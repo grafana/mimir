@@ -52,6 +52,13 @@
   // Zone-aware replication.
   //
 
+  // reduce the dynamic-replication factors from the default (i.e., 5) to 4 when we run
+  // multi-az with backup. This increase the replication factor from 3 to 4, so overall,
+  // the replication factor is similar.
+  store_dynamic_replication_override:: if !(isBackupAMultiAZEnabled && isBackupBMultiAZEnabled) then {} else {
+    'store-gateway.dynamic-replication.multiple': 4,
+  },
+
   ruler_args+:: (
     // During the migration, if read path switch is enabled we need to apply changes directly to rulers instead of queryBlocksStorageConfig.
     if !($._config.multi_zone_store_gateway_enabled && $._config.multi_zone_store_gateway_read_path_enabled && $._config.multi_zone_store_gateway_migration_enabled) then {} else {
@@ -66,7 +73,9 @@
       'store-gateway.sharding-ring.zone-awareness-enabled': 'true',
       'store-gateway.sharding-ring.prefix': 'multi-zone/',
     }
-  ),
+  ) + $.store_dynamic_replication_override,
+
+  store_gateway_args+:: $.store_dynamic_replication_override,
 
   //
   // Multi-zone store-gateways.
