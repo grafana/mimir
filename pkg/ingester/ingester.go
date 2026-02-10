@@ -65,6 +65,7 @@ import (
 	mimir_storage "github.com/grafana/mimir/pkg/storage"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -2403,8 +2404,14 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	numSamples := 0
 	numSeries := 0
 
+	projectionInclude := req.ProjectionInclude
+	projectionLabels := req.ProjectionLabels
+	if !slices.Contains(projectionLabels, model.MetricNameLabel) {
+		projectionLabels = append(projectionLabels, model.MetricNameLabel)
+	}
+
 	spanlog.DebugLog("msg", "using executeStreamingQuery")
-	numSeries, numSamples, err = i.executeStreamingQuery(ctx, db, int64(from), int64(through), matchers, shard, stream, req.StreamingChunksBatchSize, spanlog)
+	numSeries, numSamples, err = i.executeStreamingQuery(ctx, db, int64(from), int64(through), matchers, shard, projectionInclude, projectionLabels, stream, req.StreamingChunksBatchSize, spanlog)
 	if err != nil {
 		return err
 	}
@@ -2415,7 +2422,7 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	return nil
 }
 
-func (i *Ingester) executeStreamingQuery(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer, batchSize uint64, spanlog *spanlogger.SpanLogger) (numSeries, numSamples int, _ error) {
+func (i *Ingester) executeStreamingQuery(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, projectionInclude bool, projectionLabels []string, stream client.Ingester_QueryStreamServer, batchSize uint64, spanlog *spanlogger.SpanLogger) (numSeries, numSamples int, _ error) {
 	var q storage.ChunkQuerier
 	var err error
 	if i.limits.OutOfOrderTimeWindow(db.userID) > 0 {
@@ -2430,7 +2437,7 @@ func (i *Ingester) executeStreamingQuery(ctx context.Context, db *userTSDB, from
 	// The querier must remain open until we've finished streaming chunks.
 	defer q.Close()
 
-	allSeries, numSeries, err := i.sendStreamingQuerySeries(ctx, q, from, through, matchers, shard, stream)
+	allSeries, numSeries, err := i.sendStreamingQuerySeries(ctx, q, from, through, matchers, shard, projectionInclude, projectionLabels, stream)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -2480,7 +2487,7 @@ func putChunkSeriesNode(sn *chunkSeriesNode) {
 	chunkSeriesNodePool.Put(sn)
 }
 
-func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.ChunkQuerier, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (*chunkSeriesNode, int, error) {
+func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.ChunkQuerier, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, projectionInclude bool, projectionLabels []string, stream client.Ingester_QueryStreamServer) (*chunkSeriesNode, int, error) {
 	// Disable chunks trimming, so that we don't have to rewrite chunks which have samples outside
 	// the requested from/through range. PromQL engine can handle it.
 	hints := initSelectHints(from, through)
@@ -2494,6 +2501,7 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.Chunk
 	}
 
 	seriesInBatch := make([]client.QueryStreamSeries, 0, queryStreamBatchSize)
+	reducer := series.NewReducer()
 
 	// We retain the iterator factory returned by IteratorFactory() rather than the full storage.ChunkSeries,
 	// so that we don't hold references to labels or other series data longer than necessary.
@@ -2523,8 +2531,15 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.Chunk
 			return nil, 0, errors.Wrap(err, "getting ChunkSeries chunk count")
 		}
 
+		var lbls labels.Labels
+		if projectionInclude {
+			lbls = reducer.Reduce(series.Labels(), projectionLabels)
+		} else {
+			lbls = series.Labels()
+		}
+
 		seriesInBatch = append(seriesInBatch, client.QueryStreamSeries{
-			Labels:     mimirpb.FromLabelsToLabelAdapters(series.Labels()),
+			Labels:     mimirpb.FromLabelsToLabelAdapters(lbls),
 			ChunkCount: int64(chunkCount),
 		})
 
