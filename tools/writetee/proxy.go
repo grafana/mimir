@@ -83,8 +83,9 @@ func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
 			"Same auth behavior as backend.mirrored-endpoints.",
 	)
 	f.Float64Var(&cfg.AmplificationFactor, "backend.amplification-factor", 1.0,
-		"The factor by which to amplify writes to amplified backends. "+
-			"For example, 3.5 means each incoming metric will be duplicated 3.5 times on average. "+
+		"The factor by which to amplify or sample writes to amplified backends. "+
+			"Values > 1.0 amplify (duplicate) metrics: 3.5 means each metric is duplicated 3.5 times on average. "+
+			"Values < 1.0 sample (reduce) metrics: 0.1 means only 10% of metrics are sent. "+
 			"Amplified metrics have an additional __amplified__=\"<replica>\" label. "+
 			"Only applies to backends specified in backend.amplified-endpoints.",
 	)
@@ -170,8 +171,8 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 			break
 		}
 	}
-	if hasAmplifiedBackend && cfg.AmplificationFactor < 1.0 {
-		return nil, errors.New("amplification-factor must be >= 1.0 when amplified backends are configured")
+	if hasAmplifiedBackend && cfg.AmplificationFactor <= 0.0 {
+		return nil, errors.New("amplification-factor must be > 0.0 when amplified backends are configured")
 	}
 
 	// If the preferred backend is configured, then it must exist among the actual backends.
