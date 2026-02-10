@@ -281,7 +281,7 @@ func computeSplitRanges(startTs, endTs int64, splitInterval time.Duration, oooTh
 		splitEnd := splitStart + splitIntervalMs
 
 		// Check if range would be in ooo window
-		if oooThreshold > 0 && splitEnd > oooThreshold {
+		if oooThreshold > 0 && splitEnd >= oooThreshold {
 			ranges = append(ranges, SplitRange{
 				Start:     splitStart,
 				End:       endTs,

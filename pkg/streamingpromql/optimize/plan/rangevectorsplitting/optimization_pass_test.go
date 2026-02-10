@@ -177,10 +177,11 @@ func TestComputeSplitRangesWithOOOWindow(t *testing.T) {
 			endTs:         6 * hourInMs,
 			splitInterval: 2 * time.Hour,
 			oooThreshold:  4*hourInMs - 1,
+			// Since splitEnd == oooThreshold, the block includes the timestamp at the OOO threshold boundary
+			// (the interval is (Start, End] so End is included). This block cannot be cached as it may receive OOO writes.
 			expectedRanges: []SplitRange{
 				{Start: 1 * hourInMs, End: 2*hourInMs - 1, Cacheable: false},
-				{Start: 2*hourInMs - 1, End: 4*hourInMs - 1, Cacheable: true},
-				{Start: 4*hourInMs - 1, End: 6 * hourInMs, Cacheable: false},
+				{Start: 2*hourInMs - 1, End: 6 * hourInMs, Cacheable: false},
 			},
 		},
 		{
