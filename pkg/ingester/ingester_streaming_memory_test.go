@@ -108,7 +108,7 @@ func TestIngester_SendStreamingQuerySeries_ConcurrentMemoryUsage(t *testing.T) {
 				coordinator: coordinator,
 			}
 
-			_, _, err = i.sendStreamingQuerySeries(ctx, q, now-1000, now+1000, matchers, nil, stream)
+			_, _, err = i.sendStreamingQuerySeries(ctx, q, now-1000, now+1000, matchers, nil, false, nil, stream)
 			if err != nil {
 				errCh <- err
 			}

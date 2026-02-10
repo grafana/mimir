@@ -36,7 +36,6 @@ import (
 	"github.com/grafana/mimir/pkg/querier/engine"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
-	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
@@ -234,15 +233,15 @@ func New(
 
 	// Wrap queryable with memory tracking so that there will SeriesLabelsDeduplicator in the context.
 	queryable = NewMemoryTrackingQueryable(queryable, reg)
-	lazyQueryable := storage.QueryableFunc(func(minT int64, maxT int64) (storage.Querier, error) {
-		querier, err := queryable.Querier(minT, maxT)
-		if err != nil {
-			return nil, err
-		}
-		return lazyquery.NewLazyQuerier(querier), nil
-	})
+	//lazyQueryable := storage.QueryableFunc(func(minT int64, maxT int64) (storage.Querier, error) {
+	//	querier, err := queryable.Querier(minT, maxT)
+	//	if err != nil {
+	//		return nil, err
+	//	}
+	//	return lazyquery.NewLazyQuerier(querier), nil
+	//})
 
-	return NewSampleAndChunkQueryable(lazyQueryable), exemplarQueryable, eng, streamingEngine, nil
+	return NewSampleAndChunkQueryable(queryable), exemplarQueryable, eng, streamingEngine, nil
 }
 
 // NewSampleAndChunkQueryable creates a SampleAndChunkQueryable from a Queryable.
