@@ -337,7 +337,7 @@ func (e *histogramQuantileForcedMonotonicityErr) Error() string {
 	// by user) to 0 to keep the original message until merging annotations is fully
 	// supported in MQE.
 	if e.minTs == 0 && e.maxTs == 0 && e.minBucket == 0 && e.maxBucket == 0 && e.maxDiff == 0 {
-		return e.Err.Error()
+		return fmt.Sprintf("%s (%s)", e.Err, e.PositionRange.StartPosInput(e.Query, 0))
 	}
 	startTime := time.Unix(e.minTs/1000, 0).UTC().Format(time.RFC3339)
 	endTime := time.Unix(e.maxTs/1000, 0).UTC().Format(time.RFC3339)
