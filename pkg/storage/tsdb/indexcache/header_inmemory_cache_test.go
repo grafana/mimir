@@ -46,7 +46,7 @@ func TestInMemoryIndexCache_AvoidsSizeAccountingDeadlock(t *testing.T) {
 	cache.StorePostingsOffset(
 		tenant, blockID, lbl0, rng0, time.Hour,
 	)
-	expectedValueSize0 := sliceSize(cache.valCodec.EncodeRange(rng0))
+	expectedValueSize0 := sliceSize(cache.valCodec.EncodeSingleRange(rng0))
 	assert.Equal(t, expectedValueSize0, cache.curSize)
 
 	// Insert second value, same size as first, then cache will be exactly full.
@@ -56,7 +56,7 @@ func TestInMemoryIndexCache_AvoidsSizeAccountingDeadlock(t *testing.T) {
 	cache.StorePostingsOffset(
 		tenant, blockID, lbl1, rng1, time.Hour,
 	)
-	expectedValueSize1 := sliceSize(cache.valCodec.EncodeRange(rng1))
+	expectedValueSize1 := sliceSize(cache.valCodec.EncodeSingleRange(rng1))
 	assert.Equal(t, expectedValueSize0+expectedValueSize1, cache.curSize)
 	assert.Equal(t, cache.curSize, cache.maxCacheSizeBytes)
 
@@ -69,7 +69,7 @@ func TestInMemoryIndexCache_AvoidsSizeAccountingDeadlock(t *testing.T) {
 	cache.StorePostingsOffset(
 		tenant, blockID, lbl2, rng2, time.Hour,
 	)
-	expectedValueSize2 := sliceSize(cache.valCodec.EncodeRange(rng2))
+	expectedValueSize2 := sliceSize(cache.valCodec.EncodeSingleRange(rng2))
 	assert.Equal(t, expectedValueSize2, cache.curSize)
 
 	ctx := context.Background()
