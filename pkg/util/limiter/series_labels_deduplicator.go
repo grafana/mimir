@@ -77,8 +77,13 @@ func (sd *seriesDeduplicator) Deduplicate(newLabels labels.Labels, tracker *Memo
 	// Check if we've seen this hash before.
 	if existingLabels, found := sd.uniqueSeries[fingerprint]; !found {
 		// See newLabels for the first time. Track the series limit and its labels memory consumption.
+		// Track memory first - only add to map if tracking succeeds to avoid phantom entries on error.
+		result, err := sd.trackNewLabels(newLabels, tracker)
+		if err != nil {
+			return result, err
+		}
 		sd.uniqueSeries[fingerprint] = newLabels
-		return sd.trackNewLabels(newLabels, tracker)
+		return result, nil
 	} else if labels.Equal(existingLabels, newLabels) {
 		// Already see newLabels before. Deduplicate it by returning existingLabels. No need to increase memory consumption.
 		return existingLabels, nil
@@ -98,8 +103,13 @@ func (sd *seriesDeduplicator) Deduplicate(newLabels labels.Labels, tracker *Memo
 		}
 	}
 	// Despite there was a hash conflict, we see newLabels for the first time. Track the series limit and its labels memory consumption.
+	// Track memory first - only add to map if tracking succeeds to avoid phantom entries on error.
+	result, err := sd.trackNewLabels(newLabels, tracker)
+	if err != nil {
+		return result, err
+	}
 	sd.conflictSeries[fingerprint] = append(hashConflictLabels, newLabels)
-	return sd.trackNewLabels(newLabels, tracker)
+	return result, nil
 }
 
 func (sd *seriesDeduplicator) trackNewLabels(newLabels labels.Labels, tracker *MemoryConsumptionTracker) (labels.Labels, error) {

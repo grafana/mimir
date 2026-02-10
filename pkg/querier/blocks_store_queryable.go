@@ -518,9 +518,17 @@ func (q *blocksStoreQuerier) selectSorted(ctx context.Context, sp *storage.Selec
 		}
 	}
 
-	return series.NewSeriesSetWithWarnings(
+	result := series.NewSeriesSetWithWarnings(
 		storage.NewMergeSeriesSet(resSeriesSets, 0, storage.ChainedSeriesMerge),
 		resWarnings)
+	// For "series" requests, the store-gateway path calls deduplicator.Deduplicate which increases memory.
+	// We need to wrap with MemoryTrackingSeriesSet here to balance the memory tracking, because
+	// multiQuerier.Select skips the wrapping for "series" requests (to avoid negative memory from the
+	// distributor path which doesn't use Deduplicate).
+	if sp.Func == "series" {
+		return series.NewMemoryTrackingSeriesSet(result, memoryTracker)
+	}
+	return result
 }
 
 func (q *blocksStoreQuerier) startBuffering(streamReaders []*storeGatewayStreamReader) error {
