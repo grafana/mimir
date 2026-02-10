@@ -33,7 +33,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
-	"github.com/grafana/mimir/pkg/streamingpromql/planning/metrics"
+	planningmetrics "github.com/grafana/mimir/pkg/streamingpromql/planning/metrics"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -118,12 +118,9 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 	if opts.RangeVectorSplitting.Enabled {
 		splitInterval := opts.RangeVectorSplitting.SplitInterval
 		if splitInterval <= 0 {
-			splitInterval = 2 * time.Hour
+			return nil, errors.New("range vector splitting is enabled but split interval is not greater than 0")
 		}
 		planner.RegisterQueryPlanOptimizationPass(rangevectorsplitting.NewOptimizationPass(splitInterval, opts.Limits, time.Now, opts.CommonOpts.Reg, opts.Logger))
-		if opts.Logger != nil {
-			opts.Logger.Log("msg", "range vector splitting optimization pass enabled", "split_interval", splitInterval)
-		}
 	}
 
 	if opts.EnableCommonSubexpressionElimination {

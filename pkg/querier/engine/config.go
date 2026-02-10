@@ -52,6 +52,10 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.MimirQueryEngine.RegisterFlags(f)
 }
 
+func (cfg *Config) Validate() error {
+	return cfg.MimirQueryEngine.Validate()
+}
+
 // NewPromQLEngineOptions returns the PromQL engine options based on the provided config.
 func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.ActivityTracker, logger log.Logger, reg prometheus.Registerer, limits streamingpromql.QueryLimitsProvider) (promql.EngineOpts, streamingpromql.EngineOpts) {
 	tracker := newQueryTracker(activityTracker)

@@ -80,6 +80,10 @@ func (c *RangeVectorSplittingConfig) RegisterFlags(f *flag.FlagSet) {
 	c.IntermediateResultsCache.RegisterFlagsWithPrefix(f, "querier.mimir-query-engine.range-vector-splitting.")
 }
 
+func (o *EngineOpts) Validate() error {
+	return o.RangeVectorSplitting.Validate()
+}
+
 func (c *RangeVectorSplittingConfig) Validate() error {
 	if c.Enabled && c.SplitInterval <= 0 {
 		return fmt.Errorf("range vector splitting is enabled but split interval is not greater than 0")

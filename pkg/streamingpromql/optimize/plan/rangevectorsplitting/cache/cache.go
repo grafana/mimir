@@ -63,7 +63,6 @@ func NewCacheFactory(cfg Config, logger log.Logger, reg prometheus.Registerer) (
 		logger,
 	)
 
-	logger.Log("msg", "intermediate results cache initialized", "backend", cfg.Backend)
 	return NewCacheFactoryWithBackend(backend, reg, logger), nil
 }
 
@@ -79,8 +78,8 @@ func generateCacheKey(tenant string, function int32, selector string, start, end
 	return fmt.Sprintf("%s:%d:%s:%d:%d", tenant, function, selector, start, end)
 }
 
-// cacheHashKey is needed due to memcached key limit
-func cacheHashKey(key string) string {
+// hashCacheKey is needed due to memcached key limit
+func hashCacheKey(key string) string {
 	hasher := fnv.New64a()
 	_, _ = hasher.Write([]byte(key))
 	return hex.EncodeToString(hasher.Sum(nil))
@@ -125,7 +124,7 @@ func (c *Cache[T]) Get(
 
 	c.metrics.cacheRequests.Inc()
 	cacheKey := generateCacheKey(tenant, function, innerKey, start, end)
-	hashedKey := cacheHashKey(cacheKey)
+	hashedKey := hashCacheKey(cacheKey)
 
 	foundData := c.backend.GetMulti(ctx, []string{hashedKey})
 	data, ok := foundData[hashedKey]
@@ -200,7 +199,7 @@ func (c *Cache[T]) Set(
 		return fmt.Errorf("marshalling cached series: %w", err)
 	}
 
-	hashedKey := cacheHashKey(cacheKey)
+	hashedKey := hashCacheKey(cacheKey)
 	c.backend.SetMultiAsync(map[string][]byte{hashedKey: data}, defaultTTL)
 
 	level.Debug(c.logger).Log("msg", "cache entry written", "cache_key", cacheKey, "series_count", seriesCount, "entry_size", len(data))

@@ -790,7 +790,7 @@ func TestMatrixSelector_RangeVectorSplittingCacheKey(t *testing.T) {
 			},
 			expected: `{__name__="foo"}`,
 		},
-		"one matcher, has timestamp (unix only, no RFC3339), no offset": {
+		"one matcher, has timestamp, no offset": {
 			node: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
 					Matchers:  singleMatcher,

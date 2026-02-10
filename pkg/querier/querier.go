@@ -133,8 +133,8 @@ func (cfg *Config) Validate() error {
 		return errStreamingStoreGatewayBufferSize
 	}
 
-	if err := cfg.EngineConfig.MimirQueryEngine.RangeVectorSplitting.Validate(); err != nil {
-		return fmt.Errorf("invalid range vector splitting config: %w", err)
+	if err := cfg.EngineConfig.Validate(); err != nil {
+		return err
 	}
 
 	return nil

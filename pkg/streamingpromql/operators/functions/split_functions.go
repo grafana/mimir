@@ -141,7 +141,7 @@ func (c sumOverTimeCodec) Marshal(results []SumOverTimeIntermediate) ([]byte, er
 	listProto := &SumOverTimeIntermediateList{Results: results}
 	listBytes, err := listProto.Marshal()
 	if err != nil {
-		return nil, errors.Wrap(err, "marshaling sum over time list")
+		return nil, errors.Wrap(err, "marshaling sum_over_time list")
 	}
 	return listBytes, nil
 }
@@ -149,7 +149,7 @@ func (c sumOverTimeCodec) Marshal(results []SumOverTimeIntermediate) ([]byte, er
 func (c sumOverTimeCodec) Unmarshal(bytes []byte) ([]SumOverTimeIntermediate, error) {
 	var listProto SumOverTimeIntermediateList
 	if err := listProto.Unmarshal(bytes); err != nil {
-		return nil, errors.Wrap(err, "unmarshaling sum over time list")
+		return nil, errors.Wrap(err, "unmarshaling sum_over_time list")
 	}
 	return listProto.Results, nil
 }
@@ -192,7 +192,7 @@ func (c countOverTimeCodec) Marshal(results []CountOverTimeIntermediate) ([]byte
 	listProto := &CountOverTimeIntermediateList{Results: results}
 	listBytes, err := listProto.Marshal()
 	if err != nil {
-		return nil, errors.Wrap(err, "marshaling count over time list")
+		return nil, errors.Wrap(err, "marshaling count_over_time list")
 	}
 	return listBytes, nil
 }
@@ -200,7 +200,7 @@ func (c countOverTimeCodec) Marshal(results []CountOverTimeIntermediate) ([]byte
 func (c countOverTimeCodec) Unmarshal(bytes []byte) ([]CountOverTimeIntermediate, error) {
 	var listProto CountOverTimeIntermediateList
 	if err := listProto.Unmarshal(bytes); err != nil {
-		return nil, errors.Wrap(err, "unmarshaling count over time list")
+		return nil, errors.Wrap(err, "unmarshaling count_over_time list")
 	}
 	return listProto.Results, nil
 }
@@ -323,7 +323,7 @@ func (c minMaxOverTimeCodec) Marshal(results []MinMaxOverTimeIntermediate) ([]by
 	listProto := &MinMaxOverTimeIntermediateList{Results: results}
 	listBytes, err := listProto.Marshal()
 	if err != nil {
-		return nil, errors.Wrap(err, "marshaling min/max over time list")
+		return nil, errors.Wrap(err, "marshaling min/max_over_time list")
 	}
 	return listBytes, nil
 }
@@ -331,7 +331,7 @@ func (c minMaxOverTimeCodec) Marshal(results []MinMaxOverTimeIntermediate) ([]by
 func (c minMaxOverTimeCodec) Unmarshal(bytes []byte) ([]MinMaxOverTimeIntermediate, error) {
 	var listProto MinMaxOverTimeIntermediateList
 	if err := listProto.Unmarshal(bytes); err != nil {
-		return nil, errors.Wrap(err, "unmarshaling min/max over time list")
+		return nil, errors.Wrap(err, "unmarshaling min/max_over_time list")
 	}
 	return listProto.Results, nil
 }
