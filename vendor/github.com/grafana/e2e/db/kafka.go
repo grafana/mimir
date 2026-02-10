@@ -15,35 +15,62 @@ import (
 
 type KafkaService struct {
 	*e2e.HTTPService
+	cfg KafkaConfig
 }
 
 func NewKafka() *KafkaService {
+	return KafkaConfig{}.New()
+}
+
+type KafkaConfig struct {
+	AuthMode KafkaAuthMode
+}
+
+func (c KafkaConfig) New() *KafkaService {
+	readinessPort := 9092
+	var otherPorts []int
+
+	if c.AuthMode == KafkaAuthSASLPlain {
+		// Use a separate PLAINTEXT listener for readiness probes since the main
+		// listener requires authentication.
+		readinessPort = 9093
+		otherPorts = []int{9093}
+	}
+
 	return &KafkaService{
 		HTTPService: e2e.NewHTTPService(
 			"kafka",
 			images.Kafka,
 			nil, // No custom command.
-			NewKafkaReadinessProbe(9092),
+			NewKafkaReadinessProbe(readinessPort),
 			9092,
+			otherPorts...,
 		),
+		cfg: c,
 	}
 }
 
+type KafkaAuthMode int
+
+const (
+	KafkaAuthNone KafkaAuthMode = iota
+	KafkaAuthSASLPlain
+)
+
+const (
+	KafkaSASLUsername = "kafkauser"
+	KafkaSASLPassword = "kafkapassword"
+)
+
 func (s *KafkaService) Start(networkName, sharedDir string) (err error) {
-	// Configures Kafka right before starting it so that we have the networkName to correctly compute
-	// the advertised host.
-	s.HTTPService.SetEnvVars(map[string]string{
+	vars := map[string]string{
 		// Configure Kafka to run in KRaft mode (without Zookeeper).
 		"CLUSTER_ID":                      "NqnEdODVKkiLTfJvqd1uqQ==", // A random ID (16 bytes of a base64-encoded UUID).
 		"KAFKA_BROKER_ID":                 "1",
 		"KAFKA_NODE_ID":                   "1",
-		"KAFKA_LISTENERS":                 "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:29093,PLAINTEXT_HOST://localhost:29092", // Host and port to which Kafka binds to for listening.
 		"KAFKA_PROCESS_ROLES":             "broker,controller",
 		"KAFKA_CONTROLLER_QUORUM_VOTERS":  "1@kafka:29093",
 		"KAFKA_CONTROLLER_LISTENER_NAMES": "CONTROLLER",
-
-		// Configure the advertised host and post.
-		"KAFKA_ADVERTISED_LISTENERS": fmt.Sprintf("PLAINTEXT://%s-kafka:9092,PLAINTEXT_HOST://localhost:29092", networkName),
 
 		// RF=1.
 		"KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR":         "1",
@@ -59,7 +86,30 @@ func (s *KafkaService) Start(networkName, sharedDir string) (err error) {
 		"KAFKA_NUM_PARTITIONS": "3",
 
 		"LOG4J_ROOT_LOGLEVEL": "WARN",
-	})
+	}
+
+	switch s.cfg.AuthMode {
+	case KafkaAuthNone:
+		vars["KAFKA_LISTENERS"] = "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:29093,PLAINTEXT_HOST://localhost:29092"
+		vars["KAFKA_ADVERTISED_LISTENERS"] = fmt.Sprintf("PLAINTEXT://%s-kafka:9092,PLAINTEXT_HOST://localhost:29092", networkName)
+		vars["KAFKA_LISTENER_SECURITY_PROTOCOL_MAP"] = "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
+		vars["KAFKA_INTER_BROKER_LISTENER_NAME"] = "PLAINTEXT"
+
+	case KafkaAuthSASLPlain:
+		vars["KAFKA_LISTENERS"] = "SASLPLAIN://0.0.0.0:9092,CONTROLLER://0.0.0.0:29093,PLAINTEXT://0.0.0.0:9093"
+		vars["KAFKA_ADVERTISED_LISTENERS"] = fmt.Sprintf("SASLPLAIN://%s-kafka:9092,PLAINTEXT://%s-kafka:9093", networkName, networkName)
+		vars["KAFKA_LISTENER_SECURITY_PROTOCOL_MAP"] = "CONTROLLER:PLAINTEXT,SASLPLAIN:SASL_PLAINTEXT,PLAINTEXT:PLAINTEXT"
+		vars["KAFKA_INTER_BROKER_LISTENER_NAME"] = "PLAINTEXT"
+		vars["KAFKA_SASL_ENABLED_MECHANISMS"] = "PLAIN"
+		vars["KAFKA_LISTENER_NAME_SASLPLAIN_PLAIN_SASL_JAAS_CONFIG"] = fmt.Sprintf(
+			`org.apache.kafka.common.security.plain.PlainLoginModule required user_%s="%s";`,
+			KafkaSASLUsername, KafkaSASLPassword,
+		)
+	}
+
+	// Configures Kafka right before starting it so that we have the networkName to correctly compute
+	// the advertised host.
+	s.HTTPService.SetEnvVars(vars)
 
 	return s.HTTPService.Start(networkName, sharedDir)
 }

@@ -250,8 +250,8 @@ blocks_storage:
 		MinioEndpoint:  fmt.Sprintf("%s-minio-9000:9000", networkName),
 	})
 
-	IngestStorageFlags = func() map[string]string {
-		return map[string]string{
+	IngestStorageFlags = func(auth e2edb.KafkaAuthMode) map[string]string {
+		flags := map[string]string{
 			"-ingest-storage.enabled":       "true",
 			"-ingest-storage.kafka.topic":   "ingest",
 			"-ingest-storage.kafka.address": fmt.Sprintf("%s-kafka:9092", networkName),
@@ -277,6 +277,11 @@ blocks_storage:
 			"-ingest-storage.kafka.ingestion-concurrency-max":            "8",
 			"-ingest-storage.kafka.auto-create-topic-default-partitions": "10",
 		}
+		if auth == e2edb.KafkaAuthSASLPlain {
+			flags["-ingest-storage.kafka.sasl-username"] = e2edb.KafkaSASLUsername
+			flags["-ingest-storage.kafka.sasl-password"] = e2edb.KafkaSASLPassword
+		}
+		return flags
 	}
 )
 
