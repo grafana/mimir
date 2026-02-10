@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
@@ -249,11 +250,16 @@ func MaterializeDuplicateFilter(f *DuplicateFilter, materializer *planning.Mater
 		return nil, fmt.Errorf("expected operator that supports filtering as child of DuplicateFilter, got %T", operator)
 	}
 
-	filterable.SetFilters(f.Filters)
+	filters, err := core.LabelMatchersToPrometheusType(f.Filters)
+	if err != nil {
+		return nil, err
+	}
+
+	filterable.SetFilters(filters)
 
 	return planning.NewSingleUseOperatorFactory(operator), nil
 }
 
 type Filterable interface {
-	SetFilters(filters []*core.LabelMatcher)
+	SetFilters(filters []*labels.Matcher)
 }

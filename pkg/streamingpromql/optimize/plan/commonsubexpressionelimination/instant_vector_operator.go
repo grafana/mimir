@@ -6,6 +6,7 @@ import (
 	"context"
 	"math"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -22,17 +23,13 @@ type InstantVectorDuplicationBuffer struct {
 	seriesMetadataCount int
 	seriesMetadata      []types.SeriesMetadata
 
-	consumers []*instantVectorConsumerState
-	buffer    *SeriesDataRingBuffer[types.InstantVectorSeriesData]
+	consumers            []*InstantVectorDuplicationConsumer
+	nextInnerSeriesIndex int
+	buffer               *SeriesDataRingBuffer[types.InstantVectorSeriesData]
 
 	// Multiple InstantVectorDuplicationConsumers will call InstantVectorDuplicationBuffer.Prepare() and AfterPrepare(), so this ensures idempotency.
 	prepareCalled      bool
 	afterPrepareCalled bool
-}
-
-type instantVectorConsumerState struct {
-	nextSeriesIndex int // -1 if this consumer is closed.
-	finalized       bool
 }
 
 func NewInstantVectorDuplicationBuffer(inner types.InstantVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *InstantVectorDuplicationBuffer {
@@ -45,15 +42,16 @@ func NewInstantVectorDuplicationBuffer(inner types.InstantVectorOperator, memory
 
 func (b *InstantVectorDuplicationBuffer) AddConsumer() *InstantVectorDuplicationConsumer {
 	consumerIndex := len(b.consumers)
-	b.consumers = append(b.consumers, &instantVectorConsumerState{})
-
-	return &InstantVectorDuplicationConsumer{
+	consumer := &InstantVectorDuplicationConsumer{
 		Buffer:        b,
 		consumerIndex: consumerIndex,
 	}
+
+	b.consumers = append(b.consumers, consumer)
+	return consumer
 }
 
-func (b *InstantVectorDuplicationBuffer) SeriesMetadata(ctx context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {
+func (b *InstantVectorDuplicationBuffer) SeriesMetadata(ctx context.Context, consumerIndex int) ([]types.SeriesMetadata, error) {
 	if b.seriesMetadataCount == 0 {
 		// Haven't loaded series metadata yet, load it now.
 		var err error
@@ -67,79 +65,80 @@ func (b *InstantVectorDuplicationBuffer) SeriesMetadata(ctx context.Context, _ t
 	}
 
 	b.seriesMetadataCount++
+	isLastConsumer := b.seriesMetadataCount == len(b.consumers)
 
-	if b.seriesMetadataCount == len(b.consumers) {
-		// We can safely return the original series metadata, as we're not going to return this to another consumer.
-		metadata := b.seriesMetadata
-		b.seriesMetadata = nil
-
-		return metadata, nil
-	}
-
-	// Return a copy of the original series metadata.
-	// This is a shallow copy, which is sufficient while we're using stringlabels for labels.Labels given these are immutable.
-	metadata, err := types.SeriesMetadataSlicePool.Get(len(b.seriesMetadata), b.MemoryConsumptionTracker)
+	filteredSeries, err := b.consumers[consumerIndex].applyFiltering(b.seriesMetadata, isLastConsumer)
 	if err != nil {
 		return nil, err
 	}
 
-	return types.AppendSeriesMetadata(b.MemoryConsumptionTracker, metadata, b.seriesMetadata...)
+	if isLastConsumer {
+		b.seriesMetadata = nil
+	}
+
+	return filteredSeries, nil
 }
 
 func (b *InstantVectorDuplicationBuffer) NextSeries(ctx context.Context, consumerIndex int) (types.InstantVectorSeriesData, error) {
 	consumer := b.consumers[consumerIndex]
-	nextSeriesIndex := consumer.nextSeriesIndex
-	isLastConsumerOfThisSeries := b.checkIfAllOtherConsumersAreAheadOf(consumer)
-	consumer.nextSeriesIndex++
+	thisSeriesIndex := consumer.nextUnfilteredSeriesIndex
+	consumer.advanceToNextUnfilteredSeries()
+	isLastConsumerOfThisSeries := !b.anyConsumerWillRead(thisSeriesIndex)
 
-	buffered := b.buffer.IsPresent(nextSeriesIndex)
-	if buffered {
-		if isLastConsumerOfThisSeries {
-			// We can safely return the series as-is, as we're not going to return this to another consumer.
-			d := b.buffer.Remove(nextSeriesIndex)
-			return d, nil
+	for b.nextInnerSeriesIndex <= thisSeriesIndex {
+		currentSeriesIndex := b.nextInnerSeriesIndex
+		b.nextInnerSeriesIndex++
+		d, err := b.Inner.NextSeries(ctx)
+		if err != nil {
+			return types.InstantVectorSeriesData{}, err
 		}
 
-		d := b.buffer.Get(nextSeriesIndex)
-		return d.Clone(b.MemoryConsumptionTracker)
+		if currentSeriesIndex == thisSeriesIndex {
+			// We've just read the series we're looking for.
+			if isLastConsumerOfThisSeries {
+				// We don't need to buffer this series, return it as-is.
+				return d, nil
+			}
+
+			// Another consumer will read this series, so buffer it and return a cloned copy.
+			b.buffer.Append(d, currentSeriesIndex)
+			return d.Clone(b.MemoryConsumptionTracker)
+		}
+
+		if b.anyConsumerWillRead(currentSeriesIndex) {
+			b.buffer.Append(d, currentSeriesIndex)
+		} else {
+			types.PutInstantVectorSeriesData(d, b.MemoryConsumptionTracker)
+		}
 	}
 
-	d, err := b.Inner.NextSeries(ctx)
-	if err != nil {
-		return types.InstantVectorSeriesData{}, err
-	}
-
-	// Only bother storing the data if another consumer needs it.
 	if isLastConsumerOfThisSeries {
+		d := b.buffer.Remove(thisSeriesIndex)
 		return d, nil
 	}
 
-	b.buffer.Append(d, nextSeriesIndex)
+	d := b.buffer.Get(thisSeriesIndex)
 	return d.Clone(b.MemoryConsumptionTracker)
 }
 
-func (b *InstantVectorDuplicationBuffer) checkIfAllOtherConsumersAreAheadOf(consumer *instantVectorConsumerState) bool {
-	for _, otherConsumer := range b.consumers {
-		if otherConsumer == consumer {
+func (b *InstantVectorDuplicationBuffer) anyConsumerWillRead(unfilteredSeriesIndex int) bool {
+	for _, consumer := range b.consumers {
+		if consumer.nextUnfilteredSeriesIndex > unfilteredSeriesIndex {
+			// Already ahead of this series.
 			continue
 		}
 
-		if otherConsumer.nextSeriesIndex == -1 {
-			// This consumer is closed.
-			continue
-		}
-
-		if otherConsumer.nextSeriesIndex <= consumer.nextSeriesIndex {
-			return false
+		if consumer.shouldReturnUnfilteredSeries(unfilteredSeriesIndex) {
+			return true
 		}
 	}
 
-	return true
+	return false
 }
 
 func (b *InstantVectorDuplicationBuffer) CloseConsumer(consumerIndex int) {
 	consumer := b.consumers[consumerIndex]
-	if consumer.nextSeriesIndex == -1 {
+	if consumer.nextUnfilteredSeriesIndex == -1 {
 		// We've already closed this consumer, nothing more to do.
 		return
 	}
@@ -150,24 +149,24 @@ func (b *InstantVectorDuplicationBuffer) CloseConsumer(consumerIndex int) {
 			continue
 		}
 
-		if otherConsumer.nextSeriesIndex == -1 {
+		if otherConsumer.nextUnfilteredSeriesIndex == -1 {
 			// Already closed.
 			continue
 		}
 
-		lowestNextSeriesIndexOfOtherConsumers = min(lowestNextSeriesIndexOfOtherConsumers, otherConsumer.nextSeriesIndex)
+		lowestNextSeriesIndexOfOtherConsumers = min(lowestNextSeriesIndexOfOtherConsumers, otherConsumer.nextUnfilteredSeriesIndex)
 	}
 
 	if lowestNextSeriesIndexOfOtherConsumers == math.MaxInt {
 		// All other consumers are already closed. Close everything.
-		consumer.nextSeriesIndex = -1
+		consumer.nextUnfilteredSeriesIndex = -1
 		b.close()
 		return
 	}
 
 	// If this consumer was the lagging consumer, free any data that was being buffered for it.
-	for consumer.nextSeriesIndex < lowestNextSeriesIndexOfOtherConsumers {
-		seriesIdx := consumer.nextSeriesIndex
+	for consumer.nextUnfilteredSeriesIndex < lowestNextSeriesIndexOfOtherConsumers {
+		seriesIdx := consumer.nextUnfilteredSeriesIndex
 
 		// Only try to remove the buffered series if it was actually buffered (we might not have stored it if an error occurred reading the series).
 		if b.buffer.IsPresent(seriesIdx) {
@@ -175,10 +174,10 @@ func (b *InstantVectorDuplicationBuffer) CloseConsumer(consumerIndex int) {
 			types.PutInstantVectorSeriesData(d, b.MemoryConsumptionTracker)
 		}
 
-		consumer.nextSeriesIndex++
+		consumer.nextUnfilteredSeriesIndex++
 	}
 
-	consumer.nextSeriesIndex = -1
+	consumer.nextUnfilteredSeriesIndex = -1
 }
 
 func (b *InstantVectorDuplicationBuffer) Prepare(ctx context.Context, params *types.PrepareParams) error {
@@ -240,13 +239,121 @@ func (b *InstantVectorDuplicationBuffer) close() {
 type InstantVectorDuplicationConsumer struct {
 	Buffer *InstantVectorDuplicationBuffer
 
-	consumerIndex int
+	filters []*labels.Matcher
+
+	// unfilteredSeriesBitmap contains one entry per unfiltered input series, where true indicates that it passes this consumer's filters.
+	// If this consumer has no filters, this is nil.
+	unfilteredSeriesBitmap []bool
+	consumerIndex          int
+
+	nextUnfilteredSeriesIndex int // -1 if this consumer is closed.
+	finalized                 bool
 }
 
 var _ types.InstantVectorOperator = &InstantVectorDuplicationConsumer{}
 
+func (d *InstantVectorDuplicationConsumer) SetFilters(filters []*labels.Matcher) {
+	d.filters = filters
+}
+
+func (d *InstantVectorDuplicationConsumer) applyFiltering(unfilteredSeries []types.SeriesMetadata, canReuseSlice bool) ([]types.SeriesMetadata, error) {
+	if len(d.filters) == 0 {
+		d.nextUnfilteredSeriesIndex = 0
+
+		if canReuseSlice {
+			return unfilteredSeries, nil
+		}
+
+		// Return a copy of the original series metadata.
+		// This is a shallow copy, which is sufficient while we're using stringlabels for labels.Labels given these are immutable.
+		metadata, err := types.SeriesMetadataSlicePool.Get(len(unfilteredSeries), d.Buffer.MemoryConsumptionTracker)
+		if err != nil {
+			return nil, err
+		}
+
+		return types.AppendSeriesMetadata(d.Buffer.MemoryConsumptionTracker, metadata, unfilteredSeries...)
+	}
+
+	var filteredSeries []types.SeriesMetadata
+
+	// Try to reuse the original slice, if we can.
+	if canReuseSlice {
+		filteredSeries = unfilteredSeries[:0]
+	} else {
+		var err error
+		filteredSeries, err = types.SeriesMetadataSlicePool.Get(len(unfilteredSeries), d.Buffer.MemoryConsumptionTracker)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	var err error
+	d.unfilteredSeriesBitmap, err = types.BoolSlicePool.Get(len(unfilteredSeries), d.Buffer.MemoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	d.nextUnfilteredSeriesIndex = len(unfilteredSeries)
+	d.unfilteredSeriesBitmap = d.unfilteredSeriesBitmap[:len(unfilteredSeries)]
+
+	for unfilteredSeriesIndex, series := range unfilteredSeries {
+		if !matchesSeries(d.filters, series.Labels) {
+			continue
+		}
+
+		d.unfilteredSeriesBitmap[unfilteredSeriesIndex] = true
+
+		if d.nextUnfilteredSeriesIndex == len(unfilteredSeries) {
+			// First unfiltered series that matches.
+			d.nextUnfilteredSeriesIndex = unfilteredSeriesIndex
+		}
+
+		// If we're reusing the original slice, then we need to decrease the memory consumption estimate for the existing series
+		// we're about to replace in the slice.
+		if canReuseSlice {
+			d.Buffer.MemoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(unfilteredSeries[len(filteredSeries)].Labels)
+		}
+
+		filteredSeries, err = types.AppendSeriesMetadata(d.Buffer.MemoryConsumptionTracker, filteredSeries, series)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if canReuseSlice {
+		// If we reused the original slice, zero out the remaining elements, and adjust the memory consumption estimate to match.
+		for idx, series := range unfilteredSeries[len(filteredSeries):] {
+			unfilteredSeries[len(filteredSeries)+idx] = types.SeriesMetadata{}
+			d.Buffer.MemoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(series.Labels)
+		}
+	}
+
+	return filteredSeries, nil
+}
+
 func (d *InstantVectorDuplicationConsumer) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
-	return d.Buffer.SeriesMetadata(ctx, matchers)
+	return d.Buffer.SeriesMetadata(ctx, d.consumerIndex)
+}
+
+func (d *InstantVectorDuplicationConsumer) shouldReturnUnfilteredSeries(unfilteredSeriesIndex int) bool {
+	if d.nextUnfilteredSeriesIndex == -1 {
+		// Closed.
+		return false
+	}
+
+	if len(d.filters) == 0 {
+		return true
+	}
+
+	return d.unfilteredSeriesBitmap[unfilteredSeriesIndex]
+}
+
+func (d *InstantVectorDuplicationConsumer) advanceToNextUnfilteredSeries() {
+	d.nextUnfilteredSeriesIndex++
+
+	for d.nextUnfilteredSeriesIndex < len(d.unfilteredSeriesBitmap) && !d.shouldReturnUnfilteredSeries(d.nextUnfilteredSeriesIndex) {
+		d.nextUnfilteredSeriesIndex++
+	}
 }
 
 func (d *InstantVectorDuplicationConsumer) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
@@ -271,4 +378,15 @@ func (d *InstantVectorDuplicationConsumer) Finalize(ctx context.Context) error {
 
 func (d *InstantVectorDuplicationConsumer) Close() {
 	d.Buffer.CloseConsumer(d.consumerIndex)
+	types.BoolSlicePool.Put(&d.unfilteredSeriesBitmap, d.Buffer.MemoryConsumptionTracker)
+}
+
+func matchesSeries(filters []*labels.Matcher, series labels.Labels) bool {
+	for _, filter := range filters {
+		if !filter.Matches(series.Get(filter.Name)) {
+			return false
+		}
+	}
+
+	return true
 }
