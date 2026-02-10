@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.17.6-rc0
+## 2.17.6-rc.0
 
 ### Grafana Mimir
 
