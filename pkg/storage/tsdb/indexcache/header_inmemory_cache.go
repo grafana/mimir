@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package indexheader
+package indexcache
 
 import (
 	"context"
@@ -14,17 +14,15 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/index"
-
-	"github.com/grafana/mimir/pkg/storage/tsdb/indexcache"
 )
 
-const maxInt = int(^uint(0) >> 1)
-const (
-	stringHeaderSize = 8
-	sliceHeaderSize  = 16
-)
-
-var ulidSize = uint64(len(ulid.ULID{}))
+//const maxInt = int(^uint(0) >> 1)
+//const (
+//	stringHeaderSize = 8
+//	sliceHeaderSize  = 16
+//)
+//
+//var ulidSize = uint64(len(ulid.ULID{}))
 
 type InMemoryPostingsOffsetTableCache struct {
 	maxCacheSizeBytes uint64
@@ -40,7 +38,7 @@ type InMemoryPostingsOffsetTableCache struct {
 }
 
 func NewInMemoryPostingsOffsetTableCacheWithConfig(
-	config indexcache.InMemoryIndexCacheConfig,
+	config InMemoryIndexCacheConfig,
 	logger log.Logger,
 ) (*InMemoryPostingsOffsetTableCache, error) {
 	if config.MaxItemSizeBytes > config.MaxCacheSizeBytes {
@@ -69,47 +67,109 @@ func NewInMemoryPostingsOffsetTableCacheWithConfig(
 	return c, nil
 }
 
-func (c *InMemoryPostingsOffsetTableCache) StorePostingsOffset(tenantID string, blockID ulid.ULID, lbl labels.Label, rng index.Range, _ time.Duration) {
+func (c *InMemoryPostingsOffsetTableCache) StorePostingsOffset(
+	tenantID string,
+	blockID ulid.ULID,
+	lbl labels.Label,
+	rng index.Range,
+	_ time.Duration,
+) {
 	key := PostingsOffsetCacheKey{tenantID, blockID, lbl}
-	c.set(key, rng)
+	c.setRanges(key, []index.Range{rng})
 }
 
-func (c *InMemoryPostingsOffsetTableCache) FetchPostingsOffset(_ context.Context, tenantID string, blockID ulid.ULID, lbl labels.Label) (index.Range, bool) {
+func (c *InMemoryPostingsOffsetTableCache) FetchPostingsOffset(
+	_ context.Context,
+	tenantID string,
+	blockID ulid.ULID,
+	lbl labels.Label,
+) (index.Range, bool) {
 	key := PostingsOffsetCacheKey{tenantID, blockID, lbl}
-	return c.get(key)
+	return c.getRange(key)
 }
 
-func (c *InMemoryPostingsOffsetTableCache) get(key InMemoryCacheKey) (index.Range, bool) {
+func (c *InMemoryPostingsOffsetTableCache) StorePostingsOffsetsForMatcher(
+	tenantID string,
+	blockID ulid.ULID,
+	m *labels.Matcher,
+	isSubtract bool,
+	rngs []index.Range,
+	_ time.Duration,
+) {
+	key := PostingsOffsetsForMatcherCacheKey{
+		tenantID:   tenantID,
+		blockID:    blockID,
+		matcherStr: m.String(),
+		isSubtract: isSubtract,
+	}
+	c.setRanges(key, rngs)
+}
+
+func (c *InMemoryPostingsOffsetTableCache) FetchPostingsOffsetsForMatcher(
+	_ context.Context,
+	tenantID string,
+	blockID ulid.ULID,
+	m *labels.Matcher,
+	isSubtract bool,
+) ([]index.Range, bool) {
+	key := PostingsOffsetsForMatcherCacheKey{
+		tenantID:   tenantID,
+		blockID:    blockID,
+		matcherStr: m.String(),
+		isSubtract: isSubtract,
+	}
+	return c.getRanges(key)
+}
+
+func (c *InMemoryPostingsOffsetTableCache) getRange(key InMemoryCacheKey) (index.Range, bool) {
+	rngs, ok := c.getRanges(key)
+	if !ok {
+		// error for this case logging handled by getRanges
+		return index.Range{}, false
+	}
+	if len(rngs) != 1 {
+		level.Error(c.logger).Log(
+			"msg", "unexpected cache value for index.Range slice, expected single value",
+			"key", key,
+			"len", len(rngs),
+		)
+		c.lru.Remove(key)
+		return index.Range{}, false
+	}
+	return rngs[0], true
+}
+
+func (c *InMemoryPostingsOffsetTableCache) getRanges(key InMemoryCacheKey) ([]index.Range, bool) {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
 	val, ok := c.lru.Get(key)
 	if !ok {
-		return index.Range{}, false
+		return nil, false
 	}
 
-	rng, err := c.valCodec.Decode(val)
+	rngs, err := c.valCodec.DecodeRanges(val)
 	if err != nil {
 		level.Error(c.logger).Log(
-			"msg", "error decoding cache value to index.Range",
+			"msg", "error decoding cache value to index.Range slice",
 			"key", key,
 			"value", val,
 		)
 		c.lru.Remove(key)
-		return index.Range{}, false
+		return nil, false
 	}
 
-	return rng, true
+	return rngs, true
 }
 
-func (c *InMemoryPostingsOffsetTableCache) set(key InMemoryCacheKey, rng index.Range) {
+func (c *InMemoryPostingsOffsetTableCache) setRanges(key InMemoryCacheKey, rngs []index.Range) {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
 	if _, ok := c.lru.Get(key); ok {
 		return
 	}
-	val := c.valCodec.Encode(rng)
+	val := c.valCodec.EncodeRanges(rngs)
 	valSize := sliceSize(val)
 
 	if valSize > c.maxItemSizeBytes {
@@ -154,10 +214,10 @@ func (c *InMemoryPostingsOffsetTableCache) onEvict(_ InMemoryCacheKey, v []byte)
 	c.curSize -= entrySize
 }
 
-func stringSize(s string) uint64 {
-	return stringHeaderSize + uint64(len(s))
-}
-
-func sliceSize(b []byte) uint64 {
-	return sliceHeaderSize + uint64(len(b))
-}
+//func stringSize(s string) uint64 {
+//	return stringHeaderSize + uint64(len(s))
+//}
+//
+//func sliceSize(b []byte) uint64 {
+//	return sliceHeaderSize + uint64(len(b))
+//}

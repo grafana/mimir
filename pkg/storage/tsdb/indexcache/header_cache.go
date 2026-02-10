@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package indexheader
+package indexcache
 
 import (
 	"context"
@@ -16,8 +16,11 @@ import (
 )
 
 type PostingsOffsetTableCache interface {
-	StorePostingsOffset(userID string, blockID ulid.ULID, lbl labels.Label, v index.Range, ttl time.Duration)
-	FetchPostingsOffset(ctx context.Context, userID string, blockID ulid.ULID, lbl labels.Label) (index.Range, bool)
+	StorePostingsOffset(tenantID string, blockID ulid.ULID, lbl labels.Label, rng index.Range, ttl time.Duration)
+	FetchPostingsOffset(ctx context.Context, tenantID string, blockID ulid.ULID, lbl labels.Label) (index.Range, bool)
+
+	StorePostingsOffsetsForMatcher(tenantID string, blockID ulid.ULID, m *labels.Matcher, isSubtract bool, rngs []index.Range, ttl time.Duration)
+	FetchPostingsOffsetsForMatcher(ctx context.Context, tenantID string, blockID ulid.ULID, m *labels.Matcher, isSubtract bool) ([]index.Range, bool)
 }
 
 const (
@@ -56,6 +59,25 @@ func (k PostingsOffsetCacheKey) Key() string {
 // Size implements InMemoryCacheKey
 func (k PostingsOffsetCacheKey) Size() uint64 {
 	return stringSize(k.tenantID) + ulidSize + stringSize(k.lbl.Name) + stringSize(k.lbl.Value)
+}
+
+type PostingsOffsetsForMatcherCacheKey struct {
+	tenantID   string
+	blockID    ulid.ULID
+	matcherStr string
+	isSubtract bool
+}
+
+// Key implements RemoteCacheKey with a crypto-hashed representation of tenant, block, and label pair.
+func (k PostingsOffsetsForMatcherCacheKey) Key() string {
+	return postingsOffsetsForMatcherCacheKey(
+		postingsOffsetKeyPrefix, k.tenantID, k.blockID.String(), k.matcherStr, k.isSubtract,
+	)
+}
+
+// Size implements InMemoryCacheKey
+func (k PostingsOffsetsForMatcherCacheKey) Size() uint64 {
+	return stringSize(k.tenantID) + ulidSize + stringSize(k.matcherStr) + 1 // add a byte for boolean isSubtract
 }
 
 func postingsOffsetCacheKey(prefix, tenantID, blockID string, lbl labels.Label) string {
@@ -125,4 +147,71 @@ func postingsOffsetCacheKeyLabelID(lbl labels.Label) (out [blake2b.Size256]byte,
 	postingsOffsetCacheKeyLabelHashBufferPool.Put(bp)
 
 	return hash, len(hash)
+}
+
+func postingsOffsetsForMatcherCacheKey(prefix, tenantID, blockID string, matcherStr string, isSubtract bool) string {
+	// Compute the matcher hash.
+	lblHash, hashLen := postingsOffsetsForMatcherCacheKeyMatcherID(matcherStr, isSubtract)
+
+	// Preallocate the byte slice used to store the cache key.
+	encodedHashLen := base64.RawURLEncoding.EncodedLen(hashLen)
+	expectedLen := len(prefix) + len(tenantID) + 1 + ulid.EncodedSize + 1 + encodedHashLen
+	key := make([]byte, expectedLen)
+	offset := 0
+
+	offset += copy(key[offset:], prefix)
+	offset += copy(key[offset:], tenantID)
+	offset += copy(key[offset:], cacheKeySep)
+	offset += copy(key[offset:], blockID)
+	offset += copy(key[offset:], cacheKeySep)
+	base64.RawURLEncoding.Encode(key[offset:], lblHash[:hashLen])
+	offset += encodedHashLen
+
+	sizedKey := key[:offset]
+	// Convert []byte to string with no extra allocation.
+	return *(*string)(unsafe.Pointer(&sizedKey))
+}
+
+func postingsOffsetsForMatcherCacheKeyMatcherID(matcherStr string, isSubtract bool) (out [blake2b.Size256]byte, outLen int) {
+	if isSubtract {
+		matcherStr = "not:" + matcherStr
+	}
+	matcherLen := len(matcherStr)
+
+	// If the matcher string is smaller than the hash, then shortcut hashing and directly write out the result.
+	if matcherLen <= blake2b.Size256 {
+		offset := copy(out[:], matcherStr)
+		return out, offset
+	}
+	// Get a buffer from the pool and fill it with the label name/value pair to hash.
+	bp := postingsOffsetCacheKeyLabelHashBufferPool.Get().(*[]byte)
+	buf := *bp
+	if cap(buf) < matcherLen {
+		buf = make([]byte, matcherLen)
+	} else {
+		buf = buf[:matcherLen]
+	}
+
+	offset := 0 // TODO offset not actually used like in other impl; remove or see if should be used
+	offset += copy(buf[offset:], matcherStr)
+
+	// Use cryptographically hash functions to avoid hash collisions
+	// which would end up in wrong query results.
+	hash := blake2b.Sum256([]byte(matcherStr))
+
+	// Reuse the same pointer to put the buffer back into the pool.
+	*bp = buf
+	postingsOffsetCacheKeyLabelHashBufferPool.Put(bp)
+
+	return hash, len(hash)
+}
+
+type NoopHeaderCache struct{}
+
+func (n NoopHeaderCache) StorePostingsOffset(string, ulid.ULID, labels.Label, index.Range, time.Duration) {
+
+}
+
+func (n NoopHeaderCache) FetchPostingsOffset(context.Context, string, ulid.ULID, labels.Label) (index.Range, bool) {
+	return index.Range{}, false
 }

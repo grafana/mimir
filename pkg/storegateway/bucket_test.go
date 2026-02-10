@@ -92,7 +92,7 @@ func TestBucketBlock_matchLabels(t *testing.T) {
 		},
 	}
 
-	b, err := newBucketBlock(context.Background(), "test", log.NewNopLogger(), NewBucketStoreMetrics(nil), meta, bkt, path.Join(dir, blockID.String()), nil, nil, blockPartitioners{})
+	b, err := newBucketBlock(context.Background(), "test", log.NewNopLogger(), NewBucketStoreMetrics(nil), meta, bkt, path.Join(dir, blockID.String()), nil, nil, nil, blockPartitioners{})
 	assert.NoError(t, err)
 
 	cases := []struct {
