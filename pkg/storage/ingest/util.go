@@ -16,7 +16,9 @@ import (
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
+	"github.com/twmb/franz-go/pkg/sasl"
 	"github.com/twmb/franz-go/pkg/sasl/plain"
+	"github.com/twmb/franz-go/pkg/sasl/scram"
 	"github.com/twmb/franz-go/plugin/kotel"
 	"github.com/twmb/franz-go/plugin/kprom"
 	"go.opentelemetry.io/otel"
@@ -99,14 +101,35 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 		}),
 	}
 
-	// SASL plain auth.
+	// SASL auth.
 	if cfg.SASLUsername != "" && cfg.SASLPassword.String() != "" {
-		opts = append(opts, kgo.SASL(plain.Plain(func(_ context.Context) (plain.Auth, error) {
-			return plain.Auth{
-				User: cfg.SASLUsername,
-				Pass: cfg.SASLPassword.String(),
-			}, nil
-		})))
+		var m sasl.Mechanism
+		switch cfg.SASLMechanism {
+		case SASLMechanismScramSHA256:
+			m = scram.Sha256(func(_ context.Context) (scram.Auth, error) {
+				return scram.Auth{
+					User: cfg.SASLUsername,
+					Pass: cfg.SASLPassword.String(),
+				}, nil
+			})
+		case SASLMechanismScramSHA512:
+			m = scram.Sha512(func(_ context.Context) (scram.Auth, error) {
+				return scram.Auth{
+					User: cfg.SASLUsername,
+					Pass: cfg.SASLPassword.String(),
+				}, nil
+			})
+		case SASLMechanismPlain:
+			m = plain.Plain(func(_ context.Context) (plain.Auth, error) {
+				return plain.Auth{
+					User: cfg.SASLUsername,
+					Pass: cfg.SASLPassword.String(),
+				}, nil
+			})
+		default:
+			panic(fmt.Errorf("unknown SASL mechansim: %v", cfg.SASLMechanism))
+		}
+		opts = append(opts, kgo.SASL(m))
 	}
 
 	opts = append(opts, kgo.WithHooks(kotel.NewKotel(kotel.WithTracer(recordsTracer())).Hooks()...))

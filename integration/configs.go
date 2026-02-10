@@ -277,9 +277,19 @@ blocks_storage:
 			"-ingest-storage.kafka.ingestion-concurrency-max":            "8",
 			"-ingest-storage.kafka.auto-create-topic-default-partitions": "10",
 		}
-		if auth == e2edb.KafkaAuthSASLPlain {
+		switch auth {
+		case e2edb.KafkaAuthSASLPlain:
 			flags["-ingest-storage.kafka.sasl-username"] = e2edb.KafkaSASLUsername
 			flags["-ingest-storage.kafka.sasl-password"] = e2edb.KafkaSASLPassword
+			flags["-ingest-storage.kafka.sasl-mechanism"] = "PLAIN"
+		case e2edb.KafkaAuthSASLScramSHA256:
+			flags["-ingest-storage.kafka.sasl-username"] = e2edb.KafkaSASLUsername
+			flags["-ingest-storage.kafka.sasl-password"] = e2edb.KafkaSASLPassword
+			flags["-ingest-storage.kafka.sasl-mechanism"] = "SCRAM-SHA-256"
+		case e2edb.KafkaAuthSASLScramSHA512:
+			flags["-ingest-storage.kafka.sasl-username"] = e2edb.KafkaSASLUsername
+			flags["-ingest-storage.kafka.sasl-password"] = e2edb.KafkaSASLPassword
+			flags["-ingest-storage.kafka.sasl-mechanism"] = "SCRAM-SHA-512"
 		}
 		return flags
 	}

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kadm"
@@ -26,15 +28,23 @@ type KafkaConfig struct {
 	AuthMode KafkaAuthMode
 }
 
-func (c KafkaConfig) New() *KafkaService {
-	readinessPort := 9092
-	var otherPorts []int
-
-	if c.AuthMode == KafkaAuthSASLPlain {
+func (c KafkaConfig) ports() (clientPort, readinessPort int) {
+	clientPort = 9092
+	readinessPort = clientPort
+	if c.AuthMode != KafkaAuthNone {
 		// Use a separate PLAINTEXT listener for readiness probes since the main
 		// listener requires authentication.
 		readinessPort = 9093
-		otherPorts = []int{9093}
+	}
+	return clientPort, readinessPort
+}
+
+func (c KafkaConfig) New() *KafkaService {
+	readinessPort := 9092
+	clientPort, readinessPort := c.ports()
+	var otherPorts []int
+	if readinessPort != clientPort {
+		otherPorts = []int{readinessPort}
 	}
 
 	return &KafkaService{
@@ -42,8 +52,8 @@ func (c KafkaConfig) New() *KafkaService {
 			"kafka",
 			images.Kafka,
 			nil, // No custom command.
-			NewKafkaReadinessProbe(readinessPort),
-			9092,
+			c.NewReadinessProbe(),
+			clientPort,
 			otherPorts...,
 		),
 		cfg: c,
@@ -55,11 +65,15 @@ type KafkaAuthMode int
 const (
 	KafkaAuthNone KafkaAuthMode = iota
 	KafkaAuthSASLPlain
+	KafkaAuthSASLScramSHA256
+	KafkaAuthSASLScramSHA512
 )
 
 const (
 	KafkaSASLUsername = "kafkauser"
 	KafkaSASLPassword = "kafkapassword"
+
+	scramIterations = 4096
 )
 
 func (s *KafkaService) Start(networkName, sharedDir string) (err error) {
@@ -77,10 +91,6 @@ func (s *KafkaService) Start(networkName, sharedDir string) (err error) {
 		"KAFKA_TRANSACTION_STATE_LOG_MIN_ISR":            "1",
 		"KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR": "1",
 		"KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS":         "0",
-
-		// No TLS.
-		"KAFKA_LISTENER_SECURITY_PROTOCOL_MAP": "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT",
-		"KAFKA_INTER_BROKER_LISTENER_NAME":     "PLAINTEXT",
 
 		// Enough partitions for integration tests.
 		"KAFKA_NUM_PARTITIONS": "3",
@@ -105,6 +115,35 @@ func (s *KafkaService) Start(networkName, sharedDir string) (err error) {
 			`org.apache.kafka.common.security.plain.PlainLoginModule required user_%s="%s";`,
 			KafkaSASLUsername, KafkaSASLPassword,
 		)
+
+	case KafkaAuthSASLScramSHA256:
+		vars["KAFKA_LISTENERS"] = "SASLSCRAM://0.0.0.0:9092,CONTROLLER://0.0.0.0:29093,PLAINTEXT://0.0.0.0:9093"
+		vars["KAFKA_ADVERTISED_LISTENERS"] = fmt.Sprintf("SASLSCRAM://%s-kafka:9092,PLAINTEXT://%s-kafka:9093", networkName, networkName)
+		vars["KAFKA_LISTENER_SECURITY_PROTOCOL_MAP"] = "CONTROLLER:PLAINTEXT,SASLSCRAM:SASL_PLAINTEXT,PLAINTEXT:PLAINTEXT"
+		vars["KAFKA_INTER_BROKER_LISTENER_NAME"] = "PLAINTEXT"
+		vars["KAFKA_SASL_ENABLED_MECHANISMS"] = "SCRAM-SHA-256"
+
+	case KafkaAuthSASLScramSHA512:
+		vars["KAFKA_LISTENERS"] = "SASLSCRAM://0.0.0.0:9092,CONTROLLER://0.0.0.0:29093,PLAINTEXT://0.0.0.0:9093"
+		vars["KAFKA_ADVERTISED_LISTENERS"] = fmt.Sprintf("SASLSCRAM://%s-kafka:9092,PLAINTEXT://%s-kafka:9093", networkName, networkName)
+		vars["KAFKA_LISTENER_SECURITY_PROTOCOL_MAP"] = "CONTROLLER:PLAINTEXT,SASLSCRAM:SASL_PLAINTEXT,PLAINTEXT:PLAINTEXT"
+		vars["KAFKA_INTER_BROKER_LISTENER_NAME"] = "PLAINTEXT"
+		vars["KAFKA_SASL_ENABLED_MECHANISMS"] = "SCRAM-SHA-512"
+	}
+
+	// SCRAM config cannot be passed as env vars because it contains hyphens,
+	// which the apache/kafka image can't handle.
+	if s.cfg.AuthMode == KafkaAuthSASLScramSHA256 || s.cfg.AuthMode == KafkaAuthSASLScramSHA512 {
+		jaasContent := fmt.Sprintf(
+			"saslscram.KafkaServer {\n    org.apache.kafka.common.security.scram.ScramLoginModule required username=%q password=%q;\n};\n",
+			KafkaSASLUsername, KafkaSASLPassword,
+		)
+		jaasPath := filepath.Join(sharedDir, "jaas.conf")
+		if err := os.WriteFile(jaasPath, []byte(jaasContent), 0644); err != nil {
+			return fmt.Errorf("writing kafka JAAS config: %w", err)
+		}
+
+		vars["KAFKA_OPTS"] = "-Djava.security.auth.login.config=" + filepath.Join(e2e.ContainerSharedDir, "jaas.conf")
 	}
 
 	// Configures Kafka right before starting it so that we have the networkName to correctly compute
@@ -116,26 +155,31 @@ func (s *KafkaService) Start(networkName, sharedDir string) (err error) {
 
 // KafkaReadinessProbe checks readiness by ensure a Kafka broker is up and running.
 type KafkaReadinessProbe struct {
-	port int
+	cfg KafkaConfig
 }
 
-func NewKafkaReadinessProbe(port int) *KafkaReadinessProbe {
-	return &KafkaReadinessProbe{
-		port: port,
-	}
+func (c KafkaConfig) NewReadinessProbe() *KafkaReadinessProbe {
+	return &KafkaReadinessProbe{cfg: c}
 }
 
 func (p *KafkaReadinessProbe) Ready(service *e2e.ConcreteService) (err error) {
-	const timeout = time.Second
+	const timeout = 5 * time.Second
 
-	endpoint := service.Endpoint(p.port)
+	_, readinessPort := p.cfg.ports()
+
+	endpoint := service.Endpoint(readinessPort)
 	if endpoint == "" {
-		return fmt.Errorf("cannot get service endpoint for port %d", p.port)
+		return fmt.Errorf("cannot get service endpoint for port %d", readinessPort)
 	} else if endpoint == "stopped" {
 		return errors.New("service has stopped")
 	}
 
-	client, err := kgo.NewClient(kgo.SeedBrokers(endpoint), kgo.DialTimeout(timeout))
+	// Connect to the readiness port, which is always PLAINTEXT (no auth
+	// required). For non-auth modes, the readiness port is the same as the
+	// client port; for auth modes, it's a separate PLAINTEXT listener.
+	opts := []kgo.Opt{kgo.SeedBrokers(endpoint), kgo.DialTimeout(timeout)}
+
+	client, err := kgo.NewClient(opts...)
 	if err != nil {
 		return err
 	}
@@ -145,9 +189,57 @@ func (p *KafkaReadinessProbe) Ready(service *e2e.ConcreteService) (err error) {
 
 	admin := kadm.NewClient(client)
 
-	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	_, err = admin.ApiVersions(ctxWithTimeout)
-	return err
+	_, err = admin.ApiVersions(ctx)
+	if err != nil {
+		return err
+	}
+
+	if err := p.createSCRAMCredentials(service); err != nil {
+		return fmt.Errorf("creating SCRAM credentials: %w", err)
+	}
+
+	return nil
+}
+
+// createSCRAMCredentials creates SCRAM user credentials by running
+// kafka-configs.sh inside the Kafka container. It is a no-op for non-SCRAM
+// auth modes.
+//
+// We use Exec rather than the admin client API because the readiness probe
+// runs on the host, and the admin client's AlterUserSCRAMs request requires
+// talking to the controller, whose address is discovered via metadata. The
+// metadata returns the Docker-internal advertised address which is not
+// resolvable from the host.
+func (p *KafkaReadinessProbe) createSCRAMCredentials(service *e2e.ConcreteService) error {
+	if p.cfg.AuthMode != KafkaAuthSASLScramSHA256 && p.cfg.AuthMode != KafkaAuthSASLScramSHA512 {
+		return nil
+	}
+
+	var mechanism string
+	switch p.cfg.AuthMode {
+	case KafkaAuthSASLScramSHA256:
+		mechanism = "SCRAM-SHA-256"
+	case KafkaAuthSASLScramSHA512:
+		mechanism = "SCRAM-SHA-512"
+	default:
+		return fmt.Errorf("unexpected auth mode: %v", p.cfg.AuthMode)
+	}
+
+	_, readinessPort := p.cfg.ports()
+
+	stdout, stderr, err := service.Exec(e2e.NewCommandWithoutEntrypoint(
+		"/opt/kafka/bin/kafka-configs.sh",
+		fmt.Sprintf("--bootstrap-server=localhost:%d", readinessPort),
+		"--alter",
+		fmt.Sprintf("--add-config=%s=[iterations=%d,password=%s]", mechanism, scramIterations, KafkaSASLPassword),
+		"--entity-type=users",
+		fmt.Sprintf("--entity-name=%s", KafkaSASLUsername),
+	))
+	if err != nil {
+		return fmt.Errorf("kafka-configs.sh failed: %w; stdout: %s; stderr: %s", err, stdout, stderr)
+	}
+	return nil
 }

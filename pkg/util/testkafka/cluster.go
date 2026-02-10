@@ -24,6 +24,28 @@ func WithSASLPlain(username, password string) Opt {
 	}
 }
 
+// WithSASLScramSHA256 enables SASL SCRAM-SHA-256 authentication in the Kafka fake server,
+// expecting the input username and password credentials.
+func WithSASLScramSHA256(username, password string) Opt {
+	return func() []kfake.Opt {
+		return []kfake.Opt{
+			kfake.EnableSASL(),
+			kfake.Superuser("SCRAM-SHA-256", username, password),
+		}
+	}
+}
+
+// WithSASLScramSHA512 enables SASL SCRAM-SHA-512 authentication in the Kafka fake server,
+// expecting the input username and password credentials.
+func WithSASLScramSHA512(username, password string) Opt {
+	return func() []kfake.Opt {
+		return []kfake.Opt{
+			kfake.EnableSASL(),
+			kfake.Superuser("SCRAM-SHA-512", username, password),
+		}
+	}
+}
+
 // CreateCluster returns a fake Kafka cluster for unit testing.
 func CreateCluster(t testing.TB, numPartitions int32, topicName string, opts ...Opt) (*kfake.Cluster, string) {
 	cluster, addr := CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, topicName, opts...)

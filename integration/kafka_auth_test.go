@@ -24,6 +24,12 @@ func TestIngestStorageKafkaAuth(t *testing.T) {
 		"SASL plaintext": {
 			AuthMode: e2edb.KafkaAuthSASLPlain,
 		},
+		"SASL SCRAM-SHA-256": {
+			AuthMode: e2edb.KafkaAuthSASLScramSHA256,
+		},
+		"SASL SCRAM-SHA-512": {
+			AuthMode: e2edb.KafkaAuthSASLScramSHA512,
+		},
 	}
 
 	for testName, kafkaConfig := range tests {
