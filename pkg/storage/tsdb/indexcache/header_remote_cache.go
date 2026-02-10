@@ -1,4 +1,4 @@
-package indexheader
+package indexcache
 
 import (
 	"context"
@@ -59,7 +59,7 @@ func (c *RemotePostingsOffsetTableCache) get(ctx context.Context, key RemoteCach
 		return index.Range{}, false
 	}
 
-	rng, err := c.valCodec.Decode(val)
+	rng, err := c.valCodec.DecodeRange(val)
 	if err != nil {
 		level.Error(c.logger).Log(
 			"msg", "error decoding cache value to index.Range",
@@ -81,6 +81,6 @@ func (c *RemotePostingsOffsetTableCache) get(ctx context.Context, key RemoteCach
 
 func (c *RemotePostingsOffsetTableCache) setAsync(key RemoteCacheKey, rng index.Range, ttl time.Duration) {
 	k := key.Key()
-	val := c.valCodec.Encode(rng)
+	val := c.valCodec.EncodeRange(rng)
 	c.remote.SetAsync(k, val, ttl)
 }

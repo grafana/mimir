@@ -1,4 +1,4 @@
-package indexheader
+package indexcache
 
 import (
 	"context"
@@ -12,8 +12,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/assert"
-
-	"github.com/grafana/mimir/pkg/storage/tsdb/indexcache"
 )
 
 func TestInMemoryCache(t *testing.T) {
@@ -21,7 +19,7 @@ func TestInMemoryCache(t *testing.T) {
 }
 
 func TestInMemoryIndexCache_AvoidsSizeAccountingDeadlock(t *testing.T) {
-	cfg := indexcache.InMemoryIndexCacheConfig{
+	cfg := InMemoryIndexCacheConfig{
 		MaxItemSizeBytes:  sliceHeaderSize + 2, // Exact size of values the test inserts
 		MaxCacheSizeBytes: (sliceHeaderSize + 2) * 2,
 	}
@@ -48,7 +46,7 @@ func TestInMemoryIndexCache_AvoidsSizeAccountingDeadlock(t *testing.T) {
 	cache.StorePostingsOffset(
 		tenant, blockID, lbl0, rng0, time.Hour,
 	)
-	expectedValueSize0 := sliceSize(cache.valCodec.Encode(rng0))
+	expectedValueSize0 := sliceSize(cache.valCodec.EncodeRange(rng0))
 	assert.Equal(t, expectedValueSize0, cache.curSize)
 
 	// Insert second value, same size as first, then cache will be exactly full.
@@ -58,7 +56,7 @@ func TestInMemoryIndexCache_AvoidsSizeAccountingDeadlock(t *testing.T) {
 	cache.StorePostingsOffset(
 		tenant, blockID, lbl1, rng1, time.Hour,
 	)
-	expectedValueSize1 := sliceSize(cache.valCodec.Encode(rng1))
+	expectedValueSize1 := sliceSize(cache.valCodec.EncodeRange(rng1))
 	assert.Equal(t, expectedValueSize0+expectedValueSize1, cache.curSize)
 	assert.Equal(t, cache.curSize, cache.maxCacheSizeBytes)
 
@@ -71,7 +69,7 @@ func TestInMemoryIndexCache_AvoidsSizeAccountingDeadlock(t *testing.T) {
 	cache.StorePostingsOffset(
 		tenant, blockID, lbl2, rng2, time.Hour,
 	)
-	expectedValueSize2 := sliceSize(cache.valCodec.Encode(rng2))
+	expectedValueSize2 := sliceSize(cache.valCodec.EncodeRange(rng2))
 	assert.Equal(t, expectedValueSize2, cache.curSize)
 
 	ctx := context.Background()

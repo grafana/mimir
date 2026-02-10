@@ -24,6 +24,7 @@ import (
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/indexcache"
 )
 
 // rawPostingGroup keeps posting keys for single matcher. It is raw because there is no guarantee
@@ -83,7 +84,7 @@ func newLazySubtractingPostingGroup(m *labels.Matcher) rawPostingGroup {
 
 // toPostingGroup returns a postingGroup which shares the underlying keys slice with g.
 // This means that after calling toPostingGroup g.keys will be modified.
-func (g rawPostingGroup) toPostingGroup(ctx context.Context, r indexheader.Reader) (postingGroup, error) {
+func (g rawPostingGroup) toPostingGroup(ctx context.Context, r indexheader.Reader, c indexcache.PostingsOffsetTableCache) (postingGroup, error) {
 	var (
 		keys      []labels.Label
 		totalSize int64
@@ -99,7 +100,8 @@ func (g rawPostingGroup) toPostingGroup(ctx context.Context, r indexheader.Reade
 		}
 		keys = make([]labels.Label, len(vals))
 		for i := range vals {
-			keys[i] = labels.Label{Name: g.labelName, Value: vals[i].LabelValue}
+			lbl := labels.Label{Name: g.labelName, Value: vals[i].LabelValue}
+			keys[i] = lbl // TODO implement labelvaluesOffsets caching
 			totalSize += vals[i].Off.End - vals[i].Off.Start
 		}
 	} else {
@@ -135,6 +137,7 @@ func (g rawPostingGroup) filterNonExistingKeys(ctx context.Context, r indexheade
 		} else if err != nil {
 			return nil, 0, err
 		}
+
 		g.keys[writeIdx] = l
 		writeIdx++
 		totalSize += offset.End - offset.Start
