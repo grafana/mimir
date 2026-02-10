@@ -194,7 +194,7 @@ func (o *OptimizationPass) trySplitFunction(ctx context.Context, functionCall *c
 	var oooThreshold int64
 	oooWindow, err := o.limits.GetMaxOutOfOrderTimeWindow(ctx)
 	if err != nil {
-		return nil, &errNotApplied{reason: "failed_to_get_ooo_window"}
+		return nil, err
 	}
 	if oooWindow > 0 {
 		oooThreshold = o.timeNow().Add(-oooWindow).UnixMilli()
