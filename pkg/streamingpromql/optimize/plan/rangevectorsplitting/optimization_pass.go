@@ -9,7 +9,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
@@ -20,7 +19,7 @@ import (
 )
 
 type limitsProvider interface {
-	OutOfOrderTimeWindow(userID string) time.Duration
+	GetMaxOutOfOrderTimeWindow(ctx context.Context) (time.Duration, error)
 }
 
 // errNotApplied is a sentinel error returned by trySplitFunction when splitting cannot be applied
@@ -91,12 +90,6 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 }
 
 func (o *OptimizationPass) wrapSplitRangeVectorFunctions(ctx context.Context, n planning.Node, timeRange types.QueryTimeRange) (planning.Node, error) {
-	tenantID, err := user.ExtractOrgID(ctx)
-	if err != nil {
-		level.Warn(o.logger).Log("msg", "failed to extract tenant ID for range vector splitting, skipping optimization", "err", err)
-		return n, nil
-	}
-
 	// Skip processing children of subqueries - range vectors inside subqueries
 	// create a range query context which isn't supported yet.
 	if _, isSubquery := n.(*core.Subquery); isSubquery {
@@ -105,7 +98,7 @@ func (o *OptimizationPass) wrapSplitRangeVectorFunctions(ctx context.Context, n 
 
 	if functionCall, isFunctionCall := n.(*core.FunctionCall); isFunctionCall {
 		o.functionNodesInspected.Inc()
-		wrappedNode, err := o.trySplitFunction(functionCall, timeRange, tenantID)
+		wrappedNode, err := o.trySplitFunction(ctx, functionCall, timeRange)
 		if err != nil {
 			var notAppliedErr *errNotApplied
 			if errors.As(err, &notAppliedErr) {
@@ -156,7 +149,7 @@ func (o *OptimizationPass) wrapSplitRangeVectorFunctions(ctx context.Context, n 
 //     cache the entire result instead. We might still want to take advantage of the splitting part even if we don't want
 //     to cache the intermediate results though - if we could parallelise query splitting it can still be beneficial for
 //     queries with @ modifiers in terms of response time.
-func (o *OptimizationPass) trySplitFunction(functionCall *core.FunctionCall, timeRange types.QueryTimeRange, tenantID string) (planning.Node, error) {
+func (o *OptimizationPass) trySplitFunction(ctx context.Context, functionCall *core.FunctionCall, timeRange types.QueryTimeRange) (planning.Node, error) {
 	// For now, only support instant queries (range queries are more complex)
 	if !timeRange.IsInstant {
 		return nil, &errNotApplied{reason: "range_query"}
@@ -199,7 +192,10 @@ func (o *OptimizationPass) trySplitFunction(functionCall *core.FunctionCall, tim
 	}
 
 	var oooThreshold int64
-	oooWindow := o.limits.OutOfOrderTimeWindow(tenantID)
+	oooWindow, err := o.limits.GetMaxOutOfOrderTimeWindow(ctx)
+	if err != nil {
+		return nil, &errNotApplied{reason: "failed_to_get_ooo_window"}
+	}
 	if oooWindow > 0 {
 		oooThreshold = o.timeNow().Add(-oooWindow).UnixMilli()
 	}

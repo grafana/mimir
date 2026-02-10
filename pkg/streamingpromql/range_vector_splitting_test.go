@@ -688,8 +688,16 @@ type mockOutOfOrderTimeWindowProvider struct {
 	oooWindow time.Duration
 }
 
-func (m *mockOutOfOrderTimeWindowProvider) OutOfOrderTimeWindow(userID string) time.Duration {
-	return m.oooWindow
+func (m *mockOutOfOrderTimeWindowProvider) GetMaxOutOfOrderTimeWindow(_ context.Context) (time.Duration, error) {
+	return m.oooWindow, nil
+}
+
+func (m *mockOutOfOrderTimeWindowProvider) GetMaxEstimatedMemoryConsumptionPerQuery(_ context.Context) (uint64, error) {
+	return 0, nil
+}
+
+func (m *mockOutOfOrderTimeWindowProvider) GetEnableDelayedNameRemoval(_ context.Context) (bool, error) {
+	return false, nil
 }
 
 var querySplittingTestSplitIntervals = []time.Duration{

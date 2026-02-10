@@ -216,7 +216,7 @@ func New(
 		return lazyquery.NewLazyQuerier(querier), nil
 	})
 
-	opts, mqeOpts := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg, limits)
+	opts, mqeOpts := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg, limitsProvider)
 
 	// Experimental functions are always enabled globally for all engines. Access to them
 	// is controlled by an experimental functions middleware that reads per-tenant settings.
@@ -883,6 +883,22 @@ func (p *TenantQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(ctx
 	}
 
 	return totalLimit, nil
+}
+
+func (p *TenantQueryLimitsProvider) GetMaxOutOfOrderTimeWindow(ctx context.Context) (time.Duration, error) {
+	tenantIDs, err := tenant.TenantIDs(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	var maxWindow time.Duration
+	for _, tenantID := range tenantIDs {
+		if w := p.limits.OutOfOrderTimeWindow(tenantID); w > maxWindow {
+			maxWindow = w
+		}
+	}
+
+	return maxWindow, nil
 }
 
 func (p *TenantQueryLimitsProvider) GetEnableDelayedNameRemoval(ctx context.Context) (bool, error) {

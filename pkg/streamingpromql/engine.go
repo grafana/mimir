@@ -327,6 +327,8 @@ type QueryLimitsProvider interface {
 	GetMaxEstimatedMemoryConsumptionPerQuery(ctx context.Context) (uint64, error)
 	// GetEnableDelayedNameRemoval indicates if the experimental feature for delayed name removal should be enabled.
 	GetEnableDelayedNameRemoval(ctx context.Context) (bool, error)
+	// GetMaxOutOfOrderTimeWindow returns the out-of-order time window for the tenant(s) in the context.
+	GetMaxOutOfOrderTimeWindow(ctx context.Context) (time.Duration, error)
 }
 
 // NewStaticQueryLimitsProvider returns a QueryLimitsProvider that always returns the provided limits.
@@ -350,6 +352,10 @@ func (p staticQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(_ co
 
 func (p staticQueryLimitsProvider) GetEnableDelayedNameRemoval(_ context.Context) (bool, error) {
 	return p.enableDelayedNameRemoval, nil
+}
+
+func (p staticQueryLimitsProvider) GetMaxOutOfOrderTimeWindow(_ context.Context) (time.Duration, error) {
+	return 0, nil
 }
 
 type NoopQueryTracker struct{}

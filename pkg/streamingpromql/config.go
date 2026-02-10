@@ -3,6 +3,7 @@
 package streamingpromql
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"math"
@@ -15,10 +16,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
 )
-
-type Limits interface {
-	OutOfOrderTimeWindow(userID string) time.Duration
-}
 
 type EngineOpts struct {
 	CommonOpts promql.EngineOpts `yaml:"-"`
@@ -37,7 +34,7 @@ type EngineOpts struct {
 	// but for now, we use this option to change the behavior of selectors.
 	EagerLoadSelectors bool `yaml:"-"`
 
-	Limits Limits `yaml:"-"`
+	Limits QueryLimitsProvider `yaml:"-"`
 
 	EnablePruneToggles                   bool `yaml:"enable_prune_toggles" category:"experimental"`
 	EnableCommonSubexpressionElimination bool `yaml:"enable_common_subexpression_elimination" category:"experimental"`
@@ -98,7 +95,13 @@ func (c *RangeVectorSplittingConfig) Validate() error {
 
 type noopLimits struct{}
 
-func (noopLimits) OutOfOrderTimeWindow(string) time.Duration { return 0 }
+func (noopLimits) GetMaxEstimatedMemoryConsumptionPerQuery(context.Context) (uint64, error) {
+	return 0, nil
+}
+func (noopLimits) GetEnableDelayedNameRemoval(context.Context) (bool, error) { return false, nil }
+func (noopLimits) GetMaxOutOfOrderTimeWindow(context.Context) (time.Duration, error) {
+	return 0, nil
+}
 
 func NewTestEngineOpts() EngineOpts {
 	return EngineOpts{
