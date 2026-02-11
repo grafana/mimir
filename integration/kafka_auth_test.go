@@ -38,7 +38,6 @@ func TestIngestStorageKafkaAuth(t *testing.T) {
 			require.NoError(t, err)
 			defer s.Close()
 
-			// Start dependencies.
 			consul := e2edb.NewConsul()
 			kafka := kafkaConfig.New()
 			require.NoError(t, s.StartAndWaitReady(consul, kafka))
@@ -46,15 +45,8 @@ func TestIngestStorageKafkaAuth(t *testing.T) {
 			flags := mergeFlags(
 				IngestStorageFlags(kafkaConfig.AuthMode),
 				map[string]string{
-					// Use filesystem backend for blocks storage so that no
-					// object storage (S3/Minio) is required.
-					// "-blocks-storage.backend":            "filesystem",
-					// "-blocks-storage.filesystem.dir":     filepath.Join(e2e.ContainerSharedDir, "blocks"),
 					"-blocks-storage.tsdb.ship-interval": "0",
-
-					// Only query ingesters for recent data so we don't need
-					// any store-gateway instances running.
-					"-querier.query-store-after": "12h",
+					"-querier.query-store-after":         "12h",
 				},
 			)
 
