@@ -272,13 +272,15 @@ func TestProxyEndpoint_ServeHTTPPassthrough(t *testing.T) {
 	registry := prometheus.NewRegistry()
 	metrics := NewProxyMetrics(registry)
 
-	// Create a test backend that returns a specific response
+	// Create a test backend that returns a specific response with Content-Type
 	expectedBody := `{"status":"ok"}`
+	expectedContentType := "application/json"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Verify the request was forwarded correctly
 		assert.Equal(t, "POST", r.Method)
 		assert.Equal(t, "application/x-protobuf", r.Header.Get("Content-Type"))
 
+		w.Header().Set("Content-Type", expectedContentType)
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(expectedBody))
 	}))
@@ -310,6 +312,7 @@ func TestProxyEndpoint_ServeHTTPPassthrough(t *testing.T) {
 	// Verify the response
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, expectedBody, rec.Body.String())
+	assert.Equal(t, expectedContentType, rec.Header().Get("Content-Type"))
 }
 
 func TestProxyBackend_AuthHandling(t *testing.T) {
@@ -384,7 +387,7 @@ func TestProxyBackend_AuthHandling(t *testing.T) {
 			}
 
 			// Forward the request
-			_, _, _, err := backend.ForwardRequest(req.Context(), req, io.NopCloser(bytes.NewReader([]byte("test"))))
+			_, _, _, _, err := backend.ForwardRequest(req.Context(), req, io.NopCloser(bytes.NewReader([]byte("test"))))
 			require.NoError(t, err)
 
 			// Verify the captured auth

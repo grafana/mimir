@@ -135,7 +135,7 @@ func (p *ProxyEndpoint) ServeHTTPPassthrough(w http.ResponseWriter, r *http.Requ
 	}
 
 	// Forward request directly to preferred backend
-	elapsed, status, body, err := p.preferredBackend.ForwardRequest(ctx, r, r.Body)
+	elapsed, status, body, contentType, err := p.preferredBackend.ForwardRequest(ctx, r, r.Body)
 
 	// Track metrics
 	p.metrics.RecordBackendResult(p.preferredBackend.Name(), r.Method, "passthrough", elapsed, status, err)
@@ -153,6 +153,9 @@ func (p *ProxyEndpoint) ServeHTTPPassthrough(w http.ResponseWriter, r *http.Requ
 	}
 
 	// Return the backend response to client
+	if contentType != "" {
+		w.Header().Set("Content-Type", contentType)
+	}
 	w.WriteHeader(status)
 	if _, writeErr := w.Write(body); writeErr != nil {
 		level.Warn(logger).Log("msg", "Unable to write response", "err", writeErr)
@@ -196,12 +199,17 @@ func (p *ProxyEndpoint) executePreferredBackendRequest(ctx context.Context, req 
 	logger.SetSpanAndLogTag("backend_type", fmt.Sprintf("%d", b.BackendType()))
 
 	bodyToSend := p.amplifyWriteRequestBody(body, b, logger)
-	elapsed, status, respBody, err := b.ForwardRequest(ctx, req, io.NopCloser(bytes.NewReader(bodyToSend)))
+	elapsed, status, respBody, contentType, err := b.ForwardRequest(ctx, req, io.NopCloser(bytes.NewReader(bodyToSend)))
+
+	// Use the actual Content-Type from the backend, with a fallback for Mimir write endpoints
+	if contentType == "" {
+		contentType = "application/json"
+	}
 
 	res := &backendResponse{
 		backend:     b,
 		status:      status,
-		contentType: "application/json", // Default for Mimir write endpoints
+		contentType: contentType,
 		body:        respBody,
 		err:         err,
 		elapsedTime: elapsed,

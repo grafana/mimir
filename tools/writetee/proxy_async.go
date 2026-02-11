@@ -91,7 +91,7 @@ func (d *AsyncBackendDispatcher) Dispatch(ctx context.Context, req *http.Request
 		defer d.wg.Done()
 		defer func() { <-sema }() // release permit
 
-		elapsed, status, _, err := backend.ForwardRequest(context.WithoutCancel(ctx), req, io.NopCloser(bytes.NewReader(body)))
+		elapsed, status, _, _, err := backend.ForwardRequest(context.WithoutCancel(ctx), req, io.NopCloser(bytes.NewReader(body)))
 		d.metrics.RecordBackendResult(backend.Name(), req.Method, routeName, elapsed, status, err)
 
 		if err != nil {
