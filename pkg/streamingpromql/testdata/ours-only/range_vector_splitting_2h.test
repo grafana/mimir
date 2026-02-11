@@ -311,6 +311,38 @@ eval instant at 4h increase(hist_reset_boundary[3h])
 
 clear
 
+# Sparse: two histogram samples across different splits
+load 30m
+  sparse_hist_counter_total{env="prod"} _ _ _ {{schema:0 sum:1800 count:1800 buckets:[1800]}} _ {{schema:0 sum:3600 count:3600 buckets:[3600]}}
+
+eval instant at 6h rate(sparse_hist_counter_total[5h])
+  {env="prod"} {{schema:0 sum:0.2 count:0.2 counter_reset_hint:gauge buckets:[0.2]}}
+
+eval instant at 6h rate(sparse_hist_counter_total[5h])
+  {env="prod"} {{schema:0 sum:0.2 count:0.2 counter_reset_hint:gauge buckets:[0.2]}}
+
+eval instant at 6h increase(sparse_hist_counter_total[5h])
+  {env="prod"} {{schema:0 sum:3600 count:3600 counter_reset_hint:gauge buckets:[3600]}}
+
+eval instant at 6h increase(sparse_hist_counter_total[5h])
+  {env="prod"} {{schema:0 sum:3600 count:3600 counter_reset_hint:gauge buckets:[3600]}}
+
+clear
+
+# Single histogram sample: rate/increase need at least 2 samples
+load 1h
+  single_hist_counter_total _ _ _ _ {{schema:0 sum:1000 count:1000 buckets:[1000]}} _ _
+
+eval instant at 6h rate(single_hist_counter_total[5h])
+
+eval instant at 6h rate(single_hist_counter_total[5h])
+
+eval instant at 6h increase(single_hist_counter_total[5h])
+
+eval instant at 6h increase(single_hist_counter_total[5h])
+
+clear
+
 # Gauge histogram warning
 load 1m
   gauge_histogram{env="prod"} _x180 {{schema:0 sum:4 count:4 buckets:[1] counter_reset_hint:gauge}}x60

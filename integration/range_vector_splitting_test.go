@@ -53,13 +53,12 @@ func TestQuerySplittingWithRangeVectorFunction(t *testing.T) {
 	now := time.Now()
 	seriesName := "test_metric"
 	numSamples := 21
-	sampleValue := 1.0
 
 	// Build samples spanning 20 minutes (one per minute), so a 15m range covers multiple 5m splits.
 	samples := make([]prompb.Sample, numSamples)
 	for i := 0; i < numSamples; i++ {
 		samples[i] = prompb.Sample{
-			Value:     sampleValue,
+			Value:     float64(i + 1),
 			Timestamp: now.Add(time.Duration(i-numSamples+1) * time.Minute).UnixMilli(),
 		}
 	}
@@ -87,8 +86,8 @@ func TestQuerySplittingWithRangeVectorFunction(t *testing.T) {
 	vec := result.(model.Vector)
 	require.Len(t, vec, 1)
 
-	// 15m range at `now` covers samples in (now-15m, now], which is 15 samples at 1.0 each.
-	expectedSum := model.SampleValue(15)
+	// 15m range at `now` covers samples in (now-15m, now], which is 15 samples with values 7 through 21.
+	expectedSum := model.SampleValue(210)
 	assert.Equal(t, expectedSum, vec[0].Value)
 
 	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(1), "cortex_mimir_query_engine_range_vector_splitting_nodes_introduced_total"))
