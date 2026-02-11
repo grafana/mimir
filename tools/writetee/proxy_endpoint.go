@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -30,20 +29,25 @@ type ProxyEndpoint struct {
 	slowResponseThreshold time.Duration
 	amplificationFactor   float64
 	amplificationTracker  *AmplificationTracker
+	asyncDispatcher       *AsyncBackendDispatcher
 
-	// The preferred backend, if any.
+	// The preferred backend (required).
 	preferredBackend ProxyBackend
 
 	route Route
 }
 
-func NewProxyEndpoint(backends []ProxyBackend, route Route, metrics *ProxyMetrics, logger log.Logger, slowResponseThreshold time.Duration, amplificationFactor float64, amplificationTracker *AmplificationTracker) *ProxyEndpoint {
+func NewProxyEndpoint(backends []ProxyBackend, route Route, metrics *ProxyMetrics, logger log.Logger, slowResponseThreshold time.Duration, amplificationFactor float64, amplificationTracker *AmplificationTracker, asyncDispatcher *AsyncBackendDispatcher) (*ProxyEndpoint, error) {
 	var preferredBackend ProxyBackend
 	for _, backend := range backends {
 		if backend.Preferred() {
 			preferredBackend = backend
 			break
 		}
+	}
+
+	if preferredBackend == nil {
+		return nil, fmt.Errorf("no preferred backend configured")
 	}
 
 	return &ProxyEndpoint{
@@ -55,7 +59,8 @@ func NewProxyEndpoint(backends []ProxyBackend, route Route, metrics *ProxyMetric
 		amplificationFactor:   amplificationFactor,
 		amplificationTracker:  amplificationTracker,
 		preferredBackend:      preferredBackend,
-	}
+		asyncDispatcher:       asyncDispatcher,
+	}, nil
 }
 
 func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -92,26 +97,25 @@ func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Track body size
 	p.metrics.bodySize.WithLabelValues(p.route.RouteName).Observe(float64(len(body)))
 
-	// Fan out to all backends in parallel
-	resCh := make(chan *backendResponse, len(p.backends))
-	p.executeBackendRequests(ctx, r, body, resCh, logger)
+	// Dispatch to non-preferred backends asynchronously (fire-and-forget).
+	p.dispatchToNonPreferredBackends(ctx, r, body, logger)
 
-	// Wait for all responses and select the one to return
-	downstreamRes := p.selectResponseForDownstream(resCh, logger)
+	// Send to preferred backend synchronously and return its response.
+	res := p.executePreferredBackendRequest(ctx, r, body, logger)
 
-	// Return the selected response to the client
-	if downstreamRes.err != nil {
-		level.Error(logger).Log("msg", "All backends failed", "err", downstreamRes.err)
-		http.Error(w, downstreamRes.err.Error(), downstreamRes.statusCode())
+	// Return the preferred backend's response to the client
+	if res.err != nil {
+		level.Error(logger).Log("msg", "Preferred backend failed", "err", res.err)
+		http.Error(w, res.err.Error(), res.statusCode())
 	} else {
-		w.Header().Set("Content-Type", downstreamRes.contentType)
-		w.WriteHeader(downstreamRes.status)
-		if _, err := w.Write(downstreamRes.body); err != nil {
+		w.Header().Set("Content-Type", res.contentType)
+		w.WriteHeader(res.status)
+		if _, err := w.Write(res.body); err != nil {
 			level.Warn(logger).Log("msg", "Unable to write response", "err", err)
 		}
 	}
 
-	p.metrics.responsesTotal.WithLabelValues(downstreamRes.backend.Name(), r.Method, p.route.RouteName).Inc()
+	p.metrics.responsesTotal.WithLabelValues(res.backend.Name(), r.Method, p.route.RouteName).Inc()
 }
 
 // ServeHTTPPassthrough forwards the request directly to the preferred backend without fan-out.
@@ -161,192 +165,122 @@ func (p *ProxyEndpoint) ServeHTTPPassthrough(w http.ResponseWriter, r *http.Requ
 	p.metrics.responsesTotal.WithLabelValues(p.preferredBackend.Name(), r.Method, "passthrough").Inc()
 }
 
-func (p *ProxyEndpoint) executeBackendRequests(ctx context.Context, req *http.Request, body []byte, resCh chan *backendResponse, logger *spanlogger.SpanLogger) {
-	var (
-		wg              = sync.WaitGroup{}
-		timingMtx       = sync.Mutex{}
-		fastestDuration time.Duration
-		fastestBackend  ProxyBackend
-		slowestDuration time.Duration
-		slowestBackend  ProxyBackend
-	)
-
-	wg.Add(len(p.backends))
-	for _, b := range p.backends {
-		go func() {
-			defer wg.Done()
-
-			// Don't cancel the child request's context when the parent context is cancelled after we return a response.
-			// This allows us to continue running slower requests after returning a response to the caller.
-			ctx := context.WithoutCancel(ctx)
-			logger, ctx := spanlogger.New(ctx, p.logger, tracer, "Outgoing proxied write request")
-			defer logger.Finish()
-
-			logger.SetSpanAndLogTag("path", req.URL.Path)
-			logger.SetSpanAndLogTag("route_name", p.route.RouteName)
-			logger.SetSpanAndLogTag("backend", b.Name())
-			logger.SetSpanAndLogTag("method", req.Method)
-			logger.SetSpanAndLogTag("backend_type", fmt.Sprintf("%d", b.BackendType()))
-
-			// Create a new reader for this backend
-			var bodyReader io.ReadCloser
-			var bodyToSend []byte
-
-			if len(body) > 0 {
-				// Amplify or sample the request body for amplified backends
-				if b.BackendType() == BackendTypeAmplified && p.amplificationFactor != 1.0 {
-					result, err := AmplifyWriteRequest(body, p.amplificationFactor, p.amplificationTracker)
-					if err != nil {
-						level.Error(logger).Log("msg", "Failed to amplify write request", "backend", b.Name(), "err", err)
-						// Fall back to original body on amplification error
-						bodyToSend = body
-					} else {
-						bodyToSend = result.Body
-						if result.WasAmplified {
-							// Get current stats for logging
-							rw1, rw2, rw2Ratio := p.amplificationTracker.GetStats()
-							logger.SetSpanAndLogTag("amplified", "true")
-							if result.IsRW2 {
-								logger.SetSpanAndLogTag("format", "rw2")
-							} else {
-								logger.SetSpanAndLogTag("format", "rw1")
-							}
-							logger.SetSpanAndLogTag("amplification_factor", fmt.Sprintf("%.1f", p.amplificationFactor))
-							logger.SetSpanAndLogTag("rw2_ratio", fmt.Sprintf("%.3f", rw2Ratio))
-							logger.SetSpanAndLogTag("total_rw1_series", rw1)
-							logger.SetSpanAndLogTag("total_rw2_series", rw2)
-							logger.SetSpanAndLogTag("original_size", len(body))
-							logger.SetSpanAndLogTag("amplified_size", len(result.Body))
-							logger.SetSpanAndLogTag("original_series_count", result.OriginalSeriesCount)
-							logger.SetSpanAndLogTag("amplified_series_count", result.AmplifiedSeriesCount)
-						} else if result.IsRW2 {
-							// This should not happen anymore - RW 2.0 is now amplified
-							_, _, rw2Ratio := p.amplificationTracker.GetStats()
-							logger.SetSpanAndLogTag("rw2_not_amplified", "true")
-							logger.SetSpanAndLogTag("rw2_series_count", result.OriginalSeriesCount)
-							logger.SetSpanAndLogTag("rw2_ratio", fmt.Sprintf("%.3f", rw2Ratio))
-						}
-					}
-				} else {
-					bodyToSend = body
-				}
-
-				bodyReader = io.NopCloser(bytes.NewReader(bodyToSend))
-			}
-
-			elapsed, status, respBody, err := b.ForwardRequest(ctx, req, bodyReader)
-
-			// Track timing for slow response logging
-			if p.slowResponseThreshold > 0 {
-				timingMtx.Lock()
-				if elapsed > slowestDuration {
-					slowestDuration = elapsed
-					slowestBackend = b
-				}
-				if fastestDuration == 0 || elapsed < fastestDuration {
-					fastestDuration = elapsed
-					fastestBackend = b
-				}
-				timingMtx.Unlock()
-			}
-
-			res := &backendResponse{
-				backend:     b,
-				status:      status,
-				contentType: "application/json", // Default for Mimir write endpoints
-				body:        respBody,
-				err:         err,
-				elapsedTime: elapsed,
-			}
-
-			// Log with a level based on the backend response.
-			lvl := level.Debug
-			if !res.succeeded() {
-				lvl = level.Warn
-			}
-
-			l := lvl(logger)
-
-			// If we got an error (rather than just a non-2xx response), log that and mark the span as failed.
-			if err != nil {
-				l = log.With(l, "err", err)
-				logger.SetError()
-				// Track error type
-				errorType := "network"
-				if status == 0 {
-					errorType = "timeout"
-				}
-				p.metrics.errorsTotal.WithLabelValues(b.Name(), req.Method, p.route.RouteName, errorType).Inc()
-			}
-
-			l.Log("msg", "Backend response", "status", status, "elapsed", elapsed)
-			p.metrics.requestDuration.WithLabelValues(b.Name(), req.Method, p.route.RouteName, strconv.Itoa(res.statusCode())).Observe(elapsed.Seconds())
-			logger.SetTag("status", status)
-
-			resCh <- res
-		}()
+// dispatchToNonPreferredBackends sends the request to all non-preferred backends
+// asynchronously via the async dispatcher. This is fire-and-forget - we don't wait
+// for responses from non-preferred backends.
+func (p *ProxyEndpoint) dispatchToNonPreferredBackends(ctx context.Context, req *http.Request, body []byte, logger *spanlogger.SpanLogger) {
+	if p.asyncDispatcher == nil {
+		return
 	}
 
-	// Wait until all backend requests completed.
-	wg.Wait()
-	close(resCh)
+	for _, backend := range p.backends {
+		// Skip the preferred backend - it's handled synchronously
+		if backend.Preferred() {
+			continue
+		}
 
-	// Log queries that are slower in some backends than others
-	if p.slowResponseThreshold > 0 && slowestDuration-fastestDuration >= p.slowResponseThreshold {
-		level.Warn(logger).Log(
-			"msg", "response time difference between backends exceeded threshold",
-			"slowest_duration", slowestDuration,
-			"slowest_backend", slowestBackend.Name(),
-			"fastest_duration", fastestDuration,
-			"fastest_backend", fastestBackend.Name(),
-		)
+		// For amplified backends, we need to amplify the body before dispatching
+		bodyToSend := body
+		if backend.BackendType() == BackendTypeAmplified && p.amplificationFactor != 1.0 && len(body) > 0 {
+			result, err := AmplifyWriteRequest(body, p.amplificationFactor, p.amplificationTracker)
+			if err != nil {
+				level.Error(logger).Log("msg", "Failed to amplify write request for async dispatch", "backend", backend.Name(), "err", err)
+				// Fall back to original body on amplification error
+			} else {
+				bodyToSend = result.Body
+			}
+		}
+
+		p.asyncDispatcher.Dispatch(ctx, req, bodyToSend, backend)
 	}
 }
 
-func (p *ProxyEndpoint) selectResponseForDownstream(resCh chan *backendResponse, logger *spanlogger.SpanLogger) *backendResponse {
-	var (
-		preferredResponse *backendResponse
-		firstSuccessful   *backendResponse
-		firstResponse     *backendResponse
-		allResponses      []*backendResponse
-	)
+// executePreferredBackendRequest sends the request to the preferred backend synchronously
+// and returns its response.
+func (p *ProxyEndpoint) executePreferredBackendRequest(ctx context.Context, req *http.Request, body []byte, logger *spanlogger.SpanLogger) *backendResponse {
+	b := p.preferredBackend
 
-	// Collect all responses
-	for res := range resCh {
-		allResponses = append(allResponses, res)
+	logger, ctx = spanlogger.New(ctx, p.logger, tracer, "Outgoing proxied write request")
+	defer logger.Finish()
 
-		if firstResponse == nil {
-			firstResponse = res
+	logger.SetSpanAndLogTag("path", req.URL.Path)
+	logger.SetSpanAndLogTag("route_name", p.route.RouteName)
+	logger.SetSpanAndLogTag("backend", b.Name())
+	logger.SetSpanAndLogTag("method", req.Method)
+	logger.SetSpanAndLogTag("preferred", "true")
+	logger.SetSpanAndLogTag("backend_type", fmt.Sprintf("%d", b.BackendType()))
+
+	var bodyReader io.ReadCloser
+	bodyToSend := body
+
+	if len(body) > 0 {
+		// Amplify or sample the request body for amplified backends
+		if b.BackendType() == BackendTypeAmplified && p.amplificationFactor != 1.0 {
+			result, err := AmplifyWriteRequest(body, p.amplificationFactor, p.amplificationTracker)
+			if err != nil {
+				level.Error(logger).Log("msg", "Failed to amplify write request", "backend", b.Name(), "err", err)
+				// Fall back to original body on amplification error
+			} else {
+				bodyToSend = result.Body
+				if result.WasAmplified {
+					rw1, rw2, rw2Ratio := p.amplificationTracker.GetStats()
+					logger.SetSpanAndLogTag("amplified", "true")
+					if result.IsRW2 {
+						logger.SetSpanAndLogTag("format", "rw2")
+					} else {
+						logger.SetSpanAndLogTag("format", "rw1")
+					}
+					logger.SetSpanAndLogTag("amplification_factor", fmt.Sprintf("%.1f", p.amplificationFactor))
+					logger.SetSpanAndLogTag("rw2_ratio", fmt.Sprintf("%.3f", rw2Ratio))
+					logger.SetSpanAndLogTag("total_rw1_series", rw1)
+					logger.SetSpanAndLogTag("total_rw2_series", rw2)
+					logger.SetSpanAndLogTag("original_size", len(body))
+					logger.SetSpanAndLogTag("amplified_size", len(result.Body))
+					logger.SetSpanAndLogTag("original_series_count", result.OriginalSeriesCount)
+					logger.SetSpanAndLogTag("amplified_series_count", result.AmplifiedSeriesCount)
+				}
+			}
 		}
 
-		// Track the preferred backend's response
-		if res.backend != nil && res.backend.Preferred() {
-			preferredResponse = res
-		}
-
-		// Track first successful response
-		if firstSuccessful == nil && res.succeeded() {
-			firstSuccessful = res
-		}
+		bodyReader = io.NopCloser(bytes.NewReader(bodyToSend))
 	}
 
-	// Response selection logic:
-	// 1. If we have a preferred backend, return its response (even if it failed)
-	// 2. Otherwise, return the first successful response
-	// 3. If all failed, return the first response
-	if preferredResponse != nil {
-		if !preferredResponse.succeeded() {
-			level.Warn(logger).Log("msg", "Preferred backend failed, but returning its response anyway", "backend", preferredResponse.backend.Name(), "status", preferredResponse.status)
+	elapsed, status, respBody, err := b.ForwardRequest(ctx, req, bodyReader)
+
+	res := &backendResponse{
+		backend:     b,
+		status:      status,
+		contentType: "application/json", // Default for Mimir write endpoints
+		body:        respBody,
+		err:         err,
+		elapsedTime: elapsed,
+	}
+
+	// Log with a level based on the backend response.
+	lvl := level.Debug
+	if !res.succeeded() {
+		lvl = level.Warn
+	}
+
+	l := lvl(logger)
+
+	// If we got an error (rather than just a non-2xx response), log that and mark the span as failed.
+	if err != nil {
+		l = log.With(l, "err", err)
+		logger.SetError()
+		// Track error type
+		errorType := "network"
+		if status == 0 {
+			errorType = "timeout"
 		}
-		return preferredResponse
+		p.metrics.errorsTotal.WithLabelValues(b.Name(), req.Method, p.route.RouteName, errorType).Inc()
 	}
 
-	if firstSuccessful != nil {
-		return firstSuccessful
-	}
+	l.Log("msg", "Backend response", "status", status, "elapsed", elapsed)
+	p.metrics.requestDuration.WithLabelValues(b.Name(), req.Method, p.route.RouteName, strconv.Itoa(res.statusCode())).Observe(elapsed.Seconds())
+	logger.SetTag("status", status)
 
-	level.Error(logger).Log("msg", "All backends failed, returning first response")
-	return firstResponse
+	return res
 }
 
 type backendResponse struct {

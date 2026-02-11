@@ -16,7 +16,9 @@ Write-tee is a reverse proxy that fans out Prometheus remote write requests to m
   - Factor 3.5: Each time series gets 3 full copies + 50% probability of 4th copy (3.5x average)
   - Amplified copies get unique `__amplified__="<replica_number>"` label
 - **Protocol Support**: Prometheus Remote Write 1.0 and 2.0
-- **Preferred Backend**: Configurable preferred backend for response selection
+- **Preferred Backend**: Required preferred backend whose response is returned to clients
+- **Fire-and-Forget**: Non-preferred backends receive requests asynchronously without blocking the response
+- **Backpressure Handling**: Bounded concurrent in-flight requests per non-preferred backend; requests dropped when at capacity
 - **Authentication**: Supports basic auth forwarding and per-backend auth override
 
 ## Example Usage
@@ -25,32 +27,47 @@ Amplify traffic to test cluster scalability:
 
 ```bash
 write-tee \
-  -backend.mirrored-endpoints=http://ops-mimir:8080 \
+  -backend.mirrored-endpoints=http://prod-mimir:8080 \
   -backend.amplified-endpoints=http://test-mimir:8080 \
   -backend.amplification-factor=10.0 \
   -backend.preferred=prod-mimir \
   -server.http-listen-port=8080
 ```
 
-Production cluster receives normal traffic (1x), test cluster receives 10x amplified traffic.
+Production cluster (`prod-mimir`) is the preferred backend - its response is returned to clients immediately. Test cluster (`test-mimir`) receives 10x amplified traffic via fire-and-forget.
 
 ## Architecture
 
 ### Request Flow
 
 ```
-Client → Write-Tee → [Mirrored Backends (1x traffic)]
-                   ↘ [Amplified Backends (Nx traffic)]
-                   ← Response from preferred backend
+Client → Write-Tee → [Preferred Backend] ← Response returned immediately
+                   ↘ [Non-Preferred Backends] (fire-and-forget, bounded concurrency)
 ```
 
 1. **Receive**: Client sends Prometheus remote write request to write-tee
 2. **Buffer**: Entire request body is buffered in memory (writes cannot be streamed)
-3. **Amplify**: For amplified backends, request body is decompressed, time series are duplicated with `__amplified__` labels, then recompressed
-4. **Fan-out**: Requests forwarded to all backends in parallel (goroutines)
-5. **Wait**: Write-tee waits for ALL backends to respond (ensures observability)
-6. **Select**: Response from preferred backend (or first successful) is returned to client
-7. **Metrics**: Request duration, errors, and response status recorded per backend
+3. **Dispatch to Non-Preferred**: A goroutine is spawned for async delivery to each non-preferred backend (fire-and-forget)
+4. **Send to Preferred**: Request sent synchronously to preferred backend
+5. **Return**: Preferred backend's response returned to client immediately (does not wait for non-preferred backends)
+6. **Async Processing**: Spawned goroutines send requests to non-preferred backends concurrently (bounded by max-in-flight limit)
+7. **Release Memory**: Request body garbage collected after all backends (including async) complete
+8. **Metrics**: Request duration, errors, dropped requests, and response status recorded per backend
+
+### Fire-and-Forget Behavior
+
+Non-preferred backends operate in fire-and-forget mode:
+- Each request spawns a dedicated goroutine per non-preferred backend
+- Concurrency is bounded by a semaphore (max-in-flight limit per backend)
+- The proxy **never waits** for non-preferred backend responses
+- When at max capacity, requests are **silently dropped** (only metric incremented, no logging)
+- Multiple requests can be in-flight concurrently to each backend
+
+This design ensures:
+- Response latency is determined solely by the preferred backend
+- High throughput to slow backends (parallel requests instead of sequential)
+- Bounded memory usage (max-in-flight limit prevents unbounded goroutine growth)
+- The proxy remains responsive even if non-preferred backends are unavailable
 
 ### Amplification Process
 
@@ -96,8 +113,13 @@ The RW 2.0 approach only adds a few strings to the symbol table and duplicates s
     Example: 3.5 (each series duplicated 3.5 times on average)
     Note: Only applies to backends in -backend.amplified-endpoints
 
--backend.preferred string
-    The hostname of the preferred backend for response selection.
-    If unset, first successful response is returned.
+-backend.preferred string (REQUIRED)
+    The hostname of the preferred backend. This backend's response is always
+    returned to the client. Non-preferred backends receive fire-and-forget requests.
     Example: mimir-1
+
+-backend.async-max-in-flight int
+    Maximum concurrent in-flight requests per non-preferred backend (async fire-and-forget).
+    Requests are dropped silently when at capacity.
+    Default: 1000
 ```

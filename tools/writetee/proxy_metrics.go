@@ -12,10 +12,11 @@ const (
 )
 
 type ProxyMetrics struct {
-	requestDuration *prometheus.HistogramVec
-	responsesTotal  *prometheus.CounterVec
-	errorsTotal     *prometheus.CounterVec
-	bodySize        *prometheus.HistogramVec
+	requestDuration      *prometheus.HistogramVec
+	responsesTotal       *prometheus.CounterVec
+	errorsTotal          *prometheus.CounterVec
+	bodySize             *prometheus.HistogramVec
+	droppedRequestsTotal *prometheus.CounterVec
 }
 
 func NewProxyMetrics(registerer prometheus.Registerer) *ProxyMetrics {
@@ -42,6 +43,11 @@ func NewProxyMetrics(registerer prometheus.Registerer) *ProxyMetrics {
 			Help:      "Size of incoming request bodies in bytes.",
 			Buckets:   prometheus.ExponentialBuckets(1024, 2, 20), // 1KB to ~1GB
 		}, []string{"route"}),
+		droppedRequestsTotal: promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
+			Namespace: writeTeeMetricsNamespace,
+			Name:      "dropped_requests_total",
+			Help:      "Total number of requests dropped for non-preferred backends.",
+		}, []string{"backend", "reason"}),
 	}
 
 	return m

@@ -47,15 +47,25 @@ func TestNewProxy_Validation(t *testing.T) {
 			name: "preferred backend not in list",
 			cfg: ProxyConfig{
 				BackendMirroredEndpoints: "http://backend1:8080,http://backend2:8080",
-				PreferredBackend: "backend3",
+				PreferredBackend:         "backend3",
 			},
 			routes:      []Route{},
 			expectedErr: "the preferred backend (hostname) has not been found among the list of configured backends",
 		},
 		{
-			name: "valid single backend",
+			name: "no preferred backend configured",
 			cfg: ProxyConfig{
 				BackendMirroredEndpoints: "http://backend1:8080",
+				PreferredBackend:         "",
+			},
+			routes:      []Route{},
+			expectedErr: "preferred backend is required",
+		},
+		{
+			name: "valid single backend with preferred",
+			cfg: ProxyConfig{
+				BackendMirroredEndpoints: "http://backend1:8080",
+				PreferredBackend:         "backend1",
 			},
 			routes:      []Route{},
 			expectedErr: "",
@@ -64,7 +74,7 @@ func TestNewProxy_Validation(t *testing.T) {
 			name: "valid multiple backends with preferred",
 			cfg: ProxyConfig{
 				BackendMirroredEndpoints: "http://backend1:8080,http://backend2:8080",
-				PreferredBackend: "backend1",
+				PreferredBackend:         "backend1",
 			},
 			routes:      []Route{},
 			expectedErr: "",
@@ -92,7 +102,6 @@ func TestProxyEndpoint_ResponseSelection(t *testing.T) {
 		name               string
 		backends           []mockBackend
 		preferredBackend   string
-		expectedBackend    string
 		expectedStatusCode int
 	}{
 		{
@@ -102,48 +111,24 @@ func TestProxyEndpoint_ResponseSelection(t *testing.T) {
 				{name: "backend2", response: mockResponse{statusCode: 200, body: "ok"}},
 			},
 			preferredBackend:   "backend1",
-			expectedBackend:    "backend1",
 			expectedStatusCode: 200,
 		},
 		{
-			name: "preferred backend fails, others succeed",
+			name: "preferred backend fails, still returns preferred response",
 			backends: []mockBackend{
 				{name: "backend1", response: mockResponse{statusCode: 500, body: "error"}},
 				{name: "backend2", response: mockResponse{statusCode: 200, body: "ok"}},
 			},
 			preferredBackend:   "backend1",
-			expectedBackend:    "backend1",
 			expectedStatusCode: 500,
 		},
 		{
-			name: "no preferred, first succeeds",
+			name: "single preferred backend succeeds",
 			backends: []mockBackend{
 				{name: "backend1", response: mockResponse{statusCode: 200, body: "ok"}},
-				{name: "backend2", response: mockResponse{statusCode: 200, body: "ok"}},
 			},
-			preferredBackend:   "",
-			expectedBackend:    "backend1",
+			preferredBackend:   "backend1",
 			expectedStatusCode: 200,
-		},
-		{
-			name: "no preferred, first fails, second succeeds",
-			backends: []mockBackend{
-				{name: "backend1", response: mockResponse{statusCode: 500, body: "error"}},
-				{name: "backend2", response: mockResponse{statusCode: 200, body: "ok"}},
-			},
-			preferredBackend:   "",
-			expectedBackend:    "backend2",
-			expectedStatusCode: 200,
-		},
-		{
-			name: "all fail, return first",
-			backends: []mockBackend{
-				{name: "backend1", response: mockResponse{statusCode: 500, body: "error1"}},
-				{name: "backend2", response: mockResponse{statusCode: 500, body: "error2"}},
-			},
-			preferredBackend:   "",
-			expectedBackend:    "backend1",
-			expectedStatusCode: 500,
 		},
 	}
 
@@ -176,7 +161,12 @@ func TestProxyEndpoint_ResponseSelection(t *testing.T) {
 				Methods:   []string{"POST"},
 			}
 
-			endpoint := NewProxyEndpoint(backendInterfaces, route, metrics, logger, 0, 1.0, nil)
+			// Create async dispatcher for non-preferred backends
+			asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics)
+			defer asyncDispatcher.Stop()
+
+			endpoint, err := NewProxyEndpoint(backendInterfaces, route, metrics, logger, 0, 1.0, nil, asyncDispatcher)
+			require.NoError(t, err)
 
 			// Create a test request
 			req := httptest.NewRequest("POST", "/api/v1/push", bytes.NewReader([]byte("test body")))
@@ -203,7 +193,7 @@ func TestProxyEndpoint_BodySizeLimit(t *testing.T) {
 	}))
 	defer server.Close()
 
-	backend := NewProxyBackend("backend1", mustParseURL(server.URL), 5*time.Second, false, false, BackendTypeMirrored)
+	backend := NewProxyBackend("backend1", mustParseURL(server.URL), 5*time.Second, true, false, BackendTypeMirrored)
 	backendInterfaces := []ProxyBackend{backend}
 
 	route := Route{
@@ -212,7 +202,12 @@ func TestProxyEndpoint_BodySizeLimit(t *testing.T) {
 		Methods:   []string{"POST"},
 	}
 
-	endpoint := NewProxyEndpoint(backendInterfaces, route, metrics, logger, 0, 1.0, nil)
+	// Create async dispatcher for non-preferred backends
+	asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics)
+	defer asyncDispatcher.Stop()
+
+	endpoint, err := NewProxyEndpoint(backendInterfaces, route, metrics, logger, 0, 1.0, nil, asyncDispatcher)
+	require.NoError(t, err)
 
 	tests := []struct {
 		name               string
