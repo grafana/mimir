@@ -540,17 +540,7 @@ func (t *Mimir) initQueryable() (serv services.Service, err error) {
 	registerer := prometheus.WrapRegistererWith(querierEngine, t.Registerer)
 
 	// Create a querier queryable and PromQL engine
-	t.QuerierQueryable, t.ExemplarQueryable, t.QuerierEngine, t.QuerierStreamingEngine, err = querier.New(
-		t.Cfg.Querier,
-		t.Overrides,
-		t.Distributor,
-		t.AdditionalStorageQueryables,
-		registerer,
-		util_log.Logger,
-		t.ActivityTracker,
-		t.QuerierQueryPlanner,
-		t.QueryLimitsProvider,
-	)
+	t.QuerierQueryable, t.ExemplarQueryable, t.QuerierEngine, t.QuerierStreamingEngine, err = querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.AdditionalStorageQueryables, registerer, util_log.Logger, t.ActivityTracker, t.QuerierQueryPlanner, t.QueryLimitsProvider, false)
 	if err != nil {
 		return nil, fmt.Errorf("could not create queryable: %w", err)
 	}
@@ -1083,17 +1073,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		// TODO: Consider wrapping logger to differentiate from querier module logger
 		rulerRegisterer := prometheus.WrapRegistererWith(rulerEngine, t.Registerer)
 
-		queryable, _, eng, _, err := querier.New(
-			t.Cfg.Querier,
-			t.Overrides,
-			t.Distributor,
-			t.AdditionalStorageQueryables,
-			rulerRegisterer,
-			util_log.Logger,
-			t.ActivityTracker,
-			t.QuerierQueryPlanner,
-			t.QueryLimitsProvider,
-		)
+		queryable, _, eng, _, err := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.AdditionalStorageQueryables, rulerRegisterer, util_log.Logger, t.ActivityTracker, t.QuerierQueryPlanner, t.QueryLimitsProvider, true)
 		if err != nil {
 			return nil, fmt.Errorf("could not create queryable for ruler: %w", err)
 		}

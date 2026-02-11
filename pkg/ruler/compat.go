@@ -410,8 +410,6 @@ func DefaultTenantManagerFactory(
 
 		// Wrap the queryable with our custom logic.
 		wrappedQueryable := WrapQueryableWithReadConsistency(queryable, logger)
-		// Wrap the queryable to ensure all queries have a MemoryConsumptionTracker and SeriesDeduplicator in the context.
-		wrappedQueryable = querier.NewMemoryTrackingQueryable(wrappedQueryable, true)
 
 		var appendeable storage.Appendable
 		if cfg.RuleEvaluationWriteEnabled {

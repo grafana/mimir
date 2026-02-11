@@ -190,6 +190,7 @@ func New(
 	tracker *activitytracker.ActivityTracker,
 	planner *streamingpromql.QueryPlanner,
 	limitsProvider streamingpromql.QueryLimitsProvider,
+	createUnlimitedMemoryTracker bool,
 ) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, promql.QueryEngine, *streamingpromql.Engine, error) {
 	queryMetrics := stats.NewQueryMetrics(reg)
 
@@ -201,7 +202,7 @@ func New(
 		},
 	})
 
-	queryable := NewMemoryTrackingQueryable(newQueryable(queryables, cfg, limits, queryMetrics, logger), false)
+	queryable := NewMemoryTrackingQueryable(newQueryable(queryables, cfg, limits, queryMetrics, logger), createUnlimitedMemoryTracker)
 	exemplarQueryable := newDistributorExemplarQueryable(distributor, logger)
 
 	lazyQueryable := storage.QueryableFunc(func(minT int64, maxT int64) (storage.Querier, error) {
