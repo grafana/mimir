@@ -4,7 +4,6 @@ package distributor
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -21,9 +20,7 @@ import (
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/middleware"
-	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/dskit/tenant"
-	"github.com/klauspost/compress/zstd"
 	"github.com/pierrec/lz4/v4"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -285,19 +282,21 @@ func newOTLPParser(
 				buf := buffers.Get(sz)
 				switch compression {
 				case util.Gzip:
-					gzReader, err := gzip.NewReader(reader)
+					gzReader, err := util.NewPooledGzipReader(reader)
 					if err != nil {
 						return exportReq, 0, errors.Wrap(err, "create gzip reader")
 					}
-					defer runutil.CloseWithLogOnErr(logger, gzReader, "close gzip reader")
+					defer gzReader.Close()
 					reader = gzReader
 				case util.Lz4:
 					reader = io.NopCloser(lz4.NewReader(reader))
 				case util.Zstd:
-					reader, err = zstd.NewReader(reader)
+					zstdReader, err := util.NewPooledZstdReader(reader)
 					if err != nil {
 						return exportReq, 0, errors.Wrap(err, "create zstd reader")
 					}
+					defer zstdReader.Close()
+					reader = zstdReader
 				}
 
 				reader = http.MaxBytesReader(nil, io.NopCloser(reader), int64(maxRecvMsgSize))
