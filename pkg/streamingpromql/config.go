@@ -91,8 +91,10 @@ func (c *RangeVectorSplittingConfig) Validate() error {
 	if c.Enabled && c.IntermediateResultsCache.Backend == "" {
 		return fmt.Errorf("range vector splitting is enabled but intermediate results cache backend is not configured")
 	}
-	if err := c.IntermediateResultsCache.Validate(); err != nil {
-		return errors.Wrap(err, "invalid intermediate results cache config")
+	if c.Enabled {
+		if err := c.IntermediateResultsCache.Validate(); err != nil {
+			return errors.Wrap(err, "invalid intermediate results cache config")
+		}
 	}
 	return nil
 }
