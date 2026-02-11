@@ -31,6 +31,7 @@ BINARY_SUFFIX ?= ""
 # Boiler plate for building Docker containers.
 # All this must go at top of file I'm afraid.
 IMAGE_PREFIX ?= grafana/
+IMAGE_PUSH_PREFIX ?= $(IMAGE_PREFIX)
 BUILD_IMAGE ?= $(IMAGE_PREFIX)mimir-build-image
 CONTAINER_MOUNT_OPTIONS ?= delegated,z
 
@@ -147,7 +148,7 @@ push-multiarch-%/$(UPTODATE):
 		--build-arg=revision=$(GIT_REVISION) \
 		--build-arg=goproxyValue=$(GOPROXY_VALUE) \
 		--build-arg=USE_BINARY_SUFFIX=true \
-		-t $(IMAGE_PREFIX)$(shell basename $(DIR)):$(IMAGE_TAG) $(DIR)/
+		-t $(IMAGE_PUSH_PREFIX)$(shell basename $(DIR)):$(IMAGE_TAG) $(DIR)/
 
 push-multiarch-mimir: ## Push mimir docker image.
 push-multiarch-mimir: push-multiarch-cmd/mimir/.uptodate
