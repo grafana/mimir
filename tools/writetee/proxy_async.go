@@ -69,12 +69,7 @@ func (d *AsyncBackendDispatcher) Dispatch(ctx context.Context, req *http.Request
 			defer d.wg.Done()
 			defer func() { <-sema }() // release permit
 
-			var bodyReader io.ReadCloser
-			if len(body) > 0 {
-				bodyReader = io.NopCloser(bytes.NewReader(body))
-			}
-
-			elapsed, status, _, err := backend.ForwardRequest(context.WithoutCancel(ctx), req, bodyReader)
+			elapsed, status, _, err := backend.ForwardRequest(context.WithoutCancel(ctx), req, io.NopCloser(bytes.NewReader(body)))
 			d.metrics.RecordBackendResult(backend.Name(), req.Method, routeName, elapsed, status, err)
 		}()
 		return true

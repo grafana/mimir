@@ -198,14 +198,8 @@ func (p *ProxyEndpoint) executePreferredBackendRequest(ctx context.Context, req 
 	logger.SetSpanAndLogTag("preferred", "true")
 	logger.SetSpanAndLogTag("backend_type", fmt.Sprintf("%d", b.BackendType()))
 
-	var bodyReader io.ReadCloser
 	bodyToSend := p.amplifyWriteRequestBody(body, b, logger)
-
-	if len(bodyToSend) > 0 {
-		bodyReader = io.NopCloser(bytes.NewReader(bodyToSend))
-	}
-
-	elapsed, status, respBody, err := b.ForwardRequest(ctx, req, bodyReader)
+	elapsed, status, respBody, err := b.ForwardRequest(ctx, req, io.NopCloser(bytes.NewReader(bodyToSend)))
 
 	res := &backendResponse{
 		backend:     b,
