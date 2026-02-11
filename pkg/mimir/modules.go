@@ -540,7 +540,18 @@ func (t *Mimir) initQueryable() (serv services.Service, err error) {
 	registerer := prometheus.WrapRegistererWith(querierEngine, t.Registerer)
 
 	// Create a querier queryable and PromQL engine
-	t.QuerierQueryable, t.ExemplarQueryable, t.QuerierEngine, t.QuerierStreamingEngine, err = querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.AdditionalStorageQueryables, registerer, util_log.Logger, t.ActivityTracker, t.QuerierQueryPlanner, t.QueryLimitsProvider, false)
+	t.QuerierQueryable, t.ExemplarQueryable, t.QuerierEngine, t.QuerierStreamingEngine, err = querier.New(
+		t.Cfg.Querier,
+		t.Overrides,
+		t.Distributor,
+		t.AdditionalStorageQueryables,
+		registerer,
+		util_log.Logger,
+		t.ActivityTracker,
+		t.QuerierQueryPlanner,
+		t.QueryLimitsProvider,
+		false,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("could not create queryable: %w", err)
 	}
