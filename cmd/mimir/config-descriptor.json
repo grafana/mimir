@@ -8687,17 +8687,6 @@
               "fieldDefaultValue": 500,
               "fieldFlag": "ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample",
               "fieldType": "int"
-            },
-            {
-              "kind": "field",
-              "name": "ingestion_concurrency_sequential_pusher_enabled",
-              "required": false,
-              "desc": "When enabled, tenants with few timeseries use a simpler sequential pusher instead of parallel shards.",
-              "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "ingest-storage.kafka.ingestion-concurrency-sequential-pusher-enabled",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,

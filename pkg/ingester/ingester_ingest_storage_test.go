@@ -1213,7 +1213,6 @@ func BenchmarkIngester_ReplayFromKafka(b *testing.B) {
 			cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyEstimatedBytesPerSample = 200
 			cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyQueueCapacity = 3
 			cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyTargetFlushesPerShard = 40
-			cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencySequentialPusherEnabled = false
 
 			// Disable TSDB WAL to reduce variance in test executions.
 			cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes = -1
@@ -1292,7 +1291,6 @@ func BenchmarkIngester_ReplayFromKafka_Dump(b *testing.B) {
 			cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyEstimatedBytesPerSample = 200
 			cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyQueueCapacity = 3
 			cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyTargetFlushesPerShard = 40
-			cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencySequentialPusherEnabled = false
 
 			// Disable TSDB WAL to reduce variance in benchmark executions.
 			cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes = -1

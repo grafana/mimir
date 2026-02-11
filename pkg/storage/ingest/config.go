@@ -147,10 +147,6 @@ type KafkaConfig struct {
 	// Our data indicates that the average sample size is somewhere between ~250 and ~500 bytes. We'll use 500 bytes as a conservative estimate.
 	IngestionConcurrencyEstimatedBytesPerSample int `yaml:"ingestion_concurrency_estimated_bytes_per_sample"`
 
-	// IngestionConcurrencySequentialPusherEnabled controls whether to use the sequential storage pusher
-	// for tenants with few timeseries. When false, parallelStorageShards is always used even for small tenants.
-	IngestionConcurrencySequentialPusherEnabled bool `yaml:"ingestion_concurrency_sequential_pusher_enabled" category:"experimental"`
-
 	// The fetch backoff config to use in the concurrent fetchers (when enabled). This setting
 	// is just used to change the default backoff in tests.
 	concurrentFetchersFetchBackoffConfig backoff.Config `yaml:"-"`
@@ -212,7 +208,6 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 	f.IntVar(&cfg.IngestionConcurrencyQueueCapacity, prefix+"ingestion-concurrency-queue-capacity", 5, "The number of batches to prepare and queue to ingest to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.")
 	f.IntVar(&cfg.IngestionConcurrencyTargetFlushesPerShard, prefix+"ingestion-concurrency-target-flushes-per-shard", 80, "The expected number of times to ingest timeseries to the TSDB head after batching. With fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.")
 	f.IntVar(&cfg.IngestionConcurrencyEstimatedBytesPerSample, prefix+"ingestion-concurrency-estimated-bytes-per-sample", 500, "The estimated number of bytes a sample has at time of ingestion. This value is used to estimate the timeseries without decompressing them. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.")
-	f.BoolVar(&cfg.IngestionConcurrencySequentialPusherEnabled, prefix+"ingestion-concurrency-sequential-pusher-enabled", true, "When enabled, tenants with few timeseries use a simpler sequential pusher instead of parallel shards.")
 }
 
 func (cfg *KafkaConfig) Validate() error {
