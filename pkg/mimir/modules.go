@@ -1059,7 +1059,8 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 
 	t.Cfg.Ruler.Ring.Common.ListenPort = t.Cfg.Server.GRPCListenPort
 
-	// embeddedQueryable is used for RestoreForState operation and for MQE engine must be wrapped with UnlimitedMemoryConsumptionTracker.
+	// embeddedQueryable is used for RestoreForState operation. When using MQE engine, the MemoryTrackingQueryable
+	// will create an unlimited memory tracker if one is not present in the context.
 	var embeddedQueryable prom_storage.Queryable
 	var queryFunc rules.QueryFunc
 

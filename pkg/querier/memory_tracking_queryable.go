@@ -39,7 +39,11 @@ type memoryTrackingQuerier struct {
 func (q *memoryTrackingQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	memoryTracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
 	if err != nil {
-		return storage.ErrSeriesSet(err)
+		// If no memory tracker is in the context, create an unlimited one.
+		// This can happen when the queryable is used directly without going through the engine,
+		// e.g. for the ruler's RestoreForState operation.
+		memoryTracker = limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+		ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
 	}
 
 	ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx)
