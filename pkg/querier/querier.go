@@ -235,7 +235,7 @@ func New(
 		} else {
 			eng = streamingEngine
 		}
-		// Wrap queryable with memory tracking.
+		// Wrap queryable with memory tracking
 		queryable = NewMemoryTrackingQueryable(queryable)
 	default:
 		panic(fmt.Sprintf("invalid config not caught by validation: unknown PromQL engine '%s'", cfg.QueryEngine))
@@ -490,7 +490,7 @@ func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHi
 		}
 	}
 
-	// We have all the sets from different sources (chunk from store, chunks from ingesters).
+	// we have all the sets from different sources (chunk from store, chunks from ingesters).
 	// mergeSeriesSets will return sorted set.
 	return mq.mergeSeriesSets(result)
 }
