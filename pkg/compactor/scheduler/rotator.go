@@ -197,10 +197,6 @@ func (r *Rotator) CancelJobLease(tenant string, key string, epoch int64) (bool, 
 }
 
 func (r *Rotator) OfferJobs(tenant string, jobs []TrackedJob, epoch int64) (int, error) {
-	if len(jobs) == 0 {
-		return 0, nil
-	}
-
 	r.mtx.RLock()
 
 	tenantState, ok := r.tenantStateMap[tenant]

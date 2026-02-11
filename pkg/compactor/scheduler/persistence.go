@@ -3,6 +3,7 @@
 package scheduler
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/benbjohnson/clock"
@@ -10,6 +11,7 @@ import (
 	"github.com/go-kit/log/level"
 	dskit_tenant "github.com/grafana/dskit/tenant"
 	"go.etcd.io/bbolt"
+	bbolt_errors "go.etcd.io/bbolt/errors"
 
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -71,7 +73,7 @@ func (m *BboltJobPersistenceManager) InitializeTenant(tenant string) (JobPersist
 func (m *BboltJobPersistenceManager) DeleteTenant(tenant string) error {
 	return m.db.Update(func(tx *bbolt.Tx) error {
 		err := tx.DeleteBucket([]byte(tenant))
-		if err != nil {
+		if err != nil && !errors.Is(err, bbolt_errors.ErrBucketNotFound) {
 			return err
 		}
 		return nil
@@ -214,10 +216,6 @@ type NopJobPersistenceManager struct{}
 
 func (n *NopJobPersistenceManager) InitializeTenant(tenant string) (JobPersister, error) {
 	return &NopJobPersister[*CompactionJob]{}, nil
-}
-
-func (n *NopJobPersistenceManager) InitializePlanning() (JobPersister, error) {
-	return &NopJobPersister[struct{}]{}, nil
 }
 
 func (n *NopJobPersistenceManager) DeleteTenant(tenant string) error {

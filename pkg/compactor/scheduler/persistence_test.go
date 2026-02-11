@@ -131,6 +131,10 @@ func TestBboltJobPersistenceManager_DeleteTenant(t *testing.T) {
 		return nil
 	})
 	require.NoError(t, err)
+
+	// Deleting a tenant that does not exist should not error
+	err = mgr.DeleteTenant("missing")
+	require.NoError(t, err)
 }
 
 func TestBboltJobPersistenceManager_RecoverAll(t *testing.T) {
