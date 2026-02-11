@@ -357,6 +357,7 @@ func (jt *JobTracker) offerPlanJob(job TrackedJob) (accepted int, becamePending 
 
 	wasEmpty := jt.isPendingEmpty()
 	jt.incompleteJobs[planJobId] = jt.pending.PushBack(job)
+	jt.metrics.pendingJobs.Set(float64(jt.pending.Len()))
 	return 1, wasEmpty, nil
 }
 

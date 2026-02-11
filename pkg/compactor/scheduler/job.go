@@ -213,6 +213,7 @@ func (j *TrackedPlanJob) ToLeaseResponse(tenant string) *compactorschedulerpb.Le
 		},
 		Spec: &compactorschedulerpb.JobSpec{
 			JobType: compactorschedulerpb.JOB_TYPE_PLANNING,
+			Tenant:  tenant,
 		},
 	}
 }
