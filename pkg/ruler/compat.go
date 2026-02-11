@@ -34,6 +34,7 @@ import (
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	notifierCfg "github.com/grafana/mimir/pkg/ruler/notifier"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -418,11 +419,14 @@ func DefaultTenantManagerFactory(
 			appendeable = NewNoopAppendable()
 		}
 
+		ctx = user.InjectOrgID(ctx, userID)
+		ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
+
 		return rules.NewManager(&rules.ManagerOptions{
 			Appendable:                 appendeable,
 			Queryable:                  wrappedQueryable,
 			QueryFunc:                  wrappedQueryFunc,
-			Context:                    user.InjectOrgID(ctx, userID),
+			Context:                    ctx,
 			GroupEvaluationContextFunc: FederatedGroupContextFunc,
 			ExternalURL:                cfg.ExternalURL.URL,
 			NotifyFunc:                 rules.SendAlerts(notifier, cfg.ExternalURL.String()),
