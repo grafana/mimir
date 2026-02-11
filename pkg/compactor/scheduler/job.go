@@ -22,6 +22,9 @@ const (
 
 type TrackedJob interface {
 	ID() string
+	CreationTime() time.Time
+	Status() compactorschedulerpb.StoredJobStatus
+	StatusTime() time.Time // time of last renewal or time of completion
 	IsLeased() bool
 	IsComplete() bool
 	MarkLeased()
@@ -29,8 +32,7 @@ type TrackedJob interface {
 	RenewLease()
 	ClearLease()
 	NumLeases() int
-	StatusTime() time.Time // time of last renewal or time of completion
-	MatchesEpoch(int64) bool
+	Epoch() int64
 	Serialize() ([]byte, error)
 	ToLeaseResponse(tenant string) *compactorschedulerpb.LeaseJobResponse
 	CopyBase() TrackedJob // copies the underlying base job to allow for mutation (mark leased/clear lease)
@@ -59,6 +61,18 @@ func newBaseTrackedJob(id string, creationTime time.Time, clock clock.Clock) bas
 
 func (j *baseTrackedJob) ID() string {
 	return j.id
+}
+
+func (j *baseTrackedJob) CreationTime() time.Time {
+	return j.creationTime
+}
+
+func (j *baseTrackedJob) Status() compactorschedulerpb.StoredJobStatus {
+	return j.status
+}
+
+func (j *baseTrackedJob) StatusTime() time.Time {
+	return j.statusTime
 }
 
 func (j *baseTrackedJob) IsLeased() bool {
@@ -94,12 +108,8 @@ func (j *baseTrackedJob) NumLeases() int {
 	return j.numLeases
 }
 
-func (j *baseTrackedJob) StatusTime() time.Time {
-	return j.statusTime
-}
-
-func (j *baseTrackedJob) MatchesEpoch(epoch int64) bool {
-	return j.epoch == epoch
+func (j *baseTrackedJob) Epoch() int64 {
+	return j.epoch
 }
 
 type TrackedCompactionJob struct {

@@ -169,98 +169,95 @@ func TestBboltJobPersistenceManager_RecoverAll(t *testing.T) {
 }
 
 func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
-	// TODO: Clean up
-	mgr := setupBboltManager(t)
-	t.Cleanup(func() {
-		require.NoError(t, mgr.Close())
-	})
-
-	persister, err := mgr.InitializeTenant("tenant")
-	require.NoError(t, err)
-
 	now := time.Now()
-	writtenCompactionJob := &TrackedCompactionJob{
-		baseTrackedJob: baseTrackedJob{
-			id:           "job1",
-			creationTime: now,
-			statusTime:   now.Add(10 * time.Second),
-			numLeases:    1,
-			epoch:        234,
+
+	tests := map[string]struct {
+		job                  TrackedJob
+		verifySpecificFields func(t *testing.T, written, read TrackedJob)
+	}{
+		"compaction job": {
+			job: &TrackedCompactionJob{
+				baseTrackedJob: baseTrackedJob{
+					id:           "id",
+					creationTime: now,
+					status:       compactorschedulerpb.STORED_JOB_STATUS_AVAILABLE,
+					statusTime:   now.Add(10 * time.Second),
+					numLeases:    1,
+					epoch:        234,
+				},
+				value: &CompactionJob{blocks: testBlockIDs, isSplit: true},
+				order: 1,
+			},
+			verifySpecificFields: func(t *testing.T, written, read TrackedJob) {
+				writtenJob := written.(*TrackedCompactionJob)
+				readJob := read.(*TrackedCompactionJob)
+				require.Equal(t, writtenJob.value.blocks, readJob.value.blocks)
+				require.Equal(t, writtenJob.value.isSplit, readJob.value.isSplit)
+				require.Equal(t, writtenJob.order, readJob.order)
+			},
 		},
-		value: &CompactionJob{blocks: testBlockIDs, isSplit: true},
-		order: 1,
+		"plan job": {
+			job: &TrackedPlanJob{
+				baseTrackedJob: baseTrackedJob{
+					id:           planJobId,
+					creationTime: now,
+					status:       compactorschedulerpb.STORED_JOB_STATUS_LEASED,
+					statusTime:   now.Add(10 * time.Second),
+					numLeases:    1,
+					epoch:        234,
+				},
+			},
+			verifySpecificFields: func(t *testing.T, written, read TrackedJob) {
+				// No additional fields
+			},
+		},
 	}
 
-	err = persister.WriteJob(writtenCompactionJob)
-	require.NoError(t, err)
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			mgr := setupBboltManager(t)
+			t.Cleanup(func() {
+				require.NoError(t, mgr.Close())
+			})
 
-	// Read it back
-	var jobs []TrackedJob
-	readJobs := func() error {
-		return mgr.db.View(func(tx *bbolt.Tx) error {
-			b := tx.Bucket([]byte("tenant"))
-			if b == nil {
-				return errors.New("bucket should not be missing")
+			persister, err := mgr.InitializeTenant("tenant")
+			require.NoError(t, err)
+
+			err = persister.WriteJob(tc.job)
+			require.NoError(t, err)
+
+			// Helper function since the test reads twice
+			readJobs := func() ([]TrackedJob, error) {
+				var jobs []TrackedJob
+				err := mgr.db.View(func(tx *bbolt.Tx) error {
+					b := tx.Bucket([]byte("tenant"))
+					if b == nil {
+						return errors.New("bucket should not be missing")
+					}
+					jobs = jobsFromTenantBucket("tenant", b, mgr.logger)
+					return nil
+				})
+				return jobs, err
 			}
-			jobs = jobsFromTenantBucket("tenant", b, mgr.logger)
-			return nil
+
+			jobs, err := readJobs()
+			require.NoError(t, err)
+			require.Len(t, jobs, 1)
+			readJob := jobs[0]
+			require.Equal(t, tc.job.ID(), readJob.ID())
+			require.Equal(t, tc.job.CreationTime().Unix(), readJob.CreationTime().Unix())
+			require.Equal(t, tc.job.Status(), readJob.Status())
+			require.Equal(t, tc.job.StatusTime().Unix(), readJob.StatusTime().Unix())
+			require.Equal(t, tc.job.NumLeases(), readJob.NumLeases())
+			require.Equal(t, tc.job.Epoch(), readJob.Epoch())
+
+			tc.verifySpecificFields(t, tc.job, readJob)
+
+			err = persister.DeleteJob(tc.job)
+			require.NoError(t, err)
+			jobs, err = readJobs()
+			require.NoError(t, err)
+			require.Empty(t, jobs)
 		})
 	}
-
-	err = readJobs()
-	require.NoError(t, err)
-	require.Len(t, jobs, 1)
-
-	readJob := jobs[0].(*TrackedCompactionJob)
-	require.Equal(t, writtenCompactionJob.id, readJob.id)
-	require.Equal(t, writtenCompactionJob.creationTime.Unix(), readJob.creationTime.Unix())
-	require.Equal(t, writtenCompactionJob.status, readJob.status)
-	require.Equal(t, writtenCompactionJob.statusTime.Unix(), readJob.statusTime.Unix())
-	require.Equal(t, writtenCompactionJob.numLeases, readJob.numLeases)
-	require.Equal(t, writtenCompactionJob.epoch, readJob.epoch)
-
-	require.Equal(t, writtenCompactionJob.value.blocks, readJob.value.blocks)
-	require.Equal(t, writtenCompactionJob.value.isSplit, readJob.value.isSplit)
-
-	require.Equal(t, writtenCompactionJob.order, readJob.order)
-
-	// Delete it, then expect it to be gone
-	err = persister.DeleteJob(writtenCompactionJob)
-	require.NoError(t, err)
-	err = readJobs()
-	require.NoError(t, err)
-	require.Empty(t, jobs)
-
-	writtenPlanJob := &TrackedPlanJob{
-		baseTrackedJob: baseTrackedJob{
-			id:           planJobId,
-			creationTime: now,
-			status:       compactorschedulerpb.STORED_JOB_STATUS_LEASED,
-			statusTime:   now.Add(10 * time.Second),
-			numLeases:    1,
-			epoch:        234,
-		},
-	}
-
-	err = persister.WriteJob(writtenPlanJob)
-	require.NoError(t, err)
-
-	err = readJobs()
-	require.NoError(t, err)
-	require.Len(t, jobs, 1)
-
-	readPlanJob := jobs[0].(*TrackedPlanJob)
-
-	require.Equal(t, writtenPlanJob.id, readPlanJob.id)
-	require.Equal(t, writtenPlanJob.creationTime.Unix(), readPlanJob.creationTime.Unix())
-	require.Equal(t, writtenPlanJob.status, readPlanJob.status)
-	require.Equal(t, writtenPlanJob.statusTime.Unix(), readPlanJob.statusTime.Unix())
-	require.Equal(t, writtenPlanJob.numLeases, readPlanJob.numLeases)
-	require.Equal(t, writtenPlanJob.epoch, readPlanJob.epoch)
-
-	err = persister.DeleteJob(writtenPlanJob)
-	require.NoError(t, err)
-	err = readJobs()
-	require.NoError(t, err)
-	require.Empty(t, jobs)
 }

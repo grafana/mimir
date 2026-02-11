@@ -148,7 +148,7 @@ func (jt *JobTracker) Remove(id string, epoch int64, complete bool) (removed boo
 	}
 
 	j := e.Value.(TrackedJob)
-	if !j.MatchesEpoch(epoch) {
+	if j.Epoch() != epoch {
 		return false, false, nil
 	}
 
@@ -270,7 +270,7 @@ func (jt *JobTracker) RenewLease(id string, epoch int64) bool {
 	}
 
 	j := e.Value.(TrackedJob)
-	if j.IsLeased() && j.MatchesEpoch(epoch) {
+	if j.IsLeased() && j.Epoch() == epoch {
 		j.RenewLease()
 		jt.active.MoveToBack(e)
 		return true
@@ -288,7 +288,7 @@ func (jt *JobTracker) CancelLease(id string, epoch int64) (canceled bool, became
 	}
 
 	j := e.Value.(TrackedJob)
-	if !j.IsLeased() || !j.MatchesEpoch(epoch) {
+	if !j.IsLeased() || j.Epoch() != epoch {
 		return false, false, nil
 	}
 
@@ -480,7 +480,7 @@ func (jt *JobTracker) checkPlanJobEpoch(epoch int64) (*TrackedPlanJob, error) {
 		return nil, errors.New("invalid plan job type")
 
 	}
-	if !planJob.IsLeased() || !planJob.MatchesEpoch(epoch) {
+	if !planJob.IsLeased() || planJob.Epoch() != epoch {
 		return nil, errors.New("given results, but plan job lease not owned")
 	}
 
