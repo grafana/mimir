@@ -165,7 +165,7 @@ func (cfg *KafkaConfig) RegisterFlags(f *flag.FlagSet) {
 func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	cfg.concurrentFetchersFetchBackoffConfig = defaultFetchBackoffConfig
 
-	f.StringVar(&cfg.Address, prefix+"address", "", "The Kafka backend address.")
+	f.StringVar(&cfg.Address, prefix+"address", "", "The Kafka seed broker address, or a comma-separated list of seed broker addresses.")
 	f.StringVar(&cfg.Topic, prefix+"topic", "", "The Kafka topic name.")
 	f.StringVar(&cfg.ClientID, prefix+"client-id", "", "The Kafka client ID.")
 	f.DurationVar(&cfg.DialTimeout, prefix+"dial-timeout", 2*time.Second, "The maximum time allowed to open a connection to a Kafka broker.")
@@ -276,6 +276,27 @@ func (cfg *KafkaConfig) Validate() error {
 	}
 
 	return cfg.SASL.Validate()
+}
+
+// SeedBrokers returns the configured Kafka seed brokers.
+// It supports a single broker address for backward compatibility and
+// a comma-separated list of addresses for multi-seed bootstrap.
+func (cfg *KafkaConfig) SeedBrokers() []string {
+	parts := strings.Split(cfg.Address, ",")
+	brokers := make([]string, 0, len(parts))
+
+	for _, part := range parts {
+		if addr := strings.TrimSpace(part); addr != "" {
+			brokers = append(brokers, addr)
+		}
+	}
+
+	// Preserve previous behavior for malformed non-empty values.
+	if len(brokers) == 0 && cfg.Address != "" {
+		return []string{cfg.Address}
+	}
+
+	return brokers
 }
 
 // GetConsumerGroup returns the consumer group to use for the given instanceID and partitionID.

@@ -369,3 +369,38 @@ func TestExhaustiveSASLMechanismOptions(t *testing.T) {
 		require.NotErrorIs(t, (&KafkaAuthConfig{Mechanism: o}).Validate(), ErrInvalidSASLMechanism)
 	}
 }
+
+func TestKafkaConfig_SeedBrokers(t *testing.T) {
+	tests := map[string]struct {
+		address  string
+		expected []string
+	}{
+		"should return a single broker as-is": {
+			address:  "broker-1:9092",
+			expected: []string{"broker-1:9092"},
+		},
+		"should split and trim comma-separated brokers": {
+			address:  "broker-1:9092, broker-2:9092,broker-3:9092",
+			expected: []string{"broker-1:9092", "broker-2:9092", "broker-3:9092"},
+		},
+		"should ignore empty entries": {
+			address:  "broker-1:9092, ,broker-2:9092,",
+			expected: []string{"broker-1:9092", "broker-2:9092"},
+		},
+		"should preserve malformed non-empty values for backwards compatibility": {
+			address:  " , ",
+			expected: []string{" , "},
+		},
+		"should return empty when address is empty": {
+			address:  "",
+			expected: []string{},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			cfg := KafkaConfig{Address: testData.address}
+			assert.Equal(t, testData.expected, cfg.SeedBrokers())
+		})
+	}
+}

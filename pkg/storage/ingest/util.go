@@ -67,7 +67,7 @@ func (o onlySampledTraces) Inject(ctx context.Context, carrier propagation.TextM
 func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger log.Logger) []kgo.Opt {
 	opts := []kgo.Opt{
 		kgo.ClientID(cfg.ClientID),
-		kgo.SeedBrokers(cfg.Address),
+		kgo.SeedBrokers(cfg.SeedBrokers()...),
 		kgo.DialTimeout(cfg.DialTimeout),
 
 		// A cluster metadata update is a request sent to a broker and getting back the map of partitions and

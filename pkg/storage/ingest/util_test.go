@@ -179,6 +179,45 @@ func TestCreateTopic(t *testing.T) {
 		require.NoError(t, CreateTopic(cfg, logger))
 	})
 
+	t.Run("should support multiple comma-separated seed broker addresses", func(t *testing.T) {
+		var (
+			addr, cluster = createKafkaCluster(t)
+			cfg           = KafkaConfig{
+				Topic:                            "topic-name",
+				Address:                          "127.0.0.1:1, " + addr,
+				DialTimeout:                      200 * time.Millisecond,
+				AutoCreateTopicDefaultPartitions: 100,
+			}
+		)
+
+		cluster.ControlKey(kmsg.AlterConfigs.Int16(), func(request kmsg.Request) (kmsg.Response, error, bool) {
+			r := request.(*kmsg.CreateTopicsRequest)
+
+			assert.Len(t, r.Topics, 1)
+			res := r.Topics[0]
+			assert.Equal(t, cfg.Topic, res.Topic)
+			assert.Equal(t, 100, res.NumPartitions)
+			assert.Equal(t, -1, res.ReplicationFactor)
+			assert.Empty(t, res.Configs)
+			assert.Empty(t, res.ReplicaAssignment)
+
+			return &kmsg.CreateTopicsResponse{
+				Version: r.Version,
+				Topics: []kmsg.CreateTopicsResponseTopic{
+					{
+						Topic:             cfg.Topic,
+						NumPartitions:     res.NumPartitions,
+						ReplicationFactor: 3,
+					},
+				},
+			}, nil, true
+		})
+
+		logger := log.NewNopLogger()
+
+		require.NoError(t, CreateTopic(cfg, logger))
+	})
+
 	t.Run("should return an error if the request fails", func(t *testing.T) {
 		var (
 			addr, cluster = createKafkaCluster(t)
