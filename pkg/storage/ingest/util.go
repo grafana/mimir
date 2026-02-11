@@ -106,26 +106,20 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 		var m sasl.Mechanism
 		switch cfg.SASLMechanism {
 		case SASLMechanismScramSHA256:
-			m = scram.Sha256(func(_ context.Context) (scram.Auth, error) {
-				return scram.Auth{
-					User: cfg.SASLUsername,
-					Pass: cfg.SASLPassword.String(),
-				}, nil
-			})
+			m = scram.Auth{
+				User: cfg.SASLUsername,
+				Pass: cfg.SASLPassword.String(),
+			}.AsSha256Mechanism()
 		case SASLMechanismScramSHA512:
-			m = scram.Sha512(func(_ context.Context) (scram.Auth, error) {
-				return scram.Auth{
-					User: cfg.SASLUsername,
-					Pass: cfg.SASLPassword.String(),
-				}, nil
-			})
+			m = scram.Auth{
+				User: cfg.SASLUsername,
+				Pass: cfg.SASLPassword.String(),
+			}.AsSha512Mechanism()
 		case SASLMechanismPlain:
-			m = plain.Plain(func(_ context.Context) (plain.Auth, error) {
-				return plain.Auth{
-					User: cfg.SASLUsername,
-					Pass: cfg.SASLPassword.String(),
-				}, nil
-			})
+			m = plain.Auth{
+				User: cfg.SASLUsername,
+				Pass: cfg.SASLPassword.String(),
+			}.AsMechanism()
 		default:
 			panic(fmt.Errorf("unknown SASL mechanism: %v", cfg.SASLMechanism))
 		}
