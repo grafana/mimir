@@ -62,6 +62,7 @@ For each time series in the incoming request:
 3. **Fractional amplification**: If factor is 3.5, each series gets 3 guaranteed copies + 50% probability of 4th
 
 **Remote Write 1.0** (with embedded label strings):
+
 ```
 Original: {__name__="http_requests", method="GET"}
 Copy 1:   {__name__="http_requests", method="GET", __amplified__="1"}
@@ -69,6 +70,7 @@ Copy 2:   {__name__="http_requests", method="GET", __amplified__="2"}
 ```
 
 **Remote Write 2.0** (with symbol table):
+
 ```
 Symbol table: ["", "__name__", "http_requests", "method", "GET", "__amplified__", "1", "2"]
 Original:     labels_refs=[1,2,3,4]  (references to symbol table indices)
