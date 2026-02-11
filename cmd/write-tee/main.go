@@ -11,6 +11,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/log"
+	"github.com/grafana/dskit/signals"
 	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
@@ -67,6 +68,16 @@ func main() {
 		util_log.Flush()
 		os.Exit(1)
 	}
+
+	// Setup signal handler for graceful shutdown
+	handler := signals.NewHandler(util_log.Logger)
+	go func() {
+		handler.Loop()
+		level.Info(util_log.Logger).Log("msg", "Received shutdown signal, stopping proxy")
+		if err := proxy.Stop(); err != nil {
+			level.Error(util_log.Logger).Log("msg", "Error stopping proxy", "err", err)
+		}
+	}()
 
 	proxy.Await()
 }

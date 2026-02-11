@@ -162,7 +162,7 @@ func TestProxyEndpoint_ResponseSelection(t *testing.T) {
 			}
 
 			// Create async dispatcher for non-preferred backends
-			asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics)
+			asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
 			defer asyncDispatcher.Stop()
 
 			endpoint, err := NewProxyEndpoint(backendInterfaces, route, metrics, logger, 1.0, nil, asyncDispatcher)
@@ -203,7 +203,7 @@ func TestProxyEndpoint_BodySizeLimit(t *testing.T) {
 	}
 
 	// Create async dispatcher for non-preferred backends
-	asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics)
+	asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
 	defer asyncDispatcher.Stop()
 
 	endpoint, err := NewProxyEndpoint(backendInterfaces, route, metrics, logger, 1.0, nil, asyncDispatcher)
@@ -271,7 +271,7 @@ func TestProxyEndpoint_ServeHTTPPassthrough(t *testing.T) {
 		Methods:   []string{"POST"},
 	}
 
-	asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics)
+	asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
 	defer asyncDispatcher.Stop()
 
 	endpoint, err := NewProxyEndpoint(backendInterfaces, route, metrics, logger, 1.0, nil, asyncDispatcher)

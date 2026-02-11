@@ -8,6 +8,9 @@ import (
 	"io"
 	"net/http"
 	"sync"
+
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 )
 
 // AsyncBackendDispatcher handles fire-and-forget requests to non-preferred backends.
@@ -15,6 +18,7 @@ import (
 type AsyncBackendDispatcher struct {
 	maxInFlight int
 	metrics     *ProxyMetrics
+	logger      log.Logger
 
 	mu         sync.Mutex
 	semaphores map[string]chan struct{} // semaphore per backend (buffered channel)
@@ -24,10 +28,11 @@ type AsyncBackendDispatcher struct {
 
 // NewAsyncBackendDispatcher creates a new dispatcher for non-preferred backends.
 // maxInFlight controls the maximum number of concurrent in-flight requests per backend.
-func NewAsyncBackendDispatcher(maxInFlight int, metrics *ProxyMetrics) *AsyncBackendDispatcher {
+func NewAsyncBackendDispatcher(maxInFlight int, metrics *ProxyMetrics, logger log.Logger) *AsyncBackendDispatcher {
 	return &AsyncBackendDispatcher{
 		maxInFlight: maxInFlight,
 		metrics:     metrics,
+		logger:      logger,
 		semaphores:  make(map[string]chan struct{}),
 	}
 }
@@ -49,6 +54,7 @@ func (d *AsyncBackendDispatcher) Dispatch(ctx context.Context, req *http.Request
 	if d.stopped {
 		d.mu.Unlock()
 		d.metrics.droppedRequestsTotal.WithLabelValues(backend.Name(), "shutdown").Inc()
+		level.Warn(d.logger).Log("msg", "dropping request due to shutdown", "backend", backend.Name(), "route", routeName)
 		return false
 	}
 
@@ -71,6 +77,10 @@ func (d *AsyncBackendDispatcher) Dispatch(ctx context.Context, req *http.Request
 
 			elapsed, status, _, err := backend.ForwardRequest(context.WithoutCancel(ctx), req, io.NopCloser(bytes.NewReader(body)))
 			d.metrics.RecordBackendResult(backend.Name(), req.Method, routeName, elapsed, status, err)
+
+			if err != nil {
+				level.Warn(d.logger).Log("msg", "async backend request failed", "backend", backend.Name(), "route", routeName, "method", req.Method, "status", status, "elapsed", elapsed, "err", err)
+			}
 		}()
 		return true
 

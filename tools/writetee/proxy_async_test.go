@@ -46,7 +46,7 @@ func TestAsyncBackendDispatcher_ShouldNotBlockOnNonPreferredBackends(t *testing.
 	slowBackend := NewProxyBackend("slow", mustParseURLAsync(slowServer.URL), 5*time.Second, false, false, BackendTypeMirrored)
 	backends := []ProxyBackend{preferredBackend, slowBackend}
 
-	asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics)
+	asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
 	defer asyncDispatcher.Stop()
 
 	route := Route{
@@ -84,6 +84,7 @@ func TestAsyncBackendDispatcher_ShouldNotBlockOnNonPreferredBackends(t *testing.
 }
 
 func TestAsyncBackendDispatcher_ShouldEnforceMaxInFlightLimit(t *testing.T) {
+	logger := log.NewNopLogger()
 	registry := prometheus.NewRegistry()
 	metrics := NewProxyMetrics(registry)
 
@@ -102,7 +103,7 @@ func TestAsyncBackendDispatcher_ShouldEnforceMaxInFlightLimit(t *testing.T) {
 
 	const maxInFlight = 5
 	const totalRequests = 10
-	asyncDispatcher := NewAsyncBackendDispatcher(maxInFlight, metrics)
+	asyncDispatcher := NewAsyncBackendDispatcher(maxInFlight, metrics, logger)
 	defer func() {
 		close(unblock) // Unblock all handlers before stopping
 		asyncDispatcher.Stop()
@@ -131,6 +132,7 @@ func TestAsyncBackendDispatcher_ShouldEnforceMaxInFlightLimit(t *testing.T) {
 }
 
 func TestAsyncBackendDispatcher_ConcurrentRequests(t *testing.T) {
+	logger := log.NewNopLogger()
 	registry := prometheus.NewRegistry()
 	metrics := NewProxyMetrics(registry)
 
@@ -145,7 +147,7 @@ func TestAsyncBackendDispatcher_ConcurrentRequests(t *testing.T) {
 	backend := NewProxyBackend("test", mustParseURLAsync(server.URL), 5*time.Second, false, false, BackendTypeMirrored)
 
 	// Create dispatcher allowing 10 concurrent requests
-	asyncDispatcher := NewAsyncBackendDispatcher(10, metrics)
+	asyncDispatcher := NewAsyncBackendDispatcher(10, metrics, logger)
 
 	req := httptest.NewRequest("POST", "/test", nil)
 	body := []byte("test")
@@ -171,6 +173,7 @@ func TestAsyncBackendDispatcher_ConcurrentRequests(t *testing.T) {
 }
 
 func TestAsyncBackendDispatcher_GracefulShutdown(t *testing.T) {
+	logger := log.NewNopLogger()
 	registry := prometheus.NewRegistry()
 	metrics := NewProxyMetrics(registry)
 
@@ -184,7 +187,7 @@ func TestAsyncBackendDispatcher_GracefulShutdown(t *testing.T) {
 
 	backend := NewProxyBackend("test", mustParseURLAsync(server.URL), 5*time.Second, false, false, BackendTypeMirrored)
 
-	asyncDispatcher := NewAsyncBackendDispatcher(10, metrics)
+	asyncDispatcher := NewAsyncBackendDispatcher(10, metrics, logger)
 
 	req := httptest.NewRequest("POST", "/test", nil)
 	body := []byte("test")
@@ -206,6 +209,7 @@ func TestAsyncBackendDispatcher_GracefulShutdown(t *testing.T) {
 }
 
 func TestAsyncBackendDispatcher_MultipleBackends(t *testing.T) {
+	logger := log.NewNopLogger()
 	registry := prometheus.NewRegistry()
 	metrics := NewProxyMetrics(registry)
 
@@ -227,7 +231,7 @@ func TestAsyncBackendDispatcher_MultipleBackends(t *testing.T) {
 	backend2 := NewProxyBackend("backend2", mustParseURLAsync(server2.URL), 5*time.Second, false, false, BackendTypeMirrored)
 
 	// Each backend has its own semaphore with max 2
-	asyncDispatcher := NewAsyncBackendDispatcher(2, metrics)
+	asyncDispatcher := NewAsyncBackendDispatcher(2, metrics, logger)
 
 	req := httptest.NewRequest("POST", "/test", nil)
 	body := []byte("test")
