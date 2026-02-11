@@ -68,29 +68,35 @@ func (d *AsyncBackendDispatcher) Dispatch(ctx context.Context, req *http.Request
 		sema = make(chan struct{}, d.maxInFlight)
 		d.semaphores[backend.Name()] = sema
 	}
-	d.mu.Unlock()
 
-	// Try to acquire permit (non-blocking)
+	// Try to acquire permit (non-blocking) while holding lock.
+	// This ensures wg.Add(1) happens before Stop()/Await() can observe
+	// the stopped state change, preventing a race where Await() returns
+	// before all goroutines have incremented the WaitGroup.
+	acquired := false
 	select {
 	case sema <- struct{}{}:
-		// Got permit - spawn goroutine
+		acquired = true
 		d.wg.Add(1)
-		go func() {
-			defer d.wg.Done()
-			defer func() { <-sema }() // release permit
-
-			elapsed, status, _, err := backend.ForwardRequest(context.WithoutCancel(ctx), req, io.NopCloser(bytes.NewReader(body)))
-			d.metrics.RecordBackendResult(backend.Name(), req.Method, routeName, elapsed, status, err)
-
-			if err != nil {
-				level.Warn(d.logger).Log("msg", "async backend request failed", "backend", backend.Name(), "route", routeName, "method", req.Method, "status", status, "elapsed", elapsed, "err", err)
-			}
-		}()
-		return true
-
 	default:
-		// At capacity - drop request
+	}
+	d.mu.Unlock()
+
+	if !acquired {
 		d.metrics.droppedRequestsTotal.WithLabelValues(backend.Name(), "max_in_flight").Inc()
 		return false
 	}
+
+	go func() {
+		defer d.wg.Done()
+		defer func() { <-sema }() // release permit
+
+		elapsed, status, _, err := backend.ForwardRequest(context.WithoutCancel(ctx), req, io.NopCloser(bytes.NewReader(body)))
+		d.metrics.RecordBackendResult(backend.Name(), req.Method, routeName, elapsed, status, err)
+
+		if err != nil {
+			level.Warn(d.logger).Log("msg", "async backend request failed", "backend", backend.Name(), "route", routeName, "method", req.Method, "status", status, "elapsed", elapsed, "err", err)
+		}
+	}()
+	return true
 }
