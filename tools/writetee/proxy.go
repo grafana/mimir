@@ -198,6 +198,11 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 		level.Warn(p.logger).Log("msg", "The proxy is running with only 1 backend. At least 2 backends are required to fulfil the purpose of the proxy and fan out writes.")
 	}
 
+	// Validate async max in-flight
+	if cfg.AsyncMaxInFlightPerBackend <= 0 {
+		return nil, errors.New("backend.async-max-in-flight must be greater than 0")
+	}
+
 	// Create the async dispatcher for non-preferred backends
 	p.asyncDispatcher = NewAsyncBackendDispatcher(cfg.AsyncMaxInFlightPerBackend, p.metrics, logger)
 

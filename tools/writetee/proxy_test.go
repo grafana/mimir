@@ -64,8 +64,9 @@ func TestNewProxy_Validation(t *testing.T) {
 		{
 			name: "valid single backend with preferred",
 			cfg: ProxyConfig{
-				BackendMirroredEndpoints: "http://backend1:8080",
-				PreferredBackend:         "backend1",
+				BackendMirroredEndpoints:    "http://backend1:8080",
+				PreferredBackend:            "backend1",
+				AsyncMaxInFlightPerBackend:  1000,
 			},
 			routes:      []Route{},
 			expectedErr: "",
@@ -73,11 +74,32 @@ func TestNewProxy_Validation(t *testing.T) {
 		{
 			name: "valid multiple backends with preferred",
 			cfg: ProxyConfig{
-				BackendMirroredEndpoints: "http://backend1:8080,http://backend2:8080",
-				PreferredBackend:         "backend1",
+				BackendMirroredEndpoints:    "http://backend1:8080,http://backend2:8080",
+				PreferredBackend:            "backend1",
+				AsyncMaxInFlightPerBackend:  1000,
 			},
 			routes:      []Route{},
 			expectedErr: "",
+		},
+		{
+			name: "negative async max in-flight",
+			cfg: ProxyConfig{
+				BackendMirroredEndpoints:    "http://backend1:8080",
+				PreferredBackend:            "backend1",
+				AsyncMaxInFlightPerBackend:  -1,
+			},
+			routes:      []Route{},
+			expectedErr: "backend.async-max-in-flight must be greater than 0",
+		},
+		{
+			name: "zero async max in-flight",
+			cfg: ProxyConfig{
+				BackendMirroredEndpoints:    "http://backend1:8080",
+				PreferredBackend:            "backend1",
+				AsyncMaxInFlightPerBackend:  0,
+			},
+			routes:      []Route{},
+			expectedErr: "backend.async-max-in-flight must be greater than 0",
 		},
 	}
 
