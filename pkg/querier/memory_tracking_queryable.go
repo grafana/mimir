@@ -15,15 +15,6 @@ import (
 
 // MemoryTrackingQueryable wraps a storage.Queryable to add memory tracking and
 // label deduplication. It creates a MemoryTrackingQuerier for each time range query.
-//
-// For each Select() call, this wrapper:
-// 1. Retrieves the MemoryConsumptionTracker from context (must be present)
-// 2. Creates a new SeriesLabelsDeduplicator in the context
-// 3. Calls the inner querier's Select() method
-// 4. Wraps the result with MemoryTrackingSeriesSet (unless it's a "series" query)
-//
-// This centralizes memory tracking logic and is used by multiQuerier to ensure
-// consistent memory accounting across different query engines and execution paths.
 type MemoryTrackingQueryable struct {
 	inner storage.Queryable
 }
