@@ -573,7 +573,7 @@ func TimeseriesFromPool() *TimeSeries {
 
 	// Panic if the pool returns a TimeSeries that wasn't properly cleaned,
 	// which is indicative of a hard bug that we want to catch as soon as possible.
-	if len(ts.Labels) > 0 || len(ts.Samples) > 0 || len(ts.Histograms) > 0 || len(ts.Exemplars) > 0 || ts.CreatedTimestamp != 0 || ts.SkipUnmarshalingExemplars {
+	if len(ts.Labels) > 0 || len(ts.Samples) > 0 || len(ts.Histograms) > 0 || len(ts.Exemplars) > 0 || ts.CreatedTimestamp != 0 || ts.SkipUnmarshalingExemplars || ts.ResourceAttributes != nil || ts.ScopeAttributes != nil {
 		panic("pool returned dirty TimeSeries: this indicates a bug where ReuseTimeseries was called on a TimeSeries still in use")
 	}
 
@@ -612,6 +612,8 @@ func ReuseTimeseries(ts *TimeSeries) {
 
 	ts.CreatedTimestamp = 0
 	ts.SkipUnmarshalingExemplars = false
+	ts.ResourceAttributes = nil
+	ts.ScopeAttributes = nil
 
 	ClearExemplars(ts)
 	timeSeriesPool.Put(ts)
@@ -726,6 +728,109 @@ func DeepCopyTimeseries(dst, src PreallocTimeseries, keepHistograms, keepExempla
 		}
 	} else {
 		dstTs.Exemplars = dstTs.Exemplars[:0]
+	}
+
+	// Copy the resource attributes.
+	if srcTs.ResourceAttributes != nil {
+		dstTs.ResourceAttributes = DeepCopyResourceAttributes(srcTs.ResourceAttributes)
+	} else {
+		dstTs.ResourceAttributes = nil
+	}
+
+	// Copy the scope attributes.
+	if srcTs.ScopeAttributes != nil {
+		dstTs.ScopeAttributes = DeepCopyScopeAttributes(srcTs.ScopeAttributes)
+	} else {
+		dstTs.ScopeAttributes = nil
+	}
+
+	return dst
+}
+
+// DeepCopyResourceAttributes creates a deep copy of ResourceAttributes.
+func DeepCopyResourceAttributes(src *ResourceAttributes) *ResourceAttributes {
+	if src == nil {
+		return nil
+	}
+
+	dst := &ResourceAttributes{
+		Timestamp: src.Timestamp,
+	}
+
+	// Copy identifying attributes.
+	if len(src.Identifying) > 0 {
+		dst.Identifying = make([]AttributeEntry, len(src.Identifying))
+		for i, e := range src.Identifying {
+			dst.Identifying[i] = AttributeEntry{
+				Key:   strings.Clone(e.Key),
+				Value: strings.Clone(e.Value),
+			}
+		}
+	}
+
+	// Copy descriptive attributes.
+	if len(src.Descriptive) > 0 {
+		dst.Descriptive = make([]AttributeEntry, len(src.Descriptive))
+		for i, e := range src.Descriptive {
+			dst.Descriptive[i] = AttributeEntry{
+				Key:   strings.Clone(e.Key),
+				Value: strings.Clone(e.Value),
+			}
+		}
+	}
+
+	// Copy entities.
+	if len(src.Entities) > 0 {
+		dst.Entities = make([]ResourceEntity, len(src.Entities))
+		for i, e := range src.Entities {
+			dst.Entities[i] = ResourceEntity{
+				Type: strings.Clone(e.Type),
+			}
+			if len(e.ID) > 0 {
+				dst.Entities[i].ID = make([]AttributeEntry, len(e.ID))
+				for j, attr := range e.ID {
+					dst.Entities[i].ID[j] = AttributeEntry{
+						Key:   strings.Clone(attr.Key),
+						Value: strings.Clone(attr.Value),
+					}
+				}
+			}
+			if len(e.Description) > 0 {
+				dst.Entities[i].Description = make([]AttributeEntry, len(e.Description))
+				for j, attr := range e.Description {
+					dst.Entities[i].Description[j] = AttributeEntry{
+						Key:   strings.Clone(attr.Key),
+						Value: strings.Clone(attr.Value),
+					}
+				}
+			}
+		}
+	}
+
+	return dst
+}
+
+// DeepCopyScopeAttributes creates a deep copy of ScopeAttributes.
+func DeepCopyScopeAttributes(src *ScopeAttributes) *ScopeAttributes {
+	if src == nil {
+		return nil
+	}
+
+	dst := &ScopeAttributes{
+		Name:      strings.Clone(src.Name),
+		Version:   strings.Clone(src.Version),
+		SchemaURL: strings.Clone(src.SchemaURL),
+		Timestamp: src.Timestamp,
+	}
+
+	if len(src.Attrs) > 0 {
+		dst.Attrs = make([]AttributeEntry, len(src.Attrs))
+		for i, e := range src.Attrs {
+			dst.Attrs[i] = AttributeEntry{
+				Key:   strings.Clone(e.Key),
+				Value: strings.Clone(e.Value),
+			}
+		}
 	}
 
 	return dst
@@ -878,6 +983,36 @@ func (ts *TimeSeries) MakeReferencesSafeToRetain() {
 		for j, l := range e.Labels {
 			ts.Exemplars[i].Labels[j].Name = strings.Clone(l.Name)
 			ts.Exemplars[i].Labels[j].Value = strings.Clone(l.Value)
+		}
+	}
+	if ts.ResourceAttributes != nil {
+		for i, e := range ts.ResourceAttributes.Identifying {
+			ts.ResourceAttributes.Identifying[i].Key = strings.Clone(e.Key)
+			ts.ResourceAttributes.Identifying[i].Value = strings.Clone(e.Value)
+		}
+		for i, e := range ts.ResourceAttributes.Descriptive {
+			ts.ResourceAttributes.Descriptive[i].Key = strings.Clone(e.Key)
+			ts.ResourceAttributes.Descriptive[i].Value = strings.Clone(e.Value)
+		}
+		for i, entity := range ts.ResourceAttributes.Entities {
+			ts.ResourceAttributes.Entities[i].Type = strings.Clone(entity.Type)
+			for j, attr := range entity.ID {
+				ts.ResourceAttributes.Entities[i].ID[j].Key = strings.Clone(attr.Key)
+				ts.ResourceAttributes.Entities[i].ID[j].Value = strings.Clone(attr.Value)
+			}
+			for j, attr := range entity.Description {
+				ts.ResourceAttributes.Entities[i].Description[j].Key = strings.Clone(attr.Key)
+				ts.ResourceAttributes.Entities[i].Description[j].Value = strings.Clone(attr.Value)
+			}
+		}
+	}
+	if ts.ScopeAttributes != nil {
+		ts.ScopeAttributes.Name = strings.Clone(ts.ScopeAttributes.Name)
+		ts.ScopeAttributes.Version = strings.Clone(ts.ScopeAttributes.Version)
+		ts.ScopeAttributes.SchemaURL = strings.Clone(ts.ScopeAttributes.SchemaURL)
+		for i, e := range ts.ScopeAttributes.Attrs {
+			ts.ScopeAttributes.Attrs[i].Key = strings.Clone(e.Key)
+			ts.ScopeAttributes.Attrs[i].Value = strings.Clone(e.Value)
 		}
 	}
 }

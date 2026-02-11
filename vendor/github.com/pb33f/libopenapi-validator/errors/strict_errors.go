@@ -28,6 +28,8 @@ func UndeclaredPropertyError(
 	direction string,
 	requestPath string,
 	requestMethod string,
+	specLine int,
+	specCol int,
 ) *ValidationError {
 	dirStr := direction
 	if dirStr == "" {
@@ -47,6 +49,8 @@ func UndeclaredPropertyError(
 		RequestMethod: requestMethod,
 		ParameterName: name,
 		Context:       truncateForContext(value),
+		SpecLine:      specLine,
+		SpecCol:       specCol,
 	}
 }
 

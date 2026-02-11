@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
@@ -12,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pb33f/jsonpath/pkg/jsonpath"
@@ -42,14 +42,40 @@ const (
 	UnknownCase
 )
 
+type cachedJSONPath struct {
+	path *jsonpath.JSONPath
+	err  error
+}
+
+// jsonPathCache stores compiled JSONPath expressions keyed by normalized string.
+var jsonPathCache sync.Map
+
+var jsonPathQuery = func(path *jsonpath.JSONPath, node *yaml.Node) []*yaml.Node {
+	return path.Query(node)
+}
+
+// getJSONPath returns a cached JSONPath when available, compiling and caching otherwise.
+func getJSONPath(rawPath string) (*jsonpath.JSONPath, error) {
+	cleaned := FixContext(rawPath)
+	if cached, ok := jsonPathCache.Load(cleaned); ok {
+		entry := cached.(cachedJSONPath)
+		return entry.path, entry.err
+	}
+
+	path, err := jsonpath.NewPath(cleaned, jsonpathconfig.WithPropertyNameExtension())
+	jsonPathCache.Store(cleaned, cachedJSONPath{
+		path: path,
+		err:  err,
+	})
+	return path, err
+}
+
 // FindNodes will find a node based on JSONPath, it accepts raw yaml/json as input.
 func FindNodes(yamlData []byte, jsonPath string) ([]*yaml.Node, error) {
-	jsonPath = FixContext(jsonPath)
-
 	var node yaml.Node
 	yaml.Unmarshal(yamlData, &node)
 
-	path, err := jsonpath.NewPath(jsonPath, jsonpathconfig.WithPropertyNameExtension())
+	path, err := getJSONPath(jsonPath)
 	if err != nil {
 		return nil, err
 	}
@@ -116,27 +142,26 @@ func FindNodesWithoutDeserializing(node *yaml.Node, jsonPath string) ([]*yaml.No
 // FindNodesWithoutDeserializingWithTimeout will find a node based on JSONPath, without deserializing from yaml/json
 // This function can be customized with a timeout.
 func FindNodesWithoutDeserializingWithTimeout(node *yaml.Node, jsonPath string, timeout time.Duration) ([]*yaml.Node, error) {
-	jsonPath = FixContext(jsonPath)
-
-	path, err := jsonpath.NewPath(jsonPath, jsonpathconfig.WithPropertyNameExtension())
+	path, err := getJSONPath(jsonPath)
 	if err != nil {
 		return nil, err
 	}
 
 	// this can spin out, to lets gatekeep it.
-	done := make(chan struct{})
+	done := make(chan struct{}, 1)
 	var results []*yaml.Node
-	to, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	queryFn := jsonPathQuery
 	go func() {
-		results = path.Query(node)
+		results = queryFn(path, node)
 		done <- struct{}{}
 	}()
 
 	select {
 	case <-done:
 		return results, nil
-	case <-to.Done():
+	case <-timer.C:
 		return nil, fmt.Errorf("node lookup timeout exceeded (%v)", timeout)
 	}
 }
@@ -605,6 +630,25 @@ func IsNodeRefValue(node *yaml.Node) (bool, *yaml.Node, string) {
 	return false, nil, ""
 }
 
+// GetRefValueNode returns the $ref value node from a mapping node.
+// Unlike IsNodeRefValue which returns the string value, this returns the actual node
+// so it can be modified in place. This correctly handles OA 3.1 sibling properties
+// where $ref may not be at position 0.
+func GetRefValueNode(node *yaml.Node) *yaml.Node {
+	if node == nil {
+		return nil
+	}
+	n := NodeAlias(node)
+	for i, r := range n.Content {
+		if i%2 == 0 && r.Value == "$ref" {
+			if i+1 < len(n.Content) {
+				return n.Content[i+1]
+			}
+		}
+	}
+	return nil
+}
+
 // FixContext will clean up a JSONpath string to be correctly traversable.
 func FixContext(context string) string {
 	tokens := strings.Split(context, ".")
@@ -613,7 +657,7 @@ func FixContext(context string) string {
 	for i, t := range tokens {
 		if v, err := strconv.Atoi(t); err == nil {
 			if v < 200 { // codes start here
-				if cleaned[i-1] != "" {
+				if i-1 >= 0 && i-1 < len(cleaned) && cleaned[i-1] != "" {
 					cleaned[i-1] += fmt.Sprintf("[%v]", t)
 				}
 			} else {
@@ -698,14 +742,36 @@ var (
 	bracketNameExp = regexp.MustCompile(`^(\w+)\['?([\w/]+)'?]$`)
 )
 
-// isPathChar checks if a string contains only alphanumeric, underscore, or backslash characters
-// This is an optimized replacement for the pathCharExp regex
+// isPathChar checks if a string is valid for JSONPath dot notation.
+// returns true only if the string contains only alphanumeric, underscore, or backslash characters
+// and does not start with a digit (unless it's a pure integer, which is handled separately).
+// jsonPath requires bracket notation for property names starting with digits like "403_permission_denied".
+// this is an optimized replacement for the pathCharExp regex.
 func isPathChar(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+
+	firstChar := s[0]
+	startsWithDigit := firstChar >= '0' && firstChar <= '9'
+	allDigits := startsWithDigit
+
+	// single pass: validate characters and track if all are digits
 	for _, r := range s {
 		if !((r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' || r == '\\') {
 			return false
 		}
+		if allDigits && (r < '0' || r > '9') {
+			allDigits = false
+		}
 	}
+
+	// if starts with digit but not pure integer, requires bracket notation
+	// property names like "403_permission_denied" must use bracket notation
+	if startsWithDigit && !allDigits {
+		return false
+	}
+
 	return true
 }
 
@@ -1054,6 +1120,12 @@ func CheckForMergeNodes(node *yaml.Node) {
 			}
 		}
 	}
+}
+
+// IsExternalRef returns true if the reference string points to an external resource
+// (i.e., it is non-empty and does not start with '#').
+func IsExternalRef(ref string) bool {
+	return ref != "" && !strings.HasPrefix(ref, "#")
 }
 
 type RemoteURLHandler = func(url string) (*http.Response, error)

@@ -1,24 +1,11 @@
-//
-// Copyright (c) 2011-2019 Canonical Ltd
-// Copyright (c) 2006-2010 Kirill Simonov
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy of
-// this software and associated documentation files (the "Software"), to deal in
-// the Software without restriction, including without limitation the rights to
-// use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
-// of the Software, and to permit persons to whom the Software is furnished to do
-// so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
+// Copyright 2006-2010 Kirill Simonov
+// Copyright 2011-2019 Canonical Ltd
+// Copyright 2025 The go-yaml Project Contributors
+// SPDX-License-Identifier: Apache-2.0 AND MIT
+
+// High-level API helpers for parser and emitter initialization and
+// configuration.
+// Provides convenience functions for token insertion and stream management.
 
 package libyaml
 
@@ -100,11 +87,20 @@ func (parser *Parser) SetEncoding(encoding Encoding) {
 	parser.encoding = encoding
 }
 
+// GetPendingComments returns the parser's comment queue for CLI access.
+func (parser *Parser) GetPendingComments() []Comment {
+	return parser.comments
+}
+
+// GetCommentsHead returns the current position in the comment queue.
+func (parser *Parser) GetCommentsHead() int {
+	return parser.comments_head
+}
+
 // NewEmitter creates a new emitter object.
 func NewEmitter() Emitter {
 	return Emitter{
 		buffer:     make([]byte, output_buffer_size),
-		raw_buffer: make([]byte, 0, output_raw_buffer_size),
 		states:     make([]EmitterState, 0, initial_stack_size),
 		events:     make([]Event, 0, initial_queue_size),
 		best_width: -1,
@@ -290,10 +286,10 @@ func NewStreamEndEvent() Event {
 // NewDocumentStartEvent creates a new DOCUMENT-START event.
 func NewDocumentStartEvent(version_directive *VersionDirective, tag_directives []TagDirective, implicit bool) Event {
 	return Event{
-		Type:              DOCUMENT_START_EVENT,
-		version_directive: version_directive,
-		tag_directives:    tag_directives,
-		Implicit:          implicit,
+		Type:             DOCUMENT_START_EVENT,
+		versionDirective: version_directive,
+		tagDirectives:    tag_directives,
+		Implicit:         implicit,
 	}
 }
 

@@ -5,10 +5,9 @@ package v3
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
+	"hash/maphash"
 	"slices"
-	"strconv"
 
 	"github.com/pb33f/libopenapi/datamodel/low"
 	"github.com/pb33f/libopenapi/datamodel/low/base"
@@ -155,59 +154,57 @@ func (p *Parameter) Build(ctx context.Context, keyNode, root *yaml.Node, idx *in
 	return nil
 }
 
-// Hash will return a consistent SHA256 Hash of the Parameter object
-func (p *Parameter) Hash() [32]byte {
-	// Use string builder pool
-	sb := low.GetStringBuilder()
-	defer low.PutStringBuilder(sb)
-
-	if p.Name.Value != "" {
-		sb.WriteString(p.Name.Value)
-		sb.WriteByte('|')
-	}
-	if p.In.Value != "" {
-		sb.WriteString(p.In.Value)
-		sb.WriteByte('|')
-	}
-	if p.Description.Value != "" {
-		sb.WriteString(p.Description.Value)
-		sb.WriteByte('|')
-	}
-	sb.WriteString(strconv.FormatBool(p.Required.Value))
-	sb.WriteByte('|')
-	sb.WriteString(strconv.FormatBool(p.Deprecated.Value))
-	sb.WriteByte('|')
-	sb.WriteString(strconv.FormatBool(p.AllowEmptyValue.Value))
-	sb.WriteByte('|')
-	if p.Style.Value != "" {
-		sb.WriteString(p.Style.Value)
-		sb.WriteByte('|')
-	}
-	sb.WriteString(strconv.FormatBool(p.Explode.Value))
-	sb.WriteByte('|')
-	sb.WriteString(strconv.FormatBool(p.AllowReserved.Value))
-	sb.WriteByte('|')
-	if p.Schema.Value != nil && p.Schema.Value.Schema() != nil {
-		sb.WriteString(fmt.Sprintf("%x", p.Schema.Value.Schema().Hash()))
-		sb.WriteByte('|')
-	}
-	if p.Example.Value != nil && !p.Example.Value.IsZero() {
-		sb.WriteString(low.GenerateHashString(p.Example.Value))
-		sb.WriteByte('|')
-	}
-	for v := range orderedmap.SortAlpha(p.Examples.Value).ValuesFromOldest() {
-		sb.WriteString(low.GenerateHashString(v.Value))
-		sb.WriteByte('|')
-	}
-	for v := range orderedmap.SortAlpha(p.Content.Value).ValuesFromOldest() {
-		sb.WriteString(low.GenerateHashString(v.Value))
-		sb.WriteByte('|')
-	}
-	for _, ext := range low.HashExtensions(p.Extensions) {
-		sb.WriteString(ext)
-		sb.WriteByte('|')
-	}
-	return sha256.Sum256([]byte(sb.String()))
+// Hash will return a consistent Hash of the Parameter object
+func (p *Parameter) Hash() uint64 {
+	return low.WithHasher(func(h *maphash.Hash) uint64 {
+		if p.Name.Value != "" {
+			h.WriteString(p.Name.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if p.In.Value != "" {
+			h.WriteString(p.In.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if p.Description.Value != "" {
+			h.WriteString(p.Description.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		low.HashBool(h, p.Required.Value)
+		h.WriteByte(low.HASH_PIPE)
+		low.HashBool(h, p.Deprecated.Value)
+		h.WriteByte(low.HASH_PIPE)
+		low.HashBool(h, p.AllowEmptyValue.Value)
+		h.WriteByte(low.HASH_PIPE)
+		if p.Style.Value != "" {
+			h.WriteString(p.Style.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		low.HashBool(h, p.Explode.Value)
+		h.WriteByte(low.HASH_PIPE)
+		low.HashBool(h, p.AllowReserved.Value)
+		h.WriteByte(low.HASH_PIPE)
+		if p.Schema.Value != nil && p.Schema.Value.Schema() != nil {
+			h.WriteString(fmt.Sprintf("%x", p.Schema.Value.Schema().Hash()))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if p.Example.Value != nil && !p.Example.Value.IsZero() {
+			h.WriteString(low.GenerateHashString(p.Example.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		for v := range orderedmap.SortAlpha(p.Examples.Value).ValuesFromOldest() {
+			h.WriteString(low.GenerateHashString(v.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		for v := range orderedmap.SortAlpha(p.Content.Value).ValuesFromOldest() {
+			h.WriteString(low.GenerateHashString(v.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		for _, ext := range low.HashExtensions(p.Extensions) {
+			h.WriteString(ext)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		return h.Sum64()
+	})
 }
 
 // IsParameter compliance methods.

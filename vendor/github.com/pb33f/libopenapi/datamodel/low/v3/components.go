@@ -5,10 +5,9 @@ package v3
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
+	"hash/maphash"
 	"reflect"
-	"strings"
 	"sync"
 
 	"github.com/pb33f/libopenapi/datamodel"
@@ -81,34 +80,32 @@ func (co *Components) GetKeyNode() *yaml.Node {
 	return co.KeyNode
 }
 
-// Hash will return a consistent SHA256 Hash of the Components object
-func (co *Components) Hash() [32]byte {
-	// Use string builder pool
-	sb := low.GetStringBuilder()
-	defer low.PutStringBuilder(sb)
-
-	generateHashForObjectMapBuilder(co.Schemas.Value, sb)
-	generateHashForObjectMapBuilder(co.Responses.Value, sb)
-	generateHashForObjectMapBuilder(co.Parameters.Value, sb)
-	generateHashForObjectMapBuilder(co.Examples.Value, sb)
-	generateHashForObjectMapBuilder(co.RequestBodies.Value, sb)
-	generateHashForObjectMapBuilder(co.Headers.Value, sb)
-	generateHashForObjectMapBuilder(co.SecuritySchemes.Value, sb)
-	generateHashForObjectMapBuilder(co.Links.Value, sb)
-	generateHashForObjectMapBuilder(co.Callbacks.Value, sb)
-	generateHashForObjectMapBuilder(co.PathItems.Value, sb)
-	generateHashForObjectMapBuilder(co.MediaTypes.Value, sb)
-	for _, ext := range low.HashExtensions(co.Extensions) {
-		sb.WriteString(ext)
-		sb.WriteByte('|')
-	}
-	return sha256.Sum256([]byte(sb.String()))
+// Hash will return a consistent Hash of the Components object
+func (co *Components) Hash() uint64 {
+	return low.WithHasher(func(h *maphash.Hash) uint64 {
+		generateHashForObjectMap(co.Schemas.Value, h)
+		generateHashForObjectMap(co.Responses.Value, h)
+		generateHashForObjectMap(co.Parameters.Value, h)
+		generateHashForObjectMap(co.Examples.Value, h)
+		generateHashForObjectMap(co.RequestBodies.Value, h)
+		generateHashForObjectMap(co.Headers.Value, h)
+		generateHashForObjectMap(co.SecuritySchemes.Value, h)
+		generateHashForObjectMap(co.Links.Value, h)
+		generateHashForObjectMap(co.Callbacks.Value, h)
+		generateHashForObjectMap(co.PathItems.Value, h)
+		generateHashForObjectMap(co.MediaTypes.Value, h)
+		for _, ext := range low.HashExtensions(co.Extensions) {
+			h.WriteString(ext)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		return h.Sum64()
+	})
 }
 
-func generateHashForObjectMapBuilder[T any](collection *orderedmap.Map[low.KeyReference[string], low.ValueReference[T]], sb *strings.Builder) {
+func generateHashForObjectMap[T any](collection *orderedmap.Map[low.KeyReference[string], low.ValueReference[T]], h *maphash.Hash) {
 	for v := range orderedmap.SortAlpha(collection).ValuesFromOldest() {
-		sb.WriteString(low.GenerateHashString(v.Value))
-		sb.WriteByte('|')
+		h.WriteString(low.GenerateHashString(v.Value))
+		h.WriteByte(low.HASH_PIPE)
 	}
 }
 
@@ -297,10 +294,6 @@ func extractComponentValues[T low.Buildable[N], N any](ctx context.Context, labe
 			// always ignore extensions
 			if i%2 == 0 {
 				currentLabel = node
-				continue
-			}
-			// only check for lowercase extensions as 'X-' is still valid as a key (annoyingly).
-			if strings.HasPrefix(currentLabel.Value, "x-") {
 				continue
 			}
 

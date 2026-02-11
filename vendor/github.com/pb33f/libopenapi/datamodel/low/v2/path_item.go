@@ -5,8 +5,7 @@ package v2
 
 import (
 	"context"
-	"crypto/sha256"
-	"fmt"
+	"hash/maphash"
 	"sort"
 	"strings"
 	"sync"
@@ -187,36 +186,64 @@ func (p *PathItem) Build(ctx context.Context, _, root *yaml.Node, idx *index.Spe
 	return nil
 }
 
-// Hash will return a consistent SHA256 Hash of the PathItem object
-func (p *PathItem) Hash() [32]byte {
-	var f []string
-	if !p.Get.IsEmpty() {
-		f = append(f, fmt.Sprintf("%s-%s", GetLabel, low.GenerateHashString(p.Get.Value)))
-	}
-	if !p.Put.IsEmpty() {
-		f = append(f, fmt.Sprintf("%s-%s", PutLabel, low.GenerateHashString(p.Put.Value)))
-	}
-	if !p.Post.IsEmpty() {
-		f = append(f, fmt.Sprintf("%s-%s", PostLabel, low.GenerateHashString(p.Post.Value)))
-	}
-	if !p.Delete.IsEmpty() {
-		f = append(f, fmt.Sprintf("%s-%s", DeleteLabel, low.GenerateHashString(p.Delete.Value)))
-	}
-	if !p.Options.IsEmpty() {
-		f = append(f, fmt.Sprintf("%s-%s", OptionsLabel, low.GenerateHashString(p.Options.Value)))
-	}
-	if !p.Head.IsEmpty() {
-		f = append(f, fmt.Sprintf("%s-%s", HeadLabel, low.GenerateHashString(p.Head.Value)))
-	}
-	if !p.Patch.IsEmpty() {
-		f = append(f, fmt.Sprintf("%s-%s", PatchLabel, low.GenerateHashString(p.Patch.Value)))
-	}
-	keys := make([]string, len(p.Parameters.Value))
-	for k := range p.Parameters.Value {
-		keys[k] = low.GenerateHashString(p.Parameters.Value[k].Value)
-	}
-	sort.Strings(keys)
-	f = append(f, keys...)
-	f = append(f, low.HashExtensions(p.Extensions)...)
-	return sha256.Sum256([]byte(strings.Join(f, "|")))
+// Hash will return a consistent Hash of the PathItem object
+func (p *PathItem) Hash() uint64 {
+	return low.WithHasher(func(h *maphash.Hash) uint64 {
+		if !p.Get.IsEmpty() {
+			h.WriteString(GetLabel)
+			h.WriteByte('-')
+			h.WriteString(low.GenerateHashString(p.Get.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !p.Put.IsEmpty() {
+			h.WriteString(PutLabel)
+			h.WriteByte('-')
+			h.WriteString(low.GenerateHashString(p.Put.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !p.Post.IsEmpty() {
+			h.WriteString(PostLabel)
+			h.WriteByte('-')
+			h.WriteString(low.GenerateHashString(p.Post.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !p.Delete.IsEmpty() {
+			h.WriteString(DeleteLabel)
+			h.WriteByte('-')
+			h.WriteString(low.GenerateHashString(p.Delete.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !p.Options.IsEmpty() {
+			h.WriteString(OptionsLabel)
+			h.WriteByte('-')
+			h.WriteString(low.GenerateHashString(p.Options.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !p.Head.IsEmpty() {
+			h.WriteString(HeadLabel)
+			h.WriteByte('-')
+			h.WriteString(low.GenerateHashString(p.Head.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !p.Patch.IsEmpty() {
+			h.WriteString(PatchLabel)
+			h.WriteByte('-')
+			h.WriteString(low.GenerateHashString(p.Patch.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		keys := make([]string, len(p.Parameters.Value))
+		for k := range p.Parameters.Value {
+			keys[k] = low.GenerateHashString(p.Parameters.Value[k].Value)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			h.WriteString(key)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		for _, ext := range low.HashExtensions(p.Extensions) {
+			h.WriteString(ext)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		return h.Sum64()
+	})
 }

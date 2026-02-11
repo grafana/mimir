@@ -19,6 +19,7 @@ import (
 	"context"
 
 	"github.com/pb33f/libopenapi/datamodel"
+	"github.com/pb33f/libopenapi/utils"
 	"go.yaml.in/yaml/v4"
 )
 
@@ -85,7 +86,7 @@ func (l *LocalFS) OpenWithContext(ctx context.Context, name string) (fs.File, er
 	}
 
 	if !filepath.IsAbs(name) {
-		name, _ = filepath.Abs(filepath.Join(l.baseDirectory, name))
+		name, _ = filepath.Abs(utils.CheckPathOverlap(l.baseDirectory, name, string(os.PathSeparator)))
 	}
 
 	if f, ok := l.Files.Load(name); ok {
@@ -483,7 +484,7 @@ func (l *LocalFS) extractFile(p string) (*LocalFile, error) {
 	config := l.fsConfig
 	if !filepath.IsAbs(p) {
 		if config != nil && config.BaseDirectory != "" {
-			abs, _ = filepath.Abs(filepath.Join(config.BaseDirectory, p))
+			abs, _ = filepath.Abs(utils.CheckPathOverlap(config.BaseDirectory, p, string(os.PathSeparator)))
 		} else {
 			abs, _ = filepath.Abs(p)
 		}

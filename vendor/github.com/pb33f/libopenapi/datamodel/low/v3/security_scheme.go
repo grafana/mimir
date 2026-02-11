@@ -5,8 +5,7 @@ package v3
 
 import (
 	"context"
-	"crypto/sha256"
-	"strconv"
+	"hash/maphash"
 
 	"github.com/pb33f/libopenapi/datamodel/low"
 	"github.com/pb33f/libopenapi/index"
@@ -26,21 +25,21 @@ import (
 // Recommended for most use case is Authorization Code Grant flow with PKCE.
 //   - https://spec.openapis.org/oas/v3.1.0#security-scheme-object
 type SecurityScheme struct {
-	Type             low.NodeReference[string]
-	Description      low.NodeReference[string]
-	Name             low.NodeReference[string]
-	In               low.NodeReference[string]
-	Scheme           low.NodeReference[string]
-	BearerFormat     low.NodeReference[string]
-	Flows            low.NodeReference[*OAuthFlows]
-	OpenIdConnectUrl low.NodeReference[string]
+	Type              low.NodeReference[string]
+	Description       low.NodeReference[string]
+	Name              low.NodeReference[string]
+	In                low.NodeReference[string]
+	Scheme            low.NodeReference[string]
+	BearerFormat      low.NodeReference[string]
+	Flows             low.NodeReference[*OAuthFlows]
+	OpenIdConnectUrl  low.NodeReference[string]
 	OAuth2MetadataUrl low.NodeReference[string] // OpenAPI 3.2+ OAuth2 metadata URL
-	Deprecated       low.NodeReference[bool]   // OpenAPI 3.2+ deprecated flag
-	Extensions       *orderedmap.Map[low.KeyReference[string], low.ValueReference[*yaml.Node]]
-	KeyNode          *yaml.Node
-	RootNode         *yaml.Node
-	index            *index.SpecIndex
-	context          context.Context
+	Deprecated        low.NodeReference[bool]   // OpenAPI 3.2+ deprecated flag
+	Extensions        *orderedmap.Map[low.KeyReference[string], low.ValueReference[*yaml.Node]]
+	KeyNode           *yaml.Node
+	RootNode          *yaml.Node
+	index             *index.SpecIndex
+	context           context.Context
 	*low.Reference
 	low.NodeMap
 }
@@ -102,55 +101,53 @@ func (ss *SecurityScheme) Build(ctx context.Context, keyNode, root *yaml.Node, i
 	return nil
 }
 
-// Hash will return a consistent SHA256 Hash of the SecurityScheme object
-func (ss *SecurityScheme) Hash() [32]byte {
-	// Use string builder pool
-	sb := low.GetStringBuilder()
-	defer low.PutStringBuilder(sb)
-
-	if !ss.Type.IsEmpty() {
-		sb.WriteString(ss.Type.Value)
-		sb.WriteByte('|')
-	}
-	if !ss.Description.IsEmpty() {
-		sb.WriteString(ss.Description.Value)
-		sb.WriteByte('|')
-	}
-	if !ss.Name.IsEmpty() {
-		sb.WriteString(ss.Name.Value)
-		sb.WriteByte('|')
-	}
-	if !ss.In.IsEmpty() {
-		sb.WriteString(ss.In.Value)
-		sb.WriteByte('|')
-	}
-	if !ss.Scheme.IsEmpty() {
-		sb.WriteString(ss.Scheme.Value)
-		sb.WriteByte('|')
-	}
-	if !ss.BearerFormat.IsEmpty() {
-		sb.WriteString(ss.BearerFormat.Value)
-		sb.WriteByte('|')
-	}
-	if !ss.Flows.IsEmpty() {
-		sb.WriteString(low.GenerateHashString(ss.Flows.Value))
-		sb.WriteByte('|')
-	}
-	if !ss.OpenIdConnectUrl.IsEmpty() {
-		sb.WriteString(ss.OpenIdConnectUrl.Value)
-		sb.WriteByte('|')
-	}
-	if !ss.OAuth2MetadataUrl.IsEmpty() {
-		sb.WriteString(ss.OAuth2MetadataUrl.Value)
-		sb.WriteByte('|')
-	}
-	if !ss.Deprecated.IsEmpty() {
-		sb.WriteString(strconv.FormatBool(ss.Deprecated.Value))
-		sb.WriteByte('|')
-	}
-	for _, ext := range low.HashExtensions(ss.Extensions) {
-		sb.WriteString(ext)
-		sb.WriteByte('|')
-	}
-	return sha256.Sum256([]byte(sb.String()))
+// Hash will return a consistent Hash of the SecurityScheme object
+func (ss *SecurityScheme) Hash() uint64 {
+	return low.WithHasher(func(h *maphash.Hash) uint64 {
+		if !ss.Type.IsEmpty() {
+			h.WriteString(ss.Type.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !ss.Description.IsEmpty() {
+			h.WriteString(ss.Description.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !ss.Name.IsEmpty() {
+			h.WriteString(ss.Name.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !ss.In.IsEmpty() {
+			h.WriteString(ss.In.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !ss.Scheme.IsEmpty() {
+			h.WriteString(ss.Scheme.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !ss.BearerFormat.IsEmpty() {
+			h.WriteString(ss.BearerFormat.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !ss.Flows.IsEmpty() {
+			h.WriteString(low.GenerateHashString(ss.Flows.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !ss.OpenIdConnectUrl.IsEmpty() {
+			h.WriteString(ss.OpenIdConnectUrl.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !ss.OAuth2MetadataUrl.IsEmpty() {
+			h.WriteString(ss.OAuth2MetadataUrl.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !ss.Deprecated.IsEmpty() {
+			low.HashBool(h, ss.Deprecated.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		for _, ext := range low.HashExtensions(ss.Extensions) {
+			h.WriteString(ext)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		return h.Sum64()
+	})
 }

@@ -38,6 +38,9 @@ service Ingester {
 
   rpc ActiveSeries(ActiveSeriesRequest) returns (stream ActiveSeriesResponse) {}
 
+  // ResourceAttributes returns OTel resource attributes for series matching the matchers.
+  rpc ResourceAttributes(ResourceAttributesRequest) returns (stream ResourceAttributesResponse) {}
+
   // When adding more read-path methods here, please update ingester_read_path_routes_regex in operations/mimir-mixin/config.libsonnet as well.
 }
 
@@ -229,4 +232,45 @@ message LabelMatcher {
   MatchType type = 1;
   string name = 2;
   string value = 3;
+}
+
+// ResourceAttributesRequest queries OTel resource attributes for series matching matchers.
+message ResourceAttributesRequest {
+  int64 start_timestamp_ms = 1;
+  int64 end_timestamp_ms = 2;
+  repeated LabelMatcher matchers = 3;
+  int64 limit = 4;
+}
+
+// ResourceAttributesResponse contains batches of series with their resource attributes.
+message ResourceAttributesResponse {
+  repeated SeriesResourceAttributes items = 1;
+}
+
+// SeriesResourceAttributes contains resource data for a single series.
+message SeriesResourceAttributes {
+  // The series labels.
+  repeated cortexpb.LabelPair labels = 1 [
+    (gogoproto.nullable) = false,
+    (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
+  ];
+
+  // Resource versions for this series.
+  repeated ResourceVersionData versions = 2;
+}
+
+// ResourceVersionData represents a snapshot of resource data at a point in time.
+message ResourceVersionData {
+  map<string, string> identifying = 1;
+  map<string, string> descriptive = 2;
+  repeated EntityData entities = 3;
+  int64 min_time_ms = 4;
+  int64 max_time_ms = 5;
+}
+
+// EntityData represents a typed OTel entity.
+message EntityData {
+  string type = 1;
+  map<string, string> id = 2;
+  map<string, string> description = 3;
 }

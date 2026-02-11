@@ -397,6 +397,24 @@ func (u *BucketStores) LabelValues(ctx context.Context, req *storepb.LabelValues
 	return store.LabelValues(ctx, req)
 }
 
+// ResourceAttributes returns OTel resource attributes for series matching the matchers.
+func (u *BucketStores) ResourceAttributes(req *storepb.ResourceAttributesRequest, srv storegatewaypb.StoreGateway_ResourceAttributesServer) error {
+	spanLog, ctx := spanlogger.New(srv.Context(), u.logger, tracer, "BucketStores.ResourceAttributes")
+	defer spanLog.Finish()
+
+	userID := getUserIDFromGRPCContext(ctx)
+	if userID == "" {
+		return fmt.Errorf("no userID")
+	}
+
+	store := u.getStore(userID)
+	if store == nil {
+		return nil
+	}
+
+	return store.ResourceAttributes(req, srv)
+}
+
 // scanUsers in the bucket and return the list of found users, respecting any specifically
 // enabled or disabled users.
 func (u *BucketStores) scanUsers(ctx context.Context) ([]string, error) {

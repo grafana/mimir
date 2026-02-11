@@ -34,6 +34,22 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
+// zeroHistogramWithThreshold returns a zero histogram matching what TSDB's
+// bestEffortAppendSTZeroSample creates: the same ZeroThreshold as the original
+// histogram (to avoid needless chunk creation). CounterResetHint is left at
+// the default (UnknownCounterReset) since TSDB recomputes it on read-back.
+func zeroHistogramWithThreshold(threshold float64) *histogram.Histogram {
+	return &histogram.Histogram{
+		ZeroThreshold: threshold,
+	}
+}
+
+func zeroFloatHistogramWithThreshold(threshold float64) *histogram.FloatHistogram {
+	return &histogram.FloatHistogram{
+		ZeroThreshold: threshold,
+	}
+}
+
 func createWriteRequest(suffix string, samples []mimirpb.Sample, histograms []mimirpb.Histogram) mimirpb.WriteRequest {
 	var req mimirpb.WriteRequest
 
@@ -756,20 +772,20 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 			},
 			expectSamples: []test.Sample{
 				expectedHistogram(lastEnd-50000+100, 1),
-				{TS: lastEnd - 50000 + 200, Hist: zeroHistogram},
+				{TS: lastEnd - 50000 + 200, Hist: zeroHistogramWithThreshold(1e-128)},
 				expectedHistogram(lastEnd-50000+300, 2),
 				expectedHistogram(lastEnd+100, 3),
-				{TS: lastEnd + 200, Hist: zeroHistogram},
+				{TS: lastEnd + 200, Hist: zeroHistogramWithThreshold(1e-128)},
 				expectedHistogram(lastEnd+300, 4),
 				expectedHistogram(lastEnd+400, 5),
 				expectedHistogram(lastEnd+500, 6),
 				expectedHistogram(lastEnd+600, 7),
-				{TS: lastEnd + 700, Hist: zeroHistogram},
+				{TS: lastEnd + 700, Hist: zeroHistogramWithThreshold(1e-128)},
 				expectedHistogram(lastEnd+800, 8),
-				{TS: lastEnd + 1000, FloatHist: zeroFloatHistogram},
+				{TS: lastEnd + 1000, FloatHist: zeroFloatHistogramWithThreshold(1e-128)},
 				expectedFloatHistogram(lastEnd+1100, 8.5),
 				expectedHistogram(currEnd-200, 9),
-				{TS: currEnd - 100, Hist: zeroHistogram},
+				{TS: currEnd - 100, Hist: zeroHistogramWithThreshold(1e-128)},
 				expectedHistogram(currEnd+200, 10),
 			},
 		},

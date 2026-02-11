@@ -5,8 +5,7 @@ package v3
 
 import (
 	"context"
-	"crypto/sha256"
-	"strconv"
+	"hash/maphash"
 
 	"github.com/pb33f/libopenapi/datamodel/low"
 	"github.com/pb33f/libopenapi/index"
@@ -101,27 +100,25 @@ func (rb *RequestBody) Build(ctx context.Context, keyNode, root *yaml.Node, idx 
 	return nil
 }
 
-// Hash will return a consistent SHA256 Hash of the RequestBody object
-func (rb *RequestBody) Hash() [32]byte {
-	// Use string builder pool
-	sb := low.GetStringBuilder()
-	defer low.PutStringBuilder(sb)
-
-	if rb.Description.Value != "" {
-		sb.WriteString(rb.Description.Value)
-		sb.WriteByte('|')
-	}
-	if !rb.Required.IsEmpty() {
-		sb.WriteString(strconv.FormatBool(rb.Required.Value))
-		sb.WriteByte('|')
-	}
-	for v := range orderedmap.SortAlpha(rb.Content.Value).ValuesFromOldest() {
-		sb.WriteString(low.GenerateHashString(v.Value))
-		sb.WriteByte('|')
-	}
-	for _, ext := range low.HashExtensions(rb.Extensions) {
-		sb.WriteString(ext)
-		sb.WriteByte('|')
-	}
-	return sha256.Sum256([]byte(sb.String()))
+// Hash will return a consistent Hash of the RequestBody object
+func (rb *RequestBody) Hash() uint64 {
+	return low.WithHasher(func(h *maphash.Hash) uint64 {
+		if rb.Description.Value != "" {
+			h.WriteString(rb.Description.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !rb.Required.IsEmpty() {
+			low.HashBool(h, rb.Required.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		for v := range orderedmap.SortAlpha(rb.Content.Value).ValuesFromOldest() {
+			h.WriteString(low.GenerateHashString(v.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		for _, ext := range low.HashExtensions(rb.Extensions) {
+			h.WriteString(ext)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		return h.Sum64()
+	})
 }

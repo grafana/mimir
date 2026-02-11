@@ -5,10 +5,8 @@ package v2
 
 import (
 	"context"
-	"crypto/sha256"
-	"fmt"
+	"hash/maphash"
 	"sort"
-	"strings"
 
 	"github.com/pb33f/libopenapi/datamodel/low"
 	"github.com/pb33f/libopenapi/datamodel/low/base"
@@ -126,63 +124,90 @@ func (p *Parameter) Build(ctx context.Context, _, root *yaml.Node, idx *index.Sp
 	return nil
 }
 
-// Hash will return a consistent SHA256 Hash of the Parameter object
-func (p *Parameter) Hash() [32]byte {
-	var f []string
-	if p.Name.Value != "" {
-		f = append(f, p.Name.Value)
-	}
-	if p.In.Value != "" {
-		f = append(f, p.In.Value)
-	}
-	if p.Type.Value != "" {
-		f = append(f, p.Type.Value)
-	}
-	if p.Format.Value != "" {
-		f = append(f, p.Format.Value)
-	}
-	if p.Description.Value != "" {
-		f = append(f, p.Description.Value)
-	}
-	f = append(f, fmt.Sprint(p.Required.Value))
-	f = append(f, fmt.Sprint(p.AllowEmptyValue.Value))
-	if p.Schema.Value != nil {
-		f = append(f, low.GenerateHashString(p.Schema.Value.Schema()))
-	}
-	if p.CollectionFormat.Value != "" {
-		f = append(f, p.CollectionFormat.Value)
-	}
-	if p.Default.Value != nil && !p.Default.Value.IsZero() {
-		f = append(f, low.GenerateHashString(p.Default.Value))
-	}
-	f = append(f, fmt.Sprint(p.Maximum.Value))
-	f = append(f, fmt.Sprint(p.Minimum.Value))
-	f = append(f, fmt.Sprint(p.ExclusiveMinimum.Value))
-	f = append(f, fmt.Sprint(p.ExclusiveMaximum.Value))
-	f = append(f, fmt.Sprint(p.MinLength.Value))
-	f = append(f, fmt.Sprint(p.MaxLength.Value))
-	f = append(f, fmt.Sprint(p.MinItems.Value))
-	f = append(f, fmt.Sprint(p.MaxItems.Value))
-	f = append(f, fmt.Sprint(p.MultipleOf.Value))
-	f = append(f, fmt.Sprint(p.UniqueItems.Value))
-	if p.Pattern.Value != "" {
-		f = append(f, fmt.Sprintf("%x", sha256.Sum256([]byte(fmt.Sprint(p.Pattern.Value)))))
-	}
+// Hash will return a consistent Hash of the Parameter object
+func (p *Parameter) Hash() uint64 {
+	return low.WithHasher(func(h *maphash.Hash) uint64 {
+		if p.Name.Value != "" {
+			h.WriteString(p.Name.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if p.In.Value != "" {
+			h.WriteString(p.In.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if p.Type.Value != "" {
+			h.WriteString(p.Type.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if p.Format.Value != "" {
+			h.WriteString(p.Format.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if p.Description.Value != "" {
+			h.WriteString(p.Description.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		low.HashBool(h, p.Required.Value)
+		h.WriteByte(low.HASH_PIPE)
+		low.HashBool(h, p.AllowEmptyValue.Value)
+		h.WriteByte(low.HASH_PIPE)
+		if p.Schema.Value != nil {
+			h.WriteString(low.GenerateHashString(p.Schema.Value.Schema()))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if p.CollectionFormat.Value != "" {
+			h.WriteString(p.CollectionFormat.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if p.Default.Value != nil && !p.Default.Value.IsZero() {
+			h.WriteString(low.GenerateHashString(p.Default.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		low.HashInt64(h, int64(p.Maximum.Value))
+		h.WriteByte(low.HASH_PIPE)
+		low.HashInt64(h, int64(p.Minimum.Value))
+		h.WriteByte(low.HASH_PIPE)
+		low.HashBool(h, p.ExclusiveMinimum.Value)
+		h.WriteByte(low.HASH_PIPE)
+		low.HashBool(h, p.ExclusiveMaximum.Value)
+		h.WriteByte(low.HASH_PIPE)
+		low.HashInt64(h, int64(p.MinLength.Value))
+		h.WriteByte(low.HASH_PIPE)
+		low.HashInt64(h, int64(p.MaxLength.Value))
+		h.WriteByte(low.HASH_PIPE)
+		low.HashInt64(h, int64(p.MinItems.Value))
+		h.WriteByte(low.HASH_PIPE)
+		low.HashInt64(h, int64(p.MaxItems.Value))
+		h.WriteByte(low.HASH_PIPE)
+		low.HashInt64(h, int64(p.MultipleOf.Value))
+		h.WriteByte(low.HASH_PIPE)
+		low.HashBool(h, p.UniqueItems.Value)
+		h.WriteByte(low.HASH_PIPE)
+		if p.Pattern.Value != "" {
+			h.WriteString(p.Pattern.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
 
-	keys := make([]string, len(p.Enum.Value))
-	z := 0
-	for k := range p.Enum.Value {
-		keys[z] = low.ValueToString(p.Enum.Value[k].Value)
-		z++
-	}
-	sort.Strings(keys)
-	f = append(f, keys...)
+		keys := make([]string, len(p.Enum.Value))
+		for k := range p.Enum.Value {
+			keys[k] = low.ValueToString(p.Enum.Value[k].Value)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			h.WriteString(key)
+			h.WriteByte(low.HASH_PIPE)
+		}
 
-	f = append(f, low.HashExtensions(p.Extensions)...)
-	if p.Items.Value != nil {
-		f = append(f, fmt.Sprintf("%x", p.Items.Value.Hash()))
-	}
-	return sha256.Sum256([]byte(strings.Join(f, "|")))
+		for _, ext := range low.HashExtensions(p.Extensions) {
+			h.WriteString(ext)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if p.Items.Value != nil {
+			low.HashUint64(h, p.Items.Value.Hash())
+			h.WriteByte(low.HASH_PIPE)
+		}
+		return h.Sum64()
+	})
 }
 
 // Getters used by what-changed feature to satisfy the SwaggerParameter interface.

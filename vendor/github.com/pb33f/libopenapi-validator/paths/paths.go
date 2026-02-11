@@ -70,8 +70,8 @@ func FindPath(request *http.Request, document *v3.Document, regexCache config.Re
 	if len(candidates) == 0 {
 		validationErrors := []*errors.ValidationError{
 			{
-				ValidationType:    helpers.ParameterValidationPath,
-				ValidationSubType: "missing",
+				ValidationType:    helpers.PathValidation,
+				ValidationSubType: helpers.ValidationMissing,
 				Message:           fmt.Sprintf("%s Path '%s' not found", request.Method, request.URL.Path),
 				Reason: fmt.Sprintf("The %s request contains a path of '%s' "+
 					"however that path, or the %s method for that path does not exist in the specification",
@@ -93,8 +93,8 @@ func FindPath(request *http.Request, document *v3.Document, regexCache config.Re
 
 	// path matches exist but none have the required method
 	validationErrors := []*errors.ValidationError{{
-		ValidationType:    helpers.ParameterValidationPath,
-		ValidationSubType: "missingOperation",
+		ValidationType:    helpers.PathValidation,
+		ValidationSubType: helpers.ValidationMissingOperation,
 		Message:           fmt.Sprintf("%s Path '%s' not found", request.Method, request.URL.Path),
 		Reason: fmt.Sprintf("The %s method for that path does not exist in the specification",
 			request.Method),

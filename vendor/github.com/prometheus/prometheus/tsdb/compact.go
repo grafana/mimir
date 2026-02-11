@@ -33,11 +33,13 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 )
 
@@ -99,6 +101,7 @@ type LeveledCompactor struct {
 	postingsDecoderFactory      PostingsDecoderFactory
 	enableOverlappingCompaction bool
 	concurrencyOpts             LeveledCompactorConcurrencyOptions
+	enableNativeMetadata        bool
 }
 
 type CompactorMetrics struct {
@@ -191,6 +194,8 @@ type LeveledCompactorOptions struct {
 	Metrics *CompactorMetrics
 	// UseUncachedIO allows bypassing the page cache when appropriate.
 	UseUncachedIO bool
+	// EnableNativeMetadata enables persistence of OTel resource/scope attributes during compaction.
+	EnableNativeMetadata bool
 }
 
 type PostingsDecoderFactory func(meta *BlockMeta) index.PostingsDecoder
@@ -247,6 +252,7 @@ func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer
 		enableOverlappingCompaction: opts.EnableOverlappingCompaction,
 		concurrencyOpts:             DefaultLeveledCompactorConcurrencyOptions(),
 		blockExcludeFunc:            opts.BlockExcludeFilter,
+		enableNativeMetadata:        opts.EnableNativeMetadata,
 	}, nil
 }
 
@@ -936,6 +942,49 @@ func (c *LeveledCompactor) write(dest string, outBlocks []shardedBlock, blockPop
 		return err
 	}
 
+	// Merge and write series metadata from source blocks when native metadata is enabled.
+	var mergedMeta *seriesmetadata.MemSeriesMetadata
+	if c.enableNativeMetadata {
+		mergedMeta = seriesmetadata.NewMemSeriesMetadata()
+		for _, b := range blocks {
+			mr, err := b.SeriesMetadata()
+			if err != nil {
+				return fmt.Errorf("get series metadata from block: %w", err)
+			}
+			// Merge metric metadata
+			err = mr.IterByMetricName(func(name string, meta metadata.Metadata) error {
+				mergedMeta.Set(name, 0, meta)
+				return nil
+			})
+			if err != nil {
+				mr.Close()
+				return fmt.Errorf("iterate series metadata: %w", err)
+			}
+			// Merge versioned resources (unified attributes + entities)
+			err = mr.IterVersionedResources(func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
+				mergedMeta.SetVersionedResource(labelsHash, resources)
+				return nil
+			})
+			if err != nil {
+				mr.Close()
+				return fmt.Errorf("iterate resource attributes: %w", err)
+			}
+			// Merge versioned scopes
+			err = mr.IterVersionedScopes(func(labelsHash uint64, scopes *seriesmetadata.VersionedScope) error {
+				mergedMeta.SetVersionedScope(labelsHash, scopes)
+				return nil
+			})
+			if err != nil {
+				mr.Close()
+				return fmt.Errorf("iterate scope attributes: %w", err)
+			}
+			mr.Close()
+		}
+		c.logger.Info("Merged series metadata from source blocks",
+			"blocks", len(blocks), "metrics", mergedMeta.MetricCount(),
+			"resources", mergedMeta.ResourceCount(), "scopes", mergedMeta.ScopeCount())
+	}
+
 	for _, ob := range outBlocks {
 		// Populated block is empty, don't write meta file for it.
 		if ob.meta.Stats.NumSamples == 0 {
@@ -949,6 +998,13 @@ func (c *LeveledCompactor) write(dest string, outBlocks []shardedBlock, blockPop
 		// Create an empty tombstones file.
 		if _, err := tombstones.WriteFile(c.logger, ob.tmpDir, tombstones.NewMemTombstones()); err != nil {
 			return fmt.Errorf("write new tombstones file: %w", err)
+		}
+
+		// Write merged series metadata.
+		if mergedMeta != nil {
+			if _, err := seriesmetadata.WriteFile(c.logger, ob.tmpDir, mergedMeta); err != nil {
+				return fmt.Errorf("write series metadata file: %w", err)
+			}
 		}
 
 		df, err := fileutil.OpenDir(ob.tmpDir)

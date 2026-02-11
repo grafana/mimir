@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/dskit/multierror"
 	dskittenant "github.com/grafana/dskit/tenant"
 	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -102,7 +103,7 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 		return fmt.Errorf("get tsdb for tenant %s: %w", tenantID, err)
 	}
 
-	app := db.Appender(ctx).(extendedAppender)
+	app := db.AppenderV2(ctx).(extendedAppender)
 	defer func() {
 		if err != nil {
 			if e := app.Rollback(); e != nil && !errors.Is(e, tsdb.ErrAppenderClosed) {
@@ -130,40 +131,66 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 
 		ingestCreatedTimestamp := ts.CreatedTimestamp > 0
 
+		// Build resource context once per time series.
+		var resourceCtx *storage.ResourceContext
+		if ts.ResourceAttributes != nil && len(ts.ResourceAttributes.Identifying) > 0 {
+			metricName := nonCopiedLabels.Get(model.MetricNameLabel)
+			if metricName != "target_info" {
+				resourceCtx = &storage.ResourceContext{
+					Identifying: entriesToMap(ts.ResourceAttributes.Identifying),
+					Descriptive: entriesToMap(ts.ResourceAttributes.Descriptive),
+					Entities:    convertResourceEntities(ts.ResourceAttributes.Entities),
+				}
+			}
+		}
+
+		// Build scope context once per time series.
+		var scopeCtx *storage.ScopeContext
+		if ts.ScopeAttributes != nil {
+			if ts.ScopeAttributes.Name != "" || ts.ScopeAttributes.Version != "" || ts.ScopeAttributes.SchemaURL != "" || len(ts.ScopeAttributes.Attrs) > 0 {
+				scopeCtx = &storage.ScopeContext{
+					Name:      ts.ScopeAttributes.Name,
+					Version:   ts.ScopeAttributes.Version,
+					SchemaURL: ts.ScopeAttributes.SchemaURL,
+					Attrs:     entriesToMap(ts.ScopeAttributes.Attrs),
+				}
+			}
+		}
+
 		for _, s := range ts.Samples {
+			// Append ST zero sample (created timestamp) before the regular sample.
 			if ingestCreatedTimestamp && ts.CreatedTimestamp < s.TimestampMs &&
 				(!nativeHistogramsIngestionEnabled || len(ts.Histograms) == 0 || ts.Histograms[0].Timestamp >= s.TimestampMs) {
+				stOpts := storage.AppendV2Options{RejectOutOfOrder: true}
 				if ref != 0 {
-					// If the cached reference exists, we try to use it.
-					_, err = app.AppendSTZeroSample(ref, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
+					_, err = app.Append(ref, copiedLabels, 0, ts.CreatedTimestamp, 0, nil, nil, stOpts)
 				} else {
-					// Copy the label set because TSDB may retain it.
 					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
-					ref, err = app.AppendSTZeroSample(0, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
+					ref, err = app.Append(0, copiedLabels, 0, ts.CreatedTimestamp, 0, nil, nil, stOpts)
 				}
 				if err != nil && !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderST) && !errors.Is(err, storage.ErrOutOfOrderSample) {
-					// According to OTEL spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
-					// if the start time is unknown, then it should equal to the timestamp of the first sample,
-					// which will mean a created timestamp equal to the timestamp of the first sample for later
-					// samples. Thus we ignore if zero sample would cause duplicate.
-					// We also ignore out of order sample as created timestamp is out of order most of the time,
-					// except when written before the first sample.
-					level.Warn(b.logger).Log("msg", "failed to store zero float sample for created timestamp", "tenant", tenantID, "err", err)
+					level.Warn(b.logger).Log("msg", "failed to ingest ST zero sample", "err", err)
 					discardedSamples++
 				}
-				ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
+				ingestCreatedTimestamp = false
+				err = nil
+			}
+
+			opts := storage.AppendV2Options{
+				Resource: resourceCtx,
+				Scope:    scopeCtx,
 			}
 
 			if ref != 0 {
 				// If the cached reference exists, we try to use it.
-				if _, err = app.Append(ref, copiedLabels, s.TimestampMs, s.Value); err == nil {
+				if _, err = app.Append(ref, copiedLabels, 0, s.TimestampMs, s.Value, nil, nil, opts); err == nil {
 					continue
 				}
 			} else {
 				// Copy the label set because TSDB may retain it.
 				copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
 				// Retain the reference in case there are multiple samples for the series.
-				if ref, err = app.Append(0, copiedLabels, s.TimestampMs, s.Value); err == nil {
+				if ref, err = app.Append(0, copiedLabels, 0, s.TimestampMs, s.Value, nil, nil, opts); err == nil {
 					continue
 				}
 			}
@@ -182,37 +209,6 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 		}
 
 		for _, h := range ts.Histograms {
-			if ingestCreatedTimestamp && ts.CreatedTimestamp < h.Timestamp {
-				var (
-					ih *histogram.Histogram
-					fh *histogram.FloatHistogram
-				)
-				// AppendHistogramCTZeroSample doesn't care about the content of the passed histograms,
-				// just uses it to decide the type, so don't convert the input, use dummy histograms.
-				if h.IsFloatHistogram() {
-					fh = zeroFloatHistogram
-				} else {
-					ih = zeroHistogram
-				}
-				if ref != 0 {
-					_, err = app.AppendHistogramSTZeroSample(ref, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
-				} else {
-					// Copy the label set because both TSDB and the active series tracker may retain it.
-					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
-					ref, err = app.AppendHistogramSTZeroSample(0, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
-				}
-				if err != nil && !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderST) && !errors.Is(err, storage.ErrOutOfOrderSample) {
-					// According to OTEL spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
-					// if the start time is unknown, then it should equal to the timestamp of the first sample,
-					// which will mean a created timestamp equal to the timestamp of the first sample for later
-					// samples. Thus we ignore if zero sample would cause duplicate.
-					// We also ignore out of order sample as created timestamp is out of order most of the time,
-					// except when written before the first sample.
-					level.Warn(b.logger).Log("msg", "failed to store zero histogram sample for created timestamp", "tenant", tenantID, "err", err)
-					discardedSamples++
-				}
-				ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
-			}
 			var (
 				ih *histogram.Histogram
 				fh *histogram.FloatHistogram
@@ -224,16 +220,55 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 				ih = mimirpb.FromHistogramProtoToHistogram(&h)
 			}
 
+			// Append ST zero sample (created timestamp) before the regular histogram.
+			if ingestCreatedTimestamp && ts.CreatedTimestamp < h.Timestamp {
+				var zeroIH *histogram.Histogram
+				var zeroFH *histogram.FloatHistogram
+				if fh != nil {
+					zeroFH = &histogram.FloatHistogram{
+						CounterResetHint: histogram.CounterReset,
+						Schema:           fh.Schema,
+						ZeroThreshold:    fh.ZeroThreshold,
+						CustomValues:     fh.CustomValues,
+					}
+				} else if ih != nil {
+					zeroIH = &histogram.Histogram{
+						CounterResetHint: histogram.CounterReset,
+						Schema:           ih.Schema,
+						ZeroThreshold:    ih.ZeroThreshold,
+						CustomValues:     ih.CustomValues,
+					}
+				}
+				stOpts := storage.AppendV2Options{RejectOutOfOrder: true}
+				if ref != 0 {
+					_, err = app.Append(ref, copiedLabels, 0, ts.CreatedTimestamp, 0, zeroIH, zeroFH, stOpts)
+				} else {
+					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
+					ref, err = app.Append(0, copiedLabels, 0, ts.CreatedTimestamp, 0, zeroIH, zeroFH, stOpts)
+				}
+				if err != nil && !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderST) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+					level.Warn(b.logger).Log("msg", "failed to ingest ST zero histogram sample", "err", err)
+					discardedSamples++
+				}
+				ingestCreatedTimestamp = false
+				err = nil
+			}
+
+			opts := storage.AppendV2Options{
+				Resource: resourceCtx,
+				Scope:    scopeCtx,
+			}
+
 			if ref != 0 {
 				// If the cached reference exists, we try to use it.
-				if _, err = app.AppendHistogram(ref, copiedLabels, h.Timestamp, ih, fh); err == nil {
+				if _, err = app.Append(ref, copiedLabels, 0, h.Timestamp, 0, ih, fh, opts); err == nil {
 					continue
 				}
 			} else {
 				// Copy the label set because both TSDB and the active series tracker may retain it.
 				copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
 				// Retain the reference in case there are multiple samples for the series.
-				if ref, err = app.AppendHistogram(0, copiedLabels, h.Timestamp, ih, fh); err == nil {
+				if ref, err = app.Append(0, copiedLabels, 0, h.Timestamp, 0, ih, fh, opts); err == nil {
 					continue
 				}
 			}
@@ -257,11 +292,6 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 
 	return app.Commit()
 }
-
-var (
-	zeroHistogram      = &histogram.Histogram{}
-	zeroFloatHistogram = &histogram.FloatHistogram{}
-)
 
 func (b *TSDBBuilder) getOrCreateTSDB(tenant tsdbTenant) (*userTSDB, error) {
 	b.tsdbsMu.RLock()
@@ -337,6 +367,8 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 		HeadPostingsForMatchersCacheMetrics:  tsdb.NewPostingsForMatchersCacheMetrics(nil),
 		BlockPostingsForMatchersCacheMetrics: tsdb.NewPostingsForMatchersCacheMetrics(nil),
 		PostingsClonerFactory:                tsdb.DefaultPostingsClonerFactory{},
+		EnableSTAsZeroSample:                 false,
+		EnableNativeMetadata:                 true,
 	}, nil)
 	if err != nil {
 		return nil, err
@@ -464,7 +496,7 @@ func (b *TSDBBuilder) Close() error {
 }
 
 type extendedAppender interface {
-	storage.Appender
+	storage.AppenderV2
 	storage.GetRef
 }
 
@@ -511,4 +543,30 @@ func (u *userTSDB) compactEverything(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func entriesToMap(entries []mimirpb.AttributeEntry) map[string]string {
+	if len(entries) == 0 {
+		return nil
+	}
+	m := make(map[string]string, len(entries))
+	for _, e := range entries {
+		m[e.Key] = e.Value
+	}
+	return m
+}
+
+func convertResourceEntities(entities []mimirpb.ResourceEntity) []storage.EntityData {
+	if len(entities) == 0 {
+		return nil
+	}
+	result := make([]storage.EntityData, len(entities))
+	for i, e := range entities {
+		result[i] = storage.EntityData{
+			Type:        e.Type,
+			ID:          entriesToMap(e.ID),
+			Description: entriesToMap(e.Description),
+		}
+	}
+	return result
 }

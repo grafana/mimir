@@ -184,6 +184,7 @@ std.manifestYamlDoc({
       hostname: 'nginx',
       image: 'nginxinc/nginx-unprivileged:1.22-alpine',
       depends_on: [
+        'distributor-1',
         'ingester-zone-a-1',
         'alertmanager-1',
         'ruler-1',
@@ -193,7 +194,7 @@ std.manifestYamlDoc({
       ],
       environment: [
         'NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx',
-        'DISTRIBUTOR_HOST=ingester-zone-a-1:8080',
+        'DISTRIBUTOR_HOST=distributor-1:8080',
         'ALERT_MANAGER_HOST=alertmanager-1:8080',
         'RULER_HOST=ruler-1:8080',
         'QUERY_FRONTEND_HOST=query-frontend:8080',

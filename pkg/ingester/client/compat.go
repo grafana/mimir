@@ -205,6 +205,19 @@ func ToActiveSeriesRequest(matchers []*labels.Matcher) (*ActiveSeriesRequest, er
 	return &ActiveSeriesRequest{Matchers: ms}, nil
 }
 
+func ToResourceAttributesRequest(startMs, endMs int64, matchers []*labels.Matcher, limit int64) (*ResourceAttributesRequest, error) {
+	ms, err := ToLabelMatchers(matchers)
+	if err != nil {
+		return nil, err
+	}
+	return &ResourceAttributesRequest{
+		StartTimestampMs: startMs,
+		EndTimestampMs:   endMs,
+		Matchers:         ms,
+		Limit:            limit,
+	}, nil
+}
+
 func ToLabelMatchers(matchers []*labels.Matcher) ([]*LabelMatcher, error) {
 	result := make([]*LabelMatcher, 0, len(matchers))
 	for _, matcher := range matchers {

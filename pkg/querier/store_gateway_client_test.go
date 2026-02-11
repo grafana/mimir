@@ -109,3 +109,8 @@ func (m *mockStoreGatewayServer) LabelValues(ctx context.Context, req *storepb.L
 
 	return nil, nil
 }
+
+func (m *mockStoreGatewayServer) ResourceAttributes(req *storepb.ResourceAttributesRequest, srv storegatewaypb.StoreGateway_ResourceAttributesServer) error {
+	// Not implemented for tests
+	return nil
+}

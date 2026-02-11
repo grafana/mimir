@@ -3185,6 +3185,142 @@ func maxFromZones[T ~float64 | ~uint64](seriesCountByZone map[string]T) (val T) 
 	return val
 }
 
+// ResourceAttributes queries the ingester replication set for OTel resource attributes
+// matching the given selector. It combines and deduplicates the results.
+func (d *Distributor) ResourceAttributes(ctx context.Context, startMs, endMs int64, matchers []*labels.Matcher, limit int64) ([]*ingester_client.SeriesResourceAttributes, error) {
+	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// When ingest storage is disabled, if ingesters are running in a single zone we can't tolerate any errors.
+	if !d.cfg.IngestStorageConfig.Enabled && len(replicationSets) == 1 && replicationSets[0].ZoneCount() == 1 {
+		replicationSets[0].MaxErrors = 0
+	}
+
+	req, err := ingester_client.ToResourceAttributesRequest(startMs, endMs, matchers, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	res := newResourceAttributesResponse()
+
+	ingesterQuery := func(ctx context.Context, client ingester_client.IngesterClient) (any, error) {
+		// This function is invoked purely for its side effects on the captured
+		// resourceAttributesResponse, its return value is never used.
+		type ignored struct{}
+
+		log, ctx := spanlogger.New(ctx, d.log, tracer, "Distributor.ResourceAttributes.queryIngester")
+		defer log.Finish()
+
+		stream, err := client.ResourceAttributes(ctx, req)
+		if err != nil {
+			if errors.Is(globalerror.WrapGRPCErrorWithContextError(ctx, err), context.Canceled) {
+				return ignored{}, nil
+			}
+			level.Error(log).Log("msg", "error creating resource attributes response stream", "err", err)
+			log.SetError()
+			return nil, err
+		}
+
+		defer func() {
+			err = util.CloseAndExhaust[*ingester_client.ResourceAttributesResponse](stream)
+			if err != nil && !errors.Is(globalerror.WrapGRPCErrorWithContextError(ctx, err), context.Canceled) {
+				level.Warn(d.log).Log("msg", "error closing resource attributes response stream", "err", err)
+			}
+		}()
+
+		for {
+			msg, err := stream.Recv()
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				if errors.Is(globalerror.WrapGRPCErrorWithContextError(ctx, err), context.Canceled) {
+					return ignored{}, nil
+				}
+				level.Error(log).Log("msg", "error receiving resource attributes response", "err", err)
+				log.SetError()
+				return nil, err
+			}
+
+			res.add(msg.Items)
+		}
+
+		return ignored{}, nil
+	}
+
+	_, err = forReplicationSets(ctx, d, replicationSets, ingesterQuery)
+	if err != nil {
+		return nil, err
+	}
+
+	return res.result(), nil
+}
+
+// resourceAttributesResponse is a helper to merge/deduplicate ResourceAttributes responses from ingesters.
+type resourceAttributesResponse struct {
+	m      sync.Mutex
+	series map[uint64]*ingester_client.SeriesResourceAttributes
+}
+
+func newResourceAttributesResponse() *resourceAttributesResponse {
+	return &resourceAttributesResponse{
+		series: map[uint64]*ingester_client.SeriesResourceAttributes{},
+	}
+}
+
+func (r *resourceAttributesResponse) add(items []*ingester_client.SeriesResourceAttributes) {
+	r.m.Lock()
+	defer r.m.Unlock()
+
+	for _, item := range items {
+		lbls := mimirpb.FromLabelAdaptersToLabels(item.Labels)
+		lblHash := labels.StableHash(lbls)
+
+		if existing, ok := r.series[lblHash]; !ok {
+			// First time seeing this series, store it with a deep copy of labels
+			itemCopy := &ingester_client.SeriesResourceAttributes{
+				Labels:   mimirpb.FromLabelsToLabelAdapters(lbls.Copy()),
+				Versions: item.Versions,
+			}
+			r.series[lblHash] = itemCopy
+		} else {
+			// Series already exists, merge resource versions
+			r.mergeVersions(existing, item)
+		}
+	}
+}
+
+// mergeVersions merges resource attribute versions from a new item into the existing one.
+// It deduplicates versions by their time range overlap.
+func (r *resourceAttributesResponse) mergeVersions(existing, newItem *ingester_client.SeriesResourceAttributes) {
+	for _, newVer := range newItem.Versions {
+		found := false
+		for _, existingVer := range existing.Versions {
+			// Consider versions as duplicates if they have the same time range
+			if existingVer.MinTimeMs == newVer.MinTimeMs && existingVer.MaxTimeMs == newVer.MaxTimeMs {
+				found = true
+				break
+			}
+		}
+		if !found {
+			existing.Versions = append(existing.Versions, newVer)
+		}
+	}
+}
+
+func (r *resourceAttributesResponse) result() []*ingester_client.SeriesResourceAttributes {
+	r.m.Lock()
+	defer r.m.Unlock()
+
+	result := make([]*ingester_client.SeriesResourceAttributes, 0, len(r.series))
+	for _, item := range r.series {
+		result = append(result, item)
+	}
+	return result
+}
+
 // LabelNames returns the names of all labels from series with samples timestamp between from and to, and matching
 // the input optional series label matchers. The returned label names are sorted.
 func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {

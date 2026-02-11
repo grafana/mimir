@@ -5,7 +5,7 @@ package overlay
 
 import (
 	"context"
-	"crypto/sha256"
+	"hash/maphash"
 
 	"github.com/pb33f/libopenapi/datamodel/low"
 	"github.com/pb33f/libopenapi/index"
@@ -15,12 +15,13 @@ import (
 )
 
 // Action represents a low-level Overlay Action Object.
-// https://spec.openapis.org/overlay/v1.0.0#action-object
+// https://spec.openapis.org/overlay/v1.1.0#action-object
 type Action struct {
 	Target      low.NodeReference[string]
 	Description low.NodeReference[string]
 	Update      low.NodeReference[*yaml.Node]
 	Remove      low.NodeReference[bool]
+	Copy        low.NodeReference[string]
 	Extensions  *orderedmap.Map[low.KeyReference[string], low.ValueReference[*yaml.Node]]
 	KeyNode     *yaml.Node
 	RootNode    *yaml.Node
@@ -87,34 +88,33 @@ func (a *Action) GetExtensions() *orderedmap.Map[low.KeyReference[string], low.V
 	return a.Extensions
 }
 
-// Hash will return a consistent SHA256 Hash of the Action object
-func (a *Action) Hash() [32]byte {
-	sb := low.GetStringBuilder()
-	defer low.PutStringBuilder(sb)
-
-	if !a.Target.IsEmpty() {
-		sb.WriteString(a.Target.Value)
-		sb.WriteByte('|')
-	}
-	if !a.Description.IsEmpty() {
-		sb.WriteString(a.Description.Value)
-		sb.WriteByte('|')
-	}
-	if !a.Update.IsEmpty() {
-		sb.WriteString(low.GenerateHashString(a.Update.Value))
-		sb.WriteByte('|')
-	}
-	if !a.Remove.IsEmpty() {
-		if a.Remove.Value {
-			sb.WriteString("true")
-		} else {
-			sb.WriteString("false")
+// Hash will return a consistent Hash of the Action object
+func (a *Action) Hash() uint64 {
+	return low.WithHasher(func(h *maphash.Hash) uint64 {
+		if !a.Target.IsEmpty() {
+			h.WriteString(a.Target.Value)
+			h.WriteByte(low.HASH_PIPE)
 		}
-		sb.WriteByte('|')
-	}
-	for _, ext := range low.HashExtensions(a.Extensions) {
-		sb.WriteString(ext)
-		sb.WriteByte('|')
-	}
-	return sha256.Sum256([]byte(sb.String()))
+		if !a.Description.IsEmpty() {
+			h.WriteString(a.Description.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !a.Update.IsEmpty() {
+			h.WriteString(low.GenerateHashString(a.Update.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !a.Remove.IsEmpty() {
+			low.HashBool(h, a.Remove.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !a.Copy.IsEmpty() {
+			h.WriteString(a.Copy.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		for _, ext := range low.HashExtensions(a.Extensions) {
+			h.WriteString(ext)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		return h.Sum64()
+	})
 }

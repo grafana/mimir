@@ -1865,6 +1865,10 @@ func (o otlpLimitsMock) OTelLabelNamePreserveMultipleUnderscores(string) bool {
 	return true
 }
 
+func (o otlpLimitsMock) OTelPersistResourceAttributes(string) bool {
+	return false
+}
+
 func promToMimirHistogram(h *prompb.Histogram) mimirpb.Histogram {
 	pSpans := make([]mimirpb.BucketSpan, 0, len(h.PositiveSpans))
 	for _, span := range h.PositiveSpans {

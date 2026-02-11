@@ -18,6 +18,7 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -192,6 +193,47 @@ func (u *userTSDB) getIndexLookupPlannerFunc() tsdb.IndexLookupPlannerFunc {
 
 func (u *userTSDB) Appender(ctx context.Context) storage.Appender {
 	return u.db.Appender(ctx)
+}
+
+func (u *userTSDB) AppenderV2(ctx context.Context) storage.AppenderV2 {
+	return u.db.AppenderV2(ctx)
+}
+
+// CombinedAppender returns an extendedAppender that uses AppenderV2 for the
+// main path and falls back to v1 AppendExemplar for exemplar-only time series.
+func (u *userTSDB) CombinedAppender(ctx context.Context) extendedAppender {
+	return &combinedAppender{
+		AppenderV2: u.db.AppenderV2(ctx),
+		v1:         u.db.Appender(ctx),
+	}
+}
+
+// combinedAppender wraps both AppenderV2 and v1 Appender from the same TSDB head.
+// AppenderV2 is used for all sample/metadata/resource operations. The v1 Appender
+// is used only for standalone AppendExemplar calls (exemplars without samples).
+type combinedAppender struct {
+	storage.AppenderV2
+	v1 storage.Appender
+}
+
+func (c *combinedAppender) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
+	return c.AppenderV2.(storage.GetRef).GetRef(lset, hash)
+}
+
+func (c *combinedAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
+	return c.v1.AppendExemplar(ref, l, e)
+}
+
+func (c *combinedAppender) Commit() error {
+	if err := c.AppenderV2.Commit(); err != nil {
+		return err
+	}
+	return c.v1.Commit()
+}
+
+func (c *combinedAppender) Rollback() error {
+	_ = c.v1.Rollback()
+	return c.AppenderV2.Rollback()
 }
 
 // Querier returns a new querier over the data partition for the given time range.

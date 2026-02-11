@@ -75,7 +75,7 @@ func TestStatsRenderer(t *testing.T) {
 	api := v1.NewAPI(
 		engine,
 		storage,
-		nil,
+		nil, nil, // No remote write support (Appendable, AppendableV2).
 		nil,
 		nil,
 		func(context.Context) v1.ScrapePoolsRetriever { return &DummyTargetRetriever{} },
@@ -109,8 +109,9 @@ func TestStatsRenderer(t *testing.T) {
 		5*time.Minute,
 		false,
 		false,
-		nil,
-		nil,
+		nil,   // overrideErrorCode
+		false, // enableNativeMetadata
+		nil,   // featureRegistry
 		v1.OpenAPIOptions{},
 	)
 	promRouter := route.New().WithPrefix("/api/v1")

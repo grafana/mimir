@@ -224,6 +224,7 @@ func NewQuerierHandler(
 	metadataSupplier querier.MetadataSupplier,
 	engine promql.QueryEngine,
 	distributor Distributor,
+	blocksQueryable querier.ResourceAttributesBlocksQueryable,
 	metrics *querier.RequestMetrics,
 	reg prometheus.Registerer,
 	logger log.Logger,
@@ -239,8 +240,7 @@ func NewQuerierHandler(
 	api := v1.NewAPI(
 		engine,
 		querier.NewErrorTranslateSampleAndChunkQueryable(queryable), // Translate errors to errors expected by API.
-		nil, // No remote write support.
-		nil, // No remote write V2 support.
+		nil, nil, // No remote write support (Appendable, AppendableV2).
 		exemplarQueryable,
 		func(context.Context) v1.ScrapePoolsRetriever { return &querier.DummyTargetRetriever{} },
 		func(context.Context) v1.TargetRetriever { return &querier.DummyTargetRetriever{} },
@@ -274,8 +274,9 @@ func NewQuerierHandler(
 		querierCfg.EngineConfig.LookbackDelta,
 		false,
 		appendMetadata,
-		nil,
-		nil,
+		nil,   // overrideErrorCode
+		false, // enableNativeMetadata
+		nil,   // featureRegistry
 		v1.OpenAPIOptions{},
 	)
 
@@ -328,6 +329,10 @@ func NewQuerierHandler(
 	router.Path(path.Join(promPrefix, "/label/{name}/values")).Methods("GET").Handler(labelsQueryStats.Wrap(promRouter))
 	router.Path(path.Join(promPrefix, "/series")).Methods("GET", "POST", "DELETE").Handler(seriesQueryStats.Wrap(unlimitedMemoryTrackerMiddleware.Wrap(promRouter)))
 	router.Path(path.Join(promPrefix, "/metadata")).Methods("GET").Handler(metadataQueryStats.Wrap(querier.NewMetadataHandler(metadataSupplier)))
+	router.Path(path.Join(promPrefix, "/resources")).Methods("GET").Handler(querier.NewResourceAttributesHandler(distributor, blocksQueryable, querier.ResourceAttributesHandlerConfig{
+		QueryStoreAfter:      querierCfg.QueryStoreAfter,
+		QueryIngestersWithin: limits.QueryIngestersWithin,
+	}))
 	router.Path(path.Join(promPrefix, "/cardinality/label_names")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.LabelNamesCardinalityHandler(distributor, limits)))
 	router.Path(path.Join(promPrefix, "/cardinality/label_values")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.LabelValuesCardinalityHandler(distributor, limits)))
 	router.Path(path.Join(promPrefix, "/cardinality/active_series")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.ActiveSeriesCardinalityHandler(distributor, limits)))

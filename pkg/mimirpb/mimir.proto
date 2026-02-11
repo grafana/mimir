@@ -83,6 +83,12 @@ message TimeSeries {
   // Zero value means value not set. If you need to use exactly zero value for
   // the timestamp, use 1 millisecond before or after.
   int64 created_timestamp = 6;
+
+  // Mimir-specific field for OTel resource attributes.
+  // Uses high field number to avoid conflicts with upstream Prometheus fields.
+  // NOTE: This field is manually added to mimir.pb.go and not auto-generated.
+  // See ResourceAttributes, ResourceEntity, ResourceAttributeEntry types in mimir.pb.go.
+  // ResourceAttributes resource_attributes = 1000;
 }
 
 message LabelPair {
