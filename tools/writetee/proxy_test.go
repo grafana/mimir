@@ -255,6 +255,8 @@ func TestProxyEndpoint_ServeHTTPPassthrough(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Verify the request was forwarded correctly
 		assert.Equal(t, "POST", r.Method)
+		assert.Equal(t, "application/x-protobuf", r.Header.Get("Content-Type"))
+
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(expectedBody))
 	}))
@@ -286,7 +288,6 @@ func TestProxyEndpoint_ServeHTTPPassthrough(t *testing.T) {
 	// Verify the response
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, expectedBody, rec.Body.String())
-	assert.Equal(t, "application/x-protobuf", rec.Header().Get("Content-Type"))
 }
 
 func TestProxyBackend_AuthHandling(t *testing.T) {
