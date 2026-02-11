@@ -30,9 +30,7 @@ func (c BigEndianPostingsOffsetCodec) EncodeSingleRange(rng index.Range) []byte 
 	buf := make([]byte, 0, buflen)
 	buf = binary.AppendUvarint(buf, uint64(1))
 
-	buf = binary.AppendUvarint(buf, uint64(rng.Start))
-	buf = binary.AppendUvarint(buf, uint64(rng.End))
-	return buf
+	return encodeRange(buf, rng)
 }
 
 func (c BigEndianPostingsOffsetCodec) EncodeMultiRange(rngs []index.Range) []byte {
@@ -43,10 +41,15 @@ func (c BigEndianPostingsOffsetCodec) EncodeMultiRange(rngs []index.Range) []byt
 	buf = binary.AppendUvarint(buf, uint64(len(rngs)))
 
 	for _, rng := range rngs {
-		buf = binary.AppendUvarint(buf, uint64(rng.Start))
-		buf = binary.AppendUvarint(buf, uint64(rng.End))
+		buf = encodeRange(buf, rng)
 	}
 	return buf
+}
+
+func encodeRange(b []byte, rng index.Range) []byte {
+	b = binary.AppendUvarint(b, uint64(rng.Start))
+	b = binary.AppendUvarint(b, uint64(rng.End))
+	return b
 }
 
 func (c BigEndianPostingsOffsetCodec) DecodeSingleRange(b []byte) (index.Range, error) {
