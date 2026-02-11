@@ -297,6 +297,7 @@ func (m *FunctionOverRangeVectorSplit[T]) mergeSplitsMetadata(ctx context.Contex
 		key := string(labelBytes)
 
 		// Storage guarantees unique series, so each label set appears only once.
+		// TODO: this may not hold after https://github.com/grafana/mimir/issues/13863
 		seriesMap[key] = splitLocalIdx
 		seriesToSplits = append(seriesToSplits, []SplitSeries{{0, splitLocalIdx}})
 		m.splits[0].AppendMergedSeriesIndex(splitLocalIdx, splitLocalIdx)
@@ -328,7 +329,7 @@ func (m *FunctionOverRangeVectorSplit[T]) mergeSplitsMetadata(ctx context.Contex
 			}
 			seriesToSplits[mergedIdx] = append(seriesToSplits[mergedIdx], SplitSeries{
 				SplitIdx:      splitIdx,
-				SplitLocalIdx: splitLocalIdx,
+				SplitLocalSeriesIdx: splitLocalIdx,
 			})
 			m.splits[splitIdx].AppendMergedSeriesIndex(splitLocalIdx, mergedIdx)
 
@@ -350,9 +351,9 @@ func (m *FunctionOverRangeVectorSplit[T]) NextSeries(ctx context.Context) (types
 
 	splitSeriesList := m.seriesToSplits[m.currentSeriesIdx]
 
-	var pieces []T
+	pieces := make([]T, 0, len(splitSeriesList))
 	for _, splitSeries := range splitSeriesList {
-		results, err := m.splits[splitSeries.SplitIdx].GetResultsAt(ctx, splitSeries.SplitLocalIdx)
+		results, err := m.splits[splitSeries.SplitIdx].GetResultsAt(ctx, splitSeries.SplitLocalSeriesIdx)
 		if err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
@@ -499,7 +500,7 @@ type Split[T any] interface {
 
 type SplitSeries struct {
 	SplitIdx      int
-	SplitLocalIdx int
+	SplitLocalSeriesIdx int
 }
 
 type CachedSplit[T any] struct {

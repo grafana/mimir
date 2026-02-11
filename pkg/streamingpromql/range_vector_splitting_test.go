@@ -34,6 +34,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
+// Checks the case where results are not cached as the range (1h) is lower than the split interval (test default is 2h).
 func TestQuerySplitting_InstantQueryWith1hRange_NotCached(t *testing.T) {
 	testCache, mimirEngine := setupEngineAndCache(t)
 
@@ -385,9 +386,9 @@ func TestQuerySplitting_WithCSE(t *testing.T) {
 	`
 	require.Equal(t, testutils.TrimIndent(expectedPlan), plan.String())
 
-	wrappedStorage, ranges := trackRanges(promStorage)
+	trackingStorage := trackRanges(promStorage)
 
-	q, err := mimirEngine.NewInstantQuery(ctx, wrappedStorage, nil, expr, ts)
+	q, err := mimirEngine.NewInstantQuery(ctx, trackingStorage, nil, expr, ts)
 	require.NoError(t, err)
 	defer q.Close()
 
@@ -414,13 +415,13 @@ func TestQuerySplitting_WithCSE(t *testing.T) {
 	// and count_over_time via Duplicate, so we should only query storage once, not twice
 	require.Equal(t, []storageQueryRange{
 		{mint: 1*hourInMs + 1, maxt: 6 * hourInMs},
-	}, *ranges)
+	}, trackingStorage.ranges)
 
 	// Query 2 at 8h: middle (4h-6h) cached from query 1, head (3h-4h) and tail (6h-8h) uncached
 	// With CSE, both sum_over_time and count_over_time share the same MatrixSelector data
-	*ranges = nil
+	trackingStorage.ranges = nil
 	ts2 := baseT.Add(8 * time.Hour)
-	q2, err := mimirEngine.NewInstantQuery(ctx, wrappedStorage, nil, expr, ts2)
+	q2, err := mimirEngine.NewInstantQuery(ctx, trackingStorage, nil, expr, ts2)
 	require.NoError(t, err)
 	defer q2.Close()
 
@@ -437,7 +438,7 @@ func TestQuerySplitting_WithCSE(t *testing.T) {
 	require.Equal(t, []storageQueryRange{
 		{mint: 3*hourInMs + 1, maxt: 4*hourInMs - 1}, // Head: (3h, 4h-1ms] -> storage [3h+1, 4h-1ms]
 		{mint: 6 * hourInMs, maxt: 8 * hourInMs},     // Tail: (6h-1ms, 8h] -> storage [6h, 8h]
-	}, *ranges)
+	}, trackingStorage.ranges)
 }
 
 func TestQuerySplitting_WithOffset_CacheAlignment(t *testing.T) {
@@ -714,7 +715,6 @@ func TestQuerySplitting_UpstreamTestCases(t *testing.T) {
 	require.NoError(t, err)
 
 	for _, splitInterval := range querySplittingTestSplitIntervals {
-		splitInterval := splitInterval
 		t.Run(fmt.Sprintf("split_interval_%v", splitInterval), func(t *testing.T) {
 			totalQueries := 0
 			queriesWithSplit := 0
@@ -1021,13 +1021,13 @@ func runInstantQuery(t *testing.T, eng promql.QueryEngine, storage storage.Stora
 }
 
 func executeQuery(t *testing.T, engine promql.QueryEngine, storage storage.Storage, expr string, ts time.Time) (*promql.Result, []storageQueryRange) {
-	wrapped, ranges := trackRanges(storage)
+	wrapped := trackRanges(storage)
 	ctx := user.InjectOrgID(context.Background(), "test-user")
 	q, err := engine.NewInstantQuery(ctx, wrapped, nil, expr, ts)
 	require.NoError(t, err)
 	result := q.Exec(ctx)
 	q.Close()
-	return result, *ranges
+	return result, wrapped.ranges
 }
 
 func verifyCacheStats(t *testing.T, backend *testCacheBackend, expectedGets, expectedHits, expectedSets int) {
@@ -1045,14 +1045,10 @@ const (
 	minuteInMs = int64(time.Minute / time.Millisecond)
 )
 
-func trackRanges(promStorage storage.Storage) (*wrappedQueryable, *[]storageQueryRange) {
-	ranges := &[]storageQueryRange{}
-	return &wrappedQueryable{
+func trackRanges(promStorage storage.Storage) *rangeTrackingQueryable {
+	return &rangeTrackingQueryable{
 		inner: promStorage,
-		onQuerier: func(mint, maxt int64) {
-			*ranges = append(*ranges, storageQueryRange{mint, maxt})
-		},
-	}, ranges
+	}
 }
 
 type testCacheBackend struct {
@@ -1098,15 +1094,13 @@ func (c *testCacheBackend) Reset() {
 	c.gets = 0
 }
 
-type wrappedQueryable struct {
-	inner     storage.Queryable
-	onQuerier func(mint, maxt int64)
+type rangeTrackingQueryable struct {
+	inner  storage.Queryable
+	ranges []storageQueryRange
 }
 
-func (w *wrappedQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
-	if w.onQuerier != nil {
-		w.onQuerier(mint, maxt)
-	}
+func (w *rangeTrackingQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
+	w.ranges = append(w.ranges, storageQueryRange{mint, maxt})
 	return w.inner.Querier(mint, maxt)
 }
 

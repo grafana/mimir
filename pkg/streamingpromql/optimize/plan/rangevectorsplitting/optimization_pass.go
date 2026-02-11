@@ -16,6 +16,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 type limitsProvider interface {
@@ -90,6 +91,8 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 }
 
 func (o *OptimizationPass) wrapSplitRangeVectorFunctions(ctx context.Context, n planning.Node, timeRange types.QueryTimeRange) (planning.Node, error) {
+	logger := spanlogger.FromContext(ctx, o.logger)
+
 	// Skip processing children of subqueries - range vectors inside subqueries
 	// create a range query context which isn't supported yet.
 	if _, isSubquery := n.(*core.Subquery); isSubquery {
@@ -102,14 +105,14 @@ func (o *OptimizationPass) wrapSplitRangeVectorFunctions(ctx context.Context, n 
 		if err != nil {
 			var notAppliedErr *errNotApplied
 			if errors.As(err, &notAppliedErr) {
-				level.Debug(o.logger).Log("msg", "range vector splitting not applied to function", "function", functionCall.GetFunction().PromQLName(), "reason", notAppliedErr.reason)
+				level.Debug(logger).Log("msg", "range vector splitting not applied to function", "function", functionCall.GetFunction().PromQLName(), "reason", notAppliedErr.reason)
 				o.functionNodesUnsplit.WithLabelValues(notAppliedErr.reason).Inc()
 			} else {
 				o.functionNodesUnsplit.WithLabelValues("error").Inc()
 				return nil, err
 			}
 		} else {
-			level.Debug(o.logger).Log("msg", "range vector splitting applied to function", "function", functionCall.GetFunction().PromQLName())
+			level.Debug(logger).Log("msg", "range vector splitting applied to function", "function", functionCall.GetFunction().PromQLName())
 			o.splitNodesIntroduced.Inc()
 			return wrappedNode, nil
 		}
@@ -143,12 +146,6 @@ func (o *OptimizationPass) wrapSplitRangeVectorFunctions(ctx context.Context, n 
 //     inner nodes for the subquery, so the split ranges might not align with the stored blocks after the adjustments.
 //   - For functions that require timestamps (e.g. ts_of_min_over_time), we will need to shift the result timestamps to
 //     accommodate for the adjustment done for modifiers.
-//   - We probably shouldn't cache intermediate results queries for @ modifiers at all. Caching is good for cases like
-//     rules where the data being queried is partially the same as for previous executions. In the @ modifier case, the
-//     exact same result will be returned time after time (disregarding OOO or querying in the future), so we should just
-//     cache the entire result instead. We might still want to take advantage of the splitting part even if we don't want
-//     to cache the intermediate results though - if we could parallelise query splitting it can still be beneficial for
-//     queries with @ modifiers in terms of response time.
 func (o *OptimizationPass) trySplitFunction(ctx context.Context, functionCall *core.FunctionCall, timeRange types.QueryTimeRange) (planning.Node, error) {
 	// For now, only support instant queries (range queries are more complex)
 	if !timeRange.IsInstant {
