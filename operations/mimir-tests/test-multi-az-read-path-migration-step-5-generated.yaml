@@ -5883,7 +5883,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3-rc.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:

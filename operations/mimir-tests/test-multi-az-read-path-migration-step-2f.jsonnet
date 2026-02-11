@@ -1,21 +1,29 @@
 // Migration step 2:
-// - Migrate store-gateways to multi-zone deployment - Decommission - store-gateway-zone-c
+// - Migrate store-gateways to multi-zone deployment - Deploy store-gateway-zone-b-backup.
 (import 'test-multi-az-read-path-migration-step-2e.jsonnet') {
-  local statefulSet = $.apps.v1.statefulSet,
-
   _config+:: {
-    multi_zone_store_gateway_zone_c_enabled: false,
+    multi_zone_store_gateway_multi_az_enabled: true,
+
+    // Remove the following settings:
+    // store_gateway_automated_downscale_zone_b_backup_enabled: false,
+    // multi_zone_store_gateway_zone_a_backup_multi_az_enabled: true,
+    // multi_zone_store_gateway_zone_b_backup_multi_az_enabled: true,
+    // multi_zone_store_gateway_zone_b_multi_az_enabled: true,
+    // store_gateway_deletion_protection_enabled: false,
+
+    // default:
+    store_gateway_automated_downscale_zone_b_backup_enabled: $._config.store_gateway_automated_downscale_enabled,
+    multi_zone_store_gateway_zone_a_backup_multi_az_enabled: $._config.multi_zone_store_gateway_multi_az_enabled,
+    multi_zone_store_gateway_zone_b_backup_multi_az_enabled: $._config.multi_zone_store_gateway_multi_az_enabled,
+    multi_zone_store_gateway_zone_b_multi_az_enabled: $._config.multi_zone_store_gateway_multi_az_enabled,
+    store_gateway_deletion_protection_enabled: false,  // default.
   },
 
   // Remove the following:
-  // store_gateway_zone_b_statefulset+:
-  //   statefulSet.spec.persistentVolumeClaimRetentionPolicy.withWhenScaled('Retain'),
-  //
-  // store_gateway_zone_c_statefulset+:
-  //   statefulSet.mixin.metadata.withAnnotationsMixin({
-  //     'grafana.com/rollout-downscale-leader': 'store-gateway-zone-a',
-  //   }),
-
-  store_gateway_zone_b_statefulset+: { spec+: { persistentVolumeClaimRetentionPolicy+:: {} } },
-  // store_gateway_zone_c_statefulset will be removed by setting ..._enabled: false above.
+  // store_gateway_rollout_pdb+:
+  //   local podDisruptionBudget = $.policy.v1.podDisruptionBudget;
+  //   podDisruptionBudget.mixin.spec.withMaxUnavailable(0),
+  store_gateway_rollout_pdb+:
+    local podDisruptionBudget = $.policy.v1.podDisruptionBudget;
+    podDisruptionBudget.mixin.spec.withMaxUnavailable($._config.multi_zone_store_gateway_max_unavailable),
 }

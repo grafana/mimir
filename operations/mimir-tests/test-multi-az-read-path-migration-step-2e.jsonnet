@@ -1,34 +1,21 @@
 // Migration step 2:
-// - Migrate store-gateways to multi-zone deployment - Re-deploy store-gateway-zone-b to new AZ.
+// - Migrate store-gateways to multi-zone deployment - Decommission - store-gateway-zone-c
 (import 'test-multi-az-read-path-migration-step-2d.jsonnet') {
   local statefulSet = $.apps.v1.statefulSet,
 
   _config+:: {
-    multi_zone_store_gateway_zone_b_multi_az_enabled: true,
-
-    store_gateway_deletion_protection_enabled: false,
-
-    // Remove the following:
-    // store_gateway_automated_downscale_zone_b_enabled: false,
-
-    // default:
-    store_gateway_automated_downscale_zone_b_enabled: $._config.store_gateway_automated_downscale_enabled,
+    multi_zone_store_gateway_zone_c_enabled: false,
   },
 
   // Remove the following:
   // store_gateway_zone_b_statefulset+:
-  //   statefulSet.mixin.spec.withReplicas(0),
-  //
-  // store_gateway_zone_b_args+:: {
-  //   'store-gateway.sharding-ring.auto-forget-enabled': false,
-  // },
-  store_gateway_zone_b_statefulset+:
-    statefulSet.mixin.spec.withReplicas(1),  // set to normal replica count
-  store_gateway_zone_b_args+:: {
-    'store-gateway.sharding-ring.auto-forget-enabled': null,
-  },
-
-  // Keep the following:
-  // store_gateway_zone_b_statefulset+:
   //   statefulSet.spec.persistentVolumeClaimRetentionPolicy.withWhenScaled('Retain'),
+  //
+  // store_gateway_zone_c_statefulset+:
+  //   statefulSet.mixin.metadata.withAnnotationsMixin({
+  //     'grafana.com/rollout-downscale-leader': 'store-gateway-zone-a',
+  //   }),
+
+  store_gateway_zone_b_statefulset+: { spec+: { persistentVolumeClaimRetentionPolicy+:: {} } },
+  // store_gateway_zone_c_statefulset will be removed by setting ..._enabled: false above.
 }
