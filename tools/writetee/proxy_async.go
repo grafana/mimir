@@ -5,11 +5,9 @@ package writetee
 import (
 	"bytes"
 	"context"
-	"errors"
 	"io"
 	"net/http"
 	"sync"
-	"time"
 )
 
 // AsyncBackendDispatcher handles fire-and-forget requests to non-preferred backends.
@@ -46,7 +44,7 @@ func (d *AsyncBackendDispatcher) Stop() {
 
 // Dispatch spawns a goroutine to send a request to the backend. Returns true if dispatched, false if dropped.
 // Requests are dropped when the maximum number of in-flight requests is reached.
-func (d *AsyncBackendDispatcher) Dispatch(ctx context.Context, req *http.Request, body []byte, backend ProxyBackend) bool {
+func (d *AsyncBackendDispatcher) Dispatch(ctx context.Context, req *http.Request, body []byte, backend ProxyBackend, routeName string) bool {
 	d.mu.Lock()
 	if d.stopped {
 		d.mu.Unlock()
@@ -77,7 +75,7 @@ func (d *AsyncBackendDispatcher) Dispatch(ctx context.Context, req *http.Request
 			}
 
 			elapsed, status, _, err := backend.ForwardRequest(context.WithoutCancel(ctx), req, bodyReader)
-			d.trackAsyncResult(backend, req.Method, elapsed, status, err)
+			d.metrics.RecordBackendResult(backend.Name(), req.Method, routeName, elapsed, status, err)
 		}()
 		return true
 
@@ -85,22 +83,5 @@ func (d *AsyncBackendDispatcher) Dispatch(ctx context.Context, req *http.Request
 		// At capacity - drop request
 		d.metrics.droppedRequestsTotal.WithLabelValues(backend.Name(), "max_in_flight").Inc()
 		return false
-	}
-}
-
-// trackAsyncResult records metrics for async backend requests.
-func (d *AsyncBackendDispatcher) trackAsyncResult(backend ProxyBackend, method string, elapsed time.Duration, status int, err error) {
-	if err != nil {
-		errorType := "network"
-		if errors.Is(err, context.DeadlineExceeded) {
-			errorType = "timeout"
-		}
-		d.metrics.errorsTotal.WithLabelValues(backend.Name(), method, "async", errorType).Inc()
-		return
-	}
-
-	// Track 5xx and 429 as errors
-	if status >= 500 || status == 429 {
-		d.metrics.errorsTotal.WithLabelValues(backend.Name(), method, "async", "status_error").Inc()
 	}
 }

@@ -165,7 +165,7 @@ func TestProxyEndpoint_ResponseSelection(t *testing.T) {
 			asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics)
 			defer asyncDispatcher.Stop()
 
-			endpoint, err := NewProxyEndpoint(backendInterfaces, route, metrics, logger, 0, 1.0, nil, asyncDispatcher)
+			endpoint, err := NewProxyEndpoint(backendInterfaces, route, metrics, logger, 1.0, nil, asyncDispatcher)
 			require.NoError(t, err)
 
 			// Create a test request
@@ -206,7 +206,7 @@ func TestProxyEndpoint_BodySizeLimit(t *testing.T) {
 	asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics)
 	defer asyncDispatcher.Stop()
 
-	endpoint, err := NewProxyEndpoint(backendInterfaces, route, metrics, logger, 0, 1.0, nil, asyncDispatcher)
+	endpoint, err := NewProxyEndpoint(backendInterfaces, route, metrics, logger, 1.0, nil, asyncDispatcher)
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -274,7 +274,7 @@ func TestProxyEndpoint_ServeHTTPPassthrough(t *testing.T) {
 	asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics)
 	defer asyncDispatcher.Stop()
 
-	endpoint, err := NewProxyEndpoint(backendInterfaces, route, metrics, logger, 0, 1.0, nil, asyncDispatcher)
+	endpoint, err := NewProxyEndpoint(backendInterfaces, route, metrics, logger, 1.0, nil, asyncDispatcher)
 	require.NoError(t, err)
 
 	// Create a test request with Content-Type

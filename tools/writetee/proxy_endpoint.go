@@ -5,11 +5,9 @@ package writetee
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/go-kit/log"
@@ -24,13 +22,12 @@ const (
 )
 
 type ProxyEndpoint struct {
-	backends              []ProxyBackend
-	metrics               *ProxyMetrics
-	logger                log.Logger
-	slowResponseThreshold time.Duration
-	amplificationFactor   float64
-	amplificationTracker  *AmplificationTracker
-	asyncDispatcher       *AsyncBackendDispatcher
+	backends             []ProxyBackend
+	metrics              *ProxyMetrics
+	logger               log.Logger
+	amplificationFactor  float64
+	amplificationTracker *AmplificationTracker
+	asyncDispatcher      *AsyncBackendDispatcher
 
 	// The preferred backend (required).
 	preferredBackend ProxyBackend
@@ -38,7 +35,7 @@ type ProxyEndpoint struct {
 	route Route
 }
 
-func NewProxyEndpoint(backends []ProxyBackend, route Route, metrics *ProxyMetrics, logger log.Logger, slowResponseThreshold time.Duration, amplificationFactor float64, amplificationTracker *AmplificationTracker, asyncDispatcher *AsyncBackendDispatcher) (*ProxyEndpoint, error) {
+func NewProxyEndpoint(backends []ProxyBackend, route Route, metrics *ProxyMetrics, logger log.Logger, amplificationFactor float64, amplificationTracker *AmplificationTracker, asyncDispatcher *AsyncBackendDispatcher) (*ProxyEndpoint, error) {
 	var preferredBackend ProxyBackend
 	for _, backend := range backends {
 		if backend.Preferred() {
@@ -52,15 +49,14 @@ func NewProxyEndpoint(backends []ProxyBackend, route Route, metrics *ProxyMetric
 	}
 
 	return &ProxyEndpoint{
-		backends:              backends,
-		route:                 route,
-		metrics:               metrics,
-		logger:                logger,
-		slowResponseThreshold: slowResponseThreshold,
-		amplificationFactor:   amplificationFactor,
-		amplificationTracker:  amplificationTracker,
-		preferredBackend:      preferredBackend,
-		asyncDispatcher:       asyncDispatcher,
+		backends:             backends,
+		route:                route,
+		metrics:              metrics,
+		logger:               logger,
+		amplificationFactor:  amplificationFactor,
+		amplificationTracker: amplificationTracker,
+		preferredBackend:     preferredBackend,
+		asyncDispatcher:      asyncDispatcher,
 	}, nil
 }
 
@@ -142,11 +138,10 @@ func (p *ProxyEndpoint) ServeHTTPPassthrough(w http.ResponseWriter, r *http.Requ
 	elapsed, status, body, err := p.preferredBackend.ForwardRequest(ctx, r, r.Body)
 
 	// Track metrics
-	p.metrics.requestDuration.WithLabelValues(p.preferredBackend.Name(), r.Method, "passthrough", strconv.Itoa(status)).Observe(elapsed.Seconds())
+	p.metrics.RecordBackendResult(p.preferredBackend.Name(), r.Method, "passthrough", elapsed, status, err)
 
 	if err != nil {
 		level.Error(logger).Log("msg", "Passthrough request failed", "backend", p.preferredBackend.Name(), "err", err)
-		p.metrics.errorsTotal.WithLabelValues(p.preferredBackend.Name(), r.Method, "passthrough", "forward_error").Inc()
 
 		// Determine appropriate status code
 		statusCode := http.StatusBadGateway
@@ -184,7 +179,7 @@ func (p *ProxyEndpoint) dispatchToNonPreferredBackends(ctx context.Context, req 
 		}
 
 		bodyToSend := p.amplifyWriteRequestBody(body, backend, logger)
-		p.asyncDispatcher.Dispatch(ctx, req, bodyToSend, backend)
+		p.asyncDispatcher.Dispatch(ctx, req, bodyToSend, backend, p.route.RouteName)
 	}
 }
 
@@ -233,16 +228,10 @@ func (p *ProxyEndpoint) executePreferredBackendRequest(ctx context.Context, req 
 	if err != nil {
 		l = log.With(l, "err", err)
 		logger.SetError()
-		// Track error type
-		errorType := "network"
-		if errors.Is(err, context.DeadlineExceeded) {
-			errorType = "timeout"
-		}
-		p.metrics.errorsTotal.WithLabelValues(b.Name(), req.Method, p.route.RouteName, errorType).Inc()
 	}
 
 	l.Log("msg", "Backend response", "status", status, "elapsed", elapsed)
-	p.metrics.requestDuration.WithLabelValues(b.Name(), req.Method, p.route.RouteName, strconv.Itoa(res.statusCode())).Observe(elapsed.Seconds())
+	p.metrics.RecordBackendResult(b.Name(), req.Method, p.route.RouteName, elapsed, status, err)
 	logger.SetTag("status", status)
 
 	return res
@@ -279,9 +268,11 @@ func (p *ProxyEndpoint) amplifyWriteRequestBody(body []byte, backend ProxyBacken
 		logger.SetSpanAndLogTag("original_series_count", result.OriginalSeriesCount)
 		logger.SetSpanAndLogTag("amplified_series_count", result.AmplifiedSeriesCount)
 	} else if result.IsRW2 {
-		// RW2 request that wasn't amplified (e.g., factor = 1.0)
-		logger.SetSpanAndLogTag("format", "rw2")
+		// This should not happen anymore - RW 2.0 is now amplified
+		_, _, rw2Ratio := p.amplificationTracker.GetStats()
 		logger.SetSpanAndLogTag("rw2_not_amplified", "true")
+		logger.SetSpanAndLogTag("rw2_series_count", result.OriginalSeriesCount)
+		logger.SetSpanAndLogTag("rw2_ratio", fmt.Sprintf("%.3f", rw2Ratio))
 	}
 
 	return result.Body

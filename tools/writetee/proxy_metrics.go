@@ -3,6 +3,11 @@
 package writetee
 
 import (
+	"context"
+	"errors"
+	"strconv"
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -51,4 +56,28 @@ func NewProxyMetrics(registerer prometheus.Registerer) *ProxyMetrics {
 	}
 
 	return m
+}
+
+// RecordBackendResult records metrics for a completed backend request.
+// This provides consistent metric tracking for both preferred and non-preferred backends.
+func (m *ProxyMetrics) RecordBackendResult(backendName, method, routeName string, elapsed time.Duration, status int, err error) {
+	// Always record duration
+	m.requestDuration.WithLabelValues(backendName, method, routeName, strconv.Itoa(statusCodeForMetrics(status, err))).Observe(elapsed.Seconds())
+
+	// Record error only for actual errors (network/timeout), not for 5xx responses
+	if err != nil {
+		errorType := "network"
+		if errors.Is(err, context.DeadlineExceeded) {
+			errorType = "timeout"
+		}
+		m.errorsTotal.WithLabelValues(backendName, method, routeName, errorType).Inc()
+	}
+}
+
+// statusCodeForMetrics returns the status code to use for metrics labels.
+func statusCodeForMetrics(status int, err error) int {
+	if err != nil || status <= 0 {
+		return 500
+	}
+	return status
 }

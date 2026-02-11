@@ -55,7 +55,7 @@ func TestAsyncBackendDispatcher_ShouldNotBlockOnNonPreferredBackends(t *testing.
 		Methods:   []string{"POST"},
 	}
 
-	endpoint, err := NewProxyEndpoint(backends, route, metrics, logger, 0, 1.0, nil, asyncDispatcher)
+	endpoint, err := NewProxyEndpoint(backends, route, metrics, logger, 1.0, nil, asyncDispatcher)
 	require.NoError(t, err)
 
 	// Create a test request
@@ -115,7 +115,7 @@ func TestAsyncBackendDispatcher_ShouldEnforceMaxInFlightLimit(t *testing.T) {
 	dispatched := 0
 	dropped := 0
 	for i := 0; i < totalRequests; i++ {
-		if asyncDispatcher.Dispatch(req.Context(), req, body, backend) {
+		if asyncDispatcher.Dispatch(req.Context(), req, body, backend, "test_route") {
 			dispatched++
 		} else {
 			dropped++
@@ -156,7 +156,7 @@ func TestAsyncBackendDispatcher_ConcurrentRequests(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			asyncDispatcher.Dispatch(req.Context(), req, body, backend)
+			asyncDispatcher.Dispatch(req.Context(), req, body, backend, "test_route")
 		}()
 	}
 
@@ -191,7 +191,7 @@ func TestAsyncBackendDispatcher_GracefulShutdown(t *testing.T) {
 
 	// Dispatch several requests
 	for i := 0; i < 3; i++ {
-		asyncDispatcher.Dispatch(req.Context(), req, body, backend)
+		asyncDispatcher.Dispatch(req.Context(), req, body, backend, "test_route")
 	}
 
 	// Stop should wait for in-flight requests to complete
@@ -201,7 +201,7 @@ func TestAsyncBackendDispatcher_GracefulShutdown(t *testing.T) {
 	assert.Equal(t, int32(3), completed.Load(), "Stop should wait for all in-flight requests")
 
 	// New dispatches after stop should be rejected
-	dispatched := asyncDispatcher.Dispatch(req.Context(), req, body, backend)
+	dispatched := asyncDispatcher.Dispatch(req.Context(), req, body, backend, "test_route")
 	assert.False(t, dispatched, "Dispatch after stop should be rejected")
 }
 
@@ -233,10 +233,10 @@ func TestAsyncBackendDispatcher_MultipleBackends(t *testing.T) {
 	body := []byte("test")
 
 	// Dispatch to both backends
-	asyncDispatcher.Dispatch(req.Context(), req, body, backend1)
-	asyncDispatcher.Dispatch(req.Context(), req, body, backend1)
-	asyncDispatcher.Dispatch(req.Context(), req, body, backend2)
-	asyncDispatcher.Dispatch(req.Context(), req, body, backend2)
+	asyncDispatcher.Dispatch(req.Context(), req, body, backend1, "test_route")
+	asyncDispatcher.Dispatch(req.Context(), req, body, backend1, "test_route")
+	asyncDispatcher.Dispatch(req.Context(), req, body, backend2, "test_route")
+	asyncDispatcher.Dispatch(req.Context(), req, body, backend2, "test_route")
 
 	asyncDispatcher.Stop()
 

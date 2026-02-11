@@ -38,7 +38,6 @@ type ProxyConfig struct {
 	PreferredBackend           string
 	BackendReadTimeout         time.Duration
 	BackendSkipTLSVerify       bool
-	LogSlowResponseThreshold   time.Duration
 	AsyncMaxInFlightPerBackend int
 }
 
@@ -93,7 +92,6 @@ func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.BackendSkipTLSVerify, "backend.skip-tls-verify", false, "Skip TLS verification on backend targets.")
 	f.StringVar(&cfg.PreferredBackend, "backend.preferred", "", "The hostname of the preferred backend. Required. Non-preferred backends receive fire-and-forget requests.")
 	f.DurationVar(&cfg.BackendReadTimeout, "backend.read-timeout", 90*time.Second, "The timeout when reading the response from a backend.")
-	f.DurationVar(&cfg.LogSlowResponseThreshold, "proxy.log-slow-response-threshold", 10*time.Second, "The minimum difference in response time between slowest and fastest back-end over which to log the request. 0 to disable.")
 	f.IntVar(&cfg.AsyncMaxInFlightPerBackend, "backend.async-max-in-flight", 1000, "Maximum concurrent in-flight requests per non-preferred backend (async fire-and-forget). Requests are dropped when at capacity.")
 	cfg.registerServerFlagsWithChangedDefaultValues(f)
 }
@@ -255,7 +253,7 @@ func (p *Proxy) Start() error {
 
 	// register fan-out routes (explicit endpoints we want to mirror)
 	for _, route := range p.routes {
-		endpoint, err := NewProxyEndpoint(p.backends, route, p.metrics, p.logger, p.cfg.LogSlowResponseThreshold, p.cfg.AmplificationFactor, p.amplificationTracker, p.asyncDispatcher)
+		endpoint, err := NewProxyEndpoint(p.backends, route, p.metrics, p.logger, p.cfg.AmplificationFactor, p.amplificationTracker, p.asyncDispatcher)
 		if err != nil {
 			return err
 		}
@@ -269,7 +267,7 @@ func (p *Proxy) Start() error {
 		RouteName: "passthrough",
 		Methods:   []string{"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"},
 	}
-	passthroughEndpoint, err := NewProxyEndpoint(p.backends, passthroughRoute, p.metrics, p.logger, p.cfg.LogSlowResponseThreshold, p.cfg.AmplificationFactor, p.amplificationTracker, p.asyncDispatcher)
+	passthroughEndpoint, err := NewProxyEndpoint(p.backends, passthroughRoute, p.metrics, p.logger, p.cfg.AmplificationFactor, p.amplificationTracker, p.asyncDispatcher)
 	if err != nil {
 		return err
 	}
