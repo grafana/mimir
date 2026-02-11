@@ -213,7 +213,7 @@ func (jp *BboltJobPersister) WriteAndDeleteJobs(writes, deletes []TrackedJob) er
 type NopJobPersistenceManager struct{}
 
 func (n *NopJobPersistenceManager) InitializeTenant(tenant string) (JobPersister, error) {
-	return &NopJobPersister[*CompactionJob]{}, nil
+	return &NopJobPersister{}, nil
 }
 
 func (n *NopJobPersistenceManager) DeleteTenant(tenant string) error {
@@ -228,16 +228,16 @@ func (n *NopJobPersistenceManager) Close() error {
 	return nil
 }
 
-type NopJobPersister[V any] struct{}
+type NopJobPersister struct{}
 
-func (n *NopJobPersister[V]) WriteJob(job TrackedJob) error {
+func (n *NopJobPersister) WriteJob(job TrackedJob) error {
 	return nil
 }
 
-func (n *NopJobPersister[V]) DeleteJob(job TrackedJob) error {
+func (n *NopJobPersister) DeleteJob(job TrackedJob) error {
 	return nil
 }
 
-func (n *NopJobPersister[V]) WriteAndDeleteJobs(writes []TrackedJob, deletes []TrackedJob) error {
+func (n *NopJobPersister) WriteAndDeleteJobs(writes []TrackedJob, deletes []TrackedJob) error {
 	return nil
 }
