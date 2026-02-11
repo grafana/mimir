@@ -2790,6 +2790,7 @@ func TestDistributor_MetricsForLabelMatchers_adjustPushDownLimit(t *testing.T) {
 			ctx := user.InjectOrgID(context.Background(), "test")
 			ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 			ctx = limiter.AddMemoryTrackerToContext(ctx, limiter.NewUnlimitedMemoryConsumptionTracker(ctx))
+			ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx)
 
 			for _, series := range fixtures {
 				req := mockWriteRequest(series.lbls, series.value, series.timestamp)
