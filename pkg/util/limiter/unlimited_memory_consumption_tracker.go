@@ -21,7 +21,6 @@ type UnlimitedMemoryTrackingQuery struct {
 
 func (u *UnlimitedMemoryTrackingQuery) Exec(ctx context.Context) *promql.Result {
 	ctx = AddMemoryTrackerToContext(ctx, u.memoryConsumptionTracker)
-	ctx = ContextWithNewSeriesLabelsDeduplicator(ctx)
 	return u.inner.Exec(ctx)
 }
 
