@@ -141,7 +141,7 @@ type AmplificationResult struct {
 //   - factor > 1.0: amplification (duplication)
 //   - factor = 2.0: each time series is duplicated once (2x total)
 //   - factor = 1.5: each time series gets 1 full copy + deterministically selected 50% get a 2nd copy
-//     - factor = 3.5: each time series gets 3 full copies + deterministically selected 50% get a 4th copy
+//   - factor = 3.5: each time series gets 3 full copies + deterministically selected 50% get a 4th copy
 //   - factor < 1.0: sampling (reduction)
 //   - factor = 0.1: approximately 10% of series are kept (deterministic selection)
 //   - factor = 0.5: approximately 50% of series are kept (deterministic selection)
