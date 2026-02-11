@@ -302,7 +302,7 @@
 * [CHANGE] Make HTTP and gRPC server options configurable through the same dskit `server` flags and config block as Mimir. This begins the deprecation cycle for query-tee's `server.http-service-address`, `server.http-service-port`, `"server.grpc-service-address`, and `server.grpc-service-port` flags. #13328 #13355 #13360
 * [BUGFIX] Fix bug where query-tee can panic if forwarding a request fails. #14015
 
-## 3.0.3-rc.0
+## 3.0.3
 
 ### Grafana Mimir
 
