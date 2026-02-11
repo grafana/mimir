@@ -112,7 +112,7 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 	}()
 
 	metricSizes := []int{1, 100} // Don't bother with 2000 series test here: these test cases take a while and they're most interesting as benchmarks, not correctness tests.
-	q := querier.NewMemoryTrackingQueryable(createBenchmarkQueryable(t, metricSizes), false)
+	q := createBenchmarkQueryable(t, metricSizes)
 	cases := TestCases(metricSizes)
 
 	opts := streamingpromql.NewTestEngineOpts()
@@ -145,7 +145,7 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 // This test checks that the way we set up the ingester and PromQL engine does what we expect
 // (ie. that we can query the data we write to the ingester)
 func TestBenchmarkSetup(t *testing.T) {
-	q := querier.NewMemoryTrackingQueryable(createBenchmarkQueryable(t, []int{1}), false)
+	q := createBenchmarkQueryable(t, []int{1})
 
 	opts := streamingpromql.NewTestEngineOpts()
 	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
@@ -213,7 +213,7 @@ func createBenchmarkQueryable(t testing.TB, metricSizes []int) storage.Queryable
 		t.Cleanup(cleanup)
 	}
 
-	return createIngesterQueryable(t, addr)
+	return querier.NewMemoryTrackingQueryable(createIngesterQueryable(t, addr), false)
 }
 
 func createIngesterQueryable(t testing.TB, address string) storage.Queryable {
