@@ -1644,8 +1644,8 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			expr:          "sum(some_histogram)",
 			shouldSucceed: true,
 
-			rangeQueryExpectedPeak: 8*types.HistogramPointerSize + 8*types.HPointSize + types.SeriesMetadataSize + 8*types.CounterResetHintSize,
-			rangeQueryLimit:        8*types.HistogramPointerSize + 8*types.HPointSize + types.SeriesMetadataSize + 8*types.CounterResetHintSize,
+			rangeQueryExpectedPeak: 2*8*types.HistogramPointerSize + 8*types.HPointSize + types.SeriesMetadataSize + 8*types.CounterResetHintSize,
+			rangeQueryLimit:        2*8*types.HistogramPointerSize + 8*types.HPointSize + types.SeriesMetadataSize + 8*types.CounterResetHintSize,
 
 			instantQueryExpectedPeak: types.HPointSize + types.VectorSampleSize + types.SeriesMetadataSize,
 			instantQueryLimit:        types.HPointSize + types.VectorSampleSize + types.SeriesMetadataSize,
@@ -1663,11 +1663,12 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			rangeQueryLimit:        8*types.HPointSize + types.SeriesMetadataSize + 8*types.HistogramPointerSize - 1,
 			// Each series has one sample, which is already a power of two.
 			// At peak we'll hold in memory:
-			//  - the running total for the sum() (a histogram pointer),
+			//  - the running total for the sum() + compensating value for kahan summation
+			//    (2 histogram pointers),
 			//  - the next series from the selector,
 			//  - and the output sample.
 			// The last thing to be allocated is the vector slice for the final result (after the sum()'s running total has been returned), so those won't contribute to the peak before the query is aborted.
-			instantQueryExpectedPeak: types.HPointSize + types.SeriesMetadataSize + types.HistogramPointerSize + types.CounterResetHintSize,
+			instantQueryExpectedPeak: types.HPointSize + types.SeriesMetadataSize + 2*types.HistogramPointerSize + types.CounterResetHintSize,
 			instantQueryLimit:        types.HPointSize + types.SeriesMetadataSize + types.VectorSampleSize - 1,
 		},
 	}
