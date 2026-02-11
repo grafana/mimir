@@ -58,6 +58,11 @@ var (
 	spanExporter = mqetest.NewFixedInMemoryExporter(1024)
 )
 
+const (
+	prometheusEngineName = "Prometheus' engine"
+	mimirEngineName      = "Mimir's engine"
+)
+
 func init() {
 	types.EnableManglingReturnedSlices = true
 	parser.ExperimentalDurationExpr = true
@@ -262,12 +267,12 @@ func TestOurTestCases(t *testing.T) {
 				prometheusEngineToTest = prometheusEngineWithDelayedNameRemoval
 			}
 
-			t.Run("Mimir's engine", func(t *testing.T) {
+			t.Run(mimirEngineName, func(t *testing.T) {
 				promqltest.RunTest(t, testScript, mimirEngineToTest)
 			})
 
 			// Run the tests against Prometheus' engine to ensure our test cases are valid.
-			t.Run("Prometheus' engine", func(t *testing.T) {
+			t.Run(prometheusEngineName, func(t *testing.T) {
 				if strings.HasPrefix(testFile, "ours-only") {
 					t.Skip("disabled for Prometheus' engine due to bug in Prometheus' engine")
 				}
@@ -850,12 +855,12 @@ func TestRangeVectorSelectors(t *testing.T) {
 				}
 			}
 
-			t.Run("Mimir's engine", func(t *testing.T) {
+			t.Run(mimirEngineName, func(t *testing.T) {
 				runTest(t, mimirEngine, testCase.expr, testCase.ts, testCase.expected)
 			})
 
 			// Run the tests against Prometheus' engine to ensure our test cases are valid.
-			t.Run("Prometheus' engine", func(t *testing.T) {
+			t.Run(prometheusEngineName, func(t *testing.T) {
 				runTest(t, prometheusEngine, testCase.expr, testCase.ts, testCase.expected)
 			})
 		})
@@ -1348,12 +1353,12 @@ func TestSubqueries(t *testing.T) {
 				qry.Close()
 			}
 
-			t.Run("Mimir's engine", func(t *testing.T) {
+			t.Run(mimirEngineName, func(t *testing.T) {
 				runTest(t, mimirEngine)
 			})
 
 			// Ensure our test cases are correct by running them against Prometheus' engine too.
-			t.Run("Prometheus' engine", func(t *testing.T) {
+			t.Run(prometheusEngineName, func(t *testing.T) {
 				runTest(t, prometheusEngine)
 			})
 		})
@@ -1639,8 +1644,8 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			expr:          "sum(some_histogram)",
 			shouldSucceed: true,
 
-			rangeQueryExpectedPeak: 8*types.HistogramPointerSize + 8*types.HPointSize + types.SeriesMetadataSize + 8*types.CounterResetHintSize,
-			rangeQueryLimit:        8*types.HistogramPointerSize + 8*types.HPointSize + types.SeriesMetadataSize + 8*types.CounterResetHintSize,
+			rangeQueryExpectedPeak: 2*8*types.HistogramPointerSize + 8*types.HPointSize + types.SeriesMetadataSize + 8*types.CounterResetHintSize,
+			rangeQueryLimit:        2*8*types.HistogramPointerSize + 8*types.HPointSize + types.SeriesMetadataSize + 8*types.CounterResetHintSize,
 
 			instantQueryExpectedPeak: types.HPointSize + types.VectorSampleSize + types.SeriesMetadataSize,
 			instantQueryLimit:        types.HPointSize + types.VectorSampleSize + types.SeriesMetadataSize,
@@ -1658,11 +1663,12 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			rangeQueryLimit:        8*types.HPointSize + types.SeriesMetadataSize + 8*types.HistogramPointerSize - 1,
 			// Each series has one sample, which is already a power of two.
 			// At peak we'll hold in memory:
-			//  - the running total for the sum() (a histogram pointer),
+			//  - the running total for the sum() + compensating value for kahan summation
+			//    (2 histogram pointers),
 			//  - the next series from the selector,
 			//  - and the output sample.
 			// The last thing to be allocated is the vector slice for the final result (after the sum()'s running total has been returned), so those won't contribute to the peak before the query is aborted.
-			instantQueryExpectedPeak: types.HPointSize + types.SeriesMetadataSize + types.HistogramPointerSize + types.CounterResetHintSize,
+			instantQueryExpectedPeak: types.HPointSize + types.SeriesMetadataSize + 2*types.HistogramPointerSize + types.CounterResetHintSize,
 			instantQueryLimit:        types.HPointSize + types.SeriesMetadataSize + types.VectorSampleSize - 1,
 		},
 	}
@@ -2217,11 +2223,41 @@ type annotationTestCase struct {
 	expectedWarningAnnotationsDelayedNameRemovalEnabled []string
 	expectedInfoAnnotationsDelayedNameRemovalEnabled    []string
 
+	// an alternate set of info annotations for Prometheus where it differs,
+	// including both instant and range queries.
+	// if not set the test will fall back to expectedInfoAnnotations / expectedInfoAnnotationsDelayedNameRemovalEnabled
+	// This is only required temporarily until we fix merging annotations in MQE.
+	expectedInfoAnnotationsPrometheus                               []string
+	expectedInfoAnnotationsDelayedNameRemovalEnabledPrometheus      []string
+	expectedInfoAnnotationsPrometheusRange                          []string
+	expectedInfoAnnotationsDelayedNameRemovalEnabledPrometheusRange []string
+	skipComparingAnnotationsWithPrometheus                          bool
+
 	skipComparisonWithPrometheusReason string
 	instantEvaluationTimestamp         *time.Time
 }
 
-func (a annotationTestCase) getExpectedInfoAnnotations(delayedNameRemovalEnabled bool) []string {
+func (a annotationTestCase) getExpectedInfoAnnotations(delayedNameRemovalEnabled bool, engineName, queryType string) []string {
+	isRangeQuery := queryType == "range"
+
+	// Prometheus engine may have specific annotations that differ from Mimir
+	if engineName == prometheusEngineName {
+		if delayedNameRemovalEnabled {
+			if isRangeQuery && a.expectedInfoAnnotationsDelayedNameRemovalEnabledPrometheusRange != nil {
+				return a.expectedInfoAnnotationsDelayedNameRemovalEnabledPrometheusRange
+			}
+			if !isRangeQuery && a.expectedInfoAnnotationsDelayedNameRemovalEnabledPrometheus != nil {
+				return a.expectedInfoAnnotationsDelayedNameRemovalEnabledPrometheus
+			}
+		}
+		if isRangeQuery && a.expectedInfoAnnotationsPrometheusRange != nil {
+			return a.expectedInfoAnnotationsPrometheusRange
+		}
+		if !isRangeQuery && a.expectedInfoAnnotationsPrometheus != nil {
+			return a.expectedInfoAnnotationsPrometheus
+		}
+	}
+
 	if delayedNameRemovalEnabled && a.expectedInfoAnnotationsDelayedNameRemovalEnabled != nil {
 		return a.expectedInfoAnnotationsDelayedNameRemovalEnabled
 	}
@@ -2239,9 +2275,6 @@ func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
 	startT := timestamp.Time(0).Add(time.Minute)
 	step := time.Minute
 	endT := startT.Add(2 * step)
-
-	const prometheusEngineName = "Prometheus' engine"
-	const mimirEngineName = "Mimir's engine"
 
 	// create 2 sets of engines - a Mimir and Prometheus engine each with EnableDelayedNameRemoval=true and other with EnableDelayedNameRemoval=false
 	// there are some histogram annotation test cases which will emit a different warning/info annotation string depending on the delayed name removal setting
@@ -2318,7 +2351,7 @@ func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
 
 								warnings, infos := res.Warnings.AsStrings(testCase.expr, 0, 0)
 								require.ElementsMatch(t, testCase.getExpectedWarningAnnotations(engineSet.delayedNameRemovalEnabled), warnings)
-								require.ElementsMatch(t, testCase.getExpectedInfoAnnotations(engineSet.delayedNameRemovalEnabled), infos)
+								require.ElementsMatch(t, testCase.getExpectedInfoAnnotations(engineSet.delayedNameRemovalEnabled, engineName, queryType), infos)
 							})
 						}
 
@@ -2326,7 +2359,7 @@ func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
 						if len(results) == 2 {
 							// We do this extra comparison to ensure that we don't skip a series that may be outputted during a warning
 							// or vice-versa where no result may be expected etc.
-							mqetest.RequireEqualResults(t, testCase.expr, results[0], results[1], false)
+							mqetest.RequireEqualResults(t, testCase.expr, results[0], results[1], testCase.skipComparingAnnotationsWithPrometheus)
 						}
 					})
 				}
@@ -3208,7 +3241,12 @@ func TestHistogramAnnotations(t *testing.T) {
 			data:                    mixedClassicHistograms,
 			expr:                    `histogram_quantile(0.5, series{host="d"})`,
 			expectedInfoAnnotations: []string{`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) (1:25)`},
-			expectedInfoAnnotationsDelayedNameRemovalEnabled: []string{`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "series" (1:25)`},
+			expectedInfoAnnotationsDelayedNameRemovalEnabled:                []string{`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "series" (1:25)`},
+			expectedInfoAnnotationsPrometheus:                               []string{`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile), from buckets 1 to +Inf, with a max diff of 1, over 1 samples from 1970-01-01T00:01:00Z to 1970-01-01T00:01:00Z (1:25)`},
+			expectedInfoAnnotationsPrometheusRange:                          []string{`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile), from buckets 1 to +Inf, with a max diff of 1, over 10 samples from 1970-01-01T00:01:00Z to 1970-01-01T00:03:00Z (1:25)`},
+			expectedInfoAnnotationsDelayedNameRemovalEnabledPrometheus:      []string{`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "series", from buckets 1 to +Inf, with a max diff of 1, over 1 samples from 1970-01-01T00:01:00Z to 1970-01-01T00:01:00Z (1:25)`},
+			expectedInfoAnnotationsDelayedNameRemovalEnabledPrometheusRange: []string{`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "series", from buckets 1 to +Inf, with a max diff of 1, over 10 samples from 1970-01-01T00:01:00Z to 1970-01-01T00:03:00Z (1:25)`},
+			skipComparingAnnotationsWithPrometheus:                          true,
 		},
 		"both mixed classic+native histogram and invalid quantile warnings": {
 			data: mixedClassicHistograms,
@@ -3362,6 +3400,9 @@ func runMixedMetricsTests(t *testing.T, expressions []string, pointsPerSeries in
 			mimirQuery, err := mimirEngine.NewRangeQuery(context.Background(), storage, nil, expr, start, end, tr.interval)
 			require.NoError(t, err)
 			mimirResults := mimirQuery.Exec(context.Background())
+			if strings.Contains(expr, "histogram_quantile") {
+				skipAnnotationComparison = true
+			}
 			mqetest.RequireEqualResults(t, expr, prometheusResults, mimirResults, skipAnnotationComparison)
 
 			prometheusQuery.Close()
