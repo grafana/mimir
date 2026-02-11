@@ -4,8 +4,9 @@ package writetee
 
 import (
 	"fmt"
+	"hash/fnv"
+	"io"
 	"math"
-	"math/rand"
 	"strings"
 	"sync"
 	"time"
@@ -27,6 +28,43 @@ func isRW2Error(err error) bool {
 	}
 	errStr := err.Error()
 	return strings.Contains(errStr, "Remote Write 2.0") || strings.Contains(errStr, "Symbols")
+}
+
+// hashSeriesLabels creates a deterministic hash from RW 1.0 series labels.
+// This ensures the same series always gets the same hash value for consistent sampling.
+func hashSeriesLabels(labels []mimirpb.LabelAdapter) uint64 {
+	h := fnv.New64a()
+	for _, label := range labels {
+		// Write label name and value to hash
+		h.Write([]byte(label.Name))
+		h.Write([]byte{0}) // separator
+		h.Write([]byte(label.Value))
+		h.Write([]byte{0}) // separator
+	}
+	return h.Sum64()
+}
+
+// hashSeriesLabelsRW2 creates a deterministic hash from RW 2.0 series label references.
+// This ensures the same series always gets the same hash value for consistent sampling.
+func hashSeriesLabelsRW2(labelRefs []uint32, symbols []string) uint64 {
+	h := fnv.New64a()
+	for _, ref := range labelRefs {
+		// Write the symbol string to hash
+		if int(ref) < len(symbols) {
+			h.Write([]byte(symbols[ref]))
+			h.Write([]byte{0}) // separator
+		}
+	}
+	return h.Sum64()
+}
+
+// shouldKeepSeries deterministically decides if a series should be kept based on its hash.
+// For amplification factor f (where 0 < f < 1), a series is kept if hash % 1000 < f * 1000.
+// This ensures consistent sampling - the same series will always be kept or excluded.
+func shouldKeepSeries(hash uint64, amplificationFactor float64) bool {
+	// Use modulo 10000 for fine-grained precision (0.01% granularity)
+	threshold := uint64(amplificationFactor * 10000)
+	return (hash % 10000) < threshold
 }
 
 // AmplificationTracker tracks RW 1.0 vs RW 2.0 series counts for observability.
@@ -103,17 +141,21 @@ type AmplificationResult struct {
 //   - factor = 1.0: no change (returns original)
 //   - factor > 1.0: amplification (duplication)
 //   - factor = 2.0: each time series is duplicated once (2x total)
-//   - factor = 3.5: each time series gets 3 full copies + 50% chance of a 4th copy
+//   - factor = 1.5: each time series gets 1 full copy + deterministically selected 50% get a 2nd copy
+//     - factor = 3.5: each time series gets 3 full copies + deterministically selected 50% get a 4th copy
 //   - factor < 1.0: sampling (reduction)
-//   - factor = 0.1: each time series has 10% chance of being kept
-//   - factor = 0.5: each time series has 50% chance of being kept
+//   - factor = 0.1: approximately 10% of series are kept (deterministic selection)
+//   - factor = 0.5: approximately 50% of series are kept (deterministic selection)
 //
 // Amplified copies (factor > 1.0) get an additional label: __amplified__="<replica_num>"
 // Sampled series (factor < 1.0) do not get additional labels.
 // The body is expected to be Snappy-compressed Prometheus remote write protobuf.
 //
+// Selection (both sampling and fractional amplification) is deterministic and based on a hash
+// of the series labels, ensuring the same series are consistently selected across requests.
+//
 // Both RW 1.0 and RW 2.0 requests are processed using the same amplification factor.
-// RW 2.0 requests are converted to RW 1.0 format before amplification (memory intensive).
+// RW 2.0 requests are kept in native RW 2.0 format (avoiding memory expansion).
 // If tracker is provided, series counts are recorded for observability.
 // Returns AmplificationResult with metadata about what was done.
 func AmplifyWriteRequest(body []byte, amplificationFactor float64, tracker *AmplificationTracker) (AmplificationResult, error) {
@@ -160,10 +202,12 @@ func AmplifyWriteRequest(body []byte, amplificationFactor float64, tracker *Ampl
 		}
 
 		// Handle sampling (factor < 1.0) for RW 2.0
+		// Use deterministic hashing to ensure the same series are always sampled
 		if amplificationFactor < 1.0 {
 			sampledSeries := make([]mimirpb.TimeSeriesRW2, 0, int(float64(len(rw2Req.Timeseries))*amplificationFactor))
 			for _, ts := range rw2Req.Timeseries {
-				if rand.Float64() < amplificationFactor {
+				hash := hashSeriesLabelsRW2(ts.LabelsRefs, rw2Req.Symbols)
+				if shouldKeepSeries(hash, amplificationFactor) {
 					sampledSeries = append(sampledSeries, ts)
 				}
 			}
@@ -217,11 +261,13 @@ func AmplifyWriteRequest(body []byte, amplificationFactor float64, tracker *Ampl
 		tracker.RecordRW1Series(originalSeriesCount)
 	}
 
-	// Handle sampling (factor < 1.0) - randomly keep a subset of series
+	// Handle sampling (factor < 1.0) - deterministically keep a subset of series
+	// Use deterministic hashing to ensure the same series are always sampled
 	if amplificationFactor < 1.0 {
 		sampledSeries := make([]mimirpb.PreallocTimeseries, 0, int(float64(len(req.Timeseries))*amplificationFactor))
 		for _, ts := range req.Timeseries {
-			if rand.Float64() < amplificationFactor {
+			hash := hashSeriesLabels(ts.Labels)
+			if shouldKeepSeries(hash, amplificationFactor) {
 				sampledSeries = append(sampledSeries, ts)
 			}
 		}
@@ -262,9 +308,13 @@ func AmplifyWriteRequest(body []byte, amplificationFactor float64, tracker *Ampl
 			amplifiedSeries = append(amplifiedSeries, amplifyTimeSeries(&ts, i))
 		}
 
-		// Handle fractional part with probability
-		if fractionalPart > 0 && rand.Float64() < fractionalPart {
-			amplifiedSeries = append(amplifiedSeries, amplifyTimeSeries(&ts, fullCopies))
+		// Handle fractional part deterministically using hash
+		// This ensures the same series always get the fractional copy
+		if fractionalPart > 0 {
+			hash := hashSeriesLabels(ts.Labels)
+			if shouldKeepSeries(hash, fractionalPart) {
+				amplifiedSeries = append(amplifiedSeries, amplifyTimeSeries(&ts, fullCopies))
+			}
 		}
 	}
 
@@ -331,9 +381,13 @@ func amplifyRW2Request(req *mimirpb.WriteRequestRW2, amplificationFactor float64
 			amplifiedSeries = append(amplifiedSeries, amplifyTimeSeriesRW2(&ts, amplifiedLabelSymbolRef, replicaSymbolRefs[i]))
 		}
 
-		// Handle fractional part with probability
-		if fractionalPart > 0 && rand.Float64() < fractionalPart {
-			amplifiedSeries = append(amplifiedSeries, amplifyTimeSeriesRW2(&ts, amplifiedLabelSymbolRef, fractionalReplicaRef))
+		// Handle fractional part deterministically using hash
+		// This ensures the same series always get the fractional copy
+		if fractionalPart > 0 {
+			hash := hashSeriesLabelsRW2(ts.LabelsRefs, req.Symbols)
+			if shouldKeepSeries(hash, fractionalPart) {
+				amplifiedSeries = append(amplifiedSeries, amplifyTimeSeriesRW2(&ts, amplifiedLabelSymbolRef, fractionalReplicaRef))
+			}
 		}
 	}
 
