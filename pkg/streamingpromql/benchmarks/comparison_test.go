@@ -112,7 +112,7 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 	}()
 
 	metricSizes := []int{1, 100} // Don't bother with 2000 series test here: these test cases take a while and they're most interesting as benchmarks, not correctness tests.
-	q := createBenchmarkQueryable(t, metricSizes)
+	q := querier.NewMemoryTrackingQueryable(createBenchmarkQueryable(t, metricSizes))
 	cases := TestCases(metricSizes)
 
 	opts := streamingpromql.NewTestEngineOpts()
@@ -132,7 +132,7 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 			end := time.Unix(int64(NumIntervals*intervalSeconds), 0)
 
 			prometheusResult, prometheusClose := c.Run(ctx, t, start, end, interval, prometheusEngine, q)
-			mimirResult, mimirClose := c.Run(ctx, t, start, end, interval, mimirEngine, querier.NewMemoryTrackingQueryable(q))
+			mimirResult, mimirClose := c.Run(ctx, t, start, end, interval, mimirEngine, q)
 
 			testutils.RequireEqualResults(t, c.Expr, prometheusResult, mimirResult, false)
 
@@ -145,7 +145,7 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 // This test checks that the way we set up the ingester and PromQL engine does what we expect
 // (ie. that we can query the data we write to the ingester)
 func TestBenchmarkSetup(t *testing.T) {
-	q := createBenchmarkQueryable(t, []int{1})
+	q := querier.NewMemoryTrackingQueryable(createBenchmarkQueryable(t, []int{1}))
 
 	opts := streamingpromql.NewTestEngineOpts()
 	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
@@ -154,7 +154,7 @@ func TestBenchmarkSetup(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := user.InjectOrgID(context.Background(), UserID)
-	query, err := mimirEngine.NewRangeQuery(ctx, querier.NewMemoryTrackingQueryable(q), nil, "a_1", time.Unix(0, 0), time.Unix(int64((NumIntervals-1)*intervalSeconds), 0), interval)
+	query, err := mimirEngine.NewRangeQuery(ctx, q, nil, "a_1", time.Unix(0, 0), time.Unix(int64((NumIntervals-1)*intervalSeconds), 0), interval)
 	require.NoError(t, err)
 
 	t.Cleanup(query.Close)
@@ -180,7 +180,7 @@ func TestBenchmarkSetup(t *testing.T) {
 	require.Equal(t, expectedPoints, series.Floats)
 
 	// Check native histograms are set up correctly
-	query, err = mimirEngine.NewRangeQuery(ctx, querier.NewMemoryTrackingQueryable(q), nil, "nh_1", time.Unix(0, 0), time.Unix(int64(15*intervalSeconds), 0), interval)
+	query, err = mimirEngine.NewRangeQuery(ctx, q, nil, "nh_1", time.Unix(0, 0), time.Unix(int64(15*intervalSeconds), 0), interval)
 	require.NoError(t, err)
 
 	t.Cleanup(query.Close)
