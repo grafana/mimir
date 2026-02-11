@@ -307,4 +307,9 @@ func (p *Proxy) Stop() error {
 func (p *Proxy) Await() {
 	// Wait until terminated.
 	p.done.Wait()
+
+	// Wait for async dispatcher to drain in-flight requests.
+	if p.asyncDispatcher != nil {
+		p.asyncDispatcher.Await()
+	}
 }

@@ -37,13 +37,17 @@ func NewAsyncBackendDispatcher(maxInFlight int, metrics *ProxyMetrics, logger lo
 	}
 }
 
-// Stop gracefully shuts down, waiting for all in-flight requests to complete.
+// Stop signals the dispatcher to stop accepting new requests.
+// Call Await() after Stop() to wait for in-flight requests to complete.
 func (d *AsyncBackendDispatcher) Stop() {
 	d.mu.Lock()
 	d.stopped = true
 	d.mu.Unlock()
+}
 
-	// Wait for all in-flight requests to complete
+// Await waits for all in-flight requests to complete.
+// Call this after Stop() to ensure graceful shutdown.
+func (d *AsyncBackendDispatcher) Await() {
 	d.wg.Wait()
 }
 
