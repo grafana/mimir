@@ -64,13 +64,13 @@ func (d *AsyncBackendDispatcher) Dispatch(ctx context.Context, req *http.Request
 		sema = make(chan struct{}, d.maxInFlight)
 		d.semaphores[backend.Name()] = sema
 	}
-	d.mu.Unlock()
 
 	// Try to acquire permit (non-blocking)
 	select {
 	case sema <- struct{}{}:
-		// Got permit - spawn goroutine
+		// Got permit - increment WaitGroup before releasing lock to prevent race with Stop()
 		d.wg.Add(1)
+		d.mu.Unlock()
 		go func() {
 			defer d.wg.Done()
 			defer func() { <-sema }() // release permit
@@ -86,6 +86,7 @@ func (d *AsyncBackendDispatcher) Dispatch(ctx context.Context, req *http.Request
 
 	default:
 		// At capacity - drop request
+		d.mu.Unlock()
 		d.metrics.droppedRequestsTotal.WithLabelValues(backend.Name(), "max_in_flight").Inc()
 		return false
 	}
