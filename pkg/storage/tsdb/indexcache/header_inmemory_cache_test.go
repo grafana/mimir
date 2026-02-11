@@ -15,13 +15,13 @@ import (
 )
 
 func TestInMemoryCache(t *testing.T) {
-	//inMemCache := NewInMemoryPostingsOffsetTableCacheWithConfig[]
+	//inMemCache := NewInMemoryPostingsOffsetTableCacheWithConfig
 }
 
 func TestInMemoryIndexCache_AvoidsSizeAccountingDeadlock(t *testing.T) {
 	cfg := InMemoryIndexCacheConfig{
-		MaxItemSizeBytes:  sliceHeaderSize + 2, // Exact size of values the test inserts
-		MaxCacheSizeBytes: (sliceHeaderSize + 2) * 2,
+		MaxItemSizeBytes:  sliceHeaderSize + 3, // Exact size of values the test inserts
+		MaxCacheSizeBytes: (sliceHeaderSize + 3) * 2,
 	}
 
 	tenant := "tenant-0"
