@@ -39,7 +39,7 @@ type memoryTrackingQuerier struct {
 }
 
 func (q *memoryTrackingQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	// Overwrite context with new UnlimitedMemoryConsumption
+	// Overwrite context with new UnlimitedMemoryConsumption if needed
 	if q.createUnlimitedMemoryConsumptionTracker {
 		ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
 	}
@@ -50,11 +50,7 @@ func (q *memoryTrackingQuerier) Select(ctx context.Context, sortSeries bool, hin
 
 	ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx)
 
-	result := q.inner.Select(ctx, sortSeries, hints, matchers...)
-	if hints != nil && hints.Func == "series" {
-		return result
-	}
-	return series.NewMemoryTrackingSeriesSet(result, memoryTracker)
+	return series.NewMemoryTrackingSeriesSet(q.inner.Select(ctx, sortSeries, hints, matchers...), memoryTracker)
 }
 
 func (q *memoryTrackingQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
