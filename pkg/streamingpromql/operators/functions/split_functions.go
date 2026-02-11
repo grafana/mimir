@@ -165,7 +165,9 @@ var SplitCountOverTime = NewSplitOperatorFactory[CountOverTimeIntermediate](
 )
 
 func countOverTimeGenerate(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (CountOverTimeIntermediate, error) {
-	count, hasValue, _, err := countOverTime(step, nil, types.QueryTimeRange{}, nil, nil)
+	// Pass a no-op emitAnnotation: countOverTime() doesn't currently emit annotations, but we use no-op for
+	// consistency with other generate functions and safety in case countOverTime() is modified in the future.
+	count, hasValue, _, err := countOverTime(step, nil, types.QueryTimeRange{}, emitAnnotationNoop, nil)
 	if err != nil {
 		return CountOverTimeIntermediate{}, err
 	}
