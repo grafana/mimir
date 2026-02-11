@@ -221,20 +221,20 @@ func (j *TrackedPlanJob) Order() uint32 {
 	return math.MaxUint32
 }
 
-func deserializeJob(k []byte, v []byte) (TrackedJob, error) {
+func deserializeJob(k []byte, v []byte, clk clock.Clock) (TrackedJob, error) {
 	if len(k) == reservedJobIdLen {
 		sk := string(k[0])
 		switch sk {
 		case planJobId:
-			return deserializePlanJob(v)
+			return deserializePlanJob(v, clk)
 		default:
 			return nil, fmt.Errorf("unknown key: %s", sk)
 		}
 	}
-	return deserializeCompactionJob(k, v)
+	return deserializeCompactionJob(k, v, clk)
 }
 
-func deserializePlanJob(content []byte) (TrackedJob, error) {
+func deserializePlanJob(content []byte, clk clock.Clock) (TrackedJob, error) {
 	var info compactorschedulerpb.StoredJobInfo
 	if err := info.Unmarshal(content); err != nil {
 		return nil, err
@@ -247,11 +247,12 @@ func deserializePlanJob(content []byte) (TrackedJob, error) {
 			statusTime:   time.Unix(info.StatusTime, 0),
 			numLeases:    int(info.NumLeases),
 			epoch:        info.Epoch,
+			clock:        clk,
 		},
 	}, nil
 }
 
-func deserializeCompactionJob(k []byte, v []byte) (*TrackedCompactionJob, error) {
+func deserializeCompactionJob(k []byte, v []byte, clk clock.Clock) (*TrackedCompactionJob, error) {
 	var stored compactorschedulerpb.StoredCompactionJob
 	err := stored.Unmarshal(v)
 	if err != nil {
@@ -268,6 +269,7 @@ func deserializeCompactionJob(k []byte, v []byte) (*TrackedCompactionJob, error)
 			statusTime:   time.Unix(stored.Info.StatusTime, 0),
 			numLeases:    int(stored.Info.NumLeases),
 			epoch:        stored.Info.Epoch,
+			clock:        clk,
 		},
 		value: &CompactionJob{
 			blocks:  stored.Job.BlockIds,

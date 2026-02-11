@@ -249,8 +249,12 @@ func (jt *JobTracker) ExpireLeases(leaseDuration time.Duration, now time.Time) (
 		jt.incompleteJobs[id] = jt.pending.PushFront(j)
 	}
 	for _, j := range deleteJobs {
-		jt.active.Remove(jt.incompleteJobs[j.ID()])
-		delete(jt.incompleteJobs, j.ID())
+		// Only remove from incompleteJobs if present. Completed compaction jobs added to deleteJobs
+		// when a plan job's lease expires were already removed from incompleteJobs when they completed.
+		if e, ok := jt.incompleteJobs[j.ID()]; ok {
+			jt.active.Remove(e)
+			delete(jt.incompleteJobs, j.ID())
+		}
 	}
 
 	jt.metrics.activeJobs.Set(float64(jt.active.Len()))

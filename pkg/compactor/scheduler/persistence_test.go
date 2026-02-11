@@ -141,12 +141,13 @@ func TestBboltJobPersistenceManager_RecoverAll(t *testing.T) {
 
 	allowlist := util.NewAllowList(nil, nil)
 	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
+	clk := clock.New()
 	jobTrackerFactory := func(tenant string, persister JobPersister) *JobTracker {
 		return NewJobTracker(persister, tenant, infiniteLeases, metrics.trackerMetricsForTenant(tenant))
 	}
 
 	// Empty recovery should succeed
-	ctm, err := mgr.RecoverAll(allowlist, jobTrackerFactory)
+	ctm, err := mgr.RecoverAll(allowlist, clk, jobTrackerFactory)
 	require.NoError(t, err)
 	require.Empty(t, ctm)
 
@@ -157,7 +158,7 @@ func TestBboltJobPersistenceManager_RecoverAll(t *testing.T) {
 	err = tenantPersister.WriteJob(newTestPlanJob())
 	require.NoError(t, err)
 
-	ctm, err = mgr.RecoverAll(allowlist, jobTrackerFactory)
+	ctm, err = mgr.RecoverAll(allowlist, clk, jobTrackerFactory)
 	require.NoError(t, err)
 	require.Len(t, ctm, 1)
 	require.Contains(t, ctm, "foo")
@@ -234,7 +235,7 @@ func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 					if b == nil {
 						return errors.New("bucket should not be missing")
 					}
-					jobs = jobsFromTenantBucket("tenant", b, mgr.logger)
+					jobs = jobsFromTenantBucket("tenant", b, clock.New(), mgr.logger)
 					return nil
 				})
 				return jobs, err

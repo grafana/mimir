@@ -152,7 +152,7 @@ func (s *Scheduler) createJobTracker(tenant string, jp JobPersister) *JobTracker
 }
 
 func (s *Scheduler) start(ctx context.Context) error {
-	compactionTrackers, err := s.jpm.RecoverAll(s.allowList, s.createJobTracker)
+	compactionTrackers, err := s.jpm.RecoverAll(s.allowList, s.clock, s.createJobTracker)
 	if err != nil {
 		return fmt.Errorf("failed recovering state: %w", err)
 	}
@@ -264,11 +264,11 @@ func (s *Scheduler) UpdatePlanJob(ctx context.Context, req *compactorschedulerpb
 	level.Info(s.logger).Log("msg", "received plan job lease update request", "update_type", compactorschedulerpb.UpdateType_name[int32(req.Update)], "id", req.Key.Id, "epoch", req.Key.Epoch)
 	switch req.Update {
 	case compactorschedulerpb.UPDATE_TYPE_IN_PROGRESS:
-		if s.rotator.RenewJobLease(req.Key.Id, req.Key.Id, req.Key.Epoch) {
+		if s.rotator.RenewJobLease(req.Key.Id, planJobId, req.Key.Epoch) {
 			return ok()
 		}
 	case compactorschedulerpb.UPDATE_TYPE_ABANDON:
-		removed, err := s.rotator.RemoveJob(req.Key.Id, req.Key.Id, req.Key.Epoch, false)
+		removed, err := s.rotator.RemoveJob(req.Key.Id, planJobId, req.Key.Epoch, false)
 		if err != nil {
 			return nil, failedTo("remove job")
 		}
@@ -276,7 +276,7 @@ func (s *Scheduler) UpdatePlanJob(ctx context.Context, req *compactorschedulerpb
 			return ok()
 		}
 	case compactorschedulerpb.UPDATE_TYPE_REASSIGN:
-		canceled, err := s.rotator.CancelJobLease(req.Key.Id, req.Key.Id, req.Key.Epoch)
+		canceled, err := s.rotator.CancelJobLease(req.Key.Id, planJobId, req.Key.Epoch)
 		if err != nil {
 			return nil, failedTo("cancel job lease")
 		}
