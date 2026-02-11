@@ -39,10 +39,18 @@ type memoryTrackingQuerier struct {
 }
 
 func (q *memoryTrackingQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	// Overwrite context with new UnlimitedMemoryConsumption if needed
+	// Overwrite context with new UnlimitedMemoryConsumption if needed.
+	// When createUnlimitedMemoryConsumptionTracker is true, we only inject the tracker and deduplicator
+	// into the context without wrapping the result with MemoryTrackingSeriesSet. This is because the
+	// inner queryable (e.g., from querier.New) already wraps its results with MemoryTrackingSeriesSet.
+	// Double-wrapping would cause the memory tracker to decrement twice for the same series while
+	// only incrementing once, triggering a panic.
 	if q.createUnlimitedMemoryConsumptionTracker {
 		ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
+		ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx)
+		return q.inner.Select(ctx, sortSeries, hints, matchers...)
 	}
+
 	memoryTracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
