@@ -282,11 +282,13 @@ func (cfg *KafkaConfig) Validate() error {
 // It supports a single broker address for backward compatibility and
 // a comma-separated list of addresses for multi-seed bootstrap.
 func (cfg *KafkaConfig) SeedBrokers() []string {
-	parts := strings.Split(cfg.Address, ",")
-	brokers := make([]string, 0, len(parts))
+	var parsed flagext.StringSliceCSV
+	_ = parsed.Set(cfg.Address)
 
-	for _, part := range parts {
-		if addr := strings.TrimSpace(part); addr != "" {
+	brokers := make([]string, 0, len(parsed))
+
+	for _, broker := range parsed {
+		if addr := strings.TrimSpace(broker); addr != "" {
 			brokers = append(brokers, addr)
 		}
 	}
