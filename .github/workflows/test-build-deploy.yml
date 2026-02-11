@@ -468,3 +468,46 @@ jobs:
       - name: Push Docker Images
         run: |
           ./.github/workflows/scripts/push-images.sh /tmp/images grafana/ $(make image-tag)
+
+  send-slack-notification-on-automated-vendoring:
+    needs:
+      - prepare
+      - goversion
+      - lint
+      - lint-jsonnet
+      - lint-helm
+      - test
+      - test-docs
+      - build-metaconvert-image
+      - build-mimir-image
+      - build-query-tee-image
+      - build-mimirtool-image
+      - build-copyblocks-image
+      - build
+      - build-race-enabled-image
+      - integration
+      - deploy
+    runs-on: ubuntu-latest
+    if: always() && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'vendored-mimir-prometheus-update')
+    permissions:
+      id-token: write
+    steps:
+      - name: Send Slack message for successful PR
+        if: ${{ !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
+        uses: grafana/shared-workflows/actions/send-slack-message@7b628e7352c2dea057c565cc4fcd5564d5f396c0 #v1.0.0
+        with:
+          channel-id: C04AF91LPFX #mimir-ci-notifications
+          payload: |
+            {
+              "text": ":happy-mac: *Automated vendoring of mimir-prometheus into Mimir has succeeded and is awaiting approval.*\n<!subteam^S03C2P8659U> please review <${{ github.event.pull_request.html_url }}|the PR>, then approve and merge it."
+            }
+      - name: Send Slack message for failed PR
+        if: ${{ contains(needs.*.result, 'failure') }}
+        uses: grafana/shared-workflows/actions/send-slack-message@7b628e7352c2dea057c565cc4fcd5564d5f396c0 #v1.0.0
+        with:
+          channel-id: C04AF91LPFX #mimir-ci-notifications
+          payload: |
+            {
+              "text": ":sadcomputer: *Automated vendoring of mimir-prometheus into Mimir has failed.*\n<!subteam^S03C2P8659U> please check <${{ github.event.pull_request.html_url }}|the PR> and <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|build logs> and coordinate fixes for any issues."
+            }
+
