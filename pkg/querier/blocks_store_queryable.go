@@ -861,7 +861,13 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 
 			deduplicator, err := limiter.SeriesLabelsDeduplicatorFromContext(ctx)
 			if err != nil {
-				return err
+				// For "series" queries (skipChunks=true), the deduplicator might not be in context
+				// because MemoryTrackingQueryable doesn't create one for "series" queries.
+				// In this case, we proceed without memory tracking.
+				if !skipChunks {
+					return err
+				}
+				// deduplicator is nil for "series" queries
 			}
 
 			for {
@@ -1044,9 +1050,18 @@ func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegat
 		for _, s := range ss.Series {
 			ls := mimirpb.FromLabelAdaptersToLabelsWithCopy(s.Labels)
 
-			uniqueSeriesLabels, err := deduplicator.Deduplicate(ls, memoryTracker)
-			if err != nil {
-				return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, err
+			// For "series" queries, deduplicator may be nil because MemoryTrackingQueryable
+			// doesn't create one (to avoid memory imbalance since MemoryTrackingSeriesSet
+			// is also skipped for "series" queries).
+			var uniqueSeriesLabels labels.Labels
+			if deduplicator != nil {
+				var err error
+				uniqueSeriesLabels, err = deduplicator.Deduplicate(ls, memoryTracker)
+				if err != nil {
+					return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, err
+				}
+			} else {
+				uniqueSeriesLabels = ls
 			}
 
 			// Add series fingerprint to query limiter; will return error if we are over the limit

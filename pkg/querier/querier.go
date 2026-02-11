@@ -467,10 +467,6 @@ func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHi
 	}
 	sp.Limit = limit
 
-	if err != nil {
-		return storage.ErrSeriesSet(err)
-	}
-
 	if len(queriers) == 1 {
 		return queriers[0].Select(ctx, true, sp, matchers...)
 	}
