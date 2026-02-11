@@ -239,11 +239,20 @@ func deserializePlanJob(content []byte, clock clock.Clock) (TrackedJob, error) {
 	if err := info.Unmarshal(content); err != nil {
 		return nil, err
 	}
+	// Migrate old data: infer status from statusTime if status is UNKNOWN
+	status := info.Status
+	if status == compactorschedulerpb.STORED_JOB_STATUS_UNKNOWN {
+		if info.StatusTime > 0 {
+			status = compactorschedulerpb.STORED_JOB_STATUS_LEASED
+		} else {
+			status = compactorschedulerpb.STORED_JOB_STATUS_AVAILABLE
+		}
+	}
 	return &TrackedPlanJob{
 		baseTrackedJob: baseTrackedJob{
 			id:           planJobId,
 			creationTime: time.Unix(info.CreationTime, 0),
-			status:       info.Status,
+			status:       status,
 			statusTime:   time.Unix(info.StatusTime, 0),
 			numLeases:    int(info.NumLeases),
 			epoch:        info.Epoch,
@@ -261,11 +270,20 @@ func deserializeCompactionJob(k []byte, v []byte, clock clock.Clock) (*TrackedCo
 	if stored.Info == nil || stored.Job == nil {
 		return nil, errors.New("invalid compaction job can not be deserialized")
 	}
+	// Migrate old data: infer status from statusTime if status is UNKNOWN
+	status := stored.Info.Status
+	if status == compactorschedulerpb.STORED_JOB_STATUS_UNKNOWN {
+		if stored.Info.StatusTime > 0 {
+			status = compactorschedulerpb.STORED_JOB_STATUS_LEASED
+		} else {
+			status = compactorschedulerpb.STORED_JOB_STATUS_AVAILABLE
+		}
+	}
 	return &TrackedCompactionJob{
 		baseTrackedJob: baseTrackedJob{
 			id:           string(k),
 			creationTime: time.Unix(stored.Info.CreationTime, 0),
-			status:       stored.Info.Status,
+			status:       status,
 			statusTime:   time.Unix(stored.Info.StatusTime, 0),
 			numLeases:    int(stored.Info.NumLeases),
 			epoch:        stored.Info.Epoch,

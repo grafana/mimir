@@ -651,10 +651,10 @@ var xxx_messageInfo_UpdateJobResponse proto.InternalMessageInfo
 
 type StoredJobInfo struct {
 	CreationTime int64           `protobuf:"varint,1,opt,name=creationTime,proto3" json:"creationTime,omitempty"`
-	Status       StoredJobStatus `protobuf:"varint,2,opt,name=status,proto3,enum=compactorschedulerpb.StoredJobStatus" json:"status,omitempty"`
-	StatusTime   int64           `protobuf:"varint,3,opt,name=statusTime,proto3" json:"statusTime,omitempty"`
-	NumLeases    int32           `protobuf:"varint,4,opt,name=numLeases,proto3" json:"numLeases,omitempty"`
-	Epoch        int64           `protobuf:"varint,5,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	StatusTime   int64           `protobuf:"varint,2,opt,name=statusTime,proto3" json:"statusTime,omitempty"`
+	NumLeases    int32           `protobuf:"varint,3,opt,name=numLeases,proto3" json:"numLeases,omitempty"`
+	Epoch        int64           `protobuf:"varint,4,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	Status       StoredJobStatus `protobuf:"varint,5,opt,name=status,proto3,enum=compactorschedulerpb.StoredJobStatus" json:"status,omitempty"`
 }
 
 func (m *StoredJobInfo) Reset()      { *m = StoredJobInfo{} }
@@ -1390,10 +1390,10 @@ func (this *StoredJobInfo) GoString() string {
 	s := make([]string, 0, 9)
 	s = append(s, "&compactorschedulerpb.StoredJobInfo{")
 	s = append(s, "CreationTime: "+fmt.Sprintf("%#v", this.CreationTime)+",\n")
-	s = append(s, "Status: "+fmt.Sprintf("%#v", this.Status)+",\n")
 	s = append(s, "StatusTime: "+fmt.Sprintf("%#v", this.StatusTime)+",\n")
 	s = append(s, "NumLeases: "+fmt.Sprintf("%#v", this.NumLeases)+",\n")
 	s = append(s, "Epoch: "+fmt.Sprintf("%#v", this.Epoch)+",\n")
+	s = append(s, "Status: "+fmt.Sprintf("%#v", this.Status)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -2055,23 +2055,23 @@ func (m *StoredJobInfo) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if m.Status != 0 {
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(m.Status))
+		i--
+		dAtA[i] = 0x28
+	}
 	if m.Epoch != 0 {
 		i = encodeVarintCompactorscheduler(dAtA, i, uint64(m.Epoch))
 		i--
-		dAtA[i] = 0x28
+		dAtA[i] = 0x20
 	}
 	if m.NumLeases != 0 {
 		i = encodeVarintCompactorscheduler(dAtA, i, uint64(m.NumLeases))
 		i--
-		dAtA[i] = 0x20
+		dAtA[i] = 0x18
 	}
 	if m.StatusTime != 0 {
 		i = encodeVarintCompactorscheduler(dAtA, i, uint64(m.StatusTime))
-		i--
-		dAtA[i] = 0x18
-	}
-	if m.Status != 0 {
-		i = encodeVarintCompactorscheduler(dAtA, i, uint64(m.Status))
 		i--
 		dAtA[i] = 0x10
 	}
@@ -2329,9 +2329,6 @@ func (m *StoredJobInfo) Size() (n int) {
 	if m.CreationTime != 0 {
 		n += 1 + sovCompactorscheduler(uint64(m.CreationTime))
 	}
-	if m.Status != 0 {
-		n += 1 + sovCompactorscheduler(uint64(m.Status))
-	}
 	if m.StatusTime != 0 {
 		n += 1 + sovCompactorscheduler(uint64(m.StatusTime))
 	}
@@ -2340,6 +2337,9 @@ func (m *StoredJobInfo) Size() (n int) {
 	}
 	if m.Epoch != 0 {
 		n += 1 + sovCompactorscheduler(uint64(m.Epoch))
+	}
+	if m.Status != 0 {
+		n += 1 + sovCompactorscheduler(uint64(m.Status))
 	}
 	return n
 }
@@ -2499,10 +2499,10 @@ func (this *StoredJobInfo) String() string {
 	}
 	s := strings.Join([]string{`&StoredJobInfo{`,
 		`CreationTime:` + fmt.Sprintf("%v", this.CreationTime) + `,`,
-		`Status:` + fmt.Sprintf("%v", this.Status) + `,`,
 		`StatusTime:` + fmt.Sprintf("%v", this.StatusTime) + `,`,
 		`NumLeases:` + fmt.Sprintf("%v", this.NumLeases) + `,`,
 		`Epoch:` + fmt.Sprintf("%v", this.Epoch) + `,`,
+		`Status:` + fmt.Sprintf("%v", this.Status) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -3701,25 +3701,6 @@ func (m *StoredJobInfo) Unmarshal(dAtA []byte) error {
 			}
 		case 2:
 			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Status", wireType)
-			}
-			m.Status = 0
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowCompactorscheduler
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				m.Status |= StoredJobStatus(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-		case 3:
-			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field StatusTime", wireType)
 			}
 			m.StatusTime = 0
@@ -3737,7 +3718,7 @@ func (m *StoredJobInfo) Unmarshal(dAtA []byte) error {
 					break
 				}
 			}
-		case 4:
+		case 3:
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field NumLeases", wireType)
 			}
@@ -3756,7 +3737,7 @@ func (m *StoredJobInfo) Unmarshal(dAtA []byte) error {
 					break
 				}
 			}
-		case 5:
+		case 4:
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Epoch", wireType)
 			}
@@ -3771,6 +3752,25 @@ func (m *StoredJobInfo) Unmarshal(dAtA []byte) error {
 				b := dAtA[iNdEx]
 				iNdEx++
 				m.Epoch |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 5:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Status", wireType)
+			}
+			m.Status = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCompactorscheduler
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Status |= StoredJobStatus(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}

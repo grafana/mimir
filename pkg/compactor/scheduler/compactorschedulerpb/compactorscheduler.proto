@@ -89,10 +89,10 @@ enum StoredJobStatus {
 
 message StoredJobInfo {
   int64 creationTime = 1;
-  StoredJobStatus status = 2;
-  int64 statusTime = 3;
-  int32 numLeases = 4;
-  int64 epoch = 5;
+  int64 statusTime = 2;       // Was leaseCreationTime in original schema, same type and similar semantics
+  int32 numLeases = 3;        // Keep at original position for backward compatibility
+  int64 epoch = 4;            // Keep at original position for backward compatibility
+  StoredJobStatus status = 5; // New field with new tag number, defaults to UNKNOWN (0) for old data
 }
 
 message StoredCompactionJob {
