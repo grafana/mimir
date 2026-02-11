@@ -9,7 +9,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -17,6 +16,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 )
 
 func TestAsyncBackendDispatcher_ShouldNotBlockOnNonPreferredBackends(t *testing.T) {
