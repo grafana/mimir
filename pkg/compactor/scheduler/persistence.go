@@ -216,10 +216,6 @@ func (n *NopJobPersistenceManager) InitializeTenant(tenant string) (JobPersister
 	return &NopJobPersister[*CompactionJob]{}, nil
 }
 
-func (n *NopJobPersistenceManager) InitializePlanning() (JobPersister, error) {
-	return &NopJobPersister[struct{}]{}, nil
-}
-
 func (n *NopJobPersistenceManager) DeleteTenant(tenant string) error {
 	return nil
 }
