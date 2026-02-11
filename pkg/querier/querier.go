@@ -201,7 +201,7 @@ func New(
 		},
 	})
 
-	queryable := newQueryable(queryables, cfg, limits, queryMetrics, logger)
+	queryable := NewMemoryTrackingQueryable(newQueryable(queryables, cfg, limits, queryMetrics, logger))
 	exemplarQueryable := newDistributorExemplarQueryable(distributor, logger)
 
 	lazyQueryable := storage.QueryableFunc(func(minT int64, maxT int64) (storage.Querier, error) {
@@ -467,24 +467,12 @@ func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHi
 	}
 	sp.Limit = limit
 
-	memoryTracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
 
-	// Create one SeriesLabelsDeduplicator for each multiQuerier Select call in the context. This to be passed further
-	// in different Queriers call chain. SeriesLabelsDeduplicator will deduplicate Labels and
-	// IncreaseMemoryConsumptionForLabels.
-	// The Select result then will be wrapped by MemoryTrackingSeriesSet which
-	// will DecreaseMemoryConsumptionForLabels as it passes the Series to the query engine.
-	ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx)
-
 	if len(queriers) == 1 {
-		result := queriers[0].Select(ctx, true, sp, matchers...)
-		if sp != nil && sp.Func == "series" {
-			return result
-		}
-		return series.NewMemoryTrackingSeriesSet(result, memoryTracker)
+		return queriers[0].Select(ctx, true, sp, matchers...)
 	}
 
 	sets := make(chan storage.SeriesSet, len(queriers))
@@ -506,11 +494,7 @@ func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHi
 
 	// We have all the sets from different sources (chunk from store, chunks from ingesters).
 	// mergeSeriesSets will return sorted set.
-	mergeResult := mq.mergeSeriesSets(result)
-	if sp != nil && sp.Func == "series" {
-		return mergeResult
-	}
-	return series.NewMemoryTrackingSeriesSet(mergeResult, memoryTracker)
+	return mq.mergeSeriesSets(result)
 }
 
 func clampToMaxLabelQueryLength(spanLog *spanlogger.SpanLogger, startMs, endMs, nowMs, maxLabelQueryLengthMs int64) int64 {
