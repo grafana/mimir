@@ -213,7 +213,7 @@ func createBenchmarkQueryable(t testing.TB, metricSizes []int) storage.Queryable
 		t.Cleanup(cleanup)
 	}
 
-	return querier.NewMemoryTrackingQueryable(createIngesterQueryable(t, addr), false)
+	return querier.NewMemoryTrackingQueryable(createIngesterQueryable(t, addr))
 }
 
 func createIngesterQueryable(t testing.TB, address string) storage.Queryable {

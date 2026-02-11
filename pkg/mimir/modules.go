@@ -550,7 +550,6 @@ func (t *Mimir) initQueryable() (serv services.Service, err error) {
 		t.ActivityTracker,
 		t.QuerierQueryPlanner,
 		t.QueryLimitsProvider,
-		false,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("could not create queryable: %w", err)
@@ -1060,8 +1059,8 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 
 	t.Cfg.Ruler.Ring.Common.ListenPort = t.Cfg.Server.GRPCListenPort
 
-	// queryableForRestoreForState is used for RestoreForState operation and for MQE engine must be wrapped with UnlimitedMemoryConsumptionTracker.
-	var queryableForRestoreForState prom_storage.Queryable
+	// embeddedQueryable is used for RestoreForState operation and for MQE engine must be wrapped with UnlimitedMemoryConsumptionTracker.
+	var embeddedQueryable prom_storage.Queryable
 	var queryFunc rules.QueryFunc
 
 	if t.Cfg.Ruler.QueryFrontend.Address != "" {
@@ -1071,7 +1070,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		}
 		remoteQuerier := ruler.NewRemoteQuerier(queryFrontendClient, t.Cfg.Querier.EngineConfig.Timeout, t.Cfg.Ruler.QueryFrontend.MaxRetriesRate, t.Cfg.Ruler.QueryFrontend.QueryResultResponseFormat, queryFrontendURL, util_log.Logger, ruler.WithOrgIDMiddleware)
 
-		queryableForRestoreForState = prom_remote.NewSampleAndChunkQueryableClient(
+		embeddedQueryable = prom_remote.NewSampleAndChunkQueryableClient(
 			remoteQuerier,
 			labels.Labels{},
 			nil,
@@ -1081,10 +1080,6 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		queryFunc = remoteQuerier.Query
 	} else {
 		var queryable, federatedQueryable prom_storage.Queryable
-		// unlimitedQueryable and unlimitedFederatedQueryable are MemoryTrackingQueryable that has UnlimitedMemoryTracking
-		// but effective only if engine is MQE, otherwise it will be normal Queryable.
-		// These Queryable are needed for RestoreForState operation below.
-		var unlimitedQueryable, unlimitedFederatedQueryable prom_storage.Queryable
 
 		// TODO: Consider wrapping logger to differentiate from querier module logger
 		rulerRegisterer := prometheus.WrapRegistererWith(rulerEngine, t.Registerer)
@@ -1099,31 +1094,12 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 			t.ActivityTracker,
 			t.QuerierQueryPlanner,
 			t.QueryLimitsProvider,
-			false,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("could not create queryable for ruler: %w", err)
 		}
 
-		// Call query.New again to make sure Queryable is wrapped by MemoryTrackingQueryable with unlimited memory for MQE engine.
-		unlimitedQueryable, _, _, _, err = querier.New(
-			t.Cfg.Querier,
-			t.Overrides,
-			t.Distributor,
-			t.AdditionalStorageQueryables,
-			rulerRegisterer,
-			util_log.Logger,
-			t.ActivityTracker,
-			t.QuerierQueryPlanner,
-			t.QueryLimitsProvider,
-			true,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("could not create unlimited memory tracking queryable for ruler: %w", err)
-		}
-
 		queryable = querier.NewErrorTranslateQueryableWithFn(queryable, ruler.WrapQueryableErrors)
-		unlimitedQueryable = querier.NewErrorTranslateQueryableWithFn(unlimitedQueryable, ruler.WrapQueryableErrors)
 
 		if t.Cfg.Ruler.TenantFederation.Enabled {
 			if !t.Cfg.TenantFederation.Enabled {
@@ -1135,16 +1111,15 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 			const bypassForSingleQuerier = false
 
 			federatedQueryable = tenantfederation.NewQueryable(queryable, bypassForSingleQuerier, t.Cfg.TenantFederation.MaxConcurrent, rulerRegisterer, util_log.Logger)
-			unlimitedFederatedQueryable = tenantfederation.NewQueryable(unlimitedFederatedQueryable, bypassForSingleQuerier, t.Cfg.TenantFederation.MaxConcurrent, rulerRegisterer, util_log.Logger)
 
 			regularQueryFunc := rules.EngineQueryFunc(eng, queryable)
 			federatedQueryFunc := rules.EngineQueryFunc(eng, federatedQueryable)
 
-			queryableForRestoreForState = unlimitedFederatedQueryable
+			embeddedQueryable = federatedQueryable
 			queryFunc = ruler.TenantFederationQueryFunc(regularQueryFunc, federatedQueryFunc)
 
 		} else {
-			queryableForRestoreForState = unlimitedQueryable
+			embeddedQueryable = queryable
 			queryFunc = rules.EngineQueryFunc(eng, queryable)
 		}
 	}
@@ -1164,7 +1139,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	managerFactory := ruler.DefaultTenantManagerFactory(
 		t.Cfg.Ruler,
 		t.Distributor,
-		queryableForRestoreForState,
+		embeddedQueryable,
 		queryFunc,
 		rulesFS,
 		concurrencyController,

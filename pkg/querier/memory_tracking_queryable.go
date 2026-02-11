@@ -14,15 +14,14 @@ import (
 )
 
 // NewMemoryTrackingQueryable creates a new MemoryTrackingQueryable that wraps the given queryable.
-func NewMemoryTrackingQueryable(inner storage.Queryable, createUnlimitedMemoryConsumptionTracker bool) storage.Queryable {
-	return &MemoryTrackingQueryable{inner: inner, createUnlimitedMemoryConsumptionTracker: createUnlimitedMemoryConsumptionTracker}
+func NewMemoryTrackingQueryable(inner storage.Queryable) storage.Queryable {
+	return &MemoryTrackingQueryable{inner: inner}
 }
 
 // MemoryTrackingQueryable wraps a storage.Queryable to add memory tracking and
 // label deduplication in a MemoryTrackingQuerier.
 type MemoryTrackingQueryable struct {
-	inner                                   storage.Queryable
-	createUnlimitedMemoryConsumptionTracker bool
+	inner storage.Queryable
 }
 
 func (q *MemoryTrackingQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
@@ -30,19 +29,14 @@ func (q *MemoryTrackingQueryable) Querier(mint, maxt int64) (storage.Querier, er
 	if err != nil {
 		return nil, err
 	}
-	return &memoryTrackingQuerier{inner: querier, createUnlimitedMemoryConsumptionTracker: q.createUnlimitedMemoryConsumptionTracker}, nil
+	return &memoryTrackingQuerier{inner: querier}, nil
 }
 
 type memoryTrackingQuerier struct {
-	inner                                   storage.Querier
-	createUnlimitedMemoryConsumptionTracker bool
+	inner storage.Querier
 }
 
 func (q *memoryTrackingQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	// Overwrite context with new UnlimitedMemoryConsumption if needed
-	if q.createUnlimitedMemoryConsumptionTracker {
-		ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
-	}
 	memoryTracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
 	if err != nil {
 		return storage.ErrSeriesSet(err)

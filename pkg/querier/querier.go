@@ -190,7 +190,6 @@ func New(
 	tracker *activitytracker.ActivityTracker,
 	planner *streamingpromql.QueryPlanner,
 	limitsProvider streamingpromql.QueryLimitsProvider,
-	createUnlimitedMemoryTracker bool,
 ) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, promql.QueryEngine, *streamingpromql.Engine, error) {
 	queryMetrics := stats.NewQueryMetrics(reg)
 
@@ -236,8 +235,8 @@ func New(
 		} else {
 			eng = streamingEngine
 		}
-		// Wrap queryable with memory tracking and optionally create UnlimitedMemoryTracker.
-		queryable = NewMemoryTrackingQueryable(queryable, createUnlimitedMemoryTracker)
+		// Wrap queryable with memory tracking.
+		queryable = NewMemoryTrackingQueryable(queryable)
 	default:
 		panic(fmt.Sprintf("invalid config not caught by validation: unknown PromQL engine '%s'", cfg.QueryEngine))
 	}
