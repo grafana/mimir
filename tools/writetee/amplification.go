@@ -5,7 +5,6 @@ package writetee
 import (
 	"fmt"
 	"hash/fnv"
-	"io"
 	"math"
 	"strings"
 	"sync"
