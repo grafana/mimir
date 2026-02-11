@@ -228,9 +228,6 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 		}
 
 		pt := dataPoints.At(x)
-		// Clear stale exemplars from the previous data point to prevent
-		// them from leaking into _sum and _count of this data point.
-		appOpts.Exemplars = nil
 		timestamp := convertTimeStamp(pt.Timestamp())
 		startTimestamp := convertTimeStamp(pt.StartTimestamp())
 		baseLabels, err := c.createAttributes(pt.Attributes(), settings, reservedLabelNames, false, appOpts.Metadata)
@@ -271,6 +268,9 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 		var cumulativeCount uint64
 
 		// Process each bound, based on histograms proto definition, # of buckets = # of explicit bounds + 1.
+		// Note: appOpts.Exemplars is resliced per bucket below. This is safe because appOpts is
+		// passed by value to Append(). The shared Resource pointer is also safe because TSDB
+		// deep-copies it via NewVersionedResource/AddOrExtend.
 		for i := 0; i < pt.ExplicitBounds().Len() && i < pt.BucketCounts().Len(); i++ {
 			if err := c.everyN.checkContext(ctx); err != nil {
 				return err
@@ -528,6 +528,8 @@ func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, s
 		// Do not pass identifying attributes as ignoreAttrs below.
 		identifyingAttrs = nil
 	}
+	// Resource is intentionally nil: target_info IS the resource representation,
+	// so attaching resource attributes to it would be redundant/circular.
 	appOpts := storage.AOptions{
 		Metadata: metadata.Metadata{
 			Type: model.MetricTypeGauge,

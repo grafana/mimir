@@ -101,6 +101,10 @@ func (a *PusherAppender) AppendHistogramSTZeroSample(storage.SeriesRef, labels.L
 	return 0, errors.New("ST zero samples are unsupported")
 }
 
+func (a *PusherAppender) UpdateResource(_ storage.SeriesRef, _ labels.Labels, _, _ map[string]string, _ []storage.EntityData, _ int64) (storage.SeriesRef, error) {
+	return 0, errors.New("resource updates are unsupported")
+}
+
 func (a *PusherAppender) Commit() error {
 	a.totalWrites.WithLabelValues(a.userID).Inc()
 
@@ -188,6 +192,10 @@ func (a *NoopAppender) AppendSTZeroSample(_ storage.SeriesRef, _ labels.Labels, 
 
 func (a *NoopAppender) AppendHistogramSTZeroSample(storage.SeriesRef, labels.Labels, int64, int64, *histogram.Histogram, *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	return 0, errors.New("ST zero samples are unsupported")
+}
+
+func (a *NoopAppender) UpdateResource(_ storage.SeriesRef, _ labels.Labels, _, _ map[string]string, _ []storage.EntityData, _ int64) (storage.SeriesRef, error) {
+	return 0, errors.New("resource updates are unsupported")
 }
 
 func (a *NoopAppender) Commit() error {

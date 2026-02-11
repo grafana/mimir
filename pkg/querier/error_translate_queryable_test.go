@@ -145,7 +145,7 @@ func createPrometheusAPI(q storage.SampleAndChunkQueryable) *route.Router {
 	api := v1.NewAPI(
 		engine,
 		q,
-		nil,
+		nil, nil, // No remote write support (Appendable, AppendableV2).
 		nil,
 		nil,
 		func(context.Context) v1.ScrapePoolsRetriever { return &DummyTargetRetriever{} },
@@ -179,8 +179,9 @@ func createPrometheusAPI(q storage.SampleAndChunkQueryable) *route.Router {
 		5*time.Minute,
 		false,
 		false,
-		nil,
-		nil,
+		nil,   // overrideErrorCode
+		false, // enableNativeMetadata
+		nil,   // featureRegistry
 		v1.OpenAPIOptions{},
 	)
 

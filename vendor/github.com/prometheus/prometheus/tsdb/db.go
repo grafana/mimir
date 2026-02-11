@@ -38,6 +38,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -45,6 +46,7 @@ import (
 	_ "github.com/prometheus/prometheus/tsdb/goversion" // Load the package into main to make sure minimum Go version is met.
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/compression"
@@ -350,6 +352,11 @@ type Options struct {
 	// is implemented.
 	EnableMetadataWALRecords bool
 
+	// EnableNativeMetadata represents 'native-metadata' feature flag.
+	// When enabled, OTel resource/scope attributes are persisted per time series
+	// in Parquet-based metadata files alongside TSDB blocks.
+	EnableNativeMetadata bool
+
 	// BlockCompactionExcludeFunc is a function which returns true for blocks that should NOT be compacted.
 	// It's passed down to the TSDB compactor.
 	BlockCompactionExcludeFunc BlockExcludeFilterFunc
@@ -461,6 +468,7 @@ type dbMetrics struct {
 	staleSeriesCompactionsTriggered prometheus.Counter
 	staleSeriesCompactionsFailed    prometheus.Counter
 	staleSeriesCompactionDuration   prometheus.Histogram
+	seriesMetadataBytes             prometheus.Gauge
 }
 
 func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
@@ -561,6 +569,10 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		NativeHistogramMaxBucketNumber:  100,
 		NativeHistogramMinResetDuration: 1 * time.Hour,
 	})
+	m.seriesMetadataBytes = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_storage_series_metadata_bytes",
+		Help: "The number of bytes used by series metadata (Parquet) files across all blocks.",
+	})
 
 	if r != nil {
 		r.MustRegister(
@@ -581,6 +593,7 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 			m.staleSeriesCompactionsTriggered,
 			m.staleSeriesCompactionsFailed,
 			m.staleSeriesCompactionDuration,
+			m.seriesMetadataBytes,
 		)
 	}
 	return m
@@ -1108,6 +1121,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 			PD:                          opts.PostingsDecoderFactory,
 			UseUncachedIO:               opts.UseUncachedIO,
 			BlockExcludeFilter:          opts.BlockCompactionExcludeFunc,
+			EnableNativeMetadata:        opts.EnableNativeMetadata,
 		})
 	}
 	if err != nil {
@@ -1211,6 +1225,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	}
 	headOpts.EnableSTAsZeroSample = opts.EnableSTAsZeroSample
 	headOpts.EnableMetadataWALRecords = opts.EnableMetadataWALRecords
+	headOpts.EnableNativeMetadata = opts.EnableNativeMetadata
 	if opts.WALReplayConcurrency > 0 {
 		headOpts.WALReplayConcurrency = opts.WALReplayConcurrency
 	}
@@ -1325,6 +1340,89 @@ func (db *DB) BlockMetas() []BlockMeta {
 		metas = append(metas, b.Meta())
 	}
 	return metas
+}
+
+// SeriesMetadata returns a merged reader of series metadata from all blocks and the head.
+// It includes metric metadata and, when native metadata is enabled, resource/scope attributes.
+// When native metadata is disabled, returns an empty reader.
+func (db *DB) SeriesMetadata() (seriesmetadata.Reader, error) {
+	if !db.opts.EnableNativeMetadata {
+		return seriesmetadata.NewMemSeriesMetadata(), nil
+	}
+
+	merged := seriesmetadata.NewMemSeriesMetadata()
+
+	// Collect metadata and resource attributes from all blocks
+	for _, b := range db.Blocks() {
+		mr, err := b.SeriesMetadata()
+		if err != nil {
+			return nil, fmt.Errorf("get block series metadata: %w", err)
+		}
+		// Collect metric metadata
+		err = mr.IterByMetricName(func(name string, meta metadata.Metadata) error {
+			merged.Set(name, 0, meta)
+			return nil
+		})
+		if err != nil {
+			mr.Close()
+			return nil, fmt.Errorf("iterate block series metadata: %w", err)
+		}
+		// Collect versioned resources (unified attributes + entities)
+		err = mr.IterVersionedResources(func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
+			merged.SetVersionedResource(labelsHash, resources)
+			return nil
+		})
+		if err != nil {
+			mr.Close()
+			return nil, fmt.Errorf("iterate block resources: %w", err)
+		}
+		// Collect versioned scopes (instrumentation library metadata)
+		err = mr.IterVersionedScopes(func(labelsHash uint64, scopes *seriesmetadata.VersionedScope) error {
+			merged.SetVersionedScope(labelsHash, scopes)
+			return nil
+		})
+		if err != nil {
+			mr.Close()
+			return nil, fmt.Errorf("iterate block scopes: %w", err)
+		}
+		mr.Close()
+	}
+
+	// Collect metadata and resources from head (most recent data, overwrites block metadata)
+	headMeta, err := db.head.SeriesMetadata()
+	if err != nil {
+		return nil, fmt.Errorf("get head series metadata: %w", err)
+	}
+	// Collect metric metadata from head
+	err = headMeta.IterByMetricName(func(name string, meta metadata.Metadata) error {
+		merged.Set(name, 0, meta)
+		return nil
+	})
+	if err != nil {
+		headMeta.Close()
+		return nil, fmt.Errorf("iterate head series metadata: %w", err)
+	}
+	// Collect versioned resources from head (unified attributes + entities)
+	err = headMeta.IterVersionedResources(func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
+		merged.SetVersionedResource(labelsHash, resources)
+		return nil
+	})
+	if err != nil {
+		headMeta.Close()
+		return nil, fmt.Errorf("iterate head resources: %w", err)
+	}
+	// Collect versioned scopes from head (instrumentation library metadata)
+	err = headMeta.IterVersionedScopes(func(labelsHash uint64, scopes *seriesmetadata.VersionedScope) error {
+		merged.SetVersionedScope(labelsHash, scopes)
+		return nil
+	})
+	if err != nil {
+		headMeta.Close()
+		return nil, fmt.Errorf("iterate head scopes: %w", err)
+	}
+	headMeta.Close()
+
+	return merged, nil
 }
 
 func (db *DB) run(ctx context.Context) {
@@ -2034,8 +2132,9 @@ func (db *DB) reloadBlocks() (err error) {
 	}
 
 	var (
-		toLoad     []*Block
-		blocksSize int64
+		toLoad             []*Block
+		blocksSize         int64
+		seriesMetadataSize int64
 	)
 	// All deletable blocks should be unloaded.
 	// NOTE: We need to loop through loadable one more time as there might be loadable ready to be removed (replaced by compacted block).
@@ -2047,8 +2146,10 @@ func (db *DB) reloadBlocks() (err error) {
 
 		toLoad = append(toLoad, block)
 		blocksSize += block.Size()
+		seriesMetadataSize += block.numBytesSeriesMetadata
 	}
 	db.metrics.blocksBytes.Set(float64(blocksSize))
+	db.metrics.seriesMetadataBytes.Set(float64(seriesMetadataSize))
 
 	slices.SortFunc(toLoad, func(a, b *Block) int {
 		switch {

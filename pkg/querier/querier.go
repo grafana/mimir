@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/util/annotations"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"go.opentelemetry.io/otel"
@@ -705,6 +706,47 @@ func (mq *multiQuerier) Close() error {
 
 	mq.queriers = nil
 	return me.Err()
+}
+
+// GetResourceAt implements storage.ResourceQuerier by delegating to the first underlying querier that supports it.
+func (mq *multiQuerier) GetResourceAt(labelsHash uint64, timestamp int64) (*seriesmetadata.ResourceVersion, bool) {
+	mq.queriersMtx.Lock()
+	defer mq.queriersMtx.Unlock()
+
+	for _, q := range mq.queriers {
+		if rq, ok := q.(storage.ResourceQuerier); ok {
+			if rv, found := rq.GetResourceAt(labelsHash, timestamp); found {
+				return rv, true
+			}
+		}
+	}
+	return nil, false
+}
+
+// IterUniqueAttributeNames implements storage.ResourceQuerier by iterating over all underlying queriers that support it.
+func (mq *multiQuerier) IterUniqueAttributeNames(fn func(name string)) error {
+	mq.queriersMtx.Lock()
+	defer mq.queriersMtx.Unlock()
+
+	level.Debug(mq.logger).Log("msg", "IterUniqueAttributeNames called", "queriers", len(mq.queriers))
+
+	seen := make(map[string]struct{})
+	for i, q := range mq.queriers {
+		if rq, ok := q.(storage.ResourceQuerier); ok {
+			if err := rq.IterUniqueAttributeNames(func(name string) {
+				if _, exists := seen[name]; !exists {
+					seen[name] = struct{}{}
+					fn(name)
+				}
+			}); err != nil {
+				return err
+			}
+		} else {
+			level.Debug(mq.logger).Log("msg", "querier does not implement ResourceQuerier for IterUniqueAttributeNames", "querier", i, "type", fmt.Sprintf("%T", q))
+		}
+	}
+	level.Debug(mq.logger).Log("msg", "IterUniqueAttributeNames completed", "uniqueNames", len(seen))
+	return nil
 }
 
 func (mq *multiQuerier) mergeSeriesSets(sets []storage.SeriesSet) storage.SeriesSet {

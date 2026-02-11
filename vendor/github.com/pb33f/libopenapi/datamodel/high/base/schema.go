@@ -595,17 +595,28 @@ func (s *Schema) MarshalJSON() ([]byte, error) {
 // The ctx parameter should be *InlineRenderContext but is typed as any to satisfy the
 // high.RenderableInlineWithContext interface without import cycles.
 func (s *Schema) MarshalYAMLInlineWithContext(ctx any) (interface{}, error) {
-	// If this schema has a discriminator, mark OneOf/AnyOf items to preserve their references.
-	// This ensures discriminator mapping refs are not inlined during bundling.
-	if s.Discriminator != nil {
+	// ensure we have a valid render context; create default bundle mode context if nil.
+	// this ensures backward compatibility where nil context = bundle mode behavior.
+	renderCtx, ok := ctx.(*InlineRenderContext)
+	if !ok || renderCtx == nil {
+		renderCtx = NewInlineRenderContext()
+		ctx = renderCtx
+	}
+
+	// determine if we should preserve discriminator refs based on rendering mode.
+	// in validation mode, we need to fully inline all refs for the JSON schema compiler.
+	// in bundle mode (default), we preserve discriminator refs for mapping compatibility.
+	if s.Discriminator != nil && renderCtx.Mode != RenderingModeValidation {
+		// mark oneOf/anyOf refs as preserved in the context (not on the SchemaProxy).
+		// this avoids mutating shared state and prevents race conditions.
 		for _, sp := range s.OneOf {
 			if sp != nil && sp.IsReference() {
-				sp.SetPreserveReference(true)
+				renderCtx.MarkRefAsPreserved(sp.GetReference())
 			}
 		}
 		for _, sp := range s.AnyOf {
 			if sp != nil && sp.IsReference() {
-				sp.SetPreserveReference(true)
+				renderCtx.MarkRefAsPreserved(sp.GetReference())
 			}
 		}
 	}

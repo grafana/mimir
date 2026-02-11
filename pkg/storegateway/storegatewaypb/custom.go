@@ -45,6 +45,15 @@ func (c *customStoreGatewayClient) LabelValues(ctx context.Context, in *storepb.
 	return res, globalerror.WrapGRPCErrorWithContextError(ctx, err)
 }
 
+// ResourceAttributes implements StoreGatewayClient.
+func (c *customStoreGatewayClient) ResourceAttributes(ctx context.Context, in *storepb.ResourceAttributesRequest, opts ...grpc.CallOption) (StoreGateway_ResourceAttributesClient, error) {
+	client, err := c.wrapped.ResourceAttributes(ctx, in, opts...)
+	if err != nil {
+		return client, globalerror.WrapGRPCErrorWithContextError(ctx, err)
+	}
+	return newCustomResourceAttributesClient(client), nil
+}
+
 // customStoreGatewayClient is a custom StoreGateway_SeriesClient which wraps well known gRPC errors into standard golang errors.
 type customSeriesClient struct {
 	*customClientStream
@@ -99,4 +108,23 @@ func (c *customClientStream) SendMsg(m any) error {
 // RecvMsg implements grpc.ClientStream.
 func (c *customClientStream) RecvMsg(m any) error {
 	return globalerror.WrapGRPCErrorWithContextError(c.Context(), c.wrapped.RecvMsg(m))
+}
+
+// customResourceAttributesClient is a custom StoreGateway_ResourceAttributesClient which wraps well known gRPC errors into standard golang errors.
+type customResourceAttributesClient struct {
+	*customClientStream
+
+	wrapped StoreGateway_ResourceAttributesClient
+}
+
+func newCustomResourceAttributesClient(client StoreGateway_ResourceAttributesClient) *customResourceAttributesClient {
+	return &customResourceAttributesClient{
+		customClientStream: &customClientStream{client},
+		wrapped:            client,
+	}
+}
+
+func (c *customResourceAttributesClient) Recv() (*storepb.ResourceAttributesResponse, error) {
+	res, err := c.wrapped.Recv()
+	return res, globalerror.WrapGRPCErrorWithContextError(c.Context(), err)
 }

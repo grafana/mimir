@@ -693,6 +693,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		t.MetadataSupplier,
 		t.QuerierEngine,
 		t.Distributor,
+		t.BlocksStoreQueryable,
 		metrics,
 		t.Registerer,
 		util_log.Logger,
@@ -745,6 +746,7 @@ func (t *Mimir) initStoreQueryable() (services.Service, error) {
 		return nil, fmt.Errorf("failed to initialize block store queryable: %v", err)
 	}
 	t.AdditionalStorageQueryables = append(t.AdditionalStorageQueryables, querier.NewStoreGatewayTimeRangeQueryable(q, t.Cfg.Querier))
+	t.BlocksStoreQueryable = q
 	return q, nil
 }
 

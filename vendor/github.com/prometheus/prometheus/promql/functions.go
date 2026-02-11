@@ -848,7 +848,7 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 			var (
 				sum                  = s.Histograms[0].H.Copy()
 				mean, kahanC         *histogram.FloatHistogram
-				count                = 1.
+				count                float64
 				incrementalMean      bool
 				nhcbBoundsReconciled bool
 				err                  error

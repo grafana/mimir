@@ -295,6 +295,7 @@ func (r *Rolodex) IndexTheRolodex(ctx context.Context) error {
 
 			// copy config and set the
 			copiedConfig := *r.indexConfig
+			copiedConfig.Rolodex = r
 			copiedConfig.SpecAbsolutePath = fullPath
 			copiedConfig.AvoidBuildIndex = true // we will build out everything in two steps.
 			idx, err := idxFile.Index(&copiedConfig)
@@ -394,6 +395,7 @@ func (r *Rolodex) IndexTheRolodex(ctx context.Context) error {
 
 	// indexed and built every supporting file, we can build the root index (our entry point)
 	if r.rootNode != nil {
+		r.indexConfig.Rolodex = r
 
 		// if there is a base path but no SpecFilePath, then we need to set the root spec config to point to a theoretical root.yaml
 		// which does not exist, but is used to formulate the absolute path to root references correctly.
@@ -405,7 +407,46 @@ func (r *Rolodex) IndexTheRolodex(ctx context.Context) error {
 
 			if len(r.localFS) > 0 || len(r.remoteFS) > 0 {
 				if r.indexConfig.SpecFilePath != "" {
-					r.indexConfig.SpecAbsolutePath = filepath.Join(basePath, filepath.Base(r.indexConfig.SpecFilePath))
+					// Compute the absolute path to the spec file.
+					// - If SpecFilePath is already absolute, use it directly.
+					// - If SpecFilePath is relative, it needs careful handling to avoid path doubling.
+					//
+					// The original code used filepath.Base() which incorrectly stripped directory
+					// segments like /myproject/api-spec/ from nested paths.
+					//
+					// Handle cases:
+					// 1. SpecFilePath = "test_data/nested/doc.yaml", BasePath = "/abs/test_data/nested"
+					//    -> Should NOT double to /abs/test_data/nested/test_data/nested/doc.yaml
+					// 2. SpecFilePath = "subdir/doc.yaml", BasePath = "/abs/test_data"
+					//    -> Should produce /abs/test_data/subdir/doc.yaml
+					if filepath.IsAbs(r.indexConfig.SpecFilePath) {
+						r.indexConfig.SpecAbsolutePath = r.indexConfig.SpecFilePath
+					} else {
+						specPath := r.indexConfig.SpecFilePath
+						// Check if SpecFilePath starts with the relative basePath or its original value
+						// This handles cases where SpecFilePath = "test_data/file.yaml" and
+						// BasePath was originally "test_data" (now absolute)
+						origBasePath := r.indexConfig.BasePath
+
+						// Normalize paths to use OS-specific separators for Windows compatibility
+						// On Windows, paths may use / but os.PathSeparator is \, causing mismatches
+						normalizedSpecPath := filepath.FromSlash(specPath)
+						normalizedOrigBasePath := filepath.FromSlash(origBasePath)
+
+						if strings.HasPrefix(normalizedSpecPath, normalizedOrigBasePath+string(os.PathSeparator)) {
+							// SpecFilePath includes the original basePath, make it absolute directly
+							r.indexConfig.SpecAbsolutePath, _ = filepath.Abs(normalizedSpecPath)
+						} else if strings.HasPrefix(normalizedSpecPath, "..") {
+							// SpecFilePath starts with ".." (parent directory), resolve it from cwd
+							// Using filepath.Join with basePath would incorrectly double paths
+							// e.g., basePath="/Users/foo/bar" + "../bar/file.yaml" would give
+							// "/Users/foo/bar/bar/file.yaml" instead of "/Users/foo/bar/file.yaml"
+							r.indexConfig.SpecAbsolutePath, _ = filepath.Abs(normalizedSpecPath)
+						} else {
+							// SpecFilePath is relative to basePath, join them
+							r.indexConfig.SpecAbsolutePath = filepath.Join(basePath, normalizedSpecPath)
+						}
+					}
 				} else {
 					r.indexConfig.SetTheoreticalRoot()
 				}
@@ -596,7 +637,7 @@ func (r *Rolodex) OpenWithContext(ctx context.Context, location string) (Rolodex
 
 			// check if this is a URL or an abs/rel reference.
 			if !filepath.IsAbs(location) {
-				fileLookup, _ = filepath.Abs(filepath.Join(k, location))
+				fileLookup, _ = filepath.Abs(utils.CheckPathOverlap(k, location, string(os.PathSeparator)))
 			}
 
 			// For generic fs.FS implementations, we need to use relative paths

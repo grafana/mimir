@@ -4,16 +4,29 @@
 package v3
 
 import (
+	"context"
+
 	"github.com/pb33f/libopenapi/datamodel/high"
 	highbase "github.com/pb33f/libopenapi/datamodel/high/base"
 	"github.com/pb33f/libopenapi/datamodel/low"
 	lowmodel "github.com/pb33f/libopenapi/datamodel/low"
 	"github.com/pb33f/libopenapi/datamodel/low/base"
 	lowv3 "github.com/pb33f/libopenapi/datamodel/low/v3"
+	"github.com/pb33f/libopenapi/index"
 	"github.com/pb33f/libopenapi/orderedmap"
 	"github.com/pb33f/libopenapi/utils"
 	"go.yaml.in/yaml/v4"
 )
+
+// buildLowHeader builds a low-level Header from a resolved YAML node.
+func buildLowHeader(node *yaml.Node, idx *index.SpecIndex) (*lowv3.Header, error) {
+	var header lowv3.Header
+	lowmodel.BuildModel(node, &header)
+	if err := header.Build(context.Background(), nil, node, idx); err != nil {
+		return nil, err
+	}
+	return &header, nil
+}
 
 // Header represents a high-level OpenAPI 3+ Header object backed by a low-level one.
 //   - https://spec.openapis.org/oas/v3.1.0#header-object
@@ -111,9 +124,16 @@ func (h *Header) MarshalYAMLInline() (interface{}, error) {
 	if h.Reference != "" {
 		return utils.CreateRefNode(h.Reference), nil
 	}
-	nb := high.NewNodeBuilder(h, h.low)
-	nb.Resolve = true
-	return nb.Render(), nil
+
+	// resolve external reference if present
+	if h.low != nil {
+		rendered, err := high.RenderExternalRef(h.low, buildLowHeader, NewHeader)
+		if err != nil || rendered != nil {
+			return rendered, err
+		}
+	}
+
+	return high.RenderInline(h, h.low)
 }
 
 // MarshalYAMLInlineWithContext will create a ready to render YAML representation of the Header object,
@@ -124,10 +144,16 @@ func (h *Header) MarshalYAMLInlineWithContext(ctx any) (interface{}, error) {
 	if h.Reference != "" {
 		return utils.CreateRefNode(h.Reference), nil
 	}
-	nb := high.NewNodeBuilder(h, h.low)
-	nb.Resolve = true
-	nb.RenderContext = ctx
-	return nb.Render(), nil
+
+	// resolve external reference if present
+	if h.low != nil {
+		rendered, err := high.RenderExternalRefWithContext(h.low, buildLowHeader, NewHeader, ctx)
+		if err != nil || rendered != nil {
+			return rendered, err
+		}
+	}
+
+	return high.RenderInlineWithContext(h, h.low, ctx)
 }
 
 // CreateHeaderRef creates a Header that renders as a $ref to another header definition.

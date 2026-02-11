@@ -4999,6 +4999,13 @@ ruler_alertmanager_client_config:
 # CLI flag: -distributor.otel-label-name-preserve-underscores
 [otel_label_name_preserve_multiple_underscores: <boolean> | default = true]
 
+# (experimental) Whether to persist OTel resource attributes per time series as
+# metadata in Prometheus TSDB blocks. Resource attributes are stored in
+# series_metadata.parquet files within blocks and can be queried via the
+# /api/v1/resource_attributes endpoint.
+# CLI flag: -distributor.otel-persist-resource-attributes
+[otel_persist_resource_attributes: <boolean> | default = false]
+
 # (experimental) The default consistency level to enforce for queries when using
 # the ingest storage. Supports values: strong, eventual.
 # CLI flag: -ingest-storage.read-consistency

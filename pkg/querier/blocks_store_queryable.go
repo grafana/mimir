@@ -304,7 +304,7 @@ func (q *BlocksStoreQueryable) Querier(mint, maxt int64) (storage.Querier, error
 		return nil, errors.Errorf("BlocksStoreQueryable is not running: %v", s)
 	}
 
-	return &blocksStoreQuerier{
+	baseQuerier := &blocksStoreQuerier{
 		minT:                     mint,
 		maxT:                     maxt,
 		finder:                   q.finder,
@@ -316,7 +316,16 @@ func (q *BlocksStoreQueryable) Querier(mint, maxt int64) (storage.Querier, error
 		consistency:              q.consistency,
 		logger:                   q.logger,
 		queryStoreAfter:          q.queryStoreAfter,
-	}, nil
+	}
+
+	// Wrap with resource querier cache to support info() PromQL function
+	return NewResourceQuerierCache(
+		baseQuerier,
+		&blocksResourceFetcher{blocksQueryable: q},
+		mint,
+		maxt,
+		q.logger,
+	), nil
 }
 
 type blocksStoreQuerier struct {
@@ -1368,4 +1377,193 @@ func convertBlockHintsToULIDs(hints []hintspb.Block) ([]ulid.ULID, error) {
 	}
 
 	return res, nil
+}
+
+// ResourceAttributes queries resource attributes from store-gateways for the given time range and matchers.
+func (q *BlocksStoreQueryable) ResourceAttributes(ctx context.Context, minT, maxT int64, matchers []*labels.Matcher, limit int64) ([]*storepb.ResourceAttributesSeriesData, error) {
+	spanLog, ctx := spanlogger.New(ctx, q.logger, tracer, "BlocksStoreQueryable.ResourceAttributes")
+	defer spanLog.Finish()
+
+	tenantID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	spanLog.DebugLog("start", util.TimeFromMillis(minT).UTC().String(), "end",
+		util.TimeFromMillis(maxT).UTC().String(), "matchers", util.MatchersStringer(matchers))
+
+	// Check if we should query block store at all
+	now := time.Now()
+	if !ShouldQueryBlockStore(q.queryStoreAfter, now, minT) {
+		spanLog.DebugLog("msg", "not querying block store; query time range begins after the query-store-after limit")
+		return nil, nil
+	}
+
+	maxT = clampMaxTime(spanLog, maxT, now.UnixMilli(), -q.queryStoreAfter, "query store after")
+
+	// Find the list of blocks we need to query given the time range.
+	knownBlocks, indexMeta, err := q.finder.GetBlocks(ctx, tenantID, minT, maxT)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(knownBlocks) == 0 {
+		spanLog.DebugLog("msg", "no blocks found")
+		return nil, nil
+	}
+
+	spanLog.DebugLog("msg", "found blocks to query", "num_blocks", len(knownBlocks))
+
+	var (
+		results         []*storepb.ResourceAttributesSeriesData
+		mtx             sync.Mutex
+		attemptedBlocks = map[ulid.ULID][]string{}
+		touchedStores   = map[string]struct{}{}
+	)
+
+	convertedMatchers := convertMatchersToLabelMatcher(matchers)
+
+	for attempt := 1; attempt <= q.dynamicReplication.MaxReplicationFactor(); attempt++ {
+		// Find store-gateway instances having the blocks
+		clients, err := q.stores.GetClientsFor(tenantID, knownBlocks, attemptedBlocks)
+		if err != nil {
+			if attempt > 1 {
+				level.Warn(spanLog).Log("msg", "unable to get store-gateway clients while retrying", "err", err)
+				break
+			}
+			return nil, err
+		}
+
+		spanLog.DebugLog("msg", "found store-gateway instances to query", "num_instances", len(clients), "attempt", attempt)
+
+		reqCtx := grpcContextWithBucketStoreRequestMeta(ctx, tenantID, indexMeta)
+		g, gCtx := errgroup.WithContext(reqCtx)
+
+		for c, blockIDs := range clients {
+			g.Go(func() error {
+				clientResults, queriedBlocks, err := q.fetchResourceAttributesFromStore(gCtx, c, blockIDs, minT, maxT, convertedMatchers, limit, spanLog)
+				if err != nil {
+					if shouldRetry(err) {
+						level.Warn(spanLog).Log("msg", "failed to fetch resource attributes; error is retriable", "remote", c.RemoteAddress(), "err", err)
+						return nil
+					}
+					return fmt.Errorf("non-retriable error while fetching resource attributes from store: %w", err)
+				}
+
+				mtx.Lock()
+				results = append(results, clientResults...)
+				touchedStores[c.RemoteAddress()] = struct{}{}
+				for _, blockID := range queriedBlocks {
+					attemptedBlocks[blockID] = append(attemptedBlocks[blockID], c.RemoteAddress())
+				}
+				mtx.Unlock()
+
+				return nil
+			})
+		}
+
+		if err := g.Wait(); err != nil {
+			return nil, err
+		}
+
+		// Update attemptedBlocks for blocks we tried but didn't get queried
+		for client, blockIDs := range clients {
+			touchedStores[client.RemoteAddress()] = struct{}{}
+			for _, blockID := range blockIDs {
+				if _, ok := attemptedBlocks[blockID]; !ok {
+					attemptedBlocks[blockID] = append(attemptedBlocks[blockID], client.RemoteAddress())
+				}
+			}
+		}
+	}
+
+	spanLog.DebugLog("msg", "resource attributes query complete", "num_results", len(results), "num_stores", len(touchedStores))
+
+	return results, nil
+}
+
+// fetchResourceAttributesFromStore fetches resource attributes from a single store-gateway.
+func (q *BlocksStoreQueryable) fetchResourceAttributesFromStore(
+	ctx context.Context,
+	client BlocksStoreClient,
+	blockIDs []ulid.ULID,
+	minT, maxT int64,
+	matchers []storepb.LabelMatcher,
+	limit int64,
+	spanLog *spanlogger.SpanLogger,
+) ([]*storepb.ResourceAttributesSeriesData, []ulid.ULID, error) {
+	req, err := createResourceAttributesRequest(minT, maxT, blockIDs, matchers, limit)
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "failed to create resource attributes request")
+	}
+
+	stream, err := client.ResourceAttributes(ctx, req)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var (
+		results       []*storepb.ResourceAttributesSeriesData
+		queriedBlocks []ulid.ULID
+	)
+
+	for {
+		resp, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, nil, err
+		}
+
+		results = append(results, resp.Items...)
+
+		// Extract queried blocks from hints if available
+		if resp.Hints != nil {
+			hints := hintspb.ResourceAttributesResponseHints{}
+			if err := types.UnmarshalAny(resp.Hints, &hints); err == nil {
+				ids, err := convertBlockHintsToULIDs(hints.QueriedBlocks)
+				if err == nil {
+					queriedBlocks = append(queriedBlocks, ids...)
+				}
+			}
+		}
+	}
+
+	spanLog.DebugLog("msg", "received resource attributes from store-gateway",
+		"instance", client.RemoteAddress(),
+		"num_results", len(results),
+		"requested_blocks", strings.Join(convertULIDsToString(blockIDs), " "),
+		"queried_blocks", strings.Join(convertULIDsToString(queriedBlocks), " "))
+
+	return results, queriedBlocks, nil
+}
+
+func createResourceAttributesRequest(minT, maxT int64, blockIDs []ulid.ULID, matchers []storepb.LabelMatcher, limit int64) (*storepb.ResourceAttributesRequest, error) {
+	req := &storepb.ResourceAttributesRequest{
+		Start:    minT,
+		End:      maxT,
+		Matchers: matchers,
+		Limit:    limit,
+	}
+
+	// Selectively query only specific blocks
+	requestHints := &hintspb.ResourceAttributesRequestHints{
+		BlockMatchers: []storepb.LabelMatcher{
+			{
+				Type:  storepb.LabelMatcher_RE,
+				Name:  block.BlockIDLabel,
+				Value: strings.Join(convertULIDsToString(blockIDs), "|"),
+			},
+		},
+	}
+
+	anyRequestHints, err := types.MarshalAny(requestHints)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to marshal resource attributes request hints")
+	}
+
+	req.Hints = anyRequestHints
+
+	return req, nil
 }

@@ -89,6 +89,7 @@ func TestTimeseriesFromPool(t *testing.T) {
 		{"exemplars", &TimeSeries{Exemplars: []Exemplar{{Value: 1, TimestampMs: 2}}}},
 		{"CreatedTimestamp", &TimeSeries{CreatedTimestamp: 1234567890}},
 		{"SkipUnmarshalingExemplars", &TimeSeries{SkipUnmarshalingExemplars: true}},
+		{"ResourceAttributes", &TimeSeries{ResourceAttributes: &ResourceAttributes{Timestamp: 1234567890}}},
 	}
 	for _, tc := range dirtyPoolTests {
 		t.Run("panics if pool returns dirty TimeSeries with "+tc.name, func(t *testing.T) {
@@ -310,6 +311,83 @@ func TestDeepCopyTimeseries(t *testing.T) {
 	assert.Len(t, dst.Histograms, 0)
 }
 
+func TestDeepCopyTimeseriesResourceAttributes(t *testing.T) {
+	src := PreallocTimeseries{
+		TimeSeries: &TimeSeries{
+			Labels: []LabelAdapter{
+				{Name: "__name__", Value: "test_metric"},
+			},
+			Samples: []Sample{
+				{Value: 1, TimestampMs: 1000},
+			},
+			ResourceAttributes: &ResourceAttributes{
+				Identifying: []AttributeEntry{
+					{Key: "service.name", Value: "test-service"},
+					{Key: "service.namespace", Value: "test-ns"},
+				},
+				Descriptive: []AttributeEntry{
+					{Key: "host.name", Value: "test-host"},
+				},
+				Entities: []ResourceEntity{
+					{
+						Type: "service",
+						ID: []AttributeEntry{
+							{Key: "service.name", Value: "test-service"},
+						},
+						Description: []AttributeEntry{
+							{Key: "service.version", Value: "1.0.0"},
+						},
+					},
+				},
+				Timestamp: 1234567890,
+			},
+		},
+	}
+
+	dst := PreallocTimeseries{}
+	dst = DeepCopyTimeseries(dst, src, false, false)
+
+	// Check that resource attributes are deeply copied.
+	require.NotNil(t, dst.ResourceAttributes)
+	assert.Equal(t, src.ResourceAttributes.Timestamp, dst.ResourceAttributes.Timestamp)
+	assert.Equal(t, src.ResourceAttributes.Identifying, dst.ResourceAttributes.Identifying)
+	assert.Equal(t, src.ResourceAttributes.Descriptive, dst.ResourceAttributes.Descriptive)
+	assert.Equal(t, src.ResourceAttributes.Entities, dst.ResourceAttributes.Entities)
+
+	// Check that the pointers are different (deep copy).
+	assert.NotSame(t, src.ResourceAttributes, dst.ResourceAttributes)
+	if len(src.ResourceAttributes.Identifying) > 0 {
+		assert.NotSame(t, &src.ResourceAttributes.Identifying[0], &dst.ResourceAttributes.Identifying[0])
+	}
+	if len(src.ResourceAttributes.Entities) > 0 {
+		assert.NotSame(t, &src.ResourceAttributes.Entities[0], &dst.ResourceAttributes.Entities[0])
+	}
+
+	// Verify modifying src doesn't affect dst.
+	src.ResourceAttributes.Timestamp = 9999999999
+	assert.NotEqual(t, src.ResourceAttributes.Timestamp, dst.ResourceAttributes.Timestamp)
+}
+
+func TestDeepCopyTimeseriesNilResourceAttributes(t *testing.T) {
+	src := PreallocTimeseries{
+		TimeSeries: &TimeSeries{
+			Labels: []LabelAdapter{
+				{Name: "__name__", Value: "test_metric"},
+			},
+			Samples: []Sample{
+				{Value: 1, TimestampMs: 1000},
+			},
+			ResourceAttributes: nil,
+		},
+	}
+
+	dst := PreallocTimeseries{}
+	dst = DeepCopyTimeseries(dst, src, false, false)
+
+	// Check that nil resource attributes remain nil.
+	assert.Nil(t, dst.ResourceAttributes)
+}
+
 func TestDeepCopyTimeseriesExemplars(t *testing.T) {
 	src := PreallocTimeseries{
 		TimeSeries: &TimeSeries{
@@ -381,6 +459,19 @@ func TestDeepCopyTimeseriesCopiesAllFields(t *testing.T) {
 			},
 			CreatedTimestamp:          1234567890,
 			SkipUnmarshalingExemplars: true,
+			ResourceAttributes: &ResourceAttributes{
+				Identifying: []AttributeEntry{{Key: "service.name", Value: "myservice"}},
+				Descriptive: []AttributeEntry{{Key: "host.name", Value: "myhost"}},
+				Entities:    []ResourceEntity{{Type: "service", ID: []AttributeEntry{{Key: "service.name", Value: "myservice"}}, Description: []AttributeEntry{{Key: "desc", Value: "val"}}}},
+				Timestamp:   1234567890,
+			},
+			ScopeAttributes: &ScopeAttributes{
+				Name:      "github.com/example/payment",
+				Version:   "1.2.0",
+				SchemaURL: "https://opentelemetry.io/schemas/1.24.0",
+				Attrs:     []AttributeEntry{{Key: "library.language", Value: "go"}},
+				Timestamp: 1234567890,
+			},
 		},
 	}
 
@@ -788,9 +879,17 @@ func TestTimeSeries_MakeReferencesSafeToRetain(t *testing.T) {
 	const (
 		origLabelName  = "name"
 		origLabelValue = "value"
+		origAttrKey    = "service.name"
+		origAttrValue  = "myservice"
+		origScopeName  = "myscope"
+		origSchemaURL  = "https://example.com/schema"
 	)
 	labelNameBytes := []byte(origLabelName)
 	labelValueBytes := []byte(origLabelValue)
+	attrKeyBytes := []byte(origAttrKey)
+	attrValueBytes := []byte(origAttrValue)
+	scopeNameBytes := []byte(origScopeName)
+	schemaURLBytes := []byte(origSchemaURL)
 	ts := TimeSeries{
 		Labels: []LabelAdapter{
 			{
@@ -808,6 +907,29 @@ func TestTimeSeries_MakeReferencesSafeToRetain(t *testing.T) {
 				},
 			},
 		},
+		ResourceAttributes: &ResourceAttributes{
+			Identifying: []AttributeEntry{
+				{Key: yoloString(attrKeyBytes), Value: yoloString(attrValueBytes)},
+			},
+			Descriptive: []AttributeEntry{
+				{Key: yoloString(attrKeyBytes), Value: yoloString(attrValueBytes)},
+			},
+			Entities: []ResourceEntity{
+				{
+					Type:        yoloString(attrKeyBytes),
+					ID:          []AttributeEntry{{Key: yoloString(attrKeyBytes), Value: yoloString(attrValueBytes)}},
+					Description: []AttributeEntry{{Key: yoloString(attrKeyBytes), Value: yoloString(attrValueBytes)}},
+				},
+			},
+		},
+		ScopeAttributes: &ScopeAttributes{
+			Name:      yoloString(scopeNameBytes),
+			Version:   yoloString(attrValueBytes),
+			SchemaURL: yoloString(schemaURLBytes),
+			Attrs: []AttributeEntry{
+				{Key: yoloString(attrKeyBytes), Value: yoloString(attrValueBytes)},
+			},
+		},
 	}
 
 	ts.MakeReferencesSafeToRetain()
@@ -815,6 +937,10 @@ func TestTimeSeries_MakeReferencesSafeToRetain(t *testing.T) {
 	// Modify the referenced byte slices, to test whether ts retains them (it shouldn't).
 	labelNameBytes[len(labelNameBytes)-1] = 'x'
 	labelValueBytes[len(labelValueBytes)-1] = 'x'
+	attrKeyBytes[len(attrKeyBytes)-1] = 'x'
+	attrValueBytes[len(attrValueBytes)-1] = 'x'
+	scopeNameBytes[len(scopeNameBytes)-1] = 'x'
+	schemaURLBytes[len(schemaURLBytes)-1] = 'x'
 
 	for _, l := range ts.Labels {
 		require.Equal(t, origLabelName, l.Name)
@@ -825,5 +951,33 @@ func TestTimeSeries_MakeReferencesSafeToRetain(t *testing.T) {
 			require.Equal(t, origLabelName, l.Name)
 			require.Equal(t, origLabelValue, l.Value)
 		}
+	}
+	// Resource attributes must be deep-copied.
+	for _, e := range ts.ResourceAttributes.Identifying {
+		require.Equal(t, origAttrKey, e.Key)
+		require.Equal(t, origAttrValue, e.Value)
+	}
+	for _, e := range ts.ResourceAttributes.Descriptive {
+		require.Equal(t, origAttrKey, e.Key)
+		require.Equal(t, origAttrValue, e.Value)
+	}
+	for _, entity := range ts.ResourceAttributes.Entities {
+		require.Equal(t, origAttrKey, entity.Type)
+		for _, attr := range entity.ID {
+			require.Equal(t, origAttrKey, attr.Key)
+			require.Equal(t, origAttrValue, attr.Value)
+		}
+		for _, attr := range entity.Description {
+			require.Equal(t, origAttrKey, attr.Key)
+			require.Equal(t, origAttrValue, attr.Value)
+		}
+	}
+	// Scope attributes must be deep-copied.
+	require.Equal(t, origScopeName, ts.ScopeAttributes.Name)
+	require.Equal(t, origAttrValue, ts.ScopeAttributes.Version)
+	require.Equal(t, origSchemaURL, ts.ScopeAttributes.SchemaURL)
+	for _, e := range ts.ScopeAttributes.Attrs {
+		require.Equal(t, origAttrKey, e.Key)
+		require.Equal(t, origAttrValue, e.Value)
 	}
 }

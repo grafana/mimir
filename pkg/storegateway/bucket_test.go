@@ -3107,3 +3107,110 @@ func BenchmarkFilterPostingsByCachedShardHash_NoPostingsShifted(b *testing.B) {
 		filterPostingsByCachedShardHash(ps, shard, cachedSeriesHasher{cache}, nil)
 	}
 }
+
+func TestParseResourceAttributesParquet_EmptyData(t *testing.T) {
+	// Empty data should return empty map without error
+	result, err := parseResourceAttributesParquet(nil)
+	require.Error(t, err) // Parquet read fails on empty data
+	assert.Nil(t, result)
+}
+
+func TestDeduplicateResourceAttributeItems(t *testing.T) {
+	// Test deduplication logic
+	items := []*storepb.ResourceAttributesSeriesData{
+		{
+			Labels: map[string]string{"__name__": "metric1", "job": "test"},
+			Versions: []*storepb.ResourceVersionData{
+				{Identifying: map[string]string{"service.name": "svc1"}, MinTimeMs: 1000, MaxTimeMs: 2000},
+			},
+		},
+		{
+			Labels: map[string]string{"__name__": "metric1", "job": "test"},
+			Versions: []*storepb.ResourceVersionData{
+				{Identifying: map[string]string{"service.name": "svc1"}, MinTimeMs: 3000, MaxTimeMs: 4000},
+			},
+		},
+		{
+			Labels: map[string]string{"__name__": "metric2", "job": "test"},
+			Versions: []*storepb.ResourceVersionData{
+				{Identifying: map[string]string{"service.name": "svc2"}, MinTimeMs: 1000, MaxTimeMs: 2000},
+			},
+		},
+	}
+
+	result := deduplicateResourceAttributeItems(items)
+
+	// Should have 2 unique series (metric1 and metric2)
+	assert.Len(t, result, 2)
+
+	// Find the metric1 series and verify versions were merged
+	for _, item := range result {
+		if item.Labels["__name__"] == "metric1" {
+			assert.Len(t, item.Versions, 2, "metric1 should have 2 merged versions")
+		}
+		if item.Labels["__name__"] == "metric2" {
+			assert.Len(t, item.Versions, 1, "metric2 should have 1 version")
+		}
+	}
+}
+
+func TestMergeResourceVersions(t *testing.T) {
+	cases := []struct {
+		name     string
+		a        []*storepb.ResourceVersionData
+		b        []*storepb.ResourceVersionData
+		expected int
+	}{
+		{
+			name:     "both empty",
+			a:        nil,
+			b:        nil,
+			expected: 0,
+		},
+		{
+			name: "a empty",
+			a:    nil,
+			b: []*storepb.ResourceVersionData{
+				{MinTimeMs: 1000, MaxTimeMs: 2000},
+			},
+			expected: 1,
+		},
+		{
+			name: "b empty",
+			a: []*storepb.ResourceVersionData{
+				{MinTimeMs: 1000, MaxTimeMs: 2000},
+			},
+			b:        nil,
+			expected: 1,
+		},
+		{
+			name: "no duplicates",
+			a: []*storepb.ResourceVersionData{
+				{MinTimeMs: 1000, MaxTimeMs: 2000},
+			},
+			b: []*storepb.ResourceVersionData{
+				{MinTimeMs: 3000, MaxTimeMs: 4000},
+			},
+			expected: 2,
+		},
+		{
+			name: "with duplicates",
+			a: []*storepb.ResourceVersionData{
+				{MinTimeMs: 1000, MaxTimeMs: 2000},
+				{MinTimeMs: 3000, MaxTimeMs: 4000},
+			},
+			b: []*storepb.ResourceVersionData{
+				{MinTimeMs: 1000, MaxTimeMs: 2000}, // duplicate
+				{MinTimeMs: 5000, MaxTimeMs: 6000},
+			},
+			expected: 3,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := mergeResourceVersions(tc.a, tc.b)
+			assert.Len(t, result, tc.expected)
+		})
+	}
+}
