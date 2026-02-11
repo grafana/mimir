@@ -1084,7 +1084,18 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		// TODO: Consider wrapping logger to differentiate from querier module logger
 		rulerRegisterer := prometheus.WrapRegistererWith(rulerEngine, t.Registerer)
 
-		queryable, _, eng, _, err := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.AdditionalStorageQueryables, rulerRegisterer, util_log.Logger, t.ActivityTracker, t.QuerierQueryPlanner, t.QueryLimitsProvider, true)
+		queryable, _, eng, _, err := querier.New(
+			t.Cfg.Querier,
+			t.Overrides,
+			t.Distributor,
+			t.AdditionalStorageQueryables,
+			rulerRegisterer,
+			util_log.Logger,
+			t.ActivityTracker,
+			t.QuerierQueryPlanner,
+			t.QueryLimitsProvider,
+			true,
+		)
 		if err != nil {
 			return nil, fmt.Errorf("could not create queryable for ruler: %w", err)
 		}
