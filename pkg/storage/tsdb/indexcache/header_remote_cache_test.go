@@ -292,6 +292,7 @@ func testFetchFetchPostingsOffsetsForMatcher(
 	}
 
 	assert.Equal(t, len(expectedHits), len(hits))
+	assert.Equal(t, len(expectedMisses), len(misses))
 	assert.Equal(t, len(keys)-len(expectedHits), len(expectedMisses))
 
 	if len(expectedHits) != 0 {

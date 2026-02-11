@@ -192,8 +192,8 @@ func postingsOffsetsForMatcherCacheKeyMatcherID(matcherStr string, isSubtract bo
 		buf = buf[:matcherLen]
 	}
 
-	offset := 0 // TODO offset not actually used like in other impl; remove or see if should be used
-	offset += copy(buf[offset:], matcherStr)
+	//offset := 0 // TODO offset not actually used like in other impl; remove or see if should be used
+	//offset += copy(buf[offset:], matcherStr)
 
 	// Use cryptographically hash functions to avoid hash collisions
 	// which would end up in wrong query results.
