@@ -139,16 +139,14 @@ func TestProxyEndpoint_ResponseSelection(t *testing.T) {
 			metrics := NewProxyMetrics(registry)
 
 			// Create test HTTP servers for each backend
-			servers := make([]*httptest.Server, 0, len(tt.backends))
 			backendInterfaces := make([]ProxyBackend, 0, len(tt.backends))
 
 			for _, mb := range tt.backends {
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					w.WriteHeader(mb.response.statusCode)
-					w.Write([]byte(mb.response.body))
+					_, _ = w.Write([]byte(mb.response.body))
 				}))
 				defer server.Close()
-				servers = append(servers, server)
 
 				// Parse the server URL and create a backend
 				backend := NewProxyBackend(mb.name, mustParseURL(server.URL), 5*time.Second, mb.name == tt.preferredBackend, false, BackendTypeMirrored)
@@ -189,7 +187,7 @@ func TestProxyEndpoint_BodySizeLimit(t *testing.T) {
 	// Create a test backend
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
-		w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("ok"))
 	}))
 	defer server.Close()
 

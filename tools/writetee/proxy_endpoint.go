@@ -98,7 +98,7 @@ func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p.dispatchToNonPreferredBackends(ctx, r, body, logger)
 
 	// Send to preferred backend synchronously and return its response.
-	res := p.executePreferredBackendRequest(ctx, r, body, logger)
+	res := p.executePreferredBackendRequest(ctx, r, body)
 
 	// Return the preferred backend's response to the client
 	if res.err != nil {
@@ -185,10 +185,10 @@ func (p *ProxyEndpoint) dispatchToNonPreferredBackends(ctx context.Context, req 
 
 // executePreferredBackendRequest sends the request to the preferred backend synchronously
 // and returns its response.
-func (p *ProxyEndpoint) executePreferredBackendRequest(ctx context.Context, req *http.Request, body []byte, logger *spanlogger.SpanLogger) *backendResponse {
+func (p *ProxyEndpoint) executePreferredBackendRequest(ctx context.Context, req *http.Request, body []byte) *backendResponse {
 	b := p.preferredBackend
 
-	logger, ctx = spanlogger.New(ctx, p.logger, tracer, "Outgoing proxied write request")
+	logger, ctx := spanlogger.New(ctx, p.logger, tracer, "Outgoing proxied write request")
 	defer logger.Finish()
 
 	logger.SetSpanAndLogTag("path", req.URL.Path)
