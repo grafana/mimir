@@ -144,23 +144,17 @@ func (c *Cache[T]) Get(
 		return nil, nil, nil, false, nil
 	}
 
-	var cachedSeriesMetadata CachedSeriesMetadata
-	if err := cachedSeriesMetadata.Unmarshal(cached.SeriesMetadata); err != nil {
-		level.Warn(c.logger).Log("msg", "failed to decode cached series metadata", "hashed_cache_key", hashedKey, "cache_key", cacheKey, "err", err)
-		return nil, nil, nil, false, nil
-	}
-
 	c.metrics.cacheHits.Inc()
 	level.Debug(c.logger).Log("msg", "cache hit", "tenant", tenant, "function", function, "innerKey", innerKey, "start", start, "end", end)
 
-	stats.AddReadEntryStat(len(cachedSeriesMetadata.Series), len(data))
+	stats.AddReadEntryStat(len(cached.SeriesMetadata), len(data))
 
 	results, err = c.codec.Unmarshal(cached.Results)
 	if err != nil {
 		return nil, nil, nil, false, fmt.Errorf("unmarshaling cached results: %w", err)
 	}
 
-	return cachedSeriesMetadata.Series, cached.Annotations, results, true, nil
+	return cached.SeriesMetadata, cached.Annotations, results, true, nil
 }
 
 func (c *Cache[T]) Set(
@@ -169,8 +163,7 @@ func (c *Cache[T]) Set(
 	innerKey string,
 	start, end int64,
 	enableDelayedNameRemoval bool,
-	serializedSeries []byte,
-	seriesCount int,
+	seriesMetadata []querierpb.SeriesMetadata,
 	annotations []Annotation,
 	results []T,
 	stats *CacheStats,
@@ -191,7 +184,7 @@ func (c *Cache[T]) Set(
 		CacheKey:       cacheKey,
 		Start:          start,
 		End:            end,
-		SeriesMetadata: serializedSeries,
+		SeriesMetadata: seriesMetadata,
 		Annotations:    annotations,
 		Results:        resultBytes,
 	}
@@ -204,6 +197,7 @@ func (c *Cache[T]) Set(
 	hashedKey := hashCacheKey(cacheKey)
 	c.backend.SetMultiAsync(map[string][]byte{hashedKey: data}, defaultTTL)
 
+	seriesCount := len(seriesMetadata)
 	level.Debug(c.logger).Log("msg", "cache entry written", "cache_key", cacheKey, "series_count", seriesCount, "entry_size", len(data))
 
 	stats.AddWriteEntryStat(seriesCount, len(data))

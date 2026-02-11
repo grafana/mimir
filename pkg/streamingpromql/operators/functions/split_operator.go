@@ -609,9 +609,8 @@ type UncachedSplit[T any] struct {
 	// Data to cache
 	rangeResults [][]T
 	// Annotations are put into a map for deduping
-	rangeAnnotations    []map[cache.Annotation]struct{}
-	serializedMetadata  []byte
-	seriesMetadataCount int
+	rangeAnnotations   []map[cache.Annotation]struct{}
+	seriesMetadata     []querierpb.SeriesMetadata
 
 	// localToMergedIdx maps split-local series index to the parent's merged series index.
 	// Used by emitAndCaptureAnnotation to look up the correct metric name when generating results.
@@ -661,23 +660,13 @@ func (p *UncachedSplit[T]) SeriesMetadata(ctx context.Context, matchers types.Ma
 		return nil, err
 	}
 
-	// Defensively serialize series metadata now for later caching. The label adapters created below share
-	// string memory with the returned seriesMetadata; serializing copies all bytes into an independent buffer
-	// so we don't retain references into memory owned by the caller.
-	toCache := cache.CachedSeriesMetadata{
-		Series: make([]querierpb.SeriesMetadata, len(seriesMetadata)),
-	}
+	p.seriesMetadata = make([]querierpb.SeriesMetadata, len(seriesMetadata))
 	for i, sm := range seriesMetadata {
-		toCache.Series[i] = querierpb.SeriesMetadata{
+		p.seriesMetadata[i] = querierpb.SeriesMetadata{
 			Labels:   mimirpb.FromLabelsToLabelAdapters(sm.Labels),
 			DropName: sm.DropName,
 		}
 	}
-	p.serializedMetadata, err = toCache.Marshal()
-	if err != nil {
-		return nil, fmt.Errorf("marshaling series metadata for cache: %w", err)
-	}
-	p.seriesMetadataCount = len(seriesMetadata)
 	p.localToMergedIdx = make([]int, len(seriesMetadata))
 
 	p.resultGetter = NewResultGetter(p.NextSeries)
@@ -780,8 +769,7 @@ func (p *UncachedSplit[T]) Finalize(ctx context.Context) error {
 			splitRange.Start,
 			splitRange.End,
 			p.parent.enableDelayedNameRemoval,
-			p.serializedMetadata,
-			p.seriesMetadataCount,
+			p.seriesMetadata,
 			annotations,
 			results,
 			p.parent.cacheStats,

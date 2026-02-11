@@ -32,11 +32,7 @@ message CachedSeries {
   string cacheKey = 1;
   int64 start = 2;
   int64 end = 3;
-  bytes series_metadata = 4;
+  repeated querierpb.SeriesMetadata series_metadata = 4 [(gogoproto.nullable) = false];
   bytes results = 5;
   repeated Annotation annotations = 6 [(gogoproto.nullable) = false];
-}
-
-message CachedSeriesMetadata {
-  repeated querierpb.SeriesMetadata series = 1 [(gogoproto.nullable) = false];
 }
