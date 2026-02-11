@@ -167,10 +167,13 @@ func (b *proxyBackend) doBackendRequest(req *http.Request) (int, []byte, error) 
 	}
 
 	// Read the entire response body.
-	defer res.Body.Close()
-	body, err := io.ReadAll(res.Body)
-	if err != nil {
-		return 0, nil, errors.Wrap(err, "reading backend response")
+	body, readErr := io.ReadAll(res.Body)
+	closeErr := res.Body.Close()
+	if readErr != nil {
+		return 0, nil, errors.Wrap(readErr, "reading backend response")
+	}
+	if closeErr != nil {
+		return 0, nil, errors.Wrap(closeErr, "closing backend response body")
 	}
 
 	return res.StatusCode, body, nil

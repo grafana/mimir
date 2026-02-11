@@ -3,9 +3,7 @@
 package writetee
 
 import (
-	"bytes"
 	"fmt"
-	"io"
 	"math"
 	"math/rand"
 	"strings"
@@ -14,12 +12,12 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 const (
-	amplifiedLabelName  = "__amplified__"
-	amplifiedLabelValue = "true"
+	amplifiedLabelName = "__amplified__"
 )
 
 // isRW2Error checks if an error is caused by trying to unmarshal RW 2.0 data
@@ -92,11 +90,11 @@ func (t *AmplificationTracker) GetStats() (rw1Series, rw2Series int64, rw2Ratio 
 
 // AmplificationResult contains the result of amplification along with metadata.
 type AmplificationResult struct {
-	Body              []byte
-	OriginalSeriesCount int
+	Body                 []byte
+	OriginalSeriesCount  int
 	AmplifiedSeriesCount int
-	IsRW2             bool
-	WasAmplified      bool
+	IsRW2                bool
+	WasAmplified         bool
 }
 
 // AmplifyWriteRequest takes a Prometheus remote write request body and amplifies or samples it
@@ -104,11 +102,11 @@ type AmplificationResult struct {
 // The amplification factor determines how to transform the time series:
 //   - factor = 1.0: no change (returns original)
 //   - factor > 1.0: amplification (duplication)
-//     - factor = 2.0: each time series is duplicated once (2x total)
-//     - factor = 3.5: each time series gets 3 full copies + 50% chance of a 4th copy
+//   - factor = 2.0: each time series is duplicated once (2x total)
+//   - factor = 3.5: each time series gets 3 full copies + 50% chance of a 4th copy
 //   - factor < 1.0: sampling (reduction)
-//     - factor = 0.1: each time series has 10% chance of being kept
-//     - factor = 0.5: each time series has 50% chance of being kept
+//   - factor = 0.1: each time series has 10% chance of being kept
+//   - factor = 0.5: each time series has 50% chance of being kept
 //
 // Amplified copies (factor > 1.0) get an additional label: __amplified__="<replica_num>"
 // Sampled series (factor < 1.0) do not get additional labels.
@@ -291,7 +289,6 @@ func AmplifyWriteRequest(body []byte, amplificationFactor float64, tracker *Ampl
 	}, nil
 }
 
-
 // amplifyRW2Request amplifies a RW 2.0 request in native format.
 // This avoids the 12.5x memory expansion of converting RW 2.0 → RW 1.0.
 // Instead, we just add a few strings to the symbol table and duplicate uint32 label ref arrays.
@@ -429,31 +426,4 @@ func amplifyTimeSeries(original *mimirpb.PreallocTimeseries, replicaNum int) mim
 	})
 
 	return ts
-}
-
-// amplifyRequestBody is a helper that wraps AmplifyWriteRequest for use with io.ReadCloser
-func amplifyRequestBody(body io.ReadCloser, amplificationFactor float64, tracker *AmplificationTracker) (io.ReadCloser, AmplificationResult, error) {
-	if amplificationFactor == 1.0 {
-		return body, AmplificationResult{WasAmplified: false}, nil
-	}
-
-	// Read the entire body
-	bodyBytes, err := io.ReadAll(body)
-	if err != nil {
-		return nil, AmplificationResult{}, fmt.Errorf("failed to read request body for amplification: %w", err)
-	}
-
-	// Close the original body
-	if err := body.Close(); err != nil {
-		return nil, AmplificationResult{}, fmt.Errorf("failed to close original body: %w", err)
-	}
-
-	// Amplify
-	result, err := AmplifyWriteRequest(bodyBytes, amplificationFactor, tracker)
-	if err != nil {
-		return nil, AmplificationResult{}, err
-	}
-
-	// Return as a new ReadCloser
-	return io.NopCloser(bytes.NewReader(result.Body)), result, nil
 }

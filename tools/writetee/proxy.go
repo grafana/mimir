@@ -32,13 +32,13 @@ const (
 type ProxyConfig struct {
 	Server server.Config
 
-	BackendMirroredEndpoints  string
-	BackendAmplifiedEndpoints string
-	AmplificationFactor       float64
-	PreferredBackend          string
-	BackendReadTimeout        time.Duration
-	BackendSkipTLSVerify      bool
-	LogSlowResponseThreshold  time.Duration
+	BackendMirroredEndpoints   string
+	BackendAmplifiedEndpoints  string
+	AmplificationFactor        float64
+	PreferredBackend           string
+	BackendReadTimeout         time.Duration
+	BackendSkipTLSVerify       bool
+	AsyncMaxInFlightPerBackend int
 }
 
 // registerServerFlagsWithChangedDefaultValues emulates the same method in pkg/mimir/mimir.go,
@@ -90,9 +90,9 @@ func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
 			"Only applies to backends specified in backend.amplified-endpoints.",
 	)
 	f.BoolVar(&cfg.BackendSkipTLSVerify, "backend.skip-tls-verify", false, "Skip TLS verification on backend targets.")
-	f.StringVar(&cfg.PreferredBackend, "backend.preferred", "", "The hostname of the preferred backend when selecting the response to send back to the client. If no preferred backend is configured then the write-tee will send back to the client the first successful response received without waiting for other backends.")
+	f.StringVar(&cfg.PreferredBackend, "backend.preferred", "", "The hostname of the preferred backend. Required. Non-preferred backends receive fire-and-forget requests.")
 	f.DurationVar(&cfg.BackendReadTimeout, "backend.read-timeout", 90*time.Second, "The timeout when reading the response from a backend.")
-	f.DurationVar(&cfg.LogSlowResponseThreshold, "proxy.log-slow-response-threshold", 10*time.Second, "The minimum difference in response time between slowest and fastest back-end over which to log the request. 0 to disable.")
+	f.IntVar(&cfg.AsyncMaxInFlightPerBackend, "backend.async-max-in-flight", 1000, "Maximum concurrent in-flight requests per non-preferred backend (async fire-and-forget). Requests are dropped when at capacity.")
 	cfg.registerServerFlagsWithChangedDefaultValues(f)
 }
 
@@ -103,13 +103,14 @@ type Route struct {
 }
 
 type Proxy struct {
-	cfg                   ProxyConfig
-	backends              []ProxyBackend
-	logger                log.Logger
-	registerer            prometheus.Registerer
-	metrics               *ProxyMetrics
-	routes                []Route
-	amplificationTracker  *AmplificationTracker
+	cfg                  ProxyConfig
+	backends             []ProxyBackend
+	logger               log.Logger
+	registerer           prometheus.Registerer
+	metrics              *ProxyMetrics
+	routes               []Route
+	amplificationTracker *AmplificationTracker
+	asyncDispatcher      *AsyncBackendDispatcher
 
 	// The HTTP server used to run the proxy service.
 	server *server.Server
@@ -163,6 +164,11 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 		return nil, errors.New("at least 1 backend is required (specify backend.mirrored-endpoints or backend.amplified-endpoints)")
 	}
 
+	// Preferred backend is required
+	if cfg.PreferredBackend == "" {
+		return nil, errors.New("preferred backend is required (set -backend.preferred)")
+	}
+
 	// Validate amplification configuration
 	hasAmplifiedBackend := false
 	for _, b := range p.backends {
@@ -175,25 +181,25 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 		return nil, errors.New("amplification-factor must be > 0.0 when amplified backends are configured")
 	}
 
-	// If the preferred backend is configured, then it must exist among the actual backends.
-	if cfg.PreferredBackend != "" {
-		exists := false
-		for _, b := range p.backends {
-			if b.Preferred() {
-				exists = true
-				break
-			}
+	// The preferred backend must exist among the actual backends.
+	exists := false
+	for _, b := range p.backends {
+		if b.Preferred() {
+			exists = true
+			break
 		}
-
-		if !exists {
-			return nil, fmt.Errorf("the preferred backend (hostname) has not been found among the list of configured backends")
-		}
+	}
+	if !exists {
+		return nil, fmt.Errorf("the preferred backend (hostname) has not been found among the list of configured backends")
 	}
 
 	// At least 2 backends are suggested
 	if len(p.backends) < 2 {
 		level.Warn(p.logger).Log("msg", "The proxy is running with only 1 backend. At least 2 backends are required to fulfil the purpose of the proxy and fan out writes.")
 	}
+
+	// Create the async dispatcher for non-preferred backends
+	p.asyncDispatcher = NewAsyncBackendDispatcher(cfg.AsyncMaxInFlightPerBackend, p.metrics, logger)
 
 	return p, nil
 }
@@ -247,7 +253,11 @@ func (p *Proxy) Start() error {
 
 	// register fan-out routes (explicit endpoints we want to mirror)
 	for _, route := range p.routes {
-		router.Path(route.Path).Methods(route.Methods...).Handler(NewProxyEndpoint(p.backends, route, p.metrics, p.logger, p.cfg.LogSlowResponseThreshold, p.cfg.AmplificationFactor, p.amplificationTracker))
+		endpoint, err := NewProxyEndpoint(p.backends, route, p.metrics, p.logger, p.cfg.AmplificationFactor, p.amplificationTracker, p.asyncDispatcher)
+		if err != nil {
+			return err
+		}
+		router.Path(route.Path).Methods(route.Methods...).Handler(endpoint)
 	}
 
 	// register catch-all passthrough route for unsupported endpoints
@@ -257,7 +267,10 @@ func (p *Proxy) Start() error {
 		RouteName: "passthrough",
 		Methods:   []string{"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"},
 	}
-	passthroughEndpoint := NewProxyEndpoint(p.backends, passthroughRoute, p.metrics, p.logger, p.cfg.LogSlowResponseThreshold, p.cfg.AmplificationFactor, p.amplificationTracker)
+	passthroughEndpoint, err := NewProxyEndpoint(p.backends, passthroughRoute, p.metrics, p.logger, p.cfg.AmplificationFactor, p.amplificationTracker, p.asyncDispatcher)
+	if err != nil {
+		return err
+	}
 	router.PathPrefix("/").Handler(http.HandlerFunc(passthroughEndpoint.ServeHTTPPassthrough))
 
 	p.server = serv
@@ -282,6 +295,12 @@ func (p *Proxy) Stop() error {
 	}
 
 	p.server.Shutdown()
+
+	// Stop the async dispatcher
+	if p.asyncDispatcher != nil {
+		p.asyncDispatcher.Stop()
+	}
+
 	return nil
 }
 
