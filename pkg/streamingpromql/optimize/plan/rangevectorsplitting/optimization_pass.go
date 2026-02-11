@@ -305,7 +305,7 @@ func computeSplitRanges(startTs, endTs int64, splitInterval time.Duration, oooTh
 func computeBlockAlignedStart(startTs int64, splitInterval time.Duration) int64 {
 	splitIntervalMs := splitInterval.Milliseconds()
 	// -1 to adjust for block boundaries. Query splitting time ranges are left open, the same as for PromQL. However,
-	// block boundaries are left closed, in the sense that a 2h block will store samples from e.g. 8h to 10-1ms.
+	// block boundaries are left closed, in the sense that a 2h block will store samples from e.g. 8h to 10h-1ms.
 	alignedStart := (startTs/splitIntervalMs)*splitIntervalMs - 1
 	if alignedStart < startTs {
 		alignedStart += splitIntervalMs
