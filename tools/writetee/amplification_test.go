@@ -7,20 +7,21 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 func TestAmplifyWriteRequest_RW2(t *testing.T) {
 	// Create a Remote Write 2.0 request using WriteRequest with RW2 fields
 	req := mimirpb.WriteRequest{
 		SymbolsRW2: []string{
-			"",           // index 0: empty string (required by RW 2.0 spec)
-			"__name__",   // index 1
+			"",                    // index 0: empty string (required by RW 2.0 spec)
+			"__name__",            // index 1
 			"http_requests_total", // index 2
-			"method",     // index 3
-			"GET",        // index 4
+			"method",              // index 3
+			"GET",                 // index 4
 		},
 		TimeseriesRW2: []mimirpb.TimeSeriesRW2{
 			{
