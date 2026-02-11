@@ -19,7 +19,7 @@ func NewMemoryTrackingQueryable(inner storage.Queryable, createUnlimitedMemoryCo
 }
 
 // MemoryTrackingQueryable wraps a storage.Queryable to add memory tracking and
-// label deduplication. It creates a MemoryTrackingQuerier for each time range query.
+// label deduplication in a MemoryTrackingQuerier.
 type MemoryTrackingQueryable struct {
 	inner                                   storage.Queryable
 	createUnlimitedMemoryConsumptionTracker bool
