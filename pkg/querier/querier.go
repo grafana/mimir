@@ -467,7 +467,6 @@ func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHi
 	}
 	sp.Limit = limit
 
-	// Wrap with MemoryTrackingSeriesSet after merging to ensure memory is decreased only once per unique series.
 	memoryTracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
