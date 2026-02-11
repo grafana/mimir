@@ -197,17 +197,13 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 			}
 			require.True(t, gotWork, "should return true to indicate a job was acquired from the scheduler")
 
-			// Wait for job status goroutine to send the final status
-			time.Sleep(100 * time.Millisecond)
-
 			if tc.expectedFinalStatus == compactorschedulerpb.UPDATE_TYPE_IN_PROGRESS {
 				// Planning job: should only have initial IN_PROGRESS update, no final status
 				require.True(t, mockSchedulerClient.ReceivedPlannedRequest(), "planning jobs should send PlannedJobs message")
-				assert.Equal(t, compactorschedulerpb.UPDATE_TYPE_IN_PROGRESS.String(), mockSchedulerClient.GetFirstUpdate().String(), "planning jobs should only send IN_PROGRESS status")
-				assert.Equal(t, compactorschedulerpb.UPDATE_TYPE_IN_PROGRESS.String(), mockSchedulerClient.GetLastUpdate().String(), "planning jobs should not send final status update")
+				assert.Zero(t, mockSchedulerClient.GetUpdateJobCallCount(), "planning jobs should not send final status update")
 			} else {
 				// Compaction job: should have at least one status update
-				require.GreaterOrEqual(t, mockSchedulerClient.GetUpdateJobCallCount(), 1, "compaction jobs should have at least one status update")
+				require.Equal(t, mockSchedulerClient.GetUpdateJobCallCount(), 1, "compaction jobs should have at least one status update")
 				assert.Equal(t, tc.expectedFinalStatus.String(), mockSchedulerClient.GetLastUpdate().String(), "final job status should match expected")
 				assert.False(t, mockSchedulerClient.ReceivedPlannedRequest(), "compaction jobs should not send PlannedJobs message")
 			}
