@@ -39,13 +39,14 @@ func NewSeriesLabelsDeduplicator() SeriesLabelsDeduplicator {
 
 // ContextWithNewSeriesLabelsDeduplicator adds a new SeriesLabelsDeduplicator to the context.
 //
-// The scope at which a SeriesLabelsDeduplicator is added to the context determines the level
-// at which label deduplication and memory tracking occurs. Different scopes are used
-// depending on the query execution path:
+// The scope at which a SeriesLabelsDeduplicator is added determines the level of deduplication:
 //
-// 1. Per-selector scope (MQE streaming queries, including federated queries)
-// 2. Per-request scope (HTTP middleware for /series and /read)
-// 3. Per-query scope (ruler)
+//  1. Per-Select scope (default): Created by MemoryTrackingQueryable for each Select() call.
+//     This is used by both MQE streaming queries and Prometheus engine queries, including
+//     federated queries.
+//
+//  2. Per-query scope (special cases): Created for ruler queries and other custom queryable
+//     implementations that don't use MemoryTrackingQueryable.
 //
 // The deduplicator must be added to the context before series selection begins, as it
 // tracks unique labels and increases memory consumption during the Select() operation.
