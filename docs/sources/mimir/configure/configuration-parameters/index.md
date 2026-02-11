@@ -5057,15 +5057,20 @@ kafka:
   # CLI flag: -ingest-storage.kafka.write-clients
   [write_clients: <int> | default = 1]
 
-  # The username used to authenticate to Kafka using the SASL plain mechanism.
-  # To enable SASL, configure both the username and password.
+  # The username used to authenticate to Kafka using SASL. To enable SASL,
+  # configure both the username and password.
   # CLI flag: -ingest-storage.kafka.sasl-username
   [sasl_username: <string> | default = ""]
 
-  # The password used to authenticate to Kafka using the SASL plain mechanism.
-  # To enable SASL, configure both the username and password.
+  # The password used to authenticate to Kafka using SASL. To enable SASL,
+  # configure both the username and password.
   # CLI flag: -ingest-storage.kafka.sasl-password
   [sasl_password: <string> | default = ""]
+
+  # The SASL mechanism used to authenticate to Kafka. Supported values: PLAIN,
+  # SCRAM-SHA-256, SCRAM-SHA-512.
+  # CLI flag: -ingest-storage.kafka.sasl-mechanism
+  [sasl_mechanism: <string> | default = "PLAIN"]
 
   # The consumer group used by the consumer to track the last consumed offset.
   # The consumer group must be different for each ingester. If the configured

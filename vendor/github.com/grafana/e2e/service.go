@@ -7,8 +7,9 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
+	"os"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -431,7 +432,7 @@ func NewHTTPSReadinessProbe(port int, path, serverName, clientKeyFile, clientCer
 		return nil, fmt.Errorf("error creating x509 keypair from client cert file %s and client key file %s: %w", clientCertFile, clientKeyFile, err)
 	}
 
-	caCert, err := ioutil.ReadFile(rootCertFile)
+	caCert, err := os.ReadFile(rootCertFile)
 	if err != nil {
 		return nil, fmt.Errorf("error opening root CA cert file %s: %w", rootCertFile, err)
 	}
@@ -456,9 +457,10 @@ func NewHTTPSReadinessProbe(port int, path, serverName, clientKeyFile, clientCer
 
 func (p *HTTPReadinessProbe) Ready(service *ConcreteService) (err error) {
 	endpoint := service.Endpoint(p.port)
-	if endpoint == "" {
+	switch endpoint {
+	case "":
 		return fmt.Errorf("cannot get service endpoint for port %d", p.port)
-	} else if endpoint == "stopped" {
+	case "stopped":
 		return errors.New("service has stopped")
 	}
 
@@ -468,7 +470,7 @@ func (p *HTTPReadinessProbe) Ready(service *ConcreteService) (err error) {
 	}
 
 	defer runutil.ExhaustCloseWithErrCapture(&err, res.Body, "response readiness")
-	body, _ := ioutil.ReadAll(res.Body)
+	body, _ := io.ReadAll(res.Body)
 
 	if res.StatusCode < p.expectedStatusRangeStart || res.StatusCode > p.expectedStatusRangeEnd {
 		return fmt.Errorf("expected code in range: [%v, %v], got status code: %v and body: %v", p.expectedStatusRangeStart, p.expectedStatusRangeEnd, res.StatusCode, string(body))
@@ -496,9 +498,10 @@ func NewTCPReadinessProbe(port int) *TCPReadinessProbe {
 
 func (p *TCPReadinessProbe) Ready(service *ConcreteService) (err error) {
 	endpoint := service.Endpoint(p.port)
-	if endpoint == "" {
+	switch endpoint {
+	case "":
 		return fmt.Errorf("cannot get service endpoint for port %d", p.port)
-	} else if endpoint == "stopped" {
+	case "stopped":
 		return errors.New("service has stopped")
 	}
 
@@ -592,7 +595,7 @@ func (s *HTTPService) Metrics() (_ string, err error) {
 	}
 
 	defer runutil.ExhaustCloseWithErrCapture(&err, res.Body, "metrics response")
-	body, err := ioutil.ReadAll(res.Body)
+	body, err := io.ReadAll(res.Body)
 
 	return string(body), err
 }

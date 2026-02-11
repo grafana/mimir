@@ -51,4 +51,86 @@ func TestNewKafkaReaderClient(t *testing.T) {
 			require.NoError(t, client.Ping(context.Background()))
 		})
 	})
+
+	t.Run("should support SASL SCRAM-SHA-256 authentication", func(t *testing.T) {
+		const (
+			topicName     = "test"
+			numPartitions = 1
+			username      = "mimir"
+			password      = "supersecret"
+		)
+
+		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName, testkafka.WithSASLScramSHA256(username, password))
+
+		t.Run("should fail if the provided auth is wrong", func(t *testing.T) {
+			t.Parallel()
+
+			cfg := createTestKafkaConfig(clusterAddr, topicName)
+			cfg.SASLUsername = username
+			cfg.SASLMechanism = SASLMechanismScramSHA256
+			require.NoError(t, cfg.SASLPassword.Set("wrong"))
+
+			client, err := NewKafkaReaderClient(cfg, nil, log.NewNopLogger())
+			require.NoError(t, err)
+			t.Cleanup(client.Close)
+
+			require.Error(t, client.Ping(context.Background()))
+		})
+
+		t.Run("should succeed if the provided auth is good", func(t *testing.T) {
+			t.Parallel()
+
+			cfg := createTestKafkaConfig(clusterAddr, topicName)
+			cfg.SASLUsername = username
+			cfg.SASLMechanism = SASLMechanismScramSHA256
+			require.NoError(t, cfg.SASLPassword.Set(password))
+
+			client, err := NewKafkaReaderClient(cfg, nil, log.NewNopLogger())
+			require.NoError(t, err)
+			t.Cleanup(client.Close)
+
+			require.NoError(t, client.Ping(context.Background()))
+		})
+	})
+
+	t.Run("should support SASL SCRAM-SHA-512 authentication", func(t *testing.T) {
+		const (
+			topicName     = "test"
+			numPartitions = 1
+			username      = "mimir"
+			password      = "supersecret"
+		)
+
+		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName, testkafka.WithSASLScramSHA512(username, password))
+
+		t.Run("should fail if the provided auth is wrong", func(t *testing.T) {
+			t.Parallel()
+
+			cfg := createTestKafkaConfig(clusterAddr, topicName)
+			cfg.SASLUsername = username
+			cfg.SASLMechanism = SASLMechanismScramSHA512
+			require.NoError(t, cfg.SASLPassword.Set("wrong"))
+
+			client, err := NewKafkaReaderClient(cfg, nil, log.NewNopLogger())
+			require.NoError(t, err)
+			t.Cleanup(client.Close)
+
+			require.Error(t, client.Ping(context.Background()))
+		})
+
+		t.Run("should succeed if the provided auth is good", func(t *testing.T) {
+			t.Parallel()
+
+			cfg := createTestKafkaConfig(clusterAddr, topicName)
+			cfg.SASLUsername = username
+			cfg.SASLMechanism = SASLMechanismScramSHA512
+			require.NoError(t, cfg.SASLPassword.Set(password))
+
+			client, err := NewKafkaReaderClient(cfg, nil, log.NewNopLogger())
+			require.NoError(t, err)
+			t.Cleanup(client.Close)
+
+			require.NoError(t, client.Ping(context.Background()))
+		})
+	})
 }

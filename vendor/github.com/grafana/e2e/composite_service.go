@@ -1,3 +1,4 @@
+// Package e2e provides utilities for running end-to-end tests using Docker containers.
 package e2e
 
 import (

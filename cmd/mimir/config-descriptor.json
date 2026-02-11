@@ -8430,7 +8430,7 @@
               "kind": "field",
               "name": "sasl_username",
               "required": false,
-              "desc": "The username used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.",
+              "desc": "The username used to authenticate to Kafka using SASL. To enable SASL, configure both the username and password.",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "ingest-storage.kafka.sasl-username",
@@ -8440,10 +8440,20 @@
               "kind": "field",
               "name": "sasl_password",
               "required": false,
-              "desc": "The password used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.",
+              "desc": "The password used to authenticate to Kafka using SASL. To enable SASL, configure both the username and password.",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "ingest-storage.kafka.sasl-password",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "sasl_mechanism",
+              "required": false,
+              "desc": "The SASL mechanism used to authenticate to Kafka. Supported values: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512.",
+              "fieldValue": null,
+              "fieldDefaultValue": "PLAIN",
+              "fieldFlag": "ingest-storage.kafka.sasl-mechanism",
               "fieldType": "string"
             },
             {
