@@ -509,6 +509,13 @@
 * [CHANGE] If you configure multiple secondary backends and enable comparisons, query-tee reports comparison results of the preferred backend against each of the secondaries. #13022
 * [CHANGE] Add backend configuration options for request proportion sampling and time-based query filtering. #13037
 
+## 2.17.6-rc.0
+
+### Grafana Mimir
+
+* [BUGFIX] Update to Go v1.25.7 to address [CVE-2025-61726](https://pkg.go.dev/vuln/GO-2026-4341). #14243 #14255
+* [BUGFIX] Ruler: Add path traversal checks when parsing namespaces and groups, which prevents namespace and group name from containing non-local paths. #14246
+
 ## 2.17.5
 
 ### Grafana Mimir
