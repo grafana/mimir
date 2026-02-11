@@ -310,25 +310,25 @@ func (m *FunctionOverRangeVectorSplit[T]) mergeSplitsMetadata(ctx context.Contex
 			return nil, nil, err
 		}
 
-		for splitLocalIdx, serieMetadata := range splitMetadata {
-			labelBytes = serieMetadata.Labels.Bytes(labelBytes)
+		for splitLocalIdx, seriesMetadata := range splitMetadata {
+			labelBytes = seriesMetadata.Labels.Bytes(labelBytes)
 			key := string(labelBytes)
 
 			mergedIdx, exists := seriesMap[key]
 			if !exists {
 				mergedIdx = len(mergedMetadata)
 				seriesMap[key] = mergedIdx
-				mergedMetadata, err = types.SeriesMetadataSlicePool.AppendToSlice(mergedMetadata, m.MemoryConsumptionTracker, serieMetadata)
+				mergedMetadata, err = types.SeriesMetadataSlicePool.AppendToSlice(mergedMetadata, m.MemoryConsumptionTracker, seriesMetadata)
 				if err != nil {
 					return nil, nil, err
 				}
 				seriesToSplits = append(seriesToSplits, nil)
 			} else {
 				// We don't need the metadata value anymore if it's a duplicate series
-				m.MemoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(serieMetadata.Labels)
+				m.MemoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(seriesMetadata.Labels)
 			}
 			seriesToSplits[mergedIdx] = append(seriesToSplits[mergedIdx], SplitSeries{
-				SplitIdx:      splitIdx,
+				SplitIdx:            splitIdx,
 				SplitLocalSeriesIdx: splitLocalIdx,
 			})
 			m.splits[splitIdx].AppendMergedSeriesIndex(splitLocalIdx, mergedIdx)
@@ -499,7 +499,7 @@ type Split[T any] interface {
 }
 
 type SplitSeries struct {
-	SplitIdx      int
+	SplitIdx            int
 	SplitLocalSeriesIdx int
 }
 
