@@ -183,18 +183,7 @@ func (p *ProxyEndpoint) dispatchToNonPreferredBackends(ctx context.Context, req 
 			continue
 		}
 
-		// For amplified backends, we need to amplify the body before dispatching
-		bodyToSend := body
-		if backend.BackendType() == BackendTypeAmplified && p.amplificationFactor != 1.0 && len(body) > 0 {
-			result, err := AmplifyWriteRequest(body, p.amplificationFactor, p.amplificationTracker)
-			if err != nil {
-				level.Error(logger).Log("msg", "Failed to amplify write request for async dispatch", "backend", backend.Name(), "err", err)
-				// Fall back to original body on amplification error
-			} else {
-				bodyToSend = result.Body
-			}
-		}
-
+		bodyToSend := p.amplifyWriteRequestBody(body, backend, logger)
 		p.asyncDispatcher.Dispatch(ctx, req, bodyToSend, backend)
 	}
 }
@@ -215,37 +204,9 @@ func (p *ProxyEndpoint) executePreferredBackendRequest(ctx context.Context, req 
 	logger.SetSpanAndLogTag("backend_type", fmt.Sprintf("%d", b.BackendType()))
 
 	var bodyReader io.ReadCloser
-	bodyToSend := body
+	bodyToSend := p.amplifyWriteRequestBody(body, b, logger)
 
-	if len(body) > 0 {
-		// Amplify or sample the request body for amplified backends
-		if b.BackendType() == BackendTypeAmplified && p.amplificationFactor != 1.0 {
-			result, err := AmplifyWriteRequest(body, p.amplificationFactor, p.amplificationTracker)
-			if err != nil {
-				level.Error(logger).Log("msg", "Failed to amplify write request", "backend", b.Name(), "err", err)
-				// Fall back to original body on amplification error
-			} else {
-				bodyToSend = result.Body
-				if result.WasAmplified {
-					rw1, rw2, rw2Ratio := p.amplificationTracker.GetStats()
-					logger.SetSpanAndLogTag("amplified", "true")
-					if result.IsRW2 {
-						logger.SetSpanAndLogTag("format", "rw2")
-					} else {
-						logger.SetSpanAndLogTag("format", "rw1")
-					}
-					logger.SetSpanAndLogTag("amplification_factor", fmt.Sprintf("%.1f", p.amplificationFactor))
-					logger.SetSpanAndLogTag("rw2_ratio", fmt.Sprintf("%.3f", rw2Ratio))
-					logger.SetSpanAndLogTag("total_rw1_series", rw1)
-					logger.SetSpanAndLogTag("total_rw2_series", rw2)
-					logger.SetSpanAndLogTag("original_size", len(body))
-					logger.SetSpanAndLogTag("amplified_size", len(result.Body))
-					logger.SetSpanAndLogTag("original_series_count", result.OriginalSeriesCount)
-					logger.SetSpanAndLogTag("amplified_series_count", result.AmplifiedSeriesCount)
-				}
-			}
-		}
-
+	if len(bodyToSend) > 0 {
 		bodyReader = io.NopCloser(bytes.NewReader(bodyToSend))
 	}
 
@@ -294,6 +255,45 @@ type backendResponse struct {
 	body        []byte
 	err         error
 	elapsedTime time.Duration
+}
+
+// amplifyWriteRequestBody amplifies the request body if needed and logs stats on success.
+// Returns the body to use (amplified or original on error/not needed).
+func (p *ProxyEndpoint) amplifyWriteRequestBody(body []byte, backend ProxyBackend, logger *spanlogger.SpanLogger) []byte {
+	if backend.BackendType() != BackendTypeAmplified || p.amplificationFactor == 1.0 || len(body) == 0 {
+		return body
+	}
+
+	result, err := AmplifyWriteRequest(body, p.amplificationFactor, p.amplificationTracker)
+	if err != nil {
+		level.Error(logger).Log("msg", "Failed to amplify write request", "backend", backend.Name(), "err", err)
+		return body // Fall back to original
+	}
+
+	// Log amplification stats
+	if result.WasAmplified {
+		rw1, rw2, rw2Ratio := p.amplificationTracker.GetStats()
+		logger.SetSpanAndLogTag("amplified", "true")
+		if result.IsRW2 {
+			logger.SetSpanAndLogTag("format", "rw2")
+		} else {
+			logger.SetSpanAndLogTag("format", "rw1")
+		}
+		logger.SetSpanAndLogTag("amplification_factor", fmt.Sprintf("%.1f", p.amplificationFactor))
+		logger.SetSpanAndLogTag("rw2_ratio", fmt.Sprintf("%.3f", rw2Ratio))
+		logger.SetSpanAndLogTag("total_rw1_series", rw1)
+		logger.SetSpanAndLogTag("total_rw2_series", rw2)
+		logger.SetSpanAndLogTag("original_size", len(body))
+		logger.SetSpanAndLogTag("amplified_size", len(result.Body))
+		logger.SetSpanAndLogTag("original_series_count", result.OriginalSeriesCount)
+		logger.SetSpanAndLogTag("amplified_series_count", result.AmplifiedSeriesCount)
+	} else if result.IsRW2 {
+		// RW2 request that wasn't amplified (e.g., factor = 1.0)
+		logger.SetSpanAndLogTag("format", "rw2")
+		logger.SetSpanAndLogTag("rw2_not_amplified", "true")
+	}
+
+	return result.Body
 }
 
 func (r *backendResponse) succeeded() bool {
