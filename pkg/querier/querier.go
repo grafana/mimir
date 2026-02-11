@@ -201,7 +201,7 @@ func New(
 		},
 	})
 
-	queryable := NewMemoryTrackingQueryable(newQueryable(queryables, cfg, limits, queryMetrics, logger))
+	queryable := NewMemoryTrackingQueryable(newQueryable(queryables, cfg, limits, queryMetrics, logger), false)
 	exemplarQueryable := newDistributorExemplarQueryable(distributor, logger)
 
 	lazyQueryable := storage.QueryableFunc(func(minT int64, maxT int64) (storage.Querier, error) {
