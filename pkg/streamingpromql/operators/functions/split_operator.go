@@ -345,6 +345,7 @@ func (m *FunctionOverRangeVectorSplit[T]) mergeSplitsMetadata(ctx context.Contex
 
 func (m *FunctionOverRangeVectorSplit[T]) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	if m.currentSeriesIdx >= len(m.seriesToSplits) {
+		m.fullyEvaluated = true
 		return types.InstantVectorSeriesData{}, types.EOS
 	}
 
