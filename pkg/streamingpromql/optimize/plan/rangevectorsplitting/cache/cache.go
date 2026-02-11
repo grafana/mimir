@@ -17,7 +17,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/querierpb"
 )
 
 type Backend interface {
@@ -74,8 +74,8 @@ func NewCacheFactoryWithBackend(backend Backend, reg prometheus.Registerer, logg
 	}
 }
 
-func generateCacheKey(tenant string, function int32, selector string, start, end int64) string {
-	return fmt.Sprintf("%s:%d:%s:%d:%d", tenant, function, selector, start, end)
+func generateCacheKey(tenant string, function int32, selector string, start, end int64, enableDelayedNameRemoval bool) string {
+	return fmt.Sprintf("%s:%d:%s:%d:%d:%t", tenant, function, selector, start, end, enableDelayedNameRemoval)
 }
 
 // hashCacheKey is needed due to memcached key limit
@@ -115,15 +115,16 @@ func (c *Cache[T]) Get(
 	function int32,
 	innerKey string,
 	start, end int64,
+	enableDelayedNameRemoval bool,
 	stats *CacheStats,
-) (seriesProtos []mimirpb.Metric, annotations []Annotation, results []T, found bool, err error) {
+) (seriesMetadata []querierpb.SeriesMetadata, annotations []Annotation, results []T, found bool, err error) {
 	tenant, err := user.ExtractOrgID(ctx)
 	if err != nil {
 		return nil, nil, nil, false, err
 	}
 
 	c.metrics.cacheRequests.Inc()
-	cacheKey := generateCacheKey(tenant, function, innerKey, start, end)
+	cacheKey := generateCacheKey(tenant, function, innerKey, start, end, enableDelayedNameRemoval)
 	hashedKey := hashCacheKey(cacheKey)
 
 	foundData := c.backend.GetMulti(ctx, []string{hashedKey})
@@ -167,6 +168,7 @@ func (c *Cache[T]) Set(
 	function int32,
 	innerKey string,
 	start, end int64,
+	enableDelayedNameRemoval bool,
 	serializedSeries []byte,
 	seriesCount int,
 	annotations []Annotation,
@@ -178,7 +180,7 @@ func (c *Cache[T]) Set(
 		return err
 	}
 
-	cacheKey := generateCacheKey(tenant, function, innerKey, start, end)
+	cacheKey := generateCacheKey(tenant, function, innerKey, start, end, enableDelayedNameRemoval)
 
 	resultBytes, err := c.codec.Marshal(results)
 	if err != nil {

@@ -968,6 +968,16 @@ func TestQuerySplitting_StorageError(t *testing.T) {
 func createSplittingEngineWithCache(t *testing.T, registry *prometheus.Registry, splitInterval time.Duration, enableDelayedNameRemoval bool, enableEliminateDeduplicateAndMerge bool) (promql.QueryEngine, *testCacheBackend) {
 	t.Helper()
 
+	cacheBackend := newTestCacheBackend()
+	cacheFactory := cache.NewCacheFactoryWithBackend(cacheBackend, registry, log.NewNopLogger())
+
+	engine := createSplittingEngine(t, registry, splitInterval, enableDelayedNameRemoval, enableEliminateDeduplicateAndMerge, cacheFactory)
+	return engine, cacheBackend
+}
+
+func createSplittingEngine(t *testing.T, registry *prometheus.Registry, splitInterval time.Duration, enableDelayedNameRemoval bool, enableEliminateDeduplicateAndMerge bool, cacheFactory *cache.CacheFactory) promql.QueryEngine {
+	t.Helper()
+
 	opts := NewTestEngineOpts()
 	opts.RangeVectorSplitting.Enabled = true
 	opts.RangeVectorSplitting.SplitInterval = splitInterval
@@ -980,13 +990,10 @@ func createSplittingEngineWithCache(t *testing.T, registry *prometheus.Registry,
 	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 
-	cacheBackend := newTestCacheBackend()
-	cacheFactory := cache.NewCacheFactoryWithBackend(cacheBackend, registry, log.NewNopLogger())
-
 	engine, err := newEngineWithCache(opts, NewStaticQueryLimitsProvider(0, enableDelayedNameRemoval), stats.NewQueryMetrics(registry), planner, cacheFactory)
 	require.NoError(t, err)
 
-	return engine, cacheBackend
+	return engine
 }
 
 func setupEngineAndCache(t *testing.T) (*testCacheBackend, promql.QueryEngine) {
@@ -1041,6 +1048,56 @@ func verifyCacheStats(t *testing.T, backend *testCacheBackend, expectedGets, exp
 	require.Equal(t, expectedGets, backend.gets, "Expected %d cache gets, got %d", expectedGets, backend.gets)
 	require.Equal(t, expectedHits, backend.hits, "Expected %d cache hits, got %d", expectedHits, backend.hits)
 	require.Equal(t, expectedSets, backend.sets, "Expected %d cache sets, got %d", expectedSets, backend.sets)
+}
+
+func TestQuerySplitting_DelayedNameRemoval(t *testing.T) {
+	sharedCache := newTestCacheBackend()
+	cacheFactory := cache.NewCacheFactoryWithBackend(sharedCache, prometheus.NewPedanticRegistry(), log.NewNopLogger())
+
+	engineDisabled := createSplittingEngine(t, prometheus.NewPedanticRegistry(), 2*time.Hour, false, true, cacheFactory)
+	engineEnabled := createSplittingEngine(t, prometheus.NewPedanticRegistry(), 2*time.Hour, true, true, cacheFactory)
+
+	promStorage := promqltest.LoadedStorage(t, `
+		load 1h
+			sum_metric{env="prod"} 10 20 30 40 50 60 70
+	`)
+	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
+
+	baseT := timestamp.Time(0)
+	ts := baseT.Add(6 * time.Hour)
+
+	expr := `label_replace(sum_over_time(sum_metric[5h]), "original_name", "$1", "__name__", "(.+)")`
+
+	// Disabled result: sum_over_time eagerly strips __name__, so label_replace's regex (.+) doesn't match the empty name.
+	expectedDisabled := expectedScalarResult(ts, 250, "env", "prod")
+	// Enabled result: __name__ survives through sum_over_time, so label_replace captures it into original_name.
+	expectedEnabled := expectedScalarResult(ts, 250, "env", "prod", "original_name", "sum_metric")
+
+	// Delayed name removal is part of the cache key, so enabled and disabled use separate cache entries.
+
+	// Populate cache with delayed name removal disabled (2 splits → 2 misses, 2 sets).
+	result := runInstantQuery(t, engineDisabled, promStorage, expr, ts)
+	require.NoError(t, result.Err)
+	require.Equal(t, expectedDisabled, result)
+	verifyCacheStats(t, sharedCache, 2, 0, 2)
+
+	// Query with delayed name removal enabled: different cache key, so 2 misses and 2 new sets.
+	result = runInstantQuery(t, engineEnabled, promStorage, expr, ts)
+	require.NoError(t, result.Err)
+	require.Equal(t, expectedEnabled, result)
+	verifyCacheStats(t, sharedCache, 4, 0, 4)
+
+	// Repeat disabled: hits its own cache entries.
+	result = runInstantQuery(t, engineDisabled, promStorage, expr, ts)
+	require.NoError(t, result.Err)
+	require.Equal(t, expectedDisabled, result)
+	verifyCacheStats(t, sharedCache, 6, 2, 4)
+
+	// Repeat enabled: hits its own cache entries.
+	result = runInstantQuery(t, engineEnabled, promStorage, expr, ts)
+	require.NoError(t, result.Err)
+	require.Equal(t, expectedEnabled, result)
+	verifyCacheStats(t, sharedCache, 8, 4, 4)
 }
 
 type storageQueryRange struct {

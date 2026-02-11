@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/querierpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
@@ -178,7 +179,7 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) erro
 
 	for _, splitRange := range m.splitRanges {
 		if splitRange.Cacheable {
-			metadata, annotations, results, found, err := m.cache.Get(ctx, int32(m.FuncId), m.innerCacheKey, splitRange.Start, splitRange.End, m.cacheStats)
+			metadata, annotations, results, found, err := m.cache.Get(ctx, int32(m.FuncId), m.innerCacheKey, splitRange.Start, splitRange.End, m.enableDelayedNameRemoval, m.cacheStats)
 			if err != nil {
 				return err
 			}
@@ -324,7 +325,21 @@ func (m *FunctionOverRangeVectorSplit[T]) mergeSplitsMetadata(ctx context.Contex
 				}
 				seriesToSplits = append(seriesToSplits, nil)
 			} else {
-				// We don't need the metadata value anymore if it's a duplicate series
+				if seriesMetadata.DropName != mergedMetadata[mergedIdx].DropName {
+					// This shouldn't happen for range vector selectors, DropName will always be false at this point.
+					// TODO: There is a problematic edge case if subquery splitting is supported and delayed name
+					//  removal is enabled:
+					//  rate(foo[1d]) or label_replace(bar{}, "__name__", "foo", "", "")
+					//  Left: {__name__="foo"} + DropName=true (from rate)
+					//  Right: {__name__="foo"} + DropName=false (no functions to set DropName=true)
+					//  If the left is missing from some splits, we get inconsistent DropNames.
+					//  DeduplicateAndMerge will take the DropName value from the LHS, if results exist for the LHS at
+					//  any point. Otherwise the RHS DropName is used.
+					//  In the split case, if there are splits that don't have the LHS, we can get inconsistent
+					//  DropNames across splits. The splits don't know whether there were samples from the LHS or not so
+					//  cannot always reproduce the non-split behaviour.
+					return nil, nil, fmt.Errorf("series %s has conflicting DropName values across splits (split %d has %t, merged has %t)", seriesMetadata.Labels.String(), splitIdx, seriesMetadata.DropName, mergedMetadata[mergedIdx].DropName)
+				}
 				m.MemoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(seriesMetadata.Labels)
 			}
 			seriesToSplits[mergedIdx] = append(seriesToSplits[mergedIdx], SplitSeries{
@@ -504,7 +519,7 @@ type SplitSeries struct {
 }
 
 type CachedSplit[T any] struct {
-	metadata    []mimirpb.Metric
+	metadata    []querierpb.SeriesMetadata
 	annotations []cache.Annotation
 	results     []T
 
@@ -516,7 +531,7 @@ func (c *CachedSplit[T]) RangeCount() int {
 }
 
 func NewCachedSplit[T any](
-	metadata []mimirpb.Metric,
+	metadata []querierpb.SeriesMetadata,
 	annotations []cache.Annotation,
 	results []T,
 	parent *FunctionOverRangeVectorSplit[T],
@@ -544,8 +559,9 @@ func (c *CachedSplit[T]) SeriesMetadata(ctx context.Context, matchers types.Matc
 	}
 	seriesMetadata = seriesMetadata[:len(c.metadata)]
 
-	for i, proto := range c.metadata {
-		seriesMetadata[i].Labels = mimirpb.FromLabelAdaptersToLabels(proto.Labels)
+	for i, entry := range c.metadata {
+		seriesMetadata[i].Labels = mimirpb.FromLabelAdaptersToLabels(entry.Labels)
+		seriesMetadata[i].DropName = entry.DropName
 		if err := c.parent.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(seriesMetadata[i].Labels); err != nil {
 			return nil, err
 		}
@@ -649,11 +665,12 @@ func (p *UncachedSplit[T]) SeriesMetadata(ctx context.Context, matchers types.Ma
 	// string memory with the returned seriesMetadata; serializing copies all bytes into an independent buffer
 	// so we don't retain references into memory owned by the caller.
 	toCache := cache.CachedSeriesMetadata{
-		Series: make([]mimirpb.Metric, len(seriesMetadata)),
+		Series: make([]querierpb.SeriesMetadata, len(seriesMetadata)),
 	}
 	for i, sm := range seriesMetadata {
-		toCache.Series[i] = mimirpb.Metric{
-			Labels: mimirpb.FromLabelsToLabelAdapters(sm.Labels),
+		toCache.Series[i] = querierpb.SeriesMetadata{
+			Labels:   mimirpb.FromLabelsToLabelAdapters(sm.Labels),
+			DropName: sm.DropName,
 		}
 	}
 	p.serializedMetadata, err = toCache.Marshal()
@@ -762,6 +779,7 @@ func (p *UncachedSplit[T]) Finalize(ctx context.Context) error {
 			p.parent.innerCacheKey,
 			splitRange.Start,
 			splitRange.End,
+			p.parent.enableDelayedNameRemoval,
 			p.serializedMetadata,
 			p.seriesMetadataCount,
 			annotations,

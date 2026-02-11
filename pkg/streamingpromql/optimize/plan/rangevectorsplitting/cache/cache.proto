@@ -4,7 +4,7 @@ syntax = "proto3";
 
 package rangevectorsplittingcache;
 
-import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
+import "github.com/grafana/mimir/pkg/querier/querierpb/querier.proto";
 import "gogoproto/gogo.proto";
 
 option go_package = "cache";
@@ -38,5 +38,5 @@ message CachedSeries {
 }
 
 message CachedSeriesMetadata {
-  repeated cortexpb.Metric series = 1 [(gogoproto.nullable) = false];
+  repeated querierpb.SeriesMetadata series = 1 [(gogoproto.nullable) = false];
 }
