@@ -457,22 +457,24 @@ func TestQuerySplitting_WithOffset_CacheAlignment(t *testing.T) {
 	// Sum: (13+42)*(30/2) = 825
 	expr := "sum_over_time(test_metric[5h] offset 1h)"
 
-	result1, ranges1 := executeQuery(t, mimirEngine, promStorage, expr, baseT.Add(8*time.Hour))
+	ts8h := baseT.Add(8 * time.Hour)
+	result1, ranges1 := executeQuery(t, mimirEngine, promStorage, expr, ts8h)
+	require.Equal(t, expectedScalarResult(ts8h, 825, "env", "prod"), result1)
 	require.Equal(t, []storageQueryRange{
 		{mint: 2*hourInMs + 1, maxt: 7 * hourInMs}, // PromQL range (2h, 7h] converts to storage [2h+1, 7h]
 	}, ranges1)
-	require.Equal(t, 825.0, result1.Value.(promql.Vector)[0].F)
 	verifyCacheStats(t, testCache, 1, 0, 1) // 1 cacheable block
 
 	// Q1b: no offset at 7h accesses same range (2h, 7h]
 	// Cache has block (4h-1ms, 6h-1ms] from Q1, so queries head and tail from storage
+	ts7h := baseT.Add(7 * time.Hour)
 	exprNoOffset := "sum_over_time(test_metric[5h])"
-	result1b, ranges1b := executeQuery(t, mimirEngine, promStorage, exprNoOffset, baseT.Add(7*time.Hour))
+	result1b, ranges1b := executeQuery(t, mimirEngine, promStorage, exprNoOffset, ts7h)
+	require.Equal(t, expectedScalarResult(ts7h, 825, "env", "prod"), result1b)
 	require.Equal(t, []storageQueryRange{
 		{mint: 2*hourInMs + 1, maxt: 4*hourInMs - 1}, // Head: (2h, 4h-1ms] -> storage [2h+1, 4h-1ms]
 		{mint: 6 * hourInMs, maxt: 7 * hourInMs},     // Tail: (6h-1ms, 7h] -> storage [6h, 7h]
 	}, ranges1b)
-	require.Equal(t, result1b.Value, result1.Value)
 	verifyCacheStats(t, testCache, 2, 1, 1) // 1 cache hit on the block
 
 	// Q2: offset 1h at 10h accesses (4h, 9h]
@@ -480,11 +482,12 @@ func TestQuerySplitting_WithOffset_CacheAlignment(t *testing.T) {
 	// All uncached ranges merge into single storage query
 	// Data: first sample @ 4h10m = 25, last sample @ 9h = 54, samples = 30
 	// Sum: (25+54)*(30/2) = 1185
-	result2, ranges2 := executeQuery(t, mimirEngine, promStorage, expr, baseT.Add(10*time.Hour))
+	ts10h := baseT.Add(10 * time.Hour)
+	result2, ranges2 := executeQuery(t, mimirEngine, promStorage, expr, ts10h)
+	require.Equal(t, expectedScalarResult(ts10h, 1185, "env", "prod"), result2)
 	require.Equal(t, []storageQueryRange{
 		{mint: 4*hourInMs + 1, maxt: 9 * hourInMs}, // Merged: (4h, 9h] -> storage [4h+1, 9h]
 	}, ranges2)
-	require.Equal(t, 1185.0, result2.Value.(promql.Vector)[0].F)
 	verifyCacheStats(t, testCache, 3, 1, 2) // Q1: 1 get/1 set, Q1b: 1 get/1 hit, Q2: 1 get/1 set
 }
 
@@ -502,35 +505,36 @@ func TestQuerySplitting_WithAtModifier_CacheAlignment(t *testing.T) {
 	// Splits: head (2h, 4h-1ms], block (4h-1ms, 6h-1ms], tail (6h-1ms, 7h]
 	// Only 1 complete cacheable block in this range
 	expr := "sum_over_time(test_metric[5h] @ 25200)" // 7h in seconds
-	result1, ranges1 := executeQuery(t, mimirEngine, promStorage, expr, baseT.Add(8*time.Hour))
+	ts8h := baseT.Add(8 * time.Hour)
+	result1, ranges1 := executeQuery(t, mimirEngine, promStorage, expr, ts8h)
+	require.Equal(t, expectedScalarResult(ts8h, 825, "env", "prod"), result1)
 	require.Equal(t, []storageQueryRange{
 		{mint: 2*hourInMs + 1, maxt: 7 * hourInMs},
 	}, ranges1)
-	require.Equal(t, 825.0, result1.Value.(promql.Vector)[0].F)
 	verifyCacheStats(t, testCache, 1, 0, 1) // 1 cacheable block
 
 	// Q2: no @ at 7h accesses same range (2h, 7h]
 	// Cache has block (4h-1ms, 6h-1ms] from Q1, so queries head and tail from storage
 	exprNoModifier := "sum_over_time(test_metric[5h])"
-	result2, ranges2 := executeQuery(t, mimirEngine, promStorage, exprNoModifier, baseT.Add(7*time.Hour))
+	ts7h := baseT.Add(7 * time.Hour)
+	result2, ranges2 := executeQuery(t, mimirEngine, promStorage, exprNoModifier, ts7h)
+	require.Equal(t, expectedScalarResult(ts7h, 825, "env", "prod"), result2)
 	require.Equal(t, []storageQueryRange{
 		{mint: 2*hourInMs + 1, maxt: 4*hourInMs - 1}, // Head: (2h, 4h-1ms] -> storage [2h+1, 4h-1ms]
 		{mint: 6 * hourInMs, maxt: 7 * hourInMs},     // Tail: (6h-1ms, 7h] -> storage [6h, 7h]
 	}, ranges2)
-	require.Equal(t, 825.0, result2.Value.(promql.Vector)[0].F)
-	require.Equal(t, result1.Value.(promql.Vector)[0].F, result2.Value.(promql.Vector)[0].F)
 	verifyCacheStats(t, testCache, 2, 1, 1) // 1 cache hit on the block
 
 	// Q3: @ 7h at 10h accesses same range (2h, 7h]
 	// Cache has block (4h-1ms, 6h-1ms] from Q1, so queries head and tail from storage
-	result3, ranges3 := executeQuery(t, mimirEngine, promStorage, expr, baseT.Add(10*time.Hour))
+	ts10h := baseT.Add(10 * time.Hour)
+	result3, ranges3 := executeQuery(t, mimirEngine, promStorage, expr, ts10h)
+	require.Equal(t, expectedScalarResult(ts10h, 825, "env", "prod"), result3)
 	require.Equal(t, []storageQueryRange{
 		{mint: 2*hourInMs + 1, maxt: 4*hourInMs - 1}, // Head: (2h, 4h-1ms] -> storage [2h+1, 4h-1ms]
 		{mint: 6 * hourInMs, maxt: 7 * hourInMs},     // Tail: (6h-1ms, 7h] -> storage [6h, 7h]
 	}, ranges3)
-	require.Equal(t, 825.0, result3.Value.(promql.Vector)[0].F)
-	require.Equal(t, timestamp.FromTime(baseT.Add(10*time.Hour)), result3.Value.(promql.Vector)[0].T) // @ modifier fixes result timestamp
-	verifyCacheStats(t, testCache, 3, 2, 1)                                                           // Q1: 1 get/1 set, Q2: 1 get/1 hit, Q3: 1 get/1 hit
+	verifyCacheStats(t, testCache, 3, 2, 1) // Q1: 1 get/1 set, Q2: 1 get/1 hit, Q3: 1 get/1 hit
 }
 
 func TestQuerySplitting_With3hRange_NoCacheableRanges(t *testing.T) {
@@ -552,8 +556,7 @@ func TestQuerySplitting_With3hRange_NoCacheableRanges(t *testing.T) {
 	expr := "sum_over_time(test_metric[3h])"
 	ts := baseT.Add(5*time.Hour + time.Millisecond)
 	result, ranges := executeQuery(t, mimirEngine, promStorage, expr, ts)
-	require.Equal(t, 387.0, result.Value.(promql.Vector)[0].F)
-	require.Equal(t, timestamp.FromTime(ts), result.Value.(promql.Vector)[0].T)
+	require.Equal(t, expectedScalarResult(ts, 387, "env", "prod"), result)
 
 	// Since query splitting is not applied, should be a single storage query
 	require.Equal(t, []storageQueryRange{
@@ -582,8 +585,7 @@ func TestQuerySplitting_With3hRangeAndOffset_NoCacheableRanges(t *testing.T) {
 	ts := baseT.Add(4*time.Hour + 30*time.Minute)
 
 	result, ranges := executeQuery(t, mimirEngine, promStorage, expr, ts)
-	require.Equal(t, 261.0, result.Value.(promql.Vector)[0].F)
-	require.Equal(t, timestamp.FromTime(ts), result.Value.(promql.Vector)[0].T)
+	require.Equal(t, expectedScalarResult(ts, 261, "env", "prod"), result)
 
 	// Since query splitting is not applied, should be a single storage query
 	require.Equal(t, []storageQueryRange{
@@ -646,13 +648,9 @@ func TestQuerySplitting_WithOOOWindow(t *testing.T) {
 	ts := fixedNow
 
 	// First query: should cache the cacheable blocks, but not the OOO range
+	// Samples at 5h10m (31) to 12h (72) = 42 samples, sum = (31+72)*42/2 = 2163
 	result1, ranges1 := executeQuery(t, mimirEngine, storage, expr, ts)
-	require.NoError(t, result1.Err)
-	require.Len(t, result1.Value.(promql.Vector), 1)
-	// Expected: sum of values from 5h (exclusive) to 10h (inclusive)
-	// Samples at 5h10m (31) to 12h (72) = 42 samples
-	// Sum = 31+32+...+60 = (31+72)*42/2 = 2163
-	require.Equal(t, 2163.0, result1.Value.(promql.Vector)[0].F)
+	require.Equal(t, expectedScalarResult(ts, 2163, "env", "prod"), result1)
 
 	verifyCacheStats(t, backend, 1, 0, 1)
 	require.Equal(t, []storageQueryRange{
@@ -667,9 +665,7 @@ func TestQuerySplitting_WithOOOWindow(t *testing.T) {
 	require.NoError(t, app.Commit())
 
 	result2, ranges2 := executeQuery(t, mimirEngine, storage, expr, ts)
-	require.NoError(t, result2.Err)
-	require.Len(t, result2.Value.(promql.Vector), 1)
-	require.Equal(t, 2363.0, result2.Value.(promql.Vector)[0].F)
+	require.Equal(t, expectedScalarResult(ts, 2363, "env", "prod"), result2)
 
 	verifyCacheStats(t, backend, 2, 1, 1)
 	require.Equal(t, []storageQueryRange{
@@ -678,8 +674,7 @@ func TestQuerySplitting_WithOOOWindow(t *testing.T) {
 	}, ranges2)
 
 	result3, ranges3 := executeQuery(t, mimirEngine, storage, expr, ts)
-	require.NoError(t, result3.Err)
-	require.Equal(t, result2, result3)
+	require.Equal(t, expectedScalarResult(ts, 2363, "env", "prod"), result3)
 
 	verifyCacheStats(t, backend, 3, 2, 1)
 	require.Equal(t, ranges2, ranges3)
@@ -1028,6 +1023,18 @@ func executeQuery(t *testing.T, engine promql.QueryEngine, storage storage.Stora
 	result := q.Exec(ctx)
 	q.Close()
 	return result, wrapped.ranges
+}
+
+func expectedScalarResult(ts time.Time, f float64, lbls ...string) *promql.Result {
+	return &promql.Result{
+		Value: promql.Vector{
+			{
+				Metric: labels.FromStrings(lbls...),
+				T:      timestamp.FromTime(ts),
+				F:      f,
+			},
+		},
+	}
 }
 
 func verifyCacheStats(t *testing.T, backend *testCacheBackend, expectedGets, expectedHits, expectedSets int) {
