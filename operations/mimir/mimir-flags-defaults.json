@@ -601,7 +601,6 @@
   "ingest-storage.kafka.ingestion-concurrency-queue-capacity": 5,
   "ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard": 80,
   "ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample": 500,
-  "ingest-storage.kafka.ingestion-concurrency-sequential-pusher-enabled": true,
   "ingest-storage.migration.ingest-storage-max-wait-time": 0,
   "ingest-storage.write-logs-fsync-before-kafka-commit-concurrency": 4,
   "blocks-storage.backend": "filesystem",

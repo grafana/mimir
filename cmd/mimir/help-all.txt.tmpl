@@ -1483,8 +1483,6 @@ Usage of ./cmd/mimir/mimir:
     	The maximum number of concurrent ingestion streams to the TSDB head. Every tenant has their own set of streams. 0 to disable.
   -ingest-storage.kafka.ingestion-concurrency-queue-capacity int
     	The number of batches to prepare and queue to ingest to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 5)
-  -ingest-storage.kafka.ingestion-concurrency-sequential-pusher-enabled
-    	[experimental] When enabled, tenants with few timeseries use a simpler sequential pusher instead of parallel shards. (default true)
   -ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard int
     	The expected number of times to ingest timeseries to the TSDB head after batching. With fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 80)
   -ingest-storage.kafka.last-produced-offset-poll-interval duration

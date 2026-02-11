@@ -2018,7 +2018,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
         per_instance_label: $._config.per_instance_label,
         per_namespace_label: $._config.per_namespace_label,
       },
-      '{{pod}}',
+      '{{%(per_instance_label)s}}' % {
+        per_instance_label: $._config.per_instance_label,
+      },
     ) + {
       fieldConfig+: {
         defaults+: { unit: 's' },

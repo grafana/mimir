@@ -26,7 +26,6 @@
 * [CHANGE] Querier: Remove experimental flag `-querier.response-streaming-enabled`, active series responses are now always streamed to query-frontends. #14095 #14114
 * [CHANGE] Store-gateway: Warn when loading index headers based on TSDB blocks that use v1 of the index file format. #13834
 * [CHANGE] Cache: Remove the experimental setting `-<prefix>.memcached.dns-ignore-startup-failures` that allowed failure to discover Memcached servers to be a soft error and always consider failure to discover Memcached servers a hard error. #14038
-* [CHANGE] Ruler: Add path traversal checks when parsing namespaces and groups, which prevents namespace and group name from containing non-local paths. #14052
 * [CHANGE] Ingester: Removed the `-target=flusher` mode. If you need to flush ingester data, use the `/ingester/flush` HTTP endpoint instead. #14032
 * [CHANGE] Limits: Add new limit `-validation.max-active-series-additional-custom-trackers` (default: 0) to control the maximum number of additional custom trackers per tenant. This limit only applies to `active_series_additional_custom_trackers`, not to `-ingester.active-series-custom-trackers`. Set to 0 (the default) to disable the limit. #14226 #14256
 * [CHANGE] Querier and query-frontend: The experimental `-querier.mimir-query-engine.enable-common-subexpression-elimination-for-range-vector-expressions-in-instant-queries` and `-querier.mimir-query-engine.enable-skipping-histogram-decoding` flags have been removed. Both were previously enabled by default and now cannot be disabled. #14237
@@ -127,6 +126,8 @@
 * [ENHANCEMENT] Memberlist: Add experimental configuration option `-memberlist.rejoin-seed-nodes` to set custom seed nodes used by periodic rejoin (when enabled). #14208
 * [ENHANCEMENT] Ingester: Check labels order and uniqueness on ingestion to protect against corruption. #14089
 * [ENHANCEMENT] Ingester: Add experimental file based Kafka consumer group offset tracking via flag `-ingest-storage.kafka.consumer-group-offset-commit-file-enforced`. #14110
+* [ENHANCEMENT] Store-gateway: Add "OOO" column to the tenant blocks page to indicate whether each block was created from out-of-order samples. #14283
+* [ENHANCEMENT] Ingester: Optimize ingestion from Kafka in clusters with mixed size tenants. #13924 #13961 #14302
 * [BUGFIX] API: Fixed web UI links not respecting `-server.path-prefix` configuration. #14090
 * [BUGFIX] Distributor: Fix issue where distributors didn't send custom values of native histograms. #13849
 * [BUGFIX] Compactor: Fix potential concurrent map writes. #13053
@@ -175,7 +176,6 @@
 * [BUGFIX] Distributor: Fix duplicate label validation bypass when label value exceeds length limit and is handled by Truncate or Drop strategy. #14131
 * [BUGFIX] Block-builder-scheduler: Fix bug where data could be skipped when partition is fully consumed at startup but later grows. #14136
 * [BUGFIX] Ingester: Create TSDB directory on startup #14112
-* [BUGFIX] Update to Go v1.25.7 to address [CVE-2025-61726](https://pkg.go.dev/vuln/GO-2026-4341). #14231 #14251
 * [BUGFIX] Querier: Fix strategy used to select partitions to query when some partions are Inactive since longer than lookback period and shuffle sharding is disabled. #14261
 
 ### Mixin
@@ -247,7 +247,8 @@
 * [CHANGE] Rollout-operator: Vendor jsonnet from rollout-operator repository. #13245 #13317 #13793 #13799 #13840 #14240
 * [CHANGE] Ruler: Set default memory ballast to 1GiB to reduce GC pressure during startup. #13376
 * [CHANGE] Zone pod disruption budget: Remove `multi_zone_zpdb_enabled` and replace it with `multi_zone_ingester_zpdb_enabled` and `multi_zone_store_gateway_zpdb_enabled` to allow to selectively enable the zone pod disruption budget on a per-component basis. #13813
-* [FEATURE] Add multi-zone support for read path components (memcached, querier, query-frontend, query-scheduler, ruler, and ruler remote evaluation stack). Add multi-AZ support for ingester and store-gateway multi-zone deployments. Add memberlist-bridge support for zone-aware memberlist routing. #13559 #13628 #13636 #13915
+* [CHANGE] Reduced dynamic replication factor when running store-gateways with replication factor set to a value higher than 3. #14304
+* [FEATURE] Add multi-zone support for read path components (memcached, querier, query-frontend, query-scheduler, ruler, and ruler remote evaluation stack). Add multi-AZ support for ingester and store-gateway multi-zone deployments. Add memberlist-bridge support for zone-aware memberlist routing. #13559 #13628 #13636 #13915 #14260
 * [FEATURE] Add deletion protection support for ingesters and store-gateways StatefulSet. It can be enabled by setting `ingester_deletion_protection_enabled` and `store_gateway_deletion_protection_enabled` in the `_config` block. #13819
 * [FEATURE] Shuffle sharding: Add the following configuration options to enable the experimental per-zone store-gateway shard size: #13908 #13941
   * `$._config.shuffle_sharding.store_gateway_shard_size_per_zone_enabled`
@@ -284,6 +285,7 @@
 * [ENHANCEMENT] Native histograms: Set expectations on querying classic histograms versus NHCBs. #13689
 * [ENHANCEMENT] Add a scenario to the MimirCompactorNotRunningCompaction runbook. #13874
 * [ENHANCEMENT] Document how ingesters calculate partition ID from ring's instance ID in ingest storage. #13903
+* [ENHANCEMENT] Add AWS profile authentication example to `mark-blocks` tool documentation and add centralized section in runbooks with examples for all cloud providers. #14281
 
 ### Tools
 
@@ -300,6 +302,13 @@
 * [CHANGE] Added cluster validation label configuration `-query-tee.client-cluster-validation.label`. If set, query-tee will set `X-Cluster` header before forwarding the request to both primary and secondary backends. #13302
 * [CHANGE] Make HTTP and gRPC server options configurable through the same dskit `server` flags and config block as Mimir. This begins the deprecation cycle for query-tee's `server.http-service-address`, `server.http-service-port`, `"server.grpc-service-address`, and `server.grpc-service-port` flags. #13328 #13355 #13360
 * [BUGFIX] Fix bug where query-tee can panic if forwarding a request fails. #14015
+
+## 3.0.3-rc.0
+
+### Grafana Mimir
+
+* [BUGFIX] Update to Go v1.25.7 to address [CVE-2025-61726](https://pkg.go.dev/vuln/GO-2026-4341). #14242 #14254
+* [BUGFIX] Ruler: Add path traversal checks when parsing namespaces and groups, which prevents namespace and group name from containing non-local paths. #14245
 
 ## 3.0.2
 

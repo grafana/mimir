@@ -5218,11 +5218,6 @@ kafka:
   # CLI flag: -ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample
   [ingestion_concurrency_estimated_bytes_per_sample: <int> | default = 500]
 
-  # (experimental) When enabled, tenants with few timeseries use a simpler
-  # sequential pusher instead of parallel shards.
-  # CLI flag: -ingest-storage.kafka.ingestion-concurrency-sequential-pusher-enabled
-  [ingestion_concurrency_sequential_pusher_enabled: <boolean> | default = true]
-
 migration:
   # When both this option and ingest storage are enabled, distributors write to
   # both Kafka and ingesters. A write request is considered successful only when

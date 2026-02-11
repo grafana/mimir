@@ -68,4 +68,4 @@ Classic architecture:
 
 In microservices mode, each Grafana Mimir process is invoked with its `-target` parameter set to a specific Grafana Mimir component (for example, `-target=ingester` or `-target=distributor`). To get a working Grafana Mimir instance, you must deploy every required component. For more information about each of the Grafana Mimir components, refer to [Grafana Mimir advanced architecture](https://grafana.com/docs/mimir/<GRAFANA_VERSION>/references/architecture/).
 
-To deploy Grafana Mimir in microservices mode, use [Kubernetes](https://kubernetes.io/) and the [mimir-distributed Helm chart](https://github.com/grafana/mimir/tree/main/operations/helm/charts/mimir-distributed).
+To deploy Grafana Mimir in microservices mode, use [Kubernetes](https://kubernetes.io/) and the [mimir-distributed Helm chart](https://grafana.com/docs/helm-charts/mimir-distributed/latest/).
