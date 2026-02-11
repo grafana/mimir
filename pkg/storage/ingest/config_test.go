@@ -131,7 +131,7 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.Enabled = true
 				cfg.KafkaConfig.Address = "localhost"
 				cfg.KafkaConfig.Topic = "test"
-				cfg.KafkaConfig.SASLUsername = "mimir"
+				cfg.KafkaConfig.SASL.Username = "mimir"
 			},
 			expectedErr: ErrInconsistentSASLCredentials,
 		},
@@ -140,7 +140,7 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.Enabled = true
 				cfg.KafkaConfig.Address = "localhost"
 				cfg.KafkaConfig.Topic = "test"
-				require.NoError(t, cfg.KafkaConfig.SASLPassword.Set("supersecret"))
+				require.NoError(t, cfg.KafkaConfig.SASL.Password.Set("supersecret"))
 			},
 			expectedErr: ErrInconsistentSASLCredentials,
 		},
@@ -149,8 +149,8 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.Enabled = true
 				cfg.KafkaConfig.Address = "localhost"
 				cfg.KafkaConfig.Topic = "test"
-				cfg.KafkaConfig.SASLUsername = "mimir"
-				require.NoError(t, cfg.KafkaConfig.SASLPassword.Set("supersecret"))
+				cfg.KafkaConfig.SASL.Username = "mimir"
+				require.NoError(t, cfg.KafkaConfig.SASL.Password.Set("supersecret"))
 			},
 		},
 		"should fail if max ingestion concurrency is lower than 0": {
@@ -300,5 +300,12 @@ func TestConfig_GetConsumerGroup(t *testing.T) {
 			cfg := KafkaConfig{ConsumerGroup: testData.consumerGroup}
 			assert.Equal(t, testData.expected, cfg.GetConsumerGroup(testData.instanceID, testData.partitionID))
 		})
+	}
+}
+
+func TestExhaustiveSASLMechanismOptions(t *testing.T) {
+	for _, o := range saslMechanismOptions {
+		require.NoError(t, new(SASLMechanism).Set(string(o)))
+		require.NotErrorAs(t, (&KafkaAuthConfig{Mechanism: o}).Validate(), ErrInvalidSASLMechanism)
 	}
 }
