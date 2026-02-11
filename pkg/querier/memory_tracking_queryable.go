@@ -48,7 +48,13 @@ func (q *memoryTrackingQuerier) Select(ctx context.Context, sortSeries bool, hin
 		return storage.ErrSeriesSet(err)
 	}
 
-	ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx)
+	// For "series" queries, we don't create the deduplicator because we skip MemoryTrackingSeriesSet,
+	// which means memory increases from the deduplicator would never be balanced by decreases.
+	// The ingester path (distributorQuerier) doesn't use the deduplicator for "series" queries,
+	// and the store-gateway path handles the missing deduplicator gracefully.
+	if hints == nil || hints.Func != "series" {
+		ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx)
+	}
 
 	result := q.inner.Select(ctx, sortSeries, hints, matchers...)
 	if hints != nil && hints.Func == "series" {
