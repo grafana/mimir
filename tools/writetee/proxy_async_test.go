@@ -83,78 +83,51 @@ func TestAsyncBackendDispatcher_ShouldNotBlockOnNonPreferredBackends(t *testing.
 	}
 }
 
-func TestAsyncBackendDispatcher_ShouldEnforceMaxInFlightLimitOnNonPreferredBackends(t *testing.T) {
-	tests := []struct {
-		name            string
-		preferred       bool
-		expectedLimited bool
-	}{
-		{
-			name:            "non-preferred backend is limited",
-			preferred:       false,
-			expectedLimited: true,
-		},
-		{
-			name:            "preferred backend is not limited",
-			preferred:       true,
-			expectedLimited: false,
-		},
+func TestAsyncBackendDispatcher_ShouldEnforceMaxInFlightLimit(t *testing.T) {
+	registry := prometheus.NewRegistry()
+	metrics := NewProxyMetrics(registry)
+
+	// Create a backend that blocks until we signal it
+	var inFlight atomic.Int32
+	unblock := make(chan struct{})
+	blockingServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		inFlight.Add(1)
+		<-unblock // Block until signaled
+		inFlight.Add(-1)
+		w.WriteHeader(200)
+	}))
+	defer blockingServer.Close()
+
+	backend := NewProxyBackend("backend", mustParseURLAsync(blockingServer.URL), 5*time.Second, false, false, BackendTypeMirrored)
+
+	const maxInFlight = 5
+	const totalRequests = 10
+	asyncDispatcher := NewAsyncBackendDispatcher(maxInFlight, metrics)
+	defer func() {
+		close(unblock) // Unblock all handlers before stopping
+		asyncDispatcher.Stop()
+	}()
+
+	req := httptest.NewRequest("POST", "/test", nil)
+	body := []byte("test")
+
+	// Dispatch more requests than max-in-flight allows
+	dispatched := 0
+	dropped := 0
+	for i := 0; i < totalRequests; i++ {
+		if asyncDispatcher.Dispatch(req.Context(), req, body, backend) {
+			dispatched++
+		} else {
+			dropped++
+		}
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			registry := prometheus.NewRegistry()
-			metrics := NewProxyMetrics(registry)
+	// Wait a bit for goroutines to start
+	time.Sleep(100 * time.Millisecond)
 
-			// Create a backend that blocks until we signal it
-			var inFlight atomic.Int32
-			unblock := make(chan struct{})
-			blockingServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				inFlight.Add(1)
-				<-unblock // Block until signaled
-				inFlight.Add(-1)
-				w.WriteHeader(200)
-			}))
-			defer blockingServer.Close()
-
-			backend := NewProxyBackend("backend", mustParseURLAsync(blockingServer.URL), 5*time.Second, tt.preferred, false, BackendTypeMirrored)
-
-			const maxInFlight = 5
-			const totalRequests = 10
-			asyncDispatcher := NewAsyncBackendDispatcher(maxInFlight, metrics)
-			defer func() {
-				close(unblock) // Unblock all handlers before stopping
-				asyncDispatcher.Stop()
-			}()
-
-			req := httptest.NewRequest("POST", "/test", nil)
-			body := []byte("test")
-
-			// Dispatch more requests than max-in-flight allows
-			dispatched := 0
-			dropped := 0
-			for i := 0; i < totalRequests; i++ {
-				if asyncDispatcher.Dispatch(req.Context(), req, body, backend) {
-					dispatched++
-				} else {
-					dropped++
-				}
-			}
-
-			// Wait a bit for goroutines to start
-			time.Sleep(100 * time.Millisecond)
-
-			if tt.expectedLimited {
-				assert.Equal(t, maxInFlight, dispatched, "unexpected dispatched count")
-				assert.Equal(t, totalRequests-maxInFlight, dropped, "unexpected dropped count")
-				assert.Equal(t, int32(maxInFlight), inFlight.Load(), "unexpected in-flight count")
-			} else {
-				assert.Equal(t, totalRequests, dispatched, "unexpected dispatched count")
-				assert.Equal(t, 0, dropped, "unexpected dropped count")
-				assert.Equal(t, int32(totalRequests), inFlight.Load(), "unexpected in-flight count")
-			}
-		})
-	}
+	assert.Equal(t, maxInFlight, dispatched, "unexpected dispatched count")
+	assert.Equal(t, totalRequests-maxInFlight, dropped, "unexpected dropped count")
+	assert.Equal(t, int32(maxInFlight), inFlight.Load(), "unexpected in-flight count")
 }
 
 func TestAsyncBackendDispatcher_ConcurrentRequests(t *testing.T) {

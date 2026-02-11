@@ -247,6 +247,50 @@ func TestProxyEndpoint_BodySizeLimit(t *testing.T) {
 	}
 }
 
+func TestProxyEndpoint_ServeHTTPPassthrough(t *testing.T) {
+	logger := log.NewNopLogger()
+	registry := prometheus.NewRegistry()
+	metrics := NewProxyMetrics(registry)
+
+	// Create a test backend that returns a specific response
+	expectedBody := `{"status":"ok"}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Verify the request was forwarded correctly
+		assert.Equal(t, "POST", r.Method)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(expectedBody))
+	}))
+	defer server.Close()
+
+	backend := NewProxyBackend("backend1", mustParseURL(server.URL), 5*time.Second, true, false, BackendTypeMirrored)
+	backendInterfaces := []ProxyBackend{backend}
+
+	route := Route{
+		Path:      "/api/v1/push",
+		RouteName: "api_v1_push",
+		Methods:   []string{"POST"},
+	}
+
+	asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics)
+	defer asyncDispatcher.Stop()
+
+	endpoint, err := NewProxyEndpoint(backendInterfaces, route, metrics, logger, 0, 1.0, nil, asyncDispatcher)
+	require.NoError(t, err)
+
+	// Create a test request with Content-Type
+	req := httptest.NewRequest("POST", "/some/other/path", bytes.NewReader([]byte("test body")))
+	req.Header.Set("Content-Type", "application/x-protobuf")
+	rec := httptest.NewRecorder()
+
+	// Execute passthrough
+	endpoint.ServeHTTPPassthrough(rec, req)
+
+	// Verify the response
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, expectedBody, rec.Body.String())
+	assert.Equal(t, "application/x-protobuf", rec.Header().Get("Content-Type"))
+}
+
 func TestProxyBackend_AuthHandling(t *testing.T) {
 	tests := []struct {
 		name         string

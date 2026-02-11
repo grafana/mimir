@@ -18,8 +18,7 @@ import (
 )
 
 const (
-	amplifiedLabelName  = "__amplified__"
-	amplifiedLabelValue = "true"
+	amplifiedLabelName = "__amplified__"
 )
 
 // isRW2Error checks if an error is caused by trying to unmarshal RW 2.0 data

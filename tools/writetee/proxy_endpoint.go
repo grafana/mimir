@@ -5,6 +5,7 @@ package writetee
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -157,6 +158,9 @@ func (p *ProxyEndpoint) ServeHTTPPassthrough(w http.ResponseWriter, r *http.Requ
 	}
 
 	// Return the backend response to client
+	if contentType := r.Header.Get("Content-Type"); contentType != "" {
+		w.Header().Set("Content-Type", contentType)
+	}
 	w.WriteHeader(status)
 	if _, writeErr := w.Write(body); writeErr != nil {
 		level.Warn(logger).Log("msg", "Unable to write response", "err", writeErr)
@@ -270,7 +274,7 @@ func (p *ProxyEndpoint) executePreferredBackendRequest(ctx context.Context, req 
 		logger.SetError()
 		// Track error type
 		errorType := "network"
-		if status == 0 {
+		if errors.Is(err, context.DeadlineExceeded) {
 			errorType = "timeout"
 		}
 		p.metrics.errorsTotal.WithLabelValues(b.Name(), req.Method, p.route.RouteName, errorType).Inc()
