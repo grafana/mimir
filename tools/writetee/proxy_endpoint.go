@@ -248,15 +248,6 @@ func (p *ProxyEndpoint) executePreferredBackendRequest(ctx context.Context, req 
 	return res
 }
 
-type backendResponse struct {
-	backend     ProxyBackend
-	status      int
-	contentType string
-	body        []byte
-	err         error
-	elapsedTime time.Duration
-}
-
 // amplifyWriteRequestBody amplifies the request body if needed and logs stats on success.
 // Returns the body to use (amplified or original on error/not needed).
 func (p *ProxyEndpoint) amplifyWriteRequestBody(body []byte, backend ProxyBackend, logger *spanlogger.SpanLogger) []byte {
@@ -294,6 +285,15 @@ func (p *ProxyEndpoint) amplifyWriteRequestBody(body []byte, backend ProxyBacken
 	}
 
 	return result.Body
+}
+
+type backendResponse struct {
+	backend     ProxyBackend
+	status      int
+	contentType string
+	body        []byte
+	err         error
+	elapsedTime time.Duration
 }
 
 func (r *backendResponse) succeeded() bool {
