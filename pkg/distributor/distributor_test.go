@@ -2668,6 +2668,7 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 					ctx := user.InjectOrgID(context.Background(), "test")
 					ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
+					ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx)
 
 					// Push fixtures
 					for _, series := range fixtures {
