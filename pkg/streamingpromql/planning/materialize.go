@@ -126,7 +126,11 @@ type NodeMaterializer interface {
 
 type NodeMaterializerFunc[T Node] func(n T, materializer *Materializer, timeRange types.QueryTimeRange, params *OperatorParameters) (OperatorFactory, error)
 
-func (f NodeMaterializerFunc[T]) Materialize(n Node, materializer *Materializer, timeRange types.QueryTimeRange, params *OperatorParameters, _ RangeParams) (OperatorFactory, error) {
+func (f NodeMaterializerFunc[T]) Materialize(n Node, materializer *Materializer, timeRange types.QueryTimeRange, params *OperatorParameters, overrideRangeParams RangeParams) (OperatorFactory, error) {
+	if overrideRangeParams.IsSet {
+		return nil, fmt.Errorf("overrideRangeParams is not supported for NodeMaterializerFunc")
+	}
+
 	node, ok := n.(T)
 	if !ok {
 		return nil, fmt.Errorf("unexpected type passed to node materializer: expected %T, got %T", new(T), n)

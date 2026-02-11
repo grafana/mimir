@@ -347,7 +347,11 @@ func NewRemoteExecutionConsumerMaterializer() planning.NodeMaterializer {
 	return &RemoteExecutionConsumerMaterializer{}
 }
 
-func (m *RemoteExecutionConsumerMaterializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, _ planning.RangeParams) (planning.OperatorFactory, error) {
+func (m *RemoteExecutionConsumerMaterializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideRangeParams planning.RangeParams) (planning.OperatorFactory, error) {
+	if overrideRangeParams.IsSet {
+		return nil, fmt.Errorf("overrideRangeParams is not supported for RemoteExecutionConsumerMaterializer")
+	}
+
 	c, ok := n.(*RemoteExecutionConsumer)
 	if !ok {
 		return nil, fmt.Errorf("expected node of type RemoteExecutionConsumer, got %T", n)

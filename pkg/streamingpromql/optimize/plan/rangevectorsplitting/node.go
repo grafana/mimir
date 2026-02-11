@@ -3,8 +3,10 @@
 package rangevectorsplitting
 
 import (
+	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -26,7 +28,7 @@ func init() {
 
 type SplitFunctionCall struct {
 	*SplitFunctionCallDetails
-	Inner planning.Node
+	Inner *core.FunctionCall
 }
 
 func (s *SplitFunctionCall) Details() proto.Message {
@@ -42,7 +44,11 @@ func (s *SplitFunctionCall) SetChildren(children []planning.Node) error {
 		return fmt.Errorf("node of type SplitFunctionCall supports 1 child, but got %d", len(children))
 	}
 
-	s.Inner = children[0]
+	inner, ok := children[0].(*core.FunctionCall)
+	if !ok {
+		return fmt.Errorf("SplitFunctionCall node should only wrap FunctionCall nodes, got %T", children[0])
+	}
+	s.Inner = inner
 	return nil
 }
 
@@ -61,7 +67,11 @@ func (s *SplitFunctionCall) ReplaceChild(idx int, child planning.Node) error {
 	if idx > 0 {
 		return fmt.Errorf("SplitFunctionCall node has 1 child, but attempted to replace child at index %d", idx)
 	}
-	s.Inner = child
+	inner, ok := child.(*core.FunctionCall)
+	if !ok {
+		return fmt.Errorf("SplitFunctionCall node should only wrap FunctionCall nodes, got %T", child)
+	}
+	s.Inner = inner
 	return nil
 }
 
@@ -89,23 +99,23 @@ func (s *SplitFunctionCall) Describe() string {
 	// Format: splits=4 [(3600000,7199999], (7199999,14399999]*, (14399999,21599999]*, (21599999,21600000]]
 	// where * indicates cacheable ranges
 	// Timestamps are in milliseconds since epoch
-	var result string
-	result = fmt.Sprintf("splits=%d [", len(s.SplitRanges))
+	var b strings.Builder
+	fmt.Fprintf(&b, "splits=%d [", len(s.SplitRanges))
 
 	for i, sr := range s.SplitRanges {
 		if i > 0 {
-			result += ", "
+			b.WriteString(", ")
 		}
 
-		result += fmt.Sprintf("(%d,%d]", sr.Start, sr.End)
+		fmt.Fprintf(&b, "(%d,%d]", sr.Start, sr.End)
 
 		if sr.Cacheable {
-			result += "*"
+			b.WriteByte('*')
 		}
 	}
 
-	result += "]"
-	return result
+	b.WriteByte(']')
+	return b.String()
 }
 
 func (s *SplitFunctionCall) ChildrenLabels() []string {
@@ -145,22 +155,21 @@ func NewMaterializer(cache *cache.CacheFactory) *Materializer {
 	}
 }
 
-func (m Materializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, _ planning.RangeParams) (planning.OperatorFactory, error) {
+func (m Materializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideRangeParams planning.RangeParams) (planning.OperatorFactory, error) {
+	if overrideRangeParams.IsSet {
+		return nil, errors.New("overrideRangeParams not supported for rangevectorsplitting.Materialize")
+	}
 	s, ok := n.(*SplitFunctionCall)
 	if !ok {
 		return nil, fmt.Errorf("unexpected type passed to materializer: expected SplitFunctionCall, got %T", n)
 	}
-	innerFunctionCall, ok := s.Inner.(*core.FunctionCall)
-	if !ok {
-		return nil, fmt.Errorf("SplitFunctionCall node should only wrap FunctionCall nodes, got %T", s.Inner)
-	}
 
-	f, exists := functions.RegisteredFunctions[innerFunctionCall.Function]
+	f, exists := functions.RegisteredFunctions[s.Inner.Function]
 	if !exists {
-		return nil, fmt.Errorf("function '%v' not found in functions list", innerFunctionCall.Function.PromQLName())
+		return nil, fmt.Errorf("function '%v' not found in functions list", s.Inner.Function.PromQLName())
 	}
 	if f.RangeVectorSplitting == nil {
-		return nil, fmt.Errorf("function %v does not support range vector splitting", innerFunctionCall.Function.PromQLName())
+		return nil, fmt.Errorf("function %v does not support range vector splitting", s.Inner.Function.PromQLName())
 	}
 
 	ranges := make([]functions.Range, len(s.SplitRanges))
@@ -173,10 +182,10 @@ func (m Materializer) Materialize(n planning.Node, materializer *planning.Materi
 	}
 
 	if s.Inner.ChildCount() != 1 {
-		return nil, fmt.Errorf("expected exactly 1 child for range vector splitting function %s, got %d", innerFunctionCall.Function.PromQLName(), s.Inner.ChildCount())
+		return nil, fmt.Errorf("expected exactly 1 child for range vector splitting function %s, got %d", s.Inner.Function.PromQLName(), s.Inner.ChildCount())
 	}
 
-	expressionPos, err := innerFunctionCall.ExpressionPosition()
+	expressionPos, err := s.Inner.ExpressionPosition()
 	if err != nil {
 		return nil, err
 	}

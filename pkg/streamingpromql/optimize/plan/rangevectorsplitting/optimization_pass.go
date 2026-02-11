@@ -216,7 +216,7 @@ func (o *OptimizationPass) trySplitFunction(ctx context.Context, functionCall *c
 	n := &SplitFunctionCall{
 		SplitFunctionCallDetails: &SplitFunctionCallDetails{
 			SplitRanges:       splitRanges,
-			InnerNodeCacheKey: inner.RangeVectorSplittingCacheKey(),
+			InnerNodeCacheKey: inner.SplittingCacheKey(),
 		},
 	}
 	if err := n.SetChildren([]planning.Node{functionCall}); err != nil {

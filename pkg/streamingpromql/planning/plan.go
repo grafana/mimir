@@ -255,8 +255,8 @@ type SplitNode interface {
 	// be split, there might be some edge cases where it's not possible or not implemented yet.
 	IsSplittable() bool
 
-	// RangeVectorSplittingCacheKey returns a cache key for this node's intermediate results.
-	RangeVectorSplittingCacheKey() string
+	// SplittingCacheKey returns a cache key for this node's intermediate results.
+	SplittingCacheKey() string
 
 	GetRangeParams() RangeParams
 }

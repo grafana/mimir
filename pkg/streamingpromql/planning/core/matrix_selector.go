@@ -42,7 +42,7 @@ func (m *MatrixSelector) Describe() string {
 //	inner node, the range plus the offset and @ modifiers will have to be retained.
 //
 // TODO: investigate codegen to keep the cache key up to date when new fields are added to the node.
-func (m *MatrixSelector) RangeVectorSplittingCacheKey() string {
+func (m *MatrixSelector) SplittingCacheKey() string {
 	builder := &strings.Builder{}
 	builder.WriteRune('{')
 	for i, m := range m.Matchers {
@@ -135,21 +135,21 @@ func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, time
 	selectorTs := m.Timestamp
 	selectorOffset := m.Offset.Milliseconds()
 	if overrideTimeParams.IsSet {
-		selectorOffset = overrideTimeParams.Offset.Milliseconds()
+		selectorRange = overrideTimeParams.Range
 		if overrideTimeParams.HasTimestamp {
 			selectorTs = &overrideTimeParams.Timestamp
 		} else {
 			selectorTs = nil
 		}
-		selectorRange = overrideTimeParams.Range
+		selectorOffset = overrideTimeParams.Offset.Milliseconds()
 	}
 
 	selector := &selectors.Selector{
 		Queryable:                params.Queryable,
 		TimeRange:                timeRange,
+		Range:                    selectorRange,
 		Timestamp:                TimestampFromTime(selectorTs),
 		Offset:                   selectorOffset,
-		Range:                    selectorRange,
 		Matchers:                 LabelMatchersToOperatorType(m.Matchers),
 		EagerLoad:                params.EagerLoadSelectors,
 		SkipHistogramBuckets:     m.SkipHistogramBuckets,

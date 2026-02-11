@@ -841,7 +841,7 @@ func TestMatrixSelector_RangeVectorSplittingCacheKey(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			cacheKey := testCase.node.RangeVectorSplittingCacheKey()
+			cacheKey := testCase.node.SplittingCacheKey()
 			require.Equal(t, testCase.expected, cacheKey)
 		})
 	}
