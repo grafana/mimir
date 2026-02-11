@@ -302,7 +302,6 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 	c.schedulerLastContact.SetToCurrentTime()
 
 	jobID := resp.Key.Id
-	jobTenant := resp.Spec.Tenant
 	jobType := resp.Spec.JobType
 
 	// Create a cancellable context for this job that can be canceled if the scheduler cancels the job
@@ -317,6 +316,7 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 
 	switch jobType {
 	case compactorschedulerpb.JOB_TYPE_COMPACTION:
+		jobTenant := resp.Spec.Tenant
 		status, err := e.executeCompactionJob(jobCtx, c, resp.Key, resp.Spec)
 		cancelJob(err)
 		wg.Wait()
@@ -328,7 +328,8 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 		e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, status)
 		return true, nil
 	case compactorschedulerpb.JOB_TYPE_PLANNING:
-		plannedJobs, planErr := e.executePlanningJob(jobCtx, c, resp.Key.Id)
+		jobTenant := resp.Key.Id
+		plannedJobs, planErr := e.executePlanningJob(jobCtx, c, jobTenant)
 		cancelJob(planErr)
 		wg.Wait()
 		if planErr != nil {

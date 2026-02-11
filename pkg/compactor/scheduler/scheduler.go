@@ -206,7 +206,12 @@ func (s *Scheduler) LeaseJob(ctx context.Context, req *compactorschedulerpb.Leas
 		return nil, failedTo("lease job")
 	}
 	if ok {
-		level.Info(s.logger).Log("msg", "leasing job", "tenant", response.Spec.Tenant, "id", response.Key.Id, "epoch", response.Key.Epoch, "worker", req.WorkerId)
+		switch response.Spec.JobType {
+		case compactorschedulerpb.JOB_TYPE_PLANNING:
+			level.Info(s.logger).Log("msg", "leased plan job", "tenant", response.Spec.Tenant, "epoch", response.Key.Epoch, "worker", req.WorkerId)
+		case compactorschedulerpb.JOB_TYPE_COMPACTION:
+			level.Info(s.logger).Log("msg", "leased compaction job", "tenant", response.Spec.Tenant, "id", response.Key.Id, "epoch", response.Key.Epoch, "worker", req.WorkerId)
+		}
 		return response, nil
 	}
 
