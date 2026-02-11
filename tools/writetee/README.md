@@ -34,7 +34,7 @@ write-tee \
   -server.http-listen-port=8080
 ```
 
-Production cluster (`prod-mimir`) is the preferred backend - its response is returned to clients immediately. Test cluster (`test-mimir`) receives 10x amplified traffic via fire-and-forget.
+Production cluster (`prod-mimir`) is the preferred backend - it receives normal traffic (1x), and its response is returned to clients immediately. Test cluster (`test-mimir`) receives 10x amplified traffic via fire-and-forget.
 
 ## Architecture
 
@@ -51,23 +51,7 @@ Client → Write-Tee → [Preferred Backend] ← Response returned immediately
 4. **Send to Preferred**: Request sent synchronously to preferred backend
 5. **Return**: Preferred backend's response returned to client immediately (does not wait for non-preferred backends)
 6. **Async Processing**: Spawned goroutines send requests to non-preferred backends concurrently (bounded by max-in-flight limit)
-7. **Release Memory**: Request body garbage collected after all backends (including async) complete
-8. **Metrics**: Request duration, errors, dropped requests, and response status recorded per backend
-
-### Fire-and-Forget Behavior
-
-Non-preferred backends operate in fire-and-forget mode:
-- Each request spawns a dedicated goroutine per non-preferred backend
-- Concurrency is bounded by a semaphore (max-in-flight limit per backend)
-- The proxy **never waits** for non-preferred backend responses
-- When at max capacity, requests are **silently dropped** (only metric incremented, no logging)
-- Multiple requests can be in-flight concurrently to each backend
-
-This design ensures:
-- Response latency is determined solely by the preferred backend
-- High throughput to slow backends (parallel requests instead of sequential)
-- Bounded memory usage (max-in-flight limit prevents unbounded goroutine growth)
-- The proxy remains responsive even if non-preferred backends are unavailable
+7. **Metrics**: Request duration, errors, dropped requests, and response status recorded per backend
 
 ### Amplification Process
 
