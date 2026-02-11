@@ -26,8 +26,11 @@
     },
     {
       customType: 'regex',
-      description: 'Update "go install" commands in mimir-build-image/Dockerfile',
-      managerFilePatterns: ['mimir-build-image/Dockerfile'],
+      description: 'Update "go install" commands in development Dockerfiles',
+      managerFilePatterns: [
+        'mimir-build-image/Dockerfile',
+        'development/**/dev.dockerfile',
+      ],
       matchStrings: [
         'go install\\s+(?<depName>[^@]+)@(?<currentValue>[^\\s]+)',
       ],
