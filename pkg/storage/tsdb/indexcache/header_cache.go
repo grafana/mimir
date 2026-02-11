@@ -208,6 +208,13 @@ func postingsOffsetsForMatcherCacheKeyMatcherID(matcherStr string, isSubtract bo
 
 type NoopHeaderCache struct{}
 
+func (n NoopHeaderCache) StorePostingsOffsetsForMatcher(tenantID string, blockID ulid.ULID, m *labels.Matcher, isSubtract bool, rngs []index.Range, ttl time.Duration) {
+}
+
+func (n NoopHeaderCache) FetchPostingsOffsetsForMatcher(ctx context.Context, tenantID string, blockID ulid.ULID, m *labels.Matcher, isSubtract bool) ([]index.Range, bool) {
+	return nil, false
+}
+
 func (n NoopHeaderCache) StorePostingsOffset(string, ulid.ULID, labels.Label, index.Range, time.Duration) {
 
 }
