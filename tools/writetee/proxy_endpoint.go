@@ -153,9 +153,6 @@ func (p *ProxyEndpoint) ServeHTTPPassthrough(w http.ResponseWriter, r *http.Requ
 	}
 
 	// Return the backend response to client
-	if contentType := r.Header.Get("Content-Type"); contentType != "" {
-		w.Header().Set("Content-Type", contentType)
-	}
 	w.WriteHeader(status)
 	if _, writeErr := w.Write(body); writeErr != nil {
 		level.Warn(logger).Log("msg", "Unable to write response", "err", writeErr)
