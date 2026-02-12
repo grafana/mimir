@@ -178,8 +178,10 @@ func (p *ProxyEndpoint) dispatchToNonPreferredBackends(ctx context.Context, req 
 			continue
 		}
 
-		bodyToSend := p.amplifyWriteRequestBody(body, backend, logger)
-		p.asyncDispatcher.Dispatch(ctx, req, bodyToSend, backend, p.route.RouteName)
+		bodiesToSend := p.prepareAmplifiedBodies(body, backend, logger)
+		for _, bodyToSend := range bodiesToSend {
+			p.asyncDispatcher.Dispatch(ctx, req, bodyToSend, backend, p.route.RouteName)
+		}
 	}
 }
 
@@ -198,8 +200,9 @@ func (p *ProxyEndpoint) executePreferredBackendRequest(ctx context.Context, req 
 	logger.SetSpanAndLogTag("preferred", "true")
 	logger.SetSpanAndLogTag("backend_type", fmt.Sprintf("%d", b.BackendType()))
 
-	bodyToSend := p.amplifyWriteRequestBody(body, b, logger)
-	elapsed, status, respBody, contentType, err := b.ForwardRequest(ctx, req, io.NopCloser(bytes.NewReader(bodyToSend)))
+	// For the preferred backend, just send the original body (no amplification)
+	// since we're synchronously waiting for the response
+	elapsed, status, respBody, contentType, err := b.ForwardRequest(ctx, req, io.NopCloser(bytes.NewReader(body)))
 
 	// Use the actual Content-Type from the backend, with a fallback for Mimir write endpoints
 	if contentType == "" {
@@ -236,45 +239,69 @@ func (p *ProxyEndpoint) executePreferredBackendRequest(ctx context.Context, req 
 	return res
 }
 
-// amplifyWriteRequestBody amplifies the request body if needed and logs stats on success.
-// Returns the body to use (amplified or original on error/not needed).
-func (p *ProxyEndpoint) amplifyWriteRequestBody(body []byte, backend ProxyBackend, logger *spanlogger.SpanLogger) []byte {
+// prepareAmplifiedBodies prepares request bodies for amplification.
+// For amplified backends with factor > 1, returns multiple requests each with unique __amplified__ labels.
+// For factor < 1, returns a single sampled request.
+// For non-amplified backends or factor == 1, returns the original body.
+func (p *ProxyEndpoint) prepareAmplifiedBodies(body []byte, backend ProxyBackend, logger *spanlogger.SpanLogger) [][]byte {
 	if backend.BackendType() != BackendTypeAmplified || p.amplificationFactor == 1.0 || len(body) == 0 {
-		return body
+		return [][]byte{body}
 	}
 
-	result, err := AmplifyWriteRequest(body, p.amplificationFactor, p.amplificationTracker)
-	if err != nil {
-		level.Error(logger).Log("msg", "Failed to amplify write request", "backend", backend.Name(), "err", err)
-		return body // Fall back to original
-	}
-
-	// Log amplification stats
-	if result.WasAmplified {
-		rw1, rw2, rw2Ratio := p.amplificationTracker.GetStats()
-		logger.SetSpanAndLogTag("amplified", "true")
-		if result.IsRW2 {
-			logger.SetSpanAndLogTag("format", "rw2")
-		} else {
-			logger.SetSpanAndLogTag("format", "rw1")
+	// Handle sampling (factor < 1.0) - return a single sampled request
+	if p.amplificationFactor < 1.0 {
+		result, err := AmplifyWriteRequest(body, p.amplificationFactor, p.amplificationTracker)
+		if err != nil {
+			level.Error(logger).Log("msg", "Failed to sample write request", "backend", backend.Name(), "err", err)
+			return [][]byte{body} // Fall back to original
 		}
-		logger.SetSpanAndLogTag("amplification_factor", fmt.Sprintf("%.1f", p.amplificationFactor))
-		logger.SetSpanAndLogTag("rw2_ratio", fmt.Sprintf("%.3f", rw2Ratio))
-		logger.SetSpanAndLogTag("total_rw1_series", rw1)
-		logger.SetSpanAndLogTag("total_rw2_series", rw2)
-		logger.SetSpanAndLogTag("original_size", len(body))
-		logger.SetSpanAndLogTag("amplified_size", len(result.Body))
-		logger.SetSpanAndLogTag("original_series_count", result.OriginalSeriesCount)
-		logger.SetSpanAndLogTag("amplified_series_count", result.AmplifiedSeriesCount)
-	} else if result.IsRW2 {
-		// This should not happen anymore - RW 2.0 is now amplified
-		_, _, rw2Ratio := p.amplificationTracker.GetStats()
-		logger.SetSpanAndLogTag("rw2_not_amplified", "true")
-		logger.SetSpanAndLogTag("rw2_series_count", result.OriginalSeriesCount)
-		logger.SetSpanAndLogTag("rw2_ratio", fmt.Sprintf("%.3f", rw2Ratio))
+		logger.SetSpanAndLogTag("sampled", "true")
+		logger.SetSpanAndLogTag("sampling_factor", fmt.Sprintf("%.2f", p.amplificationFactor))
+		return [][]byte{result.Body}
 	}
 
-	return result.Body
+	// Handle amplification (factor >= 1.0) - create multiple requests with unique labels
+	fullCopies := int(p.amplificationFactor)
+	fractionalPart := p.amplificationFactor - float64(fullCopies)
+
+	bodies := make([][]byte, 0, fullCopies+1)
+
+	// First request: keep original (no amplification label)
+	bodies = append(bodies, body)
+
+	// Create additional requests with __amplified__ labels for uniqueness
+	for i := 1; i < fullCopies; i++ {
+		labeledBody, err := AddAmplificationLabel(body, i)
+		if err != nil {
+			level.Error(logger).Log("msg", "Failed to add amplification label", "backend", backend.Name(), "replica", i, "err", err)
+			// Continue with remaining copies even if one fails
+			continue
+		}
+		bodies = append(bodies, labeledBody)
+	}
+
+	// Handle fractional part by sampling
+	// For the fractional part, we sample the data (e.g., 50% for 0.5) and add the next replica label
+	if fractionalPart > 0 {
+		result, err := AmplifyWriteRequest(body, fractionalPart, p.amplificationTracker)
+		if err != nil {
+			level.Error(logger).Log("msg", "Failed to create fractional request", "backend", backend.Name(), "err", err)
+		} else {
+			// Add amplification label to the sampled data
+			labeledBody, err := AddAmplificationLabel(result.Body, fullCopies)
+			if err != nil {
+				level.Error(logger).Log("msg", "Failed to label fractional request", "backend", backend.Name(), "err", err)
+			} else {
+				bodies = append(bodies, labeledBody)
+			}
+		}
+	}
+
+	logger.SetSpanAndLogTag("amplified", "true")
+	logger.SetSpanAndLogTag("amplification_factor", fmt.Sprintf("%.1f", p.amplificationFactor))
+	logger.SetSpanAndLogTag("num_requests", len(bodies))
+
+	return bodies
 }
 
 type backendResponse struct {

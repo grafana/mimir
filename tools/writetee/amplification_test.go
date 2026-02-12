@@ -14,97 +14,9 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-// TestAmplifyWriteRequest_RW2 asserts that RW2 requests are amplified in native format
-// and that the __amplified__ label is correctly added via symbol table references.
-func TestAmplifyWriteRequest_RW2(t *testing.T) {
-	req := makeRW2Request(1)
-	compressed := compressRequest(t, &req)
-
-	result, err := AmplifyWriteRequest(compressed, 2.0, nil)
-	require.NoError(t, err)
-
-	decompressed := decompressAndUnmarshalRW2(t, result.Body)
-
-	// Verify results
-	assert.Equal(t, 2, len(decompressed.Timeseries), "should have 2 time series (original + 1 amplified copy)")
-	assert.True(t, result.IsRW2, "should be detected as RW 2.0")
-	assert.True(t, result.WasAmplified, "should be amplified")
-	assert.Equal(t, 1, result.OriginalSeriesCount)
-	assert.Equal(t, 1, result.AmplifiedSeriesCount)
-
-	// Verify symbols table includes __amplified__ and replica number
-	assert.Contains(t, decompressed.Symbols, "__amplified__")
-	assert.Contains(t, decompressed.Symbols, "1")
-
-	// First series should be original (2 label refs: __name__, metric_0)
-	assert.Equal(t, 2, len(decompressed.Timeseries[0].LabelsRefs))
-
-	// Second series should have amplified label added (4 label refs: original 2 + __amplified__ + "1")
-	assert.Equal(t, 4, len(decompressed.Timeseries[1].LabelsRefs))
-}
-
-// TestAmplifyWriteRequest_RW1 asserts that RW1 requests are amplified correctly
-// and that the __amplified__ label is added to duplicated series.
-func TestAmplifyWriteRequest_RW1(t *testing.T) {
-	req := makeRW1Request(1)
-	compressed := compressRequest(t, &req)
-
-	result, err := AmplifyWriteRequest(compressed, 2.0, nil)
-	require.NoError(t, err)
-
-	decompressed := decompressAndUnmarshalRW1(t, result.Body)
-
-	// Verify results
-	assert.Equal(t, 2, len(decompressed.Timeseries), "should have 2 time series (original + 1 amplified copy)")
-	assert.False(t, result.IsRW2)
-	assert.True(t, result.WasAmplified)
-
-	// First series should be original (1 label: __name__=metric_0)
-	assert.Equal(t, 1, len(decompressed.Timeseries[0].Labels))
-	assert.Equal(t, "__name__", decompressed.Timeseries[0].Labels[0].Name)
-	assert.Equal(t, "metric_0", decompressed.Timeseries[0].Labels[0].Value)
-
-	// Second series should have __amplified__ label added (2 labels)
-	assert.Equal(t, 2, len(decompressed.Timeseries[1].Labels))
-
-	// Find the amplified label
-	var hasAmplifiedLabel bool
-	for _, label := range decompressed.Timeseries[1].Labels {
-		if label.Name == "__amplified__" {
-			hasAmplifiedLabel = true
-			assert.Equal(t, "1", label.Value)
-		}
-	}
-	assert.True(t, hasAmplifiedLabel, "second time series should have __amplified__ label")
-}
-
-// TestAmplifyWriteRequest_Sampling_RW1_Deterministic asserts that sampling (factor < 1.0)
-// produces deterministic results for RW1 requests - the same series are always kept.
-func TestAmplifyWriteRequest_Sampling_RW1_Deterministic(t *testing.T) {
-	req := makeRW1Request(4) // 4 series: metric_0 to metric_3
-	compressed := compressRequest(t, &req)
-
-	// Run sampling multiple times - should get identical results each time
-	var firstSeriesCount int
-	for i := 0; i < 3; i++ {
-		result, err := AmplifyWriteRequest(compressed, 0.5, nil)
-		require.NoError(t, err)
-
-		decompressed := decompressAndUnmarshalRW1(t, result.Body)
-
-		if i == 0 {
-			firstSeriesCount = len(decompressed.Timeseries)
-			assert.Greater(t, firstSeriesCount, 0, "should keep some series")
-			assert.Less(t, firstSeriesCount, 4, "should not keep all series")
-		} else {
-			assert.Equal(t, firstSeriesCount, len(decompressed.Timeseries), "should be deterministic")
-		}
-	}
-}
-
-// TestAmplifyWriteRequest_Sampling_RW2_Deterministic asserts that sampling (factor < 1.0)
+// TestAmplifyWriteRequest_RW2_Deterministic asserts that sampling (factor < 1.0)
 // produces deterministic results for RW2 requests - the same series are always kept.
-func TestAmplifyWriteRequest_Sampling_RW2_Deterministic(t *testing.T) {
+func TestAmplifyWriteRequest_RW2_Deterministic(t *testing.T) {
 	req := makeRW2Request(4) // 4 series
 	compressed := compressRequest(t, &req)
 
@@ -127,52 +39,84 @@ func TestAmplifyWriteRequest_Sampling_RW2_Deterministic(t *testing.T) {
 	}
 }
 
-// TestAmplifyWriteRequest_FractionalAmplification_Deterministic asserts that fractional
-// amplification (e.g., 1.5x) produces deterministic results for RW1 - the same series always get extra copies.
-func TestAmplifyWriteRequest_FractionalAmplification_Deterministic(t *testing.T) {
-	req := makeRW1Request(10)
+// TestAmplifyWriteRequest_RW1_Deterministic asserts that sampling (factor < 1.0)
+// produces deterministic results for RW1 requests - the same series are always kept.
+func TestAmplifyWriteRequest_RW1_Deterministic(t *testing.T) {
+	req := makeRW1Request(4) // 4 series: metric_0 to metric_3
 	compressed := compressRequest(t, &req)
 
-	// With 1.5x factor: 10 originals + ~5 fractional copies = ~15 total
+	// Run sampling multiple times - should get identical results each time
 	var firstSeriesCount int
 	for i := 0; i < 3; i++ {
-		result, err := AmplifyWriteRequest(compressed, 1.5, nil)
+		result, err := AmplifyWriteRequest(compressed, 0.5, nil)
 		require.NoError(t, err)
 
 		decompressed := decompressAndUnmarshalRW1(t, result.Body)
 
 		if i == 0 {
 			firstSeriesCount = len(decompressed.Timeseries)
-			assert.Greater(t, firstSeriesCount, 10, "should have more than originals")
-			assert.Less(t, firstSeriesCount, 20, "should have less than 2x")
+			assert.Greater(t, firstSeriesCount, 0, "should keep some series")
+			assert.Less(t, firstSeriesCount, 4, "should not keep all series")
 		} else {
 			assert.Equal(t, firstSeriesCount, len(decompressed.Timeseries), "should be deterministic")
 		}
 	}
 }
 
-// TestAmplifyWriteRequest_FractionalAmplification_RW2_Deterministic asserts that fractional
-// amplification (e.g., 1.5x) produces deterministic results for RW2 - the same series always get extra copies.
-func TestAmplifyWriteRequest_FractionalAmplification_RW2_Deterministic(t *testing.T) {
-	req := makeRW2Request(10)
+// TestAmplifyWriteRequest_RejectAmplification asserts that the function rejects factor > 1.0
+func TestAmplifyWriteRequest_RejectAmplification(t *testing.T) {
+	req := makeRW1Request(1)
 	compressed := compressRequest(t, &req)
 
-	// With 1.5x factor: 10 originals + ~5 fractional copies = ~15 total
-	var firstSeriesCount int
-	for i := 0; i < 3; i++ {
-		result, err := AmplifyWriteRequest(compressed, 1.5, nil)
-		require.NoError(t, err)
+	_, err := AmplifyWriteRequest(compressed, 2.0, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "only handles sampling")
+}
 
-		decompressed := decompressAndUnmarshalRW2(t, result.Body)
+// TestAddAmplificationLabel_RW1 tests adding __amplified__ label to RW1 requests
+func TestAddAmplificationLabel_RW1(t *testing.T) {
+	req := makeRW1Request(1)
+	compressed := compressRequest(t, &req)
 
-		if i == 0 {
-			firstSeriesCount = len(decompressed.Timeseries)
-			assert.Greater(t, firstSeriesCount, 10, "should have more than originals")
-			assert.Less(t, firstSeriesCount, 20, "should have less than 2x")
-		} else {
-			assert.Equal(t, firstSeriesCount, len(decompressed.Timeseries), "should be deterministic")
+	labeled, err := AddAmplificationLabel(compressed, 5)
+	require.NoError(t, err)
+
+	decompressed := decompressAndUnmarshalRW1(t, labeled)
+
+	// Should have 1 series with __amplified__ label
+	require.Len(t, decompressed.Timeseries, 1)
+
+	// Find the amplified label
+	var hasAmplifiedLabel bool
+	for _, label := range decompressed.Timeseries[0].Labels {
+		if label.Name == "__amplified__" {
+			hasAmplifiedLabel = true
+			assert.Equal(t, "5", label.Value)
 		}
 	}
+	assert.True(t, hasAmplifiedLabel, "should have __amplified__ label")
+}
+
+// TestAddAmplificationLabel_RW2 tests adding __amplified__ label to RW2 requests
+func TestAddAmplificationLabel_RW2(t *testing.T) {
+	req := makeRW2Request(1)
+	compressed := compressRequest(t, &req)
+
+	labeled, err := AddAmplificationLabel(compressed, 5)
+	require.NoError(t, err)
+
+	decompressed := decompressAndUnmarshalRW2(t, labeled)
+
+	// Should have 1 series with __amplified__ label added
+	require.Len(t, decompressed.Timeseries, 1)
+
+	// Verify symbols table includes __amplified__ and "5"
+	assert.Contains(t, decompressed.Symbols, "__amplified__")
+	assert.Contains(t, decompressed.Symbols, "5")
+
+	// Original series had 2 label refs (__name__, metric_0)
+	// Should now have 4 label refs (original 2 + __amplified__ + "5")
+	assert.Equal(t, 4, len(decompressed.Timeseries[0].LabelsRefs))
 }
 
 // Test helpers
