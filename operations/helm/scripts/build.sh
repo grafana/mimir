@@ -7,7 +7,7 @@ set -euo pipefail
 SED=$(which gsed || which sed)
 
 # DEFAULT_KUBE_VERSION is used if the input values do not contain "kubeVersionOverride"
-DEFAULT_KUBE_VERSION="1.29"
+DEFAULT_KUBE_VERSION="1.32"
 
 CHART_PATH="operations/helm/charts/mimir-distributed"
 INTERMEDIATE_PATH=""
