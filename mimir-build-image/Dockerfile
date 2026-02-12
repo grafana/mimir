@@ -21,19 +21,15 @@ RUN apt-get install -y nodejs && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 RUN npm install -g prettier@2.3.2
 
+# renovate: depName=github.com/mvdan/sh
 ENV SHFMT_VERSION=3.2.4
 RUN GOARCH=$(go env GOARCH) && \
-	if [ "$GOARCH" = "amd64" ]; then \
-    	DIGEST=3f5a47f8fec27fae3e06d611559a2063f5d27e4b9501171dde9959b8c60a3538; \
-    elif [ "$GOARCH" = "arm64" ]; then \
-    	DIGEST=6474d9cc08a1c9fe2ef4be7a004951998e3067d46cf55a011ddd5ff7bfab3de6; \
-    fi && \
     URL=https://github.com/mvdan/sh/releases/download/v${SHFMT_VERSION}/shfmt_v${SHFMT_VERSION}_linux_${GOARCH}; \
     curl -fsSLo shfmt "${URL}" && \
-	echo "$DIGEST shfmt" | sha256sum -c && \
 	chmod +x shfmt && \
 	mv shfmt /usr/bin
 
+# renovate: depName=github.com/grafana/tanka
 ENV TANKA_VERSION=0.26.0
 RUN GOARCH=$(go env GOARCH) && \
     curl -fSL -o "/usr/bin/tk" "https://github.com/grafana/tanka/releases/download/v${TANKA_VERSION}/tk-linux-${GOARCH}" && \
@@ -41,6 +37,7 @@ RUN GOARCH=$(go env GOARCH) && \
 
 RUN curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b /usr/bin v2.8.0
 
+# renovate: depName=github.com/containers/skopeo
 ENV SKOPEO_VERSION=v1.15.1
 RUN git clone --depth 1 --branch ${SKOPEO_VERSION} https://github.com/containers/skopeo /go/src/github.com/containers/skopeo && \
     DISABLE_DOCS=1 make -C /go/src/github.com/containers/skopeo install && \
