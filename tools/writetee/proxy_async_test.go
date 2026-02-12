@@ -167,6 +167,7 @@ func TestAsyncBackendDispatcher_ConcurrentRequests(t *testing.T) {
 
 	// Stop and wait for all in-flight requests to complete
 	asyncDispatcher.Stop()
+	asyncDispatcher.Await()
 
 	// All 5 requests should have been processed
 	assert.Equal(t, int32(5), requestCount.Load(), "All dispatched requests should be processed")
@@ -197,11 +198,12 @@ func TestAsyncBackendDispatcher_GracefulShutdown(t *testing.T) {
 		asyncDispatcher.Dispatch(req.Context(), req, body, backend, "test_route")
 	}
 
-	// Stop should wait for in-flight requests to complete
+	// Stop signals shutdown, Await waits for in-flight requests to complete
 	asyncDispatcher.Stop()
+	asyncDispatcher.Await()
 
 	// All requests should have completed
-	assert.Equal(t, int32(3), completed.Load(), "Stop should wait for all in-flight requests")
+	assert.Equal(t, int32(3), completed.Load(), "Await should wait for all in-flight requests")
 
 	// New dispatches after stop should be rejected
 	dispatched := asyncDispatcher.Dispatch(req.Context(), req, body, backend, "test_route")
@@ -243,6 +245,7 @@ func TestAsyncBackendDispatcher_MultipleBackends(t *testing.T) {
 	asyncDispatcher.Dispatch(req.Context(), req, body, backend2, "test_route")
 
 	asyncDispatcher.Stop()
+	asyncDispatcher.Await()
 
 	assert.Equal(t, int32(2), backend1Count.Load(), "Backend1 should receive 2 requests")
 	assert.Equal(t, int32(2), backend2Count.Load(), "Backend2 should receive 2 requests")
