@@ -183,11 +183,12 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 	}
 	u.indexCache = indexCache
 
-	if cfg.BucketStore.IndexHeader.BucketReader.Enabled {
-		// && cfg.BucketStore.IndexHeader.BucketReader.CacheEnabled
+	if cfg.BucketStore.IndexHeader.BucketReader.Enabled &&
+		cfg.BucketStore.IndexHeader.BucketReader.CacheEnabled {
+
 		u.indexHeaderCache = headerCache
 	} else {
-		headerCache = indexcache.NoopHeaderCache{} // GC
+		headerCache = indexcache.NoopHeaderCache{} // deref the initialized inmemory or remote cache for GC
 		u.indexHeaderCache = headerCache
 	}
 

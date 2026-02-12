@@ -5534,6 +5534,11 @@ bucket_store:
       # CLI flag: -blocks-storage.bucket-store.index-header.bucket-reader.enabled
       [enabled: <boolean> | default = false]
 
+      # (experimental) Enable caching resolved postings offsets using the
+      # index-header cache backend and config
+      # CLI flag: -blocks-storage.bucket-store.index-header.bucket-reader.cache-enabled
+      [cache_enabled: <boolean> | default = false]
+
       # (experimental) Index sections to read from object storage instead of
       # local disk. Valid sections: all
       # CLI flag: -blocks-storage.bucket-store.index-header.bucket-reader.index-sections
