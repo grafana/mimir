@@ -124,16 +124,11 @@ func (t *AmplificationTracker) GetStats() (rw1Series, rw2Series int64, rw2Ratio 
 
 // AmplificationResult contains the result of amplification along with metadata.
 type AmplificationResult struct {
-	// Body is the snappy-compressed protobuf body (amplified or sampled).
-	Body []byte
-	// OriginalSeriesCount is the number of series in the original request.
-	OriginalSeriesCount int
-	// AmplifiedSeriesCount is the net change in series count (positive for amplification, negative for sampling).
+	Body                 []byte
+	OriginalSeriesCount  int
 	AmplifiedSeriesCount int
-	// IsRW2 indicates whether the request was in Remote Write 2.0 format.
-	IsRW2 bool
-	// WasAmplified indicates whether any transformation was applied.
-	WasAmplified bool
+	IsRW2                bool
+	WasAmplified         bool
 }
 
 // AmplifyWriteRequest takes a Prometheus remote write request body and amplifies or samples it
