@@ -12,7 +12,7 @@ jobs:
       filter_regex_include: .*operations/helm/.*
 
   call-lint-test:
-    uses: grafana/helm-charts/.github/workflows/lint-test.yaml@main
+    uses: grafana/helm-charts/.github/workflows/lint-test.yaml@vldmr/ci-gateway-api-version
     with:
       ct_configfile: operations/helm/ct.yaml
       ct_check_version_increment: false
