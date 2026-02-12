@@ -49,7 +49,7 @@ eval range from 0m to 2m step 1m sum(max(kube_pod_info{namespace="namespace", cr
   {cluster="cluster", label_kubernetes_io_arch="arm64", namespace="namespace"} 1 2 2
   {cluster="cluster", label_kubernetes_io_arch="amd64", namespace="namespace"} 0 0 1
 
-eval range from 0m to 2m step 1m sum(info(kube_pod_info{namespace="namespace", created_by_name=~"querier.*"}, {__name__="kube_node_labels", label_kubernetes_io_arch=~".+"}, "cluster", "node")) by (cluster, namespace, label_kubernetes_io_arch)
+eval range from 0m to 2m step 1m sum(info(kube_pod_info{namespace="namespace", created_by_name=~"querier.*"}, kube_node_labels{label_kubernetes_io_arch=~".+"}, "cluster", "node")) by (cluster, namespace, label_kubernetes_io_arch)
   {cluster="cluster", label_kubernetes_io_arch="arm64", namespace="namespace"} 1 2 2
   {cluster="cluster", label_kubernetes_io_arch="amd64", namespace="namespace"} 0 0 1
 
