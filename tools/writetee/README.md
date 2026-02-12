@@ -14,7 +14,7 @@ Write-tee is a reverse proxy that fans out Prometheus remote write requests to m
   - Factor 1.0: No amplification (pass-through)
   - Factor 2.0: Each time series duplicated once (2x total series)
   - Factor 3.5: Each time series gets 3 full copies + 50% probability of 4th copy (3.5x average)
-  - Amplified copies get unique `__amplified__="<replica_number>"` label
+  - Amplified copies have all label values (except `__name__`) suffixed with `_amp{N}` where N is the replica number
 - **Protocol Support**: Prometheus Remote Write 1.0 and 2.0
 - **Preferred Backend**: Required preferred backend whose response is returned to clients
 - **Fire-and-Forget**: Non-preferred backends receive requests asynchronously without blocking the response
@@ -57,28 +57,28 @@ Client → Write-Tee → [Preferred Backend] ← Response returned immediately
 
 For each time series in the incoming request:
 
-1. **Original series**: Forwarded as-is (no label changes)
-2. **Amplified copies**: Duplicated with `__amplified__="1"`, `__amplified__="2"`, etc.
+1. **Original series**: Forwarded as-is (considered replica 1, no label changes)
+2. **Amplified copies**: Duplicated with all label values (except `__name__`) suffixed with `_amp2`, `_amp3`, etc.
 3. **Fractional amplification**: If factor is 3.5, each series gets 3 guaranteed copies + 50% probability of 4th
 
 **Remote Write 1.0** (with embedded label strings):
 
 ```
 Original: {__name__="http_requests", method="GET"}
-Copy 1:   {__name__="http_requests", method="GET", __amplified__="1"}
-Copy 2:   {__name__="http_requests", method="GET", __amplified__="2"}
+Copy 1:   {__name__="http_requests", method="GET_amp2"}
+Copy 2:   {__name__="http_requests", method="GET_amp3"}
 ```
 
 **Remote Write 2.0** (with symbol table):
 
 ```
-Symbol table: ["", "__name__", "http_requests", "method", "GET", "__amplified__", "1", "2"]
+Symbol table: ["", "__name__", "http_requests", "method", "GET", "GET_amp2", "GET_amp3"]
 Original:     labels_refs=[1,2,3,4]  (references to symbol table indices)
-Copy 1:       labels_refs=[1,2,3,4,5,6]  (adds __amplified__ + "1")
-Copy 2:       labels_refs=[1,2,3,4,5,7]  (adds __amplified__ + "2")
+Copy 1:       labels_refs=[1,2,3,5]  (method value changed to GET_amp2)
+Copy 2:       labels_refs=[1,2,3,6]  (method value changed to GET_amp3)
 ```
 
-The RW 2.0 approach only adds a few strings to the symbol table and duplicates small uint32 arrays, avoiding massive memory expansion.
+The RW 2.0 approach only adds suffixed value strings to the symbol table and duplicates small uint32 arrays, avoiding massive memory expansion.
 
 ## Configuration
 
