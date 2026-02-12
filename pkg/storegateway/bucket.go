@@ -1574,7 +1574,6 @@ func blockLabelValues(ctx context.Context, b *bucketBlock, postingsStrategy post
 	}
 
 	// TODO: if matchers contains labelName, we could use it to filter out label values here.
-	// TODO implement labelvaluesOffsets caching
 	allValuesPostingOffsets, err := b.indexHeaderReader.LabelValuesOffsets(ctx, labelName, "", nil)
 	if err != nil {
 		return nil, errors.Wrap(err, "index header label values")

@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/grafana/mimir/pkg/storage/fixtures"
+	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 )
 
 type mockedPostingsOffset struct {
@@ -135,28 +136,35 @@ func TestRemotePostingsOffsetTableCache_FetchPostingsOffsetsForMatcher(t *testin
 	matchAnyPlus := labels.MustNewMatcher(labels.MatchRegexp, "instance", ".+")
 	matchEqual := labels.MustNewMatcher(labels.MatchEqual, "instance", fixtures.LabelLongSuffix)
 
+	label0 := labels.Label{Name: "instance", Value: "a"}
+	label1 := labels.Label{Name: "instance", Value: "b"}
+	label2 := labels.Label{Name: "instance", Value: "c"}
 	rng0 := index.Range{Start: 4, End: 16}
 	rng1 := index.Range{Start: 20, End: 32}
 	rng2 := index.Range{Start: 36, End: 60}
 
-	allKeyValues := map[mockedPostingsOffsetsForMatcher][]index.Range{
-		{tenantID: tenant0, blockID: block0, m: matchAnyPlus, isSubtract: false}: {rng0, rng1, rng2},
-		{tenantID: tenant0, blockID: block1, m: matchAnyPlus, isSubtract: false}: {rng0, rng1},
+	offset0 := streamindex.PostingListOffset{LabelValue: label0.Value, Off: rng0}
+	offset1 := streamindex.PostingListOffset{LabelValue: label1.Value, Off: rng1}
+	offset2 := streamindex.PostingListOffset{LabelValue: label2.Value, Off: rng2}
+
+	allKeyValues := map[mockedPostingsOffsetsForMatcher][]streamindex.PostingListOffset{
+		{tenantID: tenant0, blockID: block0, m: matchAnyPlus, isSubtract: false}: {offset0, offset1, offset2},
+		{tenantID: tenant0, blockID: block1, m: matchAnyPlus, isSubtract: false}: {offset0, offset1},
 		{tenantID: tenant0, blockID: block0, m: matchAnyPlus, isSubtract: true}:  {},
 		{tenantID: tenant0, blockID: block1, m: matchAnyPlus, isSubtract: true}:  {},
-		{tenantID: tenant0, blockID: block0, m: matchEqual, isSubtract: false}:   {rng0},
-		{tenantID: tenant0, blockID: block1, m: matchEqual, isSubtract: false}:   {rng1},
-		{tenantID: tenant0, blockID: block0, m: matchEqual, isSubtract: true}:    {rng1, rng2},
-		{tenantID: tenant0, blockID: block1, m: matchEqual, isSubtract: true}:    {rng0},
+		{tenantID: tenant0, blockID: block0, m: matchEqual, isSubtract: false}:   {offset0},
+		{tenantID: tenant0, blockID: block1, m: matchEqual, isSubtract: false}:   {offset1},
+		{tenantID: tenant0, blockID: block0, m: matchEqual, isSubtract: true}:    {offset1, offset2},
+		{tenantID: tenant0, blockID: block1, m: matchEqual, isSubtract: true}:    {offset0},
 
-		{tenantID: tenant1, blockID: block0, m: matchAnyPlus, isSubtract: false}: {rng0, rng1},
-		{tenantID: tenant1, blockID: block1, m: matchAnyPlus, isSubtract: false}: {rng1, rng2},
+		{tenantID: tenant1, blockID: block0, m: matchAnyPlus, isSubtract: false}: {offset0, offset1},
+		{tenantID: tenant1, blockID: block1, m: matchAnyPlus, isSubtract: false}: {offset1, offset2},
 		{tenantID: tenant1, blockID: block0, m: matchAnyPlus, isSubtract: true}:  {},
 		{tenantID: tenant1, blockID: block1, m: matchAnyPlus, isSubtract: true}:  {},
-		{tenantID: tenant1, blockID: block0, m: matchEqual, isSubtract: false}:   {rng1},
-		{tenantID: tenant1, blockID: block1, m: matchEqual, isSubtract: false}:   {rng0},
-		{tenantID: tenant1, blockID: block0, m: matchEqual, isSubtract: true}:    {rng0},
-		{tenantID: tenant1, blockID: block1, m: matchEqual, isSubtract: true}:    {rng1},
+		{tenantID: tenant1, blockID: block0, m: matchEqual, isSubtract: false}:   {offset1},
+		{tenantID: tenant1, blockID: block1, m: matchEqual, isSubtract: false}:   {offset0},
+		{tenantID: tenant1, blockID: block0, m: matchEqual, isSubtract: true}:    {offset0},
+		{tenantID: tenant1, blockID: block1, m: matchEqual, isSubtract: true}:    {offset1},
 	}
 	allKeys := make([]mockedPostingsOffsetsForMatcher, 0, len(allKeyValues))
 	for k := range allKeyValues {
@@ -164,14 +172,14 @@ func TestRemotePostingsOffsetTableCache_FetchPostingsOffsetsForMatcher(t *testin
 	}
 
 	tests := map[string]struct {
-		setupSetVals   map[mockedPostingsOffsetsForMatcher][]index.Range
+		setupSetVals   map[mockedPostingsOffsetsForMatcher][]streamindex.PostingListOffset
 		mockedErr      error
 		fetches        []mockedPostingsOffsetsForMatcher // no need to set rngs values
-		expectedHits   map[mockedPostingsOffsetsForMatcher][]index.Range
+		expectedHits   map[mockedPostingsOffsetsForMatcher][]streamindex.PostingListOffset
 		expectedMisses []mockedPostingsOffsetsForMatcher
 	}{
 		"should return no hits on empty cache": {
-			setupSetVals:   map[mockedPostingsOffsetsForMatcher][]index.Range{},
+			setupSetVals:   map[mockedPostingsOffsetsForMatcher][]streamindex.PostingListOffset{},
 			fetches:        allKeys,
 			expectedHits:   nil,
 			expectedMisses: allKeys,
@@ -183,32 +191,37 @@ func TestRemotePostingsOffsetTableCache_FetchPostingsOffsetsForMatcher(t *testin
 			expectedMisses: nil,
 		},
 		"should return hits and misses on partial hits": {
-			setupSetVals: map[mockedPostingsOffsetsForMatcher][]index.Range{
-				{tenantID: tenant0, blockID: block0, m: matchAnyPlus, isSubtract: false}: {rng0, rng1, rng2},
-				{tenantID: tenant0, blockID: block1, m: matchAnyPlus, isSubtract: false}: {rng0, rng1},
+			setupSetVals: map[mockedPostingsOffsetsForMatcher][]streamindex.PostingListOffset{
+				// Store first 4 values for tenant0
+				{tenantID: tenant0, blockID: block0, m: matchAnyPlus, isSubtract: false}: {offset0, offset1, offset2},
+				{tenantID: tenant0, blockID: block1, m: matchAnyPlus, isSubtract: false}: {offset0, offset1},
 				{tenantID: tenant0, blockID: block0, m: matchAnyPlus, isSubtract: true}:  {},
 				{tenantID: tenant0, blockID: block1, m: matchAnyPlus, isSubtract: true}:  {},
-				{tenantID: tenant1, blockID: block0, m: matchEqual, isSubtract: false}:   {rng1},
-				{tenantID: tenant1, blockID: block1, m: matchEqual, isSubtract: false}:   {rng0},
-				{tenantID: tenant1, blockID: block0, m: matchEqual, isSubtract: true}:    {rng0},
-				{tenantID: tenant1, blockID: block1, m: matchEqual, isSubtract: true}:    {rng1},
+
+				// Store last 4 values for tenant1
+				{tenantID: tenant1, blockID: block0, m: matchEqual, isSubtract: false}: {offset1},
+				{tenantID: tenant1, blockID: block1, m: matchEqual, isSubtract: false}: {offset0},
+				{tenantID: tenant1, blockID: block0, m: matchEqual, isSubtract: true}:  {offset0},
+				{tenantID: tenant1, blockID: block1, m: matchEqual, isSubtract: true}:  {offset1},
 			},
 			fetches: allKeys,
-			expectedHits: map[mockedPostingsOffsetsForMatcher][]index.Range{
-				{tenantID: tenant0, blockID: block0, m: matchAnyPlus, isSubtract: false}: {rng0, rng1, rng2},
-				{tenantID: tenant0, blockID: block1, m: matchAnyPlus, isSubtract: false}: {rng0, rng1},
+			expectedHits: map[mockedPostingsOffsetsForMatcher][]streamindex.PostingListOffset{
+				{tenantID: tenant0, blockID: block0, m: matchAnyPlus, isSubtract: false}: {offset0, offset1, offset2},
+				{tenantID: tenant0, blockID: block1, m: matchAnyPlus, isSubtract: false}: {offset0, offset1},
 				{tenantID: tenant0, blockID: block0, m: matchAnyPlus, isSubtract: true}:  {},
 				{tenantID: tenant0, blockID: block1, m: matchAnyPlus, isSubtract: true}:  {},
-				{tenantID: tenant1, blockID: block0, m: matchEqual, isSubtract: false}:   {rng1},
-				{tenantID: tenant1, blockID: block1, m: matchEqual, isSubtract: false}:   {rng0},
-				{tenantID: tenant1, blockID: block0, m: matchEqual, isSubtract: true}:    {rng0},
-				{tenantID: tenant1, blockID: block1, m: matchEqual, isSubtract: true}:    {rng1},
+				{tenantID: tenant1, blockID: block0, m: matchEqual, isSubtract: false}:   {offset1},
+				{tenantID: tenant1, blockID: block1, m: matchEqual, isSubtract: false}:   {offset0},
+				{tenantID: tenant1, blockID: block0, m: matchEqual, isSubtract: true}:    {offset0},
+				{tenantID: tenant1, blockID: block1, m: matchEqual, isSubtract: true}:    {offset1},
 			},
 			expectedMisses: []mockedPostingsOffsetsForMatcher{
+				// Miss last 4 values for tenant0
 				{tenantID: tenant0, blockID: block0, m: matchEqual, isSubtract: false},
 				{tenantID: tenant0, blockID: block1, m: matchEqual, isSubtract: false},
 				{tenantID: tenant0, blockID: block0, m: matchEqual, isSubtract: true},
 				{tenantID: tenant0, blockID: block1, m: matchEqual, isSubtract: true},
+				// Miss first 4 values for tenant1
 				{tenantID: tenant1, blockID: block0, m: matchAnyPlus, isSubtract: false},
 				{tenantID: tenant1, blockID: block1, m: matchAnyPlus, isSubtract: false},
 				{tenantID: tenant1, blockID: block0, m: matchAnyPlus, isSubtract: true},
@@ -274,18 +287,19 @@ func testFetchFetchPostingsOffsetsForMatcher(
 	t *testing.T,
 	cache PostingsOffsetTableCache,
 	keys []mockedPostingsOffsetsForMatcher,
-	expectedHits map[mockedPostingsOffsetsForMatcher][]index.Range,
+	expectedHits map[mockedPostingsOffsetsForMatcher][]streamindex.PostingListOffset,
 	expectedMisses []mockedPostingsOffsetsForMatcher,
 ) {
 	t.Helper()
 
-	hits := make(map[mockedPostingsOffsetsForMatcher][]index.Range)
+	hits := make(map[mockedPostingsOffsetsForMatcher][]streamindex.PostingListOffset)
 	misses := make([]mockedPostingsOffsetsForMatcher, 0, len(keys))
 	for _, key := range keys {
-		rngs, ok := cache.FetchPostingsOffsetsForMatcher(
-			ctx, key.tenantID, key.blockID, key.m, key.isSubtract)
+		offsets, ok := cache.FetchPostingsOffsetsForMatcher(
+			ctx, key.tenantID, key.blockID, key.m, key.isSubtract,
+		)
 		if ok {
-			hits[key] = rngs
+			hits[key] = offsets
 		} else {
 			misses = append(misses, key)
 		}
