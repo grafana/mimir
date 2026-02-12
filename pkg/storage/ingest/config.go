@@ -348,15 +348,20 @@ func (cfg *KafkaAuthConfig) RegisterFlags(f *flag.FlagSet) {
 
 func (cfg *KafkaAuthConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	cfg.Mechanism = "PLAIN"
-	f.Var(&cfg.Mechanism, prefix+"mechanism", fmt.Sprintf("The SASL mechanism used to authenticate to Kafka. Supported values: %s.", util.JoinStrings(saslMechanismOptions, ", ")))
+	f.Var(&cfg.Mechanism, prefix+"mechanism", fmt.Sprintf("The SASL mechanism used to authenticate to Kafka. Supported values: %s. For backwards-compatibility, PLAIN with no username nor password disables SASL.", util.JoinStrings(saslMechanismOptions, ", ")))
 	f.StringVar(&cfg.Username, prefix+"username", "", "The username used to authenticate to Kafka using SASL. To enable SASL, configure both the username and password.")
 	f.Var(&cfg.Password, prefix+"password", "The password used to authenticate to Kafka using SASL. To enable SASL, configure both the username and password.")
 }
 
 func (cfg *KafkaAuthConfig) Validate() error {
 	switch cfg.Mechanism {
-	case SASLMechanismPlain, SASLMechanismScramSHA256, SASLMechanismScramSHA512:
+	case SASLMechanismPlain:
 		if (cfg.Username == "") != (cfg.Password.String() == "") {
+			return ErrInconsistentSASLCredentials
+		}
+
+	case SASLMechanismScramSHA256, SASLMechanismScramSHA512:
+		if cfg.Username == "" || cfg.Password.String() == "" {
 			return ErrInconsistentSASLCredentials
 		}
 

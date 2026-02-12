@@ -3,6 +3,7 @@
 package ingest
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -12,10 +13,12 @@ import (
 )
 
 func TestConfig_Validate(t *testing.T) {
-	tests := map[string]struct {
+	type testCase struct {
 		setup       func(*Config)
 		expectedErr error
-	}{
+	}
+
+	tests := map[string]testCase{
 		"should pass with the default config": {
 			setup: func(_ *Config) {},
 		},
@@ -255,6 +258,25 @@ func TestConfig_Validate(t *testing.T) {
 
 			expectedErr: ErrInvalidWriteLogsFsyncConcurrency,
 		},
+	}
+
+	for _, mechanism := range []SASLMechanism{SASLMechanismScramSHA256, SASLMechanismScramSHA512} {
+		for missing, setup := range map[string]func(*Config){
+			"username":              func(cfg *Config) { require.NoError(t, cfg.KafkaConfig.SASL.Password.Set("supersecret")) },
+			"password":              func(cfg *Config) { cfg.KafkaConfig.SASL.Username = "mimir" },
+			"username and password": func(cfg *Config) {},
+		} {
+			tests[fmt.Sprintf("should fail if SASL %s is missing buth mechanism is %s", missing, mechanism)] = testCase{
+				setup: func(cfg *Config) {
+					cfg.Enabled = true
+					cfg.KafkaConfig.Address = "localhost"
+					cfg.KafkaConfig.Topic = "test"
+					cfg.KafkaConfig.SASL.Mechanism = mechanism
+					setup(cfg)
+				},
+				expectedErr: ErrInconsistentSASLCredentials,
+			}
+		}
 	}
 
 	for testName, testData := range tests {
