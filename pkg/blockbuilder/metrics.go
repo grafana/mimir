@@ -3,6 +3,8 @@
 package blockbuilder
 
 import (
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
@@ -23,7 +25,9 @@ func newBlockBuilderMetrics(reg prometheus.Registerer) blockBuilderMetrics {
 		Name: "cortex_blockbuilder_consume_job_duration_seconds",
 		Help: "Time spent consuming a job.",
 
-		NativeHistogramBucketFactor: 1.1,
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: 1 * time.Hour,
 	}, []string{"success"})
 
 	m.fetchErrors = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
@@ -59,9 +63,11 @@ func newTSDBBBuilderMetrics(reg prometheus.Registerer) tsdbBuilderMetrics {
 	}, []string{"partition"})
 
 	m.compactAndUploadDuration = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-		Name:                        "cortex_blockbuilder_tsdb_compact_and_upload_duration_seconds",
-		Help:                        "Time spent compacting and uploading a tsdb of one partition.",
-		NativeHistogramBucketFactor: 1.1,
+		Name:                            "cortex_blockbuilder_tsdb_compact_and_upload_duration_seconds",
+		Help:                            "Time spent compacting and uploading a tsdb of one partition.",
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: 1 * time.Hour,
 	}, []string{"partition"})
 
 	m.compactAndUploadFailed = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
