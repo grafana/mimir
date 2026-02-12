@@ -2206,6 +2206,7 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -store-gateway.dynamic-replication.multiple=4
         - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.prefix=multi-zone/
         - -store-gateway.sharding-ring.replication-factor=4
@@ -2321,6 +2322,7 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -store-gateway.dynamic-replication.multiple=4
         - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.prefix=multi-zone/
         - -store-gateway.sharding-ring.replication-factor=4
@@ -2441,6 +2443,7 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -store-gateway.dynamic-replication.multiple=4
         - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.prefix=multi-zone/
         - -store-gateway.sharding-ring.replication-factor=4
@@ -3254,6 +3257,7 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -store-gateway.dynamic-replication.multiple=4
         - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.prefix=multi-zone/
         - -store-gateway.sharding-ring.replication-factor=4
@@ -3367,6 +3371,7 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -store-gateway.dynamic-replication.multiple=4
         - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.prefix=multi-zone/
         - -store-gateway.sharding-ring.replication-factor=4
@@ -3485,6 +3490,7 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -store-gateway.dynamic-replication.multiple=4
         - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.prefix=multi-zone/
         - -store-gateway.sharding-ring.replication-factor=4
@@ -5863,6 +5869,7 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -store-gateway.dynamic-replication.multiple=4
         - -store-gateway.sharding-ring.heartbeat-period=1m
         - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.instance-availability-zone=zone-a
@@ -5883,7 +5890,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.0.3-rc.0
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -6018,6 +6025,7 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -store-gateway.dynamic-replication.multiple=4
         - -store-gateway.sharding-ring.heartbeat-period=1m
         - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.instance-availability-zone=zone-a-backup
@@ -6174,6 +6182,7 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -store-gateway.dynamic-replication.multiple=4
         - -store-gateway.sharding-ring.heartbeat-period=1m
         - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.instance-availability-zone=zone-b
@@ -6331,6 +6340,7 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -store-gateway.dynamic-replication.multiple=4
         - -store-gateway.sharding-ring.heartbeat-period=1m
         - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.instance-availability-zone=zone-b-backup
