@@ -2490,6 +2490,17 @@
           "fieldCategory": "advanced"
         },
         {
+          "kind": "field",
+          "name": "enable_delayed_name_removal_prometheus_engine",
+          "required": false,
+          "desc": "Enable the experimental Prometheus feature for delayed name removal in the fallback Prometheus engine.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "querier.enable-delayed-name-removal-prometheus-engine",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
           "kind": "block",
           "name": "mimir_query_engine",
           "required": false,
