@@ -3231,6 +3231,10 @@ Usage of ./cmd/mimir/mimir:
     	After having pinged for keepalive check, the duration after which an idle connection should be closed, Default: 20s (default 20s)
   -server.grpc.num-workers int
     	If non-zero, configures the amount of GRPC server workers used to serve the requests. (default 100)
+  -server.grpc.read-buffer-size-bytes int
+    	Size of the read buffer for each gRPC connection (bytes). A smaller buffer may reduce memory usage but may lead to more system calls. (default 32768)
+  -server.grpc.write-buffer-size-bytes int
+    	Size of the write buffer for each gRPC connection (bytes). A smaller buffer may reduce memory usage but may lead to more system calls. (default 32768)
   -server.http-conn-limit int
     	Maximum number of simultaneous http connections, <=0 to disable
   -server.http-idle-timeout duration
