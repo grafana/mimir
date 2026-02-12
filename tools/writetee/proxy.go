@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/server"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -39,6 +40,10 @@ type ProxyConfig struct {
 	BackendReadTimeout         time.Duration
 	BackendSkipTLSVerify       bool
 	AsyncMaxInFlightPerBackend int
+
+	ConnectionTTLMin                time.Duration
+	ConnectionTTLMax                time.Duration
+	ConnectionTTLIdleCheckFrequency time.Duration
 }
 
 // registerServerFlagsWithChangedDefaultValues emulates the same method in pkg/mimir/mimir.go,
@@ -93,6 +98,9 @@ func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.PreferredBackend, "backend.preferred", "", "The hostname of the preferred backend. Required. Non-preferred backends receive fire-and-forget requests.")
 	f.DurationVar(&cfg.BackendReadTimeout, "backend.read-timeout", 90*time.Second, "The timeout when reading the response from a backend.")
 	f.IntVar(&cfg.AsyncMaxInFlightPerBackend, "backend.async-max-in-flight", 1000, "Maximum concurrent in-flight requests per non-preferred backend (async fire-and-forget). Requests are dropped when at capacity.")
+	f.DurationVar(&cfg.ConnectionTTLMin, "connection-ttl.min", 30*time.Second, "Minimum TTL for client connections. Connections are closed after their TTL expires to rebalance across replicas. Set to 0 to disable.")
+	f.DurationVar(&cfg.ConnectionTTLMax, "connection-ttl.max", 90*time.Second, "Maximum TTL for client connections. The actual TTL is randomly chosen between min and max using a hash of the connection address.")
+	f.DurationVar(&cfg.ConnectionTTLIdleCheckFrequency, "connection-ttl.idle-check-frequency", time.Minute, "How often to check for and clean up idle connections.")
 	cfg.registerServerFlagsWithChangedDefaultValues(f)
 }
 
@@ -111,6 +119,9 @@ type Proxy struct {
 	routes               []Route
 	amplificationTracker *AmplificationTracker
 	asyncDispatcher      *AsyncBackendDispatcher
+
+	// connectionTTLMiddleware limits the lifetime of TCP connections to rebalance across replicas.
+	connectionTTLMiddleware middleware.Interface
 
 	// The HTTP server used to run the proxy service.
 	server *server.Server
@@ -206,6 +217,15 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 	// Create the async dispatcher for non-preferred backends
 	p.asyncDispatcher = NewAsyncBackendDispatcher(cfg.AsyncMaxInFlightPerBackend, p.metrics, logger)
 
+	// Create the connection TTL middleware (if enabled)
+	if cfg.ConnectionTTLMax > 0 {
+		connTTLMiddleware, err := newConnectionTTLMiddleware(cfg.ConnectionTTLMin, cfg.ConnectionTTLMax, cfg.ConnectionTTLIdleCheckFrequency, registerer)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to create connection TTL middleware")
+		}
+		p.connectionTTLMiddleware = connTTLMiddleware
+	}
+
 	return p, nil
 }
 
@@ -277,6 +297,11 @@ func (p *Proxy) Start() error {
 		return err
 	}
 	router.PathPrefix("/").Handler(http.HandlerFunc(passthroughEndpoint.ServeHTTPPassthrough))
+
+	// Wrap the server handler with connection TTL middleware (if enabled)
+	if p.connectionTTLMiddleware != nil {
+		serv.HTTPServer.Handler = p.connectionTTLMiddleware.Wrap(serv.HTTPServer.Handler)
+	}
 
 	p.server = serv
 
