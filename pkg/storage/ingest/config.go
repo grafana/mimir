@@ -88,12 +88,12 @@ func (cfg *Config) Validate() error {
 
 // KafkaConfig holds the generic config for the Kafka backend.
 type KafkaConfig struct {
-	Address      string        `yaml:"address"`
-	Topic        string        `yaml:"topic"`
-	ClientID     string        `yaml:"client_id"`
-	DialTimeout  time.Duration `yaml:"dial_timeout"`
-	WriteTimeout time.Duration `yaml:"write_timeout"`
-	WriteClients int           `yaml:"write_clients"`
+	Address      flagext.StringSliceCSV `yaml:"address"`
+	Topic        string                 `yaml:"topic"`
+	ClientID     string                 `yaml:"client_id"`
+	DialTimeout  time.Duration          `yaml:"dial_timeout"`
+	WriteTimeout time.Duration          `yaml:"write_timeout"`
+	WriteClients int                    `yaml:"write_clients"`
 
 	SASL KafkaAuthConfig `yaml:",inline"`
 
@@ -165,7 +165,7 @@ func (cfg *KafkaConfig) RegisterFlags(f *flag.FlagSet) {
 func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	cfg.concurrentFetchersFetchBackoffConfig = defaultFetchBackoffConfig
 
-	f.StringVar(&cfg.Address, prefix+"address", "", "The Kafka seed broker address, or a comma-separated list of seed broker addresses.")
+	f.Var(&cfg.Address, prefix+"address", "The Kafka seed broker address, or a comma-separated list of seed broker addresses.")
 	f.StringVar(&cfg.Topic, prefix+"topic", "", "The Kafka topic name.")
 	f.StringVar(&cfg.ClientID, prefix+"client-id", "", "The Kafka client ID.")
 	f.DurationVar(&cfg.DialTimeout, prefix+"dial-timeout", 2*time.Second, "The maximum time allowed to open a connection to a Kafka broker.")
@@ -213,7 +213,7 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 }
 
 func (cfg *KafkaConfig) Validate() error {
-	if cfg.Address == "" {
+	if cfg.Address.String() == "" {
 		return ErrMissingKafkaAddress
 	}
 	if cfg.Topic == "" {
@@ -278,24 +278,26 @@ func (cfg *KafkaConfig) Validate() error {
 	return cfg.SASL.Validate()
 }
 
+// SetAddress parses and sets Kafka seed broker addresses from CSV.
+func (cfg *KafkaConfig) SetAddress(address string) {
+	_ = cfg.Address.Set(address)
+}
+
 // SeedBrokers returns the configured Kafka seed brokers.
 // It supports a single broker address for backward compatibility and
 // a comma-separated list of addresses for multi-seed bootstrap.
 func (cfg *KafkaConfig) SeedBrokers() []string {
-	var parsed flagext.StringSliceCSV
-	_ = parsed.Set(cfg.Address)
+	brokers := make([]string, 0, len(cfg.Address))
 
-	brokers := make([]string, 0, len(parsed))
-
-	for _, broker := range parsed {
+	for _, broker := range cfg.Address {
 		if addr := strings.TrimSpace(broker); addr != "" {
 			brokers = append(brokers, addr)
 		}
 	}
 
 	// Preserve previous behavior for malformed non-empty values.
-	if len(brokers) == 0 && cfg.Address != "" {
-		return []string{cfg.Address}
+	if len(brokers) == 0 && cfg.Address.String() != "" {
+		return []string{cfg.Address.String()}
 	}
 
 	return brokers
