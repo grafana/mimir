@@ -86,7 +86,7 @@ func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
 		"The factor by which to amplify or sample writes to amplified backends. "+
 			"Values > 1.0 amplify (duplicate) metrics: 3.5 means each metric is duplicated 3.5 times on average. "+
 			"Values < 1.0 sample (reduce) metrics: 0.1 means only 10% of metrics are sent. "+
-			"Amplified metrics have an additional __amplified__=\"<replica>\" label. "+
+			"Amplified metrics have all label values (except __name__) suffixed with _amp{N} where N is the replica number. "+
 			"Only applies to backends specified in backend.amplified-endpoints.",
 	)
 	f.BoolVar(&cfg.BackendSkipTLSVerify, "backend.skip-tls-verify", false, "Skip TLS verification on backend targets.")
