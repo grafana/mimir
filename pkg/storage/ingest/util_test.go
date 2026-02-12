@@ -146,10 +146,10 @@ func TestCreateTopic(t *testing.T) {
 			addr, cluster = createKafkaCluster(t)
 			cfg           = KafkaConfig{
 				Topic:                            "topic-name",
-				Address:                          addr,
 				AutoCreateTopicDefaultPartitions: 100,
 			}
 		)
+		cfg.SetAddress(addr)
 
 		cluster.ControlKey(kmsg.AlterConfigs.Int16(), func(request kmsg.Request) (kmsg.Response, error, bool) {
 			r := request.(*kmsg.CreateTopicsRequest)
@@ -184,11 +184,11 @@ func TestCreateTopic(t *testing.T) {
 			addr, cluster = createKafkaCluster(t)
 			cfg           = KafkaConfig{
 				Topic:                            "topic-name",
-				Address:                          "127.0.0.1:1, " + addr,
 				DialTimeout:                      200 * time.Millisecond,
 				AutoCreateTopicDefaultPartitions: 100,
 			}
 		)
+		cfg.SetAddress("127.0.0.1:1, " + addr)
 
 		cluster.ControlKey(kmsg.AlterConfigs.Int16(), func(request kmsg.Request) (kmsg.Response, error, bool) {
 			r := request.(*kmsg.CreateTopicsRequest)
@@ -222,10 +222,10 @@ func TestCreateTopic(t *testing.T) {
 		var (
 			addr, cluster = createKafkaCluster(t)
 			cfg           = KafkaConfig{
-				Address:                          addr,
 				AutoCreateTopicDefaultPartitions: 100,
 			}
 		)
+		cfg.SetAddress(addr)
 
 		cluster.ControlKey(kmsg.CreateTopics.Int16(), func(_ kmsg.Request) (kmsg.Response, error, bool) {
 			return &kmsg.CreateTopicsResponse{
@@ -248,10 +248,10 @@ func TestCreateTopic(t *testing.T) {
 			addr, cluster = createKafkaCluster(t)
 			cfg           = KafkaConfig{
 				Topic:                            "topic-name",
-				Address:                          addr,
 				AutoCreateTopicDefaultPartitions: 100,
 			}
 		)
+		cfg.SetAddress(addr)
 
 		cluster.ControlKey(kmsg.AlterConfigs.Int16(), func(kReq kmsg.Request) (kmsg.Response, error, bool) {
 			req := kReq.(*kmsg.CreateTopicsRequest)
@@ -285,11 +285,11 @@ func TestCreateTopic(t *testing.T) {
 			addr, _ = createKafkaCluster(t)
 			cfg     = KafkaConfig{
 				Topic:                            "topic-name",
-				Address:                          addr,
 				AutoCreateTopicDefaultPartitions: 100,
 			}
 			logger = log.NewNopLogger()
 		)
+		cfg.SetAddress(addr)
 
 		// First call should create the topic
 		assert.NoError(t, CreateTopic(cfg, logger))
