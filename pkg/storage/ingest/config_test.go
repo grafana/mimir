@@ -156,6 +156,44 @@ func TestConfig_Validate(t *testing.T) {
 				require.NoError(t, cfg.KafkaConfig.SASL.Password.Set("supersecret"))
 			},
 		},
+		"should fail if SASL mechanism is OAUTHBEARER but no way to get the token is configured": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.SASL.Mechanism = SASLMechanismOauthbearer
+			},
+			expectedErr: ErrSASLOauthbearerBadConfig,
+		},
+		"should fail if SASL mechanism is OAUTHBEARER but no single way to get the token is configured": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.SASL.Mechanism = SASLMechanismOauthbearer
+				cfg.KafkaConfig.SASL.OauthbearerToken = "foo"
+				cfg.KafkaConfig.SASL.OauthbearerFilePath = "bar"
+			},
+			expectedErr: ErrSASLOauthbearerBadConfig,
+		},
+		"should succeed if SASL mechanism is OAUTHBEARER and a token is passed": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.SASL.Mechanism = SASLMechanismOauthbearer
+				cfg.KafkaConfig.SASL.OauthbearerToken = "foo"
+			},
+		},
+		"should succeed if SASL mechanism is OAUTHBEARER and a file path to the token is passed": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.SASL.Mechanism = SASLMechanismOauthbearer
+				cfg.KafkaConfig.SASL.OauthbearerFilePath = "foo"
+			},
+		},
 		"should fail if max ingestion concurrency is lower than 0": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
@@ -328,6 +366,6 @@ func TestConfig_GetConsumerGroup(t *testing.T) {
 func TestExhaustiveSASLMechanismOptions(t *testing.T) {
 	for _, o := range saslMechanismOptions {
 		require.NoError(t, new(SASLMechanism).Set(string(o)))
-		require.NotErrorAs(t, (&KafkaAuthConfig{Mechanism: o}).Validate(), ErrInvalidSASLMechanism)
+		require.NotErrorIs(t, (&KafkaAuthConfig{Mechanism: o}).Validate(), ErrInvalidSASLMechanism)
 	}
 }

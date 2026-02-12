@@ -33,7 +33,7 @@ var (
 	ErrInconsistentConsumerLagAtStartup  = fmt.Errorf("the target and max consumer lag at startup must be either both set to 0 or to a value greater than 0")
 	ErrInvalidMaxConsumerLagAtStartup    = fmt.Errorf("the configured max consumer lag at startup must greater or equal than the configured target consumer lag")
 	ErrInconsistentSASLCredentials       = fmt.Errorf("the SASL username and password must be both configured to enable SASL authentication")
-	ErrSASLOauthbearerIncomplete         = fmt.Errorf("either the OAuth token or a file path to load the token from must be configured to enable SASL OAUTHBEARER authentication")
+	ErrSASLOauthbearerBadConfig          = fmt.Errorf("either the OAuth token or a file path to load the token from must be configured to enable SASL OAUTHBEARER authentication")
 	ErrInvalidSASLMechanism              = fmt.Errorf("the configured SASL mechanism is invalid, must be one of: %s", util.JoinStrings(saslMechanismOptions, ", "))
 	ErrInvalidIngestionConcurrencyMax    = errors.New("ingest-storage.kafka.ingestion-concurrency-max must either be set to 0 or to a value greater than 0")
 	ErrInvalidIngestionConcurrencyParams = errors.New("ingest-storage.kafka.ingestion-concurrency-queue-capacity, ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample, ingest-storage.kafka.ingestion-concurrency-batch-size and ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard must be greater than 0")
@@ -329,9 +329,10 @@ const (
 	SASLMechanismPlain       SASLMechanism = "PLAIN"
 	SASLMechanismScramSHA256 SASLMechanism = "SCRAM-SHA-256"
 	SASLMechanismScramSHA512 SASLMechanism = "SCRAM-SHA-512"
+	SASLMechanismOauthbearer SASLMechanism = "OAUTHBEARER"
 )
 
-var saslMechanismOptions = []SASLMechanism{SASLMechanismPlain, SASLMechanismScramSHA256, SASLMechanismScramSHA512}
+var saslMechanismOptions = []SASLMechanism{SASLMechanismPlain, SASLMechanismScramSHA256, SASLMechanismScramSHA512, SASLMechanismOauthbearer}
 
 type KafkaAuthConfig struct {
 	Mechanism SASLMechanism `yaml:"sasl_mechanism"`
@@ -340,6 +341,14 @@ type KafkaAuthConfig struct {
 
 	Username string         `yaml:"sasl_username"`
 	Password flagext.Secret `yaml:"sasl_password"`
+
+	// For OAUTHBEARER mechanism
+
+	OauthbearerToken      string                    `yaml:"sasl_oauthbearer_token"`
+	OauthbearerZid        string                    `yaml:"sasl_oauthbearer_zid"`
+	OauthbearerExtensions flagext.LimitsMap[string] `yaml:"sasl_oauthbearer_extensions"`
+
+	OauthbearerFilePath string `yaml:"sasl_oauthbearer_file_path"`
 }
 
 func (cfg *KafkaAuthConfig) RegisterFlags(f *flag.FlagSet) {
@@ -351,6 +360,12 @@ func (cfg *KafkaAuthConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagS
 	f.Var(&cfg.Mechanism, prefix+"mechanism", fmt.Sprintf("The SASL mechanism used to authenticate to Kafka. Supported values: %s. For backwards-compatibility, PLAIN with no username nor password disables SASL.", util.JoinStrings(saslMechanismOptions, ", ")))
 	f.StringVar(&cfg.Username, prefix+"username", "", "The username used to authenticate to Kafka using SASL. To enable SASL, configure both the username and password.")
 	f.Var(&cfg.Password, prefix+"password", "The password used to authenticate to Kafka using SASL. To enable SASL, configure both the username and password.")
+
+	f.StringVar(&cfg.OauthbearerToken, prefix+"oauthbearer-token", "", "The OAuth token to use to authenticate to Kafka. Consider "+prefix+"oauthbearer-file-path instead.")
+	f.StringVar(&cfg.OauthbearerZid, prefix+"oauthbearer-zid", "", "Optional authorization ID to use when authenticating to Kafka using SASL OAUTHBEARER.")
+	f.Var(&cfg.OauthbearerExtensions, prefix+"oauthbearer-extensions", "Optional additional OAuth extensions to include when authenticating to Kafka using SASL OAUTHBEARER as a JSON object.")
+
+	f.StringVar(&cfg.OauthbearerFilePath, prefix+"oauthbearer-file-path", "", `Path to a file containing an OAuth token to authenticate to Kafka. The file will be read anew on every reauthentication, so it can be updated with fresh tokens. The file must be in JSON format, adhering to this JSON schema: {"type": "object", "required": ["token"], "properties": {"token": {"type": "string"}, "zid": {"type": "string"}, "extensions": {"type": "object", "additionalProperties": {"type": "string"}}}}`)
 }
 
 func (cfg *KafkaAuthConfig) Validate() error {
@@ -363,6 +378,11 @@ func (cfg *KafkaAuthConfig) Validate() error {
 	case SASLMechanismScramSHA256, SASLMechanismScramSHA512:
 		if cfg.Username == "" || cfg.Password.String() == "" {
 			return ErrInconsistentSASLCredentials
+		}
+
+	case SASLMechanismOauthbearer:
+		if cfg.OauthbearerToken == "" && cfg.OauthbearerFilePath == "" || (cfg.OauthbearerToken != "" && cfg.OauthbearerFilePath != "") {
+			return ErrSASLOauthbearerBadConfig
 		}
 
 	default:
