@@ -331,6 +331,13 @@ func (p *Proxy) Stop() error {
 		p.asyncDispatcher.Stop()
 	}
 
+	// Stop the connection TTL middleware
+	if p.connectionTTLMiddleware != nil {
+		if m, ok := p.connectionTTLMiddleware.(*connectionTTLMiddleware); ok {
+			m.Stop()
+		}
+	}
+
 	return nil
 }
 
@@ -341,5 +348,12 @@ func (p *Proxy) Await() {
 	// Wait for async dispatcher to drain in-flight requests.
 	if p.asyncDispatcher != nil {
 		p.asyncDispatcher.Await()
+	}
+
+	// Wait for connection TTL middleware to finish cleanup.
+	if p.connectionTTLMiddleware != nil {
+		if m, ok := p.connectionTTLMiddleware.(*connectionTTLMiddleware); ok {
+			m.Await()
+		}
 	}
 }

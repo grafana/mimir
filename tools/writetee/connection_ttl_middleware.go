@@ -50,6 +50,10 @@ type connectionTTLMiddleware struct {
 
 	totalOpenConnections   prometheus.Counter
 	totalClosedConnections *prometheus.CounterVec
+
+	// Shutdown mechanism for background goroutine
+	done chan struct{}
+	wg   sync.WaitGroup
 }
 
 // newConnectionTTLMiddleware returns an HTTP middleware that limits the maximum lifetime, TTL,
@@ -85,21 +89,42 @@ func newConnectionTTLMiddleware(minTTL, maxTTL, idleConnectionCheckFrequency tim
 			Name:      "closed_connections_with_ttl_total",
 			Help:      "Number of connections that connection TTL middleware closed or stopped tracking",
 		}, []string{totalClosedConnectionsReasonLabel}),
+		done: make(chan struct{}),
 	}
 
 	if maxTTL > 0 {
 		if idleConnectionCheckFrequency <= 0 {
 			return nil, errIdleConnectionCheckFrequencyMustBePositive
 		}
+		m.wg.Add(1)
 		go func() {
+			defer m.wg.Done()
 			idleConnectionCheckTicker := time.NewTicker(idleConnectionCheckFrequency)
-			for range idleConnectionCheckTicker.C {
-				m.removeIdleExpiredConnections()
+			defer idleConnectionCheckTicker.Stop()
+			for {
+				select {
+				case <-idleConnectionCheckTicker.C:
+					m.removeIdleExpiredConnections()
+				case <-m.done:
+					return
+				}
 			}
 		}()
 	}
 
 	return m, nil
+}
+
+// Stop signals the middleware to stop the background goroutine.
+// Call Await() after Stop() to wait for the goroutine to complete.
+func (m *connectionTTLMiddleware) Stop() {
+	close(m.done)
+}
+
+// Await waits for the background goroutine to complete.
+// Call this after Stop() to ensure graceful shutdown.
+func (m *connectionTTLMiddleware) Await() {
+	m.wg.Wait()
 }
 
 // removeIdleExpiredConnections removes all expired idle cached connections, i.e.,
