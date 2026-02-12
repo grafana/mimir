@@ -1,9 +1,10 @@
-name: Update vendored versions in grafana/backend-enterprise weekly branches
+name: Update vendored version in grafana/backend-enterprise
 
 on:
   push:
     branches:
       - 'r[0-9]*'
+      - 'main'
 
 permissions:
   contents: read
