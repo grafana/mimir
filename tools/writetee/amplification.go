@@ -301,6 +301,11 @@ func AmplifyWriteRequest(body []byte, amplificationFactor float64, tracker *Ampl
 		// Keep the original (considered replica 1, no suffix)
 		amplifiedSeries = append(amplifiedSeries, ts)
 
+		// Skip amplification for series with only __name__ label (nothing to suffix)
+		if hasOnlyNameLabel(ts.Labels) {
+			continue
+		}
+
 		// Create full copies with suffixed label values (replicas 2, 3, ...)
 		for i := 1; i < fullCopies; i++ {
 			amplifiedSeries = append(amplifiedSeries, amplifyTimeSeries(&ts, i+1))
@@ -370,6 +375,10 @@ func amplifyRW2Request(req *mimirpb.WriteRequestRW2, amplificationFactor float64
 
 	// Create suffixed symbols for each value ref that needs suffixing
 	for valueRef := range valueRefsToSuffix {
+		// Bounds check: skip value refs that exceed symbol table bounds
+		if int(valueRef) >= len(req.Symbols) {
+			continue
+		}
 		originalValue := req.Symbols[valueRef]
 		for replica := 2; replica <= lastReplica; replica++ {
 			newValue := fmt.Sprintf("%s_amp%d", originalValue, replica)
@@ -385,6 +394,11 @@ func amplifyRW2Request(req *mimirpb.WriteRequestRW2, amplificationFactor float64
 	for _, ts := range req.Timeseries {
 		// Keep the original (replica 1, no suffixing)
 		amplifiedSeries = append(amplifiedSeries, ts)
+
+		// Skip amplification for series with only __name__ label (nothing to suffix)
+		if !hasLabelsToSuffix(ts.LabelsRefs, nameSymbolRef) {
+			continue
+		}
 
 		// Create full copies with suffixed label values (replicas 2, 3, ...)
 		for replica := 2; replica <= fullCopies; replica++ {
@@ -418,12 +432,26 @@ func findSymbolRef(symbols []string, target string) uint32 {
 	return math.MaxUint32 // Not found
 }
 
+// hasLabelsToSuffix returns true if the RW2 series has any labels besides __name__.
+// Series with only __name__ (or no labels) cannot be amplified.
+func hasLabelsToSuffix(labelRefs []uint32, nameSymbolRef uint32) bool {
+	// Iterate over label name/value pairs
+	for i := 0; i+1 < len(labelRefs); i += 2 {
+		labelNameRef := labelRefs[i]
+		if labelNameRef != nameSymbolRef {
+			return true // Found a label that is not __name__
+		}
+	}
+	return false
+}
+
 // collectValueRefsToSuffix collects all value refs that need suffixing.
 // It excludes values of __name__ labels (metric names should not be suffixed).
 func collectValueRefsToSuffix(timeseries []mimirpb.TimeSeriesRW2, nameSymbolRef uint32) map[uint32]struct{} {
 	valueRefs := make(map[uint32]struct{})
 	for _, ts := range timeseries {
-		for i := 0; i < len(ts.LabelsRefs); i += 2 {
+		// Bounds check: ensure we have complete name/value pairs (i+1 must be valid)
+		for i := 0; i+1 < len(ts.LabelsRefs); i += 2 {
 			labelNameRef := ts.LabelsRefs[i]
 			labelValueRef := ts.LabelsRefs[i+1]
 			if labelNameRef != nameSymbolRef {
@@ -456,7 +484,8 @@ func amplifyTimeSeriesRW2(original *mimirpb.TimeSeriesRW2, nameSymbolRef uint32,
 
 	// Copy and transform label refs.
 	// No re-sorting needed - label names unchanged.
-	for i := 0; i < len(original.LabelsRefs); i += 2 {
+	// Bounds check: ensure we have complete name/value pairs (i+1 must be valid)
+	for i := 0; i+1 < len(original.LabelsRefs); i += 2 {
 		labelNameRef := original.LabelsRefs[i]
 		labelValueRef := original.LabelsRefs[i+1]
 
@@ -490,6 +519,18 @@ func amplifyTimeSeriesRW2(original *mimirpb.TimeSeriesRW2, nameSymbolRef uint32,
 	copy(ts.Histograms, original.Histograms)
 
 	return ts
+}
+
+// hasOnlyNameLabel returns true if the series has only the __name__ label.
+// Such series cannot be amplified (no label values to suffix).
+func hasOnlyNameLabel(labels []mimirpb.LabelAdapter) bool {
+	if len(labels) == 0 {
+		return true // No labels at all, nothing to suffix
+	}
+	if len(labels) == 1 && labels[0].Name == model.MetricNameLabel {
+		return true
+	}
+	return false
 }
 
 // amplifyTimeSeries creates a copy of a time series with all label values suffixed.

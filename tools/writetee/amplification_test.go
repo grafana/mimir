@@ -129,7 +129,8 @@ func TestAmplifyWriteRequest_RW2(t *testing.T) {
 	})
 
 	t.Run("fractional amplification is deterministic", func(t *testing.T) {
-		req := makeRW2Request(10)
+		// Use series with multiple labels so they can be amplified
+		req := makeRW2RequestWithLabels(10)
 		compressed := compressRequest(t, &req)
 
 		// With 1.5x factor: 10 originals + ~5 fractional copies = ~15 total
@@ -148,6 +149,31 @@ func TestAmplifyWriteRequest_RW2(t *testing.T) {
 				assert.Equal(t, firstSeriesCount, len(decompressed.Timeseries), "should be deterministic")
 			}
 		}
+	})
+
+	t.Run("series without __name__ label suffixes all values", func(t *testing.T) {
+		// Create a request with a series that has no __name__ label
+		// All label values should be suffixed
+		req := makeRW2RequestWithoutName(1)
+		compressed := compressRequest(t, &req)
+
+		result, err := AmplifyWriteRequest(compressed, 2.0, nil)
+		require.NoError(t, err)
+
+		decompressed := decompressAndUnmarshalRW2(t, result.Body)
+
+		// Verify results: 1 original + 1 copy = 2 total
+		assert.Equal(t, 2, len(decompressed.Timeseries))
+
+		// Original should have original values
+		originalLabels := resolveLabels(decompressed.Symbols, decompressed.Timeseries[0].LabelsRefs)
+		assert.Equal(t, "prometheus", originalLabels["job"])
+		assert.Equal(t, "localhost:9090", originalLabels["instance"])
+
+		// Replica 2 should have ALL values suffixed (since no __name__ to exclude)
+		replicaLabels := resolveLabels(decompressed.Symbols, decompressed.Timeseries[1].LabelsRefs)
+		assert.Equal(t, "prometheus_amp2", replicaLabels["job"], "job should be suffixed")
+		assert.Equal(t, "localhost:9090_amp2", replicaLabels["instance"], "instance should be suffixed")
 	})
 }
 
@@ -237,7 +263,8 @@ func TestAmplifyWriteRequest_RW1(t *testing.T) {
 	})
 
 	t.Run("fractional amplification is deterministic", func(t *testing.T) {
-		req := makeRW1Request(10)
+		// Use series with multiple labels so they can be amplified
+		req := makeRW1RequestWithLabels(10)
 		compressed := compressRequest(t, &req)
 
 		// With 1.5x factor: 10 originals + ~5 fractional copies = ~15 total
@@ -256,6 +283,31 @@ func TestAmplifyWriteRequest_RW1(t *testing.T) {
 				assert.Equal(t, firstSeriesCount, len(decompressed.Timeseries), "should be deterministic")
 			}
 		}
+	})
+
+	t.Run("series without __name__ label suffixes all values", func(t *testing.T) {
+		// Create a request with a series that has no __name__ label
+		// All label values should be suffixed
+		req := makeRW1RequestWithoutName(1)
+		compressed := compressRequest(t, &req)
+
+		result, err := AmplifyWriteRequest(compressed, 2.0, nil)
+		require.NoError(t, err)
+
+		decompressed := decompressAndUnmarshalRW1(t, result.Body)
+
+		// Verify results: 1 original + 1 copy = 2 total
+		assert.Equal(t, 2, len(decompressed.Timeseries))
+
+		// Original should have original values
+		originalLabels := labelsToMap(decompressed.Timeseries[0].Labels)
+		assert.Equal(t, "prometheus", originalLabels["job"])
+		assert.Equal(t, "localhost:9090", originalLabels["instance"])
+
+		// Replica 2 should have ALL values suffixed (since no __name__ to exclude)
+		replicaLabels := labelsToMap(decompressed.Timeseries[1].Labels)
+		assert.Equal(t, "prometheus_amp2", replicaLabels["job"], "job should be suffixed")
+		assert.Equal(t, "localhost:9090_amp2", replicaLabels["instance"], "instance should be suffixed")
 	})
 }
 
@@ -316,6 +368,38 @@ func makeRW2RequestWithLabels(numSeries int) mimirpb.WriteRequest {
 		timeseries = append(timeseries, mimirpb.TimeSeriesRW2{
 			// __name__=metric_N, instance=localhost:9090, job=prometheus
 			LabelsRefs: []uint32{1, metricNameRef, 2, 4, 3, 5},
+			Samples:    []mimirpb.Sample{{Value: float64(i), TimestampMs: 1000}},
+		})
+	}
+	return mimirpb.WriteRequest{SymbolsRW2: symbols, TimeseriesRW2: timeseries}
+}
+
+// makeRW1RequestWithoutName creates RW1 requests without __name__ label.
+func makeRW1RequestWithoutName(numSeries int) mimirpb.WriteRequest {
+	var timeseries []mimirpb.PreallocTimeseries
+	for i := 0; i < numSeries; i++ {
+		timeseries = append(timeseries, mimirpb.PreallocTimeseries{
+			TimeSeries: &mimirpb.TimeSeries{
+				Labels: []mimirpb.LabelAdapter{
+					{Name: "instance", Value: "localhost:9090"},
+					{Name: "job", Value: "prometheus"},
+				},
+				Samples: []mimirpb.Sample{{Value: float64(i), TimestampMs: 1000}},
+			},
+		})
+	}
+	return mimirpb.WriteRequest{Timeseries: timeseries}
+}
+
+// makeRW2RequestWithoutName creates RW2 requests without __name__ label.
+func makeRW2RequestWithoutName(numSeries int) mimirpb.WriteRequest {
+	// Symbol table: [0]="", [1]="instance", [2]="job", [3]="localhost:9090", [4]="prometheus"
+	symbols := []string{"", "instance", "job", "localhost:9090", "prometheus"}
+	var timeseries []mimirpb.TimeSeriesRW2
+	for i := 0; i < numSeries; i++ {
+		timeseries = append(timeseries, mimirpb.TimeSeriesRW2{
+			// instance=localhost:9090, job=prometheus (no __name__)
+			LabelsRefs: []uint32{1, 3, 2, 4},
 			Samples:    []mimirpb.Sample{{Value: float64(i), TimestampMs: 1000}},
 		})
 	}
