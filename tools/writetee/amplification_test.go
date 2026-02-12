@@ -14,81 +14,15 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-// TestAmplifyWriteRequest_RW2 tests RW2 request amplification scenarios.
-func TestAmplifyWriteRequest_RW2(t *testing.T) {
-	t.Run("2x amplification", func(t *testing.T) {
+// TestSampleWriteRequest_RW2 tests RW2 request sampling scenarios.
+func TestSampleWriteRequest_RW2(t *testing.T) {
+	t.Run("rejects amplification factor > 1.0", func(t *testing.T) {
 		req := makeRW2RequestWithLabels(1)
 		compressed := compressRequest(t, &req)
 
-		result, err := AmplifyWriteRequest(compressed, 2.0, nil)
-		require.NoError(t, err)
-
-		decompressed := decompressAndUnmarshalRW2(t, result.Body)
-
-		// Verify results
-		assert.Equal(t, 2, len(decompressed.Timeseries), "should have 2 time series (original + 1 amplified copy)")
-		assert.True(t, result.IsRW2, "should be detected as RW 2.0")
-		assert.True(t, result.WasAmplified, "should be amplified")
-		assert.Equal(t, 1, result.OriginalSeriesCount)
-		assert.Equal(t, 1, result.AmplifiedSeriesCount)
-
-		// Verify symbols table includes suffixed values for replica 2
-		assert.Contains(t, decompressed.Symbols, "prometheus_amp2")
-		assert.Contains(t, decompressed.Symbols, "localhost:9090_amp2")
-
-		// First series should be original (same number of label refs)
-		assert.Equal(t, 6, len(decompressed.Timeseries[0].LabelsRefs)) // __name__, job, instance = 3 pairs = 6 refs
-
-		// Second series should have same number of label refs (values are suffixed, not added)
-		assert.Equal(t, 6, len(decompressed.Timeseries[1].LabelsRefs))
-
-		// Verify the original series keeps original values
-		originalLabels := resolveLabels(decompressed.Symbols, decompressed.Timeseries[0].LabelsRefs)
-		assert.Equal(t, "metric_0", originalLabels["__name__"])
-		assert.Equal(t, "prometheus", originalLabels["job"])
-		assert.Equal(t, "localhost:9090", originalLabels["instance"])
-
-		// Verify the replica 2 series has suffixed values
-		replicaLabels := resolveLabels(decompressed.Symbols, decompressed.Timeseries[1].LabelsRefs)
-		assert.Equal(t, "metric_0", replicaLabels["__name__"], "__name__ should not be suffixed")
-		assert.Equal(t, "prometheus_amp2", replicaLabels["job"], "job should be suffixed with _amp2")
-		assert.Equal(t, "localhost:9090_amp2", replicaLabels["instance"], "instance should be suffixed with _amp2")
-	})
-
-	t.Run("3x amplification", func(t *testing.T) {
-		req := makeRW2RequestWithLabels(1)
-		compressed := compressRequest(t, &req)
-
-		result, err := AmplifyWriteRequest(compressed, 3.0, nil)
-		require.NoError(t, err)
-
-		decompressed := decompressAndUnmarshalRW2(t, result.Body)
-
-		// Verify results: 1 original + 2 copies = 3 total
-		assert.Equal(t, 3, len(decompressed.Timeseries))
-
-		// Verify symbols table includes suffixed values for replicas 2 and 3
-		assert.Contains(t, decompressed.Symbols, "prometheus_amp2")
-		assert.Contains(t, decompressed.Symbols, "prometheus_amp3")
-		assert.Contains(t, decompressed.Symbols, "localhost:9090_amp2")
-		assert.Contains(t, decompressed.Symbols, "localhost:9090_amp3")
-
-		// Verify each series has correct suffixes
-		for i, ts := range decompressed.Timeseries {
-			labels := resolveLabels(decompressed.Symbols, ts.LabelsRefs)
-			if i == 0 {
-				// Original (replica 1) - no suffix
-				assert.Equal(t, "prometheus", labels["job"])
-				assert.Equal(t, "localhost:9090", labels["instance"])
-			} else {
-				// Replicas 2, 3, ... should have _amp{i+1} suffix
-				expectedSuffix := fmt.Sprintf("_amp%d", i+1)
-				assert.Equal(t, "prometheus"+expectedSuffix, labels["job"], "replica %d job", i+1)
-				assert.Equal(t, "localhost:9090"+expectedSuffix, labels["instance"], "replica %d instance", i+1)
-			}
-			// __name__ should never be suffixed
-			assert.Equal(t, "metric_0", labels["__name__"])
-		}
+		_, err := SampleWriteRequest(compressed, 2.0, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "only handles sampling")
 	})
 
 	t.Run("sampling is deterministic", func(t *testing.T) {
@@ -98,9 +32,8 @@ func TestAmplifyWriteRequest_RW2(t *testing.T) {
 		// Run sampling multiple times - should get identical results each time
 		var firstSeriesCount int
 		for i := 0; i < 3; i++ {
-			result, err := AmplifyWriteRequest(compressed, 0.5, nil)
+			result, err := SampleWriteRequest(compressed, 0.5, nil)
 			require.NoError(t, err)
-			assert.True(t, result.IsRW2)
 
 			decompressed := decompressAndUnmarshalRW2(t, result.Body)
 
@@ -119,7 +52,7 @@ func TestAmplifyWriteRequest_RW2(t *testing.T) {
 		originalSymbols := req.SymbolsRW2
 		compressed := compressRequest(t, &req)
 
-		result, err := AmplifyWriteRequest(compressed, 0.5, nil)
+		result, err := SampleWriteRequest(compressed, 0.5, nil)
 		require.NoError(t, err)
 
 		decompressed := decompressAndUnmarshalRW2(t, result.Body)
@@ -127,117 +60,82 @@ func TestAmplifyWriteRequest_RW2(t *testing.T) {
 		// Symbols table should be unchanged during sampling
 		assert.Equal(t, originalSymbols, decompressed.Symbols, "symbols table should not be modified during sampling")
 	})
+}
 
-	t.Run("fractional amplification is deterministic", func(t *testing.T) {
-		// Use series with multiple labels so they can be amplified
-		req := makeRW2RequestWithLabels(10)
+// TestAmplifyRequestBody_RW2 tests amplifying RW2 request bodies.
+func TestAmplifyRequestBody_RW2(t *testing.T) {
+	t.Run("replica 1 returns original (no suffix)", func(t *testing.T) {
+		req := makeRW2RequestWithLabels(1)
 		compressed := compressRequest(t, &req)
 
-		// With 1.5x factor: 10 originals + ~5 fractional copies = ~15 total
-		var firstSeriesCount int
-		for i := 0; i < 3; i++ {
-			result, err := AmplifyWriteRequest(compressed, 1.5, nil)
-			require.NoError(t, err)
+		suffixed, err := AmplifyRequestBody(compressed, 1)
+		require.NoError(t, err)
 
-			decompressed := decompressAndUnmarshalRW2(t, result.Body)
-
-			if i == 0 {
-				firstSeriesCount = len(decompressed.Timeseries)
-				assert.Greater(t, firstSeriesCount, 10, "should have more than originals")
-				assert.Less(t, firstSeriesCount, 20, "should have less than 2x")
-			} else {
-				assert.Equal(t, firstSeriesCount, len(decompressed.Timeseries), "should be deterministic")
-			}
-		}
+		// Should be identical to input
+		assert.Equal(t, compressed, suffixed)
 	})
 
-	t.Run("series without __name__ label suffixes all values", func(t *testing.T) {
-		// Create a request with a series that has no __name__ label
-		// All label values should be suffixed
+	t.Run("replica 2 suffixes all label values", func(t *testing.T) {
+		req := makeRW2RequestWithLabels(1)
+		compressed := compressRequest(t, &req)
+
+		suffixed, err := AmplifyRequestBody(compressed, 2)
+		require.NoError(t, err)
+
+		decompressed := decompressAndUnmarshalRW2(t, suffixed)
+
+		// Verify symbols table includes suffixed values
+		assert.Contains(t, decompressed.Symbols, "prometheus_amp2")
+		assert.Contains(t, decompressed.Symbols, "localhost:9090_amp2")
+
+		// Verify the series has suffixed values
+		labels := resolveLabels(decompressed.Symbols, decompressed.Timeseries[0].LabelsRefs)
+		assert.Equal(t, "metric_0", labels["__name__"], "__name__ should not be suffixed")
+		assert.Equal(t, "prometheus_amp2", labels["job"], "job should be suffixed with _amp2")
+		assert.Equal(t, "localhost:9090_amp2", labels["instance"], "instance should be suffixed with _amp2")
+	})
+
+	t.Run("replica 3 suffixes with _amp3", func(t *testing.T) {
+		req := makeRW2RequestWithLabels(1)
+		compressed := compressRequest(t, &req)
+
+		suffixed, err := AmplifyRequestBody(compressed, 3)
+		require.NoError(t, err)
+
+		decompressed := decompressAndUnmarshalRW2(t, suffixed)
+
+		// Verify the series has suffixed values
+		labels := resolveLabels(decompressed.Symbols, decompressed.Timeseries[0].LabelsRefs)
+		assert.Equal(t, "metric_0", labels["__name__"], "__name__ should not be suffixed")
+		assert.Equal(t, "prometheus_amp3", labels["job"], "job should be suffixed with _amp3")
+		assert.Equal(t, "localhost:9090_amp3", labels["instance"], "instance should be suffixed with _amp3")
+	})
+
+	t.Run("series without __name__ suffixes all values", func(t *testing.T) {
 		req := makeRW2RequestWithoutName(1)
 		compressed := compressRequest(t, &req)
 
-		result, err := AmplifyWriteRequest(compressed, 2.0, nil)
+		suffixed, err := AmplifyRequestBody(compressed, 2)
 		require.NoError(t, err)
 
-		decompressed := decompressAndUnmarshalRW2(t, result.Body)
+		decompressed := decompressAndUnmarshalRW2(t, suffixed)
 
-		// Verify results: 1 original + 1 copy = 2 total
-		assert.Equal(t, 2, len(decompressed.Timeseries))
-
-		// Original should have original values
-		originalLabels := resolveLabels(decompressed.Symbols, decompressed.Timeseries[0].LabelsRefs)
-		assert.Equal(t, "prometheus", originalLabels["job"])
-		assert.Equal(t, "localhost:9090", originalLabels["instance"])
-
-		// Replica 2 should have ALL values suffixed (since no __name__ to exclude)
-		replicaLabels := resolveLabels(decompressed.Symbols, decompressed.Timeseries[1].LabelsRefs)
-		assert.Equal(t, "prometheus_amp2", replicaLabels["job"], "job should be suffixed")
-		assert.Equal(t, "localhost:9090_amp2", replicaLabels["instance"], "instance should be suffixed")
+		// All values should be suffixed (no __name__ to exclude)
+		labels := resolveLabels(decompressed.Symbols, decompressed.Timeseries[0].LabelsRefs)
+		assert.Equal(t, "prometheus_amp2", labels["job"], "job should be suffixed")
+		assert.Equal(t, "localhost:9090_amp2", labels["instance"], "instance should be suffixed")
 	})
 }
 
-// TestAmplifyWriteRequest_RW1 tests RW1 request amplification scenarios.
-func TestAmplifyWriteRequest_RW1(t *testing.T) {
-	t.Run("2x amplification", func(t *testing.T) {
+// TestSampleWriteRequest_RW1 tests RW1 request sampling scenarios.
+func TestSampleWriteRequest_RW1(t *testing.T) {
+	t.Run("rejects amplification factor > 1.0", func(t *testing.T) {
 		req := makeRW1RequestWithLabels(1)
 		compressed := compressRequest(t, &req)
 
-		result, err := AmplifyWriteRequest(compressed, 2.0, nil)
-		require.NoError(t, err)
-
-		decompressed := decompressAndUnmarshalRW1(t, result.Body)
-
-		// Verify results
-		assert.Equal(t, 2, len(decompressed.Timeseries), "should have 2 time series (original + 1 amplified copy)")
-		assert.False(t, result.IsRW2)
-		assert.True(t, result.WasAmplified)
-
-		// First series should be original (3 labels: __name__, job, instance)
-		assert.Equal(t, 3, len(decompressed.Timeseries[0].Labels))
-		originalLabels := labelsToMap(decompressed.Timeseries[0].Labels)
-		assert.Equal(t, "metric_0", originalLabels["__name__"])
-		assert.Equal(t, "prometheus", originalLabels["job"])
-		assert.Equal(t, "localhost:9090", originalLabels["instance"])
-
-		// Second series should have same number of labels (values are suffixed, not added)
-		assert.Equal(t, 3, len(decompressed.Timeseries[1].Labels))
-
-		// Verify the replica 2 series has suffixed values
-		replicaLabels := labelsToMap(decompressed.Timeseries[1].Labels)
-		assert.Equal(t, "metric_0", replicaLabels["__name__"], "__name__ should not be suffixed")
-		assert.Equal(t, "prometheus_amp2", replicaLabels["job"], "job should be suffixed with _amp2")
-		assert.Equal(t, "localhost:9090_amp2", replicaLabels["instance"], "instance should be suffixed with _amp2")
-	})
-
-	t.Run("3x amplification", func(t *testing.T) {
-		req := makeRW1RequestWithLabels(1)
-		compressed := compressRequest(t, &req)
-
-		result, err := AmplifyWriteRequest(compressed, 3.0, nil)
-		require.NoError(t, err)
-
-		decompressed := decompressAndUnmarshalRW1(t, result.Body)
-
-		// Verify results: 1 original + 2 copies = 3 total
-		assert.Equal(t, 3, len(decompressed.Timeseries))
-
-		// Verify each series has correct suffixes
-		for i, ts := range decompressed.Timeseries {
-			labels := labelsToMap(ts.Labels)
-			if i == 0 {
-				// Original (replica 1) - no suffix
-				assert.Equal(t, "prometheus", labels["job"])
-				assert.Equal(t, "localhost:9090", labels["instance"])
-			} else {
-				// Replicas 2, 3, ... should have _amp{i+1} suffix
-				expectedSuffix := fmt.Sprintf("_amp%d", i+1)
-				assert.Equal(t, "prometheus"+expectedSuffix, labels["job"], "replica %d job", i+1)
-				assert.Equal(t, "localhost:9090"+expectedSuffix, labels["instance"], "replica %d instance", i+1)
-			}
-			// __name__ should never be suffixed
-			assert.Equal(t, "metric_0", labels["__name__"])
-		}
+		_, err := SampleWriteRequest(compressed, 2.0, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "only handles sampling")
 	})
 
 	t.Run("sampling is deterministic", func(t *testing.T) {
@@ -247,7 +145,7 @@ func TestAmplifyWriteRequest_RW1(t *testing.T) {
 		// Run sampling multiple times - should get identical results each time
 		var firstSeriesCount int
 		for i := 0; i < 3; i++ {
-			result, err := AmplifyWriteRequest(compressed, 0.5, nil)
+			result, err := SampleWriteRequest(compressed, 0.5, nil)
 			require.NoError(t, err)
 
 			decompressed := decompressAndUnmarshalRW1(t, result.Body)
@@ -262,52 +160,66 @@ func TestAmplifyWriteRequest_RW1(t *testing.T) {
 		}
 	})
 
-	t.Run("fractional amplification is deterministic", func(t *testing.T) {
-		// Use series with multiple labels so they can be amplified
-		req := makeRW1RequestWithLabels(10)
+}
+
+// TestAmplifyRequestBody_RW1 tests amplifying RW1 request bodies.
+func TestAmplifyRequestBody_RW1(t *testing.T) {
+	t.Run("replica 1 returns original (no suffix)", func(t *testing.T) {
+		req := makeRW1RequestWithLabels(1)
 		compressed := compressRequest(t, &req)
 
-		// With 1.5x factor: 10 originals + ~5 fractional copies = ~15 total
-		var firstSeriesCount int
-		for i := 0; i < 3; i++ {
-			result, err := AmplifyWriteRequest(compressed, 1.5, nil)
-			require.NoError(t, err)
+		suffixed, err := AmplifyRequestBody(compressed, 1)
+		require.NoError(t, err)
 
-			decompressed := decompressAndUnmarshalRW1(t, result.Body)
-
-			if i == 0 {
-				firstSeriesCount = len(decompressed.Timeseries)
-				assert.Greater(t, firstSeriesCount, 10, "should have more than originals")
-				assert.Less(t, firstSeriesCount, 20, "should have less than 2x")
-			} else {
-				assert.Equal(t, firstSeriesCount, len(decompressed.Timeseries), "should be deterministic")
-			}
-		}
+		// Should be identical to input
+		assert.Equal(t, compressed, suffixed)
 	})
 
-	t.Run("series without __name__ label suffixes all values", func(t *testing.T) {
-		// Create a request with a series that has no __name__ label
-		// All label values should be suffixed
+	t.Run("replica 2 suffixes all label values", func(t *testing.T) {
+		req := makeRW1RequestWithLabels(1)
+		compressed := compressRequest(t, &req)
+
+		suffixed, err := AmplifyRequestBody(compressed, 2)
+		require.NoError(t, err)
+
+		decompressed := decompressAndUnmarshalRW1(t, suffixed)
+
+		// Verify the series has suffixed values
+		labels := labelsToMap(decompressed.Timeseries[0].Labels)
+		assert.Equal(t, "metric_0", labels["__name__"], "__name__ should not be suffixed")
+		assert.Equal(t, "prometheus_amp2", labels["job"], "job should be suffixed with _amp2")
+		assert.Equal(t, "localhost:9090_amp2", labels["instance"], "instance should be suffixed with _amp2")
+	})
+
+	t.Run("replica 3 suffixes with _amp3", func(t *testing.T) {
+		req := makeRW1RequestWithLabels(1)
+		compressed := compressRequest(t, &req)
+
+		suffixed, err := AmplifyRequestBody(compressed, 3)
+		require.NoError(t, err)
+
+		decompressed := decompressAndUnmarshalRW1(t, suffixed)
+
+		// Verify the series has suffixed values
+		labels := labelsToMap(decompressed.Timeseries[0].Labels)
+		assert.Equal(t, "metric_0", labels["__name__"], "__name__ should not be suffixed")
+		assert.Equal(t, "prometheus_amp3", labels["job"], "job should be suffixed with _amp3")
+		assert.Equal(t, "localhost:9090_amp3", labels["instance"], "instance should be suffixed with _amp3")
+	})
+
+	t.Run("series without __name__ suffixes all values", func(t *testing.T) {
 		req := makeRW1RequestWithoutName(1)
 		compressed := compressRequest(t, &req)
 
-		result, err := AmplifyWriteRequest(compressed, 2.0, nil)
+		suffixed, err := AmplifyRequestBody(compressed, 2)
 		require.NoError(t, err)
 
-		decompressed := decompressAndUnmarshalRW1(t, result.Body)
+		decompressed := decompressAndUnmarshalRW1(t, suffixed)
 
-		// Verify results: 1 original + 1 copy = 2 total
-		assert.Equal(t, 2, len(decompressed.Timeseries))
-
-		// Original should have original values
-		originalLabels := labelsToMap(decompressed.Timeseries[0].Labels)
-		assert.Equal(t, "prometheus", originalLabels["job"])
-		assert.Equal(t, "localhost:9090", originalLabels["instance"])
-
-		// Replica 2 should have ALL values suffixed (since no __name__ to exclude)
-		replicaLabels := labelsToMap(decompressed.Timeseries[1].Labels)
-		assert.Equal(t, "prometheus_amp2", replicaLabels["job"], "job should be suffixed")
-		assert.Equal(t, "localhost:9090_amp2", replicaLabels["instance"], "instance should be suffixed")
+		// All values should be suffixed (no __name__ to exclude)
+		labels := labelsToMap(decompressed.Timeseries[0].Labels)
+		assert.Equal(t, "prometheus_amp2", labels["job"], "job should be suffixed")
+		assert.Equal(t, "localhost:9090_amp2", labels["instance"], "instance should be suffixed")
 	})
 }
 

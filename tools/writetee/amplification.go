@@ -122,55 +122,48 @@ func (t *AmplificationTracker) GetStats() (rw1Series, rw2Series int64, rw2Ratio 
 	return t.totalRW1Series, t.totalRW2Series, ratio
 }
 
-// AmplificationResult contains the result of amplification along with metadata.
-type AmplificationResult struct {
-	Body                 []byte
-	OriginalSeriesCount  int
-	AmplifiedSeriesCount int
-	IsRW2                bool
-	WasAmplified         bool
+// SamplingResult contains the result of sampling along with metadata.
+type SamplingResult struct {
+	Body                []byte
+	OriginalSeriesCount int
+	SampledSeriesCount  int
 }
 
-// AmplifyWriteRequest takes a Prometheus remote write request body and amplifies or samples it
-// based on the amplification factor.
-// The amplification factor determines how to transform the time series:
+// SampleWriteRequest samples series from a write request based on the sampling factor.
+// The sampling factor determines how to filter the time series:
 //   - factor = 1.0: no change (returns original)
-//   - factor > 1.0: amplification (duplication)
-//   - factor = 2.0: each time series is duplicated once (2x total)
-//   - factor = 1.5: each time series gets 1 full copy + deterministically selected 50% get a 2nd copy
-//   - factor = 3.5: each time series gets 3 full copies + deterministically selected 50% get a 4th copy
 //   - factor < 1.0: sampling (reduction)
 //   - factor = 0.1: approximately 10% of series are kept (deterministic selection)
 //   - factor = 0.5: approximately 50% of series are kept (deterministic selection)
 //
-// The original series is considered replica 1 and keeps its original label values.
-// Additional copies (replicas 2, 3, ...) have all label values (except __name__) suffixed with
-// _amp{N}, where N is the replica number. This increases cardinality across all label dimensions.
-// Sampled series (factor < 1.0) do not get suffixes.
+// Selection is deterministic and based on a hash of the series labels,
+// ensuring the same series are consistently selected across requests.
+//
 // The body is expected to be Snappy-compressed Prometheus remote write protobuf.
-//
-// Selection (both sampling and fractional amplification) is deterministic and based on a hash
-// of the series labels, ensuring the same series are consistently selected across requests.
-//
-// Both RW 1.0 and RW 2.0 requests are processed using the same amplification factor.
+// Both RW 1.0 and RW 2.0 requests are processed using the same sampling factor.
 // RW 2.0 requests are kept in native RW 2.0 format (avoiding memory expansion).
 // If tracker is provided, series counts are recorded for observability.
-// Returns AmplificationResult with metadata about what was done.
-func AmplifyWriteRequest(body []byte, amplificationFactor float64, tracker *AmplificationTracker) (AmplificationResult, error) {
+//
+// For amplification (factor > 1.0), use AmplifyRequestBody to send multiple separate requests.
+func SampleWriteRequest(body []byte, amplificationFactor float64, tracker *AmplificationTracker) (SamplingResult, error) {
 	if amplificationFactor == 1.0 {
-		return AmplificationResult{
-			Body:                 body,
-			OriginalSeriesCount:  0, // Unknown without unmarshaling
-			AmplifiedSeriesCount: 0,
-			IsRW2:                false,
-			WasAmplified:         false,
+		return SamplingResult{
+			Body:                body,
+			OriginalSeriesCount: 0, // Unknown without unmarshaling
+			SampledSeriesCount:  0,
 		}, nil
+	}
+
+	// Only handle sampling (factor < 1.0). For amplification (factor > 1.0),
+	// use AmplifyRequestBody to send multiple separate requests.
+	if amplificationFactor > 1.0 {
+		return SamplingResult{}, fmt.Errorf("SampleWriteRequest only handles sampling (factor <= 1.0), got %.2f", amplificationFactor)
 	}
 
 	// Decompress the snappy-compressed body
 	decompressed, err := snappy.Decode(nil, body)
 	if err != nil {
-		return AmplificationResult{}, fmt.Errorf("failed to decompress write request: %w", err)
+		return SamplingResult{}, fmt.Errorf("failed to decompress write request: %w", err)
 	}
 
 	// Try unmarshaling as RW 1.0 first
@@ -181,7 +174,7 @@ func AmplifyWriteRequest(body []byte, amplificationFactor float64, tracker *Ampl
 	if err != nil {
 		// Check if this is a RW 2.0 request by looking for the specific error message
 		if !isRW2Error(err) {
-			return AmplificationResult{}, fmt.Errorf("failed to unmarshal write request: %w", err)
+			return SamplingResult{}, fmt.Errorf("failed to unmarshal write request: %w", err)
 		}
 
 		// Unmarshal as RW 2.0 data in native format using our custom unmarshal
@@ -189,7 +182,7 @@ func AmplifyWriteRequest(body []byte, amplificationFactor float64, tracker *Ampl
 		// avoiding the 12.5x memory expansion of converting to RW 1.0
 		rw2Req, err := mimirpb.UnmarshalWriteRequestRW2Native(decompressed)
 		if err != nil {
-			return AmplificationResult{}, fmt.Errorf("failed to unmarshal RW 2.0 write request: %w", err)
+			return SamplingResult{}, fmt.Errorf("failed to unmarshal RW 2.0 write request: %w", err)
 		}
 
 		originalSeriesCount := len(rw2Req.Timeseries)
@@ -199,59 +192,34 @@ func AmplifyWriteRequest(body []byte, amplificationFactor float64, tracker *Ampl
 			tracker.RecordRW2Series(originalSeriesCount)
 		}
 
-		// Handle sampling (factor < 1.0) for RW 2.0
-		// Use deterministic hashing to ensure the same series are always sampled
-		if amplificationFactor < 1.0 {
-			sampledSeries := make([]mimirpb.TimeSeriesRW2, 0, int(float64(len(rw2Req.Timeseries))*amplificationFactor))
-			for _, ts := range rw2Req.Timeseries {
-				hash := hashSeriesLabelsRW2(ts.LabelsRefs, rw2Req.Symbols)
-				if shouldKeepSeries(hash, amplificationFactor) {
-					sampledSeries = append(sampledSeries, ts)
-				}
+		// Sample series deterministically based on hash
+		sampledSeries := make([]mimirpb.TimeSeriesRW2, 0, int(float64(len(rw2Req.Timeseries))*amplificationFactor))
+		for _, ts := range rw2Req.Timeseries {
+			hash := hashSeriesLabelsRW2(ts.LabelsRefs, rw2Req.Symbols)
+			if shouldKeepSeries(hash, amplificationFactor) {
+				sampledSeries = append(sampledSeries, ts)
 			}
-
-			rw2Req.Timeseries = sampledSeries
-
-			// Marshal back to protobuf
-			sampledProto, err := proto.Marshal(rw2Req)
-			if err != nil {
-				return AmplificationResult{}, fmt.Errorf("failed to marshal sampled RW 2.0 write request: %w", err)
-			}
-
-			// Compress back with snappy
-			sampledBody := snappy.Encode(nil, sampledProto)
-
-			return AmplificationResult{
-				Body:                 sampledBody,
-				OriginalSeriesCount:  originalSeriesCount,
-				AmplifiedSeriesCount: len(sampledSeries) - originalSeriesCount, // Negative for sampling
-				IsRW2:                true,
-				WasAmplified:         true,
-			}, nil
 		}
 
-		// Amplify RW 2.0 data in native format (avoids 12.5x memory expansion)
-		amplifiedRW2 := amplifyRW2Request(rw2Req, amplificationFactor)
+		rw2Req.Timeseries = sampledSeries
 
 		// Marshal back to protobuf
-		amplifiedProto, err := proto.Marshal(&amplifiedRW2)
+		sampledProto, err := proto.Marshal(rw2Req)
 		if err != nil {
-			return AmplificationResult{}, fmt.Errorf("failed to marshal amplified RW 2.0 write request: %w", err)
+			return SamplingResult{}, fmt.Errorf("failed to marshal sampled RW 2.0 write request: %w", err)
 		}
 
 		// Compress back with snappy
-		amplifiedBody := snappy.Encode(nil, amplifiedProto)
+		sampledBody := snappy.Encode(nil, sampledProto)
 
-		return AmplificationResult{
-			Body:                 amplifiedBody,
-			OriginalSeriesCount:  originalSeriesCount,
-			AmplifiedSeriesCount: len(amplifiedRW2.Timeseries) - originalSeriesCount,
-			IsRW2:                true,
-			WasAmplified:         true,
+		return SamplingResult{
+			Body:                sampledBody,
+			OriginalSeriesCount: originalSeriesCount,
+			SampledSeriesCount:  len(sampledSeries),
 		}, nil
 	}
 
-	// RW 1.0 path
+	// RW 1.0 path - sample series deterministically
 	originalSeriesCount := len(req.Timeseries)
 
 	// Record RW 1.0 series for observability
@@ -259,119 +227,107 @@ func AmplifyWriteRequest(body []byte, amplificationFactor float64, tracker *Ampl
 		tracker.RecordRW1Series(originalSeriesCount)
 	}
 
-	// Handle sampling (factor < 1.0) - deterministically keep a subset of series
-	// Use deterministic hashing to ensure the same series are always sampled
-	if amplificationFactor < 1.0 {
-		sampledSeries := make([]mimirpb.PreallocTimeseries, 0, int(float64(len(req.Timeseries))*amplificationFactor))
-		for _, ts := range req.Timeseries {
-			hash := hashSeriesLabels(ts.Labels)
-			if shouldKeepSeries(hash, amplificationFactor) {
-				sampledSeries = append(sampledSeries, ts)
-			}
-		}
-
-		req.Timeseries = sampledSeries
-
-		// Marshal back to protobuf
-		sampledProto, err := proto.Marshal(&req)
-		if err != nil {
-			return AmplificationResult{}, fmt.Errorf("failed to marshal sampled write request: %w", err)
-		}
-
-		// Compress back with snappy
-		sampledBody := snappy.Encode(nil, sampledProto)
-
-		return AmplificationResult{
-			Body:                 sampledBody,
-			OriginalSeriesCount:  originalSeriesCount,
-			AmplifiedSeriesCount: len(sampledSeries) - originalSeriesCount, // Negative for sampling
-			IsRW2:                false,
-			WasAmplified:         true,
-		}, nil
-	}
-
-	// Calculate copies based on amplification factor (factor > 1.0)
-	fullCopies := int(math.Floor(amplificationFactor))
-	fractionalPart := amplificationFactor - float64(fullCopies)
-
-	// RW 1.0: amplify using Timeseries
-	amplifiedSeries := make([]mimirpb.PreallocTimeseries, 0, len(req.Timeseries)*fullCopies)
-
+	sampledSeries := make([]mimirpb.PreallocTimeseries, 0, int(float64(len(req.Timeseries))*amplificationFactor))
 	for _, ts := range req.Timeseries {
-		// Keep the original (considered replica 1, no suffix)
-		amplifiedSeries = append(amplifiedSeries, ts)
-
-		// Skip amplification for series with only __name__ label (nothing to suffix)
-		if hasOnlyNameLabel(ts.Labels) {
-			continue
-		}
-
-		// Create full copies with suffixed label values (replicas 2, 3, ...)
-		for i := 1; i < fullCopies; i++ {
-			amplifiedSeries = append(amplifiedSeries, amplifyTimeSeries(&ts, i+1))
-		}
-
-		// Handle fractional part deterministically using hash
-		// This ensures the same series always get the fractional copy
-		if fractionalPart > 0 {
-			hash := hashSeriesLabels(ts.Labels)
-			if shouldKeepSeries(hash, fractionalPart) {
-				amplifiedSeries = append(amplifiedSeries, amplifyTimeSeries(&ts, fullCopies+1))
-			}
+		hash := hashSeriesLabels(ts.Labels)
+		if shouldKeepSeries(hash, amplificationFactor) {
+			sampledSeries = append(sampledSeries, ts)
 		}
 	}
 
-	// Replace the time series in the request
-	req.Timeseries = amplifiedSeries
+	req.Timeseries = sampledSeries
 
 	// Marshal back to protobuf
-	amplifiedProto, err := proto.Marshal(&req)
+	sampledProto, err := proto.Marshal(&req)
 	if err != nil {
-		return AmplificationResult{}, fmt.Errorf("failed to marshal amplified write request: %w", err)
+		return SamplingResult{}, fmt.Errorf("failed to marshal sampled write request: %w", err)
 	}
 
 	// Compress back with snappy
-	amplifiedBody := snappy.Encode(nil, amplifiedProto)
+	sampledBody := snappy.Encode(nil, sampledProto)
 
-	return AmplificationResult{
-		Body:                 amplifiedBody,
-		OriginalSeriesCount:  originalSeriesCount,
-		AmplifiedSeriesCount: len(amplifiedSeries) - originalSeriesCount,
-		IsRW2:                false,
-		WasAmplified:         true,
+	return SamplingResult{
+		Body:                sampledBody,
+		OriginalSeriesCount: originalSeriesCount,
+		SampledSeriesCount:  len(sampledSeries),
 	}, nil
 }
 
-// amplifyRW2Request amplifies a RW 2.0 request in native format.
-// This avoids the 12.5x memory expansion of converting RW 2.0 → RW 1.0.
-// All label values (except __name__) are suffixed with _amp{N} for replicas 2, 3, etc.
-// The original series is considered replica 1 and keeps its original label values.
-func amplifyRW2Request(req *mimirpb.WriteRequestRW2, amplificationFactor float64) mimirpb.WriteRequestRW2 {
-	fullCopies := int(math.Floor(amplificationFactor))
-	fractionalPart := amplificationFactor - float64(fullCopies)
+// AmplifyRequestBody applies the _amp{N} suffix to all label values (except __name__)
+// for all series in a write request. This is used to create separate requests with unique
+// label values for each amplification replica.
+func AmplifyRequestBody(body []byte, replicaNum int) ([]byte, error) {
+	if replicaNum == 1 {
+		// Replica 1 is the original - no suffix needed
+		return body, nil
+	}
 
+	// Decompress the snappy-compressed body
+	decompressed, err := snappy.Decode(nil, body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decompress write request: %w", err)
+	}
+
+	// Try unmarshaling as RW 1.0 first
+	var req mimirpb.WriteRequest
+	err = proto.Unmarshal(decompressed, &req)
+
+	// If RW 1.0 unmarshal fails with RW 2.0 error, handle RW 2.0
+	if err != nil {
+		// Check if this is a RW 2.0 request
+		if !isRW2Error(err) {
+			return nil, fmt.Errorf("failed to unmarshal write request: %w", err)
+		}
+
+		// Unmarshal as RW 2.0
+		rw2Req, err := mimirpb.UnmarshalWriteRequestRW2Native(decompressed)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal RW 2.0 write request: %w", err)
+		}
+
+		// Apply suffixes to RW 2.0 request
+		suffixedRW2 := applySuffixToRW2Request(rw2Req, replicaNum)
+
+		// Marshal back to protobuf
+		suffixedProto, err := proto.Marshal(&suffixedRW2)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal suffixed RW 2.0 write request: %w", err)
+		}
+
+		// Compress back with snappy
+		return snappy.Encode(nil, suffixedProto), nil
+	}
+
+	// RW 1.0 path: apply suffix to all series
+	for i := range req.Timeseries {
+		req.Timeseries[i] = applySuffixToTimeSeries(&req.Timeseries[i], replicaNum)
+	}
+
+	// Marshal back to protobuf
+	suffixedProto, err := proto.Marshal(&req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal suffixed write request: %w", err)
+	}
+
+	// Compress back with snappy
+	return snappy.Encode(nil, suffixedProto), nil
+}
+
+// applySuffixToRW2Request applies the _amp{N} suffix to all label values (except __name__)
+// for all series in an RW 2.0 request.
+func applySuffixToRW2Request(req *mimirpb.WriteRequestRW2, replicaNum int) mimirpb.WriteRequestRW2 {
 	// Find __name__ symbol ref (to identify which values to exclude from suffixing)
 	nameSymbolRef := findSymbolRef(req.Symbols, model.MetricNameLabel)
 
 	// Collect value refs that need suffixing (exclude values of __name__ labels)
 	valueRefsToSuffix := collectValueRefsToSuffix(req.Timeseries, nameSymbolRef)
 
-	// Build the amplified symbol table
-	// Start with original symbols, then add suffixed versions for replicas 2, 3, etc.
-	amplifiedSymbols := make([]string, len(req.Symbols))
-	copy(amplifiedSymbols, req.Symbols)
+	// Build the suffixed symbol table
+	suffixedSymbols := make([]string, len(req.Symbols))
+	copy(suffixedSymbols, req.Symbols)
 
-	// Determine the last replica number needed
-	lastReplica := fullCopies
-	if fractionalPart > 0 {
-		lastReplica++
-	}
-
-	// Map: suffixedValueRefs[replicaNum][originalRef] = newRef
-	suffixedValueRefs := make(map[int]map[uint32]uint32)
-	for replica := 2; replica <= lastReplica; replica++ {
-		suffixedValueRefs[replica] = make(map[uint32]uint32)
-	}
+	// Map: suffixedValueRefs[originalRef] = newRef
+	suffixedValueRefs := make(map[uint32]uint32)
 
 	// Create suffixed symbols for each value ref that needs suffixing
 	for valueRef := range valueRefsToSuffix {
@@ -380,93 +336,28 @@ func amplifyRW2Request(req *mimirpb.WriteRequestRW2, amplificationFactor float64
 			continue
 		}
 		originalValue := req.Symbols[valueRef]
-		for replica := 2; replica <= lastReplica; replica++ {
-			newValue := fmt.Sprintf("%s_amp%d", originalValue, replica)
-			newRef := uint32(len(amplifiedSymbols))
-			amplifiedSymbols = append(amplifiedSymbols, newValue)
-			suffixedValueRefs[replica][valueRef] = newRef
-		}
+		newValue := fmt.Sprintf("%s_amp%d", originalValue, replicaNum)
+		newRef := uint32(len(suffixedSymbols))
+		suffixedSymbols = append(suffixedSymbols, newValue)
+		suffixedValueRefs[valueRef] = newRef
 	}
 
-	// Amplify time series
-	amplifiedSeries := make([]mimirpb.TimeSeriesRW2, 0, len(req.Timeseries)*fullCopies)
-
-	for _, ts := range req.Timeseries {
-		// Keep the original (replica 1, no suffixing)
-		amplifiedSeries = append(amplifiedSeries, ts)
-
-		// Skip amplification for series with only __name__ label (nothing to suffix)
-		if !hasLabelsToSuffix(ts.LabelsRefs, nameSymbolRef) {
-			continue
-		}
-
-		// Create full copies with suffixed label values (replicas 2, 3, ...)
-		for replica := 2; replica <= fullCopies; replica++ {
-			amplifiedSeries = append(amplifiedSeries, amplifyTimeSeriesRW2(&ts, nameSymbolRef, suffixedValueRefs[replica]))
-		}
-
-		// Handle fractional part deterministically using hash
-		// This ensures the same series always get the fractional copy
-		if fractionalPart > 0 {
-			hash := hashSeriesLabelsRW2(ts.LabelsRefs, req.Symbols)
-			if shouldKeepSeries(hash, fractionalPart) {
-				amplifiedSeries = append(amplifiedSeries, amplifyTimeSeriesRW2(&ts, nameSymbolRef, suffixedValueRefs[lastReplica]))
-			}
-		}
+	// Apply suffixes to all time series
+	suffixedSeries := make([]mimirpb.TimeSeriesRW2, len(req.Timeseries))
+	for i, ts := range req.Timeseries {
+		suffixedSeries[i] = applySuffixToTimeSeriesRW2(&ts, nameSymbolRef, suffixedValueRefs)
 	}
 
 	return mimirpb.WriteRequestRW2{
-		Symbols:    amplifiedSymbols,
-		Timeseries: amplifiedSeries,
+		Symbols:    suffixedSymbols,
+		Timeseries: suffixedSeries,
 	}
 }
 
-// findSymbolRef finds the index of a symbol in the symbol table.
-// Returns math.MaxUint32 if not found.
-func findSymbolRef(symbols []string, target string) uint32 {
-	for i, s := range symbols {
-		if s == target {
-			return uint32(i)
-		}
-	}
-	return math.MaxUint32 // Not found
-}
-
-// hasLabelsToSuffix returns true if the RW2 series has any labels besides __name__.
-// Series with only __name__ (or no labels) cannot be amplified.
-func hasLabelsToSuffix(labelRefs []uint32, nameSymbolRef uint32) bool {
-	// Iterate over label name/value pairs
-	for i := 0; i+1 < len(labelRefs); i += 2 {
-		labelNameRef := labelRefs[i]
-		if labelNameRef != nameSymbolRef {
-			return true // Found a label that is not __name__
-		}
-	}
-	return false
-}
-
-// collectValueRefsToSuffix collects all value refs that need suffixing.
-// It excludes values of __name__ labels (metric names should not be suffixed).
-func collectValueRefsToSuffix(timeseries []mimirpb.TimeSeriesRW2, nameSymbolRef uint32) map[uint32]struct{} {
-	valueRefs := make(map[uint32]struct{})
-	for _, ts := range timeseries {
-		// Bounds check: ensure we have complete name/value pairs (i+1 must be valid)
-		for i := 0; i+1 < len(ts.LabelsRefs); i += 2 {
-			labelNameRef := ts.LabelsRefs[i]
-			labelValueRef := ts.LabelsRefs[i+1]
-			if labelNameRef != nameSymbolRef {
-				valueRefs[labelValueRef] = struct{}{}
-			}
-		}
-	}
-	return valueRefs
-}
-
-// amplifyTimeSeriesRW2 creates a copy of an RW 2.0 time series with label values suffixed.
+// applySuffixToTimeSeriesRW2 creates a copy of an RW 2.0 time series with label values suffixed.
 // This operates on uint32 label references, not actual label strings.
 // For each label (except __name__), the value ref is replaced with its suffixed version.
-// The suffixedValueRefs map should contain the pre-computed suffixed symbol refs.
-func amplifyTimeSeriesRW2(original *mimirpb.TimeSeriesRW2, nameSymbolRef uint32, suffixedValueRefs map[uint32]uint32) mimirpb.TimeSeriesRW2 {
+func applySuffixToTimeSeriesRW2(original *mimirpb.TimeSeriesRW2, nameSymbolRef uint32, suffixedValueRefs map[uint32]uint32) mimirpb.TimeSeriesRW2 {
 	// Copy the time series
 	ts := mimirpb.TimeSeriesRW2{
 		// Same number of label refs - we're replacing values, not adding labels
@@ -521,23 +412,11 @@ func amplifyTimeSeriesRW2(original *mimirpb.TimeSeriesRW2, nameSymbolRef uint32,
 	return ts
 }
 
-// hasOnlyNameLabel returns true if the series has only the __name__ label.
-// Such series cannot be amplified (no label values to suffix).
-func hasOnlyNameLabel(labels []mimirpb.LabelAdapter) bool {
-	if len(labels) == 0 {
-		return true // No labels at all, nothing to suffix
-	}
-	if len(labels) == 1 && labels[0].Name == model.MetricNameLabel {
-		return true
-	}
-	return false
-}
-
-// amplifyTimeSeries creates a copy of a time series with all label values suffixed.
+// applySuffixToTimeSeries creates a copy of a time series with all label values suffixed.
 // The replicaNum is appended as _amp{N} to all label values except __name__.
 // The original series is considered replica 1 (no suffix), so replicaNum should be >= 2.
 // This increases cardinality across all label dimensions.
-func amplifyTimeSeries(original *mimirpb.PreallocTimeseries, replicaNum int) mimirpb.PreallocTimeseries {
+func applySuffixToTimeSeries(original *mimirpb.PreallocTimeseries, replicaNum int) mimirpb.PreallocTimeseries {
 	suffix := fmt.Sprintf("_amp%d", replicaNum)
 
 	// Create a copy
@@ -578,4 +457,32 @@ func amplifyTimeSeries(original *mimirpb.PreallocTimeseries, replicaNum int) mim
 	}
 
 	return ts
+}
+
+// findSymbolRef finds the index of a symbol in the symbol table.
+// Returns math.MaxUint32 if not found.
+func findSymbolRef(symbols []string, target string) uint32 {
+	for i, s := range symbols {
+		if s == target {
+			return uint32(i)
+		}
+	}
+	return math.MaxUint32 // Not found
+}
+
+// collectValueRefsToSuffix collects all value refs that need suffixing.
+// It excludes values of __name__ labels (metric names should not be suffixed).
+func collectValueRefsToSuffix(timeseries []mimirpb.TimeSeriesRW2, nameSymbolRef uint32) map[uint32]struct{} {
+	valueRefs := make(map[uint32]struct{})
+	for _, ts := range timeseries {
+		// Bounds check: ensure we have complete name/value pairs (i+1 must be valid)
+		for i := 0; i+1 < len(ts.LabelsRefs); i += 2 {
+			labelNameRef := ts.LabelsRefs[i]
+			labelValueRef := ts.LabelsRefs[i+1]
+			if labelNameRef != nameSymbolRef {
+				valueRefs[labelValueRef] = struct{}{}
+			}
+		}
+	}
+	return valueRefs
 }
