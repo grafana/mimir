@@ -5058,7 +5058,8 @@ kafka:
   [write_clients: <int> | default = 1]
 
   # The SASL mechanism used to authenticate to Kafka. Supported values: PLAIN,
-  # SCRAM-SHA-256, SCRAM-SHA-512.
+  # SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER. For backwards-compatibility,
+  # PLAIN with no username nor password disables SASL.
   # CLI flag: -ingest-storage.kafka.sasl-mechanism
   [sasl_mechanism: <string> | default = "PLAIN"]
 
@@ -5071,6 +5072,30 @@ kafka:
   # configure both the username and password.
   # CLI flag: -ingest-storage.kafka.sasl-password
   [sasl_password: <string> | default = ""]
+
+  # The OAuth token to use to authenticate to Kafka. Consider
+  # ingest-storage.kafka.sasl-oauthbearer-file-path instead.
+  # CLI flag: -ingest-storage.kafka.sasl-oauthbearer-token
+  [sasl_oauthbearer_token: <string> | default = ""]
+
+  # Optional authorization ID to use when authenticating to Kafka using SASL
+  # OAUTHBEARER.
+  # CLI flag: -ingest-storage.kafka.sasl-oauthbearer-zid
+  [sasl_oauthbearer_zid: <string> | default = ""]
+
+  # Optional additional OAuth extensions to include when authenticating to Kafka
+  # using SASL OAUTHBEARER as a JSON object.
+  # CLI flag: -ingest-storage.kafka.sasl-oauthbearer-extensions
+  [sasl_oauthbearer_extensions: <map of string to string> | default = null]
+
+  # Path to a file containing an OAuth token to authenticate to Kafka. The file
+  # will be read anew on every reauthentication, so it can be updated with fresh
+  # tokens. The file must be in JSON format, adhering to this JSON schema:
+  # {"type": "object", "required": ["token"], "properties": {"token": {"type":
+  # "string"}, "zid": {"type": "string"}, "extensions": {"type": "object",
+  # "additionalProperties": {"type": "string"}}}}
+  # CLI flag: -ingest-storage.kafka.sasl-oauthbearer-file-path
+  [sasl_oauthbearer_file_path: <string> | default = ""]
 
   # The consumer group used by the consumer to track the last consumed offset.
   # The consumer group must be different for each ingester. If the configured

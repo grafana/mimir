@@ -8430,7 +8430,7 @@
               "kind": "field",
               "name": "sasl_mechanism",
               "required": false,
-              "desc": "The SASL mechanism used to authenticate to Kafka. Supported values: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512.",
+              "desc": "The SASL mechanism used to authenticate to Kafka. Supported values: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER. For backwards-compatibility, PLAIN with no username nor password disables SASL.",
               "fieldValue": null,
               "fieldDefaultValue": "PLAIN",
               "fieldFlag": "ingest-storage.kafka.sasl-mechanism",
@@ -8454,6 +8454,46 @@
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "ingest-storage.kafka.sasl-password",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "sasl_oauthbearer_token",
+              "required": false,
+              "desc": "The OAuth token to use to authenticate to Kafka. Consider ingest-storage.kafka.sasl-oauthbearer-file-path instead.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingest-storage.kafka.sasl-oauthbearer-token",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "sasl_oauthbearer_zid",
+              "required": false,
+              "desc": "Optional authorization ID to use when authenticating to Kafka using SASL OAUTHBEARER.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingest-storage.kafka.sasl-oauthbearer-zid",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "sasl_oauthbearer_extensions",
+              "required": false,
+              "desc": "Optional additional OAuth extensions to include when authenticating to Kafka using SASL OAUTHBEARER as a JSON object.",
+              "fieldValue": null,
+              "fieldDefaultValue": {},
+              "fieldFlag": "ingest-storage.kafka.sasl-oauthbearer-extensions",
+              "fieldType": "map of string to string"
+            },
+            {
+              "kind": "field",
+              "name": "sasl_oauthbearer_file_path",
+              "required": false,
+              "desc": "Path to a file containing an OAuth token to authenticate to Kafka. The file will be read anew on every reauthentication, so it can be updated with fresh tokens. The file must be in JSON format, adhering to this JSON schema: {\"type\": \"object\", \"required\": [\"token\"], \"properties\": {\"token\": {\"type\": \"string\"}, \"zid\": {\"type\": \"string\"}, \"extensions\": {\"type\": \"object\", \"additionalProperties\": {\"type\": \"string\"}}}}",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingest-storage.kafka.sasl-oauthbearer-file-path",
               "fieldType": "string"
             },
             {
