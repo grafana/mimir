@@ -124,11 +124,16 @@ func (t *AmplificationTracker) GetStats() (rw1Series, rw2Series int64, rw2Ratio 
 
 // AmplificationResult contains the result of amplification along with metadata.
 type AmplificationResult struct {
-	Body                 []byte
-	OriginalSeriesCount  int
+	// Body is the snappy-compressed protobuf body (amplified or sampled).
+	Body []byte
+	// OriginalSeriesCount is the number of series in the original request.
+	OriginalSeriesCount int
+	// AmplifiedSeriesCount is the net change in series count (positive for amplification, negative for sampling).
 	AmplifiedSeriesCount int
-	IsRW2                bool
-	WasAmplified         bool
+	// IsRW2 indicates whether the request was in Remote Write 2.0 format.
+	IsRW2 bool
+	// WasAmplified indicates whether any transformation was applied.
+	WasAmplified bool
 }
 
 // AmplifyWriteRequest takes a Prometheus remote write request body and amplifies or samples it
@@ -354,46 +359,49 @@ func amplifyRW2Request(req *mimirpb.WriteRequestRW2, amplificationFactor float64
 	nameSymbolRef := findSymbolRef(req.Symbols, model.MetricNameLabel)
 
 	// Collect value refs that need suffixing (exclude values of __name__ labels)
-	valueRefsToSuffix := collectValueRefsToSuffix(req.Timeseries, nameSymbolRef)
-
-	// Build the amplified symbol table
-	// Start with original symbols, then add suffixed versions for replicas 2, 3, etc.
-	amplifiedSymbols := make([]string, len(req.Symbols))
-	copy(amplifiedSymbols, req.Symbols)
+	numSymbols := len(req.Symbols)
+	valueRefsToSuffix, valueRefCount := collectValueRefsToSuffix(req.Timeseries, nameSymbolRef, numSymbols)
 
 	// Determine the last replica number needed
 	lastReplica := fullCopies
 	if fractionalPart > 0 {
 		lastReplica++
 	}
+	numReplicas := lastReplica - 1 // Number of additional replicas (excluding original)
 
-	// Map: suffixedValueRefs[replicaNum][originalRef] = newRef
-	suffixedValueRefs := make(map[int]map[uint32]uint32)
-	for replica := 2; replica <= lastReplica; replica++ {
-		suffixedValueRefs[replica] = make(map[uint32]uint32)
+	// Build the amplified symbol table
+	// Start with original symbols, then add suffixed versions for replicas 2, 3, etc.
+	amplifiedSymbols := make([]string, numSymbols, numSymbols+valueRefCount*numReplicas)
+	copy(amplifiedSymbols, req.Symbols)
+
+	// 2D slice: suffixedValueRefs[replicaIdx][originalRef] = newRef
+	// replicaIdx 0 = replica 2, replicaIdx 1 = replica 3, etc.
+	suffixedValueRefs := make([][]uint32, numReplicas)
+	for i := range suffixedValueRefs {
+		suffixedValueRefs[i] = make([]uint32, numSymbols)
 	}
 
 	// Create suffixed symbols for each value ref that needs suffixing
-	for valueRef := range valueRefsToSuffix {
-		// Bounds check: skip value refs that exceed symbol table bounds
-		if int(valueRef) >= len(req.Symbols) {
+	for valueRef := 0; valueRef < numSymbols; valueRef++ {
+		if !valueRefsToSuffix[valueRef] {
 			continue
 		}
 		originalValue := req.Symbols[valueRef]
-		for replica := 2; replica <= lastReplica; replica++ {
-			newValue := fmt.Sprintf("%s_amp%d", originalValue, replica)
+		for replicaIdx := 0; replicaIdx < numReplicas; replicaIdx++ {
+			replica := replicaIdx + 2 // replica 2, 3, ...
 			newRef := uint32(len(amplifiedSymbols))
-			amplifiedSymbols = append(amplifiedSymbols, newValue)
-			suffixedValueRefs[replica][valueRef] = newRef
+			amplifiedSymbols = append(amplifiedSymbols, originalValue+"_amp"+fmt.Sprint(replica))
+			suffixedValueRefs[replicaIdx][valueRef] = newRef
 		}
 	}
 
 	// Amplify time series
 	amplifiedSeries := make([]mimirpb.TimeSeriesRW2, 0, len(req.Timeseries)*fullCopies)
 
-	for _, ts := range req.Timeseries {
+	for i := range req.Timeseries {
+		ts := &req.Timeseries[i]
 		// Keep the original (replica 1, no suffixing)
-		amplifiedSeries = append(amplifiedSeries, ts)
+		amplifiedSeries = append(amplifiedSeries, *ts)
 
 		// Skip amplification for series with only __name__ label (nothing to suffix)
 		if !hasLabelsToSuffix(ts.LabelsRefs, nameSymbolRef) {
@@ -401,8 +409,8 @@ func amplifyRW2Request(req *mimirpb.WriteRequestRW2, amplificationFactor float64
 		}
 
 		// Create full copies with suffixed label values (replicas 2, 3, ...)
-		for replica := 2; replica <= fullCopies; replica++ {
-			amplifiedSeries = append(amplifiedSeries, amplifyTimeSeriesRW2(&ts, nameSymbolRef, suffixedValueRefs[replica]))
+		for replicaIdx := 0; replicaIdx < fullCopies-1; replicaIdx++ {
+			amplifiedSeries = append(amplifiedSeries, amplifyTimeSeriesRW2(ts, nameSymbolRef, suffixedValueRefs[replicaIdx]))
 		}
 
 		// Handle fractional part deterministically using hash
@@ -410,7 +418,7 @@ func amplifyRW2Request(req *mimirpb.WriteRequestRW2, amplificationFactor float64
 		if fractionalPart > 0 {
 			hash := hashSeriesLabelsRW2(ts.LabelsRefs, req.Symbols)
 			if shouldKeepSeries(hash, fractionalPart) {
-				amplifiedSeries = append(amplifiedSeries, amplifyTimeSeriesRW2(&ts, nameSymbolRef, suffixedValueRefs[lastReplica]))
+				amplifiedSeries = append(amplifiedSeries, amplifyTimeSeriesRW2(ts, nameSymbolRef, suffixedValueRefs[numReplicas-1]))
 			}
 		}
 	}
@@ -447,44 +455,43 @@ func hasLabelsToSuffix(labelRefs []uint32, nameSymbolRef uint32) bool {
 
 // collectValueRefsToSuffix collects all value refs that need suffixing.
 // It excludes values of __name__ labels (metric names should not be suffixed).
-func collectValueRefsToSuffix(timeseries []mimirpb.TimeSeriesRW2, nameSymbolRef uint32) map[uint32]struct{} {
-	valueRefs := make(map[uint32]struct{})
+// Returns a bool slice where valueRefs[ref] = true if ref needs suffixing,
+// and the count of unique value refs that need suffixing.
+func collectValueRefsToSuffix(timeseries []mimirpb.TimeSeriesRW2, nameSymbolRef uint32, numSymbols int) ([]bool, int) {
+	valueRefs := make([]bool, numSymbols)
+	count := 0
 	for _, ts := range timeseries {
-		// Bounds check: ensure we have complete name/value pairs (i+1 must be valid)
 		for i := 0; i+1 < len(ts.LabelsRefs); i += 2 {
 			labelNameRef := ts.LabelsRefs[i]
 			labelValueRef := ts.LabelsRefs[i+1]
-			if labelNameRef != nameSymbolRef {
-				valueRefs[labelValueRef] = struct{}{}
+			if labelNameRef != nameSymbolRef && int(labelValueRef) < numSymbols {
+				if !valueRefs[labelValueRef] {
+					count++
+				}
+				valueRefs[labelValueRef] = true
 			}
 		}
 	}
-	return valueRefs
+	return valueRefs, count
 }
 
 // amplifyTimeSeriesRW2 creates a copy of an RW 2.0 time series with label values suffixed.
 // This operates on uint32 label references, not actual label strings.
 // For each label (except __name__), the value ref is replaced with its suffixed version.
-// The suffixedValueRefs map should contain the pre-computed suffixed symbol refs.
-func amplifyTimeSeriesRW2(original *mimirpb.TimeSeriesRW2, nameSymbolRef uint32, suffixedValueRefs map[uint32]uint32) mimirpb.TimeSeriesRW2 {
-	// Copy the time series
+// The suffixedValueRefs slice maps original ref -> new ref for this replica.
+func amplifyTimeSeriesRW2(original *mimirpb.TimeSeriesRW2, nameSymbolRef uint32, suffixedValueRefs []uint32) mimirpb.TimeSeriesRW2 {
+	// Create the time series with shared references for immutable data
 	ts := mimirpb.TimeSeriesRW2{
-		// Same number of label refs - we're replacing values, not adding labels
-		LabelsRefs: make([]uint32, len(original.LabelsRefs)),
-		// Copy samples
-		Samples: make([]mimirpb.Sample, len(original.Samples)),
-		// Copy exemplars
-		Exemplars: make([]mimirpb.ExemplarRW2, len(original.Exemplars)),
-		// Copy histograms
-		Histograms: make([]mimirpb.Histogram, len(original.Histograms)),
-		// Copy metadata
+		LabelsRefs:       make([]uint32, len(original.LabelsRefs)),
+		Samples:          original.Samples,    // Share reference - samples are immutable
+		Exemplars:        original.Exemplars,  // Share reference - exemplars are immutable
+		Histograms:       original.Histograms, // Share reference - histograms are immutable
 		Metadata:         original.Metadata,
 		CreatedTimestamp: original.CreatedTimestamp,
 	}
 
 	// Copy and transform label refs.
 	// No re-sorting needed - label names unchanged.
-	// Bounds check: ensure we have complete name/value pairs (i+1 must be valid)
 	for i := 0; i+1 < len(original.LabelsRefs); i += 2 {
 		labelNameRef := original.LabelsRefs[i]
 		labelValueRef := original.LabelsRefs[i+1]
@@ -494,29 +501,14 @@ func amplifyTimeSeriesRW2(original *mimirpb.TimeSeriesRW2, nameSymbolRef uint32,
 		if labelNameRef == nameSymbolRef {
 			// Keep __name__ value unchanged
 			ts.LabelsRefs[i+1] = labelValueRef
-		} else if newRef, ok := suffixedValueRefs[labelValueRef]; ok {
+		} else if int(labelValueRef) < len(suffixedValueRefs) && suffixedValueRefs[labelValueRef] != 0 {
 			// Use suffixed value ref
-			ts.LabelsRefs[i+1] = newRef
+			ts.LabelsRefs[i+1] = suffixedValueRefs[labelValueRef]
 		} else {
-			// Keep original (shouldn't happen if we collected all value refs)
+			// Keep original
 			ts.LabelsRefs[i+1] = labelValueRef
 		}
 	}
-
-	// Deep copy samples
-	copy(ts.Samples, original.Samples)
-
-	// Deep copy exemplars
-	for i := range original.Exemplars {
-		ts.Exemplars[i] = mimirpb.ExemplarRW2{
-			LabelsRefs: append([]uint32(nil), original.Exemplars[i].LabelsRefs...),
-			Value:      original.Exemplars[i].Value,
-			Timestamp:  original.Exemplars[i].Timestamp,
-		}
-	}
-
-	// Deep copy histograms
-	copy(ts.Histograms, original.Histograms)
 
 	return ts
 }
