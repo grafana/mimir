@@ -304,7 +304,7 @@ func TestConfig_Validate(t *testing.T) {
 			"password":              func(cfg *Config) { cfg.KafkaConfig.SASL.Username = "mimir" },
 			"username and password": func(cfg *Config) {},
 		} {
-			tests[fmt.Sprintf("should fail if SASL %s is missing buth mechanism is %s", missing, mechanism)] = testCase{
+			tests[fmt.Sprintf("should fail if SASL %s is missing but mechanism is %s", missing, mechanism)] = testCase{
 				setup: func(cfg *Config) {
 					cfg.Enabled = true
 					cfg.KafkaConfig.Address = "localhost"
