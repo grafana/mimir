@@ -835,6 +835,9 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 			}
 		} else {
 			na := nargs - 1
+			if n.Func.Name == "info" {
+				na = 1
+			}
 			if na > len(n.Args) {
 				p.addParseErrf(n.PositionRange(), "expected at least %d argument(s) in call to %q, got %d", na, n.Func.Name, len(n.Args))
 			} else if nargsmax := na + n.Func.Variadic; n.Func.Variadic > 0 && nargsmax < len(n.Args) {

@@ -32,7 +32,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/multiaggregation"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
-	"github.com/grafana/mimir/pkg/streamingpromql/planning/metrics"
+	planningmetrics "github.com/grafana/mimir/pkg/streamingpromql/planning/metrics"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -613,9 +613,9 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 				vectorSelector.ReturnSampleTimestamps = true
 			}
 		case functions.FUNCTION_INFO:
-			// The InsertOmittedTargetInfoSelector AST pass ensures there are always 2 arguments.
-			// Check len(args) == 2 for safety in case the pass doesn't run (e.g., in tests).
-			if len(args) == 2 {
+			// The InsertOmittedTargetInfoSelector AST pass ensures there are always at least 2 arguments.
+			// Check len(args) for safety in case the pass doesn't run (e.g. in tests).
+			if len(args) >= 2 {
 				vectorSelector, ok := args[1].(*core.VectorSelector)
 				if !ok {
 					return nil, fmt.Errorf("expected second argument of info() to be a VectorSelector, got %T", args[1])
