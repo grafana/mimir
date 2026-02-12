@@ -16,7 +16,8 @@ Write-tee is a reverse proxy that fans out Prometheus remote write requests to m
   - Factor 3.5: Each time series gets 3 full copies + 50% probability of 4th copy (3.5x average)
   - Amplified copies have all label values (except `__name__`) suffixed with `_amp{N}` where N is the replica number
 - **Protocol Support**: Prometheus Remote Write 1.0 and 2.0
-- **Preferred Backend**: Required preferred backend whose response is returned to clients
+- **Preferred Backend**: Required preferred backend whose response is returned to clients (must be a mirrored backend, not amplified)
+- **Request Splitting**: Optionally split large amplified requests into multiple smaller requests to stay under series limits
 - **Fire-and-Forget**: Non-preferred backends receive requests asynchronously without blocking the response
 - **Backpressure Handling**: Bounded concurrent in-flight requests per non-preferred backend; requests dropped when at capacity
 - **Authentication**: Supports basic auth forwarding and per-backend auth override
@@ -80,6 +81,30 @@ Copy 2:       labels_refs=[1,2,3,6]  (method value changed to GET_amp3)
 
 The RW 2.0 approach only adds suffixed value strings to the symbol table and duplicates small uint32 arrays, avoiding massive memory expansion.
 
+### Request Splitting
+
+When amplification results in a large number of series, write-tee can split the amplified request into multiple smaller requests. This is controlled by `-backend.amplified-max-series-per-request`.
+
+Splitting is done at **replica boundaries** for efficiency:
+
+```
+Original request: 100 series
+Amplification factor: 5x (5 replicas)
+Max series per request: 250
+
+Resulting requests:
+- Request 1: Original (100) + Replica 2 (100) = 200 series
+- Request 2: Replica 3 (100) + Replica 4 (100) = 200 series
+- Request 3: Replica 5 (100) = 100 series
+```
+
+Benefits of replica-boundary splitting:
+- Each request has a minimal symbol table (RW 2.0) with only the suffixes it needs
+- No series are duplicated across requests
+- Predictable request sizes
+
+**Note**: Splitting only applies to amplified backends (fire-and-forget). The preferred backend never receives amplified or split requests.
+
 ## Configuration
 
 ### Backend Endpoints
@@ -102,7 +127,16 @@ The RW 2.0 approach only adds suffixed value strings to the symbol table and dup
 -backend.preferred string (REQUIRED)
     The hostname of the preferred backend. This backend's response is always
     returned to the client. Non-preferred backends receive fire-and-forget requests.
+    IMPORTANT: The preferred backend must be in -backend.mirrored-endpoints, not
+    -backend.amplified-endpoints. This ensures predictable responses to clients.
     Example: mimir-1
+
+-backend.amplified-max-series-per-request int
+    Maximum series per request when sending amplified writes to non-preferred backends.
+    If amplification results in more series, the request is split into multiple smaller
+    requests at replica boundaries. Set to 0 to disable splitting.
+    Default: 2000
+    Example: -backend.amplified-max-series-per-request=1000
 
 -backend.async-max-in-flight int
     Maximum concurrent in-flight requests per non-preferred backend (async fire-and-forget).

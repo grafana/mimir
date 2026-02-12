@@ -20,10 +20,11 @@ func TestAmplifyWriteRequest_RW2(t *testing.T) {
 		req := makeRW2RequestWithLabels(1)
 		compressed := compressRequest(t, &req)
 
-		result, err := AmplifyWriteRequest(compressed, 2.0, nil)
+		result, err := AmplifyWriteRequest(compressed, 2.0, 0, nil)
 		require.NoError(t, err)
 
-		decompressed := decompressAndUnmarshalRW2(t, result.Body)
+		require.Len(t, result.Bodies, 1, "should have single body without splitting")
+		decompressed := decompressAndUnmarshalRW2(t, result.Bodies[0])
 
 		// Verify results
 		assert.Equal(t, 2, len(decompressed.Timeseries), "should have 2 time series (original + 1 amplified copy)")
@@ -59,10 +60,11 @@ func TestAmplifyWriteRequest_RW2(t *testing.T) {
 		req := makeRW2RequestWithLabels(1)
 		compressed := compressRequest(t, &req)
 
-		result, err := AmplifyWriteRequest(compressed, 3.0, nil)
+		result, err := AmplifyWriteRequest(compressed, 3.0, 0, nil)
 		require.NoError(t, err)
 
-		decompressed := decompressAndUnmarshalRW2(t, result.Body)
+		require.Len(t, result.Bodies, 1, "should have single body without splitting")
+		decompressed := decompressAndUnmarshalRW2(t, result.Bodies[0])
 
 		// Verify results: 1 original + 2 copies = 3 total
 		assert.Equal(t, 3, len(decompressed.Timeseries))
@@ -98,11 +100,12 @@ func TestAmplifyWriteRequest_RW2(t *testing.T) {
 		// Run sampling multiple times - should get identical results each time
 		var firstSeriesCount int
 		for i := 0; i < 3; i++ {
-			result, err := AmplifyWriteRequest(compressed, 0.5, nil)
+			result, err := AmplifyWriteRequest(compressed, 0.5, 0, nil)
 			require.NoError(t, err)
 			assert.True(t, result.IsRW2)
 
-			decompressed := decompressAndUnmarshalRW2(t, result.Body)
+			require.Len(t, result.Bodies, 1, "should have single body without splitting")
+		decompressed := decompressAndUnmarshalRW2(t, result.Bodies[0])
 
 			if i == 0 {
 				firstSeriesCount = len(decompressed.Timeseries)
@@ -119,10 +122,11 @@ func TestAmplifyWriteRequest_RW2(t *testing.T) {
 		originalSymbols := req.SymbolsRW2
 		compressed := compressRequest(t, &req)
 
-		result, err := AmplifyWriteRequest(compressed, 0.5, nil)
+		result, err := AmplifyWriteRequest(compressed, 0.5, 0, nil)
 		require.NoError(t, err)
 
-		decompressed := decompressAndUnmarshalRW2(t, result.Body)
+		require.Len(t, result.Bodies, 1, "should have single body without splitting")
+		decompressed := decompressAndUnmarshalRW2(t, result.Bodies[0])
 
 		// Symbols table should be unchanged during sampling
 		assert.Equal(t, originalSymbols, decompressed.Symbols, "symbols table should not be modified during sampling")
@@ -136,10 +140,11 @@ func TestAmplifyWriteRequest_RW2(t *testing.T) {
 		// With 1.5x factor: 10 originals + ~5 fractional copies = ~15 total
 		var firstSeriesCount int
 		for i := 0; i < 3; i++ {
-			result, err := AmplifyWriteRequest(compressed, 1.5, nil)
+			result, err := AmplifyWriteRequest(compressed, 1.5, 0, nil)
 			require.NoError(t, err)
 
-			decompressed := decompressAndUnmarshalRW2(t, result.Body)
+			require.Len(t, result.Bodies, 1, "should have single body without splitting")
+		decompressed := decompressAndUnmarshalRW2(t, result.Bodies[0])
 
 			if i == 0 {
 				firstSeriesCount = len(decompressed.Timeseries)
@@ -157,10 +162,11 @@ func TestAmplifyWriteRequest_RW2(t *testing.T) {
 		req := makeRW2RequestWithoutName(1)
 		compressed := compressRequest(t, &req)
 
-		result, err := AmplifyWriteRequest(compressed, 2.0, nil)
+		result, err := AmplifyWriteRequest(compressed, 2.0, 0, nil)
 		require.NoError(t, err)
 
-		decompressed := decompressAndUnmarshalRW2(t, result.Body)
+		require.Len(t, result.Bodies, 1, "should have single body without splitting")
+		decompressed := decompressAndUnmarshalRW2(t, result.Bodies[0])
 
 		// Verify results: 1 original + 1 copy = 2 total
 		assert.Equal(t, 2, len(decompressed.Timeseries))
@@ -183,10 +189,11 @@ func TestAmplifyWriteRequest_RW1(t *testing.T) {
 		req := makeRW1RequestWithLabels(1)
 		compressed := compressRequest(t, &req)
 
-		result, err := AmplifyWriteRequest(compressed, 2.0, nil)
+		result, err := AmplifyWriteRequest(compressed, 2.0, 0, nil)
 		require.NoError(t, err)
 
-		decompressed := decompressAndUnmarshalRW1(t, result.Body)
+		require.Len(t, result.Bodies, 1, "should have single body without splitting")
+		decompressed := decompressAndUnmarshalRW1(t, result.Bodies[0])
 
 		// Verify results
 		assert.Equal(t, 2, len(decompressed.Timeseries), "should have 2 time series (original + 1 amplified copy)")
@@ -214,10 +221,11 @@ func TestAmplifyWriteRequest_RW1(t *testing.T) {
 		req := makeRW1RequestWithLabels(1)
 		compressed := compressRequest(t, &req)
 
-		result, err := AmplifyWriteRequest(compressed, 3.0, nil)
+		result, err := AmplifyWriteRequest(compressed, 3.0, 0, nil)
 		require.NoError(t, err)
 
-		decompressed := decompressAndUnmarshalRW1(t, result.Body)
+		require.Len(t, result.Bodies, 1, "should have single body without splitting")
+		decompressed := decompressAndUnmarshalRW1(t, result.Bodies[0])
 
 		// Verify results: 1 original + 2 copies = 3 total
 		assert.Equal(t, 3, len(decompressed.Timeseries))
@@ -247,10 +255,11 @@ func TestAmplifyWriteRequest_RW1(t *testing.T) {
 		// Run sampling multiple times - should get identical results each time
 		var firstSeriesCount int
 		for i := 0; i < 3; i++ {
-			result, err := AmplifyWriteRequest(compressed, 0.5, nil)
+			result, err := AmplifyWriteRequest(compressed, 0.5, 0, nil)
 			require.NoError(t, err)
 
-			decompressed := decompressAndUnmarshalRW1(t, result.Body)
+			require.Len(t, result.Bodies, 1, "should have single body without splitting")
+		decompressed := decompressAndUnmarshalRW1(t, result.Bodies[0])
 
 			if i == 0 {
 				firstSeriesCount = len(decompressed.Timeseries)
@@ -270,10 +279,11 @@ func TestAmplifyWriteRequest_RW1(t *testing.T) {
 		// With 1.5x factor: 10 originals + ~5 fractional copies = ~15 total
 		var firstSeriesCount int
 		for i := 0; i < 3; i++ {
-			result, err := AmplifyWriteRequest(compressed, 1.5, nil)
+			result, err := AmplifyWriteRequest(compressed, 1.5, 0, nil)
 			require.NoError(t, err)
 
-			decompressed := decompressAndUnmarshalRW1(t, result.Body)
+			require.Len(t, result.Bodies, 1, "should have single body without splitting")
+		decompressed := decompressAndUnmarshalRW1(t, result.Bodies[0])
 
 			if i == 0 {
 				firstSeriesCount = len(decompressed.Timeseries)
@@ -291,10 +301,11 @@ func TestAmplifyWriteRequest_RW1(t *testing.T) {
 		req := makeRW1RequestWithoutName(1)
 		compressed := compressRequest(t, &req)
 
-		result, err := AmplifyWriteRequest(compressed, 2.0, nil)
+		result, err := AmplifyWriteRequest(compressed, 2.0, 0, nil)
 		require.NoError(t, err)
 
-		decompressed := decompressAndUnmarshalRW1(t, result.Body)
+		require.Len(t, result.Bodies, 1, "should have single body without splitting")
+		decompressed := decompressAndUnmarshalRW1(t, result.Bodies[0])
 
 		// Verify results: 1 original + 1 copy = 2 total
 		assert.Equal(t, 2, len(decompressed.Timeseries))
@@ -448,4 +459,250 @@ func decompressAndUnmarshalRW2(t *testing.T, body []byte) *mimirpb.WriteRequestR
 	result, err := mimirpb.UnmarshalWriteRequestRW2Native(decompressed)
 	require.NoError(t, err)
 	return result
+}
+
+// TestAmplifyWriteRequest_Splitting tests request splitting at replica boundaries.
+func TestAmplifyWriteRequest_Splitting(t *testing.T) {
+	t.Run("no splitting when maxSeriesPerRequest is 0", func(t *testing.T) {
+		// 100 series with 5x amplification = 500 total series
+		req := makeRW1RequestWithLabels(100)
+		compressed := compressRequest(t, &req)
+
+		result, err := AmplifyWriteRequest(compressed, 5.0, 0, nil)
+		require.NoError(t, err)
+
+		// Should return single body when splitting is disabled
+		require.Len(t, result.Bodies, 1, "should have single body when maxSeriesPerRequest=0")
+		assert.True(t, result.WasAmplified)
+
+		decompressed := decompressAndUnmarshalRW1(t, result.Bodies[0])
+		assert.Equal(t, 500, len(decompressed.Timeseries))
+	})
+
+	t.Run("no splitting when under limit", func(t *testing.T) {
+		// 10 series with 3x amplification = 30 total series (under 100 limit)
+		req := makeRW1RequestWithLabels(10)
+		compressed := compressRequest(t, &req)
+
+		result, err := AmplifyWriteRequest(compressed, 3.0, 100, nil)
+		require.NoError(t, err)
+
+		// Should return single body when under limit
+		require.Len(t, result.Bodies, 1, "should have single body when under limit")
+
+		decompressed := decompressAndUnmarshalRW1(t, result.Bodies[0])
+		assert.Equal(t, 30, len(decompressed.Timeseries))
+	})
+
+	t.Run("RW1 splitting at replica boundaries", func(t *testing.T) {
+		// 100 series with 5x amplification = 500 total series
+		// With limit of 250, expect 2 batches:
+		// Batch 1: original (100) + replica 2 (100) = 200
+		// Batch 2: replica 3 (100) + replica 4 (100) = 200
+		// Batch 3: replica 5 (100) = 100
+		// Total: 500 series across 3 batches
+		req := makeRW1RequestWithLabels(100)
+		compressed := compressRequest(t, &req)
+
+		result, err := AmplifyWriteRequest(compressed, 5.0, 250, nil)
+		require.NoError(t, err)
+
+		assert.True(t, result.WasAmplified)
+		assert.Equal(t, 100, result.OriginalSeriesCount)
+		assert.Equal(t, 400, result.AmplifiedSeriesCount) // 500 total - 100 original
+
+		// Expect 3 batches
+		require.Len(t, result.Bodies, 3, "should split into 3 batches")
+
+		// Verify batch 1: originals + replica 2
+		batch1 := decompressAndUnmarshalRW1(t, result.Bodies[0])
+		assert.Equal(t, 200, len(batch1.Timeseries), "batch 1 should have originals + replica 2")
+
+		// Verify batch 2: replica 3 + replica 4
+		batch2 := decompressAndUnmarshalRW1(t, result.Bodies[1])
+		assert.Equal(t, 200, len(batch2.Timeseries), "batch 2 should have replica 3 + replica 4")
+
+		// Verify batch 3: replica 5
+		batch3 := decompressAndUnmarshalRW1(t, result.Bodies[2])
+		assert.Equal(t, 100, len(batch3.Timeseries), "batch 3 should have replica 5")
+
+		// Verify total series across all batches
+		totalSeries := len(batch1.Timeseries) + len(batch2.Timeseries) + len(batch3.Timeseries)
+		assert.Equal(t, 500, totalSeries)
+
+		// Verify batch 1 has originals (no suffix) and replica 2 (_amp2)
+		hasOriginal := false
+		hasAmp2 := false
+		for _, ts := range batch1.Timeseries {
+			labels := labelsToMap(ts.Labels)
+			if labels["job"] == "prometheus" {
+				hasOriginal = true
+			}
+			if labels["job"] == "prometheus_amp2" {
+				hasAmp2 = true
+			}
+		}
+		assert.True(t, hasOriginal, "batch 1 should have original series")
+		assert.True(t, hasAmp2, "batch 1 should have replica 2 series")
+
+		// Verify batch 2 has replica 3 and 4
+		hasAmp3 := false
+		hasAmp4 := false
+		for _, ts := range batch2.Timeseries {
+			labels := labelsToMap(ts.Labels)
+			if labels["job"] == "prometheus_amp3" {
+				hasAmp3 = true
+			}
+			if labels["job"] == "prometheus_amp4" {
+				hasAmp4 = true
+			}
+		}
+		assert.True(t, hasAmp3, "batch 2 should have replica 3 series")
+		assert.True(t, hasAmp4, "batch 2 should have replica 4 series")
+
+		// Verify batch 3 has replica 5
+		hasAmp5 := false
+		for _, ts := range batch3.Timeseries {
+			labels := labelsToMap(ts.Labels)
+			if labels["job"] == "prometheus_amp5" {
+				hasAmp5 = true
+			}
+		}
+		assert.True(t, hasAmp5, "batch 3 should have replica 5 series")
+	})
+
+	t.Run("RW2 splitting with minimal symbol tables", func(t *testing.T) {
+		// 100 series with 5x amplification, limit 250
+		req := makeRW2RequestWithLabels(100)
+		compressed := compressRequest(t, &req)
+
+		result, err := AmplifyWriteRequest(compressed, 5.0, 250, nil)
+		require.NoError(t, err)
+
+		assert.True(t, result.IsRW2)
+		assert.True(t, result.WasAmplified)
+
+		// Expect 3 batches
+		require.Len(t, result.Bodies, 3, "should split into 3 batches")
+
+		// Verify batch 1 has minimal symbol table (base + _amp2 suffixes)
+		batch1 := decompressAndUnmarshalRW2(t, result.Bodies[0])
+		assert.Contains(t, batch1.Symbols, "prometheus_amp2", "batch 1 should have _amp2 suffix")
+		assert.NotContains(t, batch1.Symbols, "prometheus_amp3", "batch 1 should NOT have _amp3 suffix")
+
+		// Verify batch 2 has minimal symbol table (base + _amp3 + _amp4 suffixes)
+		batch2 := decompressAndUnmarshalRW2(t, result.Bodies[1])
+		assert.Contains(t, batch2.Symbols, "prometheus_amp3", "batch 2 should have _amp3 suffix")
+		assert.Contains(t, batch2.Symbols, "prometheus_amp4", "batch 2 should have _amp4 suffix")
+		assert.NotContains(t, batch2.Symbols, "prometheus_amp2", "batch 2 should NOT have _amp2 suffix")
+		assert.NotContains(t, batch2.Symbols, "prometheus_amp5", "batch 2 should NOT have _amp5 suffix")
+
+		// Verify batch 3 has minimal symbol table (base + _amp5 suffixes)
+		batch3 := decompressAndUnmarshalRW2(t, result.Bodies[2])
+		assert.Contains(t, batch3.Symbols, "prometheus_amp5", "batch 3 should have _amp5 suffix")
+		assert.NotContains(t, batch3.Symbols, "prometheus_amp4", "batch 3 should NOT have _amp4 suffix")
+
+		// Verify total series count
+		totalSeries := len(batch1.Timeseries) + len(batch2.Timeseries) + len(batch3.Timeseries)
+		assert.Equal(t, 500, totalSeries)
+	})
+
+	t.Run("splitting with fractional amplification", func(t *testing.T) {
+		// 100 series with 3.5x amplification
+		// Original (100) + replica 2 (100) + replica 3 (100) + ~50 fractional = ~350 total
+		req := makeRW1RequestWithLabels(100)
+		compressed := compressRequest(t, &req)
+
+		result, err := AmplifyWriteRequest(compressed, 3.5, 200, nil)
+		require.NoError(t, err)
+
+		// Should split into multiple batches
+		require.Greater(t, len(result.Bodies), 1, "should split into multiple batches")
+
+		// Verify total series count
+		totalSeries := 0
+		for _, body := range result.Bodies {
+			decompressed := decompressAndUnmarshalRW1(t, body)
+			totalSeries += len(decompressed.Timeseries)
+		}
+
+		// Total should be original + amplified
+		expectedTotal := result.OriginalSeriesCount + result.AmplifiedSeriesCount
+		assert.Equal(t, expectedTotal, totalSeries)
+	})
+
+	t.Run("exact limit boundary", func(t *testing.T) {
+		// 50 series with 2x amplification = 100 total, exactly at limit
+		req := makeRW1RequestWithLabels(50)
+		compressed := compressRequest(t, &req)
+
+		result, err := AmplifyWriteRequest(compressed, 2.0, 100, nil)
+		require.NoError(t, err)
+
+		// Should NOT split when exactly at limit
+		require.Len(t, result.Bodies, 1, "should not split when exactly at limit")
+
+		decompressed := decompressAndUnmarshalRW1(t, result.Bodies[0])
+		assert.Equal(t, 100, len(decompressed.Timeseries))
+	})
+
+	t.Run("empty request", func(t *testing.T) {
+		req := makeRW1RequestWithLabels(0)
+		compressed := compressRequest(t, &req)
+
+		result, err := AmplifyWriteRequest(compressed, 5.0, 100, nil)
+		require.NoError(t, err)
+
+		// Empty request should return single body
+		require.Len(t, result.Bodies, 1)
+	})
+
+	t.Run("series with only __name__ are not amplified but included", func(t *testing.T) {
+		// Create series with only __name__ (cannot be amplified)
+		req := makeRW1Request(50) // These have only __name__ label
+		compressed := compressRequest(t, &req)
+
+		result, err := AmplifyWriteRequest(compressed, 5.0, 100, nil)
+		require.NoError(t, err)
+
+		// Should have single body since no amplification happens
+		require.Len(t, result.Bodies, 1)
+
+		decompressed := decompressAndUnmarshalRW1(t, result.Bodies[0])
+		// Original series should be present, but no copies
+		assert.Equal(t, 50, len(decompressed.Timeseries))
+	})
+}
+
+// TestComputeReplicaBatches tests the batch computation logic.
+func TestComputeReplicaBatches(t *testing.T) {
+	t.Run("all replicas fit in one batch", func(t *testing.T) {
+		batches := computeReplicaBatches(10, 10, 3, 0, 100)
+		require.Len(t, batches, 1)
+		assert.Equal(t, []int{1, 2, 3}, batches[0])
+	})
+
+	t.Run("each replica in separate batch", func(t *testing.T) {
+		batches := computeReplicaBatches(100, 100, 3, 0, 100)
+		require.Len(t, batches, 3)
+		assert.Equal(t, []int{1}, batches[0])
+		assert.Equal(t, []int{2}, batches[1])
+		assert.Equal(t, []int{3}, batches[2])
+	})
+
+	t.Run("two replicas per batch", func(t *testing.T) {
+		batches := computeReplicaBatches(100, 100, 5, 0, 250)
+		require.Len(t, batches, 3)
+		assert.Equal(t, []int{1, 2}, batches[0])
+		assert.Equal(t, []int{3, 4}, batches[1])
+		assert.Equal(t, []int{5}, batches[2])
+	})
+
+	t.Run("with fractional copies", func(t *testing.T) {
+		// 100 originals, 100 amplifiable, 3 replicas, 50 fractional copies
+		batches := computeReplicaBatches(100, 100, 3, 50, 200)
+		require.Len(t, batches, 2)
+		assert.Equal(t, []int{1, 2}, batches[0])       // 100 + 100 = 200
+		assert.Equal(t, []int{3}, batches[1])         // 50 fractional copies
+	})
 }

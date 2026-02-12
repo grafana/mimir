@@ -22,12 +22,13 @@ const (
 )
 
 type ProxyEndpoint struct {
-	backends             []ProxyBackend
-	metrics              *ProxyMetrics
-	logger               log.Logger
-	amplificationFactor  float64
-	amplificationTracker *AmplificationTracker
-	asyncDispatcher      *AsyncBackendDispatcher
+	backends                     []ProxyBackend
+	metrics                      *ProxyMetrics
+	logger                       log.Logger
+	amplificationFactor          float64
+	amplifiedMaxSeriesPerRequest int
+	amplificationTracker         *AmplificationTracker
+	asyncDispatcher              *AsyncBackendDispatcher
 
 	// The preferred backend (required).
 	preferredBackend ProxyBackend
@@ -35,7 +36,7 @@ type ProxyEndpoint struct {
 	route Route
 }
 
-func NewProxyEndpoint(backends []ProxyBackend, route Route, metrics *ProxyMetrics, logger log.Logger, amplificationFactor float64, amplificationTracker *AmplificationTracker, asyncDispatcher *AsyncBackendDispatcher) (*ProxyEndpoint, error) {
+func NewProxyEndpoint(backends []ProxyBackend, route Route, metrics *ProxyMetrics, logger log.Logger, amplificationFactor float64, amplifiedMaxSeriesPerRequest int, amplificationTracker *AmplificationTracker, asyncDispatcher *AsyncBackendDispatcher) (*ProxyEndpoint, error) {
 	var preferredBackend ProxyBackend
 	for _, backend := range backends {
 		if backend.Preferred() {
@@ -49,14 +50,15 @@ func NewProxyEndpoint(backends []ProxyBackend, route Route, metrics *ProxyMetric
 	}
 
 	return &ProxyEndpoint{
-		backends:             backends,
-		route:                route,
-		metrics:              metrics,
-		logger:               logger,
-		amplificationFactor:  amplificationFactor,
-		amplificationTracker: amplificationTracker,
-		preferredBackend:     preferredBackend,
-		asyncDispatcher:      asyncDispatcher,
+		backends:                     backends,
+		route:                        route,
+		metrics:                      metrics,
+		logger:                       logger,
+		amplificationFactor:          amplificationFactor,
+		amplifiedMaxSeriesPerRequest: amplifiedMaxSeriesPerRequest,
+		amplificationTracker:         amplificationTracker,
+		preferredBackend:             preferredBackend,
+		asyncDispatcher:              asyncDispatcher,
 	}, nil
 }
 
@@ -167,6 +169,9 @@ func (p *ProxyEndpoint) ServeHTTPPassthrough(w http.ResponseWriter, r *http.Requ
 // dispatchToNonPreferredBackends sends the request to all non-preferred backends
 // asynchronously via the async dispatcher. This is fire-and-forget - we don't wait
 // for responses from non-preferred backends.
+//
+// For amplified backends with splitting enabled, multiple requests may be dispatched
+// per backend (one for each split body).
 func (p *ProxyEndpoint) dispatchToNonPreferredBackends(ctx context.Context, req *http.Request, body []byte, logger *spanlogger.SpanLogger) {
 	if p.asyncDispatcher == nil {
 		return
@@ -178,8 +183,13 @@ func (p *ProxyEndpoint) dispatchToNonPreferredBackends(ctx context.Context, req 
 			continue
 		}
 
-		bodyToSend := p.amplifyWriteRequestBody(body, backend, logger)
-		p.asyncDispatcher.Dispatch(ctx, req, bodyToSend, backend, p.route.RouteName)
+		// Get amplified bodies (may be multiple if splitting occurred)
+		bodiesToSend := p.amplifyWriteRequestBodies(body, backend, logger)
+
+		// Dispatch each body to the backend
+		for _, bodyToSend := range bodiesToSend {
+			p.asyncDispatcher.Dispatch(ctx, req, bodyToSend, backend, p.route.RouteName)
+		}
 	}
 }
 
@@ -198,7 +208,9 @@ func (p *ProxyEndpoint) executePreferredBackendRequest(ctx context.Context, req 
 	logger.SetSpanAndLogTag("preferred", "true")
 	logger.SetSpanAndLogTag("backend_type", fmt.Sprintf("%d", b.BackendType()))
 
-	bodyToSend := p.amplifyWriteRequestBody(body, b, logger)
+	// The preferred backend is never amplified (validated at startup), so we always get a single body.
+	bodiesToSend := p.amplifyWriteRequestBodies(body, b, logger)
+	bodyToSend := bodiesToSend[0]
 	elapsed, status, respBody, contentType, err := b.ForwardRequest(ctx, req, io.NopCloser(bytes.NewReader(bodyToSend)))
 
 	// Use the actual Content-Type from the backend, with a fallback for Mimir write endpoints
@@ -236,17 +248,18 @@ func (p *ProxyEndpoint) executePreferredBackendRequest(ctx context.Context, req 
 	return res
 }
 
-// amplifyWriteRequestBody amplifies the request body if needed and logs stats on success.
-// Returns the body to use (amplified or original on error/not needed).
-func (p *ProxyEndpoint) amplifyWriteRequestBody(body []byte, backend ProxyBackend, logger *spanlogger.SpanLogger) []byte {
+// amplifyWriteRequestBodies amplifies the request body if needed and logs stats on success.
+// Returns a slice of bodies to send (may be multiple if splitting occurred).
+// For non-amplified backends or errors, returns a single-element slice with the original body.
+func (p *ProxyEndpoint) amplifyWriteRequestBodies(body []byte, backend ProxyBackend, logger *spanlogger.SpanLogger) [][]byte {
 	if backend.BackendType() != BackendTypeAmplified || p.amplificationFactor == 1.0 || len(body) == 0 {
-		return body
+		return [][]byte{body}
 	}
 
-	result, err := AmplifyWriteRequest(body, p.amplificationFactor, p.amplificationTracker)
+	result, err := AmplifyWriteRequest(body, p.amplificationFactor, p.amplifiedMaxSeriesPerRequest, p.amplificationTracker)
 	if err != nil {
 		level.Error(logger).Log("msg", "Failed to amplify write request", "backend", backend.Name(), "err", err)
-		return body // Fall back to original
+		return [][]byte{body} // Fall back to original
 	}
 
 	// Log amplification stats
@@ -263,9 +276,16 @@ func (p *ProxyEndpoint) amplifyWriteRequestBody(body []byte, backend ProxyBacken
 		logger.SetSpanAndLogTag("total_rw1_series", rw1)
 		logger.SetSpanAndLogTag("total_rw2_series", rw2)
 		logger.SetSpanAndLogTag("original_size", len(body))
-		logger.SetSpanAndLogTag("amplified_size", len(result.Body))
 		logger.SetSpanAndLogTag("original_series_count", result.OriginalSeriesCount)
 		logger.SetSpanAndLogTag("amplified_series_count", result.AmplifiedSeriesCount)
+		logger.SetSpanAndLogTag("split_request_count", len(result.Bodies))
+
+		// Log total amplified size across all bodies
+		totalAmplifiedSize := 0
+		for _, b := range result.Bodies {
+			totalAmplifiedSize += len(b)
+		}
+		logger.SetSpanAndLogTag("amplified_size", totalAmplifiedSize)
 	} else if result.IsRW2 {
 		// This should not happen anymore - RW 2.0 is now amplified
 		_, _, rw2Ratio := p.amplificationTracker.GetStats()
@@ -274,7 +294,7 @@ func (p *ProxyEndpoint) amplifyWriteRequestBody(body []byte, backend ProxyBacken
 		logger.SetSpanAndLogTag("rw2_ratio", fmt.Sprintf("%.3f", rw2Ratio))
 	}
 
-	return result.Body
+	return result.Bodies
 }
 
 type backendResponse struct {

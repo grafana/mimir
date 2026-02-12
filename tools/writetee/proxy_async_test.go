@@ -55,7 +55,7 @@ func TestAsyncBackendDispatcher_ShouldNotBlockOnNonPreferredBackends(t *testing.
 		Methods:   []string{"POST"},
 	}
 
-	endpoint, err := NewProxyEndpoint(backends, route, metrics, logger, 1.0, nil, asyncDispatcher)
+	endpoint, err := NewProxyEndpoint(backends, route, metrics, logger, 1.0, 0, nil, asyncDispatcher)
 	require.NoError(t, err)
 
 	// Create a test request

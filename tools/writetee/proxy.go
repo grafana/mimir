@@ -32,13 +32,14 @@ const (
 type ProxyConfig struct {
 	Server server.Config
 
-	BackendMirroredEndpoints   string
-	BackendAmplifiedEndpoints  string
-	AmplificationFactor        float64
-	PreferredBackend           string
-	BackendReadTimeout         time.Duration
-	BackendSkipTLSVerify       bool
-	AsyncMaxInFlightPerBackend int
+	BackendMirroredEndpoints      string
+	BackendAmplifiedEndpoints     string
+	AmplificationFactor           float64
+	AmplifiedMaxSeriesPerRequest  int
+	PreferredBackend              string
+	BackendReadTimeout            time.Duration
+	BackendSkipTLSVerify          bool
+	AsyncMaxInFlightPerBackend    int
 }
 
 // registerServerFlagsWithChangedDefaultValues emulates the same method in pkg/mimir/mimir.go,
@@ -88,6 +89,11 @@ func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
 			"Values < 1.0 sample (reduce) metrics: 0.1 means only 10% of metrics are sent. "+
 			"Amplified metrics have all label values (except __name__) suffixed with _amp{N} where N is the replica number. "+
 			"Only applies to backends specified in backend.amplified-endpoints.",
+	)
+	f.IntVar(&cfg.AmplifiedMaxSeriesPerRequest, "backend.amplified-max-series-per-request", 2000,
+		"Maximum series per request when sending amplified writes to non-preferred backends. "+
+			"If amplification results in more series, the request is split into multiple smaller requests. "+
+			"Set to 0 to disable splitting.",
 	)
 	f.BoolVar(&cfg.BackendSkipTLSVerify, "backend.skip-tls-verify", false, "Skip TLS verification on backend targets.")
 	f.StringVar(&cfg.PreferredBackend, "backend.preferred", "", "The hostname of the preferred backend. Required. Non-preferred backends receive fire-and-forget requests.")
@@ -193,6 +199,14 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 		return nil, fmt.Errorf("the preferred backend (hostname) has not been found among the list of configured backends")
 	}
 
+	// The preferred backend must not be an amplified backend.
+	// This ensures the client always gets a predictable response from the preferred backend.
+	for _, b := range p.backends {
+		if b.Preferred() && b.BackendType() == BackendTypeAmplified {
+			return nil, errors.New("the preferred backend cannot be an amplified backend; move it to backend.mirrored-endpoints")
+		}
+	}
+
 	// At least 2 backends are suggested
 	if len(p.backends) < 2 {
 		level.Warn(p.logger).Log("msg", "The proxy is running with only 1 backend. At least 2 backends are required to fulfil the purpose of the proxy and fan out writes.")
@@ -258,7 +272,7 @@ func (p *Proxy) Start() error {
 
 	// register fan-out routes (explicit endpoints we want to mirror)
 	for _, route := range p.routes {
-		endpoint, err := NewProxyEndpoint(p.backends, route, p.metrics, p.logger, p.cfg.AmplificationFactor, p.amplificationTracker, p.asyncDispatcher)
+		endpoint, err := NewProxyEndpoint(p.backends, route, p.metrics, p.logger, p.cfg.AmplificationFactor, p.cfg.AmplifiedMaxSeriesPerRequest, p.amplificationTracker, p.asyncDispatcher)
 		if err != nil {
 			return err
 		}
@@ -272,7 +286,7 @@ func (p *Proxy) Start() error {
 		RouteName: "passthrough",
 		Methods:   []string{"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"},
 	}
-	passthroughEndpoint, err := NewProxyEndpoint(p.backends, passthroughRoute, p.metrics, p.logger, p.cfg.AmplificationFactor, p.amplificationTracker, p.asyncDispatcher)
+	passthroughEndpoint, err := NewProxyEndpoint(p.backends, passthroughRoute, p.metrics, p.logger, p.cfg.AmplificationFactor, p.cfg.AmplifiedMaxSeriesPerRequest, p.amplificationTracker, p.asyncDispatcher)
 	if err != nil {
 		return err
 	}

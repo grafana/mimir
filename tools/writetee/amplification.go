@@ -124,7 +124,7 @@ func (t *AmplificationTracker) GetStats() (rw1Series, rw2Series int64, rw2Ratio 
 
 // AmplificationResult contains the result of amplification along with metadata.
 type AmplificationResult struct {
-	Body                 []byte
+	Bodies               [][]byte // Split request bodies (or single body if no splitting)
 	OriginalSeriesCount  int
 	AmplifiedSeriesCount int
 	IsRW2                bool
@@ -155,11 +155,21 @@ type AmplificationResult struct {
 // Both RW 1.0 and RW 2.0 requests are processed using the same amplification factor.
 // RW 2.0 requests are kept in native RW 2.0 format (avoiding memory expansion).
 // If tracker is provided, series counts are recorded for observability.
-// Returns AmplificationResult with metadata about what was done.
-func AmplifyWriteRequest(body []byte, amplificationFactor float64, tracker *AmplificationTracker) (AmplificationResult, error) {
+//
+// maxSeriesPerRequest controls request splitting for amplification (factor > 1.0):
+//   - 0: No splitting (all series in a single body)
+//   - >0: Split into multiple requests if amplified series count exceeds this limit
+//
+// Splitting is done at replica boundaries for efficiency:
+//   - Request 1: original series + replica 2 (up to limit)
+//   - Request 2: replica 3 + replica 4 (up to limit)
+//   - etc.
+//
+// Returns AmplificationResult with Bodies slice containing one or more request bodies.
+func AmplifyWriteRequest(body []byte, amplificationFactor float64, maxSeriesPerRequest int, tracker *AmplificationTracker) (AmplificationResult, error) {
 	if amplificationFactor == 1.0 {
 		return AmplificationResult{
-			Body:                 body,
+			Bodies:               [][]byte{body},
 			OriginalSeriesCount:  0, // Unknown without unmarshaling
 			AmplifiedSeriesCount: 0,
 			IsRW2:                false,
@@ -222,7 +232,7 @@ func AmplifyWriteRequest(body []byte, amplificationFactor float64, tracker *Ampl
 			sampledBody := snappy.Encode(nil, sampledProto)
 
 			return AmplificationResult{
-				Body:                 sampledBody,
+				Bodies:               [][]byte{sampledBody},
 				OriginalSeriesCount:  originalSeriesCount,
 				AmplifiedSeriesCount: len(sampledSeries) - originalSeriesCount, // Negative for sampling
 				IsRW2:                true,
@@ -231,21 +241,16 @@ func AmplifyWriteRequest(body []byte, amplificationFactor float64, tracker *Ampl
 		}
 
 		// Amplify RW 2.0 data in native format (avoids 12.5x memory expansion)
-		amplifiedRW2 := amplifyRW2Request(rw2Req, amplificationFactor)
-
-		// Marshal back to protobuf
-		amplifiedProto, err := proto.Marshal(&amplifiedRW2)
+		// Use splitting at replica boundaries if maxSeriesPerRequest is set
+		bodies, totalAmplifiedSeries, err := amplifyRW2RequestWithSplitting(rw2Req, amplificationFactor, maxSeriesPerRequest)
 		if err != nil {
-			return AmplificationResult{}, fmt.Errorf("failed to marshal amplified RW 2.0 write request: %w", err)
+			return AmplificationResult{}, err
 		}
 
-		// Compress back with snappy
-		amplifiedBody := snappy.Encode(nil, amplifiedProto)
-
 		return AmplificationResult{
-			Body:                 amplifiedBody,
+			Bodies:               bodies,
 			OriginalSeriesCount:  originalSeriesCount,
-			AmplifiedSeriesCount: len(amplifiedRW2.Timeseries) - originalSeriesCount,
+			AmplifiedSeriesCount: totalAmplifiedSeries - originalSeriesCount,
 			IsRW2:                true,
 			WasAmplified:         true,
 		}, nil
@@ -282,7 +287,7 @@ func AmplifyWriteRequest(body []byte, amplificationFactor float64, tracker *Ampl
 		sampledBody := snappy.Encode(nil, sampledProto)
 
 		return AmplificationResult{
-			Body:                 sampledBody,
+			Bodies:               [][]byte{sampledBody},
 			OriginalSeriesCount:  originalSeriesCount,
 			AmplifiedSeriesCount: len(sampledSeries) - originalSeriesCount, // Negative for sampling
 			IsRW2:                false,
@@ -290,53 +295,16 @@ func AmplifyWriteRequest(body []byte, amplificationFactor float64, tracker *Ampl
 		}, nil
 	}
 
-	// Calculate copies based on amplification factor (factor > 1.0)
-	fullCopies := int(math.Floor(amplificationFactor))
-	fractionalPart := amplificationFactor - float64(fullCopies)
-
-	// RW 1.0: amplify using Timeseries
-	amplifiedSeries := make([]mimirpb.PreallocTimeseries, 0, len(req.Timeseries)*fullCopies)
-
-	for _, ts := range req.Timeseries {
-		// Keep the original (considered replica 1, no suffix)
-		amplifiedSeries = append(amplifiedSeries, ts)
-
-		// Skip amplification for series with only __name__ label (nothing to suffix)
-		if hasOnlyNameLabel(ts.Labels) {
-			continue
-		}
-
-		// Create full copies with suffixed label values (replicas 2, 3, ...)
-		for i := 1; i < fullCopies; i++ {
-			amplifiedSeries = append(amplifiedSeries, amplifyTimeSeries(&ts, i+1))
-		}
-
-		// Handle fractional part deterministically using hash
-		// This ensures the same series always get the fractional copy
-		if fractionalPart > 0 {
-			hash := hashSeriesLabels(ts.Labels)
-			if shouldKeepSeries(hash, fractionalPart) {
-				amplifiedSeries = append(amplifiedSeries, amplifyTimeSeries(&ts, fullCopies+1))
-			}
-		}
-	}
-
-	// Replace the time series in the request
-	req.Timeseries = amplifiedSeries
-
-	// Marshal back to protobuf
-	amplifiedProto, err := proto.Marshal(&req)
+	// Amplify RW 1.0 data with splitting at replica boundaries if maxSeriesPerRequest is set
+	bodies, totalAmplifiedSeries, err := amplifyRW1RequestWithSplitting(&req, amplificationFactor, maxSeriesPerRequest)
 	if err != nil {
-		return AmplificationResult{}, fmt.Errorf("failed to marshal amplified write request: %w", err)
+		return AmplificationResult{}, err
 	}
-
-	// Compress back with snappy
-	amplifiedBody := snappy.Encode(nil, amplifiedProto)
 
 	return AmplificationResult{
-		Body:                 amplifiedBody,
+		Bodies:               bodies,
 		OriginalSeriesCount:  originalSeriesCount,
-		AmplifiedSeriesCount: len(amplifiedSeries) - originalSeriesCount,
+		AmplifiedSeriesCount: totalAmplifiedSeries - originalSeriesCount,
 		IsRW2:                false,
 		WasAmplified:         true,
 	}, nil
@@ -578,4 +546,319 @@ func amplifyTimeSeries(original *mimirpb.PreallocTimeseries, replicaNum int) mim
 	}
 
 	return ts
+}
+
+// amplifyRW1RequestWithSplitting amplifies an RW 1.0 request with optional splitting at replica boundaries.
+// If maxSeriesPerRequest is 0 or the total series count doesn't exceed the limit, a single body is returned.
+// Otherwise, the amplified series are split into multiple request bodies at replica boundaries.
+//
+// Splitting at replica boundaries means:
+// - Request 1: original series + replica 2 (up to limit)
+// - Request 2: replica 3 + replica 4 (up to limit)
+// - etc.
+//
+// Returns the list of compressed request bodies and the total amplified series count.
+func amplifyRW1RequestWithSplitting(req *mimirpb.WriteRequest, amplificationFactor float64, maxSeriesPerRequest int) ([][]byte, int, error) {
+	fullCopies := int(math.Floor(amplificationFactor))
+	fractionalPart := amplificationFactor - float64(fullCopies)
+	originalSeriesCount := len(req.Timeseries)
+
+	// Determine the last replica number needed
+	lastReplica := fullCopies
+	if fractionalPart > 0 {
+		lastReplica++
+	}
+
+	// Count amplifiable series (those with more than just __name__ label)
+	amplifiableSeries := 0
+	for _, ts := range req.Timeseries {
+		if !hasOnlyNameLabel(ts.Labels) {
+			amplifiableSeries++
+		}
+	}
+
+	// Calculate series that will get fractional copies (deterministic)
+	fractionalCopies := 0
+	if fractionalPart > 0 {
+		for _, ts := range req.Timeseries {
+			if hasOnlyNameLabel(ts.Labels) {
+				continue
+			}
+			hash := hashSeriesLabels(ts.Labels)
+			if shouldKeepSeries(hash, fractionalPart) {
+				fractionalCopies++
+			}
+		}
+	}
+
+	// Calculate total amplified series count
+	// Original + (fullCopies-1 additional copies for amplifiable series) + fractional copies
+	totalSeriesCount := originalSeriesCount + amplifiableSeries*(fullCopies-1) + fractionalCopies
+
+	// If no splitting needed (disabled or under limit), use single body path
+	if maxSeriesPerRequest <= 0 || totalSeriesCount <= maxSeriesPerRequest {
+		amplifiedSeries := make([]mimirpb.PreallocTimeseries, 0, totalSeriesCount)
+
+		for _, ts := range req.Timeseries {
+			// Keep the original (considered replica 1, no suffix)
+			amplifiedSeries = append(amplifiedSeries, ts)
+
+			// Skip amplification for series with only __name__ label (nothing to suffix)
+			if hasOnlyNameLabel(ts.Labels) {
+				continue
+			}
+
+			// Create full copies with suffixed label values (replicas 2, 3, ...)
+			for replica := 2; replica <= fullCopies; replica++ {
+				amplifiedSeries = append(amplifiedSeries, amplifyTimeSeries(&ts, replica))
+			}
+
+			// Handle fractional part deterministically using hash
+			if fractionalPart > 0 {
+				hash := hashSeriesLabels(ts.Labels)
+				if shouldKeepSeries(hash, fractionalPart) {
+					amplifiedSeries = append(amplifiedSeries, amplifyTimeSeries(&ts, lastReplica))
+				}
+			}
+		}
+
+		req.Timeseries = amplifiedSeries
+
+		amplifiedProto, err := proto.Marshal(req)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to marshal amplified write request: %w", err)
+		}
+
+		return [][]byte{snappy.Encode(nil, amplifiedProto)}, len(amplifiedSeries), nil
+	}
+
+	// Splitting mode: group replicas into batches at replica boundaries
+	// Each batch contains complete replicas, starting with originals in the first batch
+	var bodies [][]byte
+	currentBatchSeries := make([]mimirpb.PreallocTimeseries, 0, maxSeriesPerRequest)
+
+	// Determine replica assignments to batches
+	// Start with replica 1 (originals)
+	replicaBatches := computeReplicaBatches(originalSeriesCount, amplifiableSeries, lastReplica, fractionalCopies, maxSeriesPerRequest)
+
+	for batchIdx, batch := range replicaBatches {
+		currentBatchSeries = currentBatchSeries[:0] // Reset slice
+
+		for _, replicaNum := range batch {
+			for _, ts := range req.Timeseries {
+				if replicaNum == 1 {
+					// Original series (replica 1)
+					currentBatchSeries = append(currentBatchSeries, ts)
+				} else {
+					// Skip series that can't be amplified
+					if hasOnlyNameLabel(ts.Labels) {
+						continue
+					}
+
+					// For fractional replica, check if this series gets it
+					if replicaNum == lastReplica && fractionalPart > 0 {
+						hash := hashSeriesLabels(ts.Labels)
+						if !shouldKeepSeries(hash, fractionalPart) {
+							continue
+						}
+					}
+
+					currentBatchSeries = append(currentBatchSeries, amplifyTimeSeries(&ts, replicaNum))
+				}
+			}
+		}
+
+		if len(currentBatchSeries) == 0 {
+			continue
+		}
+
+		// Marshal this batch
+		batchReq := mimirpb.WriteRequest{Timeseries: currentBatchSeries}
+		batchProto, err := proto.Marshal(&batchReq)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to marshal amplified write request batch %d: %w", batchIdx, err)
+		}
+
+		bodies = append(bodies, snappy.Encode(nil, batchProto))
+	}
+
+	return bodies, totalSeriesCount, nil
+}
+
+// computeReplicaBatches groups replicas into batches based on maxSeriesPerRequest.
+// Returns a slice of batches, where each batch is a slice of replica numbers to include.
+func computeReplicaBatches(originalSeriesCount, amplifiableSeries, lastReplica, fractionalCopies, maxSeriesPerRequest int) [][]int {
+	var batches [][]int
+	var currentBatch []int
+	currentBatchSeriesCount := 0
+
+	for replica := 1; replica <= lastReplica; replica++ {
+		// Calculate how many series this replica contributes
+		var replicaSeriesCount int
+		if replica == 1 {
+			replicaSeriesCount = originalSeriesCount
+		} else if replica == lastReplica && fractionalCopies > 0 && fractionalCopies < amplifiableSeries {
+			// Fractional replica - only some series get this copy
+			replicaSeriesCount = fractionalCopies
+		} else {
+			replicaSeriesCount = amplifiableSeries
+		}
+
+		// Check if adding this replica exceeds the limit
+		if currentBatchSeriesCount > 0 && currentBatchSeriesCount+replicaSeriesCount > maxSeriesPerRequest {
+			// Start a new batch
+			batches = append(batches, currentBatch)
+			currentBatch = nil
+			currentBatchSeriesCount = 0
+		}
+
+		currentBatch = append(currentBatch, replica)
+		currentBatchSeriesCount += replicaSeriesCount
+	}
+
+	// Don't forget the last batch
+	if len(currentBatch) > 0 {
+		batches = append(batches, currentBatch)
+	}
+
+	return batches
+}
+
+// amplifyRW2RequestWithSplitting amplifies an RW 2.0 request with optional splitting at replica boundaries.
+// If maxSeriesPerRequest is 0 or the total series count doesn't exceed the limit, a single body is returned.
+// Otherwise, the amplified series are split into multiple request bodies at replica boundaries.
+//
+// Each split request has its own minimal symbol table containing only the suffixes for its replicas.
+//
+// Returns the list of compressed request bodies and the total amplified series count.
+func amplifyRW2RequestWithSplitting(req *mimirpb.WriteRequestRW2, amplificationFactor float64, maxSeriesPerRequest int) ([][]byte, int, error) {
+	fullCopies := int(math.Floor(amplificationFactor))
+	fractionalPart := amplificationFactor - float64(fullCopies)
+	originalSeriesCount := len(req.Timeseries)
+
+	// Determine the last replica number needed
+	lastReplica := fullCopies
+	if fractionalPart > 0 {
+		lastReplica++
+	}
+
+	// Find __name__ symbol ref
+	nameSymbolRef := findSymbolRef(req.Symbols, model.MetricNameLabel)
+
+	// Count amplifiable series
+	amplifiableSeries := 0
+	for _, ts := range req.Timeseries {
+		if hasLabelsToSuffix(ts.LabelsRefs, nameSymbolRef) {
+			amplifiableSeries++
+		}
+	}
+
+	// Calculate series that will get fractional copies (deterministic)
+	fractionalCopies := 0
+	if fractionalPart > 0 {
+		for _, ts := range req.Timeseries {
+			if !hasLabelsToSuffix(ts.LabelsRefs, nameSymbolRef) {
+				continue
+			}
+			hash := hashSeriesLabelsRW2(ts.LabelsRefs, req.Symbols)
+			if shouldKeepSeries(hash, fractionalPart) {
+				fractionalCopies++
+			}
+		}
+	}
+
+	// Calculate total amplified series count
+	totalSeriesCount := originalSeriesCount + amplifiableSeries*(fullCopies-1) + fractionalCopies
+
+	// If no splitting needed (disabled or under limit), use the existing single body path
+	if maxSeriesPerRequest <= 0 || totalSeriesCount <= maxSeriesPerRequest {
+		amplifiedRW2 := amplifyRW2Request(req, amplificationFactor)
+
+		amplifiedProto, err := proto.Marshal(&amplifiedRW2)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to marshal amplified RW 2.0 write request: %w", err)
+		}
+
+		return [][]byte{snappy.Encode(nil, amplifiedProto)}, len(amplifiedRW2.Timeseries), nil
+	}
+
+	// Splitting mode: group replicas into batches at replica boundaries
+	// Each batch has its own minimal symbol table
+	replicaBatches := computeReplicaBatches(originalSeriesCount, amplifiableSeries, lastReplica, fractionalCopies, maxSeriesPerRequest)
+
+	// Collect value refs that need suffixing
+	valueRefsToSuffix := collectValueRefsToSuffix(req.Timeseries, nameSymbolRef)
+
+	var bodies [][]byte
+
+	for batchIdx, batch := range replicaBatches {
+		// Build symbol table for this batch
+		// Start with base symbols, then add suffixes only for replicas in this batch
+		batchSymbols := make([]string, len(req.Symbols))
+		copy(batchSymbols, req.Symbols)
+
+		// Map: suffixedValueRefs[replica][originalRef] = newRef (for this batch only)
+		batchSuffixedValueRefs := make(map[int]map[uint32]uint32)
+		for _, replica := range batch {
+			if replica == 1 {
+				continue // Original doesn't need suffix mapping
+			}
+			batchSuffixedValueRefs[replica] = make(map[uint32]uint32)
+			for valueRef := range valueRefsToSuffix {
+				if int(valueRef) >= len(req.Symbols) {
+					continue
+				}
+				originalValue := req.Symbols[valueRef]
+				newValue := fmt.Sprintf("%s_amp%d", originalValue, replica)
+				newRef := uint32(len(batchSymbols))
+				batchSymbols = append(batchSymbols, newValue)
+				batchSuffixedValueRefs[replica][valueRef] = newRef
+			}
+		}
+
+		// Build time series for this batch
+		batchSeries := make([]mimirpb.TimeSeriesRW2, 0, maxSeriesPerRequest)
+
+		for _, replicaNum := range batch {
+			for _, ts := range req.Timeseries {
+				if replicaNum == 1 {
+					// Original series (replica 1)
+					batchSeries = append(batchSeries, ts)
+				} else {
+					// Skip series that can't be amplified
+					if !hasLabelsToSuffix(ts.LabelsRefs, nameSymbolRef) {
+						continue
+					}
+
+					// For fractional replica, check if this series gets it
+					if replicaNum == lastReplica && fractionalPart > 0 {
+						hash := hashSeriesLabelsRW2(ts.LabelsRefs, req.Symbols)
+						if !shouldKeepSeries(hash, fractionalPart) {
+							continue
+						}
+					}
+
+					batchSeries = append(batchSeries, amplifyTimeSeriesRW2(&ts, nameSymbolRef, batchSuffixedValueRefs[replicaNum]))
+				}
+			}
+		}
+
+		if len(batchSeries) == 0 {
+			continue
+		}
+
+		// Marshal this batch
+		batchReq := mimirpb.WriteRequestRW2{
+			Symbols:    batchSymbols,
+			Timeseries: batchSeries,
+		}
+		batchProto, err := proto.Marshal(&batchReq)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to marshal amplified RW 2.0 write request batch %d: %w", batchIdx, err)
+		}
+
+		bodies = append(bodies, snappy.Encode(nil, batchProto))
+	}
+
+	return bodies, totalSeriesCount, nil
 }

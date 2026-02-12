@@ -101,6 +101,29 @@ func TestNewProxy_Validation(t *testing.T) {
 			routes:      []Route{},
 			expectedErr: "backend.async-max-in-flight must be greater than 0",
 		},
+		{
+			name: "preferred backend cannot be amplified",
+			cfg: ProxyConfig{
+				BackendAmplifiedEndpoints:  "http://backend1:8080",
+				PreferredBackend:           "backend1",
+				AmplificationFactor:        2.0,
+				AsyncMaxInFlightPerBackend: 1000,
+			},
+			routes:      []Route{},
+			expectedErr: "the preferred backend cannot be an amplified backend",
+		},
+		{
+			name: "valid amplified backend with mirrored preferred",
+			cfg: ProxyConfig{
+				BackendMirroredEndpoints:   "http://prod:8080",
+				BackendAmplifiedEndpoints:  "http://test:8080",
+				PreferredBackend:           "prod",
+				AmplificationFactor:        2.0,
+				AsyncMaxInFlightPerBackend: 1000,
+			},
+			routes:      []Route{},
+			expectedErr: "",
+		},
 	}
 
 	for _, tt := range tests {
@@ -185,7 +208,7 @@ func TestProxyEndpoint_ResponseSelection(t *testing.T) {
 			asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
 			defer asyncDispatcher.Stop()
 
-			endpoint, err := NewProxyEndpoint(backendInterfaces, route, metrics, logger, 1.0, nil, asyncDispatcher)
+			endpoint, err := NewProxyEndpoint(backendInterfaces, route, metrics, logger, 1.0, 0, nil, asyncDispatcher)
 			require.NoError(t, err)
 
 			// Create a test request
@@ -226,7 +249,7 @@ func TestProxyEndpoint_BodySizeLimit(t *testing.T) {
 	asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
 	defer asyncDispatcher.Stop()
 
-	endpoint, err := NewProxyEndpoint(backendInterfaces, route, metrics, logger, 1.0, nil, asyncDispatcher)
+	endpoint, err := NewProxyEndpoint(backendInterfaces, route, metrics, logger, 1.0, 0, nil, asyncDispatcher)
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -298,7 +321,7 @@ func TestProxyEndpoint_ServeHTTPPassthrough(t *testing.T) {
 	asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
 	defer asyncDispatcher.Stop()
 
-	endpoint, err := NewProxyEndpoint(backendInterfaces, route, metrics, logger, 1.0, nil, asyncDispatcher)
+	endpoint, err := NewProxyEndpoint(backendInterfaces, route, metrics, logger, 1.0, 0, nil, asyncDispatcher)
 	require.NoError(t, err)
 
 	// Create a test request with Content-Type
