@@ -20,7 +20,7 @@ Grafana Mimir
 
 ## Requirements
 
-Kubernetes: `^1.29.0-0`
+Kubernetes: `^1.32.0-0`
 
 | Repository | Name | Version |
 |------------|------|---------|
