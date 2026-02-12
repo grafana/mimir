@@ -64,8 +64,9 @@ func TestNewProxy_Validation(t *testing.T) {
 		{
 			name: "valid single backend with preferred",
 			cfg: ProxyConfig{
-				BackendMirroredEndpoints: "http://backend1:8080",
-				PreferredBackend:         "backend1",
+				BackendMirroredEndpoints:   "http://backend1:8080",
+				PreferredBackend:           "backend1",
+				AsyncMaxInFlightPerBackend: 1000,
 			},
 			routes:      []Route{},
 			expectedErr: "",
@@ -73,11 +74,32 @@ func TestNewProxy_Validation(t *testing.T) {
 		{
 			name: "valid multiple backends with preferred",
 			cfg: ProxyConfig{
-				BackendMirroredEndpoints: "http://backend1:8080,http://backend2:8080",
-				PreferredBackend:         "backend1",
+				BackendMirroredEndpoints:   "http://backend1:8080,http://backend2:8080",
+				PreferredBackend:           "backend1",
+				AsyncMaxInFlightPerBackend: 1000,
 			},
 			routes:      []Route{},
 			expectedErr: "",
+		},
+		{
+			name: "negative async max in-flight",
+			cfg: ProxyConfig{
+				BackendMirroredEndpoints:   "http://backend1:8080",
+				PreferredBackend:           "backend1",
+				AsyncMaxInFlightPerBackend: -1,
+			},
+			routes:      []Route{},
+			expectedErr: "backend.async-max-in-flight must be greater than 0",
+		},
+		{
+			name: "zero async max in-flight",
+			cfg: ProxyConfig{
+				BackendMirroredEndpoints:   "http://backend1:8080",
+				PreferredBackend:           "backend1",
+				AsyncMaxInFlightPerBackend: 0,
+			},
+			routes:      []Route{},
+			expectedErr: "backend.async-max-in-flight must be greater than 0",
 		},
 	}
 
@@ -250,11 +272,15 @@ func TestProxyEndpoint_ServeHTTPPassthrough(t *testing.T) {
 	registry := prometheus.NewRegistry()
 	metrics := NewProxyMetrics(registry)
 
-	// Create a test backend that returns a specific response
+	// Create a test backend that returns a specific response with Content-Type
 	expectedBody := `{"status":"ok"}`
+	expectedContentType := "application/json"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Verify the request was forwarded correctly
 		assert.Equal(t, "POST", r.Method)
+		assert.Equal(t, "application/x-protobuf", r.Header.Get("Content-Type"))
+
+		w.Header().Set("Content-Type", expectedContentType)
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(expectedBody))
 	}))
@@ -286,7 +312,7 @@ func TestProxyEndpoint_ServeHTTPPassthrough(t *testing.T) {
 	// Verify the response
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, expectedBody, rec.Body.String())
-	assert.Equal(t, "application/x-protobuf", rec.Header().Get("Content-Type"))
+	assert.Equal(t, expectedContentType, rec.Header().Get("Content-Type"))
 }
 
 func TestProxyBackend_AuthHandling(t *testing.T) {
@@ -361,7 +387,7 @@ func TestProxyBackend_AuthHandling(t *testing.T) {
 			}
 
 			// Forward the request
-			_, _, _, err := backend.ForwardRequest(req.Context(), req, io.NopCloser(bytes.NewReader([]byte("test"))))
+			_, _, _, _, err := backend.ForwardRequest(req.Context(), req, io.NopCloser(bytes.NewReader([]byte("test"))))
 			require.NoError(t, err)
 
 			// Verify the captured auth
