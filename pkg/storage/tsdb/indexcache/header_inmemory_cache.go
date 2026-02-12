@@ -14,6 +14,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/index"
+
+	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 )
 
 //const maxInt = int(^uint(0) >> 1)
@@ -75,7 +77,7 @@ func (c *InMemoryPostingsOffsetTableCache) StorePostingsOffset(
 	_ time.Duration,
 ) {
 	key := PostingsOffsetCacheKey{tenantID, blockID, lbl}
-	c.setSingle(key, rng)
+	c.setRange(key, rng)
 }
 
 func (c *InMemoryPostingsOffsetTableCache) FetchPostingsOffset(
@@ -85,7 +87,7 @@ func (c *InMemoryPostingsOffsetTableCache) FetchPostingsOffset(
 	lbl labels.Label,
 ) (index.Range, bool) {
 	key := PostingsOffsetCacheKey{tenantID, blockID, lbl}
-	return c.getSingle(key)
+	return c.getRange(key)
 }
 
 func (c *InMemoryPostingsOffsetTableCache) StorePostingsOffsetsForMatcher(
@@ -93,7 +95,7 @@ func (c *InMemoryPostingsOffsetTableCache) StorePostingsOffsetsForMatcher(
 	blockID ulid.ULID,
 	m *labels.Matcher,
 	isSubtract bool,
-	rngs []index.Range,
+	offsets []streamindex.PostingListOffset,
 	_ time.Duration,
 ) {
 	key := PostingsOffsetsForMatcherCacheKey{
@@ -102,7 +104,7 @@ func (c *InMemoryPostingsOffsetTableCache) StorePostingsOffsetsForMatcher(
 		matcherStr: m.String(),
 		isSubtract: isSubtract,
 	}
-	c.setMulti(key, rngs)
+	c.setPostingsOffsets(key, offsets)
 }
 
 func (c *InMemoryPostingsOffsetTableCache) FetchPostingsOffsetsForMatcher(
@@ -111,60 +113,17 @@ func (c *InMemoryPostingsOffsetTableCache) FetchPostingsOffsetsForMatcher(
 	blockID ulid.ULID,
 	m *labels.Matcher,
 	isSubtract bool,
-) ([]index.Range, bool) {
+) ([]streamindex.PostingListOffset, bool) {
 	key := PostingsOffsetsForMatcherCacheKey{
 		tenantID:   tenantID,
 		blockID:    blockID,
 		matcherStr: m.String(),
 		isSubtract: isSubtract,
 	}
-	return c.getMulti(key)
+	return c.getPostingsOffsets(key)
 }
 
-func (c *InMemoryPostingsOffsetTableCache) getSingle(key InMemoryCacheKey) (index.Range, bool) {
-	val, ok := c.lru.Get(key)
-	if !ok {
-		return index.Range{}, false
-	}
-
-	rng, err := c.valCodec.DecodeSingleRange(val)
-	if err != nil {
-		level.Error(c.logger).Log(
-			"msg", "error decoding cache value to index.Range",
-			"key", key,
-			"value", val,
-		)
-		c.lru.Remove(key)
-		return index.Range{}, false
-	}
-
-	return rng, true
-}
-
-func (c *InMemoryPostingsOffsetTableCache) getMulti(key InMemoryCacheKey) ([]index.Range, bool) {
-	c.mtx.Lock()
-	defer c.mtx.Unlock()
-
-	val, ok := c.lru.Get(key)
-	if !ok {
-		return nil, false
-	}
-
-	rngs, err := c.valCodec.DecodeMultiRange(val)
-	if err != nil {
-		level.Error(c.logger).Log(
-			"msg", "error decoding cache value to index.Range slice",
-			"key", key,
-			"value", val,
-		)
-		c.lru.Remove(key)
-		return nil, false
-	}
-
-	return rngs, true
-}
-
-func (c *InMemoryPostingsOffsetTableCache) setSingle(key InMemoryCacheKey, rng index.Range) {
+func (c *InMemoryPostingsOffsetTableCache) setRange(key InMemoryCacheKey, rng index.Range) {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
@@ -191,14 +150,36 @@ func (c *InMemoryPostingsOffsetTableCache) setSingle(key InMemoryCacheKey, rng i
 	c.curSize += valSize
 }
 
-func (c *InMemoryPostingsOffsetTableCache) setMulti(key InMemoryCacheKey, rngs []index.Range) {
+func (c *InMemoryPostingsOffsetTableCache) getRange(key InMemoryCacheKey) (index.Range, bool) {
+	val, ok := c.lru.Get(key)
+	if !ok {
+		return index.Range{}, false
+	}
+
+	rng, err := c.valCodec.DecodeSingleRange(val)
+	if err != nil {
+		level.Error(c.logger).Log(
+			"msg", "error decoding cache value to index.Range",
+			"key", key,
+			"value", val,
+		)
+		c.lru.Remove(key)
+		return index.Range{}, false
+	}
+
+	return rng, true
+}
+
+func (c *InMemoryPostingsOffsetTableCache) setPostingsOffsets(
+	key InMemoryCacheKey, offsets []streamindex.PostingListOffset,
+) {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
 	if _, ok := c.lru.Get(key); ok {
 		return
 	}
-	val := c.valCodec.EncodeMultiRange(rngs)
+	val := c.valCodec.EncodePostingsOffsets(offsets)
 	valSize := sliceSize(val)
 
 	if valSize > c.maxItemSizeBytes {
@@ -216,6 +197,31 @@ func (c *InMemoryPostingsOffsetTableCache) setMulti(key InMemoryCacheKey, rngs [
 
 	c.lru.Add(key, val)
 	c.curSize += valSize
+}
+
+func (c *InMemoryPostingsOffsetTableCache) getPostingsOffsets(
+	key InMemoryCacheKey,
+) ([]streamindex.PostingListOffset, bool) {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+
+	val, ok := c.lru.Get(key)
+	if !ok {
+		return nil, false
+	}
+
+	offsets, err := c.valCodec.DecodePostingsOffsets(val)
+	if err != nil {
+		level.Error(c.logger).Log(
+			"msg", "error decoding cache value to index.Range slice",
+			"key", key,
+			"value", val,
+		)
+		c.lru.Remove(key)
+		return nil, false
+	}
+
+	return offsets, true
 }
 
 func (c *InMemoryPostingsOffsetTableCache) ensureCacheSpace(valSize uint64) {

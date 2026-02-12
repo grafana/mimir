@@ -11,6 +11,8 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/index"
+
+	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 )
 
 var (
@@ -41,14 +43,14 @@ func (c *RemotePostingsOffsetTableCache) StorePostingsOffset(
 	tenantID string, blockID ulid.ULID, lbl labels.Label, rng index.Range, ttl time.Duration,
 ) {
 	key := PostingsOffsetCacheKey{tenantID, blockID, lbl}
-	c.setAsyncSingle(key, rng, ttl)
+	c.setAsyncRange(key, rng, ttl)
 }
 
 func (c *RemotePostingsOffsetTableCache) FetchPostingsOffset(
 	ctx context.Context, tenantID string, blockID ulid.ULID, lbl labels.Label,
 ) (index.Range, bool) {
 	key := PostingsOffsetCacheKey{tenantID, blockID, lbl}
-	return c.getSingle(ctx, key)
+	return c.getRange(ctx, key)
 }
 
 func (c *RemotePostingsOffsetTableCache) StorePostingsOffsetsForMatcher(
@@ -56,7 +58,7 @@ func (c *RemotePostingsOffsetTableCache) StorePostingsOffsetsForMatcher(
 	blockID ulid.ULID,
 	m *labels.Matcher,
 	isSubtract bool,
-	rngs []index.Range,
+	offsets []streamindex.PostingListOffset,
 	ttl time.Duration,
 ) {
 	key := PostingsOffsetsForMatcherCacheKey{
@@ -65,7 +67,7 @@ func (c *RemotePostingsOffsetTableCache) StorePostingsOffsetsForMatcher(
 		matcherStr: m.String(),
 		isSubtract: isSubtract,
 	}
-	c.setAsyncMulti(key, rngs, ttl)
+	c.setAsyncPostingsOffsets(key, offsets, ttl)
 }
 
 func (c *RemotePostingsOffsetTableCache) FetchPostingsOffsetsForMatcher(
@@ -74,17 +76,23 @@ func (c *RemotePostingsOffsetTableCache) FetchPostingsOffsetsForMatcher(
 	blockID ulid.ULID,
 	m *labels.Matcher,
 	isSubtract bool,
-) ([]index.Range, bool) {
+) ([]streamindex.PostingListOffset, bool) {
 	key := PostingsOffsetsForMatcherCacheKey{
 		tenantID:   tenantID,
 		blockID:    blockID,
 		matcherStr: m.String(),
 		isSubtract: isSubtract,
 	}
-	return c.getMulti(ctx, key)
+	return c.getPostingsOffsets(ctx, key)
 }
 
-func (c *RemotePostingsOffsetTableCache) getSingle(ctx context.Context, key RemoteCacheKey) (index.Range, bool) {
+func (c *RemotePostingsOffsetTableCache) setAsyncRange(key RemoteCacheKey, rng index.Range, ttl time.Duration) {
+	k := key.Key()
+	val := c.valCodec.EncodeSingleRange(rng)
+	c.remote.SetAsync(k, val, ttl)
+}
+
+func (c *RemotePostingsOffsetTableCache) getRange(ctx context.Context, key RemoteCacheKey) (index.Range, bool) {
 	k := key.Key()
 	results := c.remote.GetMulti(ctx, []string{k})
 	val, ok := results[k]
@@ -112,7 +120,17 @@ func (c *RemotePostingsOffsetTableCache) getSingle(ctx context.Context, key Remo
 	return rng, true
 }
 
-func (c *RemotePostingsOffsetTableCache) getMulti(ctx context.Context, key RemoteCacheKey) ([]index.Range, bool) {
+func (c *RemotePostingsOffsetTableCache) setAsyncPostingsOffsets(
+	key RemoteCacheKey, offsets []streamindex.PostingListOffset, ttl time.Duration,
+) {
+	k := key.Key()
+	val := c.valCodec.EncodePostingsOffsets(offsets)
+	c.remote.SetAsync(k, val, ttl)
+}
+
+func (c *RemotePostingsOffsetTableCache) getPostingsOffsets(
+	ctx context.Context, key RemoteCacheKey,
+) ([]streamindex.PostingListOffset, bool) {
 	k := key.Key()
 	results := c.remote.GetMulti(ctx, []string{k})
 	val, ok := results[k]
@@ -120,16 +138,16 @@ func (c *RemotePostingsOffsetTableCache) getMulti(ctx context.Context, key Remot
 		return nil, false
 	}
 
-	rng, err := c.valCodec.DecodeMultiRange(val)
+	offsets, err := c.valCodec.DecodePostingsOffsets(val)
 	if err != nil {
 		level.Error(c.logger).Log(
-			"msg", "error decoding cache value to index.Range",
+			"msg", "error decoding cache value to Postings Offsets",
 			"key", key,
 			"value", val,
 		)
 		if err := c.remote.Delete(ctx, k); err != nil {
 			level.Error(c.logger).Log(
-				"msg", "error deleting malformed index.Range value from cache",
+				"msg", "error deleting malformed Postings Offsets value from cache",
 				"key", key,
 				"value", val,
 			)
@@ -137,17 +155,5 @@ func (c *RemotePostingsOffsetTableCache) getMulti(ctx context.Context, key Remot
 		return nil, false
 	}
 
-	return rng, true
-}
-
-func (c *RemotePostingsOffsetTableCache) setAsyncSingle(key RemoteCacheKey, rng index.Range, ttl time.Duration) {
-	k := key.Key()
-	val := c.valCodec.EncodeSingleRange(rng)
-	c.remote.SetAsync(k, val, ttl)
-}
-
-func (c *RemotePostingsOffsetTableCache) setAsyncMulti(key RemoteCacheKey, rngs []index.Range, ttl time.Duration) {
-	k := key.Key()
-	val := c.valCodec.EncodeMultiRange(rngs)
-	c.remote.SetAsync(k, val, ttl)
+	return offsets, true
 }

@@ -13,14 +13,16 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"golang.org/x/crypto/blake2b"
+
+	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 )
 
 type PostingsOffsetTableCache interface {
 	StorePostingsOffset(tenantID string, blockID ulid.ULID, lbl labels.Label, rng index.Range, ttl time.Duration)
 	FetchPostingsOffset(ctx context.Context, tenantID string, blockID ulid.ULID, lbl labels.Label) (index.Range, bool)
 
-	StorePostingsOffsetsForMatcher(tenantID string, blockID ulid.ULID, m *labels.Matcher, isSubtract bool, rngs []index.Range, ttl time.Duration)
-	FetchPostingsOffsetsForMatcher(ctx context.Context, tenantID string, blockID ulid.ULID, m *labels.Matcher, isSubtract bool) ([]index.Range, bool)
+	StorePostingsOffsetsForMatcher(tenantID string, blockID ulid.ULID, m *labels.Matcher, isSubtract bool, offsets []streamindex.PostingListOffset, ttl time.Duration)
+	FetchPostingsOffsetsForMatcher(ctx context.Context, tenantID string, blockID ulid.ULID, m *labels.Matcher, isSubtract bool) ([]streamindex.PostingListOffset, bool)
 }
 
 const (
@@ -208,10 +210,10 @@ func postingsOffsetsForMatcherCacheKeyMatcherID(matcherStr string, isSubtract bo
 
 type NoopHeaderCache struct{}
 
-func (n NoopHeaderCache) StorePostingsOffsetsForMatcher(tenantID string, blockID ulid.ULID, m *labels.Matcher, isSubtract bool, rngs []index.Range, ttl time.Duration) {
+func (n NoopHeaderCache) StorePostingsOffsetsForMatcher(string, ulid.ULID, *labels.Matcher, bool, []streamindex.PostingListOffset, time.Duration) {
 }
 
-func (n NoopHeaderCache) FetchPostingsOffsetsForMatcher(ctx context.Context, tenantID string, blockID ulid.ULID, m *labels.Matcher, isSubtract bool) ([]index.Range, bool) {
+func (n NoopHeaderCache) FetchPostingsOffsetsForMatcher(context.Context, string, ulid.ULID, *labels.Matcher, bool) ([]streamindex.PostingListOffset, bool) {
 	return nil, false
 }
 

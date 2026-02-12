@@ -86,23 +86,37 @@ func newLazySubtractingPostingGroup(m *labels.Matcher) rawPostingGroup {
 // This means that after calling toPostingGroup g.keys will be modified.
 func (g rawPostingGroup) toPostingGroup(ctx context.Context, block *bucketBlock) (postingGroup, error) {
 	var (
-		keys      []labels.Label
-		totalSize int64
+		keys               []labels.Label
+		totalSize          int64
+		blockIndexCacheTTL = indexcache.BlockTTL(block.meta)
 	)
 	if g.isLazy {
 		filter := g.matcher.Matches
 		if g.isSubtract {
 			filter = not(filter)
 		}
-		vals, err := block.indexHeaderReader.LabelValuesOffsets(ctx, g.labelName, g.prefix, filter)
-		if err != nil {
-			return postingGroup{}, err
+
+		// Try cache for postings offset
+		offsets, ok := block.indexHeaderCache.FetchPostingsOffsetsForMatcher(
+			ctx, block.userID, block.meta.ULID, g.matcher, g.isSubtract,
+		)
+		if !ok {
+			var err error
+			offsets, err = block.indexHeaderReader.LabelValuesOffsets(ctx, g.labelName, g.prefix, filter)
+			if err != nil {
+				return postingGroup{}, err
+			}
+
+			block.indexHeaderCache.StorePostingsOffsetsForMatcher(
+				block.userID, block.meta.ULID, g.matcher, g.isSubtract, offsets, blockIndexCacheTTL,
+			)
 		}
-		keys = make([]labels.Label, len(vals))
-		for i := range vals {
-			lbl := labels.Label{Name: g.labelName, Value: vals[i].LabelValue}
+
+		keys = make([]labels.Label, len(offsets))
+		for i := range offsets {
+			lbl := labels.Label{Name: g.labelName, Value: offsets[i].LabelValue}
 			keys[i] = lbl // TODO implement labelvaluesOffsets caching
-			totalSize += vals[i].Off.End - vals[i].Off.Start
+			totalSize += offsets[i].Off.End - offsets[i].Off.Start
 		}
 	} else {
 		var err error
