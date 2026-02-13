@@ -368,61 +368,65 @@ func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, epoch in
 		}
 	}
 
-	writeJobs := make([]TrackedJob, 0, len(jobs))
+	acceptedJobs := make([]TrackedJob, 0, len(jobs))
 	for _, j := range jobs {
 		e, ok := jt.incompleteJobs[j.ID()]
-		var prevJ *TrackedCompactionJob
 		if ok {
-			prevJ, ok = e.Value.(*TrackedCompactionJob)
-			if ok && prevJ.IsLeased() {
-				// Don't add this job
+			prevJ := e.Value.(TrackedJob)
+			if prevJ.IsLeased() {
+				// We never replace jobs that are in progress
 				continue
 			}
 		}
 
-		if !ok || jobConflicts(conflictMap, j) {
+		if jobConflicts(conflictMap, j) {
+			// This job shared a block with either a completed or leased job. We don't want to duplicate work.
 			continue
 		}
 
-		writeJobs = append(writeJobs, j)
+		acceptedJobs = append(acceptedJobs, j)
 	}
 
-	preventDeleteIds := make(map[string]struct{}, len(writeJobs)+len(jt.completeCompactionJobs)+jt.pending.Len())
-	deleteJobs := make([]TrackedJob, 0, len(jt.completeCompactionJobs)+jt.pending.Len()+1)
-	for _, j := range writeJobs {
+	// We will be writing these jobs. They should never also be deleted during the upcoming WriteAndDeleteJobs call.
+	preventDeleteIds := make(map[string]struct{}, len(acceptedJobs))
+	for _, j := range acceptedJobs {
 		preventDeleteIds[j.ID()] = struct{}{}
 	}
+
+	deleteJobs := make([]TrackedJob, 0, len(jt.completeCompactionJobs)+jt.pending.Len()+1)
+	// Delete completed jobs, unless they will be overwritten anyway by an accepted job.
 	for _, j := range jt.completeCompactionJobs {
 		id := j.ID()
 		if _, ok := preventDeleteIds[id]; !ok {
 			deleteJobs = append(deleteJobs, j)
-			preventDeleteIds[id] = struct{}{}
 		}
 	}
+	// Previous pending jobs need to be deleted, unless they are already being overwritten. They are getting completely replaced by acceptedJobs.
 	for e := jt.pending.Front(); e != nil; e = e.Next() {
 		j := e.Value.(TrackedJob)
 		id := j.ID()
 		if _, ok := preventDeleteIds[id]; !ok {
 			deleteJobs = append(deleteJobs, j)
-			preventDeleteIds[id] = struct{}{} // this may not be necessary
 		}
 	}
 	deleteJobs = append(deleteJobs, planJob) // we know the plan job was in the active list due to the epoch check
 
-	err = jt.persister.WriteAndDeleteJobs(writeJobs, deleteJobs)
+	err = jt.persister.WriteAndDeleteJobs(acceptedJobs, deleteJobs)
 	if err != nil {
 		return 0, false, fmt.Errorf("failed writing offered jobs: %w", err)
 	}
 
 	wasEmpty := jt.isPendingEmpty()
+
+	// Clear out previously pending jobs from incompleteJobs
 	for e := jt.pending.Front(); e != nil; e = e.Next() {
-		// Note: This assumes no other job types besides compaction/planning.
 		j := e.Value.(TrackedJob)
 		delete(jt.incompleteJobs, j.ID())
 	}
+
 	// Recreate the pending list in order
 	jt.pending = list.New()
-	for _, j := range writeJobs {
+	for _, j := range acceptedJobs {
 		jt.incompleteJobs[j.ID()] = jt.pending.PushBack(j)
 	}
 
@@ -435,7 +439,7 @@ func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, epoch in
 	jt.metrics.activeJobs.Set(float64(jt.active.Len()))
 
 	jt.metrics.pendingJobs.Set(float64(jt.pending.Len()))
-	accepted = len(writeJobs)
+	accepted = len(acceptedJobs)
 	return accepted, wasEmpty && accepted > 0, nil
 }
 
