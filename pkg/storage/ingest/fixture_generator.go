@@ -367,7 +367,7 @@ func (g *FixtureGenerator) ProduceWriteRequests(ctx context.Context, kafkaAddres
 	// Create a Kafka client for async batch production.
 	cfg := KafkaConfig{}
 	flagext.DefaultValues(&cfg)
-	cfg.SetAddress(kafkaAddress)
+	cfg.Address = flagext.StringSliceCSV{kafkaAddress}
 	cfg.Topic = topic
 	cfg.DisableLinger = true
 

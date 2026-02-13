@@ -149,7 +149,7 @@ func TestCreateTopic(t *testing.T) {
 				AutoCreateTopicDefaultPartitions: 100,
 			}
 		)
-		cfg.SetAddress(addr)
+		require.NoError(t, cfg.Address.Set(addr))
 
 		cluster.ControlKey(kmsg.AlterConfigs.Int16(), func(request kmsg.Request) (kmsg.Response, error, bool) {
 			r := request.(*kmsg.CreateTopicsRequest)
@@ -188,7 +188,7 @@ func TestCreateTopic(t *testing.T) {
 				AutoCreateTopicDefaultPartitions: 100,
 			}
 		)
-		cfg.SetAddress("127.0.0.1:1, " + addr)
+		require.NoError(t, cfg.Address.Set("127.0.0.1:1,"+addr))
 
 		cluster.ControlKey(kmsg.AlterConfigs.Int16(), func(request kmsg.Request) (kmsg.Response, error, bool) {
 			r := request.(*kmsg.CreateTopicsRequest)
@@ -225,7 +225,7 @@ func TestCreateTopic(t *testing.T) {
 				AutoCreateTopicDefaultPartitions: 100,
 			}
 		)
-		cfg.SetAddress(addr)
+		require.NoError(t, cfg.Address.Set(addr))
 
 		cluster.ControlKey(kmsg.CreateTopics.Int16(), func(_ kmsg.Request) (kmsg.Response, error, bool) {
 			return &kmsg.CreateTopicsResponse{
@@ -251,7 +251,7 @@ func TestCreateTopic(t *testing.T) {
 				AutoCreateTopicDefaultPartitions: 100,
 			}
 		)
-		cfg.SetAddress(addr)
+		require.NoError(t, cfg.Address.Set(addr))
 
 		cluster.ControlKey(kmsg.AlterConfigs.Int16(), func(kReq kmsg.Request) (kmsg.Response, error, bool) {
 			req := kReq.(*kmsg.CreateTopicsRequest)
@@ -289,7 +289,7 @@ func TestCreateTopic(t *testing.T) {
 			}
 			logger = log.NewNopLogger()
 		)
-		cfg.SetAddress(addr)
+		require.NoError(t, cfg.Address.Set(addr))
 
 		// First call should create the topic
 		assert.NoError(t, CreateTopic(cfg, logger))

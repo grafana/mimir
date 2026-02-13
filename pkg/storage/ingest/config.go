@@ -88,6 +88,7 @@ func (cfg *Config) Validate() error {
 
 // KafkaConfig holds the generic config for the Kafka backend.
 type KafkaConfig struct {
+	// Address is a list of seed brokers. The config name is singular for backward compatibility.
 	Address      flagext.StringSliceCSV `yaml:"address"`
 	Topic        string                 `yaml:"topic"`
 	ClientID     string                 `yaml:"client_id"`
@@ -276,31 +277,6 @@ func (cfg *KafkaConfig) Validate() error {
 	}
 
 	return cfg.SASL.Validate()
-}
-
-// SetAddress parses and sets Kafka seed broker addresses from CSV.
-func (cfg *KafkaConfig) SetAddress(address string) {
-	_ = cfg.Address.Set(address)
-}
-
-// SeedBrokers returns the configured Kafka seed brokers.
-// It supports a single broker address for backward compatibility and
-// a comma-separated list of addresses for multi-seed bootstrap.
-func (cfg *KafkaConfig) SeedBrokers() []string {
-	brokers := make([]string, 0, len(cfg.Address))
-
-	for _, broker := range cfg.Address {
-		if addr := strings.TrimSpace(broker); addr != "" {
-			brokers = append(brokers, addr)
-		}
-	}
-
-	// Preserve previous behavior for malformed non-empty values.
-	if len(brokers) == 0 && cfg.Address.String() != "" {
-		return []string{cfg.Address.String()}
-	}
-
-	return brokers
 }
 
 // GetConsumerGroup returns the consumer group to use for the given instanceID and partitionID.
