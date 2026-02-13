@@ -92,6 +92,12 @@ func hashCacheKey(key string) string {
 	return hex.EncodeToString(hasher.Sum(nil))
 }
 
+// TestGenerateHashedCacheKey generates a hashed cache key using the same logic as the cache internals.
+// This should only be used in tests.
+func TestGenerateHashedCacheKey(tenant string, function int32, selector string, start, end int64, enableDelayedNameRemoval bool) string {
+	return hashCacheKey(generateCacheKey(tenant, function, selector, start, end, enableDelayedNameRemoval))
+}
+
 // SplitCodec handles serialization of intermediate results for query splitting.
 type SplitCodec[T any] interface {
 	// Marshal serializes a slice of intermediate results to bytes.

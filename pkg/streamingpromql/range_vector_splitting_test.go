@@ -949,6 +949,60 @@ func TestQuerySplitting_StorageError(t *testing.T) {
 	verifyCacheStats(t, testCache, 6, 4, 2)
 }
 
+// TestQuerySplitting_MiddleCacheEntryEvicted verifies correct behavior when a middle cache entry
+// is evicted between queries, producing interleaved cached and uncached splits.
+//
+// With a 7h range and 2h split interval at t=8h, the range (1h, 8h] splits into:
+//   - Head:   (1h, 2h-1ms]
+//   - Block1: (2h-1ms, 4h-1ms]  (cacheable)
+//   - Block2: (4h-1ms, 6h-1ms]  (cacheable)
+//   - Block3: (6h-1ms, 8h-1ms]  (cacheable)
+//   - Tail:   (8h-1ms, 8h]
+//
+// After the first query populates all 3 blocks, we evict Block2. The second query should:
+//   - Hit cache for Block1 and Block3
+//   - Miss cache for Block2, re-fetching it from storage
+func TestQuerySplitting_MiddleCacheEntryEvicted(t *testing.T) {
+	testCache, mimirEngine := setupEngineAndCache(t)
+
+	promStorage := promqltest.LoadedStorage(t, `
+		load 10m
+			test_metric{env="prod"} 0+1x100
+	`)
+	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
+
+	baseT := timestamp.Time(0)
+	ts := baseT.Add(8 * time.Hour)
+	expr := "sum_over_time(test_metric[7h])"
+
+	// First query populates cache for all 3 cacheable blocks.
+	// Data: first sample @ 1h10m (idx 7), last sample @ 8h (idx 48), 42 samples.
+	// Sum: (7+48)*42/2 = 1155
+	result1, ranges1 := executeQuery(t, mimirEngine, promStorage, expr, ts)
+	require.Equal(t, expectedScalarResult(ts, 1155, "env", "prod"), result1)
+	require.Equal(t, []storageQueryRange{
+		{mint: 1*hourInMs + 1, maxt: 8 * hourInMs},
+	}, ranges1)
+	verifyCacheStats(t, testCache, 3, 0, 3)
+
+	// Evict Block2: (4h-1ms, 6h-1ms].
+	block2Key := cache.TestGenerateHashedCacheKey("test-user", 65, `{__name__="test_metric"}`, 4*hourInMs-1, 6*hourInMs-1, false)
+	_, exists := testCache.items[block2Key]
+	require.True(t, exists, "Block2 cache key should exist before eviction")
+	delete(testCache.items, block2Key)
+
+	// Second query: Block1 and Block3 are cache hits, Block2 is a miss.
+	result2, ranges2 := executeQuery(t, mimirEngine, promStorage, expr, ts)
+	require.Equal(t, expectedScalarResult(ts, 1155, "env", "prod"), result2)
+	require.Equal(t, []storageQueryRange{
+		{mint: 1*hourInMs + 1, maxt: 2*hourInMs - 1}, // Head
+		{mint: 4 * hourInMs, maxt: 6*hourInMs - 1},   // Block2 (evicted)
+		{mint: 8 * hourInMs, maxt: 8 * hourInMs},     // Tail
+	}, ranges2)
+	// 3 more gets, 2 hits (Block1 + Block3), 1 new set (Block2 re-cached)
+	verifyCacheStats(t, testCache, 6, 2, 4)
+}
+
 func createSplittingEngineWithCache(t *testing.T, registry *prometheus.Registry, splitInterval time.Duration, enableDelayedNameRemoval bool, enableEliminateDeduplicateAndMerge bool) (promql.QueryEngine, *testCacheBackend) {
 	t.Helper()
 
