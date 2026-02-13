@@ -462,10 +462,14 @@ func jobConflicts(conflict map[string]struct{}, job *TrackedCompactionJob) bool 
 	return false
 }
 
+// errPlanJobLeaseInvalid is returned when the plan job epoch doesn't match or the lease is not owned.
+// This is a semantic error distinct from persistence errors, and should result in NOT_FOUND responses.
+var errPlanJobLeaseInvalid = errors.New("plan job lease invalid")
+
 func (jt *JobTracker) checkPlanJobEpoch(epoch int64) (*TrackedPlanJob, error) {
 	pje, ok := jt.incompleteJobs[planJobId]
 	if !ok {
-		return nil, errors.New("received plan job results, but there was no known plan job")
+		return nil, fmt.Errorf("%w: received plan job results, but there was no known plan job", errPlanJobLeaseInvalid)
 	}
 	planJob, ok := pje.Value.(*TrackedPlanJob)
 	if !ok {
@@ -474,7 +478,7 @@ func (jt *JobTracker) checkPlanJobEpoch(epoch int64) (*TrackedPlanJob, error) {
 
 	}
 	if !planJob.IsLeased() || planJob.Epoch() != epoch {
-		return nil, errors.New("given results, but plan job lease not owned")
+		return nil, fmt.Errorf("%w: given results, but plan job lease not owned", errPlanJobLeaseInvalid)
 	}
 
 	return planJob, nil

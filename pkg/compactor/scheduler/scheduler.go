@@ -244,6 +244,10 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 
 	added, err := s.rotator.OfferCompactionJobs(req.Tenant, jobs, req.Key.Epoch)
 	if err != nil {
+		if errors.Is(err, errPlanJobLeaseInvalid) {
+			level.Info(s.logger).Log("msg", "plan job lease invalid when offering results", "err", err)
+			return nil, status.Error(codes.NotFound, "plan job lease was not found or epoch mismatch")
+		}
 		level.Error(s.logger).Log("msg", "failed offering result of plan job", "err", err)
 		return nil, failedTo("offering results")
 	} else if added == 0 && !s.isRunning() {

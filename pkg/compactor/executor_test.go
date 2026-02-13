@@ -203,7 +203,7 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 				assert.Zero(t, mockSchedulerClient.GetUpdateJobCallCount(), "planning jobs should not send final status update")
 			} else {
 				// Compaction job: should have at least one status update
-				require.Equal(t, mockSchedulerClient.GetUpdateJobCallCount(), 1, "compaction jobs should have at least one status update")
+				require.Equal(t, 1, mockSchedulerClient.GetUpdateJobCallCount(), "compaction jobs should have at least one status update")
 				assert.Equal(t, tc.expectedFinalStatus.String(), mockSchedulerClient.GetLastUpdate().String(), "final job status should match expected")
 				assert.False(t, mockSchedulerClient.ReceivedPlannedRequest(), "compaction jobs should not send PlannedJobs message")
 			}
