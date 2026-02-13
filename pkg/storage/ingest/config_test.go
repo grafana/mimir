@@ -163,9 +163,9 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.SASL.Mechanism = SASLMechanismOauthbearer
 			},
-			expectedErr: ErrSASLOauthbearerBadConfig,
+			expectedErr: ErrSASLOauthbearerMissingConfig,
 		},
-		"should fail if SASL mechanism is OAUTHBEARER but no single way to get the token is configured": {
+		"should fail if SASL mechanism is OAUTHBEARER but both token and file path are configured": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
 				cfg.KafkaConfig.Address = "localhost"
@@ -174,7 +174,7 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.KafkaConfig.SASL.OauthbearerToken = "foo"
 				cfg.KafkaConfig.SASL.OauthbearerFilePath = "bar"
 			},
-			expectedErr: ErrSASLOauthbearerBadConfig,
+			expectedErr: ErrSASLOauthbearerConflictingConfig,
 		},
 		"should succeed if SASL mechanism is OAUTHBEARER and a token is passed": {
 			setup: func(cfg *Config) {

@@ -33,8 +33,9 @@ var (
 	ErrInvalidProducerMaxRecordSizeBytes = fmt.Errorf("the configured producer max record size bytes must be a value between %d and %d", minProducerRecordDataBytesLimit, maxProducerRecordDataBytesLimit)
 	ErrInconsistentConsumerLagAtStartup  = fmt.Errorf("the target and max consumer lag at startup must be either both set to 0 or to a value greater than 0")
 	ErrInvalidMaxConsumerLagAtStartup    = fmt.Errorf("the configured max consumer lag at startup must greater or equal than the configured target consumer lag")
-	ErrInconsistentSASLCredentials       = fmt.Errorf("the SASL username and password must be both configured to enable SASL authentication")
-	ErrSASLOauthbearerBadConfig          = fmt.Errorf("either the OAuth token or a file path to load the token from must be configured to enable SASL OAUTHBEARER authentication")
+	ErrInconsistentSASLCredentials        = fmt.Errorf("the SASL username and password must be both configured to enable SASL authentication")
+	ErrSASLOauthbearerMissingConfig       = fmt.Errorf("either the OAuth token or a file path to load the token from must be configured to enable SASL OAUTHBEARER authentication")
+	ErrSASLOauthbearerConflictingConfig   = fmt.Errorf("the OAuth token and the file path to load the token from are mutually exclusive, only one must be configured")
 	ErrInvalidSASLMechanism              = fmt.Errorf("the configured SASL mechanism is invalid, must be one of: %s", util.JoinStrings(saslMechanismOptions, ", "))
 	ErrInvalidIngestionConcurrencyMax    = errors.New("ingest-storage.kafka.ingestion-concurrency-max must either be set to 0 or to a value greater than 0")
 	ErrInvalidIngestionConcurrencyParams = errors.New("ingest-storage.kafka.ingestion-concurrency-queue-capacity, ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample, ingest-storage.kafka.ingestion-concurrency-batch-size and ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard must be greater than 0")
@@ -385,8 +386,11 @@ func (cfg *KafkaAuthConfig) Validate() error {
 		}
 
 	case SASLMechanismOauthbearer:
-		if (cfg.OauthbearerToken == "") == (cfg.OauthbearerFilePath == "") {
-			return ErrSASLOauthbearerBadConfig
+		if cfg.OauthbearerToken == "" && cfg.OauthbearerFilePath == "" {
+			return ErrSASLOauthbearerMissingConfig
+		}
+		if cfg.OauthbearerToken != "" && cfg.OauthbearerFilePath != "" {
+			return ErrSASLOauthbearerConflictingConfig
 		}
 
 	default:
