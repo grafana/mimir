@@ -236,7 +236,7 @@ func New(
 		eng = limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts))
 	case MimirEngine:
 		var err error
-		streamingEngine, err = streamingpromql.NewEngine(mqeOpts, limitsProvider, queryMetrics, planner)
+		streamingEngine, err = streamingpromql.NewEngine(mqeOpts, queryMetrics, planner)
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}

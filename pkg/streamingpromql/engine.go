@@ -46,20 +46,20 @@ var errPerStepStatsNotSupported = errors.New("per-step stats are not supported b
 
 const defaultLookbackDelta = 5 * time.Minute // This should be the same value as github.com/prometheus/prometheus/promql.defaultLookbackDelta.
 
-func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *stats.QueryMetrics, planner *QueryPlanner) (*Engine, error) {
+func NewEngine(opts EngineOpts, metrics *stats.QueryMetrics, planner *QueryPlanner) (*Engine, error) {
 	var cacheFactory *cache.CacheFactory
 	if opts.RangeVectorSplitting.Enabled {
 		var err error
-		cacheFactory, err = cache.NewCacheFactory(opts.RangeVectorSplitting.IntermediateResultsCache, limitsProvider, opts.Logger, opts.CommonOpts.Reg)
+		cacheFactory, err = cache.NewCacheFactory(opts.RangeVectorSplitting.IntermediateResultsCache, opts.Limits, opts.Logger, opts.CommonOpts.Reg)
 		if err != nil {
 			return nil, fmt.Errorf("failed to init range vector splitting cache, err: %w", err)
 		}
 		level.Info(opts.Logger).Log("msg", "intermediate results cache enabled", "backend", opts.RangeVectorSplitting.IntermediateResultsCache.Backend)
 	}
-	return newEngineWithCache(opts, limitsProvider, metrics, planner, cacheFactory)
+	return newEngineWithCache(opts, metrics, planner, cacheFactory)
 }
 
-func newEngineWithCache(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *stats.QueryMetrics, planner *QueryPlanner, intermediateCache *cache.CacheFactory) (*Engine, error) {
+func newEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *QueryPlanner, intermediateCache *cache.CacheFactory) (*Engine, error) {
 	if !opts.CommonOpts.EnableAtModifier {
 		return nil, errors.New("disabling @ modifier not supported by Mimir query engine")
 	}
@@ -111,7 +111,7 @@ func newEngineWithCache(opts EngineOpts, limitsProvider QueryLimitsProvider, met
 	return &Engine{
 		lookbackDelta:            DetermineLookbackDelta(opts.CommonOpts),
 		timeout:                  opts.CommonOpts.Timeout,
-		limitsProvider:           limitsProvider,
+		limitsProvider:           opts.Limits,
 		activeQueryTracker:       activeQueryTracker,
 		noStepSubqueryIntervalFn: opts.CommonOpts.NoStepSubqueryIntervalFn,
 
@@ -334,34 +334,34 @@ type QueryLimitsProvider interface {
 }
 
 // NewStaticQueryLimitsProvider returns a QueryLimitsProvider that always returns the provided limits.
-//
 // This should generally only be used in tests.
-func NewStaticQueryLimitsProvider(maxEstimatedMemoryConsumptionPerQuery uint64, enableDelayedNameRemoval bool) QueryLimitsProvider {
-	return staticQueryLimitsProvider{
-		maxEstimatedMemoryConsumptionPerQuery: maxEstimatedMemoryConsumptionPerQuery,
-		enableDelayedNameRemoval:              enableDelayedNameRemoval,
+func NewStaticQueryLimitsProvider() StaticQueryLimitsProvider {
+	return StaticQueryLimitsProvider{
+		MinResultsCacheTTL: 7 * 24 * time.Hour,
 	}
 }
 
-type staticQueryLimitsProvider struct {
-	maxEstimatedMemoryConsumptionPerQuery uint64
-	enableDelayedNameRemoval              bool
+type StaticQueryLimitsProvider struct {
+	MaxEstimatedMemoryConsumptionPerQuery uint64
+	EnableDelayedNameRemoval              bool
+	MaxOutOfOrderTimeWindow               time.Duration
+	MinResultsCacheTTL                    time.Duration
 }
 
-func (p staticQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(_ context.Context) (uint64, error) {
-	return p.maxEstimatedMemoryConsumptionPerQuery, nil
+func (p StaticQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(_ context.Context) (uint64, error) {
+	return p.MaxEstimatedMemoryConsumptionPerQuery, nil
 }
 
-func (p staticQueryLimitsProvider) GetEnableDelayedNameRemoval(_ context.Context) (bool, error) {
-	return p.enableDelayedNameRemoval, nil
+func (p StaticQueryLimitsProvider) GetEnableDelayedNameRemoval(_ context.Context) (bool, error) {
+	return p.EnableDelayedNameRemoval, nil
 }
 
-func (p staticQueryLimitsProvider) GetMaxOutOfOrderTimeWindow(_ context.Context) (time.Duration, error) {
-	return 0, nil
+func (p StaticQueryLimitsProvider) GetMaxOutOfOrderTimeWindow(_ context.Context) (time.Duration, error) {
+	return p.MaxOutOfOrderTimeWindow, nil
 }
 
-func (p staticQueryLimitsProvider) GetMinResultsCacheTTL(_ context.Context) (time.Duration, error) {
-	return 7 * 24 * time.Hour, nil
+func (p StaticQueryLimitsProvider) GetMinResultsCacheTTL(_ context.Context) (time.Duration, error) {
+	return p.MinResultsCacheTTL, nil
 }
 
 type NoopQueryTracker struct{}

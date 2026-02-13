@@ -3,7 +3,6 @@
 package streamingpromql
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"math"
@@ -97,19 +96,6 @@ func (c *RangeVectorSplittingConfig) Validate() error {
 	return nil
 }
 
-type noopLimits struct{}
-
-func (noopLimits) GetMaxEstimatedMemoryConsumptionPerQuery(context.Context) (uint64, error) {
-	return 0, nil
-}
-func (noopLimits) GetEnableDelayedNameRemoval(context.Context) (bool, error) { return false, nil }
-func (noopLimits) GetMaxOutOfOrderTimeWindow(context.Context) (time.Duration, error) {
-	return 0, nil
-}
-func (noopLimits) GetMinResultsCacheTTL(context.Context) (time.Duration, error) {
-	return 7 * 24 * time.Hour, nil
-}
-
 func NewTestEngineOpts() EngineOpts {
 	return EngineOpts{
 		CommonOpts: promql.EngineOpts{
@@ -124,7 +110,7 @@ func NewTestEngineOpts() EngineOpts {
 
 		Pedantic: true,
 		Logger:   log.NewNopLogger(),
-		Limits:   noopLimits{},
+		Limits:   NewStaticQueryLimitsProvider(),
 
 		EnablePruneToggles:                   true,
 		EnableCommonSubexpressionElimination: true,

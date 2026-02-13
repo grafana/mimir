@@ -598,14 +598,14 @@ func TestQuerySplitting_With3hRangeAndOffset_NoCacheableRanges(t *testing.T) {
 
 func TestQuerySplitting_WithOOOWindow(t *testing.T) {
 	backend := newTestCacheBackend()
-	irCache := cache.NewCacheFactoryWithBackend(backend, &mockOutOfOrderTimeWindowProvider{}, prometheus.NewRegistry(), log.NewNopLogger())
+	irCache := cache.NewCacheFactoryWithBackend(backend, NewStaticQueryLimitsProvider(), prometheus.NewRegistry(), log.NewNopLogger())
 
 	opts := NewTestEngineOpts()
 	opts.RangeVectorSplitting.Enabled = true
 	opts.RangeVectorSplitting.SplitInterval = 2 * time.Hour
-	opts.Limits = &mockOutOfOrderTimeWindowProvider{
-		oooWindow: 3 * time.Hour,
-	}
+	limits := NewStaticQueryLimitsProvider()
+	limits.MaxOutOfOrderTimeWindow = 3 * time.Hour
+	opts.Limits = limits
 
 	baseT := timestamp.Time(0)
 	fixedNow := baseT.Add(12 * time.Hour)
@@ -620,7 +620,7 @@ func TestQuerySplitting_WithOOOWindow(t *testing.T) {
 		}
 	}
 
-	mimirEngine, err := newEngineWithCache(opts, NewStaticQueryLimitsProvider(0, false), stats.NewQueryMetrics(nil), queryPlanner, irCache)
+	mimirEngine, err := newEngineWithCache(opts, stats.NewQueryMetrics(nil), queryPlanner, irCache)
 	require.NoError(t, err)
 	// Query at 12h with 7h range: (5h, 12h]
 	// Expected splits:
@@ -678,26 +678,6 @@ func TestQuerySplitting_WithOOOWindow(t *testing.T) {
 
 	verifyCacheStats(t, backend, 3, 2, 1)
 	require.Equal(t, ranges2, ranges3)
-}
-
-type mockOutOfOrderTimeWindowProvider struct {
-	oooWindow time.Duration
-}
-
-func (m *mockOutOfOrderTimeWindowProvider) GetMaxOutOfOrderTimeWindow(_ context.Context) (time.Duration, error) {
-	return m.oooWindow, nil
-}
-
-func (m *mockOutOfOrderTimeWindowProvider) GetMaxEstimatedMemoryConsumptionPerQuery(_ context.Context) (uint64, error) {
-	return 0, nil
-}
-
-func (m *mockOutOfOrderTimeWindowProvider) GetEnableDelayedNameRemoval(_ context.Context) (bool, error) {
-	return false, nil
-}
-
-func (m *mockOutOfOrderTimeWindowProvider) GetMinResultsCacheTTL(_ context.Context) (time.Duration, error) {
-	return 7 * 24 * time.Hour, nil
 }
 
 var querySplittingTestSplitIntervals = []time.Duration{
@@ -973,7 +953,7 @@ func createSplittingEngineWithCache(t *testing.T, registry *prometheus.Registry,
 	t.Helper()
 
 	cacheBackend := newTestCacheBackend()
-	cacheFactory := cache.NewCacheFactoryWithBackend(cacheBackend, &mockOutOfOrderTimeWindowProvider{}, registry, log.NewNopLogger())
+	cacheFactory := cache.NewCacheFactoryWithBackend(cacheBackend, NewStaticQueryLimitsProvider(), registry, log.NewNopLogger())
 
 	engine := createSplittingEngine(t, registry, splitInterval, enableDelayedNameRemoval, enableEliminateDeduplicateAndMerge, cacheFactory)
 	return engine, cacheBackend
@@ -983,6 +963,9 @@ func createSplittingEngine(t *testing.T, registry *prometheus.Registry, splitInt
 	t.Helper()
 
 	opts := NewTestEngineOpts()
+	limits := NewStaticQueryLimitsProvider()
+	limits.EnableDelayedNameRemoval = enableDelayedNameRemoval
+	opts.Limits = limits
 	opts.RangeVectorSplitting.Enabled = true
 	opts.RangeVectorSplitting.SplitInterval = splitInterval
 	opts.CommonOpts.Reg = registry
@@ -994,7 +977,7 @@ func createSplittingEngine(t *testing.T, registry *prometheus.Registry, splitInt
 	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 
-	engine, err := newEngineWithCache(opts, NewStaticQueryLimitsProvider(0, enableDelayedNameRemoval), stats.NewQueryMetrics(registry), planner, cacheFactory)
+	engine, err := newEngineWithCache(opts, stats.NewQueryMetrics(registry), planner, cacheFactory)
 	require.NoError(t, err)
 
 	return engine
@@ -1002,7 +985,7 @@ func createSplittingEngine(t *testing.T, registry *prometheus.Registry, splitInt
 
 func setupEngineAndCache(t *testing.T) (*testCacheBackend, promql.QueryEngine) {
 	backend := newTestCacheBackend()
-	irCache := cache.NewCacheFactoryWithBackend(backend, &mockOutOfOrderTimeWindowProvider{}, prometheus.NewRegistry(), log.NewNopLogger())
+	irCache := cache.NewCacheFactoryWithBackend(backend, NewStaticQueryLimitsProvider(), prometheus.NewRegistry(), log.NewNopLogger())
 
 	opts := NewTestEngineOpts()
 	opts.RangeVectorSplitting.Enabled = true
@@ -1011,7 +994,7 @@ func setupEngineAndCache(t *testing.T) (*testCacheBackend, promql.QueryEngine) {
 	queryPlanner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 
-	mimirEngine, err := newEngineWithCache(opts, NewStaticQueryLimitsProvider(0, false), stats.NewQueryMetrics(nil), queryPlanner, irCache)
+	mimirEngine, err := newEngineWithCache(opts, stats.NewQueryMetrics(nil), queryPlanner, irCache)
 	require.NoError(t, err)
 
 	return backend, mimirEngine
@@ -1056,7 +1039,7 @@ func verifyCacheStats(t *testing.T, backend *testCacheBackend, expectedGets, exp
 
 func TestQuerySplitting_DelayedNameRemoval(t *testing.T) {
 	sharedCache := newTestCacheBackend()
-	cacheFactory := cache.NewCacheFactoryWithBackend(sharedCache, &mockOutOfOrderTimeWindowProvider{}, prometheus.NewPedanticRegistry(), log.NewNopLogger())
+	cacheFactory := cache.NewCacheFactoryWithBackend(sharedCache, NewStaticQueryLimitsProvider(), prometheus.NewPedanticRegistry(), log.NewNopLogger())
 
 	engineDisabled := createSplittingEngine(t, prometheus.NewPedanticRegistry(), 2*time.Hour, false, true, cacheFactory)
 	engineEnabled := createSplittingEngine(t, prometheus.NewPedanticRegistry(), 2*time.Hour, true, true, cacheFactory)

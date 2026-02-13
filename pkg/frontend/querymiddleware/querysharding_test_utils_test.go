@@ -332,11 +332,11 @@ func newEngineForTesting(t *testing.T, engine string, opts ...engineOpt) (promql
 	case querier.PrometheusEngine:
 		return promOpts, promql.NewEngine(promOpts)
 	case querier.MimirEngine:
-		limits := streamingpromql.NewStaticQueryLimitsProvider(0, false)
+		mqeOpts.Limits = streamingpromql.NewStaticQueryLimitsProvider()
 		metrics := stats.NewQueryMetrics(promOpts.Reg)
 		planner, err := streamingpromql.NewQueryPlanner(mqeOpts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 		require.NoError(t, err)
-		eng, err := streamingpromql.NewEngine(mqeOpts, limits, metrics, planner)
+		eng, err := streamingpromql.NewEngine(mqeOpts, metrics, planner)
 		if err != nil {
 			t.Fatalf("error creating MQE engine for testing: %s", err)
 		}
