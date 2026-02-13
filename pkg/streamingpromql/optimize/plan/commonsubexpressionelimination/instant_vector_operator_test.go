@@ -117,12 +117,12 @@ func TestInstantVectorOperator_Buffering_NoFiltering(t *testing.T) {
 	// Close the second consumer, and check that the inner operator was closed.
 	consumer2.Close()
 	require.True(t, inner.Closed)
-	require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	requireNoMemoryConsumption(t, memoryConsumptionTracker)
 
 	// Make sure it's safe to close either consumer a second time.
 	consumer1.Close()
 	consumer2.Close()
-	require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	requireNoMemoryConsumption(t, memoryConsumptionTracker)
 }
 
 func TestInstantVectorOperator_Buffering_Filtering_AllConsumersOpen(t *testing.T) {
@@ -150,7 +150,7 @@ func TestInstantVectorOperator_Buffering_Filtering_AllConsumersOpen(t *testing.T
 	require.NoError(t, err)
 	require.Equal(t, expectedData[0], d)
 	require.Equal(t, 0, buffer.buffer.Size())
-	require.Equal(t, 0, cap(buffer.buffer.data), "should not temporarily buffer data that won't be read by another consumer")
+	require.Equal(t, 0, cap(buffer.buffer.elements), "should not temporarily buffer data that won't be read by another consumer")
 	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
 
 	d, err = consumer1.NextSeries(ctx)
@@ -204,12 +204,12 @@ func TestInstantVectorOperator_Buffering_Filtering_AllConsumersOpen(t *testing.T
 	// Close the second consumer, and check that the inner operator was closed.
 	consumer2.Close()
 	require.True(t, inner.Closed)
-	require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	requireNoMemoryConsumption(t, memoryConsumptionTracker)
 
 	// Make sure it's safe to close either consumer a second time.
 	consumer1.Close()
 	consumer2.Close()
-	require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	requireNoMemoryConsumption(t, memoryConsumptionTracker)
 }
 
 func TestInstantVectorOperator_Buffering_Filtering_DoesNotBufferForClosedConsumer(t *testing.T) {
@@ -270,32 +270,31 @@ func TestInstantVectorOperator_Buffering_Filtering_DoesNotBufferForClosedConsume
 	// Close the second consumer, and check that the inner operator was closed.
 	consumer2.Close()
 	require.True(t, inner.Closed)
-	require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	requireNoMemoryConsumption(t, memoryConsumptionTracker)
 
 	// Make sure it's safe to close either consumer a second time.
 	consumer1.Close()
 	consumer2.Close()
-	require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	requireNoMemoryConsumption(t, memoryConsumptionTracker)
 }
 
 func TestInstantVectorOperator_Buffering_Filtering_DoesNotBufferUnnecessarilyForLaggingConsumer(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
-	inner, expectedData := createTestInstantVectorOperator(t, 6, memoryConsumptionTracker)
+	inner, expectedData := createTestInstantVectorOperator(t, 3, memoryConsumptionTracker)
 
 	buffer := NewInstantVectorDuplicationBuffer(inner, memoryConsumptionTracker)
 	consumer1 := buffer.AddConsumer()
 	consumer1.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "0")})
 	consumer2 := buffer.AddConsumer()
-	consumer2.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "1|2|5")})
+	consumer2.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "1|2")})
 
-	// Both consumers should get the same series metadata.
 	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
 	require.NoError(t, err)
 	metadata2, err := consumer2.SeriesMetadata(ctx, nil)
 	require.NoError(t, err)
 	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{inner.Series[0]}), metadata1, "first consumer should get expected series metadata")
-	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{inner.Series[1], inner.Series[2], inner.Series[5]}), metadata2, "second consumer should get expected series metadata")
+	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{inner.Series[1], inner.Series[2]}), metadata2, "second consumer should get expected series metadata")
 	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
 	types.SeriesMetadataSlicePool.Put(&metadata2, memoryConsumptionTracker)
 
@@ -327,9 +326,101 @@ func TestInstantVectorOperator_Buffering_Filtering_DoesNotBufferUnnecessarilyFor
 	consumer2.Close()
 	require.True(t, inner.Finalized)
 	require.True(t, inner.Closed)
+	requireNoMemoryConsumption(t, memoryConsumptionTracker)
 }
 
-func TestInstantVectorOperator_ClosedWithBufferedData(t *testing.T) {
+func TestInstantVectorOperator_Buffering_NonContiguousSeries(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	inner, expectedData := createTestInstantVectorOperator(t, 4, memoryConsumptionTracker)
+
+	buffer := NewInstantVectorDuplicationBuffer(inner, memoryConsumptionTracker)
+	consumer1 := buffer.AddConsumer()
+	consumer2 := buffer.AddConsumer()
+	consumer2.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "0")})
+	consumer3 := buffer.AddConsumer()
+	consumer3.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "1|3")})
+
+	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
+	metadata2, err := consumer2.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
+	metadata3, err := consumer3.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
+	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.Series), metadata1, "first consumer should get expected series metadata")
+	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{inner.Series[0]}), metadata2, "second consumer should get expected series metadata")
+	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{inner.Series[1], inner.Series[3]}), metadata3, "third consumer should get expected series metadata")
+	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&metadata2, memoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&metadata3, memoryConsumptionTracker)
+
+	// Read all four series from the unfiltered consumer.
+	// Only those series needed for the other consumers should be buffered.
+	d, err := consumer1.NextSeries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, expectedData[0], d)
+	require.Equal(t, 1, buffer.buffer.Size())
+	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+
+	d, err = consumer1.NextSeries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, expectedData[1], d)
+	require.Equal(t, 2, buffer.buffer.Size())
+	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+
+	d, err = consumer1.NextSeries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, expectedData[2], d)
+	require.Equal(t, 2, buffer.buffer.Size(), "should not buffer series at index 2, as it's not needed by any other consumer")
+	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+
+	d, err = consumer1.NextSeries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, expectedData[3], d)
+	require.Equal(t, 3, buffer.buffer.Size())
+	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+
+	require.NoError(t, consumer1.Finalize(ctx))
+	consumer1.Close()
+	require.False(t, inner.Finalized)
+	require.False(t, inner.Closed)
+
+	// Read all the data from consumer 3.
+	d, err = consumer3.NextSeries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, expectedData[1], d)
+	require.Equal(t, 3, buffer.buffer.Size(), "buffer size should be unchanged as series at index 1 should be tombstoned")
+	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+
+	d, err = consumer3.NextSeries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, expectedData[3], d)
+	require.Equal(t, 1, buffer.buffer.Size(), "should only be buffering series required by consumer 2")
+	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+
+	require.NoError(t, consumer3.Finalize(ctx))
+	consumer3.Close()
+	require.False(t, inner.Finalized)
+	require.False(t, inner.Closed)
+
+	// Read all the data from consumer 2
+	d, err = consumer2.NextSeries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, expectedData[0], d)
+	require.Equal(t, 0, buffer.buffer.Size())
+	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+
+	// Make sure everything is cleaned up properly.
+	require.False(t, inner.Finalized)
+	require.False(t, inner.Closed)
+	require.NoError(t, consumer2.Finalize(ctx))
+	require.True(t, inner.Finalized)
+	consumer2.Close()
+	require.True(t, inner.Closed)
+	requireNoMemoryConsumption(t, memoryConsumptionTracker)
+}
+
+func TestInstantVectorOperator_ClosedWithBufferedData_NoFiltering(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 	inner, expectedData := createTestInstantVectorOperator(t, 3, memoryConsumptionTracker)
@@ -380,12 +471,61 @@ func TestInstantVectorOperator_ClosedWithBufferedData(t *testing.T) {
 	// Close the second consumer, and check that the inner operator was closed and all buffered data was released.
 	consumer2.Close()
 	require.True(t, inner.Closed)
-	require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	requireNoMemoryConsumption(t, memoryConsumptionTracker)
 
 	// Make sure it's safe to close either consumer a second time.
 	consumer1.Close()
 	consumer2.Close()
-	require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	requireNoMemoryConsumption(t, memoryConsumptionTracker)
+}
+
+func TestInstantVectorOperator_ClosedWithBufferedData_Filtering(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	inner, expectedData := createTestInstantVectorOperator(t, 3, memoryConsumptionTracker)
+
+	buffer := NewInstantVectorDuplicationBuffer(inner, memoryConsumptionTracker)
+	consumer1 := buffer.AddConsumer()
+	consumer2 := buffer.AddConsumer()
+	consumer2.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "0|2")})
+	consumer3 := buffer.AddConsumer()
+	consumer3.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "1")})
+
+	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
+	metadata2, err := consumer2.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
+	metadata3, err := consumer3.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
+	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.Series), metadata1, "first consumer should get expected series metadata")
+	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{inner.Series[0], inner.Series[2]}), metadata2, "second consumer should get expected series metadata")
+	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{inner.Series[1]}), metadata3, "third consumer should get expected series metadata")
+	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&metadata2, memoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&metadata3, memoryConsumptionTracker)
+
+	// Read each series from the first consumer, filling the buffer for the other consumers.
+	for idx := range 3 {
+		d, err := consumer1.NextSeries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, expectedData[idx], d)
+		require.Equal(t, idx+1, buffer.buffer.Size())
+		types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+	}
+
+	require.Equal(t, 3, buffer.buffer.Size(), "buffer should contain all three series for the remaining two consumers")
+	consumer2.Close()
+	require.Equal(t, 1, buffer.buffer.Size(), "buffer should only contain remaining series required by remaining consumer")
+
+	d, err := consumer3.NextSeries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, expectedData[1], d)
+	require.Equal(t, 0, buffer.buffer.Size())
+	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+
+	consumer1.Close()
+	consumer3.Close()
+	requireNoMemoryConsumption(t, memoryConsumptionTracker)
 }
 
 func TestInstantVectorOperator_Cloning(t *testing.T) {
@@ -495,7 +635,7 @@ func TestInstantVectorOperator_ClosingAfterFirstReadFails(t *testing.T) {
 
 	consumer2.Close()
 	consumer1.Close()
-	require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	requireNoMemoryConsumption(t, memoryConsumptionTracker)
 }
 
 func TestInstantVectorOperator_ClosingAfterSubsequentReadFails(t *testing.T) {
@@ -532,7 +672,7 @@ func TestInstantVectorOperator_ClosingAfterSubsequentReadFails(t *testing.T) {
 
 	consumer2.Close()
 	consumer1.Close()
-	require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	requireNoMemoryConsumption(t, memoryConsumptionTracker)
 }
 
 type failingInstantVectorOperator struct {

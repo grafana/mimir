@@ -164,17 +164,29 @@ func (b *InstantVectorDuplicationBuffer) CloseConsumer(consumerIndex int) {
 		return
 	}
 
-	// If this consumer was the lagging consumer, free any data that was being buffered for it.
-	for consumer.nextUnfilteredSeriesIndex < lowestNextSeriesIndexOfOtherConsumers {
-		seriesIdx := consumer.nextUnfilteredSeriesIndex
-
+	// If this consumer was the lagging consumer, free any data that was being buffered for it up to the next consumer.
+	// Given this consumer was the lagging one, we don't need to check if any series were buffered for any other consumer.
+	for b.buffer.Size() > 0 && consumer.nextUnfilteredSeriesIndex < lowestNextSeriesIndexOfOtherConsumers {
 		// Only try to remove the buffered series if it was actually buffered (we might not have stored it if an error occurred reading the series).
-		if b.buffer.IsPresent(seriesIdx) {
-			d := b.buffer.Remove(seriesIdx)
+		if d, ok := b.buffer.RemoveIfPresent(consumer.nextUnfilteredSeriesIndex); ok {
 			types.PutInstantVectorSeriesData(d, b.MemoryConsumptionTracker)
 		}
 
 		consumer.nextUnfilteredSeriesIndex++
+	}
+
+	for b.buffer.Size() > 0 && consumer.nextUnfilteredSeriesIndex < b.nextInnerSeriesIndex && consumer.nextUnfilteredSeriesIndex <= b.buffer.lastElementSeriesIndex() {
+		// If no other consumers need this series, remove it now.
+		thisSeriesIndex := consumer.nextUnfilteredSeriesIndex
+
+		// Advance nextUnfilteredSeriesIndex now so that the anyConsumerWillRead call below ignores this consumer.
+		consumer.nextUnfilteredSeriesIndex++
+
+		if !b.anyConsumerWillRead(thisSeriesIndex) {
+			if d, ok := b.buffer.RemoveIfPresent(thisSeriesIndex); ok {
+				types.PutInstantVectorSeriesData(d, b.MemoryConsumptionTracker)
+			}
+		}
 	}
 
 	consumer.nextUnfilteredSeriesIndex = -1

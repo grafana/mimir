@@ -116,7 +116,7 @@ func (b *RangeVectorDuplicationBuffer) NextSeries(ctx context.Context, consumerI
 }
 
 func (b *RangeVectorDuplicationBuffer) releaseUnneededBufferedData() {
-	if b.buffer.seriesCount == 0 {
+	if b.buffer.elementCount == 0 {
 		return
 	}
 
