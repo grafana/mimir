@@ -4,7 +4,7 @@ package rangevectorsplitting
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"time"
 
 	"github.com/go-kit/log"
@@ -21,16 +21,6 @@ import (
 
 type limitsProvider interface {
 	GetMaxOutOfOrderTimeWindow(ctx context.Context) (time.Duration, error)
-}
-
-// errNotApplied is a sentinel error returned by trySplitFunction when splitting cannot be applied
-// (but not due to an actual error condition).
-type errNotApplied struct {
-	reason string
-}
-
-func (e *errNotApplied) Error() string {
-	return e.reason
 }
 
 type OptimizationPass struct {
@@ -101,16 +91,14 @@ func (o *OptimizationPass) wrapSplitRangeVectorFunctions(ctx context.Context, n 
 
 	if functionCall, isFunctionCall := n.(*core.FunctionCall); isFunctionCall {
 		o.functionNodesInspected.Inc()
-		wrappedNode, err := o.trySplitFunction(ctx, functionCall, timeRange)
+		wrappedNode, notAppliedReason, err := o.trySplitFunction(ctx, functionCall, timeRange)
 		if err != nil {
-			var notAppliedErr *errNotApplied
-			if errors.As(err, &notAppliedErr) {
-				level.Debug(logger).Log("msg", "range vector splitting not applied to function", "function", functionCall.GetFunction().PromQLName(), "reason", notAppliedErr.reason)
-				o.functionNodesUnsplit.WithLabelValues(notAppliedErr.reason).Inc()
-			} else {
-				o.functionNodesUnsplit.WithLabelValues("error").Inc()
-				return nil, err
-			}
+			o.functionNodesUnsplit.WithLabelValues("error").Inc()
+			return nil, err
+		}
+		if notAppliedReason != "" {
+			level.Debug(logger).Log("msg", "range vector splitting not applied to function", "function", functionCall.GetFunction().PromQLName(), "reason", notAppliedReason)
+			o.functionNodesUnsplit.WithLabelValues(notAppliedReason).Inc()
 		} else {
 			level.Debug(logger).Log("msg", "range vector splitting applied to function", "function", functionCall.GetFunction().PromQLName())
 			o.splitNodesIntroduced.Inc()
@@ -146,36 +134,36 @@ func (o *OptimizationPass) wrapSplitRangeVectorFunctions(ctx context.Context, n 
 //     inner nodes for the subquery, so the split ranges might not align with the stored blocks after the adjustments.
 //   - For functions that require timestamps (e.g. ts_of_min_over_time), we will need to shift the result timestamps to
 //     accommodate for the adjustment done for modifiers.
-func (o *OptimizationPass) trySplitFunction(ctx context.Context, functionCall *core.FunctionCall, timeRange types.QueryTimeRange) (planning.Node, error) {
+func (o *OptimizationPass) trySplitFunction(ctx context.Context, functionCall *core.FunctionCall, timeRange types.QueryTimeRange) (planning.Node, string, error) {
 	// For now, only support instant queries (range queries are more complex)
 	if !timeRange.IsInstant {
-		return nil, &errNotApplied{reason: "range_query"}
+		return nil, "range_query", nil
 	}
 
 	f, ok := functions.RegisteredFunctions[functionCall.GetFunction()]
 	if !ok {
-		return nil, &errNotApplied{reason: "function_not_found"}
+		return nil, "function_not_found", nil
 	}
 	if f.RangeVectorSplitting == nil {
-		return nil, &errNotApplied{reason: "unsupported_function"}
+		return nil, "unsupported_function", nil
 	}
 
 	if functionCall.ChildCount() != 1 {
-		return nil, errors.New("function child count is not 1")
+		return nil, "", fmt.Errorf("function child count is not 1")
 	}
 
 	inner, ok := functionCall.Child(0).(planning.SplitNode)
 	if !ok || !inner.IsSplittable() {
-		return nil, &errNotApplied{reason: "unsupported_inner_node"}
+		return nil, "unsupported_inner_node", nil
 	}
 
 	if !inner.GetRangeParams().IsSet {
 		// Should always be set if it's a splittable node
-		return nil, errors.New("time range params not specified")
+		return nil, "", fmt.Errorf("time range params not specified")
 	}
 
 	if inner.GetRangeParams().Range.Milliseconds() <= o.splitInterval.Milliseconds() {
-		return nil, &errNotApplied{reason: "too_short_interval"}
+		return nil, "too_short_interval", nil
 	}
 
 	timeParams := inner.GetRangeParams()
@@ -185,13 +173,13 @@ func (o *OptimizationPass) trySplitFunction(ctx context.Context, functionCall *c
 
 	hasCompleteBlock := alignedStart+o.splitInterval.Milliseconds() <= endTs
 	if !hasCompleteBlock {
-		return nil, &errNotApplied{reason: "no_complete_cache_block"}
+		return nil, "no_complete_cache_block", nil
 	}
 
 	var oooThreshold int64
 	oooWindow, err := o.limits.GetMaxOutOfOrderTimeWindow(ctx)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if oooWindow > 0 {
 		oooThreshold = o.timeNow().Add(-oooWindow).UnixMilli()
@@ -207,7 +195,7 @@ func (o *OptimizationPass) trySplitFunction(ctx context.Context, functionCall *c
 		}
 	}
 	if !hasCacheable {
-		return nil, &errNotApplied{reason: "no_cacheable_blocks_after_ooo_filter"}
+		return nil, "no_cacheable_blocks_after_ooo_filter", nil
 	}
 
 	n := &SplitFunctionCall{
@@ -217,10 +205,10 @@ func (o *OptimizationPass) trySplitFunction(ctx context.Context, functionCall *c
 		},
 	}
 	if err := n.SetChildren([]planning.Node{functionCall}); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
-	return n, nil
+	return n, "", nil
 }
 
 func calculateInnerTimeRange(evalTime int64, timeParams planning.RangeParams) (startTs, endTs int64) {
