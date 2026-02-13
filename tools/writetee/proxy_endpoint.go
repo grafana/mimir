@@ -113,9 +113,7 @@ func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	} else {
 		// Copy all headers from backend response (includes Content-Type and RW 2.0 statistics headers)
 		for key, values := range res.headers {
-			for _, value := range values {
-				w.Header().Add(key, value)
-			}
+			w.Header()[key] = values
 		}
 		w.WriteHeader(res.status)
 		if _, err := w.Write(res.body); err != nil {
@@ -165,9 +163,7 @@ func (p *ProxyEndpoint) ServeHTTPPassthrough(w http.ResponseWriter, r *http.Requ
 
 	// Return the backend response to client - copy all headers
 	for key, values := range headers {
-		for _, value := range values {
-			w.Header().Add(key, value)
-		}
+		w.Header()[key] = values
 	}
 	w.WriteHeader(status)
 	if _, writeErr := w.Write(body); writeErr != nil {
