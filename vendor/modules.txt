@@ -458,7 +458,7 @@ github.com/envoyproxy/protoc-gen-validate/validate
 # github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb
 ## explicit
 github.com/facette/natsort
-# github.com/failsafe-go/failsafe-go v0.9.5
+# github.com/failsafe-go/failsafe-go v0.9.6
 ## explicit; go 1.21
 github.com/failsafe-go/failsafe-go
 github.com/failsafe-go/failsafe-go/adaptivelimiter
