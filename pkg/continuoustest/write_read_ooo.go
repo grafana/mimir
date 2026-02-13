@@ -167,7 +167,6 @@ func (t *WriteReadOOOTest) RunInner(ctx context.Context, now time.Time, writeLim
 		}
 	}
 
-	// Summary of written data.
 	level.Info(t.logger).Log(
 		"msg", "write summary",
 		"inorder_from", t.inOrderSamples.queryMinTime,
@@ -263,24 +262,11 @@ func (t *WriteReadOOOTest) recoverPast(ctx context.Context, now time.Time, metri
 }
 
 // getInorderQueryTimeRanges calculates some ranges to query to validate the in-order samples.
-// We only do a spot-check, we don't deeply validate these samples.
 func (t *WriteReadOOOTest) getInorderQueryTimeRanges(now time.Time) (ranges [][2]time.Time, instants []time.Time, err error) {
-	records := &t.inOrderSamples
-
-	if records.queryMinTime.IsZero() || records.queryMaxTime.IsZero() {
-		level.Info(t.logger).Log("msg", "Skipped queries because there's no valid time range to query")
-		return nil, nil, errors.New("no valid time range to query")
+	adjustedQueryMinTime, adjustedQueryMaxTime, err := t.adjustQueryTimeRange(now, &t.inOrderSamples, "inorder")
+	if err != nil {
+		return nil, nil, err
 	}
-
-	adjustedQueryMinTime := maxTime(records.queryMinTime, now.Add(-t.cfg.MaxQueryAge))
-	if records.queryMaxTime.Before(adjustedQueryMinTime) {
-		level.Info(t.logger).Log("msg", "Skipped queries because there's no valid time range to query after honoring configured max query age", "min_valid_time", records.queryMinTime, "max_valid_time", records.queryMaxTime, "max_query_age", t.cfg.MaxQueryAge)
-		return nil, nil, errors.New("no valid time range to query after honoring configured max query age")
-	}
-
-	// Compute the latest queriable timestamp
-	// records.queryMaxTime shouldn't be after now but we want to be sure of it
-	adjustedQueryMaxTime := minTime(records.queryMaxTime, now)
 
 	// Last 24h range query.
 	ranges = append(ranges, [2]time.Time{
@@ -307,20 +293,10 @@ func (t *WriteReadOOOTest) getInorderQueryTimeRanges(now time.Time) (ranges [][2
 // getOutOfOrderQueryTimeRanges returns time ranges for range queries and timestamps for instant queries,
 // targeting the dense region where out-of-order samples have been written (before now - MaxOOOLag).
 func (t *WriteReadOOOTest) getOutOfOrderQueryTimeRanges(now time.Time) (ranges [][2]time.Time, instants []time.Time, err error) {
-	records := &t.outOfOrderSamples
-
-	if records.queryMinTime.IsZero() || records.queryMaxTime.IsZero() {
-		level.Info(t.logger).Log("msg", "Skipped OOO queries because there's no valid time range to query")
-		return nil, nil, errors.New("no valid time range to query")
+	adjustedQueryMinTime, adjustedQueryMaxTime, err := t.adjustQueryTimeRange(now, &t.outOfOrderSamples, "ooo")
+	if err != nil {
+		return nil, nil, err
 	}
-
-	adjustedQueryMinTime := maxTime(records.queryMinTime, now.Add(-t.cfg.MaxQueryAge))
-	if records.queryMaxTime.Before(adjustedQueryMinTime) {
-		level.Info(t.logger).Log("msg", "Skipped OOO queries because there's no valid time range to query after honoring configured max query age", "min_valid_time", records.queryMinTime, "max_valid_time", records.queryMaxTime, "max_query_age", t.cfg.MaxQueryAge)
-		return nil, nil, errors.New("no valid time range to query after honoring configured max query age")
-	}
-
-	adjustedQueryMaxTime := minTime(records.queryMaxTime, now)
 
 	// The border where OOO samples stop being written.
 	oooLagBorder := now.Add(-t.cfg.MaxOOOLag)
@@ -348,4 +324,22 @@ func (t *WriteReadOOOTest) getOutOfOrderQueryTimeRanges(now time.Time) (ranges [
 	}
 
 	return ranges, instants, nil
+}
+
+// adjustQueryTimeRange validates records have data and adjusts the query time range
+// to honor MaxQueryAge and the current time.
+func (t *WriteReadOOOTest) adjustQueryTimeRange(now time.Time, records *MetricHistory, label string) (adjustedMin, adjustedMax time.Time, err error) {
+	if records.queryMinTime.IsZero() || records.queryMaxTime.IsZero() {
+		level.Info(t.logger).Log("msg", "Skipped queries because there's no valid time range to query", "type", label)
+		return time.Time{}, time.Time{}, errors.New("no valid time range to query")
+	}
+
+	adjustedMin = maxTime(records.queryMinTime, now.Add(-t.cfg.MaxQueryAge))
+	if records.queryMaxTime.Before(adjustedMin) {
+		level.Info(t.logger).Log("msg", "Skipped queries because there's no valid time range to query after honoring configured max query age", "type", label, "min_valid_time", records.queryMinTime, "max_valid_time", records.queryMaxTime, "max_query_age", t.cfg.MaxQueryAge)
+		return time.Time{}, time.Time{}, errors.New("no valid time range to query after honoring configured max query age")
+	}
+
+	adjustedMax = minTime(records.queryMaxTime, now)
+	return adjustedMin, adjustedMax, nil
 }
