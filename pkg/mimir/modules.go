@@ -1059,8 +1059,24 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 
 	t.Cfg.Ruler.Ring.Common.ListenPort = t.Cfg.Server.GRPCListenPort
 
-	// embeddedQueryable is used for RestoreForState operation and for MQE engine must be wrapped with UnlimitedMemoryConsumptionTracker.
+	// embeddedQueryable is used for RestoreForState operation to query ALERTS_FOR_STATE series.
+	// When ruler.query-frontend.address is configured (remote mode):
+	//   - embeddedQueryable is a Prometheus remote read client that makes HTTP requests to /api/v1/read
+	//   - NO memory tracking wrapper applied - querier handles all query execution via query-frontend
+	// When query-frontend is NOT configured (local/embedded mode):
+	//   - embeddedQueryable is returned from querier.New() already wrapped appropriately:
+	//     • MQE engine: wrapped with MemoryTrackingQueryable (tracking at queryable layer)
+	//     • Prometheus engine: NOT wrapped (engine wrapper handles memory tracking)
 	var embeddedQueryable prom_storage.Queryable
+
+	// queryFunc is used to evaluate recording and alerting rule expressions.
+	// When ruler.query-frontend.address is configured (remote mode):
+	//   - queryFunc makes HTTP POST requests to query-frontend's /api/v1/query endpoint
+	//   - Query execution (engine selection, memory tracking, etc.) happens in remote querier
+	// When query-frontend is NOT configured (local/embedded mode):
+	//   - If tenant federation is enabled: queryFunc routes to federated or regular execution based on query
+	//   - If tenant federation is disabled: queryFunc directly executes via rules.EngineQueryFunc(engine, queryable)
+	//     which creates a Query object from the PromQL string and calls Query.Exec()
 	var queryFunc rules.QueryFunc
 
 	if t.Cfg.Ruler.QueryFrontend.Address != "" {
