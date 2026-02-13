@@ -384,7 +384,7 @@ func (cfg *KafkaAuthConfig) Validate() error {
 		}
 
 	case SASLMechanismOauthbearer:
-		if cfg.OauthbearerToken == "" && cfg.OauthbearerFilePath == "" || (cfg.OauthbearerToken != "" && cfg.OauthbearerFilePath != "") {
+		if (cfg.OauthbearerToken == "") == (cfg.OauthbearerFilePath == "") {
 			return ErrSASLOauthbearerBadConfig
 		}
 
