@@ -549,9 +549,9 @@ func SortOperatorFactory(descending bool) FunctionOperatorFactory {
 }
 
 func InfoFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
-	if len(args) != 2 {
+	if len(args) < 2 {
 		// Should be caught by the PromQL parser, but we check here for safety.
-		return nil, fmt.Errorf("expected exactly 2 arguments for info, got %v", len(args))
+		return nil, fmt.Errorf("expected at least 2 arguments for info, got %v", len(args))
 	}
 
 	inner, ok := args[0].(types.InstantVectorOperator)
@@ -566,7 +566,22 @@ func InfoFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opParam
 		return nil, fmt.Errorf("expected an instant vector selector for 2nd argument for info, got %T", args[1])
 	}
 
-	return NewInfoFunction(inner, info, opParams.MemoryConsumptionTracker, timeRange, expressionPosition), nil
+	var identifyingLabels []string
+	for i := 2; i < len(args); i++ {
+		l, ok := args[i].(types.StringOperator)
+		if !ok {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected a string for argument %d for info, got %T", i+1, args[i])
+		}
+
+		identifyingLabels = append(identifyingLabels, l.GetValue())
+	}
+
+	if len(identifyingLabels) == 0 {
+		identifyingLabels = []string{"instance", "job"}
+	}
+
+	return NewInfoFunction(inner, info, opParams.MemoryConsumptionTracker, timeRange, expressionPosition, identifyingLabels), nil
 }
 
 // RegisteredFunctions contains information for each registered function.

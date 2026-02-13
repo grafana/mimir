@@ -22,10 +22,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-// identifyingLabels are the labels we consider as identifying for info metrics.
-// Currently hard coded, so we don't need knowledge of individual info metrics.
-var identifyingLabels = []string{"instance", "job"}
-
 type labelsTime struct {
 	labels labels.Labels
 	time   int64
@@ -38,6 +34,8 @@ type InfoFunction struct {
 
 	timeRange          types.QueryTimeRange
 	expressionPosition posrange.PositionRange
+
+	identifyingLabels []string
 
 	// dedicated buffer and scratch builder for signature
 	sigBuf []byte
@@ -63,14 +61,15 @@ func NewInfoFunction(
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	timeRange types.QueryTimeRange,
 	expressionPosition posrange.PositionRange,
+	identifyingLabels []string,
 ) *InfoFunction {
 	return &InfoFunction{
 		Inner:                    inner,
 		Info:                     info,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
-
-		timeRange:          timeRange,
-		expressionPosition: expressionPosition,
+		timeRange:                timeRange,
+		expressionPosition:       expressionPosition,
+		identifyingLabels:        identifyingLabels,
 	}
 }
 
@@ -111,12 +110,12 @@ func (f *InfoFunction) generateInfoMatchers(innerMetadata []types.SeriesMetadata
 	}
 
 	identifyingLabelValues := make(map[string]map[string]struct{})
-	for _, labelName := range identifyingLabels {
+	for _, labelName := range f.identifyingLabels {
 		identifyingLabelValues[labelName] = make(map[string]struct{})
 	}
 
 	for _, metadata := range innerMetadata {
-		for _, labelName := range identifyingLabels {
+		for _, labelName := range f.identifyingLabels {
 			if value := metadata.Labels.Get(labelName); value != "" {
 				identifyingLabelValues[labelName][value] = struct{}{}
 			}
@@ -125,7 +124,7 @@ func (f *InfoFunction) generateInfoMatchers(innerMetadata []types.SeriesMetadata
 
 	var matchers types.Matchers
 
-	for _, labelName := range identifyingLabels {
+	for _, labelName := range f.identifyingLabels {
 		values := identifyingLabelValues[labelName]
 		switch len(values) {
 		case 0:
@@ -161,7 +160,7 @@ func (f *InfoFunction) generateInfoMatchers(innerMetadata []types.SeriesMetadata
 func (f *InfoFunction) signature(lset labels.Labels) []byte {
 	// Signature is only the identifying labels without metric names.
 	f.sigLb.Reset()
-	lset.MatchLabels(true, identifyingLabels...).Range(func(l labels.Label) {
+	lset.MatchLabels(true, f.identifyingLabels...).Range(func(l labels.Label) {
 		f.sigLb.Add(l.Name, l.Value)
 	})
 	f.sigLb.Sort()

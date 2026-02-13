@@ -32,14 +32,15 @@ func (h *InsertOmittedTargetInfoSelector) Visit(node parser.Node, _ []parser.Nod
 	if expr.Func.Name != "info" {
 		return h, nil
 	}
-	switch length := len(expr.Args); length {
-	case 1:
+	length := len(expr.Args)
+	switch {
+	case length == 1:
 		infoExpr, err := parser.ParseExpr("target_info")
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse target_info expression: %v", err)
 		}
 		expr.Args = append(expr.Args, infoExpr)
-	case 2:
+	case length >= 2:
 		dataLabelMatchersExpr, ok := expr.Args[1].(*parser.VectorSelector)
 		if !ok {
 			return nil, fmt.Errorf("expected second argument to 'info' function to be a VectorSelector, got %T", expr.Args[1])

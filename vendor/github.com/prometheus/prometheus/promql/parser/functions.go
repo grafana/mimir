@@ -232,10 +232,10 @@ var Functions = map[string]*Function{
 	},
 	"info": {
 		Name:         "info",
-		ArgTypes:     []ValueType{ValueTypeVector, ValueTypeVector},
+		ArgTypes:     []ValueType{ValueTypeVector, ValueTypeVector, ValueTypeString},
 		ReturnType:   ValueTypeVector,
 		Experimental: true,
-		Variadic:     1,
+		Variadic:     -1,
 	},
 	"irate": {
 		Name:       "irate",
