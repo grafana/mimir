@@ -18633,6 +18633,49 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
+          "name": "propagation_delay_tracker",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "enabled",
+              "required": false,
+              "desc": "Enable the propagation delay tracker to measure gossip propagation delay.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "memberlist.propagation-delay-tracker.enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "beacon_interval",
+              "required": false,
+              "desc": "How often to publish beacons for propagation tracking.",
+              "fieldValue": null,
+              "fieldDefaultValue": 60000000000,
+              "fieldFlag": "memberlist.propagation-delay-tracker.beacon-interval",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "beacon_lifetime",
+              "required": false,
+              "desc": "How long a beacon lives before being garbage collected.",
+              "fieldValue": null,
+              "fieldDefaultValue": 600000000000,
+              "fieldFlag": "memberlist.propagation-delay-tracker.beacon-lifetime",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,

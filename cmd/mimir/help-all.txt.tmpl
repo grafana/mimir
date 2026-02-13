@@ -1949,6 +1949,12 @@ Usage of ./cmd/mimir/mimir:
     	Timeout used when connecting to other nodes to send packet. (default 500ms)
   -memberlist.packet-write-timeout duration
     	Timeout for writing 'packet' data. (default 500ms)
+  -memberlist.propagation-delay-tracker.beacon-interval duration
+    	[experimental] How often to publish beacons for propagation tracking. (default 1m0s)
+  -memberlist.propagation-delay-tracker.beacon-lifetime duration
+    	[experimental] How long a beacon lives before being garbage collected. (default 10m0s)
+  -memberlist.propagation-delay-tracker.enabled
+    	[experimental] Enable the propagation delay tracker to measure gossip propagation delay.
   -memberlist.pullpush-interval duration
     	How often to use pull/push sync. (default 30s)
   -memberlist.randomize-node-name
