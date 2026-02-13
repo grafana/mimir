@@ -30,7 +30,7 @@ RUN GOARCH=$(go env GOARCH) && \
 	mv shfmt /usr/bin
 
 # renovate: depName=github.com/grafana/tanka
-ENV TANKA_VERSION=0.26.0
+ENV TANKA_VERSION=0.36.3
 RUN GOARCH=$(go env GOARCH) && \
     curl -fSL -o "/usr/bin/tk" "https://github.com/grafana/tanka/releases/download/v${TANKA_VERSION}/tk-linux-${GOARCH}" && \
     chmod a+x /usr/bin/tk
