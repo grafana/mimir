@@ -225,7 +225,7 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 		return nil, notRunning()
 	}
 
-	level.Info(s.logger).Log("msg", "received plan results", "tenant", req.Key.Id, "epoch", req.Key.Epoch, "job_count", len(req.Jobs))
+	level.Info(s.logger).Log("msg", "received plan results", "tenant", req.Tenant, "epoch", req.Key.Epoch, "job_count", len(req.Jobs))
 
 	now := s.clock.Now()
 	jobs := make([]TrackedJob, 0, len(req.Jobs))
