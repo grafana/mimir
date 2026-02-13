@@ -111,7 +111,10 @@ func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		level.Error(logger).Log("msg", "Preferred backend failed", "err", res.err)
 		http.Error(w, res.err.Error(), res.statusCode())
 	} else {
-		w.Header().Set("Content-Type", res.contentType)
+		// Copy all headers from backend response (includes Content-Type and RW 2.0 statistics headers)
+		for key, values := range res.headers {
+			w.Header()[key] = values
+		}
 		w.WriteHeader(res.status)
 		if _, err := w.Write(res.body); err != nil {
 			level.Warn(logger).Log("msg", "Unable to write response", "err", err)
@@ -141,7 +144,7 @@ func (p *ProxyEndpoint) ServeHTTPPassthrough(w http.ResponseWriter, r *http.Requ
 	}
 
 	// Forward request directly to preferred backend
-	elapsed, status, body, contentType, err := p.preferredBackend.ForwardRequest(ctx, r, r.Body)
+	elapsed, status, body, headers, err := p.preferredBackend.ForwardRequest(ctx, r, r.Body)
 
 	// Track metrics
 	p.metrics.RecordBackendResult(p.preferredBackend.Name(), r.Method, "passthrough", elapsed, status, err)
@@ -158,9 +161,9 @@ func (p *ProxyEndpoint) ServeHTTPPassthrough(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Return the backend response to client
-	if contentType != "" {
-		w.Header().Set("Content-Type", contentType)
+	// Return the backend response to client - copy all headers
+	for key, values := range headers {
+		w.Header()[key] = values
 	}
 	w.WriteHeader(status)
 	if _, writeErr := w.Write(body); writeErr != nil {
@@ -208,17 +211,17 @@ func (p *ProxyEndpoint) executePreferredBackendRequest(ctx context.Context, req 
 
 	// For the preferred backend, just send the original body (no amplification)
 	// since we're synchronously waiting for the response
-	elapsed, status, respBody, contentType, err := b.ForwardRequest(ctx, req, io.NopCloser(bytes.NewReader(body)))
+	elapsed, status, respBody, headers, err := b.ForwardRequest(ctx, req, io.NopCloser(bytes.NewReader(body)))
 
-	// Use the actual Content-Type from the backend, with a fallback for Mimir write endpoints
-	if contentType == "" {
-		contentType = "application/json"
+	// Set a default Content-Type if the backend didn't provide one
+	if headers != nil && headers.Get("Content-Type") == "" {
+		headers.Set("Content-Type", "application/json")
 	}
 
 	res := &backendResponse{
 		backend:     b,
 		status:      status,
-		contentType: contentType,
+		headers:     headers,
 		body:        respBody,
 		err:         err,
 		elapsedTime: elapsed,
@@ -316,7 +319,7 @@ func (p *ProxyEndpoint) prepareAmplifiedBodies(body []byte, backend ProxyBackend
 type backendResponse struct {
 	backend     ProxyBackend
 	status      int
-	contentType string
+	headers     http.Header
 	body        []byte
 	err         error
 	elapsedTime time.Duration

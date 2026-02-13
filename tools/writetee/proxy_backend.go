@@ -28,7 +28,7 @@ type ProxyBackend interface {
 	Endpoint() *url.URL
 	Preferred() bool
 	BackendType() BackendType
-	ForwardRequest(ctx context.Context, orig *http.Request, body io.ReadCloser) (time.Duration, int, []byte, string, error)
+	ForwardRequest(ctx context.Context, orig *http.Request, body io.ReadCloser) (time.Duration, int, []byte, http.Header, error)
 }
 
 // proxyBackend holds the information of a single backend.
@@ -94,17 +94,17 @@ func (b *proxyBackend) BackendType() BackendType {
 	return b.backendType
 }
 
-func (b *proxyBackend) ForwardRequest(ctx context.Context, orig *http.Request, body io.ReadCloser) (time.Duration, int, []byte, string, error) {
+func (b *proxyBackend) ForwardRequest(ctx context.Context, orig *http.Request, body io.ReadCloser) (time.Duration, int, []byte, http.Header, error) {
 	req, err := b.createBackendRequest(ctx, orig, body)
 	if err != nil {
-		return 0, 0, nil, "", err
+		return 0, 0, nil, nil, err
 	}
 
 	start := time.Now()
-	status, responseBody, contentType, err := b.doBackendRequest(req)
+	status, responseBody, headers, err := b.doBackendRequest(req)
 	elapsed := time.Since(start)
 
-	return elapsed, status, responseBody, contentType, err
+	return elapsed, status, responseBody, headers, err
 }
 
 func (b *proxyBackend) createBackendRequest(ctx context.Context, orig *http.Request, body io.ReadCloser) (*http.Request, error) {
@@ -155,7 +155,7 @@ func (b *proxyBackend) createBackendRequest(ctx context.Context, orig *http.Requ
 	return req, nil
 }
 
-func (b *proxyBackend) doBackendRequest(req *http.Request) (int, []byte, string, error) {
+func (b *proxyBackend) doBackendRequest(req *http.Request) (int, []byte, http.Header, error) {
 	// Honor the read timeout.
 	ctx, cancel := context.WithTimeout(req.Context(), b.timeout)
 	defer cancel()
@@ -163,19 +163,18 @@ func (b *proxyBackend) doBackendRequest(req *http.Request) (int, []byte, string,
 	// Execute the request.
 	res, err := b.client.Do(req.WithContext(ctx))
 	if err != nil {
-		return 0, nil, "", errors.Wrap(err, "executing backend request")
+		return 0, nil, nil, errors.Wrap(err, "executing backend request")
 	}
 
 	// Read the entire response body.
 	body, readErr := io.ReadAll(res.Body)
 	closeErr := res.Body.Close()
 	if readErr != nil {
-		return 0, nil, "", errors.Wrap(readErr, "reading backend response")
+		return 0, nil, nil, errors.Wrap(readErr, "reading backend response")
 	}
 	if closeErr != nil {
-		return 0, nil, "", errors.Wrap(closeErr, "closing backend response body")
+		return 0, nil, nil, errors.Wrap(closeErr, "closing backend response body")
 	}
 
-	contentType := res.Header.Get("Content-Type")
-	return res.StatusCode, body, contentType, nil
+	return res.StatusCode, body, res.Header, nil
 }
