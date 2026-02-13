@@ -19,6 +19,11 @@ type ExecutionInternal[R any] interface {
 	// Cancel cancels the execution with the result.
 	Cancel(result *common.PolicyResult[R])
 
+	// DeferCancel defers the cancellation of any sub-context that's created as part of the execution until the returned
+	// cancel function is called. This is useful when the context is still needed after the execution completes, such as for
+	// reading an HTTP response body.
+	DeferCancel() func()
+
 	// IsCanceledWithResult returns whether the execution is canceled, along with the cancellation result, if any.
 	IsCanceledWithResult() (bool, *common.PolicyResult[R])
 

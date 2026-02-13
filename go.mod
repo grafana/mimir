@@ -7,7 +7,7 @@ require (
 	github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b
 	github.com/dustin/go-humanize v1.0.1
 	github.com/edsrzf/mmap-go v1.2.0
-	github.com/failsafe-go/failsafe-go v0.9.5
+	github.com/failsafe-go/failsafe-go v0.9.6
 	github.com/go-kit/log v0.2.1
 	github.com/go-openapi/strfmt v0.25.0
 	github.com/go-openapi/swag v0.25.4 // indirect

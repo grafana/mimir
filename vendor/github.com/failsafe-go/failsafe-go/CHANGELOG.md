@@ -1,5 +1,20 @@
 ## Upcoming Release
 
+## 0.9.6
+
+### Bug Fixes
+
+- Fixed #134 - Avoid leaking child contexts when an executor context is configured.
+
+### Improvements
+
+- Added `WithMaxLimitStabilizationWindow` to provide support for stabilization windows that mitigate fluctuating limits when setting the max limit.
+- Added `WithMaxLimitFunc` to `AdaptiveLimiter`, allowing the max limit to be configured as desired based on current inflights.
+
+### API Changes
+
+- `adaptivelimiter.Builder.WithMaxLimitFactorDecay` now expects a second parameter: `minLimitFactor`, which allows you configure the min limit factor when decay is used.
+
 ## 0.9.5
 
 - Added `MaxLimitFactorDecay` to `AdaptiveLimiter`, allowing the limit's headroom to vary relative to inflights.

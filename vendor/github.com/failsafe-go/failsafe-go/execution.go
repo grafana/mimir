@@ -87,6 +87,7 @@ type execution[R any] struct {
 	// Partly shared cancellation state
 	ctx            context.Context
 	cancelFunc     context.CancelFunc
+	deferCancel    *atomic.Bool
 	canceledResult **common.PolicyResult[R]
 
 	// Per execution state
@@ -203,13 +204,23 @@ func (e *execution[R]) Cancel(result *common.PolicyResult[R]) {
 		return
 	}
 
-	*e.canceledResult = result
 	if result != nil {
+		*e.canceledResult = result
 		e.lastResult = result.Result
 		e.lastError = result.Error
 	}
-	if e.cancelFunc != nil {
+
+	if e.cancelFunc != nil && !(result == nil && e.deferCancel.Load()) {
 		e.cancelFunc()
+	}
+}
+
+func (e *execution[R]) DeferCancel() func() {
+	e.deferCancel.Store(true)
+	return func() {
+		if e.deferCancel.CompareAndSwap(true, false) {
+			e.Cancel(nil)
+		}
 	}
 }
 
@@ -270,9 +281,6 @@ func (e *execution[R]) record() {
 
 func newExecution[R any](ctx context.Context) *execution[R] {
 	attempts := atomic.Uint32{}
-	retries := atomic.Uint32{}
-	hedges := atomic.Uint32{}
-	executions := atomic.Uint32{}
 	attempts.Add(1)
 	var canceledResult *common.PolicyResult[R]
 	now := time.Now()
@@ -280,9 +288,10 @@ func newExecution[R any](ctx context.Context) *execution[R] {
 		ctx:              ctx,
 		mu:               &sync.Mutex{},
 		attempts:         &attempts,
-		retries:          &retries,
-		hedges:           &hedges,
-		executions:       &executions,
+		retries:          &atomic.Uint32{},
+		hedges:           &atomic.Uint32{},
+		executions:       &atomic.Uint32{},
+		deferCancel:      &atomic.Bool{},
 		canceledResult:   &canceledResult,
 		attemptStartTime: now,
 		startTime:        now,
@@ -330,6 +339,10 @@ func (w *executionAnyWrapper[R]) CopyForCancellable() Execution[any] {
 func (w *executionAnyWrapper[R]) CopyForHedge() Execution[any] {
 	copied := w.execution.CopyForHedge()
 	return &executionAnyWrapper[R]{execution: copied.(*execution[R])}
+}
+
+func (w *executionAnyWrapper[R]) DeferCancel() func() {
+	return w.execution.DeferCancel()
 }
 
 func resultToAny[R any](result *common.PolicyResult[R]) *common.PolicyResult[any] {
