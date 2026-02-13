@@ -50,7 +50,7 @@ func NewDex() *DexService {
 	}
 }
 
-func (d *DexService) Start(networkName, sharedDir string) error {
+func (s *DexService) Start(networkName, sharedDir string) error {
 	// The issuer URL uses the Docker hostname which is the service name.
 	// Other containers on the same Docker network can reach Dex at this address.
 	config := fmt.Sprintf(`issuer: http://dex:5556/dex
@@ -87,7 +87,7 @@ oauth2:
 		return fmt.Errorf("writing dex config: %w", err)
 	}
 
-	return d.HTTPService.Start(networkName, sharedDir)
+	return s.HTTPService.Start(networkName, sharedDir)
 }
 
 func (s *DexService) FetchToken() (string, error) {
@@ -108,7 +108,7 @@ func (s *DexService) FetchToken() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("POST to token endpoint: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
