@@ -203,7 +203,10 @@ func (t *WriteReadOOOTest) RunInner(ctx context.Context, now time.Time, writeLim
 		level.Info(t.logger).Log("msg", "dry run OOO range query", "from", timeRange[0], "to", timeRange[1])
 	}
 	for _, ts := range oooInstants {
-		level.Info(t.logger).Log("msg", "dry run OOO instant query", "ts", ts)
+		err := t.runInstantQueryAndVerifyResult(ctx, ts, floatTypeLabel, query, generateSineWaveValue, outOfOrderWriteInterval, &t.outOfOrderSamples)
+		if err != nil {
+			errs.Add(err)
+		}
 	}
 }
 
@@ -325,6 +328,8 @@ func (t *WriteReadOOOTest) getOutOfOrderQueryTimeRanges(now time.Time) (ranges [
 		denseInstant := alignTimestampToInterval(randTime(adjustedQueryMinTime, denseEnd), outOfOrderWriteInterval)
 		instants = append(instants, denseInstant)
 	}
+
+	// TODO: instant query for the latest _non :00_ timestamp that we expect to be written.
 
 	// Instant query at the border.
 	borderInstant := alignTimestampToInterval(oooLagBorder, outOfOrderWriteInterval)
