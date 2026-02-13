@@ -15,6 +15,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/prompb"
 	"golang.org/x/time/rate"
+
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 const (
@@ -175,6 +177,8 @@ func (t *WriteReadOOOTest) RunInner(ctx context.Context, now time.Time, writeLim
 		"ooo_to", t.outOfOrderSamples.lastWrittenTimestamp,
 	)
 
+	query := querySumFloat(metricName)
+
 	inorderRanges, inorderInstants, err := t.getInorderQueryTimeRanges(now)
 	if err != nil {
 		errs.Add(err)
@@ -184,6 +188,10 @@ func (t *WriteReadOOOTest) RunInner(ctx context.Context, now time.Time, writeLim
 	}
 	for _, ts := range inorderInstants {
 		level.Info(t.logger).Log("msg", "dry run inorder instant query", "ts", ts)
+		err := t.runInstantQueryAndVerifyResult(ctx, ts, floatTypeLabel, query, generateSineWaveValue, inorderWriteInterval, &t.inOrderSamples)
+		if err != nil {
+			errs.Add(err)
+		}
 	}
 
 	oooRanges, oooInstants, err := t.getOutOfOrderQueryTimeRanges(now)
@@ -342,4 +350,29 @@ func (t *WriteReadOOOTest) adjustQueryTimeRange(now time.Time, records *MetricHi
 
 	adjustedMax = minTime(records.queryMaxTime, now)
 	return adjustedMin, adjustedMax, nil
+}
+
+func (t *WriteReadOOOTest) runInstantQueryAndVerifyResult(ctx context.Context, ts time.Time, typeLabel, metricSumQuery string, generateValue generateValueFunc, step time.Duration, records *MetricHistory) error {
+	ts = maxTime(records.queryMinTime, alignTimestampToInterval(ts, step))
+	if records.queryMaxTime.Before(ts) {
+		return nil
+	}
+
+	sp, ctx := spanlogger.New(ctx, t.logger, tracer, "WriteReadOOOTest.runInstantQueryAndVerifyResult")
+	defer sp.Finish()
+
+	logger := log.With(sp, "query", metricSumQuery, "ts", ts.UnixMilli(), "results_cache", false, "type", typeLabel, "protocol", t.client.Protocol())
+	level.Debug(logger).Log("msg", "Running instant query")
+
+	t.metrics.queriesTotal.WithLabelValues(typeLabel).Inc()
+	queryStart := time.Now()
+	_, err := t.client.Query(ctx, metricSumQuery, ts, WithResultsCacheEnabled(false))
+	t.metrics.queriesLatency.WithLabelValues(typeLabel, "false").Observe(time.Since(queryStart).Seconds())
+	if err != nil {
+		t.metrics.queriesFailedTotal.WithLabelValues(typeLabel).Inc()
+		level.Warn(logger).Log("msg", "Failed to execute instant query", "err", err)
+		return fmt.Errorf("failed to execute instant query: %w", err)
+	}
+
+	return nil
 }
