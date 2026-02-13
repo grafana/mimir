@@ -353,13 +353,27 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 
 	blocksToCompactDirs := make([]string, len(toCompact))
 	var totalBlockSize int64
+	var totalSamples, totalSeries, totalChunks uint64
 	for ix, meta := range toCompact {
 		blocksToCompactDirs[ix] = filepath.Join(subDir, meta.ULID.String())
 		totalBlockSize += meta.BlockBytes()
+		totalSamples += meta.Stats.NumSamples
+		totalSeries += meta.Stats.NumSeries
+		totalChunks += meta.Stats.NumChunks
 	}
 
 	elapsed := time.Since(downloadBegin)
-	level.Info(jobLogger).Log("msg", "downloaded and verified blocks; compacting blocks", "block_count", blockCount, "blocks", toCompactStr, "total_size_bytes", totalBlockSize, "duration", elapsed, "duration_ms", elapsed.Milliseconds())
+	level.Info(jobLogger).Log(
+		"msg", "downloaded and verified blocks; compacting blocks",
+		"block_count", blockCount,
+		"blocks", toCompactStr,
+		"total_size_bytes", totalBlockSize,
+		"total_samples", totalSamples,
+		"total_series", totalSeries,
+		"total_chunks", totalChunks,
+		"duration", elapsed,
+		"duration_ms", elapsed.Milliseconds(),
+	)
 
 	compactionBegin := time.Now()
 
