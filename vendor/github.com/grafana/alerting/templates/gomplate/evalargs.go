@@ -52,6 +52,7 @@ func printableValue(v reflect.Value) (any, bool) {
 		if v.CanAddr() && (reflect.PointerTo(v.Type()).Implements(errorType) || reflect.PointerTo(v.Type()).Implements(fmtStringerType)) {
 			v = v.Addr()
 		} else {
+			//nolint:exhaustive // Only checking for Chan/Func types, other types are allowed
 			switch v.Kind() {
 			case reflect.Chan, reflect.Func:
 				return nil, false
