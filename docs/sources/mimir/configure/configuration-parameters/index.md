@@ -5053,7 +5053,8 @@ The `ingest_storage` block configures the Kafka-based ingest storage.
 [enabled: <boolean> | default = false]
 
 kafka:
-  # The Kafka backend address.
+  # The Kafka seed broker address, or a comma-separated list of seed broker
+  # addresses.
   # CLI flag: -ingest-storage.kafka.address
   [address: <string> | default = ""]
 
