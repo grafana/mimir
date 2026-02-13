@@ -15,9 +15,8 @@ message JobKey {
 }
 
 enum JobType {
-  JOB_TYPE_UNKNOWN = 0;
-  JOB_TYPE_COMPACTION = 1;
-  JOB_TYPE_PLANNING = 2;
+  JOB_TYPE_COMPACTION = 0;
+  JOB_TYPE_PLANNING = 1;
 }
 
 message JobSpec {
@@ -27,8 +26,8 @@ message JobSpec {
 }
 
 message CompactionJob {
-  repeated bytes blockIds = 1;
-  bool split = 2;
+  repeated bytes blockIds = 2;
+  bool split = 3;
 }
 
 service CompactorScheduler {
@@ -61,11 +60,10 @@ message PlannedJobsRequest {
 message PlannedJobsResponse {}
 
 enum UpdateType {
-  UPDATE_TYPE_UNKNOWN = 0;
-  UPDATE_TYPE_IN_PROGRESS = 1;
-  UPDATE_TYPE_COMPLETE = 2;
-  UPDATE_TYPE_REASSIGN = 3;
-  UPDATE_TYPE_ABANDON = 4;
+  UPDATE_TYPE_IN_PROGRESS = 0;
+  UPDATE_TYPE_COMPLETE = 1;
+  UPDATE_TYPE_REASSIGN = 2;
+  UPDATE_TYPE_ABANDON = 3;
 }
 
 message UpdatePlanJobRequest {

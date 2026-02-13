@@ -34,21 +34,18 @@ const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 type JobType int32
 
 const (
-	JOB_TYPE_UNKNOWN    JobType = 0
-	JOB_TYPE_COMPACTION JobType = 1
-	JOB_TYPE_PLANNING   JobType = 2
+	JOB_TYPE_COMPACTION JobType = 0
+	JOB_TYPE_PLANNING   JobType = 1
 )
 
 var JobType_name = map[int32]string{
-	0: "JOB_TYPE_UNKNOWN",
-	1: "JOB_TYPE_COMPACTION",
-	2: "JOB_TYPE_PLANNING",
+	0: "JOB_TYPE_COMPACTION",
+	1: "JOB_TYPE_PLANNING",
 }
 
 var JobType_value = map[string]int32{
-	"JOB_TYPE_UNKNOWN":    0,
-	"JOB_TYPE_COMPACTION": 1,
-	"JOB_TYPE_PLANNING":   2,
+	"JOB_TYPE_COMPACTION": 0,
+	"JOB_TYPE_PLANNING":   1,
 }
 
 func (JobType) EnumDescriptor() ([]byte, []int) {
@@ -58,27 +55,24 @@ func (JobType) EnumDescriptor() ([]byte, []int) {
 type UpdateType int32
 
 const (
-	UPDATE_TYPE_UNKNOWN     UpdateType = 0
-	UPDATE_TYPE_IN_PROGRESS UpdateType = 1
-	UPDATE_TYPE_COMPLETE    UpdateType = 2
-	UPDATE_TYPE_REASSIGN    UpdateType = 3
-	UPDATE_TYPE_ABANDON     UpdateType = 4
+	UPDATE_TYPE_IN_PROGRESS UpdateType = 0
+	UPDATE_TYPE_COMPLETE    UpdateType = 1
+	UPDATE_TYPE_REASSIGN    UpdateType = 2
+	UPDATE_TYPE_ABANDON     UpdateType = 3
 )
 
 var UpdateType_name = map[int32]string{
-	0: "UPDATE_TYPE_UNKNOWN",
-	1: "UPDATE_TYPE_IN_PROGRESS",
-	2: "UPDATE_TYPE_COMPLETE",
-	3: "UPDATE_TYPE_REASSIGN",
-	4: "UPDATE_TYPE_ABANDON",
+	0: "UPDATE_TYPE_IN_PROGRESS",
+	1: "UPDATE_TYPE_COMPLETE",
+	2: "UPDATE_TYPE_REASSIGN",
+	3: "UPDATE_TYPE_ABANDON",
 }
 
 var UpdateType_value = map[string]int32{
-	"UPDATE_TYPE_UNKNOWN":     0,
-	"UPDATE_TYPE_IN_PROGRESS": 1,
-	"UPDATE_TYPE_COMPLETE":    2,
-	"UPDATE_TYPE_REASSIGN":    3,
-	"UPDATE_TYPE_ABANDON":     4,
+	"UPDATE_TYPE_IN_PROGRESS": 0,
+	"UPDATE_TYPE_COMPLETE":    1,
+	"UPDATE_TYPE_REASSIGN":    2,
+	"UPDATE_TYPE_ABANDON":     3,
 }
 
 func (UpdateType) EnumDescriptor() ([]byte, []int) {
@@ -219,12 +213,12 @@ func (m *JobSpec) GetJobType() JobType {
 	if m != nil {
 		return m.JobType
 	}
-	return JOB_TYPE_UNKNOWN
+	return JOB_TYPE_COMPACTION
 }
 
 type CompactionJob struct {
-	BlockIds [][]byte `protobuf:"bytes,1,rep,name=blockIds,proto3" json:"blockIds,omitempty"`
-	Split    bool     `protobuf:"varint,2,opt,name=split,proto3" json:"split,omitempty"`
+	BlockIds [][]byte `protobuf:"bytes,2,rep,name=blockIds,proto3" json:"blockIds,omitempty"`
+	Split    bool     `protobuf:"varint,3,opt,name=split,proto3" json:"split,omitempty"`
 }
 
 func (m *CompactionJob) Reset()      { *m = CompactionJob{} }
@@ -568,7 +562,7 @@ func (m *UpdatePlanJobRequest) GetUpdate() UpdateType {
 	if m != nil {
 		return m.Update
 	}
-	return UPDATE_TYPE_UNKNOWN
+	return UPDATE_TYPE_IN_PROGRESS
 }
 
 type UpdateCompactionJobRequest struct {
@@ -627,7 +621,7 @@ func (m *UpdateCompactionJobRequest) GetUpdate() UpdateType {
 	if m != nil {
 		return m.Update
 	}
-	return UPDATE_TYPE_UNKNOWN
+	return UPDATE_TYPE_IN_PROGRESS
 }
 
 type UpdateJobResponse struct {
@@ -1744,7 +1738,7 @@ func (m *CompactionJob) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			dAtA[i] = 0
 		}
 		i--
-		dAtA[i] = 0x10
+		dAtA[i] = 0x18
 	}
 	if len(m.BlockIds) > 0 {
 		for iNdEx := len(m.BlockIds) - 1; iNdEx >= 0; iNdEx-- {
@@ -1752,7 +1746,7 @@ func (m *CompactionJob) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			copy(dAtA[i:], m.BlockIds[iNdEx])
 			i = encodeVarintCompactorscheduler(dAtA, i, uint64(len(m.BlockIds[iNdEx])))
 			i--
-			dAtA[i] = 0xa
+			dAtA[i] = 0x12
 		}
 	}
 	return len(dAtA) - i, nil
@@ -2842,7 +2836,7 @@ func (m *CompactionJob) Unmarshal(dAtA []byte) error {
 			return fmt.Errorf("proto: CompactionJob: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
-		case 1:
+		case 2:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field BlockIds", wireType)
 			}
@@ -2874,7 +2868,7 @@ func (m *CompactionJob) Unmarshal(dAtA []byte) error {
 			m.BlockIds = append(m.BlockIds, make([]byte, postIndex-iNdEx))
 			copy(m.BlockIds[len(m.BlockIds)-1], dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
-		case 2:
+		case 3:
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Split", wireType)
 			}

@@ -196,18 +196,18 @@ func (r *Rotator) CancelJobLease(tenant string, key string, epoch int64) (bool, 
 	return canceled, nil
 }
 
-func (r *Rotator) OfferJobs(tenant string, jobs []TrackedJob, epoch int64) (int, error) {
+func (r *Rotator) OfferJobs(tenant string, jobs []TrackedJob, epoch int64) (added int, tenantFound bool, err error) {
 	r.mtx.RLock()
 
 	tenantState, ok := r.tenantStateMap[tenant]
 	if !ok {
 		r.mtx.RUnlock()
-		return 0, nil
+		return 0, false, nil
 	}
 	added, transition, err := tenantState.tracker.Offer(jobs, epoch)
 	if err != nil {
 		r.mtx.RUnlock()
-		return 0, err
+		return 0, true, err
 	}
 
 	// Must still be holding the read lock to read rotation index
@@ -219,11 +219,11 @@ func (r *Rotator) OfferJobs(tenant string, jobs []TrackedJob, epoch int64) (int,
 			r.addToRotation(tenant, tenantState)
 		}
 		r.mtx.Unlock()
-		return added, nil
+		return added, true, nil
 	}
 
 	r.mtx.RUnlock()
-	return added, nil
+	return added, true, nil
 }
 
 func (r *Rotator) RemoveJob(tenant string, key string, epoch int64, complete bool) (bool, error) {
