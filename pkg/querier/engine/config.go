@@ -31,6 +31,8 @@ type Config struct {
 	// series is considered stale.
 	LookbackDelta time.Duration `yaml:"lookback_delta" category:"advanced"`
 
+	EnableDelayedNameRemovalPrometheusEngine bool `yaml:"enable_delayed_name_removal_prometheus_engine" category:"experimental"`
+
 	MimirQueryEngine streamingpromql.EngineOpts `yaml:"mimir_query_engine" category:"experimental"`
 }
 
@@ -48,6 +50,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.MaxSamples, "querier.max-samples", 50e6, sharedWithQueryFrontend("Maximum number of samples a single query can load into memory."))
 	f.DurationVar(&cfg.DefaultEvaluationInterval, "querier.default-evaluation-interval", time.Minute, sharedWithQueryFrontend("The default evaluation interval or step size for subqueries."))
 	f.DurationVar(&cfg.LookbackDelta, "querier.lookback-delta", 5*time.Minute, sharedWithQueryFrontend("Time since the last sample after which a time series is considered stale and ignored by expression evaluations."))
+	f.BoolVar(&cfg.EnableDelayedNameRemovalPrometheusEngine, "querier.enable-delayed-name-removal-prometheus-engine", false, "Enable the experimental Prometheus feature for delayed name removal in the fallback Prometheus engine.")
 
 	cfg.MimirQueryEngine.RegisterFlags(f)
 }
@@ -69,7 +72,7 @@ func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.Activit
 			return cfg.DefaultEvaluationInterval.Milliseconds()
 		},
 		// This only applies to Prometheus engine. MQE's is defined per-tenant via limits.
-		EnableDelayedNameRemoval: false,
+		EnableDelayedNameRemoval: cfg.EnableDelayedNameRemovalPrometheusEngine,
 	}
 
 	cfg.MimirQueryEngine.CommonOpts = commonOpts
