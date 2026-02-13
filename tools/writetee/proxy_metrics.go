@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"net"
-	"net/url"
 	"strconv"
 	"time"
 
@@ -70,11 +69,9 @@ func (m *ProxyMetrics) RecordBackendResult(backendName, method, routeName string
 	if err != nil {
 		errorType := "network"
 
-		// Check for timeout/canceled errors: direct context errors, HTTP client wrapped errors, or net.Error.Timeout()
-		var urlErr *url.Error
+		// Check for timeout/canceled errors: context errors (errors.Is auto-unwraps url.Error) or net.Error.Timeout()
 		var netErr net.Error
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) ||
-			(errors.As(err, &urlErr) && (errors.Is(urlErr.Err, context.DeadlineExceeded) || errors.Is(urlErr.Err, context.Canceled))) ||
 			(errors.As(err, &netErr) && netErr.Timeout()) {
 			errorType = "timeout"
 		}
