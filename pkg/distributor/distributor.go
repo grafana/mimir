@@ -103,6 +103,7 @@ const (
 type usageTrackerGenericClient interface {
 	services.Service
 	TrackSeries(ctx context.Context, userID string, series []uint64) ([]uint64, error)
+	TrackSeriesAsync(ctx context.Context, userID string, series []uint64) error
 	CanTrackAsync(userID string) bool
 }
 
@@ -753,7 +754,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			return nil, errors.New("usage-tracker instance ring is required")
 		}
 
-		d.usageTrackerClient = usagetrackerclient.NewUsageTrackerClient("distributor", d.cfg.UsageTrackerClient, usageTrackerPartitionRing, usageTrackerInstanceRing, d.limits, log, reg)
+		d.usageTrackerClient = usagetrackerclient.NewUsageTrackerClient("distributor", d.cfg.UsageTrackerClient, usageTrackerPartitionRing, usageTrackerInstanceRing, d.limits, log, reg, d)
 		subservices = append(subservices, d.usageTrackerClient)
 	}
 
@@ -1613,8 +1614,18 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 		if d.usageTrackerClient.CanTrackAsync(userID) {
 			// User is far from limit.
 			// We can perform the track call in parallel with the metrics ingestion hoping that no series would be rejected.
-			cleanup := d.parallelUsageTrackerClientTrackSeriesCall(ctx, userID, seriesHashes)
-			pushReq.AddCleanup(cleanup)
+
+			d.asyncUsageTrackerCalls.WithLabelValues(userID).Inc()
+
+			if d.cfg.UsageTrackerClient.UseBatchedTracking {
+				if err := d.usageTrackerClient.TrackSeriesAsync(ctx, userID, seriesHashes); err != nil {
+					level.Error(d.log).Log("msg", "failed to track series asynchronously", "err", err, "user", userID, "series", len(seriesHashes))
+				}
+			} else {
+				cleanup := d.parallelUsageTrackerClientTrackSeriesCall(ctx, userID, seriesHashes)
+				pushReq.AddCleanup(cleanup)
+			}
+
 			return next(ctx, pushReq)
 		}
 
@@ -1648,7 +1659,6 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 }
 
 func (d *Distributor) parallelUsageTrackerClientTrackSeriesCall(ctx context.Context, userID string, seriesHashes []uint64) func() {
-	d.asyncUsageTrackerCalls.WithLabelValues(userID).Inc()
 	done := make(chan struct{}, 1)
 	t0 := time.Now()
 	asyncTrackingCtx, cancelAsyncTracking := context.WithCancelCause(ctx)
@@ -1685,6 +1695,12 @@ func (d *Distributor) parallelUsageTrackerClientTrackSeriesCall(ctx context.Cont
 		}
 	}
 }
+
+func (d *Distributor) ObserveUsageTrackerRejection(userID string) {
+	d.asyncUsageTrackerCallsWithRejectedSeries.WithLabelValues(userID).Inc()
+}
+
+var _ usagetrackerclient.UsageTrackerRejectionObserver = (*Distributor)(nil)
 
 // filterOutRejectedSeries filters out time series from the WriteRequest based on rejected hashes and returns discarded samples count.
 // It updates the WriteRequest in place and optimizes memory by reusing preallocated time series.
