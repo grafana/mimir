@@ -277,8 +277,8 @@ func (t *WriteReadOOOTest) getInorderQueryTimeRanges(now time.Time) (ranges [][2
 		instants = append(instants, instant24hAgo)
 	}
 
-	// Random instant query.
-	randInstant := randTime(adjustedQueryMinTime, adjustedQueryMaxTime)
+	// Random (minute-aligned).
+	randInstant := alignTimestampToInterval(randTime(adjustedQueryMinTime, adjustedQueryMaxTime), inorderWriteInterval)
 	instants = append(instants, randInstant)
 
 	return ranges, instants, nil
