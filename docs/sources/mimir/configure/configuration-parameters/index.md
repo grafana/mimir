@@ -5096,7 +5096,7 @@ kafka:
   # Optional additional OAuth extensions to include when authenticating to Kafka
   # using SASL OAUTHBEARER as a JSON object.
   # CLI flag: -ingest-storage.kafka.sasl-oauthbearer-extensions
-  [sasl_oauthbearer_extensions: <map of string to string> | default = null]
+  [sasl_oauthbearer_extensions: <map of string to string> | default = {}]
 
   # Path to a file containing an OAuth token to authenticate to Kafka. The file
   # will be read anew on every reauthentication, so it can be updated with fresh
