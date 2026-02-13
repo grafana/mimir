@@ -50,7 +50,7 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 	var cacheFactory *cache.CacheFactory
 	if opts.RangeVectorSplitting.Enabled {
 		var err error
-		cacheFactory, err = cache.NewCacheFactory(opts.RangeVectorSplitting.IntermediateResultsCache, opts.Logger, opts.CommonOpts.Reg)
+		cacheFactory, err = cache.NewCacheFactory(opts.RangeVectorSplitting.IntermediateResultsCache, limitsProvider, opts.Logger, opts.CommonOpts.Reg)
 		if err != nil {
 			return nil, fmt.Errorf("failed to init range vector splitting cache, err: %w", err)
 		}
@@ -329,6 +329,8 @@ type QueryLimitsProvider interface {
 	GetEnableDelayedNameRemoval(ctx context.Context) (bool, error)
 	// GetMaxOutOfOrderTimeWindow returns the out-of-order time window for the tenant(s) in the context.
 	GetMaxOutOfOrderTimeWindow(ctx context.Context) (time.Duration, error)
+	// GetMinResultsCacheTTL returns the TTL for cached results for the tenant(s) in the context.
+	GetMinResultsCacheTTL(ctx context.Context) (time.Duration, error)
 }
 
 // NewStaticQueryLimitsProvider returns a QueryLimitsProvider that always returns the provided limits.
@@ -356,6 +358,10 @@ func (p staticQueryLimitsProvider) GetEnableDelayedNameRemoval(_ context.Context
 
 func (p staticQueryLimitsProvider) GetMaxOutOfOrderTimeWindow(_ context.Context) (time.Duration, error) {
 	return 0, nil
+}
+
+func (p staticQueryLimitsProvider) GetMinResultsCacheTTL(_ context.Context) (time.Duration, error) {
+	return 7 * 24 * time.Hour, nil
 }
 
 type NoopQueryTracker struct{}

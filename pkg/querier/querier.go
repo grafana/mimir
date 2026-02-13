@@ -923,6 +923,15 @@ func (p *TenantQueryLimitsProvider) GetEnableDelayedNameRemoval(ctx context.Cont
 	return hasEnabled, nil
 }
 
+func (p *TenantQueryLimitsProvider) GetMinResultsCacheTTL(ctx context.Context) (time.Duration, error) {
+	tenantIDs, err := tenant.TenantIDs(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	return validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, p.limits.ResultsCacheTTL), nil
+}
+
 type RequestMetrics struct {
 	RequestDuration                *prometheus.HistogramVec
 	ReceivedMessageSize            *prometheus.HistogramVec

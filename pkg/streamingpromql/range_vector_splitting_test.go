@@ -598,7 +598,7 @@ func TestQuerySplitting_With3hRangeAndOffset_NoCacheableRanges(t *testing.T) {
 
 func TestQuerySplitting_WithOOOWindow(t *testing.T) {
 	backend := newTestCacheBackend()
-	irCache := cache.NewCacheFactoryWithBackend(backend, prometheus.NewRegistry(), log.NewNopLogger())
+	irCache := cache.NewCacheFactoryWithBackend(backend, &mockOutOfOrderTimeWindowProvider{}, prometheus.NewRegistry(), log.NewNopLogger())
 
 	opts := NewTestEngineOpts()
 	opts.RangeVectorSplitting.Enabled = true
@@ -694,6 +694,10 @@ func (m *mockOutOfOrderTimeWindowProvider) GetMaxEstimatedMemoryConsumptionPerQu
 
 func (m *mockOutOfOrderTimeWindowProvider) GetEnableDelayedNameRemoval(_ context.Context) (bool, error) {
 	return false, nil
+}
+
+func (m *mockOutOfOrderTimeWindowProvider) GetMinResultsCacheTTL(_ context.Context) (time.Duration, error) {
+	return 7 * 24 * time.Hour, nil
 }
 
 var querySplittingTestSplitIntervals = []time.Duration{
@@ -969,7 +973,7 @@ func createSplittingEngineWithCache(t *testing.T, registry *prometheus.Registry,
 	t.Helper()
 
 	cacheBackend := newTestCacheBackend()
-	cacheFactory := cache.NewCacheFactoryWithBackend(cacheBackend, registry, log.NewNopLogger())
+	cacheFactory := cache.NewCacheFactoryWithBackend(cacheBackend, &mockOutOfOrderTimeWindowProvider{}, registry, log.NewNopLogger())
 
 	engine := createSplittingEngine(t, registry, splitInterval, enableDelayedNameRemoval, enableEliminateDeduplicateAndMerge, cacheFactory)
 	return engine, cacheBackend
@@ -998,7 +1002,7 @@ func createSplittingEngine(t *testing.T, registry *prometheus.Registry, splitInt
 
 func setupEngineAndCache(t *testing.T) (*testCacheBackend, promql.QueryEngine) {
 	backend := newTestCacheBackend()
-	irCache := cache.NewCacheFactoryWithBackend(backend, prometheus.NewRegistry(), log.NewNopLogger())
+	irCache := cache.NewCacheFactoryWithBackend(backend, &mockOutOfOrderTimeWindowProvider{}, prometheus.NewRegistry(), log.NewNopLogger())
 
 	opts := NewTestEngineOpts()
 	opts.RangeVectorSplitting.Enabled = true
@@ -1052,7 +1056,7 @@ func verifyCacheStats(t *testing.T, backend *testCacheBackend, expectedGets, exp
 
 func TestQuerySplitting_DelayedNameRemoval(t *testing.T) {
 	sharedCache := newTestCacheBackend()
-	cacheFactory := cache.NewCacheFactoryWithBackend(sharedCache, prometheus.NewPedanticRegistry(), log.NewNopLogger())
+	cacheFactory := cache.NewCacheFactoryWithBackend(sharedCache, &mockOutOfOrderTimeWindowProvider{}, prometheus.NewPedanticRegistry(), log.NewNopLogger())
 
 	engineDisabled := createSplittingEngine(t, prometheus.NewPedanticRegistry(), 2*time.Hour, false, true, cacheFactory)
 	engineEnabled := createSplittingEngine(t, prometheus.NewPedanticRegistry(), 2*time.Hour, true, true, cacheFactory)

@@ -25,10 +25,16 @@ type Backend interface {
 	SetMultiAsync(data map[string][]byte, ttl time.Duration)
 }
 
+// TODO: see if we can use QueryLimitsProvider directly instead of this interface (currently introduces circular dependency but we'll be moving files around packages)
+type TTLProvider interface {
+	GetMinResultsCacheTTL(ctx context.Context) (time.Duration, error)
+}
+
 type CacheFactory struct {
-	backend Backend
-	metrics *cacheMetrics
-	logger  log.Logger
+	backend     Backend
+	ttlProvider TTLProvider
+	metrics     *cacheMetrics
+	logger      log.Logger
 }
 
 type cacheMetrics struct {
@@ -49,7 +55,7 @@ func newCacheMetrics(reg prometheus.Registerer) *cacheMetrics {
 	}
 }
 
-func NewCacheFactory(cfg Config, logger log.Logger, reg prometheus.Registerer) (*CacheFactory, error) {
+func NewCacheFactory(cfg Config, ttlProvider TTLProvider, logger log.Logger, reg prometheus.Registerer) (*CacheFactory, error) {
 	client, err := cache.CreateClient("intermediate-result-cache", cfg.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("mimir_", reg))
 	if err != nil {
 		return nil, err
@@ -63,14 +69,15 @@ func NewCacheFactory(cfg Config, logger log.Logger, reg prometheus.Registerer) (
 		logger,
 	)
 
-	return NewCacheFactoryWithBackend(backend, reg, logger), nil
+	return NewCacheFactoryWithBackend(backend, ttlProvider, reg, logger), nil
 }
 
-func NewCacheFactoryWithBackend(backend Backend, reg prometheus.Registerer, logger log.Logger) *CacheFactory {
+func NewCacheFactoryWithBackend(backend Backend, ttlProvider TTLProvider, reg prometheus.Registerer, logger log.Logger) *CacheFactory {
 	return &CacheFactory{
-		backend: backend,
-		metrics: newCacheMetrics(reg),
-		logger:  logger,
+		backend:     backend,
+		ttlProvider: ttlProvider,
+		metrics:     newCacheMetrics(reg),
+		logger:      logger,
 	}
 }
 
@@ -95,18 +102,20 @@ type SplitCodec[T any] interface {
 }
 
 type Cache[T any] struct {
-	backend Backend
-	metrics *cacheMetrics
-	logger  log.Logger
-	codec   SplitCodec[T]
+	backend     Backend
+	ttlProvider TTLProvider
+	metrics     *cacheMetrics
+	logger      log.Logger
+	codec       SplitCodec[T]
 }
 
 func NewCache[T any](factory *CacheFactory, codec SplitCodec[T]) *Cache[T] {
 	return &Cache[T]{
-		backend: factory.backend,
-		metrics: factory.metrics,
-		logger:  factory.logger,
-		codec:   codec,
+		backend:     factory.backend,
+		ttlProvider: factory.ttlProvider,
+		metrics:     factory.metrics,
+		logger:      factory.logger,
+		codec:       codec,
 	}
 }
 
@@ -173,6 +182,11 @@ func (c *Cache[T]) Set(
 		return err
 	}
 
+	ttl, err := c.ttlProvider.GetMinResultsCacheTTL(ctx)
+	if err != nil {
+		return fmt.Errorf("getting results cache TTL: %w", err)
+	}
+
 	cacheKey := generateCacheKey(tenant, function, innerKey, start, end, enableDelayedNameRemoval)
 
 	resultBytes, err := c.codec.Marshal(results)
@@ -195,7 +209,7 @@ func (c *Cache[T]) Set(
 	}
 
 	hashedKey := hashCacheKey(cacheKey)
-	c.backend.SetMultiAsync(map[string][]byte{hashedKey: data}, defaultTTL)
+	c.backend.SetMultiAsync(map[string][]byte{hashedKey: data}, ttl)
 
 	seriesCount := len(seriesMetadata)
 	level.Debug(c.logger).Log("msg", "cache entry written", "cache_key", cacheKey, "series_count", seriesCount, "entry_size", len(data))

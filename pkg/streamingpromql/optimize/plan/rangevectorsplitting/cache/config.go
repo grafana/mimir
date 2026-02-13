@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/grafana/dskit/cache"
 	"github.com/pkg/errors"
@@ -16,8 +15,6 @@ import (
 const (
 	// resultsCacheVersion should be increased every time the cache format changes.
 	resultsCacheVersion = 1
-
-	defaultTTL = 24 * time.Hour
 )
 
 var (

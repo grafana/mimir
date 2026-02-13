@@ -106,6 +106,9 @@ func (noopLimits) GetEnableDelayedNameRemoval(context.Context) (bool, error) { r
 func (noopLimits) GetMaxOutOfOrderTimeWindow(context.Context) (time.Duration, error) {
 	return 0, nil
 }
+func (noopLimits) GetMinResultsCacheTTL(context.Context) (time.Duration, error) {
+	return 7 * 24 * time.Hour, nil
+}
 
 func NewTestEngineOpts() EngineOpts {
 	return EngineOpts{
