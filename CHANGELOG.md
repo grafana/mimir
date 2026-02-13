@@ -136,6 +136,7 @@
 * [ENHANCEMENT] Ingest storage: Add `-ingest-storage.kafka.client-rack` flag to enable rack awareness. #14434
 * [ENHANCEMENT] Distributor, ingest storage: Add `cortex_distributor_received_bytes_total` and `cortex_ingest_storage_writer_input_bytes_total` metrics to measure Remote Write v2 symbols table compression effectiveness. #14453
 * [ENHANCEMENT] Store-gateway: Added `cortex_bucket_store_chunk_size_estimate_type_total` metric to track how often do we infer the size of a chunk or use the default size. #14477
+* [ENHANCEMENT] Block-builder: Expose per-tenant TSDB metrics. #14364
 * [BUGFIX] Distributor: Fix ingestion rate limit error message reporting incorrect burst size when `ingestion_burst_factor` is configured. #14471
 * [BUGFIX] Mimir: Fix nil pointer dereference when `-target` is set to an empty string. #14381
 * [BUGFIX] API: Fixed web UI links not respecting `-server.path-prefix` configuration. #14090
