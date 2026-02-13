@@ -48,6 +48,12 @@ func NewProxyEndpoint(backends []ProxyBackend, route Route, metrics *ProxyMetric
 		return nil, fmt.Errorf("no preferred backend configured")
 	}
 
+	// Warn if preferred backend is configured as amplified - it will not be amplified
+	// since we always send the original body to the preferred backend for fast client responses
+	if preferredBackend.BackendType() == BackendTypeAmplified && amplificationFactor != 1.0 {
+		level.Warn(logger).Log("msg", "Preferred backend is configured with BackendTypeAmplified but will not be amplified. Only non-preferred backends are amplified.", "backend", preferredBackend.Name(), "amplification_factor", amplificationFactor)
+	}
+
 	return &ProxyEndpoint{
 		backends:             backends,
 		route:                route,
