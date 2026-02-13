@@ -7,9 +7,9 @@
 
 package mimirpb
 
-// TimeseriesFromPool returns a new [PreallocTimeseries] slice under the nopools build tag.
+// PreallocTimeseriesSliceFromPool returns a new [PreallocTimeseries] slice under the nopools build tag.
 func PreallocTimeseriesSliceFromPool() []PreallocTimeseries {
-	return make([]PreallocTimeseries, 0, minPreallocatedTimeseries)
+	return newPreallocTimeseriesSlice()
 }
 
 // ReuseSliceOnly is a no-op under the nopools build tag.
