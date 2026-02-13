@@ -3,7 +3,7 @@
 ## main / unreleased
 
 ### Grafana Mimir
-
+* [ENHANCEMENT] Query-frontend: Reuse responses for identical requests while processing queries. #14205
 * [CHANGE] Ingester: Changed default value of `-include-tenant-id-in-profile-labels` from false to true. #13375
 * [CHANGE] Hash ring: removed experimental support for disabling heartbeats (setting `-*.ring.heartbeat-period=0`) and heartbeat timeouts (setting `-*.ring.heartbeat-timeout=0`). These configurations are now invalid. #13104
 * [CHANGE] Distributor: removed experimental flag `-distributor.metric-relabeling-enabled`. #13143

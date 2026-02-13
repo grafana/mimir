@@ -8,6 +8,7 @@ package querymiddleware
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -97,6 +98,9 @@ type splitAndCacheMiddleware struct {
 	splitter       CacheKeyGenerator
 	extractor      Extractor
 	shouldCacheReq shouldCacheFn
+
+	//promises map
+	reqPromises sync.Map
 
 	// Can be set from tests
 	currentTime func() time.Time
@@ -229,7 +233,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 	queryTime := s.currentTime()
 
 	if len(execReqs) > 0 {
-		execResps, err := doRequests(ctx, s.next, execReqs)
+		execResps, err := s.doRequests(ctx, tenantIDs, s.next, execReqs)
 		if err != nil {
 			return nil, err
 		}
@@ -605,8 +609,57 @@ type requestResponse struct {
 	Stats    *stats.SafeStats
 }
 
+type doReqestPromise = func(context.Context) (Response, error)
+
+/*
+Executes a query request and returns a promise for the results
+first request of a query is executed to produce results ,
+subsequent requests for same query will reuse the same results for promise
+deduplication of execution of a query is guranteed while the first request is being evaulated
+*/
+func (s *splitAndCacheMiddleware) doRequest(ctx context.Context, tenantIDs []string, downstream MetricsQueryHandler, req MetricsQueryRequest) (doReqestPromise, bool) {
+	var (
+		res  Response
+		err  error
+		done = make(chan struct{})
+	)
+
+	promise := func(ctx context.Context) (Response, error) {
+		select {
+		case <-ctx.Done():
+			{
+				return nil, ctx.Err()
+			}
+		case <-done:
+		}
+		if err != nil {
+			return nil, err
+		}
+		promRes, ok := res.GetPrometheusResponse()
+		if !ok {
+			return nil, fmt.Errorf("Expected Prometheus Response")
+		}
+		//create a response copy from original for each request 
+		responseCopy := promRes.Clone()
+		return responseCopy, nil
+	}
+
+	key := s.splitter.QueryRequest(ctx, tenant.JoinTenantIDs(tenantIDs), req)
+	reqPromise, fetched := s.reqPromises.LoadOrStore(key, promise)
+	if fetched {
+		return reqPromise.(doReqestPromise), true
+	}
+
+	defer close(done)
+	defer s.reqPromises.Delete(key)
+
+	res, err = downstream.Do(ctx, req)
+
+	return reqPromise.(doReqestPromise), false
+}
+
 // doRequests executes a list of requests in parallel.
-func doRequests(ctx context.Context, downstream MetricsQueryHandler, reqs []MetricsQueryRequest) ([]requestResponse, error) {
+func (s *splitAndCacheMiddleware) doRequests(ctx context.Context, tenantIds []string, downstream MetricsQueryHandler, reqs []MetricsQueryRequest) ([]requestResponse, error) {
 	g, ctx := errgroup.WithContext(ctx)
 	mtx := sync.Mutex{}
 	resps := make([]requestResponse, 0, len(reqs))
@@ -622,7 +675,9 @@ func doRequests(ctx context.Context, downstream MetricsQueryHandler, reqs []Metr
 			req.AddSpanTags(span)
 			defer span.End()
 
-			resp, err := downstream.Do(childCtx, req)
+			reqPromise, _ := s.doRequest(childCtx, tenantIds, downstream, req)
+			resp, err := reqPromise(childCtx)
+
 			queryStatistics.Merge(partialStats)
 			if err != nil {
 				return err
