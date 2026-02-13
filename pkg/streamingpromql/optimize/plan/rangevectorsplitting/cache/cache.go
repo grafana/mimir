@@ -132,10 +132,10 @@ func (c *Cache[T]) Get(
 	start, end int64,
 	enableDelayedNameRemoval bool,
 	stats *CacheStats,
-) (seriesMetadata []querierpb.SeriesMetadata, annotations []Annotation, results []T, found bool, err error) {
+) (seriesMetadata []querierpb.SeriesMetadata, annotations querierpb.Annotations, results []T, found bool, err error) {
 	tenant, err := user.ExtractOrgID(ctx)
 	if err != nil {
-		return nil, nil, nil, false, err
+		return nil, querierpb.Annotations{}, nil, false, err
 	}
 
 	c.metrics.cacheRequests.Inc()
@@ -145,18 +145,18 @@ func (c *Cache[T]) Get(
 	foundData := c.backend.GetMulti(ctx, []string{hashedKey})
 	data, ok := foundData[hashedKey]
 	if !ok || len(data) == 0 {
-		return nil, nil, nil, false, nil
+		return nil, querierpb.Annotations{}, nil, false, nil
 	}
 
 	var cached CachedSeries
 	if err := cached.Unmarshal(data); err != nil {
 		level.Warn(c.logger).Log("msg", "failed to decode cached result", "hashed_cache_key", hashedKey, "cache_key", cacheKey, "err", err)
-		return nil, nil, nil, false, nil
+		return nil, querierpb.Annotations{}, nil, false, nil
 	}
 
 	if cached.CacheKey != cacheKey {
 		level.Warn(c.logger).Log("msg", "skipped cached result because a cache key collision has been found", "hashed_cache_key", hashedKey, "cache_key", cacheKey)
-		return nil, nil, nil, false, nil
+		return nil, querierpb.Annotations{}, nil, false, nil
 	}
 
 	c.metrics.cacheHits.Inc()
@@ -166,7 +166,7 @@ func (c *Cache[T]) Get(
 
 	results, err = c.codec.Unmarshal(cached.Results)
 	if err != nil {
-		return nil, nil, nil, false, fmt.Errorf("unmarshaling cached results: %w", err)
+		return nil, querierpb.Annotations{}, nil, false, fmt.Errorf("unmarshaling cached results: %w", err)
 	}
 
 	return cached.SeriesMetadata, cached.Annotations, results, true, nil
@@ -179,7 +179,7 @@ func (c *Cache[T]) Set(
 	start, end int64,
 	enableDelayedNameRemoval bool,
 	seriesMetadata []querierpb.SeriesMetadata,
-	annotations []Annotation,
+	annotations querierpb.Annotations,
 	results []T,
 	stats *CacheStats,
 ) error {

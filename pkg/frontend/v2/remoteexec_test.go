@@ -1185,8 +1185,8 @@ func TestRemoteExecutionGroupEvaluator_ReadingMessagesInReturnedOrder(t *testing
 	annos, returnedStats, err = resp2.Finalize(ctx)
 	require.NoError(t, err)
 	expectedAnnos := annotations.New()
-	expectedAnnos.Add(newRemoteInfo("an info annotation"))
-	expectedAnnos.Add(newRemoteWarning("a warning annotation"))
+	expectedAnnos.Add(querierpb.NewInfoAnnotation("an info annotation"))
+	expectedAnnos.Add(querierpb.NewWarningAnnotation("a warning annotation"))
 	require.Equal(t, expectedAnnos, annos)
 	expectedStats := stats.Stats{SamplesProcessed: 1234}
 	require.Equal(t, expectedStats, returnedStats)
@@ -1304,8 +1304,8 @@ func TestRemoteExecutionGroupEvaluator_ReadingMessagesOutOfOrder(t *testing.T) {
 	annos, returnedStats, err = resp2.Finalize(ctx)
 	require.NoError(t, err)
 	expectedAnnos := annotations.New()
-	expectedAnnos.Add(newRemoteInfo("an info annotation"))
-	expectedAnnos.Add(newRemoteWarning("a warning annotation"))
+	expectedAnnos.Add(querierpb.NewInfoAnnotation("an info annotation"))
+	expectedAnnos.Add(querierpb.NewWarningAnnotation("a warning annotation"))
 	require.Equal(t, expectedAnnos, annos)
 	expectedStats := stats.Stats{SamplesProcessed: 1234}
 	require.Equal(t, expectedStats, returnedStats)
@@ -1491,8 +1491,8 @@ func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithFinalize(t *testing
 	annos, returnedStats, err = resp2.Finalize(ctx)
 	require.NoError(t, err)
 	expectedAnnos := annotations.New()
-	expectedAnnos.Add(newRemoteInfo("an info annotation"))
-	expectedAnnos.Add(newRemoteWarning("a warning annotation"))
+	expectedAnnos.Add(querierpb.NewInfoAnnotation("an info annotation"))
+	expectedAnnos.Add(querierpb.NewWarningAnnotation("a warning annotation"))
 	require.Equal(t, expectedAnnos, annos)
 	expectedStats := stats.Stats{SamplesProcessed: 1234}
 	require.Equal(t, expectedStats, returnedStats)
@@ -1584,8 +1584,8 @@ func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithEarlyCloseOfOneNode
 	annos, returnedStats, err := resp2.Finalize(ctx)
 	require.NoError(t, err)
 	expectedAnnos := annotations.New()
-	expectedAnnos.Add(newRemoteInfo("an info annotation"))
-	expectedAnnos.Add(newRemoteWarning("a warning annotation"))
+	expectedAnnos.Add(querierpb.NewInfoAnnotation("an info annotation"))
+	expectedAnnos.Add(querierpb.NewWarningAnnotation("a warning annotation"))
 	require.Equal(t, expectedAnnos, annos)
 	expectedStats := stats.Stats{SamplesProcessed: 1234}
 	require.Equal(t, expectedStats, returnedStats)

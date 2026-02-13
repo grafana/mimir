@@ -8,9 +8,7 @@ package functions
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -517,7 +515,7 @@ type SplitSeries struct {
 
 type CachedSplit[T any] struct {
 	metadata    []querierpb.SeriesMetadata
-	annotations []cache.Annotation
+	annotations querierpb.Annotations
 	results     []T
 
 	parent *FunctionOverRangeVectorSplit[T]
@@ -529,7 +527,7 @@ func (c *CachedSplit[T]) RangeCount() int {
 
 func NewCachedSplit[T any](
 	metadata []querierpb.SeriesMetadata,
-	annotations []cache.Annotation,
+	annotations querierpb.Annotations,
 	results []T,
 	parent *FunctionOverRangeVectorSplit[T],
 ) *CachedSplit[T] {
@@ -575,15 +573,11 @@ func (c *CachedSplit[T]) GetResultsAt(_ context.Context, idx int) ([]T, error) {
 }
 
 func (c *CachedSplit[T]) Finalize(ctx context.Context) error {
-	// Emit cached annotations
-	for _, ann := range c.annotations {
-		var wrappedErr error
-		if ann.Type == cache.INFO {
-			wrappedErr = fmt.Errorf("%w: %s", annotations.PromQLInfo, ann.Message)
-		} else {
-			wrappedErr = fmt.Errorf("%w: %s", annotations.PromQLWarning, ann.Message)
-		}
-		c.parent.Annotations.Add(wrappedErr)
+	for _, w := range c.annotations.Warnings {
+		c.parent.Annotations.Add(querierpb.NewWarningAnnotation(w))
+	}
+	for _, i := range c.annotations.Infos {
+		c.parent.Annotations.Add(querierpb.NewInfoAnnotation(i))
 	}
 	return nil
 }
@@ -592,6 +586,7 @@ func (c *CachedSplit[T]) Close() {
 }
 
 func (c *CachedSplit[T]) AppendMergedSeriesIndex(_, _ int) {}
+
 
 func (c *CachedSplit[T]) IsCached() bool {
 	return true
@@ -604,9 +599,8 @@ type UncachedSplit[T any] struct {
 	parent *FunctionOverRangeVectorSplit[T]
 
 	// Data to cache
-	rangeResults [][]T
-	// Annotations are put into a map for deduping
-	rangeAnnotations []map[cache.Annotation]struct{}
+	rangeResults     [][]T
+	rangeAnnotations []*annotations.Annotations
 	seriesMetadata   []querierpb.SeriesMetadata
 
 	// localToMergedIdx maps split-local series index to the parent's merged series index.
@@ -632,9 +626,9 @@ func NewUncachedSplit[T any](
 	}
 
 	rangeResults := make([][]T, len(ranges))
-	rangeAnnotations := make([]map[cache.Annotation]struct{}, len(ranges))
+	rangeAnnotations := make([]*annotations.Annotations, len(ranges))
 	for i := range ranges {
-		rangeAnnotations[i] = make(map[cache.Annotation]struct{})
+		rangeAnnotations[i] = annotations.New()
 	}
 
 	return &UncachedSplit[T]{
@@ -723,26 +717,7 @@ func (p *UncachedSplit[T]) emitAndCaptureAnnotation(rangeIdx int, localSeriesIdx
 	}
 	annotationErr := generator(metricName, p.parent.innerNodeExpressionPosition)
 	p.parent.Annotations.Add(annotationErr)
-
-	var annotationType cache.AnnotationType
-	var messageWithoutPrefix string
-
-	// Strip the sentinel error prefix so we can re-wrap it cleanly on replay
-	errMsg := annotationErr.Error()
-	if errors.Is(annotationErr, annotations.PromQLInfo) {
-		annotationType = cache.INFO
-		messageWithoutPrefix, _ = strings.CutPrefix(errMsg, annotations.PromQLInfo.Error()+": ")
-	} else {
-		annotationType = cache.WARNING
-		messageWithoutPrefix, _ = strings.CutPrefix(errMsg, annotations.PromQLWarning.Error()+": ")
-	}
-
-	annotation := cache.Annotation{
-		Type:    annotationType,
-		Message: messageWithoutPrefix,
-	}
-
-	p.rangeAnnotations[rangeIdx][annotation] = struct{}{}
+	p.rangeAnnotations[rangeIdx].Add(annotationErr)
 }
 
 func (p *UncachedSplit[T]) Finalize(ctx context.Context) error {
@@ -755,13 +730,8 @@ func (p *UncachedSplit[T]) Finalize(ctx context.Context) error {
 			continue
 		}
 
-		annotationsMap := p.rangeAnnotations[rangeIdx]
-		annotations := make([]cache.Annotation, 0, len(annotationsMap))
-		for ann := range annotationsMap {
-			annotations = append(annotations, ann)
-		}
-
-		results := p.rangeResults[rangeIdx]
+		var ann querierpb.Annotations
+		ann.Warnings, ann.Infos = p.rangeAnnotations[rangeIdx].AsStrings("", 0, 0)
 
 		if err := p.parent.cache.Set(
 			ctx,
@@ -771,8 +741,8 @@ func (p *UncachedSplit[T]) Finalize(ctx context.Context) error {
 			splitRange.End,
 			p.parent.enableDelayedNameRemoval,
 			p.seriesMetadata,
-			annotations,
-			results,
+			ann,
+			p.rangeResults[rangeIdx],
 			p.parent.cacheStats,
 		); err != nil {
 			return err
