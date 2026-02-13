@@ -36,6 +36,11 @@ if [[ -z "$TOTAL" ]]; then
     exit 1
 fi
 
+BUILD_TAGS="netgo,stringlabels"
+if [[ -n "$EXTRA_BUILD_TAGS" ]]; then
+    BUILD_TAGS="$BUILD_TAGS,$EXTRA_BUILD_TAGS"
+fi
+
 # List all tests.
 ALL_TESTS=$(go list "${MIMIR_DIR}/..." | sort)
 
@@ -61,7 +66,7 @@ if [[ -n "$TESTS_TO_RUN_WITH_RACE_DETECTOR" ]]; then
     echo
 
     # shellcheck disable=SC2086 # we *want* word splitting of TESTS_TO_RUN_WITH_RACE_DETECTOR.
-    go test -tags=netgo,stringlabels -timeout 30m -race ${TESTS_TO_RUN_WITH_RACE_DETECTOR} 2>&1 | tee /tmp/test-output.log
+    go test -tags="${BUILD_TAGS}" -timeout 30m -race ${TESTS_TO_RUN_WITH_RACE_DETECTOR} 2>&1 | tee /tmp/test-output.log
     RACE_ENABLED_EXIT_CODE=${PIPESTATUS[0]}
     echo
 else
@@ -74,7 +79,7 @@ if [[ -n "$TESTS_TO_RUN_WITHOUT_RACE_DETECTOR" ]]; then
     echo
 
     # shellcheck disable=SC2086 # we *want* word splitting of TESTS_TO_RUN_WITHOUT_RACE_DETECTOR.
-    go test -tags=netgo,stringlabels -timeout 30m ${TESTS_TO_RUN_WITHOUT_RACE_DETECTOR} 2>&1 | tee -a /tmp/test-output.log
+    go test -tags="${BUILD_TAGS}" -timeout 30m ${TESTS_TO_RUN_WITHOUT_RACE_DETECTOR} 2>&1 | tee -a /tmp/test-output.log
     RACE_DISABLED_EXIT_CODE=${PIPESTATUS[0]}
     echo
 else
