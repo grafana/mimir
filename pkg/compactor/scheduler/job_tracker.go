@@ -344,13 +344,13 @@ func (jt *JobTracker) OfferPlanJob(job *TrackedPlanJob) (accepted int, becamePen
 	return 1, wasEmpty, nil
 }
 
-func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, epoch int64) (accepted int, becamePending bool, err error) {
+func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, epoch int64) (accepted int, becamePending bool, becameEmpty bool, err error) {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
 
 	planJob, err := jt.checkPlanJobEpoch(epoch)
 	if err != nil {
-		return 0, false, err
+		return 0, false, false, err
 	}
 
 	conflictMap := make(map[string]struct{})
@@ -413,7 +413,7 @@ func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, epoch in
 
 	err = jt.persister.WriteAndDeleteJobs(acceptedJobs, deleteJobs)
 	if err != nil {
-		return 0, false, fmt.Errorf("failed writing offered jobs: %w", err)
+		return 0, false, false, fmt.Errorf("failed writing offered jobs: %w", err)
 	}
 
 	wasEmpty := jt.isPendingEmpty()
@@ -440,7 +440,8 @@ func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, epoch in
 
 	jt.metrics.pendingJobs.Set(float64(jt.pending.Len()))
 	accepted = len(acceptedJobs)
-	return accepted, wasEmpty && accepted > 0, nil
+	becameEmpty = !wasEmpty && jt.isPendingEmpty()
+	return accepted, wasEmpty && accepted > 0, becameEmpty, nil
 }
 
 func addBlocksToConflictMap(conflict map[string]struct{}, job *TrackedCompactionJob) {

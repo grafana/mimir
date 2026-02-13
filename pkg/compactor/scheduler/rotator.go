@@ -203,9 +203,39 @@ func (r *Rotator) OfferPlanJob(tenant string, job *TrackedPlanJob) (int, error) 
 }
 
 func (r *Rotator) OfferCompactionJobs(tenant string, jobs []*TrackedCompactionJob, planJobEpoch int64) (int, error) {
-	return r.offerJobs(tenant, func(tracker *JobTracker) (int, bool, error) {
-		return tracker.OfferCompactionJobs(jobs, planJobEpoch)
-	})
+	r.mtx.RLock()
+
+	tenantState, ok := r.tenantStateMap[tenant]
+	if !ok {
+		r.mtx.RUnlock()
+		return 0, nil
+	}
+	added, becamePending, becameEmpty, err := tenantState.tracker.OfferCompactionJobs(jobs, planJobEpoch)
+	if err != nil {
+		r.mtx.RUnlock()
+		return 0, err
+	}
+
+	// Must still be holding the read lock to read rotation index
+	if becamePending && tenantState.rotationIndex == outsideRotation {
+		r.mtx.RUnlock() // drop read lock to acquire write lock
+		r.mtx.Lock()
+		// Double check still present, not in rotation, and there are pending jobs
+		if tenantState, ok := r.tenantStateMap[tenant]; ok && tenantState.rotationIndex == outsideRotation && !tenantState.tracker.isPendingEmpty() {
+			r.addToRotation(tenant, tenantState)
+		}
+		r.mtx.Unlock()
+		return added, nil
+	}
+
+	if becameEmpty {
+		r.mtx.RUnlock()
+		r.possiblyRemoveFromRotation(tenant)
+		return added, nil
+	}
+
+	r.mtx.RUnlock()
+	return added, nil
 }
 
 func (r *Rotator) offerJobs(tenant string, offer func(tracker *JobTracker) (int, bool, error)) (int, error) {
