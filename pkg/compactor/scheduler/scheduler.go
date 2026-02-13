@@ -223,7 +223,7 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 	level.Info(s.logger).Log("msg", "received plan results", "tenant", req.Tenant, "epoch", req.Key.Epoch, "job_count", len(req.Jobs))
 
 	now := s.clock.Now()
-	jobs := make([]TrackedJob, 0, len(req.Jobs))
+	jobs := make([]*TrackedCompactionJob, 0, len(req.Jobs))
 	for i, job := range req.Jobs {
 		if len(job.Id) == reservedJobIdLen {
 			// This is never expected to actually happen. We reserve single character keys for internal use.
@@ -242,7 +242,7 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 		))
 	}
 
-	added, err := s.rotator.OfferJobs(req.Tenant, jobs, req.Key.Epoch)
+	added, err := s.rotator.OfferCompactionJobs(req.Tenant, jobs, req.Key.Epoch)
 	if err != nil {
 		level.Error(s.logger).Log("msg", "failed offering result of plan job", "err", err)
 		return nil, failedTo("offering results")

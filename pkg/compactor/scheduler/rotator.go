@@ -196,7 +196,19 @@ func (r *Rotator) CancelJobLease(tenant string, key string, epoch int64) (bool, 
 	return canceled, nil
 }
 
-func (r *Rotator) OfferJobs(tenant string, jobs []TrackedJob, epoch int64) (int, error) {
+func (r *Rotator) OfferPlanJob(tenant string, job *TrackedPlanJob) (int, error) {
+	return r.offerJobs(tenant, func(tracker *JobTracker) (int, bool, error) {
+		return tracker.OfferPlanJob(job)
+	})
+}
+
+func (r *Rotator) OfferCompactionJobs(tenant string, jobs []*TrackedCompactionJob, planJobEpoch int64) (int, error) {
+	return r.offerJobs(tenant, func(tracker *JobTracker) (int, bool, error) {
+		return tracker.OfferCompactionJobs(jobs, planJobEpoch)
+	})
+}
+
+func (r *Rotator) offerJobs(tenant string, offer func(tracker *JobTracker) (int, bool, error)) (int, error) {
 	r.mtx.RLock()
 
 	tenantState, ok := r.tenantStateMap[tenant]
@@ -204,7 +216,7 @@ func (r *Rotator) OfferJobs(tenant string, jobs []TrackedJob, epoch int64) (int,
 		r.mtx.RUnlock()
 		return 0, nil
 	}
-	added, transition, err := tenantState.tracker.Offer(jobs, epoch)
+	added, transition, err := offer(tenantState.tracker)
 	if err != nil {
 		r.mtx.RUnlock()
 		return 0, err

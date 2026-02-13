@@ -325,15 +325,7 @@ func (jt *JobTracker) CancelLease(id string, epoch int64) (canceled bool, became
 	return true, wasEmpty && revive, nil
 }
 
-func (jt *JobTracker) Offer(jobs []TrackedJob, epoch int64) (accepted int, becamePending bool, err error) {
-	// Plan jobs are injected in isolation
-	if len(jobs) == 1 && jobs[0].ID() == planJobId {
-		return jt.offerPlanJob(jobs[0])
-	}
-	return jt.offerCompactionJobs(jobs, epoch)
-}
-
-func (jt *JobTracker) offerPlanJob(job TrackedJob) (accepted int, becamePending bool, err error) {
+func (jt *JobTracker) OfferPlanJob(job *TrackedPlanJob) (accepted int, becamePending bool, err error) {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
 
@@ -352,7 +344,7 @@ func (jt *JobTracker) offerPlanJob(job TrackedJob) (accepted int, becamePending 
 	return 1, wasEmpty, nil
 }
 
-func (jt *JobTracker) offerCompactionJobs(jobs []TrackedJob, epoch int64) (accepted int, becamePending bool, err error) {
+func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, epoch int64) (accepted int, becamePending bool, err error) {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
 
@@ -388,8 +380,7 @@ func (jt *JobTracker) offerCompactionJobs(jobs []TrackedJob, epoch int64) (accep
 			}
 		}
 
-		cj, ok := j.(*TrackedCompactionJob)
-		if !ok || jobConflicts(conflictMap, cj) {
+		if !ok || jobConflicts(conflictMap, j) {
 			continue
 		}
 
