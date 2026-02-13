@@ -4,6 +4,7 @@ package continuoustest
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"time"
@@ -165,6 +166,17 @@ func (t *WriteReadOOOTest) RunInner(ctx context.Context, now time.Time, writeLim
 			return
 		}
 	}
+
+	inorderRanges, inorderInstants, err := t.getInorderQueryTimeRanges(now)
+	if err != nil {
+		errs.Add(err)
+	}
+	for _, timeRange := range inorderRanges {
+		level.Info(t.logger).Log("msg", "dry run inorder range query", "from", timeRange[0], "to", timeRange[1])
+	}
+	for _, ts := range inorderInstants {
+		level.Info(t.logger).Log("msg", "dry run inorder instant query", "ts", ts)
+	}
 }
 
 func (t *WriteReadOOOTest) nextInorderWriteTimestamp(now time.Time, interval time.Duration, records *MetricHistory) time.Time {
@@ -228,4 +240,46 @@ func (t *WriteReadOOOTest) recoverPast(ctx context.Context, now time.Time, metri
 	level.Info(t.logger).Log("msg", "Found time range for densely written samples", "from", from, "to", to)
 
 	return nil
+}
+
+// getInorderQueryTimeRanges calculates some ranges to query to validate the in-order samples.
+// We only do a spot-check, we don't deeply validate these samples.
+func (t *WriteReadOOOTest) getInorderQueryTimeRanges(now time.Time) (ranges [][2]time.Time, instants []time.Time, err error) {
+	records := &t.inOrderSamples
+
+	if records.queryMinTime.IsZero() || records.queryMaxTime.IsZero() {
+		level.Info(t.logger).Log("msg", "Skipped queries because there's no valid time range to query")
+		return nil, nil, errors.New("no valid time range to query")
+	}
+
+	adjustedQueryMinTime := maxTime(records.queryMinTime, now.Add(-t.cfg.MaxQueryAge))
+	if records.queryMaxTime.Before(adjustedQueryMinTime) {
+		level.Info(t.logger).Log("msg", "Skipped queries because there's no valid time range to query after honoring configured max query age", "min_valid_time", records.queryMinTime, "max_valid_time", records.queryMaxTime, "max_query_age", t.cfg.MaxQueryAge)
+		return nil, nil, errors.New("no valid time range to query after honoring configured max query age")
+	}
+
+	// Compute the latest queriable timestamp
+	// records.queryMaxTime shouldn't be after now but we want to be sure of it
+	adjustedQueryMaxTime := minTime(records.queryMaxTime, now)
+
+	// Last 24h range query.
+	ranges = append(ranges, [2]time.Time{
+		maxTime(adjustedQueryMinTime, now.Add(-24*time.Hour)),
+		adjustedQueryMaxTime,
+	})
+
+	// Instant query at the most recent point.
+	instants = append(instants, adjustedQueryMaxTime)
+
+	// Instant query at 24h ago.
+	instant24hAgo := maxTime(adjustedQueryMinTime, now.Add(-24*time.Hour))
+	if !instant24hAgo.Equal(adjustedQueryMaxTime) {
+		instants = append(instants, instant24hAgo)
+	}
+
+	// Random instant query.
+	randInstant := randTime(adjustedQueryMinTime, adjustedQueryMaxTime)
+	instants = append(instants, randInstant)
+
+	return ranges, instants, nil
 }
