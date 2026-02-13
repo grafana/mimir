@@ -123,6 +123,9 @@ type Proxy struct {
 	// The HTTP server used to run the proxy service.
 	server *server.Server
 
+	// TTL middleware for HTTP connections, stored to allow cleanup on shutdown.
+	ttlMiddleware interface{ Stop() }
+
 	// Wait group used to wait until the server has done.
 	done sync.WaitGroup
 }
@@ -298,6 +301,9 @@ func (p *Proxy) Start() error {
 			return errors.Wrap(err, "failed to create HTTP connection TTL middleware")
 		}
 		serv.HTTPServer.Handler = ttlMiddleware.Wrap(serv.HTTPServer.Handler)
+		// Store reference to allow cleanup on shutdown. Type assertion is safe because
+		// the concrete type returned by NewHTTPConnectionTTLMiddleware has a Stop() method.
+		p.ttlMiddleware = ttlMiddleware.(interface{ Stop() })
 	}
 
 	p.server = serv
@@ -322,6 +328,11 @@ func (p *Proxy) Stop() error {
 	}
 
 	p.server.Shutdown()
+
+	// Stop the TTL middleware to clean up background goroutine
+	if p.ttlMiddleware != nil {
+		p.ttlMiddleware.Stop()
+	}
 
 	// Stop the async dispatcher
 	if p.asyncDispatcher != nil {
