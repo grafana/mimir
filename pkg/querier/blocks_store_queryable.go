@@ -1020,13 +1020,26 @@ func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegat
 		myWarnings.Add(errors.New(w))
 	}
 
+	// Check both the opaque hints type and the non-opaque hints type. Store-gateways will only send
+	// a single one of these as part of a series request. We need to maintain support for either one
+	// in queriers until after store-gateways are switched to only use the non-opaque type.
+	if h := resp.GetResponseHints(); h != nil {
+		ids, err := convertBlockHintsToULIDs(h.QueriedBlocks)
+		if err != nil {
+			return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, errors.Wrapf(err, "failed to parse queried block IDs from received hints")
+		}
+
+		myQueriedBlocks = append(myQueriedBlocks, ids...)
+	}
+
 	if h := resp.GetHints(); h != nil {
-		hints := hintspb.SeriesResponseHints{}
-		if err := types.UnmarshalAny(h, &hints); err != nil {
+		// Note that we use a different but equivalent hints type for the opaque field.
+		opaqueResHints := hintspb.SeriesResponseHints{}
+		if err := types.UnmarshalAny(h, &opaqueResHints); err != nil {
 			return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, errors.Wrapf(err, "failed to unmarshal series hints from %s", c.RemoteAddress())
 		}
 
-		ids, err := convertBlockHintsToULIDs(hints.QueriedBlocks)
+		ids, err := convertBlockHintsToULIDsOpaque(opaqueResHints.QueriedBlocks)
 		if err != nil {
 			return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, errors.Wrapf(err, "failed to parse queried block IDs from received hints")
 		}
@@ -1116,13 +1129,21 @@ func (q *blocksStoreQuerier) fetchLabelNamesFromStore(
 			}
 
 			myQueriedBlocks := []ulid.ULID(nil)
-			if namesResp.Hints != nil {
-				hints := hintspb.LabelNamesResponseHints{}
-				if err := types.UnmarshalAny(namesResp.Hints, &hints); err != nil {
+			if namesResp.ResponseHints != nil {
+				ids, err := convertBlockHintsToULIDs(namesResp.ResponseHints.QueriedBlocks)
+				if err != nil {
+					return errors.Wrapf(err, "failed to parse queried block IDs from received hints")
+				}
+
+				myQueriedBlocks = ids
+			} else if namesResp.Hints != nil {
+				// Note that we use a different but equivalent hints type for the opaque field.
+				resHints := hintspb.LabelNamesResponseHints{}
+				if err := types.UnmarshalAny(namesResp.Hints, &resHints); err != nil {
 					return errors.Wrapf(err, "failed to unmarshal label names hints from %s", c.RemoteAddress())
 				}
 
-				ids, err := convertBlockHintsToULIDs(hints.QueriedBlocks)
+				ids, err := convertBlockHintsToULIDsOpaque(resHints.QueriedBlocks)
 				if err != nil {
 					return errors.Wrapf(err, "failed to parse queried block IDs from received hints")
 				}
@@ -1197,13 +1218,21 @@ func (q *blocksStoreQuerier) fetchLabelValuesFromStore(
 			}
 
 			myQueriedBlocks := []ulid.ULID(nil)
-			if valuesResp.Hints != nil {
-				hints := hintspb.LabelValuesResponseHints{}
-				if err := types.UnmarshalAny(valuesResp.Hints, &hints); err != nil {
+			if valuesResp.ResponseHints != nil {
+				ids, err := convertBlockHintsToULIDs(valuesResp.ResponseHints.QueriedBlocks)
+				if err != nil {
+					return errors.Wrapf(err, "failed to parse queried block IDs from received hints")
+				}
+
+				myQueriedBlocks = ids
+			} else if valuesResp.Hints != nil {
+				// Note that we use a different but equivalent hints type for the opaque field.
+				resHints := hintspb.LabelValuesResponseHints{}
+				if err := types.UnmarshalAny(valuesResp.Hints, &resHints); err != nil {
 					return errors.Wrapf(err, "failed to unmarshal label values hints from %s", c.RemoteAddress())
 				}
 
-				ids, err := convertBlockHintsToULIDs(hints.QueriedBlocks)
+				ids, err := convertBlockHintsToULIDsOpaque(resHints.QueriedBlocks)
 				if err != nil {
 					return errors.Wrapf(err, "failed to parse queried block IDs from received hints")
 				}
@@ -1253,7 +1282,7 @@ func grpcContextWithBucketStoreRequestMeta(ctx context.Context, tenantID string,
 
 func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skipChunks bool, projectionInclude bool, projectionLabels []string, blockIDs []ulid.ULID, streamingBatchSize uint64) (*storepb.SeriesRequest, error) {
 	// Selectively query only specific blocks.
-	hints := &hintspb.SeriesRequestHints{
+	requestHints := &storepb.SeriesRequestHints{
 		BlockMatchers: []storepb.LabelMatcher{
 			{
 				Type:  storepb.LabelMatcher_RE,
@@ -1265,7 +1294,22 @@ func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skip
 		ProjectionLabels:  projectionLabels,
 	}
 
-	anyHints, err := types.MarshalAny(hints)
+	// We send both opaque and non-opaque request hints to store-gateways. New store-gateways
+	// will prefer the non-opaque type and ignore the opaque type. Older store-gateways will
+	// ignore the unknown non-opaque type and instead use the opaque type.
+	opaqueHints := &hintspb.SeriesRequestHints{
+		BlockMatchers: []storepb.LabelMatcher{
+			{
+				Type:  storepb.LabelMatcher_RE,
+				Name:  block.BlockIDLabel,
+				Value: strings.Join(convertULIDsToString(blockIDs), "|"),
+			},
+		},
+		ProjectionInclude: projectionInclude,
+		ProjectionLabels:  projectionLabels,
+	}
+
+	anyHints, err := types.MarshalAny(opaqueHints)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to marshal series request hints")
 	}
@@ -1283,6 +1327,7 @@ func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skip
 		MaxTime:                  maxT,
 		Matchers:                 matchers,
 		Hints:                    anyHints,
+		RequestHints:             requestHints,
 		SkipChunks:               skipChunks,
 		StreamingChunksBatchSize: streamingBatchSize,
 	}, nil
@@ -1301,7 +1346,7 @@ func createLabelNamesRequest(minT, maxT int64, blockIDs []ulid.ULID, hints *stor
 	}
 
 	// Selectively query only specific blocks.
-	requestHints := &hintspb.LabelNamesRequestHints{
+	requestHints := &storepb.LabelNamesRequestHints{
 		BlockMatchers: []storepb.LabelMatcher{
 			{
 				Type:  storepb.LabelMatcher_RE,
@@ -1311,12 +1356,26 @@ func createLabelNamesRequest(minT, maxT int64, blockIDs []ulid.ULID, hints *stor
 		},
 	}
 
-	anyRequestHints, err := types.MarshalAny(requestHints)
+	// We send both opaque and non-opaque request hints to store-gateways. New store-gateways
+	// will prefer the non-opaque type and ignore the opaque type. Older store-gateways will
+	// ignore the unknown non-opaque type and instead use the opaque type.
+	opaqueHints := &hintspb.LabelNamesRequestHints{
+		BlockMatchers: []storepb.LabelMatcher{
+			{
+				Type:  storepb.LabelMatcher_RE,
+				Name:  block.BlockIDLabel,
+				Value: strings.Join(convertULIDsToString(blockIDs), "|"),
+			},
+		},
+	}
+
+	anyHints, err := types.MarshalAny(opaqueHints)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to marshal label names request hints")
 	}
 
-	req.Hints = anyRequestHints
+	req.Hints = anyHints
+	req.RequestHints = requestHints
 
 	return req, nil
 }
@@ -1336,7 +1395,7 @@ func createLabelValuesRequest(minT, maxT int64, label string, blockIDs []ulid.UL
 	}
 
 	// Selectively query only specific blocks.
-	requestHints := &hintspb.LabelValuesRequestHints{
+	requestHints := &storepb.LabelValuesRequestHints{
 		BlockMatchers: []storepb.LabelMatcher{
 			{
 				Type:  storepb.LabelMatcher_RE,
@@ -1346,12 +1405,26 @@ func createLabelValuesRequest(minT, maxT int64, label string, blockIDs []ulid.UL
 		},
 	}
 
-	anyRequestHints, err := types.MarshalAny(requestHints)
+	// We send both opaque and non-opaque request hints to store-gateways. New store-gateways
+	// will prefer the non-opaque type and ignore the opaque type. Older store-gateways will
+	// ignore the unknown non-opaque type and instead use the opaque type.
+	opaqueHints := &hintspb.LabelValuesRequestHints{
+		BlockMatchers: []storepb.LabelMatcher{
+			{
+				Type:  storepb.LabelMatcher_RE,
+				Name:  block.BlockIDLabel,
+				Value: strings.Join(convertULIDsToString(blockIDs), "|"),
+			},
+		},
+	}
+
+	anyHints, err := types.MarshalAny(opaqueHints)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to marshal label values request hints")
 	}
 
-	req.Hints = anyRequestHints
+	req.Hints = anyHints
+	req.RequestHints = requestHints
 
 	return req, nil
 }
@@ -1364,7 +1437,22 @@ func convertULIDsToString(ids []ulid.ULID) []string {
 	return res
 }
 
-func convertBlockHintsToULIDs(hints []hintspb.Block) ([]ulid.ULID, error) {
+func convertBlockHintsToULIDs(hints []storepb.Block) ([]ulid.ULID, error) {
+	res := make([]ulid.ULID, len(hints))
+
+	for idx, hint := range hints {
+		blockID, err := ulid.Parse(hint.Id)
+		if err != nil {
+			return nil, err
+		}
+
+		res[idx] = blockID
+	}
+
+	return res, nil
+}
+
+func convertBlockHintsToULIDsOpaque(hints []hintspb.Block) ([]ulid.ULID, error) {
 	res := make([]ulid.ULID, len(hints))
 
 	for idx, hint := range hints {

@@ -41,7 +41,7 @@ message SeriesRequest {
 
   // hints is an opaque data structure that can be used to carry additional information.
   // The content of this field and whether it's supported depends on the
-  // implementation of a specific store.
+  // implementation of a specific store. Deprecated, use request_hints instead.
   google.protobuf.Any hints = 9;
 
   // Thanos step.
@@ -55,6 +55,10 @@ message SeriesRequest {
 
   // Thanos shard_info.
   reserved 13;
+
+  // Additional information from the read path that the store can use to more efficiently
+  // return series.
+  SeriesRequestHints request_hints = 14;
 
   // If streaming_chunks_batch_size=0, the response must only contain one 'series' at a time
   // with the series labels and chunks data sent together.
@@ -70,6 +74,23 @@ message SeriesRequest {
   uint64 streaming_chunks_batch_size = 100;
 }
 
+message SeriesRequestHints {
+  // block_matchers is a list of label matchers that are evaluated against each single block's
+  // labels to filter which blocks get queried. If the list is empty, no per-block filtering
+  // is applied.
+  repeated thanos.LabelMatcher block_matchers = 1 [(gogoproto.nullable) = false];
+
+  // projection_include indicates if label projection hints are including only specific labels
+  // or excluding them. The combination of default values of projection_include (false) and
+  // projection_labels (empty) disables use of projections.
+  bool projection_include = 2;
+
+  // projection_labels is the set of labels required (projection_include = true) or not required
+  // (projection_include = false) to satisfy a query. The combination of default values of
+  // projection_include (false) and projection_labels (empty) disables use of projections.
+  repeated string projection_labels = 3;
+}
+
 message Stats {
   // This is the sum of all fetched index bytes (postings + series) for a series request.
   uint64 fetched_index_bytes = 1;
@@ -79,37 +100,49 @@ message SeriesResponse {
   reserved 1; // non-streaming series are no longer supported or used.
 
   oneof result {
-    /// warning is considered an information piece in place of series for warning purposes.
-    /// It is used to warn store API user about suspicious cases or partial response (if enabled).
+    // warning is considered an information piece in place of series for warning purposes.
+    // It is used to warn store API user about suspicious cases or partial response (if enabled).
     string warning = 2;
 
-    /// hints is an opaque data structure that can be used to carry additional information from
-    /// the store. The content of this field and whether it's supported depends on the
-    /// implementation of a specific store. It's also implementation specific if it's allowed that
-    /// multiple SeriesResponse frames contain hints for a single Series() request and how should they
-    /// be handled in such case (ie. merged vs keep the first/last one).
+    // hints is an opaque data structure that can be used to carry additional information from
+    // the store. The content of this field and whether it's supported depends on the
+    // implementation of a specific store. It's also implementation specific if it's allowed that
+    // multiple SeriesResponse frames contain hints for a single Series() request and how should they
+    // be handled in such case (ie. merged vs keep the first/last one). Deprecated, use response_hints instead.
     google.protobuf.Any hints = 3;
 
-    /// stats is a object containing stats for a series response from the store-gateways so that we can collect stats
-    /// related to the processing the series response on store-gateways did available to the querier and query-frontends.
+    // stats is a object containing stats for a series response from the store-gateways so that we can collect stats
+    // related to the processing the series response on store-gateways did available to the querier and query-frontends.
     Stats stats = 4;
 
-    /// streaming_series is a list of series labels sent as part of a streaming Series call.
-    /// These are populated only when streaming_chunks_batch_size > 0 in the series request.
-    /// Series are sent in batches because sending one at a time has additional CPU overhead for not much memory gains.
+    // streaming_series is a list of series labels sent as part of a streaming Series call.
+    // These are populated only when streaming_chunks_batch_size > 0 in the series request.
+    // Series are sent in batches because sending one at a time has additional CPU overhead for not much memory gains.
     StreamingSeriesBatch streaming_series = 5;
 
-    /// streaming_chunks is a list of chunks sent as part of a streaming Series request.
-    /// They are associated with series labels sent as streaming_series earlier in the same Series request.
-    /// These are populated only when streaming_chunks_batch_size > 0 in the series request.
-    /// Chunks are sent in batches because sending one series' chunks at a time has additional
-    /// CPU overhead for not much memory gains.
+    // streaming_chunks is a list of chunks sent as part of a streaming Series request.
+    // They are associated with series labels sent as streaming_series earlier in the same Series request.
+    // These are populated only when streaming_chunks_batch_size > 0 in the series request.
+    // Chunks are sent in batches because sending one series' chunks at a time has additional
+    // CPU overhead for not much memory gains.
     StreamingChunksBatch streaming_chunks = 6;
 
-    /// streaming_chunks_estimate contains an estimate of the number of chunks expected to be sent as part a streaming
-    /// Series call.
+    // streaming_chunks_estimate contains an estimate of the number of chunks expected to be sent as part a streaming
+    // Series call.
     StreamingChunksEstimate streaming_chunks_estimate = 7;
+
+    // response_hints contains additional information from the store about the response.
+    SeriesResponseHints response_hints = 8;
   }
+}
+
+message SeriesResponseHints {
+  // queried_blocks is the list of blocks that have been queried.
+  repeated Block queried_blocks = 1 [(gogoproto.nullable) = false];
+}
+
+message Block {
+  string id = 1;
 }
 
 message LabelNamesRequest {
@@ -125,22 +158,38 @@ message LabelNamesRequest {
 
   // hints is an opaque data structure that can be used to carry additional information.
   // The content of this field and whether it's supported depends on the
-  // implementation of a specific store.
+  // implementation of a specific store. Deprecated, use request_hints instead.
   google.protobuf.Any hints = 5;
 
   repeated LabelMatcher matchers = 6 [(gogoproto.nullable) = false];
 
   int64 limit = 7;
+
+  LabelNamesRequestHints request_hints = 8;
+}
+
+message LabelNamesRequestHints {
+  // block_matchers is a list of label matchers that are evaluated against each single block's
+  // labels to filter which blocks get queried. If the list is empty, no per-block filtering
+  // is applied.
+  repeated thanos.LabelMatcher block_matchers = 1 [(gogoproto.nullable) = false];
 }
 
 message LabelNamesResponse {
   repeated string names = 1;
   repeated string warnings = 2;
 
-  /// hints is an opaque data structure that can be used to carry additional information from
-  /// the store. The content of this field and whether it's supported depends on the
-  /// implementation of a specific store.
+  // hints is an opaque data structure that can be used to carry additional information from
+  // the store. The content of this field and whether it's supported depends on the
+  // implementation of a specific store. Deprecated, use response_hints instead.
   google.protobuf.Any hints = 3;
+
+  LabelNamesResponseHints response_hints = 4;
+}
+
+message LabelNamesResponseHints {
+  // queried_blocks is the list of blocks that have been queried.
+  repeated Block queried_blocks = 1 [(gogoproto.nullable) = false];
 }
 
 message LabelValuesRequest {
@@ -158,20 +207,36 @@ message LabelValuesRequest {
 
   // hints is an opaque data structure that can be used to carry additional information.
   // The content of this field and whether it's supported depends on the
-  // implementation of a specific store.
+  // implementation of a specific store. Deprecated, use request_hints instead.
   google.protobuf.Any hints = 6;
 
   repeated LabelMatcher matchers = 7 [(gogoproto.nullable) = false];
 
   int64 limit = 8;
+
+  LabelValuesRequestHints request_hints = 9;
+}
+
+message LabelValuesRequestHints {
+  // block_matchers is a list of label matchers that are evaluated against each single block's
+  // labels to filter which blocks get queried. If the list is empty, no per-block filtering
+  // is applied.
+  repeated thanos.LabelMatcher block_matchers = 1 [(gogoproto.nullable) = false];
 }
 
 message LabelValuesResponse {
   repeated string values = 1;
   repeated string warnings = 2;
 
-  /// hints is an opaque data structure that can be used to carry additional information from
-  /// the store. The content of this field and whether it's supported depends on the
-  /// implementation of a specific store.
+  // hints is an opaque data structure that can be used to carry additional information from
+  // the store. The content of this field and whether it's supported depends on the
+  // implementation of a specific store. Deprecated, use response_hints instead.
   google.protobuf.Any hints = 3;
+
+  LabelValuesResponseHints response_hints = 4;
+}
+
+message LabelValuesResponseHints {
+  // queried_blocks is the list of blocks that have been queried.
+  repeated Block queried_blocks = 1 [(gogoproto.nullable) = false];
 }
