@@ -777,7 +777,7 @@ func (o *Overrides) RequestBurstSize(userID string) int {
 
 // IngestionRate returns the limit on ingester rate (samples per second).
 func (o *Overrides) IngestionRate(userID string) float64 {
-	return o.getOverridesForUser(userID).IngestionRate
+	return o.getOverridesForUserWithMetadata(userID).IngestionRate
 }
 
 // LabelNamesAndValuesResultsMaxSizeBytes returns the maximum size in bytes of distinct label names and values
@@ -887,23 +887,6 @@ func (o *Overrides) PastGracePeriod(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).PastGracePeriod)
 }
 
-func getOverride[T any](o *Overrides, orgID string, f func(l *Limits) T) T {
-	tenantID, md, err := tenant.ParseTenantWithMetadata(orgID)
-	if err == nil && md != nil {
-		// Try to get the full override (tenantID:subtenantType).
-		if limits := o.tenantLimits.ByUserID(orgID); limits != nil {
-			return f(limits)
-		}
-		// Try to get a subtenant specific override (:subtenantType)
-		if limits := o.tenantLimits.ByUserID(":" + md.Key); limits != nil {
-			return f(limits)
-		}
-	}
-
-	// Fallback to regular tenant limits (and then default limits)
-	return f(o.getOverridesForUser(tenantID))
-}
-
 // MaxActiveOrGlobalSeriesPerUser returns the maximum number of active series a user is allowed to store across the cluster.
 // It will automatically fall back to the MaxGlobalSeriesPerUser setting if MaxActiveSeriesPerUser is unset.
 // This means that for users who have any overrides defined, the fallback order is:
@@ -914,20 +897,17 @@ func getOverride[T any](o *Overrides, orgID string, f func(l *Limits) T) T {
 // And for tenants without overrides it's just:
 // - Default MaxActiveSeriesPerUser
 // - Default MaxGlobalSeriesPerUser
-func (o *Overrides) MaxActiveOrGlobalSeriesPerUser(orgID string) int {
-	return getOverride(o, orgID, func(l *Limits) int {
-		if maxActive := l.MaxActiveSeriesPerUser; maxActive > 0 {
-			return maxActive
-		}
-		return l.MaxGlobalSeriesPerUser
-	})
+func (o *Overrides) MaxActiveOrGlobalSeriesPerUser(userID string) int {
+	overrides := o.getOverridesForUserWithMetadata(userID)
+	if maxActive := overrides.MaxActiveSeriesPerUser; maxActive > 0 {
+		return maxActive
+	}
+	return overrides.MaxGlobalSeriesPerUser
 }
 
 // MaxGlobalSeriesPerUser returns the maximum number of series a user is allowed to store across the cluster.
 func (o *Overrides) MaxGlobalSeriesPerUser(userID string) int {
-	return getOverride(o, userID, func(l *Limits) int {
-		return l.MaxGlobalSeriesPerUser
-	})
+	return o.getOverridesForUser(userID).MaxGlobalSeriesPerUser
 }
 
 // MaxGlobalSeriesPerMetric returns the maximum number of series allowed per metric across the cluster.
@@ -1162,9 +1142,7 @@ func (o *Overrides) MaxCostAttributionCardinality(userID string) int {
 
 // IngestionTenantShardSize returns the ingesters shard size for a given user.
 func (o *Overrides) IngestionTenantShardSize(userID string) int {
-	return getOverride(o, userID, func(l *Limits) int {
-		return l.IngestionTenantShardSize
-	})
+	return o.getOverridesForUser(userID).IngestionTenantShardSize
 }
 
 // CompactorTenantShardSize returns number of compactors that this user can use. 0 = all compactors.
@@ -1665,6 +1643,25 @@ func (o *Overrides) getOverridesForUser(userID string) *Limits {
 		}
 	}
 	return o.defaultLimits
+}
+
+func (o *Overrides) getOverridesForUserWithMetadata(userID string) *Limits {
+	if o.tenantLimits != nil {
+		tenantID, md, err := tenant.ParseTenantWithMetadata(userID)
+		if err != nil || md == nil {
+			return o.getOverridesForUser(userID)
+		}
+		if limits := o.tenantLimits.ByUserID(userID); limits != nil {
+			return limits
+		}
+		if limits := o.tenantLimits.ByUserID(tenantID + ":" + md.Key); limits != nil {
+			return limits
+		}
+		if limits := o.tenantLimits.ByUserID(tenantID); limits != nil {
+			return limits
+		}
+	}
+	return o.getOverridesForUser(userID)
 }
 
 // AllTrueBooleansPerTenant returns true only if limit func is true for all given tenants

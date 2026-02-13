@@ -9,10 +9,12 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/runtimeconfig"
+	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.yaml.in/yaml/v3"
 
@@ -86,6 +88,8 @@ func (l *runtimeConfigLoader) load(r io.Reader) (interface{}, error) {
 		return nil, errMultipleDocuments
 	}
 
+	l.expandTenantMetadataLimits(overrides)
+
 	if l.validate != nil {
 		for _, limits := range overrides.TenantLimits {
 			if limits == nil {
@@ -98,6 +102,63 @@ func (l *runtimeConfigLoader) load(r io.Reader) (interface{}, error) {
 	}
 
 	return overrides, nil
+}
+
+func (l *runtimeConfigLoader) expandTenantMetadataLimits(cfg *runtimeConfigValues) {
+	if len(cfg.TenantLimits) == 0 {
+		return
+	}
+
+	explicitKeys := make(map[string]bool)
+	for key := range cfg.TenantLimits {
+		explicitKeys[key] = true
+	}
+
+	for key, subLimits := range cfg.TenantLimits {
+		if !strings.HasPrefix(key, ":") {
+			continue
+		}
+		subKey := key[1:]
+		for tenantID, tenantLimits := range cfg.TenantLimits {
+			if strings.IndexByte(tenantID, ':') != -1 {
+				continue
+			}
+			compositeKey := tenantID + ":" + subKey
+			if explicitKeys[compositeKey] {
+				continue
+			}
+			cfg.TenantLimits[compositeKey] = mergeLimits(tenantLimits, subLimits)
+		}
+	}
+
+	for orgID := range explicitKeys {
+		tenantID, md, err := tenant.ParseTenantWithMetadata(orgID)
+		if err != nil || md == nil {
+			continue
+		}
+		baseKey := tenantID + ":" + md.Key
+		baseLimits := cfg.TenantLimits[baseKey]
+		if baseLimits == nil {
+			continue
+		}
+		cfg.TenantLimits[orgID] = mergeLimits(baseLimits, cfg.TenantLimits[orgID])
+	}
+}
+
+func mergeLimits(base, overlay *validation.Limits) *validation.Limits {
+	result := copyLimits(base)
+	if overlay.MaxActiveSeriesPerUser > 0 {
+		result.MaxActiveSeriesPerUser = overlay.MaxActiveSeriesPerUser
+	}
+	if overlay.IngestionRate > 0 {
+		result.IngestionRate = overlay.IngestionRate
+	}
+	return result
+}
+
+func copyLimits(l *validation.Limits) *validation.Limits {
+	cp := *l
+	return &cp
 }
 
 func multiClientRuntimeConfigChannel(manager *runtimeconfig.Manager) func() <-chan kv.MultiRuntimeConfig {

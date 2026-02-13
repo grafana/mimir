@@ -2514,6 +2514,45 @@ func TestOverrides_OTelTranslationStrategy(t *testing.T) {
 	})
 }
 
+func TestSubtenantOverrides(t *testing.T) {
+	defaults := getDefaultLimits()
+	defaults.IngestionRate = 1000
+	defaults.MaxActiveSeriesPerUser = 10000
+
+	tenantLimits := map[string]*Limits{
+		"tenant-a": {
+			IngestionRate:          100,
+			MaxActiveSeriesPerUser: 1000,
+		},
+		"tenant-a:test-run": {
+			IngestionRate:          5000,
+			MaxActiveSeriesPerUser: 50000,
+		},
+		"tenant-a:test-run=specific": {
+			IngestionRate:          9999,
+			MaxActiveSeriesPerUser: 99999,
+		},
+	}
+
+	ov := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
+
+	t.Run("IngestionRate", func(t *testing.T) {
+		assert.Equal(t, float64(100), ov.IngestionRate("tenant-a"))
+		assert.Equal(t, float64(5000), ov.IngestionRate("tenant-a:test-run"))
+		assert.Equal(t, float64(5000), ov.IngestionRate("tenant-a:test-run=unknown"))
+		assert.Equal(t, float64(9999), ov.IngestionRate("tenant-a:test-run=specific"))
+		assert.Equal(t, float64(1000), ov.IngestionRate("unknown-tenant"))
+	})
+
+	t.Run("MaxActiveOrGlobalSeriesPerUser", func(t *testing.T) {
+		assert.Equal(t, 1000, ov.MaxActiveOrGlobalSeriesPerUser("tenant-a"))
+		assert.Equal(t, 50000, ov.MaxActiveOrGlobalSeriesPerUser("tenant-a:test-run"))
+		assert.Equal(t, 50000, ov.MaxActiveOrGlobalSeriesPerUser("tenant-a:test-run=unknown"))
+		assert.Equal(t, 99999, ov.MaxActiveOrGlobalSeriesPerUser("tenant-a:test-run=specific"))
+		assert.Equal(t, 10000, ov.MaxActiveOrGlobalSeriesPerUser("unknown-tenant"))
+	})
+}
+
 func getDefaultLimits() Limits {
 	limits := Limits{}
 	flagext.DefaultValues(&limits)

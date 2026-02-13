@@ -50,19 +50,21 @@ func TestSubtenantLimits(t *testing.T) {
 	require.NoError(t, err)
 	defer s.Close()
 
-	defaultTestKey := ":" + metadataKey
+	subtenantKey := ":" + metadataKey
 	knownTestKey := fmt.Sprintf("%s:%s=%s", mainTenantID, metadataKey, knownTestID)
 
 	runtimeConfig := fmt.Sprintf(`
 overrides:
   %q:
     max_active_series_per_user: %d
+    ingestion_burst_size: 123
   %q:
     max_active_series_per_user: %d
   %q:
+    ingestion_rate: 456
     max_active_series_per_user: %d
 `, mainTenantID, mainTenantSeriesLimit,
-		defaultTestKey, testRunDefaultSeriesLimit,
+		subtenantKey, testRunDefaultSeriesLimit,
 		knownTestKey, testRunSpecificSeriesLimit,
 	)
 

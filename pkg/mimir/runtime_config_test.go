@@ -249,6 +249,112 @@ overrides:
 	require.Equal(t, `default:{foo="default"}`, overrides.ActiveSeriesCustomTrackersConfig("user-without-overrides").String())
 }
 
+func TestRuntimeConfigLoader_ExpandLimits(t *testing.T) {
+	tests := []struct {
+		name   string
+		yaml   string
+		checks map[string]func(t *testing.T, l *validation.Limits)
+	}{
+		{
+			name: "expand limits from metadata key",
+			yaml: `
+overrides:
+  tenant-a:
+    max_global_series_per_user: 1000
+    ingestion_rate: 100
+  tenant-b:
+    max_global_series_per_user: 2000
+    ingestion_rate: 200
+  ":test-run":
+    max_active_series_per_user: 50000
+    ingestion_rate: 5000
+`,
+			checks: map[string]func(t *testing.T, l *validation.Limits){
+				"tenant-a": func(t *testing.T, l *validation.Limits) {
+					assert.Equal(t, 1000, l.MaxGlobalSeriesPerUser)
+					assert.Equal(t, float64(100), l.IngestionRate)
+				},
+				"tenant-b": func(t *testing.T, l *validation.Limits) {
+					assert.Equal(t, 2000, l.MaxGlobalSeriesPerUser)
+					assert.Equal(t, float64(200), l.IngestionRate)
+				},
+				"tenant-a:test-run": func(t *testing.T, l *validation.Limits) {
+					assert.Equal(t, 1000, l.MaxGlobalSeriesPerUser)
+					assert.Equal(t, 50000, l.MaxActiveSeriesPerUser)
+					assert.Equal(t, float64(5000), l.IngestionRate)
+				},
+				"tenant-b:test-run": func(t *testing.T, l *validation.Limits) {
+					assert.Equal(t, 2000, l.MaxGlobalSeriesPerUser)
+					assert.Equal(t, 50000, l.MaxActiveSeriesPerUser)
+					assert.Equal(t, float64(5000), l.IngestionRate)
+				},
+			},
+		},
+		{
+			name: "explicit tenant:key=value inherits from tenant:key and applies its overrides",
+			yaml: `
+overrides:
+  tenant-a:
+    max_global_series_per_user: 1000
+    ingestion_rate: 100
+  ":test-run":
+    max_active_series_per_user: 50000
+    ingestion_rate: 5000
+  tenant-a:test-run=specific-id:
+    max_active_series_per_user: 100000
+    ingestion_rate: 9999
+`,
+			checks: map[string]func(t *testing.T, l *validation.Limits){
+				"tenant-a": func(t *testing.T, l *validation.Limits) {
+					assert.Equal(t, 1000, l.MaxGlobalSeriesPerUser)
+				},
+				"tenant-a:test-run": func(t *testing.T, l *validation.Limits) {
+					assert.Equal(t, 1000, l.MaxGlobalSeriesPerUser)
+					assert.Equal(t, 50000, l.MaxActiveSeriesPerUser)
+					assert.Equal(t, float64(5000), l.IngestionRate)
+				},
+				"tenant-a:test-run=specific-id": func(t *testing.T, l *validation.Limits) {
+					assert.Equal(t, 1000, l.MaxGlobalSeriesPerUser)
+					assert.Equal(t, 100000, l.MaxActiveSeriesPerUser)
+					assert.Equal(t, float64(9999), l.IngestionRate)
+				},
+			},
+		},
+		{
+			name: "explicit tenant:key override takes precedence over previous expansion",
+			yaml: `
+overrides:
+  tenant-a:
+    max_global_series_per_user: 1000
+  tenant-a:test-run:
+    max_active_series_per_user: 99999
+  ":test-run":
+    max_active_series_per_user: 50000
+`,
+			checks: map[string]func(t *testing.T, l *validation.Limits){
+				"tenant-a:test-run": func(t *testing.T, l *validation.Limits) {
+					assert.Equal(t, 99999, l.MaxActiveSeriesPerUser)
+				},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			loader := &runtimeConfigLoader{}
+			result, err := loader.load(strings.NewReader(tc.yaml))
+			require.NoError(t, err)
+
+			cfg := result.(*runtimeConfigValues)
+			for key, check := range tc.checks {
+				actual := cfg.TenantLimits[key]
+				require.NotNilf(t, actual, "missing key %q", key)
+				check(t, actual)
+			}
+		})
+	}
+}
+
 func getDefaultLimits() validation.Limits {
 	limits := validation.Limits{}
 	flagext.DefaultValues(&limits)
