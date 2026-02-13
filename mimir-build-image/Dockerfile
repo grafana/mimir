@@ -8,7 +8,7 @@ FROM alpine/helm:4.1.0@sha256:905a068da43146a87a06c9c6f7f39cdb66a3cd0973dfc29607
 FROM golang:1.25.7-trixie@sha256:86d4bd34f4ca0536082637663aa6959c562ceb0161b289dc7592112228735272
 ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
-ENV SKOPEO_DEPS="libgpgme-dev libassuan-dev libbtrfs-dev libdevmapper-dev pkg-config"
+ENV SKOPEO_DEPS="libgpgme-dev libassuan-dev libbtrfs-dev libdevmapper-dev libsqlite3-dev pkg-config"
 # Override toolchain directive in go.mod, to ensure the image's Go version is used.
 # Be aware that the official Go Dockerfiles already do this, but let's be explicit.
 # https://github.com/docker-library/golang/issues/472
