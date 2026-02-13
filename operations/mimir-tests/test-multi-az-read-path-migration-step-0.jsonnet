@@ -7,7 +7,7 @@
     // Assume write path has already been migrated to multi-zone.
     multi_zone_write_path_enabled: true,
 
-    // Assyme memberlist bridge is already configured with zone-aware routing.
+    // Assume memberlist bridge is already configured with zone-aware routing.
     multi_zone_memberlist_bridge_enabled: true,
     memberlist_zone_aware_routing_enabled: true,
 
