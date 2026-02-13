@@ -142,7 +142,7 @@ func TestBboltJobPersistenceManager_RecoverAll(t *testing.T) {
 	allowlist := util.NewAllowList(nil, nil)
 	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
 	jobTrackerFactory := func(tenant string, persister JobPersister) *JobTracker {
-		return NewJobTracker(persister, tenant, infiniteLeases, metrics.trackerMetricsForTenant(tenant))
+		return NewJobTracker(persister, tenant, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant))
 	}
 
 	// Empty recovery should succeed

@@ -90,15 +90,6 @@ func (jt *JobTracker) recoverFrom(jobs []TrackedJob) {
 	jt.metrics.activeJobs.Set(float64(jt.active.Len()))
 }
 
-func (jt *JobTracker) PrepareForShutdown() {
-	jt.mtx.Lock()
-	defer jt.mtx.Unlock()
-
-	jt.incompleteJobs = make(map[string]*list.Element)
-	jt.pending = list.New()
-	jt.active = list.New()
-}
-
 // Lease tries to find a pending job, returning a non-nil response if one was found.
 func (jt *JobTracker) Lease() (response *compactorschedulerpb.LeaseJobResponse, becameEmpty bool, err error) {
 	jt.mtx.Lock()

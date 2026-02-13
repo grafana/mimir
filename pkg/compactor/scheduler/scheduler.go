@@ -148,7 +148,7 @@ func NewCompactorScheduler(
 }
 
 func (s *Scheduler) createJobTracker(tenant string, jp JobPersister) *JobTracker {
-	return NewJobTracker(jp, tenant, s.cfg.maxLeases, s.metrics.trackerMetricsForTenant(tenant))
+	return NewJobTracker(jp, tenant, s.cfg.maxLeases, s.metrics.newTrackerMetricsForTenant(tenant))
 }
 
 func (s *Scheduler) start(ctx context.Context) error {
@@ -247,7 +247,7 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 		))
 	}
 
-	added, err := s.rotator.OfferJobs(req.Key.Id, jobs, req.Key.Epoch)
+	added, err := s.rotator.OfferJobs(req.Tenant, jobs, req.Key.Epoch)
 	if err != nil {
 		level.Error(s.logger).Log("msg", "failed offering result of plan job", "err", err)
 		return nil, failedTo("offering results")
@@ -269,11 +269,11 @@ func (s *Scheduler) UpdatePlanJob(ctx context.Context, req *compactorschedulerpb
 	level.Info(s.logger).Log("msg", "received plan job lease update request", "update_type", compactorschedulerpb.UpdateType_name[int32(req.Update)], "id", req.Key.Id, "epoch", req.Key.Epoch)
 	switch req.Update {
 	case compactorschedulerpb.UPDATE_TYPE_IN_PROGRESS:
-		if s.rotator.RenewJobLease(req.Key.Id, planJobId, req.Key.Epoch) {
+		if s.rotator.RenewJobLease(req.Tenant, req.Key.Id, req.Key.Epoch) {
 			return ok()
 		}
 	case compactorschedulerpb.UPDATE_TYPE_ABANDON:
-		removed, err := s.rotator.RemoveJob(req.Key.Id, planJobId, req.Key.Epoch, false)
+		removed, err := s.rotator.RemoveJob(req.Tenant, req.Key.Id, req.Key.Epoch, false)
 		if err != nil {
 			return nil, failedTo("remove job")
 		}
@@ -281,7 +281,7 @@ func (s *Scheduler) UpdatePlanJob(ctx context.Context, req *compactorschedulerpb
 			return ok()
 		}
 	case compactorschedulerpb.UPDATE_TYPE_REASSIGN:
-		canceled, err := s.rotator.CancelJobLease(req.Key.Id, planJobId, req.Key.Epoch)
+		canceled, err := s.rotator.CancelJobLease(req.Tenant, req.Key.Id, req.Key.Epoch)
 		if err != nil {
 			return nil, failedTo("cancel job lease")
 		}

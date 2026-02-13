@@ -30,7 +30,7 @@ type trackerMetrics struct {
 	activeJobs  prometheus.Gauge
 }
 
-func (s *schedulerMetrics) trackerMetricsForTenant(tenant string) *trackerMetrics {
+func (s *schedulerMetrics) newTrackerMetricsForTenant(tenant string) *trackerMetrics {
 	return &trackerMetrics{
 		pendingJobs: s.pendingJobs.WithLabelValues(tenant),
 		activeJobs:  s.activeJobs.WithLabelValues(tenant),

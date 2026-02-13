@@ -208,10 +208,11 @@ func (j *TrackedPlanJob) Serialize() ([]byte, error) {
 func (j *TrackedPlanJob) ToLeaseResponse(tenant string) *compactorschedulerpb.LeaseJobResponse {
 	return &compactorschedulerpb.LeaseJobResponse{
 		Key: &compactorschedulerpb.JobKey{
-			Id:    tenant,
+			Id:    planJobId,
 			Epoch: j.epoch,
 		},
 		Spec: &compactorschedulerpb.JobSpec{
+			Tenant:  tenant,
 			JobType: compactorschedulerpb.JOB_TYPE_PLANNING,
 		},
 	}

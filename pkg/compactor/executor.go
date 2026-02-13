@@ -252,7 +252,7 @@ func (e *schedulerExecutor) sendFinalJobStatus(ctx context.Context, key *compact
 			return err
 		})
 	case compactorschedulerpb.JOB_TYPE_PLANNING:
-		req := &compactorschedulerpb.UpdatePlanJobRequest{Key: key, Update: status}
+		req := &compactorschedulerpb.UpdatePlanJobRequest{Key: key, Tenant: spec.Tenant, Update: status}
 		err = e.retryable.WithContext(ctx).Run(func() error {
 			_, err := e.schedulerClient.UpdatePlanJob(ctx, req)
 			return err
@@ -302,6 +302,7 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 	c.schedulerLastContact.SetToCurrentTime()
 
 	jobID := resp.Key.Id
+	jobTenant := resp.Spec.Tenant
 	jobType := resp.Spec.JobType
 
 	// Create a cancellable context for this job that can be canceled if the scheduler cancels the job
@@ -316,7 +317,6 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 
 	switch jobType {
 	case compactorschedulerpb.JOB_TYPE_COMPACTION:
-		jobTenant := resp.Spec.Tenant
 		status, err := e.executeCompactionJob(jobCtx, c, resp.Key, resp.Spec)
 		cancelJob(err)
 		wg.Wait()
@@ -328,7 +328,6 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 		e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, status)
 		return true, nil
 	case compactorschedulerpb.JOB_TYPE_PLANNING:
-		jobTenant := resp.Key.Id
 		plannedJobs, planErr := e.executePlanningJob(jobCtx, c, jobTenant)
 		cancelJob(planErr)
 		wg.Wait()
@@ -340,7 +339,7 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 		}
 
 		// For planning jobs, no final status update is sent - results are communicated via PlannedJobs
-		if err := e.sendPlannedJobs(ctx, resp.Key, plannedJobs); err != nil {
+		if err := e.sendPlannedJobs(ctx, resp.Key, resp.Spec, plannedJobs); err != nil {
 			level.Warn(e.logger).Log("msg", "failed to send planned jobs", "job_id", jobID, "tenant", jobTenant, "num_jobs", len(plannedJobs), "err", err)
 			return true, err
 		}
@@ -357,7 +356,7 @@ func (e *schedulerExecutor) updateJobStatus(ctx context.Context, key *compactors
 		_, err := e.schedulerClient.UpdateCompactionJob(ctx, req)
 		return err
 	case compactorschedulerpb.JOB_TYPE_PLANNING:
-		req := &compactorschedulerpb.UpdatePlanJobRequest{Key: key, Update: updType}
+		req := &compactorschedulerpb.UpdatePlanJobRequest{Key: key, Tenant: spec.Tenant, Update: updType}
 		_, err := e.schedulerClient.UpdatePlanJob(ctx, req)
 		return err
 	default:
@@ -552,10 +551,11 @@ func serializeBlockIds(metas []*block.Meta) [][]byte {
 }
 
 // sendPlannedJobs sends the planned compaction jobs back to the scheduler with retries.
-func (e *schedulerExecutor) sendPlannedJobs(ctx context.Context, key *compactorschedulerpb.JobKey, plannedJobs []*compactorschedulerpb.PlannedCompactionJob) error {
+func (e *schedulerExecutor) sendPlannedJobs(ctx context.Context, key *compactorschedulerpb.JobKey, spec *compactorschedulerpb.JobSpec, plannedJobs []*compactorschedulerpb.PlannedCompactionJob) error {
 	req := &compactorschedulerpb.PlannedJobsRequest{
-		Key:  key,
-		Jobs: plannedJobs,
+		Key:    key,
+		Tenant: spec.Tenant,
+		Jobs:   plannedJobs,
 	}
 
 	return e.retryable.WithContext(ctx).Run(func() error {

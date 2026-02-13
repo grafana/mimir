@@ -124,7 +124,7 @@ func (s *Spawner) discoverTenants(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			tracker := NewJobTracker(persister, tenant, s.maxLeases, s.metrics.trackerMetricsForTenant(tenant))
+			tracker := NewJobTracker(persister, tenant, s.maxLeases, s.metrics.newTrackerMetricsForTenant(tenant))
 			s.rotator.AddTenant(tenant, tracker)
 			s.planMap[tenant] = time.Time{}
 		}

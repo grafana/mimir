@@ -27,8 +27,8 @@ message JobSpec {
 }
 
 message CompactionJob {
-  repeated bytes blockIds = 2;
-  bool split = 3;
+  repeated bytes blockIds = 1;
+  bool split = 2;
 }
 
 service CompactorScheduler {
@@ -54,7 +54,8 @@ message PlannedCompactionJob {
 
 message PlannedJobsRequest {
   JobKey key = 1;
-  repeated PlannedCompactionJob jobs = 2;
+  string tenant = 2;
+  repeated PlannedCompactionJob jobs = 3;
 }
 
 message PlannedJobsResponse {}
@@ -69,6 +70,7 @@ enum UpdateType {
 
 message UpdatePlanJobRequest {
   JobKey key = 1;
+  string tenant = 2;
   UpdateType update = 3;
 }
 
