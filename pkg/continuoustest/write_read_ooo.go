@@ -177,6 +177,17 @@ func (t *WriteReadOOOTest) RunInner(ctx context.Context, now time.Time, writeLim
 	for _, ts := range inorderInstants {
 		level.Info(t.logger).Log("msg", "dry run inorder instant query", "ts", ts)
 	}
+
+	oooRanges, oooInstants, err := t.getOutOfOrderQueryTimeRanges(now)
+	if err != nil {
+		errs.Add(err)
+	}
+	for _, timeRange := range oooRanges {
+		level.Info(t.logger).Log("msg", "dry run OOO range query", "from", timeRange[0], "to", timeRange[1])
+	}
+	for _, ts := range oooInstants {
+		level.Info(t.logger).Log("msg", "dry run OOO instant query", "ts", ts)
+	}
 }
 
 func (t *WriteReadOOOTest) nextInorderWriteTimestamp(now time.Time, interval time.Duration, records *MetricHistory) time.Time {
@@ -280,6 +291,52 @@ func (t *WriteReadOOOTest) getInorderQueryTimeRanges(now time.Time) (ranges [][2
 	// Random (minute-aligned).
 	randInstant := alignTimestampToInterval(randTime(adjustedQueryMinTime, adjustedQueryMaxTime), inorderWriteInterval)
 	instants = append(instants, randInstant)
+
+	return ranges, instants, nil
+}
+
+// getOutOfOrderQueryTimeRanges returns time ranges for range queries and timestamps for instant queries,
+// targeting the dense region where out-of-order samples have been written (before now - MaxOOOLag).
+func (t *WriteReadOOOTest) getOutOfOrderQueryTimeRanges(now time.Time) (ranges [][2]time.Time, instants []time.Time, err error) {
+	records := &t.outOfOrderSamples
+
+	if records.queryMinTime.IsZero() || records.queryMaxTime.IsZero() {
+		level.Info(t.logger).Log("msg", "Skipped OOO queries because there's no valid time range to query")
+		return nil, nil, errors.New("no valid time range to query")
+	}
+
+	adjustedQueryMinTime := maxTime(records.queryMinTime, now.Add(-t.cfg.MaxQueryAge))
+	if records.queryMaxTime.Before(adjustedQueryMinTime) {
+		level.Info(t.logger).Log("msg", "Skipped OOO queries because there's no valid time range to query after honoring configured max query age", "min_valid_time", records.queryMinTime, "max_valid_time", records.queryMaxTime, "max_query_age", t.cfg.MaxQueryAge)
+		return nil, nil, errors.New("no valid time range to query after honoring configured max query age")
+	}
+
+	adjustedQueryMaxTime := minTime(records.queryMaxTime, now)
+
+	// The border where OOO samples stop being written.
+	oooLagBorder := now.Add(-t.cfg.MaxOOOLag)
+
+	// Range query over the dense region (before the OOO lag border).
+	// This verifies that all 20s samples (:00, :20, :40) are present.
+	if adjustedQueryMinTime.Before(oooLagBorder) {
+		ranges = append(ranges, [2]time.Time{
+			adjustedQueryMinTime,
+			minTime(adjustedQueryMaxTime, oooLagBorder),
+		})
+	}
+
+	// Instant query in the dense region (random, 20s-aligned).
+	if adjustedQueryMinTime.Before(oooLagBorder) {
+		denseEnd := minTime(adjustedQueryMaxTime, oooLagBorder)
+		denseInstant := alignTimestampToInterval(randTime(adjustedQueryMinTime, denseEnd), outOfOrderWriteInterval)
+		instants = append(instants, denseInstant)
+	}
+
+	// Instant query at the border.
+	borderInstant := alignTimestampToInterval(oooLagBorder, outOfOrderWriteInterval)
+	if !borderInstant.Before(adjustedQueryMinTime) && !borderInstant.After(adjustedQueryMaxTime) {
+		instants = append(instants, borderInstant)
+	}
 
 	return ranges, instants, nil
 }
