@@ -1,9 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/ingester/metrics_test.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Cortex Authors.
-
-package ingester
+package tsdb_test
 
 import (
 	"bytes"
@@ -14,16 +9,18 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
 func TestTSDBMetrics(t *testing.T) {
 	mainReg := prometheus.NewPedanticRegistry()
 
-	tsdbMetrics := newTSDBMetrics(mainReg, log.NewNopLogger())
+	tsdbMetrics := tsdb.NewTSDBMetrics(prometheus.WrapRegistererWithPrefix("cortex_ingester_", mainReg), log.NewNopLogger())
 
-	tsdbMetrics.setRegistryForUser("user1", populateTSDBMetrics(12345))
-	tsdbMetrics.setRegistryForUser("user2", populateTSDBMetrics(85787))
-	tsdbMetrics.setRegistryForUser("user3", populateTSDBMetrics(999))
+	tsdbMetrics.SetRegistryForTenant("user1", populateTSDBMetrics(12345))
+	tsdbMetrics.SetRegistryForTenant("user2", populateTSDBMetrics(85787))
+	tsdbMetrics.SetRegistryForTenant("user3", populateTSDBMetrics(999))
 
 	err := testutil.GatherAndCompare(mainReg, bytes.NewBufferString(`
 			# HELP cortex_ingester_tsdb_compactions_total Total number of TSDB compactions that were executed.
@@ -333,12 +330,12 @@ func TestTSDBMetrics(t *testing.T) {
 func TestTSDBMetricsWithRemoval(t *testing.T) {
 	mainReg := prometheus.NewPedanticRegistry()
 
-	tsdbMetrics := newTSDBMetrics(mainReg, log.NewNopLogger())
+	tsdbMetrics := tsdb.NewTSDBMetrics(prometheus.WrapRegistererWithPrefix("cortex_ingester_", mainReg), log.NewNopLogger())
 
-	tsdbMetrics.setRegistryForUser("user1", populateTSDBMetrics(12345))
-	tsdbMetrics.setRegistryForUser("user2", populateTSDBMetrics(85787))
-	tsdbMetrics.setRegistryForUser("user3", populateTSDBMetrics(999))
-	tsdbMetrics.removeRegistryForUser("user3")
+	tsdbMetrics.SetRegistryForTenant("user1", populateTSDBMetrics(12345))
+	tsdbMetrics.SetRegistryForTenant("user2", populateTSDBMetrics(85787))
+	tsdbMetrics.SetRegistryForTenant("user3", populateTSDBMetrics(999))
+	tsdbMetrics.RemoveRegistryForTenant("user3")
 
 	err := testutil.GatherAndCompare(mainReg, bytes.NewBufferString(`
 			# HELP cortex_ingester_tsdb_compactions_total Total number of TSDB compactions that were executed.
