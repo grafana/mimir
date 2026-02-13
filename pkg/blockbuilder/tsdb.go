@@ -480,6 +480,11 @@ func (b *TSDBBuilder) Close() error {
 		merr.Add(os.RemoveAll(dbDir))
 	}
 
+	// Remove all registered per-tenant TSDB metrics. Their local DBs are wiped out from the block-builder no-matter what.
+	for tenant := range b.tsdbs {
+		b.tsdbMetrics.RemoveRegistryForTenant(tenant.tenantID)
+	}
+
 	// Clear the map so that it can be released from the memory. Not setting to nil in case
 	// we want to reuse the TSDBBuilder.
 	b.tsdbs = make(map[tsdbTenant]*userTSDB)
