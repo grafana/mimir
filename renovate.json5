@@ -24,6 +24,29 @@
       currentValueTemplate: 'latest',
       datasourceTemplate: 'docker',
     },
+    {
+      customType: 'regex',
+      description: 'Update "go install" commands in development Dockerfiles',
+      managerFilePatterns: [
+        'mimir-build-image/Dockerfile',
+        'development/**/dev.dockerfile',
+      ],
+      matchStrings: [
+        'go install\\s+(?<depName>[^@]+)@(?<currentValue>[^\\s]+)',
+      ],
+      datasourceTemplate: 'go',
+    },
+    {
+      customType: 'regex',
+      description: 'Update tools in build image installed from Git tags',
+      managerFilePatterns: [
+        'mimir-build-image/Dockerfile',
+      ],
+      matchStrings: [
+        '# renovate: depName=github.com/(?<depName>[^\\s]+)\\s+ENV [A-Z_]+=(?<currentValue>[^\\s]+)\\s+',
+      ],
+      datasourceTemplate: 'github-tags',
+    }
   ],
   baseBranchPatterns: [
     'main',

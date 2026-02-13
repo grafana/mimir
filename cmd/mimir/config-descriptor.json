@@ -623,6 +623,26 @@
         },
         {
           "kind": "field",
+          "name": "grpc_server_read_buffer_size",
+          "required": false,
+          "desc": "Size of the read buffer for each gRPC connection (bytes). A smaller buffer may reduce memory usage but may lead to more system calls.",
+          "fieldValue": null,
+          "fieldDefaultValue": 32768,
+          "fieldFlag": "server.grpc.read-buffer-size-bytes",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
+          "name": "grpc_server_write_buffer_size",
+          "required": false,
+          "desc": "Size of the write buffer for each gRPC connection (bytes). A smaller buffer may reduce memory usage but may lead to more system calls.",
+          "fieldValue": null,
+          "fieldDefaultValue": 32768,
+          "fieldFlag": "server.grpc.write-buffer-size-bytes",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
           "name": "log_format",
           "required": false,
           "desc": "Output log messages in the given format. Valid formats: [logfmt, json]",

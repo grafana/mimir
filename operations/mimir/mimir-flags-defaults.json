@@ -43,6 +43,8 @@
   "server.grpc.keepalive.min-time-between-pings": 10000000000,
   "server.grpc.keepalive.ping-without-stream-allowed": true,
   "server.grpc.num-workers": 100,
+  "server.grpc.read-buffer-size-bytes": 32768,
+  "server.grpc.write-buffer-size-bytes": 32768,
   "log.format": "logfmt",
   "log.level": "info",
   "server.log-source-ips-header": "",

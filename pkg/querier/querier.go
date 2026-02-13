@@ -204,14 +204,6 @@ func New(
 	queryable := newQueryable(queryables, cfg, limits, queryMetrics, logger)
 	exemplarQueryable := newDistributorExemplarQueryable(distributor, logger)
 
-	lazyQueryable := storage.QueryableFunc(func(minT int64, maxT int64) (storage.Querier, error) {
-		querier, err := queryable.Querier(minT, maxT)
-		if err != nil {
-			return nil, err
-		}
-		return lazyquery.NewLazyQuerier(querier), nil
-	})
-
 	opts, mqeOpts := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg)
 
 	// Experimental functions are always enabled globally for all engines. Access to them
@@ -243,9 +235,19 @@ func New(
 		} else {
 			eng = streamingEngine
 		}
+		// Wrap queryable with memory tracking
+		queryable = NewMemoryTrackingQueryable(queryable)
 	default:
 		panic(fmt.Sprintf("invalid config not caught by validation: unknown PromQL engine '%s'", cfg.QueryEngine))
 	}
+
+	lazyQueryable := storage.QueryableFunc(func(minT int64, maxT int64) (storage.Querier, error) {
+		querier, err := queryable.Querier(minT, maxT)
+		if err != nil {
+			return nil, err
+		}
+		return lazyquery.NewLazyQuerier(querier), nil
+	})
 
 	return NewSampleAndChunkQueryable(lazyQueryable), exemplarQueryable, eng, streamingEngine, nil
 }
