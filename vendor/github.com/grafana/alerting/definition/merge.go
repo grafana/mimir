@@ -12,6 +12,7 @@ import (
 )
 
 var (
+	ErrNoMatchers              = errors.New("matchers must not be empty")
 	ErrInvalidMatchers         = errors.New("only equality matchers are allowed")
 	ErrDuplicateMatchers       = errors.New("matchers should be unique")
 	ErrSubtreeMatchersConflict = errors.New("subtree matchers conflict with existing Grafana routes, merging will break existing notifications")
@@ -64,6 +65,9 @@ type MergeOpts struct {
 }
 
 func (o MergeOpts) Validate() error {
+	if len(o.SubtreeMatchers) == 0 {
+		return ErrNoMatchers
+	}
 	seenNames := make(map[string]struct{}, len(o.SubtreeMatchers))
 	for _, matcher := range o.SubtreeMatchers {
 		if _, ok := seenNames[matcher.Name]; ok {
