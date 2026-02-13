@@ -5,6 +5,7 @@ package writetee
 import (
 	"context"
 	"errors"
+	"net"
 	"strconv"
 	"time"
 
@@ -67,9 +68,14 @@ func (m *ProxyMetrics) RecordBackendResult(backendName, method, routeName string
 	// Record error only for actual errors (network/timeout), not for 5xx responses
 	if err != nil {
 		errorType := "network"
-		if errors.Is(err, context.DeadlineExceeded) {
+
+		// Check for timeout/canceled errors: context errors (errors.Is auto-unwraps url.Error) or net.Error.Timeout()
+		var netErr net.Error
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) ||
+			(errors.As(err, &netErr) && netErr.Timeout()) {
 			errorType = "timeout"
 		}
+
 		m.errorsTotal.WithLabelValues(backendName, method, routeName, errorType).Inc()
 	}
 }
