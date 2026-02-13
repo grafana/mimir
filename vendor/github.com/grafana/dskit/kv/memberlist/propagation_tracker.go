@@ -111,6 +111,9 @@ func NewPropagationDelayTracker(
 }
 
 func (t *PropagationDelayTracker) running(ctx context.Context) error {
+	if t.beaconInterval <= 0 {
+		return fmt.Errorf("beacon_interval must be positive, got %v", t.beaconInterval)
+	}
 	level.Info(t.logger).Log("msg", "propagation delay tracker started", "beacon_interval", t.beaconInterval, "beacon_lifetime", t.beaconLifetime)
 
 	// Start the goroutine to track beacon arrivals in real-time
