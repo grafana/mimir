@@ -32,6 +32,9 @@ import (
 // FunctionOverRangeVectorSplit performs range vector function calculation with range splitting and intermediate result
 // caching.
 // T is the type of intermediate result produced by the function's generate step.
+// TODO: consider if we should fallback to the non-split operator if the split version fails for some reason (e.g. too
+// much memory used - the non-split version could use less memory as it wouldn't have duplicate series metadata the
+// same way the split version does, if multiple splits have the same series).
 type FunctionOverRangeVectorSplit[T any] struct {
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	FuncId                   Function
@@ -201,7 +204,11 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) erro
 					return err
 				}
 
-				m.splits = append(m.splits, NewCachedSplit(metadata, annotations, results, m))
+				cachedSplit, err := NewCachedSplit(metadata, annotations, results, m)
+				if err != nil {
+					return err
+				}
+				m.splits = append(m.splits, cachedSplit)
 				continue
 			}
 		}
@@ -514,9 +521,9 @@ type SplitSeries struct {
 }
 
 type CachedSplit[T any] struct {
-	metadata    []querierpb.SeriesMetadata
-	annotations querierpb.Annotations
-	results     []T
+	seriesMetadata []types.SeriesMetadata
+	annotations    querierpb.Annotations
+	results        []T
 
 	parent *FunctionOverRangeVectorSplit[T]
 }
@@ -526,17 +533,31 @@ func (c *CachedSplit[T]) RangeCount() int {
 }
 
 func NewCachedSplit[T any](
-	metadata []querierpb.SeriesMetadata,
+	protoMetadata []querierpb.SeriesMetadata,
 	annotations querierpb.Annotations,
 	results []T,
 	parent *FunctionOverRangeVectorSplit[T],
-) *CachedSplit[T] {
-	return &CachedSplit[T]{
-		metadata:    metadata,
-		annotations: annotations,
-		results:     results,
-		parent:      parent,
+) (*CachedSplit[T], error) {
+	seriesMetadata, err := types.SeriesMetadataSlicePool.Get(len(protoMetadata), parent.MemoryConsumptionTracker)
+	if err != nil {
+		return nil, err
 	}
+	seriesMetadata = seriesMetadata[:len(protoMetadata)]
+
+	for i, entry := range protoMetadata {
+		seriesMetadata[i].Labels = mimirpb.FromLabelAdaptersToLabels(entry.Labels)
+		seriesMetadata[i].DropName = entry.DropName
+		if err := parent.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(seriesMetadata[i].Labels); err != nil {
+			return nil, err
+		}
+	}
+
+	return &CachedSplit[T]{
+		seriesMetadata: seriesMetadata,
+		annotations:    annotations,
+		results:        results,
+		parent:         parent,
+	}, nil
 }
 
 func (p *CachedSplit[T]) Prepare(ctx context.Context, params *types.PrepareParams) error {
@@ -548,21 +569,10 @@ func (p *CachedSplit[T]) AfterPrepare(ctx context.Context) error {
 }
 
 func (c *CachedSplit[T]) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
-	seriesMetadata, err := types.SeriesMetadataSlicePool.Get(len(c.metadata), c.parent.MemoryConsumptionTracker)
-	if err != nil {
-		return nil, err
-	}
-	seriesMetadata = seriesMetadata[:len(c.metadata)]
-
-	for i, entry := range c.metadata {
-		seriesMetadata[i].Labels = mimirpb.FromLabelAdaptersToLabels(entry.Labels)
-		seriesMetadata[i].DropName = entry.DropName
-		if err := c.parent.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(seriesMetadata[i].Labels); err != nil {
-			return nil, err
-		}
-	}
-
-	return seriesMetadata, nil
+	metadata := c.seriesMetadata
+	// Set metadata to nil as a defense against double reads (which shouldn't happen)
+	c.seriesMetadata = nil
+	return metadata, nil
 }
 
 func (c *CachedSplit[T]) GetResultsAt(_ context.Context, idx int) ([]T, error) {
@@ -586,7 +596,6 @@ func (c *CachedSplit[T]) Close() {
 }
 
 func (c *CachedSplit[T]) AppendMergedSeriesIndex(_, _ int) {}
-
 
 func (c *CachedSplit[T]) IsCached() bool {
 	return true
