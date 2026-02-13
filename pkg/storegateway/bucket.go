@@ -30,6 +30,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
@@ -45,6 +46,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/indexheader"
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
+	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -589,7 +591,12 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 	defer s.recordSeriesCallResult(stats)
 	defer s.recordRequestAmbientTime(stats, time.Now())
 
-	var reqBlockMatchers []*labels.Matcher
+	var (
+		reqBlockMatchers  []*labels.Matcher
+		projectionInclude bool
+		projectionLabels  []string
+	)
+
 	if req.Hints != nil {
 		reqHints := &hintspb.SeriesRequestHints{}
 		if err := types.UnmarshalAny(req.Hints, reqHints); err != nil {
@@ -599,6 +606,12 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 		reqBlockMatchers, err = storepb.MatchersToPromMatchers(reqHints.BlockMatchers...)
 		if err != nil {
 			return status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
+		}
+
+		projectionInclude = reqHints.ProjectionInclude
+		projectionLabels = reqHints.ProjectionLabels
+		if !slices.Contains(projectionLabels, model.MetricNameLabel) {
+			projectionLabels = append(projectionLabels, model.MetricNameLabel)
 		}
 	}
 
@@ -646,7 +659,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 		return err
 	}
 
-	streamingSeriesCount, err = s.sendStreamingSeriesLabelsAndStats(req, srv, stats, seriesSet)
+	streamingSeriesCount, err = s.sendStreamingSeriesLabelsAndStats(req, srv, stats, projectionInclude, projectionLabels, seriesSet)
 	if err != nil {
 		return err
 	}
@@ -748,6 +761,8 @@ func (s *BucketStore) sendStreamingSeriesLabelsAndStats(
 	req *storepb.SeriesRequest,
 	srv storegatewaypb.StoreGateway_SeriesServer,
 	stats *safeQueryStats,
+	projectionInclude bool,
+	projectionLabels []string,
 	seriesSet storepb.SeriesSet,
 ) (numSeries int, err error) {
 	var (
@@ -758,6 +773,8 @@ func (s *BucketStore) sendStreamingSeriesLabelsAndStats(
 		stats.streamingSeriesEncodeResponseDuration += encodeDuration
 		stats.streamingSeriesSendResponseDuration += sendDuration
 	})
+
+	reducer := series.NewReducer()
 
 	seriesBuffer := make([]*storepb.StreamingSeries, req.StreamingChunksBatchSize)
 	for i := range seriesBuffer {
@@ -773,6 +790,10 @@ func (s *BucketStore) sendStreamingSeriesLabelsAndStats(
 		// Although subsequent call to seriesSet.Next() may release the memory of this series object,
 		// it is safe to hold onto the labels because they are not released.
 		lset, _ = seriesSet.At()
+
+		if projectionInclude {
+			lset = reducer.Reduce(lset, projectionLabels)
+		}
 
 		// We are re-using the slice for every batch this way.
 		seriesBatch.Series = seriesBatch.Series[:len(seriesBatch.Series)+1]
