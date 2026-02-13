@@ -206,12 +206,7 @@ func (s *Scheduler) LeaseJob(ctx context.Context, req *compactorschedulerpb.Leas
 		return nil, failedTo("lease job")
 	}
 	if ok {
-		switch response.Spec.JobType {
-		case compactorschedulerpb.JOB_TYPE_PLANNING:
-			level.Info(s.logger).Log("msg", "leased plan job", "tenant", response.Spec.Tenant, "epoch", response.Key.Epoch, "worker", req.WorkerId)
-		case compactorschedulerpb.JOB_TYPE_COMPACTION:
-			level.Info(s.logger).Log("msg", "leased compaction job", "tenant", response.Spec.Tenant, "id", response.Key.Id, "epoch", response.Key.Epoch, "worker", req.WorkerId)
-		}
+		level.Info(s.logger).Log("msg", "leased job", "tenant", response.Spec.Tenant, "job_type", response.Spec.JobType.String(), "id", response.Key.Id, "epoch", response.Key.Epoch, "worker", req.WorkerId)
 		return response, nil
 	}
 
@@ -225,7 +220,7 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 		return nil, notRunning()
 	}
 
-	level.Info(s.logger).Log("msg", "received plan results", "tenant", req.Key.Id, "epoch", req.Key.Epoch, "job_count", len(req.Jobs))
+	level.Info(s.logger).Log("msg", "received plan results", "tenant", req.Tenant, "epoch", req.Key.Epoch, "job_count", len(req.Jobs))
 
 	now := s.clock.Now()
 	jobs := make([]TrackedJob, 0, len(req.Jobs))
