@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/server"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -39,6 +40,10 @@ type ProxyConfig struct {
 	BackendReadTimeout         time.Duration
 	BackendSkipTLSVerify       bool
 	AsyncMaxInFlightPerBackend int
+
+	HTTPConnectionTTLMin                time.Duration
+	HTTPConnectionTTLMax                time.Duration
+	HTTPConnectionTTLIdleCheckFrequency time.Duration
 }
 
 // registerServerFlagsWithChangedDefaultValues emulates the same method in pkg/mimir/mimir.go,
@@ -93,6 +98,9 @@ func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.PreferredBackend, "backend.preferred", "", "The hostname of the preferred backend. Required. Non-preferred backends receive fire-and-forget requests.")
 	f.DurationVar(&cfg.BackendReadTimeout, "backend.read-timeout", 90*time.Second, "The timeout when reading the response from a backend.")
 	f.IntVar(&cfg.AsyncMaxInFlightPerBackend, "backend.async-max-in-flight", 1000, "Maximum concurrent in-flight requests per non-preferred backend (async fire-and-forget). Requests are dropped when at capacity.")
+	f.DurationVar(&cfg.HTTPConnectionTTLMin, "server.http-connection-ttl-min", 0, "Minimum TTL for HTTP connections. Connections will be closed after a random duration between min and max TTL.")
+	f.DurationVar(&cfg.HTTPConnectionTTLMax, "server.http-connection-ttl-max", 0, "Maximum TTL for HTTP connections. Set to 0 to disable connection TTL.")
+	f.DurationVar(&cfg.HTTPConnectionTTLIdleCheckFrequency, "server.http-connection-ttl-idle-check-frequency", 30*time.Second, "Frequency at which idle connections are checked for TTL expiration.")
 	cfg.registerServerFlagsWithChangedDefaultValues(f)
 }
 
@@ -277,6 +285,20 @@ func (p *Proxy) Start() error {
 		return err
 	}
 	router.PathPrefix("/").Handler(http.HandlerFunc(passthroughEndpoint.ServeHTTPPassthrough))
+
+	// Create HTTP connection TTL middleware if enabled.
+	if p.cfg.HTTPConnectionTTLMax > 0 {
+		ttlMiddleware, err := middleware.NewHTTPConnectionTTLMiddleware(
+			p.cfg.HTTPConnectionTTLMin,
+			p.cfg.HTTPConnectionTTLMax,
+			p.cfg.HTTPConnectionTTLIdleCheckFrequency,
+			p.registerer,
+		)
+		if err != nil {
+			return errors.Wrap(err, "failed to create HTTP connection TTL middleware")
+		}
+		serv.HTTPServer.Handler = ttlMiddleware.Wrap(serv.HTTPServer.Handler)
+	}
 
 	p.server = serv
 
