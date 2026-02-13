@@ -292,7 +292,7 @@ func (p *Proxy) Start() error {
 			p.cfg.HTTPConnectionTTLMin,
 			p.cfg.HTTPConnectionTTLMax,
 			p.cfg.HTTPConnectionTTLIdleCheckFrequency,
-			p.registerer,
+			prometheus.WrapRegistererWithPrefix("cortex_writetee_server_", p.registerer),
 		)
 		if err != nil {
 			return errors.Wrap(err, "failed to create HTTP connection TTL middleware")
