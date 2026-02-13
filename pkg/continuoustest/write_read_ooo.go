@@ -167,6 +167,15 @@ func (t *WriteReadOOOTest) RunInner(ctx context.Context, now time.Time, writeLim
 		}
 	}
 
+	// Summary of written data.
+	level.Info(t.logger).Log(
+		"msg", "write summary",
+		"inorder_from", t.inOrderSamples.queryMinTime,
+		"inorder_to", t.inOrderSamples.lastWrittenTimestamp,
+		"ooo_from", t.outOfOrderSamples.queryMinTime,
+		"ooo_to", t.outOfOrderSamples.lastWrittenTimestamp,
+	)
+
 	inorderRanges, inorderInstants, err := t.getInorderQueryTimeRanges(now)
 	if err != nil {
 		errs.Add(err)
