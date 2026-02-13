@@ -174,8 +174,22 @@ func (m *FunctionOverRangeVectorSplit[T]) AfterPrepare(ctx context.Context) erro
 }
 
 func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) error {
-	var currentUncachedStart int64
 	var currentUncachedRanges []Range
+
+	flushCurrentUncachedRanges := func() error {
+		if len(currentUncachedRanges) == 0 {
+			return nil
+		}
+
+		split, err := NewUncachedSplit(currentUncachedRanges, m)
+		if err != nil {
+			return err
+		}
+
+		m.splits = append(m.splits, split)
+		currentUncachedRanges = nil
+		return nil
+	}
 
 	for _, splitRange := range m.splitRanges {
 		if splitRange.Cacheable {
@@ -185,15 +199,8 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) erro
 			}
 
 			if found {
-				if len(currentUncachedRanges) >= 1 {
-					lastRange := currentUncachedRanges[len(currentUncachedRanges)-1]
-					operator, err := m.materializeOperatorForTimeRange(currentUncachedStart, lastRange.End)
-					if err != nil {
-						return err
-					}
-
-					m.splits = append(m.splits, NewUncachedSplit(currentUncachedRanges, operator, m))
-					currentUncachedRanges = nil
+				if err := flushCurrentUncachedRanges(); err != nil {
+					return err
 				}
 
 				m.splits = append(m.splits, NewCachedSplit(metadata, annotations, results, m))
@@ -202,24 +209,14 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) erro
 		}
 
 		if len(currentUncachedRanges) == 0 {
-			currentUncachedStart = splitRange.Start
 			currentUncachedRanges = []Range{splitRange}
 		} else {
 			currentUncachedRanges = append(currentUncachedRanges, splitRange)
 		}
 	}
 
-	if len(currentUncachedRanges) >= 1 {
-		lastRange := currentUncachedRanges[len(currentUncachedRanges)-1]
-		operator, err := m.materializeOperatorForTimeRange(currentUncachedStart, lastRange.End)
-		if err != nil {
-			return err
-		}
-
-		m.splits = append(m.splits, NewUncachedSplit(currentUncachedRanges, operator, m))
-	}
-
-	return nil
+	// Create split from final uncached ranges if they exist.
+	return flushCurrentUncachedRanges()
 }
 
 func (m *FunctionOverRangeVectorSplit[T]) materializeOperatorForTimeRange(start int64, end int64) (types.RangeVectorOperator, error) {
@@ -609,8 +606,8 @@ type UncachedSplit[T any] struct {
 	// Data to cache
 	rangeResults [][]T
 	// Annotations are put into a map for deduping
-	rangeAnnotations   []map[cache.Annotation]struct{}
-	seriesMetadata     []querierpb.SeriesMetadata
+	rangeAnnotations []map[cache.Annotation]struct{}
+	seriesMetadata   []querierpb.SeriesMetadata
 
 	// localToMergedIdx maps split-local series index to the parent's merged series index.
 	// Used by emitAndCaptureAnnotation to look up the correct metric name when generating results.
@@ -627,9 +624,13 @@ func (p *UncachedSplit[T]) RangeCount() int {
 
 func NewUncachedSplit[T any](
 	ranges []Range,
-	operator types.RangeVectorOperator,
 	parent *FunctionOverRangeVectorSplit[T],
-) *UncachedSplit[T] {
+) (*UncachedSplit[T], error) {
+	operator, err := parent.materializeOperatorForTimeRange(ranges[0].Start, ranges[len(ranges)-1].End)
+	if err != nil {
+		return nil, err
+	}
+
 	rangeResults := make([][]T, len(ranges))
 	rangeAnnotations := make([]map[cache.Annotation]struct{}, len(ranges))
 	for i := range ranges {
@@ -643,7 +644,7 @@ func NewUncachedSplit[T any](
 		rangeResults:     rangeResults,
 		rangeAnnotations: rangeAnnotations,
 		finalized:        false,
-	}
+	}, nil
 }
 
 func (p *UncachedSplit[T]) Prepare(ctx context.Context, params *types.PrepareParams) error {
