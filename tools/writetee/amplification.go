@@ -313,14 +313,16 @@ func AmplifyRequestBody(body []byte, startReplica, endReplica int) ([][]byte, er
 	for replicaNum := startReplica; replicaNum <= endReplica; replicaNum++ {
 		var suffixedReq mimirpb.WriteRequest
 		if replicaNum == 1 {
-			// Replica 1 is the original - no suffix needed
-			suffixedReq = mimirpb.WriteRequest{
-				Timeseries: req.Timeseries,
-			}
+			// Replica 1 is the original - preserve all fields
+			suffixedReq = req
 		} else {
-			// Create a new request with suffixed series
+			// Create a new request with suffixed series, preserving all other fields
 			suffixedReq = mimirpb.WriteRequest{
-				Timeseries: make([]mimirpb.PreallocTimeseries, len(req.Timeseries)),
+				Source:                   req.Source,
+				Metadata:                 req.Metadata,
+				SkipLabelValidation:      req.SkipLabelValidation,
+				SkipLabelCountValidation: req.SkipLabelCountValidation,
+				Timeseries:               make([]mimirpb.PreallocTimeseries, len(req.Timeseries)),
 			}
 			for i := range req.Timeseries {
 				suffixedReq.Timeseries[i] = applySuffixToTimeSeries(&req.Timeseries[i], replicaNum)
