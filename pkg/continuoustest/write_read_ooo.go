@@ -13,6 +13,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/multierror"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
 	"golang.org/x/time/rate"
 
@@ -353,6 +354,7 @@ func (t *WriteReadOOOTest) adjustQueryTimeRange(now time.Time, records *MetricHi
 }
 
 func (t *WriteReadOOOTest) runInstantQueryAndVerifyResult(ctx context.Context, ts time.Time, typeLabel, metricSumQuery string, generateValue generateValueFunc, step time.Duration, records *MetricHistory) error {
+	// Align the query timestamp to the step interval to avoid false positives.
 	ts = maxTime(records.queryMinTime, alignTimestampToInterval(ts, step))
 	if records.queryMaxTime.Before(ts) {
 		return nil
@@ -361,18 +363,40 @@ func (t *WriteReadOOOTest) runInstantQueryAndVerifyResult(ctx context.Context, t
 	sp, ctx := spanlogger.New(ctx, t.logger, tracer, "WriteReadOOOTest.runInstantQueryAndVerifyResult")
 	defer sp.Finish()
 
-	logger := log.With(sp, "query", metricSumQuery, "ts", ts.UnixMilli(), "results_cache", false, "type", typeLabel, "protocol", t.client.Protocol())
+	logger := log.With(sp, "query", metricSumQuery, "ts", ts, "ts_milli", ts.UnixMilli(), "type", typeLabel, "protocol", t.client.Protocol())
 	level.Debug(logger).Log("msg", "Running instant query")
 
 	t.metrics.queriesTotal.WithLabelValues(typeLabel).Inc()
 	queryStart := time.Now()
-	_, err := t.client.Query(ctx, metricSumQuery, ts, WithResultsCacheEnabled(false))
+	vector, err := t.client.Query(ctx, metricSumQuery, ts, WithResultsCacheEnabled(false))
 	t.metrics.queriesLatency.WithLabelValues(typeLabel, "false").Observe(time.Since(queryStart).Seconds())
 	if err != nil {
 		t.metrics.queriesFailedTotal.WithLabelValues(typeLabel).Inc()
 		level.Warn(logger).Log("msg", "Failed to execute instant query", "err", err)
 		return fmt.Errorf("failed to execute instant query: %w", err)
 	}
+
+	// Convert the vector to matrix to reuse the same results comparison utility.
+	matrix := make(model.Matrix, 0, len(vector))
+	for _, entry := range vector {
+		matrix = append(matrix, &model.SampleStream{
+			Metric: entry.Metric,
+			Values: []model.SamplePair{{
+				Timestamp: entry.Timestamp,
+				Value:     entry.Value,
+			}},
+		})
+	}
+
+	t.metrics.queryResultChecksTotal.WithLabelValues(typeLabel).Inc()
+	_, err = verifySamplesSum(matrix, t.cfg.NumSeries, 0, generateValue, nil, nil)
+	if err != nil {
+		t.metrics.queryResultChecksFailedTotal.WithLabelValues(typeLabel).Inc()
+		level.Warn(logger).Log("msg", "Instant query result check failed", "err", err)
+		return fmt.Errorf("instant query result check failed: %w", err)
+	}
+
+	level.Info(logger).Log("msg", "Instant query result check succeeded")
 
 	return nil
 }
