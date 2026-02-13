@@ -83,6 +83,7 @@ func printChunksFile(filename string, printSamples bool) error {
 			it := c.Iterator(nil)
 			six := 0
 			for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
+				st := it.AtST()
 				switch valType {
 				case chunkenc.ValFloat:
 					ts, val := it.At()
@@ -93,7 +94,7 @@ func printChunksFile(filename string, printSamples bool) error {
 						maxTS = ts
 					}
 
-					fmt.Printf("Chunk #%d, sample #%d: ts: %d (%s), val: %g\n", cix, six, ts, formatTimestamp(ts), val)
+					fmt.Printf("Chunk #%d, sample #%d: st: %d (%s), ts: %d (%s), val: %g\n", cix, six, st, formatTimestamp(st), ts, formatTimestamp(ts), val)
 				case chunkenc.ValHistogram:
 					ts, h = it.AtHistogram(h)
 					if ts < minTS {
@@ -103,7 +104,7 @@ func printChunksFile(filename string, printSamples bool) error {
 						maxTS = ts
 					}
 
-					fmt.Printf("Chunk #%d, sample #%d: ts: %d (%s), val: %s\n", cix, six, ts, formatTimestamp(ts), h.String())
+					fmt.Printf("Chunk #%d, sample #%d: st: %d (%s), ts: %d (%s), val: %s\n", cix, six, st, formatTimestamp(st), ts, formatTimestamp(ts), h.String())
 				case chunkenc.ValFloatHistogram:
 					ts, fh = it.AtFloatHistogram(fh)
 					if ts < minTS {
@@ -113,9 +114,9 @@ func printChunksFile(filename string, printSamples bool) error {
 						maxTS = ts
 					}
 
-					fmt.Printf("Chunk #%d, sample #%d: ts: %d (%s), val: %s\n", cix, six, ts, formatTimestamp(ts), fh.String())
+					fmt.Printf("Chunk #%d, sample #%d: st: %d (%s), ts: %d (%s), val: %s\n", cix, six, st, formatTimestamp(st), ts, formatTimestamp(ts), fh.String())
 				default:
-					fmt.Printf("Chunk #%d, sample #%d: ts: N/A (N/A), unsupported value type %v", cix, six, valType)
+					fmt.Printf("Chunk #%d, sample #%d: st: N/A (N/A), ts: N/A (N/A), unsupported value type %v", cix, six, valType)
 				}
 				six++
 			}
