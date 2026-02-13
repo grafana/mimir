@@ -253,16 +253,18 @@ func SampleWriteRequest(body []byte, amplificationFactor float64, tracker *Ampli
 	}, nil
 }
 
-// AmplifyRequestBody applies the _amp{N} suffix to all label values (except __name__)
-// for all series in a write request. This is used to create separate requests with unique
-// label values for each amplification replica.
-func AmplifyRequestBody(body []byte, replicaNum int) ([]byte, error) {
-	if replicaNum == 1 {
-		// Replica 1 is the original - no suffix needed
-		return body, nil
+// AmplifyRequestBody creates multiple amplified replicas from a single request body.
+// It decompresses and unmarshals once, then creates replicas startReplica through endReplica (inclusive).
+// Each replica has all label values (except __name__) suffixed with _ampN for uniqueness.
+func AmplifyRequestBody(body []byte, startReplica, endReplica int) ([][]byte, error) {
+	if startReplica < 1 || endReplica < startReplica {
+		return nil, fmt.Errorf("invalid replica range: %d to %d", startReplica, endReplica)
 	}
 
-	// Decompress the snappy-compressed body
+	numReplicas := endReplica - startReplica + 1
+	bodies := make([][]byte, 0, numReplicas)
+
+	// Decompress once
 	decompressed, err := snappy.Decode(nil, body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decompress write request: %w", err)
@@ -272,45 +274,68 @@ func AmplifyRequestBody(body []byte, replicaNum int) ([]byte, error) {
 	var req mimirpb.WriteRequest
 	err = proto.Unmarshal(decompressed, &req)
 
-	// If RW 1.0 unmarshal fails with RW 2.0 error, handle RW 2.0
-	if err != nil {
-		// Check if this is a RW 2.0 request
-		if !isRW2Error(err) {
-			return nil, fmt.Errorf("failed to unmarshal write request: %w", err)
-		}
-
-		// Unmarshal as RW 2.0
+	// Check if this is RW 2.0
+	if err != nil && isRW2Error(err) {
+		// RW 2.0 path: unmarshal once, create all replicas
 		rw2Req, err := mimirpb.UnmarshalWriteRequestRW2Native(decompressed)
 		if err != nil {
 			return nil, fmt.Errorf("failed to unmarshal RW 2.0 write request: %w", err)
 		}
 
-		// Apply suffixes to RW 2.0 request
-		suffixedRW2 := applySuffixToRW2Request(rw2Req, replicaNum)
+		// Create each replica
+		for replicaNum := startReplica; replicaNum <= endReplica; replicaNum++ {
+			var suffixedRW2 mimirpb.WriteRequestRW2
+			if replicaNum == 1 {
+				// Replica 1 is the original - no suffix needed, just marshal as-is
+				suffixedRW2 = mimirpb.WriteRequestRW2{
+					Symbols:    rw2Req.Symbols,
+					Timeseries: rw2Req.Timeseries,
+				}
+			} else {
+				suffixedRW2 = applySuffixToRW2Request(rw2Req, replicaNum)
+			}
 
-		// Marshal back to protobuf
-		suffixedProto, err := proto.Marshal(&suffixedRW2)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal suffixed RW 2.0 write request: %w", err)
+			marshaled, err := proto.Marshal(&suffixedRW2)
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal RW 2.0 replica %d: %w", replicaNum, err)
+			}
+			compressed := snappy.Encode(nil, marshaled)
+			bodies = append(bodies, compressed)
 		}
 
-		// Compress back with snappy
-		return snappy.Encode(nil, suffixedProto), nil
+		return bodies, nil
+	} else if err != nil {
+		// Unmarshal error that's not RW2
+		return nil, fmt.Errorf("failed to unmarshal write request: %w", err)
 	}
 
-	// RW 1.0 path: apply suffix to all series
-	for i := range req.Timeseries {
-		req.Timeseries[i] = applySuffixToTimeSeries(&req.Timeseries[i], replicaNum)
+	// RW 1.0 path: unmarshal once, create all replicas
+	for replicaNum := startReplica; replicaNum <= endReplica; replicaNum++ {
+		var suffixedReq mimirpb.WriteRequest
+		if replicaNum == 1 {
+			// Replica 1 is the original - no suffix needed
+			suffixedReq = mimirpb.WriteRequest{
+				Timeseries: req.Timeseries,
+			}
+		} else {
+			// Create a new request with suffixed series
+			suffixedReq = mimirpb.WriteRequest{
+				Timeseries: make([]mimirpb.PreallocTimeseries, len(req.Timeseries)),
+			}
+			for i := range req.Timeseries {
+				suffixedReq.Timeseries[i] = applySuffixToTimeSeries(&req.Timeseries[i], replicaNum)
+			}
+		}
+
+		marshaled, err := proto.Marshal(&suffixedReq)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal RW 1.0 replica %d: %w", replicaNum, err)
+		}
+		compressed := snappy.Encode(nil, marshaled)
+		bodies = append(bodies, compressed)
 	}
 
-	// Marshal back to protobuf
-	suffixedProto, err := proto.Marshal(&req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal suffixed write request: %w", err)
-	}
-
-	// Compress back with snappy
-	return snappy.Encode(nil, suffixedProto), nil
+	return bodies, nil
 }
 
 // applySuffixToRW2Request applies the _amp{N} suffix to all label values (except __name__)

@@ -274,21 +274,14 @@ func (p *ProxyEndpoint) prepareAmplifiedBodies(body []byte, backend ProxyBackend
 	fullCopies := int(p.amplificationFactor)
 	fractionalPart := p.amplificationFactor - float64(fullCopies)
 
-	bodies := make([][]byte, 0, fullCopies+1)
-
-	// First request: keep original (replica 1, no suffix)
-	bodies = append(bodies, body)
-
-	// Create additional requests with suffixed labels for uniqueness (replicas 2, 3, ...)
-	for replicaNum := 2; replicaNum <= fullCopies; replicaNum++ {
-		suffixedBody, err := AmplifyRequestBody(body, replicaNum)
-		if err != nil {
-			level.Error(logger).Log("msg", "Failed to apply suffix to request", "backend", backend.Name(), "replica", replicaNum, "err", err)
-			// Continue with remaining copies even if one fails
-			continue
-		}
-		bodies = append(bodies, suffixedBody)
+	// Create replicas 1 through fullCopies
+	replicaBodies, err := AmplifyRequestBody(body, 1, fullCopies)
+	if err != nil {
+		level.Error(logger).Log("msg", "Failed to create amplified replicas", "backend", backend.Name(), "err", err)
+		return [][]byte{body} // Fall back to original
 	}
+
+	bodies := replicaBodies
 
 	// Handle fractional part by sampling and suffixing
 	// For the fractional part, we sample the data (e.g., 50% for 0.5) and add the next replica suffix
@@ -297,12 +290,12 @@ func (p *ProxyEndpoint) prepareAmplifiedBodies(body []byte, backend ProxyBackend
 		if err != nil {
 			level.Error(logger).Log("msg", "Failed to create fractional request", "backend", backend.Name(), "err", err)
 		} else {
-			// Add suffix to the sampled data (next replica number)
-			suffixedBody, err := AmplifyRequestBody(result.Body, fullCopies+1)
+			// Create replica fullCopies+1 from the sampled data
+			fractionalBodies, err := AmplifyRequestBody(result.Body, fullCopies+1, fullCopies+1)
 			if err != nil {
 				level.Error(logger).Log("msg", "Failed to suffix fractional request", "backend", backend.Name(), "err", err)
 			} else {
-				bodies = append(bodies, suffixedBody)
+				bodies = append(bodies, fractionalBodies...)
 			}
 		}
 	}

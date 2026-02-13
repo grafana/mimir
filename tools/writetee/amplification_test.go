@@ -68,21 +68,23 @@ func TestAmplifyRequestBody_RW2(t *testing.T) {
 		req := makeRW2RequestWithLabels(1)
 		compressed := compressRequest(t, &req)
 
-		suffixed, err := AmplifyRequestBody(compressed, 1)
+		suffixed, err := AmplifyRequestBody(compressed, 1, 1)
 		require.NoError(t, err)
+		require.Len(t, suffixed, 1)
 
 		// Should be identical to input
-		assert.Equal(t, compressed, suffixed)
+		assert.Equal(t, compressed, suffixed[0])
 	})
 
 	t.Run("replica 2 suffixes all label values", func(t *testing.T) {
 		req := makeRW2RequestWithLabels(1)
 		compressed := compressRequest(t, &req)
 
-		suffixed, err := AmplifyRequestBody(compressed, 2)
+		suffixed, err := AmplifyRequestBody(compressed, 2, 2)
 		require.NoError(t, err)
+		require.Len(t, suffixed, 1)
 
-		decompressed := decompressAndUnmarshalRW2(t, suffixed)
+		decompressed := decompressAndUnmarshalRW2(t, suffixed[0])
 
 		// Verify symbols table includes suffixed values
 		assert.Contains(t, decompressed.Symbols, "prometheus_amp2")
@@ -99,10 +101,11 @@ func TestAmplifyRequestBody_RW2(t *testing.T) {
 		req := makeRW2RequestWithLabels(1)
 		compressed := compressRequest(t, &req)
 
-		suffixed, err := AmplifyRequestBody(compressed, 3)
+		suffixed, err := AmplifyRequestBody(compressed, 3, 3)
 		require.NoError(t, err)
+		require.Len(t, suffixed, 1)
 
-		decompressed := decompressAndUnmarshalRW2(t, suffixed)
+		decompressed := decompressAndUnmarshalRW2(t, suffixed[0])
 
 		// Verify the series has suffixed values
 		labels := resolveLabels(decompressed.Symbols, decompressed.Timeseries[0].LabelsRefs)
@@ -115,10 +118,11 @@ func TestAmplifyRequestBody_RW2(t *testing.T) {
 		req := makeRW2RequestWithoutName(1)
 		compressed := compressRequest(t, &req)
 
-		suffixed, err := AmplifyRequestBody(compressed, 2)
+		suffixed, err := AmplifyRequestBody(compressed, 2, 2)
 		require.NoError(t, err)
+		require.Len(t, suffixed, 1)
 
-		decompressed := decompressAndUnmarshalRW2(t, suffixed)
+		decompressed := decompressAndUnmarshalRW2(t, suffixed[0])
 
 		// All values should be suffixed (no __name__ to exclude)
 		labels := resolveLabels(decompressed.Symbols, decompressed.Timeseries[0].LabelsRefs)
@@ -168,21 +172,23 @@ func TestAmplifyRequestBody_RW1(t *testing.T) {
 		req := makeRW1RequestWithLabels(1)
 		compressed := compressRequest(t, &req)
 
-		suffixed, err := AmplifyRequestBody(compressed, 1)
+		suffixed, err := AmplifyRequestBody(compressed, 1, 1)
 		require.NoError(t, err)
+		require.Len(t, suffixed, 1)
 
 		// Should be identical to input
-		assert.Equal(t, compressed, suffixed)
+		assert.Equal(t, compressed, suffixed[0])
 	})
 
 	t.Run("replica 2 suffixes all label values", func(t *testing.T) {
 		req := makeRW1RequestWithLabels(1)
 		compressed := compressRequest(t, &req)
 
-		suffixed, err := AmplifyRequestBody(compressed, 2)
+		suffixed, err := AmplifyRequestBody(compressed, 2, 2)
 		require.NoError(t, err)
+		require.Len(t, suffixed, 1)
 
-		decompressed := decompressAndUnmarshalRW1(t, suffixed)
+		decompressed := decompressAndUnmarshalRW1(t, suffixed[0])
 
 		// Verify the series has suffixed values
 		labels := labelsToMap(decompressed.Timeseries[0].Labels)
@@ -195,10 +201,11 @@ func TestAmplifyRequestBody_RW1(t *testing.T) {
 		req := makeRW1RequestWithLabels(1)
 		compressed := compressRequest(t, &req)
 
-		suffixed, err := AmplifyRequestBody(compressed, 3)
+		suffixed, err := AmplifyRequestBody(compressed, 3, 3)
 		require.NoError(t, err)
+		require.Len(t, suffixed, 1)
 
-		decompressed := decompressAndUnmarshalRW1(t, suffixed)
+		decompressed := decompressAndUnmarshalRW1(t, suffixed[0])
 
 		// Verify the series has suffixed values
 		labels := labelsToMap(decompressed.Timeseries[0].Labels)
@@ -211,10 +218,11 @@ func TestAmplifyRequestBody_RW1(t *testing.T) {
 		req := makeRW1RequestWithoutName(1)
 		compressed := compressRequest(t, &req)
 
-		suffixed, err := AmplifyRequestBody(compressed, 2)
+		suffixed, err := AmplifyRequestBody(compressed, 2, 2)
 		require.NoError(t, err)
+		require.Len(t, suffixed, 1)
 
-		decompressed := decompressAndUnmarshalRW1(t, suffixed)
+		decompressed := decompressAndUnmarshalRW1(t, suffixed[0])
 
 		// All values should be suffixed (no __name__ to exclude)
 		labels := labelsToMap(decompressed.Timeseries[0].Labels)
