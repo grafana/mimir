@@ -370,17 +370,17 @@ func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, epoch in
 
 	writeJobs := make([]TrackedJob, 0, len(jobs))
 	for _, j := range jobs {
-		e, ok := jt.incompleteJobs[j.ID()]
-		var prevJ *TrackedCompactionJob
-		if ok {
-			prevJ, ok = e.Value.(*TrackedCompactionJob)
-			if ok && prevJ.IsLeased() {
-				// Don't add this job
+		e, exists := jt.incompleteJobs[j.ID()]
+		if exists {
+			prevJ, ok := e.Value.(*TrackedCompactionJob)
+			if !ok || prevJ.IsLeased() {
+				// Don't add this job - either it's not a compaction job (shouldn't happen)
+				// or it's currently leased
 				continue
 			}
 		}
 
-		if !ok || jobConflicts(conflictMap, j) {
+		if jobConflicts(conflictMap, j) {
 			continue
 		}
 
