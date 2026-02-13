@@ -344,11 +344,14 @@ func (jt *JobTracker) OfferPlanJob(job *TrackedPlanJob) (accepted int, becamePen
 	return 1, wasEmpty, nil
 }
 
-func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, epoch int64) (accepted int, becamePending bool, err error) {
+// OfferCompactionJobs processes the results from a plan job. Since planning offers a fresh view of pending work all remaining pending work
+// is replaced. Only a subset of the offered jobs may be accepted. The plan job itself will be considered completed if the epoch
+// provided was a match.
+func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, planJobEpoch int64) (accepted int, becamePending bool, err error) {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
 
-	planJob, err := jt.checkPlanJobEpoch(epoch)
+	planJob, err := jt.checkPlanJobEpoch(planJobEpoch)
 	if err != nil {
 		return 0, false, err
 	}
