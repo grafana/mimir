@@ -17,14 +17,14 @@ jobs:
       ct_configfile: operations/helm/ct.yaml
       ct_check_version_increment: false
       helm_version: v4.0.4
-      kind_kubectl_version: v1.29.5
-      kind_node_image: kindest/node:v1.29.0
+      kind_kubectl_version: v1.32.12
+      kind_node_image: kindest/node:v1.32.0
 
   prepare:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
       - name: Get build image from Makefile
@@ -41,7 +41,7 @@ jobs:
       image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
       - name: Check out repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
 

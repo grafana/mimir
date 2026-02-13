@@ -7,8 +7,6 @@ import (
 	"log"
 	"math"
 	"sort"
-
-	"github.com/grafana/mimir/pkg/storage/indexheader"
 )
 
 // Data collection constants.
@@ -17,15 +15,6 @@ const (
 	maxDuplicateExamples = 10
 	topNItems            = 20
 )
-
-// TOCInfo holds table of contents information.
-type TOCInfo struct {
-	IndexHeaderSize         int64
-	IndexHeaderVersion      int
-	TSDBIndexVersion        int
-	SymbolsSize             uint64
-	PostingsOffsetTableSize uint64
-}
 
 // LabelStats holds statistics about label cardinality.
 type LabelStats struct {
@@ -72,26 +61,25 @@ type LabelValueBucket struct {
 	Samples    []string
 }
 
-// analyzeTOC analyzes the table of contents of the index-header.
-func analyzeTOC(ctx context.Context, reader *indexheader.StreamBinaryReader, indexHeaderSize int64) *TOCInfo {
-	toc := reader.TOC()
-	indexVersion, _ := reader.IndexVersion(ctx)
-	return &TOCInfo{
-		IndexHeaderSize:         indexHeaderSize,
-		IndexHeaderVersion:      reader.IndexHeaderVersion(),
-		TSDBIndexVersion:        indexVersion,
-		SymbolsSize:             toc.PostingsOffsetTable - toc.Symbols,
-		PostingsOffsetTableSize: uint64(indexHeaderSize) - indexheader.BinaryTOCLen - toc.PostingsOffsetTable,
-	}
+// MetricNameStats holds statistics about metric names that have a specific label.
+type MetricNameStats struct {
+	UniqueMetricNames int
+	TopMetrics        []MetricCount // Top 10 by series count
+}
+
+// MetricCount holds the count of series for a metric name.
+type MetricCount struct {
+	Name        string
+	SeriesCount int64
 }
 
 // analyzeSymbols iterates through all symbols and collects statistics.
-func analyzeSymbols(ctx context.Context, reader *indexheader.StreamBinaryReader) *SymbolStats {
-	symbolsReader, err := reader.SymbolsReader(ctx)
+func analyzeSymbols(ctx context.Context, analyzer IndexAnalyzer) *SymbolStats {
+	iter, err := analyzer.SymbolsIterator(ctx)
 	if err != nil {
-		log.Fatalf("Failed to get symbols reader: %v\n", err)
+		log.Fatalf("Failed to get symbols iterator: %v\n", err)
 	}
-	defer symbolsReader.Close()
+	defer iter.Close()
 
 	stats := &SymbolStats{
 		MinLength:       math.MaxInt,
@@ -110,12 +98,8 @@ func analyzeSymbols(ctx context.Context, reader *indexheader.StreamBinaryReader)
 	var prevSymbol string
 	isFirstSymbol := true
 
-	for i := uint32(0); ; i++ {
-		sym, err := symbolsReader.Read(i)
-		if err != nil {
-			// End of symbols.
-			break
-		}
+	for iter.Next() {
+		sym := iter.At()
 
 		// Check for duplicates and sort order (symbols should be sorted).
 		if !isFirstSymbol {
@@ -159,6 +143,10 @@ func analyzeSymbols(ctx context.Context, reader *indexheader.StreamBinaryReader)
 		}
 	}
 
+	if err := iter.Err(); err != nil {
+		log.Fatalf("Error iterating symbols: %v\n", err)
+	}
+
 	// Convert to string slice.
 	for _, s := range topLongest {
 		stats.LongestSymbols = append(stats.LongestSymbols, s.symbol)
@@ -172,8 +160,8 @@ func analyzeSymbols(ctx context.Context, reader *indexheader.StreamBinaryReader)
 }
 
 // analyzeLabelCardinality analyzes label cardinality from the postings offset table.
-func analyzeLabelCardinality(ctx context.Context, reader *indexheader.StreamBinaryReader) *LabelStats {
-	labelNames, err := reader.LabelNames(ctx)
+func analyzeLabelCardinality(ctx context.Context, analyzer IndexAnalyzer) *LabelStats {
+	labelNames, err := analyzer.LabelNames(ctx)
 	if err != nil {
 		log.Fatalf("Failed to get label names: %v\n", err)
 	}
@@ -184,7 +172,7 @@ func analyzeLabelCardinality(ctx context.Context, reader *indexheader.StreamBina
 	}
 
 	for _, name := range labelNames {
-		values, err := reader.LabelValuesOffsets(ctx, name, "", nil)
+		values, err := analyzer.LabelValues(ctx, name)
 		if err != nil {
 			log.Printf("Warning: failed to get values for label %q: %v\n", name, err)
 			continue
@@ -197,7 +185,7 @@ func analyzeLabelCardinality(ctx context.Context, reader *indexheader.StreamBina
 		// Calculate total bytes of all label values.
 		var totalBytes int64
 		for _, v := range values {
-			totalBytes += int64(len(v.LabelValue))
+			totalBytes += int64(len(v))
 		}
 
 		stats.Labels = append(stats.Labels, LabelCardinality{
@@ -221,8 +209,8 @@ func analyzeLabelCardinality(ctx context.Context, reader *indexheader.StreamBina
 
 // analyzeLabelValues analyzes the value distribution for a specific label.
 // Returns nil if the label is not found, has no values, or on error.
-func analyzeLabelValues(ctx context.Context, reader *indexheader.StreamBinaryReader, labelName string) *LabelValueStats {
-	values, err := reader.LabelValuesOffsets(ctx, labelName, "", nil)
+func analyzeLabelValues(ctx context.Context, analyzer IndexAnalyzer, labelName string) *LabelValueStats {
+	values, err := analyzer.LabelValues(ctx, labelName)
 	if err != nil {
 		log.Printf("Failed to get values for label %q: %v\n", labelName, err)
 		return nil
@@ -239,7 +227,7 @@ func analyzeLabelValues(ctx context.Context, reader *indexheader.StreamBinaryRea
 	}
 
 	for _, v := range values {
-		length := len(v.LabelValue)
+		length := len(v)
 		stats.TotalBytes += int64(length)
 
 		if length < stats.MinLength {
@@ -260,9 +248,50 @@ func analyzeLabelValues(ctx context.Context, reader *indexheader.StreamBinaryRea
 
 		// Collect samples.
 		if len(b.Samples) < maxSamplesPerBucket {
-			b.Samples = append(b.Samples, v.LabelValue)
+			b.Samples = append(b.Samples, v)
 		}
 	}
 
 	return stats
+}
+
+// analyzeMetricNamesForLabel analyzes which metric names have the given label.
+// Returns nil if the analyzer doesn't support series iteration (e.g., index-headers).
+func analyzeMetricNamesForLabel(ctx context.Context, analyzer IndexAnalyzer, labelName string) *MetricNameStats {
+	iter := analyzer.SeriesWithLabel(ctx, labelName)
+	if iter == nil {
+		return nil // Not supported (e.g., index-header format)
+	}
+
+	metricCounts := make(map[string]int64)
+	for iter.Next() {
+		name := iter.Labels().Get("__name__")
+		if name != "" {
+			metricCounts[name]++
+		}
+	}
+
+	if err := iter.Err(); err != nil {
+		log.Printf("Warning: error iterating series for label %q: %v\n", labelName, err)
+	}
+
+	// Convert to slice and sort by count descending.
+	metrics := make([]MetricCount, 0, len(metricCounts))
+	for name, count := range metricCounts {
+		metrics = append(metrics, MetricCount{Name: name, SeriesCount: count})
+	}
+	sort.Slice(metrics, func(i, j int) bool {
+		return metrics[i].SeriesCount > metrics[j].SeriesCount
+	})
+
+	// Take top 10.
+	const topMetricNames = 10
+	if len(metrics) > topMetricNames {
+		metrics = metrics[:topMetricNames]
+	}
+
+	return &MetricNameStats{
+		UniqueMetricNames: len(metricCounts),
+		TopMetrics:        metrics,
+	}
 }

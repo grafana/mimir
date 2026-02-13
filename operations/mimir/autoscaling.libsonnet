@@ -16,6 +16,7 @@
     autoscaling_querier_min_replicas_per_zone: error 'you must set autoscaling_querier_min_replicas_per_zone in the _config',
     autoscaling_querier_max_replicas_per_zone: error 'you must set autoscaling_querier_max_replicas_per_zone in the _config',
     autoscaling_querier_target_utilization: 0.75,  // Target to utilize 75% querier workers on peak traffic, so we have 25% room for higher peaks.
+    autoscaling_querier_ignore_null_values: true,  // Sets ignoreNullValues for KEDA; if false, no data will result in a scaler error.
     autoscaling_querier_predictive_scaling_enabled: false,  // Use inflight queries from the past to predict the number of queriers needed.
     autoscaling_querier_predictive_scaling_period: '6d23h30m',  // The period to consider when considering scheduler metrics for predictive scaling. This is usually slightly lower than the period of the repeating query events to give scaling up lead time.
     autoscaling_querier_predictive_scaling_lookback: '30m',  // The time range to consider when considering scheduler metrics for predictive scaling. For example: if lookback is 30m and period is 6d23h30m, the querier will scale based on the maximum inflight queries between 6d23h30m and 7d0h0m ago.
@@ -180,7 +181,7 @@
   // `weight` param can be used to control just a portion of the expected queriers with the generated scaled object.
   // For example, if you run multiple querier deployments on different node types, you can use the weight to control which portion of them runs on which nodes.
   // The weight is a number between 0 and 1, where 1 means 100% of the expected queriers.
-  newQuerierScaledObject(name, query_scheduler_container_name, querier_container_name, querier_max_concurrent, min_replicas, max_replicas, target_utilization, weight=1, extra_matchers='')::
+  newQuerierScaledObject(name, query_scheduler_container_name, querier_container_name, querier_max_concurrent, min_replicas, max_replicas, target_utilization, weight=1, extra_matchers='', ignore_null_values=true)::
     local queryParams = {
       namespace: $._config.namespace,
       query_scheduler_container_name: query_scheduler_container_name,
@@ -205,6 +206,8 @@
             query: queryWithWeight('sum(max_over_time(cortex_query_scheduler_inflight_requests{container="%(query_scheduler_container_name)s",namespace="%(namespace)s",quantile="0.5"%(extra_matchers)s}[1m]))' % queryParams, weight),
 
             threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
+            // We only need to pass ignore_null_values if it's false
+            [if !ignore_null_values then 'ignore_null_values']: ignore_null_values,
           },
           {
             metric_name: 'cortex_%s_hpa_%s_requests_duration' % [std.strReplace(name, '-', '_'), $._config.namespace],
@@ -216,6 +219,8 @@
             query: queryWithWeight('sum(rate(cortex_querier_request_duration_seconds_sum{container="%(querier_container_name)s",namespace="%(namespace)s"%(extra_matchers)s}[1m]))' % queryParams, weight),
 
             threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
+            // We only need to pass ignore_null_values if it's false
+            [if !ignore_null_values then 'ignore_null_values']: ignore_null_values,
           },
         ]
         + if !$._config.autoscaling_querier_predictive_scaling_enabled then [] else [
@@ -231,6 +236,8 @@
               }
             ), weight),
             threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
+            // We only need to pass ignore_null_values if it's false
+            [if !ignore_null_values then 'ignore_null_values']: ignore_null_values,
           },
         ],
     }) + {
@@ -442,6 +449,7 @@
     with_ready_trigger=false,
     with_memory_trigger=true,
     weight=1,
+    query_weight=null,  // If null, defaults to weight. Use to apply different weights to queries vs replicas.
     scale_down_period=null,
     extra_triggers=[],
     container_name='',
@@ -453,6 +461,7 @@
         namespace: $._config.namespace,
         extra_matchers: if extra_matchers == '' then '' else ',%s' % extra_matchers,
       },
+      local effectiveQueryWeight = if query_weight != null then query_weight else weight,
 
       min_replica_count: replicasWithWeight(min_replicas, weight),
       max_replica_count: replicasWithWeight(max_replicas, weight),
@@ -464,7 +473,7 @@
           metric_name: '%s%s_cpu_hpa_%s' %
                        ([if with_cortex_prefix then 'cortex_' else ''] + [std.strReplace(name, '-', '_'), $._config.namespace]),
 
-          query: queryWithWeight(cpuHPAQuery(with_ready_trigger) % queryParameters, weight),
+          query: queryWithWeight(cpuHPAQuery(with_ready_trigger) % queryParameters, effectiveQueryWeight),
 
           // Threshold is expected to be a string
           threshold: std.toString(std.floor(cpuToMilliCPUInt(cpu_requests) * cpu_target_utilization)),
@@ -477,7 +486,7 @@
                metric_name: '%s%s_memory_hpa_%s' %
                             ([if with_cortex_prefix then 'cortex_' else ''] + [std.strReplace(name, '-', '_'), $._config.namespace]),
 
-               query: queryWithWeight(memoryHPAQuery(with_ready_trigger) % queryParameters, weight),
+               query: queryWithWeight(memoryHPAQuery(with_ready_trigger) % queryParameters, effectiveQueryWeight),
 
                // Threshold is expected to be a string
                threshold: std.toString(std.floor($.util.siToBytes(memory_requests) * memory_target_utilization)),
@@ -504,7 +513,7 @@
                      changes(kube_pod_container_status_restarts_total{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}[15m]) > 0
                    )
                  ) or vector(0)
-               ||| % queryParameters, weight),
+               ||| % queryParameters, effectiveQueryWeight),
                threshold: '1',
                metric_type: 'Value',
                // Disable ignoring null values to ensure the trigger properly pauses when metrics are unavailable
@@ -562,6 +571,7 @@
       min_replicas=$._config.autoscaling_querier_min_replicas_per_zone,
       max_replicas=$._config.autoscaling_querier_max_replicas_per_zone,
       target_utilization=$._config.autoscaling_querier_target_utilization,
+      ignore_null_values=$._config.autoscaling_querier_ignore_null_values,
     ),
 
   querier_deployment: overrideSuperIfExists(
@@ -765,7 +775,7 @@
   // Rulers
   //
 
-  newRulerScaledObject(name, extra_matchers='')::
+  newRulerScaledObject(name, extra_matchers='', query_weight=1)::
     $.newResourceScaledObject(
       name=name,
       container_name='ruler',
@@ -779,6 +789,7 @@
       // down of the ruler. As a result, we have made the decision to set the scale down period to 600 seconds.
       scale_down_period=600,
       extra_matchers=extra_matchers,
+      query_weight=query_weight,
     ),
 
   ruler_scaled_object: if !$._config.autoscaling_ruler_enabled then null else $.newRulerScaledObject('ruler'),

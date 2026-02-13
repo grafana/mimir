@@ -499,9 +499,8 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	t.Cfg.Distributor.DistributorRing.Common.ListenPort = t.Cfg.Server.GRPCListenPort
 	t.Cfg.Distributor.InstanceLimitsFn = distributorInstanceLimits(t.RuntimeConfig)
 
-	if t.Cfg.Querier.ShuffleShardingIngestersEnabled {
-		t.Cfg.Distributor.ShuffleShardingLookbackPeriod = t.Cfg.BlocksStorage.TSDB.Retention
-	}
+	t.Cfg.Distributor.ShuffleShardingEnabled = t.Cfg.Querier.ShuffleShardingIngestersEnabled
+	t.Cfg.Distributor.IngestersLookbackPeriod = t.Cfg.BlocksStorage.TSDB.Retention
 
 	// Check whether the distributor can join the distributors ring, which is
 	// whenever it's not running as an internal dependency (ie. querier or
@@ -1060,7 +1059,24 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 
 	t.Cfg.Ruler.Ring.Common.ListenPort = t.Cfg.Server.GRPCListenPort
 
+	// embeddedQueryable is used for RestoreForState operation to query ALERTS_FOR_STATE series.
+	// When ruler.query-frontend.address is configured (remote mode):
+	//   - embeddedQueryable is a Prometheus remote read client that makes HTTP requests to /api/v1/read
+	//   - NO memory tracking wrapper applied - querier handles all query execution via query-frontend
+	// When query-frontend is NOT configured (local/embedded mode):
+	//   - embeddedQueryable is returned from querier.New() already wrapped appropriately:
+	//     • MQE engine: wrapped with MemoryTrackingQueryable (tracking at queryable layer)
+	//     • Prometheus engine: NOT wrapped (engine wrapper handles memory tracking)
 	var embeddedQueryable prom_storage.Queryable
+
+	// queryFunc is used to evaluate recording and alerting rule expressions.
+	// When ruler.query-frontend.address is configured (remote mode):
+	//   - queryFunc makes HTTP POST requests to query-frontend's /api/v1/query endpoint
+	//   - Query execution (engine selection, memory tracking, etc.) happens in remote querier
+	// When query-frontend is NOT configured (local/embedded mode):
+	//   - If tenant federation is enabled: queryFunc routes to federated or regular execution based on query
+	//   - If tenant federation is disabled: queryFunc directly executes via rules.EngineQueryFunc(engine, queryable)
+	//     which creates a Query object from the PromQL string and calls Query.Exec()
 	var queryFunc rules.QueryFunc
 
 	if t.Cfg.Ruler.QueryFrontend.Address != "" {
@@ -1428,6 +1444,7 @@ func (t *Mimir) initContinuousTest() (services.Service, error) {
 	t.ContinuousTestManager = continuoustest.NewManager(t.Cfg.ContinuousTest.Manager, util_log.Logger)
 	t.ContinuousTestManager.AddTest(continuoustest.NewWriteReadSeriesTest(t.Cfg.ContinuousTest.WriteReadSeriesTest, client, util_log.Logger, t.Registerer))
 	t.ContinuousTestManager.AddTest(continuoustest.NewIngestStorageRecordTest(t.Cfg.ContinuousTest.IngestStorageRecordTest, util_log.Logger, t.Registerer))
+	t.ContinuousTestManager.AddTest(continuoustest.NewWriteReadOOOTest(t.Cfg.ContinuousTest.WriteReadOOOTest, client, util_log.Logger, t.Registerer))
 
 	return services.NewBasicService(nil, func(ctx context.Context) error {
 		return t.ContinuousTestManager.Run(ctx)

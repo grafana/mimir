@@ -318,7 +318,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
         {
           alert: $.alertName('BlockBuilderDataSkipped'),
           expr: |||
-            increase(cortex_blockbuilder_scheduler_job_gap_detected[1m]) > 0
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (
+              increase(cortex_blockbuilder_scheduler_job_gap_detected[1h])
+            ) > 0
           ||| % $._config,
           labels: {
             severity: 'critical',

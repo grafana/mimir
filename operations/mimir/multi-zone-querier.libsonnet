@@ -24,7 +24,7 @@
 
   local querierZoneArgs(zone) = {
     // Prefer querying ingesters and store-gateways in the same zone, to reduce cross-AZ data transfer.
-    'querier.prefer-availability-zones': 'zone-%s' % zone,
+    'querier.prefer-availability-zones': 'zone-%s,zone-%s-backup' % [zone, zone],
   },
 
   querierClientZoneArgs(zone):: {
@@ -118,6 +118,7 @@
       min_replicas=$._config.autoscaling_querier_min_replicas_per_zone,
       max_replicas=$._config.autoscaling_querier_max_replicas_per_zone,
       target_utilization=$._config.autoscaling_querier_target_utilization,
+      ignore_null_values=$._config.autoscaling_querier_ignore_null_values,
       extra_matchers=extra_matchers,
     ),
 

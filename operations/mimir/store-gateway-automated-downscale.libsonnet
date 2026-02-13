@@ -15,6 +15,8 @@
     store_gateway_automated_downscale_zone_a_enabled: $._config.store_gateway_automated_downscale_enabled,
     store_gateway_automated_downscale_zone_b_enabled: $._config.store_gateway_automated_downscale_enabled,
     store_gateway_automated_downscale_zone_c_enabled: $._config.store_gateway_automated_downscale_enabled,
+    store_gateway_automated_downscale_zone_a_backup_enabled: $._config.store_gateway_automated_downscale_enabled,
+    store_gateway_automated_downscale_zone_b_backup_enabled: $._config.store_gateway_automated_downscale_enabled,
 
     // Give more time if lazy-loading is disabled.
     store_gateway_automated_downscale_min_time_between_zones: if $._config.store_gateway_lazy_loading_enabled then '15m' else '60m',
@@ -66,6 +68,32 @@
       }),
   ),
 
+  store_gateway_zone_a_backup_statefulset: overrideSuperIfExists(
+    'store_gateway_zone_a_backup_statefulset',
+    if !$._config.store_gateway_automated_downscale_zone_a_backup_enabled || !$._config.multi_zone_store_gateway_enabled then {} else
+      prepareDownscaleLabelsAnnotations +
+      $.removeReplicasFromSpec +
+      statefulSet.mixin.metadata.withAnnotationsMixin({
+        // store-gateway-zone-a-backup is expected to run on spot nodes. Since spot nodes can be unavailable from time to time,
+        // we follow zone-a that is running on standard nodes and we ensure none follows zone-a-backup.
+        'grafana.com/rollout-downscale-leader': 'store-gateway-zone-a',
+        'grafana.com/rollout-upscale-only-when-leader-ready': 'true',
+      })
+  ),
+
+  store_gateway_zone_b_backup_statefulset: overrideSuperIfExists(
+    'store_gateway_zone_b_backup_statefulset',
+    if !$._config.store_gateway_automated_downscale_zone_b_backup_enabled || !$._config.multi_zone_store_gateway_enabled then {} else
+      prepareDownscaleLabelsAnnotations +
+      $.removeReplicasFromSpec +
+      statefulSet.mixin.metadata.withAnnotationsMixin({
+        // store-gateway-zone-b-backup is expected to run on spot nodes. Since spot nodes can be unavailable from time to time,
+        // we follow zone-b that is running on standard nodes and we ensure none follows zone-b-backup.
+        'grafana.com/rollout-downscale-leader': 'store-gateway-zone-b',
+        'grafana.com/rollout-upscale-only-when-leader-ready': 'true',
+      }),
+  ),
+
   // When prepare-downscale webhook is in use, we don't need the auto-forget feature to ensure
   // store-gateways are removed from the ring, because the shutdown endpoint (called by the
   // rollout-operator) will do it. For this reason, we disable the auto-forget which has the benefit
@@ -81,4 +109,11 @@
   store_gateway_zone_c_args+:: if !$._config.store_gateway_automated_downscale_zone_c_enabled || !$._config.multi_zone_store_gateway_enabled then {} else {
     'store-gateway.sharding-ring.auto-forget-enabled': false,
   },
+  store_gateway_zone_a_backup_args+:: if !$._config.store_gateway_automated_downscale_zone_a_backup_enabled || !$._config.multi_zone_store_gateway_enabled then {} else {
+    'store-gateway.sharding-ring.auto-forget-enabled': false,
+  },
+  store_gateway_zone_b_backup_args+:: if !$._config.store_gateway_automated_downscale_zone_b_backup_enabled || !$._config.multi_zone_store_gateway_enabled then {} else {
+    'store-gateway.sharding-ring.auto-forget-enabled': false,
+  },
+
 }

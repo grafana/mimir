@@ -248,7 +248,7 @@ func TestRangeVectorSelectorSyntheticPoints(t *testing.T) {
 			data: `load 1m
 					metric 10 5 6 1`,
 			ts:           timeZero.Add(2 * time.Second * 61),
-			expected:     []promql.FPoint{{T: 2000, F: 0.16666666666666666}, {T: 60000, F: 5}, {T: 120000, F: 6}, {T: 122000, F: 6.033333333333333}},
+			expected:     []promql.FPoint{{T: 2000, F: 0.16666666666666666}, {T: 60000, F: 5}, {T: 120000, F: 6}, {T: 122000, F: 0.03333333333333333}},
 			smoothed:     true,
 			counterAware: true,
 		},

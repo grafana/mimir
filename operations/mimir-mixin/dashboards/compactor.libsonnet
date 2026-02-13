@@ -59,12 +59,9 @@ local fixTargetsForTransformations(panel, refIds) = panel {
 
   local lastRunQuery =
     |||
-      max by(%(instance)s)
-      (
-        (time() * (max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{%(job)s}[1h]) !=bool 0))
-        -
-        max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{%(job)s}[1h])
-      )
+      max by(%(instance)s) (time() - (max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{%(job)s}[1h]) > 0))
+      or
+      max by(%(instance)s) (time() - max_over_time(process_start_time_seconds{%(job)s}[1h]))
     ||| % {
       instance: $._config.per_instance_label,
       job: $.jobMatcher($._config.job_names.compactor),
@@ -232,6 +229,10 @@ local fixTargetsForTransformations(panel, refIds) = panel {
                 ]),
               ]),
             ],
+          },
+        } + {
+          options+: {
+            sortBy: [{ desc: true, displayName: 'Last run' }],
           },
         },
       )

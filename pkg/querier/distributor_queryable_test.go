@@ -87,8 +87,7 @@ func TestDistributorQuerier_Select_ShouldHonorQueryIngestersWithin(t *testing.T)
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			distributor := &mockDistributor{}
-			distributor.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
-			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{}, nil)
+			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{}, nil)
 			distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]labels.Labels{}, nil)
 
 			const tenantID = "test"
@@ -154,7 +153,7 @@ func TestDistributorQuerier_Select(t *testing.T) {
 			d := &mockDistributor{
 				memoryConsumptionTracker: memoryTracker,
 			}
-			d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(testCase.response, nil)
+			d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(testCase.response, nil)
 
 			queryable := NewDistributorQueryable(d, newMockConfigProvider(0), nil, log.NewNopLogger())
 			querier, err := queryable.Querier(mint, maxt)
@@ -202,7 +201,7 @@ func TestDistributorQuerier_Select_ClosedBeforeSelectFinishes(t *testing.T) {
 	d := &mockDistributor{
 		memoryConsumptionTracker: memoryTracker,
 	}
-	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
+	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		client.CombinedQueryStreamResponse{
 			StreamingSeries: []client.StreamingSeries{
 				{
@@ -303,7 +302,7 @@ func TestDistributorQuerier_Select_MixedFloatAndIntegerHistograms(t *testing.T) 
 	d := &mockDistributor{
 		memoryConsumptionTracker: memoryTracker,
 	}
-	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
+	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		client.CombinedQueryStreamResponse{
 			StreamingSeries: []client.StreamingSeries{
 				{
@@ -422,7 +421,7 @@ func TestDistributorQuerier_Select_MixedHistogramsAndFloatSamples(t *testing.T) 
 	d := &mockDistributor{
 		memoryConsumptionTracker: memoryTracker,
 	}
-	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
+	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		client.CombinedQueryStreamResponse{
 			StreamingSeries: []client.StreamingSeries{
 				{
@@ -577,7 +576,7 @@ func TestDistributorQuerier_Select_CounterResets(t *testing.T) {
 					d := &mockDistributor{
 						memoryConsumptionTracker: memoryTracker,
 					}
-					d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(responseType.combinedResponse, nil)
+					d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(responseType.combinedResponse, nil)
 
 					queryable := NewDistributorQueryable(d, newMockConfigProvider(0), stats.NewQueryMetrics(prometheus.NewPedanticRegistry()), log.NewNopLogger())
 					querier, err := queryable.Querier(tc.queryStart, tc.queryEnd)
@@ -695,7 +694,7 @@ func BenchmarkDistributorQuerier_Select(b *testing.B) {
 	// for each call of the QueryStream method.
 	d := &mockDistributor{}
 	for n := 0; n < b.N; n++ {
-		d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(makeResponse(), nil).Once()
+		d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(makeResponse(), nil).Once()
 	}
 
 	ctx := user.InjectOrgID(context.Background(), "0")
@@ -829,8 +828,8 @@ func (m *mockDistributor) QueryExemplars(ctx context.Context, from, to model.Tim
 	args := m.Called(ctx, from, to, matchers)
 	return args.Get(0).(*client.ExemplarQueryResponse), args.Error(1)
 }
-func (m *mockDistributor) QueryStream(ctx context.Context, queryMetrics *stats.QueryMetrics, from, to model.Time, matchers ...*labels.Matcher) (client.CombinedQueryStreamResponse, error) {
-	args := m.Called(ctx, queryMetrics, from, to, matchers)
+func (m *mockDistributor) QueryStream(ctx context.Context, queryMetrics *stats.QueryMetrics, from, to model.Time, projectionInclude bool, projectionLabels []string, matchers ...*labels.Matcher) (client.CombinedQueryStreamResponse, error) {
+	args := m.Called(ctx, queryMetrics, from, to, projectionInclude, projectionLabels, matchers)
 	response := args.Get(0).(client.CombinedQueryStreamResponse)
 	for _, ss := range response.StreamingSeries {
 		err := m.memoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(ss.Labels)

@@ -34,7 +34,7 @@ import (
 	"github.com/prometheus/prometheus/prompb" // OTLP protos are not compatible with gogo
 	promRW2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/storage/remote"
-	yaml "gopkg.in/yaml.v3"
+	yaml "go.yaml.in/yaml/v3"
 
 	"github.com/grafana/mimir/integration/e2emimir/rw2/rc3"
 	"github.com/grafana/mimir/pkg/alertmanager"

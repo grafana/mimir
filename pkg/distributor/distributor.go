@@ -262,7 +262,8 @@ type Config struct {
 	SkipLabelCountValidation bool `yaml:"-"`
 
 	// This config is dynamically injected because it is defined in the querier config.
-	ShuffleShardingLookbackPeriod              time.Duration `yaml:"-"`
+	ShuffleShardingEnabled                     bool          `yaml:"-"`
+	IngestersLookbackPeriod                    time.Duration `yaml:"-"`
 	StreamingChunksPerIngesterSeriesBufferSize uint64        `yaml:"-"`
 	MinimizeIngesterRequests                   bool          `yaml:"-"`
 	MinimiseIngesterRequestsHedgingDelay       time.Duration `yaml:"-"`
@@ -374,12 +375,13 @@ const (
 )
 
 type PushMetrics struct {
+	uncompressedBodySize *prometheus.HistogramVec
+	compressionRatio     *prometheus.HistogramVec
 	// Influx metrics.
 	influxRequestCounter       *prometheus.CounterVec
 	influxUncompressedBodySize *prometheus.HistogramVec
 	// OTLP metrics.
 	otlpRequestCounter     *prometheus.CounterVec
-	uncompressedBodySize   *prometheus.HistogramVec
 	otlpContentTypeCounter *prometheus.CounterVec
 	// Temporary to better understand which array (ResourceMetrics/ScopeMetrics/Metrics) is usually large
 	otlpArrayLengths *prometheus.HistogramVec
@@ -409,6 +411,13 @@ func newPushMetrics(reg prometheus.Registerer) *PushMetrics {
 			NativeHistogramMinResetDuration: 1 * time.Hour,
 			NativeHistogramMaxBucketNumber:  100,
 		}, []string{"user", "handler"}),
+		compressionRatio: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                            "cortex_distributor_request_body_compression_ratio",
+			Help:                            "Compression ratio (uncompressed size / compressed size).",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			NativeHistogramMaxBucketNumber:  100,
+		}, []string{"handler"}),
 		otlpContentTypeCounter: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_otlp_requests_by_content_type_total",
 			Help: "Total number of requests with a given content type.",
@@ -441,9 +450,12 @@ func (m *PushMetrics) IncOTLPRequest(user string) {
 	}
 }
 
-func (m *PushMetrics) ObserveUncompressedBodySize(user string, handler string, size float64) {
+func (m *PushMetrics) ObserveRequestBodySize(user, handler string, uncompressedSize, compressedSize int64) {
 	if m != nil {
-		m.uncompressedBodySize.WithLabelValues(user, handler).Observe(size)
+		if compressedSize > 0 {
+			m.compressionRatio.WithLabelValues(handler).Observe(float64(uncompressedSize) / float64(compressedSize))
+		}
+		m.uncompressedBodySize.WithLabelValues(user, handler).Observe(float64(uncompressedSize))
 	}
 }
 
@@ -3281,6 +3293,10 @@ respsLoop:
 	}
 
 	queryLimiter := mimir_limiter.QueryLimiterFromContextWithFallback(ctx)
+	deduplicator, err := mimir_limiter.SeriesLabelsDeduplicatorFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
 	tracker, err := mimir_limiter.MemoryConsumptionTrackerFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -3288,12 +3304,15 @@ respsLoop:
 
 	result := make([]labels.Labels, 0, len(metrics))
 	for _, m := range metrics {
-		uniqueSeriesLabels, err := queryLimiter.AddSeries(m, tracker)
+		uniqueSeries, err := deduplicator.Deduplicate(m, tracker)
 		if err != nil {
 			return nil, err
 		}
+		if err := queryLimiter.AddSeries(uniqueSeries); err != nil {
+			return nil, err
+		}
 
-		result = append(result, uniqueSeriesLabels)
+		result = append(result, uniqueSeries)
 	}
 	return result, nil
 }

@@ -4587,7 +4587,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "max by(pod)\n(\n  (time() * (max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[1h]) !=bool 0))\n  -\n  max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[1h])\n)\n",
+                            "expr": "max by(pod) (time() - (max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[1h]) > 0))\nor\nmax by(pod) (time() - max_over_time(process_start_time_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[1h]))\n",
                             "format": "table",
                             "instant": true,
                             "interval": "",
@@ -4789,6 +4789,12 @@ data:
                          "legend": {
                             "showLegend": true
                          },
+                         "sortBy": [
+                            {
+                               "desc": true,
+                               "displayName": "Last run"
+                            }
+                         ],
                          "tooltip": {
                             "mode": "multi",
                             "sort": "none"
@@ -4797,7 +4803,7 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "max by(pod)\n(\n  (time() * (max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[1h]) !=bool 0))\n  -\n  max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[1h])\n)\n",
+                            "expr": "max by(pod) (time() - (max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[1h]) > 0))\nor\nmax by(pod) (time() - max_over_time(process_start_time_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[1h]))\n",
                             "format": "table",
                             "instant": true,
                             "legendFormat": "Last run",
@@ -47639,7 +47645,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "histogram_avg(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))",
@@ -47707,7 +47713,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "exemplar": true,
@@ -47757,7 +47763,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "histogram_avg(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval])))",
@@ -47785,6 +47791,55 @@ data:
                          }
                       ],
                       "title": "Kafka end-to-end latency when starting",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Forced TSDB head compactions in progress\nThe number of ingesters currently performing a forced TSDB head compaction. During a forced compaction,\nKafka consumption may be paused, which is a common cause of elevated — but temporary — end-to-end latency.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 26,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sum(max_over_time(cortex_ingester_tsdb_forced_compactions_in_progress{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))",
+                            "format": "time_series",
+                            "legendFormat": "In progress",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Forced TSDB head compactions in progress",
                       "type": "timeseries"
                    }
                 ],
@@ -47856,7 +47911,7 @@ data:
                             }
                          ]
                       },
-                      "id": 26,
+                      "id": 27,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -47911,7 +47966,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 27,
+                      "id": 28,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -48039,7 +48094,7 @@ data:
                             }
                          ]
                       },
-                      "id": 28,
+                      "id": 29,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -48100,7 +48155,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 29,
+                      "id": 30,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -48149,7 +48204,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 30,
+                      "id": 31,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -48198,7 +48253,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 31,
+                      "id": 32,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -48409,7 +48464,7 @@ data:
                             }
                          ]
                       },
-                      "id": 32,
+                      "id": 33,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -48463,7 +48518,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 33,
+                      "id": 34,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -48723,7 +48778,7 @@ data:
                             }
                          ]
                       },
-                      "id": 34,
+                      "id": 35,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -48777,7 +48832,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 35,
+                      "id": 36,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -49037,7 +49092,7 @@ data:
                             }
                          ]
                       },
-                      "id": 36,
+                      "id": 37,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -49091,7 +49146,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 37,
+                      "id": 38,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -49232,7 +49287,7 @@ data:
                             }
                          ]
                       },
-                      "id": 38,
+                      "id": 39,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -49287,7 +49342,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 39,
+                      "id": 40,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -49428,7 +49483,7 @@ data:
                             }
                          ]
                       },
-                      "id": 40,
+                      "id": 41,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -49483,7 +49538,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 41,
+                      "id": 42,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -49624,7 +49679,7 @@ data:
                             }
                          ]
                       },
-                      "id": 42,
+                      "id": 43,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -49710,7 +49765,7 @@ data:
                             }
                          ]
                       },
-                      "id": 43,
+                      "id": 44,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -49766,7 +49821,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 44,
+                      "id": 45,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -49846,7 +49901,7 @@ data:
                             }
                          ]
                       },
-                      "id": 45,
+                      "id": 46,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -49913,7 +49968,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 46,
+                      "id": 47,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -49962,7 +50017,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 47,
+                      "id": 48,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -50011,7 +50066,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 48,
+                      "id": 49,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -50060,7 +50115,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 49,
+                      "id": 50,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -50120,7 +50175,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 50,
+                      "id": 51,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -50168,7 +50223,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 51,
+                      "id": 52,
                       "links": [ ],
                       "options": {
                          "legend": {

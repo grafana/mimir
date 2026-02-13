@@ -37,6 +37,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"go.uber.org/atomic"
+	"go.uber.org/goleak"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
@@ -47,8 +48,15 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
+var goleakOpts = []goleak.Option{
+	// TestIngester_Startup_PartitionRingActiveBlocksOnInstanceRingActive
+	// tests ingester failure on startup, which does not clean up all goroutines.
+	// This goroutine will be detected by other tests running in parallel with VerifyNoLeak.
+	goleak.IgnoreAnyFunction("github.com/grafana/dskit/services.funcBasedListener.Failed"),
+}
+
 func TestIngester_Startup_PartitionRingActiveBlocksOnInstanceRingActive(t *testing.T) {
-	util_test.VerifyNoLeak(t)
+	util_test.VerifyNoLeak(t, goleakOpts...)
 	var err error
 
 	cfg := defaultIngesterTestConfig(t)
@@ -159,7 +167,7 @@ func TestIngester_Startup_PartitionRingActiveBlocksOnInstanceRingActive(t *testi
 }
 
 func TestIngester_Start(t *testing.T) {
-	util_test.VerifyNoLeak(t)
+	util_test.VerifyNoLeak(t, goleakOpts...)
 
 	t.Run("should replay the partition at startup (after a restart) and then join the ingesters and partitions ring", func(t *testing.T) {
 		var (
@@ -1205,7 +1213,6 @@ func BenchmarkIngester_ReplayFromKafka(b *testing.B) {
 			cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyEstimatedBytesPerSample = 200
 			cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyQueueCapacity = 3
 			cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyTargetFlushesPerShard = 40
-			cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencySequentialPusherEnabled = false
 
 			// Disable TSDB WAL to reduce variance in test executions.
 			cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes = -1
@@ -1284,7 +1291,6 @@ func BenchmarkIngester_ReplayFromKafka_Dump(b *testing.B) {
 			cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyEstimatedBytesPerSample = 200
 			cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyQueueCapacity = 3
 			cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyTargetFlushesPerShard = 40
-			cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencySequentialPusherEnabled = false
 
 			// Disable TSDB WAL to reduce variance in benchmark executions.
 			cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes = -1

@@ -29,6 +29,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [CHANGE] Update minimum supported Kubernetes version to 1.32. This reflects the fact that Grafana does not test with older versions of Kubernetes. #14335
 * [CHANGE] Set default memory ballast for ruler to 1GiB to reduce GC pressure during startup. #13376
 * [CHANGE] Set docker.io as the default registry for mimir image. #13267
 * [ENHANCEMENT] Add Support to customize gossip ring k8s service annotations. #12718
@@ -44,6 +45,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Delete gateway's serviceMonitor #13481
 * [BUGFIX] Ensure Kafka can boostrap successfully by using parallel rollout and publishing not-ready addresses. #13650
 * [BUGFIX] Upgrade rollout-operator chart to 0.38.1, which fixes an issue with permissions preventing the rollout-operator from starting when webhooks are not enabled. #13754.
+* [BUGFIX] Fix Kafka image reference to include the registry in the StatefulSet template. #14211.
 
 ## 6.0.5
 

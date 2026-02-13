@@ -38,6 +38,7 @@
         <th>Samples</th>
         <th>Chunks</th>
         <th>Labels</th>
+        <th>OOO</th>
         <th>No Compact</th>
         {{ if .ShowSources }}
         <th>Sources</th>{{ end }}
@@ -64,6 +65,7 @@
             <td>{{ .Stats.NumSamples }}</td>
             <td>{{ .Stats.NumChunks }}</td>
             <td>{{ .Labels }}</td>
+            <td>{{ if .OutOfOrder }}Yes{{ end }}</td>
             <td>
                 {{ range $i, $source := .NoCompactDetails }}
                     {{ if $i }}<br>{{ end }}

@@ -68,7 +68,7 @@ func TestEvaluator(t *testing.T) {
 		LookbackDelta:            lookbackDelta,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 	}
-	instantVectorOperator := selectors.NewInstantVectorSelector(instantVectorSelector, memoryConsumptionTracker, stats, false)
+	instantVectorOperator := selectors.NewInstantVectorSelector(instantVectorSelector, memoryConsumptionTracker, stats, false, false)
 
 	rangeVectorNode := &core.MatrixSelector{MatrixSelectorDetails: &core.MatrixSelectorDetails{
 		Matchers: []*core.LabelMatcher{

@@ -12,6 +12,7 @@ import (
 	"io"
 	"math"
 	"math/rand"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strconv"
@@ -1006,6 +1007,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 	const metricName = "foo"
 	ctx := user.InjectOrgID(context.Background(), "user")
 	ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
+	ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx)
 	nameMatcher := mustEqualMatcher(model.MetricNameLabel, metricName)
 	barMatcher := mustEqualMatcher("bar", "baz")
 
@@ -1128,7 +1130,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 			assert.Nil(t, err)
 
 			queryMetrics := stats.NewQueryMetrics(reg[0])
-			resp, err := ds[0].QueryStream(ctx, queryMetrics, 0, 10, tc.matchers...)
+			resp, err := ds[0].QueryStream(ctx, queryMetrics, 0, 10, false, nil, tc.matchers...)
 
 			if tc.expectedError == nil {
 				require.NoError(t, err)
@@ -2489,6 +2491,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 func TestSlowQueries(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "user")
 	ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
+	ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx)
 	nameMatcher := mustEqualMatcher(model.MetricNameLabel, "foo")
 	nIngesters := 3
 	for happy := 0; happy <= nIngesters; happy++ {
@@ -2506,7 +2509,7 @@ func TestSlowQueries(t *testing.T) {
 			})
 
 			queryMetrics := stats.NewQueryMetrics(reg[0])
-			_, err := ds[0].QueryStream(ctx, queryMetrics, 0, 10, nameMatcher)
+			_, err := ds[0].QueryStream(ctx, queryMetrics, 0, 10, false, nil, nameMatcher)
 			assert.Equal(t, expectedErr, err)
 		})
 	}
@@ -2665,6 +2668,7 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 					ctx := user.InjectOrgID(context.Background(), "test")
 					ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
+					ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx)
 
 					// Push fixtures
 					for _, series := range fixtures {
@@ -2786,6 +2790,7 @@ func TestDistributor_MetricsForLabelMatchers_adjustPushDownLimit(t *testing.T) {
 			ctx := user.InjectOrgID(context.Background(), "test")
 			ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 			ctx = limiter.AddMemoryTrackerToContext(ctx, limiter.NewUnlimitedMemoryConsumptionTracker(ctx))
+			ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx)
 
 			for _, series := range fixtures {
 				req := mockWriteRequest(series.lbls, series.value, series.timestamp)
@@ -5764,7 +5769,7 @@ func prepareIngesterZone(t testing.TB, zone string, state ingesterZoneState, cfg
 			kafkaCfg.LastProducedOffsetPollInterval = 100 * time.Millisecond
 			kafkaCfg.LastProducedOffsetRetryTimeout = 100 * time.Millisecond
 
-			ingester.partitionReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, ingester.partitionID(), ingester.instanceID(), newMockIngesterPusherAdapter(ingester), log.NewNopLogger(), nil)
+			ingester.partitionReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, ingester.partitionID(), ingester.instanceID(), filepath.Join(t.TempDir(), "test.json"), newMockIngesterPusherAdapter(ingester), log.NewNopLogger(), nil)
 			require.NoError(t, err)
 
 			// We start it async, and then we wait until running in a defer so that multiple partition
@@ -5950,7 +5955,8 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		distributorCfg.DistributorRing.Common.InstanceID = strconv.Itoa(i)
 		distributorCfg.DistributorRing.Common.KVStore.Mock = kvStore
 		distributorCfg.DistributorRing.Common.InstanceAddr = "127.0.0.1"
-		distributorCfg.ShuffleShardingLookbackPeriod = time.Hour
+		distributorCfg.ShuffleShardingEnabled = true
+		distributorCfg.IngestersLookbackPeriod = time.Hour
 		distributorCfg.StreamingChunksPerIngesterSeriesBufferSize = 128
 		distributorCfg.IngestStorageConfig = ingestCfg
 

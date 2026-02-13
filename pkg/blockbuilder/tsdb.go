@@ -57,6 +57,7 @@ var softErrProcessor = mimir_storage.NewSoftAppendErrorProcessor(
 		_, ok := globalerror.MapNativeHistogramErr(err)
 		return ok
 	},
+	func([]mimirpb.LabelAdapter) {},
 )
 
 type tsdbTenant struct {

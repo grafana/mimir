@@ -59,59 +59,6 @@ func TestPreallocTimeseriesSliceFromPool(t *testing.T) {
 	})
 }
 
-func TestTimeseriesFromPool(t *testing.T) {
-	t.Run("new instance is provided when not available to reuse", func(t *testing.T) {
-		first := TimeseriesFromPool()
-		second := TimeseriesFromPool()
-
-		assert.NotSame(t, first, second)
-	})
-
-	t.Run("instance is cleaned before reusing", func(t *testing.T) {
-		ts := TimeseriesFromPool()
-		ts.Labels = []LabelAdapter{{Name: "foo", Value: "bar"}}
-		ts.Samples = []Sample{{Value: 1, TimestampMs: 2}}
-		ReuseTimeseries(ts)
-
-		reused := TimeseriesFromPool()
-		assert.Len(t, reused.Labels, 0)
-		assert.Len(t, reused.Samples, 0)
-	})
-
-	// Test that TimeseriesFromPool panics when it receives a dirty object from the pool.
-	dirtyPoolTests := []struct {
-		name    string
-		dirtyTS *TimeSeries
-	}{
-		{"labels", &TimeSeries{Labels: []LabelAdapter{{Name: "foo", Value: "bar"}}}},
-		{"samples", &TimeSeries{Samples: []Sample{{Value: 1, TimestampMs: 2}}}},
-		{"histograms", &TimeSeries{Histograms: []Histogram{{Sum: 1.0}}}},
-		{"exemplars", &TimeSeries{Exemplars: []Exemplar{{Value: 1, TimestampMs: 2}}}},
-		{"CreatedTimestamp", &TimeSeries{CreatedTimestamp: 1234567890}},
-		{"SkipUnmarshalingExemplars", &TimeSeries{SkipUnmarshalingExemplars: true}},
-	}
-	for _, tc := range dirtyPoolTests {
-		t.Run("panics if pool returns dirty TimeSeries with "+tc.name, func(t *testing.T) {
-			t.Cleanup(func() {
-				// Drain the pool to ensure isolation. sync.Pool.Get() never returns nil
-				// (it calls New if empty), so we just drain a fixed count.
-				for range 1000 {
-					timeSeriesPool.Get()
-				}
-			})
-			// Flood the pool with dirty objects because sync.Pool doesn't guarantee returning
-			// the same object that was just put in.
-			for range 100 {
-				timeSeriesPool.Put(tc.dirtyTS)
-			}
-
-			assert.Panics(t, func() {
-				TimeseriesFromPool()
-			})
-		})
-	}
-}
-
 func TestCopyToYoloString(t *testing.T) {
 	stringByteArray := func(val string) uintptr {
 		// Ignore deprecation warning for now
@@ -182,10 +129,16 @@ func TestDeepCopyTimeseries(t *testing.T) {
 					{Name: "exemplarLabel2", Value: "exemplarValue2"},
 				},
 			}},
+			CreatedTimestamp:          1234567890,
+			SkipUnmarshalingExemplars: true,
 		},
 	}
 	dst := PreallocTimeseries{}
 	dst = DeepCopyTimeseries(dst, src, true, true)
+
+	// Check that scalar properties are copied.
+	assert.Equal(t, src.CreatedTimestamp, dst.CreatedTimestamp)
+	assert.Equal(t, src.SkipUnmarshalingExemplars, dst.SkipUnmarshalingExemplars)
 
 	// Check that the values in src and dst are the same.
 	assert.Equal(t, src.TimeSeries, dst.TimeSeries)
@@ -337,6 +290,101 @@ func TestDeepCopyTimeseriesExemplars(t *testing.T) {
 
 	// dst1 should use much smaller buffer than dst2.
 	assert.Less(t, cap(*dst1.yoloSlice), cap(*dst2.yoloSlice))
+}
+
+// TestDeepCopyTimeseriesCopiesAllFields uses reflection to ensure that all fields
+// of TimeSeries are copied by DeepCopyTimeseries. This test will fail if a new field
+// is added to TimeSeries but not copied, preventing future oversights.
+func TestDeepCopyTimeseriesCopiesAllFields(t *testing.T) {
+	// Create a fixture with all fields set to non-zero values, including nested fields.
+	src := PreallocTimeseries{
+		TimeSeries: &TimeSeries{
+			Labels: []LabelAdapter{
+				{Name: "label1", Value: "value1"},
+			},
+			Samples: []Sample{
+				{Value: 1, TimestampMs: 2},
+			},
+			Exemplars: []Exemplar{
+				{Value: 1, TimestampMs: 2, Labels: []LabelAdapter{{Name: "e1", Value: "v1"}}},
+			},
+			Histograms: []Histogram{
+				{
+					Count:          &Histogram_CountInt{CountInt: 10},
+					Sum:            1.0,
+					Schema:         1,
+					ZeroThreshold:  0.01,
+					ZeroCount:      &Histogram_ZeroCountInt{ZeroCountInt: 2},
+					NegativeSpans:  []BucketSpan{{Offset: 1, Length: 2}},
+					NegativeDeltas: []int64{1, 2},
+					NegativeCounts: []float64{1.0, 2.0},
+					PositiveSpans:  []BucketSpan{{Offset: 3, Length: 4}},
+					PositiveDeltas: []int64{3, 4},
+					PositiveCounts: []float64{3.0, 4.0},
+					ResetHint:      Histogram_YES,
+					Timestamp:      100,
+					CustomValues:   []float64{5.0, 6.0},
+				},
+			},
+			CreatedTimestamp:          1234567890,
+			SkipUnmarshalingExemplars: true,
+		},
+	}
+
+	// Use reflection to verify that all fields in the source TimeSeries are non-zero (deeply).
+	// This ensures our fixture is complete and can detect if a field isn't copied.
+	assertNoZeroFieldsDeep(t, reflect.ValueOf(src.TimeSeries).Elem(), "TimeSeries")
+
+	// Deep copy with keepHistograms=true and keepExemplars=true to copy all fields.
+	dst := PreallocTimeseries{}
+	dst = DeepCopyTimeseries(dst, src, true, true)
+
+	// Use reflection to verify that all fields were copied correctly.
+	srcVal := reflect.ValueOf(src.TimeSeries).Elem()
+	srcType := srcVal.Type()
+	dstVal := reflect.ValueOf(dst.TimeSeries).Elem()
+	for i := 0; i < srcVal.NumField(); i++ {
+		srcField := srcVal.Field(i)
+		dstField := dstVal.Field(i)
+		fieldName := srcType.Field(i).Name
+
+		// For deep equality, we use reflect.DeepEqual which handles slices, pointers, etc.
+		assert.True(t, reflect.DeepEqual(srcField.Interface(), dstField.Interface()),
+			"field %s was not copied correctly: src=%v, dst=%v", fieldName, srcField.Interface(), dstField.Interface())
+	}
+}
+
+// assertNoZeroFieldsDeep recursively checks that all fields in a struct (and nested structs/slices)
+// are non-zero. This ensures test fixtures are complete.
+func assertNoZeroFieldsDeep(t *testing.T, val reflect.Value, path string) {
+	t.Helper()
+
+	switch val.Kind() {
+	case reflect.Struct:
+		typ := val.Type()
+		for i := 0; i < val.NumField(); i++ {
+			field := val.Field(i)
+			fieldName := typ.Field(i).Name
+			fieldPath := path + "." + fieldName
+			assert.False(t, field.IsZero(), "fixture field %s should be non-zero to detect if it's not copied", fieldPath)
+			// Recursively check nested structs and slices.
+			assertNoZeroFieldsDeep(t, field, fieldPath)
+		}
+	case reflect.Slice, reflect.Array:
+		assert.NotZero(t, val.Len())
+		for i := 0; i < val.Len(); i++ {
+			elem := val.Index(i)
+			elemPath := fmt.Sprintf("%s[%d]", path, i)
+			// Check that slice elements are non-zero (including scalar elements).
+			assert.False(t, elem.IsZero(), "fixture element %s should be non-zero to detect if it's not copied", elemPath)
+			// Recursively check all elements, letting the type-specific cases handle each appropriately.
+			assertNoZeroFieldsDeep(t, elem, elemPath)
+		}
+	case reflect.Ptr, reflect.Interface:
+		if !val.IsNil() {
+			assertNoZeroFieldsDeep(t, val.Elem(), path)
+		}
+	}
 }
 
 func TestPreallocTimeseries_Unmarshal(t *testing.T) {

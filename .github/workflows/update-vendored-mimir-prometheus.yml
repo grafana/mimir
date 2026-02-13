@@ -61,7 +61,7 @@ jobs:
           echo "mimir_prometheus_branch=${{ steps.branch-names-dispatch.outputs.mimir_prometheus_branch || steps.branch-names-manual.outputs.mimir_prometheus_branch }}" >> $GITHUB_OUTPUT
 
       - name: Check out repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           ref: ${{ steps.branch-names.outputs.mimir_branch }}
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -72,7 +72,7 @@ jobs:
         uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6
         with:
           # We only use this to run `go mod` commands, so it doesn't need to follow the version used in the Dockerfile.
-          go-version: "1.25.5"
+          go-version: "1.25.7"
 
       # This job uses "mimir-vendoring bot" instead of "github-actions bot" (secrets.GITHUB_TOKEN)
       # because any events triggered by the later don't spawn GitHub actions.
@@ -145,7 +145,7 @@ jobs:
 
       - name: Create Pull Request
         id: create_pull_request
-        uses: peter-evans/create-pull-request@98357b18bf14b5342f975ff684046ec3b2a07725 # v8.0.0
+        uses: peter-evans/create-pull-request@c0f553fe549906ede9cf27b5156039d195d2ece0 # v8.1.0
         with:
           token: ${{ steps.app-token.outputs.token }}
           title: '[${{ steps.branch-names.outputs.mimir_branch }}] Update mimir-prometheus to ${{ steps.get-commit-info.outputs.short_hash }}'
@@ -180,3 +180,13 @@ jobs:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           BASE_BRANCH: ${{ steps.branch-names.outputs.mimir_branch }}
           PULL_REQUEST_NUMBER: ${{ steps.create_pull_request.outputs.pull-request-number }}
+
+      - name: Send Slack notification on failure
+        if: failure()
+        uses: grafana/shared-workflows/actions/send-slack-message@7b628e7352c2dea057c565cc4fcd5564d5f396c0 # v1.0.0
+        with:
+          channel-id: C04AF91LPFX #mimir-ci-notifications
+          payload: |
+            {
+              "text": ":sadcomputer: *Automated vendoring of mimir-prometheus into Mimir has failed.*\n<!subteam^S03C2P8659U> please check the <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow logs> and coordinate fixes for any issues."
+            }

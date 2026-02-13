@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/dustin/go-humanize"
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/kv/memberlist"
@@ -40,14 +41,16 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-func newIndexPageContent() *IndexPageContent {
-	return &IndexPageContent{}
+func newIndexPageContent(pathPrefix string) *IndexPageContent {
+	return &IndexPageContent{
+		BaseURL: pathPrefix,
+	}
 }
 
 // IndexPageContent is a map of sections to path -> description.
 type IndexPageContent struct {
-	mu sync.Mutex
-
+	mu       sync.Mutex
+	BaseURL  string
 	elements []IndexPageLinkGroup
 }
 
@@ -112,17 +115,27 @@ var indexPageHTML string
 
 type indexPageContents struct {
 	LinkGroups []IndexPageLinkGroup
+	BaseURL    string
 }
 
 //go:embed static
 var staticFiles embed.FS
 
+func resolveBaseURL(baseURL, path string) string {
+	if strings.HasPrefix(path, "/") {
+		return strings.TrimSuffix(baseURL, "/") + path
+	}
+	return path
+}
+
 func indexHandler(content *IndexPageContent) http.HandlerFunc {
-	templ := template.New("main")
+	templ := template.New("main").Funcs(template.FuncMap{
+		"resolveBaseURL": resolveBaseURL,
+	})
 	template.Must(templ.Parse(indexPageHTML))
 
 	return func(w http.ResponseWriter, _ *http.Request) {
-		err := templ.Execute(w, indexPageContents{LinkGroups: content.GetContent()})
+		err := templ.Execute(w, indexPageContents{LinkGroups: content.GetContent(), BaseURL: content.BaseURL})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
@@ -227,6 +240,7 @@ func NewQuerierHandler(
 		engine,
 		querier.NewErrorTranslateSampleAndChunkQueryable(queryable), // Translate errors to errors expected by API.
 		nil, // No remote write support.
+		nil, // No remote write V2 support.
 		exemplarQueryable,
 		func(context.Context) v1.ScrapePoolsRetriever { return &querier.DummyTargetRetriever{} },
 		func(context.Context) v1.TargetRetriever { return &querier.DummyTargetRetriever{} },
@@ -262,6 +276,7 @@ func NewQuerierHandler(
 		appendMetadata,
 		nil,
 		nil,
+		v1.OpenAPIOptions{},
 	)
 
 	api.InstallCodec(protobufCodec{})
@@ -335,6 +350,9 @@ func memberlistStatusHandler(kvs *memberlist.KVInitService) http.Handler {
 		},
 		"GetRoleFromMeta": func(meta []byte) string {
 			return memberlist.EncodedNodeMetadata(meta).Role().String()
+		},
+		"FormatBytes": func(bytes int) string {
+			return humanize.IBytes(uint64(bytes))
 		},
 	})
 	template.Must(templ.Parse(memberlistStatusPageHTML))

@@ -623,6 +623,26 @@
         },
         {
           "kind": "field",
+          "name": "grpc_server_read_buffer_size",
+          "required": false,
+          "desc": "Size of the read buffer for each gRPC connection (bytes). A smaller buffer may reduce memory usage but may lead to more system calls.",
+          "fieldValue": null,
+          "fieldDefaultValue": 32768,
+          "fieldFlag": "server.grpc.read-buffer-size-bytes",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
+          "name": "grpc_server_write_buffer_size",
+          "required": false,
+          "desc": "Size of the write buffer for each gRPC connection (bytes). A smaller buffer may reduce memory usage but may lead to more system calls.",
+          "fieldValue": null,
+          "fieldDefaultValue": 32768,
+          "fieldFlag": "server.grpc.write-buffer-size-bytes",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
           "name": "log_format",
           "required": false,
           "desc": "Output log messages in the given format. Valid formats: [logfmt, json]",
@@ -863,6 +883,16 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "create_new_traces",
+          "required": false,
+          "desc": "Creates new traces for each call rather than continuing the existing trace. A span link is used to allow navigation to the parent trace. Only works when using Open-Telemetry tracing.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "server.create-new-traces",
+          "fieldType": "boolean"
         }
       ],
       "fieldValue": null,
@@ -2509,28 +2539,6 @@
             },
             {
               "kind": "field",
-              "name": "enable_common_subexpression_elimination_for_range_vector_expressions_in_instant_queries",
-              "required": false,
-              "desc": "Enable common subexpression elimination for range vector expressions when evaluating instant queries. This has no effect if common subexpression elimination is disabled.",
-              "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "querier.mimir-query-engine.enable-common-subexpression-elimination-for-range-vector-expressions-in-instant-queries",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "enable_skipping_histogram_decoding",
-              "required": false,
-              "desc": "Enable skipping decoding native histograms when evaluating queries that do not require full histograms.",
-              "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "querier.mimir-query-engine.enable-skipping-histogram-decoding",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
               "name": "enable_narrow_binary_selectors",
               "required": false,
               "desc": "Enable generating selectors for one side of a binary expression based on results from the other side.",
@@ -2546,7 +2554,7 @@
               "required": false,
               "desc": "Enable eliminating redundant DeduplicateAndMerge nodes from the query plan when it can be proven that each input series produces a unique output series.",
               "fieldValue": null,
-              "fieldDefaultValue": false,
+              "fieldDefaultValue": true,
               "fieldFlag": "querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
@@ -5365,6 +5373,17 @@
           "fieldDefaultValue": {},
           "fieldType": "map of tracker name (string) to matcher (string)",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "max_active_series_additional_custom_trackers",
+          "required": false,
+          "desc": "Maximum number of additional custom trackers for active series that you can configure per tenant. This limit only applies to additional custom trackers. Set to 0 to disable the limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "validation.max-active-series-additional-custom-trackers",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -8431,7 +8450,7 @@
               "kind": "field",
               "name": "sasl_username",
               "required": false,
-              "desc": "The username used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.",
+              "desc": "The username used to authenticate to Kafka using SASL. To enable SASL, configure both the username and password.",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "ingest-storage.kafka.sasl-username",
@@ -8441,10 +8460,20 @@
               "kind": "field",
               "name": "sasl_password",
               "required": false,
-              "desc": "The password used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.",
+              "desc": "The password used to authenticate to Kafka using SASL. To enable SASL, configure both the username and password.",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "ingest-storage.kafka.sasl-password",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "sasl_mechanism",
+              "required": false,
+              "desc": "The SASL mechanism used to authenticate to Kafka. Supported values: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512.",
+              "fieldValue": null,
+              "fieldDefaultValue": "PLAIN",
+              "fieldFlag": "ingest-storage.kafka.sasl-mechanism",
               "fieldType": "string"
             },
             {
@@ -8466,6 +8495,17 @@
               "fieldDefaultValue": 1000000000,
               "fieldFlag": "ingest-storage.kafka.consumer-group-offset-commit-interval",
               "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "consumer_group_offset_commit_file_enforced",
+              "required": false,
+              "desc": "When true, the file-based offset stored in the TSDB directory is enforced at startup, taking precedence over Kafka consumer group offset. When false, offsets are still written to the file (in the TSDB directory) but the Kafka consumer group offset is used at startup.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ingest-storage.kafka.consumer-group-offset-commit-file-enforced",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             },
             {
               "kind": "field",
@@ -8677,17 +8717,6 @@
               "fieldDefaultValue": 500,
               "fieldFlag": "ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample",
               "fieldType": "int"
-            },
-            {
-              "kind": "field",
-              "name": "ingestion_concurrency_sequential_pusher_enabled",
-              "required": false,
-              "desc": "When enabled, tenants with few timeseries use a simpler sequential pusher instead of parallel shards.",
-              "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "ingest-storage.kafka.ingestion-concurrency-sequential-pusher-enabled",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -10939,6 +10968,38 @@
                   "fieldFlag": "blocks-storage.bucket-store.index-header.verify-on-load",
                   "fieldType": "boolean",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "block",
+                  "name": "bucket_reader",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "enabled",
+                      "required": false,
+                      "desc": "Enable reading TSDB index-header sections from object storage. When enabled, the configured -blocks-storage.bucket-store.index-header.bucket-reader.index-sections are not downloaded to local disk.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "blocks-storage.bucket-store.index-header.bucket-reader.enabled",
+                      "fieldType": "boolean",
+                      "fieldCategory": "experimental"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "index_sections",
+                      "required": false,
+                      "desc": "Index sections to read from object storage instead of local disk. Valid sections: all",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "all",
+                      "fieldFlag": "blocks-storage.bucket-store.index-header.bucket-reader.index-sections",
+                      "fieldType": "string",
+                      "fieldCategory": "experimental"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
                 }
               ],
               "fieldValue": null,
@@ -12595,6 +12656,17 @@
               "fieldDefaultValue": false,
               "fieldFlag": "store-gateway.sharding-ring.zone-awareness-enabled",
               "fieldType": "boolean"
+            },
+            {
+              "kind": "field",
+              "name": "excluded_zones",
+              "required": false,
+              "desc": "Comma-separated list of zones to exclude from the ring. Instances in excluded zones will be filtered out from the ring. This option needs be set both on the store-gateway, querier and ruler when running in microservices mode.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "store-gateway.sharding-ring.excluded-zones",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -18168,7 +18240,7 @@
           "kind": "field",
           "name": "join_members",
           "required": false,
-          "desc": "Other cluster members to join. Can be specified multiple times. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.",
+          "desc": "Other cluster members to join. Can be specified multiple times or as a comma-separated list. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.",
           "fieldValue": null,
           "fieldDefaultValue": [],
           "fieldFlag": "memberlist.join",
@@ -18220,6 +18292,17 @@
         },
         {
           "kind": "field",
+          "name": "abort_if_cluster_fast_join_fails_min_nodes",
+          "required": false,
+          "desc": "Minimum number of seed nodes that must be successfully joined during fast-join for it to succeed. Only applies when -memberlist.abort-if-fast-join-fails is enabled.",
+          "fieldValue": null,
+          "fieldDefaultValue": 1,
+          "fieldFlag": "memberlist.abort-if-fast-join-fails-min-nodes",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "abort_if_cluster_join_fails",
           "required": false,
           "desc": "Abort if this node fails to join memberlist cluster at startup. When enabled, it's not guaranteed that other services are started only after the cluster state has been successfully updated; use 'abort-if-fast-join-fails' instead.",
@@ -18238,6 +18321,17 @@
           "fieldFlag": "memberlist.rejoin-interval",
           "fieldType": "duration",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "rejoin_seed_nodes",
+          "required": false,
+          "desc": "Seed nodes to use for periodic rejoin. Takes precedence over -memberlist.join for rejoining. If not specified, -memberlist.join is used. Can be specified multiple times or as a comma-separated list. Supports IP, hostname, or DNS Service Discovery format.",
+          "fieldValue": null,
+          "fieldDefaultValue": [],
+          "fieldFlag": "memberlist.rejoin-seed-nodes",
+          "fieldType": "list of strings",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -18494,6 +18588,49 @@
               "fieldDefaultValue": "member",
               "fieldFlag": "memberlist.zone-aware-routing.role",
               "fieldType": "string",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
+          "name": "propagation_delay_tracker",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "enabled",
+              "required": false,
+              "desc": "Enable the propagation delay tracker to measure gossip propagation delay.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "memberlist.propagation-delay-tracker.enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "beacon_interval",
+              "required": false,
+              "desc": "How often to publish beacons for propagation tracking.",
+              "fieldValue": null,
+              "fieldDefaultValue": 60000000000,
+              "fieldFlag": "memberlist.propagation-delay-tracker.beacon-interval",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "beacon_lifetime",
+              "required": false,
+              "desc": "How long a beacon lives before being garbage collected.",
+              "fieldValue": null,
+              "fieldDefaultValue": 600000000000,
+              "fieldFlag": "memberlist.propagation-delay-tracker.beacon-lifetime",
+              "fieldType": "duration",
               "fieldCategory": "experimental"
             }
           ],

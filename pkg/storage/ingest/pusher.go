@@ -92,20 +92,15 @@ func (c PusherConsumer) Consume(ctx context.Context, records iter.Seq[*kgo.Recor
 		offset   int64
 	}
 
-	var recordsChannel chan parsedRecord
-	if c.kafkaConfig.IngestionConcurrencySequentialPusherEnabled {
-		recordsChannel = make(chan parsedRecord)
-	} else {
-		// Buffer the channel to allow the unmarshal goroutine to work ahead while the main loop
-		// is busy pushing to storage. Without buffering, the goroutine blocks on send after each
-		// record, preventing any real pipelining. With a buffer, unmarshalling can overlap with
-		// storage operations, hiding deserialization latency.
-		//
-		// On cancellation (e.g., pushToStorage error), any records remaining in the buffer won't
-		// be processed. This is acceptable because errors trigger a retry of the entire batch,
-		// and the memory will be freed by GC.
-		recordsChannel = make(chan parsedRecord, 128)
-	}
+	// Buffer the channel to allow the unmarshal goroutine to work ahead while the main loop
+	// is busy pushing to storage. Without buffering, the goroutine blocks on send after each
+	// record, preventing any real pipelining. With a buffer, unmarshalling can overlap with
+	// storage operations, hiding deserialization latency.
+	//
+	// On cancellation (e.g., pushToStorage error), any records remaining in the buffer won't
+	// be processed. This is acceptable because errors trigger a retry of the entire batch,
+	// and the memory will be freed by GC.
+	recordsChannel := make(chan parsedRecord, 128)
 
 	// Create a cancellable context to let the unmarshalling goroutine know when to stop.
 	ctx, cancel := context.WithCancelCause(ctx)
@@ -203,7 +198,6 @@ func (c PusherConsumer) newStorageWriter(bytesPerTenant map[string]int) PusherCl
 		c.kafkaConfig.IngestionConcurrencyQueueCapacity,
 		c.kafkaConfig.IngestionConcurrencyEstimatedBytesPerSample,
 		c.kafkaConfig.IngestionConcurrencyTargetFlushesPerShard,
-		c.kafkaConfig.IngestionConcurrencySequentialPusherEnabled,
 		c.logger,
 	)
 }
@@ -234,14 +228,6 @@ func newSequentialStoragePusher(metrics *storagePusherMetrics, pusher Pusher, sa
 		metrics:      metrics,
 		pusher:       pusher,
 		errorHandler: newPushErrorHandler(metrics, util_log.NewSampler(sampleRate), logger),
-	}
-}
-
-func newSequentialStoragePusherWithErrorHandler(metrics *storagePusherMetrics, pusher Pusher, errorHandler *pushErrorHandler) sequentialStoragePusher {
-	return sequentialStoragePusher{
-		metrics:      metrics,
-		pusher:       pusher,
-		errorHandler: errorHandler,
 	}
 }
 
@@ -283,26 +269,22 @@ type parallelStoragePusher struct {
 	bytesPerSample  int
 	targetFlushes   int
 	numActiveShards int
-
-	// sequentialPusherEnabled controls whether to use the sequential pusher for tenants with few timeseries.
-	sequentialPusherEnabled bool
 }
 
 // newParallelStoragePusher creates a new parallelStoragePusher instance.
-func newParallelStoragePusher(metrics *storagePusherMetrics, pusher Pusher, bytesPerTenant map[string]int, loggerSampleRate int64, maxShards int, batchSize int, queueCapacity int, bytesPerSample int, targetFlushes int, sequentialPusherEnabled bool, logger log.Logger) *parallelStoragePusher {
+func newParallelStoragePusher(metrics *storagePusherMetrics, pusher Pusher, bytesPerTenant map[string]int, loggerSampleRate int64, maxShards int, batchSize int, queueCapacity int, bytesPerSample int, targetFlushes int, logger log.Logger) *parallelStoragePusher {
 	return &parallelStoragePusher{
-		logger:                  log.With(logger, "component", "parallel-storage-pusher"),
-		pushers:                 make(map[string]PusherCloser),
-		upstreamPusher:          pusher,
-		maxShards:               maxShards,
-		bytesPerTenant:          bytesPerTenant,
-		errorHandler:            newPushErrorHandler(metrics, util_log.NewSampler(loggerSampleRate), logger),
-		batchSize:               batchSize,
-		queueCapacity:           queueCapacity,
-		bytesPerSample:          bytesPerSample,
-		targetFlushes:           targetFlushes,
-		metrics:                 metrics,
-		sequentialPusherEnabled: sequentialPusherEnabled,
+		logger:         log.With(logger, "component", "parallel-storage-pusher"),
+		pushers:        make(map[string]PusherCloser),
+		upstreamPusher: pusher,
+		maxShards:      maxShards,
+		bytesPerTenant: bytesPerTenant,
+		errorHandler:   newPushErrorHandler(metrics, util_log.NewSampler(loggerSampleRate), logger),
+		batchSize:      batchSize,
+		queueCapacity:  queueCapacity,
+		bytesPerSample: bytesPerSample,
+		targetFlushes:  targetFlushes,
+		metrics:        metrics,
 	}
 }
 
@@ -339,17 +321,7 @@ func (c *parallelStoragePusher) shardsFor(userID string, requestSource mimirpb.W
 	}
 
 	idealShards := c.idealShardsFor(userID)
-	var p PusherCloser
-	if idealShards <= 1 && c.sequentialPusherEnabled {
-		// If we're going to push only one shard, then we can use the sequential pusher.
-		// This means that pushes will now be synchronous.
-		// The idea is that if we don't see a reason to parallelize,
-		// then the pushes to this pusher are likely small in absolute terms and speeding them up will have marginal gains.
-		// So we choose the lower overhead and simpler sequential pusher.
-		p = newSequentialStoragePusherWithErrorHandler(c.metrics, c.upstreamPusher, c.errorHandler)
-	} else {
-		p = newParallelStorageShards(c.metrics, c.errorHandler, idealShards, c.batchSize, c.queueCapacity, c.upstreamPusher)
-	}
+	p := newParallelStorageShards(c.metrics, c.errorHandler, idealShards, c.batchSize, c.queueCapacity, c.upstreamPusher)
 
 	c.pushers[userID+"|"+requestSource.String()] = p
 	return p

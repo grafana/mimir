@@ -46,6 +46,7 @@
                     <tr>
                         <th>Key</th>
                         <th class="fit-width">Codec</th>
+                        <th class="fit-width">Size</th>
                         <th class="fit-width">
                             <span class="text-nowrap">
                                 Version
@@ -63,6 +64,7 @@
                         <tr>
                             <td class="align-middle font-monospace small">{{ $k }}</td>
                             <td class="align-middle font-monospace small fit-width">{{ $v.CodecID }}</td>
+                            <td class="align-middle font-monospace small fit-width text-nowrap">{{ FormatBytes (index $.StoreSizes $k) }}</td>
                             <td class="align-middle font-monospace small fit-width">{{ $v.Version }}</td>
                             <td class="fit-width">
                                 <span class="text-nowrap">
@@ -83,6 +85,13 @@
                         </tr>
                     {{ end }}
                     </tbody>
+                    <tfoot>
+                    <tr>
+                        <td colspan="2"></td>
+                        <td class="align-middle font-monospace small fit-width text-nowrap">{{ FormatBytes .TotalStoreSize }}</td>
+                        <td colspan="2"></td>
+                    </tr>
+                    </tfoot>
                 </table>
             </div>
 

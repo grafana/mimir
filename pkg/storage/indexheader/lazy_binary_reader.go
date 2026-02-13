@@ -126,6 +126,7 @@ type unloadRequest struct {
 // It does not try to parse the sparse index header.
 func NewLazyBinaryReader(
 	ctx context.Context,
+	cfg Config,
 	readerFactory func() (Reader, error),
 	logger log.Logger,
 	bkt objstore.InstrumentedBucketReader,
@@ -150,9 +151,11 @@ func NewLazyBinaryReader(
 	logger = log.With(logger, "id", id)
 
 	g := errgroup.Group{}
-	g.Go(func() error {
-		return ensureIndexHeaderOnDisk(ctx, logger, bkt, id, indexHeaderPath)
-	})
+	if !cfg.BucketReader.Enabled {
+		g.Go(func() error {
+			return ensureIndexHeaderOnDisk(ctx, logger, bkt, id, indexHeaderPath)
+		})
+	}
 
 	g.Go(func() error {
 		tryDownloadSparseHeader(ctx, logger, bkt, id, sparseHeaderPath)

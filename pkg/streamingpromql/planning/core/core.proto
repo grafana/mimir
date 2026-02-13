@@ -145,6 +145,7 @@ message VectorSelectorDetails {
   bool smoothed = 7;
   bool projectionInclude = 8;
   repeated string projectionLabels = 9;
+  bool returnSampleTimestampsPreserveHistograms = 10;
 }
 
 message MatrixSelectorDetails {

@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"runtime"
+	"time"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -117,10 +119,24 @@ func (a *initAppender) AppendSTZeroSample(ref storage.SeriesRef, lset labels.Lab
 // for a completely fresh head with an empty WAL.
 func (h *Head) initTime(t int64) {
 	if !h.minTime.CompareAndSwap(math.MaxInt64, t) {
+		// Concurrent appends that are initializing.
+		// Wait until h.maxTime is swapped to avoid minTime/maxTime races.
+		// This should complete in microseconds under normal operation.
+		antiDeadlockTimeout := time.After(100 * time.Millisecond)
+		for h.maxTime.Load() == math.MinInt64 {
+			select {
+			case <-antiDeadlockTimeout:
+				// This should never happen in normal operation.
+				// If it does, there may be a bug or the system is severely overloaded.
+				h.logger.Warn("initTime timeout waiting for maxTime initialization")
+				return
+			default:
+				runtime.Gosched() // Yield to allow the initializing goroutine to complete
+			}
+		}
 		return
 	}
 	// Ensure that max time is initialized to at least the min time we just set.
-	// Concurrent appenders may already have set it to a higher value.
 	h.maxTime.CompareAndSwap(math.MinInt64, t)
 }
 
@@ -168,8 +184,6 @@ func (h *Head) appender() *headAppender {
 		headAppenderBase: headAppenderBase{
 			head:                  h,
 			minValidTime:          minValidTime,
-			mint:                  math.MaxInt64,
-			maxt:                  math.MinInt64,
 			headMaxt:              h.MaxTime(),
 			oooTimeWindow:         h.opts.OutOfOrderTimeWindow.Load(),
 			seriesRefs:            h.getRefSeriesBuffer(),
@@ -393,7 +407,6 @@ func (b *appendBatch) close(h *Head) {
 type headAppenderBase struct {
 	head          *Head
 	minValidTime  int64 // No samples below this timestamp are allowed.
-	mint, maxt    int64
 	headMaxt      int64 // We track it here to not take the lock for every sample appended.
 	oooTimeWindow int64 // Use the same for the entire append, and don't load the atomic for each sample.
 
@@ -477,13 +490,6 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 		return 0, err
 	}
 
-	if t < a.mint {
-		a.mint = t
-	}
-	if t > a.maxt {
-		a.maxt = t
-	}
-
 	b := a.getCurrentBatch(stFloat, s.ref)
 	b.floats = append(b.floats, record.RefSample{
 		Ref: s.ref,
@@ -527,9 +533,6 @@ func (a *headAppender) AppendSTZeroSample(ref storage.SeriesRef, lset labels.Lab
 		return storage.SeriesRef(s.ref), storage.ErrOutOfOrderST
 	}
 
-	if st > a.maxt {
-		a.maxt = st
-	}
 	b := a.getCurrentBatch(stFloat, s.ref)
 	b.floats = append(b.floats, record.RefSample{Ref: s.ref, T: st, V: 0.0})
 	b.floatSeries = append(b.floatSeries, s)
@@ -907,13 +910,6 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		b.floatHistogramSeries = append(b.floatHistogramSeries, s)
 	}
 
-	if t < a.mint {
-		a.mint = t
-	}
-	if t > a.maxt {
-		a.maxt = t
-	}
-
 	return storage.SeriesRef(s.ref), nil
 }
 
@@ -1015,10 +1011,6 @@ func (a *headAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset l
 			FH:  zeroFloatHistogram,
 		})
 		b.floatHistogramSeries = append(b.floatHistogramSeries, s)
-	}
-
-	if st > a.maxt {
-		a.maxt = st
 	}
 
 	return storage.SeriesRef(s.ref), nil
@@ -2283,6 +2275,9 @@ func (s *memSeries) mmapChunks(chunkDiskMapper *chunks.ChunkDiskMapper) (count i
 	return count
 }
 
+// TODO(bwplotka): Propagate errors correctly, even when they are async. Panicking here do occurs from time to time
+// and cause flaky tests with hidden root cause (unlocked mutexes when deferred closing).
+// We didn't have evidences of prod impact though, yet.
 func handleChunkWriteError(err error) {
 	if err != nil && !errors.Is(err, chunks.ErrChunkDiskMapperClosed) {
 		panic(err)

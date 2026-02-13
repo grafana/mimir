@@ -118,7 +118,7 @@ func newBlocksStoreQueryableMetrics(reg prometheus.Registerer) *blocksStoreQuery
 		storesHit: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_querier_storegateway_instances_hit_per_query",
 			Help:    "Number of store-gateway instances hit for a single query.",
-			Buckets: []float64{0, 1, 2, 4, 8, 16, 32, 64, 128},
+			Buckets: []float64{0, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048},
 		}),
 		refetches: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_querier_storegateway_refetches_per_query",
@@ -518,9 +518,9 @@ func (q *blocksStoreQuerier) selectSorted(ctx context.Context, sp *storage.Selec
 		}
 	}
 
-	return series.NewMemoryTrackingSeriesSet(series.NewSeriesSetWithWarnings(
+	return series.NewSeriesSetWithWarnings(
 		storage.NewMergeSeriesSet(resSeriesSets, 0, storage.ChainedSeriesMerge),
-		resWarnings), memoryTracker)
+		resWarnings)
 }
 
 func (q *blocksStoreQuerier) startBuffering(streamReaders []*storeGatewayStreamReader) error {
@@ -818,13 +818,22 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 			defer clientSpanLog.Finish()
 			clientSpanLog.SetTag("store_gateway_address", c.RemoteAddress())
 
-			// See: https://github.com/prometheus/prometheus/pull/8050
-			// TODO(goutham): we should ideally be passing the hints down to the storage layer
-			// and let the TSDB return us data with no chunks as in prometheus#8050.
-			// But this is an acceptable workaround for now.
-			skipChunks := sp != nil && sp.Func == "series"
+			var (
+				skipChunks        bool
+				projectionInclude bool
+				projectionLabels  []string
+			)
+			if sp != nil {
+				// See: https://github.com/prometheus/prometheus/pull/8050
+				// TODO(goutham): we should ideally be passing the hints down to the storage layer
+				// and let the TSDB return us data with no chunks as in prometheus#8050.
+				// But this is an acceptable workaround for now.
+				skipChunks = sp.Func == "series"
+				projectionInclude = sp.ProjectionInclude
+				projectionLabels = sp.ProjectionLabels
+			}
 
-			req, err := createSeriesRequest(minT, maxT, matchers, skipChunks, blockIDs, q.streamingChunksBatchSize)
+			req, err := createSeriesRequest(minT, maxT, matchers, skipChunks, projectionInclude, projectionLabels, blockIDs, q.streamingChunksBatchSize)
 			if err != nil {
 				return errors.Wrapf(err, "failed to create series request")
 			}
@@ -850,6 +859,11 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 			myQueriedBlocks := []ulid.ULID(nil)
 			indexBytesFetched := uint64(0)
 
+			deduplicator, err := limiter.SeriesLabelsDeduplicatorFromContext(ctx)
+			if err != nil {
+				return err
+			}
+
 			for {
 				// Ensure the context hasn't been canceled in the meanwhile (eg. an error occurred
 				// in another goroutine).
@@ -862,7 +876,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 				var shouldRetry bool
 
 				myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, isEOS, shouldRetry, err = q.receiveMessage(
-					c, stream, queryLimiter, memoryTracker, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched,
+					c, stream, queryLimiter, memoryTracker, deduplicator, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched,
 				)
 				if errors.Is(err, io.EOF) {
 					util.CloseAndExhaust[*storepb.SeriesResponse](stream) //nolint:errcheck
@@ -986,7 +1000,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 	return seriesSets, queriedBlocks, warnings, streamReaders, estimateChunks, nil //nolint:govet // It's OK to return without cancelling reqCtx, see comment above.
 }
 
-func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegatewaypb.StoreGateway_SeriesClient, queryLimiter *limiter.QueryLimiter, memoryTracker *limiter.MemoryConsumptionTracker, myWarnings annotations.Annotations, myQueriedBlocks []ulid.ULID, myStreamingSeriesLabels []labels.Labels, indexBytesFetched uint64) (annotations.Annotations, []ulid.ULID, []labels.Labels, uint64, bool, bool, error) {
+func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegatewaypb.StoreGateway_SeriesClient, queryLimiter *limiter.QueryLimiter, memoryTracker *limiter.MemoryConsumptionTracker, deduplicator limiter.SeriesLabelsDeduplicator, myWarnings annotations.Annotations, myQueriedBlocks []ulid.ULID, myStreamingSeriesLabels []labels.Labels, indexBytesFetched uint64) (annotations.Annotations, []ulid.ULID, []labels.Labels, uint64, bool, bool, error) {
 	resp, err := stream.Recv()
 	if err != nil {
 		if errors.Is(err, io.EOF) {
@@ -1030,9 +1044,13 @@ func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegat
 		for _, s := range ss.Series {
 			ls := mimirpb.FromLabelAdaptersToLabelsWithCopy(s.Labels)
 
+			uniqueSeriesLabels, err := deduplicator.Deduplicate(ls, memoryTracker)
+			if err != nil {
+				return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, err
+			}
+
 			// Add series fingerprint to query limiter; will return error if we are over the limit
-			uniqueSeriesLabels, limitErr := queryLimiter.AddSeries(ls, memoryTracker)
-			if limitErr != nil {
+			if limitErr := queryLimiter.AddSeries(uniqueSeriesLabels); limitErr != nil {
 				return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, limitErr
 			}
 
@@ -1233,7 +1251,7 @@ func grpcContextWithBucketStoreRequestMeta(ctx context.Context, tenantID string,
 	)
 }
 
-func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skipChunks bool, blockIDs []ulid.ULID, streamingBatchSize uint64) (*storepb.SeriesRequest, error) {
+func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skipChunks bool, projectionInclude bool, projectionLabels []string, blockIDs []ulid.ULID, streamingBatchSize uint64) (*storepb.SeriesRequest, error) {
 	// Selectively query only specific blocks.
 	hints := &hintspb.SeriesRequestHints{
 		BlockMatchers: []storepb.LabelMatcher{
@@ -1243,6 +1261,8 @@ func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skip
 				Value: strings.Join(convertULIDsToString(blockIDs), "|"),
 			},
 		},
+		ProjectionInclude: projectionInclude,
+		ProjectionLabels:  projectionLabels,
 	}
 
 	anyHints, err := types.MarshalAny(hints)

@@ -36,7 +36,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
@@ -292,6 +291,13 @@ func (c *LeveledCompactor) Plan(dir string) ([]string, error) {
 			return nil, err
 		}
 		if c.blockExcludeFunc != nil && c.blockExcludeFunc(meta) {
+			// Compactions work from oldest to newest, uploads do the same (usually).
+			// If you continue here you'll skip compactions on this one block, but:
+			// * all further blocks are NOT yet uploaded
+			// * some or all further blocks are uploaded
+			//
+			// If we continue and there are newer blocks to pick from,
+			// then you will compact in a non-continuous way, leaving gaps of individual un-compacted blocks.
 			break
 		}
 		dms = append(dms, dirMeta{dir, meta})
@@ -623,16 +629,16 @@ func (c *LeveledCompactor) CompactWithBlockPopulator(dest string, dirs []string,
 		return ulids, nil
 	}
 
-	errs := tsdb_errors.NewMulti(err)
+	errs := []error{err}
 	if !errors.Is(err, context.Canceled) {
 		for _, b := range bs {
 			if err := b.setCompactionFailed(); err != nil {
-				errs.Add(fmt.Errorf("setting compaction failed for block: %s: %w", b.Dir(), err))
+				errs = append(errs, fmt.Errorf("setting compaction failed for block: %s: %w", b.Dir(), err))
 			}
 		}
 	}
 
-	return nil, errs.Err()
+	return nil, errors.Join(errs...)
 }
 
 // CompactOOOWithSplitting splits the input OOO Head into shardCount number of output blocks
@@ -778,6 +784,9 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, b
 		if base.Compaction.FromOutOfOrder() {
 			meta.Compaction.SetOutOfOrder()
 		}
+		if base.Compaction.FromStaleSeries() {
+			meta.Compaction.SetStaleSeries()
+		}
 	}
 
 	err := c.write(dest, []shardedBlock{{meta: meta}}, DefaultBlockPopulator{}, b)
@@ -830,7 +839,7 @@ func (c *LeveledCompactor) write(dest string, outBlocks []shardedBlock, blockPop
 	var closers []io.Closer
 
 	defer func(t time.Time) {
-		err = tsdb_errors.NewMulti(err, tsdb_errors.CloseAll(closers)).Err()
+		err = errors.Join(err, closeAll(closers))
 
 		for _, ob := range outBlocks {
 			if ob.tmpDir != "" {
@@ -918,13 +927,13 @@ func (c *LeveledCompactor) write(dest string, outBlocks []shardedBlock, blockPop
 	// though these are covered under defer. This is because in Windows,
 	// you cannot delete these unless they are closed and the defer is to
 	// make sure they are closed if the function exits due to an error above.
-	errs := tsdb_errors.NewMulti()
+	var errs []error
 	for _, w := range closers {
-		errs.Add(w.Close())
+		errs = append(errs, w.Close())
 	}
 	closers = closers[:0] // Avoid closing the writers twice in the defer.
-	if errs.Err() != nil {
-		return errs.Err()
+	if err := errors.Join(errs...); err != nil {
+		return err
 	}
 
 	for _, ob := range outBlocks {
@@ -1059,11 +1068,9 @@ func (DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compact
 		overlapping bool
 	)
 	defer func() {
-		errs := tsdb_errors.NewMulti(err)
-		if cerr := tsdb_errors.CloseAll(closers); cerr != nil {
-			errs.Add(fmt.Errorf("close: %w", cerr))
+		if cerr := closeAll(closers); cerr != nil {
+			err = errors.Join(err, fmt.Errorf("close: %w", cerr))
 		}
-		err = errs.Err()
 		metrics.PopulatingBlocks.Set(0)
 	}()
 	metrics.PopulatingBlocks.Set(1)

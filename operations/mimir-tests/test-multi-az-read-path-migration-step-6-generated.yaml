@@ -1802,7 +1802,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -1915,7 +1915,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -2007,7 +2007,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=memberlist-kv
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: memberlist-bridge
         ports:
@@ -2092,7 +2092,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=memberlist-kv
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: memberlist-bridge
         ports:
@@ -2194,7 +2194,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "5"
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -2288,7 +2288,7 @@ spec:
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
-        - -querier.prefer-availability-zones=zone-a
+        - -querier.prefer-availability-zones=zone-a,zone-a-backup
         - -querier.ring.prefix=querier-zone-a/
         - -querier.store-gateway-client.grpc-max-recv-msg-size=209715200
         - -query-scheduler.ring.prefix=query-scheduler-zone-a/
@@ -2309,7 +2309,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "5"
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -2408,7 +2408,7 @@ spec:
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
-        - -querier.prefer-availability-zones=zone-b
+        - -querier.prefer-availability-zones=zone-b,zone-b-backup
         - -querier.ring.prefix=querier-zone-b/
         - -querier.store-gateway-client.grpc-max-recv-msg-size=209715200
         - -query-scheduler.ring.prefix=query-scheduler-zone-b/
@@ -2429,7 +2429,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "5"
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -2520,7 +2520,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -2616,7 +2616,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -2717,7 +2717,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -2806,7 +2806,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -2891,7 +2891,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -2981,7 +2981,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -3044,7 +3044,7 @@ spec:
         - -server-tls.enabled=true
         - -use-zone-tracker=true
         - -zone-tracker.config-map-name=rollout-operator-zone-tracker
-        image: grafana/rollout-operator:v0.33.0
+        image: grafana/rollout-operator:v0.34.0
         imagePullPolicy: IfNotPresent
         name: rollout-operator
         ports:
@@ -3138,7 +3138,7 @@ spec:
         - -store-gateway.tenant-shard-size=3
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -3240,7 +3240,7 @@ spec:
         - -target=querier
         - -usage-stats.installation-mode=jsonnet
         env: []
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: ruler-querier
         ports:
@@ -3334,7 +3334,7 @@ spec:
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
-        - -querier.prefer-availability-zones=zone-a
+        - -querier.prefer-availability-zones=zone-a,zone-a-backup
         - -querier.ring.prefix=ruler-querier-zone-a/
         - -querier.store-gateway-client.grpc-max-recv-msg-size=209715200
         - -query-scheduler.ring.prefix=ruler-query-scheduler-zone-a/
@@ -3353,7 +3353,7 @@ spec:
         - -target=querier
         - -usage-stats.installation-mode=jsonnet
         env: []
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: ruler-querier
         ports:
@@ -3452,7 +3452,7 @@ spec:
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
-        - -querier.prefer-availability-zones=zone-b
+        - -querier.prefer-availability-zones=zone-b,zone-b-backup
         - -querier.ring.prefix=ruler-querier-zone-b/
         - -querier.store-gateway-client.grpc-max-recv-msg-size=209715200
         - -query-scheduler.ring.prefix=ruler-query-scheduler-zone-b/
@@ -3471,7 +3471,7 @@ spec:
         - -target=querier
         - -usage-stats.installation-mode=jsonnet
         env: []
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: ruler-querier
         ports:
@@ -3568,7 +3568,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: ruler-query-frontend
         ports:
@@ -3669,7 +3669,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: ruler-query-frontend
         ports:
@@ -3775,7 +3775,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: ruler-query-frontend
         ports:
@@ -3864,7 +3864,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: ruler-query-scheduler
         ports:
@@ -3949,7 +3949,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: ruler-query-scheduler
         ports:
@@ -4039,7 +4039,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: ruler-query-scheduler
         ports:
@@ -4156,7 +4156,7 @@ spec:
         - -store-gateway.tenant-shard-size=3
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -4279,7 +4279,7 @@ spec:
         - -store-gateway.tenant-shard-size=3
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -4362,7 +4362,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: alertmanager
         ports:
@@ -4464,7 +4464,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -4607,7 +4607,7 @@ spec:
           value: 1Gi
         - name: Z
           value: "123"
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -4749,7 +4749,7 @@ spec:
           value: all-ingesters
         - name: GOMAXPROCS
           value: "9"
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -4883,7 +4883,7 @@ spec:
           value: all-ingesters
         - name: GOMAXPROCS
           value: "9"
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -5860,7 +5860,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -6018,7 +6018,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -6166,7 +6166,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -7053,14 +7053,15 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: ruler_zone_a_cpu_hpa_default
-      query: |
-        max_over_time(
+      query: |-
+        (max_over_time(
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="ruler",namespace="default",pod=~"ruler-zone-a.*"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="ruler",namespace="default",pod=~"ruler-zone-.*"}[5m]))
             and
-            max by (pod) (up{container="ruler",namespace="default",pod=~"ruler-zone-a.*"}) > 0
+            max by (pod) (up{container="ruler",namespace="default",pod=~"ruler-zone-.*"}) > 0
           )[15m:]
         ) * 1000
+        ) * 0.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "1000"
     name: ruler_zone_a_cpu_hpa_default
@@ -7068,25 +7069,26 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: ruler_zone_a_memory_hpa_default
-      query: |
-        max_over_time(
+      query: |-
+        (max_over_time(
           sum(
             (
-              sum by (pod) (container_memory_working_set_bytes{container="ruler",namespace="default",pod=~"ruler-zone-a.*"})
+              sum by (pod) (container_memory_working_set_bytes{container="ruler",namespace="default",pod=~"ruler-zone-.*"})
               and
-              max by (pod) (up{container="ruler",namespace="default",pod=~"ruler-zone-a.*"}) > 0
+              max by (pod) (up{container="ruler",namespace="default",pod=~"ruler-zone-.*"}) > 0
             ) or vector(0)
           )[15m:]
         )
         +
         sum(
-          sum by (pod) (max_over_time(kube_pod_container_resource_requests{container="ruler", namespace="default", resource="memory",pod=~"ruler-zone-a.*"}[15m]))
+          sum by (pod) (max_over_time(kube_pod_container_resource_requests{container="ruler", namespace="default", resource="memory",pod=~"ruler-zone-.*"}[15m]))
           and
-          max by (pod) (changes(kube_pod_container_status_restarts_total{container="ruler", namespace="default",pod=~"ruler-zone-a.*"}[15m]) > 0)
+          max by (pod) (changes(kube_pod_container_status_restarts_total{container="ruler", namespace="default",pod=~"ruler-zone-.*"}[15m]) > 0)
           and
-          max by (pod) (kube_pod_container_status_last_terminated_reason{container="ruler", namespace="default", reason="OOMKilled",pod=~"ruler-zone-a.*"})
+          max by (pod) (kube_pod_container_status_last_terminated_reason{container="ruler", namespace="default", reason="OOMKilled",pod=~"ruler-zone-.*"})
           or vector(0)
         )
+        ) * 0.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "6442450944"
     name: ruler_zone_a_memory_hpa_default
@@ -7115,14 +7117,15 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: ruler_zone_b_cpu_hpa_default
-      query: |
-        max_over_time(
+      query: |-
+        (max_over_time(
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="ruler",namespace="default",pod=~"ruler-zone-b.*"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="ruler",namespace="default",pod=~"ruler-zone-.*"}[5m]))
             and
-            max by (pod) (up{container="ruler",namespace="default",pod=~"ruler-zone-b.*"}) > 0
+            max by (pod) (up{container="ruler",namespace="default",pod=~"ruler-zone-.*"}) > 0
           )[15m:]
         ) * 1000
+        ) * 0.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "1000"
     name: ruler_zone_b_cpu_hpa_default
@@ -7130,25 +7133,26 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: ruler_zone_b_memory_hpa_default
-      query: |
-        max_over_time(
+      query: |-
+        (max_over_time(
           sum(
             (
-              sum by (pod) (container_memory_working_set_bytes{container="ruler",namespace="default",pod=~"ruler-zone-b.*"})
+              sum by (pod) (container_memory_working_set_bytes{container="ruler",namespace="default",pod=~"ruler-zone-.*"})
               and
-              max by (pod) (up{container="ruler",namespace="default",pod=~"ruler-zone-b.*"}) > 0
+              max by (pod) (up{container="ruler",namespace="default",pod=~"ruler-zone-.*"}) > 0
             ) or vector(0)
           )[15m:]
         )
         +
         sum(
-          sum by (pod) (max_over_time(kube_pod_container_resource_requests{container="ruler", namespace="default", resource="memory",pod=~"ruler-zone-b.*"}[15m]))
+          sum by (pod) (max_over_time(kube_pod_container_resource_requests{container="ruler", namespace="default", resource="memory",pod=~"ruler-zone-.*"}[15m]))
           and
-          max by (pod) (changes(kube_pod_container_status_restarts_total{container="ruler", namespace="default",pod=~"ruler-zone-b.*"}[15m]) > 0)
+          max by (pod) (changes(kube_pod_container_status_restarts_total{container="ruler", namespace="default",pod=~"ruler-zone-.*"}[15m]) > 0)
           and
-          max by (pod) (kube_pod_container_status_last_terminated_reason{container="ruler", namespace="default", reason="OOMKilled",pod=~"ruler-zone-b.*"})
+          max by (pod) (kube_pod_container_status_last_terminated_reason{container="ruler", namespace="default", reason="OOMKilled",pod=~"ruler-zone-.*"})
           or vector(0)
         )
+        ) * 0.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "6442450944"
     name: ruler_zone_b_memory_hpa_default

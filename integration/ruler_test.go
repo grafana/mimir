@@ -1523,7 +1523,7 @@ func TestRulerRemoteEvaluation_ShouldEnforceStrongReadConsistencyForDependentRul
 		CommonStorageBackendFlags(),
 		RulerFlags(),
 		BlocksStorageFlags(),
-		IngestStorageFlags(),
+		IngestStorageFlags(e2edb.KafkaAuthNone),
 		map[string]string{
 			"-ingester.ring.replication-factor": "1",
 

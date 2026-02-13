@@ -111,20 +111,25 @@ func (s *blocksStoreReplicationSet) GetClientsFor(userID string, blocks bucketin
 	instances := make(map[string]ring.InstanceDesc)
 	userRing := storegateway.GetShuffleShardingSubring(s.storesRing, userID, s.limits)
 
+	// It's safe to reuse buffers across iterations, as far as we don't retain the ReplicationSet.Instances slice
+	// (retaining individual instances from the slice is fine).
+	ringBuffersOpt := ring.WithBuffers(ring.MakeBuffersForGet())
+
 	// Find the replication set of each block we need to query.
 	for _, block := range blocks {
-		var ringOpts []ring.Option
+		ringOpts := []ring.Option{ringBuffersOpt}
 		if eligible, replicationFactor := s.dynamicReplication.EligibleForQuerying(block); eligible {
 			ringOpts = append(ringOpts, ring.WithReplicationFactor(replicationFactor))
 		}
 
-		// Note that we don't pass buffers since we retain instances from the returned replication set.
 		set, err := userRing.GetWithOptions(mimir_tsdb.HashBlockID(block.ID), storegateway.BlocksRead, ringOpts...)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to get store-gateway replication set owning the block %s", block.ID)
 		}
 
 		// Pick a non excluded store-gateway instance.
+		// We copy the instance descriptor, and we don't use the replication set's slice buffers any more beyond this point,
+		// so that it's safe to reuse ring buffers across iterations.
 		inst := getNonExcludedInstance(set, exclude[block.ID], s.balancingStrategy, s.preferredZones)
 		if inst == nil {
 			return nil, fmt.Errorf("no store-gateway instance left after checking exclude for block %s", block.ID)

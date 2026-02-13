@@ -123,7 +123,7 @@ func TestDistributor_QueryExemplars(t *testing.T) {
 
 					testConfig.configure = func(config *Config) {
 						if testData.shuffleShardingDisabled {
-							config.ShuffleShardingLookbackPeriod = 0
+							config.ShuffleShardingEnabled = false
 						}
 					}
 
@@ -203,6 +203,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunksPerQueryLimitIsReac
 				t.Run(fmt.Sprintf("request minimization enabled: %v", minimizeIngesterRequests), func(t *testing.T) {
 					userCtx := user.InjectOrgID(context.Background(), "user")
 					userCtx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(userCtx)
+					userCtx = limiter.ContextWithNewSeriesLabelsDeduplicator(userCtx)
 					limits := prepareDefaultLimits()
 					limits.MaxChunksPerQuery = limit
 
@@ -234,7 +235,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunksPerQueryLimitIsReac
 
 					// Since the number of series (and thus chunks) is equal to the limit (but doesn't
 					// exceed it), we expect a query running on all series to succeed.
-					queryRes, err := ds[0].QueryStream(queryCtx, queryMetrics, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
+					queryRes, err := ds[0].QueryStream(queryCtx, queryMetrics, math.MinInt32, math.MaxInt32, false, nil, allSeriesMatchers...)
 					require.NoError(t, err)
 
 					require.Len(t, queryRes.StreamingSeries, initialSeries)
@@ -262,7 +263,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunksPerQueryLimitIsReac
 
 					// Since the number of series (and thus chunks) is exceeding to the limit, we expect
 					// a query running on all series to fail.
-					_, err = ds[0].QueryStream(queryCtx, queryMetrics, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
+					_, err = ds[0].QueryStream(queryCtx, queryMetrics, math.MinInt32, math.MaxInt32, false, nil, allSeriesMatchers...)
 					require.Error(t, err)
 					require.ErrorContains(t, err, testCase.expectedError)
 
@@ -283,6 +284,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReac
 		t.Run(fmt.Sprintf("request minimization enabled: %v", minimizeIngesterRequests), func(t *testing.T) {
 			userCtx := user.InjectOrgID(context.Background(), "user")
 			userCtx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(userCtx)
+			userCtx = limiter.ContextWithNewSeriesLabelsDeduplicator(userCtx)
 			limits := prepareDefaultLimits()
 
 			// Prepare distributors.
@@ -313,7 +315,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReac
 			// exceed it), we expect a query running on all series to succeed.
 			queryCtx := limiter.AddQueryLimiterToContext(userCtx, limiter.NewQueryLimiter(maxSeriesLimit, 0, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
 			queryCtx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(queryCtx)
-			queryRes, err := ds[0].QueryStream(queryCtx, queryMetrics, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
+			queryRes, err := ds[0].QueryStream(queryCtx, queryMetrics, math.MinInt32, math.MaxInt32, false, nil, allSeriesMatchers...)
 			require.NoError(t, err)
 
 			assert.Len(t, queryRes.StreamingSeries, initialSeries)
@@ -336,7 +338,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReac
 
 			// Since the number of series is exceeding the limit, we expect
 			// a query running on all series to fail.
-			_, err = ds[0].QueryStream(queryCtx, queryMetrics, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
+			_, err = ds[0].QueryStream(queryCtx, queryMetrics, math.MinInt32, math.MaxInt32, false, nil, allSeriesMatchers...)
 			require.Error(t, err)
 			assert.ErrorContains(t, err, "the query exceeded the maximum number of series")
 
@@ -353,6 +355,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIs
 
 	ctx := user.InjectOrgID(context.Background(), "user")
 	ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
+	ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx)
 	limits := prepareDefaultLimits()
 
 	// Prepare distributors.
@@ -376,7 +379,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIs
 	assert.Nil(t, err)
 
 	queryMetrics := stats.NewQueryMetrics(reg[0])
-	chunkSizeResponse, err := ds[0].QueryStream(ctx, queryMetrics, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
+	chunkSizeResponse, err := ds[0].QueryStream(ctx, queryMetrics, math.MinInt32, math.MaxInt32, false, nil, allSeriesMatchers...)
 	require.NoError(t, err)
 
 	_, responseChunkSize, err := countStreamingChunksAndBytes(chunkSizeResponse)
@@ -396,7 +399,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIs
 
 	// Since the number of chunk bytes is equal to the limit (but doesn't
 	// exceed it), we expect a query running on all series to succeed.
-	queryRes, err := ds[0].QueryStream(ctx, queryMetrics, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
+	queryRes, err := ds[0].QueryStream(ctx, queryMetrics, math.MinInt32, math.MaxInt32, false, nil, allSeriesMatchers...)
 	require.NoError(t, err)
 	assert.Len(t, queryRes.StreamingSeries, seriesToAdd)
 
@@ -410,7 +413,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIs
 	// Since the aggregated chunk size is exceeding the limit, we expect
 	// a query running on all series to fail but only when the chunks are
 	// actually consumed from the stream.
-	finalResp, err := ds[0].QueryStream(ctx, queryMetrics, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
+	finalResp, err := ds[0].QueryStream(ctx, queryMetrics, math.MinInt32, math.MaxInt32, false, nil, allSeriesMatchers...)
 	require.NoError(t, err)
 
 	_, _, err = countStreamingChunksAndBytes(finalResp)
@@ -465,6 +468,7 @@ func TestDistributor_QueryStream_ShouldSuccessfullyRunOnSlowIngesterWithStreamin
 			// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 			ctx := user.InjectOrgID(context.Background(), "test")
 			ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
+			ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx)
 			ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 
 			// Push series.
@@ -481,7 +485,7 @@ func TestDistributor_QueryStream_ShouldSuccessfullyRunOnSlowIngesterWithStreamin
 				t.Run(fmt.Sprintf("Query #%d", i), func(t *testing.T) {
 					t.Parallel()
 
-					res, err := distributors[0].QueryStream(ctx, queryMetrics, math.MinInt32, math.MaxInt32, matchers)
+					res, err := distributors[0].QueryStream(ctx, queryMetrics, math.MinInt32, math.MaxInt32, false, nil, matchers)
 					require.NoError(t, err)
 					require.Equal(t, numSeries, len(res.StreamingSeries))
 
