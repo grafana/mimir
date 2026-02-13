@@ -4,18 +4,25 @@ package writetee
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/gogo/protobuf/proto"
 	"github.com/go-kit/log"
+	"github.com/golang/snappy"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 func TestNewProxy_Validation(t *testing.T) {
@@ -470,4 +477,216 @@ func mustParseURL(rawURL string) *url.URL {
 		panic(fmt.Sprintf("failed to parse URL %s: %v", rawURL, err))
 	}
 	return u
+}
+
+func TestPrepareAmplifiedBodies(t *testing.T) {
+	logger := log.NewNopLogger()
+
+	tests := []struct {
+		name           string
+		amplifyFactor  float64
+		backendType    BackendType
+		expectedBodies int
+	}{
+		{
+			name:           "non-amplified backend returns 1 body",
+			amplifyFactor:  10.0,
+			backendType:    BackendTypeMirrored,
+			expectedBodies: 1,
+		},
+		{
+			name:           "factor 1.0 returns 1 body",
+			amplifyFactor:  1.0,
+			backendType:    BackendTypeAmplified,
+			expectedBodies: 1,
+		},
+		{
+			name:           "factor 0.5 sampling returns 1 body",
+			amplifyFactor:  0.5,
+			backendType:    BackendTypeAmplified,
+			expectedBodies: 1,
+		},
+		{
+			name:           "factor 2.0 returns 2 bodies",
+			amplifyFactor:  2.0,
+			backendType:    BackendTypeAmplified,
+			expectedBodies: 2,
+		},
+		{
+			name:           "factor 10.0 returns 10 bodies",
+			amplifyFactor:  10.0,
+			backendType:    BackendTypeAmplified,
+			expectedBodies: 10,
+		},
+		{
+			name:           "factor 2.5 returns 3 bodies (2 full + 1 fractional)",
+			amplifyFactor:  2.5,
+			backendType:    BackendTypeAmplified,
+			expectedBodies: 3,
+		},
+		{
+			name:           "factor 5.2 returns 6 bodies (5 full + 1 fractional)",
+			amplifyFactor:  5.2,
+			backendType:    BackendTypeAmplified,
+			expectedBodies: 6,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			registry := prometheus.NewRegistry()
+			metrics := NewProxyMetrics(registry)
+			tracker := NewAmplificationTracker()
+
+			backend := NewProxyBackend("test", mustParseURL("http://localhost:9090"), 5*time.Second, false, false, tt.backendType)
+			route := Route{Path: "/api/v1/push", RouteName: "test", Methods: []string{"POST"}}
+
+			endpoint := &ProxyEndpoint{
+				backends:             []ProxyBackend{backend},
+				route:                route,
+				metrics:              metrics,
+				logger:               logger,
+				amplificationFactor:  tt.amplifyFactor,
+				amplificationTracker: tracker,
+			}
+
+			body := makeTestWriteRequest(t)
+			spLogger := spanlogger.FromContext(context.Background(), logger)
+			bodies := endpoint.prepareAmplifiedBodies(body, backend, spLogger)
+
+			assert.Equal(t, tt.expectedBodies, len(bodies), "expected %d bodies, got %d", tt.expectedBodies, len(bodies))
+
+			// For amplification > 1, verify bodies are different (except first which is original)
+			if tt.amplifyFactor > 1.0 && tt.backendType == BackendTypeAmplified && len(bodies) > 1 {
+				for i := 1; i < len(bodies); i++ {
+					assert.NotEqual(t, bodies[0], bodies[i], "body %d should differ from original due to label suffixes", i)
+				}
+			}
+		})
+	}
+}
+
+func TestProxyEndpoint_Amplification(t *testing.T) {
+	logger := log.NewNopLogger()
+
+	tests := []struct {
+		name                string
+		amplificationFactor float64
+		expectedRequests    int // Expected number of requests to the amplified backend
+	}{
+		{
+			name:                "no amplification",
+			amplificationFactor: 1.0,
+			expectedRequests:    1,
+		},
+		{
+			name:                "10x amplification",
+			amplificationFactor: 10.0,
+			expectedRequests:    10,
+		},
+		{
+			name:                "2.5x amplification",
+			amplificationFactor: 2.5,
+			expectedRequests:    3, // 2 full + 1 fractional
+		},
+		{
+			name:                "0.5x sampling",
+			amplificationFactor: 0.5,
+			expectedRequests:    1, // 1 sampled request
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			registry := prometheus.NewRegistry()
+			metrics := NewProxyMetrics(registry)
+
+			// Track requests to the amplified backend
+			var amplifiedBackendRequests int
+			var receivedBodies [][]byte
+			var mu sync.Mutex
+
+			// Create preferred backend
+			preferredServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(200)
+				_, _ = w.Write([]byte("ok"))
+			}))
+			defer preferredServer.Close()
+
+			// Create amplified backend that counts requests and captures bodies
+			amplifiedServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, _ := io.ReadAll(r.Body)
+				mu.Lock()
+				amplifiedBackendRequests++
+				receivedBodies = append(receivedBodies, body)
+				mu.Unlock()
+				w.WriteHeader(200)
+				_, _ = w.Write([]byte("ok"))
+			}))
+			defer amplifiedServer.Close()
+
+			preferredBackend := NewProxyBackend("preferred", mustParseURL(preferredServer.URL), 5*time.Second, true, false, BackendTypeMirrored)
+			amplifiedBackend := NewProxyBackend("amplified", mustParseURL(amplifiedServer.URL), 5*time.Second, false, false, BackendTypeAmplified)
+
+			route := Route{
+				Path:      "/api/v1/push",
+				RouteName: "api_v1_push",
+				Methods:   []string{"POST"},
+			}
+
+			asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
+			defer asyncDispatcher.Stop()
+
+			tracker := NewAmplificationTracker()
+			endpoint, err := NewProxyEndpoint([]ProxyBackend{preferredBackend, amplifiedBackend}, route, metrics, logger, tt.amplificationFactor, tracker, asyncDispatcher)
+			require.NoError(t, err)
+
+			// Create a minimal valid write request
+			req := httptest.NewRequest("POST", "/api/v1/push", bytes.NewReader(makeTestWriteRequest(t)))
+			rec := httptest.NewRecorder()
+
+			endpoint.ServeHTTP(rec, req)
+
+			// Wait for async requests to complete
+			asyncDispatcher.Stop()
+			asyncDispatcher.Await()
+
+			// Verify response from preferred backend
+			assert.Equal(t, 200, rec.Code)
+
+			// Verify the number of requests to the amplified backend
+			mu.Lock()
+			defer mu.Unlock()
+			assert.Equal(t, tt.expectedRequests, amplifiedBackendRequests, "expected %d requests to amplified backend, got %d", tt.expectedRequests, amplifiedBackendRequests)
+
+			// For amplification > 1, verify that bodies are different (unique labels)
+			if tt.amplificationFactor > 1.0 && len(receivedBodies) > 1 {
+				// Bodies should be different due to different label suffixes
+				firstBody := receivedBodies[0]
+				for i := 1; i < len(receivedBodies); i++ {
+					assert.NotEqual(t, firstBody, receivedBodies[i], "request %d should have different body than request 0 (different label suffixes)", i)
+				}
+			}
+		})
+	}
+}
+
+func makeTestWriteRequest(t *testing.T) []byte {
+	req := mimirpb.WriteRequest{
+		Timeseries: []mimirpb.PreallocTimeseries{
+			{
+				TimeSeries: &mimirpb.TimeSeries{
+					Labels: []mimirpb.LabelAdapter{
+						{Name: "__name__", Value: "test_metric"},
+						{Name: "job", Value: "test"},
+						{Name: "instance", Value: "localhost:9090"},
+					},
+					Samples: []mimirpb.Sample{{Value: 1.0, TimestampMs: 1000}},
+				},
+			},
+		},
+	}
+	marshaled, err := proto.Marshal(&req)
+	require.NoError(t, err)
+	return snappy.Encode(nil, marshaled)
 }
