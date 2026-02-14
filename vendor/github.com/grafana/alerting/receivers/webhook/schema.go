@@ -8,16 +8,14 @@ import (
 
 const Type schema.IntegrationType = "webhook"
 
-func Schema() schema.IntegrationTypeSchema {
-	return schema.IntegrationTypeSchema{
-		Type:           Type,
-		Name:           "Webhook",
-		Description:    "Sends HTTP POST request to a URL",
-		Heading:        "Webhook settings",
-		CurrentVersion: v1.Version,
-		Versions: []schema.IntegrationSchemaVersion{
-			v1.Schema(),
-			v0mimir1.Schema(),
-		},
-	}
-}
+var Schema = schema.InitSchema(schema.IntegrationTypeSchema{
+	Type:           Type,
+	Name:           "Webhook",
+	Description:    "Sends HTTP POST request to a URL",
+	Heading:        "Webhook settings",
+	CurrentVersion: v1.Version,
+	Versions: []schema.IntegrationSchemaVersion{
+		v1.Schema,
+		v0mimir1.Schema,
+	},
+})
