@@ -25,6 +25,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/kv/memberlist"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/modules"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/ring"
@@ -57,6 +58,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/labelaccess"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
@@ -968,6 +970,11 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 	}
 
 	mimir.Cfg.Server.Router = mux.NewRouter()
+
+	// Register label access middleware early, before API routes are registered.
+	// This must happen before setupModuleManager() so that when the API module
+	// registers routes, they include the label access middleware.
+	mimir.Cfg.API.HTTPAuthMiddleware = middleware.Merge(mimir.Cfg.API.HTTPAuthMiddleware, labelaccess.NewMiddleware(util_log.Logger))
 
 	if err := mimir.setupModuleManager(); err != nil {
 		return nil, err
