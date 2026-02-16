@@ -11,8 +11,8 @@ var (
 	// These can be modified by command-line flags before parsing queries.
 	ParserOptions = parser.Options{
 		EnableExperimentalFunctions:  false,
-		ExperimentalDurationExpr:     false,
-		EnableExtendedRangeSelectors: false,
+		ExperimentalDurationExpr:     true,
+		EnableExtendedRangeSelectors: true,
 		EnableBinopFillModifiers:     false,
 	}
 )
