@@ -335,7 +335,7 @@ func (r *Rotator) LeaseMaintenance(ctx context.Context, leaseDuration time.Durat
 			r.mtx.RUnlock()
 			return
 		}
-		transition, err := tenantState.tracker.ExpireLeases(leaseDuration, time.Now())
+		transition, err := tenantState.tracker.ExpireLeases(leaseDuration)
 		if err != nil {
 			level.Warn(r.logger).Log("msg", "background lease expiration failed for tenant compaction job tracker", "tenant", tenant, "err", err)
 		} else if transition {

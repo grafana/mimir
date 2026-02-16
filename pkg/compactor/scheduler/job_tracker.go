@@ -188,10 +188,11 @@ func (jt *JobTracker) Remove(id string, epoch int64, complete bool) (removed boo
 // ExpireLeases iterates through all the active jobs known by the JobTracker to find ones that have expired leases.
 // If a job has an expired lease and has been active under the maximum number of times, it is returned to the front of the queue
 // Otherwise a job with an expired lease will be removed from the tracker.
-func (jt *JobTracker) ExpireLeases(leaseDuration time.Duration, now time.Time) (bool, error) {
+func (jt *JobTracker) ExpireLeases(leaseDuration time.Duration) (bool, error) {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
 
+	now := jt.clock.Now()
 	wasEmpty := jt.isPendingEmpty()
 
 	var e, next *list.Element
