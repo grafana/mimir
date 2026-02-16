@@ -79,12 +79,7 @@ func newWithSchedulerClient(
 
 	var readerMetrics *ingest.ReaderMetrics
 	if cfg.Kafka.FetchConcurrencyMax > 0 {
-		m := ingest.NewReaderMetrics(
-			prometheus.WrapRegistererWith(prometheus.Labels{"component": "block-builder"}, reg),
-			readerMetricsSource,
-			cfg.Kafka.Topic,
-			kpm,
-		)
+		m := ingest.NewReaderMetrics(reg, readerMetricsSource, cfg.Kafka.Topic, kpm)
 		readerMetrics = &m
 	}
 
