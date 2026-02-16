@@ -60,18 +60,29 @@ func (b *InstantVectorDuplicationBuffer) SeriesMetadata(ctx context.Context, con
 		if err != nil {
 			return nil, err
 		}
+
+		// Populate the filter bitmap for each consumer now.
+		// We'll produce a series metadata slice for the current consumer below - if we create all of them upfront, then we have to hold them
+		// in memory for longer.
+		for _, consumer := range b.consumers {
+			nextUnfilteredSeriesIndex, unfilteredSeriesBitmap, filteredSeriesCount, err := computeFilterBitmap(b.seriesMetadata, consumer.filters, b.MemoryConsumptionTracker)
+			if err != nil {
+				return nil, err
+			}
+
+			consumer.unfilteredSeriesBitmap = unfilteredSeriesBitmap
+			consumer.nextUnfilteredSeriesIndex = nextUnfilteredSeriesIndex
+			consumer.filteredSeriesCount = filteredSeriesCount
+		}
 	}
 
 	b.seriesMetadataCount++
 	isLastConsumer := b.seriesMetadataCount == len(b.consumers)
 
-	filteredSeries, nextUnfilteredSeriesIndex, unfilteredSeriesBitmap, err := applyFiltering(b.seriesMetadata, consumer.filters, isLastConsumer, b.MemoryConsumptionTracker)
+	filteredSeries, err := applyFiltering(b.seriesMetadata, consumer.unfilteredSeriesBitmap, consumer.filteredSeriesCount, isLastConsumer, b.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
-
-	consumer.unfilteredSeriesBitmap = unfilteredSeriesBitmap
-	consumer.nextUnfilteredSeriesIndex = nextUnfilteredSeriesIndex
 
 	if isLastConsumer {
 		b.seriesMetadata = nil
@@ -286,6 +297,7 @@ type InstantVectorDuplicationConsumer struct {
 	// unfilteredSeriesBitmap contains one entry per unfiltered input series, where true indicates that it passes this consumer's filters.
 	// If this consumer has no filters, this is nil.
 	unfilteredSeriesBitmap []bool
+	filteredSeriesCount    int
 
 	nextUnfilteredSeriesIndex int
 	closed                    bool
@@ -298,42 +310,14 @@ func (d *InstantVectorDuplicationConsumer) SetFilters(filters []*labels.Matcher)
 	d.filters = filters
 }
 
-func applyFiltering(unfilteredSeries []types.SeriesMetadata, filters []*labels.Matcher, canReuseSlice bool, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (filteredSeries []types.SeriesMetadata, nextUnfilteredSeriesIndex int, unfilteredSeriesBitmap []bool, err error) {
+func computeFilterBitmap(unfilteredSeries []types.SeriesMetadata, filters []*labels.Matcher, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (nextUnfilteredSeriesIndex int, unfilteredSeriesBitmap []bool, filteredSeriesCount int, err error) {
 	if len(filters) == 0 {
-		nextUnfilteredSeriesIndex = 0
-
-		if canReuseSlice {
-			return unfilteredSeries, nextUnfilteredSeriesIndex, nil, nil
-		}
-
-		// Return a copy of the original series metadata.
-		// This is a shallow copy, which is sufficient while we're using stringlabels for labels.Labels given these are immutable.
-		metadata, err := types.SeriesMetadataSlicePool.Get(len(unfilteredSeries), memoryConsumptionTracker)
-		if err != nil {
-			return nil, 0, nil, err
-		}
-
-		metadata, err = types.AppendSeriesMetadata(memoryConsumptionTracker, metadata, unfilteredSeries...)
-		if err != nil {
-			return nil, 0, nil, err
-		}
-
-		return metadata, nextUnfilteredSeriesIndex, nil, nil
-	}
-
-	// Try to reuse the original slice, if we can.
-	if canReuseSlice {
-		filteredSeries = unfilteredSeries[:0]
-	} else {
-		filteredSeries, err = types.SeriesMetadataSlicePool.Get(len(unfilteredSeries), memoryConsumptionTracker)
-		if err != nil {
-			return nil, 0, nil, err
-		}
+		return 0, nil, len(unfilteredSeries), nil
 	}
 
 	unfilteredSeriesBitmap, err = types.BoolSlicePool.Get(len(unfilteredSeries), memoryConsumptionTracker)
 	if err != nil {
-		return nil, 0, nil, err
+		return 0, nil, 0, err
 	}
 
 	nextUnfilteredSeriesIndex = len(unfilteredSeries)
@@ -345,10 +329,56 @@ func applyFiltering(unfilteredSeries []types.SeriesMetadata, filters []*labels.M
 		}
 
 		unfilteredSeriesBitmap[unfilteredSeriesIndex] = true
+		filteredSeriesCount++
 
 		if nextUnfilteredSeriesIndex == len(unfilteredSeries) {
 			// First unfiltered series that matches.
 			nextUnfilteredSeriesIndex = unfilteredSeriesIndex
+		}
+	}
+
+	return nextUnfilteredSeriesIndex, unfilteredSeriesBitmap, filteredSeriesCount, nil
+}
+
+func applyFiltering(unfilteredSeries []types.SeriesMetadata, bitmap []bool, filteredSeriesCount int, canReuseSlice bool, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
+	if bitmap == nil {
+		// Fast path: no filters to apply.
+
+		if canReuseSlice {
+			return unfilteredSeries, nil
+		}
+
+		// Return a copy of the original series metadata.
+		// This is a shallow copy, which is sufficient while we're using stringlabels for labels.Labels given these are immutable.
+		metadata, err := types.SeriesMetadataSlicePool.Get(len(unfilteredSeries), memoryConsumptionTracker)
+		if err != nil {
+			return nil, err
+		}
+
+		metadata, err = types.AppendSeriesMetadata(memoryConsumptionTracker, metadata, unfilteredSeries...)
+		if err != nil {
+			return nil, err
+		}
+
+		return metadata, nil
+	}
+
+	// Try to reuse the original slice, if we can.
+	var filteredSeries []types.SeriesMetadata
+
+	if canReuseSlice {
+		filteredSeries = unfilteredSeries[:0]
+	} else {
+		var err error
+		filteredSeries, err = types.SeriesMetadataSlicePool.Get(filteredSeriesCount, memoryConsumptionTracker)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	for idx, matchesFilter := range bitmap {
+		if !matchesFilter {
+			continue
 		}
 
 		// If we're reusing the original slice, then we need to decrease the memory consumption estimate for the existing series
@@ -357,9 +387,10 @@ func applyFiltering(unfilteredSeries []types.SeriesMetadata, filters []*labels.M
 			memoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(unfilteredSeries[len(filteredSeries)].Labels)
 		}
 
-		filteredSeries, err = types.AppendSeriesMetadata(memoryConsumptionTracker, filteredSeries, series)
+		var err error
+		filteredSeries, err = types.AppendSeriesMetadata(memoryConsumptionTracker, filteredSeries, unfilteredSeries[idx])
 		if err != nil {
-			return nil, 0, nil, err
+			return nil, err
 		}
 	}
 
@@ -371,7 +402,7 @@ func applyFiltering(unfilteredSeries []types.SeriesMetadata, filters []*labels.M
 		}
 	}
 
-	return filteredSeries, nextUnfilteredSeriesIndex, unfilteredSeriesBitmap, nil
+	return filteredSeries, nil
 }
 
 func (d *InstantVectorDuplicationConsumer) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {

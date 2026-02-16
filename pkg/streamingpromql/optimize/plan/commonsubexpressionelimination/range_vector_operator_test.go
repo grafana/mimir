@@ -156,7 +156,6 @@ func TestRangeVectorOperator_Buffering_Filtering_AllConsumersOpen(t *testing.T) 
 	consumer2 := buffer.AddConsumer()
 	consumer2.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "1|2|5")})
 
-	// Both consumers should get the same series metadata.
 	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
 	require.NoError(t, err)
 	metadata2, err := consumer2.SeriesMetadata(ctx, nil)
@@ -183,6 +182,100 @@ func TestRangeVectorOperator_Buffering_Filtering_AllConsumersOpen(t *testing.T) 
 	require.Equal(t, 1, buffer.buffer.Size())
 
 	// Read the same data from the second consumer, and then keep reading data beyond what has already been buffered.
+	err = consumer2.NextSeries(ctx)
+	require.NoError(t, err)
+	d, err = consumer2.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualDataAndReturnToPool(t, expectedData[1], d, memoryConsumptionTracker)
+	require.Equal(t, 1, buffer.buffer.Size(), "buffered data should remain buffered until the next NextSeries or Close call")
+
+	err = consumer2.NextSeries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 0, buffer.buffer.Size())
+	d, err = consumer2.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualDataAndReturnToPool(t, expectedData[2], d, memoryConsumptionTracker)
+	require.Equal(t, 1, buffer.buffer.Size())
+
+	err = consumer2.NextSeries(ctx)
+	require.NoError(t, err)
+	d, err = consumer2.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualDataAndReturnToPool(t, expectedData[5], d, memoryConsumptionTracker)
+	require.Equal(t, 4, buffer.buffer.Size())
+
+	// Read the buffered data for the first consumer.
+	err = consumer1.NextSeries(ctx)
+	require.NoError(t, err)
+	d, err = consumer1.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualDataAndReturnToPool(t, expectedData[2], d, memoryConsumptionTracker)
+	require.Equal(t, 4, buffer.buffer.Size(), "buffered data should remain buffered until the next NextSeries or Close call")
+
+	// Close the first consumer, check that the data that was being buffered for it is released.
+	consumer1.Close()
+	require.Equal(t, 0, buffer.buffer.Size())
+
+	// Check that the inner operator hasn't been closed or finalized yet.
+	require.False(t, inner.finalized)
+	require.False(t, inner.closed)
+
+	// Finalize each consumer, and check that the inner operator was only finalized after the last consumer is finalized.
+	require.NoError(t, consumer1.Finalize(ctx))
+	require.False(t, inner.finalized)
+	require.NoError(t, consumer2.Finalize(ctx))
+	require.True(t, inner.finalized)
+	require.NoError(t, consumer1.Finalize(ctx), "it should be safe to finalize either consumer a second time")
+	require.NoError(t, consumer2.Finalize(ctx), "it should be safe to finalize either consumer a second time")
+
+	// Close the second consumer, and check that the inner operator was closed.
+	consumer2.Close()
+	require.True(t, inner.closed)
+	requireNoMemoryConsumption(t, memoryConsumptionTracker)
+
+	// Make sure it's safe to close either consumer a second time.
+	consumer1.Close()
+	consumer2.Close()
+	requireNoMemoryConsumption(t, memoryConsumptionTracker)
+}
+
+func TestRangeVectorOperator_Buffering_Filtering_IteratingBeforeCallingSeriesMetadataOnAllConsumers(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	inner, expectedData := createTestRangeVectorOperator(t, 6, memoryConsumptionTracker)
+
+	buffer := NewRangeVectorDuplicationBuffer(inner, memoryConsumptionTracker)
+	consumer1 := buffer.AddConsumer()
+	consumer2 := buffer.AddConsumer()
+	consumer2.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "1|2|5")})
+
+	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
+	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.series), metadata1, "first consumer should get expected series metadata")
+	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
+
+	// Read some data from the first consumer and ensure that it was buffered for the second consumer, if the second consumer needs that series.
+	err = consumer1.NextSeries(ctx)
+	require.NoError(t, err)
+	d, err := consumer1.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualDataAndReturnToPool(t, expectedData[0], d, memoryConsumptionTracker)
+	require.Equal(t, 0, buffer.buffer.Size())
+	require.Equal(t, 0, cap(buffer.buffer.elements), "should not temporarily buffer data that won't be read by another consumer")
+
+	err = consumer1.NextSeries(ctx)
+	require.NoError(t, err)
+	d, err = consumer1.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualDataAndReturnToPool(t, expectedData[1], d, memoryConsumptionTracker)
+	require.Equal(t, 1, buffer.buffer.Size())
+
+	// Read the same data from the second consumer, and then keep reading data beyond what has already been buffered.
+	metadata2, err := consumer2.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
+	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{inner.series[1], inner.series[2], inner.series[5]}), metadata2, "second consumer should get expected series metadata")
+	types.SeriesMetadataSlicePool.Put(&metadata2, memoryConsumptionTracker)
+
 	err = consumer2.NextSeries(ctx)
 	require.NoError(t, err)
 	d, err = consumer2.NextStepSamples(ctx)

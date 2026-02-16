@@ -66,18 +66,29 @@ func (b *RangeVectorDuplicationBuffer) SeriesMetadata(ctx context.Context, _ typ
 		if err != nil {
 			return nil, err
 		}
+
+		// Populate the filter bitmap for each consumer now.
+		// We'll produce a series metadata slice for the current consumer below - if we create all of them upfront, then we have to hold them
+		// in memory for longer.
+		for _, consumer := range b.consumers {
+			nextUnfilteredSeriesIndex, unfilteredSeriesBitmap, filteredSeriesCount, err := computeFilterBitmap(b.seriesMetadata, consumer.filters, b.MemoryConsumptionTracker)
+			if err != nil {
+				return nil, err
+			}
+
+			consumer.unfilteredSeriesBitmap = unfilteredSeriesBitmap
+			consumer.nextUnfilteredSeriesIndex = nextUnfilteredSeriesIndex
+			consumer.filteredSeriesCount = filteredSeriesCount
+		}
 	}
 
 	b.seriesMetadataCount++
 	isLastConsumer := b.seriesMetadataCount == len(b.consumers)
 
-	filteredSeries, nextUnfilteredSeriesIndex, unfilteredSeriesBitmap, err := applyFiltering(b.seriesMetadata, consumer.filters, isLastConsumer, b.MemoryConsumptionTracker)
+	filteredSeries, err := applyFiltering(b.seriesMetadata, consumer.unfilteredSeriesBitmap, consumer.filteredSeriesCount, isLastConsumer, b.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
-
-	consumer.unfilteredSeriesBitmap = unfilteredSeriesBitmap
-	consumer.nextUnfilteredSeriesIndex = nextUnfilteredSeriesIndex
 
 	if isLastConsumer {
 		b.seriesMetadata = nil
@@ -461,6 +472,7 @@ type RangeVectorDuplicationConsumer struct {
 	// unfilteredSeriesBitmap contains one entry per unfiltered input series, where true indicates that it passes this consumer's filters.
 	// If this consumer has no filters, this is nil.
 	unfilteredSeriesBitmap []bool
+	filteredSeriesCount    int
 }
 
 var _ types.RangeVectorOperator = &RangeVectorDuplicationConsumer{}
