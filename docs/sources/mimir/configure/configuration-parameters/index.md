@@ -735,6 +735,16 @@ grpc_tls_config:
 # CLI flag: -server.grpc.num-workers
 [grpc_server_num_workers: <int> | default = 100]
 
+# Size of the read buffer for each gRPC connection (bytes). A smaller buffer may
+# reduce memory usage but may lead to more system calls.
+# CLI flag: -server.grpc.read-buffer-size-bytes
+[grpc_server_read_buffer_size: <int> | default = 32768]
+
+# Size of the write buffer for each gRPC connection (bytes). A smaller buffer
+# may reduce memory usage but may lead to more system calls.
+# CLI flag: -server.grpc.write-buffer-size-bytes
+[grpc_server_write_buffer_size: <int> | default = 32768]
+
 # Output log messages in the given format. Valid formats: [logfmt, json]
 # CLI flag: -log.format
 [log_format: <string> | default = "logfmt"]
@@ -4025,6 +4035,20 @@ zone_aware_routing:
   # bridge.
   # CLI flag: -memberlist.zone-aware-routing.role
   [role: <string> | default = "member"]
+
+propagation_delay_tracker:
+  # (experimental) Enable the propagation delay tracker to measure gossip
+  # propagation delay.
+  # CLI flag: -memberlist.propagation-delay-tracker.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) How often to publish beacons for propagation tracking.
+  # CLI flag: -memberlist.propagation-delay-tracker.beacon-interval
+  [beacon_interval: <duration> | default = 1m]
+
+  # (experimental) How long a beacon lives before being garbage collected.
+  # CLI flag: -memberlist.propagation-delay-tracker.beacon-lifetime
+  [beacon_lifetime: <duration> | default = 10m]
 ```
 
 ### limits
@@ -5083,15 +5107,20 @@ kafka:
   # CLI flag: -ingest-storage.kafka.write-clients
   [write_clients: <int> | default = 1]
 
-  # The username used to authenticate to Kafka using the SASL plain mechanism.
-  # To enable SASL, configure both the username and password.
+  # The username used to authenticate to Kafka using SASL. To enable SASL,
+  # configure both the username and password.
   # CLI flag: -ingest-storage.kafka.sasl-username
   [sasl_username: <string> | default = ""]
 
-  # The password used to authenticate to Kafka using the SASL plain mechanism.
-  # To enable SASL, configure both the username and password.
+  # The password used to authenticate to Kafka using SASL. To enable SASL,
+  # configure both the username and password.
   # CLI flag: -ingest-storage.kafka.sasl-password
   [sasl_password: <string> | default = ""]
+
+  # The SASL mechanism used to authenticate to Kafka. Supported values: PLAIN,
+  # SCRAM-SHA-256, SCRAM-SHA-512.
+  # CLI flag: -ingest-storage.kafka.sasl-mechanism
+  [sasl_mechanism: <string> | default = "PLAIN"]
 
   # The consumer group used by the consumer to track the last consumed offset.
   # The consumer group must be different for each ingester. If the configured
@@ -5238,11 +5267,6 @@ kafka:
   # 0.
   # CLI flag: -ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample
   [ingestion_concurrency_estimated_bytes_per_sample: <int> | default = 500]
-
-  # (experimental) When enabled, tenants with few timeseries use a simpler
-  # sequential pusher instead of parallel shards.
-  # CLI flag: -ingest-storage.kafka.ingestion-concurrency-sequential-pusher-enabled
-  [ingestion_concurrency_sequential_pusher_enabled: <boolean> | default = true]
 
 migration:
   # When both this option and ingest storage are enabled, distributors write to

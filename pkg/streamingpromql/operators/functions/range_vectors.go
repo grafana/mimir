@@ -347,11 +347,15 @@ func sumHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotati
 
 	trackCounterReset(sum)
 
+	var compensation *histogram.FloatHistogram // Kahan compensation histogram
+
 	accumulate := func(points []promql.HPoint) (bool, error) {
 		for _, p := range points {
 			trackCounterReset(p.H)
 
-			_, _, nhcbBoundsReconciled, err := sum.Add(p.H)
+			var nhcbBoundsReconciled bool
+			var err error
+			compensation, _, nhcbBoundsReconciled, err = sum.KahanAdd(p.H, compensation)
 			if err != nil {
 				err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
 				return false, err
@@ -377,6 +381,16 @@ func sumHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotati
 	}
 	if nhcbBoundsReconciledSeen {
 		emitAnnotation(newAggregationMismatchedCustomBucketsHistogramInfo)
+	}
+
+	// Apply Kahan compensation to get the final accurate result
+	if compensation != nil {
+		// Use regular Add (not KahanAdd) to apply the final compensation
+		sum, _, _, err := sum.Add(compensation)
+		if err != nil {
+			return nil, err
+		}
+		return sum, nil
 	}
 
 	return sum, nil
@@ -500,41 +514,20 @@ func avgHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotati
 
 	trackCounterReset(avgSoFar)
 
-	// Reuse these instances if we need them, to avoid allocating two FloatHistograms for every remaining histogram in the range.
-	var contributionByP *histogram.FloatHistogram
-	var contributionByAvgSoFar *histogram.FloatHistogram
+	var kahanC *histogram.FloatHistogram // Kahan compensation histogram
 
 	accumulate := func(points []promql.HPoint) error {
-		for _, p := range points {
+		for _, h := range points {
+			trackCounterReset(h.H)
 			count++
-			trackCounterReset(p.H)
-
-			// Make a copy of p.H, as the ring buffer may reuse the FloatHistogram instance on subsequent steps.
-			if contributionByP == nil {
-				contributionByP = p.H.Copy()
-			} else {
-				p.H.CopyTo(contributionByP)
+			q := (count - 1) / count
+			if kahanC != nil {
+				kahanC.Mul(q)
 			}
-
-			// Make a copy of avgSoFar so we can divide it below without modifying the running total.
-			if contributionByAvgSoFar == nil {
-				contributionByAvgSoFar = avgSoFar.Copy()
-			} else {
-				avgSoFar.CopyTo(contributionByAvgSoFar)
-			}
-
-			contributionByP = contributionByP.Div(count)
-			contributionByAvgSoFar = contributionByAvgSoFar.Div(count)
-
-			change, _, nhcbBoundsReconciled, err := contributionByP.Sub(contributionByAvgSoFar)
-			if err != nil {
-				return err
-			}
-			if nhcbBoundsReconciled {
-				nhcbBoundsReconciledSeen = true
-			}
-
-			avgSoFar, _, nhcbBoundsReconciled, err = avgSoFar.Add(change)
+			toAdd := h.H.Copy().Div(count)
+			var nhcbBoundsReconciled bool
+			var err error
+			kahanC, _, nhcbBoundsReconciled, err = avgSoFar.Mul(q).KahanAdd(toAdd, kahanC)
 			if err != nil {
 				return err
 			}
@@ -560,6 +553,16 @@ func avgHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotati
 
 	if nhcbBoundsReconciledSeen {
 		emitAnnotation(newAggregationMismatchedCustomBucketsHistogramInfo)
+	}
+
+	// Apply Kahan compensation to get the final accurate result
+	if kahanC != nil {
+		// Use regular Add (not KahanAdd) to apply the final compensation
+		avgSoFar, _, _, err := avgSoFar.Add(kahanC)
+		if err != nil {
+			return nil, err
+		}
+		return avgSoFar, nil
 	}
 
 	return avgSoFar, nil

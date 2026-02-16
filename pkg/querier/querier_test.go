@@ -232,7 +232,7 @@ func TestQuerier(t *testing.T) {
 			// Generate TSDB head used to simulate querying the long-term storage.
 			db, through := mockTSDB(t, model.Time(0), int(chunks*samplesPerChunk), sampleRate, chunkOffset, int(samplesPerChunk), q.valueType)
 			dbQueryable := TimeRangeQueryable{
-				Queryable: db,
+				Queryable: &increaseMemoryConsumptionLabelsQueryable{db},
 				IsApplicable: func(_ context.Context, _ string, _ time.Time, _, _ int64, _ log.Logger, _ ...*labels.Matcher) bool {
 					return true
 				},
@@ -1436,6 +1436,7 @@ func testRangeQuery(t testing.TB, queryable storage.Queryable, end model.Time, q
 		Timeout:            1 * time.Minute,
 	})
 	ctx := user.InjectOrgID(context.Background(), "0")
+	ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
 	query, err := engine.NewRangeQuery(ctx, queryable, nil, q.query, from, through, step)
 	require.NoError(t, err)
 
@@ -2003,4 +2004,75 @@ func (s *staticTenantLimits) ByUserID(userID string) *validation.Limits {
 
 func (s *staticTenantLimits) AllByUserID() map[string]*validation.Limits {
 	return s.limits
+}
+
+// The following storage.Queryable, storage.Querier and storage.SeriesSet implementations
+// are used to create SeriesSet that will increase Labels memory consumption when it is iterated.
+type increaseMemoryConsumptionLabelsQueryable struct {
+	inner storage.Queryable
+}
+
+func (t *increaseMemoryConsumptionLabelsQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
+	q, err := t.inner.Querier(mint, maxt)
+	if err != nil {
+		return nil, err
+	}
+	return &increaseMemoryConsumptionLabelsQuerier{inner: q}, nil
+}
+
+type increaseMemoryConsumptionLabelsQuerier struct {
+	inner storage.Querier
+}
+
+func (t *increaseMemoryConsumptionLabelsQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	memoryTracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
+	if err != nil {
+		return storage.ErrSeriesSet(err)
+	}
+
+	return &increaseMemoryConsumptionLabelsSeriesSet{
+		inner:         t.inner.Select(ctx, sortSeries, hints, matchers...),
+		memoryTracker: memoryTracker,
+	}
+}
+
+func (t *increaseMemoryConsumptionLabelsQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return t.inner.LabelValues(ctx, name, hints, matchers...)
+}
+
+func (t *increaseMemoryConsumptionLabelsQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return t.inner.LabelNames(ctx, hints, matchers...)
+}
+
+func (t *increaseMemoryConsumptionLabelsQuerier) Close() error {
+	return t.inner.Close()
+}
+
+type increaseMemoryConsumptionLabelsSeriesSet struct {
+	inner         storage.SeriesSet
+	memoryTracker *limiter.MemoryConsumptionTracker
+}
+
+func (t *increaseMemoryConsumptionLabelsSeriesSet) Next() bool {
+	if !t.inner.Next() {
+		return false
+	}
+
+	// Increase memory for the series labels to balance the decrease done by MemoryTrackingSeriesSet
+	s := t.inner.At()
+	_ = t.memoryTracker.IncreaseMemoryConsumptionForLabels(s.Labels())
+
+	return true
+}
+
+func (t *increaseMemoryConsumptionLabelsSeriesSet) At() storage.Series {
+	return t.inner.At()
+}
+
+func (t *increaseMemoryConsumptionLabelsSeriesSet) Err() error {
+	return t.inner.Err()
+}
+
+func (t *increaseMemoryConsumptionLabelsSeriesSet) Warnings() annotations.Annotations {
+	return t.inner.Warnings()
 }

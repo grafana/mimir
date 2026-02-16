@@ -699,6 +699,7 @@ How to **investigate**:
           ```
           ./tools/mark-blocks/mark-blocks -backend gcs -gcs.bucket-name <bucket> -mark-type no-compact -tenant <tenant-id> -details "Leading to out-of-order chunks when compacting with other blocks" -blocks "<block-1>,<block-2>..."
           ```
+          For examples using AWS S3 or Azure, see [How to use the mark-blocks tool](#how-to-use-the-mark-blocks-tool).
   - Result block exceeds symbol table maximum size:
     - **How to detect**: Search compactor logs for `symbol table size exceeds`.
     - **What it means**: The compactor successfully validated the source blocks. But the resulting block is impossible to write due to the error above.
@@ -714,6 +715,7 @@ How to **investigate**:
         ```
         ./tools/mark-blocks/mark-blocks -backend gcs -gcs.bucket-name <bucket> -mark-type no-compact -tenant <tenant-id> -details "Result block exceeds symbol table maximum size" -blocks "<block-1>,<block-2>..."
         ```
+        For examples using AWS S3 or Azure, see [How to use the mark-blocks tool](#how-to-use-the-mark-blocks-tool).
     - Further reading: [Compaction algorithm](../../references/architecture/components/compactor/#compaction-algorithm).
   - Compactor network disk unresponsive:
     - **How to detect**: A telltale sign is having many cores of sustained kernel-mode CPU usage by the compactor process. Check the metric `rate(container_cpu_system_seconds_total{pod="<pod>"}[$__rate_interval])` for the affected pod.
@@ -753,6 +755,7 @@ How to **fix** it:
   ```
   ./tools/mark-blocks/mark-blocks -backend gcs -gcs.bucket-name <bucket> -mark-type no-compact -tenant <tenant-id> -details "focus on newer blocks" -blocks "<block 1>,<block 2>..."
   ```
+  For examples using AWS S3 or Azure, see [How to use the mark-blocks tool](#how-to-use-the-mark-blocks-tool).
 
 ### MimirCompactorSkippedBlocks
 
@@ -808,6 +811,26 @@ How to **investigate**:
 
 - If the alert `MimirCompactorHasRunOutOfDiskSpace` has fired as well, then investigate that issue first. If there is no disk space available, the compactor will fail to write sparse headers to local disk prior to upload.
 - Look for any errors in the compactor logs, focusing on logs with `method=indexheader.NewStreamBinaryReader`.
+
+### MimirCompactorOOMKilled
+
+This alert fires when compactor pods have been terminated due to Out of Memory (OOM) conditions.
+
+Frequent OOM kills indicate that the compactor does not have enough memory to process the blocks it is compacting. This can lead to compaction falling behind, which negatively impacts query performance.
+
+How to **investigate**:
+
+- Check the compactor's memory usage in the `Mimir / Compactor Resources` dashboard to understand the memory consumption pattern.
+- Look for `OOMKilled` events in the Kubernetes events for the compactor pods:
+  ```
+  kubectl get events --field-selector reason=OOMKilling -n <namespace>
+  ```
+
+How to **fix** it:
+
+- Increase the memory request and limit for the compactor pods.
+- If specific tenants are causing OOMs due to high cardinality, consider increasing the `compactor_split_and_merge_shards` for those tenants to produce smaller blocks.
+- Reduce compactor concurrency (`-compactor.compaction-concurrency`) to lower peak memory usage, at the cost of slower compaction.
 
 ### MimirBucketIndexNotUpdated
 
@@ -3139,6 +3162,80 @@ Halting the ingesters should be the **very last resort** because of the side eff
 However the **queries will return partial data**, due to all the ingested samples which have not been compacted to blocks yet.
 
 ## Manual procedures
+
+### How to use the mark-blocks tool
+
+The `mark-blocks` tool creates or removes markers for TSDB blocks in object storage. This is commonly needed for:
+
+- Marking blocks for deletion (using `-mark-type deletion`)
+- Marking blocks to prevent compaction (using `-mark-type no-compact`)
+
+The tool is located at `tools/mark-blocks/` in the Mimir repository. Build it with `go build` in that directory, or use the pre-built binary from Mimir releases.
+
+#### Google Cloud Storage (GCS)
+
+```bash
+./mark-blocks \
+  --backend gcs \
+  --gcs.bucket-name <bucket> \
+  --tenant <tenant-id> \
+  --mark-type <deletion|no-compact> \
+  --details "<reason for marking>" \
+  --blocks "<block-1>,<block-2>..." \
+  --dry-run
+```
+
+GCS uses Application Default Credentials. Ensure you have authenticated using `gcloud auth application-default login` or are running on a GCE instance with appropriate service account permissions.
+
+#### Amazon S3 with AWS Profile Authentication
+
+```bash
+export AWS_PROFILE=<your-aws-profile>
+
+./mark-blocks \
+  --backend s3 \
+  --s3.bucket-name <bucket> \
+  --s3.region <region> \
+  --s3.native-aws-auth-enabled=true \
+  --tenant <tenant-id> \
+  --mark-type <deletion|no-compact> \
+  --details "<reason for marking>" \
+  --blocks "<block-1>,<block-2>..." \
+  --dry-run
+```
+
+This method uses the AWS SDK's default credential chain, which supports environment variables, shared credentials files (`~/.aws/credentials`), and IAM roles.
+
+#### Amazon S3 with Access Keys
+
+```bash
+./mark-blocks \
+  --backend s3 \
+  --s3.bucket-name <bucket> \
+  --s3.access-key-id <access-key-id> \
+  --s3.secret-access-key <secret-access-key> \
+  --s3.endpoint <endpoint> \
+  --tenant <tenant-id> \
+  --mark-type <deletion|no-compact> \
+  --details "<reason for marking>" \
+  --blocks "<block-1>,<block-2>..." \
+  --dry-run
+```
+
+#### Azure Blob Storage
+
+```bash
+./mark-blocks \
+  --backend azure \
+  --azure.container-name <container> \
+  --azure.account-name <account-name> \
+  --azure.account-key <account-key> \
+  --tenant <tenant-id> \
+  --mark-type <deletion|no-compact> \
+  --details "<reason for marking>" \
+  --blocks "<block-1>,<block-2>..." \
+  --dry-run
+```
 
 ### Resizing Persistent Volumes using Kubernetes
 

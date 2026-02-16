@@ -1,3 +1,4 @@
+// Package images provides Docker image version constants for e2e test services.
 package images
 
 var (

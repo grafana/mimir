@@ -623,6 +623,26 @@
         },
         {
           "kind": "field",
+          "name": "grpc_server_read_buffer_size",
+          "required": false,
+          "desc": "Size of the read buffer for each gRPC connection (bytes). A smaller buffer may reduce memory usage but may lead to more system calls.",
+          "fieldValue": null,
+          "fieldDefaultValue": 32768,
+          "fieldFlag": "server.grpc.read-buffer-size-bytes",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
+          "name": "grpc_server_write_buffer_size",
+          "required": false,
+          "desc": "Size of the write buffer for each gRPC connection (bytes). A smaller buffer may reduce memory usage but may lead to more system calls.",
+          "fieldValue": null,
+          "fieldDefaultValue": 32768,
+          "fieldFlag": "server.grpc.write-buffer-size-bytes",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
           "name": "log_format",
           "required": false,
           "desc": "Output log messages in the given format. Valid formats: [logfmt, json]",
@@ -8697,7 +8717,7 @@
               "kind": "field",
               "name": "sasl_username",
               "required": false,
-              "desc": "The username used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.",
+              "desc": "The username used to authenticate to Kafka using SASL. To enable SASL, configure both the username and password.",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "ingest-storage.kafka.sasl-username",
@@ -8707,10 +8727,20 @@
               "kind": "field",
               "name": "sasl_password",
               "required": false,
-              "desc": "The password used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.",
+              "desc": "The password used to authenticate to Kafka using SASL. To enable SASL, configure both the username and password.",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "ingest-storage.kafka.sasl-password",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "sasl_mechanism",
+              "required": false,
+              "desc": "The SASL mechanism used to authenticate to Kafka. Supported values: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512.",
+              "fieldValue": null,
+              "fieldDefaultValue": "PLAIN",
+              "fieldFlag": "ingest-storage.kafka.sasl-mechanism",
               "fieldType": "string"
             },
             {
@@ -8954,17 +8984,6 @@
               "fieldDefaultValue": 500,
               "fieldFlag": "ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample",
               "fieldType": "int"
-            },
-            {
-              "kind": "field",
-              "name": "ingestion_concurrency_sequential_pusher_enabled",
-              "required": false,
-              "desc": "When enabled, tenants with few timeseries use a simpler sequential pusher instead of parallel shards.",
-              "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "ingest-storage.kafka.ingestion-concurrency-sequential-pusher-enabled",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -18836,6 +18855,49 @@
               "fieldDefaultValue": "member",
               "fieldFlag": "memberlist.zone-aware-routing.role",
               "fieldType": "string",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
+          "name": "propagation_delay_tracker",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "enabled",
+              "required": false,
+              "desc": "Enable the propagation delay tracker to measure gossip propagation delay.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "memberlist.propagation-delay-tracker.enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "beacon_interval",
+              "required": false,
+              "desc": "How often to publish beacons for propagation tracking.",
+              "fieldValue": null,
+              "fieldDefaultValue": 60000000000,
+              "fieldFlag": "memberlist.propagation-delay-tracker.beacon-interval",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "beacon_lifetime",
+              "required": false,
+              "desc": "How long a beacon lives before being garbage collected.",
+              "fieldValue": null,
+              "fieldDefaultValue": 600000000000,
+              "fieldFlag": "memberlist.propagation-delay-tracker.beacon-lifetime",
+              "fieldType": "duration",
               "fieldCategory": "experimental"
             }
           ],

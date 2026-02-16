@@ -1690,6 +1690,29 @@ apiVersion: v1
 kind: Service
 metadata:
   labels:
+    name: store-gateway-zone-a-backup
+  name: store-gateway-zone-a-backup
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: store-gateway-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: store-gateway-grpc
+    port: 9095
+    targetPort: 9095
+  - name: store-gateway-gossip-ring
+    port: 7946
+    targetPort: 7946
+  selector:
+    name: store-gateway-zone-a-backup
+    rollout-group: store-gateway
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
     name: store-gateway-zone-b
   name: store-gateway-zone-b
   namespace: default
@@ -1713,8 +1736,8 @@ apiVersion: v1
 kind: Service
 metadata:
   labels:
-    name: store-gateway-zone-c
-  name: store-gateway-zone-c
+    name: store-gateway-zone-b-backup
+  name: store-gateway-zone-b-backup
   namespace: default
 spec:
   clusterIP: None
@@ -1729,7 +1752,7 @@ spec:
     port: 7946
     targetPort: 7946
   selector:
-    name: store-gateway-zone-c
+    name: store-gateway-zone-b-backup
     rollout-group: store-gateway
 ---
 apiVersion: apps/v1
@@ -1802,7 +1825,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -1915,7 +1938,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -2007,7 +2030,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=memberlist-kv
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: memberlist-bridge
         ports:
@@ -2092,7 +2115,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=memberlist-kv
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: memberlist-bridge
         ports:
@@ -2183,9 +2206,10 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -store-gateway.dynamic-replication.multiple=4
         - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.prefix=multi-zone/
-        - -store-gateway.sharding-ring.replication-factor=3
+        - -store-gateway.sharding-ring.replication-factor=4
         - -store-gateway.sharding-ring.store=memberlist
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -store-gateway.tenant-shard-size=3
@@ -2194,7 +2218,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "5"
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -2288,7 +2312,7 @@ spec:
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
-        - -querier.prefer-availability-zones=zone-a
+        - -querier.prefer-availability-zones=zone-a,zone-a-backup
         - -querier.ring.prefix=querier-zone-a/
         - -querier.store-gateway-client.grpc-max-recv-msg-size=209715200
         - -query-scheduler.ring.prefix=query-scheduler-zone-a/
@@ -2298,9 +2322,10 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -store-gateway.dynamic-replication.multiple=4
         - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.prefix=multi-zone/
-        - -store-gateway.sharding-ring.replication-factor=3
+        - -store-gateway.sharding-ring.replication-factor=4
         - -store-gateway.sharding-ring.store=memberlist
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -store-gateway.tenant-shard-size=3
@@ -2309,7 +2334,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "5"
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -2408,7 +2433,7 @@ spec:
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
-        - -querier.prefer-availability-zones=zone-b
+        - -querier.prefer-availability-zones=zone-b,zone-b-backup
         - -querier.ring.prefix=querier-zone-b/
         - -querier.store-gateway-client.grpc-max-recv-msg-size=209715200
         - -query-scheduler.ring.prefix=query-scheduler-zone-b/
@@ -2418,9 +2443,10 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -store-gateway.dynamic-replication.multiple=4
         - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.prefix=multi-zone/
-        - -store-gateway.sharding-ring.replication-factor=3
+        - -store-gateway.sharding-ring.replication-factor=4
         - -store-gateway.sharding-ring.store=memberlist
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -store-gateway.tenant-shard-size=3
@@ -2429,7 +2455,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "5"
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -2520,7 +2546,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -2616,7 +2642,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -2717,7 +2743,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -2806,7 +2832,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -2891,7 +2917,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -2981,7 +3007,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -3132,13 +3158,13 @@ spec:
         - -server.http-listen-port=8080
         - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.prefix=multi-zone/
-        - -store-gateway.sharding-ring.replication-factor=3
+        - -store-gateway.sharding-ring.replication-factor=4
         - -store-gateway.sharding-ring.store=memberlist
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -store-gateway.tenant-shard-size=3
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -3231,16 +3257,17 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -store-gateway.dynamic-replication.multiple=4
         - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.prefix=multi-zone/
-        - -store-gateway.sharding-ring.replication-factor=3
+        - -store-gateway.sharding-ring.replication-factor=4
         - -store-gateway.sharding-ring.store=memberlist
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -store-gateway.tenant-shard-size=3
         - -target=querier
         - -usage-stats.installation-mode=jsonnet
         env: []
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: ruler-querier
         ports:
@@ -3334,7 +3361,7 @@ spec:
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
-        - -querier.prefer-availability-zones=zone-a
+        - -querier.prefer-availability-zones=zone-a,zone-a-backup
         - -querier.ring.prefix=ruler-querier-zone-a/
         - -querier.store-gateway-client.grpc-max-recv-msg-size=209715200
         - -query-scheduler.ring.prefix=ruler-query-scheduler-zone-a/
@@ -3344,16 +3371,17 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -store-gateway.dynamic-replication.multiple=4
         - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.prefix=multi-zone/
-        - -store-gateway.sharding-ring.replication-factor=3
+        - -store-gateway.sharding-ring.replication-factor=4
         - -store-gateway.sharding-ring.store=memberlist
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -store-gateway.tenant-shard-size=3
         - -target=querier
         - -usage-stats.installation-mode=jsonnet
         env: []
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: ruler-querier
         ports:
@@ -3452,7 +3480,7 @@ spec:
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
-        - -querier.prefer-availability-zones=zone-b
+        - -querier.prefer-availability-zones=zone-b,zone-b-backup
         - -querier.ring.prefix=ruler-querier-zone-b/
         - -querier.store-gateway-client.grpc-max-recv-msg-size=209715200
         - -query-scheduler.ring.prefix=ruler-query-scheduler-zone-b/
@@ -3462,16 +3490,17 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -store-gateway.dynamic-replication.multiple=4
         - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.prefix=multi-zone/
-        - -store-gateway.sharding-ring.replication-factor=3
+        - -store-gateway.sharding-ring.replication-factor=4
         - -store-gateway.sharding-ring.store=memberlist
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -store-gateway.tenant-shard-size=3
         - -target=querier
         - -usage-stats.installation-mode=jsonnet
         env: []
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: ruler-querier
         ports:
@@ -3568,7 +3597,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: ruler-query-frontend
         ports:
@@ -3669,7 +3698,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: ruler-query-frontend
         ports:
@@ -3775,7 +3804,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: ruler-query-frontend
         ports:
@@ -3864,7 +3893,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: ruler-query-scheduler
         ports:
@@ -3949,7 +3978,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: ruler-query-scheduler
         ports:
@@ -4039,7 +4068,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: ruler-query-scheduler
         ports:
@@ -4150,13 +4179,13 @@ spec:
         - -server.http-listen-port=8080
         - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.prefix=multi-zone/
-        - -store-gateway.sharding-ring.replication-factor=3
+        - -store-gateway.sharding-ring.replication-factor=4
         - -store-gateway.sharding-ring.store=memberlist
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -store-gateway.tenant-shard-size=3
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -4273,13 +4302,13 @@ spec:
         - -server.http-listen-port=8080
         - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.prefix=multi-zone/
-        - -store-gateway.sharding-ring.replication-factor=3
+        - -store-gateway.sharding-ring.replication-factor=4
         - -store-gateway.sharding-ring.store=memberlist
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -store-gateway.tenant-shard-size=3
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -4362,7 +4391,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: alertmanager
         ports:
@@ -4464,7 +4493,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -4607,7 +4636,7 @@ spec:
           value: 1Gi
         - name: Z
           value: "123"
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -4749,7 +4778,7 @@ spec:
           value: all-ingesters
         - name: GOMAXPROCS
           value: "9"
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -4883,7 +4912,7 @@ spec:
           value: all-ingesters
         - name: GOMAXPROCS
           value: "9"
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -5840,11 +5869,12 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -store-gateway.dynamic-replication.multiple=4
         - -store-gateway.sharding-ring.heartbeat-period=1m
         - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.instance-availability-zone=zone-a
         - -store-gateway.sharding-ring.prefix=multi-zone/
-        - -store-gateway.sharding-ring.replication-factor=3
+        - -store-gateway.sharding-ring.replication-factor=4
         - -store-gateway.sharding-ring.store=memberlist
         - -store-gateway.sharding-ring.tokens-file-path=/data/tokens
         - -store-gateway.sharding-ring.unregister-on-shutdown=false
@@ -5860,7 +5890,163 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
+        imagePullPolicy: IfNotPresent
+        name: store-gateway
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        - containerPort: 7946
+          name: gossip-ring
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 18Gi
+          requests:
+            cpu: "1"
+            memory: 12Gi
+        volumeMounts:
+        - mountPath: /data
+          name: store-gateway-data
+        - mountPath: /etc/mimir
+          name: overrides
+      securityContext:
+        runAsUser: 0
+      terminationGracePeriodSeconds: 120
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+  updateStrategy:
+    type: OnDelete
+  volumeClaimTemplates:
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: store-gateway-data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 50Gi
+      storageClassName: standard
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  annotations:
+    rollout-max-unavailable: "50"
+  labels:
+    rollout-group: store-gateway
+  name: store-gateway-zone-a-backup
+  namespace: default
+spec:
+  podManagementPolicy: Parallel
+  replicas: 0
+  selector:
+    matchLabels:
+      name: store-gateway-zone-a-backup
+      rollout-group: store-gateway
+  serviceName: store-gateway-zone-a-backup
+  template:
+    metadata:
+      labels:
+        name: store-gateway-zone-a-backup
+        rollout-group: store-gateway
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2a
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: rollout-group
+                operator: In
+                values:
+                - store-gateway
+              - key: name
+                operator: NotIn
+                values:
+                - store-gateway-zone-a-backup
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -blocks-storage.bucket-store.chunks-cache.backend=memcached
+        - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached-zone-a.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency=50
+        - -blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency=100
+        - -blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections=150
+        - -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size=1048576
+        - -blocks-storage.bucket-store.chunks-cache.memcached.timeout=750ms
+        - -blocks-storage.bucket-store.index-cache.backend=memcached
+        - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries-zone-a.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency=50
+        - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
+        - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
+        - -blocks-storage.bucket-store.index-cache.memcached.max-item-size=5242880
+        - -blocks-storage.bucket-store.index-cache.memcached.timeout=750ms
+        - -blocks-storage.bucket-store.metadata-cache.backend=memcached
+        - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata-zone-a.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency=100
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections=150
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size=1048576
+        - -blocks-storage.bucket-store.sync-dir=/data/tsdb
+        - -blocks-storage.bucket-store.sync-interval=15m
+        - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -common.storage.backend=gcs
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.zone-aware-routing.enabled=true
+        - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
+        - -memberlist.zone-aware-routing.role=member
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-send-msg-size-bytes=209715200
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -store-gateway.dynamic-replication.multiple=4
+        - -store-gateway.sharding-ring.heartbeat-period=1m
+        - -store-gateway.sharding-ring.heartbeat-timeout=10m
+        - -store-gateway.sharding-ring.instance-availability-zone=zone-a-backup
+        - -store-gateway.sharding-ring.prefix=multi-zone/
+        - -store-gateway.sharding-ring.replication-factor=4
+        - -store-gateway.sharding-ring.store=memberlist
+        - -store-gateway.sharding-ring.tokens-file-path=/data/tokens
+        - -store-gateway.sharding-ring.unregister-on-shutdown=false
+        - -store-gateway.sharding-ring.wait-stability-min-duration=1m
+        - -store-gateway.sharding-ring.zone-awareness-enabled=true
+        - -store-gateway.tenant-shard-size=3
+        - -target=store-gateway
+        - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: A
+          value: all-store-gateways
+        - name: GOMAXPROCS
+          value: "5"
+        - name: GOMEMLIMIT
+          value: "12884901888"
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -5996,11 +6182,12 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -store-gateway.dynamic-replication.multiple=4
         - -store-gateway.sharding-ring.heartbeat-period=1m
         - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.instance-availability-zone=zone-b
         - -store-gateway.sharding-ring.prefix=multi-zone/
-        - -store-gateway.sharding-ring.replication-factor=3
+        - -store-gateway.sharding-ring.replication-factor=4
         - -store-gateway.sharding-ring.store=memberlist
         - -store-gateway.sharding-ring.tokens-file-path=/data/tokens
         - -store-gateway.sharding-ring.unregister-on-shutdown=false
@@ -6018,7 +6205,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -6079,24 +6266,31 @@ metadata:
     rollout-max-unavailable: "50"
   labels:
     rollout-group: store-gateway
-  name: store-gateway-zone-c
+  name: store-gateway-zone-b-backup
   namespace: default
 spec:
   podManagementPolicy: Parallel
-  replicas: 1
+  replicas: 0
   selector:
     matchLabels:
-      name: store-gateway-zone-c
+      name: store-gateway-zone-b-backup
       rollout-group: store-gateway
-  serviceName: store-gateway-zone-c
+  serviceName: store-gateway-zone-b-backup
   template:
     metadata:
       labels:
-        gossip_ring_member: "true"
-        name: store-gateway-zone-c
+        name: store-gateway-zone-b-backup
         rollout-group: store-gateway
     spec:
       affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2b
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
           - labelSelector:
@@ -6108,26 +6302,26 @@ spec:
               - key: name
                 operator: NotIn
                 values:
-                - store-gateway-zone-c
+                - store-gateway-zone-b-backup
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
         - -blocks-storage.bucket-store.chunks-cache.backend=memcached
-        - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached-zone-a.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached-zone-b.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size=1048576
         - -blocks-storage.bucket-store.chunks-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.index-cache.backend=memcached
-        - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries-zone-a.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries-zone-b.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.index-cache.memcached.max-item-size=5242880
         - -blocks-storage.bucket-store.index-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
-        - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata-zone-a.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata-zone-b.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections=150
@@ -6139,18 +6333,19 @@ spec:
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
-        - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
+        - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
         - -memberlist.zone-aware-routing.role=member
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-send-msg-size-bytes=209715200
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -store-gateway.dynamic-replication.multiple=4
         - -store-gateway.sharding-ring.heartbeat-period=1m
         - -store-gateway.sharding-ring.heartbeat-timeout=10m
-        - -store-gateway.sharding-ring.instance-availability-zone=zone-c
+        - -store-gateway.sharding-ring.instance-availability-zone=zone-b-backup
         - -store-gateway.sharding-ring.prefix=multi-zone/
-        - -store-gateway.sharding-ring.replication-factor=3
+        - -store-gateway.sharding-ring.replication-factor=4
         - -store-gateway.sharding-ring.store=memberlist
         - -store-gateway.sharding-ring.tokens-file-path=/data/tokens
         - -store-gateway.sharding-ring.unregister-on-shutdown=false
@@ -6166,7 +6361,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.0.2
+        image: grafana/mimir:3.0.3
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -6196,6 +6391,11 @@ spec:
       securityContext:
         runAsUser: 0
       terminationGracePeriodSeconds: 120
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
       volumes:
       - configMap:
           name: overrides
@@ -6282,7 +6482,6 @@ spec:
     name: querier
   triggers:
   - metadata:
-      ignoreNullValues: "true"
       metricName: cortex_querier_hpa_default
       query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="default",quantile="0.5",pod!~"(querier|query-scheduler)-zone.*"}[1m]))
       serverAddress: http://prometheus.default:9090/prometheus
@@ -6290,7 +6489,6 @@ spec:
     name: cortex_querier_hpa_default
     type: prometheus
   - metadata:
-      ignoreNullValues: "true"
       metricName: cortex_querier_hpa_default_requests_duration
       query: sum(rate(cortex_querier_request_duration_seconds_sum{container="querier",namespace="default",pod!~"(querier|query-scheduler)-zone.*"}[1m]))
       serverAddress: http://prometheus.default:9090/prometheus
@@ -6329,7 +6527,6 @@ spec:
     name: querier-zone-a
   triggers:
   - metadata:
-      ignoreNullValues: "true"
       metricName: cortex_querier_zone_a_hpa_default
       query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="default",quantile="0.5",pod=~"(querier|query-scheduler)-zone-a.*"}[1m]))
       serverAddress: http://prometheus.default:9090/prometheus
@@ -6337,7 +6534,6 @@ spec:
     name: cortex_querier_zone_a_hpa_default
     type: prometheus
   - metadata:
-      ignoreNullValues: "true"
       metricName: cortex_querier_zone_a_hpa_default_requests_duration
       query: sum(rate(cortex_querier_request_duration_seconds_sum{container="querier",namespace="default",pod=~"(querier|query-scheduler)-zone-a.*"}[1m]))
       serverAddress: http://prometheus.default:9090/prometheus
@@ -6376,7 +6572,6 @@ spec:
     name: querier-zone-b
   triggers:
   - metadata:
-      ignoreNullValues: "true"
       metricName: cortex_querier_zone_b_hpa_default
       query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="default",quantile="0.5",pod=~"(querier|query-scheduler)-zone-b.*"}[1m]))
       serverAddress: http://prometheus.default:9090/prometheus
@@ -6384,7 +6579,6 @@ spec:
     name: cortex_querier_zone_b_hpa_default
     type: prometheus
   - metadata:
-      ignoreNullValues: "true"
       metricName: cortex_querier_zone_b_hpa_default_requests_duration
       query: sum(rate(cortex_querier_request_duration_seconds_sum{container="querier",namespace="default",pod=~"(querier|query-scheduler)-zone-b.*"}[1m]))
       serverAddress: http://prometheus.default:9090/prometheus

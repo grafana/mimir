@@ -32,7 +32,7 @@ Experience with the following is recommended, but not essential:
 
 ### Software requirements
 
-- Kubernetes 1.29 or higher
+- Kubernetes 1.32 or higher
 - The [`kubectl`](https://kubernetes.io/docs/reference/kubectl/) command for your version of Kubernetes
 
   Run the following command to get both the Kubernetes and `kubectl` version: `kubectl version`. The command prints out the server and client versions, where the server is the Kubernetes itself and client means `kubectl`.
@@ -236,7 +236,7 @@ We will install [Grafana Alloy](https://grafana.com/docs/alloy/latest/), preconf
 
    # Disable ServiceMonitor for monitoring Alloy itself
    serviceMonitor:
-   enabled: false
+     enabled: false
    ```
 
    {{< admonition type="note" >}}

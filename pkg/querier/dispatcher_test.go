@@ -1142,7 +1142,7 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 				t, ctx, planner,
 				`rate(some_total[5s])`,
 				types.NewInstantQueryTimeRange(startT.Add(9*time.Second)),
-				enableDelayedNameRemoval,
+				limits.EnableDelayedNameRemoval,
 				1,
 				[]string{"DeduplicateAndMerge", "DropName", "FunctionCall: rate(...)"}, // Evaluate the rate() directly, rather than the root node, which is the deduplicate and merge operation that removes the metric name.
 			),
@@ -1170,7 +1170,7 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 				t, ctx, planner,
 				`rate(some_total[5s])`,
 				types.NewInstantQueryTimeRange(startT.Add(9*time.Second)),
-				enableDelayedNameRemoval,
+				limits.EnableDelayedNameRemoval,
 				1,
 				nil, // The root of the query
 			),

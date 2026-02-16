@@ -21,26 +21,23 @@ RUN apt-get install -y nodejs && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 RUN npm install -g prettier@2.3.2
 
-ENV SHFMT_VERSION=3.2.4
+# renovate: depName=github.com/mvdan/sh
+ENV SHFMT_VERSION=3.12.0
 RUN GOARCH=$(go env GOARCH) && \
-	if [ "$GOARCH" = "amd64" ]; then \
-    	DIGEST=3f5a47f8fec27fae3e06d611559a2063f5d27e4b9501171dde9959b8c60a3538; \
-    elif [ "$GOARCH" = "arm64" ]; then \
-    	DIGEST=6474d9cc08a1c9fe2ef4be7a004951998e3067d46cf55a011ddd5ff7bfab3de6; \
-    fi && \
     URL=https://github.com/mvdan/sh/releases/download/v${SHFMT_VERSION}/shfmt_v${SHFMT_VERSION}_linux_${GOARCH}; \
     curl -fsSLo shfmt "${URL}" && \
-	echo "$DIGEST shfmt" | sha256sum -c && \
 	chmod +x shfmt && \
 	mv shfmt /usr/bin
 
-ENV TANKA_VERSION=0.26.0
+# renovate: depName=github.com/grafana/tanka
+ENV TANKA_VERSION=0.36.3
 RUN GOARCH=$(go env GOARCH) && \
     curl -fSL -o "/usr/bin/tk" "https://github.com/grafana/tanka/releases/download/v${TANKA_VERSION}/tk-linux-${GOARCH}" && \
     chmod a+x /usr/bin/tk
 
 RUN curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b /usr/bin v2.8.0
 
+# renovate: depName=github.com/containers/skopeo
 ENV SKOPEO_VERSION=v1.15.1
 RUN git clone --depth 1 --branch ${SKOPEO_VERSION} https://github.com/containers/skopeo /go/src/github.com/containers/skopeo && \
     DISABLE_DOCS=1 make -C /go/src/github.com/containers/skopeo install && \
@@ -56,8 +53,8 @@ RUN GO111MODULE=on \
 	go install github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb@v0.4.0 && \
 	go install github.com/monitoring-mixins/mixtool/cmd/mixtool@b97ae11 && \
 	go install github.com/mikefarah/yq/v4@v4.13.4 && \
-	go install github.com/google/go-jsonnet/cmd/jsonnet@v0.19.1 && \
-	go install github.com/google/go-jsonnet/cmd/jsonnetfmt@v0.19.1 && \
+	go install github.com/google/go-jsonnet/cmd/jsonnet@v0.21.0 && \
+	go install github.com/google/go-jsonnet/cmd/jsonnetfmt@v0.21.0 && \
 	go install github.com/norwoodj/helm-docs/cmd/helm-docs@v1.8.1 && \
 	go install github.com/open-policy-agent/conftest@v0.62.0 && \
 	go install github.com/uber-go/gopatch@v0.4.0 && \

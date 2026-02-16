@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package ingester
+package tsdb_test
 
 import (
 	"bytes"
@@ -14,16 +14,18 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
 func TestTSDBMetrics(t *testing.T) {
 	mainReg := prometheus.NewPedanticRegistry()
 
-	tsdbMetrics := newTSDBMetrics(mainReg, log.NewNopLogger())
+	tsdbMetrics := tsdb.NewTSDBMetrics(prometheus.WrapRegistererWithPrefix("cortex_ingester_", mainReg), log.NewNopLogger())
 
-	tsdbMetrics.setRegistryForUser("user1", populateTSDBMetrics(12345))
-	tsdbMetrics.setRegistryForUser("user2", populateTSDBMetrics(85787))
-	tsdbMetrics.setRegistryForUser("user3", populateTSDBMetrics(999))
+	tsdbMetrics.SetRegistryForTenant("user1", populateTSDBMetrics(12345))
+	tsdbMetrics.SetRegistryForTenant("user2", populateTSDBMetrics(85787))
+	tsdbMetrics.SetRegistryForTenant("user3", populateTSDBMetrics(999))
 
 	err := testutil.GatherAndCompare(mainReg, bytes.NewBufferString(`
 			# HELP cortex_ingester_tsdb_compactions_total Total number of TSDB compactions that were executed.
@@ -240,56 +242,6 @@ func TestTSDBMetrics(t *testing.T) {
 			# TYPE cortex_ingester_tsdb_exemplar_exemplars_in_storage gauge
 			cortex_ingester_tsdb_exemplar_exemplars_in_storage 30
 
-			# HELP cortex_ingester_tsdb_head_postings_for_matchers_cache_hits_total Total number of postings lists returned from the PostingsForMatchers cache.
-			# TYPE cortex_ingester_tsdb_head_postings_for_matchers_cache_hits_total counter
-			cortex_ingester_tsdb_head_postings_for_matchers_cache_hits_total 0
-
-			# HELP cortex_ingester_tsdb_head_postings_for_matchers_cache_misses_total Total number of requests to the PostingsForMatchers cache for which there is no valid cached entry. The subsequent result is cached.
-			# TYPE cortex_ingester_tsdb_head_postings_for_matchers_cache_misses_total counter
-			cortex_ingester_tsdb_head_postings_for_matchers_cache_misses_total 0
-
-			# HELP cortex_ingester_tsdb_head_postings_for_matchers_cache_requests_total Total number of requests to the PostingsForMatchers cache.
-			# TYPE cortex_ingester_tsdb_head_postings_for_matchers_cache_requests_total counter
-			cortex_ingester_tsdb_head_postings_for_matchers_cache_requests_total 0
-
-			# HELP cortex_ingester_tsdb_head_postings_for_matchers_cache_skips_total Total number of requests to the PostingsForMatchers cache that have been skipped the cache. The subsequent result is not cached.
-			# TYPE cortex_ingester_tsdb_head_postings_for_matchers_cache_skips_total counter
-			cortex_ingester_tsdb_head_postings_for_matchers_cache_skips_total{reason="canceled-cached-entry"} 0
-			cortex_ingester_tsdb_head_postings_for_matchers_cache_skips_total{reason="ineligible"} 0
-			cortex_ingester_tsdb_head_postings_for_matchers_cache_skips_total{reason="stale-cached-entry"} 0
-
-			# HELP cortex_ingester_tsdb_head_postings_for_matchers_cache_evictions_total Total number of evictions from the PostingsForMatchers cache.
-			# TYPE cortex_ingester_tsdb_head_postings_for_matchers_cache_evictions_total counter
-			cortex_ingester_tsdb_head_postings_for_matchers_cache_evictions_total{reason="max-bytes-reached"} 0
-			cortex_ingester_tsdb_head_postings_for_matchers_cache_evictions_total{reason="max-items-reached"} 0
-			cortex_ingester_tsdb_head_postings_for_matchers_cache_evictions_total{reason="ttl-expired"} 0
-			cortex_ingester_tsdb_head_postings_for_matchers_cache_evictions_total{reason="unknown"} 0
-
-			# HELP cortex_ingester_tsdb_block_postings_for_matchers_cache_hits_total Total number of postings lists returned from the PostingsForMatchers cache.
-			# TYPE cortex_ingester_tsdb_block_postings_for_matchers_cache_hits_total counter
-			cortex_ingester_tsdb_block_postings_for_matchers_cache_hits_total 0
-
-			# HELP cortex_ingester_tsdb_block_postings_for_matchers_cache_misses_total Total number of requests to the PostingsForMatchers cache for which there is no valid cached entry. The subsequent result is cached.
-			# TYPE cortex_ingester_tsdb_block_postings_for_matchers_cache_misses_total counter
-			cortex_ingester_tsdb_block_postings_for_matchers_cache_misses_total 0
-
-			# HELP cortex_ingester_tsdb_block_postings_for_matchers_cache_requests_total Total number of requests to the PostingsForMatchers cache.
-			# TYPE cortex_ingester_tsdb_block_postings_for_matchers_cache_requests_total counter
-			cortex_ingester_tsdb_block_postings_for_matchers_cache_requests_total 0
-
-			# HELP cortex_ingester_tsdb_block_postings_for_matchers_cache_skips_total Total number of requests to the PostingsForMatchers cache that have been skipped the cache. The subsequent result is not cached.
-			# TYPE cortex_ingester_tsdb_block_postings_for_matchers_cache_skips_total counter
-			cortex_ingester_tsdb_block_postings_for_matchers_cache_skips_total{reason="canceled-cached-entry"} 0
-			cortex_ingester_tsdb_block_postings_for_matchers_cache_skips_total{reason="ineligible"} 0
-			cortex_ingester_tsdb_block_postings_for_matchers_cache_skips_total{reason="stale-cached-entry"} 0
-
-			# HELP cortex_ingester_tsdb_block_postings_for_matchers_cache_evictions_total Total number of evictions from the PostingsForMatchers cache.
-			# TYPE cortex_ingester_tsdb_block_postings_for_matchers_cache_evictions_total counter
-			cortex_ingester_tsdb_block_postings_for_matchers_cache_evictions_total{reason="max-bytes-reached"} 0
-			cortex_ingester_tsdb_block_postings_for_matchers_cache_evictions_total{reason="max-items-reached"} 0
-			cortex_ingester_tsdb_block_postings_for_matchers_cache_evictions_total{reason="ttl-expired"} 0
-			cortex_ingester_tsdb_block_postings_for_matchers_cache_evictions_total{reason="unknown"} 0
-
 			# HELP cortex_ingester_tsdb_wal_replay_unknown_refs_total Total number of unknown series references encountered during WAL replay.
 			# TYPE cortex_ingester_tsdb_wal_replay_unknown_refs_total counter
 			cortex_ingester_tsdb_wal_replay_unknown_refs_total{type="series", user="user1"} 12345
@@ -304,28 +256,6 @@ func TestTSDBMetrics(t *testing.T) {
 			cortex_ingester_tsdb_wbl_replay_unknown_refs_total{type="exemplars", user="user1"} 12345
 			cortex_ingester_tsdb_wbl_replay_unknown_refs_total{type="exemplars", user="user2"} 85787
 			cortex_ingester_tsdb_wbl_replay_unknown_refs_total{type="exemplars", user="user3"} 999
-
-			# HELP cortex_ingester_tsdb_block_postings_for_matchers_cache_bytes_total Total number of bytes in the PostingsForMatchers cache.
-			# TYPE cortex_ingester_tsdb_block_postings_for_matchers_cache_bytes_total gauge
-			cortex_ingester_tsdb_block_postings_for_matchers_cache_bytes_total 0
-			# HELP cortex_ingester_tsdb_block_postings_for_matchers_cache_entries_total Total number of entries in the PostingsForMatchers cache.
-			# TYPE cortex_ingester_tsdb_block_postings_for_matchers_cache_entries_total gauge
-			cortex_ingester_tsdb_block_postings_for_matchers_cache_entries_total 0
-
-			# HELP cortex_ingester_tsdb_head_postings_for_matchers_cache_invalidations_total Total number of cache entries that were invalidated.
-			# TYPE cortex_ingester_tsdb_head_postings_for_matchers_cache_invalidations_total counter
-			cortex_ingester_tsdb_head_postings_for_matchers_cache_invalidations_total 0
-
-			# HELP cortex_ingester_tsdb_head_postings_for_matchers_cache_bytes_total Total number of bytes in the PostingsForMatchers cache.
-			# TYPE cortex_ingester_tsdb_head_postings_for_matchers_cache_bytes_total gauge
-			cortex_ingester_tsdb_head_postings_for_matchers_cache_bytes_total 0
-			# HELP cortex_ingester_tsdb_head_postings_for_matchers_cache_entries_total Total number of entries in the PostingsForMatchers cache.
-			# TYPE cortex_ingester_tsdb_head_postings_for_matchers_cache_entries_total gauge
-			cortex_ingester_tsdb_head_postings_for_matchers_cache_entries_total 0
-
-			# HELP cortex_ingester_tsdb_block_postings_for_matchers_cache_invalidations_total Total number of cache entries that were invalidated.
-			# TYPE cortex_ingester_tsdb_block_postings_for_matchers_cache_invalidations_total counter
-			cortex_ingester_tsdb_block_postings_for_matchers_cache_invalidations_total 0
 	`))
 	require.NoError(t, err)
 }
@@ -333,12 +263,12 @@ func TestTSDBMetrics(t *testing.T) {
 func TestTSDBMetricsWithRemoval(t *testing.T) {
 	mainReg := prometheus.NewPedanticRegistry()
 
-	tsdbMetrics := newTSDBMetrics(mainReg, log.NewNopLogger())
+	tsdbMetrics := tsdb.NewTSDBMetrics(prometheus.WrapRegistererWithPrefix("cortex_ingester_", mainReg), log.NewNopLogger())
 
-	tsdbMetrics.setRegistryForUser("user1", populateTSDBMetrics(12345))
-	tsdbMetrics.setRegistryForUser("user2", populateTSDBMetrics(85787))
-	tsdbMetrics.setRegistryForUser("user3", populateTSDBMetrics(999))
-	tsdbMetrics.removeRegistryForUser("user3")
+	tsdbMetrics.SetRegistryForTenant("user1", populateTSDBMetrics(12345))
+	tsdbMetrics.SetRegistryForTenant("user2", populateTSDBMetrics(85787))
+	tsdbMetrics.SetRegistryForTenant("user3", populateTSDBMetrics(999))
+	tsdbMetrics.RemoveRegistryForTenant("user3")
 
 	err := testutil.GatherAndCompare(mainReg, bytes.NewBufferString(`
 			# HELP cortex_ingester_tsdb_compactions_total Total number of TSDB compactions that were executed.
@@ -545,56 +475,6 @@ func TestTSDBMetricsWithRemoval(t *testing.T) {
 			cortex_ingester_tsdb_out_of_order_samples_appended_total{user="user1"} 3
 			cortex_ingester_tsdb_out_of_order_samples_appended_total{user="user2"} 3
 
-			# HELP cortex_ingester_tsdb_head_postings_for_matchers_cache_hits_total Total number of postings lists returned from the PostingsForMatchers cache.
-			# TYPE cortex_ingester_tsdb_head_postings_for_matchers_cache_hits_total counter
-			cortex_ingester_tsdb_head_postings_for_matchers_cache_hits_total 0
-
-			# HELP cortex_ingester_tsdb_head_postings_for_matchers_cache_misses_total Total number of requests to the PostingsForMatchers cache for which there is no valid cached entry. The subsequent result is cached.
-			# TYPE cortex_ingester_tsdb_head_postings_for_matchers_cache_misses_total counter
-			cortex_ingester_tsdb_head_postings_for_matchers_cache_misses_total 0
-
-			# HELP cortex_ingester_tsdb_head_postings_for_matchers_cache_requests_total Total number of requests to the PostingsForMatchers cache.
-			# TYPE cortex_ingester_tsdb_head_postings_for_matchers_cache_requests_total counter
-			cortex_ingester_tsdb_head_postings_for_matchers_cache_requests_total 0
-
-			# HELP cortex_ingester_tsdb_head_postings_for_matchers_cache_skips_total Total number of requests to the PostingsForMatchers cache that have been skipped the cache. The subsequent result is not cached.
-			# TYPE cortex_ingester_tsdb_head_postings_for_matchers_cache_skips_total counter
-			cortex_ingester_tsdb_head_postings_for_matchers_cache_skips_total{reason="canceled-cached-entry"} 0
-			cortex_ingester_tsdb_head_postings_for_matchers_cache_skips_total{reason="ineligible"} 0
-			cortex_ingester_tsdb_head_postings_for_matchers_cache_skips_total{reason="stale-cached-entry"} 0
-
-			# HELP cortex_ingester_tsdb_head_postings_for_matchers_cache_evictions_total Total number of evictions from the PostingsForMatchers cache.
-			# TYPE cortex_ingester_tsdb_head_postings_for_matchers_cache_evictions_total counter
-			cortex_ingester_tsdb_head_postings_for_matchers_cache_evictions_total{reason="max-bytes-reached"} 0
-			cortex_ingester_tsdb_head_postings_for_matchers_cache_evictions_total{reason="max-items-reached"} 0
-			cortex_ingester_tsdb_head_postings_for_matchers_cache_evictions_total{reason="ttl-expired"} 0
-			cortex_ingester_tsdb_head_postings_for_matchers_cache_evictions_total{reason="unknown"} 0
-
-			# HELP cortex_ingester_tsdb_block_postings_for_matchers_cache_hits_total Total number of postings lists returned from the PostingsForMatchers cache.
-			# TYPE cortex_ingester_tsdb_block_postings_for_matchers_cache_hits_total counter
-			cortex_ingester_tsdb_block_postings_for_matchers_cache_hits_total 0
-
-			# HELP cortex_ingester_tsdb_block_postings_for_matchers_cache_misses_total Total number of requests to the PostingsForMatchers cache for which there is no valid cached entry. The subsequent result is cached.
-			# TYPE cortex_ingester_tsdb_block_postings_for_matchers_cache_misses_total counter
-			cortex_ingester_tsdb_block_postings_for_matchers_cache_misses_total 0
-
-			# HELP cortex_ingester_tsdb_block_postings_for_matchers_cache_requests_total Total number of requests to the PostingsForMatchers cache.
-			# TYPE cortex_ingester_tsdb_block_postings_for_matchers_cache_requests_total counter
-			cortex_ingester_tsdb_block_postings_for_matchers_cache_requests_total 0
-
-			# HELP cortex_ingester_tsdb_block_postings_for_matchers_cache_skips_total Total number of requests to the PostingsForMatchers cache that have been skipped the cache. The subsequent result is not cached.
-			# TYPE cortex_ingester_tsdb_block_postings_for_matchers_cache_skips_total counter
-			cortex_ingester_tsdb_block_postings_for_matchers_cache_skips_total{reason="canceled-cached-entry"} 0
-			cortex_ingester_tsdb_block_postings_for_matchers_cache_skips_total{reason="ineligible"} 0
-			cortex_ingester_tsdb_block_postings_for_matchers_cache_skips_total{reason="stale-cached-entry"} 0
-
-			# HELP cortex_ingester_tsdb_block_postings_for_matchers_cache_evictions_total Total number of evictions from the PostingsForMatchers cache.
-			# TYPE cortex_ingester_tsdb_block_postings_for_matchers_cache_evictions_total counter
-			cortex_ingester_tsdb_block_postings_for_matchers_cache_evictions_total{reason="max-bytes-reached"} 0
-			cortex_ingester_tsdb_block_postings_for_matchers_cache_evictions_total{reason="max-items-reached"} 0
-			cortex_ingester_tsdb_block_postings_for_matchers_cache_evictions_total{reason="ttl-expired"} 0
-			cortex_ingester_tsdb_block_postings_for_matchers_cache_evictions_total{reason="unknown"} 0
-
 			# HELP cortex_ingester_tsdb_wal_replay_unknown_refs_total Total number of unknown series references encountered during WAL replay.
 			# TYPE cortex_ingester_tsdb_wal_replay_unknown_refs_total counter
 			cortex_ingester_tsdb_wal_replay_unknown_refs_total{type="series", user="user1"} 12345
@@ -606,28 +486,6 @@ func TestTSDBMetricsWithRemoval(t *testing.T) {
 			# TYPE cortex_ingester_tsdb_wbl_replay_unknown_refs_total counter
 			cortex_ingester_tsdb_wbl_replay_unknown_refs_total{type="exemplars", user="user1"} 12345
 			cortex_ingester_tsdb_wbl_replay_unknown_refs_total{type="exemplars", user="user2"} 85787
-
-			# HELP cortex_ingester_tsdb_block_postings_for_matchers_cache_bytes_total Total number of bytes in the PostingsForMatchers cache.
-			# TYPE cortex_ingester_tsdb_block_postings_for_matchers_cache_bytes_total gauge
-			cortex_ingester_tsdb_block_postings_for_matchers_cache_bytes_total 0
-			# HELP cortex_ingester_tsdb_block_postings_for_matchers_cache_entries_total Total number of entries in the PostingsForMatchers cache.
-			# TYPE cortex_ingester_tsdb_block_postings_for_matchers_cache_entries_total gauge
-			cortex_ingester_tsdb_block_postings_for_matchers_cache_entries_total 0
-
-			# HELP cortex_ingester_tsdb_head_postings_for_matchers_cache_invalidations_total Total number of cache entries that were invalidated.
-			# TYPE cortex_ingester_tsdb_head_postings_for_matchers_cache_invalidations_total counter
-			cortex_ingester_tsdb_head_postings_for_matchers_cache_invalidations_total 0
-
-			# HELP cortex_ingester_tsdb_head_postings_for_matchers_cache_bytes_total Total number of bytes in the PostingsForMatchers cache.
-			# TYPE cortex_ingester_tsdb_head_postings_for_matchers_cache_bytes_total gauge
-			cortex_ingester_tsdb_head_postings_for_matchers_cache_bytes_total 0
-			# HELP cortex_ingester_tsdb_head_postings_for_matchers_cache_entries_total Total number of entries in the PostingsForMatchers cache.
-			# TYPE cortex_ingester_tsdb_head_postings_for_matchers_cache_entries_total gauge
-			cortex_ingester_tsdb_head_postings_for_matchers_cache_entries_total 0
-
-			# HELP cortex_ingester_tsdb_block_postings_for_matchers_cache_invalidations_total Total number of cache entries that were invalidated.
-			# TYPE cortex_ingester_tsdb_block_postings_for_matchers_cache_invalidations_total counter
-			cortex_ingester_tsdb_block_postings_for_matchers_cache_invalidations_total 0
 	`))
 	require.NoError(t, err)
 }
