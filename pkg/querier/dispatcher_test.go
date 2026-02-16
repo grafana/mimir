@@ -565,12 +565,12 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second),
 				enableDelayedNameRemoval,
 				2,
-				[]string{"BinaryExpression: LHS + RHS", `LHS: VectorSelector: {__name__="my_three_item_series", idx=~"(0|1|2)"}`},
-				[]string{"BinaryExpression: LHS + RHS", `RHS: VectorSelector: {__name__="my_three_item_series"}`}, // Note that the wildcard selector has been removed by the "reduce matchers" pass.
+				[]string{"BinaryExpression: LHS + RHS", `LHS: DuplicateFilter: {idx=~"(0|1|2)"}`},
+				[]string{"BinaryExpression: LHS + RHS", `RHS: Duplicate`}, // Note that the wildcard selector has been removed by the "reduce matchers" pass.
 			),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				newSeriesMetadataMessage(
-					0,
+					2,
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "0"))},
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "1"))},
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "2"))},
@@ -582,7 +582,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "2"))},
 				),
 				newInstantVectorSeriesDataMessage(
-					0,
+					2,
 					querierpb.InstantVectorSeriesData{
 						Floats: []mimirpb.Sample{
 							{TimestampMs: 0, Value: 3},
@@ -616,7 +616,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					},
 				),
 				newInstantVectorSeriesDataMessage(
-					0,
+					2,
 					querierpb.InstantVectorSeriesData{
 						Floats: []mimirpb.Sample{
 							{TimestampMs: 0, Value: 5},
@@ -636,7 +636,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					},
 				),
 				newEvaluationCompletedMessage(stats.Stats{
-					SamplesProcessed:   18,
+					SamplesProcessed:   9,
 					QueueTime:          3 * time.Second,
 					WallTime:           expectedQueryWallTime,
 					FetchedSeriesCount: 123,
