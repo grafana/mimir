@@ -79,12 +79,7 @@ func newWithSchedulerClient(
 
 	var readerMetrics *ingest.ReaderMetrics
 	if cfg.Kafka.FetchConcurrencyMax > 0 {
-		m := ingest.NewReaderMetrics(
-			prometheus.WrapRegistererWith(prometheus.Labels{"component": "block-builder"}, reg),
-			readerMetricsSource,
-			cfg.Kafka.Topic,
-			kpm,
-		)
+		m := ingest.NewReaderMetrics(reg, readerMetricsSource, cfg.Kafka.Topic, kpm)
 		readerMetrics = &m
 	}
 
@@ -166,6 +161,14 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 			return fmt.Errorf("starting kafka reader metrics: %w", err)
 		}
 	}
+
+	// Ensure readerMetrics is stopped if starting fails after this point.
+	// dskit's BasicService does not call stopping when starting returns an error.
+	defer func() {
+		if err != nil && b.readerMetrics != nil {
+			_ = services.StopAndAwaitTerminated(context.Background(), b.readerMetrics)
+		}
+	}()
 
 	b.kafkaClient, err = ingest.NewKafkaReaderClient(
 		b.cfg.Kafka,
