@@ -235,12 +235,12 @@ func New(
 		} else {
 			eng = streamingEngine
 		}
-		// Wrap queryable with memory tracking
-		queryable = NewMemoryTrackingQueryable(queryable)
 	default:
 		panic(fmt.Sprintf("invalid config not caught by validation: unknown PromQL engine '%s'", cfg.QueryEngine))
 	}
 
+	// Wrap queryable with memory tracking so that there will SeriesLabelsDeduplicator in the context.
+	queryable = NewMemoryTrackingQueryable(queryable)
 	lazyQueryable := storage.QueryableFunc(func(minT int64, maxT int64) (storage.Querier, error) {
 		querier, err := queryable.Querier(minT, maxT)
 		if err != nil {
