@@ -265,23 +265,28 @@ func (b *RangeVectorDuplicationBuffer) CloseConsumer(consumer *RangeVectorDuplic
 		return
 	}
 
+	// Remove any buffered series that are no longer needed because they were only being retained for the consumer
+	// that was just closed.
 	consumer.hasReadCurrentSeriesSamples = true
 	earliestSeriesIndexStillToReturn := b.earliestSeriesIndexStillToReturn()
+	allOpenConsumersHaveNoFilters := b.allOpenConsumersHaveNoFilters()
+	lastIndexToCheck := b.lastNextStepSamplesCallIndex
+
+	if allOpenConsumersHaveNoFilters {
+		// If all open consumers have no filters, then we only need to check for buffered series to discard up to
+		// the lagging open consumer, as at least one open consumer will need every buffered series after that.
+		lastIndexToCheck = earliestSeriesIndexStillToReturn - 1
+	}
 
 	if consumer.currentUnfilteredSeriesIndex == -1 {
 		consumer.currentUnfilteredSeriesIndex = 0
 	}
 
-	for b.buffer.Size() > 0 && consumer.currentUnfilteredSeriesIndex <= b.lastNextStepSamplesCallIndex {
+	for b.buffer.Size() > 0 && consumer.currentUnfilteredSeriesIndex <= lastIndexToCheck {
 		thisSeriesIndex := consumer.currentUnfilteredSeriesIndex
 
-		// Advance nextUnfilteredSeriesIndex now so that the anyConsumerWillRead call below ignores this consumer.
+		// Advance currentUnfilteredSeriesIndex now so that the anyConsumerWillRead call below ignores this consumer.
 		consumer.currentUnfilteredSeriesIndex++
-
-		if consumer.unfilteredSeriesBitmap != nil && !consumer.unfilteredSeriesBitmap[thisSeriesIndex] {
-			// This consumer didn't need this series, so it would not have been buffered for it.
-			continue
-		}
 
 		if thisSeriesIndex < earliestSeriesIndexStillToReturn {
 			// We know no consumer needs this series, as all consumers are past it. Remove it if it's buffered.
@@ -289,7 +294,15 @@ func (b *RangeVectorDuplicationBuffer) CloseConsumer(consumer *RangeVectorDuplic
 				d.Close()
 			}
 		} else {
-			// It's possible no consumer needs this series, but we'll have to check first.
+			// It's possible no consumer needs this series, but we'll have to check if it matches the filters on any open consumer first.
+
+			if consumer.unfilteredSeriesBitmap != nil && !consumer.unfilteredSeriesBitmap[thisSeriesIndex] {
+				// This consumer has filters but doesn't need this series, so this series would not have been buffered for this consumer.
+				// So we don't need to check if any other consumer needs it - either no consumer needs the series, or a consumer needs it,
+				// but either way, the fact this consumer is now closed doesn't change anything.
+				continue
+			}
+
 			if !b.anyConsumerWillRead(thisSeriesIndex) {
 				if d, ok := b.buffer.RemoveIfPresent(thisSeriesIndex); ok {
 					d.Close()
@@ -317,6 +330,20 @@ func (b *RangeVectorDuplicationBuffer) earliestSeriesIndexStillToReturn() int {
 	}
 
 	return idx
+}
+
+func (b *RangeVectorDuplicationBuffer) allOpenConsumersHaveNoFilters() bool {
+	for _, consumer := range b.consumers {
+		if consumer.closed {
+			continue
+		}
+
+		if len(consumer.filters) > 0 {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (b *RangeVectorDuplicationBuffer) close() {
