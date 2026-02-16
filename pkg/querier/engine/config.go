@@ -50,7 +50,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.MaxSamples, "querier.max-samples", 50e6, sharedWithQueryFrontend("Maximum number of samples a single query can load into memory."))
 	f.DurationVar(&cfg.DefaultEvaluationInterval, "querier.default-evaluation-interval", time.Minute, sharedWithQueryFrontend("The default evaluation interval or step size for subqueries."))
 	f.DurationVar(&cfg.LookbackDelta, "querier.lookback-delta", 5*time.Minute, sharedWithQueryFrontend("Time since the last sample after which a time series is considered stale and ignored by expression evaluations."))
-	f.BoolVar(&cfg.EnableDelayedNameRemovalPrometheusEngine, "querier.enable-delayed-name-removal-prometheus-engine", false, "Enable the experimental Prometheus feature for delayed name removal in the fallback Prometheus engine.")
+	f.BoolVar(&cfg.EnableDelayedNameRemovalPrometheusEngine, "querier.enable-delayed-name-removal-prometheus-engine", false, "Enable the experimental Prometheus feature for delayed name removal in the fallback Prometheus engine. Note that this only applies when the Mimir Query Engine is enabled along with fallback to the Prometheus engine.")
 
 	cfg.MimirQueryEngine.RegisterFlags(f)
 }
