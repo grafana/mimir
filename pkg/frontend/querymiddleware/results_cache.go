@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
@@ -317,7 +318,7 @@ func areEvaluationTimeModifiersCachable(r MetricsQueryRequest, maxCacheTime int6
 	if !strings.Contains(query, "@") && !strings.Contains(query, "offset") {
 		return true, ""
 	}
-	expr, err := parser.ParseExpr(query)
+	expr, err := astmapper.CreateParser().ParseExpr(query)
 	if err != nil {
 		// We are being pessimistic in such cases.
 		return false, notCachableReasonModifiersNotCachableFailedParse

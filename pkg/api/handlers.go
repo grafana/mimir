@@ -277,6 +277,7 @@ func NewQuerierHandler(
 		nil,
 		nil,
 		v1.OpenAPIOptions{},
+		nil, // parser.Parser - will use default in v1.NewAPI
 	)
 
 	api.InstallCodec(protobufCodec{})

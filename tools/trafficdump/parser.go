@@ -17,11 +17,11 @@ import (
 
 	"github.com/grafana/regexp"
 	"github.com/prometheus/prometheus/model/labels"
-	promql_parser "github.com/prometheus/prometheus/promql/parser"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 const maxBufferPoolSize = 1024 * 1024
@@ -84,7 +84,8 @@ func (rp *parser) prepare() {
 
 	if rp.metricSelector != "" {
 		var err error
-		rp.matchers, err = promql_parser.ParseMetricSelector(rp.metricSelector)
+		p := promqlext.NewExperimentalParser()
+		rp.matchers, err = p.ParseMetricSelector(rp.metricSelector)
 		if err != nil {
 			log.Fatalln("failed to parse matcher selector", "err", err)
 		}

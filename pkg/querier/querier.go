@@ -27,7 +27,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
@@ -205,16 +204,6 @@ func New(
 	exemplarQueryable := newDistributorExemplarQueryable(distributor, logger)
 
 	opts, mqeOpts := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg)
-
-	// Experimental functions are always enabled globally for all engines. Access to them
-	// is controlled by an experimental functions middleware that reads per-tenant settings.
-	parser.EnableExperimentalFunctions = true
-
-	// This enables duration arithmetic https://github.com/prometheus/prometheus/pull/16249.
-	parser.ExperimentalDurationExpr = true
-
-	// This enables the anchored and smoothed selector modifiers
-	parser.EnableExtendedRangeSelectors = true
 
 	var eng promql.QueryEngine
 	var streamingEngine *streamingpromql.Engine

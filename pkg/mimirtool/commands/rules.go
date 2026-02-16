@@ -23,11 +23,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
-	"github.com/prometheus/prometheus/promql/parser"
 	yamlv3 "go.yaml.in/yaml/v3"
 	"golang.org/x/term"
 
 	"github.com/grafana/mimir/pkg/mimirtool/client"
+	"github.com/grafana/mimir/pkg/mimirtool/config"
 	"github.com/grafana/mimir/pkg/mimirtool/printer"
 	"github.com/grafana/mimir/pkg/mimirtool/rules"
 	"github.com/grafana/mimir/pkg/mimirtool/rules/rwrulefmt"
@@ -118,6 +118,9 @@ type RuleCommand struct {
 	// Diff Rules Config
 	Verbose bool
 
+	// Enable experimental PromQL functions
+	enableExperimentalFunctions bool
+
 	// Metrics.
 	ruleLoadTimestamp        prometheus.Gauge
 	ruleLoadSuccessTimestamp prometheus.Gauge
@@ -133,7 +136,7 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, lo
 	rulesCmd.Flag("key", "Basic auth password to use when contacting Grafana Mimir; alternatively, set "+envVars.APIKey+".").Default("").Envar(envVars.APIKey).StringVar(&r.ClientConfig.Key)
 	rulesCmd.Flag("backend", "Backend type to interact with (deprecated)").Default(rules.MimirBackend).EnumVar(&r.Backend, backends...)
 	rulesCmd.Flag("auth-token", "Authentication token for bearer token or JWT auth, alternatively set "+envVars.AuthToken+".").Default("").Envar(envVars.AuthToken).StringVar(&r.ClientConfig.AuthToken)
-	rulesCmd.Flag("enable-experimental-functions", "If set, enables parsing experimental PromQL functions.").BoolVar(&parser.EnableExperimentalFunctions)
+	rulesCmd.Flag("enable-experimental-functions", "If set, enables parsing experimental PromQL functions.").BoolVar(&r.enableExperimentalFunctions)
 	r.ClientConfig.ExtraHeaders = map[string]string{}
 	rulesCmd.Flag("extra-headers", "Extra headers to add to the requests in header=value format, alternatively set newline separated "+envVars.ExtraHeaders+".").Envar(envVars.ExtraHeaders).StringMapVar(&r.ClientConfig.ExtraHeaders)
 
@@ -303,6 +306,8 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, lo
 }
 
 func (r *RuleCommand) setup(_ *kingpin.ParseContext, reg prometheus.Registerer) error {
+	config.ParserOptions.EnableExperimentalFunctions = r.enableExperimentalFunctions
+
 	r.ruleLoadTimestamp = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 		Name: "cortex_last_rule_load_timestamp_seconds",
 		Help: "The timestamp of the last rule load.",

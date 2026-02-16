@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql/parser"
 
+	"github.com/grafana/mimir/pkg/mimirtool/config"
 	"github.com/grafana/mimir/pkg/mimirtool/minisdk"
 )
 
@@ -193,7 +194,8 @@ func replaceVariables(query string) string {
 }
 
 func parseQuery(query string, metrics map[string]struct{}) error {
-	expr, err := parser.ParseExpr(replaceVariables(query))
+	p := config.CreateParser()
+	expr, err := p.ParseExpr(replaceVariables(query))
 	if err != nil {
 		return err
 	}

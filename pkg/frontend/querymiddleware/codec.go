@@ -36,6 +36,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/api"
@@ -364,7 +365,7 @@ func (c Codec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryRequest, er
 	}
 
 	query := reqValues.Get("query")
-	queryExpr, err := parser.ParseExpr(query)
+	queryExpr, err := astmapper.CreateParser().ParseExpr(query)
 	if err != nil {
 		return nil, DecorateWithParamName(err, "query")
 	}
@@ -391,7 +392,7 @@ func (c Codec) decodeInstantQueryRequest(r *http.Request) (MetricsQueryRequest, 
 	}
 
 	query := reqValues.Get("query")
-	queryExpr, err := parser.ParseExpr(query)
+	queryExpr, err := astmapper.CreateParser().ParseExpr(query)
 	if err != nil {
 		return nil, DecorateWithParamName(err, "query")
 	}

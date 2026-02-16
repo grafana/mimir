@@ -50,11 +50,6 @@ var (
 	lookbackDelta = 5 * time.Minute
 )
 
-func init() {
-	// This enables duration arithmetic https://github.com/prometheus/prometheus/pull/16249.
-	parser.ExperimentalDurationExpr = true
-}
-
 func mockHandlerWith(resp *PrometheusResponse, err error) MetricsQueryHandler {
 	return HandlerFunc(func(ctx context.Context, _ MetricsQueryRequest) (Response, error) {
 		if expired := ctx.Err(); expired != nil {
@@ -1514,12 +1509,13 @@ func BenchmarkQueryShardingRewriting(b *testing.B) {
 	sharder := NewQuerySharder(astmapper.EmbeddedQueriesSquasher, limits, 0, reg, log.NewNopLogger())
 	tenants := []string{"tenant-1"}
 	ctx := context.Background()
+	p := astmapper.CreateParser()
 
 	for _, expr := range testCases {
 		b.Run(expr, func(b *testing.B) {
 			for b.Loop() {
 				// We must parse the expression each time as shard() mutates the expression.
-				parsedExpr, err := parser.ParseExpr(expr)
+				parsedExpr, err := p.ParseExpr(expr)
 				if err != nil {
 					require.NoError(b, err)
 				}
@@ -1716,9 +1712,11 @@ func TestLongestRegexpMatcherBytes(t *testing.T) {
 		},
 	}
 
+	p := astmapper.CreateParser()
+
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			parsed, err := parser.ParseExpr(testData.expr)
+			parsed, err := p.ParseExpr(testData.expr)
 			require.NoError(t, err)
 
 			actual := longestRegexpMatcherBytes(parsed)

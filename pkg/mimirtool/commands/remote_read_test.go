@@ -22,19 +22,21 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/mimirtool/config"
 )
 
 // parseSelectors converts string selectors to matchers for testing
 func parseSelectors(t *testing.T, selectors ...string) [][]*labels.Matcher {
 	var result [][]*labels.Matcher
+	p := config.CreateParser()
 	for _, selector := range selectors {
-		matchers, err := parser.ParseMetricSelector(selector)
+		matchers, err := p.ParseMetricSelector(selector)
 		require.NoError(t, err)
 		result = append(result, matchers)
 	}

@@ -10,6 +10,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/promql"
+
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 type EngineOpts struct {
@@ -58,6 +60,7 @@ func NewTestEngineOpts() EngineOpts {
 			EnableAtModifier:         true,
 			EnableNegativeOffset:     true,
 			NoStepSubqueryIntervalFn: func(int64) int64 { return time.Minute.Milliseconds() },
+			Parser:                   promqlext.NewExperimentalParser(),
 		},
 
 		Pedantic: true,

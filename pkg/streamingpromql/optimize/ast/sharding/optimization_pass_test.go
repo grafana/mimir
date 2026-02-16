@@ -14,6 +14,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 func TestOptimizationPass(t *testing.T) {
@@ -121,7 +122,7 @@ func rewriteForSubquerySpinoff(ctx context.Context, expr string) (parser.Expr, e
 	stats := astmapper.NewSubquerySpinOffMapperStats()
 	defaultStepFunc := func(rangeMillis int64) int64 { return 1000 }
 	mapper := astmapper.NewSubquerySpinOffMapper(defaultStepFunc, log.NewNopLogger(), stats)
-	ast, err := parser.ParseExpr(expr)
+	ast, err := promqlext.NewExperimentalParser().ParseExpr(expr)
 	if err != nil {
 		return nil, err
 	}

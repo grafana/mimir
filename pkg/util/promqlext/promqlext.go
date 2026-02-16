@@ -14,3 +14,18 @@ func ExtendPromQL() {
 	parser.Functions["holt_winters"] = parser.Functions["double_exponential_smoothing"]
 	parser.Functions["holt_winters"].Experimental = false
 }
+
+// NewBaseParser creates a new parser with default options.
+func NewDefaultParser() parser.Parser {
+	return parser.NewParser(parser.Options{})
+}
+
+// NewExperimentalParser creates a new parser with all experimental features enabled.
+func NewExperimentalParser() parser.Parser {
+	return parser.NewParser(parser.Options{
+		EnableExperimentalFunctions:  true,
+		ExperimentalDurationExpr:     true,
+		EnableExtendedRangeSelectors: true,
+		EnableBinopFillModifiers:     true,
+	})
+}

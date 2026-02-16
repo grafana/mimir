@@ -31,6 +31,7 @@ import (
 	"go.uber.org/atomic"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -1156,8 +1157,10 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 
 	lookbackDelta := 5 * time.Minute
 
+	p := astmapper.CreateParser()
+
 	mustParseExpr := func(s string) parser.Expr {
-		expr, err := parser.ParseExpr(s)
+		expr, err := p.ParseExpr(s)
 		require.NoError(t, err)
 		return expr
 	}

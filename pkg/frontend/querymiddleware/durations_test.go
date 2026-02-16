@@ -13,10 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func init() {
-	parser.ExperimentalDurationExpr = true
-}
-
 func TestDurationMiddleware(t *testing.T) {
 	testCases := map[string]struct {
 		query         string
@@ -54,11 +50,14 @@ func TestDurationMiddleware(t *testing.T) {
 			expectRange:   "rate(http_requests_total[31s])",
 		},
 	}
+	p := parser.NewParser(parser.Options{
+		ExperimentalDurationExpr: true,
+	})
 	for name, tc := range testCases {
 		for _, instant := range []bool{false, true} {
 			t.Run(fmt.Sprintf("name=%s instant=%v", name, instant), func(t *testing.T) {
 				var req MetricsQueryRequest
-				expr, err := parser.ParseExpr(tc.query)
+				expr, err := p.ParseExpr(tc.query)
 				require.NoError(t, err)
 				if instant {
 					req = NewPrometheusInstantQueryRequest(

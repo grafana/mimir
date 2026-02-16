@@ -11,7 +11,6 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql"
@@ -26,15 +25,6 @@ import (
 )
 
 func TestOptimizationPass(t *testing.T) {
-	enableExtendedRangeSelectors := parser.EnableExtendedRangeSelectors
-	enableExperimentalFunctions := parser.EnableExperimentalFunctions
-	defer func() {
-		parser.EnableExtendedRangeSelectors = enableExtendedRangeSelectors
-		parser.EnableExperimentalFunctions = enableExperimentalFunctions
-	}()
-	parser.EnableExtendedRangeSelectors = true
-	parser.EnableExperimentalFunctions = true
-
 	testCases := map[string]struct {
 		expr                        string
 		rangeQuery                  bool

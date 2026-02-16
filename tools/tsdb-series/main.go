@@ -15,13 +15,13 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 var logger = util_log.MakeLeveledLogger(os.Stderr, "info")
@@ -62,7 +62,8 @@ func main() {
 	var matchers []*labels.Matcher
 	if *metricSelector != "" {
 		var err error
-		matchers, err = parser.ParseMetricSelector(*metricSelector)
+		p := promqlext.NewExperimentalParser()
+		matchers, err = p.ParseMetricSelector(*metricSelector)
 		if err != nil {
 			level.Error(logger).Log("msg", "failed to parse matcher selector", "err", err)
 			os.Exit(1)

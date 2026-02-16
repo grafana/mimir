@@ -11,7 +11,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 
@@ -117,7 +116,7 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 			return storage.ErrSeriesSet(errors.New("missing required labels for subquery"))
 		}
 
-		queryExpr, err := parser.ParseExpr(expr)
+		queryExpr, err := astmapper.CreateParser().ParseExpr(expr)
 		if err != nil {
 			return storage.ErrSeriesSet(errors.Wrap(err, "failed to parse subquery"))
 		}

@@ -32,8 +32,9 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/multiaggregation"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
-	"github.com/grafana/mimir/pkg/streamingpromql/planning/metrics"
+	planningmetrics "github.com/grafana/mimir/pkg/streamingpromql/planning/metrics"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -68,6 +69,7 @@ type QueryPlanner struct {
 	versionProvider          QueryPlanVersionProvider
 	planningMetricsTracker   *planningmetrics.MetricsTracker
 	logger                   log.Logger
+	parser                   parser.Parser
 
 	// Replaced during testing to ensure timing produces consistent results.
 	TimeSince func(time.Time) time.Duration
@@ -145,6 +147,11 @@ func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts, versionProvider Q
 		activeQueryTracker = &NoopQueryTracker{}
 	}
 
+	parserToUse := opts.CommonOpts.Parser
+	if parserToUse == nil {
+		parserToUse = promqlext.NewExperimentalParser()
+	}
+
 	return &QueryPlanner{
 		activeQueryTracker:       activeQueryTracker,
 		noStepSubqueryIntervalFn: opts.CommonOpts.NoStepSubqueryIntervalFn,
@@ -159,6 +166,7 @@ func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts, versionProvider Q
 		}, []string{"version"}),
 		planningMetricsTracker: planningmetrics.NewMetricsTracker(opts.CommonOpts.Reg),
 		versionProvider:        versionProvider,
+		parser:                 parserToUse,
 
 		logger:    opts.Logger,
 		TimeSince: time.Since,
@@ -190,7 +198,7 @@ type PlanningObserver interface {
 // an expression and any error encountered. This is separated into its own method to allow testing of
 // AST optimization passes.
 func (p *QueryPlanner) ParseAndApplyASTOptimizationPasses(ctx context.Context, qs string, timeRange types.QueryTimeRange, observer PlanningObserver) (parser.Expr, error) {
-	expr, err := p.runASTStage("Parsing", observer, func() (parser.Expr, error) { return parser.ParseExpr(qs) })
+	expr, err := p.runASTStage("Parsing", observer, func() (parser.Expr, error) { return p.parser.ParseExpr(qs) })
 	if err != nil {
 		return nil, err
 	}

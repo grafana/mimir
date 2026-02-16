@@ -42,7 +42,6 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
@@ -50,6 +49,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirtool/backfill"
 	mimirtool_client "github.com/grafana/mimir/pkg/mimirtool/client"
+	"github.com/grafana/mimir/pkg/mimirtool/config"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -59,7 +59,8 @@ type selectorFlag struct {
 }
 
 func (s *selectorFlag) Set(value string) error {
-	matchers, err := parser.ParseMetricSelector(value)
+	p := config.CreateParser()
+	matchers, err := p.ParseMetricSelector(value)
 	if err != nil {
 		return fmt.Errorf("error parsing selector '%s': %w", value, err)
 	}

@@ -79,7 +79,7 @@ func (c *prom2RangeCompatHandler) Do(ctx context.Context, r MetricsQueryRequest)
 }
 
 func (c *prom2RangeCompatHandler) rewrite(ctx context.Context, query string) (parser.Expr, error) {
-	expr, err := parser.ParseExpr(query)
+	expr, err := astmapper.CreateParser().ParseExpr(query)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 	}

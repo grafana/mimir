@@ -15,10 +15,10 @@ import (
 	"unsafe"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/util/propagation"
 )
 
@@ -177,6 +177,7 @@ func TestPrometheusRangeQueryRequest_MinTMaxT(t *testing.T) {
 	start := now
 	end := now.Add(17 * time.Minute)
 	defaultLookback := 1 * time.Minute
+	p := astmapper.CreateParser()
 
 	testCases := map[string]struct {
 		query        string
@@ -231,7 +232,7 @@ func TestPrometheusRangeQueryRequest_MinTMaxT(t *testing.T) {
 		"instant vector query, WithExpr": {
 			query: "some_metric{}",
 			withFn: func(req MetricsQueryRequest) (MetricsQueryRequest, error) {
-				newExpr, err := parser.ParseExpr("other_metric{}")
+				newExpr, err := p.ParseExpr("other_metric{}")
 				if err != nil {
 					return nil, err
 				}
@@ -243,7 +244,7 @@ func TestPrometheusRangeQueryRequest_MinTMaxT(t *testing.T) {
 		"range vector query, WithExpr": {
 			query: "some_metric{}[10m]",
 			withFn: func(req MetricsQueryRequest) (MetricsQueryRequest, error) {
-				newExpr, err := parser.ParseExpr("some_metric{}[20m]")
+				newExpr, err := p.ParseExpr("some_metric{}[20m]")
 				if err != nil {
 					return nil, err
 				}
@@ -255,7 +256,7 @@ func TestPrometheusRangeQueryRequest_MinTMaxT(t *testing.T) {
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			expr, err := parser.ParseExpr(tc.query)
+			expr, err := p.ParseExpr(tc.query)
 			require.NoError(t, err)
 			req := NewPrometheusRangeQueryRequest(
 				"/query",
@@ -282,6 +283,7 @@ func TestPrometheusRangeQueryRequest_MinTMaxT(t *testing.T) {
 func TestPrometheusInstantQueryRequest_MinTMaxT(t *testing.T) {
 	now := time.Now()
 	defaultLookback := 1 * time.Minute
+	p := astmapper.CreateParser()
 
 	testCases := map[string]struct {
 		query        string
@@ -336,7 +338,7 @@ func TestPrometheusInstantQueryRequest_MinTMaxT(t *testing.T) {
 		"instant vector selector, WithExpr": {
 			query: "some_metric{}",
 			withFn: func(req MetricsQueryRequest) (MetricsQueryRequest, error) {
-				newExpr, err := parser.ParseExpr("other_metric{}")
+				newExpr, err := p.ParseExpr("other_metric{}")
 				if err != nil {
 					return nil, err
 				}
@@ -348,7 +350,7 @@ func TestPrometheusInstantQueryRequest_MinTMaxT(t *testing.T) {
 		"range vector selector, WithExpr": {
 			query: "some_metric{}[10m]",
 			withFn: func(req MetricsQueryRequest) (MetricsQueryRequest, error) {
-				newExpr, err := parser.ParseExpr("some_metric{}[20m]")
+				newExpr, err := p.ParseExpr("some_metric{}[20m]")
 				if err != nil {
 					return nil, err
 				}
@@ -360,7 +362,7 @@ func TestPrometheusInstantQueryRequest_MinTMaxT(t *testing.T) {
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			expr, err := parser.ParseExpr(tc.query)
+			expr, err := p.ParseExpr(tc.query)
 			require.NoError(t, err)
 			req := NewPrometheusInstantQueryRequest(
 				"/query",

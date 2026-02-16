@@ -16,6 +16,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
+
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 const (
@@ -206,7 +208,8 @@ func loadQueryLogsFromFile(filepath string, queryIDs []int) ([]Query, ParsingSta
 // It parses the PromQL expression and returns a separate set of matchers for each vector selector.
 // Returns a slice of slices, where each inner slice represents one vector selector's matchers.
 func extractLabelMatchers(query string) ([][]*labels.Matcher, error) {
-	expr, err := parser.ParseExpr(query)
+	p := promqlext.NewExperimentalParser()
+	expr, err := p.ParseExpr(query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse PromQL query: %w", err)
 	}
