@@ -98,13 +98,14 @@ func (b *SeriesDataRingBuffer[T]) removeAtPosition(position int) T {
 	var empty T
 	b.elements[idx].data = empty // Clear the element.
 
-	if position == 0 {
+	switch position {
+	case 0:
 		// We've just removed the first element. Clear it and any tombstones that follow.
 		for b.elementCount > 0 && !b.getElementAtPosition(0).present {
 			b.startIndex++
 			b.elementCount--
 		}
-	} else if position == b.elementCount-1 {
+	case b.elementCount - 1:
 		// We've just removed the last element. Clear it and any tombstones that precede it.
 		for b.elementCount > 0 && !b.getElementAtPosition(b.elementCount-1).present {
 			b.elementCount--

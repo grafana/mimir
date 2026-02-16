@@ -169,26 +169,6 @@ func (b *RangeVectorDuplicationBuffer) anyConsumerWillRead(unfilteredSeriesIndex
 	return false
 }
 
-func (b *RangeVectorDuplicationBuffer) checkIfAllOtherConsumersAreAheadOf(consumer *RangeVectorDuplicationConsumer) bool {
-	thisConsumerPosition := consumer.currentUnfilteredSeriesIndex
-
-	for _, otherConsumer := range b.consumers {
-		if otherConsumer == consumer {
-			continue
-		}
-
-		if otherConsumer.closed {
-			continue
-		}
-
-		if otherConsumer.currentUnfilteredSeriesIndex <= thisConsumerPosition {
-			return false
-		}
-	}
-
-	return true
-}
-
 func (b *RangeVectorDuplicationBuffer) releaseLastReadSamples() {
 	if b.lastReadSeriesIndex == -1 {
 		return
