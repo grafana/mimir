@@ -183,14 +183,16 @@ func (b *BlockBuilder) stopping(_ error) error {
 	b.kafkaClient.Close()
 	b.schedulerClient.Close()
 
-	if b.schedulerConn != nil {
-		return b.schedulerConn.Close()
-	}
-
 	if b.readerMetrics != nil {
 		if err := services.StopAndAwaitTerminated(context.Background(), b.readerMetrics); err != nil {
 			// This service can't fail.
 			level.Warn(b.logger).Log("msg", "error encountered while stopping kafka reader metrics service", "err", err)
+		}
+	}
+
+	if b.schedulerConn != nil {
+		if err := b.schedulerConn.Close(); err != nil {
+			return fmt.Errorf("closing scheduler connection: %w", err)
 		}
 	}
 
