@@ -2491,12 +2491,12 @@
         },
         {
           "kind": "field",
-          "name": "enable_delayed_name_removal_prometheus_engine",
+          "name": "enable_delayed_name_removal_fallback_engine",
           "required": false,
-          "desc": "Enable the experimental Prometheus feature for delayed name removal in the fallback Prometheus engine.",
+          "desc": "Enable the experimental Prometheus feature for delayed name removal in the fallback Prometheus engine. Note that this only applies when the Mimir Query Engine is enabled along with fallback to the Prometheus engine.",
           "fieldValue": null,
           "fieldDefaultValue": false,
-          "fieldFlag": "querier.enable-delayed-name-removal-prometheus-engine",
+          "fieldFlag": "querier.enable-delayed-name-removal-fallback-engine",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
