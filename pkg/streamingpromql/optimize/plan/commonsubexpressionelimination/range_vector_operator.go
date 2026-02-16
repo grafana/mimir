@@ -278,12 +278,16 @@ func (b *RangeVectorDuplicationBuffer) CloseConsumer(consumer *RangeVectorDuplic
 		// Advance nextUnfilteredSeriesIndex now so that the anyConsumerWillRead call below ignores this consumer.
 		consumer.currentUnfilteredSeriesIndex++
 
+		if consumer.unfilteredSeriesBitmap != nil && !consumer.unfilteredSeriesBitmap[thisSeriesIndex] {
+			// This consumer didn't need this series, so it would not have been buffered for it.
+			continue
+		}
+
 		if thisSeriesIndex < earliestSeriesIndexStillToReturn {
 			// We know no consumer needs this series, as all consumers are past it. Remove it if it's buffered.
 			if d, ok := b.buffer.RemoveIfPresent(thisSeriesIndex); ok {
 				d.Close()
 			}
-
 		} else {
 			// It's possible no consumer needs this series, but we'll have to check first.
 			if !b.anyConsumerWillRead(thisSeriesIndex) {
