@@ -8,6 +8,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
@@ -34,6 +35,7 @@ func TestSeriesDeduplicator_Deduplicate_HashCollision(t *testing.T) {
 	deduplicator := &seriesDeduplicator{
 		uniqueSeriesMx: sync.Mutex{},
 		uniqueSeries:   make(map[uint64]labels.Labels),
+		metrics:        newSeriesDeduplicatorMetrics(prometheus.NewPedanticRegistry()),
 	}
 	memoryTracker := NewUnlimitedMemoryConsumptionTracker(context.Background())
 
@@ -102,6 +104,7 @@ func TestSeriesDeduplicator_Deduplicate_HashCollisionWithThreeCollidingSeries(t 
 	deduplicator := &seriesDeduplicator{
 		uniqueSeriesMx: sync.Mutex{},
 		uniqueSeries:   make(map[uint64]labels.Labels),
+		metrics:        newSeriesDeduplicatorMetrics(prometheus.NewPedanticRegistry()),
 	}
 	memoryTracker := NewUnlimitedMemoryConsumptionTracker(context.Background())
 
@@ -161,7 +164,7 @@ func TestSeriesDeduplicator_Deduplicate_HashCollisionWithThreeCollidingSeries(t 
 
 func TestSeriesDeduplicator_Deduplicate_MemoryTrackingWithDuplicates(t *testing.T) {
 	// Test that memory tracking correctly avoids double-counting for duplicate series
-	deduplicator := NewSeriesLabelsDeduplicator()
+	deduplicator := NewSeriesLabelsDeduplicator(prometheus.NewPedanticRegistry())
 
 	ctx := context.Background()
 	memoryTracker := NewMemoryConsumptionTracker(ctx, 1000000, nil, "test")
@@ -220,7 +223,7 @@ func BenchmarkSeriesDeduplicator_Deduplicate_WithCallerDedup_NoDuplicates(b *tes
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	deduplicator := NewSeriesLabelsDeduplicator()
+	deduplicator := NewSeriesLabelsDeduplicator(prometheus.NewPedanticRegistry())
 	memoryTracker := NewUnlimitedMemoryConsumptionTracker(context.Background())
 
 	for b.Loop() {
@@ -255,7 +258,7 @@ func BenchmarkSeriesDeduplicator_Deduplicate_WithCallerDedup_90pct(b *testing.B)
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	deduplicator := NewSeriesLabelsDeduplicator()
+	deduplicator := NewSeriesLabelsDeduplicator(prometheus.NewPedanticRegistry())
 	memoryTracker := NewUnlimitedMemoryConsumptionTracker(context.Background())
 
 	for b.Loop() {
@@ -289,7 +292,7 @@ func BenchmarkSeriesDeduplicator_Deduplicate_WithCallerDedup_50pct(b *testing.B)
 
 	b.ReportAllocs()
 
-	deduplicator := NewSeriesLabelsDeduplicator()
+	deduplicator := NewSeriesLabelsDeduplicator(prometheus.NewPedanticRegistry())
 	memoryTracker := NewUnlimitedMemoryConsumptionTracker(context.Background())
 
 	for b.Loop() {
