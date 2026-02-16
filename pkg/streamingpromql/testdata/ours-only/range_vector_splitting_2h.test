@@ -1,7 +1,10 @@
-# Tests for query splitting with 2-hour split intervals.
-# All evals are run twice to verify caching works correctly.
+# Tests for query splitting
+# These will run at 2h split intervals as well as some additonal smaller intervals.
 
-# With whole-second timestamps and 2h split interval:
+# All evals should be run twice before any load or clear commands, to ensure the cached path is tested.
+# TestQuerySplitting_EvalsRunTwice checks this.
+
+# With 2h split interval:
 # For query at 6h with [5h] range, splits are (left-open, right-closed):
 #   Head (1h, 2h-1ms], Block1 (2h-1ms, 4h-1ms], Block2 (4h-1ms, 6h-1ms], Tail (6h-1ms, 6h]
 # For query at 4h with [3h] range, splits are:
