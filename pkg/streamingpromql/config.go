@@ -84,14 +84,16 @@ func (o *EngineOpts) Validate() error {
 }
 
 func (c *RangeVectorSplittingConfig) Validate() error {
-	if c.Enabled && c.SplitInterval <= 0 {
-		return fmt.Errorf("range vector splitting is enabled but split interval is not greater than 0")
-	}
-	if c.Enabled && c.IntermediateResultsCache.Backend == "" {
-		return fmt.Errorf("range vector splitting is enabled but intermediate results cache backend is not configured")
-	}
-	if err := c.IntermediateResultsCache.Validate(); err != nil {
-		return errors.Wrap(err, "invalid intermediate results cache config")
+	if c.Enabled {
+		if c.SplitInterval <= 0 {
+			return fmt.Errorf("range vector splitting is enabled but split interval is not greater than 0")
+		}
+		if c.IntermediateResultsCache.Backend == "" {
+			return fmt.Errorf("range vector splitting is enabled but intermediate results cache backend is not configured")
+		}
+		if err := c.IntermediateResultsCache.Validate(); err != nil {
+			return errors.Wrap(err, "invalid intermediate results cache config")
+		}
 	}
 	return nil
 }
