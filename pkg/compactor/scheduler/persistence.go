@@ -77,7 +77,7 @@ func (m *BboltJobPersistenceManager) DeleteTenant(tenant string) error {
 	})
 }
 
-func (m *BboltJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, compactionTrackerFactory func(tenant string, persister JobPersister) *JobTracker) (jobTrackers map[string]*JobTracker, err error) {
+func (m *BboltJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, jobTrackerFactory func(tenant string, persister JobPersister) *JobTracker) (jobTrackers map[string]*JobTracker, err error) {
 	jobTrackers = make(map[string]*JobTracker)
 	numJobsRecovered := 0
 
@@ -102,7 +102,7 @@ func (m *BboltJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, 
 			numJobsRecovered += len(jobs)
 
 			jp := newBboltJobPersister(m.db, []byte(tenant), m.logger)
-			jt := compactionTrackerFactory(tenant, jp)
+			jt := jobTrackerFactory(tenant, jp)
 			jt.recoverFrom(jobs)
 			jobTrackers[tenant] = jt
 			return nil
