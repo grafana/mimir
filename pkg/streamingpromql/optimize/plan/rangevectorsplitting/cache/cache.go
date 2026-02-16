@@ -194,6 +194,12 @@ func (c *Cache[T]) Set(
 		return fmt.Errorf("getting results cache TTL: %w", err)
 	}
 
+	// If TTL is zero or negative, caching is disabled, so skip writing to the cache.
+	// This is important because memcached treats TTL=0 as "never expire".
+	if ttl <= 0 {
+		return nil
+	}
+
 	cacheKey := generateCacheKey(tenant, function, innerKey, start, end, enableDelayedNameRemoval)
 
 	resultBytes, err := c.codec.Marshal(results)
