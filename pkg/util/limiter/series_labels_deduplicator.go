@@ -23,15 +23,16 @@ type SeriesLabelsDeduplicator interface {
 	Deduplicate(newLabels labels.Labels, tracker *MemoryConsumptionTracker) (labels.Labels, error)
 }
 
-type seriesDeduplicatorMetrics struct {
+type SeriesDeduplicatorMetrics struct {
 	// Total number of series labels processed by the deduplicator.
 	seriesLabelsTotal prometheus.Counter
 	// Number of series labels that were deduplicated (reused existing labels).
 	seriesLabelsDeduplicated prometheus.Counter
 }
 
-func newSeriesDeduplicatorMetrics(reg prometheus.Registerer) *seriesDeduplicatorMetrics {
-	return &seriesDeduplicatorMetrics{
+// NewSeriesDeduplicatorMetrics creates metrics for series label deduplication.
+func NewSeriesDeduplicatorMetrics(reg prometheus.Registerer) *SeriesDeduplicatorMetrics {
+	return &SeriesDeduplicatorMetrics{
 		seriesLabelsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_querier_series_labels_total",
 			Help: "Total number of series labels processed by the deduplicator, including both unique and duplicate series.",
@@ -51,21 +52,22 @@ type seriesDeduplicator struct {
 	// hashFunc as a function so that we can override in test.
 	hashFunc func(labels.Labels) uint64
 
-	metrics *seriesDeduplicatorMetrics
+	metrics *SeriesDeduplicatorMetrics
 }
 
-func NewSeriesLabelsDeduplicator(reg prometheus.Registerer) SeriesLabelsDeduplicator {
+// NewSeriesLabelsDeduplicator creates a new SeriesLabelsDeduplicator with the given shared metrics.
+func NewSeriesLabelsDeduplicator(metrics *SeriesDeduplicatorMetrics) SeriesLabelsDeduplicator {
 	return &seriesDeduplicator{
 		uniqueSeriesMx: sync.Mutex{},
 		uniqueSeries:   make(map[uint64]labels.Labels),
 		hashFunc:       func(l labels.Labels) uint64 { return l.Hash() },
-		metrics:        newSeriesDeduplicatorMetrics(reg),
+		metrics:        metrics,
 	}
 }
 
 // ContextWithNewSeriesLabelsDeduplicator adds a new SeriesLabelsDeduplicator to the context.
-func ContextWithNewSeriesLabelsDeduplicator(ctx context.Context, reg prometheus.Registerer) context.Context {
-	return context.WithValue(ctx, sdCtxKey, NewSeriesLabelsDeduplicator(reg))
+func ContextWithNewSeriesLabelsDeduplicator(ctx context.Context, metrics *SeriesDeduplicatorMetrics) context.Context {
+	return context.WithValue(ctx, sdCtxKey, NewSeriesLabelsDeduplicator(metrics))
 }
 
 func SeriesLabelsDeduplicatorFromContext(ctx context.Context) (SeriesLabelsDeduplicator, error) {
