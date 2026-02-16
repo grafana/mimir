@@ -24,7 +24,6 @@ type RangeVectorDuplicationBuffer struct {
 	seriesMetadataCount int
 	seriesMetadata      []types.SeriesMetadata
 
-	lastNextSeriesCallIndex      int
 	lastNextStepSamplesCallIndex int
 	lastReadSeriesIndex          int
 	consumers                    []*RangeVectorDuplicationConsumer
@@ -39,7 +38,6 @@ func NewRangeVectorDuplicationBuffer(inner types.RangeVectorOperator, memoryCons
 	return &RangeVectorDuplicationBuffer{
 		Inner:                        inner,
 		MemoryConsumptionTracker:     memoryConsumptionTracker,
-		lastNextSeriesCallIndex:      -1,
 		lastNextStepSamplesCallIndex: -1,
 		lastReadSeriesIndex:          -1,
 		buffer:                       &SeriesDataRingBuffer[bufferedRangeVectorStepData]{},
@@ -88,7 +86,7 @@ func (b *RangeVectorDuplicationBuffer) SeriesMetadata(ctx context.Context, _ typ
 	return filteredSeries, nil
 }
 
-func (b *RangeVectorDuplicationBuffer) NextSeries(ctx context.Context, consumer *RangeVectorDuplicationConsumer) error {
+func (b *RangeVectorDuplicationBuffer) NextSeries(consumer *RangeVectorDuplicationConsumer) error {
 	if consumer.closed {
 		return fmt.Errorf("consumer %p is already closed, can't advance to next series", consumer)
 	}
@@ -99,18 +97,8 @@ func (b *RangeVectorDuplicationBuffer) NextSeries(ctx context.Context, consumer 
 	consumer.hasReadCurrentSeriesSamples = false
 	b.releaseLastReadSamples()
 
-	if b.lastNextSeriesCallIndex < thisSeriesIndex {
-		// If this consumer is the leading one, then buffer any series before the desired one, then call NextSeries on the inner operator now.
-		// We don't buffer this series as that's not necessary until NextStepSamples is called.
-		if _, err := b.bufferUpToAndIncluding(ctx, thisSeriesIndex-1); err != nil {
-			return err
-		}
-
-		b.lastNextSeriesCallIndex = thisSeriesIndex
-		if err := b.Inner.NextSeries(ctx); err != nil {
-			return err
-		}
-	}
+	// Note that we deliberately don't call NextSeries here to simplify the logic: instead,
+	// we'll call it just before we call NextStepSamples.
 
 	return nil
 }
@@ -119,11 +107,8 @@ func (b *RangeVectorDuplicationBuffer) bufferUpToAndIncluding(ctx context.Contex
 	var lastStepData bufferedRangeVectorStepData
 
 	for b.lastNextStepSamplesCallIndex < desiredSeriesIndex {
-		if b.lastNextSeriesCallIndex < desiredSeriesIndex {
-			b.lastNextSeriesCallIndex++
-			if err := b.Inner.NextSeries(ctx); err != nil {
-				return bufferedRangeVectorStepData{}, err
-			}
+		if err := b.Inner.NextSeries(ctx); err != nil {
+			return bufferedRangeVectorStepData{}, err
 		}
 
 		b.lastNextStepSamplesCallIndex++
@@ -150,7 +135,7 @@ func (b *RangeVectorDuplicationBuffer) cacheNextStepSamples(ctx context.Context)
 		return bufferedRangeVectorStepData{}, err
 	}
 
-	b.buffer.Append(clonedData, b.lastNextSeriesCallIndex)
+	b.buffer.Append(clonedData, b.lastNextStepSamplesCallIndex)
 
 	return clonedData, nil
 }
@@ -226,12 +211,19 @@ func (b *RangeVectorDuplicationBuffer) NextStepSamples(ctx context.Context, cons
 
 	isLastConsumerOfThisSeries := !b.anyConsumerWillRead(consumer.currentUnfilteredSeriesIndex)
 	if isLastConsumerOfThisSeries {
-		// Don't bother buffering this series, but buffer anything before this one that other consumers might need.
+		// This series isn't present in the buffer, and no other consumer needs it.
+		// Don't bother buffering this series, but buffer anything before this one that other consumers might need,
+		// then read and return the data directly.
 		if _, err := b.bufferUpToAndIncluding(ctx, consumer.currentUnfilteredSeriesIndex-1); err != nil {
 			return nil, err
 		}
 
 		b.lastNextStepSamplesCallIndex++
+		err := b.Inner.NextSeries(ctx)
+		if err != nil {
+			return nil, err
+		}
+
 		stepData, err := b.Inner.NextStepSamples(ctx)
 		if err != nil {
 			return nil, err
@@ -240,6 +232,8 @@ func (b *RangeVectorDuplicationBuffer) NextStepSamples(ctx context.Context, cons
 		return stepData, nil
 	}
 
+	// This series isn't present in the buffer, and other consumers might need it.
+	// Buffer everything up to and including this series, then return it.
 	d, err := b.bufferUpToAndIncluding(ctx, consumer.currentUnfilteredSeriesIndex)
 	if err != nil {
 		return nil, err
@@ -499,8 +493,8 @@ func (d *RangeVectorDuplicationConsumer) advanceToNextUnfilteredSeries() {
 	}
 }
 
-func (d *RangeVectorDuplicationConsumer) NextSeries(ctx context.Context) error {
-	return d.Buffer.NextSeries(ctx, d)
+func (d *RangeVectorDuplicationConsumer) NextSeries(_ context.Context) error {
+	return d.Buffer.NextSeries(d)
 }
 
 func (d *RangeVectorDuplicationConsumer) NextStepSamples(ctx context.Context) (*types.RangeVectorStepData, error) {
