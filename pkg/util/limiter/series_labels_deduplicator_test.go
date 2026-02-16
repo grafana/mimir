@@ -5,10 +5,12 @@ package limiter
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
@@ -304,4 +306,52 @@ func BenchmarkSeriesDeduplicator_Deduplicate_WithCallerDedup_50pct(b *testing.B)
 			_, _ = deduplicator.Deduplicate(s, memoryTracker)
 		}
 	}
+}
+
+func TestSeriesDeduplicator_Metrics(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	metrics := NewSeriesDeduplicatorMetrics(reg)
+	deduplicator := NewSeriesLabelsDeduplicator(metrics)
+	memoryTracker := NewUnlimitedMemoryConsumptionTracker(context.Background())
+
+	// Create test series
+	seriesA := labels.FromMap(map[string]string{
+		model.MetricNameLabel: "metric_a",
+		"label":               "value_a",
+	})
+	seriesB := labels.FromMap(map[string]string{
+		model.MetricNameLabel: "metric_b",
+		"label":               "value_b",
+	})
+
+	_, err := deduplicator.Deduplicate(seriesA, memoryTracker)
+	require.NoError(t, err)
+
+	_, err = deduplicator.Deduplicate(seriesA, memoryTracker)
+	require.NoError(t, err)
+
+	_, err = deduplicator.Deduplicate(seriesB, memoryTracker)
+	require.NoError(t, err)
+
+	_, err = deduplicator.Deduplicate(seriesB, memoryTracker)
+	require.NoError(t, err)
+
+	_, err = deduplicator.Deduplicate(seriesA, memoryTracker)
+	require.NoError(t, err)
+
+	// Verify metrics: 5 total calls, 3 deduplicated
+	expectedMetrics := `
+		# HELP cortex_querier_series_labels_total Total number of series labels processed by the deduplicator, including both unique and duplicate series.
+		# TYPE cortex_querier_series_labels_total counter
+		cortex_querier_series_labels_total 5
+
+		# HELP cortex_querier_series_labels_deduplicated_total Number of series labels that were deduplicated by reusing existing labels instead of creating new ones.
+		# TYPE cortex_querier_series_labels_deduplicated_total counter
+		cortex_querier_series_labels_deduplicated_total 3
+	`
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics),
+		"cortex_querier_series_labels_total",
+		"cortex_querier_series_labels_deduplicated_total",
+	))
 }
