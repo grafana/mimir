@@ -205,29 +205,31 @@ func (r *Rotator) CancelJobLease(tenant string, key string, epoch int64) (bool, 
 }
 
 func (r *Rotator) OfferPlanJob(tenant string, job *TrackedPlanJob) (int, error) {
-	return r.offerJobs(tenant, func(tracker *JobTracker) (int, rotationTransition, error) {
-		return tracker.OfferPlanJob(job)
+	accepted, _, err := r.offerJobs(tenant, func(tracker *JobTracker) (int, bool, rotationTransition, error) {
+		accepted, transition, err := tracker.OfferPlanJob(job)
+		return accepted, true, transition, err
 	})
+	return accepted, err
 }
 
-func (r *Rotator) OfferCompactionJobs(tenant string, jobs []*TrackedCompactionJob, planJobEpoch int64) (int, error) {
-	return r.offerJobs(tenant, func(tracker *JobTracker) (int, rotationTransition, error) {
+func (r *Rotator) OfferCompactionJobs(tenant string, jobs []*TrackedCompactionJob, planJobEpoch int64) (int, bool, error) {
+	return r.offerJobs(tenant, func(tracker *JobTracker) (int, bool, rotationTransition, error) {
 		return tracker.OfferCompactionJobs(jobs, planJobEpoch)
 	})
 }
 
-func (r *Rotator) offerJobs(tenant string, offer func(tracker *JobTracker) (int, rotationTransition, error)) (int, error) {
+func (r *Rotator) offerJobs(tenant string, offer func(tracker *JobTracker) (int, bool, rotationTransition, error)) (int, bool, error) {
 	r.mtx.RLock()
 
 	tenantState, ok := r.tenantStateMap[tenant]
 	if !ok {
 		r.mtx.RUnlock()
-		return 0, nil
+		return 0, false, nil
 	}
-	added, transition, err := offer(tenantState.tracker)
+	added, found, transition, err := offer(tenantState.tracker)
 	if err != nil {
 		r.mtx.RUnlock()
-		return 0, err
+		return 0, found, err
 	}
 
 	// Must still be holding the read lock to read rotation index
@@ -241,18 +243,18 @@ func (r *Rotator) offerJobs(tenant string, offer func(tracker *JobTracker) (int,
 				r.addToRotation(tenant, tenantState)
 			}
 			r.mtx.Unlock()
-			return added, nil
+			return added, found, nil
 		}
 	case rotationRemoveTracker:
 		if tenantState.rotationIndex != outsideRotation {
 			r.mtx.RUnlock() // drop read lock to acquire write lock
 			r.possiblyRemoveFromRotation(tenant)
-			return added, nil
+			return added, found, nil
 		}
 	}
 
 	r.mtx.RUnlock()
-	return added, nil
+	return added, found, nil
 }
 
 func (r *Rotator) RemoveJob(tenant string, key string, epoch int64, complete bool) (bool, error) {

@@ -5,7 +5,6 @@ package scheduler
 import (
 	"cmp"
 	"container/list"
-	"errors"
 	"fmt"
 	"slices"
 	"sync"
@@ -356,13 +355,13 @@ func (jt *JobTracker) OfferPlanJob(job *TrackedPlanJob) (accepted int, transitio
 // OfferCompactionJobs processes the results from a plan job. Since planning offers a fresh view of pending work all remaining pending work
 // is replaced. Only a subset of the offered jobs may be accepted. The plan job itself will be considered completed if the epoch
 // provided was a match.
-func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, planJobEpoch int64) (accepted int, transition rotationTransition, err error) {
+func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, planJobEpoch int64) (accepted int, found bool, transition rotationTransition, err error) {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
 
-	planJob, err := jt.checkPlanJobEpoch(planJobEpoch)
-	if err != nil {
-		return 0, rotationNoChange, err
+	planJob, match := jt.checkPlanJobEpoch(planJobEpoch)
+	if !match {
+		return 0, false, rotationNoChange, nil
 	}
 
 	conflictMap := make(map[string]struct{})
@@ -425,7 +424,7 @@ func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, planJobE
 
 	err = jt.persister.WriteAndDeleteJobs(acceptedJobs, deleteJobs)
 	if err != nil {
-		return 0, rotationNoChange, fmt.Errorf("failed writing offered jobs: %w", err)
+		return 0, true, rotationNoChange, fmt.Errorf("failed writing offered jobs: %w", err)
 	}
 
 	wasEmpty := jt.isPendingEmpty()
@@ -460,7 +459,7 @@ func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, planJobE
 	} else if accepted == 0 && !wasEmpty {
 		transition = rotationRemoveTracker
 	}
-	return accepted, transition, nil
+	return accepted, true, transition, nil
 }
 
 func addBlocksToConflictMap(conflict map[string]struct{}, job *TrackedCompactionJob) {
@@ -479,22 +478,22 @@ func jobConflicts(conflict map[string]struct{}, job *TrackedCompactionJob) bool 
 	return false
 }
 
-func (jt *JobTracker) checkPlanJobEpoch(epoch int64) (*TrackedPlanJob, error) {
+func (jt *JobTracker) checkPlanJobEpoch(epoch int64) (*TrackedPlanJob, bool) {
 	pje, ok := jt.incompleteJobs[planJobId]
 	if !ok {
-		return nil, errors.New("received plan job results, but there was no known plan job")
+		return nil, false
 	}
 	planJob, ok := pje.Value.(*TrackedPlanJob)
 	if !ok {
 		// This should never happen
-		return nil, errors.New("invalid plan job type")
+		return nil, false
 
 	}
 	if !planJob.IsLeased() || planJob.Epoch() != epoch {
-		return nil, errors.New("given results, but plan job lease not owned")
+		return nil, false
 	}
 
-	return planJob, nil
+	return planJob, true
 }
 
 func (jt *JobTracker) stopTrackingCompleteCompactionJobs() {

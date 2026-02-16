@@ -249,14 +249,18 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 		))
 	}
 
-	added, err := s.rotator.OfferCompactionJobs(req.Tenant, jobs, req.Key.Epoch)
+	_, found, err := s.rotator.OfferCompactionJobs(req.Tenant, jobs, req.Key.Epoch)
 	if err != nil {
 		level.Error(s.logger).Log("msg", "failed offering result of plan job", "err", err)
 		return nil, failedTo("offering results")
-	} else if added == 0 && !s.isRunning() {
-		// This request may have erroneously seen empty state. Transform it to an unavailable error to preserve state in the worker.
-		// Worst case we are accidentally pushing them to return the same results later
-		return nil, notRunning()
+	} else if !found {
+		if s.isRunning() {
+			return nil, status.Error(codes.NotFound, "no matching plan job lease found")
+		} else {
+			// This request may have erroneously seen empty state. Transform it to an unavailable error to preserve state in the worker.
+			// Worst case we are accidentally pushing them to return the same results later
+			return nil, notRunning()
+		}
 	}
 
 	return &compactorschedulerpb.PlannedJobsResponse{}, nil
