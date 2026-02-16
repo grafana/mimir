@@ -429,7 +429,7 @@ func (e *OptimizationPass) applyDeduplication(group SharedSelectorGroup, offset 
 	}
 
 	if err != nil {
-		return deduplicationStats{}, nil
+		return deduplicationStats{}, err
 	}
 
 	if skipLongerExpressions {
