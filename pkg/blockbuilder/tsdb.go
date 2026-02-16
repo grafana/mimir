@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/dskit/multierror"
 	dskittenant "github.com/grafana/dskit/tenant"
 	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -35,10 +36,12 @@ import (
 type TSDBBuilder struct {
 	dataDir string
 
-	logger                           log.Logger
-	limits                           *validation.Overrides
-	blocksStorageCfg                 mimir_tsdb.BlocksStorageConfig
-	metrics                          tsdbBuilderMetrics
+	logger             log.Logger
+	limits             *validation.Overrides
+	blocksStorageCfg   mimir_tsdb.BlocksStorageConfig
+	tsdbBuilderMetrics tsdbBuilderMetrics
+	tsdbMetrics        *mimir_tsdb.TSDBMetrics
+
 	applyMaxGlobalSeriesPerUserBelow int // inclusive
 
 	partitionID int32
@@ -65,13 +68,23 @@ type tsdbTenant struct {
 	tenantID    string
 }
 
-func NewTSDBBuilder(logger log.Logger, dataDir string, partitionID int32, blocksStorageCfg mimir_tsdb.BlocksStorageConfig, limits *validation.Overrides, metrics tsdbBuilderMetrics, applyMaxGlobalSeriesPerUserBelow int) *TSDBBuilder {
+func NewTSDBBuilder(
+	logger log.Logger,
+	dataDir string,
+	partitionID int32,
+	blocksStorageCfg mimir_tsdb.BlocksStorageConfig,
+	limits *validation.Overrides,
+	tsdbBuilderMetrics tsdbBuilderMetrics,
+	tsdbMetrics *mimir_tsdb.TSDBMetrics,
+	applyMaxGlobalSeriesPerUserBelow int,
+) *TSDBBuilder {
 	return &TSDBBuilder{
 		dataDir:                          dataDir,
 		logger:                           logger,
 		limits:                           limits,
 		blocksStorageCfg:                 blocksStorageCfg,
-		metrics:                          metrics,
+		tsdbBuilderMetrics:               tsdbBuilderMetrics,
+		tsdbMetrics:                      tsdbMetrics,
 		applyMaxGlobalSeriesPerUserBelow: applyMaxGlobalSeriesPerUserBelow,
 		partitionID:                      partitionID,
 		tsdbs:                            make(map[tsdbTenant]*userTSDB),
@@ -252,7 +265,7 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 
 	if discardedSamples > 0 {
 		partitionStr := fmt.Sprintf("%d", tenant.partitionID)
-		b.metrics.processSamplesDiscarded.WithLabelValues(partitionStr).Add(float64(discardedSamples))
+		b.tsdbBuilderMetrics.processSamplesDiscarded.WithLabelValues(partitionStr).Add(float64(discardedSamples))
 	}
 
 	return app.Commit()
@@ -292,6 +305,8 @@ func (b *TSDBBuilder) getOrCreateTSDB(tenant tsdbTenant) (*userTSDB, error) {
 }
 
 func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
+	tsdbPromReg := prometheus.NewRegistry()
+
 	udir := filepath.Join(b.dataDir, strconv.Itoa(int(tenant.partitionID)), tenant.tenantID)
 	// Remove any previous TSDB dir. We don't need it.
 	if err := os.RemoveAll(udir); err != nil {
@@ -318,7 +333,7 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 		udb.maxGlobalSeries = userLimit
 	}
 
-	db, err := tsdb.Open(udir, util_log.SlogFromGoKit(userLogger), nil, &tsdb.Options{
+	db, err := tsdb.Open(udir, util_log.SlogFromGoKit(userLogger), tsdbPromReg, &tsdb.Options{
 		RetentionDuration:                    0,
 		MinBlockDuration:                     2 * time.Hour.Milliseconds(),
 		MaxBlockDuration:                     2 * time.Hour.Milliseconds(),
@@ -334,17 +349,19 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 		OutOfOrderCapMax:                     int64(b.blocksStorageCfg.TSDB.OutOfOrderCapacityMax),
 		SecondaryHashFunction:                nil, // TODO(codesome): May needed when applying limits. Used to determine the owned series by an ingesters
 		SeriesLifecycleCallback:              udb,
-		HeadPostingsForMatchersCacheMetrics:  tsdb.NewPostingsForMatchersCacheMetrics(nil),
-		BlockPostingsForMatchersCacheMetrics: tsdb.NewPostingsForMatchersCacheMetrics(nil),
+		HeadPostingsForMatchersCacheMetrics:  tsdb.NewPostingsForMatchersCacheMetrics(nil), // No need for these metrics; no one queries tsdb through block-builder
+		BlockPostingsForMatchersCacheMetrics: tsdb.NewPostingsForMatchersCacheMetrics(nil), // No need for these metrics; no one queries tsdb through block-builder
 		PostingsClonerFactory:                tsdb.DefaultPostingsClonerFactory{},
 	}, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	db.DisableCompactions()
+	db.DisableCompactions() // we compact on our own schedule
 
 	udb.DB = db
+
+	b.tsdbMetrics.SetRegistryForTenant(userID, tsdbPromReg)
 
 	return udb, nil
 }
@@ -377,6 +394,12 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 			}
 			merr.Add(os.RemoveAll(db.Dir()))
 		}
+
+		// Remove all registered per-tenant TSDB metrics. Their local DBs are wiped out from the block-builder no-matter what.
+		for tenant := range b.tsdbs {
+			b.tsdbMetrics.RemoveRegistryForTenant(tenant.tenantID)
+		}
+
 		// Clear the map so that it can be released from the memory. Not setting to nil in case we want to reuse the TSDBBuilder.
 		clear(b.tsdbs)
 		b.tsdbsMu.Unlock()
@@ -403,11 +426,11 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 				}
 				partitionStr := strconv.Itoa(int(tenant.partitionID))
 				if err != nil {
-					b.metrics.compactAndUploadFailed.WithLabelValues(partitionStr).Inc()
+					b.tsdbBuilderMetrics.compactAndUploadFailed.WithLabelValues(partitionStr).Inc()
 					return
 				}
-				b.metrics.compactAndUploadDuration.WithLabelValues(partitionStr).Observe(time.Since(t).Seconds())
-				b.metrics.lastSuccessfulCompactAndUploadTime.WithLabelValues(partitionStr).SetToCurrentTime()
+				b.tsdbBuilderMetrics.compactAndUploadDuration.WithLabelValues(partitionStr).Observe(time.Since(t).Seconds())
+				b.tsdbBuilderMetrics.lastSuccessfulCompactAndUploadTime.WithLabelValues(partitionStr).SetToCurrentTime()
 			}(time.Now())
 
 			if err := db.compactEverything(ctx); err != nil {
@@ -451,10 +474,12 @@ func (b *TSDBBuilder) Close() error {
 	defer b.tsdbsMu.Unlock()
 
 	var merr multierror.MultiError
-	for _, db := range b.tsdbs {
+	for tenant, db := range b.tsdbs {
 		dbDir := db.Dir()
 		merr.Add(db.Close())
 		merr.Add(os.RemoveAll(dbDir))
+
+		b.tsdbMetrics.RemoveRegistryForTenant(tenant.tenantID)
 	}
 
 	// Clear the map so that it can be released from the memory. Not setting to nil in case

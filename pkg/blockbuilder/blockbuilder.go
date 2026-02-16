@@ -28,6 +28,7 @@ import (
 	"github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -50,6 +51,7 @@ type BlockBuilder struct {
 
 	blockBuilderMetrics   blockBuilderMetrics
 	tsdbBuilderMetrics    tsdbBuilderMetrics
+	tsdbMetrics           *mimir_tsdb.TSDBMetrics
 	readerMetrics         *ingest.ReaderMetrics
 	readerMetricsSource   swappableReaderMetricsSource
 	kpromMetrics          *kprom.Metrics
@@ -88,7 +90,8 @@ func newWithSchedulerClient(
 		register:              reg,
 		limits:                limits,
 		blockBuilderMetrics:   newBlockBuilderMetrics(reg),
-		tsdbBuilderMetrics:    newTSDBBBuilderMetrics(reg),
+		tsdbBuilderMetrics:    newTSDBBuilderMetrics(reg),
+		tsdbMetrics:           mimir_tsdb.NewTSDBMetrics(prometheus.WrapRegistererWithPrefix("cortex_blockbuilder_", reg), logger),
 		readerMetrics:         readerMetrics,
 		readerMetricsSource:   readerMetricsSource,
 		kpromMetrics:          kpm,
@@ -241,7 +244,7 @@ func (b *BlockBuilder) consumeJob(ctx context.Context, key schedulerpb.JobKey, s
 
 	logger := log.With(sp, "partition", spec.Partition, "job_id", key.Id, "job_epoch", key.Epoch)
 
-	builder := NewTSDBBuilder(logger, b.cfg.DataDir, spec.Partition, b.cfg.BlocksStorage, b.limits, b.tsdbBuilderMetrics, b.cfg.ApplyMaxGlobalSeriesPerUserBelow)
+	builder := NewTSDBBuilder(logger, b.cfg.DataDir, spec.Partition, b.cfg.BlocksStorage, b.limits, b.tsdbBuilderMetrics, b.tsdbMetrics, b.cfg.ApplyMaxGlobalSeriesPerUserBelow)
 	defer runutil.CloseWithErrCapture(&err, builder, "closing tsdb builder")
 
 	// TODO: the block-builder can skip unmarshaling of exemplars because TSDB doesn't persist them into blocks; find a way to let PusherConsumer know about it
