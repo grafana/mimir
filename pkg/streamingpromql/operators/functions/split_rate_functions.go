@@ -84,11 +84,10 @@ func rateGenerateFloat(fHead, fTail []promql.FPoint, fCount int) (RateIntermedia
 func rateGenerateHistogram(hHead, hTail []promql.HPoint, hCount int, emitAnnotation types.EmitAnnotationFunc) (RateIntermediate, error) {
 	firstPoint := hHead[0]
 
-	if firstPoint.H.CounterResetHint == histogram.GaugeType {
-		emitAnnotation(annotations.NewNativeHistogramNotCounterWarning)
-	}
-
 	if hCount == 1 {
+		if firstPoint.H.CounterResetHint == histogram.GaugeType {
+			emitAnnotation(annotations.NewNativeHistogramNotCounterWarning)
+		}
 		// Copy to avoid sharing memory with ring buffer that may be reused across series
 		firstHistProto := mimirpb.FromFloatHistogramToHistogramProto(0, firstPoint.H.Copy())
 		return RateIntermediate{
