@@ -313,6 +313,7 @@ func (m *MultiAggregatorInstanceOperator) Close() {
 	}
 
 	types.BoolSlicePool.Put(&m.unfilteredSeriesBitmap, m.group.memoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&m.outputSeriesMetadata, m.group.memoryConsumptionTracker)
 
 	m.group.Close()
 }

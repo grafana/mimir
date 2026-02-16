@@ -86,3 +86,13 @@ eval range from 0 to 5m step 1m sum(metric) / (sum(metric) + sum(metric{idx=~"2|
 
 eval range from 0 to 5m step 1m sum(metric{idx=~"2|3"}) / (sum(metric) + sum(metric{idx=~"2|3"}))
   {} 0.25x5
+
+# Subset returns no results
+eval range from 0 to 5m step 1m metric{something="does-not-exist"} / metric
+  # Should return no results.
+
+eval range from 0 to 5m step 1m sum(metric{something="does-not-exist"}) / sum(metric)
+  # Should return no results.
+
+eval range from 0 to 5m step 1m sum(rate(metric{something="does-not-exist"}[1m])) / sum(rate(metric[1m]))
+  # Should return no results.
