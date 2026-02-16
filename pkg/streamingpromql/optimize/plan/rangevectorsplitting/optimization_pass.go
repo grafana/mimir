@@ -223,9 +223,10 @@ func calculateInnerTimeRange(evalTime int64, timeParams planning.RangeParams) (s
 	return startTs, endTs
 }
 
-// computeSplitRanges divides [startTs, endTs] into split ranges using PromQL semantics.
+// computeSplitRanges divides (startTs, endTs] into split ranges using PromQL semantics.
 //
-// Split ranges use left-open, right-closed intervals: (Start, End].
+// Split ranges use left-open, right-closed intervals: (Start, End], aligning with PromQL range vector boundary
+// semantics.
 // When converted to storage queries, these become closed intervals [Start+1, End] on both sides,
 // since the storage API expects closed intervals [mint, maxt].
 //
@@ -245,9 +246,10 @@ func computeSplitRanges(startTs, endTs int64, splitInterval time.Duration, oooTh
 		return []SplitRange{{Start: startTs, End: endTs, Cacheable: false}}
 	}
 
+	// Check if we have an uncacheable "head" range
 	if startTs < alignedStart {
-		// Check if range would be in ooo window
-		if oooThreshold > 0 && alignedStart > oooThreshold {
+		// Check if head range would be in ooo window (which would mean nothing can be cached)
+		if oooThreshold > 0 && alignedStart >= oooThreshold {
 			return []SplitRange{{Start: startTs, End: endTs, Cacheable: false}}
 		}
 		ranges = append(ranges, SplitRange{
@@ -262,7 +264,9 @@ func computeSplitRanges(startTs, endTs int64, splitInterval time.Duration, oooTh
 		splitEnd := splitStart + splitIntervalMs
 
 		// Check if range would be in ooo window
-		if oooThreshold > 0 && splitEnd > oooThreshold {
+		// oooThreshold is inclusive - that is, a sample written at the oooThreshold can be OOO, which is why we use >=
+		// for comparing the inclusive splitEnd with oooThreshold
+		if oooThreshold > 0 && splitEnd >= oooThreshold {
 			ranges = append(ranges, SplitRange{
 				Start:     splitStart,
 				End:       endTs,

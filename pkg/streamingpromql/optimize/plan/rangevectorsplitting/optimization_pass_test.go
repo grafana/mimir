@@ -172,15 +172,40 @@ func TestComputeSplitRangesWithOOOWindow(t *testing.T) {
 			},
 		},
 		{
-			name:          "OOO window exactly at block boundary",
+			name:          "OOO window at end of head range",
 			startTs:       1 * hourInMs,
-			endTs:         6 * hourInMs,
+			endTs:         8 * hourInMs,
+			splitInterval: 2 * time.Hour,
+			oooThreshold:  2*hourInMs - 1,
+			expectedRanges: []SplitRange{
+				{Start: 1 * hourInMs, End: 8 * hourInMs, Cacheable: false},
+			},
+		},
+		{
+			name:          "OOO window at end of first cacheable range",
+			startTs:       1 * hourInMs,
+			endTs:         8 * hourInMs,
 			splitInterval: 2 * time.Hour,
 			oooThreshold:  4*hourInMs - 1,
+			// First cacheable block (2h-1ms, 4h-1ms] ends exactly at the threshold.
+			// The block includes the threshold timestamp (right-closed), so it can't be cached.
 			expectedRanges: []SplitRange{
-				{Start: 1 * hourInMs, End: 2*hourInMs - 1, Cacheable: false},
-				{Start: 2*hourInMs - 1, End: 4*hourInMs - 1, Cacheable: true},
-				{Start: 4*hourInMs - 1, End: 6 * hourInMs, Cacheable: false},
+				{Start: 1 * hourInMs, End: 2*hourInMs - 1, Cacheable: false}, // Head
+				{Start: 2*hourInMs - 1, End: 8 * hourInMs, Cacheable: false}, // Merged: all blocks in OOO
+			},
+		},
+		{
+			name:          "OOO window exactly at range boundary",
+			startTs:       1 * hourInMs,
+			endTs:         8 * hourInMs,
+			splitInterval: 2 * time.Hour,
+			oooThreshold:  6*hourInMs - 1,
+			// Block (4h-1ms, 6h-1ms] ends exactly at the threshold. Since ranges are (Start, End],
+			// the block includes the timestamp at the threshold, which could receive OOO writes.
+			expectedRanges: []SplitRange{
+				{Start: 1 * hourInMs, End: 2*hourInMs - 1, Cacheable: false},  // Head
+				{Start: 2*hourInMs - 1, End: 4*hourInMs - 1, Cacheable: true}, // Block: cacheable, before OOO
+				{Start: 4*hourInMs - 1, End: 8 * hourInMs, Cacheable: false},  // Merged: range at boundary + tail in OOO
 			},
 		},
 		{
