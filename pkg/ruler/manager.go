@@ -32,6 +32,7 @@ import (
 	"golang.org/x/net/context/ctxhttp"
 
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 type DefaultMultiTenantManager struct {
@@ -442,8 +443,9 @@ func (r *DefaultMultiTenantManager) ValidateRuleGroup(userID string, g rulefmt.R
 	}
 
 	validationScheme := r.limits.NameValidationScheme(userID)
+	promqlParser := promqlext.NewExperimentalParser()
 	for i, r := range g.Rules {
-		for _, err := range r.Validate(node.Rules[i], validationScheme) {
+		for _, err := range r.Validate(node.Rules[i], validationScheme, promqlParser) {
 			var ruleName string
 			if r.Alert != "" {
 				ruleName = r.Alert

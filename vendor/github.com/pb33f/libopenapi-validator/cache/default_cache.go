@@ -15,7 +15,7 @@ func NewDefaultCache() *DefaultCache {
 }
 
 // Load retrieves a schema from the cache.
-func (c *DefaultCache) Load(key [32]byte) (*SchemaCacheEntry, bool) {
+func (c *DefaultCache) Load(key uint64) (*SchemaCacheEntry, bool) {
 	if c == nil || c.m == nil {
 		return nil, false
 	}
@@ -28,7 +28,7 @@ func (c *DefaultCache) Load(key [32]byte) (*SchemaCacheEntry, bool) {
 }
 
 // Store saves a schema to the cache.
-func (c *DefaultCache) Store(key [32]byte, value *SchemaCacheEntry) {
+func (c *DefaultCache) Store(key uint64, value *SchemaCacheEntry) {
 	if c == nil || c.m == nil {
 		return
 	}
@@ -36,12 +36,12 @@ func (c *DefaultCache) Store(key [32]byte, value *SchemaCacheEntry) {
 }
 
 // Range calls f for each entry in the cache (for testing/inspection).
-func (c *DefaultCache) Range(f func(key [32]byte, value *SchemaCacheEntry) bool) {
+func (c *DefaultCache) Range(f func(key uint64, value *SchemaCacheEntry) bool) {
 	if c == nil || c.m == nil {
 		return
 	}
 	c.m.Range(func(k, v interface{}) bool {
-		key, ok := k.([32]byte)
+		key, ok := k.(uint64)
 		if !ok {
 			return true
 		}

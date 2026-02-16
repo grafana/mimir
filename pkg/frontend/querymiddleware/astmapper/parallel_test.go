@@ -205,7 +205,7 @@ func TestCanParallel_String(t *testing.T) {
 
 	for i, c := range testExpr {
 		t.Run(fmt.Sprintf("[%d]", i), func(t *testing.T) {
-			expr, err := parser.ParseExpr(c.input)
+			expr, err := CreateParser().ParseExpr(c.input)
 			require.Nil(t, err)
 			res := CanParallelize(expr, log.NewNopLogger())
 			require.Equal(t, c.expected, res)
@@ -268,7 +268,7 @@ func TestCountVectorSelectors(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			expr, err := parser.ParseExpr(testData.expr)
+			expr, err := CreateParser().ParseExpr(testData.expr)
 			require.Nil(t, err)
 			assert.Equal(t, testData.expected, countVectorSelectors(expr))
 		})
@@ -301,7 +301,7 @@ func TestEvalPredicate(t *testing.T) {
 		},
 	} {
 		t.Run(testName, func(t *testing.T) {
-			expr, err := parser.ParseExpr(tc.input)
+			expr, err := CreateParser().ParseExpr(tc.input)
 			require.Nil(t, err)
 
 			res := AnyNode(expr.(parser.Node), tc.fn)

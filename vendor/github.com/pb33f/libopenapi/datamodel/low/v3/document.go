@@ -9,8 +9,7 @@
 package v3
 
 import (
-	"crypto/sha256"
-	"fmt"
+	"hash/maphash"
 	"sort"
 
 	"github.com/pb33f/libopenapi/datamodel/low"
@@ -132,117 +131,103 @@ func (d *Document) GetIndex() *index.SpecIndex {
 	return d.Index
 }
 
-// Hash will return a consistent SHA256 Hash of the Document object
-func (d *Document) Hash() [32]byte {
-	// Use string builder pool
-	sb := low.GetStringBuilder()
-	defer low.PutStringBuilder(sb)
+// Hash will return a consistent Hash of the Document object
+func (d *Document) Hash() uint64 {
+	return low.WithHasher(func(h *maphash.Hash) uint64 {
+		if d.Version.Value != "" {
+			h.WriteString(d.Version.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if d.Info.Value != nil {
+			h.WriteString(low.GenerateHashString(d.Info.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if d.JsonSchemaDialect.Value != "" {
+			h.WriteString(d.JsonSchemaDialect.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if d.Self.Value != "" {
+			h.WriteString(d.Self.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
 
-	if d.Version.Value != "" {
-		sb.WriteString(d.Version.Value)
-		sb.WriteByte('|')
-	}
-	if d.Info.Value != nil {
-		sb.WriteString(low.GenerateHashString(d.Info.Value))
-		sb.WriteByte('|')
-	}
-	if d.JsonSchemaDialect.Value != "" {
-		sb.WriteString(d.JsonSchemaDialect.Value)
-		sb.WriteByte('|')
-	}
-	if d.Self.Value != "" {
-		sb.WriteString(d.Self.Value)
-		sb.WriteByte('|')
-	}
+		// Webhooks - pre-allocate slice
+		if d.Webhooks.GetValue() != nil {
+			webhookLen := d.Webhooks.GetValue().Len()
+			if webhookLen > 0 {
+				keys := make([]string, 0, webhookLen)
+				for k, v := range d.Webhooks.GetValue().FromOldest() {
+					keys = append(keys, k.Value+"-"+low.GenerateHashString(v.Value))
+				}
+				sort.Strings(keys)
+				for _, key := range keys {
+					h.WriteString(key)
+					h.WriteByte(low.HASH_PIPE)
+				}
+			}
+		}
 
-	// Webhooks - pre-allocate slice
-	if d.Webhooks.GetValue() != nil {
-		webhookLen := d.Webhooks.GetValue().Len()
-		if webhookLen > 0 {
-			keys := make([]string, 0, webhookLen)
-			for k, v := range d.Webhooks.GetValue().FromOldest() {
-				keys = append(keys, k.Value+"-"+low.GenerateHashString(v.Value))
+		// Servers - pre-allocate slice
+		serverLen := len(d.Servers.Value)
+		if serverLen > 0 {
+			keys := make([]string, 0, serverLen)
+			for i := range d.Servers.Value {
+				keys = append(keys, low.GenerateHashString(d.Servers.Value[i].Value))
 			}
 			sort.Strings(keys)
 			for _, key := range keys {
-				sb.WriteString(key)
-				sb.WriteByte('|')
+				h.WriteString(key)
+				h.WriteByte(low.HASH_PIPE)
 			}
 		}
-	}
 
-	// Servers - pre-allocate slice
-	serverLen := len(d.Servers.Value)
-	if serverLen > 0 {
-		keys := make([]string, 0, serverLen)
-		for i := range d.Servers.Value {
-			keys = append(keys, low.GenerateHashString(d.Servers.Value[i].Value))
+		if d.Paths.Value != nil {
+			h.WriteString(low.GenerateHashString(d.Paths.Value))
+			h.WriteByte(low.HASH_PIPE)
 		}
-		sort.Strings(keys)
-		for _, key := range keys {
-			sb.WriteString(key)
-			sb.WriteByte('|')
+		if d.Components.Value != nil {
+			h.WriteString(low.GenerateHashString(d.Components.Value))
+			h.WriteByte(low.HASH_PIPE)
 		}
-	}
 
-	if d.Paths.Value != nil {
-		sb.WriteString(low.GenerateHashString(d.Paths.Value))
-		sb.WriteByte('|')
-	}
-	if d.Components.Value != nil {
-		sb.WriteString(low.GenerateHashString(d.Components.Value))
-		sb.WriteByte('|')
-	}
+		// Security - pre-allocate slice
+		securityLen := len(d.Security.Value)
+		if securityLen > 0 {
+			keys := make([]string, 0, securityLen)
+			for i := range d.Security.Value {
+				keys = append(keys, low.GenerateHashString(d.Security.Value[i].Value))
+			}
+			sort.Strings(keys)
+			for _, key := range keys {
+				h.WriteString(key)
+				h.WriteByte(low.HASH_PIPE)
+			}
+		}
 
-	// Security - pre-allocate slice
-	securityLen := len(d.Security.Value)
-	if securityLen > 0 {
-		keys := make([]string, 0, securityLen)
-		for i := range d.Security.Value {
-			keys = append(keys, low.GenerateHashString(d.Security.Value[i].Value))
+		// Tags - pre-allocate slice
+		tagLen := len(d.Tags.Value)
+		if tagLen > 0 {
+			keys := make([]string, 0, tagLen)
+			for i := range d.Tags.Value {
+				keys = append(keys, low.GenerateHashString(d.Tags.Value[i].Value))
+			}
+			sort.Strings(keys)
+			for _, key := range keys {
+				h.WriteString(key)
+				h.WriteByte(low.HASH_PIPE)
+			}
 		}
-		sort.Strings(keys)
-		for _, key := range keys {
-			sb.WriteString(key)
-			sb.WriteByte('|')
-		}
-	}
 
-	// Tags - pre-allocate slice
-	tagLen := len(d.Tags.Value)
-	if tagLen > 0 {
-		keys := make([]string, 0, tagLen)
-		for i := range d.Tags.Value {
-			keys = append(keys, low.GenerateHashString(d.Tags.Value[i].Value))
+		if d.ExternalDocs.Value != nil {
+			h.WriteString(low.GenerateHashString(d.ExternalDocs.Value))
+			h.WriteByte(low.HASH_PIPE)
 		}
-		sort.Strings(keys)
-		for _, key := range keys {
-			sb.WriteString(key)
-			sb.WriteByte('|')
-		}
-	}
 
-	if d.ExternalDocs.Value != nil {
-		sb.WriteString(low.GenerateHashString(d.ExternalDocs.Value))
-		sb.WriteByte('|')
-	}
-
-	// Extensions - pre-allocate slice
-	extLen := d.Extensions.Len()
-	if extLen > 0 {
-		keys := make([]string, 0, extLen)
-		for k, v := range d.Extensions.FromOldest() {
-			// Optimize extension hash generation
-			var nodeHash [32]byte
-			nodeHashStr := fmt.Sprint(v.Value)
-			nodeHash = sha256.Sum256([]byte(nodeHashStr))
-			keys = append(keys, k.Value+"-"+fmt.Sprintf("%x", nodeHash))
+		// Extensions
+		for _, ext := range low.HashExtensions(d.Extensions) {
+			h.WriteString(ext)
+			h.WriteByte(low.HASH_PIPE)
 		}
-		sort.Strings(keys)
-		for _, key := range keys {
-			sb.WriteString(key)
-			sb.WriteByte('|')
-		}
-	}
-	return sha256.Sum256([]byte(sb.String()))
+		return h.Sum64()
+	})
 }

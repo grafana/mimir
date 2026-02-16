@@ -15,7 +15,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/stretchr/testify/require"
 
@@ -1222,14 +1221,8 @@ func TestEliminateDeduplicateAndMergeOptimizationWithDelayedNameRemovalDisabled(
 
 func runTestCasesWithDelayedNameRemovalDisabled(t *testing.T, globPattern string) {
 	types.EnableManglingReturnedSlices = true
-	parser.ExperimentalDurationExpr = true
-	parser.EnableExperimentalFunctions = true
-	parser.EnableExtendedRangeSelectors = true
 	t.Cleanup(func() {
 		types.EnableManglingReturnedSlices = false
-		parser.ExperimentalDurationExpr = false
-		parser.EnableExperimentalFunctions = false
-		parser.EnableExtendedRangeSelectors = false
 	})
 
 	testdataFS := os.DirFS("../../testdata")

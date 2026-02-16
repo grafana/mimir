@@ -69,7 +69,8 @@ func (e *EmbeddedQuery) UnmarshalJSON(b []byte) error {
 		return err
 	}
 
-	expr, err := parser.ParseExpr(v.Expr)
+	p := CreateParser()
+	expr, err := p.ParseExpr(v.Expr)
 	if err != nil {
 		return err
 	}

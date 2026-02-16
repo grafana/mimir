@@ -9,6 +9,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
+
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 type InsertOmittedTargetInfoSelector struct{}
@@ -34,7 +36,7 @@ func (h *InsertOmittedTargetInfoSelector) Visit(node parser.Node, _ []parser.Nod
 	}
 	switch length := len(expr.Args); length {
 	case 1:
-		infoExpr, err := parser.ParseExpr("target_info")
+		infoExpr, err := promqlext.NewDefaultParser().ParseExpr("target_info")
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse target_info expression: %v", err)
 		}

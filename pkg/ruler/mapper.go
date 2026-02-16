@@ -21,6 +21,8 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/spf13/afero"
 	"go.yaml.in/yaml/v3"
+
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 // mapper is designed to enusre the provided rule sets are identical
@@ -178,29 +180,33 @@ func (m *mapper) writeRuleGroupsIfNewer(groups []rulefmt.RuleGroup, filename str
 
 // FSLoader a GroupLoader implementation that reads files from a given afero.Fs.
 type FSLoader struct {
-	fs afero.Fs
+	fs     afero.Fs
+	parser parser.Parser
 }
 
 func NewFSLoader(fs afero.Fs) FSLoader {
 	return FSLoader{
-		fs: fs,
+		fs:     fs,
+		parser: promqlext.NewExperimentalParser(),
 	}
 }
 
 func (f FSLoader) Load(identifier string, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*rulefmt.RuleGroups, []error) {
-	return parseFile(f.fs, identifier, ignoreUnknownFields, nameValidationScheme)
+	return f.parseFile(f.fs, identifier, ignoreUnknownFields, nameValidationScheme)
 }
 
-func (FSLoader) Parse(query string) (parser.Expr, error) { return parser.ParseExpr(query) }
+func (f FSLoader) Parse(query string) (parser.Expr, error) {
+	return f.parser.ParseExpr(query)
+}
 
 // parseFile reads and parses rules from a file.
 // Duplicate of Prometheus' rulefmt.ParseFile, but injects the FS.
-func parseFile(fs afero.Fs, file string, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*rulefmt.RuleGroups, []error) {
+func (f FSLoader) parseFile(fs afero.Fs, file string, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*rulefmt.RuleGroups, []error) {
 	b, err := afero.ReadFile(fs, file)
 	if err != nil {
 		return nil, []error{fmt.Errorf("%s: %w", file, err)}
 	}
-	rgs, errs := rulefmt.Parse(b, ignoreUnknownFields, nameValidationScheme)
+	rgs, errs := rulefmt.Parse(b, ignoreUnknownFields, nameValidationScheme, f.parser)
 	for i := range errs {
 		errs[i] = fmt.Errorf("%s: %w", file, errs[i])
 	}

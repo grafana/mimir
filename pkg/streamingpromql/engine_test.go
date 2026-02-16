@@ -65,9 +65,6 @@ const (
 
 func init() {
 	types.EnableManglingReturnedSlices = true
-	parser.ExperimentalDurationExpr = true
-	parser.EnableExperimentalFunctions = true
-	parser.EnableExtendedRangeSelectors = true
 
 	// Set a tracer provider with in memory span exporter so we can check the spans later.
 	otel.SetTracerProvider(
@@ -78,10 +75,6 @@ func init() {
 }
 
 func TestUnsupportedPromQLFeatures(t *testing.T) {
-	binOpFillModifierEnabled := parser.EnableBinopFillModifiers
-	parser.EnableBinopFillModifiers = true
-	defer func() { parser.EnableBinopFillModifiers = binOpFillModifierEnabled }()
-
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{

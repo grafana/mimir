@@ -33,6 +33,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
@@ -45,7 +46,7 @@ var (
 )
 
 func parseQuery(t require.TestingT, query string) parser.Expr {
-	queryExpr, err := parser.ParseExpr(query)
+	queryExpr, err := astmapper.CreateParser().ParseExpr(query)
 	require.NoError(t, err)
 	return queryExpr
 }
@@ -492,7 +493,7 @@ func TestMetricsQuery_WithQuery_WithExpr_TransformConsistency(t *testing.T) {
 			}
 
 			// test WithExpr on the same query as WithQuery
-			queryExpr, err := parser.ParseExpr(testCase.updatedQuery)
+			queryExpr, err := astmapper.CreateParser().ParseExpr(testCase.updatedQuery)
 			updatedMetricsQuery = mustSucceed(testCase.initialMetricsQuery.WithExpr(queryExpr))
 
 			if err != nil || testCase.expectedErr != nil {

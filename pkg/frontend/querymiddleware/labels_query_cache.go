@@ -16,9 +16,9 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/promql/parser"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -134,10 +134,11 @@ func generateLabelsQueryRequestCacheKey(startTime, endTime int64, labelName stri
 
 func parseRequestMatchersParam(values url.Values, paramName string) ([][]*labels.Matcher, error) {
 	matcherSets := make([][]*labels.Matcher, 0, len(values[paramName]))
+	p := astmapper.CreateParser()
 
 	for _, value := range values[paramName] {
 
-		matchers, err := parser.ParseMetricSelector(value)
+		matchers, err := p.ParseMetricSelector(value)
 		if err != nil {
 			return nil, errors.Wrapf(err, "invalid '%s' parameter", paramName)
 		}

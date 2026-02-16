@@ -36,6 +36,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -302,7 +303,8 @@ func RecordAndReportRuleQueryMetrics(qf rules.QueryFunc, queryTime, zeroFetchedS
 			// Do not count queries with errors for zero fetched series, or queries
 			// with no selectors that are not meant to fetch any series.
 			if err == nil && numSeries == 0 {
-				if expr, err := parser.ParseExpr(qs); err == nil {
+				p := promqlext.NewExperimentalParser()
+				if expr, err := p.ParseExpr(qs); err == nil {
 					if len(parser.ExtractSelectors(expr)) > 0 {
 						zeroFetchedSeriesCount.Add(1)
 					}

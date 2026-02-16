@@ -11,14 +11,20 @@ import (
 	"strconv"
 
 	"github.com/alecthomas/kingpin/v2"
-	"github.com/prometheus/prometheus/promql/parser"
+
+	"github.com/grafana/mimir/pkg/mimirtool/config"
 )
 
-type AnalyzeCommand struct{}
+type AnalyzeCommand struct {
+	enableExperimentalFunctions bool
+}
 
 func (cmd *AnalyzeCommand) Register(app *kingpin.Application, envVars EnvVarNames, logConfig *LoggerConfig) {
-	analyzeCmd := app.Command("analyze", "Run analysis against your Prometheus, Grafana, and Grafana Mimir to see which metrics are being used and exported.")
-	analyzeCmd.Flag("enable-experimental-functions", "If set, enables parsing experimental PromQL functions.").BoolVar(&parser.EnableExperimentalFunctions)
+	analyzeCmd := app.Command("analyze", "Run analysis against your Prometheus, Grafana, and Grafana Mimir to see which metrics are being used and exported.").PreAction(func(_ *kingpin.ParseContext) error {
+		config.ParserOptions.EnableExperimentalFunctions = cmd.enableExperimentalFunctions
+		return nil
+	})
+	analyzeCmd.Flag("enable-experimental-functions", "If set, enables parsing experimental PromQL functions.").BoolVar(&cmd.enableExperimentalFunctions)
 
 	paCmd := &PrometheusAnalyzeCommand{}
 	prometheusAnalyzeCmd := analyzeCmd.Command("prometheus", "Take the metrics being used in Grafana and get the cardinality from a Prometheus.").PreAction(func(_ *kingpin.ParseContext) error {

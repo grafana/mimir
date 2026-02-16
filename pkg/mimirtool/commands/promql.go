@@ -7,17 +7,19 @@ import (
 	"os"
 
 	"github.com/alecthomas/kingpin/v2"
-	"github.com/prometheus/prometheus/promql/parser"
+
+	"github.com/grafana/mimir/pkg/mimirtool/config"
 )
 
 type PromQLCommand struct {
-	query       string
-	prettyPrint bool
+	query                       string
+	prettyPrint                 bool
+	enableExperimentalFunctions bool
 }
 
 func (c *PromQLCommand) Register(app *kingpin.Application, _ EnvVarNames) {
 	promqlCmd := app.Command("promql", "PromQL formatting and editing for Grafana Mimir.")
-	promqlCmd.Flag("enable-experimental-functions", "If set, enables parsing experimental PromQL functions.").BoolVar(&parser.EnableExperimentalFunctions)
+	promqlCmd.Flag("enable-experimental-functions", "If set, enables parsing experimental PromQL functions.").BoolVar(&c.enableExperimentalFunctions)
 
 	// PromQL Format Query Command
 	promqlFormatCmd := promqlCmd.Command("format", "Format PromQL query with Prometheus' string formatter; wrap query in quotes for CLI parsing.").Action(c.formatQuery)
@@ -26,7 +28,9 @@ func (c *PromQLCommand) Register(app *kingpin.Application, _ EnvVarNames) {
 }
 
 func (c *PromQLCommand) formatQuery(_ *kingpin.ParseContext) error {
-	queryExpr, err := parser.ParseExpr(c.query)
+	config.ParserOptions.EnableExperimentalFunctions = c.enableExperimentalFunctions
+	p := config.CreateParser()
+	queryExpr, err := p.ParseExpr(c.query)
 	if err != nil {
 		return err
 	}

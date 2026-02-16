@@ -70,8 +70,6 @@ func TestCloneExpr_ExplicitTestCases(t *testing.T) {
 }
 
 func TestCloneExpr(t *testing.T) {
-	enableExperimentalParserFeaturesDuringTest(t)
-
 	testCases := []string{
 		// Vector selectors
 		`foo`,
@@ -149,7 +147,7 @@ func TestCloneExpr(t *testing.T) {
 
 	for i, tc := range testCases {
 		t.Run(fmt.Sprintf("%d: %s", i, tc), func(t *testing.T) {
-			originalExpression, err := parser.ParseExpr(tc)
+			originalExpression, err := CreateParser().ParseExpr(tc)
 			require.NoError(t, err)
 			clonedExpression, err := CloneExpr(originalExpression)
 			require.NoError(t, err)
@@ -163,13 +161,11 @@ func TestCloneExpr(t *testing.T) {
 // This test supplements TestCloneExpr by running all of the engine test cases through cloneExpr.
 // The goal of this is to detect cases not covered by TestCloneExpr.
 func TestCloneExpr_EngineTestCases(t *testing.T) {
-	enableExperimentalParserFeaturesDuringTest(t)
-
 	testCases := loadTestExpressions(t)
 
 	for _, testCase := range testCases {
 		t.Run(testCase, func(t *testing.T) {
-			originalExpression, err := parser.ParseExpr(testCase)
+			originalExpression, err := CreateParser().ParseExpr(testCase)
 			require.NoError(t, err)
 
 			clonedExpression, err := CloneExpr(originalExpression)
@@ -246,20 +242,6 @@ func loadTestExpressionsFromDirectory(t *testing.T, dir string, accumulatedExpre
 			accumulatedExpressions[expr] = struct{}{}
 		}
 	}
-}
-
-func enableExperimentalParserFeaturesDuringTest(t *testing.T) {
-	oldDurationExpressions := parser.ExperimentalDurationExpr
-	oldExperimentalFunctions := parser.EnableExperimentalFunctions
-	oldEnableExtendedRangeSelectors := parser.EnableExtendedRangeSelectors
-	parser.ExperimentalDurationExpr = true
-	parser.EnableExperimentalFunctions = true
-	parser.EnableExtendedRangeSelectors = true
-	t.Cleanup(func() {
-		parser.ExperimentalDurationExpr = oldDurationExpressions
-		parser.EnableExperimentalFunctions = oldExperimentalFunctions
-		parser.EnableExtendedRangeSelectors = oldEnableExtendedRangeSelectors
-	})
 }
 
 func requireNoSharedPointers(t *testing.T, objA, objB any) {
@@ -357,7 +339,7 @@ func TestSharding_BinaryExpressionsDontTakeExponentialTime(t *testing.T) {
 	for i := 2; i <= expressions; i++ {
 		query += fmt.Sprintf("or vector(%d)", i)
 	}
-	expr, err := parser.ParseExpr(query)
+	expr, err := CreateParser().ParseExpr(query)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -379,7 +361,7 @@ func TestASTMapperContextCancellation(t *testing.T) {
 	cancel()
 
 	// Attempt to map with cancelled context
-	expr, err := parser.ParseExpr("test{label=\"value\"}")
+	expr, err := CreateParser().ParseExpr("test{label=\"value\"}")
 	require.NoError(t, err)
 
 	// The Map function should detect the cancellation and return the error

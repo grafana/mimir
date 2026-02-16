@@ -14,12 +14,12 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
-	promRules "github.com/prometheus/prometheus/rules"
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
 
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 func TestClient_LoadRuleGroups(t *testing.T) {
@@ -70,9 +70,10 @@ func TestClient_LoadRuleGroups(t *testing.T) {
 	err = os.Symlink(namespace1, path.Join(dir, user1, namespace2))
 	require.NoError(t, err)
 
+	p := promqlext.NewDefaultParser()
 	client, err := NewLocalRulesClient(rulestore.LocalStoreConfig{
 		Directory: dir,
-	}, promRules.FileLoader{})
+	}, NewFileLoader(p))
 	require.NoError(t, err)
 
 	t.Run("all rule groups", func(t *testing.T) {

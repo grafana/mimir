@@ -8,10 +8,10 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 func TestReduceMatchers_Apply_Vectors(t *testing.T) {
@@ -102,12 +102,6 @@ func TestReduceMatchers_Apply_Vectors(t *testing.T) {
 }
 
 func TestReduceMatchers_Apply_ComplexQueries(t *testing.T) {
-	enableExperimentalFunctions := parser.EnableExperimentalFunctions
-	t.Cleanup(func() {
-		parser.EnableExperimentalFunctions = enableExperimentalFunctions
-	})
-	parser.EnableExperimentalFunctions = true
-
 	tests := []struct {
 		name          string
 		inputQuery    string
@@ -140,11 +134,13 @@ func TestReduceMatchers_Apply_ComplexQueries(t *testing.T) {
 		},
 	}
 
+	p := promqlext.NewExperimentalParser()
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			pass := ast.NewReduceMatchers(prometheus.NewPedanticRegistry(), log.NewNopLogger())
 			outputExpr := runASTOptimizationPassWithoutMetrics(t, context.Background(), tt.inputQuery, pass)
-			expectedExpr, err := parser.ParseExpr(tt.expectedQuery)
+			expectedExpr, err := p.ParseExpr(tt.expectedQuery)
 			require.NoError(t, err)
 			expectedQuery := expectedExpr.String()
 			outputQuery := outputExpr.String()

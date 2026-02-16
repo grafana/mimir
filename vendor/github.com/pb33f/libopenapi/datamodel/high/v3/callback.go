@@ -4,15 +4,28 @@
 package v3
 
 import (
+	"context"
 	"sort"
 
 	"github.com/pb33f/libopenapi/datamodel/high"
 	"github.com/pb33f/libopenapi/datamodel/low"
+	lowmodel "github.com/pb33f/libopenapi/datamodel/low"
 	lowv3 "github.com/pb33f/libopenapi/datamodel/low/v3"
+	"github.com/pb33f/libopenapi/index"
 	"github.com/pb33f/libopenapi/orderedmap"
 	"github.com/pb33f/libopenapi/utils"
 	"go.yaml.in/yaml/v4"
 )
+
+// buildLowCallback builds a low-level Callback from a resolved YAML node.
+func buildLowCallback(node *yaml.Node, idx *index.SpecIndex) (*lowv3.Callback, error) {
+	var cb lowv3.Callback
+	_ = lowmodel.BuildModel(node, &cb)
+	if err := cb.Build(context.Background(), nil, node, idx); err != nil {
+		return nil, err
+	}
+	return &cb, nil
+}
 
 // Callback represents a high-level Callback object for OpenAPI 3+.
 //
@@ -161,6 +174,19 @@ func (c *Callback) marshalYAMLInlineInternal(ctx any) (interface{}, error) {
 	if c.Reference != "" {
 		return utils.CreateRefNode(c.Reference), nil
 	}
+
+	// resolve external reference if present
+	if c.low != nil {
+		result, err := high.ResolveExternalRef(c.low, buildLowCallback, NewCallback)
+		if err != nil {
+			return nil, err
+		}
+		if result.Resolved {
+			// recursively render the resolved callback
+			return result.High.marshalYAMLInlineInternal(ctx)
+		}
+	}
+
 	// map keys correctly.
 	m := utils.CreateEmptyMapNode()
 	type pathItem struct {

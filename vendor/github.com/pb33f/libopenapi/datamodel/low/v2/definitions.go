@@ -5,8 +5,7 @@ package v2
 
 import (
 	"context"
-	"crypto/sha256"
-	"strings"
+	"hash/maphash"
 	"sync"
 
 	"github.com/pb33f/libopenapi/datamodel"
@@ -155,13 +154,15 @@ func (d *Definitions) Build(ctx context.Context, _, root *yaml.Node, idx *index.
 	return nil
 }
 
-// Hash will return a consistent SHA256 Hash of the Definitions object
-func (d *Definitions) Hash() [32]byte {
-	var f []string
-	for k := range orderedmap.SortAlpha(d.Schemas).KeysFromOldest() {
-		f = append(f, low.GenerateHashString(d.FindSchema(k.Value).Value))
-	}
-	return sha256.Sum256([]byte(strings.Join(f, "|")))
+// Hash will return a consistent Hash of the Definitions object
+func (d *Definitions) Hash() uint64 {
+	return low.WithHasher(func(h *maphash.Hash) uint64 {
+		for k := range orderedmap.SortAlpha(d.Schemas).KeysFromOldest() {
+			h.WriteString(low.GenerateHashString(d.FindSchema(k.Value).Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		return h.Sum64()
+	})
 }
 
 // Build will extract all ParameterDefinitions into Parameter instances.

@@ -20,6 +20,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -287,7 +288,7 @@ func (r *remoteReadQueryRequest) GetClonedParsedQuery() (parser.Expr, error) {
 		return nil, errRequestNoQuery
 	}
 
-	return parser.ParseExpr(r.promQuery)
+	return astmapper.CreateParser().ParseExpr(r.promQuery)
 }
 
 func (r *remoteReadQueryRequest) GetHeaders() []*PrometheusHeader {

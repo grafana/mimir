@@ -13,11 +13,37 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
+	"github.com/prometheus/prometheus/promql/parser"
 	promRules "github.com/prometheus/prometheus/rules"
 
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
+
+// fileLoader implements promRules.GroupLoader interface.
+// It loads rule groups from files and provides a parser for PromQL expressions.
+type fileLoader struct {
+	parser parser.Parser
+}
+
+// NewFileLoader creates a new fileLoader with the given parser.
+func NewFileLoader(p parser.Parser) *fileLoader {
+	if p == nil {
+		p = promqlext.NewExperimentalParser()
+	}
+	return &fileLoader{
+		parser: p,
+	}
+}
+
+func (fl *fileLoader) Load(identifier string, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*rulefmt.RuleGroups, []error) {
+	return rulefmt.ParseFile(identifier, ignoreUnknownFields, nameValidationScheme, fl.parser)
+}
+
+func (fl *fileLoader) Parse(query string) (parser.Expr, error) {
+	return fl.parser.ParseExpr(query)
+}
 
 // Client expects to load already existing rules located at:
 //

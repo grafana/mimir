@@ -17,10 +17,11 @@ import (
 	"github.com/grafana/dskit/runutil"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"go.yaml.in/yaml/v3"
+
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 type SourceType string
@@ -129,7 +130,8 @@ type ThanosMeta struct {
 type Matchers []*labels.Matcher
 
 func (m *Matchers) UnmarshalYAML(value *yaml.Node) (err error) {
-	*m, err = parser.ParseMetricSelector(value.Value)
+	p := promqlext.NewExperimentalParser()
+	*m, err = p.ParseMetricSelector(value.Value)
 	if err != nil {
 		return errors.Wrapf(err, "parse metric selector %v", value.Value)
 	}

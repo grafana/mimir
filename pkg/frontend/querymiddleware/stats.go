@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
@@ -189,7 +190,7 @@ func QueryDetailsFromContext(ctx context.Context) *QueryDetails {
 func ExtractMinMaxTime(ctx context.Context, req MetricsQueryRequest, lookbackDelta time.Duration) (int64, int64, bool) {
 	switch r := req.(type) {
 	case *PrometheusRangeQueryRequest, *PrometheusInstantQueryRequest:
-		expr, err := parser.ParseExpr(r.GetQuery())
+		expr, err := astmapper.CreateParser().ParseExpr(r.GetQuery())
 		if err != nil {
 			return 0, 0, false
 		}

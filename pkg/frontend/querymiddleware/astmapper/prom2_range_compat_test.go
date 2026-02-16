@@ -6,7 +6,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 )
 
@@ -14,7 +13,7 @@ func TestProm2RangeCompat_Cancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	query, _ := parser.ParseExpr(`up{foo="bar"}`)
+	query, _ := CreateParser().ParseExpr(`up{foo="bar"}`)
 	mapper := NewProm2RangeCompat()
 	_, err := mapper.Map(ctx, query)
 
@@ -52,7 +51,7 @@ func TestProm2RangeCompat_Queries(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.query, func(t *testing.T) {
-			query, err := parser.ParseExpr(tc.query)
+			query, err := CreateParser().ParseExpr(tc.query)
 			require.NoError(t, err)
 
 			mapper := NewProm2RangeCompat()

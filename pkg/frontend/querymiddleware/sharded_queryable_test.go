@@ -27,6 +27,7 @@ import (
 
 func TestShardedQuerier_Select(t *testing.T) {
 	ctx := context.Background()
+	p := astmapper.CreateParser()
 	var testExpr = []struct {
 		name    string
 		querier *shardedQuerier
@@ -65,7 +66,7 @@ func TestShardedQuerier_Select(t *testing.T) {
 					},
 				)
 
-				expr, err := parser.ParseExpr(`http_requests_total{cluster="prod"}`)
+				expr, err := p.ParseExpr(`http_requests_total{cluster="prod"}`)
 				require.NoError(t, err)
 				encoded, err := astmapper.JSONCodec.Encode([]astmapper.EmbeddedQuery{astmapper.NewEmbeddedQuery(expr, nil)})
 				require.Nil(t, err)
@@ -88,7 +89,7 @@ func TestShardedQuerier_Select(t *testing.T) {
 				nil,
 			)),
 			fn: func(t *testing.T, q *shardedQuerier) {
-				expr, err := parser.ParseExpr(`http_requests_total{cluster="prod"}`)
+				expr, err := p.ParseExpr(`http_requests_total{cluster="prod"}`)
 				require.NoError(t, err)
 				encoded, err := astmapper.JSONCodec.Encode([]astmapper.EmbeddedQuery{astmapper.NewEmbeddedQuery(expr, nil)})
 				require.Nil(t, err)
@@ -147,7 +148,7 @@ func TestShardedQuerier_Select(t *testing.T) {
 				nil,
 			)),
 			fn: func(t *testing.T, q *shardedQuerier) {
-				expr, err := parser.ParseExpr(`http_requests_total{cluster="prod"}`)
+				expr, err := p.ParseExpr(`http_requests_total{cluster="prod"}`)
 				require.NoError(t, err)
 				encoded, err := astmapper.JSONCodec.Encode([]astmapper.EmbeddedQuery{astmapper.NewEmbeddedQuery(expr, nil)})
 				require.Nil(t, err)
@@ -217,8 +218,9 @@ func TestShardedQuerier_Select_ShouldConcurrentlyRunEmbeddedQueries(t *testing.T
 	}
 
 	embeddedQueries := make([]astmapper.EmbeddedQuery, len(embeddedQueriesRaw))
+	p := astmapper.CreateParser()
 	for i, query := range embeddedQueriesRaw {
-		expr, err := parser.ParseExpr(query)
+		expr, err := p.ParseExpr(query)
 		require.NoError(t, err)
 		embeddedQueries[i] = astmapper.NewEmbeddedQuery(expr, nil)
 	}

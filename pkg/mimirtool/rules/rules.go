@@ -15,6 +15,7 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/promql/parser"
 
+	"github.com/grafana/mimir/pkg/mimirtool/config"
 	"github.com/grafana/mimir/pkg/mimirtool/rules/rwrulefmt"
 )
 
@@ -38,8 +39,9 @@ func (r RuleNamespace) LintExpressions(backend string, logger log.Logger) (int, 
 	switch backend {
 	case MimirBackend:
 		queryLanguage = "PromQL"
+		p := config.CreateParser()
 		parseFn = func(s string) (fmt.Stringer, error) {
-			return parser.ParseExpr(s)
+			return p.ParseExpr(s)
 		}
 	default:
 		return 0, 0, errInvalidBackend
@@ -106,6 +108,8 @@ func (r RuleNamespace) AggregateBy(label string, applyTo func(group rwrulefmt.Ru
 	// label in the aggregation.
 	var count, mod int
 
+	p := config.CreateParser()
+
 	for i, group := range r.Groups {
 		for j, rule := range group.Rules {
 			// Skip it if the applyTo function returns false.
@@ -117,7 +121,7 @@ func (r RuleNamespace) AggregateBy(label string, applyTo func(group rwrulefmt.Ru
 			}
 
 			level.Debug(logger).Log("msg", "evaluating...", "rule", getRuleName(rule))
-			exp, err := parser.ParseExpr(rule.Expr)
+			exp, err := p.ParseExpr(rule.Expr)
 			if err != nil {
 				return count, mod, err
 			}
@@ -236,8 +240,9 @@ func (r RuleNamespace) Validate(groupNodes []rulefmt.RuleGroupNode, scheme model
 // ValidateRuleGroup validates a rulegroup
 func ValidateRuleGroup(g rwrulefmt.RuleGroup, node rulefmt.RuleGroupNode, scheme model.ValidationScheme) []error {
 	var errs []error
+	p := config.CreateParser()
 	for i, r := range g.Rules {
-		for _, err := range r.Validate(node.Rules[i], scheme) {
+		for _, err := range r.Validate(node.Rules[i], scheme, p) {
 			var ruleName string
 			if r.Alert != "" {
 				ruleName = r.Alert

@@ -1,4 +1,4 @@
-// Copyright 2023 Princess B33f Heavy Industries / Dave Shanley
+// Copyright 2023-2025 Princess Beef Heavy Industries, LLC / Dave Shanley
 // SPDX-License-Identifier: MIT
 
 package schema_validation
@@ -34,6 +34,28 @@ func ValidateOpenAPIDocument(doc libopenapi.Document, opts ...config.Option) (bo
 	info := doc.GetSpecInfo()
 	loadedSchema := info.APISchema
 	var validationErrors []*liberrors.ValidationError
+
+	// Check if SpecJSON is nil before dereferencing
+	if info.SpecJSON == nil {
+		violation := &liberrors.SchemaValidationFailure{
+			Reason:          "document SpecJSON is nil - document may not be properly parsed",
+			Location:        "document root",
+			ReferenceSchema: loadedSchema,
+		}
+		validationErrors = append(validationErrors, &liberrors.ValidationError{
+			ValidationType:         "schema",
+			ValidationSubType:      "document",
+			Message:                "OpenAPI document validation failed",
+			Reason:                 "The document's SpecJSON is nil, indicating the document was not properly parsed or is empty",
+			SpecLine:               1,
+			SpecCol:                0,
+			SchemaValidationErrors: []*liberrors.SchemaValidationFailure{violation},
+			HowToFix:               "ensure the OpenAPI document is valid YAML/JSON and can be properly parsed by libopenapi",
+			Context:                "document root",
+		})
+		return false, validationErrors
+	}
+
 	decodedDocument := *info.SpecJSON
 
 	// Compile the JSON Schema
@@ -46,7 +68,7 @@ func ValidateOpenAPIDocument(doc libopenapi.Document, opts ...config.Option) (bo
 			ReferenceSchema: loadedSchema,
 		}
 		validationErrors = append(validationErrors, &liberrors.ValidationError{
-			ValidationType:         "schema",
+			ValidationType:         helpers.Schema,
 			ValidationSubType:      "compilation",
 			Message:                "OpenAPI document schema compilation failed",
 			Reason:                 fmt.Sprintf("The OpenAPI schema failed to compile: %s", err.Error()),

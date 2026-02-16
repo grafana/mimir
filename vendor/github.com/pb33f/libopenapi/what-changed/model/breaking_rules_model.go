@@ -260,9 +260,9 @@ type SecuritySchemeRules struct {
 	OAuth2MetadataUrl *BreakingChangeRule `json:"oauth2MetadataUrl,omitempty" yaml:"oauth2MetadataUrl,omitempty"`
 	Flows             *BreakingChangeRule `json:"flows,omitempty" yaml:"flows,omitempty"`
 	Scopes            *BreakingChangeRule `json:"scopes,omitempty" yaml:"scopes,omitempty"`
-	Flow              *BreakingChangeRule `json:"flow,omitempty" yaml:"flow,omitempty"`               // Swagger 2.0
+	Flow              *BreakingChangeRule `json:"flow,omitempty" yaml:"flow,omitempty"`                         // Swagger 2.0
 	AuthorizationURL  *BreakingChangeRule `json:"authorizationUrl,omitempty" yaml:"authorizationUrl,omitempty"` // Swagger 2.0
-	TokenURL          *BreakingChangeRule `json:"tokenUrl,omitempty" yaml:"tokenUrl,omitempty"`       // Swagger 2.0
+	TokenURL          *BreakingChangeRule `json:"tokenUrl,omitempty" yaml:"tokenUrl,omitempty"`                 // Swagger 2.0
 	Deprecated        *BreakingChangeRule `json:"deprecated,omitempty" yaml:"deprecated,omitempty"`
 }
 

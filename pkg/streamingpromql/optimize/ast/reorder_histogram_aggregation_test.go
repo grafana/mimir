@@ -6,10 +6,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 var testCasesReorderHistogramAggregation = map[string]string{
@@ -60,10 +60,10 @@ func TestReorderHistogramAggregation(t *testing.T) {
 
 	for input, expected := range testCasesReorderHistogramAggregation {
 		t.Run(input, func(t *testing.T) {
-			expectedExpr, err := parser.ParseExpr(expected)
+			expectedExpr, err := promqlext.NewExperimentalParser().ParseExpr(expected)
 			require.NoError(t, err)
 
-			inputExpr, err := parser.ParseExpr(input)
+			inputExpr, err := promqlext.NewExperimentalParser().ParseExpr(input)
 			require.NoError(t, err)
 			inputExpr, err = preprocessQuery(t, inputExpr)
 			require.NoError(t, err)
