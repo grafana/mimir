@@ -38,8 +38,8 @@ type seriesDataRingBufferElement[T any] struct {
 }
 
 func (b *SeriesDataRingBuffer[T]) Append(d T, seriesIndex int) {
-	if b.elementCount > 0 && seriesIndex <= b.lastElementSeriesIndex() {
-		panic(fmt.Sprintf("attempted to append series with index %v, but last series index in buffer is %v", seriesIndex, b.lastElementSeriesIndex()))
+	if b.elementCount > 0 && seriesIndex <= b.LastElementSeriesIndex() {
+		panic(fmt.Sprintf("attempted to append series with index %v, but last series index in buffer is %v", seriesIndex, b.LastElementSeriesIndex()))
 	}
 
 	if len(b.elements) == b.elementCount {
@@ -61,11 +61,11 @@ func (b *SeriesDataRingBuffer[T]) Append(d T, seriesIndex int) {
 	b.elementCount++
 }
 
-func (b *SeriesDataRingBuffer[T]) firstElementSeriesIndex() int {
+func (b *SeriesDataRingBuffer[T]) FirstElementSeriesIndex() int {
 	return b.getElementAtPosition(0).seriesIndex
 }
 
-func (b *SeriesDataRingBuffer[T]) lastElementSeriesIndex() int {
+func (b *SeriesDataRingBuffer[T]) LastElementSeriesIndex() int {
 	return b.getElementAtPosition(b.elementCount - 1).seriesIndex
 }
 
@@ -79,8 +79,8 @@ func (b *SeriesDataRingBuffer[T]) Remove(seriesIndex int) T {
 		panic(fmt.Sprintf("attempted to remove series at index %v, but buffer is empty", seriesIndex))
 	}
 
-	firstElementSeriesIndex := b.firstElementSeriesIndex()
-	lastElementSeriesIndex := b.lastElementSeriesIndex()
+	firstElementSeriesIndex := b.FirstElementSeriesIndex()
+	lastElementSeriesIndex := b.LastElementSeriesIndex()
 
 	if seriesIndex < firstElementSeriesIndex || seriesIndex > lastElementSeriesIndex {
 		panic(fmt.Sprintf("attempted to remove series at index %v, but have series from index %v to %v", seriesIndex, firstElementSeriesIndex, lastElementSeriesIndex))
@@ -125,7 +125,7 @@ func (b *SeriesDataRingBuffer[T]) RemoveFirst() T {
 		panic("attempted to remove first series of empty buffer")
 	}
 
-	return b.Remove(b.firstElementSeriesIndex())
+	return b.Remove(b.FirstElementSeriesIndex())
 }
 
 // RemoveIfPresent removes and returns the series with the given series index, if it is present in the buffer.
@@ -145,8 +145,8 @@ func (b *SeriesDataRingBuffer[T]) Get(seriesIndex int) T {
 		panic(fmt.Sprintf("attempted to get series at index %v, but buffer is empty", seriesIndex))
 	}
 
-	firstElementSeriesIndex := b.firstElementSeriesIndex()
-	lastElementSeriesIndex := b.lastElementSeriesIndex()
+	firstElementSeriesIndex := b.FirstElementSeriesIndex()
+	lastElementSeriesIndex := b.LastElementSeriesIndex()
 
 	if seriesIndex < firstElementSeriesIndex || seriesIndex > lastElementSeriesIndex {
 		panic(fmt.Sprintf("attempted to remove series at index %v, but have series from index %v to %v", seriesIndex, firstElementSeriesIndex, lastElementSeriesIndex))
@@ -156,11 +156,21 @@ func (b *SeriesDataRingBuffer[T]) Get(seriesIndex int) T {
 	return b.elements[(b.startIndex+position)%len(b.elements)].data
 }
 
+func (b *SeriesDataRingBuffer[T]) GetIfPresent(seriesIndex int) (T, bool) {
+	pos, found := b.tryToFindElementPositionForSeriesIndex(seriesIndex)
+	if !found {
+		var empty T
+		return empty, false
+	}
+
+	return b.elements[(b.startIndex+pos)%len(b.elements)].data, true
+}
+
 func (b *SeriesDataRingBuffer[T]) findElementPositionForSeriesIndex(seriesIndex int) int {
 	pos, found := b.tryToFindElementPositionForSeriesIndex(seriesIndex)
 
 	if !found {
-		panic(fmt.Sprintf("attempted to find element position for series index %d, but it is not present in this buffer (first series index is %d, last series index is %d)", seriesIndex, b.firstElementSeriesIndex(), b.lastElementSeriesIndex()))
+		panic(fmt.Sprintf("attempted to find element position for series index %d, but it is not present in this buffer (first series index is %d, last series index is %d)", seriesIndex, b.FirstElementSeriesIndex(), b.LastElementSeriesIndex()))
 	}
 
 	if !b.getElementAtPosition(pos).present {

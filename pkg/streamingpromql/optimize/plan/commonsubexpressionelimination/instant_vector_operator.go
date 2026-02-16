@@ -174,7 +174,7 @@ func (b *InstantVectorDuplicationBuffer) CloseConsumer(consumer *InstantVectorDu
 		consumer.nextUnfilteredSeriesIndex++
 	}
 
-	for b.buffer.Size() > 0 && consumer.nextUnfilteredSeriesIndex < b.nextInnerSeriesIndex && consumer.nextUnfilteredSeriesIndex <= b.buffer.lastElementSeriesIndex() {
+	for b.buffer.Size() > 0 && consumer.nextUnfilteredSeriesIndex < b.nextInnerSeriesIndex && consumer.nextUnfilteredSeriesIndex <= b.buffer.LastElementSeriesIndex() {
 		// If no other consumers need this series, remove it now.
 		thisSeriesIndex := consumer.nextUnfilteredSeriesIndex
 
