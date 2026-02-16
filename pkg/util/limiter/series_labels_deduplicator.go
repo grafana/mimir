@@ -24,9 +24,7 @@ type SeriesLabelsDeduplicator interface {
 }
 
 type SeriesDeduplicatorMetrics struct {
-	// Total number of series labels processed by the deduplicator.
-	seriesLabelsTotal prometheus.Counter
-	// Number of series labels that were deduplicated (reused existing labels).
+	seriesLabelsTotal        prometheus.Counter
 	seriesLabelsDeduplicated prometheus.Counter
 }
 
