@@ -91,12 +91,14 @@ func (s *Spawner) plan() {
 	now := s.clock.Now()
 	for tenant, lastSubmitted := range s.planMap {
 		if now.Sub(lastSubmitted) > s.planningInterval {
-			_, err := s.rotator.OfferPlanJob(tenant, NewTrackedPlanJob(now))
+			accepted, err := s.rotator.OfferPlanJob(tenant, NewTrackedPlanJob(now))
 			if err != nil {
 				level.Error(s.logger).Log("msg", "failed submitting plan job", "tenant", tenant, "err", err)
 				continue
 			}
-			s.planMap[tenant] = now
+			if accepted > 0 {
+				s.planMap[tenant] = now
+			}
 		}
 	}
 }
