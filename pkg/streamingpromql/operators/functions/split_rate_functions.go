@@ -17,7 +17,7 @@ var SplitRate = NewSplitOperatorFactory[RateIntermediate](rateGenerate, rateComb
 
 var SplitIncrease = NewSplitOperatorFactory[RateIntermediate](rateGenerate, rateCombine(false), RateCodec, Increase, FUNCTION_INCREASE)
 
-func rateGenerate(step *types.RangeVectorStepData, _ []types.ScalarData, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (RateIntermediate, error) {
+func rateGenerate(step *types.RangeVectorStepData, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (RateIntermediate, error) {
 	fHead, fTail := step.Floats.UnsafePoints()
 	fCount := len(fHead) + len(fTail)
 
@@ -140,7 +140,6 @@ func rateGenerateHistogram(hHead, hTail []promql.HPoint, hCount int, emitAnnotat
 func rateCombine(isRate bool) SplitCombineFunc[RateIntermediate] {
 	return func(
 		pieces []RateIntermediate,
-		_ []types.ScalarData,
 		rangeStart int64,
 		rangeEnd int64,
 		emitAnnotation types.EmitAnnotationFunc,

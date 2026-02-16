@@ -35,7 +35,6 @@ var SplitSumOverTime = NewSplitOperatorFactory[SumOverTimeIntermediate](sumOverT
 
 func sumOverTimeGenerate(
 	step *types.RangeVectorStepData,
-	_ []types.ScalarData,
 	emitAnnotation types.EmitAnnotationFunc,
 	_ *limiter.MemoryConsumptionTracker,
 ) (SumOverTimeIntermediate, error) {
@@ -89,7 +88,6 @@ func sumOverTimeGenerate(
 
 func sumOverTimeCombine(
 	pieces []SumOverTimeIntermediate,
-	_ []types.ScalarData,
 	_ int64,
 	_ int64,
 	emitAnnotation types.EmitAnnotationFunc,
@@ -164,15 +162,15 @@ var SplitCountOverTime = NewSplitOperatorFactory[CountOverTimeIntermediate](
 	FUNCTION_COUNT_OVER_TIME,
 )
 
-func countOverTimeGenerate(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (CountOverTimeIntermediate, error) {
-	count, hasValue, _, err := countOverTime(step, nil, types.QueryTimeRange{}, nil, nil)
+func countOverTimeGenerate(step *types.RangeVectorStepData, emitAnnotation types.EmitAnnotationFunc, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (CountOverTimeIntermediate, error) {
+	count, hasValue, _, err := countOverTime(step, nil, types.QueryTimeRange{}, emitAnnotation, memoryConsumptionTracker)
 	if err != nil {
 		return CountOverTimeIntermediate{}, err
 	}
 	return CountOverTimeIntermediate{F: count, HasFloat: hasValue}, nil
 }
 
-func countOverTimeCombine(pieces []CountOverTimeIntermediate, _ []types.ScalarData, _ int64, _ int64, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+func countOverTimeCombine(pieces []CountOverTimeIntermediate, _ int64, _ int64, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 	totalCount := 0.0
 	hasValue := false
 
@@ -217,13 +215,12 @@ var SplitMinOverTime = NewSplitOperatorFactory[MinMaxOverTimeIntermediate](
 
 func minOverTimeGenerate(
 	step *types.RangeVectorStepData,
-	_ []types.ScalarData,
 	_ types.EmitAnnotationFunc,
-	_ *limiter.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 ) (MinMaxOverTimeIntermediate, error) {
 	// Pass a no-op emitAnnotation: the combine step will handle emitting the mixed float+histogram annotations so we
 	// can ignore the annotations emitted in minOverTime().
-	f, hasFloat, _, err := minOverTime(step, nil, types.QueryTimeRange{}, emitAnnotationNoop, nil)
+	f, hasFloat, _, err := minOverTime(step, nil, types.QueryTimeRange{}, emitAnnotationNoop, memoryConsumptionTracker)
 	if err != nil {
 		return MinMaxOverTimeIntermediate{}, err
 	}
@@ -240,7 +237,7 @@ func minOverTimeGenerate(
 	return result, nil
 }
 
-func minOverTimeCombine(pieces []MinMaxOverTimeIntermediate, _ []types.ScalarData, _ int64, _ int64, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+func minOverTimeCombine(pieces []MinMaxOverTimeIntermediate, _ int64, _ int64, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 	minF := math.NaN()
 	hasFloat := false
 	hasHistogram := false
@@ -272,10 +269,10 @@ var SplitMaxOverTime = NewSplitOperatorFactory[MinMaxOverTimeIntermediate](
 	FUNCTION_MAX_OVER_TIME,
 )
 
-func maxOverTimeGenerate(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (MinMaxOverTimeIntermediate, error) {
+func maxOverTimeGenerate(step *types.RangeVectorStepData, _ types.EmitAnnotationFunc, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (MinMaxOverTimeIntermediate, error) {
 	// Pass a no-op emitAnnotation: the combine step will handle emitting the mixed float+histogram annotations so we
 	// can ignore the annotations emitted in maxOverTime().
-	f, hasFloat, _, err := maxOverTime(step, nil, types.QueryTimeRange{}, emitAnnotationNoop, nil)
+	f, hasFloat, _, err := maxOverTime(step, nil, types.QueryTimeRange{}, emitAnnotationNoop, memoryConsumptionTracker)
 	if err != nil {
 		return MinMaxOverTimeIntermediate{}, err
 	}
@@ -292,7 +289,7 @@ func maxOverTimeGenerate(step *types.RangeVectorStepData, _ []types.ScalarData, 
 	return result, nil
 }
 
-func maxOverTimeCombine(pieces []MinMaxOverTimeIntermediate, _ []types.ScalarData, _ int64, _ int64, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+func maxOverTimeCombine(pieces []MinMaxOverTimeIntermediate, _ int64, _ int64, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 	hasFloat := false
 	hasHistogram := false
 	maxF := math.NaN()

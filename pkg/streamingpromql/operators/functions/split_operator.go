@@ -380,7 +380,7 @@ func (m *FunctionOverRangeVectorSplit[T]) NextSeries(ctx context.Context) (types
 	rangeStart := m.splitRanges[0].Start
 	rangeEnd := m.splitRanges[len(m.splitRanges)-1].End
 
-	f, hasFloat, h, err := m.combineFunc(pieces, nil, rangeStart, rangeEnd, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
+	f, hasFloat, h, err := m.combineFunc(pieces, rangeStart, rangeEnd, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
@@ -707,7 +707,7 @@ func (p *UncachedSplit[T]) NextSeries(ctx context.Context) ([]T, error) {
 			p.emitAndCaptureAnnotation(rangeIdx, localIdx, generator)
 		}
 
-		result, err := p.parent.generateFunc(rangeStep, nil, capturingEmitAnnotation, p.parent.MemoryConsumptionTracker)
+		result, err := p.parent.generateFunc(rangeStep, capturingEmitAnnotation, p.parent.MemoryConsumptionTracker)
 		if err != nil {
 			return nil, err
 		}

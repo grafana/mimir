@@ -25,7 +25,6 @@ type Range struct {
 // SplitGenerateFunc generates an intermediate result for a single split range.
 type SplitGenerateFunc[T any] func(
 	step *types.RangeVectorStepData,
-	scalarArgsData []types.ScalarData,
 	emitAnnotation types.EmitAnnotationFunc,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 ) (T, error)
@@ -35,7 +34,6 @@ type SplitGenerateFunc[T any] func(
 // histogram protos that are waiting to be cached.
 type SplitCombineFunc[T any] func(
 	ranges []T,
-	scalarArgsData []types.ScalarData,
 	rangeStart int64,
 	rangeEnd int64,
 	emitAnnotation types.EmitAnnotationFunc,
