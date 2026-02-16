@@ -332,7 +332,6 @@ func newEngineForTesting(t *testing.T, engine string, opts ...engineOpt) (promql
 	case querier.PrometheusEngine:
 		return promOpts, promql.NewEngine(promOpts)
 	case querier.MimirEngine:
-		mqeOpts.Limits = streamingpromql.NewStaticQueryLimitsProvider()
 		metrics := stats.NewQueryMetrics(promOpts.Reg)
 		planner, err := streamingpromql.NewQueryPlanner(mqeOpts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 		require.NoError(t, err)
