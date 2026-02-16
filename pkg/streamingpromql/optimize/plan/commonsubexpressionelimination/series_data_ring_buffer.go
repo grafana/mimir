@@ -217,11 +217,6 @@ func (b *SeriesDataRingBuffer[T]) tryToFindElementPositionForSeriesIndex(seriesI
 	return slices.BinarySearchFunc(b.elements[b.startIndex:min(b.startIndex+b.elementCount, len(b.elements))], seriesIndex, cmp)
 }
 
-func (b *SeriesDataRingBuffer[T]) IsPresent(seriesIndex int) bool {
-	// TODO: remove this
-	return false
-}
-
 // Size returns the number of elements in the buffer, including any empty elements due to
 // the removal of elements out of order.
 func (b *SeriesDataRingBuffer[T]) Size() int {
