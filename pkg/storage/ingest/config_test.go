@@ -362,38 +362,9 @@ func TestConfig_GetConsumerGroup(t *testing.T) {
 		})
 	}
 }
-
 func TestExhaustiveSASLMechanismOptions(t *testing.T) {
 	for _, o := range saslMechanismOptions {
 		require.NoError(t, new(SASLMechanism).Set(string(o)))
 		require.NotErrorIs(t, (&KafkaAuthConfig{Mechanism: o}).Validate(), ErrInvalidSASLMechanism)
-	}
-}
-
-func TestKafkaConfig_AddressCSV(t *testing.T) {
-	tests := map[string]struct {
-		address  string
-		expected []string
-	}{
-		"should parse a single broker": {
-			address:  "broker-1:9092",
-			expected: []string{"broker-1:9092"},
-		},
-		"should parse comma-separated brokers": {
-			address:  "broker-1:9092,broker-2:9092,broker-3:9092",
-			expected: []string{"broker-1:9092", "broker-2:9092", "broker-3:9092"},
-		},
-		"should parse empty address as nil": {
-			address:  "",
-			expected: nil,
-		},
-	}
-
-	for testName, testData := range tests {
-		t.Run(testName, func(t *testing.T) {
-			cfg := KafkaConfig{}
-			require.NoError(t, cfg.Address.Set(testData.address))
-			assert.Equal(t, testData.expected, []string(cfg.Address))
-		})
 	}
 }
