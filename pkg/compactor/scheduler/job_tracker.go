@@ -325,35 +325,40 @@ func (jt *JobTracker) CancelLease(id string, epoch int64) (canceled bool, became
 	return true, wasEmpty && revive, nil
 }
 
-func (jt *JobTracker) OfferPlanJob(job *TrackedPlanJob) (accepted int, becamePending bool, err error) {
+func (jt *JobTracker) OfferPlanJob(job *TrackedPlanJob) (accepted int, transition rotationTransition, err error) {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
 
 	if _, ok := jt.incompleteJobs[planJobId]; ok {
 		// A plan job is already present, do not replace it
-		return 0, false, nil
+		return 0, rotationNoChange, nil
 	}
 
 	if err := jt.persister.WriteJob(job); err != nil {
-		return 0, false, fmt.Errorf("failed persisting plan job offer: %w", err)
+		return 0, rotationNoChange, fmt.Errorf("failed persisting plan job offer: %w", err)
 	}
 
 	wasEmpty := jt.isPendingEmpty()
 	jt.incompleteJobs[planJobId] = jt.pending.PushBack(job)
 	jt.metrics.pendingJobs.Set(float64(jt.pending.Len()))
-	return 1, wasEmpty, nil
+
+	transition = rotationNoChange
+	if wasEmpty {
+		transition = rotationAddTracker
+	}
+	return 1, transition, nil
 }
 
 // OfferCompactionJobs processes the results from a plan job. Since planning offers a fresh view of pending work all remaining pending work
 // is replaced. Only a subset of the offered jobs may be accepted. The plan job itself will be considered completed if the epoch
 // provided was a match.
-func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, planJobEpoch int64) (accepted int, becamePending bool, err error) {
+func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, planJobEpoch int64) (accepted int, transition rotationTransition, err error) {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
 
 	planJob, err := jt.checkPlanJobEpoch(planJobEpoch)
 	if err != nil {
-		return 0, false, err
+		return 0, rotationNoChange, err
 	}
 
 	conflictMap := make(map[string]struct{})
@@ -416,7 +421,7 @@ func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, planJobE
 
 	err = jt.persister.WriteAndDeleteJobs(acceptedJobs, deleteJobs)
 	if err != nil {
-		return 0, false, fmt.Errorf("failed writing offered jobs: %w", err)
+		return 0, rotationNoChange, fmt.Errorf("failed writing offered jobs: %w", err)
 	}
 
 	wasEmpty := jt.isPendingEmpty()
@@ -443,7 +448,15 @@ func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, planJobE
 
 	jt.metrics.pendingJobs.Set(float64(jt.pending.Len()))
 	accepted = len(acceptedJobs)
-	return accepted, wasEmpty && accepted > 0, nil
+
+	// Determine rotation transition
+	transition = rotationNoChange
+	if accepted > 0 && wasEmpty {
+		transition = rotationAddTracker
+	} else if accepted == 0 && !wasEmpty {
+		transition = rotationRemoveTracker
+	}
+	return accepted, transition, nil
 }
 
 func addBlocksToConflictMap(conflict map[string]struct{}, job *TrackedCompactionJob) {

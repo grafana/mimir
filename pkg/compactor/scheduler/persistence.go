@@ -28,7 +28,7 @@ func jobPersistenceManagerFactory(cfg Config, logger log.Logger) (JobPersistence
 type JobPersistenceManager interface {
 	InitializeTenant(tenant string) (JobPersister, error)
 	DeleteTenant(tenant string) error
-	RecoverAll(allowlist *util.AllowList, clock clock.Clock, jobTrackerFactory func(tenant string, persister JobPersister) *JobTracker) (map[string]*JobTracker, error)
+	RecoverAll(allowedTenants *util.AllowList, clock clock.Clock, jobTrackerFactory func(tenant string, persister JobPersister) *JobTracker) (map[string]*JobTracker, error)
 	Close() error
 }
 
@@ -220,7 +220,7 @@ func (n *NopJobPersistenceManager) DeleteTenant(tenant string) error {
 	return nil
 }
 
-func (n *NopJobPersistenceManager) RecoverAll(allowList *util.AllowList, clock clock.Clock, jobTrackerFactory func(string, JobPersister) *JobTracker) (jobTrackers map[string]*JobTracker, err error) {
+func (n *NopJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, clock clock.Clock, jobTrackerFactory func(string, JobPersister) *JobTracker) (jobTrackers map[string]*JobTracker, err error) {
 	return make(map[string]*JobTracker), nil
 }
 
