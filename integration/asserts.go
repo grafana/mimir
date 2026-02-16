@@ -35,7 +35,7 @@ var (
 	serviceMetricsPrefixes = map[ServiceType][]string{
 		Distributor:    {},
 		Ingester:       {"!cortex_ingester_client", "cortex_ingester"},                                                                                                                                                                              // The metrics prefix cortex_ingester_client may be used by other components so we ignore it.
-		Querier:        {"!cortex_querier_storegateway", "!cortex_querier_blocks", "!cortex_querier_queries", "!cortex_querier_query", "cortex_querier", "!cortex_querier_series_labels_total", "!cortex_querier_series_labels_deduplicated_total"}, // The metrics prefix cortex_querier_storegateway, cortex_querier_blocks, cortex_querier_queries, cortex_querier_query, cortex_querier_series_labels_total, and cortex_querier_series_labels_deduplicated_total may be used by other components so we ignore it.
+		Querier:        {"!cortex_querier_storegateway", "!cortex_querier_blocks", "!cortex_querier_queries", "!cortex_querier_query", "!cortex_querier_series_labels_total", "!cortex_querier_series_labels_deduplicated_total", "cortex_querier"}, // The metrics prefix cortex_querier_storegateway, cortex_querier_blocks, cortex_querier_queries, cortex_querier_query, cortex_querier_series_labels_total, and cortex_querier_series_labels_deduplicated_total may be used by other components so we ignore it.
 		QueryFrontend:  {"cortex_frontend", "cortex_query_frontend"},
 		QueryScheduler: {"cortex_query_scheduler"},
 		AlertManager:   {"cortex_alertmanager"},
