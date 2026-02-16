@@ -76,6 +76,10 @@ func newEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *Q
 		return nil, errors.New("no query planner provided")
 	}
 
+	if opts.Limits == nil {
+		return nil, errors.New("no limits provider provided")
+	}
+
 	activeQueryTracker := opts.ActiveQueryTracker
 	if activeQueryTracker == nil {
 		if opts.CommonOpts.ActiveQueryTracker != nil {
