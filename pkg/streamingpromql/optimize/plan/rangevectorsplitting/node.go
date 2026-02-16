@@ -162,6 +162,9 @@ func (m Materializer) Materialize(n planning.Node, materializer *planning.Materi
 	if !ok {
 		return nil, fmt.Errorf("unexpected type passed to materializer: expected SplitFunctionCall, got %T", n)
 	}
+	if m.cache == nil {
+		return nil, errors.New("cannot execute query plan containing range vector split nodes: range vector splitting is not enabled on this querier (intermediate results cache not configured)")
+	}
 
 	splitFactory, exists := SplitFunctionRegistry[s.Inner.Function]
 	if !exists {
