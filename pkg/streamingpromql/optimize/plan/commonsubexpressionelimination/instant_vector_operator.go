@@ -137,58 +137,91 @@ func (b *InstantVectorDuplicationBuffer) anyConsumerWillRead(unfilteredSeriesInd
 }
 
 func (b *InstantVectorDuplicationBuffer) CloseConsumer(consumer *InstantVectorDuplicationConsumer) {
-	if consumer.nextUnfilteredSeriesIndex == -1 {
+	if consumer.closed {
 		// We've already closed this consumer, nothing more to do.
 		return
 	}
 
-	lowestNextSeriesIndexOfOtherConsumers := math.MaxInt
-	for _, otherConsumer := range b.consumers {
-		if otherConsumer == consumer {
-			continue
-		}
+	consumer.closed = true
 
-		if otherConsumer.nextUnfilteredSeriesIndex == -1 {
-			// Already closed.
-			continue
-		}
+	// Remove any buffered series that are no longer needed because they were only being retained for the consumer
+	// that was just closed.
+	earliestSeriesIndexStillToReturn := b.earliestSeriesIndexStillToReturn()
 
-		lowestNextSeriesIndexOfOtherConsumers = min(lowestNextSeriesIndexOfOtherConsumers, otherConsumer.nextUnfilteredSeriesIndex)
-	}
-
-	if lowestNextSeriesIndexOfOtherConsumers == math.MaxInt {
+	if earliestSeriesIndexStillToReturn == math.MaxInt {
 		// All other consumers are already closed. Close everything.
-		consumer.nextUnfilteredSeriesIndex = -1
 		b.close()
 		return
 	}
 
-	// If this consumer was the lagging consumer, free any data that was being buffered for it up to the next consumer.
-	// Given this consumer was the lagging one, we don't need to check if any series were buffered for any other consumer.
-	for b.buffer.Size() > 0 && consumer.nextUnfilteredSeriesIndex < lowestNextSeriesIndexOfOtherConsumers {
-		// Only try to remove the buffered series if it was actually buffered (we might not have stored it if an error occurred reading the series).
-		if d, ok := b.buffer.RemoveIfPresent(consumer.nextUnfilteredSeriesIndex); ok {
-			types.PutInstantVectorSeriesData(d, b.MemoryConsumptionTracker)
-		}
-
-		consumer.nextUnfilteredSeriesIndex++
+	if b.buffer.Size() == 0 {
+		return
 	}
 
-	for b.buffer.Size() > 0 && consumer.nextUnfilteredSeriesIndex < b.nextInnerSeriesIndex && consumer.nextUnfilteredSeriesIndex <= b.buffer.LastElementSeriesIndex() {
-		// If no other consumers need this series, remove it now.
+	allOpenConsumersHaveNoFilters := b.allOpenConsumersHaveNoFilters()
+	lastIndexToCheck := b.nextInnerSeriesIndex - 1
+
+	if allOpenConsumersHaveNoFilters {
+		// If all open consumers have no filters, then we only need to check for buffered series to discard up to
+		// the lagging open consumer, as at least one open consumer will need every buffered series after that.
+		lastIndexToCheck = earliestSeriesIndexStillToReturn - 1
+	}
+
+	for b.buffer.Size() > 0 && consumer.nextUnfilteredSeriesIndex <= lastIndexToCheck {
 		thisSeriesIndex := consumer.nextUnfilteredSeriesIndex
 
 		// Advance nextUnfilteredSeriesIndex now so that the anyConsumerWillRead call below ignores this consumer.
 		consumer.nextUnfilteredSeriesIndex++
 
-		if !b.anyConsumerWillRead(thisSeriesIndex) {
+		if thisSeriesIndex < earliestSeriesIndexStillToReturn {
+			// We know no consumer needs this series, as all consumers are past it. Remove it if it's buffered.
 			if d, ok := b.buffer.RemoveIfPresent(thisSeriesIndex); ok {
 				types.PutInstantVectorSeriesData(d, b.MemoryConsumptionTracker)
 			}
+		} else {
+			// It's possible no consumer needs this series, but we'll have to check if it matches the filters on any open consumer first.
+
+			if consumer.unfilteredSeriesBitmap != nil && !consumer.unfilteredSeriesBitmap[thisSeriesIndex] {
+				// This consumer has filters but doesn't need this series, so this series would not have been buffered for this consumer.
+				// So we don't need to check if any other consumer needs it - either no consumer needs the series, or a consumer needs it,
+				// but either way, the fact this consumer is now closed doesn't change anything.
+				continue
+			}
+
+			if !b.anyConsumerWillRead(thisSeriesIndex) {
+				if d, ok := b.buffer.RemoveIfPresent(thisSeriesIndex); ok {
+					types.PutInstantVectorSeriesData(d, b.MemoryConsumptionTracker)
+				}
+			}
+		}
+	}
+}
+
+func (b *InstantVectorDuplicationBuffer) earliestSeriesIndexStillToReturn() int {
+	idx := math.MaxInt
+	for _, consumer := range b.consumers {
+		if consumer.closed {
+			continue
+		}
+
+		idx = min(idx, consumer.nextUnfilteredSeriesIndex)
+	}
+
+	return idx
+}
+
+func (b *InstantVectorDuplicationBuffer) allOpenConsumersHaveNoFilters() bool {
+	for _, consumer := range b.consumers {
+		if consumer.closed {
+			continue
+		}
+
+		if len(consumer.filters) > 0 {
+			return false
 		}
 	}
 
-	consumer.nextUnfilteredSeriesIndex = -1
+	return true
 }
 
 func (b *InstantVectorDuplicationBuffer) Prepare(ctx context.Context, params *types.PrepareParams) error {
@@ -254,7 +287,8 @@ type InstantVectorDuplicationConsumer struct {
 	// If this consumer has no filters, this is nil.
 	unfilteredSeriesBitmap []bool
 
-	nextUnfilteredSeriesIndex int // -1 if this consumer is closed.
+	nextUnfilteredSeriesIndex int
+	closed                    bool
 	finalized                 bool
 }
 
@@ -345,7 +379,7 @@ func (d *InstantVectorDuplicationConsumer) SeriesMetadata(ctx context.Context, m
 }
 
 func (d *InstantVectorDuplicationConsumer) shouldReturnUnfilteredSeries(unfilteredSeriesIndex int) bool {
-	if d.nextUnfilteredSeriesIndex == -1 {
+	if d.closed {
 		// Closed.
 		return false
 	}
