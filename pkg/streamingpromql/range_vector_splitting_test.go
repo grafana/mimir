@@ -926,27 +926,33 @@ func TestQuerySplitting_StorageError(t *testing.T) {
 	baseT := timestamp.Time(0)
 	expr := "sum_over_time(some_metric[5h])"
 	ts := baseT.Add(6 * time.Hour)
-
-	// First query succeeds and populates the cache.
-	result := runInstantQuery(t, mimirEngine, promStorage, expr, ts)
-	require.NoError(t, result.Err)
-	firstResult := result.Value
-	// 2 gets (cacheable blocks), 0 hits (empty cache), 2 sets (populate cache)
-	verifyCacheStats(t, testCache, 2, 0, 2)
-
-	// Second query uses error storage. Cached blocks hit, but uncached ranges fail.
 	errStorage := &errorStorage{Storage: promStorage}
-	result = runInstantQuery(t, mimirEngine, errStorage, expr, ts)
-	require.Error(t, result.Err)
-	// Cumulative: 4 gets (2 more), 2 hits (cached blocks found), still 2 sets (no new sets)
-	verifyCacheStats(t, testCache, 4, 2, 2)
 
-	// Third query with real storage. Cached blocks still work correctly.
+	// Q1: error storage, empty cache. Query fails, nothing cached.
+	result := runInstantQuery(t, mimirEngine, errStorage, expr, ts)
+	require.Error(t, result.Err)
+	// 2 gets (cached splits check cache during Prepare), 0 hits, 0 sets
+	verifyCacheStats(t, testCache, 2, 0, 0)
+
+	// Q2: real storage. Cache is empty, query succeeds and populates cache.
 	result = runInstantQuery(t, mimirEngine, promStorage, expr, ts)
 	require.NoError(t, result.Err)
-	require.Equal(t, firstResult, result.Value)
-	// Cumulative: 6 gets, 4 hits (2 more cache hits), still 2 sets
-	verifyCacheStats(t, testCache, 6, 4, 2)
+	expectedValue := result.Value
+	// Cumulative: 4 gets, 0 hits, 2 sets
+	verifyCacheStats(t, testCache, 4, 0, 2)
+
+	// Q3: error storage again. Cached blocks hit, but uncached ranges fail.
+	result = runInstantQuery(t, mimirEngine, errStorage, expr, ts)
+	require.Error(t, result.Err)
+	// Cumulative: 6 gets, 2 hits (cached blocks found), still 2 sets
+	verifyCacheStats(t, testCache, 6, 2, 2)
+
+	// Q4: real storage. Cached blocks still work correctly.
+	result = runInstantQuery(t, mimirEngine, promStorage, expr, ts)
+	require.NoError(t, result.Err)
+	require.Equal(t, expectedValue, result.Value)
+	// Cumulative: 8 gets, 4 hits, still 2 sets
+	verifyCacheStats(t, testCache, 8, 4, 2)
 }
 
 // TestQuerySplitting_MiddleCacheEntryEvicted verifies correct behavior when a middle cache entry
@@ -1001,6 +1007,173 @@ func TestQuerySplitting_MiddleCacheEntryEvicted(t *testing.T) {
 	}, ranges2)
 	// 3 more gets, 2 hits (Block1 + Block3), 1 new set (Block2 re-cached)
 	verifyCacheStats(t, testCache, 6, 2, 4)
+}
+
+func TestQuerySplitting_DelayedNameRemoval(t *testing.T) {
+	sharedCache := newTestCacheBackend()
+	cacheFactory := cache.NewCacheFactoryWithBackend(sharedCache, NewStaticQueryLimitsProvider(), prometheus.NewPedanticRegistry(), log.NewNopLogger())
+
+	engineDisabled := createSplittingEngine(t, prometheus.NewPedanticRegistry(), 2*time.Hour, false, true, cacheFactory)
+	engineEnabled := createSplittingEngine(t, prometheus.NewPedanticRegistry(), 2*time.Hour, true, true, cacheFactory)
+
+	promStorage := promqltest.LoadedStorage(t, `
+		load 1h
+			sum_metric{env="prod"} 10 20 30 40 50 60 70
+	`)
+	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
+
+	baseT := timestamp.Time(0)
+	ts := baseT.Add(6 * time.Hour)
+
+	expr := `label_replace(sum_over_time(sum_metric[5h]), "original_name", "$1", "__name__", "(.+)")`
+
+	// Disabled result: sum_over_time eagerly strips __name__, so label_replace's regex (.+) doesn't match the empty name.
+	expectedDisabled := expectedScalarResult(ts, 250, "env", "prod")
+	// Enabled result: __name__ survives through sum_over_time, so label_replace captures it into original_name.
+	expectedEnabled := expectedScalarResult(ts, 250, "env", "prod", "original_name", "sum_metric")
+
+	// Delayed name removal is part of the cache key, so enabled and disabled use separate cache entries.
+
+	// Populate cache with delayed name removal disabled (2 splits → 2 misses, 2 sets).
+	result := runInstantQuery(t, engineDisabled, promStorage, expr, ts)
+	require.NoError(t, result.Err)
+	require.Equal(t, expectedDisabled, result)
+	verifyCacheStats(t, sharedCache, 2, 0, 2)
+
+	// Query with delayed name removal enabled: different cache key, so 2 misses and 2 new sets.
+	result = runInstantQuery(t, engineEnabled, promStorage, expr, ts)
+	require.NoError(t, result.Err)
+	require.Equal(t, expectedEnabled, result)
+	verifyCacheStats(t, sharedCache, 4, 0, 4)
+
+	// Repeat disabled: hits its own cache entries.
+	result = runInstantQuery(t, engineDisabled, promStorage, expr, ts)
+	require.NoError(t, result.Err)
+	require.Equal(t, expectedDisabled, result)
+	verifyCacheStats(t, sharedCache, 6, 2, 4)
+
+	// Repeat enabled: hits its own cache entries.
+	result = runInstantQuery(t, engineEnabled, promStorage, expr, ts)
+	require.NoError(t, result.Err)
+	require.Equal(t, expectedEnabled, result)
+	verifyCacheStats(t, sharedCache, 8, 4, 4)
+}
+
+func TestQuerySplitting_AnnotationMetricName(t *testing.T) {
+	backend, mimirEngine := setupEngineAndCache(t)
+
+	promStorage := teststorage.New(t)
+	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
+
+	ctx := context.Background()
+	app := promStorage.Appender(ctx)
+	baseT := timestamp.Time(0)
+
+	// zzz_total: float samples from 0h to 10h every 10 minutes
+	for i := 0; i <= 60; i++ {
+		ts := timestamp.FromTime(baseT.Add(time.Duration(i) * 10 * time.Minute))
+		_, err := app.Append(0, labels.FromStrings("__name__", "zzz_total", "env", "z"), ts, float64(i))
+		require.NoError(t, err)
+	}
+
+	// aaa_total: float samples from 4h to 6h10m every 10 minutes (absent from head range)
+	for i := 0; i <= 13; i++ {
+		ts := timestamp.FromTime(baseT.Add(4*time.Hour + time.Duration(i)*10*time.Minute))
+		_, err := app.Append(0, labels.FromStrings("__name__", "aaa_total", "env", "a"), ts, float64(i))
+		require.NoError(t, err)
+	}
+
+	// aaa_total: histogram at 6h30m → creates mixed float+hist in the tail range (6h-1ms, 7h]
+	_, err := app.AppendHistogram(0, labels.FromStrings("__name__", "aaa_total", "env", "a"),
+		timestamp.FromTime(baseT.Add(6*time.Hour+30*time.Minute)), nil, &histogram.FloatHistogram{
+			Schema: 0, Count: 10, Sum: 100, ZeroThreshold: 0.001, ZeroCount: 2,
+			PositiveSpans: []histogram.Span{{Offset: 0, Length: 2}}, PositiveBuckets: []float64{3, 5},
+		})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// rate({__name__=~"aaa_total|zzz_total"}[5h]) at t=7h
+	// Splits: head (2h, 4h-1ms], block (4h-1ms, 6h-1ms]*, tail (6h-1ms, 7h]
+	expr := `rate({__name__=~"aaa_total|zzz_total"}[5h])`
+	ts := baseT.Add(7 * time.Hour)
+
+	// Q1: populates cache for block (4h-1ms, 6h-1ms] with [aaa, zzz] in storage order
+	expectedWarning := `PromQL warning: encountered a mix of histograms and floats for metric name "aaa_total"`
+
+	// Q1: populates cache, no ordering mismatch yet
+	result1 := runInstantQuery(t, mimirEngine, promStorage, expr, ts)
+	require.NoError(t, result1.Err)
+	require.Len(t, result1.Warnings.AsErrors(), 1)
+	require.EqualError(t, result1.Warnings.AsErrors()[0], expectedWarning)
+	verifyCacheStats(t, backend, 1, 0, 1)
+
+	// Q2: cache hit for the block
+	// - Head (2h, 4h-1ms]: only zzz (aaa starts at 4h) → merged starts as [zzz]
+	// - Cached (4h-1ms, 6h-1ms]: [aaa, zzz] → aaa is new → merged = [zzz, aaa]
+	// - Tail (6h-1ms, 7h]: storage returns [aaa, zzz] → differs from merged order
+	//   When processing merged 0 (zzz), first local 0 (aaa) is processed.
+	result2 := runInstantQuery(t, mimirEngine, promStorage, expr, ts)
+	require.NoError(t, result2.Err)
+	require.Len(t, result2.Warnings.AsErrors(), 1)
+	require.EqualError(t, result2.Warnings.AsErrors()[0], expectedWarning)
+	verifyCacheStats(t, backend, 2, 1, 1)
+}
+
+// TestQuerySplitting_NoMatchingSeries_CachesEmptyResult verifies that when a query matches 0 series,
+// the empty result is still cached and subsequent queries hit the cache.
+func TestQuerySplitting_NoMatchingSeries_CachesEmptyResult(t *testing.T) {
+	testCache, mimirEngine := setupEngineAndCache(t)
+
+	promStorage := promqltest.LoadedStorage(t, `
+		load 10m
+			some_metric{env="1"} 0+1x60
+	`)
+	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
+
+	baseT := timestamp.Time(0)
+	expr := "sum_over_time(nonexistent_metric[5h])"
+	ts := baseT.Add(6 * time.Hour)
+
+	// First query: 0 series match. Should still cache the empty result.
+	result := runInstantQuery(t, mimirEngine, promStorage, expr, ts)
+	require.NoError(t, result.Err)
+	require.Nil(t, result.Value)
+	// 2 gets (cacheable blocks), 0 hits, 2 sets (empty results cached)
+	verifyCacheStats(t, testCache, 2, 0, 2)
+
+	// Second query: cache hits for both blocks.
+	result = runInstantQuery(t, mimirEngine, promStorage, expr, ts)
+	require.NoError(t, result.Err)
+	require.Nil(t, result.Value)
+	// Cumulative: 4 gets, 2 hits, still 2 sets
+	verifyCacheStats(t, testCache, 4, 2, 2)
+}
+
+func TestQuerySplitting_PartialConsumption_DoesNotCache(t *testing.T) {
+	testCache, mimirEngine := setupEngineAndCache(t)
+
+	promStorage := promqltest.LoadedStorage(t, `
+		load 10m
+			some_metric{env="1"} 0+1x60
+			some_metric{env="2"} 0+2x60
+			filter_metric{env="1"} 1+0x60
+	`)
+	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
+
+	baseT := timestamp.Time(0)
+	ts := baseT.Add(6 * time.Hour)
+
+	// `and on(env)` matches only env=1. The split operator (left) returns 2 series from
+	// SeriesMetadata, but `and` only consumes the first (env=1) via NextSeries before
+	// finalizing the left side. The second series (env=2) is never consumed.
+	expr := `sum_over_time(some_metric[5h]) and on(env) filter_metric`
+
+	result := runInstantQuery(t, mimirEngine, promStorage, expr, ts)
+	require.NoError(t, result.Err)
+	// The query returns a result for the matched series (env=1).
+	require.Equal(t, expectedScalarResult(ts, 645, "env", "1"), result)
+	// The split operator's series were not fully consumed, so results should not be cached.
+	verifyCacheStats(t, testCache, 2, 0, 0)
 }
 
 func createSplittingEngineWithCache(t *testing.T, registry *prometheus.Registry, splitInterval time.Duration, enableDelayedNameRemoval bool, enableEliminateDeduplicateAndMerge bool) (promql.QueryEngine, *testCacheBackend) {
@@ -1089,56 +1262,6 @@ func verifyCacheStats(t *testing.T, backend *testCacheBackend, expectedGets, exp
 	require.Equal(t, expectedGets, backend.gets, "Expected %d cache gets, got %d", expectedGets, backend.gets)
 	require.Equal(t, expectedHits, backend.hits, "Expected %d cache hits, got %d", expectedHits, backend.hits)
 	require.Equal(t, expectedSets, backend.sets, "Expected %d cache sets, got %d", expectedSets, backend.sets)
-}
-
-func TestQuerySplitting_DelayedNameRemoval(t *testing.T) {
-	sharedCache := newTestCacheBackend()
-	cacheFactory := cache.NewCacheFactoryWithBackend(sharedCache, NewStaticQueryLimitsProvider(), prometheus.NewPedanticRegistry(), log.NewNopLogger())
-
-	engineDisabled := createSplittingEngine(t, prometheus.NewPedanticRegistry(), 2*time.Hour, false, true, cacheFactory)
-	engineEnabled := createSplittingEngine(t, prometheus.NewPedanticRegistry(), 2*time.Hour, true, true, cacheFactory)
-
-	promStorage := promqltest.LoadedStorage(t, `
-		load 1h
-			sum_metric{env="prod"} 10 20 30 40 50 60 70
-	`)
-	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
-
-	baseT := timestamp.Time(0)
-	ts := baseT.Add(6 * time.Hour)
-
-	expr := `label_replace(sum_over_time(sum_metric[5h]), "original_name", "$1", "__name__", "(.+)")`
-
-	// Disabled result: sum_over_time eagerly strips __name__, so label_replace's regex (.+) doesn't match the empty name.
-	expectedDisabled := expectedScalarResult(ts, 250, "env", "prod")
-	// Enabled result: __name__ survives through sum_over_time, so label_replace captures it into original_name.
-	expectedEnabled := expectedScalarResult(ts, 250, "env", "prod", "original_name", "sum_metric")
-
-	// Delayed name removal is part of the cache key, so enabled and disabled use separate cache entries.
-
-	// Populate cache with delayed name removal disabled (2 splits → 2 misses, 2 sets).
-	result := runInstantQuery(t, engineDisabled, promStorage, expr, ts)
-	require.NoError(t, result.Err)
-	require.Equal(t, expectedDisabled, result)
-	verifyCacheStats(t, sharedCache, 2, 0, 2)
-
-	// Query with delayed name removal enabled: different cache key, so 2 misses and 2 new sets.
-	result = runInstantQuery(t, engineEnabled, promStorage, expr, ts)
-	require.NoError(t, result.Err)
-	require.Equal(t, expectedEnabled, result)
-	verifyCacheStats(t, sharedCache, 4, 0, 4)
-
-	// Repeat disabled: hits its own cache entries.
-	result = runInstantQuery(t, engineDisabled, promStorage, expr, ts)
-	require.NoError(t, result.Err)
-	require.Equal(t, expectedDisabled, result)
-	verifyCacheStats(t, sharedCache, 6, 2, 4)
-
-	// Repeat enabled: hits its own cache entries.
-	result = runInstantQuery(t, engineEnabled, promStorage, expr, ts)
-	require.NoError(t, result.Err)
-	require.Equal(t, expectedEnabled, result)
-	verifyCacheStats(t, sharedCache, 8, 4, 4)
 }
 
 type storageQueryRange struct {
@@ -1275,64 +1398,4 @@ func (q *testSplittingQuery) Exec(ctx context.Context) *promql.Result {
 	}
 
 	return result
-}
-
-func TestQuerySplitting_AnnotationMetricName(t *testing.T) {
-	backend, mimirEngine := setupEngineAndCache(t)
-
-	promStorage := teststorage.New(t)
-	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
-
-	ctx := context.Background()
-	app := promStorage.Appender(ctx)
-	baseT := timestamp.Time(0)
-
-	// zzz_total: float samples from 0h to 10h every 10 minutes
-	for i := 0; i <= 60; i++ {
-		ts := timestamp.FromTime(baseT.Add(time.Duration(i) * 10 * time.Minute))
-		_, err := app.Append(0, labels.FromStrings("__name__", "zzz_total", "env", "z"), ts, float64(i))
-		require.NoError(t, err)
-	}
-
-	// aaa_total: float samples from 4h to 6h10m every 10 minutes (absent from head range)
-	for i := 0; i <= 13; i++ {
-		ts := timestamp.FromTime(baseT.Add(4*time.Hour + time.Duration(i)*10*time.Minute))
-		_, err := app.Append(0, labels.FromStrings("__name__", "aaa_total", "env", "a"), ts, float64(i))
-		require.NoError(t, err)
-	}
-
-	// aaa_total: histogram at 6h30m → creates mixed float+hist in the tail range (6h-1ms, 7h]
-	_, err := app.AppendHistogram(0, labels.FromStrings("__name__", "aaa_total", "env", "a"),
-		timestamp.FromTime(baseT.Add(6*time.Hour+30*time.Minute)), nil, &histogram.FloatHistogram{
-			Schema: 0, Count: 10, Sum: 100, ZeroThreshold: 0.001, ZeroCount: 2,
-			PositiveSpans: []histogram.Span{{Offset: 0, Length: 2}}, PositiveBuckets: []float64{3, 5},
-		})
-	require.NoError(t, err)
-	require.NoError(t, app.Commit())
-
-	// rate({__name__=~"aaa_total|zzz_total"}[5h]) at t=7h
-	// Splits: head (2h, 4h-1ms], block (4h-1ms, 6h-1ms]*, tail (6h-1ms, 7h]
-	expr := `rate({__name__=~"aaa_total|zzz_total"}[5h])`
-	ts := baseT.Add(7 * time.Hour)
-
-	// Q1: populates cache for block (4h-1ms, 6h-1ms] with [aaa, zzz] in storage order
-	expectedWarning := `PromQL warning: encountered a mix of histograms and floats for metric name "aaa_total"`
-
-	// Q1: populates cache, no ordering mismatch yet
-	result1 := runInstantQuery(t, mimirEngine, promStorage, expr, ts)
-	require.NoError(t, result1.Err)
-	require.Len(t, result1.Warnings.AsErrors(), 1)
-	require.EqualError(t, result1.Warnings.AsErrors()[0], expectedWarning)
-	verifyCacheStats(t, backend, 1, 0, 1)
-
-	// Q2: cache hit for the block
-	// - Head (2h, 4h-1ms]: only zzz (aaa starts at 4h) → merged starts as [zzz]
-	// - Cached (4h-1ms, 6h-1ms]: [aaa, zzz] → aaa is new → merged = [zzz, aaa]
-	// - Tail (6h-1ms, 7h]: storage returns [aaa, zzz] → differs from merged order
-	//   When processing merged 0 (zzz), first local 0 (aaa) is processed.
-	result2 := runInstantQuery(t, mimirEngine, promStorage, expr, ts)
-	require.NoError(t, result2.Err)
-	require.Len(t, result2.Warnings.AsErrors(), 1)
-	require.EqualError(t, result2.Warnings.AsErrors()[0], expectedWarning)
-	verifyCacheStats(t, backend, 2, 1, 1)
 }
