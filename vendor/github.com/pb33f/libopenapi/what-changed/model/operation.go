@@ -234,12 +234,12 @@ func CompareOperations(l, r any) *OperationChanges {
 			for i := range lParams {
 				s := lParams[i].Value.Name.Value
 				lv[s] = lParams[i].Value
-				lRefs[s] = &lParams[i]  // Keep the reference wrapper
+				lRefs[s] = &lParams[i] // Keep the reference wrapper
 			}
 			for i := range rParams {
 				s := rParams[i].Value.Name.Value
 				rv[s] = rParams[i].Value
-				rRefs[s] = &rParams[i]  // Keep the reference wrapper
+				rRefs[s] = &rParams[i] // Keep the reference wrapper
 			}
 
 			var paramChanges []*ParameterChanges
@@ -343,12 +343,12 @@ func CompareOperations(l, r any) *OperationChanges {
 			for i := range lParams {
 				s := lParams[i].Value.Name.Value
 				lv[s] = lParams[i].Value
-				lRefs[s] = &lParams[i]  // Keep the reference wrapper
+				lRefs[s] = &lParams[i] // Keep the reference wrapper
 			}
 			for i := range rParams {
 				s := rParams[i].Value.Name.Value
 				rv[s] = rParams[i].Value
-				rRefs[s] = &rParams[i]  // Keep the reference wrapper
+				rRefs[s] = &rParams[i] // Keep the reference wrapper
 			}
 
 			var paramChanges []*ParameterChanges

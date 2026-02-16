@@ -5,7 +5,7 @@ package v3
 
 import (
 	"context"
-	"crypto/sha256"
+	"hash/maphash"
 	"slices"
 
 	"github.com/pb33f/libopenapi/datamodel/low"
@@ -184,39 +184,37 @@ func (mt *MediaType) Build(ctx context.Context, keyNode, root *yaml.Node, idx *i
 	return nil
 }
 
-// Hash will return a consistent SHA256 Hash of the MediaType object
-func (mt *MediaType) Hash() [32]byte {
-	// Use string builder pool
-	sb := low.GetStringBuilder()
-	defer low.PutStringBuilder(sb)
-
-	if mt.Schema.Value != nil {
-		sb.WriteString(low.GenerateHashString(mt.Schema.Value))
-		sb.WriteByte('|')
-	}
-	if mt.ItemSchema.Value != nil {
-		sb.WriteString(low.GenerateHashString(mt.ItemSchema.Value))
-		sb.WriteByte('|')
-	}
-	if mt.Example.Value != nil && !mt.Example.Value.IsZero() {
-		sb.WriteString(low.GenerateHashString(mt.Example.Value))
-		sb.WriteByte('|')
-	}
-	for v := range orderedmap.SortAlpha(mt.Examples.Value).ValuesFromOldest() {
-		sb.WriteString(low.GenerateHashString(v.Value))
-		sb.WriteByte('|')
-	}
-	for v := range orderedmap.SortAlpha(mt.Encoding.Value).ValuesFromOldest() {
-		sb.WriteString(low.GenerateHashString(v.Value))
-		sb.WriteByte('|')
-	}
-	for v := range orderedmap.SortAlpha(mt.ItemEncoding.Value).ValuesFromOldest() {
-		sb.WriteString(low.GenerateHashString(v.Value))
-		sb.WriteByte('|')
-	}
-	for _, ext := range low.HashExtensions(mt.Extensions) {
-		sb.WriteString(ext)
-		sb.WriteByte('|')
-	}
-	return sha256.Sum256([]byte(sb.String()))
+// Hash will return a consistent Hash of the MediaType object
+func (mt *MediaType) Hash() uint64 {
+	return low.WithHasher(func(h *maphash.Hash) uint64 {
+		if mt.Schema.Value != nil {
+			h.WriteString(low.GenerateHashString(mt.Schema.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if mt.ItemSchema.Value != nil {
+			h.WriteString(low.GenerateHashString(mt.ItemSchema.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if mt.Example.Value != nil && !mt.Example.Value.IsZero() {
+			h.WriteString(low.GenerateHashString(mt.Example.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		for v := range orderedmap.SortAlpha(mt.Examples.Value).ValuesFromOldest() {
+			h.WriteString(low.GenerateHashString(v.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		for v := range orderedmap.SortAlpha(mt.Encoding.Value).ValuesFromOldest() {
+			h.WriteString(low.GenerateHashString(v.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		for v := range orderedmap.SortAlpha(mt.ItemEncoding.Value).ValuesFromOldest() {
+			h.WriteString(low.GenerateHashString(v.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		for _, ext := range low.HashExtensions(mt.Extensions) {
+			h.WriteString(ext)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		return h.Sum64()
+	})
 }

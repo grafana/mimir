@@ -20,9 +20,10 @@ func IncorrectFormEncoding(param *v3.Parameter, qp *helpers.QueryParam, i int) *
 		Reason: fmt.Sprintf("The query parameter '%s' has a default or 'form' encoding defined, "+
 			"however the value '%s' is encoded as an object or an array using commas. The contract defines "+
 			"the explode value to set to 'true'", param.Name, qp.Values[i]),
-		SpecLine: param.GoLow().Explode.ValueNode.Line,
-		SpecCol:  param.GoLow().Explode.ValueNode.Column,
-		Context:  param,
+		SpecLine:      param.GoLow().Explode.ValueNode.Line,
+		SpecCol:       param.GoLow().Explode.ValueNode.Column,
+		ParameterName: param.Name,
+		Context:       param,
 		HowToFix: fmt.Sprintf(HowToFixParamInvalidFormEncode,
 			helpers.CollapseCSVIntoFormStyle(param.Name, qp.Values[i])),
 	}
@@ -36,9 +37,10 @@ func IncorrectSpaceDelimiting(param *v3.Parameter, qp *helpers.QueryParam) *Vali
 		Reason: fmt.Sprintf("The query parameter '%s' has 'spaceDelimited' style defined, "+
 			"and explode is defined as false. There are multiple values (%d) supplied, instead of a single"+
 			" space delimited value", param.Name, len(qp.Values)),
-		SpecLine: param.GoLow().Style.ValueNode.Line,
-		SpecCol:  param.GoLow().Style.ValueNode.Column,
-		Context:  param,
+		SpecLine:      param.GoLow().Style.ValueNode.Line,
+		SpecCol:       param.GoLow().Style.ValueNode.Column,
+		ParameterName: param.Name,
+		Context:       param,
 		HowToFix: fmt.Sprintf(HowToFixParamInvalidSpaceDelimitedObjectExplode,
 			helpers.CollapseCSVIntoSpaceDelimitedStyle(param.Name, qp.Values)),
 	}
@@ -52,9 +54,10 @@ func IncorrectPipeDelimiting(param *v3.Parameter, qp *helpers.QueryParam) *Valid
 		Reason: fmt.Sprintf("The query parameter '%s' has 'pipeDelimited' style defined, "+
 			"and explode is defined as false. There are multiple values (%d) supplied, instead of a single"+
 			" space delimited value", param.Name, len(qp.Values)),
-		SpecLine: param.GoLow().Style.ValueNode.Line,
-		SpecCol:  param.GoLow().Style.ValueNode.Column,
-		Context:  param,
+		SpecLine:      param.GoLow().Style.ValueNode.Line,
+		SpecCol:       param.GoLow().Style.ValueNode.Column,
+		ParameterName: param.Name,
+		Context:       param,
 		HowToFix: fmt.Sprintf(HowToFixParamInvalidPipeDelimitedObjectExplode,
 			helpers.CollapseCSVIntoPipeDelimitedStyle(param.Name, qp.Values)),
 	}
@@ -68,9 +71,10 @@ func InvalidDeepObject(param *v3.Parameter, qp *helpers.QueryParam) *ValidationE
 		Reason: fmt.Sprintf("The query parameter '%s' has the 'deepObject' style defined, "+
 			"There are multiple values (%d) supplied, instead of a single "+
 			"value", param.Name, len(qp.Values)),
-		SpecLine: param.GoLow().Style.ValueNode.Line,
-		SpecCol:  param.GoLow().Style.ValueNode.Column,
-		Context:  param,
+		SpecLine:      param.GoLow().Style.ValueNode.Line,
+		SpecCol:       param.GoLow().Style.ValueNode.Column,
+		ParameterName: param.Name,
+		Context:       param,
 		HowToFix: fmt.Sprintf(HowToFixParamInvalidDeepObjectMultipleValues,
 			helpers.CollapseCSVIntoPipeDelimitedStyle(param.Name, qp.Values)),
 	}
@@ -83,9 +87,10 @@ func QueryParameterMissing(param *v3.Parameter) *ValidationError {
 		Message:           fmt.Sprintf("Query parameter '%s' is missing", param.Name),
 		Reason: fmt.Sprintf("The query parameter '%s' is defined as being required, "+
 			"however it's missing from the requests", param.Name),
-		SpecLine: param.GoLow().Required.KeyNode.Line,
-		SpecCol:  param.GoLow().Required.KeyNode.Column,
-		HowToFix: HowToFixMissingValue,
+		SpecLine:      param.GoLow().Required.KeyNode.Line,
+		SpecCol:       param.GoLow().Required.KeyNode.Column,
+		ParameterName: param.Name,
+		HowToFix:      HowToFixMissingValue,
 	}
 }
 
@@ -96,9 +101,10 @@ func HeaderParameterMissing(param *v3.Parameter) *ValidationError {
 		Message:           fmt.Sprintf("Header parameter '%s' is missing", param.Name),
 		Reason: fmt.Sprintf("The header parameter '%s' is defined as being required, "+
 			"however it's missing from the requests", param.Name),
-		SpecLine: param.GoLow().Required.KeyNode.Line,
-		SpecCol:  param.GoLow().Required.KeyNode.Column,
-		HowToFix: HowToFixMissingValue,
+		SpecLine:      param.GoLow().Required.KeyNode.Line,
+		SpecCol:       param.GoLow().Required.KeyNode.Column,
+		ParameterName: param.Name,
+		HowToFix:      HowToFixMissingValue,
 	}
 }
 
@@ -109,9 +115,10 @@ func CookieParameterMissing(param *v3.Parameter) *ValidationError {
 		Message:           fmt.Sprintf("Cookie parameter '%s' is missing", param.Name),
 		Reason: fmt.Sprintf("The cookie parameter '%s' is defined as being required, "+
 			"however it's missing from the request", param.Name),
-		SpecLine: param.GoLow().Required.KeyNode.Line,
-		SpecCol:  param.GoLow().Required.KeyNode.Column,
-		HowToFix: HowToFixMissingValue,
+		SpecLine:      param.GoLow().Required.KeyNode.Line,
+		SpecCol:       param.GoLow().Required.KeyNode.Column,
+		ParameterName: param.Name,
+		HowToFix:      HowToFixMissingValue,
 	}
 }
 
@@ -122,9 +129,10 @@ func HeaderParameterCannotBeDecoded(param *v3.Parameter, val string) *Validation
 		Message:           fmt.Sprintf("Header parameter '%s' cannot be decoded", param.Name),
 		Reason: fmt.Sprintf("The header parameter '%s' cannot be "+
 			"extracted into an object, '%s' is malformed", param.Name, val),
-		SpecLine: param.GoLow().Schema.Value.Schema().Type.KeyNode.Line,
-		SpecCol:  param.GoLow().Schema.Value.Schema().Type.KeyNode.Line,
-		HowToFix: HowToFixInvalidEncoding,
+		SpecLine:      param.GoLow().Schema.Value.Schema().Type.KeyNode.Line,
+		SpecCol:       param.GoLow().Schema.Value.Schema().Type.KeyNode.Line,
+		ParameterName: param.Name,
+		HowToFix:      HowToFixInvalidEncoding,
 	}
 }
 
@@ -140,10 +148,11 @@ func IncorrectHeaderParamEnum(param *v3.Parameter, ef string, sch *base.Schema) 
 		Message:           fmt.Sprintf("Header parameter '%s' does not match allowed values", param.Name),
 		Reason: fmt.Sprintf("The header parameter '%s' has pre-defined "+
 			"values set via an enum. The value '%s' is not one of those values.", param.Name, ef),
-		SpecLine: param.GoLow().Schema.Value.Schema().Enum.KeyNode.Line,
-		SpecCol:  param.GoLow().Schema.Value.Schema().Enum.KeyNode.Column,
-		Context:  sch,
-		HowToFix: fmt.Sprintf(HowToFixParamInvalidEnum, ef, validEnums),
+		SpecLine:      param.GoLow().Schema.Value.Schema().Enum.KeyNode.Line,
+		SpecCol:       param.GoLow().Schema.Value.Schema().Enum.KeyNode.Column,
+		ParameterName: param.Name,
+		Context:       sch,
+		HowToFix:      fmt.Sprintf(HowToFixParamInvalidEnum, ef, validEnums),
 	}
 }
 
@@ -156,10 +165,11 @@ func IncorrectQueryParamArrayBoolean(
 		Message:           fmt.Sprintf("Query array parameter '%s' is not a valid boolean", param.Name),
 		Reason: fmt.Sprintf("The query parameter (which is an array) '%s' is defined as being a boolean, "+
 			"however the value '%s' is not a valid true/false value", param.Name, item),
-		SpecLine: sch.Items.A.GoLow().Schema().Type.KeyNode.Line,
-		SpecCol:  sch.Items.A.GoLow().Schema().Type.KeyNode.Column,
-		Context:  itemsSchema,
-		HowToFix: fmt.Sprintf(HowToFixParamInvalidBoolean, item),
+		SpecLine:      sch.Items.A.GoLow().Schema().Type.KeyNode.Line,
+		SpecCol:       sch.Items.A.GoLow().Schema().Type.KeyNode.Column,
+		ParameterName: param.Name,
+		Context:       itemsSchema,
+		HowToFix:      fmt.Sprintf(HowToFixParamInvalidBoolean, item),
 	}
 }
 
@@ -170,10 +180,11 @@ func IncorrectParamArrayMaxNumItems(param *v3.Parameter, sch *base.Schema, expec
 		Message:           fmt.Sprintf("Query array parameter '%s' has too many items", param.Name),
 		Reason: fmt.Sprintf("The query parameter (which is an array) '%s' has a maximum item length of %d, "+
 			"however the request provided %d items", param.Name, expected, actual),
-		SpecLine: sch.Items.A.GoLow().Schema().Type.KeyNode.Line,
-		SpecCol:  sch.Items.A.GoLow().Schema().Type.KeyNode.Column,
-		Context:  sch,
-		HowToFix: fmt.Sprintf(HowToFixInvalidMaxItems, expected),
+		SpecLine:      sch.Items.A.GoLow().Schema().Type.KeyNode.Line,
+		SpecCol:       sch.Items.A.GoLow().Schema().Type.KeyNode.Column,
+		ParameterName: param.Name,
+		Context:       sch,
+		HowToFix:      fmt.Sprintf(HowToFixInvalidMaxItems, expected),
 	}
 }
 
@@ -184,10 +195,11 @@ func IncorrectParamArrayMinNumItems(param *v3.Parameter, sch *base.Schema, expec
 		Message:           fmt.Sprintf("Query array parameter '%s' does not have enough items", param.Name),
 		Reason: fmt.Sprintf("The query parameter (which is an array) '%s' has a minimum items length of %d, "+
 			"however the request provided %d items", param.Name, expected, actual),
-		SpecLine: sch.Items.A.GoLow().Schema().Type.KeyNode.Line,
-		SpecCol:  sch.Items.A.GoLow().Schema().Type.KeyNode.Column,
-		Context:  sch,
-		HowToFix: fmt.Sprintf(HowToFixInvalidMinItems, expected),
+		SpecLine:      sch.Items.A.GoLow().Schema().Type.KeyNode.Line,
+		SpecCol:       sch.Items.A.GoLow().Schema().Type.KeyNode.Column,
+		ParameterName: param.Name,
+		Context:       sch,
+		HowToFix:      fmt.Sprintf(HowToFixInvalidMinItems, expected),
 	}
 }
 
@@ -199,6 +211,7 @@ func IncorrectParamArrayUniqueItems(param *v3.Parameter, sch *base.Schema, dupli
 		Reason:            fmt.Sprintf("The query parameter (which is an array) '%s' contains the following duplicates: '%s'", param.Name, duplicates),
 		SpecLine:          sch.Items.A.GoLow().Schema().Type.KeyNode.Line,
 		SpecCol:           sch.Items.A.GoLow().Schema().Type.KeyNode.Column,
+		ParameterName:     param.Name,
 		Context:           sch,
 		HowToFix:          "Ensure the array values are all unique",
 	}
@@ -213,10 +226,11 @@ func IncorrectCookieParamArrayBoolean(
 		Message:           fmt.Sprintf("Cookie array parameter '%s' is not a valid boolean", param.Name),
 		Reason: fmt.Sprintf("The cookie parameter (which is an array) '%s' is defined as being a boolean, "+
 			"however the value '%s' is not a valid true/false value", param.Name, item),
-		SpecLine: sch.Items.A.GoLow().Schema().Type.KeyNode.Line,
-		SpecCol:  sch.Items.A.GoLow().Schema().Type.KeyNode.Column,
-		Context:  itemsSchema,
-		HowToFix: fmt.Sprintf(HowToFixParamInvalidBoolean, item),
+		SpecLine:      sch.Items.A.GoLow().Schema().Type.KeyNode.Line,
+		SpecCol:       sch.Items.A.GoLow().Schema().Type.KeyNode.Column,
+		ParameterName: param.Name,
+		Context:       itemsSchema,
+		HowToFix:      fmt.Sprintf(HowToFixParamInvalidBoolean, item),
 	}
 }
 
@@ -229,10 +243,11 @@ func IncorrectQueryParamArrayInteger(
 		Message:           fmt.Sprintf("Query array parameter '%s' is not a valid integer", param.Name),
 		Reason: fmt.Sprintf("The query parameter (which is an array) '%s' is defined as being an integer, "+
 			"however the value '%s' is not a valid integer", param.Name, item),
-		SpecLine: sch.Items.A.GoLow().Schema().Type.KeyNode.Line,
-		SpecCol:  sch.Items.A.GoLow().Schema().Type.KeyNode.Column,
-		Context:  itemsSchema,
-		HowToFix: fmt.Sprintf(HowToFixParamInvalidInteger, item),
+		SpecLine:      sch.Items.A.GoLow().Schema().Type.KeyNode.Line,
+		SpecCol:       sch.Items.A.GoLow().Schema().Type.KeyNode.Column,
+		ParameterName: param.Name,
+		Context:       itemsSchema,
+		HowToFix:      fmt.Sprintf(HowToFixParamInvalidInteger, item),
 	}
 }
 
@@ -245,10 +260,11 @@ func IncorrectQueryParamArrayNumber(
 		Message:           fmt.Sprintf("Query array parameter '%s' is not a valid number", param.Name),
 		Reason: fmt.Sprintf("The query parameter (which is an array) '%s' is defined as being a number, "+
 			"however the value '%s' is not a valid number", param.Name, item),
-		SpecLine: sch.Items.A.GoLow().Schema().Type.KeyNode.Line,
-		SpecCol:  sch.Items.A.GoLow().Schema().Type.KeyNode.Column,
-		Context:  itemsSchema,
-		HowToFix: fmt.Sprintf(HowToFixParamInvalidNumber, item),
+		SpecLine:      sch.Items.A.GoLow().Schema().Type.KeyNode.Line,
+		SpecCol:       sch.Items.A.GoLow().Schema().Type.KeyNode.Column,
+		ParameterName: param.Name,
+		Context:       itemsSchema,
+		HowToFix:      fmt.Sprintf(HowToFixParamInvalidNumber, item),
 	}
 }
 
@@ -261,10 +277,11 @@ func IncorrectCookieParamArrayNumber(
 		Message:           fmt.Sprintf("Cookie array parameter '%s' is not a valid number", param.Name),
 		Reason: fmt.Sprintf("The cookie parameter (which is an array) '%s' is defined as being a number, "+
 			"however the value '%s' is not a valid number", param.Name, item),
-		SpecLine: sch.Items.A.GoLow().Schema().Type.KeyNode.Line,
-		SpecCol:  sch.Items.A.GoLow().Schema().Type.KeyNode.Column,
-		Context:  itemsSchema,
-		HowToFix: fmt.Sprintf(HowToFixParamInvalidNumber, item),
+		SpecLine:      sch.Items.A.GoLow().Schema().Type.KeyNode.Line,
+		SpecCol:       sch.Items.A.GoLow().Schema().Type.KeyNode.Column,
+		ParameterName: param.Name,
+		Context:       itemsSchema,
+		HowToFix:      fmt.Sprintf(HowToFixParamInvalidNumber, item),
 	}
 }
 
@@ -275,10 +292,11 @@ func IncorrectParamEncodingJSON(param *v3.Parameter, ef string, sch *base.Schema
 		Message:           fmt.Sprintf("Query parameter '%s' is not valid JSON", param.Name),
 		Reason: fmt.Sprintf("The query parameter '%s' is defined as being a JSON object, "+
 			"however the value '%s' is not valid JSON", param.Name, ef),
-		SpecLine: param.GoLow().FindContent(helpers.JSONContentType).ValueNode.Line,
-		SpecCol:  param.GoLow().FindContent(helpers.JSONContentType).ValueNode.Column,
-		Context:  sch,
-		HowToFix: HowToFixInvalidJSON,
+		SpecLine:      param.GoLow().FindContent(helpers.JSONContentType).ValueNode.Line,
+		SpecCol:       param.GoLow().FindContent(helpers.JSONContentType).ValueNode.Column,
+		ParameterName: param.Name,
+		Context:       sch,
+		HowToFix:      HowToFixInvalidJSON,
 	}
 }
 
@@ -361,10 +379,11 @@ func IncorrectQueryParamEnumArray(param *v3.Parameter, ef string, sch *base.Sche
 		Message:           fmt.Sprintf("Query array parameter '%s' does not match allowed values", param.Name),
 		Reason: fmt.Sprintf("The query array parameter '%s' has pre-defined "+
 			"values set via an enum. The value '%s' is not one of those values.", param.Name, ef),
-		SpecLine: param.GoLow().Schema.Value.Schema().Items.Value.A.Schema().Enum.KeyNode.Line,
-		SpecCol:  param.GoLow().Schema.Value.Schema().Items.Value.A.Schema().Enum.KeyNode.Line,
-		Context:  sch,
-		HowToFix: fmt.Sprintf(HowToFixParamInvalidEnum, ef, validEnums),
+		SpecLine:      param.GoLow().Schema.Value.Schema().Items.Value.A.Schema().Enum.KeyNode.Line,
+		SpecCol:       param.GoLow().Schema.Value.Schema().Items.Value.A.Schema().Enum.KeyNode.Line,
+		ParameterName: param.Name,
+		Context:       sch,
+		HowToFix:      fmt.Sprintf(HowToFixParamInvalidEnum, ef, validEnums),
 	}
 }
 
@@ -375,10 +394,11 @@ func IncorrectReservedValues(param *v3.Parameter, ef string, sch *base.Schema) *
 		Message:           fmt.Sprintf("Query parameter '%s' value contains reserved values", param.Name),
 		Reason: fmt.Sprintf("The query parameter '%s' has 'allowReserved' set to false, "+
 			"however the value '%s' contains one of the following characters: :/?#[]@!$&'()*+,;=", param.Name, ef),
-		SpecLine: param.GoLow().Schema.KeyNode.Line,
-		SpecCol:  param.GoLow().Schema.KeyNode.Column,
-		Context:  sch,
-		HowToFix: fmt.Sprintf(HowToFixReservedValues, url.QueryEscape(ef)),
+		SpecLine:      param.GoLow().Schema.KeyNode.Line,
+		SpecCol:       param.GoLow().Schema.KeyNode.Column,
+		ParameterName: param.Name,
+		Context:       sch,
+		HowToFix:      fmt.Sprintf(HowToFixReservedValues, url.QueryEscape(ef)),
 	}
 }
 
@@ -419,10 +439,11 @@ func InvalidCookieParamInteger(param *v3.Parameter, ef string, sch *base.Schema)
 		Message:           fmt.Sprintf("Cookie parameter '%s' is not a valid integer", param.Name),
 		Reason: fmt.Sprintf("The cookie parameter '%s' is defined as being an integer, "+
 			"however the value '%s' is not a valid integer", param.Name, ef),
-		SpecLine: param.GoLow().Schema.KeyNode.Line,
-		SpecCol:  param.GoLow().Schema.KeyNode.Column,
-		Context:  sch,
-		HowToFix: fmt.Sprintf(HowToFixParamInvalidInteger, ef),
+		SpecLine:      param.GoLow().Schema.KeyNode.Line,
+		SpecCol:       param.GoLow().Schema.KeyNode.Column,
+		ParameterName: param.Name,
+		Context:       sch,
+		HowToFix:      fmt.Sprintf(HowToFixParamInvalidInteger, ef),
 	}
 }
 
@@ -433,10 +454,11 @@ func InvalidCookieParamNumber(param *v3.Parameter, ef string, sch *base.Schema) 
 		Message:           fmt.Sprintf("Cookie parameter '%s' is not a valid number", param.Name),
 		Reason: fmt.Sprintf("The cookie parameter '%s' is defined as being a number, "+
 			"however the value '%s' is not a valid number", param.Name, ef),
-		SpecLine: param.GoLow().Schema.KeyNode.Line,
-		SpecCol:  param.GoLow().Schema.KeyNode.Column,
-		Context:  sch,
-		HowToFix: fmt.Sprintf(HowToFixParamInvalidNumber, ef),
+		SpecLine:      param.GoLow().Schema.KeyNode.Line,
+		SpecCol:       param.GoLow().Schema.KeyNode.Column,
+		ParameterName: param.Name,
+		Context:       sch,
+		HowToFix:      fmt.Sprintf(HowToFixParamInvalidNumber, ef),
 	}
 }
 
@@ -462,10 +484,11 @@ func IncorrectCookieParamBool(param *v3.Parameter, ef string, sch *base.Schema) 
 		Message:           fmt.Sprintf("Cookie parameter '%s' is not a valid boolean", param.Name),
 		Reason: fmt.Sprintf("The cookie parameter '%s' is defined as being a boolean, "+
 			"however the value '%s' is not a valid boolean", param.Name, ef),
-		SpecLine: param.GoLow().Schema.KeyNode.Line,
-		SpecCol:  param.GoLow().Schema.KeyNode.Column,
-		Context:  sch,
-		HowToFix: fmt.Sprintf(HowToFixParamInvalidBoolean, ef),
+		SpecLine:      param.GoLow().Schema.KeyNode.Line,
+		SpecCol:       param.GoLow().Schema.KeyNode.Column,
+		ParameterName: param.Name,
+		Context:       sch,
+		HowToFix:      fmt.Sprintf(HowToFixParamInvalidBoolean, ef),
 	}
 }
 
@@ -481,10 +504,11 @@ func IncorrectCookieParamEnum(param *v3.Parameter, ef string, sch *base.Schema) 
 		Message:           fmt.Sprintf("Cookie parameter '%s' does not match allowed values", param.Name),
 		Reason: fmt.Sprintf("The cookie parameter '%s' has pre-defined "+
 			"values set via an enum. The value '%s' is not one of those values.", param.Name, ef),
-		SpecLine: param.GoLow().Schema.Value.Schema().Enum.KeyNode.Line,
-		SpecCol:  param.GoLow().Schema.Value.Schema().Enum.KeyNode.Column,
-		Context:  sch,
-		HowToFix: fmt.Sprintf(HowToFixParamInvalidEnum, ef, validEnums),
+		SpecLine:      param.GoLow().Schema.Value.Schema().Enum.KeyNode.Line,
+		SpecCol:       param.GoLow().Schema.Value.Schema().Enum.KeyNode.Column,
+		ParameterName: param.Name,
+		Context:       sch,
+		HowToFix:      fmt.Sprintf(HowToFixParamInvalidEnum, ef, validEnums),
 	}
 }
 
@@ -497,10 +521,11 @@ func IncorrectHeaderParamArrayBoolean(
 		Message:           fmt.Sprintf("Header array parameter '%s' is not a valid boolean", param.Name),
 		Reason: fmt.Sprintf("The header parameter (which is an array) '%s' is defined as being a boolean, "+
 			"however the value '%s' is not a valid true/false value", param.Name, item),
-		SpecLine: sch.Items.A.GoLow().Schema().Type.KeyNode.Line,
-		SpecCol:  sch.Items.A.GoLow().Schema().Type.KeyNode.Column,
-		Context:  itemsSchema,
-		HowToFix: fmt.Sprintf(HowToFixParamInvalidBoolean, item),
+		SpecLine:      sch.Items.A.GoLow().Schema().Type.KeyNode.Line,
+		SpecCol:       sch.Items.A.GoLow().Schema().Type.KeyNode.Column,
+		ParameterName: param.Name,
+		Context:       itemsSchema,
+		HowToFix:      fmt.Sprintf(HowToFixParamInvalidBoolean, item),
 	}
 }
 
@@ -513,10 +538,11 @@ func IncorrectHeaderParamArrayNumber(
 		Message:           fmt.Sprintf("Header array parameter '%s' is not a valid number", param.Name),
 		Reason: fmt.Sprintf("The header parameter (which is an array) '%s' is defined as being a number, "+
 			"however the value '%s' is not a valid number", param.Name, item),
-		SpecLine: sch.Items.A.GoLow().Schema().Type.KeyNode.Line,
-		SpecCol:  sch.Items.A.GoLow().Schema().Type.KeyNode.Column,
-		Context:  itemsSchema,
-		HowToFix: fmt.Sprintf(HowToFixParamInvalidNumber, item),
+		SpecLine:      sch.Items.A.GoLow().Schema().Type.KeyNode.Line,
+		SpecCol:       sch.Items.A.GoLow().Schema().Type.KeyNode.Column,
+		ParameterName: param.Name,
+		Context:       itemsSchema,
+		HowToFix:      fmt.Sprintf(HowToFixParamInvalidNumber, item),
 	}
 }
 
@@ -527,10 +553,11 @@ func IncorrectPathParamBool(param *v3.Parameter, item string, sch *base.Schema) 
 		Message:           fmt.Sprintf("Path parameter '%s' is not a valid boolean", param.Name),
 		Reason: fmt.Sprintf("The path parameter '%s' is defined as being a boolean, "+
 			"however the value '%s' is not a valid boolean", param.Name, item),
-		SpecLine: param.GoLow().Schema.KeyNode.Line,
-		SpecCol:  param.GoLow().Schema.KeyNode.Column,
-		Context:  sch,
-		HowToFix: fmt.Sprintf(HowToFixParamInvalidBoolean, item),
+		SpecLine:      param.GoLow().Schema.KeyNode.Line,
+		SpecCol:       param.GoLow().Schema.KeyNode.Column,
+		ParameterName: param.Name,
+		Context:       sch,
+		HowToFix:      fmt.Sprintf(HowToFixParamInvalidBoolean, item),
 	}
 }
 
@@ -543,6 +570,7 @@ func IncorrectPathParamEnum(param *v3.Parameter, ef string, sch *base.Schema) *V
 	return &ValidationError{
 		ValidationType:    helpers.ParameterValidation,
 		ValidationSubType: helpers.ParameterValidationPath,
+		ParameterName:     param.Name,
 		Message:           fmt.Sprintf("Path parameter '%s' does not match allowed values", param.Name),
 		Reason: fmt.Sprintf("The path parameter '%s' has pre-defined "+
 			"values set via an enum. The value '%s' is not one of those values.", param.Name, ef),
@@ -575,10 +603,11 @@ func IncorrectPathParamNumber(param *v3.Parameter, item string, sch *base.Schema
 		Message:           fmt.Sprintf("Path parameter '%s' is not a valid number", param.Name),
 		Reason: fmt.Sprintf("The path parameter '%s' is defined as being a number, "+
 			"however the value '%s' is not a valid number", param.Name, item),
-		SpecLine: param.GoLow().Schema.KeyNode.Line,
-		SpecCol:  param.GoLow().Schema.KeyNode.Column,
-		Context:  sch,
-		HowToFix: fmt.Sprintf(HowToFixParamInvalidNumber, item),
+		SpecLine:      param.GoLow().Schema.KeyNode.Line,
+		SpecCol:       param.GoLow().Schema.KeyNode.Column,
+		ParameterName: param.Name,
+		Context:       sch,
+		HowToFix:      fmt.Sprintf(HowToFixParamInvalidNumber, item),
 	}
 }
 
@@ -591,10 +620,11 @@ func IncorrectPathParamArrayNumber(
 		Message:           fmt.Sprintf("Path array parameter '%s' is not a valid number", param.Name),
 		Reason: fmt.Sprintf("The path parameter (which is an array) '%s' is defined as being a number, "+
 			"however the value '%s' is not a valid number", param.Name, item),
-		SpecLine: sch.Items.A.GoLow().Schema().Type.KeyNode.Line,
-		SpecCol:  sch.Items.A.GoLow().Schema().Type.KeyNode.Column,
-		Context:  itemsSchema,
-		HowToFix: fmt.Sprintf(HowToFixParamInvalidNumber, item),
+		SpecLine:      sch.Items.A.GoLow().Schema().Type.KeyNode.Line,
+		SpecCol:       sch.Items.A.GoLow().Schema().Type.KeyNode.Column,
+		ParameterName: param.Name,
+		Context:       itemsSchema,
+		HowToFix:      fmt.Sprintf(HowToFixParamInvalidNumber, item),
 	}
 }
 
@@ -607,10 +637,11 @@ func IncorrectPathParamArrayInteger(
 		Message:           fmt.Sprintf("Path array parameter '%s' is not a valid integer", param.Name),
 		Reason: fmt.Sprintf("The path parameter (which is an array) '%s' is defined as being an integer, "+
 			"however the value '%s' is not a valid integer", param.Name, item),
-		SpecLine: sch.Items.A.GoLow().Schema().Type.KeyNode.Line,
-		SpecCol:  sch.Items.A.GoLow().Schema().Type.KeyNode.Column,
-		Context:  itemsSchema,
-		HowToFix: fmt.Sprintf(HowToFixParamInvalidNumber, item),
+		SpecLine:      sch.Items.A.GoLow().Schema().Type.KeyNode.Line,
+		SpecCol:       sch.Items.A.GoLow().Schema().Type.KeyNode.Column,
+		ParameterName: param.Name,
+		Context:       itemsSchema,
+		HowToFix:      fmt.Sprintf(HowToFixParamInvalidNumber, item),
 	}
 }
 
@@ -623,10 +654,11 @@ func IncorrectPathParamArrayBoolean(
 		Message:           fmt.Sprintf("Path array parameter '%s' is not a valid boolean", param.Name),
 		Reason: fmt.Sprintf("The path parameter (which is an array) '%s' is defined as being a boolean, "+
 			"however the value '%s' is not a valid boolean", param.Name, item),
-		SpecLine: sch.Items.A.GoLow().Schema().Type.KeyNode.Line,
-		SpecCol:  sch.Items.A.GoLow().Schema().Type.KeyNode.Column,
-		Context:  itemsSchema,
-		HowToFix: fmt.Sprintf(HowToFixParamInvalidBoolean, item),
+		SpecLine:      sch.Items.A.GoLow().Schema().Type.KeyNode.Line,
+		SpecCol:       sch.Items.A.GoLow().Schema().Type.KeyNode.Column,
+		ParameterName: param.Name,
+		Context:       itemsSchema,
+		HowToFix:      fmt.Sprintf(HowToFixParamInvalidBoolean, item),
 	}
 }
 
@@ -637,8 +669,9 @@ func PathParameterMissing(param *v3.Parameter) *ValidationError {
 		Message:           fmt.Sprintf("Path parameter '%s' is missing", param.Name),
 		Reason: fmt.Sprintf("The path parameter '%s' is defined as being required, "+
 			"however it's missing from the requests", param.Name),
-		SpecLine: param.GoLow().Required.KeyNode.Line,
-		SpecCol:  param.GoLow().Required.KeyNode.Column,
-		HowToFix: HowToFixMissingValue,
+		SpecLine:      param.GoLow().Required.KeyNode.Line,
+		SpecCol:       param.GoLow().Required.KeyNode.Column,
+		ParameterName: param.Name,
+		HowToFix:      HowToFixMissingValue,
 	}
 }

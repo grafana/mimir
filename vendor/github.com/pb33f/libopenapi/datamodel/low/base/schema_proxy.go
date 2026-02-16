@@ -5,9 +5,9 @@ package base
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
 	"fmt"
+	"hash/maphash"
 	"log/slog"
 	"sync"
 
@@ -58,7 +58,7 @@ type SchemaProxy struct {
 	rendered       *Schema
 	buildError     error
 	ctx            context.Context
-	cachedHash     *[32]byte  // Cache computed hash to avoid recalculation
+	cachedHash     *uint64    // Cache computed hash to avoid recalculation
 	TransformedRef *yaml.Node // Original node that contained the ref before transformation
 	*low.NodeMap
 }
@@ -68,7 +68,6 @@ type SchemaProxy struct {
 func (sp *SchemaProxy) Build(ctx context.Context, key, value *yaml.Node, idx *index.SpecIndex) error {
 	sp.kn = key
 	sp.idx = idx
-	sp.ctx = ctx
 
 	// transform sibling refs to allOf structure if enabled and applicable
 	// this ensures sp.vn contains the pre-transformed YAML as the source of truth
@@ -87,6 +86,7 @@ func (sp *SchemaProxy) Build(ctx context.Context, key, value *yaml.Node, idx *in
 	}
 
 	sp.vn = transformedValue
+	sp.ctx = applySchemaIdScope(ctx, value, idx)
 
 	// handle reference detection
 	if !wasTransformed {
@@ -100,6 +100,33 @@ func (sp *SchemaProxy) Build(ctx context.Context, key, value *yaml.Node, idx *in
 	var m sync.Map
 	sp.NodeMap = &low.NodeMap{Nodes: &m}
 	return nil
+}
+
+func applySchemaIdScope(ctx context.Context, node *yaml.Node, idx *index.SpecIndex) context.Context {
+	if node == nil {
+		return ctx
+	}
+	scope := index.GetSchemaIdScope(ctx)
+	idValue := index.FindSchemaIdInNode(node)
+	if idValue == "" {
+		return ctx
+	}
+	if scope == nil {
+		base := ""
+		if idx != nil {
+			base = idx.GetSpecAbsolutePath()
+		}
+		scope = index.NewSchemaIdScope(base)
+		ctx = index.WithSchemaIdScope(ctx, scope)
+	}
+	parentBase := scope.BaseUri
+	resolved, err := index.ResolveSchemaId(idValue, parentBase)
+	if err != nil || resolved == "" {
+		resolved = idValue
+	}
+	updated := scope.Copy()
+	updated.PushId(resolved)
+	return index.WithSchemaIdScope(ctx, updated)
 }
 
 // Schema will first check if this SchemaProxy has already rendered the schema, and return the pre-rendered version
@@ -116,6 +143,12 @@ func (sp *SchemaProxy) Build(ctx context.Context, key, value *yaml.Node, idx *in
 func (sp *SchemaProxy) Schema() *Schema {
 	if sp.rendered != nil {
 		return sp.rendered
+	}
+
+	// If this proxy represents an unresolved external ref, return nil without error.
+	if sp.IsReference() && sp.idx != nil && sp.idx.GetConfig() != nil &&
+		sp.idx.GetConfig().SkipExternalRefResolution && utils.IsExternalRef(sp.GetReference()) {
+		return nil
 	}
 
 	// handle property merging for references with sibling properties
@@ -183,20 +216,23 @@ func (sp *SchemaProxy) GetValueNode() *yaml.Node {
 	return sp.vn
 }
 
-// Hash will return a consistent SHA256 Hash of the SchemaProxy object (it will resolve it)
-func (sp *SchemaProxy) Hash() [32]byte {
+// Hash will return a consistent Hash of the SchemaProxy object (it will resolve it)
+func (sp *SchemaProxy) Hash() uint64 {
 	if sp.cachedHash != nil {
 		return *sp.cachedHash
 	}
 
-	var hash [32]byte
+	var hash uint64
 
 	if sp.rendered != nil {
 		if !sp.IsReference() {
 			hash = sp.rendered.Hash()
 		} else {
 			// For references, hash the reference value
-			hash = sha256.Sum256([]byte(sp.GetReference()))
+			hash = low.WithHasher(func(h *maphash.Hash) uint64 {
+				h.WriteString(sp.GetReference())
+				return h.Sum64()
+			})
 		}
 	} else {
 		if !sp.IsReference() {
@@ -223,7 +259,7 @@ func (sp *SchemaProxy) Hash() [32]byte {
 						logger.Warn("SchemaProxy.Hash() unable to complete hash: ", "error", bErr.Error())
 					}
 				}
-				hash = [32]byte{}
+				hash = 0
 			}
 		} else {
 			// Handle UseSchemaQuickHash case for references
@@ -234,11 +270,17 @@ func (sp *SchemaProxy) Hash() [32]byte {
 					}
 					hash = sp.rendered.QuickHash() // quick hash uses a cache to keep things fast.
 				} else {
-					hash = sha256.Sum256([]byte(sp.GetReference()))
+					hash = low.WithHasher(func(h *maphash.Hash) uint64 {
+						h.WriteString(sp.GetReference())
+						return h.Sum64()
+					})
 				}
 			} else {
 				// Hash reference value only, do not resolve!
-				hash = sha256.Sum256([]byte(sp.GetReference()))
+				hash = low.WithHasher(func(h *maphash.Hash) uint64 {
+					h.WriteString(sp.GetReference())
+					return h.Sum64()
+				})
 			}
 		}
 	}

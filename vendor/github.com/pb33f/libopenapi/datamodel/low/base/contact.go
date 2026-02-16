@@ -5,7 +5,7 @@ package base
 
 import (
 	"context"
-	"crypto/sha256"
+	"hash/maphash"
 
 	"github.com/pb33f/libopenapi/datamodel/low"
 	"github.com/pb33f/libopenapi/index"
@@ -61,27 +61,24 @@ func (c *Contact) GetKeyNode() *yaml.Node {
 	return c.KeyNode
 }
 
-// Hash will return a consistent SHA256 Hash of the Contact object
-func (c *Contact) Hash() [32]byte {
-	// Use string builder pool
-	sb := low.GetStringBuilder()
-	defer low.PutStringBuilder(sb)
-
-	if !c.Name.IsEmpty() {
-		sb.WriteString(c.Name.Value)
-		sb.WriteByte('|')
-	}
-	if !c.URL.IsEmpty() {
-		sb.WriteString(c.URL.Value)
-		sb.WriteByte('|')
-	}
-	if !c.Email.IsEmpty() {
-		sb.WriteString(c.Email.Value)
-		sb.WriteByte('|')
-	}
-
-	// Note: Extensions are not included in the hash for Contact
-	return sha256.Sum256([]byte(sb.String()))
+// Hash will return a consistent hash of the Contact object
+func (c *Contact) Hash() uint64 {
+	return low.WithHasher(func(h *maphash.Hash) uint64 {
+		if !c.Name.IsEmpty() {
+			h.WriteString(c.Name.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !c.URL.IsEmpty() {
+			h.WriteString(c.URL.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !c.Email.IsEmpty() {
+			h.WriteString(c.Email.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		// Note: Extensions are not included in the hash for Contact
+		return h.Sum64()
+	})
 }
 
 // GetExtensions returns all extensions for Contact
