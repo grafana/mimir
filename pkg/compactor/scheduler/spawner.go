@@ -91,7 +91,7 @@ func (s *Spawner) plan() {
 	now := s.clock.Now()
 	for tenant, lastSubmitted := range s.planMap {
 		if now.Sub(lastSubmitted) > s.planningInterval {
-			_, err := s.rotator.OfferPlanJob(tenant, NewTrackedPlanJob(now, s.clock))
+			_, err := s.rotator.OfferPlanJob(tenant, NewTrackedPlanJob(now))
 			if err != nil {
 				level.Error(s.logger).Log("msg", "failed submitting plan job", "tenant", tenant, "err", err)
 				continue
@@ -123,7 +123,7 @@ func (s *Spawner) discoverTenants(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			tracker := NewJobTracker(persister, tenant, s.maxLeases, s.metrics.newTrackerMetricsForTenant(tenant))
+			tracker := NewJobTracker(persister, tenant, s.clock, s.maxLeases, s.metrics.newTrackerMetricsForTenant(tenant))
 			s.rotator.AddTenant(tenant, tracker)
 			s.planMap[tenant] = time.Time{}
 		}

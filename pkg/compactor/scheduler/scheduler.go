@@ -148,11 +148,11 @@ func NewCompactorScheduler(
 }
 
 func (s *Scheduler) createJobTracker(tenant string, jp JobPersister) *JobTracker {
-	return NewJobTracker(jp, tenant, s.cfg.maxLeases, s.metrics.newTrackerMetricsForTenant(tenant))
+	return NewJobTracker(jp, tenant, s.clock, s.cfg.maxLeases, s.metrics.newTrackerMetricsForTenant(tenant))
 }
 
 func (s *Scheduler) start(ctx context.Context) error {
-	compactionTrackers, err := s.jpm.RecoverAll(s.allowList, s.clock, s.createJobTracker)
+	compactionTrackers, err := s.jpm.RecoverAll(s.allowList, s.createJobTracker)
 	if err != nil {
 		return fmt.Errorf("failed recovering state: %w", err)
 	}
@@ -224,12 +224,20 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 
 	now := s.clock.Now()
 	jobs := make([]*TrackedCompactionJob, 0, len(req.Jobs))
+	idSet := make(map[string]struct{}, len(req.Jobs))
 	for i, job := range req.Jobs {
 		if len(job.Id) == reservedJobIdLen {
 			// This is never expected to actually happen. We reserve single character keys for internal use.
 			level.Warn(s.logger).Log("msg", "ignoring planned job with an internally reserved ID length", "id", job.Id)
 			continue
 		}
+		if _, ok := idSet[job.Id]; ok {
+			// This is never expected to actually happen. It enforces a guarantee for later code.
+			level.Warn(s.logger).Log("msg", "ignoring planned job with a duplicated job ID", "id", job.Id)
+			continue
+		}
+		idSet[job.Id] = struct{}{}
+
 		jobs = append(jobs, NewTrackedCompactionJob(
 			job.Id,
 			&CompactionJob{
@@ -238,7 +246,6 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 			},
 			uint32(i), // technically this casting could truncate, but that's an unrealistic case
 			now,
-			s.clock,
 		))
 	}
 

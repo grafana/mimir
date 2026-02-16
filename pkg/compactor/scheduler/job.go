@@ -9,8 +9,6 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/benbjohnson/clock"
-
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 )
 
@@ -27,9 +25,9 @@ type TrackedJob interface {
 	StatusTime() time.Time // time of last renewal or time of completion
 	IsLeased() bool
 	IsComplete() bool
-	MarkLeased()
-	MarkComplete()
-	RenewLease()
+	MarkLeased(time.Time)
+	MarkComplete(time.Time)
+	RenewLease(time.Time)
 	ClearLease()
 	NumLeases() int
 	Epoch() int64
@@ -46,16 +44,14 @@ type baseTrackedJob struct {
 	statusTime   time.Time
 	numLeases    int
 	epoch        int64 // used to avoid conflict since a job can be reassigned/replaced
-	clock        clock.Clock
 }
 
-func newBaseTrackedJob(id string, creationTime time.Time, clock clock.Clock) baseTrackedJob {
+func newBaseTrackedJob(id string, creationTime time.Time) baseTrackedJob {
 	return baseTrackedJob{
 		id:           id,
 		creationTime: creationTime,
 		status:       compactorschedulerpb.STORED_JOB_STATUS_AVAILABLE,
 		epoch:        rand.Int63(),
-		clock:        clock,
 	}
 }
 
@@ -83,20 +79,20 @@ func (j *baseTrackedJob) IsComplete() bool {
 	return j.status == compactorschedulerpb.STORED_JOB_STATUS_COMPLETE
 }
 
-func (j *baseTrackedJob) MarkLeased() {
+func (j *baseTrackedJob) MarkLeased(now time.Time) {
 	j.status = compactorschedulerpb.STORED_JOB_STATUS_LEASED
-	j.statusTime = j.clock.Now()
+	j.statusTime = now
 	j.numLeases += 1
 	j.epoch += 1
 }
 
-func (j *baseTrackedJob) MarkComplete() {
+func (j *baseTrackedJob) MarkComplete(now time.Time) {
 	j.status = compactorschedulerpb.STORED_JOB_STATUS_COMPLETE
-	j.statusTime = j.clock.Now()
+	j.statusTime = now
 }
 
-func (j *baseTrackedJob) RenewLease() {
-	j.statusTime = j.clock.Now()
+func (j *baseTrackedJob) RenewLease(now time.Time) {
+	j.statusTime = now
 }
 
 func (j *baseTrackedJob) ClearLease() {
@@ -118,9 +114,9 @@ type TrackedCompactionJob struct {
 	order uint32
 }
 
-func NewTrackedCompactionJob(id string, value *CompactionJob, order uint32, creationTime time.Time, clock clock.Clock) *TrackedCompactionJob {
+func NewTrackedCompactionJob(id string, value *CompactionJob, order uint32, creationTime time.Time) *TrackedCompactionJob {
 	return &TrackedCompactionJob{
-		baseTrackedJob: newBaseTrackedJob(id, creationTime, clock),
+		baseTrackedJob: newBaseTrackedJob(id, creationTime),
 		value:          value,
 		order:          order,
 	}
@@ -177,9 +173,9 @@ type TrackedPlanJob struct {
 	baseTrackedJob
 }
 
-func NewTrackedPlanJob(creationTime time.Time, clock clock.Clock) *TrackedPlanJob {
+func NewTrackedPlanJob(creationTime time.Time) *TrackedPlanJob {
 	return &TrackedPlanJob{
-		baseTrackedJob: newBaseTrackedJob(planJobId, creationTime, clock),
+		baseTrackedJob: newBaseTrackedJob(planJobId, creationTime),
 	}
 }
 
@@ -222,20 +218,20 @@ func (j *TrackedPlanJob) Order() uint32 {
 	return math.MaxUint32
 }
 
-func deserializeJob(k []byte, v []byte, clock clock.Clock) (TrackedJob, error) {
+func deserializeJob(k []byte, v []byte) (TrackedJob, error) {
 	if len(k) == reservedJobIdLen {
 		sk := string(k[0])
 		switch sk {
 		case planJobId:
-			return deserializePlanJob(v, clock)
+			return deserializePlanJob(v)
 		default:
 			return nil, fmt.Errorf("unknown key: %s", sk)
 		}
 	}
-	return deserializeCompactionJob(k, v, clock)
+	return deserializeCompactionJob(k, v)
 }
 
-func deserializePlanJob(content []byte, clock clock.Clock) (TrackedJob, error) {
+func deserializePlanJob(content []byte) (TrackedJob, error) {
 	var info compactorschedulerpb.StoredJobInfo
 	if err := info.Unmarshal(content); err != nil {
 		return nil, err
@@ -248,12 +244,11 @@ func deserializePlanJob(content []byte, clock clock.Clock) (TrackedJob, error) {
 			statusTime:   time.Unix(info.StatusTime, 0),
 			numLeases:    int(info.NumLeases),
 			epoch:        info.Epoch,
-			clock:        clock,
 		},
 	}, nil
 }
 
-func deserializeCompactionJob(k []byte, v []byte, clock clock.Clock) (*TrackedCompactionJob, error) {
+func deserializeCompactionJob(k []byte, v []byte) (*TrackedCompactionJob, error) {
 	var stored compactorschedulerpb.StoredCompactionJob
 	err := stored.Unmarshal(v)
 	if err != nil {
@@ -270,7 +265,6 @@ func deserializeCompactionJob(k []byte, v []byte, clock clock.Clock) (*TrackedCo
 			statusTime:   time.Unix(stored.Info.StatusTime, 0),
 			numLeases:    int(stored.Info.NumLeases),
 			epoch:        stored.Info.Epoch,
-			clock:        clock,
 		},
 		value: &CompactionJob{
 			blocks:  stored.Job.BlockIds,

@@ -12,6 +12,8 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/benbjohnson/clock"
+
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 )
 
@@ -20,6 +22,7 @@ import (
 type JobTracker struct {
 	persister JobPersister
 	tenant    string
+	clock     clock.Clock
 
 	maxLeases int
 	metrics   *trackerMetrics
@@ -32,10 +35,11 @@ type JobTracker struct {
 	completeCompactionJobs []*TrackedCompactionJob  // tracked in order to reject jobs that may be from a stale planning view.
 }
 
-func NewJobTracker(jobPersister JobPersister, tenant string, maxLeases int, metrics *trackerMetrics) *JobTracker {
+func NewJobTracker(jobPersister JobPersister, tenant string, clock clock.Clock, maxLeases int, metrics *trackerMetrics) *JobTracker {
 	jt := &JobTracker{
 		persister:              jobPersister,
 		tenant:                 tenant,
+		clock:                  clock,
 		maxLeases:              maxLeases,
 		metrics:                metrics,
 		mtx:                    sync.Mutex{},
@@ -105,7 +109,7 @@ func (jt *JobTracker) Lease() (response *compactorschedulerpb.LeaseJobResponse, 
 	// Copy the value, don't want to leave a modification if the write fails
 	jj := j.CopyBase()
 
-	jj.MarkLeased()
+	jj.MarkLeased(jt.clock.Now())
 	if err := jt.persister.WriteJob(jj); err != nil {
 		return nil, false, err
 	}
@@ -157,7 +161,7 @@ func (jt *JobTracker) Remove(id string, epoch int64, complete bool) (removed boo
 			// This should never happen
 			return false, false, fmt.Errorf("unexpected job type encountered")
 		}
-		jj.MarkComplete()
+		jj.MarkComplete(jt.clock.Now())
 		if err := jt.persister.WriteAndDeleteJobs([]TrackedJob{jj}, nil); err != nil {
 			return false, false, fmt.Errorf("failed writing complete job: %w", err)
 		}
@@ -265,7 +269,7 @@ func (jt *JobTracker) RenewLease(id string, epoch int64) bool {
 
 	j := e.Value.(TrackedJob)
 	if j.IsLeased() && j.Epoch() == epoch {
-		j.RenewLease()
+		j.RenewLease(jt.clock.Now())
 		jt.active.MoveToBack(e)
 		return true
 	}

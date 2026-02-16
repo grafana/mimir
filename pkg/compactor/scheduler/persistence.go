@@ -5,7 +5,6 @@ package scheduler
 import (
 	"fmt"
 
-	"github.com/benbjohnson/clock"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	dskit_tenant "github.com/grafana/dskit/tenant"
@@ -28,7 +27,7 @@ func jobPersistenceManagerFactory(cfg Config, logger log.Logger) (JobPersistence
 type JobPersistenceManager interface {
 	InitializeTenant(tenant string) (JobPersister, error)
 	DeleteTenant(tenant string) error
-	RecoverAll(allowedTenants *util.AllowList, clock clock.Clock, jobTrackerFactory func(tenant string, persister JobPersister) *JobTracker) (map[string]*JobTracker, error)
+	RecoverAll(allowedTenants *util.AllowList, jobTrackerFactory func(tenant string, persister JobPersister) *JobTracker) (map[string]*JobTracker, error)
 	Close() error
 }
 
@@ -78,7 +77,7 @@ func (m *BboltJobPersistenceManager) DeleteTenant(tenant string) error {
 	})
 }
 
-func (m *BboltJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, clock clock.Clock, compactionTrackerFactory func(tenant string, persister JobPersister) *JobTracker) (jobTrackers map[string]*JobTracker, err error) {
+func (m *BboltJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, compactionTrackerFactory func(tenant string, persister JobPersister) *JobTracker) (jobTrackers map[string]*JobTracker, err error) {
 	jobTrackers = make(map[string]*JobTracker)
 	numJobsRecovered := 0
 
@@ -99,7 +98,7 @@ func (m *BboltJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, 
 				return tx.DeleteBucket(name)
 			}
 
-			jobs := jobsFromTenantBucket(tenant, b, clock, m.logger)
+			jobs := jobsFromTenantBucket(tenant, b, m.logger)
 			numJobsRecovered += len(jobs)
 
 			jp := newBboltJobPersister(m.db, []byte(tenant), m.logger)
@@ -117,11 +116,11 @@ func (m *BboltJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, 
 	return jobTrackers, nil
 }
 
-func jobsFromTenantBucket(tenant string, bucket *bbolt.Bucket, clock clock.Clock, logger log.Logger) []TrackedJob {
+func jobsFromTenantBucket(tenant string, bucket *bbolt.Bucket, logger log.Logger) []TrackedJob {
 	jobs := make([]TrackedJob, 0, 10)
 	c := bucket.Cursor()
 	for k, v := c.First(); k != nil; k, v = c.Next() {
-		job, err := deserializeJob(k, v, clock)
+		job, err := deserializeJob(k, v)
 		if err != nil {
 			// If we can't deserialize a value assume it is corrupt. We don't want it sticking around forever, so delete it.
 			level.Warn(logger).Log("msg", "failed to deserialize job, deleting it", "tenant", tenant, "key", string(k), "err", err)
@@ -220,7 +219,7 @@ func (n *NopJobPersistenceManager) DeleteTenant(tenant string) error {
 	return nil
 }
 
-func (n *NopJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, clock clock.Clock, jobTrackerFactory func(string, JobPersister) *JobTracker) (jobTrackers map[string]*JobTracker, err error) {
+func (n *NopJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, jobTrackerFactory func(string, JobPersister) *JobTracker) (jobTrackers map[string]*JobTracker, err error) {
 	return make(map[string]*JobTracker), nil
 }
 
