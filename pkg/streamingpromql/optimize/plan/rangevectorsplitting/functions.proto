@@ -2,12 +2,12 @@
 
 syntax = "proto3";
 
-package functions;
+package rangevectorsplitting;
 
 import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
 import "gogoproto/gogo.proto";
 
-option go_package = "functions";
+option go_package = "rangevectorsplitting";
 option (gogoproto.goproto_getters_all) = false;
 option (gogoproto.goproto_sizecache_all) = false;
 // Do not generate XXX fields to reduce memory footprint.

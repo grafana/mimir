@@ -3,7 +3,7 @@
 // Most split function behavior should be tested by adding to the promql test cases in
 // pkg/streamingpromql/testdata/ours-only/range_vector_splitting_2h.test.
 // Tests here should be for specific edge cases that benefit from direct unit testing.
-package functions
+package rangevectorsplitting
 
 import (
 	"testing"

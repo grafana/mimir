@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package functions
+package rangevectorsplitting
 
 import (
 	"github.com/pkg/errors"
@@ -9,13 +9,14 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-var SplitRate = NewSplitOperatorFactory[RateIntermediate](rateGenerate, rateCombine(true), RateCodec, Rate, FUNCTION_RATE)
+var SplitRate = NewSplitOperatorFactory[RateIntermediate](rateGenerate, rateCombine(true), RateCodec, functions.Rate, functions.FUNCTION_RATE)
 
-var SplitIncrease = NewSplitOperatorFactory[RateIntermediate](rateGenerate, rateCombine(false), RateCodec, Increase, FUNCTION_INCREASE)
+var SplitIncrease = NewSplitOperatorFactory[RateIntermediate](rateGenerate, rateCombine(false), RateCodec, functions.Increase, functions.FUNCTION_INCREASE)
 
 func rateGenerate(step *types.RangeVectorStepData, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (RateIntermediate, error) {
 	fHead, fTail := step.Floats.UnsafePoints()
@@ -64,7 +65,7 @@ func rateGenerateFloat(fHead, fTail []promql.FPoint, fCount int) (RateIntermedia
 		}, nil
 	}
 
-	firstPoint, lastPoint, delta := calculateFloatDelta(fHead, fTail)
+	firstPoint, lastPoint, delta := functions.CalculateFloatDelta(fHead, fTail)
 
 	return RateIntermediate{
 		FirstSample: &mimirpb.Sample{
@@ -102,14 +103,14 @@ func rateGenerateHistogram(hHead, hTail []promql.HPoint, hCount int, emitAnnotat
 
 	originalFirstHistProto := mimirpb.FromFloatHistogramToHistogramProto(0, firstPoint.H.Copy())
 
-	// firstPoint and fpHistCount returned from calculateHistogramDelta() are ignored and instead use the original
-	// first point. calculateHistogramDelta() will return a first point that could be empty if the second point is a
+	// firstPoint and fpHistCount returned from CalculateHistogramDelta() are ignored and instead use the original
+	// first point. CalculateHistogramDelta() will return a first point that could be empty if the second point is a
 	// counter reset. This makes sense in the non-split case, but in the split case, in combine, we need to take the
 	// delta between the original first sample of a split range and the last sample of the previous range. Using the
 	// empty updated firstPoint would result in an incorrect delta calculation.
-	_, lastPoint, delta, _, err := calculateHistogramDelta(hHead, hTail, emitAnnotation)
+	_, lastPoint, delta, _, err := functions.CalculateHistogramDelta(hHead, hTail, emitAnnotation)
 	if err != nil {
-		err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
+		err = functions.NativeHistogramErrorToAnnotation(err, emitAnnotation)
 		if err == nil {
 			// Error was converted to annotation (e.g., mixed exponential/custom buckets)
 			return RateIntermediate{
@@ -175,7 +176,7 @@ func rateCombine(isRate bool) SplitCombineFunc[RateIntermediate] {
 		if hCount > 0 {
 			h, err := rateCombineHistogram(pieces, rangeStart, rangeEnd, isRate, emitAnnotation)
 			if err != nil {
-				err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
+				err = functions.NativeHistogramErrorToAnnotation(err, emitAnnotation)
 				if err == nil {
 					return 0, false, nil, nil
 				}
@@ -250,7 +251,7 @@ func rateCombineFloat(splits []RateIntermediate, rangeStart int64, rangeEnd int6
 
 	rangeSeconds := float64(rangeEnd-rangeStart) / 1000
 
-	result := calculateFloatRate(
+	result := functions.CalculateFloatRate(
 		true,
 		isRate,
 		rangeStart,
@@ -320,7 +321,7 @@ func rateCombineHistogram(splits []RateIntermediate, rangeStart int64, rangeEnd 
 					return nil, err
 				}
 				if nhcbBoundsReconciled {
-					emitAnnotation(newAddMismatchedCustomBucketsHistogramInfo)
+					emitAnnotation(functions.NewAddMismatchedCustomBucketsHistogramInfo)
 				}
 			}
 		} else {
@@ -330,7 +331,7 @@ func rateCombineHistogram(splits []RateIntermediate, rangeStart int64, rangeEnd 
 				return nil, err
 			}
 			if nhcbBoundsReconciled {
-				emitAnnotation(newSubMismatchedCustomBucketsHistogramInfo)
+				emitAnnotation(functions.NewSubMismatchedCustomBucketsHistogramInfo)
 			}
 
 			if totalDelta == nil {
@@ -341,7 +342,7 @@ func rateCombineHistogram(splits []RateIntermediate, rangeStart int64, rangeEnd 
 					return nil, err
 				}
 				if nhcbBoundsReconciled {
-					emitAnnotation(newAddMismatchedCustomBucketsHistogramInfo)
+					emitAnnotation(functions.NewAddMismatchedCustomBucketsHistogramInfo)
 				}
 			}
 		}
@@ -357,7 +358,7 @@ func rateCombineHistogram(splits []RateIntermediate, rangeStart int64, rangeEnd 
 					return nil, err
 				}
 				if nhcbBoundsReconciled {
-					emitAnnotation(newAddMismatchedCustomBucketsHistogramInfo)
+					emitAnnotation(functions.NewAddMismatchedCustomBucketsHistogramInfo)
 				}
 			}
 		}
@@ -374,7 +375,7 @@ func rateCombineHistogram(splits []RateIntermediate, rangeStart int64, rangeEnd 
 	}
 
 	rangeSeconds := float64(rangeEnd-rangeStart) / 1000
-	result := calculateHistogramRate(
+	result := functions.CalculateHistogramRate(
 		true,
 		isRate,
 		rangeStart,

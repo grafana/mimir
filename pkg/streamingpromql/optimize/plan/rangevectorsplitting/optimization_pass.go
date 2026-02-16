@@ -12,7 +12,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -140,11 +139,7 @@ func (o *OptimizationPass) trySplitFunction(ctx context.Context, functionCall *c
 		return nil, "range_query", nil
 	}
 
-	f, ok := functions.RegisteredFunctions[functionCall.GetFunction()]
-	if !ok {
-		return nil, "function_not_found", nil
-	}
-	if f.RangeVectorSplitting == nil {
+	if _, ok := SplitFunctionRegistry[functionCall.GetFunction()]; !ok {
 		return nil, "unsupported_function", nil
 	}
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package functions
+package rangevectorsplitting
 
 import (
 	"math"
@@ -11,6 +11,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/streamingpromql/floats"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
@@ -31,7 +32,7 @@ import (
 // gauge histograms rather than counter histograms) and counter reset detection is still evolving
 // (see https://github.com/prometheus/prometheus/issues/15346), so we choose to be slightly inconsistent with the
 // Prometheus for now. The returned result is correct, it's just the warning annotation may occasionally be missing.
-var SplitSumOverTime = NewSplitOperatorFactory[SumOverTimeIntermediate](sumOverTimeGenerate, sumOverTimeCombine, SumOverTimeCodec, SumOverTime, FUNCTION_SUM_OVER_TIME)
+var SplitSumOverTime = NewSplitOperatorFactory[SumOverTimeIntermediate](sumOverTimeGenerate, sumOverTimeCombine, SumOverTimeCodec, functions.SumOverTime, functions.FUNCTION_SUM_OVER_TIME)
 
 func sumOverTimeGenerate(
 	step *types.RangeVectorStepData,
@@ -75,7 +76,7 @@ func sumOverTimeGenerate(
 	}
 
 	if haveHistograms {
-		h, err := sumHistograms(hHead, hTail, emitAnnotation)
+		h, err := functions.SumHistograms(hHead, hTail, emitAnnotation)
 		if err != nil {
 			return SumOverTimeIntermediate{}, err
 		}
@@ -112,7 +113,7 @@ func sumOverTimeCombine(
 				sumH = h.Copy()
 			} else {
 				if _, _, nhcbBoundsReconciled, err := sumH.Add(h); err != nil {
-					err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
+					err = functions.NativeHistogramErrorToAnnotation(err, emitAnnotation)
 					return 0, false, nil, err
 				} else if nhcbBoundsReconciled {
 					nhcbBoundsReconciledSeen = true
@@ -127,7 +128,7 @@ func sumOverTimeCombine(
 	}
 
 	if nhcbBoundsReconciledSeen {
-		emitAnnotation(newAggregationMismatchedCustomBucketsHistogramInfo)
+		emitAnnotation(functions.NewAggregationMismatchedCustomBucketsHistogramInfo)
 	}
 
 	return sumF + c, haveFloats, sumH, nil
@@ -158,12 +159,12 @@ var SplitCountOverTime = NewSplitOperatorFactory[CountOverTimeIntermediate](
 	countOverTimeGenerate,
 	countOverTimeCombine,
 	CountOverTimeCodec,
-	CountOverTime,
-	FUNCTION_COUNT_OVER_TIME,
+	functions.CountOverTime,
+	functions.FUNCTION_COUNT_OVER_TIME,
 )
 
 func countOverTimeGenerate(step *types.RangeVectorStepData, emitAnnotation types.EmitAnnotationFunc, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (CountOverTimeIntermediate, error) {
-	count, hasValue, _, err := countOverTime(step, nil, types.QueryTimeRange{}, emitAnnotation, memoryConsumptionTracker)
+	count, hasValue, _, err := functions.CountOverTime.StepFunc(step, nil, types.QueryTimeRange{}, emitAnnotation, memoryConsumptionTracker)
 	if err != nil {
 		return CountOverTimeIntermediate{}, err
 	}
@@ -209,8 +210,8 @@ var SplitMinOverTime = NewSplitOperatorFactory[MinMaxOverTimeIntermediate](
 	minOverTimeGenerate,
 	minOverTimeCombine,
 	MinMaxOverTimeCodec,
-	MinOverTime,
-	FUNCTION_MIN_OVER_TIME,
+	functions.MinOverTime,
+	functions.FUNCTION_MIN_OVER_TIME,
 )
 
 func minOverTimeGenerate(
@@ -220,7 +221,7 @@ func minOverTimeGenerate(
 ) (MinMaxOverTimeIntermediate, error) {
 	// Pass a no-op emitAnnotation: the combine step will handle emitting the mixed float+histogram annotations so we
 	// can ignore the annotations emitted in minOverTime().
-	f, hasFloat, _, err := minOverTime(step, nil, types.QueryTimeRange{}, emitAnnotationNoop, memoryConsumptionTracker)
+	f, hasFloat, _, err := functions.MinOverTime.StepFunc(step, nil, types.QueryTimeRange{}, emitAnnotationNoop, memoryConsumptionTracker)
 	if err != nil {
 		return MinMaxOverTimeIntermediate{}, err
 	}
@@ -265,14 +266,14 @@ var SplitMaxOverTime = NewSplitOperatorFactory[MinMaxOverTimeIntermediate](
 	maxOverTimeGenerate,
 	maxOverTimeCombine,
 	MinMaxOverTimeCodec,
-	MaxOverTime,
-	FUNCTION_MAX_OVER_TIME,
+	functions.MaxOverTime,
+	functions.FUNCTION_MAX_OVER_TIME,
 )
 
 func maxOverTimeGenerate(step *types.RangeVectorStepData, _ types.EmitAnnotationFunc, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (MinMaxOverTimeIntermediate, error) {
 	// Pass a no-op emitAnnotation: the combine step will handle emitting the mixed float+histogram annotations so we
 	// can ignore the annotations emitted in maxOverTime().
-	f, hasFloat, _, err := maxOverTime(step, nil, types.QueryTimeRange{}, emitAnnotationNoop, memoryConsumptionTracker)
+	f, hasFloat, _, err := functions.MaxOverTime.StepFunc(step, nil, types.QueryTimeRange{}, emitAnnotationNoop, memoryConsumptionTracker)
 	if err != nil {
 		return MinMaxOverTimeIntermediate{}, err
 	}

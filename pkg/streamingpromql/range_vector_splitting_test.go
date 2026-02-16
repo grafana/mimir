@@ -28,6 +28,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
@@ -832,7 +833,7 @@ func skipUnsupportedTests(t *testing.T, testContent string, testFile string) str
 	switch testFile {
 	case "upstream/native_histograms.test":
 		// The split sum_over_time sometimes cannot detect conflicting counter reset warnings.
-		// See comments for functions.SplitSumOverTime.
+		// See comments for rangevectorsplitting.SplitSumOverTime.
 		testCasesToSkip = []string{
 			`eval instant at 14m histogram_count(sum_over_time(mixed[10m]))
   expect warn msg:PromQL warning: conflicting counter resets during histogram aggregation
@@ -992,7 +993,7 @@ func TestQuerySplitting_MiddleCacheEntryEvicted(t *testing.T) {
 	verifyCacheStats(t, testCache, 3, 0, 3)
 
 	// Evict Block2: (4h-1ms, 6h-1ms].
-	block2Key := cache.TestGenerateHashedCacheKey("test-user", 65, `{__name__="test_metric"}`, 4*hourInMs-1, 6*hourInMs-1, false)
+	block2Key := cache.TestGenerateHashedCacheKey("test-user", functions.FUNCTION_SUM_OVER_TIME, `{__name__="test_metric"}`, 4*hourInMs-1, 6*hourInMs-1, false)
 	_, exists := testCache.items[block2Key]
 	require.True(t, exists, "Block2 cache key should exist before eviction")
 	delete(testCache.items, block2Key)

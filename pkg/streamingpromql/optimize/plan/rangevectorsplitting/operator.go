@@ -4,7 +4,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Prometheus Authors
 
-package functions
+package rangevectorsplitting
 
 import (
 	"context"
@@ -23,6 +23,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/querierpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -38,8 +39,8 @@ import (
 // same way the split version does, if multiple splits have the same series).
 type FunctionOverRangeVectorSplit[T any] struct {
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
-	FuncId                   Function
-	FuncDef                  FunctionOverRangeVectorDefinition
+	FuncId                   functions.Function
+	FuncDef                  functions.FunctionOverRangeVectorDefinition
 	Annotations              *annotations.Annotations
 
 	metricNames                 *operators.MetricNames
@@ -48,7 +49,7 @@ type FunctionOverRangeVectorSplit[T any] struct {
 	innerNodeExpressionPosition posrange.PositionRange
 
 	emitAnnotationFunc   types.EmitAnnotationFunc
-	seriesValidationFunc RangeVectorSeriesValidationFunction
+	seriesValidationFunc functions.RangeVectorSeriesValidationFunction
 
 	cache *cache.Cache[T]
 
@@ -89,8 +90,8 @@ func NewSplittingFunctionOverRangeVector[T any](
 	ranges []Range,
 	innerCacheKey string,
 	cacheFactory *cache.CacheFactory,
-	funcId Function,
-	funcDef FunctionOverRangeVectorDefinition,
+	funcId functions.Function,
+	funcDef functions.FunctionOverRangeVectorDefinition,
 	generateFunc SplitGenerateFunc[T],
 	combineFunc SplitCombineFunc[T],
 	codec cache.SplitCodec[T],
@@ -194,7 +195,7 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) erro
 
 	for _, splitRange := range m.splitRanges {
 		if splitRange.Cacheable {
-			metadata, annotations, results, found, err := m.cache.Get(ctx, int32(m.FuncId), m.innerCacheKey, splitRange.Start, splitRange.End, m.enableDelayedNameRemoval, m.cacheStats)
+			metadata, annotations, results, found, err := m.cache.Get(ctx, m.FuncId, m.innerCacheKey, splitRange.Start, splitRange.End, m.enableDelayedNameRemoval, m.cacheStats)
 			if err != nil {
 				return err
 			}
@@ -754,7 +755,7 @@ func (p *UncachedSplit[T]) Finalize(ctx context.Context) error {
 
 		if err := p.parent.cache.Set(
 			ctx,
-			int32(p.parent.FuncId),
+			p.parent.FuncId,
 			p.parent.innerCacheKey,
 			splitRange.Start,
 			splitRange.End,

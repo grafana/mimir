@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/grafana/mimir/pkg/querier/querierpb"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 )
 
 type Backend interface {
@@ -81,7 +82,7 @@ func NewCacheFactoryWithBackend(backend Backend, ttlProvider TTLProvider, reg pr
 	}
 }
 
-func generateCacheKey(tenant string, function int32, selector string, start, end int64, enableDelayedNameRemoval bool) string {
+func generateCacheKey(tenant string, function functions.Function, selector string, start, end int64, enableDelayedNameRemoval bool) string {
 	return fmt.Sprintf("%s:%d:%s:%d:%d:%t", tenant, function, selector, start, end, enableDelayedNameRemoval)
 }
 
@@ -94,7 +95,7 @@ func hashCacheKey(key string) string {
 
 // TestGenerateHashedCacheKey generates a hashed cache key using the same logic as the cache internals.
 // This should only be used in tests.
-func TestGenerateHashedCacheKey(tenant string, function int32, selector string, start, end int64, enableDelayedNameRemoval bool) string {
+func TestGenerateHashedCacheKey(tenant string, function functions.Function, selector string, start, end int64, enableDelayedNameRemoval bool) string {
 	return hashCacheKey(generateCacheKey(tenant, function, selector, start, end, enableDelayedNameRemoval))
 }
 
@@ -127,7 +128,7 @@ func NewCache[T any](factory *CacheFactory, codec SplitCodec[T]) *Cache[T] {
 
 func (c *Cache[T]) Get(
 	ctx context.Context,
-	function int32,
+	function functions.Function,
 	innerKey string,
 	start, end int64,
 	enableDelayedNameRemoval bool,
@@ -174,7 +175,7 @@ func (c *Cache[T]) Get(
 
 func (c *Cache[T]) Set(
 	ctx context.Context,
-	function int32,
+	function functions.Function,
 	innerKey string,
 	start, end int64,
 	enableDelayedNameRemoval bool,

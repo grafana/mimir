@@ -13,7 +13,6 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
@@ -164,21 +163,14 @@ func (m Materializer) Materialize(n planning.Node, materializer *planning.Materi
 		return nil, fmt.Errorf("unexpected type passed to materializer: expected SplitFunctionCall, got %T", n)
 	}
 
-	f, exists := functions.RegisteredFunctions[s.Inner.Function]
+	splitFactory, exists := SplitFunctionRegistry[s.Inner.Function]
 	if !exists {
-		return nil, fmt.Errorf("function '%v' not found in functions list", s.Inner.Function.PromQLName())
-	}
-	if f.RangeVectorSplitting == nil {
 		return nil, fmt.Errorf("function %v does not support range vector splitting", s.Inner.Function.PromQLName())
 	}
 
-	ranges := make([]functions.Range, len(s.SplitRanges))
+	ranges := make([]Range, len(s.SplitRanges))
 	for i, sr := range s.SplitRanges {
-		ranges[i] = functions.Range{
-			Start:     sr.Start,
-			End:       sr.End,
-			Cacheable: sr.Cacheable,
-		}
+		ranges[i] = Range(sr)
 	}
 
 	if s.Inner.ChildCount() != 1 {
@@ -190,7 +182,7 @@ func (m Materializer) Materialize(n planning.Node, materializer *planning.Materi
 		return nil, err
 	}
 
-	splitOp, err := f.RangeVectorSplitting(
+	splitOp, err := splitFactory(
 		s.Inner.Child(0),
 		materializer,
 		timeRange,

@@ -310,7 +310,7 @@ func sumOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.
 		return sumFloats(fHead, fTail), true, nil, nil
 	}
 
-	h, err := sumHistograms(hHead, hTail, emitAnnotation)
+	h, err := SumHistograms(hHead, hTail, emitAnnotation)
 	return 0, false, h, err
 }
 
@@ -328,7 +328,7 @@ func sumFloats(head, tail []promql.FPoint) float64 {
 	return sum + c
 }
 
-func sumHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
+func SumHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
 	sum := head[0].H.Copy() // We must make a copy of the histogram, as the ring buffer may reuse the FloatHistogram instance on subsequent steps.
 	head = head[1:]
 
@@ -380,7 +380,7 @@ func sumHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotati
 		emitAnnotation(newAggregationCounterResetCollisionWarning)
 	}
 	if nhcbBoundsReconciledSeen {
-		emitAnnotation(newAggregationMismatchedCustomBucketsHistogramInfo)
+		emitAnnotation(NewAggregationMismatchedCustomBucketsHistogramInfo)
 	}
 
 	// Apply Kahan compensation to get the final accurate result
@@ -400,7 +400,7 @@ func newAggregationCounterResetCollisionWarning(_ string, expressionPosition pos
 	return annotations.NewHistogramCounterResetCollisionWarning(expressionPosition, annotations.HistogramAgg)
 }
 
-func newAggregationMismatchedCustomBucketsHistogramInfo(_ string, expressionPosition posrange.PositionRange) error {
+func NewAggregationMismatchedCustomBucketsHistogramInfo(_ string, expressionPosition posrange.PositionRange) error {
 	return annotations.NewMismatchedCustomBucketsHistogramsInfo(expressionPosition, annotations.HistogramAgg)
 }
 
@@ -552,7 +552,7 @@ func avgHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotati
 	}
 
 	if nhcbBoundsReconciledSeen {
-		emitAnnotation(newAggregationMismatchedCustomBucketsHistogramInfo)
+		emitAnnotation(NewAggregationMismatchedCustomBucketsHistogramInfo)
 	}
 
 	// Apply Kahan compensation to get the final accurate result
@@ -924,7 +924,7 @@ func histogramIrateIdelta(isRate bool, lastSample, secondLastSample promql.HPoin
 			return nil, err
 		}
 		if nhcbBoundsReconciled {
-			emitAnnotation(newSubMismatchedCustomBucketsHistogramInfo)
+			emitAnnotation(NewSubMismatchedCustomBucketsHistogramInfo)
 		}
 	}
 

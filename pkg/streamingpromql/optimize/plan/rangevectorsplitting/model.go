@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package functions
+package rangevectorsplitting
 
 import (
 	"github.com/go-kit/log"
@@ -8,6 +8,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -58,8 +59,8 @@ func NewSplitOperatorFactory[T any](
 	generate SplitGenerateFunc[T],
 	combine SplitCombineFunc[T],
 	codec cache.SplitCodec[T],
-	funcDef FunctionOverRangeVectorDefinition,
-	funcId Function,
+	funcDef functions.FunctionOverRangeVectorDefinition,
+	funcId functions.Function,
 ) SplitOperatorFactory {
 	return func(
 		innerNode planning.Node,

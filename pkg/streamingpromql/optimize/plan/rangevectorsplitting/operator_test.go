@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package functions
+package rangevectorsplitting
 
 import (
 	"context"
@@ -68,4 +68,3 @@ func TestResultGetter_SequentialAccess(t *testing.T) {
 	require.Equal(t, []string{"C"}, result2)
 	require.Equal(t, 3, callCount)
 }
-
