@@ -15,8 +15,9 @@ message JobKey {
 }
 
 enum JobType {
-  COMPACTION = 0;
-  PLANNING = 1;
+  JOB_TYPE_UNKNOWN = 0;
+  JOB_TYPE_COMPACTION = 1;
+  JOB_TYPE_PLANNING = 2;
 }
 
 message JobSpec {
@@ -26,8 +27,8 @@ message JobSpec {
 }
 
 message CompactionJob {
-  repeated bytes blockIds = 2;
-  bool split = 3;
+  repeated bytes blockIds = 1;
+  bool split = 2;
 }
 
 service CompactorScheduler {
@@ -53,20 +54,23 @@ message PlannedCompactionJob {
 
 message PlannedJobsRequest {
   JobKey key = 1;
-  repeated PlannedCompactionJob jobs = 2;
+  string tenant = 2;
+  repeated PlannedCompactionJob jobs = 3;
 }
 
 message PlannedJobsResponse {}
 
 enum UpdateType {
-  IN_PROGRESS = 0;
-  COMPLETE = 1;
-  REASSIGN = 2;
-  ABANDON = 3;
+  UPDATE_TYPE_UNKNOWN = 0;
+  UPDATE_TYPE_IN_PROGRESS = 1;
+  UPDATE_TYPE_COMPLETE = 2;
+  UPDATE_TYPE_REASSIGN = 3;
+  UPDATE_TYPE_ABANDON = 4;
 }
 
 message UpdatePlanJobRequest {
   JobKey key = 1;
+  string tenant = 2;
   UpdateType update = 3;
 }
 
@@ -78,14 +82,23 @@ message UpdateCompactionJobRequest {
 
 message UpdateJobResponse {}
 
+enum StoredJobStatus {
+  STORED_JOB_STATUS_UNKNOWN = 0;
+  STORED_JOB_STATUS_AVAILABLE = 1;
+  STORED_JOB_STATUS_LEASED = 2;
+  STORED_JOB_STATUS_COMPLETE = 3;
+}
+
 message StoredJobInfo {
   int64 creationTime = 1;
-  int64 leaseCreationTime = 2;
-  int32 numLeases = 3;
-  int64 epoch = 4;
+  StoredJobStatus status = 2;
+  int64 statusTime = 3;
+  int32 numLeases = 4;
+  int64 epoch = 5;
 }
 
 message StoredCompactionJob {
   StoredJobInfo info = 1;
   CompactionJob job = 2;
+  uint32 order = 3;
 }

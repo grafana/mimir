@@ -219,7 +219,7 @@ func (e *schedulerExecutor) startJobStatusUpdater(ctx context.Context, c *Multit
 	for {
 		select {
 		case <-ticker.C:
-			if err := e.updateJobStatus(ctx, key, spec, compactorschedulerpb.IN_PROGRESS); err != nil {
+			if err := e.updateJobStatus(ctx, key, spec, compactorschedulerpb.UPDATE_TYPE_IN_PROGRESS); err != nil {
 				// Check if the job was canceled from the scheduler side (not found response)
 				if grpcutil.ErrorToStatusCode(err) == codes.NotFound {
 					level.Info(e.logger).Log("msg", "job canceled by scheduler, stopping work", "job_id", jobId, "tenant", jobTenant)
@@ -245,14 +245,14 @@ func (e *schedulerExecutor) sendFinalJobStatus(ctx context.Context, key *compact
 
 	var err error
 	switch spec.JobType {
-	case compactorschedulerpb.COMPACTION:
+	case compactorschedulerpb.JOB_TYPE_COMPACTION:
 		req := &compactorschedulerpb.UpdateCompactionJobRequest{Key: key, Tenant: spec.Tenant, Update: status}
 		err = e.retryable.WithContext(ctx).Run(func() error {
 			_, err := e.schedulerClient.UpdateCompactionJob(ctx, req)
 			return err
 		})
-	case compactorschedulerpb.PLANNING:
-		req := &compactorschedulerpb.UpdatePlanJobRequest{Key: key, Update: status}
+	case compactorschedulerpb.JOB_TYPE_PLANNING:
+		req := &compactorschedulerpb.UpdatePlanJobRequest{Key: key, Tenant: spec.Tenant, Update: status}
 		err = e.retryable.WithContext(ctx).Run(func() error {
 			_, err := e.schedulerClient.UpdatePlanJob(ctx, req)
 			return err
@@ -316,7 +316,7 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 	}()
 
 	switch jobType {
-	case compactorschedulerpb.COMPACTION:
+	case compactorschedulerpb.JOB_TYPE_COMPACTION:
 		status, err := e.executeCompactionJob(jobCtx, c, resp.Key, resp.Spec)
 		cancelJob(err)
 		wg.Wait()
@@ -327,19 +327,19 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 		}
 		e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, status)
 		return true, nil
-	case compactorschedulerpb.PLANNING:
-		plannedJobs, planErr := e.executePlanningJob(jobCtx, c, resp.Key.Id)
+	case compactorschedulerpb.JOB_TYPE_PLANNING:
+		plannedJobs, planErr := e.executePlanningJob(jobCtx, c, jobTenant)
 		cancelJob(planErr)
 		wg.Wait()
 		if planErr != nil {
 			level.Warn(e.logger).Log("msg", "failed to execute planning job", "job_id", jobID, "tenant", jobTenant, "job_type", jobType, "err", planErr)
 			// Planning jobs only send final status updates on failure
-			e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, compactorschedulerpb.REASSIGN)
+			e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, compactorschedulerpb.UPDATE_TYPE_REASSIGN)
 			return true, planErr
 		}
 
 		// For planning jobs, no final status update is sent - results are communicated via PlannedJobs
-		if err := e.sendPlannedJobs(ctx, resp.Key, plannedJobs); err != nil {
+		if err := e.sendPlannedJobs(ctx, resp.Key, resp.Spec, plannedJobs); err != nil {
 			level.Warn(e.logger).Log("msg", "failed to send planned jobs", "job_id", jobID, "tenant", jobTenant, "num_jobs", len(plannedJobs), "err", err)
 			return true, err
 		}
@@ -351,12 +351,12 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 
 func (e *schedulerExecutor) updateJobStatus(ctx context.Context, key *compactorschedulerpb.JobKey, spec *compactorschedulerpb.JobSpec, updType compactorschedulerpb.UpdateType) error {
 	switch spec.JobType {
-	case compactorschedulerpb.COMPACTION:
+	case compactorschedulerpb.JOB_TYPE_COMPACTION:
 		req := &compactorschedulerpb.UpdateCompactionJobRequest{Key: key, Tenant: spec.Tenant, Update: updType}
 		_, err := e.schedulerClient.UpdateCompactionJob(ctx, req)
 		return err
-	case compactorschedulerpb.PLANNING:
-		req := &compactorschedulerpb.UpdatePlanJobRequest{Key: key, Update: updType}
+	case compactorschedulerpb.JOB_TYPE_PLANNING:
+		req := &compactorschedulerpb.UpdatePlanJobRequest{Key: key, Tenant: spec.Tenant, Update: updType}
 		_, err := e.schedulerClient.UpdatePlanJob(ctx, req)
 		return err
 	default:
@@ -367,7 +367,7 @@ func (e *schedulerExecutor) updateJobStatus(ctx context.Context, key *compactors
 func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *MultitenantCompactor, key *compactorschedulerpb.JobKey, spec *compactorschedulerpb.JobSpec) (compactorschedulerpb.UpdateType, error) {
 	if spec.Job == nil || len(spec.Job.BlockIds) == 0 {
 		level.Error(e.logger).Log("msg", "invalid compaction plan, abandoning job", "tenant", spec.Tenant)
-		return compactorschedulerpb.ABANDON, errCompactionJobHasNoBlocks
+		return compactorschedulerpb.UPDATE_TYPE_ABANDON, errCompactionJobHasNoBlocks
 	}
 
 	userID := spec.Tenant
@@ -392,19 +392,19 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 	syncDir := c.metaSyncDirForUser(userID)
 	fetcher, err := block.NewMetaFetcher(userLogger, c.compactorCfg.MetaSyncConcurrency, userBucket, syncDir, reg, fetcherFilters, maxLookback)
 	if err != nil {
-		return compactorschedulerpb.REASSIGN, errors.Wrap(err, "failed to create meta fetcher")
+		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, errors.Wrap(err, "failed to create meta fetcher")
 	}
 
 	syncer, err := newMetaSyncer(userLogger, reg, userBucket, fetcher, nil, c.blocksMarkedForDeletion)
 	if err != nil {
-		return compactorschedulerpb.REASSIGN, errors.Wrap(err, "failed to create syncer")
+		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, errors.Wrap(err, "failed to create syncer")
 	}
 
 	blockIDs := make([]ulid.ULID, len(spec.Job.BlockIds))
 	for i, id := range spec.Job.BlockIds {
 		if err := blockIDs[i].UnmarshalBinary(id); err != nil {
 			level.Error(userLogger).Log("msg", "invalid block ID, abandoning job", "tenant", userID, "err", err)
-			return compactorschedulerpb.ABANDON, errors.Wrapf(err, "failed to parse block ID")
+			return compactorschedulerpb.UPDATE_TYPE_ABANDON, errors.Wrapf(err, "failed to parse block ID")
 		}
 	}
 
@@ -412,15 +412,15 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		// If a block was not found, ABANDON the job, it will never succeed.
 		if errors.Is(err, block.ErrorSyncMetaNotFound) {
 			level.Warn(userLogger).Log("msg", "blocks not found in object storage, abandoning job", "err", err)
-			return compactorschedulerpb.ABANDON, err
+			return compactorschedulerpb.UPDATE_TYPE_ABANDON, err
 		}
-		return compactorschedulerpb.REASSIGN, errors.Wrap(err, "failed to sync metas")
+		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, errors.Wrap(err, "failed to sync metas")
 	}
 
 	jobMetas, err := getJobMetas(syncer, blockIDs)
 	if err != nil {
 		level.Error(userLogger).Log("msg", "blocks not found after sync, abandoning job", "err", err)
-		return compactorschedulerpb.ABANDON, err
+		return compactorschedulerpb.UPDATE_TYPE_ABANDON, err
 	}
 
 	var splitNumShards uint32
@@ -430,12 +430,12 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 
 	job, err := buildCompactionJobFromMetas(userID, key.Id, jobMetas, spec, splitNumShards)
 	if err != nil {
-		return compactorschedulerpb.REASSIGN, err
+		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, err
 	}
 
 	compactor, err := c.newBucketCompactor(ctx, userID, userLogger, userBucket, syncer, reg)
 	if err != nil {
-		return compactorschedulerpb.REASSIGN, errors.Wrap(err, "failed to create bucket compactor")
+		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, errors.Wrap(err, "failed to create bucket compactor")
 	}
 
 	// Track that a compaction job has started
@@ -450,7 +450,7 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		}
 		compactor.metrics.groupCompactionsLastSuccess.SetToCurrentTime()
 		level.Info(userLogger).Log("msg", "compaction job completed", "tenant", userID, "compacted_blocks", len(compactedBlockIDs))
-		return compactorschedulerpb.COMPLETE, nil
+		return compactorschedulerpb.UPDATE_TYPE_COMPLETE, nil
 	}
 
 	// At this point the compaction has failed. Track the failure.
@@ -461,12 +461,12 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 	}
 
 	if handleErr := compactor.handleKnownCompactionErrors(ctx, job, err); handleErr == nil {
-		return compactorschedulerpb.ABANDON, err
+		return compactorschedulerpb.UPDATE_TYPE_ABANDON, err
 	}
 
 	// All other errors should be reassigned
 	level.Warn(userLogger).Log("msg", "compaction job failed with unhandled error, reassigning", "err", err)
-	return compactorschedulerpb.REASSIGN, err
+	return compactorschedulerpb.UPDATE_TYPE_REASSIGN, err
 }
 
 func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *MultitenantCompactor, tenant string) ([]*compactorschedulerpb.PlannedCompactionJob, error) {
@@ -551,10 +551,11 @@ func serializeBlockIds(metas []*block.Meta) [][]byte {
 }
 
 // sendPlannedJobs sends the planned compaction jobs back to the scheduler with retries.
-func (e *schedulerExecutor) sendPlannedJobs(ctx context.Context, key *compactorschedulerpb.JobKey, plannedJobs []*compactorschedulerpb.PlannedCompactionJob) error {
+func (e *schedulerExecutor) sendPlannedJobs(ctx context.Context, key *compactorschedulerpb.JobKey, spec *compactorschedulerpb.JobSpec, plannedJobs []*compactorschedulerpb.PlannedCompactionJob) error {
 	req := &compactorschedulerpb.PlannedJobsRequest{
-		Key:  key,
-		Jobs: plannedJobs,
+		Key:    key,
+		Tenant: spec.Tenant,
+		Jobs:   plannedJobs,
 	}
 
 	return e.retryable.WithContext(ctx).Run(func() error {
