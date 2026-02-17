@@ -73,7 +73,7 @@
           expr: |||
             sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (increase(cortex_compactor_runs_failed_total{reason!="shutdown"}[%(range_interval)s])) > 0
           ||| %  $._config {
-            range_interval: $.alertRangeInterval(5),
+            range_interval: $.alertRangeInterval(10),
           },
           labels: {
             severity: 'critical',
