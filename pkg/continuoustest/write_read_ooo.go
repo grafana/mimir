@@ -323,7 +323,7 @@ func (t *WriteReadOOOTest) getOutOfOrderQueryTimeRanges(now time.Time) (ranges [
 	// This verifies that all 20s samples (:00, :20, :40) are present.
 	if adjustedQueryMinTime.Before(oooLagBorder) {
 		ranges = append(ranges, [2]time.Time{
-			adjustedQueryMinTime,
+			maxTime(adjustedQueryMinTime, oooLagBorder.Add(-24*time.Hour)),
 			minTime(adjustedQueryMaxTime, oooLagBorder),
 		})
 	}
