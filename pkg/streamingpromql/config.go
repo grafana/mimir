@@ -42,7 +42,7 @@ type EngineOpts struct {
 func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&o.EnablePruneToggles, "querier.mimir-query-engine.enable-prune-toggles", true, "Enable pruning query expressions that are toggled off with constants.")
 	f.BoolVar(&o.EnableCommonSubexpressionElimination, "querier.mimir-query-engine.enable-common-subexpression-elimination", true, "Enable common subexpression elimination when evaluating queries.")
-	f.BoolVar(&o.EnableSubsetSelectorElimination, "querier.mimir-query-engine.enable-subset-selector-elimination", true, "Enable subset selector elimination when evaluating queries.")
+	f.BoolVar(&o.EnableSubsetSelectorElimination, "querier.mimir-query-engine.enable-subset-selector-elimination", false, "Enable subset selector elimination when evaluating queries.")
 	f.BoolVar(&o.EnableNarrowBinarySelectors, "querier.mimir-query-engine.enable-narrow-binary-selectors", false, "Enable generating selectors for one side of a binary expression based on results from the other side.")
 	f.BoolVar(&o.EnableEliminateDeduplicateAndMerge, "querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge", true, "Enable eliminating redundant DeduplicateAndMerge nodes from the query plan when it can be proven that each input series produces a unique output series.")
 	f.BoolVar(&o.EnableReduceMatchers, "querier.mimir-query-engine.enable-reduce-matchers", true, "Enable eliminating duplicate or redundant matchers that are part of selector expressions.")

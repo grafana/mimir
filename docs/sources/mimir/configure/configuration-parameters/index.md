@@ -1923,7 +1923,7 @@ mimir_query_engine:
 
   # (experimental) Enable subset selector elimination when evaluating queries.
   # CLI flag: -querier.mimir-query-engine.enable-subset-selector-elimination
-  [enable_subset_selector_elimination: <boolean> | default = true]
+  [enable_subset_selector_elimination: <boolean> | default = false]
 
   # (experimental) Enable generating selectors for one side of a binary
   # expression based on results from the other side.
