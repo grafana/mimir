@@ -129,6 +129,7 @@
 * [ENHANCEMENT] Store-gateway: Add "OOO" column to the tenant blocks page to indicate whether each block was created from out-of-order samples. #14283
 * [ENHANCEMENT] Ingester: Optimize ingestion from Kafka in clusters with mixed size tenants. #13924 #13961 #14302
 * [ENHANCEMENT] MQE: Add experimental support for eliminating selectors that are a subset of another selector. Enable with `-querier.mimir-query-engine.enable-subset-selector-elimination=true`. #14377
+* [BUGFIX] Mimir: Fix nil pointer dereference when `-target` is set to an empty string. #14381
 * [BUGFIX] API: Fixed web UI links not respecting `-server.path-prefix` configuration. #14090
 * [BUGFIX] Distributor: Fix issue where distributors didn't send custom values of native histograms. #13849
 * [BUGFIX] Compactor: Fix potential concurrent map writes. #13053
