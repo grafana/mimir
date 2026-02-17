@@ -710,7 +710,13 @@ func IsSafeToApplyFilteringAfterFunction(functionCall *core.FunctionCall, group 
 			return false, true
 		}
 
-		return !group.haveAnyFiltersForLabel(destinationLabelName), true
+		if group.haveAnyFiltersForLabel(destinationLabelName) {
+			return false, true
+		}
+
+		// These functions drop the __name__ label if delayed name removal is not enabled, so it's only safe to apply
+		// filtering after these functions if delayed name removal is enabled, or there is no filtering by __name__.
+		return delayedNameRemovalEnabled || !group.haveAnyFiltersForLabel(model.MetricNameLabel), true
 
 	case functions.FUNCTION_HISTOGRAM_FRACTION, functions.FUNCTION_HISTOGRAM_QUANTILE:
 		// These functions drop the 'le' label on native histograms, so we can never apply filtering after the function
