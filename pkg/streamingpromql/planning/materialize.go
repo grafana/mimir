@@ -149,3 +149,17 @@ func (f RangeAwareNodeMaterializerFunc[T]) Materialize(n Node, materializer *Mat
 
 	return f(node, materializer, timeRange, params, overrideRangeParams)
 }
+
+type DisabledMaterializer struct {
+	err error
+}
+
+var _ NodeMaterializer = DisabledMaterializer{}
+
+func NewDisabledMaterializer(err error) DisabledMaterializer {
+	return DisabledMaterializer{err: err}
+}
+
+func (d DisabledMaterializer) Materialize(Node, *Materializer, types.QueryTimeRange, *OperatorParameters, RangeParams) (OperatorFactory, error) {
+	return nil, d.err
+}
