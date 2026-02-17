@@ -127,7 +127,8 @@ func buildOutMatchers(inMatchers []*labels.Matcher, allowedOutMatchers []*labels
 	dedupedMatchers, dropped := dedupeMatchers(inMatchers)
 
 	// allowedInResultSet maps the relevant values of matchers returned by setReduce.
-	// The innermost map value tracks whether that matcher is already represented in outMatchers.
+	// We use core.LabelMatcher as the key here because labels.Matcher contains a FastRegexMatcher instance
+	// which means that two otherwise identical matchers are considered different.
 	// We do it this way instead of using the matcher string via m.String()
 	// to avoid unnecessary memory allocations when building the string.
 	allowedInResultSet := make(map[core.LabelMatcher]bool, len(allowedOutMatchers))
