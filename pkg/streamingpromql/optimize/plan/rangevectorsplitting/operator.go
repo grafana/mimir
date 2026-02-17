@@ -8,7 +8,6 @@ package rangevectorsplitting
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -429,20 +428,19 @@ func (m *FunctionOverRangeVectorSplit[T]) emitAnnotation(generator types.Annotat
 func (m *FunctionOverRangeVectorSplit[T]) Finalize(ctx context.Context) error {
 	logger := spanlogger.FromContext(ctx, m.logger)
 
-	if !m.metadataConsumed {
-		// This should never happen
-		return errors.New("unexpected: Finalize() called on FunctionOverRangeVectorSplit but metadata has not been read")
-	}
-
 	// Don't cache if we have cached already
 	if m.finalized {
 		return nil
 	}
 
-	// Don't cache if not all series have been processed. It's possible for not all series to be processed if a binary
-	// operation short-circuits evaluation early. A cached partial intermediate result might result in an incorrect
-	// calculation for a query spanning a different time range.
+	// Don't cache in cases where not all series have been processed. It's possible for not all series to be processed
+	// if a binary operation short-circuits evaluation early. A cached partial intermediate result might result in an
+	// incorrect calculation for a query spanning a different time range.
 	// TODO: It might be worth processing any remaining series so we can cache the result.
+	if !m.metadataConsumed {
+		level.Debug(logger).Log("msg", "skipping caching as SeriesMetadata() was not called")
+		return nil
+	}
 	if m.currentSeriesIdx < len(m.seriesToSplits) {
 		level.Debug(logger).Log("msg", "skipping caching as not all series processed by NextSeries()")
 		return nil

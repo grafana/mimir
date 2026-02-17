@@ -1194,6 +1194,28 @@ func TestQuerySplitting_NoMatchingSeries_CachesEmptyResult(t *testing.T) {
 	verifyCacheStats(t, testCache, 4, 2, 2)
 }
 
+func TestQuerySplitting_NoMetadataConsumption_DoesNotCache(t *testing.T) {
+	testCache, mimirEngine := setupEngineAndCache(t)
+	promStorage := promqltest.LoadedStorage(t, `
+		load 10m
+			test_metric{env="prod"} 0+1x100
+	`)
+	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
+
+	baseT := timestamp.Time(0)
+
+	// nonexistent_metric returns no series, so the binary op short-circuits.
+	// This means Finalize() is called on the sum_over_time split operator without SeriesMetadata() being called first.
+	expr := "nonexistent_metric + sum_over_time(test_metric[24h])"
+	ts := baseT.Add(25 * time.Hour)
+
+	result := runInstantQuery(t, mimirEngine, promStorage, expr, ts)
+	require.NoError(t, result.Err)
+	require.Empty(t, result.Value)
+	// No cache operations should occur since SeriesMetadata() was never called on the split operator.
+	verifyCacheStats(t, testCache, 11, 0, 0)
+}
+
 func TestQuerySplitting_PartialConsumption_DoesNotCache(t *testing.T) {
 	testCache, mimirEngine := setupEngineAndCache(t)
 
