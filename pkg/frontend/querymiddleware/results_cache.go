@@ -653,8 +653,8 @@ func (e *Extent) toResponse() (Response, error) {
 	return resp, nil
 }
 
-// cacheHashKey hashes key into something you can store in the results cache.
-func cacheHashKey(key string) string {
+// hashCacheKey hashes key into something you can store in the results cache.
+func hashCacheKey(key string) string {
 	hasher := fnv.New64a()
 	_, _ = hasher.Write([]byte(key)) // This'll never error.
 
