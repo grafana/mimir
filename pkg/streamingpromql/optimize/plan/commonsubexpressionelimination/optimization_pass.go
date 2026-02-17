@@ -575,6 +575,11 @@ func IsSafeToApplyFilteringAfter(node planning.Node, group SharedSelectorGroup, 
 				}
 			}
 
+			// Aggregations always implicitly drop __name__ unless delayed name removal is enabled.
+			if !delayedNameRemovalEnabled && group.haveAnyFiltersForLabel(model.MetricNameLabel) {
+				return false
+			}
+
 			return true
 		}
 

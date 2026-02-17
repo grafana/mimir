@@ -1841,6 +1841,17 @@ func TestIsSafeToApplyFilteringAfter(t *testing.T) {
 			expectedSafeWithDelayedNameRemovalDisabled: true,
 			expectedSafeWithDelayedNameRemovalEnabled:  true,
 		},
+		"aggregation with 'without' and filter on __name__": {
+			node: &core.AggregateExpression{
+				AggregateExpressionDetails: &core.AggregateExpressionDetails{
+					Op:      core.AGGREGATION_SUM,
+					Without: true,
+				},
+			},
+			group: groupWithFilterOnMetricName,
+			expectedSafeWithDelayedNameRemovalDisabled: false,
+			expectedSafeWithDelayedNameRemovalEnabled:  true,
+		},
 		"aggregation with 'without' and sole filter label does not appear in grouping labels": {
 			node: &core.AggregateExpression{
 				AggregateExpressionDetails: &core.AggregateExpressionDetails{
