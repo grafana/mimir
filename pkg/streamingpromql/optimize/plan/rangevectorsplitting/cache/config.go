@@ -23,18 +23,15 @@ var (
 	errUnsupportedBackend = errors.New("unsupported cache backend")
 )
 
-// Config is the config for the results cache.
 type Config struct {
 	cache.BackendConfig `yaml:",inline"`
 	Compression         cache.CompressionConfig `yaml:",inline"`
 }
 
-// RegisterFlags registers flags.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.RegisterFlagsWithPrefix(f, "querier.mimir-query-engine.intermediate-results-cache.")
 }
 
-// RegisterFlagsWithPrefix registers flags with the given prefix.
 func (cfg *Config) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.StringVar(&cfg.Backend, prefix+"backend", "", fmt.Sprintf("Backend for intermediate results cache, if not empty. Supported values: %s.", strings.Join(supportedResultsCacheBackends, ", ")))
 	cfg.Memcached.RegisterFlagsWithPrefix(prefix+"memcached.", f)
