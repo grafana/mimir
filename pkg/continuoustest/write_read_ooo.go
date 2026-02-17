@@ -335,8 +335,6 @@ func (t *WriteReadOOOTest) getOutOfOrderQueryTimeRanges(now time.Time) (ranges [
 		instants = append(instants, denseInstant)
 	}
 
-	// TODO: instant query for the latest _non :00_ timestamp that we expect to be written.
-
 	// Instant query at the border.
 	borderInstant := alignTimestampToInterval(oooLagBorder, outOfOrderWriteInterval)
 	if !borderInstant.Before(adjustedQueryMinTime) && !borderInstant.After(adjustedQueryMaxTime) {
