@@ -231,6 +231,11 @@ func calculateInnerTimeRange(evalTime int64, timeParams planning.RangeParams) (s
 //   - Split (7:59:59.999, 9:59:59.999] gets samples where 8:00:00.000 <= t <= 9:59:59.999
 //   - This would map exactly to a two hour block:
 //   - Block [8:00:00.000, 10:00:00.000) contains samples where 8:00:00.000 <= t < 10:00:00.000
+//
+// Ranges that would be within the OOO window are not cached to avoid stale data being returned.
+// The main results cache does cache results within the OOO window with a short TTL. If we also cached OOO results in
+// the intermediate cache, we could end up serving stale results for longer as a cached result returned from the
+// intermediate cache can end up in a result that's then cached in the result cache.
 func computeSplitRanges(startTs, endTs int64, splitInterval time.Duration, oooThreshold int64) []SplitRange {
 	splitIntervalMs := splitInterval.Milliseconds()
 	alignedStart := computeBlockAlignedStart(startTs, splitInterval)

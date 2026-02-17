@@ -194,6 +194,7 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) erro
 
 	for _, splitRange := range m.splitRanges {
 		if splitRange.Cacheable {
+			// TODO: considering using a single call to retrieve all the cache entries.
 			metadata, annotations, results, found, err := m.cache.Get(ctx, m.FuncId, m.innerCacheKey, splitRange.Start, splitRange.End, m.enableDelayedNameRemoval, m.cacheStats)
 			if err != nil {
 				return err
@@ -619,7 +620,9 @@ type UncachedSplit[T any] struct {
 	// Data to cache
 	rangeResults     [][]T
 	rangeAnnotations []*annotations.Annotations
-	seriesMetadata   []querierpb.SeriesMetadata
+	// TODO: consider building a separate seriesMetadata for each range to reduce cache entry size.
+	// https://github.com/grafana/mimir/pull/13472#discussion_r2796712175
+	seriesMetadata []querierpb.SeriesMetadata
 
 	// localToMergedIdx maps split-local series index to the parent's merged series index.
 	// Used by emitAndCaptureAnnotation to look up the correct metric name when generating results.
@@ -667,8 +670,11 @@ func (p *UncachedSplit[T]) AfterPrepare(ctx context.Context) error {
 	return p.operator.AfterPrepare(ctx)
 }
 
-func (p *UncachedSplit[T]) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
-	seriesMetadata, err := p.operator.SeriesMetadata(ctx, matchers)
+func (p *UncachedSplit[T]) SeriesMetadata(ctx context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {
+	// Ignore optional matchers for now, to ensure we get the same data no matter if narrow selectors is enabled or not.
+	// Otherwise we could have cache key collisions between different queries which have different additional matchers.
+	// TODO: add additional matchers to cache key so this isn't a problem anymore
+	seriesMetadata, err := p.operator.SeriesMetadata(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
