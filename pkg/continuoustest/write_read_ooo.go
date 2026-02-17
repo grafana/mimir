@@ -176,6 +176,7 @@ func (t *WriteReadOOOTest) RunInner(ctx context.Context, now time.Time, writeLim
 		"inorder_to", t.inOrderSamples.lastWrittenTimestamp,
 		"ooo_from", t.outOfOrderSamples.queryMinTime,
 		"ooo_to", t.outOfOrderSamples.lastWrittenTimestamp,
+		"ooo_now", oooNow,
 	)
 
 	query := querySumFloat(metricName)
@@ -185,10 +186,12 @@ func (t *WriteReadOOOTest) RunInner(ctx context.Context, now time.Time, writeLim
 		errs.Add(err)
 	}
 	for _, timeRange := range inorderRanges {
-		level.Info(t.logger).Log("msg", "dry run inorder range query", "from", timeRange[0], "to", timeRange[1])
+		err := t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1], floatTypeLabel, query, generateSineWaveValue, inorderWriteInterval, &t.inOrderSamples)
+		if err != nil {
+			errs.Add(err)
+		}
 	}
 	for _, ts := range inorderInstants {
-		level.Info(t.logger).Log("msg", "dry run inorder instant query", "ts", ts)
 		err := t.runInstantQueryAndVerifyResult(ctx, ts, floatTypeLabel, query, generateSineWaveValue, inorderWriteInterval, &t.inOrderSamples)
 		if err != nil {
 			errs.Add(err)
@@ -200,7 +203,10 @@ func (t *WriteReadOOOTest) RunInner(ctx context.Context, now time.Time, writeLim
 		errs.Add(err)
 	}
 	for _, timeRange := range oooRanges {
-		level.Info(t.logger).Log("msg", "dry run OOO range query", "from", timeRange[0], "to", timeRange[1])
+		err := t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1], floatTypeLabel, query, generateSineWaveValue, outOfOrderWriteInterval, &t.outOfOrderSamples)
+		if err != nil {
+			errs.Add(err)
+		}
 	}
 	for _, ts := range oooInstants {
 		err := t.runInstantQueryAndVerifyResult(ctx, ts, floatTypeLabel, query, generateSineWaveValue, outOfOrderWriteInterval, &t.outOfOrderSamples)
@@ -402,6 +408,45 @@ func (t *WriteReadOOOTest) runInstantQueryAndVerifyResult(ctx context.Context, t
 	}
 
 	level.Info(logger).Log("msg", "Instant query result check succeeded")
+
+	return nil
+}
+
+func (t *WriteReadOOOTest) runRangeQueryAndVerifyResult(ctx context.Context, start, end time.Time, typeLabel, metricSumQuery string, generateValue generateValueFunc, step time.Duration, records *MetricHistory) error {
+	// Align start, end and step to write interval to avoid false positives when checking results correctness.
+	start = maxTime(records.queryMinTime, alignTimestampToInterval(start, step))
+	end = minTime(records.queryMaxTime, alignTimestampToInterval(end, step))
+	if end.Before(start) {
+		return nil
+	}
+
+	queryStep := getQueryStep(start, end, step)
+
+	sp, ctx := spanlogger.New(ctx, t.logger, tracer, "WriteReadOOOTest.runRangeQueryAndVerifyResult")
+	defer sp.Finish()
+
+	logger := log.With(sp, "query", metricSumQuery, "start", start.UnixMilli(), "end", end.UnixMilli(), "step", queryStep, "type", typeLabel, "protocol", t.client.Protocol())
+	level.Debug(logger).Log("msg", "Running range query")
+
+	t.metrics.queriesTotal.WithLabelValues(typeLabel).Inc()
+	queryStart := time.Now()
+	matrix, err := t.client.QueryRange(ctx, metricSumQuery, start, end, queryStep, WithResultsCacheEnabled(false))
+	t.metrics.queriesLatency.WithLabelValues(typeLabel, "false").Observe(time.Since(queryStart).Seconds())
+	if err != nil {
+		t.metrics.queriesFailedTotal.WithLabelValues(typeLabel).Inc()
+		level.Warn(logger).Log("msg", "Failed to execute range query", "err", err)
+		return fmt.Errorf("failed to execute range query: %w", err)
+	}
+
+	t.metrics.queryResultChecksTotal.WithLabelValues(typeLabel).Inc()
+	_, err = verifySamplesSum(matrix, t.cfg.NumSeries, queryStep, generateValue, nil, nil)
+	if err != nil {
+		t.metrics.queryResultChecksFailedTotal.WithLabelValues(typeLabel).Inc()
+		level.Warn(logger).Log("msg", "Range query result check failed", "err", err)
+		return fmt.Errorf("range query result check failed: %w", err)
+	}
+
+	level.Info(logger).Log("msg", "Range query result check succeeded")
 
 	return nil
 }
