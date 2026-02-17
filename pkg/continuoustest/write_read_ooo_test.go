@@ -12,6 +12,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -435,5 +436,59 @@ func TestWriteReadOOOTest_getOutOfOrderQueryTimeRanges(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Empty(t, instants)
+	})
+}
+
+func TestWriteReadOOOTest_Run(t *testing.T) {
+	logger := log.NewNopLogger()
+
+	t.Run("writes initial samples and issues basic queries when no history is present", func(t *testing.T) {
+		client := newMockClient()
+		client.On("WriteSeries", mock.Anything, mock.Anything, mock.Anything).Return(200, nil)
+		client.On("QueryRange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
+		client.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{}, nil)
+
+		reg := prometheus.NewPedanticRegistry()
+		test := NewWriteReadOOOTest(cfgOOO, client, logger, reg)
+
+		now := time.Unix(1000*60, 0)
+		_ = test.Run(context.Background(), now)
+
+		expectedInOrderSeries := generateSineWaveSeries(oooFloatMetricName, now, cfgOOO.NumSeries, prompb.Label{Name: "protocol", Value: "prometheus"})
+		client.AssertCalled(t, "WriteSeries", mock.Anything, expectedInOrderSeries, mock.Anything)
+		require.Equal(t, now, test.inOrderSamples.lastWrittenTimestamp)
+
+		// After one write, queryMinTime == queryMaxTime == now, so range is [now, now] and instants are at now.
+		expectedQuery := querySumFloat(oooFloatMetricName)
+		client.AssertCalled(t, "QueryRange", mock.Anything, expectedQuery, now, now, mock.Anything, mock.Anything)
+		client.AssertCalled(t, "Query", mock.Anything, expectedQuery, now, mock.Anything)
+	})
+
+	t.Run("partial history exists", func(t *testing.T) {
+		client := newMockClient()
+		client.On("WriteSeries", mock.Anything, mock.Anything, mock.Anything).Return(200, nil)
+		client.On("QueryRange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
+		client.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{}, nil)
+
+		reg := prometheus.NewPedanticRegistry()
+		test := NewWriteReadOOOTest(cfgOOO, client, logger, reg)
+
+		now := time.Unix(1000*60+40, 0)
+		test.inOrderSamples.lastWrittenTimestamp = alignTimestampToInterval(now, inorderWriteInterval)
+		test.inOrderSamples.queryMinTime = now.Add(-30 * time.Minute)
+		test.inOrderSamples.queryMaxTime = test.inOrderSamples.lastWrittenTimestamp
+
+		_ = test.Run(context.Background(), now)
+
+		oooNow := now.Add(-cfgOOO.MaxOOOLag)
+		expectedOOOTimestamp := alignTimestampToInterval(oooNow, outOfOrderWriteInterval)
+		expectedOOOSeries := generateSineWaveSeries(oooFloatMetricName, expectedOOOTimestamp, cfgOOO.NumSeries, prompb.Label{Name: "protocol", Value: "prometheus"})
+		client.AssertCalled(t, "WriteSeries", mock.Anything, expectedOOOSeries, mock.Anything)
+
+		expectedQuery := querySumFloat(oooFloatMetricName)
+		inOrderQueryMax := alignTimestampToInterval(now, inorderWriteInterval)
+		client.AssertCalled(t, "QueryRange", mock.Anything, expectedQuery, now.Add(-30*time.Minute), inOrderQueryMax, mock.Anything, mock.Anything)
+		client.AssertCalled(t, "Query", mock.Anything, expectedQuery, inOrderQueryMax, mock.Anything)
+		client.AssertCalled(t, "Query", mock.Anything, expectedQuery, now.Add(-30*time.Minute), mock.Anything)
 	})
 }
