@@ -26,7 +26,6 @@ type Backend interface {
 	SetMultiAsync(data map[string][]byte, ttl time.Duration)
 }
 
-// TODO: see if we can use QueryLimitsProvider directly instead of this interface (currently introduces circular dependency but we'll be moving files around packages)
 type TTLProvider interface {
 	GetMinResultsCacheTTL(ctx context.Context) (time.Duration, error)
 }
