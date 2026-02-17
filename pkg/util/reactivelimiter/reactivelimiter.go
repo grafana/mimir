@@ -5,6 +5,7 @@ package reactivelimiter
 import (
 	"context"
 	"flag"
+	"fmt"
 	"time"
 
 	"github.com/failsafe-go/failsafe-go/adaptivelimiter"
@@ -27,6 +28,7 @@ type Config struct {
 	InitialLimit        uint    `yaml:"initial_limit" category:"experimental"`
 	MaxLimitFactor      float64 `yaml:"max_limit_factor" category:"experimental"`
 	MaxLimitFactorDecay float64 `yaml:"max_limit_factor_decay" category:"experimental"`
+	MinLimitFactor      float64 `yaml:"min_limit_factor" category:"experimental"`
 
 	RecentWindowMinDuration time.Duration `yaml:"recent_window_min_duration" category:"experimental"`
 	RecentWindowMaxDuration time.Duration `yaml:"recent_window_max_duration" category:"experimental"`
@@ -37,6 +39,13 @@ type Config struct {
 
 	InitialRejectionFactor float64 `yaml:"initial_rejection_factor" category:"experimental"`
 	MaxRejectionFactor     float64 `yaml:"max_rejection_factor" category:"experimental"`
+}
+
+func (cfg *Config) Validate() error {
+	if cfg.MinLimitFactor < 1 {
+		return fmt.Errorf("min_limit_factor must be >= 1")
+	}
+	return nil
 }
 
 func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
@@ -51,6 +60,7 @@ func (cfg *Config) RegisterFlagsWithPrefixAndRejectionFactors(prefix string, f *
 	f.UintVar(&cfg.InitialLimit, prefix+"initial-limit", 20, "Initial inflight requests limit")
 	f.Float64Var(&cfg.MaxLimitFactor, prefix+"max-limit-factor", 5, "The maximum inflight limit as a multiple of current inflight requests")
 	f.Float64Var(&cfg.MaxLimitFactorDecay, prefix+"max-limit-factor-decay", 1, "Logarithmic decay applied to the maxLimitFactor based on current inflight requests")
+	f.Float64Var(&cfg.MinLimitFactor, prefix+"min-limit-factor", 1.2, "Minimum limit factor when max-limit-factor-decay is applied")
 
 	f.DurationVar(&cfg.RecentWindowMinDuration, prefix+"recent-window-min-duration", time.Second, "Minimum duration of the window that is used to collect recent response time samples")
 	f.DurationVar(&cfg.RecentWindowMaxDuration, prefix+"recent-window-max-duration", 30*time.Second, "Maximum duration of the window that is used to collect recent response time samples")
@@ -83,7 +93,7 @@ func buildBase(c *Config, logger log.Logger) adaptivelimiter.Builder[any] {
 	return adaptivelimiter.NewBuilder[any]().
 		WithLimits(c.MinLimit, c.MaxLimit, c.InitialLimit).
 		WithMaxLimitFactor(c.MaxLimitFactor).
-		WithMaxLimitFactorDecay(c.MaxLimitFactorDecay).
+		WithMaxLimitFactorDecay(c.MaxLimitFactorDecay, c.MinLimitFactor).
 		WithRecentWindow(c.RecentWindowMinDuration, c.RecentWindowMaxDuration, c.RecentWindowMinSamples).
 		WithRecentQuantile(c.RecentQuantile).
 		WithBaselineWindow(c.BaselienWindowAge).
