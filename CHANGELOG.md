@@ -181,6 +181,7 @@
 
 ### Mixin
 
+* [CHANGE] Alerts: Change `MimirCompactorNotRunningCompaction` to fire after ten minutes of sustained failures. This makes the alert resolve quickly during transient failures. #14391
 * [CHANGE] Alerts: Renamed the following alerts to fit within 40 characters: #13363
   * `MimirAlertmanagerPartialStateMergeFailing` → `MimirAlertmanagerStateMergeFailing`
   * `MimirServerInvalidClusterValidationLabelRequests` → `MimirServerInvalidClusterLabelRequests`
@@ -281,6 +282,7 @@
 
 ### Documentation
 
+* [ENHANCEMENT] Runbooks: Add section on "Ring Failures" to `MimirCompactorNotRunningCompaction` runbook. #14391
 * [ENHANCEMENT] Add Azure object store workload identity example configuration. #13135
 * [ENHANCEMENT] Ruler: clarify that internal distributor applies to both operational modes. #13300
 * [ENHANCEMENT] Native histograms: Set expectations on querying classic histograms versus NHCBs. #13689

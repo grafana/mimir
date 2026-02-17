@@ -67,17 +67,20 @@
         ]
       ] + [
         {
-          // Alert if compactor failed to run 2 consecutive compactions excluding shutdowns.
+          // Alert if compactor has sustained failing compactions (excluding shutdowns) in the last 10 minutes.
           alert: $.alertName('CompactorNotRunningCompaction'),
+          'for': '10m',
           expr: |||
-            sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (increase(cortex_compactor_runs_failed_total{reason!="shutdown"}[2h])) >= 2
-          ||| % $._config,
+            sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (increase(cortex_compactor_runs_failed_total{reason!="shutdown"}[%(range_interval)s])) > 0
+          ||| %  $._config {
+            range_interval: $.alertRangeInterval(5),
+          },
           labels: {
             severity: 'critical',
             reason: 'consecutive-failures',
           },
           annotations: {
-            message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s failed to run 2 consecutive compactions.' % $._config,
+            message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s failed to run compactions for the last 10m.' % $._config,
           },
         },
         {

@@ -717,6 +717,14 @@ How to **investigate**:
         ```
         For examples using AWS S3 or Azure, see [How to use the mark-blocks tool](#how-to-use-the-mark-blocks-tool).
     - Further reading: [Compaction algorithm](../../references/architecture/components/compactor/#compaction-algorithm).
+ 
+  - Ring failures:
+    - **How to detect**: 
+      - Search compactor logs for `unhealthy instances`. 
+      - Check the [compactor ring web page](../../references/http-api/#compactor-ring-status) for unhealthy instances. 
+    - **What it means**: The compactor ring contains unhealthy instances and compactor(s) cannot check the tenant-shard relationship. 
+    - **How to mitigate**: Ring failures are typically transient and the alert self-resolves after ten minutes. Otherwise: consider manually forgetting unexpected instances in an `Unhealthy` state on the compactor ring web page.
+ 
   - Compactor network disk unresponsive:
     - **How to detect**: A telltale sign is having many cores of sustained kernel-mode CPU usage by the compactor process. Check the metric `rate(container_cpu_system_seconds_total{pod="<pod>"}[$__rate_interval])` for the affected pod.
     - **What it means**: The compactor process has frozen because it's blocked on kernel-mode flushes to an unresponsive network block storage device.
