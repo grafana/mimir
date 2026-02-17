@@ -38,7 +38,7 @@ RUN GOARCH=$(go env GOARCH) && \
 RUN curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b /usr/bin v2.8.0
 
 # renovate: depName=github.com/containers/skopeo
-ENV SKOPEO_VERSION=v1.15.1
+ENV SKOPEO_VERSION=v1.22.0
 RUN git clone --depth 1 --branch ${SKOPEO_VERSION} https://github.com/containers/skopeo /go/src/github.com/containers/skopeo && \
     DISABLE_DOCS=1 make -C /go/src/github.com/containers/skopeo install && \
     rm -rf /go/pkg /go/src /root/.cache
