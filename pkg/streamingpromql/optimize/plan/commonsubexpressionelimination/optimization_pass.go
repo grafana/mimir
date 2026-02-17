@@ -575,6 +575,12 @@ func IsSafeToApplyFilteringAfter(node planning.Node, group SharedSelectorGroup, 
 				}
 			}
 
+			if group.haveAnyFiltersForLabel(model.MetricNameLabel) {
+				// The __name__ label is always implicitly dropped, even if not given in the grouping labels,
+				// so we have to apply any filters on __name__ before the aggregation.
+				return false
+			}
+
 			return true
 		}
 

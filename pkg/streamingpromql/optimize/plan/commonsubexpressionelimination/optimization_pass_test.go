@@ -1901,6 +1901,18 @@ func TestIsSafeToApplyFilteringAfter(t *testing.T) {
 			expectedSafeWithDelayedNameRemovalDisabled: false,
 			expectedSafeWithDelayedNameRemovalEnabled:  false,
 		},
+		"aggregation with 'without' and filtering on __name__": {
+			// __name__ is always implicitly dropped, even if not given in the grouping labels.
+			node: &core.AggregateExpression{
+				AggregateExpressionDetails: &core.AggregateExpressionDetails{
+					Op:      core.AGGREGATION_SUM,
+					Without: true,
+				},
+			},
+			group: groupWithFilterOnMetricName,
+			expectedSafeWithDelayedNameRemovalDisabled: false,
+			expectedSafeWithDelayedNameRemovalEnabled:  false,
+		},
 	}
 
 	for name, testCase := range testCases {
