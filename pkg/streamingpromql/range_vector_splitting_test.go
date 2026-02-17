@@ -902,8 +902,7 @@ func TestQuerySplitting_EvalsRunTwice(t *testing.T) {
 				}
 				clear(evalCounts)
 			}
-			for i := 0; i < len(lines); i++ {
-				line := lines[i]
+			for i, line := range lines {
 
 				if strings.HasPrefix(line, "load ") || line == "clear" {
 					checkAndClear(i + 1)
