@@ -54,7 +54,7 @@ jobs:
     - uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6
       with:
         go-version: ${{ needs.goversion.outputs.version }}
-    - uses: helm/kind-action@92086f6be054225fa813e0a4b13787fc9088faab # v1.13.0
+    - uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
     - name: Download yq
       uses: dsaltares/fetch-gh-release-asset@aa2ab1243d6e0d5b405b973c89fa4d06a2d0fff7 # 1.1.2
       with:
