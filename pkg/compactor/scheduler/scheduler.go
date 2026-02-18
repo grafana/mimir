@@ -32,6 +32,7 @@ var (
 	errFailedCancelLease   = status.Error(codes.Internal, "failed to cancel job lease")
 	errFailedCompletingJob = status.Error(codes.Internal, "failed to complete job")
 	errFailedLeasingJob    = status.Error(codes.Internal, "failed to lease job")
+	errFailedOfferingJobs  = status.Error(codes.Internal, "failed to offer jobs")
 	errLeaseNotFound       = status.Error(codes.NotFound, "lease was not found")
 	errNotRunning          = status.Error(codes.Unavailable, "the compactor scheduler is not currently running (starting or shutting down)")
 )
@@ -259,7 +260,7 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 	_, found, err := s.rotator.OfferCompactionJobs(req.Tenant, jobs, req.Key.Epoch)
 	if err != nil {
 		level.Error(s.logger).Log("msg", "failed offering result of plan job", "err", err)
-		return nil, errFailedCompletingJob
+		return nil, errFailedOfferingJobs
 	} else if !found {
 		if s.isRunning() {
 			return nil, errLeaseNotFound
