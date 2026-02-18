@@ -1961,6 +1961,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] How long a beacon lives before being garbage collected. (default 10m0s)
   -memberlist.propagation-delay-tracker.enabled
     	[experimental] Enable the propagation delay tracker to measure gossip propagation delay.
+  -memberlist.propagation-delay-tracker.log-beacons-latency-longer-than duration
+    	[experimental] Log warning when beacon propagation delay exceeds this threshold. 0 disables logging.
   -memberlist.pullpush-interval duration
     	How often to use pull/push sync. (default 30s)
   -memberlist.randomize-node-name
