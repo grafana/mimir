@@ -158,7 +158,7 @@ func NewLazyBinaryReader(
 	}
 
 	g.Go(func() error {
-		tryDownloadSparseHeader(ctx, logger, bkt, meta.ULID, sparseHeaderPath)
+		tryDownloadSparseHeader(ctx, logger, bkt, meta, sparseHeaderPath)
 		return nil
 	})
 	if err := g.Wait(); err != nil {
