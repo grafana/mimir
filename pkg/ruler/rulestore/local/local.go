@@ -21,30 +21,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
-// fileLoader implements promRules.GroupLoader interface.
-// It loads rule groups from files and provides a parser for PromQL expressions.
-type fileLoader struct {
-	parser parser.Parser
-}
-
-// NewFileLoader creates a new fileLoader with the given parser.
-func NewFileLoader(p parser.Parser) *fileLoader {
-	if p == nil {
-		p = promqlext.NewPromQLParser()
-	}
-	return &fileLoader{
-		parser: p,
-	}
-}
-
-func (fl *fileLoader) Load(identifier string, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*rulefmt.RuleGroups, []error) {
-	return rulefmt.ParseFile(identifier, ignoreUnknownFields, nameValidationScheme, fl.parser)
-}
-
-func (fl *fileLoader) Parse(query string) (parser.Expr, error) {
-	return fl.parser.ParseExpr(query)
-}
-
 // Client expects to load already existing rules located at:
 //
 //	cfg.Directory / userID / namespace
@@ -53,14 +29,14 @@ type Client struct {
 	loader promRules.GroupLoader
 }
 
-func NewLocalRulesClient(cfg rulestore.LocalStoreConfig, loader promRules.GroupLoader) (*Client, error) {
+func NewLocalRulesClient(cfg rulestore.LocalStoreConfig) (*Client, error) {
 	if cfg.Directory == "" {
 		return nil, errors.New("directory required for local rules config")
 	}
 
 	return &Client{
 		cfg:    cfg,
-		loader: loader,
+		loader: newFileLoader(),
 	}, nil
 }
 
@@ -205,4 +181,25 @@ func (l *Client) loadRawRulesGroupsForUserAndNamespace(_ context.Context, userID
 		return nil, errors.Wrapf(errs[0], "error parsing %s", filename)
 	}
 	return rulegroups, nil
+}
+
+// fileLoader implements promRules.GroupLoader interface.
+// It loads rule groups from files
+type fileLoader struct {
+	parser parser.Parser
+}
+
+// newFileLoader creates a new fileLoader.
+func newFileLoader() *fileLoader {
+	return &fileLoader{
+		parser: promqlext.NewPromQLParser(),
+	}
+}
+
+func (fl *fileLoader) Load(identifier string, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*rulefmt.RuleGroups, []error) {
+	return rulefmt.ParseFile(identifier, ignoreUnknownFields, nameValidationScheme, fl.parser)
+}
+
+func (fl *fileLoader) Parse(query string) (parser.Expr, error) {
+	return fl.parser.ParseExpr(query)
 }

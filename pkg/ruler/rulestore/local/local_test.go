@@ -19,7 +19,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
-	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 func TestClient_LoadRuleGroups(t *testing.T) {
@@ -70,10 +69,9 @@ func TestClient_LoadRuleGroups(t *testing.T) {
 	err = os.Symlink(namespace1, path.Join(dir, user1, namespace2))
 	require.NoError(t, err)
 
-	p := promqlext.NewPromQLParser()
 	client, err := NewLocalRulesClient(rulestore.LocalStoreConfig{
 		Directory: dir,
-	}, NewFileLoader(p))
+	})
 	require.NoError(t, err)
 
 	t.Run("all rule groups", func(t *testing.T) {
