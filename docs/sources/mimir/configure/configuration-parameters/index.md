@@ -4061,6 +4061,11 @@ propagation_delay_tracker:
   # (experimental) How long a beacon lives before being garbage collected.
   # CLI flag: -memberlist.propagation-delay-tracker.beacon-lifetime
   [beacon_lifetime: <duration> | default = 10m]
+
+  # (experimental) Log warning when beacon propagation delay exceeds this
+  # threshold. 0 disables logging.
+  # CLI flag: -memberlist.propagation-delay-tracker.log-beacons-latency-longer-than
+  [log_beacons_latency_longer_than: <duration> | default = 0s]
 ```
 
 ### limits
