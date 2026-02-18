@@ -8490,7 +8490,7 @@
               "kind": "field",
               "name": "sasl_oauthbearer_file_path",
               "required": false,
-              "desc": "Path to a file containing an OAuth token to authenticate to Kafka. The file will be read anew on every reauthentication, so it can be updated with fresh tokens. The file must be in JSON format, adhering to this JSON schema: {\"type\": \"object\", \"required\": [\"token\"], \"properties\": {\"token\": {\"type\": \"string\"}, \"zid\": {\"type\": \"string\"}, \"extensions\": {\"type\": \"object\", \"additionalProperties\": {\"type\": \"string\"}}}}",
+              "desc": "Path to a file containing an OAuth token to authenticate to Kafka. The file is read anew on every reauthentication, so it can be updated with fresh tokens. The file must be in JSON format, adhering to this JSON schema: {\"type\": \"object\", \"required\": [\"token\"], \"properties\": {\"token\": {\"type\": \"string\"}, \"zid\": {\"type\": \"string\"}, \"extensions\": {\"type\": \"object\", \"additionalProperties\": {\"type\": \"string\"}}}}",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "ingest-storage.kafka.sasl-oauthbearer-file-path",

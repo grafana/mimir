@@ -5089,7 +5089,7 @@ kafka:
   [sasl_oauthbearer_extensions: <map of string to string> | default = null]
 
   # Path to a file containing an OAuth token to authenticate to Kafka. The file
-  # will be read anew on every reauthentication, so it can be updated with fresh
+  # is read anew on every reauthentication, so it can be updated with fresh
   # tokens. The file must be in JSON format, adhering to this JSON schema:
   # {"type": "object", "required": ["token"], "properties": {"token": {"type":
   # "string"}, "zid": {"type": "string"}, "extensions": {"type": "object",
