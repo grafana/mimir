@@ -37,6 +37,11 @@ func TestSetContentLength(t *testing.T) {
 			responseHeaders:    []*httpgrpc.Header{{Key: "Content-Length", Values: []string{"not-a-number"}}},
 			expectedContentLen: -1,
 		},
+		"empty gRPC body with negative Content-Length header falls back to -1": {
+			grpcBody:           nil,
+			responseHeaders:    []*httpgrpc.Header{{Key: "Content-Length", Values: []string{"-1000"}}},
+			expectedContentLen: -1,
+		},
 		"empty gRPC body with no Content-Length header falls back to -1": {
 			grpcBody:           nil,
 			expectedContentLen: -1,
