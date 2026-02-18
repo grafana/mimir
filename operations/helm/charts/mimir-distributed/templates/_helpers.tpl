@@ -583,6 +583,7 @@ which allows us to keep generating everything for the default zone.
   "noDownscale"  $rolloutZone.noDownscale
   "downscaleLeader" $downscaleLeader
   "prepareDownscale" $rolloutZone.prepareDownscale
+  "minTimeBetweenZonesDownscale" ($componentSection.zoneAwareReplication.minTimeBetweenZonesDownscale | default "")
   ) -}}
 {{- end -}}
 {{- if $componentSection.zoneAwareReplication.migration.enabled -}}

@@ -12,6 +12,7 @@ ingester:
   zoneAwareReplication:
     enabled: true
     topologyKey: 'kubernetes.io/hostname'
+    minTimeBetweenZonesDownscale: 2h
     zones:
     - name: zone-a
       extraAffinity:
