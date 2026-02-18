@@ -142,9 +142,7 @@ func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) er
 
 		ok, err := e.leaseAndExecuteJob(ctx, c, workerID)
 		if err != nil {
-			if grpcutil.ErrorToStatusCode(err) != codes.NotFound || b.NumRetries() > 10 {
-				level.Warn(e.logger).Log("msg", "failed to lease or execute job", "err", err)
-			}
+			level.Warn(e.logger).Log("msg", "failed to lease or execute job", "err", err)
 		}
 		if ok {
 			b.Reset()
@@ -291,15 +289,15 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 
 	resp, err := e.schedulerClient.LeaseJob(ctx, req)
 	if err != nil {
-		// Leasing a job counts as successful contact if the scheduler returns a job to the compactor or if the scheduler
-		// returns an error indicating no work is available. All other errors are assumed to be a scheduler-side error.
-		if grpcutil.ErrorToStatusCode(err) == codes.NotFound {
-			c.schedulerLastContact.SetToCurrentTime()
-		}
 		return false, err
 	}
 
 	c.schedulerLastContact.SetToCurrentTime()
+
+	if resp.Key == nil || resp.Spec == nil {
+		// No available job
+		return false, nil
+	}
 
 	jobID := resp.Key.Id
 	jobTenant := resp.Spec.Tenant
