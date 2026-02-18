@@ -11,6 +11,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 func TestDurationMiddleware(t *testing.T) {
@@ -50,14 +52,12 @@ func TestDurationMiddleware(t *testing.T) {
 			expectRange:   "rate(http_requests_total[31s])",
 		},
 	}
-	p := parser.NewParser(parser.Options{
-		ExperimentalDurationExpr: true,
-	})
+
 	for name, tc := range testCases {
 		for _, instant := range []bool{false, true} {
 			t.Run(fmt.Sprintf("name=%s instant=%v", name, instant), func(t *testing.T) {
 				var req MetricsQueryRequest
-				expr, err := p.ParseExpr(tc.query)
+				expr, err := promqlext.NewPromQLParser().ParseExpr(tc.query)
 				require.NoError(t, err)
 				if instant {
 					req = NewPrometheusInstantQueryRequest(

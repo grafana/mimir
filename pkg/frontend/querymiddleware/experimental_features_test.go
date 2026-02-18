@@ -12,7 +12,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 func TestContainedExperimentalFunctions(t *testing.T) {
@@ -86,11 +86,9 @@ func TestContainedExperimentalFunctions(t *testing.T) {
 		},
 	}
 
-	p := astmapper.CreateParser()
-
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			expr, err := p.ParseExpr(tc.query)
+			expr, err := promqlext.NewPromQLParser().ParseExpr(tc.query)
 			require.NoError(t, err)
 			var enabled []string
 			for op, opType := range containedExperimentalFeatures(expr) {

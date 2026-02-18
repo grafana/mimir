@@ -46,7 +46,7 @@ var (
 )
 
 func parseQuery(t require.TestingT, query string) parser.Expr {
-	queryExpr, err := astmapper.CreateParser().ParseExpr(query)
+	queryExpr, err := promqlext.NewPromQLParser().ParseExpr(query)
 	require.NoError(t, err)
 	return queryExpr
 }
@@ -493,7 +493,7 @@ func TestMetricsQuery_WithQuery_WithExpr_TransformConsistency(t *testing.T) {
 			}
 
 			// test WithExpr on the same query as WithQuery
-			queryExpr, err := astmapper.CreateParser().ParseExpr(testCase.updatedQuery)
+			queryExpr, err := promqlext.NewPromQLParser().ParseExpr(testCase.updatedQuery)
 			updatedMetricsQuery = mustSucceed(testCase.initialMetricsQuery.WithExpr(queryExpr))
 
 			if err != nil || testCase.expectedErr != nil {

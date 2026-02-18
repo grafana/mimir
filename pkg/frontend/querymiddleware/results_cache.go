@@ -32,6 +32,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 const (
@@ -318,7 +319,7 @@ func areEvaluationTimeModifiersCachable(r MetricsQueryRequest, maxCacheTime int6
 	if !strings.Contains(query, "@") && !strings.Contains(query, "offset") {
 		return true, ""
 	}
-	expr, err := astmapper.CreateParser().ParseExpr(query)
+	expr, err := promqlext.NewPromQLParser().ParseExpr(query)
 	if err != nil {
 		// We are being pessimistic in such cases.
 		return false, notCachableReasonModifiersNotCachableFailedParse

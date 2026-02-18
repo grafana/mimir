@@ -36,7 +36,7 @@ func (h *InsertOmittedTargetInfoSelector) Visit(node parser.Node, _ []parser.Nod
 	}
 	switch length := len(expr.Args); length {
 	case 1:
-		infoExpr, err := promqlext.NewDefaultParser().ParseExpr("target_info")
+		infoExpr, err := promqlext.NewPromQLParser().ParseExpr("target_info")
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse target_info expression: %v", err)
 		}

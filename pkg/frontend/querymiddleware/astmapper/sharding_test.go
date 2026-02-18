@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 func TestSharding(t *testing.T) {
@@ -634,7 +635,7 @@ func TestSharding(t *testing.T) {
 				endT := startT.Add(5 * time.Minute)
 
 				parseInputAndPreprocess := func(t *testing.T) parser.Expr {
-					expr, err := CreateParser().ParseExpr(tt.in)
+					expr, err := promqlext.NewPromQLParser().ParseExpr(tt.in)
 					require.NoError(t, err)
 
 					if preprocess {
@@ -655,7 +656,7 @@ func TestSharding(t *testing.T) {
 						stats := NewMapperStats()
 						summer := NewQueryShardSummer(shardCount, EmbeddedQueriesSquasher, log.NewNopLogger(), stats)
 						expr := parseInputAndPreprocess(t)
-						expectedExpr, err := CreateParser().ParseExpr(out)
+						expectedExpr, err := promqlext.NewPromQLParser().ParseExpr(out)
 						require.NoError(t, err)
 
 						ctx := context.Background()
@@ -692,7 +693,7 @@ func concatShards(t *testing.T, shards int, queryTemplate string) string {
 	queries := make([]EmbeddedQuery, shards)
 	for shard := range queries {
 		queryStr := strings.ReplaceAll(queryTemplate, "x_of_y", sharding.FormatShardIDLabelValue(uint64(shard), uint64(shards)))
-		expr, err := CreateParser().ParseExpr(queryStr)
+		expr, err := promqlext.NewPromQLParser().ParseExpr(queryStr)
 		require.NoError(t, err)
 		queries[shard] = NewEmbeddedQuery(expr, nil)
 	}
@@ -722,14 +723,14 @@ func TestShardSummerWithEncoding(t *testing.T) {
 		t.Run(fmt.Sprintf("[%d]", i), func(t *testing.T) {
 			stats := NewMapperStats()
 			summer := NewQueryShardSummer(c.shards, EmbeddedQueriesSquasher, log.NewNopLogger(), stats)
-			expr, err := CreateParser().ParseExpr(c.input)
+			expr, err := promqlext.NewPromQLParser().ParseExpr(c.input)
 			require.Nil(t, err)
 
 			ctx := context.Background()
 			res, err := summer.Map(ctx, expr)
 			require.Nil(t, err)
 			assert.Equal(t, c.shards, stats.GetShardedQueries())
-			expected, err := CreateParser().ParseExpr(c.expected)
+			expected, err := promqlext.NewPromQLParser().ParseExpr(c.expected)
 			require.Nil(t, err)
 
 			require.Equal(t, expected.String(), res.String())
@@ -768,7 +769,7 @@ func TestIsSubqueryCall(t *testing.T) {
 
 	for _, testData := range tests {
 		t.Run(testData.query, func(t *testing.T) {
-			expr, err := CreateParser().ParseExpr(testData.query)
+			expr, err := promqlext.NewPromQLParser().ParseExpr(testData.query)
 			require.NoError(t, err)
 
 			call, ok := expr.(*parser.Call)

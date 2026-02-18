@@ -7,13 +7,15 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 func TestProm2RangeCompat_Cancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	query, _ := CreateParser().ParseExpr(`up{foo="bar"}`)
+	query, _ := promqlext.NewPromQLParser().ParseExpr(`up{foo="bar"}`)
 	mapper := NewProm2RangeCompat()
 	_, err := mapper.Map(ctx, query)
 
@@ -51,7 +53,7 @@ func TestProm2RangeCompat_Queries(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.query, func(t *testing.T) {
-			query, err := CreateParser().ParseExpr(tc.query)
+			query, err := promqlext.NewPromQLParser().ParseExpr(tc.query)
 			require.NoError(t, err)
 
 			mapper := NewProm2RangeCompat()

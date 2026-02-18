@@ -18,6 +18,7 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -133,7 +134,7 @@ func (l *labelsQueryOptimizer) optimizeRequest(ctx context.Context, req *http.Re
 }
 
 func optimizeLabelsRequestMatchers(rawMatcherSets []string) (_ []string, optimized bool, _ error) {
-	p := astmapper.CreateParser()
+	p := promqlext.NewPromQLParser()
 	matcherSets, err := p.ParseMetricSelectors(rawMatcherSets)
 	if err != nil {
 		return nil, false, err

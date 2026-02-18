@@ -20,6 +20,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 const (
@@ -134,7 +135,7 @@ func generateLabelsQueryRequestCacheKey(startTime, endTime int64, labelName stri
 
 func parseRequestMatchersParam(values url.Values, paramName string) ([][]*labels.Matcher, error) {
 	matcherSets := make([][]*labels.Matcher, 0, len(values[paramName]))
-	p := astmapper.CreateParser()
+	p := promqlext.NewPromQLParser()
 
 	for _, value := range values[paramName] {
 

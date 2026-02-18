@@ -32,12 +32,12 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 
-	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/testdatagen"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 const resultsCacheTTL = 24 * time.Hour
@@ -1800,17 +1800,17 @@ func TestNextIntervalBoundary(t *testing.T) {
 }
 
 func TestSplitQueryByInterval(t *testing.T) {
-	p := astmapper.CreateParser()
+	parser := promqlext.NewPromQLParser()
 	queryFoo := "foo"
-	queryFooExpr, _ := p.ParseExpr(queryFoo)
+	queryFooExpr, _ := parser.ParseExpr(queryFoo)
 	queryFooAtStart := "foo @ start()"
-	queryFooAtStartExpr, _ := p.ParseExpr(queryFooAtStart)
+	queryFooAtStartExpr, _ := parser.ParseExpr(queryFooAtStart)
 	queryFooAtZero := "foo @ 0.00000"
-	queryFooAtZeroExpr, _ := p.ParseExpr(queryFooAtZero)
+	queryFooAtZeroExpr, _ := parser.ParseExpr(queryFooAtZero)
 	queryFooSubqueryAtStart := "sum_over_time(foo[1d:] @ start())"
-	queryFooSubqueryAtStartExpr, _ := p.ParseExpr(queryFooSubqueryAtStart)
+	queryFooSubqueryAtStartExpr, _ := parser.ParseExpr(queryFooSubqueryAtStart)
 	queryFooSubqueryAtZero := "sum_over_time(foo[1d:] @ 0.00000)"
-	queryFooSubqueryAtZeroExpr, _ := p.ParseExpr(queryFooSubqueryAtZero)
+	queryFooSubqueryAtZeroExpr, _ := parser.ParseExpr(queryFooSubqueryAtZero)
 	lookbackDelta := 5 * time.Minute
 
 	for i, tc := range []struct {
@@ -1987,7 +1987,6 @@ func timeToMillis(t *testing.T, input string) int64 {
 }
 
 func Test_evaluateAtModifier(t *testing.T) {
-	p := astmapper.CreateParser()
 	const (
 		start, end = int64(1546300800), int64(1646300800)
 	)
@@ -2030,9 +2029,11 @@ func Test_evaluateAtModifier(t *testing.T) {
 	} {
 		t.Run(tt.in, func(t *testing.T) {
 			t.Parallel()
-			expr, err := p.ParseExpr(tt.in)
+
+			parser := promqlext.NewPromQLParser()
+			expr, err := parser.ParseExpr(tt.in)
 			require.NoError(t, err)
-			expectedExpr, err := p.ParseExpr(tt.expected)
+			expectedExpr, err := parser.ParseExpr(tt.expected)
 			require.NoError(t, err)
 			evaluateAtModifierFunction(expr, start, end)
 			require.Equal(t, expectedExpr.String(), expr.String()) // Character positions are not identical between exprs.

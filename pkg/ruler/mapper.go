@@ -187,7 +187,7 @@ type FSLoader struct {
 func NewFSLoader(fs afero.Fs) FSLoader {
 	return FSLoader{
 		fs:     fs,
-		parser: promqlext.NewExperimentalParser(),
+		parser: promqlext.NewPromQLParser(),
 	}
 }
 

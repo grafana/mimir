@@ -122,7 +122,7 @@ func rewriteForSubquerySpinoff(ctx context.Context, expr string) (parser.Expr, e
 	stats := astmapper.NewSubquerySpinOffMapperStats()
 	defaultStepFunc := func(rangeMillis int64) int64 { return 1000 }
 	mapper := astmapper.NewSubquerySpinOffMapper(defaultStepFunc, log.NewNopLogger(), stats)
-	ast, err := promqlext.NewExperimentalParser().ParseExpr(expr)
+	ast, err := promqlext.NewPromQLParser().ParseExpr(expr)
 	if err != nil {
 		return nil, err
 	}

@@ -198,7 +198,7 @@ func extractSelector(values url.Values) (matchers []*labels.Matcher, err error) 
 	if len(selectorParams) > 1 {
 		return nil, fmt.Errorf("multiple 'selector' params are not allowed")
 	}
-	p := promqlext.NewExperimentalParser()
+	p := promqlext.NewPromQLParser()
 	matchers, err = p.ParseMetricSelector(selectorParams[0])
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse selector: %w", err)

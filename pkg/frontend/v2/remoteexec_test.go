@@ -2245,7 +2245,7 @@ func runQueryParallelismTestCase(t *testing.T, enableMQESharding bool) {
 	cfg := Config{LookBackDelta: 7 * time.Minute}
 	require.NoError(t, RegisterRemoteExecutionMaterializers(engine, frontend, cfg))
 
-	p := promqlext.NewDefaultParser()
+	p := promqlext.NewPromQLParser()
 	expr, err := p.ParseExpr("sum(foo)")
 	require.NoError(t, err)
 	request := querymiddleware.NewPrometheusRangeQueryRequest("/api/v1/query_range", nil, timestamp.FromTime(time.Now().Add(-time.Hour)), timestamp.FromTime(time.Now()), time.Second.Milliseconds(), 5*time.Minute, expr, querymiddleware.Options{}, nil, "")

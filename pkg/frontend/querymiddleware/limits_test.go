@@ -31,7 +31,6 @@ import (
 	"go.uber.org/atomic"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
-	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -39,6 +38,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -1157,10 +1157,8 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 
 	lookbackDelta := 5 * time.Minute
 
-	p := astmapper.CreateParser()
-
 	mustParseExpr := func(s string) parser.Expr {
-		expr, err := p.ParseExpr(s)
+		expr, err := promqlext.NewPromQLParser().ParseExpr(s)
 		require.NoError(t, err)
 		return expr
 	}

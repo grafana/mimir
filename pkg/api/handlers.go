@@ -278,7 +278,7 @@ func NewQuerierHandler(
 		nil,
 		nil,
 		v1.OpenAPIOptions{},
-		promqlext.NewExperimentalParser(),
+		promqlext.NewPromQLParser(),
 	)
 
 	api.InstallCodec(protobufCodec{})

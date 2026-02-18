@@ -25,6 +25,8 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 func TestCloneExpr_ExplicitTestCases(t *testing.T) {
@@ -147,7 +149,7 @@ func TestCloneExpr(t *testing.T) {
 
 	for i, tc := range testCases {
 		t.Run(fmt.Sprintf("%d: %s", i, tc), func(t *testing.T) {
-			originalExpression, err := CreateParser().ParseExpr(tc)
+			originalExpression, err := promqlext.NewPromQLParser().ParseExpr(tc)
 			require.NoError(t, err)
 			clonedExpression, err := CloneExpr(originalExpression)
 			require.NoError(t, err)
@@ -165,7 +167,7 @@ func TestCloneExpr_EngineTestCases(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase, func(t *testing.T) {
-			originalExpression, err := CreateParser().ParseExpr(testCase)
+			originalExpression, err := promqlext.NewPromQLParser().ParseExpr(testCase)
 			require.NoError(t, err)
 
 			clonedExpression, err := CloneExpr(originalExpression)
@@ -339,7 +341,7 @@ func TestSharding_BinaryExpressionsDontTakeExponentialTime(t *testing.T) {
 	for i := 2; i <= expressions; i++ {
 		query += fmt.Sprintf("or vector(%d)", i)
 	}
-	expr, err := CreateParser().ParseExpr(query)
+	expr, err := promqlext.NewPromQLParser().ParseExpr(query)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -361,7 +363,7 @@ func TestASTMapperContextCancellation(t *testing.T) {
 	cancel()
 
 	// Attempt to map with cancelled context
-	expr, err := CreateParser().ParseExpr("test{label=\"value\"}")
+	expr, err := promqlext.NewPromQLParser().ParseExpr("test{label=\"value\"}")
 	require.NoError(t, err)
 
 	// The Map function should detect the cancellation and return the error

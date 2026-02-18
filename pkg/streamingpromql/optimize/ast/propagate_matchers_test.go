@@ -134,10 +134,10 @@ func TestPropagateMatchers(t *testing.T) {
 	for input, expected := range testCasesPropagateMatchers {
 		t.Run(input, func(t *testing.T) {
 			// We parse the expressions and compare them as strings below so we don't have to worry about formatting in the test cases.
-			expectedExpr, err := promqlext.NewExperimentalParser().ParseExpr(expected)
+			expectedExpr, err := promqlext.NewPromQLParser().ParseExpr(expected)
 			require.NoError(t, err)
 
-			inputExpr, err := promqlext.NewExperimentalParser().ParseExpr(input)
+			inputExpr, err := promqlext.NewPromQLParser().ParseExpr(input)
 			require.NoError(t, err)
 			inputExpr, err = preprocessQuery(t, inputExpr)
 			require.NoError(t, err)

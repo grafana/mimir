@@ -70,7 +70,7 @@ func TestClient_LoadRuleGroups(t *testing.T) {
 	err = os.Symlink(namespace1, path.Join(dir, user1, namespace2))
 	require.NoError(t, err)
 
-	p := promqlext.NewDefaultParser()
+	p := promqlext.NewPromQLParser()
 	client, err := NewLocalRulesClient(rulestore.LocalStoreConfig{
 		Directory: dir,
 	}, NewFileLoader(p))

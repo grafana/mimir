@@ -15,6 +15,8 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 func TestCanParallel(t *testing.T) {
@@ -205,7 +207,7 @@ func TestCanParallel_String(t *testing.T) {
 
 	for i, c := range testExpr {
 		t.Run(fmt.Sprintf("[%d]", i), func(t *testing.T) {
-			expr, err := CreateParser().ParseExpr(c.input)
+			expr, err := promqlext.NewPromQLParser().ParseExpr(c.input)
 			require.Nil(t, err)
 			res := CanParallelize(expr, log.NewNopLogger())
 			require.Equal(t, c.expected, res)
@@ -268,7 +270,7 @@ func TestCountVectorSelectors(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			expr, err := CreateParser().ParseExpr(testData.expr)
+			expr, err := promqlext.NewPromQLParser().ParseExpr(testData.expr)
 			require.Nil(t, err)
 			assert.Equal(t, testData.expected, countVectorSelectors(expr))
 		})
@@ -301,7 +303,7 @@ func TestEvalPredicate(t *testing.T) {
 		},
 	} {
 		t.Run(testName, func(t *testing.T) {
-			expr, err := CreateParser().ParseExpr(tc.input)
+			expr, err := promqlext.NewPromQLParser().ParseExpr(tc.input)
 			require.Nil(t, err)
 
 			res := AnyNode(expr.(parser.Node), tc.fn)

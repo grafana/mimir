@@ -288,7 +288,7 @@ func (r *remoteReadQueryRequest) GetClonedParsedQuery() (parser.Expr, error) {
 		return nil, errRequestNoQuery
 	}
 
-	return astmapper.CreateParser().ParseExpr(r.promQuery)
+	return promqlext.NewPromQLParser().ParseExpr(r.promQuery)
 }
 
 func (r *remoteReadQueryRequest) GetHeaders() []*PrometheusHeader {

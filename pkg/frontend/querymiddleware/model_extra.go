@@ -25,6 +25,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 var (
@@ -198,8 +199,7 @@ func (r *PrometheusRangeQueryRequest) WithStartEnd(start int64, end int64) (Metr
 
 // WithQuery clones the current `PrometheusRangeQueryRequest` with a new query; returns error if query parse fails.
 func (r *PrometheusRangeQueryRequest) WithQuery(query string) (MetricsQueryRequest, error) {
-	p := astmapper.CreateParser()
-	queryExpr, err := p.ParseExpr(query)
+	queryExpr, err := promqlext.NewPromQLParser().ParseExpr(query)
 	if err != nil {
 		return nil, err
 	}
@@ -418,8 +418,7 @@ func (r *PrometheusInstantQueryRequest) WithStartEnd(time int64, _ int64) (Metri
 
 // WithQuery clones the current `PrometheusInstantQueryRequest` with a new query; returns error if query parse fails.
 func (r *PrometheusInstantQueryRequest) WithQuery(query string) (MetricsQueryRequest, error) {
-	p := astmapper.CreateParser()
-	queryExpr, err := p.ParseExpr(query)
+	queryExpr, err := promqlext.NewPromQLParser().ParseExpr(query)
 	if err != nil {
 		return nil, err
 	}

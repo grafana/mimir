@@ -471,15 +471,3 @@ func (w *ASTExprMapperWithState) Map(ctx context.Context, expr parser.Expr) (par
 func (w *ASTExprMapperWithState) HasChanged() bool {
 	return w.mapper.HasChanged()
 }
-
-func CreateParser() parser.Parser {
-	return parser.NewParser(parser.Options{
-		// Experimental functions are always enabled globally for all engines. Access to them
-		// is controlled by an experimental functions middleware that reads per-tenant settings.
-		EnableExperimentalFunctions: true,
-		// This enables duration arithmetic https://github.com/prometheus/prometheus/pull/16249.
-		ExperimentalDurationExpr: true,
-		// This enables the anchored and smoothed selector modifiers.
-		EnableExtendedRangeSelectors: true,
-	})
-}

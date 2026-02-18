@@ -462,8 +462,6 @@ func TestOptimizeLabelsRequestMatchers(t *testing.T) {
 		},
 	}
 
-	p := astmapper.CreateParser()
-
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			actualMatchers, actualOptimized, err := optimizeLabelsRequestMatchers(testData.inputMatchers)
@@ -478,7 +476,7 @@ func TestOptimizeLabelsRequestMatchers(t *testing.T) {
 			assert.Equal(t, testData.expectedMatchers, actualMatchers)
 
 			// Ensure the optimized matchers are still valid.
-			_, err = p.ParseMetricSelectors(actualMatchers)
+			_, err = promqlext.NewPromQLParser().ParseMetricSelectors(actualMatchers)
 			assert.NoError(t, err)
 		})
 	}

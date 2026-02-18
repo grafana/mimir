@@ -30,7 +30,7 @@ type fileLoader struct {
 // NewFileLoader creates a new fileLoader with the given parser.
 func NewFileLoader(p parser.Parser) *fileLoader {
 	if p == nil {
-		p = promqlext.NewExperimentalParser()
+		p = promqlext.NewPromQLParser()
 	}
 	return &fileLoader{
 		parser: p,

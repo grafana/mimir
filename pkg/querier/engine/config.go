@@ -10,11 +10,11 @@ import (
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/streamingpromql"      //lint:ignore faillint streamingpromql is fine
 	"github.com/grafana/mimir/pkg/util/activitytracker" //lint:ignore faillint activitytracker is fine
 	util_log "github.com/grafana/mimir/pkg/util/log"    //lint:ignore faillint log is fine
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 // Config holds the PromQL engine config exposed by Mimir.
@@ -75,15 +75,7 @@ func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.Activit
 		},
 		// This only applies to Prometheus engine. MQE's is defined per-tenant via limits.
 		EnableDelayedNameRemoval: false,
-		Parser: parser.NewParser(parser.Options{
-			// Experimental functions are always enabled globally for all engines. Access to them
-			// is controlled by an experimental functions middleware that reads per-tenant settings.
-			EnableExperimentalFunctions: true,
-			// This enables duration arithmetic https://github.com/prometheus/prometheus/pull/16249.
-			ExperimentalDurationExpr: true,
-			// This enables the anchored and smoothed selector modifiers.
-			EnableExtendedRangeSelectors: true,
-		}),
+		Parser:                   promqlext.NewPromQLParser(),
 	}
 
 	cfg.MimirQueryEngine.CommonOpts = commonOpts

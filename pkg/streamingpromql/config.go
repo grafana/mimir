@@ -109,7 +109,7 @@ func NewTestEngineOpts() EngineOpts {
 			EnableAtModifier:         true,
 			EnableNegativeOffset:     true,
 			NoStepSubqueryIntervalFn: func(int64) int64 { return time.Minute.Milliseconds() },
-			Parser:                   promqlext.NewExperimentalParser(),
+			Parser:                   promqlext.NewPromQLParser(),
 		},
 
 		Pedantic: true,

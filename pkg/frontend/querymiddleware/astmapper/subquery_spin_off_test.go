@@ -10,6 +10,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 func TestSubquerySpinOffMapper(t *testing.T) {
@@ -272,10 +274,10 @@ func TestSubquerySpinOffMapper(t *testing.T) {
 			stats := NewSubquerySpinOffMapperStats()
 			mapper := NewSubquerySpinOffMapper(defaultStepFunc, log.NewNopLogger(), stats)
 			ctx := context.Background()
-			p := CreateParser()
-			expr, err := p.ParseExpr(tt.in)
+			parser := promqlext.NewPromQLParser()
+			expr, err := parser.ParseExpr(tt.in)
 			require.NoError(t, err)
-			out, err := p.ParseExpr(tt.out)
+			out, err := parser.ParseExpr(tt.out)
 			require.NoError(t, err)
 
 			mapped, err := mapper.Map(ctx, expr)

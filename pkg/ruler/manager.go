@@ -443,7 +443,7 @@ func (r *DefaultMultiTenantManager) ValidateRuleGroup(userID string, g rulefmt.R
 	}
 
 	validationScheme := r.limits.NameValidationScheme(userID)
-	promqlParser := promqlext.NewExperimentalParser()
+	promqlParser := promqlext.NewPromQLParser()
 	for i, r := range g.Rules {
 		for _, err := range r.Validate(node.Rules[i], validationScheme, promqlParser) {
 			var ruleName string

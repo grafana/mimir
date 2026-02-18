@@ -105,7 +105,7 @@ func TestMultiTenantConcurrencyController(t *testing.T) {
 		Opts:     &rules.ManagerOptions{},
 	})
 
-	exp, err := promqlext.NewExperimentalParser().ParseExpr("vector(1)")
+	exp, err := promqlext.NewPromQLParser().ParseExpr("vector(1)")
 	require.NoError(t, err)
 	rule1 := rules.NewRecordingRule("test", exp, labels.Labels{})
 	rule1.SetDependencyRules([]rules.Rule{})

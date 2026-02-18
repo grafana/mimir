@@ -62,7 +62,7 @@ func main() {
 	var matchers []*labels.Matcher
 	if *metricSelector != "" {
 		var err error
-		p := promqlext.NewExperimentalParser()
+		p := promqlext.NewPromQLParser()
 		matchers, err = p.ParseMetricSelector(*metricSelector)
 		if err != nil {
 			level.Error(logger).Log("msg", "failed to parse matcher selector", "err", err)

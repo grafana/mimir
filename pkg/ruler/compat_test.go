@@ -258,7 +258,7 @@ func TestPusherErrors(t *testing.T) {
 			failures := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user", "reason"})
 			pa := NewPusherAppendable(pusher, "user-1", writes, failures)
 
-			lbls, err := promqlext.NewExperimentalParser().ParseMetric("foo_bar")
+			lbls, err := promqlext.NewPromQLParser().ParseMetric("foo_bar")
 			require.NoError(t, err)
 
 			a := pa.Appender(ctx)
@@ -1278,7 +1278,7 @@ func getMetricValue(t *testing.T, reg prometheus.Gatherer, metricName, labelName
 
 func TestPrometheusErrorStringsForDuplicateLabelsets(t *testing.T) {
 	logger := promslog.New(&promslog.Config{})
-	expr, err := promqlext.NewExperimentalParser().ParseExpr("test_metric")
+	expr, err := promqlext.NewPromQLParser().ParseExpr("test_metric")
 	require.NoError(t, err)
 
 	// Mock query function that returns duplicate metrics

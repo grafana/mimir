@@ -159,7 +159,7 @@ func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts, versionProvider Q
 
 	parserToUse := opts.CommonOpts.Parser
 	if parserToUse == nil {
-		parserToUse = promqlext.NewExperimentalParser()
+		parserToUse = promqlext.NewPromQLParser()
 	}
 
 	return &QueryPlanner{

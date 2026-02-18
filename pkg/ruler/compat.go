@@ -303,7 +303,7 @@ func RecordAndReportRuleQueryMetrics(qf rules.QueryFunc, queryTime, zeroFetchedS
 			// Do not count queries with errors for zero fetched series, or queries
 			// with no selectors that are not meant to fetch any series.
 			if err == nil && numSeries == 0 {
-				p := promqlext.NewExperimentalParser()
+				p := promqlext.NewPromQLParser()
 				if expr, err := p.ParseExpr(qs); err == nil {
 					if len(parser.ExtractSelectors(expr)) > 0 {
 						zeroFetchedSeriesCount.Add(1)

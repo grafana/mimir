@@ -60,10 +60,10 @@ func TestReorderHistogramAggregation(t *testing.T) {
 
 	for input, expected := range testCasesReorderHistogramAggregation {
 		t.Run(input, func(t *testing.T) {
-			expectedExpr, err := promqlext.NewExperimentalParser().ParseExpr(expected)
+			expectedExpr, err := promqlext.NewPromQLParser().ParseExpr(expected)
 			require.NoError(t, err)
 
-			inputExpr, err := promqlext.NewExperimentalParser().ParseExpr(input)
+			inputExpr, err := promqlext.NewPromQLParser().ParseExpr(input)
 			require.NoError(t, err)
 			inputExpr, err = preprocessQuery(t, inputExpr)
 			require.NoError(t, err)

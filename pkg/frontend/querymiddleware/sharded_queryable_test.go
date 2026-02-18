@@ -23,11 +23,13 @@ import (
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 func TestShardedQuerier_Select(t *testing.T) {
 	ctx := context.Background()
-	p := astmapper.CreateParser()
+	p := promqlext.NewPromQLParser()
+
 	var testExpr = []struct {
 		name    string
 		querier *shardedQuerier
@@ -218,9 +220,8 @@ func TestShardedQuerier_Select_ShouldConcurrentlyRunEmbeddedQueries(t *testing.T
 	}
 
 	embeddedQueries := make([]astmapper.EmbeddedQuery, len(embeddedQueriesRaw))
-	p := astmapper.CreateParser()
 	for i, query := range embeddedQueriesRaw {
-		expr, err := p.ParseExpr(query)
+		expr, err := promqlext.NewPromQLParser().ParseExpr(query)
 		require.NoError(t, err)
 		embeddedQueries[i] = astmapper.NewEmbeddedQuery(expr, nil)
 	}

@@ -134,7 +134,7 @@ func TestReduceMatchers_Apply_ComplexQueries(t *testing.T) {
 		},
 	}
 
-	p := promqlext.NewExperimentalParser()
+	p := promqlext.NewPromQLParser()
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

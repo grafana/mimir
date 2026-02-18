@@ -14,8 +14,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
-	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 func TestBlockInternalFunctionsMiddleware(t *testing.T) {
@@ -51,7 +51,7 @@ func TestBlockInternalFunctionsMiddleware(t *testing.T) {
 }
 
 func createTestRequest(t *testing.T, qs string) *PrometheusInstantQueryRequest {
-	expr, err := astmapper.CreateParser().ParseExpr(qs)
+	expr, err := promqlext.NewPromQLParser().ParseExpr(qs)
 	require.NoError(t, err)
 
 	return NewPrometheusInstantQueryRequest("/", nil, timestamp.FromTime(time.Now()), 5*time.Minute, expr, Options{}, nil, "")

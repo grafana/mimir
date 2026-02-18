@@ -84,7 +84,7 @@ func (rp *parser) prepare() {
 
 	if rp.metricSelector != "" {
 		var err error
-		p := promqlext.NewExperimentalParser()
+		p := promqlext.NewPromQLParser()
 		rp.matchers, err = p.ParseMetricSelector(rp.metricSelector)
 		if err != nil {
 			log.Fatalln("failed to parse matcher selector", "err", err)

@@ -711,7 +711,7 @@ func (l *Limits) Validate() error {
 const LabelValueHashLen = len("(hash:)") + blake2b.Size256*2
 
 func (l *Limits) canonicalizeQueries() {
-	p := promqlext.NewExperimentalParser()
+	p := promqlext.NewPromQLParser()
 	for i, q := range l.BlockedQueries {
 		if q.Regex {
 			continue

@@ -41,6 +41,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 var (
@@ -1509,13 +1510,12 @@ func BenchmarkQueryShardingRewriting(b *testing.B) {
 	sharder := NewQuerySharder(astmapper.EmbeddedQueriesSquasher, limits, 0, reg, log.NewNopLogger())
 	tenants := []string{"tenant-1"}
 	ctx := context.Background()
-	p := astmapper.CreateParser()
 
 	for _, expr := range testCases {
 		b.Run(expr, func(b *testing.B) {
 			for b.Loop() {
 				// We must parse the expression each time as shard() mutates the expression.
-				parsedExpr, err := p.ParseExpr(expr)
+				parsedExpr, err := promqlext.NewPromQLParser().ParseExpr(expr)
 				if err != nil {
 					require.NoError(b, err)
 				}
@@ -1712,11 +1712,9 @@ func TestLongestRegexpMatcherBytes(t *testing.T) {
 		},
 	}
 
-	p := astmapper.CreateParser()
-
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			parsed, err := p.ParseExpr(testData.expr)
+			parsed, err := promqlext.NewPromQLParser().ParseExpr(testData.expr)
 			require.NoError(t, err)
 
 			actual := longestRegexpMatcherBytes(parsed)

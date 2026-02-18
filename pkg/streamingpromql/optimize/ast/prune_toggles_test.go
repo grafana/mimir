@@ -61,7 +61,7 @@ func TestPruneToggles(t *testing.T) {
 
 	for input, expected := range testCasesPruneToggles {
 		t.Run(input, func(t *testing.T) {
-			expectedExpr, err := promqlext.NewExperimentalParser().ParseExpr(expected)
+			expectedExpr, err := promqlext.NewPromQLParser().ParseExpr(expected)
 			require.NoError(t, err)
 
 			reg, outputExpr := runASTOptimizationPass(t, ctx, input, func(reg prometheus.Registerer) optimize.ASTOptimizationPass {
