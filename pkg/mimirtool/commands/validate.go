@@ -118,7 +118,7 @@ func alertsCheckNativeVersionExists(rules []rulefmt.Rule) []alertCheckResult {
 	p := config.CreateParser()
 	var failures []alertCheckResult
 	for i := 0; i < len(rules); i++ {
-		classicSelectors, err := findClassicHistogramSelectors(rules[i].Expr)
+		classicSelectors, err := findClassicHistogramSelectors(p, rules[i].Expr)
 		if err != nil {
 			failures = append(failures, alertCheckResult{
 				failure:   true,
@@ -209,8 +209,8 @@ var classicHistogramSuffixes = []string{"_bucket", "_count", "_sum"}
 
 // findClassicHistogramSelectors parses the expression and returns all vector selectors
 // that reference classic histogram metrics (identified by _bucket, _count, _sum suffixes).
-func findClassicHistogramSelectors(expr string) ([]*parser.VectorSelector, error) {
-	parsed, err := config.CreateParser().ParseExpr(expr)
+func findClassicHistogramSelectors(p *parser.Parser, expr string) ([]*parser.VectorSelector, error) {
+	parsed, err := p.ParseExpr(expr)
 	if err != nil {
 		return nil, err
 	}
