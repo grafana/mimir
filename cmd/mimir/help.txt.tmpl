@@ -591,6 +591,16 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of samples a single query can load into memory. This config option should be set on query-frontend too when query sharding is enabled. (default 50000000)
   -querier.max-series-query-limit int
     	Maximum number of series, the series endpoint queries. This limit is enforced in the querier. If the requested limit is outside of the allowed value, the request doesn't fail, but is manipulated to only query data up to the allowed limit. Set to 0 to disable.
+  -querier.mimir-query-engine.range-vector-splitting.backend string
+    	Backend for intermediate results cache, if not empty. Supported values: memcached.
+  -querier.mimir-query-engine.range-vector-splitting.compression string
+    	Enable cache compression, if not empty. Supported values are: snappy.
+  -querier.mimir-query-engine.range-vector-splitting.memcached.addresses comma-separated-list-of-strings
+    	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -querier.mimir-query-engine.range-vector-splitting.memcached.connect-timeout duration
+    	The connection timeout. (default 200ms)
+  -querier.mimir-query-engine.range-vector-splitting.memcached.timeout duration
+    	The socket read/write timeout. (default 200ms)
   -querier.ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
   -querier.ring.etcd.endpoints string
@@ -827,6 +837,10 @@ Usage of ./cmd/mimir/mimir:
     	gRPC server listen address.
   -server.grpc-listen-port int
     	gRPC server listen port. (default 9095)
+  -server.grpc.read-buffer-size-bytes int
+    	Size of the read buffer for each gRPC connection (bytes). A smaller buffer may reduce memory usage but may lead to more system calls. (default 32768)
+  -server.grpc.write-buffer-size-bytes int
+    	Size of the write buffer for each gRPC connection (bytes). A smaller buffer may reduce memory usage but may lead to more system calls. (default 32768)
   -server.http-listen-address string
     	HTTP server listen address.
   -server.http-listen-port int

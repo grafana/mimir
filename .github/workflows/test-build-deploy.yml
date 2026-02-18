@@ -148,6 +148,7 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    name: test (${{ matrix.extra_build_tags != '' && format('{0}, ', matrix.extra_build_tags) || '' }}${{ matrix.test_group_id }}, ${{ matrix.test_group_total }})
     strategy:
       # Do not abort other groups when one fails.
       fail-fast: false
@@ -155,6 +156,7 @@ jobs:
       matrix:
         test_group_id:    [0, 1, 2, 3]
         test_group_total: [4]
+        extra_build_tags: ["", "nopools"]
     needs:
       - prepare
     permissions:
@@ -185,8 +187,8 @@ jobs:
           max_attempts: 2
           retry_wait_seconds: 0
           command: |
-            echo "Running unit tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }}) with Go version: $(go version)"
-            ./.github/workflows/scripts/run-unit-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
+            echo "Running unit tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }})${{ matrix.extra_build_tags != '' && format(' with build tags: {0}', matrix.extra_build_tags) || '' }} with Go version: $(go version)"
+            EXTRA_BUILD_TAGS="${{ matrix.extra_build_tags }}" ./.github/workflows/scripts/run-unit-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
       - name: Notify on streamingpromql failures
         if: failure() && env.FAILED_PACKAGES != '' && contains(github.event.pull_request.labels.*.name, 'vendored-mimir-prometheus-update')
         run: |
@@ -468,3 +470,46 @@ jobs:
       - name: Push Docker Images
         run: |
           ./.github/workflows/scripts/push-images.sh /tmp/images grafana/ $(make image-tag)
+
+  send-slack-notification-on-automated-vendoring:
+    needs:
+      - prepare
+      - goversion
+      - lint
+      - lint-jsonnet
+      - lint-helm
+      - test
+      - test-docs
+      - build-metaconvert-image
+      - build-mimir-image
+      - build-query-tee-image
+      - build-mimirtool-image
+      - build-copyblocks-image
+      - build
+      - build-race-enabled-image
+      - integration
+      - deploy
+    runs-on: ubuntu-latest
+    if: always() && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'vendored-mimir-prometheus-update')
+    permissions:
+      id-token: write
+    steps:
+      - name: Send Slack message for successful PR
+        if: ${{ !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
+        uses: grafana/shared-workflows/actions/send-slack-message@7b628e7352c2dea057c565cc4fcd5564d5f396c0 #v1.0.0
+        with:
+          channel-id: C04AF91LPFX #mimir-ci-notifications
+          payload: |
+            {
+              "text": ":happy-mac: *Automated vendoring of mimir-prometheus into Mimir has succeeded and is awaiting approval.*\n<!subteam^S03C2P8659U> please review <${{ github.event.pull_request.html_url }}|the PR>, then approve and merge it."
+            }
+      - name: Send Slack message for failed PR
+        if: ${{ contains(needs.*.result, 'failure') }}
+        uses: grafana/shared-workflows/actions/send-slack-message@7b628e7352c2dea057c565cc4fcd5564d5f396c0 #v1.0.0
+        with:
+          channel-id: C04AF91LPFX #mimir-ci-notifications
+          payload: |
+            {
+              "text": ":sadcomputer: *Automated vendoring of mimir-prometheus into Mimir has failed.*\n<!subteam^S03C2P8659U> please check <${{ github.event.pull_request.html_url }}|the PR> and <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|build logs> and coordinate fixes for any issues."
+            }
+

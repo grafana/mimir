@@ -190,7 +190,6 @@ func TestProjectionPushdownOptimizationPass(t *testing.T) {
 			`,
 			expectedModified: 1,
 		},
-
 		"sort_by_label with aggregation": {
 			expr: `sort_by_label(avg by (job) (bar), "zone", "environment")`,
 			expectedPlan: `
@@ -257,6 +256,46 @@ func TestProjectionPushdownOptimizationPass(t *testing.T) {
 			`,
 			expectedModified: 0,
 			expectedSkip:     map[plan.SkipReason]int{plan.SkipReasonDeduplicate: 1},
+		},
+		"unsupported topk aggregation": {
+			expr: `topk(5, foo)`,
+			expectedPlan: `
+				- AggregateExpression: topk
+					- expression: VectorSelector: {__name__="foo"}
+					- parameter: NumberLiteral: 5
+			`,
+			expectedModified: 0,
+			expectedSkip:     map[plan.SkipReason]int{plan.SkipReasonNotSupported: 1},
+		},
+		"unsupported bottomk aggregation": {
+			expr: `bottomk(5, foo)`,
+			expectedPlan: `
+				- AggregateExpression: bottomk
+					- expression: VectorSelector: {__name__="foo"}
+					- parameter: NumberLiteral: 5
+			`,
+			expectedModified: 0,
+			expectedSkip:     map[plan.SkipReason]int{plan.SkipReasonNotSupported: 1},
+		},
+		"unsupported limitk aggregation": {
+			expr: `limitk(5, foo)`,
+			expectedPlan: `
+				- AggregateExpression: limitk
+					- expression: VectorSelector: {__name__="foo"}
+					- parameter: NumberLiteral: 5
+			`,
+			expectedModified: 0,
+			expectedSkip:     map[plan.SkipReason]int{plan.SkipReasonNotSupported: 1},
+		},
+		"unsupported limit_ratio aggregation": {
+			expr: `limit_ratio(0.8, foo)`,
+			expectedPlan: `
+				- AggregateExpression: limit_ratio
+					- expression: VectorSelector: {__name__="foo"}
+					- parameter: NumberLiteral: 0.8
+			`,
+			expectedModified: 0,
+			expectedSkip:     map[plan.SkipReason]int{plan.SkipReasonNotSupported: 1},
 		},
 		"unary expression": {
 			expr: `-foo`,

@@ -364,6 +364,10 @@ func (cfg *Config) Validate(limits validation.Limits) error {
 		return errInvalidTenantShardSize
 	}
 
+	if err := cfg.ReactiveLimiter.Validate(); err != nil {
+		return err
+	}
+
 	return cfg.RetryConfig.Validate()
 }
 
@@ -3277,6 +3281,10 @@ respsLoop:
 	}
 
 	queryLimiter := mimir_limiter.QueryLimiterFromContextWithFallback(ctx)
+	deduplicator, err := mimir_limiter.SeriesLabelsDeduplicatorFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
 	tracker, err := mimir_limiter.MemoryConsumptionTrackerFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -3284,12 +3292,15 @@ respsLoop:
 
 	result := make([]labels.Labels, 0, len(metrics))
 	for _, m := range metrics {
-		uniqueSeriesLabels, err := queryLimiter.AddSeries(m, tracker)
+		uniqueSeries, err := deduplicator.Deduplicate(m, tracker)
 		if err != nil {
 			return nil, err
 		}
+		if err := queryLimiter.AddSeries(uniqueSeries); err != nil {
+			return nil, err
+		}
 
-		result = append(result, uniqueSeriesLabels)
+		result = append(result, uniqueSeries)
 	}
 	return result, nil
 }

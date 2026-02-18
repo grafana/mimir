@@ -5,9 +5,11 @@ package core
 import (
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -21,8 +23,46 @@ type MatrixSelector struct {
 	*MatrixSelectorDetails
 }
 
+func (m *MatrixSelector) IsSplittable() bool {
+	// TODO: it should be possible to add support for smoothed and anchored, but that will be left for later
+	return !m.Smoothed && !m.Anchored
+}
+
+var _ planning.SplitNode = &MatrixSelector{}
+
 func (m *MatrixSelector) Describe() string {
 	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range, m.SkipHistogramBuckets, m.Anchored, m.Smoothed, m.CounterAware, m.ProjectionLabels, m.ProjectionInclude)
+}
+
+// RangeVectorSplittingCacheKey returns the cache key for the matrix selector.
+// The range is not part of the cache key as range vector splitting means that matrix selectors which only differ by
+// the range can share cache entries.
+// The offset and @ modifiers are not part of the cache key as they are adjusted for when calculating split ranges.
+// TODO: when subquery splitting is supported, the logic will have to change - if the matrix selector is not the root
+//
+//	inner node, the range plus the offset and @ modifiers will have to be retained.
+//
+// TODO: investigate codegen to keep the cache key up to date when new fields are added to the node.
+func (m *MatrixSelector) SplittingCacheKey() string {
+	builder := &strings.Builder{}
+	builder.WriteRune('{')
+	for i, m := range m.Matchers {
+		if i > 0 {
+			builder.WriteString(", ")
+		}
+
+		// Convert to the Prometheus type so we can use its String().
+		promMatcher := labels.Matcher{Type: m.Type, Name: m.Name, Value: m.Value}
+		builder.WriteString(promMatcher.String())
+	}
+	builder.WriteRune('}')
+
+	if m.SkipHistogramBuckets {
+		// This needs to be kept in the cache key, as the returned results will differ depending on if buckets are skipped or not
+		builder.WriteString(", skip histogram buckets")
+	}
+
+	return builder.String()
 }
 
 func (m *MatrixSelector) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -91,13 +131,26 @@ func (m *MatrixSelector) ChildrenLabels() []string {
 	return nil
 }
 
-func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams planning.RangeParams) (planning.OperatorFactory, error) {
+	selectorRange := m.Range
+	selectorTs := m.Timestamp
+	selectorOffset := m.Offset.Milliseconds()
+	if overrideTimeParams.IsSet {
+		selectorRange = overrideTimeParams.Range
+		if overrideTimeParams.HasTimestamp {
+			selectorTs = &overrideTimeParams.Timestamp
+		} else {
+			selectorTs = nil
+		}
+		selectorOffset = overrideTimeParams.Offset.Milliseconds()
+	}
+
 	selector := &selectors.Selector{
 		Queryable:                params.Queryable,
 		TimeRange:                timeRange,
-		Timestamp:                TimestampFromTime(m.Timestamp),
-		Offset:                   m.Offset.Milliseconds(),
-		Range:                    m.Range,
+		Range:                    selectorRange,
+		Timestamp:                TimestampFromTime(selectorTs),
+		Offset:                   selectorOffset,
 		Matchers:                 LabelMatchersToOperatorType(m.Matchers),
 		EagerLoad:                params.EagerLoadSelectors,
 		SkipHistogramBuckets:     m.SkipHistogramBuckets,
@@ -141,4 +194,21 @@ func (m *MatrixSelector) MinimumRequiredPlanVersion() planning.QueryPlanVersion 
 		return planning.QueryPlanV4
 	}
 	return planning.QueryPlanVersionZero
+}
+
+func (m *MatrixSelector) GetRange() time.Duration {
+	return m.Range
+}
+
+func (m *MatrixSelector) GetRangeParams() planning.RangeParams {
+	params := planning.RangeParams{
+		IsSet:  true,
+		Range:  m.Range,
+		Offset: m.Offset,
+	}
+	if m.Timestamp != nil {
+		params.HasTimestamp = true
+		params.Timestamp = *m.Timestamp
+	}
+	return params
 }

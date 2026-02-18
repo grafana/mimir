@@ -5,5 +5,8 @@
   _config+:: {
     multi_zone_read_path_enabled: true,
     multi_zone_read_path_multi_az_enabled: true,
+    multi_zone_store_gateway_zone_c_enabled: false,
+    multi_zone_store_gateway_backup_zones_enabled: true,
+    store_gateway_replication_factor: 4,
   },
 }

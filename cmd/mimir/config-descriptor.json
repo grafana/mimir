@@ -623,6 +623,26 @@
         },
         {
           "kind": "field",
+          "name": "grpc_server_read_buffer_size",
+          "required": false,
+          "desc": "Size of the read buffer for each gRPC connection (bytes). A smaller buffer may reduce memory usage but may lead to more system calls.",
+          "fieldValue": null,
+          "fieldDefaultValue": 32768,
+          "fieldFlag": "server.grpc.read-buffer-size-bytes",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
+          "name": "grpc_server_write_buffer_size",
+          "required": false,
+          "desc": "Size of the write buffer for each gRPC connection (bytes). A smaller buffer may reduce memory usage but may lead to more system calls.",
+          "fieldValue": null,
+          "fieldDefaultValue": 32768,
+          "fieldFlag": "server.grpc.write-buffer-size-bytes",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
           "name": "log_format",
           "required": false,
           "desc": "Output log messages in the given format. Valid formats: [logfmt, json]",
@@ -1922,6 +1942,17 @@
             },
             {
               "kind": "field",
+              "name": "min_limit_factor",
+              "required": false,
+              "desc": "Minimum limit factor when max-limit-factor-decay is applied",
+              "fieldValue": null,
+              "fieldDefaultValue": 1.2,
+              "fieldFlag": "distributor.reactive-limiter.min-limit-factor",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "recent_window_min_duration",
               "required": false,
               "desc": "Minimum duration of the window that is used to collect recent response time samples",
@@ -2571,6 +2602,273 @@
               "fieldFlag": "querier.mimir-query-engine.enable-multi-aggregation",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "block",
+              "name": "range_vector_splitting",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "enabled",
+                  "required": false,
+                  "desc": "Enable splitting function over range vectors queries into smaller blocks for caching.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "querier.mimir-query-engine.range-vector-splitting.enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "split_interval",
+                  "required": false,
+                  "desc": "Time interval used for splitting function over range vectors queries into cacheable blocks.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 7200000000000,
+                  "fieldFlag": "querier.mimir-query-engine.range-vector-splitting.split-interval",
+                  "fieldType": "duration",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "block",
+                  "name": "intermediate_results_cache",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "backend",
+                      "required": false,
+                      "desc": "Backend for intermediate results cache, if not empty. Supported values: memcached.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "querier.mimir-query-engine.range-vector-splitting.backend",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "block",
+                      "name": "memcached",
+                      "required": false,
+                      "desc": "",
+                      "blockEntries": [
+                        {
+                          "kind": "field",
+                          "name": "addresses",
+                          "required": false,
+                          "desc": "Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.",
+                          "fieldValue": null,
+                          "fieldDefaultValue": "",
+                          "fieldFlag": "querier.mimir-query-engine.range-vector-splitting.memcached.addresses",
+                          "fieldType": "string"
+                        },
+                        {
+                          "kind": "field",
+                          "name": "timeout",
+                          "required": false,
+                          "desc": "The socket read/write timeout.",
+                          "fieldValue": null,
+                          "fieldDefaultValue": 200000000,
+                          "fieldFlag": "querier.mimir-query-engine.range-vector-splitting.memcached.timeout",
+                          "fieldType": "duration"
+                        },
+                        {
+                          "kind": "field",
+                          "name": "connect_timeout",
+                          "required": false,
+                          "desc": "The connection timeout.",
+                          "fieldValue": null,
+                          "fieldDefaultValue": 200000000,
+                          "fieldFlag": "querier.mimir-query-engine.range-vector-splitting.memcached.connect-timeout",
+                          "fieldType": "duration"
+                        },
+                        {
+                          "kind": "field",
+                          "name": "min_idle_connections_headroom_percentage",
+                          "required": false,
+                          "desc": "The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely.",
+                          "fieldValue": null,
+                          "fieldDefaultValue": -1,
+                          "fieldFlag": "querier.mimir-query-engine.range-vector-splitting.memcached.min-idle-connections-headroom-percentage",
+                          "fieldType": "float",
+                          "fieldCategory": "advanced"
+                        },
+                        {
+                          "kind": "field",
+                          "name": "max_idle_connections",
+                          "required": false,
+                          "desc": "The maximum number of idle connections that will be maintained per address.",
+                          "fieldValue": null,
+                          "fieldDefaultValue": 100,
+                          "fieldFlag": "querier.mimir-query-engine.range-vector-splitting.memcached.max-idle-connections",
+                          "fieldType": "int",
+                          "fieldCategory": "advanced"
+                        },
+                        {
+                          "kind": "field",
+                          "name": "max_async_concurrency",
+                          "required": false,
+                          "desc": "The maximum number of concurrent asynchronous operations can occur.",
+                          "fieldValue": null,
+                          "fieldDefaultValue": 50,
+                          "fieldFlag": "querier.mimir-query-engine.range-vector-splitting.memcached.max-async-concurrency",
+                          "fieldType": "int",
+                          "fieldCategory": "advanced"
+                        },
+                        {
+                          "kind": "field",
+                          "name": "max_async_buffer_size",
+                          "required": false,
+                          "desc": "The maximum number of enqueued asynchronous operations allowed.",
+                          "fieldValue": null,
+                          "fieldDefaultValue": 25000,
+                          "fieldFlag": "querier.mimir-query-engine.range-vector-splitting.memcached.max-async-buffer-size",
+                          "fieldType": "int",
+                          "fieldCategory": "advanced"
+                        },
+                        {
+                          "kind": "field",
+                          "name": "max_get_multi_concurrency",
+                          "required": false,
+                          "desc": "The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited.",
+                          "fieldValue": null,
+                          "fieldDefaultValue": 100,
+                          "fieldFlag": "querier.mimir-query-engine.range-vector-splitting.memcached.max-get-multi-concurrency",
+                          "fieldType": "int",
+                          "fieldCategory": "advanced"
+                        },
+                        {
+                          "kind": "field",
+                          "name": "max_get_multi_batch_size",
+                          "required": false,
+                          "desc": "The maximum number of keys a single underlying get operation should run. If more keys are specified, internally keys are split into multiple batches and fetched concurrently, honoring the max concurrency. If set to 0, the max batch size is unlimited.",
+                          "fieldValue": null,
+                          "fieldDefaultValue": 100,
+                          "fieldFlag": "querier.mimir-query-engine.range-vector-splitting.memcached.max-get-multi-batch-size",
+                          "fieldType": "int",
+                          "fieldCategory": "advanced"
+                        },
+                        {
+                          "kind": "field",
+                          "name": "max_item_size",
+                          "required": false,
+                          "desc": "The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced.",
+                          "fieldValue": null,
+                          "fieldDefaultValue": 1048576,
+                          "fieldFlag": "querier.mimir-query-engine.range-vector-splitting.memcached.max-item-size",
+                          "fieldType": "int",
+                          "fieldCategory": "advanced"
+                        },
+                        {
+                          "kind": "field",
+                          "name": "tls_enabled",
+                          "required": false,
+                          "desc": "Enable connecting to Memcached with TLS.",
+                          "fieldValue": null,
+                          "fieldDefaultValue": false,
+                          "fieldFlag": "querier.mimir-query-engine.range-vector-splitting.memcached.tls-enabled",
+                          "fieldType": "boolean",
+                          "fieldCategory": "advanced"
+                        },
+                        {
+                          "kind": "field",
+                          "name": "tls_cert_path",
+                          "required": false,
+                          "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+                          "fieldValue": null,
+                          "fieldDefaultValue": "",
+                          "fieldFlag": "querier.mimir-query-engine.range-vector-splitting.memcached.tls-cert-path",
+                          "fieldType": "string",
+                          "fieldCategory": "advanced"
+                        },
+                        {
+                          "kind": "field",
+                          "name": "tls_key_path",
+                          "required": false,
+                          "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+                          "fieldValue": null,
+                          "fieldDefaultValue": "",
+                          "fieldFlag": "querier.mimir-query-engine.range-vector-splitting.memcached.tls-key-path",
+                          "fieldType": "string",
+                          "fieldCategory": "advanced"
+                        },
+                        {
+                          "kind": "field",
+                          "name": "tls_ca_path",
+                          "required": false,
+                          "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
+                          "fieldValue": null,
+                          "fieldDefaultValue": "",
+                          "fieldFlag": "querier.mimir-query-engine.range-vector-splitting.memcached.tls-ca-path",
+                          "fieldType": "string",
+                          "fieldCategory": "advanced"
+                        },
+                        {
+                          "kind": "field",
+                          "name": "tls_server_name",
+                          "required": false,
+                          "desc": "Override the expected name on the server certificate.",
+                          "fieldValue": null,
+                          "fieldDefaultValue": "",
+                          "fieldFlag": "querier.mimir-query-engine.range-vector-splitting.memcached.tls-server-name",
+                          "fieldType": "string",
+                          "fieldCategory": "advanced"
+                        },
+                        {
+                          "kind": "field",
+                          "name": "tls_insecure_skip_verify",
+                          "required": false,
+                          "desc": "Skip validating server certificate.",
+                          "fieldValue": null,
+                          "fieldDefaultValue": false,
+                          "fieldFlag": "querier.mimir-query-engine.range-vector-splitting.memcached.tls-insecure-skip-verify",
+                          "fieldType": "boolean",
+                          "fieldCategory": "advanced"
+                        },
+                        {
+                          "kind": "field",
+                          "name": "tls_cipher_suites",
+                          "required": false,
+                          "desc": "Override the default cipher suite list (separated by commas). Allowed values:\n\nSecure Ciphers:\n- TLS_AES_128_GCM_SHA256\n- TLS_AES_256_GCM_SHA384\n- TLS_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256\n\nInsecure Ciphers:\n- TLS_RSA_WITH_RC4_128_SHA\n- TLS_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA\n- TLS_RSA_WITH_AES_256_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA256\n- TLS_RSA_WITH_AES_128_GCM_SHA256\n- TLS_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_ECDSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256\n",
+                          "fieldValue": null,
+                          "fieldDefaultValue": "",
+                          "fieldFlag": "querier.mimir-query-engine.range-vector-splitting.memcached.tls-cipher-suites",
+                          "fieldType": "string",
+                          "fieldCategory": "advanced"
+                        },
+                        {
+                          "kind": "field",
+                          "name": "tls_min_version",
+                          "required": false,
+                          "desc": "Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13",
+                          "fieldValue": null,
+                          "fieldDefaultValue": "",
+                          "fieldFlag": "querier.mimir-query-engine.range-vector-splitting.memcached.tls-min-version",
+                          "fieldType": "string",
+                          "fieldCategory": "advanced"
+                        }
+                      ],
+                      "fieldValue": null,
+                      "fieldDefaultValue": null
+                    },
+                    {
+                      "kind": "field",
+                      "name": "compression",
+                      "required": false,
+                      "desc": "Enable cache compression, if not empty. Supported values are: snappy.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "querier.mimir-query-engine.range-vector-splitting.compression",
+                      "fieldType": "string"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,
@@ -4683,6 +4981,17 @@
             },
             {
               "kind": "field",
+              "name": "min_limit_factor",
+              "required": false,
+              "desc": "Minimum limit factor when max-limit-factor-decay is applied",
+              "fieldValue": null,
+              "fieldDefaultValue": 1.2,
+              "fieldFlag": "ingester.push-reactive-limiter.min-limit-factor",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "recent_window_min_duration",
               "required": false,
               "desc": "Minimum duration of the window that is used to collect recent response time samples",
@@ -4842,6 +5151,17 @@
               "fieldValue": null,
               "fieldDefaultValue": 1,
               "fieldFlag": "ingester.read-reactive-limiter.max-limit-factor-decay",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "min_limit_factor",
+              "required": false,
+              "desc": "Minimum limit factor when max-limit-factor-decay is applied",
+              "fieldValue": null,
+              "fieldDefaultValue": 1.2,
+              "fieldFlag": "ingester.read-reactive-limiter.min-limit-factor",
               "fieldType": "float",
               "fieldCategory": "experimental"
             },
@@ -18608,6 +18928,49 @@
               "fieldDefaultValue": "member",
               "fieldFlag": "memberlist.zone-aware-routing.role",
               "fieldType": "string",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
+          "name": "propagation_delay_tracker",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "enabled",
+              "required": false,
+              "desc": "Enable the propagation delay tracker to measure gossip propagation delay.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "memberlist.propagation-delay-tracker.enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "beacon_interval",
+              "required": false,
+              "desc": "How often to publish beacons for propagation tracking.",
+              "fieldValue": null,
+              "fieldDefaultValue": 60000000000,
+              "fieldFlag": "memberlist.propagation-delay-tracker.beacon-interval",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "beacon_lifetime",
+              "required": false,
+              "desc": "How long a beacon lives before being garbage collected.",
+              "fieldValue": null,
+              "fieldDefaultValue": 600000000000,
+              "fieldFlag": "memberlist.propagation-delay-tracker.beacon-lifetime",
+              "fieldType": "duration",
               "fieldCategory": "experimental"
             }
           ],

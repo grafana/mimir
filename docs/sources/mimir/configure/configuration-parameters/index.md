@@ -735,6 +735,16 @@ grpc_tls_config:
 # CLI flag: -server.grpc.num-workers
 [grpc_server_num_workers: <int> | default = 100]
 
+# Size of the read buffer for each gRPC connection (bytes). A smaller buffer may
+# reduce memory usage but may lead to more system calls.
+# CLI flag: -server.grpc.read-buffer-size-bytes
+[grpc_server_read_buffer_size: <int> | default = 32768]
+
+# Size of the write buffer for each gRPC connection (bytes). A smaller buffer
+# may reduce memory usage but may lead to more system calls.
+# CLI flag: -server.grpc.write-buffer-size-bytes
+[grpc_server_write_buffer_size: <int> | default = 32768]
+
 # Output log messages in the given format. Valid formats: [logfmt, json]
 # CLI flag: -log.format
 [log_format: <string> | default = "logfmt"]
@@ -1091,6 +1101,10 @@ reactive_limiter:
   # current inflight requests
   # CLI flag: -distributor.reactive-limiter.max-limit-factor-decay
   [max_limit_factor_decay: <float> | default = 1]
+
+  # (experimental) Minimum limit factor when max-limit-factor-decay is applied
+  # CLI flag: -distributor.reactive-limiter.min-limit-factor
+  [min_limit_factor: <float> | default = 1.2]
 
   # (experimental) Minimum duration of the window that is used to collect recent
   # response time samples
@@ -1541,6 +1555,10 @@ push_reactive_limiter:
   # CLI flag: -ingester.push-reactive-limiter.max-limit-factor-decay
   [max_limit_factor_decay: <float> | default = 1]
 
+  # (experimental) Minimum limit factor when max-limit-factor-decay is applied
+  # CLI flag: -ingester.push-reactive-limiter.min-limit-factor
+  [min_limit_factor: <float> | default = 1.2]
+
   # (experimental) Minimum duration of the window that is used to collect recent
   # response time samples
   # CLI flag: -ingester.push-reactive-limiter.recent-window-min-duration
@@ -1608,6 +1626,10 @@ read_reactive_limiter:
   # current inflight requests
   # CLI flag: -ingester.read-reactive-limiter.max-limit-factor-decay
   [max_limit_factor_decay: <float> | default = 1]
+
+  # (experimental) Minimum limit factor when max-limit-factor-decay is applied
+  # CLI flag: -ingester.read-reactive-limiter.min-limit-factor
+  [min_limit_factor: <float> | default = 1.2]
 
   # (experimental) Minimum duration of the window that is used to collect recent
   # response time samples
@@ -1936,6 +1958,32 @@ mimir_query_engine:
   # without buffering. Requires common subexpression elimination to be enabled.
   # CLI flag: -querier.mimir-query-engine.enable-multi-aggregation
   [enable_multi_aggregation: <boolean> | default = true]
+
+  range_vector_splitting:
+    # (experimental) Enable splitting function over range vectors queries into
+    # smaller blocks for caching.
+    # CLI flag: -querier.mimir-query-engine.range-vector-splitting.enabled
+    [enabled: <boolean> | default = false]
+
+    # (experimental) Time interval used for splitting function over range
+    # vectors queries into cacheable blocks.
+    # CLI flag: -querier.mimir-query-engine.range-vector-splitting.split-interval
+    [split_interval: <duration> | default = 2h]
+
+    intermediate_results_cache:
+      # Backend for intermediate results cache, if not empty. Supported values:
+      # memcached.
+      # CLI flag: -querier.mimir-query-engine.range-vector-splitting.backend
+      [backend: <string> | default = ""]
+
+      # The memcached block configures the Memcached-based caching backend.
+      # The CLI flags prefix for this block configuration is:
+      # querier.mimir-query-engine.range-vector-splitting
+      [memcached: <memcached>]
+
+      # Enable cache compression, if not empty. Supported values are: snappy.
+      # CLI flag: -querier.mimir-query-engine.range-vector-splitting.compression
+      [compression: <string> | default = ""]
 
 ring:
   # The key-value store used to share the hash ring across multiple instances.
@@ -3999,6 +4047,20 @@ zone_aware_routing:
   # bridge.
   # CLI flag: -memberlist.zone-aware-routing.role
   [role: <string> | default = "member"]
+
+propagation_delay_tracker:
+  # (experimental) Enable the propagation delay tracker to measure gossip
+  # propagation delay.
+  # CLI flag: -memberlist.propagation-delay-tracker.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) How often to publish beacons for propagation tracking.
+  # CLI flag: -memberlist.propagation-delay-tracker.beacon-interval
+  [beacon_interval: <duration> | default = 1m]
+
+  # (experimental) How long a beacon lives before being garbage collected.
+  # CLI flag: -memberlist.propagation-delay-tracker.beacon-lifetime
+  [beacon_lifetime: <duration> | default = 10m]
 ```
 
 ### limits
@@ -6234,6 +6296,7 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 - `blocks-storage.bucket-store.chunks-cache`
 - `blocks-storage.bucket-store.index-cache`
 - `blocks-storage.bucket-store.metadata-cache`
+- `querier.mimir-query-engine.range-vector-splitting`
 - `query-frontend.results-cache`
 - `ruler-storage.cache`
 

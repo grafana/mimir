@@ -263,6 +263,13 @@ func (cfg *Config) Validate(log.Logger) error {
 		return fmt.Errorf("ring tokens can only be disabled when gRPC push is disabled")
 	}
 
+	if err := cfg.PushReactiveLimiter.Validate(); err != nil {
+		return err
+	}
+	if err := cfg.ReadReactiveLimiter.Validate(); err != nil {
+		return err
+	}
+
 	return cfg.IngesterRing.Validate()
 }
 
@@ -330,7 +337,7 @@ type Ingester struct {
 
 	costAttributionMgr *costattribution.Manager
 
-	tsdbMetrics *tsdbMetrics
+	tsdbMetrics *mimir_tsdb.TSDBMetrics
 
 	forceCompactTrigger chan requestWithUsersAndCallback
 	shipTrigger         chan requestWithUsersAndCallback
@@ -387,7 +394,7 @@ func newIngester(cfg Config, limits *validation.Overrides, ingestersRing ring.Re
 	replicationFactor.Set(int64(cfg.IngesterRing.ReplicationFactor))
 	ringStoreName.Set(cfg.IngesterRing.KVStore.Store)
 
-	metrics := newTSDBMetrics(registerer, logger)
+	metrics := mimir_tsdb.NewTSDBMetrics(prometheus.WrapRegistererWithPrefix("cortex_ingester_", registerer), logger)
 
 	return &Ingester{
 		cfg:    cfg,
@@ -414,7 +421,7 @@ func newIngester(cfg Config, limits *validation.Overrides, ingestersRing ring.Re
 				MaxItems:              cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheMaxItems,
 				MaxBytes:              cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheMaxBytes,
 				Force:                 cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheForce,
-				Metrics:               metrics.headPostingsForMatchersCacheMetrics,
+				Metrics:               tsdb.NewPostingsForMatchersCacheMetrics(prometheus.WrapRegistererWithPrefix("cortex_ingester_tsdb_head_", registerer)),
 				PostingsClonerFactory: lookupplan.ActualSelectedPostingsClonerFactory{},
 			},
 		),
@@ -428,7 +435,7 @@ func newIngester(cfg Config, limits *validation.Overrides, ingestersRing ring.Re
 				MaxItems:              cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheMaxItems,
 				MaxBytes:              cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheMaxBytes,
 				Force:                 cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheForce,
-				Metrics:               metrics.blockPostingsForMatchersCacheMetrics,
+				Metrics:               tsdb.NewPostingsForMatchersCacheMetrics(prometheus.WrapRegistererWithPrefix("cortex_ingester_tsdb_block_", registerer)),
 				PostingsClonerFactory: lookupplan.ActualSelectedPostingsClonerFactory{},
 			},
 		),
@@ -2839,7 +2846,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		}
 	}
 
-	i.tsdbMetrics.setRegistryForUser(userID, tsdbPromReg)
+	i.tsdbMetrics.SetRegistryForTenant(userID, tsdbPromReg)
 
 	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.Enabled {
 		// Generate initial statistics only after the TSDB has been opened and initialized.
@@ -3734,7 +3741,7 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 	}()
 
 	i.metrics.memUsers.Dec()
-	i.tsdbMetrics.removeRegistryForUser(userID)
+	i.tsdbMetrics.RemoveRegistryForTenant(userID)
 
 	i.deleteUserMetadata(userID)
 	i.metrics.deletePerUserMetrics(userID)
@@ -4418,7 +4425,7 @@ func (i *Ingester) UserRegistryHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	reg := i.tsdbMetrics.regs.GetRegistryForTenant(userID)
+	reg := i.tsdbMetrics.RegistryForTenant(userID)
 	if reg == nil {
 		http.Error(w, "user registry not found", http.StatusNotFound)
 		return

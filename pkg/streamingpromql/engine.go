@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -27,6 +28,8 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/multiaggregation"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -43,7 +46,20 @@ var errPerStepStatsNotSupported = errors.New("per-step stats are not supported b
 
 const defaultLookbackDelta = 5 * time.Minute // This should be the same value as github.com/prometheus/prometheus/promql.defaultLookbackDelta.
 
-func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *stats.QueryMetrics, planner *QueryPlanner) (*Engine, error) {
+func NewEngine(opts EngineOpts, metrics *stats.QueryMetrics, planner *QueryPlanner) (*Engine, error) {
+	var cacheFactory *cache.CacheFactory
+	if opts.RangeVectorSplitting.Enabled {
+		var err error
+		cacheFactory, err = cache.NewCacheFactory(opts.RangeVectorSplitting.IntermediateResultsCache, opts.Limits, opts.Logger, opts.CommonOpts.Reg)
+		if err != nil {
+			return nil, fmt.Errorf("failed to init range vector splitting cache, err: %w", err)
+		}
+		level.Info(opts.Logger).Log("msg", "intermediate results cache enabled", "backend", opts.RangeVectorSplitting.IntermediateResultsCache.Backend)
+	}
+	return newEngineWithCache(opts, metrics, planner, cacheFactory)
+}
+
+func newEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *QueryPlanner, intermediateCache *cache.CacheFactory) (*Engine, error) {
 	if !opts.CommonOpts.EnableAtModifier {
 		return nil, errors.New("disabling @ modifier not supported by Mimir query engine")
 	}
@@ -60,6 +76,10 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		return nil, errors.New("no query planner provided")
 	}
 
+	if opts.Limits == nil {
+		return nil, errors.New("no limits provider provided")
+	}
+
 	activeQueryTracker := opts.ActiveQueryTracker
 	if activeQueryTracker == nil {
 		if opts.CommonOpts.ActiveQueryTracker != nil {
@@ -71,7 +91,7 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 
 	nodeMaterializers := map[planning.NodeType]planning.NodeMaterializer{
 		planning.NODE_TYPE_VECTOR_SELECTOR:       planning.NodeMaterializerFunc[*core.VectorSelector](core.MaterializeVectorSelector),
-		planning.NODE_TYPE_MATRIX_SELECTOR:       planning.NodeMaterializerFunc[*core.MatrixSelector](core.MaterializeMatrixSelector),
+		planning.NODE_TYPE_MATRIX_SELECTOR:       planning.RangeAwareNodeMaterializerFunc[*core.MatrixSelector](core.MaterializeMatrixSelector),
 		planning.NODE_TYPE_AGGREGATE_EXPRESSION:  planning.NodeMaterializerFunc[*core.AggregateExpression](core.MaterializeAggregateExpression),
 		planning.NODE_TYPE_BINARY_EXPRESSION:     planning.NodeMaterializerFunc[*core.BinaryExpression](core.MaterializeBinaryExpression),
 		planning.NODE_TYPE_FUNCTION_CALL:         planning.NodeMaterializerFunc[*core.FunctionCall](core.MaterializeFunctionCall),
@@ -82,16 +102,24 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		planning.NODE_TYPE_DEDUPLICATE_AND_MERGE: planning.NodeMaterializerFunc[*core.DeduplicateAndMerge](core.MaterializeDeduplicateAndMerge),
 		planning.NODE_TYPE_DROP_NAME:             planning.NodeMaterializerFunc[*core.DropName](core.MaterializeDropName),
 
-		planning.NODE_TYPE_DUPLICATE:                  planning.NodeMaterializerFunc[*commonsubexpressionelimination.Duplicate](commonsubexpressionelimination.MaterializeDuplicate),
+		planning.NODE_TYPE_DUPLICATE:                  planning.RangeAwareNodeMaterializerFunc[*commonsubexpressionelimination.Duplicate](commonsubexpressionelimination.MaterializeDuplicate),
 		planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION:  planning.NodeMaterializerFunc[*core.StepInvariantExpression](core.MaterializeStepInvariantExpression),
 		planning.NODE_TYPE_MULTI_AGGREGATION_GROUP:    planning.NodeMaterializerFunc[*multiaggregation.MultiAggregationGroup](multiaggregation.MaterializeMultiAggregationGroup),
 		planning.NODE_TYPE_MULTI_AGGREGATION_INSTANCE: planning.NodeMaterializerFunc[*multiaggregation.MultiAggregationInstance](multiaggregation.MaterializeMultiAggregationInstance),
 	}
 
+	if opts.RangeVectorSplitting.Enabled {
+		nodeMaterializers[planning.NODE_TYPE_SPLIT_FUNCTION_OVER_RANGE_VECTOR] = rangevectorsplitting.NewMaterializer(intermediateCache)
+	} else {
+		nodeMaterializers[planning.NODE_TYPE_SPLIT_FUNCTION_OVER_RANGE_VECTOR] = planning.NewDisabledMaterializer(
+			errors.New("split function node is present but range vector splitting is disabled, this could happen if splitting is enabled on the query-frontend but not in the querier"),
+		)
+	}
+
 	return &Engine{
 		lookbackDelta:            DetermineLookbackDelta(opts.CommonOpts),
 		timeout:                  opts.CommonOpts.Timeout,
-		limitsProvider:           limitsProvider,
+		limitsProvider:           opts.Limits,
 		activeQueryTracker:       activeQueryTracker,
 		noStepSubqueryIntervalFn: opts.CommonOpts.NoStepSubqueryIntervalFn,
 
@@ -307,29 +335,41 @@ type QueryLimitsProvider interface {
 	GetMaxEstimatedMemoryConsumptionPerQuery(ctx context.Context) (uint64, error)
 	// GetEnableDelayedNameRemoval indicates if the experimental feature for delayed name removal should be enabled.
 	GetEnableDelayedNameRemoval(ctx context.Context) (bool, error)
+	// GetMaxOutOfOrderTimeWindow returns the out-of-order time window for the tenant(s) in the context.
+	GetMaxOutOfOrderTimeWindow(ctx context.Context) (time.Duration, error)
+	// GetMinResultsCacheTTL returns the TTL for cached results for the tenant(s) in the context.
+	GetMinResultsCacheTTL(ctx context.Context) (time.Duration, error)
 }
 
 // NewStaticQueryLimitsProvider returns a QueryLimitsProvider that always returns the provided limits.
-//
 // This should generally only be used in tests.
-func NewStaticQueryLimitsProvider(maxEstimatedMemoryConsumptionPerQuery uint64, enableDelayedNameRemoval bool) QueryLimitsProvider {
-	return staticQueryLimitsProvider{
-		maxEstimatedMemoryConsumptionPerQuery: maxEstimatedMemoryConsumptionPerQuery,
-		enableDelayedNameRemoval:              enableDelayedNameRemoval,
+func NewStaticQueryLimitsProvider() StaticQueryLimitsProvider {
+	return StaticQueryLimitsProvider{
+		MinResultsCacheTTL: 7 * 24 * time.Hour,
 	}
 }
 
-type staticQueryLimitsProvider struct {
-	maxEstimatedMemoryConsumptionPerQuery uint64
-	enableDelayedNameRemoval              bool
+type StaticQueryLimitsProvider struct {
+	MaxEstimatedMemoryConsumptionPerQuery uint64
+	EnableDelayedNameRemoval              bool
+	MaxOutOfOrderTimeWindow               time.Duration
+	MinResultsCacheTTL                    time.Duration
 }
 
-func (p staticQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(_ context.Context) (uint64, error) {
-	return p.maxEstimatedMemoryConsumptionPerQuery, nil
+func (p StaticQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(_ context.Context) (uint64, error) {
+	return p.MaxEstimatedMemoryConsumptionPerQuery, nil
 }
 
-func (p staticQueryLimitsProvider) GetEnableDelayedNameRemoval(_ context.Context) (bool, error) {
-	return p.enableDelayedNameRemoval, nil
+func (p StaticQueryLimitsProvider) GetEnableDelayedNameRemoval(_ context.Context) (bool, error) {
+	return p.EnableDelayedNameRemoval, nil
+}
+
+func (p StaticQueryLimitsProvider) GetMaxOutOfOrderTimeWindow(_ context.Context) (time.Duration, error) {
+	return p.MaxOutOfOrderTimeWindow, nil
+}
+
+func (p StaticQueryLimitsProvider) GetMinResultsCacheTTL(_ context.Context) (time.Duration, error) {
+	return p.MinResultsCacheTTL, nil
 }
 
 type NoopQueryTracker struct{}

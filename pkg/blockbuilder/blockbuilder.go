@@ -9,6 +9,7 @@ import (
 	"iter"
 	"os"
 	"path"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -51,7 +52,7 @@ type BlockBuilder struct {
 	blockBuilderMetrics   blockBuilderMetrics
 	tsdbBuilderMetrics    tsdbBuilderMetrics
 	readerMetrics         *ingest.ReaderMetrics
-	readerMetricsSource   swappableReaderMetricsSource
+	readerMetricsSource   *swappableReaderMetricsSource
 	kpromMetrics          *kprom.Metrics
 	pusherConsumerMetrics *ingest.PusherConsumerMetrics
 }
@@ -74,7 +75,7 @@ func newWithSchedulerClient(
 	schedulerClient schedulerpb.SchedulerClient,
 ) (*BlockBuilder, error) {
 	kpm := ingest.NewKafkaReaderClientMetrics(ingest.ReaderMetricsPrefix, "block-builder", reg)
-	readerMetricsSource := swappableReaderMetricsSource{&zeroReaderMetricsSource{}}
+	readerMetricsSource := &swappableReaderMetricsSource{}
 
 	var readerMetrics *ingest.ReaderMetrics
 	if cfg.Kafka.FetchConcurrencyMax > 0 {
@@ -145,13 +146,20 @@ func (b *BlockBuilder) makeSchedulerClient() (schedulerpb.SchedulerClient, *grpc
 	return client, conn, nil
 }
 
-func (b *BlockBuilder) starting(context.Context) (err error) {
+func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 	// Empty any previous artifacts.
 	if err := os.RemoveAll(b.cfg.DataDir); err != nil {
 		return fmt.Errorf("removing data dir: %w", err)
 	}
 	if err := os.MkdirAll(b.cfg.DataDir, os.ModePerm); err != nil {
 		return fmt.Errorf("creating data dir: %w", err)
+	}
+
+	if b.readerMetrics != nil {
+		// ingest.ReaderMetrics is a service that pulls metrics from the provided readerMetricsSource.
+		if err := services.StartAndAwaitRunning(ctx, b.readerMetrics); err != nil {
+			return fmt.Errorf("starting kafka reader metrics: %w", err)
+		}
 	}
 
 	b.kafkaClient, err = ingest.NewKafkaReaderClient(
@@ -170,9 +178,19 @@ func (b *BlockBuilder) stopping(_ error) error {
 	b.kafkaClient.Close()
 	b.schedulerClient.Close()
 
-	if b.schedulerConn != nil {
-		return b.schedulerConn.Close()
+	if b.readerMetrics != nil {
+		if err := services.StopAndAwaitTerminated(context.Background(), b.readerMetrics); err != nil {
+			// This service can't fail.
+			level.Warn(b.logger).Log("msg", "error encountered while stopping kafka reader metrics service", "err", err)
+		}
 	}
+
+	if b.schedulerConn != nil {
+		if err := b.schedulerConn.Close(); err != nil {
+			return fmt.Errorf("closing scheduler connection: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -267,20 +285,45 @@ var _ fetchPoller = (*fetchWrapper)(nil)
 
 // swappableReaderMetricsSource is a ReaderMetricsSource that can be swapped out at runtime.
 type swappableReaderMetricsSource struct {
-	ingest.ReaderMetricsSource
+	// protects the underlying metrics source
+	mu  sync.RWMutex
+	src ingest.ReaderMetricsSource
 }
 
-func (s *swappableReaderMetricsSource) set(metricsSource ingest.ReaderMetricsSource) {
-	s.ReaderMetricsSource = metricsSource
+func (s *swappableReaderMetricsSource) BufferedBytes() int64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.src == nil {
+		return 0
+	}
+	return s.src.BufferedBytes()
 }
 
-type zeroReaderMetricsSource struct{}
+func (s *swappableReaderMetricsSource) BufferedRecords() int64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.src == nil {
+		return 0
+	}
+	return s.src.BufferedRecords()
+}
 
-func (z *zeroReaderMetricsSource) BufferedBytes() int64           { return 0 }
-func (z *zeroReaderMetricsSource) BufferedRecords() int64         { return 0 }
-func (z *zeroReaderMetricsSource) EstimatedBytesPerRecord() int64 { return 0 }
+func (s *swappableReaderMetricsSource) EstimatedBytesPerRecord() int64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.src == nil {
+		return 0
+	}
+	return s.src.EstimatedBytesPerRecord()
+}
 
-var _ ingest.ReaderMetricsSource = (*zeroReaderMetricsSource)(nil)
+func (s *swappableReaderMetricsSource) set(src ingest.ReaderMetricsSource) {
+	s.mu.Lock()
+	s.src = src
+	s.mu.Unlock()
+}
+
+var _ ingest.ReaderMetricsSource = (*swappableReaderMetricsSource)(nil)
 
 // newFetchers creates a new concurrent fetcher, retrying until it succeeds or the context is cancelled.
 // The returned error is the last error encountered.

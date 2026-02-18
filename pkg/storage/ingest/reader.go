@@ -126,7 +126,8 @@ func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID stri
 		offsetFile: newOffsetFile(offsetFilePath, partitionID, log.With(logger, "partition", partitionID)),
 	}
 
-	r.metrics = NewReaderMetrics(reg, r, kafkaCfg.Topic, nil)
+	kpromMetrics := NewKafkaReaderClientMetrics(ReaderMetricsPrefix, "partition-reader", reg)
+	r.metrics = NewReaderMetrics(reg, r, kafkaCfg.Topic, kpromMetrics)
 	// Initialize the last consumed offset metric to -1 to signal no offset has been consumed yet (0 is a valid offset).
 	r.metrics.lastConsumedOffset.WithLabelValues(strconv.Itoa(int(partitionID))).Set(-1)
 
@@ -1177,11 +1178,6 @@ func NewReaderMetrics(reg prometheus.Registerer, metricsSource ReaderMetricsSour
 		Help: "The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.",
 	}, []string{"partition"})
 
-	kpm := kpromMetrics
-	if kpm == nil {
-		kpm = NewKafkaReaderClientMetrics(ReaderMetricsPrefix, component, reg)
-	}
-
 	m := ReaderMetrics{
 		bufferedFetchedRecords: promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
 			Name: "cortex_ingest_storage_reader_buffered_fetched_records",
@@ -1234,7 +1230,7 @@ func NewReaderMetrics(reg prometheus.Registerer, metricsSource ReaderMetricsSour
 		}),
 		strongConsistencyInstrumentation: NewStrongReadConsistencyInstrumentation[struct{}](component, reg, []string{topic}),
 		lastConsumedOffset:               lastConsumedOffset,
-		kprom:                            kpm,
+		kprom:                            kpromMetrics,
 		missedRecords: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingest_storage_reader_missed_records_total",
 			Help: "The number of offsets that were never consumed by the reader because they weren't fetched.",

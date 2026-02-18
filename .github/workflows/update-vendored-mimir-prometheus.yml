@@ -180,3 +180,13 @@ jobs:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           BASE_BRANCH: ${{ steps.branch-names.outputs.mimir_branch }}
           PULL_REQUEST_NUMBER: ${{ steps.create_pull_request.outputs.pull-request-number }}
+
+      - name: Send Slack notification on failure
+        if: failure()
+        uses: grafana/shared-workflows/actions/send-slack-message@7b628e7352c2dea057c565cc4fcd5564d5f396c0 # v1.0.0
+        with:
+          channel-id: C04AF91LPFX #mimir-ci-notifications
+          payload: |
+            {
+              "text": ":sadcomputer: *Automated vendoring of mimir-prometheus into Mimir has failed.*\n<!subteam^S03C2P8659U> please check the <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow logs> and coordinate fixes for any issues."
+            }
