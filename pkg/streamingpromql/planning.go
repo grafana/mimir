@@ -157,6 +157,11 @@ func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts, versionProvider Q
 		activeQueryTracker = &NoopQueryTracker{}
 	}
 
+	promqlParser := opts.CommonOpts.Parser
+	if promqlParser == nil {
+		promqlParser = promqlext.NewPromQLParser()
+	}
+
 	return &QueryPlanner{
 		activeQueryTracker:       activeQueryTracker,
 		noStepSubqueryIntervalFn: opts.CommonOpts.NoStepSubqueryIntervalFn,
@@ -171,7 +176,7 @@ func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts, versionProvider Q
 		}, []string{"version"}),
 		planningMetricsTracker: planningmetrics.NewMetricsTracker(opts.CommonOpts.Reg),
 		versionProvider:        versionProvider,
-		parser:                 promqlext.NewPromQLParser(),
+		parser:                 promqlParser,
 
 		logger:    opts.Logger,
 		TimeSince: time.Since,

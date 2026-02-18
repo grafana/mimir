@@ -48,6 +48,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 	syncutil "github.com/grafana/mimir/pkg/util/sync"
 )
 
@@ -101,7 +102,12 @@ func requireQueryIsUnsupported(t *testing.T, expression string, expectedError st
 }
 
 func requireRangeQueryIsUnsupported(t *testing.T, expression string, expectedError string) {
+	parserOpts := promqlext.NewPromQLParserOptions()
+	parserOpts.EnableBinopFillModifiers = true
+
 	opts := NewTestEngineOpts()
+	opts.CommonOpts.Parser = parser.NewParser(parserOpts)
+
 	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	engine, err := NewEngine(opts, stats.NewQueryMetrics(nil), planner)
@@ -114,7 +120,12 @@ func requireRangeQueryIsUnsupported(t *testing.T, expression string, expectedErr
 }
 
 func requireInstantQueryIsUnsupported(t *testing.T, expression string, expectedError string) {
+	parserOpts := promqlext.NewPromQLParserOptions()
+	parserOpts.EnableBinopFillModifiers = true
+
 	opts := NewTestEngineOpts()
+	opts.CommonOpts.Parser = parser.NewParser(parserOpts)
+
 	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	engine, err := NewEngine(opts, stats.NewQueryMetrics(nil), planner)
