@@ -460,9 +460,14 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error
 	}()
 	s.metrics.blockLoads.Inc()
 
+	// Track index-header loading with block compaction level
+	binaryReaderLogger := log.With(s.logger,
+		"id", meta.ULID, "compaction_level", meta.Compaction.Level,
+	)
+
 	indexHeaderReader, err := s.indexReaderPool.NewBinaryReader(
 		ctx,
-		s.logger,
+		binaryReaderLogger,
 		s.bkt,
 		s.dir,
 		meta.ULID,
