@@ -27,6 +27,15 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
+var (
+	errFailedAbandoningJob = status.Error(codes.Internal, "failed to abandon job")
+	errFailedCancelLease   = status.Error(codes.Internal, "failed to cancel job lease")
+	errFailedCompletingJob = status.Error(codes.Internal, "failed to complete job")
+	errFailedLeasingJob    = status.Error(codes.Internal, "failed to lease job")
+	errLeaseNotFound       = status.Error(codes.NotFound, "lease was not found")
+	errNotRunning          = status.Error(codes.Unavailable, "the compactor scheduler is not currently running (starting or shutting down)")
+)
+
 type Config struct {
 	maxLeases             int
 	leaseDuration         time.Duration
@@ -203,21 +212,19 @@ func (s *Scheduler) LeaseJob(ctx context.Context, req *compactorschedulerpb.Leas
 	response, ok, err := s.rotator.LeaseJob(ctx)
 	if err != nil {
 		level.Error(s.logger).Log("msg", "failed leasing job", "err", err)
-		return nil, failedTo("lease job")
+		return nil, errFailedLeasingJob
 	}
 	if ok {
 		level.Info(s.logger).Log("msg", "leased job", "tenant", response.Spec.Tenant, "job_type", response.Spec.JobType.String(), "id", response.Key.Id, "epoch", response.Key.Epoch, "worker", req.WorkerId)
 		return response, nil
 	}
-
-	level.Info(s.logger).Log("msg", "no jobs pending to be leased", "worker", req.WorkerId)
-	return nil, status.Error(codes.NotFound, "no jobs were pending to be leased")
+	return &compactorschedulerpb.LeaseJobResponse{}, nil
 }
 
 func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.PlannedJobsRequest) (*compactorschedulerpb.PlannedJobsResponse, error) {
 	if !s.isRunning() {
 		// This check is required to prevent requests from seeing empty state before startup
-		return nil, notRunning()
+		return nil, errNotRunning
 	}
 
 	level.Info(s.logger).Log("msg", "received plan results", "tenant", req.Tenant, "epoch", req.Key.Epoch, "job_count", len(req.Jobs))
@@ -252,14 +259,14 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 	_, found, err := s.rotator.OfferCompactionJobs(req.Tenant, jobs, req.Key.Epoch)
 	if err != nil {
 		level.Error(s.logger).Log("msg", "failed offering result of plan job", "err", err)
-		return nil, failedTo("offering results")
+		return nil, errFailedCompletingJob
 	} else if !found {
 		if s.isRunning() {
-			return nil, status.Error(codes.NotFound, "no matching plan job lease found")
+			return nil, errLeaseNotFound
 		} else {
 			// This request may have erroneously seen empty state. Transform it to an unavailable error to preserve state in the worker.
 			// Worst case we are accidentally pushing them to return the same results later
-			return nil, notRunning()
+			return nil, errNotRunning
 		}
 	}
 
@@ -269,51 +276,51 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 func (s *Scheduler) UpdatePlanJob(ctx context.Context, req *compactorschedulerpb.UpdatePlanJobRequest) (*compactorschedulerpb.UpdateJobResponse, error) {
 	if !s.isRunning() {
 		// This check is required to prevent requests from seeing empty state before startup, but then running when checking to transform not found errors.
-		return nil, notRunning()
+		return nil, errNotRunning
 	}
 
 	level.Info(s.logger).Log("msg", "received plan job lease update request", "update_type", compactorschedulerpb.UpdateType_name[int32(req.Update)], "id", req.Key.Id, "epoch", req.Key.Epoch)
 	switch req.Update {
 	case compactorschedulerpb.UPDATE_TYPE_IN_PROGRESS:
 		if s.rotator.RenewJobLease(req.Tenant, req.Key.Id, req.Key.Epoch) {
-			return ok()
+			return &compactorschedulerpb.UpdateJobResponse{}, nil
 		}
 	case compactorschedulerpb.UPDATE_TYPE_ABANDON:
 		removed, err := s.rotator.RemoveJob(req.Tenant, req.Key.Id, req.Key.Epoch, false)
 		if err != nil {
-			return nil, failedTo("remove job")
+			return nil, errFailedAbandoningJob
 		}
 		if removed {
-			return ok()
+			return &compactorschedulerpb.UpdateJobResponse{}, nil
 		}
 	case compactorschedulerpb.UPDATE_TYPE_REASSIGN:
 		canceled, err := s.rotator.CancelJobLease(req.Tenant, req.Key.Id, req.Key.Epoch)
 		if err != nil {
-			return nil, failedTo("cancel job lease")
+			return nil, errFailedCancelLease
 		}
 		if canceled {
-			return ok()
+			return &compactorschedulerpb.UpdateJobResponse{}, nil
 		}
 	case compactorschedulerpb.UPDATE_TYPE_COMPLETE:
 		// Plan jobs do not send a complete. They instead call PlannedJobs.
 		fallthrough
 	default:
-		return nil, status.Error(codes.InvalidArgument, "unrecognized update type")
+		return nil, invalidUpdateTypeError(req.Update)
 	}
 
 	if !s.isRunning() {
 		// This request may have erroneously seen empty state. Transform it to an unavailable error to preserve state in the worker.
-		return nil, notRunning()
+		return nil, errNotRunning
 	}
 
 	level.Info(s.logger).Log("msg", "could not find lease during update for plan job", "update_type", compactorschedulerpb.UpdateType_name[int32(req.Update)], "id", req.Key.Id, "epoch", req.Key.Epoch)
-	return notFound()
+	return nil, errLeaseNotFound
 }
 
 func (s *Scheduler) UpdateCompactionJob(ctx context.Context, req *compactorschedulerpb.UpdateCompactionJobRequest) (*compactorschedulerpb.UpdateJobResponse, error) {
 	if !s.isRunning() {
 		// This check is required to prevent requests from seeing empty state before startup, but then running when checking to transform not found errors.
-		return nil, notRunning()
+		return nil, errNotRunning
 	}
 
 	level.Info(s.logger).Log("msg", "received compaction lease update request", "update_type", compactorschedulerpb.UpdateType_name[int32(req.Update)], "id", req.Key.Id, "epoch", req.Key.Epoch)
@@ -321,57 +328,45 @@ func (s *Scheduler) UpdateCompactionJob(ctx context.Context, req *compactorsched
 	switch req.Update {
 	case compactorschedulerpb.UPDATE_TYPE_IN_PROGRESS:
 		if s.rotator.RenewJobLease(req.Tenant, req.Key.Id, req.Key.Epoch) {
-			return ok()
+			return &compactorschedulerpb.UpdateJobResponse{}, nil
 		}
 	case compactorschedulerpb.UPDATE_TYPE_COMPLETE:
 		removed, err := s.rotator.RemoveJob(req.Tenant, req.Key.Id, req.Key.Epoch, true)
 		if err != nil {
-			return nil, failedTo("complete job")
+			return nil, errFailedCompletingJob
 		}
 		if removed {
-			return ok()
+			return &compactorschedulerpb.UpdateJobResponse{}, nil
 		}
 	case compactorschedulerpb.UPDATE_TYPE_ABANDON:
 		removed, err := s.rotator.RemoveJob(req.Tenant, req.Key.Id, req.Key.Epoch, false)
 		if err != nil {
-			return nil, failedTo("remove job")
+			return nil, errFailedAbandoningJob
 		}
 		if removed {
-			return ok()
+			return &compactorschedulerpb.UpdateJobResponse{}, nil
 		}
 	case compactorschedulerpb.UPDATE_TYPE_REASSIGN:
 		canceled, err := s.rotator.CancelJobLease(req.Tenant, req.Key.Id, req.Key.Epoch)
 		if err != nil {
-			return nil, failedTo("cancel job lease")
+			return nil, errFailedCancelLease
 		}
 		if canceled {
-			return ok()
+			return &compactorschedulerpb.UpdateJobResponse{}, nil
 		}
 	default:
-		return nil, status.Error(codes.InvalidArgument, "unrecognized update type")
+		return nil, invalidUpdateTypeError(req.Update)
 	}
 
 	if !s.isRunning() {
 		// This request may have erroneously seen empty state. Transform it to an unavailable error to preserve state in the worker.
-		return nil, notRunning()
+		return nil, errNotRunning
 	}
 
 	level.Info(s.logger).Log("msg", "could not find lease during update for compaction job", "update_type", compactorschedulerpb.UpdateType_name[int32(req.Update)], "id", req.Key.Id, "epoch", req.Key.Epoch)
-	return notFound()
+	return nil, errLeaseNotFound
 }
 
-func ok() (*compactorschedulerpb.UpdateJobResponse, error) {
-	return &compactorschedulerpb.UpdateJobResponse{}, nil
-}
-
-func failedTo(operation string) error {
-	return status.Error(codes.Internal, fmt.Sprintf("failed to %s", operation))
-}
-
-func notRunning() error {
-	return status.Error(codes.Unavailable, "the compactor scheduler is not currently running (starting or shutting down)")
-}
-
-func notFound() (*compactorschedulerpb.UpdateJobResponse, error) {
-	return nil, status.Error(codes.NotFound, "lease was not found")
+func invalidUpdateTypeError(updateType compactorschedulerpb.UpdateType) error {
+	return status.Error(codes.InvalidArgument, fmt.Sprintf("update type was not recognized: %s", updateType.String()))
 }
