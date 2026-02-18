@@ -79,17 +79,7 @@
   newDistributorZoneContainer(zone, args, extraEnvVarMap={})::
     $.distributor_container +
     container.withArgs($.util.mapToFlags(args)) +
-    (
-      local envMixin =
-        if std.type(extraEnvVarMap) == 'array'
-        then extraEnvVarMap
-        else [
-          { name: kv.key, value: kv.value }
-          for kv in std.objectKeysValues(extraEnvVarMap)
-        ];
-
-      if std.length(envMixin) > 0 then container.withEnvMixin(std.prune(envMixin)) else {}
-    ),
+    (if std.length(extraEnvVarMap) > 0 then container.withEnvMap(std.prune(extraEnvVarMap)) else {}),
 
   newDistributorZoneDeployment(zone, container, nodeAffinityMatchers=[])::
     local name = 'distributor-zone-%s' % zone;
