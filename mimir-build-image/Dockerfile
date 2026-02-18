@@ -58,7 +58,7 @@ RUN GO111MODULE=on \
 	go install github.com/norwoodj/helm-docs/cmd/helm-docs@v1.14.2 && \
 	go install github.com/open-policy-agent/conftest@v0.62.0 && \
 	go install github.com/uber-go/gopatch@v0.4.0 && \
-	go install github.com/bufbuild/buf/cmd/buf@v1.55.1 && \
+	go install github.com/bufbuild/buf/cmd/buf@v1.65.0 && \
 	rm -rf /go/pkg /go/src /root/.cache
 
 COPY --from=helm /usr/bin/helm /usr/bin/helm
