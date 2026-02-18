@@ -52,6 +52,7 @@ store_gateway:
   zoneAwareReplication:
     enabled: true
     topologyKey: 'kubernetes.io/hostname'
+    minTimeBetweenZonesDownscale: 10m
     zones:
     - name: zone-a
       nodeSelector:
