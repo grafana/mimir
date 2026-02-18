@@ -325,7 +325,7 @@ func TestCompactedBlocksTimeRangeVerification(t *testing.T) {
 				}, 10, testData.compactedBlockMaxTime-500, testData.compactedBlockMaxTime, labels.EmptyLabels())
 			require.NoError(t, err)
 
-			err = verifyCompactedBlocksTimeRanges([]ulid.ULID{compactedBlock1, compactedBlock2}, sourceMinTime, sourceMaxTime, tempDir)
+			_, err = verifyCompactedBlocksTimeRanges([]ulid.ULID{compactedBlock1.ULID, compactedBlock2.ULID}, sourceMinTime, sourceMaxTime, tempDir)
 			if testData.shouldErr {
 				require.ErrorContains(t, err, testData.expectedErrMsg)
 			} else {

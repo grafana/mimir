@@ -131,12 +131,12 @@ func NewLazyBinaryReader(
 	logger log.Logger,
 	bkt objstore.InstrumentedBucketReader,
 	dir string,
-	id ulid.ULID,
+	meta *block.Meta,
 	metrics *LazyBinaryReaderMetrics,
 	onClosed func(*LazyBinaryReader),
 	lazyLoadingGate gate.Gate,
 ) (*LazyBinaryReader, error) {
-	dir = filepath.Join(dir, id.String())
+	dir = filepath.Join(dir, meta.ULID.String())
 	indexHeaderPath := filepath.Join(dir, block.IndexHeaderFilename)
 	sparseHeaderPath := filepath.Join(dir, block.SparseIndexHeaderFilename)
 
@@ -148,17 +148,17 @@ func NewLazyBinaryReader(
 		_ = df.Close()
 	}
 
-	logger = log.With(logger, "id", id)
+	logger = log.With(logger, "id", meta)
 
 	g := errgroup.Group{}
 	if !cfg.BucketReader.Enabled {
 		g.Go(func() error {
-			return ensureIndexHeaderOnDisk(ctx, logger, bkt, id, indexHeaderPath)
+			return ensureIndexHeaderOnDisk(ctx, logger, bkt, meta.ULID, indexHeaderPath)
 		})
 	}
 
 	g.Go(func() error {
-		tryDownloadSparseHeader(ctx, logger, bkt, id, sparseHeaderPath)
+		tryDownloadSparseHeader(ctx, logger, bkt, meta.ULID, sparseHeaderPath)
 		return nil
 	})
 	if err := g.Wait(); err != nil {
@@ -172,7 +172,7 @@ func NewLazyBinaryReader(
 		usedAt:          atomic.NewInt64(0),
 		onClosed:        onClosed,
 		readerFactory:   readerFactory,
-		blockID:         id,
+		blockID:         meta.ULID,
 		lazyLoadingGate: lazyLoadingGate,
 		ctx:             ctx,
 
@@ -185,13 +185,19 @@ func NewLazyBinaryReader(
 	return reader, nil
 }
 
-func tryDownloadSparseHeader(ctx context.Context, logger log.Logger, bkt objstore.InstrumentedBucketReader, id ulid.ULID, sparseHeaderPath string) {
+func tryDownloadSparseHeader(ctx context.Context, logger log.Logger, bkt objstore.InstrumentedBucketReader, meta *block.Meta, sparseHeaderPath string) {
 	_, err := os.Stat(sparseHeaderPath)
 	if err == nil {
 		// The header is already on disk
 		return
 	}
-	bucketSparseHeaderBytes, err := tryReadBucketSparseHeader(ctx, logger, bkt, id)
+	logger = log.With(logger,
+		"id", meta.ULID,
+		"compaction_level", meta.Compaction.Level,
+		"path", sparseHeaderPath,
+	)
+
+	bucketSparseHeaderBytes, err := tryReadBucketSparseHeader(ctx, logger, bkt, meta.ULID)
 	if err != nil {
 		level.Info(logger).Log("msg", "could not download sparse index-header from bucket; will reconstruct when the block is queried", "err", err)
 		return

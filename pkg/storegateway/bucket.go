@@ -465,7 +465,7 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error
 		s.logger,
 		s.bkt,
 		s.dir,
-		meta.ULID,
+		meta,
 		s.postingOffsetsInMemSampling,
 		s.indexHeaderCfg,
 	)

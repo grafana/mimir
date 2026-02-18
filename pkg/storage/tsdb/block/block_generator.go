@@ -196,9 +196,9 @@ func CreateBlock(
 	numSamples int,
 	mint, maxt int64,
 	extLset labels.Labels,
-) (id ulid.ULID, err error) {
+) (meta *Meta, err error) {
 	if len(series) < 3 {
-		return id, errors.Errorf("not enough series to test different value types: floats, histograms, float histograms")
+		return meta, errors.Errorf("not enough series to test different value types: floats, histograms, float histograms")
 	}
 
 	headOpts := tsdb.DefaultHeadOptions()
@@ -206,7 +206,7 @@ func CreateBlock(
 	headOpts.ChunkRange = math.MaxInt64
 	h, err := tsdb.NewHead(nil, nil, nil, nil, headOpts, nil)
 	if err != nil {
-		return id, errors.Wrap(err, "create head block")
+		return meta, errors.Wrap(err, "create head block")
 	}
 	defer func() {
 		runutil.CloseWithErrCapture(&err, h, "TSDB Head")
@@ -268,40 +268,40 @@ func CreateBlock(
 		})
 	}
 	if err := g.Wait(); err != nil {
-		return id, err
+		return meta, err
 	}
 	c, err := tsdb.NewLeveledCompactor(ctx, nil, promslog.NewNopLogger(), []int64{maxt - mint}, nil, nil)
 	if err != nil {
-		return id, errors.Wrap(err, "create compactor")
+		return meta, errors.Wrap(err, "create compactor")
 	}
 
 	blocks, err := c.Write(dir, h, mint, maxt, nil)
 	if err != nil {
-		return id, errors.Wrap(err, "write block")
+		return meta, errors.Wrap(err, "write block")
 	}
 
 	if len(blocks) == 0 || (blocks[0] == ulid.ULID{}) {
-		return id, errors.Errorf("nothing to write, asked for %d samples", numSamples)
+		return meta, errors.Errorf("nothing to write, asked for %d samples", numSamples)
 	}
 	if len(blocks) > 1 {
-		return id, errors.Errorf("expected one block, got %d, asked for %d samples", len(blocks), numSamples)
+		return meta, errors.Errorf("expected one block, got %d, asked for %d samples", len(blocks), numSamples)
 	}
 
-	id = blocks[0]
+	id := blocks[0]
 
 	blockDir := filepath.Join(dir, id.String())
 
-	if _, err = InjectThanosMeta(log.NewNopLogger(), blockDir, ThanosMeta{
+	if meta, err = InjectThanosMeta(log.NewNopLogger(), blockDir, ThanosMeta{
 		Labels: extLset.Map(),
 		Source: TestSource,
 		Files:  []File{},
 	}, nil); err != nil {
-		return id, errors.Wrap(err, "finalize block")
+		return meta, errors.Wrap(err, "finalize block")
 	}
 
 	if err = os.Remove(filepath.Join(dir, id.String(), "tombstones")); err != nil {
-		return id, errors.Wrap(err, "remove tombstones")
+		return meta, errors.Wrap(err, "remove tombstones")
 	}
 
-	return id, nil
+	return meta, nil
 }

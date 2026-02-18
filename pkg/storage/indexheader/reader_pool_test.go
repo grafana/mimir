@@ -141,7 +141,7 @@ func TestReaderPool_LoadedBlocks(t *testing.T) {
 	require.Equal(t, []ulid.ULID{id}, loadedBlocks)
 }
 
-func prepareReaderPool(t *testing.T) (context.Context, string, objstore.InstrumentedBucketReader, ulid.ULID, *ReaderPoolMetrics) {
+func prepareReaderPool(t *testing.T) (context.Context, string, objstore.InstrumentedBucketReader, *block.Meta, *ReaderPoolMetrics) {
 	ctx := context.Background()
 
 	tmpDir := t.TempDir()
@@ -156,15 +156,15 @@ func prepareReaderPool(t *testing.T) (context.Context, string, objstore.Instrume
 	})
 
 	// Create block.
-	blockID, err := block.CreateBlock(ctx, tmpDir, []labels.Labels{
+	meta, err := block.CreateBlock(ctx, tmpDir, []labels.Labels{
 		labels.FromStrings("a", "1"),
 		labels.FromStrings("a", "2"),
 		labels.FromStrings("a", "3"),
 	}, 100, 0, 1000, labels.FromStrings("ext1", "1"))
 	require.NoError(t, err)
-	_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil)
+	_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, meta.ULID.String()), nil)
 	require.NoError(t, err)
 
 	metrics := NewReaderPoolMetrics(nil)
-	return ctx, tmpDir, bkt, blockID, metrics
+	return ctx, tmpDir, bkt, meta, metrics
 }

@@ -92,7 +92,7 @@ func TestMimirtoolBackfill(t *testing.T) {
 
 	{
 		// Try to upload block using mimirtool. Should fail because upload is not enabled for user.
-		output, err := runMimirtoolBackfill(tmpDir, compactor, block1)
+		output, err := runMimirtoolBackfill(tmpDir, compactor, block1.ULID)
 		require.Contains(t, output, "400 Bad Request")
 		require.Contains(t, output, "block upload is disabled")
 		require.Error(t, err)
@@ -118,16 +118,16 @@ overrides:
 		})
 
 		// Upload block using mimirtool, should work since upload is enabled for user.
-		output, err := runMimirtoolBackfill(tmpDir, compactor, block1)
-		requireLineContaining(t, output, "msg=\"block uploaded successfully\"", fmt.Sprintf("block=%s", block1))
+		output, err := runMimirtoolBackfill(tmpDir, compactor, block1.ULID)
+		requireLineContaining(t, output, "msg=\"block uploaded successfully\"", fmt.Sprintf("block=%s", block1.ULID))
 		require.NoError(t, err)
 	}
 
 	{
 		// Upload block1 and block2. Block 1 already exists, but block2 should be uploaded without problems.
-		output, err := runMimirtoolBackfill(tmpDir, compactor, block1, block2)
-		requireLineContaining(t, output, "msg=\"block already exists on the server\"", fmt.Sprintf("path=%s", path.Join(e2e.ContainerSharedDir, block1.String())))
-		requireLineContaining(t, output, "msg=\"block uploaded successfully\"", fmt.Sprintf("block=%s", block2))
+		output, err := runMimirtoolBackfill(tmpDir, compactor, block1.ULID, block2.ULID)
+		requireLineContaining(t, output, "msg=\"block already exists on the server\"", fmt.Sprintf("path=%s", path.Join(e2e.ContainerSharedDir, block1.ULID.String())))
+		requireLineContaining(t, output, "msg=\"block uploaded successfully\"", fmt.Sprintf("block=%s", block2.ULID))
 
 		// If blocks exist, it's not an error.
 		require.NoError(t, err)
@@ -145,8 +145,8 @@ overrides:
 		}, "test", log.NewNopLogger())
 		require.NoError(t, err)
 
-		verifyBlock(t, client, block1, filepath.Join(tmpDir, block1.String()))
-		verifyBlock(t, client, block2, filepath.Join(tmpDir, block2.String()))
+		verifyBlock(t, client, block1.ULID, filepath.Join(tmpDir, block1.ULID.String()))
+		verifyBlock(t, client, block2.ULID, filepath.Join(tmpDir, block2.ULID.String()))
 	}
 
 	{
@@ -160,10 +160,10 @@ overrides:
 			},
 			100, blockEnd.Add(-2*time.Hour).UnixMilli(), blockEnd.UnixMilli(), labels.EmptyLabels())
 		require.NoError(t, err)
-		require.NoError(t, os.Remove(filepath.Join(tmpDir, b.String(), block.MetaFilename)))
+		require.NoError(t, os.Remove(filepath.Join(tmpDir, b.ULID.String(), block.MetaFilename)))
 
-		output, err := runMimirtoolBackfill(tmpDir, compactor, b)
-		requireLineContaining(t, output, "msg=\"failed uploading block\"", fmt.Sprintf("path=%s", path.Join(e2e.ContainerSharedDir, b.String())))
+		output, err := runMimirtoolBackfill(tmpDir, compactor, b.ULID)
+		requireLineContaining(t, output, "msg=\"failed uploading block\"", fmt.Sprintf("path=%s", path.Join(e2e.ContainerSharedDir, b.ULID.String())))
 		require.Error(t, err)
 	}
 
@@ -181,7 +181,7 @@ overrides:
 			100, blockEnd.Add(-2*time.Hour).UnixMilli(), blockEnd.UnixMilli(), extLabels)
 		require.NoError(t, err)
 
-		output, err := runMimirtoolBackfill(tmpDir, compactor, b)
+		output, err := runMimirtoolBackfill(tmpDir, compactor, b.ULID)
 		require.Contains(t, output, "unsupported external label: ext")
 		require.Error(t, err)
 	}
@@ -239,13 +239,13 @@ func TestBackfillSlowUploadSpeed(t *testing.T) {
 	// Initiate new block upload.
 	{
 		// client.GetBlockMeta will generate correct meta.json file ready for initiating upload of our block.
-		meta, err := client.GetBlockMeta(fmt.Sprintf("%s/%s", tmpDir, block.String()))
+		clientMeta, err := client.GetBlockMeta(fmt.Sprintf("%s/%s", tmpDir, block.ULID.String()))
 		require.NoError(t, err)
 
 		buf := bytes.NewBuffer(nil)
-		require.NoError(t, json.NewEncoder(buf).Encode(meta))
+		require.NoError(t, json.NewEncoder(buf).Encode(clientMeta))
 
-		req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/api/v1/upload/block/%s/start", compactor.HTTPEndpoint(), block.String()), buf)
+		req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/api/v1/upload/block/%s/start", compactor.HTTPEndpoint(), block.ULID.String()), buf)
 		req.Header.Set("X-Scope-OrgID", userID)
 		require.NoError(t, err)
 
@@ -261,7 +261,7 @@ func TestBackfillSlowUploadSpeed(t *testing.T) {
 	// This will only succeed if timeout is overridden for the endpoint.
 	{
 		const targetDuration = httpServerTimeout * 2
-		chunksFilename := fmt.Sprintf("%s/%s/chunks/000001", tmpDir, block.String())
+		chunksFilename := fmt.Sprintf("%s/%s/chunks/000001", tmpDir, block.ULID.String())
 		chunksFiledata, err := os.ReadFile(chunksFilename)
 		require.NoError(t, err)
 
@@ -271,7 +271,7 @@ func TestBackfillSlowUploadSpeed(t *testing.T) {
 
 		rr := newRateLimitedReader(bytes.NewReader(chunksFiledata), rateLimit, int(rateLimit))
 
-		req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/api/v1/upload/block/%s/files?path=chunks/000001", compactor.HTTPEndpoint(), block.String()), rr)
+		req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/api/v1/upload/block/%s/files?path=chunks/000001", compactor.HTTPEndpoint(), block.ULID.String()), rr)
 		req.Header.Set("X-Scope-OrgID", userID)
 		require.NoError(t, err)
 

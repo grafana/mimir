@@ -18,6 +18,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/objstore"
+
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
 // ReaderPoolMetrics holds metrics tracked by ReaderPool.
@@ -85,7 +87,7 @@ func (p *ReaderPool) NewBinaryReader(
 	logger log.Logger,
 	bkt objstore.InstrumentedBucketReader,
 	dir string,
-	id ulid.ULID,
+	meta *block.Meta,
 	postingOffsetsInMemSampling int,
 	cfg Config,
 ) (Reader, error) {
@@ -95,16 +97,16 @@ func (p *ReaderPool) NewBinaryReader(
 
 	if cfg.BucketReader.Enabled {
 		readerFactory = func() (Reader, error) {
-			return NewBucketBinaryReader(ctx, logger, bkt, dir, id, postingOffsetsInMemSampling, cfg)
+			return NewBucketBinaryReader(ctx, logger, bkt, dir, meta, postingOffsetsInMemSampling, cfg)
 		}
 	} else {
 		readerFactory = func() (Reader, error) {
-			return NewStreamBinaryReader(ctx, logger, bkt, dir, id, postingOffsetsInMemSampling, p.metrics.streamReader, cfg)
+			return NewStreamBinaryReader(ctx, logger, bkt, dir, meta, postingOffsetsInMemSampling, p.metrics.streamReader, cfg)
 		}
 	}
 
 	if p.lazyReaderEnabled {
-		reader, err = NewLazyBinaryReader(ctx, cfg, readerFactory, logger, bkt, dir, id, p.metrics.lazyReader, p.onLazyReaderClosed, p.lazyLoadingGate)
+		reader, err = NewLazyBinaryReader(ctx, cfg, readerFactory, logger, bkt, dir, meta, p.metrics.lazyReader, p.onLazyReaderClosed, p.lazyLoadingGate)
 	} else {
 		reader, err = readerFactory()
 	}

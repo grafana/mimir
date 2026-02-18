@@ -61,14 +61,14 @@ func NewBucketBinaryReader(
 	logger log.Logger,
 	bkt objstore.InstrumentedBucketReader,
 	dir string,
-	blockID ulid.ULID,
+	meta *block.Meta,
 	postingOffsetsInMemSampling int,
 	cfg Config,
 ) (*BucketBinaryReader, error) {
 	spanLog, ctx := spanlogger.New(ctx, logger, tracer, "indexheader.NewBucketBinaryReader")
 	defer spanLog.Finish()
 
-	dir = filepath.Join(dir, blockID.String())
+	dir = filepath.Join(dir, meta.ULID.String())
 	if df, err := os.Open(dir); err != nil && os.IsNotExist(err) {
 		if err := os.MkdirAll(dir, os.ModePerm); err != nil {
 			return nil, fmt.Errorf("cannot create index-header dir: %w", err)
@@ -77,11 +77,10 @@ func NewBucketBinaryReader(
 		_ = df.Close()
 	}
 
-	indexPath := filepath.Join(blockID.String(), block.IndexFilename)
+	indexPath := filepath.Join(meta.ULID.String(), block.IndexFilename)
 
 	r := &BucketBinaryReader{
-		bkt: bkt,
-
+		bkt:     bkt,
 		factory: streamencoding.NewBucketDecbufFactory(ctx, bkt, indexPath),
 	}
 
@@ -129,9 +128,15 @@ func NewBucketBinaryReader(
 	}
 
 	sparseHeadersPath := filepath.Join(dir, block.SparseIndexHeaderFilename)
-
+	logger = log.With(logger,
+		"id", meta.ULID,
+		"compaction_level", meta.Compaction.Level,
+		"path", sparseHeadersPath,
+		"inmem_sampling_rate", postingOffsetsInMemSampling,
+	)
 	// Load symbols and postings offset table
-	if err = r.loadSparseHeader(ctx, logger, cfg, indexLastPostingListEndBound, postingOffsetsInMemSampling, sparseHeadersPath, bkt, blockID); err != nil {
+	if err = r.loadSparseHeader(
+		ctx, meta.ULID, bkt, indexLastPostingListEndBound, postingOffsetsInMemSampling, sparseHeadersPath, cfg, logger); err != nil {
 		return nil, fmt.Errorf("cannot load sparse index-header: %w", err)
 	}
 
@@ -157,16 +162,14 @@ func NewBucketBinaryReader(
 // If the sparse header was not found on disk, it will try to write it after generating or downloading it. If writing fails, loadSparseHeader does not return an error.
 func (r *BucketBinaryReader) loadSparseHeader(
 	ctx context.Context,
-	logger log.Logger,
-	cfg Config,
+	id ulid.ULID,
+	bkt objstore.InstrumentedBucketReader,
 	indexLastPostingListEndBound uint64,
 	postingOffsetsInMemSampling int,
 	sparseHeadersPath string,
-	bkt objstore.InstrumentedBucketReader,
-	id ulid.ULID,
+	cfg Config,
+	logger log.Logger,
 ) (err error) {
-	logger = log.With(logger, "id", id, "path", sparseHeadersPath, "inmem_sampling_rate", postingOffsetsInMemSampling)
-
 	// Only v2 indexes use sparse headers
 	if r.indexVersion != index.FormatV2 {
 		return r.loadFromIndexHeader(logger, cfg, indexLastPostingListEndBound, postingOffsetsInMemSampling)

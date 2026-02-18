@@ -1707,15 +1707,15 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// create a test block
 			now := time.Now()
-			blockID, err := block.CreateBlock(ctx, tmpDir, tc.lbls(), 300, now.Add(-2*time.Hour).UnixMilli(), now.UnixMilli(), labels.EmptyLabels())
+			blockMeta, err := block.CreateBlock(ctx, tmpDir, tc.lbls(), 300, now.Add(-2*time.Hour).UnixMilli(), now.UnixMilli(), labels.EmptyLabels())
 			require.NoError(t, err)
-			testDir := filepath.Join(tmpDir, blockID.String())
-			meta, err := block.ReadMetaFromDir(testDir)
+			testDir := filepath.Join(tmpDir, blockMeta.ULID.String())
+			newMeta, err := block.ReadMetaFromDir(testDir)
 			require.NoError(t, err)
 			if tc.populateFileList {
 				stats, err := block.GatherFileStats(testDir)
 				require.NoError(t, err)
-				meta.Thanos.Files = stats
+				newMeta.Thanos.Files = stats
 			}
 
 			// create a compactor
@@ -1733,19 +1733,19 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 			_, err = block.Upload(ctx, log.NewNopLogger(), bkt, testDir, nil)
 			require.NoError(t, err)
 			// remove meta.json as we will be uploading a new one with the uploading meta name
-			require.NoError(t, bkt.Delete(ctx, path.Join(blockID.String(), block.MetaFilename)))
+			require.NoError(t, bkt.Delete(ctx, path.Join(blockMeta.ULID.String(), block.MetaFilename)))
 
 			// handle meta file
 			if tc.metaInject != nil {
-				tc.metaInject(meta)
+				tc.metaInject(newMeta)
 			}
 			var metaBody bytes.Buffer
-			require.NoError(t, meta.Write(&metaBody))
+			require.NoError(t, newMeta.Write(&metaBody))
 
 			// replace index file
 			if tc.indexInject != nil {
 				indexFile := filepath.Join(testDir, block.IndexFilename)
-				indexObject := path.Join(blockID.String(), block.IndexFilename)
+				indexObject := path.Join(blockMeta.ULID.String(), block.IndexFilename)
 				require.NoError(t, bkt.Delete(ctx, indexObject))
 				tc.indexInject(indexFile)
 				uploadLocalFileToBucket(ctx, t, bkt, indexFile, indexObject)
@@ -1754,7 +1754,7 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 			// replace segment file
 			if tc.chunkInject != nil {
 				segmentFile := filepath.Join(testDir, block.ChunksDirname, "000001")
-				segmentObject := path.Join(blockID.String(), block.ChunksDirname, "000001")
+				segmentObject := path.Join(blockMeta.ULID.String(), block.ChunksDirname, "000001")
 				require.NoError(t, bkt.Delete(ctx, segmentObject))
 				tc.chunkInject(segmentFile)
 				uploadLocalFileToBucket(ctx, t, bkt, segmentFile, segmentObject)
@@ -1762,11 +1762,11 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 
 			// delete any files that should be missing
 			if tc.missing&MissingIndex != 0 {
-				require.NoError(t, bkt.Delete(ctx, path.Join(blockID.String(), block.IndexFilename)))
+				require.NoError(t, bkt.Delete(ctx, path.Join(blockMeta.ULID.String(), block.IndexFilename)))
 			}
 
 			if tc.missing&MissingChunks != 0 {
-				chunkDir := path.Join(blockID.String(), block.ChunksDirname)
+				chunkDir := path.Join(blockMeta.ULID.String(), block.ChunksDirname)
 				err := bkt.Iter(ctx, chunkDir, func(name string) error {
 					require.NoError(t, bkt.Delete(ctx, name))
 					return nil
@@ -1777,11 +1777,11 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 			// only upload renamed meta file if it is not meant to be missing
 			if tc.missing&MissingMeta == 0 {
 				// rename to uploading meta file as that is what validateBlock expects
-				require.NoError(t, bkt.Upload(ctx, path.Join(blockID.String(), uploadingMetaFilename), &metaBody))
+				require.NoError(t, bkt.Upload(ctx, path.Join(blockMeta.ULID.String(), uploadingMetaFilename), &metaBody))
 			}
 
 			// validate the block
-			err = c.validateBlock(ctx, c.logger, blockID, meta, bkt, tenantID)
+			err = c.validateBlock(ctx, c.logger, blockMeta.ULID, newMeta, bkt, tenantID)
 			if tc.expectError {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tc.expectedMsg)

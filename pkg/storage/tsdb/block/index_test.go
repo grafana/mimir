@@ -98,7 +98,7 @@ func TestRewrite(t *testing.T) {
 
 	tmpDir := t.TempDir()
 
-	b, err := CreateBlock(ctx, tmpDir, []labels.Labels{
+	meta, err := CreateBlock(ctx, tmpDir, []labels.Labels{
 		labels.FromStrings("a", "1"),
 		labels.FromStrings("a", "2"),
 		labels.FromStrings("a", "3"),
@@ -107,34 +107,34 @@ func TestRewrite(t *testing.T) {
 	}, 150, 0, 1000, labels.EmptyLabels())
 	require.NoError(t, err)
 
-	ir, err := index.NewFileReader(filepath.Join(tmpDir, b.String(), IndexFilename), index.DecodePostingsRaw)
+	ir, err := index.NewFileReader(filepath.Join(tmpDir, meta.ULID.String(), IndexFilename), index.DecodePostingsRaw)
 	require.NoError(t, err)
 
 	defer func() { require.NoError(t, ir.Close()) }()
 
-	cr, err := chunks.NewDirReader(filepath.Join(tmpDir, b.String(), "chunks"), nil)
+	cr, err := chunks.NewDirReader(filepath.Join(tmpDir, meta.ULID.String(), "chunks"), nil)
 	require.NoError(t, err)
 
 	defer func() { require.NoError(t, cr.Close()) }()
 
-	m := &Meta{
+	newMeta := &Meta{
 		BlockMeta: tsdb.BlockMeta{ULID: ULID(1)},
 		Thanos:    ThanosMeta{},
 	}
 
-	require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, m.ULID.String()), os.ModePerm))
-	iw, err := index.NewWriter(ctx, filepath.Join(tmpDir, m.ULID.String(), IndexFilename))
+	require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, newMeta.ULID.String()), os.ModePerm))
+	iw, err := index.NewWriter(ctx, filepath.Join(tmpDir, newMeta.ULID.String(), IndexFilename))
 	require.NoError(t, err)
 	defer iw.Close()
 
-	cw, err := chunks.NewWriter(filepath.Join(tmpDir, m.ULID.String()))
+	cw, err := chunks.NewWriter(filepath.Join(tmpDir, newMeta.ULID.String()))
 	require.NoError(t, err)
 
 	defer cw.Close()
 
 	totalChunks := 0
 	ignoredChunks := 0
-	require.NoError(t, rewrite(ctx, log.NewNopLogger(), ir, cr, iw, cw, m, false, []ignoreFnType{func(_, _ int64, _ *chunks.Meta, curr *chunks.Meta) (bool, error) {
+	require.NoError(t, rewrite(ctx, log.NewNopLogger(), ir, cr, iw, cw, newMeta, false, []ignoreFnType{func(_, _ int64, _ *chunks.Meta, curr *chunks.Meta) (bool, error) {
 		totalChunks++
 		if curr.OverlapsClosedInterval(excludeTime, excludeTime) {
 			// Ignores all chunks that overlap with the excludeTime. excludeTime was randomly selected inside the block.
@@ -143,17 +143,17 @@ func TestRewrite(t *testing.T) {
 		}
 		return false, nil
 	}}))
-	require.Equal(t, uint64(5), m.Stats.NumSeries)
-	require.Equal(t, uint64(269), m.Stats.NumSamples)
-	require.Equal(t, uint64(66), m.Stats.NumFloatSamples)
-	require.Equal(t, uint64(203), m.Stats.NumHistogramSamples)
+	require.Equal(t, uint64(5), newMeta.Stats.NumSeries)
+	require.Equal(t, uint64(269), newMeta.Stats.NumSamples)
+	require.Equal(t, uint64(66), newMeta.Stats.NumFloatSamples)
+	require.Equal(t, uint64(203), newMeta.Stats.NumHistogramSamples)
 	require.Greater(t, ignoredChunks, 0)           // Sanity check.
 	require.Greater(t, totalChunks, ignoredChunks) // Sanity check.
 
 	require.NoError(t, iw.Close())
 	require.NoError(t, cw.Close())
 
-	ir2, err := index.NewFileReader(filepath.Join(tmpDir, m.ULID.String(), IndexFilename), index.DecodePostingsRaw)
+	ir2, err := index.NewFileReader(filepath.Join(tmpDir, newMeta.ULID.String(), IndexFilename), index.DecodePostingsRaw)
 	require.NoError(t, err)
 
 	defer func() { require.NoError(t, ir2.Close()) }()

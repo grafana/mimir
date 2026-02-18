@@ -84,23 +84,23 @@ func prepareTestBlocks(t testing.TB, now time.Time, count int, dir string, bkt o
 
 		// Create two blocks per time slot. Only add 10 samples each so only one chunk
 		// gets created each. This way we can easily verify we got 10 chunks per series below.
-		id1, err := block.CreateBlock(ctx, dir, series[:4], 10, mint, maxt, extLset)
+		meta1, err := block.CreateBlock(ctx, dir, series[:4], 10, mint, maxt, extLset)
 		assert.NoError(t, err)
 		if nonOverlappingBlocks {
 			mint = maxt
 			maxt = timestamp.FromTime(now.Add(2 * time.Hour))
 			maxTime = maxt
 		}
-		id2, err := block.CreateBlock(ctx, dir, series[4:], 10, mint, maxt, extLset)
+		meta2, err := block.CreateBlock(ctx, dir, series[4:], 10, mint, maxt, extLset)
 		assert.NoError(t, err)
 
-		dir1, dir2 := filepath.Join(dir, id1.String()), filepath.Join(dir, id2.String())
+		dir1, dir2 := filepath.Join(dir, meta1.ULID.String()), filepath.Join(dir, meta2.ULID.String())
 
 		// Replace labels to the meta of the second block.
-		meta, err := block.ReadMetaFromDir(dir2)
+		newMeta2, err := block.ReadMetaFromDir(dir2)
 		require.NoError(t, err)
-		meta.Thanos.Labels = map[string]string{"ext2": "value2"}
-		assert.NoError(t, meta.WriteToDir(logger, dir2))
+		newMeta2.Thanos.Labels = map[string]string{"ext2": "value2"}
+		assert.NoError(t, newMeta2.WriteToDir(logger, dir2))
 
 		_, err = block.Upload(ctx, logger, bkt, dir1, nil)
 		assert.NoError(t, err)

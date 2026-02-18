@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
@@ -37,27 +36,27 @@ func BenchmarkLookupSymbol(b *testing.B) {
 	// TODO: are the number of name and value symbols representative?
 	nameSymbols := generateSymbols("name", 20)
 	valueSymbols := generateSymbols("value", 1000)
-	idIndexV2, err := block.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
+	meta, err := block.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
 	require.NoError(b, err)
-	_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), nil)
+	_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, meta.ULID.String()), nil)
 	require.NoError(b, err)
 
-	indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
-	require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
+	indexName := filepath.Join(bucketDir, meta.ULID.String(), block.IndexHeaderFilename)
+	require.NoError(b, WriteBinary(ctx, bkt, meta.ULID, indexName))
 
 	// TODO: are these sensible values for parallelism?
 	for _, parallelism := range []int{1, 2, 4, 8, 20, 100} {
 		// TODO: are these sensible value for name lookup percentage?
 		for _, percentageNameLookups := range []int{20, 40, 50, 60, 80} {
 			b.Run(fmt.Sprintf("NameLookups%v%%-Parallelism%v", percentageNameLookups, parallelism), func(b *testing.B) {
-				benchmarkLookupSymbol(ctx, b, bucketDir, idIndexV2, parallelism, percentageNameLookups, nameSymbols, valueSymbols)
+				benchmarkLookupSymbol(ctx, b, bucketDir, meta, parallelism, percentageNameLookups, nameSymbols, valueSymbols)
 			})
 		}
 	}
 }
 
-func benchmarkLookupSymbol(ctx context.Context, b *testing.B, bucketDir string, id ulid.ULID, parallelism int, percentageNameLookups int, nameSymbols []string, valueSymbols []string) {
-	br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, bucketDir, id, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+func benchmarkLookupSymbol(ctx context.Context, b *testing.B, bucketDir string, meta *block.Meta, parallelism int, percentageNameLookups int, nameSymbols []string, valueSymbols []string) {
+	br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, bucketDir, meta, 32, NewStreamBinaryReaderMetrics(nil), Config{})
 	require.NoError(b, err)
 	b.Cleanup(func() {
 		require.NoError(b, br.Close())
@@ -119,16 +118,16 @@ func BenchmarkLabelNames(b *testing.B) {
 		for _, valueCount := range []int{100, 500, 1000} {
 			nameSymbols := generateSymbols("name", nameCount)
 			valueSymbols := generateSymbols("value", valueCount)
-			idIndexV2, err := block.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
+			meta, err := block.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
 			require.NoError(b, err)
-			_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), nil)
+			_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, meta.ULID.String()), nil)
 			require.NoError(b, err)
 
-			indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
-			require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
+			indexName := filepath.Join(bucketDir, meta.ULID.String(), block.IndexHeaderFilename)
+			require.NoError(b, WriteBinary(ctx, bkt, meta.ULID, indexName))
 
 			b.Run(fmt.Sprintf("%vNames%vValues", nameCount, valueCount), func(b *testing.B) {
-				benchmarkReader(b, bucketDir, idIndexV2, func(b *testing.B, br Reader) {
+				benchmarkReader(b, bucketDir, meta, func(b *testing.B, br Reader) {
 					slices.Sort(nameSymbols)
 					b.ResetTimer()
 
@@ -159,15 +158,15 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 		for _, valueCount := range []int{100, 500, 1000, 5000} {
 			nameSymbols := generateSymbols("name", nameCount)
 			valueSymbols := generateSymbols("value", valueCount)
-			idIndexV2, err := block.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
+			meta, err := block.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
 			require.NoError(b, err)
-			_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), nil)
+			_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, meta.ULID.String()), nil)
 			require.NoError(b, err)
 
-			indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
-			require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
+			indexName := filepath.Join(bucketDir, meta.ULID.String(), block.IndexHeaderFilename)
+			require.NoError(b, WriteBinary(ctx, bkt, meta.ULID, indexName))
 
-			diskReader, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), instrBkt, bucketDir, idIndexV2, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+			diskReader, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), instrBkt, bucketDir, meta, 32, NewStreamBinaryReaderMetrics(nil), Config{})
 			require.NoError(b, err)
 			b.Cleanup(func() { require.NoError(b, diskReader.Close()) })
 
@@ -177,7 +176,7 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 			cachingBucket, err := bucketcache.NewCachingBucket("test", metricsBkt, cfg, log.NewNopLogger(), bucketReg)
 			require.NoError(b, err)
 
-			bucketReader, err := NewBucketBinaryReader(ctx, log.NewNopLogger(), cachingBucket, bucketDir, idIndexV2, 32, Config{})
+			bucketReader, err := NewBucketBinaryReader(ctx, log.NewNopLogger(), cachingBucket, bucketDir, meta, 32, Config{})
 			require.NoError(b, err)
 			b.Cleanup(func() { require.NoError(b, bucketReader.Close()) })
 
@@ -300,16 +299,16 @@ func BenchmarkPostingsOffset(b *testing.B) {
 	for _, valueCount := range []int{100, 500, 1000} {
 		nameSymbols := generateSymbols("name", nameCount)
 		valueSymbols := generateSymbols("value", valueCount)
-		idIndexV2, err := block.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
+		meta, err := block.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
 		require.NoError(b, err)
-		_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), nil)
+		_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, meta.ULID.String()), nil)
 		require.NoError(b, err)
 
-		indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
-		require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
+		indexName := filepath.Join(bucketDir, meta.ULID.String(), block.IndexHeaderFilename)
+		require.NoError(b, WriteBinary(ctx, bkt, meta.ULID, indexName))
 
 		b.Run(fmt.Sprintf("%vNames%vValues", nameCount, valueCount), func(b *testing.B) {
-			br, err := NewStreamBinaryReader(context.Background(), log.NewNopLogger(), nil, bucketDir, idIndexV2, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+			br, err := NewStreamBinaryReader(context.Background(), log.NewNopLogger(), nil, bucketDir, meta, 32, NewStreamBinaryReaderMetrics(nil), Config{})
 			require.NoError(b, err)
 			b.Cleanup(func() {
 				require.NoError(b, br.Close())
@@ -332,8 +331,8 @@ func BenchmarkPostingsOffset(b *testing.B) {
 	}
 }
 
-func benchmarkReader(b *testing.B, bucketDir string, id ulid.ULID, benchmark func(b *testing.B, br Reader)) {
-	br, err := NewStreamBinaryReader(context.Background(), log.NewNopLogger(), nil, bucketDir, id, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+func benchmarkReader(b *testing.B, bucketDir string, meta *block.Meta, benchmark func(b *testing.B, br Reader)) {
+	br, err := NewStreamBinaryReader(context.Background(), log.NewNopLogger(), nil, bucketDir, meta, 32, NewStreamBinaryReaderMetrics(nil), Config{})
 	require.NoError(b, err)
 	b.Cleanup(func() {
 		require.NoError(b, br.Close())
@@ -356,17 +355,17 @@ func BenchmarkNewStreamBinaryReader(b *testing.B) {
 		for _, valueCount := range []int{1, 10, 100, 500, 1000, 5000} {
 			nameSymbols := generateSymbols("name", nameCount)
 			valueSymbols := generateSymbols("value", valueCount)
-			idIndexV2, err := block.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
+			meta, err := block.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
 			require.NoError(b, err)
-			_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), nil)
+			_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, meta.ULID.String()), nil)
 			require.NoError(b, err)
 
-			indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
-			require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
+			indexName := filepath.Join(bucketDir, meta.ULID.String(), block.IndexHeaderFilename)
+			require.NoError(b, WriteBinary(ctx, bkt, meta.ULID, indexName))
 
 			b.Run(fmt.Sprintf("%vNames%vValues", nameCount, valueCount), func(b *testing.B) {
 				for i := 0; i < b.N; i++ {
-					br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, bucketDir, idIndexV2, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+					br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, bucketDir, meta, 32, NewStreamBinaryReaderMetrics(nil), Config{})
 					require.NoError(b, err)
 					b.Cleanup(func() {
 						require.NoError(b, br.Close())

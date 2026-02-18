@@ -74,23 +74,23 @@ func TestMetaFetcher_Fetch_ShouldReturnDiscoveredBlocksIncludingMarkedForDeletio
 	})
 
 	// Upload a block.
-	block1ID, block1Dir := createTestBlock(t)
+	block1Meta, block1Dir := createTestBlock(t)
 	_, err = Upload(ctx, logger, bkt, block1Dir, nil)
 	require.NoError(t, err)
 
 	// Upload a partial block.
-	block2ID, block2Dir := createTestBlock(t)
+	block2Meta, block2Dir := createTestBlock(t)
 	_, err = Upload(ctx, logger, bkt, block2Dir, nil)
 	require.NoError(t, err)
-	require.NoError(t, bkt.Delete(ctx, path.Join(block2ID.String(), MetaFilename)))
+	require.NoError(t, bkt.Delete(ctx, path.Join(block2Meta.ULID.String(), MetaFilename)))
 
 	t.Run("should return metas and partials on some blocks in the storage", func(t *testing.T) {
 		actualMetas, actualPartials, actualErr := f.Fetch(ctx)
 		require.NoError(t, actualErr)
 		require.Len(t, actualMetas, 1)
-		require.Contains(t, actualMetas, block1ID)
+		require.Contains(t, actualMetas, block1Meta.ULID)
 		require.Len(t, actualPartials, 1)
-		require.Contains(t, actualPartials, block2ID)
+		require.Contains(t, actualPartials, block2Meta.ULID)
 
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP blocks_meta_sync_failures_total Total blocks metadata synchronization failures
@@ -117,19 +117,19 @@ func TestMetaFetcher_Fetch_ShouldReturnDiscoveredBlocksIncludingMarkedForDeletio
 	})
 
 	// Upload a block and mark it for deletion.
-	block3ID, block3Dir := createTestBlock(t)
+	block3Meta, block3Dir := createTestBlock(t)
 	_, err = Upload(ctx, logger, bkt, block3Dir, nil)
 	require.NoError(t, err)
-	require.NoError(t, MarkForDeletion(ctx, logger, bkt, block3ID, "", promauto.With(nil).NewCounter(prometheus.CounterOpts{})))
+	require.NoError(t, MarkForDeletion(ctx, logger, bkt, block3Meta.ULID, "", promauto.With(nil).NewCounter(prometheus.CounterOpts{})))
 
 	t.Run("should include blocks marked for deletion", func(t *testing.T) {
 		actualMetas, actualPartials, actualErr := f.Fetch(ctx)
 		require.NoError(t, actualErr)
 		require.Len(t, actualMetas, 2)
-		require.Contains(t, actualMetas, block1ID)
-		require.Contains(t, actualMetas, block3ID)
+		require.Contains(t, actualMetas, block1Meta.ULID)
+		require.Contains(t, actualMetas, block3Meta.ULID)
 		require.Len(t, actualPartials, 1)
-		require.Contains(t, actualPartials, block2ID)
+		require.Contains(t, actualPartials, block2Meta.ULID)
 
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP blocks_meta_sync_failures_total Total blocks metadata synchronization failures
@@ -202,23 +202,23 @@ func TestMetaFetcher_FetchWithoutMarkedForDeletion_ShouldReturnDiscoveredBlocksE
 	})
 
 	// Upload a block.
-	block1ID, block1Dir := createTestBlock(t)
+	block1Meta, block1Dir := createTestBlock(t)
 	_, err = Upload(ctx, logger, bkt, block1Dir, nil)
 	require.NoError(t, err)
 
 	// Upload a partial block.
-	block2ID, block2Dir := createTestBlock(t)
+	block2Meta, block2Dir := createTestBlock(t)
 	_, err = Upload(ctx, logger, bkt, block2Dir, nil)
 	require.NoError(t, err)
-	require.NoError(t, bkt.Delete(ctx, path.Join(block2ID.String(), MetaFilename)))
+	require.NoError(t, bkt.Delete(ctx, path.Join(block2Meta.ULID.String(), MetaFilename)))
 
 	t.Run("should return metas and partials on some blocks in the storage", func(t *testing.T) {
 		actualMetas, actualPartials, actualErr := f.FetchWithoutMarkedForDeletion(ctx)
 		require.NoError(t, actualErr)
 		require.Len(t, actualMetas, 1)
-		require.Contains(t, actualMetas, block1ID)
+		require.Contains(t, actualMetas, block1Meta.ULID)
 		require.Len(t, actualPartials, 1)
-		require.Contains(t, actualPartials, block2ID)
+		require.Contains(t, actualPartials, block2Meta.ULID)
 
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP blocks_meta_sync_failures_total Total blocks metadata synchronization failures
@@ -245,18 +245,18 @@ func TestMetaFetcher_FetchWithoutMarkedForDeletion_ShouldReturnDiscoveredBlocksE
 	})
 
 	// Upload a block and mark it for deletion.
-	block3ID, block3Dir := createTestBlock(t)
+	block3Meta, block3Dir := createTestBlock(t)
 	_, err = Upload(ctx, logger, bkt, block3Dir, nil)
 	require.NoError(t, err)
-	require.NoError(t, MarkForDeletion(ctx, logger, bkt, block3ID, "", promauto.With(nil).NewCounter(prometheus.CounterOpts{})))
+	require.NoError(t, MarkForDeletion(ctx, logger, bkt, block3Meta.ULID, "", promauto.With(nil).NewCounter(prometheus.CounterOpts{})))
 
 	t.Run("should include blocks marked for deletion", func(t *testing.T) {
 		actualMetas, actualPartials, actualErr := f.FetchWithoutMarkedForDeletion(ctx)
 		require.NoError(t, actualErr)
 		require.Len(t, actualMetas, 1)
-		require.Contains(t, actualMetas, block1ID)
+		require.Contains(t, actualMetas, block1Meta.ULID)
 		require.Len(t, actualPartials, 1)
-		require.Contains(t, actualPartials, block2ID)
+		require.Contains(t, actualPartials, block2Meta.ULID)
 
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP blocks_meta_sync_failures_total Total blocks metadata synchronization failures
@@ -295,10 +295,10 @@ func TestMetaFetcher_ShouldNotIssueAnyAPICallToObjectStorageIfAllBlockMetasAreCa
 	require.NoError(t, err)
 
 	// Upload few blocks.
-	block1ID, block1Dir := createTestBlock(t)
+	block1Meta, block1Dir := createTestBlock(t)
 	_, err = Upload(ctx, logger, bkt, block1Dir, nil)
 	require.NoError(t, err)
-	block2ID, block2Dir := createTestBlock(t)
+	block2Meta, block2Dir := createTestBlock(t)
 	_, err = Upload(ctx, logger, bkt, block2Dir, nil)
 	require.NoError(t, err)
 
@@ -309,8 +309,8 @@ func TestMetaFetcher_ShouldNotIssueAnyAPICallToObjectStorageIfAllBlockMetasAreCa
 	actualMetas, _, actualErr := fetcher1.Fetch(ctx)
 	require.NoError(t, actualErr)
 	require.Len(t, actualMetas, 2)
-	require.Contains(t, actualMetas, block1ID)
-	require.Contains(t, actualMetas, block2ID)
+	require.Contains(t, actualMetas, block1Meta.ULID)
+	require.Contains(t, actualMetas, block2Meta.ULID)
 
 	assert.NoError(t, testutil.GatherAndCompare(reg1, strings.NewReader(`
 		# HELP thanos_objstore_bucket_operations_total Total number of all attempted operations against a bucket.
@@ -331,8 +331,8 @@ func TestMetaFetcher_ShouldNotIssueAnyAPICallToObjectStorageIfAllBlockMetasAreCa
 	actualMetas, _, actualErr = fetcher2.Fetch(ctx)
 	require.NoError(t, actualErr)
 	require.Len(t, actualMetas, 2)
-	require.Contains(t, actualMetas, block1ID)
-	require.Contains(t, actualMetas, block2ID)
+	require.Contains(t, actualMetas, block1Meta.ULID)
+	require.Contains(t, actualMetas, block2Meta.ULID)
 
 	assert.NoError(t, testutil.GatherAndCompare(reg2, strings.NewReader(`
 		# HELP thanos_objstore_bucket_operations_total Total number of all attempted operations against a bucket.
@@ -360,18 +360,18 @@ func TestMetaFetcher_Fetch_ShouldReturnDiscoveredBlocksWithinCompactorLookback(t
 	require.NoError(t, err)
 
 	// Upload recent blocks.
-	block1ID, block1Dir := createTestBlock(t)
+	block1Meta, block1Dir := createTestBlock(t)
 	_, err = Upload(ctx, logger, bkt, block1Dir, nil)
 	require.NoError(t, err)
 
-	block2ID, block2Dir := createTestBlock(t)
+	block2Meta, block2Dir := createTestBlock(t)
 	_, err = Upload(ctx, logger, bkt, block2Dir, nil)
 	require.NoError(t, err)
 
-	block3ID, block3Dir := createTestBlock(t)
+	block3Meta, block3Dir := createTestBlock(t)
 	_, err = Upload(ctx, logger, bkt, block3Dir, nil)
 	require.NoError(t, err)
-	require.NoError(t, bkt.Delete(ctx, path.Join(block3ID.String(), MetaFilename)))
+	require.NoError(t, bkt.Delete(ctx, path.Join(block3Meta.ULID.String(), MetaFilename)))
 
 	// Simulate a block uploaded before than MetaFetchers' maximum lookback period by creating a new block,
 	// renaming the blockDir to an older ULID, and uploading meta.json w. the older ULID.
@@ -386,8 +386,8 @@ func TestMetaFetcher_Fetch_ShouldReturnDiscoveredBlocksWithinCompactorLookback(t
 		actualMetas, _, actualErr := f.Fetch(ctx)
 		require.NoError(t, actualErr)
 		require.Len(t, actualMetas, 3)
-		require.Contains(t, actualMetas, block1ID)
-		require.Contains(t, actualMetas, block2ID)
+		require.Contains(t, actualMetas, block1Meta.ULID)
+		require.Contains(t, actualMetas, block2Meta.ULID)
 		require.Contains(t, actualMetas, twoWeekOldBlockID)
 
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
@@ -426,10 +426,10 @@ func TestMetaFetcher_Fetch_ShouldReturnDiscoveredBlocksWithinCompactorLookback(t
 		actualMetas, actualPartials, actualErr := f.Fetch(ctx)
 		require.NoError(t, actualErr)
 		require.Len(t, actualMetas, 2)
-		require.Contains(t, actualMetas, block1ID)
-		require.Contains(t, actualMetas, block2ID)
+		require.Contains(t, actualMetas, block1Meta.ULID)
+		require.Contains(t, actualMetas, block2Meta.ULID)
 		require.Len(t, actualPartials, 1)
-		require.Contains(t, actualPartials, block3ID)
+		require.Contains(t, actualPartials, block3Meta.ULID)
 
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP blocks_meta_sync_failures_total Total blocks metadata synchronization failures
@@ -483,8 +483,8 @@ func TestMetaFetcher_Fetch_ShouldReturnDiscoveredBlocksWithinCompactorLookback(t
 
 		actualMetas, _, actualErr := f.Fetch(ctx)
 		require.NoError(t, actualErr)
-		require.Contains(t, actualMetas, block1ID)
-		require.Contains(t, actualMetas, block2ID)
+		require.Contains(t, actualMetas, block1Meta.ULID)
+		require.Contains(t, actualMetas, block2Meta.ULID)
 		require.Contains(t, actualMetas, twoWeekOldBlockID)
 	})
 
@@ -520,7 +520,7 @@ func TestMetaFetcher_Fetch_ShouldReturnDiscoveredBlocksWithinCompactorLookback(t
 
 }
 
-func createTestBlock(t *testing.T) (blockID ulid.ULID, blockDir string) {
+func createTestBlock(t *testing.T) (meta *Meta, blockDir string) {
 	var err error
 
 	parentDir := t.TempDir()
@@ -530,10 +530,10 @@ func createTestBlock(t *testing.T) (blockID ulid.ULID, blockDir string) {
 		labels.FromStrings(model.MetricNameLabel, "series_3"),
 	}
 
-	blockID, err = CreateBlock(context.Background(), parentDir, series, 100, 0, 1000, labels.EmptyLabels())
+	meta, err = CreateBlock(context.Background(), parentDir, series, 100, 0, 1000, labels.EmptyLabels())
 	require.NoError(t, err)
 
-	blockDir = filepath.Join(parentDir, blockID.String())
+	blockDir = filepath.Join(parentDir, meta.ULID.String())
 	return
 }
 
@@ -546,20 +546,20 @@ func generateULIDs(count int) []ulid.ULID {
 }
 
 func generateBlockUploadedAtTimestamp(t *testing.T, bkt objstore.Bucket, l log.Logger, ts time.Time) ulid.ULID {
-	blockID, blockDir := createTestBlock(t)
+	meta, blockDir := createTestBlock(t)
 	fixedTimeULID, err := ulid.New(ulid.Timestamp(ts), nil)
 	require.NoError(t, err)
-	fixedTimeULIDDir := strings.ReplaceAll(blockDir, blockID.String(), fixedTimeULID.String())
+	fixedTimeULIDDir := strings.ReplaceAll(blockDir, meta.ULID.String(), fixedTimeULID.String())
 	err = os.Rename(blockDir, fixedTimeULIDDir)
 	require.NoError(t, err)
-	meta := &Meta{
+	newMeta := &Meta{
 		BlockMeta: tsdb.BlockMeta{
 			ULID:       fixedTimeULID,
 			Compaction: tsdb.BlockMetaCompaction{Level: 5, Sources: generateULIDs(10)},
 			Version:    1,
 		},
 	}
-	_, err = Upload(context.Background(), l, bkt, fixedTimeULIDDir, meta)
+	_, err = Upload(context.Background(), l, bkt, fixedTimeULIDDir, newMeta)
 	require.NoError(t, err)
 	return fixedTimeULID
 }
@@ -573,7 +573,7 @@ func TestMetaFetcher_CacheMetrics(t *testing.T) {
 	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: t.TempDir()})
 	require.NoError(t, err)
 
-	blockID, blockDir := createTestBlock(t)
+	meta, blockDir := createTestBlock(t)
 	_, err = Upload(ctx, logger, bkt, blockDir, nil)
 	require.NoError(t, err)
 
@@ -639,7 +639,7 @@ func TestMetaFetcher_CacheMetrics(t *testing.T) {
 			metas, _, err := fetcher.Fetch(ctx)
 			require.NoError(t, err)
 			require.Len(t, metas, 1)
-			require.Contains(t, metas, blockID)
+			require.Contains(t, metas, meta.ULID)
 
 			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 				# HELP blocks_meta_cached_loads Block metadata loads served from in-memory cache

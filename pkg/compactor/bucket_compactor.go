@@ -405,9 +405,12 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 
 	uploadBegin := time.Now()
 
-	if err = verifyCompactedBlocksTimeRanges(compIDs, toCompactMinTime.UnixMilli(), toCompactMaxTime.UnixMilli(), subDir); err != nil {
+	verifiedMetas, err := verifyCompactedBlocksTimeRanges(compIDs, toCompactMinTime.UnixMilli(), toCompactMaxTime.UnixMilli(), subDir)
+	if err != nil {
 		level.Warn(jobLogger).Log("msg", "compacted blocks verification failed", "err", err)
 		c.metrics.compactionBlocksVerificationFailed.Inc()
+		// map from verifyCompactedBlocksTimeRanges may be nil in error case
+		verifiedMetas = make(map[ulid.ULID]*block.Meta, len(compIDs))
 	}
 
 	blocksToUpload := convertCompactionResultToForEachJobs(compIDs, job.UseSplitting(), jobLogger)
@@ -443,6 +446,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		if err := block.VerifyBlock(ctx, jobLogger, bdir, newMeta.MinTime, newMeta.MaxTime, false); err != nil {
 			return fmt.Errorf("invalid result block %s: %w", bdir, err)
 		}
+		verifiedMetas[blockToUpload.ulid] = newMeta
 		return nil
 	})
 	if err != nil {
@@ -463,7 +467,8 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		fsInstrBkt := objstore.WithNoopInstr(fsbkt)
 		_ = concurrency.ForEachJob(ctx, uploadBlocksCount, c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
 			blockToUpload := blocksToUpload[idx]
-			err := prepareSparseIndexHeader(ctx, jobLogger, fsInstrBkt, subDir, blockToUpload.ulid, c.sparseIndexHeaderSamplingRate, c.sparseIndexHeaderconfig)
+			meta := verifiedMetas[blockToUpload.ulid]
+			err := prepareSparseIndexHeader(ctx, jobLogger, fsInstrBkt, subDir, meta, c.sparseIndexHeaderSamplingRate, c.sparseIndexHeaderconfig)
 			if err != nil {
 				c.metrics.compactionBlocksBuildSparseHeadersFailed.Inc()
 				level.Warn(jobLogger).Log("msg", "failed to create sparse index headers", "block", blockToUpload.ulid.String(), "shard", blockToUpload.shardIndex, "err", err)
@@ -548,10 +553,10 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	return true, compIDs, nil
 }
 
-func prepareSparseIndexHeader(ctx context.Context, logger log.Logger, bkt objstore.InstrumentedBucketReader, dir string, id ulid.ULID, sampling int, cfg indexheader.Config) error {
+func prepareSparseIndexHeader(ctx context.Context, logger log.Logger, bkt objstore.InstrumentedBucketReader, dir string, meta *block.Meta, sampling int, cfg indexheader.Config) error {
 	// Calling NewStreamBinaryReader reads a block's index and writes a sparse-index-header to disk.
 	mets := indexheader.NewStreamBinaryReaderMetrics(nil)
-	br, err := indexheader.NewStreamBinaryReader(ctx, logger, bkt, dir, id, sampling, mets, cfg)
+	br, err := indexheader.NewStreamBinaryReader(ctx, logger, bkt, dir, meta, sampling, mets, cfg)
 	if err != nil {
 		return err
 	}
@@ -560,10 +565,11 @@ func prepareSparseIndexHeader(ctx context.Context, logger log.Logger, bkt objsto
 
 // verifyCompactedBlocksTimeRanges does a full run over the compacted blocks
 // and verifies that they satisfy the min/maxTime from the source blocks
-func verifyCompactedBlocksTimeRanges(compIDs []ulid.ULID, sourceBlocksMinTime, sourceBlocksMaxTime int64, subDir string) error {
+func verifyCompactedBlocksTimeRanges(compIDs []ulid.ULID, sourceBlocksMinTime, sourceBlocksMaxTime int64, subDir string) (map[ulid.ULID]*block.Meta, error) {
 	sourceBlocksMinTimeFound := false
 	sourceBlocksMaxTimeFound := false
 
+	metas := make(map[ulid.ULID]*block.Meta, len(compIDs))
 	for _, compID := range compIDs {
 		// Skip empty block
 		if compID == (ulid.ULID{}) {
@@ -573,16 +579,16 @@ func verifyCompactedBlocksTimeRanges(compIDs []ulid.ULID, sourceBlocksMinTime, s
 		bdir := filepath.Join(subDir, compID.String())
 		meta, err := block.ReadMetaFromDir(bdir)
 		if err != nil {
-			return fmt.Errorf("failed to read meta.json from %s during block time range verification: %w", bdir, err)
+			return nil, fmt.Errorf("failed to read meta.json from %s during block time range verification: %w", bdir, err)
 		}
 
 		// Ensure compacted block min/maxTime within source blocks min/maxTime
 		if meta.MinTime < sourceBlocksMinTime {
-			return fmt.Errorf("invalid minTime for block %s, compacted block minTime %d is before source minTime %d", compID.String(), meta.MinTime, sourceBlocksMinTime)
+			return nil, fmt.Errorf("invalid minTime for block %s, compacted block minTime %d is before source minTime %d", compID.String(), meta.MinTime, sourceBlocksMinTime)
 		}
 
 		if meta.MaxTime > sourceBlocksMaxTime {
-			return fmt.Errorf("invalid maxTime for block %s, compacted block maxTime %d is after source maxTime %d", compID.String(), meta.MaxTime, sourceBlocksMaxTime)
+			return nil, fmt.Errorf("invalid maxTime for block %s, compacted block maxTime %d is after source maxTime %d", compID.String(), meta.MaxTime, sourceBlocksMaxTime)
 		}
 
 		if meta.MinTime == sourceBlocksMinTime {
@@ -592,15 +598,16 @@ func verifyCompactedBlocksTimeRanges(compIDs []ulid.ULID, sourceBlocksMinTime, s
 		if meta.MaxTime == sourceBlocksMaxTime {
 			sourceBlocksMaxTimeFound = true
 		}
+		metas[compID] = meta
 	}
 
 	// Check that the minTime and maxTime from the source blocks
 	// are found at least once in the compacted blocks
 	if !sourceBlocksMinTimeFound || !sourceBlocksMaxTimeFound {
-		return fmt.Errorf("compacted block(s) do not contain minTime %d and maxTime %d from the source blocks", sourceBlocksMinTime, sourceBlocksMaxTime)
+		return nil, fmt.Errorf("compacted block(s) do not contain minTime %d and maxTime %d from the source blocks", sourceBlocksMinTime, sourceBlocksMaxTime)
 	}
 
-	return nil
+	return metas, nil
 }
 
 // convertCompactionResultToForEachJobs filters out empty ULIDs.

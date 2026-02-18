@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -49,7 +50,10 @@ func TestNewLazyBinaryReader_ShouldFailIfUnableToBuildIndexHeader(t *testing.T) 
 		require.NoError(t, bkt.Close())
 	})
 
-	testLazyBinaryReader(t, bkt, tmpDir, ulid.ULID{}, func(t *testing.T, _ *LazyBinaryReader, err error) {
+	meta := &block.Meta{
+		BlockMeta: tsdb.BlockMeta{ULID: ulid.ULID{}},
+	}
+	testLazyBinaryReader(t, bkt, tmpDir, meta, func(t *testing.T, _ *LazyBinaryReader, err error) {
 		require.Error(t, err)
 	})
 }
@@ -96,7 +100,7 @@ func TestNewaLazyStreamBinaryReader_UsesSparseHeaderFromObjectStore(t *testing.T
 	})
 
 	// Create block with sample data
-	blockID, err := block.CreateBlock(ctx, tmpDir, []labels.Labels{
+	meta, err := block.CreateBlock(ctx, tmpDir, []labels.Labels{
 		labels.FromStrings("a", "1"),
 		labels.FromStrings("a", "2"),
 		labels.FromStrings("b", "3"),
@@ -104,16 +108,16 @@ func TestNewaLazyStreamBinaryReader_UsesSparseHeaderFromObjectStore(t *testing.T
 	require.NoError(t, err)
 
 	// Upload block to bucket
-	_, err = block.Upload(ctx, logger, bkt, filepath.Join(tmpDir, blockID.String()), nil)
+	_, err = block.Upload(ctx, logger, bkt, filepath.Join(tmpDir, meta.ULID.String()), nil)
 	require.NoError(t, err)
 
 	// First, create a StreamBinaryReader to generate the sparse header file
-	origReader, err := NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, samplingRate, NewStreamBinaryReaderMetrics(nil), Config{})
+	origReader, err := NewStreamBinaryReader(ctx, logger, bkt, tmpDir, meta, samplingRate, NewStreamBinaryReaderMetrics(nil), Config{})
 	require.NoError(t, err)
 	require.NoError(t, origReader.Close())
 
 	// Get the generated sparse header file path
-	sparseHeadersPath := filepath.Join(tmpDir, blockID.String(), block.SparseIndexHeaderFilename)
+	sparseHeadersPath := filepath.Join(tmpDir, meta.ULID.String(), block.SparseIndexHeaderFilename)
 
 	// Read the sparse header file content and save its size
 	originalSparseData, err := os.ReadFile(sparseHeadersPath)
@@ -125,10 +129,10 @@ func TestNewaLazyStreamBinaryReader_UsesSparseHeaderFromObjectStore(t *testing.T
 	require.NoError(t, os.Remove(sparseHeadersPath))
 
 	// Delete the local block directory to ensure nothing is read from local disk
-	require.NoError(t, os.RemoveAll(filepath.Join(tmpDir, blockID.String())))
+	require.NoError(t, os.RemoveAll(filepath.Join(tmpDir, meta.ULID.String())))
 
 	// Upload the sparse header directly to the object store
-	sparseHeaderObjPath := filepath.Join(blockID.String(), block.SparseIndexHeaderFilename)
+	sparseHeaderObjPath := filepath.Join(meta.ULID.String(), block.SparseIndexHeaderFilename)
 	require.NoError(t, bkt.Upload(ctx, sparseHeaderObjPath, bytes.NewReader(originalSparseData)))
 
 	// Create a bucket that can track downloads and verify content
@@ -137,11 +141,11 @@ func TestNewaLazyStreamBinaryReader_UsesSparseHeaderFromObjectStore(t *testing.T
 	}
 
 	factory := func() (Reader, error) {
-		return NewStreamBinaryReader(ctx, logger, trackedBkt, tmpDir, blockID, samplingRate, NewStreamBinaryReaderMetrics(nil), Config{})
+		return NewStreamBinaryReader(ctx, logger, trackedBkt, tmpDir, meta, samplingRate, NewStreamBinaryReaderMetrics(nil), Config{})
 	}
 
 	// Create a new StreamBinaryReader - it should use the sparse header from the object store
-	newReader, err := NewLazyBinaryReader(ctx, Config{}, factory, logger, trackedBkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
+	newReader, err := NewLazyBinaryReader(ctx, Config{}, factory, logger, trackedBkt, tmpDir, meta, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
 	require.NoError(t, err)
 	defer newReader.Close()
 
@@ -163,13 +167,13 @@ func TestNewaLazyStreamBinaryReader_UsesSparseHeaderFromObjectStore(t *testing.T
 }
 
 func TestNewLazyBinaryReader_ShouldRebuildCorruptedIndexHeader(t *testing.T) {
-	tmpDir, bkt, blockID := initBucketAndBlocksForTest(t)
+	tmpDir, bkt, meta := initBucketAndBlocksForTest(t)
 
 	// Write a corrupted index-header for the block.
-	headerFilename := filepath.Join(tmpDir, blockID.String(), block.IndexHeaderFilename)
+	headerFilename := filepath.Join(tmpDir, meta.ULID.String(), block.IndexHeaderFilename)
 	require.NoError(t, os.WriteFile(headerFilename, []byte("xxx"), os.ModePerm))
 
-	testLazyBinaryReader(t, bkt, tmpDir, blockID, func(t *testing.T, r *LazyBinaryReader, err error) {
+	testLazyBinaryReader(t, bkt, tmpDir, meta, func(t *testing.T, r *LazyBinaryReader, err error) {
 		require.NoError(t, err)
 
 		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.loadCount))
@@ -266,7 +270,7 @@ func TestLazyBinaryReader_LoadUnloadRaceCondition(t *testing.T) {
 	})
 }
 
-func initBucketAndBlocksForTest(t testing.TB) (string, objstore.InstrumentedBucketReader, ulid.ULID) {
+func initBucketAndBlocksForTest(t testing.TB) (string, objstore.InstrumentedBucketReader, *block.Meta) {
 	ctx := context.Background()
 
 	tmpDir := filepath.Join(t.TempDir(), "test-indexheader")
@@ -280,25 +284,25 @@ func initBucketAndBlocksForTest(t testing.TB) (string, objstore.InstrumentedBuck
 	})
 
 	// Create block.
-	blockID, err := block.CreateBlock(ctx, tmpDir, []labels.Labels{
+	meta, err := block.CreateBlock(ctx, tmpDir, []labels.Labels{
 		labels.FromStrings("a", "1"),
 		labels.FromStrings("a", "2"),
 		labels.FromStrings("a", "3"),
 	}, 100, 0, 1000, labels.FromStrings("ext1", "1"))
 	require.NoError(t, err)
-	_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil)
+	_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, meta.ULID.String()), nil)
 	require.NoError(t, err)
-	return tmpDir, bkt, blockID
+	return tmpDir, bkt, meta
 }
 
-func testLazyBinaryReader(t *testing.T, bkt objstore.InstrumentedBucketReader, dir string, id ulid.ULID, test func(t *testing.T, r *LazyBinaryReader, err error)) {
+func testLazyBinaryReader(t *testing.T, bkt objstore.InstrumentedBucketReader, dir string, meta *block.Meta, test func(t *testing.T, r *LazyBinaryReader, err error)) {
 	ctx := context.Background()
 	logger := log.NewNopLogger()
 	factory := func() (Reader, error) {
-		return NewStreamBinaryReader(ctx, logger, bkt, dir, id, 3, NewStreamBinaryReaderMetrics(nil), Config{})
+		return NewStreamBinaryReader(ctx, logger, bkt, dir, meta, 3, NewStreamBinaryReaderMetrics(nil), Config{})
 	}
 
-	reader, err := NewLazyBinaryReader(ctx, Config{}, factory, logger, bkt, dir, id, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
+	reader, err := NewLazyBinaryReader(ctx, Config{}, factory, logger, bkt, dir, meta, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
 	if err == nil {
 		t.Cleanup(func() { require.NoError(t, reader.Close()) })
 	}
@@ -594,9 +598,9 @@ func TestLazyBinaryReader_CancellingContextReturnsCallButDoesntStopLazyLoading_N
 
 func TestLazyBinaryReader_SymbolReaderAndUnload(t *testing.T) {
 	t.Parallel()
-	tmpDir, bkt, blockID := initBucketAndBlocksForTest(t)
+	tmpDir, bkt, meta := initBucketAndBlocksForTest(t)
 
-	testLazyBinaryReader(t, bkt, tmpDir, blockID, func(t *testing.T, r *LazyBinaryReader, err error) {
+	testLazyBinaryReader(t, bkt, tmpDir, meta, func(t *testing.T, r *LazyBinaryReader, err error) {
 		require.NoError(t, err)
 
 		closed := atomic.NewBool(false)
