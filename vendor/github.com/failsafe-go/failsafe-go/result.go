@@ -44,6 +44,9 @@ func (e *executionResult[R]) record(result *common.PolicyResult[R]) {
 	e.result.Store(&result)
 	e.done.Store(true)
 	close(e.doneChan)
+	if e.cancelFunc != nil {
+		e.cancelFunc()
+	}
 }
 
 func (e *executionResult[R]) Done() <-chan any {

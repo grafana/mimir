@@ -17,6 +17,7 @@ func Test_ingesterReactiveLimiter(t *testing.T) {
 		cfg := reactivelimiter.Config{}
 		cfg.Enabled = true
 		cfg.MaxLimitFactor = 1
+		cfg.MinLimitFactor = 1.2
 		cfg.InitialRejectionFactor = 1
 		cfg.MaxRejectionFactor = 2
 		prioritizer := reactivelimiter.NewPrioritizer(log.NewNopLogger())

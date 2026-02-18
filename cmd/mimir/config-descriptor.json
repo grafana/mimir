@@ -1942,6 +1942,17 @@
             },
             {
               "kind": "field",
+              "name": "min_limit_factor",
+              "required": false,
+              "desc": "Minimum limit factor when max-limit-factor-decay is applied",
+              "fieldValue": null,
+              "fieldDefaultValue": 1.2,
+              "fieldFlag": "distributor.reactive-limiter.min-limit-factor",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "recent_window_min_duration",
               "required": false,
               "desc": "Minimum duration of the window that is used to collect recent response time samples",
@@ -4703,6 +4714,17 @@
             },
             {
               "kind": "field",
+              "name": "min_limit_factor",
+              "required": false,
+              "desc": "Minimum limit factor when max-limit-factor-decay is applied",
+              "fieldValue": null,
+              "fieldDefaultValue": 1.2,
+              "fieldFlag": "ingester.push-reactive-limiter.min-limit-factor",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "recent_window_min_duration",
               "required": false,
               "desc": "Minimum duration of the window that is used to collect recent response time samples",
@@ -4862,6 +4884,17 @@
               "fieldValue": null,
               "fieldDefaultValue": 1,
               "fieldFlag": "ingester.read-reactive-limiter.max-limit-factor-decay",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "min_limit_factor",
+              "required": false,
+              "desc": "Minimum limit factor when max-limit-factor-decay is applied",
+              "fieldValue": null,
+              "fieldDefaultValue": 1.2,
+              "fieldFlag": "ingester.read-reactive-limiter.min-limit-factor",
               "fieldType": "float",
               "fieldCategory": "experimental"
             },

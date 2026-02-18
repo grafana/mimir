@@ -263,6 +263,13 @@ func (cfg *Config) Validate(log.Logger) error {
 		return fmt.Errorf("ring tokens can only be disabled when gRPC push is disabled")
 	}
 
+	if err := cfg.PushReactiveLimiter.Validate(); err != nil {
+		return err
+	}
+	if err := cfg.ReadReactiveLimiter.Validate(); err != nil {
+		return err
+	}
+
 	return cfg.IngesterRing.Validate()
 }
 
