@@ -1244,47 +1244,6 @@ func NewReaderMetrics(reg prometheus.Registerer, metricsSource ReaderMetricsSour
 	return m
 }
 
-type StrongReadConsistencyInstrumentation[T any] struct {
-	requests *prometheus.CounterVec
-	failures *prometheus.CounterVec
-	latency  *prometheus.HistogramVec
-}
-
-func NewStrongReadConsistencyInstrumentation[T any](component string, reg prometheus.Registerer, topics []string) *StrongReadConsistencyInstrumentation[T] {
-	i := &StrongReadConsistencyInstrumentation[T]{
-		requests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name:        "cortex_ingest_storage_strong_consistency_requests_total",
-			Help:        "Total number of requests for which strong consistency has been requested. The metric distinguishes between requests with an offset specified and requests requesting to enforce strong consistency up until the last produced offset.",
-			ConstLabels: map[string]string{"component": component},
-		}, []string{"with_offset", "topic"}),
-		failures: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name:        "cortex_ingest_storage_strong_consistency_failures_total",
-			Help:        "Total number of failures while waiting for strong consistency to be enforced.",
-			ConstLabels: map[string]string{"component": component},
-		}, []string{"topic"}),
-		latency: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-			Name:                            "cortex_ingest_storage_strong_consistency_wait_duration_seconds",
-			Help:                            "How long a request spent waiting for strong consistency to be guaranteed.",
-			NativeHistogramBucketFactor:     1.1,
-			NativeHistogramMaxBucketNumber:  100,
-			NativeHistogramMinResetDuration: 1 * time.Hour,
-			Buckets:                         prometheus.DefBuckets,
-			ConstLabels:                     map[string]string{"component": component},
-		}, []string{"topic"}),
-	}
-
-	// Init metrics.
-	for _, topic := range topics {
-		for _, value := range []bool{true, false} {
-			i.requests.WithLabelValues(strconv.FormatBool(value), topic)
-		}
-		i.failures.WithLabelValues(topic)
-		i.latency.WithLabelValues(topic)
-	}
-
-	return i
-}
-
 type StrongReadConsistencyMetrics struct {
 	requests *prometheus.CounterVec
 	failures *prometheus.CounterVec
