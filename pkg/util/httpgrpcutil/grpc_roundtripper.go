@@ -114,7 +114,7 @@ func setContentLength(resp *httpgrpc.HTTPResponse, httpResp *http.Response) {
 		contentLength = len(resp.Body)
 	} else if l := httpResp.Header.Get("Content-Length"); l != "" {
 		cl, err := strconv.Atoi(l)
-		if err != nil {
+		if err == nil {
 			contentLength = cl
 		}
 	}
