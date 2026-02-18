@@ -88,7 +88,7 @@
           for kv in std.objectKeysValues(extraEnvVarMap)
         ];
 
-      if std.length(extraEnvVarMap) > 0 then container.withEnvMixin(std.prune(envMixin)) else {}
+      if std.length(envMixin) > 0 then container.withEnvMixin(std.prune(envMixin)) else {}
     ),
 
   newDistributorZoneDeployment(zone, container, nodeAffinityMatchers=[])::
