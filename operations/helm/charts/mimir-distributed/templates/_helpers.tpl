@@ -531,7 +531,7 @@ Return value:
     },
     ...
   }
-During migration there is a special case where an extra "zone" is generated with zonaName == "" empty string.
+During migration there is a special case where an extra "zone" is generated with zoneName == "" empty string.
 The empty string evaluates to false in boolean expressions so it is treated as the default (non zone-aware) zone,
 which allows us to keep generating everything for the default zone.
 */}}
