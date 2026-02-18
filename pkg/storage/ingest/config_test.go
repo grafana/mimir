@@ -171,7 +171,7 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.KafkaConfig.Address = "localhost"
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.SASL.Mechanism = SASLMechanismOauthbearer
-				cfg.KafkaConfig.SASL.OauthbearerToken = "foo"
+				require.NoError(t, cfg.KafkaConfig.SASL.OauthbearerToken.Set("foo"))
 				cfg.KafkaConfig.SASL.OauthbearerFilePath = "bar"
 			},
 			expectedErr: ErrSASLOauthbearerBadConfig,
@@ -182,7 +182,7 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.KafkaConfig.Address = "localhost"
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.SASL.Mechanism = SASLMechanismOauthbearer
-				cfg.KafkaConfig.SASL.OauthbearerToken = "foo"
+				require.NoError(t, cfg.KafkaConfig.SASL.OauthbearerToken.Set("foo"))
 			},
 		},
 		"should succeed if SASL mechanism is OAUTHBEARER and a file path to the token is passed": {

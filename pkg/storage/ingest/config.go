@@ -345,7 +345,7 @@ type KafkaAuthConfig struct {
 
 	// For OAUTHBEARER mechanism
 
-	OauthbearerToken      string                    `yaml:"sasl_oauthbearer_token"`
+	OauthbearerToken      flagext.Secret            `yaml:"sasl_oauthbearer_token"`
 	OauthbearerZid        string                    `yaml:"sasl_oauthbearer_zid"`
 	OauthbearerExtensions flagext.LimitsMap[string] `yaml:"sasl_oauthbearer_extensions"`
 
@@ -362,7 +362,7 @@ func (cfg *KafkaAuthConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagS
 	f.StringVar(&cfg.Username, prefix+"username", "", "The username used to authenticate to Kafka using SASL. To enable SASL, configure both the username and password.")
 	f.Var(&cfg.Password, prefix+"password", "The password used to authenticate to Kafka using SASL. To enable SASL, configure both the username and password.")
 
-	f.StringVar(&cfg.OauthbearerToken, prefix+"oauthbearer-token", "", "The OAuth token to use to authenticate to Kafka. Consider "+prefix+"oauthbearer-file-path instead.")
+	f.Var(&cfg.OauthbearerToken, prefix+"oauthbearer-token", "The OAuth token to use to authenticate to Kafka. Consider "+prefix+"oauthbearer-file-path instead.")
 	f.StringVar(&cfg.OauthbearerZid, prefix+"oauthbearer-zid", "", "Optional authorization ID to use when authenticating to Kafka using SASL OAUTHBEARER.")
 	if !cfg.OauthbearerExtensions.IsInitialized() {
 		cfg.OauthbearerExtensions = flagext.NewLimitsMap[string](nil)
@@ -385,7 +385,7 @@ func (cfg *KafkaAuthConfig) Validate() error {
 		}
 
 	case SASLMechanismOauthbearer:
-		if (cfg.OauthbearerToken == "") == (cfg.OauthbearerFilePath == "") {
+		if (cfg.OauthbearerToken.String() == "") == (cfg.OauthbearerFilePath == "") {
 			return ErrSASLOauthbearerBadConfig
 		}
 

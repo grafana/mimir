@@ -139,9 +139,9 @@ func kafkaAuthOptions(cfg KafkaAuthConfig) []kgo.Opt {
 		}.AsMechanism()
 	case SASLMechanismOauthbearer:
 		switch {
-		case cfg.OauthbearerToken != "":
+		case cfg.OauthbearerToken.String() != "":
 			m = oauth.Auth{
-				Token:      cfg.OauthbearerToken,
+				Token:      cfg.OauthbearerToken.String(),
 				Zid:        cfg.OauthbearerZid,
 				Extensions: cfg.OauthbearerExtensions.Read(),
 			}.AsMechanism()
