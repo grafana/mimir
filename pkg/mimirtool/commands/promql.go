@@ -28,8 +28,8 @@ func (c *PromQLCommand) Register(app *kingpin.Application, _ EnvVarNames) {
 }
 
 func (c *PromQLCommand) formatQuery(_ *kingpin.ParseContext) error {
-	p := util.CreatePromQLParser(c.enableExperimentalFunctions)
-	queryExpr, err := p.ParseExpr(c.query)
+	promqlParser := util.CreatePromQLParser(c.enableExperimentalFunctions)
+	queryExpr, err := promqlParser.ParseExpr(c.query)
 	if err != nil {
 		return err
 	}

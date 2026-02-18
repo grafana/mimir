@@ -482,10 +482,10 @@ func (r *RuleCommand) deleteRuleGroup(_ *kingpin.ParseContext) error {
 }
 
 func (r *RuleCommand) loadRules(_ *kingpin.ParseContext) error {
-	p := util.CreatePromQLParser(r.enableExperimentalFunctions)
+	promqlParser := util.CreatePromQLParser(r.enableExperimentalFunctions)
 
 	// TODO: Get scheme from CLI flag.
-	nss, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation, p, r.logger)
+	nss, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation, promqlParser, r.logger)
 	if err != nil {
 		return errors.Wrap(err, "load operation unsuccessful, unable to parse rules files")
 	}
@@ -615,10 +615,10 @@ func (r *RuleCommand) syncRules(_ *kingpin.ParseContext) error {
 		return errors.Wrap(err, "sync operation unsuccessful, invalid arguments")
 	}
 
-	p := util.CreatePromQLParser(r.enableExperimentalFunctions)
+	promqlParser := util.CreatePromQLParser(r.enableExperimentalFunctions)
 
 	// TODO: Get scheme from CLI flag.
-	nss, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation, p, r.logger)
+	nss, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation, promqlParser, r.logger)
 	if err != nil {
 		return errors.Wrap(err, "sync operation unsuccessful, unable to parse rules files")
 	}
@@ -723,10 +723,10 @@ func (r *RuleCommand) prepare(_ *kingpin.ParseContext) error {
 		return errors.Wrap(err, "prepare operation unsuccessful, invalid arguments")
 	}
 
-	p := util.CreatePromQLParser(r.enableExperimentalFunctions)
+	promqlParser := util.CreatePromQLParser(r.enableExperimentalFunctions)
 
 	// TODO: Get scheme from CLI flag.
-	namespaces, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation, p, r.logger)
+	namespaces, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation, promqlParser, r.logger)
 	if err != nil {
 		return errors.Wrap(err, "prepare operation unsuccessful, unable to parse rules files")
 	}
@@ -739,7 +739,7 @@ func (r *RuleCommand) prepare(_ *kingpin.ParseContext) error {
 
 	var count, mod int
 	for _, ruleNamespace := range namespaces {
-		c, m, err := ruleNamespace.AggregateBy(r.AggregationLabel, applyTo, p, r.logger)
+		c, m, err := ruleNamespace.AggregateBy(r.AggregationLabel, applyTo, promqlParser, r.logger)
 		if err != nil {
 			return err
 		}
@@ -764,17 +764,17 @@ func (r *RuleCommand) lint(_ *kingpin.ParseContext) error {
 		return errors.Wrap(err, "prepare operation unsuccessful, invalid arguments")
 	}
 
-	p := util.CreatePromQLParser(r.enableExperimentalFunctions)
+	promqlParser := util.CreatePromQLParser(r.enableExperimentalFunctions)
 
 	// TODO: Get scheme from CLI flag.
-	namespaces, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation, p, r.logger)
+	namespaces, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation, promqlParser, r.logger)
 	if err != nil {
 		return errors.Wrap(err, "prepare operation unsuccessful, unable to parse rules files")
 	}
 
 	var count, mod int
 	for _, ruleNamespace := range namespaces {
-		c, m, err := ruleNamespace.LintExpressions(r.Backend, p, r.logger)
+		c, m, err := ruleNamespace.LintExpressions(r.Backend, promqlParser, r.logger)
 		if err != nil {
 			return err
 		}
@@ -801,10 +801,10 @@ func (r *RuleCommand) checkRules(_ *kingpin.ParseContext) error {
 		return errors.Wrap(err, "check operation unsuccessful, invalid arguments")
 	}
 
-	p := util.CreatePromQLParser(r.enableExperimentalFunctions)
+	promqlParser := util.CreatePromQLParser(r.enableExperimentalFunctions)
 
 	// TODO: Get scheme from CLI flag.
-	namespaces, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation, p, r.logger)
+	namespaces, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation, promqlParser, r.logger)
 	if err != nil {
 		return errors.Wrap(err, "check operation unsuccessful, unable to parse rules files")
 	}

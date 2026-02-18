@@ -115,7 +115,7 @@ func (cmd *ValidateAlertFilesCommand) run(_ *kingpin.ParseContext) error {
 //     with the same metric name (after removing histogram suffixes, e.g.
 //     some_metric_count == some_metric) and identical label matchers.
 func alertsCheckNativeVersionExists(rules []rulefmt.Rule) []alertCheckResult {
-	p := util.CreatePromQLParser(false)
+	promqlParser := util.CreatePromQLParser(false)
 	var failures []alertCheckResult
 	for i := 0; i < len(rules); i++ {
 		classicSelectors, err := findClassicHistogramSelectors(rules[i].Expr)
@@ -154,7 +154,7 @@ func alertsCheckNativeVersionExists(rules []rulefmt.Rule) []alertCheckResult {
 			})
 			continue
 		}
-		nextRule, err := p.ParseExpr(rules[i+1].Expr)
+		nextRule, err := promqlParser.ParseExpr(rules[i+1].Expr)
 		if err != nil {
 			failures = append(failures, alertCheckResult{
 				failure:   true,
