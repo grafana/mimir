@@ -109,8 +109,7 @@ func (c *config) validate() error {
 	}
 	// force the use of a metrics selector, as analyzing all series can be slow
 	if c.selector == "" {
-		p := promqlext.NewPromQLParser()
-		if _, err := p.ParseMetricSelector(c.selector); err != nil {
+		if _, err := promqlext.NewPromQLParser().ParseMetricSelector(c.selector); err != nil {
 			return fmt.Errorf("failed to parse metric selector: %w", err)
 		}
 
@@ -180,8 +179,7 @@ func main() {
 	var matchers []*labels.Matcher
 	if cfg.selector != "" {
 		var err error
-		p := promqlext.NewPromQLParser()
-		matchers, err = p.ParseMetricSelector(cfg.selector)
+		matchers, err = promqlext.NewPromQLParser().ParseMetricSelector(cfg.selector)
 		if err != nil {
 			level.Error(logger).Log("msg", "failed to parse matcher selector", "err", err)
 			os.Exit(1)

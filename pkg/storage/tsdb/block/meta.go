@@ -130,8 +130,7 @@ type ThanosMeta struct {
 type Matchers []*labels.Matcher
 
 func (m *Matchers) UnmarshalYAML(value *yaml.Node) (err error) {
-	p := promqlext.NewPromQLParser()
-	*m, err = p.ParseMetricSelector(value.Value)
+	*m, err = promqlext.NewPromQLParser().ParseMetricSelector(value.Value)
 	if err != nil {
 		return errors.Wrapf(err, "parse metric selector %v", value.Value)
 	}

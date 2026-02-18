@@ -163,8 +163,7 @@ func parseUint(t *testing.T, str string) uint64 {
 }
 
 func parseVectorSelector(t testing.TB, str string) []*labels.Matcher {
-	p := promqlext.NewPromQLParser()
-	matchers, err := p.ParseMetricSelector(str)
+	matchers, err := promqlext.NewPromQLParser().ParseMetricSelector(str)
 	require.NoError(t, err)
 	return matchers
 }

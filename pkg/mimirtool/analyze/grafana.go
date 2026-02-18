@@ -194,8 +194,7 @@ func replaceVariables(query string) string {
 }
 
 func parseQuery(query string, metrics map[string]struct{}) error {
-	p := config.CreateParser()
-	expr, err := p.ParseExpr(replaceVariables(query))
+	expr, err := config.CreateParser().ParseExpr(replaceVariables(query))
 	if err != nil {
 		return err
 	}

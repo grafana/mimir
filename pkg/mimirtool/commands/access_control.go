@@ -32,9 +32,10 @@ func (a *AccessControlCommand) Register(app *kingpin.Application, envVars EnvVar
 }
 
 func (a *AccessControlCommand) generateHeader(_ *kingpin.ParseContext) error {
-	p := config.CreateParser()
+	parser := config.CreateParser()
+	
 	for _, acl := range a.ACLs {
-		_, err := p.ParseMetricSelector(acl)
+		_, err := parser.ParseMetricSelector(acl)
 		if err != nil {
 			return errors.Wrapf(err, "cant parse metric selector for: %s", acl)
 		}

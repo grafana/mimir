@@ -59,8 +59,7 @@ type selectorFlag struct {
 }
 
 func (s *selectorFlag) Set(value string) error {
-	p := config.CreateParser()
-	matchers, err := p.ParseMetricSelector(value)
+	matchers, err := config.CreateParser().ParseMetricSelector(value)
 	if err != nil {
 		return fmt.Errorf("error parsing selector '%s': %w", value, err)
 	}

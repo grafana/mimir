@@ -16,7 +16,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
-	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -134,8 +133,8 @@ func (l *labelsQueryOptimizer) optimizeRequest(ctx context.Context, req *http.Re
 }
 
 func optimizeLabelsRequestMatchers(rawMatcherSets []string) (_ []string, optimized bool, _ error) {
-	p := promqlext.NewPromQLParser()
-	matcherSets, err := p.ParseMetricSelectors(rawMatcherSets)
+	parser := promqlext.NewPromQLParser()
+	matcherSets, err := parser.ParseMetricSelectors(rawMatcherSets)
 	if err != nil {
 		return nil, false, err
 	}

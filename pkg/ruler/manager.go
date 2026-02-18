@@ -443,9 +443,9 @@ func (r *DefaultMultiTenantManager) ValidateRuleGroup(userID string, g rulefmt.R
 	}
 
 	validationScheme := r.limits.NameValidationScheme(userID)
-	promqlParser := promqlext.NewPromQLParser()
+	parser := promqlext.NewPromQLParser()
 	for i, r := range g.Rules {
-		for _, err := range r.Validate(node.Rules[i], validationScheme, promqlParser) {
+		for _, err := range r.Validate(node.Rules[i], validationScheme, parser) {
 			var ruleName string
 			if r.Alert != "" {
 				ruleName = r.Alert

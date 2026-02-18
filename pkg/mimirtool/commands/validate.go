@@ -210,8 +210,7 @@ var classicHistogramSuffixes = []string{"_bucket", "_count", "_sum"}
 // findClassicHistogramSelectors parses the expression and returns all vector selectors
 // that reference classic histogram metrics (identified by _bucket, _count, _sum suffixes).
 func findClassicHistogramSelectors(expr string) ([]*parser.VectorSelector, error) {
-	p := config.CreateParser()
-	parsed, err := p.ParseExpr(expr)
+	parsed, err := config.CreateParser().ParseExpr(expr)
 	if err != nil {
 		return nil, err
 	}

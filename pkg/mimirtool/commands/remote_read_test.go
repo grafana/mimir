@@ -34,9 +34,8 @@ import (
 // parseSelectors converts string selectors to matchers for testing
 func parseSelectors(t *testing.T, selectors ...string) [][]*labels.Matcher {
 	var result [][]*labels.Matcher
-	p := config.CreateParser()
 	for _, selector := range selectors {
-		matchers, err := p.ParseMetricSelector(selector)
+		matchers, err := config.CreateParser().ParseMetricSelector(selector)
 		require.NoError(t, err)
 		result = append(result, matchers)
 	}

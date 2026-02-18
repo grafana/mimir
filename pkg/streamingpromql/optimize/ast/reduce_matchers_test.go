@@ -134,13 +134,11 @@ func TestReduceMatchers_Apply_ComplexQueries(t *testing.T) {
 		},
 	}
 
-	p := promqlext.NewPromQLParser()
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			pass := ast.NewReduceMatchers(prometheus.NewPedanticRegistry(), log.NewNopLogger())
 			outputExpr := runASTOptimizationPassWithoutMetrics(t, context.Background(), tt.inputQuery, pass)
-			expectedExpr, err := p.ParseExpr(tt.expectedQuery)
+			expectedExpr, err := promqlext.NewPromQLParser().ParseExpr(tt.expectedQuery)
 			require.NoError(t, err)
 			expectedQuery := expectedExpr.String()
 			outputQuery := outputExpr.String()
