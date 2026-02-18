@@ -403,8 +403,8 @@ Usage of ./cmd/mimir/mimir:
     	Print help, also including advanced and experimental parameters.
   -ingest-storage.enabled
     	True to enable the ingestion via object storage.
-  -ingest-storage.kafka.address string
-    	The Kafka backend address.
+  -ingest-storage.kafka.address comma-separated-list-of-strings
+    	The Kafka seed broker addresses.
   -ingest-storage.kafka.auto-create-topic-default-partitions int
     	When auto-creation of Kafka topic is enabled and this value is positive, Mimir creates the topic with this number of partitions. When the value is -1 the Kafka broker uses the default number of partitions (num.partitions configuration). (default -1)
   -ingest-storage.kafka.auto-create-topic-enabled

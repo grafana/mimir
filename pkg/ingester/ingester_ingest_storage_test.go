@@ -1117,7 +1117,7 @@ func createTestIngesterWithIngestStorage(
 
 	// Create a fake Kafka cluster.
 	kafkaCluster, kafkaAddr := testkafka.CreateCluster(t, 10, ingesterCfg.IngestStorageConfig.KafkaConfig.Topic)
-	ingesterCfg.IngestStorageConfig.KafkaConfig.Address = kafkaAddr
+	ingesterCfg.IngestStorageConfig.KafkaConfig.Address = flagext.StringSliceCSV{kafkaAddr}
 
 	if ingesterCfg.IngesterRing.InstanceID == "" || ingesterCfg.IngesterRing.InstanceID == defaultIngesterConfig.IngesterRing.InstanceID {
 		// The ingest storage requires the ingester ID to have a well known format.
@@ -1238,7 +1238,7 @@ func BenchmarkIngester_ReplayFromKafka(b *testing.B) {
 			// We produce all records upfront (before starting the ingester) to ensure that
 			// Kafka production is not a bottleneck during the benchmark. This way we measure
 			// only the ingester's replay performance, not the combined produce+consume throughput.
-			numRecordsProduced, err := gen.ProduceWriteRequests(ctx, cfg.IngestStorageConfig.KafkaConfig.Address, cfg.IngestStorageConfig.KafkaConfig.Topic, partitionID)
+			numRecordsProduced, err := gen.ProduceWriteRequests(ctx, cfg.IngestStorageConfig.KafkaConfig.Address[0], cfg.IngestStorageConfig.KafkaConfig.Topic, partitionID)
 			require.NoError(b, err)
 
 			targetOffset := int64(numRecordsProduced - 1)

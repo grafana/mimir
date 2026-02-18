@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kerr"
@@ -146,7 +147,7 @@ func TestCreateTopic(t *testing.T) {
 			addr, cluster = createKafkaCluster(t)
 			cfg           = KafkaConfig{
 				Topic:                            "topic-name",
-				Address:                          addr,
+				Address:                          flagext.StringSliceCSV{addr},
 				AutoCreateTopicDefaultPartitions: 100,
 			}
 		)
@@ -183,7 +184,7 @@ func TestCreateTopic(t *testing.T) {
 		var (
 			addr, cluster = createKafkaCluster(t)
 			cfg           = KafkaConfig{
-				Address:                          addr,
+				Address:                          flagext.StringSliceCSV{addr},
 				AutoCreateTopicDefaultPartitions: 100,
 			}
 		)
@@ -209,7 +210,7 @@ func TestCreateTopic(t *testing.T) {
 			addr, cluster = createKafkaCluster(t)
 			cfg           = KafkaConfig{
 				Topic:                            "topic-name",
-				Address:                          addr,
+				Address:                          flagext.StringSliceCSV{addr},
 				AutoCreateTopicDefaultPartitions: 100,
 			}
 		)
@@ -246,7 +247,7 @@ func TestCreateTopic(t *testing.T) {
 			addr, _ = createKafkaCluster(t)
 			cfg     = KafkaConfig{
 				Topic:                            "topic-name",
-				Address:                          addr,
+				Address:                          flagext.StringSliceCSV{addr},
 				AutoCreateTopicDefaultPartitions: 100,
 			}
 			logger = log.NewNopLogger()
