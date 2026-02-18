@@ -269,6 +269,20 @@ func (s *SafeStats) LoadRemoteExecutionRequestCount() uint32 {
 	return atomic.LoadUint32(&s.RemoteExecutionRequestCount)
 }
 
+func (s *SafeStats) AddSplitRangeVectors(count uint32) {
+	if s == nil {
+		return
+	}
+	atomic.AddUint32(&s.SplitRangeVectors, count)
+}
+
+func (s *SafeStats) LoadSplitRangeVectors() uint32 {
+	if s == nil {
+		return 0
+	}
+	return atomic.LoadUint32(&s.SplitRangeVectors)
+}
+
 // Merge the provided Stats into this one.
 func (s *SafeStats) Merge(other *SafeStats) {
 	if s == nil || other == nil {
@@ -288,6 +302,7 @@ func (s *SafeStats) Merge(other *SafeStats) {
 	s.AddSpunOffSubqueries(other.LoadSpunOffSubqueries())
 	s.mergeSamplesProcessedPerStep(other.LoadSamplesProcessedPerStep())
 	s.AddRemoteExecutionRequests(other.LoadRemoteExecutionRequestCount())
+	s.AddSplitRangeVectors(other.LoadSplitRangeVectors())
 }
 
 func (s *SafeStats) mergeSamplesProcessedPerStep(other []StepStat) {

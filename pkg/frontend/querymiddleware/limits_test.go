@@ -1141,7 +1141,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	logger := log.NewNopLogger()
-	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0, false), stats.NewQueryMetrics(nil), planner)
+	engine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(nil), planner)
 	require.NoError(t, err)
 	codec := newTestCodec()
 	handler := NewEngineQueryRequestRoundTripperHandler(engine, codec, logger)

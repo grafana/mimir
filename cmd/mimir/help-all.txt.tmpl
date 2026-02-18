@@ -2185,6 +2185,50 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable pruning query expressions that are toggled off with constants. (default true)
   -querier.mimir-query-engine.enable-reduce-matchers
     	[experimental] Enable eliminating duplicate or redundant matchers that are part of selector expressions. (default true)
+  -querier.mimir-query-engine.range-vector-splitting.backend string
+    	Backend for intermediate results cache, if not empty. Supported values: memcached.
+  -querier.mimir-query-engine.range-vector-splitting.compression string
+    	Enable cache compression, if not empty. Supported values are: snappy.
+  -querier.mimir-query-engine.range-vector-splitting.enabled
+    	[experimental] Enable splitting function over range vectors queries into smaller blocks for caching.
+  -querier.mimir-query-engine.range-vector-splitting.memcached.addresses comma-separated-list-of-strings
+    	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -querier.mimir-query-engine.range-vector-splitting.memcached.connect-timeout duration
+    	The connection timeout. (default 200ms)
+  -querier.mimir-query-engine.range-vector-splitting.memcached.max-async-buffer-size int
+    	The maximum number of enqueued asynchronous operations allowed. (default 25000)
+  -querier.mimir-query-engine.range-vector-splitting.memcached.max-async-concurrency int
+    	The maximum number of concurrent asynchronous operations can occur. (default 50)
+  -querier.mimir-query-engine.range-vector-splitting.memcached.max-get-multi-batch-size int
+    	The maximum number of keys a single underlying get operation should run. If more keys are specified, internally keys are split into multiple batches and fetched concurrently, honoring the max concurrency. If set to 0, the max batch size is unlimited. (default 100)
+  -querier.mimir-query-engine.range-vector-splitting.memcached.max-get-multi-concurrency int
+    	The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited. (default 100)
+  -querier.mimir-query-engine.range-vector-splitting.memcached.max-idle-connections int
+    	The maximum number of idle connections that will be maintained per address. (default 100)
+  -querier.mimir-query-engine.range-vector-splitting.memcached.max-item-size int
+    	The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
+  -querier.mimir-query-engine.range-vector-splitting.memcached.min-idle-connections-headroom-percentage float
+    	The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely. (default -1)
+  -querier.mimir-query-engine.range-vector-splitting.memcached.timeout duration
+    	The socket read/write timeout. (default 200ms)
+  -querier.mimir-query-engine.range-vector-splitting.memcached.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -querier.mimir-query-engine.range-vector-splitting.memcached.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -querier.mimir-query-engine.range-vector-splitting.memcached.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -querier.mimir-query-engine.range-vector-splitting.memcached.tls-enabled
+    	Enable connecting to Memcached with TLS.
+  -querier.mimir-query-engine.range-vector-splitting.memcached.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -querier.mimir-query-engine.range-vector-splitting.memcached.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -querier.mimir-query-engine.range-vector-splitting.memcached.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -querier.mimir-query-engine.range-vector-splitting.memcached.tls-server-name string
+    	Override the expected name on the server certificate.
+  -querier.mimir-query-engine.range-vector-splitting.split-interval duration
+    	[experimental] Time interval used for splitting function over range vectors queries into cacheable blocks. (default 2h0m0s)
   -querier.minimize-ingester-requests
     	If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path. (default true)
   -querier.minimize-ingester-requests-hedging-delay duration

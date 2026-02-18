@@ -30,7 +30,7 @@ func TestEvaluator(t *testing.T) {
 	opts.CommonOpts.Reg = prometheus.NewPedanticRegistry()
 	planner, err := NewQueryPlanner(opts, NewStaticQueryPlanVersionProvider(planning.MaximumSupportedQueryPlanVersion))
 	require.NoError(t, err)
-	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0, false), stats.NewQueryMetrics(opts.CommonOpts.Reg), planner)
+	engine, err := NewEngine(opts, stats.NewQueryMetrics(opts.CommonOpts.Reg), planner)
 	require.NoError(t, err)
 
 	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
