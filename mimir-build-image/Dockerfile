@@ -50,7 +50,7 @@ RUN GO111MODULE=on \
 	go install github.com/weaveworks/tools/cover@bdd647e92546027e12cdde3ae0714bb495e43013 && \
 	go install github.com/fatih/faillint@v1.15.0 && \
 	go install github.com/campoy/embedmd@v1.0.0 && \
-	go install github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb@v0.4.0 && \
+	go install github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb@v0.6.0 && \
 	go install github.com/monitoring-mixins/mixtool/cmd/mixtool@b97ae11 && \
 	go install github.com/mikefarah/yq/v4@v4.52.4 && \
 	go install github.com/google/go-jsonnet/cmd/jsonnet@v0.21.0 && \
