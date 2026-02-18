@@ -8,7 +8,7 @@ import (
 
 	"github.com/alecthomas/kingpin/v2"
 
-	"github.com/grafana/mimir/pkg/mimirtool/config"
+	"github.com/grafana/mimir/pkg/mimirtool/util"
 )
 
 type PromQLCommand struct {
@@ -28,8 +28,7 @@ func (c *PromQLCommand) Register(app *kingpin.Application, _ EnvVarNames) {
 }
 
 func (c *PromQLCommand) formatQuery(_ *kingpin.ParseContext) error {
-	config.ParserOptions.EnableExperimentalFunctions = c.enableExperimentalFunctions
-	p := config.CreateParser()
+	p := util.CreatePromQLParser(c.enableExperimentalFunctions)
 	queryExpr, err := p.ParseExpr(c.query)
 	if err != nil {
 		return err

@@ -14,8 +14,8 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/promql/parser"
 
-	"github.com/grafana/mimir/pkg/mimirtool/config"
 	"github.com/grafana/mimir/pkg/mimirtool/rules"
+	"github.com/grafana/mimir/pkg/mimirtool/util"
 )
 
 // ValidateCommand is the parent command for validation operations.
@@ -56,7 +56,7 @@ type alertCheckResult struct {
 type alertCheckFunc func([]rulefmt.Rule) []alertCheckResult
 
 func (cmd *ValidateAlertFilesCommand) run(_ *kingpin.ParseContext) error {
-	namespaces, err := rules.ParseFiles(rules.MimirBackend, cmd.Files, model.UTF8Validation, cmd.logger)
+	namespaces, err := rules.ParseFiles(rules.MimirBackend, cmd.Files, model.UTF8Validation, util.CreatePromQLParser(false), cmd.logger)
 	if err != nil {
 		return fmt.Errorf("failed to parse rule files: %w", err)
 	}
@@ -115,7 +115,7 @@ func (cmd *ValidateAlertFilesCommand) run(_ *kingpin.ParseContext) error {
 //     with the same metric name (after removing histogram suffixes, e.g.
 //     some_metric_count == some_metric) and identical label matchers.
 func alertsCheckNativeVersionExists(rules []rulefmt.Rule) []alertCheckResult {
-	p := config.CreateParser()
+	p := util.CreatePromQLParser(false)
 	var failures []alertCheckResult
 	for i := 0; i < len(rules); i++ {
 		classicSelectors, err := findClassicHistogramSelectors(rules[i].Expr)
@@ -210,7 +210,7 @@ var classicHistogramSuffixes = []string{"_bucket", "_count", "_sum"}
 // findClassicHistogramSelectors parses the expression and returns all vector selectors
 // that reference classic histogram metrics (identified by _bucket, _count, _sum suffixes).
 func findClassicHistogramSelectors(expr string) ([]*parser.VectorSelector, error) {
-	parsed, err := config.CreateParser().ParseExpr(expr)
+	parsed, err := util.CreatePromQLParser(false).ParseExpr(expr)
 	if err != nil {
 		return nil, err
 	}

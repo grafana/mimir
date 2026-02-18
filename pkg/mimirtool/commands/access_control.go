@@ -13,7 +13,7 @@ import (
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/pkg/errors"
 
-	"github.com/grafana/mimir/pkg/mimirtool/config"
+	"github.com/grafana/mimir/pkg/mimirtool/util"
 )
 
 // AccessControlCommand is the kingpin command for ACLs.
@@ -32,7 +32,7 @@ func (a *AccessControlCommand) Register(app *kingpin.Application, envVars EnvVar
 }
 
 func (a *AccessControlCommand) generateHeader(_ *kingpin.ParseContext) error {
-	parser := config.CreateParser()
+	parser := util.CreatePromQLParser(false)
 
 	for _, acl := range a.ACLs {
 		_, err := parser.ParseMetricSelector(acl)

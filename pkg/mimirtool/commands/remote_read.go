@@ -49,7 +49,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirtool/backfill"
 	mimirtool_client "github.com/grafana/mimir/pkg/mimirtool/client"
-	"github.com/grafana/mimir/pkg/mimirtool/config"
+	util2 "github.com/grafana/mimir/pkg/mimirtool/util"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -59,7 +59,7 @@ type selectorFlag struct {
 }
 
 func (s *selectorFlag) Set(value string) error {
-	matchers, err := config.CreateParser().ParseMetricSelector(value)
+	matchers, err := util2.CreatePromQLParser(false).ParseMetricSelector(value)
 	if err != nil {
 		return fmt.Errorf("error parsing selector '%s': %w", value, err)
 	}

@@ -14,7 +14,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql/parser"
 
-	"github.com/grafana/mimir/pkg/mimirtool/config"
 	"github.com/grafana/mimir/pkg/mimirtool/rules/rwrulefmt"
 )
 
@@ -31,12 +30,11 @@ type RuleGroupMetrics struct {
 	ParseErrors []string `json:"parse_errors"`
 }
 
-func ParseMetricsInRuleGroup(mir *MetricsInRuler, group rwrulefmt.RuleGroup, ns string, logger log.Logger) error {
+func ParseMetricsInRuleGroup(mir *MetricsInRuler, group rwrulefmt.RuleGroup, ns string, promqlParser parser.Parser, logger log.Logger) error {
 	var (
 		ruleMetrics = make(map[string]struct{})
 		refMetrics  = make(map[string]struct{})
 		parseErrors []error
-		p           = config.CreateParser()
 	)
 
 	for _, rule := range group.Rules {
@@ -45,7 +43,7 @@ func ParseMetricsInRuleGroup(mir *MetricsInRuler, group rwrulefmt.RuleGroup, ns 
 		}
 
 		query := rule.Expr
-		expr, err := p.ParseExpr(query)
+		expr, err := promqlParser.ParseExpr(query)
 		if err != nil {
 			parseErrors = append(parseErrors, errors.Wrapf(err, "query=%v", query))
 			level.Debug(logger).Log("msg", "promql parse error", "err", err, "query", query)
