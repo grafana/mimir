@@ -283,8 +283,9 @@ func (p *ProxyEndpoint) prepareAmplifiedBodies(body []byte, backend ProxyBackend
 	fullCopies := int(p.amplificationFactor)
 	fractionalPart := p.amplificationFactor - float64(fullCopies)
 
-	// Create replicas 1 through fullCopies
-	replicaBodies, err := AmplifyRequestBody(body, 1, fullCopies)
+	// Create replicas 2 through fullCopies+1 (starting at 2 so all copies have a suffix,
+	// avoiding a series clash with the unsuffixed mirrored/preferred endpoint)
+	replicaBodies, err := AmplifyRequestBody(body, fullCopies, 1)
 	if err != nil {
 		level.Error(logger).Log("msg", "Failed to create amplified replicas", "backend", backend.Name(), "err", err)
 		return [][]byte{body} // Fall back to original
@@ -299,8 +300,7 @@ func (p *ProxyEndpoint) prepareAmplifiedBodies(body []byte, backend ProxyBackend
 		if err != nil {
 			level.Error(logger).Log("msg", "Failed to create fractional request", "backend", backend.Name(), "err", err)
 		} else {
-			// Create replica fullCopies+1 from the sampled data
-			fractionalBodies, err := AmplifyRequestBody(result.Body, fullCopies+1, fullCopies+1)
+			fractionalBodies, err := AmplifyRequestBody(result.Body, 1, fullCopies+1)
 			if err != nil {
 				level.Error(logger).Log("msg", "Failed to suffix fractional request", "backend", backend.Name(), "err", err)
 			} else {

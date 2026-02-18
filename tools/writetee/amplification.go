@@ -257,13 +257,18 @@ func SampleWriteRequest(body []byte, amplificationFactor float64, tracker *Ampli
 // AmplifyRequestBody creates multiple amplified replicas from a single request body.
 // It decompresses and unmarshals once, then creates replicas startReplica through endReplica (inclusive).
 // Each replica has all label values (except __name__) suffixed with _ampN for uniqueness.
-func AmplifyRequestBody(body []byte, startReplica, endReplica int) ([][]byte, error) {
-	if startReplica < 1 || endReplica < startReplica {
-		return nil, fmt.Errorf("invalid replica range: %d to %d", startReplica, endReplica)
+// AmplifyRequestBody creates count copies of the request body, each with label suffixes
+// _amp{startSuffix}, _amp{startSuffix+1}, ..., _amp{startSuffix+count-1}.
+// startSuffix must be >= 2 to avoid clashing with the unsuffixed mirrored/preferred endpoint.
+func AmplifyRequestBody(body []byte, count, startSuffix int) ([][]byte, error) {
+	if count < 1 {
+		return nil, fmt.Errorf("count must be >= 1, got %d", count)
+	}
+	if startSuffix < 1 {
+		return nil, fmt.Errorf("startSuffix must be >= 1, got %d", startSuffix)
 	}
 
-	numReplicas := endReplica - startReplica + 1
-	bodies := make([][]byte, 0, numReplicas)
+	bodies := make([][]byte, 0, count)
 
 	// Decompress once
 	decompressed, err := snappy.Decode(nil, body)
@@ -283,25 +288,13 @@ func AmplifyRequestBody(body []byte, startReplica, endReplica int) ([][]byte, er
 			return nil, fmt.Errorf("failed to unmarshal RW 2.0 write request: %w", err)
 		}
 
-		// Create each replica
-		for replicaNum := startReplica; replicaNum <= endReplica; replicaNum++ {
-			var suffixedRW2 mimirpb.WriteRequestRW2
-			if replicaNum == 1 {
-				// Replica 1 is the original - no suffix needed, just marshal as-is
-				suffixedRW2 = mimirpb.WriteRequestRW2{
-					Symbols:    rw2Req.Symbols,
-					Timeseries: rw2Req.Timeseries,
-				}
-			} else {
-				suffixedRW2 = applySuffixToRW2Request(rw2Req, replicaNum)
-			}
-
+		for i := range count {
+			suffixedRW2 := applySuffixToRW2Request(rw2Req, startSuffix+i)
 			marshaled, err := proto.Marshal(&suffixedRW2)
 			if err != nil {
-				return nil, fmt.Errorf("failed to marshal RW 2.0 replica %d: %w", replicaNum, err)
+				return nil, fmt.Errorf("failed to marshal RW 2.0 replica %d: %w", startSuffix+i, err)
 			}
-			compressed := snappy.Encode(nil, marshaled)
-			bodies = append(bodies, compressed)
+			bodies = append(bodies, snappy.Encode(nil, marshaled))
 		}
 
 		return bodies, nil
@@ -311,31 +304,24 @@ func AmplifyRequestBody(body []byte, startReplica, endReplica int) ([][]byte, er
 	}
 
 	// RW 1.0 path: unmarshal once, create all replicas
-	for replicaNum := startReplica; replicaNum <= endReplica; replicaNum++ {
-		var suffixedReq mimirpb.WriteRequest
-		if replicaNum == 1 {
-			// Replica 1 is the original - preserve all fields
-			suffixedReq = req
-		} else {
-			// Create a new request with suffixed series, preserving all other fields
-			suffixedReq = mimirpb.WriteRequest{
-				Source:                   req.Source,
-				Metadata:                 req.Metadata,
-				SkipLabelValidation:      req.SkipLabelValidation,
-				SkipLabelCountValidation: req.SkipLabelCountValidation,
-				Timeseries:               make([]mimirpb.PreallocTimeseries, len(req.Timeseries)),
-			}
-			for i := range req.Timeseries {
-				suffixedReq.Timeseries[i] = applySuffixToTimeSeries(&req.Timeseries[i], replicaNum)
-			}
+	for i := range count {
+		suffixNum := startSuffix + i
+		suffixedReq := mimirpb.WriteRequest{
+			Source:                   req.Source,
+			Metadata:                 req.Metadata,
+			SkipLabelValidation:      req.SkipLabelValidation,
+			SkipLabelCountValidation: req.SkipLabelCountValidation,
+			Timeseries:               make([]mimirpb.PreallocTimeseries, len(req.Timeseries)),
+		}
+		for j := range req.Timeseries {
+			suffixedReq.Timeseries[j] = applySuffixToTimeSeries(&req.Timeseries[j], suffixNum)
 		}
 
 		marshaled, err := proto.Marshal(&suffixedReq)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal RW 1.0 replica %d: %w", replicaNum, err)
+			return nil, fmt.Errorf("failed to marshal RW 1.0 replica %d: %w", suffixNum, err)
 		}
-		compressed := snappy.Encode(nil, marshaled)
-		bodies = append(bodies, compressed)
+		bodies = append(bodies, snappy.Encode(nil, marshaled))
 	}
 
 	return bodies, nil

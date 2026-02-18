@@ -64,23 +64,20 @@ func TestSampleWriteRequest_RW2(t *testing.T) {
 
 // TestAmplifyRequestBody_RW2 tests amplifying RW2 request bodies.
 func TestAmplifyRequestBody_RW2(t *testing.T) {
-	t.Run("replica 1 returns original (no suffix)", func(t *testing.T) {
+	t.Run("rejects startSuffix < 1", func(t *testing.T) {
 		req := makeRW2RequestWithLabels(1)
 		compressed := compressRequest(t, &req)
 
-		suffixed, err := AmplifyRequestBody(compressed, 1, 1)
-		require.NoError(t, err)
-		require.Len(t, suffixed, 1)
-
-		// Should be identical to input
-		assert.Equal(t, compressed, suffixed[0])
+		_, err := AmplifyRequestBody(compressed, 1, 0)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "startSuffix must be >= 1")
 	})
 
 	t.Run("replica 2 suffixes all label values", func(t *testing.T) {
 		req := makeRW2RequestWithLabels(1)
 		compressed := compressRequest(t, &req)
 
-		suffixed, err := AmplifyRequestBody(compressed, 2, 2)
+		suffixed, err := AmplifyRequestBody(compressed, 1, 2)
 		require.NoError(t, err)
 		require.Len(t, suffixed, 1)
 
@@ -101,7 +98,7 @@ func TestAmplifyRequestBody_RW2(t *testing.T) {
 		req := makeRW2RequestWithLabels(1)
 		compressed := compressRequest(t, &req)
 
-		suffixed, err := AmplifyRequestBody(compressed, 3, 3)
+		suffixed, err := AmplifyRequestBody(compressed, 1, 3)
 		require.NoError(t, err)
 		require.Len(t, suffixed, 1)
 
@@ -118,7 +115,7 @@ func TestAmplifyRequestBody_RW2(t *testing.T) {
 		req := makeRW2RequestWithoutName(1)
 		compressed := compressRequest(t, &req)
 
-		suffixed, err := AmplifyRequestBody(compressed, 2, 2)
+		suffixed, err := AmplifyRequestBody(compressed, 1, 2)
 		require.NoError(t, err)
 		require.Len(t, suffixed, 1)
 
@@ -168,23 +165,20 @@ func TestSampleWriteRequest_RW1(t *testing.T) {
 
 // TestAmplifyRequestBody_RW1 tests amplifying RW1 request bodies.
 func TestAmplifyRequestBody_RW1(t *testing.T) {
-	t.Run("replica 1 returns original (no suffix)", func(t *testing.T) {
+	t.Run("rejects startSuffix < 1", func(t *testing.T) {
 		req := makeRW1RequestWithLabels(1)
 		compressed := compressRequest(t, &req)
 
-		suffixed, err := AmplifyRequestBody(compressed, 1, 1)
-		require.NoError(t, err)
-		require.Len(t, suffixed, 1)
-
-		// Should be identical to input
-		assert.Equal(t, compressed, suffixed[0])
+		_, err := AmplifyRequestBody(compressed, 1, 0)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "startSuffix must be >= 1")
 	})
 
 	t.Run("replica 2 suffixes all label values", func(t *testing.T) {
 		req := makeRW1RequestWithLabels(1)
 		compressed := compressRequest(t, &req)
 
-		suffixed, err := AmplifyRequestBody(compressed, 2, 2)
+		suffixed, err := AmplifyRequestBody(compressed, 1, 2)
 		require.NoError(t, err)
 		require.Len(t, suffixed, 1)
 
@@ -201,7 +195,7 @@ func TestAmplifyRequestBody_RW1(t *testing.T) {
 		req := makeRW1RequestWithLabels(1)
 		compressed := compressRequest(t, &req)
 
-		suffixed, err := AmplifyRequestBody(compressed, 3, 3)
+		suffixed, err := AmplifyRequestBody(compressed, 1, 3)
 		require.NoError(t, err)
 		require.Len(t, suffixed, 1)
 
@@ -218,7 +212,7 @@ func TestAmplifyRequestBody_RW1(t *testing.T) {
 		req := makeRW1RequestWithoutName(1)
 		compressed := compressRequest(t, &req)
 
-		suffixed, err := AmplifyRequestBody(compressed, 2, 2)
+		suffixed, err := AmplifyRequestBody(compressed, 1, 2)
 		require.NoError(t, err)
 		require.Len(t, suffixed, 1)
 
