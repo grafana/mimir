@@ -33,7 +33,7 @@ func (a *AccessControlCommand) Register(app *kingpin.Application, envVars EnvVar
 
 func (a *AccessControlCommand) generateHeader(_ *kingpin.ParseContext) error {
 	parser := config.CreateParser()
-	
+
 	for _, acl := range a.ACLs {
 		_, err := parser.ParseMetricSelector(acl)
 		if err != nil {

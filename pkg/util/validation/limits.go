@@ -712,7 +712,7 @@ const LabelValueHashLen = len("(hash:)") + blake2b.Size256*2
 
 func (l *Limits) canonicalizeQueries() {
 	parser := promqlext.NewPromQLParser()
-	
+
 	for i, q := range l.BlockedQueries {
 		if q.Regex {
 			continue
