@@ -66,6 +66,12 @@ Example:
 make CONTAINER_MOUNT_OPTIONS=delegated
 ```
 
+To compile Protobuf files (`.proto`) to Go code (`.pb.go`), run:
+
+```
+make protos
+```
+
 ### Run Grafana Mimir locally
 
 To easily run Grafana Mimir locally during development, use the docker-compose setup at `development/<deployment-mode>/`:
@@ -129,6 +135,7 @@ The Grafana Mimir documentation and the Helm chart documentation for Mimir and G
 For more detail on style and organisation of the documentation, refer to the dedicated page "[How to write documentation](how-to-write-documentation.md)".
 
 Note: if you attempt to view pages on GitHub, it's likely that you might find broken links or pages. That is expected and should not be addressed unless it is causing issues with the site that occur as part of the build.
+
 
 Please see dedicated [instructions for documentation authoring](documentation-authoring.md) for more information on the Docs toolkit.
 
