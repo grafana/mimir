@@ -27,9 +27,15 @@ const (
 
 // PropagationDelayTrackerConfig configures the propagation delay tracker.
 type PropagationDelayTrackerConfig struct {
-	Enabled        bool          `yaml:"enabled" category:"experimental"`
-	BeaconInterval time.Duration `yaml:"beacon_interval" category:"experimental"`
-	BeaconLifetime time.Duration `yaml:"beacon_lifetime" category:"experimental"`
+	Enabled                     bool          `yaml:"enabled" category:"experimental"`
+	BeaconInterval              time.Duration `yaml:"beacon_interval" category:"experimental"`
+	BeaconLifetime              time.Duration `yaml:"beacon_lifetime" category:"experimental"`
+	LogBeaconsLatencyLongerThan time.Duration `yaml:"log_beacons_latency_longer_than" category:"experimental"`
+}
+
+// RegisterFlags registers flags with default names.
+func (cfg *PropagationDelayTrackerConfig) RegisterFlags(f *flag.FlagSet) {
+	cfg.RegisterFlagsWithPrefix(f, "")
 }
 
 // RegisterFlagsWithPrefix registers flags with the given prefix.
@@ -37,6 +43,7 @@ func (cfg *PropagationDelayTrackerConfig) RegisterFlagsWithPrefix(f *flag.FlagSe
 	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, "Enable the propagation delay tracker to measure gossip propagation delay.")
 	f.DurationVar(&cfg.BeaconInterval, prefix+"beacon-interval", 1*time.Minute, "How often to publish beacons for propagation tracking.")
 	f.DurationVar(&cfg.BeaconLifetime, prefix+"beacon-lifetime", 10*time.Minute, "How long a beacon lives before being garbage collected.")
+	f.DurationVar(&cfg.LogBeaconsLatencyLongerThan, prefix+"log-beacons-latency-longer-than", 0, "Log warning when beacon propagation delay exceeds this threshold. 0 disables logging.")
 }
 
 // PropagationDelayTracker is a service that tracks gossip propagation delay across
@@ -45,11 +52,11 @@ func (cfg *PropagationDelayTrackerConfig) RegisterFlagsWithPrefix(f *flag.FlagSe
 type PropagationDelayTracker struct {
 	services.Service
 
-	beaconInterval time.Duration
-	beaconLifetime time.Duration
-	kv             *KV
-	codec          codec.Codec
-	logger         log.Logger
+	cfg      PropagationDelayTrackerConfig
+	nodeName string
+	kv       *KV
+	codec    codec.Codec
+	logger   log.Logger
 
 	// seenBeacons tracks beacon IDs that have already been processed to avoid
 	// measuring the same beacon twice.
@@ -75,18 +82,18 @@ type PropagationDelayTracker struct {
 // NewPropagationDelayTracker creates a new PropagationDelayTracker service.
 func NewPropagationDelayTracker(
 	kv *KV,
-	beaconInterval time.Duration,
-	beaconLifetime time.Duration,
+	cfg PropagationDelayTrackerConfig,
+	nodeName string,
 	logger log.Logger,
 	registerer prometheus.Registerer,
 ) *PropagationDelayTracker {
 	t := &PropagationDelayTracker{
-		beaconInterval: beaconInterval,
-		beaconLifetime: beaconLifetime,
-		kv:             kv,
-		codec:          GetPropagationDelayTrackerCodec(),
-		logger:         log.With(logger, "component", "memberlist-propagation-delay-tracker"),
-		seenBeacons:    make(map[uint64]struct{}),
+		cfg:         cfg,
+		nodeName:    nodeName,
+		kv:          kv,
+		codec:       GetPropagationDelayTrackerCodec(),
+		logger:      log.With(logger, "component", "memberlist-propagation-delay-tracker"),
+		seenBeacons: make(map[uint64]struct{}),
 		propagationDelay: promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
 			Name:                            "memberlist_propagation_tracker_delay_seconds",
 			Help:                            "Time from beacon publish to receive.",
@@ -111,7 +118,7 @@ func NewPropagationDelayTracker(
 }
 
 func (t *PropagationDelayTracker) running(ctx context.Context) error {
-	level.Info(t.logger).Log("msg", "propagation delay tracker started", "beacon_interval", t.beaconInterval, "beacon_lifetime", t.beaconLifetime)
+	level.Info(t.logger).Log("msg", "propagation delay tracker started", "beacon_interval", t.cfg.BeaconInterval, "beacon_lifetime", t.cfg.BeaconLifetime)
 
 	// Start the goroutine to track beacon arrivals in real-time
 	watchCtx, cancelWatch := context.WithCancel(ctx)
@@ -133,8 +140,8 @@ func (t *PropagationDelayTracker) running(ctx context.Context) error {
 	// Start the beacon publish ticker. The first tick uses a random delay between 1ns and
 	// beaconInterval to distribute beacon publishing over time when multiple processes
 	// start simultaneously (e.g., during a rollout).
-	initialDelay := 1 + time.Duration(rand.Int63n(int64(t.beaconInterval)))
-	stopTicker, tickerChan := timeutil.NewVariableTicker(initialDelay, t.beaconInterval)
+	initialDelay := 1 + time.Duration(rand.Int63n(int64(t.cfg.BeaconInterval)))
+	stopTicker, tickerChan := timeutil.NewVariableTicker(initialDelay, t.cfg.BeaconInterval)
 	defer stopTicker()
 
 	for {
@@ -202,6 +209,17 @@ func (t *PropagationDelayTracker) onBeaconsReceived(desc *PropagationDelayTracke
 		delay := now.Sub(beacon.GetPublishedAtTime())
 		if delay >= 0 {
 			t.propagationDelay.Observe(delay.Seconds())
+
+			if t.cfg.LogBeaconsLatencyLongerThan > 0 && delay >= t.cfg.LogBeaconsLatencyLongerThan {
+				level.Warn(t.logger).Log(
+					"msg", "high latency beacon detected",
+					"beacon_id", beaconID,
+					"published_by", beacon.PublishedBy,
+					"published_at", beacon.GetPublishedAtTime().Format(time.RFC3339Nano),
+					"received_at", now.Format(time.RFC3339Nano),
+					"delay", delay,
+				)
+			}
 		}
 	}
 
@@ -276,9 +294,9 @@ func (t *PropagationDelayTracker) onBeaconInterval(ctx context.Context) {
 			continue
 		}
 		age := now.Sub(beacon.GetPublishedAtTime())
-		if age >= t.beaconLifetime {
+		if age >= t.cfg.BeaconLifetime {
 			beaconsToDelete = append(beaconsToDelete, beaconID)
-		} else if age < t.beaconInterval {
+		} else if age < t.cfg.BeaconInterval {
 			hasRecentBeacon = true
 		}
 	}
@@ -322,6 +340,7 @@ func (t *PropagationDelayTracker) publishBeacon(ctx context.Context) {
 
 		desc.Beacons[beaconID] = BeaconDesc{
 			PublishedAt: now.UnixMilli(),
+			PublishedBy: t.nodeName,
 		}
 
 		return desc, true, nil

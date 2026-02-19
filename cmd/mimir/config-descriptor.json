@@ -18972,6 +18972,17 @@
               "fieldFlag": "memberlist.propagation-delay-tracker.beacon-lifetime",
               "fieldType": "duration",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "log_beacons_latency_longer_than",
+              "required": false,
+              "desc": "Log warning when beacon propagation delay exceeds this threshold. 0 disables logging.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "memberlist.propagation-delay-tracker.log-beacons-latency-longer-than",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,

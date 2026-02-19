@@ -1350,6 +1350,7 @@
   "memberlist.zone-aware-routing.role": "member",
   "memberlist.propagation-delay-tracker.beacon-interval": 60000000000,
   "memberlist.propagation-delay-tracker.beacon-lifetime": 600000000000,
+  "memberlist.propagation-delay-tracker.log-beacons-latency-longer-than": 0,
   "query-scheduler.max-outstanding-requests-per-tenant": 100,
   "query-scheduler.querier-forget-delay": 0,
   "query-scheduler.grpc-client-config.grpc-max-recv-msg-size": 104857600,
