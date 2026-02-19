@@ -152,10 +152,10 @@ jobs:
     strategy:
       # Do not abort other groups when one fails.
       fail-fast: false
-      # Split tests into 4 groups.
+      # Split tests into 8 groups.
       matrix:
-        test_group_id:    [0, 1, 2, 3]
-        test_group_total: [4]
+        test_group_id:    [0, 1, 2, 3, 4, 5, 6, 7]
+        test_group_total: [8]
         extra_build_tags: ["", "nopools"]
     needs:
       - prepare
@@ -355,10 +355,10 @@ jobs:
     strategy:
       # Do not abort other groups when one fails.
       fail-fast: false
-      # Split tests into 6 groups.
+      # Split tests into 8 groups.
       matrix:
-        test_group_id:    [0, 1, 2, 3, 4, 5]
-        test_group_total: [6]
+        test_group_id:    [0, 1, 2, 3, 4, 5, 6, 7]
+        test_group_total: [8]
     steps:
       - name: Upgrade golang
         uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6
