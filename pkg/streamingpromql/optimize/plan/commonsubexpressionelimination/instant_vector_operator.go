@@ -49,14 +49,19 @@ func (b *InstantVectorDuplicationBuffer) AddConsumer() *InstantVectorDuplication
 	return consumer
 }
 
-func (b *InstantVectorDuplicationBuffer) SeriesMetadata(ctx context.Context, consumer *InstantVectorDuplicationConsumer) ([]types.SeriesMetadata, error) {
+func (b *InstantVectorDuplicationBuffer) SeriesMetadata(ctx context.Context, matchers types.Matchers, consumer *InstantVectorDuplicationConsumer) ([]types.SeriesMetadata, error) {
 	if b.seriesMetadataCount == 0 {
 		// Haven't loaded series metadata yet, load it now.
+
+		if len(b.consumers) > 1 {
+			// Ignore the matchers passed at runtime if we have multiple consumers:
+			// this operator is being used for multiple parts of the query and
+			// the matchers may filter out results needed for other consumers.
+			matchers = nil
+		}
+
 		var err error
-		// Note that we are ignoring the matchers passed at runtime and not passing them to the inner
-		// operator. This is because this operator is being used for multiple parts of the query and
-		// the matchers may filter out results needed for other uses of this operator.
-		b.seriesMetadata, err = b.Inner.SeriesMetadata(ctx, nil)
+		b.seriesMetadata, err = b.Inner.SeriesMetadata(ctx, matchers)
 		if err != nil {
 			return nil, err
 		}
@@ -406,7 +411,7 @@ func applyFiltering(unfilteredSeries []types.SeriesMetadata, bitmap []bool, filt
 }
 
 func (d *InstantVectorDuplicationConsumer) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
-	return d.Buffer.SeriesMetadata(ctx, d)
+	return d.Buffer.SeriesMetadata(ctx, matchers, d)
 }
 
 func (d *InstantVectorDuplicationConsumer) shouldReturnUnfilteredSeries(unfilteredSeriesIndex int) bool {
