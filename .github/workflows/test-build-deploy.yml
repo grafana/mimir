@@ -210,7 +210,7 @@ jobs:
 
   test-streamingpromql:
     runs-on: ubuntu-latest
-    name: test (${{ matrix.extra_build_tags != '' && format('{0}, ', matrix.extra_build_tags) || '' }}${{ matrix.test_group_id }}, ${{ matrix.test_group_total }})
+    name: test-streamingpromql (${{ matrix.extra_build_tags != '' && format('{0}, ', matrix.extra_build_tags) || '' }}${{ matrix.test_group_id }}, ${{ matrix.test_group_total }})
     strategy:
       # Do not abort other groups when one fails.
       fail-fast: false
