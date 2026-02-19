@@ -32,11 +32,11 @@ type SeriesDeduplicatorMetrics struct {
 func NewSeriesDeduplicatorMetrics(reg prometheus.Registerer) *SeriesDeduplicatorMetrics {
 	return &SeriesDeduplicatorMetrics{
 		seriesLabelsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_querier_series_labels_total",
+			Name: "cortex_querier_labels_deduplicator_processed_total",
 			Help: "Total number of series labels processed by the deduplicator, including both unique and duplicate series.",
 		}),
 		seriesLabelsDeduplicated: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_querier_series_labels_deduplicated_total",
+			Name: "cortex_querier_labels_deduplicator_deduplicated_total",
 			Help: "Number of series labels that were deduplicated by reusing existing labels instead of creating new ones.",
 		}),
 	}

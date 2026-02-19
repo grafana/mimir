@@ -341,17 +341,17 @@ func TestSeriesDeduplicator_Metrics(t *testing.T) {
 
 	// Verify metrics: 5 total calls, 3 deduplicated
 	expectedMetrics := `
-		# HELP cortex_querier_series_labels_total Total number of series labels processed by the deduplicator, including both unique and duplicate series.
-		# TYPE cortex_querier_series_labels_total counter
-		cortex_querier_series_labels_total 5
+		# HELP cortex_querier_labels_deduplicator_processed_total Total number of series labels processed by the deduplicator, including both unique and duplicate series.
+		# TYPE cortex_querier_labels_deduplicator_processed_total counter
+		cortex_querier_labels_deduplicator_processed_total 5
 
-		# HELP cortex_querier_series_labels_deduplicated_total Number of series labels that were deduplicated by reusing existing labels instead of creating new ones.
-		# TYPE cortex_querier_series_labels_deduplicated_total counter
-		cortex_querier_series_labels_deduplicated_total 3
+		# HELP cortex_querier_labels_deduplicator_deduplicated_total Number of series labels that were deduplicated by reusing existing labels instead of creating new ones.
+		# TYPE cortex_querier_labels_deduplicator_deduplicated_total counter
+		cortex_querier_labels_deduplicator_deduplicated_total 3
 	`
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics),
-		"cortex_querier_series_labels_total",
-		"cortex_querier_series_labels_deduplicated_total",
+		"cortex_querier_labels_deduplicator_processed_total",
+		"cortex_querier_labels_deduplicator_deduplicated_total",
 	))
 }
