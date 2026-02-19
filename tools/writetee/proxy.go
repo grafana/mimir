@@ -189,15 +189,11 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 		return nil, errors.New("amplification-factor must be > 0.0 when amplified backends are configured")
 	}
 
-	// The preferred backend must exist among the actual backends.
-	exists := false
-	for _, b := range p.backends {
-		if b.Preferred() {
-			exists = true
-			break
-		}
-	}
-	if !exists {
+	// Select the preferred backend. When multiple backends share the same hostname
+	// (e.g., same endpoint in both mirrored and amplified lists), only ONE backend
+	// is marked as preferred. This ensures async dispatch correctly sends to the
+	// non-preferred backends.
+	if !p.selectPreferredBackend() {
 		return nil, fmt.Errorf("the preferred backend (hostname) has not been found among the list of configured backends")
 	}
 
@@ -231,16 +227,51 @@ func (p *Proxy) parseBackendEndpoint(endpoint string, idx int, backendType Backe
 
 	// The backend name is hardcoded as the backend hostname.
 	name := u.Hostname()
-	preferred := name == p.cfg.PreferredBackend
 
-	// In tests, we have the same hostname for all backends, so we also
-	// support a numeric preferred backend which is the index in the list
-	// of backends.
+	// Preferred is determined later in selectPreferredBackend() after all backends are parsed.
+	// This ensures that when multiple backends have the same hostname, only one is marked as preferred.
+	return NewProxyBackend(name, u, p.cfg.BackendReadTimeout, false, p.cfg.BackendSkipTLSVerify, backendType), nil
+}
+
+// selectPreferredBackend selects a single backend as the preferred one based on the configured
+// PreferredBackend setting. When multiple backends match the preferred hostname (e.g., same
+// hostname in both mirrored and amplified endpoints), this function prioritizes:
+// 1. First matching mirrored backend (preferred, as it returns unmodified data)
+// 2. First matching amplified backend (fallback)
+// This ensures async dispatch works correctly when the same hostname appears in both lists.
+func (p *Proxy) selectPreferredBackend() bool {
+	// Support numeric preferred backend index (used in tests where all backends have the same hostname)
 	if preferredIdx, err := strconv.Atoi(p.cfg.PreferredBackend); err == nil {
-		preferred = preferredIdx == idx
+		if preferredIdx >= 0 && preferredIdx < len(p.backends) {
+			p.backends[preferredIdx].SetPreferred(true)
+			return true
+		}
+		return false
 	}
 
-	return NewProxyBackend(name, u, p.cfg.BackendReadTimeout, preferred, p.cfg.BackendSkipTLSVerify, backendType), nil
+	// Find the preferred backend by hostname, prioritizing mirrored over amplified
+	var firstAmplifiedMatch ProxyBackend
+	for _, b := range p.backends {
+		if b.Name() == p.cfg.PreferredBackend {
+			if b.BackendType() == BackendTypeMirrored {
+				// Found a mirrored backend match - use it immediately
+				b.SetPreferred(true)
+				return true
+			}
+			// Keep track of the first amplified match as fallback
+			if firstAmplifiedMatch == nil {
+				firstAmplifiedMatch = b
+			}
+		}
+	}
+
+	// No mirrored match found, use the first amplified match if available
+	if firstAmplifiedMatch != nil {
+		firstAmplifiedMatch.SetPreferred(true)
+		return true
+	}
+
+	return false
 }
 
 func (p *Proxy) Start() error {

@@ -124,6 +124,175 @@ func TestNewProxy_Validation(t *testing.T) {
 	}
 }
 
+func TestNewProxy_PreferredBackendSelection(t *testing.T) {
+	logger := log.NewNopLogger()
+
+	tests := []struct {
+		name                      string
+		mirroredEndpoints         string
+		amplifiedEndpoints        string
+		preferredBackend          string
+		expectedPreferredIdx      int  // Index of backend that should be preferred
+		expectedPreferredType     BackendType
+		expectedNonPreferredCount int  // Number of backends that should NOT be preferred
+	}{
+		{
+			name:                      "same hostname in mirrored and amplified - mirrored should be preferred",
+			mirroredEndpoints:         "http://backend1:8080",
+			amplifiedEndpoints:        "http://backend1:8080",
+			preferredBackend:          "backend1",
+			expectedPreferredIdx:      0, // First backend (mirrored)
+			expectedPreferredType:     BackendTypeMirrored,
+			expectedNonPreferredCount: 1, // The amplified backend should NOT be preferred
+		},
+		{
+			name:                      "different hostnames - normal behavior",
+			mirroredEndpoints:         "http://backend1:8080",
+			amplifiedEndpoints:        "http://backend2:8080",
+			preferredBackend:          "backend1",
+			expectedPreferredIdx:      0,
+			expectedPreferredType:     BackendTypeMirrored,
+			expectedNonPreferredCount: 1,
+		},
+		{
+			name:                      "only amplified backends with matching hostname",
+			mirroredEndpoints:         "http://other:8080",
+			amplifiedEndpoints:        "http://backend1:8080",
+			preferredBackend:          "backend1",
+			expectedPreferredIdx:      1, // Second backend (amplified)
+			expectedPreferredType:     BackendTypeAmplified,
+			expectedNonPreferredCount: 1,
+		},
+		{
+			name:                      "numeric preferred backend index",
+			mirroredEndpoints:         "http://backend1:8080",
+			amplifiedEndpoints:        "http://backend1:8080",
+			preferredBackend:          "1", // Select second backend by index
+			expectedPreferredIdx:      1,
+			expectedPreferredType:     BackendTypeAmplified,
+			expectedNonPreferredCount: 1,
+		},
+		{
+			name:                      "multiple mirrored backends - first match wins",
+			mirroredEndpoints:         "http://backend1:8080,http://backend1:8081",
+			amplifiedEndpoints:        "",
+			preferredBackend:          "backend1",
+			expectedPreferredIdx:      0,
+			expectedPreferredType:     BackendTypeMirrored,
+			expectedNonPreferredCount: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			registry := prometheus.NewRegistry()
+			cfg := ProxyConfig{
+				BackendMirroredEndpoints:   tt.mirroredEndpoints,
+				BackendAmplifiedEndpoints:  tt.amplifiedEndpoints,
+				PreferredBackend:           tt.preferredBackend,
+				AmplificationFactor:        1.0,
+				AsyncMaxInFlightPerBackend: 1000,
+			}
+
+			proxy, err := NewProxy(cfg, logger, []Route{}, registry)
+			require.NoError(t, err)
+
+			// Count preferred and non-preferred backends
+			var preferredCount, nonPreferredCount int
+			var preferredIdx int
+			var preferredType BackendType
+			for idx, b := range proxy.backends {
+				if b.Preferred() {
+					preferredCount++
+					preferredIdx = idx
+					preferredType = b.BackendType()
+				} else {
+					nonPreferredCount++
+				}
+			}
+
+			assert.Equal(t, 1, preferredCount, "exactly one backend should be preferred")
+			assert.Equal(t, tt.expectedPreferredIdx, preferredIdx, "wrong backend selected as preferred")
+			assert.Equal(t, tt.expectedPreferredType, preferredType, "wrong backend type selected as preferred")
+			assert.Equal(t, tt.expectedNonPreferredCount, nonPreferredCount, "wrong number of non-preferred backends")
+		})
+	}
+}
+
+func TestProxyEndpoint_SameHostnameMirroredAndAmplified_BothReceiveTraffic(t *testing.T) {
+	// This test verifies the fix for the bug where same hostname in both
+	// mirrored and amplified endpoints resulted in only 1x traffic instead of 2x.
+	logger := log.NewNopLogger()
+	registry := prometheus.NewRegistry()
+	metrics := NewProxyMetrics(registry)
+
+	var mirroredRequests, amplifiedRequests int
+	var mu sync.Mutex
+
+	// Create a server that tracks requests
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		// We can't distinguish backends by URL since they're the same, but in the real
+		// test we just verify total request count equals 2 (1 sync + 1 async)
+		w.WriteHeader(200)
+		mu.Unlock()
+	}))
+	defer server.Close()
+
+	serverURL := mustParseURL(server.URL)
+
+	// Create two backends pointing to the same server, but one is preferred (mirrored) and one is not (amplified)
+	mirroredBackend := NewProxyBackend(serverURL.Hostname(), serverURL, 5*time.Second, true, false, BackendTypeMirrored)
+	amplifiedBackend := NewProxyBackend(serverURL.Hostname(), serverURL, 5*time.Second, false, false, BackendTypeAmplified)
+
+	// Track requests via custom backends that wrap the real ones
+	mirroredWrapper := &trackingBackend{ProxyBackend: mirroredBackend, counter: &mirroredRequests, mu: &mu}
+	amplifiedWrapper := &trackingBackend{ProxyBackend: amplifiedBackend, counter: &amplifiedRequests, mu: &mu}
+
+	route := Route{
+		Path:      "/api/v1/push",
+		RouteName: "api_v1_push",
+		Methods:   []string{"POST"},
+	}
+
+	asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
+	defer asyncDispatcher.Stop()
+
+	tracker := NewAmplificationTracker()
+	endpoint, err := NewProxyEndpoint([]ProxyBackend{mirroredWrapper, amplifiedWrapper}, route, metrics, logger, 1.0, tracker, asyncDispatcher)
+	require.NoError(t, err)
+
+	// Make a request
+	req := httptest.NewRequest("POST", "/api/v1/push", bytes.NewReader(makeTestWriteRequest(t)))
+	rec := httptest.NewRecorder()
+
+	endpoint.ServeHTTP(rec, req)
+
+	// Wait for async requests to complete
+	asyncDispatcher.Stop()
+	asyncDispatcher.Await()
+
+	// Verify both backends received requests
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, 1, mirroredRequests, "mirrored backend should receive 1 request (synchronous)")
+	assert.Equal(t, 1, amplifiedRequests, "amplified backend should receive 1 request (async)")
+}
+
+// trackingBackend wraps a ProxyBackend and counts requests
+type trackingBackend struct {
+	ProxyBackend
+	counter *int
+	mu      *sync.Mutex
+}
+
+func (t *trackingBackend) ForwardRequest(ctx context.Context, orig *http.Request, body io.ReadCloser) (time.Duration, int, []byte, http.Header, error) {
+	t.mu.Lock()
+	*t.counter++
+	t.mu.Unlock()
+	return t.ProxyBackend.ForwardRequest(ctx, orig, body)
+}
+
 func TestProxyEndpoint_ResponseSelection(t *testing.T) {
 	logger := log.NewNopLogger()
 
