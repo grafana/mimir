@@ -5,9 +5,8 @@ package v3
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
-	"strconv"
+	"hash/maphash"
 
 	"github.com/pb33f/libopenapi/datamodel/low"
 	"github.com/pb33f/libopenapi/datamodel/low/base"
@@ -80,51 +79,49 @@ func (h *Header) GetExtensions() *orderedmap.Map[low.KeyReference[string], low.V
 	return h.Extensions
 }
 
-// Hash will return a consistent SHA256 Hash of the Header object
-func (h *Header) Hash() [32]byte {
-	// Use string builder pool
-	sb := low.GetStringBuilder()
-	defer low.PutStringBuilder(sb)
-
-	if h.Description.Value != "" {
-		sb.WriteString(h.Description.Value)
-		sb.WriteByte('|')
-	}
-	sb.WriteString(strconv.FormatBool(h.Required.Value))
-	sb.WriteByte('|')
-	sb.WriteString(strconv.FormatBool(h.Deprecated.Value))
-	sb.WriteByte('|')
-	sb.WriteString(strconv.FormatBool(h.AllowEmptyValue.Value))
-	sb.WriteByte('|')
-	if h.Style.Value != "" {
-		sb.WriteString(h.Style.Value)
-		sb.WriteByte('|')
-	}
-	sb.WriteString(strconv.FormatBool(h.Explode.Value))
-	sb.WriteByte('|')
-	sb.WriteString(strconv.FormatBool(h.AllowReserved.Value))
-	sb.WriteByte('|')
-	if h.Schema.Value != nil {
-		sb.WriteString(low.GenerateHashString(h.Schema.Value))
-		sb.WriteByte('|')
-	}
-	if h.Example.Value != nil && !h.Example.Value.IsZero() {
-		sb.WriteString(low.GenerateHashString(h.Example.Value))
-		sb.WriteByte('|')
-	}
-	for k, v := range orderedmap.SortAlpha(h.Examples.Value).FromOldest() {
-		sb.WriteString(fmt.Sprintf("%s-%x", k.Value, v.Value.Hash()))
-		sb.WriteByte('|')
-	}
-	for k, v := range orderedmap.SortAlpha(h.Content.Value).FromOldest() {
-		sb.WriteString(fmt.Sprintf("%s-%x", k.Value, v.Value.Hash()))
-		sb.WriteByte('|')
-	}
-	for _, ext := range low.HashExtensions(h.Extensions) {
-		sb.WriteString(ext)
-		sb.WriteByte('|')
-	}
-	return sha256.Sum256([]byte(sb.String()))
+// Hash will return a consistent Hash of the Header object
+func (h *Header) Hash() uint64 {
+	return low.WithHasher(func(hsh *maphash.Hash) uint64 {
+		if h.Description.Value != "" {
+			hsh.WriteString(h.Description.Value)
+			hsh.WriteByte(low.HASH_PIPE)
+		}
+		low.HashBool(hsh, h.Required.Value)
+		hsh.WriteByte(low.HASH_PIPE)
+		low.HashBool(hsh, h.Deprecated.Value)
+		hsh.WriteByte(low.HASH_PIPE)
+		low.HashBool(hsh, h.AllowEmptyValue.Value)
+		hsh.WriteByte(low.HASH_PIPE)
+		if h.Style.Value != "" {
+			hsh.WriteString(h.Style.Value)
+			hsh.WriteByte(low.HASH_PIPE)
+		}
+		low.HashBool(hsh, h.Explode.Value)
+		hsh.WriteByte(low.HASH_PIPE)
+		low.HashBool(hsh, h.AllowReserved.Value)
+		hsh.WriteByte(low.HASH_PIPE)
+		if h.Schema.Value != nil {
+			hsh.WriteString(low.GenerateHashString(h.Schema.Value))
+			hsh.WriteByte(low.HASH_PIPE)
+		}
+		if h.Example.Value != nil && !h.Example.Value.IsZero() {
+			hsh.WriteString(low.GenerateHashString(h.Example.Value))
+			hsh.WriteByte(low.HASH_PIPE)
+		}
+		for k, v := range orderedmap.SortAlpha(h.Examples.Value).FromOldest() {
+			hsh.WriteString(fmt.Sprintf("%s-%x", k.Value, v.Value.Hash()))
+			hsh.WriteByte(low.HASH_PIPE)
+		}
+		for k, v := range orderedmap.SortAlpha(h.Content.Value).FromOldest() {
+			hsh.WriteString(fmt.Sprintf("%s-%x", k.Value, v.Value.Hash()))
+			hsh.WriteByte(low.HASH_PIPE)
+		}
+		for _, ext := range low.HashExtensions(h.Extensions) {
+			hsh.WriteString(ext)
+			hsh.WriteByte(low.HASH_PIPE)
+		}
+		return hsh.Sum64()
+	})
 }
 
 // Build will extract extensions, examples, schema and content/media types from node.

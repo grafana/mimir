@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirtool/rules/rwrulefmt"
+	"github.com/grafana/mimir/pkg/mimirtool/util"
 )
 
 func TestAggregateBy(t *testing.T) {
@@ -219,7 +220,7 @@ func TestAggregateBy(t *testing.T) {
 
 	for _, tc := range tt {
 		t.Run(tc.name, func(t *testing.T) {
-			c, m, err := tc.rn.AggregateBy("cluster", tc.applyTo, log.NewNopLogger())
+			c, m, err := tc.rn.AggregateBy("cluster", tc.applyTo, util.CreatePromQLParser(false), log.NewNopLogger())
 
 			require.Equal(t, tc.expect, err)
 			assert.Equal(t, tc.count, c)
@@ -299,7 +300,7 @@ func TestLintExpressions(t *testing.T) {
 			}
 
 			backend := MimirBackend
-			c, m, err := r.LintExpressions(backend, log.NewNopLogger())
+			c, m, err := r.LintExpressions(backend, util.CreatePromQLParser(false), log.NewNopLogger())
 			rexpr := r.Groups[0].Rules[0].Expr
 
 			require.Equal(t, tc.count, c)

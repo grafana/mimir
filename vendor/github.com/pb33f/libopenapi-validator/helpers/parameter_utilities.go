@@ -105,6 +105,59 @@ func ExtractSecurityForOperation(request *http.Request, item *v3.PathItem) []*ba
 	return schemes
 }
 
+// ExtractSecurityHeaderNames extracts header names from applicable security schemes.
+// Returns header names from apiKey schemes with in:"header", plus "Authorization"
+// for http/oauth2/openIdConnect schemes.
+//
+// This function is used by strict mode validation to recognize security headers
+// as "declared" headers that should not trigger undeclared header errors.
+func ExtractSecurityHeaderNames(
+	security []*base.SecurityRequirement,
+	securitySchemes map[string]*v3.SecurityScheme,
+) []string {
+	if security == nil || securitySchemes == nil {
+		return nil
+	}
+
+	seen := make(map[string]bool)
+	var headers []string
+
+	for _, sec := range security {
+		if sec == nil || sec.ContainsEmptyRequirement {
+			continue // No security required for this option
+		}
+
+		if sec.Requirements == nil {
+			continue
+		}
+
+		for pair := sec.Requirements.First(); pair != nil; pair = pair.Next() {
+			schemeName := pair.Key()
+			scheme, ok := securitySchemes[schemeName]
+			if !ok || scheme == nil {
+				continue
+			}
+
+			var headerName string
+			switch strings.ToLower(scheme.Type) {
+			case "apikey":
+				if strings.ToLower(scheme.In) == Header {
+					headerName = scheme.Name
+				}
+			case "http", "oauth2", "openidconnect":
+				headerName = "Authorization"
+			}
+
+			if headerName != "" && !seen[strings.ToLower(headerName)] {
+				seen[strings.ToLower(headerName)] = true
+				headers = append(headers, headerName)
+			}
+		}
+	}
+
+	return headers
+}
+
 func cast(v string) any {
 	if v == "true" || v == "false" {
 		b, _ := strconv.ParseBool(v)

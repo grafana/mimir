@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql"      //lint:ignore faillint streamingpromql is fine
 	"github.com/grafana/mimir/pkg/util/activitytracker" //lint:ignore faillint activitytracker is fine
 	util_log "github.com/grafana/mimir/pkg/util/log"    //lint:ignore faillint log is fine
+	"github.com/grafana/mimir/pkg/util/promqlext"       //lint:ignore faillint promqlext is fine
 )
 
 // Config holds the PromQL engine config exposed by Mimir.
@@ -74,6 +75,7 @@ func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.Activit
 		},
 		// This only applies to Prometheus engine. MQE's is defined per-tenant via limits.
 		EnableDelayedNameRemoval: false,
+		Parser:                   promqlext.NewPromQLParser(),
 	}
 
 	cfg.MimirQueryEngine.CommonOpts = commonOpts

@@ -38,6 +38,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -1157,7 +1158,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 	lookbackDelta := 5 * time.Minute
 
 	mustParseExpr := func(s string) parser.Expr {
-		expr, err := parser.ParseExpr(s)
+		expr, err := promqlext.NewPromQLParser().ParseExpr(s)
 		require.NoError(t, err)
 		return expr
 	}

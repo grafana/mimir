@@ -11,11 +11,11 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 // spinOffSubqueriesQueryable is an implementor of the Queryable interface.
@@ -117,7 +117,7 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 			return storage.ErrSeriesSet(errors.New("missing required labels for subquery"))
 		}
 
-		queryExpr, err := parser.ParseExpr(expr)
+		queryExpr, err := promqlext.NewPromQLParser().ParseExpr(expr)
 		if err != nil {
 			return storage.ErrSeriesSet(errors.Wrap(err, "failed to parse subquery"))
 		}

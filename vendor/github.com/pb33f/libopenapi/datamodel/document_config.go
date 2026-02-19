@@ -81,6 +81,12 @@ type DocumentConfiguration struct {
 	// FileFilter should be used to limit the scope of the rolodex.
 	AllowFileReferences bool
 
+	// SkipExternalRefResolution will skip resolving external $ref references (those not starting with #).
+	// When enabled, external references will be left as-is during model building. Schema proxies will
+	// report IsReference()=true and GetReference() will return the ref string, but Schema() will return nil.
+	// This is useful for code generators that handle external refs via import mappings.
+	SkipExternalRefResolution bool
+
 	// AllowRemoteReferences will allow the index to lookup remote references. This is disabled by default.
 	//
 	// This behavior is now driven by the inclusion of a BaseURL. If a BaseURL is set, then the
@@ -130,8 +136,14 @@ type DocumentConfiguration struct {
 	// defaults to false (which means extensions will be included)
 	ExcludeExtensionRefs bool
 
-	// BundleInlineRefs is used by the bundler module. If set to true, all references will be inlined, including
-	// local references (to the root document) as well as all external references. This is false by default.
+	// BundleInlineRefs controls whether local component references are inlined during bundling.
+	// When false (default): Local refs like #/components/schemas/Pet are preserved
+	// When true: Local refs are also inlined (may break discriminator mappings)
+	//
+	// Note: This setting can be overridden per-call using BundleInlineConfig.InlineLocalRefs
+	// when calling bundler.BundleBytesWithConfig()
+	//
+	// Circular references are ALWAYS preserved regardless of this setting.
 	BundleInlineRefs bool
 
 	// RecomposeRefs is used by the bundler module. If set to true, all references will be composed into the root document.

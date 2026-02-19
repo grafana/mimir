@@ -12,6 +12,7 @@ import (
 	"github.com/pb33f/libopenapi"
 	"github.com/pb33f/libopenapi/datamodel/high/base"
 	"github.com/pb33f/libopenapi/utils"
+	"go.yaml.in/yaml/v4"
 
 	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
 
@@ -90,13 +91,13 @@ func NewValidatorFromV3Model(m *v3.Document, opts ...config.Option) Validator {
 	v := &validator{options: options, v3Model: m}
 
 	// create a new parameter validator
-	v.paramValidator = parameters.NewParameterValidator(m, opts...)
+	v.paramValidator = parameters.NewParameterValidator(m, config.WithExistingOpts(options))
 
 	// create aq new request body validator
-	v.requestValidator = requests.NewRequestBodyValidator(m, opts...)
+	v.requestValidator = requests.NewRequestBodyValidator(m, config.WithExistingOpts(options))
 
 	// create a response body validator
-	v.responseValidator = responses.NewResponseBodyValidator(m, opts...)
+	v.responseValidator = responses.NewResponseBodyValidator(m, config.WithExistingOpts(options))
 
 	// warm the schema caches by pre-compiling all schemas in the document
 	// (warmSchemaCaches checks for nil cache and skips if disabled)
@@ -124,8 +125,8 @@ func (v *validator) GetResponseBodyValidator() responses.ResponseBodyValidator {
 func (v *validator) ValidateDocument() (bool, []*errors.ValidationError) {
 	if v.document == nil {
 		return false, []*errors.ValidationError{{
-			ValidationType:    "document",
-			ValidationSubType: "missing",
+			ValidationType:    helpers.DocumentValidation,
+			ValidationSubType: helpers.ValidationMissing,
 			Message:           "Document is not set",
 			Reason:            "The document cannot be validated as it is not set",
 			SpecLine:          1,
@@ -491,12 +492,17 @@ func warmMediaTypeSchema(mediaType *v3.MediaType, schemaCache cache.SchemaCache,
 				if len(renderedInline) > 0 {
 					compiledSchema, _ := helpers.NewCompiledSchema(fmt.Sprintf("%x", hash), renderedJSON, options)
 
+					// Pre-parse YAML node for error reporting (avoids re-parsing on each error)
+					var renderedNode yaml.Node
+					_ = yaml.Unmarshal(renderedInline, &renderedNode)
+
 					schemaCache.Store(hash, &cache.SchemaCacheEntry{
 						Schema:          schema,
 						RenderedInline:  renderedInline,
 						ReferenceSchema: referenceSchema,
 						RenderedJSON:    renderedJSON,
 						CompiledSchema:  compiledSchema,
+						RenderedNode:    &renderedNode,
 					})
 				}
 			}
@@ -508,7 +514,7 @@ func warmMediaTypeSchema(mediaType *v3.MediaType, schemaCache cache.SchemaCache,
 func warmParameterSchema(param *v3.Parameter, schemaCache cache.SchemaCache, options *config.ValidationOptions) {
 	if param != nil {
 		var schema *base.Schema
-		var hash [32]byte
+		var hash uint64
 
 		// Parameters can have schemas in two places: schema property or content property
 		if param.Schema != nil {
@@ -539,6 +545,10 @@ func warmParameterSchema(param *v3.Parameter, schemaCache cache.SchemaCache, opt
 				if len(renderedInline) > 0 {
 					compiledSchema, _ := helpers.NewCompiledSchema(fmt.Sprintf("%x", hash), renderedJSON, options)
 
+					// Pre-parse YAML node for error reporting (avoids re-parsing on each error)
+					var renderedNode yaml.Node
+					_ = yaml.Unmarshal(renderedInline, &renderedNode)
+
 					// Store in cache using the shared SchemaCache type
 					schemaCache.Store(hash, &cache.SchemaCacheEntry{
 						Schema:          schema,
@@ -546,6 +556,7 @@ func warmParameterSchema(param *v3.Parameter, schemaCache cache.SchemaCache, opt
 						ReferenceSchema: referenceSchema,
 						RenderedJSON:    renderedJSON,
 						CompiledSchema:  compiledSchema,
+						RenderedNode:    &renderedNode,
 					})
 				}
 			}

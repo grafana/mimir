@@ -43,6 +43,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -2244,7 +2245,7 @@ func runQueryParallelismTestCase(t *testing.T, enableMQESharding bool) {
 	cfg := Config{LookBackDelta: 7 * time.Minute}
 	require.NoError(t, RegisterRemoteExecutionMaterializers(engine, frontend, cfg))
 
-	expr, err := parser.ParseExpr("sum(foo)")
+	expr, err := promqlext.NewPromQLParser().ParseExpr("sum(foo)")
 	require.NoError(t, err)
 	request := querymiddleware.NewPrometheusRangeQueryRequest("/api/v1/query_range", nil, timestamp.FromTime(time.Now().Add(-time.Hour)), timestamp.FromTime(time.Now()), time.Second.Milliseconds(), 5*time.Minute, expr, querymiddleware.Options{}, nil, "")
 	httpRequest, err := codec.EncodeMetricsQueryRequest(ctx, request)

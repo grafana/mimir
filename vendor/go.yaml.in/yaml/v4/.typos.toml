@@ -1,4 +1,7 @@
-# this is the configuration file of typos (spell checker)
+# Copyright 2025 The go-yaml Project Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+# This is the configuration file of typos (spell checker)
 # https://github.com/crate-ci/typos
 
 [files]
@@ -19,3 +22,12 @@ extend-ignore-re = [
 # Here is a list of words we want to ignore in Go files
 typ = "typ"  # commonly used abbreviation for "type" in Go as "type" is a reserved identifier
 
+# setting for YAML files configuration
+[type.yaml]
+extend-ignore-re = [
+	'ba\?r',         # this one can be found in test files
+]
+
+[default.extend-words]
+caf = "caf"  # part of "café" shown as "caf\u00e9" in Unicode escape examples
+deprecat = "deprecat"  # Used as part of a command in a docs/ file

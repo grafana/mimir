@@ -37,6 +37,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 	testutil "github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -45,7 +46,7 @@ var (
 )
 
 func parseQuery(t require.TestingT, query string) parser.Expr {
-	queryExpr, err := parser.ParseExpr(query)
+	queryExpr, err := promqlext.NewPromQLParser().ParseExpr(query)
 	require.NoError(t, err)
 	return queryExpr
 }
@@ -492,7 +493,7 @@ func TestMetricsQuery_WithQuery_WithExpr_TransformConsistency(t *testing.T) {
 			}
 
 			// test WithExpr on the same query as WithQuery
-			queryExpr, err := parser.ParseExpr(testCase.updatedQuery)
+			queryExpr, err := promqlext.NewPromQLParser().ParseExpr(testCase.updatedQuery)
 			updatedMetricsQuery = mustSucceed(testCase.initialMetricsQuery.WithExpr(queryExpr))
 
 			if err != nil || testCase.expectedErr != nil {

@@ -24,6 +24,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -104,7 +105,7 @@ func parseSelector(req *http.Request) (*parser.VectorSelector, error) {
 	if valSelector == "" {
 		return nil, errors.New("selector parameter is required")
 	}
-	parsed, err := parser.ParseExpr(valSelector)
+	parsed, err := promqlext.NewPromQLParser().ParseExpr(valSelector)
 	if err != nil {
 		return nil, fmt.Errorf("invalid selector: %w", err)
 	}
