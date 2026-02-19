@@ -189,24 +189,6 @@ jobs:
           command: |
             echo "Running unit tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }})${{ matrix.extra_build_tags != '' && format(' with build tags: {0}', matrix.extra_build_tags) || '' }} with Go version: $(go version)"
             EXTRA_BUILD_TAGS="${{ matrix.extra_build_tags }}" ./.github/workflows/scripts/run-unit-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }} --exclude "^github.com/grafana/mimir/pkg/streamingpromql"
-      - name: Notify on streamingpromql failures
-        if: failure() && env.FAILED_PACKAGES != '' && contains(github.event.pull_request.labels.*.name, 'vendored-mimir-prometheus-update')
-        run: |
-          if echo "${{ env.FAILED_PACKAGES }}" | grep -q "pkg/streamingpromql"; then
-            gh pr comment ${{ github.event.pull_request.number }} --body \
-              "⚠️ Test failures detected in \`pkg/streamingpromql\` (test group ${{ matrix.test_group_id }}/${{ matrix.test_group_total }})
-              
-          Failed packages in this test group:
-          \`\`\`
-          ${{ env.FAILED_PACKAGES }}
-          \`\`\`
-              
-          cc @charleskorn @56quarters @lamida @zenador @tcp13equals2
-              
-          Please review the [test logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) and push fixes to this PR."
-          fi
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   test-streamingpromql:
     runs-on: ubuntu-latest
