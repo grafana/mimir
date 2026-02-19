@@ -159,7 +159,7 @@ func TestConfig_Validate(t *testing.T) {
 		"should fail if SASL mechanism is OAUTHBEARER but no way to get the token is configured": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
-				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.SASL.Mechanism = SASLMechanismOauthbearer
 			},
@@ -168,7 +168,7 @@ func TestConfig_Validate(t *testing.T) {
 		"should fail if SASL mechanism is OAUTHBEARER but no single way to get the token is configured": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
-				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.SASL.Mechanism = SASLMechanismOauthbearer
 				require.NoError(t, cfg.KafkaConfig.SASL.OauthbearerToken.Set("foo"))
@@ -179,7 +179,7 @@ func TestConfig_Validate(t *testing.T) {
 		"should succeed if SASL mechanism is OAUTHBEARER and a token is passed": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
-				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.SASL.Mechanism = SASLMechanismOauthbearer
 				require.NoError(t, cfg.KafkaConfig.SASL.OauthbearerToken.Set("foo"))
@@ -188,7 +188,7 @@ func TestConfig_Validate(t *testing.T) {
 		"should succeed if SASL mechanism is OAUTHBEARER and a file path to the token is passed": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
-				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.SASL.Mechanism = SASLMechanismOauthbearer
 				cfg.KafkaConfig.SASL.OauthbearerFilePath = "foo"
@@ -307,7 +307,7 @@ func TestConfig_Validate(t *testing.T) {
 			tests[fmt.Sprintf("should fail if SASL %s is missing but mechanism is %s", missing, mechanism)] = testCase{
 				setup: func(cfg *Config) {
 					cfg.Enabled = true
-					cfg.KafkaConfig.Address = "localhost"
+					cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 					cfg.KafkaConfig.Topic = "test"
 					cfg.KafkaConfig.SASL.Mechanism = mechanism
 					setup(cfg)
