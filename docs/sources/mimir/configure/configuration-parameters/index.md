@@ -1922,6 +1922,12 @@ store_gateway_client:
 # CLI flag: -querier.lookback-delta
 [lookback_delta: <duration> | default = 5m]
 
+# (experimental) Enable the experimental PromQL feature for delayed name removal
+# in the Prometheus engine. Note that this only applies when the Prometheus
+# engine is selected or used as fallback from the Mimir Query Engine.
+# CLI flag: -querier.enable-delayed-name-removal-prometheus-engine
+[enable_delayed_name_removal_prometheus_engine: <boolean> | default = false]
+
 mimir_query_engine:
   # (experimental) Enable pruning query expressions that are toggled off with
   # constants.
