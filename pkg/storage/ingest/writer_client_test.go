@@ -38,8 +38,8 @@ func TestNewKafkaWriterClient_ShouldSupportSASLPlainAuthentication(t *testing.T)
 		t.Parallel()
 
 		cfg := createTestKafkaConfig(clusterAddr, topicName)
-		cfg.SASLUsername = username
-		require.NoError(t, cfg.SASLPassword.Set("wrong"))
+		cfg.SASL.Username = username
+		require.NoError(t, cfg.SASL.Password.Set("wrong"))
 
 		client, err := NewKafkaWriterClient(cfg, 1, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 		require.NoError(t, err)
@@ -52,8 +52,8 @@ func TestNewKafkaWriterClient_ShouldSupportSASLPlainAuthentication(t *testing.T)
 		t.Parallel()
 
 		cfg := createTestKafkaConfig(clusterAddr, topicName)
-		cfg.SASLUsername = username
-		require.NoError(t, cfg.SASLPassword.Set(password))
+		cfg.SASL.Username = username
+		require.NoError(t, cfg.SASL.Password.Set(password))
 
 		client, err := NewKafkaWriterClient(cfg, 1, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 		require.NoError(t, err)

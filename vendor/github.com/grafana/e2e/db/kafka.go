@@ -8,11 +8,11 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/twmb/franz-go/pkg/kadm"
-	"github.com/twmb/franz-go/pkg/kgo"
-
 	"github.com/grafana/e2e"
 	"github.com/grafana/e2e/images"
+
+	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kgo"
 )
 
 type KafkaService struct {
@@ -25,7 +25,8 @@ func NewKafka() *KafkaService {
 }
 
 type KafkaConfig struct {
-	AuthMode KafkaAuthMode
+	AuthMode    KafkaAuthMode
+	DexEndpoint string
 }
 
 func (c KafkaConfig) ports() (clientPort, readinessPort int) {
@@ -66,6 +67,8 @@ const (
 	KafkaAuthSASLPlain
 	KafkaAuthSASLScramSHA256
 	KafkaAuthSASLScramSHA512
+	KafkaAuthSASLOAuthToken
+	KafkaAuthSASLOAuthTokenFile
 )
 
 const (
@@ -128,6 +131,19 @@ func (s *KafkaService) Start(networkName, sharedDir string) (err error) {
 		vars["KAFKA_LISTENER_SECURITY_PROTOCOL_MAP"] = "CONTROLLER:PLAINTEXT,SASLSCRAM:SASL_PLAINTEXT,PLAINTEXT:PLAINTEXT"
 		vars["KAFKA_INTER_BROKER_LISTENER_NAME"] = "PLAINTEXT"
 		vars["KAFKA_SASL_ENABLED_MECHANISMS"] = "SCRAM-SHA-512"
+
+	case KafkaAuthSASLOAuthToken, KafkaAuthSASLOAuthTokenFile:
+		vars["KAFKA_LISTENERS"] = "SASLOAUTH://0.0.0.0:9092,CONTROLLER://0.0.0.0:29093,PLAINTEXT://0.0.0.0:9093"
+		vars["KAFKA_ADVERTISED_LISTENERS"] = fmt.Sprintf("SASLOAUTH://%s-kafka:9092,PLAINTEXT://%s-kafka:9093", networkName, networkName)
+		vars["KAFKA_LISTENER_SECURITY_PROTOCOL_MAP"] = "CONTROLLER:PLAINTEXT,SASLOAUTH:SASL_PLAINTEXT,PLAINTEXT:PLAINTEXT"
+		vars["KAFKA_INTER_BROKER_LISTENER_NAME"] = "PLAINTEXT"
+		vars["KAFKA_SASL_ENABLED_MECHANISMS"] = "OAUTHBEARER"
+		vars["KAFKA_LISTENER_NAME_SASLOAUTH_OAUTHBEARER_SASL_JAAS_CONFIG"] = "org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required;"
+		vars["KAFKA_LISTENER_NAME_SASLOAUTH_OAUTHBEARER_SASL_SERVER_CALLBACK_HANDLER_CLASS"] = "org.apache.kafka.common.security.oauthbearer.OAuthBearerValidatorCallbackHandler"
+		vars["KAFKA_LISTENER_NAME_SASLOAUTH_SASL_OAUTHBEARER_JWKS_ENDPOINT_URL"] = fmt.Sprintf("http://%s/dex/keys", s.cfg.DexEndpoint)
+		vars["KAFKA_LISTENER_NAME_SASLOAUTH_SASL_OAUTHBEARER_EXPECTED_AUDIENCE"] = DexClientID
+		// Kafka 4.0+ requires JWKS URLs to be explicitly allowed via this JVM system property.
+		vars["KAFKA_OPTS"] = fmt.Sprintf("-Dorg.apache.kafka.sasl.oauthbearer.allowed.urls=http://%s/dex/keys", s.cfg.DexEndpoint)
 	}
 
 	// SCRAM config cannot be passed as env vars because it contains hyphens,

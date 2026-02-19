@@ -290,6 +290,8 @@ blocks_storage:
 			flags["-ingest-storage.kafka.sasl-username"] = e2edb.KafkaSASLUsername
 			flags["-ingest-storage.kafka.sasl-password"] = e2edb.KafkaSASLPassword
 			flags["-ingest-storage.kafka.sasl-mechanism"] = "SCRAM-SHA-512"
+		case e2edb.KafkaAuthSASLOAuthToken, e2edb.KafkaAuthSASLOAuthTokenFile:
+			flags["-ingest-storage.kafka.sasl-mechanism"] = "OAUTHBEARER"
 		}
 		return flags
 	}
