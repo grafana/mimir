@@ -215,7 +215,7 @@ func (s *Scheduler) LeaseJob(ctx context.Context, req *compactorschedulerpb.Leas
 		return nil, errFailedLeasingJob
 	}
 	if ok {
-		level.Info(s.logger).Log("msg", "leased job", "tenant", response.Spec.Tenant, "job_type", response.Spec.JobType.String(), "id", response.Key.Id, "epoch", response.Key.Epoch, "worker", req.WorkerId)
+		level.Info(s.logger).Log("msg", "leased job", "user", response.Spec.Tenant, "job_type", response.Spec.JobType.String(), "id", response.Key.Id, "epoch", response.Key.Epoch, "worker", req.WorkerId)
 		return response, nil
 	}
 	return &compactorschedulerpb.LeaseJobResponse{}, nil
@@ -227,7 +227,8 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 		return nil, errNotRunning
 	}
 
-	level.Info(s.logger).Log("msg", "received plan results", "tenant", req.Tenant, "epoch", req.Key.Epoch, "job_count", len(req.Jobs))
+	logger := log.With(s.logger, "user", req.Tenant, "epoch", req.Key.Epoch)
+	level.Info(logger).Log("msg", "received plan results", "job_count", len(req.Jobs))
 
 	now := s.clock.Now()
 	jobs := make([]*TrackedCompactionJob, 0, len(req.Jobs))
@@ -235,12 +236,12 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 	for i, job := range req.Jobs {
 		if len(job.Id) == reservedJobIdLen {
 			// This is never expected to actually happen. We reserve single character keys for internal use.
-			level.Warn(s.logger).Log("msg", "ignoring planned job with an internally reserved ID length", "id", job.Id)
+			level.Warn(logger).Log("msg", "ignoring planned job with an internally reserved ID length", "id", job.Id)
 			continue
 		}
 		if _, ok := idSet[job.Id]; ok {
 			// This is never expected to actually happen. It enforces a guarantee for later code.
-			level.Warn(s.logger).Log("msg", "ignoring planned job with a duplicated job ID", "id", job.Id)
+			level.Warn(logger).Log("msg", "ignoring planned job with a duplicated job ID", "id", job.Id)
 			continue
 		}
 		idSet[job.Id] = struct{}{}
@@ -258,8 +259,8 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 
 	_, found, err := s.rotator.OfferCompactionJobs(req.Tenant, jobs, req.Key.Epoch)
 	if err != nil {
-		level.Error(s.logger).Log("msg", "failed offering result of plan job", "err", err)
-		return nil, errFailedCompletingJob
+		level.Error(logger).Log("msg", "failed offering result of plan job", "err", err)
+		return nil, errFailedCompletingJob // this error is used because PlannedJobs is the completion of a plan job
 	} else if !found {
 		if s.isRunning() {
 			return nil, errLeaseNotFound
@@ -279,26 +280,34 @@ func (s *Scheduler) UpdatePlanJob(ctx context.Context, req *compactorschedulerpb
 		return nil, errNotRunning
 	}
 
-	level.Info(s.logger).Log("msg", "received plan job lease update request", "update_type", compactorschedulerpb.UpdateType_name[int32(req.Update)], "id", req.Key.Id, "epoch", req.Key.Epoch)
+	// Not logging the key ID because plan jobs all have an identical ID
+	logger := log.With(s.logger, "user", req.Tenant, "epoch", req.Key.Epoch)
+
 	switch req.Update {
 	case compactorschedulerpb.UPDATE_TYPE_IN_PROGRESS:
 		if s.rotator.RenewJobLease(req.Tenant, req.Key.Id, req.Key.Epoch) {
+			// Lease renewals are only debug logged to prevent noise
+			level.Debug(logger).Log("msg", "plan job lease renewed")
 			return &compactorschedulerpb.UpdateJobResponse{}, nil
 		}
 	case compactorschedulerpb.UPDATE_TYPE_ABANDON:
 		removed, err := s.rotator.RemoveJob(req.Tenant, req.Key.Id, req.Key.Epoch, false)
 		if err != nil {
+			level.Error(logger).Log("msg", "failed plan job abandon", "err", err)
 			return nil, errFailedAbandoningJob
 		}
 		if removed {
+			level.Info(logger).Log("msg", "plan job abandoned")
 			return &compactorschedulerpb.UpdateJobResponse{}, nil
 		}
 	case compactorschedulerpb.UPDATE_TYPE_REASSIGN:
 		canceled, err := s.rotator.CancelJobLease(req.Tenant, req.Key.Id, req.Key.Epoch)
 		if err != nil {
+			level.Error(logger).Log("msg", "failed plan job cancel", "err", err)
 			return nil, errFailedCancelLease
 		}
 		if canceled {
+			level.Info(logger).Log("msg", "plan job canceled")
 			return &compactorschedulerpb.UpdateJobResponse{}, nil
 		}
 	case compactorschedulerpb.UPDATE_TYPE_COMPLETE:
@@ -313,7 +322,7 @@ func (s *Scheduler) UpdatePlanJob(ctx context.Context, req *compactorschedulerpb
 		return nil, errNotRunning
 	}
 
-	level.Info(s.logger).Log("msg", "could not find lease during update for plan job", "update_type", compactorschedulerpb.UpdateType_name[int32(req.Update)], "id", req.Key.Id, "epoch", req.Key.Epoch)
+	level.Info(logger).Log("msg", "could not find lease during update for plan job", "update_type", req.Update.String())
 	return nil, errLeaseNotFound
 }
 
@@ -323,35 +332,43 @@ func (s *Scheduler) UpdateCompactionJob(ctx context.Context, req *compactorsched
 		return nil, errNotRunning
 	}
 
-	level.Info(s.logger).Log("msg", "received compaction lease update request", "update_type", compactorschedulerpb.UpdateType_name[int32(req.Update)], "id", req.Key.Id, "epoch", req.Key.Epoch)
+	logger := log.With(s.logger, "user", req.Tenant, "id", req.Key.Id, "epoch", req.Key.Epoch)
 
 	switch req.Update {
 	case compactorschedulerpb.UPDATE_TYPE_IN_PROGRESS:
 		if s.rotator.RenewJobLease(req.Tenant, req.Key.Id, req.Key.Epoch) {
+			// Lease renewals are only debug logged to prevent noise
+			level.Debug(logger).Log("msg", "compaction job lease renewed")
 			return &compactorschedulerpb.UpdateJobResponse{}, nil
 		}
 	case compactorschedulerpb.UPDATE_TYPE_COMPLETE:
 		removed, err := s.rotator.RemoveJob(req.Tenant, req.Key.Id, req.Key.Epoch, true)
 		if err != nil {
+			level.Error(logger).Log("msg", "failed compaction job completion", "err", err)
 			return nil, errFailedCompletingJob
 		}
 		if removed {
+			level.Info(logger).Log("msg", "compaction job completed")
 			return &compactorschedulerpb.UpdateJobResponse{}, nil
 		}
 	case compactorschedulerpb.UPDATE_TYPE_ABANDON:
 		removed, err := s.rotator.RemoveJob(req.Tenant, req.Key.Id, req.Key.Epoch, false)
 		if err != nil {
+			level.Error(logger).Log("msg", "failed compaction job abandon", "err", err)
 			return nil, errFailedAbandoningJob
 		}
 		if removed {
+			level.Info(logger).Log("msg", "compaction job abandoned")
 			return &compactorschedulerpb.UpdateJobResponse{}, nil
 		}
 	case compactorschedulerpb.UPDATE_TYPE_REASSIGN:
 		canceled, err := s.rotator.CancelJobLease(req.Tenant, req.Key.Id, req.Key.Epoch)
 		if err != nil {
+			level.Error(logger).Log("msg", "failed compaction job cancel", "err", err)
 			return nil, errFailedCancelLease
 		}
 		if canceled {
+			level.Info(logger).Log("msg", "compaction job lease canceled")
 			return &compactorschedulerpb.UpdateJobResponse{}, nil
 		}
 	default:
@@ -363,7 +380,7 @@ func (s *Scheduler) UpdateCompactionJob(ctx context.Context, req *compactorsched
 		return nil, errNotRunning
 	}
 
-	level.Info(s.logger).Log("msg", "could not find lease during update for compaction job", "update_type", compactorschedulerpb.UpdateType_name[int32(req.Update)], "id", req.Key.Id, "epoch", req.Key.Epoch)
+	level.Info(logger).Log("msg", "could not find lease during update for compaction job", "update_type", req.Update.String())
 	return nil, errLeaseNotFound
 }
 

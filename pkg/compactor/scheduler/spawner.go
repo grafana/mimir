@@ -93,7 +93,7 @@ func (s *Spawner) plan() {
 		if now.Sub(lastSubmitted) > s.planningInterval {
 			_, err := s.rotator.OfferPlanJob(tenant, NewTrackedPlanJob(now))
 			if err != nil {
-				level.Error(s.logger).Log("msg", "failed submitting plan job", "tenant", tenant, "err", err)
+				level.Warn(s.logger).Log("msg", "failed submitting plan job", "user", tenant, "err", err)
 				continue
 			}
 			s.planMap[tenant] = now
@@ -104,7 +104,7 @@ func (s *Spawner) plan() {
 func (s *Spawner) discoverTenants(ctx context.Context) error {
 	tenants, err := mimir_tsdb.ListUsers(ctx, s.bkt)
 	if err != nil {
-		level.Error(s.logger).Log("msg", "failed tenant discovery", "err", err)
+		level.Warn(s.logger).Log("msg", "failed tenant discovery", "err", err)
 		return err
 	}
 
@@ -121,6 +121,7 @@ func (s *Spawner) discoverTenants(ctx context.Context) error {
 			// Discovered a new tenant
 			persister, err := s.jpm.InitializeTenant(tenant)
 			if err != nil {
+				level.Warn(s.logger).Log("msg", "failed initializing tenant", "user", tenant, "err", err)
 				return err
 			}
 			tracker := NewJobTracker(persister, tenant, s.clock, s.maxLeases, s.metrics.newTrackerMetricsForTenant(tenant))
@@ -130,15 +131,15 @@ func (s *Spawner) discoverTenants(ctx context.Context) error {
 	}
 
 	for tenant := range s.planMap {
+		logger := log.With(s.logger, "user", tenant)
 		if _, ok := seen[tenant]; !ok {
-			level.Info(s.logger).Log("msg", "removing empty tenant from compactor scheduler", "tenant", tenant)
 			tracker, ok := s.rotator.RemoveTenant(tenant)
 			if !ok {
-				level.Warn(s.logger).Log("msg", "Attempted to remove tenant from rotator, but it was missing. This should never happen.")
+				level.Warn(logger).Log("msg", "attempted to remove tenant from rotator, but the tenant was unexpectedly missing")
 			}
 			err = s.jpm.DeleteTenant(tenant)
 			if err != nil {
-				level.Warn(s.logger).Log("msg", "failed removing tenant bucket from compactor scheduler", "tenant", tenant, "error", err)
+				level.Warn(logger).Log("msg", "failed removing tenant bucket from compactor scheduler", "err", err)
 				if ok {
 					// Preserve 1:1 with rotator and planMap
 					s.rotator.AddTenant(tenant, tracker)
@@ -146,6 +147,7 @@ func (s *Spawner) discoverTenants(ctx context.Context) error {
 				continue
 			}
 			delete(s.planMap, tenant)
+			level.Info(logger).Log("msg", "removed empty tenant from compactor scheduler")
 		}
 	}
 
