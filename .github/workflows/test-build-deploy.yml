@@ -489,6 +489,7 @@ jobs:
       - prepare
       - build
       - test
+      - test-streamingpromql
       - test-docs
       - lint
       - lint-jsonnet
@@ -541,6 +542,7 @@ jobs:
       - lint-jsonnet
       - lint-helm
       - test
+      - test-streamingpromql
       - test-docs
       - build-metaconvert-image
       - build-mimir-image
