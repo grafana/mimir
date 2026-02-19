@@ -236,7 +236,7 @@ func New(o Options) (*FlushLog, error) {
 
 	l := &FlushLog{
 		clock:     clock.New(),
-		retention: o.Retention,
+		retention: time.Hour * 2,
 		logger:    log.NewNopLogger(),
 		st:        state{},
 		broadcast: func([]byte) {},
@@ -378,9 +378,20 @@ func (l *FlushLog) Log(groupFingerprint uint64, flushTime, expiryThreshold time.
 		// This may happen with raciness or clock-drift across AM nodes.
 		if prevle.FlushLog.Timestamp.After(flushTime) || !closeToExpiry {
 			return nil
-		} else if closeToExpiry {
-			e.FlushLog = prevle.FlushLog // keep previous timestamp
 		}
+
+		// closeToExpiry case: refresh expiry while keeping previous timestamp.
+		// We copy the timestamp value (not the pointer) and directly update the state,
+		// since merge() won't accept entries with equal timestamps.
+		e.FlushLog.Timestamp = prevle.FlushLog.Timestamp
+		l.st[groupFingerprint] = e
+
+		b, err := marshalMeshFlushLog(e)
+		if err != nil {
+			return err
+		}
+		l.broadcast(b)
+		return nil
 	}
 
 	b, err := marshalMeshFlushLog(e)
