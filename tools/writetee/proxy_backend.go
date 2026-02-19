@@ -27,6 +27,7 @@ type ProxyBackend interface {
 	Name() string
 	Endpoint() *url.URL
 	Preferred() bool
+	SetPreferred(preferred bool)
 	BackendType() BackendType
 	ForwardRequest(ctx context.Context, orig *http.Request, body io.ReadCloser) (time.Duration, int, []byte, http.Header, error)
 }
@@ -88,6 +89,10 @@ func (b *proxyBackend) Endpoint() *url.URL {
 
 func (b *proxyBackend) Preferred() bool {
 	return b.preferred
+}
+
+func (b *proxyBackend) SetPreferred(preferred bool) {
+	b.preferred = preferred
 }
 
 func (b *proxyBackend) BackendType() BackendType {
