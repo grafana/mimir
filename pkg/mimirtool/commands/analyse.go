@@ -11,14 +11,15 @@ import (
 	"strconv"
 
 	"github.com/alecthomas/kingpin/v2"
-	"github.com/prometheus/prometheus/promql/parser"
 )
 
-type AnalyzeCommand struct{}
+type AnalyzeCommand struct {
+	enableExperimentalFunctions bool
+}
 
 func (cmd *AnalyzeCommand) Register(app *kingpin.Application, envVars EnvVarNames, logConfig *LoggerConfig) {
 	analyzeCmd := app.Command("analyze", "Run analysis against your Prometheus, Grafana, and Grafana Mimir to see which metrics are being used and exported.")
-	analyzeCmd.Flag("enable-experimental-functions", "If set, enables parsing experimental PromQL functions.").BoolVar(&parser.EnableExperimentalFunctions)
+	analyzeCmd.Flag("enable-experimental-functions", "If set, enables parsing experimental PromQL functions.").BoolVar(&cmd.enableExperimentalFunctions)
 
 	paCmd := &PrometheusAnalyzeCommand{}
 	prometheusAnalyzeCmd := analyzeCmd.Command("prometheus", "Take the metrics being used in Grafana and get the cardinality from a Prometheus.").PreAction(func(_ *kingpin.ParseContext) error {
@@ -67,6 +68,7 @@ func (cmd *AnalyzeCommand) Register(app *kingpin.Application, envVars EnvVarName
 	gaCmd := &GrafanaAnalyzeCommand{}
 	grafanaAnalyzeCmd := analyzeCmd.Command("grafana", "Analyze and output the metrics used in Grafana Dashboards.").PreAction(func(_ *kingpin.ParseContext) error {
 		gaCmd.logger = logConfig.Logger()
+		gaCmd.enableExperimentalFunctions = cmd.enableExperimentalFunctions
 		return nil
 	}).Action(gaCmd.run)
 
@@ -91,6 +93,7 @@ func (cmd *AnalyzeCommand) Register(app *kingpin.Application, envVars EnvVarName
 	rulerAnalyzeCmd := analyzeCmd.Command("ruler", "Analyze and extract the metrics that are used in Grafana Mimir rules").
 		PreAction(func(_ *kingpin.ParseContext) error {
 			raCmd.logger = logConfig.Logger()
+			raCmd.enableExperimentalFunctions = cmd.enableExperimentalFunctions
 			return nil
 		}).Action(raCmd.run)
 	rulerAnalyzeCmd.Flag("address", "Address of the Prometheus or Grafana Mimir instance; alternatively, set "+envVars.Address+".").
@@ -124,6 +127,7 @@ func (cmd *AnalyzeCommand) Register(app *kingpin.Application, envVars EnvVarName
 	daCmd := &DashboardAnalyzeCommand{}
 	dashboardAnalyzeCmd := analyzeCmd.Command("dashboard", "Analyze and output the metrics used in Grafana dashboard files").PreAction(func(_ *kingpin.ParseContext) error {
 		daCmd.logger = logConfig.Logger()
+		daCmd.enableExperimentalFunctions = cmd.enableExperimentalFunctions
 		return nil
 	}).Action(daCmd.run)
 	dashboardAnalyzeCmd.Arg("files", "Dashboard files").
@@ -136,6 +140,7 @@ func (cmd *AnalyzeCommand) Register(app *kingpin.Application, envVars EnvVarName
 	rfCmd := &RuleFileAnalyzeCommand{}
 	ruleFileAnalyzeCmd := analyzeCmd.Command("rule-file", "Analyze and output the metrics used in Prometheus rules files").PreAction(func(_ *kingpin.ParseContext) error {
 		rfCmd.logger = logConfig.Logger()
+		rfCmd.enableExperimentalFunctions = cmd.enableExperimentalFunctions
 		return nil
 	}).Action(rfCmd.run)
 	ruleFileAnalyzeCmd.Arg("files", "Rules files").

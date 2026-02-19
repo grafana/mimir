@@ -26,6 +26,18 @@ func (index *SpecIndex) FindComponent(ctx context.Context, componentId string) *
 		return nil
 	}
 
+	if strings.HasPrefix(componentId, "/") {
+		baseUri, fragment := SplitRefFragment(componentId)
+		if resolved := index.resolveRefViaSchemaIdPath(baseUri); resolved != nil {
+			if fragment != "" && resolved.Node != nil {
+				if fragmentNode := navigateToFragment(resolved.Node, fragment); fragmentNode != nil {
+					resolved.Node = fragmentNode
+				}
+			}
+			return resolved
+		}
+	}
+
 	uri := strings.Split(componentId, "#/")
 	if len(uri) == 2 {
 		if uri[0] != "" {
@@ -135,6 +147,11 @@ func (index *SpecIndex) FindComponentInRoot(ctx context.Context, componentId str
 
 func (index *SpecIndex) lookupRolodex(ctx context.Context, uri []string) *Reference {
 	if index.rolodex == nil {
+		return nil
+	}
+
+	// If SkipExternalRefResolution is enabled, don't attempt rolodex lookups
+	if index.config != nil && index.config.SkipExternalRefResolution {
 		return nil
 	}
 

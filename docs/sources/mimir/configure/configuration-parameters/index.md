@@ -735,6 +735,16 @@ grpc_tls_config:
 # CLI flag: -server.grpc.num-workers
 [grpc_server_num_workers: <int> | default = 100]
 
+# Size of the read buffer for each gRPC connection (bytes). A smaller buffer may
+# reduce memory usage but may lead to more system calls.
+# CLI flag: -server.grpc.read-buffer-size-bytes
+[grpc_server_read_buffer_size: <int> | default = 32768]
+
+# Size of the write buffer for each gRPC connection (bytes). A smaller buffer
+# may reduce memory usage but may lead to more system calls.
+# CLI flag: -server.grpc.write-buffer-size-bytes
+[grpc_server_write_buffer_size: <int> | default = 32768]
+
 # Output log messages in the given format. Valid formats: [logfmt, json]
 # CLI flag: -log.format
 [log_format: <string> | default = "logfmt"]
@@ -1091,6 +1101,10 @@ reactive_limiter:
   # current inflight requests
   # CLI flag: -distributor.reactive-limiter.max-limit-factor-decay
   [max_limit_factor_decay: <float> | default = 1]
+
+  # (experimental) Minimum limit factor when max-limit-factor-decay is applied
+  # CLI flag: -distributor.reactive-limiter.min-limit-factor
+  [min_limit_factor: <float> | default = 1.2]
 
   # (experimental) Minimum duration of the window that is used to collect recent
   # response time samples
@@ -1541,6 +1555,10 @@ push_reactive_limiter:
   # CLI flag: -ingester.push-reactive-limiter.max-limit-factor-decay
   [max_limit_factor_decay: <float> | default = 1]
 
+  # (experimental) Minimum limit factor when max-limit-factor-decay is applied
+  # CLI flag: -ingester.push-reactive-limiter.min-limit-factor
+  [min_limit_factor: <float> | default = 1.2]
+
   # (experimental) Minimum duration of the window that is used to collect recent
   # response time samples
   # CLI flag: -ingester.push-reactive-limiter.recent-window-min-duration
@@ -1608,6 +1626,10 @@ read_reactive_limiter:
   # current inflight requests
   # CLI flag: -ingester.read-reactive-limiter.max-limit-factor-decay
   [max_limit_factor_decay: <float> | default = 1]
+
+  # (experimental) Minimum limit factor when max-limit-factor-decay is applied
+  # CLI flag: -ingester.read-reactive-limiter.min-limit-factor
+  [min_limit_factor: <float> | default = 1.2]
 
   # (experimental) Minimum duration of the window that is used to collect recent
   # response time samples
@@ -1942,6 +1964,32 @@ mimir_query_engine:
   # without buffering. Requires common subexpression elimination to be enabled.
   # CLI flag: -querier.mimir-query-engine.enable-multi-aggregation
   [enable_multi_aggregation: <boolean> | default = true]
+
+  range_vector_splitting:
+    # (experimental) Enable splitting function over range vectors queries into
+    # smaller blocks for caching.
+    # CLI flag: -querier.mimir-query-engine.range-vector-splitting.enabled
+    [enabled: <boolean> | default = false]
+
+    # (experimental) Time interval used for splitting function over range
+    # vectors queries into cacheable blocks.
+    # CLI flag: -querier.mimir-query-engine.range-vector-splitting.split-interval
+    [split_interval: <duration> | default = 2h]
+
+    intermediate_results_cache:
+      # Backend for intermediate results cache, if not empty. Supported values:
+      # memcached.
+      # CLI flag: -querier.mimir-query-engine.range-vector-splitting.backend
+      [backend: <string> | default = ""]
+
+      # The memcached block configures the Memcached-based caching backend.
+      # The CLI flags prefix for this block configuration is:
+      # querier.mimir-query-engine.range-vector-splitting
+      [memcached: <memcached>]
+
+      # Enable cache compression, if not empty. Supported values are: snappy.
+      # CLI flag: -querier.mimir-query-engine.range-vector-splitting.compression
+      [compression: <string> | default = ""]
 
 ring:
   # The key-value store used to share the hash ring across multiple instances.
@@ -4005,6 +4053,25 @@ zone_aware_routing:
   # bridge.
   # CLI flag: -memberlist.zone-aware-routing.role
   [role: <string> | default = "member"]
+
+propagation_delay_tracker:
+  # (experimental) Enable the propagation delay tracker to measure gossip
+  # propagation delay.
+  # CLI flag: -memberlist.propagation-delay-tracker.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) How often to publish beacons for propagation tracking.
+  # CLI flag: -memberlist.propagation-delay-tracker.beacon-interval
+  [beacon_interval: <duration> | default = 1m]
+
+  # (experimental) How long a beacon lives before being garbage collected.
+  # CLI flag: -memberlist.propagation-delay-tracker.beacon-lifetime
+  [beacon_lifetime: <duration> | default = 10m]
+
+  # (experimental) Log warning when beacon propagation delay exceeds this
+  # threshold. 0 disables logging.
+  # CLI flag: -memberlist.propagation-delay-tracker.log-beacons-latency-longer-than
+  [log_beacons_latency_longer_than: <duration> | default = 0s]
 ```
 
 ### limits
@@ -5063,6 +5130,12 @@ kafka:
   # CLI flag: -ingest-storage.kafka.write-clients
   [write_clients: <int> | default = 1]
 
+  # The SASL mechanism used to authenticate to Kafka. Supported values: PLAIN,
+  # SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER. For backwards-compatibility,
+  # PLAIN with no username nor password disables SASL.
+  # CLI flag: -ingest-storage.kafka.sasl-mechanism
+  [sasl_mechanism: <string> | default = "PLAIN"]
+
   # The username used to authenticate to Kafka using SASL. To enable SASL,
   # configure both the username and password.
   # CLI flag: -ingest-storage.kafka.sasl-username
@@ -5073,10 +5146,29 @@ kafka:
   # CLI flag: -ingest-storage.kafka.sasl-password
   [sasl_password: <string> | default = ""]
 
-  # The SASL mechanism used to authenticate to Kafka. Supported values: PLAIN,
-  # SCRAM-SHA-256, SCRAM-SHA-512.
-  # CLI flag: -ingest-storage.kafka.sasl-mechanism
-  [sasl_mechanism: <string> | default = "PLAIN"]
+  # The OAuth token to use to authenticate to Kafka. Consider
+  # ingest-storage.kafka.sasl-oauthbearer-file-path instead.
+  # CLI flag: -ingest-storage.kafka.sasl-oauthbearer-token
+  [sasl_oauthbearer_token: <string> | default = ""]
+
+  # Optional authorization ID to use when authenticating to Kafka using SASL
+  # OAUTHBEARER.
+  # CLI flag: -ingest-storage.kafka.sasl-oauthbearer-zid
+  [sasl_oauthbearer_zid: <string> | default = ""]
+
+  # Optional additional OAuth extensions to include when authenticating to Kafka
+  # using SASL OAUTHBEARER as a JSON object.
+  # CLI flag: -ingest-storage.kafka.sasl-oauthbearer-extensions
+  [sasl_oauthbearer_extensions: <map of string to string> | default = {}]
+
+  # Path to a file containing an OAuth token to authenticate to Kafka. The file
+  # is read anew on every reauthentication, so it can be updated with fresh
+  # tokens. The file must be in JSON format, adhering to this JSON schema:
+  # {"type": "object", "required": ["token"], "properties": {"token": {"type":
+  # "string"}, "zid": {"type": "string"}, "extensions": {"type": "object",
+  # "additionalProperties": {"type": "string"}}}}
+  # CLI flag: -ingest-storage.kafka.sasl-oauthbearer-file-path
+  [sasl_oauthbearer_file_path: <string> | default = ""]
 
   # The consumer group used by the consumer to track the last consumed offset.
   # The consumer group must be different for each ingester. If the configured
@@ -6215,6 +6307,7 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 - `blocks-storage.bucket-store.chunks-cache`
 - `blocks-storage.bucket-store.index-cache`
 - `blocks-storage.bucket-store.metadata-cache`
+- `querier.mimir-query-engine.range-vector-splitting`
 - `query-frontend.results-cache`
 - `ruler-storage.cache`
 

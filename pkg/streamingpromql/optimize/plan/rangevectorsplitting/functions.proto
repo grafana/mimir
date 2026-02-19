@@ -1,0 +1,74 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+syntax = "proto3";
+
+package rangevectorsplitting;
+
+import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
+import "gogoproto/gogo.proto";
+
+option go_package = "rangevectorsplitting";
+option (gogoproto.goproto_getters_all) = false;
+option (gogoproto.goproto_sizecache_all) = false;
+// Do not generate XXX fields to reduce memory footprint.
+option (gogoproto.goproto_unkeyed_all) = false;
+option (gogoproto.goproto_unrecognized_all) = false;
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.sizer_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+
+message SumOverTimeIntermediate {
+  double sumF = 1;
+  bool hasFloat = 2;
+  double sumC = 3;
+  cortexpb.Histogram sumH = 4;
+}
+
+message SumOverTimeIntermediateList {
+  repeated SumOverTimeIntermediate results = 1 [(gogoproto.nullable) = false];
+}
+
+message CountOverTimeIntermediate {
+  double f = 1;
+  bool hasFloat = 2;
+}
+
+message CountOverTimeIntermediateList {
+  repeated CountOverTimeIntermediate results = 1 [(gogoproto.nullable) = false];
+}
+
+message MinMaxOverTimeIntermediate {
+  double f = 1;
+  bool hasFloat = 2;
+  bool hasHistogram = 3;
+}
+
+message MinMaxOverTimeIntermediateList {
+  repeated MinMaxOverTimeIntermediate results = 1 [(gogoproto.nullable) = false];
+}
+
+message RateIntermediate {
+  int64 sample_count = 1;
+  bool is_histogram = 2;
+
+  // For floats
+  cortexpb.Sample first_sample = 3;
+  cortexpb.Sample last_sample = 4;
+  double delta = 5;
+
+  // For histograms
+  cortexpb.Histogram first_histogram = 10;
+  cortexpb.Histogram last_histogram = 11;
+  cortexpb.Histogram delta_histogram = 12;
+  int64 first_histogram_timestamp = 14;
+  int64 last_histogram_timestamp = 15;
+
+  // When true, indicates this split encountered an error condition (e.g., mixed types)
+  // and the entire combined result should be empty.
+  // The annotation describing the error will have been emitted by this split.
+  bool force_empty_result = 16;
+}
+
+message RateIntermediateList {
+  repeated RateIntermediate results = 1 [(gogoproto.nullable) = false];
+}

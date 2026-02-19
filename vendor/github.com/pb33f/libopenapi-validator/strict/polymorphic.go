@@ -123,7 +123,7 @@ func (v *Validator) validateAllOf(ctx *traversalContext, schema *base.Schema, da
 
 		// Not declared - report as undeclared
 		undeclared = append(undeclared,
-			newUndeclaredProperty(propPath, propName, propValue, getDeclaredPropertyNames(allDeclared), ctx.direction))
+			newUndeclaredProperty(propPath, propName, propValue, getDeclaredPropertyNames(allDeclared), ctx.direction, schema))
 	}
 
 	return undeclared
@@ -228,8 +228,13 @@ func (v *Validator) validateVariantWithParent(ctx *traversalContext, parent *bas
 		}
 
 		// Not declared - report as undeclared
+		// Use variant schema location if available, otherwise fall back to parent
+		locationSchema := variant
+		if locationSchema == nil || locationSchema.GoLow() == nil {
+			locationSchema = parent
+		}
 		undeclared = append(undeclared,
-			newUndeclaredProperty(propPath, propName, propValue, getDeclaredPropertyNames(allDeclared), ctx.direction))
+			newUndeclaredProperty(propPath, propName, propValue, getDeclaredPropertyNames(allDeclared), ctx.direction, locationSchema))
 	}
 
 	return undeclared

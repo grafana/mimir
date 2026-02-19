@@ -126,7 +126,8 @@ func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID stri
 		offsetFile: newOffsetFile(offsetFilePath, partitionID, log.With(logger, "partition", partitionID)),
 	}
 
-	r.metrics = NewReaderMetrics(reg, r, kafkaCfg.Topic, nil)
+	kpromMetrics := NewKafkaReaderClientMetrics(ReaderMetricsPrefix, "partition-reader", reg)
+	r.metrics = NewReaderMetrics(reg, r, kafkaCfg.Topic, kpromMetrics)
 	// Initialize the last consumed offset metric to -1 to signal no offset has been consumed yet (0 is a valid offset).
 	r.metrics.lastConsumedOffset.WithLabelValues(strconv.Itoa(int(partitionID))).Set(-1)
 
@@ -896,7 +897,7 @@ func (r *PartitionReader) WaitReadConsistencyUntilOffset(ctx context.Context, of
 }
 
 func (r *PartitionReader) waitReadConsistency(ctx context.Context, withOffset bool, getOffset func(context.Context) (int64, error)) error {
-	_, err := r.metrics.strongConsistencyInstrumentation.Observe(r.kafkaCfg.Topic, withOffset, func() (struct{}, error) {
+	_, err := ObserveStrongReadConsistency(r.metrics.strongConsistencyMetrics, r.kafkaCfg.Topic, withOffset, func() (struct{}, error) {
 		spanLog := spanlogger.FromContext(ctx, r.logger)
 		spanLog.DebugLog("msg", "waiting for read consistency")
 
@@ -1136,7 +1137,7 @@ type ReaderMetrics struct {
 	fetchWaitDuration                  prometheus.Histogram
 	fetchMaxBytes                      prometheus.Histogram
 	fetchedDiscardedRecordBytes        prometheus.Counter
-	strongConsistencyInstrumentation   *StrongReadConsistencyInstrumentation[struct{}]
+	strongConsistencyMetrics           *StrongReadConsistencyMetrics
 	lastConsumedOffset                 *prometheus.GaugeVec
 	consumeLatency                     prometheus.Histogram
 	kprom                              *kprom.Metrics
@@ -1176,11 +1177,6 @@ func NewReaderMetrics(reg prometheus.Registerer, metricsSource ReaderMetricsSour
 		Name: "cortex_ingest_storage_reader_last_consumed_offset",
 		Help: "The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.",
 	}, []string{"partition"})
-
-	kpm := kpromMetrics
-	if kpm == nil {
-		kpm = NewKafkaReaderClientMetrics(ReaderMetricsPrefix, component, reg)
-	}
 
 	m := ReaderMetrics{
 		bufferedFetchedRecords: promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
@@ -1232,9 +1228,9 @@ func NewReaderMetrics(reg prometheus.Registerer, metricsSource ReaderMetricsSour
 			Help:                        "How long a consumer spent processing a batch of records from Kafka. This includes retries on server errors.",
 			NativeHistogramBucketFactor: 1.1,
 		}),
-		strongConsistencyInstrumentation: NewStrongReadConsistencyInstrumentation[struct{}](component, reg, []string{topic}),
-		lastConsumedOffset:               lastConsumedOffset,
-		kprom:                            kpm,
+		strongConsistencyMetrics: NewStrongReadConsistencyMetrics(reg, component, []string{topic}),
+		lastConsumedOffset:       lastConsumedOffset,
+		kprom:                    kpromMetrics,
 		missedRecords: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingest_storage_reader_missed_records_total",
 			Help: "The number of offsets that were never consumed by the reader because they weren't fetched.",
@@ -1248,14 +1244,14 @@ func NewReaderMetrics(reg prometheus.Registerer, metricsSource ReaderMetricsSour
 	return m
 }
 
-type StrongReadConsistencyInstrumentation[T any] struct {
+type StrongReadConsistencyMetrics struct {
 	requests *prometheus.CounterVec
 	failures *prometheus.CounterVec
 	latency  *prometheus.HistogramVec
 }
 
-func NewStrongReadConsistencyInstrumentation[T any](component string, reg prometheus.Registerer, topics []string) *StrongReadConsistencyInstrumentation[T] {
-	i := &StrongReadConsistencyInstrumentation[T]{
+func NewStrongReadConsistencyMetrics(reg prometheus.Registerer, component string, topics []string) *StrongReadConsistencyMetrics {
+	m := &StrongReadConsistencyMetrics{
 		requests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name:        "cortex_ingest_storage_strong_consistency_requests_total",
 			Help:        "Total number of requests for which strong consistency has been requested. The metric distinguishes between requests with an offset specified and requests requesting to enforce strong consistency up until the last produced offset.",
@@ -1280,18 +1276,18 @@ func NewStrongReadConsistencyInstrumentation[T any](component string, reg promet
 	// Init metrics.
 	for _, topic := range topics {
 		for _, value := range []bool{true, false} {
-			i.requests.WithLabelValues(strconv.FormatBool(value), topic)
+			m.requests.WithLabelValues(strconv.FormatBool(value), topic)
 		}
-		i.failures.WithLabelValues(topic)
-		i.latency.WithLabelValues(topic)
+		m.failures.WithLabelValues(topic)
+		m.latency.WithLabelValues(topic)
 	}
 
-	return i
+	return m
 }
 
-func (i *StrongReadConsistencyInstrumentation[T]) Observe(topic string, withOffset bool, f func() (T, error)) (_ T, returnErr error) {
+func ObserveStrongReadConsistency[T any](m *StrongReadConsistencyMetrics, topic string, withOffset bool, f func() (T, error)) (_ T, returnErr error) {
 	startTime := time.Now()
-	i.requests.WithLabelValues(strconv.FormatBool(withOffset), topic).Inc()
+	m.requests.WithLabelValues(strconv.FormatBool(withOffset), topic).Inc()
 
 	defer func() {
 		// Do not track failure or latency if the request was canceled (because the tracking would be incorrect).
@@ -1301,10 +1297,10 @@ func (i *StrongReadConsistencyInstrumentation[T]) Observe(topic string, withOffs
 
 		// Track latency for failures too, so that we have a better measurement of latency if
 		// backend latency is high and requests fail because of timeouts.
-		i.latency.WithLabelValues(topic).Observe(time.Since(startTime).Seconds())
+		m.latency.WithLabelValues(topic).Observe(time.Since(startTime).Seconds())
 
 		if returnErr != nil {
-			i.failures.WithLabelValues(topic).Inc()
+			m.failures.WithLabelValues(topic).Inc()
 		}
 	}()
 

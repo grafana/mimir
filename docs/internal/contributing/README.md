@@ -66,6 +66,12 @@ Example:
 make CONTAINER_MOUNT_OPTIONS=delegated
 ```
 
+To compile Protobuf files (`.proto`) to Go code (`.pb.go`), run:
+
+```
+make protos
+```
+
 ### Run Grafana Mimir locally
 
 To easily run Grafana Mimir locally during development, use the docker-compose setup at `development/<deployment-mode>/`:

@@ -26,20 +26,6 @@ import (
 // Set LIBOPENAPI_LEGACY_REF_ORDER=true to use the old non-deterministic ordering.
 var preserveLegacyRefOrder = os.Getenv("LIBOPENAPI_LEGACY_REF_ORDER") == "true"
 
-// findSchemaIdInNode looks for a $id key in a mapping node and returns its value.
-// Returns empty string if not found or if the node is not a mapping.
-func findSchemaIdInNode(node *yaml.Node) string {
-	if node == nil || node.Kind != yaml.MappingNode {
-		return ""
-	}
-	for i := 0; i < len(node.Content)-1; i += 2 {
-		if node.Content[i].Value == "$id" && utils.IsNodeStringValue(node.Content[i+1]) {
-			return node.Content[i+1].Value
-		}
-	}
-	return ""
-}
-
 // indexedRef pairs a resolved reference with its original input position for deterministic ordering.
 type indexedRef struct {
 	ref *Reference
@@ -67,7 +53,7 @@ func (index *SpecIndex) ExtractRefs(ctx context.Context, node, parent *yaml.Node
 	// Check if THIS node has a $id and update scope for processing children
 	// This must happen before iterating children so they see the updated scope
 	if node.Kind == yaml.MappingNode {
-		if nodeId := findSchemaIdInNode(node); nodeId != "" {
+		if nodeId := FindSchemaIdInNode(node); nodeId != "" {
 			resolvedNodeId, _ := ResolveSchemaId(nodeId, parentBaseUri)
 			if resolvedNodeId == "" {
 				resolvedNodeId = nodeId
@@ -307,6 +293,10 @@ func (index *SpecIndex) ExtractRefs(ctx context.Context, node, parent *yaml.Node
 				if len(node.Content) > i+1 {
 
 					value := node.Content[i+1].Value
+					schemaIdBase := ""
+					if scope != nil && len(scope.Chain) > 0 {
+						schemaIdBase = scope.BaseUri
+					}
 					// extract last path segment without allocating a full slice
 					lastSlash := strings.LastIndexByte(value, '/')
 					var name string
@@ -341,37 +331,27 @@ func (index *SpecIndex) ExtractRefs(ctx context.Context, node, parent *yaml.Node
 									fullDefinitionPath = value
 									componentName = fmt.Sprintf("#/%s", uri[1])
 								} else {
-									// if the index has a base path, use that to resolve the path
-									if index.config.BasePath != "" && index.config.BaseURL == nil {
-										abs, _ := filepath.Abs(utils.CheckPathOverlap(index.config.BasePath, uri[0], string(os.PathSeparator)))
-										if abs != defRoot {
-											abs, _ = filepath.Abs(utils.CheckPathOverlap(defRoot, uri[0], string(os.PathSeparator)))
+									// if the index has a base URL, use that to resolve the path.
+									if index.config.BaseURL != nil && !filepath.IsAbs(defRoot) {
+										var u url.URL
+										if strings.HasPrefix(defRoot, "http") {
+											up, _ := url.Parse(defRoot)
+											up.Path = utils.ReplaceWindowsDriveWithLinuxPath(filepath.Dir(up.Path))
+											u = *up
+										} else {
+											u = *index.config.BaseURL
 										}
+										// abs, _ := filepath.Abs(filepath.Join(u.Path, uri[0]))
+										// abs, _ := filepath.Abs(utils.CheckPathOverlap(u.Path, uri[0], string(os.PathSeparator)))
+										abs := utils.CheckPathOverlap(u.Path, uri[0], string(os.PathSeparator))
+										u.Path = utils.ReplaceWindowsDriveWithLinuxPath(abs)
+										fullDefinitionPath = fmt.Sprintf("%s#/%s", u.String(), uri[1])
+										componentName = fmt.Sprintf("#/%s", uri[1])
+
+									} else {
+										abs := index.resolveRelativeFilePath(defRoot, uri[0])
 										fullDefinitionPath = fmt.Sprintf("%s#/%s", abs, uri[1])
 										componentName = fmt.Sprintf("#/%s", uri[1])
-									} else {
-										// if the index has a base URL, use that to resolve the path.
-										if index.config.BaseURL != nil && !filepath.IsAbs(defRoot) {
-											var u url.URL
-											if strings.HasPrefix(defRoot, "http") {
-												up, _ := url.Parse(defRoot)
-												up.Path = utils.ReplaceWindowsDriveWithLinuxPath(filepath.Dir(up.Path))
-												u = *up
-											} else {
-												u = *index.config.BaseURL
-											}
-											// abs, _ := filepath.Abs(filepath.Join(u.Path, uri[0]))
-											// abs, _ := filepath.Abs(utils.CheckPathOverlap(u.Path, uri[0], string(os.PathSeparator)))
-											abs := utils.CheckPathOverlap(u.Path, uri[0], string(os.PathSeparator))
-											u.Path = utils.ReplaceWindowsDriveWithLinuxPath(abs)
-											fullDefinitionPath = fmt.Sprintf("%s#/%s", u.String(), uri[1])
-											componentName = fmt.Sprintf("#/%s", uri[1])
-
-										} else {
-											abs, _ := filepath.Abs(utils.CheckPathOverlap(defRoot, uri[0], string(os.PathSeparator)))
-											fullDefinitionPath = fmt.Sprintf("%s#/%s", abs, uri[1])
-											componentName = fmt.Sprintf("#/%s", uri[1])
-										}
 									}
 								}
 							}
@@ -394,34 +374,31 @@ func (index *SpecIndex) ExtractRefs(ctx context.Context, node, parent *yaml.Node
 									}
 								} else {
 									if !filepath.IsAbs(uri[0]) {
-										// if the index has a base path, use that to resolve the path
-										if index.config.BasePath != "" {
-											abs, _ := filepath.Abs(utils.CheckPathOverlap(index.config.BasePath, uri[0], string(os.PathSeparator)))
-											if abs != defRoot {
-												abs, _ = filepath.Abs(utils.CheckPathOverlap(defRoot, uri[0], string(os.PathSeparator)))
-											}
-											fullDefinitionPath = abs
+										// if the index has a base URL, use that to resolve the path.
+										if index.config.BaseURL != nil {
+
+											u := *index.config.BaseURL
+											abs := utils.CheckPathOverlap(u.Path, uri[0], string(os.PathSeparator))
+											abs = utils.ReplaceWindowsDriveWithLinuxPath(abs)
+											u.Path = abs
+											fullDefinitionPath = u.String()
 											componentName = uri[0]
 										} else {
-											// if the index has a base URL, use that to resolve the path.
-											if index.config.BaseURL != nil {
-
-												u := *index.config.BaseURL
-												abs := utils.CheckPathOverlap(u.Path, uri[0], string(os.PathSeparator))
-												abs = utils.ReplaceWindowsDriveWithLinuxPath(abs)
-												u.Path = abs
-												fullDefinitionPath = u.String()
-												componentName = uri[0]
-											} else {
-												abs, _ := filepath.Abs(utils.CheckPathOverlap(defRoot, uri[0], string(os.PathSeparator)))
-												fullDefinitionPath = abs
-												componentName = uri[0]
-											}
+											abs := index.resolveRelativeFilePath(defRoot, uri[0])
+											fullDefinitionPath = abs
+											componentName = uri[0]
 										}
 									}
 								}
 							}
 						}
+					}
+
+					if fullDefinitionPath == "" && value != "" {
+						fullDefinitionPath = value
+					}
+					if componentName == "" {
+						componentName = value
 					}
 
 					_, p := utils.ConvertComponentIdIntoFriendlyPathSearch(componentName)
@@ -444,6 +421,8 @@ func (index *SpecIndex) ExtractRefs(ctx context.Context, node, parent *yaml.Node
 						ParentNode:           parent,
 						FullDefinition:       fullDefinitionPath,
 						Definition:           componentName,
+						RawRef:               value,
+						SchemaIdBase:         schemaIdBase,
 						Name:                 name,
 						Node:                 node,
 						KeyNode:              node.Content[i+1],
@@ -489,6 +468,8 @@ func (index *SpecIndex) ExtractRefs(ctx context.Context, node, parent *yaml.Node
 							ParentNode:           parent,
 							FullDefinition:       fullDefinitionPath,
 							Definition:           ref.Definition,
+							RawRef:               ref.RawRef,
+							SchemaIdBase:         ref.SchemaIdBase,
 							Name:                 ref.Name,
 							Node:                 &copiedNode,
 							KeyNode:              node.Content[i],
@@ -859,6 +840,10 @@ func (index *SpecIndex) ExtractComponentsFromRefs(ctx context.Context, refs []*R
 				}
 				index.refLock.Unlock()
 			} else {
+				// If SkipExternalRefResolution is enabled, don't record errors for external refs
+				if index.config != nil && index.config.SkipExternalRefResolution && utils.IsExternalRef(ref.Definition) {
+					continue
+				}
 				// Record error for definitive failure
 				_, path := utils.ConvertComponentIdIntoFriendlyPathSearch(ref.Definition)
 				index.errorLock.Lock()
@@ -978,6 +963,10 @@ func (index *SpecIndex) ExtractComponentsFromRefs(ctx context.Context, refs []*R
 			}
 			index.refLock.Unlock()
 		} else {
+			// If SkipExternalRefResolution is enabled, don't record errors for external refs
+			if index.config != nil && index.config.SkipExternalRefResolution && utils.IsExternalRef(ref.Definition) {
+				continue
+			}
 			// Definitive failure - record error
 			_, path := utils.ConvertComponentIdIntoFriendlyPathSearch(ref.Definition)
 			index.errorLock.Lock()
@@ -1019,7 +1008,16 @@ func (index *SpecIndex) locateRef(ctx context.Context, ref *Reference) *Referenc
 	}
 
 	if located == nil {
-		return nil
+		rawRef := ref.RawRef
+		if rawRef == "" {
+			rawRef = ref.FullDefinition
+		}
+		normalizedRef := resolveRefWithSchemaBase(rawRef, ref.SchemaIdBase)
+		if resolved := index.ResolveRefViaSchemaId(normalizedRef); resolved != nil {
+			located = resolved
+		} else {
+			return nil
+		}
 	}
 
 	// Extract KeyNode - yamlpath API returns subnodes only, so we need to

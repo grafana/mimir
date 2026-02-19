@@ -909,6 +909,10 @@ type Mimir struct {
 
 // New makes a new Mimir.
 func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
+	if len(cfg.Target) == 0 {
+		return nil, fmt.Errorf("no target module specified, the -target flag must be set to a valid module (e.g. \"all\")")
+	}
+
 	if cfg.PrintConfig {
 		if err := yaml.NewEncoder(os.Stdout).Encode(&cfg); err != nil {
 			fmt.Println("Error encoding config:", err)

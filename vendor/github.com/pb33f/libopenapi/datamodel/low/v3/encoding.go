@@ -5,9 +5,8 @@ package v3
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
-	"strconv"
+	"hash/maphash"
 
 	"github.com/pb33f/libopenapi/datamodel/low"
 	"github.com/pb33f/libopenapi/index"
@@ -57,34 +56,27 @@ func (en *Encoding) GetKeyNode() *yaml.Node {
 	return en.KeyNode
 }
 
-// Hash will return a consistent SHA256 Hash of the Encoding object
-func (en *Encoding) Hash() [32]byte {
-	// Use string builder pool
-	sb := low.GetStringBuilder()
-	defer low.PutStringBuilder(sb)
-
-	if en.ContentType.Value != "" {
-		sb.WriteString(en.ContentType.Value)
-		sb.WriteByte('|')
-	}
-	for k, v := range orderedmap.SortAlpha(en.Headers.Value).FromOldest() {
-		sb.WriteString(fmt.Sprintf("%s-%x", k.Value, v.Value.Hash()))
-		sb.WriteByte('|')
-	}
-	if en.Style.Value != "" {
-		sb.WriteString(en.Style.Value)
-		sb.WriteByte('|')
-	}
-	// Optimize boolean handling
-	explodeBytes := []byte(strconv.FormatBool(en.Explode.Value))
-	sb.WriteString(fmt.Sprint(sha256.Sum256(explodeBytes)))
-	sb.WriteByte('|')
-
-	allowReservedBytes := []byte(strconv.FormatBool(en.AllowReserved.Value))
-	sb.WriteString(fmt.Sprint(sha256.Sum256(allowReservedBytes)))
-	sb.WriteByte('|')
-
-	return sha256.Sum256([]byte(sb.String()))
+// Hash will return a consistent Hash of the Encoding object
+func (en *Encoding) Hash() uint64 {
+	return low.WithHasher(func(h *maphash.Hash) uint64 {
+		if en.ContentType.Value != "" {
+			h.WriteString(en.ContentType.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		for k, v := range orderedmap.SortAlpha(en.Headers.Value).FromOldest() {
+			h.WriteString(fmt.Sprintf("%s-%x", k.Value, v.Value.Hash()))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if en.Style.Value != "" {
+			h.WriteString(en.Style.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		low.HashBool(h, en.Explode.Value)
+		h.WriteByte(low.HASH_PIPE)
+		low.HashBool(h, en.AllowReserved.Value)
+		h.WriteByte(low.HASH_PIPE)
+		return h.Sum64()
+	})
 }
 
 // Build will extract all Header objects from supplied node.

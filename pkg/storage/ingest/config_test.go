@@ -3,6 +3,7 @@
 package ingest
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -12,10 +13,12 @@ import (
 )
 
 func TestConfig_Validate(t *testing.T) {
-	tests := map[string]struct {
+	type testCase struct {
 		setup       func(*Config)
 		expectedErr error
-	}{
+	}
+
+	tests := map[string]testCase{
 		"should pass with the default config": {
 			setup: func(_ *Config) {},
 		},
@@ -131,7 +134,7 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.Enabled = true
 				cfg.KafkaConfig.Address = "localhost"
 				cfg.KafkaConfig.Topic = "test"
-				cfg.KafkaConfig.SASLUsername = "mimir"
+				cfg.KafkaConfig.SASL.Username = "mimir"
 			},
 			expectedErr: ErrInconsistentSASLCredentials,
 		},
@@ -140,7 +143,7 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.Enabled = true
 				cfg.KafkaConfig.Address = "localhost"
 				cfg.KafkaConfig.Topic = "test"
-				require.NoError(t, cfg.KafkaConfig.SASLPassword.Set("supersecret"))
+				require.NoError(t, cfg.KafkaConfig.SASL.Password.Set("supersecret"))
 			},
 			expectedErr: ErrInconsistentSASLCredentials,
 		},
@@ -149,8 +152,46 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.Enabled = true
 				cfg.KafkaConfig.Address = "localhost"
 				cfg.KafkaConfig.Topic = "test"
-				cfg.KafkaConfig.SASLUsername = "mimir"
-				require.NoError(t, cfg.KafkaConfig.SASLPassword.Set("supersecret"))
+				cfg.KafkaConfig.SASL.Username = "mimir"
+				require.NoError(t, cfg.KafkaConfig.SASL.Password.Set("supersecret"))
+			},
+		},
+		"should fail if SASL mechanism is OAUTHBEARER but no way to get the token is configured": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.SASL.Mechanism = SASLMechanismOauthbearer
+			},
+			expectedErr: ErrSASLOauthbearerBadConfig,
+		},
+		"should fail if SASL mechanism is OAUTHBEARER but no single way to get the token is configured": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.SASL.Mechanism = SASLMechanismOauthbearer
+				require.NoError(t, cfg.KafkaConfig.SASL.OauthbearerToken.Set("foo"))
+				cfg.KafkaConfig.SASL.OauthbearerFilePath = "bar"
+			},
+			expectedErr: ErrSASLOauthbearerBadConfig,
+		},
+		"should succeed if SASL mechanism is OAUTHBEARER and a token is passed": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.SASL.Mechanism = SASLMechanismOauthbearer
+				require.NoError(t, cfg.KafkaConfig.SASL.OauthbearerToken.Set("foo"))
+			},
+		},
+		"should succeed if SASL mechanism is OAUTHBEARER and a file path to the token is passed": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.SASL.Mechanism = SASLMechanismOauthbearer
+				cfg.KafkaConfig.SASL.OauthbearerFilePath = "foo"
 			},
 		},
 		"should fail if max ingestion concurrency is lower than 0": {
@@ -257,6 +298,25 @@ func TestConfig_Validate(t *testing.T) {
 		},
 	}
 
+	for _, mechanism := range []SASLMechanism{SASLMechanismScramSHA256, SASLMechanismScramSHA512} {
+		for missing, setup := range map[string]func(*Config){
+			"username":              func(cfg *Config) { require.NoError(t, cfg.KafkaConfig.SASL.Password.Set("supersecret")) },
+			"password":              func(cfg *Config) { cfg.KafkaConfig.SASL.Username = "mimir" },
+			"username and password": func(cfg *Config) {},
+		} {
+			tests[fmt.Sprintf("should fail if SASL %s is missing but mechanism is %s", missing, mechanism)] = testCase{
+				setup: func(cfg *Config) {
+					cfg.Enabled = true
+					cfg.KafkaConfig.Address = "localhost"
+					cfg.KafkaConfig.Topic = "test"
+					cfg.KafkaConfig.SASL.Mechanism = mechanism
+					setup(cfg)
+				},
+				expectedErr: ErrInconsistentSASLCredentials,
+			}
+		}
+	}
+
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			cfg := Config{}
@@ -300,5 +360,12 @@ func TestConfig_GetConsumerGroup(t *testing.T) {
 			cfg := KafkaConfig{ConsumerGroup: testData.consumerGroup}
 			assert.Equal(t, testData.expected, cfg.GetConsumerGroup(testData.instanceID, testData.partitionID))
 		})
+	}
+}
+
+func TestExhaustiveSASLMechanismOptions(t *testing.T) {
+	for _, o := range saslMechanismOptions {
+		require.NoError(t, new(SASLMechanism).Set(string(o)))
+		require.NotErrorIs(t, (&KafkaAuthConfig{Mechanism: o}).Validate(), ErrInvalidSASLMechanism)
 	}
 }

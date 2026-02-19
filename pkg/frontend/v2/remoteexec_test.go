@@ -43,6 +43,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -1185,8 +1186,8 @@ func TestRemoteExecutionGroupEvaluator_ReadingMessagesInReturnedOrder(t *testing
 	annos, returnedStats, err = resp2.Finalize(ctx)
 	require.NoError(t, err)
 	expectedAnnos := annotations.New()
-	expectedAnnos.Add(newRemoteInfo("an info annotation"))
-	expectedAnnos.Add(newRemoteWarning("a warning annotation"))
+	expectedAnnos.Add(querierpb.NewInfoAnnotation("an info annotation"))
+	expectedAnnos.Add(querierpb.NewWarningAnnotation("a warning annotation"))
 	require.Equal(t, expectedAnnos, annos)
 	expectedStats := stats.Stats{SamplesProcessed: 1234}
 	require.Equal(t, expectedStats, returnedStats)
@@ -1304,8 +1305,8 @@ func TestRemoteExecutionGroupEvaluator_ReadingMessagesOutOfOrder(t *testing.T) {
 	annos, returnedStats, err = resp2.Finalize(ctx)
 	require.NoError(t, err)
 	expectedAnnos := annotations.New()
-	expectedAnnos.Add(newRemoteInfo("an info annotation"))
-	expectedAnnos.Add(newRemoteWarning("a warning annotation"))
+	expectedAnnos.Add(querierpb.NewInfoAnnotation("an info annotation"))
+	expectedAnnos.Add(querierpb.NewWarningAnnotation("a warning annotation"))
 	require.Equal(t, expectedAnnos, annos)
 	expectedStats := stats.Stats{SamplesProcessed: 1234}
 	require.Equal(t, expectedStats, returnedStats)
@@ -1491,8 +1492,8 @@ func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithFinalize(t *testing
 	annos, returnedStats, err = resp2.Finalize(ctx)
 	require.NoError(t, err)
 	expectedAnnos := annotations.New()
-	expectedAnnos.Add(newRemoteInfo("an info annotation"))
-	expectedAnnos.Add(newRemoteWarning("a warning annotation"))
+	expectedAnnos.Add(querierpb.NewInfoAnnotation("an info annotation"))
+	expectedAnnos.Add(querierpb.NewWarningAnnotation("a warning annotation"))
 	require.Equal(t, expectedAnnos, annos)
 	expectedStats := stats.Stats{SamplesProcessed: 1234}
 	require.Equal(t, expectedStats, returnedStats)
@@ -1584,8 +1585,8 @@ func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithEarlyCloseOfOneNode
 	annos, returnedStats, err := resp2.Finalize(ctx)
 	require.NoError(t, err)
 	expectedAnnos := annotations.New()
-	expectedAnnos.Add(newRemoteInfo("an info annotation"))
-	expectedAnnos.Add(newRemoteWarning("a warning annotation"))
+	expectedAnnos.Add(querierpb.NewInfoAnnotation("an info annotation"))
+	expectedAnnos.Add(querierpb.NewWarningAnnotation("a warning annotation"))
 	require.Equal(t, expectedAnnos, annos)
 	expectedStats := stats.Stats{SamplesProcessed: 1234}
 	require.Equal(t, expectedStats, returnedStats)
@@ -2207,7 +2208,7 @@ func runQueryParallelismTestCase(t *testing.T, enableMQESharding bool) {
 		planner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(limits, 0, nil, logger))
 	}
 
-	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0, false), stats.NewQueryMetrics(nil), planner)
+	engine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(nil), planner)
 	require.NoError(t, err)
 
 	frontend, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
@@ -2244,7 +2245,7 @@ func runQueryParallelismTestCase(t *testing.T, enableMQESharding bool) {
 	cfg := Config{LookBackDelta: 7 * time.Minute}
 	require.NoError(t, RegisterRemoteExecutionMaterializers(engine, frontend, cfg))
 
-	expr, err := parser.ParseExpr("sum(foo)")
+	expr, err := promqlext.NewPromQLParser().ParseExpr("sum(foo)")
 	require.NoError(t, err)
 	request := querymiddleware.NewPrometheusRangeQueryRequest("/api/v1/query_range", nil, timestamp.FromTime(time.Now().Add(-time.Hour)), timestamp.FromTime(time.Now()), time.Second.Milliseconds(), 5*time.Minute, expr, querymiddleware.Options{}, nil, "")
 	httpRequest, err := codec.EncodeMetricsQueryRequest(ctx, request)

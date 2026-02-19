@@ -27,7 +27,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
@@ -133,6 +132,10 @@ func (cfg *Config) Validate() error {
 		return errStreamingStoreGatewayBufferSize
 	}
 
+	if err := cfg.EngineConfig.Validate(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -204,25 +207,7 @@ func New(
 	queryable := newQueryable(queryables, cfg, limits, queryMetrics, logger)
 	exemplarQueryable := newDistributorExemplarQueryable(distributor, logger)
 
-	lazyQueryable := storage.QueryableFunc(func(minT int64, maxT int64) (storage.Querier, error) {
-		querier, err := queryable.Querier(minT, maxT)
-		if err != nil {
-			return nil, err
-		}
-		return lazyquery.NewLazyQuerier(querier), nil
-	})
-
-	opts, mqeOpts := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg)
-
-	// Experimental functions are always enabled globally for all engines. Access to them
-	// is controlled by an experimental functions middleware that reads per-tenant settings.
-	parser.EnableExperimentalFunctions = true
-
-	// This enables duration arithmetic https://github.com/prometheus/prometheus/pull/16249.
-	parser.ExperimentalDurationExpr = true
-
-	// This enables the anchored and smoothed selector modifiers
-	parser.EnableExtendedRangeSelectors = true
+	opts, mqeOpts := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg, limitsProvider)
 
 	var eng promql.QueryEngine
 	var streamingEngine *streamingpromql.Engine
@@ -232,7 +217,7 @@ func New(
 		eng = limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts))
 	case MimirEngine:
 		var err error
-		streamingEngine, err = streamingpromql.NewEngine(mqeOpts, limitsProvider, queryMetrics, planner)
+		streamingEngine, err = streamingpromql.NewEngine(mqeOpts, queryMetrics, planner)
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
@@ -246,6 +231,16 @@ func New(
 	default:
 		panic(fmt.Sprintf("invalid config not caught by validation: unknown PromQL engine '%s'", cfg.QueryEngine))
 	}
+
+	// Wrap queryable with memory tracking so that there will SeriesLabelsDeduplicator in the context.
+	queryable = NewMemoryTrackingQueryable(queryable)
+	lazyQueryable := storage.QueryableFunc(func(minT int64, maxT int64) (storage.Querier, error) {
+		querier, err := queryable.Querier(minT, maxT)
+		if err != nil {
+			return nil, err
+		}
+		return lazyquery.NewLazyQuerier(querier), nil
+	})
 
 	return NewSampleAndChunkQueryable(lazyQueryable), exemplarQueryable, eng, streamingEngine, nil
 }
@@ -881,6 +876,22 @@ func (p *TenantQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(ctx
 	return totalLimit, nil
 }
 
+func (p *TenantQueryLimitsProvider) GetMaxOutOfOrderTimeWindow(ctx context.Context) (time.Duration, error) {
+	tenantIDs, err := tenant.TenantIDs(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	var maxWindow time.Duration
+	for _, tenantID := range tenantIDs {
+		if w := p.limits.OutOfOrderTimeWindow(tenantID); w > maxWindow {
+			maxWindow = w
+		}
+	}
+
+	return maxWindow, nil
+}
+
 func (p *TenantQueryLimitsProvider) GetEnableDelayedNameRemoval(ctx context.Context) (bool, error) {
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
@@ -901,6 +912,15 @@ func (p *TenantQueryLimitsProvider) GetEnableDelayedNameRemoval(ctx context.Cont
 	}
 
 	return hasEnabled, nil
+}
+
+func (p *TenantQueryLimitsProvider) GetMinResultsCacheTTL(ctx context.Context) (time.Duration, error) {
+	tenantIDs, err := tenant.TenantIDs(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	return validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, p.limits.ResultsCacheTTL), nil
 }
 
 type RequestMetrics struct {

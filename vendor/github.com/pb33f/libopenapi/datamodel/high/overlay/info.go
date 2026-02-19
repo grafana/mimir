@@ -11,12 +11,13 @@ import (
 )
 
 // Info represents a high-level Overlay Info Object.
-// https://spec.openapis.org/overlay/v1.0.0#info-object
+// https://spec.openapis.org/overlay/v1.1.0#info-object
 type Info struct {
-	Title      string                               `json:"title,omitempty" yaml:"title,omitempty"`
-	Version    string                               `json:"version,omitempty" yaml:"version,omitempty"`
-	Extensions *orderedmap.Map[string, *yaml.Node] `json:"-" yaml:"-"`
-	low        *low.Info
+	Title       string                              `json:"title,omitempty" yaml:"title,omitempty"`
+	Version     string                              `json:"version,omitempty" yaml:"version,omitempty"`
+	Description string                              `json:"description,omitempty" yaml:"description,omitempty"`
+	Extensions  *orderedmap.Map[string, *yaml.Node] `json:"-" yaml:"-"`
+	low         *low.Info
 }
 
 // NewInfo creates a new high-level Info instance from a low-level one.
@@ -28,6 +29,9 @@ func NewInfo(info *low.Info) *Info {
 	}
 	if !info.Version.IsEmpty() {
 		i.Version = info.Version.Value
+	}
+	if !info.Description.IsEmpty() {
+		i.Description = info.Description.Value
 	}
 	i.Extensions = high.ExtractExtensions(info.Extensions)
 	return i
@@ -49,13 +53,16 @@ func (i *Info) Render() ([]byte, error) {
 }
 
 // MarshalYAML creates a ready to render YAML representation of the Info object.
-func (i *Info) MarshalYAML() (interface{}, error) {
+func (i *Info) MarshalYAML() (any, error) {
 	m := orderedmap.New[string, any]()
 	if i.Title != "" {
 		m.Set("title", i.Title)
 	}
 	if i.Version != "" {
 		m.Set("version", i.Version)
+	}
+	if i.Description != "" {
+		m.Set("description", i.Description)
 	}
 	for pair := i.Extensions.First(); pair != nil; pair = pair.Next() {
 		m.Set(pair.Key(), pair.Value())

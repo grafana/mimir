@@ -44,7 +44,10 @@
 * [FEATURE] Ingester: Added experimental per-tenant early head compaction. New per-tenant limits `-ingester.early-head-compaction-owned-series-threshold` and `-ingester.early-head-compaction-min-estimated-series-reduction-percentage` trigger compaction based on owned series count. #13980
 * [FEATURE] Ingester: Added experimental support to run ingesters with no tokens in the ring when ingest storage is enabled. You can set `-ingester.ring.num-tokens=0` to enable this feature. #14024
 * [FEATURE] Store-gateway: Add `-store-gateway.sharding-ring.excluded-zones` flag to exclude specific zones from the store-gateway ring. #14120
+* [FEATURE] Ingest storage: Add `-ingest-storage.kafka.sasl-mechanism` flag supporting more ways to authenticate with Kafka. #14307 #14344
 * [FEATURE] Ingest storage: Add `-ingest-storage.kafka.sasl-mechanism` flag to use SCRAM to authenticate with Kafka. #14307
+* [FEATURE] MQE: Add experimental support for splitting and caching intermediate results for functions over range vectors in instant queries. #13472
+* [ENHANCEMENT] Memberlist: Add experimental propagation delay tracker to measure gossip propagation delay across the memberlist cluster. Enable with `-memberlist.propagation-delay-tracker.enabled=true`. #14312 #14406
 * [ENHANCEMENT] Compactor: Add 0-100% jitter to the first compaction interval to spread compactions when multiple compactors start simultaneously. #14280
 * [ENHANCEMENT] Compactor, Store-gateway: Remove experimental setting `-compactor.upload-sparse-index-headers` and always upload sparse index-headers. This improves lazy loading performance in the store-gateway. #13089 #13882
 * [ENHANCEMENT] Querier: Reduce memory consumption of queries samples for a single series are retrieved from multiple ingesters or store-gateways. #13806
@@ -128,6 +131,7 @@
 * [ENHANCEMENT] Store-gateway: Add "OOO" column to the tenant blocks page to indicate whether each block was created from out-of-order samples. #14283
 * [ENHANCEMENT] Ingester: Optimize ingestion from Kafka in clusters with mixed size tenants. #13924 #13961 #14302
 * [ENHANCEMENT] Querier: Add new config flag `querier.enable-delayed-name-removal-fallback-engine` to enable delayed name removal for fallback Prometheus engine. #14349
+* [BUGFIX] Mimir: Fix nil pointer dereference when `-target` is set to an empty string. #14381
 * [BUGFIX] API: Fixed web UI links not respecting `-server.path-prefix` configuration. #14090
 * [BUGFIX] Distributor: Fix issue where distributors didn't send custom values of native histograms. #13849
 * [BUGFIX] Compactor: Fix potential concurrent map writes. #13053
@@ -201,6 +205,7 @@
   * `MimirStrongConsistencyOffsetNotPropagatedToIngesters` → `MimirStrongConsistencyOffsetMissing`
   * `MimirKafkaClientBufferedProduceBytesTooHigh` → `MimirKafkaClientProduceBufferHigh`
 * [CHANGE] Alerts: Replaced `MimirCompactorSkippedUnhealthyBlocks` with more generic `MimirCompactorSkippedBlocks`. #13876
+* [CHANGE] Dashboards: replace usage of `container_spec_cpu_quota / container_spec_cpu_period` with `kube_pod_container_resource_limits` for calculation of CPU limits. #14425
 * [ENHANCEMENT] Alerts: Add more native histogram versions of alerts using classic histograms. #13814
 * [ENHANCEMENT] Alerts: Improve `MimirCompactorNotRunningCompaction` alert to be restart-resistant. Added warning severity alerts for early detection (6h threshold) and lowered the `since-startup` critical duration from 24h to 12h. #14282
 * [ENHANCEMENT] Dashboards: Support native histograms in the Alertmanager, Compactor, Queries, Rollout operator, Reads, RemoteRuler-Reads, Ruler, and Writes dashboards. #13556 #13621 #13629 #13673 #13690 #13678 #13633 #13672
@@ -248,7 +253,7 @@
 * [CHANGE] Ruler: Set default memory ballast to 1GiB to reduce GC pressure during startup. #13376
 * [CHANGE] Zone pod disruption budget: Remove `multi_zone_zpdb_enabled` and replace it with `multi_zone_ingester_zpdb_enabled` and `multi_zone_store_gateway_zpdb_enabled` to allow to selectively enable the zone pod disruption budget on a per-component basis. #13813
 * [CHANGE] Reduced dynamic replication factor when running store-gateways with replication factor set to a value higher than 3. #14304
-* [FEATURE] Add multi-zone support for read path components (memcached, querier, query-frontend, query-scheduler, ruler, and ruler remote evaluation stack). Add multi-AZ support for ingester and store-gateway multi-zone deployments. Add memberlist-bridge support for zone-aware memberlist routing. #13559 #13628 #13636 #13915 #14260
+* [FEATURE] Add multi-zone support for read path components (memcached, querier, query-frontend, query-scheduler, ruler, and ruler remote evaluation stack). Add multi-AZ support for ingester and store-gateway multi-zone deployments. Add memberlist-bridge support for zone-aware memberlist routing. #13559 #13628 #13636 #13915 #14260 #14301
 * [FEATURE] Add deletion protection support for ingesters and store-gateways StatefulSet. It can be enabled by setting `ingester_deletion_protection_enabled` and `store_gateway_deletion_protection_enabled` in the `_config` block. #13819
 * [FEATURE] Shuffle sharding: Add the following configuration options to enable the experimental per-zone store-gateway shard size: #13908 #13941
   * `$._config.shuffle_sharding.store_gateway_shard_size_per_zone_enabled`
@@ -286,12 +291,14 @@
 * [ENHANCEMENT] Add a scenario to the MimirCompactorNotRunningCompaction runbook. #13874
 * [ENHANCEMENT] Document how ingesters calculate partition ID from ring's instance ID in ingest storage. #13903
 * [ENHANCEMENT] Add AWS profile authentication example to `mark-blocks` tool documentation and add centralized section in runbooks with examples for all cloud providers. #14281
+* [BUGFIX] Distributor: Fix type error in multi-zone distributor container constructor's env map. #14403
 
 ### Tools
 
 * [FEATURE] mimir-tool: Add `validate alerts-file` command that performs checks on alert files defined as YAML. #14043
 * [FEATURE] mimir-tool: Add `partition-ring add-partition` and `partition-ring remove-partition` commands. #14265
 * [FEATURE] tsdb-index-header: Add tool to inspect the content of a block's index or index-header. #13738 #14279
+* [FEATURE] tsdb-chunks, tsdb-print-chunk: When printing samples, include the start time (ST) in the output. #14337
 * [BUGFIX] mimir-tool-action: Fix base image of the Github action. #13303
 * [BUGFIX] mimir-tool: do not fail on `$latency_metrics` dashboard variable, documented for native histograms migrations. #13526
 * [BUGFIX] kafkatool: Fix `kafkatool dump print` to support RW2 records. #13848

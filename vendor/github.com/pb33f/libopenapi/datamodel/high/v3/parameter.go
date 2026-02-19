@@ -4,13 +4,27 @@
 package v3
 
 import (
+	"context"
+
 	"github.com/pb33f/libopenapi/datamodel/high"
 	"github.com/pb33f/libopenapi/datamodel/high/base"
+	lowmodel "github.com/pb33f/libopenapi/datamodel/low"
 	low "github.com/pb33f/libopenapi/datamodel/low/v3"
+	"github.com/pb33f/libopenapi/index"
 	"github.com/pb33f/libopenapi/orderedmap"
 	"github.com/pb33f/libopenapi/utils"
 	"go.yaml.in/yaml/v4"
 )
+
+// buildLowParameter builds a low-level Parameter from a resolved YAML node.
+func buildLowParameter(node *yaml.Node, idx *index.SpecIndex) (*low.Parameter, error) {
+	var param low.Parameter
+	lowmodel.BuildModel(node, &param)
+	if err := param.Build(context.Background(), nil, node, idx); err != nil {
+		return nil, err
+	}
+	return &param, nil
+}
 
 // Parameter represents a high-level OpenAPI 3+ Parameter object, that is backed by a low-level one.
 //
@@ -124,9 +138,16 @@ func (p *Parameter) MarshalYAMLInline() (interface{}, error) {
 	if p.Reference != "" {
 		return utils.CreateRefNode(p.Reference), nil
 	}
-	nb := high.NewNodeBuilder(p, p.low)
-	nb.Resolve = true
-	return nb.Render(), nil
+
+	// resolve external reference if present
+	if p.low != nil {
+		rendered, err := high.RenderExternalRef(p.low, buildLowParameter, NewParameter)
+		if err != nil || rendered != nil {
+			return rendered, err
+		}
+	}
+
+	return high.RenderInline(p, p.low)
 }
 
 // MarshalYAMLInlineWithContext will create a ready to render YAML representation of the Parameter object,
@@ -137,10 +158,16 @@ func (p *Parameter) MarshalYAMLInlineWithContext(ctx any) (interface{}, error) {
 	if p.Reference != "" {
 		return utils.CreateRefNode(p.Reference), nil
 	}
-	nb := high.NewNodeBuilder(p, p.low)
-	nb.Resolve = true
-	nb.RenderContext = ctx
-	return nb.Render(), nil
+
+	// resolve external reference if present
+	if p.low != nil {
+		rendered, err := high.RenderExternalRefWithContext(p.low, buildLowParameter, NewParameter, ctx)
+		if err != nil || rendered != nil {
+			return rendered, err
+		}
+	}
+
+	return high.RenderInlineWithContext(p, p.low, ctx)
 }
 
 // IsExploded will return true if the parameter is exploded, false otherwise.

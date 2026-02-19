@@ -440,12 +440,12 @@ func checkParameters(lParams, rParams []low.ValueReference[low.SharedParameters]
 	for i := range lParams {
 		s := lParams[i].Value.GetName().Value
 		lv[s] = lParams[i].Value
-		lRefs[s] = &lParams[i]  // Keep the reference wrapper
+		lRefs[s] = &lParams[i] // Keep the reference wrapper
 	}
 	for i := range rParams {
 		s := rParams[i].Value.GetName().Value
 		rv[s] = rParams[i].Value
-		rRefs[s] = &rParams[i]  // Keep the reference wrapper
+		rRefs[s] = &rParams[i] // Keep the reference wrapper
 	}
 
 	var paramChanges []*ParameterChanges

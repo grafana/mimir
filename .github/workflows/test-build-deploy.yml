@@ -148,6 +148,7 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    name: test (${{ matrix.extra_build_tags != '' && format('{0}, ', matrix.extra_build_tags) || '' }}${{ matrix.test_group_id }}, ${{ matrix.test_group_total }})
     strategy:
       # Do not abort other groups when one fails.
       fail-fast: false
@@ -155,6 +156,7 @@ jobs:
       matrix:
         test_group_id:    [0, 1, 2, 3]
         test_group_total: [4]
+        extra_build_tags: ["", "nopools"]
     needs:
       - prepare
     permissions:
@@ -185,8 +187,8 @@ jobs:
           max_attempts: 2
           retry_wait_seconds: 0
           command: |
-            echo "Running unit tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }}) with Go version: $(go version)"
-            ./.github/workflows/scripts/run-unit-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
+            echo "Running unit tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }})${{ matrix.extra_build_tags != '' && format(' with build tags: {0}', matrix.extra_build_tags) || '' }} with Go version: $(go version)"
+            EXTRA_BUILD_TAGS="${{ matrix.extra_build_tags }}" ./.github/workflows/scripts/run-unit-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
       - name: Notify on streamingpromql failures
         if: failure() && env.FAILED_PACKAGES != '' && contains(github.event.pull_request.labels.*.name, 'vendored-mimir-prometheus-update')
         run: |

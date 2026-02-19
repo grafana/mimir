@@ -12,21 +12,24 @@ import (
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/mimirtool/analyze"
 	"github.com/grafana/mimir/pkg/mimirtool/rules"
+	"github.com/grafana/mimir/pkg/mimirtool/util"
 )
 
 type RuleFileAnalyzeCommand struct {
-	RuleFilesList []string
-	outputFile    string
+	RuleFilesList               []string
+	outputFile                  string
+	enableExperimentalFunctions bool
 
 	logger log.Logger
 }
 
 func (cmd *RuleFileAnalyzeCommand) run(_ *kingpin.ParseContext) error {
 	// TODO: Get scheme from CLI flag.
-	output, err := AnalyzeRuleFiles(cmd.RuleFilesList, model.LegacyValidation, cmd.logger)
+	output, err := AnalyzeRuleFiles(cmd.RuleFilesList, model.LegacyValidation, util.CreatePromQLParser(cmd.enableExperimentalFunctions), cmd.logger)
 	if err != nil {
 		return err
 	}
@@ -40,18 +43,18 @@ func (cmd *RuleFileAnalyzeCommand) run(_ *kingpin.ParseContext) error {
 }
 
 // AnalyzeRuleFiles analyze rules files and return the list metrics used in them.
-func AnalyzeRuleFiles(ruleFiles []string, scheme model.ValidationScheme, logger log.Logger) (*analyze.MetricsInRuler, error) {
+func AnalyzeRuleFiles(ruleFiles []string, scheme model.ValidationScheme, promqlParser parser.Parser, logger log.Logger) (*analyze.MetricsInRuler, error) {
 	output := &analyze.MetricsInRuler{}
 	output.OverallMetrics = make(map[string]struct{})
 
-	nss, err := rules.ParseFiles(rules.MimirBackend, ruleFiles, scheme, logger)
+	nss, err := rules.ParseFiles(rules.MimirBackend, ruleFiles, scheme, promqlParser, logger)
 	if err != nil {
 		return nil, errors.Wrap(err, "analyze operation unsuccessful, unable to parse rules files")
 	}
 
 	for _, ns := range nss {
 		for _, group := range ns.Groups {
-			err := analyze.ParseMetricsInRuleGroup(output, group, ns.Namespace, logger)
+			err := analyze.ParseMetricsInRuleGroup(output, group, ns.Namespace, promqlParser, logger)
 			if err != nil {
 				return nil, err
 			}

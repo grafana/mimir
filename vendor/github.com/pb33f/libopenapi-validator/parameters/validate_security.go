@@ -28,8 +28,8 @@ func (v *paramValidator) ValidateSecurity(request *http.Request) (bool, []*error
 func (v *paramValidator) ValidateSecurityWithPathItem(request *http.Request, pathItem *v3.PathItem, pathValue string) (bool, []*errors.ValidationError) {
 	if pathItem == nil {
 		return false, []*errors.ValidationError{{
-			ValidationType:    helpers.ParameterValidationPath,
-			ValidationSubType: "missing",
+			ValidationType:    helpers.PathValidation,
+			ValidationSubType: helpers.ValidationMissing,
 			Message:           fmt.Sprintf("%s Path '%s' not found", request.Method, request.URL.Path),
 			Reason: fmt.Sprintf("The %s request contains a path of '%s' "+
 				"however that path, or the %s method for that path does not exist in the specification",
@@ -71,7 +71,7 @@ func (v *paramValidator) ValidateSecurityWithPathItem(request *http.Request, pat
 						Message: fmt.Sprintf("Security scheme '%s' is missing", secName),
 						Reason: fmt.Sprintf("The security scheme '%s' is defined as being required, "+
 							"however it's missing from the components", secName),
-						ValidationType: "security",
+						ValidationType: helpers.SecurityValidation,
 						SpecLine:       sec.GoLow().Requirements.ValueNode.Line,
 						SpecCol:        sec.GoLow().Requirements.ValueNode.Column,
 						HowToFix:       "Add the missing security scheme to the components",
@@ -131,7 +131,7 @@ func (v *paramValidator) validateHTTPSecurityScheme(
 				{
 					Message:           fmt.Sprintf("Authorization header for '%s' scheme", secScheme.Scheme),
 					Reason:            "Authorization header was not found",
-					ValidationType:    "security",
+					ValidationType:    helpers.SecurityValidation,
 					ValidationSubType: secScheme.Scheme,
 					SpecLine:          sec.GoLow().Requirements.ValueNode.Line,
 					SpecCol:           sec.GoLow().Requirements.ValueNode.Column,
@@ -159,7 +159,7 @@ func (v *paramValidator) validateAPIKeySecurityScheme(
 				{
 					Message:           fmt.Sprintf("API Key %s not found in header", secScheme.Name),
 					Reason:            "API Key not found in http header for security scheme 'apiKey' with type 'header'",
-					ValidationType:    "security",
+					ValidationType:    helpers.SecurityValidation,
 					ValidationSubType: "apiKey",
 					SpecLine:          sec.GoLow().Requirements.ValueNode.Line,
 					SpecCol:           sec.GoLow().Requirements.ValueNode.Column,
@@ -183,7 +183,7 @@ func (v *paramValidator) validateAPIKeySecurityScheme(
 				{
 					Message:           fmt.Sprintf("API Key %s not found in query", secScheme.Name),
 					Reason:            "API Key not found in URL query for security scheme 'apiKey' with type 'query'",
-					ValidationType:    "security",
+					ValidationType:    helpers.SecurityValidation,
 					ValidationSubType: "apiKey",
 					SpecLine:          sec.GoLow().Requirements.ValueNode.Line,
 					SpecCol:           sec.GoLow().Requirements.ValueNode.Column,
@@ -207,7 +207,7 @@ func (v *paramValidator) validateAPIKeySecurityScheme(
 			{
 				Message:           fmt.Sprintf("API Key %s not found in cookies", secScheme.Name),
 				Reason:            "API Key not found in http request cookies for security scheme 'apiKey' with type 'cookie'",
-				ValidationType:    "security",
+				ValidationType:    helpers.SecurityValidation,
 				ValidationSubType: "apiKey",
 				SpecLine:          sec.GoLow().Requirements.ValueNode.Line,
 				SpecCol:           sec.GoLow().Requirements.ValueNode.Column,

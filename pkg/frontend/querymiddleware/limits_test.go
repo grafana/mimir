@@ -38,6 +38,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -1141,7 +1142,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	logger := log.NewNopLogger()
-	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0, false), stats.NewQueryMetrics(nil), planner)
+	engine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(nil), planner)
 	require.NoError(t, err)
 	codec := newTestCodec()
 	handler := NewEngineQueryRequestRoundTripperHandler(engine, codec, logger)
@@ -1157,7 +1158,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 	lookbackDelta := 5 * time.Minute
 
 	mustParseExpr := func(s string) parser.Expr {
-		expr, err := parser.ParseExpr(s)
+		expr, err := promqlext.NewPromQLParser().ParseExpr(s)
 		require.NoError(t, err)
 		return expr
 	}

@@ -5,8 +5,8 @@ package v2
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
+	"hash/maphash"
 	"strings"
 
 	"github.com/pb33f/libopenapi/datamodel/low"
@@ -91,13 +91,21 @@ func (r *Responses) FindResponseByCode(code string) *low.ValueReference[*Respons
 	return low.FindItemInOrderedMap[*Response](code, r.Codes)
 }
 
-// Hash will return a consistent SHA256 Hash of the Examples object
-func (r *Responses) Hash() [32]byte {
-	var f []string
-	f = low.AppendMapHashes(f, orderedmap.SortAlpha(r.Codes))
-	if !r.Default.IsEmpty() {
-		f = append(f, low.GenerateHashString(r.Default.Value))
-	}
-	f = append(f, low.HashExtensions(r.Extensions)...)
-	return sha256.Sum256([]byte(strings.Join(f, "|")))
+// Hash will return a consistent Hash of the Responses object
+func (r *Responses) Hash() uint64 {
+	return low.WithHasher(func(h *maphash.Hash) uint64 {
+		for _, hash := range low.AppendMapHashes(nil, orderedmap.SortAlpha(r.Codes)) {
+			h.WriteString(hash)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !r.Default.IsEmpty() {
+			h.WriteString(low.GenerateHashString(r.Default.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		for _, ext := range low.HashExtensions(r.Extensions) {
+			h.WriteString(ext)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		return h.Sum64()
+	})
 }

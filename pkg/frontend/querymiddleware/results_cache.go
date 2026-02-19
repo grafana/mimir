@@ -31,6 +31,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 const (
@@ -317,7 +318,7 @@ func areEvaluationTimeModifiersCachable(r MetricsQueryRequest, maxCacheTime int6
 	if !strings.Contains(query, "@") && !strings.Contains(query, "offset") {
 		return true, ""
 	}
-	expr, err := parser.ParseExpr(query)
+	expr, err := promqlext.NewPromQLParser().ParseExpr(query)
 	if err != nil {
 		// We are being pessimistic in such cases.
 		return false, notCachableReasonModifiersNotCachableFailedParse
@@ -653,8 +654,8 @@ func (e *Extent) toResponse() (Response, error) {
 	return resp, nil
 }
 
-// cacheHashKey hashes key into something you can store in the results cache.
-func cacheHashKey(key string) string {
+// hashCacheKey hashes key into something you can store in the results cache.
+func hashCacheKey(key string) string {
 	hasher := fnv.New64a()
 	_, _ = hasher.Write([]byte(key)) // This'll never error.
 

@@ -5,10 +5,8 @@ package v2
 
 import (
 	"context"
-	"crypto/sha256"
-	"fmt"
+	"hash/maphash"
 	"sort"
-	"strings"
 
 	"github.com/pb33f/libopenapi/datamodel/low"
 	"github.com/pb33f/libopenapi/index"
@@ -53,48 +51,69 @@ func (i *Items) GetExtensions() *orderedmap.Map[low.KeyReference[string], low.Va
 	return i.Extensions
 }
 
-// Hash will return a consistent SHA256 Hash of the Items object
-func (i *Items) Hash() [32]byte {
-	var f []string
-	if i.Type.Value != "" {
-		f = append(f, i.Type.Value)
-	}
-	if i.Format.Value != "" {
-		f = append(f, i.Format.Value)
-	}
-	if i.CollectionFormat.Value != "" {
-		f = append(f, i.CollectionFormat.Value)
-	}
-	if i.Default.Value != nil && !i.Default.Value.IsZero() {
-		f = append(f, low.GenerateHashString(i.Default.Value))
-	}
-	f = append(f, fmt.Sprint(i.Maximum.Value))
-	f = append(f, fmt.Sprint(i.Minimum.Value))
-	f = append(f, fmt.Sprint(i.ExclusiveMinimum.Value))
-	f = append(f, fmt.Sprint(i.ExclusiveMaximum.Value))
-	f = append(f, fmt.Sprint(i.MinLength.Value))
-	f = append(f, fmt.Sprint(i.MaxLength.Value))
-	f = append(f, fmt.Sprint(i.MinItems.Value))
-	f = append(f, fmt.Sprint(i.MaxItems.Value))
-	f = append(f, fmt.Sprint(i.MultipleOf.Value))
-	f = append(f, fmt.Sprint(i.UniqueItems.Value))
-	if i.Pattern.Value != "" {
-		f = append(f, fmt.Sprintf("%x", sha256.Sum256([]byte(fmt.Sprint(i.Pattern.Value)))))
-	}
-	keys := make([]string, len(i.Enum.Value))
-	z := 0
-	for k := range i.Enum.Value {
-		keys[z] = low.ValueToString(i.Enum.Value[k].Value)
-		z++
-	}
-	sort.Strings(keys)
-	f = append(f, keys...)
+// Hash will return a consistent Hash of the Items object
+func (itm *Items) Hash() uint64 {
+	return low.WithHasher(func(h *maphash.Hash) uint64 {
+		if itm.Type.Value != "" {
+			h.WriteString(itm.Type.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if itm.Format.Value != "" {
+			h.WriteString(itm.Format.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if itm.CollectionFormat.Value != "" {
+			h.WriteString(itm.CollectionFormat.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if itm.Default.Value != nil && !itm.Default.Value.IsZero() {
+			h.WriteString(low.GenerateHashString(itm.Default.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		low.HashInt64(h, int64(itm.Maximum.Value))
+		h.WriteByte(low.HASH_PIPE)
+		low.HashInt64(h, int64(itm.Minimum.Value))
+		h.WriteByte(low.HASH_PIPE)
+		low.HashBool(h, itm.ExclusiveMinimum.Value)
+		h.WriteByte(low.HASH_PIPE)
+		low.HashBool(h, itm.ExclusiveMaximum.Value)
+		h.WriteByte(low.HASH_PIPE)
+		low.HashInt64(h, int64(itm.MinLength.Value))
+		h.WriteByte(low.HASH_PIPE)
+		low.HashInt64(h, int64(itm.MaxLength.Value))
+		h.WriteByte(low.HASH_PIPE)
+		low.HashInt64(h, int64(itm.MinItems.Value))
+		h.WriteByte(low.HASH_PIPE)
+		low.HashInt64(h, int64(itm.MaxItems.Value))
+		h.WriteByte(low.HASH_PIPE)
+		low.HashInt64(h, int64(itm.MultipleOf.Value))
+		h.WriteByte(low.HASH_PIPE)
+		low.HashBool(h, itm.UniqueItems.Value)
+		h.WriteByte(low.HASH_PIPE)
+		if itm.Pattern.Value != "" {
+			h.WriteString(itm.Pattern.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		keys := make([]string, len(itm.Enum.Value))
+		for k := range itm.Enum.Value {
+			keys[k] = low.ValueToString(itm.Enum.Value[k].Value)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			h.WriteString(key)
+			h.WriteByte(low.HASH_PIPE)
+		}
 
-	if i.Items.Value != nil {
-		f = append(f, low.GenerateHashString(i.Items.Value))
-	}
-	f = append(f, low.HashExtensions(i.Extensions)...)
-	return sha256.Sum256([]byte(strings.Join(f, "|")))
+		if itm.Items.Value != nil {
+			h.WriteString(low.GenerateHashString(itm.Items.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		for _, ext := range low.HashExtensions(itm.Extensions) {
+			h.WriteString(ext)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		return h.Sum64()
+	})
 }
 
 // Build will build out items and default value.

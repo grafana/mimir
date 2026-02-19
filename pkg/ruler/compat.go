@@ -34,7 +34,9 @@ import (
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	notifierCfg "github.com/grafana/mimir/pkg/ruler/notifier"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -301,7 +303,7 @@ func RecordAndReportRuleQueryMetrics(qf rules.QueryFunc, queryTime, zeroFetchedS
 			// Do not count queries with errors for zero fetched series, or queries
 			// with no selectors that are not meant to fetch any series.
 			if err == nil && numSeries == 0 {
-				if expr, err := parser.ParseExpr(qs); err == nil {
+				if expr, err := promqlext.NewPromQLParser().ParseExpr(qs); err == nil {
 					if len(parser.ExtractSelectors(expr)) > 0 {
 						zeroFetchedSeriesCount.Add(1)
 					}
@@ -410,12 +412,6 @@ func DefaultTenantManagerFactory(
 
 		// Wrap the queryable with our custom logic.
 		wrappedQueryable := WrapQueryableWithReadConsistency(queryable, logger)
-		// Wrap the queryable to ensure all queries have a memory tracker in the context.
-		// This is needed for ruler operations, specifically alert state restoration that does not use a query engine.
-		// (Operations that use a query engine use QueryFunc, and it's expected that
-		// the QueryFunc either uses MQE, or uses a Prometheus engine instance wrapped
-		// in UnlimitedMemoryTrackerPromQLEngine to provide a memory consumption tracker.)
-		wrappedQueryable = NewUnlimitedMemoryTrackerQueryable(wrappedQueryable)
 
 		var appendeable storage.Appendable
 		if cfg.RuleEvaluationWriteEnabled {
@@ -424,11 +420,14 @@ func DefaultTenantManagerFactory(
 			appendeable = NewNoopAppendable()
 		}
 
+		ctx = user.InjectOrgID(ctx, userID)
+		ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
+
 		return rules.NewManager(&rules.ManagerOptions{
 			Appendable:                 appendeable,
 			Queryable:                  wrappedQueryable,
 			QueryFunc:                  wrappedQueryFunc,
-			Context:                    user.InjectOrgID(ctx, userID),
+			Context:                    ctx,
 			GroupEvaluationContextFunc: FederatedGroupContextFunc,
 			ExternalURL:                cfg.ExternalURL.URL,
 			NotifyFunc:                 rules.SendAlerts(notifier, cfg.ExternalURL.String()),

@@ -11,7 +11,6 @@ import (
 
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/mimirtool/commands"
 	"github.com/grafana/mimir/pkg/mimirtool/version"
@@ -38,8 +37,6 @@ var (
 )
 
 func main() {
-	parser.ExperimentalDurationExpr = true
-
 	app := kingpin.New("mimirtool", "A command-line tool to manage Mimir and GEM.")
 
 	envVars := commands.NewEnvVarsWithPrefix("MIMIR")

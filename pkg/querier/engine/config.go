@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql"      //lint:ignore faillint streamingpromql is fine
 	"github.com/grafana/mimir/pkg/util/activitytracker" //lint:ignore faillint activitytracker is fine
 	util_log "github.com/grafana/mimir/pkg/util/log"    //lint:ignore faillint log is fine
+	"github.com/grafana/mimir/pkg/util/promqlext"       //lint:ignore faillint promqlext is fine
 )
 
 // Config holds the PromQL engine config exposed by Mimir.
@@ -55,8 +56,12 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.MimirQueryEngine.RegisterFlags(f)
 }
 
+func (cfg *Config) Validate() error {
+	return cfg.MimirQueryEngine.Validate()
+}
+
 // NewPromQLEngineOptions returns the PromQL engine options based on the provided config.
-func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.ActivityTracker, logger log.Logger, reg prometheus.Registerer) (promql.EngineOpts, streamingpromql.EngineOpts) {
+func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.ActivityTracker, logger log.Logger, reg prometheus.Registerer, limits streamingpromql.QueryLimitsProvider) (promql.EngineOpts, streamingpromql.EngineOpts) {
 	tracker := newQueryTracker(activityTracker)
 
 	commonOpts := promql.EngineOpts{
@@ -73,11 +78,13 @@ func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.Activit
 		},
 		// This only applies to the fallback Prometheus engine. MQE's is defined per-tenant via limits.
 		EnableDelayedNameRemoval: cfg.EnableDelayedNameRemovalPrometheusEngine,
+		Parser:                   promqlext.NewPromQLParser(),
 	}
 
 	cfg.MimirQueryEngine.CommonOpts = commonOpts
 	cfg.MimirQueryEngine.ActiveQueryTracker = tracker
 	cfg.MimirQueryEngine.Logger = logger
+	cfg.MimirQueryEngine.Limits = limits
 
 	return commonOpts, cfg.MimirQueryEngine
 }

@@ -73,6 +73,9 @@ memberlist:
     - localhost
   rejoin_interval: 10s
 
+  propagation_delay_tracker:
+    enabled: true
+
 ruler:
   alertmanager_url: http://alertmanager-1:8041/alertmanager,http://alertmanager-2:8042/alertmanager,http://alertmanager-3:8043/alertmanager
   # Force the ruler to restore the state of any alert with a "for" period longer than 1s.

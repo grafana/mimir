@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 type queryStatsMiddleware struct {
@@ -189,7 +190,7 @@ func QueryDetailsFromContext(ctx context.Context) *QueryDetails {
 func ExtractMinMaxTime(ctx context.Context, req MetricsQueryRequest, lookbackDelta time.Duration) (int64, int64, bool) {
 	switch r := req.(type) {
 	case *PrometheusRangeQueryRequest, *PrometheusInstantQueryRequest:
-		expr, err := parser.ParseExpr(r.GetQuery())
+		expr, err := promqlext.NewPromQLParser().ParseExpr(r.GetQuery())
 		if err != nil {
 			return 0, 0, false
 		}

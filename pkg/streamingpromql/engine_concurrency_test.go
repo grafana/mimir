@@ -188,7 +188,7 @@ func TestConcurrentQueries(t *testing.T) {
 	opts := NewTestEngineOpts()
 	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
-	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0, false), stats.NewQueryMetrics(nil), planner)
+	engine, err := NewEngine(opts, stats.NewQueryMetrics(nil), planner)
 	require.NoError(t, err)
 
 	// Populate the expected result for each query.

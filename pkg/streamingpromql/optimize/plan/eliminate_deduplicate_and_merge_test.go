@@ -15,7 +15,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/stretchr/testify/require"
 
@@ -1162,6 +1161,9 @@ func TestEliminateDeduplicateAndMergeOptimizationPassCorrectness(t *testing.T) {
 
 			runTest := func(t *testing.T, withOptimization bool, enableDelayedNameRemoval bool) {
 				opts := streamingpromql.NewTestEngineOpts()
+				limits := streamingpromql.NewStaticQueryLimitsProvider()
+				limits.EnableDelayedNameRemoval = enableDelayedNameRemoval
+				opts.Limits = limits
 				planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 				require.NoError(t, err)
 
@@ -1169,7 +1171,7 @@ func TestEliminateDeduplicateAndMergeOptimizationPassCorrectness(t *testing.T) {
 					planner.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
 				}
 
-				engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0, enableDelayedNameRemoval), stats.NewQueryMetrics(nil), planner)
+				engine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(nil), planner)
 				require.NoError(t, err)
 
 				q, err := engine.NewInstantQuery(ctx, storage, nil, testCase.expr, end)
@@ -1219,14 +1221,8 @@ func TestEliminateDeduplicateAndMergeOptimizationWithDelayedNameRemovalDisabled(
 
 func runTestCasesWithDelayedNameRemovalDisabled(t *testing.T, globPattern string) {
 	types.EnableManglingReturnedSlices = true
-	parser.ExperimentalDurationExpr = true
-	parser.EnableExperimentalFunctions = true
-	parser.EnableExtendedRangeSelectors = true
 	t.Cleanup(func() {
 		types.EnableManglingReturnedSlices = false
-		parser.ExperimentalDurationExpr = false
-		parser.EnableExperimentalFunctions = false
-		parser.EnableExtendedRangeSelectors = false
 	})
 
 	testdataFS := os.DirFS("../../testdata")
@@ -1254,7 +1250,7 @@ func runTestCasesWithDelayedNameRemovalDisabled(t *testing.T, globPattern string
 			opts := streamingpromql.NewTestEngineOpts()
 			planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
-			engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0, false), stats.NewQueryMetrics(nil), planner)
+			engine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(nil), planner)
 			require.NoError(t, err)
 			promqltest.RunTest(t, testScript, engine)
 		})

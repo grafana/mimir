@@ -88,10 +88,33 @@ type UndeclaredValue struct {
 	// Direction indicates whether this was in a request or response.
 	// used for error message disambiguation when Path is "$.body".
 	Direction Direction
+
+	// SpecLine is the line number in the OpenAPI spec where the parent
+	// schema is defined. Zero if unavailable.
+	SpecLine int
+
+	// SpecCol is the column number in the OpenAPI spec where the parent
+	// schema is defined. Zero if unavailable.
+	SpecCol int
+}
+
+// extractSchemaLocation extracts the line and column from a schema's low-level
+// representation. returns (0, 0) if the schema is nil or has no low-level info.
+func extractSchemaLocation(schema *base.Schema) (line, col int) {
+	if schema == nil {
+		return 0, 0
+	}
+	low := schema.GoLow()
+	if low == nil || low.RootNode == nil {
+		return 0, 0
+	}
+	return low.RootNode.Line, low.RootNode.Column
 }
 
 // newUndeclaredProperty creates an UndeclaredValue for an undeclared object property.
-func newUndeclaredProperty(path, name string, value any, declaredNames []string, direction Direction) UndeclaredValue {
+// the schema parameter is the parent schema where the property would need to be declared.
+func newUndeclaredProperty(path, name string, value any, declaredNames []string, direction Direction, schema *base.Schema) UndeclaredValue {
+	line, col := extractSchemaLocation(schema)
 	return UndeclaredValue{
 		Path:               path,
 		Name:               name,
@@ -99,10 +122,14 @@ func newUndeclaredProperty(path, name string, value any, declaredNames []string,
 		Type:               "property",
 		DeclaredProperties: declaredNames,
 		Direction:          direction,
+		SpecLine:           line,
+		SpecCol:            col,
 	}
 }
 
 // newUndeclaredParam creates an UndeclaredValue for an undeclared parameter (query/header/cookie).
+// note: parameters don't have SpecLine/SpecCol because they're defined in OpenAPI parameter objects,
+// not schema objects. the parameter itself is the issue, not a schema definition.
 func newUndeclaredParam(path, name string, value any, paramType string, declaredNames []string, direction Direction) UndeclaredValue {
 	return UndeclaredValue{
 		Path:               path,
@@ -357,7 +384,7 @@ func (v *Validator) getSchemaKey(schema *base.Schema) string {
 	}
 	if low := schema.GoLow(); low != nil {
 		hash := low.Hash()
-		return fmt.Sprintf("%x", hash[:8]) // Use first 8 bytes for shorter key
+		return fmt.Sprintf("%x", hash) // uint64 hash as hex string
 	}
 	// fallback to pointer address for inline schemas without low-level info
 	return fmt.Sprintf("%p", schema)

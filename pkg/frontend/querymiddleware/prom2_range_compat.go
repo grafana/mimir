@@ -13,6 +13,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -79,7 +80,7 @@ func (c *prom2RangeCompatHandler) Do(ctx context.Context, r MetricsQueryRequest)
 }
 
 func (c *prom2RangeCompatHandler) rewrite(ctx context.Context, query string) (parser.Expr, error) {
-	expr, err := parser.ParseExpr(query)
+	expr, err := promqlext.NewPromQLParser().ParseExpr(query)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 	}

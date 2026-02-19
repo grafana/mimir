@@ -1007,6 +1007,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 	const metricName = "foo"
 	ctx := user.InjectOrgID(context.Background(), "user")
 	ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
+	ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx)
 	nameMatcher := mustEqualMatcher(model.MetricNameLabel, metricName)
 	barMatcher := mustEqualMatcher("bar", "baz")
 
@@ -2490,6 +2491,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 func TestSlowQueries(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "user")
 	ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
+	ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx)
 	nameMatcher := mustEqualMatcher(model.MetricNameLabel, "foo")
 	nIngesters := 3
 	for happy := 0; happy <= nIngesters; happy++ {
@@ -2666,6 +2668,7 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 					ctx := user.InjectOrgID(context.Background(), "test")
 					ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
+					ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx)
 
 					// Push fixtures
 					for _, series := range fixtures {
@@ -2787,6 +2790,7 @@ func TestDistributor_MetricsForLabelMatchers_adjustPushDownLimit(t *testing.T) {
 			ctx := user.InjectOrgID(context.Background(), "test")
 			ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 			ctx = limiter.AddMemoryTrackerToContext(ctx, limiter.NewUnlimitedMemoryConsumptionTracker(ctx))
+			ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx)
 
 			for _, series := range fixtures {
 				req := mockWriteRequest(series.lbls, series.value, series.timestamp)
