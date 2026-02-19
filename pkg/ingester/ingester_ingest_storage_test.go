@@ -1117,7 +1117,7 @@ func createTestIngesterWithIngestStorage(
 
 	// Create a fake Kafka cluster.
 	kafkaCluster, kafkaAddr := testkafka.CreateCluster(t, 10, ingesterCfg.IngestStorageConfig.KafkaConfig.Topic)
-	ingesterCfg.IngestStorageConfig.KafkaConfig.Address = kafkaAddr
+	ingesterCfg.IngestStorageConfig.KafkaConfig.Address = flagext.StringSliceCSV{kafkaAddr}
 
 	if ingesterCfg.IngesterRing.InstanceID == "" || ingesterCfg.IngesterRing.InstanceID == defaultIngesterConfig.IngesterRing.InstanceID {
 		// The ingest storage requires the ingester ID to have a well known format.

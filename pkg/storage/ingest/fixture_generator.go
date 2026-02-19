@@ -363,11 +363,11 @@ func (g *FixtureGenerator) generateWriteRequest(tenantIdx int, timestampMs int64
 // ProduceWriteRequests generates WriteRequests and produces them to Kafka.
 // It creates a Kafka client, produces all requests based on TotalSamples, and flushes.
 // Returns the total number of records produced, or an error if any step fails.
-func (g *FixtureGenerator) ProduceWriteRequests(ctx context.Context, kafkaAddress, topic string, partitionID int32) (int, error) {
+func (g *FixtureGenerator) ProduceWriteRequests(ctx context.Context, kafkaAddresses flagext.StringSliceCSV, topic string, partitionID int32) (int, error) {
 	// Create a Kafka client for async batch production.
 	cfg := KafkaConfig{}
 	flagext.DefaultValues(&cfg)
-	cfg.Address = flagext.StringSliceCSV{kafkaAddress}
+	cfg.Address = kafkaAddresses
 	cfg.Topic = topic
 	cfg.DisableLinger = true
 
