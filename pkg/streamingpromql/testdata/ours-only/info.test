@@ -34,3 +34,25 @@ eval range from 0m to 2m step 1m info(test_metric, {priority=~"high|medium", pri
 eval range from 0m to 2m step 1m info(test_metric, {__name__=~".*info", __name__=~"target.*", category=~"web|api"})
   test_metric{instance="a", job="1", env="prod", category="web"} 1 2 3
   test_metric{instance="b", job="2", env="dev", category="api"} 4 5 6
+
+clear
+
+load 1m
+  kube_pod_info{cluster="cluster", namespace="namespace", node="node1", created_by_name="querier", pod="pod1"} 1 1 1
+  kube_pod_info{cluster="cluster", namespace="namespace", node="node2", created_by_name="querier", pod="pod2"} 0 1 1
+  kube_pod_info{cluster="cluster", namespace="namespace", node="node3", created_by_name="querier", pod="pod3"} 0 0 1
+  kube_node_labels{cluster="cluster", node="node1", label_kubernetes_io_arch="arm64"} 1 1 1
+  kube_node_labels{cluster="cluster", node="node2", label_kubernetes_io_arch="arm64"} 1 1 1
+  kube_node_labels{cluster="cluster", node="node3", label_kubernetes_io_arch="amd64"} 1 1 1
+
+eval range from 0m to 2m step 1m sum(max(kube_pod_info{namespace="namespace", created_by_name=~"querier.*"}) by (cluster, namespace, node) * on (cluster, node) group_left(label_kubernetes_io_arch) kube_node_labels) by (cluster, namespace, label_kubernetes_io_arch)
+  {cluster="cluster", label_kubernetes_io_arch="arm64", namespace="namespace"} 1 2 2
+  {cluster="cluster", label_kubernetes_io_arch="amd64", namespace="namespace"} 0 0 1
+
+eval range from 0m to 2m step 1m sum(info(kube_pod_info{namespace="namespace", created_by_name=~"querier.*"}, kube_node_labels{label_kubernetes_io_arch=~".+"}, "cluster", "node")) by (cluster, namespace, label_kubernetes_io_arch)
+  {cluster="cluster", label_kubernetes_io_arch="arm64", namespace="namespace"} 1 2 2
+  {cluster="cluster", label_kubernetes_io_arch="amd64", namespace="namespace"} 0 0 1
+
+eval range from 0m to 2m step 1m sum(info(kube_pod_info{namespace="namespace", created_by_name=~"querier.*"}, {__name__="kube_node_labels", label_kubernetes_io_arch=~".+"}, "node", "cluster")) by (cluster, namespace, label_kubernetes_io_arch)
+  {cluster="cluster", label_kubernetes_io_arch="arm64", namespace="namespace"} 1 2 2
+  {cluster="cluster", label_kubernetes_io_arch="amd64", namespace="namespace"} 0 0 1
