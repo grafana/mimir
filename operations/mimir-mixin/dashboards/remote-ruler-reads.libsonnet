@@ -7,7 +7,7 @@ local filename = 'mimir-remote-ruler-reads.json';
     assert std.md5(filename) == 'f103238f7f5ab2f1345ce650cbfbfe2f' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Remote ruler reads') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
-    .addShowNativeLatencyVariable()
+    .addShowNativeLatencyVariable($.latencyVariableDefault())
     .addRowIf(
       $._config.show_dashboard_descriptions.reads,
       ($.row('Remote ruler reads dashboard description') { height: '175px', showTitle: false })

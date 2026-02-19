@@ -214,6 +214,9 @@
       namespace_query: 'cortex_build_info{%s=~"$cluster"}' % $._config.per_cluster_label,
     },
 
+    // Controls whether dashboards show classic or native latency histograms. Allowed values: 'classic' (default), 'native'.
+    dashboards_default_latency_mode: 'classic',
+
     // Used to add extra labels to all alerts. Careful: takes precedence over default labels.
     alert_extra_labels: {},
 
