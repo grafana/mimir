@@ -384,11 +384,10 @@ func (e *OptimizationPass) groupPathsForSubsequentIteration(paths []path, offset
 			}
 
 			if group.Paths == nil {
-				group.Paths = make([]path, 0, 2)
-				group.Paths = append(group.Paths, p)
+				group.add(p, nil)
 			}
 
-			group.Paths = append(group.Paths, otherPath)
+			group.add(otherPath, nil)
 			alreadyGrouped[otherPathIdx] = true
 		}
 
