@@ -93,7 +93,7 @@ func (s *Spawner) plan() {
 		if now.Sub(lastSubmitted) > s.planningInterval {
 			_, err := s.rotator.OfferPlanJob(tenant, NewTrackedPlanJob(now))
 			if err != nil {
-				level.Warn(s.logger).Log("msg", "failed submitting plan job", "tenant", tenant, "err", err)
+				level.Warn(s.logger).Log("msg", "failed submitting plan job", "user", tenant, "err", err)
 				continue
 			}
 			s.planMap[tenant] = now
@@ -121,7 +121,7 @@ func (s *Spawner) discoverTenants(ctx context.Context) error {
 			// Discovered a new tenant
 			persister, err := s.jpm.InitializeTenant(tenant)
 			if err != nil {
-				level.Warn(s.logger).Log("msg", "failed initializing tenant", "tenant", tenant, "err", err)
+				level.Warn(s.logger).Log("msg", "failed initializing tenant", "user", tenant, "err", err)
 				return err
 			}
 			tracker := NewJobTracker(persister, tenant, s.clock, s.maxLeases, s.metrics.newTrackerMetricsForTenant(tenant))
@@ -131,14 +131,15 @@ func (s *Spawner) discoverTenants(ctx context.Context) error {
 	}
 
 	for tenant := range s.planMap {
+		logger := log.With(s.logger, "user", tenant)
 		if _, ok := seen[tenant]; !ok {
 			tracker, ok := s.rotator.RemoveTenant(tenant)
 			if !ok {
-				level.Warn(s.logger).Log("msg", "attempted to remove tenant from rotator, but the tenant was unexpectedly missing", "tenant", tenant)
+				level.Warn(logger).Log("msg", "attempted to remove tenant from rotator, but the tenant was unexpectedly missing")
 			}
 			err = s.jpm.DeleteTenant(tenant)
 			if err != nil {
-				level.Warn(s.logger).Log("msg", "failed removing tenant bucket from compactor scheduler", "tenant", tenant, "err", err)
+				level.Warn(logger).Log("msg", "failed removing tenant bucket from compactor scheduler", "err", err)
 				if ok {
 					// Preserve 1:1 with rotator and planMap
 					s.rotator.AddTenant(tenant, tracker)
@@ -146,7 +147,7 @@ func (s *Spawner) discoverTenants(ctx context.Context) error {
 				continue
 			}
 			delete(s.planMap, tenant)
-			level.Info(s.logger).Log("msg", "removed empty tenant from compactor scheduler", "tenant", tenant)
+			level.Info(logger).Log("msg", "removed empty tenant from compactor scheduler")
 		}
 	}
 
