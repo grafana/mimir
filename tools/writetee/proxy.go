@@ -141,8 +141,8 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 	// Parse mirrored backend endpoints (comma separated).
 	if cfg.BackendMirroredEndpoints != "" {
 		parts := strings.Split(cfg.BackendMirroredEndpoints, ",")
-		for idx, part := range parts {
-			backend, err := p.parseBackendEndpoint(part, idx, BackendTypeMirrored)
+		for _, part := range parts {
+			backend, err := p.parseBackendEndpoint(part, BackendTypeMirrored)
 			if err != nil {
 				return nil, err
 			}
@@ -155,9 +155,8 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 	// Parse amplified backend endpoints (comma separated).
 	if cfg.BackendAmplifiedEndpoints != "" {
 		parts := strings.Split(cfg.BackendAmplifiedEndpoints, ",")
-		baseIdx := len(p.backends) // offset for numeric preferred backend matching
-		for idx, part := range parts {
-			backend, err := p.parseBackendEndpoint(part, baseIdx+idx, BackendTypeAmplified)
+		for _, part := range parts {
+			backend, err := p.parseBackendEndpoint(part, BackendTypeAmplified)
 			if err != nil {
 				return nil, err
 			}
@@ -213,7 +212,7 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 	return p, nil
 }
 
-func (p *Proxy) parseBackendEndpoint(endpoint string, idx int, backendType BackendType) (ProxyBackend, error) {
+func (p *Proxy) parseBackendEndpoint(endpoint string, backendType BackendType) (ProxyBackend, error) {
 	// Skip empty ones.
 	endpoint = strings.TrimSpace(endpoint)
 	if endpoint == "" {
