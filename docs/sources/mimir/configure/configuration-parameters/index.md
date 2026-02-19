@@ -1102,6 +1102,10 @@ reactive_limiter:
   # CLI flag: -distributor.reactive-limiter.max-limit-factor-decay
   [max_limit_factor_decay: <float> | default = 1]
 
+  # (experimental) Minimum limit factor when max-limit-factor-decay is applied
+  # CLI flag: -distributor.reactive-limiter.min-limit-factor
+  [min_limit_factor: <float> | default = 1.2]
+
   # (experimental) Minimum duration of the window that is used to collect recent
   # response time samples
   # CLI flag: -distributor.reactive-limiter.recent-window-min-duration
@@ -1551,6 +1555,10 @@ push_reactive_limiter:
   # CLI flag: -ingester.push-reactive-limiter.max-limit-factor-decay
   [max_limit_factor_decay: <float> | default = 1]
 
+  # (experimental) Minimum limit factor when max-limit-factor-decay is applied
+  # CLI flag: -ingester.push-reactive-limiter.min-limit-factor
+  [min_limit_factor: <float> | default = 1.2]
+
   # (experimental) Minimum duration of the window that is used to collect recent
   # response time samples
   # CLI flag: -ingester.push-reactive-limiter.recent-window-min-duration
@@ -1618,6 +1626,10 @@ read_reactive_limiter:
   # current inflight requests
   # CLI flag: -ingester.read-reactive-limiter.max-limit-factor-decay
   [max_limit_factor_decay: <float> | default = 1]
+
+  # (experimental) Minimum limit factor when max-limit-factor-decay is applied
+  # CLI flag: -ingester.read-reactive-limiter.min-limit-factor
+  [min_limit_factor: <float> | default = 1.2]
 
   # (experimental) Minimum duration of the window that is used to collect recent
   # response time samples
@@ -1950,6 +1962,32 @@ mimir_query_engine:
   # without buffering. Requires common subexpression elimination to be enabled.
   # CLI flag: -querier.mimir-query-engine.enable-multi-aggregation
   [enable_multi_aggregation: <boolean> | default = true]
+
+  range_vector_splitting:
+    # (experimental) Enable splitting function over range vectors queries into
+    # smaller blocks for caching.
+    # CLI flag: -querier.mimir-query-engine.range-vector-splitting.enabled
+    [enabled: <boolean> | default = false]
+
+    # (experimental) Time interval used for splitting function over range
+    # vectors queries into cacheable blocks.
+    # CLI flag: -querier.mimir-query-engine.range-vector-splitting.split-interval
+    [split_interval: <duration> | default = 2h]
+
+    intermediate_results_cache:
+      # Backend for intermediate results cache, if not empty. Supported values:
+      # memcached.
+      # CLI flag: -querier.mimir-query-engine.range-vector-splitting.backend
+      [backend: <string> | default = ""]
+
+      # The memcached block configures the Memcached-based caching backend.
+      # The CLI flags prefix for this block configuration is:
+      # querier.mimir-query-engine.range-vector-splitting
+      [memcached: <memcached>]
+
+      # Enable cache compression, if not empty. Supported values are: snappy.
+      # CLI flag: -querier.mimir-query-engine.range-vector-splitting.compression
+      [compression: <string> | default = ""]
 
 ring:
   # The key-value store used to share the hash ring across multiple instances.
@@ -6237,6 +6275,7 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 - `blocks-storage.bucket-store.chunks-cache`
 - `blocks-storage.bucket-store.index-cache`
 - `blocks-storage.bucket-store.metadata-cache`
+- `querier.mimir-query-engine.range-vector-splitting`
 - `query-frontend.results-cache`
 - `ruler-storage.cache`
 

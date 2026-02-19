@@ -364,6 +364,10 @@ func (cfg *Config) Validate(limits validation.Limits) error {
 		return errInvalidTenantShardSize
 	}
 
+	if err := cfg.ReactiveLimiter.Validate(); err != nil {
+		return err
+	}
+
 	return cfg.RetryConfig.Validate()
 }
 

@@ -104,14 +104,19 @@ func LabelMatchersFromPrometheusType(matchers []*labels.Matcher) []*LabelMatcher
 	converted := make([]*LabelMatcher, 0, len(matchers))
 
 	for _, m := range matchers {
-		converted = append(converted, &LabelMatcher{
-			Name:  m.Name,
-			Value: m.Value,
-			Type:  m.Type,
-		})
+		matcher := LabelMatcherFromPrometheusType(m)
+		converted = append(converted, &matcher)
 	}
 
 	return converted
+}
+
+func LabelMatcherFromPrometheusType(m *labels.Matcher) LabelMatcher {
+	return LabelMatcher{
+		Name:  m.Name,
+		Value: m.Value,
+		Type:  m.Type,
+	}
 }
 
 func LabelMatchersToOperatorType(matchers []*LabelMatcher) types.Matchers {

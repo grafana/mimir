@@ -4,7 +4,7 @@
 # Provenance-includes-copyright: The Cortex Authors.
 
 FROM registry.k8s.io/kustomize/kustomize:v5.4.3 AS kustomize
-FROM alpine/helm:4.1.0@sha256:905a068da43146a87a06c9c6f7f39cdb66a3cd0973dfc29607784f7172d8d171 AS helm
+FROM alpine/helm:4.1.1@sha256:b5c85b997d83e89d9e8ff9215a14b03864274143981af45eb3fe729cdf782c73 AS helm
 FROM golang:1.25.7-trixie@sha256:86d4bd34f4ca0536082637663aa6959c562ceb0161b289dc7592112228735272
 ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
@@ -38,27 +38,27 @@ RUN GOARCH=$(go env GOARCH) && \
 RUN curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b /usr/bin v2.8.0
 
 # renovate: depName=github.com/containers/skopeo
-ENV SKOPEO_VERSION=v1.15.1
+ENV SKOPEO_VERSION=v1.22.0
 RUN git clone --depth 1 --branch ${SKOPEO_VERSION} https://github.com/containers/skopeo /go/src/github.com/containers/skopeo && \
     DISABLE_DOCS=1 make -C /go/src/github.com/containers/skopeo install && \
     rm -rf /go/pkg /go/src /root/.cache
 
 RUN GO111MODULE=on \
 	go install github.com/client9/misspell/cmd/misspell@v0.3.4 && \
-	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.6 && \
+	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11 && \
 	go install github.com/gogo/protobuf/protoc-gen-gogoslick@v1.3.2 && \
 	go install github.com/weaveworks/tools/cover@bdd647e92546027e12cdde3ae0714bb495e43013 && \
 	go install github.com/fatih/faillint@v1.15.0 && \
 	go install github.com/campoy/embedmd@v1.0.0 && \
-	go install github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb@v0.4.0 && \
+	go install github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb@v0.6.0 && \
 	go install github.com/monitoring-mixins/mixtool/cmd/mixtool@b97ae11 && \
-	go install github.com/mikefarah/yq/v4@v4.13.4 && \
+	go install github.com/mikefarah/yq/v4@v4.52.4 && \
 	go install github.com/google/go-jsonnet/cmd/jsonnet@v0.21.0 && \
 	go install github.com/google/go-jsonnet/cmd/jsonnetfmt@v0.21.0 && \
-	go install github.com/norwoodj/helm-docs/cmd/helm-docs@v1.8.1 && \
-	go install github.com/open-policy-agent/conftest@v0.62.0 && \
+	go install github.com/norwoodj/helm-docs/cmd/helm-docs@v1.14.2 && \
+	go install github.com/open-policy-agent/conftest@v0.66.0 && \
 	go install github.com/uber-go/gopatch@v0.4.0 && \
-	go install github.com/bufbuild/buf/cmd/buf@v1.55.1 && \
+	go install github.com/bufbuild/buf/cmd/buf@v1.65.0 && \
 	rm -rf /go/pkg /go/src /root/.cache
 
 COPY --from=helm /usr/bin/helm /usr/bin/helm

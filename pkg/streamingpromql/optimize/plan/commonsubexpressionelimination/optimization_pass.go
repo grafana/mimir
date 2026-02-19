@@ -76,7 +76,7 @@ func (e *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 	paths := e.accumulatePaths(plan)
 
 	// For each path: find all the other paths that terminate in duplicate or subset selectors, then inject a duplication node
-	groups, err := e.groupPathsForFirstIteration(paths, maximumSupportedQueryPlanVersion >= planning.QueryPlanV6)
+	groups, err := e.groupPathsForFirstIteration(paths, maximumSupportedQueryPlanVersion >= planning.QueryPlanV7)
 	if err != nil {
 		return nil, err
 	}

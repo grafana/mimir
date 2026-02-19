@@ -347,7 +347,7 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, now tim
 	hashedKeys := make([]string, 0, len(keys))
 	hashedKeysIdx := make(map[string]int, len(keys))
 	for idx, key := range keys {
-		hashed := cacheHashKey(key)
+		hashed := hashCacheKey(key)
 		hashedKeys = append(hashedKeys, hashed)
 		hashedKeysIdx[hashed] = idx
 
@@ -459,7 +459,7 @@ func (s *splitAndCacheMiddleware) storeCacheExtents(key string, tenantIDs []stri
 		return
 	}
 
-	s.cache.SetMultiAsync(map[string][]byte{cacheHashKey(key): buf}, usedTTL)
+	s.cache.SetMultiAsync(map[string][]byte{hashCacheKey(key): buf}, usedTTL)
 }
 
 func getTTLForExtent(now time.Time, ttl, ttlInOOOWindow, oooWindow time.Duration, e Extent) time.Duration {

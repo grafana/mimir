@@ -1428,19 +1428,19 @@ func TestOptimizationPass_SubsetSelectorEliminationDisabled(t *testing.T) {
 	`
 
 	t.Run("feature enabled, querier supports SSE", func(t *testing.T) {
-		runTest(t, expr, true, planning.QueryPlanV6, expectedPlanWithSSE)
+		runTest(t, expr, true, planning.QueryPlanV7, expectedPlanWithSSE)
 	})
 
 	t.Run("feature disabled, querier supports SSE", func(t *testing.T) {
-		runTest(t, expr, false, planning.QueryPlanV6, expectedPlanWithoutSSE)
+		runTest(t, expr, false, planning.QueryPlanV7, expectedPlanWithoutSSE)
 	})
 
 	t.Run("feature enabled, querier does not support SSE", func(t *testing.T) {
-		runTest(t, expr, true, planning.QueryPlanV5, expectedPlanWithoutSSE)
+		runTest(t, expr, true, planning.QueryPlanV6, expectedPlanWithoutSSE)
 	})
 
 	t.Run("feature disabled, querier does not support SSE", func(t *testing.T) {
-		runTest(t, expr, false, planning.QueryPlanV5, expectedPlanWithoutSSE)
+		runTest(t, expr, false, planning.QueryPlanV6, expectedPlanWithoutSSE)
 	})
 }
 

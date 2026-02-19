@@ -30,6 +30,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/multiaggregation"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/metrics"
@@ -66,7 +67,7 @@ type QueryPlanner struct {
 	planStageLatency         *prometheus.HistogramVec
 	generatedPlans           *prometheus.CounterVec
 	versionProvider          QueryPlanVersionProvider
-	planningMetricsTracker   *planningmetrics.MetricsTracker
+	planningMetricsTracker   *metrics.MetricsTracker
 	logger                   log.Logger
 
 	// Replaced during testing to ensure timing produces consistent results.
@@ -111,6 +112,15 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 	if opts.EnableProjectionPushdown {
 		// This optimization pass must be registered before common subexpression elimination, if that is enabled.
 		planner.RegisterQueryPlanOptimizationPass(plan.NewProjectionPushdownOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
+	}
+
+	// Run range vector splitting pass before CSE.
+	if opts.RangeVectorSplitting.Enabled {
+		splitInterval := opts.RangeVectorSplitting.SplitInterval
+		if splitInterval <= 0 {
+			return nil, errors.New("range vector splitting is enabled but split interval is not greater than 0")
+		}
+		planner.RegisterQueryPlanOptimizationPass(rangevectorsplitting.NewOptimizationPass(splitInterval, opts.Limits, time.Now, opts.CommonOpts.Reg, opts.Logger))
 	}
 
 	if opts.EnableSubsetSelectorElimination && !opts.EnableCommonSubexpressionElimination {
@@ -161,7 +171,7 @@ func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts, versionProvider Q
 			Name: "cortex_mimir_query_engine_plans_generated_total",
 			Help: "Total number of query plans generated.",
 		}, []string{"version"}),
-		planningMetricsTracker: planningmetrics.NewMetricsTracker(opts.CommonOpts.Reg),
+		planningMetricsTracker: metrics.NewMetricsTracker(opts.CommonOpts.Reg),
 		versionProvider:        versionProvider,
 
 		logger:    opts.Logger,

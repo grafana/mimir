@@ -213,7 +213,7 @@ func (a *MultiAggregationInstance) ExpressionPosition() (posrange.PositionRange,
 
 func (a *MultiAggregationInstance) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
 	if len(a.Filters) > 0 {
-		return planning.QueryPlanV6
+		return planning.QueryPlanV7
 	}
 
 	return planning.QueryPlanV5
