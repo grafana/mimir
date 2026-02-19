@@ -132,9 +132,9 @@ func TestNewProxy_PreferredBackendSelection(t *testing.T) {
 		mirroredEndpoints         string
 		amplifiedEndpoints        string
 		preferredBackend          string
-		expectedPreferredIdx      int  // Index of backend that should be preferred
+		expectedPreferredIdx      int // Index of backend that should be preferred
 		expectedPreferredType     BackendType
-		expectedNonPreferredCount int  // Number of backends that should NOT be preferred
+		expectedNonPreferredCount int // Number of backends that should NOT be preferred
 	}{
 		{
 			name:                      "same hostname in mirrored and amplified - mirrored should be preferred",
