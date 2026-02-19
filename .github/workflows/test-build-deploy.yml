@@ -154,8 +154,8 @@ jobs:
       fail-fast: false
       # Split tests into 8 groups.
       matrix:
-        test_group_id:    [0, 1, 2, 3, 4, 5, 6, 7]
-        test_group_total: [8]
+        test_group_id:    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+        test_group_total: [12]
         extra_build_tags: ["", "nopools"]
     needs:
       - prepare
@@ -216,8 +216,8 @@ jobs:
       fail-fast: false
       # Split tests into 8 groups.
       matrix:
-        test_group_id: [0, 1]
-        test_group_total: [2]
+        test_group_id: [0, 1, 2, 3]
+        test_group_total: [4]
         extra_build_tags: ["", "nopools"]
     needs:
       - prepare
@@ -489,6 +489,7 @@ jobs:
       - prepare
       - build
       - test
+      - test-streamingpromql
       - test-docs
       - lint
       - lint-jsonnet
@@ -541,6 +542,7 @@ jobs:
       - lint-jsonnet
       - lint-helm
       - test
+      - test-streamingpromql
       - test-docs
       - build-metaconvert-image
       - build-mimir-image
