@@ -44,7 +44,7 @@ require (
 	golang.org/x/net v0.49.0
 	golang.org/x/sync v0.19.0
 	golang.org/x/time v0.14.0
-	google.golang.org/grpc v1.78.0
+	google.golang.org/grpc v1.79.1
 	gopkg.in/yaml.v2 v2.4.0
 )
 
@@ -101,7 +101,7 @@ require (
 )
 
 require (
-	cel.dev/expr v0.24.0 // indirect
+	cel.dev/expr v0.25.1 // indirect
 	cloud.google.com/go/auth v0.18.1 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
 	cloud.google.com/go/monitoring v1.24.3 // indirect
@@ -125,7 +125,7 @@ require (
 	github.com/bboreham/go-loser v0.0.0-20230920113527-fcc2c21820a3 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
-	github.com/cncf/xds/go v0.0.0-20251022180443-0feb69152e9f // indirect
+	github.com/cncf/xds/go v0.0.0-20251210132809-ee656c7534f5 // indirect
 	github.com/d4l3k/messagediff v1.2.1 // indirect
 	github.com/ebitengine/purego v0.9.1 // indirect
 	github.com/envoyproxy/go-control-plane/envoy v1.36.0 // indirect
@@ -206,7 +206,7 @@ require (
 	go.opentelemetry.io/collector/pipeline v1.48.0 // indirect
 	go.opentelemetry.io/collector/processor v1.48.0 // indirect
 	go.opentelemetry.io/contrib/bridges/prometheus v0.64.0 // indirect
-	go.opentelemetry.io/contrib/detectors/gcp v1.38.0 // indirect
+	go.opentelemetry.io/contrib/detectors/gcp v1.39.0 // indirect
 	go.opentelemetry.io/contrib/exporters/autoexport v0.64.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.64.0 // indirect
 	go.opentelemetry.io/contrib/samplers/jaegerremote v0.33.0 // indirect
