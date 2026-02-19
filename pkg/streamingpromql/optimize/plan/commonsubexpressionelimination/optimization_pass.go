@@ -303,6 +303,8 @@ func (e *OptimizationPass) groupPathsForFirstIteration(paths []path, subsetSelec
 
 		group := SharedSelectorGroup{}
 
+		// Check all the other paths that could terminate in a selector that is a duplicate or subset of this
+		// path's selector. (This is enforced by the sorting done above.)
 		for otherPathOffset, otherPath := range paths[pathIdx+1:] {
 			otherPathIdx := otherPathOffset + pathIdx + 1
 
@@ -325,6 +327,8 @@ func (e *OptimizationPass) groupPathsForFirstIteration(paths []path, subsetSelec
 			}
 
 			if group.len() == 0 {
+				// This is the first path we've found so far that is a subset or duplicate of p, so create a group now.
+				// (This saves unnecessarily creating groups for paths that have no duplicates or subsets.)
 				group.add(p, nil)
 			}
 
@@ -884,6 +888,7 @@ const (
 
 // SelectorsAreDuplicateOrSubset returns ExactDuplicateSelectors if first and second are the same,
 // SubsetSelectors if second is a subset of first, or NotDuplicateOrSubset otherwise.
+// SelectorsAreDuplicateOrSubset does not check if first is a subset of second.
 //
 // The matchers in first and second must be sorted in the order produced by core.CompareMatchers.
 func SelectorsAreDuplicateOrSubset(first, second []*core.LabelMatcher) (SelectorRelationship, []*core.LabelMatcher) {
