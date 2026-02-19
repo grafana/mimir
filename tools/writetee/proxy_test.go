@@ -556,10 +556,10 @@ func TestPrepareAmplifiedBodies(t *testing.T) {
 
 			assert.Equal(t, tt.expectedBodies, len(bodies), "expected %d bodies, got %d", tt.expectedBodies, len(bodies))
 
-			// For amplification > 1, verify bodies are different (except first which is original)
+			// For amplification > 1, verify all bodies have suffixes (none should equal the original)
 			if tt.amplifyFactor > 1.0 && tt.backendType == BackendTypeAmplified && len(bodies) > 1 {
-				for i := 1; i < len(bodies); i++ {
-					assert.NotEqual(t, bodies[0], bodies[i], "body %d should differ from original due to label suffixes", i)
+				for i := 0; i < len(bodies); i++ {
+					assert.NotEqual(t, body, bodies[i], "body %d should differ from original - all amplified copies must have a label suffix to avoid clashing with the mirrored endpoint", i)
 				}
 			}
 		})
