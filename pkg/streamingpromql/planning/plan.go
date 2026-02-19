@@ -61,7 +61,6 @@ const QueryPlanV7 = QueryPlanVersion(7)
 
 var MaximumSupportedQueryPlanVersion = QueryPlanV7
 
-
 type QueryPlan struct {
 	Root       Node
 	Parameters *QueryParameters

@@ -59,7 +59,12 @@ func (b *RangeVectorDuplicationBuffer) SeriesMetadata(ctx context.Context, match
 	if b.seriesMetadataCount == 0 {
 		// Haven't loaded series metadata yet, load it now.
 
-		if len(b.consumers) > 1 {
+		if len(b.consumers) == 1 {
+			// If we have any filters for this consumer, we might as well pass them down to the selector.
+			for _, filter := range consumer.filters {
+				matchers = append(matchers, types.NewMatcherFromPrometheusType(filter))
+			}
+		} else {
 			// Ignore the matchers passed at runtime if we have multiple consumers:
 			// this operator is being used for multiple parts of the query and
 			// the matchers may filter out results needed for other consumers.

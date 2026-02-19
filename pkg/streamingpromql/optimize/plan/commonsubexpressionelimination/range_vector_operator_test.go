@@ -554,6 +554,34 @@ func TestRangeVectorOperator_Buffering_NonContiguousSeries(t *testing.T) {
 	requireNoMemoryConsumption(t, memoryConsumptionTracker)
 }
 
+func TestRangeVectorOperator_Filtering_SingleConsumer(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	inner, expectedData := createTestRangeVectorOperator(t, 6, memoryConsumptionTracker)
+
+	buffer := NewRangeVectorDuplicationBuffer(inner, memoryConsumptionTracker)
+	consumer1 := buffer.AddConsumer()
+	consumer1.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "1|2|5")})
+
+	expectedSeries := []labels.Labels{inner.series[1], inner.series[2], inner.series[5]}
+	filteredData := []types.InstantVectorSeriesData{expectedData[1], expectedData[2], expectedData[5]}
+
+	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
+	require.Equal(t, testutils.LabelsToSeriesMetadata(expectedSeries), metadata1, "consumer should get expected series metadata")
+	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
+	require.Equal(t, types.Matchers{types.Matcher{Type: labels.MatchRegexp, Name: "idx", Value: "1|2|5"}}, inner.matchersProvided, "filters for sole consumer should be passed to inner operator")
+
+	for idx := range 3 {
+		err := consumer1.NextSeries(ctx)
+		require.NoError(t, err)
+		d, err := consumer1.NextStepSamples(ctx)
+		require.NoError(t, err)
+		requireEqualDataAndReturnToPool(t, filteredData[idx], d, memoryConsumptionTracker)
+		require.Equal(t, 0, buffer.buffer.Size())
+	}
+}
+
 func TestRangeVectorOperator_ClosedWithBufferedData_NoFiltering(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
@@ -938,6 +966,7 @@ type testRangeVectorOperator struct {
 	finalized                bool
 	closed                   bool
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	matchersProvided         types.Matchers
 }
 
 func newTestRangeVectorOperator(series []labels.Labels, data []types.InstantVectorSeriesData, stepRange time.Duration, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *testRangeVectorOperator {
@@ -950,7 +979,9 @@ func newTestRangeVectorOperator(series []labels.Labels, data []types.InstantVect
 	}
 }
 
-func (t *testRangeVectorOperator) SeriesMetadata(_ context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {
+func (t *testRangeVectorOperator) SeriesMetadata(_ context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	t.matchersProvided = matchers
+
 	if len(t.series) == 0 {
 		return nil, nil
 	}
