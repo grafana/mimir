@@ -283,27 +283,27 @@ func (s *Scheduler) UpdatePlanJob(ctx context.Context, req *compactorschedulerpb
 	case compactorschedulerpb.UPDATE_TYPE_IN_PROGRESS:
 		if s.rotator.RenewJobLease(req.Tenant, req.Key.Id, req.Key.Epoch) {
 			// Lease renewals are only debug logged to prevent noise
-			level.Debug(s.logger).Log("msg", "plan job lease renewed", "tenant", req.Tenant, "epoch", req.Key.Epoch)
+			level.Debug(s.logger).Log("msg", "plan job lease renewed", "tenant", req.Tenant, "id", req.Key.Id, "epoch", req.Key.Epoch)
 			return &compactorschedulerpb.UpdateJobResponse{}, nil
 		}
 	case compactorschedulerpb.UPDATE_TYPE_ABANDON:
 		removed, err := s.rotator.RemoveJob(req.Tenant, req.Key.Id, req.Key.Epoch, false)
 		if err != nil {
-			level.Error(s.logger).Log("msg", "failed plan job abandon", "tenant", req.Tenant, "epoch", req.Key.Epoch, "err", err)
+			level.Error(s.logger).Log("msg", "failed plan job abandon", "tenant", req.Tenant, "id", req.Key.Id, "epoch", req.Key.Epoch, "err", err)
 			return nil, errFailedAbandoningJob
 		}
 		if removed {
-			level.Info(s.logger).Log("msg", "plan job abandoned", "tenant", req.Tenant, "epoch", req.Key.Epoch)
+			level.Info(s.logger).Log("msg", "plan job abandoned", "tenant", req.Tenant, "id", req.Key.Id, "epoch", req.Key.Epoch)
 			return &compactorschedulerpb.UpdateJobResponse{}, nil
 		}
 	case compactorschedulerpb.UPDATE_TYPE_REASSIGN:
 		canceled, err := s.rotator.CancelJobLease(req.Tenant, req.Key.Id, req.Key.Epoch)
 		if err != nil {
-			level.Error(s.logger).Log("msg", "failed plan job cancel", "tenant", req.Tenant, "epoch", req.Key.Epoch, "err", err)
+			level.Error(s.logger).Log("msg", "failed plan job cancel", "tenant", req.Tenant, "id", req.Key.Id, "epoch", req.Key.Epoch, "err", err)
 			return nil, errFailedCancelLease
 		}
 		if canceled {
-			level.Info(s.logger).Log("msg", "plan job canceled", "tenant", req.Tenant, "epoch", req.Key.Epoch)
+			level.Info(s.logger).Log("msg", "plan job canceled", "tenant", req.Tenant, "id", req.Key.Id, "epoch", req.Key.Epoch)
 			return &compactorschedulerpb.UpdateJobResponse{}, nil
 		}
 	case compactorschedulerpb.UPDATE_TYPE_COMPLETE:
