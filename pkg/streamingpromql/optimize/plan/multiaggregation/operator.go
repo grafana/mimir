@@ -190,7 +190,7 @@ func (m *MultiAggregatorInstanceOperator) AfterPrepare(ctx context.Context) erro
 	return m.group.AfterPrepare(ctx)
 }
 
-func (m *MultiAggregatorInstanceOperator) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+func (m *MultiAggregatorInstanceOperator) SeriesMetadata(ctx context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {
 	// Note that we deliberately ignore the matchers passed here as we can't use them: there's no
 	// guarantee that they apply to other instances in the same group.
 
