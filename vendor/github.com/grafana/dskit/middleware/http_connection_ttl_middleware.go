@@ -160,6 +160,7 @@ func (m *httpConnectionTTLMiddleware) removeExpiredConnection(conn string) bool 
 	}
 	if !state.isExpired() {
 		state.lastSeen = now
+		state.idleExpired = false
 		m.connectionsMu.Unlock()
 		return false
 	}
