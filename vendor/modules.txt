@@ -1986,7 +1986,7 @@ golang.org/x/tools/internal/typesinternal
 golang.org/x/tools/internal/versions
 # golang.org/x/tools/godoc v0.1.0-deprecated
 ## explicit; go 1.24.0
-# google.golang.org/api v0.265.0
+# google.golang.org/api v0.266.0
 ## explicit; go 1.24.0
 google.golang.org/api/googleapi
 google.golang.org/api/googleapi/transport
