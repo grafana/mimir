@@ -234,7 +234,8 @@ func TestWriteReadOOOTest_getInorderQueryTimeRanges(t *testing.T) {
 	flagext.DefaultValues(&cfg)
 	cfg.MaxQueryAge = 2 * 24 * time.Hour
 
-	now := time.Unix(int64((10*24*time.Hour)+(2*time.Second)), 0)
+	// 10d and 10s (864002e9 nanos) after epoch
+	now := time.Unix(0, int64((10*24*time.Hour)+(2*time.Second)))
 
 	t.Run("returns error when min/max query time has not been set", func(t *testing.T) {
 		test := NewWriteReadOOOTest(cfg, newMockClient(), log.NewNopLogger(), nil)
