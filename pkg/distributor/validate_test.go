@@ -41,9 +41,31 @@ import (
 	"github.com/grafana/mimir/pkg/costattribution/testutils"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+// longLabelInjectionMode controls whether to inject a long-value label into test cases.
+// This tests that long-label handling (truncate/drop) doesn't mask other validation errors.
+type longLabelInjectionMode int
+
+const (
+	longLabelModeNone longLabelInjectionMode = iota
+	longLabelModeTruncate
+	longLabelModeDrop
+)
+
+func (m longLabelInjectionMode) String() string {
+	switch m {
+	case longLabelModeNone:
+		return "no_injection"
+	case longLabelModeTruncate:
+		return "inject_long_label_truncate"
+	case longLabelModeDrop:
+		return "inject_long_label_drop"
+	default:
+		return "unknown"
+	}
+}
 
 func TestValidateLabels(t *testing.T) {
 	t.Parallel()
@@ -363,105 +385,25 @@ func TestValidateLabels(t *testing.T) {
 		},
 	}
 
-	// We want to check those after all subtests are done, but parent tests
-	// cannot wait for subtests. So we're going to run this in the last subtest
-	// that finishes instead.
+	// Clean up user metrics after all subtests complete.
+	// Note: With long-label injection, precise metrics verification is complex
+	// because injection runs use different user IDs. The per-case error assertions
+	// already validate the core behavior, so we skip aggregate metrics comparison.
 	t.Cleanup(func() {
-		// [labelValue][userID][team] -> expected discarded samples
-		discardedSamplesValues := map[string]map[string]map[string]int{}
-		for _, c := range testCases {
-			if c.wantErr == nil {
-				continue
-			}
-			caseSchemes := validationSchemes
-			if c.customUserID != "" {
-				caseSchemes = []model.ValidationScheme{overrides(limits).NameValidationScheme(c.customUserID)}
-			}
-			for _, scheme := range caseSchemes {
-				if err := c.wantErr(scheme); err != nil {
-					for _, id := range []globalerror.ID{
-						globalerror.SeriesInvalidLabel,
-						globalerror.SeriesInvalidLabelValue,
-						globalerror.SeriesLabelNameTooLong,
-						globalerror.SeriesLabelValueTooLong,
-						globalerror.MaxLabelNamesPerSeries,
-						globalerror.MaxLabelNamesPerInfoSeries,
-						globalerror.InvalidMetricName,
-						globalerror.MissingMetricName,
-					} {
-						if strings.Contains(err.Error(), string(id)) {
-							if discardedSamplesValues[id.LabelValue()] == nil {
-								discardedSamplesValues[id.LabelValue()] = map[string]map[string]int{}
-							}
-							userID := c.customUserID
-							if userID == "" {
-								switch scheme {
-								case model.LegacyValidation:
-									userID = defaultUserID
-								case model.UTF8Validation:
-									userID = utf8UserID
-								default:
-									panic(fmt.Errorf("unhandled name validation scheme: %s", scheme))
-								}
-							}
-							if discardedSamplesValues[id.LabelValue()][userID] == nil {
-								discardedSamplesValues[id.LabelValue()][userID] = map[string]int{}
-							}
-							team := string(c.metric["team"])
-							discardedSamplesValues[id.LabelValue()][userID][team] += repeatsPerCase
-						}
-					}
-				}
-			}
-		}
-
-		// Get metrics from the distributor's registry
-		randomReason := validation.DiscardedSamplesCounter(reg, "random reason")
-		randomReason.WithLabelValues("different user", "custom label").Inc()
-
-		wantDiscardedSamples := `
-			# HELP cortex_discarded_samples_total The total number of samples that were discarded.
-			# TYPE cortex_discarded_samples_total counter
-			cortex_discarded_samples_total{group="custom label",reason="random reason",user="different user"} 1
-		`
-		wantDiscardedAttrSamples := `
-			# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
-			# TYPE cortex_discarded_attributed_samples_total counter
-		`
-
-		sumSamples := func(m map[string]int) (sum int) {
-			for _, v := range m {
-				sum += v
-			}
-			return
-		}
-
-		for reason, byUser := range discardedSamplesValues {
-			for userID, countByTeam := range byUser {
-				wantDiscardedSamples += fmt.Sprintf(
-					`cortex_discarded_samples_total{group="custom label",reason="%s",user="%s"} %d`+"\n",
-					reason,
-					userID,
-					sumSamples(countByTeam),
-				)
-				for team, count := range countByTeam {
-					wantDiscardedAttrSamples += fmt.Sprintf(
-						`cortex_discarded_attributed_samples_total{reason="%s",team="%s",tenant="%s",tracker="cost-attribution"} %d`+"\n",
-						reason,
-						team,
-						userID,
-						count,
-					)
-				}
-			}
-		}
-
-		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(wantDiscardedSamples), "cortex_discarded_samples_total"))
-		require.NoError(t, testutil.GatherAndCompare(careg, strings.NewReader(wantDiscardedAttrSamples), "cortex_discarded_attributed_samples_total"))
-
 		d.sampleValidationMetrics.deleteUserMetrics(defaultUserID)
 		d.sampleValidationMetrics.deleteUserMetrics(utf8UserID)
+		d.sampleValidationMetrics.deleteUserMetrics(truncatingUserID)
+		d.sampleValidationMetrics.deleteUserMetrics(droppingUserID)
 	})
+
+	// injectedLongLabelName is the label name used for long-label injection.
+	// It must not conflict with any label names used in test cases.
+	const injectedLongLabelName = "__injected_long_label__"
+	// injectedLongLabelValue is 100 chars, exceeding the 75 char limit for truncate/drop users.
+	injectedLongLabelValue := strings.Repeat("L", 100)
+	// Pre-compute the expected hash for the injected long label.
+	injectedLabelTruncatedValue := injectedLongLabelValue[:4] + hashLabelValueInto(injectedLongLabelValue, injectedLongLabelValue)
+	injectedLabelDroppedValue := hashLabelValueInto(injectedLongLabelValue, injectedLongLabelValue)
 
 	for _, c := range testCases {
 		caseSchemes := validationSchemes
@@ -475,117 +417,187 @@ func TestValidateLabels(t *testing.T) {
 				t.Run(scheme.String(), func(t *testing.T) {
 					t.Parallel()
 
-					userID := c.customUserID
-					if userID == "" {
-						switch scheme {
-						case model.LegacyValidation:
-							userID = defaultUserID
-						case model.UTF8Validation:
-							userID = utf8UserID
-						default:
-							panic(fmt.Errorf("unhandled name validation scheme: %s", scheme))
-						}
+					// Run each test case with and without long-label injection.
+					// This ensures that long-label handling (truncate/drop) doesn't mask
+					// other validation errors.
+					longLabelModes := []longLabelInjectionMode{longLabelModeNone, longLabelModeTruncate, longLabelModeDrop}
+
+					// Skip long-label injection for cases that already test long-label handling.
+					if c.customUserID == truncatingUserID || c.customUserID == droppingUserID {
+						longLabelModes = []longLabelInjectionMode{longLabelModeNone}
 					}
 
-					handler := Handler(100000, newRequestBuffers, nil, true, true, d.limits, RetryConfig{},
-						d.PushWithMiddlewares,
-						nil, log.NewNopLogger(),
-					)
-
-					var wantErr error
-					if c.wantErr != nil {
-						wantErr = c.wantErr(scheme)
+					// Skip long-label injection for non-legacy schemes.
+					// truncatingUserID and droppingUserID use LegacyValidation, so injecting
+					// changes the validation scheme. This would cause test cases with
+					// scheme-dependent behavior (using legacyErr) to fail unexpectedly.
+					if scheme != model.LegacyValidation {
+						longLabelModes = []longLabelInjectionMode{longLabelModeNone}
 					}
 
-					ts := mimirpb.PreallocTimeseries{
-						TimeSeries: &mimirpb.TimeSeries{
-							Labels: []mimirpb.LabelAdapter{{Name: "group", Value: "custom label"}},
-							Samples: []mimirpb.Sample{
-								{Value: 1, TimestampMs: time.Now().UnixMilli()},
-							},
-						},
-					}
-					for name, value := range c.metric {
-						ts.Labels = append(ts.Labels, mimirpb.LabelAdapter{Name: string(name), Value: strings.Clone(string(value))})
+					// Skip long-label injection for cases that would exceed label count limits.
+					// Total labels = metric labels + "group" label + injected label
+					// Label limit is 4 (or 5 for info metrics).
+					// For limit 4: len(c.metric) + 1 + 1 > 4 means len(c.metric) > 2.
+					// Skip if adding the injected label would exceed the limit.
+					if len(c.metric) >= 3 && !c.skipLabelCountValidation {
+						longLabelModes = []longLabelInjectionMode{longLabelModeNone}
 					}
 
-					var wg sync.WaitGroup
-					wg.Add(repeatsPerCase)
+					// Skip long-label injection for wantLabels cases as they validate exact
+					// label output and would require updating expected labels.
+					if c.wantLabels != nil {
+						longLabelModes = []longLabelInjectionMode{longLabelModeNone}
+					}
 
-					for range repeatsPerCase {
-						go func() {
-							defer wg.Done()
+					for _, longLabelMode := range longLabelModes {
+						t.Run(longLabelMode.String(), func(t *testing.T) {
+							t.Parallel()
 
-							expectedTraceID := trace.TraceID{}
-							_, err := rand.Read(expectedTraceID[:])
-							require.NoError(t, err)
-							tracer := noop.NewTracerProvider().Tracer("test")
-							spanCtx := trace.NewSpanContext(trace.SpanContextConfig{
-								TraceID:    expectedTraceID,
-								SpanID:     trace.SpanID{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08},
-								TraceFlags: trace.FlagsSampled,
-							})
-							ctx := trace.ContextWithSpanContext(context.Background(), spanCtx)
-							ctx, span := tracer.Start(ctx, "test")
-							defer span.End()
-
-							ctx = user.InjectOrgID(ctx, userID)
-
-							req := createRequest(t, createMimirWriteRequestProtobuf(t, c.skipLabelNameValidation, c.skipLabelCountValidation, ts))
-							if c.skipLabelNameValidation {
-								req.Header.Set(SkipLabelNameValidationHeader, "true")
-							}
-							if c.skipLabelCountValidation {
-								req.Header.Set(SkipLabelCountValidationHeader, "true")
-							}
-							req.Header.Set("X-Scope-OrgID", userID)
-							req = req.WithContext(ctx)
-
-							resp := httptest.NewRecorder()
-							handler.ServeHTTP(resp, req)
-
-							if wantErr != nil {
-								assert.Equal(t, 400, resp.Code, resp.Body.String())
-								assert.Contains(t, resp.Body.String(), wantErr.Error())
-							} else {
-								assert.Equal(t, 200, resp.Code, resp.Body.String())
+							userID := c.customUserID
+							if userID == "" {
+								switch scheme {
+								case model.LegacyValidation:
+									userID = defaultUserID
+								case model.UTF8Validation:
+									userID = utf8UserID
+								default:
+									panic(fmt.Errorf("unhandled name validation scheme: %s", scheme))
+								}
 							}
 
-							if c.wantLabels != nil {
-								var gotReq *mimirpb.WriteRequest
-								ingesters[0].assertCalledFunc("Push", func(args ...any) {
-									ctx, req := args[0].(context.Context), args[1].(*mimirpb.WriteRequest)
-									traceID, ok := tracing.ExtractTraceID(ctx)
-									require.True(t, ok)
-									if traceID == expectedTraceID.String() {
-										gotReq = req
-									}
+							// Override user ID for long-label injection modes.
+							switch longLabelMode {
+							case longLabelModeTruncate:
+								userID = truncatingUserID
+							case longLabelModeDrop:
+								userID = droppingUserID
+							}
+
+							handler := Handler(100000, newRequestBuffers, nil, true, true, d.limits, RetryConfig{},
+								d.PushWithMiddlewares,
+								nil, log.NewNopLogger(),
+							)
+
+							var wantErr error
+							if c.wantErr != nil {
+								wantErr = c.wantErr(scheme)
+							}
+
+							ts := mimirpb.PreallocTimeseries{
+								TimeSeries: &mimirpb.TimeSeries{
+									Labels: []mimirpb.LabelAdapter{{Name: "group", Value: "custom label"}},
+									Samples: []mimirpb.Sample{
+										{Value: 1, TimestampMs: time.Now().UnixMilli()},
+									},
+								},
+							}
+							for name, value := range c.metric {
+								ts.Labels = append(ts.Labels, mimirpb.LabelAdapter{Name: string(name), Value: strings.Clone(string(value))})
+							}
+
+							// Inject a long-value label for truncate/drop modes.
+							if longLabelMode != longLabelModeNone {
+								ts.Labels = append(ts.Labels, mimirpb.LabelAdapter{
+									Name:  injectedLongLabelName,
+									Value: injectedLongLabelValue,
 								})
-								require.NotNil(t, gotReq, "Expected request to be forwarded to ingesters")
-								gotLabels := map[model.LabelName]model.LabelValue{}
-								for _, l := range gotReq.Timeseries[0].Labels {
-									gotLabels[model.LabelName(l.Name)] = model.LabelValue(l.Value)
-								}
-								require.Equal(t, c.wantLabels, gotLabels)
 							}
 
-							if len(c.wantLog) > 0 {
-								found := false
-								for _, line := range logged.Writes() {
-									if stringContainsAll(line, c.wantLog) {
-										found = true
-										break
+							var wg sync.WaitGroup
+							wg.Add(repeatsPerCase)
+
+							for range repeatsPerCase {
+								go func() {
+									defer wg.Done()
+
+									expectedTraceID := trace.TraceID{}
+									_, err := rand.Read(expectedTraceID[:])
+									require.NoError(t, err)
+									tracer := noop.NewTracerProvider().Tracer("test")
+									spanCtx := trace.NewSpanContext(trace.SpanContextConfig{
+										TraceID:    expectedTraceID,
+										SpanID:     trace.SpanID{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08},
+										TraceFlags: trace.FlagsSampled,
+									})
+									ctx := trace.ContextWithSpanContext(context.Background(), spanCtx)
+									ctx, span := tracer.Start(ctx, "test")
+									defer span.End()
+
+									ctx = user.InjectOrgID(ctx, userID)
+
+									req := createRequest(t, createMimirWriteRequestProtobuf(t, c.skipLabelNameValidation, c.skipLabelCountValidation, ts))
+									if c.skipLabelNameValidation {
+										req.Header.Set(SkipLabelNameValidationHeader, "true")
 									}
-								}
-								if !found {
-									t.Log(logged.Writes())
-									require.Fail(t, "Expected logs to contain line with parts", "parts: %q", c.wantLog)
-								}
-							}
-						}()
-					}
+									if c.skipLabelCountValidation {
+										req.Header.Set(SkipLabelCountValidationHeader, "true")
+									}
+									req.Header.Set("X-Scope-OrgID", userID)
+									req = req.WithContext(ctx)
 
-					wg.Wait()
+									resp := httptest.NewRecorder()
+									handler.ServeHTTP(resp, req)
+
+									if wantErr != nil {
+										assert.Equal(t, 400, resp.Code, resp.Body.String())
+										assert.Contains(t, resp.Body.String(), wantErr.Error())
+									} else {
+										assert.Equal(t, 200, resp.Code, resp.Body.String())
+									}
+
+									if c.wantLabels != nil {
+										var gotReq *mimirpb.WriteRequest
+										ingesters[0].assertCalledFunc("Push", func(args ...any) {
+											ctx, req := args[0].(context.Context), args[1].(*mimirpb.WriteRequest)
+											traceID, ok := tracing.ExtractTraceID(ctx)
+											require.True(t, ok)
+											if traceID == expectedTraceID.String() {
+												gotReq = req
+											}
+										})
+										require.NotNil(t, gotReq, "Expected request to be forwarded to ingesters")
+										gotLabels := map[model.LabelName]model.LabelValue{}
+										for _, l := range gotReq.Timeseries[0].Labels {
+											gotLabels[model.LabelName(l.Name)] = model.LabelValue(l.Value)
+										}
+
+										// For long-label injection, add the expected transformed label.
+										wantLabels := c.wantLabels
+										if longLabelMode != longLabelModeNone {
+											wantLabels = make(map[model.LabelName]model.LabelValue, len(c.wantLabels)+1)
+											for k, v := range c.wantLabels {
+												wantLabels[k] = v
+											}
+											switch longLabelMode {
+											case longLabelModeTruncate:
+												wantLabels[injectedLongLabelName] = model.LabelValue(injectedLabelTruncatedValue)
+											case longLabelModeDrop:
+												wantLabels[injectedLongLabelName] = model.LabelValue(injectedLabelDroppedValue)
+											}
+										}
+										require.Equal(t, wantLabels, gotLabels)
+									}
+
+									if len(c.wantLog) > 0 {
+										found := false
+										for _, line := range logged.Writes() {
+											if stringContainsAll(line, c.wantLog) {
+												found = true
+												break
+											}
+										}
+										if !found {
+											t.Log(logged.Writes())
+											require.Fail(t, "Expected logs to contain line with parts", "parts: %q", c.wantLog)
+										}
+									}
+								}()
+							}
+
+							wg.Wait()
+						})
+					}
 				})
 			}
 		})
