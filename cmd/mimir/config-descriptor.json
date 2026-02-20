@@ -11339,6 +11339,17 @@
                     },
                     {
                       "kind": "field",
+                      "name": "cache_enabled",
+                      "required": false,
+                      "desc": "Enable caching resolved postings offsets using the index-header cache backend and config",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "blocks-storage.bucket-store.index-header.bucket-reader.cache-enabled",
+                      "fieldType": "boolean",
+                      "fieldCategory": "experimental"
+                    },
+                    {
+                      "kind": "field",
                       "name": "index_sections",
                       "required": false,
                       "desc": "Index sections to read from object storage instead of local disk. Valid sections: all",

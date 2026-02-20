@@ -65,6 +65,8 @@ type BucketStores struct {
 	// Index cache shared across all tenants.
 	indexCache indexcache.IndexCache
 
+	indexHeaderCache indexcache.PostingsOffsetTableCache
+
 	// Series hash cache shared across all tenants.
 	seriesHashCache *hashcache.SeriesHashCache
 
@@ -174,8 +176,19 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 	)
 
 	// Init the index cache.
-	if u.indexCache, err = indexcache.NewIndexCache(cfg.BucketStore.IndexCache, logger, reg); err != nil {
+	indexCache, headerCache, err := indexcache.NewIndexCache(cfg.BucketStore.IndexCache, logger, reg)
+	if err != nil {
 		return nil, errors.Wrap(err, "create index cache")
+	}
+	u.indexCache = indexCache
+
+	if cfg.BucketStore.IndexHeader.BucketReader.Enabled &&
+		cfg.BucketStore.IndexHeader.BucketReader.CacheEnabled {
+
+		u.indexHeaderCache = headerCache
+	} else {
+		headerCache = indexcache.NoopHeaderCache{} // deref the initialized inmemory or remote cache for GC
+		u.indexHeaderCache = headerCache
 	}
 
 	if reg != nil {
@@ -532,6 +545,7 @@ func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*Bu
 	bucketStoreOpts := []BucketStoreOption{
 		WithLogger(userLogger),
 		WithIndexCache(u.indexCache),
+		WithIndexHeaderCache(u.indexHeaderCache),
 		WithQueryGate(u.queryGate),
 		WithLazyLoadingGate(u.lazyLoadingGate),
 	}

@@ -24,6 +24,7 @@ import (
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/indexcache"
 )
 
 // rawPostingGroup keeps posting keys for single matcher. It is raw because there is no guarantee
@@ -83,28 +84,43 @@ func newLazySubtractingPostingGroup(m *labels.Matcher) rawPostingGroup {
 
 // toPostingGroup returns a postingGroup which shares the underlying keys slice with g.
 // This means that after calling toPostingGroup g.keys will be modified.
-func (g rawPostingGroup) toPostingGroup(ctx context.Context, r indexheader.Reader) (postingGroup, error) {
+func (g rawPostingGroup) toPostingGroup(ctx context.Context, block *bucketBlock) (postingGroup, error) {
 	var (
-		keys      []labels.Label
-		totalSize int64
+		keys               []labels.Label
+		totalSize          int64
+		blockIndexCacheTTL = indexcache.BlockTTL(block.meta)
 	)
 	if g.isLazy {
 		filter := g.matcher.Matches
 		if g.isSubtract {
 			filter = not(filter)
 		}
-		vals, err := r.LabelValuesOffsets(ctx, g.labelName, g.prefix, filter)
-		if err != nil {
-			return postingGroup{}, err
+
+		// Try cache for postings offset
+		offsets, ok := block.indexHeaderCache.FetchPostingsOffsetsForMatcher(
+			ctx, block.userID, block.meta.ULID, g.matcher, g.isSubtract,
+		)
+		if !ok {
+			var err error
+			offsets, err = block.indexHeaderReader.LabelValuesOffsets(ctx, g.labelName, g.prefix, filter)
+			if err != nil {
+				return postingGroup{}, err
+			}
+
+			block.indexHeaderCache.StorePostingsOffsetsForMatcher(
+				block.userID, block.meta.ULID, g.matcher, g.isSubtract, offsets, blockIndexCacheTTL,
+			)
 		}
-		keys = make([]labels.Label, len(vals))
-		for i := range vals {
-			keys[i] = labels.Label{Name: g.labelName, Value: vals[i].LabelValue}
-			totalSize += vals[i].Off.End - vals[i].Off.Start
+
+		keys = make([]labels.Label, len(offsets))
+		for i := range offsets {
+			lbl := labels.Label{Name: g.labelName, Value: offsets[i].LabelValue}
+			keys[i] = lbl // TODO implement labelvaluesOffsets caching
+			totalSize += offsets[i].Off.End - offsets[i].Off.Start
 		}
 	} else {
 		var err error
-		keys, totalSize, err = g.filterNonExistingKeys(ctx, r)
+		keys, totalSize, err = g.filterNonExistingKeys(ctx, block)
 		if err != nil {
 			return postingGroup{}, errors.Wrap(err, "filter posting keys")
 		}
@@ -120,21 +136,35 @@ func (g rawPostingGroup) toPostingGroup(ctx context.Context, r indexheader.Reade
 
 // filterNonExistingKeys uses the indexheader.Reader to filter out any label values that do not exist in this index.
 // modifies the underlying keys slice of the group. Do not use the rawPostingGroup after calling toPostingGroup.
-func (g rawPostingGroup) filterNonExistingKeys(ctx context.Context, r indexheader.Reader) ([]labels.Label, int64, error) {
+func (g rawPostingGroup) filterNonExistingKeys(ctx context.Context, block *bucketBlock) ([]labels.Label, int64, error) {
 	var (
-		writeIdx  int
-		totalSize int64
+		writeIdx           int
+		totalSize          int64
+		blockIndexCacheTTL = indexcache.BlockTTL(block.meta)
 	)
+
 	for _, l := range g.keys {
-		offset, err := r.PostingsOffset(ctx, l.Name, l.Value)
-		if errors.Is(err, indexheader.NotFoundRangeErr) {
-			// This label name and value doesn't exist in this block, so there are 0 postings we can match.
-			// Try with the rest of the set matchers, maybe they can match some series.
-			// Continue so we overwrite it next time there's an existing value.
-			continue
-		} else if err != nil {
-			return nil, 0, err
+		// Try cache for postings offset
+		offset, ok := block.indexHeaderCache.FetchPostingsOffset(
+			ctx, block.userID, block.meta.ULID, l,
+		)
+		if !ok {
+			var err error
+			offset, err = block.indexHeaderReader.PostingsOffset(ctx, l.Name, l.Value)
+			if errors.Is(err, indexheader.NotFoundRangeErr) {
+				// This label name and value doesn't exist in this block, so there are 0 postings we can match.
+				// Try with the rest of the set matchers, maybe they can match some series.
+				// Continue so we overwrite it next time there's an existing value.
+				continue
+			} else if err != nil {
+				return nil, 0, err
+			}
+
+			block.indexHeaderCache.StorePostingsOffset(
+				block.userID, block.meta.ULID, l, offset, blockIndexCacheTTL,
+			)
 		}
+
 		g.keys[writeIdx] = l
 		writeIdx++
 		totalSize += offset.End - offset.Start

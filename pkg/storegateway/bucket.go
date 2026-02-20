@@ -85,16 +85,17 @@ type BucketStoreStats struct {
 type BucketStore struct {
 	services.Service
 
-	userID          string
-	logger          log.Logger
-	metrics         *BucketStoreMetrics
-	bkt             objstore.InstrumentedBucketReader
-	bucketIndexMeta BucketIndexMetadataReader
-	fetcher         block.MetadataFetcher
-	dir             string
-	indexCache      indexcache.IndexCache
-	indexReaderPool *indexheader.ReaderPool
-	seriesHashCache *hashcache.SeriesHashCache
+	userID           string
+	logger           log.Logger
+	metrics          *BucketStoreMetrics
+	bkt              objstore.InstrumentedBucketReader
+	bucketIndexMeta  BucketIndexMetadataReader
+	fetcher          block.MetadataFetcher
+	dir              string
+	indexCache       indexcache.IndexCache
+	indexHeaderCache indexcache.PostingsOffsetTableCache
+	indexReaderPool  *indexheader.ReaderPool
+	seriesHashCache  *hashcache.SeriesHashCache
 
 	snapshotter services.Service
 
@@ -186,6 +187,13 @@ func WithIndexCache(cache indexcache.IndexCache) BucketStoreOption {
 	}
 }
 
+// WithIndexHeaderCache sets an index header cache to use instead of a noopCache.
+func WithIndexHeaderCache(cache indexcache.PostingsOffsetTableCache) BucketStoreOption {
+	return func(s *BucketStore) {
+		s.indexHeaderCache = cache
+	}
+}
+
 // WithQueryGate sets a queryGate to use instead of a gate.NewNoop().
 func WithQueryGate(queryGate gate.Gate) BucketStoreOption {
 	return func(s *BucketStore) {
@@ -224,6 +232,7 @@ func NewBucketStore(
 		fetcher:                     fetcher,
 		dir:                         dir,
 		indexCache:                  noopCache{},
+		indexHeaderCache:            indexcache.NoopHeaderCache{},
 		blockSet:                    newBucketBlockSet(),
 		blockSyncConcurrency:        bucketStoreConfig.BlockSyncConcurrency,
 		queryGate:                   gate.NewNoop(),
@@ -494,6 +503,7 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error
 		dir,
 		s.indexCache,
 		indexHeaderReader,
+		s.indexHeaderCache,
 		s.partitioners,
 	)
 	if err != nil {
@@ -1962,13 +1972,14 @@ func (m *bucketBlockStats) SizeBytes() int64 {
 // bucketBlock represents a block that is located in a bucket. It holds intermediate
 // state for the block on local disk.
 type bucketBlock struct {
-	userID     string
-	logger     log.Logger
-	metrics    *BucketStoreMetrics
-	bkt        objstore.BucketReader
-	meta       *block.Meta
-	dir        string
-	indexCache indexcache.IndexCache
+	userID           string
+	logger           log.Logger
+	metrics          *BucketStoreMetrics
+	bkt              objstore.BucketReader
+	meta             *block.Meta
+	dir              string
+	indexCache       indexcache.IndexCache
+	indexHeaderCache indexcache.PostingsOffsetTableCache
 
 	indexHeaderReader indexheader.Reader
 	pendingReaders    sync.WaitGroup
@@ -2002,6 +2013,7 @@ func newBucketBlock(
 	dir string,
 	indexCache indexcache.IndexCache,
 	indexHeadReader indexheader.Reader,
+	indexHeadCache indexcache.PostingsOffsetTableCache,
 	p blockPartitioners,
 ) (b *bucketBlock, err error) {
 	b = &bucketBlock{
@@ -2010,6 +2022,7 @@ func newBucketBlock(
 		metrics:           metrics,
 		bkt:               bkt,
 		indexCache:        indexCache,
+		indexHeaderCache:  indexHeadCache,
 		dir:               dir,
 		partitioners:      p,
 		meta:              meta,
