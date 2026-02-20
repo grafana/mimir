@@ -75,23 +75,8 @@ func TestIngester_SendStreamingQuerySeries_ConcurrentMemoryUsage(t *testing.T) {
 
 	matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".*")}
 
-	// Phase 1: Dry run to count how many Send() calls occur
-	countingStream := &countingQueryStreamServer{ctx: ctx}
-	innerQ, err := db.ChunkQuerier(now-1000, now+1000)
-	require.NoError(t, err)
-
-	_, seriesCount, err := i.sendStreamingQuerySeries(ctx, innerQ, now-1000, now+1000, matchers, nil, countingStream)
-	require.NoError(t, err)
-	require.Equal(t, numSeries, seriesCount)
-	innerQ.Close()
-
-	expectedCalls := countingStream.sendCount.Load()
-	require.Greater(t, expectedCalls, int64(1), "expected multiple Send calls")
-
-	// Phase 2: Run concurrent queries with blocking streams
 	// Create coordinator for synchronizing all goroutines
 	coordinator := &blockingCoordinator{
-		expectedCalls:   expectedCalls,
 		totalGoroutines: int64(numGoroutines),
 		blockCh:         make(chan struct{}),
 		allBlockedCh:    make(chan struct{}),
@@ -201,25 +186,8 @@ func TestIngester_SendStreamingQuerySeries_ConcurrentMemoryUsage(t *testing.T) {
 		memoryGrowth/(1024*1024), maxAllowedMemory/(1024*1024))
 }
 
-// countingQueryStreamServer counts the number of Send() calls.
-type countingQueryStreamServer struct {
-	grpc.ServerStream
-	ctx       context.Context
-	sendCount atomic.Int64
-}
-
-func (s *countingQueryStreamServer) Send(*client.QueryStreamResponse) error {
-	s.sendCount.Add(1)
-	return nil
-}
-
-func (s *countingQueryStreamServer) Context() context.Context {
-	return s.ctx
-}
-
 // blockingCoordinator coordinates blocking across multiple goroutines.
 type blockingCoordinator struct {
-	expectedCalls   int64         // Number of Send() calls expected per goroutine
 	totalGoroutines int64         // Total number of goroutines
 	blockedCount    atomic.Int64  // Number of goroutines currently blocked
 	blockCh         chan struct{} // Closed to release all blocked goroutines
@@ -232,14 +200,11 @@ type blockingQueryStreamServer struct {
 	grpc.ServerStream
 	ctx         context.Context
 	coordinator *blockingCoordinator
-	currentCall atomic.Int64
 }
 
-func (s *blockingQueryStreamServer) Send(*client.QueryStreamResponse) error {
-	callNum := s.currentCall.Add(1)
-
+func (s *blockingQueryStreamServer) Send(resp *client.QueryStreamResponse) error {
 	// Block on the last call (the one with IsEndOfSeriesStream: true)
-	if callNum == s.coordinator.expectedCalls {
+	if resp.IsEndOfSeriesStream {
 		blocked := s.coordinator.blockedCount.Add(1)
 		if blocked == s.coordinator.totalGoroutines {
 			// All goroutines are now blocked - signal this
