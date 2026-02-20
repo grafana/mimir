@@ -4,15 +4,25 @@
 package base
 
 import (
+	"context"
 	"encoding/json"
 
 	"github.com/pb33f/libopenapi/datamodel/high"
 	"github.com/pb33f/libopenapi/datamodel/low"
 	lowBase "github.com/pb33f/libopenapi/datamodel/low/base"
+	"github.com/pb33f/libopenapi/index"
 	"github.com/pb33f/libopenapi/orderedmap"
 	"github.com/pb33f/libopenapi/utils"
 	"go.yaml.in/yaml/v4"
 )
+
+// buildLowExample builds a low-level Example from a resolved YAML node.
+func buildLowExample(node *yaml.Node, idx *index.SpecIndex) (*lowBase.Example, error) {
+	var ex lowBase.Example
+	low.BuildModel(node, &ex)
+	ex.Build(context.Background(), nil, node, idx)
+	return &ex, nil
+}
 
 // Example represents a high-level Example object as defined by OpenAPI 3+
 //
@@ -23,7 +33,7 @@ type Example struct {
 	Description     string                              `json:"description,omitempty" yaml:"description,omitempty"`
 	Value           *yaml.Node                          `json:"value,omitempty" yaml:"value,omitempty"`
 	ExternalValue   string                              `json:"externalValue,omitempty" yaml:"externalValue,omitempty"`
-	DataValue       *yaml.Node                          `json:"dataValue,omitempty" yaml:"dataValue,omitempty"`              // OpenAPI 3.2+ dataValue field
+	DataValue       *yaml.Node                          `json:"dataValue,omitempty" yaml:"dataValue,omitempty"`             // OpenAPI 3.2+ dataValue field
 	SerializedValue string                              `json:"serializedValue,omitempty" yaml:"serializedValue,omitempty"` // OpenAPI 3.2+ serializedValue field
 	Extensions      *orderedmap.Map[string, *yaml.Node] `json:"-" yaml:"-"`
 	low             *lowBase.Example
@@ -91,6 +101,16 @@ func (e *Example) MarshalYAMLInline() (interface{}, error) {
 	if e.Reference != "" {
 		return utils.CreateRefNode(e.Reference), nil
 	}
+
+	// resolve external reference if present
+	if e.low != nil {
+		// buildLowExample never returns an error, so we can ignore it
+		rendered, err := high.RenderExternalRef(e.low, buildLowExample, NewExample)
+		if rendered != nil || err != nil {
+			return rendered, err
+		}
+	}
+
 	return high.RenderInline(e, e.low)
 }
 
@@ -102,6 +122,16 @@ func (e *Example) MarshalYAMLInlineWithContext(ctx any) (interface{}, error) {
 	if e.Reference != "" {
 		return utils.CreateRefNode(e.Reference), nil
 	}
+
+	// resolve external reference if present
+	if e.low != nil {
+		// buildLowExample never returns an error, so we can ignore it
+		rendered, _ := high.RenderExternalRefWithContext(e.low, buildLowExample, NewExample, ctx)
+		if rendered != nil {
+			return rendered, nil
+		}
+	}
+
 	return high.RenderInlineWithContext(e, e.low, ctx)
 }
 

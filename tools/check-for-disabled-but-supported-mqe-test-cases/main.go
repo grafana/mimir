@@ -17,7 +17,6 @@ import (
 	"github.com/grafana/regexp"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
@@ -32,9 +31,6 @@ var (
 )
 
 func main() {
-	parser.EnableExperimentalFunctions = true // Silence parsing errors due to the use of experimental functions.
-	parser.ExperimentalDurationExpr = true    // Silence parsing errors due to the use of experimental duration expressions.
-
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

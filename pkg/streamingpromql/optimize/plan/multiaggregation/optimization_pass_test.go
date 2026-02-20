@@ -12,7 +12,6 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql"
@@ -26,10 +25,6 @@ import (
 )
 
 func TestOptimizationPass(t *testing.T) {
-	experimentalFunctionsEnabled := parser.EnableExperimentalFunctions
-	parser.EnableExperimentalFunctions = true
-	t.Cleanup(func() { parser.EnableExperimentalFunctions = experimentalFunctionsEnabled })
-
 	testCases := map[string]struct {
 		expr                                  string
 		expectedPlan                          string

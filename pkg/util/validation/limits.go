@@ -21,7 +21,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/otlptranslator"
 	"github.com/prometheus/prometheus/model/relabel"
-	"github.com/prometheus/prometheus/promql/parser"
 	"go.uber.org/atomic"
 	"go.yaml.in/yaml/v3"
 	"golang.org/x/crypto/blake2b"
@@ -32,6 +31,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/ruler/notifier"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 const (
@@ -711,6 +711,8 @@ func (l *Limits) Validate() error {
 const LabelValueHashLen = len("(hash:)") + blake2b.Size256*2
 
 func (l *Limits) canonicalizeQueries() {
+	parser := promqlext.NewPromQLParser()
+
 	for i, q := range l.BlockedQueries {
 		if q.Regex {
 			continue

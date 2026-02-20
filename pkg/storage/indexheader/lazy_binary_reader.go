@@ -148,8 +148,6 @@ func NewLazyBinaryReader(
 		_ = df.Close()
 	}
 
-	logger = log.With(logger, "id", id)
-
 	g := errgroup.Group{}
 	if !cfg.BucketReader.Enabled {
 		g.Go(func() error {

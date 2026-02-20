@@ -10,20 +10,12 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 func TestContainedExperimentalFunctions(t *testing.T) {
-	enableExperimentalFunctions := parser.EnableExperimentalFunctions
-	enableExtendedRangeSelectors := parser.EnableExtendedRangeSelectors
-	t.Cleanup(func() {
-		parser.EnableExperimentalFunctions = enableExperimentalFunctions
-		parser.EnableExtendedRangeSelectors = enableExtendedRangeSelectors
-	})
-	parser.EnableExperimentalFunctions = true
-	parser.EnableExtendedRangeSelectors = true
-
 	testCases := map[string]struct {
 		query  string
 		expect []string
@@ -96,7 +88,7 @@ func TestContainedExperimentalFunctions(t *testing.T) {
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			expr, err := parser.ParseExpr(tc.query)
+			expr, err := promqlext.NewPromQLParser().ParseExpr(tc.query)
 			require.NoError(t, err)
 			var enabled []string
 			for op, opType := range containedExperimentalFeatures(expr) {

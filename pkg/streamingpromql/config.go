@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 type EngineOpts struct {
@@ -110,6 +111,7 @@ func NewTestEngineOpts() EngineOpts {
 			EnableAtModifier:         true,
 			EnableNegativeOffset:     true,
 			NoStepSubqueryIntervalFn: func(int64) int64 { return time.Minute.Milliseconds() },
+			Parser:                   promqlext.NewPromQLParser(),
 		},
 
 		Pedantic: true,

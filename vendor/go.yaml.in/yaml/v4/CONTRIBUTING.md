@@ -12,6 +12,7 @@ project.
 By participating in this project, you agree to follow our Code of Conduct.
 
 We expect all contributors to:
+
 - Be respectful and inclusive
 - Use welcoming and inclusive language
 - Be collaborative and constructive
@@ -24,6 +25,7 @@ We expect all contributors to:
 ### Reporting Issues
 
 Before submitting an issue, please:
+
 - Check if the issue already exists in our issue tracker
 - Use a clear and descriptive title
 - Provide detailed steps to reproduce the issue
@@ -38,7 +40,7 @@ This tool can be used to inspect both the internal stages and final results of
 YAML processing with the go-yaml library.
 It should be used when reporting most bugs.
 
-The `go-yaml` CLI tool uses the `go-yaml.in/yaml/v4` library to decode and
+The `go-yaml` CLI tool uses the `go.yaml.in/yaml/v4` library to decode and
 encode YAML.
 Decoding YAML is a multi-stage process that involves tokens, events, and nodes.
 The `go-yaml` CLI tool lets you see all of these intermediate stages of the
@@ -101,41 +103,89 @@ foo: &a1 bar
 
 ## Development Process
 
-- Installing Go is not necessary. See "The Makefile" below.
+- This project makes use of a GNU makefile (`GNUmakefile`) for many dev tasks
+- The makefile doesn't use your locally installed Go commands; it auto-installs
+  them, so that all results are deterministic
 - Fork and clone the repository
 - Make your changes
 - Run tests, linters and formatters
-  - `make test-all`
-  - `make lint`
   - `make fmt`
   - `make tidy`
+  - `make lint`
+  - `make test`
+  - You can use `make check` to run all of the above
 - Submit a [Pull Request](https://github.com/yaml/go-yaml/pulls)
 
 
-## The Makefile
+### Using Your Own Go with the Makefile
 
-The repository contains a Makefile (`GNUmakefile`) that provides a number of
-useful targets:
+We ask that you always test with the makefile installed Go before committing,
+since it is deterministic and uses the exact same flow as the go-yaml CI.
 
-- `make test` runs the tests
+We also realize that many Go devs need to run their locally installed Go
+commands for their development environment, and might want to use them with
+the go-yaml makefile.
+
+If you need to use your own Go utils with the makefile, set `GO_YAML_PATH` to
+the directory(s) containing them (either by exporting it or passing it to
+`make`).
+
+Something like this:
+
+```bash
+export GO_YAML_PATH=$(dirname "$(command -v go)")
+make test
+# or
+make test GO_YAML_PATH=$(dirname "$(command -v go)")
+```
+
+**Note:** `GO-VERSION` and `GO_YAML_PATH` are mutually exclusive.
+When `GO_YAML_PATH` is set, the makefile uses your own Go environment and
+ignores any `GO-VERSION` setting.
+
+
+### Using the Makefile Environment as a Shell
+
+Sometimes you might want to run your own shell commands using the same binaries
+that the makefile installs.
+
+To get a subshell with this environment, run one of:
+
+```bash
+make shell
+make bash
+make zsh
+make shell GO-VERSION=1.23.4
+```
+
+
+
+## Makefile Targets
+
+The repository's makefile (`GNUmakefile`) provides a number of useful targets:
+
+- `make test` runs all tests including yaml-test-suite tests
+- `make test-unit` runs just the unit tests
+- `make test-internal` runs just the internal tests
+- `make test-yts` runs just the yaml-test-suite tests
 - `make test v=1 count=3` runs the tests with options
 - `make test GO-VERSION=1.23.4` runs the tests with a specific Go version
+- `make test GO_YAML_PATH=/path/to/go/bin` uses your own Go installation
 - `make shell` opens a shell with the project's dependencies set up
 - `make shell GO-VERSION=1.23.4` opens a shell with a specific Go version
 - `make fmt` runs `golangci-lint fmt ./...`
 - `make lint` runs `golangci-lint run`
 - `make tidy` runs `go mod tidy`
-- `make install` runs `go install`
 - `make distclean` cleans the project completely
-
-The Makefile will install all requirements for any target, including Go itself.
 
 
 ## Getting Help
 
 If you need help, you can:
-- Open an issue with your question
-- Read through our documentation
+- Open an [issue](https://github.com/yaml/go-yaml/issues) with your question
+- Start a [discussion](https://github.com/yaml/go-yaml/discussions)
+- Read through our [documentation](https://pkg.go.dev/go.yaml.in/yaml/v4)
+- Check the [migration guide](docs/v3-to-v4-migration.md) if upgrading from v3
 - Join our [Slack channel](https://cloud-native.slack.com/archives/C08PPAT8PS7)
 
 

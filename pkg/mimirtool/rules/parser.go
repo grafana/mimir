@@ -18,6 +18,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
+	"github.com/prometheus/prometheus/promql/parser"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -31,9 +32,9 @@ var (
 )
 
 // ParseFiles returns a formatted set of prometheus rule groups
-func ParseFiles(backend string, files []string, scheme model.ValidationScheme, logger log.Logger) (map[string]RuleNamespace, error) {
+func ParseFiles(backend string, files []string, scheme model.ValidationScheme, promqlParser parser.Parser, logger log.Logger) (map[string]RuleNamespace, error) {
 	ruleSet := map[string]RuleNamespace{}
-	var parseFn func(f string, scheme model.ValidationScheme, logger log.Logger) ([]RuleNamespace, []error)
+	var parseFn func(f string, scheme model.ValidationScheme, promqlParser parser.Parser, logger log.Logger) ([]RuleNamespace, []error)
 	switch backend {
 	case MimirBackend:
 		parseFn = Parse
@@ -42,7 +43,7 @@ func ParseFiles(backend string, files []string, scheme model.ValidationScheme, l
 	}
 
 	for _, f := range files {
-		nss, errs := parseFn(f, scheme, logger)
+		nss, errs := parseFn(f, scheme, promqlParser, logger)
 		for _, err := range errs {
 			level.Error(logger).Log("msg", "unable to parse rules file", "file", f, "err", err)
 			return nil, errFileReadError
@@ -71,17 +72,17 @@ func ParseFiles(backend string, files []string, scheme model.ValidationScheme, l
 }
 
 // Parse parses and validates a set of rules.
-func Parse(f string, scheme model.ValidationScheme, logger log.Logger) ([]RuleNamespace, []error) {
+func Parse(f string, scheme model.ValidationScheme, promqlParser parser.Parser, logger log.Logger) ([]RuleNamespace, []error) {
 	content, err := loadFile(f)
 	if err != nil {
 		level.Error(logger).Log("msg", "unable to load rules file", "file", f, "err", err)
 		return nil, []error{errFileReadError}
 	}
 
-	return ParseBytes(content, scheme)
+	return ParseBytes(content, scheme, promqlParser)
 }
 
-func ParseBytes(content []byte, scheme model.ValidationScheme) ([]RuleNamespace, []error) {
+func ParseBytes(content []byte, scheme model.ValidationScheme, promqlParser parser.Parser) ([]RuleNamespace, []error) {
 	decoder := yaml.NewDecoder(bytes.NewReader(content))
 	decoder.KnownFields(true)
 
@@ -116,7 +117,7 @@ func ParseBytes(content []byte, scheme model.ValidationScheme) ([]RuleNamespace,
 			return nil, []error{err}
 		}
 
-		if errs := ns.Validate(node.GroupNodes, scheme); len(errs) > 0 {
+		if errs := ns.Validate(node.GroupNodes, scheme, promqlParser); len(errs) > 0 {
 			return nil, errs
 		}
 	}

@@ -9,7 +9,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
@@ -20,6 +19,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 func TestOptimizationPass(t *testing.T) {
@@ -570,7 +570,7 @@ func rewriteForQuerySharding(ctx context.Context, expr string) (string, error) {
 	stats := astmapper.NewMapperStats()
 	squasher := astmapper.EmbeddedQueriesSquasher
 	summer := astmapper.NewQueryShardSummer(maxShards, squasher, log.NewNopLogger(), stats)
-	ast, err := parser.ParseExpr(expr)
+	ast, err := promqlext.NewPromQLParser().ParseExpr(expr)
 	if err != nil {
 		return "", err
 	}
@@ -587,7 +587,7 @@ func rewriteForSubquerySpinoff(ctx context.Context, expr string) (string, error)
 	stats := astmapper.NewSubquerySpinOffMapperStats()
 	defaultStepFunc := func(rangeMillis int64) int64 { return 1000 }
 	mapper := astmapper.NewSubquerySpinOffMapper(defaultStepFunc, log.NewNopLogger(), stats)
-	ast, err := parser.ParseExpr(expr)
+	ast, err := promqlext.NewPromQLParser().ParseExpr(expr)
 	if err != nil {
 		return "", err
 	}

@@ -13,7 +13,8 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/promql/parser"
+
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 type CountMethod string
@@ -197,7 +198,7 @@ func extractSelector(values url.Values) (matchers []*labels.Matcher, err error) 
 	if len(selectorParams) > 1 {
 		return nil, fmt.Errorf("multiple 'selector' params are not allowed")
 	}
-	matchers, err = parser.ParseMetricSelector(selectorParams[0])
+	matchers, err = promqlext.NewPromQLParser().ParseMetricSelector(selectorParams[0])
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse selector: %w", err)
 	}

@@ -29,15 +29,6 @@ import (
 )
 
 func TestOptimizationPass(t *testing.T) {
-	enableExtendedRangeSelectors := parser.EnableExtendedRangeSelectors
-	enableExperimentalFunctions := parser.EnableExperimentalFunctions
-	defer func() {
-		parser.EnableExtendedRangeSelectors = enableExtendedRangeSelectors
-		parser.EnableExperimentalFunctions = enableExperimentalFunctions
-	}()
-	parser.EnableExtendedRangeSelectors = true
-	parser.EnableExperimentalFunctions = true
-
 	testCases := map[string]struct {
 		expr                                 string
 		rangeQuery                           bool
@@ -1675,7 +1666,8 @@ func TestSelectorsAreDuplicateOrSubset(t *testing.T) {
 }
 
 func parseSelector(t *testing.T, selector string) []*core.LabelMatcher {
-	matchers, err := parser.ParseMetricSelector(selector)
+	p := parser.NewParser(parser.Options{})
+	matchers, err := p.ParseMetricSelector(selector)
 	require.NoError(t, err)
 
 	slices.SortFunc(matchers, func(a, b *labels.Matcher) int {

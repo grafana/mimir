@@ -48,6 +48,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 	syncutil "github.com/grafana/mimir/pkg/util/sync"
 )
 
@@ -65,9 +66,6 @@ const (
 
 func init() {
 	types.EnableManglingReturnedSlices = true
-	parser.ExperimentalDurationExpr = true
-	parser.EnableExperimentalFunctions = true
-	parser.EnableExtendedRangeSelectors = true
 
 	// Set a tracer provider with in memory span exporter so we can check the spans later.
 	otel.SetTracerProvider(
@@ -78,10 +76,6 @@ func init() {
 }
 
 func TestUnsupportedPromQLFeatures(t *testing.T) {
-	binOpFillModifierEnabled := parser.EnableBinopFillModifiers
-	parser.EnableBinopFillModifiers = true
-	defer func() { parser.EnableBinopFillModifiers = binOpFillModifierEnabled }()
-
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{
@@ -108,7 +102,12 @@ func requireQueryIsUnsupported(t *testing.T, expression string, expectedError st
 }
 
 func requireRangeQueryIsUnsupported(t *testing.T, expression string, expectedError string) {
+	parserOpts := promqlext.NewPromQLParserOptions()
+	parserOpts.EnableBinopFillModifiers = true
+
 	opts := NewTestEngineOpts()
+	opts.CommonOpts.Parser = parser.NewParser(parserOpts)
+
 	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	engine, err := NewEngine(opts, stats.NewQueryMetrics(nil), planner)
@@ -121,7 +120,12 @@ func requireRangeQueryIsUnsupported(t *testing.T, expression string, expectedErr
 }
 
 func requireInstantQueryIsUnsupported(t *testing.T, expression string, expectedError string) {
+	parserOpts := promqlext.NewPromQLParserOptions()
+	parserOpts.EnableBinopFillModifiers = true
+
 	opts := NewTestEngineOpts()
+	opts.CommonOpts.Parser = parser.NewParser(parserOpts)
+
 	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	engine, err := NewEngine(opts, stats.NewQueryMetrics(nil), planner)
@@ -196,8 +200,6 @@ func TestNewInstantQuery_Strings(t *testing.T) {
 // Once the streaming engine supports all PromQL features exercised by Prometheus' test cases, we can remove these files and instead call promql.RunBuiltinTests here instead.
 func TestUpstreamTestCases(t *testing.T) {
 	opts := NewTestEngineOpts()
-	// Disable the optimization pass, since it requires delayed name removal to be enabled.
-	opts.EnableEliminateDeduplicateAndMerge = false
 	limits := NewStaticQueryLimitsProvider()
 	limits.EnableDelayedNameRemoval = true
 	opts.Limits = limits

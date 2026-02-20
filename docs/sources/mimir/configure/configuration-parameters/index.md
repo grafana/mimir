@@ -1922,6 +1922,12 @@ store_gateway_client:
 # CLI flag: -querier.lookback-delta
 [lookback_delta: <duration> | default = 5m]
 
+# (experimental) Enable the experimental PromQL feature for delayed name removal
+# in the Prometheus engine. Note that this only applies when the Prometheus
+# engine is selected or used as fallback from the Mimir Query Engine.
+# CLI flag: -querier.enable-delayed-name-removal-prometheus-engine
+[enable_delayed_name_removal_prometheus_engine: <boolean> | default = false]
+
 mimir_query_engine:
   # (experimental) Enable pruning query expressions that are toggled off with
   # constants.
@@ -4065,6 +4071,11 @@ propagation_delay_tracker:
   # (experimental) How long a beacon lives before being garbage collected.
   # CLI flag: -memberlist.propagation-delay-tracker.beacon-lifetime
   [beacon_lifetime: <duration> | default = 10m]
+
+  # (experimental) Log warning when beacon propagation delay exceeds this
+  # threshold. 0 disables logging.
+  # CLI flag: -memberlist.propagation-delay-tracker.log-beacons-latency-longer-than
+  [log_beacons_latency_longer_than: <duration> | default = 0s]
 ```
 
 ### limits
@@ -5123,6 +5134,12 @@ kafka:
   # CLI flag: -ingest-storage.kafka.write-clients
   [write_clients: <int> | default = 1]
 
+  # The SASL mechanism used to authenticate to Kafka. Supported values: PLAIN,
+  # SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER. For backwards-compatibility,
+  # PLAIN with no username nor password disables SASL.
+  # CLI flag: -ingest-storage.kafka.sasl-mechanism
+  [sasl_mechanism: <string> | default = "PLAIN"]
+
   # The username used to authenticate to Kafka using SASL. To enable SASL,
   # configure both the username and password.
   # CLI flag: -ingest-storage.kafka.sasl-username
@@ -5133,10 +5150,29 @@ kafka:
   # CLI flag: -ingest-storage.kafka.sasl-password
   [sasl_password: <string> | default = ""]
 
-  # The SASL mechanism used to authenticate to Kafka. Supported values: PLAIN,
-  # SCRAM-SHA-256, SCRAM-SHA-512.
-  # CLI flag: -ingest-storage.kafka.sasl-mechanism
-  [sasl_mechanism: <string> | default = "PLAIN"]
+  # The OAuth token to use to authenticate to Kafka. Consider
+  # ingest-storage.kafka.sasl-oauthbearer-file-path instead.
+  # CLI flag: -ingest-storage.kafka.sasl-oauthbearer-token
+  [sasl_oauthbearer_token: <string> | default = ""]
+
+  # Optional authorization ID to use when authenticating to Kafka using SASL
+  # OAUTHBEARER.
+  # CLI flag: -ingest-storage.kafka.sasl-oauthbearer-zid
+  [sasl_oauthbearer_zid: <string> | default = ""]
+
+  # Optional additional OAuth extensions to include when authenticating to Kafka
+  # using SASL OAUTHBEARER as a JSON object.
+  # CLI flag: -ingest-storage.kafka.sasl-oauthbearer-extensions
+  [sasl_oauthbearer_extensions: <map of string to string> | default = {}]
+
+  # Path to a file containing an OAuth token to authenticate to Kafka. The file
+  # is read anew on every reauthentication, so it can be updated with fresh
+  # tokens. The file must be in JSON format, adhering to this JSON schema:
+  # {"type": "object", "required": ["token"], "properties": {"token": {"type":
+  # "string"}, "zid": {"type": "string"}, "extensions": {"type": "object",
+  # "additionalProperties": {"type": "string"}}}}
+  # CLI flag: -ingest-storage.kafka.sasl-oauthbearer-file-path
+  [sasl_oauthbearer_file_path: <string> | default = ""]
 
   # The consumer group used by the consumer to track the last consumed offset.
   # The consumer group must be different for each ingester. If the configured

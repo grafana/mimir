@@ -152,7 +152,7 @@ func CompareDocuments(l, r any) *DocumentChanges {
 
 	// reset schema hashmap
 	base.SchemaQuickHashMap.Clear()
-	
+
 	// clear hash cache to ensure clean state for comparison
 	low.ClearHashCache()
 

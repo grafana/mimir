@@ -22,6 +22,7 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 // To keep logs and error messages in sync, we define the following keys:
@@ -287,7 +288,7 @@ func (r *remoteReadQueryRequest) GetClonedParsedQuery() (parser.Expr, error) {
 		return nil, errRequestNoQuery
 	}
 
-	return parser.ParseExpr(r.promQuery)
+	return promqlext.NewPromQLParser().ParseExpr(r.promQuery)
 }
 
 func (r *remoteReadQueryRequest) GetHeaders() []*PrometheusHeader {

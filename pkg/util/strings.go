@@ -5,6 +5,11 @@
 
 package util
 
+import (
+	"strings"
+	"unsafe"
+)
+
 // StringsMap returns a map where keys are input values.
 func StringsMap(values []string) map[string]bool {
 	out := make(map[string]bool, len(values))
@@ -12,4 +17,9 @@ func StringsMap(values []string) map[string]bool {
 		out[v] = true
 	}
 	return out
+}
+
+// JoinStrings is like [strings.Join], but generic over the string type.
+func JoinStrings[S interface{ ~string }](elems []S, sep string) string {
+	return strings.Join(*(*[]string)(unsafe.Pointer(&elems)), sep)
 }

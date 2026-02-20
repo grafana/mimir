@@ -455,14 +455,19 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error
 			}
 			level.Error(s.logger).Log("msg", "loading block failed", "elapsed", time.Since(start), "id", meta.ULID, "err", err)
 		} else {
-			level.Info(s.logger).Log("msg", "loaded new block", "elapsed", time.Since(start), "id", meta.ULID)
+			level.Info(s.logger).Log("msg", "loaded new block", "elapsed", time.Since(start), "id", meta.ULID, "compaction_level", meta.Compaction.Level, "num_series", meta.Stats.NumSeries, "ooo", meta.IsOutOfOrder(), "from", meta.MinTime, "to", meta.MaxTime)
 		}
 	}()
 	s.metrics.blockLoads.Inc()
 
+	// Track index-header loading with block compaction level
+	binaryReaderLogger := log.With(s.logger,
+		"id", meta.ULID, "compaction_level", meta.Compaction.Level,
+	)
+
 	indexHeaderReader, err := s.indexReaderPool.NewBinaryReader(
 		ctx,
-		s.logger,
+		binaryReaderLogger,
 		s.bkt,
 		s.dir,
 		meta.ULID,

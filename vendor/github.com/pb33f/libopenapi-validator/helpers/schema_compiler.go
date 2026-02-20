@@ -187,6 +187,26 @@ func transformNullableSchema(schema map[string]interface{}) map[string]interface
 			}
 		}
 	}
+	allOf, hasAllOf := schema["allOf"]
+	if hasAllOf {
+		delete(schema, "allOf")
+		oneOfAdditions := []interface{}{
+			map[string]interface{}{
+				"allOf": allOf,
+			},
+			map[string]interface{}{
+				"type": "null",
+			},
+		}
+		var oneOfSlice []interface{}
+		oneOf, hasOneOf := schema["oneOf"]
+		if hasOneOf {
+			oneOfSlice, _ = oneOf.([]interface{})
+		}
+		oneOfSlice = append(oneOfSlice, oneOfAdditions...)
+		schema["oneOf"] = oneOfSlice
+	}
+
 	return schema
 }
 

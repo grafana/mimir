@@ -165,7 +165,7 @@ func (r *BucketBinaryReader) loadSparseHeader(
 	bkt objstore.InstrumentedBucketReader,
 	id ulid.ULID,
 ) (err error) {
-	logger = log.With(logger, "id", id, "path", sparseHeadersPath, "inmem_sampling_rate", postingOffsetsInMemSampling)
+	logger = log.With(logger, "path", sparseHeadersPath, "inmem_sampling_rate", postingOffsetsInMemSampling)
 
 	// Only v2 indexes use sparse headers
 	if r.indexVersion != index.FormatV2 {

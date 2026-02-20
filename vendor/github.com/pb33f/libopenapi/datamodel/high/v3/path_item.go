@@ -4,16 +4,29 @@
 package v3
 
 import (
+	"context"
 	"reflect"
 	"slices"
 
 	"github.com/pb33f/libopenapi/datamodel/high"
 	"github.com/pb33f/libopenapi/datamodel/low"
+	lowmodel "github.com/pb33f/libopenapi/datamodel/low"
 	lowV3 "github.com/pb33f/libopenapi/datamodel/low/v3"
+	"github.com/pb33f/libopenapi/index"
 	"github.com/pb33f/libopenapi/orderedmap"
 	"github.com/pb33f/libopenapi/utils"
 	"go.yaml.in/yaml/v4"
 )
+
+// buildLowPathItem builds a low-level PathItem from a resolved YAML node.
+func buildLowPathItem(node *yaml.Node, idx *index.SpecIndex) (*lowV3.PathItem, error) {
+	var pi lowV3.PathItem
+	lowmodel.BuildModel(node, &pi)
+	if err := pi.Build(context.Background(), nil, node, idx); err != nil {
+		return nil, err
+	}
+	return &pi, nil
+}
 
 const (
 	get = iota
@@ -265,11 +278,16 @@ func (p *PathItem) MarshalYAMLInline() (interface{}, error) {
 	if p.Reference != "" {
 		return utils.CreateRefNode(p.Reference), nil
 	}
-	nb := high.NewNodeBuilder(p, p.low)
 
-	nb.Resolve = true
+	// resolve external reference if present
+	if p.low != nil {
+		rendered, err := high.RenderExternalRef(p.low, buildLowPathItem, NewPathItem)
+		if err != nil || rendered != nil {
+			return rendered, err
+		}
+	}
 
-	return nb.Render(), nil
+	return high.RenderInline(p, p.low)
 }
 
 // MarshalYAMLInlineWithContext will create a ready to render YAML representation of the PathItem object,
@@ -280,10 +298,16 @@ func (p *PathItem) MarshalYAMLInlineWithContext(ctx any) (interface{}, error) {
 	if p.Reference != "" {
 		return utils.CreateRefNode(p.Reference), nil
 	}
-	nb := high.NewNodeBuilder(p, p.low)
-	nb.Resolve = true
-	nb.RenderContext = ctx
-	return nb.Render(), nil
+
+	// resolve external reference if present
+	if p.low != nil {
+		rendered, err := high.RenderExternalRefWithContext(p.low, buildLowPathItem, NewPathItem, ctx)
+		if err != nil || rendered != nil {
+			return rendered, err
+		}
+	}
+
+	return high.RenderInlineWithContext(p, p.low, ctx)
 }
 
 // CreatePathItemRef creates a PathItem that renders as a $ref to another path item definition.

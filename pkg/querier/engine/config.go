@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql"      //lint:ignore faillint streamingpromql is fine
 	"github.com/grafana/mimir/pkg/util/activitytracker" //lint:ignore faillint activitytracker is fine
 	util_log "github.com/grafana/mimir/pkg/util/log"    //lint:ignore faillint log is fine
+	"github.com/grafana/mimir/pkg/util/promqlext"       //lint:ignore faillint promqlext is fine
 )
 
 // Config holds the PromQL engine config exposed by Mimir.
@@ -30,6 +31,8 @@ type Config struct {
 	// LookbackDelta determines the time since the last sample after which a time
 	// series is considered stale.
 	LookbackDelta time.Duration `yaml:"lookback_delta" category:"advanced"`
+
+	EnableDelayedNameRemovalPrometheusEngine bool `yaml:"enable_delayed_name_removal_prometheus_engine" category:"experimental"`
 
 	MimirQueryEngine streamingpromql.EngineOpts `yaml:"mimir_query_engine" category:"experimental"`
 }
@@ -48,6 +51,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.MaxSamples, "querier.max-samples", 50e6, sharedWithQueryFrontend("Maximum number of samples a single query can load into memory."))
 	f.DurationVar(&cfg.DefaultEvaluationInterval, "querier.default-evaluation-interval", time.Minute, sharedWithQueryFrontend("The default evaluation interval or step size for subqueries."))
 	f.DurationVar(&cfg.LookbackDelta, "querier.lookback-delta", 5*time.Minute, sharedWithQueryFrontend("Time since the last sample after which a time series is considered stale and ignored by expression evaluations."))
+	f.BoolVar(&cfg.EnableDelayedNameRemovalPrometheusEngine, "querier.enable-delayed-name-removal-prometheus-engine", false, "Enable the experimental PromQL feature for delayed name removal in the Prometheus engine. Note that this only applies when the Prometheus engine is selected or used as fallback from the Mimir Query Engine.")
 
 	cfg.MimirQueryEngine.RegisterFlags(f)
 }
@@ -72,8 +76,9 @@ func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.Activit
 		NoStepSubqueryIntervalFn: func(int64) int64 {
 			return cfg.DefaultEvaluationInterval.Milliseconds()
 		},
-		// This only applies to Prometheus engine. MQE's is defined per-tenant via limits.
-		EnableDelayedNameRemoval: false,
+		// This only applies to the fallback Prometheus engine. MQE's is defined per-tenant via limits.
+		EnableDelayedNameRemoval: cfg.EnableDelayedNameRemovalPrometheusEngine,
+		Parser:                   promqlext.NewPromQLParser(),
 	}
 
 	cfg.MimirQueryEngine.CommonOpts = commonOpts
