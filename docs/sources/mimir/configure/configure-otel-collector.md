@@ -119,7 +119,7 @@ The `-distributor.otel-promote-resource-attributes` option is an experimental fe
 
 Mimir stores additional OTel resource attributes in a separate series called `target_info`, which you can query using a join query or the Prometheus `info()` function. Refer to [Functions](https://prometheus.io/docs/prometheus/latest/querying/functions/) in the Prometheus documentation for more information.
 
-To learn more about OpenTelemetry resource attributes, refer to [Resources](https://opentelemetry.io/docs/languages/js/resources/) in the OpenTelemetry documentation.
+To learn more about OpenTelemetry resource attributes, refer to [Resources](https://opentelemetry.io/docs/concepts/resources/) in the OpenTelemetry documentation.
 
 To learn more about ingesting OpenTelemetry data in Grafana Cloud, including how Grafana Cloud promotes OpenTelemetry resouce attributes to labels during ingestion, refer to [OTLP: OpenTelemetry Protocol format considerations](https://grafana.com/docs/grafana-cloud/send-data/otlp/otlp-format-considerations/).
 
