@@ -5,7 +5,6 @@ package ingester
 import (
 	"context"
 	"fmt"
-	"github.com/prometheus/common/model"
 	"runtime"
 	"strings"
 	"sync"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
