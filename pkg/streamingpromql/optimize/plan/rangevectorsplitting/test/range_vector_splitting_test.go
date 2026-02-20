@@ -9,11 +9,7 @@ package test
 import (
 	"context"
 	"fmt"
-	"io"
-	"io/fs"
-	"os"
 	"slices"
-	"strings"
 	"testing"
 	"time"
 
@@ -676,56 +672,6 @@ func TestQuerySplitting_WithOOOWindow(t *testing.T) {
 
 	verifyCacheStats(t, backend, 3, 2, 1)
 	require.Equal(t, ranges2, ranges3)
-}
-
-var querySplittingTestSplitIntervals = []time.Duration{
-	10 * time.Second,
-	5 * time.Minute,
-	2 * time.Hour,
-}
-
-// TestQuerySplitting_EvalsRunTwice verifies that each eval in the range vector splitting test files appears at least
-// twice before the next clear, ensuring both cache miss and cache hit paths are tested.
-func TestQuerySplitting_EvalsRunTwice(t *testing.T) {
-	testdataFS := os.DirFS("../../../../testdata")
-	testFiles, err := fs.Glob(testdataFS, "ours-only/range_vector_splitting_*.test")
-	require.NoError(t, err)
-	require.NotEmpty(t, testFiles)
-
-	for _, testFile := range testFiles {
-		t.Run(testFile, func(t *testing.T) {
-			f, err := testdataFS.Open(testFile)
-			require.NoError(t, err)
-			defer f.Close()
-
-			b, err := io.ReadAll(f)
-			require.NoError(t, err)
-
-			lines := strings.Split(string(b), "\n")
-
-			// Between each load/clear, verify each eval appears at least twice (to test both cache miss and hit).
-			evalCounts := map[string]int{}
-			checkAndClear := func(lineNum int) {
-				for eval, count := range evalCounts {
-					require.GreaterOrEqualf(t, count, 2,
-						"eval appears only %d time(s) before line %d, expected at least 2:\n%s",
-						count, lineNum, eval)
-				}
-				clear(evalCounts)
-			}
-			for i, line := range lines {
-
-				if strings.HasPrefix(line, "load ") || line == "clear" {
-					checkAndClear(i + 1)
-				}
-
-				if strings.HasPrefix(line, "eval ") {
-					evalCounts[line]++
-				}
-			}
-			checkAndClear(len(lines))
-		})
-	}
 }
 
 func TestQuerySplitting_CacheKeyIsolationAcrossFunctions(t *testing.T) {

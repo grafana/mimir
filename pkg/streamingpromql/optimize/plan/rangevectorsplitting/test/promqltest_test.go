@@ -9,12 +9,19 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
 )
+
+var querySplittingTestSplitIntervals = []time.Duration{
+	10 * time.Second,
+	5 * time.Minute,
+	2 * time.Hour,
+}
 
 // TestQuerySplitting_UpstreamTestCases runs upstream Prometheus test cases with query splitting enabled.
 // This is analogous to TestUpstreamTestCases but with query splitting.
@@ -78,12 +85,18 @@ func TestQuerySplitting_OurTestCases(t *testing.T) {
 	testdataFS := os.DirFS("../../../../testdata")
 	oursTests, err := fs.Glob(testdataFS, "ours/*.test")
 	require.NoError(t, err)
+	require.NotEmpty(t, oursTests, "expected to find test files")
 
 	oursOnlyTests, err := fs.Glob(testdataFS, "ours-only/*.test")
 	require.NoError(t, err)
+	require.NotEmpty(t, oursOnlyTests, "expected to find test files")
+
+	rangeVectorSplittingTests, err := fs.Glob(testdataFS, "range-vector-splitting/test/*.test")
+	require.NoError(t, err)
+	require.NotEmpty(t, rangeVectorSplittingTests, "expected to find test files")
 
 	allTests := append(oursTests, oursOnlyTests...)
-	require.NotEmpty(t, allTests, "expected to find test files")
+	allTests = append(allTests, rangeVectorSplittingTests...)
 
 	for _, splitInterval := range querySplittingTestSplitIntervals {
 		t.Run(fmt.Sprintf("split_interval_%v", splitInterval), func(t *testing.T) {
@@ -202,4 +215,48 @@ func skipUnsupportedTests(t *testing.T, testContent string, testFile string) str
 	}
 
 	return modified
+}
+
+// TestQuerySplitting_EvalsRunTwice verifies that each eval in the range vector splitting test files appears at least
+// twice before the next clear, ensuring both cache miss and cache hit paths are tested.
+func TestQuerySplitting_EvalsRunTwice(t *testing.T) {
+	testdataFS := os.DirFS("../../../../testdata")
+	testFiles, err := fs.Glob(testdataFS, "ours-only/range_vector_splitting_*.test")
+	require.NoError(t, err)
+	require.NotEmpty(t, testFiles)
+
+	for _, testFile := range testFiles {
+		t.Run(testFile, func(t *testing.T) {
+			f, err := testdataFS.Open(testFile)
+			require.NoError(t, err)
+			defer f.Close()
+
+			b, err := io.ReadAll(f)
+			require.NoError(t, err)
+
+			lines := strings.Split(string(b), "\n")
+
+			// Between each load/clear, verify each eval appears at least twice (to test both cache miss and hit).
+			evalCounts := map[string]int{}
+			checkAndClear := func(lineNum int) {
+				for eval, count := range evalCounts {
+					require.GreaterOrEqualf(t, count, 2,
+						"eval appears only %d time(s) before line %d, expected at least 2:\n%s",
+						count, lineNum, eval)
+				}
+				clear(evalCounts)
+			}
+			for i, line := range lines {
+
+				if strings.HasPrefix(line, "load ") || line == "clear" {
+					checkAndClear(i + 1)
+				}
+
+				if strings.HasPrefix(line, "eval ") {
+					evalCounts[line]++
+				}
+			}
+			checkAndClear(len(lines))
+		})
+	}
 }
