@@ -5,9 +5,12 @@ package limiter
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
@@ -34,6 +37,7 @@ func TestSeriesDeduplicator_Deduplicate_HashCollision(t *testing.T) {
 	deduplicator := &seriesDeduplicator{
 		uniqueSeriesMx: sync.Mutex{},
 		uniqueSeries:   make(map[uint64]labels.Labels),
+		metrics:        NewSeriesDeduplicatorMetrics(prometheus.NewPedanticRegistry()),
 	}
 	memoryTracker := NewUnlimitedMemoryConsumptionTracker(context.Background())
 
@@ -102,6 +106,7 @@ func TestSeriesDeduplicator_Deduplicate_HashCollisionWithThreeCollidingSeries(t 
 	deduplicator := &seriesDeduplicator{
 		uniqueSeriesMx: sync.Mutex{},
 		uniqueSeries:   make(map[uint64]labels.Labels),
+		metrics:        NewSeriesDeduplicatorMetrics(prometheus.NewPedanticRegistry()),
 	}
 	memoryTracker := NewUnlimitedMemoryConsumptionTracker(context.Background())
 
@@ -161,7 +166,8 @@ func TestSeriesDeduplicator_Deduplicate_HashCollisionWithThreeCollidingSeries(t 
 
 func TestSeriesDeduplicator_Deduplicate_MemoryTrackingWithDuplicates(t *testing.T) {
 	// Test that memory tracking correctly avoids double-counting for duplicate series
-	deduplicator := NewSeriesLabelsDeduplicator()
+	metrics := NewSeriesDeduplicatorMetrics(prometheus.NewPedanticRegistry())
+	deduplicator := NewSeriesLabelsDeduplicator(metrics)
 
 	ctx := context.Background()
 	memoryTracker := NewMemoryConsumptionTracker(ctx, 1000000, nil, "test")
@@ -220,7 +226,8 @@ func BenchmarkSeriesDeduplicator_Deduplicate_WithCallerDedup_NoDuplicates(b *tes
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	deduplicator := NewSeriesLabelsDeduplicator()
+	metrics := NewSeriesDeduplicatorMetrics(prometheus.NewPedanticRegistry())
+	deduplicator := NewSeriesLabelsDeduplicator(metrics)
 	memoryTracker := NewUnlimitedMemoryConsumptionTracker(context.Background())
 
 	for b.Loop() {
@@ -255,7 +262,8 @@ func BenchmarkSeriesDeduplicator_Deduplicate_WithCallerDedup_90pct(b *testing.B)
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	deduplicator := NewSeriesLabelsDeduplicator()
+	metrics := NewSeriesDeduplicatorMetrics(prometheus.NewPedanticRegistry())
+	deduplicator := NewSeriesLabelsDeduplicator(metrics)
 	memoryTracker := NewUnlimitedMemoryConsumptionTracker(context.Background())
 
 	for b.Loop() {
@@ -289,7 +297,8 @@ func BenchmarkSeriesDeduplicator_Deduplicate_WithCallerDedup_50pct(b *testing.B)
 
 	b.ReportAllocs()
 
-	deduplicator := NewSeriesLabelsDeduplicator()
+	metrics := NewSeriesDeduplicatorMetrics(prometheus.NewPedanticRegistry())
+	deduplicator := NewSeriesLabelsDeduplicator(metrics)
 	memoryTracker := NewUnlimitedMemoryConsumptionTracker(context.Background())
 
 	for b.Loop() {
@@ -297,4 +306,52 @@ func BenchmarkSeriesDeduplicator_Deduplicate_WithCallerDedup_50pct(b *testing.B)
 			_, _ = deduplicator.Deduplicate(s, memoryTracker)
 		}
 	}
+}
+
+func TestSeriesDeduplicator_Metrics(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	metrics := NewSeriesDeduplicatorMetrics(reg)
+	deduplicator := NewSeriesLabelsDeduplicator(metrics)
+	memoryTracker := NewUnlimitedMemoryConsumptionTracker(context.Background())
+
+	// Create test series
+	seriesA := labels.FromMap(map[string]string{
+		model.MetricNameLabel: "metric_a",
+		"label":               "value_a",
+	})
+	seriesB := labels.FromMap(map[string]string{
+		model.MetricNameLabel: "metric_b",
+		"label":               "value_b",
+	})
+
+	_, err := deduplicator.Deduplicate(seriesA, memoryTracker)
+	require.NoError(t, err)
+
+	_, err = deduplicator.Deduplicate(seriesA, memoryTracker)
+	require.NoError(t, err)
+
+	_, err = deduplicator.Deduplicate(seriesB, memoryTracker)
+	require.NoError(t, err)
+
+	_, err = deduplicator.Deduplicate(seriesB, memoryTracker)
+	require.NoError(t, err)
+
+	_, err = deduplicator.Deduplicate(seriesA, memoryTracker)
+	require.NoError(t, err)
+
+	// Verify metrics: 5 total calls, 3 deduplicated
+	expectedMetrics := `
+		# HELP cortex_querier_labels_deduplicator_processed_total Total number of series labels processed by the deduplicator, including both unique and duplicate series.
+		# TYPE cortex_querier_labels_deduplicator_processed_total counter
+		cortex_querier_labels_deduplicator_processed_total 5
+
+		# HELP cortex_querier_labels_deduplicator_deduplicated_total Number of series labels that were deduplicated by reusing existing labels instead of creating new ones.
+		# TYPE cortex_querier_labels_deduplicator_deduplicated_total counter
+		cortex_querier_labels_deduplicator_deduplicated_total 3
+	`
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics),
+		"cortex_querier_labels_deduplicator_processed_total",
+		"cortex_querier_labels_deduplicator_deduplicated_total",
+	))
 }

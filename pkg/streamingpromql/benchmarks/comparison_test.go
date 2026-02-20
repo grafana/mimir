@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
@@ -193,7 +194,7 @@ func createBenchmarkQueryable(t testing.TB, metricSizes []int) storage.Queryable
 		t.Cleanup(cleanup)
 	}
 
-	return querier.NewMemoryTrackingQueryable(createIngesterQueryable(t, addr))
+	return querier.NewMemoryTrackingQueryable(createIngesterQueryable(t, addr), prometheus.NewPedanticRegistry())
 }
 
 func createIngesterQueryable(t testing.TB, address string) storage.Queryable {

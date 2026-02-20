@@ -5,6 +5,7 @@ package querier
 import (
 	"context"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -14,14 +15,18 @@ import (
 )
 
 // NewMemoryTrackingQueryable creates a new MemoryTrackingQueryable that wraps the given queryable.
-func NewMemoryTrackingQueryable(inner storage.Queryable) storage.Queryable {
-	return &MemoryTrackingQueryable{inner: inner}
+func NewMemoryTrackingQueryable(inner storage.Queryable, reg prometheus.Registerer) storage.Queryable {
+	return &MemoryTrackingQueryable{
+		inner:   inner,
+		metrics: limiter.NewSeriesDeduplicatorMetrics(reg),
+	}
 }
 
 // MemoryTrackingQueryable wraps a storage.Queryable to add memory tracking and
 // label deduplication in a MemoryTrackingQuerier.
 type MemoryTrackingQueryable struct {
-	inner storage.Queryable
+	inner   storage.Queryable
+	metrics *limiter.SeriesDeduplicatorMetrics
 }
 
 func (q *MemoryTrackingQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
@@ -29,11 +34,12 @@ func (q *MemoryTrackingQueryable) Querier(mint, maxt int64) (storage.Querier, er
 	if err != nil {
 		return nil, err
 	}
-	return &memoryTrackingQuerier{inner: querier}, nil
+	return &memoryTrackingQuerier{inner: querier, metrics: q.metrics}, nil
 }
 
 type memoryTrackingQuerier struct {
-	inner storage.Querier
+	inner   storage.Querier
+	metrics *limiter.SeriesDeduplicatorMetrics
 }
 
 func (q *memoryTrackingQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
@@ -42,7 +48,7 @@ func (q *memoryTrackingQuerier) Select(ctx context.Context, sortSeries bool, hin
 		return storage.ErrSeriesSet(err)
 	}
 
-	ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx)
+	ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx, q.metrics)
 
 	return series.NewMemoryTrackingSeriesSet(q.inner.Select(ctx, sortSeries, hints, matchers...), memoryTracker)
 }

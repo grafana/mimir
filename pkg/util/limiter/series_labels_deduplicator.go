@@ -7,6 +7,8 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 )
 
@@ -20,6 +22,26 @@ var (
 type SeriesLabelsDeduplicator interface {
 	Deduplicate(newLabels labels.Labels, tracker *MemoryConsumptionTracker) (labels.Labels, error)
 }
+
+type SeriesDeduplicatorMetrics struct {
+	seriesLabelsTotal        prometheus.Counter
+	seriesLabelsDeduplicated prometheus.Counter
+}
+
+// NewSeriesDeduplicatorMetrics creates metrics for series label deduplication.
+func NewSeriesDeduplicatorMetrics(reg prometheus.Registerer) *SeriesDeduplicatorMetrics {
+	return &SeriesDeduplicatorMetrics{
+		seriesLabelsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_querier_labels_deduplicator_processed_total",
+			Help: "Total number of series labels processed by the deduplicator, including both unique and duplicate series.",
+		}),
+		seriesLabelsDeduplicated: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_querier_labels_deduplicator_deduplicated_total",
+			Help: "Number of series labels that were deduplicated by reusing existing labels instead of creating new ones.",
+		}),
+	}
+}
+
 type seriesDeduplicator struct {
 	uniqueSeriesMx sync.Mutex
 	uniqueSeries   map[uint64]labels.Labels
@@ -27,19 +49,23 @@ type seriesDeduplicator struct {
 
 	// hashFunc as a function so that we can override in test.
 	hashFunc func(labels.Labels) uint64
+
+	metrics *SeriesDeduplicatorMetrics
 }
 
-func NewSeriesLabelsDeduplicator() SeriesLabelsDeduplicator {
+// NewSeriesLabelsDeduplicator creates a new SeriesLabelsDeduplicator with the given shared metrics.
+func NewSeriesLabelsDeduplicator(metrics *SeriesDeduplicatorMetrics) SeriesLabelsDeduplicator {
 	return &seriesDeduplicator{
 		uniqueSeriesMx: sync.Mutex{},
 		uniqueSeries:   make(map[uint64]labels.Labels),
 		hashFunc:       func(l labels.Labels) uint64 { return l.Hash() },
+		metrics:        metrics,
 	}
 }
 
 // ContextWithNewSeriesLabelsDeduplicator adds a new SeriesLabelsDeduplicator to the context.
-func ContextWithNewSeriesLabelsDeduplicator(ctx context.Context) context.Context {
-	return context.WithValue(ctx, sdCtxKey, NewSeriesLabelsDeduplicator())
+func ContextWithNewSeriesLabelsDeduplicator(ctx context.Context, metrics *SeriesDeduplicatorMetrics) context.Context {
+	return context.WithValue(ctx, sdCtxKey, NewSeriesLabelsDeduplicator(metrics))
 }
 
 func SeriesLabelsDeduplicatorFromContext(ctx context.Context) (SeriesLabelsDeduplicator, error) {
@@ -61,6 +87,8 @@ func (sd *seriesDeduplicator) Deduplicate(newLabels labels.Labels, tracker *Memo
 	sd.uniqueSeriesMx.Lock()
 	defer sd.uniqueSeriesMx.Unlock()
 
+	sd.metrics.seriesLabelsTotal.Inc()
+
 	// Check if we've seen this hash before.
 	if existingLabels, found := sd.uniqueSeries[fingerprint]; !found {
 		// See newLabels for the first time. Track the series limit and its labels memory consumption.
@@ -68,6 +96,7 @@ func (sd *seriesDeduplicator) Deduplicate(newLabels labels.Labels, tracker *Memo
 		return sd.trackNewLabels(newLabels, tracker)
 	} else if labels.Equal(existingLabels, newLabels) {
 		// Already see newLabels before. Deduplicate it by returning existingLabels. No need to increase memory consumption.
+		sd.metrics.seriesLabelsDeduplicated.Inc()
 		return existingLabels, nil
 	}
 
@@ -81,6 +110,7 @@ func (sd *seriesDeduplicator) Deduplicate(newLabels labels.Labels, tracker *Memo
 		// See newLabels before in conflictSeries map, hence just return the existingConflictedLabels.
 		// No need to increase memory consumption.
 		if labels.Equal(existingConflictedLabels, newLabels) {
+			sd.metrics.seriesLabelsDeduplicated.Inc()
 			return existingConflictedLabels, nil
 		}
 	}
