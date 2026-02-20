@@ -214,6 +214,8 @@ func TestUpstreamTestCases(t *testing.T) {
 
 	for _, testFile := range testFiles {
 		t.Run(testFile, func(t *testing.T) {
+			t.Parallel()
+
 			f, err := testdataFS.Open(testFile)
 			require.NoError(t, err)
 			defer f.Close()
@@ -257,6 +259,8 @@ func TestOurTestCases(t *testing.T) {
 
 	for _, testFile := range testFiles {
 		t.Run(testFile, func(t *testing.T) {
+			t.Parallel()
+
 			f, err := testdataFS.Open(testFile)
 			require.NoError(t, err)
 			defer f.Close()
