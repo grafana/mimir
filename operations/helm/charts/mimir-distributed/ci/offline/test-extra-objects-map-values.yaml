@@ -1,0 +1,22 @@
+# Pin kube version so results are the same for running in CI and locally where the installed kube version may be different.
+kubeVersionOverride: "1.29"
+
+# Test map format for extraObjects (keys are arbitrary, values are extracted as manifests)
+extraObjects:
+  myConfig:
+    kind: ConfigMap
+    apiVersion: v1
+    metadata:
+      name: extra-cm-{{ .Release.Name }}-map
+      namespace: '{{ .Release.Namespace }}'
+    data:
+      map.yml: "test.map-format: true"
+  mySecret:
+    kind: Secret
+    apiVersion: v1
+    metadata:
+      name: extra-secret-{{ .Release.Name }}-map
+      namespace: '{{ .Release.Namespace }}'
+    type: Opaque
+    stringData:
+      password: "test-password"

@@ -3925,21 +3925,29 @@ continuous_test:
   tolerations: []
   terminationGracePeriodSeconds: 30
 
-# -- Add dynamic manifests via values. Example:
+# -- Add dynamic manifests via values. Supports both list and map formats, useful when defining extraObjects from multiple (SOPS) values files. Examples:
+# As a list of objects:
 # extraObjects:
 # - kind: ConfigMap
 #   apiVersion: v1
 #   metadata:
 #     name: extra-cm-{{ .Release.Name }}
-#   data: |
+#   data:
 #     extra.yml: "does-my-install-need-extra-info: true"
-# alternatively, you can use strings, which lets you use the mimir defines:
+# As a list of strings (useful for using mimir template defines):
 # extraObjects:
 # - |
 #   kind: ConfigMap
 #   apiVersion: v1
 #   metadata:
 #     name: extra-cm-{{ .Release.Name }}
-#   data: |
-#     extra.yml: "{{ include some-mimir-define }}"
+#   data:
+#     extra.yml: "{{ include "some-mimir-define" . }}"
+# As a map (values will be extracted):
+# extraObjects:
+#   config1:
+#     kind: ConfigMap
+#     apiVersion: v1
+#     metadata:
+#       name: extra-cm-{{ .Release.Name }}
 extraObjects: []

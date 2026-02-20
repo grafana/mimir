@@ -1,0 +1,130 @@
+---
+# Source: mimir-distributed/templates/kafka/kafka-statefulset.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test-extra-objects-map-values-mimir-kafka
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-extra-objects-map-values
+    app.kubernetes.io/component: kafka
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    {}
+  namespace: "citestns"
+spec:
+  podManagementPolicy: Parallel
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: test-extra-objects-map-values
+      app.kubernetes.io/component: kafka
+  serviceName: test-extra-objects-map-values-mimir-kafka-headless
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mimir
+        app.kubernetes.io/instance: test-extra-objects-map-values
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/component: kafka
+      annotations:
+      namespace: "citestns"
+    spec:
+      serviceAccountName: test-extra-objects-map-values-mimir
+      securityContext:
+        fsGroup: 1001
+        runAsGroup: 1001
+        runAsNonRoot: true
+        runAsUser: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: kafka
+          image: "apache/kafka-native:4.1.0"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 9092
+              name: kafka
+              protocol: TCP
+            - containerPort: 9093
+              name: controller
+              protocol: TCP
+          env:
+            # Kubernetes expands env variables in lexical order. So "_POD_NAME" (sic) here is so the name was expanded before KAFKA_ADVERTISED_LISTENERS is.
+            - name: _POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: KAFKA_CLUSTER_ID
+              value: ""
+            - name: KAFKA_NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['apps.kubernetes.io/pod-index']
+            - name: KAFKA_PROCESS_ROLES
+              value: "broker,controller"
+            - name: KAFKA_LISTENERS
+              value: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093"
+            - name: KAFKA_ADVERTISED_LISTENERS
+              value: PLAINTEXT://$(_POD_NAME).test-extra-objects-map-values-mimir-kafka-headless.citestns.svc.cluster.local.:9092
+            - name: KAFKA_CONTROLLER_QUORUM_VOTERS
+              # Kafka fails to resolve DNS name with a trailing dot, e.g. "example.cluster.local." Thus, "trimSuffix" is here for the clusterDomain.
+              value: "0@test-extra-objects-map-values-mimir-kafka-0.test-extra-objects-map-values-mimir-kafka-headless.citestns.svc.cluster.local:9093"
+            - name: KAFKA_CONTROLLER_LISTENER_NAMES
+              value: "CONTROLLER"
+            - name: KAFKA_INTER_BROKER_LISTENER_NAME
+              value: "PLAINTEXT"
+            - name: KAFKA_LOG_DIRS
+              value: "/var/lib/kafka/data"
+              # The "REPLICATION_FACTOR" must be defined so the broker created offsets topic. Otherwise, the Mimir ingesters won't be able to start.
+            - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
+              value: "1"
+            - name: KAFKA_LOG_RETENTION_HOURS
+              value: "24"
+          resources:
+            limits: {}
+            requests:
+              cpu: 1
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: kafka-data
+              mountPath: /var/lib/kafka
+            - name: kafka-config
+              mountPath: /opt/kafka/config
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            tcpSocket:
+              port: kafka
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: kafka-config
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+  volumeClaimTemplates:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: kafka-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: "5Gi"

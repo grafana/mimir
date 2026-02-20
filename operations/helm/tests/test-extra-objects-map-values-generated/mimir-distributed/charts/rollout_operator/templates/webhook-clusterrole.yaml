@@ -1,0 +1,16 @@
+---
+# Source: mimir-distributed/charts/rollout_operator/templates/webhook-clusterrole.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: test-extra-objects-map-values-rollout-operator-webhook-clusterrole
+rules:
+  - apiGroups:
+      - admissionregistration.k8s.io
+    resources:
+      - validatingwebhookconfigurations
+      - mutatingwebhookconfigurations
+    verbs:
+      - list
+      - patch
+      - watch

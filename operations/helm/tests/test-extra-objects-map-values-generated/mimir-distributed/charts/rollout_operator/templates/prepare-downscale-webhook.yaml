@@ -1,0 +1,42 @@
+---
+# Source: mimir-distributed/charts/rollout_operator/templates/prepare-downscale-webhook.yaml
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: prepare-downscale-citestns
+  labels:
+    grafana.com/inject-rollout-operator-ca: "true"
+    grafana.com/namespace: "citestns"
+    helm.sh/chart: rollout-operator-0.40.0
+    app.kubernetes.io/name: rollout-operator
+    app.kubernetes.io/instance: test-extra-objects-map-values
+    app.kubernetes.io/version: "v0.33.0"
+    app.kubernetes.io/managed-by: Helm
+webhooks:
+  - name: prepare-downscale-citestns.grafana.com
+    clientConfig:
+      service:
+        namespace: "citestns"
+        name: test-extra-objects-map-values-rollout-operator
+        path: /admission/prepare-downscale
+        port: 443
+    rules:
+      - operations:
+          - UPDATE
+        apiGroups:
+          - apps
+        apiVersions:
+          - v1
+        resources:
+          - statefulsets
+          - statefulsets/scale
+        scope: Namespaced
+    admissionReviewVersions:
+      - v1
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: "citestns"
+    sideEffects: NoneOnDryRun
+    matchPolicy: Equivalent
+    timeoutSeconds: 10
+    failurePolicy: Fail

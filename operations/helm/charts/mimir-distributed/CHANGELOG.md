@@ -32,6 +32,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [CHANGE] Update minimum supported Kubernetes version to 1.32. This reflects the fact that Grafana does not test with older versions of Kubernetes. #14335
 * [CHANGE] Set default memory ballast for ruler to 1GiB to reduce GC pressure during startup. #13376
 * [CHANGE] Set docker.io as the default registry for mimir image. #13267
+* [ENHANCEMENT] Enhanced `extraObjects` to support map format input where keys are ignored and values are extracted as manifests, improving flexibility for multiple values files input. #14193
 * [ENHANCEMENT] Add Support to customize gossip ring k8s service annotations. #12718
 * [ENHANCEMENT] Ruler querier and query-frontend: Add support for newly-introduced querier ring, which is used when performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13017
 * [ENHANCEMENT] Upgrade rollout-operator chart to [0.37.0](https://github.com/grafana/helm-charts/blob/main/charts/rollout-operator/README.md#upgrade-of-grafana-rollout-operator). Note required actions for upgrading the rollout-operator chart. #13245
