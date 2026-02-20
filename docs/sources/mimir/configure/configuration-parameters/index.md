@@ -5114,6 +5114,11 @@ kafka:
   # CLI flag: -ingest-storage.kafka.client-id
   [client_id: <string> | default = ""]
 
+  # The rack identifier for this Kafka client. Corresponds to the Kafka
+  # client.rack setting.
+  # CLI flag: -ingest-storage.kafka.client-rack
+  [client_rack: <string> | default = ""]
+
   # The maximum time allowed to open a connection to a Kafka broker.
   # CLI flag: -ingest-storage.kafka.dial-timeout
   [dial_timeout: <duration> | default = 2s]

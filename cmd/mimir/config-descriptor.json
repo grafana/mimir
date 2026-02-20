@@ -8729,6 +8729,16 @@
             },
             {
               "kind": "field",
+              "name": "client_rack",
+              "required": false,
+              "desc": "The rack identifier for this Kafka client. Corresponds to the Kafka client.rack setting.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingest-storage.kafka.client-rack",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
               "name": "dial_timeout",
               "required": false,
               "desc": "The maximum time allowed to open a connection to a Kafka broker.",

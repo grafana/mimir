@@ -1461,6 +1461,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable auto-creation of Kafka topic on startup if it doesn't exist. If creating the topic fails and the topic doesn't already exist, Mimir fails to start. (default true)
   -ingest-storage.kafka.client-id string
     	The Kafka client ID.
+  -ingest-storage.kafka.client-rack string
+    	The rack identifier for this Kafka client. Corresponds to the Kafka client.rack setting.
   -ingest-storage.kafka.consume-from-position-at-startup string
     	From which position to start consuming the partition at startup. Supported options: last-offset, start, end, timestamp. (default "last-offset")
   -ingest-storage.kafka.consume-from-timestamp-at-startup int
