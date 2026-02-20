@@ -297,7 +297,21 @@ func (e errorTranslateChunkSeries) ChunkCount() (int, error) {
 }
 
 func (e errorTranslateChunkSeries) IteratorFactory() storage.ChunkIterable {
-	return e.s.IteratorFactory()
+	f := e.s.IteratorFactory()
+	if f == nil {
+		return nil
+	}
+	return errorTranslateChunkIterable{i: f, fn: e.fn}
+}
+
+type errorTranslateChunkIterable struct {
+	i  storage.ChunkIterable
+	fn ErrTranslateFn
+}
+
+func (e errorTranslateChunkIterable) Iterator(iterator chunks.Iterator) chunks.Iterator {
+	i := e.i.Iterator(iterator)
+	return errorTranslateChunksIterator{i: i, fn: e.fn}
 }
 
 type errorTranslateChunksIterator struct {
