@@ -2733,6 +2733,7 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 			assert.Equal(t, tc.expectedNames, namesResp.Names)
 
 			var opaqueNamesHints hintspb.LabelNamesResponseHints
+			//nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
 			assert.NoError(t, types.UnmarshalAny(namesResp.Hints, &opaqueNamesHints))
 			// The order is not determinate, so we are sorting them.
 			slices.SortFunc(opaqueNamesHints.QueriedBlocks, func(a, b hintspb.Block) int {
@@ -2745,6 +2746,7 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 			assert.Equal(t, tc.expectedValues, valuesResp.Values)
 
 			var opaqueValuesHints hintspb.LabelValuesResponseHints
+			//nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
 			assert.NoError(t, types.UnmarshalAny(valuesResp.Hints, &opaqueValuesHints))
 			// The order is not determinate, so we are sorting them.
 			slices.SortFunc(opaqueValuesHints.QueriedBlocks, func(a, b hintspb.Block) int {

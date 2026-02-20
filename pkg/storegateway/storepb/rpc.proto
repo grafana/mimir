@@ -41,7 +41,9 @@ message SeriesRequest {
 
   // hints is an opaque data structure that can be used to carry additional information.
   // The content of this field and whether it's supported depends on the
-  // implementation of a specific store. Deprecated, use request_hints instead.
+  // implementation of a specific store.
+  //
+  // Deprecated: use request_hints instead.
   google.protobuf.Any hints = 9;
 
   // Thanos step.
@@ -108,7 +110,9 @@ message SeriesResponse {
     // the store. The content of this field and whether it's supported depends on the
     // implementation of a specific store. It's also implementation specific if it's allowed that
     // multiple SeriesResponse frames contain hints for a single Series() request and how should they
-    // be handled in such case (ie. merged vs keep the first/last one). Deprecated, use response_hints instead.
+    // be handled in such case (ie. merged vs keep the first/last one).
+    //
+    // Deprecated: use response_hints instead.
     google.protobuf.Any hints = 3;
 
     // stats is a object containing stats for a series response from the store-gateways so that we can collect stats
@@ -158,7 +162,9 @@ message LabelNamesRequest {
 
   // hints is an opaque data structure that can be used to carry additional information.
   // The content of this field and whether it's supported depends on the
-  // implementation of a specific store. Deprecated, use request_hints instead.
+  // implementation of a specific store.
+  //
+  // Deprecated: use request_hints instead.
   google.protobuf.Any hints = 5;
 
   repeated LabelMatcher matchers = 6 [(gogoproto.nullable) = false];
@@ -181,7 +187,9 @@ message LabelNamesResponse {
 
   // hints is an opaque data structure that can be used to carry additional information from
   // the store. The content of this field and whether it's supported depends on the
-  // implementation of a specific store. Deprecated, use response_hints instead.
+  // implementation of a specific store.
+  //
+  // Deprecated: use response_hints instead.
   google.protobuf.Any hints = 3;
 
   LabelNamesResponseHints response_hints = 4;
@@ -207,7 +215,9 @@ message LabelValuesRequest {
 
   // hints is an opaque data structure that can be used to carry additional information.
   // The content of this field and whether it's supported depends on the
-  // implementation of a specific store. Deprecated, use request_hints instead.
+  // implementation of a specific store.
+  //
+  // Deprecated: use request_hints instead.
   google.protobuf.Any hints = 6;
 
   repeated LabelMatcher matchers = 7 [(gogoproto.nullable) = false];
@@ -230,7 +240,9 @@ message LabelValuesResponse {
 
   // hints is an opaque data structure that can be used to carry additional information from
   // the store. The content of this field and whether it's supported depends on the
-  // implementation of a specific store. Deprecated, use response_hints instead.
+  // implementation of a specific store.
+  //
+  // Deprecated: use response_hints instead.
   google.protobuf.Any hints = 3;
 
   LabelValuesResponseHints response_hints = 4;

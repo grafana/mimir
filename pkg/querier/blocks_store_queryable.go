@@ -1136,9 +1136,10 @@ func (q *blocksStoreQuerier) fetchLabelNamesFromStore(
 				}
 
 				myQueriedBlocks = ids
-			} else if namesResp.Hints != nil {
+			} else if namesResp.Hints != nil { //nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
 				// Note that we use a different but equivalent hints type for the opaque field.
 				resHints := hintspb.LabelNamesResponseHints{}
+				//nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
 				if err := types.UnmarshalAny(namesResp.Hints, &resHints); err != nil {
 					return errors.Wrapf(err, "failed to unmarshal label names hints from %s", c.RemoteAddress())
 				}
@@ -1225,9 +1226,10 @@ func (q *blocksStoreQuerier) fetchLabelValuesFromStore(
 				}
 
 				myQueriedBlocks = ids
-			} else if valuesResp.Hints != nil {
+			} else if valuesResp.Hints != nil { //nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
 				// Note that we use a different but equivalent hints type for the opaque field.
 				resHints := hintspb.LabelValuesResponseHints{}
+				//nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
 				if err := types.UnmarshalAny(valuesResp.Hints, &resHints); err != nil {
 					return errors.Wrapf(err, "failed to unmarshal label values hints from %s", c.RemoteAddress())
 				}
@@ -1323,9 +1325,10 @@ func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skip
 	}
 
 	return &storepb.SeriesRequest{
-		MinTime:                  minT,
-		MaxTime:                  maxT,
-		Matchers:                 matchers,
+		MinTime:  minT,
+		MaxTime:  maxT,
+		Matchers: matchers,
+		//nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
 		Hints:                    anyHints,
 		RequestHints:             requestHints,
 		SkipChunks:               skipChunks,
@@ -1374,6 +1377,7 @@ func createLabelNamesRequest(minT, maxT int64, blockIDs []ulid.ULID, hints *stor
 		return nil, errors.Wrapf(err, "failed to marshal label names request hints")
 	}
 
+	//nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
 	req.Hints = anyHints
 	req.RequestHints = requestHints
 
@@ -1423,6 +1427,7 @@ func createLabelValuesRequest(minT, maxT int64, label string, blockIDs []ulid.UL
 		return nil, errors.Wrapf(err, "failed to marshal label values request hints")
 	}
 
+	//nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
 	req.Hints = anyHints
 	req.RequestHints = requestHints
 

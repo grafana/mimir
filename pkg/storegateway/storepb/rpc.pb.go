@@ -9,6 +9,7 @@ import (
 	proto "github.com/gogo/protobuf/proto"
 	types "github.com/gogo/protobuf/types"
 	"github.com/grafana/mimir/pkg/mimirpb"
+
 	io "io"
 	math "math"
 	math_bits "math/bits"
@@ -35,7 +36,9 @@ type SeriesRequest struct {
 	SkipChunks bool `protobuf:"varint,8,opt,name=skip_chunks,json=skipChunks,proto3" json:"skip_chunks,omitempty"`
 	// hints is an opaque data structure that can be used to carry additional information.
 	// The content of this field and whether it's supported depends on the
-	// implementation of a specific store. Deprecated, use request_hints instead.
+	// implementation of a specific store.
+	//
+	// Deprecated: use request_hints instead.
 	Hints *types.Any `protobuf:"bytes,9,opt,name=hints,proto3" json:"hints,omitempty"`
 	// Additional information from the read path that the store can use to more efficiently
 	// return series.
@@ -401,7 +404,9 @@ type LabelNamesRequest struct {
 	End   int64 `protobuf:"varint,4,opt,name=end,proto3" json:"end,omitempty"`
 	// hints is an opaque data structure that can be used to carry additional information.
 	// The content of this field and whether it's supported depends on the
-	// implementation of a specific store. Deprecated, use request_hints instead.
+	// implementation of a specific store.
+	//
+	// Deprecated: use request_hints instead.
 	Hints        *types.Any              `protobuf:"bytes,5,opt,name=hints,proto3" json:"hints,omitempty"`
 	Matchers     []LabelMatcher          `protobuf:"bytes,6,rep,name=matchers,proto3" json:"matchers"`
 	Limit        int64                   `protobuf:"varint,7,opt,name=limit,proto3" json:"limit,omitempty"`
@@ -484,7 +489,9 @@ type LabelNamesResponse struct {
 	Warnings []string `protobuf:"bytes,2,rep,name=warnings,proto3" json:"warnings,omitempty"`
 	// hints is an opaque data structure that can be used to carry additional information from
 	// the store. The content of this field and whether it's supported depends on the
-	// implementation of a specific store. Deprecated, use response_hints instead.
+	// implementation of a specific store.
+	//
+	// Deprecated: use response_hints instead.
 	Hints         *types.Any               `protobuf:"bytes,3,opt,name=hints,proto3" json:"hints,omitempty"`
 	ResponseHints *LabelNamesResponseHints `protobuf:"bytes,4,opt,name=response_hints,json=responseHints,proto3" json:"response_hints,omitempty"`
 }
@@ -564,7 +571,9 @@ type LabelValuesRequest struct {
 	End   int64  `protobuf:"varint,5,opt,name=end,proto3" json:"end,omitempty"`
 	// hints is an opaque data structure that can be used to carry additional information.
 	// The content of this field and whether it's supported depends on the
-	// implementation of a specific store. Deprecated, use request_hints instead.
+	// implementation of a specific store.
+	//
+	// Deprecated: use request_hints instead.
 	Hints        *types.Any               `protobuf:"bytes,6,opt,name=hints,proto3" json:"hints,omitempty"`
 	Matchers     []LabelMatcher           `protobuf:"bytes,7,rep,name=matchers,proto3" json:"matchers"`
 	Limit        int64                    `protobuf:"varint,8,opt,name=limit,proto3" json:"limit,omitempty"`
@@ -647,7 +656,9 @@ type LabelValuesResponse struct {
 	Warnings []string `protobuf:"bytes,2,rep,name=warnings,proto3" json:"warnings,omitempty"`
 	// hints is an opaque data structure that can be used to carry additional information from
 	// the store. The content of this field and whether it's supported depends on the
-	// implementation of a specific store. Deprecated, use response_hints instead.
+	// implementation of a specific store.
+	//
+	// Deprecated: use response_hints instead.
 	Hints         *types.Any                `protobuf:"bytes,3,opt,name=hints,proto3" json:"hints,omitempty"`
 	ResponseHints *LabelValuesResponseHints `protobuf:"bytes,4,opt,name=response_hints,json=responseHints,proto3" json:"response_hints,omitempty"`
 }
