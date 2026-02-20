@@ -7,7 +7,6 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"regexp"
 	"strings"
 	"testing"
 
@@ -16,100 +15,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
 )
-
-// splittingRelevantQuerySubstrings: only eval blocks whose query contains at least one of these are run.
-// Must match rangevectorsplitting.SplitFunctionRegistry (sum_over_time, count_over_time, min_over_time,
-// max_over_time, rate, increase). We use "rate(" and "increase(" to avoid false matches.
-var splittingRelevantQuerySubstrings = []string{
-	"sum_over_time", "count_over_time", "min_over_time", "max_over_time",
-	"rate(", "increase(",
-}
-
-// skipRangeQueryEvalBlocks comments out eval blocks for range queries ("eval range from ...").
-// Query splitting only applies to instant queries, so range query evals are skipped.
-func skipRangeQueryEvalBlocks(tb testing.TB, content string) string {
-	const skipPrefix = "# SKIPPED (range query; splitting is instant-only): "
-	lines := strings.Split(content, "\n")
-	out := make([]string, 0, len(lines))
-	skippingBlock := false
-
-	for _, line := range lines {
-		trimmed := strings.TrimLeft(line, " \t")
-		if strings.HasPrefix(trimmed, "eval range from ") {
-			skippingBlock = true
-			tb.Logf("Skipped (range query): %s", trimmed)
-			out = append(out, skipPrefix+line)
-			continue
-		}
-		if skippingBlock {
-			if line == "" {
-				skippingBlock = false
-				out = append(out, line)
-				continue
-			}
-			if !strings.HasPrefix(line, "\t") && !strings.HasPrefix(line, "  ") && !strings.HasPrefix(trimmed, "expect") {
-				skippingBlock = false
-			}
-			out = append(out, skipPrefix+line)
-			continue
-		}
-		out = append(out, line)
-	}
-	return strings.Join(out, "\n")
-}
-
-// skipEvalBlocksWithoutSplittingRelevantFunctions comments out instant eval blocks whose query does not
-// contain any splittingRelevantQuerySubstrings (rough contains search). Only evals for functions
-// implemented for query splitting are run.
-func skipEvalBlocksWithoutSplittingRelevantFunctions(tb testing.TB, content string) string {
-	var (
-		instantEvalPrefix = regexp.MustCompile(`^eval instant at \S+\s+(.*)$`)
-		skipPrefix        = "# SKIPPED (no splitting-relevant function): "
-	)
-	lines := strings.Split(content, "\n")
-	out := make([]string, 0, len(lines))
-	skippingBlock := false
-
-	for _, line := range lines {
-		trimmed := strings.TrimLeft(line, " \t")
-		if strings.HasPrefix(trimmed, "eval instant at ") {
-			query := ""
-			if m := instantEvalPrefix.FindStringSubmatch(trimmed); m != nil {
-				query = m[1]
-			}
-			relevant := false
-			for _, sub := range splittingRelevantQuerySubstrings {
-				if strings.Contains(query, sub) {
-					relevant = true
-					break
-				}
-			}
-			if !relevant {
-				skippingBlock = true
-				tb.Logf("Skipped (no splitting-relevant function): %s", trimmed)
-				out = append(out, skipPrefix+line)
-				continue
-			}
-			skippingBlock = false
-			out = append(out, line)
-			continue
-		}
-		if skippingBlock {
-			if line == "" {
-				skippingBlock = false
-				out = append(out, line)
-				continue
-			}
-			if !strings.HasPrefix(line, "\t") && !strings.HasPrefix(line, "  ") && !strings.HasPrefix(trimmed, "expect") {
-				skippingBlock = false
-			}
-			out = append(out, skipPrefix+line)
-			continue
-		}
-		out = append(out, line)
-	}
-	return strings.Join(out, "\n")
-}
 
 // TestQuerySplitting_UpstreamTestCases runs upstream Prometheus test cases with query splitting enabled.
 // This is analogous to TestUpstreamTestCases but with query splitting.
@@ -147,9 +52,7 @@ func TestQuerySplitting_UpstreamTestCases(t *testing.T) {
 					b, err := io.ReadAll(f)
 					require.NoError(t, err)
 
-					testScript := skipRangeQueryEvalBlocks(t, string(b))
-					testScript = skipEvalBlocksWithoutSplittingRelevantFunctions(t, testScript)
-					testScript = skipUnsupportedTests(t, testScript, testFile)
+					testScript := skipUnsupportedTests(t, string(b), testFile)
 
 					newStorage := func(t testing.TB) storage.Storage {
 						base := promqltest.LoadedStorage(t, "")
@@ -225,9 +128,7 @@ func TestQuerySplitting_OurTestCases(t *testing.T) {
 					b, err := io.ReadAll(f)
 					require.NoError(t, err)
 
-					testScript := skipRangeQueryEvalBlocks(t, string(b))
-					testScript = skipEvalBlocksWithoutSplittingRelevantFunctions(t, testScript)
-					testScript = skipUnsupportedTests(t, testScript, testFile)
+					testScript := skipUnsupportedTests(t, string(b), testFile)
 
 					// Switch to delayed name removal engine if the test file requires it
 					enableDelayedNameRemoval := strings.Contains(testFile, "name_label_dropping") || strings.Contains(testFile, "delayed_name_removal_enabled")
