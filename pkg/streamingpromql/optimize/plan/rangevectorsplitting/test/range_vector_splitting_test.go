@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package streamingpromql
+// Package test contains tests for range vector splitting that run against the full
+// streaming PromQL engine. This package is separate from the rangevectorsplitting
+// package to avoid circular dependencies: the engine depends on the optimization
+// pass, so engine-level tests live here.
+package test
 
 import (
 	"context"
 	"fmt"
-	"io"
-	"io/fs"
-	"os"
 	"slices"
-	"strings"
 	"testing"
 	"time"
 
@@ -28,8 +28,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -363,15 +363,15 @@ func TestQuerySplitting_WithCSE(t *testing.T) {
 	ts := baseT.Add(6 * time.Hour)
 	ctx := user.InjectOrgID(context.Background(), "test-user")
 
-	opts := NewTestEngineOpts()
+	opts := streamingpromql.NewTestEngineOpts()
 	opts.RangeVectorSplitting.Enabled = true
 	opts.RangeVectorSplitting.SplitInterval = 2 * time.Hour
 	require.True(t, opts.EnableCommonSubexpressionElimination, "CSE should be enabled")
 
-	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 
-	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(ts), false, &NoopPlanningObserver{})
+	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(ts), false, &streamingpromql.NoopPlanningObserver{})
 	require.NoError(t, err)
 	require.NotNil(t, plan)
 
@@ -599,29 +599,22 @@ func TestQuerySplitting_With3hRangeAndOffset_NoCacheableRanges(t *testing.T) {
 
 func TestQuerySplitting_WithOOOWindow(t *testing.T) {
 	backend := newTestCacheBackend()
-	irCache := cache.NewCacheFactoryWithBackend(backend, NewStaticQueryLimitsProvider(), prometheus.NewRegistry(), log.NewNopLogger())
+	irCache := cache.NewCacheFactoryWithBackend(backend, streamingpromql.NewStaticQueryLimitsProvider(), prometheus.NewRegistry(), log.NewNopLogger())
 
-	opts := NewTestEngineOpts()
+	opts := streamingpromql.NewTestEngineOpts()
 	opts.RangeVectorSplitting.Enabled = true
 	opts.RangeVectorSplitting.SplitInterval = 2 * time.Hour
-	limits := NewStaticQueryLimitsProvider()
+	limits := streamingpromql.NewStaticQueryLimitsProvider()
 	limits.MaxOutOfOrderTimeWindow = 3 * time.Hour
 	opts.Limits = limits
 
 	baseT := timestamp.Time(0)
 	fixedNow := baseT.Add(12 * time.Hour)
 
-	queryPlanner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	queryPlanner, err := streamingpromql.NewQueryPlannerWithTime(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider(), func() time.Time { return fixedNow })
 	require.NoError(t, err)
 
-	for _, pass := range queryPlanner.planOptimizationPasses {
-		if qsPass, ok := pass.(*rangevectorsplitting.OptimizationPass); ok {
-			qsPass.TestOnlySetTimeNow(func() time.Time { return fixedNow })
-			break
-		}
-	}
-
-	mimirEngine, err := newEngineWithCache(opts, stats.NewQueryMetrics(nil), queryPlanner, irCache)
+	mimirEngine, err := streamingpromql.NewEngineWithCache(opts, stats.NewQueryMetrics(nil), queryPlanner, irCache)
 	require.NoError(t, err)
 	// Query at 12h with 7h range: (5h, 12h]
 	// Expected splits:
@@ -679,242 +672,6 @@ func TestQuerySplitting_WithOOOWindow(t *testing.T) {
 
 	verifyCacheStats(t, backend, 3, 2, 1)
 	require.Equal(t, ranges2, ranges3)
-}
-
-var querySplittingTestSplitIntervals = []time.Duration{
-	10 * time.Second,
-	5 * time.Minute,
-	2 * time.Hour,
-}
-
-// TestQuerySplitting_UpstreamTestCases runs upstream Prometheus test cases with query splitting enabled.
-// This is analogous to TestUpstreamTestCases but with query splitting.
-func TestQuerySplitting_UpstreamTestCases(t *testing.T) {
-	testdataFS := os.DirFS("./testdata")
-	testFiles, err := fs.Glob(testdataFS, "upstream/*.test")
-	require.NoError(t, err)
-
-	for _, splitInterval := range querySplittingTestSplitIntervals {
-		t.Run(fmt.Sprintf("split_interval_%v", splitInterval), func(t *testing.T) {
-			totalQueries := 0
-			queriesWithSplit := 0
-
-			registry := prometheus.NewRegistry()
-			innerEngine, cacheBackend := createSplittingEngineWithCache(t, registry, splitInterval, true, false)
-
-			engine := &testSplittingEngine{
-				engine: innerEngine,
-				orgID:  "test-user",
-				onQueryExec: func(splitQueriesCount uint32) {
-					totalQueries++
-					if splitQueriesCount > 0 {
-						queriesWithSplit++
-					}
-				},
-			}
-
-			for _, testFile := range testFiles {
-				t.Run(testFile, func(t *testing.T) {
-					f, err := testdataFS.Open(testFile)
-					require.NoError(t, err)
-					defer f.Close()
-
-					b, err := io.ReadAll(f)
-					require.NoError(t, err)
-
-					testScript := skipUnsupportedTests(t, string(b), testFile)
-
-					newStorage := func(t testing.TB) storage.Storage {
-						base := promqltest.LoadedStorage(t, "")
-						return &storageWithCloseCallback{
-							Storage: base,
-							onClose: cacheBackend.Reset,
-						}
-					}
-
-					promqltest.RunTestWithStorage(t, testScript, engine, newStorage)
-				})
-			}
-
-			t.Logf("Total queries executed: %d", totalQueries)
-			t.Logf("Queries with splitting applied: %d", queriesWithSplit)
-		})
-	}
-}
-
-// TestQuerySplitting_OurTestCases runs Mimir's test cases with query splitting enabled.
-// This is analogous to TestOurTestCases but with query splitting.
-func TestQuerySplitting_OurTestCases(t *testing.T) {
-	testdataFS := os.DirFS("./testdata")
-	oursTests, err := fs.Glob(testdataFS, "ours/*.test")
-	require.NoError(t, err)
-
-	oursOnlyTests, err := fs.Glob(testdataFS, "ours-only/*.test")
-	require.NoError(t, err)
-
-	allTests := append(oursTests, oursOnlyTests...)
-	require.NotEmpty(t, allTests, "expected to find test files")
-
-	for _, splitInterval := range querySplittingTestSplitIntervals {
-		t.Run(fmt.Sprintf("split_interval_%v", splitInterval), func(t *testing.T) {
-			totalQueries := 0
-			queriesWithSplit := 0
-
-			registry := prometheus.NewRegistry()
-			innerEngine, cacheBackend := createSplittingEngineWithCache(t, registry, splitInterval, false, true)
-
-			registryDelayed := prometheus.NewRegistry()
-			innerEngineDelayed, cacheBackendDelayed := createSplittingEngineWithCache(t, registryDelayed, splitInterval, true, true)
-
-			engine := &testSplittingEngine{
-				engine: innerEngine,
-				orgID:  "test-user",
-				onQueryExec: func(splitQueriesCount uint32) {
-					totalQueries++
-					if splitQueriesCount > 0 {
-						queriesWithSplit++
-					}
-				},
-			}
-
-			engineDelayed := &testSplittingEngine{
-				engine: innerEngineDelayed,
-				orgID:  "test-user",
-				onQueryExec: func(splitQueriesCount uint32) {
-					totalQueries++
-					if splitQueriesCount > 0 {
-						queriesWithSplit++
-					}
-				},
-			}
-
-			for _, testFile := range allTests {
-				t.Run(testFile, func(t *testing.T) {
-					f, err := testdataFS.Open(testFile)
-					require.NoError(t, err)
-					defer f.Close()
-
-					b, err := io.ReadAll(f)
-					require.NoError(t, err)
-
-					testScript := skipUnsupportedTests(t, string(b), testFile)
-
-					// Switch to delayed name removal engine if the test file requires it
-					enableDelayedNameRemoval := strings.Contains(testFile, "name_label_dropping") || strings.Contains(testFile, "delayed_name_removal_enabled")
-					selectedEngine := engine
-					selectedCache := cacheBackend
-					if enableDelayedNameRemoval {
-						selectedEngine = engineDelayed
-						selectedCache = cacheBackendDelayed
-					}
-
-					newStorage := func(t testing.TB) storage.Storage {
-						base := promqltest.LoadedStorage(t, "")
-						return &storageWithCloseCallback{
-							Storage: base,
-							onClose: selectedCache.Reset,
-						}
-					}
-
-					promqltest.RunTestWithStorage(t, testScript, selectedEngine, newStorage)
-				})
-			}
-
-			t.Logf("Total queries executed: %d", totalQueries)
-			t.Logf("Queries with splitting applied: %d", queriesWithSplit)
-		})
-	}
-}
-
-// skipUnsupportedTests comments out test cases where the split implementation diverges from the Prometheus/non-split MQE implementations.
-func skipUnsupportedTests(t *testing.T, testContent string, testFile string) string {
-	var testCasesToSkip []string
-
-	switch testFile {
-	case "upstream/native_histograms.test":
-		// The split sum_over_time sometimes cannot detect conflicting counter reset warnings.
-		// See comments for rangevectorsplitting.SplitSumOverTime.
-		testCasesToSkip = []string{
-			`eval instant at 14m histogram_count(sum_over_time(mixed[10m]))
-  expect warn msg:PromQL warning: conflicting counter resets during histogram aggregation
-  expect no_info
-  {} 93`,
-
-			`eval instant at 11m histogram_count(sum_over_time(mixed[2m]))
-  expect warn msg:PromQL warning: conflicting counter resets during histogram aggregation
-  expect no_info
-  {} 21`,
-
-			`eval instant at 5m histogram_count(sum_over_time(reset{timing="late"}[5m]))
-    expect warn msg: PromQL warning: conflicting counter resets during histogram aggregation
-    {timing="late"} 7`,
-		}
-
-	default:
-		return testContent
-	}
-
-	modified := testContent
-	for i, testCase := range testCasesToSkip {
-		if !strings.Contains(modified, testCase) {
-			require.FailNow(t, "Failed to find expected test case in "+testFile,
-				"Could not find test case at index %d. The test file may have changed.\nLooking for:\n%s", i, testCase)
-		}
-
-		lines := strings.Split(testCase, "\n")
-		for j, line := range lines {
-			lines[j] = "# SKIPPED FOR QUERY SPLITTING: " + line
-		}
-		commented := strings.Join(lines, "\n")
-
-		modified = strings.Replace(modified, testCase, commented, 1)
-	}
-
-	return modified
-}
-
-// TestQuerySplitting_EvalsRunTwice verifies that each eval in the range vector splitting test files appears at least
-// twice before the next clear, ensuring both cache miss and cache hit paths are tested.
-func TestQuerySplitting_EvalsRunTwice(t *testing.T) {
-	testdataFS := os.DirFS("./testdata")
-	testFiles, err := fs.Glob(testdataFS, "ours-only/range_vector_splitting_*.test")
-	require.NoError(t, err)
-	require.NotEmpty(t, testFiles)
-
-	for _, testFile := range testFiles {
-		t.Run(testFile, func(t *testing.T) {
-			f, err := testdataFS.Open(testFile)
-			require.NoError(t, err)
-			defer f.Close()
-
-			b, err := io.ReadAll(f)
-			require.NoError(t, err)
-
-			lines := strings.Split(string(b), "\n")
-
-			// Between each load/clear, verify each eval appears at least twice (to test both cache miss and hit).
-			evalCounts := map[string]int{}
-			checkAndClear := func(lineNum int) {
-				for eval, count := range evalCounts {
-					require.GreaterOrEqualf(t, count, 2,
-						"eval appears only %d time(s) before line %d, expected at least 2:\n%s",
-						count, lineNum, eval)
-				}
-				clear(evalCounts)
-			}
-			for i, line := range lines {
-
-				if strings.HasPrefix(line, "load ") || line == "clear" {
-					checkAndClear(i + 1)
-				}
-
-				if strings.HasPrefix(line, "eval ") {
-					evalCounts[line]++
-				}
-			}
-			checkAndClear(len(lines))
-		})
-	}
 }
 
 func TestQuerySplitting_CacheKeyIsolationAcrossFunctions(t *testing.T) {
@@ -1056,7 +813,7 @@ func TestQuerySplitting_MiddleCacheEntryEvicted(t *testing.T) {
 
 func TestQuerySplitting_DelayedNameRemoval(t *testing.T) {
 	sharedCache := newTestCacheBackend()
-	cacheFactory := cache.NewCacheFactoryWithBackend(sharedCache, NewStaticQueryLimitsProvider(), prometheus.NewPedanticRegistry(), log.NewNopLogger())
+	cacheFactory := cache.NewCacheFactoryWithBackend(sharedCache, streamingpromql.NewStaticQueryLimitsProvider(), prometheus.NewPedanticRegistry(), log.NewNopLogger())
 
 	engineDisabled := createSplittingEngine(t, prometheus.NewPedanticRegistry(), 2*time.Hour, false, true, cacheFactory)
 	engineEnabled := createSplittingEngine(t, prometheus.NewPedanticRegistry(), 2*time.Hour, true, true, cacheFactory)
@@ -1247,7 +1004,7 @@ func createSplittingEngineWithCache(t *testing.T, registry *prometheus.Registry,
 	t.Helper()
 
 	cacheBackend := newTestCacheBackend()
-	cacheFactory := cache.NewCacheFactoryWithBackend(cacheBackend, NewStaticQueryLimitsProvider(), registry, log.NewNopLogger())
+	cacheFactory := cache.NewCacheFactoryWithBackend(cacheBackend, streamingpromql.NewStaticQueryLimitsProvider(), registry, log.NewNopLogger())
 
 	engine := createSplittingEngine(t, registry, splitInterval, enableDelayedNameRemoval, enableEliminateDeduplicateAndMerge, cacheFactory)
 	return engine, cacheBackend
@@ -1256,8 +1013,8 @@ func createSplittingEngineWithCache(t *testing.T, registry *prometheus.Registry,
 func createSplittingEngine(t *testing.T, registry *prometheus.Registry, splitInterval time.Duration, enableDelayedNameRemoval bool, enableEliminateDeduplicateAndMerge bool, cacheFactory *cache.CacheFactory) promql.QueryEngine {
 	t.Helper()
 
-	opts := NewTestEngineOpts()
-	limits := NewStaticQueryLimitsProvider()
+	opts := streamingpromql.NewTestEngineOpts()
+	limits := streamingpromql.NewStaticQueryLimitsProvider()
 	limits.EnableDelayedNameRemoval = enableDelayedNameRemoval
 	opts.Limits = limits
 	opts.RangeVectorSplitting.Enabled = true
@@ -1268,10 +1025,10 @@ func createSplittingEngine(t *testing.T, registry *prometheus.Registry, splitInt
 		opts.EnableEliminateDeduplicateAndMerge = false
 	}
 
-	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 
-	engine, err := newEngineWithCache(opts, stats.NewQueryMetrics(registry), planner, cacheFactory)
+	engine, err := streamingpromql.NewEngineWithCache(opts, stats.NewQueryMetrics(registry), planner, cacheFactory)
 	require.NoError(t, err)
 
 	return engine
@@ -1279,16 +1036,16 @@ func createSplittingEngine(t *testing.T, registry *prometheus.Registry, splitInt
 
 func setupEngineAndCache(t *testing.T) (*testCacheBackend, promql.QueryEngine) {
 	backend := newTestCacheBackend()
-	irCache := cache.NewCacheFactoryWithBackend(backend, NewStaticQueryLimitsProvider(), prometheus.NewRegistry(), log.NewNopLogger())
+	irCache := cache.NewCacheFactoryWithBackend(backend, streamingpromql.NewStaticQueryLimitsProvider(), prometheus.NewRegistry(), log.NewNopLogger())
 
-	opts := NewTestEngineOpts()
+	opts := streamingpromql.NewTestEngineOpts()
 	opts.RangeVectorSplitting.Enabled = true
 	opts.RangeVectorSplitting.SplitInterval = 2 * time.Hour
 
-	queryPlanner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	queryPlanner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 
-	mimirEngine, err := newEngineWithCache(opts, stats.NewQueryMetrics(nil), queryPlanner, irCache)
+	mimirEngine, err := streamingpromql.NewEngineWithCache(opts, stats.NewQueryMetrics(nil), queryPlanner, irCache)
 	require.NoError(t, err)
 
 	return backend, mimirEngine
@@ -1405,64 +1162,4 @@ type errorStorage struct {
 
 func (e *errorStorage) Querier(_, _ int64) (storage.Querier, error) {
 	return nil, fmt.Errorf("injected storage error")
-}
-
-type storageWithCloseCallback struct {
-	storage.Storage
-	onClose func()
-}
-
-func (s *storageWithCloseCallback) Close() error {
-	if s.onClose != nil {
-		s.onClose()
-	}
-	return s.Storage.Close()
-}
-
-type testSplittingEngine struct {
-	engine      promql.QueryEngine
-	orgID       string
-	onQueryExec func(splitQueriesCount uint32)
-}
-
-func (e *testSplittingEngine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
-	ctx = user.InjectOrgID(ctx, e.orgID)
-
-	query, err := e.engine.NewInstantQuery(ctx, q, opts, qs, ts)
-	if err != nil {
-		return nil, err
-	}
-
-	return &testSplittingQuery{Query: query, orgID: e.orgID, onExec: e.onQueryExec}, nil
-}
-
-func (e *testSplittingEngine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
-	ctx = user.InjectOrgID(ctx, e.orgID)
-
-	query, err := e.engine.NewRangeQuery(ctx, q, opts, qs, start, end, interval)
-	if err != nil {
-		return nil, err
-	}
-
-	return &testSplittingQuery{Query: query, orgID: e.orgID, onExec: e.onQueryExec}, nil
-}
-
-type testSplittingQuery struct {
-	promql.Query
-	orgID  string
-	onExec func(splitQueriesCount uint32)
-}
-
-func (q *testSplittingQuery) Exec(ctx context.Context) *promql.Result {
-	ctx = user.InjectOrgID(ctx, q.orgID)
-
-	queryStats, ctx := stats.ContextWithEmptyStats(ctx)
-
-	result := q.Query.Exec(ctx)
-
-	if q.onExec != nil {
-		q.onExec(queryStats.LoadSplitRangeVectors())
-	}
-
-	return result
 }

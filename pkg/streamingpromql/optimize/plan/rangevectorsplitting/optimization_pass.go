@@ -60,11 +60,6 @@ func (o *OptimizationPass) Name() string {
 	return "Range vector splitting"
 }
 
-// TestOnlySetTimeNow sets the time function. For tests only.
-func (o *OptimizationPass) TestOnlySetTimeNow(timeNow func() time.Time) {
-	o.timeNow = timeNow
-}
-
 func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
 	if maximumSupportedQueryPlanVersion < planning.QueryPlanV6 {
 		return plan, nil
