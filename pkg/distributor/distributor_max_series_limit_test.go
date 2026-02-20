@@ -293,6 +293,11 @@ func (m *usageTrackerClientMock) TrackSeries(ctx context.Context, userID string,
 	return args.Get(0).([]uint64), args.Error(1)
 }
 
+func (m *usageTrackerClientMock) TrackSeriesAsync(ctx context.Context, userID string, series []uint64) error {
+	args := m.Called(ctx, userID, series)
+	return args.Error(0)
+}
+
 func (m *usageTrackerClientMock) CanTrackAsync(userID string) bool {
 	args := m.Called(userID)
 	return args.Bool(0)
@@ -317,6 +322,10 @@ func (m *usageTrackerClientRejectionMock) TrackSeries(_ context.Context, _ strin
 	copy(rejected, series[len(series)-len(rejected):])
 
 	return rejected, nil
+}
+
+func (m *usageTrackerClientRejectionMock) TrackSeriesAsync(ctx context.Context, userID string, series []uint64) error {
+	return nil
 }
 
 func (m *usageTrackerClientRejectionMock) CanTrackAsync(_ string) bool {
