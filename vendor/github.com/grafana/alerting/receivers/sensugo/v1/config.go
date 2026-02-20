@@ -41,61 +41,60 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 	return settings, nil
 }
 
-func Schema() schema.IntegrationSchemaVersion {
-	return schema.IntegrationSchemaVersion{
-		Version:   Version,
-		CanCreate: true,
-		Options: []schema.Field{
-			{
-				Label:        "Backend URL",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				Placeholder:  "http://sensu-api.local:8080",
-				PropertyName: "url",
-				Required:     true,
-			},
-			{
-				Label:        "API Key",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypePassword,
-				Description:  "API key to auth to Sensu Go backend",
-				PropertyName: "apikey",
-				Required:     true,
-				Secure:       true,
-			},
-			{
-				Label:        "Proxy entity name",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				Placeholder:  "default",
-				PropertyName: "entity",
-			},
-			{
-				Label:        "Check name",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				Placeholder:  "default",
-				PropertyName: "check",
-			},
-			{
-				Label:        "Handler",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				PropertyName: "handler",
-			},
-			{
-				Label:        "Namespace",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				Placeholder:  "default",
-				PropertyName: "namespace",
-			},
-			{ // New in 8.0.
-				Label:        "Message",
-				Element:      schema.ElementTypeTextArea,
-				Placeholder:  templates.DefaultMessageEmbed,
-				PropertyName: "message",
-			},
+var Schema = schema.IntegrationSchemaVersion{
+	Version:   Version,
+	CanCreate: true,
+	Options: []schema.Field{
+		{
+			Label:        "Backend URL",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			Placeholder:  "http://sensu-api.local:8080",
+			PropertyName: "url",
+			Required:     true,
+			Protected:    true,
 		},
-	}
+		{
+			Label:        "API Key",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypePassword,
+			Description:  "API key to auth to Sensu Go backend",
+			PropertyName: "apikey",
+			Required:     true,
+			Secure:       true,
+		},
+		{
+			Label:        "Proxy entity name",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			Placeholder:  "default",
+			PropertyName: "entity",
+		},
+		{
+			Label:        "Check name",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			Placeholder:  "default",
+			PropertyName: "check",
+		},
+		{
+			Label:        "Handler",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			PropertyName: "handler",
+		},
+		{
+			Label:        "Namespace",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			Placeholder:  "default",
+			PropertyName: "namespace",
+		},
+		{ // New in 8.0.
+			Label:        "Message",
+			Element:      schema.ElementTypeTextArea,
+			Placeholder:  templates.DefaultMessageEmbed,
+			PropertyName: "message",
+		},
+	},
 }

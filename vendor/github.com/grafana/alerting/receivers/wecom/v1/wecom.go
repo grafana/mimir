@@ -52,7 +52,7 @@ func (w *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error)
 		tmpl(w.settings.Message),
 	)
 	if w.settings.MsgType != DefaultsgType {
-		content = fmt.Sprintf("%s\n%s\n",
+		content = fmt.Sprintf("%s\n%s",
 			tmpl(w.settings.Title),
 			tmpl(w.settings.Message),
 		)
@@ -80,7 +80,7 @@ func (w *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error)
 	}
 
 	if tmplErr != nil {
-		level.Warn(l).Log("failed to template WeCom message", "err", tmplErr.Error())
+		level.Warn(l).Log("msg", "failed to template WeCom message", "err", tmplErr.Error())
 	}
 
 	cmd := &receivers.SendWebhookSettings{
@@ -89,7 +89,7 @@ func (w *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error)
 	}
 
 	if err = w.ns.SendWebhook(ctx, l, cmd); err != nil {
-		level.Error(l).Log("failed to send WeCom webhook", "err", err)
+		level.Error(l).Log("msg", "failed to send WeCom webhook", "err", err)
 		return false, err
 	}
 

@@ -89,64 +89,6 @@ func (cfg *TLSConfig) ToCryptoTLSConfig() (*tls.Config, error) {
 	return tlsCfg, nil
 }
 
-// SendHTTPRequest sends an HTTP request.
-// Stubbable by tests.
-//
-//nolint:unused, varcheck
-var SendHTTPRequest = func(ctx context.Context, url *url.URL, cfg HTTPCfg, logger log.Logger) ([]byte, error) {
-	var reader io.Reader
-	if len(cfg.Body) > 0 {
-		reader = bytes.NewReader(cfg.Body)
-	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, url.String(), reader)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
-	}
-	if cfg.User != "" && cfg.Password != "" {
-		request.SetBasicAuth(cfg.User, cfg.Password)
-	}
-
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("User-Agent", "Grafana")
-	netTransport := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			Renegotiation: tls.RenegotiateFreelyAsClient,
-		},
-		Proxy: http.ProxyFromEnvironment,
-		DialContext: (&net.Dialer{
-			Timeout: 30 * time.Second,
-		}).DialContext,
-		TLSHandshakeTimeout: 5 * time.Second,
-	}
-	netClient := &http.Client{
-		Timeout:   time.Second * 30,
-		Transport: netTransport,
-	}
-	resp, err := netClient.Do(request)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			level.Error(logger).Log("msg", "failed to close response Body", "err", err)
-		}
-	}()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response Body: %w", err)
-	}
-
-	if resp.StatusCode/100 != 2 {
-		level.Warn(logger).Log("msg", "HTTP request failed", "url", request.URL.String(), "statusCode", resp.Status, "Body",
-			string(respBody))
-		return nil, fmt.Errorf("failed to send HTTP request - status code %d", resp.StatusCode)
-	}
-
-	level.Debug(logger).Log("msg", "sending HTTP request succeeded", "url", request.URL.String(), "statusCode", resp.Status)
-	return respBody, nil
-}
-
 func JoinURLPath(base, additionalPath string, logger log.Logger) string {
 	u, err := url.Parse(base)
 	if err != nil {
@@ -213,6 +155,74 @@ func TruncateInBytes(s string, n int) (string, bool) {
 	}
 
 	return string(truncatedRunes) + truncationMarker, true
+}
+
+type Sender interface {
+	SendHTTPRequest(ctx context.Context, url *url.URL, cfg HTTPCfg) ([]byte, error)
+}
+
+type defaultSender struct {
+	logger log.Logger
+}
+
+func NewSender(logger log.Logger) Sender {
+	return &defaultSender{logger: logger}
+}
+
+func (s *defaultSender) SendHTTPRequest(ctx context.Context, url *url.URL, cfg HTTPCfg) ([]byte, error) {
+	var reader io.Reader
+	if len(cfg.Body) > 0 {
+		reader = bytes.NewReader(cfg.Body)
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, url.String(), reader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
+	}
+	if cfg.User != "" && cfg.Password != "" {
+		request.SetBasicAuth(cfg.User, cfg.Password)
+	}
+
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("User-Agent", "Grafana")
+	netTransport := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			Renegotiation: tls.RenegotiateFreelyAsClient,
+		},
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout: 30 * time.Second,
+		}).DialContext,
+		TLSHandshakeTimeout: 5 * time.Second,
+		// Disable keep alive since this is a short lived client
+		DisableKeepAlives: true,
+	}
+	netClient := &http.Client{
+		Timeout:   time.Second * 30,
+		Transport: netTransport,
+	}
+	resp, err := netClient.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			level.Warn(s.logger).Log("msg", "failed to close response Body", "error", err)
+		}
+	}()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response Body: %w", err)
+	}
+
+	if resp.StatusCode/100 != 2 {
+		level.Warn(s.logger).Log("msg", "HTTP request failed", "url", request.URL.String(), "statusCode", resp.Status, "body",
+			string(respBody))
+		return nil, fmt.Errorf("failed to send HTTP request - status code %d", resp.StatusCode)
+	}
+
+	level.Debug(s.logger).Log("msg", "sending HTTP request succeeded", "url", request.URL.String(), "statusCode", resp.Status)
+	return respBody, nil
 }
 
 type extraDataKey int
