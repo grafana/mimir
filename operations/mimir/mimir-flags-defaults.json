@@ -596,6 +596,7 @@
   "ingest-storage.kafka.address": "",
   "ingest-storage.kafka.topic": "",
   "ingest-storage.kafka.client-id": "",
+  "ingest-storage.kafka.client-rack": "",
   "ingest-storage.kafka.dial-timeout": 2000000000,
   "ingest-storage.kafka.write-timeout": 10000000000,
   "ingest-storage.kafka.write-clients": 1,
