@@ -296,6 +296,10 @@ func (e errorTranslateChunkSeries) ChunkCount() (int, error) {
 	return e.s.ChunkCount()
 }
 
+func (e errorTranslateChunkSeries) IteratorFactory() storage.ChunkIterable {
+	return e.s.IteratorFactory()
+}
+
 type errorTranslateChunksIterator struct {
 	i  chunks.Iterator
 	fn ErrTranslateFn
