@@ -144,7 +144,7 @@ func (s *shardActiveNativeHistogramMetricsMiddleware) mergeResponses(ctx context
 
 	if err != nil {
 		merged.Status = "error"
-		merged.Error = fmt.Sprintf("error merging partial responses: %s", err.Error())
+		merged.Error = fmt.Sprintf("%s: %s", ErrMergingPartialResponseStr, err.Error())
 	} else {
 		resp.StatusCode = http.StatusOK
 		slices.SortFunc(metricBucketCount, func(a, b *cardinality.ActiveMetricWithBucketCount) int {

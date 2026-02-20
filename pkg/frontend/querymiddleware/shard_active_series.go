@@ -284,14 +284,14 @@ func (s *shardActiveSeriesMiddleware) writeMergedResponse(ctx context.Context, c
 	stream.WriteArrayEnd()
 
 	if err := check(); err != nil {
-		level.Error(s.logger).Log("msg", "error merging partial responses", "err", err.Error())
+		level.Error(s.logger).Log("msg", ErrMergingPartialResponseStr, "err", err.Error())
 		span.RecordError(err)
 		stream.WriteMore()
 		stream.WriteObjectField("status")
 		stream.WriteString("error")
 		stream.WriteMore()
 		stream.WriteObjectField("error")
-		stream.WriteString(fmt.Sprintf("error merging partial responses: %s", err.Error()))
+		stream.WriteString(fmt.Sprintf("%s: %s", ErrMergingPartialResponseStr, err.Error()))
 	}
 
 	stream.WriteObjectEnd()
@@ -355,14 +355,14 @@ func (s *shardActiveSeriesMiddleware) writeMergedResponseWithZeroAllocationDecod
 	stream.WriteArrayEnd()
 
 	if err := check(); err != nil {
-		level.Error(s.logger).Log("msg", "error merging partial responses", "err", err.Error())
+		level.Error(s.logger).Log("msg", ErrMergingPartialResponseStr, "err", err.Error())
 		span.RecordError(err)
 		stream.WriteMore()
 		stream.WriteObjectField("status")
 		stream.WriteString("error")
 		stream.WriteMore()
 		stream.WriteObjectField("error")
-		stream.WriteString(fmt.Sprintf("error merging partial responses: %s", err.Error()))
+		stream.WriteString(fmt.Sprintf("%s: %s", ErrMergingPartialResponseStr, err.Error()))
 	}
 
 	stream.WriteObjectEnd()
