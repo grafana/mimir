@@ -25,6 +25,7 @@ func TestQuerySplitting_UpstreamTestCases(t *testing.T) {
 
 	for _, splitInterval := range querySplittingTestSplitIntervals {
 		t.Run(fmt.Sprintf("split_interval_%v", splitInterval), func(t *testing.T) {
+			t.Parallel()
 			totalQueries := 0
 			queriesWithSplit := 0
 
@@ -86,6 +87,7 @@ func TestQuerySplitting_OurTestCases(t *testing.T) {
 
 	for _, splitInterval := range querySplittingTestSplitIntervals {
 		t.Run(fmt.Sprintf("split_interval_%v", splitInterval), func(t *testing.T) {
+			t.Parallel()
 			totalQueries := 0
 			queriesWithSplit := 0
 
