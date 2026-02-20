@@ -37,6 +37,7 @@ func TestMemoryConsumptionTrackerFromContext(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, existing, stored)
 		require.Equal(t, uint64(512), stored.CurrentEstimatedMemoryConsumptionBytes())
+		require.Equal(t, uint64(512), stored.CurrentEstimatedMemoryConsumptionBytesBySource(IngesterChunks))
 	})
 }
 
@@ -49,6 +50,7 @@ func TestAddToContext(t *testing.T) {
 	stored := ctx.Value(memoryConsumptionTracker).(*MemoryConsumptionTracker)
 	require.Equal(t, existing, stored)
 	require.Equal(t, uint64(512), stored.CurrentEstimatedMemoryConsumptionBytes())
+	require.Equal(t, uint64(512), stored.CurrentEstimatedMemoryConsumptionBytesBySource(IngesterChunks))
 }
 
 func TestMemoryConsumptionTracker_Unlimited(t *testing.T) {
@@ -57,33 +59,38 @@ func TestMemoryConsumptionTracker_Unlimited(t *testing.T) {
 
 	require.NoError(t, tracker.IncreaseMemoryConsumption(128, IngesterChunks))
 	require.Equal(t, uint64(128), tracker.CurrentEstimatedMemoryConsumptionBytes())
+	require.Equal(t, uint64(128), tracker.CurrentEstimatedMemoryConsumptionBytesBySource(IngesterChunks))
 	require.Equal(t, uint64(128), tracker.PeakEstimatedMemoryConsumptionBytes())
 
 	// Add some more memory consumption. The current and peak stats should be updated.
 	require.NoError(t, tracker.IncreaseMemoryConsumption(2, StoreGatewayChunks))
 	require.Equal(t, uint64(130), tracker.CurrentEstimatedMemoryConsumptionBytes())
+	require.Equal(t, uint64(2), tracker.CurrentEstimatedMemoryConsumptionBytesBySource(StoreGatewayChunks))
 	require.Equal(t, uint64(130), tracker.PeakEstimatedMemoryConsumptionBytes())
 
 	// Reduce memory consumption. The current consumption should be updated, but the peak should be unchanged.
 	tracker.DecreaseMemoryConsumption(128, IngesterChunks)
 	require.Equal(t, uint64(2), tracker.CurrentEstimatedMemoryConsumptionBytes())
+	require.Equal(t, uint64(0), tracker.CurrentEstimatedMemoryConsumptionBytesBySource(IngesterChunks))
 	require.Equal(t, uint64(130), tracker.PeakEstimatedMemoryConsumptionBytes())
 
 	// Add some more memory consumption that doesn't take us over the previous peak.
 	require.NoError(t, tracker.IncreaseMemoryConsumption(8, FPointSlices))
 	require.Equal(t, uint64(10), tracker.CurrentEstimatedMemoryConsumptionBytes())
+	require.Equal(t, uint64(8), tracker.CurrentEstimatedMemoryConsumptionBytesBySource(FPointSlices))
 	require.Equal(t, uint64(130), tracker.PeakEstimatedMemoryConsumptionBytes())
 
 	// Add some more memory consumption that takes us over the previous peak.
 	require.NoError(t, tracker.IncreaseMemoryConsumption(121, HPointSlices))
 	require.Equal(t, uint64(131), tracker.CurrentEstimatedMemoryConsumptionBytes())
+	require.Equal(t, uint64(121), tracker.CurrentEstimatedMemoryConsumptionBytesBySource(HPointSlices))
 	require.Equal(t, uint64(131), tracker.PeakEstimatedMemoryConsumptionBytes())
 
 	assertRejectedQueriesCount(t, reg, 0)
 
 	// Test reducing memory consumption to a negative value panics
-	require.PanicsWithValue(t, `Estimated memory consumption of all instances of []promql.FPoint in this query is negative. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: foo + bar`, func() { tracker.DecreaseMemoryConsumption(9, FPointSlices) })
-	require.PanicsWithValue(t, `Estimated memory consumption of all instances of []promql.HPoint in this query is negative. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: foo + bar`, func() { tracker.DecreaseMemoryConsumption(130, HPointSlices) })
+	require.PanicsWithValue(t, `Estimated memory consumption of all instances of []promql.FPoint in this query is 8 bytes when trying to return 9 bytes. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: foo + bar`, func() { tracker.DecreaseMemoryConsumption(9, FPointSlices) })
+	require.PanicsWithValue(t, `Estimated memory consumption of all instances of []promql.HPoint in this query is 121 bytes when trying to return 130 bytes. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: foo + bar`, func() { tracker.DecreaseMemoryConsumption(130, HPointSlices) })
 }
 
 func TestMemoryConsumptionTracker_Limited(t *testing.T) {
@@ -135,8 +142,8 @@ func TestMemoryConsumptionTracker_Limited(t *testing.T) {
 	assertRejectedQueriesCount(t, reg, 1)
 
 	// Test reducing memory consumption to a negative value panics
-	require.PanicsWithValue(t, `Estimated memory consumption of all instances of []promql.FPoint in this query is negative. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: foo + bar`, func() { tracker.DecreaseMemoryConsumption(150, FPointSlices) })
-	require.PanicsWithValue(t, `Estimated memory consumption of all instances of []promql.HPoint in this query is negative. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: foo + bar`, func() { tracker.DecreaseMemoryConsumption(150, HPointSlices) })
+	require.PanicsWithValue(t, `Estimated memory consumption of all instances of []promql.FPoint in this query is 3 bytes when trying to return 150 bytes. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: foo + bar`, func() { tracker.DecreaseMemoryConsumption(150, FPointSlices) })
+	require.PanicsWithValue(t, `Estimated memory consumption of all instances of []promql.HPoint in this query is 0 bytes when trying to return 150 bytes. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: foo + bar`, func() { tracker.DecreaseMemoryConsumption(150, HPointSlices) })
 }
 
 func assertRejectedQueriesCount(t *testing.T, reg *prometheus.Registry, expectedRejectionCount int) {
@@ -273,7 +280,7 @@ func TestMemoryConsumptionTracker_NegativeMemoryConsumptionPanicWithTracing(t *t
 
 	tracker := NewMemoryConsumptionTracker(ctx, 0, nil, "foo + bar")
 
-	require.PanicsWithValue(t, `Estimated memory consumption of all instances of ingester chunks in this query is negative. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: foo + bar (trace ID: 00000000000000010000000000000002)`, func() {
+	require.PanicsWithValue(t, `Estimated memory consumption of all instances of ingester chunks in this query is 0 bytes when trying to return 10 bytes. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: foo + bar (trace ID: 00000000000000010000000000000002)`, func() {
 		tracker.DecreaseMemoryConsumption(10, IngesterChunks)
 	})
 }

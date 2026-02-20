@@ -196,7 +196,14 @@ func (l *MemoryConsumptionTracker) DecreaseMemoryConsumption(b uint64, source Me
 			traceDescription = fmt.Sprintf(" (trace ID: %v)", traceID)
 		}
 
-		panic(fmt.Sprintf("Estimated memory consumption of all instances of %s in this query is negative. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: %v%v", source, l.queryDescription, traceDescription))
+		panic(fmt.Sprintf(
+			"Estimated memory consumption of all instances of %s in this query is %d bytes when trying to return %d bytes. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: %v%v",
+			source,
+			l.currentEstimatedMemoryConsumptionBySource[source],
+			b,
+			l.queryDescription,
+			traceDescription,
+		))
 	}
 
 	l.currentEstimatedMemoryConsumptionBytes -= b
@@ -219,17 +226,22 @@ func (l *MemoryConsumptionTracker) CurrentEstimatedMemoryConsumptionBytes() uint
 	return l.currentEstimatedMemoryConsumptionBytes
 }
 
+// CurrentEstimatedMemoryConsumptionBytesBySource returns the current memory consumption for a source in bytes.
+func (l *MemoryConsumptionTracker) CurrentEstimatedMemoryConsumptionBytesBySource(s MemoryConsumptionSource) uint64 {
+	l.mtx.Lock()
+	defer l.mtx.Unlock()
+
+	return l.currentEstimatedMemoryConsumptionBySource[s]
+}
+
 // IncreaseMemoryConsumptionForLabels attempts to increase the current memory consumption based on labels.
 func (l *MemoryConsumptionTracker) IncreaseMemoryConsumptionForLabels(lbls labels.Labels) error {
-	if err := l.IncreaseMemoryConsumption(uint64(lbls.ByteSize()), Labels); err != nil {
-		return err
-	}
-	return nil
+	return l.IncreaseMemoryConsumption(lbls.ByteSize(), Labels)
 }
 
 // DecreaseMemoryConsumptionForLabels decreases the current memory consumption based on labels.
 func (l *MemoryConsumptionTracker) DecreaseMemoryConsumptionForLabels(lbls labels.Labels) {
-	l.DecreaseMemoryConsumption(uint64(lbls.ByteSize()), Labels)
+	l.DecreaseMemoryConsumption(lbls.ByteSize(), Labels)
 }
 
 func (l *MemoryConsumptionTracker) DescribeCurrentMemoryConsumption() string {
