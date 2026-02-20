@@ -1079,6 +1079,8 @@ ingester:
     enabled: true
     # -- Maximum number of ingesters that can be unavailable per zone during rollout
     maxUnavailable: 50
+    # -- Minimum time for the rollout operator to wait between ingester zone down scales
+    minTimeBetweenZonesDownscale: 12h
     # -- topologyKey to use in pod anti-affinity. If unset, no anti-affinity rules are generated. If set, the generated anti-affinity rule makes sure that pods from different zones do not mix.
     # E.g.: topologyKey: 'kubernetes.io/hostname'
     topologyKey: null
@@ -2278,6 +2280,8 @@ store_gateway:
     enabled: true
     # -- Maximum number of store-gateways that can be unavailable per zone during rollout
     maxUnavailable: 50
+    # -- Minimum time for the rollout operator to wait between store-gateway zone down scales
+    minTimeBetweenZonesDownscale: 30m
     # -- topologyKey to use in pod anti-affinity. If unset, no anti-affinity rules are generated. If set, the generated anti-affinity rule makes sure that pods from different zones do not mix.
     # E.g.: topologyKey: 'kubernetes.io/hostname'
     topologyKey: null
