@@ -56,7 +56,7 @@ func blockBuilderConfig(t *testing.T, addr string) (Config, *validation.Override
 
 	// Kafka related options.
 	flagext.DefaultValues(&cfg.Kafka)
-	cfg.Kafka.Address = addr
+	cfg.Kafka.Address = flagext.StringSliceCSV{addr}
 	cfg.Kafka.Topic = testTopic
 
 	// Block storage related options.

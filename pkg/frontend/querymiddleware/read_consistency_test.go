@@ -180,7 +180,7 @@ func TestGetDefaultReadConsistency(t *testing.T) {
 func createKafkaConfig(clusterAddr, topic string) ingest.KafkaConfig {
 	cfg := ingest.KafkaConfig{}
 	flagext.DefaultValues(&cfg)
-	cfg.Address = clusterAddr
+	cfg.Address = flagext.StringSliceCSV{clusterAddr}
 	cfg.Topic = topic
 
 	return cfg
