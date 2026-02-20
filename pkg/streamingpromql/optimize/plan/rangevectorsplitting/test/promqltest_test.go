@@ -3,6 +3,7 @@
 package test
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"io/fs"
@@ -11,10 +12,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/querier/stats"
 )
 
 var querySplittingTestSplitIntervals = []time.Duration{
@@ -33,48 +38,18 @@ func TestQuerySplitting_UpstreamTestCases(t *testing.T) {
 	for _, splitInterval := range querySplittingTestSplitIntervals {
 		t.Run(fmt.Sprintf("split_interval_%v", splitInterval), func(t *testing.T) {
 			t.Parallel()
-			totalQueries := 0
-			queriesWithSplit := 0
-
 			registry := prometheus.NewRegistry()
 			innerEngine, cacheBackend := createSplittingEngineWithCache(t, registry, splitInterval, true, false)
-
-			engine := &testSplittingEngine{
-				engine: innerEngine,
-				orgID:  "test-user",
-				onQueryExec: func(splitQueriesCount uint32) {
-					totalQueries++
-					if splitQueriesCount > 0 {
-						queriesWithSplit++
-					}
-				},
-			}
+			engine := &testSplittingEngine{engine: innerEngine, orgID: "test-user"}
 
 			for _, testFile := range testFiles {
 				t.Run(testFile, func(t *testing.T) {
-					f, err := testdataFS.Open(testFile)
-					require.NoError(t, err)
-					defer f.Close()
-
-					b, err := io.ReadAll(f)
-					require.NoError(t, err)
-
-					testScript := skipUnsupportedTests(t, string(b), testFile)
-
-					newStorage := func(t testing.TB) storage.Storage {
-						base := promqltest.LoadedStorage(t, "")
-						return &storageWithCloseCallback{
-							Storage: base,
-							onClose: cacheBackend.Reset,
-						}
-					}
-
-					promqltest.RunTestWithStorage(t, testScript, engine, newStorage)
+					runTestFile(t, testdataFS, testFile, engine, cacheBackend.Reset)
 				})
 			}
 
-			t.Logf("Total queries executed: %d", totalQueries)
-			t.Logf("Queries with splitting applied: %d", queriesWithSplit)
+			t.Logf("Total queries executed: %d", engine.TotalQueries())
+			t.Logf("Queries with splitting applied: %d", engine.QueriesWithSplit())
 		})
 	}
 }
@@ -91,59 +66,20 @@ func TestQuerySplitting_OurTestCases(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, oursOnlyTests, "expected to find test files")
 
-	rangeVectorSplittingTests, err := fs.Glob(testdataFS, "range-vector-splitting/test/*.test")
-	require.NoError(t, err)
-	require.NotEmpty(t, rangeVectorSplittingTests, "expected to find test files")
-
 	allTests := append(oursTests, oursOnlyTests...)
-	allTests = append(allTests, rangeVectorSplittingTests...)
 
 	for _, splitInterval := range querySplittingTestSplitIntervals {
 		t.Run(fmt.Sprintf("split_interval_%v", splitInterval), func(t *testing.T) {
 			t.Parallel()
-			totalQueries := 0
-			queriesWithSplit := 0
-
 			registry := prometheus.NewRegistry()
 			innerEngine, cacheBackend := createSplittingEngineWithCache(t, registry, splitInterval, false, true)
-
 			registryDelayed := prometheus.NewRegistry()
 			innerEngineDelayed, cacheBackendDelayed := createSplittingEngineWithCache(t, registryDelayed, splitInterval, true, true)
-
-			engine := &testSplittingEngine{
-				engine: innerEngine,
-				orgID:  "test-user",
-				onQueryExec: func(splitQueriesCount uint32) {
-					totalQueries++
-					if splitQueriesCount > 0 {
-						queriesWithSplit++
-					}
-				},
-			}
-
-			engineDelayed := &testSplittingEngine{
-				engine: innerEngineDelayed,
-				orgID:  "test-user",
-				onQueryExec: func(splitQueriesCount uint32) {
-					totalQueries++
-					if splitQueriesCount > 0 {
-						queriesWithSplit++
-					}
-				},
-			}
+			engine := &testSplittingEngine{engine: innerEngine, orgID: "test-user"}
+			engineDelayed := &testSplittingEngine{engine: innerEngineDelayed, orgID: "test-user"}
 
 			for _, testFile := range allTests {
 				t.Run(testFile, func(t *testing.T) {
-					f, err := testdataFS.Open(testFile)
-					require.NoError(t, err)
-					defer f.Close()
-
-					b, err := io.ReadAll(f)
-					require.NoError(t, err)
-
-					testScript := skipUnsupportedTests(t, string(b), testFile)
-
-					// Switch to delayed name removal engine if the test file requires it
 					enableDelayedNameRemoval := strings.Contains(testFile, "name_label_dropping") || strings.Contains(testFile, "delayed_name_removal_enabled")
 					selectedEngine := engine
 					selectedCache := cacheBackend
@@ -151,21 +87,38 @@ func TestQuerySplitting_OurTestCases(t *testing.T) {
 						selectedEngine = engineDelayed
 						selectedCache = cacheBackendDelayed
 					}
-
-					newStorage := func(t testing.TB) storage.Storage {
-						base := promqltest.LoadedStorage(t, "")
-						return &storageWithCloseCallback{
-							Storage: base,
-							onClose: selectedCache.Reset,
-						}
-					}
-
-					promqltest.RunTestWithStorage(t, testScript, selectedEngine, newStorage)
+					runTestFile(t, testdataFS, testFile, selectedEngine, selectedCache.Reset)
 				})
 			}
 
-			t.Logf("Total queries executed: %d", totalQueries)
-			t.Logf("Queries with splitting applied: %d", queriesWithSplit)
+			t.Logf("Total queries executed: %d", engine.TotalQueries()+engineDelayed.TotalQueries())
+			t.Logf("Queries with splitting applied: %d", engine.QueriesWithSplit()+engineDelayed.QueriesWithSplit())
+		})
+	}
+}
+
+// TestQuerySplitting_RangeVectorSplittingTestCases runs the .test files in this package directory (range-vector-splitting-specific cases).
+func TestQuerySplitting_RangeVectorSplittingTestCases(t *testing.T) {
+	packageFS := os.DirFS(".")
+	testFiles, err := fs.Glob(packageFS, "*.test")
+	require.NoError(t, err)
+	require.NotEmpty(t, testFiles, "expected to find .test files in package directory")
+
+	for _, splitInterval := range querySplittingTestSplitIntervals {
+		t.Run(fmt.Sprintf("split_interval_%v", splitInterval), func(t *testing.T) {
+			t.Parallel()
+			registry := prometheus.NewRegistry()
+			innerEngine, cacheBackend := createSplittingEngineWithCache(t, registry, splitInterval, false, true)
+			engine := &testSplittingEngine{engine: innerEngine, orgID: "test-user"}
+
+			for _, testFile := range testFiles {
+				t.Run(testFile, func(t *testing.T) {
+					runTestFile(t, packageFS, testFile, engine, cacheBackend.Reset)
+				})
+			}
+
+			t.Logf("Total queries executed: %d", engine.TotalQueries())
+			t.Logf("Queries with splitting applied: %d", engine.QueriesWithSplit())
 		})
 	}
 }
@@ -220,14 +173,14 @@ func skipUnsupportedTests(t *testing.T, testContent string, testFile string) str
 // TestQuerySplitting_EvalsRunTwice verifies that each eval in the range vector splitting test files appears at least
 // twice before the next clear, ensuring both cache miss and cache hit paths are tested.
 func TestQuerySplitting_EvalsRunTwice(t *testing.T) {
-	testdataFS := os.DirFS("../../../../testdata")
-	testFiles, err := fs.Glob(testdataFS, "ours-only/range_vector_splitting_*.test")
+	packageFS := os.DirFS(".")
+	testFiles, err := fs.Glob(packageFS, "*.test")
 	require.NoError(t, err)
 	require.NotEmpty(t, testFiles)
 
 	for _, testFile := range testFiles {
 		t.Run(testFile, func(t *testing.T) {
-			f, err := testdataFS.Open(testFile)
+			f, err := packageFS.Open(testFile)
 			require.NoError(t, err)
 			defer f.Close()
 
@@ -259,4 +212,79 @@ func TestQuerySplitting_EvalsRunTwice(t *testing.T) {
 			checkAndClear(len(lines))
 		})
 	}
+}
+
+func runTestFile(t *testing.T, fsys fs.FS, testFile string, engine promql.QueryEngine, cacheReset func()) {
+	t.Helper()
+	f, err := fsys.Open(testFile)
+	require.NoError(t, err)
+	defer f.Close()
+	b, err := io.ReadAll(f)
+	require.NoError(t, err)
+	testScript := skipUnsupportedTests(t, string(b), testFile)
+	newStorage := func(t testing.TB) storage.Storage {
+		base := promqltest.LoadedStorage(t, "")
+		return &storageWithCloseCallback{Storage: base, onClose: cacheReset}
+	}
+	promqltest.RunTestWithStorage(t, testScript, engine, newStorage)
+}
+
+type storageWithCloseCallback struct {
+	storage.Storage
+	onClose func()
+}
+
+func (s *storageWithCloseCallback) Close() error {
+	if s.onClose != nil {
+		s.onClose()
+	}
+	return s.Storage.Close()
+}
+
+type testSplittingEngine struct {
+	engine           promql.QueryEngine
+	orgID            string
+	totalQueries     int
+	queriesWithSplit int
+}
+
+// TotalQueries returns the number of queries executed through this engine.
+func (e *testSplittingEngine) TotalQueries() int { return e.totalQueries }
+
+// QueriesWithSplit returns the number of those queries that had range vector splitting applied.
+func (e *testSplittingEngine) QueriesWithSplit() int { return e.queriesWithSplit }
+
+func (e *testSplittingEngine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
+	ctx = user.InjectOrgID(ctx, e.orgID)
+	query, err := e.engine.NewInstantQuery(ctx, q, opts, qs, ts)
+	if err != nil {
+		return nil, err
+	}
+	return &testSplittingQuery{Query: query, orgID: e.orgID, engine: e}, nil
+}
+
+func (e *testSplittingEngine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
+	ctx = user.InjectOrgID(ctx, e.orgID)
+	query, err := e.engine.NewRangeQuery(ctx, q, opts, qs, start, end, interval)
+	if err != nil {
+		return nil, err
+	}
+	return &testSplittingQuery{Query: query, orgID: e.orgID, engine: e}, nil
+}
+
+type testSplittingQuery struct {
+	promql.Query
+	orgID  string
+	engine *testSplittingEngine
+}
+
+func (q *testSplittingQuery) Exec(ctx context.Context) *promql.Result {
+	ctx = user.InjectOrgID(ctx, q.orgID)
+	queryStats, ctx := stats.ContextWithEmptyStats(ctx)
+	result := q.Query.Exec(ctx)
+	q.engine.totalQueries++
+	if queryStats.LoadSplitRangeVectors() > 0 {
+		q.engine.queriesWithSplit++
+	}
+	return result
 }
