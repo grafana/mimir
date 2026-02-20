@@ -345,7 +345,11 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 		}
 		return true, nil
 	default:
-		// Should not happen because this case is caught above.
+		// Should not happen because this case is caught above, but clean up
+		// the goroutine and context in case a new job type is added to
+		// jobTypeValid() without a corresponding case here.
+		cancelJob(nil)
+		wg.Wait()
 		return false, fmt.Errorf("unsupported job type %q, only COMPACTION and PLANNING are supported", jobType.String())
 	}
 }
