@@ -419,6 +419,7 @@ func (b *BlockBuilder) consumePartitionSection(
 		b.kafkaClient.AddConsumePartitions(map[string]map[int32]kgo.Offset{
 			b.cfg.Kafka.Topic: {partition: kgo.NewOffset().At(startOffset)},
 		})
+		defer b.kafkaClient.RemoveConsumePartitions(map[string][]int32{b.cfg.Kafka.Topic: {partition}})
 		f, err := b.newFetchers(ctx, logger, partition, startOffset)
 		if err != nil {
 			return fmt.Errorf("creating concurrent fetcher: %w", err)
@@ -434,8 +435,8 @@ func (b *BlockBuilder) consumePartitionSection(
 		b.kafkaClient.AddConsumePartitions(map[string]map[int32]kgo.Offset{
 			b.cfg.Kafka.Topic: {partition: kgo.NewOffset().At(startOffset)},
 		})
+		defer b.kafkaClient.RemoveConsumePartitions(map[string][]int32{b.cfg.Kafka.Topic: {partition}})
 	}
-	defer b.kafkaClient.RemoveConsumePartitions(map[string][]int32{b.cfg.Kafka.Topic: {partition}})
 
 	level.Info(logger).Log("msg", "start consuming", "partition", partition, "start_offset", startOffset, "end_offset", endOffset)
 
