@@ -42,6 +42,19 @@ func (s *ChunkSeriesEntry) Labels() labels.Labels                       { return
 func (s *ChunkSeriesEntry) Iterator(it chunks.Iterator) chunks.Iterator { return s.ChunkIteratorFn(it) }
 func (s *ChunkSeriesEntry) ChunkCount() (int, error)                    { return s.ChunkCountFn() }
 
+func (s *ChunkSeriesEntry) IteratorFactory() ChunkIterable {
+	return &chunkIterableFn{iteratorFn: s.ChunkIteratorFn}
+}
+
+// chunkIterableFn implements ChunkIterable using a function.
+type chunkIterableFn struct {
+	iteratorFn func(chunks.Iterator) chunks.Iterator
+}
+
+func (c *chunkIterableFn) Iterator(it chunks.Iterator) chunks.Iterator {
+	return c.iteratorFn(it)
+}
+
 // NewListSeries returns series entry with iterator that allows to iterate over provided samples.
 func NewListSeries(lset labels.Labels, s []chunks.Sample) *SeriesEntry {
 	samplesS := Samples(samples(s))
@@ -440,6 +453,10 @@ func (s *seriesToChunkEncoder) ChunkCount() (int, error) {
 	}
 
 	return chunkCount, it.Err()
+}
+
+func (s *seriesToChunkEncoder) IteratorFactory() ChunkIterable {
+	return s
 }
 
 func appendChunk(chks []chunks.Meta, mint, maxt int64, chk chunkenc.Chunk) []chunks.Meta {

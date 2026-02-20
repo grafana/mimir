@@ -43,6 +43,10 @@ func (m *mockChunkSeries) ChunkCount() (int, error) {
 	return len(m.chunks), nil
 }
 
+func (m *mockChunkSeries) IteratorFactory() storage.ChunkIterable {
+	return m
+}
+
 type mockChunkSeriesSet struct {
 	series []storage.ChunkSeries
 	pos    int
