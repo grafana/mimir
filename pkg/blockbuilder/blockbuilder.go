@@ -17,9 +17,11 @@ import (
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/dskit/services"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/thanos-io/objstore"
+	"github.com/thanos-io/objstore/providers/filesystem"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/plugin/kprom"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
@@ -28,6 +30,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/indexheader"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util"
@@ -49,12 +52,14 @@ type BlockBuilder struct {
 	schedulerClient schedulerpb.SchedulerClient
 	schedulerConn   *grpc.ClientConn
 
-	blockBuilderMetrics   blockBuilderMetrics
-	tsdbBuilderMetrics    tsdbBuilderMetrics
-	readerMetrics         *ingest.ReaderMetrics
-	readerMetricsSource   *swappableReaderMetricsSource
-	kpromMetrics          *kprom.Metrics
-	pusherConsumerMetrics *ingest.PusherConsumerMetrics
+	blockBuilderMetrics           blockBuilderMetrics
+	tsdbBuilderMetrics            tsdbBuilderMetrics
+	readerMetrics                 *ingest.ReaderMetrics
+	readerMetricsSource           *swappableReaderMetricsSource
+	kpromMetrics                  *kprom.Metrics
+	pusherConsumerMetrics         *ingest.PusherConsumerMetrics
+	sparseIndexHeaderSamplingRate int
+	sparseIndexHeaderConfig       indexheader.Config
 }
 
 func New(
@@ -84,16 +89,18 @@ func newWithSchedulerClient(
 	}
 
 	b := &BlockBuilder{
-		cfg:                   cfg,
-		logger:                logger,
-		register:              reg,
-		limits:                limits,
-		blockBuilderMetrics:   newBlockBuilderMetrics(reg),
-		tsdbBuilderMetrics:    newTSDBBBuilderMetrics(reg),
-		readerMetrics:         readerMetrics,
-		readerMetricsSource:   readerMetricsSource,
-		kpromMetrics:          kpm,
-		pusherConsumerMetrics: ingest.NewPusherConsumerMetrics(reg),
+		cfg:                           cfg,
+		logger:                        logger,
+		register:                      reg,
+		limits:                        limits,
+		blockBuilderMetrics:           newBlockBuilderMetrics(reg),
+		tsdbBuilderMetrics:            newTSDBBBuilderMetrics(reg),
+		readerMetrics:                 readerMetrics,
+		readerMetricsSource:           readerMetricsSource,
+		kpromMetrics:                  kpm,
+		pusherConsumerMetrics:         ingest.NewPusherConsumerMetrics(reg),
+		sparseIndexHeaderSamplingRate: cfg.BlocksStorage.BucketStore.PostingOffsetsInMemSampling,
+		sparseIndexHeaderConfig:       cfg.BlocksStorage.BucketStore.IndexHeader,
 	}
 
 	bucketClient, err := bucket.NewClient(context.Background(), cfg.BlocksStorage.Bucket, "block-builder", logger, reg)
@@ -505,6 +512,16 @@ func (b *BlockBuilder) consumePartitionSection(
 
 func (b *BlockBuilder) uploadBlocks(ctx context.Context, tenantID, dbDir string, metas []tsdb.BlockMeta) error {
 	buc := bucket.NewUserBucketClient(tenantID, b.bucketClient, b.limits)
+
+	// Create a bucket backed by the local directory for sparse index-header generation.
+	// This allows prepareSparseIndexHeader to read the index file without making requests to object storage.
+	fsbkt, err := filesystem.NewBucket(dbDir)
+	if err != nil {
+		return fmt.Errorf("failed to create filesystem bucket for sparse header generation: %w", err)
+	}
+	// Instrument filesystem.Bucket to objstore.InstrumentedBucket
+	fsInstrBkt := objstore.WithNoopInstr(fsbkt)
+
 	for _, m := range metas {
 		if m.Stats.NumSamples == 0 {
 			// No need to upload empty block.
@@ -526,6 +543,13 @@ func (b *BlockBuilder) uploadBlocks(ctx context.Context, tenantID, dbDir string,
 			meta.Thanos.Labels[block.OutOfOrderExternalLabel] = block.OutOfOrderExternalLabelValue
 		}
 
+		// Generate sparse index-header for the block before uploading.
+		// This is required for store-gateway to efficiently query the block.
+		if err := b.prepareSparseIndexHeader(ctx, fsInstrBkt, dbDir, meta.ULID); err != nil {
+			b.blockBuilderMetrics.buildSparseHeadersFailed.Inc()
+			return fmt.Errorf("failed to build sparse index-header for block %s (tenant %s): %w", meta.ULID.String(), tenantID, err)
+		}
+
 		boff := backoff.New(ctx, backoff.Config{
 			MinBackoff: 100 * time.Millisecond,
 			MaxBackoff: time.Minute, // If there is a network hiccup, we prefer to wait longer retrying, than fail the whole section.
@@ -544,4 +568,17 @@ func (b *BlockBuilder) uploadBlocks(ctx context.Context, tenantID, dbDir string,
 		}
 	}
 	return nil
+}
+
+// prepareSparseIndexHeader generates and writes a sparse index-header file to disk for the given block.
+// It reads the block's index and creates a sparse version for efficient querying by the store-gateway.
+func (b *BlockBuilder) prepareSparseIndexHeader(ctx context.Context, bkt objstore.InstrumentedBucketReader, dir string, id ulid.ULID) error {
+	// Calling NewStreamBinaryReader reads a block's index and writes a sparse-index-header to disk.
+	mets := indexheader.NewStreamBinaryReaderMetrics(nil)
+	logger := log.With(b.logger, "block", id)
+	br, err := indexheader.NewStreamBinaryReader(ctx, logger, bkt, dir, id, b.sparseIndexHeaderSamplingRate, mets, b.sparseIndexHeaderConfig)
+	if err != nil {
+		return err
+	}
+	return br.Close()
 }

@@ -14,6 +14,7 @@ type blockBuilderMetrics struct {
 	fetchErrors              *prometheus.CounterVec
 	blockCounts              *prometheus.CounterVec
 	invalidClusterValidation *prometheus.CounterVec
+	buildSparseHeadersFailed prometheus.Counter
 }
 
 func newBlockBuilderMetrics(reg prometheus.Registerer) blockBuilderMetrics {
@@ -40,6 +41,12 @@ func newBlockBuilderMetrics(reg prometheus.Registerer) blockBuilderMetrics {
 	}, []string{"block_time"})
 
 	m.invalidClusterValidation = util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "block-builder", util.GRPCProtocol)
+
+	m.buildSparseHeadersFailed = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "cortex_blockbuilder_sparse_index_headers_build_failed_total",
+		Help: "Total number of failures building sparse index-headers.",
+	})
+
 	return m
 }
 
