@@ -1163,4 +1163,3 @@ type errorStorage struct {
 func (e *errorStorage) Querier(_, _ int64) (storage.Querier, error) {
 	return nil, fmt.Errorf("injected storage error")
 }
-
