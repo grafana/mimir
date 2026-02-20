@@ -8701,7 +8701,7 @@
               "kind": "field",
               "name": "address",
               "required": false,
-              "desc": "The Kafka backend address.",
+              "desc": "The Kafka seed broker address, or a comma-separated list of seed broker addresses.",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "ingest-storage.kafka.address",
