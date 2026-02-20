@@ -56,10 +56,10 @@ func NewEngine(opts EngineOpts, metrics *stats.QueryMetrics, planner *QueryPlann
 		}
 		level.Info(opts.Logger).Log("msg", "intermediate results cache enabled", "backend", opts.RangeVectorSplitting.IntermediateResultsCache.Backend)
 	}
-	return newEngineWithCache(opts, metrics, planner, cacheFactory)
+	return NewEngineWithCache(opts, metrics, planner, cacheFactory)
 }
 
-func newEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *QueryPlanner, intermediateCache *cache.CacheFactory) (*Engine, error) {
+func NewEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *QueryPlanner, intermediateCache *cache.CacheFactory) (*Engine, error) {
 	if !opts.CommonOpts.EnableAtModifier {
 		return nil, errors.New("disabling @ modifier not supported by Mimir query engine")
 	}
