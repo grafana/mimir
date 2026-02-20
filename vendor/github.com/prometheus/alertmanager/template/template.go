@@ -333,7 +333,7 @@ type Alerts []Alert
 
 // Firing returns the subset of alerts that are firing.
 func (as Alerts) Firing() []Alert {
-	res := []Alert{}
+	res := make([]Alert, 0, len(as))
 	for _, a := range as {
 		if a.Status == string(model.AlertFiring) {
 			res = append(res, a)
@@ -344,7 +344,7 @@ func (as Alerts) Firing() []Alert {
 
 // Resolved returns the subset of alerts that are resolved.
 func (as Alerts) Resolved() []Alert {
-	res := []Alert{}
+	res := make([]Alert, 0, len(as))
 	for _, a := range as {
 		if a.Status == string(model.AlertResolved) {
 			res = append(res, a)

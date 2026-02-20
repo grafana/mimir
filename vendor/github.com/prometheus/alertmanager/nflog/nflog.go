@@ -33,7 +33,6 @@ import (
 	"github.com/matttproud/golang_protobuf_extensions/pbutil"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/prometheus/alertmanager/cluster"
 	pb "github.com/prometheus/alertmanager/nflog/nflogpb"
 )
 
@@ -84,9 +83,10 @@ type Log struct {
 
 	// For now we only store the most recently added log entry.
 	// The key is a serialized concatenation of group key and receiver.
-	mtx       sync.RWMutex
-	st        state
-	broadcast func([]byte)
+	mtx                sync.RWMutex
+	st                 state
+	broadcast          func([]byte)
+	isReliableDelivery func([]byte) bool
 }
 
 // MaintenanceFunc represents the function to run as part of the periodic maintenance for the nflog.
@@ -259,12 +259,13 @@ func New(o Options) (*Log, error) {
 	}
 
 	l := &Log{
-		clock:     clock.New(),
-		retention: o.Retention,
-		logger:    log.NewNopLogger(),
-		st:        state{},
-		broadcast: func([]byte) {},
-		metrics:   newMetrics(o.Metrics),
+		clock:              clock.New(),
+		retention:          o.Retention,
+		logger:             log.NewNopLogger(),
+		st:                 state{},
+		broadcast:          func([]byte) {},
+		isReliableDelivery: func([]byte) bool { return false },
+		metrics:            newMetrics(o.Metrics),
 	}
 
 	if o.Logger != nil {
@@ -527,11 +528,11 @@ func (l *Log) Merge(b []byte) error {
 	now := l.now()
 
 	for _, e := range st {
-		if merged := l.st.merge(e, now); merged && !cluster.OversizedMessage(b) {
-			// If this is the first we've seen the message and it's
-			// not oversized, gossip it to other nodes. We don't
-			// propagate oversized messages because they're sent to
-			// all nodes already.
+		if merged := l.st.merge(e, now); merged && !l.isReliableDelivery(b) {
+			// If this is the first we've seen the message and it was
+			// not sent reliably to all nodes, gossip it to other nodes.
+			// We don't propagate reliable messages because they're
+			// sent to all nodes already.
 			l.broadcast(b)
 			l.metrics.propagatedMessagesTotal.Inc()
 			level.Debug(l.logger).Log("msg", "gossiping new entry", "entry", e)
@@ -548,6 +549,14 @@ func (l *Log) SetBroadcast(f func([]byte)) {
 	l.mtx.Unlock()
 }
 
+// SetIsReliableDelivery sets a callback that returns true if the given message
+// was delivered reliably to all peers and should not be re-broadcast.
+func (l *Log) SetIsReliableDelivery(f func([]byte) bool) {
+	l.mtx.Lock()
+	l.isReliableDelivery = f
+	l.mtx.Unlock()
+}
+
 // replaceFile wraps a file that is moved to another filename on closing.
 type replaceFile struct {
 	*os.File
@@ -555,13 +564,13 @@ type replaceFile struct {
 }
 
 func (f *replaceFile) Close() error {
-	if err := f.File.Sync(); err != nil {
+	if err := f.Sync(); err != nil {
 		return err
 	}
 	if err := f.File.Close(); err != nil {
 		return err
 	}
-	return os.Rename(f.File.Name(), f.filename)
+	return os.Rename(f.Name(), f.filename)
 }
 
 // openReplace opens a new temporary file that is moved to filename on closing.
