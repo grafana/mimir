@@ -343,7 +343,10 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 		}
 		return true, nil
 	default:
-		return false, fmt.Errorf("unsupported job type %q, only COMPACTION and PLANNING are supported", jobType.String())
+		err := fmt.Errorf("unsupported job type %q, only COMPACTION and PLANNING are supported", jobType.String())
+		cancelJob(err)
+		wg.Wait()
+		return false, err
 	}
 }
 
