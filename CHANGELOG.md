@@ -287,6 +287,7 @@
 
 ### Documentation
 
+* [ENHANCEMENT] Runbook: Add section on "Ring Failures" to `MimirCompactorNotRunningCompaction` runbook. #14391
 * [ENHANCEMENT] Add Azure object store workload identity example configuration. #13135
 * [ENHANCEMENT] Ruler: clarify that internal distributor applies to both operational modes. #13300
 * [ENHANCEMENT] Native histograms: Set expectations on querying classic histograms versus NHCBs. #13689
