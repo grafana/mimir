@@ -56,20 +56,6 @@ func NewStreamingChunksEstimate(estimatedChunks uint64) *SeriesResponse {
 	}
 }
 
-func NewResponseHintsSeriesResponse(hints *SeriesResponseHints) *SeriesResponse {
-	return &SeriesResponse{
-		Result: &SeriesResponse_ResponseHints{
-			ResponseHints: hints,
-		},
-	}
-}
-
-func (m *SeriesResponseHints) AddQueriedBlock(id ulid.ULID) {
-	m.QueriedBlocks = append(m.QueriedBlocks, Block{
-		Id: id.String(),
-	})
-}
-
 func (m *LabelNamesResponseHints) AddQueriedBlock(id ulid.ULID) {
 	m.QueriedBlocks = append(m.QueriedBlocks, Block{
 		Id: id.String(),
