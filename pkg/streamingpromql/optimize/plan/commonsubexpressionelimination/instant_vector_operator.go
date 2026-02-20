@@ -373,28 +373,14 @@ func applyFiltering(unfilteredSeries []types.SeriesMetadata, bitmap []bool, filt
 		return metadata, nil
 	}
 
-	// Try to reuse the original slice, if we can.
-	var filteredSeries []types.SeriesMetadata
-
-	if canReuseSlice {
-		filteredSeries = unfilteredSeries[:0]
-	} else {
-		var err error
-		filteredSeries, err = types.SeriesMetadataSlicePool.Get(filteredSeriesCount, memoryConsumptionTracker)
-		if err != nil {
-			return nil, err
-		}
+	filteredSeries, err := types.SeriesMetadataSlicePool.Get(filteredSeriesCount, memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
 	}
 
 	for idx, matchesFilter := range bitmap {
 		if !matchesFilter {
 			continue
-		}
-
-		// If we're reusing the original slice, then we need to decrease the memory consumption estimate for the existing series
-		// we're about to replace in the slice.
-		if canReuseSlice {
-			memoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(unfilteredSeries[len(filteredSeries)].Labels)
 		}
 
 		var err error
@@ -405,11 +391,8 @@ func applyFiltering(unfilteredSeries []types.SeriesMetadata, bitmap []bool, filt
 	}
 
 	if canReuseSlice {
-		// If we reused the original slice, zero out the remaining elements, and adjust the memory consumption estimate to match.
-		for idx, series := range unfilteredSeries[len(filteredSeries):] {
-			unfilteredSeries[len(filteredSeries)+idx] = types.SeriesMetadata{}
-			memoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(series.Labels)
-		}
+		// It's simpler not to reuse the slice when filtering is involved, so return it to the pool now that we're done with it.
+		types.SeriesMetadataSlicePool.Put(&unfilteredSeries, memoryConsumptionTracker)
 	}
 
 	return filteredSeries, nil
