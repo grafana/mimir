@@ -28,6 +28,7 @@ The following are the main/default maintainers:
 - Miguel Ángel Ortuño [@ortuman](https://github.com/ortuman) ([Grafana Labs](https://grafana.com/))
 - Nick Pillitteri — [@56quarters](https://github.com/56quarters) ([Grafana Labs](https://grafana.com/))
 - Oleg Zaytsev — [@colega](https://github.com/colega) ([Grafana Labs](https://grafana.com/))
+- Oliver Herrmann - [@monoxane](https://github.com/monoxane) ([Grafana Labs](https://grafana.com/))
 - Patrick Oyarzun - [@Logiraptor](https://github.com/Logiraptor) ([Grafana Labs](https://grafana.com/))
 - Patryk Prus [@pr00se](https://github.com/pr00se) ([Grafana Labs](https://grafana.com/))
 - Peter Štibraný — [@pstibrany](https://github.com/pstibrany) ([Grafana Labs](https://grafana.com/))
