@@ -640,13 +640,23 @@ func (u *BucketStores) Collect(metrics chan<- prometheus.Metric) {
 		)
 	}
 
-	for compactLvl, count := range blockCompactionLevels {
+	if len(blockCompactionLevels) == 0 {
+		// Emit 0 when there are no blocks loaded to ensure the metric exists for alerting/dashboards.
 		metrics <- prometheus.MustNewConstMetric(
 			u.blocksLoaded,
 			prometheus.GaugeValue,
-			float64(count),
-			strconv.Itoa(compactLvl),
+			0,
+			"1",
 		)
+	} else {
+		for compactLvl, count := range blockCompactionLevels {
+			metrics <- prometheus.MustNewConstMetric(
+				u.blocksLoaded,
+				prometheus.GaugeValue,
+				float64(count),
+				strconv.Itoa(compactLvl),
+			)
+		}
 	}
 }
 

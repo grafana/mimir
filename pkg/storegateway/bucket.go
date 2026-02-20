@@ -286,9 +286,21 @@ func (s *BucketStore) RemoveBlocksAndClose() error {
 	return errs.Err()
 }
 
-// Stats returns statistics about the BucketStore instance.
+// Stats returns a copy of statistics about the BucketStore instance.
+// The copy is safe to read without synchronization.
 func (s *BucketStore) Stats() *loadedBlockSetStats {
-	return s.blockSet.blockSetStats
+	s.blockSet.mtx.RLock()
+	defer s.blockSet.mtx.RUnlock()
+
+	stats := s.blockSet.blockSetStats
+	result := &loadedBlockSetStats{
+		loadedSizeBytes:        stats.loadedSizeBytes,
+		loadedCompactionLevels: make(map[int]int, len(stats.loadedCompactionLevels)),
+	}
+	for k, v := range stats.loadedCompactionLevels {
+		result.loadedCompactionLevels[k] = v
+	}
+	return result
 }
 
 // SyncBlocks synchronizes the stores state with the Bucket bucket.
@@ -1957,7 +1969,11 @@ func (bss *loadedBlockSetStats) SizeBytes() int64 {
 }
 
 func (bss *loadedBlockSetStats) CompactionLevels() map[int]int {
-	return bss.loadedCompactionLevels
+	result := make(map[int]int, len(bss.loadedCompactionLevels))
+	for k, v := range bss.loadedCompactionLevels {
+		result[k] = v
+	}
+	return result
 }
 
 func (bss *loadedBlockSetStats) Len() int {
@@ -2053,8 +2069,9 @@ func newBucketBlock(
 
 	b.blockStats, err = collectLoadedBlockStats(dir)
 	if err != nil {
-		// Block stats are optional.
+		// Block stats are optional; initialize to empty stats to avoid nil pointer dereference.
 		level.Warn(logger).Log("msg", "failed to collect on-disk stats", "err", err)
+		b.blockStats = &loadedBlockStats{}
 	}
 
 	// Get object handles for all chunk files (segment files) from meta.json, if available.

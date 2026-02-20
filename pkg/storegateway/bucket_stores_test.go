@@ -777,6 +777,9 @@ func TestBucketStores_deleteLocalFilesForExcludedTenants(t *testing.T) {
         	            	# HELP cortex_bucket_store_block_loads_total Total number of remote block loading attempts.
         	            	# TYPE cortex_bucket_store_block_loads_total counter
         	            	cortex_bucket_store_block_loads_total 2
+        	            	# HELP cortex_bucket_store_blocks_loaded Number of currently loaded blocks.
+        	            	# TYPE cortex_bucket_store_blocks_loaded gauge
+        	            	cortex_bucket_store_blocks_loaded{level="1"} 0
 	`), metricNames...))
 
 	// We can always get user back.
