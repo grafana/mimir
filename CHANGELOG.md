@@ -292,6 +292,7 @@
 * [ENHANCEMENT] Document how ingesters calculate partition ID from ring's instance ID in ingest storage. #13903
 * [ENHANCEMENT] Add AWS profile authentication example to `mark-blocks` tool documentation and add centralized section in runbooks with examples for all cloud providers. #14281
 * [BUGFIX] Distributor: Fix type error in multi-zone distributor container constructor's env map. #14403
+* [BUGFIX] Native histograms: Fix PromQL query example for `histogram_fraction` to filter NaN results when there are no observations. #14433
 
 ### Tools
 
