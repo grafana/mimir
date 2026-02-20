@@ -83,6 +83,10 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 // NewQueryPlannerWithTime is like NewQueryPlanner but uses the given time function. Useful for tests that need a fixed
 // "now" for OOO window calculations).
 func NewQueryPlannerWithTime(opts EngineOpts, versionProvider QueryPlanVersionProvider, timeNow func() time.Time) (*QueryPlanner, error) {
+	if timeNow == nil {
+		timeNow = time.Now
+	}
+
 	planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, versionProvider)
 	if err != nil {
 		return nil, err
