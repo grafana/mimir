@@ -215,6 +215,8 @@ func (b *SeriesDataRingBuffer[T]) tryToFindElementPositionForSeriesIndex(seriesI
 		return posInTail + headSize, found
 	}
 
+	// Using a binary search here only works because the elements in the buffer are ordered by series index.
+	// This is an invariant enforced by Append().
 	return slices.BinarySearchFunc(b.elements[b.startIndex:min(b.startIndex+b.elementCount, len(b.elements))], seriesIndex, cmp)
 }
 
