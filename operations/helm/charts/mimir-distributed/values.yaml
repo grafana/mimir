@@ -579,6 +579,10 @@ alertmanager:
     #
     annotations: {}
 
+    # Alertmanager data Persistent Volume Claim labels
+    #
+    labels: {}
+
     # Alertmanager data Persistent Volume access modes
     # Must match those of existing PV or dynamic provisioner
     # Ref: http://kubernetes.io/docs/user-guide/persistent-volumes/
@@ -991,6 +995,10 @@ ingester:
     # Ingester data Persistent Volume Claim annotations
     #
     annotations: {}
+
+    # Ingester data Persistent Volume Claim labels
+    #
+    labels: {}
 
     # Ingester data Persistent Volume access modes
     # Must match those of existing PV or dynamic provisioner
@@ -2190,6 +2198,10 @@ store_gateway:
     #
     annotations: {}
 
+    # Store-gateway data Persistent Volume Claim labels
+    #
+    labels: {}
+
     # Store-gateway data Persistent Volume access modes
     # Must match those of existing PV or dynamic provisioner
     # Ref: http://kubernetes.io/docs/user-guide/persistent-volumes/
@@ -2433,6 +2445,10 @@ compactor:
     # compactor data Persistent Volume Claim annotations
     #
     annotations: {}
+
+    # compactor data Persistent Volume Claim labels
+    #
+    labels: {}
 
     # compactor data Persistent Volume access modes
     # Must match those of existing PV or dynamic provisioner
