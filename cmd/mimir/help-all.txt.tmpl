@@ -279,14 +279,6 @@ Usage of ./cmd/mimir/mimir:
     	Per-tenant rate limit for sending notifications from Alertmanager in notifications/sec. 0 = rate limit disabled. Negative value = no notifications are allowed.
   -alertmanager.notification-rate-limit-per-integration value
     	Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: webhook, email, pagerduty, opsgenie, wechat, slack, victorops, pushover, sns, webex, telegram, discord, msteams, msteamsv2. (default {})
-  -alertmanager.notify-hook-receivers comma-separated-list-of-strings
-    	List of receivers to enable notify hooks for. empty = all receivers.
-  -alertmanager.notify-hook-timeout duration
-    	Maximum amount of time to wait for a hook to complete before timing out. 0 = no timeout. (default 30s)
-  -alertmanager.notify-hook-url string
-    	URL of a hook to invoke before a notification is sent. empty = no hook.
-  -alertmanager.notify-hooks-enabled
-    	[experimental] Enable pre-notification hooks.
   -alertmanager.peer-timeout duration
     	Time to wait between peers to send notifications. (default 15s)
   -alertmanager.persist-interval duration

@@ -6986,36 +6986,6 @@
         },
         {
           "kind": "field",
-          "name": "alertmanager_notify_hook_url",
-          "required": false,
-          "desc": "URL of a hook to invoke before a notification is sent. empty = no hook.",
-          "fieldValue": null,
-          "fieldDefaultValue": "",
-          "fieldFlag": "alertmanager.notify-hook-url",
-          "fieldType": "string"
-        },
-        {
-          "kind": "field",
-          "name": "alertmanager_notify_hook_receivers",
-          "required": false,
-          "desc": "List of receivers to enable notify hooks for. empty = all receivers.",
-          "fieldValue": null,
-          "fieldDefaultValue": "",
-          "fieldFlag": "alertmanager.notify-hook-receivers",
-          "fieldType": "string"
-        },
-        {
-          "kind": "field",
-          "name": "alertmanager_notify_hook_timeout",
-          "required": false,
-          "desc": "Maximum amount of time to wait for a hook to complete before timing out. 0 = no timeout.",
-          "fieldValue": null,
-          "fieldDefaultValue": 30000000000,
-          "fieldFlag": "alertmanager.notify-hook-timeout",
-          "fieldType": "duration"
-        },
-        {
-          "kind": "field",
           "name": "otel_metric_suffixes_enabled",
           "required": false,
           "desc": "Whether to enable automatic suffixes to names of metrics ingested through OTLP.",
@@ -17276,17 +17246,6 @@
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "alertmanager.utf8-migration-logging-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
-          "name": "enable_notify_hooks",
-          "required": false,
-          "desc": "Enable pre-notification hooks.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "alertmanager.notify-hooks-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         }

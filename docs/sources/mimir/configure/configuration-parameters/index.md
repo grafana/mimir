@@ -3238,10 +3238,6 @@ alertmanager_client:
 # with UTF-8 strict mode.
 # CLI flag: -alertmanager.utf8-migration-logging-enabled
 [utf8_migration_logging: <boolean> | default = false]
-
-# (experimental) Enable pre-notification hooks.
-# CLI flag: -alertmanager.notify-hooks-enabled
-[enable_notify_hooks: <boolean> | default = false]
 ```
 
 ### alertmanager_storage
@@ -5001,19 +4997,6 @@ ruler_alertmanager_client_config:
 # alerts will fail with a log message and metric increment. 0 = no limit.
 # CLI flag: -alertmanager.max-alerts-size-bytes
 [alertmanager_max_alerts_size_bytes: <int> | default = 0]
-
-# URL of a hook to invoke before a notification is sent. empty = no hook.
-# CLI flag: -alertmanager.notify-hook-url
-[alertmanager_notify_hook_url: <string> | default = ""]
-
-# List of receivers to enable notify hooks for. empty = all receivers.
-# CLI flag: -alertmanager.notify-hook-receivers
-[alertmanager_notify_hook_receivers: <string> | default = ""]
-
-# Maximum amount of time to wait for a hook to complete before timing out. 0 =
-# no timeout.
-# CLI flag: -alertmanager.notify-hook-timeout
-[alertmanager_notify_hook_timeout: <duration> | default = 30s]
 
 # (advanced) Whether to enable automatic suffixes to names of metrics ingested
 # through OTLP.
