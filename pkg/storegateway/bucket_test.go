@@ -181,7 +181,7 @@ func TestBucketBlockSet_add_FailOnDuplicates(t *testing.T) {
 		m.ULID = in.id
 		m.MinTime = in.mint
 		m.MaxTime = in.maxt
-		require.NoError(t, set.add(&bucketBlock{meta: &m, blockStats: &loadedBlockStats{}}))
+		require.NoError(t, set.add(&bucketBlock{meta: &m}))
 	}
 	assert.Equal(t, 2, set.len())
 
@@ -214,7 +214,7 @@ func TestBucketBlockSet_remove(t *testing.T) {
 		m.ULID = in.id
 		m.MinTime = in.mint
 		m.MaxTime = in.maxt
-		assert.NoError(t, set.add(&bucketBlock{meta: &m, blockStats: &loadedBlockStats{}}))
+		assert.NoError(t, set.add(&bucketBlock{meta: &m}))
 	}
 	b := set.remove(input[1].id)
 	require.NotNil(t, b)
@@ -1720,7 +1720,6 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			meta:         meta,
 			partitioners: newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 			chunkObjs:    []string{filepath.Join(id.String(), "chunks", "000001")},
-			blockStats:   &loadedBlockStats{},
 		}
 		b1.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b1.meta.ULID, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.NewStreamBinaryReaderMetrics(nil), indexheader.Config{})
 		assert.NoError(t, err)
@@ -1760,7 +1759,6 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			meta:         meta,
 			partitioners: newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 			chunkObjs:    []string{filepath.Join(id.String(), "chunks", "000001")},
-			blockStats:   &loadedBlockStats{},
 		}
 		b2.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b2.meta.ULID, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.NewStreamBinaryReaderMetrics(nil), indexheader.Config{})
 		assert.NoError(t, err)
