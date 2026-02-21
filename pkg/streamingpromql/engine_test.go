@@ -195,6 +195,31 @@ func TestNewInstantQuery_Strings(t *testing.T) {
 	mqetest.RequireEqualResults(t, expr, prometheus, mimir, false)
 }
 
+func TestNewInstantQuery_42EasterEgg(t *testing.T) {
+	ctx := context.Background()
+	opts := NewTestEngineOpts()
+
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
+	require.NoError(t, err)
+
+	storage := promqltest.LoadedStorage(t, ``)
+
+	expr := `"42"`
+	q, err := engine.NewInstantQuery(ctx, storage, nil, expr, time.Now())
+	require.NoError(t, err)
+	result := q.Exec(context.Background())
+	defer q.Close()
+
+	require.Nil(t, result.Err)
+	vector, ok := result.Value.(promql.Vector)
+	require.True(t, ok, "expected vector result")
+	require.Len(t, vector, 1)
+	require.Equal(t, "Answer to the Ultimate Question of Life, the Universe, and Everything", vector[0].Metric.Get(model.MetricNameLabel))
+	require.Equal(t, float64(42), vector[0].F)
+}
+
 // This test runs the test cases defined upstream in https://github.com/prometheus/prometheus/tree/main/promql/testdata and copied to testdata/upstream.
 // Test cases that are not supported by the streaming engine are commented out (or, if the entire file is not supported, .disabled is appended to the file name).
 // Once the streaming engine supports all PromQL features exercised by Prometheus' test cases, we can remove these files and instead call promql.RunBuiltinTests here instead.
