@@ -125,9 +125,11 @@ func newEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *Q
 
 		logger: opts.Logger,
 		estimatedPeakMemoryConsumption: promauto.With(opts.CommonOpts.Reg).NewHistogram(prometheus.HistogramOpts{
-			Name:                        "cortex_mimir_query_engine_estimated_query_peak_memory_consumption",
-			Help:                        "Estimated peak memory consumption of each query (in bytes)",
-			NativeHistogramBucketFactor: 1.1,
+			Name:                            "cortex_mimir_query_engine_estimated_query_peak_memory_consumption",
+			Help:                            "Estimated peak memory consumption of each query (in bytes)",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		}),
 		queriesRejectedDueToPeakMemoryConsumption: metrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxEstimatedQueryMemoryConsumption),
 

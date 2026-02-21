@@ -50,10 +50,12 @@ func newUsageTrackerClientPool(discovery client.PoolServiceDiscovery, clientName
 
 func newUsageTrackerClientFactory(clientName string, clientCfg grpcclient.Config, reg prometheus.Registerer, logger log.Logger) client.PoolFactory {
 	requestDuration := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-		Name:                        "cortex_usage_tracker_client_request_duration_seconds",
-		Help:                        "Time spent executing  a single request to a usage-tracker instance.",
-		NativeHistogramBucketFactor: 1.1,
-		ConstLabels:                 prometheus.Labels{"client": clientName},
+		Name:                            "cortex_usage_tracker_client_request_duration_seconds",
+		Help:                            "Time spent executing  a single request to a usage-tracker instance.",
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: 1 * time.Hour,
+		ConstLabels:                     prometheus.Labels{"client": clientName},
 	}, []string{"operation", "status_code"})
 
 	invalidClusterValidation := util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "usage-tracker", util.GRPCProtocol)

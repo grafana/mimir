@@ -3,6 +3,8 @@
 package scheduler
 
 import (
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -28,7 +30,9 @@ func newSchedulerMetrics(reg prometheus.Registerer) schedulerMetrics {
 			Name: "cortex_blockbuilder_scheduler_schedule_update_seconds",
 			Help: "Time spent updating the schedule.",
 
-			NativeHistogramBucketFactor: 1.1,
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		}),
 		partitionStartOffset: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_blockbuilder_scheduler_partition_start_offset",

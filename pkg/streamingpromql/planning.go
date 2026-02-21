@@ -166,9 +166,11 @@ func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts, versionProvider Q
 		activeQueryTracker:       activeQueryTracker,
 		noStepSubqueryIntervalFn: opts.CommonOpts.NoStepSubqueryIntervalFn,
 		planStageLatency: promauto.With(opts.CommonOpts.Reg).NewHistogramVec(prometheus.HistogramOpts{
-			Name:                        "cortex_mimir_query_engine_plan_stage_latency_seconds",
-			Help:                        "Latency of each stage of the query planning process.",
-			NativeHistogramBucketFactor: 1.1,
+			Name:                            "cortex_mimir_query_engine_plan_stage_latency_seconds",
+			Help:                            "Latency of each stage of the query planning process.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		}, []string{"stage_type", "stage"}),
 		generatedPlans: promauto.With(opts.CommonOpts.Reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_mimir_query_engine_plans_generated_total",

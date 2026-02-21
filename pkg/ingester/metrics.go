@@ -179,13 +179,17 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_queried_series",
 			Help: "The total number of series returned from queries.",
 			// A reasonable upper bound is around 100k - 10*(8^(6-1)) = 327k.
-			Buckets:                     prometheus.ExponentialBuckets(10, 8, 6),
-			NativeHistogramBucketFactor: 1.1,
+			Buckets:                         prometheus.ExponentialBuckets(10, 8, 6),
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		}, []string{"stage"}),
 		discardedSeriesRatio: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
-			Name:                        "cortex_ingester_discarded_series_ratio",
-			Help:                        `Ratio of discarded series during query processing. These are series fetched from the index, but then discarded because they don't match the vector selector. This is the ratio of cortex_ingester_queried_series{stage="index"} over {stage="send"}.`,
-			NativeHistogramBucketFactor: 1.1,
+			Name:                            "cortex_ingester_discarded_series_ratio",
+			Help:                            `Ratio of discarded series during query processing. These are series fetched from the index, but then discarded because they don't match the vector selector. This is the ratio of cortex_ingester_queried_series{stage="index"} over {stage="send"}.`,
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		}),
 		memMetadata: promauto.With(r).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_ingester_memory_metadata",
