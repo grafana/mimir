@@ -11,6 +11,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/mem"
 
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -237,27 +238,35 @@ func TestHistogram_BucketsCount(t *testing.T) {
 	}
 }
 
-func TestBufferHolder_FreeBuffer_Idempotent(t *testing.T) {
-	// Create a buffer via unmarshalling
-	c := codecV2{}
-	var origReq WriteRequest
-	data, err := c.Marshal(&origReq)
-	require.NoError(t, err)
+func TestBufferHolder_FreeBuffer_PanicsOnDoubleFree(t *testing.T) {
+	// Create a BufferHolder with a buffer directly (not via WriteRequest).
+	data := []byte("test data")
+	buf := mem.NewBuffer(&data, nil)
+	var holder BufferHolder
+	holder.SetBuffer(buf)
+	require.NotNil(t, holder.Buffer())
 
-	var req WriteRequest
-	require.NoError(t, c.Unmarshal(data, &req))
-	require.NotNil(t, req.Buffer())
+	// First FreeBuffer should work.
+	holder.FreeBuffer()
 
-	// First FreeBuffer should work
-	req.FreeBuffer()
+	// Buffer should be nil after FreeBuffer.
+	assert.Nil(t, holder.Buffer())
 
-	// Second FreeBuffer should be a no-op (buffer is now nil), not panic
-	assert.NotPanics(t, func() {
-		req.FreeBuffer()
+	// Second FreeBuffer should panic.
+	assert.PanicsWithValue(t, "BufferHolder.FreeBuffer called on already-freed buffer", func() {
+		holder.FreeBuffer()
 	})
+}
 
-	// Buffer should be nil after FreeBuffer
-	assert.Nil(t, req.Buffer())
+func TestBufferHolder_FreeBuffer_NoOpIfNeverHadBuffer(t *testing.T) {
+	// A freshly created BufferHolder with no buffer should not panic.
+	var holder BufferHolder
+	require.Nil(t, holder.Buffer())
+
+	// FreeBuffer should be a no-op, not panic.
+	assert.NotPanics(t, func() {
+		holder.FreeBuffer()
+	})
 }
 
 func TestAddSourceBufferHolder_DeduplicationByBuffer(t *testing.T) {
@@ -293,7 +302,7 @@ func TestAddSourceBufferHolder_DeduplicationByBuffer(t *testing.T) {
 	sourceReq.FreeBuffer()
 }
 
-func TestWriteRequest_FreeBuffer_WithSourceHolders_Idempotent(t *testing.T) {
+func TestWriteRequest_FreeBuffer_WithSourceHolders(t *testing.T) {
 	// Create a buffer via unmarshalling
 	var c codecV2
 	var origReq WriteRequest
@@ -301,7 +310,12 @@ func TestWriteRequest_FreeBuffer_WithSourceHolders_Idempotent(t *testing.T) {
 	require.NoError(t, err)
 	var sourceReq WriteRequest
 	require.NoError(t, c.Unmarshal(data, &sourceReq))
-	t.Cleanup(sourceReq.FreeBuffer)
+	t.Cleanup(func() {
+		// sourceReq still has its own BufferHolder with its own buffer reference.
+		assert.NotPanics(t, func() {
+			sourceReq.FreeBuffer()
+		})
+	})
 	require.NotNil(t, sourceReq.Buffer())
 
 	// Create a destination WriteRequest and add source buffer holder.
@@ -309,13 +323,10 @@ func TestWriteRequest_FreeBuffer_WithSourceHolders_Idempotent(t *testing.T) {
 	destReq.AddSourceBufferHolder(&sourceReq.BufferHolder)
 	require.Len(t, destReq.sourceBufferHolders, 1)
 
-	// First FreeBuffer should work.
+	// FreeBuffer should work and free the copied source holder's buffer reference.
+	// Note: AddSourceBufferHolder copies the BufferHolder and increments the buffer's ref count.
 	destReq.FreeBuffer()
 
-	// Second FreeBuffer should be a no-op.
-	assert.NotPanics(t, func() {
-		destReq.FreeBuffer()
-	})
 	// sourceBufferHolders should be nil after FreeBuffer.
 	assert.Nil(t, destReq.sourceBufferHolders)
 }
