@@ -1099,6 +1099,7 @@ ingester:
       # -- Enable zone-awareness, write path only
       writePath: false
     # -- Zone definitions for ingester zones. Note: you have to redefine the whole list to change parts as YAML does not allow to modify parts of a list.
+    # When ingest storage is enabled, 2 zones are sufficient since Kafka handles replication. 3 zones are required for classic (non-ingest-storage) architecture.
     zones:
       # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
       - name: zone-a
