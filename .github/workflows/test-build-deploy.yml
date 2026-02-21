@@ -152,10 +152,10 @@ jobs:
     strategy:
       # Do not abort other groups when one fails.
       fail-fast: false
-      # Split tests into 4 groups.
+      # Split tests into 8 groups.
       matrix:
-        test_group_id:    [0, 1, 2, 3]
-        test_group_total: [4]
+        test_group_id:    [0, 1, 2, 3, 4, 5, 6, 7]
+        test_group_total: [8]
         extra_build_tags: ["", "nopools"]
     needs:
       - prepare
@@ -188,21 +188,65 @@ jobs:
           retry_wait_seconds: 0
           command: |
             echo "Running unit tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }})${{ matrix.extra_build_tags != '' && format(' with build tags: {0}', matrix.extra_build_tags) || '' }} with Go version: $(go version)"
-            EXTRA_BUILD_TAGS="${{ matrix.extra_build_tags }}" ./.github/workflows/scripts/run-unit-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
+            EXTRA_BUILD_TAGS="${{ matrix.extra_build_tags }}" ./.github/workflows/scripts/run-unit-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }} --exclude "^github.com/grafana/mimir/pkg/streamingpromql"
+
+  test-streamingpromql:
+    runs-on: ubuntu-latest
+    name: test-streamingpromql (${{ matrix.extra_build_tags != '' && format('{0}, ', matrix.extra_build_tags) || '' }}${{ matrix.test_group_id }}, ${{ matrix.test_group_total }})
+    strategy:
+      # Do not abort other groups when one fails.
+      fail-fast: false
+      # Split tests into 8 groups.
+      matrix:
+        test_group_id: [0, 1]
+        test_group_total: [2]
+        extra_build_tags: ["", "nopools"]
+    needs:
+      - prepare
+    permissions:
+      contents: read
+      pull-requests: write
+    container:
+      image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+      - name: Install GitHub CLI
+        run: ./.github/workflows/scripts/install-gh.sh
+      - name: Run Git Config
+        run: git config --global --add safe.directory '*'
+      - name: Symlink Expected Path to Workspace
+        run: |
+          mkdir -p /go/src/github.com/grafana/mimir
+          ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
+      # We use retry logic for tests to handle flaky tests that might fail intermittently.
+      # The retry action will run the test command up to max_attempts times if it fails.
+      # This helps reduce CI failures caused by temporary issues, timing problems, or race conditions.
+      - name: Run Tests with retry
+        uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3.0.2
+        with:
+          timeout_minutes: 180 # 3 hours so that we rely on the timeout in the makefile
+          max_attempts: 2
+          retry_wait_seconds: 0
+          command: |
+            echo "Running unit tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }})${{ matrix.extra_build_tags != '' && format(' with build tags: {0}', matrix.extra_build_tags) || '' }} with Go version: $(go version)"
+            EXTRA_BUILD_TAGS="${{ matrix.extra_build_tags }}" ./.github/workflows/scripts/run-unit-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }} --include "^github.com/grafana/mimir/pkg/streamingpromql"
       - name: Notify on streamingpromql failures
         if: failure() && env.FAILED_PACKAGES != '' && contains(github.event.pull_request.labels.*.name, 'vendored-mimir-prometheus-update')
         run: |
           if echo "${{ env.FAILED_PACKAGES }}" | grep -q "pkg/streamingpromql"; then
             gh pr comment ${{ github.event.pull_request.number }} --body \
               "⚠️ Test failures detected in \`pkg/streamingpromql\` (test group ${{ matrix.test_group_id }}/${{ matrix.test_group_total }})
-              
+
           Failed packages in this test group:
           \`\`\`
           ${{ env.FAILED_PACKAGES }}
           \`\`\`
-              
+
           cc @charleskorn @56quarters @lamida @zenador @tcp13equals2
-              
+
           Please review the [test logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) and push fixes to this PR."
           fi
         env:
@@ -355,10 +399,10 @@ jobs:
     strategy:
       # Do not abort other groups when one fails.
       fail-fast: false
-      # Split tests into 6 groups.
+      # Split tests into 8 groups.
       matrix:
-        test_group_id:    [0, 1, 2, 3, 4, 5]
-        test_group_total: [6]
+        test_group_id:    [0, 1, 2, 3, 4, 5, 6, 7]
+        test_group_total: [8]
     steps:
       - name: Upgrade golang
         uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6
@@ -427,6 +471,7 @@ jobs:
       - prepare
       - build
       - test
+      - test-streamingpromql
       - test-docs
       - lint
       - lint-jsonnet
@@ -479,6 +524,7 @@ jobs:
       - lint-jsonnet
       - lint-helm
       - test
+      - test-streamingpromql
       - test-docs
       - build-metaconvert-image
       - build-mimir-image
