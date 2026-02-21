@@ -3264,7 +3264,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum (cortex_bucket_store_blocks_loaded{component=\"store-gateway\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"})",
+                        "expr": "sum by (instance) (cortex_bucket_store_blocks_loaded{component=\"store-gateway\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"})",
                         "format": "time_series",
                         "legendFormat": "{{instance}}",
                         "legendLink": null

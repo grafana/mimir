@@ -1968,12 +1968,12 @@ func (bss loadedBlockSetStats) Len() int {
 	return total
 }
 
-func (bss loadedBlockSetStats) Add(b *bucketBlock) {
+func (bss *loadedBlockSetStats) Add(b *bucketBlock) {
 	bss.loadedSizeBytes += b.blockStats.sizeBytes()
 	bss.loadedCompactionLevels[b.meta.Compaction.Level]++
 }
 
-func (bss loadedBlockSetStats) Remove(b *bucketBlock) {
+func (bss *loadedBlockSetStats) Remove(b *bucketBlock) {
 	bss.loadedSizeBytes -= b.blockStats.sizeBytes()
 	bss.loadedCompactionLevels[b.meta.Compaction.Level]--
 }
