@@ -174,7 +174,7 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 		mockLimits{},
 		codec,
 		nil,
-		nil,
+		DefaultCacheKeyGenerator{interval: day},
 		nil,
 		nil,
 		log.NewNopLogger(),
