@@ -1543,6 +1543,7 @@ cortex_distributor_uncompressed_request_body_size_bytes_count{handler="otlp",use
 				MiB, util.NewBufferPool(0), nil, otlpLimitsMock{},
 				nil, nil, RetryConfig{}, nil,
 				distr.limitsMiddleware(dummyPushFunc), newPushMetrics(reg), reg, log.NewNopLogger(),
+				false, // enableArenaAllocation
 			)
 
 			resp := httptest.NewRecorder()
@@ -1590,6 +1591,7 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 		200, util.NewBufferPool(0), nil, otlpLimitsMock{},
 		nil, nil, RetryConfig{}, nil,
 		push, newPushMetrics(reg), reg, log.NewNopLogger(),
+		false, // enableArenaAllocation
 	)
 	srv.HTTP.Handle("/otlp", h)
 
