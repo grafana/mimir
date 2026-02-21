@@ -1049,12 +1049,11 @@ func (resp *PrometheusResponseWithFinalizer) GetPrometheusResponse() (*Prometheu
 	return resp.PrometheusResponse, true
 }
 
-// create a semi clone
-// Data field points to the original response field
+// Creates a deep clone
 func (resp *PrometheusResponse) Clone() *PrometheusResponse {
 	respClone := &PrometheusResponse{
 		Status:    resp.Status,
-		Data:      resp.Data,
+		Data:      proto.Clone(resp.Data).(*PrometheusData),
 		ErrorType: resp.ErrorType,
 		Error:     resp.Error,
 		Headers:   make([]*PrometheusHeader, len(resp.Headers)),
