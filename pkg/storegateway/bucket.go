@@ -68,14 +68,6 @@ const (
 	fallbackStreamingBatchSize        = 256
 )
 
-type BucketStoreStats struct {
-	// BlocksLoadedTotal is the total number of blocks currently loaded in the bucket store.
-	BlocksLoadedTotal int
-	// BlocksLoadedSizeBytes is the total size in bytes of loaded blocks on local disk.
-	// This includes index-header and sparse-index-header files, but not the actual block data in the object storage.
-	BlocksLoadedSizeBytes int64
-}
-
 // BucketStore implements the store API backed by a bucket. It loads all index
 // files to local disk.
 //
@@ -295,11 +287,8 @@ func (s *BucketStore) RemoveBlocksAndClose() error {
 }
 
 // Stats returns statistics about the BucketStore instance.
-func (s *BucketStore) Stats() BucketStoreStats {
-	return BucketStoreStats{
-		BlocksLoadedTotal:     s.blockSet.len(),
-		BlocksLoadedSizeBytes: s.blockSet.sizeBytes(),
-	}
+func (s *BucketStore) Stats() loadedBlockSetStats {
+	return s.blockSet.blockSetStats
 }
 
 // SyncBlocks synchronizes the stores state with the Bucket bucket.
@@ -1756,19 +1745,22 @@ func storeCachedLabelValues(ctx context.Context, indexCache indexcache.IndexCach
 // bucketBlockSet holds all blocks.
 type bucketBlockSet struct {
 	// mtx protects the below data strcutures, helping to keep them in sync.
-	mtx      sync.RWMutex
-	blockSet sync.Map       // Maps block's ulid.ULID to the *bucketBlock.
-	blocks   []*bucketBlock // Blocks sorted by mint, then maxt.
+	mtx           sync.RWMutex
+	blockSet      sync.Map       // Maps block's ulid.ULID to the *bucketBlock.
+	blocks        []*bucketBlock // Blocks sorted by mint, then maxt.
+	blockSetStats loadedBlockSetStats
 }
 
 // newBucketBlockSet initializes a new set with the known downsampling windows hard-configured.
 // (Mimir only supports no-downsampling)
 // The set currently does not support arbitrary ranges.
 func newBucketBlockSet() *bucketBlockSet {
-	return &bucketBlockSet{}
+	return &bucketBlockSet{
+		blockSetStats: newLoadedBlockSetStats(),
+	}
 }
 
-// add adds a block to the set.
+// add adds a block to the set and updates the loadedBlockSetStats.
 func (s *bucketBlockSet) add(b *bucketBlock) error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
@@ -1779,6 +1771,8 @@ func (s *bucketBlockSet) add(b *bucketBlock) error {
 		// This should not ever happen.
 		return fmt.Errorf("block %s already exists in the set", b.meta.ULID)
 	}
+
+	s.blockSetStats.Add(b)
 
 	s.blocks = append(s.blocks, b)
 
@@ -1792,7 +1786,8 @@ func (s *bucketBlockSet) add(b *bucketBlock) error {
 	return nil
 }
 
-// remove removes the block identified by id from the set. It returns the removed block if it was present in the set.
+// remove removes the block identified by id from the set and updates loadedBlockSetStats.
+// It returns the removed block if it was present in the set.
 func (s *bucketBlockSet) remove(id ulid.ULID) *bucketBlock {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
@@ -1802,6 +1797,9 @@ func (s *bucketBlockSet) remove(id ulid.ULID) *bucketBlock {
 		return nil
 	}
 
+	b := val.(*bucketBlock)
+	s.blockSetStats.Remove(b)
+
 	for i, b := range s.blocks {
 		if b.meta.ULID != id {
 			continue
@@ -1810,7 +1808,7 @@ func (s *bucketBlockSet) remove(id ulid.ULID) *bucketBlock {
 		break
 	}
 
-	return val.(*bucketBlock)
+	return b
 }
 
 func (s *bucketBlockSet) contains(id ulid.ULID) bool {
@@ -1937,21 +1935,56 @@ func (s *bucketBlockSet) timerange() (mint, maxt int64) {
 	return mint, maxt
 }
 
-// sizeBytes returns the total bytes size of all blocks in the set which are not closed.
-func (s *bucketBlockSet) sizeBytes() (v int64) {
-	s.forEach(func(b *bucketBlock) {
-		v += b.blockStats.SizeBytes()
-	})
-	return v
+type loadedBlockSetStats struct {
+	// loadedSizeBytes tracks the total size in bytes of loaded blocks on local disk.
+	// This includes index-header and sparse-index-header files,
+	// but not the actual block data in the object storage.
+	loadedSizeBytes int64
+
+	// loadedCompactionLevels tracks the counts of loaded blocks on local disk by compaction level
+	loadedCompactionLevels map[int]int
 }
 
-type bucketBlockStats struct {
-	Files []block.File
+func newLoadedBlockSetStats() loadedBlockSetStats {
+	return loadedBlockSetStats{
+		loadedSizeBytes:        0,
+		loadedCompactionLevels: make(map[int]int),
+	}
 }
 
-func (m *bucketBlockStats) SizeBytes() int64 {
+func (bss loadedBlockSetStats) SizeBytes() int64 {
+	return bss.loadedSizeBytes
+}
+
+func (bss loadedBlockSetStats) CompactionLevels() map[int]int {
+	return bss.loadedCompactionLevels
+}
+
+func (bss loadedBlockSetStats) Len() int {
+	total := 0
+	for _, v := range bss.loadedCompactionLevels {
+		total += v
+	}
+	return total
+}
+
+func (bss loadedBlockSetStats) Add(b *bucketBlock) {
+	bss.loadedSizeBytes += b.blockStats.sizeBytes()
+	bss.loadedCompactionLevels[b.meta.Compaction.Level]++
+}
+
+func (bss loadedBlockSetStats) Remove(b *bucketBlock) {
+	bss.loadedSizeBytes -= b.blockStats.sizeBytes()
+	bss.loadedCompactionLevels[b.meta.Compaction.Level]--
+}
+
+type loadedBlockStats struct {
+	files []block.File
+}
+
+func (m *loadedBlockStats) sizeBytes() int64 {
 	var b int64
-	for _, f := range m.Files {
+	for _, f := range m.files {
 		if f.SizeBytes > 0 {
 			b += f.SizeBytes
 		}
@@ -1982,9 +2015,9 @@ type bucketBlock struct {
 	// Block's labels used by block-level matchers to filter blocks to query. These are used to select blocks using
 	// request hints' BlockMatchers.
 	blockLabels labels.Labels
-	// Block's stats includes details about on-local disk files (e.g. index-header). The data is different from block.Meta above,
-	// which contains the block's metadata in the bucket.
-	blockStats bucketBlockStats
+	// Block's stats includes details about on-local disk files (e.g. index-header).
+	// The data differs from block.Meta above, which contains the block's metadata in the bucket.
+	blockStats loadedBlockStats
 
 	expandedPostingsPromises sync.Map
 
@@ -2018,7 +2051,7 @@ func newBucketBlock(
 		blockLabels: labels.FromStrings(block.BlockIDLabel, meta.ULID.String()),
 	}
 
-	b.blockStats.Files, err = collectBucketBlockFileStats(dir)
+	b.blockStats, err = collectLoadedBlockStats(dir)
 	if err != nil {
 		// Block stats are optional.
 		level.Warn(logger).Log("msg", "failed to collect on-disk stats", "err", err)
@@ -2135,29 +2168,29 @@ func (b *bucketBlock) Close() error {
 	return b.indexHeaderReader.Close()
 }
 
-// collectBucketBlockFileStats collects the files of the on-disk block representation.
-func collectBucketBlockFileStats(blockDir string) (res []block.File, _ error) {
+// collectLoadedBlockStats collects the file stats of the on-disk block representation.
+func collectLoadedBlockStats(blockDir string) (stats loadedBlockStats, _ error) {
 	indexHeaderInfo, err := os.Stat(filepath.Join(blockDir, block.IndexHeaderFilename))
 	if err != nil {
-		return nil, fmt.Errorf("stat %v: %w", filepath.Join(blockDir, block.IndexHeaderFilename), err)
+		return stats, fmt.Errorf("stat %v: %w", filepath.Join(blockDir, block.IndexHeaderFilename), err)
 	}
-	mf := block.File{
+
+	files := []block.File{{
 		RelPath:   indexHeaderInfo.Name(),
 		SizeBytes: indexHeaderInfo.Size(),
-	}
-	res = append(res, mf)
+	}}
 
 	// Sparse index headers are optional and may not exist on disk.
 	sparseHeaderInfo, err := os.Stat(filepath.Join(blockDir, block.SparseIndexHeaderFilename))
 	if err != nil {
 		if !os.IsNotExist(err) {
-			return nil, fmt.Errorf("stat %v: %w", filepath.Join(blockDir, block.SparseIndexHeaderFilename), err)
+			return stats, fmt.Errorf("stat %v: %w", filepath.Join(blockDir, block.SparseIndexHeaderFilename), err)
 		}
 	} else {
-		res = append(res, block.File{RelPath: sparseHeaderInfo.Name(), SizeBytes: sparseHeaderInfo.Size()})
+		files = append(files, block.File{RelPath: sparseHeaderInfo.Name(), SizeBytes: sparseHeaderInfo.Size()})
 	}
 
-	return res, err
+	return loadedBlockStats{files: files}, err
 }
 
 type Part struct {

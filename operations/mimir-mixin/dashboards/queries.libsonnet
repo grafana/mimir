@@ -583,7 +583,7 @@ local filename = 'mimir-queries.json';
       $.row('')
       .addPanel(
         $.timeseriesPanel('Blocks currently owned') +
-        $.queryPanel('cortex_bucket_store_blocks_loaded{component="store-gateway",%s}' % $.jobMatcher($._config.job_names.store_gateway), '{{%s}}' % $._config.per_instance_label) +
+        $.queryPanel('sum (cortex_bucket_store_blocks_loaded{component="store-gateway",%s})' % $.jobMatcher($._config.job_names.store_gateway), '{{%s}}' % $._config.per_instance_label) +
         { fieldConfig+: { defaults+: { custom+: { fillOpacity: 0 } } } } +
         $.panelDescription(
           'Blocks currently owned',

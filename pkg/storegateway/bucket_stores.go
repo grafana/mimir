@@ -165,7 +165,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 	u.blocksLoaded = prometheus.NewDesc(
 		"cortex_bucket_store_blocks_loaded",
 		"Number of currently loaded blocks.",
-		nil, nil,
+		[]string{"level"}, nil,
 	)
 	u.blocksLoadedSizeBytes = prometheus.NewDesc(
 		"cortex_bucket_store_blocks_loaded_size_bytes",
@@ -615,18 +615,21 @@ func (u *BucketStores) Describe(descs chan<- *prometheus.Desc) {
 
 func (u *BucketStores) Collect(metrics chan<- prometheus.Metric) {
 	u.storesMu.RLock()
-	// Total number of blocks loaded, summed for all users.
-	loadedTotal := 0
+
 	// Block sizes by userID.
 	blockSizes := make(map[string]int64, len(u.stores))
+	// Block compaction levels, summed for all users;
+	// init with enough compaction level buckets to minimize allocations from expansion.
+	blockCompactionLevels := make(map[int]int, 20)
+
 	for userID, store := range u.stores {
 		stats := store.Stats()
-		loadedTotal += stats.BlocksLoadedTotal
-		blockSizes[userID] = stats.BlocksLoadedSizeBytes
+		blockSizes[userID] = stats.SizeBytes()
+		for compactLvl, count := range stats.CompactionLevels() {
+			blockCompactionLevels[compactLvl] += count
+		}
 	}
 	u.storesMu.RUnlock()
-
-	metrics <- prometheus.MustNewConstMetric(u.blocksLoaded, prometheus.GaugeValue, float64(loadedTotal))
 
 	for userID, size := range blockSizes {
 		metrics <- prometheus.MustNewConstMetric(
@@ -634,6 +637,15 @@ func (u *BucketStores) Collect(metrics chan<- prometheus.Metric) {
 			prometheus.GaugeValue,
 			float64(size),
 			userID,
+		)
+	}
+
+	for compactLvl, count := range blockCompactionLevels {
+		metrics <- prometheus.MustNewConstMetric(
+			u.blocksLoaded,
+			prometheus.GaugeValue,
+			float64(count),
+			strconv.Itoa(compactLvl),
 		)
 	}
 }
