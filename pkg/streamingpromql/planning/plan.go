@@ -29,8 +29,6 @@ func (v QueryPlanVersion) String() string {
 	return strconv.FormatUint(uint64(v), 10)
 }
 
-var MaximumSupportedQueryPlanVersion = QueryPlanV6
-
 // IMPORTANT:
 // Do not change the value or meaning of these constants once they have been merged.
 // Doing so could result in queriers receiving query plans they don't understand, which could
@@ -57,6 +55,11 @@ const QueryPlanV5 = QueryPlanVersion(5)
 
 // QueryPlanV6 introduces support for query splitting with intermediate result caching.
 const QueryPlanV6 = QueryPlanVersion(6)
+
+// QueryPlanV7 introduces support for subset selector elimination.
+const QueryPlanV7 = QueryPlanVersion(7)
+
+var MaximumSupportedQueryPlanVersion = QueryPlanV7
 
 type QueryPlan struct {
 	Root       Node

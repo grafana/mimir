@@ -1939,6 +1939,10 @@ mimir_query_engine:
   # CLI flag: -querier.mimir-query-engine.enable-common-subexpression-elimination
   [enable_common_subexpression_elimination: <boolean> | default = true]
 
+  # (experimental) Enable subset selector elimination when evaluating queries.
+  # CLI flag: -querier.mimir-query-engine.enable-subset-selector-elimination
+  [enable_subset_selector_elimination: <boolean> | default = false]
+
   # (experimental) Enable generating selectors for one side of a binary
   # expression based on results from the other side.
   # CLI flag: -querier.mimir-query-engine.enable-narrow-binary-selectors

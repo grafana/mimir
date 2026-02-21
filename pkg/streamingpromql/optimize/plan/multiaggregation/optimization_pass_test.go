@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/multiaggregation"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -339,6 +340,51 @@ func TestOptimizationPass(t *testing.T) {
 			expectUnchanged:                     true,
 			expectedDuplicateNodesExaminedCount: 1,
 		},
+
+		"subset selector elimination with same aggregation": {
+			expr: `sum(foo{status="success"}) / sum(foo)`,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS
+					- LHS: MultiAggregationInstance: sum, filters: {status="success"}
+						- ref#1 MultiAggregationGroup
+							- VectorSelector: {__name__="foo"}
+					- RHS: MultiAggregationInstance: sum
+						- ref#1 MultiAggregationGroup ...
+			`,
+			expectedDuplicateNodesExaminedCount:   1,
+			expectedDuplicateNodesReplacedCount:   1,
+			expectedAggregationNodesReplacedCount: 2,
+		},
+		"subset selector elimination with different grouping": {
+			expr: `sum by (region) (foo{status="success"}) / scalar(sum(foo))`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- BinaryExpression: LHS / RHS
+						- LHS: MultiAggregationInstance: sum by (region), filters: {status="success"}
+							- ref#1 MultiAggregationGroup
+								- VectorSelector: {__name__="foo"}
+						- RHS: FunctionCall: scalar(...)
+							- MultiAggregationInstance: sum
+								- ref#1 MultiAggregationGroup ...
+			`,
+			expectedDuplicateNodesExaminedCount:   1,
+			expectedDuplicateNodesReplacedCount:   1,
+			expectedAggregationNodesReplacedCount: 2,
+		},
+		"subset selector elimination with different aggregation": {
+			expr: `sum(foo{status="success"}) / count(foo)`,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS
+					- LHS: MultiAggregationInstance: sum, filters: {status="success"}
+						- ref#1 MultiAggregationGroup
+							- VectorSelector: {__name__="foo"}
+					- RHS: MultiAggregationInstance: count
+						- ref#1 MultiAggregationGroup ...
+			`,
+			expectedDuplicateNodesExaminedCount:   1,
+			expectedDuplicateNodesReplacedCount:   1,
+			expectedAggregationNodesReplacedCount: 2,
+		},
 	}
 
 	for name, testCase := range testCases {
@@ -394,7 +440,8 @@ func createPlan(t *testing.T, expr string, enableOptimizationPass bool, minimumQ
 	opts.CommonOpts.Reg = reg
 	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewStaticQueryPlanVersionProvider(minimumQueryPlanVersion))
 	require.NoError(t, err)
-	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
+	planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{}) // This is a prerequisite for the CSE optimization pass
+	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, opts.CommonOpts.Reg, opts.Logger))
 
 	if enableOptimizationPass {
 		planner.RegisterQueryPlanOptimizationPass(multiaggregation.NewOptimizationPass(opts.CommonOpts.Reg))

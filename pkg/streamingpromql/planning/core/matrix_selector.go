@@ -102,12 +102,23 @@ func (m *MatrixSelector) EquivalentToIgnoringHintsAndChildren(other planning.Nod
 
 	return ok &&
 		slices.EqualFunc(m.Matchers, otherMatrixSelector.Matchers, matchersEqual) &&
+		m.EquivalentToIgnoringMatchersAndHints(otherMatrixSelector)
+}
+
+func (m *MatrixSelector) EquivalentToIgnoringMatchersAndHints(other planning.Node) bool {
+	otherMatrixSelector, ok := other.(*MatrixSelector)
+
+	return ok &&
 		((m.Timestamp == nil && otherMatrixSelector.Timestamp == nil) || (m.Timestamp != nil && otherMatrixSelector.Timestamp != nil && m.Timestamp.Equal(*otherMatrixSelector.Timestamp))) &&
 		m.Offset == otherMatrixSelector.Offset &&
 		m.Range == otherMatrixSelector.Range &&
 		m.Anchored == otherMatrixSelector.Anchored &&
 		m.Smoothed == otherMatrixSelector.Smoothed &&
 		m.CounterAware == otherMatrixSelector.CounterAware
+}
+
+func (m *MatrixSelector) GetMatchers() []*LabelMatcher {
+	return m.Matchers
 }
 
 func (m *MatrixSelector) MergeHints(other planning.Node) error {

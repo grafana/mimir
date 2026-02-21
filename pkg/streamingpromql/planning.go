@@ -33,7 +33,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
-	planningmetrics "github.com/grafana/mimir/pkg/streamingpromql/planning/metrics"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/metrics"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -68,7 +68,7 @@ type QueryPlanner struct {
 	planStageLatency         *prometheus.HistogramVec
 	generatedPlans           *prometheus.CounterVec
 	versionProvider          QueryPlanVersionProvider
-	planningMetricsTracker   *planningmetrics.MetricsTracker
+	planningMetricsTracker   *metrics.MetricsTracker
 	logger                   log.Logger
 	parser                   parser.Parser
 
@@ -125,8 +125,12 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 		planner.RegisterQueryPlanOptimizationPass(rangevectorsplitting.NewOptimizationPass(splitInterval, opts.Limits, time.Now, opts.CommonOpts.Reg, opts.Logger))
 	}
 
+	if opts.EnableSubsetSelectorElimination && !opts.EnableCommonSubexpressionElimination {
+		return nil, errors.New("cannot enable subset selector elimination without common subexpression elimination")
+	}
+
 	if opts.EnableCommonSubexpressionElimination {
-		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
+		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.EnableSubsetSelectorElimination, opts.CommonOpts.Reg, opts.Logger))
 	}
 
 	if opts.EnableMultiAggregation {
@@ -174,7 +178,7 @@ func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts, versionProvider Q
 			Name: "cortex_mimir_query_engine_plans_generated_total",
 			Help: "Total number of query plans generated.",
 		}, []string{"version"}),
-		planningMetricsTracker: planningmetrics.NewMetricsTracker(opts.CommonOpts.Reg),
+		planningMetricsTracker: metrics.NewMetricsTracker(opts.CommonOpts.Reg),
 		versionProvider:        versionProvider,
 		parser:                 promqlParser,
 

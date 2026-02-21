@@ -2197,6 +2197,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable pruning query expressions that are toggled off with constants. (default true)
   -querier.mimir-query-engine.enable-reduce-matchers
     	[experimental] Enable eliminating duplicate or redundant matchers that are part of selector expressions. (default true)
+  -querier.mimir-query-engine.enable-subset-selector-elimination
+    	[experimental] Enable subset selector elimination when evaluating queries.
   -querier.mimir-query-engine.range-vector-splitting.backend string
     	Backend for intermediate results cache, if not empty. Supported values: memcached.
   -querier.mimir-query-engine.range-vector-splitting.compression string
