@@ -449,6 +449,7 @@ type ExprMapperWithState interface {
 	ExprMapper
 	// HasChanged returns whether the mapper made any changes during mapping
 	HasChanged() bool
+	Stats() (int, int, int)
 }
 
 // ASTExprMapperWithState is a wrapper around an ASTExprMapper that stores the original mapper to provide a method to check if any changes were made.
@@ -470,4 +471,8 @@ func (w *ASTExprMapperWithState) Map(ctx context.Context, expr parser.Expr) (par
 
 func (w *ASTExprMapperWithState) HasChanged() bool {
 	return w.mapper.HasChanged()
+}
+
+func (w *ASTExprMapperWithState) Stats() (int, int, int) {
+	return w.mapper.Stats()
 }

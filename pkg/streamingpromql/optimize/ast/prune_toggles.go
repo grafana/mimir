@@ -62,6 +62,10 @@ func (mapper *pruneToggles) HasChanged() bool {
 	return mapper.changed
 }
 
+func (mapper *pruneToggles) Stats() (int, int, int) {
+	return 0, 0, 0
+}
+
 func (mapper *pruneToggles) MapExpr(ctx context.Context, expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
 	e, ok := expr.(*parser.BinaryExpr)
 	if !ok {

@@ -27,6 +27,10 @@ func (mapper *reorderHistogramAggregation) HasChanged() bool {
 	return mapper.changed
 }
 
+func (mapper *reorderHistogramAggregation) Stats() (int, int, int) {
+	return 0, 0, 0
+}
+
 func (mapper *reorderHistogramAggregation) MapExpr(ctx context.Context, expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
 	call, ok := expr.(*parser.Call)
 	if !ok || !mapper.isSwitchableCall(call.Func) {
