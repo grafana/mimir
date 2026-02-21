@@ -7,7 +7,7 @@ alertmanager:
     topologyKey: 'kubernetes.io/hostname'
 
 ingester:
-  # Test that the calculated number of replicas per zone is ceil(20/3)=7
+  # Test that the calculated number of replicas per zone is ceil(20/2)=10
   replicas: 20
   zoneAwareReplication:
     enabled: true
@@ -26,17 +26,6 @@ ingester:
                 - S1
             topologyKey: topology.kubernetes.io/zone
     - name: zone-b
-      extraAffinity:
-        podAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchExpressions:
-              - key: security
-                operator: In
-                values:
-                - S1
-            topologyKey: topology.kubernetes.io/zone
-    - name: zone-c
       extraAffinity:
         podAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
