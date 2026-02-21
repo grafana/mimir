@@ -9,7 +9,7 @@ local filename = 'mimir-alertmanager.json';
     assert std.md5(filename) == 'b0d38d318bbddd80476246d4930f9e55' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Alertmanager') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
-    .addShowNativeLatencyVariable()
+    .addShowNativeLatencyVariable($.latencyVariableDefault())
     .addRow(
       ($.row('Headlines') + {
          height: '100px',

@@ -187,6 +187,7 @@
 
 ### Mixin
 
+* [CHANGE] Dashboards: Add config option `dashboards_default_latency_mode` to control the default value of the native/classic latency variable (uses 'classic' if unset). #14424
 * [CHANGE] Alerts: Renamed the following alerts to fit within 40 characters: #13363
   * `MimirAlertmanagerPartialStateMergeFailing` → `MimirAlertmanagerStateMergeFailing`
   * `MimirServerInvalidClusterValidationLabelRequests` → `MimirServerInvalidClusterLabelRequests`
