@@ -99,6 +99,15 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expectedErr: ErrInvalidProducerMaxRecordSizeBytes,
 		},
+		"should fail if ingest storage is enabled and producer compression type is invalid": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.ProducerCompressionType = "invalid"
+			},
+			expectedErr: ErrInvalidProducerCompressionType,
+		},
 		"should fail if target consumer lag is enabled but max consumer lag is not": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true

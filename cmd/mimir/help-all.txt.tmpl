@@ -1495,6 +1495,8 @@ Usage of ./cmd/mimir/mimir:
     	The maximum number of buffered records ready to be processed. This limit applies to the sum of all inflight requests. Set to 0 to disable the limit. (default 100000000)
   -ingest-storage.kafka.max-consumer-lag-at-startup duration
     	The guaranteed maximum lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set both -ingest-storage.kafka.target-consumer-lag-at-startup and -ingest-storage.kafka.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 15s)
+  -ingest-storage.kafka.producer-compression-type string
+    	The compression algorithm used by Kafka producer when producing records. Supported values: snappy, none, gzip, lz4, zstd. (default "snappy")
   -ingest-storage.kafka.producer-max-buffered-bytes int
     	The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is per Kafka client. 0 to disable the limit. (default 1073741824)
   -ingest-storage.kafka.producer-max-record-size-bytes int

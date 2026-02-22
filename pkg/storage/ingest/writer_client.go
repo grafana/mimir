@@ -4,6 +4,7 @@ package ingest
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"sync"
 	"time"
@@ -89,7 +90,27 @@ func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, 
 		kgo.MaxBufferedBytes(0),
 	)
 
+	opts = append(opts, kgo.ProducerBatchCompression(producerCompressionCodecs(kafkaCfg.ProducerCompressionType)...))
+
 	return kgo.NewClient(opts...)
+}
+
+// producerCompressionCodecs returns the kgo.CompressionCodec preference list for the given compression type string.
+func producerCompressionCodecs(compressionType string) []kgo.CompressionCodec {
+	switch compressionType {
+	case compressionTypeSnappy:
+		return []kgo.CompressionCodec{kgo.SnappyCompression(), kgo.NoCompression()}
+	case compressionTypeNone:
+		return []kgo.CompressionCodec{kgo.NoCompression()}
+	case compressionTypeGzip:
+		return []kgo.CompressionCodec{kgo.GzipCompression(), kgo.NoCompression()}
+	case compressionTypeLz4:
+		return []kgo.CompressionCodec{kgo.Lz4Compression(), kgo.NoCompression()}
+	case compressionTypeZstd:
+		return []kgo.CompressionCodec{kgo.ZstdCompression(), kgo.NoCompression()}
+	default:
+		panic(fmt.Sprintf("unsupported compression type %q", compressionType))
+	}
 }
 
 // KafkaProducer is a kgo.Client wrapper exposing some higher level features and metrics useful for producers.

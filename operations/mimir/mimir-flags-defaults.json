@@ -618,6 +618,7 @@
   "ingest-storage.kafka.auto-create-topic-default-partitions": -1,
   "ingest-storage.kafka.producer-max-record-size-bytes": 15983616,
   "ingest-storage.kafka.producer-max-buffered-bytes": 1073741824,
+  "ingest-storage.kafka.producer-compression-type": "snappy",
   "ingest-storage.kafka.wait-strong-read-consistency-timeout": 20000000000,
   "ingest-storage.kafka.producer-record-version": 0,
   "ingest-storage.kafka.fetch-max-wait": 5000000000,
