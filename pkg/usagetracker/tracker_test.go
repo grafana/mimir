@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/ring"
@@ -858,14 +859,14 @@ func newTestUsageTrackerConfig(tb testing.TB, instanceID, zone string, ikv, pkv 
 	// Fake kafka cluster address.
 	cfg.EventsStorageWriter.Topic = eventsTopic
 	cfg.EventsStorageReader.Topic = eventsTopic
-	cfg.EventsStorageReader.Address = cluster.ListenAddrs()[0]
-	cfg.EventsStorageWriter.Address = cluster.ListenAddrs()[0]
+	cfg.EventsStorageReader.Address = flagext.StringSliceCSV{cluster.ListenAddrs()[0]}
+	cfg.EventsStorageWriter.Address = flagext.StringSliceCSV{cluster.ListenAddrs()[0]}
 	cfg.EventsStorageWriter.AutoCreateTopicDefaultPartitions = testPartitionsCount
 
 	cfg.SnapshotsMetadataWriter.Topic = snapshotsMetadataTopic
 	cfg.SnapshotsMetadataReader.Topic = snapshotsMetadataTopic
-	cfg.SnapshotsMetadataReader.Address = cluster.ListenAddrs()[0]
-	cfg.SnapshotsMetadataWriter.Address = cluster.ListenAddrs()[0]
+	cfg.SnapshotsMetadataReader.Address = flagext.StringSliceCSV{cluster.ListenAddrs()[0]}
+	cfg.SnapshotsMetadataWriter.Address = flagext.StringSliceCSV{cluster.ListenAddrs()[0]}
 	cfg.SnapshotsMetadataWriter.AutoCreateTopicDefaultPartitions = testPartitionsCount
 
 	cfg.PartitionReconcileInterval = time.Hour // we do reconciliation manually

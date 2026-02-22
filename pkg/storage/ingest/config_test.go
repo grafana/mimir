@@ -32,21 +32,21 @@ func TestConfig_Validate(t *testing.T) {
 		"should fail if ingest storage is enabled and Kafka topic is not configured": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
-				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 			},
 			expectedErr: ErrMissingKafkaTopic,
 		},
 		"should pass if ingest storage is enabled and required config is set": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
-				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 			},
 		},
 		"should fail if ingest storage is enabled and consume position is invalid": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
-				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.ConsumeFromPositionAtStartup = "middle"
 			},
@@ -55,7 +55,7 @@ func TestConfig_Validate(t *testing.T) {
 		"should fail if ingest storage is enabled and consume timestamp is set and consume position is not expected": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
-				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.ConsumeFromPositionAtStartup = consumeFromEnd
 				cfg.KafkaConfig.ConsumeFromTimestampAtStartup = time.Now().UnixMilli()
@@ -65,7 +65,7 @@ func TestConfig_Validate(t *testing.T) {
 		"should fail if ingest storage is enabled and consume position is expected but consume timestamp is invalid": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
-				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.ConsumeFromPositionAtStartup = consumeFromTimestamp
 				cfg.KafkaConfig.ConsumeFromTimestampAtStartup = 0
@@ -75,7 +75,7 @@ func TestConfig_Validate(t *testing.T) {
 		"should fail if ingest storage is enabled and the configured number of Kafka write clients is 0": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
-				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.WriteClients = 0
 			},
@@ -84,7 +84,7 @@ func TestConfig_Validate(t *testing.T) {
 		"should fail if ingest storage is enabled and producer max record size bytes is set too low": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
-				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.ProducerMaxRecordSizeBytes = minProducerRecordDataBytesLimit - 1
 			},
@@ -93,7 +93,7 @@ func TestConfig_Validate(t *testing.T) {
 		"should fail if ingest storage is enabled and producer max record size bytes is set too high": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
-				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.ProducerMaxRecordSizeBytes = maxProducerRecordDataBytesLimit + 1
 			},
@@ -102,7 +102,7 @@ func TestConfig_Validate(t *testing.T) {
 		"should fail if target consumer lag is enabled but max consumer lag is not": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
-				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.TargetConsumerLagAtStartup = 2 * time.Second
 				cfg.KafkaConfig.MaxConsumerLagAtStartup = 0
@@ -112,7 +112,7 @@ func TestConfig_Validate(t *testing.T) {
 		"should fail if max consumer lag is enabled but target consumer lag is not": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
-				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.TargetConsumerLagAtStartup = 0
 				cfg.KafkaConfig.MaxConsumerLagAtStartup = 2 * time.Second
@@ -122,7 +122,7 @@ func TestConfig_Validate(t *testing.T) {
 		"should fail if target consumer lag is > max consumer lag": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
-				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.TargetConsumerLagAtStartup = 2 * time.Second
 				cfg.KafkaConfig.MaxConsumerLagAtStartup = 1 * time.Second
@@ -132,7 +132,7 @@ func TestConfig_Validate(t *testing.T) {
 		"should fail if SASL username is configured but password is not": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
-				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.SASL.Username = "mimir"
 			},
@@ -141,7 +141,7 @@ func TestConfig_Validate(t *testing.T) {
 		"should fail if SASL password is configured but username is not": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
-				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				require.NoError(t, cfg.KafkaConfig.SASL.Password.Set("supersecret"))
 			},
@@ -150,7 +150,7 @@ func TestConfig_Validate(t *testing.T) {
 		"should pass if both SASL username and password are configured": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
-				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.SASL.Username = "mimir"
 				require.NoError(t, cfg.KafkaConfig.SASL.Password.Set("supersecret"))
@@ -159,7 +159,7 @@ func TestConfig_Validate(t *testing.T) {
 		"should fail if SASL mechanism is OAUTHBEARER but no way to get the token is configured": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
-				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.SASL.Mechanism = SASLMechanismOauthbearer
 			},
@@ -168,7 +168,7 @@ func TestConfig_Validate(t *testing.T) {
 		"should fail if SASL mechanism is OAUTHBEARER but no single way to get the token is configured": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
-				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.SASL.Mechanism = SASLMechanismOauthbearer
 				require.NoError(t, cfg.KafkaConfig.SASL.OauthbearerToken.Set("foo"))
@@ -179,7 +179,7 @@ func TestConfig_Validate(t *testing.T) {
 		"should succeed if SASL mechanism is OAUTHBEARER and a token is passed": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
-				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.SASL.Mechanism = SASLMechanismOauthbearer
 				require.NoError(t, cfg.KafkaConfig.SASL.OauthbearerToken.Set("foo"))
@@ -188,7 +188,7 @@ func TestConfig_Validate(t *testing.T) {
 		"should succeed if SASL mechanism is OAUTHBEARER and a file path to the token is passed": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
-				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.SASL.Mechanism = SASLMechanismOauthbearer
 				cfg.KafkaConfig.SASL.OauthbearerFilePath = "foo"
@@ -197,7 +197,7 @@ func TestConfig_Validate(t *testing.T) {
 		"should fail if max ingestion concurrency is lower than 0": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
-				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.IngestionConcurrencyMax = -1
 			},
@@ -206,7 +206,7 @@ func TestConfig_Validate(t *testing.T) {
 		"should pass if max ingestion concurrency is 0": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
-				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.IngestionConcurrencyMax = 0
 			},
@@ -214,7 +214,7 @@ func TestConfig_Validate(t *testing.T) {
 		"should fail if ingestion concurrency batch size is lower than 0": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
-				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.IngestionConcurrencyMax = 5
 				cfg.KafkaConfig.IngestionConcurrencyBatchSize = -1
@@ -224,7 +224,7 @@ func TestConfig_Validate(t *testing.T) {
 		"should fail if ingestion concurrency queue capacity is lower than 0": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
-				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.IngestionConcurrencyMax = 5
 				cfg.KafkaConfig.IngestionConcurrencyQueueCapacity = -1
@@ -234,7 +234,7 @@ func TestConfig_Validate(t *testing.T) {
 		"should fail if ingestion concurrency estimates bytes per sample is lower than 0": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
-				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.IngestionConcurrencyMax = 5
 				cfg.KafkaConfig.IngestionConcurrencyEstimatedBytesPerSample = -1
@@ -244,7 +244,7 @@ func TestConfig_Validate(t *testing.T) {
 		"should fail if ingestion concurrency target flushes per shard is lower than 0": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
-				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.IngestionConcurrencyMax = 5
 				cfg.KafkaConfig.IngestionConcurrencyTargetFlushesPerShard = -1
@@ -254,7 +254,7 @@ func TestConfig_Validate(t *testing.T) {
 		"should fail when auto create topic default partitions is lower than 1": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
-				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.AutoCreateTopicEnabled = true
 				cfg.KafkaConfig.AutoCreateTopicDefaultPartitions = -100
@@ -264,7 +264,7 @@ func TestConfig_Validate(t *testing.T) {
 		"should pass when auto create topic default partitions is -1 (using Kafka broker's default)": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
-				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.AutoCreateTopicEnabled = true
 				cfg.KafkaConfig.AutoCreateTopicDefaultPartitions = -1
@@ -273,7 +273,7 @@ func TestConfig_Validate(t *testing.T) {
 		"should fail if Kafka fetch max wait is less than 5s": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
-				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.FetchMaxWait = 2 * time.Second
 			},
@@ -282,7 +282,7 @@ func TestConfig_Validate(t *testing.T) {
 		"should fail if Kafka fetch max wait is greater than 30s": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
-				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.FetchMaxWait = 32 * time.Second
 			},
@@ -307,7 +307,7 @@ func TestConfig_Validate(t *testing.T) {
 			tests[fmt.Sprintf("should fail if SASL %s is missing but mechanism is %s", missing, mechanism)] = testCase{
 				setup: func(cfg *Config) {
 					cfg.Enabled = true
-					cfg.KafkaConfig.Address = "localhost"
+					cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 					cfg.KafkaConfig.Topic = "test"
 					cfg.KafkaConfig.SASL.Mechanism = mechanism
 					setup(cfg)
@@ -362,7 +362,6 @@ func TestConfig_GetConsumerGroup(t *testing.T) {
 		})
 	}
 }
-
 func TestExhaustiveSASLMechanismOptions(t *testing.T) {
 	for _, o := range saslMechanismOptions {
 		require.NoError(t, new(SASLMechanism).Set(string(o)))

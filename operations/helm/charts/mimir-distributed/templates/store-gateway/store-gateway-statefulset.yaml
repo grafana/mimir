@@ -15,7 +15,7 @@ metadata:
     {{- else }}
     {{- if (eq $rolloutZone.prepareDownscale true )}}
     grafana.com/prepare-downscale: {{ $rolloutZone.prepareDownscale | quote }}
-    grafana.com/min-time-between-zones-downscale: 30m
+    grafana.com/min-time-between-zones-downscale: {{ $rolloutZone.minTimeBetweenZonesDownscale }}
     {{- end }}
     {{- end }}
   annotations:

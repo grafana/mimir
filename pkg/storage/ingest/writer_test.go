@@ -1364,7 +1364,7 @@ func createTestKafkaConfig(clusterAddr, topicName string) KafkaConfig {
 	cfg := KafkaConfig{}
 	flagext.DefaultValues(&cfg)
 
-	cfg.Address = clusterAddr
+	cfg.Address = flagext.StringSliceCSV{clusterAddr}
 	cfg.Topic = topicName
 	cfg.WriteTimeout = 5 * time.Second
 	cfg.FetchConcurrencyMax = 2

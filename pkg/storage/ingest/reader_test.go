@@ -3179,7 +3179,7 @@ func newKafkaProduceClient(t *testing.T, addrs string, opts ...writerTestCfgOpt)
 	// do not configure the linger to keep tests running fast.
 	cfg := KafkaConfig{}
 	flagext.DefaultValues(&cfg)
-	cfg.Address = addrs
+	cfg.Address = flagext.StringSliceCSV{addrs}
 	cfg.DisableLinger = true
 
 	for _, opt := range opts {

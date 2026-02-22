@@ -123,6 +123,7 @@
 * [ENHANCEMENT] MQE: Add metrics to track step-invariant expression usage and data point reuse savings: `cortex_mimir_query_engine_step_invariant_nodes_total` and `cortex_mimir_query_engine_step_invariant_steps_saved_total`. #13911
 * [ENHANCEMENT] MQE: Add explicit error handling for unsupported Prometheus experimental binary operator modifiers `fill`, `fill_left` and `fill_right`. #14107
 * [ENHANCEMENT] MQE: Add experimental support for computing multiple aggregations over the same data without buffering. Enable with `-querier.mimir-query-engine.enable-multi-aggregation=true`. #14123 #14174
+* [ENHANCEMENT] Querier: Add support for the first phase of using non-opaque GRPC types between queriers and store-gateways per #14264. #14253
 * [ENHANCEMENT] Querier: Optimize querying store-gateways when many of them are in a LEAVING state. #14157
 * [ENHANCEMENT] Memberlist: Add "Size" column to "KV Store" table in the memberlist web page. #14200
 * [ENHANCEMENT] Memberlist: Add experimental configuration option `-memberlist.rejoin-seed-nodes` to set custom seed nodes used by periodic rejoin (when enabled). #14208
@@ -131,6 +132,8 @@
 * [ENHANCEMENT] Store-gateway: Add "OOO" column to the tenant blocks page to indicate whether each block was created from out-of-order samples. #14283
 * [ENHANCEMENT] Ingester: Optimize ingestion from Kafka in clusters with mixed size tenants. #13924 #13961 #14302
 * [ENHANCEMENT] Querier: Add new config flag `querier.enable-delayed-name-removal-prometheus-engine` to enable delayed name removal for Prometheus engine. #14349
+* [ENHANCEMENT] Ingester: reduce heap usage during streaming chunk queries by releasing series label memory after each batch is sent rather than holding it until chunk streaming completes. #14422
+* [ENHANCEMENT] Ingest storage: Allow configuring multiple Kafka seed brokers via `-ingest-storage.kafka.address` (comma-separated). #14328
 * [BUGFIX] Mimir: Fix nil pointer dereference when `-target` is set to an empty string. #14381
 * [BUGFIX] API: Fixed web UI links not respecting `-server.path-prefix` configuration. #14090
 * [BUGFIX] Distributor: Fix issue where distributors didn't send custom values of native histograms. #13849
@@ -293,6 +296,7 @@
 * [ENHANCEMENT] Add AWS profile authentication example to `mark-blocks` tool documentation and add centralized section in runbooks with examples for all cloud providers. #14281
 * [BUGFIX] Distributor: Fix type error in multi-zone distributor container constructor's env map. #14403
 * [BUGFIX] Native histograms: Fix PromQL query example for `histogram_fraction` to filter NaN results when there are no observations. #14433
+* [BUGFIX] OTLP: Exponential histograms over OTLP are not experimental. #14437
 
 ### Tools
 

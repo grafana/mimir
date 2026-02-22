@@ -59,7 +59,7 @@ require (
 	github.com/go-openapi/swag/jsonutils v0.25.4
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8
 	github.com/google/go-cmp v0.7.0
-	github.com/google/go-github/v81 v81.0.0
+	github.com/google/go-github/v83 v83.0.0
 	github.com/google/uuid v1.6.0
 	github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
 	github.com/grafana/alerting v0.0.0-20251002141545-d513d62d3210
@@ -362,7 +362,7 @@ require (
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20260216071609-8aa312f6fd75
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20260220070428-95607198cbca
 
 // Replace memberlist with our fork which includes some changes that haven't been
 // merged upstream yet for years and we don't expect to change anytime soon.

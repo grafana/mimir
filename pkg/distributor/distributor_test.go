@@ -5768,7 +5768,7 @@ func prepareIngesterZone(t testing.TB, zone string, state ingesterZoneState, cfg
 
 			kafkaCfg := ingest.KafkaConfig{}
 			flagext.DefaultValues(&kafkaCfg)
-			kafkaCfg.Address = cfg.ingestStorageKafka.ListenAddrs()[0]
+			kafkaCfg.Address = flagext.StringSliceCSV{cfg.ingestStorageKafka.ListenAddrs()[0]}
 			kafkaCfg.Topic = kafkaTopic
 			kafkaCfg.LastProducedOffsetPollInterval = 100 * time.Millisecond
 			kafkaCfg.LastProducedOffsetRetryTimeout = 100 * time.Millisecond
@@ -5949,7 +5949,7 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		ingestCfg.Enabled = cfg.ingestStorageEnabled
 		if cfg.ingestStorageEnabled {
 			ingestCfg.KafkaConfig.Topic = kafkaTopic
-			ingestCfg.KafkaConfig.Address = cfg.ingestStorageKafka.ListenAddrs()[0]
+			ingestCfg.KafkaConfig.Address = flagext.StringSliceCSV{cfg.ingestStorageKafka.ListenAddrs()[0]}
 			ingestCfg.KafkaConfig.LastProducedOffsetPollInterval = 100 * time.Millisecond
 			ingestCfg.Migration.DistributorSendToIngestersEnabled = cfg.ingestStorageMigrationEnabled
 		}

@@ -855,16 +855,37 @@ type chunkSeriesEntry struct {
 }
 
 func (s *chunkSeriesEntry) Iterator(it chunks.Iterator) chunks.Iterator {
-	pi, ok := it.(*populateWithDelChunkSeriesIterator)
-	if !ok {
-		pi = &populateWithDelChunkSeriesIterator{}
-	}
-	pi.reset(s.blockID, s.chunks, s.chks, s.intervals)
-	return pi
+	return s.IteratorFactory().Iterator(it)
 }
 
 func (s *chunkSeriesEntry) ChunkCount() (int, error) {
 	return len(s.chks), nil
+}
+
+func (s *chunkSeriesEntry) IteratorFactory() storage.ChunkIterable {
+	return &blockChunkIterable{
+		chunks:    s.chunks,
+		blockID:   s.blockID,
+		chks:      s.chks,
+		intervals: s.intervals,
+	}
+}
+
+// blockChunkIterable implements ChunkIterable for block storage.
+type blockChunkIterable struct {
+	chunks    ChunkReader
+	blockID   ulid.ULID
+	chks      []chunks.Meta
+	intervals tombstones.Intervals
+}
+
+func (b *blockChunkIterable) Iterator(it chunks.Iterator) chunks.Iterator {
+	pi, ok := it.(*populateWithDelChunkSeriesIterator)
+	if !ok {
+		pi = &populateWithDelChunkSeriesIterator{}
+	}
+	pi.reset(b.blockID, b.chunks, b.chks, b.intervals)
+	return pi
 }
 
 // populateWithDelSeriesIterator allows to iterate over samples for the single series.
