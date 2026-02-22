@@ -437,6 +437,7 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		"cortex_distributor_received_samples_total",
 		"cortex_distributor_received_exemplars_total",
 		"cortex_distributor_received_metadata_total",
+		"cortex_distributor_received_bytes_total",
 		"cortex_distributor_deduped_samples_total",
 		"cortex_distributor_requests_in_total",
 		"cortex_distributor_samples_in_total",
@@ -453,6 +454,8 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 	d.receivedExemplars.WithLabelValues("userB").Add(10)
 	d.receivedMetadata.WithLabelValues("userA").Add(5)
 	d.receivedMetadata.WithLabelValues("userB").Add(10)
+	d.receivedBytes.WithLabelValues("userA").Add(100)
+	d.receivedBytes.WithLabelValues("userB").Add(200)
 	d.incomingRequests.WithLabelValues("userA", "2.0").Add(1)
 	d.incomingSamples.WithLabelValues("userA").Add(5)
 	d.incomingExemplars.WithLabelValues("userA").Add(5)
@@ -482,6 +485,11 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		# HELP cortex_distributor_non_ha_samples_received_total The total number of received samples for a user that has HA tracking turned on, but the sample didn't contain both HA labels.
 		# TYPE cortex_distributor_non_ha_samples_received_total counter
 		cortex_distributor_non_ha_samples_received_total{user="userA"} 5
+
+		# HELP cortex_distributor_received_bytes_total The total number of received bytes, excluding rejected and deduped requests.
+		# TYPE cortex_distributor_received_bytes_total counter
+		cortex_distributor_received_bytes_total{user="userA"} 100
+		cortex_distributor_received_bytes_total{user="userB"} 200
 
 		# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
 		# TYPE cortex_distributor_received_metadata_total counter
@@ -528,6 +536,10 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 
 		# HELP cortex_distributor_non_ha_samples_received_total The total number of received samples for a user that has HA tracking turned on, but the sample didn't contain both HA labels.
 		# TYPE cortex_distributor_non_ha_samples_received_total counter
+
+		# HELP cortex_distributor_received_bytes_total The total number of received bytes, excluding rejected and deduped requests.
+		# TYPE cortex_distributor_received_bytes_total counter
+		cortex_distributor_received_bytes_total{user="userB"} 200
 
 		# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
 		# TYPE cortex_distributor_received_metadata_total counter

@@ -74,6 +74,7 @@ type Writer struct {
 	writeSuccessLatency prometheus.Observer
 	writeFailureLatency prometheus.Observer
 	writeBytesTotal     prometheus.Counter
+	receivedBytesTotal  prometheus.Counter
 	recordsPerRequest   prometheus.Histogram
 
 	// The following settings can only be overridden in tests.
@@ -104,6 +105,10 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 		writeBytesTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingest_storage_writer_sent_bytes_total",
 			Help: "Total number of bytes produced to the Kafka backend.",
+		}),
+		receivedBytesTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingest_storage_writer_received_bytes_total",
+			Help: "Total number of bytes received before conversion to the Kafka record format.",
 		}),
 		recordsPerRequest: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_ingest_storage_writer_records_per_write_request",
@@ -150,6 +155,9 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string
 		return nil
 	}
 
+	// Calculate input size before conversion to track the compression ratio.
+	inputSize := req.Size()
+
 	// Create records out of the write request.
 	records, err := w.serializer.ToRecords(partitionID, userID, req, w.kafkaCfg.ProducerMaxRecordSizeBytes)
 	if err != nil {
@@ -175,6 +183,7 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string
 	if count, sizeBytes := successfulProduceRecordsStats(res); count > 0 {
 		w.writeSuccessLatency.Observe(time.Since(startTime).Seconds())
 		w.writeBytesTotal.Add(float64(sizeBytes))
+		w.receivedBytesTotal.Add(float64(inputSize))
 	} else {
 		w.writeFailureLatency.Observe(time.Since(startTime).Seconds())
 	}

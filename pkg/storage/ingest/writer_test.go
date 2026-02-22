@@ -66,7 +66,9 @@ func TestWriter_WriteSync(t *testing.T) {
 			return nil, nil, false
 		})
 
-		err := writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: multiSeries, Metadata: nil, Source: mimirpb.API})
+		req := &mimirpb.WriteRequest{Timeseries: multiSeries, Metadata: nil, Source: mimirpb.API}
+		inputSize := req.Size()
+		err := writer.WriteSync(ctx, partitionID, tenantID, req)
 		require.NoError(t, err)
 
 		// Ensure it was processed before returning.
@@ -96,6 +98,10 @@ func TestWriter_WriteSync(t *testing.T) {
 
 		// Check metrics.
 		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+			# HELP cortex_ingest_storage_writer_received_bytes_total Total number of bytes received before conversion to the Kafka record format.
+			# TYPE cortex_ingest_storage_writer_received_bytes_total counter
+			cortex_ingest_storage_writer_received_bytes_total %d
+
 			# HELP cortex_ingest_storage_writer_sent_bytes_total Total number of bytes produced to the Kafka backend.
 			# TYPE cortex_ingest_storage_writer_sent_bytes_total counter
 			cortex_ingest_storage_writer_sent_bytes_total %d
@@ -117,7 +123,8 @@ func TestWriter_WriteSync(t *testing.T) {
 			# HELP cortex_ingest_storage_writer_produce_records_enqueued_total Total number of Kafka records enqueued to be sent to the Kafka backend (includes records that fail to be successfully sent to the Kafka backend).
 			# TYPE cortex_ingest_storage_writer_produce_records_enqueued_total counter
 			cortex_ingest_storage_writer_produce_records_enqueued_total{client_id="0"} 1
-		`, len(fetches.Records()[0].Value))),
+		`, inputSize, len(fetches.Records()[0].Value))),
+			"cortex_ingest_storage_writer_received_bytes_total",
 			"cortex_ingest_storage_writer_sent_bytes_total",
 			"cortex_ingest_storage_writer_records_per_write_request",
 			"cortex_ingest_storage_writer_produce_records_enqueued_total"))
@@ -183,9 +190,13 @@ func TestWriter_WriteSync(t *testing.T) {
 		assert.Equal(t, expectedReq, &actualMergedReq)
 
 		// Check metrics.
-		expectedBytes := len(records[0].Value) + len(records[1].Value)
+		expectedSentBytes := len(records[0].Value) + len(records[1].Value)
 
 		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+			# HELP cortex_ingest_storage_writer_received_bytes_total Total number of bytes received before conversion to the Kafka record format.
+			# TYPE cortex_ingest_storage_writer_received_bytes_total counter
+			cortex_ingest_storage_writer_received_bytes_total %d
+
 			# HELP cortex_ingest_storage_writer_sent_bytes_total Total number of bytes produced to the Kafka backend.
 			# TYPE cortex_ingest_storage_writer_sent_bytes_total counter
 			cortex_ingest_storage_writer_sent_bytes_total %d
@@ -207,7 +218,8 @@ func TestWriter_WriteSync(t *testing.T) {
 			# HELP cortex_ingest_storage_writer_produce_records_enqueued_total Total number of Kafka records enqueued to be sent to the Kafka backend (includes records that fail to be successfully sent to the Kafka backend).
 			# TYPE cortex_ingest_storage_writer_produce_records_enqueued_total counter
 			cortex_ingest_storage_writer_produce_records_enqueued_total{client_id="0"} 2
-		`, expectedBytes)),
+		`, expectedReq.Size(), expectedSentBytes)),
+			"cortex_ingest_storage_writer_received_bytes_total",
 			"cortex_ingest_storage_writer_sent_bytes_total",
 			"cortex_ingest_storage_writer_records_per_write_request",
 			"cortex_ingest_storage_writer_produce_records_enqueued_total"))
@@ -595,6 +607,10 @@ func TestWriter_WriteSync(t *testing.T) {
 
 		// Check metrics.
 		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+			# HELP cortex_ingest_storage_writer_received_bytes_total Total number of bytes received before conversion to the Kafka record format.
+			# TYPE cortex_ingest_storage_writer_received_bytes_total counter
+			cortex_ingest_storage_writer_received_bytes_total %d
+
 			# HELP cortex_ingest_storage_writer_sent_bytes_total Total number of bytes produced to the Kafka backend.
 			# TYPE cortex_ingest_storage_writer_sent_bytes_total counter
 			cortex_ingest_storage_writer_sent_bytes_total %d
@@ -620,7 +636,8 @@ func TestWriter_WriteSync(t *testing.T) {
 			# HELP cortex_ingest_storage_writer_produce_records_failed_total Total number of Kafka records that failed to be sent to the Kafka backend.
 			# TYPE cortex_ingest_storage_writer_produce_records_failed_total counter
 			cortex_ingest_storage_writer_produce_records_failed_total{client_id="0",reason="record-too-large"} 1
-		`, len(fetches.Records()[0].Value))),
+		`, req.Size(), len(fetches.Records()[0].Value))),
+			"cortex_ingest_storage_writer_received_bytes_total",
 			"cortex_ingest_storage_writer_sent_bytes_total",
 			"cortex_ingest_storage_writer_records_per_write_request",
 			"cortex_ingest_storage_writer_produce_records_enqueued_total",
