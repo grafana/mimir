@@ -149,6 +149,7 @@ type Distributor struct {
 	receivedMetadata                 *prometheus.CounterVec
 	receivedNativeHistogramSamples   *prometheus.CounterVec
 	receivedNativeHistogramBuckets   *prometheus.CounterVec
+	receivedBytes                    *prometheus.CounterVec
 	incomingRequests                 *prometheus.CounterVec
 	incomingSamples                  *prometheus.CounterVec
 	incomingExemplars                *prometheus.CounterVec
@@ -535,6 +536,10 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Name: "cortex_distributor_received_native_histogram_buckets_total",
 			Help: "The total number of received native histogram buckets, excluding rejected and deduped samples.",
 		}, []string{"user"}),
+		receivedBytes: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_received_bytes_total",
+			Help: "The total number of received bytes, excluding rejected and deduped requests.",
+		}, []string{"user"}),
 		incomingRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_requests_in_total",
 			Help: "The total number of requests that have come in to the distributor, including rejected or deduped requests.",
@@ -874,6 +879,7 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.receivedMetadata.DeleteLabelValues(userID)
 	d.receivedNativeHistogramSamples.DeleteLabelValues(userID)
 	d.receivedNativeHistogramBuckets.DeleteLabelValues(userID)
+	d.receivedBytes.DeleteLabelValues(userID)
 	d.incomingSamples.DeleteLabelValues(userID)
 	d.incomingExemplars.DeleteLabelValues(userID)
 	d.incomingMetadata.DeleteLabelValues(userID)
@@ -2364,6 +2370,7 @@ func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID st
 	d.receivedNativeHistogramBuckets.WithLabelValues(userID).Add(float64(receivedHistogramBuckets))
 	d.receivedExemplars.WithLabelValues(userID).Add(float64(receivedExemplars))
 	d.receivedMetadata.WithLabelValues(userID).Add(float64(receivedMetadata))
+	d.receivedBytes.WithLabelValues(userID).Add(float64(req.Size()))
 }
 
 // forReplicationSets runs f, in parallel, for all ingesters in the input replicationSets.
