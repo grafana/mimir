@@ -27,11 +27,39 @@ Please see the dedicated "[Contributing to Grafana Mimir helm chart](contributin
 
 ## Formatting
 
-Grafana Mimir uses `goimports` tool (`go get golang.org/x/tools/cmd/goimports` to install) to format the Go files, and sort imports. We use goimports with `-local github.com/grafana/mimir` parameter, to put Grafana Mimir internal imports into a separate group. We try to keep imports sorted into three groups: imports from standard library, imports of 3rd party packages and internal Grafana Mimir imports. Goimports will fix the order, but will keep existing newlines between imports in the groups. We try to avoid extra newlines like that.
+### Go
+
+Grafana Mimir uses `goimports` tool (`go get golang.org/x/tools/cmd/goimports` to install) to format the Go files, and sort imports.
+We use goimports with `-local github.com/grafana/mimir` parameter, to put Grafana Mimir internal imports into a separate group.
+
+We try to keep imports sorted into three groups:
+
+- imports from standard library
+- imports of 3rd party packages and
+- internal Grafana Mimir imports.
+
+Goimports will fix the order, but will keep existing newlines between imports in the groups. We try to avoid extra newlines like that.
 
 You're using an IDE you may find useful the following settings for the Grafana Mimir project:
 
 - [VSCode](vscode-goimports-settings.json)
+
+**Always run `make format` before creating commits**, or configure your IDE to run goimports on save. This prevents formatting-only commits and keeps the git history clean.
+
+### Jsonnet
+
+When making changes to jsonnet/libsonnet files, always format before creating commits:
+
+- **Mixin files** (`operations/mimir-mixin/`): Run `make format-mixin` then `make build-mixin` to render compiled YAML outputs
+- **Other jsonnet files** (`operations/mimir`, `operations/mimir-tests`, `development/`): Run `make format-jsonnet-manifests`
+
+This prevents formatting-only commits and ensures your jsonnet changes compile correctly.
+
+### Other formatters
+
+- **Makefiles**: Run `make format-makefiles` for any Makefile changes
+- **Protobuf files**: Run `make format-protobuf` for `.proto` file changes
+- **PromQL test files**: Run `make format-promql-tests` for PromQL test changes
 
 ## Building Grafana Mimir
 
