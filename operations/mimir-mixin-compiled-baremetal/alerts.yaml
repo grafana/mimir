@@ -12,6 +12,7 @@ groups:
             severity: critical
         - alert: MimirRequestErrors
           annotations:
+            dashboard_url: https://grafana.example.com/d/8280707b8f16e7b87b840fc1cc92d4c5/mimir-writes?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: |
                 The route {{ $labels.route }} in {{ $labels.cluster }}/{{ $labels.namespace }} is experiencing {{ printf "%.2f" $value }}% errors.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrequesterrors
@@ -30,6 +31,7 @@ groups:
             severity: critical
         - alert: MimirRequestErrors
           annotations:
+            dashboard_url: https://grafana.example.com/d/8280707b8f16e7b87b840fc1cc92d4c5/mimir-writes?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: |
                 The route {{ $labels.route }} in {{ $labels.cluster }}/{{ $labels.namespace }} is experiencing {{ printf "%.2f" $value }}% errors.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrequesterrors
@@ -48,6 +50,7 @@ groups:
             severity: critical
         - alert: MimirRequestLatency
           annotations:
+            dashboard_url: https://grafana.example.com/d/8280707b8f16e7b87b840fc1cc92d4c5/mimir-writes?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: |
                 {{ $labels.job }} {{ $labels.route }} is experiencing {{ printf "%.2f" $value }}s 99th percentile latency.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrequestlatency
@@ -81,6 +84,7 @@ groups:
             severity: critical
         - alert: MimirSchedulerQueriesStuck
           annotations:
+            dashboard_url: https://grafana.example.com/d/e327503188913dc38ad571c647eef643/mimir-reads?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: |
                 There are {{ $value }} queued up queries in {{ $labels.cluster }}/{{ $labels.namespace }} {{ $labels.job }}.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirschedulerqueriesstuck
@@ -231,6 +235,7 @@ groups:
             severity: warning
         - alert: MimirStoreGatewayTooManyFailedOperations
           annotations:
+            dashboard_url: https://grafana.example.com/d/e1324ee2a434f4158c00a9ee279d3292/mimir-object-store?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: Mimir store-gateway in {{ $labels.cluster }}/{{ $labels.namespace }} is experiencing {{ $value | humanizePercentage }} errors while doing {{ $labels.operation }} on the object storage.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirstoregatewaytoomanyfailedoperations
           expr: |
@@ -354,6 +359,7 @@ groups:
       rules:
         - alert: MimirIngesterReachingSeriesLimit
           annotations:
+            dashboard_url: https://grafana.example.com/d/bc9160e50b52e89e0e49c840fea3d379/mimir-writes-resources?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: |
                 Ingester {{ $labels.job }}/{{ $labels.instance }} has reached {{ $value | humanizePercentage }} of its series limit.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterreachingserieslimit
@@ -368,6 +374,7 @@ groups:
             severity: warning
         - alert: MimirIngesterReachingSeriesLimit
           annotations:
+            dashboard_url: https://grafana.example.com/d/bc9160e50b52e89e0e49c840fea3d379/mimir-writes-resources?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: |
                 Ingester {{ $labels.job }}/{{ $labels.instance }} has reached {{ $value | humanizePercentage }} of its series limit.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterreachingserieslimit
@@ -382,6 +389,7 @@ groups:
             severity: critical
         - alert: MimirIngesterReachingTenantsLimit
           annotations:
+            dashboard_url: https://grafana.example.com/d/bc9160e50b52e89e0e49c840fea3d379/mimir-writes-resources?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: |
                 Ingester {{ $labels.job }}/{{ $labels.instance }} has reached {{ $value | humanizePercentage }} of its tenant limit.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterreachingtenantslimit
@@ -396,6 +404,7 @@ groups:
             severity: warning
         - alert: MimirIngesterReachingTenantsLimit
           annotations:
+            dashboard_url: https://grafana.example.com/d/bc9160e50b52e89e0e49c840fea3d379/mimir-writes-resources?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: |
                 Ingester {{ $labels.job }}/{{ $labels.instance }} has reached {{ $value | humanizePercentage }} of its tenant limit.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterreachingtenantslimit
@@ -410,6 +419,7 @@ groups:
             severity: critical
         - alert: MimirReachingTCPConnectionsLimit
           annotations:
+            dashboard_url: https://grafana.example.com/d/8280707b8f16e7b87b840fc1cc92d4c5/mimir-writes?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: |
                 Mimir instance {{ $labels.job }}/{{ $labels.instance }} has reached {{ $value | humanizePercentage }} of its TCP connections limit for {{ $labels.protocol }} protocol.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirreachingtcpconnectionslimit
@@ -421,6 +431,7 @@ groups:
             severity: critical
         - alert: MimirDistributorInflightRequestsHigh
           annotations:
+            dashboard_url: https://grafana.example.com/d/bc9160e50b52e89e0e49c840fea3d379/mimir-writes-resources?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: |
                 Distributor {{ $labels.job }}/{{ $labels.instance }} has reached {{ $value | humanizePercentage }} of its inflight push request limit.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirdistributorinflightrequestshigh
@@ -553,6 +564,7 @@ groups:
       rules:
         - alert: MimirAllocatingTooMuchMemory
           annotations:
+            dashboard_url: https://grafana.example.com/d/bc9160e50b52e89e0e49c840fea3d379/mimir-writes-resources?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: |
                 Instance {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} is using too much memory.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirallocatingtoomuchmemory
@@ -567,6 +579,7 @@ groups:
             severity: warning
         - alert: MimirAllocatingTooMuchMemory
           annotations:
+            dashboard_url: https://grafana.example.com/d/bc9160e50b52e89e0e49c840fea3d379/mimir-writes-resources?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: |
                 Instance {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} is using too much memory.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirallocatingtoomuchmemory
@@ -598,6 +611,7 @@ groups:
             severity: critical
         - alert: MimirRulerTooManyFailedQueries
           annotations:
+            dashboard_url: https://grafana.example.com/d/f103238f7f5ab2f1345ce650cbfbfe2f/mimir-remote-ruler-reads?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: |
                 Mimir Ruler {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} is experiencing {{ printf "%.2f" $value }}% errors while evaluating rules.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrulertoomanyfailedqueries
@@ -638,6 +652,7 @@ groups:
             severity: critical
         - alert: MimirRulerRemoteEvaluationFailing
           annotations:
+            dashboard_url: https://grafana.example.com/d/f103238f7f5ab2f1345ce650cbfbfe2f/mimir-remote-ruler-reads?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: |
                 Mimir rulers in {{ $labels.cluster }}/{{ $labels.namespace }} are failing to perform {{ printf "%.2f" $value }}% of remote evaluations through the ruler-query-frontend.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrulerremoteevaluationfailing
@@ -653,6 +668,7 @@ groups:
             severity: warning
         - alert: MimirRulerRemoteEvaluationFailing
           annotations:
+            dashboard_url: https://grafana.example.com/d/f103238f7f5ab2f1345ce650cbfbfe2f/mimir-remote-ruler-reads?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: |
                 Mimir rulers in {{ $labels.cluster }}/{{ $labels.namespace }} are failing to perform {{ printf "%.2f" $value }}% of remote evaluations through the ruler-query-frontend.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrulerremoteevaluationfailing
@@ -801,6 +817,7 @@ groups:
       rules:
         - alert: MimirAlertmanagerSyncConfigsFailing
           annotations:
+            dashboard_url: https://grafana.example.com/d/b0d38d318bbddd80476246d4930f9e55/mimir-alertmanager?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: |
                 Mimir Alertmanager {{ $labels.job }}/{{ $labels.instance }} is failing to read tenant configurations from storage.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiralertmanagersyncconfigsfailing
@@ -811,6 +828,7 @@ groups:
             severity: critical
         - alert: MimirAlertmanagerRingCheckFailing
           annotations:
+            dashboard_url: https://grafana.example.com/d/b0d38d318bbddd80476246d4930f9e55/mimir-alertmanager?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: |
                 Mimir Alertmanager {{ $labels.job }}/{{ $labels.instance }} is unable to check tenants ownership via the ring.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiralertmanagerringcheckfailing
@@ -821,6 +839,7 @@ groups:
             severity: critical
         - alert: MimirAlertmanagerStateMergeFailing
           annotations:
+            dashboard_url: https://grafana.example.com/d/b0d38d318bbddd80476246d4930f9e55/mimir-alertmanager?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: |
                 Mimir Alertmanager {{ $labels.job }}/{{ $labels.instance }} is failing to merge partial state changes received from a replica.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiralertmanagerstatemergefailing
@@ -831,6 +850,7 @@ groups:
             severity: critical
         - alert: MimirAlertmanagerReplicationFailing
           annotations:
+            dashboard_url: https://grafana.example.com/d/b0d38d318bbddd80476246d4930f9e55/mimir-alertmanager?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: |
                 Mimir Alertmanager {{ $labels.job }}/{{ $labels.instance }} is failing to replicating partial state to its replicas.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiralertmanagerreplicationfailing
@@ -841,6 +861,7 @@ groups:
             severity: critical
         - alert: MimirAlertmanagerPersistStateFailing
           annotations:
+            dashboard_url: https://grafana.example.com/d/b0d38d318bbddd80476246d4930f9e55/mimir-alertmanager?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: |
                 Mimir Alertmanager {{ $labels.job }}/{{ $labels.instance }} is unable to persist full state snaphots to remote storage.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiralertmanagerpersiststatefailing
@@ -851,6 +872,7 @@ groups:
             severity: critical
         - alert: MimirAlertmanagerInitialSyncFailed
           annotations:
+            dashboard_url: https://grafana.example.com/d/b0d38d318bbddd80476246d4930f9e55/mimir-alertmanager?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: |
                 Mimir Alertmanager {{ $labels.job }}/{{ $labels.instance }} was unable to obtain some initial state when starting up.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiralertmanagerinitialsyncfailed
@@ -860,6 +882,7 @@ groups:
             severity: warning
         - alert: MimirAlertmanagerAllocatingTooMuchMemory
           annotations:
+            dashboard_url: https://grafana.example.com/d/64bbad83507b7289b514725658e10352/mimir-scaling?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: |
                 Alertmanager {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} is using too much memory.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiralertmanagerallocatingtoomuchmemory
@@ -870,6 +893,7 @@ groups:
             severity: warning
         - alert: MimirAlertmanagerAllocatingTooMuchMemory
           annotations:
+            dashboard_url: https://grafana.example.com/d/64bbad83507b7289b514725658e10352/mimir-scaling?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: |
                 Alertmanager {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} is using too much memory.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiralertmanagerallocatingtoomuchmemory
@@ -880,6 +904,7 @@ groups:
             severity: critical
         - alert: MimirAlertmanagerInstanceHasNoTenants
           annotations:
+            dashboard_url: https://grafana.example.com/d/b0d38d318bbddd80476246d4930f9e55/mimir-alertmanager?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: Mimir alertmanager {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} owns no tenants.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiralertmanagerinstancehasnotenants
           expr: |
@@ -1050,6 +1075,7 @@ groups:
             severity: critical
         - alert: MimirHighVolumeLevel1BlocksQueried
           annotations:
+            dashboard_url: https://grafana.example.com/d/1b3443aea86db629e6efdb7d05c53823/mimir-compactor?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: Mimir store-gateway in {{ $labels.cluster }}/{{ $labels.namespace }} is querying level 1 blocks, indicating the compactor may not be keeping up with compaction.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirhighvolumelevel1blocksqueried
           expr: |
@@ -1065,6 +1091,7 @@ groups:
       rules:
         - alert: MimirCompactorNotCleaningUpBlocks
           annotations:
+            dashboard_url: https://grafana.example.com/d/1b3443aea86db629e6efdb7d05c53823/mimir-compactor?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not successfully cleaned up blocks in the last 6 hours.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactornotcleaningupblocks
           expr: |
@@ -1076,6 +1103,7 @@ groups:
             severity: critical
         - alert: MimirCompactorNotRunningCompaction
           annotations:
+            dashboard_url: https://grafana.example.com/d/1b3443aea86db629e6efdb7d05c53823/mimir-compactor?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not run compaction in the last 6 hours.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactornotrunningcompaction
           expr: |
@@ -1090,6 +1118,7 @@ groups:
             severity: warning
         - alert: MimirCompactorNotRunningCompaction
           annotations:
+            dashboard_url: https://grafana.example.com/d/1b3443aea86db629e6efdb7d05c53823/mimir-compactor?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not run compaction in the last 24 hours.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactornotrunningcompaction
           expr: |
@@ -1104,6 +1133,7 @@ groups:
             severity: critical
         - alert: MimirCompactorNotRunningCompaction
           annotations:
+            dashboard_url: https://grafana.example.com/d/1b3443aea86db629e6efdb7d05c53823/mimir-compactor?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not run compaction since startup.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactornotrunningcompaction
           expr: |
@@ -1116,6 +1146,7 @@ groups:
             severity: warning
         - alert: MimirCompactorNotRunningCompaction
           annotations:
+            dashboard_url: https://grafana.example.com/d/1b3443aea86db629e6efdb7d05c53823/mimir-compactor?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not run compaction since startup.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactornotrunningcompaction
           expr: |
@@ -1128,6 +1159,7 @@ groups:
             severity: critical
         - alert: MimirCompactorNotRunningCompaction
           annotations:
+            dashboard_url: https://grafana.example.com/d/1b3443aea86db629e6efdb7d05c53823/mimir-compactor?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} failed to run 2 consecutive compactions.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactornotrunningcompaction
           expr: |
@@ -1137,6 +1169,7 @@ groups:
             severity: critical
         - alert: MimirCompactorHasRunOutOfDiskSpace
           annotations:
+            dashboard_url: https://grafana.example.com/d/1b3443aea86db629e6efdb7d05c53823/mimir-compactor?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has run out of disk space.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactorhasrunoutofdiskspace
           expr: |
@@ -1146,6 +1179,7 @@ groups:
             severity: critical
         - alert: MimirCompactorHasNotUploadedBlocks
           annotations:
+            dashboard_url: https://grafana.example.com/d/1b3443aea86db629e6efdb7d05c53823/mimir-compactor?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not uploaded any block in the last 24 hours.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactorhasnotuploadedblocks
           expr: |
@@ -1161,6 +1195,7 @@ groups:
             time_period: 24h
         - alert: MimirCompactorHasNotUploadedBlocks
           annotations:
+            dashboard_url: https://grafana.example.com/d/1b3443aea86db629e6efdb7d05c53823/mimir-compactor?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not uploaded any block since its start.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactorhasnotuploadedblocks
           expr: |
@@ -1174,6 +1209,7 @@ groups:
             time_period: since-start
         - alert: MimirCompactorSkippedBlocks
           annotations:
+            dashboard_url: https://grafana.example.com/d/1b3443aea86db629e6efdb7d05c53823/mimir-compactor?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: 'Mimir Compactor in {{ $labels.cluster }}/{{ $labels.namespace }} has marked {{ $value }} blocks for no-compaction (reason: {{ $labels.reason }}).'
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactorskippedblocks
           expr: |
@@ -1185,6 +1221,7 @@ groups:
             severity: critical
         - alert: MimirCompactorBuildingSparseIndexFailed
           annotations:
+            dashboard_url: https://grafana.example.com/d/1b3443aea86db629e6efdb7d05c53823/mimir-compactor?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} is failing to build sparse index headers
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactorbuildingsparseindexfailed
           expr: |
@@ -1194,6 +1231,7 @@ groups:
             severity: warning
         - alert: MimirCompactorOOMKilled
           annotations:
+            dashboard_url: https://grafana.example.com/d/09a5c49e9cdb2f2b24c6d184574a07fd/mimir-compactor-resources?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has been OOMKilled {{ printf "%.2f" $value }} times in the last 4h.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactoroomkilled
           expr: |
@@ -1212,6 +1250,7 @@ groups:
             severity: warning
         - alert: MimirCompactorOOMKilled
           annotations:
+            dashboard_url: https://grafana.example.com/d/09a5c49e9cdb2f2b24c6d184574a07fd/mimir-compactor-resources?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has been OOMKilled {{ printf "%.2f" $value }} times in the last 2h.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactoroomkilled
           expr: |
@@ -1335,6 +1374,7 @@ groups:
             severity: critical
         - alert: MimirStartingIngesterKafkaDelayGrowing
           annotations:
+            dashboard_url: https://grafana.example.com/d/8280707b8f16e7b87b840fc1cc92d4c5/mimir-writes?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: Mimir {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} in "starting" phase is not reducing consumption lag of write requests read from Kafka.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirstartingingesterkafkadelaygrowing
           expr: |
@@ -1349,6 +1389,7 @@ groups:
             severity: warning
         - alert: MimirStartingIngesterKafkaDelayGrowing
           annotations:
+            dashboard_url: https://grafana.example.com/d/8280707b8f16e7b87b840fc1cc92d4c5/mimir-writes?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: Mimir {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} in "starting" phase is not reducing consumption lag of write requests read from Kafka.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirstartingingesterkafkadelaygrowing
           expr: |
@@ -1469,6 +1510,7 @@ groups:
             severity: critical
         - alert: MimirStrongConsistencyEnforcementFailed
           annotations:
+            dashboard_url: https://grafana.example.com/d/b3abe8d5c040395cc36615cb4334c92d/mimir-queries?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: Mimir {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} fails to enforce strong-consistency on read-path.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirstrongconsistencyenforcementfailed
           expr: |
@@ -1566,6 +1608,7 @@ groups:
             severity: critical
         - alert: MimirFewerIngestersConsumingThanActivePartitions
           annotations:
+            dashboard_url: https://grafana.example.com/d/8280707b8f16e7b87b840fc1cc92d4c5/mimir-writes?${__url_time_range}&var-cluster={{ $labels.cluster }}&var-namespace={{ $labels.namespace }}
             message: Mimir ingesters in {{ $labels.cluster }}/{{ $labels.namespace }} have fewer ingesters consuming than active partitions.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirfeweringestersconsumingthanactivepartitions
           expr: |

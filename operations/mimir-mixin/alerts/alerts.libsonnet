@@ -70,7 +70,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
       message: |||
         The route {{ $labels.route }} in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% errors.
       ||| % $._config,
-    },
+    }
+    // Alternative dashboards for investigation:
+    //   - Mimir / Reads (mimir-reads.json) - for read path errors
+    //   - Mimir / Alertmanager (mimir-alertmanager.json) - for alertmanager errors
+    //   - Mimir / Alertmanager Resources (mimir-alertmanager-resources.json) - for resource starvation
+    + $.dashboardURLAnnotation('mimir-writes.json'),
   },
 
   local rulerRemoteEvaluationFailingAlert(histogram_type) = {
@@ -88,7 +93,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
       message: |||
         %(product)s rulers in %(alert_aggregation_variables)s are failing to perform {{ printf "%%.2f" $value }}%% of remote evaluations through the ruler-query-frontend.
       ||| % $._config,
-    },
+    }
+    // Alternative dashboards for investigation:
+    //   - Mimir / Remote ruler reads resources (mimir-remote-ruler-reads-resources.json)
+    + $.dashboardURLAnnotation('mimir-remote-ruler-reads.json'),
   },
 
   local kvStoreFailure(histogram_type) = {
@@ -160,7 +168,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: |||
               {{ $labels.%(per_job_label)s }} {{ $labels.route }} is experiencing {{ printf "%%.2f" $value }}s 99th percentile latency.
             ||| % $._config,
-          },
+          }
+          // Alternative dashboards for investigation:
+          //   - Mimir / Scaling (mimir-scaling.json) - for scaling decisions
+          //   - Mimir / Reads (mimir-reads.json) - for read path latency
+          //   - Mimir / Slow Queries (mimir-slow-queries.json) - to identify slow queries
+          //   - Mimir / Queries (mimir-queries.json) - for queue length analysis
+          //   - Mimir / Alertmanager (mimir-alertmanager.json) - for alertmanager path
+          + $.dashboardURLAnnotation('mimir-writes.json'),
         },
         {
           alert: $.alertName('InconsistentRuntimeConfig'),
@@ -211,7 +226,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: |||
               There are {{ $value }} queued up queries in %(alert_aggregation_variables)s {{ $labels.%(per_job_label)s }}.
             ||| % $._config,
-          },
+          }
+          // Alternative dashboards for investigation:
+          //   - Mimir / Remote ruler reads (mimir-remote-ruler-reads.json)
+          //   - Mimir / Reads Resources (mimir-reads-resources.json)
+          //   - Mimir / Slow Queries (mimir-slow-queries.json)
+          + $.dashboardURLAnnotation('mimir-reads.json'),
         },
         {
           alert: $.alertName('CacheRequestErrors'),
@@ -382,7 +402,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
           annotations: {
             message: '%(product)s store-gateway in %(alert_aggregation_variables)s is experiencing {{ $value | humanizePercentage }} errors while doing {{ $labels.operation }} on the object storage.' % $._config,
-          },
+          }
+          // Alternative dashboards for investigation:
+          //   - Mimir / Compactor (mimir-compactor.json)
+          //   - Mimir / Reads Resources (mimir-reads-resources.json)
+          //   - Mimir / Tenants (mimir-tenants.json)
+          + $.dashboardURLAnnotation('mimir-object-store.json'),
         },
         {
           // Alert if servers are receiving requests with invalid cluster validation labels (i.e. meant for other clusters).
@@ -578,7 +603,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: |||
               Ingester {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s has reached {{ $value | humanizePercentage }} of its series limit.
             ||| % $._config,
-          },
+          } + $.dashboardURLAnnotation('mimir-writes-resources.json'),
         },
         {
           alert: $.alertName('IngesterReachingSeriesLimit'),
@@ -597,7 +622,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: |||
               Ingester {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s has reached {{ $value | humanizePercentage }} of its series limit.
             ||| % $._config,
-          },
+          } + $.dashboardURLAnnotation('mimir-writes-resources.json'),
         },
         {
           alert: $.alertName('IngesterReachingTenantsLimit'),
@@ -616,7 +641,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: |||
               Ingester {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s has reached {{ $value | humanizePercentage }} of its tenant limit.
             ||| % $._config,
-          },
+          } + $.dashboardURLAnnotation('mimir-writes-resources.json'),
         },
         {
           alert: $.alertName('IngesterReachingTenantsLimit'),
@@ -635,7 +660,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: |||
               Ingester {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s has reached {{ $value | humanizePercentage }} of its tenant limit.
             ||| % $._config,
-          },
+          } + $.dashboardURLAnnotation('mimir-writes-resources.json'),
         },
         {
           alert: $.alertName('ReachingTCPConnectionsLimit'),
@@ -651,7 +676,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: |||
               %(product)s instance {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s has reached {{ $value | humanizePercentage }} of its TCP connections limit for {{ $labels.protocol }} protocol.
             ||| % $._config,
-          },
+          } + $.dashboardURLAnnotation('mimir-writes.json'),
         },
         {
           alert: $.alertName('DistributorInflightRequestsHigh'),
@@ -670,7 +695,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: |||
               Distributor {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s has reached {{ $value | humanizePercentage }} of its inflight push request limit.
             ||| % $._config,
-          },
+          } + $.dashboardURLAnnotation('mimir-writes-resources.json'),
         },
       ],
     },
@@ -795,7 +820,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: |||
               Instance %(alert_instance_variable)s in %(alert_aggregation_variables)s is using too much memory.
             ||| % $._config,
-          },
+          }
+          // Alternative dashboards for investigation:
+          //   - Mimir / Scaling (mimir-scaling.json) - for scaling recommendations
+          + $.dashboardURLAnnotation('mimir-writes-resources.json'),
         },
         {
           alert: $.alertName('AllocatingTooMuchMemory'),
@@ -811,7 +839,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: |||
               Instance %(alert_instance_variable)s in %(alert_aggregation_variables)s is using too much memory.
             ||| % $._config,
-          },
+          }
+          // Alternative dashboards for investigation:
+          //   - Mimir / Scaling (mimir-scaling.json) - for scaling recommendations
+          + $.dashboardURLAnnotation('mimir-writes-resources.json'),
         },
       ],
     },
@@ -860,7 +891,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: |||
               %(product)s Ruler %(alert_instance_variable)s in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% errors while evaluating rules.
             ||| % $._config,
-          },
+          }
+          // Alternative dashboards for investigation:
+          //   - Mimir / Remote ruler reads resources (mimir-remote-ruler-reads-resources.json)
+          + $.dashboardURLAnnotation('mimir-remote-ruler-reads.json'),
         },
         {
           alert: $.alertName('RulerMissedEvaluations'),
