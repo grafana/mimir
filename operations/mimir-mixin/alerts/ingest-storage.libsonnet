@@ -355,11 +355,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
             severity: 'critical',
           },
           annotations: {
-            message: '%(product)s ingesters in %(alert_aggregation_variables)s have fewer ingesters consuming than active partitions.' % $._config,
-          }
-          // Alternative dashboards for investigation:
-          //   - Mimir / Reads (mimir-reads.json)
-          + $.dashboardURLAnnotation('mimir-writes.json'),
+                         message: '%(product)s ingesters in %(alert_aggregation_variables)s have fewer ingesters consuming than active partitions.' % $._config,
+                       }
+                       // Alternative dashboards for investigation:
+                       //   - Mimir / Reads (mimir-reads.json)
+                       + $.dashboardURLAnnotation('mimir-writes.json'),
         },
       ],
     },
