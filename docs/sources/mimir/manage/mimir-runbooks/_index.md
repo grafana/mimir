@@ -899,7 +899,7 @@ This alert fires if queries are piling up in the query-scheduler.
 
 #### Dashboard Panels
 
-The size of the queue is shown on the `Queue Length` dashboard panel on the [`Mimir / Reads`](https://admin-ops-eu-south-0.grafana-ops.net/grafana/d/e327503188913dc38ad571c647eef643) (for the standard query path) or `Mimir / Remote Ruler Reads`
+The size of the queue is shown on the `Queue Length` dashboard panel on the `Mimir / Reads` (for the standard query path) or `Mimir / Remote Ruler Reads`
 (for the dedicated rule evaluation query path) dashboards.
 
 The `Queue Length` dashboard panel on the `Mimir / Reads` (for the standard query path)
