@@ -280,6 +280,25 @@ var (
 	zeroFloatHistogram = &histogram.FloatHistogram{}
 )
 
+func (b *TSDBBuilder) getTSDB(tenant tsdbTenant) *userTSDB {
+	b.tsdbsMu.RLock()
+	defer b.tsdbsMu.RUnlock()
+	db := b.tsdbs[tenant]
+	return db
+}
+
+func (b *TSDBBuilder) getTSDBTenants() []tsdbTenant {
+	b.tsdbsMu.RLock()
+	defer b.tsdbsMu.RUnlock()
+
+	tenants := make([]tsdbTenant, 0, len(b.tsdbs))
+	for tenant := range b.tsdbs {
+		tenants = append(tenants, tenant)
+	}
+
+	return tenants
+}
+
 func (b *TSDBBuilder) getOrCreateTSDB(tenant tsdbTenant) (*userTSDB, error) {
 	b.tsdbsMu.RLock()
 	db := b.tsdbs[tenant]
@@ -375,6 +394,20 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 
 func (b *TSDBBuilder) NotifyPreCommit(_ context.Context) error {
 	return nil
+}
+
+func (b *TSDBBuilder) CompactToReduceInMemorySeries(ctx context.Context) {
+	if b.blocksStorageCfg.TSDB.EarlyHeadCompactionMinInMemorySeries <= 0 {
+		return
+	}
+
+	// No need to prematurely compact TSDB heads if the number of in-memory series is below a critical threshold.
+	totalMemorySeries := b.seriesCount.Load()
+	if totalMemorySeries < b.blocksStorageCfg.TSDB.EarlyHeadCompactionMinInMemorySeries {
+		return
+	}
+
+	level.Info(b.logger).Log("msg", "the number of in-memory series is higher than the configured early compaction threshold", "in_memory_series", totalMemorySeries, "early_compaction_threshold", b.blocksStorageCfg.TSDB.EarlyHeadCompactionMinInMemorySeries)
 }
 
 // Function to upload the blocks.
