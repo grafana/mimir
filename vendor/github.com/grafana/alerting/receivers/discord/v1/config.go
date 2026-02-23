@@ -39,48 +39,47 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 	return settings, nil
 }
 
-func Schema() schema.IntegrationSchemaVersion {
-	return schema.IntegrationSchemaVersion{
-		Version:   Version,
-		CanCreate: true,
-		Options: []schema.Field{
-			{
-				Label:        "Title",
-				Description:  "Templated title of the message",
-				Element:      schema.ElementTypeTextArea,
-				InputType:    schema.InputTypeText,
-				Placeholder:  templates.DefaultMessageTitleEmbed,
-				PropertyName: "title",
-			},
-			{
-				Label:        "Message Content",
-				Description:  "Mention a group using @ or a user using <@ID> when notifying in a channel",
-				Element:      schema.ElementTypeTextArea,
-				InputType:    schema.InputTypeText,
-				Placeholder:  templates.DefaultMessageEmbed,
-				PropertyName: "message",
-			},
-			{
-				Label:        "Webhook URL",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				Placeholder:  "Discord webhook URL",
-				PropertyName: "url",
-				Required:     true,
-				Secure:       true,
-			},
-			{
-				Label:        "Avatar URL",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				PropertyName: "avatar_url",
-			},
-			{
-				Label:        "Use Discord's Webhook Username",
-				Description:  "Use the username configured in Discord's webhook settings. Otherwise, the username will be 'Grafana'",
-				Element:      schema.ElementTypeCheckbox,
-				PropertyName: "use_discord_username",
-			},
+var Schema = schema.IntegrationSchemaVersion{
+	Version:   Version,
+	CanCreate: true,
+	Options: []schema.Field{
+		{
+			Label:        "Title",
+			Description:  "Templated title of the message",
+			Element:      schema.ElementTypeTextArea,
+			InputType:    schema.InputTypeText,
+			Placeholder:  templates.DefaultMessageTitleEmbed,
+			PropertyName: "title",
 		},
-	}
+		{
+			Label:        "Message Content",
+			Description:  "Mention a group using @ or a user using <@ID> when notifying in a channel",
+			Element:      schema.ElementTypeTextArea,
+			InputType:    schema.InputTypeText,
+			Placeholder:  templates.DefaultMessageEmbed,
+			PropertyName: "message",
+		},
+		{
+			Label:        "Webhook URL",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			Placeholder:  "Discord webhook URL",
+			PropertyName: "url",
+			Required:     true,
+			Secure:       true,
+			Protected:    true,
+		},
+		{
+			Label:        "Avatar URL",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			PropertyName: "avatar_url",
+		},
+		{
+			Label:        "Use Discord's Webhook Username",
+			Description:  "Use the username configured in Discord's webhook settings. Otherwise, the username will be 'Grafana'",
+			Element:      schema.ElementTypeCheckbox,
+			PropertyName: "use_discord_username",
+		},
+	},
 }

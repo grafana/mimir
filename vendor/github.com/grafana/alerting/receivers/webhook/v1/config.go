@@ -14,6 +14,7 @@ import (
 )
 
 const Version = schema.V1
+const NoopURL = "grafana://noop"
 
 type CustomPayload struct {
 	// Template is the template used to generate the payload for the webhook.
@@ -183,159 +184,158 @@ func OmitRestrictedHeaders(headers map[string]string) (map[string]string, []stri
 	return safeHeaders, omitted
 }
 
-func Schema() schema.IntegrationSchemaVersion {
-	return schema.IntegrationSchemaVersion{
-		Version:   Version,
-		CanCreate: true,
-		Options: []schema.Field{
-			{
-				Label:        "URL",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				PropertyName: "url",
-				Required:     true,
-			},
-			{
-				Label:   "HTTP Method",
-				Element: schema.ElementTypeSelect,
-				SelectOptions: []schema.SelectOption{
-					{
-						Value: "POST",
-						Label: "POST",
-					},
-					{
-						Value: "PUT",
-						Label: "PUT",
-					},
-				},
-				PropertyName: "httpMethod",
-			},
-			{
-				Label:        "HTTP Basic Authentication - Username",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				PropertyName: "username",
-			},
-			{
-				Label:        "HTTP Basic Authentication - Password",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypePassword,
-				PropertyName: "password",
-				Secure:       true,
-			},
-			{ // New in 9.1
-				Label:        "Authorization Header - Scheme",
-				Description:  "Optionally provide a scheme for the Authorization Request Header. Default is Bearer.",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				PropertyName: "authorization_scheme",
-				Placeholder:  "Bearer",
-			},
-			{ // New in 9.1
-				Label:        "Authorization Header - Credentials",
-				Description:  "Credentials for the Authorization Request header. Only one of HTTP Basic Authentication or Authorization Request Header can be set.",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				PropertyName: "authorization_credentials",
-				Secure:       true,
-			},
-			{ // New in 12.0.
-				Label:        "Extra Headers",
-				Description:  "Optionally provide extra headers to be used in the request.",
-				Element:      schema.ElementTypeKeyValueMap,
-				InputType:    schema.InputTypeText,
-				PropertyName: "headers",
-			},
-			{ // New in 8.0. TODO: How to enforce only numbers?
-				Label:        "Max Alerts",
-				Description:  "Max alerts to include in a notification. Remaining alerts in the same batch will be ignored above this number. 0 means no limit.",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				PropertyName: "maxAlerts",
-			},
-			{ // New in 9.3.
-				Label:        "Title",
-				Description:  "Templated title of the message.",
-				Element:      schema.ElementTypeTextArea,
-				InputType:    schema.InputTypeText,
-				PropertyName: "title",
-				Placeholder:  templates.DefaultMessageTitleEmbed,
-			},
-			{ // New in 9.3.
-				Label:        "Message",
-				Description:  "Templated message to be used in the payload's \"message\" field.",
-				Element:      schema.ElementTypeTextArea,
-				PropertyName: "message",
-				Placeholder:  templates.DefaultMessageEmbed,
-			},
-			{ // New in 12.0.
-				Label:        "Custom Payload",
-				Description:  "Optionally provide a templated payload. Overrides 'Message' and 'Title' field.",
-				Element:      schema.ElementTypeSubform,
-				PropertyName: "payload",
-				SubformOptions: []schema.Field{
-					{
-						Label:        "Payload Template",
-						Description:  "Custom payload template.",
-						Element:      schema.ElementTypeTextArea,
-						PropertyName: "template",
-						Placeholder:  `{{ template "webhook.default.payload" . }}`,
-						Required:     true,
-					},
-					{
-						Label:        "Payload Variables",
-						Description:  "Optionally provide a variables to be used in the payload template. They will be available in the template as `.Vars.<variable_name>`.",
-						Element:      schema.ElementTypeKeyValueMap,
-						InputType:    schema.InputTypeText,
-						PropertyName: "vars",
-					},
-				},
-			},
-
-			{
-				Label:          "TLS",
-				PropertyName:   "tlsConfig",
-				Description:    "TLS configuration options",
-				Element:        schema.ElementTypeSubform,
-				SubformOptions: schema.V1TLSSubformOptions(),
-			},
-			{
-				Label:        "HMAC Signature",
-				PropertyName: "hmacConfig",
-				Description:  "HMAC signature configuration options",
-				Element:      schema.ElementTypeSubform,
-				SubformOptions: []schema.Field{
-					{
-						Label:        "Secret",
-						Element:      schema.ElementTypeInput,
-						Description:  "",
-						InputType:    schema.InputTypeText,
-						PropertyName: "secret",
-						Required:     true,
-						Secure:       true,
-					},
-					{
-						Label:        "Header",
-						Element:      schema.ElementTypeInput,
-						Description:  "The header in which the HMAC signature will be included.",
-						InputType:    schema.InputTypeText,
-						PropertyName: "header",
-						Placeholder:  "X-Grafana-Alerting-Signature",
-						Required:     false,
-						Secure:       false,
-					},
-					{
-						Label:        "Timestamp header",
-						Element:      schema.ElementTypeInput,
-						Description:  "If set, the timestamp will be included in the HMAC signature. The value should be the name of the header to use.",
-						InputType:    schema.InputTypeText,
-						PropertyName: "timestampHeader",
-						Required:     false,
-						Secure:       false,
-					},
-				},
-			},
-			schema.V1HttpClientOption(), // New in 12.1.
+var Schema = schema.IntegrationSchemaVersion{
+	Version:   Version,
+	CanCreate: true,
+	Options: []schema.Field{
+		{
+			Label:        "URL",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			PropertyName: "url",
+			Required:     true,
+			Protected:    true,
 		},
-	}
+		{
+			Label:   "HTTP Method",
+			Element: schema.ElementTypeSelect,
+			SelectOptions: []schema.SelectOption{
+				{
+					Value: "POST",
+					Label: "POST",
+				},
+				{
+					Value: "PUT",
+					Label: "PUT",
+				},
+			},
+			PropertyName: "httpMethod",
+		},
+		{
+			Label:        "HTTP Basic Authentication - Username",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			PropertyName: "username",
+		},
+		{
+			Label:        "HTTP Basic Authentication - Password",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypePassword,
+			PropertyName: "password",
+			Secure:       true,
+		},
+		{ // New in 9.1
+			Label:        "Authorization Header - Scheme",
+			Description:  "Optionally provide a scheme for the Authorization Request Header. Default is Bearer.",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			PropertyName: "authorization_scheme",
+			Placeholder:  "Bearer",
+		},
+		{ // New in 9.1
+			Label:        "Authorization Header - Credentials",
+			Description:  "Credentials for the Authorization Request header. Only one of HTTP Basic Authentication or Authorization Request Header can be set.",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			PropertyName: "authorization_credentials",
+			Secure:       true,
+		},
+		{ // New in 12.0.
+			Label:        "Extra Headers",
+			Description:  "Optionally provide extra headers to be used in the request.",
+			Element:      schema.ElementTypeKeyValueMap,
+			InputType:    schema.InputTypeText,
+			PropertyName: "headers",
+		},
+		{ // New in 8.0. TODO: How to enforce only numbers?
+			Label:        "Max Alerts",
+			Description:  "Max alerts to include in a notification. Remaining alerts in the same batch will be ignored above this number. 0 means no limit.",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			PropertyName: "maxAlerts",
+		},
+		{ // New in 9.3.
+			Label:        "Title",
+			Description:  "Templated title of the message.",
+			Element:      schema.ElementTypeTextArea,
+			InputType:    schema.InputTypeText,
+			PropertyName: "title",
+			Placeholder:  templates.DefaultMessageTitleEmbed,
+		},
+		{ // New in 9.3.
+			Label:        "Message",
+			Description:  "Templated message to be used in the payload's \"message\" field.",
+			Element:      schema.ElementTypeTextArea,
+			PropertyName: "message",
+			Placeholder:  templates.DefaultMessageEmbed,
+		},
+		{ // New in 12.0.
+			Label:        "Custom Payload",
+			Description:  "Optionally provide a templated payload. Overrides 'Message' and 'Title' field.",
+			Element:      schema.ElementTypeSubform,
+			PropertyName: "payload",
+			SubformOptions: []schema.Field{
+				{
+					Label:        "Payload Template",
+					Description:  "Custom payload template.",
+					Element:      schema.ElementTypeTextArea,
+					PropertyName: "template",
+					Placeholder:  `{{ template "webhook.default.payload" . }}`,
+					Required:     true,
+				},
+				{
+					Label:        "Payload Variables",
+					Description:  "Optionally provide a variables to be used in the payload template. They will be available in the template as `.Vars.<variable_name>`.",
+					Element:      schema.ElementTypeKeyValueMap,
+					InputType:    schema.InputTypeText,
+					PropertyName: "vars",
+				},
+			},
+		},
+
+		{
+			Label:          "TLS",
+			PropertyName:   "tlsConfig",
+			Description:    "TLS configuration options",
+			Element:        schema.ElementTypeSubform,
+			SubformOptions: schema.V1TLSSubformOptions(),
+		},
+		{
+			Label:        "HMAC Signature",
+			PropertyName: "hmacConfig",
+			Description:  "HMAC signature configuration options",
+			Element:      schema.ElementTypeSubform,
+			SubformOptions: []schema.Field{
+				{
+					Label:        "Secret",
+					Element:      schema.ElementTypeInput,
+					Description:  "",
+					InputType:    schema.InputTypeText,
+					PropertyName: "secret",
+					Required:     true,
+					Secure:       true,
+				},
+				{
+					Label:        "Header",
+					Element:      schema.ElementTypeInput,
+					Description:  "The header in which the HMAC signature will be included.",
+					InputType:    schema.InputTypeText,
+					PropertyName: "header",
+					Placeholder:  "X-Grafana-Alerting-Signature",
+					Required:     false,
+					Secure:       false,
+				},
+				{
+					Label:        "Timestamp header",
+					Element:      schema.ElementTypeInput,
+					Description:  "If set, the timestamp will be included in the HMAC signature. The value should be the name of the header to use.",
+					InputType:    schema.InputTypeText,
+					PropertyName: "timestampHeader",
+					Required:     false,
+					Secure:       false,
+				},
+			},
+		},
+		schema.V1HttpClientOption(), // New in 12.1.
+	},
 }

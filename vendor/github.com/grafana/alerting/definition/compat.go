@@ -235,25 +235,6 @@ func LoadCompat(rawCfg []byte) (*PostableApiAlertingConfig, error) {
 	return &c, nil
 }
 
-// GrafanaToUpstreamConfig converts a Grafana alerting configuration into an upstream Alertmanager configuration.
-// It ignores the configuration for Grafana receivers, adding only their names.
-func GrafanaToUpstreamConfig(cfg *PostableApiAlertingConfig) config.Config {
-	rcvs := make([]config.Receiver, 0, len(cfg.Receivers))
-	for _, r := range cfg.Receivers {
-		rcvs = append(rcvs, r.Receiver)
-	}
-
-	return config.Config{
-		Global:            cfg.Global,
-		Route:             cfg.Route.AsAMRoute(),
-		InhibitRules:      cfg.InhibitRules,
-		Receivers:         rcvs,
-		Templates:         cfg.Templates,
-		MuteTimeIntervals: cfg.MuteTimeIntervals,
-		TimeIntervals:     cfg.TimeIntervals,
-	}
-}
-
 func TemplatesMapToPostableAPITemplates(templates map[string]string, kind TemplateKind) []PostableApiTemplate {
 	res := make([]PostableApiTemplate, 0, len(templates))
 	for k, v := range templates {
