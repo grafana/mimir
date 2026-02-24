@@ -653,9 +653,9 @@ github.com/google/go-cmp/cmp/internal/diff
 github.com/google/go-cmp/cmp/internal/flags
 github.com/google/go-cmp/cmp/internal/function
 github.com/google/go-cmp/cmp/internal/value
-# github.com/google/go-github/v81 v81.0.0
+# github.com/google/go-github/v83 v83.0.0
 ## explicit; go 1.24.0
-github.com/google/go-github/v81/github
+github.com/google/go-github/v83/github
 # github.com/google/go-querystring v1.2.0
 ## explicit; go 1.13
 github.com/google/go-querystring/query
@@ -1224,7 +1224,7 @@ github.com/pmezard/go-difflib/difflib
 # github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55
 ## explicit; go 1.14
 github.com/power-devops/perfstat
-# github.com/prometheus/alertmanager v0.31.0 => github.com/grafana/prometheus-alertmanager v0.25.1-0.20250911094103-5456b6e45604
+# github.com/prometheus/alertmanager v0.31.1 => github.com/grafana/prometheus-alertmanager v0.25.1-0.20250911094103-5456b6e45604
 ## explicit; go 1.23.0
 github.com/prometheus/alertmanager/api
 github.com/prometheus/alertmanager/api/metrics
@@ -1495,7 +1495,7 @@ github.com/tklauser/go-sysconf
 # github.com/tklauser/numcpus v0.11.0
 ## explicit; go 1.24.0
 github.com/tklauser/numcpus
-# github.com/twmb/franz-go v1.20.6
+# github.com/twmb/franz-go v1.20.7
 ## explicit; go 1.24.0
 github.com/twmb/franz-go/pkg/kbin
 github.com/twmb/franz-go/pkg/kerr
@@ -1611,14 +1611,14 @@ go.opentelemetry.io/collector/confmap/xconfmap
 ## explicit; go 1.24.0
 go.opentelemetry.io/collector/consumer
 go.opentelemetry.io/collector/consumer/internal
-# go.opentelemetry.io/collector/featuregate v1.51.0
-## explicit; go 1.24.0
+# go.opentelemetry.io/collector/featuregate v1.52.0
+## explicit; go 1.25.0
 go.opentelemetry.io/collector/featuregate
 # go.opentelemetry.io/collector/internal/componentalias v0.145.0
 ## explicit; go 1.24.0
 go.opentelemetry.io/collector/internal/componentalias
-# go.opentelemetry.io/collector/pdata v1.51.0
-## explicit; go 1.24.0
+# go.opentelemetry.io/collector/pdata v1.52.0
+## explicit; go 1.25.0
 go.opentelemetry.io/collector/pdata/internal
 go.opentelemetry.io/collector/pdata/internal/json
 go.opentelemetry.io/collector/pdata/internal/otelgrpc
@@ -1985,7 +1985,7 @@ golang.org/x/tools/internal/typesinternal
 golang.org/x/tools/internal/versions
 # golang.org/x/tools/godoc v0.1.0-deprecated
 ## explicit; go 1.24.0
-# google.golang.org/api v0.266.0
+# google.golang.org/api v0.267.0
 ## explicit; go 1.24.0
 google.golang.org/api/googleapi
 google.golang.org/api/googleapi/transport

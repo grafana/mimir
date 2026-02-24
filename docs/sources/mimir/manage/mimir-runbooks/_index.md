@@ -351,6 +351,10 @@ How to **investigate**:
 - If the failing service is crashing / panicking: look for the stack trace in the logs and investigate from there
   - If crashing service is query-frontend, querier or store-gateway, and you have "activity tracker" feature enabled, look for `found unfinished activities from previous run` message and subsequent `activity` messages in the log file to see which queries caused the crash.
 - When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for the [`MimirGossipMembersTooHigh`](#MimirGossipMembersTooHigh) and [`MimirGossipMembersTooLow`](#MimirGossipMembersTooLow) alerts.
+- When using Memberlist look for querier logs which include warnings such as `partition 41: too many unhealthy instances in the ring`
+  - Verify that the minimum required number of ingesters for the affected partition are running and healthy.
+  - Identify the ingesters responsible for the partition via the `/ingester/partition-ring` endpoint.
+  - If the partition owners are not as expected, use, use `mimirtool partition-ring` to adjust the partitions and/or owners.
 - When using [ingest-storage](#mimir-ingest-storage-experimental) and distributors are failing to write requests to Kafka, make sure that Kafka is up and running correctly.
 
 #### Alertmanager
@@ -899,7 +903,7 @@ This alert fires if queries are piling up in the query-scheduler.
 
 #### Dashboard Panels
 
-The size of the queue is shown on the `Queue Length` dashboard panel on the [`Mimir / Reads`](https://admin-ops-eu-south-0.grafana-ops.net/grafana/d/e327503188913dc38ad571c647eef643) (for the standard query path) or `Mimir / Remote Ruler Reads`
+The size of the queue is shown on the `Queue Length` dashboard panel on the `Mimir / Reads` (for the standard query path) or `Mimir / Remote Ruler Reads`
 (for the dedicated rule evaluation query path) dashboards.
 
 The `Queue Length` dashboard panel on the `Mimir / Reads` (for the standard query path)

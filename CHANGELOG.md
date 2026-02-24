@@ -122,6 +122,7 @@
 * [ENHANCEMENT] MQE: Add metrics to track step-invariant expression usage and data point reuse savings: `cortex_mimir_query_engine_step_invariant_nodes_total` and `cortex_mimir_query_engine_step_invariant_steps_saved_total`. #13911
 * [ENHANCEMENT] MQE: Add explicit error handling for unsupported Prometheus experimental binary operator modifiers `fill`, `fill_left` and `fill_right`. #14107
 * [ENHANCEMENT] MQE: Add experimental support for computing multiple aggregations over the same data without buffering. Enable with `-querier.mimir-query-engine.enable-multi-aggregation=true`. #14123 #14174
+* [ENHANCEMENT] Querier: Add support for the first phase of using non-opaque GRPC types between queriers and store-gateways per #14264. #14253
 * [ENHANCEMENT] Querier: Optimize querying store-gateways when many of them are in a LEAVING state. #14157
 * [ENHANCEMENT] Memberlist: Add "Size" column to "KV Store" table in the memberlist web page. #14200
 * [ENHANCEMENT] Memberlist: Add experimental configuration option `-memberlist.rejoin-seed-nodes` to set custom seed nodes used by periodic rejoin (when enabled). #14208
@@ -130,7 +131,10 @@
 * [ENHANCEMENT] Store-gateway: Add "OOO" column to the tenant blocks page to indicate whether each block was created from out-of-order samples. #14283
 * [ENHANCEMENT] Ingester: Optimize ingestion from Kafka in clusters with mixed size tenants. #13924 #13961 #14302
 * [ENHANCEMENT] Querier: Add new config flag `querier.enable-delayed-name-removal-prometheus-engine` to enable delayed name removal for Prometheus engine. #14349
+* [ENHANCEMENT] Ingester: reduce heap usage during streaming chunk queries by releasing series label memory after each batch is sent rather than holding it until chunk streaming completes. #14422
+* [ENHANCEMENT] Ingest storage: Allow configuring multiple Kafka seed brokers via `-ingest-storage.kafka.address` (comma-separated). #14328
 * [ENHANCEMENT] Ingest storage: Add `-ingest-storage.kafka.client-rack` flag to enable rack awareness. #14434
+* [ENHANCEMENT] Distributor, ingest storage: Add `cortex_distributor_received_bytes_total` and `cortex_ingest_storage_writer_input_bytes_total` metrics to measure Remote Write v2 symbols table compression effectiveness. #14453
 * [BUGFIX] Mimir: Fix nil pointer dereference when `-target` is set to an empty string. #14381
 * [BUGFIX] API: Fixed web UI links not respecting `-server.path-prefix` configuration. #14090
 * [BUGFIX] Distributor: Fix issue where distributors didn't send custom values of native histograms. #13849
@@ -184,6 +188,7 @@
 
 ### Mixin
 
+* [CHANGE] Dashboards: Add configuration option `dashboards_default_latency_mode` to control the default value of the native/classic latency variable (uses 'classic' if unset). #14424
 * [CHANGE] Alerts: Renamed the following alerts to fit within 40 characters: #13363
   * `MimirAlertmanagerPartialStateMergeFailing` → `MimirAlertmanagerStateMergeFailing`
   * `MimirServerInvalidClusterValidationLabelRequests` → `MimirServerInvalidClusterLabelRequests`
@@ -230,6 +235,7 @@
 * [ENHANCEMENT] Dashboards: Add panels showing the distribution of estimated query memory consumption and rate of fallback to Prometheus' query engine in query-frontends to the Queries dashboard. #14029
 * [ENHANCEMENT] Dashboards: Add "Forced TSDB head compactions in progress" panel to "Mimir / Writes" dashboard. #14248
 * [ENHANCEMENT] Dashboards: Improve "Last successful run per-compactor replica" table in the compactor dashboard to show time since process start for compactors that haven't completed their first run yet. #14285
+* [ENHANCEMENT] Alerts: Add dashboard_url annotations to Prometheus alerts. #14458
 * [BUGFIX] Dashboards: Fix issue where throughput dashboard panels would group all gRPC requests that resulted in a status containing an underscore into one series with no name. #13184
 * [BUGFIX] Dashboards: Filter out 0s from `max_series` limit on Writes Resources > Ingester > In-memory series panel. #13419
 * [BUGFIX] Dashboards: Fix issue where the "Tenant gateway requests" panels on Tenants dashboard would show data from all components. #13940
@@ -249,7 +255,7 @@
   * `autoscaling_ruler_query_frontend_min_replicas` → `autoscaling_ruler_query_frontend_min_replicas_per_zone`
   * `autoscaling_ruler_query_frontend_max_replicas` → `autoscaling_ruler_query_frontend_max_replicas_per_zone`
 * [CHANGE] Store-gateway: The store-gateway disk class now honors the one configured via `$._config.store_gateway_data_disk_class` and doesn't replace `fast` with `fast-dont-retain`. #13152
-* [CHANGE] Rollout-operator: Vendor jsonnet from rollout-operator repository. #13245 #13317 #13793 #13799 #13840 #14240
+* [CHANGE] Rollout-operator: Vendor jsonnet from rollout-operator repository. #13245 #13317 #13793 #13799 #13840 #14240 #14463
 * [CHANGE] Ruler: Set default memory ballast to 1GiB to reduce GC pressure during startup. #13376
 * [CHANGE] Zone pod disruption budget: Remove `multi_zone_zpdb_enabled` and replace it with `multi_zone_ingester_zpdb_enabled` and `multi_zone_store_gateway_zpdb_enabled` to allow to selectively enable the zone pod disruption budget on a per-component basis. #13813
 * [CHANGE] Reduced dynamic replication factor when running store-gateways with replication factor set to a value higher than 3. #14304
@@ -260,6 +266,7 @@
   * `$._config.shuffle_sharding.store_gateway_shard_size_per_zone_defaults_enabled` (takes precedence over `store_gateway_shard_size_per_zone_enabled`)
   * `$._config.shuffle_sharding.store_gateway_shard_size_per_zone_overrides_enabled` (takes precedence over `store_gateway_shard_size_per_zone_enabled`)
 * [FEATURE] Ruler: Add `$._config.multi_zone_ruler_balanced_autoscaling_enabled` option to ensure equally balanced replica counts across ruler zones in multi-AZ deployments by using aggregate metrics for autoscaling. #14198
+* [FEATURE] Add `query_engine_range_vector_splitting_enabled` configuration option to enable experimental range vector splitting with memcached cache. #14435
 * [ENHANCEMENT] Ruler querier and query-frontend: Add support for newly-introduced querier ring, which is used when performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13017
 * [ENHANCEMENT] Ingester: Increase `$._config.ingester_tsdb_head_early_compaction_min_in_memory_series` default when Mimir is running with the ingest storage architecture. #13450
 * [ENHANCEMENT] Memberlist bridge: Add `memberlist_bridge_replicas_per_zone` configuration option (default: 2). #13727
@@ -292,11 +299,14 @@
 * [ENHANCEMENT] Document how ingesters calculate partition ID from ring's instance ID in ingest storage. #13903
 * [ENHANCEMENT] Add AWS profile authentication example to `mark-blocks` tool documentation and add centralized section in runbooks with examples for all cloud providers. #14281
 * [BUGFIX] Distributor: Fix type error in multi-zone distributor container constructor's env map. #14403
+* [BUGFIX] Native histograms: Fix PromQL query example for `histogram_fraction` to filter NaN results when there are no observations. #14433
+* [BUGFIX] OTLP: Exponential histograms over OTLP are not experimental. #14437
 
 ### Tools
 
 * [FEATURE] mimir-tool: Add `validate alerts-file` command that performs checks on alert files defined as YAML. #14043
 * [FEATURE] mimir-tool: Add `partition-ring add-partition` and `partition-ring remove-partition` commands. #14265
+* [FEATURE] mimir-tool: Add `partition-ring add-owner` and `partition-ring remove-owner` commands. #14462
 * [FEATURE] tsdb-index-header: Add tool to inspect the content of a block's index or index-header. #13738 #14279
 * [FEATURE] tsdb-chunks, tsdb-print-chunk: When printing samples, include the start time (ST) in the output. #14337
 * [BUGFIX] mimir-tool-action: Fix base image of the Github action. #13303

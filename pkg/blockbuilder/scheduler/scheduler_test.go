@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
@@ -40,7 +41,7 @@ func mustSchedulerWithKafkaAddr(t *testing.T, addr string) (*BlockBuilderSchedul
 	cli := mustKafkaClient(t, addr)
 	cfg := Config{
 		Kafka: ingest.KafkaConfig{
-			Address:      addr,
+			Address:      flagext.StringSliceCSV{addr},
 			Topic:        "ingest",
 			FetchMaxWait: 10 * time.Millisecond,
 		},

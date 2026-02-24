@@ -270,7 +270,9 @@ func BenchmarkDistributor_prePushMaxSeriesLimitMiddleware(b *testing.B) {
 			b.ResetTimer()
 
 			for n := 0; n < b.N; n++ {
-				err := fn(ctx, newRequest(func() (req *mimirpb.WriteRequest, cleanup func(), err error) { return reqs[n], func() {}, nil }))
+				err := fn(ctx, newRequest(func() (req *mimirpb.WriteRequest, cleanup func(), uncompressedBodySize int, err error) {
+					return reqs[n], func() {}, 0, nil
+				}))
 				if (err != nil) != (testData.rejectedSeriesPercentage > 0) {
 					if testData.rejectedSeriesPercentage > 0 {
 						require.Error(b, err)

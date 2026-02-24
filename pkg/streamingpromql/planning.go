@@ -77,6 +77,12 @@ type QueryPlanner struct {
 }
 
 func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) (*QueryPlanner, error) {
+	return NewQueryPlannerWithTime(opts, versionProvider, time.Now)
+}
+
+// NewQueryPlannerWithTime is like NewQueryPlanner but uses the given time function. Useful for tests that need a fixed
+// "now" for OOO window calculations).
+func NewQueryPlannerWithTime(opts EngineOpts, versionProvider QueryPlanVersionProvider, timeNow func() time.Time) (*QueryPlanner, error) {
 	planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, versionProvider)
 	if err != nil {
 		return nil, err
@@ -122,7 +128,7 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 		if splitInterval <= 0 {
 			return nil, errors.New("range vector splitting is enabled but split interval is not greater than 0")
 		}
-		planner.RegisterQueryPlanOptimizationPass(rangevectorsplitting.NewOptimizationPass(splitInterval, opts.Limits, time.Now, opts.CommonOpts.Reg, opts.Logger))
+		planner.RegisterQueryPlanOptimizationPass(rangevectorsplitting.NewOptimizationPass(splitInterval, opts.Limits, timeNow, opts.CommonOpts.Reg, opts.Logger))
 	}
 
 	if opts.EnableCommonSubexpressionElimination {

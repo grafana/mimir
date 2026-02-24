@@ -20,8 +20,8 @@ Set the following configuration flags to enable Grafana Mimir to use ingest stor
 - `-ingest-storage.enabled=true`<br />
   You must explicitly enable the ingest storage architecture in all Mimir components.
 
-- `-ingest-storage.kafka.address=<host:port>`<br />
-  The `<host:port>` is the address of the Kafka broker used to bootstrap the connection.
+- `-ingest-storage.kafka.address=<host:port>[,<host:port>...]`<br />
+  The `<host:port>` is a Kafka seed broker address used to bootstrap the connection. You can configure a comma-separated list of seed broker addresses for higher bootstrap availability.
 
 - `-ingest-storage.kafka.topic=<name>`<br />
   The `<name>` is the name of the Kafka topic that is used for ingesting data.
@@ -33,7 +33,7 @@ Additionally, you can use these recommended configuration options when running G
 
 - `-distributor.remote-timeout=5s`<br />
   Use this setting to increase the default remote write timeout. This is recommended for writing to Kafka, because pushing
-  to Kafka-compatible backends might be slower than writing to directly to ingesters.
+  to Kafka-compatible backends might be slower than writing directly to ingesters.
 
 Refer to Grafana Mimir [configuration parameters](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configuration-parameters/) for detailed descriptions of all available configuration options.
 

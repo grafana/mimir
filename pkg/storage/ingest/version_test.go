@@ -327,10 +327,14 @@ func TestRecordSerializer(t *testing.T) {
 		}
 
 		serializer := versionTwoRecordSerializer{}
-		records, err := serializer.ToRecords(1234, "user-1", req, 100000)
+		inputSize := req.Size() // Capture input RW1 size before serialization
+		records, returnedSize, err := serializer.ToRecords(1234, "user-1", req, 100000)
 		require.NoError(t, err)
 		require.Len(t, records, 1)
 		record := records[0]
+
+		// Verify that ToRecords returns the input size (RW1), not the output size (RW2).
+		require.Equal(t, inputSize, returnedSize, "ToRecords should return input RW1 size, not output RW2 size")
 
 		require.Equal(t, 2, ParseRecordVersion(record))
 
@@ -434,7 +438,7 @@ func BenchmarkRecordSerializer(b *testing.B) {
 
 	b.Run("v2 serialize (full flow)", func(b *testing.B) {
 		for n := 0; n < b.N; n++ {
-			_, err := v2s.ToRecords(123, "user-1", req, 16000000)
+			_, _, err := v2s.ToRecords(123, "user-1", req, 16000000)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -443,7 +447,7 @@ func BenchmarkRecordSerializer(b *testing.B) {
 
 	b.Run("v1 serialize (full flow)", func(b *testing.B) {
 		for n := 0; n < b.N; n++ {
-			_, err := v1s.ToRecords(123, "user-1", req, 16000000)
+			_, _, err := v1s.ToRecords(123, "user-1", req, 16000000)
 			if err != nil {
 				b.Fatal(err)
 			}

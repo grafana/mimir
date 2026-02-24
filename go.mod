@@ -29,7 +29,7 @@ require (
 	github.com/opentracing-contrib/go-stdlib v1.1.1 // indirect
 	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/alertmanager v0.31.0
+	github.com/prometheus/alertmanager v0.31.1
 	github.com/prometheus/client_golang v1.23.3-0.20260108101519-fb0838f53562
 	github.com/prometheus/client_model v0.6.2
 	github.com/prometheus/common v0.67.5
@@ -59,7 +59,7 @@ require (
 	github.com/go-openapi/swag/jsonutils v0.25.4
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8
 	github.com/google/go-cmp v0.7.0
-	github.com/google/go-github/v81 v81.0.0
+	github.com/google/go-github/v83 v83.0.0
 	github.com/google/uuid v1.6.0
 	github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
 	github.com/grafana/alerting v0.0.0-20251002141545-d513d62d3210
@@ -77,7 +77,7 @@ require (
 	github.com/spf13/pflag v1.0.10
 	github.com/thanos-io/objstore v0.0.0-20250813080715-4e5fd4289b50
 	github.com/tjhop/slog-gokit v0.1.5
-	github.com/twmb/franz-go v1.20.6
+	github.com/twmb/franz-go v1.20.7
 	github.com/twmb/franz-go/pkg/kadm v1.17.2-0.20251227070528-0c71f7e25fa1
 	github.com/twmb/franz-go/pkg/kfake v0.0.0-20260121195810-e0832fcbdccb
 	github.com/twmb/franz-go/pkg/kmsg v1.12.1-0.20251024215757-aea970d4d0d2
@@ -85,7 +85,7 @@ require (
 	github.com/twmb/franz-go/plugin/kprom v1.3.0
 	github.com/tylertreat/BoomFilters v0.0.0-20251117164519-53813c36cc1b
 	github.com/xlab/treeprint v1.2.0
-	go.opentelemetry.io/collector/pdata v1.51.0
+	go.opentelemetry.io/collector/pdata v1.52.0
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.65.0
 	go.opentelemetry.io/contrib/propagators/jaeger v1.40.0
 	go.opentelemetry.io/otel v1.40.0
@@ -95,7 +95,7 @@ require (
 	go.uber.org/multierr v1.11.0
 	go.yaml.in/yaml/v3 v3.0.4
 	golang.org/x/term v0.40.0
-	google.golang.org/api v0.266.0
+	google.golang.org/api v0.267.0
 	google.golang.org/protobuf v1.36.11
 	sigs.k8s.io/kustomize/kyaml v0.21.1
 )
@@ -201,7 +201,7 @@ require (
 	go.opentelemetry.io/collector/confmap v1.51.0 // indirect
 	go.opentelemetry.io/collector/confmap/xconfmap v0.145.0 // indirect
 	go.opentelemetry.io/collector/consumer v1.51.0 // indirect
-	go.opentelemetry.io/collector/featuregate v1.51.0 // indirect
+	go.opentelemetry.io/collector/featuregate v1.52.0 // indirect
 	go.opentelemetry.io/collector/internal/componentalias v0.145.0 // indirect
 	go.opentelemetry.io/collector/pipeline v1.51.0 // indirect
 	go.opentelemetry.io/collector/processor v1.51.0 // indirect

@@ -149,6 +149,7 @@ type Distributor struct {
 	receivedMetadata                 *prometheus.CounterVec
 	receivedNativeHistogramSamples   *prometheus.CounterVec
 	receivedNativeHistogramBuckets   *prometheus.CounterVec
+	receivedBytes                    *prometheus.CounterVec
 	incomingRequests                 *prometheus.CounterVec
 	incomingSamples                  *prometheus.CounterVec
 	incomingExemplars                *prometheus.CounterVec
@@ -535,6 +536,10 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Name: "cortex_distributor_received_native_histogram_buckets_total",
 			Help: "The total number of received native histogram buckets, excluding rejected and deduped samples.",
 		}, []string{"user"}),
+		receivedBytes: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_received_bytes_total",
+			Help: "The total number of uncompressed bytes received in the original request body (before any protocol conversion). Excludes requests rejected by middleware (e.g., rate limiting, size limits, HA deduplication) but includes bytes from requests where individual samples may be filtered or rejected during processing.",
+		}, []string{"user"}),
 		incomingRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_requests_in_total",
 			Help: "The total number of requests that have come in to the distributor, including rejected or deduped requests.",
@@ -874,6 +879,7 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.receivedMetadata.DeleteLabelValues(userID)
 	d.receivedNativeHistogramSamples.DeleteLabelValues(userID)
 	d.receivedNativeHistogramBuckets.DeleteLabelValues(userID)
+	d.receivedBytes.DeleteLabelValues(userID)
 	d.incomingSamples.DeleteLabelValues(userID)
 	d.incomingExemplars.DeleteLabelValues(userID)
 	d.incomingMetadata.DeleteLabelValues(userID)
@@ -2043,7 +2049,7 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 
 // Push is gRPC method registered as client.IngesterServer and distributor.DistributorServer.
 func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
-	pushReq := NewParsedRequest(req)
+	pushReq := NewParsedRequest(req, req.Size())
 	pushReq.AddCleanup(func() {
 		req.FreeBuffer()
 		mimirpb.ReuseSlice(req.Timeseries)
@@ -2091,7 +2097,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 		return err
 	}
 
-	d.updateReceivedMetrics(req, userID)
+	d.updateReceivedMetrics(ctx, pushReq, userID)
 
 	if len(req.Timeseries) == 0 && len(req.Metadata) == 0 {
 		return nil
@@ -2346,7 +2352,8 @@ func tokenForMetadata(userID string, metricName string) uint32 {
 	return mimirpb.ShardByMetricName(userID, metricName)
 }
 
-func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID string) {
+func (d *Distributor) updateReceivedMetrics(ctx context.Context, pushReq *Request, userID string) {
+	req, _ := pushReq.WriteRequest()
 	var receivedSamples, receivedHistograms, receivedHistogramBuckets, receivedExemplars, receivedMetadata int
 	for _, ts := range req.Timeseries {
 		receivedSamples += len(ts.Samples)
@@ -2364,6 +2371,15 @@ func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID st
 	d.receivedNativeHistogramBuckets.WithLabelValues(userID).Add(float64(receivedHistogramBuckets))
 	d.receivedExemplars.WithLabelValues(userID).Add(float64(receivedExemplars))
 	d.receivedMetadata.WithLabelValues(userID).Add(float64(receivedMetadata))
+
+	// Use the uncompressed body size (original wire bytes).
+	// This properly accounts for different protocols (e.g., RW2, OTLP).
+	reqSize := pushReq.UncompressedBodySize()
+	if reqSize == 0 {
+		// Fallback if unknown.
+		reqSize = req.Size()
+	}
+	d.receivedBytes.WithLabelValues(userID).Add(float64(reqSize))
 }
 
 // forReplicationSets runs f, in parallel, for all ingesters in the input replicationSets.
