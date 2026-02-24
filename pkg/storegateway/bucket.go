@@ -1765,11 +1765,7 @@ func (s *bucketBlockSet) stats() *BlockSetStats {
 	s.mtx.RLock()
 	defer s.mtx.RUnlock()
 
-	// Copy values into new struct to avoid data race while being read by caller
-	return &BlockSetStats{
-		s.blockSetStats.SizeBytes(),
-		maps.Clone(s.blockSetStats.CompactionLevels()),
-	}
+	return s.blockSetStats.Report()
 }
 
 // add adds a block to the set and updates the BlockSetStats.
@@ -1948,8 +1944,8 @@ func (s *bucketBlockSet) timerange() (mint, maxt int64) {
 }
 
 // BlockSetStats tracks metrics for the bucketBlockSet to be collected by BucketStores.
-// Concurrent calls to BlockSetStats are expected to be protected by the mutex in bucketBlockSet.
-// Values must be copied out when reported to collectors, as the callers will not hold the mutex.
+// Concurrent calls to update and read BlockSetStats are expected to be protected by the mutex in bucketBlockSet.
+// Values are copied out when reported to collectors, as the callers will not hold the mutex.
 type BlockSetStats struct {
 
 	// loadedSizeBytes tracks the total size in bytes of loaded blocks on local disk.
@@ -1965,6 +1961,14 @@ func NewBlockSetStats() *BlockSetStats {
 	return &BlockSetStats{
 		loadedSizeBytes:        0,
 		loadedCompactionLevels: make(map[int]int),
+	}
+}
+
+func (bss *BlockSetStats) Report() *BlockSetStats {
+	// Copy values into new struct to avoid data race while being read by caller
+	return &BlockSetStats{
+		bss.SizeBytes(),
+		maps.Clone(bss.CompactionLevels()),
 	}
 }
 
