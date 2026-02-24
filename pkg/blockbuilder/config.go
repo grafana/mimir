@@ -25,8 +25,9 @@ type Config struct {
 	ApplyMaxGlobalSeriesPerUserBelow int `yaml:"apply_max_global_series_per_user_below" category:"experimental"`
 
 	// Config parameters defined outside the block-builder config and are injected dynamically.
-	Kafka         ingest.KafkaConfig       `yaml:"-"`
-	BlocksStorage tsdb.BlocksStorageConfig `yaml:"-"`
+	Kafka                         ingest.KafkaConfig       `yaml:"-"`
+	BlocksStorage                 tsdb.BlocksStorageConfig `yaml:"-"`
+	SparseIndexHeaderSamplingRate int                      `yaml:"-"`
 }
 
 type SchedulerConfig struct {

@@ -48,6 +48,7 @@ type tsdbBuilderMetrics struct {
 	compactAndUploadDuration           *prometheus.HistogramVec
 	compactAndUploadFailed             *prometheus.CounterVec
 	lastSuccessfulCompactAndUploadTime *prometheus.GaugeVec
+	sparseIndexHeadersFailed           prometheus.Counter
 }
 
 func newTSDBBBuilderMetrics(reg prometheus.Registerer) tsdbBuilderMetrics {
@@ -73,6 +74,11 @@ func newTSDBBBuilderMetrics(reg prometheus.Registerer) tsdbBuilderMetrics {
 		Name: "cortex_blockbuilder_tsdb_last_successful_compact_and_upload_timestamp_seconds",
 		Help: "Unix timestamp (in seconds) of the last successful tsdb block compacted and uploaded to the object storage on a partition.",
 	}, []string{"partition"})
+
+	m.sparseIndexHeadersFailed = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "cortex_blockbuilder_tsdb_sparse_index_headers_failed_total",
+		Help: "Total number of failures building sparse index-headers for blocks.",
+	})
 
 	return m
 }

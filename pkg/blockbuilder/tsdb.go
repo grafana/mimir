@@ -22,10 +22,13 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/thanos-io/objstore"
+	"github.com/thanos-io/objstore/providers/filesystem"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	mimir_storage "github.com/grafana/mimir/pkg/storage"
+	"github.com/grafana/mimir/pkg/storage/indexheader"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -40,6 +43,7 @@ type TSDBBuilder struct {
 	blocksStorageCfg                 mimir_tsdb.BlocksStorageConfig
 	metrics                          tsdbBuilderMetrics
 	applyMaxGlobalSeriesPerUserBelow int // inclusive
+	sparseIndexHeaderSamplingRate    int
 
 	partitionID int32
 
@@ -65,7 +69,7 @@ type tsdbTenant struct {
 	tenantID    string
 }
 
-func NewTSDBBuilder(logger log.Logger, dataDir string, partitionID int32, blocksStorageCfg mimir_tsdb.BlocksStorageConfig, limits *validation.Overrides, metrics tsdbBuilderMetrics, applyMaxGlobalSeriesPerUserBelow int) *TSDBBuilder {
+func NewTSDBBuilder(logger log.Logger, dataDir string, partitionID int32, blocksStorageCfg mimir_tsdb.BlocksStorageConfig, limits *validation.Overrides, metrics tsdbBuilderMetrics, applyMaxGlobalSeriesPerUserBelow, sparseIndexHeaderSamplingRate int) *TSDBBuilder {
 	return &TSDBBuilder{
 		dataDir:                          dataDir,
 		logger:                           logger,
@@ -73,6 +77,7 @@ func NewTSDBBuilder(logger log.Logger, dataDir string, partitionID int32, blocks
 		blocksStorageCfg:                 blocksStorageCfg,
 		metrics:                          metrics,
 		applyMaxGlobalSeriesPerUserBelow: applyMaxGlobalSeriesPerUserBelow,
+		sparseIndexHeaderSamplingRate:    sparseIndexHeaderSamplingRate,
 		partitionID:                      partitionID,
 		tsdbs:                            make(map[tsdbTenant]*userTSDB),
 	}
@@ -423,6 +428,9 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 			metas = append(metas, localMetas...)
 			metasMu.Unlock()
 
+			// Build sparse index-headers for the blocks (best-effort).
+			b.prepareSparseIndexHeadersForBlocks(ctx, dbDir, localMetas)
+
 			if err := db.Close(); err != nil {
 				return err
 			}
@@ -511,4 +519,42 @@ func (u *userTSDB) compactEverything(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// prepareSparseIndexHeadersForBlocks builds sparse index-headers for all blocks in the directory.
+// This is a best-effort operation and failures are logged but do not fail the upload.
+func (b *TSDBBuilder) prepareSparseIndexHeadersForBlocks(ctx context.Context, dbDir string, metas []tsdb.BlockMeta) {
+	if b.sparseIndexHeaderSamplingRate <= 0 {
+		return // Sparse headers disabled
+	}
+
+	// Build sparse headers for each block.
+	for _, m := range metas {
+		blockID := m.ULID
+		if err := b.prepareSparseIndexHeader(ctx, dbDir, blockID); err != nil {
+			level.Warn(b.logger).Log("msg", "failed to create sparse index-header", "block", blockID.String(), "err", err)
+			b.metrics.sparseIndexHeadersFailed.Inc()
+		}
+	}
+}
+
+// prepareSparseIndexHeader builds a sparse index-header for a single block.
+func (b *TSDBBuilder) prepareSparseIndexHeader(ctx context.Context, dir string, id ulid.ULID) error {
+	// Create a filesystem-backed bucket for reading the block.
+	fsbkt, err := filesystem.NewBucket(dir)
+	if err != nil {
+		return err
+	}
+
+	// Instrument the filesystem bucket.
+	fsInstrBkt := objstore.WithNoopInstr(fsbkt)
+
+	// Calling NewStreamBinaryReader reads a block's index and writes a sparse-index-header to disk.
+	mets := indexheader.NewStreamBinaryReaderMetrics(nil)
+	logger := log.With(b.logger, "block", id)
+	br, err := indexheader.NewStreamBinaryReader(ctx, logger, fsInstrBkt, dir, id, b.sparseIndexHeaderSamplingRate, mets, indexheader.Config{})
+	if err != nil {
+		return err
+	}
+	return br.Close()
 }

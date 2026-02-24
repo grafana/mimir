@@ -226,7 +226,7 @@ func TestTSDBBuilder(t *testing.T) {
 			overrides := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
 			metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
 
-			builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), partitionID, mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0)
+			builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), partitionID, mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0, 32)
 
 			ctx := user.InjectOrgID(ctx, userID)
 
@@ -308,7 +308,7 @@ func TestTSDBBuilder_CompactAndUpload_fail(t *testing.T) {
 
 	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 	metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
-	builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), partitionID, mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0)
+	builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), partitionID, mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0, 0)
 	t.Cleanup(func() {
 		require.NoError(t, builder.Close())
 	})
@@ -385,7 +385,7 @@ func compareQuery(t *testing.T, db *tsdb.DB, expSamples []mimirpb.Sample, expHis
 	require.Equal(t, expHistograms, actHistograms)
 }
 
-func mockUploaderFunc(t *testing.T, destDir string) blockUploader {
+func mockUploaderFunc(t testing.TB, destDir string) blockUploader {
 	return func(_ context.Context, _, dbDir string, metas []tsdb.BlockMeta) error {
 		for _, meta := range metas {
 			blockDir := path.Join(dbDir, meta.ULID.String())
@@ -404,7 +404,7 @@ func TestProcessingEmptyRequest(t *testing.T) {
 
 	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 	metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
-	builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), partitionID, mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0)
+	builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), partitionID, mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0, 0)
 
 	ctx := user.InjectOrgID(t.Context(), userID)
 
@@ -452,7 +452,7 @@ func TestTSDBBuilderLimits(t *testing.T) {
 	overrides := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
 
 	metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
-	builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), partitionID, mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, applyGlobalSeriesLimitUnder)
+	builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), partitionID, mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, applyGlobalSeriesLimitUnder, 0)
 	t.Cleanup(func() {
 		require.NoError(t, builder.Close())
 	})
@@ -517,7 +517,7 @@ func TestTSDBBuilderNativeHistogramEnabledError(t *testing.T) {
 	overrides := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
 
 	metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
-	builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), partitionID, mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0)
+	builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), partitionID, mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0, 0)
 	t.Cleanup(func() {
 		require.NoError(t, builder.Close())
 	})
@@ -816,7 +816,7 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 	registry := prometheus.NewPedanticRegistry()
 	metrics := newTSDBBBuilderMetrics(registry)
 	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stdout))
-	builder := NewTSDBBuilder(logger, t.TempDir(), partitionID, mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0)
+	builder := NewTSDBBuilder(logger, t.TempDir(), partitionID, mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0, 32)
 	t.Cleanup(func() {
 		require.NoError(t, builder.Close())
 	})
