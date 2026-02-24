@@ -55,6 +55,21 @@ type ClusterChannel interface {
 	Broadcast([]byte)
 }
 
+// ChannelOption is a functional option for configuring a ClusterChannel.
+type ChannelOption func(*channelOptions)
+
+type channelOptions struct{}
+
+// WithReliableDelivery enables reliable delivery for the channel.
+func WithReliableDelivery() ChannelOption {
+	return func(*channelOptions) {}
+}
+
+// WithQueueSize sets the queue size for the channel.
+func WithQueueSize(int) ChannelOption {
+	return func(*channelOptions) {}
+}
+
 // Peer is a single peer in a gossip cluster.
 type Peer struct {
 	mlist    *memberlist.Memberlist
@@ -547,7 +562,7 @@ func (p *Peer) peerUpdate(n *memberlist.Node) {
 
 // AddState adds a new state that will be gossiped. It returns a channel to which
 // broadcast messages for the state can be sent.
-func (p *Peer) AddState(key string, s State, reg prometheus.Registerer) ClusterChannel {
+func (p *Peer) AddState(key string, s State, reg prometheus.Registerer, _ ...ChannelOption) ClusterChannel {
 	p.mtx.Lock()
 	p.states[key] = s
 	p.mtx.Unlock()
