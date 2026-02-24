@@ -1525,11 +1525,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 				return newIngestionBurstSizeLimitedError(limiterBurst, totalN)
 			}
 
-			burstSize := d.limits.IngestionBurstSize(userID)
-			if d.limits.IngestionBurstFactor(userID) > 0 {
-				burstSize = int(d.limits.IngestionRate(userID) * d.limits.IngestionBurstFactor(userID))
-			}
-			return newIngestionRateLimitedError(d.limits.IngestionRate(userID), burstSize)
+			return newIngestionRateLimitedError(d.limits.IngestionRate(userID), limiterBurst)
 		}
 
 		// totalN included samples, exemplars and metadata. Ingester follows this pattern when computing its ingestion rate.
