@@ -397,7 +397,7 @@ func (g *FixtureGenerator) ProduceWriteRequests(ctx context.Context, kafkaAddres
 		}
 
 		// Serialize the WriteRequest to Kafka records.
-		records, err := serializer.ToRecords(partitionID, tenantID, req, math.MaxInt)
+		records, _, err := serializer.ToRecords(partitionID, tenantID, req, math.MaxInt)
 		if err != nil {
 			return numRecordsProduced, fmt.Errorf("failed to serialize WriteRequest: %w", err)
 		}

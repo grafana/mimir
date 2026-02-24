@@ -22,7 +22,7 @@ local filename = 'mimir-rollout-progress.json';
     assert std.md5(filename) == '7f0b5567d543a1698e695b530eb7f5de' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Rollout progress') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates(false)
-    .addShowNativeLatencyVariable() + {
+    .addShowNativeLatencyVariable($.latencyVariableDefault()) + {
       // This dashboard uses the new grid system in order to place panels (using gridPos).
       // Because of this we can't use the mixin's addRow() and addPanel().
       schemaVersion: 27,

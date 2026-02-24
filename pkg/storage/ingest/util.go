@@ -104,6 +104,10 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 		}),
 	}
 
+	if cfg.ClientRack != "" {
+		opts = append(opts, kgo.Rack(cfg.ClientRack))
+	}
+
 	opts = append(opts, kafkaAuthOptions(cfg.SASL)...)
 
 	opts = append(opts, kgo.WithHooks(kotel.NewKotel(kotel.WithTracer(recordsTracer())).Hooks()...))

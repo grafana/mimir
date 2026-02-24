@@ -214,6 +214,9 @@
       namespace_query: 'cortex_build_info{%s=~"$cluster"}' % $._config.per_cluster_label,
     },
 
+    // Controls whether dashboards show classic or native latency histograms. Allowed values: 'classic' (default), 'native'.
+    dashboards_default_latency_mode: 'classic',
+
     // Used to add extra labels to all alerts. Careful: takes precedence over default labels.
     alert_extra_labels: {},
 
@@ -778,5 +781,10 @@
 
     // Show panels that use queries for "ingest storage" ingestion (distributor -> Kafka, Kafka -> ingesters)
     show_ingest_storage_panels: true,
+
+    // External Grafana URL prefix for dashboard links in alerts.
+    // This is used to generate absolute URLs in alert annotations that link to dashboards.
+    // Set to empty string '' to disable dashboard links in alerts.
+    externalGrafanaURLPrefix: '',
   },
 }

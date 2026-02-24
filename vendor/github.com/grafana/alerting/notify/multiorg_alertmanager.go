@@ -12,10 +12,11 @@ type NilPeer struct{}
 
 func (p *NilPeer) Position() int                   { return 0 }
 func (p *NilPeer) WaitReady(context.Context) error { return nil }
-func (p *NilPeer) AddState(string, cluster.State, prometheus.Registerer) cluster.ClusterChannel {
+func (p *NilPeer) AddState(string, cluster.State, prometheus.Registerer, ...cluster.ChannelOption) cluster.ClusterChannel {
 	return &NilChannel{}
 }
 
 type NilChannel struct{}
 
-func (c *NilChannel) Broadcast([]byte) {}
+func (c *NilChannel) Broadcast([]byte)             {}
+func (c *NilChannel) ReliableDelivery([]byte) bool { return true }

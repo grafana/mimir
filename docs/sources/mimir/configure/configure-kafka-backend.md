@@ -33,7 +33,7 @@ Additionally, you can use these recommended configuration options when running G
 
 - `-distributor.remote-timeout=5s`<br />
   Use this setting to increase the default remote write timeout. This is recommended for writing to Kafka, because pushing
-  to Kafka-compatible backends might be slower than writing to directly to ingesters.
+  to Kafka-compatible backends might be slower than writing directly to ingesters.
 
 Refer to Grafana Mimir [configuration parameters](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configuration-parameters/) for detailed descriptions of all available configuration options.
 

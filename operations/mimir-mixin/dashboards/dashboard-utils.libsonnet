@@ -2242,4 +2242,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
       </p>
     ||| % querySchedulerDescription
   ),
+
+  // latencyVariableDefault returns the default to use for the native / classic latency variable.
+  // Use like: $._config.dashboards_default_latency_mode = 'native'.
+  latencyVariableDefault()::
+    if std.objectHas($._config, 'dashboards_default_latency_mode') then
+      $._config.dashboards_default_latency_mode
+    else
+      'classic',
 }

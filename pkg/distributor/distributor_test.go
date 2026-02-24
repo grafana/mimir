@@ -437,6 +437,7 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		"cortex_distributor_received_samples_total",
 		"cortex_distributor_received_exemplars_total",
 		"cortex_distributor_received_metadata_total",
+		"cortex_distributor_received_bytes_total",
 		"cortex_distributor_deduped_samples_total",
 		"cortex_distributor_requests_in_total",
 		"cortex_distributor_samples_in_total",
@@ -453,6 +454,8 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 	d.receivedExemplars.WithLabelValues("userB").Add(10)
 	d.receivedMetadata.WithLabelValues("userA").Add(5)
 	d.receivedMetadata.WithLabelValues("userB").Add(10)
+	d.receivedBytes.WithLabelValues("userA").Add(100)
+	d.receivedBytes.WithLabelValues("userB").Add(200)
 	d.incomingRequests.WithLabelValues("userA", "2.0").Add(1)
 	d.incomingSamples.WithLabelValues("userA").Add(5)
 	d.incomingExemplars.WithLabelValues("userA").Add(5)
@@ -482,6 +485,11 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		# HELP cortex_distributor_non_ha_samples_received_total The total number of received samples for a user that has HA tracking turned on, but the sample didn't contain both HA labels.
 		# TYPE cortex_distributor_non_ha_samples_received_total counter
 		cortex_distributor_non_ha_samples_received_total{user="userA"} 5
+
+		# HELP cortex_distributor_received_bytes_total The total number of uncompressed bytes received in the original request body (before any protocol conversion). Excludes requests rejected by middleware (e.g., rate limiting, size limits, HA deduplication) but includes bytes from requests where individual samples may be filtered or rejected during processing.
+		# TYPE cortex_distributor_received_bytes_total counter
+		cortex_distributor_received_bytes_total{user="userA"} 100
+		cortex_distributor_received_bytes_total{user="userB"} 200
 
 		# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
 		# TYPE cortex_distributor_received_metadata_total counter
@@ -528,6 +536,10 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 
 		# HELP cortex_distributor_non_ha_samples_received_total The total number of received samples for a user that has HA tracking turned on, but the sample didn't contain both HA labels.
 		# TYPE cortex_distributor_non_ha_samples_received_total counter
+
+		# HELP cortex_distributor_received_bytes_total The total number of uncompressed bytes received in the original request body (before any protocol conversion). Excludes requests rejected by middleware (e.g., rate limiting, size limits, HA deduplication) but includes bytes from requests where individual samples may be filtered or rejected during processing.
+		# TYPE cortex_distributor_received_bytes_total counter
+		cortex_distributor_received_bytes_total{user="userB"} 200
 
 		# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
 		# TYPE cortex_distributor_received_metadata_total counter
@@ -5194,7 +5206,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 
 			var gotErrs []error
 			for _, req := range tc.reqs {
-				pushReq := NewParsedRequest(req)
+				pushReq := NewParsedRequest(req, req.Size())
 				pushReq.AddCleanup(cleanup)
 				err := middleware(tc.ctx, pushReq)
 				handledErr := err
@@ -5264,7 +5276,7 @@ func TestInstanceLimitsBeforeHaDedupe(t *testing.T) {
 
 	// If we HA deduplication runs before instance limits check,
 	// then this would set replica for the cluster.
-	err := wrappedMockPush(ctx, NewParsedRequest(writeReqReplica1))
+	err := wrappedMockPush(ctx, NewParsedRequest(writeReqReplica1, writeReqReplica1.Size()))
 	require.ErrorIs(t, err, errMaxInflightRequestsReached)
 
 	// Simulate no other inflight request.
@@ -5273,7 +5285,7 @@ func TestInstanceLimitsBeforeHaDedupe(t *testing.T) {
 	// We now send request from second replica.
 	// If HA deduplication middleware ran before instance limits check, then replica would be already set,
 	// and HA deduplication would return 202 status code for this request instead.
-	err = wrappedMockPush(ctx, NewParsedRequest(writeReqReplica2))
+	err = wrappedMockPush(ctx, NewParsedRequest(writeReqReplica2, writeReqReplica2.Size()))
 	require.NoError(t, err)
 
 	// Check that the write requests which have been submitted to the push function look as expected,
@@ -5424,7 +5436,7 @@ func TestRelabelMiddleware(t *testing.T) {
 
 			var gotErrs []bool
 			for _, req := range tc.reqs {
-				pushReq := NewParsedRequest(req)
+				pushReq := NewParsedRequest(req, req.Size())
 				pushReq.AddCleanup(cleanup)
 				err := middleware(tc.ctx, pushReq)
 				gotErrs = append(gotErrs, err != nil)
@@ -5499,7 +5511,7 @@ func TestSortAndFilterMiddleware(t *testing.T) {
 
 			var gotErrs []bool
 			for _, req := range tc.reqs {
-				pushReq := NewParsedRequest(req)
+				pushReq := NewParsedRequest(req, req.Size())
 				pushReq.AddCleanup(cleanup)
 				err := middleware(tc.ctx, pushReq)
 				gotErrs = append(gotErrs, err != nil)
@@ -8048,7 +8060,7 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), userName)
 	// skip all the middlewares, just do the push
 	distrib := d[0]
-	err := distrib.push(ctx, NewParsedRequest(req))
+	err := distrib.push(ctx, NewParsedRequest(req, req.Size()))
 	require.NoError(t, err)
 
 	// Verify that each ingester only received series and metadata that it should receive.
@@ -8491,7 +8503,7 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 				}
 			}
 
-			err := wrappedPush(ctx, NewParsedRequest(pushReq))
+			err := wrappedPush(ctx, NewParsedRequest(pushReq, pushReq.Size()))
 			if tc.expectedPushError == nil {
 				require.NoError(t, err)
 			} else {
@@ -9248,7 +9260,7 @@ func Test_outerMaybeDelayMiddleware(t *testing.T) {
 				ctx = user.InjectOrgID(ctx, tc.userID)
 			}
 			wrappedPush := distributor.outerMaybeDelayMiddleware(p)
-			err := wrappedPush(ctx, NewParsedRequest(&mimirpb.WriteRequest{}))
+			err := wrappedPush(ctx, NewParsedRequest(&mimirpb.WriteRequest{}, 0))
 			require.NoError(t, err)
 
 			// Due to the 10% jitter we need to take into account that the number will not be deterministic in tests.

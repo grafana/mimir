@@ -19,5 +19,11 @@ var (
 )
 
 type ClusterChannel = cluster.ClusterChannel //nolint:revive
+type ChannelOption = cluster.ChannelOption
 type Peer = cluster.Peer
 type State = cluster.State
+
+var (
+	WithReliableDelivery = cluster.WithReliableDelivery
+	WithQueueSize        = cluster.WithQueueSize
+)

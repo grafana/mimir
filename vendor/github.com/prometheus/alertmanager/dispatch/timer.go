@@ -51,7 +51,7 @@ func standardTimerFactory(
 type Timer interface {
 	C() <-chan time.Time
 	Reset(time.Time) bool
-	Stop() bool
+	Stop(bool) bool
 	Flush() bool
 }
 
@@ -72,9 +72,12 @@ func (sat *standardTimer) Flush() bool {
 	return sat.t.Reset(0)
 }
 
-func (sat *standardTimer) Stop() bool {
+func (sat *standardTimer) Stop(_ bool) bool {
 	return sat.t.Stop()
 }
+
+// syncTimerMaxDrift defines the maximum allowed drift from the expected schedule.
+const syncTimerMaxDrift = time.Second * 2
 
 type syncTimer struct {
 	t                *time.Timer
@@ -86,7 +89,7 @@ type syncTimer struct {
 }
 
 type FlushLog interface {
-	Log(groupFingerprint uint64, flushTime time.Time, expiry time.Duration) error
+	Log(groupFingerprint uint64, flushTime, expiryThreshold time.Time, expiry time.Duration) error
 	Query(groupFingerprint uint64) ([]*flushlogpb.FlushLog, error)
 	Delete(groupFingerprint uint64) error
 }
@@ -132,43 +135,66 @@ func (st *syncTimer) getFirstFlushTime() (*time.Time, error) {
 	return &ft, nil
 }
 
-func (st *syncTimer) getNextTick(now time.Time) (time.Duration, error) {
+func (st *syncTimer) getNextTick(now, pipelineTime time.Time) (time.Duration, time.Time, error) {
 	ft, err := st.getFirstFlushTime()
 	if err != nil {
-		return 0, err
+		return st.groupInterval, now.Add(st.groupInterval), err
 	}
 
-	level.Debug(st.logger).Log("msg", "found flush log entry", "flush_time", ft)
-
-	interval := time.Duration(st.nextFlushIteration(*ft, now)) * st.groupInterval
-	if next := ft.Add(interval); next.After(now) {
-		return next.Sub(now), nil
+	it := st.nextFlushIteration(*ft, now)
+	next := ft.Add(time.Duration(it) * st.groupInterval)
+	nextTick := next.Sub(now)
+	if !next.After(now) {
+		// edge case, now is exactly on the boundary (shouldn't happen)
+		// subtract overshoot to maintain interval alignment
+		delta := now.Sub(next)
+		nextTick = st.groupInterval - delta
+		next = now.Add(nextTick)
 	}
 
-	return 0, nil
+	// Calculate drift from expected schedule
+	// The last aligned time was one interval before next
+	lastAligned := next.Add(-st.groupInterval)
+	drift := now.Sub(lastAligned).Abs()
+
+	// Determine if significantly drifted (e.g., > 1 second)
+	isDrifted := drift > syncTimerMaxDrift
+
+	level.Debug(st.logger).Log(
+		"msg", "calculated next tick",
+		"next_tick", nextTick,
+		"flush_time", ft,
+		"now", now,
+		"pipeline_time", pipelineTime,
+		"last_aligned", lastAligned,
+		"drift", drift,
+		"is_drifted", isDrifted,
+		"ring_position", st.position(),
+		"iteration", it,
+	)
+
+	return nextTick, next, nil
 }
 
-func (st *syncTimer) Reset(now time.Time) bool {
-	reset, err := st.getNextTick(now)
-	if err != nil {
-		if errors.Is(err, flushlog.ErrNotFound) {
-			st.logFlush(now)
-		} else {
-			level.Error(st.logger).Log("msg", "failed to calculate next tick", "err", err)
-		}
+func (st *syncTimer) Reset(pipelineTime time.Time) bool {
+	nextTick, next, err := st.getNextTick(time.Now(), pipelineTime)
+	if err != nil && !errors.Is(err, flushlog.ErrNotFound) {
+		level.Error(st.logger).Log("msg", "failed to calculate next tick", "err", err)
+	} else {
+		expiryThreshold := next.Add(2 * st.groupInterval)
+		st.logFlush(pipelineTime, expiryThreshold)
 	}
 
-	level.Debug(st.logger).Log("msg", "calculated next tick", "reset", reset)
-	return st.t.Reset(reset)
+	return st.t.Reset(nextTick)
 }
 
 func (st *syncTimer) Flush() bool {
 	return st.t.Reset(0)
 }
 
-func (st *syncTimer) Stop() bool {
-	if st.position() == 0 {
-		if err := st.flushLog.Delete(st.groupFingerprint); err != nil {
+func (st *syncTimer) Stop(cleanState bool) bool {
+	if st.position() == 0 && cleanState {
+		if err := st.flushLog.Delete(st.groupFingerprint); err != nil && !errors.Is(err, flushlog.ErrNotFound) {
 			level.Warn(st.logger).Log("msg", "failed to delete flush log entry", "err", err)
 		}
 	}
@@ -179,15 +205,21 @@ func (st *syncTimer) C() <-chan time.Time {
 	return st.t.C
 }
 
-func (st *syncTimer) logFlush(now time.Time) {
+func (st *syncTimer) flushLogExpiry() time.Duration {
+	// minimum expiry of 24 hours to avoid excessive log churn
+	return max(st.groupInterval*2, time.Hour*24)
+}
+
+func (st *syncTimer) logFlush(pipelineTime, expiryThreshold time.Time) {
 	if st.position() != 0 {
 		return
 	}
 
 	if err := st.flushLog.Log(
 		st.groupFingerprint,
-		now,
-		st.groupInterval*2,
+		pipelineTime,
+		expiryThreshold,
+		st.flushLogExpiry(),
 	); err != nil {
 		// log the error and continue
 		level.Error(st.logger).Log("msg", "failed to log tick time", "err", err)
@@ -200,10 +232,8 @@ func (st *syncTimer) nextFlushIteration(firstFlush, now time.Time) int64 {
 		return 0
 	}
 
-	// convert it all to milliseconds
-	ns := now.UnixMilli()
-	fs := firstFlush.UnixMilli()
-	gs := st.groupInterval.Milliseconds()
+	elapsed := now.Sub(firstFlush)
+	intervals := float64(elapsed) / float64(st.groupInterval)
 
-	return int64(math.Ceil(float64(ns-fs) / float64(gs)))
+	return int64(math.Ceil(intervals))
 }

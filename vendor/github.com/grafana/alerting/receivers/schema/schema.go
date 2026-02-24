@@ -1,5 +1,10 @@
 package schema
 
+import (
+	"fmt"
+	"strings"
+)
+
 type Version string
 type IntegrationType string
 
@@ -12,6 +17,23 @@ const (
 	V0mimir2 Version = "v0mimir2"
 	V1       Version = "v1"
 )
+
+func IsValidVersion(v Version) bool {
+	_, err := VersionFromString(string(v))
+	return err == nil
+}
+
+func VersionFromString(v string) (Version, error) {
+	if v == "" {
+		return "", fmt.Errorf("version cannot be empty")
+	}
+	for _, version := range []Version{V0mimir1, V0mimir2, V1} {
+		if strings.EqualFold(string(version), v) {
+			return version, nil
+		}
+	}
+	return "", fmt.Errorf("invalid version: %s", v)
+}
 
 // ElementType is the type of element that can be rendered in the frontend.
 type ElementType string
@@ -36,6 +58,7 @@ type IntegrationTypeSchema struct {
 	Description    string                     `json:"description,omitempty"`
 	Info           string                     `json:"info,omitempty"`
 	Versions       []IntegrationSchemaVersion `json:"versions"`
+	Deprecated     bool                       `json:"deprecated,omitempty"`
 }
 
 // GetAllTypes returns a list of all types that are mentioned by the schema.
@@ -43,6 +66,9 @@ type IntegrationTypeSchema struct {
 func (p IntegrationTypeSchema) GetAllTypes() []IntegrationType {
 	types := []IntegrationType{p.Type}
 	for _, version := range p.Versions {
+		if version.TypeAlias == "" {
+			continue
+		}
 		types = append(types, version.TypeAlias)
 	}
 	return types
@@ -51,7 +77,7 @@ func (p IntegrationTypeSchema) GetAllTypes() []IntegrationType {
 // GetVersionByTypeAlias retrieves a specific version of the schema by its type alias. Returns the version and a boolean indicating success.
 func (p IntegrationTypeSchema) GetVersionByTypeAlias(alias IntegrationType) (IntegrationSchemaVersion, bool) {
 	for _, version := range p.Versions {
-		if version.TypeAlias == alias {
+		if strings.EqualFold(string(version.TypeAlias), string(alias)) {
 			return version, true
 		}
 	}
@@ -61,7 +87,7 @@ func (p IntegrationTypeSchema) GetVersionByTypeAlias(alias IntegrationType) (Int
 // GetVersion retrieves a specific version of the notifier plugin by its version string. Returns the version and a boolean indicating success.
 func (p IntegrationTypeSchema) GetVersion(v Version) (IntegrationSchemaVersion, bool) {
 	for _, version := range p.Versions {
-		if version.Version == v {
+		if strings.EqualFold(string(version.Version), string(v)) {
 			return version, true
 		}
 	}
@@ -90,26 +116,65 @@ type IntegrationSchemaVersion struct {
 	Options []Field `json:"options"`
 	// Additional information about the version
 	Info string `json:"info,omitempty"`
+	// Indicates whether the version is deprecated and will be removed in a future release
+	Deprecated bool `json:"deprecated,omitempty"`
+
+	typeSchema *IntegrationTypeSchema
+}
+
+// GetTypeSchema returns the IntegrationTypeSchema that this version belongs to.
+func (v IntegrationSchemaVersion) GetTypeSchema() IntegrationTypeSchema {
+	if v.typeSchema == nil {
+		panic("type schema not set")
+	}
+	return *v.typeSchema
+}
+
+// Type returns the type of the integration schema version.
+func (v IntegrationSchemaVersion) Type() IntegrationType {
+	if v.typeSchema == nil {
+		panic("type schema not set")
+	}
+	return v.typeSchema.Type
 }
 
 // GetSecretFieldsPaths returns a list of paths for fields marked as secure within the IntegrationSchemaVersion's options.
-func (v IntegrationSchemaVersion) GetSecretFieldsPaths() []string {
-	return getSecretFields("", v.Options)
+func (v IntegrationSchemaVersion) GetSecretFieldsPaths() []IntegrationFieldPath {
+	return getSecretFields(nil, v.Options)
 }
 
-func getSecretFields(parentPath string, options []Field) []string {
-	var secureFields []string
-	for _, field := range options {
-		name := field.PropertyName
-		if parentPath != "" {
-			name = parentPath + "." + name
+// IsSecureField returns true if the field is both known and marked as secure in the integration configuration.
+func (v IntegrationSchemaVersion) IsSecureField(path IntegrationFieldPath) bool {
+	f, ok := v.GetField(path)
+	return ok && f.Secure
+}
+
+func (v IntegrationSchemaVersion) IsProtectedField(path IntegrationFieldPath) bool {
+	f, ok := v.GetField(path)
+	return ok && f.Protected
+}
+
+func (v IntegrationSchemaVersion) GetField(path IntegrationFieldPath) (Field, bool) {
+	for _, integrationField := range v.Options {
+		if strings.EqualFold(integrationField.PropertyName, path.Head()) {
+			if path.IsLeaf() {
+				return integrationField, true
+			}
+			return getFieldRecursive(integrationField, path.Tail())
 		}
+	}
+	return Field{}, false
+}
+
+func getSecretFields(parentPath IntegrationFieldPath, options []Field) []IntegrationFieldPath {
+	var secureFields []IntegrationFieldPath
+	for _, field := range options {
 		if field.Secure {
-			secureFields = append(secureFields, name)
+			secureFields = append(secureFields, parentPath.With(field.PropertyName))
 			continue
 		}
 		if len(field.SubformOptions) > 0 {
-			secureFields = append(secureFields, getSecretFields(name, field.SubformOptions)...)
+			secureFields = append(secureFields, getSecretFields(append(parentPath, field.PropertyName), field.SubformOptions)...)
 		}
 	}
 	return secureFields
@@ -126,6 +191,7 @@ type Field struct {
 	SelectOptions  []SelectOption `json:"selectOptions"`
 	ShowWhen       ShowWhen       `json:"showWhen"`
 	Required       bool           `json:"required"`
+	Protected      bool           `json:"protected,omitempty"`
 	ValidationRule string         `json:"validationRule"`
 	Secure         bool           `json:"secure"`
 	DependsOn      string         `json:"dependsOn"`
@@ -163,4 +229,56 @@ type SelectOption struct {
 type ShowWhen struct {
 	Field string `json:"field"`
 	Is    string `json:"is"`
+}
+
+func InitSchema(s IntegrationTypeSchema) IntegrationTypeSchema {
+	for i := range s.Versions {
+		s.Versions[i].typeSchema = &s
+	}
+	return s
+}
+
+type IntegrationFieldPath []string
+
+func ParseIntegrationPath(path string) IntegrationFieldPath {
+	return strings.Split(path, ".")
+}
+
+func (f IntegrationFieldPath) Head() string {
+	if len(f) > 0 {
+		return f[0]
+	}
+	return ""
+}
+
+func (f IntegrationFieldPath) Tail() IntegrationFieldPath {
+	return f[1:]
+}
+
+func (f IntegrationFieldPath) IsLeaf() bool {
+	return len(f) == 1
+}
+
+func (f IntegrationFieldPath) String() string {
+	return strings.Join(f, ".")
+}
+
+func (f IntegrationFieldPath) With(segment string) IntegrationFieldPath {
+	// Copy the existing path to avoid modifying the original slice.
+	newPath := make(IntegrationFieldPath, len(f)+1)
+	copy(newPath, f)
+	newPath[len(newPath)-1] = segment
+	return newPath
+}
+
+func getFieldRecursive(field Field, path IntegrationFieldPath) (Field, bool) {
+	for _, integrationField := range field.SubformOptions {
+		if strings.EqualFold(integrationField.PropertyName, path.Head()) {
+			if path.IsLeaf() {
+				return integrationField, true
+			}
+			return getFieldRecursive(integrationField, path.Tail())
+		}
+	}
+	return Field{}, false
 }

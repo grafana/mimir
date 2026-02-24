@@ -25,6 +25,10 @@
     memcached_metadata_zone_a_replicas: $._config.memcached_metadata_replicas,
     memcached_metadata_zone_b_replicas: $._config.memcached_metadata_replicas,
     memcached_metadata_zone_c_replicas: $._config.memcached_metadata_replicas,
+
+    memcached_range_vector_splitting_zone_a_replicas: $._config.memcached_range_vector_splitting_replicas,
+    memcached_range_vector_splitting_zone_b_replicas: $._config.memcached_range_vector_splitting_replicas,
+    memcached_range_vector_splitting_zone_c_replicas: $._config.memcached_range_vector_splitting_replicas,
   },
 
   local container = $.core.v1.container,
@@ -138,11 +142,33 @@
     // We use a headless service because this K8S service is used for service discovery.
     service.mixin.spec.withClusterIp('None'),
 
+  // Range vector splitting cache.
+  memcached_range_vector_splitting_zone_a_node_affinity_matchers:: $.memcached_range_vector_splitting_node_affinity_matchers + [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_availability_zones[0])],
+  memcached_range_vector_splitting_zone_b_node_affinity_matchers:: $.memcached_range_vector_splitting_node_affinity_matchers + [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_availability_zones[1])],
+  memcached_range_vector_splitting_zone_c_node_affinity_matchers:: $.memcached_range_vector_splitting_node_affinity_matchers + [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_availability_zones[2])],
+
+  newMemcachedRangeVectorSplittingZone(zone, nodeAffinityMatchers=[], replicas=2)::
+    $.newMemcachedRangeVectorSplitting('memcached-range-vector-splitting-zone-%s' % zone, nodeAffinityMatchers) + {
+      statefulSet+:
+        statefulSet.mixin.spec.withReplicas(replicas) +
+        statefulSet.mixin.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()),
+    },
+
+  memcached_range_vector_splitting_zone_a: if !isZoneAEnabled || !$._config.query_engine_range_vector_splitting_enabled then null else
+    $.newMemcachedRangeVectorSplittingZone('a', $.memcached_range_vector_splitting_zone_a_node_affinity_matchers, $._config.memcached_range_vector_splitting_zone_a_replicas),
+
+  memcached_range_vector_splitting_zone_b: if !isZoneBEnabled || !$._config.query_engine_range_vector_splitting_enabled then null else
+    $.newMemcachedRangeVectorSplittingZone('b', $.memcached_range_vector_splitting_zone_b_node_affinity_matchers, $._config.memcached_range_vector_splitting_zone_b_replicas),
+
+  memcached_range_vector_splitting_zone_c: if !isZoneCEnabled || !$._config.query_engine_range_vector_splitting_enabled then null else
+    $.newMemcachedRangeVectorSplittingZone('c', $.memcached_range_vector_splitting_zone_c_node_affinity_matchers, $._config.memcached_range_vector_splitting_zone_c_replicas),
+
   // Remove single-zone deployment when it's disabled.
   memcached_frontend: if !isSingleZoneEnabled then null else super.memcached_frontend,
   memcached_index_queries: if !isSingleZoneEnabled then null else super.memcached_index_queries,
   memcached_chunks: if !isSingleZoneEnabled then null else super.memcached_chunks,
   memcached_metadata: if !isSingleZoneEnabled then null else super.memcached_metadata,
+  memcached_range_vector_splitting: if !isSingleZoneEnabled then null else super.memcached_range_vector_splitting,
 
   // Shared config between Mimir components.
   local memcachedFrontendClientZoneAddress(zone) =
@@ -159,6 +185,13 @@
 
   local memcachedMetadataClientMultiZoneAddress() =
     'dnssrvnoa+memcached-metadata-multi-zone.%(namespace)s.svc.%(cluster_domain)s:11211' % $._config,
+
+  local memcachedRangeVectorSplittingClientZoneAddress(zone) =
+    'dnssrvnoa+memcached-range-vector-splitting-zone-%(zone)s.%(namespace)s.svc.%(cluster_domain)s:11211' % ($._config { zone: zone }),
+
+  rangeVectorSplittingZoneCachingConfig(zone):: if !$._config.query_engine_range_vector_splitting_enabled || !$._config.multi_zone_memcached_routing_enabled then {} else {
+    'querier.mimir-query-engine.range-vector-splitting.memcached.addresses': memcachedRangeVectorSplittingClientZoneAddress(zone),
+  },
 
   local queryFrontendZoneCachingConfig(zone) = if !$._config.cache_frontend_enabled || !$._config.multi_zone_memcached_routing_enabled then {} else {
     'query-frontend.results-cache.memcached.addresses': memcachedFrontendClientZoneAddress(zone),

@@ -113,6 +113,7 @@
     memcached_index_queries_replicas: 3,
     memcached_chunks_replicas: 3,
     memcached_metadata_replicas: 3,
+    memcached_range_vector_splitting_replicas: 3,
 
     cache_frontend_enabled: true,
     cache_frontend_max_item_size_mb: 5,
@@ -133,6 +134,11 @@
     cache_metadata_max_item_size_mb: 1,
     cache_metadata_connection_limit: 16384,
     cache_metadata_min_ready_seconds: 60,
+
+    query_engine_range_vector_splitting_enabled: false,
+    cache_range_vector_splitting_max_item_size_mb: 5,
+    cache_range_vector_splitting_connection_limit: 16384,
+    cache_range_vector_splitting_min_ready_seconds: 60,
 
     // The query-tee is an optional service which can be used to send
     // the same input query to multiple backends and make them compete
@@ -686,4 +692,14 @@
   } else {
     'blocks-storage.bucket-store.bucket-index.enabled': false,
   },
+
+  range_vector_splitting_caching_config:: (
+    if $._config.query_engine_range_vector_splitting_enabled then {
+      'querier.mimir-query-engine.range-vector-splitting.enabled': true,
+      'querier.mimir-query-engine.range-vector-splitting.backend': 'memcached',
+      'querier.mimir-query-engine.range-vector-splitting.memcached.addresses': 'dnssrvnoa+memcached-range-vector-splitting.%(namespace)s.svc.%(cluster_domain)s:11211' % $._config,
+      'querier.mimir-query-engine.range-vector-splitting.memcached.max-item-size': $._config.cache_range_vector_splitting_max_item_size_mb * 1024 * 1024,
+      'querier.mimir-query-engine.range-vector-splitting.memcached.timeout': '500ms',
+    } else {}
+  ),
 }

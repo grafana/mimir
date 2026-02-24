@@ -18,13 +18,13 @@ import (
 	alertingTemplates "github.com/grafana/alerting/templates"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
-	"github.com/prometheus/alertmanager/notify"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
+	"github.com/grafana/mimir/pkg/util/version"
 )
 
 const (
@@ -560,20 +560,22 @@ func (am *MultitenantAlertmanager) validateUserGrafanaConfig(logger log.Logger, 
 	}
 
 	// Validate template files.
+	tmplCfg, err := alertingTemplates.NewConfig(user, "http://localhost", version.Version, alertingTemplates.Limits{})
+	if err != nil {
+		return err
+	}
 	factory, err := alertingTemplates.NewFactory(
 		alertingNotify.PostableAPITemplatesToTemplateDefinitions(grafanaConfig.Templates),
+		tmplCfg,
 		logger,
-		"http://localhost", // Use a fake URL to avoid errors.
-		user,
 	)
 	if err != nil {
 		return err
 	}
 	cached := alertingTemplates.NewCachedFactory(factory)
 
-	noopWrapper := func(integrationName string, notifier notify.Notifier) notify.Notifier { return notifier }
 	for _, rcv := range userAmConfig.Receivers {
-		_, err := buildGrafanaReceiverIntegrations(alertingReceivers.EmailSenderConfig{}, alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), cached, logger, noopWrapper)
+		_, err := buildGrafanaReceiverIntegrations(alertingReceivers.EmailSenderConfig{}, alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), cached, logger, alertingNotify.NoWrap)
 		if err != nil {
 			return err
 		}

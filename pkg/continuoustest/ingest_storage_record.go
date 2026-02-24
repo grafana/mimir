@@ -366,7 +366,7 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record, report batchReport) b
 	}
 
 	ser := ingest.RecordSerializerFromVersion(2)
-	v2Records, err := ser.ToRecords(rec.Partition, string(rec.Key), &req.WriteRequest, t.cfg.Kafka.ProducerMaxRecordSizeBytes)
+	v2Records, _, err := ser.ToRecords(rec.Partition, string(rec.Key), &req.WriteRequest, t.cfg.Kafka.ProducerMaxRecordSizeBytes)
 	if err != nil {
 		return report.Error(fmt.Errorf("failed to serialize to v2: %w", err))
 	}
