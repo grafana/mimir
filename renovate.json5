@@ -53,6 +53,7 @@
     'release-3.0',
     'release-2.17',
   ],
+  rebaseWhen: 'behind-base-branch',
   postUpdateOptions: [
     'gomodTidy',
     'gomodUpdateImportPaths',
