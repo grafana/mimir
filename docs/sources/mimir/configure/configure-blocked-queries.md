@@ -28,6 +28,65 @@ overrides:
         unaligned_range_queries: true
 ```
 
+## Block queries based on time range
+
+You can block queries based on their time range duration (calculated as `end - start` from the query parameters). This is useful for preventing queries that span too long or too short of a time period:
+
+```yaml
+overrides:
+  "tenant-id":
+    blocked_queries:
+      # Block queries longer than 7 days
+      - time_range_longer_than: 7d
+        reason: "queries longer than 7 days are not allowed"
+
+      # Block queries shorter than 5 minutes
+      - time_range_shorter_than: 5m
+        reason: "queries shorter than 5 minutes are not useful"
+
+      # Block queries OUTSIDE acceptable window (too short or too long)
+      # This blocks queries < 7d OR > 21d, allowing 7-21 day queries
+      - time_range_shorter_than: 7d
+        time_range_longer_than: 21d
+        reason: "queries must be between 7 and 21 days"
+
+      # Block queries INSIDE a problematic window
+      # This blocks queries between 2-3h (both conditions must be true)
+      - time_range_longer_than: 2h
+        time_range_shorter_than: 3h
+        reason: "queries between 2 and 3 hours hit a performance cliff"
+
+      # Combine pattern matching with time range filtering
+      - pattern: ".*expensive.*"
+        regex: true
+        time_range_longer_than: 24h
+        reason: "expensive queries over 1 day are blocked"
+```
+
+### Time range filtering details
+
+- **Duration format**: Supports Prometheus duration strings: `ms`, `s`, `m`, `h`, `d`, `w`, `y`
+  - Examples: `5m`, `1h`, `24h`, `7d`, `2w`
+- **Query time range**: The time range is calculated as `end - start` from the query parameters
+- **Instant queries**: Time range filtering is automatically skipped for instant queries since they query a single point in time
+- **Optional fields**: Both `time_range_longer_than` and `time_range_shorter_than` are optional. You can use one, both, or neither
+- **Window behavior**: When both thresholds are specified, the blocking mode depends on their relationship:
+  - **Outside window** (`longer_than >= shorter_than`): Blocks queries too short OR too long
+    - Example: `shorter_than: 7d, longer_than: 21d` blocks queries < 7d OR > 21d (allows 7-21 day queries)
+    - Use case: Define an acceptable query duration range
+  - **Inside window** (`longer_than < shorter_than`): Blocks queries falling between the thresholds (both conditions must be true)
+    - Example: `longer_than: 2h, shorter_than: 3h` blocks queries between 2-3 hours (allows queries < 2h or > 3h)
+    - Use case: Block a specific problematic time range while allowing shorter and longer queries
+- **Combination with patterns**: When both pattern and time range filters are specified, the pattern must match AND the time range must violate the threshold for the query to be blocked
+- **Debug logging**: Blocked queries include a `time_range_position` field in logs indicating whether the query duration was "before" (too short), "after" (too long), or "inside" the configured thresholds
+
+### Use cases
+
+- **Prevent expensive long-range queries**: Block queries spanning more than a specific duration to reduce system load
+- **Enforce query granularity**: Block very short queries that may not provide useful results for your use case
+- **Protect specific metrics**: Combine pattern matching with time range limits to protect expensive metrics only over long periods
+- **Block problematic time ranges**: Block queries in a specific duration range that causes performance issues while allowing shorter and longer queries
+
 The blocking is enforced on instant and range queries as well as remote read queries.
 
 For instant and range queries the pattern is evaluated against the query, for remote read requests, the pattern is evaluated against each set of matchers, as if the matchers formed a vector selector. If any set of matchers is blocked, the whole remote read request is rejected.
