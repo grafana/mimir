@@ -548,7 +548,14 @@ func (b *TSDBBuilder) buildSparseIndexHeader(ctx context.Context, dbDir string, 
 	metrics := indexheader.NewStreamBinaryReaderMetrics(nil)
 	logger := log.With(b.logger, "id", id)
 	br, err := indexheader.NewStreamBinaryReader(
-		ctx, logger, fsInstrBkt, dbDir, id, b.cfg.BlocksStorage.BucketStore.PostingOffsetsInMemSampling, metrics, indexheader.Config{})
+		ctx,
+		logger,
+		fsInstrBkt,
+		dbDir,
+		id,
+		b.cfg.BlocksStorage.BucketStore.PostingOffsetsInMemSampling,
+		metrics,
+		b.cfg.BlocksStorage.BucketStore.IndexHeader)
 	if err != nil {
 		return err
 	}
