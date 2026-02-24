@@ -782,6 +782,6 @@
     // External Grafana URL prefix for dashboard links in alerts.
     // This is used to generate absolute URLs in alert annotations that link to dashboards.
     // Set to empty string '' to disable dashboard links in alerts.
-    externalGrafanaURLPrefix: '',
+    externalGrafanaURLPrefix: 'https://grafana.example.com',
   },
 }
