@@ -421,7 +421,7 @@ func compareQuery(t *testing.T, db *tsdb.DB, expSamples []mimirpb.Sample, expHis
 	require.Equal(t, expHistograms, actHistograms)
 }
 
-func mockUploaderFunc(t *testing.T, destDir string) blockUploader {
+func mockUploaderFunc(t testing.TB, destDir string) blockUploader {
 	return func(_ context.Context, _, dbDir string, metas []tsdb.BlockMeta) error {
 		for _, meta := range metas {
 			blockDir := path.Join(dbDir, meta.ULID.String())
