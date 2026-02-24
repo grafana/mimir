@@ -2454,23 +2454,28 @@ func TestMultitenantCompactor_PermanentCompactionErrors(t *testing.T) {
 
 			tsdbPlanner.On("Plan", mock.Anything, mock.Anything).Return([]*block.Meta{meta1, meta2}, nil)
 
+			// Mock the compaction to return the permanent error
 			tsdbCompactor.On("Compact", mock.Anything, mock.Anything, mock.Anything).
 				Return([]ulid.ULID(nil), tc.compactErr)
 
+			// Start the compactor
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 
+			// Wait until a compaction run has been completed
 			test.Poll(t, 10*time.Second, 1.0, func() interface{} {
 				return prom_testutil.ToFloat64(c.compactionRunsCompleted)
 			})
 
+			// Stop the compactor
 			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c))
 
+			// Verify that compactor marked both input blocks for no-compaction
 			r := regexp.MustCompile("level=info component=compactor user=user msg=\"block has been marked for no compaction\" block=([0-9A-Z]+)")
 			matches := r.FindAllStringSubmatch(logs.String(), -1)
-			require.Len(t, matches, 2, "expected two blocks to be marked for no-compaction")
+			require.Len(t, matches, 2, "expected two blocks to be marked for no-compaction") // One log per block
 
 			for _, match := range matches {
-				require.Len(t, match, 2)
+				require.Len(t, match, 2) // Full match + capture group
 				blockID := match[1]
 				require.True(t, blockID == meta1.ULID.String() || blockID == meta2.ULID.String(),
 					"marked block %s should be either meta1 or meta2", blockID)
@@ -2484,6 +2489,7 @@ func TestMultitenantCompactor_PermanentCompactionErrors(t *testing.T) {
 				require.Equal(t, tc.expectedReason, m.Reason)
 			}
 
+			// Verify metrics
 			assert.NoError(t, prom_testutil.GatherAndCompare(registry, strings.NewReader(tc.expectedMetrics),
 				"cortex_compactor_blocks_marked_for_no_compaction_total",
 			))
