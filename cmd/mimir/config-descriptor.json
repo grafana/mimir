@@ -2561,6 +2561,17 @@
             },
             {
               "kind": "field",
+              "name": "enable_subset_selector_elimination",
+              "required": false,
+              "desc": "Enable subset selector elimination when evaluating queries.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "querier.mimir-query-engine.enable-subset-selector-elimination",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "enable_narrow_binary_selectors",
               "required": false,
               "desc": "Enable generating selectors for one side of a binary expression based on results from the other side.",

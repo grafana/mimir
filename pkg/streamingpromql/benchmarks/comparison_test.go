@@ -115,7 +115,7 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 			prometheusResult, prometheusClose := c.Run(ctx, t, start, end, interval, prometheusEngine, q)
 			mimirResult, mimirClose := c.Run(ctx, t, start, end, interval, mimirEngine, q)
 
-			testutils.RequireEqualResults(t, c.Expr, prometheusResult, mimirResult, false)
+			testutils.RequireEqualResults(t, c.Expr, prometheusResult, mimirResult, c.IgnoreAnnotationDifferences)
 
 			prometheusClose()
 			mimirClose()
