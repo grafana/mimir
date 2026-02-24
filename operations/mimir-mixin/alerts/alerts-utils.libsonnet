@@ -73,7 +73,6 @@
         std.md5(filename),
         std.strReplace(filename, '.json', ''),
       ];
-      local time_param = '${__url_time_range}';
       // Generate var-<label>={{ $labels.<label> }} for each cluster label
       local var_params = std.join(
         '&',
@@ -82,7 +81,7 @@
           $._config.cluster_labels
         )
       );
-      '%s?%s&%s' % [base_url, time_param, var_params]
+      '%s?%s' % [base_url, var_params]
     else
       null,
 
