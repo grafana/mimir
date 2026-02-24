@@ -1209,6 +1209,7 @@ func (c *BucketCompactor) handleKnownCompactionErrors(ctx context.Context, job *
 		if allMarked {
 			return nil
 		}
+		break
 	}
 
 	// Unhandled, returning original err
