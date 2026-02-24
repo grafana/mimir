@@ -128,7 +128,7 @@ func newReplicatedStates(userID string, rf int, re Replicator, st alertstore.Ale
 }
 
 // AddState adds a new state that will be replicated using the ReplicationFunc. It returns a channel to which the client can broadcast messages of the state to be sent.
-func (s *state) AddState(key string, cs cluster.State, _ prometheus.Registerer) cluster.ClusterChannel {
+func (s *state) AddState(key string, cs cluster.State, _ prometheus.Registerer, _ ...cluster.ChannelOption) cluster.ClusterChannel {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
