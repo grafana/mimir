@@ -18,6 +18,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/user"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
@@ -27,8 +28,10 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
+	"github.com/thanos-io/objstore/providers/filesystem"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -216,77 +219,90 @@ func TestTSDBBuilder(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			const partitionID = int32(0)
-			userID := "user1"
-			limits := map[string]*validation.Limits{
-				userID: tc.limits,
-			}
-
-			config, overrides := blockBuilderConfig(t, "kafka:9092", validation.NewMockTenantLimits(limits))
-			metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
-			builder := NewTSDBBuilder(partitionID, config, overrides, log.NewNopLogger(), metrics)
-
-			ctx := user.InjectOrgID(ctx, userID)
-
-			// Hold samples for all cases and check for the correctness.
-			var (
-				expSamples    []mimirpb.Sample
-				expHistograms []mimirpb.Histogram
-			)
-
-			// Add float samples
-			for _, s := range tc.samples {
-				samples := floatSample(s.ts, s.val)
-				if !s.shouldDiscard {
-					expSamples = append(expSamples, samples...)
+		for _, genSparseHeaders := range []bool{false, true} {
+			t.Run(tc.name, func(t *testing.T) {
+				const partitionID = int32(0)
+				userID := "user1"
+				limits := map[string]*validation.Limits{
+					userID: tc.limits,
 				}
-				req := createWriteRequest(userID, samples, nil)
-				err := builder.PushToStorageAndReleaseRequest(ctx, &req)
-				require.NoError(t, err)
-			}
 
-			// Add histogram samples
-			for _, h := range tc.histograms {
-				histograms := histogramSample(h.ts)
-				if !h.shouldDiscard {
-					for i := range histograms {
-						histograms[i].ResetHint = 0
-						expHistograms = append(expHistograms, histograms[i])
+				config, overrides := blockBuilderConfig(t, "kafka:9092", validation.NewMockTenantLimits(limits))
+				config.GenerateSparseIndexHeaders = genSparseHeaders
+
+				metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
+				builder := NewTSDBBuilder(partitionID, config, overrides, log.NewNopLogger(), metrics)
+
+				ctx := user.InjectOrgID(ctx, userID)
+
+				// Hold samples for all cases and check for the correctness.
+				var (
+					expSamples    []mimirpb.Sample
+					expHistograms []mimirpb.Histogram
+				)
+
+				// Add float samples
+				for _, s := range tc.samples {
+					samples := floatSample(s.ts, s.val)
+					if !s.shouldDiscard {
+						expSamples = append(expSamples, samples...)
+					}
+					req := createWriteRequest(userID, samples, nil)
+					err := builder.PushToStorageAndReleaseRequest(ctx, &req)
+					require.NoError(t, err)
+				}
+
+				// Add histogram samples
+				for _, h := range tc.histograms {
+					histograms := histogramSample(h.ts)
+					if !h.shouldDiscard {
+						for i := range histograms {
+							histograms[i].ResetHint = 0
+							expHistograms = append(expHistograms, histograms[i])
+						}
+					}
+					req := createWriteRequest(userID, nil, histograms)
+					err := builder.PushToStorageAndReleaseRequest(ctx, &req)
+					require.NoError(t, err)
+				}
+
+				// Query the TSDB for the expected samples.
+				tenant := tsdbTenant{
+					partitionID: partitionID,
+					tenantID:    userID,
+				}
+				db, err := builder.getOrCreateTSDB(tenant)
+				require.NoError(t, err)
+
+				// Check the samples in the DB.
+				compareQuery(t, db.DB, expSamples, expHistograms, labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"))
+
+				// This should create the appropriate blocks and close the DB.
+				shipperDir := t.TempDir()
+				_, err = builder.CompactAndUpload(ctx, mockUploaderFunc(t, shipperDir))
+				require.NoError(t, err)
+				require.Nil(t, builder.tsdbs[tenant])
+
+				newDB, err := tsdb.Open(shipperDir, promslog.NewNopLogger(), nil, nil, nil)
+				require.NoError(t, err)
+
+				blocks := newDB.Blocks()
+				tc.verifyBlocksAfterCompaction(blocks)
+
+				if builder.cfg.GenerateSparseIndexHeaders {
+					blockIDsWithSparseHeader := validateSparseIndexHeadersInDir(t, ctx, shipperDir)
+					require.Equal(t, len(blocks), len(blockIDsWithSparseHeader))
+					for _, b := range blocks {
+						require.Contains(t, blockIDsWithSparseHeader, b.Meta().ULID)
 					}
 				}
-				req := createWriteRequest(userID, nil, histograms)
-				err := builder.PushToStorageAndReleaseRequest(ctx, &req)
-				require.NoError(t, err)
-			}
 
-			// Query the TSDB for the expected samples.
-			tenant := tsdbTenant{
-				partitionID: partitionID,
-				tenantID:    userID,
-			}
-			db, err := builder.getOrCreateTSDB(tenant)
-			require.NoError(t, err)
+				// Check correctness of samples in the blocks.
+				compareQuery(t, newDB, expSamples, expHistograms, labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"))
+				require.NoError(t, newDB.Close())
+			})
+		}
 
-			// Check the samples in the DB.
-			compareQuery(t, db.DB, expSamples, expHistograms, labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"))
-
-			// This should create the appropriate blocks and close the DB.
-			shipperDir := t.TempDir()
-			_, err = builder.CompactAndUpload(ctx, mockUploaderFunc(t, shipperDir))
-			require.NoError(t, err)
-			require.Nil(t, builder.tsdbs[tenant])
-
-			newDB, err := tsdb.Open(shipperDir, promslog.NewNopLogger(), nil, nil, nil)
-			require.NoError(t, err)
-
-			blocks := newDB.Blocks()
-			tc.verifyBlocksAfterCompaction(blocks)
-
-			// Check correctness of samples in the blocks.
-			compareQuery(t, newDB, expSamples, expHistograms, labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"))
-			require.NoError(t, newDB.Close())
-		})
 	}
 }
 
@@ -324,6 +340,27 @@ func TestTSDBBuilder_CompactAndUpload_fail(t *testing.T) {
 		return errUploadFailed
 	})
 	require.ErrorIs(t, err, errUploadFailed)
+}
+
+func validateSparseIndexHeadersInDir(t *testing.T, ctx context.Context, dbDir string) []ulid.ULID {
+	fsBkt, err := filesystem.NewBucket(dbDir)
+	if err != nil {
+		require.NoError(t, err)
+	}
+	var ids []ulid.ULID
+	require.NoError(t, fsBkt.Iter(ctx, "", func(n string) error {
+		if id, ok := block.IsBlockDir(n); !ok {
+			return nil
+		} else {
+			ids = append(ids, id)
+			sparseHeadersPath := path.Join(id.String(), block.SparseIndexHeaderFilename)
+			if exists, _ := fsBkt.Exists(ctx, sparseHeadersPath); !exists {
+				return fmt.Errorf("expected sparse index headers not found %s", sparseHeadersPath)
+			}
+		}
+		return nil
+	}))
+	return ids
 }
 
 func compareQueryWithDir(t *testing.T, bucketDir string, expSamples []mimirpb.Sample, expHistograms []mimirpb.Histogram, matchers ...*labels.Matcher) *tsdb.DB {
