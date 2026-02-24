@@ -858,6 +858,8 @@ func NewBucketCompactorMetrics(blocksMarkedForDeletion prometheus.Counter, reg p
 	bcm.blocksMarkedForNoCompact.WithLabelValues(block.OutOfOrderChunksNoCompactReason).Add(0)
 	bcm.blocksMarkedForNoCompact.WithLabelValues(block.CriticalNoCompactReason).Add(0)
 	bcm.blocksMarkedForNoCompact.WithLabelValues(block.PostingsOffsetTableTooLargeNoCompactReason).Add(0)
+	bcm.blocksMarkedForNoCompact.WithLabelValues(block.IndexExceeds64GiBNoCompactReason).Add(0)
+	bcm.blocksMarkedForNoCompact.WithLabelValues(block.SymbolTableTooLargeNoCompactReason).Add(0)
 
 	return bcm
 }
@@ -1160,13 +1162,24 @@ func (c *BucketCompactor) handleKnownCompactionErrors(ctx context.Context, job *
 		)
 	}
 
-	// Handle postings offset table size errors by marking all input blocks as no-compact.
-	// This error indicates the blocks have extremely high label cardinality and cannot be
-	// compacted together without exceeding the 4GB offset table size limit.
-	if errors.Is(err, index.ErrPostingsOffsetTableTooLarge) && c.skipUnhealthyBlocks {
+	// Handle permanent compaction failures by marking all input blocks as no-compact.
+	// These errors are deterministic: compacting the same inputs will always fail due
+	// to structural limits of the index format, so retrying is futile.
+	permanentCompactionErrors := []struct {
+		sentinel error
+		reason   block.NoCompactReason
+	}{
+		{index.ErrPostingsOffsetTableTooLarge, block.PostingsOffsetTableTooLargeNoCompactReason},
+		{index.ErrIndexExceeds64GiB, block.IndexExceeds64GiBNoCompactReason},
+		{index.ErrSymbolTableTooLarge, block.SymbolTableTooLargeNoCompactReason},
+	}
+	for _, pce := range permanentCompactionErrors {
+		if !errors.Is(err, pce.sentinel) || !c.skipUnhealthyBlocks {
+			continue
+		}
 		blockIDs := job.IDs()
 		level.Warn(c.logger).Log(
-			"msg", "compaction failed due to postings offset table size limit; marking input blocks as no-compact",
+			"msg", fmt.Sprintf("compaction failed due to %s; marking input blocks as no-compact", pce.reason),
 			"groupKey", job.Key(),
 			"block_count", len(blockIDs),
 			"blocks", fmt.Sprintf("%v", blockIDs),
@@ -1180,13 +1193,13 @@ func (c *BucketCompactor) handleKnownCompactionErrors(ctx context.Context, job *
 				c.logger,
 				c.bkt,
 				blockID,
-				block.PostingsOffsetTableTooLargeNoCompactReason,
-				"PostingsOffsetTableTooLarge: marking input block as no compact to unblock compaction",
-				c.metrics.blocksMarkedForNoCompact.WithLabelValues(block.PostingsOffsetTableTooLargeNoCompactReason),
+				pce.reason,
+				fmt.Sprintf("%s: marking input block as no compact to unblock compaction", pce.reason),
+				c.metrics.blocksMarkedForNoCompact.WithLabelValues(string(pce.reason)),
 			)
 			if markErr != nil {
 				level.Error(c.logger).Log(
-					"msg", "failed to mark block as no-compact after postings offset table size error",
+					"msg", fmt.Sprintf("failed to mark block as no-compact after %s error", pce.reason),
 					"block", blockID,
 					"err", markErr,
 				)
