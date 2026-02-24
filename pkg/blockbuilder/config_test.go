@@ -41,7 +41,7 @@ const (
 	numPartitions = 2
 )
 
-func blockBuilderConfig(t *testing.T, kafkaAddr string, tenantLimits validation.TenantLimits) (Config, *validation.Overrides) {
+func blockBuilderConfig(t testing.TB, kafkaAddr string, tenantLimits validation.TenantLimits) (Config, *validation.Overrides) {
 	cfg := Config{}
 	flagext.DefaultValues(&cfg)
 
