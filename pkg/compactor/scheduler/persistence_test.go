@@ -189,7 +189,8 @@ func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 			},
 			verifySpecificFields: func(t *testing.T, written, read TrackedJob) {
 				writtenJob := written.(*TrackedCompactionJob)
-				readJob := read.(*TrackedCompactionJob)
+				readJob, ok := read.(*TrackedCompactionJob)
+				require.True(t, ok)
 				require.Equal(t, writtenJob.value.blocks, readJob.value.blocks)
 				require.Equal(t, writtenJob.value.isSplit, readJob.value.isSplit)
 				require.Equal(t, writtenJob.order, readJob.order)
@@ -200,14 +201,14 @@ func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 				baseTrackedJob: baseTrackedJob{
 					id:           planJobId,
 					creationTime: now,
-					status:       compactorschedulerpb.STORED_JOB_STATUS_LEASED,
+					status:       compactorschedulerpb.STORED_JOB_STATUS_COMPLETE,
 					statusTime:   now.Add(10 * time.Second),
 					numLeases:    1,
 					epoch:        234,
 				},
 			},
 			verifySpecificFields: func(t *testing.T, written, read TrackedJob) {
-				// No additional fields
+				// No fields to validate
 			},
 		},
 	}
@@ -226,23 +227,26 @@ func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 			require.NoError(t, err)
 
 			// Helper function since the test reads twice
-			readJobs := func() ([]TrackedJob, error) {
-				var jobs []TrackedJob
-				err := mgr.db.View(func(tx *bbolt.Tx) error {
+			readJobs := func() (compactionJobs []*TrackedCompactionJob, planJob *TrackedPlanJob, err error) {
+				err = mgr.db.View(func(tx *bbolt.Tx) error {
 					b := tx.Bucket([]byte("tenant"))
 					if b == nil {
 						return errors.New("bucket should not be missing")
 					}
-					jobs = jobsFromTenantBucket("tenant", b, mgr.logger)
+					compactionJobs, planJob = jobsFromTenantBucket("tenant", b, mgr.logger)
 					return nil
 				})
-				return jobs, err
+				return
 			}
 
-			jobs, err := readJobs()
+			compactionJobs, planJob, err := readJobs()
 			require.NoError(t, err)
-			require.Len(t, jobs, 1)
-			readJob := jobs[0]
+			var readJob TrackedJob
+			if len(compactionJobs) == 1 {
+				readJob = compactionJobs[0]
+			} else {
+				readJob = planJob
+			}
 			require.Equal(t, tc.job.ID(), readJob.ID())
 			require.Equal(t, tc.job.CreationTime().Unix(), readJob.CreationTime().Unix())
 			require.Equal(t, tc.job.Status(), readJob.Status())
@@ -254,9 +258,10 @@ func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 
 			err = persister.DeleteJob(tc.job)
 			require.NoError(t, err)
-			jobs, err = readJobs()
+			compactionJobs, planJob, err = readJobs()
 			require.NoError(t, err)
-			require.Empty(t, jobs)
+			require.Empty(t, compactionJobs)
+			require.Nil(t, planJob)
 		})
 	}
 }

@@ -37,22 +37,24 @@ var (
 )
 
 type Config struct {
-	maxLeases             int
-	leaseDuration         time.Duration
-	leaseCheckInterval    time.Duration
-	planningCheckInterval time.Duration
-	planningInterval      time.Duration
-	userDiscoveryBackoff  backoff.Config
-	persistenceType       string
-	bboltPath             string
+	maxLeases                                 int
+	leaseDuration                             time.Duration
+	planningInterval                          time.Duration
+	maintenanceInterval                       time.Duration
+	maintenanceIntervalsBeforeLeaseExpiration int
+	tenantDiscoveryInterval                   time.Duration
+	userDiscoveryBackoff                      backoff.Config
+	persistenceType                           string
+	bboltPath                                 string
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.maxLeases, "compactor-scheduler.max-leases", 3, "The maximum number of times a job can be retried from the same plan before it is removed. 0 for no limit.")
 	f.DurationVar(&cfg.leaseDuration, "compactor-scheduler.lease-duration", 10*time.Minute, "The duration of time without contact until the scheduler is able to lease a work item to another worker.")
-	f.DurationVar(&cfg.leaseCheckInterval, "compactor-scheduler.lease-check-interval", 3*time.Minute, "How often the scheduler will check for expired leases to make the work items pending again.")
-	f.DurationVar(&cfg.planningCheckInterval, "compactor-scheduler.planning-check-interval", time.Minute, "How often the scheduler will check all tenants to see if a planning job needs to be submitted.")
-	f.DurationVar(&cfg.planningInterval, "compactor-scheduler.planning-interval", 30*time.Minute, "How often the plan jobs will be created by the scheduler.")
+	f.DurationVar(&cfg.planningInterval, "compactor-scheduler.planning-interval", 1*time.Hour, "The duration of time between when plan jobs are submitted aligned by UTC. Note that -compactor.first-level-compaction-wait-period is accounted for during alignment of this interval.")
+	f.DurationVar(&cfg.maintenanceInterval, "compactor-scheduler.maintenance-interval", 3*time.Minute, "The duration of time between when maintenance tasks are performed on job trackers. This includes lease expiration and plan job submission checks.")
+	f.IntVar(&cfg.maintenanceIntervalsBeforeLeaseExpiration, "compactor-scheduler.maintenance-intervals-before-lease-expiration", 2, "The number of maintenance intervals before lease expiration is enforced. Nonpositive values are all treated as zero.")
+	f.DurationVar(&cfg.tenantDiscoveryInterval, "compactor-scheduler.tenant-discovery-interval", 10*time.Minute, "The duration of time between bucket listings to discover new tenants.")
 	f.StringVar(&cfg.persistenceType, "compactor-scheduler.persistence-type", "bbolt", "The type of persistence the compactor scheduler should use. Valid values: none, bbolt")
 	f.StringVar(&cfg.bboltPath, "compactor-scheduler.bbolt.db-path", "bbolt_1.db", "The path to the bbolt database file for the compactor scheduler.")
 	cfg.userDiscoveryBackoff.RegisterFlagsWithPrefix("compactor-scheduler", f)
@@ -65,14 +67,14 @@ func (cfg *Config) Validate() error {
 	if cfg.leaseDuration <= 0 {
 		return errors.New("compactor-scheduler.lease-duration must be positive")
 	}
-	if cfg.leaseCheckInterval <= 0 {
-		return errors.New("compactor-scheduler.lease-check-interval must be positive")
-	}
-	if cfg.planningCheckInterval <= 0 {
-		return errors.New("compactor-scheduler.planning-check-interval must be positive")
-	}
 	if cfg.planningInterval <= 0 {
 		return errors.New("compactor-scheduler.planning-interval must be positive")
+	}
+	if cfg.maintenanceInterval <= 0 {
+		return errors.New("compactor-scheduler.maintenance-interval must be positive")
+	}
+	if cfg.tenantDiscoveryInterval <= 0 {
+		return errors.New("compactor-scheduler.tenant-discovery-interval must be positive")
 	}
 	if cfg.persistenceType == "bbolt" {
 		if cfg.bboltPath == "" {
@@ -80,11 +82,6 @@ func (cfg *Config) Validate() error {
 		}
 	}
 	return nil
-}
-
-type CompactionJob struct {
-	blocks  [][]byte // empty indicates a planning job
-	isSplit bool
 }
 
 type Scheduler struct {
@@ -95,6 +92,7 @@ type Scheduler struct {
 	allowList          *util.AllowList
 	jpm                JobPersistenceManager
 	rotator            *Rotator
+	tenantDiscoverer   *TenantDiscoverer
 	subservicesManager *services.Manager
 	metrics            *schedulerMetrics
 	logger             log.Logger
@@ -116,34 +114,27 @@ func NewCompactorScheduler(
 		return nil, err
 	}
 
-	scheduler := &Scheduler{
-		running:   atomic.NewBool(false),
-		cfg:       cfg,
-		allowList: allowList,
-		jpm:       jpm,
-		rotator:   NewRotator(cfg.leaseDuration, cfg.leaseCheckInterval, metrics, logger),
-		metrics:   metrics,
-		logger:    logger,
-		clock:     clock.New(),
-	}
-
 	// TODO: This will need to be moved for testing
 	bkt, err := bucket.NewClient(context.Background(), storageCfg.Bucket, "compactor-scheduler", logger, registerer)
 	if err != nil {
 		return nil, err
 	}
 
-	planSpawner := NewSpawner(
-		cfg,
-		allowList,
-		scheduler.rotator,
-		bkt,
-		jpm,
-		metrics,
-		logger,
-	)
+	rotator := NewRotator(cfg.leaseDuration, cfg.planningInterval, compactorCfg.CompactionWaitPeriod, cfg.maintenanceInterval, cfg.maintenanceIntervalsBeforeLeaseExpiration, metrics, logger)
 
-	subservicesManager, err := services.NewManager(scheduler.rotator, planSpawner)
+	scheduler := &Scheduler{
+		running:          atomic.NewBool(false),
+		cfg:              cfg,
+		allowList:        allowList,
+		jpm:              jpm,
+		rotator:          rotator,
+		tenantDiscoverer: NewTenantDiscoverer(cfg, allowList, rotator, bkt, jpm, metrics, logger),
+		metrics:          metrics,
+		logger:           logger,
+		clock:            clock.New(),
+	}
+
+	subservicesManager, err := services.NewManager(scheduler.rotator, scheduler.tenantDiscoverer)
 	if err != nil {
 		return nil, err
 	}
@@ -161,11 +152,12 @@ func (s *Scheduler) createJobTracker(tenant string, jp JobPersister) *JobTracker
 }
 
 func (s *Scheduler) start(ctx context.Context) error {
-	compactionTrackers, err := s.jpm.RecoverAll(s.allowList, s.createJobTracker)
+	jobTrackers, err := s.jpm.RecoverAll(s.allowList, s.createJobTracker)
 	if err != nil {
 		return fmt.Errorf("failed recovering state: %w", err)
 	}
-	s.rotator.RecoverFrom(compactionTrackers)
+	s.rotator.RecoverFrom(jobTrackers)
+	s.tenantDiscoverer.RecoverFrom(jobTrackers)
 
 	if err := s.subservicesManager.StartAsync(ctx); err != nil {
 		return fmt.Errorf("unable to start compactor scheduler subservices: %w", err)
@@ -270,7 +262,6 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 			return nil, errNotRunning
 		}
 	}
-
 	return &compactorschedulerpb.PlannedJobsResponse{}, nil
 }
 

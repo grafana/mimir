@@ -4,7 +4,6 @@ package scheduler
 
 import (
 	"errors"
-	"fmt"
 	"math"
 	"math/rand"
 	"time"
@@ -106,6 +105,11 @@ func (j *baseTrackedJob) NumLeases() int {
 
 func (j *baseTrackedJob) Epoch() int64 {
 	return j.epoch
+}
+
+type CompactionJob struct {
+	blocks  [][]byte
+	isSplit bool
 }
 
 type TrackedCompactionJob struct {
@@ -218,20 +222,7 @@ func (j *TrackedPlanJob) Order() uint32 {
 	return math.MaxUint32
 }
 
-func deserializeJob(k []byte, v []byte) (TrackedJob, error) {
-	if len(k) == reservedJobIdLen {
-		sk := string(k[0])
-		switch sk {
-		case planJobId:
-			return deserializePlanJob(v)
-		default:
-			return nil, fmt.Errorf("unknown key: %s", sk)
-		}
-	}
-	return deserializeCompactionJob(k, v)
-}
-
-func deserializePlanJob(content []byte) (TrackedJob, error) {
+func deserializePlanJob(content []byte) (*TrackedPlanJob, error) {
 	var info compactorschedulerpb.StoredJobInfo
 	if err := info.Unmarshal(content); err != nil {
 		return nil, err

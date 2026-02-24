@@ -3,6 +3,7 @@
 package scheduler
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/go-kit/log"
@@ -77,13 +78,13 @@ func (m *BboltJobPersistenceManager) DeleteTenant(tenant string) error {
 	})
 }
 
-func (m *BboltJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, jobTrackerFactory func(tenant string, persister JobPersister) *JobTracker) (jobTrackers map[string]*JobTracker, err error) {
-	jobTrackers = make(map[string]*JobTracker)
+func (m *BboltJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, jobTrackerFactory func(tenant string, persister JobPersister) *JobTracker) (map[string]*JobTracker, error) {
+	jobTrackers := make(map[string]*JobTracker)
 	numJobsRecovered := 0
 
 	level.Info(m.logger).Log("msg", "starting job recovery")
 	// Iterate through each bucket and create the corresponding JobTracker
-	err = m.db.Update(func(tx *bbolt.Tx) error {
+	err := m.db.Update(func(tx *bbolt.Tx) error {
 		return tx.ForEach(func(name []byte, b *bbolt.Bucket) error {
 			tenant := string(name)
 			// Must be a tenant bucket
@@ -94,16 +95,19 @@ func (m *BboltJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, 
 			}
 			if !allowedTenants.IsAllowed(tenant) {
 				// This tenant is no longer allowed, remove their bucket
-				level.Warn(m.logger).Log("msg", "deleting bbolt bucket of tenant no longer allowed", "tenant", tenant)
+				level.Warn(m.logger).Log("msg", "deleting bbolt bucket of tenant no longer allowed", "user", tenant)
 				return tx.DeleteBucket(name)
 			}
 
-			jobs := jobsFromTenantBucket(tenant, b, m.logger)
-			numJobsRecovered += len(jobs)
+			compactionJobs, planJob := jobsFromTenantBucket(tenant, b, m.logger)
+			numJobsRecovered += len(compactionJobs)
+			if planJob != nil {
+				numJobsRecovered += 1
+			}
 
 			jp := newBboltJobPersister(m.db, []byte(tenant), m.logger)
 			jt := jobTrackerFactory(tenant, jp)
-			jt.recoverFrom(jobs)
+			jt.recoverFrom(compactionJobs, planJob)
 			jobTrackers[tenant] = jt
 			return nil
 		})
@@ -116,24 +120,46 @@ func (m *BboltJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, 
 	return jobTrackers, nil
 }
 
-func jobsFromTenantBucket(tenant string, bucket *bbolt.Bucket, logger log.Logger) []TrackedJob {
-	jobs := make([]TrackedJob, 0, 10)
+func jobsFromTenantBucket(tenant string, bucket *bbolt.Bucket, logger log.Logger) ([]*TrackedCompactionJob, *TrackedPlanJob) {
+	compactionJobs := make([]*TrackedCompactionJob, 0, 10)
+	var planJob *TrackedPlanJob // may be nil
+
 	c := bucket.Cursor()
 	for k, v := c.First(); k != nil; k, v = c.Next() {
-		job, err := deserializeJob(k, v)
-		if err != nil {
-			// If we can't deserialize a value assume it is corrupt. We don't want it sticking around forever, so delete it.
-			level.Warn(logger).Log("msg", "failed to deserialize job, deleting it", "tenant", tenant, "key", string(k), "err", err)
-			if err := bucket.Delete(k); err != nil {
-				// Only returns an error if we're in a read-only transaction, which should never be the case.
-				// This isn't the actual write, but instead an addition to the write transaction which hasn't reached commit yet.
-				level.Warn(logger).Log("msg", "failed to delete job that failed to deserialize", "tenant", tenant, "key", string(k), "err", err)
+		if len(k) == reservedJobIdLen {
+			sk := string(k[0])
+			switch sk {
+			case planJobId:
+				job, err := deserializePlanJob(v)
+				if err != nil {
+					onFailedDeserialization(err, bucket, tenant, k, logger)
+					continue
+				}
+				planJob = job
+			default:
+				onFailedDeserialization(errors.New("unknown key"), bucket, tenant, k, logger)
 			}
-			continue
+		} else {
+			compactionJob, err := deserializeCompactionJob(k, v)
+			if err != nil {
+				onFailedDeserialization(err, bucket, tenant, k, logger)
+				continue
+			}
+			compactionJobs = append(compactionJobs, compactionJob)
 		}
-		jobs = append(jobs, job)
+
 	}
-	return jobs
+	return compactionJobs, planJob
+}
+
+func onFailedDeserialization(err error, bucket *bbolt.Bucket, tenant string, k []byte, logger log.Logger) {
+	// If we can't deserialize a value assume it is corrupt. We don't want it sticking around forever, so delete it.
+	level.Warn(logger).Log("msg", "failed to deserialize job, deleting it", "user", tenant, "key", string(k), "err", err)
+	if err := bucket.Delete(k); err != nil {
+		// Only returns an error if we're in a read-only transaction, which should never be the case.
+		// This isn't the actual write, but instead an addition to the write transaction which hasn't reached commit yet.
+		level.Warn(logger).Log("msg", "failed to delete job that failed to deserialize", "user", tenant, "key", string(k), "err", err)
+	}
 }
 
 func (m *BboltJobPersistenceManager) Close() error {
@@ -219,7 +245,7 @@ func (n *NopJobPersistenceManager) DeleteTenant(tenant string) error {
 	return nil
 }
 
-func (n *NopJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, jobTrackerFactory func(string, JobPersister) *JobTracker) (jobTrackers map[string]*JobTracker, err error) {
+func (n *NopJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, jobTrackerFactory func(string, JobPersister) *JobTracker) (map[string]*JobTracker, error) {
 	return make(map[string]*JobTracker), nil
 }
 

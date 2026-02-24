@@ -5,7 +5,6 @@ package scheduler
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/benbjohnson/clock"
 	"github.com/go-kit/log"
@@ -18,8 +17,8 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-// Spawner periodically creates plan jobs for tenants.
-type Spawner struct {
+// TenantDiscoverer periodically scans the bucket for new tenants.
+type TenantDiscoverer struct {
 	services.Service
 
 	logger               log.Logger
@@ -28,51 +27,50 @@ type Spawner struct {
 	allowedTenants       *util.AllowList
 	bkt                  objstore.Bucket
 	jpm                  JobPersistenceManager
-	planningInterval     time.Duration
 	userDiscoveryBackoff backoff.Config
 	rotator              *Rotator
 	maxLeases            int
-
-	planMap map[string]time.Time
+	knownTenants         map[string]struct{}
 }
 
-func NewSpawner(
+func NewTenantDiscoverer(
 	cfg Config,
 	allowList *util.AllowList,
 	rotator *Rotator,
 	bkt objstore.Bucket,
 	jpm JobPersistenceManager,
 	metrics *schedulerMetrics,
-	logger log.Logger) *Spawner {
-	s := &Spawner{
+	logger log.Logger) *TenantDiscoverer {
+	s := &TenantDiscoverer{
 		logger:               logger,
 		metrics:              metrics,
 		clock:                clock.New(),
 		allowedTenants:       allowList,
 		bkt:                  bkt,
 		jpm:                  jpm,
-		planningInterval:     cfg.planningInterval,
 		userDiscoveryBackoff: cfg.userDiscoveryBackoff,
 		rotator:              rotator,
-		planMap:              make(map[string]time.Time),
 		maxLeases:            cfg.maxLeases,
+		knownTenants:         make(map[string]struct{}),
 	}
-	s.Service = services.NewTimerService(cfg.planningCheckInterval, s.start, s.iter, nil)
+	s.Service = services.NewTimerService(cfg.tenantDiscoveryInterval, s.start, s.iter, nil)
 	return s
 }
 
-func (s *Spawner) start(ctx context.Context) error {
-	// The rotator gets prepoluated upon recovery, use that to determine tenants that are already active
-	for tenant := range s.rotator.Tenants() {
-		s.planMap[tenant] = time.Time{}
+// RecoverFrom populates the tenant discoverer with known tenants from recovered state.
+// Must be called before the service is started.
+func (s *TenantDiscoverer) RecoverFrom(jobTrackers map[string]*JobTracker) {
+	for tenant := range jobTrackers {
+		s.knownTenants[tenant] = struct{}{}
 	}
+}
 
+func (s *TenantDiscoverer) start(ctx context.Context) error {
 	b := backoff.New(ctx, s.userDiscoveryBackoff)
 	var err error
 	for b.Ongoing() {
 		err = s.discoverTenants(ctx)
 		if err == nil {
-			s.plan()
 			return nil
 		}
 		b.Wait()
@@ -80,28 +78,12 @@ func (s *Spawner) start(ctx context.Context) error {
 	return fmt.Errorf("failed to discover users for the compactor scheduler: %w", err)
 }
 
-func (s *Spawner) iter(ctx context.Context) error {
-	// Don't care if user discovery fails since we still want to submit plans for users that are known
+func (s *TenantDiscoverer) iter(ctx context.Context) error {
 	_ = s.discoverTenants(ctx)
-	s.plan()
 	return nil
 }
 
-func (s *Spawner) plan() {
-	now := s.clock.Now()
-	for tenant, lastSubmitted := range s.planMap {
-		if now.Sub(lastSubmitted) > s.planningInterval {
-			_, err := s.rotator.OfferPlanJob(tenant, NewTrackedPlanJob(now))
-			if err != nil {
-				level.Warn(s.logger).Log("msg", "failed submitting plan job", "user", tenant, "err", err)
-				continue
-			}
-			s.planMap[tenant] = now
-		}
-	}
-}
-
-func (s *Spawner) discoverTenants(ctx context.Context) error {
+func (s *TenantDiscoverer) discoverTenants(ctx context.Context) error {
 	tenants, err := mimir_tsdb.ListUsers(ctx, s.bkt)
 	if err != nil {
 		level.Warn(s.logger).Log("msg", "failed tenant discovery", "err", err)
@@ -117,22 +99,23 @@ func (s *Spawner) discoverTenants(ctx context.Context) error {
 
 		seen[tenant] = struct{}{}
 
-		if _, ok := s.planMap[tenant]; !ok {
+		if _, ok := s.knownTenants[tenant]; !ok {
 			// Discovered a new tenant
 			persister, err := s.jpm.InitializeTenant(tenant)
 			if err != nil {
 				level.Warn(s.logger).Log("msg", "failed initializing tenant", "user", tenant, "err", err)
-				return err
+				continue
 			}
 			tracker := NewJobTracker(persister, tenant, s.clock, s.maxLeases, s.metrics.newTrackerMetricsForTenant(tenant))
 			s.rotator.AddTenant(tenant, tracker)
-			s.planMap[tenant] = time.Time{}
+			s.knownTenants[tenant] = struct{}{}
 		}
 	}
 
-	for tenant := range s.planMap {
-		logger := log.With(s.logger, "user", tenant)
+	for tenant := range s.knownTenants {
 		if _, ok := seen[tenant]; !ok {
+			// A tenant no longer has blocks
+			logger := log.With(s.logger, "user", tenant)
 			tracker, ok := s.rotator.RemoveTenant(tenant)
 			if !ok {
 				level.Warn(logger).Log("msg", "attempted to remove tenant from rotator, but the tenant was unexpectedly missing")
@@ -141,12 +124,12 @@ func (s *Spawner) discoverTenants(ctx context.Context) error {
 			if err != nil {
 				level.Warn(logger).Log("msg", "failed removing tenant bucket from compactor scheduler", "err", err)
 				if ok {
-					// Preserve 1:1 with rotator and planMap
+					// Preserve 1:1 with rotator and knownTenants
 					s.rotator.AddTenant(tenant, tracker)
 				}
 				continue
 			}
-			delete(s.planMap, tenant)
+			delete(s.knownTenants, tenant)
 			level.Info(logger).Log("msg", "removed empty tenant from compactor scheduler")
 		}
 	}
