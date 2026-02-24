@@ -1147,6 +1147,9 @@ func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
 	s.metrics.seriesDataSizeTouched.WithLabelValues("chunks", "returned").Observe(float64(stats.chunksTouchedSizeSum))
 
 	s.metrics.resultSeriesCount.Observe(float64(stats.mergedSeriesCount))
+
+	s.metrics.chunkSizeEstimateType.WithLabelValues("inferred").Add(float64(stats.chunksInferredSizeCount))
+	s.metrics.chunkSizeEstimateType.WithLabelValues("fallback").Add(float64(stats.chunksFallbackSizeCount))
 }
 
 func (s *BucketStore) recordLabelNamesCallResult(safeStats *safeQueryStats) {
