@@ -74,7 +74,7 @@ func TestBlockBuilder(t *testing.T) {
 			kafkaClient := mustKafkaClient(t, kafkaAddr)
 			kafkaClient.AddConsumeTopics(testTopic)
 
-			cfg, overrides := blockBuilderConfig(t, kafkaAddr)
+			cfg, overrides := blockBuilderConfig(t, kafkaAddr, nil)
 
 			producedSamples := make(map[string][]mimirpb.Sample, 0)
 			recsPerTenant := 0
@@ -141,7 +141,7 @@ func TestBlockBuilder_WipeOutDataDirOnStart(t *testing.T) {
 	t.Cleanup(func() { cancel(errors.New("test done")) })
 
 	_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
-	cfg, overrides := blockBuilderConfig(t, kafkaAddr)
+	cfg, overrides := blockBuilderConfig(t, kafkaAddr, nil)
 
 	f, err := os.CreateTemp(cfg.DataDir, "block")
 	require.NoError(t, err)

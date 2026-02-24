@@ -29,7 +29,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -223,10 +222,10 @@ func TestTSDBBuilder(t *testing.T) {
 			limits := map[string]*validation.Limits{
 				userID: tc.limits,
 			}
-			overrides := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
-			metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
 
-			builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), partitionID, mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0)
+			config, overrides := blockBuilderConfig(t, "kafka:9092", validation.NewMockTenantLimits(limits))
+			metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
+			builder := NewTSDBBuilder(partitionID, config, overrides, log.NewNopLogger(), metrics)
 
 			ctx := user.InjectOrgID(ctx, userID)
 
@@ -306,9 +305,9 @@ func TestTSDBBuilder_CompactAndUpload_fail(t *testing.T) {
 	partitionID := int32(0)
 	userID := "user1"
 
-	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+	config, overrides := blockBuilderConfig(t, "kafka:9092", nil)
 	metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
-	builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), partitionID, mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0)
+	builder := NewTSDBBuilder(partitionID, config, overrides, log.NewNopLogger(), metrics)
 	t.Cleanup(func() {
 		require.NoError(t, builder.Close())
 	})
@@ -402,9 +401,9 @@ func TestProcessingEmptyRequest(t *testing.T) {
 	partitionID := int32(0)
 	userID := "1"
 
-	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+	config, overrides := blockBuilderConfig(t, "kafka:9092", nil)
 	metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
-	builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), partitionID, mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0)
+	builder := NewTSDBBuilder(partitionID, config, overrides, log.NewNopLogger(), metrics)
 
 	ctx := user.InjectOrgID(t.Context(), userID)
 
@@ -436,7 +435,7 @@ func TestTSDBBuilderLimits(t *testing.T) {
 		user2       = "user2"
 		partitionID = int32(0)
 		// Limits should be applied only if the limits is under 50
-		applyGlobalSeriesLimitUnder = 50
+		applyMaxGlobalSeriesPerUserBelow = 50
 	)
 
 	limits := map[string]*validation.Limits{
@@ -449,10 +448,11 @@ func TestTSDBBuilderLimits(t *testing.T) {
 			NativeHistogramsIngestionEnabled: true,
 		},
 	}
-	overrides := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
+	config, overrides := blockBuilderConfig(t, "kafka:9092", validation.NewMockTenantLimits(limits))
+	config.ApplyMaxGlobalSeriesPerUserBelow = applyMaxGlobalSeriesPerUserBelow
 
 	metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
-	builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), partitionID, mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, applyGlobalSeriesLimitUnder)
+	builder := NewTSDBBuilder(partitionID, config, overrides, log.NewNopLogger(), metrics)
 	t.Cleanup(func() {
 		require.NoError(t, builder.Close())
 	})
@@ -484,13 +484,13 @@ func TestTSDBBuilderLimits(t *testing.T) {
 		}
 	}
 
-	// user1 had a limit of 30, which is less than applyGlobalSeriesLimitUnder.
+	// user1 had a limit of 30, which is less than applyMaxGlobalSeriesPerUserBelow.
 	// So the limit must be applied.
 	db, err := builder.getOrCreateTSDB(tsdbTenant{tenantID: user1})
 	require.NoError(t, err)
 	require.Equal(t, uint64(30), db.Head().NumSeries())
 
-	// user2 had a limit of 100, which is greather than applyGlobalSeriesLimitUnder.
+	// user2 had a limit of 100, which is greather than applyMaxGlobalSeriesPerUserBelow.
 	// So the limit must not be applied.
 	db, err = builder.getOrCreateTSDB(tsdbTenant{tenantID: user2})
 	require.NoError(t, err)
@@ -514,10 +514,10 @@ func TestTSDBBuilderNativeHistogramEnabledError(t *testing.T) {
 			NativeHistogramsIngestionEnabled: false,
 		},
 	}
-	overrides := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
+	config, overrides := blockBuilderConfig(t, "kafka:9092", validation.NewMockTenantLimits(limits))
 
 	metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
-	builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), partitionID, mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0)
+	builder := NewTSDBBuilder(partitionID, config, overrides, log.NewNopLogger(), metrics)
 	t.Cleanup(func() {
 		require.NoError(t, builder.Close())
 	})
@@ -574,7 +574,7 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 			OutOfOrderTimeWindow:                     model.Duration(time.Hour),
 		},
 	}
-	overrides := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
+	config, overrides := blockBuilderConfig(t, "kafka:9092", validation.NewMockTenantLimits(limits))
 
 	processingRange := int64(100000)
 	lastEnd := 2 * processingRange
@@ -813,10 +813,10 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 		},
 	}
 
+	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stdout))
 	registry := prometheus.NewPedanticRegistry()
 	metrics := newTSDBBBuilderMetrics(registry)
-	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stdout))
-	builder := NewTSDBBuilder(logger, t.TempDir(), partitionID, mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0)
+	builder := NewTSDBBuilder(partitionID, config, overrides, logger, metrics)
 	t.Cleanup(func() {
 		require.NoError(t, builder.Close())
 	})
