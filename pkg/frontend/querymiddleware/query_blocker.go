@@ -11,11 +11,14 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
+
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 type queryBlockerMiddleware struct {
 	next                  MetricsQueryHandler
 	limits                Limits
+	normalised            map[string]string
 	logger                log.Logger
 	blockedQueriesCounter *prometheus.CounterVec
 }
@@ -31,6 +34,7 @@ func newQueryBlockerMiddleware(
 			limits:                limits,
 			logger:                logger,
 			blockedQueriesCounter: blockedQueriesCounter,
+			normalised:            make(map[string]string),
 		}
 	})
 }
@@ -61,7 +65,7 @@ func (qb *queryBlockerMiddleware) isBlocked(tenant string, req MetricsQueryReque
 	query := req.GetQuery()
 
 	for ruleIndex, block := range blocks {
-		if strings.TrimSpace(block.Pattern) == strings.TrimSpace(query) {
+		if qb.normalizeQueryPattern(block.Pattern, ruleIndex) == strings.TrimSpace(query) {
 			level.Info(logger).Log("msg", "query blocker matched with exact match policy", "query", query, "index", ruleIndex)
 			return true, block.Reason
 		}
@@ -79,4 +83,27 @@ func (qb *queryBlockerMiddleware) isBlocked(tenant string, req MetricsQueryReque
 		}
 	}
 	return false, ""
+}
+
+// normalizeQueryPattern will take the given non regex block query and normalise it.
+// This will apply the same normalisation as the incoming user query.
+// This allows for the blocked query to be defined as observed before or after normalisation, and removing the
+// need for operators to determine the normalised version of a query before adding a block.
+// The normalised block pattern is cached so it does not need to be processed on every block consideration.
+func (qb *queryBlockerMiddleware) normalizeQueryPattern(pattern string, ruleIndex int) string {
+
+	n, ok := qb.normalised[pattern]
+	if ok {
+		return n
+	}
+
+	if expr, err := promqlext.NewPromQLParser().ParseExpr(pattern); err == nil {
+		n = expr.String()
+	} else {
+		level.Error(qb.logger).Log("msg", "blocked query is not valid PromQL", "pattern", pattern, "err", err, "index", ruleIndex)
+		n = pattern
+	}
+	n = strings.TrimSpace(n)
+	qb.normalised[pattern] = n
+	return n
 }

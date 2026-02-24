@@ -112,6 +112,92 @@ func TestQueryBlockerMiddleware_RangeAndInstantQuery(t *testing.T) {
 			},
 			query: "rate(metric_counter[5m])",
 		},
+		{
+			name: "empty label selector normalisation",
+			limits: mockLimits{
+				blockedQueries: []validation.BlockedQuery{
+					{Pattern: "avg_over_time(kube_namespace_annotations[1h])"},
+				},
+			},
+			expectedBlocked: true,
+			query:           `avg_over_time(kube_namespace_annotations{}[1h])`,
+		},
+		{
+			name: "trailing label selector comma normalisation",
+			limits: mockLimits{
+				blockedQueries: []validation.BlockedQuery{
+					{Pattern: "avg_over_time(kube_namespace_annotations{foo=\"bar\"}[1h])"},
+				},
+			},
+			expectedBlocked: true,
+			query:           `avg_over_time(kube_namespace_annotations{foo="bar",}[1h])`,
+		},
+		{
+			name: "whitespace normalisation",
+			limits: mockLimits{
+				blockedQueries: []validation.BlockedQuery{
+					{Pattern: `avg_over_time(kube_namespace_annotations[1h])`},
+				},
+			},
+			expectedBlocked: true,
+			query: `avg_over_time(kube_namespace_annotations
+[1h] )`,
+		},
+		{
+			name: "selector order normalisation",
+			limits: mockLimits{
+				blockedQueries: []validation.BlockedQuery{
+					{Pattern: `avg_over_time(kube_namespace_annotations{foo="bar", bar="foo"}[1h])`},
+				},
+			},
+			expectedBlocked: true,
+			query:           `avg_over_time(kube_namespace_annotations{bar="foo", foo="bar"}[1h])`,
+		},
+		{
+			name: "operator reordering exact match",
+			limits: mockLimits{
+				blockedQueries: []validation.BlockedQuery{
+					{Pattern: "sum(container_memory_rss) by (namespace)"},
+				},
+			},
+			expectedBlocked: true,
+			query:           `sum(container_memory_rss) by (namespace)`,
+		},
+		{
+			name: "operator reordering normalisation",
+			limits: mockLimits{
+				blockedQueries: []validation.BlockedQuery{
+					{Pattern: `sum(container_memory_rss) by (namespace)`},
+				},
+			},
+			expectedBlocked: true,
+			query:           `sum by (namespace) (container_memory_rss)`,
+		},
+		{
+			name: "comments removed",
+			limits: mockLimits{
+				blockedQueries: []validation.BlockedQuery{
+					{Pattern: `rate(
+  metric_counter[15m] # comment 1
+) /
+rate(
+  other_counter[15m] # comment 2
+)`},
+				},
+			},
+			expectedBlocked: true,
+			query:           `rate(metric_counter[15m]) / rate(other_counter[15m])`,
+		},
+		{
+			name: "time range normalisation",
+			limits: mockLimits{
+				blockedQueries: []validation.BlockedQuery{
+					{Pattern: "rate(metric_counter[1m])"},
+				},
+			},
+			expectedBlocked: true,
+			query:           `rate(metric_counter[60s])`,
+		},
 	}
 
 	for _, tt := range tests {
@@ -149,6 +235,47 @@ func TestQueryBlockerMiddleware_RangeAndInstantQuery(t *testing.T) {
 						require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(``)))
 					}
 				})
+			}
+
+			// Invert the blocked pattern and the actual query.
+			// This ensures that the normalisation is consistently applied to both defined block queries and the incoming user query
+			if len(tt.limits.blockedQueries) == 1 && tt.limits.blockedQueries[0].Regex == false && tt.expectedBlocked {
+
+				pattern := tt.query
+
+				reqs := map[string]MetricsQueryRequest{
+					"range query - blocked pattern and query swapped": &PrometheusRangeQueryRequest{
+						queryExpr: parseQuery(t, tt.limits.blockedQueries[0].Pattern),
+					},
+					"instant query- blocked pattern and query swapped": &PrometheusInstantQueryRequest{
+						queryExpr: parseQuery(t, tt.limits.blockedQueries[0].Pattern),
+					},
+				}
+
+				tt.limits.blockedQueries[0].Pattern = pattern
+
+				for reqType, req := range reqs {
+					t.Run(reqType, func(t *testing.T) {
+						reg := prometheus.NewPedanticRegistry()
+						blockedQueriesCounter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+							Name: "cortex_query_frontend_rejected_queries_total",
+							Help: "Number of queries that were rejected by the cluster administrator.",
+						}, []string{"user", "reason"})
+						logger := log.NewNopLogger()
+
+						mw := newQueryBlockerMiddleware(tt.limits, logger, blockedQueriesCounter)
+						_, err := mw.Wrap(&mockNextHandler{t: t, shouldContinue: !tt.expectedBlocked}).Do(user.InjectOrgID(context.Background(), "test"), req)
+
+						require.Error(t, err)
+						require.Contains(t, err.Error(), globalerror.QueryBlocked)
+						require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+							# HELP cortex_query_frontend_rejected_queries_total Number of queries that were rejected by the cluster administrator.
+							# TYPE cortex_query_frontend_rejected_queries_total counter
+							cortex_query_frontend_rejected_queries_total{reason="blocked", user="test"} 1
+						`)))
+
+					})
+				}
 			}
 		})
 	}
