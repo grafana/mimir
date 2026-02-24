@@ -152,12 +152,12 @@ func (s *Scheduler) createJobTracker(tenant string, jp JobPersister) *JobTracker
 }
 
 func (s *Scheduler) start(ctx context.Context) error {
-	recoveredState, err := s.jpm.RecoverAll(s.allowList, s.createJobTracker)
+	jobTrackers, err := s.jpm.RecoverAll(s.allowList, s.createJobTracker)
 	if err != nil {
 		return fmt.Errorf("failed recovering state: %w", err)
 	}
-	s.rotator.RecoverFrom(recoveredState)
-	s.tenantDiscoverer.RecoverFrom(recoveredState)
+	s.rotator.RecoverFrom(jobTrackers)
+	s.tenantDiscoverer.RecoverFrom(jobTrackers)
 
 	if err := s.subservicesManager.StartAsync(ctx); err != nil {
 		return fmt.Errorf("unable to start compactor scheduler subservices: %w", err)

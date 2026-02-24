@@ -59,8 +59,8 @@ func NewTenantDiscoverer(
 
 // RecoverFrom populates the tenant discoverer with known tenants from recovered state.
 // Must be called before the service is started.
-func (s *TenantDiscoverer) RecoverFrom(recovered map[string]*JobTracker) {
-	for tenant := range recovered {
+func (s *TenantDiscoverer) RecoverFrom(jobTrackers map[string]*JobTracker) {
+	for tenant := range jobTrackers {
 		s.knownTenants[tenant] = struct{}{}
 	}
 }
@@ -99,9 +99,7 @@ func (s *TenantDiscoverer) discoverTenants(ctx context.Context) error {
 
 		seen[tenant] = struct{}{}
 
-		_, exists := s.knownTenants[tenant]
-
-		if !exists {
+		if _, ok := s.knownTenants[tenant]; !ok {
 			// Discovered a new tenant
 			persister, err := s.jpm.InitializeTenant(tenant)
 			if err != nil {
@@ -116,6 +114,7 @@ func (s *TenantDiscoverer) discoverTenants(ctx context.Context) error {
 
 	for tenant := range s.knownTenants {
 		if _, ok := seen[tenant]; !ok {
+			// A tenant no longer has blocks
 			logger := log.With(s.logger, "user", tenant)
 			tracker, ok := s.rotator.RemoveTenant(tenant)
 			if !ok {
