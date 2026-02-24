@@ -8,6 +8,7 @@ package alertmanager
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -28,6 +29,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	gogoproto "github.com/gogo/protobuf/proto"
 	"github.com/gogo/status"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
@@ -47,7 +49,6 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/grafana/regexp"
-	"github.com/matttproud/golang_protobuf_extensions/pbutil"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	amconfig "github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/featurecontrol"
@@ -3889,6 +3890,22 @@ func Test_amConfigFingerprint(t *testing.T) {
 	})
 }
 
+// writeDelimited encodes a gogo-protobuf message with a varint length prefix.
+func writeDelimited(w io.Writer, m gogoproto.Marshaler) (int, error) {
+	buf, err := gogoproto.Marshal(m.(gogoproto.Message))
+	if err != nil {
+		return 0, err
+	}
+	var sizeBuf [binary.MaxVarintLen32]byte
+	n := binary.PutUvarint(sizeBuf[:], uint64(len(buf)))
+	written, err := w.Write(sizeBuf[:n])
+	if err != nil {
+		return written, err
+	}
+	n2, err := w.Write(buf)
+	return written + n2, err
+}
+
 func TestSyncStates(t *testing.T) {
 	user := "test-user"
 	externalURL, err := url.Parse("http://test.com")
@@ -3896,7 +3913,7 @@ func TestSyncStates(t *testing.T) {
 
 	// Create test Grafana state.
 	var buf bytes.Buffer
-	_, err = pbutil.WriteDelimited(&buf, &pb.MeshEntry{
+	_, err = writeDelimited(&buf, &pb.MeshEntry{
 		Entry: &pb.Entry{
 			Receiver:     &pb.Receiver{GroupName: `Grafana`, Integration: "grafanaIntegration", Idx: 0},
 			GroupKey:     []byte(`{}/{grafana="true"}/{receiver="grafana webhook"}:{alertname="grafana test"}`),
@@ -3910,7 +3927,7 @@ func TestSyncStates(t *testing.T) {
 	copy(grafanaNflog, buf.Bytes())
 	buf.Reset()
 
-	_, err = pbutil.WriteDelimited(&buf, &silencepb.MeshSilence{
+	_, err = writeDelimited(&buf, &silencepb.MeshSilence{
 		Silence: &silencepb.Silence{
 			Id: "grafana silence",
 		},
@@ -3922,7 +3939,7 @@ func TestSyncStates(t *testing.T) {
 	buf.Reset()
 
 	// Create test Mimir state.
-	_, err = pbutil.WriteDelimited(&buf, &pb.MeshEntry{
+	_, err = writeDelimited(&buf, &pb.MeshEntry{
 		Entry: &pb.Entry{
 			Receiver:     &pb.Receiver{GroupName: `Mimir`, Integration: "mimirIntegration", Idx: 0},
 			GroupKey:     []byte(`{}/{mimir="true"}/{receiver="mimir webhook"}:{alertname="mimir test"}`),
@@ -3936,7 +3953,7 @@ func TestSyncStates(t *testing.T) {
 	copy(mimirNflog, buf.Bytes())
 	buf.Reset()
 
-	_, err = pbutil.WriteDelimited(&buf, &silencepb.MeshSilence{
+	_, err = writeDelimited(&buf, &silencepb.MeshSilence{
 		Silence: &silencepb.Silence{
 			Id: "mimir silence",
 		},
