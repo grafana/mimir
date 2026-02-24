@@ -108,7 +108,7 @@ func (j *baseTrackedJob) Epoch() int64 {
 }
 
 type CompactionJob struct {
-	blocks  [][]byte // empty indicates a planning job
+	blocks  [][]byte
 	isSplit bool
 }
 

@@ -17,20 +17,30 @@ import (
 )
 
 // JobTracker tracks pending, active, and (temporarily) complete jobs for tenants.
+//
+// Pending jobs are either plan jobs scheduled during Maintenance, or compaction jobs offered
+// via OfferCompactionJobs. At most one plan job exists at a time. Lease moves a selected
+// job from pending to active.
+//
+// An active job returns to pending if its lease expires (via Maintenance) or is canceled within
+// the attempt limit.
+//
+// Plan jobs complete via OfferCompactionJobs. Compaction jobs complete via Remove. Compaction jobs that complete
+// while a plan job is active are temporarily retained for conflict detection.
 type JobTracker struct {
 	persister JobPersister
 	tenant    string
 	clock     clock.Clock
 
-	maxLeases int
+	maxLeases int // maximum lease attempts per job where 0 (infiniteLeases) means unlimited. Plan jobs ignore this.
 	metrics   *trackerMetrics
 
 	mtx                    sync.Mutex
 	pending                *list.List
 	active                 *list.List
-	isPlanJobLeased        bool                     // we track blocks from completed jobs while a plan job is leased
+	isPlanJobLeased        bool                     // used to decide whether to retain completed compaction jobs
 	incompleteJobs         map[string]*list.Element // all incomplete jobs will be in this map, element is in one and only one of pending or active
-	completePlanTime       time.Time                // time of completed plan job. IsZero is true if there is a pending job or planning has never been completed
+	completePlanTime       time.Time                // time of the last completed plan job. Zero time if planning has never completed or a plan job is currently incomplete (pending or active).
 	completeCompactionJobs []*TrackedCompactionJob  // tracked in order to reject jobs that may be from a stale planning view.
 }
 
@@ -188,6 +198,15 @@ func (jt *JobTracker) Remove(id string, epoch int64, complete bool) (removed boo
 	return true, jt.isPendingEmpty(), nil
 }
 
+// Maintenance performs two periodic tasks: expiring leases and scheduling plan jobs.
+//
+// If enforceLeaseExpiration is true, active jobs whose leases have exceeded leaseDuration are
+// returned to pending (if within the attempt limit) or dropped.
+//
+// A new plan job is added to pending when the current planning window (determined by planningInterval
+// and compactionWaitPeriod) has not yet been planned.
+//
+// Maintenance returns true when err is nil and the pending queue transitioned from empty to non-empty.
 func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpiration bool, planningInterval, compactionWaitPeriod time.Duration) (bool, error) {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
