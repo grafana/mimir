@@ -204,6 +204,8 @@ func matchFilterLabels(matchers []*labels.Matcher, sms map[string]string) bool {
 			if !m.Matches(v) {
 				return false
 			}
+		default:
+			return false
 		}
 	}
 
