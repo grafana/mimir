@@ -783,6 +783,16 @@ func TestIsAbsPathOverlapping(t *testing.T) {
 			expected: true,
 		},
 		{
+			first:    "/",
+			second:   "/data/tsdb",
+			expected: true,
+		},
+		{
+			first:    "/data/tsdb",
+			second:   "/",
+			expected: true,
+		},
+		{
 			first:    "/data",
 			second:   "/data-more",
 			expected: false,
@@ -806,6 +816,23 @@ func TestIsAbsPathOverlapping(t *testing.T) {
 			first:    "/path/to/data",
 			second:   "/path/to/more/data",
 			expected: false,
+		},
+		// Paths at different depths where one is a string prefix of the other
+		// but NOT a path ancestor (regression test for path boundary check).
+		{
+			first:    "/data/tsdb",
+			second:   "/data/tsdb-compactor/cache",
+			expected: false,
+		},
+		{
+			first:    "/data/tsdb-compactor/cache",
+			second:   "/data/tsdb",
+			expected: false,
+		},
+		{
+			first:    "/data/tsdb",
+			second:   "/data/tsdb/wal",
+			expected: true,
 		},
 	}
 
