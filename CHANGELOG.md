@@ -320,6 +320,7 @@
 * [CHANGE] Added `/api/v1/read` as a registered route. #13227
 * [CHANGE] Added cluster validation label configuration `-query-tee.client-cluster-validation.label`. If set, query-tee will set `X-Cluster` header before forwarding the request to both primary and secondary backends. #13302
 * [CHANGE] Make HTTP and gRPC server options configurable through the same dskit `server` flags and config block as Mimir. This begins the deprecation cycle for query-tee's `server.http-service-address`, `server.http-service-port`, `"server.grpc-service-address`, and `server.grpc-service-port` flags. #13328 #13355 #13360
+* [ENHANCEMENT] Add `/ready` endpoint that returns HTTP 200 when the proxy is running. #14478
 * [BUGFIX] Fix bug where query-tee can panic if forwarding a request fails. #14015
 
 ## 3.0.3
