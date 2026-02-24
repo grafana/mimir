@@ -301,7 +301,6 @@ func TestInstantVectorOperator_Buffering_Filtering_DoesNotBufferForClosedConsume
 	consumer2 := buffer.AddConsumer()
 	consumer2.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "1|2|5")})
 
-	// Both consumers should get the same series metadata.
 	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
 	require.NoError(t, err)
 	metadata2, err := consumer2.SeriesMetadata(ctx, nil)
