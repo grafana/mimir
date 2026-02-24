@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"time"
@@ -27,6 +28,9 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/sync/singleflight"
+
+	"github.com/grafana/mimir/pkg/util/ioctx"
 )
 
 var (
@@ -146,14 +150,22 @@ func kafkaAuthOptions(cfg KafkaAuthConfig) []kgo.Opt {
 				Extensions: cfg.OauthbearerExtensions.Read(),
 			}.AsMechanism()
 		case cfg.OauthbearerFilePath != "":
-			m = oauth.Oauth(func(context.Context) (oauth.Auth, error) {
-				f, err := os.ReadFile(cfg.OauthbearerFilePath)
-				if err != nil {
-					return oauth.Auth{}, err
-				}
-				var a oauth.Auth
-				err = json.Unmarshal(f, &a)
-				return a, err
+			refresh := readTokenFromFile
+			if cfg.OauthbearerReauthRequestFilePath != "" {
+				refresh = requestRefreshAndReadTokenFromFile
+			}
+			var g singleflight.Group
+			m = oauth.Oauth(func(ctx context.Context) (oauth.Auth, error) {
+				a, err, _ := g.Do("", func() (any, error) {
+					token, err := refresh(ctx, cfg)
+					if err != nil {
+						return oauth.Auth{}, err
+					}
+					var a oauth.Auth
+					err = json.Unmarshal(token, &a)
+					return a, err
+				})
+				return a.(oauth.Auth), err
 			})
 		default:
 			panic(fmt.Errorf("SASL mechanism is %s but no way to get token defined", SASLMechanismOauthbearer))
@@ -163,6 +175,48 @@ func kafkaAuthOptions(cfg KafkaAuthConfig) []kgo.Opt {
 	}
 
 	return []kgo.Opt{kgo.SASL(m)}
+}
+
+func requestRefreshAndReadTokenFromFile(ctx context.Context, cfg KafkaAuthConfig) (tokenJSON []byte, err error) {
+	err = requestTokenRefresh(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	return readTokenFromFile(ctx, cfg)
+}
+
+func requestTokenRefresh(ctx context.Context, cfg KafkaAuthConfig) error {
+	ctx, cancel := context.WithTimeout(ctx, cfg.OauthbearerReauthRequestWriteTimeout)
+	defer cancel()
+
+	wf, err := ioctx.Open(ctx, cfg.OauthbearerReauthRequestFilePath, os.O_WRONLY)
+	if err != nil {
+		return fmt.Errorf("opening reauth request file %s: %w", cfg.OauthbearerReauthRequestFilePath, err)
+	}
+
+	_, err = ioctx.Write(ctx, wf, []byte("reauth\n"))
+	if err != nil {
+		return fmt.Errorf("writing reauth signal to %s: %w", cfg.OauthbearerReauthRequestFilePath, err)
+	}
+	return nil
+}
+
+func readTokenFromFile(ctx context.Context, cfg KafkaAuthConfig) (tokenJSON []byte, err error) {
+	ctx, cancel := context.WithTimeout(ctx, cfg.OauthbearerReadTimeout)
+	defer cancel()
+
+	f, err := ioctx.Open(ctx, cfg.OauthbearerFilePath, os.O_RDONLY)
+	if err != nil {
+		return nil, fmt.Errorf("opening token file %s: %w", cfg.OauthbearerFilePath, err)
+	}
+
+	tokenJSON, err = ioctx.ReadAll(ctx, f)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("reading token file %s: %w", cfg.OauthbearerFilePath, err)
+	}
+
+	return tokenJSON, nil
 }
 
 func recordsTracer() *kotel.Tracer {

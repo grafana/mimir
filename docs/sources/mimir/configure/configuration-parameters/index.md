@@ -5159,6 +5159,22 @@ kafka:
   # CLI flag: -ingest-storage.kafka.sasl-oauthbearer-file-path
   [sasl_oauthbearer_file_path: <string> | default = ""]
 
+  # Timeout for reading the token from the oauthbearer file path after writing
+  # the reauth signal.
+  # CLI flag: -ingest-storage.kafka.sasl-oauthbearer-read-timeout
+  [sasl_oauthbearer_read_timeout: <duration> | default = 10s]
+
+  # Path to a file (typically a named pipe) to signal reauthentication. When
+  # set, before reading the token from the file at oauthbearer-file-path, the
+  # string "reauth\n" is written to this file. This can be used to trigger an
+  # external process to refresh the token.
+  # CLI flag: -ingest-storage.kafka.sasl-oauthbearer-reauth-request-file-path
+  [sasl_oauthbearer_reauth_request_file_path: <string> | default = ""]
+
+  # Timeout for writing the reauth signal to the reauth file.
+  # CLI flag: -ingest-storage.kafka.sasl-oauthbearer-reauth-request-write-timeout
+  [sasl_oauthbearer_reauth_request_write_timeout: <duration> | default = 10s]
+
   # The consumer group used by the consumer to track the last consumed offset.
   # The consumer group must be different for each ingester. If the configured
   # consumer group contains the '<partition>' placeholder, it is replaced with

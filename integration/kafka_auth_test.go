@@ -5,8 +5,10 @@ package integration
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -21,38 +23,38 @@ import (
 
 func TestIngestStorageKafkaAuth(t *testing.T) {
 	tests := map[string]struct {
-		setup func(*testing.T, *e2e.Scenario) (e2edb.KafkaConfig, map[string]string)
+		setup func(*testing.T, *e2e.Scenario) (_ e2edb.KafkaConfig, commonFlags map[string]string, serviceFlags map[string]map[string]string)
 	}{
 		"no auth": {
-			setup: func(t *testing.T, s *e2e.Scenario) (e2edb.KafkaConfig, map[string]string) {
+			setup: func(t *testing.T, s *e2e.Scenario) (e2edb.KafkaConfig, map[string]string, map[string]map[string]string) {
 				return e2edb.KafkaConfig{
 					AuthMode: e2edb.KafkaAuthNone,
-				}, nil
+				}, nil, nil
 			},
 		},
 		"SASL plaintext": {
-			setup: func(t *testing.T, s *e2e.Scenario) (e2edb.KafkaConfig, map[string]string) {
+			setup: func(t *testing.T, s *e2e.Scenario) (e2edb.KafkaConfig, map[string]string, map[string]map[string]string) {
 				return e2edb.KafkaConfig{
 					AuthMode: e2edb.KafkaAuthSASLPlain,
-				}, nil
+				}, nil, nil
 			},
 		},
 		"SASL SCRAM-SHA-256": {
-			setup: func(t *testing.T, s *e2e.Scenario) (e2edb.KafkaConfig, map[string]string) {
+			setup: func(t *testing.T, s *e2e.Scenario) (e2edb.KafkaConfig, map[string]string, map[string]map[string]string) {
 				return e2edb.KafkaConfig{
 					AuthMode: e2edb.KafkaAuthSASLScramSHA256,
-				}, nil
+				}, nil, nil
 			},
 		},
 		"SASL SCRAM-SHA-512": {
-			setup: func(t *testing.T, s *e2e.Scenario) (e2edb.KafkaConfig, map[string]string) {
+			setup: func(t *testing.T, s *e2e.Scenario) (e2edb.KafkaConfig, map[string]string, map[string]map[string]string) {
 				return e2edb.KafkaConfig{
 					AuthMode: e2edb.KafkaAuthSASLScramSHA512,
-				}, nil
+				}, nil, nil
 			},
 		},
 		"SASL OAUTHBEARER token": {
-			setup: func(t *testing.T, s *e2e.Scenario) (e2edb.KafkaConfig, map[string]string) {
+			setup: func(t *testing.T, s *e2e.Scenario) (e2edb.KafkaConfig, map[string]string, map[string]map[string]string) {
 				dex := e2edb.NewDex()
 				require.NoError(t, s.StartAndWaitReady(dex))
 
@@ -62,11 +64,11 @@ func TestIngestStorageKafkaAuth(t *testing.T) {
 				return e2edb.KafkaConfig{
 					AuthMode:    e2edb.KafkaAuthSASLOAuthToken,
 					DexEndpoint: dex.NetworkHTTPEndpoint(),
-				}, map[string]string{"-ingest-storage.kafka.sasl-oauthbearer-token": token}
+				}, map[string]string{"-ingest-storage.kafka.sasl-oauthbearer-token": token}, nil
 			},
 		},
 		"SASL OAUTHBEARER file": {
-			setup: func(t *testing.T, s *e2e.Scenario) (e2edb.KafkaConfig, map[string]string) {
+			setup: func(t *testing.T, s *e2e.Scenario) (e2edb.KafkaConfig, map[string]string, map[string]map[string]string) {
 				dex := e2edb.NewDex()
 				require.NoError(t, s.StartAndWaitReady(dex))
 
@@ -79,7 +81,79 @@ func TestIngestStorageKafkaAuth(t *testing.T) {
 				return e2edb.KafkaConfig{
 					AuthMode:    e2edb.KafkaAuthSASLOAuthTokenFile,
 					DexEndpoint: dex.NetworkHTTPEndpoint(),
-				}, map[string]string{"-ingest-storage.kafka.sasl-oauthbearer-file-path": "/shared/oauth-token.json"}
+				}, map[string]string{"-ingest-storage.kafka.sasl-oauthbearer-file-path": "/shared/oauth-token.json"}, nil
+			},
+		},
+		"SASL OAUTHBEARER reauth pipe": {
+			setup: func(t *testing.T, s *e2e.Scenario) (e2edb.KafkaConfig, map[string]string, map[string]map[string]string) {
+				dex := e2edb.NewDex()
+				require.NoError(t, s.StartAndWaitReady(dex))
+
+				// Sidecar that reads from reauth-pipe, refreshes the token,
+				// and writes to tokens.jsonl.
+				// This simulates an external token management service that would be used
+				// in production to handle OAuth token lifecycle management.
+				tokenRefreshScript := fmt.Sprintf(`
+					set -euo pipefail
+					apk add --no-cache curl jq >/dev/null
+					while true; do
+						head -n1 /shared/reauth-pipe > /dev/null
+						echo "Got reauth request; refreshing token"
+						RESPONSE=$(curl -s -X POST \
+							--connect-timeout 5 \
+							--max-time 10 \
+							-d "grant_type=password" \
+							-d "username=%s" \
+							-d "password=%s" \
+							-d "client_id=%s" \
+							-d "client_secret=%s" \
+							-d "scope=openid" \
+							"http://%s/dex/token" 2>&1)
+						TOKEN=$(echo "$RESPONSE" | jq -r .access_token 2>/dev/null)
+						if [ "$TOKEN" != "null" ] && [ -n "$TOKEN" ]; then
+							# Update the current token
+							echo "Refreshed token; responding"
+							echo '{"token": "'"$TOKEN"'"}' > /shared/tokens.jsonl
+							echo "Responded"
+						else
+							echo "ERROR: Failed to fetch valid token from response: $RESPONSE"
+						fi
+					done
+				`,
+					e2edb.DexUserEmail, e2edb.DexUserPassword, e2edb.DexClientID, e2edb.DexClientSecret,
+					strings.TrimPrefix(dex.NetworkHTTPEndpoint(), "http://"))
+
+				serviceFlags := map[string]map[string]string{}
+				for _, service := range []string{"distributor", "ingester"} {
+					// Create named pipes for the OAuth token.
+					_, err := e2emimir.RunInContainerShell(s, fmt.Sprintf("mkfifo /shared/%[1]s-reauth-pipe /shared/%[1]s-tokens.jsonl", service))
+					require.NoError(t, err)
+
+					// Start the refresher sidecar.
+					tokenRefresher := e2e.NewConcreteService(
+						service+"-token-refresher",
+						e2emimir.ShellImage,
+						e2e.NewCommand("sh", "-c", tokenRefreshScript),
+						e2e.NewCmdReadinessProbe(e2e.NewCommand("true")), // Always ready
+						0, // dummy port
+					)
+					require.NoError(t, s.Start(tokenRefresher))
+
+					t.Cleanup(func() {
+						_ = tokenRefresher.Kill()
+						_, _ = e2emimir.RunInContainerShell(s, fmt.Sprintf("rm -f /shared/%[1]s-reauth-pipe /shared/%[1]s-tokens.jsonl", service))
+					})
+
+					serviceFlags[service] = map[string]string{
+						"-ingest-storage.kafka.sasl-oauthbearer-file-path":                fmt.Sprintf("/shared/%s-tokens.jsonl", service),
+						"-ingest-storage.kafka.sasl-oauthbearer-reauth-request-file-path": fmt.Sprintf("/shared/%s-reauth-pipe", service),
+					}
+				}
+
+				return e2edb.KafkaConfig{
+					AuthMode:    e2edb.KafkaAuthSASLOAuthTokenFile,
+					DexEndpoint: dex.NetworkHTTPEndpoint(),
+				}, nil, serviceFlags
 			},
 		},
 	}
@@ -90,7 +164,7 @@ func TestIngestStorageKafkaAuth(t *testing.T) {
 			require.NoError(t, err)
 			defer s.Close()
 
-			kafkaConfig, flags := tc.setup(t, s)
+			kafkaConfig, flags, serviceFlags := tc.setup(t, s)
 			consul := e2edb.NewConsul()
 			kafka := kafkaConfig.New()
 			require.NoError(t, s.StartAndWaitReady(consul, kafka))
@@ -104,9 +178,9 @@ func TestIngestStorageKafkaAuth(t *testing.T) {
 				flags,
 			)
 
-			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
-			ingester := e2emimir.NewIngester("ingester-0", consul.NetworkHTTPEndpoint(), flags)
-			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
+			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), mergeMaps(flags, serviceFlags["distributor"]))
+			ingester := e2emimir.NewIngester("ingester-0", consul.NetworkHTTPEndpoint(), mergeMaps(flags, serviceFlags["ingester"]))
+			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), mergeMaps(flags, serviceFlags["querier"]))
 			require.NoError(t, s.StartAndWaitReady(distributor, ingester, querier))
 
 			client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", userID)
@@ -131,4 +205,12 @@ func TestIngestStorageKafkaAuth(t *testing.T) {
 			assert.Equal(t, expectedVector, result.(model.Vector))
 		})
 	}
+}
+
+func mergeMaps[M ~map[K]V, K comparable, V any](ms ...M) M {
+	ret := make(M)
+	for _, m := range ms {
+		maps.Insert(m, maps.All(m))
+	}
+	return ret
 }

@@ -1507,6 +1507,12 @@ Usage of ./cmd/mimir/mimir:
     	Optional additional OAuth extensions to include when authenticating to Kafka using SASL OAUTHBEARER as a JSON object. (default {})
   -ingest-storage.kafka.sasl-oauthbearer-file-path string
     	Path to a file containing an OAuth token to authenticate to Kafka. The file is read anew on every reauthentication, so it can be updated with fresh tokens. The file must be in JSON format, adhering to this JSON schema: {"type": "object", "required": ["token"], "properties": {"token": {"type": "string"}, "zid": {"type": "string"}, "extensions": {"type": "object", "additionalProperties": {"type": "string"}}}}
+  -ingest-storage.kafka.sasl-oauthbearer-read-timeout duration
+    	Timeout for reading the token from the oauthbearer file path after writing the reauth signal. (default 10s)
+  -ingest-storage.kafka.sasl-oauthbearer-reauth-request-file-path string
+    	Path to a file (typically a named pipe) to signal reauthentication. When set, before reading the token from the file at oauthbearer-file-path, the string "reauth\n" is written to this file. This can be used to trigger an external process to refresh the token.
+  -ingest-storage.kafka.sasl-oauthbearer-reauth-request-write-timeout duration
+    	Timeout for writing the reauth signal to the reauth file. (default 10s)
   -ingest-storage.kafka.sasl-oauthbearer-token string
     	The OAuth token to use to authenticate to Kafka. Consider ingest-storage.kafka.sasl-oauthbearer-file-path instead.
   -ingest-storage.kafka.sasl-oauthbearer-zid string
