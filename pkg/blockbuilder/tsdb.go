@@ -22,10 +22,13 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/thanos-io/objstore"
+	"github.com/thanos-io/objstore/providers/filesystem"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	mimir_storage "github.com/grafana/mimir/pkg/storage"
+	"github.com/grafana/mimir/pkg/storage/indexheader"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -411,7 +414,7 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 				b.metrics.lastSuccessfulCompactAndUploadTime.WithLabelValues(partitionStr).SetToCurrentTime()
 			}(time.Now())
 
-			if err := db.compactEverything(ctx); err != nil {
+			if err := db.compactBlocks(ctx); err != nil {
 				return err
 			}
 
@@ -420,6 +423,13 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 			for _, b := range db.Blocks() {
 				localMetas = append(localMetas, b.Meta())
 			}
+
+			if b.cfg.GenerateSparseIndexHeaders {
+				if err := b.buildSparseIndexHeaders(ctx, dbDir, localMetas); err != nil {
+					return err
+				}
+			}
+
 			metasMu.Lock()
 			metas = append(metas, localMetas...)
 			metasMu.Unlock()
@@ -492,7 +502,7 @@ func (u *userTSDB) PostCreation(labels.Labels) {}
 
 func (u *userTSDB) PostDeletion(map[chunks.HeadSeriesRef]labels.Labels) {}
 
-func (u *userTSDB) compactEverything(ctx context.Context) error {
+func (u *userTSDB) compactBlocks(ctx context.Context) error {
 	blockRange := 2 * time.Hour.Milliseconds()
 
 	// Compact the in-order data.
@@ -512,4 +522,35 @@ func (u *userTSDB) compactEverything(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// buildSparseIndexHeaders builds sparse index-headers for all blocks in the directory.
+func (b *TSDBBuilder) buildSparseIndexHeaders(ctx context.Context, dbDir string, metas []tsdb.BlockMeta) error {
+	for _, m := range metas {
+		if err := b.buildSparseIndexHeader(ctx, dbDir, m.ULID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// prepareSparseIndexHeader builds a sparse index-header for a single block.
+func (b *TSDBBuilder) buildSparseIndexHeader(ctx context.Context, dbDir string, id ulid.ULID) error {
+	// Indexheader code uses a bucket client to read;
+	// construct local-filesystem-backed bucket to read from disk.
+	fsBkt, err := filesystem.NewBucket(dbDir)
+	if err != nil {
+		return err
+	}
+	fsInstrBkt := objstore.WithNoopInstr(fsBkt)
+
+	// Calling NewStreamBinaryReader reads a block's index and writes a sparse-index-header to disk.
+	metrics := indexheader.NewStreamBinaryReaderMetrics(nil)
+	logger := log.With(b.logger, "id", id)
+	br, err := indexheader.NewStreamBinaryReader(
+		ctx, logger, fsInstrBkt, dbDir, id, b.cfg.BlocksStorage.BucketStore.PostingOffsetsInMemSampling, metrics, indexheader.Config{})
+	if err != nil {
+		return err
+	}
+	return br.Close()
 }
