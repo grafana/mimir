@@ -3734,7 +3734,7 @@ func TestComputeConfig(t *testing.T) {
 }
 
 func Test_amConfigFingerprint(t *testing.T) {
-	const expectedTotalFields = 23 // Total fields: 3 (PostableApiTemplate) + 14 (EmailSenderConfig) + 6 (amConfig)
+	const expectedTotalFields = 24 // Total fields: 3 (PostableApiTemplate) + 15 (EmailSenderConfig) + 6 (amConfig)
 	t.Run("ensure all fields in the fingerprint", func(t *testing.T) {
 		// Helper function to get field count of a struct
 		getFieldCount := func(v interface{}) int {
