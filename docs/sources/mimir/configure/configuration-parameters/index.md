@@ -5253,6 +5253,11 @@ kafka:
   # CLI flag: -ingest-storage.kafka.producer-max-buffered-bytes
   [producer_max_buffered_bytes: <int> | default = 1073741824]
 
+  # The compression algorithm used by Kafka producer when producing records.
+  # Supported values: snappy, none, gzip, lz4, zstd.
+  # CLI flag: -ingest-storage.kafka.producer-compression-type
+  [producer_compression_type: <string> | default = "snappy"]
+
   # The maximum allowed for a read requests processed by an ingester to wait
   # until strong read consistency is enforced. 0 to disable the timeout.
   # CLI flag: -ingest-storage.kafka.wait-strong-read-consistency-timeout

@@ -391,3 +391,27 @@ func generateRandomBytes(n int) ([]byte, error) {
 	_, err := rand.Read(b)
 	return b, err
 }
+
+func TestProducerCompressionCodecs(t *testing.T) {
+	tests := map[string]struct {
+		compressionType string
+		expectedLen     int
+	}{
+		"snappy": {compressionType: "snappy", expectedLen: 2},
+		"none":   {compressionType: "none", expectedLen: 1},
+		"gzip":   {compressionType: "gzip", expectedLen: 2},
+		"lz4":    {compressionType: "lz4", expectedLen: 2},
+		"zstd":   {compressionType: "zstd", expectedLen: 2},
+	}
+
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			codecs := producerCompressionCodecs(tc.compressionType)
+			require.Len(t, codecs, tc.expectedLen)
+		})
+	}
+
+	t.Run("unknown panics", func(t *testing.T) {
+		require.Panics(t, func() { producerCompressionCodecs("unknown") })
+	})
+}

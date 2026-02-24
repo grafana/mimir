@@ -8960,6 +8960,16 @@
             },
             {
               "kind": "field",
+              "name": "producer_compression_type",
+              "required": false,
+              "desc": "The compression algorithm used by Kafka producer when producing records. Supported values: snappy, none, gzip, lz4, zstd.",
+              "fieldValue": null,
+              "fieldDefaultValue": "snappy",
+              "fieldFlag": "ingest-storage.kafka.producer-compression-type",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
               "name": "wait_strong_read_consistency_timeout",
               "required": false,
               "desc": "The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout.",
