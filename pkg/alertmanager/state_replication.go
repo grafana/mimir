@@ -343,3 +343,9 @@ type stateChannel struct {
 func (c *stateChannel) Broadcast(b []byte) {
 	c.s.broadcast(c.key, b)
 }
+
+// ReliableDelivery returns true if the message was delivered reliably to all peers.
+// In Mimir, all messages are replicated via the distributor, so all deliveries are reliable.
+func (c *stateChannel) ReliableDelivery([]byte) bool {
+	return true
+}

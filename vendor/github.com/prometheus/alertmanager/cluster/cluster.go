@@ -56,21 +56,6 @@ type ClusterChannel interface {
 	ReliableDelivery([]byte) bool
 }
 
-// ChannelOption is a functional option for configuring a ClusterChannel.
-type ChannelOption func(*channelOptions)
-
-type channelOptions struct{}
-
-// WithReliableDelivery enables reliable delivery for the channel.
-func WithReliableDelivery() ChannelOption {
-	return func(*channelOptions) {}
-}
-
-// WithQueueSize sets the queue size for the channel.
-func WithQueueSize(int) ChannelOption {
-	return func(*channelOptions) {}
-}
-
 // Peer is a single peer in a gossip cluster.
 type Peer struct {
 	mlist    *memberlist.Memberlist
