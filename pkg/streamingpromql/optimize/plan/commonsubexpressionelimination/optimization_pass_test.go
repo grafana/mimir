@@ -1905,6 +1905,13 @@ func TestIsSafeToApplyFilteringAfter(t *testing.T) {
 			expectedSafeWithDelayedNameRemovalDisabled: false,
 			expectedSafeWithDelayedNameRemovalEnabled:  false,
 		},
+
+		"node with no special handling in IsSafeToApplyFilteringAfter": {
+			node:  &core.NumberLiteral{},
+			group: groupWithNoFilters,
+			expectedSafeWithDelayedNameRemovalDisabled: false,
+			expectedSafeWithDelayedNameRemovalEnabled:  false,
+		},
 	}
 
 	for name, testCase := range testCases {
