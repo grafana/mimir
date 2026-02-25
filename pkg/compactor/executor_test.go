@@ -154,9 +154,12 @@ func prepareCompactorForExecutorTest(t *testing.T, cfg Config, bkt objstore.Buck
 
 func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 	testCases := map[string]struct {
-		setupMock           func(*mockCompactorSchedulerClient)
-		setupBucket         func(objstore.Bucket)
-		expectedFinalStatus compactorschedulerpb.UpdateType
+		setupMock            func(*mockCompactorSchedulerClient)
+		makeBucket           func() objstore.Bucket // nil = objstore.NewInMemBucket()
+		expectError          bool
+		expectUpdateCount    int
+		expectLastUpdate     compactorschedulerpb.UpdateType
+		expectPlannedRequest bool
 	}{
 		"compaction_job_abandons_when_block_not_found": {
 			setupMock: func(mock *mockCompactorSchedulerClient) {
@@ -170,8 +173,9 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 					return &compactorschedulerpb.UpdateJobResponse{}, nil
 				}
 			},
-			setupBucket:         func(bkt objstore.Bucket) {},
-			expectedFinalStatus: compactorschedulerpb.UPDATE_TYPE_ABANDON,
+			expectError:       true,
+			expectUpdateCount: 1,
+			expectLastUpdate:  compactorschedulerpb.UPDATE_TYPE_ABANDON,
 		},
 		"successful_planning_job_no_status_update": {
 			setupMock: func(mock *mockCompactorSchedulerClient) {
@@ -188,8 +192,29 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 					return &compactorschedulerpb.PlannedJobsResponse{}, nil
 				}
 			},
-			setupBucket:         func(bkt objstore.Bucket) {},
-			expectedFinalStatus: compactorschedulerpb.UPDATE_TYPE_IN_PROGRESS,
+			expectPlannedRequest: true,
+		},
+		"planning_job_transient_failure_sends_reassign": {
+			setupMock: func(mock *mockCompactorSchedulerClient) {
+				mock.LeaseJobFunc = func(_ context.Context, _ *compactorschedulerpb.LeaseJobRequest) (*compactorschedulerpb.LeaseJobResponse, error) {
+					return &compactorschedulerpb.LeaseJobResponse{
+						Key:  &compactorschedulerpb.JobKey{Id: "planning-job"},
+						Spec: &compactorschedulerpb.JobSpec{Tenant: "test-tenant", Job: &compactorschedulerpb.CompactionJob{}, JobType: compactorschedulerpb.JOB_TYPE_PLANNING},
+					}, nil
+				}
+				mock.UpdatePlanJobFunc = func(_ context.Context, _ *compactorschedulerpb.UpdatePlanJobRequest) (*compactorschedulerpb.UpdateJobResponse, error) {
+					return &compactorschedulerpb.UpdateJobResponse{}, nil
+				}
+			},
+			makeBucket: func() objstore.Bucket {
+				bkt := &bucket.ClientMock{}
+				bkt.MockIter("test-tenant/", []string{}, errors.New("bucket unavailable"))
+				bkt.MockIter("test-tenant/markers/", []string{}, nil)
+				return bkt
+			},
+			expectError:       true,
+			expectUpdateCount: 1,
+			expectLastUpdate:  compactorschedulerpb.UPDATE_TYPE_REASSIGN,
 		},
 	}
 
@@ -202,29 +227,26 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 			cfg.SchedulerUpdateInterval = 1 * time.Hour
 			cfg.CompactionConcurrency = 1
 
-			bucketClient := objstore.NewInMemBucket()
-			tc.setupBucket(bucketClient)
+			var bucketClient objstore.Bucket = objstore.NewInMemBucket()
+			if tc.makeBucket != nil {
+				bucketClient = tc.makeBucket()
+			}
 
 			schedulerExec := newTestSchedulerExecutor(t, cfg, mockSchedulerClient)
 			c := prepareCompactorForExecutorTest(t, cfg, bucketClient, newMockConfigProvider())
 
 			gotWork, err := schedulerExec.leaseAndExecuteJob(context.Background(), c, "compactor-1")
-			if tc.expectedFinalStatus == compactorschedulerpb.UPDATE_TYPE_ABANDON {
+			if tc.expectError {
 				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
 			}
-			require.True(t, gotWork, "should return true to indicate a job was acquired from the scheduler")
+			require.True(t, gotWork, "should have gotten work")
 
-			if tc.expectedFinalStatus == compactorschedulerpb.UPDATE_TYPE_IN_PROGRESS {
-				// Planning job: should only have initial IN_PROGRESS update, no final status
-				require.True(t, mockSchedulerClient.ReceivedPlannedRequest(), "planning jobs should send PlannedJobs message")
-				assert.Zero(t, mockSchedulerClient.GetUpdateJobCallCount(), "planning jobs should not send final status update")
-			} else {
-				// Compaction job: should have at least one status update
-				require.Equal(t, 1, mockSchedulerClient.GetUpdateJobCallCount(), "compaction jobs should have at least one status update")
-				assert.Equal(t, tc.expectedFinalStatus.String(), mockSchedulerClient.GetLastUpdate().String(), "final job status should match expected")
-				assert.False(t, mockSchedulerClient.ReceivedPlannedRequest(), "compaction jobs should not send PlannedJobs message")
+			assert.Equal(t, tc.expectUpdateCount, mockSchedulerClient.GetUpdateJobCallCount())
+			assert.Equal(t, tc.expectPlannedRequest, mockSchedulerClient.ReceivedPlannedRequest())
+			if tc.expectUpdateCount > 0 {
+				assert.Equal(t, tc.expectLastUpdate.String(), mockSchedulerClient.GetLastUpdate().String())
 			}
 		})
 	}
