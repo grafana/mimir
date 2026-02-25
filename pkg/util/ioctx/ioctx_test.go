@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,9 +25,9 @@ func TestRead(t *testing.T) {
 
 		got := make([]byte, len(data))
 		_, err := Read(t.Context(), r, got)
-		require.ErrorIs(t, err, io.EOF)
-		assert.Equal(t, data, got)
-		assert.False(t, r.Closed())
+		require.NoError(t, err)
+		require.Equal(t, data, got)
+		require.False(t, r.Closed())
 	})
 
 	t.Run("returns context error and closes reader when context is cancelled beforehand", func(t *testing.T) {
@@ -42,7 +41,7 @@ func TestRead(t *testing.T) {
 		got := make([]byte, 10)
 		_, err := Read(ctx, r, got)
 		require.ErrorIs(t, err, context.Canceled)
-		assert.True(t, r.Closed())
+		require.True(t, r.Closed())
 	})
 
 	t.Run("returns context error and closes reader when context is cancelled while reading", func(t *testing.T) {
@@ -61,7 +60,7 @@ func TestRead(t *testing.T) {
 		got := make([]byte, 10)
 		_, err := Read(ctx, r, got)
 		require.ErrorIs(t, err, context.Canceled)
-		assert.True(t, r.Closed())
+		require.True(t, r.Closed())
 	})
 }
 
@@ -77,8 +76,8 @@ func TestWrite(t *testing.T) {
 
 		_, err := Write(t.Context(), r, data)
 		require.NoError(t, err)
-		assert.Equal(t, data, <-got)
-		assert.False(t, r.Closed())
+		require.Equal(t, data, <-got)
+		require.False(t, r.Closed())
 	})
 
 	t.Run("returns context error and closes reader when context is cancelled beforehand", func(t *testing.T) {
@@ -91,7 +90,7 @@ func TestWrite(t *testing.T) {
 
 		_, err := Write(ctx, w, []byte("test"))
 		require.ErrorIs(t, err, context.Canceled)
-		assert.True(t, w.Closed())
+		require.True(t, w.Closed())
 	})
 
 	t.Run("returns context error and closes reader when context is cancelled while reading", func(t *testing.T) {
@@ -109,7 +108,7 @@ func TestWrite(t *testing.T) {
 
 		_, err := Write(ctx, w, []byte("test"))
 		require.ErrorIs(t, err, context.Canceled)
-		assert.True(t, w.Closed())
+		require.True(t, w.Closed())
 	})
 }
 
@@ -124,8 +123,8 @@ func TestOpen(t *testing.T) {
 
 		got, err := open(o.Open, t.Context(), "foo", 0)
 		require.NoError(t, err)
-		assert.Equal(t, f, got)
-		assert.False(t, f.Closed())
+		require.Equal(t, f, got)
+		require.False(t, f.Closed())
 	})
 
 	t.Run("returns context error and doesn't open file when context is cancelled beforehand", func(t *testing.T) {
@@ -146,7 +145,7 @@ func TestOpen(t *testing.T) {
 
 		got, err := open(o.Open, ctx, "foo", 0)
 		require.ErrorIs(t, err, context.Canceled)
-		assert.Nil(t, got)
+		require.Nil(t, got)
 	})
 
 	t.Run("returns context error and eventually closes file when context is cancelled while opening", func(t *testing.T) {
@@ -165,7 +164,7 @@ func TestOpen(t *testing.T) {
 
 		got, err := open(o.Open, ctx, "foo", 0)
 		require.ErrorIs(t, err, context.Canceled)
-		assert.Nil(t, got)
+		require.Nil(t, got)
 
 		select {
 		case <-f.closed:
@@ -192,8 +191,8 @@ func TestReadAll(t *testing.T) {
 
 	got, err := ReadAll(t.Context(), r)
 	require.NoError(t, err)
-	assert.Equal(t, expected, string(got))
-	assert.False(t, r.Closed())
+	require.Equal(t, expected, string(got))
+	require.False(t, r.Closed())
 }
 
 type blockingReadWriter struct {
