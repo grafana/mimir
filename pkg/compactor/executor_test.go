@@ -24,7 +24,7 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/prometheus/tsdb"
+"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
@@ -52,6 +52,22 @@ func makeTestCompactorConfig(PlanningMode, schedulerAddress string) Config {
 	cfg.SchedulerEndpoint = schedulerAddress
 	cfg.DataDir = "/tmp/compactor-test"
 	cfg.SparseIndexHeadersSamplingRate = 32
+	return cfg
+}
+
+// makeSchedulerTestConfig creates a Config for tests that exercise the full executor run loop,
+// requiring a ring and Consul backend (e.g. tests calling run() or starting the service).
+// Use makeTestCompactorConfig for unit tests that call executor methods directly.
+func makeSchedulerTestConfig(t *testing.T) Config {
+	t.Helper()
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+	cfg := prepareConfig(t)
+	cfg.ShardingRing.Common.InstanceID = "compactor-1"
+	cfg.ShardingRing.Common.InstanceAddr = "1.2.3.4"
+	cfg.ShardingRing.Common.KVStore.Mock = ringStore
+	cfg.SchedulerEndpoint = "localhost:9095"
+	cfg.PlanningMode = planningModeScheduler
 	return cfg
 }
 
@@ -258,7 +274,6 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 	tests := map[string]struct {
 		setupMock          func(*mockCompactorSchedulerClient)
 		expectGrowingDelay bool
-		planJob            bool
 	}{
 		"scheduler_errors_should_trigger_backoff": {
 			setupMock: func(mock *mockCompactorSchedulerClient) {
@@ -315,7 +330,6 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 				}
 			},
 			expectGrowingDelay: false,
-			planJob:            true,
 		},
 	}
 
@@ -324,23 +338,13 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 			mockSchedulerClient := &mockCompactorSchedulerClient{}
 			tc.setupMock(mockSchedulerClient)
 
-			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
-			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
-
-			cfg := prepareConfig(t)
-			cfg.ShardingRing.Common.InstanceID = "compactor-1"
-			cfg.ShardingRing.Common.InstanceAddr = "1.2.3.4"
-			cfg.ShardingRing.Common.KVStore.Mock = ringStore
-			cfg.SchedulerEndpoint = "localhost:9095"
-			cfg.PlanningMode = planningModeScheduler
+			cfg := makeSchedulerTestConfig(t)
 			cfg.SchedulerUpdateInterval = 1 * time.Hour
 			cfg.SchedulerMinLeasingBackoff = 100 * time.Millisecond
 			cfg.SchedulerMaxLeasingBackoff = 400 * time.Millisecond
 
 			bucketClient := &bucket.ClientMock{}
-			if tc.planJob {
-				bucketClient.MockIter("user-1/", []string{}, nil)
-			}
+			bucketClient.MockIter("user-1/", []string{}, nil)
 			bucketClient.MockIter("user-1/markers/", []string{}, nil)
 			bucketClient.MockGet(fmt.Sprintf("user-1/%s/meta.json", testBlockID1), "", block.ErrorSyncMetaNotFound)
 			bucketClient.MockGet(fmt.Sprintf("user-1/%s/meta.json", testBlockID2), "", block.ErrorSyncMetaNotFound)
@@ -399,18 +403,8 @@ func sleepUntil(t *testing.T, cond func() bool, timeout time.Duration) time.Dura
 }
 
 func TestSchedulerExecutor_ServicesLifecycle(t *testing.T) {
-	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
-	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
-
-	inmem := objstore.NewInMemBucket()
-
-	cfg := prepareConfig(t)
-	cfg.ShardingRing.Common.InstanceID = "compactor-1"
-	cfg.ShardingRing.Common.InstanceAddr = "1.2.3.4"
-	cfg.ShardingRing.Common.KVStore.Mock = ringStore
-	cfg.SchedulerEndpoint = "localhost:9095"
-	cfg.PlanningMode = planningModeScheduler
-	c, _, _, _, _ := prepare(t, cfg, inmem)
+	cfg := makeSchedulerTestConfig(t)
+	c, _, _, _, _ := prepare(t, cfg, objstore.NewInMemBucket())
 
 	assert.Nil(t, c.executor, "executor should be nil before service start")
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
@@ -430,20 +424,9 @@ func TestSchedulerExecutor_ServicesLifecycle(t *testing.T) {
 }
 
 func TestSchedulerExecutor_UnreachableScheduler(t *testing.T) {
-
-	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
-	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
-
-	inmem := objstore.NewInMemBucket()
-
-	cfg := prepareConfig(t)
-	cfg.ShardingRing.Common.InstanceID = "compactor-1"
-	cfg.ShardingRing.Common.InstanceAddr = "1.2.3.4"
-	cfg.ShardingRing.Common.KVStore.Mock = ringStore
+	cfg := makeSchedulerTestConfig(t)
 	cfg.SchedulerEndpoint = "unreachable-scheduler:9095"
-	cfg.PlanningMode = planningModeScheduler
-
-	c, _, _, _, _ := prepare(t, cfg, inmem)
+	c, _, _, _, _ := prepare(t, cfg, objstore.NewInMemBucket())
 
 	// Starting should succeed if a valid cfg.SchedulerEndpoint string is passed, do not Dial w. block
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c), "compactor should start even when scheduler is unreachable")
@@ -528,27 +511,17 @@ func TestSchedulerExecutor_NoGoRoutineLeak(t *testing.T) {
 	bucketClient.MockIter("test-tenant/markers/", []string{}, nil)
 	bucketClient.MockGet(fmt.Sprintf("test-tenant/%s/meta.json", testBlockID1), "", block.ErrorSyncMetaNotFound)
 
-	schedulerExec, err := newSchedulerExecutor(cfg, log.NewNopLogger(), nil)
-	require.NoError(t, err)
-	schedulerExec.schedulerClient = mockSchedulerClient
-
-	// Snapshot goroutines after the executor is created so that any gRPC-internal goroutines
-	// from the dialed connection are excluded. This test only checks for leaks from leaseAndExecuteJob.
+	// newTestSchedulerExecutor dials the scheduler; snapshot goroutines after that so
+	// gRPC-internal goroutines are excluded from the leak check.
+	schedulerExec := newTestSchedulerExecutor(t, cfg, mockSchedulerClient)
 	initialGoroutines := goleak.IgnoreCurrent()
 	defer testutil.VerifyNoLeak(t, initialGoroutines)
 
 	c := prepareCompactorForExecutorTest(t, cfg, bucketClient, newMockConfigProvider())
 
-	ctx, cancel := context.WithCancel(context.Background())
-	gotWork, err := schedulerExec.leaseAndExecuteJob(ctx, c, "compactor-1")
+	gotWork, err := schedulerExec.leaseAndExecuteJob(context.Background(), c, "compactor-1")
 	require.Error(t, err) // expect an error since bucket has no test block
 	require.True(t, gotWork)
-
-	cancel()
-
-	if schedulerExec.schedulerConn != nil {
-		require.NoError(t, schedulerExec.schedulerConn.Close())
-	}
 }
 
 func TestSchedulerExecutor_JobCancellationOn_NotFoundResponse(t *testing.T) {
@@ -804,6 +777,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 				require.NoError(t, err)
 				assert.True(t, exists, "uncompacted block %s should still exist after compaction", blockID.String())
 			}
+
 		})
 	}
 }
