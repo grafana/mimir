@@ -927,7 +927,7 @@ Note that elevated measures of _inflight_ queries at any part of the read path a
 
 **Query Frontend**
 
-The query-frontend logs can be used to review successful and failed queries and the most useful logs for initial investigation are the `query` and `evaluation` stats log lines.
+The query-frontend logs can be used to review successful and failed queries and the most useful logs for initial investigation are the `query stats` and `evaluation stats` log lines.
 
 `query stats` are logged once per HTTP request at the query-frontend boundary. It captures the full lifecycle: queueing, splitting, remote execution, cache interaction, response encoding, and what was
 fetched from storage. This is your first stop when investigating latency, cache behaviour, data volume, or whether a query was split/sharded.
