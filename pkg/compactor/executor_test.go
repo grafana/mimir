@@ -194,6 +194,7 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 			expectLastUpdate:  compactorschedulerpb.UPDATE_TYPE_ABANDON,
 		},
 		"successful_planning_job_no_status_update": {
+			expectUpdateCount: 0,
 			setupMock: func(mock *mockCompactorSchedulerClient) {
 				mock.LeaseJobFunc = func(_ context.Context, _ *compactorschedulerpb.LeaseJobRequest) (*compactorschedulerpb.LeaseJobResponse, error) {
 					return &compactorschedulerpb.LeaseJobResponse{
@@ -537,6 +538,7 @@ func TestSchedulerExecutor_JobCancellationOn_NotFoundResponse(t *testing.T) {
 	}
 
 	cfg := makeTestCompactorConfig(planningModeScheduler, "localhost:9095")
+	cfg.SchedulerUpdateInterval = 10 * time.Millisecond
 
 	schedulerExec := newTestSchedulerExecutor(t, cfg, mockSchedulerClient)
 
