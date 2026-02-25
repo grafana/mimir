@@ -233,7 +233,7 @@ func New(
 	}
 
 	// Wrap queryable with memory tracking so that there will SeriesLabelsDeduplicator in the context.
-	queryable = NewMemoryTrackingQueryable(queryable)
+	queryable = NewMemoryTrackingQueryable(queryable, reg)
 	lazyQueryable := storage.QueryableFunc(func(minT int64, maxT int64) (storage.Querier, error) {
 		querier, err := queryable.Querier(minT, maxT)
 		if err != nil {

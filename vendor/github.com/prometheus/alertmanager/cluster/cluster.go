@@ -53,6 +53,7 @@ type ClusterMember interface {
 // ClusterChannel supports state broadcasting across peers.
 type ClusterChannel interface {
 	Broadcast([]byte)
+	ReliableDelivery([]byte) bool
 }
 
 // Peer is a single peer in a gossip cluster.
@@ -546,8 +547,9 @@ func (p *Peer) peerUpdate(n *memberlist.Node) {
 }
 
 // AddState adds a new state that will be gossiped. It returns a channel to which
-// broadcast messages for the state can be sent.
-func (p *Peer) AddState(key string, s State, reg prometheus.Registerer) ClusterChannel {
+// broadcast messages for the state can be sent. Optional configuration can be
+// provided (e.g., WithReliableDelivery).
+func (p *Peer) AddState(key string, s State, reg prometheus.Registerer, opts ...ChannelOption) ClusterChannel {
 	p.mtx.Lock()
 	p.states[key] = s
 	p.mtx.Unlock()
@@ -568,7 +570,7 @@ func (p *Peer) AddState(key string, s State, reg prometheus.Registerer) ClusterC
 	sendOversize := func(n *memberlist.Node, b []byte) error {
 		return p.mlist.SendReliable(n, b)
 	}
-	return NewChannel(key, send, peers, sendOversize, p.logger, p.stopc, reg)
+	return NewChannel(key, send, peers, sendOversize, p.logger, p.stopc, reg, opts...)
 }
 
 // Leave the cluster, waiting up to timeout.

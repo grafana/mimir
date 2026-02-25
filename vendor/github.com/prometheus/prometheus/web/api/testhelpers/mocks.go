@@ -214,6 +214,17 @@ func (*FakeChunkSeries) ChunkCount() (int, error) {
 	return 0, nil
 }
 
+func (*FakeChunkSeries) IteratorFactory() storage.ChunkIterable {
+	return &fakeChunkIterable{}
+}
+
+// fakeChunkIterable implements storage.ChunkIterable for testing.
+type fakeChunkIterable struct{}
+
+func (*fakeChunkIterable) Iterator(_ chunks.Iterator) chunks.Iterator {
+	return &FakeChunkSeriesIterator{}
+}
+
 // FakeChunkSeriesIterator implements chunks.Iterator.
 type FakeChunkSeriesIterator struct{}
 

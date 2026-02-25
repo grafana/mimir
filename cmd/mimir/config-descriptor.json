@@ -2521,6 +2521,17 @@
           "fieldCategory": "advanced"
         },
         {
+          "kind": "field",
+          "name": "enable_delayed_name_removal_prometheus_engine",
+          "required": false,
+          "desc": "Enable the experimental PromQL feature for delayed name removal in the Prometheus engine. Note that this only applies when the Prometheus engine is selected or used as fallback from the Mimir Query Engine.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "querier.enable-delayed-name-removal-prometheus-engine",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
           "kind": "block",
           "name": "mimir_query_engine",
           "required": false,
@@ -2545,6 +2556,17 @@
               "fieldValue": null,
               "fieldDefaultValue": true,
               "fieldFlag": "querier.mimir-query-engine.enable-common-subexpression-elimination",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_subset_selector_elimination",
+              "required": false,
+              "desc": "Enable subset selector elimination when evaluating queries.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "querier.mimir-query-engine.enable-subset-selector-elimination",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
             },
@@ -8690,7 +8712,7 @@
               "kind": "field",
               "name": "address",
               "required": false,
-              "desc": "The Kafka backend address.",
+              "desc": "The Kafka seed broker address, or a comma-separated list of seed broker addresses.",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "ingest-storage.kafka.address",
@@ -8714,6 +8736,16 @@
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "ingest-storage.kafka.client-id",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "client_rack",
+              "required": false,
+              "desc": "The rack identifier for this Kafka client. Corresponds to the Kafka client.rack setting.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingest-storage.kafka.client-rack",
               "fieldType": "string"
             },
             {
@@ -19000,6 +19032,17 @@
               "fieldValue": null,
               "fieldDefaultValue": 600000000000,
               "fieldFlag": "memberlist.propagation-delay-tracker.beacon-lifetime",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "log_beacons_latency_longer_than",
+              "required": false,
+              "desc": "Log warning when beacon propagation delay exceeds this threshold. 0 disables logging.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "memberlist.propagation-delay-tracker.log-beacons-latency-longer-than",
               "fieldType": "duration",
               "fieldCategory": "experimental"
             }

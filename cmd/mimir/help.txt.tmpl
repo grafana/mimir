@@ -403,14 +403,16 @@ Usage of ./cmd/mimir/mimir:
     	Print help, also including advanced and experimental parameters.
   -ingest-storage.enabled
     	True to enable the ingestion via object storage.
-  -ingest-storage.kafka.address string
-    	The Kafka backend address.
+  -ingest-storage.kafka.address comma-separated-list-of-strings
+    	The Kafka seed broker address, or a comma-separated list of seed broker addresses.
   -ingest-storage.kafka.auto-create-topic-default-partitions int
     	When auto-creation of Kafka topic is enabled and this value is positive, Mimir creates the topic with this number of partitions. When the value is -1 the Kafka broker uses the default number of partitions (num.partitions configuration). (default -1)
   -ingest-storage.kafka.auto-create-topic-enabled
     	Enable auto-creation of Kafka topic on startup if it doesn't exist. If creating the topic fails and the topic doesn't already exist, Mimir fails to start. (default true)
   -ingest-storage.kafka.client-id string
     	The Kafka client ID.
+  -ingest-storage.kafka.client-rack string
+    	The rack identifier for this Kafka client. Corresponds to the Kafka client.rack setting.
   -ingest-storage.kafka.consume-from-position-at-startup string
     	From which position to start consuming the partition at startup. Supported options: last-offset, start, end, timestamp. (default "last-offset")
   -ingest-storage.kafka.consume-from-timestamp-at-startup int

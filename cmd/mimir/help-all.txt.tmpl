@@ -1453,14 +1453,16 @@ Usage of ./cmd/mimir/mimir:
     	True to enable the ingestion via object storage.
   -ingest-storage.ingestion-partition-tenant-shard-size int
     	[experimental] The number of partitions a tenant's data should be sharded to when using the ingest storage. Tenants are sharded across partitions using shuffle-sharding. 0 disables shuffle sharding and tenant is sharded across all partitions.
-  -ingest-storage.kafka.address string
-    	The Kafka backend address.
+  -ingest-storage.kafka.address comma-separated-list-of-strings
+    	The Kafka seed broker address, or a comma-separated list of seed broker addresses.
   -ingest-storage.kafka.auto-create-topic-default-partitions int
     	When auto-creation of Kafka topic is enabled and this value is positive, Mimir creates the topic with this number of partitions. When the value is -1 the Kafka broker uses the default number of partitions (num.partitions configuration). (default -1)
   -ingest-storage.kafka.auto-create-topic-enabled
     	Enable auto-creation of Kafka topic on startup if it doesn't exist. If creating the topic fails and the topic doesn't already exist, Mimir fails to start. (default true)
   -ingest-storage.kafka.client-id string
     	The Kafka client ID.
+  -ingest-storage.kafka.client-rack string
+    	The rack identifier for this Kafka client. Corresponds to the Kafka client.rack setting.
   -ingest-storage.kafka.consume-from-position-at-startup string
     	From which position to start consuming the partition at startup. Supported options: last-offset, start, end, timestamp. (default "last-offset")
   -ingest-storage.kafka.consume-from-timestamp-at-startup int
@@ -1967,6 +1969,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] How long a beacon lives before being garbage collected. (default 10m0s)
   -memberlist.propagation-delay-tracker.enabled
     	[experimental] Enable the propagation delay tracker to measure gossip propagation delay.
+  -memberlist.propagation-delay-tracker.log-beacons-latency-longer-than duration
+    	[experimental] Log warning when beacon propagation delay exceeds this threshold. 0 disables logging.
   -memberlist.pullpush-interval duration
     	How often to use pull/push sync. (default 30s)
   -memberlist.randomize-node-name
@@ -2097,6 +2101,8 @@ Usage of ./cmd/mimir/mimir:
     	How often to query DNS for query-frontend or query-scheduler address. (default 10s)
   -querier.enable-delayed-name-removal
     	[experimental] Enable the experimental Prometheus feature for delayed name removal within MQE, which only works if remote execution and running sharding within MQE is enabled.
+  -querier.enable-delayed-name-removal-prometheus-engine
+    	[experimental] Enable the experimental PromQL feature for delayed name removal in the Prometheus engine. Note that this only applies when the Prometheus engine is selected or used as fallback from the Mimir Query Engine.
   -querier.enable-query-engine-fallback
     	[experimental] If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine. (default true)
   -querier.filter-queryables-enabled
@@ -2199,6 +2205,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable pruning query expressions that are toggled off with constants. (default true)
   -querier.mimir-query-engine.enable-reduce-matchers
     	[experimental] Enable eliminating duplicate or redundant matchers that are part of selector expressions. (default true)
+  -querier.mimir-query-engine.enable-subset-selector-elimination
+    	[experimental] Enable subset selector elimination when evaluating queries.
   -querier.mimir-query-engine.range-vector-splitting.backend string
     	Backend for intermediate results cache, if not empty. Supported values: memcached.
   -querier.mimir-query-engine.range-vector-splitting.compression string

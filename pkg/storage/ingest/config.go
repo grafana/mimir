@@ -89,12 +89,14 @@ func (cfg *Config) Validate() error {
 
 // KafkaConfig holds the generic config for the Kafka backend.
 type KafkaConfig struct {
-	Address      string        `yaml:"address"`
-	Topic        string        `yaml:"topic"`
-	ClientID     string        `yaml:"client_id"`
-	DialTimeout  time.Duration `yaml:"dial_timeout"`
-	WriteTimeout time.Duration `yaml:"write_timeout"`
-	WriteClients int           `yaml:"write_clients"`
+	// Address is a list of seed brokers. The config name is singular for backward compatibility.
+	Address      flagext.StringSliceCSV `yaml:"address"`
+	Topic        string                 `yaml:"topic"`
+	ClientID     string                 `yaml:"client_id"`
+	ClientRack   string                 `yaml:"client_rack"`
+	DialTimeout  time.Duration          `yaml:"dial_timeout"`
+	WriteTimeout time.Duration          `yaml:"write_timeout"`
+	WriteClients int                    `yaml:"write_clients"`
 
 	SASL KafkaAuthConfig `yaml:",inline"`
 
@@ -166,9 +168,10 @@ func (cfg *KafkaConfig) RegisterFlags(f *flag.FlagSet) {
 func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	cfg.concurrentFetchersFetchBackoffConfig = defaultFetchBackoffConfig
 
-	f.StringVar(&cfg.Address, prefix+"address", "", "The Kafka backend address.")
+	f.Var(&cfg.Address, prefix+"address", "The Kafka seed broker address, or a comma-separated list of seed broker addresses.")
 	f.StringVar(&cfg.Topic, prefix+"topic", "", "The Kafka topic name.")
 	f.StringVar(&cfg.ClientID, prefix+"client-id", "", "The Kafka client ID.")
+	f.StringVar(&cfg.ClientRack, prefix+"client-rack", "", "The rack identifier for this Kafka client. Corresponds to the Kafka client.rack setting.")
 	f.DurationVar(&cfg.DialTimeout, prefix+"dial-timeout", 2*time.Second, "The maximum time allowed to open a connection to a Kafka broker.")
 	f.DurationVar(&cfg.WriteTimeout, prefix+"write-timeout", 10*time.Second, "How long to wait for an incoming write request to be successfully committed to the Kafka backend.")
 	f.IntVar(&cfg.WriteClients, prefix+"write-clients", 1, "The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka.")
@@ -214,7 +217,7 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 }
 
 func (cfg *KafkaConfig) Validate() error {
-	if cfg.Address == "" {
+	if cfg.Address.String() == "" {
 		return ErrMissingKafkaAddress
 	}
 	if cfg.Topic == "" {

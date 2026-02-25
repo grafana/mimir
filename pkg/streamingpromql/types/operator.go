@@ -119,6 +119,14 @@ type Matcher struct {
 	Value string
 }
 
+func NewMatcherFromPrometheusType(m *labels.Matcher) Matcher {
+	return Matcher{
+		Type:  m.Type,
+		Name:  m.Name,
+		Value: m.Value,
+	}
+}
+
 func (m Matcher) ToPrometheusType() (*labels.Matcher, error) {
 	return labels.NewMatcher(m.Type, m.Name, m.Value)
 }

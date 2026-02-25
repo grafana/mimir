@@ -1718,7 +1718,8 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			t.Cleanup(cancel)
 			ctx = limiter.AddQueryLimiterToContext(ctx, testData.queryLimiter)
 			ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
-			ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx)
+			metrics := limiter.NewSeriesDeduplicatorMetrics(reg)
+			ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx, metrics)
 			st, ctx := stats.ContextWithEmptyStats(ctx)
 			const tenantID = "user-1"
 			ctx = user.InjectOrgID(ctx, tenantID)
@@ -1844,7 +1845,8 @@ func TestBlocksStoreQuerier_Select_ClosedBeforeSelectFinishes(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	ctx := user.InjectOrgID(context.Background(), "user-1")
 	ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
-	ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx)
+	metrics := limiter.NewSeriesDeduplicatorMetrics(reg)
+	ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx, metrics)
 	querier := &blocksStoreQuerier{
 		minT:               minT,
 		maxT:               maxT,
@@ -1952,7 +1954,8 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 			continueExecution = make(chan struct{})
 		)
 		ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
-		ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx)
+		metrics := limiter.NewSeriesDeduplicatorMetrics(prometheus.NewPedanticRegistry())
+		ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx, metrics)
 
 		srv, q, reg := prepareTestCase(t)
 
@@ -2115,8 +2118,9 @@ func TestBlocksStoreQuerier_Select_cancelledContext(t *testing.T) {
 
 			ctx = limiter.AddQueryLimiterToContext(ctx, noOpQueryLimiter)
 			ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
-			ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx)
 			reg := prometheus.NewPedanticRegistry()
+			metrics := limiter.NewSeriesDeduplicatorMetrics(reg)
+			ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx, metrics)
 
 			const tenantID = "user-1"
 			ctx = user.InjectOrgID(ctx, tenantID)
@@ -2222,14 +2226,41 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 					&storeGatewayClientMock{
 						remoteAddr: "1.1.1.1",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
-							Names:    namesFromSeries(series1, series2),
-							Warnings: []string{},
-							Hints:    mockNamesHints(block1, block2),
+							Names:         namesFromSeries(series1, series2),
+							Warnings:      []string{},
+							Hints:         mockNamesHints(block1, block2),
+							ResponseHints: mockNamesResponseHints(block1, block2),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
-							Values:   valuesFromSeries(model.MetricNameLabel, series1, series2),
-							Warnings: []string{},
-							Hints:    mockValuesHints(block1, block2),
+							Values:        valuesFromSeries(model.MetricNameLabel, series1, series2),
+							Warnings:      []string{},
+							Hints:         mockValuesHints(block1, block2),
+							ResponseHints: mockValuesResponseHints(block1, block2),
+						},
+					}: {block1, block2},
+				},
+			},
+			expectedLabelNames:  namesFromSeries(series1, series2),
+			expectedLabelValues: valuesFromSeries(model.MetricNameLabel, series1, series2),
+		},
+		"a single store-gateway instance holds the required blocks with only non-opaque response hints": {
+			finderResult: bucketindex.Blocks{
+				{ID: block1},
+				{ID: block2},
+			},
+			storeSetResponses: []interface{}{
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{
+						remoteAddr: "1.1.1.1",
+						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
+							Names:         namesFromSeries(series1, series2),
+							Warnings:      []string{},
+							ResponseHints: mockNamesResponseHints(block1, block2),
+						},
+						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
+							Values:        valuesFromSeries(model.MetricNameLabel, series1, series2),
+							Warnings:      []string{},
+							ResponseHints: mockValuesResponseHints(block1, block2),
 						},
 					}: {block1, block2},
 				},
@@ -2247,27 +2278,31 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 					&storeGatewayClientMock{
 						remoteAddr: "1.1.1.1",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
-							Names:    namesFromSeries(series1),
-							Warnings: []string{},
-							Hints:    mockNamesHints(block1),
+							Names:         namesFromSeries(series1),
+							Warnings:      []string{},
+							Hints:         mockNamesHints(block1),
+							ResponseHints: mockNamesResponseHints(block1),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
-							Values:   valuesFromSeries(model.MetricNameLabel, series1),
-							Warnings: []string{},
-							Hints:    mockValuesHints(block1),
+							Values:        valuesFromSeries(model.MetricNameLabel, series1),
+							Warnings:      []string{},
+							Hints:         mockValuesHints(block1),
+							ResponseHints: mockValuesResponseHints(block1),
 						},
 					}: {block1},
 					&storeGatewayClientMock{
 						remoteAddr: "2.2.2.2",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
-							Names:    namesFromSeries(series2),
-							Warnings: []string{},
-							Hints:    mockNamesHints(block2),
+							Names:         namesFromSeries(series2),
+							Warnings:      []string{},
+							Hints:         mockNamesHints(block2),
+							ResponseHints: mockNamesResponseHints(block2),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
-							Values:   valuesFromSeries(model.MetricNameLabel, series2),
-							Warnings: []string{},
-							Hints:    mockValuesHints(block2),
+							Values:        valuesFromSeries(model.MetricNameLabel, series2),
+							Warnings:      []string{},
+							Hints:         mockValuesHints(block2),
+							ResponseHints: mockValuesResponseHints(block2),
 						},
 					}: {block2},
 				},
@@ -2285,27 +2320,31 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 					&storeGatewayClientMock{
 						remoteAddr: "1.1.1.1",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
-							Names:    namesFromSeries(series1),
-							Warnings: []string{},
-							Hints:    mockNamesHints(block1),
+							Names:         namesFromSeries(series1),
+							Warnings:      []string{},
+							Hints:         mockNamesHints(block1),
+							ResponseHints: mockNamesResponseHints(block1),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
-							Values:   valuesFromSeries(model.MetricNameLabel, series1),
-							Warnings: []string{},
-							Hints:    mockValuesHints(block1),
+							Values:        valuesFromSeries(model.MetricNameLabel, series1),
+							Warnings:      []string{},
+							Hints:         mockValuesHints(block1),
+							ResponseHints: mockValuesResponseHints(block1),
 						},
 					}: {block1},
 					&storeGatewayClientMock{
 						remoteAddr: "2.2.2.2",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
-							Names:    namesFromSeries(series1),
-							Warnings: []string{},
-							Hints:    mockNamesHints(block2),
+							Names:         namesFromSeries(series1),
+							Warnings:      []string{},
+							Hints:         mockNamesHints(block2),
+							ResponseHints: mockNamesResponseHints(block2),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
-							Values:   valuesFromSeries(model.MetricNameLabel, series1),
-							Warnings: []string{},
-							Hints:    mockValuesHints(block2),
+							Values:        valuesFromSeries(model.MetricNameLabel, series1),
+							Warnings:      []string{},
+							Hints:         mockValuesHints(block2),
+							ResponseHints: mockValuesResponseHints(block2),
 						},
 					}: {block2},
 				},
@@ -2326,40 +2365,46 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 					&storeGatewayClientMock{
 						remoteAddr: "1.1.1.1",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
-							Names:    namesFromSeries(series1, series2),
-							Warnings: []string{},
-							Hints:    mockNamesHints(block1),
+							Names:         namesFromSeries(series1, series2),
+							Warnings:      []string{},
+							Hints:         mockNamesHints(block1),
+							ResponseHints: mockNamesResponseHints(block1),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
-							Values:   valuesFromSeries(model.MetricNameLabel, series1, series2),
-							Warnings: []string{},
-							Hints:    mockValuesHints(block1),
+							Values:        valuesFromSeries(model.MetricNameLabel, series1, series2),
+							Warnings:      []string{},
+							Hints:         mockValuesHints(block1),
+							ResponseHints: mockValuesResponseHints(block1),
 						},
 					}: {block1},
 					&storeGatewayClientMock{
 						remoteAddr: "2.2.2.2",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
-							Names:    namesFromSeries(series1),
-							Warnings: []string{},
-							Hints:    mockNamesHints(block2),
+							Names:         namesFromSeries(series1),
+							Warnings:      []string{},
+							Hints:         mockNamesHints(block2),
+							ResponseHints: mockNamesResponseHints(block2),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
-							Values:   valuesFromSeries(model.MetricNameLabel, series1),
-							Warnings: []string{},
-							Hints:    mockValuesHints(block2),
+							Values:        valuesFromSeries(model.MetricNameLabel, series1),
+							Warnings:      []string{},
+							Hints:         mockValuesHints(block2),
+							ResponseHints: mockValuesResponseHints(block2),
 						},
 					}: {block2},
 					&storeGatewayClientMock{
 						remoteAddr: "3.3.3.3",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
-							Names:    namesFromSeries(series2),
-							Warnings: []string{},
-							Hints:    mockNamesHints(block3),
+							Names:         namesFromSeries(series2),
+							Warnings:      []string{},
+							Hints:         mockNamesHints(block3),
+							ResponseHints: mockNamesResponseHints(block3),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
-							Values:   valuesFromSeries(model.MetricNameLabel, series2),
-							Warnings: []string{},
-							Hints:    mockValuesHints(block3),
+							Values:        valuesFromSeries(model.MetricNameLabel, series2),
+							Warnings:      []string{},
+							Hints:         mockValuesHints(block3),
+							ResponseHints: mockValuesResponseHints(block3),
 						},
 					}: {block3},
 				},
@@ -2407,14 +2452,16 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 					&storeGatewayClientMock{
 						remoteAddr: "1.1.1.1",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
-							Names:    namesFromSeries(series1),
-							Warnings: []string{},
-							Hints:    mockNamesHints(block1),
+							Names:         namesFromSeries(series1),
+							Warnings:      []string{},
+							Hints:         mockNamesHints(block1),
+							ResponseHints: mockNamesResponseHints(block1),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
-							Values:   valuesFromSeries(model.MetricNameLabel, series1),
-							Warnings: []string{},
-							Hints:    mockValuesHints(block1),
+							Values:        valuesFromSeries(model.MetricNameLabel, series1),
+							Warnings:      []string{},
+							Hints:         mockValuesHints(block1),
+							ResponseHints: mockValuesResponseHints(block1),
 						},
 					}: {block1},
 				},
@@ -2436,27 +2483,31 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 					&storeGatewayClientMock{
 						remoteAddr: "1.1.1.1",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
-							Names:    namesFromSeries(series1),
-							Warnings: []string{},
-							Hints:    mockNamesHints(block1),
+							Names:         namesFromSeries(series1),
+							Warnings:      []string{},
+							Hints:         mockNamesHints(block1),
+							ResponseHints: mockNamesResponseHints(block1),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
-							Values:   valuesFromSeries(model.MetricNameLabel, series1),
-							Warnings: []string{},
-							Hints:    mockValuesHints(block1),
+							Values:        valuesFromSeries(model.MetricNameLabel, series1),
+							Warnings:      []string{},
+							Hints:         mockValuesHints(block1),
+							ResponseHints: mockValuesResponseHints(block1),
 						},
 					}: {block1},
 					&storeGatewayClientMock{
 						remoteAddr: "2.2.2.2",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
-							Names:    namesFromSeries(series2),
-							Warnings: []string{},
-							Hints:    mockNamesHints(block2),
+							Names:         namesFromSeries(series2),
+							Warnings:      []string{},
+							Hints:         mockNamesHints(block2),
+							ResponseHints: mockNamesResponseHints(block2),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
-							Values:   valuesFromSeries(model.MetricNameLabel, series2),
-							Warnings: []string{},
-							Hints:    mockValuesHints(block2),
+							Values:        valuesFromSeries(model.MetricNameLabel, series2),
+							Warnings:      []string{},
+							Hints:         mockValuesHints(block2),
+							ResponseHints: mockValuesResponseHints(block2),
 						},
 					}: {block2},
 				},
@@ -2482,27 +2533,31 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 					&storeGatewayClientMock{
 						remoteAddr: "1.1.1.1",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
-							Names:    namesFromSeries(series1),
-							Warnings: []string{},
-							Hints:    mockNamesHints(block1),
+							Names:         namesFromSeries(series1),
+							Warnings:      []string{},
+							Hints:         mockNamesHints(block1),
+							ResponseHints: mockNamesResponseHints(block1),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
-							Values:   valuesFromSeries(model.MetricNameLabel, series1),
-							Warnings: []string{},
-							Hints:    mockValuesHints(block1),
+							Values:        valuesFromSeries(model.MetricNameLabel, series1),
+							Warnings:      []string{},
+							Hints:         mockValuesHints(block1),
+							ResponseHints: mockValuesResponseHints(block1),
 						},
 					}: {block1, block3},
 					&storeGatewayClientMock{
 						remoteAddr: "2.2.2.2",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
-							Names:    namesFromSeries(series2),
-							Warnings: []string{},
-							Hints:    mockNamesHints(block2),
+							Names:         namesFromSeries(series2),
+							Warnings:      []string{},
+							Hints:         mockNamesHints(block2),
+							ResponseHints: mockNamesResponseHints(block2),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
-							Values:   valuesFromSeries(model.MetricNameLabel, series2),
-							Warnings: []string{},
-							Hints:    mockValuesHints(block2),
+							Values:        valuesFromSeries(model.MetricNameLabel, series2),
+							Warnings:      []string{},
+							Hints:         mockValuesHints(block2),
+							ResponseHints: mockValuesResponseHints(block2),
 						},
 					}: {block2, block4},
 				},
@@ -2511,14 +2566,16 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 					&storeGatewayClientMock{
 						remoteAddr: "3.3.3.3",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
-							Names:    namesFromSeries(series1, series2),
-							Warnings: []string{},
-							Hints:    mockNamesHints(block3),
+							Names:         namesFromSeries(series1, series2),
+							Warnings:      []string{},
+							Hints:         mockNamesHints(block3),
+							ResponseHints: mockNamesResponseHints(block3),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
-							Values:   valuesFromSeries(model.MetricNameLabel, series1, series2),
-							Warnings: []string{},
-							Hints:    mockValuesHints(block3),
+							Values:        valuesFromSeries(model.MetricNameLabel, series1, series2),
+							Warnings:      []string{},
+							Hints:         mockValuesHints(block3),
+							ResponseHints: mockValuesResponseHints(block3),
 						},
 					}: {block3, block4},
 				},
@@ -2527,14 +2584,16 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 					&storeGatewayClientMock{
 						remoteAddr: "4.4.4.4",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
-							Names:    []string{},
-							Warnings: []string{},
-							Hints:    mockNamesHints(block4),
+							Names:         []string{},
+							Warnings:      []string{},
+							Hints:         mockNamesHints(block4),
+							ResponseHints: mockNamesResponseHints(block4),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
-							Values:   []string{},
-							Warnings: []string{},
-							Hints:    mockValuesHints(block4),
+							Values:        []string{},
+							Warnings:      []string{},
+							Hints:         mockValuesHints(block4),
+							ResponseHints: mockValuesResponseHints(block4),
 						},
 					}: {block4},
 				},
@@ -2590,14 +2649,16 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 					&storeGatewayClientMock{
 						remoteAddr: "2.2.2.2",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
-							Names:    namesFromSeries(series1),
-							Warnings: []string{},
-							Hints:    mockNamesHints(block1),
+							Names:         namesFromSeries(series1),
+							Warnings:      []string{},
+							Hints:         mockNamesHints(block1),
+							ResponseHints: mockNamesResponseHints(block1),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
-							Values:   valuesFromSeries(model.MetricNameLabel, series1),
-							Warnings: []string{},
-							Hints:    mockValuesHints(block1),
+							Values:        valuesFromSeries(model.MetricNameLabel, series1),
+							Warnings:      []string{},
+							Hints:         mockValuesHints(block1),
+							ResponseHints: mockValuesResponseHints(block1),
 						},
 					}: {block1},
 				},
@@ -2811,7 +2872,8 @@ func TestBlocksStoreQuerier_SelectSortedShouldHonorQueryStoreAfter(t *testing.T)
 			const tenantID = "user-1"
 			ctx = user.InjectOrgID(ctx, tenantID)
 			ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
-			ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx)
+			metrics := limiter.NewSeriesDeduplicatorMetrics(prometheus.NewPedanticRegistry())
+			ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx, metrics)
 			q := &blocksStoreQuerier{
 				minT:               testData.queryMinT,
 				maxT:               testData.queryMaxT,
@@ -3045,7 +3107,8 @@ func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
 
 			ctx := context.Background()
 			ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
-			ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx)
+			metrics := limiter.NewSeriesDeduplicatorMetrics(prometheus.NewPedanticRegistry())
+			ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx, metrics)
 
 			// Mock the finder to simulate we need to query two blocks.
 			finder := &blocksFinderMock{
@@ -3539,6 +3602,14 @@ func mockNamesHints(ids ...ulid.ULID) *types.Any {
 	return marshalled
 }
 
+func mockNamesResponseHints(ids ...ulid.ULID) *storepb.LabelNamesResponseHints {
+	hints := &storepb.LabelNamesResponseHints{}
+	for _, id := range ids {
+		hints.AddQueriedBlock(id)
+	}
+	return hints
+}
+
 func mockValuesHints(ids ...ulid.ULID) *types.Any {
 	hints := &hintspb.LabelValuesResponseHints{}
 	for _, id := range ids {
@@ -3551,6 +3622,15 @@ func mockValuesHints(ids ...ulid.ULID) *types.Any {
 	}
 
 	return marshalled
+}
+
+func mockValuesResponseHints(ids ...ulid.ULID) *storepb.LabelValuesResponseHints {
+	hints := &storepb.LabelValuesResponseHints{}
+	for _, id := range ids {
+		hints.AddQueriedBlock(id)
+	}
+
+	return hints
 }
 
 func namesFromSeries(series ...labels.Labels) []string {
@@ -3683,7 +3763,7 @@ func TestShouldRetry(t *testing.T) {
 		},
 		"should retry on any unknown error detail": {
 			err: func() error {
-				st, createErr := status.New(codes.Internal, "test").WithDetails(&hintspb.Block{Id: "123"})
+				st, createErr := status.New(codes.Internal, "test").WithDetails(&storepb.Block{Id: "123"})
 				require.NoError(t, createErr)
 				return st.Err()
 			}(),
@@ -3691,7 +3771,7 @@ func TestShouldRetry(t *testing.T) {
 		},
 		"should retry on multiple error details": {
 			err: func() error {
-				st, createErr := status.New(codes.Internal, "test").WithDetails(&hintspb.Block{Id: "123"}, &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_INSTANCE_LIMIT})
+				st, createErr := status.New(codes.Internal, "test").WithDetails(&storepb.Block{Id: "123"}, &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_INSTANCE_LIMIT})
 				require.NoError(t, createErr)
 				return st.Err()
 			}(),

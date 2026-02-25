@@ -2019,9 +2019,10 @@ func TestMetasToChunkRefs(t *testing.T) {
 		},
 	}
 
+	queryStats := newQueryStats()
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			actualRanges := metasToChunkRefs(testCase.partitions, blockID, testCase.minT, testCase.maxT)
+			actualRanges := metasToChunkRefs(testCase.partitions, blockID, testCase.minT, testCase.maxT, queryStats)
 			assert.Equal(t, testCase.expectedChunks, actualRanges)
 			assert.Equal(t, len(testCase.expectedChunks), cap(actualRanges)) // Assert that we've done the slice preallocation correctly. This won't always catch all incorrect or missing preallocations, but might catch some.
 		})

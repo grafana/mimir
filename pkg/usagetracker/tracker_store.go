@@ -45,6 +45,7 @@ type trackerStore struct {
 	// config
 	idleTimeout                         time.Duration
 	userCloseToLimitPercentageThreshold int
+	enableVerboseSeriesMetrics          bool
 
 	// misc
 	logger log.Logger
@@ -61,7 +62,7 @@ type events interface {
 	publishCreatedSeries(ctx context.Context, tenantID string, series []uint64, timestamp time.Time) error
 }
 
-func newTrackerStore(idleTimeout time.Duration, userCloseToLimitPercentageThreshold int, logger log.Logger, l limiter, ev events) *trackerStore {
+func newTrackerStore(idleTimeout time.Duration, userCloseToLimitPercentageThreshold int, logger log.Logger, l limiter, ev events, enableVerboseSeriesMetrics bool) *trackerStore {
 	t := &trackerStore{
 		tenants:                             make(map[string]*trackedTenant),
 		limiter:                             l,
@@ -69,6 +70,7 @@ func newTrackerStore(idleTimeout time.Duration, userCloseToLimitPercentageThresh
 		logger:                              logger,
 		idleTimeout:                         idleTimeout,
 		userCloseToLimitPercentageThreshold: userCloseToLimitPercentageThreshold,
+		enableVerboseSeriesMetrics:          enableVerboseSeriesMetrics,
 		sortedUsersCloseToLimit:             nil, // will be populated by updateLimits
 	}
 	return t
@@ -103,6 +105,10 @@ func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series 
 			m.Unlock()
 			i0 = i
 		}
+	}
+
+	if t.enableVerboseSeriesMetrics && len(createdRefs) > 0 {
+		tenant.seriesCreated.Add(uint64(len(createdRefs)))
 	}
 
 	level.Debug(t.logger).Log("msg", "tracked series", "tenant", tenantID, "received_len", len(series), "created_len", len(createdRefs), "rejected_len", len(rejectedRefs), "now", timeNow.Unix(), "now_minutes", now)
@@ -190,8 +196,10 @@ func (t *trackerStore) getOrCreateTenant(tenantID string) *trackedTenant {
 
 	// Let's prepare a tenant with all shards instead of doing it while locked.
 	tenant := &trackedTenant{
-		series:       atomic.NewUint64(0),
-		currentLimit: atomic.NewUint64(currentSeriesLimit(0, limit, zonesCount)),
+		series:        atomic.NewUint64(0),
+		currentLimit:  atomic.NewUint64(currentSeriesLimit(0, limit, zonesCount)),
+		seriesCreated: atomic.NewUint64(0),
+		seriesRemoved: atomic.NewUint64(0),
 	}
 	capacity := int(limit / shards)
 	if limit == noLimit || limit == 0 {
@@ -231,9 +239,11 @@ func (t *trackerStore) cleanup(now time.Time) {
 			removed := shard.Cleanup(watermark)
 			shard.Unlock()
 
-			// Update the tenant's counter when not holding the mutex anymore.
 			if removed > 0 {
 				tenant.series.Add(-uint64(removed))
+				if t.enableVerboseSeriesMetrics {
+					tenant.seriesRemoved.Add(uint64(removed))
+				}
 			}
 		}
 
@@ -325,6 +335,9 @@ type trackedTenant struct {
 	series       *atomic.Uint64
 	currentLimit *atomic.Uint64
 	shards       [shards]*tenantshard.Map
+
+	seriesCreated *atomic.Uint64
+	seriesRemoved *atomic.Uint64
 }
 
 func zeroAsNoLimit(v uint64) uint64 {

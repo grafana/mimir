@@ -2454,7 +2454,7 @@ func (i *Ingester) executeStreamingQuery(ctx context.Context, db *userTSDB, from
 // NOTE: Do not use this struct directly. Get it from getChunkSeriesNode()
 // and put it back using putChunkSeriesNode() when you are done using it.
 type chunkSeriesNode struct {
-	series []storage.ChunkSeries
+	series []storage.ChunkIterable
 	next   *chunkSeriesNode
 }
 
@@ -2468,7 +2468,7 @@ func getChunkSeriesNode() *chunkSeriesNode {
 	sn := chunkSeriesNodePool.Get()
 	if sn == nil {
 		sn = &chunkSeriesNode{
-			series: make([]storage.ChunkSeries, 0, chunkSeriesNodeSize),
+			series: make([]storage.ChunkIterable, 0, chunkSeriesNodeSize),
 		}
 	}
 	return sn
@@ -2495,9 +2495,10 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.Chunk
 
 	seriesInBatch := make([]client.QueryStreamSeries, 0, queryStreamBatchSize)
 
-	// Why retain the storage.ChunkSeries instead of their chunks.Iterator? If we get the iterators here,
-	// we can't re-use them. Re-using iterators has a bigger impact on allocations/memory than trying to
-	// avoid holding labels reference in ChunkSeries.
+	// We retain the iterator factory returned by IteratorFactory() rather than the full storage.ChunkSeries,
+	// so that we don't hold references to labels or other series data longer than necessary.
+	// The factory retains only the minimum data required to create the chunk iterator, and still supports
+	// iterator reuse in sendStreamingQueryChunks().
 	//
 	// It is non-trivial to know the total number of series here, so we use a linked list of slices
 	// of series and re-use them for future use as well. Even if we did know total number of series
@@ -2514,7 +2515,7 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.Chunk
 			lastSeriesNode.next = newNode
 			lastSeriesNode = newNode
 		}
-		lastSeriesNode.series = append(lastSeriesNode.series, series)
+		lastSeriesNode.series = append(lastSeriesNode.series, series.IteratorFactory())
 		seriesCount++
 
 		chunkCount, err := series.ChunkCount()

@@ -967,6 +967,7 @@ func (f amConfig) fingerprint() model.Fingerprint {
 	writeBool(f.EmailConfig.SkipVerify)
 	writeString(f.EmailConfig.StartTLSPolicy)
 	writeString(f.EmailConfig.SentBy)
+	writeBool(f.EmailConfig.UseBCC)
 	result := sum.Sum64()
 
 	writeBytes(nil)

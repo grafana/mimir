@@ -966,7 +966,7 @@ func (s *loadingSeriesChunkRefsSetIterator) symbolizedSet(ctx context.Context, p
 			}
 		case !s.strategy.isNoChunkRefs():
 			clampLastChunkLength(symbolizedSet.series, metas)
-			series.refs = metasToChunkRefs(metas, s.blockID, s.minTime, s.maxTime)
+			series.refs = metasToChunkRefs(metas, s.blockID, s.minTime, s.maxTime, stats)
 		default:
 			// What's left is "no chunk refs on entire block."
 			// In this case we don't have to do anything with the chunk metas because we know they all
@@ -1047,7 +1047,7 @@ func (s *loadingSeriesChunkRefsSetIterator) filterSeries(set seriesChunkRefsSet,
 }
 
 // metasToChunkRefs converts metas to chunk refs. It excludes any chunks that do not overlap with minT and maxT.
-func metasToChunkRefs(metas []chunks.Meta, blockID ulid.ULID, minT, maxT int64) []seriesChunkRef {
+func metasToChunkRefs(metas []chunks.Meta, blockID ulid.ULID, minT, maxT int64, stats *queryStats) []seriesChunkRef {
 	numChunksOverlapping := 0
 	for _, m := range metas {
 		if m.OverlapsClosedInterval(minT, maxT) {
@@ -1076,8 +1076,10 @@ func metasToChunkRefs(metas []chunks.Meta, blockID ulid.ULID, minT, maxT int64) 
 				// but if it does, we don't want to have an erroneously large length.
 				chunkLen = tsdb.EstimatedMaxChunkSize
 			}
+			stats.chunksInferredSizeCount++
 		} else {
 			chunkLen = tsdb.EstimatedMaxChunkSize
+			stats.chunksFallbackSizeCount++
 		}
 		refs = append(refs, seriesChunkRef{
 			segFileOffset: chunkOffset(m.Ref),

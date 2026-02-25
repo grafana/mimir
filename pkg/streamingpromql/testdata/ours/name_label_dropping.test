@@ -100,3 +100,9 @@ eval instant at 10m sum by (__name__) (up{foo="bar"} or rate(up{foo="bar2"}[5m])
 
 eval instant at 10m sum by (__name__) (rate(up{foo="bar2"}[5m]) or up{foo="bar"})
   {} 10.05
+
+# Aggregations with 'without' should always drop __name__.
+eval instant at 10m label_replace(sum without () (up), "old_name", "$1", "__name__", "(.*)")
+  {foo="bar"} 10
+  {foo="bar2"} 30
+  {foo="bar3"} 50

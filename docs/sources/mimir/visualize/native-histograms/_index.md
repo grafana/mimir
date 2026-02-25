@@ -77,7 +77,7 @@ To query the rate of observations between two values such as `0` and `2` seconds
 
 ```PromQL
 # Native histograms:
-histogram_fraction(0, 2, sum(rate(request_duration_seconds[5m])))
+(histogram_fraction(0, 2, sum(rate(request_duration_seconds[5m]))) < +Inf)
 *
 sum(histogram_count(rate(request_duration_seconds[5m])))
 
@@ -87,6 +87,9 @@ sum(rate(request_duration_seconds_bucket{le="2.5"}[5m]))
 
 There is a native histogram function that estimates the fraction of the total number of observations that fall within a certain interval, such as `[0, 2]`.
 For more information, refer to [histogram fraction](https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_fraction).
+
+One caveat for `histogram_fraction` is that if the input is empty, for example there are no observations in the measured period, then the fraction evaluates to not a number (NaN).
+This is because in the fraction we divide by the total number of observations, which would be zero.
 
 Classic histograms have no such function. Therefore, if the lower and upper bounds of the interval do not line up with the bucket boundaries of a classic histogram,
 you have to estimate the fraction manually.

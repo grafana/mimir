@@ -5,7 +5,6 @@ import (
 	"context"
 	crypto_rand "crypto/rand"
 	"encoding/binary"
-	"errors"
 	"flag"
 	"fmt"
 	"math"
@@ -18,6 +17,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/golang/snappy"
 	"github.com/hashicorp/memberlist"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 
@@ -424,7 +424,6 @@ var (
 	// if merge fails because of CAS version mismatch, this error is returned. CAS operation reacts on it
 	errVersionMismatch     = errors.New("version mismatch")
 	errNoChangeDetected    = errors.New("no change detected")
-	errTooManyRetries      = errors.New("too many retries")
 	emptySnappyEncodedData = snappy.Encode(nil, []byte{})
 )
 
@@ -609,8 +608,8 @@ func (m *KV) starting(ctx context.Context) error {
 	if m.cfg.PropagationDelayTracker.Enabled {
 		m.propagationDelayTracker = NewPropagationDelayTracker(
 			m,
-			m.cfg.PropagationDelayTracker.BeaconInterval,
-			m.cfg.PropagationDelayTracker.BeaconLifetime,
+			m.cfg.PropagationDelayTracker,
+			m.memberlist.LocalNode().Name,
 			m.logger,
 			m.registerer,
 		)
@@ -1302,10 +1301,9 @@ outer:
 
 		return nil
 	}
-
 	if errors.Is(lastError, errVersionMismatch) {
-		// this is more likely error than version mismatch.
-		lastError = errTooManyRetries
+		// Version mismatch err on CAS would have been retried up to the limit
+		lastError = errors.Wrap(lastError, "too many retries")
 	}
 
 	m.casFailures.Inc()
