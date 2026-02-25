@@ -303,15 +303,17 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 	jobTenant := resp.Spec.Tenant
 	jobType := resp.Spec.JobType
 
+	if !jobTypeValid(jobType) {
+		return false, fmt.Errorf("unsupported job type %q, only COMPACTION and PLANNING are supported", jobType.String())
+	}
+
 	// Create a cancellable context for this job that can be canceled if the scheduler cancels the job
 	jobCtx, cancelJob := context.WithCancelCause(ctx)
 	wg := sync.WaitGroup{}
-	wg.Add(1)
 	// Start async keep-alive updater for periodic IN_PROGRESS messages
-	go func() {
+	wg.Go(func() {
 		e.startJobStatusUpdater(jobCtx, c, resp.Key, resp.Spec, cancelJob)
-		wg.Done()
-	}()
+	})
 
 	switch jobType {
 	case compactorschedulerpb.JOB_TYPE_COMPACTION:
@@ -343,7 +345,17 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 		}
 		return true, nil
 	default:
+		// Should not happen because this case is caught above.
 		return false, fmt.Errorf("unsupported job type %q, only COMPACTION and PLANNING are supported", jobType.String())
+	}
+}
+
+func jobTypeValid(jobType compactorschedulerpb.JobType) bool {
+	switch jobType {
+	case compactorschedulerpb.JOB_TYPE_COMPACTION, compactorschedulerpb.JOB_TYPE_PLANNING:
+		return true
+	default:
+		return false
 	}
 }
 
