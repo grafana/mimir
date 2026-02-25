@@ -3526,7 +3526,7 @@ Possible reasons for this are:
 
 ### How it Works
 
-- For range and instant queries, the query-frontend normalizes and optimizes the query structure, and (when configured) splits by time interval, shards by series (__query_shard__), and extracts subqueries.
+- For range and instant queries, the query-frontend normalizes and optimizes the query structure, and (when configured) splits by time interval, shards by series (**query_shard**), and extracts subqueries.
 - The query-frontend enqueues the resulting sub-requests with the query-scheduler.
 - The query-scheduler dispatches enqueued queries to idle querier workers.
 - The querier fetches data from ingesters, store-gateways, or both. In the classic path it also evaluates the PromQL expression; with remote execution enabled, data is streamed back to the query-frontend where evaluation occurs.
@@ -3534,7 +3534,7 @@ Possible reasons for this are:
 
 ### Dashboards and PromQL queries
 
-The starting point for query debugging is the `Mimir / Reads` and `Mimir / Remote Ruler Reads` dashboards. 
+The starting point for query debugging is the `Mimir / Reads` and `Mimir / Remote Ruler Reads` dashboards.
 
 Useful PromQL references include;
 
@@ -3558,7 +3558,7 @@ The query-frontend logs can be used to review successful and failed queries and 
 `query stats` are logged once per HTTP request at the query-frontend boundary. It captures the full lifecycle: queueing, splitting, remote execution, cache interaction, response encoding, and what was
 fetched from storage. This is your first stop when investigating latency, cache behaviour, data volume, or whether a query was split/sharded.
 
-`evaluation stats` are logged per split interval when using MQE sharding (sharding is internal to the engine), or per shard per split interval when using non-MQE sharding (each shard is a separate dispatched request). It captures the PromQL execution inside the query-frontend engine: the expression being evaluated, the estimated memory consumption of the engine (not including querier-side memory for fetching data), and the time range being   
+`evaluation stats` are logged per split interval when using MQE sharding (sharding is internal to the engine), or per shard per split interval when using non-MQE sharding (each shard is a separate dispatched request). It captures the PromQL execution inside the query-frontend engine: the expression being evaluated, the estimated memory consumption of the engine (not including querier-side memory for fetching data), and the time range being  
 processed. If your query had split_queries=2 and sharded_queries=0, there would be two evaluator log lines — one per time-split chunk — each showing a sub-range of the overall query window.
 
 Use `query stats` when asking:
@@ -3617,7 +3617,7 @@ When looking at `msg="evaluation stats"` consider the following attributes;
 **Ingester or Store-Gateway Issues**
 
 With querier autoscaling in place, the most common cause of a query backlog is that either ingesters or store-gateways
-are not able to keep up with their query load. Read path outages will occur if ingesters/store-gateways become unavailable. 
+are not able to keep up with their query load. Read path outages will occur if ingesters/store-gateways become unavailable.
 
 Use the `Mimir / Reads` and `Mimir / Remote Ruler Reads` dashboards to review the RPS and Latency panels for ingesters and store-gateways.
 
