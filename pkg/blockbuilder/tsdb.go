@@ -388,15 +388,13 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 		var merr multierror.MultiError
 		merr.Add(err)
 		// If some TSDB was not compacted or uploaded, it will be re-tried in the next cycle, so we always remove it here.
-		for _, db := range b.tsdbs {
+		for tenant, db := range b.tsdbs {
 			if !closedDBs[db] {
 				merr.Add(db.Close())
 			}
 			merr.Add(os.RemoveAll(db.Dir()))
-		}
 
-		// Remove all registered per-tenant TSDB metrics. Their local DBs are wiped out from the block-builder no-matter what.
-		for tenant := range b.tsdbs {
+			// Remove all registered per-tenant TSDB metrics. Their local DBs are wiped out from the block-builder no-matter what.
 			b.tsdbMetrics.RemoveRegistryForTenant(tenant.tenantID)
 		}
 
