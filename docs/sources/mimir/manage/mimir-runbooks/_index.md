@@ -3632,7 +3632,7 @@ In the case of an ingester or store-gateway being `OOMKilled`, if you have the "
 - Are queriers in a crash loop (eg. OOMKilled)?
   - `OOMKilled`: temporarily increase queriers memory request/limit
   - `panic`: look for the stack trace in the logs and investigate from there
-  - if queriers run with activity tracker enabled, they may log `unfinished activities` message on startup with queries that possibly caused the crash. Look for `component=activity-tracker` in the logs.
+  - If queriers run with activity tracker enabled, they may log an `unfinished activities` message on startup with queries that had started but not completed before the crash. Look for `component=activity-tracker` in the logs.
 - Is QPS increased?
   - Scale up queriers to satisfy the increased workload
 - Is query latency increased?
