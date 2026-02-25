@@ -669,12 +669,11 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		setupBucket             func(*testing.T, objstore.Bucket) setupResult
-		split                   bool
-		expectedStatus          compactorschedulerpb.UpdateType
-		expectNewBlocksCount    int
-		expectUncompactedBlocks int
-		expectError             bool
+		setupBucket          func(*testing.T, objstore.Bucket) setupResult
+		split                bool
+		expectedStatus       compactorschedulerpb.UpdateType
+		expectNewBlocksCount int
+		expectError          bool
 	}{
 		"compacts_single_block": {
 			setupBucket: func(t *testing.T, bkt objstore.Bucket) setupResult {
@@ -685,11 +684,8 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 					uncompactedBlocks: nil,
 				}
 			},
-			split:                   false,
-			expectedStatus:          compactorschedulerpb.UPDATE_TYPE_COMPLETE,
-			expectNewBlocksCount:    1,
-			expectUncompactedBlocks: 0,
-			expectError:             false,
+			expectedStatus:       compactorschedulerpb.UPDATE_TYPE_COMPLETE,
+			expectNewBlocksCount: 1,
 		},
 		"compacts_multiple_blocks": {
 			setupBucket: func(t *testing.T, bkt objstore.Bucket) setupResult {
@@ -701,10 +697,8 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 					uncompactedBlocks: nil,
 				}
 			},
-			split:                   false,
-			expectedStatus:          compactorschedulerpb.UPDATE_TYPE_COMPLETE,
-			expectNewBlocksCount:    1,
-			expectUncompactedBlocks: 0,
+			expectedStatus:       compactorschedulerpb.UPDATE_TYPE_COMPLETE,
+			expectNewBlocksCount: 1,
 		},
 		"compacts_subset_of_blocks": {
 			setupBucket: func(t *testing.T, bkt objstore.Bucket) setupResult {
@@ -717,10 +711,8 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 					uncompactedBlocks: []ulid.ULID{block3},
 				}
 			},
-			split:                   false,
-			expectedStatus:          compactorschedulerpb.UPDATE_TYPE_COMPLETE,
-			expectNewBlocksCount:    1,
-			expectUncompactedBlocks: 1,
+			expectedStatus:       compactorschedulerpb.UPDATE_TYPE_COMPLETE,
+			expectNewBlocksCount: 1,
 		},
 		"compacts_single_block_with_split": {
 			setupBucket: func(t *testing.T, bkt objstore.Bucket) setupResult {
@@ -731,10 +723,9 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 					uncompactedBlocks: nil,
 				}
 			},
-			split:                   true,
-			expectedStatus:          compactorschedulerpb.UPDATE_TYPE_COMPLETE,
-			expectNewBlocksCount:    splitShards,
-			expectUncompactedBlocks: 0,
+			split:                true,
+			expectedStatus:       compactorschedulerpb.UPDATE_TYPE_COMPLETE,
+			expectNewBlocksCount: splitShards,
 		},
 		"abandon_when_requested_blocks_not_in_obj_storage": {
 			setupBucket: func(t *testing.T, bkt objstore.Bucket) setupResult {
@@ -746,11 +737,9 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 					uncompactedBlocks: []ulid.ULID{block1},
 				}
 			},
-			split:                   false,
-			expectedStatus:          compactorschedulerpb.UPDATE_TYPE_ABANDON,
-			expectNewBlocksCount:    0,
-			expectUncompactedBlocks: 1,
-			expectError:             true,
+			expectedStatus:       compactorschedulerpb.UPDATE_TYPE_ABANDON,
+			expectNewBlocksCount: 0,
+			expectError:          true,
 		},
 	}
 
@@ -810,7 +799,6 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 				assert.True(t, marked, "compacted block %s should be marked for deletion after compaction", blockID.String())
 			}
 
-			assert.Equal(t, len(setup.uncompactedBlocks), tc.expectUncompactedBlocks, "expected %d uncompacted blocks", tc.expectUncompactedBlocks)
 			for _, blockID := range setup.uncompactedBlocks {
 				exists, err := bkt.Exists(context.Background(), fmt.Sprintf("test-tenant/%s/meta.json", blockID.String()))
 				require.NoError(t, err)
