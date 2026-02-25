@@ -187,6 +187,7 @@
 * [BUGFIX] Block-builder-scheduler: Fix bug where data could be skipped when partition is fully consumed at startup but later grows. #14136
 * [BUGFIX] Ingester: Create TSDB directory on startup #14112
 * [BUGFIX] Querier: Fix strategy used to select partitions to query when some partions are Inactive since longer than lookback period and shuffle sharding is disabled. #14261
+* [BUGFIX] Block-builder-scheduler: Fix data race when reading partition state during pending jobs enqueueing. #14489
 
 ### Mixin
 
