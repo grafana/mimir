@@ -946,7 +946,7 @@ Use `query stats` when asking:
 Use `evaluation stats` when asking:
 
 - What expression was actually executed after rewriting?
-- How much memory did the PromQL engine use?
+- How much memory did the PromQL engine use in the query-frontend? (queriers also log a `evaluation stats` line showing their peak memory consumption)
 - Which shard/time-chunk is causing problems?
 - Was the expression modified from what the user submitted?
 
