@@ -63,11 +63,12 @@ func NewCacheFactory(cfg Config, ttlProvider TTLProvider, logger log.Logger, reg
 		return nil, errUnsupportedResultsCacheBackend(cfg.Backend)
 	}
 
-	backend := cache.NewVersioned(
+	var backend cache.Cache = cache.NewVersioned(
 		cache.NewSpanlessTracingCache(client, logger, tenant.NewMultiResolver()),
 		resultsCacheVersion,
 		logger,
 	)
+	backend = cache.NewCompression(cfg.Compression, backend, logger)
 
 	return NewCacheFactoryWithBackend(backend, ttlProvider, reg, logger), nil
 }
