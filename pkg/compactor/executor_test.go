@@ -246,6 +246,15 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 			},
 			expectGrowingDelay: true,
 		},
+		"no_work_available_should_trigger_backoff": {
+			setupMock: func(mock *mockCompactorSchedulerClient) {
+				mock.LeaseJobFunc = func(_ context.Context, _ *compactorschedulerpb.LeaseJobRequest) (*compactorschedulerpb.LeaseJobResponse, error) {
+					// i.e. no work available
+					return &compactorschedulerpb.LeaseJobResponse{}, nil
+				}
+			},
+			expectGrowingDelay: true,
+		},
 		"successful_compaction_execution_should_not_backoff": {
 			setupMock: func(mock *mockCompactorSchedulerClient) {
 				mock.LeaseJobFunc = func(_ context.Context, _ *compactorschedulerpb.LeaseJobRequest) (*compactorschedulerpb.LeaseJobResponse, error) {
