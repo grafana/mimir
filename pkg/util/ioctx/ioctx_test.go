@@ -256,7 +256,7 @@ func (c closer) Close() error {
 
 func (c closer) Closed() bool {
 	select {
-	case _, _ = <-c.closed:
+	case <-c.closed:
 		return true
 	default:
 		return false
