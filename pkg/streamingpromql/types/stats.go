@@ -9,6 +9,8 @@ import (
 	"unsafe"
 
 	"github.com/prometheus/prometheus/model/histogram"
+
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // QueryStats tracks statistics about the execution of a single query.
@@ -39,4 +41,70 @@ const timestampFieldSize = int64(unsafe.Sizeof(int64(0)))
 
 func EquivalentFloatSampleCount(h *histogram.FloatHistogram) int64 {
 	return (int64(h.Size()) + timestampFieldSize) / int64(FPointSize)
+}
+
+type EvaluationStats struct {
+	timeRange                QueryTimeRange
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
+
+	samplesProcessedPerStep []int64
+	newSamplesReadPerStep   []int64
+}
+
+func NewEvaluationStats(timeRange QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*EvaluationStats, error) {
+	samplesProcessedPerStep, err := Int64SlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	newSamplesReadPerStep, err := Int64SlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	return &EvaluationStats{
+		timeRange:                timeRange,
+		memoryConsumptionTracker: memoryConsumptionTracker,
+
+		samplesProcessedPerStep: samplesProcessedPerStep[:timeRange.StepCount],
+		newSamplesReadPerStep:   newSamplesReadPerStep[:timeRange.StepCount],
+	}, nil
+}
+
+// TrackSampleForInstantVectorSelector records a sample for an instant vector selector at output timestamp stepT.
+//
+// sampleCount should be 1 for float samples, or the result of EquivalentFloatSampleCount for histogram samples.
+//
+// TrackSampleForInstantVectorSelector should be called for each output step of an instant vector selector, even if
+// the same underlying sample is used for multiple output steps.
+func (s *EvaluationStats) TrackSampleForInstantVectorSelector(stepT int64, sampleCount int64) {
+	i := s.timeRange.PointIndex(stepT)
+
+	s.samplesProcessedPerStep[i] += sampleCount
+	s.newSamplesReadPerStep[i] += sampleCount
+}
+
+// TrackSamplesForRangeVectorSelector records samples for a range vector selector at output timestamp stepT.
+//
+// TrackSamplesForRangeVectorSelector should be called for each output step of an instant vector selector, even if
+// the same underlying sample is used for multiple output steps.
+//
+// floats and histograms may contain samples beyond rangeEnd, these will be ignored.
+// floats and histograms must not contain samples before rangeStart.
+func (s *EvaluationStats) TrackSamplesForRangeVectorSelector(stepT int64, floats *FPointRingBuffer, histograms *HPointRingBuffer, rangeStart int64, rangeEnd int64) {
+	i := s.timeRange.PointIndex(stepT)
+
+	s.samplesProcessedPerStep[i] += int64(floats.CountUntil(rangeEnd)) + histograms.EquivalentFloatSampleCountUntil(rangeEnd)
+
+	newSampleRangeStart := rangeEnd - s.timeRange.IntervalMilliseconds
+	if s.timeRange.IsInstant {
+		newSampleRangeStart = rangeStart
+	}
+
+	s.newSamplesReadPerStep[i] += int64(floats.CountBetween(newSampleRangeStart, rangeEnd)) + histograms.EquivalentFloatSampleCountBetween(newSampleRangeStart, rangeEnd)
+}
+
+func (s *EvaluationStats) Close() {
+	Int64SlicePool.Put(&s.samplesProcessedPerStep, s.memoryConsumptionTracker)
+	Int64SlicePool.Put(&s.newSamplesReadPerStep, s.memoryConsumptionTracker)
 }
