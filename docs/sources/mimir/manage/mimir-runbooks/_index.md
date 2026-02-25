@@ -281,7 +281,7 @@ How to **investigate**:
 
 Query performance is a known issue. A query may be slow because of high cardinality, large time range and/or because not leveraging on cache (eg. querying series data not cached yet). When investigating this alert, you should check if it's caused by few slow queries or there's an operational / config issue to be fixed.
 
-See also [PromQL query analysis](#promql-query-analysis).
+See also [Investigating query evaluation issues](#investigating-query-evaluation-issues).
 
 How to **investigate**:
 
@@ -342,7 +342,7 @@ This alert fires when the rate of 5xx errors of a specific route is > 1% for som
 
 This alert typically acts as a last resort to detect issues / outages. SLO alerts are expected to trigger earlier: if an **SLO alert** has triggered as well for the same read/write path, then you can ignore this alert and focus on the SLO one (but the investigation procedure is typically the same).
 
-See also [PromQL query analysis](#promql-query-analysis).
+See also [Investigating query evaluation issues](#investigating-query-evaluation-issues).
 
 How to **investigate**:
 
@@ -414,7 +414,7 @@ Each rule evaluation may fail due to many reasons, eg. due to invalid PromQL exp
 
 There is a category of errors that is more important: errors due to failure to read data from store-gateways or ingesters. These errors would result in 500 when run from querier. This alert fires if there is too many of such failures.
 
-See also [PromQL query analysis](#promql-query-analysis).
+See also [Investigating query evaluation issues](#investigating-query-evaluation-issues).
 
 How to **fix** it:
 
@@ -921,7 +921,7 @@ as well as which query components are utilized to service the queries.
 
 #### How to Investigate
 
-See [PromQL query analysis](#promql-query-analysis).
+See also [Investigating query evaluation issues](#investigating-query-evaluation-issues).
 
 Note that elevated measures of _inflight_ queries at any part of the read path are likely a symptom and not a cause.
 
@@ -3522,7 +3522,7 @@ Possible reasons for this are:
 - Incorrect relabelling rules can cause a label to be dropped from a series so that multiple series have the same labels. If these series were collected from the same target they will have the same timestamp.
 - The exporter being scraped sets the same timestamp on every scrape. Note that exporters should generally not set timestamps.
 
-## PromQL query analysis
+## Investigating query evaluation issues
 
 ### How it Works
 
