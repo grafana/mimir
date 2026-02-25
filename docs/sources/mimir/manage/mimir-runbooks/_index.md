@@ -3558,7 +3558,7 @@ The query-frontend logs can be used to review successful and failed queries and 
 `query stats` are logged once per HTTP request at the query-frontend boundary. It captures the full lifecycle: queueing, splitting, remote execution, cache interaction, response encoding, and what was
 fetched from storage. This is your first stop when investigating latency, cache behaviour, data volume, or whether a query was split/sharded.
 
-`evaluation stats` are logged per split interval when using MQE sharding (sharding is internal to the engine), or per shard per split interval when using non-MQE sharding (each shard is a separate dispatched request). It captures the PromQL execution inside the query-frontend engine: the expression being evaluated, the estimated memory consumption of the engine (not including querier-side memory for fetching data), and the time range being  
+`evaluation stats` are logged per split interval when using MQE sharding (sharding is internal to the engine), or per shard per split interval when using non-MQE sharding (each shard is a separate dispatched request). It captures the PromQL execution inside the query-frontend engine: the expression being evaluated, the estimated memory consumption of the engine (not including querier-side memory for fetching data), and the time range being
 processed. If your query had split_queries=2 and sharded_queries=0, there would be two evaluator log lines — one per time-split chunk — each showing a sub-range of the overall query window.
 
 Use `query stats` when asking:
