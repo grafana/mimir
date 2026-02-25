@@ -16,19 +16,19 @@ import (
 
 func TestConfig_Validate(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
-		cfg, _ := blockBuilderConfig(t, "kafka:9092")
+		cfg, _ := blockBuilderConfig(t, "kafka:9092", nil)
 		require.NoError(t, cfg.Validate())
 	})
 
 	t.Run("empty instance-id assignment", func(t *testing.T) {
-		cfg, _ := blockBuilderConfig(t, "kafka:9092")
+		cfg, _ := blockBuilderConfig(t, "kafka:9092", nil)
 
 		cfg.InstanceID = ""
 		require.Error(t, cfg.Validate())
 	})
 
 	t.Run("empty data dir", func(t *testing.T) {
-		cfg, _ := blockBuilderConfig(t, "kafka:9092")
+		cfg, _ := blockBuilderConfig(t, "kafka:9092", nil)
 
 		cfg.DataDir = ""
 		require.Error(t, cfg.Validate())
@@ -41,7 +41,7 @@ const (
 	numPartitions = 2
 )
 
-func blockBuilderConfig(t *testing.T, addr string) (Config, *validation.Overrides) {
+func blockBuilderConfig(t testing.TB, kafkaAddr string, tenantLimits validation.TenantLimits) (Config, *validation.Overrides) {
 	cfg := Config{}
 	flagext.DefaultValues(&cfg)
 
@@ -56,7 +56,7 @@ func blockBuilderConfig(t *testing.T, addr string) (Config, *validation.Override
 
 	// Kafka related options.
 	flagext.DefaultValues(&cfg.Kafka)
-	cfg.Kafka.Address = flagext.StringSliceCSV{addr}
+	cfg.Kafka.Address = flagext.StringSliceCSV{kafkaAddr}
 	cfg.Kafka.Topic = testTopic
 
 	// Block storage related options.
@@ -68,7 +68,7 @@ func blockBuilderConfig(t *testing.T, addr string) (Config, *validation.Override
 	limits.OutOfOrderTimeWindow = 2 * model.Duration(time.Hour)
 	limits.OutOfOrderBlocksExternalLabelEnabled = true // Needed to reproduce a panic.
 	limits.NativeHistogramsIngestionEnabled = true
-	overrides := validation.NewOverrides(limits, nil)
+	overrides := validation.NewOverrides(limits, tenantLimits)
 
 	return cfg, overrides
 }

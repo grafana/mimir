@@ -23,10 +23,13 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/thanos-io/objstore"
+	"github.com/thanos-io/objstore/providers/filesystem"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	mimir_storage "github.com/grafana/mimir/pkg/storage"
+	"github.com/grafana/mimir/pkg/storage/indexheader"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -34,21 +37,18 @@ import (
 )
 
 type TSDBBuilder struct {
-	dataDir string
-
-	logger             log.Logger
-	limits             *validation.Overrides
-	blocksStorageCfg   mimir_tsdb.BlocksStorageConfig
-	tsdbBuilderMetrics tsdbBuilderMetrics
-	tsdbMetrics        *mimir_tsdb.TSDBMetrics
-
-	applyMaxGlobalSeriesPerUserBelow int // inclusive
-
 	partitionID int32
 
 	// Map of a tenant in a partition to its TSDB.
 	tsdbsMu sync.RWMutex
 	tsdbs   map[tsdbTenant]*userTSDB
+
+	cfg    Config
+	limits *validation.Overrides
+
+	logger             log.Logger
+	tsdbBuilderMetrics tsdbBuilderMetrics
+	tsdbMetrics        *mimir_tsdb.TSDBMetrics
 }
 
 // We use this only to identify the soft errors.
@@ -69,25 +69,21 @@ type tsdbTenant struct {
 }
 
 func NewTSDBBuilder(
-	logger log.Logger,
-	dataDir string,
 	partitionID int32,
-	blocksStorageCfg mimir_tsdb.BlocksStorageConfig,
+	cfg Config,
 	limits *validation.Overrides,
+	logger log.Logger,
 	tsdbBuilderMetrics tsdbBuilderMetrics,
 	tsdbMetrics *mimir_tsdb.TSDBMetrics,
-	applyMaxGlobalSeriesPerUserBelow int,
 ) *TSDBBuilder {
 	return &TSDBBuilder{
-		dataDir:                          dataDir,
-		logger:                           logger,
-		limits:                           limits,
-		blocksStorageCfg:                 blocksStorageCfg,
-		tsdbBuilderMetrics:               tsdbBuilderMetrics,
-		tsdbMetrics:                      tsdbMetrics,
-		applyMaxGlobalSeriesPerUserBelow: applyMaxGlobalSeriesPerUserBelow,
-		partitionID:                      partitionID,
-		tsdbs:                            make(map[tsdbTenant]*userTSDB),
+		partitionID:        partitionID,
+		tsdbs:              make(map[tsdbTenant]*userTSDB),
+		cfg:                cfg,
+		limits:             limits,
+		logger:             logger,
+		tsdbBuilderMetrics: tsdbBuilderMetrics,
+		tsdbMetrics:        tsdbMetrics,
 	}
 }
 
@@ -307,7 +303,7 @@ func (b *TSDBBuilder) getOrCreateTSDB(tenant tsdbTenant) (*userTSDB, error) {
 func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 	tsdbPromReg := prometheus.NewRegistry()
 
-	udir := filepath.Join(b.dataDir, strconv.Itoa(int(tenant.partitionID)), tenant.tenantID)
+	udir := filepath.Join(b.cfg.DataDir, strconv.Itoa(int(tenant.partitionID)), tenant.tenantID)
 	// Remove any previous TSDB dir. We don't need it.
 	if err := os.RemoveAll(udir); err != nil {
 		return nil, err
@@ -329,7 +325,7 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 	// and the tenant is generally more careful. It is the smaller tenants that can create problem
 	// if they suddenly send millions of series when they are supposed to be limited to a few thousand.
 	userLimit := b.limits.MaxGlobalSeriesPerUser(userID)
-	if userLimit <= b.applyMaxGlobalSeriesPerUserBelow {
+	if userLimit <= b.cfg.ApplyMaxGlobalSeriesPerUserBelow {
 		udb.maxGlobalSeries = userLimit
 	}
 
@@ -338,15 +334,15 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 		MinBlockDuration:                     2 * time.Hour.Milliseconds(),
 		MaxBlockDuration:                     2 * time.Hour.Milliseconds(),
 		NoLockfile:                           true,
-		StripeSize:                           b.blocksStorageCfg.TSDB.StripeSize,
-		HeadChunksWriteBufferSize:            b.blocksStorageCfg.TSDB.HeadChunksWriteBufferSize,
-		HeadChunksWriteQueueSize:             b.blocksStorageCfg.TSDB.HeadChunksWriteQueueSize,
+		StripeSize:                           b.cfg.BlocksStorage.TSDB.StripeSize,
+		HeadChunksWriteBufferSize:            b.cfg.BlocksStorage.TSDB.HeadChunksWriteBufferSize,
+		HeadChunksWriteQueueSize:             b.cfg.BlocksStorage.TSDB.HeadChunksWriteQueueSize,
 		WALSegmentSize:                       -1,                                                                             // No WAL
 		BlocksToDelete:                       func([]*tsdb.Block) map[ulid.ULID]struct{} { return map[ulid.ULID]struct{}{} }, // Always noop
 		IsolationDisabled:                    true,
 		EnableOverlappingCompaction:          false,                                                // Always false since Mimir only uploads lvl 1 compacted blocks
 		OutOfOrderTimeWindow:                 b.limits.OutOfOrderTimeWindow(userID).Milliseconds(), // The unit must be same as our timestamps.
-		OutOfOrderCapMax:                     int64(b.blocksStorageCfg.TSDB.OutOfOrderCapacityMax),
+		OutOfOrderCapMax:                     int64(b.cfg.BlocksStorage.TSDB.OutOfOrderCapacityMax),
 		SecondaryHashFunction:                nil, // TODO(codesome): May needed when applying limits. Used to determine the owned series by an ingesters
 		SeriesLifecycleCallback:              udb,
 		HeadPostingsForMatchersCacheMetrics:  tsdb.NewPostingsForMatchersCacheMetrics(nil), // No need for these metrics; no one queries tsdb through block-builder
@@ -412,8 +408,8 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 	}
 
 	eg, ctx := errgroup.WithContext(ctx)
-	if b.blocksStorageCfg.TSDB.ShipConcurrency > 0 {
-		eg.SetLimit(b.blocksStorageCfg.TSDB.ShipConcurrency)
+	if b.cfg.BlocksStorage.TSDB.ShipConcurrency > 0 {
+		eg.SetLimit(b.cfg.BlocksStorage.TSDB.ShipConcurrency)
 	}
 	for tenant, db := range b.tsdbs {
 		eg.Go(func() (err error) {
@@ -431,7 +427,7 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 				b.tsdbBuilderMetrics.lastSuccessfulCompactAndUploadTime.WithLabelValues(partitionStr).SetToCurrentTime()
 			}(time.Now())
 
-			if err := db.compactEverything(ctx); err != nil {
+			if err := db.compactBlocks(ctx); err != nil {
 				return err
 			}
 
@@ -440,6 +436,13 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 			for _, b := range db.Blocks() {
 				localMetas = append(localMetas, b.Meta())
 			}
+
+			if b.cfg.GenerateSparseIndexHeaders {
+				if err := b.buildSparseIndexHeaders(ctx, dbDir, localMetas); err != nil {
+					return err
+				}
+			}
+
 			metasMu.Lock()
 			metas = append(metas, localMetas...)
 			metasMu.Unlock()
@@ -514,7 +517,7 @@ func (u *userTSDB) PostCreation(labels.Labels) {}
 
 func (u *userTSDB) PostDeletion(map[chunks.HeadSeriesRef]labels.Labels) {}
 
-func (u *userTSDB) compactEverything(ctx context.Context) error {
+func (u *userTSDB) compactBlocks(ctx context.Context) error {
 	blockRange := 2 * time.Hour.Milliseconds()
 
 	// Compact the in-order data.
@@ -534,4 +537,42 @@ func (u *userTSDB) compactEverything(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// buildSparseIndexHeaders builds sparse index-headers for all blocks in the directory.
+func (b *TSDBBuilder) buildSparseIndexHeaders(ctx context.Context, dbDir string, metas []tsdb.BlockMeta) error {
+	for _, m := range metas {
+		if err := b.buildSparseIndexHeader(ctx, dbDir, m.ULID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// prepareSparseIndexHeader builds a sparse index-header for a single block.
+func (b *TSDBBuilder) buildSparseIndexHeader(ctx context.Context, dbDir string, id ulid.ULID) error {
+	// Indexheader code uses a bucket client to read;
+	// construct local-filesystem-backed bucket to read from disk.
+	fsBkt, err := filesystem.NewBucket(dbDir)
+	if err != nil {
+		return err
+	}
+	fsInstrBkt := objstore.WithNoopInstr(fsBkt)
+
+	// Calling NewStreamBinaryReader reads a block's index and writes a sparse-index-header to disk.
+	metrics := indexheader.NewStreamBinaryReaderMetrics(nil)
+	logger := log.With(b.logger, "id", id)
+	br, err := indexheader.NewStreamBinaryReader(
+		ctx,
+		logger,
+		fsInstrBkt,
+		dbDir,
+		id,
+		b.cfg.BlocksStorage.BucketStore.PostingOffsetsInMemSampling,
+		metrics,
+		b.cfg.BlocksStorage.BucketStore.IndexHeader)
+	if err != nil {
+		return err
+	}
+	return br.Close()
 }

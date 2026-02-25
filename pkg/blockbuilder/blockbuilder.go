@@ -262,7 +262,7 @@ func (b *BlockBuilder) consumeJob(ctx context.Context, key schedulerpb.JobKey, s
 
 	logger := log.With(sp, "partition", spec.Partition, "job_id", key.Id, "job_epoch", key.Epoch)
 
-	builder := NewTSDBBuilder(logger, b.cfg.DataDir, spec.Partition, b.cfg.BlocksStorage, b.limits, b.tsdbBuilderMetrics, b.tsdbMetrics, b.cfg.ApplyMaxGlobalSeriesPerUserBelow)
+	builder := NewTSDBBuilder(spec.Partition, b.cfg, b.limits, logger, b.tsdbBuilderMetrics, b.tsdbMetrics)
 	defer runutil.CloseWithErrCapture(&err, builder, "closing tsdb builder")
 
 	// TODO: the block-builder can skip unmarshaling of exemplars because TSDB doesn't persist them into blocks; find a way to let PusherConsumer know about it
