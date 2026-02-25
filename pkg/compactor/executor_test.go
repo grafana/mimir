@@ -183,6 +183,7 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 
 			schedulerExec, err := newSchedulerExecutor(cfg, log.NewNopLogger(), nil)
 			require.NoError(t, err)
+			t.Cleanup(func() { schedulerExec.schedulerConn.Close() })
 			schedulerExec.schedulerClient = mockSchedulerClient
 
 			c, _, _, _, _ := prepareWithConfigProvider(t, cfg, bucketClient, newMockConfigProvider())
@@ -311,11 +312,14 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 			// Create a scheduler executor with the mock client
 			schedulerExec, err := newSchedulerExecutor(cfg, log.NewNopLogger(), nil)
 			require.NoError(t, err)
+			t.Cleanup(func() { schedulerExec.schedulerConn.Close() })
 			schedulerExec.schedulerClient = mockSchedulerClient
 
+			runCtx, runCancel := context.WithCancel(context.Background())
+			t.Cleanup(runCancel)
 			errCh := make(chan error, 1)
 			go func() {
-				errCh <- schedulerExec.run(context.Background(), c)
+				errCh <- schedulerExec.run(runCtx, c)
 			}()
 
 			require.Eventually(t, func() bool {
@@ -423,6 +427,7 @@ func TestSchedulerExecutor_PlannedJobsRetryBehavior(t *testing.T) {
 
 	schedulerExec, err := newSchedulerExecutor(cfg, log.NewNopLogger(), nil)
 	require.NoError(t, err)
+	t.Cleanup(func() { schedulerExec.schedulerConn.Close() })
 	schedulerExec.schedulerClient = mockSchedulerClient
 
 	mcp := newMockConfigProvider()
@@ -443,9 +448,6 @@ func TestSchedulerExecutor_PlannedJobsRetryBehavior(t *testing.T) {
 }
 
 func TestSchedulerExecutor_NoGoRoutineLeak(t *testing.T) {
-	initialGoroutines := goleak.IgnoreCurrent()
-	defer testutil.VerifyNoLeak(t, initialGoroutines)
-
 	mockSchedulerClient := &mockCompactorSchedulerClient{
 		LeaseJobFunc: func(_ context.Context, _ *compactorschedulerpb.LeaseJobRequest) (*compactorschedulerpb.LeaseJobResponse, error) {
 			return &compactorschedulerpb.LeaseJobResponse{
@@ -468,6 +470,11 @@ func TestSchedulerExecutor_NoGoRoutineLeak(t *testing.T) {
 	schedulerExec, err := newSchedulerExecutor(cfg, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	schedulerExec.schedulerClient = mockSchedulerClient
+
+	// Snapshot goroutines after the executor is created so that any gRPC-internal goroutines
+	// from the dialed connection are excluded. This test only checks for leaks from leaseAndExecuteJob.
+	initialGoroutines := goleak.IgnoreCurrent()
+	defer testutil.VerifyNoLeak(t, initialGoroutines)
 
 	c, _, _, _, _ := prepareWithConfigProvider(t, cfg, bucketClient, newMockConfigProvider())
 	c.bucketClient = bucketClient
@@ -596,6 +603,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_InvalidInput(t *testing.T) {
 			cfg := makeTestCompactorConfig(planningModeScheduler, "localhost:9095")
 			schedulerExec, err := newSchedulerExecutor(cfg, log.NewNopLogger(), nil)
 			require.NoError(t, err)
+			t.Cleanup(func() { schedulerExec.schedulerConn.Close() })
 
 			c, _, _, _, _ := prepareWithConfigProvider(t, cfg, &bucket.ClientMock{}, newMockConfigProvider())
 
@@ -715,6 +723,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 
 			schedulerExec, err := newSchedulerExecutor(cfg, log.NewNopLogger(), nil)
 			require.NoError(t, err)
+			t.Cleanup(func() { schedulerExec.schedulerConn.Close() })
 
 			mockCfg := newMockConfigProvider()
 			if tc.split {
