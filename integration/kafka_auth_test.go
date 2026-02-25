@@ -5,7 +5,6 @@ package integration
 
 import (
 	"fmt"
-	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -89,42 +88,43 @@ func TestIngestStorageKafkaAuth(t *testing.T) {
 				dex := e2edb.NewDex()
 				require.NoError(t, s.StartAndWaitReady(dex))
 
-				// Sidecar that reads from reauth-pipe, refreshes the token,
-				// and writes to tokens.jsonl.
-				// This simulates an external token management service that would be used
-				// in production to handle OAuth token lifecycle management.
-				tokenRefreshScript := fmt.Sprintf(`
-					set -euo pipefail
-					apk add --no-cache curl jq >/dev/null
-					while true; do
-						head -n1 /shared/reauth-pipe > /dev/null
-						echo "Got reauth request; refreshing token"
-						RESPONSE=$(curl -s -X POST \
-							--connect-timeout 5 \
-							--max-time 10 \
-							-d "grant_type=password" \
-							-d "username=%s" \
-							-d "password=%s" \
-							-d "client_id=%s" \
-							-d "client_secret=%s" \
-							-d "scope=openid" \
-							"http://%s/dex/token" 2>&1)
-						TOKEN=$(echo "$RESPONSE" | jq -r .access_token 2>/dev/null)
-						if [ "$TOKEN" != "null" ] && [ -n "$TOKEN" ]; then
-							# Update the current token
-							echo "Refreshed token; responding"
-							echo '{"token": "'"$TOKEN"'"}' > /shared/tokens.jsonl
-							echo "Responded"
-						else
-							echo "ERROR: Failed to fetch valid token from response: $RESPONSE"
-						fi
-					done
-				`,
-					e2edb.DexUserEmail, e2edb.DexUserPassword, e2edb.DexClientID, e2edb.DexClientSecret,
-					strings.TrimPrefix(dex.NetworkHTTPEndpoint(), "http://"))
-
 				serviceFlags := map[string]map[string]string{}
 				for _, service := range []string{"distributor", "ingester"} {
+					// Sidecar that reads from reauth-pipe, refreshes the token,
+					// and writes to tokens.jsonl.
+					// This simulates an external token management service that would be used
+					// in production to handle OAuth token lifecycle management.
+					tokenRefreshScript := fmt.Sprintf(`
+						set -euo pipefail
+						apk add --no-cache curl jq >/dev/null
+						while true; do
+							head -n1 /shared/%[1]s-reauth-pipe > /dev/null
+							echo "Got reauth request; refreshing token"
+							RESPONSE=$(curl -s -X POST \
+								--connect-timeout 5 \
+								--max-time 10 \
+								-d "grant_type=password" \
+								-d "username=%[2]s" \
+								-d "password=%[3]s" \
+								-d "client_id=%[4]s" \
+								-d "client_secret=%[5]s" \
+								-d "scope=openid" \
+								"http://%[6]s/dex/token" 2>&1)
+							TOKEN=$(echo "$RESPONSE" | jq -r .access_token 2>/dev/null)
+							if [ "$TOKEN" != "null" ] && [ -n "$TOKEN" ]; then
+								# Update the current token
+								echo "Refreshed token; responding"
+								echo '{"token": "'"$TOKEN"'"}' > /shared/%[1]s-tokens.jsonl
+								echo "Responded"
+							else
+								echo "ERROR: Failed to fetch valid token from response: $RESPONSE"
+							fi
+						done
+					`,
+						service,
+						e2edb.DexUserEmail, e2edb.DexUserPassword, e2edb.DexClientID, e2edb.DexClientSecret,
+						strings.TrimPrefix(dex.NetworkHTTPEndpoint(), "http://"))
+
 					// Create named pipes for the OAuth token.
 					_, err := e2emimir.RunInContainerShell(s, fmt.Sprintf("mkfifo /shared/%[1]s-reauth-pipe /shared/%[1]s-tokens.jsonl", service))
 					require.NoError(t, err)
@@ -170,7 +170,6 @@ func TestIngestStorageKafkaAuth(t *testing.T) {
 			require.NoError(t, s.StartAndWaitReady(consul, kafka))
 
 			flags = mergeFlags(
-				IngestStorageFlags(kafkaConfig.AuthMode),
 				map[string]string{
 					"-blocks-storage.tsdb.ship-interval": "0",
 					"-querier.query-store-after":         "12h",
@@ -178,9 +177,9 @@ func TestIngestStorageKafkaAuth(t *testing.T) {
 				flags,
 			)
 
-			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), mergeMaps(flags, serviceFlags["distributor"]))
-			ingester := e2emimir.NewIngester("ingester-0", consul.NetworkHTTPEndpoint(), mergeMaps(flags, serviceFlags["ingester"]))
-			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), mergeMaps(flags, serviceFlags["querier"]))
+			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), mergeFlags(flags, IngestStorageFlags(kafkaConfig.AuthMode), serviceFlags["distributor"]))
+			ingester := e2emimir.NewIngester("ingester-0", consul.NetworkHTTPEndpoint(), mergeFlags(flags, IngestStorageFlags(kafkaConfig.AuthMode), serviceFlags["ingester"]))
+			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), mergeFlags(flags, serviceFlags["querier"]))
 			require.NoError(t, s.StartAndWaitReady(distributor, ingester, querier))
 
 			client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", userID)
@@ -205,12 +204,4 @@ func TestIngestStorageKafkaAuth(t *testing.T) {
 			assert.Equal(t, expectedVector, result.(model.Vector))
 		})
 	}
-}
-
-func mergeMaps[M ~map[K]V, K comparable, V any](ms ...M) M {
-	ret := make(M)
-	for _, m := range ms {
-		maps.Insert(m, maps.All(m))
-	}
-	return ret
 }

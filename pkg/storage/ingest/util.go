@@ -194,6 +194,7 @@ func requestTokenRefresh(ctx context.Context, cfg KafkaAuthConfig) error {
 	if err != nil {
 		return fmt.Errorf("opening reauth request file %s: %w", cfg.OauthbearerReauthRequestFilePath, err)
 	}
+	defer wf.Close()
 
 	_, err = ioctx.Write(ctx, wf, []byte("reauth\n"))
 	if err != nil {
@@ -210,6 +211,7 @@ func readTokenFromFile(ctx context.Context, cfg KafkaAuthConfig) (tokenJSON []by
 	if err != nil {
 		return nil, fmt.Errorf("opening token file %s: %w", cfg.OauthbearerFilePath, err)
 	}
+	defer f.Close()
 
 	tokenJSON, err = ioctx.ReadAll(ctx, f)
 	if err != nil && !errors.Is(err, io.EOF) {
