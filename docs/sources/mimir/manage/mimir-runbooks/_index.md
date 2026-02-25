@@ -1015,7 +1015,7 @@ Useful PromQL queries include;
 
 ```promql
 # Look for a change in the number of requests made to ingesters by queriers and ruler-queriers. See also cortex_ingester_client_request_duration_seconds_bucket
-sum by (container)(rate(cortex_ingester_client_request_duration_seconds_count{namespace="mimir-prod-49"}[$__rate_interval]))
+sum by (container)(rate(cortex_ingester_client_request_duration_seconds_count{namespace="my-mimir-cluster"}[$__rate_interval]))
 ```
 
 **Querier Issues**
