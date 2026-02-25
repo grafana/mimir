@@ -6,6 +6,7 @@
 package types
 
 import (
+	"errors"
 	"unsafe"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -102,6 +103,37 @@ func (s *EvaluationStats) TrackSamplesForRangeVectorSelector(stepT int64, floats
 	}
 
 	s.newSamplesReadPerStep[i] += int64(floats.CountBetween(newSampleRangeStart, rangeEnd)) + histograms.EquivalentFloatSampleCountBetween(newSampleRangeStart, rangeEnd)
+}
+
+// Add adds the statistics from other to this instance.
+//
+// This instance is modified in-place.
+//
+// Both instances must be for the same time range.
+func (s *EvaluationStats) Add(other *EvaluationStats) error {
+	if !s.timeRange.Equal(other.timeRange) {
+		return errors.New("cannot add EvaluationStats with different time ranges")
+	}
+
+	for i := range s.samplesProcessedPerStep {
+		s.samplesProcessedPerStep[i] += other.samplesProcessedPerStep[i]
+		s.newSamplesReadPerStep[i] += other.newSamplesReadPerStep[i]
+	}
+
+	return nil
+}
+
+// Clone returns a copy of this EvaluationStats instance.
+func (s *EvaluationStats) Clone() (*EvaluationStats, error) {
+	clone, err := NewEvaluationStats(s.timeRange, s.memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	copy(clone.samplesProcessedPerStep, s.samplesProcessedPerStep)
+	copy(clone.newSamplesReadPerStep, s.newSamplesReadPerStep)
+
+	return clone, nil
 }
 
 func (s *EvaluationStats) Close() {

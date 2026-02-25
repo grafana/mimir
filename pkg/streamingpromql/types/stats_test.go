@@ -233,3 +233,100 @@ func (p *perStepTracker) requireChange(t *testing.T, actual []int64, delta ...in
 func (p *perStepTracker) requireNoChange(t *testing.T, actual []int64) {
 	require.Equal(t, p.current, actual)
 }
+
+func TestEvaluationStats_Add(t *testing.T) {
+	start := timestamp.Time(0)
+	step := time.Minute
+	end := start.Add(2 * step)
+	timeRange := NewRangeQueryTimeRange(start, end, step)
+
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+	s1, err := NewEvaluationStats(timeRange, memoryConsumptionTracker)
+	require.NoError(t, err)
+	s2, err := NewEvaluationStats(timeRange, memoryConsumptionTracker)
+	require.NoError(t, err)
+
+	s1.samplesProcessedPerStep[0] = 10
+	s1.samplesProcessedPerStep[1] = 20
+	s1.samplesProcessedPerStep[2] = 30
+	s1.newSamplesReadPerStep[0] = 1
+	s1.newSamplesReadPerStep[1] = 2
+	s1.newSamplesReadPerStep[2] = 3
+
+	s2.samplesProcessedPerStep[0] = 40
+	s2.samplesProcessedPerStep[1] = 50
+	s2.samplesProcessedPerStep[2] = 60
+	s2.newSamplesReadPerStep[0] = 4
+	s2.newSamplesReadPerStep[1] = 5
+	s2.newSamplesReadPerStep[2] = 6
+
+	require.NoError(t, s1.Add(s2))
+	require.Equal(t, []int64{50, 70, 90}, s1.samplesProcessedPerStep)
+	require.Equal(t, []int64{5, 7, 9}, s1.newSamplesReadPerStep)
+
+	// s2 should be unchanged.
+	require.Equal(t, []int64{40, 50, 60}, s2.samplesProcessedPerStep)
+	require.Equal(t, []int64{4, 5, 6}, s2.newSamplesReadPerStep)
+
+	s1.Close()
+	s2.Close()
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+}
+
+func TestEvaluationStats_Add_DifferentTimeRanges(t *testing.T) {
+	start := timestamp.Time(0)
+	step := time.Minute
+
+	timeRange1 := NewRangeQueryTimeRange(start, start.Add(2*step), step)
+	timeRange2 := NewRangeQueryTimeRange(start, start.Add(3*step), step)
+
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+	s1, err := NewEvaluationStats(timeRange1, memoryConsumptionTracker)
+	require.NoError(t, err)
+	s2, err := NewEvaluationStats(timeRange2, memoryConsumptionTracker)
+	require.NoError(t, err)
+
+	require.EqualError(t, s1.Add(s2), "cannot add EvaluationStats with different time ranges")
+}
+
+func TestEvaluationStats_Clone(t *testing.T) {
+	start := timestamp.Time(0)
+	step := time.Minute
+	end := start.Add(2 * step)
+	timeRange := NewRangeQueryTimeRange(start, end, step)
+
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+	original, err := NewEvaluationStats(timeRange, memoryConsumptionTracker)
+	require.NoError(t, err)
+
+	original.samplesProcessedPerStep[0] = 10
+	original.samplesProcessedPerStep[1] = 20
+	original.samplesProcessedPerStep[2] = 30
+	original.newSamplesReadPerStep[0] = 1
+	original.newSamplesReadPerStep[1] = 2
+	original.newSamplesReadPerStep[2] = 3
+
+	clone, err := original.Clone()
+	require.NoError(t, err)
+
+	// Clone should have the same values.
+	require.Equal(t, original.samplesProcessedPerStep, clone.samplesProcessedPerStep)
+	require.Equal(t, original.newSamplesReadPerStep, clone.newSamplesReadPerStep)
+	require.Equal(t, original.timeRange, clone.timeRange)
+
+	// Modifying the clone should not affect the original.
+	clone.samplesProcessedPerStep[0] = 99
+	clone.newSamplesReadPerStep[0] = 99
+	require.Equal(t, int64(10), original.samplesProcessedPerStep[0])
+	require.Equal(t, int64(1), original.newSamplesReadPerStep[0])
+
+	original.Close()
+	clone.Close()
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+}
