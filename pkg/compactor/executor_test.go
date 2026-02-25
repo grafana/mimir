@@ -13,6 +13,7 @@ import (
 	"slices"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/go-kit/log"
@@ -40,8 +41,8 @@ import (
 )
 
 var (
-	testBlockID1 = ulid.MustNew(ulid.Timestamp(time.Unix(1600000000, 0)), rand.New(rand.NewSource(1)))
-	testBlockID2 = ulid.MustNew(ulid.Timestamp(time.Unix(1600000001, 0)), rand.New(rand.NewSource(2)))
+	testBlockID1 = ulid.MustNew(1, nil)
+	testBlockID2 = ulid.MustNew(2, nil)
 )
 
 func makeTestCompactorConfig(PlanningMode, schedulerAddress string) Config {
@@ -128,6 +129,29 @@ func (m *mockCompactorSchedulerClient) GetUpdateJobCallCount() int {
 	return m.updateJobCallCount
 }
 
+func (m *mockCompactorSchedulerClient) GetLeaseJobCallCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.leaseJobCallCount
+}
+
+func newTestSchedulerExecutor(t *testing.T, cfg Config, client compactorschedulerpb.CompactorSchedulerClient) *schedulerExecutor {
+	t.Helper()
+	exec, err := newSchedulerExecutor(cfg, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { exec.schedulerConn.Close() })
+	exec.schedulerClient = client
+	return exec
+}
+
+func prepareCompactorForExecutorTest(t *testing.T, cfg Config, bkt objstore.Bucket, cfgProvider ConfigProvider) *MultitenantCompactor {
+	t.Helper()
+	c, _, _, _, _ := prepareWithConfigProvider(t, cfg, bkt, cfgProvider)
+	c.bucketClient = bkt
+	c.shardingStrategy = newSplitAndMergeShardingStrategy(nil, nil, nil, c.cfgProvider)
+	return c
+}
+
 func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 	testCases := map[string]struct {
 		setupMock           func(*mockCompactorSchedulerClient)
@@ -181,14 +205,8 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 			bucketClient := objstore.NewInMemBucket()
 			tc.setupBucket(bucketClient)
 
-			schedulerExec, err := newSchedulerExecutor(cfg, log.NewNopLogger(), nil)
-			require.NoError(t, err)
-			t.Cleanup(func() { schedulerExec.schedulerConn.Close() })
-			schedulerExec.schedulerClient = mockSchedulerClient
-
-			c, _, _, _, _ := prepareWithConfigProvider(t, cfg, bucketClient, newMockConfigProvider())
-			c.bucketClient = bucketClient
-			c.shardingStrategy = newSplitAndMergeShardingStrategy(nil, nil, nil, c.cfgProvider)
+			schedulerExec := newTestSchedulerExecutor(t, cfg, mockSchedulerClient)
+			c := prepareCompactorForExecutorTest(t, cfg, bucketClient, newMockConfigProvider())
 
 			gotWork, err := schedulerExec.leaseAndExecuteJob(context.Background(), c, "compactor-1")
 			if tc.expectedFinalStatus == compactorschedulerpb.UPDATE_TYPE_ABANDON {
@@ -216,10 +234,9 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 	var IDs = [][]byte{testBlockID1.Bytes(), testBlockID2.Bytes()}
 
 	tests := map[string]struct {
-		setupMock           func(*mockCompactorSchedulerClient)
-		expectedLeaseCalls  int
-		expectedUpdateCalls int
-		planJob             bool
+		setupMock          func(*mockCompactorSchedulerClient)
+		expectGrowingDelay bool
+		planJob            bool
 	}{
 		"scheduler_errors_should_trigger_backoff": {
 			setupMock: func(mock *mockCompactorSchedulerClient) {
@@ -227,41 +244,37 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 					return nil, errors.New("error")
 				}
 			},
-			expectedLeaseCalls:  3,
-			expectedUpdateCalls: 0,
+			expectGrowingDelay: true,
 		},
 		"successful_compaction_execution_should_not_backoff": {
 			setupMock: func(mock *mockCompactorSchedulerClient) {
 				mock.LeaseJobFunc = func(_ context.Context, _ *compactorschedulerpb.LeaseJobRequest) (*compactorschedulerpb.LeaseJobResponse, error) {
-					resp := &compactorschedulerpb.LeaseJobResponse{
+					return &compactorschedulerpb.LeaseJobResponse{
 						Key: &compactorschedulerpb.JobKey{Id: "compaction-job"},
 						Spec: &compactorschedulerpb.JobSpec{
 							Tenant:  "user-1",
 							Job:     &compactorschedulerpb.CompactionJob{Split: true, BlockIds: IDs},
 							JobType: compactorschedulerpb.JOB_TYPE_COMPACTION,
 						},
-					}
-					return resp, nil
+					}, nil
 				}
 				mock.UpdateJobFunc = func(_ context.Context, _ *compactorschedulerpb.UpdateCompactionJobRequest) (*compactorschedulerpb.UpdateJobResponse, error) {
 					return &compactorschedulerpb.UpdateJobResponse{}, nil
 				}
 			},
-			expectedLeaseCalls:  3,
-			expectedUpdateCalls: 3, // Only final COMPLETE status updates, no immediate IN_PROGRESS
+			expectGrowingDelay: false,
 		},
 		"successful_planning_execution_should_not_backoff": {
 			setupMock: func(mock *mockCompactorSchedulerClient) {
 				mock.LeaseJobFunc = func(_ context.Context, _ *compactorschedulerpb.LeaseJobRequest) (*compactorschedulerpb.LeaseJobResponse, error) {
-					resp := &compactorschedulerpb.LeaseJobResponse{
+					return &compactorschedulerpb.LeaseJobResponse{
 						Key: &compactorschedulerpb.JobKey{Id: "user-1"},
 						Spec: &compactorschedulerpb.JobSpec{
 							Tenant:  "user-1",
-							Job:     &compactorschedulerpb.CompactionJob{Split: false, BlockIds: [][]byte{}}, // Empty BlockIds = planning
+							Job:     &compactorschedulerpb.CompactionJob{Split: false, BlockIds: [][]byte{}},
 							JobType: compactorschedulerpb.JOB_TYPE_PLANNING,
 						},
-					}
-					return resp, nil
+					}, nil
 				}
 				mock.UpdatePlanJobFunc = func(_ context.Context, _ *compactorschedulerpb.UpdatePlanJobRequest) (*compactorschedulerpb.UpdateJobResponse, error) {
 					return &compactorschedulerpb.UpdateJobResponse{}, nil
@@ -270,9 +283,8 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 					return &compactorschedulerpb.PlannedJobsResponse{}, nil
 				}
 			},
-			expectedLeaseCalls:  3,
-			expectedUpdateCalls: 0, // Planning jobs no longer send initial IN_PROGRESS updates, only periodic ones from ticker
-			planJob:             true,
+			expectGrowingDelay: false,
+			planJob:            true,
 		},
 	}
 
@@ -290,8 +302,9 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 			cfg.ShardingRing.Common.KVStore.Mock = ringStore
 			cfg.SchedulerEndpoint = "localhost:9095"
 			cfg.PlanningMode = planningModeScheduler
-			// set cfg.SchedulerUpdateInterval long, only testing initial progress update
 			cfg.SchedulerUpdateInterval = 1 * time.Hour
+			cfg.SchedulerMinLeasingBackoff = 100 * time.Millisecond
+			cfg.SchedulerMaxLeasingBackoff = 400 * time.Millisecond
 
 			bucketClient := &bucket.ClientMock{}
 			if tc.planJob {
@@ -301,37 +314,57 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 			bucketClient.MockGet(fmt.Sprintf("user-1/%s/meta.json", testBlockID1), "", block.ErrorSyncMetaNotFound)
 			bucketClient.MockGet(fmt.Sprintf("user-1/%s/meta.json", testBlockID2), "", block.ErrorSyncMetaNotFound)
 
-			c, _, _, _, _ := prepareWithConfigProvider(t, cfg, bucketClient, newMockConfigProvider())
-			c.bucketClient = bucketClient
-
-			c.shardingStrategy = newSplitAndMergeShardingStrategy(nil, nil, nil, c.cfgProvider)
+			c := prepareCompactorForExecutorTest(t, cfg, bucketClient, newMockConfigProvider())
 
 			reg := prometheus.NewPedanticRegistry()
 			c.ring, c.ringLifecycler, _ = newRingAndLifecycler(cfg.ShardingRing, log.NewNopLogger(), reg)
 
-			// Create a scheduler executor with the mock client
-			schedulerExec, err := newSchedulerExecutor(cfg, log.NewNopLogger(), nil)
-			require.NoError(t, err)
-			t.Cleanup(func() { schedulerExec.schedulerConn.Close() })
-			schedulerExec.schedulerClient = mockSchedulerClient
+			schedulerExec := newTestSchedulerExecutor(t, cfg, mockSchedulerClient)
 
-			runCtx, runCancel := context.WithCancel(context.Background())
-			t.Cleanup(runCancel)
-			errCh := make(chan error, 1)
-			go func() {
-				errCh <- schedulerExec.run(runCtx, c)
-			}()
+			synctest.Test(t, func(t *testing.T) {
+				runCtx, runCancel := context.WithCancel(context.Background())
+				t.Cleanup(runCancel)
 
-			require.Eventually(t, func() bool {
-				mockSchedulerClient.mu.Lock()
-				defer mockSchedulerClient.mu.Unlock()
-				return (mockSchedulerClient.leaseJobCallCount == tc.expectedLeaseCalls) &&
-					(mockSchedulerClient.updateJobCallCount == tc.expectedUpdateCalls)
-			}, 6*time.Second, 100*time.Millisecond)
+				errCh := make(chan error, 1)
+				go func() {
+					errCh <- schedulerExec.run(runCtx, c)
+				}()
 
-			assert.Empty(t, errCh, "error channel should be empty")
+				// Iteration 1 should fire immediately
+				sleepUntil(t, func() bool { return mockSchedulerClient.GetLeaseJobCallCount() == 1 }, cfg.SchedulerMaxLeasingBackoff)
+				delay1 := sleepUntil(t, func() bool { return mockSchedulerClient.GetLeaseJobCallCount() == 2 }, cfg.SchedulerMaxLeasingBackoff)
+				delay2 := sleepUntil(t, func() bool { return mockSchedulerClient.GetLeaseJobCallCount() == 3 }, cfg.SchedulerMaxLeasingBackoff)
+				runCancel()
+				synctest.Wait()
+				require.NoError(t, <-errCh, "executor should exit without error")
+
+				// if it grows, back-off grows its jitter window as follows:
+				// [start,start*2) -> [start*2, start*4) -> [start*4, start*8) -> ... until max is reached]
+				maxFirstDelay := 2 * cfg.SchedulerMinLeasingBackoff
+				assert.Less(t, delay1, maxFirstDelay)
+				if tc.expectGrowingDelay {
+					assert.GreaterOrEqual(t, delay2, maxFirstDelay, "second delay should grow")
+				} else {
+					assert.Less(t, delay2, maxFirstDelay, "second delay should not grow")
+				}
+			})
 		})
 	}
+}
+
+// sleepUntil advances fake time in 1ms steps until cond returns true or timeout elapses.
+// Returns the elapsed fake time with millisecond precision. Calls t.Fatal if timeout
+// elapses before cond returns true. Must be called from within a synctest bubble.
+func sleepUntil(t *testing.T, cond func() bool, timeout time.Duration) time.Duration {
+	t.Helper()
+	from := time.Now()
+	for !cond() {
+		if time.Since(from) >= timeout {
+			t.Fatalf("sleepUntil: condition not met within %v", timeout)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	return time.Since(from)
 }
 
 func TestSchedulerExecutor_ServicesLifecycle(t *testing.T) {
@@ -425,26 +458,23 @@ func TestSchedulerExecutor_PlannedJobsRetryBehavior(t *testing.T) {
 
 	cfg := makeTestCompactorConfig(planningModeScheduler, "localhost:9095")
 
-	schedulerExec, err := newSchedulerExecutor(cfg, log.NewNopLogger(), nil)
-	require.NoError(t, err)
-	t.Cleanup(func() { schedulerExec.schedulerConn.Close() })
-	schedulerExec.schedulerClient = mockSchedulerClient
+	schedulerExec := newTestSchedulerExecutor(t, cfg, mockSchedulerClient)
 
 	mcp := newMockConfigProvider()
 	mcp.maxPerBlockUploadConcurrency = map[string]int{"test-tenant": 1}
-	c, _, _, _, _ := prepareWithConfigProvider(t, cfg, &bucket.ClientMock{}, mcp)
 
 	bucketClient := &bucket.ClientMock{}
 	bucketClient.MockIter("test-tenant/", []string{}, nil)
 	bucketClient.MockIter("test-tenant/markers/", []string{}, nil)
-	c.bucketClient = bucketClient
+	c := prepareCompactorForExecutorTest(t, cfg, bucketClient, mcp)
 
-	c.shardingStrategy = newSplitAndMergeShardingStrategy(nil, nil, nil, c.cfgProvider)
-
-	gotWork, err := schedulerExec.leaseAndExecuteJob(context.Background(), c, "compactor-1")
-	require.NoError(t, err, "should eventually succeed with plannedJobs retry policy")
-	require.True(t, gotWork)
-	require.Equal(t, failuresBeforeSuccess+1, callCount)
+	// Wrap with synctest to avoid sleeping in real time during retries
+	synctest.Test(t, func(t *testing.T) {
+		gotWork, err := schedulerExec.leaseAndExecuteJob(context.Background(), c, "compactor-1")
+		require.NoError(t, err, "should eventually succeed with plannedJobs retry policy")
+		require.True(t, gotWork)
+		require.Equal(t, failuresBeforeSuccess+1, callCount)
+	})
 }
 
 func TestSchedulerExecutor_NoGoRoutineLeak(t *testing.T) {
@@ -476,10 +506,7 @@ func TestSchedulerExecutor_NoGoRoutineLeak(t *testing.T) {
 	initialGoroutines := goleak.IgnoreCurrent()
 	defer testutil.VerifyNoLeak(t, initialGoroutines)
 
-	c, _, _, _, _ := prepareWithConfigProvider(t, cfg, bucketClient, newMockConfigProvider())
-	c.bucketClient = bucketClient
-
-	c.shardingStrategy = newSplitAndMergeShardingStrategy(nil, nil, nil, c.cfgProvider)
+	c := prepareCompactorForExecutorTest(t, cfg, bucketClient, newMockConfigProvider())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	gotWork, err := schedulerExec.leaseAndExecuteJob(ctx, c, "compactor-1")
@@ -494,15 +521,11 @@ func TestSchedulerExecutor_NoGoRoutineLeak(t *testing.T) {
 }
 
 func TestSchedulerExecutor_JobCancellationOn_NotFoundResponse(t *testing.T) {
-
-	updateCallCount := 0
-	jobCanceled := make(chan struct{})
-
-	mockSchedulerClient := &mockCompactorSchedulerClient{
+	var mockSchedulerClient *mockCompactorSchedulerClient
+	mockSchedulerClient = &mockCompactorSchedulerClient{
 		UpdateJobFunc: func(_ context.Context, in *compactorschedulerpb.UpdateCompactionJobRequest) (*compactorschedulerpb.UpdateJobResponse, error) {
-			updateCallCount++
 			// Return NOT_FOUND after first heartbeat to simulate job cancellation by scheduler
-			if updateCallCount > 1 {
+			if mockSchedulerClient.GetUpdateJobCallCount() > 1 {
 				return nil, status.Error(codes.NotFound, "job not found")
 			}
 			return &compactorschedulerpb.UpdateJobResponse{}, nil
@@ -510,20 +533,8 @@ func TestSchedulerExecutor_JobCancellationOn_NotFoundResponse(t *testing.T) {
 	}
 
 	cfg := makeTestCompactorConfig(planningModeScheduler, "localhost:9095")
-	cfg.SchedulerUpdateInterval = 10 * time.Millisecond // Short interval for fast test
 
-	schedulerExec, err := newSchedulerExecutor(cfg, log.NewNopLogger(), nil)
-	require.NoError(t, err)
-	defer schedulerExec.schedulerConn.Close()
-	schedulerExec.schedulerClient = mockSchedulerClient
-
-	ctx, cancel := context.WithCancelCause(context.Background())
-	defer cancel(nil)
-
-	jobCancelFunc := func(cause error) {
-		cancel(cause)
-		close(jobCanceled)
-	}
+	schedulerExec := newTestSchedulerExecutor(t, cfg, mockSchedulerClient)
 
 	// Test the startJobStatusUpdater directly
 	jobKey := &compactorschedulerpb.JobKey{Id: "test-job"}
@@ -534,17 +545,20 @@ func TestSchedulerExecutor_JobCancellationOn_NotFoundResponse(t *testing.T) {
 		schedulerLastContact: promauto.With(nil).NewGauge(prometheus.GaugeOpts{Name: "test_last_contact"}),
 	}
 
-	go schedulerExec.startJobStatusUpdater(ctx, mockCompactor, jobKey, jobSpec, jobCancelFunc)
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancelCause(context.Background())
+		defer cancel(nil)
 
-	// Wait for the job to cancel after NOT_FOUND
-	select {
-	case <-jobCanceled:
-	case <-time.After(50 * time.Millisecond):
-		t.Fatal("job was not canceled")
-	}
+		go schedulerExec.startJobStatusUpdater(ctx, mockCompactor, jobKey, jobSpec, cancel)
 
-	// check that exactly 2 updates were sent. First recv OK, next recv NOT_FOUND to trigge cancel
-	require.Equal(t, 2, updateCallCount, "should have sent exactly 2 updates: one successful, then one NOT_FOUND")
+		// we expect the job to be canceled after on the second update attempt
+		sleepUntil(t, func() bool { return mockSchedulerClient.GetUpdateJobCallCount() == 2 }, 3*cfg.SchedulerUpdateInterval)
+		synctest.Wait()
+		require.Error(t, ctx.Err(), "job context should have been canceled after NOT_FOUND response")
+	})
+
+	// check that exactly 2 updates were sent. First recv OK, next recv NOT_FOUND to trigger cancel
+	require.Equal(t, 2, mockSchedulerClient.GetUpdateJobCallCount(), "should have sent exactly 2 updates: one successful, then one NOT_FOUND")
 }
 
 func TestSchedulerExecutor_ExecuteCompactionJob_InvalidInput(t *testing.T) {
@@ -601,9 +615,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_InvalidInput(t *testing.T) {
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
 			cfg := makeTestCompactorConfig(planningModeScheduler, "localhost:9095")
-			schedulerExec, err := newSchedulerExecutor(cfg, log.NewNopLogger(), nil)
-			require.NoError(t, err)
-			t.Cleanup(func() { schedulerExec.schedulerConn.Close() })
+			schedulerExec := newTestSchedulerExecutor(t, cfg, nil)
 
 			c, _, _, _, _ := prepareWithConfigProvider(t, cfg, &bucket.ClientMock{}, newMockConfigProvider())
 
@@ -696,7 +708,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 		"abandon_when_requested_blocks_not_in_obj_storage": {
 			setupBucket: func(t *testing.T, bkt objstore.Bucket) setupResult {
 				block1 := createTSDBBlock(t, bkt, "test-tenant", 10, 20, 2, nil)
-				block2 := ulid.MustNew(ulid.Timestamp(time.Unix(1600000002, 0)), rand.New(rand.NewSource(2)))
+				block2 := testBlockID1
 				return setupResult{
 					blockIDsToCompact: []ulid.ULID{block1, block2},
 					compactedBlocks:   nil,
@@ -721,17 +733,12 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 
 			blocksAfterSetup := countBlocksInBucket(t, bkt, "test-tenant")
 
-			schedulerExec, err := newSchedulerExecutor(cfg, log.NewNopLogger(), nil)
-			require.NoError(t, err)
-			t.Cleanup(func() { schedulerExec.schedulerConn.Close() })
-
 			mockCfg := newMockConfigProvider()
 			if tc.split {
 				mockCfg.splitAndMergeShards = map[string]int{"test-tenant": splitShards}
 			}
-			c, _, _, _, _ := prepareWithConfigProvider(t, cfg, bkt, mockCfg)
-			c.bucketClient = bkt
-			c.shardingStrategy = newSplitAndMergeShardingStrategy(nil, nil, nil, c.cfgProvider)
+			schedulerExec := newTestSchedulerExecutor(t, cfg, nil)
+			c := prepareCompactorForExecutorTest(t, cfg, bkt, mockCfg)
 
 			compactor, planner, err := splitAndMergeCompactorFactory(context.Background(), cfg, log.NewNopLogger(), prometheus.NewRegistry())
 			require.NoError(t, err)
