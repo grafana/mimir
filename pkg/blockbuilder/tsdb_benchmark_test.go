@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -87,9 +88,11 @@ func BenchmarkTSDBBuilder_CompactAndUpload(b *testing.B) {
 			config, overrides := blockBuilderConfig(b, "kafka:9092", nil)
 			config.GenerateSparseIndexHeaders = bm.genSparseHeaders
 
-			metrics := newTSDBBBuilderMetrics(prometheus.NewRegistry())
-
-			builder := NewTSDBBuilder(partitionID, config, overrides, log.NewNopLogger(), metrics)
+			logger := log.NewNopLogger()
+			registry := prometheus.NewPedanticRegistry()
+			tsdbBuilderMetrics := newTSDBBuilderMetrics(registry)
+			tsdbMetrics := mimir_tsdb.NewTSDBMetrics(registry, logger)
+			builder := NewTSDBBuilder(partitionID, config, overrides, logger, tsdbBuilderMetrics, tsdbMetrics)
 			benchmarkCompactAndUpload(b, builder, tenantID, bm.numSeries, bm.samplesPerSeries, bm.useHistograms)
 		})
 	}
