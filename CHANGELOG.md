@@ -99,6 +99,7 @@
 * [ENHANCEMENT] Ingester: New `-blocks-storage.tsdb.close-idle-tsdb-when-shipping-disabled` flag to enforce closing of idle TSDBs when block shipping is disabled. #13862
 * [ENHANCEMENT] Partitions ring: Add support to forcefully lock a partition state through the web UI. #13811
 * [ENHANCEMENT] Usage-tracker: Serialize metrics gathering to reduce tail latency when running many partitions on a single instance. #13886
+* [ENHANCEMENT] Usage-tracker: Add experimental per-user series created and removed counter metrics, gated behind `-usage-tracker.enable-verbose-series-creation-deletion-prometheus-metrics`. #14486
 * [ENHANCEMENT] API: The `/api/v1/user_limits` endpoint is now stable and no longer experimental. #13218
 * [ENHANCEMENT] Ingester: limiting CPU and memory utilized by the read path (`-ingester.read-path-cpu-utilization-limit` and `-ingester.read-path-memory-utilization-limit`) is now considered stable. #13167
 * [ENHANCEMENT] Querier: `-querier.max-estimated-fetched-chunks-per-query-multiplier` is now stable and no longer experimental. #13120
