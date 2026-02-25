@@ -996,6 +996,22 @@ func TestQuerySplitting_PartialConsumption_DoesNotCache(t *testing.T) {
 	verifyCacheStats(t, testCache, 2, 0, 0)
 }
 
+func TestQuerySplitting_SubquerySpinoff_SkipsSplitting(t *testing.T) {
+	testCache, mimirEngine := setupEngineAndCache(t)
+	storage := promqltest.LoadedStorage(t, `
+		load 10m
+			some_metric{env="1"} 0+1x40
+	`)
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	baseT := timestamp.Time(0)
+	ts := baseT.Add(6 * time.Hour)
+
+	result := runInstantQuery(t, mimirEngine, storage, `sum_over_time(__subquery_spinoff__{__query__="some_metric",__range__="5h0m0s",__step__="5m0s"}[5h])`, ts)
+	require.NoError(t, result.Err)
+	verifyCacheStats(t, testCache, 0, 0, 0)
+}
+
 func createSplittingEngineWithCache(t *testing.T, registry *prometheus.Registry, splitInterval time.Duration, enableDelayedNameRemoval bool, enableEliminateDeduplicateAndMerge bool) (promql.QueryEngine, *testCacheBackend) {
 	t.Helper()
 

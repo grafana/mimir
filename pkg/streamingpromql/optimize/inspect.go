@@ -70,7 +70,7 @@ func InspectSelectors(node planning.Node) InspectSelectorsResult {
 		switch e := n.(type) {
 		case *core.MatrixSelector:
 			res.HasSelectors = true
-			res.IsRewrittenByMiddleware = res.IsRewrittenByMiddleware || isSpunOff(e)
+			res.IsRewrittenByMiddleware = res.IsRewrittenByMiddleware || IsSpunOff(e)
 		case *core.VectorSelector:
 			res.HasSelectors = true
 			res.IsRewrittenByMiddleware = res.IsRewrittenByMiddleware || isSharded(e)
@@ -91,7 +91,7 @@ func isSharded(s *core.VectorSelector) bool {
 	return false
 }
 
-func isSpunOff(s *core.MatrixSelector) bool {
+func IsSpunOff(s *core.MatrixSelector) bool {
 	for _, m := range s.Matchers {
 		if m.Name == model.MetricNameLabel && m.Type == labels.MatchEqual && m.Value == astmapper.SubqueryMetricName {
 			return true

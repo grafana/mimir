@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -145,6 +146,16 @@ func (o *OptimizationPass) trySplitFunction(ctx context.Context, functionCall *c
 	inner, ok := functionCall.Child(0).(planning.SplitNode)
 	if !ok || !inner.IsSplittable() {
 		return nil, "unsupported_inner_node", nil
+	}
+
+	// Skip splitting for the fake selectors that subquery spinoff generates for now. These selectors will ignore the
+	// sub time ranges from splitting and instead always query for the entire original range, so each split would end up
+	// fetching more data than needed.
+	ms, ok := inner.(*core.MatrixSelector)
+	if ok {
+		if optimize.IsSpunOff(ms) {
+			return nil, "subquery_spinoff", nil
+		}
 	}
 
 	if !inner.GetRangeParams().IsSet {
