@@ -24,7 +24,7 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
@@ -292,7 +292,7 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 			},
 			expectGrowingDelay: true,
 		},
-		"successful_compaction_execution_should_not_backoff": {
+		"leased_compaction_job_should_not_backoff": {
 			setupMock: func(mock *mockCompactorSchedulerClient) {
 				mock.LeaseJobFunc = func(_ context.Context, _ *compactorschedulerpb.LeaseJobRequest) (*compactorschedulerpb.LeaseJobResponse, error) {
 					return &compactorschedulerpb.LeaseJobResponse{
@@ -310,7 +310,7 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 			},
 			expectGrowingDelay: false,
 		},
-		"successful_planning_execution_should_not_backoff": {
+		"leased_planning_job_should_not_backoff": {
 			setupMock: func(mock *mockCompactorSchedulerClient) {
 				mock.LeaseJobFunc = func(_ context.Context, _ *compactorschedulerpb.LeaseJobRequest) (*compactorschedulerpb.LeaseJobResponse, error) {
 					return &compactorschedulerpb.LeaseJobResponse{
