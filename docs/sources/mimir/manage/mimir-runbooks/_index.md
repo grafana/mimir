@@ -3637,7 +3637,7 @@ In the case of an ingester or store-gateway being `OOMKilled`, if you have the "
   - Scale up queriers to satisfy the increased workload
 - Is query latency increased?
   - An increased latency reduces the number of queries we can run / sec: once all workers are busy, new queries will pile up in the queue
-  - Temporarily scale up queriers to try to stop the bleed
+  - Temporarily scale up queriers to try to stop the bleed (note that if the root cause is slow responses from ingesters or store-gateways, then adding more queriers may add to the load and make the problem worse)
   - Check if a specific tenant is running heavy queries
     - Run `sum by (user) (cortex_query_scheduler_queue_length{namespace="<namespace>"}) > 0` to find tenants with enqueued queries
     - If remote ruler evaluation is enabled, make sure you understand which one of the read paths (user or ruler queries?) is being affected - check the alert message.
