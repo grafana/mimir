@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.17.7
+
+### Grafana Mimir
+
+* [BUGFIX] Update go.opentelemetry.io/otel/sdk to v1.40.0 to address [CVE-2026-24051](https://nvd.nist.gov/vuln/detail/CVE-2026-24051) #14432
+
 ## 2.17.6
 
 ### Grafana Mimir
