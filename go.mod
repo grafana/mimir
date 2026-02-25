@@ -33,7 +33,7 @@ require (
 	github.com/prometheus/client_golang v1.23.3-0.20260108101519-fb0838f53562
 	github.com/prometheus/client_model v0.6.2
 	github.com/prometheus/common v0.67.5
-	github.com/prometheus/prometheus v1.99.0
+	github.com/prometheus/prometheus v2.5.0+incompatible
 	github.com/segmentio/fasthash v1.0.3
 	github.com/spf13/afero v1.15.0
 	github.com/stretchr/testify v1.11.1
