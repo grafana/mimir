@@ -878,7 +878,7 @@ func TestBuildCompactionJobFromMetas(t *testing.T) {
 		}
 	}
 
-	meta1, meta2, meta3 := makeMeta(100, 200, 1), makeMeta(200, 300, 2), makeMeta(50, 150, 3)
+	meta1, meta2, meta3, meta4 := makeMeta(100, 200, 1), makeMeta(200, 300, 2), makeMeta(50, 150, 3), makeMeta(50, 300, 4)
 
 	tests := map[string]struct {
 		metas          []*block.Meta
@@ -909,6 +909,12 @@ func TestBuildCompactionJobFromMetas(t *testing.T) {
 			expectMinTime: 50,
 			expectMaxTime: 300,
 		},
+		"overlapping_time_ranges": {
+			// meta4 overlaps meta1: earlier MinTime but later MaxTime.
+			metas:         []*block.Meta{meta1, meta4},
+			expectMinTime: 50,
+			expectMaxTime: 300,
+		},
 	}
 
 	for testName, tc := range tests {
@@ -932,8 +938,8 @@ func TestBuildCompactionJobFromMetas(t *testing.T) {
 			}), "blocks should be sorted by MinTime")
 
 			if len(job.metasByMinTime) > 0 {
-				assert.Equal(t, tc.expectMinTime, job.metasByMinTime[0].MinTime)
-				assert.Equal(t, tc.expectMaxTime, job.metasByMinTime[len(job.metasByMinTime)-1].MaxTime)
+				assert.Equal(t, tc.expectMinTime, job.MinTime())
+				assert.Equal(t, tc.expectMaxTime, job.MaxTime())
 			}
 		})
 	}
