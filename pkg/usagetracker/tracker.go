@@ -85,6 +85,8 @@ type Config struct {
 	MaxEventsFetchSize int `yaml:"max_events_fetch_size"`
 
 	UserCloseToLimitPercentageThreshold int `yaml:"user_close_to_limit_percentage_threshold"`
+
+	EnableVerboseSeriesCreationDeletionPrometheusMetrics bool `yaml:"enable_verbose_series_creation_deletion_prometheus_metrics" category:"experimental"`
 }
 
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -125,6 +127,8 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&c.MaxEventsFetchSize, "usage-tracker.max-events-fetch-size", 100, "Maximum number of events to fetch from Kafka in a single request. This is used to limit the memory usage when fetching events.")
 
 	f.IntVar(&c.UserCloseToLimitPercentageThreshold, "usage-tracker.user-close-to-limit-percentage-threshold", 90, "Percentage of the local series limit after which a user is considered close to the limit. A user is close to the limit if their series count is above this percentage of their local limit.")
+
+	f.BoolVar(&c.EnableVerboseSeriesCreationDeletionPrometheusMetrics, "usage-tracker.enable-verbose-series-creation-deletion-prometheus-metrics", false, "Enable verbose series creation and deletion Prometheus metrics. When enabled, two additional counters per user and partition are exposed (series created and series removed), increasing the cardinality of exposed metrics and impacting the time and resources needed for scraping in deployments with multiple partitions per pod.")
 }
 
 func (c *Config) ValidateForClient() error {
