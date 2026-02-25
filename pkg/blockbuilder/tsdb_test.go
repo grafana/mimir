@@ -221,7 +221,7 @@ func TestTSDBBuilder(t *testing.T) {
 
 	for _, tc := range testCases {
 		for _, genSparseHeaders := range []bool{false, true} {
-			t.Run(tc.name, func(t *testing.T) {
+			t.Run(fmt.Sprintf("%s/GenSparseHeaders=%t", tc.name, genSparseHeaders), func(t *testing.T) {
 				const partitionID = int32(0)
 				userID := "user1"
 				limits := map[string]*validation.Limits{
