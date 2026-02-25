@@ -349,7 +349,8 @@ How to **investigate**:
   - The panels in the dashboard are vertically sorted by the network path (eg. on the write path: gateway -> distributor -> ingester)
 - If the failing service is going OOM (`OOMKilled`): scale up or increase the memory
 - If the failing service is crashing / panicking: look for the stack trace in the logs and investigate from there
-  - If crashing service is query-frontend, querier or store-gateway, and you have "activity tracker" feature enabled, look for `found unfinished activities from previous run` message and subsequent `activity` messages in the log file to see which queries caused the crash.
+  - If crashing service is query-frontend, querier, ingester or store-gateway, and you have "activity tracker" feature enabled, look for `activity-tracker` logs
+  - After the component restarts it will log `found unfinished activities from previous run`. The subsequent `activity` messages will show which queries were running at the time of the crash
 - When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for the [`MimirGossipMembersTooHigh`](#MimirGossipMembersTooHigh) and [`MimirGossipMembersTooLow`](#MimirGossipMembersTooLow) alerts.
 - When using [ingest-storage](#mimir-ingest-storage-experimental) and distributors are failing to write requests to Kafka, make sure that Kafka is up and running correctly.
 
@@ -924,6 +925,76 @@ as well as which query components are utilized to service the queries.
 
 Note that elevated measures of _inflight_ queries at any part of the read path are likely a symptom and not a cause.
 
+**Query Frontend**
+
+The query-frontend logs can be used to review successful and failed queries and the most useful logs for initial investigation are the `query` and `evaluation` stats log lines.
+
+`query stats` are logged once per HTTP request at the query-frontend boundary. It captures the full lifecycle: queueing, splitting, remote execution, cache interaction, response encoding, and what was
+fetched from storage. This is your first stop when investigating latency, cache behaviour, data volume, or whether a query was split/sharded.
+
+`evaluation stats` are logged once per query shard per evaluation. It captures the PromQL execution itself: the expression being evaluated, estimated memory consumption, and the time range being processed. If
+your query had split_queries=2 and sharded_queries=0, there would be two evaluator log lines — one per time-split chunk — each showing a sub-range of the overall query window.
+
+Use `query stats` when asking:
+
+- Why was this query slow end-to-end?
+- How much data was fetched from storage?
+- Did the results cache help?
+- Was the query split or sharded?
+- What did the client actually send?
+
+Use `evaluation stats` when asking:
+
+- What expression was actually executed after rewriting?
+- How much memory did the PromQL engine use?
+- Which shard/time-chunk is causing problems?
+- Was the expression modified from what the user submitted?
+
+When looking at `msg="query stats"` consider the following attributes;
+
+- status, err - indicates success or failure with an error message indicating the failure reason
+- param_query - the PromQL as submitted by the user
+- param_start, param_end, param_step - the query time range and step interval
+- length — total time window covered by the query (end − start)
+- time_since_min_time — how long ago the query start was relative to now (the oldest data point requested)
+- time_since_max_time - how long ago the query end was relative to now (the most recent data point requested)
+- user_agent - the HTTP User-Agent header value
+- status_code - the http response status code
+- response_time — total wall-clock time from request received to response sent
+- response_size_bytes — size of the HTTP response body
+- queue_time_seconds — time spent waiting in the query scheduler queue
+- query_wall_time_seconds — time spent actually executing the query
+- encode_time_seconds — time spent serialising the result to JSON
+- remote_execution_request_count - number of requests sent to queriers for execution
+- split_queries - the query was split into n sub-queries by the time-splitting middleware
+- sharded_queries — the number of sharded queries
+- spun_off_subqueries — the number of subquery spin-offs
+- fetched_series_count — number of distinct time series read from store-gateways and ingesters
+- fetched_chunks_count — total chunks fetched
+- fetched_chunk_bytes — raw chunk data transferred
+- fetched_index_bytes — number of index bytes fetched. This can be 0 if the index was fully served from cache or memory
+- estimated_series_count — pre-execution estimate of series count
+- samples_processed — total individual samples evaluated
+- results_cache_hit_bytes — the number of bytes returned from the query results cache
+- results_cache_miss_bytes —the number of bytes fetched from storage and written to the query results cache
+- read_consistency — flags if strong read consistency was required
+
+When looking at `msg="evaluation stats"` consider the following attributes;
+
+- status, err - indicates success or failure with an error message indicating the failure reason
+- originalExpression - the PromQL before any query sharding or AST rewriting has been performed
+- nodeCount - the number of nodes/shards the query was distributed across
+- start, end, step - the query time range and step interval
+- timeRangeType - instant vs range query
+- estimatedPeakMemoryConsumption - estimated peak heap bytes used during evaluation of this query
+
+Useful PromQL queries include;
+
+```promql
+# Look for changes in the tenants making the most requests
+topk(10, sum by(user) (rate(cortex_query_frontend_queries_total{namespace="<namespace>"}[$__rate_interval])))
+```
+
 **Ingester or Store-Gateway Issues**
 
 With querier autoscaling in place, the most common cause of a query backlog is that either ingesters or store-gateways
@@ -938,12 +1009,21 @@ Generally, this shows that one of either the ingesters or store-gateways is expe
 and then you can further investigate the query component on its own.
 Scaling up queriers is unlikely to help in this case, as it places more load on an already-overloaded component.
 
+If you have the "activity tracker" feature enabled, look for `activity-tracker` logs. After a component restarts it will log `found unfinished activities from previous run` and then list which queries were running at the time of the crash.
+
+Useful PromQL queries include;
+
+```promql
+# Look for a change in the number of requests made to ingesters by queriers and ruler-queriers. See also cortex_ingester_client_request_duration_seconds_bucket
+sum by (container)(rate(cortex_ingester_client_request_duration_seconds_count{namespace="mimir-prod-49"}[$__rate_interval]))
+```
+
 **Querier Issues**
 
 - Are queriers in a crash loop (eg. OOMKilled)?
   - `OOMKilled`: temporarily increase queriers memory request/limit
   - `panic`: look for the stack trace in the logs and investigate from there
-  - if queriers run with activity tracker enabled, they may log `unfinished activities` message on startup with queries that possibly caused the crash.
+  - if queriers run with activity tracker enabled, they may log `unfinished activities` message on startup with queries that possibly caused the crash. Look for `component=activity-tracker` in the logs.
 - Is QPS increased?
   - Scale up queriers to satisfy the increased workload
 - Is query latency increased?
