@@ -385,6 +385,23 @@ func TestOptimizationPass(t *testing.T) {
 			expectedDuplicateNodesReplacedCount:   1,
 			expectedAggregationNodesReplacedCount: 2,
 		},
+		"subset selector elimination with multiple subsets": {
+			expr: `sum(foo{status="success"}) / sum(foo) / count(foo{status="error"})`,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS
+					- LHS: BinaryExpression: LHS / RHS
+						- LHS: MultiAggregationInstance: sum, filters: {status="success"}
+							- ref#1 MultiAggregationGroup
+								- VectorSelector: {__name__="foo"}
+						- RHS: MultiAggregationInstance: sum
+							- ref#1 MultiAggregationGroup ...
+					- RHS: MultiAggregationInstance: count, filters: {status="error"}
+						- ref#1 MultiAggregationGroup ...
+			`,
+			expectedDuplicateNodesExaminedCount:   1,
+			expectedDuplicateNodesReplacedCount:   1,
+			expectedAggregationNodesReplacedCount: 3,
+		},
 	}
 
 	for name, testCase := range testCases {
