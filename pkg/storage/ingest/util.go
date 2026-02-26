@@ -168,7 +168,10 @@ func kafkaAuthOptions(cfg KafkaAuthConfig) []kgo.Opt {
 					err = json.Unmarshal(token, &a)
 					return a, err
 				})
-				return a.(oauth.Auth), err
+				if err != nil {
+					return oauth.Auth{}, err
+				}
+				return a.(oauth.Auth), nil
 			})
 		default:
 			panic(fmt.Errorf("SASL mechanism is %s but no way to get token defined", SASLMechanismOauthbearer))
