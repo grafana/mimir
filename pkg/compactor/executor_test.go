@@ -55,9 +55,6 @@ func makeTestCompactorConfig(PlanningMode, schedulerAddress string) Config {
 	return cfg
 }
 
-// makeSchedulerTestConfig creates a Config for tests that exercise the full executor run loop,
-// requiring a ring and Consul backend (e.g. tests calling run() or starting the service).
-// Use makeTestCompactorConfig for unit tests that call executor methods directly.
 func makeSchedulerTestConfig(t *testing.T) Config {
 	t.Helper()
 	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
