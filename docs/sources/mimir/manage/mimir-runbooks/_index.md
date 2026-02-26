@@ -281,6 +281,8 @@ How to **investigate**:
 
 Query performance is a known issue. A query may be slow because of high cardinality, large time range and/or because not leveraging on cache (eg. querying series data not cached yet). When investigating this alert, you should check if it's caused by few slow queries or there's an operational / config issue to be fixed.
 
+See also [Investigating query evaluation issues](#investigating-query-evaluation-issues).
+
 How to **investigate**:
 
 - Check the `Mimir / Reads` dashboard
@@ -340,6 +342,8 @@ This alert fires when the rate of 5xx errors of a specific route is > 1% for som
 
 This alert typically acts as a last resort to detect issues / outages. SLO alerts are expected to trigger earlier: if an **SLO alert** has triggered as well for the same read/write path, then you can ignore this alert and focus on the SLO one (but the investigation procedure is typically the same).
 
+See also [Investigating query evaluation issues](#investigating-query-evaluation-issues).
+
 How to **investigate**:
 
 - Check for which route the alert fired (see [Mimir routes by path](#mimir-routes-by-path))
@@ -349,7 +353,8 @@ How to **investigate**:
   - The panels in the dashboard are vertically sorted by the network path (eg. on the write path: gateway -> distributor -> ingester)
 - If the failing service is going OOM (`OOMKilled`): scale up or increase the memory
 - If the failing service is crashing / panicking: look for the stack trace in the logs and investigate from there
-  - If crashing service is query-frontend, querier or store-gateway, and you have "activity tracker" feature enabled, look for `found unfinished activities from previous run` message and subsequent `activity` messages in the log file to see which queries caused the crash.
+  - If crashing service is query-frontend, querier, ingester or store-gateway, and you have "activity tracker" feature enabled, look for `activity-tracker` logs
+  - After the component restarts it will log `found unfinished activities from previous run`. The subsequent `activity` messages will show which queries were running at the time of the crash
 - When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for the [`MimirGossipMembersTooHigh`](#MimirGossipMembersTooHigh) and [`MimirGossipMembersTooLow`](#MimirGossipMembersTooLow) alerts.
 - When using Memberlist look for querier logs which include warnings such as `partition 41: too many unhealthy instances in the ring`
   - Verify that the minimum required number of ingesters for the affected partition are running and healthy.
@@ -412,6 +417,8 @@ This alert fires when rulers fail to evaluate rule queries.
 Each rule evaluation may fail due to many reasons, eg. due to invalid PromQL expression, or query hits limits on number of chunks. These are "user errors", and this alert ignores them.
 
 There is a category of errors that is more important: errors due to failure to read data from store-gateways or ingesters. These errors would result in 500 when run from querier. This alert fires if there is too many of such failures.
+
+See also [Investigating query evaluation issues](#investigating-query-evaluation-issues).
 
 How to **fix** it:
 
@@ -927,63 +934,11 @@ The row below shows peak values for `Query-scheduler <-> Querier Inflight Reques
 This shows when the queriers are saturated with inflight query requests,
 as well as which query components are utilized to service the queries.
 
-#### How it Works
-
-- A query-frontend API endpoint is called to execute a query.
-- The query-frontend enqueues the request to the query-scheduler.
-- The query-scheduler is responsible for dispatching enqueued queries to idle querier workers.
-- The querier fetches data from ingesters, store-gateways, or both, and runs the query against the data.
-  Then, it sends the response back directly to the query-frontend and notifies the query-scheduler that it can process another query.
-
 #### How to Investigate
 
+See also [Investigating query evaluation issues](#investigating-query-evaluation-issues).
+
 Note that elevated measures of _inflight_ queries at any part of the read path are likely a symptom and not a cause.
-
-**Ingester or Store-Gateway Issues**
-
-With querier autoscaling in place, the most common cause of a query backlog is that either ingesters or store-gateways
-are not able to keep up with their query load.
-
-Investigate the RPS and Latency panels for ingesters and store-gateways on the `Mimir / Reads` dashboard
-and compare this value to the `Latency (Time in Queue)` or `Query-scheduler <-> Querier Inflight Requests`
-breakouts on the `Mimir / Reads` or `Mimir / Remote Ruler Reads` dashboards.
-Additionally, check the `Mimir / Reads Resources` dashboard for elevated resource utilization or limiting on ingesters or store-gateways.
-
-Generally, this shows that one of either the ingesters or store-gateways is experiencing issues
-and then you can further investigate the query component on its own.
-Scaling up queriers is unlikely to help in this case, as it places more load on an already-overloaded component.
-
-**Querier Issues**
-
-- Are queriers in a crash loop (eg. OOMKilled)?
-  - `OOMKilled`: temporarily increase queriers memory request/limit
-  - `panic`: look for the stack trace in the logs and investigate from there
-  - if queriers run with activity tracker enabled, they may log `unfinished activities` message on startup with queries that possibly caused the crash.
-- Is QPS increased?
-  - Scale up queriers to satisfy the increased workload
-- Is query latency increased?
-  - An increased latency reduces the number of queries we can run / sec: once all workers are busy, new queries will pile up in the queue
-  - Temporarily scale up queriers to try to stop the bleed
-  - Check if a specific tenant is running heavy queries
-    - Run `sum by (user) (cortex_query_scheduler_queue_length{namespace="<namespace>"}) > 0` to find tenants with enqueued queries
-    - If remote ruler evaluation is enabled, make sure you understand which one of the read paths (user or ruler queries?) is being affected - check the alert message.
-    - Check the [Mimir / Slow Queries` dashboard to find slow queries
-  - On multi-tenant Mimir cluster with **shuffle-sharing for queriers disabled**, you may consider to enable it for that specific tenant to reduce its blast radius. To enable queriers shuffle-sharding for a single tenant you need to set the `max_queriers_per_tenant` limit override for the specific tenant (the value should be set to the number of queriers assigned to the tenant).
-  - On multi-tenant Mimir cluster with **shuffle-sharding for queriers enabled**, you may consider to temporarily increase the shard size for affected tenants: be aware that this could affect other tenants too, reducing resources available to run other tenant queries. Alternatively, you may choose to do nothing and let Mimir return errors for that given user once the per-tenant queue is full.
-  - On multi-tenant Mimir clusters with **query-sharding enabled** and **more than a few tenants** being affected: The workload exceeds the available downstream capacity. Scaling of queriers and potentially store-gateways should be considered.
-  - On multi-tenant Mimir clusters with **query-sharding enabled** and **only a single tenant** being affected:
-    - Verify if the particular queries are hitting edge cases, where query-sharding is not benefical, by getting traces from the `Mimir / Slow Queries` dashboard and then look where time is spent. If time is spent in the query-frontend running PromQL engine, then it means query-sharding is not beneficial for this tenant. Consider disabling query-sharding or reduce the shard count using the `query_sharding_total_shards` override.
-    - Otherwise and only if the queries by the tenant are within reason representing normal usage, consider scaling of queriers and potentially store-gateways.
-  - On a Mimir cluster with **querier auto-scaling enabled** after checking the health of the existing querier replicas, check to see if the auto-scaler has added additional querier replicas or if the maximum number of querier replicas has been reached and is not sufficient and should be increased.
-
-**Query-Scheduler Issues**
-
-In rare cases, the query-scheduler itself may be the bottleneck.
-When querier-connection utilization is low in the `Query-scheduler <-> Querier Inflight Requests` dashboard panels
-but the queue length or latency is high, it indicates that the query-scheduler is very slow in dispatching queries.
-
-In this case if the scheduler is not resource-constrained,
-you can use CPU profiles to see where the scheduler's query dispatch process is spending its time.
 
 ### MimirCacheRequestErrors
 
@@ -3581,3 +3536,141 @@ Possible reasons for this are:
 
 - Incorrect relabelling rules can cause a label to be dropped from a series so that multiple series have the same labels. If these series were collected from the same target they will have the same timestamp.
 - The exporter being scraped sets the same timestamp on every scrape. Note that exporters should generally not set timestamps.
+
+## Investigating query evaluation issues
+
+### How it Works
+
+- For range and instant queries, the query-frontend normalizes and optimizes the query structure, and (when configured) splits by time interval, shards by series (`__query_shard__`), and extracts subqueries.
+- The query-frontend enqueues the resulting sub-requests with the query-scheduler.
+- The query-scheduler dispatches enqueued queries to idle querier workers.
+- The querier fetches data from ingesters, store-gateways, or both. In the classic path it also evaluates the PromQL expression; with remote execution enabled, data is streamed back to the query-frontend where evaluation occurs.
+- The querier sends the response directly to the originating query-frontend instance, then notifies the query-scheduler it is available for the next query.
+
+### Dashboards and PromQL queries
+
+The starting point for query debugging is the `Mimir / Reads` and `Mimir / Remote Ruler Reads` dashboards.
+
+Useful PromQL references include;
+
+```promql
+# Look for changes in the tenants making the most requests
+topk(10, sum by(user) (rate(cortex_query_frontend_queries_total{namespace="my-mimir-cluster"}[$__rate_interval])))
+
+# Look for a change in the number of requests made to ingesters by queriers and ruler-queriers. See also cortex_ingester_client_request_duration_seconds_bucket
+sum by (container)(rate(cortex_ingester_client_request_duration_seconds_count{namespace="my-mimir-cluster"}[$__rate_interval]))
+
+# Find the number of queries queued by tenant
+sum by (user) (cortex_query_scheduler_queue_length{namespace="my-mimir-cluster"}) > 0
+```
+
+### How to investigate
+
+**Query Frontend**
+
+The query-frontend logs can be used to review successful and failed queries and the most useful logs for initial investigation are the `query stats` and `evaluation stats` log lines.
+
+`query stats` are logged once per HTTP request at the query-frontend boundary. It captures the full lifecycle: queueing, splitting, remote execution, cache interaction, response encoding, and what was
+fetched from storage. This is your first stop when investigating latency, cache behaviour, data volume, or whether a query was split/sharded.
+
+`evaluation stats` are logged per split interval when using MQE sharding (sharding is internal to the engine), or per shard per split interval when using non-MQE sharding (each shard is a separate dispatched request). It captures the PromQL execution inside the query-frontend engine: the expression being evaluated, the estimated memory consumption of the engine (not including querier-side memory for fetching data), and the time range being
+processed. If your query had split_queries=2 and sharded_queries=0, there would be two evaluator log lines — one per time-split chunk — each showing a sub-range of the overall query window.
+
+Use `query stats` when asking:
+
+- Why was this query slow end-to-end?
+- How much data was fetched from storage?
+- Did the results cache help?
+- Was the query split or sharded?
+- What did the client actually send?
+
+Use `evaluation stats` when asking:
+
+- What expression was passed to the engine after initial query-frontend middleware rewrites? Note that MQE's own internal optimization passes may further transform the expression
+- How much memory did the PromQL engine use in the query-frontend? (queriers also log a `evaluation stats` line showing their peak memory consumption)
+- Which shard/time-chunk is causing problems?
+- Was the expression modified from what the user submitted?
+
+When looking at `msg="query stats"` consider the following attributes;
+
+- status, err - indicates success or failure with an error message indicating the failure reason
+- param_query - the PromQL as submitted by the user
+- param_start, param_end, param_step - the query time range and step interval
+- length — total time window covered by the query (end − start)
+- time_since_min_time — how long ago the query start was relative to now (the oldest data point requested)
+- time_since_max_time - how long ago the query end was relative to now (the most recent data point requested)
+- user_agent - the HTTP User-Agent header value
+- status_code - the http response status code
+- response_time — total wall-clock time from request received to response sent
+- response_size_bytes — size of the HTTP response body
+- queue_time_seconds — time spent waiting in the query scheduler queue
+- query_wall_time_seconds — time spent actually executing the query
+- encode_time_seconds — time spent serialising the result to JSON
+- remote_execution_request_count - number of requests sent to queriers for execution
+- split_queries - the query was split into n sub-queries by the time-splitting middleware
+- sharded_queries — the number of sharded queries
+- spun_off_subqueries — the number of subquery spin-offs
+- fetched_series_count — number of distinct time series read from store-gateways and ingesters
+- fetched_chunks_count — total chunks fetched
+- fetched_chunk_bytes — raw chunk data transferred
+- fetched_index_bytes — number of index bytes fetched. This can be 0 if the index was fully served from cache or memory
+- estimated_series_count — pre-execution estimate of series count
+- samples_processed — total individual samples evaluated
+- results_cache_hit_bytes — the number of bytes returned from the query results cache
+- results_cache_miss_bytes —the number of bytes fetched from storage and written to the query results cache
+- read_consistency — flags if strong read consistency was required
+
+When looking at `msg="evaluation stats"` consider the following attributes;
+
+- status, err - indicates success or failure with an error message indicating the failure reason
+- originalExpression - the PromQL before any query sharding or AST rewriting has been performed
+- nodeCount - the number of nodes/shards the query was distributed across
+- start, end, step - the query time range and step interval
+- timeRangeType - instant vs range query
+- estimatedPeakMemoryConsumption - estimated peak heap bytes used during evaluation of this query
+
+**Ingester or Store-Gateway Issues**
+
+With querier autoscaling in place, the most common cause of a query backlog is that either ingesters or store-gateways
+are not able to keep up with their query load. Read path outages will occur if ingesters/store-gateways become unavailable.
+
+Use the `Mimir / Reads` and `Mimir / Remote Ruler Reads` dashboards to review the RPS and Latency panels for ingesters and store-gateways.
+
+Use the `Mimir / Reads Resources` dashboard to look for elevated resource utilization or limiting on ingesters or store-gateways.
+
+Note that scaling up queriers is unlikely to help if the issue is with ingesters or store-gateways, as it places more load on an already-overloaded component.
+
+In the case of an ingester or store-gateway being `OOMKilled`, if you have the "activity tracker" feature enabled, look for `activity-tracker` logs. After a component restarts it will log `found unfinished activities from previous run` and then list which queries were running at the time of the crash.
+
+**Querier Issues**
+
+- Are queriers in a crash loop (eg. OOMKilled)?
+  - `OOMKilled`: temporarily increase queriers memory request/limit
+  - `panic`: look for the stack trace in the logs and investigate from there
+  - If queriers run with activity tracker enabled, they may log an `unfinished activities` message on startup with queries that had started but not completed before the crash. Look for `component=activity-tracker` in the logs.
+- Is QPS increased?
+  - Scale up queriers to satisfy the increased workload
+- Is query latency increased?
+  - An increased latency reduces the number of queries we can run / sec: once all workers are busy, new queries will pile up in the queue
+  - Temporarily scale up queriers to try to stop the bleed (note that if the root cause is slow responses from ingesters or store-gateways, then adding more queriers may add to the load and make the problem worse)
+  - Check if a specific tenant is running heavy queries
+    - Run `sum by (user) (cortex_query_scheduler_queue_length{namespace="<namespace>"}) > 0` to find tenants with enqueued queries
+    - If remote ruler evaluation is enabled, make sure you understand which one of the read paths (user or ruler queries?) is being affected - check the alert message.
+    - Check the `Mimir / Slow Queries` dashboard to find slow queries
+  - On multi-tenant Mimir clusters with **shuffle-sharing for queriers disabled**, you may consider to enable it for that specific tenant to reduce its blast radius. To enable queriers shuffle-sharding for a single tenant you need to set the `max_queriers_per_tenant` limit override for the specific tenant (the value should be set to the number of queriers assigned to the tenant).
+  - On multi-tenant Mimir clusters with **shuffle-sharding for queriers enabled**, you may consider to temporarily increase the shard size for affected tenants: be aware that this could affect other tenants too, reducing resources available to run other tenant queries. Alternatively, you may choose to do nothing and let Mimir return errors for that given user once the per-tenant queue is full.
+  - On multi-tenant Mimir clusters with **query-sharding enabled** and **more than a few tenants** being affected: The workload exceeds the available downstream capacity. Scaling of queriers and potentially store-gateways should be considered.
+  - On multi-tenant Mimir clusters with **query-sharding enabled** and **only a single tenant** being affected:
+    - Verify if the particular queries are hitting edge cases, where query-sharding is not benefical, by getting traces from the `Mimir / Slow Queries` dashboard and then look where time is spent. If time is spent in the query-frontend running PromQL engine, then it means query-sharding is not beneficial for this tenant. Consider disabling query-sharding or reduce the shard count using the `query_sharding_total_shards` override.
+    - Otherwise and only if the queries by the tenant are within reason representing normal usage, consider scaling of queriers and potentially store-gateways.
+  - On a Mimir cluster with **querier auto-scaling enabled** after checking the health of the existing querier replicas, check to see if the auto-scaler has added additional querier replicas or if the maximum number of querier replicas has been reached and is not sufficient and should be increased.
+
+**Query-Scheduler Issues**
+
+In rare cases, the query-scheduler itself may be the bottleneck.
+
+When querier-connection utilization is low in the `Query-scheduler <-> Querier Inflight Requests` dashboard panels
+but the queue length or latency is high, it indicates that the query-scheduler is very slow in dispatching queries.
+
+In this case if the scheduler is not resource-constrained,
+you can use CPU profiles to see where the scheduler's query dispatch process is spending its time.

@@ -5,11 +5,9 @@ package core
 import (
 	"fmt"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -39,30 +37,10 @@ func (m *MatrixSelector) Describe() string {
 // the range can share cache entries.
 // The offset and @ modifiers are not part of the cache key as they are adjusted for when calculating split ranges.
 // TODO: when subquery splitting is supported, the logic will have to change - if the matrix selector is not the root
-//
-//	inner node, the range plus the offset and @ modifiers will have to be retained.
-//
+// inner node, the range plus the offset and @ modifiers will have to be retained.
 // TODO: investigate codegen to keep the cache key up to date when new fields are added to the node.
 func (m *MatrixSelector) SplittingCacheKey() string {
-	builder := &strings.Builder{}
-	builder.WriteRune('{')
-	for i, m := range m.Matchers {
-		if i > 0 {
-			builder.WriteString(", ")
-		}
-
-		// Convert to the Prometheus type so we can use its String().
-		promMatcher := labels.Matcher{Type: m.Type, Name: m.Name, Value: m.Value}
-		builder.WriteString(promMatcher.String())
-	}
-	builder.WriteRune('}')
-
-	if m.SkipHistogramBuckets {
-		// This needs to be kept in the cache key, as the returned results will differ depending on if buckets are skipped or not
-		builder.WriteString(", skip histogram buckets")
-	}
-
-	return builder.String()
+	return describeSelector(m.Matchers, nil, 0, nil, m.SkipHistogramBuckets, m.Anchored, m.Smoothed, m.CounterAware, m.ProjectionLabels, m.ProjectionInclude)
 }
 
 func (m *MatrixSelector) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -102,12 +80,23 @@ func (m *MatrixSelector) EquivalentToIgnoringHintsAndChildren(other planning.Nod
 
 	return ok &&
 		slices.EqualFunc(m.Matchers, otherMatrixSelector.Matchers, matchersEqual) &&
+		m.EquivalentToIgnoringMatchersAndHints(otherMatrixSelector)
+}
+
+func (m *MatrixSelector) EquivalentToIgnoringMatchersAndHints(other planning.Node) bool {
+	otherMatrixSelector, ok := other.(*MatrixSelector)
+
+	return ok &&
 		((m.Timestamp == nil && otherMatrixSelector.Timestamp == nil) || (m.Timestamp != nil && otherMatrixSelector.Timestamp != nil && m.Timestamp.Equal(*otherMatrixSelector.Timestamp))) &&
 		m.Offset == otherMatrixSelector.Offset &&
 		m.Range == otherMatrixSelector.Range &&
 		m.Anchored == otherMatrixSelector.Anchored &&
 		m.Smoothed == otherMatrixSelector.Smoothed &&
 		m.CounterAware == otherMatrixSelector.CounterAware
+}
+
+func (m *MatrixSelector) GetMatchers() []*LabelMatcher {
+	return m.Matchers
 }
 
 func (m *MatrixSelector) MergeHints(other planning.Node) error {

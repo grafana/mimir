@@ -11,7 +11,7 @@ var DefaultPreviousVersionImages = map[string]e2emimir.FlagMapper{
 		removePartitionRingFlags,
 		removeQuerierRingFlags,
 	),
-	"grafana/mimir:2.17.4": e2emimir.ChainFlagMappers(
+	"grafana/mimir:2.17.7": e2emimir.ChainFlagMappers(
 		removePartitionRingFlags,
 		removeQuerierRingFlags,
 	),
