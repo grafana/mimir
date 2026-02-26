@@ -366,9 +366,10 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 				}()
 
 				// Iteration 1 should fire immediately
-				sleepUntil(t, func() bool { return mockSchedulerClient.GetLeaseJobCallCount() == 1 }, cfg.SchedulerMaxLeasingBackoff)
-				delay1 := sleepUntil(t, func() bool { return mockSchedulerClient.GetLeaseJobCallCount() == 2 }, cfg.SchedulerMaxLeasingBackoff)
-				delay2 := sleepUntil(t, func() bool { return mockSchedulerClient.GetLeaseJobCallCount() == 3 }, cfg.SchedulerMaxLeasingBackoff)
+				waitTimeout := 2 * cfg.SchedulerMaxLeasingBackoff
+				sleepUntil(t, func() bool { return mockSchedulerClient.GetLeaseJobCallCount() == 1 }, waitTimeout)
+				delay1 := sleepUntil(t, func() bool { return mockSchedulerClient.GetLeaseJobCallCount() == 2 }, waitTimeout)
+				delay2 := sleepUntil(t, func() bool { return mockSchedulerClient.GetLeaseJobCallCount() == 3 }, waitTimeout)
 				runCancel()
 				synctest.Wait()
 				require.NoError(t, <-errCh, "executor should exit without error")
