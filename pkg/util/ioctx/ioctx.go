@@ -8,6 +8,8 @@ import (
 	"errors"
 	"io"
 	"os"
+
+	"go.uber.org/atomic"
 )
 
 // Open opens a file, respecting context cancellation.
@@ -95,8 +97,11 @@ func readWrite(ctx context.Context, c io.Closer, p []byte, do func([]byte) (int,
 // ReadAll is like [io.ReadAll], but respects context cancellation.
 // If the context is cancelled while reading, r is closed to unblock the
 // operation. r is always closed before ReadAll returns.
-func ReadAll(ctx context.Context, r io.ReadCloser) ([]byte, error) {
-	data := make([]byte, 0, 2048)
+func ReadAll(ctx context.Context, r io.ReadCloser) (data []byte, err error) {
+	r = &readCloseOnce{ReadCloser: r}
+	defer func() { err = errors.Join(err, r.Close()) }()
+
+	data = make([]byte, 0, 2048)
 
 	for {
 		window := data[len(data):cap(data)]
@@ -114,4 +119,16 @@ func ReadAll(ctx context.Context, r io.ReadCloser) ([]byte, error) {
 			data = append(data, 0)[:len(data)]
 		}
 	}
+}
+
+type readCloseOnce struct {
+	io.ReadCloser
+	closed atomic.Bool
+}
+
+func (c *readCloseOnce) Close() error {
+	if c.closed.CompareAndSwap(false, true) {
+		return c.ReadCloser.Close()
+	}
+	return nil
 }

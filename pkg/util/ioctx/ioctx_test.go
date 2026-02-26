@@ -192,7 +192,7 @@ func TestReadAll(t *testing.T) {
 	got, err := ReadAll(t.Context(), r)
 	require.NoError(t, err)
 	require.Equal(t, expected, string(got))
-	require.False(t, r.Closed())
+	require.True(t, r.Closed())
 }
 
 type blockingReadWriter struct {
