@@ -148,7 +148,7 @@ func TestLimitingPool_Limited(t *testing.T) {
 }
 
 func TestLimitingPool_ClearsReturnedSlices(t *testing.T) {
-	tracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+	tracker := limiter.NewUnlimitedMemoryConsumptionTracker(context.Background())
 
 	// Get a slice, put it back in the pool and get it back again.
 	// Make sure all elements are zero or false when we get it back.
@@ -242,7 +242,7 @@ func TestLimitingPool_Mangling(t *testing.T) {
 }
 
 func TestLimitingBucketedPool_AppendToSlice(t *testing.T) {
-	tracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+	tracker := limiter.NewUnlimitedMemoryConsumptionTracker(context.Background())
 	onPutHookSlices := [][]promql.FPoint{}
 	p := NewLimitingBucketedPool(
 		pool.NewBucketedPool(1024, func(size int) []promql.FPoint { return make([]promql.FPoint, 0, size) }),

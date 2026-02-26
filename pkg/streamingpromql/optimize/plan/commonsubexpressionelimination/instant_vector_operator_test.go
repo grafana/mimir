@@ -23,7 +23,7 @@ import (
 
 func TestInstantVectorOperator_Buffering_NoFiltering(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	inner, expectedData := createTestInstantVectorOperator(t, 6, memoryConsumptionTracker)
 
 	buffer := NewInstantVectorDuplicationBuffer(inner, memoryConsumptionTracker)
@@ -127,7 +127,7 @@ func TestInstantVectorOperator_Buffering_NoFiltering(t *testing.T) {
 
 func TestInstantVectorOperator_Buffering_Filtering_AllConsumersOpen(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	inner, expectedData := createTestInstantVectorOperator(t, 6, memoryConsumptionTracker)
 
 	buffer := NewInstantVectorDuplicationBuffer(inner, memoryConsumptionTracker)
@@ -213,7 +213,7 @@ func TestInstantVectorOperator_Buffering_Filtering_AllConsumersOpen(t *testing.T
 
 func TestInstantVectorOperator_Buffering_Filtering_IteratingBeforeCallingSeriesMetadataOnAllConsumers(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	inner, expectedData := createTestInstantVectorOperator(t, 6, memoryConsumptionTracker)
 
 	buffer := NewInstantVectorDuplicationBuffer(inner, memoryConsumptionTracker)
@@ -293,7 +293,7 @@ func TestInstantVectorOperator_Buffering_Filtering_IteratingBeforeCallingSeriesM
 
 func TestInstantVectorOperator_Buffering_Filtering_DoesNotBufferForClosedConsumer(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	inner, expectedData := createTestInstantVectorOperator(t, 6, memoryConsumptionTracker)
 
 	buffer := NewInstantVectorDuplicationBuffer(inner, memoryConsumptionTracker)
@@ -358,7 +358,7 @@ func TestInstantVectorOperator_Buffering_Filtering_DoesNotBufferForClosedConsume
 
 func TestInstantVectorOperator_Buffering_Filtering_DoesNotBufferUnnecessarilyForLaggingConsumer(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	inner, expectedData := createTestInstantVectorOperator(t, 3, memoryConsumptionTracker)
 
 	buffer := NewInstantVectorDuplicationBuffer(inner, memoryConsumptionTracker)
@@ -409,7 +409,7 @@ func TestInstantVectorOperator_Buffering_Filtering_DoesNotBufferUnnecessarilyFor
 
 func TestInstantVectorOperator_Buffering_NonContiguousSeries(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	inner, expectedData := createTestInstantVectorOperator(t, 4, memoryConsumptionTracker)
 
 	buffer := NewInstantVectorDuplicationBuffer(inner, memoryConsumptionTracker)
@@ -500,7 +500,7 @@ func TestInstantVectorOperator_Buffering_NonContiguousSeries(t *testing.T) {
 
 func TestInstantVectorOperator_Filtering_SingleConsumer(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	inner, expectedData := createTestInstantVectorOperator(t, 6, memoryConsumptionTracker)
 
 	buffer := NewInstantVectorDuplicationBuffer(inner, memoryConsumptionTracker)
@@ -527,7 +527,7 @@ func TestInstantVectorOperator_Filtering_SingleConsumer(t *testing.T) {
 
 func TestInstantVectorOperator_ClosedWithBufferedData_NoFiltering(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	inner, expectedData := createTestInstantVectorOperator(t, 3, memoryConsumptionTracker)
 
 	buffer := NewInstantVectorDuplicationBuffer(inner, memoryConsumptionTracker)
@@ -586,7 +586,7 @@ func TestInstantVectorOperator_ClosedWithBufferedData_NoFiltering(t *testing.T) 
 
 func TestInstantVectorOperator_ClosedWithBufferedData_Filtering(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	inner, expectedData := createTestInstantVectorOperator(t, 3, memoryConsumptionTracker)
 
 	buffer := NewInstantVectorDuplicationBuffer(inner, memoryConsumptionTracker)

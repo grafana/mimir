@@ -20,7 +20,7 @@ import (
 
 func TestConcat(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
 	inner1 := &operators.TestOperator{
 		Series: []labels.Labels{
@@ -101,7 +101,7 @@ func TestConcat(t *testing.T) {
 
 func TestConcat_InnerOperatorsWithNoSeries(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
 	inner1 := &operators.TestOperator{MemoryConsumptionTracker: memoryConsumptionTracker}
 	inner2 := &operators.TestOperator{MemoryConsumptionTracker: memoryConsumptionTracker}

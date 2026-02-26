@@ -25,7 +25,7 @@ import (
 
 func TestRangeVectorOperator_Buffering_NoFiltering(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	inner, expectedData := createTestRangeVectorOperator(t, 6, memoryConsumptionTracker)
 
 	buffer := NewRangeVectorDuplicationBuffer(inner, memoryConsumptionTracker)
@@ -148,7 +148,7 @@ func TestRangeVectorOperator_Buffering_NoFiltering(t *testing.T) {
 
 func TestRangeVectorOperator_Buffering_Filtering_AllConsumersOpen(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	inner, expectedData := createTestRangeVectorOperator(t, 6, memoryConsumptionTracker)
 
 	buffer := NewRangeVectorDuplicationBuffer(inner, memoryConsumptionTracker)
@@ -241,7 +241,7 @@ func TestRangeVectorOperator_Buffering_Filtering_AllConsumersOpen(t *testing.T) 
 
 func TestRangeVectorOperator_Buffering_Filtering_IteratingBeforeCallingSeriesMetadataOnAllConsumers(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	inner, expectedData := createTestRangeVectorOperator(t, 6, memoryConsumptionTracker)
 
 	buffer := NewRangeVectorDuplicationBuffer(inner, memoryConsumptionTracker)
@@ -335,7 +335,7 @@ func TestRangeVectorOperator_Buffering_Filtering_IteratingBeforeCallingSeriesMet
 
 func TestRangeVectorOperator_Buffering_Filtering_DoesNotBufferForClosedConsumer(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	inner, expectedData := createTestRangeVectorOperator(t, 6, memoryConsumptionTracker)
 
 	buffer := NewRangeVectorDuplicationBuffer(inner, memoryConsumptionTracker)
@@ -404,7 +404,7 @@ func TestRangeVectorOperator_Buffering_Filtering_DoesNotBufferForClosedConsumer(
 
 func TestRangeVectorOperator_Buffering_Filtering_DoesNotBufferUnnecessarilyForLaggingConsumer(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	inner, expectedData := createTestRangeVectorOperator(t, 3, memoryConsumptionTracker)
 
 	buffer := NewRangeVectorDuplicationBuffer(inner, memoryConsumptionTracker)
@@ -457,7 +457,7 @@ func TestRangeVectorOperator_Buffering_Filtering_DoesNotBufferUnnecessarilyForLa
 
 func TestRangeVectorOperator_Buffering_NonContiguousSeries(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	inner, expectedData := createTestRangeVectorOperator(t, 4, memoryConsumptionTracker)
 
 	buffer := NewRangeVectorDuplicationBuffer(inner, memoryConsumptionTracker)
@@ -556,7 +556,7 @@ func TestRangeVectorOperator_Buffering_NonContiguousSeries(t *testing.T) {
 
 func TestRangeVectorOperator_Filtering_SingleConsumer(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	inner, expectedData := createTestRangeVectorOperator(t, 6, memoryConsumptionTracker)
 
 	buffer := NewRangeVectorDuplicationBuffer(inner, memoryConsumptionTracker)
@@ -584,7 +584,7 @@ func TestRangeVectorOperator_Filtering_SingleConsumer(t *testing.T) {
 
 func TestRangeVectorOperator_ClosedWithBufferedData_NoFiltering(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	inner, expectedData := createTestRangeVectorOperator(t, 3, memoryConsumptionTracker)
 
 	buffer := NewRangeVectorDuplicationBuffer(inner, memoryConsumptionTracker)
@@ -647,7 +647,7 @@ func TestRangeVectorOperator_ClosedWithBufferedData_NoFiltering(t *testing.T) {
 
 func TestRangeVectorOperator_ClosedWithBufferedData_Filtering(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	inner, expectedData := createTestRangeVectorOperator(t, 3, memoryConsumptionTracker)
 
 	buffer := NewRangeVectorDuplicationBuffer(inner, memoryConsumptionTracker)
@@ -704,7 +704,7 @@ func TestRangeVectorOperator_ClosedWithBufferedData_Filtering(t *testing.T) {
 // Should this test fail, add the necessary field handling to this test and update range_vector_operator.go cloneStepData().
 func TestRangeVectorOperator_StepDataStructure(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
 	data := &types.RangeVectorStepData{}
 
@@ -771,7 +771,7 @@ func TestRangeVectorOperator_Cloning_SmoothedAnchored(t *testing.T) {
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
-			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 			tc.stepData.Floats = types.NewFPointRingBuffer(memoryConsumptionTracker).ViewAll(nil)
 			tc.stepData.Histograms = types.NewHPointRingBuffer(memoryConsumptionTracker).ViewUntilSearchingBackwards(0, nil)
 			clonedStepData, err := cloneStepData(&tc.stepData)
@@ -797,7 +797,7 @@ func TestRangeVectorOperator_Cloning(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	inner := newTestRangeVectorOperator(
 		[]labels.Labels{labels.FromStrings(model.MetricNameLabel, "test_series")},
 		[]types.InstantVectorSeriesData{series},
@@ -875,7 +875,7 @@ func createTestRangeVectorOperator(t *testing.T, seriesCount int, memoryConsumpt
 
 func TestRangeVectorOperator_ClosingAfterFirstReadFails(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	series, err := types.SeriesMetadataSlicePool.Get(1, memoryConsumptionTracker)
 	require.NoError(t, err)
 
@@ -905,7 +905,7 @@ func TestRangeVectorOperator_ClosingAfterFirstReadFails(t *testing.T) {
 
 func TestRangeVectorOperator_ClosingAfterSubsequentReadFails(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	series, err := types.SeriesMetadataSlicePool.Get(2, memoryConsumptionTracker)
 	require.NoError(t, err)
 

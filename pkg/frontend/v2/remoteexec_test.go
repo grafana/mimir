@@ -49,7 +49,7 @@ import (
 
 func TestScalarExecutionResponse(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
 	stream := &mockResponseStream{
 		responses: []mockResponse{
@@ -92,7 +92,7 @@ func TestScalarExecutionResponse(t *testing.T) {
 
 func TestInstantVectorExecutionResponse(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
 	stream := &mockResponseStream{
 		responses: []mockResponse{
@@ -161,7 +161,7 @@ func TestInstantVectorExecutionResponse(t *testing.T) {
 
 func TestInstantVectorExecutionResponse_Batching(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
 	stream := &mockResponseStream{
 		responses: []mockResponse{
@@ -255,7 +255,7 @@ func TestInstantVectorExecutionResponse_Batching(t *testing.T) {
 
 func TestInstantVectorExecutionResponse_DelayedNameRemoval(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
 	stream := &mockResponseStream{
 		responses: []mockResponse{
@@ -291,7 +291,7 @@ func TestInstantVectorExecutionResponse_DelayedNameRemoval(t *testing.T) {
 
 func TestInstantVectorExecutionResponse_PointSliceLengthNotAPowerOfTwo(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
 	stream := &mockResponseStream{
 		responses: []mockResponse{
@@ -341,7 +341,7 @@ func TestInstantVectorExecutionResponse_PointSliceLengthNotAPowerOfTwo(t *testin
 
 func TestRangeVectorExecutionResponse(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
 	stream := &mockResponseStream{
 		responses: []mockResponse{
@@ -459,7 +459,7 @@ func TestRangeVectorExecutionResponse(t *testing.T) {
 
 func TestRangeVectorExecutionResponse_DelayedNameRemoval(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
 	stream := &mockResponseStream{
 		responses: []mockResponse{
@@ -495,7 +495,7 @@ func TestRangeVectorExecutionResponse_DelayedNameRemoval(t *testing.T) {
 
 func TestRangeVectorExecutionResponse_ExpectedSeriesMismatch(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
 	stream := &mockResponseStream{
 		responses: []mockResponse{
@@ -571,7 +571,7 @@ func TestRangeVectorExecutionResponse_ExpectedSeriesMismatch(t *testing.T) {
 
 func TestRangeVectorExecutionResponse_PointSliceLengthNotAPowerOfTwo(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
 	stream := &mockResponseStream{
 		responses: []mockResponse{
