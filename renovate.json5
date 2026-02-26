@@ -126,7 +126,7 @@
       ],
     },
     {
-      description: 'Group all dependency updates touching mimir-build-image/Dockerfile into a single PR',
+      description: 'Automatically rebase all dependency update PRs touching mimir-build-image/Dockerfile',
       matchFileNames: [
         'mimir-build-image/Dockerfile',
       ],
