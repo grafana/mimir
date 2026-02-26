@@ -286,7 +286,7 @@ func (b *FPointRingBuffer) CountBetween(minT, maxT int64) int {
 
 	countAtOrBeforeMinT := 0
 
-	for b.PointAt(countAtOrBeforeMinT).T <= minT && countAtOrBeforeMinT < countToMaxT {
+	for countAtOrBeforeMinT < countToMaxT && b.PointAt(countAtOrBeforeMinT).T <= minT {
 		countAtOrBeforeMinT++
 	}
 
