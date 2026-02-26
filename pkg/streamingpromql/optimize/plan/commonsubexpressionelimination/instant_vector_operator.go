@@ -306,6 +306,23 @@ type InstantVectorDuplicationConsumer struct {
 
 	// unfilteredSeriesBitmap contains one entry per unfiltered input series, where true indicates that it passes this consumer's filters.
 	// If this consumer has no filters, this is nil.
+	//
+	// For example, suppose the inner operator returns 5 series:
+	//    index 0: {__name__="foo", env="dev"}
+	//    index 1: {__name__="foo", env="prod"}
+	//    index 2: {__name__="foo", env="staging"}
+	//    index 3: {__name__="foo", env="prod", region="us-east"}
+	//    index 4: {__name__="foo", env="dev"}
+	//
+	//  If the query is "foo + foo{env="prod"}", with "foo" read by consumer A and "foo{env="prod"}" read by consumer B,
+	//  then the initial state will be:
+	//
+	//  Consumer A (no filters):  unfilteredSeriesBitmap = nil
+	//                            nextUnfilteredSeriesIndex = 0
+	//                            filteredSeriesCount = 5
+	//  Consumer B (env="prod"):  unfilteredSeriesBitmap = [false, true, false, true, false]
+	//                            nextUnfilteredSeriesIndex = 1
+	//                            filteredSeriesCount = 2
 	unfilteredSeriesBitmap []bool
 	filteredSeriesCount    int
 
