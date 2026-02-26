@@ -135,10 +135,6 @@ func NewQueryPlannerWithTime(opts EngineOpts, versionProvider QueryPlanVersionPr
 		return nil, errors.New("cannot enable subset selector elimination without common subexpression elimination")
 	}
 
-	if opts.EnableSubsetSelectorElimination && !opts.EnableCommonSubexpressionElimination {
-		return nil, errors.New("cannot enable subset selector elimination without common subexpression elimination")
-	}
-
 	if opts.EnableCommonSubexpressionElimination {
 		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.EnableSubsetSelectorElimination, opts.CommonOpts.Reg, opts.Logger))
 	}

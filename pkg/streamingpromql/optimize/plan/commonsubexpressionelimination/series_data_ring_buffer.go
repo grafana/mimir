@@ -150,7 +150,7 @@ func (b *SeriesDataRingBuffer[T]) Get(seriesIndex int) T {
 	lastElementSeriesIndex := b.LastElementSeriesIndex()
 
 	if seriesIndex < firstElementSeriesIndex || seriesIndex > lastElementSeriesIndex {
-		panic(fmt.Sprintf("attempted to remove series at index %v, but have series from index %v to %v", seriesIndex, firstElementSeriesIndex, lastElementSeriesIndex))
+		panic(fmt.Sprintf("attempted to get series at index %v, but have series from index %v to %v", seriesIndex, firstElementSeriesIndex, lastElementSeriesIndex))
 	}
 
 	position := b.findElementPositionForSeriesIndex(seriesIndex)
@@ -169,7 +169,6 @@ func (b *SeriesDataRingBuffer[T]) GetIfPresent(seriesIndex int) (T, bool) {
 
 func (b *SeriesDataRingBuffer[T]) findElementPositionForSeriesIndex(seriesIndex int) int {
 	pos, found := b.tryToFindElementPositionForSeriesIndex(seriesIndex)
-
 	if !found {
 		panic(fmt.Sprintf("attempted to find element position for series index %d, but it is not present in this buffer (first series index is %d, last series index is %d)", seriesIndex, b.FirstElementSeriesIndex(), b.LastElementSeriesIndex()))
 	}
