@@ -438,6 +438,29 @@ func TestQuerySplitting_WithCSE(t *testing.T) {
 	}, trackingStorage.ranges)
 }
 
+func TestQuerySplitting_ProjectionNotApplied(t *testing.T) {
+	ctx := context.Background()
+	evalTime := timestamp.Time(0).Add(6 * time.Hour)
+
+	opts := streamingpromql.NewTestEngineOpts()
+	opts.RangeVectorSplitting.Enabled = true
+	opts.RangeVectorSplitting.SplitInterval = 2 * time.Hour
+
+	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+
+	p, err := planner.NewQueryPlan(ctx, `sum by (job) (rate(some_metric[5h]))`, types.NewInstantQueryTimeRange(evalTime), false, &streamingpromql.NoopPlanningObserver{})
+	require.NoError(t, err)
+
+	// Checking there's no include annotation on MatrixSelector
+	require.Equal(t, testutils.TrimIndent(`
+		- AggregateExpression: sum by (job)
+			- SplitFunctionCall: splits=4 [(3600000,7199999], (7199999,14399999]*, (14399999,21599999]*, (21599999,21600000]]
+				- FunctionCall: rate(...)
+					- MatrixSelector: {__name__="some_metric"}[5h0m0s]
+	`), p.String())
+}
+
 func TestQuerySplitting_WithOffset_CacheAlignment(t *testing.T) {
 	testCache, mimirEngine := setupEngineAndCache(t)
 	promStorage := promqltest.LoadedStorage(t, `
