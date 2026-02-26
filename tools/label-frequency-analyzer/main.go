@@ -52,6 +52,10 @@ type stringCount struct {
 	count uint64
 }
 
+type batchResult struct {
+	stringFrequencies map[string]uint64
+}
+
 func main() {
 	// Clean up all flags registered via init() methods of 3rd-party libraries.
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
@@ -227,7 +231,7 @@ func runAnalysis(ctx context.Context, cfg config, tenantID string) error {
 	var wg sync.WaitGroup
 
 	// Channel to collect worker results
-	resultChan := make(chan map[string]uint64)
+	resultChan := make(chan batchResult)
 
 	// Calculate total number of batches
 	totalBatches := (len(seriesNames) + cfg.BatchSize - 1) / cfg.BatchSize   // Ceiling division
@@ -241,8 +245,10 @@ func runAnalysis(ctx context.Context, cfg config, tenantID string) error {
 			defer wg.Done()
 			// Each worker has its own HTTP client with separate connection pool
 			workerClient := newHTTPClient()
-			// Each worker has its own map for final counts
-			workerCounts := make(map[string]uint64)
+			// Each worker has its own result for final counts
+			batchResult := batchResult{
+				stringFrequencies: make(map[string]uint64),
+			}
 			batchCount := 0
 
 			for {
@@ -250,7 +256,7 @@ func runAnalysis(ctx context.Context, cfg config, tenantID string) error {
 				case batch, ok := <-seriesChan:
 					if !ok {
 						// Channel closed, send results and exit
-						resultChan <- workerCounts
+						resultChan <- batchResult
 						return
 					}
 
@@ -277,7 +283,7 @@ func runAnalysis(ctx context.Context, cfg config, tenantID string) error {
 					keptStrings := 0
 					for str, count := range batchCounts {
 						if count >= 10 {
-							workerCounts[str] += count
+							batchResult.stringFrequencies[str] += count
 							keptStrings++
 						}
 					}
@@ -287,7 +293,7 @@ func runAnalysis(ctx context.Context, cfg config, tenantID string) error {
 
 				case <-ctx.Done():
 					// Context cancelled, send partial results and exit
-					resultChan <- workerCounts
+					resultChan <- batchResult
 					return
 				}
 			}
@@ -328,8 +334,8 @@ func runAnalysis(ctx context.Context, cfg config, tenantID string) error {
 
 	// Merge all worker results
 	labelCounts := make(map[string]uint64)
-	for workerCounts := range resultChan {
-		for str, count := range workerCounts {
+	for result := range resultChan {
+		for str, count := range result.stringFrequencies {
 			labelCounts[str] += count
 		}
 	}
