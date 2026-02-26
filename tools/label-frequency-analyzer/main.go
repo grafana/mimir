@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/csv"
 	"encoding/json"
@@ -18,8 +19,15 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/grafana/dskit/flagext"
+)
+
+const (
+	fetchRetryAttempts = 5
+	fetchRetryDelay    = 10 * time.Second
+	pauseEveryNBatches = 200
 )
 
 type config struct {
@@ -54,7 +62,7 @@ func main() {
 	flag.Var(&cfg.TenantIDs, "tenants", "Comma-separated list of tenant IDs to analyze")
 	flag.IntVar(&cfg.NumWorkers, "workers", 10, "Number of worker goroutines to use for fetching active series")
 	flag.IntVar(&cfg.BatchSize, "batch-size", 50, "Number of series names to process in each batch")
-	flag.IntVar(&cfg.TopN, "top-n", 200, "Number of most common strings to display")
+	flag.IntVar(&cfg.TopN, "top-n", 5000, "Number of most common strings to display")
 
 	// Parse CLI flags.
 	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
@@ -92,8 +100,37 @@ func main() {
 	}
 }
 
-func fetchSeriesNames(ctx context.Context, port int, tenantID string) ([]string, error) {
-	client := &http.Client{}
+func fetchSeriesNamesWithRetry(ctx context.Context, client *http.Client, port int, tenantID string, maxAttempts int, retryDelay time.Duration) ([]string, error) {
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		result, err := fetchSeriesNames(ctx, client, port, tenantID)
+		if err == nil {
+			return result, nil
+		}
+		lastErr = err
+		if attempt < maxAttempts {
+			log.Printf("Attempt %d/%d failed for tenant %s: %v. Retrying in %v...", attempt, maxAttempts, tenantID, err, retryDelay)
+			select {
+			case <-time.After(retryDelay):
+			case <-ctx.Done():
+				return nil, fmt.Errorf("context cancelled while waiting to retry: %w", ctx.Err())
+			}
+		}
+	}
+	return nil, fmt.Errorf("all %d attempts failed: %w", maxAttempts, lastErr)
+}
+
+func newHTTPClient() *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 100,
+			IdleConnTimeout:     90 * time.Second,
+		},
+	}
+}
+
+func fetchSeriesNames(ctx context.Context, client *http.Client, port int, tenantID string) ([]string, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("http://localhost:%d/prometheus/api/v1/label/__name__/values", port), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -124,8 +161,7 @@ func fetchSeriesNames(ctx context.Context, port int, tenantID string) ([]string,
 	return result.Data, nil
 }
 
-func fetchActiveSeries(ctx context.Context, port int, tenantID string, seriesNames []string) (*activeSeriesResponse, error) {
-	client := &http.Client{}
+func fetchActiveSeries(ctx context.Context, client *http.Client, port int, tenantID string, seriesNames []string) (*activeSeriesResponse, error) {
 	// Create regex selector for the batch of series names
 	selector := fmt.Sprintf(`{__name__=~"%s"}`, strings.Join(seriesNames, "|"))
 	url := fmt.Sprintf("http://localhost:%d/prometheus/api/v1/cardinality/active_series?selector=%s", port, url.QueryEscape(selector))
@@ -155,10 +191,31 @@ func fetchActiveSeries(ctx context.Context, port int, tenantID string, seriesNam
 	return &result, nil
 }
 
+func fetchActiveSeriesWithRetry(ctx context.Context, client *http.Client, port int, tenantID string, seriesNames []string, maxAttempts int, retryDelay time.Duration) (*activeSeriesResponse, error) {
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		result, err := fetchActiveSeries(ctx, client, port, tenantID, seriesNames)
+		if err == nil {
+			return result, nil
+		}
+		lastErr = err
+		if attempt < maxAttempts {
+			log.Printf("Attempt %d/%d failed to fetch active series for tenant %s: %v. Retrying in %v...", attempt, maxAttempts, tenantID, err, retryDelay)
+			select {
+			case <-time.After(retryDelay):
+			case <-ctx.Done():
+				return nil, fmt.Errorf("context cancelled while waiting to retry: %w", ctx.Err())
+			}
+		}
+	}
+	return nil, fmt.Errorf("all %d attempts failed: %w", maxAttempts, lastErr)
+}
+
 func runAnalysis(ctx context.Context, cfg config, tenantID string) error {
 	log.Printf("Analyzing tenant %s...", tenantID)
 
-	seriesNames, err := fetchSeriesNames(ctx, cfg.PortForwardPort, tenantID)
+	client := newHTTPClient()
+	seriesNames, err := fetchSeriesNamesWithRetry(ctx, client, cfg.PortForwardPort, tenantID, fetchRetryAttempts, fetchRetryDelay)
 	if err != nil {
 		return err
 	}
@@ -182,6 +239,8 @@ func runAnalysis(ctx context.Context, cfg config, tenantID string) error {
 		workerID := i // Capture worker ID for logging
 		go func() {
 			defer wg.Done()
+			// Each worker has its own HTTP client with separate connection pool
+			workerClient := newHTTPClient()
 			// Each worker has its own map for final counts
 			workerCounts := make(map[string]uint64)
 			batchCount := 0
@@ -196,7 +255,7 @@ func runAnalysis(ctx context.Context, cfg config, tenantID string) error {
 					}
 
 					batchCount++
-					result, err := fetchActiveSeries(ctx, cfg.PortForwardPort, tenantID, batch)
+					result, err := fetchActiveSeriesWithRetry(ctx, workerClient, cfg.PortForwardPort, tenantID, batch, fetchRetryAttempts, fetchRetryDelay)
 					if err != nil {
 						log.Printf("Worker %d: Failed to fetch active series (batch %d/%d): %v", workerID, batchCount, batchesPerWorker, err)
 						continue
@@ -238,6 +297,8 @@ func runAnalysis(ctx context.Context, cfg config, tenantID string) error {
 	// Send batches of series names to workers
 	go func() {
 		defer close(seriesChan)
+		reader := bufio.NewReader(os.Stdin)
+		batchesSent := 0
 		for i := 0; i < len(seriesNames); i += cfg.BatchSize {
 			end := i + cfg.BatchSize
 			if end > len(seriesNames) {
@@ -246,6 +307,13 @@ func runAnalysis(ctx context.Context, cfg config, tenantID string) error {
 			batch := seriesNames[i:end]
 			select {
 			case seriesChan <- batch:
+				batchesSent++
+				if batchesSent%pauseEveryNBatches == 0 {
+					log.Printf("\n*** PAUSED after %d batches. Please restart your port-forward session. ***", batchesSent)
+					log.Printf("*** Press ENTER to continue... ***\n")
+					_, _ = reader.ReadString('\n')
+					log.Printf("Resuming...")
+				}
 			case <-ctx.Done():
 				return
 			}

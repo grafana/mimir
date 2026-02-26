@@ -5,6 +5,8 @@ A simple hacky script to download label names and values from ingesters and anal
 # How to use it
 
 1. Edit `pkg/ingester/client/ingester.proto` and change the `import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto"` statement to `import "pkg/mimirpb/mimir.proto"`
+1. Edit `pkg/ingester/client/ingester.proto` and change the `import "gogoproto/gogo.proto"` statement to `import "github.com/gogo/protobuf/gogoproto/gogo.proto"`
+1. Edit `pkg/mimirpb/mimir.proto` and change the `import "gogoproto/gogo.proto"` statement to `import "github.com/gogo/protobuf/gogoproto/gogo.proto"`
 2. Edit `download-labels-from-ingesters.sh` with the configuration about the Kubernetes namespace and Mimir tenant to query.
 3. Run `bash ./download-labels-from-ingesters.sh` from this directory to download the labels.
 4. Once you've got the dump (1 file per ingester), run `go run . label-names-and-values-dump/*` to analyze the label frequencies.
