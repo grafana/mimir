@@ -167,7 +167,6 @@ func (a *MultiAggregationInstance) EquivalentToIgnoringHintsAndChildren(other pl
 		slices.EqualFunc(a.Filters, otherInstance.Filters, func(a *core.LabelMatcher, b *core.LabelMatcher) bool {
 			return a.Equal(b)
 		})
-
 }
 
 func (a *MultiAggregationInstance) MergeHints(other planning.Node) error {
