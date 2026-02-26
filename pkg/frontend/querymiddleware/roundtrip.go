@@ -9,6 +9,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"net/http"
 	"slices"
 	"strings"
@@ -49,6 +50,7 @@ const (
 	queryTypeLabels                       = "label_names_and_values"
 	queryTypeActiveSeries                 = "active_series"
 	queryTypeActiveNativeHistogramMetrics = "active_native_histogram_metrics"
+	queryTypeSearch                       = "search"
 	queryTypeOther                        = "other"
 )
 
@@ -317,12 +319,14 @@ func newQueryTripperware(
 		activeNativeHistogramMetrics := next
 		labels := next
 		series := next
+		search := next
 
 		if cfg.MaxRetries > 0 {
 			cardinality = newRetryRoundTripper(cardinality, log, cfg.MaxRetries, retryMetrics)
 			series = newRetryRoundTripper(series, log, cfg.MaxRetries, retryMetrics)
 			labels = newRetryRoundTripper(labels, log, cfg.MaxRetries, retryMetrics)
 			activeSeries = newRetryRoundTripper(series, log, cfg.MaxRetries, retryMetrics)
+			search = newRetryRoundTripper(search, log, cfg.MaxRetries, retryMetrics)
 		}
 
 		if cfg.ShardActiveSeriesQueries {
@@ -342,6 +346,7 @@ func newQueryTripperware(
 			labels = newReadConsistencyRoundTripper(labels, ingestStorageTopicOffsetsReaders, limits, log, metrics)
 			series = newReadConsistencyRoundTripper(series, ingestStorageTopicOffsetsReaders, limits, log, metrics)
 			remoteRead = newReadConsistencyRoundTripper(remoteRead, ingestStorageTopicOffsetsReaders, limits, log, metrics)
+			search = newReadConsistencyRoundTripper(search, ingestStorageTopicOffsetsReaders, limits, log, metrics)
 			next = newReadConsistencyRoundTripper(next, ingestStorageTopicOffsetsReaders, limits, log, metrics)
 		}
 
@@ -360,6 +365,7 @@ func newQueryTripperware(
 		labels = NewLabelsQueryRequestValidationRoundTripper(codec, labels)
 		series = NewLabelsQueryRequestValidationRoundTripper(codec, series)
 		cardinality = NewCardinalityQueryRequestValidationRoundTripper(cardinality)
+		search = NewSearchRequestValidationRoundTripper(codec, search)
 
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
 			if err := requestBlocker.isBlocked(r); err != nil {
@@ -383,6 +389,8 @@ func newQueryTripperware(
 				return series.RoundTrip(r)
 			case IsRemoteReadQuery(r.URL.Path):
 				return remoteRead.RoundTrip(r)
+			case IsSearchQuery(r.URL.Path):
+				return search.RoundTrip(r)
 			default:
 				return next.RoundTrip(r)
 			}
@@ -630,6 +638,8 @@ func newQueryCountTripperware(registerer prometheus.Registerer) Tripperware {
 				op = queryTypeActiveNativeHistogramMetrics
 			case IsLabelsQuery(r.URL.Path):
 				op = queryTypeLabels
+			case IsSearchQuery(r.URL.Path):
+				op = queryTypeSearch
 			}
 
 			tenantIDs, err := tenant.TenantIDs(r.Context())
@@ -685,4 +695,10 @@ func IsActiveNativeHistogramMetricsQuery(path string) bool {
 
 func IsRemoteReadQuery(path string) bool {
 	return strings.HasSuffix(path, remoteReadPathSuffix)
+}
+
+func IsSearchQuery(path string) bool {
+	return strings.HasSuffix(path, streaminglabelvalues.SearchMetricNamesPathSuffix) ||
+		strings.HasSuffix(path, streaminglabelvalues.SearchLabelNamesPathSuffix) ||
+		strings.HasSuffix(path, streaminglabelvalues.SearchLabelValuesPathSuffix)
 }

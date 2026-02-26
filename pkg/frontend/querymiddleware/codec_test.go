@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -35,6 +36,7 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 	"github.com/grafana/mimir/pkg/util/promqlext"
@@ -788,6 +790,344 @@ func TestCodec_DecodeEncodeLabelsQueryRequest(t *testing.T) {
 					require.Equal(t, userID, actualUserID)
 				})
 			}
+		})
+	}
+}
+
+func TestCodec_DecodeSearchQueryRequest(t *testing.T) {
+	codec := newTestCodec()
+
+	// Pre-compute error strings that embed math.MaxInt.
+	errBatchSizeBelowMin := fmt.Sprintf("invalid batch_size - expected an int in range [1-%d] but got 0", math.MaxInt)
+	errLimitBelowMin := fmt.Sprintf("invalid limit - expected an int in range [0-%d] but got -1", math.MaxInt)
+
+	// defaults returns a SearchQueryRequest populated with all non-zero defaults,
+	// so individual test cases only need to specify fields that differ from defaults.
+	defaults := func(path string) *SearchQueryRequest {
+		return &SearchQueryRequest{
+			Path:      path,
+			FuzzAlg:   "jaro",
+			BatchSize: 1000,
+		}
+	}
+
+	tests := []struct {
+		name        string
+		path        string
+		query       string
+		expectedReq *SearchQueryRequest
+		expectErr   string
+	}{
+		// ── time params ──────────────────────────────────────────────────────────
+		{
+			name:  "start end parsing",
+			path:  "/api/v1/search/metric_names",
+			query: "start=0&end=1000",
+			expectedReq: &SearchQueryRequest{
+				Path:      "/api/v1/search/metric_names",
+				Start:     0,
+				End:       1000000,
+				FuzzAlg:   "jaro",
+				BatchSize: 1000,
+			},
+		},
+		{
+			name:  "defaults when no params set",
+			path:  "/api/v1/search/metric_names",
+			query: "",
+			expectedReq: defaults("/api/v1/search/metric_names"),
+		},
+
+		// ── search / case_sensitive ───────────────────────────────────────────────
+		{
+			name:  "search with case sensitive",
+			path:  "/api/v1/search/label_names",
+			query: "search=http&case_sensitive=true",
+			expectedReq: &SearchQueryRequest{
+				Path:          "/api/v1/search/label_names",
+				Search:        []string{"http"},
+				CaseSensitive: true,
+				FuzzAlg:       "jaro",
+				BatchSize:     1000,
+			},
+		},
+		{
+			name:  "multiple search terms",
+			path:  "/api/v1/search/label_names",
+			query: "search=http&search=bar",
+			expectedReq: &SearchQueryRequest{
+				Path:      "/api/v1/search/label_names",
+				Search:    []string{"http", "bar"},
+				FuzzAlg:   "jaro",
+				BatchSize: 1000,
+			},
+		},
+		{
+			name:      "case_sensitive invalid value",
+			path:      "/api/v1/search/metric_names",
+			query:     "case_sensitive=maybe",
+			expectErr: "invalid case_sensitive - expected a bool but got maybe",
+		},
+
+		// ── label_name ────────────────────────────────────────────────────────────
+		{
+			name:  "label value",
+			path:  "/api/v1/search/label_values",
+			query: "label_name=job",
+			expectedReq: &SearchQueryRequest{
+				Path:      "/api/v1/search/label_values",
+				LabelName: "job",
+				FuzzAlg:   "jaro",
+				BatchSize: 1000,
+			},
+		},
+		{
+			name:      "label value missing",
+			path:      "/api/v1/search/label_values",
+			query:     "",
+			expectErr: `missing required parameter label_name`,
+		},
+		{
+			name:      "label on wrong endpoint",
+			path:      "/api/v1/search/metric_names",
+			query:     "label_name=job",
+			expectErr: `not supported parameter label_name`,
+		},
+
+		// ── fuzz_threshold ────────────────────────────────────────────────────────
+		{
+			name:  "fuzz_threshold valid",
+			path:  "/api/v1/search/metric_names",
+			query: "fuzz_threshold=75",
+			expectedReq: &SearchQueryRequest{
+				Path:          "/api/v1/search/metric_names",
+				FuzzThreshold: 75,
+				FuzzAlg:       "jaro",
+				BatchSize:     1000,
+			},
+		},
+		{
+			name:  "fuzz_threshold boundary min (0)",
+			path:  "/api/v1/search/metric_names",
+			query: "fuzz_threshold=0",
+			expectedReq: defaults("/api/v1/search/metric_names"),
+		},
+		{
+			name:  "fuzz_threshold boundary max (100)",
+			path:  "/api/v1/search/metric_names",
+			query: "fuzz_threshold=100",
+			expectedReq: &SearchQueryRequest{
+				Path:          "/api/v1/search/metric_names",
+				FuzzThreshold: 100,
+				FuzzAlg:       "jaro",
+				BatchSize:     1000,
+			},
+		},
+		{
+			name:      "fuzz_threshold above max",
+			path:      "/api/v1/search/metric_names",
+			query:     "fuzz_threshold=101",
+			expectErr: "invalid fuzz_threshold - expected an int in range [0-100] but got 101",
+		},
+		{
+			name:      "fuzz_threshold below min",
+			path:      "/api/v1/search/metric_names",
+			query:     "fuzz_threshold=-1",
+			expectErr: "invalid fuzz_threshold - expected an int in range [0-100] but got -1",
+		},
+		{
+			name:      "fuzz_threshold not an int",
+			path:      "/api/v1/search/metric_names",
+			query:     "fuzz_threshold=abc",
+			expectErr: "invalid fuzz_threshold - expected an int but got abc",
+		},
+
+		// ── fuzz_alg ──────────────────────────────────────────────────────────────
+		{
+			name:  "fuzz_alg jarowinkler",
+			path:  "/api/v1/search/metric_names",
+			query: "fuzz_alg=jarowinkler",
+			expectedReq: &SearchQueryRequest{
+				Path:      "/api/v1/search/metric_names",
+				FuzzAlg:   "jarowinkler",
+				BatchSize: 1000,
+			},
+		},
+		{
+			name:  "fuzz_alg explicit jaro",
+			path:  "/api/v1/search/metric_names",
+			query: "fuzz_alg=jaro",
+			expectedReq: defaults("/api/v1/search/metric_names"),
+		},
+		{
+			name:      "fuzz_alg invalid",
+			path:      "/api/v1/search/metric_names",
+			query:     "fuzz_alg=levenshtein",
+			expectErr: "invalid fuzz_alg - expected jaro or jarowinkler but got levenshtein",
+		},
+
+		// ── batch_size ────────────────────────────────────────────────────────────
+		{
+			name:  "batch_size valid",
+			path:  "/api/v1/search/metric_names",
+			query: "batch_size=500",
+			expectedReq: &SearchQueryRequest{
+				Path:      "/api/v1/search/metric_names",
+				FuzzAlg:   "jaro",
+				BatchSize: 500,
+			},
+		},
+		{
+			name:  "batch_size boundary min (1)",
+			path:  "/api/v1/search/metric_names",
+			query: "batch_size=1",
+			expectedReq: &SearchQueryRequest{
+				Path:      "/api/v1/search/metric_names",
+				FuzzAlg:   "jaro",
+				BatchSize: 1,
+			},
+		},
+		{
+			name:      "batch_size below min",
+			path:      "/api/v1/search/metric_names",
+			query:     "batch_size=0",
+			expectErr: errBatchSizeBelowMin,
+		},
+		{
+			name:      "batch_size not an int",
+			path:      "/api/v1/search/metric_names",
+			query:     "batch_size=big",
+			expectErr: "invalid batch_size - expected an int but got big",
+		},
+
+		// ── sort_by ───────────────────────────────────────────────────────────────
+		{
+			name:  "sort_by alpha",
+			path:  "/api/v1/search/metric_names",
+			query: "sort_by=alpha",
+			expectedReq: &SearchQueryRequest{
+				Path:      "/api/v1/search/metric_names",
+				FuzzAlg:   "jaro",
+				BatchSize: 1000,
+				SortBy:    streaminglabelvalues.Alpha,
+			},
+		},
+		{
+			name:  "sort_by score",
+			path:  "/api/v1/search/metric_names",
+			query: "sort_by=score",
+			expectedReq: &SearchQueryRequest{
+				Path:      "/api/v1/search/metric_names",
+				FuzzAlg:   "jaro",
+				BatchSize: 1000,
+				SortBy:    streaminglabelvalues.Score,
+			},
+		},
+		{
+			name:  "sort_by none explicit",
+			path:  "/api/v1/search/metric_names",
+			query: "sort_by=none",
+			expectedReq: defaults("/api/v1/search/metric_names"),
+		},
+		{
+			name:      "sort_by invalid",
+			path:      "/api/v1/search/metric_names",
+			query:     "sort_by=frequency",
+			expectErr: "invalid sort_by - expected one of alpha, score, none but got frequency",
+		},
+
+		// ── sort_dir ──────────────────────────────────────────────────────────────
+		{
+			name:  "sort_dir desc",
+			path:  "/api/v1/search/metric_names",
+			query: "sort_dir=desc",
+			expectedReq: &SearchQueryRequest{
+				Path:      "/api/v1/search/metric_names",
+				FuzzAlg:   "jaro",
+				BatchSize: 1000,
+				SortDir:   streaminglabelvalues.Desc,
+			},
+		},
+		{
+			name:  "sort_dir dsc alias",
+			path:  "/api/v1/search/metric_names",
+			query: "sort_dir=dsc",
+			expectedReq: &SearchQueryRequest{
+				Path:      "/api/v1/search/metric_names",
+				FuzzAlg:   "jaro",
+				BatchSize: 1000,
+				SortDir:   streaminglabelvalues.Desc,
+			},
+		},
+		{
+			name:  "sort_dir asc explicit",
+			path:  "/api/v1/search/metric_names",
+			query: "sort_dir=asc",
+			expectedReq: defaults("/api/v1/search/metric_names"),
+		},
+		{
+			name:      "sort_dir invalid",
+			path:      "/api/v1/search/metric_names",
+			query:     "sort_dir=ascending",
+			expectErr: "invalid sort_dir - expected one of asc, dsc but got ascending",
+		},
+
+		// ── limit ─────────────────────────────────────────────────────────────────
+		{
+			name:  "limit valid",
+			path:  "/api/v1/search/metric_names",
+			query: "limit=100",
+			expectedReq: &SearchQueryRequest{
+				Path:      "/api/v1/search/metric_names",
+				FuzzAlg:   "jaro",
+				BatchSize: 1000,
+				Limit:     100,
+			},
+		},
+		{
+			name:  "limit zero explicit",
+			path:  "/api/v1/search/metric_names",
+			query: "limit=0",
+			expectedReq: defaults("/api/v1/search/metric_names"),
+		},
+		{
+			name:      "limit below min",
+			path:      "/api/v1/search/metric_names",
+			query:     "limit=-1",
+			expectErr: errLimitBelowMin,
+		},
+		{
+			name:      "limit not an int",
+			path:      "/api/v1/search/metric_names",
+			query:     "limit=many",
+			expectErr: "invalid limit - expected an int but got many",
+		},
+
+		// ── unknown path ──────────────────────────────────────────────────────────
+		{
+			name:      "unknown path",
+			path:      "/api/v1/unknown",
+			query:     "",
+			expectErr: `unknown search query API endpoint /api/v1/unknown`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			u := tc.path
+			if tc.query != "" {
+				u += "?" + tc.query
+			}
+			req, err := http.NewRequest(http.MethodGet, u, nil)
+			require.NoError(t, err)
+
+			result, err := codec.DecodeSearchQueryRequest(context.Background(), req)
+			if tc.expectErr != "" {
+				require.EqualError(t, err, tc.expectErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedReq, result)
 		})
 	}
 }

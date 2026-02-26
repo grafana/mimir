@@ -69,6 +69,34 @@ func (rt LabelsQueryRequestValidationRoundTripper) RoundTrip(r *http.Request) (*
 	return rt.next.RoundTrip(r)
 }
 
+type SearchRequestValidationRoundTripper struct {
+	codec Codec
+	next  http.RoundTripper
+}
+
+func NewSearchRequestValidationRoundTripper(codec Codec, next http.RoundTripper) http.RoundTripper {
+	return SearchRequestValidationRoundTripper{
+		codec: codec,
+		next:  next,
+	}
+}
+
+var errSearchQueryRequestValidationFailed = cancellation.NewErrorf(
+	requestValidationFailedFmt + "search query",
+)
+
+func (rt SearchRequestValidationRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
+	ctx, cancel := context.WithCancelCause(r.Context())
+	defer cancel(errSearchQueryRequestValidationFailed)
+	r = r.WithContext(ctx)
+
+	_, err := rt.codec.DecodeSearchQueryRequest(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	return rt.next.RoundTrip(r)
+}
+
 type CardinalityQueryRequestValidationRoundTripper struct {
 	next http.RoundTripper
 }

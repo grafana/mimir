@@ -8,6 +8,7 @@ package querymiddleware
 import (
 	"bytes"
 	"fmt"
+	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"io"
 	"net/http"
 	"slices"
@@ -851,6 +852,23 @@ func (m *PrometheusSeriesResponse) GetHeaders() []*PrometheusHeader {
 func (m *PrometheusSeriesResponse) Reset()         { *m = PrometheusSeriesResponse{} }
 func (*PrometheusSeriesResponse) ProtoMessage()    {}
 func (m *PrometheusSeriesResponse) String() string { return fmt.Sprintf("%+v", *m) }
+
+// SearchQueryRequest holds the parsed parameters for a /api/v1/search/* request.
+type SearchQueryRequest struct {
+	Path             string
+	Start            int64
+	End              int64
+	LabelMatcherSets []string
+	LabelName        string // only set for search/label_values
+	Search           []string
+	FuzzThreshold    int
+	FuzzAlg          string
+	CaseSensitive    bool
+	SortBy           streaminglabelvalues.SortBy
+	SortDir          streaminglabelvalues.SortDirection
+	BatchSize        int
+	Limit            int
+}
 
 func prometheusDataJsoniterDecode(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
 	d := (*PrometheusData)(ptr)

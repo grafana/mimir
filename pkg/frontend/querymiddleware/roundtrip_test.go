@@ -753,6 +753,29 @@ func TestIsLabelsQuery(t *testing.T) {
 	}
 }
 
+func TestIsSearchQuery(t *testing.T) {
+	tests := []struct {
+		path     string
+		expected bool
+	}{
+		{path: "/api/v1/search/metric_names", expected: true},
+		{path: "/api/v1/search/label_names", expected: true},
+		{path: "/api/v1/search/label_values", expected: true},
+		{path: "/prometheus/api/v1/search/metric_names", expected: true},
+		{path: "/prometheus/api/v1/search/label_names", expected: true},
+		{path: "/prometheus/api/v1/search/label_values", expected: true},
+		{path: "/api/v1/search/unknown", expected: false},
+		{path: "/api/v1/labels", expected: false},
+		{path: "/api/v1/cardinality/label_names", expected: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.path, func(t *testing.T) {
+			assert.Equal(t, tc.expected, IsSearchQuery(tc.path))
+		})
+	}
+}
+
 func TestTripperware_RemoteRead(t *testing.T) {
 	testCases := map[string]struct {
 		makeRequest         func() *http.Request

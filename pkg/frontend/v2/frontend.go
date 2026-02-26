@@ -981,6 +981,15 @@ func (f *Frontend) extractTouchedQueryComponentsForHTTPRequest(
 		return f.queryComponentQueueDimensionFromTimeParams(
 			tenantIDs, decodedRequest.GetStart(), decodedRequest.GetEnd(), now,
 		), nil
+	case querymiddleware.IsSearchQuery(httpRequest.URL.Path):
+		decodedRequest, err := f.codec.DecodeSearchQueryRequest(httpRequest.Context(), httpRequest)
+		if err != nil {
+			return nil, err
+		}
+
+		return f.queryComponentQueueDimensionFromTimeParams(
+			tenantIDs, decodedRequest.Start, decodedRequest.End, now,
+		), nil
 	case querymiddleware.IsCardinalityQuery(httpRequest.URL.Path), querymiddleware.IsActiveSeriesQuery(httpRequest.URL.Path), querymiddleware.IsActiveNativeHistogramMetricsQuery(httpRequest.URL.Path):
 		// cardinality only hits ingesters
 		return []string{ingesterQueryComponent}, nil

@@ -40,6 +40,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
@@ -480,6 +481,61 @@ func (Codec) DecodeLabelsSeriesQueryRequest(_ context.Context, r *http.Request) 
 		LabelMatcherSets: labelMatcherSets,
 		Limit:            limit,
 	}, nil
+}
+
+// DecodeSearchQueryRequest decodes a SearchQueryRequest from an HTTP request for the /api/v1/search/* endpoints.
+func (Codec) DecodeSearchQueryRequest(_ context.Context, r *http.Request) (*SearchQueryRequest, error) {
+	if !IsSearchQuery(r.URL.Path) {
+		return nil, fmt.Errorf("unknown search query API endpoint %s", r.URL.Path)
+	}
+
+	reqValues, err := util.ParseRequestFormWithoutConsumingBody(r)
+	if err != nil {
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
+	}
+
+	start, end, err := DecodeLabelsSeriesQueryTimeParams(&reqValues)
+	if err != nil {
+		return nil, err
+	}
+
+	p := streaminglabelvalues.NewRequestParser(reqValues)
+
+	req := &SearchQueryRequest{
+		Path:             r.URL.Path,
+		Start:            start,
+		End:              end,
+		LabelMatcherSets: reqValues[streaminglabelvalues.MatcherParam],
+		Search:           p.Search(),
+	}
+
+	if req.LabelName, err = p.LabelName(strings.HasSuffix(r.URL.Path, streaminglabelvalues.SearchLabelValuesPathSuffix)); err != nil {
+		return nil, err
+	}
+
+	if req.FuzzThreshold, err = p.FuzzThreshold(); err != nil {
+		return nil, err
+	}
+	if req.FuzzAlg, err = p.FuzzAlgorithm(); err != nil {
+		return nil, err
+	}
+	if req.CaseSensitive, err = p.CaseSensitive(); err != nil {
+		return nil, err
+	}
+	if req.BatchSize, err = p.BatchSize(); err != nil {
+		return nil, err
+	}
+	if req.SortBy, err = p.SortBy(); err != nil {
+		return nil, err
+	}
+	if req.SortDir, err = p.SortDir(); err != nil {
+		return nil, err
+	}
+	if req.Limit, err = p.Limit(); err != nil {
+		return nil, err
+	}
+
+	return req, nil
 }
 
 // TimeParamType enumerates the types of time parameters in Prometheus API.
