@@ -631,10 +631,10 @@ func IsSafeToApplyFilteringAfterFunction(functionCall *core.FunctionCall, group 
 		functions.FUNCTION_COS,
 		functions.FUNCTION_COSH,
 		functions.FUNCTION_COUNT_OVER_TIME,
+		functions.FUNCTION_DAYS_IN_MONTH,
 		functions.FUNCTION_DAY_OF_MONTH,
 		functions.FUNCTION_DAY_OF_WEEK,
 		functions.FUNCTION_DAY_OF_YEAR,
-		functions.FUNCTION_DAYS_IN_MONTH,
 		functions.FUNCTION_DEG,
 		functions.FUNCTION_DELTA,
 		functions.FUNCTION_DERIV,
@@ -651,17 +651,18 @@ func IsSafeToApplyFilteringAfterFunction(functionCall *core.FunctionCall, group 
 		functions.FUNCTION_INCREASE,
 		functions.FUNCTION_IRATE,
 		functions.FUNCTION_LN,
-		functions.FUNCTION_LOG2,
 		functions.FUNCTION_LOG10,
+		functions.FUNCTION_LOG2,
 		functions.FUNCTION_MAD_OVER_TIME,
 		functions.FUNCTION_MAX_OVER_TIME,
-		functions.FUNCTION_MIN_OVER_TIME,
 		functions.FUNCTION_MINUTE,
+		functions.FUNCTION_MIN_OVER_TIME,
 		functions.FUNCTION_MONTH,
 		functions.FUNCTION_PREDICT_LINEAR,
 		functions.FUNCTION_PRESENT_OVER_TIME,
 		functions.FUNCTION_QUANTILE_OVER_TIME,
 		functions.FUNCTION_RAD,
+		functions.FUNCTION_RATE,
 		functions.FUNCTION_RESETS,
 		functions.FUNCTION_ROUND,
 		functions.FUNCTION_SGN,
@@ -678,8 +679,7 @@ func IsSafeToApplyFilteringAfterFunction(functionCall *core.FunctionCall, group 
 		functions.FUNCTION_TS_OF_LAST_OVER_TIME,
 		functions.FUNCTION_TS_OF_MAX_OVER_TIME,
 		functions.FUNCTION_TS_OF_MIN_OVER_TIME,
-		functions.FUNCTION_YEAR,
-		functions.FUNCTION_RATE:
+		functions.FUNCTION_YEAR:
 		// Functions that remove __name__ label if delayed name removal is disabled:
 		// - if delayed name removal is enabled: safe to apply filtering after the function call (as the function call will pass through all labels as-is)
 		// - if delayed name removal is disabled: safe if no filters on __name__
