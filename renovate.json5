@@ -130,7 +130,6 @@
       matchFileNames: [
         'mimir-build-image/Dockerfile',
       ],
-      groupName: 'mimir-build-image',
       rebaseWhen: 'behind-base-branch',
     }
   ],
