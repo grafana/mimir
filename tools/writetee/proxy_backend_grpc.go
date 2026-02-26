@@ -1,0 +1,199 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package writetee
+
+import (
+	"context"
+	"io"
+	"net/http"
+	"net/url"
+	"path"
+	"time"
+
+	"github.com/grafana/dskit/httpgrpc"
+	"github.com/pkg/errors"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/keepalive"
+)
+
+// GRPCBackendConfig holds configuration for gRPC backends.
+type GRPCBackendConfig struct {
+	MaxRecvMsgSize int
+	MaxSendMsgSize int
+}
+
+// grpcProxyBackend implements ProxyBackend for HTTPgRPC backends.
+type grpcProxyBackend struct {
+	name        string
+	endpoint    *url.URL
+	timeout     time.Duration
+	backendType BackendType
+	preferred   bool
+
+	conn   *grpc.ClientConn
+	client httpgrpc.HTTPClient
+}
+
+// NewGRPCProxyBackend creates a new gRPC backend.
+func NewGRPCProxyBackend(name string, endpoint *url.URL, timeout time.Duration, preferred bool, backendType BackendType, cfg GRPCBackendConfig) (ProxyBackend, error) {
+	// Build the target address from the endpoint.
+	// For dns:// scheme, use the host directly with dns resolver.
+	target := "dns:///" + endpoint.Host
+
+	dialOptions := []grpc.DialOption{
+		grpc.WithDefaultServiceConfig(`{"loadBalancingPolicy":"round_robin"}`),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithKeepaliveParams(keepalive.ClientParameters{
+			Time:                10 * time.Second,
+			Timeout:             5 * time.Second,
+			PermitWithoutStream: true,
+		}),
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
+		grpc.WithDefaultCallOptions(
+			grpc.MaxCallRecvMsgSize(cfg.MaxRecvMsgSize),
+			grpc.MaxCallSendMsgSize(cfg.MaxSendMsgSize),
+		),
+	}
+
+	conn, err := grpc.NewClient(target, dialOptions...)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating gRPC client connection")
+	}
+
+	return &grpcProxyBackend{
+		name:        name,
+		endpoint:    endpoint,
+		timeout:     timeout,
+		backendType: backendType,
+		preferred:   preferred,
+		conn:        conn,
+		client:      httpgrpc.NewHTTPClient(conn),
+	}, nil
+}
+
+func (b *grpcProxyBackend) Name() string {
+	return b.name
+}
+
+func (b *grpcProxyBackend) Endpoint() *url.URL {
+	return b.endpoint
+}
+
+func (b *grpcProxyBackend) Preferred() bool {
+	return b.preferred
+}
+
+func (b *grpcProxyBackend) SetPreferred(preferred bool) {
+	b.preferred = preferred
+}
+
+func (b *grpcProxyBackend) BackendType() BackendType {
+	return b.backendType
+}
+
+func (b *grpcProxyBackend) ForwardRequest(ctx context.Context, orig *http.Request, body io.ReadCloser) (time.Duration, int, []byte, http.Header, error) {
+	req, err := b.createGRPCRequest(orig, body)
+	if err != nil {
+		return 0, 0, nil, nil, err
+	}
+
+	start := time.Now()
+	status, responseBody, headers, err := b.doGRPCRequest(ctx, req)
+	elapsed := time.Since(start)
+
+	return elapsed, status, responseBody, headers, err
+}
+
+func (b *grpcProxyBackend) createGRPCRequest(orig *http.Request, body io.ReadCloser) (*httpgrpc.HTTPRequest, error) {
+	// Read the body.
+	bodyBytes, err := io.ReadAll(body)
+	if err != nil {
+		return nil, errors.Wrap(err, "reading request body")
+	}
+	if err := body.Close(); err != nil {
+		return nil, errors.Wrap(err, "closing request body")
+	}
+
+	// Build the URL path with endpoint path prefix.
+	reqPath := path.Join(b.endpoint.Path, orig.URL.Path)
+
+	// Clone headers and apply auth transformations.
+	headers := make(http.Header)
+	for k, v := range orig.Header {
+		headers[k] = v
+	}
+
+	// Replace the auth:
+	// - If the endpoint has user and password, use it.
+	// - If the endpoint has user only, keep it and use the request password (if any).
+	// - If the endpoint has no user and no password, use the request auth (if any).
+	// - If the endpoint has __REQUEST_HEADER_X_SCOPE_ORGID__ as the user, then replace it with the X-Scope-OrgID header value from the request.
+	clientUser, clientPass, clientAuth := orig.BasicAuth()
+	endpointUser := b.endpoint.User.Username()
+	if endpointUser == "__REQUEST_HEADER_X_SCOPE_ORGID__" {
+		endpointUser = orig.Header.Get("X-Scope-OrgID")
+	}
+	endpointPass, _ := b.endpoint.User.Password()
+
+	headers.Del("Authorization")
+	if endpointUser != "" && endpointPass != "" {
+		// Create a temporary request to use SetBasicAuth.
+		tmpReq := &http.Request{Header: headers}
+		tmpReq.SetBasicAuth(endpointUser, endpointPass)
+	} else if endpointUser != "" {
+		tmpReq := &http.Request{Header: headers}
+		tmpReq.SetBasicAuth(endpointUser, clientPass)
+	} else if clientAuth {
+		tmpReq := &http.Request{Header: headers}
+		tmpReq.SetBasicAuth(clientUser, clientPass)
+	}
+
+	// Remove Accept-Encoding header to avoid compressed responses.
+	headers.Del("Accept-Encoding")
+
+	// Remove Content-Length as it will be recalculated.
+	headers.Del("Content-Length")
+
+	return &httpgrpc.HTTPRequest{
+		Method:  orig.Method,
+		Url:     reqPath,
+		Headers: httpgrpc.FromHeader(headers),
+		Body:    bodyBytes,
+	}, nil
+}
+
+func (b *grpcProxyBackend) doGRPCRequest(ctx context.Context, req *httpgrpc.HTTPRequest) (int, []byte, http.Header, error) {
+	// Honor the read timeout.
+	ctx, cancel := context.WithTimeout(ctx, b.timeout)
+	defer cancel()
+
+	// Append HTTPgRPC metadata to the context.
+	ctx = httpgrpc.AppendRequestMetadataToContext(ctx, req)
+
+	// Execute the request.
+	resp, err := b.client.Handle(ctx, req)
+	if err != nil {
+		// Try to extract HTTP response from gRPC error.
+		resp, ok := httpgrpc.HTTPResponseFromError(err)
+		if !ok {
+			return 0, nil, nil, errors.Wrap(err, "executing gRPC backend request")
+		}
+		// Got an HTTP response embedded in the error.
+		headers := make(http.Header)
+		httpgrpc.ToHeader(resp.Headers, headers)
+		return int(resp.Code), resp.Body, headers, nil
+	}
+
+	headers := make(http.Header)
+	httpgrpc.ToHeader(resp.Headers, headers)
+	return int(resp.Code), resp.Body, headers, nil
+}
+
+func (b *grpcProxyBackend) Close() error {
+	if b.conn != nil {
+		return b.conn.Close()
+	}
+	return nil
+}

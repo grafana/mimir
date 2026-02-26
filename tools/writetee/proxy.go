@@ -44,6 +44,9 @@ type ProxyConfig struct {
 	HTTPConnectionTTLMin                time.Duration
 	HTTPConnectionTTLMax                time.Duration
 	HTTPConnectionTTLIdleCheckFrequency time.Duration
+
+	GRPCMaxRecvMsgSize int
+	GRPCMaxSendMsgSize int
 }
 
 // registerServerFlagsWithChangedDefaultValues emulates the same method in pkg/mimir/mimir.go,
@@ -101,6 +104,8 @@ func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.HTTPConnectionTTLMin, "server.http-connection-ttl-min", 0, "Minimum TTL for HTTP connections. Connections will be closed after a random duration between min and max TTL.")
 	f.DurationVar(&cfg.HTTPConnectionTTLMax, "server.http-connection-ttl-max", 0, "Maximum TTL for HTTP connections. Set to 0 to disable connection TTL.")
 	f.DurationVar(&cfg.HTTPConnectionTTLIdleCheckFrequency, "server.http-connection-ttl-idle-check-frequency", 30*time.Second, "Frequency at which idle connections are checked for TTL expiration.")
+	f.IntVar(&cfg.GRPCMaxRecvMsgSize, "backend.grpc-max-recv-msg-size", 100*1024*1024, "Maximum size of received gRPC messages for HTTPgRPC backends (dns:// scheme).")
+	f.IntVar(&cfg.GRPCMaxSendMsgSize, "backend.grpc-max-send-msg-size", 100*1024*1024, "Maximum size of sent gRPC messages for HTTPgRPC backends (dns:// scheme).")
 	cfg.registerServerFlagsWithChangedDefaultValues(f)
 }
 
@@ -229,7 +234,18 @@ func (p *Proxy) parseBackendEndpoint(endpoint string, backendType BackendType) (
 
 	// Preferred is determined later in selectPreferredBackend() after all backends are parsed.
 	// This ensures that when multiple backends have the same hostname, only one is marked as preferred.
-	return NewProxyBackend(name, u, p.cfg.BackendReadTimeout, false, p.cfg.BackendSkipTLSVerify, backendType), nil
+	switch u.Scheme {
+	case "http", "https":
+		return NewHTTPProxyBackend(name, u, p.cfg.BackendReadTimeout, false, p.cfg.BackendSkipTLSVerify, backendType), nil
+	case "dns":
+		grpcCfg := GRPCBackendConfig{
+			MaxRecvMsgSize: p.cfg.GRPCMaxRecvMsgSize,
+			MaxSendMsgSize: p.cfg.GRPCMaxSendMsgSize,
+		}
+		return NewGRPCProxyBackend(name, u, p.cfg.BackendReadTimeout, false, backendType, grpcCfg)
+	default:
+		return nil, fmt.Errorf("unsupported backend scheme %q for endpoint %s (supported: http, https, dns)", u.Scheme, endpoint)
+	}
 }
 
 // selectPreferredBackend selects a single backend as the preferred one based on the configured
@@ -356,6 +372,13 @@ func (p *Proxy) Stop() error {
 	// Stop the async dispatcher
 	if p.asyncDispatcher != nil {
 		p.asyncDispatcher.Stop()
+	}
+
+	// Close all backends (important for gRPC backends to close connections).
+	for _, backend := range p.backends {
+		if err := backend.Close(); err != nil {
+			level.Warn(p.logger).Log("msg", "failed to close backend", "backend", backend.Name(), "err", err)
+		}
 	}
 
 	return nil

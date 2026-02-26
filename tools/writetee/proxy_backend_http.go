@@ -30,10 +30,11 @@ type ProxyBackend interface {
 	SetPreferred(preferred bool)
 	BackendType() BackendType
 	ForwardRequest(ctx context.Context, orig *http.Request, body io.ReadCloser) (time.Duration, int, []byte, http.Header, error)
+	Close() error
 }
 
-// proxyBackend holds the information of a single backend.
-type proxyBackend struct {
+// httpProxyBackend holds the information of a single backend.
+type httpProxyBackend struct {
 	name        string
 	endpoint    *url.URL
 	client      *http.Client
@@ -45,8 +46,8 @@ type proxyBackend struct {
 	preferred bool
 }
 
-// NewProxyBackend makes a new proxyBackend
-func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, preferred bool, skipTLSVerify bool, backendType BackendType) ProxyBackend {
+// NewHTTPProxyBackend makes a new httpProxyBackend
+func NewHTTPProxyBackend(name string, endpoint *url.URL, timeout time.Duration, preferred bool, skipTLSVerify bool, backendType BackendType) ProxyBackend {
 	innerTransport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		TLSClientConfig: &tls.Config{
@@ -64,7 +65,7 @@ func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, pref
 
 	tracingTransport := otelhttp.NewTransport(innerTransport)
 
-	return &proxyBackend{
+	return &httpProxyBackend{
 		name:        name,
 		endpoint:    endpoint,
 		timeout:     timeout,
@@ -79,27 +80,27 @@ func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, pref
 	}
 }
 
-func (b *proxyBackend) Name() string {
+func (b *httpProxyBackend) Name() string {
 	return b.name
 }
 
-func (b *proxyBackend) Endpoint() *url.URL {
+func (b *httpProxyBackend) Endpoint() *url.URL {
 	return b.endpoint
 }
 
-func (b *proxyBackend) Preferred() bool {
+func (b *httpProxyBackend) Preferred() bool {
 	return b.preferred
 }
 
-func (b *proxyBackend) SetPreferred(preferred bool) {
+func (b *httpProxyBackend) SetPreferred(preferred bool) {
 	b.preferred = preferred
 }
 
-func (b *proxyBackend) BackendType() BackendType {
+func (b *httpProxyBackend) BackendType() BackendType {
 	return b.backendType
 }
 
-func (b *proxyBackend) ForwardRequest(ctx context.Context, orig *http.Request, body io.ReadCloser) (time.Duration, int, []byte, http.Header, error) {
+func (b *httpProxyBackend) ForwardRequest(ctx context.Context, orig *http.Request, body io.ReadCloser) (time.Duration, int, []byte, http.Header, error) {
 	req, err := b.createBackendRequest(ctx, orig, body)
 	if err != nil {
 		return 0, 0, nil, nil, err
@@ -112,7 +113,7 @@ func (b *proxyBackend) ForwardRequest(ctx context.Context, orig *http.Request, b
 	return elapsed, status, responseBody, headers, err
 }
 
-func (b *proxyBackend) createBackendRequest(ctx context.Context, orig *http.Request, body io.ReadCloser) (*http.Request, error) {
+func (b *httpProxyBackend) createBackendRequest(ctx context.Context, orig *http.Request, body io.ReadCloser) (*http.Request, error) {
 	req := orig.Clone(ctx)
 	req.Body = body
 	// RequestURI can't be set on a cloned request. It's only for handlers.
@@ -160,7 +161,7 @@ func (b *proxyBackend) createBackendRequest(ctx context.Context, orig *http.Requ
 	return req, nil
 }
 
-func (b *proxyBackend) doBackendRequest(req *http.Request) (int, []byte, http.Header, error) {
+func (b *httpProxyBackend) doBackendRequest(req *http.Request) (int, []byte, http.Header, error) {
 	// Honor the read timeout.
 	ctx, cancel := context.WithTimeout(req.Context(), b.timeout)
 	defer cancel()
@@ -182,4 +183,8 @@ func (b *proxyBackend) doBackendRequest(req *http.Request) (int, []byte, http.He
 	}
 
 	return res.StatusCode, body, res.Header, nil
+}
+
+func (b *httpProxyBackend) Close() error {
+	return nil
 }
