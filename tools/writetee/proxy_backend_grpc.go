@@ -8,9 +8,12 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/middleware"
+	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
@@ -55,6 +58,7 @@ func NewGRPCProxyBackend(name string, endpoint *url.URL, timeout time.Duration, 
 			grpc.MaxCallRecvMsgSize(cfg.MaxRecvMsgSize),
 			grpc.MaxCallSendMsgSize(cfg.MaxSendMsgSize),
 		),
+		grpc.WithUnaryInterceptor(middleware.ClientUserHeaderInterceptor),
 	}
 
 	conn, err := grpc.NewClient(target, dialOptions...)
@@ -119,41 +123,15 @@ func (b *grpcProxyBackend) createGRPCRequest(orig *http.Request, body io.ReadClo
 	// Build the URL path with endpoint path prefix.
 	reqPath := path.Join(b.endpoint.Path, orig.URL.Path)
 
-	// Clone headers and apply auth transformations.
+	// Clone headers for the gRPC request.
 	headers := make(http.Header)
 	for k, v := range orig.Header {
 		headers[k] = v
 	}
 
-	// Replace the auth:
-	// - If the endpoint has user and password, use it.
-	// - If the endpoint has user only, keep it and use the request password (if any).
-	// - If the endpoint has no user and no password, use the request auth (if any).
-	// - If the endpoint has __REQUEST_HEADER_X_SCOPE_ORGID__ as the user, then replace it with the X-Scope-OrgID header value from the request.
-	clientUser, clientPass, clientAuth := orig.BasicAuth()
-	endpointUser := b.endpoint.User.Username()
-	if endpointUser == "__REQUEST_HEADER_X_SCOPE_ORGID__" {
-		endpointUser = orig.Header.Get("X-Scope-OrgID")
-	}
-	endpointPass, _ := b.endpoint.User.Password()
-
+	// Remove headers that are not relevant for HTTPgRPC backends.
 	headers.Del("Authorization")
-	if endpointUser != "" && endpointPass != "" {
-		// Create a temporary request to use SetBasicAuth.
-		tmpReq := &http.Request{Header: headers}
-		tmpReq.SetBasicAuth(endpointUser, endpointPass)
-	} else if endpointUser != "" {
-		tmpReq := &http.Request{Header: headers}
-		tmpReq.SetBasicAuth(endpointUser, clientPass)
-	} else if clientAuth {
-		tmpReq := &http.Request{Header: headers}
-		tmpReq.SetBasicAuth(clientUser, clientPass)
-	}
-
-	// Remove Accept-Encoding header to avoid compressed responses.
 	headers.Del("Accept-Encoding")
-
-	// Remove Content-Length as it will be recalculated.
 	headers.Del("Content-Length")
 
 	return &httpgrpc.HTTPRequest{
@@ -168,6 +146,15 @@ func (b *grpcProxyBackend) doGRPCRequest(ctx context.Context, req *httpgrpc.HTTP
 	// Honor the read timeout.
 	ctx, cancel := context.WithTimeout(ctx, b.timeout)
 	defer cancel()
+
+	// Extract org ID from HTTPRequest headers and inject into context.
+	// This allows ClientUserHeaderInterceptor to propagate it to gRPC metadata.
+	for _, h := range req.Headers {
+		if strings.EqualFold(h.Key, "X-Scope-OrgID") && len(h.Values) > 0 {
+			ctx = user.InjectOrgID(ctx, h.Values[0])
+			break
+		}
+	}
 
 	// Append HTTPgRPC metadata to the context.
 	ctx = httpgrpc.AppendRequestMetadataToContext(ctx, req)

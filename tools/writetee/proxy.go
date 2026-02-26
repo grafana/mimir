@@ -363,7 +363,7 @@ func (p *Proxy) Start() error {
 		}
 	}()
 
-	level.Info(p.logger).Log("msg", "The write-tee proxy is up and running.", "httpPort", p.cfg.Server.HTTPListenPort)
+	level.Info(p.logger).Log("msg", "The write-tee proxy is up and running.", "httpPort", p.cfg.Server.HTTPListenPort, "grpcPort", p.cfg.Server.GRPCListenPort)
 	return nil
 }
 
