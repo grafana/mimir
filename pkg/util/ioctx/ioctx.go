@@ -86,9 +86,9 @@ func readWrite(ctx context.Context, c io.Closer, p []byte, do func([]byte) (int,
 	case res := <-ch:
 		return res.n, res.err
 	case <-ctx.Done():
-		_ = c.Close()
+		err := c.Close()
 		<-ch
-		return 0, ctx.Err()
+		return 0, errors.Join(err, ctx.Err())
 	}
 }
 

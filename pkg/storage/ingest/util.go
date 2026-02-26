@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"strconv"
 	"time"
@@ -190,7 +189,7 @@ func requestRefreshAndReadTokenFromFile(ctx context.Context, cfg KafkaAuthConfig
 	return readTokenFromFile(ctx, cfg)
 }
 
-func requestTokenRefresh(ctx context.Context, cfg KafkaAuthConfig) error {
+func requestTokenRefresh(ctx context.Context, cfg KafkaAuthConfig) (err error) {
 	ctx, cancel := context.WithTimeout(ctx, cfg.OauthbearerReauthRequestWriteTimeout)
 	defer cancel()
 
@@ -198,7 +197,7 @@ func requestTokenRefresh(ctx context.Context, cfg KafkaAuthConfig) error {
 	if err != nil {
 		return fmt.Errorf("opening reauth request file %s: %w", cfg.OauthbearerReauthRequestFilePath, err)
 	}
-	defer wf.Close()
+	defer func() { err = errors.Join(err, wf.Close()) }()
 
 	_, err = ioctx.Write(ctx, wf, []byte("reauth\n"))
 	if err != nil {
