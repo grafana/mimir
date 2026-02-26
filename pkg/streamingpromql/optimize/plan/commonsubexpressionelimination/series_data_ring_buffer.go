@@ -159,7 +159,7 @@ func (b *SeriesDataRingBuffer[T]) Get(seriesIndex int) T {
 
 func (b *SeriesDataRingBuffer[T]) GetIfPresent(seriesIndex int) (T, bool) {
 	pos, found := b.tryToFindElementPositionForSeriesIndex(seriesIndex)
-	if !found {
+	if !found || !b.getElementAtPosition(pos).present {
 		var empty T
 		return empty, false
 	}

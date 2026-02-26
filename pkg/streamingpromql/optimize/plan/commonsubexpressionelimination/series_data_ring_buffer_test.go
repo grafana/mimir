@@ -299,3 +299,77 @@ func TestSeriesDataRingBuffer_FindElementPositionForSeriesIndex(t *testing.T) {
 		})
 	})
 }
+
+func TestSeriesDataRingBuffer_GetIfPresent(t *testing.T) {
+	buffer := &SeriesDataRingBuffer[types.InstantVectorSeriesData]{}
+
+	requireNotPresent(t, buffer, 121)
+
+	s1 := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 1, F: 1}}}
+	buffer.Append(s1, 121)
+	requireNotPresent(t, buffer, 120)
+	requirePresent(t, buffer, 121, s1)
+	requireNotPresent(t, buffer, 122)
+
+	s2 := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 2, F: 2}}}
+	buffer.Append(s2, 122)
+	requireNotPresent(t, buffer, 120)
+	requirePresent(t, buffer, 121, s1)
+	requirePresent(t, buffer, 122, s2)
+	requireNotPresent(t, buffer, 123)
+
+	s3 := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 3, F: 3}}}
+	buffer.Append(s3, 123)
+	requireNotPresent(t, buffer, 120)
+	requirePresent(t, buffer, 121, s1)
+	requirePresent(t, buffer, 122, s2)
+	requirePresent(t, buffer, 123, s3)
+	requireNotPresent(t, buffer, 124)
+
+	// Check that non-contiguous series indices work as well.
+	s6 := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 6, F: 6}}}
+	buffer.Append(s6, 126)
+	requireNotPresent(t, buffer, 120)
+	requirePresent(t, buffer, 121, s1)
+	requirePresent(t, buffer, 122, s2)
+	requirePresent(t, buffer, 123, s3)
+	requireNotPresent(t, buffer, 124)
+	requireNotPresent(t, buffer, 125)
+	requirePresent(t, buffer, 126, s6)
+	requireNotPresent(t, buffer, 127)
+
+	s7 := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 7, F: 7}}}
+	buffer.Append(s7, 127)
+	requireNotPresent(t, buffer, 120)
+	requirePresent(t, buffer, 121, s1)
+	requirePresent(t, buffer, 122, s2)
+	requirePresent(t, buffer, 123, s3)
+	requireNotPresent(t, buffer, 124)
+	requireNotPresent(t, buffer, 125)
+	requirePresent(t, buffer, 126, s6)
+	requirePresent(t, buffer, 127, s7)
+	requireNotPresent(t, buffer, 128)
+
+	// Check that tombstoned elements are not considered present.
+	buffer.Remove(122)
+	requireNotPresent(t, buffer, 120)
+	requirePresent(t, buffer, 121, s1)
+	requireNotPresent(t, buffer, 122)
+	requirePresent(t, buffer, 123, s3)
+	requireNotPresent(t, buffer, 124)
+	requireNotPresent(t, buffer, 125)
+	requirePresent(t, buffer, 126, s6)
+	requirePresent(t, buffer, 127, s7)
+	requireNotPresent(t, buffer, 128)
+}
+
+func requirePresent(t *testing.T, buffer *SeriesDataRingBuffer[types.InstantVectorSeriesData], seriesIndex int, expected types.InstantVectorSeriesData) {
+	returnedSeries, found := buffer.GetIfPresent(seriesIndex)
+	require.True(t, found, "should find series in buffer")
+	require.Equal(t, expected, returnedSeries)
+}
+
+func requireNotPresent(t *testing.T, buffer *SeriesDataRingBuffer[types.InstantVectorSeriesData], seriesIndex int) {
+	_, found := buffer.GetIfPresent(seriesIndex)
+	require.False(t, found, "should not find series in buffer")
+}
