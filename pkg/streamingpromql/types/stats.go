@@ -44,7 +44,7 @@ func EquivalentFloatSampleCount(h *histogram.FloatHistogram) int64 {
 	return (int64(h.Size()) + timestampFieldSize) / int64(FPointSize)
 }
 
-type EvaluationStats struct {
+type OperatorEvaluationStats struct {
 	timeRange                QueryTimeRange
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
@@ -52,7 +52,7 @@ type EvaluationStats struct {
 	newSamplesReadPerStep   []int64
 }
 
-func NewEvaluationStats(timeRange QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*EvaluationStats, error) {
+func NewOperatorEvaluationStats(timeRange QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*OperatorEvaluationStats, error) {
 	samplesProcessedPerStep, err := Int64SlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
 	if err != nil {
 		return nil, err
@@ -63,7 +63,7 @@ func NewEvaluationStats(timeRange QueryTimeRange, memoryConsumptionTracker *limi
 		return nil, err
 	}
 
-	return &EvaluationStats{
+	return &OperatorEvaluationStats{
 		timeRange:                timeRange,
 		memoryConsumptionTracker: memoryConsumptionTracker,
 
@@ -78,7 +78,7 @@ func NewEvaluationStats(timeRange QueryTimeRange, memoryConsumptionTracker *limi
 //
 // TrackSampleForInstantVectorSelector should be called for each output step of an instant vector selector, even if
 // the same underlying sample is used for multiple output steps.
-func (s *EvaluationStats) TrackSampleForInstantVectorSelector(stepT int64, sampleCount int64) {
+func (s *OperatorEvaluationStats) TrackSampleForInstantVectorSelector(stepT int64, sampleCount int64) {
 	i := s.timeRange.PointIndex(stepT)
 
 	s.samplesProcessedPerStep[i] += sampleCount
@@ -92,7 +92,7 @@ func (s *EvaluationStats) TrackSampleForInstantVectorSelector(stepT int64, sampl
 //
 // floats and histograms may contain samples beyond rangeEnd, these will be ignored.
 // floats and histograms must not contain samples before rangeStart.
-func (s *EvaluationStats) TrackSamplesForRangeVectorSelector(stepT int64, floats *FPointRingBuffer, histograms *HPointRingBuffer, rangeStart int64, rangeEnd int64) {
+func (s *OperatorEvaluationStats) TrackSamplesForRangeVectorSelector(stepT int64, floats *FPointRingBuffer, histograms *HPointRingBuffer, rangeStart int64, rangeEnd int64) {
 	i := s.timeRange.PointIndex(stepT)
 
 	s.samplesProcessedPerStep[i] += int64(floats.CountUntil(rangeEnd)) + histograms.EquivalentFloatSampleCountUntil(rangeEnd)
@@ -110,9 +110,9 @@ func (s *EvaluationStats) TrackSamplesForRangeVectorSelector(stepT int64, floats
 // This instance is modified in-place.
 //
 // Both instances must be for the same time range.
-func (s *EvaluationStats) Add(other *EvaluationStats) error {
+func (s *OperatorEvaluationStats) Add(other *OperatorEvaluationStats) error {
 	if !s.timeRange.Equal(other.timeRange) {
-		return errors.New("cannot add EvaluationStats with different time ranges")
+		return errors.New("cannot add OperatorEvaluationStats with different time ranges")
 	}
 
 	for i := range s.samplesProcessedPerStep {
@@ -123,9 +123,9 @@ func (s *EvaluationStats) Add(other *EvaluationStats) error {
 	return nil
 }
 
-// Clone returns a copy of this EvaluationStats instance.
-func (s *EvaluationStats) Clone() (*EvaluationStats, error) {
-	clone, err := NewEvaluationStats(s.timeRange, s.memoryConsumptionTracker)
+// Clone returns a copy of this OperatorEvaluationStats instance.
+func (s *OperatorEvaluationStats) Clone() (*OperatorEvaluationStats, error) {
+	clone, err := NewOperatorEvaluationStats(s.timeRange, s.memoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +136,7 @@ func (s *EvaluationStats) Clone() (*EvaluationStats, error) {
 	return clone, nil
 }
 
-func (s *EvaluationStats) Close() {
+func (s *OperatorEvaluationStats) Close() {
 	Int64SlicePool.Put(&s.samplesProcessedPerStep, s.memoryConsumptionTracker)
 	Int64SlicePool.Put(&s.newSamplesReadPerStep, s.memoryConsumptionTracker)
 }

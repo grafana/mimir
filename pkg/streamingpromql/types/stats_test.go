@@ -15,7 +15,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-func TestEvaluationStats_TrackSampleForInstantVectorSelector(t *testing.T) {
+func TestOperatorEvaluationStats_TrackSampleForInstantVectorSelector(t *testing.T) {
 	start := timestamp.Time(0)
 	step := time.Minute
 	end := start.Add(2 * step)
@@ -24,7 +24,7 @@ func TestEvaluationStats_TrackSampleForInstantVectorSelector(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
-	stats, err := NewEvaluationStats(timeRange, memoryConsumptionTracker)
+	stats, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker)
 	require.NoError(t, err)
 
 	samplesProcessedPerStep := newPerStepTracker("samples processed", timeRange.StepCount)
@@ -50,7 +50,7 @@ func TestEvaluationStats_TrackSampleForInstantVectorSelector(t *testing.T) {
 	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 }
 
-func TestEvaluationStats_TrackSamplesForRangeVectorSelector(t *testing.T) {
+func TestOperatorEvaluationStats_TrackSamplesForRangeVectorSelector(t *testing.T) {
 	testCases := map[string]struct {
 		append          func(ts int64, floats *FPointRingBuffer, histograms *HPointRingBuffer) error
 		samplesPerPoint int64
@@ -79,7 +79,7 @@ func TestEvaluationStats_TrackSamplesForRangeVectorSelector(t *testing.T) {
 			ctx := context.Background()
 			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
-			stats, err := NewEvaluationStats(timeRange, memoryConsumptionTracker)
+			stats, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker)
 			require.NoError(t, err)
 
 			samplesProcessedPerStep := newPerStepTracker("samples processed", timeRange.StepCount)
@@ -145,7 +145,7 @@ func TestEvaluationStats_TrackSamplesForRangeVectorSelector(t *testing.T) {
 	}
 }
 
-func TestEvaluationStats_TrackSamplesForRangeVectorSelector_FloatsAndHistograms(t *testing.T) {
+func TestOperatorEvaluationStats_TrackSamplesForRangeVectorSelector_FloatsAndHistograms(t *testing.T) {
 	start := timestamp.Time(0)
 	step := time.Minute
 	end := start.Add(2 * step)
@@ -154,7 +154,7 @@ func TestEvaluationStats_TrackSamplesForRangeVectorSelector_FloatsAndHistograms(
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
-	stats, err := NewEvaluationStats(timeRange, memoryConsumptionTracker)
+	stats, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker)
 	require.NoError(t, err)
 
 	samplesProcessedPerStep := newPerStepTracker("samples processed", timeRange.StepCount)
@@ -178,14 +178,14 @@ func TestEvaluationStats_TrackSamplesForRangeVectorSelector_FloatsAndHistograms(
 	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 }
 
-func TestEvaluationStats_TrackSamplesForRangeVectorSelector_InstantQuery(t *testing.T) {
+func TestOperatorEvaluationStats_TrackSamplesForRangeVectorSelector_InstantQuery(t *testing.T) {
 	queryT := timestamp.Time(0)
 	timeRange := NewInstantQueryTimeRange(queryT)
 
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
-	stats, err := NewEvaluationStats(timeRange, memoryConsumptionTracker)
+	stats, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker)
 	require.NoError(t, err)
 
 	samplesProcessedPerStep := newPerStepTracker("samples processed", timeRange.StepCount)
@@ -234,7 +234,7 @@ func (p *perStepTracker) requireNoChange(t *testing.T, actual []int64) {
 	require.Equal(t, p.current, actual)
 }
 
-func TestEvaluationStats_Add(t *testing.T) {
+func TestOperatorEvaluationStats_Add(t *testing.T) {
 	start := timestamp.Time(0)
 	step := time.Minute
 	end := start.Add(2 * step)
@@ -243,9 +243,9 @@ func TestEvaluationStats_Add(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
-	s1, err := NewEvaluationStats(timeRange, memoryConsumptionTracker)
+	s1, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker)
 	require.NoError(t, err)
-	s2, err := NewEvaluationStats(timeRange, memoryConsumptionTracker)
+	s2, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker)
 	require.NoError(t, err)
 
 	s1.samplesProcessedPerStep[0] = 10
@@ -275,7 +275,7 @@ func TestEvaluationStats_Add(t *testing.T) {
 	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 }
 
-func TestEvaluationStats_Add_DifferentTimeRanges(t *testing.T) {
+func TestOperatorEvaluationStats_Add_DifferentTimeRanges(t *testing.T) {
 	start := timestamp.Time(0)
 	step := time.Minute
 
@@ -285,15 +285,15 @@ func TestEvaluationStats_Add_DifferentTimeRanges(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
-	s1, err := NewEvaluationStats(timeRange1, memoryConsumptionTracker)
+	s1, err := NewOperatorEvaluationStats(timeRange1, memoryConsumptionTracker)
 	require.NoError(t, err)
-	s2, err := NewEvaluationStats(timeRange2, memoryConsumptionTracker)
+	s2, err := NewOperatorEvaluationStats(timeRange2, memoryConsumptionTracker)
 	require.NoError(t, err)
 
-	require.EqualError(t, s1.Add(s2), "cannot add EvaluationStats with different time ranges")
+	require.EqualError(t, s1.Add(s2), "cannot add OperatorEvaluationStats with different time ranges")
 }
 
-func TestEvaluationStats_Clone(t *testing.T) {
+func TestOperatorEvaluationStats_Clone(t *testing.T) {
 	start := timestamp.Time(0)
 	step := time.Minute
 	end := start.Add(2 * step)
@@ -302,7 +302,7 @@ func TestEvaluationStats_Clone(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
-	original, err := NewEvaluationStats(timeRange, memoryConsumptionTracker)
+	original, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker)
 	require.NoError(t, err)
 
 	original.samplesProcessedPerStep[0] = 10
