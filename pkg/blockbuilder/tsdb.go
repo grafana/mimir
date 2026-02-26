@@ -539,7 +539,7 @@ func (u *userTSDB) compactBlocks(ctx context.Context) error {
 	return nil
 }
 
-// buildSparseIndexHeaders builds sparse index-headers for all blocks in the directory.
+// buildSparseIndexHeaders builds sparse index-headers for all blocks in the metas list in the directory.
 func (b *TSDBBuilder) buildSparseIndexHeaders(ctx context.Context, dbDir string, metas []tsdb.BlockMeta) error {
 	for _, m := range metas {
 		if err := b.buildSparseIndexHeader(ctx, dbDir, m.ULID); err != nil {
