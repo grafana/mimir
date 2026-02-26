@@ -310,6 +310,11 @@ func (p *Proxy) Start() error {
 		w.WriteHeader(http.StatusOK)
 	}))
 
+	// Readiness endpoint for K8s probes.
+	router.Path("/ready").Methods("GET").Handler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
 	// register fan-out routes (explicit endpoints we want to mirror)
 	for _, route := range p.routes {
 		endpoint, err := NewProxyEndpoint(p.backends, route, p.metrics, p.logger, p.cfg.AmplificationFactor, p.amplificationTracker, p.asyncDispatcher)
