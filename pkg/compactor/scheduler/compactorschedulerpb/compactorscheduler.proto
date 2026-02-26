@@ -6,6 +6,7 @@ package compactorschedulerpb;
 
 import "gogoproto/gogo.proto";
 
+option go_package = "compactorschedulerpb";
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
 
@@ -27,7 +28,7 @@ message JobSpec {
 }
 
 message CompactionJob {
-  repeated bytes blockIds = 1;
+  repeated bytes block_ids = 1;
   bool split = 2;
 }
 
@@ -90,10 +91,10 @@ enum StoredJobStatus {
 }
 
 message StoredJobInfo {
-  int64 creationTime = 1;
+  int64 creation_time = 1;
   StoredJobStatus status = 2;
-  int64 statusTime = 3;
-  int32 numLeases = 4;
+  int64 status_time = 3;
+  int32 num_leases = 4;
   int64 epoch = 5;
 }
 

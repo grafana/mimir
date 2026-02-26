@@ -33,6 +33,7 @@ var (
 	errFailedCompletingJob = status.Error(codes.Internal, "failed to complete job")
 	errFailedLeasingJob    = status.Error(codes.Internal, "failed to lease job")
 	errLeaseNotFound       = status.Error(codes.NotFound, "lease was not found")
+	errMissingKey          = status.Error(codes.InvalidArgument, "missing required job key")
 	errNotRunning          = status.Error(codes.Unavailable, "the compactor scheduler is not currently running (starting or shutting down)")
 )
 
@@ -214,6 +215,9 @@ func (s *Scheduler) LeaseJob(ctx context.Context, req *compactorschedulerpb.Leas
 }
 
 func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.PlannedJobsRequest) (*compactorschedulerpb.PlannedJobsResponse, error) {
+	if req.Key == nil {
+		return nil, errMissingKey
+	}
 	if !s.isRunning() {
 		// This check is required to prevent requests from seeing empty state before startup
 		return nil, errNotRunning
@@ -226,6 +230,9 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 	jobs := make([]*TrackedCompactionJob, 0, len(req.Jobs))
 	idSet := make(map[string]struct{}, len(req.Jobs))
 	for i, job := range req.Jobs {
+		if job.Job == nil {
+			return nil, status.Errorf(codes.InvalidArgument, "planned job %q is missing required job field", job.Id)
+		}
 		if len(job.Id) == reservedJobIdLen {
 			// This is never expected to actually happen. We reserve single character keys for internal use.
 			level.Warn(logger).Log("msg", "ignoring planned job with an internally reserved ID length", "id", job.Id)
@@ -236,6 +243,7 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 			level.Warn(logger).Log("msg", "ignoring planned job with a duplicated job ID", "id", job.Id)
 			continue
 		}
+
 		idSet[job.Id] = struct{}{}
 
 		jobs = append(jobs, NewTrackedCompactionJob(
@@ -266,6 +274,9 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 }
 
 func (s *Scheduler) UpdatePlanJob(ctx context.Context, req *compactorschedulerpb.UpdatePlanJobRequest) (*compactorschedulerpb.UpdateJobResponse, error) {
+	if req.Key == nil {
+		return nil, errMissingKey
+	}
 	if !s.isRunning() {
 		// This check is required to prevent requests from seeing empty state before startup, but then running when checking to transform not found errors.
 		return nil, errNotRunning
@@ -318,6 +329,9 @@ func (s *Scheduler) UpdatePlanJob(ctx context.Context, req *compactorschedulerpb
 }
 
 func (s *Scheduler) UpdateCompactionJob(ctx context.Context, req *compactorschedulerpb.UpdateCompactionJobRequest) (*compactorschedulerpb.UpdateJobResponse, error) {
+	if req.Key == nil {
+		return nil, errMissingKey
+	}
 	if !s.isRunning() {
 		// This check is required to prevent requests from seeing empty state before startup, but then running when checking to transform not found errors.
 		return nil, errNotRunning
