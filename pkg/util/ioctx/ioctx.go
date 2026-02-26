@@ -60,7 +60,7 @@ func Read(ctx context.Context, r io.ReadCloser, p []byte) (int, error) {
 
 // Write writes data to w, respecting context cancellation.
 // If the context is cancelled while writing, w is closed to unblock the
-// operation. w is always closed before Write returns.
+// operation.
 func Write(ctx context.Context, w io.WriteCloser, data []byte) (int, error) {
 	return readWrite(ctx, w, data, w.Write)
 }
@@ -92,8 +92,9 @@ func readWrite(ctx context.Context, c io.Closer, p []byte, do func([]byte) (int,
 	}
 }
 
-// ReadAll is like [io.ReadAll], but uses [Read] under the hood to cancel reads
-// and close the reader if the context is cancelled.
+// ReadAll is like [io.ReadAll], but respects context cancellation.
+// If the context is cancelled while reading, r is closed to unblock the
+// operation. r is always closed before ReadAll returns.
 func ReadAll(ctx context.Context, r io.ReadCloser) ([]byte, error) {
 	data := make([]byte, 0, 2048)
 

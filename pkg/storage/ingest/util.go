@@ -218,7 +218,7 @@ func readTokenFromFile(ctx context.Context, cfg KafkaAuthConfig) (tokenJSON []by
 	defer f.Close()
 
 	tokenJSON, err = ioctx.ReadAll(ctx, f)
-	if err != nil && !errors.Is(err, io.EOF) {
+	if err != nil {
 		return nil, fmt.Errorf("reading token file %s: %w", cfg.OauthbearerFilePath, err)
 	}
 
