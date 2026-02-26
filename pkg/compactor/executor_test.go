@@ -45,10 +45,10 @@ var (
 	testBlockID2 = ulid.MustNew(2, nil)
 )
 
-func makeTestCompactorConfig(PlanningMode, schedulerAddress string) Config {
+func makeTestCompactorConfig(planningMode, schedulerAddress string) Config {
 	cfg := Config{}
 	flagext.DefaultValues(&cfg)
-	cfg.PlanningMode = PlanningMode
+	cfg.PlanningMode = planningMode
 	cfg.SchedulerEndpoint = schedulerAddress
 	cfg.DataDir = "/tmp/compactor-test"
 	cfg.SparseIndexHeadersSamplingRate = 32
@@ -350,7 +350,9 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 			c := prepareCompactorForExecutorTest(t, cfg, bucketClient, newMockConfigProvider())
 
 			reg := prometheus.NewPedanticRegistry()
-			c.ring, c.ringLifecycler, _ = newRingAndLifecycler(cfg.ShardingRing, log.NewNopLogger(), reg)
+			var err error
+			c.ring, c.ringLifecycler, err = newRingAndLifecycler(cfg.ShardingRing, log.NewNopLogger(), reg)
+			require.NoError(t, err)
 
 			schedulerExec := newTestSchedulerExecutor(t, cfg, mockSchedulerClient)
 
@@ -418,7 +420,7 @@ func TestSchedulerExecutor_ServicesLifecycle(t *testing.T) {
 	require.NoError(t, c.blocksCleaner.AwaitRunning(context.Background()))
 
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c))
-	assert.Equal(t, schedulerExec.schedulerConn.GetState(), connectivity.Shutdown)
+	assert.Equal(t, connectivity.Shutdown, schedulerExec.schedulerConn.GetState())
 }
 
 func TestSchedulerExecutor_UnreachableScheduler(t *testing.T) {
