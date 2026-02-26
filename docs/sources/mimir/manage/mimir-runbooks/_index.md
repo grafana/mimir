@@ -3526,7 +3526,7 @@ Possible reasons for this are:
 
 ### How it Works
 
-- For range and instant queries, the query-frontend normalizes and optimizes the query structure, and (when configured) splits by time interval, shards by series (**query_shard**), and extracts subqueries.
+- For range and instant queries, the query-frontend normalizes and optimizes the query structure, and (when configured) splits by time interval, shards by series (`__query_shard__`), and extracts subqueries.
 - The query-frontend enqueues the resulting sub-requests with the query-scheduler.
 - The query-scheduler dispatches enqueued queries to idle querier workers.
 - The querier fetches data from ingesters, store-gateways, or both. In the classic path it also evaluates the PromQL expression; with remote execution enabled, data is streamed back to the query-frontend where evaluation occurs.
