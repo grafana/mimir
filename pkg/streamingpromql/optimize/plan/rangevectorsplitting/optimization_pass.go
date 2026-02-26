@@ -151,11 +151,8 @@ func (o *OptimizationPass) trySplitFunction(ctx context.Context, functionCall *c
 	// Skip splitting for the fake selectors that subquery spinoff generates for now. These selectors will ignore the
 	// sub time ranges from splitting and instead always query for the entire original range, so each split would end up
 	// fetching more data than needed.
-	ms, ok := inner.(*core.MatrixSelector)
-	if ok {
-		if optimize.IsSpunOff(ms) {
-			return nil, "subquery_spinoff", nil
-		}
+	if ms, ok := inner.(*core.MatrixSelector); ok && optimize.IsSpunOff(ms) {
+		return nil, "subquery_spinoff", nil
 	}
 
 	if !inner.GetRangeParams().IsSet {
