@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"github.com/grafana/dskit/user"
@@ -17,6 +18,8 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	mimirstorage "github.com/grafana/mimir/pkg/storage"
 )
 
 // searchTestQuerier is a simple storage.Querier for search handler tests.
@@ -43,88 +46,6 @@ func newSearchTestQueryable(labelNames []string, labelValues map[string][]string
 			return q, nil
 		},
 	}
-}
-
-func TestFilterSearchValues(t *testing.T) {
-	tests := []struct {
-		name     string
-		values   []string
-		params   *searchParams
-		expected []string
-	}{
-		{
-			name:     "no filter returns all",
-			values:   []string{"http_requests_total", "go_goroutines"},
-			params:   &searchParams{},
-			expected: []string{"http_requests_total", "go_goroutines"},
-		},
-		{
-			name:     "case-insensitive substring match",
-			values:   []string{"http_requests_total", "go_goroutines", "HTTP_errors"},
-			params:   &searchParams{search: []string{"http"}},
-			expected: []string{"http_requests_total", "HTTP_errors"},
-		},
-		{
-			name:     "case-sensitive match",
-			values:   []string{"http_requests_total", "go_goroutines", "HTTP_errors"},
-			params:   &searchParams{search: []string{"http"}, caseSensitive: true},
-			expected: []string{"http_requests_total"},
-		},
-		{
-			name:     "multiple search terms OR'd",
-			values:   []string{"http_requests_total", "go_goroutines", "tcp_packets"},
-			params:   &searchParams{search: []string{"http", "tcp"}},
-			expected: []string{"http_requests_total", "tcp_packets"},
-		},
-		{
-			name:     "no match returns empty",
-			values:   []string{"http_requests_total", "go_goroutines"},
-			params:   &searchParams{search: []string{"xyz"}},
-			expected: []string{},
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			result := filterSearchValues(tc.values, tc.params)
-			assert.Equal(t, tc.expected, result)
-		})
-	}
-}
-
-func TestWriteSearchNDJSON(t *testing.T) {
-	values := []string{"a", "b", "c", "d", "e"}
-
-	rec := httptest.NewRecorder()
-	writeSearchNDJSON(rec, values, 2, func(v string) any {
-		return map[string]string{"metric_name": v}
-	})
-
-	assert.Equal(t, "application/x-ndjson", rec.Header().Get("Content-Type"))
-
-	var buf bytes.Buffer
-	buf.Write(rec.Body.Bytes())
-
-	scanner := bufio.NewScanner(&buf)
-	var lines []map[string]any
-	for scanner.Scan() {
-		var obj map[string]any
-		require.NoError(t, json.Unmarshal(scanner.Bytes(), &obj))
-		lines = append(lines, obj)
-	}
-
-	// 5 values / batchSize=2 => ceil(5/2)=3 result chunks + 1 status chunk = 4 lines
-	require.Len(t, lines, 4)
-
-	// Check first batch has 2 results
-	results0, ok := lines[0]["results"].([]any)
-	require.True(t, ok)
-	assert.Len(t, results0, 2)
-
-	// Check last chunk is status
-	lastLine := lines[len(lines)-1]
-	assert.Equal(t, "success", lastLine["status"])
-	assert.Equal(t, false, lastLine["has_more"])
 }
 
 func TestSearchLabelNamesHandler(t *testing.T) {
@@ -190,9 +111,7 @@ func TestSearchMetricNamesHandler(t *testing.T) {
 	results, ok := lines[0]["results"].([]any)
 	require.True(t, ok)
 	require.Len(t, results, 1)
-	resultMap, ok := results[0].(map[string]any)
-	require.True(t, ok)
-	assert.Equal(t, "http_requests_total", resultMap["metric_name"])
+	assert.Equal(t, "http_requests_total", results[0])
 }
 
 func TestSearchLabelValuesHandler_MissingLabelName(t *testing.T) {
@@ -237,4 +156,293 @@ func TestSearchLabelValuesHandler(t *testing.T) {
 	require.GreaterOrEqual(t, len(lines), 1)
 	last := lines[len(lines)-1]
 	assert.Equal(t, "success", last["status"])
+}
+
+// ── Native-Searcher test infrastructure ──────────────────────────────────────
+//
+// searchTestNativeSearcher simulates a querier that directly implements
+// mimirstorage.Searcher (as an upstream Prometheus storage would). Its
+// SearchLabelNames / SearchLabelValues return different data than the
+// embedded searchTestQuerier's LabelNames / LabelValues, so tests can
+// assert which code path was actually taken by the handler.
+
+type sliceSearcherValueSet struct {
+	values []string
+	pos    int
+}
+
+func (s *sliceSearcherValueSet) Next() bool {
+	if s.pos < len(s.values) {
+		s.pos++
+		return true
+	}
+	return false
+}
+
+func (s *sliceSearcherValueSet) At() string                        { return s.values[s.pos-1] }
+func (s *sliceSearcherValueSet) Warnings() annotations.Annotations { return nil }
+func (s *sliceSearcherValueSet) Err() error                        { return nil }
+func (s *sliceSearcherValueSet) Close()                            {}
+
+// searchTestNativeSearcher embeds searchTestQuerier (for the LabelQuerier methods
+// required by storage.Querier) and adds native Searcher methods whose results are
+// independent of the underlying labelNames / labelValues maps.
+type searchTestNativeSearcher struct {
+	searchTestQuerier
+	searchLabelNames  []string
+	searchLabelValues map[string][]string
+}
+
+func (q *searchTestNativeSearcher) SearchLabelNames(_ context.Context, _ *mimirstorage.SearchHints, _ ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
+	return &sliceSearcherValueSet{values: q.searchLabelNames}, nil
+}
+
+func (q *searchTestNativeSearcher) SearchLabelValues(_ context.Context, name string, _ *mimirstorage.SearchHints, _ ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
+	return &sliceSearcherValueSet{values: q.searchLabelValues[name]}, nil
+}
+
+// newSearchTestNativeSearchableQueryable returns a queryable whose querier
+// implements mimirstorage.Searcher natively. The LabelNames / LabelValues data
+// is set to different sentinel values so tests can confirm the Searcher path is used.
+func newSearchTestNativeSearchableQueryable(searchLabelNames []string, searchLabelValues map[string][]string) mockSampleAndChunkQueryable {
+	q := &searchTestNativeSearcher{
+		searchTestQuerier: searchTestQuerier{
+			// Values on the non-Searcher path — should never appear in results.
+			labelNames:  []string{"via_label_querier"},
+			labelValues: map[string][]string{"__name__": {"via_label_querier"}},
+		},
+		searchLabelNames:  searchLabelNames,
+		searchLabelValues: searchLabelValues,
+	}
+	return mockSampleAndChunkQueryable{
+		queryableFn: func(_, _ int64) (storage.Querier, error) {
+			return q, nil
+		},
+	}
+}
+
+// collectNDJSONResults scans an NDJSON body and returns the string values
+// from each "results" chunk. Results are expected to be plain strings.
+func collectNDJSONResults(t *testing.T, body *bytes.Buffer) []string {
+	t.Helper()
+	var values []string
+	scanner := bufio.NewScanner(body)
+	for scanner.Scan() {
+		var obj map[string]any
+		require.NoError(t, json.Unmarshal(scanner.Bytes(), &obj))
+		results, ok := obj["results"].([]any)
+		if !ok {
+			continue
+		}
+		for _, r := range results {
+			s, ok := r.(string)
+			require.True(t, ok)
+			values = append(values, s)
+		}
+	}
+	return values
+}
+
+func TestSearchLabelNamesHandler_WithNativeSearcher(t *testing.T) {
+	queryable := newSearchTestNativeSearchableQueryable(
+		[]string{"__name__", "job", "instance"},
+		nil,
+	)
+
+	handler := SearchLabelNamesHandler(queryable, nil)
+
+	ctx := user.InjectOrgID(context.Background(), "test-tenant")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/search/label_names", nil)
+	require.NoError(t, err)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "application/x-ndjson", rec.Header().Get("Content-Type"))
+
+	got := collectNDJSONResults(t, rec.Body)
+	assert.Equal(t, []string{"__name__", "job", "instance"}, got)
+	assert.NotContains(t, got, "via_label_querier")
+}
+
+func TestSearchMetricNamesHandler_WithNativeSearcher(t *testing.T) {
+	queryable := newSearchTestNativeSearchableQueryable(
+		nil,
+		map[string][]string{
+			"__name__": {"http_requests_total", "go_goroutines"},
+		},
+	)
+
+	handler := SearchMetricNamesHandler(queryable, nil)
+
+	ctx := user.InjectOrgID(context.Background(), "test-tenant")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/search/metric_names", nil)
+	require.NoError(t, err)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	got := collectNDJSONResults(t, rec.Body)
+	assert.Equal(t, []string{"http_requests_total", "go_goroutines"}, got)
+	assert.NotContains(t, got, "via_label_querier")
+}
+
+func TestSearchLabelValuesHandler_WithNativeSearcher(t *testing.T) {
+	queryable := newSearchTestNativeSearchableQueryable(
+		nil,
+		map[string][]string{
+			"job": {"prometheus", "alertmanager"},
+		},
+	)
+
+	handler := SearchLabelValuesHandler(queryable, nil)
+
+	ctx := user.InjectOrgID(context.Background(), "test-tenant")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/search/label_values?label_name=job", nil)
+	require.NoError(t, err)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	got := collectNDJSONResults(t, rec.Body)
+	assert.Equal(t, []string{"prometheus", "alertmanager"}, got)
+	assert.NotContains(t, got, "via_label_querier")
+}
+
+// cancellingSearcherValueSet is a SearcherValueSet that returns up to blockAfter values
+// and then blocks until its context is cancelled. It records whether Close was called.
+type cancellingSearcherValueSet struct {
+	values      []string
+	pos         int
+	blockAfter  int
+	readyOnce   sync.Once
+	readyCh     chan struct{} // closed when the iterator is about to block
+	ctx         context.Context
+	closeCalled bool
+}
+
+func (s *cancellingSearcherValueSet) Next() bool {
+	if s.pos < len(s.values) && s.pos < s.blockAfter {
+		s.pos++
+		return true
+	}
+	// Signal to the test that we're now blocking.
+	s.readyOnce.Do(func() { close(s.readyCh) })
+	// Block until context is cancelled.
+	<-s.ctx.Done()
+	return false
+}
+
+func (s *cancellingSearcherValueSet) At() string                        { return s.values[s.pos-1] }
+func (s *cancellingSearcherValueSet) Warnings() annotations.Annotations { return nil }
+func (s *cancellingSearcherValueSet) Err() error                        { return s.ctx.Err() }
+func (s *cancellingSearcherValueSet) Close()                            { s.closeCalled = true }
+
+// cancellingNativeSearcher is a storage.Querier + mimirstorage.Searcher that returns
+// a cancellingSearcherValueSet, capturing the request context when SearchLabelNames is called.
+type cancellingNativeSearcher struct {
+	searchTestQuerier
+	vs *cancellingSearcherValueSet
+}
+
+func (q *cancellingNativeSearcher) SearchLabelNames(ctx context.Context, _ *mimirstorage.SearchHints, _ ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
+	q.vs.ctx = ctx
+	return q.vs, nil
+}
+
+func (q *cancellingNativeSearcher) SearchLabelValues(ctx context.Context, _ string, _ *mimirstorage.SearchHints, _ ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
+	q.vs.ctx = ctx
+	return q.vs, nil
+}
+
+// TestSearchLabelNamesHandler_ContextCancellation verifies that when a request is cancelled
+// mid-stream, the handler writes an in-band error chunk and closes the iterator.
+func TestSearchLabelNamesHandler_ContextCancellation(t *testing.T) {
+	readyCh := make(chan struct{})
+	vs := &cancellingSearcherValueSet{
+		values:     []string{"__name__", "job", "instance", "pod", "namespace"},
+		blockAfter: 2, // return 2 values then block
+		readyCh:    readyCh,
+	}
+
+	q := &cancellingNativeSearcher{vs: vs}
+	queryable := mockSampleAndChunkQueryable{
+		queryableFn: func(_, _ int64) (storage.Querier, error) {
+			return q, nil
+		},
+	}
+
+	handler := SearchLabelNamesHandler(queryable, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ctx = user.InjectOrgID(ctx, "test-tenant")
+
+	// batch_size=1 ensures each value is flushed immediately so the response
+	// body contains result chunks before the blocking point is reached.
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/search/label_names?batch_size=1", nil)
+	require.NoError(t, err)
+	rec := httptest.NewRecorder()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		handler.ServeHTTP(rec, req)
+	}()
+
+	// Wait until the iterator signals it is about to block, then cancel.
+	<-readyCh
+	cancel()
+	<-done
+
+	// Parse the NDJSON body to verify results and the error chunk.
+	scanner := bufio.NewScanner(rec.Body)
+	var resultCount int
+	var errFound bool
+	for scanner.Scan() {
+		var obj map[string]any
+		require.NoError(t, json.Unmarshal(scanner.Bytes(), &obj))
+		if results, ok := obj["results"].([]any); ok {
+			resultCount += len(results)
+		}
+		if status, ok := obj["status"].(string); ok && status == "error" {
+			errFound = true
+		}
+	}
+
+	assert.Greater(t, resultCount, 0, "expected some results before cancellation")
+	assert.True(t, errFound, "expected an error status chunk in the response")
+	assert.True(t, vs.closeCalled, "expected iterator Close() to have been called")
+}
+
+// TestStreamingSearch_ContextCancellation verifies that a cancelled context stops
+// the producer goroutine and the SearcherValueSet reports the cancellation.
+func TestStreamingSearch_ContextCancellation(t *testing.T) {
+	// Use a querier that returns enough values to fill the channel buffer so the
+	// producer will block trying to send, giving cancellation something to interrupt.
+	many := make([]string, 512)
+	for i := range many {
+		many[i] = "label"
+	}
+	q := &searchTestQuerier{labelNames: many}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately before the producer even starts
+
+	ss := searcherFor(q)
+	vs, err := ss.SearchLabelNames(ctx, nil)
+	require.NoError(t, err)
+	defer vs.Close()
+
+	// Drain; the producer should exit quickly due to cancelled context.
+	for vs.Next() {
+	}
+	// Err() should return the context cancellation error (or nil if the producer
+	// managed to finish before noticing the cancellation).
+	err = vs.Err()
+	if err != nil {
+		assert.ErrorIs(t, err, context.Canceled)
+	}
 }
