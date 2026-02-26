@@ -215,7 +215,7 @@ func readTokenFromFile(ctx context.Context, cfg KafkaAuthConfig) (tokenJSON []by
 	if err != nil {
 		return nil, fmt.Errorf("opening token file %s: %w", cfg.OauthbearerFilePath, err)
 	}
-	defer f.Close()
+	// ioctx.ReadAll always closes f before returning.
 
 	tokenJSON, err = ioctx.ReadAll(ctx, f)
 	if err != nil {
