@@ -326,7 +326,6 @@ func (d *InstantVectorDuplicationConsumer) SeriesMetadata(ctx context.Context, m
 
 func (d *InstantVectorDuplicationConsumer) shouldReturnUnfilteredSeries(unfilteredSeriesIndex int) bool {
 	if d.closed {
-		// Closed.
 		return false
 	}
 
