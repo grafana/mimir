@@ -685,15 +685,16 @@ func IsSafeToApplyFilteringAfterFunction(functionCall *core.FunctionCall, group 
 		// - if delayed name removal is disabled: safe if no filters on __name__
 		return delayedNameRemovalEnabled || !group.haveAnyFiltersForLabel(model.MetricNameLabel), nil
 
-	case functions.FUNCTION_FIRST_OVER_TIME,
-		functions.FUNCTION_LAST_OVER_TIME,
+	case
 		functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_1,
 		functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_2,
+		functions.FUNCTION_LAST_OVER_TIME,
+		functions.FUNCTION_SHARDING_CONCAT,
 		functions.FUNCTION_SORT,
-		functions.FUNCTION_SORT_DESC,
 		functions.FUNCTION_SORT_BY_LABEL,
 		functions.FUNCTION_SORT_BY_LABEL_DESC,
-		functions.FUNCTION_SHARDING_CONCAT:
+		functions.FUNCTION_SORT_DESC,
+		functions.FUNCTION_FIRST_OVER_TIME:
 		// These functions return the labels as-is, so it's always safe to apply filtering after them.
 		return true, nil
 
