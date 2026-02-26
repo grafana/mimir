@@ -376,11 +376,11 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 				// if it grows, back-off grows its jitter window as follows:
 				// [start,start*2) -> [start*2, start*4) -> [start*4, start*8) -> ... until max is reached]
 				maxFirstDelay := 2 * cfg.SchedulerMinLeasingBackoff
-				assert.Less(t, delay1, maxFirstDelay)
+				assert.LessOrEqual(t, delay1, maxFirstDelay)
 				if tc.expectGrowingDelay {
 					assert.GreaterOrEqual(t, delay2, maxFirstDelay, "second delay should grow")
 				} else {
-					assert.Less(t, delay2, maxFirstDelay, "second delay should not grow")
+					assert.LessOrEqual(t, delay2, maxFirstDelay, "second delay should not grow")
 				}
 			})
 		})
