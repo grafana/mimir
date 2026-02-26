@@ -183,12 +183,11 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 	if err != nil {
 		return nil, err
 	} else if len(b.leftMetadata) == 0 {
+		// No series on left-hand side, we'll never have any output series.
 		if err = b.Finalize(ctx); err != nil {
 			return nil, err
 		}
 
-		// No series on left-hand side, we'll never have any output series.
-		b.Close()
 		return nil, nil
 	}
 
@@ -217,12 +216,11 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 	if err != nil {
 		return nil, err
 	} else if len(b.rightMetadata) == 0 {
+		// No series on right-hand side, we'll never have any output series.
 		if err = b.Finalize(ctx); err != nil {
 			return nil, err
 		}
 
-		// No series on right-hand side, we'll never have any output series.
-		b.Close()
 		return nil, nil
 	}
 
@@ -240,7 +238,6 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 			return nil, err
 		}
 
-		b.Close()
 		return nil, nil
 	}
 

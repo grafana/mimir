@@ -77,13 +77,9 @@ func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context, matchers types.M
 			return nil, err
 		}
 
-		o.Left.Close()
-
 		if err := o.Right.Finalize(ctx); err != nil {
 			return nil, err
 		}
-
-		o.Right.Close()
 
 		return nil, nil
 	}
@@ -98,8 +94,6 @@ func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context, matchers types.M
 			return nil, err
 		}
 
-		o.Left.Close()
-
 		return rightMetadata, nil
 	}
 
@@ -112,8 +106,6 @@ func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context, matchers types.M
 		if err := o.Right.Finalize(ctx); err != nil {
 			return nil, err
 		}
-
-		o.Right.Close()
 
 		return leftMetadata, nil
 	}
@@ -272,12 +264,10 @@ func (o *OrBinaryOperation) nextLeftSeries(ctx context.Context) (types.InstantVe
 	}
 
 	if len(o.leftSeriesCount) == 0 {
-		// No more series from left side remaining, close it.
+		// No more series from left side remaining, finalize it.
 		if err := o.Left.Finalize(ctx); err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
-
-		o.Left.Close()
 	}
 
 	return d, nil
@@ -321,12 +311,10 @@ func (o *OrBinaryOperation) nextRightSeries(ctx context.Context) (types.InstantV
 	}
 
 	if len(o.rightSeriesCount) == 0 {
-		// No more series from right side remaining, close it after we read this next series.
+		// No more series from right side remaining, finalize it.
 		if err := o.Right.Finalize(ctx); err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
-
-		o.Right.Close()
 	}
 
 	return d, nil

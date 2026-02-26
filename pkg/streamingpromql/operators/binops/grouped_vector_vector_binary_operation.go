@@ -208,7 +208,6 @@ func (g *GroupedVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context,
 			return nil, err
 		}
 
-		g.Close()
 		return nil, nil
 	}
 
@@ -226,7 +225,6 @@ func (g *GroupedVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context,
 			return nil, err
 		}
 
-		g.Close()
 		return nil, nil
 	}
 

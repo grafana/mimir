@@ -66,12 +66,10 @@ func (b *InstantVectorOperatorBuffer) GetSeries(ctx context.Context, seriesIndic
 	}
 
 	if b.nextIndexToRead > b.lastSeriesIndexUsed {
-		// If we're not going to read any more series, we can close the inner operator.
+		// If we're not going to read any more series, finalize the inner operator.
 		if err := b.source.Finalize(ctx); err != nil {
 			return nil, err
 		}
-
-		b.source.Close()
 	}
 
 	return b.output, nil
