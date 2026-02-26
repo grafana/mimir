@@ -2035,13 +2035,13 @@ func TestIsSafeToApplyFilteringAfterFunction(t *testing.T) {
 			expectedSafeWithDelayedNameRemovalEnabled:  false,
 		},
 		"pi()": {
-			function: functions.FUNCTION_SCALAR,
+			function: functions.FUNCTION_PI,
 			group:    groupWithNoFilters,
 			expectedSafeWithDelayedNameRemovalDisabled: false,
 			expectedSafeWithDelayedNameRemovalEnabled:  false,
 		},
 		"time()": {
-			function: functions.FUNCTION_SCALAR,
+			function: functions.FUNCTION_TIME,
 			group:    groupWithNoFilters,
 			expectedSafeWithDelayedNameRemovalDisabled: false,
 			expectedSafeWithDelayedNameRemovalEnabled:  false,
