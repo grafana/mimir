@@ -201,11 +201,8 @@ func (o *OptimizationPass) trySplitFunction(ctx context.Context, functionCall *c
 			SplitRanges:       splitRanges,
 			InnerNodeCacheKey: inner.SplittingCacheKey(),
 		},
+		Inner: functionCall,
 	}
-	if err := n.SetChildren([]planning.Node{functionCall}); err != nil {
-		return nil, "", err
-	}
-
 	return n, "", nil
 }
 
