@@ -1790,6 +1790,17 @@
             },
             {
               "kind": "field",
+              "name": "instance_availability_zone",
+              "required": false,
+              "desc": "The availability zone where this instance is running. Used for zone-aware rate limiting.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "distributor.ring.instance-availability-zone",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
               "name": "auto_forget_unhealthy_periods",
               "required": false,
               "desc": "Number of consecutive timeout periods after which Mimir automatically removes an unhealthy instance in the ring. Set to 0 to disable auto-forget.",

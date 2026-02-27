@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"golang.org/x/time/rate"
 
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -18,79 +17,118 @@ import (
 
 func TestIngestionRateStrategy(t *testing.T) {
 	t.Run("rate limiter should share the limit across the number of distributors", func(t *testing.T) {
-		// Init limits overrides
 		overrides := validation.NewOverrides(validation.Limits{
 			IngestionRate:      float64(1000),
 			IngestionBurstSize: 10000,
 		}, nil)
 
-		mockRing := newReadLifecyclerMock()
-		mockRing.On("HealthyInstancesCount").Return(2)
-
-		strategy := newGlobalRateStrategyWithBurstFactor(overrides, mockRing)
-		assert.Equal(t, strategy.Limit("test"), float64(500))
-		assert.Equal(t, strategy.Burst("test"), 10000)
+		mockRing := newReadLifecyclerMock(2, -1, 1)
+		strategy := newGlobalRateStrategyWithBurstFactor(overrides, mockRing, false)
+		assert.Equal(t, float64(500), strategy.Limit("test"))
+		assert.Equal(t, 10000, strategy.Burst("test"))
 	})
 
 	t.Run("infinite rate limiter should return unlimited settings", func(t *testing.T) {
 		strategy := newInfiniteRateStrategy()
 
-		assert.Equal(t, strategy.Limit("test"), float64(rate.Inf))
-		assert.Equal(t, strategy.Burst("test"), 0)
+		assert.Equal(t, float64(rate.Inf), strategy.Limit("test"))
+		assert.Equal(t, 0, strategy.Burst("test"))
 	})
 	t.Run("Burst factor should be 3x the per distributor limit", func(t *testing.T) {
-		// Init limits overrides
 		overrides := validation.NewOverrides(validation.Limits{
 			IngestionRate:        float64(1000),
 			IngestionBurstFactor: 3,
 		}, nil)
 
-		mockRing := newReadLifecyclerMock()
-		mockRing.On("HealthyInstancesCount").Return(2)
-
-		strategy := newGlobalRateStrategyWithBurstFactor(overrides, mockRing)
-		assert.Equal(t, strategy.Limit("test"), float64(500))
-		assert.Equal(t, strategy.Burst("test"), 1500)
+		mockRing := newReadLifecyclerMock(2, -1, 1)
+		strategy := newGlobalRateStrategyWithBurstFactor(overrides, mockRing, false)
+		assert.Equal(t, float64(500), strategy.Limit("test"))
+		assert.Equal(t, 1500, strategy.Burst("test"))
 	})
-	t.Run("Burst factor should be set to to max int if limit is too large", func(t *testing.T) {
-		// Init limits overrides
+	t.Run("Burst factor should be set to max int if limit is too large", func(t *testing.T) {
 		overrides := validation.NewOverrides(validation.Limits{
 			IngestionRate:        float64(math.MaxInt),
 			IngestionBurstFactor: 3,
 		}, nil)
 
-		mockRing := newReadLifecyclerMock()
-		mockRing.On("HealthyInstancesCount").Return(2)
-
-		strategy := newGlobalRateStrategyWithBurstFactor(overrides, mockRing)
-		assert.Equal(t, strategy.Limit("test"), float64(math.MaxInt)/2)
-		assert.Equal(t, strategy.Burst("test"), math.MaxInt)
+		mockRing := newReadLifecyclerMock(2, -1, 1)
+		strategy := newGlobalRateStrategyWithBurstFactor(overrides, mockRing, false)
+		assert.Equal(t, float64(math.MaxInt)/2, strategy.Limit("test"))
+		assert.Equal(t, math.MaxInt, strategy.Burst("test"))
 	})
-	t.Run("Burst factor should be set to to max int if limit is rate.inf", func(t *testing.T) {
-		// Init limits overrides
+	t.Run("Burst factor should be set to max int if limit is rate.inf", func(t *testing.T) {
 		overrides := validation.NewOverrides(validation.Limits{
 			IngestionRate:        math.MaxFloat64,
 			IngestionBurstFactor: 3,
 		}, nil)
 
-		mockRing := newReadLifecyclerMock()
-		mockRing.On("HealthyInstancesCount").Return(2)
+		mockRing := newReadLifecyclerMock(2, -1, 1)
+		strategy := newGlobalRateStrategyWithBurstFactor(overrides, mockRing, false)
+		assert.Equal(t, math.MaxFloat64, strategy.Limit("test"))
+		assert.Equal(t, math.MaxInt, strategy.Burst("test"))
+	})
 
-		strategy := newGlobalRateStrategyWithBurstFactor(overrides, mockRing)
-		assert.Equal(t, strategy.Limit("test"), math.MaxFloat64)
-		assert.Equal(t, strategy.Burst("test"), math.MaxInt)
+	t.Run("zone-aware: limit is divided by zone count and distributors in zone", func(t *testing.T) {
+		overrides := validation.NewOverrides(validation.Limits{
+			IngestionRate:      float64(100000),
+			IngestionBurstSize: 200000,
+		}, nil)
+
+		mockRing := newReadLifecyclerMock(-1, 35, 2)
+		strategy := newGlobalRateStrategyWithBurstFactor(overrides, mockRing, true)
+		assert.InDelta(t, float64(100000)/35/2, strategy.Limit("test"), 0.01)
+
+		// Zones with less healthy members gets a higher limit:
+		mockRing.healthyInZone = 5
+		mockRing.zonesCount = 2
+		assert.Equal(t, float64(100000)/5/2, strategy.Limit("test"))
+	})
+
+	t.Run("zone-aware: 3 zones with burst factor", func(t *testing.T) {
+		overrides := validation.NewOverrides(validation.Limits{
+			IngestionRate:        float64(9000),
+			IngestionBurstFactor: 2,
+		}, nil)
+
+		mockRing := newReadLifecyclerMock(-1, 10, 3)
+		strategy := newGlobalRateStrategyWithBurstFactor(overrides, mockRing, true)
+		assert.Equal(t, float64(300), strategy.Limit("test"))
+		assert.Equal(t, 600, strategy.Burst("test"))
+	})
+	t.Run("zone-aware: no healthy distributors returns global limit", func(t *testing.T) {
+		overrides := validation.NewOverrides(validation.Limits{
+			IngestionRate:      float64(1000),
+			IngestionBurstSize: 10000,
+		}, nil)
+
+		mockRing := newReadLifecyclerMock(-1, 0, 2)
+		strategy := newGlobalRateStrategyWithBurstFactor(overrides, mockRing, true)
+		assert.Equal(t, float64(1000), strategy.Limit("test"))
 	})
 }
 
 type readLifecyclerMock struct {
-	mock.Mock
+	healthyInstances int
+	healthyInZone    int
+	zonesCount       int
 }
 
-func newReadLifecyclerMock() *readLifecyclerMock {
-	return &readLifecyclerMock{}
+func newReadLifecyclerMock(healthyInstances, healthyInZone, zonesCount int) *readLifecyclerMock {
+	return &readLifecyclerMock{
+		healthyInstances: healthyInstances,
+		healthyInZone:    healthyInZone,
+		zonesCount:       zonesCount,
+	}
 }
 
 func (m *readLifecyclerMock) HealthyInstancesCount() int {
-	args := m.Called()
-	return args.Int(0)
+	return m.healthyInstances
+}
+
+func (m *readLifecyclerMock) HealthyInstancesInZoneCount() int {
+	return m.healthyInZone
+}
+
+func (m *readLifecyclerMock) ZonesCount() int {
+	return m.zonesCount
 }
