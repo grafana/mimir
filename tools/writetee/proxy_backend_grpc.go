@@ -19,6 +19,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/metadata"
 )
 
 // GRPCBackendConfig holds configuration for gRPC backends.
@@ -147,12 +148,20 @@ func (b *grpcProxyBackend) doGRPCRequest(ctx context.Context, req *httpgrpc.HTTP
 	ctx, cancel := context.WithTimeout(ctx, b.timeout)
 	defer cancel()
 
-	// Extract org ID from HTTPRequest headers and inject into context.
-	// This allows ClientUserHeaderInterceptor to propagate it to gRPC metadata.
+	// Extract headers that gRPC server-side middleware reads from gRPC metadata and inject
+	// them into the outgoing context. These headers are carried in the HTTPRequest protobuf
+	// but also need to be present in gRPC metadata for middleware interceptors to read them.
 	for _, h := range req.Headers {
-		if strings.EqualFold(h.Key, "X-Scope-OrgID") && len(h.Values) > 0 {
+		if len(h.Values) == 0 {
+			continue
+		}
+		switch {
+		case strings.EqualFold(h.Key, "X-Scope-OrgID"):
+			// Inject org ID into context so ClientUserHeaderInterceptor propagates it.
 			ctx = user.InjectOrgID(ctx, h.Values[0])
-			break
+		case strings.EqualFold(h.Key, "X-Cluster"):
+			// Inject cluster validation label into outgoing gRPC metadata.
+			ctx = metadata.AppendToOutgoingContext(ctx, "x-cluster", h.Values[0])
 		}
 	}
 
