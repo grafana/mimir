@@ -657,7 +657,7 @@ type batcher struct {
 	maxSeriesPerBatch int
 	batchDelay        time.Duration
 
-	batchersMtx sync.Mutex
+	batchersMtx sync.RWMutex
 	batchers    map[int32]*PartitionBatcher
 
 	trackerClient *UsageTrackerClient
@@ -682,15 +682,25 @@ func newBatcher(clientsPool *client.Pool, maxSeriesPerBatch int, batchDelay time
 
 // trackSeries tracks some series for a user in a partition. It will be batched and flushed asynchronously.
 func (c *batcher) trackSeries(partition int32, userID string, series []uint64) {
-	c.batchersMtx.Lock()
+	// Since c.batchers doesn't change much, prefer to fetch it with a shared
+	// read lock, falling back to a write lock only if needed.
+	c.batchersMtx.RLock()
 	b, ok := c.batchers[partition]
+	c.batchersMtx.RUnlock()
+
 	if !ok {
-		b = NewPartitionBatcher(partition, c.maxSeriesPerBatch, c.batchDelay, c.logger, c.trackerClient, c.clientsPool, c.stoppingChan)
-		// May as well start the flusher outside of the lock.
-		defer b.startFlusher()
-		c.batchers[partition] = b
+		c.batchersMtx.Lock()
+		b, ok = c.batchers[partition]
+		if !ok {
+			b = NewPartitionBatcher(partition, c.maxSeriesPerBatch, c.batchDelay, c.logger, c.trackerClient, c.clientsPool, c.stoppingChan)
+			c.batchers[partition] = b
+			// May as well start the flusher outside of the lock.
+			defer func() {
+				go b.flushWorker()
+			}()
+		}
+		c.batchersMtx.Unlock()
 	}
-	c.batchersMtx.Unlock()
 
 	b.TrackSeries(userID, series)
 }
@@ -742,10 +752,6 @@ func NewPartitionBatcher(partition int32, maxSeriesPerBatch int, batchDelay time
 		logger:            log.With(logger, "partition", partition),
 		stoppingChan:      stopping,
 	}
-}
-
-func (b *PartitionBatcher) startFlusher() {
-	go b.flushWorker()
 }
 
 // TrackSeries adds a user and their series to this partition's current batch,
