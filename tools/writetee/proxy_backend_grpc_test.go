@@ -244,6 +244,37 @@ func TestGRPCProxyBackend_PathPrepending(t *testing.T) {
 	assert.Equal(t, "/prefix/api/v1/push", receivedPath)
 }
 
+func TestGRPCProxyBackend_QueryParameters(t *testing.T) {
+	var receivedURL string
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedURL = r.URL.String()
+		w.WriteHeader(http.StatusOK)
+	})
+
+	grpcServer, addr := startTestGRPCServer(t, handler)
+	defer grpcServer.Stop()
+
+	endpoint := mustParseURL("dns://" + addr)
+	backend, err := NewGRPCProxyBackend("test-backend", endpoint, 5*time.Second, false, BackendTypeMirrored, GRPCBackendConfig{
+		MaxRecvMsgSize: 100 * 1024 * 1024,
+		MaxSendMsgSize: 100 * 1024 * 1024,
+	})
+	require.NoError(t, err)
+	defer backend.Close()
+
+	origReq := httptest.NewRequest("POST", "/api/v1/push?foo=bar&baz=qux", bytes.NewReader([]byte("test")))
+	origReq.Header.Set("X-Scope-OrgID", "test-tenant")
+
+	_, _, _, _, err = backend.ForwardRequest(
+		context.Background(),
+		origReq,
+		io.NopCloser(bytes.NewReader([]byte("test"))),
+	)
+	require.NoError(t, err)
+
+	assert.Equal(t, "/api/v1/push?foo=bar&baz=qux", receivedURL)
+}
+
 func TestGRPCProxyBackend_Close(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

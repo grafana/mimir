@@ -374,16 +374,9 @@ func (p *Proxy) Stop() error {
 
 	p.server.Shutdown()
 
-	// Stop the async dispatcher
+	// Stop the async dispatcher (prevents new dispatches, but doesn't wait for in-flight).
 	if p.asyncDispatcher != nil {
 		p.asyncDispatcher.Stop()
-	}
-
-	// Close all backends (important for gRPC backends to close connections).
-	for _, backend := range p.backends {
-		if err := backend.Close(); err != nil {
-			level.Warn(p.logger).Log("msg", "failed to close backend", "backend", backend.Name(), "err", err)
-		}
 	}
 
 	return nil
@@ -396,5 +389,12 @@ func (p *Proxy) Await() {
 	// Wait for async dispatcher to drain in-flight requests.
 	if p.asyncDispatcher != nil {
 		p.asyncDispatcher.Await()
+	}
+
+	// Close all backends after async requests have drained (important for gRPC backends to close connections).
+	for _, backend := range p.backends {
+		if err := backend.Close(); err != nil {
+			level.Warn(p.logger).Log("msg", "failed to close backend", "backend", backend.Name(), "err", err)
+		}
 	}
 }

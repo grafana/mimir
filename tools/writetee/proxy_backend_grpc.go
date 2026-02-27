@@ -121,8 +121,11 @@ func (b *grpcProxyBackend) createGRPCRequest(orig *http.Request, body io.ReadClo
 		return nil, errors.Wrap(err, "closing request body")
 	}
 
-	// Build the URL path with endpoint path prefix.
+	// Build the URL path with endpoint path prefix and preserve query parameters.
 	reqPath := path.Join(b.endpoint.Path, orig.URL.Path)
+	if orig.URL.RawQuery != "" {
+		reqPath = reqPath + "?" + orig.URL.RawQuery
+	}
 
 	// Clone headers for the gRPC request.
 	headers := make(http.Header)
