@@ -715,8 +715,8 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		}
 
 		subservices = append(subservices, distributorsLifecycler, distributorsRing)
-		requestRateStrategy = newGlobalRateStrategy(newRequestRateStrategy(limits), d)
 		zoneAware := cfg.DistributorRing.InstanceZone != ""
+		requestRateStrategy = newGlobalRateStrategy(newRequestRateStrategy(limits), d, zoneAware)
 		ingestionRateStrategy = newGlobalRateStrategyWithBurstFactor(limits, d, zoneAware)
 	}
 

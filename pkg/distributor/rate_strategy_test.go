@@ -116,6 +116,33 @@ func TestIngestionRateStrategy(t *testing.T) {
 	})
 }
 
+func TestRequestRateStrategy(t *testing.T) {
+	t.Run("rate limiter should share the limit across the number of distributors", func(t *testing.T) {
+		overrides := validation.NewOverrides(validation.Limits{
+			RequestRate:      1000,
+			RequestBurstSize: 10000,
+		}, nil)
+
+		mockRing := newReadLifecyclerMock(2, -1, 1)
+		strategy := newGlobalRateStrategy(newRequestRateStrategy(overrides), mockRing, false)
+		assert.Equal(t, float64(500), strategy.Limit("test"))
+		assert.Equal(t, 10000, strategy.Burst("test"))
+	})
+
+	t.Run("zone-aware: limit is divided by zone count and distributors in zone", func(t *testing.T) {
+		overrides := validation.NewOverrides(validation.Limits{
+			RequestRate:      100000,
+			RequestBurstSize: 200000,
+		}, nil)
+
+		mockRing := newReadLifecyclerMock(-1, 35, 2)
+		strategy := newGlobalRateStrategy(newRequestRateStrategy(overrides), mockRing, true)
+		// 100000 / 35 distributors in zone / 2 zones = 1428.57
+		assert.InDelta(t, float64(100000)/35/2, strategy.Limit("test"), 0.01)
+		assert.Equal(t, 200000, strategy.Burst("test"))
+	})
+}
+
 type readLifecyclerMock struct {
 	healthyInstances int
 	healthyInZone    int

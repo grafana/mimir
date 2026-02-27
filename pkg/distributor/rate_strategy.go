@@ -79,27 +79,36 @@ func (s *globalIngestionStrategyWithBurstFactor) Burst(tenantID string) int {
 type globalStrategy struct {
 	baseStrategy limiter.RateLimiterStrategy
 	ring         ReadLifecycler
+	zoneAware    bool
 }
 
 // newGlobalRateStrategy constructs a new limiter.RateLimiterStrategy, where the
 // effective per-instance limit is calculated according to:
-// limit = maxRate / healthyInstances
-func newGlobalRateStrategy(baseStrategy limiter.RateLimiterStrategy, ring ReadLifecycler) limiter.RateLimiterStrategy {
+// if zoneAware: limit = maxRate / healthyInstancesInZone / ringZones
+// else: limit = maxRate / healthyInstances
+func newGlobalRateStrategy(baseStrategy limiter.RateLimiterStrategy, ring ReadLifecycler, zoneAware bool) limiter.RateLimiterStrategy {
 	return &globalStrategy{
 		baseStrategy: baseStrategy,
 		ring:         ring,
+		zoneAware:    zoneAware,
 	}
 }
 
 func (s *globalStrategy) Limit(tenantID string) float64 {
-	numDistributors := s.ring.HealthyInstancesCount()
-
+	var numDistributors, ringZones int
+	if s.zoneAware {
+		numDistributors = s.ring.HealthyInstancesInZoneCount()
+		ringZones = s.ring.ZonesCount()
+	} else {
+		numDistributors = s.ring.HealthyInstancesCount()
+		ringZones = 1
+	}
 	limit := s.baseStrategy.Limit(tenantID)
 
-	if numDistributors == 0 || limit == float64(rate.Inf) {
+	if numDistributors == 0 || ringZones == 0 || limit == float64(rate.Inf) {
 		return limit
 	}
-	return limit / float64(numDistributors)
+	return limit / float64(numDistributors*ringZones)
 }
 
 func (s *globalStrategy) Burst(tenantID string) int {
