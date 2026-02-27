@@ -120,7 +120,18 @@ type Distributor struct {
 	// the number of healthy instances
 	distributorsLifecycler *ring.BasicLifecycler
 	distributorsRing       *ring.Ring
-	healthyInstancesCount  *atomic.Uint32
+
+	// healthyInstancesCount stores the number of healthy instances in the
+	// distributors ring.
+	healthyInstancesCount *atomic.Uint32
+
+	// healthyInstancesInZoneCount stores the number of healthy instances in the
+	// distributors ring that are also in the same zone as this instance.
+	healthyInstancesInZoneCount *atomic.Uint32
+
+	// ringZonesCount stores the number of non-empty ring zones. If the distributor
+	// is not zone-aware, ringZonesCount is 1.
+	ringZonesCount *atomic.Uint32
 
 	costAttributionMgr *costattribution.Manager
 	// For handling HA replicas.
@@ -496,16 +507,18 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	requestBufferPool := util.NewBufferPool(cfg.MaxRequestPoolBufferSize)
 
 	d := &Distributor{
-		cfg:                   cfg,
-		log:                   log,
-		ingestersRing:         ingestersRing,
-		RequestBufferPool:     requestBufferPool,
-		partitionsRing:        partitionsRing,
-		ingesterPool:          NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
-		healthyInstancesCount: atomic.NewUint32(0),
-		limits:                limits,
-		costAttributionMgr:    costAttributionMgr,
-		ingestionRate:         util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
+		cfg:                         cfg,
+		log:                         log,
+		ingestersRing:               ingestersRing,
+		RequestBufferPool:           requestBufferPool,
+		partitionsRing:              partitionsRing,
+		ingesterPool:                NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
+		healthyInstancesCount:       atomic.NewUint32(0),
+		healthyInstancesInZoneCount: atomic.NewUint32(0),
+		ringZonesCount:              atomic.NewUint32(0),
+		limits:                      limits,
+		costAttributionMgr:          costAttributionMgr,
+		ingestionRate:               util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
 
 		queryDuration: instrument.NewHistogramCollector(promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "cortex_distributor_query_duration_seconds",
@@ -696,14 +709,15 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		requestRateStrategy = newInfiniteRateStrategy()
 		ingestionRateStrategy = newInfiniteRateStrategy()
 	} else {
-		distributorsRing, distributorsLifecycler, err = newRingAndLifecycler(cfg.DistributorRing, d.healthyInstancesCount, log, reg)
+		distributorsRing, distributorsLifecycler, err = newRingAndLifecycler(cfg.DistributorRing, d.healthyInstancesCount, d.healthyInstancesInZoneCount, d.ringZonesCount, log, reg)
 		if err != nil {
 			return nil, err
 		}
 
 		subservices = append(subservices, distributorsLifecycler, distributorsRing)
 		requestRateStrategy = newGlobalRateStrategy(newRequestRateStrategy(limits), d)
-		ingestionRateStrategy = newGlobalRateStrategyWithBurstFactor(limits, d)
+		zoneAware := cfg.DistributorRing.InstanceZone != ""
+		ingestionRateStrategy = newGlobalRateStrategyWithBurstFactor(limits, d, zoneAware)
 	}
 
 	// If this isn't a real distributor that will be accepting writes or if the HA tracker is
@@ -800,7 +814,7 @@ func exportStorageModeMetrics(reg prometheus.Registerer, classicStorageEnabled, 
 }
 
 // newRingAndLifecycler creates a new distributor ring and lifecycler with all required lifecycler delegates
-func newRingAndLifecycler(cfg RingConfig, instanceCount *atomic.Uint32, logger log.Logger, reg prometheus.Registerer) (*ring.Ring, *ring.BasicLifecycler, error) {
+func newRingAndLifecycler(cfg RingConfig, instanceCount, instanceInZoneCount, ringZonesCount *atomic.Uint32, logger log.Logger, reg prometheus.Registerer) (*ring.Ring, *ring.BasicLifecycler, error) {
 	reg = prometheus.WrapRegistererWithPrefix("cortex_", reg)
 	kvStore, err := kv.NewClient(cfg.Common.KVStore, ring.GetCodec(), kv.RegistererWithKVName(reg, "distributor-lifecycler"), logger)
 	if err != nil {
@@ -814,7 +828,7 @@ func newRingAndLifecycler(cfg RingConfig, instanceCount *atomic.Uint32, logger l
 
 	var delegate ring.BasicLifecyclerDelegate
 	delegate = ring.NewInstanceRegisterDelegate(ring.ACTIVE, lifecyclerCfg.NumTokens)
-	delegate = newHealthyInstanceDelegate(instanceCount, cfg.Common.HeartbeatTimeout, delegate)
+	delegate = newHealthyInstanceDelegate(instanceCount, instanceInZoneCount, ringZonesCount, cfg.Common.HeartbeatTimeout, delegate)
 	delegate = ring.NewLeaveOnStoppingDelegate(delegate, logger)
 	if cfg.AutoForgetUnhealthyPeriods > 0 {
 		delegate = ring.NewAutoForgetDelegate(time.Duration(cfg.AutoForgetUnhealthyPeriods)*cfg.Common.HeartbeatTimeout, delegate, logger)
@@ -3588,10 +3602,16 @@ func (d *Distributor) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 }
 
 // HealthyInstancesCount implements the ReadLifecycler interface
-//
-// We use a ring lifecycler delegate to count the number of members of the
-// ring. The count is then used to enforce rate limiting correctly for each
-// distributor. $EFFECTIVE_RATE_LIMIT = $GLOBAL_RATE_LIMIT / $NUM_INSTANCES
 func (d *Distributor) HealthyInstancesCount() int {
 	return int(d.healthyInstancesCount.Load())
+}
+
+// HealthyInstancesInZoneCount implements the ReadLifecycler interface.
+func (d *Distributor) HealthyInstancesInZoneCount() int {
+	return int(d.healthyInstancesInZoneCount.Load())
+}
+
+// ZonesCount implements the ReadLifecycler interface.
+func (d *Distributor) ZonesCount() int {
+	return int(d.ringZonesCount.Load())
 }

@@ -12,14 +12,29 @@ import (
 // healthyInstanceDelegate counts the number of healthy instances that are part of the ring
 // and stores the count to the provided atomic integer. Used here to count the number of
 // distributors in the ring to determine how to enforce rate limiting.
+//
+// If the ring is zone-aware healthyInstanceDelegate counts the number of healthy
+// instances in the current instance's zone and the number of ring zones.
 type healthyInstanceDelegate struct {
-	count            *atomic.Uint32
-	heartbeatTimeout time.Duration
-	next             ring.BasicLifecyclerDelegate
+	instanceCount       *atomic.Uint32
+	instanceInZoneCount *atomic.Uint32
+	zoneCount           *atomic.Uint32
+	heartbeatTimeout    time.Duration
+	next                ring.BasicLifecyclerDelegate
 }
 
-func newHealthyInstanceDelegate(count *atomic.Uint32, heartbeatTimeout time.Duration, next ring.BasicLifecyclerDelegate) *healthyInstanceDelegate {
-	return &healthyInstanceDelegate{count: count, heartbeatTimeout: heartbeatTimeout, next: next}
+func newHealthyInstanceDelegate(
+	instanceCount, instanceInZoneCount, zoneCount *atomic.Uint32,
+	heartbeatTimeout time.Duration,
+	next ring.BasicLifecyclerDelegate,
+) *healthyInstanceDelegate {
+	return &healthyInstanceDelegate{
+		instanceCount:       instanceCount,
+		instanceInZoneCount: instanceInZoneCount,
+		zoneCount:           zoneCount,
+		heartbeatTimeout:    heartbeatTimeout,
+		next:                next,
+	}
 }
 
 // OnRingInstanceRegister implements the ring.BasicLifecyclerDelegate interface
@@ -40,14 +55,30 @@ func (d *healthyInstanceDelegate) OnRingInstanceStopping(lifecycler *ring.BasicL
 // OnRingInstanceHeartbeat implements the ring.BasicLifecyclerDelegate interface
 func (d *healthyInstanceDelegate) OnRingInstanceHeartbeat(lifecycler *ring.BasicLifecycler, ringDesc *ring.Desc, instanceDesc *ring.InstanceDesc) {
 	activeMembers := uint32(0)
+	activeMembersInZone := uint32(0)
+	zoneCount := uint32(1)
 	now := time.Now()
+
+	zone := lifecycler.GetInstanceZone()
+	zones := map[string]struct{}{zone: {}}
 
 	for _, instance := range ringDesc.Ingesters {
 		if ring.ACTIVE == instance.State && instance.IsHeartbeatHealthy(d.heartbeatTimeout, now) {
 			activeMembers++
+			if zone != "" && instance.Zone == zone {
+				activeMembersInZone++
+			}
+		}
+		if zone != "" {
+			if _, ok := zones[instance.Zone]; !ok {
+				zones[instance.Zone] = struct{}{}
+				zoneCount++
+			}
 		}
 	}
 
-	d.count.Store(activeMembers)
+	d.zoneCount.Store(zoneCount)
+	d.instanceCount.Store(activeMembers)
+	d.instanceInZoneCount.Store(activeMembersInZone)
 	d.next.OnRingInstanceHeartbeat(lifecycler, ringDesc, instanceDesc)
 }
