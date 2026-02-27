@@ -71,14 +71,16 @@ type batchResult struct {
 
 func main() {
 	if len(os.Args) < 2 {
-		log.Fatalln("usage: label-frequency-analyzer <command> [args]\n\nCommands:\n  download    Download and analyze label frequencies from ingesters")
+		log.Fatalln("usage: label-frequency-analyzer <command> [args]\n\nCommands:\n  download    Download and analyze label frequencies from ingesters\n  analyze     Analyze previously downloaded label frequency data")
 	}
 
 	switch os.Args[1] {
 	case "download":
 		runDownloadCommand(os.Args[2:])
+	case "analyze":
+		runAnalyzeCommand(os.Args[2:])
 	default:
-		log.Fatalf("unknown command: %s\n\nCommands:\n  download    Download and analyze label frequencies from ingesters", os.Args[1])
+		log.Fatalf("unknown command: %s\n\nCommands:\n  download    Download and analyze label frequencies from ingesters\n  analyze     Analyze previously downloaded label frequency data", os.Args[1])
 	}
 }
 
