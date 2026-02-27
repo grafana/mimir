@@ -42,8 +42,8 @@ func TestAsyncBackendDispatcher_ShouldNotBlockOnNonPreferredBackends(t *testing.
 	}))
 	defer fastServer.Close()
 
-	preferredBackend := NewProxyBackend("fast", mustParseURLAsync(fastServer.URL), 5*time.Second, true, false, BackendTypeMirrored)
-	slowBackend := NewProxyBackend("slow", mustParseURLAsync(slowServer.URL), 5*time.Second, false, false, BackendTypeMirrored)
+	preferredBackend := NewHTTPProxyBackend("fast", mustParseURLAsync(fastServer.URL), 5*time.Second, true, false, BackendTypeMirrored)
+	slowBackend := NewHTTPProxyBackend("slow", mustParseURLAsync(slowServer.URL), 5*time.Second, false, false, BackendTypeMirrored)
 	backends := []ProxyBackend{preferredBackend, slowBackend}
 
 	asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
@@ -99,7 +99,7 @@ func TestAsyncBackendDispatcher_ShouldEnforceMaxInFlightLimit(t *testing.T) {
 	}))
 	defer blockingServer.Close()
 
-	backend := NewProxyBackend("backend", mustParseURLAsync(blockingServer.URL), 5*time.Second, false, false, BackendTypeMirrored)
+	backend := NewHTTPProxyBackend("backend", mustParseURLAsync(blockingServer.URL), 5*time.Second, false, false, BackendTypeMirrored)
 
 	const maxInFlight = 5
 	const totalRequests = 10
@@ -144,7 +144,7 @@ func TestAsyncBackendDispatcher_ConcurrentRequests(t *testing.T) {
 	}))
 	defer server.Close()
 
-	backend := NewProxyBackend("test", mustParseURLAsync(server.URL), 5*time.Second, false, false, BackendTypeMirrored)
+	backend := NewHTTPProxyBackend("test", mustParseURLAsync(server.URL), 5*time.Second, false, false, BackendTypeMirrored)
 
 	// Create dispatcher allowing 10 concurrent requests
 	asyncDispatcher := NewAsyncBackendDispatcher(10, metrics, logger)
@@ -186,7 +186,7 @@ func TestAsyncBackendDispatcher_GracefulShutdown(t *testing.T) {
 	}))
 	defer server.Close()
 
-	backend := NewProxyBackend("test", mustParseURLAsync(server.URL), 5*time.Second, false, false, BackendTypeMirrored)
+	backend := NewHTTPProxyBackend("test", mustParseURLAsync(server.URL), 5*time.Second, false, false, BackendTypeMirrored)
 
 	asyncDispatcher := NewAsyncBackendDispatcher(10, metrics, logger)
 
@@ -229,8 +229,8 @@ func TestAsyncBackendDispatcher_MultipleBackends(t *testing.T) {
 	}))
 	defer server2.Close()
 
-	backend1 := NewProxyBackend("backend1", mustParseURLAsync(server1.URL), 5*time.Second, false, false, BackendTypeMirrored)
-	backend2 := NewProxyBackend("backend2", mustParseURLAsync(server2.URL), 5*time.Second, false, false, BackendTypeMirrored)
+	backend1 := NewHTTPProxyBackend("backend1", mustParseURLAsync(server1.URL), 5*time.Second, false, false, BackendTypeMirrored)
+	backend2 := NewHTTPProxyBackend("backend2", mustParseURLAsync(server2.URL), 5*time.Second, false, false, BackendTypeMirrored)
 
 	// Each backend has its own semaphore with max 2
 	asyncDispatcher := NewAsyncBackendDispatcher(2, metrics, logger)
