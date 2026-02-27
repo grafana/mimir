@@ -127,11 +127,8 @@ func (b *grpcProxyBackend) createGRPCRequest(orig *http.Request, body io.ReadClo
 		reqPath = reqPath + "?" + orig.URL.RawQuery
 	}
 
-	// Clone headers for the gRPC request.
-	headers := make(http.Header)
-	for k, v := range orig.Header {
-		headers[k] = v
-	}
+	// Clone headers for the gRPC request (deep copy to avoid sharing slices with original).
+	headers := orig.Header.Clone()
 
 	// Remove headers that are not relevant for HTTPgRPC backends.
 	headers.Del("Authorization")
