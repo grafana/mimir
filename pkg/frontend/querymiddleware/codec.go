@@ -509,6 +509,7 @@ func (Codec) DecodeSearchQueryRequest(_ context.Context, r *http.Request) (*Sear
 		Search:           p.Search(),
 	}
 
+	// Label name is only supported on label values endpoint
 	if req.LabelName, err = p.LabelName(strings.HasSuffix(r.URL.Path, streaminglabelvalues.SearchLabelValuesPathSuffix)); err != nil {
 		return nil, err
 	}
@@ -529,6 +530,9 @@ func (Codec) DecodeSearchQueryRequest(_ context.Context, r *http.Request) (*Sear
 		return nil, err
 	}
 	if req.SortDir, err = p.SortDir(); err != nil {
+		return nil, err
+	}
+	if req.Operator, err = p.Operator(); err != nil {
 		return nil, err
 	}
 	if req.Limit, err = p.Limit(); err != nil {

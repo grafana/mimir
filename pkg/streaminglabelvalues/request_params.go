@@ -9,8 +9,14 @@ import (
 	"strings"
 )
 
+type SearchResult struct {
+	Name string `json:"name"`
+}
+
 type SortBy int
 type SortDirection int
+
+type Operator int
 
 const (
 	None SortBy = iota
@@ -21,6 +27,11 @@ const (
 const (
 	Asc SortDirection = iota
 	Desc
+)
+
+const (
+	Or Operator = iota
+	And
 )
 
 const (
@@ -61,6 +72,18 @@ func (p *RequestParser) asBool(param string, defaultIfNotSet bool) (bool, error)
 		return b, nil
 	}
 	return defaultIfNotSet, nil
+}
+
+func (p *RequestParser) Operator() (Operator, error) {
+	v := p.reqValues.Get("operator")
+	switch v {
+	case "", "or":
+		return Or, nil
+	case "and":
+		return And, nil
+	default:
+		return Or, apierror.New(apierror.TypeBadData, fmt.Sprintf("invalid operator - expected one of and, or but got %s", v))
+	}
 }
 
 // FuzzThreshold returns the fuzz_threshold query parameter as an integer in [0, 100].

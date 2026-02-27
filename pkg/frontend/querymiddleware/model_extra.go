@@ -866,6 +866,7 @@ type SearchQueryRequest struct {
 	CaseSensitive    bool
 	SortBy           streaminglabelvalues.SortBy
 	SortDir          streaminglabelvalues.SortDirection
+	Operator         streaminglabelvalues.Operator
 	BatchSize        int
 	Limit            int
 }

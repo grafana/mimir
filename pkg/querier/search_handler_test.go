@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -45,6 +46,152 @@ func newSearchTestQueryable(labelNames []string, labelValues map[string][]string
 		queryableFn: func(_, _ int64) (storage.Querier, error) {
 			return q, nil
 		},
+	}
+}
+
+func TestFilterChain(t *testing.T) {
+	tcs := []struct {
+		name     string
+		params   searchParams
+		input    []string
+		expected map[string]struct {
+			accepted bool
+			score    float64
+		}
+	}{
+		{
+			name:   "no filters - everything is a match",
+			params: searchParams{},
+			input:  []string{"foo", "bar"},
+			expected: map[string]struct {
+				accepted bool
+				score    float64
+			}{
+				// no filters were applied - no score was recorded
+				"foo": {true, -1},
+				"bar": {true, -1},
+			},
+		},
+
+		{
+			name:   "single string",
+			params: searchParams{search: []string{"foo"}},
+			input:  []string{"foo", "bar", "_foo", "foo_", "_foo_"},
+			expected: map[string]struct {
+				accepted bool
+				score    float64
+			}{
+				// input string contains foo - accepted and no score was recorded
+				"foo":   {true, -1},
+				"_foo":  {true, -1},
+				"foo_":  {true, -1},
+				"_foo_": {true, -1},
+				"bar":   {false, 0},
+			},
+		},
+
+		{
+			name:   "string disjunction",
+			params: searchParams{search: []string{"foo", "bar"}},
+			input:  []string{"foo", "bar", "cat"},
+			expected: map[string]struct {
+				accepted bool
+				score    float64
+			}{
+				// inputs were filtered against foo or bar - those accepted have no score recorded
+				"foo": {true, -1},
+				"bar": {true, -1},
+				"cat": {false, 0},
+			},
+		},
+
+		{
+			name:   "string conjunction",
+			params: searchParams{search: []string{"foo", "bar"}, operation: streaminglabelvalues.And},
+			input:  []string{"foo", "bar", "cat", "foobar", "foo_bar"},
+			expected: map[string]struct {
+				accepted bool
+				score    float64
+			}{
+				// inputs were filtered against foo AND bar - those accepted have no score recorded
+				"foo":     {false, 0},
+				"bar":     {false, 0},
+				"cat":     {false, 0},
+				"foobar":  {true, -1},
+				"foo_bar": {true, -1},
+			},
+		},
+
+		{
+			name:   "single string with fuzz",
+			params: searchParams{search: []string{"foo"}, fuzzThreshold: 70},
+			input:  []string{"foo", "bar", "boo", "some_metric_ending_with_foo", "bar_foo"},
+			expected: map[string]struct {
+				accepted bool
+				score    float64
+			}{
+				// inputs were filtered as containing foo or the fuzz similarity > 0.7
+				// Only one input did not contain foo but had a fuzz score above the threshold
+				"foo":                         {true, -1},   // string contains match - no need to calculate a fuzz score here
+				"bar":                         {false, 0},   // no match at all
+				"boo":                         {true, 0.77}, // fuzz match only
+				"some_metric_ending_with_foo": {true, -1},   // string contains match - no need to calculate a fuzz score here
+				"bar_foo":                     {true, -1},   // string contains match - no need to calculate a fuzz score here
+			},
+		},
+
+		{
+			name:   "multiple strings with fuzz",
+			params: searchParams{search: []string{"foo", "bar"}, fuzzThreshold: 70},
+			input:  []string{"foo", "bar", "boo", "some_metric_ending_with_foo", "bar_foo", "tar", "foobar", "barfoo", "tarloo", "loo_tar"},
+			expected: map[string]struct {
+				accepted bool
+				score    float64
+			}{
+				"foo":                         {true, -1},   // string contains match - no need to calculate a fuzz score here
+				"bar":                         {true, -1},   // string contains match - no need to calculate a fuzz score here
+				"boo":                         {true, 0.77}, // fuzz match on foo
+				"some_metric_ending_with_foo": {true, -1},   // string contains match - no need to calculate a fuzz score here
+				"bar_foo":                     {true, -1},   // string contains match - no need to calculate a fuzz score here
+				"tar":                         {true, 0.77}, // fuzz match on bar
+				"foobar":                      {true, -1},   // string contains match - no need to calculate a fuzz score here
+				"barfoo":                      {true, -1},   // string contains match - no need to calculate a fuzz score here
+				"loo_tar":                     {false, 0},   // input does not contain the given search strings, and the fuzz matching does not meet the necessary threshold
+				"tarloo":                      {false, 0},   // input does not contain the given search strings, and the fuzz matching does not meet the necessary threshold
+			},
+		},
+
+		{
+			name:   "multiple strings with fuzz - lower threshold",
+			params: searchParams{search: []string{"foo", "bar"}, fuzzThreshold: 1},
+			input:  []string{"foo", "bar", "boo", "some_metric_ending_with_foo", "bar_foo", "tar", "foobar", "barfoo", "tarloo", "loo_tar"},
+			expected: map[string]struct {
+				accepted bool
+				score    float64
+			}{
+				"foo":                         {true, -1},   // string contains match - no need to calculate a fuzz score here
+				"bar":                         {true, -1},   // string contains match - no need to calculate a fuzz score here
+				"boo":                         {true, 0.77}, // fuzz match on foo
+				"some_metric_ending_with_foo": {true, -1},   // string contains match - no need to calculate a fuzz score here
+				"bar_foo":                     {true, -1},   // string contains match - no need to calculate a fuzz score here
+				"tar":                         {true, 0.77}, // fuzz match on bar
+				"foobar":                      {true, -1},   // string contains match - no need to calculate a fuzz score here
+				"barfoo":                      {true, -1},   // string contains match - no need to calculate a fuzz score here
+				"loo_tar":                     {true, 0.65}, //  fuzz match
+				"tarloo":                      {true, 0.66}, // fuzz match on bar
+			},
+		},
+	}
+
+	for _, tc := range tcs {
+		t.Run(tc.name, func(t *testing.T) {
+			hints := buildSearchHints(&tc.params)
+			for _, input := range tc.input {
+				accepted, score := hints.Filter.Accept(input)
+				require.Equalf(t, tc.expected[input].accepted, accepted, "%s should have accepted %v but got %v", input, tc.expected[input].accepted, score)
+				require.InDeltaf(t, tc.expected[input].score, score, 0.02, "%s should have score %v but got %v", input, tc.expected[input].score, score)
+			}
+		})
 	}
 }
 
@@ -111,7 +258,9 @@ func TestSearchMetricNamesHandler(t *testing.T) {
 	results, ok := lines[0]["results"].([]any)
 	require.True(t, ok)
 	require.Len(t, results, 1)
-	assert.Equal(t, "http_requests_total", results[0])
+	result, ok := results[0].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "http_requests_total", result["Value"])
 }
 
 func TestSearchLabelValuesHandler_MissingLabelName(t *testing.T) {
@@ -179,7 +328,7 @@ func (s *sliceSearcherValueSet) Next() bool {
 	return false
 }
 
-func (s *sliceSearcherValueSet) At() string                        { return s.values[s.pos-1] }
+func (s *sliceSearcherValueSet) At() mimirstorage.FilteredResult   { return mimirstorage.FilteredResult{Value: s.values[s.pos-1]} }
 func (s *sliceSearcherValueSet) Warnings() annotations.Annotations { return nil }
 func (s *sliceSearcherValueSet) Err() error                        { return nil }
 func (s *sliceSearcherValueSet) Close()                            {}
@@ -221,8 +370,8 @@ func newSearchTestNativeSearchableQueryable(searchLabelNames []string, searchLab
 	}
 }
 
-// collectNDJSONResults scans an NDJSON body and returns the string values
-// from each "results" chunk. Results are expected to be plain strings.
+// collectNDJSONResults scans an NDJSON body and returns the Value field from
+// each FilteredResult in "results" chunks.
 func collectNDJSONResults(t *testing.T, body *bytes.Buffer) []string {
 	t.Helper()
 	var values []string
@@ -235,8 +384,10 @@ func collectNDJSONResults(t *testing.T, body *bytes.Buffer) []string {
 			continue
 		}
 		for _, r := range results {
-			s, ok := r.(string)
-			require.True(t, ok)
+			m, ok := r.(map[string]any)
+			require.True(t, ok, "expected result to be a JSON object, got %T", r)
+			s, ok := m["Value"].(string)
+			require.True(t, ok, "expected Value field in result object")
 			values = append(values, s)
 		}
 	}
@@ -335,7 +486,7 @@ func (s *cancellingSearcherValueSet) Next() bool {
 	return false
 }
 
-func (s *cancellingSearcherValueSet) At() string                        { return s.values[s.pos-1] }
+func (s *cancellingSearcherValueSet) At() mimirstorage.FilteredResult   { return mimirstorage.FilteredResult{Value: s.values[s.pos-1]} }
 func (s *cancellingSearcherValueSet) Warnings() annotations.Annotations { return nil }
 func (s *cancellingSearcherValueSet) Err() error                        { return s.ctx.Err() }
 func (s *cancellingSearcherValueSet) Close()                            { s.closeCalled = true }

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/grafana/dskit/tenant"
@@ -15,6 +16,7 @@ import (
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/querier/worker"
 	mimirstorage "github.com/grafana/mimir/pkg/storage"
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"github.com/grafana/mimir/pkg/util"
@@ -33,44 +35,61 @@ type searchParams struct {
 	caseSensitive bool
 	sortBy        streaminglabelvalues.SortBy
 	sortDir       streaminglabelvalues.SortDirection
+	operation     streaminglabelvalues.Operator
 	batchSize     int
 	limit         int
 }
 
-// substringFilter is a mimirstorage.Filter that accepts values containing any of
-// the provided search terms (OR logic, with optional case folding).
-type substringFilter struct {
-	terms         []string
-	caseSensitive bool
-}
-
-func (f *substringFilter) Accept(value string) (bool, float64) {
-	cmp := value
-	if !f.caseSensitive {
-		cmp = strings.ToLower(cmp)
-	}
-	for _, term := range f.terms {
-		t := term
-		if !f.caseSensitive {
-			t = strings.ToLower(t)
-		}
-		if strings.Contains(cmp, t) {
-			return true, 1.0
-		}
-	}
-	return false, 0
-}
-
-// buildSearchHints constructs a SearchHints from the parsed search params,
-// including a substring filter when search terms are provided.
+// buildSearchHints constructs a SearchHints from the parsed search params.
+// When search terms are present, a FilterChains is built and attached as hints.Filter:
+//   - A string-matching chain (FilterContains) accepts values containing any/all terms.
+//   - An optional fuzzy-matching chain (FilterJaro) accepts near-matches above the threshold.
+//
+// The two chains are OR'd together so that a value accepted by either chain is included.
 func buildSearchHints(params *searchParams) *mimirstorage.SearchHints {
 	hints := &mimirstorage.SearchHints{Limit: params.limit}
+
+	chain := streaminglabelvalues.NewFilterChains(params.caseSensitive)
+	hints.Filter = chain
+
 	if len(params.search) > 0 {
-		hints.Filter = &substringFilter{
-			terms:         params.search,
-			caseSensitive: params.caseSensitive,
+
+		// String-matching chain: each search term becomes a FilterContains.
+		stringChain := streaminglabelvalues.NewFilterChain(params.operation, len(params.search))
+		for _, s := range params.search {
+			term := s
+			if !params.caseSensitive {
+				term = strings.ToLower(s)
+			}
+			stringChain.AddFilter(streaminglabelvalues.NewFilterContains(term))
+		}
+		chain.AddFilterChain(stringChain)
+
+		// Optional fuzzy-matching chain: each search term becomes a FilterJaro.
+		if params.fuzzThreshold > 0 {
+			fuzzChain := streaminglabelvalues.NewFilterChain(params.operation, len(params.search))
+			threshold := float64(params.fuzzThreshold) / 100.0
+			for _, s := range params.search {
+				term := s
+				if !params.caseSensitive {
+					term = strings.ToLower(s)
+				}
+				fuzzChain.AddFilter(streaminglabelvalues.NewFilterJaro(term, threshold))
+			}
+			chain.AddFilterChain(fuzzChain)
 		}
 	}
+
+	if params.sortBy == streaminglabelvalues.Alpha && params.sortDir == streaminglabelvalues.Asc {
+		hints.Compare = &streaminglabelvalues.ComparerAlpha{}
+	} else if params.sortBy == streaminglabelvalues.Alpha {
+		hints.Compare = &streaminglabelvalues.ComparerAlphaDesc{}
+	} else if params.sortBy == streaminglabelvalues.Score && params.sortDir == streaminglabelvalues.Desc {
+		hints.Compare = streaminglabelvalues.NewCompareScore(params.search)
+	} else {
+		// TODO
+	}
+
 	return hints
 }
 
@@ -121,37 +140,7 @@ func SearchMetricNamesHandler(queryable storage.SampleAndChunkQueryable, _ *vali
 		writer := newStreamingWriter(w)
 		writer.init()
 
-		// TODO proper memory allocation
-		batch := make([]string, 0, params.batchSize)
-		total := 0
-		for vs.Next() && (params.limit == 0 || total < params.limit) {
-			v := vs.At()
-			batch = append(batch, v)
-			if len(batch) >= params.batchSize {
-				err := writer.writeBatch(batch)
-				if err != nil {
-					respondFromError(err, w)
-					return
-				}
-				batch = batch[:0]
-			}
-			total++
-		}
-		if err := vs.Err(); err != nil {
-			if len(batch) > 0 {
-				_ = writer.writeBatch(batch)
-			}
-			_ = writer.writeError(err)
-			return
-		}
-		if len(batch) >= 0 {
-			err := writer.writeBatch(batch)
-			if err != nil {
-				respondFromError(err, w)
-				return
-			}
-		}
-		writer.writeEnd(vs.Next())
+		streamSearchResults(vs, hints, params.batchSize, params.limit, writer)
 	})
 }
 
@@ -193,37 +182,7 @@ func SearchLabelNamesHandler(queryable storage.SampleAndChunkQueryable, _ *valid
 		writer := newStreamingWriter(w)
 		writer.init()
 
-		// TODO proper memory allocation
-		batch := make([]string, 0, params.batchSize)
-		total := 0
-		for vs.Next() && (params.limit == 0 || total < params.limit) {
-			v := vs.At()
-			batch = append(batch, v)
-			if len(batch) >= params.batchSize {
-				err := writer.writeBatch(batch)
-				if err != nil {
-					respondFromError(err, w)
-					return
-				}
-				batch = batch[:0]
-			}
-			total++
-		}
-		if err := vs.Err(); err != nil {
-			if len(batch) > 0 {
-				_ = writer.writeBatch(batch)
-			}
-			_ = writer.writeError(err)
-			return
-		}
-		if len(batch) >= 0 {
-			err := writer.writeBatch(batch)
-			if err != nil {
-				respondFromError(err, w)
-				return
-			}
-		}
-		writer.writeEnd(vs.Next())
+		streamSearchResults(vs, hints, params.batchSize, params.limit, writer)
 	})
 }
 
@@ -275,38 +234,86 @@ func SearchLabelValuesHandler(queryable storage.SampleAndChunkQueryable, _ *vali
 		writer := newStreamingWriter(w)
 		writer.init()
 
-		// TODO proper memory allocation
-		batch := make([]string, 0, params.batchSize)
-		total := 0
-		for vs.Next() && (params.limit == 0 || total < params.limit) {
-			v := vs.At()
-			batch = append(batch, v)
-			if len(batch) >= params.batchSize {
-				err := writer.writeBatch(batch)
-				if err != nil {
-					respondFromError(err, w)
-					return
-				}
-				batch = batch[:0]
-			}
-			total++
+		streamSearchResults(vs, hints, params.batchSize, params.limit, writer)
+	})
+}
+
+// streamSearchResults writes results from vs to writer.
+// If hints.Compare is set, all values are accumulated and sorted before applying the
+// limit and writing in batches. Otherwise the limit is enforced during streaming.
+func streamSearchResults(vs mimirstorage.SearcherValueSet, hints *mimirstorage.SearchHints, batchSize, limit int, writer *streamingWriter) {
+	if hints.Compare != nil {
+		streamSorted(vs, hints, batchSize, limit, writer)
+	} else {
+		streamUnsorted(vs, batchSize, limit, writer)
+	}
+}
+
+// streamSorted accumulates all values, sorts them with hints.Compare, applies the limit,
+// then writes in batches.
+func streamSorted(vs mimirstorage.SearcherValueSet, hints *mimirstorage.SearchHints, batchSize, limit int, writer *streamingWriter) {
+	all := make([]mimirstorage.FilteredResult, 0, 1000) // TODO proper memory allocation
+	for vs.Next() {
+		v := vs.At()
+		all = append(all, v)
+		// TODO perodically check for error / cancel
+	}
+	if err := vs.Err(); err != nil {
+		_ = writer.writeError(err)
+		return
+	}
+
+	slices.SortFunc(all, hints.Compare.Compare)
+
+	hasMore := limit > 0 && len(all) > limit
+	if hasMore {
+		all = all[:limit]
+	}
+
+	for i := 0; i < len(all); i += batchSize {
+		end := i + batchSize
+		if end > len(all) {
+			end = len(all)
 		}
-		if err := vs.Err(); err != nil {
-			if len(batch) > 0 {
-				_ = writer.writeBatch(batch)
-			}
-			_ = writer.writeError(err)
+		batch := make([]mimirstorage.FilteredResult, end-i)
+		for j, r := range all[i:end] {
+			batch[j] = r
+		}
+		if err := writer.writeBatch(batch); err != nil {
 			return
 		}
-		if len(batch) >= 0 {
-			err := writer.writeBatch(batch)
-			if err != nil {
-				respondFromError(err, w)
+	}
+	writer.writeEnd(hasMore)
+}
+
+// streamUnsorted streams values from vs directly, enforcing the limit during iteration.
+func streamUnsorted(vs mimirstorage.SearcherValueSet, batchSize, limit int, writer *streamingWriter) {
+	batch := make([]mimirstorage.FilteredResult, 0, batchSize)
+	total := 0
+	for vs.Next() && (limit == 0 || total < limit) {
+		v := vs.At()
+		batch = append(batch, v)
+		if len(batch) >= batchSize {
+			if err := writer.writeBatch(batch); err != nil {
 				return
 			}
+			batch = batch[:0]
 		}
-		writer.writeEnd(vs.Next())
-	})
+		total++
+	}
+	if err := vs.Err(); err != nil {
+		if len(batch) > 0 {
+			_ = writer.writeBatch(batch)
+		}
+		_ = writer.writeError(err)
+		return
+	}
+	if len(batch) > 0 {
+		if err := writer.writeBatch(batch); err != nil {
+			return
+		}
+	}
+	writer.writeEnd(vs.Next())
 }
 
 // parseSearchParams parses common search query parameters from an HTTP request.
@@ -377,6 +384,9 @@ func parseSearchParams(r *http.Request) (*searchParams, error) {
 	if params.limit, err = p.Limit(); err != nil {
 		return nil, err
 	}
+	if params.operation, err = p.Operator(); err != nil {
+		return nil, err
+	}
 
 	return params, nil
 }
@@ -406,10 +416,17 @@ func newStreamingWriter(w http.ResponseWriter) *streamingWriter {
 
 func (w *streamingWriter) init() {
 	w.writer.Header().Set("Content-Type", "application/x-ndjson")
+	w.writer.Header().Set(worker.ResponseStreamingEnabledHeader, "true")
 }
 
-func (w *streamingWriter) writeBatch(batch []string) error {
-	if err := w.encoder.Encode(map[string]any{"results": batch}); err != nil {
+func (w *streamingWriter) writeBatch(batch []mimirstorage.FilteredResult) error {
+
+	xformed := make([]streaminglabelvalues.SearchResult, 0, len(batch))
+	for _, r := range batch {
+		xformed = append(xformed, streaminglabelvalues.SearchResult{Name: r.Value})
+	}
+
+	if err := w.encoder.Encode(map[string]any{"results": xformed}); err != nil {
 		return err
 	}
 	if w.canFlush {

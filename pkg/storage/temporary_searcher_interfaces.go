@@ -47,7 +47,7 @@ type SearchHints struct {
 // SearcherValueSet is an iterator returned from the Searcher label/value search functions.
 type SearcherValueSet interface {
 	Next() bool
-	At() string
+	At() FilteredResult
 	Warnings() annotations.Annotations
 	Err() error
 	// Close this iterator and releases its resources. This does not close the Searcher. The iterator should be closed before the Searcher is closed.

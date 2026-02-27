@@ -9,7 +9,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"net/http"
 	"slices"
 	"strings"
@@ -28,6 +27,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -702,3 +702,4 @@ func IsSearchQuery(path string) bool {
 		strings.HasSuffix(path, streaminglabelvalues.SearchLabelNamesPathSuffix) ||
 		strings.HasSuffix(path, streaminglabelvalues.SearchLabelValuesPathSuffix)
 }
+

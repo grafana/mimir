@@ -23,8 +23,8 @@ func NewStreamingSearch(querier storage2.LabelQuerier) *StreamingSearch {
 // chanSearcherValueSet is a storage.SearcherValueSet backed by a channel produced
 // by a background goroutine. Callers must call Close() to release resources.
 type chanSearcherValueSet struct {
-	ch      <-chan string
-	current string
+	ch      <-chan storage.FilteredResult
+	current storage.FilteredResult
 	ctx     context.Context
 	cancel  context.CancelFunc
 	// err holds a non-context error from the producer (e.g. a query failure). It is
@@ -47,7 +47,7 @@ func (c *chanSearcherValueSet) Next() bool {
 	}
 }
 
-func (c *chanSearcherValueSet) At() string { return c.current }
+func (c *chanSearcherValueSet) At() storage.FilteredResult { return c.current }
 
 func (c *chanSearcherValueSet) Warnings() annotations.Annotations { return nil }
 
@@ -73,7 +73,7 @@ func (c *chanSearcherValueSet) Close() {
 // through a buffered channel. The returned SearcherValueSet reads from that channel.
 func (s *StreamingSearch) SearchLabelNames(ctx context.Context, hints *storage.SearchHints, matchers ...*labels.Matcher) (storage.SearcherValueSet, error) {
 	ctx, cancel := context.WithCancel(ctx)
-	ch := make(chan string, 256)
+	ch := make(chan storage.FilteredResult, 256)
 	vs := &chanSearcherValueSet{ch: ch, ctx: ctx, cancel: cancel}
 
 	go func() {
@@ -85,6 +85,8 @@ func (s *StreamingSearch) SearchLabelNames(ctx context.Context, hints *storage.S
 			return
 		}
 
+		accepted := false
+		score := -1.0
 		for _, name := range names {
 			select {
 			case <-ctx.Done():
@@ -92,13 +94,13 @@ func (s *StreamingSearch) SearchLabelNames(ctx context.Context, hints *storage.S
 			default:
 			}
 			if hints != nil && hints.Filter != nil {
-				accepted, _ := hints.Filter.Accept(name)
+				accepted, score = hints.Filter.Accept(name)
 				if !accepted {
 					continue
 				}
 			}
 			select {
-			case ch <- name:
+			case ch <- storage.FilteredResult{Value: name, Score: score}:
 			case <-ctx.Done():
 				return
 			}
@@ -114,7 +116,7 @@ func (s *StreamingSearch) SearchLabelNames(ctx context.Context, hints *storage.S
 // from that channel.
 func (s *StreamingSearch) SearchLabelValues(ctx context.Context, name string, hints *storage.SearchHints, matchers ...*labels.Matcher) (storage.SearcherValueSet, error) {
 	ctx, cancel := context.WithCancel(ctx)
-	ch := make(chan string, 256)
+	ch := make(chan storage.FilteredResult, 256)
 	vs := &chanSearcherValueSet{ch: ch, ctx: ctx, cancel: cancel}
 
 	go func() {
@@ -126,6 +128,8 @@ func (s *StreamingSearch) SearchLabelValues(ctx context.Context, name string, hi
 			return
 		}
 
+		accepted := false
+		score := -1.0
 		for _, v := range values {
 			select {
 			case <-ctx.Done():
@@ -133,13 +137,13 @@ func (s *StreamingSearch) SearchLabelValues(ctx context.Context, name string, hi
 			default:
 			}
 			if hints != nil && hints.Filter != nil {
-				accepted, _ := hints.Filter.Accept(v)
+				accepted, score = hints.Filter.Accept(v)
 				if !accepted {
 					continue
 				}
 			}
 			select {
-			case ch <- v:
+			case ch <- storage.FilteredResult{Value: v, Score: score}:
 			case <-ctx.Done():
 				return
 			}
