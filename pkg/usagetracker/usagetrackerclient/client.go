@@ -5,11 +5,9 @@ package usagetrackerclient
 import (
 	"context"
 	"flag"
-	"fmt"
 	"math/rand/v2"
 	"slices"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -823,33 +821,17 @@ func (b *PartitionBatcher) flush(users []*usagetrackerpb.TrackSeriesBatchUser) e
 	}
 
 	if len(rejections) > 0 {
-		level.Warn(b.logger).Log("msg", "ingested some series that should have been rejected, because they were batch-tracked asynchronously", "rejections", RejectionString(rejections))
+		count := 0
 
 		for _, rejection := range rejections {
 			for _, user := range rejection.Users {
 				b.trackerClient.rejectionObserver.ObserveAsyncUsageTrackerRejection(user.UserID)
+				count += len(user.RejectedSeriesHashes)
 			}
 		}
+
+		level.Warn(b.logger).Log("msg", "ingested some series that should have been rejected, because they were batch-tracked asynchronously", "count", count)
 	}
 
 	return nil
-}
-
-// RejectionString returns a string representation of the rejections.
-func RejectionString(rejections []*usagetrackerpb.TrackSeriesBatchRejection) string {
-	userRejections := make(map[string]int)
-	for _, rejection := range rejections {
-		for _, user := range rejection.Users {
-			if c := len(user.RejectedSeriesHashes); c > 0 {
-				userRejections[user.UserID] += c
-			}
-		}
-	}
-
-	r := make([]string, 0, len(userRejections))
-	for u, c := range userRejections {
-		r = append(r, fmt.Sprintf("%s (%d)", u, c))
-	}
-	slices.Sort(r)
-	return strings.Join(r, ", ")
 }
