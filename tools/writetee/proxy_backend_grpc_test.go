@@ -75,100 +75,76 @@ func TestGRPCProxyBackend_ForwardRequest(t *testing.T) {
 	assert.Equal(t, "test-tenant", receivedHeaders.Get("X-Scope-OrgID"))
 }
 
-func TestGRPCProxyBackend_AuthHandling(t *testing.T) {
-	tests := []struct {
-		name         string
-		endpointURL  string
-		requestAuth  bool
-		requestUser  string
-		requestPass  string
-		expectedUser string
-		expectedPass string
-	}{
-		{
-			name:         "endpoint auth takes precedence",
-			endpointURL:  "dns://endpointuser:endpointpass@localhost",
-			requestAuth:  true,
-			requestUser:  "requestuser",
-			requestPass:  "requestpass",
-			expectedUser: "endpointuser",
-			expectedPass: "endpointpass",
-		},
-		{
-			name:         "endpoint user only, use request password",
-			endpointURL:  "dns://endpointuser@localhost",
-			requestAuth:  true,
-			requestUser:  "requestuser",
-			requestPass:  "requestpass",
-			expectedUser: "endpointuser",
-			expectedPass: "requestpass",
-		},
-		{
-			name:         "no endpoint auth, use request auth",
-			endpointURL:  "dns://localhost",
-			requestAuth:  true,
-			requestUser:  "requestuser",
-			requestPass:  "requestpass",
-			expectedUser: "requestuser",
-			expectedPass: "requestpass",
-		},
-		{
-			name:         "no auth at all",
-			endpointURL:  "dns://localhost",
-			requestAuth:  false,
-			expectedUser: "",
-			expectedPass: "",
-		},
-		{
-			name:         "X-Scope-OrgID username substitution",
-			endpointURL:  "dns://__REQUEST_HEADER_X_SCOPE_ORGID__:password@localhost",
-			requestAuth:  false,
-			expectedUser: "test-tenant",
-			expectedPass: "password",
-		},
-	}
+func TestGRPCProxyBackend_OrgIDPropagation(t *testing.T) {
+	// HTTPgRPC backends use X-Scope-OrgID header for tenant identification,
+	// not Basic Auth. The org ID is propagated via gRPC metadata.
+	var capturedOrgID string
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedOrgID = r.Header.Get("X-Scope-OrgID")
+		w.WriteHeader(http.StatusOK)
+	})
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var capturedUser, capturedPass string
-			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				capturedUser, capturedPass, _ = r.BasicAuth()
-				w.WriteHeader(http.StatusOK)
-			})
+	grpcServer, addr := startTestGRPCServer(t, handler)
+	defer grpcServer.Stop()
 
-			grpcServer, addr := startTestGRPCServer(t, handler)
-			defer grpcServer.Stop()
+	endpoint := mustParseURL("dns://" + addr)
+	backend, err := NewGRPCProxyBackend("test-backend", endpoint, 5*time.Second, false, BackendTypeMirrored, GRPCBackendConfig{
+		MaxRecvMsgSize: 100 * 1024 * 1024,
+		MaxSendMsgSize: 100 * 1024 * 1024,
+	})
+	require.NoError(t, err)
+	defer backend.Close()
 
-			// Parse endpoint URL and replace host with actual test server address.
-			endpoint := mustParseURL(tt.endpointURL)
-			endpoint.Host = addr
+	// Create test request with org ID.
+	origReq := httptest.NewRequest("POST", "/api/v1/push", bytes.NewReader([]byte("test")))
+	origReq.Header.Set("X-Scope-OrgID", "test-tenant")
 
-			backend, err := NewGRPCProxyBackend("test-backend", endpoint, 5*time.Second, false, BackendTypeMirrored, GRPCBackendConfig{
-				MaxRecvMsgSize: 100 * 1024 * 1024,
-				MaxSendMsgSize: 100 * 1024 * 1024,
-			})
-			require.NoError(t, err)
-			defer backend.Close()
+	// Forward request.
+	_, _, _, _, err = backend.ForwardRequest(
+		context.Background(),
+		origReq,
+		io.NopCloser(bytes.NewReader([]byte("test"))),
+	)
+	require.NoError(t, err)
 
-			// Create test request.
-			origReq := httptest.NewRequest("POST", "/api/v1/push", bytes.NewReader([]byte("test")))
-			origReq.Header.Set("X-Scope-OrgID", "test-tenant")
-			if tt.requestAuth {
-				origReq.SetBasicAuth(tt.requestUser, tt.requestPass)
-			}
+	assert.Equal(t, "test-tenant", capturedOrgID)
+}
 
-			// Forward request.
-			_, _, _, _, err = backend.ForwardRequest(
-				context.Background(),
-				origReq,
-				io.NopCloser(bytes.NewReader([]byte("test"))),
-			)
-			require.NoError(t, err)
+func TestGRPCProxyBackend_AuthorizationHeaderStripped(t *testing.T) {
+	// HTTPgRPC backends don't use Authorization headers - they use X-Scope-OrgID.
+	// Verify that Authorization headers are stripped from forwarded requests.
+	var hasAuthHeader bool
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hasAuthHeader = r.Header.Get("Authorization") != ""
+		w.WriteHeader(http.StatusOK)
+	})
 
-			assert.Equal(t, tt.expectedUser, capturedUser)
-			assert.Equal(t, tt.expectedPass, capturedPass)
-		})
-	}
+	grpcServer, addr := startTestGRPCServer(t, handler)
+	defer grpcServer.Stop()
+
+	endpoint := mustParseURL("dns://" + addr)
+	backend, err := NewGRPCProxyBackend("test-backend", endpoint, 5*time.Second, false, BackendTypeMirrored, GRPCBackendConfig{
+		MaxRecvMsgSize: 100 * 1024 * 1024,
+		MaxSendMsgSize: 100 * 1024 * 1024,
+	})
+	require.NoError(t, err)
+	defer backend.Close()
+
+	// Create test request with Basic Auth.
+	origReq := httptest.NewRequest("POST", "/api/v1/push", bytes.NewReader([]byte("test")))
+	origReq.Header.Set("X-Scope-OrgID", "test-tenant")
+	origReq.SetBasicAuth("user", "pass")
+
+	// Forward request.
+	_, _, _, _, err = backend.ForwardRequest(
+		context.Background(),
+		origReq,
+		io.NopCloser(bytes.NewReader([]byte("test"))),
+	)
+	require.NoError(t, err)
+
+	// Authorization header should be stripped.
+	assert.False(t, hasAuthHeader, "Authorization header should be stripped for HTTPgRPC backends")
 }
 
 func TestGRPCProxyBackend_ErrorHandling(t *testing.T) {
@@ -190,6 +166,7 @@ func TestGRPCProxyBackend_ErrorHandling(t *testing.T) {
 	defer backend.Close()
 
 	origReq := httptest.NewRequest("POST", "/api/v1/push", bytes.NewReader([]byte("test")))
+	origReq.Header.Set("X-Scope-OrgID", "test-tenant")
 
 	_, status, respBody, _, err := backend.ForwardRequest(
 		context.Background(),
@@ -221,6 +198,7 @@ func TestGRPCProxyBackend_5xxError(t *testing.T) {
 	defer backend.Close()
 
 	origReq := httptest.NewRequest("POST", "/api/v1/push", bytes.NewReader([]byte("test")))
+	origReq.Header.Set("X-Scope-OrgID", "test-tenant")
 
 	_, status, respBody, _, err := backend.ForwardRequest(
 		context.Background(),
@@ -254,6 +232,7 @@ func TestGRPCProxyBackend_PathPrepending(t *testing.T) {
 	defer backend.Close()
 
 	origReq := httptest.NewRequest("POST", "/api/v1/push", bytes.NewReader([]byte("test")))
+	origReq.Header.Set("X-Scope-OrgID", "test-tenant")
 
 	_, _, _, _, err = backend.ForwardRequest(
 		context.Background(),
@@ -415,9 +394,7 @@ func startTestGRPCServer(t *testing.T, handler http.Handler) (*grpc.Server, stri
 	httpgrpc.RegisterHTTPServer(grpcServer, httpgrpcserver.NewServer(handler))
 
 	go func() {
-		if err := grpcServer.Serve(lis); err != nil {
-			// Server stopped, ignore.
-		}
+		_ = grpcServer.Serve(lis) // Server stopped error is expected during test cleanup.
 	}()
 
 	return grpcServer, lis.Addr().String()
