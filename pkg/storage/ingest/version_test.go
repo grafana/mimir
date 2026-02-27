@@ -28,6 +28,18 @@ func TestV2SymbolsCompat(t *testing.T) {
 	})
 }
 
+func TestV3SymbolsCompat(t *testing.T) {
+	t.Run("v3 symbols cannot be larger than v3 offset", func(t *testing.T) {
+		require.LessOrEqual(t, len(V3CommonSymbols.GetSlice()), V3RecordSymbolOffset)
+		require.LessOrEqual(t, len(V3CommonSymbols.GetMap()), V3RecordSymbolOffset)
+	})
+
+	t.Run("the zeroth symbol in v3 symbols must be empty string", func(t *testing.T) {
+		require.Empty(t, V3CommonSymbols.GetSlice()[0])
+		require.Equal(t, uint32(0), V3CommonSymbols.GetMap()[""])
+	})
+}
+
 func TestRecordVersionHeader(t *testing.T) {
 	t.Run("no version header is assumed to be v0", func(t *testing.T) {
 		rec := &kgo.Record{

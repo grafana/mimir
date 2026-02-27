@@ -14,7 +14,7 @@ import (
 
 const (
 	RecordVersionHeaderKey = "Version"
-	LatestRecordVersion    = 2
+	LatestRecordVersion    = 3
 	V2RecordSymbolOffset   = 64
 )
 
@@ -79,6 +79,8 @@ func ValidateRecordVersion(version int) error {
 		return nil
 	case 2:
 		return nil
+	case 3:
+		return nil
 	default:
 		return fmt.Errorf("unknown record version %d", version)
 	}
@@ -114,6 +116,8 @@ func RecordSerializerFromVersion(version int) recordSerializer {
 		return versionOneRecordSerializer{}
 	case 2:
 		return versionTwoRecordSerializer{}
+	case 3:
+		return versionThreeRecordSerializer{}
 	default:
 		return versionZeroRecordSerializer{}
 	}
@@ -173,6 +177,27 @@ func (v versionTwoRecordSerializer) ToRecords(partitionID int32, tenantID string
 	return records, inputSize, nil
 }
 
+type versionThreeRecordSerializer struct{}
+
+func (v versionThreeRecordSerializer) ToRecords(partitionID int32, tenantID string, req *mimirpb.WriteRequest, maxSize int) ([]*kgo.Record, int, error) {
+	inputSize := req.Size()
+
+	reqv3, err := mimirpb.FromWriteRequestToRW2Request(req, V3CommonSymbols, V3RecordSymbolOffset)
+	defer mimirpb.ReuseRW2(reqv3)
+	if err != nil {
+		return nil, 0, errors.Wrap(err, "failed to convert RW1 request to RW2")
+	}
+
+	records, err := marshalWriteRequestToRecords(partitionID, tenantID, reqv3, reqv3.Size(), maxSize, splitRequestVersionThree)
+	if err != nil {
+		return nil, 0, errors.Wrap(err, "failed to serialise write request")
+	}
+	for _, r := range records {
+		r.Headers = append(r.Headers, RecordVersionHeader(3))
+	}
+	return records, inputSize, nil
+}
+
 func DeserializeRecordContent(content []byte, wr *mimirpb.PreallocWriteRequest, version int) error {
 	switch version {
 	case 0:
@@ -182,6 +207,8 @@ func DeserializeRecordContent(content []byte, wr *mimirpb.PreallocWriteRequest, 
 		return deserializeRecordContentV1(content, wr)
 	case 2:
 		return deserializeRecordContentV2(content, wr)
+	case 3:
+		return deserializeRecordContentV3(content, wr)
 	default:
 		return fmt.Errorf("received a record with an unsupported version: %d, max supported version: %d", version, LatestRecordVersion)
 	}
@@ -203,4 +230,18 @@ func deserializeRecordContentV2(content []byte, wr *mimirpb.PreallocWriteRequest
 // splitRequestVersionTwo adapts mimirpb.SplitWriteRequestByMaxMarshalSizeRW2 to requestSplitter
 func splitRequestVersionTwo(wr *mimirpb.WriteRequest, reqSize, maxSize int) []*mimirpb.WriteRequest {
 	return mimirpb.SplitWriteRequestByMaxMarshalSizeRW2(wr, reqSize, maxSize, V2RecordSymbolOffset, V2CommonSymbols)
+}
+
+func deserializeRecordContentV3(content []byte, wr *mimirpb.PreallocWriteRequest) error {
+	wr.UnmarshalFromRW2 = true
+	wr.RW2SymbolOffset = V3RecordSymbolOffset
+	wr.RW2CommonSymbols = V3CommonSymbols.GetSlice()
+	wr.SkipNormalizeMetadataMetricName = true
+	wr.SkipDeduplicateMetadata = true
+	return mimirpb.Unmarshal(content, wr)
+}
+
+// splitRequestVersionThree adapts mimirpb.SplitWriteRequestByMaxMarshalSizeRW2 to requestSplitter
+func splitRequestVersionThree(wr *mimirpb.WriteRequest, reqSize, maxSize int) []*mimirpb.WriteRequest {
+	return mimirpb.SplitWriteRequestByMaxMarshalSizeRW2(wr, reqSize, maxSize, V3RecordSymbolOffset, V3CommonSymbols)
 }
