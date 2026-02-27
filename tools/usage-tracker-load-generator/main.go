@@ -142,7 +142,7 @@ func main() {
 
 type noOpUsageTrackerRejectionObserver struct{}
 
-func (n *noOpUsageTrackerRejectionObserver) ObserveUsageTrackerRejection(userID string) {
+func (n *noOpUsageTrackerRejectionObserver) ObserveAsyncUsageTrackerRejection(userID string) {
 }
 
 var _ usagetrackerclient.UsageTrackerRejectionObserver = (*noOpUsageTrackerRejectionObserver)(nil)

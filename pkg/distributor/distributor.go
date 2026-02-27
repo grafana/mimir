@@ -1696,7 +1696,7 @@ func (d *Distributor) parallelUsageTrackerClientTrackSeriesCall(ctx context.Cont
 	}
 }
 
-func (d *Distributor) ObserveUsageTrackerRejection(userID string) {
+func (d *Distributor) ObserveAsyncUsageTrackerRejection(userID string) {
 	d.asyncUsageTrackerCallsWithRejectedSeries.WithLabelValues(userID).Inc()
 }
 

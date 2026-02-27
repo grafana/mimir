@@ -42,7 +42,7 @@ type limitsProvider interface {
 }
 
 type UsageTrackerRejectionObserver interface {
-	ObserveUsageTrackerRejection(userID string)
+	ObserveAsyncUsageTrackerRejection(userID string)
 }
 
 type Config struct {
@@ -409,8 +409,6 @@ func (c *UsageTrackerClient) TrackSeriesAsync(ctx context.Context, userID string
 		}
 	)
 
-	// Create the partition ring view as late as possible, because we want to get the most updated
-	// snapshot of the ring.
 	partitionBatchRing := ring.NewActivePartitionBatchRing(c.partitionRing.PartitionRing())
 
 	// Series hashes are 64bit but the hash ring tokens are 32bit, so we truncate
@@ -817,7 +815,7 @@ func (b *PartitionBatcher) flush(users []*usagetrackerpb.TrackSeriesBatchUser) e
 
 		for _, rejection := range rejections {
 			for _, user := range rejection.Users {
-				b.trackerClient.rejectionObserver.ObserveUsageTrackerRejection(user.UserID)
+				b.trackerClient.rejectionObserver.ObserveAsyncUsageTrackerRejection(user.UserID)
 			}
 		}
 	}
