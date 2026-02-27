@@ -26,8 +26,8 @@ import (
 
 const (
 	fetchRetryAttempts = 5
-	fetchRetryDelay    = 10 * time.Second
-	pauseEveryNBatches = 200
+	fetchRetryDelay    = 15 * time.Second
+	pauseEveryNBatches = 50
 )
 
 type config struct {
@@ -48,19 +48,21 @@ type activeSeriesResponse struct {
 }
 
 type stringCount struct {
-	str        string
-	count      uint64
-	nameCount  uint64
-	valueCount uint64
+	str             string
+	count           uint64
+	nameCount       uint64
+	valueCount      uint64
+	metricNameCount uint64
 }
 
 type stringFrequency struct {
-	nameCount  uint64
-	valueCount uint64
+	nameCount       uint64
+	valueCount      uint64
+	metricNameCount uint64
 }
 
 func (f stringFrequency) total() uint64 {
-	return f.nameCount + f.valueCount
+	return f.nameCount + f.valueCount + f.metricNameCount
 }
 
 type batchResult struct {
@@ -68,19 +70,30 @@ type batchResult struct {
 }
 
 func main() {
-	// Clean up all flags registered via init() methods of 3rd-party libraries.
-	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	if len(os.Args) < 2 {
+		log.Fatalln("usage: label-frequency-analyzer <command> [args]\n\nCommands:\n  download    Download and analyze label frequencies from ingesters")
+	}
+
+	switch os.Args[1] {
+	case "download":
+		runDownloadCommand(os.Args[2:])
+	default:
+		log.Fatalf("unknown command: %s\n\nCommands:\n  download    Download and analyze label frequencies from ingesters", os.Args[1])
+	}
+}
+
+func runDownloadCommand(args []string) {
+	fs := flag.NewFlagSet("download", flag.ExitOnError)
 
 	cfg := config{}
 	cfg.TenantIDs = flagext.StringSliceCSV{}
-	flag.IntVar(&cfg.PortForwardPort, "port", 0, "Port number of the port-forward to cortex-gw-internal")
-	flag.Var(&cfg.TenantIDs, "tenants", "Comma-separated list of tenant IDs to analyze")
-	flag.IntVar(&cfg.NumWorkers, "workers", 10, "Number of worker goroutines to use for fetching active series")
-	flag.IntVar(&cfg.BatchSize, "batch-size", 50, "Number of series names to process in each batch")
-	flag.IntVar(&cfg.TopN, "top-n", 5000, "Number of most common strings to display")
+	fs.IntVar(&cfg.PortForwardPort, "port", 0, "Port number of the port-forward to cortex-gw-internal")
+	fs.Var(&cfg.TenantIDs, "tenants", "Comma-separated list of tenant IDs to analyze")
+	fs.IntVar(&cfg.NumWorkers, "workers", 10, "Number of worker goroutines to use for fetching active series")
+	fs.IntVar(&cfg.BatchSize, "batch-size", 50, "Number of series names to process in each batch")
+	fs.IntVar(&cfg.TopN, "top-n", 5000, "Number of most common strings to display")
 
-	// Parse CLI flags.
-	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
+	if err := fs.Parse(args); err != nil {
 		log.Fatalln(err.Error())
 	}
 
@@ -289,7 +302,11 @@ func runAnalysis(ctx context.Context, cfg config, tenantID string) error {
 								continue
 							}
 							freq = batchCounts[value]
-							freq.valueCount++
+							if name == "__name__" {
+								freq.metricNameCount++
+							} else {
+								freq.valueCount++
+							}
 							batchCounts[value] = freq
 						}
 					}
@@ -301,6 +318,7 @@ func runAnalysis(ctx context.Context, cfg config, tenantID string) error {
 							existing := batchResult.stringFrequencies[str]
 							existing.nameCount += freq.nameCount
 							existing.valueCount += freq.valueCount
+							existing.metricNameCount += freq.metricNameCount
 							batchResult.stringFrequencies[str] = existing
 							keptStrings++
 						}
@@ -357,6 +375,7 @@ func runAnalysis(ctx context.Context, cfg config, tenantID string) error {
 			existing := labelCounts[str]
 			existing.nameCount += freq.nameCount
 			existing.valueCount += freq.valueCount
+			existing.metricNameCount += freq.metricNameCount
 			labelCounts[str] = existing
 		}
 	}
@@ -370,10 +389,11 @@ func runAnalysis(ctx context.Context, cfg config, tenantID string) error {
 	counts := make([]stringCount, 0, len(labelCounts))
 	for str, freq := range labelCounts {
 		counts = append(counts, stringCount{
-			str:        str,
-			count:      freq.total(),
-			nameCount:  freq.nameCount,
-			valueCount: freq.valueCount,
+			str:             str,
+			count:           freq.total(),
+			nameCount:       freq.nameCount,
+			valueCount:      freq.valueCount,
+			metricNameCount: freq.metricNameCount,
 		})
 	}
 
@@ -390,7 +410,7 @@ func runAnalysis(ctx context.Context, cfg config, tenantID string) error {
 	defer w.Flush()
 
 	// Write CSV header
-	if err := w.Write([]string{"rank", "string", "count", "bytes", "countAsLabelName", "countAsLabelValue"}); err != nil {
+	if err := w.Write([]string{"rank", "string", "count", "bytes", "countAsLabelName", "countAsLabelValue", "countAsMetricName"}); err != nil {
 		return fmt.Errorf("failed to write CSV header: %w", err)
 	}
 
@@ -407,6 +427,7 @@ func runAnalysis(ctx context.Context, cfg config, tenantID string) error {
 			fmt.Sprintf("%d", bytesUsed),
 			fmt.Sprintf("%d", sc.nameCount),
 			fmt.Sprintf("%d", sc.valueCount),
+			fmt.Sprintf("%d", sc.metricNameCount),
 		}); err != nil {
 			return fmt.Errorf("failed to write CSV row: %w", err)
 		}
