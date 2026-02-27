@@ -183,10 +183,7 @@ func NewUsageTrackerClient(clientName string, clientCfg Config, partitionRing *r
 		}),
 	}
 
-	if clientCfg.UseBatchedTracking {
-		c.batchTrackingClient = newBatchTrackingClient(clientsPool, clientCfg.MaxBatchSeries, clientCfg.BatchDelay, logger, c)
-	}
-
+	c.batchTrackingClient = newBatchTrackingClient(clientsPool, clientCfg.MaxBatchSeries, clientCfg.BatchDelay, logger, c)
 	c.Service = services.NewBasicService(c.starting, c.running, c.stopping)
 	return c
 }
