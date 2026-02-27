@@ -5,8 +5,7 @@ package base
 
 import (
 	"context"
-	"crypto/sha256"
-	"fmt"
+	"hash/maphash"
 
 	"github.com/pb33f/libopenapi/datamodel/low"
 	"github.com/pb33f/libopenapi/index"
@@ -49,45 +48,39 @@ func (ex *Example) GetKeyNode() *yaml.Node {
 	return ex.KeyNode
 }
 
-// Hash will return a consistent SHA256 Hash of the Example object
-func (ex *Example) Hash() [32]byte {
-	// Use string builder pool
-	sb := low.GetStringBuilder()
-	defer low.PutStringBuilder(sb)
-
-	if ex.Summary.Value != "" {
-		sb.WriteString(ex.Summary.Value)
-		sb.WriteByte('|')
-	}
-	if ex.Description.Value != "" {
-		sb.WriteString(ex.Description.Value)
-		sb.WriteByte('|')
-	}
-	if ex.Value.Value != nil && !ex.Value.Value.IsZero() {
-		// this could be anything!
-		b, _ := yaml.Marshal(ex.Value.Value)
-		sb.WriteString(fmt.Sprintf("%x", sha256.Sum256(b)))
-		sb.WriteByte('|')
-	}
-	if ex.ExternalValue.Value != "" {
-		sb.WriteString(ex.ExternalValue.Value)
-		sb.WriteByte('|')
-	}
-	if ex.DataValue.Value != nil && !ex.DataValue.Value.IsZero() {
-		// dataValue could be anything!
-		b, _ := yaml.Marshal(ex.DataValue.Value)
-		sb.WriteString(fmt.Sprintf("%x", sha256.Sum256(b)))
-		sb.WriteByte('|')
-	}
-	if ex.SerializedValue.Value != "" {
-		sb.WriteString(ex.SerializedValue.Value)
-		sb.WriteByte('|')
-	}
-	for _, ext := range low.HashExtensions(ex.Extensions) {
-		sb.WriteString(ext)
-		sb.WriteByte('|')
-	}
-	return sha256.Sum256([]byte(sb.String()))
+// Hash will return a consistent hash of the Example object
+func (ex *Example) Hash() uint64 {
+	return low.WithHasher(func(h *maphash.Hash) uint64 {
+		if ex.Summary.Value != "" {
+			h.WriteString(ex.Summary.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if ex.Description.Value != "" {
+			h.WriteString(ex.Description.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if ex.Value.Value != nil && !ex.Value.Value.IsZero() {
+			h.WriteString(low.GenerateHashString(ex.Value.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if ex.ExternalValue.Value != "" {
+			h.WriteString(ex.ExternalValue.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if ex.DataValue.Value != nil && !ex.DataValue.Value.IsZero() {
+			h.WriteString(low.GenerateHashString(ex.DataValue.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if ex.SerializedValue.Value != "" {
+			h.WriteString(ex.SerializedValue.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		for _, ext := range low.HashExtensions(ex.Extensions) {
+			h.WriteString(ext)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		return h.Sum64()
+	})
 }
 
 // Build extracts extensions and example value

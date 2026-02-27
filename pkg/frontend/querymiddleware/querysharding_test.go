@@ -41,6 +41,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 var (
@@ -49,11 +50,6 @@ var (
 	step          = 30 * time.Second
 	lookbackDelta = 5 * time.Minute
 )
-
-func init() {
-	// This enables duration arithmetic https://github.com/prometheus/prometheus/pull/16249.
-	parser.ExperimentalDurationExpr = true
-}
 
 func mockHandlerWith(resp *PrometheusResponse, err error) MetricsQueryHandler {
 	return HandlerFunc(func(ctx context.Context, _ MetricsQueryRequest) (Response, error) {
@@ -1519,7 +1515,7 @@ func BenchmarkQueryShardingRewriting(b *testing.B) {
 		b.Run(expr, func(b *testing.B) {
 			for b.Loop() {
 				// We must parse the expression each time as shard() mutates the expression.
-				parsedExpr, err := parser.ParseExpr(expr)
+				parsedExpr, err := promqlext.NewPromQLParser().ParseExpr(expr)
 				if err != nil {
 					require.NoError(b, err)
 				}
@@ -1718,7 +1714,7 @@ func TestLongestRegexpMatcherBytes(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			parsed, err := parser.ParseExpr(testData.expr)
+			parsed, err := promqlext.NewPromQLParser().ParseExpr(testData.expr)
 			require.NoError(t, err)
 
 			actual := longestRegexpMatcherBytes(parsed)

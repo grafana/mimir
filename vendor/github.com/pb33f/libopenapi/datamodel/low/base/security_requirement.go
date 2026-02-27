@@ -5,8 +5,7 @@ package base
 
 import (
 	"context"
-	"crypto/sha256"
-	"fmt"
+	"hash/maphash"
 	"sort"
 
 	"github.com/pb33f/libopenapi/datamodel/low"
@@ -128,28 +127,27 @@ func (s *SecurityRequirement) GetKeys() []string {
 	return keys
 }
 
-// Hash will return a consistent SHA256 Hash of the SecurityRequirement object
-func (s *SecurityRequirement) Hash() [32]byte {
-	// Use string builder pool
-	sb := low.GetStringBuilder()
-	defer low.PutStringBuilder(sb)
-
-	for k, v := range orderedmap.SortAlpha(s.Requirements.Value).FromOldest() {
-		// Pre-allocate vals slice
-		vals := make([]string, len(v.Value))
-		for y := range v.Value {
-			vals[y] = v.Value[y].Value
-		}
-		sort.Strings(vals)
-
-		sb.WriteString(fmt.Sprintf("%s-", k.Value))
-		for i, val := range vals {
-			if i > 0 {
-				sb.WriteByte('|')
+// Hash will return a consistent hash of the SecurityRequirement object
+func (s *SecurityRequirement) Hash() uint64 {
+	return low.WithHasher(func(h *maphash.Hash) uint64 {
+		for k, v := range orderedmap.SortAlpha(s.Requirements.Value).FromOldest() {
+			// Pre-allocate vals slice
+			vals := make([]string, len(v.Value))
+			for y := range v.Value {
+				vals[y] = v.Value[y].Value
 			}
-			sb.WriteString(val)
+			sort.Strings(vals)
+
+			h.WriteString(k.Value)
+			h.WriteByte('-')
+			for i, val := range vals {
+				if i > 0 {
+					h.WriteByte(low.HASH_PIPE)
+				}
+				h.WriteString(val)
+			}
+			h.WriteByte(low.HASH_PIPE)
 		}
-		sb.WriteByte('|')
-	}
-	return sha256.Sum256([]byte(sb.String()))
+		return h.Sum64()
+	})
 }

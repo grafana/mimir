@@ -59,7 +59,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	enableDelayedNameRemoval := false
-	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0, enableDelayedNameRemoval), stats.NewQueryMetrics(nil), planner)
+	engine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(nil), planner)
 	require.NoError(t, err)
 
 	createQueryRequest := func(expr string, timeRange types.QueryTimeRange) *prototypes.Any {
@@ -565,12 +565,12 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second),
 				enableDelayedNameRemoval,
 				2,
-				[]string{"BinaryExpression: LHS + RHS", `LHS: VectorSelector: {__name__="my_three_item_series", idx=~"(0|1|2)"}`},
-				[]string{"BinaryExpression: LHS + RHS", `RHS: VectorSelector: {__name__="my_three_item_series"}`}, // Note that the wildcard selector has been removed by the "reduce matchers" pass.
+				[]string{"BinaryExpression: LHS + RHS", `LHS: DuplicateFilter: {idx=~"(0|1|2)"}`},
+				[]string{"BinaryExpression: LHS + RHS", `RHS: Duplicate`}, // Note that the wildcard selector has been removed by the "reduce matchers" pass.
 			),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				newSeriesMetadataMessage(
-					0,
+					2,
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "0"))},
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "1"))},
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "2"))},
@@ -582,7 +582,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "2"))},
 				),
 				newInstantVectorSeriesDataMessage(
-					0,
+					2,
 					querierpb.InstantVectorSeriesData{
 						Floats: []mimirpb.Sample{
 							{TimestampMs: 0, Value: 3},
@@ -616,7 +616,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					},
 				),
 				newInstantVectorSeriesDataMessage(
-					0,
+					2,
 					querierpb.InstantVectorSeriesData{
 						Floats: []mimirpb.Sample{
 							{TimestampMs: 0, Value: 5},
@@ -636,7 +636,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					},
 				),
 				newEvaluationCompletedMessage(stats.Stats{
-					SamplesProcessed:   18,
+					SamplesProcessed:   9,
 					QueueTime:          3 * time.Second,
 					WallTime:           expectedQueryWallTime,
 					FetchedSeriesCount: 123,
@@ -1121,11 +1121,13 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 	opts := streamingpromql.NewTestEngineOpts()
 	// Disable the optimization pass, since it requires delayed name removal to be enabled.
 	opts.EnableEliminateDeduplicateAndMerge = false
+	limits := streamingpromql.NewStaticQueryLimitsProvider()
+	limits.EnableDelayedNameRemoval = true
+	opts.Limits = limits
 	ctx := context.Background()
 	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
-	enableDelayedNameRemoval := true
-	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0, enableDelayedNameRemoval), stats.NewQueryMetrics(nil), planner)
+	engine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(nil), planner)
 	require.NoError(t, err)
 
 	startT := timestamp.Time(0)
@@ -1140,7 +1142,7 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 				t, ctx, planner,
 				`rate(some_total[5s])`,
 				types.NewInstantQueryTimeRange(startT.Add(9*time.Second)),
-				enableDelayedNameRemoval,
+				limits.EnableDelayedNameRemoval,
 				1,
 				[]string{"DeduplicateAndMerge", "DropName", "FunctionCall: rate(...)"}, // Evaluate the rate() directly, rather than the root node, which is the deduplicate and merge operation that removes the metric name.
 			),
@@ -1168,7 +1170,7 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 				t, ctx, planner,
 				`rate(some_total[5s])`,
 				types.NewInstantQueryTimeRange(startT.Add(9*time.Second)),
-				enableDelayedNameRemoval,
+				limits.EnableDelayedNameRemoval,
 				1,
 				nil, // The root of the query
 			),
@@ -1517,7 +1519,7 @@ func TestDispatcher_RingErrorTranslation(t *testing.T) {
 	opts.Pedantic = true
 	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
-	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0, false), stats.NewQueryMetrics(nil), planner)
+	engine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(nil), planner)
 	require.NoError(t, err)
 
 	startT := timestamp.Time(0)

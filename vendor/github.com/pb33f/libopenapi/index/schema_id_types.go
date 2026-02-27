@@ -10,14 +10,14 @@ import (
 // SchemaIdEntry represents a schema registered by its JSON Schema 2020-12 $id.
 // This enables $ref resolution against $id values per JSON Schema specification.
 type SchemaIdEntry struct {
-	Id             string      // The $id value as declared in the schema
-	ResolvedUri    string      // Fully resolved absolute URI after applying base URI resolution
-	SchemaNode     *yaml.Node  // The YAML node containing the schema with this $id
-	ParentId       string      // The $id of the parent scope (for nested schemas with $id)
-	Index          *SpecIndex  // Reference to the SpecIndex containing this schema
-	DefinitionPath string      // JSON pointer path to this schema (e.g., #/components/schemas/Pet)
-	Line           int         // Line number where $id was declared (for error reporting)
-	Column         int         // Column number where $id was declared (for error reporting)
+	Id             string     // The $id value as declared in the schema
+	ResolvedUri    string     // Fully resolved absolute URI after applying base URI resolution
+	SchemaNode     *yaml.Node // The YAML node containing the schema with this $id
+	ParentId       string     // The $id of the parent scope (for nested schemas with $id)
+	Index          *SpecIndex // Reference to the SpecIndex containing this schema
+	DefinitionPath string     // JSON pointer path to this schema (e.g., #/components/schemas/Pet)
+	Line           int        // Line number where $id was declared (for error reporting)
+	Column         int        // Column number where $id was declared (for error reporting)
 }
 
 // GetKey returns the registry key for this entry.

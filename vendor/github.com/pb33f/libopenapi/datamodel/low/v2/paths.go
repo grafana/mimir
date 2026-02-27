@@ -5,7 +5,7 @@ package v2
 
 import (
 	"context"
-	"crypto/sha256"
+	"hash/maphash"
 	"strings"
 	"sync"
 
@@ -154,12 +154,17 @@ func (p *Paths) Build(ctx context.Context, _, root *yaml.Node, idx *index.SpecIn
 	return nil
 }
 
-// Hash will return a consistent SHA256 Hash of the PathItem object
-func (p *Paths) Hash() [32]byte {
-	var f []string
-	for v := range orderedmap.SortAlpha(p.PathItems).ValuesFromOldest() {
-		f = append(f, low.GenerateHashString(v.Value))
-	}
-	f = append(f, low.HashExtensions(p.Extensions)...)
-	return sha256.Sum256([]byte(strings.Join(f, "|")))
+// Hash will return a consistent Hash of the Paths object
+func (p *Paths) Hash() uint64 {
+	return low.WithHasher(func(h *maphash.Hash) uint64 {
+		for v := range orderedmap.SortAlpha(p.PathItems).ValuesFromOldest() {
+			h.WriteString(low.GenerateHashString(v.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		for _, ext := range low.HashExtensions(p.Extensions) {
+			h.WriteString(ext)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		return h.Sum64()
+	})
 }

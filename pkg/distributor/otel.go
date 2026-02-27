@@ -106,24 +106,25 @@ func OTLPHandler(
 			OTLPPushMiddlewares,
 		)
 
-		supplier := func() (*mimirpb.WriteRequest, func(), error) {
+		supplier := func() (*mimirpb.WriteRequest, func(), int, error) {
 			rb := util.NewRequestBuffers(requestBufferPool)
 			var req mimirpb.PreallocWriteRequest
-			if err := parser(ctx, r, maxRecvMsgSize, rb, &req, logger); err != nil {
+			uncompressedSize, err := parser(ctx, r, maxRecvMsgSize, rb, &req, logger)
+			if err != nil {
 				// Check for httpgrpc error, default to client error if parsing failed
 				if _, ok := httpgrpc.HTTPResponseFromError(err); !ok {
 					err = httpgrpc.Error(http.StatusBadRequest, err.Error())
 				}
 
 				rb.CleanUp()
-				return nil, nil, err
+				return nil, nil, 0, err
 			}
 
 			cleanup := func() {
 				mimirpb.ReuseSlice(req.Timeseries)
 				rb.CleanUp()
 			}
-			return &req.WriteRequest, cleanup, nil
+			return &req.WriteRequest, cleanup, uncompressedSize, nil
 		}
 		req := newRequest(supplier)
 		req.contentLength = r.ContentLength
@@ -237,7 +238,7 @@ func newOTLPParser(
 	if keepIdentifyingOTelResourceAttributesConfig == nil {
 		keepIdentifyingOTelResourceAttributesConfig = limits
 	}
-	return func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error {
+	return func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) (int, error) {
 		contentType := r.Header.Get("Content-Type")
 		contentEncoding := r.Header.Get("Content-Encoding")
 		var compression util.CompressionType
@@ -251,7 +252,7 @@ func newOTLPParser(
 		case "":
 			compression = util.NoCompression
 		default:
-			return httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported compression: %s. Only \"gzip\", \"lz4\", \"zstd\", or no compression supported", contentEncoding)
+			return 0, httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported compression: %s. Only \"gzip\", \"lz4\", \"zstd\", or no compression supported", contentEncoding)
 		}
 
 		var decoderFunc func(io.Reader) (req pmetricotlp.ExportRequest, uncompressedBodySize int, err error)
@@ -316,13 +317,13 @@ func newOTLPParser(
 			}
 
 		default:
-			return httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported content type: %s, supported: [%s, %s]", contentType, jsonContentType, pbContentType)
+			return 0, httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported content type: %s, supported: [%s, %s]", contentType, jsonContentType, pbContentType)
 		}
 
 		// Check the request size against the message size limit, regardless of whether the request is compressed.
 		// If the request is compressed and its compressed length already exceeds the size limit, there's no need to decompress it.
 		if r.ContentLength > int64(maxRecvMsgSize) {
-			return httpgrpc.Error(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
+			return 0, httpgrpc.Error(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
 				actual: int(r.ContentLength),
 				limit:  maxRecvMsgSize,
 			}.Error())
@@ -337,7 +338,7 @@ func newOTLPParser(
 
 		otlpReq, uncompressedBodySize, err := decoderFunc(r.Body)
 		if err != nil {
-			return err
+			return 0, err
 		}
 
 		level.Debug(spanLogger).Log("msg", "decoding complete, starting conversion")
@@ -345,13 +346,13 @@ func newOTLPParser(
 		for _, middleware := range OTLPPushMiddlewares {
 			err := middleware(ctx, &otlpReq)
 			if err != nil {
-				return err
+				return 0, err
 			}
 		}
 
 		tenantID, err := tenant.TenantID(ctx)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		enableCTZeroIngestion := limits.OTelCreatedTimestampZeroIngestionEnabled(tenantID)
 		promoteResourceAttributes := resourceAttributePromotionConfig.PromoteOTelResourceAttributes(tenantID)
@@ -390,7 +391,7 @@ func newOTLPParser(
 			discardedDueToOtelParseError.WithLabelValues(tenantID, "").Add(float64(metricsDropped)) // "group" label is empty here as metrics couldn't be parsed
 		}
 		if err != nil {
-			return err
+			return 0, err
 		}
 
 		metricCount := len(metrics)
@@ -417,7 +418,7 @@ func newOTLPParser(
 		req.Source = mimirpb.OTLP
 		req.Timeseries = metrics
 		req.Metadata = metadata
-		return nil
+		return uncompressedBodySize, nil
 	}
 }
 

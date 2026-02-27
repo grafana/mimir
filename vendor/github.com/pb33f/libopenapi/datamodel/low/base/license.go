@@ -5,7 +5,7 @@ package base
 
 import (
 	"context"
-	"crypto/sha256"
+	"hash/maphash"
 
 	"github.com/pb33f/libopenapi/datamodel/low"
 	"github.com/pb33f/libopenapi/index"
@@ -66,27 +66,24 @@ func (l *License) GetKeyNode() *yaml.Node {
 	return l.KeyNode
 }
 
-// Hash will return a consistent SHA256 Hash of the License object
-func (l *License) Hash() [32]byte {
-	// Use string builder pool
-	sb := low.GetStringBuilder()
-	defer low.PutStringBuilder(sb)
-
-	if !l.Name.IsEmpty() {
-		sb.WriteString(l.Name.Value)
-		sb.WriteByte('|')
-	}
-	if !l.URL.IsEmpty() {
-		sb.WriteString(l.URL.Value)
-		sb.WriteByte('|')
-	}
-	if !l.Identifier.IsEmpty() {
-		sb.WriteString(l.Identifier.Value)
-		sb.WriteByte('|')
-	}
-
-	// Note: Extensions are not included in the hash for License
-	return sha256.Sum256([]byte(sb.String()))
+// Hash will return a consistent hash of the License object
+func (l *License) Hash() uint64 {
+	return low.WithHasher(func(h *maphash.Hash) uint64 {
+		if !l.Name.IsEmpty() {
+			h.WriteString(l.Name.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !l.URL.IsEmpty() {
+			h.WriteString(l.URL.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !l.Identifier.IsEmpty() {
+			h.WriteString(l.Identifier.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		// Note: Extensions are not included in the hash for License
+		return h.Sum64()
+	})
 }
 
 // GetExtensions returns all extensions for License

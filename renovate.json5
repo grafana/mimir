@@ -72,6 +72,8 @@
       // Don't update replace directives.
       matchPackageNames: [
         'github.com/grafana/mimir-prometheus',
+        // Don't attempt to upgrade the upstream Prometheus dependency, as it's replaced by our fork.
+        'github.com/prometheus/prometheus',
         'github.com/grafana/memberlist',
         'github.com/grafana/regexp',
         'github.com/colega/go-yaml-yaml',
@@ -125,6 +127,13 @@
         '* 0-4 * * 1'
       ],
     },
+    {
+      description: 'Automatically rebase all dependency update PRs touching mimir-build-image/Dockerfile',
+      matchFileNames: [
+        'mimir-build-image/Dockerfile',
+      ],
+      rebaseWhen: 'behind-base-branch',
+    }
   ],
   branchPrefix: 'deps-update/',
   labels: [

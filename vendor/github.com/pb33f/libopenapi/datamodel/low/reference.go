@@ -71,10 +71,10 @@ type HasValueNodeUntyped interface {
 	IsReferenced
 }
 
-// Hashable defines any struct that implements a Hash function that returns a 256SHA hash of the state of the
+// Hashable defines any struct that implements a Hash function that returns a 64-bit hash of the state of the
 // representative object. Great for equality checking!
 type Hashable interface {
-	Hash() [32]byte
+	Hash() uint64
 }
 
 // HasExtensions is implemented by any object that exposes extensions
@@ -344,6 +344,6 @@ func GetCircularReferenceResult(node *yaml.Node, idx *index.SpecIndex) *index.Ci
 	return nil
 }
 
-func HashToString(hash [32]byte) string {
+func HashToString(hash uint64) string {
 	return fmt.Sprintf("%x", hash)
 }

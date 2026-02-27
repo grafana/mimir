@@ -60,39 +60,37 @@ func splitEmails(emails string) []string {
 	})
 }
 
-func Schema() schema.IntegrationSchemaVersion {
-	return schema.IntegrationSchemaVersion{
-		Version:   Version,
-		CanCreate: true,
-		Options: []schema.Field{
-			{
-				Label:        "Single email",
-				Description:  "Send a single email to all recipients",
-				Element:      schema.ElementTypeCheckbox,
-				PropertyName: "singleEmail",
-			},
-			{
-				Label:        "Addresses",
-				Description:  "You can enter multiple email addresses using a \";\", \"\\n\" or  \",\" separator",
-				Element:      schema.ElementTypeTextArea,
-				PropertyName: "addresses",
-				Required:     true,
-			},
-			{ // New in 8.0.
-				Label:        "Message",
-				Description:  "Optional message. You can use templates to customize this field. Using a custom message will replace the default message",
-				Element:      schema.ElementTypeTextArea,
-				PropertyName: "message",
-				Placeholder:  templates.DefaultMessageEmbed,
-			},
-			{ // New in 9.0.
-				Label:        "Subject",
-				Element:      schema.ElementTypeTextArea,
-				InputType:    schema.InputTypeText,
-				Description:  "Optional subject. You can use templates to customize this field",
-				PropertyName: "subject",
-				Placeholder:  templates.DefaultMessageTitleEmbed,
-			},
+var Schema = schema.IntegrationSchemaVersion{
+	Version:   Version,
+	CanCreate: true,
+	Options: []schema.Field{
+		{
+			Label:        "Single email",
+			Description:  "Send a single email to all recipients",
+			Element:      schema.ElementTypeCheckbox,
+			PropertyName: "singleEmail",
 		},
-	}
+		{
+			Label:        "Addresses",
+			Description:  "You can enter multiple email addresses using a \";\", \"\\n\" or  \",\" separator",
+			Element:      schema.ElementTypeTextArea,
+			PropertyName: "addresses",
+			Required:     true,
+		},
+		{ // New in 8.0.
+			Label:        "Message",
+			Description:  "Optional message. You can use templates to customize this field. Using a custom message will replace the default message",
+			Element:      schema.ElementTypeTextArea,
+			PropertyName: "message",
+			Placeholder:  templates.DefaultMessageEmbed,
+		},
+		{ // New in 9.0.
+			Label:        "Subject",
+			Element:      schema.ElementTypeTextArea,
+			InputType:    schema.InputTypeText,
+			Description:  "Optional subject. You can use templates to customize this field",
+			PropertyName: "subject",
+			Placeholder:  templates.DefaultMessageTitleEmbed,
+		},
+	},
 }

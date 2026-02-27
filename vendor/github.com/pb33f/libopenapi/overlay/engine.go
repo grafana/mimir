@@ -26,8 +26,8 @@ func Apply(targetBytes []byte, overlay *highoverlay.Overlay) (*Result, error) {
 		return nil, err
 	}
 
-	// Parent index is built lazily and rebuilt after updates to ensure
-	// remove actions can target nodes created by earlier update actions.
+	// Parent index is built lazily and rebuilt after updates/copies to ensure
+	// remove actions can target nodes created by earlier update/copy actions.
 	var parentIdx parentIndex
 	parentIdxStale := true
 
@@ -44,7 +44,9 @@ func Apply(targetBytes []byte, overlay *highoverlay.Overlay) (*Result, error) {
 		}
 		warnings = append(warnings, actionWarnings...)
 
-		if action.Update != nil {
+		// Mark parent index as stale after update or copy operations
+		// (both can add new nodes that subsequent remove actions may target)
+		if action.Update != nil || action.Copy != "" {
 			parentIdxStale = true
 		}
 	}
@@ -83,20 +85,69 @@ func applyAction(root *yaml.Node, action *highoverlay.Action, parentIdx parentIn
 		return warnings, nil
 	}
 
+	// Operation order per spec: copy → update → remove
+	// This allows:
+	// - Copy to populate the target first
+	// - Update to override copied values
+	// - Remove to clean up afterwards (move pattern)
+
+	// 1. Copy (if present)
+	if action.Copy != "" {
+		copyWarnings, err := applyCopyAction(root, nodes, action.Copy)
+		if err != nil {
+			return nil, err
+		}
+		warnings = append(warnings, copyWarnings...)
+	}
+
+	// 2. Update (if present)
 	// Validate targets for UPDATE actions (must be objects or arrays, not primitives).
+	// Validation happens AFTER copy because copy may change the target node type.
 	// REMOVE actions can target any node type.
-	if !action.Remove && action.Update != nil {
+	if action.Update != nil {
 		for _, node := range nodes {
 			if err := validateTarget(node); err != nil {
 				return nil, err
 			}
 		}
+		applyUpdateAction(nodes, action.Update)
 	}
 
+	// 3. Remove (if present)
 	if action.Remove {
 		applyRemoveAction(parentIdx, nodes)
-	} else if action.Update != nil {
-		applyUpdateAction(nodes, action.Update)
+	}
+
+	return warnings, nil
+}
+
+func applyCopyAction(root *yaml.Node, targetNodes []*yaml.Node, copyPath string) ([]*Warning, error) {
+	var warnings []*Warning
+
+	path, err := jsonpath.NewPath(copyPath, config.WithPropertyNameExtension())
+	if err != nil {
+		return nil, ErrInvalidJSONPath
+	}
+
+	sourceNodes := path.Query(root)
+
+	// Single-node constraint per spec: copy source must select exactly one node
+	if len(sourceNodes) == 0 {
+		return nil, ErrCopySourceNotFound
+	}
+	if len(sourceNodes) > 1 {
+		return nil, ErrCopySourceMultiple
+	}
+
+	sourceNode := sourceNodes[0]
+
+	// Type compatibility check per spec: "If the target expression and
+	// copy expression do not return the same type, an error MUST be reported"
+	for _, targetNode := range targetNodes {
+		if sourceNode.Kind != targetNode.Kind {
+			return nil, ErrCopyTypeMismatch
+		}
+		mergeNode(targetNode, sourceNode)
 	}
 
 	return warnings, nil
@@ -191,10 +242,16 @@ NextKey:
 }
 
 func mergeSequenceNode(node *yaml.Node, merge *yaml.Node) {
-	node.Content = append(node.Content, cloneNode(merge).Content...)
+	// clone each child individually to avoid wasteful intermediate allocation
+	for _, child := range merge.Content {
+		node.Content = append(node.Content, cloneNode(child))
+	}
 }
 
 func cloneNode(node *yaml.Node) *yaml.Node {
+	if node == nil {
+		return nil
+	}
 	newNode := &yaml.Node{
 		Kind:        node.Kind,
 		Style:       node.Style,

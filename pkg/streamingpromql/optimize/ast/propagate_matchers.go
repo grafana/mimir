@@ -193,7 +193,7 @@ func VectorSelectorArgumentIndex(funcName string) (int, error) {
 	case "rate", "delta", "increase", "idelta", "irate":
 		return 0, nil
 	// Histogram-related
-	case "histogram_avg", "histogram_count", "histogram_sum", "histogram_stddev", "histogram_stdvar":
+	case "histogram_avg", "histogram_count", "histogram_sum", "histogram_stddev", "histogram_stdvar", "histogram_quantiles":
 		return 0, nil
 	case "histogram_quantile":
 		return 1, nil

@@ -36,7 +36,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/alertmanager/cluster"
 	"github.com/prometheus/alertmanager/matchers/compat"
 	"github.com/prometheus/alertmanager/pkg/labels"
 	pb "github.com/prometheus/alertmanager/silence/silencepb"
@@ -195,11 +194,12 @@ type Silences struct {
 	retention time.Duration
 	limits    Limits
 
-	mtx       sync.RWMutex
-	st        state
-	version   int // Increments whenever silences are added.
-	broadcast func([]byte)
-	mc        matcherCache
+	mtx                sync.RWMutex
+	st                 state
+	version            int // Increments whenever silences are added.
+	broadcast          func([]byte)
+	isReliableDelivery func([]byte) bool
+	mc                 matcherCache
 }
 
 // Limits contains the limits for silences.
@@ -350,13 +350,14 @@ func New(o Options) (*Silences, error) {
 	}
 
 	s := &Silences{
-		clock:     clock.New(),
-		mc:        matcherCache{},
-		logger:    log.NewNopLogger(),
-		retention: o.Retention,
-		limits:    o.Limits,
-		broadcast: func([]byte) {},
-		st:        state{},
+		clock:              clock.New(),
+		mc:                 matcherCache{},
+		logger:             log.NewNopLogger(),
+		retention:          o.Retention,
+		limits:             o.Limits,
+		broadcast:          func([]byte) {},
+		isReliableDelivery: func([]byte) bool { return false },
+		st:                 state{},
 	}
 	s.metrics = newMetrics(o.Metrics, s)
 
@@ -952,11 +953,11 @@ func (s *Silences) Merge(b []byte) error {
 	for _, e := range st {
 		if merged := s.st.merge(e, now); merged {
 			s.version++
-			if !cluster.OversizedMessage(b) {
-				// If this is the first we've seen the message and it's
-				// not oversized, gossip it to other nodes. We don't
-				// propagate oversized messages because they're sent to
-				// all nodes already.
+			if !s.isReliableDelivery(b) {
+				// If this is the first we've seen the message and it was
+				// not sent reliably to all nodes, gossip it to other nodes.
+				// We don't propagate reliable messages because they're
+				// sent to all nodes already.
 				s.broadcast(b)
 				s.metrics.propagatedMessagesTotal.Inc()
 				level.Debug(s.logger).Log("msg", "Gossiping new silence", "silence", e)
@@ -971,6 +972,14 @@ func (s *Silences) Merge(b []byte) error {
 func (s *Silences) SetBroadcast(f func([]byte)) {
 	s.mtx.Lock()
 	s.broadcast = f
+	s.mtx.Unlock()
+}
+
+// SetIsReliableDelivery sets a callback that returns true if the given message
+// was delivered reliably to all peers and should not be re-broadcast.
+func (s *Silences) SetIsReliableDelivery(f func([]byte) bool) {
+	s.mtx.Lock()
+	s.isReliableDelivery = f
 	s.mtx.Unlock()
 }
 
@@ -1043,13 +1052,13 @@ type replaceFile struct {
 }
 
 func (f *replaceFile) Close() error {
-	if err := f.File.Sync(); err != nil {
+	if err := f.Sync(); err != nil {
 		return err
 	}
 	if err := f.File.Close(); err != nil {
 		return err
 	}
-	return os.Rename(f.File.Name(), f.filename)
+	return os.Rename(f.Name(), f.filename)
 }
 
 // openReplace opens a new temporary file that is moved to filename on closing.

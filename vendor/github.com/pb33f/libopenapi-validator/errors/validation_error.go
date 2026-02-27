@@ -6,6 +6,7 @@ package errors
 import (
 	"fmt"
 
+	"github.com/pb33f/libopenapi-validator/helpers"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
@@ -128,10 +129,10 @@ func (v *ValidationError) Error() string {
 
 // IsPathMissingError returns true if the error has a ValidationType of "path" and a ValidationSubType of "missing"
 func (v *ValidationError) IsPathMissingError() bool {
-	return v.ValidationType == "path" && v.ValidationSubType == "missing"
+	return v.ValidationType == helpers.PathValidation && v.ValidationSubType == helpers.ValidationMissing
 }
 
 // IsOperationMissingError returns true if the error has a ValidationType of "request" and a ValidationSubType of "missingOperation"
 func (v *ValidationError) IsOperationMissingError() bool {
-	return v.ValidationType == "path" && v.ValidationSubType == "missingOperation"
+	return v.ValidationType == helpers.PathValidation && v.ValidationSubType == helpers.ValidationMissingOperation
 }

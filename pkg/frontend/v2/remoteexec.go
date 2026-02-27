@@ -735,39 +735,14 @@ func decodeEvaluationCompletedMessage(msg *querierpb.EvaluateQueryResponseEvalua
 
 	annos := make(annotations.Annotations, count)
 	for _, a := range msg.Annotations.Infos {
-		annos.Add(newRemoteInfo(a))
+		annos.Add(querierpb.NewInfoAnnotation(a))
 	}
 
 	for _, a := range msg.Annotations.Warnings {
-		annos.Add(newRemoteWarning(a))
+		annos.Add(querierpb.NewWarningAnnotation(a))
 	}
 
 	return &annos, msg.Stats
-}
-
-// Prometheus' annotations.Annotations type stores Golang error types and checks if they
-// are annotations.PromQLInfo or annotations.PromQLWarning, so this type allows us to
-// create errors with arbitrary strings received from remote executors that satisfies
-// this requirement.
-type remoteAnnotation struct {
-	msg   string
-	inner error
-}
-
-func newRemoteWarning(msg string) error {
-	return &remoteAnnotation{msg: msg, inner: annotations.PromQLWarning}
-}
-
-func newRemoteInfo(msg string) error {
-	return &remoteAnnotation{msg: msg, inner: annotations.PromQLInfo}
-}
-
-func (r remoteAnnotation) Error() string {
-	return r.msg
-}
-
-func (r remoteAnnotation) Unwrap() error {
-	return r.inner
 }
 
 func accountForFPointMemoryConsumption(points []promql.FPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) error {

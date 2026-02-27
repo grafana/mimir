@@ -1341,6 +1341,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] The number of allowed queued requests, as a multiple of current inflight requests, after which all requests are rejected (default 2)
   -distributor.reactive-limiter.min-limit uint
     	[experimental] Minimum inflight requests limit (default 2)
+  -distributor.reactive-limiter.min-limit-factor float
+    	[experimental] Minimum limit factor when max-limit-factor-decay is applied (default 1.2)
   -distributor.reactive-limiter.recent-quantile float
     	[experimental] The quantile of recent recorded response times to consider when adjusting the concurrency limit (default 0.9)
   -distributor.reactive-limiter.recent-window-max-duration duration
@@ -1451,14 +1453,16 @@ Usage of ./cmd/mimir/mimir:
     	True to enable the ingestion via object storage.
   -ingest-storage.ingestion-partition-tenant-shard-size int
     	[experimental] The number of partitions a tenant's data should be sharded to when using the ingest storage. Tenants are sharded across partitions using shuffle-sharding. 0 disables shuffle sharding and tenant is sharded across all partitions.
-  -ingest-storage.kafka.address string
-    	The Kafka backend address.
+  -ingest-storage.kafka.address comma-separated-list-of-strings
+    	The Kafka seed broker address, or a comma-separated list of seed broker addresses.
   -ingest-storage.kafka.auto-create-topic-default-partitions int
     	When auto-creation of Kafka topic is enabled and this value is positive, Mimir creates the topic with this number of partitions. When the value is -1 the Kafka broker uses the default number of partitions (num.partitions configuration). (default -1)
   -ingest-storage.kafka.auto-create-topic-enabled
     	Enable auto-creation of Kafka topic on startup if it doesn't exist. If creating the topic fails and the topic doesn't already exist, Mimir fails to start. (default true)
   -ingest-storage.kafka.client-id string
     	The Kafka client ID.
+  -ingest-storage.kafka.client-rack string
+    	The rack identifier for this Kafka client. Corresponds to the Kafka client.rack setting.
   -ingest-storage.kafka.consume-from-position-at-startup string
     	From which position to start consuming the partition at startup. Supported options: last-offset, start, end, timestamp. (default "last-offset")
   -ingest-storage.kafka.consume-from-timestamp-at-startup int
@@ -1500,7 +1504,15 @@ Usage of ./cmd/mimir/mimir:
   -ingest-storage.kafka.producer-record-version int
     	[experimental] The record version that this producer sends.
   -ingest-storage.kafka.sasl-mechanism string
-    	The SASL mechanism used to authenticate to Kafka. Supported values: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512. (default "PLAIN")
+    	The SASL mechanism used to authenticate to Kafka. Supported values: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER. For backwards-compatibility, PLAIN with no username nor password disables SASL. (default "PLAIN")
+  -ingest-storage.kafka.sasl-oauthbearer-extensions value
+    	Optional additional OAuth extensions to include when authenticating to Kafka using SASL OAUTHBEARER as a JSON object. (default {})
+  -ingest-storage.kafka.sasl-oauthbearer-file-path string
+    	Path to a file containing an OAuth token to authenticate to Kafka. The file is read anew on every reauthentication, so it can be updated with fresh tokens. The file must be in JSON format, adhering to this JSON schema: {"type": "object", "required": ["token"], "properties": {"token": {"type": "string"}, "zid": {"type": "string"}, "extensions": {"type": "object", "additionalProperties": {"type": "string"}}}}
+  -ingest-storage.kafka.sasl-oauthbearer-token string
+    	The OAuth token to use to authenticate to Kafka. Consider ingest-storage.kafka.sasl-oauthbearer-file-path instead.
+  -ingest-storage.kafka.sasl-oauthbearer-zid string
+    	Optional authorization ID to use when authenticating to Kafka using SASL OAUTHBEARER.
   -ingest-storage.kafka.sasl-password string
     	The password used to authenticate to Kafka using SASL. To enable SASL, configure both the username and password.
   -ingest-storage.kafka.sasl-username string
@@ -1713,6 +1725,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] The number of allowed queued requests, as a multiple of current inflight requests, after which all requests are rejected (default 3)
   -ingester.push-reactive-limiter.min-limit uint
     	[experimental] Minimum inflight requests limit (default 2)
+  -ingester.push-reactive-limiter.min-limit-factor float
+    	[experimental] Minimum limit factor when max-limit-factor-decay is applied (default 1.2)
   -ingester.push-reactive-limiter.recent-quantile float
     	[experimental] The quantile of recent recorded response times to consider when adjusting the concurrency limit (default 0.9)
   -ingester.push-reactive-limiter.recent-window-max-duration duration
@@ -1761,6 +1775,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] The number of allowed queued requests, as a multiple of current inflight requests, after which all requests are rejected (default 3)
   -ingester.read-reactive-limiter.min-limit uint
     	[experimental] Minimum inflight requests limit (default 2)
+  -ingester.read-reactive-limiter.min-limit-factor float
+    	[experimental] Minimum limit factor when max-limit-factor-decay is applied (default 1.2)
   -ingester.read-reactive-limiter.recent-quantile float
     	[experimental] The quantile of recent recorded response times to consider when adjusting the concurrency limit (default 0.9)
   -ingester.read-reactive-limiter.recent-window-max-duration duration
@@ -1947,6 +1963,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] How long a beacon lives before being garbage collected. (default 10m0s)
   -memberlist.propagation-delay-tracker.enabled
     	[experimental] Enable the propagation delay tracker to measure gossip propagation delay.
+  -memberlist.propagation-delay-tracker.log-beacons-latency-longer-than duration
+    	[experimental] Log warning when beacon propagation delay exceeds this threshold. 0 disables logging.
   -memberlist.pullpush-interval duration
     	How often to use pull/push sync. (default 30s)
   -memberlist.randomize-node-name
@@ -2077,6 +2095,8 @@ Usage of ./cmd/mimir/mimir:
     	How often to query DNS for query-frontend or query-scheduler address. (default 10s)
   -querier.enable-delayed-name-removal
     	[experimental] Enable the experimental Prometheus feature for delayed name removal within MQE, which only works if remote execution and running sharding within MQE is enabled.
+  -querier.enable-delayed-name-removal-prometheus-engine
+    	[experimental] Enable the experimental PromQL feature for delayed name removal in the Prometheus engine. Note that this only applies when the Prometheus engine is selected or used as fallback from the Mimir Query Engine.
   -querier.enable-query-engine-fallback
     	[experimental] If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine. (default true)
   -querier.filter-queryables-enabled
@@ -2179,6 +2199,52 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable pruning query expressions that are toggled off with constants. (default true)
   -querier.mimir-query-engine.enable-reduce-matchers
     	[experimental] Enable eliminating duplicate or redundant matchers that are part of selector expressions. (default true)
+  -querier.mimir-query-engine.enable-subset-selector-elimination
+    	[experimental] Enable subset selector elimination when evaluating queries.
+  -querier.mimir-query-engine.range-vector-splitting.backend string
+    	Backend for intermediate results cache, if not empty. Supported values: memcached.
+  -querier.mimir-query-engine.range-vector-splitting.compression string
+    	Enable cache compression, if not empty. Supported values are: snappy.
+  -querier.mimir-query-engine.range-vector-splitting.enabled
+    	[experimental] Enable splitting function over range vectors queries into smaller blocks for caching.
+  -querier.mimir-query-engine.range-vector-splitting.memcached.addresses comma-separated-list-of-strings
+    	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -querier.mimir-query-engine.range-vector-splitting.memcached.connect-timeout duration
+    	The connection timeout. (default 200ms)
+  -querier.mimir-query-engine.range-vector-splitting.memcached.max-async-buffer-size int
+    	The maximum number of enqueued asynchronous operations allowed. (default 25000)
+  -querier.mimir-query-engine.range-vector-splitting.memcached.max-async-concurrency int
+    	The maximum number of concurrent asynchronous operations can occur. (default 50)
+  -querier.mimir-query-engine.range-vector-splitting.memcached.max-get-multi-batch-size int
+    	The maximum number of keys a single underlying get operation should run. If more keys are specified, internally keys are split into multiple batches and fetched concurrently, honoring the max concurrency. If set to 0, the max batch size is unlimited. (default 100)
+  -querier.mimir-query-engine.range-vector-splitting.memcached.max-get-multi-concurrency int
+    	The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited. (default 100)
+  -querier.mimir-query-engine.range-vector-splitting.memcached.max-idle-connections int
+    	The maximum number of idle connections that will be maintained per address. (default 100)
+  -querier.mimir-query-engine.range-vector-splitting.memcached.max-item-size int
+    	The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
+  -querier.mimir-query-engine.range-vector-splitting.memcached.min-idle-connections-headroom-percentage float
+    	The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely. (default -1)
+  -querier.mimir-query-engine.range-vector-splitting.memcached.timeout duration
+    	The socket read/write timeout. (default 200ms)
+  -querier.mimir-query-engine.range-vector-splitting.memcached.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -querier.mimir-query-engine.range-vector-splitting.memcached.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -querier.mimir-query-engine.range-vector-splitting.memcached.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -querier.mimir-query-engine.range-vector-splitting.memcached.tls-enabled
+    	Enable connecting to Memcached with TLS.
+  -querier.mimir-query-engine.range-vector-splitting.memcached.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -querier.mimir-query-engine.range-vector-splitting.memcached.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -querier.mimir-query-engine.range-vector-splitting.memcached.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -querier.mimir-query-engine.range-vector-splitting.memcached.tls-server-name string
+    	Override the expected name on the server certificate.
+  -querier.mimir-query-engine.range-vector-splitting.split-interval duration
+    	[experimental] Time interval used for splitting function over range vectors queries into cacheable blocks. (default 2h0m0s)
   -querier.minimize-ingester-requests
     	If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path. (default true)
   -querier.minimize-ingester-requests-hedging-delay duration

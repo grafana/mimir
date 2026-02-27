@@ -27,8 +27,8 @@ func TestNewKafkaReaderClient(t *testing.T) {
 			t.Parallel()
 
 			cfg := createTestKafkaConfig(clusterAddr, topicName)
-			cfg.SASLUsername = username
-			require.NoError(t, cfg.SASLPassword.Set("wrong"))
+			cfg.SASL.Username = username
+			require.NoError(t, cfg.SASL.Password.Set("wrong"))
 
 			client, err := NewKafkaReaderClient(cfg, nil, log.NewNopLogger())
 			require.NoError(t, err)
@@ -41,8 +41,8 @@ func TestNewKafkaReaderClient(t *testing.T) {
 			t.Parallel()
 
 			cfg := createTestKafkaConfig(clusterAddr, topicName)
-			cfg.SASLUsername = username
-			require.NoError(t, cfg.SASLPassword.Set(password))
+			cfg.SASL.Username = username
+			require.NoError(t, cfg.SASL.Password.Set(password))
 
 			client, err := NewKafkaReaderClient(cfg, nil, log.NewNopLogger())
 			require.NoError(t, err)
@@ -66,9 +66,9 @@ func TestNewKafkaReaderClient(t *testing.T) {
 			t.Parallel()
 
 			cfg := createTestKafkaConfig(clusterAddr, topicName)
-			cfg.SASLUsername = username
-			cfg.SASLMechanism = SASLMechanismScramSHA256
-			require.NoError(t, cfg.SASLPassword.Set("wrong"))
+			cfg.SASL.Username = username
+			cfg.SASL.Mechanism = SASLMechanismScramSHA256
+			require.NoError(t, cfg.SASL.Password.Set("wrong"))
 
 			client, err := NewKafkaReaderClient(cfg, nil, log.NewNopLogger())
 			require.NoError(t, err)
@@ -81,9 +81,9 @@ func TestNewKafkaReaderClient(t *testing.T) {
 			t.Parallel()
 
 			cfg := createTestKafkaConfig(clusterAddr, topicName)
-			cfg.SASLUsername = username
-			cfg.SASLMechanism = SASLMechanismScramSHA256
-			require.NoError(t, cfg.SASLPassword.Set(password))
+			cfg.SASL.Username = username
+			cfg.SASL.Mechanism = SASLMechanismScramSHA256
+			require.NoError(t, cfg.SASL.Password.Set(password))
 
 			client, err := NewKafkaReaderClient(cfg, nil, log.NewNopLogger())
 			require.NoError(t, err)
@@ -107,9 +107,9 @@ func TestNewKafkaReaderClient(t *testing.T) {
 			t.Parallel()
 
 			cfg := createTestKafkaConfig(clusterAddr, topicName)
-			cfg.SASLUsername = username
-			cfg.SASLMechanism = SASLMechanismScramSHA512
-			require.NoError(t, cfg.SASLPassword.Set("wrong"))
+			cfg.SASL.Username = username
+			cfg.SASL.Mechanism = SASLMechanismScramSHA512
+			require.NoError(t, cfg.SASL.Password.Set("wrong"))
 
 			client, err := NewKafkaReaderClient(cfg, nil, log.NewNopLogger())
 			require.NoError(t, err)
@@ -122,9 +122,9 @@ func TestNewKafkaReaderClient(t *testing.T) {
 			t.Parallel()
 
 			cfg := createTestKafkaConfig(clusterAddr, topicName)
-			cfg.SASLUsername = username
-			cfg.SASLMechanism = SASLMechanismScramSHA512
-			require.NoError(t, cfg.SASLPassword.Set(password))
+			cfg.SASL.Username = username
+			cfg.SASL.Mechanism = SASLMechanismScramSHA512
+			require.NoError(t, cfg.SASL.Password.Set(password))
 
 			client, err := NewKafkaReaderClient(cfg, nil, log.NewNopLogger())
 			require.NoError(t, err)

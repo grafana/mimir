@@ -1055,6 +1055,20 @@ func getHostnameAndRandomPort(t *testing.T) (string, int) {
 	return host, portNum
 }
 
+func TestNewReturnsErrorOnEmptyTarget(t *testing.T) {
+	args := []string{
+		"-target=",
+	}
+	var cfg Config
+	fs := flag.NewFlagSet("test", flag.PanicOnError)
+	cfg.RegisterFlags(fs, log.NewNopLogger())
+	require.NoError(t, fs.Parse(args))
+
+	_, err := New(cfg, prometheus.NewPedanticRegistry())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no target module specified")
+}
+
 type mockGrpcServiceHandler struct {
 	querierShutdownCalled atomic.Bool
 	rulerSyncRulesCalled  atomic.Bool

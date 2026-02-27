@@ -55,7 +55,7 @@ func TestRingBuffer(t *testing.T) {
 			{T: 8, F: 800},
 			{T: 9, F: 900},
 		}
-		buf := &fPointRingBufferWrapper{NewFPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))}
+		buf := &fPointRingBufferWrapper{NewFPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
 		testRingBuffer(t, buf, points)
 	})
 
@@ -71,7 +71,7 @@ func TestRingBuffer(t *testing.T) {
 			{T: 8, H: &histogram.FloatHistogram{Count: 800}},
 			{T: 9, H: &histogram.FloatHistogram{Count: 900}},
 		}
-		buf := &hPointRingBufferWrapper{NewHPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))}
+		buf := &hPointRingBufferWrapper{NewHPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
 		testRingBuffer(t, buf, points)
 	})
 }
@@ -156,7 +156,7 @@ func TestRingBuffer_DiscardPointsBefore_ThroughWrapAround(t *testing.T) {
 			{T: 5, F: 500},
 			{T: 6, F: 600},
 		}
-		buf := &fPointRingBufferWrapper{NewFPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))}
+		buf := &fPointRingBufferWrapper{NewFPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
 		testDiscardPointsBeforeThroughWrapAround(t, buf, points)
 	})
 
@@ -169,7 +169,7 @@ func TestRingBuffer_DiscardPointsBefore_ThroughWrapAround(t *testing.T) {
 			{T: 5, H: &histogram.FloatHistogram{Count: 500}},
 			{T: 6, H: &histogram.FloatHistogram{Count: 600}},
 		}
-		buf := &hPointRingBufferWrapper{NewHPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))}
+		buf := &hPointRingBufferWrapper{NewHPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
 		testDiscardPointsBeforeThroughWrapAround(t, buf, points)
 	})
 }
@@ -216,7 +216,7 @@ func TestRingBuffer_RemoveLastPoint(t *testing.T) {
 		{T: 6, H: &histogram.FloatHistogram{Count: 600}},
 	}
 
-	buf := &hPointRingBufferWrapper{NewHPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))}
+	buf := &hPointRingBufferWrapper{NewHPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
 
 	t.Run("test removing points until none exist", func(t *testing.T) {
 		buf.Reset()
@@ -297,7 +297,7 @@ func TestRingBuffer_RemoveLastPoint(t *testing.T) {
 
 func TestRingBuffer_ViewUntilWithExistingView(t *testing.T) {
 	t.Run("FPoint ring buffer", func(t *testing.T) {
-		buf := NewFPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
+		buf := NewFPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))
 		require.NoError(t, buf.Append(promql.FPoint{T: 1, F: 100}))
 		require.NoError(t, buf.Append(promql.FPoint{T: 2, F: 200}))
 		require.NoError(t, buf.Append(promql.FPoint{T: 3, F: 300}))
@@ -323,7 +323,7 @@ func TestRingBuffer_ViewUntilWithExistingView(t *testing.T) {
 		h3 := &histogram.FloatHistogram{Count: 300}
 		h4 := &histogram.FloatHistogram{Count: 400}
 
-		buf := NewHPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
+		buf := NewHPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))
 		require.NoError(t, buf.Append(promql.HPoint{T: 1, H: h1}))
 		require.NoError(t, buf.Append(promql.HPoint{T: 2, H: h2}))
 		require.NoError(t, buf.Append(promql.HPoint{T: 3, H: h3}))
@@ -484,7 +484,7 @@ func (w *hPointRingBufferWrapper) GetTimestamp(point promql.HPoint) int64 {
 }
 
 func TestRingBuffer_FPointView_Cloning(t *testing.T) {
-	originalBuffer := NewFPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
+	originalBuffer := NewFPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))
 	require.NoError(t, originalBuffer.Append(promql.FPoint{T: 0, F: 10}))
 	require.NoError(t, originalBuffer.Append(promql.FPoint{T: 1, F: 11}))
 
@@ -505,7 +505,7 @@ func TestRingBuffer_FPointView_Cloning(t *testing.T) {
 }
 
 func TestRingBuffer_HPointView_Cloning(t *testing.T) {
-	originalBuffer := NewHPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
+	originalBuffer := NewHPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))
 	h1 := &histogram.FloatHistogram{Count: 100}
 	h2 := &histogram.FloatHistogram{Count: 200}
 	require.NoError(t, originalBuffer.Append(promql.HPoint{T: 0, H: h1}))
@@ -545,7 +545,7 @@ func TestRingBufferView_SubView(t *testing.T) {
 				name:       "without wraparound",
 				wraparound: false,
 				setupBuffer: func(t *testing.T) *FPointRingBufferView {
-					memoryTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+					memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(context.Background())
 					buf := NewFPointRingBuffer(memoryTracker)
 					points := []promql.FPoint{
 						{T: 10, F: 100},
@@ -563,7 +563,7 @@ func TestRingBufferView_SubView(t *testing.T) {
 				name:       "with wraparound",
 				wraparound: true,
 				setupBuffer: func(t *testing.T) *FPointRingBufferView {
-					memoryTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+					memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(context.Background())
 					buf := NewFPointRingBuffer(memoryTracker)
 					// Strategy: Create a buffer with wraparound where newer samples wrap to the beginning.
 					// Final buffer: [T=40, T=10, T=20, T=30] with firstIndex=1, size=4
@@ -690,7 +690,7 @@ func TestRingBufferView_SubView(t *testing.T) {
 				name:       "without wraparound",
 				wraparound: false,
 				setupBuffer: func(t *testing.T) *HPointRingBufferView {
-					memoryTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+					memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(context.Background())
 					buf := NewHPointRingBuffer(memoryTracker)
 					points := []promql.HPoint{
 						{T: 10, H: &histogram.FloatHistogram{Count: 100}},
@@ -1375,7 +1375,7 @@ func TestFPointRingBuffer_AppendSlice(t *testing.T) {
 	}
 }
 
-func TestFPointRingBuffer_AppendAtStart_FirstPointAlignment(t *testing.T) {
+func TestFPointRingBuffer_AppendAtStart(t *testing.T) {
 	buff := NewFPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
 	require.NoError(t, buff.Append(promql.FPoint{T: 10, F: 20}))
 	require.Equal(t, 1, buff.size)
@@ -1454,4 +1454,108 @@ func TestFPointRingBuffer_AppendSlice_SizeLessThanFirstIndex(t *testing.T) {
 	require.Equal(t, 3, buff.firstIndex)
 
 	require.NoError(t, buff.AppendSlice([]promql.FPoint{{T: 50}, {T: 60}, {T: 70}, {T: 80}}))
+}
+
+func TestFPointRingBuffer_CountUntil(t *testing.T) {
+	buff := NewFPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))
+
+	// Should work with empty buffer.
+	require.Zero(t, buff.CountUntil(0))
+	require.Zero(t, buff.CountUntil(100))
+
+	require.NoError(t, buff.Append(promql.FPoint{T: 10}))
+	require.NoError(t, buff.Append(promql.FPoint{T: 20}))
+	require.NoError(t, buff.Append(promql.FPoint{T: 30}))
+	require.NoError(t, buff.Append(promql.FPoint{T: 40}))
+
+	require.Equal(t, 0, buff.CountUntil(0))
+	require.Equal(t, 0, buff.CountUntil(5))
+	require.Equal(t, 1, buff.CountUntil(10))
+	require.Equal(t, 1, buff.CountUntil(15))
+	require.Equal(t, 2, buff.CountUntil(20))
+	require.Equal(t, 2, buff.CountUntil(25))
+	require.Equal(t, 3, buff.CountUntil(30))
+	require.Equal(t, 3, buff.CountUntil(35))
+	require.Equal(t, 4, buff.CountUntil(40))
+	require.Equal(t, 4, buff.CountUntil(45))
+}
+
+func TestFPointRingBuffer_CountBetween(t *testing.T) {
+	buff := NewFPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))
+
+	// Should work with empty buffer.
+	require.Zero(t, buff.CountBetween(0, 0))
+	require.Zero(t, buff.CountBetween(0, 100))
+
+	require.NoError(t, buff.Append(promql.FPoint{T: 10}))
+	require.NoError(t, buff.Append(promql.FPoint{T: 20}))
+	require.NoError(t, buff.Append(promql.FPoint{T: 30}))
+	require.NoError(t, buff.Append(promql.FPoint{T: 40}))
+
+	require.Equal(t, 0, buff.CountBetween(0, 0))
+	require.Equal(t, 4, buff.CountBetween(0, 100))
+	require.Equal(t, 4, buff.CountBetween(0, 40))
+	require.Equal(t, 4, buff.CountBetween(9, 40))
+	require.Equal(t, 3, buff.CountBetween(10, 40))
+	require.Equal(t, 1, buff.CountBetween(5, 10))
+	require.Equal(t, 2, buff.CountBetween(5, 20))
+	require.Equal(t, 1, buff.CountBetween(15, 20))
+	require.Equal(t, 1, buff.CountBetween(31, 40))
+	require.Equal(t, 0, buff.CountBetween(40, 40))
+	require.Equal(t, 0, buff.CountBetween(41, 100))
+}
+
+func TestHPointRingBuffer_EquivalentFloatSampleCountUntil(t *testing.T) {
+	buff := NewHPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))
+
+	// Should work with empty buffer.
+	require.Zero(t, buff.EquivalentFloatSampleCountUntil(0))
+	require.Zero(t, buff.EquivalentFloatSampleCountUntil(100))
+
+	h := &histogram.FloatHistogram{}
+	require.NoError(t, buff.Append(promql.HPoint{T: 10, H: h}))
+	require.NoError(t, buff.Append(promql.HPoint{T: 20, H: h}))
+	require.NoError(t, buff.Append(promql.HPoint{T: 30, H: h}))
+	require.NoError(t, buff.Append(promql.HPoint{T: 40, H: h}))
+
+	equivalentSampleCount := EquivalentFloatSampleCount(h)
+
+	require.Equal(t, 0*equivalentSampleCount, buff.EquivalentFloatSampleCountUntil(0))
+	require.Equal(t, 0*equivalentSampleCount, buff.EquivalentFloatSampleCountUntil(5))
+	require.Equal(t, 1*equivalentSampleCount, buff.EquivalentFloatSampleCountUntil(10))
+	require.Equal(t, 1*equivalentSampleCount, buff.EquivalentFloatSampleCountUntil(15))
+	require.Equal(t, 2*equivalentSampleCount, buff.EquivalentFloatSampleCountUntil(20))
+	require.Equal(t, 2*equivalentSampleCount, buff.EquivalentFloatSampleCountUntil(25))
+	require.Equal(t, 3*equivalentSampleCount, buff.EquivalentFloatSampleCountUntil(30))
+	require.Equal(t, 3*equivalentSampleCount, buff.EquivalentFloatSampleCountUntil(35))
+	require.Equal(t, 4*equivalentSampleCount, buff.EquivalentFloatSampleCountUntil(40))
+	require.Equal(t, 4*equivalentSampleCount, buff.EquivalentFloatSampleCountUntil(45))
+}
+
+func TestHPointRingBuffer_EquivalentFloatSampleCountBetween(t *testing.T) {
+	buff := NewHPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))
+
+	// Should work with empty buffer.
+	require.Zero(t, buff.EquivalentFloatSampleCountBetween(0, 0))
+	require.Zero(t, buff.EquivalentFloatSampleCountBetween(0, 100))
+
+	h := &histogram.FloatHistogram{}
+	require.NoError(t, buff.Append(promql.HPoint{T: 10, H: h}))
+	require.NoError(t, buff.Append(promql.HPoint{T: 20, H: h}))
+	require.NoError(t, buff.Append(promql.HPoint{T: 30, H: h}))
+	require.NoError(t, buff.Append(promql.HPoint{T: 40, H: h}))
+
+	equivalentSampleCount := EquivalentFloatSampleCount(h)
+
+	require.Equal(t, 0*equivalentSampleCount, buff.EquivalentFloatSampleCountBetween(0, 0))
+	require.Equal(t, 4*equivalentSampleCount, buff.EquivalentFloatSampleCountBetween(0, 100))
+	require.Equal(t, 4*equivalentSampleCount, buff.EquivalentFloatSampleCountBetween(0, 40))
+	require.Equal(t, 4*equivalentSampleCount, buff.EquivalentFloatSampleCountBetween(9, 40))
+	require.Equal(t, 3*equivalentSampleCount, buff.EquivalentFloatSampleCountBetween(10, 40))
+	require.Equal(t, 1*equivalentSampleCount, buff.EquivalentFloatSampleCountBetween(5, 10))
+	require.Equal(t, 2*equivalentSampleCount, buff.EquivalentFloatSampleCountBetween(5, 20))
+	require.Equal(t, 1*equivalentSampleCount, buff.EquivalentFloatSampleCountBetween(15, 20))
+	require.Equal(t, 1*equivalentSampleCount, buff.EquivalentFloatSampleCountBetween(31, 40))
+	require.Equal(t, 0*equivalentSampleCount, buff.EquivalentFloatSampleCountBetween(40, 40))
+	require.Equal(t, 0*equivalentSampleCount, buff.EquivalentFloatSampleCountBetween(41, 100))
 }

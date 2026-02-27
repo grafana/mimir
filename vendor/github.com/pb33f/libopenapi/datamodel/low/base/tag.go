@@ -5,7 +5,7 @@ package base
 
 import (
 	"context"
-	"crypto/sha256"
+	"hash/maphash"
 
 	"github.com/pb33f/libopenapi/datamodel/low"
 	"github.com/pb33f/libopenapi/index"
@@ -87,60 +87,37 @@ func (t *Tag) GetExtensions() *orderedmap.Map[low.KeyReference[string], low.Valu
 	return t.Extensions
 }
 
-// Hash will return a consistent SHA256 Hash of the Tag object
-func (t *Tag) Hash() [32]byte {
-	// Pre-calculate field count for optimal allocation
-	fieldCount := 0
-	if !t.Name.IsEmpty() {
-		fieldCount++
-	}
-	if !t.Summary.IsEmpty() {
-		fieldCount++
-	}
-	if !t.Description.IsEmpty() {
-		fieldCount++
-	}
-	if !t.ExternalDocs.IsEmpty() {
-		fieldCount++
-	}
-	if !t.Parent.IsEmpty() {
-		fieldCount++
-	}
-	if !t.Kind.IsEmpty() {
-		fieldCount++
-	}
-
-	// Use string builder pool
-	sb := low.GetStringBuilder()
-	defer low.PutStringBuilder(sb)
-
-	if !t.Name.IsEmpty() {
-		sb.WriteString(t.Name.Value)
-		sb.WriteByte('|')
-	}
-	if !t.Summary.IsEmpty() {
-		sb.WriteString(t.Summary.Value)
-		sb.WriteByte('|')
-	}
-	if !t.Description.IsEmpty() {
-		sb.WriteString(t.Description.Value)
-		sb.WriteByte('|')
-	}
-	if !t.ExternalDocs.IsEmpty() {
-		sb.WriteString(low.GenerateHashString(t.ExternalDocs.Value))
-		sb.WriteByte('|')
-	}
-	if !t.Parent.IsEmpty() {
-		sb.WriteString(t.Parent.Value)
-		sb.WriteByte('|')
-	}
-	if !t.Kind.IsEmpty() {
-		sb.WriteString(t.Kind.Value)
-		sb.WriteByte('|')
-	}
-	for _, ext := range low.HashExtensions(t.Extensions) {
-		sb.WriteString(ext)
-		sb.WriteByte('|')
-	}
-	return sha256.Sum256([]byte(sb.String()))
+// Hash will return a consistent hash of the Tag object
+func (t *Tag) Hash() uint64 {
+	return low.WithHasher(func(h *maphash.Hash) uint64 {
+		if !t.Name.IsEmpty() {
+			h.WriteString(t.Name.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !t.Summary.IsEmpty() {
+			h.WriteString(t.Summary.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !t.Description.IsEmpty() {
+			h.WriteString(t.Description.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !t.ExternalDocs.IsEmpty() {
+			h.WriteString(low.GenerateHashString(t.ExternalDocs.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !t.Parent.IsEmpty() {
+			h.WriteString(t.Parent.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !t.Kind.IsEmpty() {
+			h.WriteString(t.Kind.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		for _, ext := range low.HashExtensions(t.Extensions) {
+			h.WriteString(ext)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		return h.Sum64()
+	})
 }

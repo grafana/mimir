@@ -5,9 +5,8 @@ package v3
 
 import (
 	"context"
-	"crypto/sha256"
+	"hash/maphash"
 	"sort"
-	"strconv"
 
 	"github.com/pb33f/libopenapi/datamodel/low"
 	"github.com/pb33f/libopenapi/datamodel/low/base"
@@ -201,105 +200,103 @@ func (o *Operation) Build(ctx context.Context, keyNode, root *yaml.Node, idx *in
 	return nil
 }
 
-// Hash will return a consistent SHA256 Hash of the Operation object
-func (o *Operation) Hash() [32]byte {
-	// Use string builder pool
-	sb := low.GetStringBuilder()
-	defer low.PutStringBuilder(sb)
+// Hash will return a consistent Hash of the Operation object
+func (o *Operation) Hash() uint64 {
+	return low.WithHasher(func(h *maphash.Hash) uint64 {
+		if !o.Summary.IsEmpty() {
+			h.WriteString(o.Summary.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !o.Description.IsEmpty() {
+			h.WriteString(o.Description.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !o.OperationId.IsEmpty() {
+			h.WriteString(o.OperationId.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !o.RequestBody.IsEmpty() {
+			h.WriteString(low.GenerateHashString(o.RequestBody.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !o.ExternalDocs.IsEmpty() {
+			h.WriteString(low.GenerateHashString(o.ExternalDocs.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !o.Responses.IsEmpty() {
+			h.WriteString(low.GenerateHashString(o.Responses.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !o.Security.IsEmpty() {
+			// Pre-allocate keys for sorting
+			secKeys := make([]string, len(o.Security.Value))
+			for k := range o.Security.Value {
+				secKeys[k] = low.GenerateHashString(o.Security.Value[k].Value)
+			}
+			sort.Strings(secKeys)
+			for _, key := range secKeys {
+				h.WriteString(key)
+				h.WriteByte(low.HASH_PIPE)
+			}
+		}
+		if !o.Deprecated.IsEmpty() {
+			low.HashBool(h, o.Deprecated.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
 
-	if !o.Summary.IsEmpty() {
-		sb.WriteString(o.Summary.Value)
-		sb.WriteByte('|')
-	}
-	if !o.Description.IsEmpty() {
-		sb.WriteString(o.Description.Value)
-		sb.WriteByte('|')
-	}
-	if !o.OperationId.IsEmpty() {
-		sb.WriteString(o.OperationId.Value)
-		sb.WriteByte('|')
-	}
-	if !o.RequestBody.IsEmpty() {
-		sb.WriteString(low.GenerateHashString(o.RequestBody.Value))
-		sb.WriteByte('|')
-	}
-	if !o.ExternalDocs.IsEmpty() {
-		sb.WriteString(low.GenerateHashString(o.ExternalDocs.Value))
-		sb.WriteByte('|')
-	}
-	if !o.Responses.IsEmpty() {
-		sb.WriteString(low.GenerateHashString(o.Responses.Value))
-		sb.WriteByte('|')
-	}
-	if !o.Security.IsEmpty() {
-		// Pre-allocate keys for sorting
-		secKeys := make([]string, len(o.Security.Value))
-		for k := range o.Security.Value {
-			secKeys[k] = low.GenerateHashString(o.Security.Value[k].Value)
+		// Tags array - pre-allocate and sort
+		if len(o.Tags.Value) > 0 {
+			tags := make([]string, len(o.Tags.Value))
+			for k := range o.Tags.Value {
+				tags[k] = o.Tags.Value[k].Value
+			}
+			sort.Strings(tags)
+			for _, tag := range tags {
+				h.WriteString(tag)
+				h.WriteByte(low.HASH_PIPE)
+			}
 		}
-		sort.Strings(secKeys)
-		for _, key := range secKeys {
-			sb.WriteString(key)
-			sb.WriteByte('|')
-		}
-	}
-	if !o.Deprecated.IsEmpty() {
-		sb.WriteString(strconv.FormatBool(o.Deprecated.Value))
-		sb.WriteByte('|')
-	}
 
-	// Tags array - pre-allocate and sort
-	if len(o.Tags.Value) > 0 {
-		tags := make([]string, len(o.Tags.Value))
-		for k := range o.Tags.Value {
-			tags[k] = o.Tags.Value[k].Value
+		// Servers array - pre-allocate and sort
+		if len(o.Servers.Value) > 0 {
+			servers := make([]string, len(o.Servers.Value))
+			for k := range o.Servers.Value {
+				servers[k] = low.GenerateHashString(o.Servers.Value[k].Value)
+			}
+			sort.Strings(servers)
+			for _, server := range servers {
+				h.WriteString(server)
+				h.WriteByte(low.HASH_PIPE)
+			}
 		}
-		sort.Strings(tags)
-		for _, tag := range tags {
-			sb.WriteString(tag)
-			sb.WriteByte('|')
-		}
-	}
 
-	// Servers array - pre-allocate and sort
-	if len(o.Servers.Value) > 0 {
-		servers := make([]string, len(o.Servers.Value))
-		for k := range o.Servers.Value {
-			servers[k] = low.GenerateHashString(o.Servers.Value[k].Value)
+		// Parameters array - pre-allocate and sort
+		if len(o.Parameters.Value) > 0 {
+			params := make([]string, len(o.Parameters.Value))
+			for k := range o.Parameters.Value {
+				params[k] = low.GenerateHashString(o.Parameters.Value[k].Value)
+			}
+			sort.Strings(params)
+			for _, param := range params {
+				h.WriteString(param)
+				h.WriteByte(low.HASH_PIPE)
+			}
 		}
-		sort.Strings(servers)
-		for _, server := range servers {
-			sb.WriteString(server)
-			sb.WriteByte('|')
+
+		// Callbacks
+		for v := range orderedmap.SortAlpha(o.Callbacks.Value).ValuesFromOldest() {
+			h.WriteString(low.GenerateHashString(v.Value))
+			h.WriteByte(low.HASH_PIPE)
 		}
-	}
 
-	// Parameters array - pre-allocate and sort
-	if len(o.Parameters.Value) > 0 {
-		params := make([]string, len(o.Parameters.Value))
-		for k := range o.Parameters.Value {
-			params[k] = low.GenerateHashString(o.Parameters.Value[k].Value)
+		// Extensions
+		for _, ext := range low.HashExtensions(o.Extensions) {
+			h.WriteString(ext)
+			h.WriteByte(low.HASH_PIPE)
 		}
-		sort.Strings(params)
-		for _, param := range params {
-			sb.WriteString(param)
-			sb.WriteByte('|')
-		}
-	}
 
-	// Callbacks
-	for v := range orderedmap.SortAlpha(o.Callbacks.Value).ValuesFromOldest() {
-		sb.WriteString(low.GenerateHashString(v.Value))
-		sb.WriteByte('|')
-	}
-
-	// Extensions
-	for _, ext := range low.HashExtensions(o.Extensions) {
-		sb.WriteString(ext)
-		sb.WriteByte('|')
-	}
-
-	return sha256.Sum256([]byte(sb.String()))
+		return h.Sum64()
+	})
 }
 
 // methods to satisfy swagger operations interface

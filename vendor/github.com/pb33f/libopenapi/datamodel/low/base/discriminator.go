@@ -4,7 +4,7 @@
 package base
 
 import (
-	"crypto/sha256"
+	"hash/maphash"
 
 	"go.yaml.in/yaml/v4"
 
@@ -51,26 +51,21 @@ func (d *Discriminator) FindMappingValue(key string) *low.ValueReference[string]
 	return nil
 }
 
-// Hash will return a consistent SHA256 Hash of the Discriminator object
-func (d *Discriminator) Hash() [32]byte {
-	// Use string builder pool
-	sb := low.GetStringBuilder()
-	defer low.PutStringBuilder(sb)
-
-	if d.PropertyName.Value != "" {
-		sb.WriteString(d.PropertyName.Value)
-		sb.WriteByte('|')
-	}
-
-	for v := range orderedmap.SortAlpha(d.Mapping.Value).ValuesFromOldest() {
-		sb.WriteString(v.Value)
-		sb.WriteByte('|')
-	}
-
-	if d.DefaultMapping.Value != "" {
-		sb.WriteString(d.DefaultMapping.Value)
-		sb.WriteByte('|')
-	}
-
-	return sha256.Sum256([]byte(sb.String()))
+// Hash will return a consistent hash of the Discriminator object
+func (d *Discriminator) Hash() uint64 {
+	return low.WithHasher(func(h *maphash.Hash) uint64 {
+		if d.PropertyName.Value != "" {
+			h.WriteString(d.PropertyName.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		for v := range orderedmap.SortAlpha(d.Mapping.Value).ValuesFromOldest() {
+			h.WriteString(v.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if d.DefaultMapping.Value != "" {
+			h.WriteString(d.DefaultMapping.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		return h.Sum64()
+	})
 }

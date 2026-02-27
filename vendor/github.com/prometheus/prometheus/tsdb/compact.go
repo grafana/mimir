@@ -1403,15 +1403,12 @@ func openBlocksForCompaction(ctx context.Context, dirs []string, open []*Block, 
 	// If openingError is true, at least one error is sent to openResultCh.
 	openingError := atomic.NewBool(false)
 
-	wg := sync.WaitGroup{}
+	var wg sync.WaitGroup
 	if len(dirs) < concurrency {
 		concurrency = len(dirs)
 	}
 	for i := 0; i < concurrency; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			for d := range toOpenCh {
 				if openingError.Load() {
 					return
@@ -1425,7 +1422,7 @@ func openBlocksForCompaction(ctx context.Context, dirs []string, open []*Block, 
 					return
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 

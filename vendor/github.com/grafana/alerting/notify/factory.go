@@ -60,9 +60,9 @@ import (
 	"github.com/grafana/alerting/templates"
 )
 
-type WrapNotifierFunc func(integrationName string, notifier notify.Notifier) notify.Notifier
+type WrapNotifierFunc func(integrationName string, notifier nfstatus.Notifier) nfstatus.Notifier
 
-var NoWrap WrapNotifierFunc = func(_ string, notifier notify.Notifier) notify.Notifier { return notifier }
+var NoWrap WrapNotifierFunc = func(_ string, notifier nfstatus.Notifier) nfstatus.Notifier { return notifier }
 
 // BuildGrafanaReceiverIntegrations creates integrations for each configured notification channel in GrafanaReceiverConfig.
 // It returns a slice of Integration objects, one for each notification channel, along with any errors that occurred.
@@ -92,7 +92,7 @@ func BuildGrafanaReceiverIntegrations(
 				return
 			}
 			n := newInt(client)
-			notify := wrapNotifier(cfg.Name, n)
+			notify := wrapNotifier(cfg.Name, nfstatus.NewNotifierAdapter(n))
 			i := NewIntegration(notify, n, cfg.Type, idx, cfg.Name, notificationHistorian, logger)
 			integrations = append(integrations, i)
 		}
@@ -239,7 +239,7 @@ func BuildPrometheusReceiverIntegrations(
 				errs.Add(err)
 				return
 			}
-			tmpl = t
+			tmpl = t.Template
 		})
 		add = func(name string, i int, rs notify.ResolvedSender, f func(l log.Logger) (notify.Notifier, error)) {
 			initOnce()
@@ -249,10 +249,11 @@ func BuildPrometheusReceiverIntegrations(
 				errs.Add(err)
 				return
 			}
+			nw := nfstatus.NewNotifierAdapter(n)
 			if wrapper != nil {
-				n = wrapper(name, n)
+				nw = wrapper(name, nw)
 			}
-			integrations = append(integrations, nfstatus.NewIntegration(n, rs, name, i, nc.Name, notificationHistorian, integrationLogger))
+			integrations = append(integrations, nfstatus.NewIntegration(nw, rs, name, i, nc.Name, notificationHistorian, integrationLogger))
 		}
 	)
 

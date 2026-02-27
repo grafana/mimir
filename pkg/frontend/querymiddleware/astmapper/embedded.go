@@ -11,6 +11,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
+
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 /*
@@ -69,7 +71,7 @@ func (e *EmbeddedQuery) UnmarshalJSON(b []byte) error {
 		return err
 	}
 
-	expr, err := parser.ParseExpr(v.Expr)
+	expr, err := promqlext.NewPromQLParser().ParseExpr(v.Expr)
 	if err != nil {
 		return err
 	}

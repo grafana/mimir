@@ -1102,6 +1102,10 @@ reactive_limiter:
   # CLI flag: -distributor.reactive-limiter.max-limit-factor-decay
   [max_limit_factor_decay: <float> | default = 1]
 
+  # (experimental) Minimum limit factor when max-limit-factor-decay is applied
+  # CLI flag: -distributor.reactive-limiter.min-limit-factor
+  [min_limit_factor: <float> | default = 1.2]
+
   # (experimental) Minimum duration of the window that is used to collect recent
   # response time samples
   # CLI flag: -distributor.reactive-limiter.recent-window-min-duration
@@ -1551,6 +1555,10 @@ push_reactive_limiter:
   # CLI flag: -ingester.push-reactive-limiter.max-limit-factor-decay
   [max_limit_factor_decay: <float> | default = 1]
 
+  # (experimental) Minimum limit factor when max-limit-factor-decay is applied
+  # CLI flag: -ingester.push-reactive-limiter.min-limit-factor
+  [min_limit_factor: <float> | default = 1.2]
+
   # (experimental) Minimum duration of the window that is used to collect recent
   # response time samples
   # CLI flag: -ingester.push-reactive-limiter.recent-window-min-duration
@@ -1618,6 +1626,10 @@ read_reactive_limiter:
   # current inflight requests
   # CLI flag: -ingester.read-reactive-limiter.max-limit-factor-decay
   [max_limit_factor_decay: <float> | default = 1]
+
+  # (experimental) Minimum limit factor when max-limit-factor-decay is applied
+  # CLI flag: -ingester.read-reactive-limiter.min-limit-factor
+  [min_limit_factor: <float> | default = 1.2]
 
   # (experimental) Minimum duration of the window that is used to collect recent
   # response time samples
@@ -1910,6 +1922,12 @@ store_gateway_client:
 # CLI flag: -querier.lookback-delta
 [lookback_delta: <duration> | default = 5m]
 
+# (experimental) Enable the experimental PromQL feature for delayed name removal
+# in the Prometheus engine. Note that this only applies when the Prometheus
+# engine is selected or used as fallback from the Mimir Query Engine.
+# CLI flag: -querier.enable-delayed-name-removal-prometheus-engine
+[enable_delayed_name_removal_prometheus_engine: <boolean> | default = false]
+
 mimir_query_engine:
   # (experimental) Enable pruning query expressions that are toggled off with
   # constants.
@@ -1920,6 +1938,10 @@ mimir_query_engine:
   # queries.
   # CLI flag: -querier.mimir-query-engine.enable-common-subexpression-elimination
   [enable_common_subexpression_elimination: <boolean> | default = true]
+
+  # (experimental) Enable subset selector elimination when evaluating queries.
+  # CLI flag: -querier.mimir-query-engine.enable-subset-selector-elimination
+  [enable_subset_selector_elimination: <boolean> | default = false]
 
   # (experimental) Enable generating selectors for one side of a binary
   # expression based on results from the other side.
@@ -1946,6 +1968,32 @@ mimir_query_engine:
   # without buffering. Requires common subexpression elimination to be enabled.
   # CLI flag: -querier.mimir-query-engine.enable-multi-aggregation
   [enable_multi_aggregation: <boolean> | default = true]
+
+  range_vector_splitting:
+    # (experimental) Enable splitting function over range vectors queries into
+    # smaller blocks for caching.
+    # CLI flag: -querier.mimir-query-engine.range-vector-splitting.enabled
+    [enabled: <boolean> | default = false]
+
+    # (experimental) Time interval used for splitting function over range
+    # vectors queries into cacheable blocks.
+    # CLI flag: -querier.mimir-query-engine.range-vector-splitting.split-interval
+    [split_interval: <duration> | default = 2h]
+
+    intermediate_results_cache:
+      # Backend for intermediate results cache, if not empty. Supported values:
+      # memcached.
+      # CLI flag: -querier.mimir-query-engine.range-vector-splitting.backend
+      [backend: <string> | default = ""]
+
+      # The memcached block configures the Memcached-based caching backend.
+      # The CLI flags prefix for this block configuration is:
+      # querier.mimir-query-engine.range-vector-splitting
+      [memcached: <memcached>]
+
+      # Enable cache compression, if not empty. Supported values are: snappy.
+      # CLI flag: -querier.mimir-query-engine.range-vector-splitting.compression
+      [compression: <string> | default = ""]
 
 ring:
   # The key-value store used to share the hash ring across multiple instances.
@@ -4023,6 +4071,11 @@ propagation_delay_tracker:
   # (experimental) How long a beacon lives before being garbage collected.
   # CLI flag: -memberlist.propagation-delay-tracker.beacon-lifetime
   [beacon_lifetime: <duration> | default = 10m]
+
+  # (experimental) Log warning when beacon propagation delay exceeds this
+  # threshold. 0 disables logging.
+  # CLI flag: -memberlist.propagation-delay-tracker.log-beacons-latency-longer-than
+  [log_beacons_latency_longer_than: <duration> | default = 0s]
 ```
 
 ### limits
@@ -5053,7 +5106,8 @@ The `ingest_storage` block configures the Kafka-based ingest storage.
 [enabled: <boolean> | default = false]
 
 kafka:
-  # The Kafka backend address.
+  # The Kafka seed broker address, or a comma-separated list of seed broker
+  # addresses.
   # CLI flag: -ingest-storage.kafka.address
   [address: <string> | default = ""]
 
@@ -5064,6 +5118,11 @@ kafka:
   # The Kafka client ID.
   # CLI flag: -ingest-storage.kafka.client-id
   [client_id: <string> | default = ""]
+
+  # The rack identifier for this Kafka client. Corresponds to the Kafka
+  # client.rack setting.
+  # CLI flag: -ingest-storage.kafka.client-rack
+  [client_rack: <string> | default = ""]
 
   # The maximum time allowed to open a connection to a Kafka broker.
   # CLI flag: -ingest-storage.kafka.dial-timeout
@@ -5081,6 +5140,12 @@ kafka:
   # CLI flag: -ingest-storage.kafka.write-clients
   [write_clients: <int> | default = 1]
 
+  # The SASL mechanism used to authenticate to Kafka. Supported values: PLAIN,
+  # SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER. For backwards-compatibility,
+  # PLAIN with no username nor password disables SASL.
+  # CLI flag: -ingest-storage.kafka.sasl-mechanism
+  [sasl_mechanism: <string> | default = "PLAIN"]
+
   # The username used to authenticate to Kafka using SASL. To enable SASL,
   # configure both the username and password.
   # CLI flag: -ingest-storage.kafka.sasl-username
@@ -5091,10 +5156,29 @@ kafka:
   # CLI flag: -ingest-storage.kafka.sasl-password
   [sasl_password: <string> | default = ""]
 
-  # The SASL mechanism used to authenticate to Kafka. Supported values: PLAIN,
-  # SCRAM-SHA-256, SCRAM-SHA-512.
-  # CLI flag: -ingest-storage.kafka.sasl-mechanism
-  [sasl_mechanism: <string> | default = "PLAIN"]
+  # The OAuth token to use to authenticate to Kafka. Consider
+  # ingest-storage.kafka.sasl-oauthbearer-file-path instead.
+  # CLI flag: -ingest-storage.kafka.sasl-oauthbearer-token
+  [sasl_oauthbearer_token: <string> | default = ""]
+
+  # Optional authorization ID to use when authenticating to Kafka using SASL
+  # OAUTHBEARER.
+  # CLI flag: -ingest-storage.kafka.sasl-oauthbearer-zid
+  [sasl_oauthbearer_zid: <string> | default = ""]
+
+  # Optional additional OAuth extensions to include when authenticating to Kafka
+  # using SASL OAUTHBEARER as a JSON object.
+  # CLI flag: -ingest-storage.kafka.sasl-oauthbearer-extensions
+  [sasl_oauthbearer_extensions: <map of string to string> | default = {}]
+
+  # Path to a file containing an OAuth token to authenticate to Kafka. The file
+  # is read anew on every reauthentication, so it can be updated with fresh
+  # tokens. The file must be in JSON format, adhering to this JSON schema:
+  # {"type": "object", "required": ["token"], "properties": {"token": {"type":
+  # "string"}, "zid": {"type": "string"}, "extensions": {"type": "object",
+  # "additionalProperties": {"type": "string"}}}}
+  # CLI flag: -ingest-storage.kafka.sasl-oauthbearer-file-path
+  [sasl_oauthbearer_file_path: <string> | default = ""]
 
   # The consumer group used by the consumer to track the last consumed offset.
   # The consumer group must be different for each ingester. If the configured
@@ -6233,6 +6317,7 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 - `blocks-storage.bucket-store.chunks-cache`
 - `blocks-storage.bucket-store.index-cache`
 - `blocks-storage.bucket-store.metadata-cache`
+- `querier.mimir-query-engine.range-vector-splitting`
 - `query-frontend.results-cache`
 - `ruler-storage.cache`
 

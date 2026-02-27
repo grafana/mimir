@@ -5,7 +5,7 @@ package v3
 
 import (
 	"context"
-	"crypto/sha256"
+	"hash/maphash"
 
 	"github.com/pb33f/libopenapi/datamodel/low"
 	"github.com/pb33f/libopenapi/index"
@@ -109,39 +109,37 @@ func (l *Link) Build(ctx context.Context, keyNode, root *yaml.Node, idx *index.S
 	return nil
 }
 
-// Hash will return a consistent SHA256 Hash of the Link object
-func (l *Link) Hash() [32]byte {
-	// Use string builder pool
-	sb := low.GetStringBuilder()
-	defer low.PutStringBuilder(sb)
-
-	if l.Description.Value != "" {
-		sb.WriteString(l.Description.Value)
-		sb.WriteByte('|')
-	}
-	if l.OperationRef.Value != "" {
-		sb.WriteString(l.OperationRef.Value)
-		sb.WriteByte('|')
-	}
-	if l.OperationId.Value != "" {
-		sb.WriteString(l.OperationId.Value)
-		sb.WriteByte('|')
-	}
-	if l.RequestBody.Value != "" {
-		sb.WriteString(l.RequestBody.Value)
-		sb.WriteByte('|')
-	}
-	if l.Server.Value != nil {
-		sb.WriteString(low.GenerateHashString(l.Server.Value))
-		sb.WriteByte('|')
-	}
-	for v := range orderedmap.SortAlpha(l.Parameters.Value).ValuesFromOldest() {
-		sb.WriteString(v.Value)
-		sb.WriteByte('|')
-	}
-	for _, ext := range low.HashExtensions(l.Extensions) {
-		sb.WriteString(ext)
-		sb.WriteByte('|')
-	}
-	return sha256.Sum256([]byte(sb.String()))
+// Hash will return a consistent Hash of the Link object
+func (l *Link) Hash() uint64 {
+	return low.WithHasher(func(h *maphash.Hash) uint64 {
+		if l.Description.Value != "" {
+			h.WriteString(l.Description.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if l.OperationRef.Value != "" {
+			h.WriteString(l.OperationRef.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if l.OperationId.Value != "" {
+			h.WriteString(l.OperationId.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if l.RequestBody.Value != "" {
+			h.WriteString(l.RequestBody.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if l.Server.Value != nil {
+			h.WriteString(low.GenerateHashString(l.Server.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		for v := range orderedmap.SortAlpha(l.Parameters.Value).ValuesFromOldest() {
+			h.WriteString(v.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		for _, ext := range low.HashExtensions(l.Extensions) {
+			h.WriteString(ext)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		return h.Sum64()
+	})
 }

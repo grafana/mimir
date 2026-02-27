@@ -5,7 +5,7 @@ package overlay
 
 import (
 	"context"
-	"crypto/sha256"
+	"hash/maphash"
 
 	"github.com/pb33f/libopenapi/datamodel/low"
 	"github.com/pb33f/libopenapi/index"
@@ -15,15 +15,16 @@ import (
 )
 
 // Info represents a low-level Overlay Info Object.
-// https://spec.openapis.org/overlay/v1.0.0#info-object
+// https://spec.openapis.org/overlay/v1.1.0#info-object
 type Info struct {
-	Title      low.NodeReference[string]
-	Version    low.NodeReference[string]
-	Extensions *orderedmap.Map[low.KeyReference[string], low.ValueReference[*yaml.Node]]
-	KeyNode    *yaml.Node
-	RootNode   *yaml.Node
-	index      *index.SpecIndex
-	context    context.Context
+	Title       low.NodeReference[string]
+	Version     low.NodeReference[string]
+	Description low.NodeReference[string]
+	Extensions  *orderedmap.Map[low.KeyReference[string], low.ValueReference[*yaml.Node]]
+	KeyNode     *yaml.Node
+	RootNode    *yaml.Node
+	index       *index.SpecIndex
+	context     context.Context
 	*low.Reference
 	low.NodeMap
 }
@@ -73,22 +74,25 @@ func (i *Info) GetExtensions() *orderedmap.Map[low.KeyReference[string], low.Val
 	return i.Extensions
 }
 
-// Hash will return a consistent SHA256 Hash of the Info object
-func (i *Info) Hash() [32]byte {
-	sb := low.GetStringBuilder()
-	defer low.PutStringBuilder(sb)
-
-	if !i.Title.IsEmpty() {
-		sb.WriteString(i.Title.Value)
-		sb.WriteByte('|')
-	}
-	if !i.Version.IsEmpty() {
-		sb.WriteString(i.Version.Value)
-		sb.WriteByte('|')
-	}
-	for _, ext := range low.HashExtensions(i.Extensions) {
-		sb.WriteString(ext)
-		sb.WriteByte('|')
-	}
-	return sha256.Sum256([]byte(sb.String()))
+// Hash will return a consistent Hash of the Info object
+func (inf *Info) Hash() uint64 {
+	return low.WithHasher(func(h *maphash.Hash) uint64 {
+		if !inf.Title.IsEmpty() {
+			h.WriteString(inf.Title.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !inf.Version.IsEmpty() {
+			h.WriteString(inf.Version.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !inf.Description.IsEmpty() {
+			h.WriteString(inf.Description.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		for _, ext := range low.HashExtensions(inf.Extensions) {
+			h.WriteString(ext)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		return h.Sum64()
+	})
 }

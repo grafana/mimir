@@ -1,20 +1,27 @@
+# Copyright 2025 The go-yaml Project Contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # Auto-install https://github.com/makeplus/makes at specific commit:
 MAKES := .cache/makes
 MAKES-LOCAL := .cache/local
-MAKES-COMMIT ?= 654f7c57ca30a2b08cb4aab8bb0c0d509510ad81
+MAKES-COMMIT ?= 4e48a743c3652b88adc4a257398d895a801e6d11
 $(shell [ -d $(MAKES) ] || ( \
   git clone -q https://github.com/makeplus/makes $(MAKES) && \
   git -C $(MAKES) reset -q --hard $(MAKES-COMMIT)))
 ifneq ($(shell git -C $(MAKES) rev-parse HEAD), \
        $(shell git -C $(MAKES) rev-parse $(MAKES-COMMIT)))
-$(error $(MAKES) is not at the correct commit: $(MAKES-COMMIT))
+$(error $(MAKES) is not at the correct commit: $(MAKES-COMMIT). \
+	Remove $(MAKES) and try again.)
 endif
-include $(MAKES)/init.mk
-include $(MAKES)/clean.mk
 
-# Only auto-install go if no go exists or GO-VERSION specified:
-ifeq (,$(shell command -v go))
-GO-VERSION ?= 1.24.0
+include $(MAKES)/init.mk
+include $(MAKES)/shellcheck.mk
+
+# Auto-install go unless GO_YAML_PATH is set:
+ifdef GO_YAML_PATH
+override export PATH := $(GO_YAML_PATH):$(PATH)
+else
+GO-VERSION ?= 1.25.5
 endif
 GO-VERSION-NEEDED := $(GO-VERSION)
 
@@ -25,22 +32,25 @@ YTS-DIR := yts/testdata/$(YTS-TAG)
 
 CLI-BINARY := go-yaml
 
-MAKES-NO-CLEAN := true
-MAKES-CLEAN := $(CLI-BINARY)
-MAKES-REALCLEAN := $(dir $(YTS-DIR))
+# Pager for viewing documentation:
+PAGER ?= less -FRX
 
 # Setup and include go.mk and shell.mk:
-GO-FILES := $(shell find -not \( -path ./.cache -prune \) -name '*.go' | sort)
-GO-CMDS-SKIP := test fmt vet
+
+# We need to limit `find` to avoid dirs like `.cache/` and any git worktrees,
+# as this makes `make` operations very slow:
+REPO-DIRS := $(shell find * -maxdepth 0 -type d \
+	       ! -exec test -f {}/.git \; -print)
+GO-FILES := $(shell find $(REPO-DIRS) -name '*.go')
+
 ifndef GO-VERSION-NEEDED
 GO-NO-DEP-GO := true
 endif
-GO-CMDS-RULES := true
 
 include $(MAKES)/go.mk
 
 # Set this from the `make` command to override:
-GOLANGCI-LINT-VERSION ?= v2.6.0
+GOLANGCI-LINT-VERSION ?= v2.8.0
 GOLANGCI-LINT-INSTALLER := \
   https://github.com/golangci/golangci-lint/raw/main/install.sh
 GOLANGCI-LINT := $(LOCAL-BIN)/golangci-lint
@@ -58,30 +68,80 @@ SHELL-NAME := makes go-yaml
 include $(MAKES)/clean.mk
 include $(MAKES)/shell.mk
 
-MAKES-CLEAN += $(dir $(YTS-DIR)) $(GOLANGCI-LINT)
+MAKES-CLEAN := $(CLI-BINARY) $(GOLANGCI-LINT)
+MAKES-REALCLEAN := $(dir $(YTS-DIR))
+
+SHELL-SCRIPTS = \
+  util/common.bash \
+  $(shell grep -rl '^.!/usr/bin/env bash' util | \
+          grep -v '\.sw')
+
+COVER-TESTS := \
+ . \
+ ./cmd/... \
+ ./internal/... \
+
+# v=1 for verbose
+MAKE := $(MAKE) --no-print-directory
 
 v ?=
-count ?= 1
+cover ?=
+fuzz ?=
+time ?= 60s
+opts ?=
 
+TEST-OPTS := \
+$(if $v, -v)\
+$(if $(cover), --cover)\
+$(if $(fuzz), --fuzz=FuzzEncodeFromJSON --fuzztime=$(time))\
+$(if $(opts), $(opts))\
 
 # Test rules:
-test: $(GO-DEPS)
-	go test$(if $v, -v) -vet=off .
+test: test-main test-internal test-cmd test-yts-all test-shell
+	@echo 'ALL TESTS PASS'
 
-test-data: $(YTS-DIR)
+check:
+	$(MAKE) fmt
+	$(MAKE) tidy
+	$(MAKE) lint
+	$(MAKE) test
 
-test-all: test test-yts-all
+test-main: $(GO-DEPS)
+	go test .$(TEST-OPTS)
+	@echo 'ALL MAIN FILES PASS'
+
+test-cmd: $(GO-DEPS)
+	go test ./cmd/...$(TEST-OPTS)
+	@echo 'ALL CMD FILES PASS'
+
+test-internal: $(GO-DEPS)
+	go test ./internal/...$(TEST-OPTS)
+	@echo 'ALL INTERNAL FILES PASS'
+
+test-cover: $(GO-DEPS)
+	go test . $(COVER-TESTS) -vet=off --cover$(TEST-OPTS)
 
 test-yts: $(GO-DEPS) $(YTS-DIR)
-	go test$(if $v, -v) ./yts -count=$(count)
+	go test ./yts$(TEST-OPTS)
 
 test-yts-all: $(GO-DEPS) $(YTS-DIR)
 	@echo 'Testing yaml-test-suite'
-	@RUNALL=1 bash -c "$$yts_pass_fail"
+	util/yaml-test-suite all
 
 test-yts-fail: $(GO-DEPS) $(YTS-DIR)
 	@echo 'Testing yaml-test-suite failures'
-	@RUNFAILING=1 bash -c "$$yts_pass_fail"
+	util/yaml-test-suite fail
+
+test-shell: $(SHELLCHECK)
+	shellcheck $(SHELL-SCRIPTS)
+	@echo 'ALL SHELL FILES PASS'
+
+test-count: $(GO-DEPS)
+	util/test-count
+
+yts-dir: $(YTS-DIR)
+
+get-test-data: $(YTS-DIR)
 
 # Install golangci-lint for GitHub Actions:
 golangci-lint-install: $(GOLANGCI-LINT)
@@ -92,10 +152,27 @@ fmt: $(GOLANGCI-LINT-VERSIONED)
 lint: $(GOLANGCI-LINT-VERSIONED)
 	$< run ./...
 
+tidy: $(GO-DEPS)
+	go mod tidy
+
 cli: $(CLI-BINARY)
 
 $(CLI-BINARY): $(GO)
 	go build -o $@ ./cmd/$@
+
+run-examples: $(GO)
+	@for dir in example/*/; do \
+	  (set -x; go run "$${dir}main.go") || \
+	  { echo "$$dir failed"; break; }; \
+	done
+
+# CLI documentation (go doc) - view in terminal:
+doc: $(GO-DEPS)
+	@go doc -all . | $(PAGER)
+
+# HTTP documentation server - opens browser:
+doc-http: $(GO-DEPS)
+	go doc -http -all
 
 # Setup rules:
 $(YTS-DIR):
@@ -112,25 +189,3 @@ $(GOLANGCI-LINT-VERSIONED): $(GO-DEPS)
 # Moves golangci-lint-<version> to golangci-lint for CI requirement
 $(GOLANGCI-LINT): $(GOLANGCI-LINT-VERSIONED)
 	cp $< $@
-
-define yts_pass_fail
-( result=.cache/local/tmp/yts-test-results
-  go test ./yts -count=1 -v |
-    awk '/     --- (PASS|FAIL): / {print $$2, $$3}' > $$result
-  known_count=$$(grep -c '' yts/known-failing-tests)
-  pass_count=$$(grep -c '^PASS:' $$result)
-  fail_count=$$(grep -c '^FAIL:' $$result)
-  echo "PASS: $$pass_count"
-  echo "FAIL: $$fail_count (known: $$known_count)"
-  if [[ $$RUNFAILING ]] && [[ $$pass_count -gt 0 ]]; then
-    echo "ERROR: Found passing tests among expected failures:"
-    grep '^PASS:' $$result
-    exit 1
-  fi
-  if [[ $$fail_count != "$$known_count" ]]; then
-    echo "ERROR: FAIL count differs from expected value of $$known_count"
-    exit 1
-  fi
-)
-endef
-export yts_pass_fail

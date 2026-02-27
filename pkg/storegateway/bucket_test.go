@@ -2588,13 +2588,15 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 	type labelNamesValuesCase struct {
 		name string
 
-		labelNamesReq      *storepb.LabelNamesRequest
-		expectedNames      []string
-		expectedNamesHints hintspb.LabelNamesResponseHints
+		labelNamesReq            *storepb.LabelNamesRequest
+		expectedNames            []string
+		expectedOpaqueNamesHints hintspb.LabelNamesResponseHints
+		expectedNamesHints       *storepb.LabelNamesResponseHints
 
-		labelValuesReq      *storepb.LabelValuesRequest
-		expectedValues      []string
-		expectedValuesHints hintspb.LabelValuesResponseHints
+		labelValuesReq            *storepb.LabelValuesRequest
+		expectedValues            []string
+		expectedOpaqueValuesHints hintspb.LabelValuesResponseHints
+		expectedValuesHints       *storepb.LabelValuesResponseHints
 	}
 
 	testCases := []labelNamesValuesCase{
@@ -2606,8 +2608,13 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 				End:   1,
 			},
 			expectedNames: labelNamesFromSeriesSet(seriesSet1),
-			expectedNamesHints: hintspb.LabelNamesResponseHints{
+			expectedOpaqueNamesHints: hintspb.LabelNamesResponseHints{
 				QueriedBlocks: []hintspb.Block{
+					{Id: block1.String()},
+				},
+			},
+			expectedNamesHints: &storepb.LabelNamesResponseHints{
+				QueriedBlocks: []storepb.Block{
 					{Id: block1.String()},
 				},
 			},
@@ -2618,8 +2625,13 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 				End:   1,
 			},
 			expectedValues: []string{"1"},
-			expectedValuesHints: hintspb.LabelValuesResponseHints{
+			expectedOpaqueValuesHints: hintspb.LabelValuesResponseHints{
 				QueriedBlocks: []hintspb.Block{
+					{Id: block1.String()},
+				},
+			},
+			expectedValuesHints: &storepb.LabelValuesResponseHints{
+				QueriedBlocks: []storepb.Block{
 					{Id: block1.String()},
 				},
 			},
@@ -2634,8 +2646,14 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 			expectedNames: labelNamesFromSeriesSet(
 				append(append([]*storeTestSeries{}, seriesSet1...), seriesSet2...),
 			),
-			expectedNamesHints: hintspb.LabelNamesResponseHints{
+			expectedOpaqueNamesHints: hintspb.LabelNamesResponseHints{
 				QueriedBlocks: []hintspb.Block{
+					{Id: block1.String()},
+					{Id: block2.String()},
+				},
+			},
+			expectedNamesHints: &storepb.LabelNamesResponseHints{
+				QueriedBlocks: []storepb.Block{
 					{Id: block1.String()},
 					{Id: block2.String()},
 				},
@@ -2647,8 +2665,14 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 				End:   3,
 			},
 			expectedValues: []string{"1"},
-			expectedValuesHints: hintspb.LabelValuesResponseHints{
+			expectedOpaqueValuesHints: hintspb.LabelValuesResponseHints{
 				QueriedBlocks: []hintspb.Block{
+					{Id: block1.String()},
+					{Id: block2.String()},
+				},
+			},
+			expectedValuesHints: &storepb.LabelValuesResponseHints{
+				QueriedBlocks: []storepb.Block{
 					{Id: block1.String()},
 					{Id: block2.String()},
 				},
@@ -2667,8 +2691,13 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 				}),
 			},
 			expectedNames: labelNamesFromSeriesSet(seriesSet1),
-			expectedNamesHints: hintspb.LabelNamesResponseHints{
+			expectedOpaqueNamesHints: hintspb.LabelNamesResponseHints{
 				QueriedBlocks: []hintspb.Block{
+					{Id: block1.String()},
+				},
+			},
+			expectedNamesHints: &storepb.LabelNamesResponseHints{
+				QueriedBlocks: []storepb.Block{
 					{Id: block1.String()},
 				},
 			},
@@ -2684,8 +2713,13 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 				}),
 			},
 			expectedValues: []string{"1"},
-			expectedValuesHints: hintspb.LabelValuesResponseHints{
+			expectedOpaqueValuesHints: hintspb.LabelValuesResponseHints{
 				QueriedBlocks: []hintspb.Block{
+					{Id: block1.String()},
+				},
+			},
+			expectedValuesHints: &storepb.LabelValuesResponseHints{
+				QueriedBlocks: []storepb.Block{
 					{Id: block1.String()},
 				},
 			},
@@ -2698,25 +2732,39 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 			assert.NoError(t, err)
 			assert.Equal(t, tc.expectedNames, namesResp.Names)
 
-			var namesHints hintspb.LabelNamesResponseHints
-			assert.NoError(t, types.UnmarshalAny(namesResp.Hints, &namesHints))
+			var opaqueNamesHints hintspb.LabelNamesResponseHints
+			//nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
+			assert.NoError(t, types.UnmarshalAny(namesResp.Hints, &opaqueNamesHints))
 			// The order is not determinate, so we are sorting them.
-			slices.SortFunc(namesHints.QueriedBlocks, func(a, b hintspb.Block) int {
+			slices.SortFunc(opaqueNamesHints.QueriedBlocks, func(a, b hintspb.Block) int {
 				return strings.Compare(a.Id, b.Id)
 			})
-			assert.Equal(t, tc.expectedNamesHints, namesHints)
+			assert.Equal(t, tc.expectedOpaqueNamesHints, opaqueNamesHints)
 
 			valuesResp, err := store.LabelValues(context.Background(), tc.labelValuesReq)
 			assert.NoError(t, err)
 			assert.Equal(t, tc.expectedValues, valuesResp.Values)
 
-			var valuesHints hintspb.LabelValuesResponseHints
-			assert.NoError(t, types.UnmarshalAny(valuesResp.Hints, &valuesHints))
+			var opaqueValuesHints hintspb.LabelValuesResponseHints
+			//nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
+			assert.NoError(t, types.UnmarshalAny(valuesResp.Hints, &opaqueValuesHints))
 			// The order is not determinate, so we are sorting them.
-			slices.SortFunc(valuesHints.QueriedBlocks, func(a, b hintspb.Block) int {
+			slices.SortFunc(opaqueValuesHints.QueriedBlocks, func(a, b hintspb.Block) int {
 				return strings.Compare(a.Id, b.Id)
 			})
-			assert.Equal(t, tc.expectedValuesHints, valuesHints)
+			assert.Equal(t, tc.expectedOpaqueValuesHints, opaqueValuesHints)
+
+			// Verify the non-opaque hint types. We currently return both opaque and non-opaque
+			// hints from label name and label value requests.
+			slices.SortFunc(namesResp.ResponseHints.QueriedBlocks, func(a, b storepb.Block) int {
+				return strings.Compare(a.Id, b.Id)
+			})
+			assert.Equal(t, tc.expectedNamesHints, namesResp.ResponseHints)
+
+			slices.SortFunc(valuesResp.ResponseHints.QueriedBlocks, func(a, b storepb.Block) int {
+				return strings.Compare(a.Id, b.Id)
+			})
+			assert.Equal(t, tc.expectedValuesHints, valuesResp.ResponseHints)
 		})
 	}
 }

@@ -31,7 +31,7 @@ type RuleNamespace struct {
 
 // LintExpressions runs the `expr` from a rule through the PromQL or LogQL parser and
 // compares its output. If it differs from the parser, it uses the parser's instead.
-func (r RuleNamespace) LintExpressions(backend string, logger log.Logger) (int, int, error) {
+func (r RuleNamespace) LintExpressions(backend string, promqlParser parser.Parser, logger log.Logger) (int, int, error) {
 	var parseFn func(string) (fmt.Stringer, error)
 	var queryLanguage string
 
@@ -39,7 +39,7 @@ func (r RuleNamespace) LintExpressions(backend string, logger log.Logger) (int, 
 	case MimirBackend:
 		queryLanguage = "PromQL"
 		parseFn = func(s string) (fmt.Stringer, error) {
-			return parser.ParseExpr(s)
+			return promqlParser.ParseExpr(s)
 		}
 	default:
 		return 0, 0, errInvalidBackend
@@ -100,7 +100,7 @@ func (r RuleNamespace) CheckRecordingRules(strict bool, logger log.Logger) int {
 // AggregateBy modifies the aggregation rules in groups to include a given Label.
 // If the applyTo function is provided, the aggregation is applied only to rules
 // for which the applyTo function returns true.
-func (r RuleNamespace) AggregateBy(label string, applyTo func(group rwrulefmt.RuleGroup, rule rulefmt.Rule) bool, logger log.Logger) (int, int, error) {
+func (r RuleNamespace) AggregateBy(label string, applyTo func(group rwrulefmt.RuleGroup, rule rulefmt.Rule) bool, promqlParser parser.Parser, logger log.Logger) (int, int, error) {
 	// `count` represents the number of rules we evaluated.
 	// `mod` represents the number of rules we modified - a modification can either be a lint or adding the
 	// label in the aggregation.
@@ -117,7 +117,7 @@ func (r RuleNamespace) AggregateBy(label string, applyTo func(group rwrulefmt.Ru
 			}
 
 			level.Debug(logger).Log("msg", "evaluating...", "rule", getRuleName(rule))
-			exp, err := parser.ParseExpr(rule.Expr)
+			exp, err := promqlParser.ParseExpr(rule.Expr)
 			if err != nil {
 				return count, mod, err
 			}
@@ -209,7 +209,7 @@ func prepareBinaryExpr(e *parser.BinaryExpr, label string, rule string, logger l
 }
 
 // Validate each rule in the rule namespace is valid
-func (r RuleNamespace) Validate(groupNodes []rulefmt.RuleGroupNode, scheme model.ValidationScheme) []error {
+func (r RuleNamespace) Validate(groupNodes []rulefmt.RuleGroupNode, scheme model.ValidationScheme, promqlParser parser.Parser) []error {
 	set := map[string]struct{}{}
 	var errs []error
 
@@ -227,17 +227,17 @@ func (r RuleNamespace) Validate(groupNodes []rulefmt.RuleGroupNode, scheme model
 
 		set[g.Name] = struct{}{}
 
-		errs = append(errs, ValidateRuleGroup(g, groupNodes[i], scheme)...)
+		errs = append(errs, ValidateRuleGroup(g, groupNodes[i], scheme, promqlParser)...)
 	}
 
 	return errs
 }
 
 // ValidateRuleGroup validates a rulegroup
-func ValidateRuleGroup(g rwrulefmt.RuleGroup, node rulefmt.RuleGroupNode, scheme model.ValidationScheme) []error {
+func ValidateRuleGroup(g rwrulefmt.RuleGroup, node rulefmt.RuleGroupNode, scheme model.ValidationScheme, promqlParser parser.Parser) []error {
 	var errs []error
 	for i, r := range g.Rules {
-		for _, err := range r.Validate(node.Rules[i], scheme) {
+		for _, err := range r.Validate(node.Rules[i], scheme, promqlParser) {
 			var ruleName string
 			if r.Alert != "" {
 				ruleName = r.Alert

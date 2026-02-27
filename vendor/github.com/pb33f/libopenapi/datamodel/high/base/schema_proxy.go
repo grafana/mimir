@@ -49,16 +49,39 @@ func IsBundlingMode() bool {
 	return bundlingModeCount.Load() > 0
 }
 
+// RenderingMode controls how inline rendering handles discriminator $refs.
+type RenderingMode int
+
+const (
+	// RenderingModeBundle is the default mode - preserves $refs in discriminator
+	// oneOf/anyOf for compatibility with discriminator mappings during bundling.
+	RenderingModeBundle RenderingMode = iota
+
+	// RenderingModeValidation forces full inlining of all $refs, ignoring
+	// discriminator preservation. Use this when rendering schemas for JSON
+	// Schema validation where the compiler needs a self-contained schema.
+	RenderingModeValidation
+)
+
 // InlineRenderContext provides isolated tracking for inline rendering operations.
 // Each render call-chain should use its own context to prevent false positive
 // cycle detection when multiple goroutines render the same schemas concurrently.
 type InlineRenderContext struct {
-	tracker sync.Map
+	tracker       sync.Map
+	Mode          RenderingMode
+	preservedRefs sync.Map // tracks refs that should be preserved in this render
 }
 
-// NewInlineRenderContext creates a new isolated rendering context.
+// NewInlineRenderContext creates a new isolated rendering context with default bundle mode.
 func NewInlineRenderContext() *InlineRenderContext {
-	return &InlineRenderContext{}
+	return &InlineRenderContext{Mode: RenderingModeBundle}
+}
+
+// NewInlineRenderContextForValidation creates a context that fully inlines
+// all refs, including discriminator oneOf/anyOf refs. Use this when rendering
+// schemas for JSON Schema validation.
+func NewInlineRenderContextForValidation() *InlineRenderContext {
+	return &InlineRenderContext{Mode: RenderingModeValidation}
 }
 
 // StartRendering marks a key as being rendered. Returns true if already rendering (cycle detected).
@@ -76,6 +99,23 @@ func (ctx *InlineRenderContext) StopRendering(key string) {
 	if key != "" {
 		ctx.tracker.Delete(key)
 	}
+}
+
+// MarkRefAsPreserved marks a reference as one that should be preserved (not inlined) in this render.
+// used by discriminator handling to track which refs need preservation without mutating shared state.
+func (ctx *InlineRenderContext) MarkRefAsPreserved(ref string) {
+	if ref != "" {
+		ctx.preservedRefs.Store(ref, true)
+	}
+}
+
+// ShouldPreserveRef returns true if the given reference was marked for preservation.
+func (ctx *InlineRenderContext) ShouldPreserveRef(ref string) bool {
+	if ref == "" {
+		return false
+	}
+	_, ok := ctx.preservedRefs.Load(ref)
+	return ok
 }
 
 // SchemaProxy exists as a stub that will create a Schema once (and only once) the Schema() method is called. An
@@ -112,12 +152,11 @@ func (ctx *InlineRenderContext) StopRendering(key string) {
 // it's not actually JSONSchema until 3.1, so lots of times a bad schema will break parsing. Errors are only found
 // when a schema is needed, so the rest of the document is parsed and ready to use.
 type SchemaProxy struct {
-	schema            *low.NodeReference[*base.SchemaProxy]
-	buildError        error
-	rendered          *Schema
-	refStr            string
-	lock              *sync.Mutex
-	preserveReference bool // When true, MarshalYAMLInline returns the ref node instead of inlining
+	schema     *low.NodeReference[*base.SchemaProxy]
+	buildError error
+	rendered   *Schema
+	refStr     string
+	lock       *sync.Mutex
 }
 
 // NewSchemaProxy creates a new high-level SchemaProxy from a low-level one.
@@ -226,7 +265,7 @@ func (sp *SchemaProxy) IsReference() bool {
 	if sp.refStr != "" {
 		return true
 	}
-	if sp.schema != nil {
+	if sp.schema != nil && sp.schema.Value != nil {
 		return sp.schema.Value.IsReference()
 	}
 	return false
@@ -269,17 +308,31 @@ func (sp *SchemaProxy) GetReferenceOrigin() *index.NodeOrigin {
 // It differs from Schema in that it does not require a low-level SchemaProxy to be present,
 // and will build the schema from the high-level one.
 func (sp *SchemaProxy) BuildSchema() (*Schema, error) {
-	if sp.rendered != nil {
-		return sp.rendered, sp.buildError
+	if sp == nil {
+		return nil, nil
 	}
 	schema := sp.Schema()
+	if sp.lock == nil {
+		return schema, sp.buildError
+	}
+	sp.lock.Lock()
 	er := sp.buildError
+	sp.lock.Unlock()
 	return schema, er
 }
 
 // GetBuildError returns any error that was thrown when calling Schema()
 func (sp *SchemaProxy) GetBuildError() error {
-	return sp.buildError
+	if sp == nil {
+		return nil
+	}
+	if sp.lock == nil {
+		return sp.buildError
+	}
+	sp.lock.Lock()
+	err := sp.buildError
+	sp.lock.Unlock()
+	return err
 }
 
 func (sp *SchemaProxy) GoLow() *base.SchemaProxy {
@@ -314,21 +367,8 @@ func (sp *SchemaProxy) MarshalYAML() (interface{}, error) {
 		nb := high.NewNodeBuilder(s, s.low)
 		return nb.Render(), nil
 	} else {
-		refNode := sp.GetReferenceNode()
-		if refNode != nil {
-			return refNode, nil
-		}
-
-		// do not build out a reference, just marshal the reference.
-		return utils.CreateRefNode(sp.GetReference()), nil
+		return sp.GetReferenceNode(), nil
 	}
-}
-
-// SetPreserveReference sets whether this SchemaProxy should preserve its reference when rendering inline.
-// When true, MarshalYAMLInline will return the reference node instead of inlining the schema.
-// This is used for discriminator mapping scenarios where refs must be preserved.
-func (sp *SchemaProxy) SetPreserveReference(preserve bool) {
-	sp.preserveReference = preserve
 }
 
 // getInlineRenderKey generates a unique key for tracking this schema during inline rendering.
@@ -355,11 +395,22 @@ func (sp *SchemaProxy) getInlineRenderKey() string {
 	// For inline schemas, use the node position
 	if sp.schema.ValueNode != nil {
 		node := sp.schema.ValueNode
-		if sp.schema.Value != nil && sp.schema.Value.GetIndex() != nil {
-			idx := sp.schema.Value.GetIndex()
-			return fmt.Sprintf("%s:%d:%d", idx.GetSpecAbsolutePath(), node.Line, node.Column)
+		var idx *index.SpecIndex
+		if sp.schema.Value != nil {
+			idx = sp.schema.Value.GetIndex()
 		}
-		return fmt.Sprintf("inline:%d:%d", node.Line, node.Column)
+		if node.Line > 0 && node.Column > 0 {
+			if idx != nil {
+				return fmt.Sprintf("%s:%d:%d", idx.GetSpecAbsolutePath(), node.Line, node.Column)
+			}
+			return fmt.Sprintf("inline:%d:%d", node.Line, node.Column)
+		}
+		// Nodes created via yaml.Node.Encode() don't include line/column info.
+		// Fall back to a pointer-based key to avoid false cycle detection.
+		if idx != nil {
+			return fmt.Sprintf("%s:inline:%p", idx.GetSpecAbsolutePath(), node)
+		}
+		return fmt.Sprintf("inline:%p", node)
 	}
 	return ""
 }
@@ -388,10 +439,14 @@ func (sp *SchemaProxy) MarshalYAMLInline() (interface{}, error) {
 }
 
 func (sp *SchemaProxy) marshalYAMLInlineInternal(ctx *InlineRenderContext) (interface{}, error) {
-	// If preserveReference is set, return the reference node instead of inlining.
-	// This is used for discriminator mapping scenarios where refs must be preserved.
-	if sp.preserveReference && sp.IsReference() {
-		return sp.GetReferenceNode(), nil
+	// check if this reference should be preserved (set via context by discriminator handling).
+	// this avoids mutating shared SchemaProxy state and prevents race conditions.
+	// need to guard against nil schema.Value which can happen with bad/incomplete proxies.
+	if sp.IsReference() {
+		ref := sp.GetReference()
+		if ref != "" && ctx.ShouldPreserveRef(ref) {
+			return sp.GetReferenceNode(), nil
+		}
 	}
 
 	// In bundling mode, preserve local component refs that point to schemas in the SAME document.
@@ -441,13 +496,16 @@ func (sp *SchemaProxy) marshalYAMLInlineInternal(ctx *InlineRenderContext) (inte
 	s, err = sp.BuildSchema()
 
 	if s != nil && s.GoLow() != nil && s.GoLow().Index != nil {
-		circ := s.GoLow().Index.GetCircularReferences()
+		idx := s.GoLow().Index
+		circ := idx.GetCircularReferences()
 
-		// extract the ignored and safe circular references
-		ignored := s.GoLow().Index.GetRolodex().GetIgnoredCircularReferences()
-		safe := s.GoLow().Index.GetRolodex().GetSafeCircularReferences()
-		circ = append(circ, ignored...)
-		circ = append(circ, safe...)
+		// Extract ignored and safe circular references from rolodex if available
+		if idx.GetRolodex() != nil {
+			ignored := idx.GetRolodex().GetIgnoredCircularReferences()
+			safe := idx.GetRolodex().GetSafeCircularReferences()
+			circ = append(circ, ignored...)
+			circ = append(circ, safe...)
+		}
 
 		cirError := func(str string) error {
 			return fmt.Errorf("schema render failure, circular reference: `%s`", str)
@@ -486,10 +544,23 @@ func (sp *SchemaProxy) marshalYAMLInlineInternal(ctx *InlineRenderContext) (inte
 						a = strings.Replace(a, specPath, "", 1)
 					}
 				}
-				if a == b {
-					// nope
+
+				aBase, aFragment := index.SplitRefFragment(a)
+				bBase, bFragment := index.SplitRefFragment(b)
+
+				if aFragment != "" && bFragment != "" && aFragment == bFragment {
 					return sp.GetReferenceNode(),
 						cirError((c.LoopPoint.Definition))
+				}
+
+				if aFragment == "" && bFragment == "" {
+					aNorm := strings.TrimPrefix(strings.TrimPrefix(aBase, "./"), "/")
+					bNorm := strings.TrimPrefix(strings.TrimPrefix(bBase, "./"), "/")
+					if aNorm != "" && bNorm != "" && aNorm == bNorm {
+						// nope
+						return sp.GetReferenceNode(),
+							cirError((c.LoopPoint.Definition))
+					}
 				}
 			}
 		}

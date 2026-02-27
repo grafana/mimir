@@ -761,3 +761,88 @@ func TestMatrixSelector_QueriedTimeRange(t *testing.T) {
 		})
 	}
 }
+
+func TestMatrixSelector_RangeVectorSplittingCacheKey(t *testing.T) {
+	singleMatcher := []*LabelMatcher{
+		{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+	}
+
+	testCases := map[string]struct {
+		node     *MatrixSelector
+		expected string
+	}{
+		"one matcher, no timestamp and no offset": {
+			node: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: singleMatcher,
+					Range:    time.Minute,
+				},
+			},
+			expected: `{__name__="foo"}`,
+		},
+		"one matcher, no timestamp, has offset": {
+			node: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: singleMatcher,
+					Range:    time.Minute,
+					Offset:   time.Hour,
+				},
+			},
+			expected: `{__name__="foo"}`,
+		},
+		"one matcher, has timestamp, no offset": {
+			node: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers:  singleMatcher,
+					Range:     time.Minute,
+					Timestamp: timestampOf(123456),
+				},
+			},
+			expected: `{__name__="foo"}`,
+		},
+		"one matcher, has timestamp and offset": {
+			node: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers:  singleMatcher,
+					Range:     time.Minute,
+					Offset:    time.Hour,
+					Timestamp: timestampOf(123456),
+				},
+			},
+			expected: `{__name__="foo"}`,
+		},
+		"one matcher, skip histogram buckets enabled": {
+			node: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers:             singleMatcher,
+					Range:                time.Minute,
+					SkipHistogramBuckets: true,
+				},
+			},
+			expected: `{__name__="foo"}, skip histogram buckets`,
+		},
+		"complex selector with all fields": {
+			node: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+						{Name: "env", Type: labels.MatchNotEqual, Value: "test"},
+						{Name: "region", Type: labels.MatchRegexp, Value: "au-.*"},
+					},
+					Range:                5 * time.Minute,
+					Offset:               2 * time.Hour,
+					Timestamp:            timestampOf(789012),
+					SkipHistogramBuckets: true,
+				},
+			},
+			expected: `{__name__="foo", env!="test", region=~"au-.*"}, skip histogram buckets`,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			cacheKey := testCase.node.SplittingCacheKey()
+			require.Equal(t, testCase.expected, cacheKey)
+		})
+	}
+}

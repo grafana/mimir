@@ -1,30 +1,15 @@
-//
-// Copyright (c) 2011-2019 Canonical Ltd
-// Copyright (c) 2006-2010 Kirill Simonov
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy of
-// this software and associated documentation files (the "Software"), to deal in
-// the Software without restriction, including without limitation the rights to
-// use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
-// of the Software, and to permit persons to whom the Software is furnished to do
-// so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
+// Copyright 2006-2010 Kirill Simonov
+// Copyright 2011-2019 Canonical Ltd
+// Copyright 2025 The go-yaml Project Contributors
+// SPDX-License-Identifier: Apache-2.0 AND MIT
+
+// Emitter stage: Generates YAML output from events.
+// Handles formatting, indentation, line wrapping, and output buffering.
 
 package libyaml
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 )
 
@@ -205,7 +190,9 @@ func (emitter *Emitter) appendTagDirective(value *TagDirective, allow_duplicates
 			if allow_duplicates {
 				return nil
 			}
-			return errors.New("duplicate %TAG directive")
+			return EmitterError{
+				Message: "duplicate %TAG directive",
+			}
 		}
 	}
 
@@ -312,7 +299,9 @@ func (emitter *Emitter) stateMachine(event *Event) error {
 		return emitter.emitBlockMappingValue(event, false)
 
 	case EMIT_END_STATE:
-		return errors.New("expected nothing after STREAM-END")
+		return EmitterError{
+			Message: "expected nothing after STREAM-END",
+		}
 	}
 	panic("invalid emitter state")
 }
@@ -320,7 +309,9 @@ func (emitter *Emitter) stateMachine(event *Event) error {
 // Expect STREAM-START.
 func (emitter *Emitter) emitStreamStart(event *Event) error {
 	if event.Type != STREAM_START_EVENT {
-		return errors.New("expected STREAM-START")
+		return EmitterError{
+			Message: "expected STREAM-START",
+		}
 	}
 	if emitter.encoding == ANY_ENCODING {
 		emitter.encoding = event.encoding
@@ -362,14 +353,14 @@ func (emitter *Emitter) emitStreamStart(event *Event) error {
 func (emitter *Emitter) emitDocumentStart(event *Event, first bool) error {
 	if event.Type == DOCUMENT_START_EVENT {
 
-		if event.version_directive != nil {
-			if err := emitter.analyzeVersionDirective(event.version_directive); err != nil {
+		if event.versionDirective != nil {
+			if err := emitter.analyzeVersionDirective(event.versionDirective); err != nil {
 				return err
 			}
 		}
 
-		for i := 0; i < len(event.tag_directives); i++ {
-			tag_directive := &event.tag_directives[i]
+		for i := 0; i < len(event.tagDirectives); i++ {
+			tag_directive := &event.tagDirectives[i]
 			if err := emitter.analyzeTagDirective(tag_directive); err != nil {
 				return err
 			}
@@ -390,7 +381,7 @@ func (emitter *Emitter) emitDocumentStart(event *Event, first bool) error {
 			implicit = false
 		}
 
-		if emitter.OpenEnded && (event.version_directive != nil || len(event.tag_directives) > 0) {
+		if emitter.OpenEnded && (event.versionDirective != nil || len(event.tagDirectives) > 0) {
 			if err := emitter.writeIndicator([]byte("..."), true, false, false); err != nil {
 				return err
 			}
@@ -399,7 +390,7 @@ func (emitter *Emitter) emitDocumentStart(event *Event, first bool) error {
 			}
 		}
 
-		if event.version_directive != nil {
+		if event.versionDirective != nil {
 			implicit = false
 			if err := emitter.writeIndicator([]byte("%YAML"), true, false, false); err != nil {
 				return err
@@ -412,10 +403,10 @@ func (emitter *Emitter) emitDocumentStart(event *Event, first bool) error {
 			}
 		}
 
-		if len(event.tag_directives) > 0 {
+		if len(event.tagDirectives) > 0 {
 			implicit = false
-			for i := 0; i < len(event.tag_directives); i++ {
-				tag_directive := &event.tag_directives[i]
+			for i := 0; i < len(event.tagDirectives); i++ {
+				tag_directive := &event.tagDirectives[i]
 				if err := emitter.writeIndicator([]byte("%TAG"), true, false, false); err != nil {
 					return err
 				}
@@ -477,7 +468,9 @@ func (emitter *Emitter) emitDocumentStart(event *Event, first bool) error {
 		return nil
 	}
 
-	return errors.New("expected DOCUMENT-START or STREAM-END")
+	return EmitterError{
+		Message: "expected DOCUMENT-START or STREAM-END",
+	}
 }
 
 // emitter preserves the original signature and delegates to
@@ -514,7 +507,9 @@ func (emitter *Emitter) emitDocumentContent(event *Event) error {
 // Expect DOCUMENT-END.
 func (emitter *Emitter) emitDocumentEnd(event *Event) error {
 	if event.Type != DOCUMENT_END_EVENT {
-		return errors.New("expected DOCUMENT-END")
+		return EmitterError{
+			Message: "expected DOCUMENT-END",
+		}
 	}
 	// [Go] Force document foot separation.
 	emitter.foot_indent = 0
@@ -902,7 +897,9 @@ func (emitter *Emitter) emitNode(event *Event,
 	case MAPPING_START_EVENT:
 		return emitter.emitMappingStart(event)
 	default:
-		return fmt.Errorf("expected SCALAR, SEQUENCE-START, MAPPING-START, or ALIAS, but got %v", event.Type)
+		return EmitterError{
+			Message: fmt.Sprintf("expected SCALAR, SEQUENCE-START, MAPPING-START, or ALIAS, but got %v", event.Type),
+		}
 	}
 }
 
@@ -914,6 +911,15 @@ func (emitter *Emitter) emitAlias(event *Event) error {
 	emitter.state = emitter.states[len(emitter.states)-1]
 	emitter.states = emitter.states[:len(emitter.states)-1]
 	return nil
+}
+
+// requiredQuoteStyle returns the appropriate quote style based on the
+// emitter's quotePreference setting.
+func (emitter *Emitter) requiredQuoteStyle() ScalarStyle {
+	if emitter.quotePreference == QuoteDouble {
+		return DOUBLE_QUOTED_SCALAR_STYLE
+	}
+	return SINGLE_QUOTED_SCALAR_STYLE
 }
 
 // Expect SCALAR.
@@ -1035,7 +1041,9 @@ func (emitter *Emitter) checkSimpleKey() bool {
 func (emitter *Emitter) selectScalarStyle(event *Event) error {
 	no_tag := len(emitter.tag_data.handle) == 0 && len(emitter.tag_data.suffix) == 0
 	if no_tag && !event.Implicit && !event.quoted_implicit {
-		return errors.New("neither tag nor implicit flags are specified")
+		return EmitterError{
+			Message: "neither tag nor implicit flags are specified",
+		}
 	}
 
 	style := event.ScalarStyle()
@@ -1052,13 +1060,13 @@ func (emitter *Emitter) selectScalarStyle(event *Event) error {
 	if style == PLAIN_SCALAR_STYLE {
 		if emitter.flow_level > 0 && !emitter.scalar_data.flow_plain_allowed ||
 			emitter.flow_level == 0 && !emitter.scalar_data.block_plain_allowed {
-			style = SINGLE_QUOTED_SCALAR_STYLE
+			style = emitter.requiredQuoteStyle()
 		}
 		if len(emitter.scalar_data.value) == 0 && (emitter.flow_level > 0 || emitter.simple_key_context) {
-			style = SINGLE_QUOTED_SCALAR_STYLE
+			style = emitter.requiredQuoteStyle()
 		}
 		if no_tag && !event.Implicit {
-			style = SINGLE_QUOTED_SCALAR_STYLE
+			style = emitter.requiredQuoteStyle()
 		}
 	}
 	if style == SINGLE_QUOTED_SCALAR_STYLE {
@@ -1221,7 +1229,9 @@ func (emitter *Emitter) processFootComment() error {
 // Check if a %YAML directive is valid.
 func (emitter *Emitter) analyzeVersionDirective(version_directive *VersionDirective) error {
 	if version_directive.major != 1 || version_directive.minor != 1 {
-		return errors.New("incompatible %YAML directive")
+		return EmitterError{
+			Message: "incompatible %YAML directive",
+		}
 	}
 	return nil
 }
@@ -1231,21 +1241,31 @@ func (emitter *Emitter) analyzeTagDirective(tag_directive *TagDirective) error {
 	handle := tag_directive.handle
 	prefix := tag_directive.prefix
 	if len(handle) == 0 {
-		return errors.New("tag handle must not be empty")
+		return EmitterError{
+			Message: "tag handle must not be empty",
+		}
 	}
 	if handle[0] != '!' {
-		return errors.New("tag handle must start with '!'")
+		return EmitterError{
+			Message: "tag handle must start with '!'",
+		}
 	}
 	if handle[len(handle)-1] != '!' {
-		return errors.New("tag handle must end with '!'")
+		return EmitterError{
+			Message: "tag handle must end with '!'",
+		}
 	}
 	for i := 1; i < len(handle)-1; i += width(handle[i]) {
 		if !isAlpha(handle, i) {
-			return errors.New("tag handle must contain alphanumerical characters only")
+			return EmitterError{
+				Message: "tag handle must contain alphanumerical characters only",
+			}
 		}
 	}
 	if len(prefix) == 0 {
-		return errors.New("tag prefix must not be empty")
+		return EmitterError{
+			Message: "tag prefix must not be empty",
+		}
 	}
 	return nil
 }
@@ -1253,18 +1273,22 @@ func (emitter *Emitter) analyzeTagDirective(tag_directive *TagDirective) error {
 // Check if an anchor is valid.
 func (emitter *Emitter) analyzeAnchor(anchor []byte, alias bool) error {
 	if len(anchor) == 0 {
+		problem := "anchor value must not be empty"
 		if alias {
-			return errors.New("alias value must not be empty")
-		} else {
-			return errors.New("anchor value must not be empty")
+			problem = "alias value must not be empty"
+		}
+		return EmitterError{
+			Message: problem,
 		}
 	}
 	for i := 0; i < len(anchor); i += width(anchor[i]) {
 		if !isAnchorChar(anchor, i) {
+			problem := "anchor value must contain valid characters only"
 			if alias {
-				return errors.New("alias value must contain valid characters only")
-			} else {
-				return errors.New("anchor value must contain valid characters only")
+				problem = "alias value must contain valid characters only"
+			}
+			return EmitterError{
+				Message: problem,
 			}
 		}
 	}
@@ -1276,7 +1300,9 @@ func (emitter *Emitter) analyzeAnchor(anchor []byte, alias bool) error {
 // Check if a tag is valid.
 func (emitter *Emitter) analyzeTag(tag []byte) error {
 	if len(tag) == 0 {
-		return errors.New("tag value must not be empty")
+		return EmitterError{
+			Message: "tag value must not be empty",
+		}
 	}
 	for i := 0; i < len(emitter.tag_directives); i++ {
 		tag_directive := &emitter.tag_directives[i]
@@ -1544,7 +1570,6 @@ func (emitter *Emitter) writeIndent() error {
 		}
 	}
 	emitter.whitespace = true
-	// emitter.indention = true
 	emitter.space_above = false
 	emitter.foot_indent = -1
 	return nil
@@ -1673,7 +1698,6 @@ func (emitter *Emitter) writePlainScalar(value []byte, allow_breaks bool) error 
 			if err := emitter.writeLineBreak(value, &i); err != nil {
 				return err
 			}
-			// emitter.indention = true
 			breaks = true
 		} else {
 			if breaks {
@@ -1730,7 +1754,6 @@ func (emitter *Emitter) writeSingleQuotedScalar(value []byte, allow_breaks bool)
 			if err := emitter.writeLineBreak(value, &i); err != nil {
 				return err
 			}
-			// emitter.indention = true
 			breaks = true
 		} else {
 			if breaks {
@@ -1881,7 +1904,9 @@ func (emitter *Emitter) writeDoubleQuotedScalar(value []byte, allow_breaks bool)
 }
 
 func (emitter *Emitter) writeBlockScalarHints(value []byte) error {
-	if isSpace(value, 0) || isLineBreak(value, 0) {
+	if isSpace(value, 0) {
+		// https://github.com/yaml/go-yaml/issues/65
+		// isLineBreak(value, 0) removed as the linebreak will only write the indentation value.
 		indent_hint := []byte{'0' + byte(emitter.BestIndent)}
 		if err := emitter.writeIndicator(indent_hint, false, false, false); err != nil {
 			return err
@@ -1932,7 +1957,6 @@ func (emitter *Emitter) writeLiteralScalar(value []byte) error {
 	if err := emitter.processLineCommentLinebreak(true); err != nil {
 		return err
 	}
-	// emitter.indention = true
 	emitter.whitespace = true
 	breaks := true
 	for i := 0; i < len(value); {
@@ -1940,7 +1964,6 @@ func (emitter *Emitter) writeLiteralScalar(value []byte) error {
 			if err := emitter.writeLineBreak(value, &i); err != nil {
 				return err
 			}
-			// emitter.indention = true
 			breaks = true
 		} else {
 			if breaks {
@@ -1970,7 +1993,6 @@ func (emitter *Emitter) writeFoldedScalar(value []byte) error {
 		return err
 	}
 
-	// emitter.indention = true
 	emitter.whitespace = true
 
 	breaks := true
@@ -1991,7 +2013,6 @@ func (emitter *Emitter) writeFoldedScalar(value []byte) error {
 			if err := emitter.writeLineBreak(value, &i); err != nil {
 				return err
 			}
-			// emitter.indention = true
 			breaks = true
 		} else {
 			if breaks {
@@ -2025,7 +2046,6 @@ func (emitter *Emitter) writeComment(comment []byte) error {
 			if err := emitter.writeLineBreak(comment, &i); err != nil {
 				return err
 			}
-			// emitter.indention = true
 			breaks = true
 			pound = false
 		} else {
@@ -2059,6 +2079,5 @@ func (emitter *Emitter) writeComment(comment []byte) error {
 	}
 
 	emitter.whitespace = true
-	// emitter.indention = true
 	return nil
 }

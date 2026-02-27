@@ -6,19 +6,12 @@ import (
 	"context"
 	"testing"
 
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 )
 
 func TestInsertOmittedTargetInfoSelector(t *testing.T) {
-	enableExperimentalFunctions := parser.EnableExperimentalFunctions
-	t.Cleanup(func() {
-		parser.EnableExperimentalFunctions = enableExperimentalFunctions
-	})
-	parser.EnableExperimentalFunctions = true
-
 	testCases := map[string]string{
 		`info(metric)`:               `info(metric, target_info)`,
 		`info(metric @ 60)`:          `info(metric @ 60.000, target_info)`,

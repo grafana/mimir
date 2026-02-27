@@ -1,4 +1,4 @@
-// Copyright 2022 Princess B33f Heavy Industries / Dave Shanley
+// Copyright 2022 Princess Beef Heavy Industries / Dave Shanley
 // SPDX-License-Identifier: MIT
 
 // Package high contains a set of high-level models that represent OpenAPI 2 and 3 documents.
@@ -14,7 +14,11 @@
 package high
 
 import (
+	"context"
+	"fmt"
+
 	"github.com/pb33f/libopenapi/datamodel/low"
+	"github.com/pb33f/libopenapi/index"
 	"github.com/pb33f/libopenapi/orderedmap"
 	"go.yaml.in/yaml/v4"
 )
@@ -88,4 +92,112 @@ func UnpackExtensions[T any, R low.HasExtensions[T]](low GoesLow[R]) (*orderedma
 		m.Set(ext.Value, g)
 	}
 	return m, nil
+}
+
+// ExternalRefResolver is an interface for low-level objects that can be external references.
+// This is used by ResolveExternalRef to resolve external $ref values during inline rendering.
+type ExternalRefResolver interface {
+	IsReference() bool
+	GetReference() string
+	GetIndex() *index.SpecIndex
+}
+
+// ExternalRefBuildFunc is a function that builds a low-level object from a resolved YAML node.
+// It should create a new instance of the low-level type, call BuildModel and Build on it,
+// and return the constructed object along with any error encountered.
+type ExternalRefBuildFunc[L any] func(node *yaml.Node, idx *index.SpecIndex) (L, error)
+
+// ExternalRefResult contains the result of resolving an external reference.
+type ExternalRefResult[H any, L any] struct {
+	High     H
+	Low      L
+	Resolved bool
+}
+
+// ResolveExternalRef attempts to resolve an external reference from a low-level object.
+// If the low-level object is an external reference (IsReference() returns true), this function
+// will use the index to find and resolve the referenced component, build new low and high level
+// objects from the resolved content, and return them.
+//
+// Parameters:
+//   - lowObj: the low-level object that may be an external reference
+//   - buildLow: function to build a new low-level object from the resolved YAML node
+//   - buildHigh: function to create a high-level object from the resolved low-level object
+//
+// Returns:
+//   - ExternalRefResult containing the resolved high and low objects if resolution succeeded
+//   - error if resolution failed (malformed YAML, build errors, etc.)
+//
+// If the object is not a reference or cannot be resolved, Resolved will be false and the
+// caller should fall back to rendering the original object.
+func ResolveExternalRef[H any, L any](
+	lowObj ExternalRefResolver,
+	buildLow ExternalRefBuildFunc[L],
+	buildHigh func(L) H,
+) (ExternalRefResult[H, L], error) {
+	var result ExternalRefResult[H, L]
+
+	// not a reference, nothing to resolve
+	if lowObj == nil || !lowObj.IsReference() {
+		return result, nil
+	}
+
+	idx := lowObj.GetIndex()
+	if idx == nil {
+		return result, nil
+	}
+
+	ref := lowObj.GetReference()
+	resolved := idx.FindComponent(context.Background(), ref)
+	if resolved == nil || resolved.Node == nil {
+		return result, nil
+	}
+
+	// build the low-level object from the resolved node
+	lowResolved, err := buildLow(resolved.Node, resolved.Index)
+	if err != nil {
+		return result, fmt.Errorf("failed to build resolved external reference '%s': %w", ref, err)
+	}
+
+	// build the high-level object from the resolved low-level object
+	highResolved := buildHigh(lowResolved)
+
+	result.High = highResolved
+	result.Low = lowResolved
+	result.Resolved = true
+	return result, nil
+}
+
+// RenderExternalRef is a convenience function that resolves an external reference and renders it inline.
+// This combines ResolveExternalRef with RenderInline for the common case where you want to
+// resolve and immediately render an external reference.
+//
+// If the low-level object is not a reference or resolution fails gracefully (not found),
+// this returns (nil, nil) and the caller should fall back to normal rendering.
+// If resolution succeeds, returns the rendered YAML node.
+// If an error occurs during resolution or rendering, returns the error.
+func RenderExternalRef[H any, L any](
+	lowObj ExternalRefResolver,
+	buildLow ExternalRefBuildFunc[L],
+	buildHigh func(L) H,
+) (interface{}, error) {
+	result, err := ResolveExternalRef(lowObj, buildLow, buildHigh)
+	if err != nil || !result.Resolved {
+		return nil, err
+	}
+	return RenderInline(result.High, result.Low)
+}
+
+// RenderExternalRefWithContext is like RenderExternalRef but passes a context for cycle detection.
+func RenderExternalRefWithContext[H any, L any](
+	lowObj ExternalRefResolver,
+	buildLow ExternalRefBuildFunc[L],
+	buildHigh func(L) H,
+	ctx any,
+) (interface{}, error) {
+	result, err := ResolveExternalRef(lowObj, buildLow, buildHigh)
+	if err != nil || !result.Resolved {
+		return nil, err
+	}
+	return RenderInlineWithContext(result.High, result.Low, ctx)
 }

@@ -5,10 +5,8 @@ package v2
 
 import (
 	"context"
-	"crypto/sha256"
-	"fmt"
+	"hash/maphash"
 	"sort"
-	"strings"
 
 	"github.com/pb33f/libopenapi/datamodel/low"
 	"github.com/pb33f/libopenapi/index"
@@ -77,52 +75,74 @@ func (h *Header) Build(ctx context.Context, _, root *yaml.Node, idx *index.SpecI
 	return nil
 }
 
-// Hash will return a consistent SHA256 Hash of the Header object
-func (h *Header) Hash() [32]byte {
-	var f []string
-	if h.Description.Value != "" {
-		f = append(f, h.Description.Value)
-	}
-	if h.Type.Value != "" {
-		f = append(f, h.Type.Value)
-	}
-	if h.Format.Value != "" {
-		f = append(f, h.Format.Value)
-	}
-	if h.CollectionFormat.Value != "" {
-		f = append(f, h.CollectionFormat.Value)
-	}
-	if h.Default.Value != nil && !h.Default.Value.IsZero() {
-		f = append(f, low.GenerateHashString(h.Default.Value))
-	}
-	f = append(f, fmt.Sprint(h.Maximum.Value))
-	f = append(f, fmt.Sprint(h.Minimum.Value))
-	f = append(f, fmt.Sprint(h.ExclusiveMinimum.Value))
-	f = append(f, fmt.Sprint(h.ExclusiveMaximum.Value))
-	f = append(f, fmt.Sprint(h.MinLength.Value))
-	f = append(f, fmt.Sprint(h.MaxLength.Value))
-	f = append(f, fmt.Sprint(h.MinItems.Value))
-	f = append(f, fmt.Sprint(h.MaxItems.Value))
-	f = append(f, fmt.Sprint(h.MultipleOf.Value))
-	f = append(f, fmt.Sprint(h.UniqueItems.Value))
-	if h.Pattern.Value != "" {
-		f = append(f, fmt.Sprintf("%x", sha256.Sum256([]byte(fmt.Sprint(h.Pattern.Value)))))
-	}
-	f = append(f, low.HashExtensions(h.Extensions)...)
+// Hash will return a consistent Hash of the Header object
+func (hdr *Header) Hash() uint64 {
+	return low.WithHasher(func(h *maphash.Hash) uint64 {
+		if hdr.Description.Value != "" {
+			h.WriteString(hdr.Description.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if hdr.Type.Value != "" {
+			h.WriteString(hdr.Type.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if hdr.Format.Value != "" {
+			h.WriteString(hdr.Format.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if hdr.CollectionFormat.Value != "" {
+			h.WriteString(hdr.CollectionFormat.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if hdr.Default.Value != nil && !hdr.Default.Value.IsZero() {
+			h.WriteString(low.GenerateHashString(hdr.Default.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		low.HashInt64(h, int64(hdr.Maximum.Value))
+		h.WriteByte(low.HASH_PIPE)
+		low.HashInt64(h, int64(hdr.Minimum.Value))
+		h.WriteByte(low.HASH_PIPE)
+		low.HashBool(h, hdr.ExclusiveMinimum.Value)
+		h.WriteByte(low.HASH_PIPE)
+		low.HashBool(h, hdr.ExclusiveMaximum.Value)
+		h.WriteByte(low.HASH_PIPE)
+		low.HashInt64(h, int64(hdr.MinLength.Value))
+		h.WriteByte(low.HASH_PIPE)
+		low.HashInt64(h, int64(hdr.MaxLength.Value))
+		h.WriteByte(low.HASH_PIPE)
+		low.HashInt64(h, int64(hdr.MinItems.Value))
+		h.WriteByte(low.HASH_PIPE)
+		low.HashInt64(h, int64(hdr.MaxItems.Value))
+		h.WriteByte(low.HASH_PIPE)
+		low.HashInt64(h, int64(hdr.MultipleOf.Value))
+		h.WriteByte(low.HASH_PIPE)
+		low.HashBool(h, hdr.UniqueItems.Value)
+		h.WriteByte(low.HASH_PIPE)
+		if hdr.Pattern.Value != "" {
+			h.WriteString(hdr.Pattern.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		for _, ext := range low.HashExtensions(hdr.Extensions) {
+			h.WriteString(ext)
+			h.WriteByte(low.HASH_PIPE)
+		}
 
-	keys := make([]string, len(h.Enum.Value))
-	z := 0
-	for k := range h.Enum.Value {
-		keys[z] = low.ValueToString(h.Enum.Value[k].Value)
-		z++
-	}
-	sort.Strings(keys)
-	f = append(f, keys...)
+		keys := make([]string, len(hdr.Enum.Value))
+		for k := range hdr.Enum.Value {
+			keys[k] = low.ValueToString(hdr.Enum.Value[k].Value)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			h.WriteString(key)
+			h.WriteByte(low.HASH_PIPE)
+		}
 
-	if h.Items.Value != nil {
-		f = append(f, low.GenerateHashString(h.Items.Value))
-	}
-	return sha256.Sum256([]byte(strings.Join(f, "|")))
+		if hdr.Items.Value != nil {
+			h.WriteString(low.GenerateHashString(hdr.Items.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		return h.Sum64()
+	})
 }
 
 // Getter methods to satisfy SwaggerHeader interface.

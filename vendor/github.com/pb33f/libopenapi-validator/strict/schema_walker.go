@@ -66,7 +66,7 @@ func (v *Validator) validateObject(ctx *traversalContext, schema *base.Schema, d
 
 		if !isPropertyDeclared(propName, declared, patterns) {
 			undeclared = append(undeclared,
-				newUndeclaredProperty(propPath, propName, propValue, getDeclaredPropertyNames(declared), ctx.direction))
+				newUndeclaredProperty(propPath, propName, propValue, getDeclaredPropertyNames(declared), ctx.direction, schema))
 
 			// even if undeclared, recurse into additionalProperties schema if present
 			if schema.AdditionalProperties != nil && schema.AdditionalProperties.IsA() {

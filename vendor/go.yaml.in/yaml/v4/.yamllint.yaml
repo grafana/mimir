@@ -1,3 +1,6 @@
+# Copyright 2025 The go-yaml Project Contributors
+# SPDX-License-Identifier: Apache-2.0
+
 extends: default
 
 ignore: /**/testdata/  # ignore testdata files that are not relevant for linting

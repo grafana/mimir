@@ -14,10 +14,10 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/util/promqlext"
 	mimirtest "github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -476,7 +476,7 @@ func TestOptimizeLabelsRequestMatchers(t *testing.T) {
 			assert.Equal(t, testData.expectedMatchers, actualMatchers)
 
 			// Ensure the optimized matchers are still valid.
-			_, err = parser.ParseMetricSelectors(actualMatchers)
+			_, err = promqlext.NewPromQLParser().ParseMetricSelectors(actualMatchers)
 			assert.NoError(t, err)
 		})
 	}

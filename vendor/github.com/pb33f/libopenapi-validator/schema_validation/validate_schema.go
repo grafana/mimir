@@ -122,15 +122,15 @@ func (s *schemaValidator) validateSchemaWithVersion(schema *base.Schema, payload
 		return false, validationErrors
 	}
 
-	// extract index of schema, and check the version
-	// schemaIndex := schema.GoLow().Index
 	var renderedSchema []byte
 
 	// render the schema, to be used for validation, stop this from running concurrently, mutations are made to state
 	// and, it will cause async issues.
 	// Create isolated render context for this validation to prevent false positive cycle detection
 	// when multiple validations run concurrently.
-	renderCtx := base.NewInlineRenderContext()
+	// Use validation mode to force full inlining of discriminator refs - the JSON schema compiler
+	// needs a self-contained schema without unresolved $refs.
+	renderCtx := base.NewInlineRenderContextForValidation()
 	s.lock.Lock()
 	var e error
 	renderedSchema, e = schema.RenderInlineWithContext(renderCtx)

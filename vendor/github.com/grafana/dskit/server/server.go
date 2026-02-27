@@ -585,6 +585,7 @@ func RegisterInstrumentationWithGatherer(router *mux.Router, gatherer prometheus
 	router.Handle("/metrics", promhttp.HandlerFor(gatherer, promhttp.HandlerOpts{
 		EnableOpenMetrics: true,
 	}))
+	router.Handle("/debug/pprof/cmdline", http.NotFoundHandler())
 	router.PathPrefix("/debug/pprof").Handler(http.DefaultServeMux)
 }
 

@@ -94,9 +94,15 @@ func ValidateQueryParams(
 
 // ValidateRequestHeaders checks for undeclared headers in an HTTP request.
 // Header names are normalized to lowercase for path generation and pattern matching.
+//
+// The securityHeaders parameter contains header names that are valid due to security
+// scheme definitions (e.g., "X-API-Key" for apiKey schemes, "Authorization" for
+// http/oauth2/openIdConnect schemes). These headers are considered "declared" even
+// though they don't appear in the operation's parameters array.
 func ValidateRequestHeaders(
 	headers http.Header,
 	declaredParams []*v3.Parameter,
+	securityHeaders []string,
 	options *config.ValidationOptions,
 ) []UndeclaredValue {
 	if headers == nil || options == nil || !options.StrictMode {
@@ -113,13 +119,18 @@ func ValidateRequestHeaders(
 		}
 	}
 
+	// add security scheme headers (case-insensitive)
+	for _, h := range securityHeaders {
+		declared[strings.ToLower(h)] = true
+	}
+
 	var undeclared []UndeclaredValue
 
 	// check each header
 	for headerName := range headers {
 		lowerName := strings.ToLower(headerName)
 
-		// skip if declared
+		// skip if declared (via parameters or security schemes)
 		if declared[lowerName] {
 			continue
 		}

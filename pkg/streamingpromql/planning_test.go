@@ -1695,21 +1695,21 @@ func TestDeduplicateAndMergePlanning(t *testing.T) {
 						- param 4: StringLiteral: "(.+)"
 			`,
 		},
-		"instant vector function which doesn't drop __name__  - should NOT deduplicate and merge": {
+		"instant vector function which doesn't drop __name__ - should NOT deduplicate and merge": {
 			expr: `sort(some_metric)`,
 			expectedPlan: `
 				- FunctionCall: sort(...)
 					- VectorSelector: {__name__="some_metric"}
 			`,
 		},
-		"range  vector function which doesn't drop __name__- should NOT deduplicate and merge": {
+		"range vector function which doesn't drop __name__- should NOT deduplicate and merge": {
 			expr: `absent_over_time(some_metric[5m])`,
 			expectedPlan: `
 				- FunctionCall: absent_over_time(...)
 					- MatrixSelector: {__name__="some_metric"}[5m0s]
 			`,
 		},
-		"aritmetic vector-scalar operation - should deduplicate and merge": {
+		"arithmetic vector-scalar operation - should deduplicate and merge": {
 			expr: `some_metric * 2`,
 			expectedPlan: `
 				- DeduplicateAndMerge

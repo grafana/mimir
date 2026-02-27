@@ -5,7 +5,7 @@ package base
 
 import (
 	"context"
-	"crypto/sha256"
+	"hash/maphash"
 
 	"github.com/pb33f/libopenapi/datamodel/low"
 	"github.com/pb33f/libopenapi/index"
@@ -66,25 +66,22 @@ func (ex *ExternalDoc) GetExtensions() *orderedmap.Map[low.KeyReference[string],
 	return ex.Extensions
 }
 
-func (ex *ExternalDoc) Hash() [32]byte {
-	// Use string builder pool
-	sb := low.GetStringBuilder()
-	defer low.PutStringBuilder(sb)
-
-	if ex.Description.Value != "" {
-		sb.WriteString(ex.Description.Value)
-		sb.WriteByte('|')
-	}
-	if ex.URL.Value != "" {
-		sb.WriteString(ex.URL.Value)
-		sb.WriteByte('|')
-	}
-
-	for _, ext := range low.HashExtensions(ex.Extensions) {
-		sb.WriteString(ext)
-		sb.WriteByte('|')
-	}
-	return sha256.Sum256([]byte(sb.String()))
+func (ex *ExternalDoc) Hash() uint64 {
+	return low.WithHasher(func(h *maphash.Hash) uint64 {
+		if ex.Description.Value != "" {
+			h.WriteString(ex.Description.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if ex.URL.Value != "" {
+			h.WriteString(ex.URL.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		for _, ext := range low.HashExtensions(ex.Extensions) {
+			h.WriteString(ext)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		return h.Sum64()
+	})
 }
 
 // GetIndex returns the index.SpecIndex instance attached to the ExternalDoc object

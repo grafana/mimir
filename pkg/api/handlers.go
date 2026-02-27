@@ -37,6 +37,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -277,6 +278,7 @@ func NewQuerierHandler(
 		nil,
 		nil,
 		v1.OpenAPIOptions{},
+		promqlext.NewPromQLParser(),
 	)
 
 	api.InstallCodec(protobufCodec{})

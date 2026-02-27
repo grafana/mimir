@@ -75,26 +75,25 @@ func InfluxHandler(
 
 		pushMetrics.IncInfluxRequest(tenantID)
 
-		var bytesRead int
-
-		supplier := func() (*mimirpb.WriteRequest, func(), error) {
+		supplier := func() (*mimirpb.WriteRequest, func(), int, error) {
 			rb := util.NewRequestBuffers(requestBufferPool)
 			var req mimirpb.PreallocWriteRequest
 
-			if bytesRead, err = influxRequestParser(ctx, r, maxRecvMsgSize, rb, &req, logger); err != nil {
+			bytesRead, err := influxRequestParser(ctx, r, maxRecvMsgSize, rb, &req, logger)
+			if err != nil {
 				err = httpgrpc.Error(http.StatusBadRequest, err.Error())
 				rb.CleanUp()
-				return nil, nil, err
+				return nil, nil, 0, err
 			}
+
+			pushMetrics.ObserveInfluxUncompressedBodySize(tenantID, float64(bytesRead))
 
 			cleanup := func() {
 				mimirpb.ReuseSlice(req.Timeseries)
 				rb.CleanUp()
 			}
-			return &req.WriteRequest, cleanup, nil
+			return &req.WriteRequest, cleanup, bytesRead, nil
 		}
-
-		pushMetrics.ObserveInfluxUncompressedBodySize(tenantID, float64(bytesRead))
 
 		req := newRequest(supplier)
 		req.contentLength = r.ContentLength
@@ -106,7 +105,7 @@ func InfluxHandler(
 				return
 			}
 			if errors.Is(err, influxio.ErrReadLimitExceeded) {
-				level.Warn(logger).Log("msg", "request too large", "err", err, "bytesRead", bytesRead, "maxMsgSize", maxRecvMsgSize)
+				level.Warn(logger).Log("msg", "request too large", "err", err, "maxMsgSize", maxRecvMsgSize)
 				w.WriteHeader(http.StatusRequestEntityTooLarge)
 				return
 			}

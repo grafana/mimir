@@ -594,7 +594,6 @@ func RegisterFunction(function Function, name string, returnType parser.ValueTyp
 		ReturnType:      returnType,
 		OperatorFactory: factory,
 	}
-
 	promQLNamesToFunctions[name] = function
 
 	return nil

@@ -4,8 +4,10 @@ package ingest
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
 	"time"
 
@@ -17,6 +19,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/twmb/franz-go/pkg/sasl"
+	"github.com/twmb/franz-go/pkg/sasl/oauth"
 	"github.com/twmb/franz-go/pkg/sasl/plain"
 	"github.com/twmb/franz-go/pkg/sasl/scram"
 	"github.com/twmb/franz-go/plugin/kotel"
@@ -64,7 +67,7 @@ func (o onlySampledTraces) Inject(ctx context.Context, carrier propagation.TextM
 func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger log.Logger) []kgo.Opt {
 	opts := []kgo.Opt{
 		kgo.ClientID(cfg.ClientID),
-		kgo.SeedBrokers(cfg.Address),
+		kgo.SeedBrokers(cfg.Address...),
 		kgo.DialTimeout(cfg.DialTimeout),
 
 		// A cluster metadata update is a request sent to a broker and getting back the map of partitions and
@@ -101,36 +104,11 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 		}),
 	}
 
-	// SASL auth.
-	if cfg.SASLUsername != "" && cfg.SASLPassword.String() != "" {
-		var m sasl.Mechanism
-		switch cfg.SASLMechanism {
-		case SASLMechanismScramSHA256:
-			m = scram.Sha256(func(_ context.Context) (scram.Auth, error) {
-				return scram.Auth{
-					User: cfg.SASLUsername,
-					Pass: cfg.SASLPassword.String(),
-				}, nil
-			})
-		case SASLMechanismScramSHA512:
-			m = scram.Sha512(func(_ context.Context) (scram.Auth, error) {
-				return scram.Auth{
-					User: cfg.SASLUsername,
-					Pass: cfg.SASLPassword.String(),
-				}, nil
-			})
-		case SASLMechanismPlain:
-			m = plain.Plain(func(_ context.Context) (plain.Auth, error) {
-				return plain.Auth{
-					User: cfg.SASLUsername,
-					Pass: cfg.SASLPassword.String(),
-				}, nil
-			})
-		default:
-			panic(fmt.Errorf("unknown SASL mechanism: %v", cfg.SASLMechanism))
-		}
-		opts = append(opts, kgo.SASL(m))
+	if cfg.ClientRack != "" {
+		opts = append(opts, kgo.Rack(cfg.ClientRack))
 	}
+
+	opts = append(opts, kafkaAuthOptions(cfg.SASL)...)
 
 	opts = append(opts, kgo.WithHooks(kotel.NewKotel(kotel.WithTracer(recordsTracer())).Hooks()...))
 
@@ -139,6 +117,56 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 	}
 
 	return opts
+}
+
+func kafkaAuthOptions(cfg KafkaAuthConfig) []kgo.Opt {
+	if (cfg.Mechanism == "" || cfg.Mechanism == SASLMechanismPlain) && cfg.Username == "" {
+		return nil
+	}
+
+	var m sasl.Mechanism
+	switch cfg.Mechanism {
+	case SASLMechanismScramSHA256:
+		m = scram.Auth{
+			User: cfg.Username,
+			Pass: cfg.Password.String(),
+		}.AsSha256Mechanism()
+	case SASLMechanismScramSHA512:
+		m = scram.Auth{
+			User: cfg.Username,
+			Pass: cfg.Password.String(),
+		}.AsSha512Mechanism()
+	case SASLMechanismPlain:
+		m = plain.Auth{
+			User: cfg.Username,
+			Pass: cfg.Password.String(),
+		}.AsMechanism()
+	case SASLMechanismOauthbearer:
+		switch {
+		case cfg.OauthbearerToken.String() != "":
+			m = oauth.Auth{
+				Token:      cfg.OauthbearerToken.String(),
+				Zid:        cfg.OauthbearerZid,
+				Extensions: cfg.OauthbearerExtensions.Read(),
+			}.AsMechanism()
+		case cfg.OauthbearerFilePath != "":
+			m = oauth.Oauth(func(context.Context) (oauth.Auth, error) {
+				f, err := os.ReadFile(cfg.OauthbearerFilePath)
+				if err != nil {
+					return oauth.Auth{}, err
+				}
+				var a oauth.Auth
+				err = json.Unmarshal(f, &a)
+				return a, err
+			})
+		default:
+			panic(fmt.Errorf("SASL mechanism is %s but no way to get token defined", SASLMechanismOauthbearer))
+		}
+	default:
+		panic(fmt.Errorf("unknown SASL mechanism: %v", cfg.Mechanism))
+	}
+
+	return []kgo.Opt{kgo.SASL(m)}
 }
 
 func recordsTracer() *kotel.Tracer {

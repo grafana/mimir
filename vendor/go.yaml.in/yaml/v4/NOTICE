@@ -11,11 +11,11 @@ starting in 2011 when the project was ported over:
 - internal/libyaml/yaml.go
 - internal/libyaml/yamlprivate.go
 
-Copyright 2006-2011 - Kirill Simonov
+Copyright 2006-2010 Kirill Simonov
 https://opensource.org/license/mit
 
 All the remaining project files are covered by the Apache license:
 
-Copyright 2011-2019 - Canonical Ltd
-Copyright 2025 - The go-yaml Project Contributors
+Copyright 2011-2019 Canonical Ltd
+Copyright 2025 The go-yaml Project Contributors
 http://www.apache.org/licenses/LICENSE-2.0

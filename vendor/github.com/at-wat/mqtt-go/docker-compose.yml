@@ -1,7 +1,7 @@
 version: '2'
 services:
   mosquitto:
-    image: eclipse-mosquitto:2.0.18
+    image: eclipse-mosquitto:2.0.20
     ports:
       - 1883:1883
       - 8883:8883

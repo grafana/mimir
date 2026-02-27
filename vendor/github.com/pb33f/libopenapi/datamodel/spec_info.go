@@ -37,7 +37,7 @@ type SpecInfo struct {
 	APISchema           string                  `json:"-"`     // API Schema for supplied spec type (2 or 3)
 	Generated           time.Time               `json:"-"`
 	OriginalIndentation int                     `json:"-"` // the original whitespace
-	Self                string                  `json:"-"`     // the $self field for OpenAPI 3.2+ documents (base URI)
+	Self                string                  `json:"-"` // the $self field for OpenAPI 3.2+ documents (base URI)
 }
 
 func ExtractSpecInfoWithConfig(spec []byte, config *DocumentConfiguration) (*SpecInfo, error) {

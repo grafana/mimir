@@ -26,10 +26,10 @@ type readConsistencyRoundTripper struct {
 
 	limits  Limits
 	logger  log.Logger
-	metrics *ingest.StrongReadConsistencyInstrumentation[map[int32]int64]
+	metrics *ingest.StrongReadConsistencyMetrics
 }
 
-func newReadConsistencyRoundTripper(next http.RoundTripper, offsetsReaders map[string]*ingest.TopicOffsetsReader, limits Limits, logger log.Logger, metrics *ingest.StrongReadConsistencyInstrumentation[map[int32]int64]) http.RoundTripper {
+func newReadConsistencyRoundTripper(next http.RoundTripper, offsetsReaders map[string]*ingest.TopicOffsetsReader, limits Limits, logger log.Logger, metrics *ingest.StrongReadConsistencyMetrics) http.RoundTripper {
 	return &readConsistencyRoundTripper{
 		next:           next,
 		offsetsReaders: offsetsReaders,
@@ -70,7 +70,7 @@ func (r *readConsistencyRoundTripper) RoundTrip(req *http.Request) (_ *http.Resp
 		offsetsReader := offsetsReader
 
 		errGroup.Go(func() error {
-			offsets, err := r.metrics.Observe(offsetsReader.Topic(), false, func() (map[int32]int64, error) {
+			offsets, err := ingest.ObserveStrongReadConsistency(r.metrics, offsetsReader.Topic(), false, func() (map[int32]int64, error) {
 				return offsetsReader.WaitNextFetchLastProducedOffset(ctx)
 			})
 			if err != nil {
@@ -109,7 +109,7 @@ func getDefaultReadConsistency(tenantIDs []string, limits Limits) string {
 	return querierapi.ReadConsistencyEventual
 }
 
-func newReadConsistencyMetrics(reg prometheus.Registerer, offsetsReaders map[string]*ingest.TopicOffsetsReader) *ingest.StrongReadConsistencyInstrumentation[map[int32]int64] {
+func newReadConsistencyMetrics(reg prometheus.Registerer, offsetsReaders map[string]*ingest.TopicOffsetsReader) *ingest.StrongReadConsistencyMetrics {
 	const component = "query-frontend"
 
 	topics := make([]string, 0, len(offsetsReaders))
@@ -117,5 +117,5 @@ func newReadConsistencyMetrics(reg prometheus.Registerer, offsetsReaders map[str
 		topics = append(topics, r.Topic())
 	}
 
-	return ingest.NewStrongReadConsistencyInstrumentation[map[int32]int64](component, reg, topics)
+	return ingest.NewStrongReadConsistencyMetrics(reg, component, topics)
 }

@@ -11,7 +11,6 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql"
@@ -21,9 +20,6 @@ import (
 )
 
 func TestProjectionPushdownOptimizationPass(t *testing.T) {
-	// Enable experimental functions so that we can verify they are inspected correctly.
-	parser.EnableExperimentalFunctions = true
-
 	testCases := map[string]struct {
 		expr             string
 		expectedPlan     string

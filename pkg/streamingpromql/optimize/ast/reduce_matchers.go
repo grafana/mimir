@@ -11,6 +11,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -126,22 +127,13 @@ func buildOutMatchers(inMatchers []*labels.Matcher, allowedOutMatchers []*labels
 	dedupedMatchers, dropped := dedupeMatchers(inMatchers)
 
 	// allowedInResultSet maps the relevant values of matchers returned by setReduce.
-	// The innermost map value tracks whether that matcher is already represented in outMatchers.
+	// We use core.LabelMatcher as the key here because labels.Matcher contains a FastRegexMatcher instance
+	// which means that two otherwise identical matchers are considered different.
 	// We do it this way instead of using the matcher string via m.String()
 	// to avoid unnecessary memory allocations when building the string.
-	allowedInResultSet := make(map[labels.MatchType]map[string]map[string]bool, 4)
+	allowedInResultSet := make(map[core.LabelMatcher]bool, len(allowedOutMatchers))
 	for _, m := range allowedOutMatchers {
-		if _, ok := allowedInResultSet[m.Type][m.Name]; ok {
-			allowedInResultSet[m.Type][m.Name][m.Value] = false
-			continue
-		}
-		val := map[string]bool{m.Value: false}
-		if _, ok := allowedInResultSet[m.Type]; ok {
-			allowedInResultSet[m.Type][m.Name] = val
-			continue
-		}
-		name := map[string]map[string]bool{m.Name: val}
-		allowedInResultSet[m.Type] = name
+		allowedInResultSet[core.LabelMatcherFromPrometheusType(m)] = false
 	}
 	// If we have reached the last deduped input matcher and are still not returning any matchers,
 	// we should return at least one matcher. This can happen if all input matchers are wildcard matchers.
@@ -153,9 +145,9 @@ func buildOutMatchers(inMatchers []*labels.Matcher, allowedOutMatchers []*labels
 		// allowedOutMatchers is used to both keep track of all unique matchers (evidenced by existence in the map),
 		// and whether the matcher has already been seen and added to a set of output matchers (evidenced by the value in the map).
 		// We only want to add the matcher if it hasn't already been added to an output slice.
-		if alreadyInResultSet, allowed := allowedInResultSet[m.Type][m.Name][m.Value]; allowed && !alreadyInResultSet {
+		if alreadyInResultSet, allowed := allowedInResultSet[core.LabelMatcherFromPrometheusType(m)]; allowed && !alreadyInResultSet {
 			outMatchers = append(outMatchers, m)
-			allowedInResultSet[m.Type][m.Name][m.Value] = true
+			allowedInResultSet[core.LabelMatcherFromPrometheusType(m)] = true
 		} else {
 			dropped = append(dropped, m)
 		}
@@ -198,32 +190,19 @@ func setReduceMatchers(ms []*labels.Matcher, keepWildcardsForInfoDataSelector bo
 
 // dedupeMatchers dedupes matchers based on their type, name, and value.
 func dedupeMatchers(ms []*labels.Matcher) ([]*labels.Matcher, []*labels.Matcher) {
-	deduped := make(map[labels.MatchType]map[string]map[string]*labels.Matcher, 4)
+	deduped := make(map[core.LabelMatcher]*labels.Matcher, len(ms))
 	dropped := make([]*labels.Matcher, 0, 1)
 	for _, m := range ms {
-		if _, ok := deduped[m.Type][m.Name][m.Value]; ok {
+		key := core.LabelMatcherFromPrometheusType(m)
+		if _, ok := deduped[key]; ok {
 			dropped = append(dropped, m)
 			continue
 		}
-		if _, ok := deduped[m.Type][m.Name]; ok {
-			deduped[m.Type][m.Name][m.Value] = m
-			continue
-		}
-		valPtr := map[string]*labels.Matcher{m.Value: m}
-		if _, ok := deduped[m.Type]; ok {
-			deduped[m.Type][m.Name] = valPtr
-			continue
-		}
-		name := map[string]map[string]*labels.Matcher{m.Name: valPtr}
-		deduped[m.Type] = name
+		deduped[key] = m
 	}
 	outMatchers := make([]*labels.Matcher, 0, len(deduped))
-	for _, nameMap := range deduped {
-		for _, valMap := range nameMap {
-			for _, ptr := range valMap {
-				outMatchers = append(outMatchers, ptr)
-			}
-		}
+	for _, ptr := range deduped {
+		outMatchers = append(outMatchers, ptr)
 	}
 	return outMatchers, dropped
 }

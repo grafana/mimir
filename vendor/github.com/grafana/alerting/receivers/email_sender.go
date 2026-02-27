@@ -4,22 +4,18 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"embed"
 	"errors"
 	"fmt"
-	"html/template"
 	"io"
 	"net"
 	"net/mail"
 	"strconv"
 	"strings"
 
-	"github.com/Masterminds/sprig/v3"
+	"github.com/grafana/alerting/templates/email"
+
 	gomail "gopkg.in/mail.v2"
 )
-
-//go:embed templates/*
-var defaultEmailTemplate embed.FS
 
 type EmailSenderConfig struct {
 	AuthPassword   string
@@ -36,32 +32,26 @@ type EmailSenderConfig struct {
 	StartTLSPolicy string
 	StaticHeaders  map[string]string
 	SentBy         string
+	// UseBCC indicates whether to send emails using BCC
+	// instead of the TO field when SingleEmail is false.
+	// If both UseBCC and SingleEmail are true, UseBCC is ignored
+	// and recipients are placed in the TO field.
+	UseBCC bool
 }
 
 type defaultEmailSender struct {
 	cfg    EmailSenderConfig
-	tmpl   *template.Template
 	dialFn func(*defaultEmailSender) (gomail.SendCloser, error)
 }
 
 // NewEmailSender takes a configuration and returns a new EmailSender.
-func NewEmailSender(cfg EmailSenderConfig) (EmailSender, error) {
-	tmpl, err := template.New("templates").
-		Funcs(template.FuncMap{
-			"Subject":                 subjectTemplateFunc,
-			"__dangerouslyInjectHTML": __dangerouslyInjectHTML,
-		}).Funcs(sprig.FuncMap()).
-		ParseFS(defaultEmailTemplate, "templates/*")
-	if err != nil {
-		return nil, err
-	}
+func NewEmailSender(cfg EmailSenderConfig) EmailSender {
 	return &defaultEmailSender{
-		cfg:  cfg,
-		tmpl: tmpl,
+		cfg: cfg,
 		dialFn: func(s *defaultEmailSender) (gomail.SendCloser, error) {
 			return s.dial()
 		},
-	}, nil
+	}
 }
 
 // Message representats an email message.
@@ -102,7 +92,7 @@ func (s *defaultEmailSender) buildEmailMessage(cmd *SendEmailSettings) (*Message
 			return nil, err
 		}
 		var buffer bytes.Buffer
-		err = s.tmpl.ExecuteTemplate(&buffer, cmd.Template+fileExtension, data)
+		err = email.Template().ExecuteTemplate(&buffer, cmd.Template+fileExtension, data)
 		if err != nil {
 			return nil, err
 		}
@@ -171,7 +161,7 @@ func (s *defaultEmailSender) Send(messages ...*Message) (int, error) {
 // expandMsg expands the message to a list of messages, one for each recipient
 // if SingleEmail is false, otherwise it returns a single message.
 func (s *defaultEmailSender) expandMsg(msg *Message) []*gomail.Message {
-	if msg.SingleEmail {
+	if msg.SingleEmail || s.cfg.UseBCC {
 		return []*gomail.Message{s.buildEmail(msg)}
 	}
 
@@ -245,7 +235,11 @@ func (s *defaultEmailSender) buildEmail(msg *Message) *gomail.Message {
 		m.SetHeader(h, val)
 	}
 	m.SetHeader("From", msg.From)
-	m.SetHeader("To", msg.To...)
+	if s.cfg.UseBCC && !msg.SingleEmail {
+		m.SetHeader("Bcc", msg.To...)
+	} else {
+		m.SetHeader("To", msg.To...)
+	}
 	m.SetHeader("Subject", msg.Subject)
 
 	// Add embedded files.
@@ -289,38 +283,4 @@ func getFileExtensionByContentType(contentType string) (string, error) {
 	default:
 		return "", fmt.Errorf("unrecognized content type %q", contentType)
 	}
-}
-
-// subjectTemplateFunc sets the subject template (value) on the map represented by `.Subject.` (obj) so that it can be compiled and executed later.
-// In addition, it executes and returns the subject template using the data represented in `.TemplateData` (data).
-// This results in the template being replaced by the subject string.
-func subjectTemplateFunc(obj map[string]any, data map[string]any, value string) string {
-	obj["value"] = value
-
-	titleTmpl, err := template.New("title").Parse(value)
-	if err != nil {
-		return ""
-	}
-
-	var buf bytes.Buffer
-	err = titleTmpl.ExecuteTemplate(&buf, "title", data)
-	if err != nil {
-		return ""
-	}
-
-	subj := buf.String()
-	// Since we have already executed the template, save it to subject data so we don't have to do it again later on
-	obj["executed_template"] = subj
-	return subj
-}
-
-// __dangerouslyInjectHTML allows marking areas of am email template as HTML safe, this will _not_ sanitize the string and will allow HTML snippets to be rendered verbatim.
-// Use with absolute care as this _could_ allow for XSS attacks when used in an insecure context.
-//
-// It's safe to ignore gosec warning G203 when calling this function in an HTML template because we assume anyone who has write access
-// to the email templates folder is an administrator.
-//
-// nolint:gosec,revive
-func __dangerouslyInjectHTML(s string) template.HTML {
-	return template.HTML(s)
 }

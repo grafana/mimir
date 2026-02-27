@@ -11,6 +11,7 @@ memcached {
   memcached_index_queries_node_affinity_matchers:: [],
   memcached_chunks_node_affinity_matchers:: [],
   memcached_metadata_node_affinity_matchers:: [],
+  memcached_range_vector_splitting_node_affinity_matchers:: [],
 
   memcached+:: {
     cpu_limits:: null,
@@ -109,5 +110,24 @@ memcached {
   memcached_metadata:
     if $._config.cache_metadata_enabled then
       $.newMemcachedMetadata('memcached-metadata', $.memcached_metadata_node_affinity_matchers)
+    else {},
+
+  // Creates a memcached instance used to cache intermediate results from range vector splitting queries.
+  newMemcachedRangeVectorSplitting(name, nodeAffinityMatchers=[])::
+    $.memcached {
+      name: name,
+      max_item_size: '%dm' % [$._config.cache_range_vector_splitting_max_item_size_mb],
+      overprovision_factor: 1.05,
+      connection_limit: std.toString($._config.cache_range_vector_splitting_connection_limit),
+      min_ready_seconds: $._config.cache_range_vector_splitting_min_ready_seconds,
+
+      statefulSet+:
+        statefulSet.mixin.spec.withReplicas($._config.memcached_range_vector_splitting_replicas) +
+        $.newMimirNodeAffinityMatchers(nodeAffinityMatchers),
+    },
+
+  memcached_range_vector_splitting:
+    if $._config.query_engine_range_vector_splitting_enabled then
+      $.newMemcachedRangeVectorSplitting('memcached-range-vector-splitting', $.memcached_range_vector_splitting_node_affinity_matchers)
     else {},
 }
