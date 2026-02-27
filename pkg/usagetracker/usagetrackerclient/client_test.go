@@ -895,8 +895,7 @@ func TestUsageTrackerClient_TrackSeriesBatch(t *testing.T) {
 		instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
 		instances["usage-tracker-zone-b-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
 
-		batchClient := c.BatchClient()
-		batchClient.TestFlush()
+		c.Batcher().TestFlush()
 
 		// Should have tracked series only to usage-tracker replicas in the preferred zone.
 		instances["usage-tracker-zone-a-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
@@ -990,8 +989,7 @@ func TestUsageTrackerClient_TrackSeriesBatch(t *testing.T) {
 		instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
 		instances["usage-tracker-zone-b-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
 
-		batchClient := c.BatchClient()
-		batchClient.TestFlush()
+		c.Batcher().TestFlush()
 
 		// Should have attempted to track series to usage-tracker replicas in the preferred zone first.
 		instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 1)
@@ -1224,8 +1222,7 @@ func TestUsageTrackerClient_TrackSeriesBatch(t *testing.T) {
 		require.Equal(t, 0, r.rejections["user-2"])
 
 		// Flush the batch
-		batchClient := c.BatchClient()
-		batchClient.TestFlush()
+		c.Batcher().TestFlush()
 
 		// Should have tracked series to usage-tracker replicas in the preferred zone
 		instances["usage-tracker-zone-a-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)

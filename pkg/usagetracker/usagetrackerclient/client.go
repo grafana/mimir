@@ -126,8 +126,8 @@ type UsageTrackerClient struct {
 	// trackSeriesWorkersPool is the pool of workers used to send requests to usage-tracker instances.
 	trackSeriesWorkersPool *concurrency.ReusableGoroutinesPool
 
-	// batchTrackingClient manages batch per-partition series tracking.
-	batchTrackingClient *batchTrackingClient
+	// batcher manages batch per-partition series tracking.
+	batcher *batcher
 
 	// Cache for users close to their limits.
 	usersCloseToLimitsMtx   sync.RWMutex
@@ -183,7 +183,7 @@ func NewUsageTrackerClient(clientName string, clientCfg Config, partitionRing *r
 		}),
 	}
 
-	c.batchTrackingClient = newBatchTrackingClient(clientsPool, clientCfg.MaxBatchSeries, clientCfg.BatchDelay, logger, c)
+	c.batcher = newBatcher(clientsPool, clientCfg.MaxBatchSeries, clientCfg.BatchDelay, logger, c)
 	c.Service = services.NewBasicService(c.starting, c.running, c.stopping)
 	return c
 }
@@ -238,8 +238,8 @@ func (c *UsageTrackerClient) running(ctx context.Context) error {
 // stopping implements services.StoppingFn.
 func (c *UsageTrackerClient) stopping(_ error) error {
 	c.trackSeriesWorkersPool.Close()
-	if c.batchTrackingClient != nil {
-		c.batchTrackingClient.Stop()
+	if c.batcher != nil {
+		c.batcher.Stop()
 	}
 	return nil
 }
@@ -432,7 +432,7 @@ func (c *UsageTrackerClient) TrackSeriesAsync(ctx context.Context, userID string
 				partitionSeries[i] = series[idx]
 			}
 
-			c.batchTrackingClient.TrackSeries(int32(partitionID), userID, partitionSeries)
+			c.batcher.TrackSeries(int32(partitionID), userID, partitionSeries)
 			return nil
 		}, batchOptions,
 	)
@@ -649,11 +649,11 @@ func (c *UsageTrackerClient) CanTrackAsync(userID string) bool {
 	return !found
 }
 
-func (c *UsageTrackerClient) BatchClient() *batchTrackingClient {
-	return c.batchTrackingClient
+func (c *UsageTrackerClient) Batcher() *batcher {
+	return c.batcher
 }
 
-type batchTrackingClient struct {
+type batcher struct {
 	maxSeriesPerBatch int
 	batchDelay        time.Duration
 
@@ -666,8 +666,8 @@ type batchTrackingClient struct {
 	logger        log.Logger
 }
 
-func newBatchTrackingClient(clientsPool *client.Pool, maxSeriesPerBatch int, batchDelay time.Duration, logger log.Logger, trackerClient *UsageTrackerClient) *batchTrackingClient {
-	return &batchTrackingClient{
+func newBatcher(clientsPool *client.Pool, maxSeriesPerBatch int, batchDelay time.Duration, logger log.Logger, trackerClient *UsageTrackerClient) *batcher {
+	return &batcher{
 		maxSeriesPerBatch: maxSeriesPerBatch,
 		batchDelay:        batchDelay,
 
@@ -681,7 +681,7 @@ func newBatchTrackingClient(clientsPool *client.Pool, maxSeriesPerBatch int, bat
 }
 
 // TrackSeries tracks some series for a user in a partition. It will be batched and flushed asynchronously.
-func (c *batchTrackingClient) TrackSeries(partition int32, userID string, series []uint64) {
+func (c *batcher) TrackSeries(partition int32, userID string, series []uint64) {
 	c.batchersMtx.Lock()
 	b, ok := c.batchers[partition]
 	if !ok {
@@ -695,12 +695,12 @@ func (c *batchTrackingClient) TrackSeries(partition int32, userID string, series
 	b.TrackSeries(userID, series)
 }
 
-func (c *batchTrackingClient) Stop() {
+func (c *batcher) Stop() {
 	close(c.stoppingChan)
 }
 
 // TestFlush synchronously flushes all batchers. This is only used for testing.
-func (c *batchTrackingClient) TestFlush() {
+func (c *batcher) TestFlush() {
 	c.batchersMtx.Lock()
 	defer c.batchersMtx.Unlock()
 	for _, b := range c.batchers {
