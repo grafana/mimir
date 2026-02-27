@@ -757,6 +757,12 @@ func NewPartitionBatcher(partition int32, maxSeriesPerBatch int, batchDelay time
 // TrackSeries adds a user and their series to this partition's current batch,
 // flushing it if it exceeds the size threshold.
 func (b *PartitionBatcher) TrackSeries(userID string, series []uint64) {
+	select {
+	case <-b.stoppingChan:
+		return
+	default:
+	}
+
 	b.usersMtx.Lock()
 	b.userSeries = append(b.userSeries, &usagetrackerpb.TrackSeriesBatchUser{
 		UserID:       userID,
