@@ -721,7 +721,6 @@ type PartitionBatcher struct {
 	seriesCount int
 
 	trackerClient *UsageTrackerClient
-	clientsPool   *client.Pool
 	workersPool   *concurrency.ReusableGoroutinesPool
 
 	maxSeriesPerBatch int
@@ -738,7 +737,6 @@ func NewPartitionBatcher(partition int32, maxSeriesPerBatch int, batchDelay time
 		seriesCount: 0,
 
 		trackerClient: trackerClient,
-		clientsPool:   clientsPool,
 		workersPool:   concurrency.NewReusableGoroutinesPool(2),
 
 		maxSeriesPerBatch: maxSeriesPerBatch,
