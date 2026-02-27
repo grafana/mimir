@@ -242,8 +242,8 @@ func TestProxyEndpoint_SameHostnameMirroredAndAmplified_BothReceiveTraffic(t *te
 	serverURL := mustParseURL(server.URL)
 
 	// Create two backends pointing to the same server, but one is preferred (mirrored) and one is not (amplified)
-	mirroredBackend := NewProxyBackend(serverURL.Hostname(), serverURL, 5*time.Second, true, false, BackendTypeMirrored)
-	amplifiedBackend := NewProxyBackend(serverURL.Hostname(), serverURL, 5*time.Second, false, false, BackendTypeAmplified)
+	mirroredBackend := NewHTTPProxyBackend(serverURL.Hostname(), serverURL, 5*time.Second, true, false, BackendTypeMirrored)
+	amplifiedBackend := NewHTTPProxyBackend(serverURL.Hostname(), serverURL, 5*time.Second, false, false, BackendTypeAmplified)
 
 	// Track requests via custom backends that wrap the real ones
 	mirroredWrapper := &trackingBackend{ProxyBackend: mirroredBackend, counter: &mirroredRequests, mu: &mu}
@@ -347,7 +347,7 @@ func TestProxyEndpoint_ResponseSelection(t *testing.T) {
 				defer server.Close()
 
 				// Parse the server URL and create a backend
-				backend := NewProxyBackend(mb.name, mustParseURL(server.URL), 5*time.Second, mb.name == tt.preferredBackend, false, BackendTypeMirrored)
+				backend := NewHTTPProxyBackend(mb.name, mustParseURL(server.URL), 5*time.Second, mb.name == tt.preferredBackend, false, BackendTypeMirrored)
 				backendInterfaces = append(backendInterfaces, backend)
 			}
 
@@ -389,7 +389,7 @@ func TestProxyEndpoint_BodySizeLimit(t *testing.T) {
 	}))
 	defer server.Close()
 
-	backend := NewProxyBackend("backend1", mustParseURL(server.URL), 5*time.Second, true, false, BackendTypeMirrored)
+	backend := NewHTTPProxyBackend("backend1", mustParseURL(server.URL), 5*time.Second, true, false, BackendTypeMirrored)
 	backendInterfaces := []ProxyBackend{backend}
 
 	route := Route{
@@ -462,7 +462,7 @@ func TestProxyEndpoint_ServeHTTPPassthrough(t *testing.T) {
 	}))
 	defer server.Close()
 
-	backend := NewProxyBackend("backend1", mustParseURL(server.URL), 5*time.Second, true, false, BackendTypeMirrored)
+	backend := NewHTTPProxyBackend("backend1", mustParseURL(server.URL), 5*time.Second, true, false, BackendTypeMirrored)
 	backendInterfaces := []ProxyBackend{backend}
 
 	route := Route{
@@ -554,7 +554,7 @@ func TestProxyBackend_AuthHandling(t *testing.T) {
 			testServerURL := mustParseURL(server.URL)
 			endpointURL.Host = testServerURL.Host
 
-			backend := NewProxyBackend("backend1", endpointURL, 5*time.Second, false, false, BackendTypeMirrored)
+			backend := NewHTTPProxyBackend("backend1", endpointURL, 5*time.Second, false, false, BackendTypeMirrored)
 
 			// Create a request with auth if specified
 			req := httptest.NewRequest("POST", "/api/v1/push", bytes.NewReader([]byte("test")))
@@ -707,7 +707,7 @@ func TestPrepareAmplifiedBodies(t *testing.T) {
 			metrics := NewProxyMetrics(registry)
 			tracker := NewAmplificationTracker()
 
-			backend := NewProxyBackend("test", mustParseURL("http://localhost:9090"), 5*time.Second, false, false, tt.backendType)
+			backend := NewHTTPProxyBackend("test", mustParseURL("http://localhost:9090"), 5*time.Second, false, false, tt.backendType)
 			route := Route{Path: "/api/v1/push", RouteName: "test", Methods: []string{"POST"}}
 
 			endpoint := &ProxyEndpoint{
@@ -794,8 +794,8 @@ func TestProxyEndpoint_Amplification(t *testing.T) {
 			}))
 			defer amplifiedServer.Close()
 
-			preferredBackend := NewProxyBackend("preferred", mustParseURL(preferredServer.URL), 5*time.Second, true, false, BackendTypeMirrored)
-			amplifiedBackend := NewProxyBackend("amplified", mustParseURL(amplifiedServer.URL), 5*time.Second, false, false, BackendTypeAmplified)
+			preferredBackend := NewHTTPProxyBackend("preferred", mustParseURL(preferredServer.URL), 5*time.Second, true, false, BackendTypeMirrored)
+			amplifiedBackend := NewHTTPProxyBackend("amplified", mustParseURL(amplifiedServer.URL), 5*time.Second, false, false, BackendTypeAmplified)
 
 			route := Route{
 				Path:      "/api/v1/push",
