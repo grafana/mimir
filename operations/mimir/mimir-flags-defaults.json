@@ -116,6 +116,7 @@
   "distributor.ring.instance-interface-names": [],
   "distributor.ring.instance-port": 0,
   "distributor.ring.instance-addr": "",
+  "distributor.ring.instance-availability-zone": "",
   "distributor.ring.auto-forget-unhealthy-periods": 10,
   "distributor.instance-limits.max-ingestion-rate": 0,
   "distributor.instance-limits.max-inflight-push-requests": 2000,
