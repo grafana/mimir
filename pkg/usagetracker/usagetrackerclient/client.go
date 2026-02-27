@@ -239,7 +239,7 @@ func (c *UsageTrackerClient) running(ctx context.Context) error {
 func (c *UsageTrackerClient) stopping(_ error) error {
 	c.trackSeriesWorkersPool.Close()
 	if c.batcher != nil {
-		c.batcher.Stop()
+		c.batcher.stop()
 	}
 	return nil
 }
@@ -432,7 +432,7 @@ func (c *UsageTrackerClient) TrackSeriesAsync(ctx context.Context, userID string
 				partitionSeries[i] = series[idx]
 			}
 
-			c.batcher.TrackSeries(int32(partitionID), userID, partitionSeries)
+			c.batcher.trackSeries(int32(partitionID), userID, partitionSeries)
 			return nil
 		}, batchOptions,
 	)
@@ -680,8 +680,8 @@ func newBatcher(clientsPool *client.Pool, maxSeriesPerBatch int, batchDelay time
 	}
 }
 
-// TrackSeries tracks some series for a user in a partition. It will be batched and flushed asynchronously.
-func (c *batcher) TrackSeries(partition int32, userID string, series []uint64) {
+// trackSeries tracks some series for a user in a partition. It will be batched and flushed asynchronously.
+func (c *batcher) trackSeries(partition int32, userID string, series []uint64) {
 	c.batchersMtx.Lock()
 	b, ok := c.batchers[partition]
 	if !ok {
@@ -695,7 +695,7 @@ func (c *batcher) TrackSeries(partition int32, userID string, series []uint64) {
 	b.TrackSeries(userID, series)
 }
 
-func (c *batcher) Stop() {
+func (c *batcher) stop() {
 	close(c.stoppingChan)
 }
 
