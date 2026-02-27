@@ -48,12 +48,23 @@ type activeSeriesResponse struct {
 }
 
 type stringCount struct {
-	str   string
-	count uint64
+	str        string
+	count      uint64
+	nameCount  uint64
+	valueCount uint64
+}
+
+type stringFrequency struct {
+	nameCount  uint64
+	valueCount uint64
+}
+
+func (f stringFrequency) total() uint64 {
+	return f.nameCount + f.valueCount
 }
 
 type batchResult struct {
-	stringFrequencies map[string]uint64
+	stringFrequencies map[string]stringFrequency
 }
 
 func main() {
@@ -247,7 +258,7 @@ func runAnalysis(ctx context.Context, cfg config, tenantID string) error {
 			workerClient := newHTTPClient()
 			// Each worker has its own result for final counts
 			batchResult := batchResult{
-				stringFrequencies: make(map[string]uint64),
+				stringFrequencies: make(map[string]stringFrequency),
 			}
 			batchCount := 0
 
@@ -268,22 +279,29 @@ func runAnalysis(ctx context.Context, cfg config, tenantID string) error {
 					}
 
 					// First count strings within this batch only
-					batchCounts := make(map[string]uint64)
+					batchCounts := make(map[string]stringFrequency)
 					for _, series := range result.Data {
 						for name, value := range series {
-							batchCounts[name]++
+							freq := batchCounts[name]
+							freq.nameCount++
+							batchCounts[name] = freq
 							if name == "image" {
 								continue
 							}
-							batchCounts[value]++
+							freq = batchCounts[value]
+							freq.valueCount++
+							batchCounts[value] = freq
 						}
 					}
 
 					// Only keep strings that appear 10 or more times in this batch
 					keptStrings := 0
-					for str, count := range batchCounts {
-						if count >= 10 {
-							batchResult.stringFrequencies[str] += count
+					for str, freq := range batchCounts {
+						if freq.total() >= 10 {
+							existing := batchResult.stringFrequencies[str]
+							existing.nameCount += freq.nameCount
+							existing.valueCount += freq.valueCount
+							batchResult.stringFrequencies[str] = existing
 							keptStrings++
 						}
 					}
@@ -333,10 +351,13 @@ func runAnalysis(ctx context.Context, cfg config, tenantID string) error {
 	}()
 
 	// Merge all worker results
-	labelCounts := make(map[string]uint64)
+	labelCounts := make(map[string]stringFrequency)
 	for result := range resultChan {
-		for str, count := range result.stringFrequencies {
-			labelCounts[str] += count
+		for str, freq := range result.stringFrequencies {
+			existing := labelCounts[str]
+			existing.nameCount += freq.nameCount
+			existing.valueCount += freq.valueCount
+			labelCounts[str] = existing
 		}
 	}
 
@@ -347,8 +368,13 @@ func runAnalysis(ctx context.Context, cfg config, tenantID string) error {
 
 	// Convert map to slice for sorting
 	counts := make([]stringCount, 0, len(labelCounts))
-	for str, count := range labelCounts {
-		counts = append(counts, stringCount{str, count})
+	for str, freq := range labelCounts {
+		counts = append(counts, stringCount{
+			str:        str,
+			count:      freq.total(),
+			nameCount:  freq.nameCount,
+			valueCount: freq.valueCount,
+		})
 	}
 
 	// Sort by count in descending order
@@ -364,7 +390,7 @@ func runAnalysis(ctx context.Context, cfg config, tenantID string) error {
 	defer w.Flush()
 
 	// Write CSV header
-	if err := w.Write([]string{"rank", "string", "count", "bytes"}); err != nil {
+	if err := w.Write([]string{"rank", "string", "count", "bytes", "countAsLabelName", "countAsLabelValue"}); err != nil {
 		return fmt.Errorf("failed to write CSV header: %w", err)
 	}
 
@@ -379,6 +405,8 @@ func runAnalysis(ctx context.Context, cfg config, tenantID string) error {
 			sc.str,
 			fmt.Sprintf("%d", sc.count),
 			fmt.Sprintf("%d", bytesUsed),
+			fmt.Sprintf("%d", sc.nameCount),
+			fmt.Sprintf("%d", sc.valueCount),
 		}); err != nil {
 			return fmt.Errorf("failed to write CSV row: %w", err)
 		}
