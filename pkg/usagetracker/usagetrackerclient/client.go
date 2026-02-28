@@ -26,6 +26,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -656,7 +657,7 @@ type batcher struct {
 	batchDelay        time.Duration
 
 	batchersMtx sync.RWMutex
-	batchers    map[int32]*PartitionBatcher
+	batchers    []*PartitionBatcher
 
 	trackerClient *UsageTrackerClient
 	clientsPool   *client.Pool
@@ -665,11 +666,13 @@ type batcher struct {
 }
 
 func newBatcher(clientsPool *client.Pool, maxSeriesPerBatch int, batchDelay time.Duration, logger log.Logger, trackerClient *UsageTrackerClient) *batcher {
+	const defaultPartitions = 64
+
 	return &batcher{
 		maxSeriesPerBatch: maxSeriesPerBatch,
 		batchDelay:        batchDelay,
 
-		batchers: make(map[int32]*PartitionBatcher),
+		batchers: make([]*PartitionBatcher, defaultPartitions),
 
 		trackerClient: trackerClient,
 		clientsPool:   clientsPool,
@@ -682,14 +685,19 @@ func newBatcher(clientsPool *client.Pool, maxSeriesPerBatch int, batchDelay time
 func (c *batcher) trackSeries(partition int32, userID string, series []uint64) {
 	// Since c.batchers doesn't change much, prefer to fetch it with a shared
 	// read lock, falling back to a write lock only if needed.
+
 	c.batchersMtx.RLock()
-	b, ok := c.batchers[partition]
+	b, grow := c.getBatcher(partition)
 	c.batchersMtx.RUnlock()
 
-	if !ok {
+	if b == nil {
 		c.batchersMtx.Lock()
-		b, ok = c.batchers[partition]
-		if !ok {
+
+		// Re-check, since multiple readers may have entered the "not found" block.
+		if b, grow = c.getBatcher(partition); b == nil {
+			if grow {
+				c.growBatchers(partition)
+			}
 			b = NewPartitionBatcher(partition, c.maxSeriesPerBatch, c.batchDelay, c.logger, c.trackerClient, c.clientsPool, c.stoppingChan)
 			c.batchers[partition] = b
 			// May as well start the flusher outside of the lock.
@@ -697,10 +705,31 @@ func (c *batcher) trackSeries(partition int32, userID string, series []uint64) {
 				go b.flushWorker()
 			}()
 		}
+
 		c.batchersMtx.Unlock()
 	}
 
 	b.TrackSeries(userID, series)
+}
+
+// getBatcher returns the batcher for the given partition, along with whether it needs to be grown.
+// assumes a suitable lock is held.
+func (c *batcher) getBatcher(partition int32) (*PartitionBatcher, bool) {
+	if int(partition) < len(c.batchers) {
+		return c.batchers[partition], false
+	}
+	return nil, true
+}
+
+// growBatchers grows the batchers slice to the next power of 2.
+// The exclusive lock must be held.
+func (c *batcher) growBatchers(partition int32) {
+	// round to next pow 2 and reallocate/copy.
+	lenRequired := int(partition) + 1 // partition 7 requires size 8; partition 8 requires size 16.
+	newLen := math.NextPowerTwo(lenRequired)
+	newBatchers := make([]*PartitionBatcher, newLen)
+	copy(newBatchers, c.batchers)
+	c.batchers = newBatchers
 }
 
 func (c *batcher) stop() {
@@ -712,7 +741,9 @@ func (c *batcher) TestFlush() {
 	c.batchersMtx.Lock()
 	defer c.batchersMtx.Unlock()
 	for _, b := range c.batchers {
-		b.flushBatch(true)
+		if b != nil {
+			b.flushBatch(true)
+		}
 	}
 }
 
