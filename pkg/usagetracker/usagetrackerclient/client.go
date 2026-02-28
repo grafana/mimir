@@ -687,7 +687,7 @@ func (c *batcher) trackSeries(partition int32, userID string, series []uint64) {
 	// read lock, falling back to a write lock only if needed.
 
 	c.batchersMtx.RLock()
-	b, grow := c.getBatcher(partition)
+	b, _ := c.getBatcher(partition)
 	c.batchersMtx.RUnlock()
 
 	if b == nil {
