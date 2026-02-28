@@ -686,6 +686,15 @@ func (m *usageTrackerMock) Close() error {
 	return nil
 }
 
+// noopMockT is a mock.TestingT implementation that silently discards all failures.
+// Use it inside require.Eventually conditions to avoid permanently marking the outer
+// test as failed on intermediate polls.
+type noopMockT struct{}
+
+func (*noopMockT) Logf(_ string, _ ...interface{})   {}
+func (*noopMockT) Errorf(_ string, _ ...interface{}) {}
+func (*noopMockT) FailNow()                          {}
+
 func TestUsageTrackerClient_CanTrackAsync(t *testing.T) {
 	tests := []struct {
 		name                           string
@@ -1095,14 +1104,15 @@ func TestUsageTrackerClient_TrackSeriesBatch(t *testing.T) {
 		err = c.TrackSeriesAsync(t.Context(), "user-2", []uint64{series4Partition1, series5Partition1, series6Partition1})
 		require.NoError(t, err)
 
-		// Wait a bit for the async flush to complete
-
+		// Wait for the async flush to complete. We use a noopT inside the condition to
+		// avoid calling t.Errorf from inside the require.Eventually goroutine, which would
+		// permanently mark the test as failed even when subsequent polls would succeed.
+		noop := &noopMockT{}
 		require.Eventually(t, func() bool {
-			// Should have automatically flushed when threshold was exceeded
-			return (instances["usage-tracker-zone-a-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0) &&
-				instances["usage-tracker-zone-a-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0) &&
-				instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 1) &&
-				instances["usage-tracker-zone-b-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0))
+			return instances["usage-tracker-zone-a-1"].AssertNumberOfCalls(noop, "TrackSeriesBatch", 0) &&
+				instances["usage-tracker-zone-a-2"].AssertNumberOfCalls(noop, "TrackSeriesBatch", 0) &&
+				instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(noop, "TrackSeriesBatch", 1) &&
+				instances["usage-tracker-zone-b-2"].AssertNumberOfCalls(noop, "TrackSeriesBatch", 0)
 		}, 5*time.Second, 10*time.Millisecond)
 
 		require.Equal(t, 0, r.rejections["user-1"])
