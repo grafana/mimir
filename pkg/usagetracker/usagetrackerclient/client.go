@@ -721,12 +721,14 @@ func (c *batcher) getBatcher(partition int32) (*PartitionBatcher, bool) {
 	return nil, true
 }
 
-// growBatchers grows the batchers slice to the next power of 2.
-// The exclusive lock must be held.
+// growBatchers grows the batchers slice. The exclusive lock must be held.
 func (c *batcher) growBatchers(partition int32) {
 	// round to next pow 2 and reallocate/copy.
 	lenRequired := int(partition) + 1 // partition 7 requires size 8; partition 8 requires size 16.
 	newLen := math.NextPowerTwo(lenRequired)
+	if newLen < lenRequired {
+		return
+	}
 	newBatchers := make([]*PartitionBatcher, newLen)
 	copy(newBatchers, c.batchers)
 	c.batchers = newBatchers
