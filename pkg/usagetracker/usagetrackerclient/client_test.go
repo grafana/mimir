@@ -1272,12 +1272,10 @@ func BenchmarkPartitionBatcher_TrackSeries(b *testing.B) {
 
 	// Create partitionBatcher with high thresholds to avoid flushes during benchmark
 	batcher := usagetrackerclient.NewPartitionBatcher(
-		1,               // partition
-		0,               // never flush due to size threshold
-		1_000*time.Hour, // batchDelay (very long)
+		1, // partition
+		0, // never flush due to size threshold
 		logger,
 		nil, // trackerClient (not needed if no flushes)
-		nil, // clientsPool (not needed if no flushes)
 		stopping,
 	)
 

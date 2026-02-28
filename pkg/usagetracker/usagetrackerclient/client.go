@@ -221,6 +221,10 @@ func (c *UsageTrackerClient) starting(ctx context.Context) error {
 
 // running implements services.RunningFn.
 func (c *UsageTrackerClient) running(ctx context.Context) error {
+	if c.cfg.UseBatchedTracking {
+		go c.batcher.flusher()
+	}
+
 	ticker := time.NewTicker(c.cfg.UsersCloseToLimitPollInterval)
 	defer ticker.Stop()
 
@@ -237,9 +241,7 @@ func (c *UsageTrackerClient) running(ctx context.Context) error {
 // stopping implements services.StoppingFn.
 func (c *UsageTrackerClient) stopping(_ error) error {
 	c.trackSeriesWorkersPool.Close()
-	if c.batcher != nil {
-		c.batcher.stop()
-	}
+	c.batcher.stop()
 	return nil
 }
 
@@ -681,6 +683,21 @@ func newBatcher(clientsPool *client.Pool, maxSeriesPerBatch int, batchDelay time
 	}
 }
 
+func (c *batcher) flusher() {
+	// We flush all partitions at the same time to improve the batch-reading
+	// economics on the usage-tracker server.
+	t := time.NewTimer(util.DurationWithJitter(c.batchDelay, 0.1))
+	for {
+		select {
+		case <-t.C:
+			c.signalAll()
+			t.Reset(util.DurationWithJitter(c.batchDelay, 0.1))
+		case <-c.stoppingChan:
+			return
+		}
+	}
+}
+
 // trackSeries tracks some series for a user in a partition. It will be batched and flushed asynchronously.
 func (c *batcher) trackSeries(partition int32, userID string, series []uint64) {
 	// Since c.batchers doesn't change much, prefer to fetch it with a shared
@@ -692,18 +709,16 @@ func (c *batcher) trackSeries(partition int32, userID string, series []uint64) {
 
 	if b == nil {
 		c.batchersMtx.Lock()
+		var grow bool
 
 		// Re-check, since multiple readers may have entered the "not found" block.
 		if b, grow = c.getBatcher(partition); b == nil {
 			if grow {
 				c.growBatchers(partition)
 			}
-			b = NewPartitionBatcher(partition, c.maxSeriesPerBatch, c.batchDelay, c.logger, c.trackerClient, c.clientsPool, c.stoppingChan)
+			b = NewPartitionBatcher(partition, c.maxSeriesPerBatch, c.logger, c.trackerClient, c.stoppingChan)
 			c.batchers[partition] = b
-			// May as well start the flusher outside of the lock.
-			defer func() {
-				go b.flushWorker()
-			}()
+			go b.flushWorker()
 		}
 
 		c.batchersMtx.Unlock()
@@ -736,12 +751,38 @@ func (c *batcher) growBatchers(partition int32) {
 
 func (c *batcher) stop() {
 	close(c.stoppingChan)
+
+	// Wait for all partition-batchers to finish stopping.
+	var wg sync.WaitGroup
+
+	func() {
+		c.batchersMtx.RLock()
+		defer c.batchersMtx.RUnlock()
+		for _, b := range c.batchers {
+			if b != nil {
+				wg.Go(b.stop)
+			}
+		}
+	}()
+
+	wg.Wait()
 }
 
-// TestFlush synchronously flushes all batchers. This is only used for testing.
+// signalAll signals all partition-batchers to perform a flush.
+func (c *batcher) signalAll() {
+	c.batchersMtx.RLock()
+	defer c.batchersMtx.RUnlock()
+	for _, b := range c.batchers {
+		if b != nil {
+			b.signalFlush()
+		}
+	}
+}
+
+// TestFlush synchronously flushes all batchers. It's for tests.
 func (c *batcher) TestFlush() {
-	c.batchersMtx.Lock()
-	defer c.batchersMtx.Unlock()
+	c.batchersMtx.RLock()
+	defer c.batchersMtx.RUnlock()
 	for _, b := range c.batchers {
 		if b != nil {
 			b.flushBatch(true)
@@ -759,29 +800,31 @@ type PartitionBatcher struct {
 	userSeries  []*usagetrackerpb.TrackSeriesBatchUser
 	seriesCount int
 
+	flushChan    chan struct{}
+	stoppingChan <-chan struct{}
+
 	trackerClient *UsageTrackerClient
 	workersPool   *concurrency.ReusableGoroutinesPool
 
 	maxSeriesPerBatch int
-	batchDelay        time.Duration
 	logger            log.Logger
-	stoppingChan      <-chan struct{}
 }
 
-func NewPartitionBatcher(partition int32, maxSeriesPerBatch int, batchDelay time.Duration, logger log.Logger, trackerClient *UsageTrackerClient, clientsPool *client.Pool, stopping <-chan struct{}) *PartitionBatcher {
+func NewPartitionBatcher(partition int32, maxSeriesPerBatch int, logger log.Logger, trackerClient *UsageTrackerClient, stopping <-chan struct{}) *PartitionBatcher {
 	return &PartitionBatcher{
 		partition: partition,
 
 		userSeries:  nil,
 		seriesCount: 0,
 
+		flushChan:    make(chan struct{}),
+		stoppingChan: stopping,
+
 		trackerClient: trackerClient,
 		workersPool:   concurrency.NewReusableGoroutinesPool(2),
 
 		maxSeriesPerBatch: maxSeriesPerBatch,
-		batchDelay:        batchDelay,
 		logger:            log.With(logger, "partition", partition),
-		stoppingChan:      stopping,
 	}
 }
 
@@ -804,26 +847,35 @@ func (b *PartitionBatcher) TrackSeries(userID string, series []uint64) {
 	b.usersMtx.Unlock()
 
 	if needsFlush {
+		b.signalFlush()
 		b.trackerClient.batchTrackingFlushedOnSizeThreshold.Inc()
-		b.flushBatch(false)
+	}
+}
+
+func (b *PartitionBatcher) signalFlush() {
+	select {
+	case b.flushChan <- struct{}{}:
+	case <-b.stoppingChan:
+		return
+	default: // flusher is busy. no need to block.
 	}
 }
 
 func (b *PartitionBatcher) flushWorker() {
-	t := time.NewTimer(util.DurationWithJitter(b.batchDelay, 0.1))
-
 	for {
 		select {
-		case <-t.C:
+		case <-b.flushChan:
 			b.flushBatch(false)
-			t.Reset(util.DurationWithJitter(b.batchDelay, 0.1))
 		case <-b.stoppingChan:
-			// flush anything outstanding before returning.
-			b.workersPool.Close()
-			b.flushBatch(true)
 			return
 		}
 	}
+}
+
+// stop stops the partition batcher, waiting for any outstanding batches to be flushed.
+func (b *PartitionBatcher) stop() {
+	b.flushBatch(true)
+	b.workersPool.Close()
 }
 
 func (b *PartitionBatcher) flushBatch(synchronous bool) {
@@ -844,13 +896,13 @@ func (b *PartitionBatcher) flushBatch(synchronous bool) {
 	}
 }
 
-func (b *PartitionBatcher) flush(users []*usagetrackerpb.TrackSeriesBatchUser) error {
+func (b *PartitionBatcher) flush(users []*usagetrackerpb.TrackSeriesBatchUser) {
 	// We're making a batch call across potentially many users, so we inject an arbitrary fake org ID.
 	batchCtx := user.InjectOrgID(context.Background(), "batch")
 	rejections, err := b.trackerClient.TrackSeriesPerPartitionBatch(batchCtx, b.partition, users)
 	if err != nil {
 		level.Error(b.logger).Log("msg", "failed to track series in partition batch", "err", err)
-		return err
+		return
 	}
 
 	if len(rejections) > 0 {
@@ -865,6 +917,4 @@ func (b *PartitionBatcher) flush(users []*usagetrackerpb.TrackSeriesBatchUser) e
 
 		level.Warn(b.logger).Log("msg", "ingested some series that should have been rejected, because they were batch-tracked asynchronously", "count", count)
 	}
-
-	return nil
 }
