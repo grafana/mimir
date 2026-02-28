@@ -10,6 +10,7 @@ import (
 
 	"github.com/benbjohnson/clock"
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/tenant"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
@@ -167,6 +168,75 @@ func TestBboltJobPersistenceManager_RecoverAll(t *testing.T) {
 	require.Contains(t, jobTracker.incompleteJobs, planJobId)
 }
 
+func TestBboltJobPersistenceManager_RecoverAll_Cleanup(t *testing.T) {
+	mgr := setupBboltManager(t)
+	t.Cleanup(func() {
+		require.NoError(t, mgr.Close())
+	})
+
+	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
+	jobTrackerFactory := func(tenant string, persister JobPersister) *JobTracker {
+		return NewJobTracker(persister, tenant, clock.New(), infiniteLeases, metrics.newTrackerMetricsForTenant(tenant))
+	}
+
+	// Create a bucket with an invalid tenant name
+	invalidTenant := "|"
+	require.Error(t, tenant.ValidTenantID(invalidTenant))
+	err := mgr.db.Update(func(tx *bbolt.Tx) error {
+		_, err := tx.CreateBucket([]byte(invalidTenant))
+		return err
+	})
+	require.NoError(t, err)
+
+	// Create a bucket for a tenant that is not in the allow list
+	disallowedTenant := "disallowed"
+	err = mgr.db.Update(func(tx *bbolt.Tx) error {
+		_, err := tx.CreateBucket([]byte(disallowedTenant))
+		return err
+	})
+	require.NoError(t, err)
+
+	// Create a valid tenant with one good job and one corrupt job
+	validTenant := "valid-tenant"
+	persister, err := mgr.InitializeTenant(validTenant)
+	require.NoError(t, err)
+
+	compactionJob := newTestCompactionJob("id")
+	corruptKey := []byte("corrupt")
+	err = persister.WriteJob(compactionJob)
+	require.NoError(t, err)
+	err = mgr.db.Update(func(tx *bbolt.Tx) error {
+		b := tx.Bucket([]byte(validTenant))
+		return b.Put(corruptKey, []byte("invalid protobuf"))
+	})
+	require.NoError(t, err)
+
+	allowedTenants := util.NewAllowList(nil, []string{disallowedTenant})
+	jobTrackers, err := mgr.RecoverAll(allowedTenants, jobTrackerFactory)
+	require.NoError(t, err)
+
+	// Only the valid tenant should be recovered
+	require.Len(t, jobTrackers, 1)
+	require.Contains(t, jobTrackers, validTenant)
+
+	// The valid job should be the only one recovered
+	require.Len(t, jobTrackers[validTenant].incompleteJobs, 1)
+	require.Contains(t, jobTrackers[validTenant].incompleteJobs, compactionJob.ID())
+
+	// Verify the database state after cleanup
+	err = mgr.db.View(func(tx *bbolt.Tx) error {
+		require.Nil(t, tx.Bucket([]byte(invalidTenant)), "invalid tenant bucket should be deleted")
+		require.Nil(t, tx.Bucket([]byte(disallowedTenant)), "disallowed tenant bucket should be deleted")
+
+		b := tx.Bucket([]byte(validTenant))
+		require.NotNil(t, b, "valid tenant bucket should remain")
+		require.Nil(t, b.Get(corruptKey), "corrupt key should be deleted")
+		require.NotNil(t, b.Get([]byte(compactionJob.ID())), "valid job key should remain")
+		return nil
+	})
+	require.NoError(t, err)
+}
+
 func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 	now := time.Now()
 
@@ -227,20 +297,21 @@ func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 			require.NoError(t, err)
 
 			// Helper function since the test reads twice
-			readJobs := func() (compactionJobs []*TrackedCompactionJob, planJob *TrackedPlanJob, err error) {
+			readJobs := func() (compactionJobs []*TrackedCompactionJob, planJob *TrackedPlanJob, cleanup *keyCleanup, err error) {
 				err = mgr.db.View(func(tx *bbolt.Tx) error {
 					b := tx.Bucket([]byte("tenant"))
 					if b == nil {
 						return errors.New("bucket should not be missing")
 					}
-					compactionJobs, planJob = jobsFromTenantBucket("tenant", b, mgr.logger)
+					compactionJobs, planJob, cleanup = jobsFromTenantBucket(b)
 					return nil
 				})
 				return
 			}
 
-			compactionJobs, planJob, err := readJobs()
+			compactionJobs, planJob, cleanup, err := readJobs()
 			require.NoError(t, err)
+			require.Nil(t, cleanup)
 			var readJob TrackedJob
 			if len(compactionJobs) == 1 {
 				readJob = compactionJobs[0]
@@ -258,8 +329,9 @@ func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 
 			err = persister.DeleteJob(tc.job)
 			require.NoError(t, err)
-			compactionJobs, planJob, err = readJobs()
+			compactionJobs, planJob, cleanup, err = readJobs()
 			require.NoError(t, err)
+			require.Nil(t, cleanup)
 			require.Empty(t, compactionJobs)
 			require.Nil(t, planJob)
 		})

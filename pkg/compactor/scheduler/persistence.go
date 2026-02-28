@@ -80,31 +80,45 @@ func (m *BboltJobPersistenceManager) DeleteTenant(tenant string) error {
 
 func (m *BboltJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, jobTrackerFactory func(tenant string, persister JobPersister) *JobTracker) (map[string]*JobTracker, error) {
 	jobTrackers := make(map[string]*JobTracker)
-	numJobsRecovered := 0
+
+	var (
+		numCompactionJobsRecovered int
+		numPlanJobsRecovered       int
+		numBucketCleanups          int
+		numKeyCleanups             int
+	)
 
 	level.Info(m.logger).Log("msg", "starting job recovery")
+
 	// Iterate through each bucket and create the corresponding JobTracker
+	// This is Update and not View due to the need to delete buckets that are no longer needed and values that failed to deserialize
 	err := m.db.Update(func(tx *bbolt.Tx) error {
 
-		// The bucket name bytes stored in these are only valid within the Update
-		var invalidBuckets, disallowedTenantBuckets [][]byte
+		// Deletions can not occur during iteration since it interacts with the bucket cursor
+		// This maps tenants to required cleanup. If the cleanup is nil then the tenant bucket itself should be deleted
+		cleanup := make(map[string]*keyCleanup)
 
+		// No bucket modification can occur within the ForEach
 		err := tx.ForEach(func(name []byte, b *bbolt.Bucket) error {
 			tenant := string(name)
 			if err := dskit_tenant.ValidTenantID(tenant); err != nil {
-				level.Warn(m.logger).Log("msg", "bbolt bucket has invalid tenant name", "name", tenant, "err", err)
-				invalidBuckets = append(invalidBuckets, name)
+				level.Warn(m.logger).Log("msg", "will delete bbolt bucket with invalid tenant name", "user", tenant, "err", err)
+				cleanup[tenant] = nil
 				return nil
 			}
 			if !allowedTenants.IsAllowed(tenant) {
-				disallowedTenantBuckets = append(disallowedTenantBuckets, name)
+				level.Warn(m.logger).Log("msg", "will delete bbolt bucket of tenant no longer allowed", "user", tenant)
+				cleanup[tenant] = nil
 				return nil
 			}
 
-			compactionJobs, planJob := jobsFromTenantBucket(tenant, b, m.logger)
-			numJobsRecovered += len(compactionJobs)
+			compactionJobs, planJob, keyCleanup := jobsFromTenantBucket(b)
+			numCompactionJobsRecovered += len(compactionJobs)
 			if planJob != nil {
-				numJobsRecovered += 1
+				numPlanJobsRecovered += 1
+			}
+			if keyCleanup != nil {
+				cleanup[tenant] = keyCleanup
 			}
 
 			jp := newBboltJobPersister(m.db, []byte(tenant), m.logger)
@@ -116,37 +130,74 @@ func (m *BboltJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, 
 		if err != nil {
 			return err
 		}
-		for _, name := range invalidBuckets {
-			level.Warn(m.logger).Log("msg", "deleting bbolt bucket with invalid name", "name", string(name))
-			if err := tx.DeleteBucket(name); err != nil {
-				return err
-			}
-		}
-		for _, name := range disallowedTenantBuckets {
-			level.Warn(m.logger).Log("msg", "deleting bbolt bucket of tenant no longer allowed", "user", string(name))
-			if err := tx.DeleteBucket(name); err != nil {
-				return err
-			}
-		}
+
+		numBucketCleanups, numKeyCleanups = m.cleanup(tx, cleanup)
+
 		return nil
 	})
 	if err != nil {
 		level.Error(m.logger).Log("msg", "failed job recovery", "err", err)
 		return nil, err
 	}
-	level.Info(m.logger).Log("msg", "completed job recovery", "num_tenants_recovered", len(jobTrackers), "num_jobs_recovered", numJobsRecovered)
+
+	level.Info(m.logger).Log(
+		"msg", "completed job recovery",
+		"num_tenants_recovered", len(jobTrackers),
+		"num_compaction_jobs_recovered", numCompactionJobsRecovered,
+		"num_plan_jobs_recovered", numPlanJobsRecovered,
+		"num_bucket_cleanups", numBucketCleanups,
+		"num_key_cleanups", numKeyCleanups,
+	)
+
 	return jobTrackers, nil
 }
 
-func jobsFromTenantBucket(tenant string, bucket *bbolt.Bucket, logger log.Logger) ([]*TrackedCompactionJob, *TrackedPlanJob) {
+// keyCleanup is only valid within the transaction in which it was created
+type keyCleanup struct {
+	bucket    *bbolt.Bucket
+	keyErrors []keyError
+}
+
+// keyError is only valid within the transaction in which it was created
+type keyError struct {
+	key []byte
+	err error
+}
+
+func (m *BboltJobPersistenceManager) cleanup(tx *bbolt.Tx, cleanup map[string]*keyCleanup) (numBucketCleanups, numKeyCleanups int) {
+	for tenant, kc := range cleanup {
+		name := []byte(tenant)
+		if kc == nil {
+			// Delete the bucket
+			if err := tx.DeleteBucket(name); err != nil {
+				level.Warn(m.logger).Log("msg", "failed to delete bbolt bucket", "err", err)
+				continue
+			}
+			numBucketCleanups++
+			continue
+		}
+
+		// Delete the keys that failed
+		for _, ke := range kc.keyErrors {
+			failureLogger := log.With(m.logger, "user", tenant, "key", string(ke.key), "err", ke.err)
+
+			if err := kc.bucket.Delete(ke.key); err != nil {
+				// Only returns an error if we're in a read-only transaction, which should never be the case
+				// This isn't the actual write, but instead an addition to the write transaction which hasn't reached commit yet
+				level.Warn(failureLogger).Log("msg", "failed to delete job that failed to deserialize", "delete_err", err)
+				continue
+			}
+			numKeyCleanups++
+			level.Warn(failureLogger).Log("msg", "deleted job that failed to deserialize")
+		}
+	}
+	return
+}
+
+func jobsFromTenantBucket(bucket *bbolt.Bucket) ([]*TrackedCompactionJob, *TrackedPlanJob, *keyCleanup) {
 	compactionJobs := make([]*TrackedCompactionJob, 0, 10)
 	var planJob *TrackedPlanJob // may be nil
-
-	type failedKeys struct {
-		key []byte
-		err error
-	}
-	var failed []failedKeys
+	var keyErrs []keyError
 
 	c := bucket.Cursor()
 	for k, v := c.First(); k != nil; k, v = c.Next() {
@@ -156,37 +207,29 @@ func jobsFromTenantBucket(tenant string, bucket *bbolt.Bucket, logger log.Logger
 			case planJobId:
 				job, err := deserializePlanJob(v)
 				if err != nil {
-					failed = append(failed, failedKeys{k, err})
+					keyErrs = append(keyErrs, keyError{k, err})
 					continue
 				}
 				planJob = job
 			default:
-				failed = append(failed, failedKeys{k, errors.New("unknown key")})
+				keyErrs = append(keyErrs, keyError{k, errors.New("unknown key")})
 			}
 		} else {
 			compactionJob, err := deserializeCompactionJob(k, v)
 			if err != nil {
-				failed = append(failed, failedKeys{k, err})
+				keyErrs = append(keyErrs, keyError{k, err})
 				continue
 			}
 			compactionJobs = append(compactionJobs, compactionJob)
 		}
 	}
 
-	// Delete corrupt entries after the cursor loop to avoid mutating the bucket
-	// during iteration, which can cause the cursor to skip entries.
-	for _, f := range failed {
-		// If we can't deserialize a value assume it is corrupt. We don't want it sticking around forever, so delete it.
-		failureLogger := log.With(logger, "user", tenant, "key", string(f.key), "err", f.err)
-		if err := bucket.Delete(f.key); err != nil {
-			// Only returns an error if we're in a read-only transaction, which should never be the case.
-			// This isn't the actual write, but instead an addition to the write transaction which hasn't reached commit yet.
-			level.Warn(failureLogger).Log("msg", "failed to delete job that failed to deserialize", "delete_err", err)
-		}
-		level.Warn(failureLogger).Log("msg", "deleted job that failed to deserialize")
+	var kc *keyCleanup
+	if len(keyErrs) > 0 {
+		kc = &keyCleanup{bucket, keyErrs}
 	}
 
-	return compactionJobs, planJob
+	return compactionJobs, planJob, kc
 }
 
 func (m *BboltJobPersistenceManager) Close() error {
