@@ -867,6 +867,7 @@ func (b *PartitionBatcher) flushWorker() {
 		case <-b.flushChan:
 			b.flushBatch(false)
 		case <-b.stoppingChan:
+			b.workersPool.Close()
 			return
 		}
 	}
@@ -875,7 +876,6 @@ func (b *PartitionBatcher) flushWorker() {
 // stop stops the partition batcher, waiting for any outstanding batches to be flushed.
 func (b *PartitionBatcher) stop() {
 	b.flushBatch(true)
-	b.workersPool.Close()
 }
 
 func (b *PartitionBatcher) flushBatch(synchronous bool) {
