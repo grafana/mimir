@@ -55,20 +55,20 @@ func TestJobPersistenceManagerFactory(t *testing.T) {
 	}{
 		"bbolt persistence": {
 			cfg: Config{
-				persistenceType: "bbolt",
-				bboltPath:       filepath.Join(tempDir, "test.db"),
+				PersistenceType: "bbolt",
+				BboltPath:       filepath.Join(tempDir, "test.db"),
 			},
 			expectError: false,
 		},
 		"nop persistence": {
 			cfg: Config{
-				persistenceType: "none",
+				PersistenceType: "none",
 			},
 			expectError: false,
 		},
 		"unrecognized persistence type": {
 			cfg: Config{
-				persistenceType: "invalid",
+				PersistenceType: "invalid",
 			},
 			expectError: true,
 		},

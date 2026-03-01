@@ -48,12 +48,12 @@ func NewTenantDiscoverer(
 		allowedTenants:       allowList,
 		bkt:                  bkt,
 		jpm:                  jpm,
-		userDiscoveryBackoff: cfg.userDiscoveryBackoff,
+		userDiscoveryBackoff: cfg.UserDiscoveryBackoff,
 		rotator:              rotator,
-		maxLeases:            cfg.maxLeases,
+		maxLeases:            cfg.MaxLeases,
 		knownTenants:         make(map[string]struct{}),
 	}
-	s.Service = services.NewTimerService(cfg.tenantDiscoveryInterval, s.start, s.iter, nil)
+	s.Service = services.NewTimerService(cfg.TenantDiscoveryInterval, s.start, s.iter, nil)
 	return s
 }
 
@@ -130,6 +130,7 @@ func (s *TenantDiscoverer) discoverTenants(ctx context.Context) error {
 				continue
 			}
 			delete(s.knownTenants, tenant)
+			s.metrics.deleteTenantMetrics(tenant)
 			level.Info(logger).Log("msg", "removed empty tenant from compactor scheduler")
 		}
 	}

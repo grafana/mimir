@@ -126,7 +126,7 @@ func (r *Rotator) LeaseJob(ctx context.Context) (*compactorschedulerpb.LeaseJobR
 	i := ((int(r.rotationIndexCounter.Add(1)) % length) + length) % length
 
 	// Check possibly all tenants. Tenants get removed from the rotation once they are out of work,
-	// but this may still encounter some due to canAccept or due to holding the read lock
+	// but this may still encounter some due to holding the read lock
 	for range length {
 		tenant := r.rotation[i]
 		response, transition, err := r.tenantStateMap[tenant].tracker.Lease()
@@ -195,8 +195,7 @@ func (r *Rotator) CancelJobLease(tenant string, key string, epoch int64) (bool, 
 	}
 
 	if tenantState.rotationIndex == outsideRotation && !tenantState.tracker.isPendingEmpty() {
-		tenantState.rotationIndex = len(r.rotation)
-		r.rotation = append(r.rotation, tenant)
+		r.addToRotation(tenant, tenantState)
 	}
 
 	return canceled, nil
@@ -363,5 +362,5 @@ func (r *Rotator) removeFromRotation(tenantState *TenantRotationState) {
 	}
 	// Remove the tenant from the rotation
 	r.rotation = r.rotation[:length-1]
-	tenantState.rotationIndex = -1
+	tenantState.rotationIndex = outsideRotation
 }

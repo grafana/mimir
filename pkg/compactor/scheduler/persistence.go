@@ -15,13 +15,13 @@ import (
 )
 
 func jobPersistenceManagerFactory(cfg Config, logger log.Logger) (JobPersistenceManager, error) {
-	switch cfg.persistenceType {
+	switch cfg.PersistenceType {
 	case "bbolt":
-		return openBboltJobPersistenceManager(cfg.bboltPath, logger)
+		return openBboltJobPersistenceManager(cfg.BboltPath, logger)
 	case "none":
 		return &NopJobPersistenceManager{}, nil
 	default:
-		return nil, fmt.Errorf("unrecognized compactor scheduler persistence type: %s", cfg.persistenceType)
+		return nil, fmt.Errorf("unrecognized compactor scheduler persistence type: %s", cfg.PersistenceType)
 	}
 }
 

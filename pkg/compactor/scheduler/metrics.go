@@ -36,3 +36,8 @@ func (s *schedulerMetrics) newTrackerMetricsForTenant(tenant string) *trackerMet
 		activeJobs:  s.activeJobs.WithLabelValues(tenant),
 	}
 }
+
+func (s *schedulerMetrics) deleteTenantMetrics(tenant string) {
+	s.pendingJobs.DeleteLabelValues(tenant)
+	s.activeJobs.DeleteLabelValues(tenant)
+}

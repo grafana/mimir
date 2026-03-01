@@ -37,7 +37,7 @@ type JobTracker struct {
 
 	mtx                    sync.Mutex
 	pending                *list.List
-	active                 *list.List
+	active                 *list.List               // ordered by oldest lease first
 	isPlanJobLeased        bool                     // used to decide whether to retain completed compaction jobs
 	incompleteJobs         map[string]*list.Element // all incomplete jobs will be in this map, element is in one and only one of pending or active
 	completePlanTime       time.Time                // time of the last completed plan job. Zero time if planning has never completed or a plan job is currently incomplete (pending or active).
@@ -161,7 +161,7 @@ func (jt *JobTracker) Remove(id string, epoch int64, complete bool) (removed boo
 	}
 
 	if jt.isPlanJobLeased && id == planJobId {
-		// A plan job that was leased is being abandoned. Complete is not checked here because it is an invalid case.
+		// A plan job that was leased is being abandoned. Complete is not checked here because plan jobs are completed through OfferCompactionJobs.
 		if err := jt.persister.WriteAndDeleteJobs(nil, jt.completedJobsWith(j)); err != nil {
 			return false, false, fmt.Errorf("failed deleting jobs: %w", err)
 		}
@@ -295,7 +295,7 @@ func (jt *JobTracker) computeLeaseExpiration(leaseDuration time.Duration, now ti
 				deleteJobs = append(deleteJobs, j)
 			}
 		} else {
-			// No more expirable jobs
+			// No more expirable jobs. Active is ordered oldest lease first, so no later entries can be expired.
 			break
 		}
 	}
