@@ -182,7 +182,7 @@ func NewUsageTrackerClient(clientName string, clientCfg Config, partitionRing *r
 		}),
 	}
 
-	c.batcher = newBatcher(clientsPool, clientCfg.MaxBatchSeries, clientCfg.BatchDelay, logger, c)
+	c.batcher = newBatcher(clientCfg.MaxBatchSeries, clientCfg.BatchDelay, logger, c)
 	c.Service = services.NewBasicService(c.starting, c.running, c.stopping)
 	return c
 }
@@ -662,12 +662,11 @@ type batcher struct {
 	batchers    []*PartitionBatcher
 
 	trackerClient *UsageTrackerClient
-	clientsPool   *client.Pool
 	stoppingChan  chan struct{}
 	logger        log.Logger
 }
 
-func newBatcher(clientsPool *client.Pool, maxSeriesPerBatch int, batchDelay time.Duration, logger log.Logger, trackerClient *UsageTrackerClient) *batcher {
+func newBatcher(maxSeriesPerBatch int, batchDelay time.Duration, logger log.Logger, trackerClient *UsageTrackerClient) *batcher {
 	const defaultPartitions = 64
 
 	return &batcher{
@@ -677,7 +676,6 @@ func newBatcher(clientsPool *client.Pool, maxSeriesPerBatch int, batchDelay time
 		batchers: make([]*PartitionBatcher, defaultPartitions),
 
 		trackerClient: trackerClient,
-		clientsPool:   clientsPool,
 		stoppingChan:  make(chan struct{}),
 		logger:        logger,
 	}
