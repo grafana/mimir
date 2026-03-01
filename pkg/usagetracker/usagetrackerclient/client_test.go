@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package usagetrackerclient_test
+package usagetrackerclient
 
 import (
 	"context"
@@ -25,11 +25,10 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/grafana/mimir/pkg/usagetracker"
-	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerclient"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 )
 
-// mockLimitsProvider is a mock implementation of usagetrackerclient.limitsProvider.
+// mockLimitsProvider is a mock implementation of limitsProvider.
 type mockLimitsProvider struct {
 	limits map[string]int
 }
@@ -52,7 +51,7 @@ type noopUsageTrackerRejectionObserver struct{}
 func (n *noopUsageTrackerRejectionObserver) ObserveAsyncUsageTrackerRejection(_ string) {
 }
 
-var _ usagetrackerclient.UsageTrackerRejectionObserver = (*noopUsageTrackerRejectionObserver)(nil)
+var _ UsageTrackerRejectionObserver = (*noopUsageTrackerRejectionObserver)(nil)
 
 var noOpObserver = &noopUsageTrackerRejectionObserver{}
 
@@ -64,7 +63,7 @@ func (o *testRejectionObserver) ObserveAsyncUsageTrackerRejection(userID string)
 	o.rejections[userID]++
 }
 
-var _ usagetrackerclient.UsageTrackerRejectionObserver = (*testRejectionObserver)(nil)
+var _ UsageTrackerRejectionObserver = (*testRejectionObserver)(nil)
 
 // prepareTestRings is a helper function that sets up the rings needed for testing.
 func prepareTestRings(t testing.TB, ctx context.Context) (*ring.MultiPartitionInstanceRing, *ring.Ring, prometheus.Registerer) {
@@ -120,7 +119,7 @@ func prepareTestRings(t testing.TB, ctx context.Context) (*ring.MultiPartitionIn
 	})
 
 	// Pre-condition check: all instances should be healthy.
-	set, err := instanceRing.GetAllHealthy(usagetrackerclient.TrackSeriesOp)
+	set, err := instanceRing.GetAllHealthy(TrackSeriesOp)
 	require.NoError(t, err)
 	require.Len(t, set.Instances, 4)
 
@@ -175,7 +174,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
 		})
 
-		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer, noOpObserver)
+		c := NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer, noOpObserver)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -239,7 +238,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
 		})
 
-		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer, noOpObserver)
+		c := NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer, noOpObserver)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -297,7 +296,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
 		})
 
-		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer, noOpObserver)
+		c := NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer, noOpObserver)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -389,7 +388,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 				return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
 			})
 
-			c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer, noOpObserver)
+			c := NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer, noOpObserver)
 			require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 			t.Cleanup(func() {
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -461,7 +460,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
 		})
 
-		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer, noOpObserver)
+		c := NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer, noOpObserver)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -517,7 +516,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
 		})
 
-		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer, noOpObserver)
+		c := NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer, noOpObserver)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -554,7 +553,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
 		})
 
-		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer, noOpObserver)
+		c := NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer, noOpObserver)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -585,8 +584,8 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 	})
 }
 
-func createTestClientConfig() usagetrackerclient.Config {
-	cfg := usagetrackerclient.Config{}
+func createTestClientConfig() Config {
+	cfg := Config{}
 	flagext.DefaultValues(&cfg)
 
 	// No hedging in tests by default.
@@ -804,7 +803,7 @@ func TestUsageTrackerClient_CanTrackAsync(t *testing.T) {
 
 			// Create and start the client
 			// StartAndAwaitRunning ensures that starting() has completed, which populates the cache
-			c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, limitsProvider, logger, registerer, noOpObserver)
+			c := NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, limitsProvider, logger, registerer, noOpObserver)
 			require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 			t.Cleanup(func() {
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -874,7 +873,7 @@ func TestUsageTrackerClient_TrackSeriesBatch(t *testing.T) {
 			rejections: make(map[string]int),
 		}
 
-		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer, r)
+		c := NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer, r)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -965,7 +964,7 @@ func TestUsageTrackerClient_TrackSeriesBatch(t *testing.T) {
 			rejections: make(map[string]int),
 		}
 
-		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer, r)
+		c := NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer, r)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -1071,7 +1070,7 @@ func TestUsageTrackerClient_TrackSeriesBatch(t *testing.T) {
 			rejections: make(map[string]int),
 		}
 
-		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer, r)
+		c := NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer, r)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -1207,7 +1206,7 @@ func TestUsageTrackerClient_TrackSeriesBatch(t *testing.T) {
 			rejections: make(map[string]int),
 		}
 
-		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer, r)
+		c := NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer, r)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -1271,7 +1270,7 @@ func BenchmarkPartitionBatcher_TrackSeries(b *testing.B) {
 	defer close(stopping)
 
 	// Create partitionBatcher with high thresholds to avoid flushes during benchmark
-	batcher := usagetrackerclient.NewPartitionBatcher(
+	batcher := NewPartitionBatcher(
 		1, // partition
 		0, // never flush due to size threshold
 		logger,

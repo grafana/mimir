@@ -24,16 +24,15 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
+	"github.com/grafana/mimir/pkg/usagetracker/trackerop"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-var (
-	// The ring operation used to track series.
-	TrackSeriesOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
-)
+// TrackSeriesOp is the ring operation used to locate instances for series tracking.
+var TrackSeriesOp = trackerop.TrackSeriesOp
 
 // limitsProvider provides access to user limits.
 type limitsProvider interface {
