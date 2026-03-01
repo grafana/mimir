@@ -227,6 +227,6 @@ jobs:
           fi
         env:
           GITHUB_TOKEN: ${{ steps.app-token-for-commit.outputs.token }}
-          GITHUB_LOGIN: ${{ github.event.pull_request.user.login }}
+          GITHUB_LOGIN: mimir-github-bot
           TAG: ${{ steps.compute_hash.outputs.tag }}
           MAIN_TAG: ${{ steps.prepare.outputs.main_image_tag }}
