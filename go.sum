@@ -595,8 +595,8 @@ github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc h1:PXZQA2WCxe85T
 github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc/go.mod h1:AHHlOEv1+GGQ3ktHMlhuTUwo3zljV3QJbC0+8o2kn+4=
 github.com/grafana/alerting v0.0.0-20260223215711-4271d73d344a h1:GaAYQG7Ty9soWalniXvMqJpbT6MF8E+CCzj+3hO3JYw=
 github.com/grafana/alerting v0.0.0-20260223215711-4271d73d344a/go.mod h1:mReddzc4K93zI4Lb6NvuN3zDkDOXM2YnJtrveFFMa6Q=
-github.com/grafana/dskit v0.0.0-20260218151138-6352488fe08f h1:Y6xyyfHn5BooCWXVujJcCquKtWqvvemt6vMA6A6iNp0=
-github.com/grafana/dskit v0.0.0-20260218151138-6352488fe08f/go.mod h1:bvgzFvwNBycxuKIF/uHgP6WK7XPpo5xGaqvXyBbo50E=
+github.com/grafana/dskit v0.0.0-20260228091820-49ab18c8ab1e h1:3ZOzp9j5vafkXRxx9WZ3WdRVpoAu/gTgciXCRhjASaI=
+github.com/grafana/dskit v0.0.0-20260228091820-49ab18c8ab1e/go.mod h1:gRbVlfiQhg7U9B1RYXY7wWqn1q0APPvyVtXNGDQPKKc=
 github.com/grafana/e2e v0.1.2-0.20260213092851-e558763e8376 h1:4gZEK6AW8BoIdYSV7ZXsD/lKWgFv7PExg6OFLBhUJwA=
 github.com/grafana/e2e v0.1.2-0.20260213092851-e558763e8376/go.mod h1:KFvJP5m5GQ837CN7rUbWIiPdw1JZgeRJTEyp2O5U0is=
 github.com/grafana/go-yaml/v3 v3.0.0-20260130164322-e3c24e8f4c87 h1:Op5/Kd8Ae90IC7Ow+CNwGo/oq87cJX2iE+U8Dw4a8Bc=
@@ -1268,8 +1268,8 @@ golang.org/x/exp v0.0.0-20191227195350-da58074b4299/go.mod h1:2RIsYlXP63K8oxa1u0
 golang.org/x/exp v0.0.0-20200119233911-0405dc783f0a/go.mod h1:2RIsYlXP63K8oxa1u096TMicItID8zy7Y6sNkU49FU4=
 golang.org/x/exp v0.0.0-20200207192155-f17229e696bd/go.mod h1:J/WKrq2StrnmMY6+EHIKF9dgMWnmCNThgcyBT1FY9mM=
 golang.org/x/exp v0.0.0-20200224162631-6cc2880d07d6/go.mod h1:3jZMyOhIsHpP37uCMkUooju7aAi5cS1Q23tOzKc+0MU=
-golang.org/x/exp v0.0.0-20260212183809-81e46e3db34a h1:ovFr6Z0MNmU7nH8VaX5xqw+05ST2uO1exVfZPVqRC5o=
-golang.org/x/exp v0.0.0-20260212183809-81e46e3db34a/go.mod h1:K79w1Vqn7PoiZn+TkNpx3BUWUQksGO3JcVX6qIjytmA=
+golang.org/x/exp v0.0.0-20260218203240-3dfff04db8fa h1:Zt3DZoOFFYkKhDT3v7Lm9FDMEV06GpzjG2jrqW+QTE0=
+golang.org/x/exp v0.0.0-20260218203240-3dfff04db8fa/go.mod h1:K79w1Vqn7PoiZn+TkNpx3BUWUQksGO3JcVX6qIjytmA=
 golang.org/x/image v0.0.0-20190227222117-0694c2d4d067/go.mod h1:kZ7UVZpmo3dzQBMxlp+ypCbDeSB+sBbTgSJuh5dn5js=
 golang.org/x/image v0.0.0-20190802002840-cff245a6509b/go.mod h1:FeLwcggjj3mMvU+oOTbSwawSJRM1uh48EjtB4UJZlP0=
 golang.org/x/lint v0.0.0-20181026193005-c67002cb31c3/go.mod h1:UVdnD1Gm6xHRNCYTkRU2/jEulfH38KcIWyp/GAMgvoE=

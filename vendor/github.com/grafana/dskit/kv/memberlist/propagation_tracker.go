@@ -68,10 +68,9 @@ type PropagationDelayTracker struct {
 	// CAS operation that publishes it completes.
 	pendingBeaconID atomic.Uint64
 
-	// initialSyncDone indicates whether the first WatchKey callback has completed.
-	// On the first callback, we mark all beacons as seen but skip delay recording
-	// since pre-existing beacons may have been published long ago.
-	initialSyncDone atomic.Bool
+	// startupTime is the timestamp (milliseconds since epoch) when the tracker started.
+	// Beacons published before this time are skipped to avoid measuring pre-existing beacons.
+	startupTime int64
 
 	// Metrics
 	propagationDelay      prometheus.Histogram
@@ -118,6 +117,7 @@ func NewPropagationDelayTracker(
 }
 
 func (t *PropagationDelayTracker) running(ctx context.Context) error {
+	t.startupTime = time.Now().UnixMilli()
 	level.Info(t.logger).Log("msg", "propagation delay tracker started", "beacon_interval", t.cfg.BeaconInterval, "beacon_lifetime", t.cfg.BeaconLifetime)
 
 	// Start the goroutine to track beacon arrivals in real-time
@@ -200,8 +200,8 @@ func (t *PropagationDelayTracker) onBeaconsReceived(desc *PropagationDelayTracke
 		}
 		t.markAsSeen(beaconID)
 
-		// Skip delay recording on initial sync (pre-existing beacons)
-		if !t.initialSyncDone.Load() {
+		// Skip delay recording for beacons published before the tracker started.
+		if beacon.PublishedAt < t.startupTime {
 			continue
 		}
 
@@ -221,10 +221,6 @@ func (t *PropagationDelayTracker) onBeaconsReceived(desc *PropagationDelayTracke
 				)
 			}
 		}
-	}
-
-	if !t.initialSyncDone.Load() {
-		t.initialSyncDone.Store(true)
 	}
 
 	if receivedCount > 0 {

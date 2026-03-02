@@ -799,7 +799,7 @@ github.com/grafana/alerting/templates/email
 github.com/grafana/alerting/templates/gomplate
 github.com/grafana/alerting/templates/mimir
 github.com/grafana/alerting/utils
-# github.com/grafana/dskit v0.0.0-20260218151138-6352488fe08f
+# github.com/grafana/dskit v0.0.0-20260228091820-49ab18c8ab1e
 ## explicit; go 1.25.5
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/ballast
@@ -1871,7 +1871,7 @@ golang.org/x/crypto/pbkdf2
 golang.org/x/crypto/pkcs12
 golang.org/x/crypto/pkcs12/internal/rc2
 golang.org/x/crypto/scrypt
-# golang.org/x/exp v0.0.0-20260212183809-81e46e3db34a
+# golang.org/x/exp v0.0.0-20260218203240-3dfff04db8fa
 ## explicit; go 1.25.0
 golang.org/x/exp/constraints
 golang.org/x/exp/slices
