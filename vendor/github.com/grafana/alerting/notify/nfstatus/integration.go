@@ -9,9 +9,14 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/google/uuid"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/common/model"
+)
+
+var (
+	newUUID func() string = uuid.NewString
 )
 
 type NotificationHistoryAlert struct {
@@ -20,6 +25,7 @@ type NotificationHistoryAlert struct {
 }
 
 type NotificationHistoryEntry struct {
+	UUID            string
 	Alerts          []NotificationHistoryAlert
 	GroupKey        string
 	Retry           bool
@@ -35,6 +41,9 @@ type NotificationHistoryEntry struct {
 func (e NotificationHistoryEntry) Validate() error {
 	var errs []error
 
+	if e.UUID == "" {
+		errs = append(errs, errors.New("missing UUID"))
+	}
 	if e.ReceiverName == "" {
 		errs = append(errs, errors.New("missing receiver name"))
 	}
@@ -210,6 +219,7 @@ func (n *statusCaptureNotifier) recordNotificationHistory(ctx context.Context, a
 	}
 
 	entry := NotificationHistoryEntry{
+		UUID:            newUUID(),
 		Alerts:          entryAlerts,
 		GroupKey:        groupKey,
 		Retry:           retry,

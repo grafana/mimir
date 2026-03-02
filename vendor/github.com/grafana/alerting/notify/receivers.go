@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/dispatch"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/common/model"
@@ -71,7 +70,7 @@ type TestIntegrationConfigResult struct {
 	Error  string `json:"error"`
 }
 
-type ConfigReceiver = config.Receiver
+type ConfigReceiver = definition.Receiver
 
 type APIReceiver struct {
 	ConfigReceiver        `yaml:",inline"`

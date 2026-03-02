@@ -1,14 +1,69 @@
+// Copyright 2021 Prometheus Team
+// Modifications Copyright Grafana Labs, licensed under AGPL-3.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package v0mimir1
 
 import (
-	"github.com/prometheus/alertmanager/config"
+	"errors"
 
+	"github.com/prometheus/common/sigv4"
+
+	"github.com/grafana/alerting/receivers"
+
+	httpcfg "github.com/grafana/alerting/http/v0mimir1"
 	"github.com/grafana/alerting/receivers/schema"
 )
 
 const Version = schema.V0mimir1
 
-type Config = config.SNSConfig
+// DefaultConfig defines default values for SNS configurations.
+var DefaultConfig = Config{
+	NotifierConfig: receivers.NotifierConfig{
+		VSendResolved: true,
+	},
+	Subject: `{{ template "sns.default.subject" . }}`,
+	Message: `{{ template "sns.default.message" . }}`,
+}
+
+// Config configures notifications via SNS.
+type Config struct {
+	receivers.NotifierConfig `yaml:",inline" json:",inline"`
+
+	HTTPConfig *httpcfg.HTTPClientConfig `yaml:"http_config,omitempty" json:"http_config,omitempty"`
+
+	APIUrl      string            `yaml:"api_url,omitempty" json:"api_url,omitempty"`
+	Sigv4       sigv4.SigV4Config `yaml:"sigv4" json:"sigv4"`
+	TopicARN    string            `yaml:"topic_arn,omitempty" json:"topic_arn,omitempty"`
+	PhoneNumber string            `yaml:"phone_number,omitempty" json:"phone_number,omitempty"`
+	TargetARN   string            `yaml:"target_arn,omitempty" json:"target_arn,omitempty"`
+	Subject     string            `yaml:"subject,omitempty" json:"subject,omitempty"`
+	Message     string            `yaml:"message,omitempty" json:"message,omitempty"`
+	Attributes  map[string]string `yaml:"attributes,omitempty" json:"attributes,omitempty"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultConfig
+	type plain Config
+	if err := unmarshal((*plain)(c)); err != nil {
+		return err
+	}
+	if (c.TargetARN == "") != (c.TopicARN == "") != (c.PhoneNumber == "") {
+		return errors.New("must provide either a Target ARN, Topic ARN, or Phone Number for SNS config")
+	}
+	return nil
+}
 
 var Schema = schema.IntegrationSchemaVersion{
 	Version:   Version,
@@ -90,7 +145,7 @@ var Schema = schema.IntegrationSchemaVersion{
 		{
 			Label:        "Subject",
 			Description:  "Subject line when the message is delivered",
-			Placeholder:  config.DefaultSNSConfig.Subject,
+			Placeholder:  DefaultConfig.Subject,
 			Element:      schema.ElementTypeInput,
 			InputType:    schema.InputTypeText,
 			PropertyName: "subject",
@@ -98,7 +153,7 @@ var Schema = schema.IntegrationSchemaVersion{
 		{
 			Label:        "Message",
 			Description:  "The message content of the SNS notification",
-			Placeholder:  config.DefaultSNSConfig.Message,
+			Placeholder:  DefaultConfig.Message,
 			Element:      schema.ElementTypeInput,
 			InputType:    schema.InputTypeText,
 			PropertyName: "message",
