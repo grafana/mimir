@@ -703,7 +703,7 @@ func (c *batcher) trackSeries(partition int32, userID string, series []uint64) {
 		// Re-check, since multiple readers may have entered the "not found" block.
 		if b, grow = c.getBatcher(partition); b == nil {
 			if grow {
-				c.growBatchers(int(partition))
+				c.growBatchers(partition)
 			}
 			b = newPartitionBatcher(partition, c.maxSeriesPerBatch, c.logger, c.trackerClient, c.stoppingChan)
 			c.batchers[partition] = b
@@ -725,10 +725,10 @@ func (c *batcher) getBatcher(partition int32) (*partitionBatcher, bool) {
 	return nil, true
 }
 
-// growBatchers grows the batchers slice to accomodate the given offset. The exclusive lock must be held.
-func (c *batcher) growBatchers(offset int) {
+// growBatchers grows the batchers slice to accomodate the given partition. The exclusive lock must be held.
+func (c *batcher) growBatchers(partition int32) {
 	// round to next pow 2 and reallocate/copy.
-	lenRequired := int(offset) + 1 // partition 7 requires size 8; partition 8 requires size 16.
+	lenRequired := int(partition) + 1 // partition 7 requires size 8; partition 8 requires size 16.
 	newLen := math.NextPowerTwo(lenRequired)
 	if newLen <= len(c.batchers) {
 		return

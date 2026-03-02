@@ -1275,6 +1275,7 @@ func TestUsageTrackerBatcherPartitionsGrowth(t *testing.T) {
 	initialData := unsafe.SliceData(batcher.batchers)
 
 	batcher.trackSeries(0, "user-1", []uint64{1, 2, 3})
+	batcher.trackSeries(1, "user-1", []uint64{4, 5, 6, 7})
 
 	require.Equal(t, initialLength, len(batcher.batchers))
 	require.Same(t, initialData, unsafe.SliceData(batcher.batchers), "slice should not have been reallocated")
@@ -1283,24 +1284,24 @@ func TestUsageTrackerBatcherPartitionsGrowth(t *testing.T) {
 	require.Equal(t, initialLength, len(batcher.batchers))
 	require.Same(t, initialData, unsafe.SliceData(batcher.batchers), "slice should not have been reallocated")
 
-	batcher.growBatchers(initialLength - 1)
+	batcher.growBatchers(int32(initialLength - 1))
 	require.Equal(t, initialLength, len(batcher.batchers))
 	require.Same(t, initialData, unsafe.SliceData(batcher.batchers), "slice should not have been reallocated")
 
 	// Once we reach initialLength, the slice should be reallocated.
-	batcher.growBatchers(initialLength)
+	batcher.growBatchers(int32(initialLength))
 	require.Equal(t, initialLength*2, len(batcher.batchers))
 	require.NotSame(t, initialData, unsafe.SliceData(batcher.batchers), "slice should be reallocated")
 	require.Equal(t, initialSlice, batcher.batchers[:len(initialSlice)], "realloced slice should contain initial slice contents")
 
 	data2 := unsafe.SliceData(batcher.batchers)
 
-	batcher.growBatchers(initialLength*2 - 1)
+	batcher.growBatchers(int32(initialLength*2 - 1))
 	require.Equal(t, initialLength*2, len(batcher.batchers))
 	require.Same(t, data2, unsafe.SliceData(batcher.batchers), "slice should not be reallocated")
 	require.Equal(t, initialSlice, batcher.batchers[:len(initialSlice)], "realloced slice should contain initial slice contents")
 
-	batcher.growBatchers(initialLength * 2)
+	batcher.growBatchers(int32(initialLength * 2))
 	require.Equal(t, initialLength*4, len(batcher.batchers))
 	require.NotSame(t, data2, unsafe.SliceData(batcher.batchers), "slice should be reallocated")
 	require.Equal(t, initialSlice, batcher.batchers[:len(initialSlice)], "realloced slice should contain initial slice contents")
