@@ -778,9 +778,7 @@ func (p *UncachedSplit[T]) Finalize(ctx context.Context) error {
 }
 
 func (p *UncachedSplit[T]) Close() {
-	if p.operator != nil {
-		p.operator.Close()
-	}
+	p.operator.Close()
 }
 
 func (p *UncachedSplit[T]) AppendMergedSeriesIndex(splitLocalIdx int, mergedIdx int) {
