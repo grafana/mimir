@@ -749,6 +749,10 @@ func (p *UncachedSplit[T]) Finalize(ctx context.Context) error {
 		return nil
 	}
 
+	if err := p.operator.Finalize(ctx); err != nil {
+		return err
+	}
+
 	for rangeIdx, splitRange := range p.ranges {
 		if !splitRange.Cacheable {
 			continue
