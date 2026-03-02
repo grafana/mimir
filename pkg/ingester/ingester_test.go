@@ -9807,7 +9807,6 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 	}
 
 	metricNames := []string{
-		"cortex_ingester_active_series_loading",
 		"cortex_ingester_active_series",
 		"cortex_ingester_active_series_custom_tracker",
 		"cortex_ingester_active_native_histogram_series",

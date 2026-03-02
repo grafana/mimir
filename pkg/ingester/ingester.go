@@ -922,58 +922,52 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 			)
 		}
 
-		valid := userDB.activeSeries.Purge(now, idx)
+		userDB.activeSeries.Purge(now, idx)
 		idx.Close()
 
-		if !valid {
-			// Active series config has been reloaded, exposing loading metric until MetricsIdleTimeout passes.
-			i.metrics.activeSeriesLoading.WithLabelValues(userID).Set(1)
+		allActive, activeMatching, allActiveOTLP, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets := userDB.activeSeries.ActiveWithMatchers()
+		if allActive > 0 {
+			i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(allActive))
 		} else {
-			allActive, activeMatching, allActiveOTLP, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets := userDB.activeSeries.ActiveWithMatchers()
-			i.metrics.activeSeriesLoading.DeleteLabelValues(userID)
-			if allActive > 0 {
-				i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(allActive))
-			} else {
-				i.metrics.activeSeriesPerUser.DeleteLabelValues(userID)
-			}
-			if allActiveOTLP > 0 {
-				i.metrics.activeSeriesPerUserOTLP.WithLabelValues(userID).Set(float64(allActiveOTLP))
-			} else {
-				i.metrics.activeSeriesPerUserOTLP.DeleteLabelValues(userID)
-			}
-			if allActiveHistograms > 0 {
-				i.metrics.activeSeriesPerUserNativeHistograms.WithLabelValues(userID).Set(float64(allActiveHistograms))
-			} else {
-				i.metrics.activeSeriesPerUserNativeHistograms.DeleteLabelValues(userID)
-			}
-			if allActiveBuckets > 0 {
-				i.metrics.activeNativeHistogramBucketsPerUser.WithLabelValues(userID).Set(float64(allActiveBuckets))
-			} else {
-				i.metrics.activeNativeHistogramBucketsPerUser.DeleteLabelValues(userID)
-			}
+			i.metrics.activeSeriesPerUser.DeleteLabelValues(userID)
+		}
+		if allActiveOTLP > 0 {
+			i.metrics.activeSeriesPerUserOTLP.WithLabelValues(userID).Set(float64(allActiveOTLP))
+		} else {
+			i.metrics.activeSeriesPerUserOTLP.DeleteLabelValues(userID)
+		}
+		if allActiveHistograms > 0 {
+			i.metrics.activeSeriesPerUserNativeHistograms.WithLabelValues(userID).Set(float64(allActiveHistograms))
+		} else {
+			i.metrics.activeSeriesPerUserNativeHistograms.DeleteLabelValues(userID)
+		}
+		if allActiveBuckets > 0 {
+			i.metrics.activeNativeHistogramBucketsPerUser.WithLabelValues(userID).Set(float64(allActiveBuckets))
+		} else {
+			i.metrics.activeNativeHistogramBucketsPerUser.DeleteLabelValues(userID)
+		}
 
-			AttributedActiveSeriesFailure := userDB.activeSeries.ActiveSeriesAttributionFailureCount()
-			if AttributedActiveSeriesFailure > 0 {
-				i.metrics.attributedActiveSeriesFailuresPerUser.WithLabelValues(userID).Add(AttributedActiveSeriesFailure)
-			}
+		AttributedActiveSeriesFailure := userDB.activeSeries.ActiveSeriesAttributionFailureCount()
+		if AttributedActiveSeriesFailure > 0 {
+			i.metrics.attributedActiveSeriesFailuresPerUser.WithLabelValues(userID).Add(AttributedActiveSeriesFailure)
+		}
 
-			for idx, name := range userDB.activeSeries.CurrentMatcherNames() {
-				// We only set the metrics for matchers that actually exist, to avoid increasing cardinality with zero valued metrics.
-				if activeMatching[idx] > 0 {
-					i.metrics.activeSeriesCustomTrackersPerUser.WithLabelValues(userID, name).Set(float64(activeMatching[idx]))
-				} else {
-					i.metrics.activeSeriesCustomTrackersPerUser.DeleteLabelValues(userID, name)
-				}
-				if activeMatchingHistograms[idx] > 0 {
-					i.metrics.activeSeriesCustomTrackersPerUserNativeHistograms.WithLabelValues(userID, name).Set(float64(activeMatchingHistograms[idx]))
-				} else {
-					i.metrics.activeSeriesCustomTrackersPerUserNativeHistograms.DeleteLabelValues(userID, name)
-				}
-				if activeMatchingBuckets[idx] > 0 {
-					i.metrics.activeNativeHistogramBucketsCustomTrackersPerUser.WithLabelValues(userID, name).Set(float64(activeMatchingBuckets[idx]))
-				} else {
-					i.metrics.activeNativeHistogramBucketsCustomTrackersPerUser.DeleteLabelValues(userID, name)
-				}
+		for idx, name := range userDB.activeSeries.CurrentMatcherNames() {
+			// We only set the metrics for matchers that actually exist, to avoid increasing cardinality with zero valued metrics.
+			if activeMatching[idx] > 0 {
+				i.metrics.activeSeriesCustomTrackersPerUser.WithLabelValues(userID, name).Set(float64(activeMatching[idx]))
+			} else {
+				i.metrics.activeSeriesCustomTrackersPerUser.DeleteLabelValues(userID, name)
+			}
+			if activeMatchingHistograms[idx] > 0 {
+				i.metrics.activeSeriesCustomTrackersPerUserNativeHistograms.WithLabelValues(userID, name).Set(float64(activeMatchingHistograms[idx]))
+			} else {
+				i.metrics.activeSeriesCustomTrackersPerUserNativeHistograms.DeleteLabelValues(userID, name)
+			}
+			if activeMatchingBuckets[idx] > 0 {
+				i.metrics.activeNativeHistogramBucketsCustomTrackersPerUser.WithLabelValues(userID, name).Set(float64(activeMatchingBuckets[idx]))
+			} else {
+				i.metrics.activeNativeHistogramBucketsCustomTrackersPerUser.DeleteLabelValues(userID, name)
 			}
 		}
 	}

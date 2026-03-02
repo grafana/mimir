@@ -46,14 +46,12 @@ type ActiveSeries struct {
 	stripes [numStripes]seriesStripe
 	deleted deletedSeries
 
-	// configMutex protects matchers, cat and lastMatchersUpdate. shared by matchers and cat
-	configMutex      sync.RWMutex
-	matchers         *asmodel.Matchers
-	lastConfigUpdate time.Time
-	cat              *costattribution.ActiveSeriesTracker
+	// configMutex protects matchers and cat.
+	configMutex sync.RWMutex
+	matchers    *asmodel.Matchers
+	cat         *costattribution.ActiveSeriesTracker
 
 	// The duration after which series become inactive.
-	// Also used to determine if enough time has passed since configuration reload for valid results.
 	timeout time.Duration
 }
 
@@ -192,16 +190,13 @@ func (c *ActiveSeries) PostDeletion(deleted map[chunks.HeadSeriesRef]labels.Labe
 	}
 }
 
-// Purge purges expired entries and returns true if enough time has passed since
-// last reload. This should be called periodically to avoid unbounded memory
-// growth.
-func (c *ActiveSeries) Purge(now time.Time, idx tsdb.IndexReader) bool {
+// Purge purges expired entries. This should be called periodically to avoid
+// unbounded memory growth.
+func (c *ActiveSeries) Purge(now time.Time, idx tsdb.IndexReader) {
 	c.configMutex.Lock()
 	defer c.configMutex.Unlock()
 	purgeTime := now.Add(-c.timeout)
 	c.purge(purgeTime, idx)
-
-	return !c.lastConfigUpdate.After(purgeTime)
 }
 
 // purge removes expired entries from the cache.
