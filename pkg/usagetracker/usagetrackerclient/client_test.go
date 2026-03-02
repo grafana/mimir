@@ -9,6 +9,7 @@ import (
 	"slices"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
@@ -1263,6 +1264,51 @@ func TestUsageTrackerClient_TrackSeriesBatch(t *testing.T) {
 			},
 		)
 	})
+}
+
+func TestUsageTrackerBatcherPartitionsGrowth(t *testing.T) {
+	t.Parallel()
+	// Create a batcher instance and verify that the batcher slice grows correctly as new partitions arrive.
+	batcher := newBatcher(1000, 1000*time.Hour, log.NewNopLogger(), nil)
+	initialLength := len(batcher.batchers)
+	initialSlice := batcher.batchers
+	initialData := unsafe.SliceData(batcher.batchers)
+
+	batcher.trackSeries(0, "user-1", []uint64{1, 2, 3})
+
+	require.Equal(t, initialLength, len(batcher.batchers))
+	require.Same(t, initialData, unsafe.SliceData(batcher.batchers), "slice should not have been reallocated")
+
+	batcher.growBatchers(0)
+	require.Equal(t, initialLength, len(batcher.batchers))
+	require.Same(t, initialData, unsafe.SliceData(batcher.batchers), "slice should not have been reallocated")
+
+	batcher.growBatchers(initialLength - 1)
+	require.Equal(t, initialLength, len(batcher.batchers))
+	require.Same(t, initialData, unsafe.SliceData(batcher.batchers), "slice should not have been reallocated")
+
+	// Once we reach initialLength, the slice should be reallocated.
+	batcher.growBatchers(initialLength)
+	require.Equal(t, initialLength*2, len(batcher.batchers))
+	require.NotSame(t, initialData, unsafe.SliceData(batcher.batchers), "slice should be reallocated")
+	require.Equal(t, initialSlice, batcher.batchers[:len(initialSlice)], "realloced slice should contain initial slice contents")
+
+	data2 := unsafe.SliceData(batcher.batchers)
+
+	batcher.growBatchers(initialLength*2 - 1)
+	require.Equal(t, initialLength*2, len(batcher.batchers))
+	require.Same(t, data2, unsafe.SliceData(batcher.batchers), "slice should not be reallocated")
+	require.Equal(t, initialSlice, batcher.batchers[:len(initialSlice)], "realloced slice should contain initial slice contents")
+
+	batcher.growBatchers(initialLength * 2)
+	require.Equal(t, initialLength*4, len(batcher.batchers))
+	require.NotSame(t, data2, unsafe.SliceData(batcher.batchers), "slice should be reallocated")
+	require.Equal(t, initialSlice, batcher.batchers[:len(initialSlice)], "realloced slice should contain initial slice contents")
+
+	// Verify that all added batchers are initially nil.
+	for i := len(initialSlice); i < len(batcher.batchers); i++ {
+		require.Nil(t, batcher.batchers[i], "added batcher should be nil")
+	}
 }
 
 func BenchmarkPartitionBatcher_TrackSeries(b *testing.B) {
