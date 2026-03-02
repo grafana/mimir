@@ -1268,14 +1268,18 @@ func TestUsageTrackerClient_TrackSeriesBatch(t *testing.T) {
 
 func TestUsageTrackerBatcherPartitionsGrowth(t *testing.T) {
 	t.Parallel()
+
 	// Create a batcher instance and verify that the batcher slice grows correctly as new partitions arrive.
 	batcher := newBatcher(1000, 1000*time.Hour, log.NewNopLogger(), nil)
+	t.Cleanup(batcher.stop)
+
 	initialLength := len(batcher.batchers)
 	initialSlice := batcher.batchers
 	initialData := unsafe.SliceData(batcher.batchers)
 
-	batcher.trackSeries(0, "user-1", []uint64{1, 2, 3})
-	batcher.trackSeries(1, "user-1", []uint64{4, 5, 6, 7})
+	// Add some slice elements to verify copy behavior.
+	batcher.batchers[0] = newPartitionBatcher(0, 1000, log.NewNopLogger(), nil, batcher.stoppingChan)
+	batcher.batchers[1] = newPartitionBatcher(1, 1000, log.NewNopLogger(), nil, batcher.stoppingChan)
 
 	require.Equal(t, initialLength, len(batcher.batchers))
 	require.Same(t, initialData, unsafe.SliceData(batcher.batchers), "slice should not have been reallocated")
