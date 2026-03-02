@@ -1564,7 +1564,7 @@ func benchmarkPurge(b *testing.B, twice bool) {
 }
 
 func BenchmarkActiveSeries_ReloadMatchersConfig(b *testing.B) {
-	const numSeries = 100_000
+	const numSeries = 2_000_000
 
 	for _, numTrackers := range []int{0, 2, 10} {
 		b.Run(fmt.Sprintf("trackers=%d", numTrackers), func(b *testing.B) {
@@ -1580,7 +1580,12 @@ func BenchmarkActiveSeries_ReloadMatchersConfig(b *testing.B) {
 			existingLabels := make(map[storage.SeriesRef]labels.Labels, numSeries)
 			for s := 0; s < numSeries; s++ {
 				ref := storage.SeriesRef(s)
-				ls := labels.FromStrings("__name__", "metric", "series_id", strconv.Itoa(s), "team", strconv.Itoa(s%5), "env", "prod")
+				labelsStrings := []string{"__name__", fmt.Sprintf("metric_%d", s%100), "series_id", strconv.Itoa(s), "team", strconv.Itoa(s % 5), "env", "prod"}
+				for l := 'a'; l <= 'z'; l++ {
+					labelsStrings = append(labelsStrings, fmt.Sprintf("%c%d", l, s%100), fmt.Sprintf("%c%d", l, s))
+				}
+				existingLabels[ref] = labels.FromStrings(labelsStrings...)
+				ls := labels.FromStrings(labelsStrings...)
 				existingLabels[ref] = ls
 				c.UpdateSeries(ls, ref, currentTime, -1, false, nil)
 			}
