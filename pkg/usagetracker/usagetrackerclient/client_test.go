@@ -119,7 +119,7 @@ func prepareTestRings(t testing.TB, ctx context.Context) (*ring.MultiPartitionIn
 	})
 
 	// Pre-condition check: all instances should be healthy.
-	set, err := instanceRing.GetAllHealthy(TrackSeriesOp)
+	set, err := instanceRing.GetAllHealthy(trackSeriesOp)
 	require.NoError(t, err)
 	require.Len(t, set.Instances, 4)
 

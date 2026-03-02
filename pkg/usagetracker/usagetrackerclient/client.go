@@ -31,8 +31,8 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-// TrackSeriesOp is the ring operation used to locate instances for series tracking.
-var TrackSeriesOp = trackerop.TrackSeriesOp
+// trackSeriesOp is the ring operation used to locate instances for series tracking.
+var trackSeriesOp = trackerop.TrackSeriesOp
 
 // limitsProvider provides access to user limits.
 type limitsProvider interface {
@@ -281,7 +281,7 @@ func (c *UsageTrackerClient) TrackSeries(ctx context.Context, userID string, ser
 		keys[i] = uint32(hash)
 	}
 
-	err := ring.DoBatchWithOptions(ctx, TrackSeriesOp, partitionBatchRing, keys,
+	err := ring.DoBatchWithOptions(ctx, trackSeriesOp, partitionBatchRing, keys,
 		func(partition ring.InstanceDesc, indexes []int) error {
 			// The partition ID is stored in the ring.InstanceDesc.Id.
 			partitionID, err := strconv.ParseUint(partition.Id, 10, 31)
@@ -334,7 +334,7 @@ func (c *UsageTrackerClient) TrackSeries(ctx context.Context, userID string, ser
 
 func (c *UsageTrackerClient) trackSeriesPerPartition(ctx context.Context, userID string, partitionID int32, series []uint64) ([]uint64, error) {
 	// Get the usage-tracker instances for the input partition.
-	set, err := c.partitionRing.GetReplicationSetForPartitionAndOperation(partitionID, TrackSeriesOp)
+	set, err := c.partitionRing.GetReplicationSetForPartitionAndOperation(partitionID, trackSeriesOp)
 	if err != nil {
 		return nil, err
 	}
@@ -418,7 +418,7 @@ func (c *UsageTrackerClient) TrackSeriesAsync(ctx context.Context, userID string
 		keys[i] = uint32(hash)
 	}
 
-	return ring.DoBatchWithOptions(ctx, TrackSeriesOp, partitionBatchRing, keys,
+	return ring.DoBatchWithOptions(ctx, trackSeriesOp, partitionBatchRing, keys,
 		func(partition ring.InstanceDesc, indexes []int) error {
 			// The partition ID is stored in the ring.InstanceDesc.Id.
 			partitionID, err := strconv.ParseUint(partition.Id, 10, 31)
@@ -443,7 +443,7 @@ func (c *UsageTrackerClient) TrackSeriesAsync(ctx context.Context, userID string
 // for each user.
 func (c *UsageTrackerClient) trackSeriesPerPartitionBatch(ctx context.Context, partitionID int32, users []*usagetrackerpb.TrackSeriesBatchUser) ([]*usagetrackerpb.TrackSeriesBatchRejection, error) {
 	// Get the usage-tracker instances for the input partition.
-	set, err := c.partitionRing.GetReplicationSetForPartitionAndOperation(partitionID, TrackSeriesOp)
+	set, err := c.partitionRing.GetReplicationSetForPartitionAndOperation(partitionID, trackSeriesOp)
 	if err != nil {
 		return nil, err
 	}
@@ -607,7 +607,7 @@ func (c *UsageTrackerClient) selectRandomPartition() (int32, ring.ReplicationSet
 		return 0, ring.ReplicationSet{}, false
 	}
 	partitionID := partitions[rand.IntN(len(partitions))]
-	set, err := c.partitionRing.GetReplicationSetForPartitionAndOperation(partitionID, TrackSeriesOp)
+	set, err := c.partitionRing.GetReplicationSetForPartitionAndOperation(partitionID, trackSeriesOp)
 	if err != nil {
 		level.Error(c.logger).Log(
 			"component", "usage-tracker-client",
