@@ -138,6 +138,46 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
       else
         null;
 
+    // Validates that querier and ruler_querier deployments have the correct 'querier.prefer-availability-zones' setting.
+    // This validation checks that the flag is present and that all preferred zones start with the expected zone name.
+    // We use "starts with" matching (not exact match) because a zone-a querier may prefer both "zone-a" and "zone-a-backup".
+    // This allows backup zones to be included while ensuring each preference targets the correct availability zone.
+    local validateContainerPreferAvailabilityZones(deploymentName, expectedZone, container) =
+      // Only validate querier and ruler_querier deployments (they use this flag to prefer same-zone ingesters/store-gateways)
+      if std.startsWith(deploymentName, 'querier_') || std.startsWith(deploymentName, 'ruler_querier_') then
+        local flagName = '-querier.prefer-availability-zones';
+
+        if std.objectHas(container, 'args') then
+          local flagPrefix = flagName + '=';
+          local expectedZonePrefix = 'zone-' + expectedZone;
+
+          // Find the prefer-availability-zones flag in the args
+          local preferZonesArgs = std.filter(
+            function(arg) std.isString(arg) && std.startsWith(arg, flagPrefix),
+            container.args
+          );
+
+          if std.length(preferZonesArgs) == 0 then
+            'The Deployment or StatefulSet "%s" is missing the required CLI flag "%s".' % [deploymentName, flagName]
+          else
+            local actualValue = std.substr(preferZonesArgs[0], std.length(flagPrefix), std.length(preferZonesArgs[0]));
+            local preferredZones = std.split(actualValue, ',');
+
+            // Check that all preferred zones start with the expected zone prefix
+            local invalidZones = std.filter(
+              function(zone) !std.startsWith(zone, expectedZonePrefix),
+              preferredZones
+            );
+
+            if std.length(invalidZones) > 0 then
+              'The Deployment or StatefulSet "%s" contains the CLI flag "%s" with invalid zones %s. All zones must start with "%s" (based on deployment name).' % [deploymentName, flagName, std.toString(invalidZones), expectedZonePrefix]
+            else
+              null
+        else
+          'The Deployment or StatefulSet "%s" is missing the required CLI flag "%s".' % [deploymentName, flagName]
+      else
+        null;
+
     local validateContainerArg(deploymentName, expectedZone, arg) =
       if std.isString(arg) && std.length(std.findSubstr('cluster.local', arg)) > 0 && !isContainerArgExcluded(arg) then
         local expectedZoneNotation = '-zone-' + expectedZone;
@@ -189,6 +229,7 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
     local validateContainer(deploymentName, expectedZone, container) =
       local validators = [
         validateContainerMemberlistConfig,
+        validateContainerPreferAvailabilityZones,
         validateContainerArgs,
         validateContainerEnvVars,
       ];
