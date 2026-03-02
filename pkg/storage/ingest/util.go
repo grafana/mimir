@@ -179,12 +179,15 @@ func requestOAuthToken(ctx context.Context, socketPath string, timeout time.Dura
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	client := &http.Client{
-		Transport: &http.Transport{
-			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
-			},
+	transport := &http.Transport{
+		DisableKeepAlives: true,
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
 		},
+	}
+
+	client := &http.Client{
+		Transport: transport,
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://token/", nil)
