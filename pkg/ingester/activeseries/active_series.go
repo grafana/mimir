@@ -80,8 +80,6 @@ type seriesStripe struct {
 
 	cat                                   *costattribution.ActiveSeriesTracker
 	activeSeriesAttributionFailureCounter atomic.Float64
-
-	needsMatcherReeval bool
 }
 
 // seriesEntryFlag contains boolean flags that can be set on seriesEntry.
@@ -515,10 +513,9 @@ func (s *seriesStripe) reloadConfig(asm *asmodel.Matchers, cat *costattribution.
 		s.activeMatching = resizeAndClear(len(asm.MatcherNames()), s.activeMatching)
 		s.activeMatchingNativeHistograms = resizeAndClear(len(asm.MatcherNames()), s.activeMatchingNativeHistograms)
 		s.activeMatchingNativeHistogramBuckets = resizeAndClear(len(asm.MatcherNames()), s.activeMatchingNativeHistogramBuckets)
-		s.oldestEntryTs.Store(0) // force purge to run
 	}
 
-	if catChanged {
+	if matchersChanged || catChanged {
 		buf := labels.NewScratchBuilder(128)
 		for ref, entry := range s.refs {
 			if err := idx.Series(ref, &buf, nil); err != nil {
@@ -526,25 +523,21 @@ func (s *seriesStripe) reloadConfig(asm *asmodel.Matchers, cat *costattribution.
 				continue
 			}
 			lbls := buf.Labels()
-			cat.Increment(lbls, time.Unix(0, entry.nanos.Load()), entry.numNativeHistogramBuckets)
+			if catChanged {
+				cat.Increment(lbls, time.Unix(0, entry.nanos.Load()), entry.numNativeHistogramBuckets)
+			}
 			if matchersChanged {
-				matches := asm.Matches(lbls)
-				entry.matches = matches
+				entry.matches = asm.Matches(lbls)
 				s.refs[ref] = entry
-				ml := matches.Len()
-				for i := 0; i < ml; i++ {
-					match := matches.Get(i)
-					s.activeMatching[match]++
-					if entry.numNativeHistogramBuckets >= 0 {
-						s.activeMatchingNativeHistograms[match]++
-						s.activeMatchingNativeHistogramBuckets[match] += uint32(entry.numNativeHistogramBuckets)
-					}
-				}
 			}
 		}
+	}
+
+	if catChanged {
 		s.cat = cat
-	} else if matchersChanged {
-		s.needsMatcherReeval = true
+	}
+	if matchersChanged {
+		s.oldestEntryTs.Store(0) // force purge to recount
 	}
 }
 
@@ -566,9 +559,6 @@ func (s *seriesStripe) purge(keepUntil time.Time, idx tsdb.IndexReader) {
 	s.activeMatchingNativeHistograms = resizeAndClear(len(s.activeMatchingNativeHistograms), s.activeMatchingNativeHistograms)
 	s.activeMatchingNativeHistogramBuckets = resizeAndClear(len(s.activeMatchingNativeHistogramBuckets), s.activeMatchingNativeHistogramBuckets)
 
-	needsReeval := s.needsMatcherReeval
-	s.needsMatcherReeval = false
-
 	oldest := int64(math.MaxInt64)
 	buf := labels.NewScratchBuilder(128)
 	for ref, entry := range s.refs {
@@ -586,15 +576,6 @@ func (s *seriesStripe) purge(keepUntil time.Time, idx tsdb.IndexReader) {
 			}
 			delete(s.refs, ref)
 			continue
-		}
-
-		if needsReeval {
-			if err := idx.Series(ref, &buf, nil); err != nil {
-				entry.matches = asmodel.PreAllocDynamicSlice{}
-			} else {
-				entry.matches = s.matchers.Matches(buf.Labels())
-			}
-			s.refs[ref] = entry
 		}
 
 		s.active++
@@ -665,9 +646,6 @@ func (s *seriesStripe) remove(ref storage.SeriesRef, idx tsdb.IndexReader) {
 	ml := entry.matches.Len()
 	for i := 0; i < ml; i++ {
 		match := entry.matches.Get(i)
-		if int(match) >= len(s.activeMatching) {
-			continue
-		}
 		s.activeMatching[match]--
 		if entry.numNativeHistogramBuckets >= 0 {
 			s.activeMatchingNativeHistograms[match]--
