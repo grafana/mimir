@@ -621,6 +621,25 @@ func (b *OneToOneVectorVectorBinaryOperation) AfterPrepare(ctx context.Context) 
 }
 
 func (b *OneToOneVectorVectorBinaryOperation) Finalize(ctx context.Context) error {
+	types.SeriesMetadataSlicePool.Put(&b.leftMetadata, b.MemoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&b.rightMetadata, b.MemoryConsumptionTracker)
+
+	if b.leftBuffer != nil {
+		b.leftBuffer.Finalize()
+		b.leftBuffer = nil
+	}
+
+	if b.rightBuffer != nil {
+		b.rightBuffer.Finalize()
+		b.rightBuffer = nil
+	}
+
+	for _, s := range b.remainingSeries {
+		s.rightSide.Close(b.MemoryConsumptionTracker)
+	}
+
+	b.remainingSeries = nil
+
 	if err := b.Left.Finalize(ctx); err != nil {
 		return err
 	}
@@ -631,23 +650,4 @@ func (b *OneToOneVectorVectorBinaryOperation) Finalize(ctx context.Context) erro
 func (b *OneToOneVectorVectorBinaryOperation) Close() {
 	b.Left.Close()
 	b.Right.Close()
-
-	types.SeriesMetadataSlicePool.Put(&b.leftMetadata, b.MemoryConsumptionTracker)
-	types.SeriesMetadataSlicePool.Put(&b.rightMetadata, b.MemoryConsumptionTracker)
-
-	if b.leftBuffer != nil {
-		b.leftBuffer.Close()
-		b.leftBuffer = nil
-	}
-
-	if b.rightBuffer != nil {
-		b.rightBuffer.Close()
-		b.rightBuffer = nil
-	}
-
-	for _, s := range b.remainingSeries {
-		s.rightSide.Close(b.MemoryConsumptionTracker)
-	}
-
-	b.remainingSeries = nil
 }

@@ -386,17 +386,6 @@ func (o *OrBinaryOperation) AfterPrepare(ctx context.Context) error {
 }
 
 func (o *OrBinaryOperation) Finalize(ctx context.Context) error {
-	if err := o.Left.Finalize(ctx); err != nil {
-		return err
-	}
-
-	return o.Right.Finalize(ctx)
-}
-
-func (o *OrBinaryOperation) Close() {
-	o.Left.Close()
-	o.Right.Close()
-
 	for _, g := range o.leftSeriesGroups {
 		if g == nil {
 			continue
@@ -416,6 +405,17 @@ func (o *OrBinaryOperation) Close() {
 	}
 
 	o.rightSeriesGroups = nil
+
+	if err := o.Left.Finalize(ctx); err != nil {
+		return err
+	}
+
+	return o.Right.Finalize(ctx)
+}
+
+func (o *OrBinaryOperation) Close() {
+	o.Left.Close()
+	o.Right.Close()
 }
 
 type orGroup struct {

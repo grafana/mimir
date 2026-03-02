@@ -260,13 +260,12 @@ func (m *RangeVectorSelector) AfterPrepare(ctx context.Context) error {
 }
 
 func (m *RangeVectorSelector) Finalize(ctx context.Context) error {
-	// Nothing to do.
-	return nil
-}
-
-func (m *RangeVectorSelector) Close() {
-	m.Selector.Close()
 	m.floats.Close()
 	m.histograms.Close()
 	m.chunkIterator = nil
+	return m.Selector.Finalize()
+}
+
+func (m *RangeVectorSelector) Close() {
+	// Nothing to do.
 }

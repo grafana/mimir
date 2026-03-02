@@ -591,9 +591,10 @@ func TestOrBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testing.T) {
 			_, err = o.NextSeries(ctx)
 			require.Equal(t, types.EOS, err)
 
-			o.Close()
+			require.NoError(t, o.Finalize(ctx))
 			// Make sure we've returned everything to their pools.
 			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+			o.Close()
 		})
 	}
 }
@@ -704,9 +705,10 @@ func TestOrBinaryOperation_ReleasesIntermediateStateIfClosedEarly(t *testing.T) 
 				require.NoError(t, err)
 			}
 
-			// Close the operator and confirm that we've returned everything to their pools.
-			o.Close()
+			// Finalize the operator and confirm that we've returned everything to their pools.
+			require.NoError(t, o.Finalize(ctx))
 			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+			o.Close()
 		})
 	}
 }

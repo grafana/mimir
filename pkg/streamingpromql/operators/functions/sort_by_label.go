@@ -154,16 +154,16 @@ func (s *SortByLabel) AfterPrepare(ctx context.Context) error {
 }
 
 func (s *SortByLabel) Finalize(ctx context.Context) error {
+	if s.buffer != nil {
+		s.buffer.Finalize()
+		s.buffer = nil
+	}
+
+	types.IntSlicePool.Put(&s.originalIndexes, s.memoryConsumptionTracker)
+
 	return s.inner.Finalize(ctx)
 }
 
 func (s *SortByLabel) Close() {
-	if s.buffer != nil {
-		// Closing the buffer also closes its source operator which is our `inner`.
-		s.buffer.Close()
-	}
-	// If the buffer hasn't been initialized yet, we still need to close `inner`
-	// ourselves. It's safe to call Close on operators multiple times.
 	s.inner.Close()
-	types.IntSlicePool.Put(&s.originalIndexes, s.memoryConsumptionTracker)
 }

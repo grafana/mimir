@@ -212,7 +212,7 @@ func (s *Selector) Next(ctx context.Context, existing chunkenc.Iterator) (chunke
 	return s.series.Pop().Iterator(existing), nil
 }
 
-func (s *Selector) Close() {
+func (s *Selector) Finalize() error {
 	if s.series != nil {
 		s.series.Close()
 		s.series = nil
@@ -224,6 +224,7 @@ func (s *Selector) Close() {
 	}
 
 	s.seriesSet = nil
+	return nil
 }
 
 // seriesList is a FIFO queue of storage.Series.

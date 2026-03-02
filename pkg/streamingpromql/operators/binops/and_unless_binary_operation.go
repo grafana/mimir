@@ -315,17 +315,6 @@ func (a *AndUnlessBinaryOperation) AfterPrepare(ctx context.Context) error {
 }
 
 func (a *AndUnlessBinaryOperation) Finalize(ctx context.Context) error {
-	if err := a.Left.Finalize(ctx); err != nil {
-		return err
-	}
-
-	return a.Right.Finalize(ctx)
-}
-
-func (a *AndUnlessBinaryOperation) Close() {
-	a.Left.Close()
-	a.Right.Close()
-
 	for _, group := range a.leftSeriesGroups {
 		if group == nil {
 			continue
@@ -338,6 +327,17 @@ func (a *AndUnlessBinaryOperation) Close() {
 
 	// We don't need to explicitly close any groups in rightSeriesGroups, as they would have been closed above.
 	a.rightSeriesGroups = nil
+
+	if err := a.Left.Finalize(ctx); err != nil {
+		return err
+	}
+
+	return a.Right.Finalize(ctx)
+}
+
+func (a *AndUnlessBinaryOperation) Close() {
+	a.Left.Close()
+	a.Right.Close()
 }
 
 type andGroup struct {

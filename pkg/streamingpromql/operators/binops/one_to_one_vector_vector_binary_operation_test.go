@@ -681,9 +681,10 @@ func TestOneToOneVectorVectorBinaryOperation_ClosesInnerOperatorsAsSoonAsPossibl
 			_, err = o.NextSeries(ctx)
 			require.Equal(t, types.EOS, err)
 
-			o.Close()
+			require.NoError(t, o.Finalize(ctx))
 			// Make sure we've returned everything to their pools.
 			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+			o.Close()
 		})
 	}
 }
@@ -743,9 +744,10 @@ func TestOneToOneVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEa
 				types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
 			}
 
-			// Close the operator and verify that the intermediate state is released.
-			o.Close()
+			// Finalize the operator and verify that the intermediate state is released.
+			require.NoError(t, o.Finalize(ctx))
 			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+			o.Close()
 		})
 	}
 }

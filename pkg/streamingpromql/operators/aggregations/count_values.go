@@ -263,19 +263,20 @@ func (c *CountValues) AfterPrepare(ctx context.Context) error {
 }
 
 func (c *CountValues) Finalize(ctx context.Context) error {
+	for _, d := range c.series {
+		types.FPointSlicePool.Put(&d, c.MemoryConsumptionTracker)
+	}
+
+	c.series = nil
+
 	if err := c.Inner.Finalize(ctx); err != nil {
 		return err
 	}
+
 	return c.LabelName.Finalize(ctx)
 }
 
 func (c *CountValues) Close() {
 	c.Inner.Close()
 	c.LabelName.Close()
-
-	for _, d := range c.series {
-		types.FPointSlicePool.Put(&d, c.MemoryConsumptionTracker)
-	}
-
-	c.series = nil
 }

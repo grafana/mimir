@@ -187,17 +187,6 @@ func (o *Operator) AfterPrepare(ctx context.Context) error {
 }
 
 func (o *Operator) Finalize(ctx context.Context) error {
-	if err := o.Inner.Finalize(ctx); err != nil {
-		return err
-	}
-
-	return o.Param.Finalize(ctx)
-}
-
-func (o *Operator) Close() {
-	o.Inner.Close()
-	o.Param.Close()
-
 	if o.stepArg != nil {
 		o.stepArg.close()
 	}
@@ -208,6 +197,16 @@ func (o *Operator) Close() {
 		}
 	}
 
+	if err := o.Inner.Finalize(ctx); err != nil {
+		return err
+	}
+
+	return o.Param.Finalize(ctx)
+}
+
+func (o *Operator) Close() {
+	o.Inner.Close()
+	o.Param.Close()
 }
 
 func NewLimitK(

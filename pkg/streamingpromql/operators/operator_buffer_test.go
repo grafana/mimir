@@ -172,7 +172,7 @@ func TestInstantVectorOperatorBuffer_BufferingAllInputSeries(t *testing.T) {
 	require.True(t, inner.Closed)
 }
 
-func TestInstantVectorOperatorBuffer_ReleasesBufferWhenClosedEarly(t *testing.T) {
+func TestInstantVectorOperatorBuffer_FinalizeReleasesBufferedData(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
@@ -206,7 +206,7 @@ func TestInstantVectorOperatorBuffer_ReleasesBufferWhenClosedEarly(t *testing.T)
 	types.PutInstantVectorSeriesData(series[0], memoryConsumptionTracker)
 	require.Len(t, buffer.buffer, 1, "should have buffered first series")
 
-	// Close the buffer, which should release the buffered series.
-	buffer.Close()
-	require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	// Finalizing the buffer should release the buffered series.
+	buffer.Finalize()
+	require.Equalf(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "expected 0 memory consumption after Finalize, but have\n%s", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
 }
