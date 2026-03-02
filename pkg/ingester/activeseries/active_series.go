@@ -126,7 +126,7 @@ func NewActiveSeries(asm *asmodel.Matchers, timeout time.Duration, cat *costattr
 
 	// Stripes are pre-allocated so that we only read on them and no lock is required.
 	for i := 0; i < numStripes; i++ {
-		c.stripes[i].reinitialize(asm, &c.deleted, cat)
+		c.stripes[i].initialize(asm, &c.deleted, cat)
 	}
 
 	return c
@@ -486,8 +486,8 @@ func (s *seriesStripe) clear() {
 	}
 }
 
-// Reinitialize assigns new matchers and corresponding size activeMatching slices.
-func (s *seriesStripe) reinitialize(asm *asmodel.Matchers, deleted *deletedSeries, cat *costattribution.ActiveSeriesTracker) {
+// initialize assigns matchers and corresponding size activeMatching slices.
+func (s *seriesStripe) initialize(asm *asmodel.Matchers, deleted *deletedSeries, cat *costattribution.ActiveSeriesTracker) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.deleted = deleted
