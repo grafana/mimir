@@ -169,15 +169,13 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 			}
 
 			if !haveMoreWork {
+				if err := evaluator.finalize(ctx); err != nil {
+					return err
+				}
+
 				remainingOperatorEvaluators = append(remainingOperatorEvaluators[:i], remainingOperatorEvaluators[i+1:]...)
 				i--
 			}
-		}
-	}
-
-	for _, req := range e.nodeRequests {
-		if err := req.operator.Finalize(ctx); err != nil {
-			return err
 		}
 	}
 
@@ -209,6 +207,8 @@ type operatorEvaluator interface {
 	//
 	// performWork returns true if there is more work remaining for this operator, or false otherwise.
 	performWork(ctx context.Context, evaluator *Evaluator, observer EvaluationObserver) (bool, error)
+
+	finalize(ctx context.Context) error
 }
 
 type instantVectorEvaluator struct {
@@ -256,6 +256,10 @@ func (e *instantVectorEvaluator) performWork(ctx context.Context, evaluator *Eva
 	haveMoreSeries := e.nextSeriesIndex < e.seriesCount
 
 	return haveMoreSeries, nil
+}
+
+func (e *instantVectorEvaluator) finalize(ctx context.Context) error {
+	return e.operator.Finalize(ctx)
 }
 
 type rangeVectorEvaluator struct {
@@ -321,6 +325,10 @@ func (e *rangeVectorEvaluator) performWork(ctx context.Context, evaluator *Evalu
 	return haveMoreSeries, nil
 }
 
+func (e *rangeVectorEvaluator) finalize(ctx context.Context) error {
+	return e.operator.Finalize(ctx)
+}
+
 type scalarEvaluator struct {
 	node     planning.Node
 	operator types.ScalarOperator
@@ -335,6 +343,10 @@ func (e *scalarEvaluator) performWork(ctx context.Context, evaluator *Evaluator,
 	return false, observer.ScalarEvaluated(ctx, evaluator, e.node, d)
 }
 
+func (e *scalarEvaluator) finalize(ctx context.Context) error {
+	return e.operator.Finalize(ctx)
+}
+
 type stringEvaluator struct {
 	node     planning.Node
 	operator types.StringOperator
@@ -344,6 +356,10 @@ func (e *stringEvaluator) performWork(ctx context.Context, evaluator *Evaluator,
 	v := e.operator.GetValue()
 
 	return false, observer.StringEvaluated(ctx, evaluator, e.node, v)
+}
+
+func (e *stringEvaluator) finalize(ctx context.Context) error {
+	return e.operator.Finalize(ctx)
 }
 
 func (e *Evaluator) Cancel() {
