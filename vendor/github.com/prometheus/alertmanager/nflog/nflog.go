@@ -33,6 +33,7 @@ import (
 	"github.com/matttproud/golang_protobuf_extensions/pbutil"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/prometheus/alertmanager/cluster/clusterutil"
 	pb "github.com/prometheus/alertmanager/nflog/nflogpb"
 )
 
@@ -264,7 +265,7 @@ func New(o Options) (*Log, error) {
 		logger:             log.NewNopLogger(),
 		st:                 state{},
 		broadcast:          func([]byte) {},
-		isReliableDelivery: func([]byte) bool { return false },
+		isReliableDelivery: clusterutil.OversizedMessage,
 		metrics:            newMetrics(o.Metrics),
 	}
 
