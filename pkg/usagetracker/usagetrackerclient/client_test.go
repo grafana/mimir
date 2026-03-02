@@ -25,6 +25,7 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/grafana/mimir/pkg/usagetracker"
+	"github.com/grafana/mimir/pkg/usagetracker/trackerop"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 )
 
@@ -119,7 +120,7 @@ func prepareTestRings(t testing.TB, ctx context.Context) (*ring.MultiPartitionIn
 	})
 
 	// Pre-condition check: all instances should be healthy.
-	set, err := instanceRing.GetAllHealthy(trackSeriesOp)
+	set, err := instanceRing.GetAllHealthy(trackerop.TrackSeriesOp)
 	require.NoError(t, err)
 	require.Len(t, set.Instances, 4)
 
