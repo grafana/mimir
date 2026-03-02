@@ -500,9 +500,45 @@ func (s *seriesStripe) initialize(asm *asmodel.Matchers, deleted *deletedSeries,
 }
 
 func (s *seriesStripe) reloadConfig(asm *asmodel.Matchers, cat *costattribution.ActiveSeriesTracker, matchersChanged bool, catChanged bool, idx tsdb.IndexReader) {
+	type resolvedSeries struct {
+		labels  labels.Labels
+		matches asmodel.PreAllocDynamicSlice
+	}
+
+	// Holding s.mu.Lock() stalls the write pipeline, and we want to avoid that as much as possible.
+	// So we'll do the updates in three phases: pre-fetch, lookup, and update.
+	//
+	// Pre-fetch phase.
+	// Take the mutex, copy refs ids, and release the mutex.
+	s.mu.Lock()
+	resolved := make(map[storage.SeriesRef]resolvedSeries, len(s.refs))
+	for ref := range s.refs {
+		resolved[ref] = resolvedSeries{}
+	}
+	s.mu.Unlock()
+
+	// Lookup phase, this is the slowest part that we don't want to do while holding s.mu
+	// Lookup each series in the tsdb, take its labels and if matchers changed, evaluate the new matches (this is the slowest operation with hundreds of custom trackers).
+	for ref := range resolved {
+		entry := resolvedSeries{}
+		buf := labels.NewScratchBuilder(128)
+		if err := idx.Series(ref, &buf, nil); err != nil {
+			// Don't store these, this should never happen,
+			// it doesn't make sense to have the code repeated twice for something that shouldn't happen.
+			delete(resolved, ref)
+			continue
+		}
+		entry.labels = buf.Labels()
+		if matchersChanged {
+			entry.matches = asm.Matches(entry.labels)
+		}
+		resolved[ref] = entry
+	}
+
+	// Update phase.
+	// Do what we came to do: update matchers, update CAT.
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
 	if matchersChanged {
 		s.matchers = asm
 		s.activeMatching = resizeAndClear(len(asm.MatcherNames()), s.activeMatching)
@@ -513,8 +549,23 @@ func (s *seriesStripe) reloadConfig(asm *asmodel.Matchers, cat *costattribution.
 	if matchersChanged || catChanged {
 		buf := labels.NewScratchBuilder(128)
 		for ref, entry := range s.refs {
+			if c, ok := resolved[ref]; ok {
+				if matchersChanged {
+					entry.matches = c.matches
+				}
+				if catChanged {
+					cat.Increment(c.labels, time.Unix(0, entry.nanos.Load()), entry.numNativeHistogramBuckets)
+				}
+				s.refs[ref] = entry
+				continue
+			}
+
+			// It's possible that a series have may been added while we were in the lookup phase,
+			// So we need to keep this logic here for those.
 			if err := idx.Series(ref, &buf, nil); err != nil {
 				s.activeSeriesAttributionFailureCounter.Add(1)
+				// If we failed to lookup the series (which shouldn't happen as we're notified of deletions),
+				// we still need to update the entry.matches to make sure it has a coherent size with the matchers we're setting.
 				if matchersChanged {
 					entry.matches = asm.Matches(labels.EmptyLabels())
 					s.refs[ref] = entry
