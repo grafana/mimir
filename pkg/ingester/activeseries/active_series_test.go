@@ -1504,7 +1504,7 @@ func benchmarkPurge(b *testing.B, twice bool) {
 func BenchmarkActiveSeries_ReloadMatchersConfig(b *testing.B) {
 	const numSeries = 2_000_000
 
-	for _, numTrackers := range []int{0, 2, 10} {
+	for _, numTrackers := range []int{0, 2, 10, 100} {
 		b.Run(fmt.Sprintf("trackers=%d", numTrackers), func(b *testing.B) {
 			trackerCfg := map[string]string{}
 			for i := 0; i < numTrackers; i++ {
