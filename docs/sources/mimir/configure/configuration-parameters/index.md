@@ -5180,6 +5180,17 @@ kafka:
   # CLI flag: -ingest-storage.kafka.sasl-oauthbearer-file-path
   [sasl_oauthbearer_file_path: <string> | default = ""]
 
+  # Path to a Unix domain socket to fetch an OAuth token from via HTTP. On every
+  # authentication or reauthentication, an HTTP GET / request is made to the
+  # socket and the response body is read as JSON. The JSON schema is the same as
+  # for ingest-storage.kafka.sasl-oauthbearer-file-path.
+  # CLI flag: -ingest-storage.kafka.sasl-oauthbearer-http-socket-path
+  [sasl_oauthbearer_http_socket_path: <string> | default = ""]
+
+  # Timeout for requesting the token from the HTTP socket.
+  # CLI flag: -ingest-storage.kafka.sasl-oauthbearer-http-socket-timeout
+  [sasl_oauthbearer_http_socket_timeout: <duration> | default = 10s]
+
   # The consumer group used by the consumer to track the last consumed offset.
   # The consumer group must be different for each ingester. If the configured
   # consumer group contains the '<partition>' placeholder, it is replaced with
