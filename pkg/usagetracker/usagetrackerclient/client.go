@@ -438,10 +438,10 @@ func (c *UsageTrackerClient) TrackSeriesAsync(ctx context.Context, userID string
 	)
 }
 
-// TrackSeriesPerPartitionBatch tracks series per partition batch. It is called
+// trackSeriesPerPartitionBatch tracks series per partition batch. It is called
 // to track an accumulated batch of series. It will return the list of rejections
 // for each user.
-func (c *UsageTrackerClient) TrackSeriesPerPartitionBatch(ctx context.Context, partitionID int32, users []*usagetrackerpb.TrackSeriesBatchUser) ([]*usagetrackerpb.TrackSeriesBatchRejection, error) {
+func (c *UsageTrackerClient) trackSeriesPerPartitionBatch(ctx context.Context, partitionID int32, users []*usagetrackerpb.TrackSeriesBatchUser) ([]*usagetrackerpb.TrackSeriesBatchRejection, error) {
 	// Get the usage-tracker instances for the input partition.
 	set, err := c.partitionRing.GetReplicationSetForPartitionAndOperation(partitionID, TrackSeriesOp)
 	if err != nil {
@@ -649,16 +649,12 @@ func (c *UsageTrackerClient) CanTrackAsync(userID string) bool {
 	return !found
 }
 
-func (c *UsageTrackerClient) Batcher() *batcher {
-	return c.batcher
-}
-
 type batcher struct {
 	maxSeriesPerBatch int
 	batchDelay        time.Duration
 
 	batchersMtx sync.RWMutex
-	batchers    []*PartitionBatcher
+	batchers    []*partitionBatcher
 
 	trackerClient *UsageTrackerClient
 	stoppingChan  chan struct{}
@@ -672,7 +668,7 @@ func newBatcher(maxSeriesPerBatch int, batchDelay time.Duration, logger log.Logg
 		maxSeriesPerBatch: maxSeriesPerBatch,
 		batchDelay:        batchDelay,
 
-		batchers: make([]*PartitionBatcher, defaultPartitions),
+		batchers: make([]*partitionBatcher, defaultPartitions),
 
 		trackerClient: trackerClient,
 		stoppingChan:  make(chan struct{}),
@@ -713,7 +709,7 @@ func (c *batcher) trackSeries(partition int32, userID string, series []uint64) {
 			if grow {
 				c.growBatchers(partition)
 			}
-			b = NewPartitionBatcher(partition, c.maxSeriesPerBatch, c.logger, c.trackerClient, c.stoppingChan)
+			b = newPartitionBatcher(partition, c.maxSeriesPerBatch, c.logger, c.trackerClient, c.stoppingChan)
 			c.batchers[partition] = b
 			go b.flushWorker()
 		}
@@ -721,12 +717,12 @@ func (c *batcher) trackSeries(partition int32, userID string, series []uint64) {
 		c.batchersMtx.Unlock()
 	}
 
-	b.TrackSeries(userID, series)
+	b.trackSeries(userID, series)
 }
 
 // getBatcher returns the batcher for the given partition, along with whether it needs to be grown.
 // assumes a suitable lock is held.
-func (c *batcher) getBatcher(partition int32) (*PartitionBatcher, bool) {
+func (c *batcher) getBatcher(partition int32) (*partitionBatcher, bool) {
 	if int(partition) < len(c.batchers) {
 		return c.batchers[partition], false
 	}
@@ -741,7 +737,7 @@ func (c *batcher) growBatchers(partition int32) {
 	if newLen < lenRequired {
 		return
 	}
-	newBatchers := make([]*PartitionBatcher, newLen)
+	newBatchers := make([]*partitionBatcher, newLen)
 	copy(newBatchers, c.batchers)
 	c.batchers = newBatchers
 }
@@ -776,8 +772,8 @@ func (c *batcher) signalAll() {
 	}
 }
 
-// TestFlush synchronously flushes all batchers. It's for tests.
-func (c *batcher) TestFlush() {
+// testFlush synchronously flushes all batchers. It's for tests.
+func (c *batcher) testFlush() {
 	c.batchersMtx.RLock()
 	defer c.batchersMtx.RUnlock()
 	for _, b := range c.batchers {
@@ -787,10 +783,10 @@ func (c *batcher) TestFlush() {
 	}
 }
 
-// PartitionBatcher batches series hashes by partition and user. It will be
+// partitionBatcher batches series hashes by partition and user. It will be
 // flushed when it either reaches a size threshold or when the per-partition
 // batch delay is reached.
-type PartitionBatcher struct {
+type partitionBatcher struct {
 	partition int32
 
 	usersMtx    sync.Mutex
@@ -807,8 +803,8 @@ type PartitionBatcher struct {
 	logger            log.Logger
 }
 
-func NewPartitionBatcher(partition int32, maxSeriesPerBatch int, logger log.Logger, trackerClient *UsageTrackerClient, stopping <-chan struct{}) *PartitionBatcher {
-	return &PartitionBatcher{
+func newPartitionBatcher(partition int32, maxSeriesPerBatch int, logger log.Logger, trackerClient *UsageTrackerClient, stopping <-chan struct{}) *partitionBatcher {
+	return &partitionBatcher{
 		partition: partition,
 
 		userSeries:  nil,
@@ -825,9 +821,9 @@ func NewPartitionBatcher(partition int32, maxSeriesPerBatch int, logger log.Logg
 	}
 }
 
-// TrackSeries adds a user and their series to this partition's current batch,
+// trackSeries adds a user and their series to this partition's current batch,
 // flushing it if it exceeds the size threshold.
-func (b *PartitionBatcher) TrackSeries(userID string, series []uint64) {
+func (b *partitionBatcher) trackSeries(userID string, series []uint64) {
 	select {
 	case <-b.stoppingChan:
 		return
@@ -849,7 +845,7 @@ func (b *PartitionBatcher) TrackSeries(userID string, series []uint64) {
 	}
 }
 
-func (b *PartitionBatcher) signalFlush() {
+func (b *partitionBatcher) signalFlush() {
 	select {
 	case b.flushChan <- struct{}{}:
 	case <-b.stoppingChan:
@@ -858,7 +854,7 @@ func (b *PartitionBatcher) signalFlush() {
 	}
 }
 
-func (b *PartitionBatcher) flushWorker() {
+func (b *partitionBatcher) flushWorker() {
 	for {
 		select {
 		case <-b.flushChan:
@@ -871,11 +867,11 @@ func (b *PartitionBatcher) flushWorker() {
 }
 
 // stop stops the partition batcher, waiting for any outstanding batches to be flushed.
-func (b *PartitionBatcher) stop() {
+func (b *partitionBatcher) stop() {
 	b.flushBatch(true)
 }
 
-func (b *PartitionBatcher) flushBatch(synchronous bool) {
+func (b *partitionBatcher) flushBatch(synchronous bool) {
 	b.usersMtx.Lock()
 	users := b.userSeries
 	b.userSeries = nil
@@ -893,10 +889,10 @@ func (b *PartitionBatcher) flushBatch(synchronous bool) {
 	}
 }
 
-func (b *PartitionBatcher) flush(users []*usagetrackerpb.TrackSeriesBatchUser) {
+func (b *partitionBatcher) flush(users []*usagetrackerpb.TrackSeriesBatchUser) {
 	// We're making a batch call across potentially many users, so we inject an arbitrary fake org ID.
 	batchCtx := user.InjectOrgID(context.Background(), "batch")
-	rejections, err := b.trackerClient.TrackSeriesPerPartitionBatch(batchCtx, b.partition, users)
+	rejections, err := b.trackerClient.trackSeriesPerPartitionBatch(batchCtx, b.partition, users)
 	if err != nil {
 		level.Error(b.logger).Log("msg", "failed to track series in partition batch", "err", err)
 		return

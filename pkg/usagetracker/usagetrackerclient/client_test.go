@@ -903,7 +903,7 @@ func TestUsageTrackerClient_TrackSeriesBatch(t *testing.T) {
 		instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
 		instances["usage-tracker-zone-b-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
 
-		c.Batcher().TestFlush()
+		c.batcher.testFlush()
 
 		// Should have tracked series only to usage-tracker replicas in the preferred zone.
 		instances["usage-tracker-zone-a-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
@@ -997,7 +997,7 @@ func TestUsageTrackerClient_TrackSeriesBatch(t *testing.T) {
 		instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
 		instances["usage-tracker-zone-b-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
 
-		c.Batcher().TestFlush()
+		c.batcher.testFlush()
 
 		// Should have attempted to track series to usage-tracker replicas in the preferred zone first.
 		instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 1)
@@ -1231,7 +1231,7 @@ func TestUsageTrackerClient_TrackSeriesBatch(t *testing.T) {
 		require.Equal(t, 0, r.rejections["user-2"])
 
 		// Flush the batch
-		c.Batcher().TestFlush()
+		c.batcher.testFlush()
 
 		// Should have tracked series to usage-tracker replicas in the preferred zone
 		instances["usage-tracker-zone-a-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
@@ -1270,7 +1270,7 @@ func BenchmarkPartitionBatcher_TrackSeries(b *testing.B) {
 	defer close(stopping)
 
 	// Create partitionBatcher with high thresholds to avoid flushes during benchmark
-	batcher := NewPartitionBatcher(
+	batcher := newPartitionBatcher(
 		1, // partition
 		0, // never flush due to size threshold
 		logger,
@@ -1286,6 +1286,6 @@ func BenchmarkPartitionBatcher_TrackSeries(b *testing.B) {
 
 	b.ResetTimer()
 	for b.Loop() {
-		batcher.TrackSeries("user-1", series)
+		batcher.trackSeries("user-1", series)
 	}
 }
