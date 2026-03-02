@@ -295,6 +295,7 @@
   * `multi_zone_store_gateway_zone_b_multi_az_enabled`
   * `multi_zone_store_gateway_zone_c_multi_az_enabled`
 * [ENHANCEMENT] Querier: Add `autoscaling_querier_ignore_null_values` option to set KEDA `ignoreNullValues` for querier autoscaling metrics. #14101
+* [ENHANCEMENT] Multi-zone: Add config validation for `-querier.prefer-availability-zones` flag on querier and ruler-querier deployments. #14539
 * [BUGFIX] Ingester: Fix `$._config.ingest_storage_ingester_autoscaling_max_owned_series_threshold` default value, to compute it based on the configured `$._config.ingester_instance_limits.max_series`. #13448
 
 ### Documentation
