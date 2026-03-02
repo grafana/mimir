@@ -858,13 +858,14 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 				- DeduplicateAndMerge
 					- DropName
 						- BinaryExpression: LHS or RHS
-							- LHS: BinaryExpression: LHS or RHS
-								- LHS: VectorSelector: {__name__="foo"}
-								- RHS: VectorSelector: {__name__="bar"}
+							- LHS: DeduplicateAndMerge
+								- BinaryExpression: LHS or RHS
+									- LHS: VectorSelector: {__name__="foo"}
+									- RHS: VectorSelector: {__name__="bar"}
 							- RHS: VectorSelector: {__name__="baz"}
 				`,
 			nodesEliminatedWithoutDelayedNameRemoval: 0,
-			nodesEliminatedWithDelayedNameRemoval:    1,
+			nodesEliminatedWithDelayedNameRemoval:    0,
 		},
 		"nested binary operations with rate functions": {
 			expr: `rate(foo[5m]) or rate(bar[5m]) or rate(baz[5m])`,
@@ -884,16 +885,17 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 				- DeduplicateAndMerge
 					- DropName
 						- BinaryExpression: LHS or RHS
-							- LHS: BinaryExpression: LHS or RHS
-								- LHS: FunctionCall: rate(...)
-									- MatrixSelector: {__name__="foo"}[5m0s]
-								- RHS: FunctionCall: rate(...)
-									- MatrixSelector: {__name__="bar"}[5m0s]
+							- LHS: DeduplicateAndMerge
+								- BinaryExpression: LHS or RHS
+									- LHS: FunctionCall: rate(...)
+										- MatrixSelector: {__name__="foo"}[5m0s]
+									- RHS: FunctionCall: rate(...)
+										- MatrixSelector: {__name__="bar"}[5m0s]
 							- RHS: FunctionCall: rate(...)
 								- MatrixSelector: {__name__="baz"}[5m0s]
 				`,
 			nodesEliminatedWithoutDelayedNameRemoval: 3,
-			nodesEliminatedWithDelayedNameRemoval:    4,
+			nodesEliminatedWithDelayedNameRemoval:    3,
 		},
 		"nested binary operations not wrapped in DeduplicateAndMerge, with one eligible for elimination": {
 			expr: `rate(bar[5m]) / (baz * foo)`,
@@ -936,12 +938,13 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 						- BinaryExpression: LHS or RHS
 							- LHS: FunctionCall: rate(...)
 								- MatrixSelector: {__name__="bar"}[5m0s]
-							- RHS: BinaryExpression: LHS or RHS
-								- LHS: VectorSelector: {__name__="baz"}
-								- RHS: VectorSelector: {__name__="foo"}
+							- RHS: DeduplicateAndMerge
+								- BinaryExpression: LHS or RHS
+									- LHS: VectorSelector: {__name__="baz"}
+									- RHS: VectorSelector: {__name__="foo"}
 				`,
 			nodesEliminatedWithoutDelayedNameRemoval: 1,
-			nodesEliminatedWithDelayedNameRemoval:    2,
+			nodesEliminatedWithDelayedNameRemoval:    1,
 		},
 	}
 
