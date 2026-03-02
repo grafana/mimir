@@ -30,7 +30,7 @@ require (
 	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/alertmanager v0.31.1
-	github.com/prometheus/client_golang v1.23.3-0.20260108101519-fb0838f53562
+	github.com/prometheus/client_golang v1.23.3-0.20260301095109-4b86739a4e19
 	github.com/prometheus/client_model v0.6.2
 	github.com/prometheus/common v0.67.5
 	github.com/prometheus/prometheus v1.99.0
@@ -72,7 +72,7 @@ require (
 	github.com/okzk/sdnotify v0.0.0-20240725214427-1c1fdd37c5ac
 	github.com/pierrec/lz4/v4 v4.1.25
 	github.com/prometheus/otlptranslator v1.0.0
-	github.com/prometheus/procfs v0.20.0
+	github.com/prometheus/procfs v0.20.1
 	github.com/shirou/gopsutil/v4 v4.26.1
 	github.com/spf13/pflag v1.0.10
 	github.com/thanos-io/objstore v0.0.0-20250813080715-4e5fd4289b50
