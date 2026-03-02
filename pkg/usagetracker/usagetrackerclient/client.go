@@ -725,17 +725,15 @@ func (c *batcher) getBatcher(partition int32) (*partitionBatcher, bool) {
 	return nil, true
 }
 
-// growBatchers grows the batchers slice to accomodate the given partition. The exclusive lock must be held.
+// growBatchers grows the batchers slice to accommodate the given partition. The exclusive lock must be held.
 func (c *batcher) growBatchers(partition int32) {
-	// round to next pow 2 and reallocate/copy.
-	lenRequired := int(partition) + 1 // partition 7 requires size 8; partition 8 requires size 16.
-	newLen := math.NextPowerTwo(lenRequired)
-	if newLen <= len(c.batchers) {
-		return
+	// round to next pow 2 and reallocate/copy if necessary.
+	lenRequired := int(partition) + 1 // translate between zero-based partition ID and required slice length.
+	if newLen := math.NextPowerTwo(lenRequired); newLen > len(c.batchers) {
+		newBatchers := make([]*partitionBatcher, newLen)
+		copy(newBatchers, c.batchers)
+		c.batchers = newBatchers
 	}
-	newBatchers := make([]*partitionBatcher, newLen)
-	copy(newBatchers, c.batchers)
-	c.batchers = newBatchers
 }
 
 func (c *batcher) stop() {
