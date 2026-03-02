@@ -19,7 +19,6 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
-	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -890,9 +889,7 @@ func (b *partitionBatcher) flushBatch(synchronous bool) {
 }
 
 func (b *partitionBatcher) flush(users []*usagetrackerpb.TrackSeriesBatchUser) {
-	// We're making a batch call across potentially many users, so we inject an arbitrary fake org ID.
-	batchCtx := user.InjectOrgID(context.Background(), "batch")
-	rejections, err := b.trackerClient.trackSeriesPerPartitionBatch(batchCtx, b.partition, users)
+	rejections, err := b.trackerClient.trackSeriesPerPartitionBatch(context.Background(), b.partition, users)
 	if err != nil {
 		level.Error(b.logger).Log("msg", "failed to track series in partition batch", "err", err)
 		return
