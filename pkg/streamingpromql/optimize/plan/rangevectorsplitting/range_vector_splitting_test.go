@@ -359,9 +359,7 @@ func TestQuerySplitting_WithCSE(t *testing.T) {
 	ts := baseT.Add(6 * time.Hour)
 	ctx := user.InjectOrgID(context.Background(), "test-user")
 
-	opts := streamingpromql.NewTestEngineOpts()
-	opts.RangeVectorSplitting.Enabled = true
-	opts.RangeVectorSplitting.SplitInterval = 2 * time.Hour
+	opts := defaultSplittingOpts()
 	require.True(t, opts.EnableCommonSubexpressionElimination, "CSE should be enabled")
 
 	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
@@ -442,11 +440,7 @@ func TestQuerySplitting_ProjectionNotApplied(t *testing.T) {
 	ctx := context.Background()
 	evalTime := timestamp.Time(0).Add(6 * time.Hour)
 
-	opts := streamingpromql.NewTestEngineOpts()
-	opts.RangeVectorSplitting.Enabled = true
-	opts.RangeVectorSplitting.SplitInterval = 2 * time.Hour
-
-	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+	planner, err := streamingpromql.NewQueryPlanner(defaultSplittingOpts(), streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 
 	p, err := planner.NewQueryPlan(ctx, `sum by (job) (rate(some_metric[5h]))`, types.NewInstantQueryTimeRange(evalTime), false, &streamingpromql.NoopPlanningObserver{})
@@ -620,9 +614,7 @@ func TestQuerySplitting_WithOOOWindow(t *testing.T) {
 	backend := newTestCacheBackend()
 	irCache := cache.NewCacheFactoryWithBackend(backend, streamingpromql.NewStaticQueryLimitsProvider(), prometheus.NewRegistry(), log.NewNopLogger())
 
-	opts := streamingpromql.NewTestEngineOpts()
-	opts.RangeVectorSplitting.Enabled = true
-	opts.RangeVectorSplitting.SplitInterval = 2 * time.Hour
+	opts := defaultSplittingOpts()
 	limits := streamingpromql.NewStaticQueryLimitsProvider()
 	limits.MaxOutOfOrderTimeWindow = 3 * time.Hour
 	opts.Limits = limits
@@ -1035,6 +1027,32 @@ func TestQuerySplitting_SubquerySpinoff_SkipsSplitting(t *testing.T) {
 	verifyCacheStats(t, testCache, 0, 0, 0)
 }
 
+func TestQuerySplitting_SplittingDisabledOnQuerier_FallsBackToRegularNode(t *testing.T) {
+	// Simulate query-frontend with splitting enabled
+	plannerOpts := defaultSplittingOpts()
+	planner, err := streamingpromql.NewQueryPlanner(plannerOpts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+
+	// Simulate querier with splitting disabled
+	engineOpts := streamingpromql.NewTestEngineOpts()
+	engineOpts.RangeVectorSplitting.Enabled = false
+	engine, err := streamingpromql.NewEngineWithCache(engineOpts, stats.NewQueryMetrics(nil), planner, nil)
+	require.NoError(t, err)
+
+	promStorage := promqltest.LoadedStorage(t, `
+		load 10m
+			some_metric{env="1"} 0+1x60
+	`)
+	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
+
+	baseT := timestamp.Time(0)
+	ts := baseT.Add(6 * time.Hour)
+
+	result := runInstantQuery(t, engine, promStorage, "sum_over_time(some_metric[5h])", ts)
+	require.NoError(t, result.Err)
+	require.Equal(t, expectedScalarResult(ts, 645, "env", "1"), result)
+}
+
 func createSplittingEngineWithCache(t *testing.T, registry *prometheus.Registry, splitInterval time.Duration, enableDelayedNameRemoval bool, enableEliminateDeduplicateAndMerge bool) (promql.QueryEngine, *testCacheBackend) {
 	t.Helper()
 
@@ -1073,9 +1091,7 @@ func setupEngineAndCache(t *testing.T) (*testCacheBackend, promql.QueryEngine) {
 	backend := newTestCacheBackend()
 	irCache := cache.NewCacheFactoryWithBackend(backend, streamingpromql.NewStaticQueryLimitsProvider(), prometheus.NewRegistry(), log.NewNopLogger())
 
-	opts := streamingpromql.NewTestEngineOpts()
-	opts.RangeVectorSplitting.Enabled = true
-	opts.RangeVectorSplitting.SplitInterval = 2 * time.Hour
+	opts := defaultSplittingOpts()
 
 	queryPlanner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
@@ -1121,6 +1137,13 @@ func verifyCacheStats(t *testing.T, backend *testCacheBackend, expectedGets, exp
 	require.Equal(t, expectedGets, backend.gets, "Expected %d cache gets, got %d", expectedGets, backend.gets)
 	require.Equal(t, expectedHits, backend.hits, "Expected %d cache hits, got %d", expectedHits, backend.hits)
 	require.Equal(t, expectedSets, backend.sets, "Expected %d cache sets, got %d", expectedSets, backend.sets)
+}
+
+func defaultSplittingOpts() streamingpromql.EngineOpts {
+	opts := streamingpromql.NewTestEngineOpts()
+	opts.RangeVectorSplitting.Enabled = true
+	opts.RangeVectorSplitting.SplitInterval = 2 * time.Hour
+	return opts
 }
 
 type storageQueryRange struct {
