@@ -50,7 +50,6 @@ const (
 	snapshotCleanupIdleTimeoutFactor = 10
 )
 
-
 type Config struct {
 	Enabled bool `yaml:"enabled"`
 
