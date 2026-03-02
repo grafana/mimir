@@ -1020,6 +1020,7 @@ func TestActiveSeries_PurgeOpt(t *testing.T) {
 func TestActiveSeries_ReloadCostAttributionTrackers(t *testing.T) {
 	ref1, ls1 := storage.SeriesRef(1), labels.FromStrings("a", "1")
 	ref2, ls2 := storage.SeriesRef(2), labels.FromStrings("a", "2")
+	idx := &mockIndex{existingLabels: map[storage.SeriesRef]labels.Labels{ref1: ls1, ref2: ls2}}
 
 	asm := asmodel.NewMatchers(MustNewCustomTrackersConfigFromMap(t, map[string]string{"foo": `{a=~.*}`}))
 	currentTime := time.Now()
@@ -1027,40 +1028,34 @@ func TestActiveSeries_ReloadCostAttributionTrackers(t *testing.T) {
 	valid := c.Purge(currentTime, nil)
 	assert.True(t, valid)
 
-	// Change the cost attribution tracker, and make sure it's reloaded, purge result not valid.
-	cat, err := costattribution.NewActiveSeriesTracker("a", costattributionmodel.Labels{{Input: "a"}, {Input: "b"}}, 4, 5*time.Minute, log.NewNopLogger())
-	assert.NoError(t, err)
-	c.ReloadMatchersAndTrackers(asm, cat, currentTime)
-	valid = c.Purge(currentTime, nil)
-	assert.False(t, valid)
-
-	// Adding timeout time to make Purge results valid.
-	currentTime = currentTime.Add(DefaultTimeout)
 	c.UpdateSeries(ls1, ref1, currentTime, -1, false, nil)
 	c.UpdateSeries(ls2, ref2, currentTime, -1, false, nil)
-	valid = c.Purge(currentTime, nil)
+
+	// Change the cost attribution tracker, series should be preserved, purge result valid.
+	cat, err := costattribution.NewActiveSeriesTracker("a", costattributionmodel.Labels{{Input: "a"}, {Input: "b"}}, 4, 5*time.Minute, log.NewNopLogger())
+	assert.NoError(t, err)
+	c.ReloadSeriesConfig(asm, cat, false, true, idx)
+	valid = c.Purge(currentTime, idx)
 	assert.True(t, valid)
 	assert.NotNil(t, c.cat)
+	allActive, _, _, _, _, _, _ := c.ActiveWithMatchers()
+	assert.Equal(t, 2, allActive)
 
 	cat, err = costattribution.NewActiveSeriesTracker("a", costattributionmodel.Labels{{Input: "a"}}, 4, 5*time.Minute, log.NewNopLogger())
 	assert.NoError(t, err)
-	c.ReloadMatchersAndTrackers(asm, cat, currentTime)
-	valid = c.Purge(currentTime, nil)
-	assert.False(t, valid)
-	assert.Equal(t, cat, c.cat)
-
-	// Adding timeout time to make Purge results valid.
-	currentTime = currentTime.Add(DefaultTimeout)
-	c.UpdateSeries(ls1, ref1, currentTime, -1, false, nil)
-	c.UpdateSeries(ls2, ref2, currentTime, -1, false, nil)
-	valid = c.Purge(currentTime, nil)
+	c.ReloadSeriesConfig(asm, cat, false, true, idx)
+	valid = c.Purge(currentTime, idx)
 	assert.True(t, valid)
+	assert.Equal(t, cat, c.cat)
+	allActive, _, _, _, _, _, _ = c.ActiveWithMatchers()
+	assert.Equal(t, 2, allActive)
 }
 func TestActiveSeries_ReloadSeriesMatchersAndTrackers(t *testing.T) {
 	ref1, ls1 := storage.SeriesRef(1), labels.FromStrings("a", "1")
 	ref2, ls2 := storage.SeriesRef(2), labels.FromStrings("a", "2")
 	ref3, ls3 := storage.SeriesRef(3), labels.FromStrings("a", "3")
 	ref4, ls4 := storage.SeriesRef(4), labels.FromStrings("a", "4")
+	idx := &mockIndex{existingLabels: map[storage.SeriesRef]labels.Labels{ref1: ls1, ref2: ls2, ref3: ls3, ref4: ls4}}
 
 	asm := asmodel.NewMatchers(MustNewCustomTrackersConfigFromMap(t, map[string]string{"foo": `{a=~.*}`}))
 
@@ -1080,50 +1075,42 @@ func TestActiveSeries_ReloadSeriesMatchersAndTrackers(t *testing.T) {
 	assert.Equal(t, 1, allActive)
 	assertMatcherCounts(t, map[string]int{"foo": 1}, activeMatching, c.CurrentMatcherNames())
 
-	c.ReloadMatchersAndTrackers(asm, nil, currentTime)
-	valid = c.Purge(currentTime, nil)
-	assert.False(t, valid)
-
-	// Adding timeout time to make Purge results valid.
-	currentTime = currentTime.Add(DefaultTimeout)
+	// Reload same matchers (no cat change): no-op since neither changed.
 	c.UpdateSeries(ls1, ref1, currentTime, -1, false, nil)
 	c.UpdateSeries(ls2, ref2, currentTime, -1, false, nil)
-	valid = c.Purge(currentTime, nil)
+	valid = c.Purge(currentTime, idx)
 	assert.True(t, valid)
 	allActive, activeMatching, _, _, _, _, _ = c.ActiveWithMatchers()
 	assert.Equal(t, 2, allActive)
 	assertMatcherCounts(t, map[string]int{"foo": 2}, activeMatching, c.CurrentMatcherNames())
 
+	// Reload with fewer matchers: series preserved, matcher counts re-evaluated on purge.
 	asmWithLessMatchers := asmodel.NewMatchers(MustNewCustomTrackersConfigFromMap(t, map[string]string{}))
-	c.ReloadMatchersAndTrackers(asmWithLessMatchers, nil, currentTime)
-
-	// Adding timeout time to make Purge results valid.
-	currentTime = currentTime.Add(DefaultTimeout)
-	c.UpdateSeries(ls3, ref3, currentTime, -1, false, nil)
-	valid = c.Purge(currentTime, nil)
+	c.ReloadSeriesConfig(asmWithLessMatchers, nil, true, false, idx)
+	valid = c.Purge(currentTime, idx)
 	assert.True(t, valid)
 	allActive, activeMatching, _, _, _, _, _ = c.ActiveWithMatchers()
-	assert.Equal(t, 1, allActive)
+	assert.Equal(t, 2, allActive)
 	assert.Empty(t, activeMatching)
 
+	// Reload with more matchers: series preserved, matcher counts re-evaluated.
+	c.UpdateSeries(ls3, ref3, currentTime, -1, false, nil)
+	c.UpdateSeries(ls4, ref4, currentTime, -1, false, nil)
 	asmWithMoreMatchers := asmodel.NewMatchers(MustNewCustomTrackersConfigFromMap(t, map[string]string{
 		"a": `{a="3"}`,
 		"b": `{a="4"}`,
 	}))
-	c.ReloadMatchersAndTrackers(asmWithMoreMatchers, nil, currentTime)
-
-	// Adding timeout time to make Purge results valid.
-	currentTime = currentTime.Add(DefaultTimeout)
-	c.UpdateSeries(ls4, ref4, currentTime, -1, false, nil)
-	valid = c.Purge(currentTime, nil)
+	c.ReloadSeriesConfig(asmWithMoreMatchers, nil, true, false, idx)
+	valid = c.Purge(currentTime, idx)
 	assert.True(t, valid)
 	allActive, activeMatching, _, _, _, _, _ = c.ActiveWithMatchers()
-	assert.Equal(t, 1, allActive)
-	assertMatcherCounts(t, map[string]int{"a": 0, "b": 1}, activeMatching, c.CurrentMatcherNames())
+	assert.Equal(t, 4, allActive)
+	assertMatcherCounts(t, map[string]int{"a": 1, "b": 1}, activeMatching, c.CurrentMatcherNames())
 }
 
 func TestActiveSeries_ReloadSeriesMatchers_LessMatchers(t *testing.T) {
 	ref1, ls1 := storage.SeriesRef(1), labels.FromStrings("a", "1")
+	idx := &mockIndex{existingLabels: map[storage.SeriesRef]labels.Labels{ref1: ls1}}
 
 	asm := asmodel.NewMatchers(MustNewCustomTrackersConfigFromMap(t, map[string]string{
 		"foo": `{a=~.+}`,
@@ -1148,23 +1135,22 @@ func TestActiveSeries_ReloadSeriesMatchers_LessMatchers(t *testing.T) {
 	assert.Equal(t, 1, allActive)
 	assertMatcherCounts(t, map[string]int{"foo": 1, "bar": 1}, activeMatching, c.CurrentMatcherNames())
 	assert.Equal(t, cat, c.cat)
+
+	// Reload with fewer matchers and remove cat: series preserved, matchers re-evaluated.
 	asm = asmodel.NewMatchers(MustNewCustomTrackersConfigFromMap(t, map[string]string{
 		"foo": `{a=~.+}`,
 	}))
-
-	c.ReloadMatchersAndTrackers(asm, nil, currentTime)
-	c.purge(time.Time{}, nil)
-	// Adding timeout time to make Purge results valid.
-	currentTime = currentTime.Add(DefaultTimeout)
-	valid = c.Purge(currentTime, nil)
+	c.ReloadSeriesConfig(asm, nil, true, true, idx)
+	valid = c.Purge(currentTime, idx)
 	assert.True(t, valid)
 	allActive, activeMatching, _, _, _, _, _ = c.ActiveWithMatchers()
-	assert.Equal(t, 0, allActive)
-	assertMatcherCounts(t, map[string]int{}, activeMatching, c.CurrentMatcherNames())
+	assert.Equal(t, 1, allActive)
+	assertMatcherCounts(t, map[string]int{"foo": 1}, activeMatching, c.CurrentMatcherNames())
 }
 
 func TestActiveSeries_ReloadSeriesMatchers_SameSizeNewLabels(t *testing.T) {
 	ref1, ls1 := storage.SeriesRef(1), labels.FromStrings("a", "1")
+	idx := &mockIndex{existingLabels: map[storage.SeriesRef]labels.Labels{ref1: ls1}}
 
 	asm := asmodel.NewMatchers(MustNewCustomTrackersConfigFromMap(t, map[string]string{
 		"foo": `{a=~.+}`,
@@ -1186,21 +1172,167 @@ func TestActiveSeries_ReloadSeriesMatchers_SameSizeNewLabels(t *testing.T) {
 	assert.Equal(t, 1, allActive)
 	assertMatcherCounts(t, map[string]int{"foo": 1, "bar": 1}, activeMatching, c.CurrentMatcherNames())
 
+	// Reload with different matchers that don't match existing series: series preserved, no matcher matches.
 	asm = asmodel.NewMatchers(MustNewCustomTrackersConfigFromMap(t, map[string]string{
 		"foo": `{b=~.+}`,
 		"bar": `{b=~.+}`,
 	}))
-
-	c.ReloadMatchersAndTrackers(asm, nil, currentTime)
-	c.purge(time.Time{}, nil)
-	// Adding timeout time to make Purge results valid.
-	currentTime = currentTime.Add(DefaultTimeout)
-
-	valid = c.Purge(currentTime, nil)
+	c.ReloadSeriesConfig(asm, nil, true, false, idx)
+	valid = c.Purge(currentTime, idx)
 	assert.True(t, valid)
 	allActive, activeMatching, _, _, _, _, _ = c.ActiveWithMatchers()
-	assert.Equal(t, 0, allActive)
+	assert.Equal(t, 1, allActive)
 	assertMatcherCounts(t, map[string]int{"foo": 0, "bar": 0}, activeMatching, c.CurrentMatcherNames())
+}
+
+func TestActiveSeries_ReloadMatchersOnly_PreservesTotalCount(t *testing.T) {
+	ref1, ls1 := storage.SeriesRef(1), labels.FromStrings("a", "1", "team", "x")
+	ref2, ls2 := storage.SeriesRef(2), labels.FromStrings("a", "2", "team", "y")
+	ref3, ls3 := storage.SeriesRef(3), labels.FromStrings("a", "3", "team", "x")
+	idx := &mockIndex{existingLabels: map[storage.SeriesRef]labels.Labels{ref1: ls1, ref2: ls2, ref3: ls3}}
+
+	asm := asmodel.NewMatchers(MustNewCustomTrackersConfigFromMap(t, map[string]string{
+		"team_x": `{team="x"}`,
+	}))
+	currentTime := time.Now()
+	c := NewActiveSeries(asm, DefaultTimeout, nil)
+
+	c.UpdateSeries(ls1, ref1, currentTime, -1, false, nil)
+	c.UpdateSeries(ls2, ref2, currentTime, -1, false, nil)
+	c.UpdateSeries(ls3, ref3, currentTime, 5, false, nil)
+	c.Purge(currentTime, idx)
+
+	total, matching, _, histograms, matchingHist, buckets, matchingBuckets := c.ActiveWithMatchers()
+	assert.Equal(t, 3, total)
+	assert.Equal(t, 1, histograms)
+	assert.Equal(t, 5, buckets)
+	assertMatcherCounts(t, map[string]int{"team_x": 2}, matching, c.CurrentMatcherNames())
+	assertMatcherCounts(t, map[string]int{"team_x": 1}, matchingHist, c.CurrentMatcherNames())
+	assertMatcherCounts(t, map[string]int{"team_x": 5}, matchingBuckets, c.CurrentMatcherNames())
+
+	// Reload with different matchers.
+	asm2 := asmodel.NewMatchers(MustNewCustomTrackersConfigFromMap(t, map[string]string{
+		"team_y": `{team="y"}`,
+	}))
+	c.ReloadSeriesConfig(asm2, nil, true, false, idx)
+	valid := c.Purge(currentTime, idx)
+	assert.True(t, valid)
+
+	total, matching, _, histograms, matchingHist, buckets, matchingBuckets = c.ActiveWithMatchers()
+	assert.Equal(t, 3, total)
+	assert.Equal(t, 1, histograms)
+	assert.Equal(t, 5, buckets)
+	assertMatcherCounts(t, map[string]int{"team_y": 1}, matching, c.CurrentMatcherNames())
+	assertMatcherCounts(t, map[string]int{"team_y": 0}, matchingHist, c.CurrentMatcherNames())
+	assertMatcherCounts(t, map[string]int{"team_y": 0}, matchingBuckets, c.CurrentMatcherNames())
+}
+
+func TestActiveSeries_ReloadCatOnly_PreservesTotalCount(t *testing.T) {
+	ref1, ls1 := storage.SeriesRef(1), labels.FromStrings("a", "1")
+	ref2, ls2 := storage.SeriesRef(2), labels.FromStrings("a", "2")
+	idx := &mockIndex{existingLabels: map[storage.SeriesRef]labels.Labels{ref1: ls1, ref2: ls2}}
+
+	asm := asmodel.NewMatchers(MustNewCustomTrackersConfigFromMap(t, map[string]string{"foo": `{a=~.+}`}))
+	currentTime := time.Now()
+
+	cat1, err := costattribution.NewActiveSeriesTracker("u1", costattributionmodel.Labels{{Input: "a"}}, 4, 5*time.Minute, log.NewNopLogger())
+	require.NoError(t, err)
+	c := NewActiveSeries(asm, DefaultTimeout, cat1)
+
+	c.UpdateSeries(ls1, ref1, currentTime, -1, false, idx)
+	c.UpdateSeries(ls2, ref2, currentTime, -1, false, idx)
+	c.Purge(currentTime, idx)
+
+	total, matching, _, _, _, _, _ := c.ActiveWithMatchers()
+	assert.Equal(t, 2, total)
+	assertMatcherCounts(t, map[string]int{"foo": 2}, matching, c.CurrentMatcherNames())
+
+	// Reload with new cat only.
+	cat2, err := costattribution.NewActiveSeriesTracker("u1", costattributionmodel.Labels{{Input: "a"}}, 4, 5*time.Minute, log.NewNopLogger())
+	require.NoError(t, err)
+	c.ReloadSeriesConfig(asm, cat2, false, true, idx)
+	valid := c.Purge(currentTime, idx)
+	assert.True(t, valid)
+
+	total, matching, _, _, _, _, _ = c.ActiveWithMatchers()
+	assert.Equal(t, 2, total)
+	assertMatcherCounts(t, map[string]int{"foo": 2}, matching, c.CurrentMatcherNames())
+}
+
+func TestActiveSeries_ReloadBothMatchersAndCat(t *testing.T) {
+	ref1, ls1 := storage.SeriesRef(1), labels.FromStrings("a", "1", "team", "x")
+	ref2, ls2 := storage.SeriesRef(2), labels.FromStrings("a", "2", "team", "y")
+	idx := &mockIndex{existingLabels: map[storage.SeriesRef]labels.Labels{ref1: ls1, ref2: ls2}}
+
+	asm := asmodel.NewMatchers(MustNewCustomTrackersConfigFromMap(t, map[string]string{"team_x": `{team="x"}`}))
+	cat1, err := costattribution.NewActiveSeriesTracker("u1", costattributionmodel.Labels{{Input: "a"}}, 4, 5*time.Minute, log.NewNopLogger())
+	require.NoError(t, err)
+	currentTime := time.Now()
+	c := NewActiveSeries(asm, DefaultTimeout, cat1)
+
+	c.UpdateSeries(ls1, ref1, currentTime, -1, false, idx)
+	c.UpdateSeries(ls2, ref2, currentTime, -1, false, idx)
+	c.Purge(currentTime, idx)
+
+	total, matching, _, _, _, _, _ := c.ActiveWithMatchers()
+	assert.Equal(t, 2, total)
+	assertMatcherCounts(t, map[string]int{"team_x": 1}, matching, c.CurrentMatcherNames())
+
+	// Reload both matchers and cat.
+	asm2 := asmodel.NewMatchers(MustNewCustomTrackersConfigFromMap(t, map[string]string{"team_y": `{team="y"}`}))
+	cat2, err := costattribution.NewActiveSeriesTracker("u1", costattributionmodel.Labels{{Input: "team"}}, 4, 5*time.Minute, log.NewNopLogger())
+	require.NoError(t, err)
+	c.ReloadSeriesConfig(asm2, cat2, true, true, idx)
+	valid := c.Purge(currentTime, idx)
+	assert.True(t, valid)
+
+	total, matching, _, _, _, _, _ = c.ActiveWithMatchers()
+	assert.Equal(t, 2, total)
+	assertMatcherCounts(t, map[string]int{"team_y": 1}, matching, c.CurrentMatcherNames())
+}
+
+func TestActiveSeries_ReloadMatchersOnly_PurgeReturnsValid(t *testing.T) {
+	asm := asmodel.NewMatchers(MustNewCustomTrackersConfigFromMap(t, map[string]string{"foo": `{a=~.+}`}))
+	c := NewActiveSeries(asm, DefaultTimeout, nil)
+
+	asm2 := asmodel.NewMatchers(MustNewCustomTrackersConfigFromMap(t, map[string]string{"bar": `{b=~.+}`}))
+	c.ReloadSeriesConfig(asm2, nil, true, false, nil)
+
+	valid := c.Purge(time.Now(), nil)
+	assert.True(t, valid)
+}
+
+func TestActiveSeries_ReloadMatchersOnly_BoundsCheckOnRemove(t *testing.T) {
+	ref1, ls1 := storage.SeriesRef(1), labels.FromStrings("a", "1")
+	ref2, ls2 := storage.SeriesRef(2), labels.FromStrings("a", "2")
+	idx := &mockIndex{existingLabels: map[storage.SeriesRef]labels.Labels{ref1: ls1, ref2: ls2}}
+
+	// Start with 2 matchers.
+	asm := asmodel.NewMatchers(MustNewCustomTrackersConfigFromMap(t, map[string]string{
+		"m1": `{a=~.+}`,
+		"m2": `{a=~.+}`,
+	}))
+	currentTime := time.Now()
+	c := NewActiveSeries(asm, DefaultTimeout, nil)
+
+	c.UpdateSeries(ls1, ref1, currentTime, -1, false, nil)
+	c.UpdateSeries(ls2, ref2, currentTime, -1, false, nil)
+	c.Purge(currentTime, idx)
+
+	total, _, _, _, _, _, _ := c.ActiveWithMatchers()
+	assert.Equal(t, 2, total)
+
+	// Reload with 0 matchers: activeMatching slices are now empty, but entries still have old match indices.
+	asm2 := asmodel.NewMatchers(MustNewCustomTrackersConfigFromMap(t, map[string]string{}))
+	c.ReloadSeriesConfig(asm2, nil, true, false, idx)
+
+	// Remove a series before purge re-evaluates matchers. This should not panic.
+	c.Delete(chunks.HeadSeriesRef(ref1), idx)
+
+	valid := c.Purge(currentTime, idx)
+	assert.True(t, valid)
+	total, _, _, _, _, _, _ = c.ActiveWithMatchers()
+	assert.Equal(t, 1, total)
 }
 
 func BenchmarkActiveSeries_UpdateSeriesConcurrency(b *testing.B) {
@@ -1428,5 +1560,49 @@ func benchmarkPurge(b *testing.B, twice bool) {
 			allActive, _, _, _, _, _, _ = c.ActiveWithMatchers()
 			assert.Equal(b, numSeries-numExpiresSeries, allActive)
 		}
+	}
+}
+
+func BenchmarkActiveSeries_ReloadMatchersConfig(b *testing.B) {
+	const numSeries = 100_000
+
+	for _, numTrackers := range []int{0, 2, 10} {
+		b.Run(fmt.Sprintf("trackers=%d", numTrackers), func(b *testing.B) {
+			trackerCfg := map[string]string{}
+			for i := 0; i < numTrackers; i++ {
+				trackerCfg[fmt.Sprintf("tracker_%d", i)] = fmt.Sprintf(`{team="%d"}`, i%5)
+			}
+			asm := asmodel.NewMatchers(MustNewCustomTrackersConfigFromMap(b, trackerCfg))
+
+			currentTime := time.Now()
+			c := NewActiveSeries(asm, DefaultTimeout, nil)
+
+			existingLabels := make(map[storage.SeriesRef]labels.Labels, numSeries)
+			for s := 0; s < numSeries; s++ {
+				ref := storage.SeriesRef(s)
+				ls := labels.FromStrings("__name__", "metric", "series_id", strconv.Itoa(s), "team", strconv.Itoa(s%5), "env", "prod")
+				existingLabels[ref] = ls
+				c.UpdateSeries(ls, ref, currentTime, -1, false, nil)
+			}
+			idx := &mockIndex{existingLabels: existingLabels}
+			c.Purge(currentTime, idx)
+
+			newTrackerCfg := map[string]string{}
+			for i := 0; i < numTrackers; i++ {
+				newTrackerCfg[fmt.Sprintf("new_tracker_%d", i)] = fmt.Sprintf(`{env="%s"}`, "prod")
+			}
+
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				var newAsm *asmodel.Matchers
+				if i%2 == 0 {
+					newAsm = asmodel.NewMatchers(MustNewCustomTrackersConfigFromMap(b, newTrackerCfg))
+				} else {
+					newAsm = asmodel.NewMatchers(MustNewCustomTrackersConfigFromMap(b, trackerCfg))
+				}
+				c.ReloadSeriesConfig(newAsm, nil, true, false, idx)
+				c.Purge(currentTime, idx)
+			}
+		})
 	}
 }

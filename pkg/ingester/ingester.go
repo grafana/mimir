@@ -897,11 +897,6 @@ func (i *Ingester) metricsUpdaterServiceRunning(ctx context.Context) error {
 	}
 }
 
-func (i *Ingester) replaceMatchersAndTrackers(asm *asmodel.Matchers, cat *costattribution.ActiveSeriesTracker, userDB *userTSDB, now time.Time) {
-	i.metrics.deletePerUserCustomTrackerMetrics(userDB.userID, userDB.activeSeries.CurrentMatcherNames())
-	userDB.activeSeries.ReloadMatchersAndTrackers(asm, cat, now)
-}
-
 func (i *Ingester) updateActiveSeries(now time.Time) {
 	for _, userID := range i.getTSDBUsers() {
 		userDB := i.getTSDB(userID)
@@ -911,11 +906,22 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 
 		newMatchersConfig := i.limits.ActiveSeriesCustomTrackersConfig(userID)
 		newCostAttributionActiveSeriesTracker := i.costAttributionMgr.ActiveSeriesTracker(userID)
-		if userDB.activeSeries.ConfigDiffers(newMatchersConfig, newCostAttributionActiveSeriesTracker) {
-			i.replaceMatchersAndTrackers(asmodel.NewMatchers(newMatchersConfig), newCostAttributionActiveSeriesTracker, userDB, now)
-		}
+		matchersChanged := userDB.activeSeries.MatchersDiffer(newMatchersConfig)
+		catChanged := userDB.activeSeries.CostAttributionDiffers(newCostAttributionActiveSeriesTracker)
 
 		idx := userDB.Head().MustIndex()
+
+		if matchersChanged || catChanged {
+			if matchersChanged {
+				i.metrics.deletePerUserCustomTrackerMetrics(userDB.userID, userDB.activeSeries.CurrentMatcherNames())
+			}
+			userDB.activeSeries.ReloadSeriesConfig(
+				asmodel.NewMatchers(newMatchersConfig),
+				newCostAttributionActiveSeriesTracker,
+				matchersChanged, catChanged, idx,
+			)
+		}
+
 		valid := userDB.activeSeries.Purge(now, idx)
 		idx.Close()
 
