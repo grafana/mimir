@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -143,14 +145,18 @@ func (s *SplitFunctionCall) MinimumRequiredPlanVersion() planning.QueryPlanVersi
 }
 
 type Materializer struct {
-	cache *cache.CacheFactory
+	enabled bool
+	cache   *cache.CacheFactory
+	logger  log.Logger
 }
 
 var _ planning.NodeMaterializer = &Materializer{}
 
-func NewMaterializer(cache *cache.CacheFactory) *Materializer {
+func NewMaterializer(enabled bool, cache *cache.CacheFactory, logger log.Logger) *Materializer {
 	return &Materializer{
-		cache: cache,
+		enabled: enabled,
+		cache:   cache,
+		logger:  logger,
 	}
 }
 
@@ -161,6 +167,11 @@ func (m Materializer) Materialize(n planning.Node, materializer *planning.Materi
 	s, ok := n.(*SplitFunctionCall)
 	if !ok {
 		return nil, fmt.Errorf("unexpected type passed to materializer: expected SplitFunctionCall, got %T", n)
+	}
+
+	if !m.enabled {
+		level.Warn(m.logger).Log("msg", "split function node is present but range vector splitting is disabled, falling back to unsplit execution; this can happen if splitting is enabled on the query-frontend but not yet on the querier")
+		return materializer.FactoryForNode(s.Inner, timeRange)
 	}
 
 	splitFactory, exists := SplitFunctionRegistry[s.Inner.Function]
