@@ -1,6 +1,6 @@
 package main
 
-var symbols = []string{
+var symbols1 = []string{
 	"dev-eu-south-0",
 	"dev-eu-south-0_amp1",
 	"dev-eu-south-0_amp2",

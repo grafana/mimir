@@ -53,24 +53,7 @@ func runAnalyzeCommand(args []string) {
 
 	log.Printf("Read %d rows from %s", len(rows), inputFile)
 
-	// Apply amplification factor (only to rows used as label values)
-	if amplificationFactor > 1 {
-		amplifiedRows := make([]csvRow, 0, len(rows)*amplificationFactor)
-		for _, row := range rows {
-			// Include original
-			amplifiedRows = append(amplifiedRows, row)
-			// Only amplify if used as a label value
-			if row.countAsLabelValue > 0 {
-				for i := 1; i < amplificationFactor; i++ {
-					amplifiedRow := row
-					amplifiedRow.str = fmt.Sprintf("%s_amp%d", row.str, i)
-					amplifiedRows = append(amplifiedRows, amplifiedRow)
-				}
-			}
-		}
-		rows = amplifiedRows
-		log.Printf("Amplified to %d rows (factor %d)", len(rows), amplificationFactor)
-	}
+	rows = applyAmplificationFactor(rows, amplificationFactor)
 
 	// Sort by bytes descending (stable sort preserves order of amplified copies)
 	sort.SliceStable(rows, func(i, j int) bool {
@@ -85,6 +68,41 @@ func runAnalyzeCommand(args []string) {
 			fmt.Println(rows[i].str)
 		}
 	}
+}
+
+func applyAmplificationFactor(rows []csvRow, amplificationFactor int) []csvRow {
+	if amplificationFactor <= 1 {
+		return rows
+	}
+
+	amplifiedRows := make([]csvRow, 0, len(rows)*amplificationFactor)
+	for _, row := range rows {
+		originalRow := row
+
+		// Entries used as metric names or label names have their counts/bytes multiplied by the amplification factor.
+		if row.countAsMetricName > 0 || row.countAsLabelName > 0 {
+			multiplier := uint64(amplificationFactor)
+			originalRow.count *= multiplier
+			originalRow.bytes *= multiplier
+			originalRow.countAsLabelName *= multiplier
+			originalRow.countAsLabelValue *= multiplier
+			originalRow.countAsMetricName *= multiplier
+		}
+
+		amplifiedRows = append(amplifiedRows, originalRow)
+
+		// Create duplicated entries for label values (without the metric name multiplier)
+		if row.countAsLabelValue > 0 {
+			for i := 1; i < amplificationFactor; i++ {
+				amplifiedRow := row
+				amplifiedRow.str = fmt.Sprintf("%s_amp%d", row.str, i)
+				amplifiedRows = append(amplifiedRows, amplifiedRow)
+			}
+		}
+	}
+
+	log.Printf("Amplified to %d rows (factor %d)", len(amplifiedRows), amplificationFactor)
+	return amplifiedRows
 }
 
 func readCSV(path string) ([]csvRow, error) {
