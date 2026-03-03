@@ -38,23 +38,25 @@ var (
 )
 
 type Config struct {
-	MaxLeases                                 int            `yaml:"max_leases" category:"experimental"`
-	LeaseDuration                             time.Duration  `yaml:"lease_duration" category:"experimental"`
-	PlanningInterval                          time.Duration  `yaml:"planning_interval" category:"experimental"`
-	MaintenanceInterval                       time.Duration  `yaml:"maintenance_interval" category:"experimental"`
-	MaintenanceIntervalsBeforeLeaseExpiration int            `yaml:"maintenance_intervals_before_lease_expiration" category:"experimental"`
-	TenantDiscoveryInterval                   time.Duration  `yaml:"tenant_discovery_interval" category:"experimental"`
-	UserDiscoveryBackoff                      backoff.Config `yaml:"user_discovery_backoff" category:"experimental"`
-	PersistenceType                           string         `yaml:"persistence_type" category:"experimental"`
-	BboltPath                                 string         `yaml:"bbolt_db_path" category:"experimental"`
+	MaxLeases                                   int            `yaml:"max_leases" category:"experimental"`
+	LeaseDuration                               time.Duration  `yaml:"lease_duration" category:"experimental"`
+	PlanningInterval                            time.Duration  `yaml:"planning_interval" category:"experimental"`
+	MaintenanceInterval                         time.Duration  `yaml:"maintenance_interval" category:"experimental"`
+	MaintenanceIntervalsBeforeLeaseExpiration   int            `yaml:"maintenance_intervals_before_lease_expiration" category:"experimental"`
+	MaintenanceIntervalsBeforeColdStartPlanning int            `yaml:"maintenance_intervals_before_cold_start_planning" category:"experimental"`
+	TenantDiscoveryInterval                     time.Duration  `yaml:"tenant_discovery_interval" category:"experimental"`
+	UserDiscoveryBackoff                        backoff.Config `yaml:"user_discovery_backoff" category:"experimental"`
+	PersistenceType                             string         `yaml:"persistence_type" category:"experimental"`
+	BboltPath                                   string         `yaml:"bbolt_db_path" category:"experimental"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.MaxLeases, "compactor-scheduler.max-leases", 3, "The maximum number of times a job can be retried before it is removed. 0 for no limit.")
 	f.DurationVar(&cfg.LeaseDuration, "compactor-scheduler.lease-duration", 10*time.Minute, "The duration of time without contact until the scheduler is able to lease a work item to another worker.")
 	f.DurationVar(&cfg.PlanningInterval, "compactor-scheduler.planning-interval", 1*time.Hour, "The duration of time between when plan jobs are submitted aligned by UTC. Note that -compactor.first-level-compaction-wait-period is accounted for during alignment of this interval.")
-	f.DurationVar(&cfg.MaintenanceInterval, "compactor-scheduler.maintenance-interval", 3*time.Minute, "The duration of time between when maintenance tasks are performed on job trackers. This includes lease expiration and plan job submission checks.")
-	f.IntVar(&cfg.MaintenanceIntervalsBeforeLeaseExpiration, "compactor-scheduler.maintenance-intervals-before-lease-expiration", 2, "The number of maintenance intervals before lease expiration is enforced. Nonpositive values are all treated as zero.")
+	f.DurationVar(&cfg.MaintenanceInterval, "compactor-scheduler.maintenance-interval", 2*time.Minute, "The duration of time between when maintenance tasks are performed on job trackers. This includes lease expiration and plan job submission checks.")
+	f.IntVar(&cfg.MaintenanceIntervalsBeforeLeaseExpiration, "compactor-scheduler.maintenance-intervals-before-lease-expiration", 3, "The number of maintenance intervals before lease expiration is enforced. Nonpositive values are all treated as zero.")
+	f.IntVar(&cfg.MaintenanceIntervalsBeforeColdStartPlanning, "compactor-scheduler.maintenance-intervals-before-cold-start-planning", 4, "The number of maintenance intervals before planning occurs when starting from no recovered state. Nonpositive values are all treated as zero.")
 	f.DurationVar(&cfg.TenantDiscoveryInterval, "compactor-scheduler.tenant-discovery-interval", 10*time.Minute, "The duration of time between bucket listings to discover new tenants.")
 	f.StringVar(&cfg.PersistenceType, "compactor-scheduler.persistence-type", "bbolt", "The type of persistence the compactor scheduler should use. Valid values: none, bbolt")
 	f.StringVar(&cfg.BboltPath, "compactor-scheduler.bbolt.db-path", "bbolt_1.db", "The path to the bbolt database file for the compactor scheduler.")
@@ -121,7 +123,16 @@ func NewCompactorScheduler(
 		return nil, err
 	}
 
-	rotator := NewRotator(cfg.LeaseDuration, cfg.PlanningInterval, compactorCfg.CompactionWaitPeriod, cfg.MaintenanceInterval, cfg.MaintenanceIntervalsBeforeLeaseExpiration, metrics, logger)
+	rotator := NewRotator(
+		cfg.LeaseDuration,
+		cfg.PlanningInterval,
+		compactorCfg.CompactionWaitPeriod,
+		cfg.MaintenanceInterval,
+		cfg.MaintenanceIntervalsBeforeLeaseExpiration,
+		cfg.MaintenanceIntervalsBeforeColdStartPlanning,
+		metrics,
+		logger,
+	)
 
 	scheduler := &Scheduler{
 		running:          atomic.NewBool(false),

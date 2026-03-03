@@ -207,7 +207,7 @@ func (jt *JobTracker) Remove(id string, epoch int64, complete bool) (removed boo
 // and compactionWaitPeriod) has not yet been planned.
 //
 // Maintenance returns true when err is nil and the pending queue transitioned from empty to non-empty.
-func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpiration bool, planningInterval, compactionWaitPeriod time.Duration) (bool, error) {
+func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpiration, plan bool, planningInterval, compactionWaitPeriod time.Duration) (bool, error) {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
 
@@ -220,7 +220,10 @@ func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpir
 
 	// Note: a plan job will never be created if there is already an active plan job (even if we're about to expire a lease).
 	// Therefore lease expiration and planning are mutually exclusive.
-	planJob := jt.computePlan(planningInterval, compactionWaitPeriod, now)
+	var planJob *TrackedPlanJob
+	if plan {
+		planJob = jt.computePlan(planningInterval, compactionWaitPeriod, now)
+	}
 
 	if len(reviveJobs) == 0 && len(deleteJobs) == 0 && planJob == nil {
 		return false, nil

@@ -93,7 +93,7 @@ func TestJobTracker_Maintenance_Planning(t *testing.T) {
 				tc.setup(jt)
 			}
 
-			transition, err := jt.Maintenance(leaseDuration, false, planningInterval, compactionWaitPeriod)
+			transition, err := jt.Maintenance(leaseDuration, false, true, planningInterval, compactionWaitPeriod)
 			require.NoError(t, err)
 
 			if tc.expectedPlan {
@@ -110,8 +110,17 @@ func TestJobTracker_Maintenance_Planning(t *testing.T) {
 		metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
 		jt := NewJobTracker(&errJobPersister{}, "test", clock.New(), infiniteLeases, metrics.newTrackerMetricsForTenant("test"))
 
-		transition, err := jt.Maintenance(leaseDuration, false, planningInterval, compactionWaitPeriod)
+		transition, err := jt.Maintenance(leaseDuration, false, true, planningInterval, compactionWaitPeriod)
 		require.Error(t, err)
+		require.False(t, transition)
+		require.NotContains(t, jt.incompleteJobs, planJobId)
+	})
+
+	t.Run("planning skipped when plan is false", func(t *testing.T) {
+		metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
+		jt := NewJobTracker(&errJobPersister{}, "test", clock.New(), infiniteLeases, metrics.newTrackerMetricsForTenant("test"))
+		transition, err := jt.Maintenance(leaseDuration, false, false, planningInterval, compactionWaitPeriod)
+		require.NoError(t, err)
 		require.False(t, transition)
 		require.NotContains(t, jt.incompleteJobs, planJobId)
 	})
