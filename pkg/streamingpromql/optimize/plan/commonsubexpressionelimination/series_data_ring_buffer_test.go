@@ -386,7 +386,7 @@ func TestSeriesDataRingBuffer_ResizeAfterRemovalThroughWrapAround(t *testing.T) 
 	buffer.Append(s3, 123)
 	buffer.Append(s4, 124)
 
-	// Remove the middle elements, creating space at the start of the underlying slice
+	// Remove the first elements, creating space at the start of the underlying slice
 	buffer.Remove(121)
 	buffer.Remove(122)
 
