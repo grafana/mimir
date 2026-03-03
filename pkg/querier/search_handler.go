@@ -3,12 +3,15 @@
 package querier
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"slices"
 	"strings"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -21,8 +24,11 @@ import (
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/promqlext"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+type searchExecutor func(ctx context.Context, searcher mimirstorage.Searcher, hints *mimirstorage.SearchHints, params *searchParams) (mimirstorage.SearcherValueSet, error)
 
 // searchParams holds parsed parameters common to all search endpoints.
 type searchParams struct {
@@ -33,11 +39,13 @@ type searchParams struct {
 	fuzzThreshold int
 	fuzzAlg       string
 	caseSensitive bool
+	includeScore  bool
 	sortBy        streaminglabelvalues.SortBy
 	sortDir       streaminglabelvalues.SortDirection
 	operation     streaminglabelvalues.Operator
 	batchSize     int
 	limit         int
+	labelName     string
 }
 
 // buildSearchHints constructs a SearchHints from the parsed search params.
@@ -102,25 +110,29 @@ func searcherFor(q storage.Querier) mimirstorage.Searcher {
 	return streaminglabelvalues.NewStreamingSearch(q)
 }
 
-// SearchMetricNamesHandler returns an HTTP handler for GET/POST /api/v1/search/metric_names.
-func SearchMetricNamesHandler(queryable storage.SampleAndChunkQueryable, _ *validation.Overrides) http.Handler {
+func doSearchHandler(queryable storage.SampleAndChunkQueryable, _ *validation.Overrides, logger log.Logger, handler string, searchExec searchExecutor, requireLabelNameParam bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
+		log, ctx := spanlogger.New(ctx, logger, tracer, handler)
+		defer log.Finish()
 
-		_, err := tenant.TenantID(ctx)
+		tenant, err := tenant.TenantID(ctx)
 		if err != nil {
+			level.Error(log).Log("msg", "error obtaining tenant from context", "err", err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		params, err := parseSearchParams(r)
+		params, err := parseSearchParams(r, requireLabelNameParam)
 		if err != nil {
+			level.Error(log).Log("msg", "error parsing search metric names request", "tenant", tenant, "err", err)
 			writeSearchError(w, err)
 			return
 		}
 
 		q, err := queryable.Querier(params.start, params.end)
 		if err != nil {
+			level.Error(log).Log("msg", "error obtaining querier", "tenant", tenant, "err", err, "start", params.start, "end", params.end)
 			respondFromError(err, w)
 			return
 		}
@@ -129,138 +141,75 @@ func SearchMetricNamesHandler(queryable storage.SampleAndChunkQueryable, _ *vali
 		searcher := searcherFor(q)
 		hints := buildSearchHints(params)
 
-		vs, err := searcher.SearchLabelValues(ctx, model.MetricNameLabel, hints, params.matchers...)
+		vs, err := searchExec(ctx, searcher, hints, params)
 		if err != nil {
 			// we have not started the stream, so we can return with a 4xx error
+			level.Error(log).Log("msg", "unable to invoke search", "tenant", tenant, "err", err)
 			respondFromError(err, w)
 			return
 		}
 		defer vs.Close()
 
-		writer := newStreamingWriter(w)
+		writer := newStreamingWriter(w, streaminglabelvalues.NewSearchResultFactory(params.includeScore))
 		writer.init()
 
-		streamSearchResults(vs, hints, params.batchSize, params.limit, writer)
+		err = streamSearchResults(vs, hints, params.batchSize, params.limit, writer)
+		if err != nil {
+			// we have an error after we have started streaming .... try to write the error to the stream
+			level.Error(log).Log("msg", "error writing streaming search results", "tenant", tenant, "err", err)
+			writeError := writer.writeError(err)
+			if writeError != nil {
+				level.Error(log).Log("msg", "error writing error to output stream", "tenant", tenant, "err", err)
+			}
+		}
 	})
+}
+
+// SearchMetricNamesHandler returns an HTTP handler for GET/POST /api/v1/search/metric_names.
+func SearchMetricNamesHandler(queryable storage.SampleAndChunkQueryable, overrides *validation.Overrides, logger log.Logger) http.Handler {
+	searchExec := func(ctx context.Context, searcher mimirstorage.Searcher, hints *mimirstorage.SearchHints, params *searchParams) (mimirstorage.SearcherValueSet, error) {
+		return searcher.SearchLabelValues(ctx, model.MetricNameLabel, hints, params.matchers...)
+	}
+	return doSearchHandler(queryable, overrides, logger, "SearchMetricNamesHandler", searchExec, false)
 }
 
 // SearchLabelNamesHandler returns an HTTP handler for GET/POST /api/v1/search/label_names.
-func SearchLabelNamesHandler(queryable storage.SampleAndChunkQueryable, _ *validation.Overrides) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-
-		_, err := tenant.TenantID(ctx)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		params, err := parseSearchParams(r)
-		if err != nil {
-			writeSearchError(w, err)
-			return
-		}
-
-		q, err := queryable.Querier(params.start, params.end)
-		if err != nil {
-			respondFromError(err, w)
-			return
-		}
-		defer q.Close()
-
-		searcher := searcherFor(q)
-		hints := buildSearchHints(params)
-
-		vs, err := searcher.SearchLabelNames(ctx, hints, params.matchers...)
-		if err != nil {
-			// we have not started the stream, so we can return with a 4xx error
-			respondFromError(err, w)
-			return
-		}
-		defer vs.Close()
-
-		writer := newStreamingWriter(w)
-		writer.init()
-
-		streamSearchResults(vs, hints, params.batchSize, params.limit, writer)
-	})
+func SearchLabelNamesHandler(queryable storage.SampleAndChunkQueryable, overrides *validation.Overrides, logger log.Logger) http.Handler {
+	searchExec := func(ctx context.Context, searcher mimirstorage.Searcher, hints *mimirstorage.SearchHints, params *searchParams) (mimirstorage.SearcherValueSet, error) {
+		return searcher.SearchLabelNames(ctx, hints, params.matchers...)
+	}
+	return doSearchHandler(queryable, overrides, logger, "SearchLabelNamesHandler", searchExec, false)
 }
 
 // SearchLabelValuesHandler returns an HTTP handler for GET/POST /api/v1/search/label_values.
-func SearchLabelValuesHandler(queryable storage.SampleAndChunkQueryable, _ *validation.Overrides) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-
-		_, err := tenant.TenantID(ctx)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		if err := r.ParseForm(); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		labelName := r.Form.Get("label_name")
-		if labelName == "" {
-			http.Error(w, `missing required parameter "label_name"`, http.StatusBadRequest)
-			return
-		}
-
-		params, err := parseSearchParams(r)
-		if err != nil {
-			writeSearchError(w, err)
-			return
-		}
-
-		q, err := queryable.Querier(params.start, params.end)
-		if err != nil {
-			respondFromError(err, w)
-			return
-		}
-		defer q.Close()
-
-		searcher := searcherFor(q)
-		hints := buildSearchHints(params)
-
-		vs, err := searcher.SearchLabelValues(ctx, labelName, hints, params.matchers...)
-		if err != nil {
-			// we have not started the stream, so we can return with a 4xx error
-			respondFromError(err, w)
-			return
-		}
-		defer vs.Close()
-
-		writer := newStreamingWriter(w)
-		writer.init()
-
-		streamSearchResults(vs, hints, params.batchSize, params.limit, writer)
-	})
+func SearchLabelValuesHandler(queryable storage.SampleAndChunkQueryable, overrides *validation.Overrides, logger log.Logger) http.Handler {
+	searchExec := func(ctx context.Context, searcher mimirstorage.Searcher, hints *mimirstorage.SearchHints, params *searchParams) (mimirstorage.SearcherValueSet, error) {
+		return searcher.SearchLabelValues(ctx, params.labelName, hints, params.matchers...)
+	}
+	return doSearchHandler(queryable, overrides, logger, "SearchLabelNamesHandler", searchExec, true)
 }
 
 // streamSearchResults writes results from vs to writer.
 // If hints.Compare is set, all values are accumulated and sorted before applying the
 // limit and writing in batches. Otherwise the limit is enforced during streaming.
-func streamSearchResults(vs mimirstorage.SearcherValueSet, hints *mimirstorage.SearchHints, batchSize, limit int, writer *streamingWriter) {
+func streamSearchResults(vs mimirstorage.SearcherValueSet, hints *mimirstorage.SearchHints, batchSize, limit int, writer *streamingWriter) error {
 	if hints.Compare != nil {
-		streamSorted(vs, hints, batchSize, limit, writer)
-	} else {
-		streamUnsorted(vs, batchSize, limit, writer)
+		return streamSorted(vs, hints, batchSize, limit, writer)
 	}
+	return streamUnsorted(vs, batchSize, limit, writer)
 }
 
 // streamSorted accumulates all values, sorts them with hints.Compare, applies the limit,
 // then writes in batches.
-func streamSorted(vs mimirstorage.SearcherValueSet, hints *mimirstorage.SearchHints, batchSize, limit int, writer *streamingWriter) {
+func streamSorted(vs mimirstorage.SearcherValueSet, hints *mimirstorage.SearchHints, batchSize, limit int, writer *streamingWriter) error {
 	all := make([]mimirstorage.FilteredResult, 0, 1000) // TODO proper memory allocation
 	for vs.Next() {
-		v := vs.At()
-		all = append(all, v)
+		all = append(all, vs.At())
 		// TODO perodically check for error / cancel
 	}
 	if err := vs.Err(); err != nil {
 		_ = writer.writeError(err)
-		return
+		return nil
 	}
 
 	slices.SortFunc(all, hints.Compare.Compare)
@@ -270,54 +219,57 @@ func streamSorted(vs mimirstorage.SearcherValueSet, hints *mimirstorage.SearchHi
 		all = all[:limit]
 	}
 
+	results := make([]streaminglabelvalues.SearchResult, 0, batchSize)
 	for i := 0; i < len(all); i += batchSize {
-		end := i + batchSize
-		if end > len(all) {
-			end = len(all)
+		end := min(i+batchSize, len(all))
+		results = results[:0]
+		for _, fr := range all[i:end] {
+			results = append(results, writer.factory(fr))
 		}
-		batch := make([]mimirstorage.FilteredResult, end-i)
-		for j, r := range all[i:end] {
-			batch[j] = r
-		}
-		if err := writer.writeBatch(batch); err != nil {
-			return
+		if err := writer.writeBatch(results); err != nil {
+			return err
 		}
 	}
-	writer.writeEnd(hasMore)
+	if err := writer.writeEnd(hasMore); err != nil {
+		return err
+	}
+	return nil
 }
 
 // streamUnsorted streams values from vs directly, enforcing the limit during iteration.
-func streamUnsorted(vs mimirstorage.SearcherValueSet, batchSize, limit int, writer *streamingWriter) {
-	batch := make([]mimirstorage.FilteredResult, 0, batchSize)
+func streamUnsorted(vs mimirstorage.SearcherValueSet, batchSize, limit int, writer *streamingWriter) error {
+	results := make([]streaminglabelvalues.SearchResult, 0, batchSize)
 	total := 0
 	for vs.Next() && (limit == 0 || total < limit) {
-		v := vs.At()
-		batch = append(batch, v)
-		if len(batch) >= batchSize {
-			if err := writer.writeBatch(batch); err != nil {
-				return
+		results = append(results, writer.factory(vs.At()))
+		if len(results) >= batchSize {
+			if err := writer.writeBatch(results); err != nil {
+				return err
 			}
-			batch = batch[:0]
+			results = results[:0]
 		}
 		total++
 	}
 	if err := vs.Err(); err != nil {
-		if len(batch) > 0 {
-			_ = writer.writeBatch(batch)
+		if len(results) > 0 {
+			_ = writer.writeBatch(results)
 		}
 		_ = writer.writeError(err)
-		return
+		return nil
 	}
-	if len(batch) > 0 {
-		if err := writer.writeBatch(batch); err != nil {
-			return
+	if len(results) > 0 {
+		if err := writer.writeBatch(results); err != nil {
+			return err
 		}
 	}
-	writer.writeEnd(vs.Next())
+	if err := writer.writeEnd(vs.Next()); err != nil {
+		return err
+	}
+	return nil
 }
 
 // parseSearchParams parses common search query parameters from an HTTP request.
-func parseSearchParams(r *http.Request) (*searchParams, error) {
+func parseSearchParams(r *http.Request, expectLabelName bool) (*searchParams, error) {
 	if err := r.ParseForm(); err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
@@ -372,6 +324,9 @@ func parseSearchParams(r *http.Request) (*searchParams, error) {
 	if params.caseSensitive, err = p.CaseSensitive(); err != nil {
 		return nil, err
 	}
+	if params.includeScore, err = p.IncludeScore(); err != nil {
+		return nil, err
+	}
 	if params.batchSize, err = p.BatchSize(); err != nil {
 		return nil, err
 	}
@@ -385,6 +340,9 @@ func parseSearchParams(r *http.Request) (*searchParams, error) {
 		return nil, err
 	}
 	if params.operation, err = p.Operator(); err != nil {
+		return nil, err
+	}
+	if params.labelName, err = p.LabelName(expectLabelName); err != nil {
 		return nil, err
 	}
 
@@ -401,15 +359,21 @@ func writeSearchError(w http.ResponseWriter, err error) {
 	http.Error(w, err.Error(), http.StatusInternalServerError)
 }
 
+// batchMessage is the JSON envelope written by writeBatch.
+type batchMessage struct {
+	Results []streaminglabelvalues.SearchResult `json:"results"`
+}
+
 type streamingWriter struct {
 	writer   http.ResponseWriter
 	flusher  http.Flusher
 	canFlush bool
 	encoder  *json.Encoder
+	factory  streaminglabelvalues.SearchResultFactory
 }
 
-func newStreamingWriter(w http.ResponseWriter) *streamingWriter {
-	writer := &streamingWriter{writer: w, encoder: json.NewEncoder(w)}
+func newStreamingWriter(w http.ResponseWriter, factory streaminglabelvalues.SearchResultFactory) *streamingWriter {
+	writer := &streamingWriter{writer: w, encoder: json.NewEncoder(w), factory: factory}
 	writer.flusher, writer.canFlush = w.(http.Flusher)
 	return writer
 }
@@ -419,14 +383,8 @@ func (w *streamingWriter) init() {
 	w.writer.Header().Set(worker.ResponseStreamingEnabledHeader, "true")
 }
 
-func (w *streamingWriter) writeBatch(batch []mimirstorage.FilteredResult) error {
-
-	xformed := make([]streaminglabelvalues.SearchResult, 0, len(batch))
-	for _, r := range batch {
-		xformed = append(xformed, streaminglabelvalues.SearchResult{Name: r.Value})
-	}
-
-	if err := w.encoder.Encode(map[string]any{"results": xformed}); err != nil {
+func (w *streamingWriter) writeBatch(results []streaminglabelvalues.SearchResult) error {
+	if err := w.encoder.Encode(batchMessage{Results: results}); err != nil {
 		return err
 	}
 	if w.canFlush {

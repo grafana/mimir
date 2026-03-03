@@ -1016,3 +1016,126 @@ func TestFormatRequestHeaders(t *testing.T) {
 
 	assert.Equal(t, expected, fields)
 }
+
+// ── copyStreamingResponse ─────────────────────────────────────────────────────
+
+// flushTrackingResponseWriter is an http.ResponseWriter + http.Flusher that
+// records how many times Flush() has been called.
+type flushTrackingResponseWriter struct {
+	bytes.Buffer
+	flushCount int
+}
+
+func (f *flushTrackingResponseWriter) Header() http.Header { return http.Header{} }
+func (f *flushTrackingResponseWriter) WriteHeader(int)     {}
+func (f *flushTrackingResponseWriter) Flush()              { f.flushCount++ }
+
+// nonFlusherResponseWriter is an http.ResponseWriter that does NOT implement
+// http.Flusher, used to verify copyStreamingResponse handles that case safely.
+type nonFlusherResponseWriter struct{ bytes.Buffer }
+
+func (n *nonFlusherResponseWriter) Header() http.Header { return http.Header{} }
+func (n *nonFlusherResponseWriter) WriteHeader(int)     {}
+
+// errorResponseWriter always returns an error from Write.
+type errorResponseWriter struct{ err error }
+
+func (e *errorResponseWriter) Header() http.Header       { return http.Header{} }
+func (e *errorResponseWriter) WriteHeader(int)           {}
+func (e *errorResponseWriter) Write([]byte) (int, error) { return 0, e.err }
+
+// errorReader always returns an error from Read.
+type errorReader struct{ err error }
+
+func (e *errorReader) Read([]byte) (int, error) { return 0, e.err }
+
+// chunkReader returns one string chunk per Read call, then io.EOF. It does not
+// implement io.WriterTo, so io.Copy falls back to its buffer loop — matching the
+// behaviour of a real HTTP response body delivering data incrementally.
+type chunkReader struct {
+	chunks []string
+	pos    int
+}
+
+func (r *chunkReader) Read(p []byte) (int, error) {
+	if r.pos >= len(r.chunks) {
+		return 0, io.EOF
+	}
+	n := copy(p, r.chunks[r.pos])
+	r.pos++
+	return n, nil
+}
+
+func TestCopyStreamingResponse(t *testing.T) {
+	t.Run("copies all data and returns correct byte count", func(t *testing.T) {
+		data := bytes.Repeat([]byte("x"), 100*1024) // 100 KB
+		w := &flushTrackingResponseWriter{}
+		n, err := copyStreamingResponse(w, bytes.NewReader(data))
+		require.NoError(t, err)
+		assert.Equal(t, int64(len(data)), n)
+		assert.Equal(t, data, w.Bytes())
+	})
+
+	t.Run("flushes after each read chunk", func(t *testing.T) {
+		// Use a reader that returns data in discrete chunks (no io.WriterTo), simulating
+		// an HTTP response body that delivers NDJSON lines as they arrive from the network.
+		chunks := []string{
+			`{"results":[{"name":"metric_a"}]}` + "\n",
+			`{"results":[{"name":"metric_b"}]}` + "\n",
+			`{"status":"success","has_more":false}` + "\n",
+		}
+		r := &chunkReader{chunks: chunks}
+		w := &flushTrackingResponseWriter{}
+		_, err := copyStreamingResponse(w, r)
+		require.NoError(t, err)
+		assert.Equal(t, len(chunks), w.flushCount,
+			"should flush exactly once per chunk returned by the reader")
+	})
+
+	t.Run("works with non-flusher writer", func(t *testing.T) {
+		data := []byte("hello")
+		w := &nonFlusherResponseWriter{}
+		n, err := copyStreamingResponse(w, bytes.NewReader(data))
+		require.NoError(t, err)
+		assert.Equal(t, int64(len(data)), n)
+		assert.Equal(t, data, w.Bytes())
+	})
+
+	t.Run("propagates write error", func(t *testing.T) {
+		wantErr := errors.New("write failed")
+		_, err := copyStreamingResponse(&errorResponseWriter{err: wantErr}, bytes.NewReader([]byte("data")))
+		assert.ErrorIs(t, err, wantErr)
+	})
+
+	t.Run("propagates read error", func(t *testing.T) {
+		wantErr := errors.New("read failed")
+		_, err := copyStreamingResponse(&nonFlusherResponseWriter{}, &errorReader{err: wantErr})
+		assert.ErrorIs(t, err, wantErr)
+	})
+}
+
+// TestHandler_ServeHTTP_NDJSONResponseIsFlushed verifies that ServeHTTP calls
+// Flush() on the client ResponseWriter when the downstream returns an
+// application/x-ndjson Content-Type, ensuring streaming delivery.
+func TestHandler_ServeHTTP_NDJSONResponseIsFlushed(t *testing.T) {
+	body := `{"results":[{"name":"cpu_usage"}]}` + "\n" + `{"status":"success","has_more":false}` + "\n"
+	rt := roundTripperFunc(func(_ *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/x-ndjson"}},
+			Body:       io.NopCloser(strings.NewReader(body)),
+		}, nil
+	})
+
+	handler := NewHandler(HandlerConfig{}, rt, log.NewNopLogger(), prometheus.NewRegistry(), nil)
+
+	req := httptest.NewRequest("GET", "/api/v1/search/metric_names", nil)
+	req = req.WithContext(user.InjectOrgID(req.Context(), "test-tenant"))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.True(t, rec.Flushed, "NDJSON response must be flushed to the client")
+	assert.Equal(t, body, rec.Body.String())
+}

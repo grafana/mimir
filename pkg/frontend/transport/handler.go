@@ -284,7 +284,14 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(resp.StatusCode)
 	// we don't check for copy error as there is no much we can do at this point
-	queryResponseSize, _ := io.Copy(w, resp.Body)
+	var queryResponseSize int64
+	if resp.Header.Get("Content-Type") == "application/x-ndjson" {
+		// For streaming NDJSON responses, flush after each chunk so the client
+		// receives batches as they are produced rather than all at once.
+		queryResponseSize, _ = copyStreamingResponse(w, resp.Body)
+	} else {
+		queryResponseSize, _ = io.Copy(w, resp.Body)
+	}
 
 	if f.cfg.LogQueriesLongerThan > 0 && queryResponseTime > f.cfg.LogQueriesLongerThan {
 		f.reportSlowQuery(r, params, queryResponseTime, queryDetails)
@@ -590,4 +597,30 @@ func httpRequestActivity(request *http.Request, userAgent string, requestParams 
 
 func isActiveSeriesEndpoint(r *http.Request) bool {
 	return strings.HasSuffix(r.URL.Path, "api/v1/cardinality/active_series")
+}
+
+// copyStreamingResponse copies r to w, flushing after each chunk. This ensures
+// streaming responses (e.g. NDJSON) are delivered to the client incrementally
+// rather than buffered until the response is complete.
+func copyStreamingResponse(w http.ResponseWriter, r io.Reader) (int64, error) {
+	flusher, canFlush := w.(http.Flusher)
+	if !canFlush {
+		return io.Copy(w, r)
+	}
+	return io.Copy(&flushingWriter{w: w, f: flusher}, r)
+}
+
+// flushingWriter wraps an http.ResponseWriter and calls Flush after each Write,
+// ensuring each chunk is delivered to the client immediately.
+type flushingWriter struct {
+	w http.ResponseWriter
+	f http.Flusher
+}
+
+func (fw *flushingWriter) Write(p []byte) (int, error) {
+	n, err := fw.w.Write(p)
+	if n > 0 {
+		fw.f.Flush()
+	}
+	return n, err
 }

@@ -734,7 +734,13 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		return nil, nil
 	}
 
-	return querier_worker.NewQuerierWorker(t.Cfg.Worker, httpgrpc_server.NewServer(internalQuerierRouter, httpgrpc_server.WithReturn4XXErrors), dispatcher, util_log.Logger, t.Registerer)
+	// Wrap the router with HTTPRequestHandler so search endpoints can stream each
+	// NDJSON batch to the query-frontend without buffering the full response first.
+	httpHandler := querier_worker.NewHTTPRequestHandler(
+		httpgrpc_server.NewServer(internalQuerierRouter, httpgrpc_server.WithReturn4XXErrors),
+		internalQuerierRouter,
+	)
+	return querier_worker.NewQuerierWorker(t.Cfg.Worker, httpHandler, dispatcher, util_log.Logger, t.Registerer)
 }
 
 func (t *Mimir) initStoreQueryable() (services.Service, error) {

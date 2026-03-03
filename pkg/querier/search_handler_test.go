@@ -7,12 +7,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"net/http"
 	"net/http/httptest"
 	"sync"
 	"testing"
 
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mimirstorage "github.com/grafana/mimir/pkg/storage"
+	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 )
 
 // searchTestQuerier is a simple storage.Querier for search handler tests.
@@ -201,7 +202,7 @@ func TestSearchLabelNamesHandler(t *testing.T) {
 		nil,
 	)
 
-	handler := SearchLabelNamesHandler(queryable, nil)
+	handler := SearchLabelNamesHandler(queryable, nil, log.NewNopLogger())
 
 	ctx := user.InjectOrgID(context.Background(), "test-tenant")
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/search/label_names", nil)
@@ -235,7 +236,7 @@ func TestSearchMetricNamesHandler(t *testing.T) {
 		},
 	)
 
-	handler := SearchMetricNamesHandler(queryable, nil)
+	handler := SearchMetricNamesHandler(queryable, nil, log.NewNopLogger())
 
 	ctx := user.InjectOrgID(context.Background(), "test-tenant")
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/search/metric_names?search=http", nil)
@@ -260,12 +261,12 @@ func TestSearchMetricNamesHandler(t *testing.T) {
 	require.Len(t, results, 1)
 	result, ok := results[0].(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, "http_requests_total", result["Value"])
+	assert.Equal(t, "http_requests_total", result["name"])
 }
 
 func TestSearchLabelValuesHandler_MissingLabelName(t *testing.T) {
 	queryable := newSearchTestQueryable(nil, nil)
-	handler := SearchLabelValuesHandler(queryable, nil)
+	handler := SearchLabelValuesHandler(queryable, nil, log.NewNopLogger())
 
 	ctx := user.InjectOrgID(context.Background(), "test-tenant")
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/search/label_values", nil)
@@ -284,7 +285,7 @@ func TestSearchLabelValuesHandler(t *testing.T) {
 		},
 	)
 
-	handler := SearchLabelValuesHandler(queryable, nil)
+	handler := SearchLabelValuesHandler(queryable, nil, log.NewNopLogger())
 
 	ctx := user.InjectOrgID(context.Background(), "test-tenant")
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/search/label_values?label_name=job", nil)
@@ -328,7 +329,9 @@ func (s *sliceSearcherValueSet) Next() bool {
 	return false
 }
 
-func (s *sliceSearcherValueSet) At() mimirstorage.FilteredResult   { return mimirstorage.FilteredResult{Value: s.values[s.pos-1]} }
+func (s *sliceSearcherValueSet) At() mimirstorage.FilteredResult {
+	return mimirstorage.FilteredResult{Value: s.values[s.pos-1]}
+}
 func (s *sliceSearcherValueSet) Warnings() annotations.Annotations { return nil }
 func (s *sliceSearcherValueSet) Err() error                        { return nil }
 func (s *sliceSearcherValueSet) Close()                            {}
@@ -386,8 +389,8 @@ func collectNDJSONResults(t *testing.T, body *bytes.Buffer) []string {
 		for _, r := range results {
 			m, ok := r.(map[string]any)
 			require.True(t, ok, "expected result to be a JSON object, got %T", r)
-			s, ok := m["Value"].(string)
-			require.True(t, ok, "expected Value field in result object")
+			s, ok := m["name"].(string)
+			require.True(t, ok, "expected name field in result object")
 			values = append(values, s)
 		}
 	}
@@ -400,7 +403,7 @@ func TestSearchLabelNamesHandler_WithNativeSearcher(t *testing.T) {
 		nil,
 	)
 
-	handler := SearchLabelNamesHandler(queryable, nil)
+	handler := SearchLabelNamesHandler(queryable, nil, log.NewNopLogger())
 
 	ctx := user.InjectOrgID(context.Background(), "test-tenant")
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/search/label_names", nil)
@@ -424,7 +427,7 @@ func TestSearchMetricNamesHandler_WithNativeSearcher(t *testing.T) {
 		},
 	)
 
-	handler := SearchMetricNamesHandler(queryable, nil)
+	handler := SearchMetricNamesHandler(queryable, nil, log.NewNopLogger())
 
 	ctx := user.InjectOrgID(context.Background(), "test-tenant")
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/search/metric_names", nil)
@@ -447,7 +450,7 @@ func TestSearchLabelValuesHandler_WithNativeSearcher(t *testing.T) {
 		},
 	)
 
-	handler := SearchLabelValuesHandler(queryable, nil)
+	handler := SearchLabelValuesHandler(queryable, nil, log.NewNopLogger())
 
 	ctx := user.InjectOrgID(context.Background(), "test-tenant")
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/search/label_values?label_name=job", nil)
@@ -486,7 +489,9 @@ func (s *cancellingSearcherValueSet) Next() bool {
 	return false
 }
 
-func (s *cancellingSearcherValueSet) At() mimirstorage.FilteredResult   { return mimirstorage.FilteredResult{Value: s.values[s.pos-1]} }
+func (s *cancellingSearcherValueSet) At() mimirstorage.FilteredResult {
+	return mimirstorage.FilteredResult{Value: s.values[s.pos-1]}
+}
 func (s *cancellingSearcherValueSet) Warnings() annotations.Annotations { return nil }
 func (s *cancellingSearcherValueSet) Err() error                        { return s.ctx.Err() }
 func (s *cancellingSearcherValueSet) Close()                            { s.closeCalled = true }
@@ -525,7 +530,7 @@ func TestSearchLabelNamesHandler_ContextCancellation(t *testing.T) {
 		},
 	}
 
-	handler := SearchLabelNamesHandler(queryable, nil)
+	handler := SearchLabelNamesHandler(queryable, nil, log.NewNopLogger())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

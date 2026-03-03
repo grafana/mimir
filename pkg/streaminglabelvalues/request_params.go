@@ -2,15 +2,31 @@ package streaminglabelvalues
 
 import (
 	"fmt"
-	apierror "github.com/grafana/mimir/pkg/api/error"
 	"math"
 	"net/url"
 	"strconv"
 	"strings"
+
+	apierror "github.com/grafana/mimir/pkg/api/error"
+	mimirstorage "github.com/grafana/mimir/pkg/storage"
 )
 
 type SearchResult struct {
-	Name string `json:"name"`
+	Name  string  `json:"name"`
+	Score float64 `json:"score,omitempty"`
+}
+
+type SearchResultFactory func(result mimirstorage.FilteredResult) SearchResult
+
+func NewSearchResultFactory(includeScore bool) SearchResultFactory {
+	if includeScore {
+		return func(result mimirstorage.FilteredResult) SearchResult {
+			return SearchResult{Name: result.Value, Score: result.Score}
+		}
+	}
+	return func(result mimirstorage.FilteredResult) SearchResult {
+		return SearchResult{Name: result.Value}
+	}
 }
 
 type SortBy int
@@ -132,6 +148,9 @@ func (p *RequestParser) FuzzAlgorithm() (string, error) {
 // CaseSensitive returns the case_sensitive query parameter.
 func (p *RequestParser) CaseSensitive() (bool, error) {
 	return p.asBool("case_sensitive", false)
+}
+func (p *RequestParser) IncludeScore() (bool, error) {
+	return p.asBool("include_score", false)
 }
 
 // BatchSize returns the batch_size query parameter.
