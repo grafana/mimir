@@ -2,10 +2,18 @@ package e2edb
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"errors"
 	"fmt"
+	"math/big"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	"github.com/grafana/e2e"
@@ -18,6 +26,7 @@ import (
 type KafkaService struct {
 	*e2e.HTTPService
 	cfg KafkaConfig
+	*kafkaTLSCA
 }
 
 func NewKafka() *KafkaService {
@@ -69,6 +78,7 @@ const (
 	KafkaAuthSASLScramSHA512
 	KafkaAuthSASLOAuthToken
 	KafkaAuthSASLOAuthTokenFile
+	KafkaAuthSASLMTLS
 )
 
 const (
@@ -144,6 +154,38 @@ func (s *KafkaService) Start(networkName, sharedDir string) (err error) {
 		vars["KAFKA_LISTENER_NAME_SASLOAUTH_SASL_OAUTHBEARER_EXPECTED_AUDIENCE"] = DexClientID
 		// Kafka 4.0+ requires JWKS URLs to be explicitly allowed via this JVM system property.
 		vars["KAFKA_OPTS"] = fmt.Sprintf("-Dorg.apache.kafka.sasl.oauthbearer.allowed.urls=http://%s/dex/keys", s.cfg.DexEndpoint)
+
+	case KafkaAuthSASLMTLS:
+		// Generate a CA and a server certificate, write them as PEM files
+		// to the shared directory, then convert them to JKS keystores via
+		// a one-off Docker container (using openssl + keytool from the
+		// Kafka image). The resulting JKS files are mounted into the
+		// Kafka container at /etc/kafka/secrets, following the official
+		// Kafka Docker SSL example:
+		// https://github.com/apache/kafka/blob/trunk/docker/examples/README.md#running-in-ssl-mode
+
+		if err := s.generateTLSCerts(networkName, sharedDir); err != nil {
+			return fmt.Errorf("generating TLS certificates: %w", err)
+		}
+		if err := convertPEMToJKS(sharedDir); err != nil {
+			return err
+		}
+		s.SetVolumes(map[string]string{
+			filepath.Join(sharedDir, kafkaTLSSecretsDir): "/etc/kafka/secrets",
+		})
+
+		vars["KAFKA_LISTENERS"] = "SSL://0.0.0.0:9092,CONTROLLER://0.0.0.0:29093,PLAINTEXT://0.0.0.0:9093"
+		vars["KAFKA_ADVERTISED_LISTENERS"] = fmt.Sprintf("SSL://%s-kafka:9092,PLAINTEXT://%s-kafka:9093", networkName, networkName)
+		vars["KAFKA_LISTENER_SECURITY_PROTOCOL_MAP"] = "CONTROLLER:PLAINTEXT,SSL:SSL,PLAINTEXT:PLAINTEXT"
+		vars["KAFKA_INTER_BROKER_LISTENER_NAME"] = "PLAINTEXT"
+		vars["KAFKA_SSL_CLIENT_AUTH"] = "required"
+		vars["KAFKA_SSL_KEYSTORE_FILENAME"] = "kafka.keystore.jks"
+		vars["KAFKA_SSL_KEYSTORE_CREDENTIALS"] = "keystore_creds"
+		vars["KAFKA_SSL_KEY_CREDENTIALS"] = "key_creds"
+		vars["KAFKA_SSL_TRUSTSTORE_FILENAME"] = "kafka.truststore.jks"
+		vars["KAFKA_SSL_TRUSTSTORE_CREDENTIALS"] = "truststore_creds"
+		// Disable hostname verification for test certificates.
+		vars["KAFKA_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM"] = ""
 	}
 
 	// SCRAM config cannot be passed as env vars because it contains hyphens,
@@ -258,4 +300,200 @@ func (p *KafkaReadinessProbe) createSCRAMCredentials(service *e2e.ConcreteServic
 		return fmt.Errorf("kafka-configs.sh failed: %w; stdout: %s; stderr: %s", err, stdout, stderr)
 	}
 	return nil
+}
+
+const (
+	// KafkaTLSCACertFile is the path (relative to the scenario's shared
+	// directory) where the Kafka TLS CA certificate is written.
+	KafkaTLSCACertFile = "kafka-tls/ca.crt"
+
+	kafkaTLSDir        = "kafka-tls"
+	kafkaTLSSecretsDir = "kafka-secrets"
+
+	// kafkaSSLStorePassword is the password used for the generated JKS
+	// keystore and truststore files. Since these are ephemeral test
+	// artifacts, a simple well-known password is fine.
+	kafkaSSLStorePassword = "changeit"
+)
+
+// generateTLSCerts creates a CA and a server certificate for the Kafka
+// broker, writing PEM files to the kafka-tls/ subdirectory of the shared
+// directory. Callers can then generate client certificates via WriteCertificate().
+func (s *KafkaService) generateTLSCerts(networkName, sharedDir string) error {
+	ca, err := newKafkaTLSCA()
+	if err != nil {
+		return err
+	}
+	s.kafkaTLSCA = ca
+
+	tlsDir := filepath.Join(sharedDir, kafkaTLSDir)
+	if err := os.MkdirAll(tlsDir, 0777); err != nil {
+		return fmt.Errorf("creating TLS directory: %w", err)
+	}
+
+	if err := ca.writeCACertificate(filepath.Join(tlsDir, "ca.crt")); err != nil {
+		return fmt.Errorf("writing CA certificate: %w", err)
+	}
+
+	brokerHostname := fmt.Sprintf("%s-kafka", networkName)
+	if err := ca.WriteCertificate(
+		&x509.Certificate{
+			Subject:     pkix.Name{CommonName: "kafka"},
+			DNSNames:    []string{brokerHostname},
+			ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		},
+		filepath.Join(tlsDir, "server.crt"),
+		filepath.Join(tlsDir, "server.key"),
+	); err != nil {
+		return fmt.Errorf("writing server certificate: %w", err)
+	}
+
+	return nil
+}
+
+// convertPEMToJKS runs a one-off Docker container (using the Kafka image,
+// which ships openssl and keytool) to convert the PEM certificates in
+// kafka-tls/ into JKS keystores in kafka-secrets/. This is analogous to
+// createSCRAMCredentials but runs before the Kafka container starts,
+// because the JKS files must exist when Kafka boots.
+func convertPEMToJKS(sharedDir string) error {
+	secretsDir := filepath.Join(sharedDir, kafkaTLSSecretsDir)
+	if err := os.MkdirAll(secretsDir, 0777); err != nil {
+		return fmt.Errorf("creating secrets directory: %w", err)
+	}
+
+	script := fmt.Sprintf(`set -euo pipefail
+STORE_PASS=%s
+TLS_DIR=%s/%s
+SECRETS_DIR=%s/%s
+
+openssl pkcs12 -export \
+    -in "$TLS_DIR/server.crt" \
+    -inkey "$TLS_DIR/server.key" \
+    -out /tmp/kafka.keystore.p12 \
+    -name broker \
+    -passout "pass:$STORE_PASS"
+
+keytool -importkeystore \
+    -srckeystore /tmp/kafka.keystore.p12 \
+    -srcstoretype PKCS12 \
+    -srcstorepass "$STORE_PASS" \
+    -destkeystore "$SECRETS_DIR/kafka.keystore.jks" \
+    -deststoretype JKS \
+    -deststorepass "$STORE_PASS" \
+    -noprompt
+
+keytool -importcert \
+    -file "$TLS_DIR/ca.crt" \
+    -keystore "$SECRETS_DIR/kafka.truststore.jks" \
+    -storepass "$STORE_PASS" \
+    -alias ca \
+    -noprompt
+
+printf '%%s' "$STORE_PASS" > "$SECRETS_DIR/keystore_creds"
+printf '%%s' "$STORE_PASS" > "$SECRETS_DIR/key_creds"
+printf '%%s' "$STORE_PASS" > "$SECRETS_DIR/truststore_creds"`,
+		kafkaSSLStorePassword,
+		e2e.ContainerSharedDir, kafkaTLSDir,
+		e2e.ContainerSharedDir, kafkaTLSSecretsDir,
+	)
+
+	output, err := e2e.RunCommandAndGetOutput(
+		"docker", "run", "--rm",
+		"-v", fmt.Sprintf("%s:%s:z", sharedDir, e2e.ContainerSharedDir),
+		images.Kafka,
+		"/bin/bash", "-c", script,
+	)
+	if err != nil {
+		return fmt.Errorf("converting PEM to JKS via docker: %w\noutput: %s", err, output)
+	}
+	return nil
+}
+
+type kafkaTLSCA struct {
+	cert    *x509.Certificate
+	certDER []byte
+	key     *ecdsa.PrivateKey
+	serial  atomic.Int64
+}
+
+func newKafkaTLSCA() (*kafkaTLSCA, error) {
+	key, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	if err != nil {
+		return nil, fmt.Errorf("generating CA key: %w", err)
+	}
+
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{Organization: []string{"Kafka e2e Test CA"}},
+		NotBefore:    time.Now(),
+		NotAfter:     time.Now().Add(24 * time.Hour),
+
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}
+
+	certDER, err := x509.CreateCertificate(rand.Reader, template, template, key.Public(), key)
+	if err != nil {
+		return nil, fmt.Errorf("creating CA certificate: %w", err)
+	}
+
+	cert, err := x509.ParseCertificate(certDER)
+	if err != nil {
+		return nil, fmt.Errorf("parsing CA certificate: %w", err)
+	}
+
+	ca := &kafkaTLSCA{
+		cert:    cert,
+		certDER: certDER,
+		key:     key,
+	}
+	ca.serial.Store(1) // first signed cert will get serial 2
+	return ca, nil
+}
+
+// WriteCertificate generates a new key pair, signs a certificate with the CA,
+// and writes the certificate and private key as PEM files. The private key is
+// encoded in PKCS#8 format.
+func (ca *kafkaTLSCA) WriteCertificate(template *x509.Certificate, certPath, keyPath string) error {
+	if ca == nil {
+		return errors.New("WriteCertificate requires KafkaConfig.AuthMode: KafkaAuthSASLMTLS and calling Start first")
+	}
+
+	key, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	if err != nil {
+		return fmt.Errorf("generating key: %w", err)
+	}
+
+	keyBytes, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		return fmt.Errorf("marshaling private key: %w", err)
+	}
+	if err := writePEMFile(keyPath, "PRIVATE KEY", 0600, keyBytes); err != nil {
+		return fmt.Errorf("writing key file: %w", err)
+	}
+
+	template.IsCA = false
+	template.NotBefore = time.Now()
+	if template.NotAfter.IsZero() {
+		template.NotAfter = time.Now().Add(24 * time.Hour)
+	}
+	template.SerialNumber = big.NewInt(ca.serial.Add(1))
+
+	certDER, err := x509.CreateCertificate(rand.Reader, template, ca.cert, key.Public(), ca.key)
+	if err != nil {
+		return fmt.Errorf("signing certificate: %w", err)
+	}
+
+	return writePEMFile(certPath, "CERTIFICATE", 0644, certDER)
+}
+
+func (ca *kafkaTLSCA) writeCACertificate(path string) error {
+	return writePEMFile(path, "CERTIFICATE", 0644, ca.certDER)
+}
+
+func writePEMFile(path string, pemType string, mode os.FileMode, derBytes []byte) error {
+	data := pem.EncodeToMemory(&pem.Block{Type: pemType, Bytes: derBytes})
+	return os.WriteFile(path, data, mode)
 }

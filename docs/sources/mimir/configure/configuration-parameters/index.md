@@ -5180,6 +5180,29 @@ kafka:
   # CLI flag: -ingest-storage.kafka.sasl-oauthbearer-file-path
   [sasl_oauthbearer_file_path: <string> | default = ""]
 
+  tls:
+    # Path to the CA certificate file to verify Kafka brokers. If not set, the
+    # system's root CA certificates will be used.
+    # CLI flag: -ingest-storage.kafka.tls-ca-file
+    [ca_file_path: <string> | default = ""]
+
+    # Path to the client certificate file for mTLS authentication to Kafka.
+    # CLI flag: -ingest-storage.kafka.tls-cert-file
+    [cert_file_path: <string> | default = ""]
+
+    # Path to the client key file for mTLS authentication to Kafka.
+    # CLI flag: -ingest-storage.kafka.tls-key-file
+    [key_file_path: <string> | default = ""]
+
+    # Override the expected name on the server certificate for Kafka brokers.
+    # CLI flag: -ingest-storage.kafka.tls-server-name
+    [server_name: <string> | default = ""]
+
+    # Skip TLS certificate verification. This is insecure and should only be
+    # used for testing.
+    # CLI flag: -ingest-storage.kafka.tls-insecure-skip-verify
+    [insecure_skip_verify: <boolean> | default = false]
+
   # The consumer group used by the consumer to track the last consumed offset.
   # The consumer group must be different for each ingester. If the configured
   # consumer group contains the '<partition>' placeholder, it is replaced with

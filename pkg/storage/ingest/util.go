@@ -4,6 +4,8 @@ package ingest
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -110,6 +112,12 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 
 	opts = append(opts, kafkaAuthOptions(cfg.SASL)...)
 
+	if tlsConfig, err := cfg.TLS.tlsConfig(); err != nil {
+		panic("must call Validate before trying to construct Kafka options")
+	} else if tlsConfig != nil {
+		opts = append(opts, kgo.DialTLSConfig(tlsConfig))
+	}
+
 	opts = append(opts, kgo.WithHooks(kotel.NewKotel(kotel.WithTracer(recordsTracer())).Hooks()...))
 
 	if metrics != nil {
@@ -167,6 +175,44 @@ func kafkaAuthOptions(cfg KafkaAuthConfig) []kgo.Opt {
 	}
 
 	return []kgo.Opt{kgo.SASL(m)}
+}
+
+func (cfg KafkaTLSConfig) tlsConfig() (*tls.Config, error) {
+	if cfg == (KafkaTLSConfig{}) {
+		return nil, nil
+	}
+
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: cfg.InsecureSkipTLSVerify,
+		ServerName:         cfg.ServerName,
+	}
+
+	if cfg.CertFilePath != "" || cfg.KeyFilePath != "" {
+		if cfg.CertFilePath == "" || cfg.KeyFilePath == "" {
+			return nil, ErrInconsistentMTLSCredentials
+		}
+
+		cert, err := tls.LoadX509KeyPair(cfg.CertFilePath, cfg.KeyFilePath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load client certificate and key from %s and %s: %w", cfg.CertFilePath, cfg.KeyFilePath, err)
+		}
+		tlsConfig.Certificates = []tls.Certificate{cert}
+	}
+
+	if cfg.CAFilePath != "" {
+		caCert, err := os.ReadFile(cfg.CAFilePath)
+		if err != nil {
+			return nil, fmt.Errorf("reading CA certficate: %w", err)
+		}
+
+		caCertPool := x509.NewCertPool()
+		if !caCertPool.AppendCertsFromPEM(caCert) {
+			return nil, fmt.Errorf("%s: failed to parse CA certificate", cfg.CAFilePath)
+		}
+		tlsConfig.RootCAs = caCertPool
+	}
+
+	return tlsConfig, nil
 }
 
 func recordsTracer() *kotel.Tracer {

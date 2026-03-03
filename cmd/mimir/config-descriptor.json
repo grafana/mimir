@@ -8849,6 +8849,66 @@
               "fieldType": "string"
             },
             {
+              "kind": "block",
+              "name": "tls",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "ca_file_path",
+                  "required": false,
+                  "desc": "Path to the CA certificate file to verify Kafka brokers. If not set, the system's root CA certificates will be used.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ingest-storage.kafka.tls-ca-file",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "cert_file_path",
+                  "required": false,
+                  "desc": "Path to the client certificate file for mTLS authentication to Kafka.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ingest-storage.kafka.tls-cert-file",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "key_file_path",
+                  "required": false,
+                  "desc": "Path to the client key file for mTLS authentication to Kafka.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ingest-storage.kafka.tls-key-file",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "server_name",
+                  "required": false,
+                  "desc": "Override the expected name on the server certificate for Kafka brokers.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ingest-storage.kafka.tls-server-name",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "insecure_skip_verify",
+                  "required": false,
+                  "desc": "Skip TLS certificate verification. This is insecure and should only be used for testing.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "ingest-storage.kafka.tls-insecure-skip-verify",
+                  "fieldType": "boolean"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
               "kind": "field",
               "name": "consumer_group",
               "required": false,
