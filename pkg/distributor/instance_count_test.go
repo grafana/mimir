@@ -161,7 +161,19 @@ func TestHealthyInstanceDelegate_OnRingInstanceHeartbeat(t *testing.T) {
 			},
 			expectedInstances: 2,
 			expectedInZone:    2,
-			expectedRingZones: 2,
+			expectedRingZones: 1,
+		},
+		"zone-aware with non-active instances in other zone": {
+			zone: "zone-a",
+			ringSetup: func(desc *ring.Desc) {
+				now := time.Now()
+				addInstance(desc, "distributor-a-1", "zone-a", ring.ACTIVE, now.Unix())
+				addInstance(desc, "distributor-a-2", "zone-a", ring.ACTIVE, now.Unix())
+				addInstance(desc, "distributor-b-1", "zone-b", ring.LEAVING, now.Unix())
+			},
+			expectedInstances: 2,
+			expectedInZone:    2,
+			expectedRingZones: 1,
 		},
 		"zone-aware single zone": {
 			zone: "zone-a",

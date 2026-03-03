@@ -67,14 +67,14 @@ func (d *healthyInstanceDelegate) OnRingInstanceHeartbeat(lifecycler *ring.Basic
 	for _, instance := range ringDesc.Ingesters {
 		if ring.ACTIVE == instance.State && instance.IsHeartbeatHealthy(d.heartbeatTimeout, now) {
 			activeMembers++
-			if zone != "" && instance.Zone == zone {
-				activeMembersInZone++
-			}
-		}
-		if zone != "" {
-			if _, ok := zones[instance.Zone]; !ok {
-				zones[instance.Zone] = struct{}{}
-				zoneCount++
+			if zone != "" {
+				if instance.Zone == zone {
+					activeMembersInZone++
+				}
+				if _, ok := zones[instance.Zone]; !ok {
+					zones[instance.Zone] = struct{}{}
+					zoneCount++
+				}
 			}
 		}
 	}
