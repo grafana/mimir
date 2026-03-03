@@ -73,7 +73,7 @@ require (
 	github.com/pierrec/lz4/v4 v4.1.25
 	github.com/prometheus/otlptranslator v1.0.0
 	github.com/prometheus/procfs v0.20.1
-	github.com/shirou/gopsutil/v4 v4.26.1
+	github.com/shirou/gopsutil/v4 v4.26.2
 	github.com/spf13/pflag v1.0.10
 	github.com/thanos-io/objstore v0.0.0-20250813080715-4e5fd4289b50
 	github.com/tjhop/slog-gokit v0.1.5
@@ -127,7 +127,7 @@ require (
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cncf/xds/go v0.0.0-20251210132809-ee656c7534f5 // indirect
 	github.com/d4l3k/messagediff v1.2.1 // indirect
-	github.com/ebitengine/purego v0.9.1 // indirect
+	github.com/ebitengine/purego v0.10.0 // indirect
 	github.com/envoyproxy/go-control-plane/envoy v1.37.0 // indirect
 	github.com/envoyproxy/protoc-gen-validate v1.3.3 // indirect
 	github.com/go-ini/ini v1.67.0 // indirect
