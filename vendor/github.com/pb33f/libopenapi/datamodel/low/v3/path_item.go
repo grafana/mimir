@@ -5,8 +5,8 @@ package v3
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
+	"hash/maphash"
 	"sort"
 	"strings"
 	"sync"
@@ -59,101 +59,99 @@ func (p *PathItem) GetContext() context.Context {
 	return p.context
 }
 
-// Hash will return a consistent SHA256 Hash of the PathItem object
-func (p *PathItem) Hash() [32]byte {
-	// Use string builder pool
-	sb := low.GetStringBuilder()
-	defer low.PutStringBuilder(sb)
+// Hash will return a consistent Hash of the PathItem object
+func (p *PathItem) Hash() uint64 {
+	return low.WithHasher(func(h *maphash.Hash) uint64 {
+		if !p.Description.IsEmpty() {
+			h.WriteString(p.Description.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !p.Summary.IsEmpty() {
+			h.WriteString(p.Summary.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !p.Get.IsEmpty() {
+			h.WriteString(fmt.Sprintf("%s-%s", GetLabel, low.GenerateHashString(p.Get.Value)))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !p.Put.IsEmpty() {
+			h.WriteString(fmt.Sprintf("%s-%s", PutLabel, low.GenerateHashString(p.Put.Value)))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !p.Post.IsEmpty() {
+			h.WriteString(fmt.Sprintf("%s-%s", PostLabel, low.GenerateHashString(p.Post.Value)))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !p.Delete.IsEmpty() {
+			h.WriteString(fmt.Sprintf("%s-%s", DeleteLabel, low.GenerateHashString(p.Delete.Value)))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !p.Options.IsEmpty() {
+			h.WriteString(fmt.Sprintf("%s-%s", OptionsLabel, low.GenerateHashString(p.Options.Value)))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !p.Head.IsEmpty() {
+			h.WriteString(fmt.Sprintf("%s-%s", HeadLabel, low.GenerateHashString(p.Head.Value)))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !p.Patch.IsEmpty() {
+			h.WriteString(fmt.Sprintf("%s-%s", PatchLabel, low.GenerateHashString(p.Patch.Value)))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !p.Trace.IsEmpty() {
+			h.WriteString(fmt.Sprintf("%s-%s", TraceLabel, low.GenerateHashString(p.Trace.Value)))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !p.Query.IsEmpty() {
+			h.WriteString(fmt.Sprintf("%s-%s", QueryLabel, low.GenerateHashString(p.Query.Value)))
+			h.WriteByte(low.HASH_PIPE)
+		}
 
-	if !p.Description.IsEmpty() {
-		sb.WriteString(p.Description.Value)
-		sb.WriteByte('|')
-	}
-	if !p.Summary.IsEmpty() {
-		sb.WriteString(p.Summary.Value)
-		sb.WriteByte('|')
-	}
-	if !p.Get.IsEmpty() {
-		sb.WriteString(fmt.Sprintf("%s-%s", GetLabel, low.GenerateHashString(p.Get.Value)))
-		sb.WriteByte('|')
-	}
-	if !p.Put.IsEmpty() {
-		sb.WriteString(fmt.Sprintf("%s-%s", PutLabel, low.GenerateHashString(p.Put.Value)))
-		sb.WriteByte('|')
-	}
-	if !p.Post.IsEmpty() {
-		sb.WriteString(fmt.Sprintf("%s-%s", PostLabel, low.GenerateHashString(p.Post.Value)))
-		sb.WriteByte('|')
-	}
-	if !p.Delete.IsEmpty() {
-		sb.WriteString(fmt.Sprintf("%s-%s", DeleteLabel, low.GenerateHashString(p.Delete.Value)))
-		sb.WriteByte('|')
-	}
-	if !p.Options.IsEmpty() {
-		sb.WriteString(fmt.Sprintf("%s-%s", OptionsLabel, low.GenerateHashString(p.Options.Value)))
-		sb.WriteByte('|')
-	}
-	if !p.Head.IsEmpty() {
-		sb.WriteString(fmt.Sprintf("%s-%s", HeadLabel, low.GenerateHashString(p.Head.Value)))
-		sb.WriteByte('|')
-	}
-	if !p.Patch.IsEmpty() {
-		sb.WriteString(fmt.Sprintf("%s-%s", PatchLabel, low.GenerateHashString(p.Patch.Value)))
-		sb.WriteByte('|')
-	}
-	if !p.Trace.IsEmpty() {
-		sb.WriteString(fmt.Sprintf("%s-%s", TraceLabel, low.GenerateHashString(p.Trace.Value)))
-		sb.WriteByte('|')
-	}
-	if !p.Query.IsEmpty() {
-		sb.WriteString(fmt.Sprintf("%s-%s", QueryLabel, low.GenerateHashString(p.Query.Value)))
-		sb.WriteByte('|')
-	}
+		// Process AdditionalOperations with pre-allocation and sorting
+		if p.AdditionalOperations.Value != nil && p.AdditionalOperations.Value.Len() > 0 {
+			keys := make([]string, 0, p.AdditionalOperations.Value.Len())
+			for k, v := range p.AdditionalOperations.Value.FromOldest() {
+				keys = append(keys, fmt.Sprintf("%s-%s", k.Value, low.GenerateHashString(v.Value)))
+			}
+			sort.Strings(keys)
+			for _, key := range keys {
+				h.WriteString(key)
+				h.WriteByte(low.HASH_PIPE)
+			}
+		}
 
-	// Process AdditionalOperations with pre-allocation and sorting
-	if p.AdditionalOperations.Value != nil && p.AdditionalOperations.Value.Len() > 0 {
-		keys := make([]string, 0, p.AdditionalOperations.Value.Len())
-		for k, v := range p.AdditionalOperations.Value.FromOldest() {
-			keys = append(keys, fmt.Sprintf("%s-%s", k.Value, low.GenerateHashString(v.Value)))
+		// Process Parameters with pre-allocation and sorting
+		if len(p.Parameters.Value) > 0 {
+			keys := make([]string, len(p.Parameters.Value))
+			for k := range p.Parameters.Value {
+				keys[k] = low.GenerateHashString(p.Parameters.Value[k].Value)
+			}
+			sort.Strings(keys)
+			for _, key := range keys {
+				h.WriteString(key)
+				h.WriteByte(low.HASH_PIPE)
+			}
 		}
-		sort.Strings(keys)
-		for _, key := range keys {
-			sb.WriteString(key)
-			sb.WriteByte('|')
-		}
-	}
 
-	// Process Parameters with pre-allocation and sorting
-	if len(p.Parameters.Value) > 0 {
-		keys := make([]string, len(p.Parameters.Value))
-		for k := range p.Parameters.Value {
-			keys[k] = low.GenerateHashString(p.Parameters.Value[k].Value)
+		// Process Servers with pre-allocation and sorting
+		if len(p.Servers.Value) > 0 {
+			keys := make([]string, len(p.Servers.Value))
+			for k := range p.Servers.Value {
+				keys[k] = low.GenerateHashString(p.Servers.Value[k].Value)
+			}
+			sort.Strings(keys)
+			for _, key := range keys {
+				h.WriteString(key)
+				h.WriteByte(low.HASH_PIPE)
+			}
 		}
-		sort.Strings(keys)
-		for _, key := range keys {
-			sb.WriteString(key)
-			sb.WriteByte('|')
-		}
-	}
 
-	// Process Servers with pre-allocation and sorting
-	if len(p.Servers.Value) > 0 {
-		keys := make([]string, len(p.Servers.Value))
-		for k := range p.Servers.Value {
-			keys[k] = low.GenerateHashString(p.Servers.Value[k].Value)
+		for _, ext := range low.HashExtensions(p.Extensions) {
+			h.WriteString(ext)
+			h.WriteByte(low.HASH_PIPE)
 		}
-		sort.Strings(keys)
-		for _, key := range keys {
-			sb.WriteString(key)
-			sb.WriteByte('|')
-		}
-	}
-
-	for _, ext := range low.HashExtensions(p.Extensions) {
-		sb.WriteString(ext)
-		sb.WriteByte('|')
-	}
-	return sha256.Sum256([]byte(sb.String()))
+		return h.Sum64()
+	})
 }
 
 // GetRootNode returns the root yaml node of the PathItem object

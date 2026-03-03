@@ -13,12 +13,12 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 const (
@@ -109,7 +109,7 @@ func (c *config) validate() error {
 	}
 	// force the use of a metrics selector, as analyzing all series can be slow
 	if c.selector == "" {
-		if _, err := parser.ParseMetricSelector(c.selector); err != nil {
+		if _, err := promqlext.NewPromQLParser().ParseMetricSelector(c.selector); err != nil {
 			return fmt.Errorf("failed to parse metric selector: %w", err)
 		}
 
@@ -179,7 +179,7 @@ func main() {
 	var matchers []*labels.Matcher
 	if cfg.selector != "" {
 		var err error
-		matchers, err = parser.ParseMetricSelector(cfg.selector)
+		matchers, err = promqlext.NewPromQLParser().ParseMetricSelector(cfg.selector)
 		if err != nil {
 			level.Error(logger).Log("msg", "failed to parse matcher selector", "err", err)
 			os.Exit(1)

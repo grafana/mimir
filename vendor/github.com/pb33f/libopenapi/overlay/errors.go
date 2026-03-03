@@ -53,4 +53,9 @@ var (
 
 	// Application errors
 	ErrNoTargetDocument = errors.New("no target document provided")
+
+	// Copy action errors
+	ErrCopySourceNotFound = errors.New("copy source JSONPath matched zero nodes")
+	ErrCopySourceMultiple = errors.New("copy source JSONPath must match exactly one node")
+	ErrCopyTypeMismatch   = errors.New("copy source and target must be the same type")
 )

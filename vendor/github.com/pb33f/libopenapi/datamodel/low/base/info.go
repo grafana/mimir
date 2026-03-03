@@ -5,7 +5,7 @@ package base
 
 import (
 	"context"
-	"crypto/sha256"
+	"hash/maphash"
 
 	"github.com/pb33f/libopenapi/orderedmap"
 	"github.com/pb33f/libopenapi/utils"
@@ -91,43 +91,41 @@ func (i *Info) GetContext() context.Context {
 	return i.context
 }
 
-// Hash will return a consistent SHA256 Hash of the Info object
-func (i *Info) Hash() [32]byte {
-	// Use string builder pool
-	sb := low.GetStringBuilder()
-	defer low.PutStringBuilder(sb)
-
-	if !i.Title.IsEmpty() {
-		sb.WriteString(i.Title.Value)
-		sb.WriteByte('|')
-	}
-	if !i.Summary.IsEmpty() {
-		sb.WriteString(i.Summary.Value)
-		sb.WriteByte('|')
-	}
-	if !i.Description.IsEmpty() {
-		sb.WriteString(i.Description.Value)
-		sb.WriteByte('|')
-	}
-	if !i.TermsOfService.IsEmpty() {
-		sb.WriteString(i.TermsOfService.Value)
-		sb.WriteByte('|')
-	}
-	if !i.Contact.IsEmpty() {
-		sb.WriteString(low.GenerateHashString(i.Contact.Value))
-		sb.WriteByte('|')
-	}
-	if !i.License.IsEmpty() {
-		sb.WriteString(low.GenerateHashString(i.License.Value))
-		sb.WriteByte('|')
-	}
-	if !i.Version.IsEmpty() {
-		sb.WriteString(i.Version.Value)
-		sb.WriteByte('|')
-	}
-	for _, ext := range low.HashExtensions(i.Extensions) {
-		sb.WriteString(ext)
-		sb.WriteByte('|')
-	}
-	return sha256.Sum256([]byte(sb.String()))
+// Hash will return a consistent hash of the Info object
+func (i *Info) Hash() uint64 {
+	return low.WithHasher(func(h *maphash.Hash) uint64 {
+		if !i.Title.IsEmpty() {
+			h.WriteString(i.Title.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !i.Summary.IsEmpty() {
+			h.WriteString(i.Summary.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !i.Description.IsEmpty() {
+			h.WriteString(i.Description.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !i.TermsOfService.IsEmpty() {
+			h.WriteString(i.TermsOfService.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !i.Contact.IsEmpty() {
+			h.WriteString(low.GenerateHashString(i.Contact.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !i.License.IsEmpty() {
+			h.WriteString(low.GenerateHashString(i.License.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !i.Version.IsEmpty() {
+			h.WriteString(i.Version.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		for _, ext := range low.HashExtensions(i.Extensions) {
+			h.WriteString(ext)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		return h.Sum64()
+	})
 }

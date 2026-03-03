@@ -214,6 +214,9 @@
       namespace_query: 'cortex_build_info{%s=~"$cluster"}' % $._config.per_cluster_label,
     },
 
+    // Controls whether dashboards show classic or native latency histograms. Allowed values: 'classic' (default), 'native'.
+    dashboards_default_latency_mode: 'classic',
+
     // Used to add extra labels to all alerts. Careful: takes precedence over default labels.
     alert_extra_labels: {},
 
@@ -557,7 +560,7 @@
     resources_panel_queries: {
       kubernetes: {
         cpu_usage: 'sum by(%(instanceLabel)s) (rate(container_cpu_usage_seconds_total{%(namespace)s,container=~"%(containerName)s"}[$__rate_interval]))',
-        cpu_limit: 'min(container_spec_cpu_quota{%(namespace)s,container=~"%(containerName)s"} / container_spec_cpu_period{%(namespace)s,container=~"%(containerName)s"})',
+        cpu_limit: 'min(kube_pod_container_resource_limits{%(namespace)s,container=~"%(containerName)s",resource="cpu"})',
         cpu_request: 'min(kube_pod_container_resource_requests{%(namespace)s,container=~"%(containerName)s",resource="cpu"})',
         // We use "max" instead of "sum" otherwise during a rolling update of a statefulset we will end up
         // summing the memory of the old instance/pod (whose metric will be stale for 5m) to the new instance/pod.
@@ -778,5 +781,10 @@
 
     // Show panels that use queries for "ingest storage" ingestion (distributor -> Kafka, Kafka -> ingesters)
     show_ingest_storage_panels: true,
+
+    // External Grafana URL prefix for dashboard links in alerts.
+    // This is used to generate absolute URLs in alert annotations that link to dashboards.
+    // Set to empty string '' to disable dashboard links in alerts.
+    externalGrafanaURLPrefix: '',
   },
 }

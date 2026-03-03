@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -14,19 +15,23 @@ import (
 	"github.com/grafana/alerting/receivers"
 )
 
-func New(cfg Config, meta receivers.Metadata, images images.Provider, logger log.Logger) *Notifier {
-	return &Notifier{
-		Base:     receivers.NewBase(meta, logger),
-		images:   images,
-		settings: cfg,
-	}
-}
-
 // Notifier sends alert notifications to the alert manager
 type Notifier struct {
 	*receivers.Base
 	images   images.Provider
 	settings Config
+	logger   log.Logger
+	sender   receivers.Sender
+}
+
+func New(cfg Config, meta receivers.Metadata, images images.Provider, logger log.Logger) *Notifier {
+	return &Notifier{
+		Base:     receivers.NewBase(meta, logger),
+		images:   images,
+		settings: cfg,
+		logger:   logger,
+		sender:   receivers.NewSender(logger),
+	}
 }
 
 // Notify sends alert notifications to Alertmanager.
@@ -37,17 +42,34 @@ func (n *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error)
 		return true, nil
 	}
 
+	// clone because it can be modified by the image provider
+	clones := make([]*types.Alert, 0, len(as))
+	for _, a := range as {
+		clone := &types.Alert{
+			Alert: model.Alert{
+				Labels:       maps.Clone(a.Labels),
+				Annotations:  maps.Clone(a.Annotations),
+				StartsAt:     a.StartsAt,
+				EndsAt:       a.EndsAt,
+				GeneratorURL: a.GeneratorURL,
+			},
+			UpdatedAt: a.UpdatedAt,
+			Timeout:   a.Timeout,
+		}
+		clones = append(clones, clone)
+	}
+
 	_ = images.WithStoredImages(ctx, l, n.images,
 		func(index int, image images.Image) error {
 			// If there is an image for this alert and the image has been uploaded
 			// to a public URL then include it as an annotation
 			if image.URL != "" {
-				as[index].Annotations["image"] = model.LabelValue(image.URL)
+				clones[index].Annotations["image"] = model.LabelValue(image.URL)
 			}
 			return nil
-		}, as...)
+		}, clones...)
 
-	body, err := json.Marshal(as)
+	body, err := json.Marshal(clones)
 	if err != nil {
 		return false, err
 	}
@@ -57,12 +79,12 @@ func (n *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error)
 		numErrs int
 	)
 	for _, u := range n.settings.URLs {
-		if _, err := receivers.SendHTTPRequest(ctx, u, receivers.HTTPCfg{
+		if _, err := n.sender.SendHTTPRequest(ctx, u, receivers.HTTPCfg{
 			User:     n.settings.User,
 			Password: n.settings.Password,
 			Body:     body,
-		}, l); err != nil {
-			level.Warn(l).Log("msg", "failed to send to Alertmanager", "err", err, "url", u.String())
+		}); err != nil {
+			level.Warn(l).Log("msg", "failed to send to Alertmanager", "error", err, "url", u.String())
 			lastErr = err
 			numErrs++
 		}

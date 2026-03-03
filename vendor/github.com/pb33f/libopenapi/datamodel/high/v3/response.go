@@ -4,13 +4,27 @@
 package v3
 
 import (
+	"context"
+
 	"github.com/pb33f/libopenapi/datamodel/high"
 	"github.com/pb33f/libopenapi/datamodel/low"
+	lowmodel "github.com/pb33f/libopenapi/datamodel/low"
 	lowv3 "github.com/pb33f/libopenapi/datamodel/low/v3"
+	"github.com/pb33f/libopenapi/index"
 	"github.com/pb33f/libopenapi/orderedmap"
 	"github.com/pb33f/libopenapi/utils"
 	"go.yaml.in/yaml/v4"
 )
+
+// buildLowResponse builds a low-level Response from a resolved YAML node.
+func buildLowResponse(node *yaml.Node, idx *index.SpecIndex) (*lowv3.Response, error) {
+	var resp lowv3.Response
+	lowmodel.BuildModel(node, &resp)
+	if err := resp.Build(context.Background(), nil, node, idx); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
 
 // Response represents a high-level OpenAPI 3+ Response object that is backed by a low-level one.
 //
@@ -94,9 +108,16 @@ func (r *Response) MarshalYAMLInline() (interface{}, error) {
 	if r.Reference != "" {
 		return utils.CreateRefNode(r.Reference), nil
 	}
-	nb := high.NewNodeBuilder(r, r.low)
-	nb.Resolve = true
-	return nb.Render(), nil
+
+	// resolve external reference if present
+	if r.low != nil {
+		rendered, err := high.RenderExternalRef(r.low, buildLowResponse, NewResponse)
+		if err != nil || rendered != nil {
+			return rendered, err
+		}
+	}
+
+	return high.RenderInline(r, r.low)
 }
 
 // MarshalYAMLInlineWithContext will create a ready to render YAML representation of the Response object,
@@ -107,10 +128,16 @@ func (r *Response) MarshalYAMLInlineWithContext(ctx any) (interface{}, error) {
 	if r.Reference != "" {
 		return utils.CreateRefNode(r.Reference), nil
 	}
-	nb := high.NewNodeBuilder(r, r.low)
-	nb.Resolve = true
-	nb.RenderContext = ctx
-	return nb.Render(), nil
+
+	// resolve external reference if present
+	if r.low != nil {
+		rendered, err := high.RenderExternalRefWithContext(r.low, buildLowResponse, NewResponse, ctx)
+		if err != nil || rendered != nil {
+			return rendered, err
+		}
+	}
+
+	return high.RenderInlineWithContext(r, r.low, ctx)
 }
 
 // CreateResponseRef creates a Response that renders as a $ref to another response definition.

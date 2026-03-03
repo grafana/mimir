@@ -225,7 +225,8 @@ func (h *writeHandler) appendV1Samples(app storage.Appender, ss []prompb.Sample,
 		if err != nil {
 			if errors.Is(err, storage.ErrOutOfOrderSample) ||
 				errors.Is(err, storage.ErrOutOfBounds) ||
-				errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
+				errors.Is(err, storage.ErrDuplicateSampleForTimestamp) ||
+				errors.Is(err, storage.ErrTooOldSample) {
 				h.logger.Error("Out of order sample from remote write", "err", err.Error(), "series", labels.String(), "timestamp", s.Timestamp)
 			}
 			return err
@@ -247,7 +248,8 @@ func (h *writeHandler) appendV1Histograms(app storage.Appender, hh []prompb.Hist
 			// a note indicating its inclusion in the future.
 			if errors.Is(err, storage.ErrOutOfOrderSample) ||
 				errors.Is(err, storage.ErrOutOfBounds) ||
-				errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
+				errors.Is(err, storage.ErrDuplicateSampleForTimestamp) ||
+				errors.Is(err, storage.ErrTooOldSample) {
 				h.logger.Error("Out of order histogram from remote write", "err", err.Error(), "series", labels.String(), "timestamp", hp.Timestamp)
 			}
 			return err
@@ -409,7 +411,8 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 			// a note indicating its inclusion in the future.
 			if errors.Is(err, storage.ErrOutOfOrderSample) ||
 				errors.Is(err, storage.ErrOutOfBounds) ||
-				errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
+				errors.Is(err, storage.ErrDuplicateSampleForTimestamp) ||
+				errors.Is(err, storage.ErrTooOldSample) {
 				// TODO(bwplotka): Not too spammy log?
 				h.logger.Error("Out of order histogram from remote write", "err", err.Error(), "series", ls.String(), "timestamp", hp.Timestamp)
 				badRequestErrs = append(badRequestErrs, fmt.Errorf("%w for series %v", err, ls.String()))
@@ -536,4 +539,28 @@ func (app *remoteWriteAppender) AppendExemplar(ref storage.SeriesRef, l labels.L
 		return 0, err
 	}
 	return ref, nil
+}
+
+type remoteWriteAppenderV2 struct {
+	storage.AppenderV2
+
+	maxTime int64
+}
+
+func (app *remoteWriteAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
+	if t > app.maxTime {
+		return 0, fmt.Errorf("%w: timestamp is too far in the future", storage.ErrOutOfBounds)
+	}
+
+	if h != nil && histogram.IsExponentialSchemaReserved(h.Schema) && h.Schema > histogram.ExponentialSchemaMax {
+		if err := h.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {
+			return 0, err
+		}
+	}
+	if fh != nil && histogram.IsExponentialSchemaReserved(fh.Schema) && fh.Schema > histogram.ExponentialSchemaMax {
+		if err := fh.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {
+			return 0, err
+		}
+	}
+	return app.AppenderV2.Append(ref, ls, st, t, v, h, fh, opts)
 }

@@ -14,6 +14,8 @@ import (
 
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/flagext"
+
+	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -32,6 +34,8 @@ var (
 	ErrInconsistentConsumerLagAtStartup  = fmt.Errorf("the target and max consumer lag at startup must be either both set to 0 or to a value greater than 0")
 	ErrInvalidMaxConsumerLagAtStartup    = fmt.Errorf("the configured max consumer lag at startup must greater or equal than the configured target consumer lag")
 	ErrInconsistentSASLCredentials       = fmt.Errorf("the SASL username and password must be both configured to enable SASL authentication")
+	ErrSASLOauthbearerBadConfig          = fmt.Errorf("either the OAuth token or a file path to load the token from must be configured to enable SASL OAUTHBEARER authentication")
+	ErrInvalidSASLMechanism              = fmt.Errorf("the configured SASL mechanism is invalid, must be one of: %s", util.JoinStrings(saslMechanismOptions, ", "))
 	ErrInvalidIngestionConcurrencyMax    = errors.New("ingest-storage.kafka.ingestion-concurrency-max must either be set to 0 or to a value greater than 0")
 	ErrInvalidIngestionConcurrencyParams = errors.New("ingest-storage.kafka.ingestion-concurrency-queue-capacity, ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample, ingest-storage.kafka.ingestion-concurrency-batch-size and ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard must be greater than 0")
 	ErrInvalidAutoCreateTopicParams      = errors.New("ingest-storage.kafka.auto-create-topic-default-partitions must be -1 or greater than 0 when ingest-storage.kafka.auto-create-topic-default-partitions=true")
@@ -84,15 +88,16 @@ func (cfg *Config) Validate() error {
 
 // KafkaConfig holds the generic config for the Kafka backend.
 type KafkaConfig struct {
-	Address      string        `yaml:"address"`
-	Topic        string        `yaml:"topic"`
-	ClientID     string        `yaml:"client_id"`
-	DialTimeout  time.Duration `yaml:"dial_timeout"`
-	WriteTimeout time.Duration `yaml:"write_timeout"`
-	WriteClients int           `yaml:"write_clients"`
+	// Address is a list of seed brokers. The config name is singular for backward compatibility.
+	Address      flagext.StringSliceCSV `yaml:"address"`
+	Topic        string                 `yaml:"topic"`
+	ClientID     string                 `yaml:"client_id"`
+	ClientRack   string                 `yaml:"client_rack"`
+	DialTimeout  time.Duration          `yaml:"dial_timeout"`
+	WriteTimeout time.Duration          `yaml:"write_timeout"`
+	WriteClients int                    `yaml:"write_clients"`
 
-	SASLUsername string         `yaml:"sasl_username"`
-	SASLPassword flagext.Secret `yaml:"sasl_password"`
+	SASL KafkaAuthConfig `yaml:",inline"`
 
 	ConsumerGroup                         string        `yaml:"consumer_group"`
 	ConsumerGroupOffsetCommitInterval     time.Duration `yaml:"consumer_group_offset_commit_interval"`
@@ -147,10 +152,6 @@ type KafkaConfig struct {
 	// Our data indicates that the average sample size is somewhere between ~250 and ~500 bytes. We'll use 500 bytes as a conservative estimate.
 	IngestionConcurrencyEstimatedBytesPerSample int `yaml:"ingestion_concurrency_estimated_bytes_per_sample"`
 
-	// IngestionConcurrencySequentialPusherEnabled controls whether to use the sequential storage pusher
-	// for tenants with few timeseries. When false, parallelStorageShards is always used even for small tenants.
-	IngestionConcurrencySequentialPusherEnabled bool `yaml:"ingestion_concurrency_sequential_pusher_enabled" category:"experimental"`
-
 	// The fetch backoff config to use in the concurrent fetchers (when enabled). This setting
 	// is just used to change the default backoff in tests.
 	concurrentFetchersFetchBackoffConfig backoff.Config `yaml:"-"`
@@ -166,15 +167,13 @@ func (cfg *KafkaConfig) RegisterFlags(f *flag.FlagSet) {
 func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	cfg.concurrentFetchersFetchBackoffConfig = defaultFetchBackoffConfig
 
-	f.StringVar(&cfg.Address, prefix+"address", "", "The Kafka backend address.")
+	f.Var(&cfg.Address, prefix+"address", "The Kafka seed broker address, or a comma-separated list of seed broker addresses.")
 	f.StringVar(&cfg.Topic, prefix+"topic", "", "The Kafka topic name.")
 	f.StringVar(&cfg.ClientID, prefix+"client-id", "", "The Kafka client ID.")
+	f.StringVar(&cfg.ClientRack, prefix+"client-rack", "", "The rack identifier for this Kafka client. Corresponds to the Kafka client.rack setting.")
 	f.DurationVar(&cfg.DialTimeout, prefix+"dial-timeout", 2*time.Second, "The maximum time allowed to open a connection to a Kafka broker.")
 	f.DurationVar(&cfg.WriteTimeout, prefix+"write-timeout", 10*time.Second, "How long to wait for an incoming write request to be successfully committed to the Kafka backend.")
 	f.IntVar(&cfg.WriteClients, prefix+"write-clients", 1, "The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka.")
-
-	f.StringVar(&cfg.SASLUsername, prefix+"sasl-username", "", "The username used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.")
-	f.Var(&cfg.SASLPassword, prefix+"sasl-password", "The password used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.")
 
 	f.StringVar(&cfg.ConsumerGroup, prefix+"consumer-group", "", "The consumer group used by the consumer to track the last consumed offset. The consumer group must be different for each ingester. If the configured consumer group contains the '<partition>' placeholder, it is replaced with the actual partition ID owned by the ingester. When empty (recommended), Mimir uses the ingester instance ID to guarantee uniqueness.")
 	f.DurationVar(&cfg.ConsumerGroupOffsetCommitInterval, prefix+"consumer-group-offset-commit-interval", time.Second, "How frequently a consumer should commit the consumed offset to Kafka. The last committed offset is used at startup to continue the consumption from where it was left.")
@@ -212,11 +211,12 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 	f.IntVar(&cfg.IngestionConcurrencyQueueCapacity, prefix+"ingestion-concurrency-queue-capacity", 5, "The number of batches to prepare and queue to ingest to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.")
 	f.IntVar(&cfg.IngestionConcurrencyTargetFlushesPerShard, prefix+"ingestion-concurrency-target-flushes-per-shard", 80, "The expected number of times to ingest timeseries to the TSDB head after batching. With fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.")
 	f.IntVar(&cfg.IngestionConcurrencyEstimatedBytesPerSample, prefix+"ingestion-concurrency-estimated-bytes-per-sample", 500, "The estimated number of bytes a sample has at time of ingestion. This value is used to estimate the timeseries without decompressing them. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.")
-	f.BoolVar(&cfg.IngestionConcurrencySequentialPusherEnabled, prefix+"ingestion-concurrency-sequential-pusher-enabled", true, "When enabled, tenants with few timeseries use a simpler sequential pusher instead of parallel shards.")
+
+	cfg.SASL.RegisterFlagsWithPrefix(prefix+"sasl-", f)
 }
 
 func (cfg *KafkaConfig) Validate() error {
-	if cfg.Address == "" {
+	if cfg.Address.String() == "" {
 		return ErrMissingKafkaAddress
 	}
 	if cfg.Topic == "" {
@@ -264,10 +264,6 @@ func (cfg *KafkaConfig) Validate() error {
 		return fmt.Errorf("ingest-storage.kafka.max-buffered-bytes must be less than %d", math.MaxInt32)
 	}
 
-	if (cfg.SASLUsername == "") != (cfg.SASLPassword.String() == "") {
-		return ErrInconsistentSASLCredentials
-	}
-
 	if cfg.IngestionConcurrencyMax < 0 {
 		return ErrInvalidIngestionConcurrencyMax
 	}
@@ -282,7 +278,7 @@ func (cfg *KafkaConfig) Validate() error {
 		return ErrInvalidAutoCreateTopicParams
 	}
 
-	return nil
+	return cfg.SASL.Validate()
 }
 
 // GetConsumerGroup returns the consumer group to use for the given instanceID and partitionID.
@@ -310,4 +306,95 @@ func (cfg *MigrationConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagS
 	f.BoolVar(&cfg.DistributorSendToIngestersEnabled, prefix+"distributor-send-to-ingesters-enabled", false, "When both this option and ingest storage are enabled, distributors write to both Kafka and ingesters. A write request is considered successful only when written to both backends.")
 	f.BoolVar(&cfg.IgnoreIngestStorageErrors, prefix+"ignore-ingest-storage-errors", false, "When enabled, errors writing to ingest storage are logged but do not affect write success or quorum. When disabled, write requests fail if ingest storage write fails.")
 	f.DurationVar(&cfg.IngestStorageMaxWaitTime, prefix+"ingest-storage-max-wait-time", 0, "The maximum time a write request that goes through the ingest storage waits before it times out. Set to `0` to disable the timeout.")
+}
+
+type SASLMechanism string
+
+// Set implements flag.Value.
+func (s *SASLMechanism) Set(v string) error {
+	if !slices.Contains(saslMechanismOptions, SASLMechanism(v)) {
+		return ErrInvalidSASLMechanism
+	}
+	*s = SASLMechanism(v)
+	return nil
+}
+
+// String implements flag.Value.
+func (s *SASLMechanism) String() string {
+	return string(*s)
+}
+
+// FlagType implements usage.FlagTyper.
+func (SASLMechanism) FlagType() string {
+	return "string"
+}
+
+const (
+	SASLMechanismPlain       SASLMechanism = "PLAIN"
+	SASLMechanismScramSHA256 SASLMechanism = "SCRAM-SHA-256"
+	SASLMechanismScramSHA512 SASLMechanism = "SCRAM-SHA-512"
+	SASLMechanismOauthbearer SASLMechanism = "OAUTHBEARER"
+)
+
+var saslMechanismOptions = []SASLMechanism{SASLMechanismPlain, SASLMechanismScramSHA256, SASLMechanismScramSHA512, SASLMechanismOauthbearer}
+
+type KafkaAuthConfig struct {
+	Mechanism SASLMechanism `yaml:"sasl_mechanism"`
+
+	// For PLAIN and SCRAM-SHA-* mechanisms
+
+	Username string         `yaml:"sasl_username"`
+	Password flagext.Secret `yaml:"sasl_password"`
+
+	// For OAUTHBEARER mechanism
+
+	OauthbearerToken      flagext.Secret            `yaml:"sasl_oauthbearer_token"`
+	OauthbearerZid        string                    `yaml:"sasl_oauthbearer_zid"`
+	OauthbearerExtensions flagext.LimitsMap[string] `yaml:"sasl_oauthbearer_extensions"`
+
+	OauthbearerFilePath string `yaml:"sasl_oauthbearer_file_path"`
+}
+
+func (cfg *KafkaAuthConfig) RegisterFlags(f *flag.FlagSet) {
+	cfg.RegisterFlagsWithPrefix("", f)
+}
+
+func (cfg *KafkaAuthConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	cfg.Mechanism = "PLAIN"
+	f.Var(&cfg.Mechanism, prefix+"mechanism", fmt.Sprintf("The SASL mechanism used to authenticate to Kafka. Supported values: %s. For backwards-compatibility, PLAIN with no username nor password disables SASL.", util.JoinStrings(saslMechanismOptions, ", ")))
+	f.StringVar(&cfg.Username, prefix+"username", "", "The username used to authenticate to Kafka using SASL. To enable SASL, configure both the username and password.")
+	f.Var(&cfg.Password, prefix+"password", "The password used to authenticate to Kafka using SASL. To enable SASL, configure both the username and password.")
+
+	f.Var(&cfg.OauthbearerToken, prefix+"oauthbearer-token", "The OAuth token to use to authenticate to Kafka. Consider "+prefix+"oauthbearer-file-path instead.")
+	f.StringVar(&cfg.OauthbearerZid, prefix+"oauthbearer-zid", "", "Optional authorization ID to use when authenticating to Kafka using SASL OAUTHBEARER.")
+	if !cfg.OauthbearerExtensions.IsInitialized() {
+		cfg.OauthbearerExtensions = flagext.NewLimitsMap[string](nil)
+	}
+	f.Var(&cfg.OauthbearerExtensions, prefix+"oauthbearer-extensions", "Optional additional OAuth extensions to include when authenticating to Kafka using SASL OAUTHBEARER as a JSON object.")
+
+	f.StringVar(&cfg.OauthbearerFilePath, prefix+"oauthbearer-file-path", "", `Path to a file containing an OAuth token to authenticate to Kafka. The file is read anew on every reauthentication, so it can be updated with fresh tokens. The file must be in JSON format, adhering to this JSON schema: {"type": "object", "required": ["token"], "properties": {"token": {"type": "string"}, "zid": {"type": "string"}, "extensions": {"type": "object", "additionalProperties": {"type": "string"}}}}`)
+}
+
+func (cfg *KafkaAuthConfig) Validate() error {
+	switch cfg.Mechanism {
+	case SASLMechanismPlain:
+		if (cfg.Username == "") != (cfg.Password.String() == "") {
+			return ErrInconsistentSASLCredentials
+		}
+
+	case SASLMechanismScramSHA256, SASLMechanismScramSHA512:
+		if cfg.Username == "" || cfg.Password.String() == "" {
+			return ErrInconsistentSASLCredentials
+		}
+
+	case SASLMechanismOauthbearer:
+		if (cfg.OauthbearerToken.String() == "") == (cfg.OauthbearerFilePath == "") {
+			return ErrSASLOauthbearerBadConfig
+		}
+
+	default:
+		return ErrInvalidSASLMechanism
+	}
+
+	return nil
 }

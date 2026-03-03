@@ -211,6 +211,15 @@ func examineAggregate(a *core.AggregateExpression) (map[string]struct{}, SkipRea
 		return nil, SkipReasonNotSupported
 	}
 
+	// These aggregations limit the number of results, they don't actually aggregate the
+	// series by any or all labels.
+	if a.Op == core.AGGREGATION_TOPK ||
+		a.Op == core.AGGREGATION_BOTTOMK ||
+		a.Op == core.AGGREGATION_LIMITK ||
+		a.Op == core.AGGREGATION_LIMIT_RATIO {
+		return nil, SkipReasonNotSupported
+	}
+
 	requiredLabels := make(map[string]struct{})
 	for _, l := range a.Grouping {
 		requiredLabels[l] = struct{}{}

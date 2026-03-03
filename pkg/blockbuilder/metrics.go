@@ -50,7 +50,7 @@ type tsdbBuilderMetrics struct {
 	lastSuccessfulCompactAndUploadTime *prometheus.GaugeVec
 }
 
-func newTSDBBBuilderMetrics(reg prometheus.Registerer) tsdbBuilderMetrics {
+func newTSDBBuilderMetrics(reg prometheus.Registerer) tsdbBuilderMetrics {
 	var m tsdbBuilderMetrics
 
 	m.processSamplesDiscarded = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{

@@ -24,7 +24,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/thanos-io/objstore"
 	"google.golang.org/grpc/metadata"
@@ -283,7 +282,7 @@ func (u *BucketStores) syncUsersBlocks(ctx context.Context, includeUserIDs []str
 
 	wg := &sync.WaitGroup{}
 	jobs := make(chan job)
-	errs := tsdb_errors.NewMulti()
+	errs := multierror.New()
 	errsMx := sync.Mutex{}
 
 	u.tenantsSynced.Set(float64(len(includeUserIDs)))

@@ -23,7 +23,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
-	"github.com/prometheus/prometheus/promql/parser"
 	yamlv3 "go.yaml.in/yaml/v3"
 	"golang.org/x/term"
 
@@ -31,6 +30,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirtool/printer"
 	"github.com/grafana/mimir/pkg/mimirtool/rules"
 	"github.com/grafana/mimir/pkg/mimirtool/rules/rwrulefmt"
+	"github.com/grafana/mimir/pkg/mimirtool/util"
 )
 
 const (
@@ -118,6 +118,9 @@ type RuleCommand struct {
 	// Diff Rules Config
 	Verbose bool
 
+	// Enable experimental PromQL functions
+	enableExperimentalFunctions bool
+
 	// Metrics.
 	ruleLoadTimestamp        prometheus.Gauge
 	ruleLoadSuccessTimestamp prometheus.Gauge
@@ -133,7 +136,7 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, lo
 	rulesCmd.Flag("key", "Basic auth password to use when contacting Grafana Mimir; alternatively, set "+envVars.APIKey+".").Default("").Envar(envVars.APIKey).StringVar(&r.ClientConfig.Key)
 	rulesCmd.Flag("backend", "Backend type to interact with (deprecated)").Default(rules.MimirBackend).EnumVar(&r.Backend, backends...)
 	rulesCmd.Flag("auth-token", "Authentication token for bearer token or JWT auth, alternatively set "+envVars.AuthToken+".").Default("").Envar(envVars.AuthToken).StringVar(&r.ClientConfig.AuthToken)
-	rulesCmd.Flag("enable-experimental-functions", "If set, enables parsing experimental PromQL functions.").BoolVar(&parser.EnableExperimentalFunctions)
+	rulesCmd.Flag("enable-experimental-functions", "If set, enables parsing experimental PromQL functions.").BoolVar(&r.enableExperimentalFunctions)
 	r.ClientConfig.ExtraHeaders = map[string]string{}
 	rulesCmd.Flag("extra-headers", "Extra headers to add to the requests in header=value format, alternatively set newline separated "+envVars.ExtraHeaders+".").Envar(envVars.ExtraHeaders).StringMapVar(&r.ClientConfig.ExtraHeaders)
 
@@ -479,8 +482,10 @@ func (r *RuleCommand) deleteRuleGroup(_ *kingpin.ParseContext) error {
 }
 
 func (r *RuleCommand) loadRules(_ *kingpin.ParseContext) error {
+	promqlParser := util.CreatePromQLParser(r.enableExperimentalFunctions)
+
 	// TODO: Get scheme from CLI flag.
-	nss, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation, r.logger)
+	nss, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation, promqlParser, r.logger)
 	if err != nil {
 		return errors.Wrap(err, "load operation unsuccessful, unable to parse rules files")
 	}
@@ -539,8 +544,10 @@ func (r *RuleCommand) diffRules(_ *kingpin.ParseContext) error {
 		return errors.Wrap(err, "diff operation unsuccessful, invalid arguments")
 	}
 
+	promqlParser := util.CreatePromQLParser(r.enableExperimentalFunctions)
+
 	// TODO: Get scheme from CLI flag.
-	nss, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation, r.logger)
+	nss, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation, promqlParser, r.logger)
 	if err != nil {
 		return errors.Wrap(err, "diff operation unsuccessful, unable to parse rules files")
 	}
@@ -608,8 +615,10 @@ func (r *RuleCommand) syncRules(_ *kingpin.ParseContext) error {
 		return errors.Wrap(err, "sync operation unsuccessful, invalid arguments")
 	}
 
+	promqlParser := util.CreatePromQLParser(r.enableExperimentalFunctions)
+
 	// TODO: Get scheme from CLI flag.
-	nss, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation, r.logger)
+	nss, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation, promqlParser, r.logger)
 	if err != nil {
 		return errors.Wrap(err, "sync operation unsuccessful, unable to parse rules files")
 	}
@@ -714,8 +723,10 @@ func (r *RuleCommand) prepare(_ *kingpin.ParseContext) error {
 		return errors.Wrap(err, "prepare operation unsuccessful, invalid arguments")
 	}
 
+	promqlParser := util.CreatePromQLParser(r.enableExperimentalFunctions)
+
 	// TODO: Get scheme from CLI flag.
-	namespaces, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation, r.logger)
+	namespaces, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation, promqlParser, r.logger)
 	if err != nil {
 		return errors.Wrap(err, "prepare operation unsuccessful, unable to parse rules files")
 	}
@@ -728,7 +739,7 @@ func (r *RuleCommand) prepare(_ *kingpin.ParseContext) error {
 
 	var count, mod int
 	for _, ruleNamespace := range namespaces {
-		c, m, err := ruleNamespace.AggregateBy(r.AggregationLabel, applyTo, r.logger)
+		c, m, err := ruleNamespace.AggregateBy(r.AggregationLabel, applyTo, promqlParser, r.logger)
 		if err != nil {
 			return err
 		}
@@ -753,15 +764,17 @@ func (r *RuleCommand) lint(_ *kingpin.ParseContext) error {
 		return errors.Wrap(err, "prepare operation unsuccessful, invalid arguments")
 	}
 
+	promqlParser := util.CreatePromQLParser(r.enableExperimentalFunctions)
+
 	// TODO: Get scheme from CLI flag.
-	namespaces, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation, r.logger)
+	namespaces, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation, promqlParser, r.logger)
 	if err != nil {
 		return errors.Wrap(err, "prepare operation unsuccessful, unable to parse rules files")
 	}
 
 	var count, mod int
 	for _, ruleNamespace := range namespaces {
-		c, m, err := ruleNamespace.LintExpressions(r.Backend, r.logger)
+		c, m, err := ruleNamespace.LintExpressions(r.Backend, promqlParser, r.logger)
 		if err != nil {
 			return err
 		}
@@ -788,8 +801,10 @@ func (r *RuleCommand) checkRules(_ *kingpin.ParseContext) error {
 		return errors.Wrap(err, "check operation unsuccessful, invalid arguments")
 	}
 
+	promqlParser := util.CreatePromQLParser(r.enableExperimentalFunctions)
+
 	// TODO: Get scheme from CLI flag.
-	namespaces, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation, r.logger)
+	namespaces, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation, promqlParser, r.logger)
 	if err != nil {
 		return errors.Wrap(err, "check operation unsuccessful, unable to parse rules files")
 	}

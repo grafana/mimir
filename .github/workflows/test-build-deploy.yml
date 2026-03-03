@@ -148,6 +148,7 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    name: test (${{ matrix.extra_build_tags != '' && format('{0}, ', matrix.extra_build_tags) || '' }}${{ matrix.test_group_id }}, ${{ matrix.test_group_total }})
     strategy:
       # Do not abort other groups when one fails.
       fail-fast: false
@@ -155,6 +156,7 @@ jobs:
       matrix:
         test_group_id:    [0, 1, 2, 3]
         test_group_total: [4]
+        extra_build_tags: ["", "nopools"]
     needs:
       - prepare
     permissions:
@@ -185,8 +187,8 @@ jobs:
           max_attempts: 2
           retry_wait_seconds: 0
           command: |
-            echo "Running unit tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }}) with Go version: $(go version)"
-            ./.github/workflows/scripts/run-unit-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
+            echo "Running unit tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }})${{ matrix.extra_build_tags != '' && format(' with build tags: {0}', matrix.extra_build_tags) || '' }} with Go version: $(go version)"
+            EXTRA_BUILD_TAGS="${{ matrix.extra_build_tags }}" ./.github/workflows/scripts/run-unit-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
       - name: Notify on streamingpromql failures
         if: failure() && env.FAILED_PACKAGES != '' && contains(github.event.pull_request.labels.*.name, 'vendored-mimir-prometheus-update')
         run: |
@@ -340,7 +342,7 @@ jobs:
           export MIMIR_DISTROLESS_IMAGE="grafana/mimir:$IMAGE_TAG_RACE"
           docker save $MIMIR_DISTROLESS_IMAGE -o ./mimir_race_image_distroless
       - name: Upload archive with race-enabled Mimir
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
         with:
           # We deliberately don't use the "docker-image" prefix here, as that is used to find all images published as part of a release, and we don't want this image included in the release.
           name: test-docker-image-race-enabled-mimir
@@ -359,7 +361,7 @@ jobs:
         test_group_total: [6]
     steps:
       - name: Upgrade golang
-        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
         with:
           go-version: ${{ needs.goversion.outputs.version }}
           cache: false # We manage caching ourselves below to maintain consistency with the other jobs that don't use setup-go.
@@ -374,7 +376,7 @@ jobs:
           sudo mkdir -p /go/src/github.com/grafana/mimir
           sudo ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
       - name: Download mimirtool Docker Image
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8
         with:
           name: docker-image-mimirtool
       - name: Extract Docker Image from Archive
@@ -387,7 +389,7 @@ jobs:
           # that's why we use docker run to run latest version.
           docker run -v /tmp/images:/tmp/images -v /var/run/docker.sock:/var/run/docker.sock quay.io/skopeo/stable:v1.15.1 copy oci-archive:/tmp/images/mimirtool.oci "docker-daemon:grafana/mimirtool:$IMAGE_TAG"
       - name: Download Archive with Docker Images
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8
         with:
           name: test-docker-image-race-enabled-mimir
       - name: Load race-enabled mimir into Docker
@@ -452,7 +454,7 @@ jobs:
           mkdir -p /go/src/github.com/grafana/mimir
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
       - name: Download Archive with Docker Images
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8
         with:
           pattern: docker-image-*
           path: built-images
@@ -468,3 +470,46 @@ jobs:
       - name: Push Docker Images
         run: |
           ./.github/workflows/scripts/push-images.sh /tmp/images grafana/ $(make image-tag)
+
+  send-slack-notification-on-automated-vendoring:
+    needs:
+      - prepare
+      - goversion
+      - lint
+      - lint-jsonnet
+      - lint-helm
+      - test
+      - test-docs
+      - build-metaconvert-image
+      - build-mimir-image
+      - build-query-tee-image
+      - build-mimirtool-image
+      - build-copyblocks-image
+      - build
+      - build-race-enabled-image
+      - integration
+      - deploy
+    runs-on: ubuntu-latest
+    if: always() && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'vendored-mimir-prometheus-update')
+    permissions:
+      id-token: write
+    steps:
+      - name: Send Slack message for successful PR
+        if: ${{ !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
+        uses: grafana/shared-workflows/actions/send-slack-message@7b628e7352c2dea057c565cc4fcd5564d5f396c0 #v1.0.0
+        with:
+          channel-id: C04AF91LPFX #mimir-ci-notifications
+          payload: |
+            {
+              "text": ":happy-mac: *Automated vendoring of mimir-prometheus into Mimir has succeeded and is awaiting approval.*\n<!subteam^S03C2P8659U> please review <${{ github.event.pull_request.html_url }}|the PR>, then approve and merge it."
+            }
+      - name: Send Slack message for failed PR
+        if: ${{ contains(needs.*.result, 'failure') }}
+        uses: grafana/shared-workflows/actions/send-slack-message@7b628e7352c2dea057c565cc4fcd5564d5f396c0 #v1.0.0
+        with:
+          channel-id: C04AF91LPFX #mimir-ci-notifications
+          payload: |
+            {
+              "text": ":sadcomputer: *Automated vendoring of mimir-prometheus into Mimir has failed.*\n<!subteam^S03C2P8659U> please check <${{ github.event.pull_request.html_url }}|the PR> and <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|build logs> and coordinate fixes for any issues."
+            }
+

@@ -5,8 +5,7 @@ package v2
 
 import (
 	"context"
-	"crypto/sha256"
-	"strings"
+	"hash/maphash"
 
 	"github.com/pb33f/libopenapi/datamodel/low"
 	"github.com/pb33f/libopenapi/datamodel/low/base"
@@ -78,20 +77,27 @@ func (r *Response) Build(ctx context.Context, _, root *yaml.Node, idx *index.Spe
 	return nil
 }
 
-// Hash will return a consistent SHA256 Hash of the Response object
-func (r *Response) Hash() [32]byte {
-	var f []string
-	if r.Description.Value != "" {
-		f = append(f, r.Description.Value)
-	}
-	if !r.Schema.IsEmpty() {
-		f = append(f, low.GenerateHashString(r.Schema.Value))
-	}
-	if !r.Examples.IsEmpty() {
-		for v := range orderedmap.SortAlpha(r.Examples.Value.Values).ValuesFromOldest() {
-			f = append(f, low.GenerateHashString(v.Value))
+// Hash will return a consistent Hash of the Response object
+func (r *Response) Hash() uint64 {
+	return low.WithHasher(func(h *maphash.Hash) uint64 {
+		if r.Description.Value != "" {
+			h.WriteString(r.Description.Value)
+			h.WriteByte(low.HASH_PIPE)
 		}
-	}
-	f = append(f, low.HashExtensions(r.Extensions)...)
-	return sha256.Sum256([]byte(strings.Join(f, "|")))
+		if !r.Schema.IsEmpty() {
+			h.WriteString(low.GenerateHashString(r.Schema.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !r.Examples.IsEmpty() {
+			for v := range orderedmap.SortAlpha(r.Examples.Value.Values).ValuesFromOldest() {
+				h.WriteString(low.GenerateHashString(v.Value))
+				h.WriteByte(low.HASH_PIPE)
+			}
+		}
+		for _, ext := range low.HashExtensions(r.Extensions) {
+			h.WriteString(ext)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		return h.Sum64()
+	})
 }

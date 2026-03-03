@@ -76,7 +76,7 @@ func TestIngesterSharding(t *testing.T) {
 			flags["-ingester.ring.num-tokens"] = strconv.Itoa(testData.numTokens)
 
 			if testData.useIngestStorage {
-				flags = mergeFlags(flags, IngestStorageFlags())
+				flags = mergeFlags(flags, IngestStorageFlags(e2edb.KafkaAuthNone))
 			}
 
 			// Start dependencies.

@@ -24,6 +24,29 @@
       currentValueTemplate: 'latest',
       datasourceTemplate: 'docker',
     },
+    {
+      customType: 'regex',
+      description: 'Update "go install" commands in development Dockerfiles',
+      managerFilePatterns: [
+        'mimir-build-image/Dockerfile',
+        'development/**/dev.dockerfile',
+      ],
+      matchStrings: [
+        'go install\\s+(?<depName>[^@]+)@(?<currentValue>[^\\s]+)',
+      ],
+      datasourceTemplate: 'go',
+    },
+    {
+      customType: 'regex',
+      description: 'Update tools in build image installed from Git tags',
+      managerFilePatterns: [
+        'mimir-build-image/Dockerfile',
+      ],
+      matchStrings: [
+        '# renovate: depName=github.com/(?<depName>[^\\s]+)\\s+ENV [A-Z_]+=(?<currentValue>[^\\s]+)\\s+',
+      ],
+      datasourceTemplate: 'github-tags',
+    }
   ],
   baseBranchPatterns: [
     'main',
@@ -49,6 +72,8 @@
       // Don't update replace directives.
       matchPackageNames: [
         'github.com/grafana/mimir-prometheus',
+        // Don't attempt to upgrade the upstream Prometheus dependency, as it's replaced by our fork.
+        'github.com/prometheus/prometheus',
         'github.com/grafana/memberlist',
         'github.com/grafana/regexp',
         'github.com/colega/go-yaml-yaml',
@@ -102,6 +127,14 @@
         '* 0-4 * * 1'
       ],
     },
+    {
+      description: 'Automatically rebase all dependency update PRs touching mimir-build-image/Dockerfile, and ignore pushes from GitHub Actions with new image reference when considering if the PR is modified and can be rebased',
+      matchFileNames: [
+        'mimir-build-image/Dockerfile',
+      ],
+      rebaseWhen: 'behind-base-branch',
+      gitIgnoredAuthors: ['mimir-github-bot@users.noreply.github.com'],
+    }
   ],
   branchPrefix: 'deps-update/',
   labels: [

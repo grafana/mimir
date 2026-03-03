@@ -1,24 +1,11 @@
-//
-// Copyright (c) 2011-2019 Canonical Ltd
-// Copyright (c) 2006-2010 Kirill Simonov
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy of
-// this software and associated documentation files (the "Software"), to deal in
-// the Software without restriction, including without limitation the rights to
-// use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
-// of the Software, and to permit persons to whom the Software is furnished to do
-// so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
+// Copyright 2006-2010 Kirill Simonov
+// Copyright 2011-2019 Canonical Ltd
+// Copyright 2025 The go-yaml Project Contributors
+// SPDX-License-Identifier: Apache-2.0 AND MIT
+
+// Internal constants and buffer sizes.
+// Defines buffer sizes, stack sizes, and other internal configuration
+// constants for libyaml.
 
 package libyaml
 
@@ -32,10 +19,6 @@ const (
 
 	// The size of the output buffer.
 	output_buffer_size = 128
-
-	// The size of the output raw buffer.
-	// It should be possible to encode the whole output buffer.
-	output_raw_buffer_size = (output_buffer_size*2 + 2)
 
 	// The size of other stacks and queues.
 	initial_stack_size  = 16
@@ -90,6 +73,31 @@ func isAnchorChar(b []byte, i int) bool {
 // isColon checks whether the character at the specified position is a colon.
 func isColon(b []byte, i int) bool {
 	return b[i] == ':'
+}
+
+// Check if the character at the specified position is valid in a tag URI.
+//
+// The set of valid characters is:
+//
+//	'0'-'9', 'A'-'Z', 'a'-'z', '_', '-', ';', '/', '?', ':', '@', '&',
+//	'=', '+', '$', '.', '!', '~', '*', '\'', '(', ')', '%'.
+//
+// If verbatim is true, flow indicators (',', '[', ']', '{', '}') are also
+// allowed.
+func isTagURIChar(b []byte, i int, verbatim bool) bool {
+	c := b[i]
+	// isAlpha covers: 0-9, A-Z, a-z, _, -
+	if isAlpha(b, i) {
+		return true
+	}
+	// Check special URI characters
+	switch c {
+	case ';', '/', '?', ':', '@', '&', '=', '+', '$', '.', '!', '~', '*', '\'', '(', ')', '%':
+		return true
+	case ',', '[', ']', '{', '}':
+		return verbatim
+	}
+	return false
 }
 
 // Check if the character at the specified position is a digit.

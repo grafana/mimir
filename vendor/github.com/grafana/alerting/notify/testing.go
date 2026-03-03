@@ -8,6 +8,7 @@ import (
 
 	"github.com/prometheus/alertmanager/types"
 
+	"github.com/grafana/alerting/notify/nfstatus"
 	receiversTesting "github.com/grafana/alerting/receivers/testing"
 	"github.com/grafana/alerting/templates"
 )
@@ -85,8 +86,8 @@ func (f *FakeConfig) Raw() []byte {
 
 type fakeNotifier struct{}
 
-func (f *fakeNotifier) Notify(_ context.Context, _ ...*types.Alert) (bool, error) {
-	return true, nil
+func (f *fakeNotifier) Notify(_ context.Context, _ ...*types.Alert) (nfstatus.NotifyInfo, bool, error) {
+	return nfstatus.NotifyInfo{}, true, nil
 }
 
 func (f *fakeNotifier) SendResolved() bool {

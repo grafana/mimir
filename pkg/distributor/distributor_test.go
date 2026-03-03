@@ -438,6 +438,7 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		"cortex_distributor_received_samples_total",
 		"cortex_distributor_received_exemplars_total",
 		"cortex_distributor_received_metadata_total",
+		"cortex_distributor_received_bytes_total",
 		"cortex_distributor_deduped_samples_total",
 		"cortex_distributor_requests_in_total",
 		"cortex_distributor_samples_in_total",
@@ -454,6 +455,8 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 	d.receivedExemplars.WithLabelValues("userB").Add(10)
 	d.receivedMetadata.WithLabelValues("userA").Add(5)
 	d.receivedMetadata.WithLabelValues("userB").Add(10)
+	d.receivedBytes.WithLabelValues("userA").Add(100)
+	d.receivedBytes.WithLabelValues("userB").Add(200)
 	d.incomingRequests.WithLabelValues("userA", "2.0").Add(1)
 	d.incomingSamples.WithLabelValues("userA").Add(5)
 	d.incomingExemplars.WithLabelValues("userA").Add(5)
@@ -483,6 +486,11 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		# HELP cortex_distributor_non_ha_samples_received_total The total number of received samples for a user that has HA tracking turned on, but the sample didn't contain both HA labels.
 		# TYPE cortex_distributor_non_ha_samples_received_total counter
 		cortex_distributor_non_ha_samples_received_total{user="userA"} 5
+
+		# HELP cortex_distributor_received_bytes_total The total number of uncompressed bytes received in the original request body (before any protocol conversion). Excludes requests rejected by middleware (e.g., rate limiting, size limits, HA deduplication) but includes bytes from requests where individual samples may be filtered or rejected during processing.
+		# TYPE cortex_distributor_received_bytes_total counter
+		cortex_distributor_received_bytes_total{user="userA"} 100
+		cortex_distributor_received_bytes_total{user="userB"} 200
 
 		# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
 		# TYPE cortex_distributor_received_metadata_total counter
@@ -529,6 +537,10 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 
 		# HELP cortex_distributor_non_ha_samples_received_total The total number of received samples for a user that has HA tracking turned on, but the sample didn't contain both HA labels.
 		# TYPE cortex_distributor_non_ha_samples_received_total counter
+
+		# HELP cortex_distributor_received_bytes_total The total number of uncompressed bytes received in the original request body (before any protocol conversion). Excludes requests rejected by middleware (e.g., rate limiting, size limits, HA deduplication) but includes bytes from requests where individual samples may be filtered or rejected during processing.
+		# TYPE cortex_distributor_received_bytes_total counter
+		cortex_distributor_received_bytes_total{user="userB"} 200
 
 		# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
 		# TYPE cortex_distributor_received_metadata_total counter
@@ -679,10 +691,10 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 			pushes: []testPush{
 				{samples: 10, expectedError: nil},
 				{samples: 5, expectedError: nil},
-				{samples: 5, metadata: 1, expectedError: status.New(codes.ResourceExhausted, newIngestionRateLimitedError(10, 40).Error())},
+				{samples: 5, metadata: 1, expectedError: status.New(codes.ResourceExhausted, newIngestionRateLimitedError(10, 20).Error())},
 				{samples: 5, expectedError: nil},
-				{samples: 1, expectedError: status.New(codes.ResourceExhausted, newIngestionRateLimitedError(10, 40).Error())},
-				{metadata: 1, expectedError: status.New(codes.ResourceExhausted, newIngestionRateLimitedError(10, 40).Error())},
+				{samples: 1, expectedError: status.New(codes.ResourceExhausted, newIngestionRateLimitedError(10, 20).Error())},
+				{metadata: 1, expectedError: status.New(codes.ResourceExhausted, newIngestionRateLimitedError(10, 20).Error())},
 			},
 		},
 		"Test burstFactor burst limit in one burst": {
@@ -693,7 +705,7 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 				// Burst is 10 for the distributor (10/2)*2 = 10
 				{samples: 10, expectedError: nil},
 				// We've drained the pool so this should fail until the bucket re-fills in a few seconds
-				{samples: 1, metadata: 1, expectedError: status.New(codes.ResourceExhausted, newIngestionRateLimitedError(10, 20).Error())},
+				{samples: 1, metadata: 1, expectedError: status.New(codes.ResourceExhausted, newIngestionRateLimitedError(10, 10).Error())},
 			},
 		},
 	}
@@ -1008,6 +1020,8 @@ func TestDistributor_PushQuery(t *testing.T) {
 	const metricName = "foo"
 	ctx := user.InjectOrgID(context.Background(), "user")
 	ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
+	metrics := limiter.NewSeriesDeduplicatorMetrics(prometheus.NewPedanticRegistry())
+	ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx, metrics)
 	nameMatcher := mustEqualMatcher(model.MetricNameLabel, metricName)
 	barMatcher := mustEqualMatcher("bar", "baz")
 
@@ -2568,6 +2582,8 @@ func BenchmarkDistributor_Push(b *testing.B) {
 func TestSlowQueries(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "user")
 	ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
+	metrics := limiter.NewSeriesDeduplicatorMetrics(prometheus.NewPedanticRegistry())
+	ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx, metrics)
 	nameMatcher := mustEqualMatcher(model.MetricNameLabel, "foo")
 	nIngesters := 3
 	for happy := 0; happy <= nIngesters; happy++ {
@@ -2744,6 +2760,8 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 					ctx := user.InjectOrgID(context.Background(), "test")
 					ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
+					dedupMetrics := limiter.NewSeriesDeduplicatorMetrics(prometheus.NewPedanticRegistry())
+					ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx, dedupMetrics)
 
 					// Push fixtures
 					for _, series := range fixtures {
@@ -2865,6 +2883,8 @@ func TestDistributor_MetricsForLabelMatchers_adjustPushDownLimit(t *testing.T) {
 			ctx := user.InjectOrgID(context.Background(), "test")
 			ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 			ctx = limiter.AddMemoryTrackerToContext(ctx, limiter.NewUnlimitedMemoryConsumptionTracker(ctx))
+			metrics := limiter.NewSeriesDeduplicatorMetrics(prometheus.NewPedanticRegistry())
+			ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx, metrics)
 
 			for _, series := range fixtures {
 				req := mockWriteRequest(series.lbls, series.value, series.timestamp)
@@ -5409,7 +5429,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 
 			var gotErrs []error
 			for _, req := range tc.reqs {
-				pushReq := NewParsedRequest(req)
+				pushReq := NewParsedRequest(req, req.Size())
 				pushReq.AddCleanup(cleanup)
 				err := middleware(tc.ctx, pushReq)
 				handledErr := err
@@ -5486,7 +5506,7 @@ func TestInstanceLimitsBeforeHaDedupe(t *testing.T) {
 
 	// If we HA deduplication runs before instance limits check,
 	// then this would set replica for the cluster.
-	err := wrappedMockPush(ctx, NewParsedRequest(writeReqReplica1))
+	err := wrappedMockPush(ctx, NewParsedRequest(writeReqReplica1, writeReqReplica1.Size()))
 	require.ErrorIs(t, err, errMaxInflightRequestsReached)
 
 	// Simulate no other inflight request.
@@ -5495,7 +5515,7 @@ func TestInstanceLimitsBeforeHaDedupe(t *testing.T) {
 	// We now send request from second replica.
 	// If HA deduplication middleware ran before instance limits check, then replica would be already set,
 	// and HA deduplication would return 202 status code for this request instead.
-	err = wrappedMockPush(ctx, NewParsedRequest(writeReqReplica2))
+	err = wrappedMockPush(ctx, NewParsedRequest(writeReqReplica2, writeReqReplica2.Size()))
 	require.NoError(t, err)
 
 	// Check that the write requests which have been submitted to the push function look as expected,
@@ -5646,7 +5666,7 @@ func TestRelabelMiddleware(t *testing.T) {
 
 			var gotErrs []bool
 			for _, req := range tc.reqs {
-				pushReq := NewParsedRequest(req)
+				pushReq := NewParsedRequest(req, req.Size())
 				pushReq.AddCleanup(cleanup)
 				err := middleware(tc.ctx, pushReq)
 				gotErrs = append(gotErrs, err != nil)
@@ -5721,7 +5741,7 @@ func TestSortAndFilterMiddleware(t *testing.T) {
 
 			var gotErrs []bool
 			for _, req := range tc.reqs {
-				pushReq := NewParsedRequest(req)
+				pushReq := NewParsedRequest(req, req.Size())
 				pushReq.AddCleanup(cleanup)
 				err := middleware(tc.ctx, pushReq)
 				gotErrs = append(gotErrs, err != nil)
@@ -6071,7 +6091,7 @@ func prepareIngesterZone(t testing.TB, zone string, state ingesterZoneState, cfg
 
 			kafkaCfg := ingest.KafkaConfig{}
 			flagext.DefaultValues(&kafkaCfg)
-			kafkaCfg.Address = cfg.ingestStorageKafka.ListenAddrs()[0]
+			kafkaCfg.Address = flagext.StringSliceCSV{cfg.ingestStorageKafka.ListenAddrs()[0]}
 			kafkaCfg.Topic = kafkaTopic
 			kafkaCfg.LastProducedOffsetPollInterval = 100 * time.Millisecond
 			kafkaCfg.LastProducedOffsetRetryTimeout = 100 * time.Millisecond
@@ -6252,7 +6272,7 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		ingestCfg.Enabled = cfg.ingestStorageEnabled
 		if cfg.ingestStorageEnabled {
 			ingestCfg.KafkaConfig.Topic = kafkaTopic
-			ingestCfg.KafkaConfig.Address = cfg.ingestStorageKafka.ListenAddrs()[0]
+			ingestCfg.KafkaConfig.Address = flagext.StringSliceCSV{cfg.ingestStorageKafka.ListenAddrs()[0]}
 			ingestCfg.KafkaConfig.LastProducedOffsetPollInterval = 100 * time.Millisecond
 			ingestCfg.Migration.DistributorSendToIngestersEnabled = cfg.ingestStorageMigrationEnabled
 		}
@@ -8357,7 +8377,7 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), userName)
 	// skip all the middlewares, just do the push
 	distrib := d[0]
-	err := distrib.push(ctx, NewParsedRequest(req))
+	err := distrib.push(ctx, NewParsedRequest(req, req.Size()))
 	require.NoError(t, err)
 
 	// Verify that each ingester only received series and metadata that it should receive.
@@ -8800,7 +8820,7 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 				}
 			}
 
-			err := wrappedPush(ctx, NewParsedRequest(pushReq))
+			err := wrappedPush(ctx, NewParsedRequest(pushReq, pushReq.Size()))
 			if tc.expectedPushError == nil {
 				require.NoError(t, err)
 			} else {
@@ -9557,7 +9577,7 @@ func Test_outerMaybeDelayMiddleware(t *testing.T) {
 				ctx = user.InjectOrgID(ctx, tc.userID)
 			}
 			wrappedPush := distributor.outerMaybeDelayMiddleware(p)
-			err := wrappedPush(ctx, NewParsedRequest(&mimirpb.WriteRequest{}))
+			err := wrappedPush(ctx, NewParsedRequest(&mimirpb.WriteRequest{}, 0))
 			require.NoError(t, err)
 
 			// Due to the 10% jitter we need to take into account that the number will not be deterministic in tests.

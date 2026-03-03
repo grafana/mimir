@@ -7,6 +7,7 @@ package storepb
 
 import (
 	"github.com/gogo/protobuf/types"
+	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 
@@ -53,6 +54,32 @@ func NewStreamingChunksEstimate(estimatedChunks uint64) *SeriesResponse {
 			},
 		},
 	}
+}
+
+func NewResponseHintsSeriesResponse(hints *SeriesResponseHints) *SeriesResponse {
+	return &SeriesResponse{
+		Result: &SeriesResponse_ResponseHints{
+			ResponseHints: hints,
+		},
+	}
+}
+
+func (m *SeriesResponseHints) AddQueriedBlock(id ulid.ULID) {
+	m.QueriedBlocks = append(m.QueriedBlocks, Block{
+		Id: id.String(),
+	})
+}
+
+func (m *LabelNamesResponseHints) AddQueriedBlock(id ulid.ULID) {
+	m.QueriedBlocks = append(m.QueriedBlocks, Block{
+		Id: id.String(),
+	})
+}
+
+func (m *LabelValuesResponseHints) AddQueriedBlock(id ulid.ULID) {
+	m.QueriedBlocks = append(m.QueriedBlocks, Block{
+		Id: id.String(),
+	})
 }
 
 type emptySeriesSet struct{}

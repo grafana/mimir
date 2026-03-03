@@ -108,7 +108,7 @@ func TestErrorCachingHandler_Do(t *testing.T) {
 				})
 				require.NoError(t, err)
 
-				require.NoError(t, c.Set(ctx, cacheHashKey(key), bytes, time.Minute))
+				require.NoError(t, c.Set(ctx, hashCacheKey(key), bytes, time.Minute))
 
 				res, err := runHandler(ctx, inner, c, req)
 
@@ -136,7 +136,7 @@ func TestErrorCachingHandler_Do(t *testing.T) {
 				})
 				require.NoError(t, err)
 
-				require.NoError(t, c.Set(ctx, cacheHashKey(key), bytes, time.Minute))
+				require.NoError(t, c.Set(ctx, hashCacheKey(key), bytes, time.Minute))
 
 				res, err := runHandler(ctx, inner, c, req)
 
@@ -158,7 +158,7 @@ func TestErrorCachingHandler_Do(t *testing.T) {
 
 				key := keyGen.QueryRequestError(ctx, "1234", req)
 				bytes := []byte{0x0, 0x0, 0x0, 0x0}
-				require.NoError(t, c.Set(ctx, cacheHashKey(key), bytes, time.Minute))
+				require.NoError(t, c.Set(ctx, hashCacheKey(key), bytes, time.Minute))
 
 				res, err := runHandler(ctx, inner, c, req)
 

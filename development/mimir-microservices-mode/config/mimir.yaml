@@ -107,7 +107,7 @@ ruler_storage:
     insecure:          true
 
 alertmanager:
-  fallback_config_file: './config/alertmanager.yaml'
+  fallback_config_file: '/etc/mimir/alertmanager.yaml'
   sharding_ring:
     replication_factor: 3
     heartbeat_period: 5s
@@ -194,4 +194,4 @@ limits:
   ha_max_clusters: 10
 
 runtime_config:
-  file: ./config/runtime.yaml
+  file: /etc/mimir/runtime.yaml

@@ -37,6 +37,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -240,6 +241,7 @@ func NewQuerierHandler(
 		engine,
 		querier.NewErrorTranslateSampleAndChunkQueryable(queryable), // Translate errors to errors expected by API.
 		nil, // No remote write support.
+		nil, // No remote write V2 support.
 		exemplarQueryable,
 		func(context.Context) v1.ScrapePoolsRetriever { return &querier.DummyTargetRetriever{} },
 		func(context.Context) v1.TargetRetriever { return &querier.DummyTargetRetriever{} },
@@ -276,6 +278,7 @@ func NewQuerierHandler(
 		nil,
 		nil,
 		v1.OpenAPIOptions{},
+		promqlext.NewPromQLParser(),
 	)
 
 	api.InstallCodec(protobufCodec{})

@@ -12,6 +12,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -226,4 +227,269 @@ func assertHistoryEmpty(t *testing.T, h MetricHistory) {
 	require.Zero(t, h.lastWrittenTimestamp)
 	require.Zero(t, h.queryMinTime)
 	require.Zero(t, h.queryMaxTime)
+}
+
+func TestWriteReadOOOTest_getInorderQueryTimeRanges(t *testing.T) {
+	cfg := WriteReadOOOTestConfig{}
+	flagext.DefaultValues(&cfg)
+	cfg.MaxQueryAge = 2 * 24 * time.Hour
+
+	// 10d and 10s (864002e9 nanos) after epoch
+	now := time.Unix(0, int64((10*24*time.Hour)+(2*time.Second)))
+
+	t.Run("returns error when min/max query time has not been set", func(t *testing.T) {
+		test := NewWriteReadOOOTest(cfg, newMockClient(), log.NewNopLogger(), nil)
+
+		ranges, instants, err := test.getInorderQueryTimeRanges(now)
+		require.Error(t, err)
+		require.Empty(t, ranges)
+		require.Empty(t, instants)
+	})
+
+	t.Run("returns error when query time range is older than max query age", func(t *testing.T) {
+		test := NewWriteReadOOOTest(cfg, newMockClient(), log.NewNopLogger(), nil)
+		test.inOrderSamples.queryMinTime = now.Add(-cfg.MaxQueryAge).Add(-time.Hour)
+		test.inOrderSamples.queryMaxTime = now.Add(-cfg.MaxQueryAge).Add(-time.Minute)
+
+		ranges, instants, err := test.getInorderQueryTimeRanges(now)
+		require.Error(t, err)
+		require.Empty(t, ranges)
+		require.Empty(t, instants)
+	})
+
+	t.Run("last 24h - range query", func(t *testing.T) {
+		test := NewWriteReadOOOTest(cfg, newMockClient(), log.NewNopLogger(), nil)
+		// assume we have data for the last 30 hours
+		test.inOrderSamples.queryMinTime = now.Add(-30 * time.Hour)
+		test.inOrderSamples.queryMaxTime = now.Add(-time.Minute)
+
+		ranges, _, err := test.getInorderQueryTimeRanges(now)
+		require.NoError(t, err)
+
+		require.Len(t, ranges, 1)
+		require.Equal(t, now.Add(-24*time.Hour), ranges[0][0])
+		require.Equal(t, now.Add(-time.Minute), ranges[0][1])
+	})
+
+	t.Run("clamps query range to max query age if configured", func(t *testing.T) {
+		shortMaxAgeCfg := cfg
+		shortMaxAgeCfg.MaxQueryAge = 12 * time.Hour
+		test := NewWriteReadOOOTest(shortMaxAgeCfg, newMockClient(), log.NewNopLogger(), nil)
+		test.inOrderSamples.queryMinTime = now.Add(-30 * time.Hour)
+		test.inOrderSamples.queryMaxTime = now.Add(-time.Minute)
+
+		ranges, _, err := test.getInorderQueryTimeRanges(now)
+		require.NoError(t, err)
+
+		require.Len(t, ranges, 1)
+		require.Equal(t, now.Add(-12*time.Hour), ranges[0][0])
+		require.Equal(t, now.Add(-time.Minute), ranges[0][1])
+	})
+
+	t.Run("most recent point - instant query", func(t *testing.T) {
+		test := NewWriteReadOOOTest(cfg, newMockClient(), log.NewNopLogger(), nil)
+		test.inOrderSamples.queryMinTime = now.Add(-30 * time.Minute)
+		test.inOrderSamples.queryMaxTime = now.Add(-time.Minute)
+
+		_, instants, err := test.getInorderQueryTimeRanges(now)
+		require.NoError(t, err)
+
+		require.GreaterOrEqual(t, len(instants), 1)
+		require.Equal(t, now.Add(-time.Minute), instants[0])
+	})
+
+	t.Run("24h ago - instant query", func(t *testing.T) {
+		test := NewWriteReadOOOTest(cfg, newMockClient(), log.NewNopLogger(), nil)
+		test.inOrderSamples.queryMinTime = now.Add(-30 * time.Hour)
+		test.inOrderSamples.queryMaxTime = now.Add(-time.Minute)
+
+		_, instants, err := test.getInorderQueryTimeRanges(now)
+		require.NoError(t, err)
+
+		require.Len(t, instants, 3)
+		require.Equal(t, now.Add(-24*time.Hour), instants[1])
+	})
+
+	t.Run("clamps 24h-ago instant to the oldest known point when data doesn't go back 24h", func(t *testing.T) {
+		test := NewWriteReadOOOTest(cfg, newMockClient(), log.NewNopLogger(), nil)
+		test.inOrderSamples.queryMinTime = now.Add(-30 * time.Minute)
+		test.inOrderSamples.queryMaxTime = now.Add(-time.Minute)
+
+		_, instants, err := test.getInorderQueryTimeRanges(now)
+		require.NoError(t, err)
+
+		require.Len(t, instants, 3)
+		require.Equal(t, now.Add(-time.Minute), instants[0])
+		require.Equal(t, now.Add(-30*time.Minute), instants[1])
+	})
+
+	t.Run("skips 24h-ago instant when queryMinTime equals queryMaxTime", func(t *testing.T) {
+		test := NewWriteReadOOOTest(cfg, newMockClient(), log.NewNopLogger(), nil)
+		test.inOrderSamples.queryMinTime = now.Add(-time.Minute)
+		test.inOrderSamples.queryMaxTime = now.Add(-time.Minute)
+
+		_, instants, err := test.getInorderQueryTimeRanges(now)
+		require.NoError(t, err)
+
+		require.Len(t, instants, 2)
+		require.Equal(t, now.Add(-time.Minute), instants[0])
+	})
+}
+
+func TestWriteReadOOOTest_getOutOfOrderQueryTimeRanges(t *testing.T) {
+	cfg := WriteReadOOOTestConfig{}
+	flagext.DefaultValues(&cfg)
+	cfg.MaxQueryAge = 2 * 24 * time.Hour
+
+	now := time.Unix(int64((10*24*time.Hour)+(2*time.Second)), 0)
+
+	t.Run("returns error when min/max query time has not been set", func(t *testing.T) {
+		test := NewWriteReadOOOTest(cfg, newMockClient(), log.NewNopLogger(), nil)
+
+		ranges, instants, err := test.getOutOfOrderQueryTimeRanges(now)
+		require.Error(t, err)
+		require.Empty(t, ranges)
+		require.Empty(t, instants)
+	})
+
+	t.Run("returns error when query time range is older than max query age", func(t *testing.T) {
+		test := NewWriteReadOOOTest(cfg, newMockClient(), log.NewNopLogger(), nil)
+		test.outOfOrderSamples.queryMinTime = now.Add(-cfg.MaxQueryAge).Add(-time.Hour)
+		test.outOfOrderSamples.queryMaxTime = now.Add(-cfg.MaxQueryAge).Add(-time.Minute)
+
+		ranges, instants, err := test.getOutOfOrderQueryTimeRanges(now)
+		require.Error(t, err)
+		require.Empty(t, ranges)
+		require.Empty(t, instants)
+	})
+
+	t.Run("ooo border to 24h before that - range query", func(t *testing.T) {
+		test := NewWriteReadOOOTest(cfg, newMockClient(), log.NewNopLogger(), nil)
+		test.outOfOrderSamples.queryMinTime = now.Add(-30 * time.Hour)
+		test.outOfOrderSamples.queryMaxTime = now.Add(-30 * time.Minute)
+
+		ranges, _, err := test.getOutOfOrderQueryTimeRanges(now)
+		require.NoError(t, err)
+
+		require.Len(t, ranges, 1)
+		require.Equal(t, now.Add(-25*time.Hour), ranges[0][0]) // Clamped to border - 24h.
+		require.Equal(t, now.Add(-1*time.Hour), ranges[0][1])
+	})
+
+	t.Run("clamps 24h-border range query when data doesn't go back 24h", func(t *testing.T) {
+		test := NewWriteReadOOOTest(cfg, newMockClient(), log.NewNopLogger(), nil)
+		test.outOfOrderSamples.queryMinTime = now.Add(-3 * time.Hour)
+		test.outOfOrderSamples.queryMaxTime = now.Add(-30 * time.Minute)
+
+		ranges, _, err := test.getOutOfOrderQueryTimeRanges(now)
+		require.NoError(t, err)
+
+		require.Len(t, ranges, 1)
+		require.Equal(t, now.Add(-3*time.Hour), ranges[0][0])
+		require.Equal(t, now.Add(-1*time.Hour), ranges[0][1])
+	})
+
+	t.Run("data doesn't reach back to ooo border - no ooo query issued", func(t *testing.T) {
+		test := NewWriteReadOOOTest(cfg, newMockClient(), log.NewNopLogger(), nil)
+		test.outOfOrderSamples.queryMinTime = now.Add(-30 * time.Minute)
+		test.outOfOrderSamples.queryMaxTime = now.Add(-10 * time.Minute)
+
+		ranges, _, err := test.getOutOfOrderQueryTimeRanges(now)
+		require.NoError(t, err)
+
+		require.Empty(t, ranges)
+	})
+
+	t.Run("random instant query in dense region", func(t *testing.T) {
+		test := NewWriteReadOOOTest(cfg, newMockClient(), log.NewNopLogger(), nil)
+		test.outOfOrderSamples.queryMinTime = now.Add(-3 * time.Hour)
+		test.outOfOrderSamples.queryMaxTime = now.Add(-30 * time.Minute)
+
+		_, instants, err := test.getOutOfOrderQueryTimeRanges(now)
+		require.NoError(t, err)
+
+		require.GreaterOrEqual(t, len(instants), 1)
+		denseInstant := instants[0]
+		require.False(t, denseInstant.Before(now.Add(-3*time.Hour)))
+		require.False(t, denseInstant.After(now.Add(-1*time.Hour)))
+	})
+
+	t.Run("ooo lag border - instant query", func(t *testing.T) {
+		test := NewWriteReadOOOTest(cfg, newMockClient(), log.NewNopLogger(), nil)
+		test.outOfOrderSamples.queryMinTime = now.Add(-3 * time.Hour)
+		test.outOfOrderSamples.queryMaxTime = now.Add(-30 * time.Minute)
+
+		_, instants, err := test.getOutOfOrderQueryTimeRanges(now)
+		require.NoError(t, err)
+
+		require.Len(t, instants, 2)
+		oooLagBorder := now.Add(-1 * time.Hour)
+		expectedBorderInstant := oooLagBorder.Truncate(outOfOrderWriteInterval)
+		require.Equal(t, expectedBorderInstant, instants[1])
+	})
+
+	t.Run("data doesn't reach back to ooo border - no instant query issued", func(t *testing.T) {
+		test := NewWriteReadOOOTest(cfg, newMockClient(), log.NewNopLogger(), nil)
+		test.outOfOrderSamples.queryMinTime = now.Add(-30 * time.Minute)
+		test.outOfOrderSamples.queryMaxTime = now.Add(-10 * time.Minute)
+
+		_, instants, err := test.getOutOfOrderQueryTimeRanges(now)
+		require.NoError(t, err)
+
+		require.Empty(t, instants)
+	})
+}
+
+func TestWriteReadOOOTest_Run(t *testing.T) {
+	logger := log.NewNopLogger()
+
+	t.Run("writes initial samples and issues basic queries when no history is present", func(t *testing.T) {
+		client := newMockClient()
+		client.On("WriteSeries", mock.Anything, mock.Anything, mock.Anything).Return(200, nil)
+		client.On("QueryRange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
+		client.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{}, nil)
+
+		reg := prometheus.NewPedanticRegistry()
+		test := NewWriteReadOOOTest(cfgOOO, client, logger, reg)
+
+		now := time.Unix(1000*60, 0)
+		_ = test.Run(context.Background(), now)
+
+		expectedInOrderSeries := generateSineWaveSeries(oooFloatMetricName, now, cfgOOO.NumSeries, prompb.Label{Name: "protocol", Value: "prometheus"})
+		client.AssertCalled(t, "WriteSeries", mock.Anything, expectedInOrderSeries, mock.Anything)
+		require.Equal(t, now, test.inOrderSamples.lastWrittenTimestamp)
+
+		// After one write, queryMinTime == queryMaxTime == now, so range is [now, now] and instants are at now.
+		expectedQuery := querySumFloat(oooFloatMetricName)
+		client.AssertCalled(t, "QueryRange", mock.Anything, expectedQuery, now, now, mock.Anything, mock.Anything)
+		client.AssertCalled(t, "Query", mock.Anything, expectedQuery, now, mock.Anything)
+	})
+
+	t.Run("partial history exists", func(t *testing.T) {
+		client := newMockClient()
+		client.On("WriteSeries", mock.Anything, mock.Anything, mock.Anything).Return(200, nil)
+		client.On("QueryRange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
+		client.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{}, nil)
+
+		reg := prometheus.NewPedanticRegistry()
+		test := NewWriteReadOOOTest(cfgOOO, client, logger, reg)
+
+		now := time.Unix(1000*60+40, 0)
+		test.inOrderSamples.lastWrittenTimestamp = alignTimestampToInterval(now, inorderWriteInterval)
+		test.inOrderSamples.queryMinTime = now.Add(-30 * time.Minute)
+		test.inOrderSamples.queryMaxTime = test.inOrderSamples.lastWrittenTimestamp
+
+		_ = test.Run(context.Background(), now)
+
+		oooNow := now.Add(-cfgOOO.MaxOOOLag)
+		expectedOOOTimestamp := alignTimestampToInterval(oooNow, outOfOrderWriteInterval)
+		expectedOOOSeries := generateSineWaveSeries(oooFloatMetricName, expectedOOOTimestamp, cfgOOO.NumSeries, prompb.Label{Name: "protocol", Value: "prometheus"})
+		client.AssertCalled(t, "WriteSeries", mock.Anything, expectedOOOSeries, mock.Anything)
+
+		expectedQuery := querySumFloat(oooFloatMetricName)
+		inOrderQueryMax := alignTimestampToInterval(now, inorderWriteInterval)
+		client.AssertCalled(t, "QueryRange", mock.Anything, expectedQuery, now.Add(-30*time.Minute), inOrderQueryMax, mock.Anything, mock.Anything)
+		client.AssertCalled(t, "Query", mock.Anything, expectedQuery, inOrderQueryMax, mock.Anything)
+		client.AssertCalled(t, "Query", mock.Anything, expectedQuery, now.Add(-30*time.Minute), mock.Anything)
+	})
 }

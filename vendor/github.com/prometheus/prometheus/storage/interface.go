@@ -530,6 +530,7 @@ type ChunkSeriesSet interface {
 type ChunkSeries interface {
 	Labels
 	ChunkIterable
+	ChunkIterableFactory
 
 	// ChunkCount returns the number of chunks available from this ChunkSeries.
 	//
@@ -556,6 +557,14 @@ type ChunkIterable interface {
 	// Iterator returns an iterator that iterates over potentially overlapping
 	// chunks of the series, sorted by min time.
 	Iterator(chunks.Iterator) chunks.Iterator
+}
+
+// ChunkIterableFactory provides the ability to create a ChunkIterable
+// retaining the minimum amount of data required to create the chunk iterator.
+type ChunkIterableFactory interface {
+	// IteratorFactory returns a ChunkIterable that can iterate over chunks,
+	// retaining the minimum amount of data required to create the chunk iterator.
+	IteratorFactory() ChunkIterable
 }
 
 // LabelValues is an iterator over label values in sorted order.

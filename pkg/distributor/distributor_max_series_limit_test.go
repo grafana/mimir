@@ -270,7 +270,9 @@ func BenchmarkDistributor_prePushMaxSeriesLimitMiddleware(b *testing.B) {
 			b.ResetTimer()
 
 			for n := 0; n < b.N; n++ {
-				err := fn(ctx, newRequest(func() (req *mimirpb.WriteRequest, cleanup func(), err error) { return reqs[n], func() {}, nil }))
+				err := fn(ctx, newRequest(func() (req *mimirpb.WriteRequest, cleanup func(), uncompressedBodySize int, err error) {
+					return reqs[n], func() {}, 0, nil
+				}))
 				if (err != nil) != (testData.rejectedSeriesPercentage > 0) {
 					if testData.rejectedSeriesPercentage > 0 {
 						require.Error(b, err)
@@ -291,6 +293,11 @@ type usageTrackerClientMock struct {
 func (m *usageTrackerClientMock) TrackSeries(ctx context.Context, userID string, series []uint64) ([]uint64, error) {
 	args := m.Called(ctx, userID, series)
 	return args.Get(0).([]uint64), args.Error(1)
+}
+
+func (m *usageTrackerClientMock) TrackSeriesAsync(ctx context.Context, userID string, series []uint64) error {
+	args := m.Called(ctx, userID, series)
+	return args.Error(0)
 }
 
 func (m *usageTrackerClientMock) CanTrackAsync(userID string) bool {
@@ -317,6 +324,10 @@ func (m *usageTrackerClientRejectionMock) TrackSeries(_ context.Context, _ strin
 	copy(rejected, series[len(series)-len(rejected):])
 
 	return rejected, nil
+}
+
+func (m *usageTrackerClientRejectionMock) TrackSeriesAsync(ctx context.Context, userID string, series []uint64) error {
+	return nil
 }
 
 func (m *usageTrackerClientRejectionMock) CanTrackAsync(_ string) bool {

@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
@@ -32,6 +33,8 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), tenantID)
 	ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
+	metrics := limiter.NewSeriesDeduplicatorMetrics(prometheus.NewPedanticRegistry())
+	ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx, metrics)
 	selectAllSeriesMatcher := mustEqualMatcher("bar", "baz")
 
 	tests := map[string]struct {
@@ -605,6 +608,8 @@ func TestDistributor_QueryStream_InactivePartitionsLookback(t *testing.T) {
 
 				ctx := user.InjectOrgID(context.Background(), tenantID)
 				ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
+				metrics := limiter.NewSeriesDeduplicatorMetrics(prometheus.NewPedanticRegistry())
+				ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx, metrics)
 
 				limits := prepareDefaultLimits()
 				limits.IngestionPartitionsTenantShardSize = shardingCfg.tenantShardSize

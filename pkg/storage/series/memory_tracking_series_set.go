@@ -9,7 +9,17 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-// MemoryTrackingSeriesSet is storage.SeriesSet that tracks the wrapped SeriesSet memory consumption.
+// MemoryTrackingSeriesSet is a storage.SeriesSet wrapper that decreases memory
+// consumption as series are consumed from the wrapped SeriesSet.
+//
+// The memory for each series' labels must be increased beforehand, typically via
+// SeriesLabelsDeduplicator during series selection from queriers (ingesters and store-gateways) or
+// just by increase manually using MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels.
+//
+// The wrapped SeriesSet should contain unique series that have already been deduplicated
+// (e.g., via MergeSeriesSet). MemoryTrackingSeriesSet decreases memory exactly once per
+// unique series as it is consumed via Next()/At() calls. If the wrapped SeriesSet contains
+// duplicate series, memory tracking will be inaccurate.
 type MemoryTrackingSeriesSet struct {
 	inner                    storage.SeriesSet
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker

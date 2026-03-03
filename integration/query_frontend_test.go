@@ -252,7 +252,7 @@ func TestQueryFrontendWithIngestStorageViaFlagsAndQueryStatsEnabled(t *testing.T
 				flags = mergeFlags(
 					BlocksStorageFlags(),
 					BlocksStorageS3Flags(),
-					IngestStorageFlags(),
+					IngestStorageFlags(e2edb.KafkaAuthNone),
 				)
 
 				kafka := e2edb.NewKafka()

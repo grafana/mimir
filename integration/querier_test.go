@@ -518,12 +518,20 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 }
 
 func TestMimirPromQLEngine(t *testing.T) {
+	testPromQLEngine(t, "mimir")
+}
+
+func TestPrometheusPromQLEngine(t *testing.T) {
+	testPromQLEngine(t, "prometheus")
+}
+
+func testPromQLEngine(t *testing.T, engineType string) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
 	defer s.Close()
 
 	flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
-		"-querier.query-engine": "mimir",
+		"-querier.query-engine": engineType,
 	})
 
 	consul := e2edb.NewConsul()
@@ -553,7 +561,7 @@ func TestMimirPromQLEngine(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 
-	// Query back the same series using the streaming PromQL engine.
+	// Query back the same series.
 	c, err := e2emimir.NewClient("", querier.HTTPEndpoint(), "", "", "user-1")
 	require.NoError(t, err)
 

@@ -26,7 +26,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -38,6 +37,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 const resultsCacheTTL = 24 * time.Hour
@@ -850,7 +850,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 			require.Equal(t, testData.downstreamResponse, prometheusResponse)
 
 			// Check if the response was cached.
-			cacheKey := cacheHashKey(keyGenerator.QueryRequest(ctx, userID, req))
+			cacheKey := hashCacheKey(keyGenerator.QueryRequest(ctx, userID, req))
 			found := cacheBackend.GetMulti(ctx, []string{cacheKey})
 
 			if len(testData.expectedCachedResponses) == 0 {
@@ -1408,7 +1408,7 @@ func TestSplitAndCacheMiddleware_StoreAndFetchCacheExtents(t *testing.T) {
 		// Simulate an hash collision on "key-1".
 		buf, err := proto.Marshal(&CachedResponse{Key: "another", Extents: []Extent{mkExtent(10, 20)}})
 		require.NoError(t, err)
-		cacheBackend.SetMultiAsync(map[string][]byte{cacheHashKey("key-1"): buf}, 0)
+		cacheBackend.SetMultiAsync(map[string][]byte{hashCacheKey("key-1"): buf}, 0)
 
 		mw.storeCacheExtents("key-3", []string{"tenant"}, []Extent{mkExtent(20, 30), mkExtent(40, 50)})
 
@@ -1800,6 +1800,7 @@ func TestNextIntervalBoundary(t *testing.T) {
 }
 
 func TestSplitQueryByInterval(t *testing.T) {
+	parser := promqlext.NewPromQLParser()
 	queryFoo := "foo"
 	queryFooExpr, _ := parser.ParseExpr(queryFoo)
 	queryFooAtStart := "foo @ start()"
@@ -2028,6 +2029,8 @@ func Test_evaluateAtModifier(t *testing.T) {
 	} {
 		t.Run(tt.in, func(t *testing.T) {
 			t.Parallel()
+
+			parser := promqlext.NewPromQLParser()
 			expr, err := parser.ParseExpr(tt.in)
 			require.NoError(t, err)
 			expectedExpr, err := parser.ParseExpr(tt.expected)
@@ -2087,7 +2090,7 @@ func TestSplitAndCacheMiddlewareLowerTTL(t *testing.T) {
 		})
 
 		// Check.
-		key = cacheHashKey(key)
+		key = hashCacheKey(key)
 		ci := mcache.GetItems()[key]
 		actualTTL := time.Until(ci.ExpiresAt)
 		// We use a tolerance of 50ms to avoid flaky tests.

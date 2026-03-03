@@ -181,8 +181,8 @@ func generateCardinalityEstimationCacheKey(userID string, r MetricsQueryRequest,
 
 	// Apply a hash function to user controlled input to make sure we don't exceed
 	// the max number of bytes for the cache key (250 bytes in Memcached).
-	queryHash := cacheHashKey(r.GetQuery())
-	userIDHash := cacheHashKey(userID)
+	queryHash := hashCacheKey(r.GetQuery())
+	userIDHash := hashCacheKey(userID)
 
 	// Prefix key with `QS` (short for "query statistics").
 	return fmt.Sprintf("QS:%s:%s:%d:%d", userIDHash, queryHash, startBucket, rangeBucket)

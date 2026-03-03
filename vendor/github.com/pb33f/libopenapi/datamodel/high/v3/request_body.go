@@ -4,12 +4,24 @@
 package v3
 
 import (
+	"context"
+
 	"github.com/pb33f/libopenapi/datamodel/high"
+	lowmodel "github.com/pb33f/libopenapi/datamodel/low"
 	low "github.com/pb33f/libopenapi/datamodel/low/v3"
+	"github.com/pb33f/libopenapi/index"
 	"github.com/pb33f/libopenapi/orderedmap"
 	"github.com/pb33f/libopenapi/utils"
 	"go.yaml.in/yaml/v4"
 )
+
+// buildLowRequestBody builds a low-level RequestBody from a resolved YAML node.
+func buildLowRequestBody(node *yaml.Node, idx *index.SpecIndex) (*low.RequestBody, error) {
+	var rb low.RequestBody
+	lowmodel.BuildModel(node, &rb)
+	rb.Build(context.Background(), nil, node, idx)
+	return &rb, nil
+}
 
 // RequestBody represents a high-level OpenAPI 3+ RequestBody object, backed by a low-level one.
 //   - https://spec.openapis.org/oas/v3.1.0#request-body-object
@@ -82,9 +94,17 @@ func (r *RequestBody) MarshalYAMLInline() (interface{}, error) {
 	if r.Reference != "" {
 		return utils.CreateRefNode(r.Reference), nil
 	}
-	nb := high.NewNodeBuilder(r, r.low)
-	nb.Resolve = true
-	return nb.Render(), nil
+
+	// resolve external reference if present
+	if r.low != nil {
+		// buildLowRequestBody never returns an error, so we can ignore it
+		rendered, _ := high.RenderExternalRef(r.low, buildLowRequestBody, NewRequestBody)
+		if rendered != nil {
+			return rendered, nil
+		}
+	}
+
+	return high.RenderInline(r, r.low)
 }
 
 // MarshalYAMLInlineWithContext will create a ready to render YAML representation of the RequestBody object,
@@ -95,10 +115,17 @@ func (r *RequestBody) MarshalYAMLInlineWithContext(ctx any) (interface{}, error)
 	if r.Reference != "" {
 		return utils.CreateRefNode(r.Reference), nil
 	}
-	nb := high.NewNodeBuilder(r, r.low)
-	nb.Resolve = true
-	nb.RenderContext = ctx
-	return nb.Render(), nil
+
+	// resolve external reference if present
+	if r.low != nil {
+		// buildLowRequestBody never returns an error, so we can ignore it
+		rendered, _ := high.RenderExternalRefWithContext(r.low, buildLowRequestBody, NewRequestBody, ctx)
+		if rendered != nil {
+			return rendered, nil
+		}
+	}
+
+	return high.RenderInlineWithContext(r, r.low, ctx)
 }
 
 // CreateRequestBodyRef creates a RequestBody that renders as a $ref to another request body definition.

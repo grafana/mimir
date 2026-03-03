@@ -1273,7 +1273,7 @@ func TestAlertmanagerTestReceivers(t *testing.T) {
 
 	// Endpoint: POST /api/v1/grafana/receivers/test
 	trConfig := alertingNotify.TestReceiversConfigBodyParams{
-		Alert: &alertingNotify.TestReceiversConfigAlertParams{
+		Alert: &alertingmodels.TestReceiversConfigAlertParams{
 			Annotations: model.LabelSet{"annotation": "test annotation"},
 			Labels:      model.LabelSet{"label": "test label"},
 		},

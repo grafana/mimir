@@ -1,3 +1,4 @@
+// Package e2ecache provides pre-built cache service definitions for e2e tests.
 package e2ecache
 
 import (

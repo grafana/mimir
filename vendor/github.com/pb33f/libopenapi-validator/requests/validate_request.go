@@ -47,6 +47,7 @@ func ValidateRequestSchema(input *ValidateRequestSchemaInput) (bool, []*errors.V
 	var renderedSchema, jsonSchema []byte
 	var referenceSchema string
 	var compiledSchema *jsonschema.Schema
+	var cachedNode *yaml.Node
 
 	if input.Schema == nil {
 		return false, []*errors.ValidationError{{
@@ -71,6 +72,7 @@ func ValidateRequestSchema(input *ValidateRequestSchemaInput) (bool, []*errors.V
 			referenceSchema = cached.ReferenceSchema
 			jsonSchema = cached.RenderedJSON
 			compiledSchema = cached.CompiledSchema
+			cachedNode = cached.RenderedNode
 		}
 	}
 
@@ -229,9 +231,12 @@ func ValidateRequestSchema(input *ValidateRequestSchemaInput) (bool, []*errors.V
 		schFlatErrs := jk.BasicOutput().Errors
 		var schemaValidationErrors []*errors.SchemaValidationFailure
 
-		// re-encode the schema.
-		var renderedNode yaml.Node
-		_ = yaml.Unmarshal(renderedSchema, &renderedNode)
+		// Use cached node if available, otherwise parse
+		renderedNode := cachedNode
+		if renderedNode == nil {
+			renderedNode = new(yaml.Node)
+			_ = yaml.Unmarshal(renderedSchema, renderedNode)
+		}
 		for q := range schFlatErrs {
 			er := schFlatErrs[q]
 
@@ -342,6 +347,8 @@ func ValidateRequestSchema(input *ValidateRequestSchemaInput) (bool, []*errors.V
 						undeclared.Direction.String(),
 						request.URL.Path,
 						request.Method,
+						undeclared.SpecLine,
+						undeclared.SpecCol,
 					))
 			}
 		}

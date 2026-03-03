@@ -5,7 +5,7 @@ package v3
 
 import (
 	"context"
-	"crypto/sha256"
+	"hash/maphash"
 
 	"github.com/pb33f/libopenapi/datamodel/low"
 	"github.com/pb33f/libopenapi/index"
@@ -148,36 +148,34 @@ func (r *Response) Build(ctx context.Context, keyNode, root *yaml.Node, idx *ind
 	return nil
 }
 
-// Hash will return a consistent SHA256 Hash of the Response object
-func (r *Response) Hash() [32]byte {
-	// Use string builder pool
-	sb := low.GetStringBuilder()
-	defer low.PutStringBuilder(sb)
+// Hash will return a consistent Hash of the Response object
+func (r *Response) Hash() uint64 {
+	return low.WithHasher(func(h *maphash.Hash) uint64 {
+		if r.Summary.Value != "" {
+			h.WriteString(r.Summary.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if r.Description.Value != "" {
+			h.WriteString(r.Description.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
 
-	if r.Summary.Value != "" {
-		sb.WriteString(r.Summary.Value)
-		sb.WriteByte('|')
-	}
-	if r.Description.Value != "" {
-		sb.WriteString(r.Description.Value)
-		sb.WriteByte('|')
-	}
-
-	for _, hash := range low.AppendMapHashes(nil, r.Headers.Value) {
-		sb.WriteString(hash)
-		sb.WriteByte('|')
-	}
-	for _, hash := range low.AppendMapHashes(nil, r.Content.Value) {
-		sb.WriteString(hash)
-		sb.WriteByte('|')
-	}
-	for _, hash := range low.AppendMapHashes(nil, r.Links.Value) {
-		sb.WriteString(hash)
-		sb.WriteByte('|')
-	}
-	for _, ext := range low.HashExtensions(r.Extensions) {
-		sb.WriteString(ext)
-		sb.WriteByte('|')
-	}
-	return sha256.Sum256([]byte(sb.String()))
+		for _, hash := range low.AppendMapHashes(nil, r.Headers.Value) {
+			h.WriteString(hash)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		for _, hash := range low.AppendMapHashes(nil, r.Content.Value) {
+			h.WriteString(hash)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		for _, hash := range low.AppendMapHashes(nil, r.Links.Value) {
+			h.WriteString(hash)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		for _, ext := range low.HashExtensions(r.Extensions) {
+			h.WriteString(ext)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		return h.Sum64()
+	})
 }

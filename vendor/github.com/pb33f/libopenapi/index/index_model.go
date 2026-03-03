@@ -21,27 +21,29 @@ import (
 // Reference is a wrapper around *yaml.Node results to make things more manageable when performing
 // algorithms on data models. the *yaml.Node def is just a bit too low level for tracking state.
 type Reference struct {
-	FullDefinition        string              `json:"fullDefinition,omitempty"`
-	Definition            string              `json:"definition,omitempty"`
-	Name                  string              `json:"name,omitempty"`
-	Node                  *yaml.Node          `json:"-"`
-	KeyNode               *yaml.Node          `json:"-"`
-	ParentNode            *yaml.Node          `json:"-"`
-	ParentNodeSchemaType  string              `json:"-"` // used to determine if the parent node is an array or not.
-	ParentNodeTypes       []string            `json:"-"` // used to capture deep journeys, if any item is an array, we need to know.
-	Resolved              bool                `json:"-"`
-	Circular              bool                `json:"-"`
-	Seen                  bool                `json:"-"`
-	IsRemote              bool                `json:"isRemote,omitempty"`
-	IsExtensionRef        bool                `json:"isExtensionRef,omitempty"` // true if ref is under an x-* extension path
-	Index                 *SpecIndex          `json:"-"`                        // index that contains this reference.
-	RemoteLocation        string              `json:"remoteLocation,omitempty"`
-	Path                  string              `json:"path,omitempty"`               // this won't always be available.
-	RequiredRefProperties map[string][]string `json:"requiredProperties,omitempty"` // definition names (eg, #/definitions/One) to a list of required properties on this definition which reference that definition
-	HasSiblingProperties  bool                `json:"-"`                            // indicates if ref has sibling properties
-	SiblingProperties     map[string]*yaml.Node `json:"-"`                          // stores sibling property nodes
-	SiblingKeys           []*yaml.Node        `json:"-"`                            // stores sibling key nodes
-	In                    string              `json:"-"`                            // parameter location (path, query, header, cookie) - cached for performance
+	FullDefinition        string                `json:"fullDefinition,omitempty"`
+	Definition            string                `json:"definition,omitempty"`
+	RawRef                string                `json:"-"`
+	SchemaIdBase          string                `json:"-"`
+	Name                  string                `json:"name,omitempty"`
+	Node                  *yaml.Node            `json:"-"`
+	KeyNode               *yaml.Node            `json:"-"`
+	ParentNode            *yaml.Node            `json:"-"`
+	ParentNodeSchemaType  string                `json:"-"` // used to determine if the parent node is an array or not.
+	ParentNodeTypes       []string              `json:"-"` // used to capture deep journeys, if any item is an array, we need to know.
+	Resolved              bool                  `json:"-"`
+	Circular              bool                  `json:"-"`
+	Seen                  bool                  `json:"-"`
+	IsRemote              bool                  `json:"isRemote,omitempty"`
+	IsExtensionRef        bool                  `json:"isExtensionRef,omitempty"` // true if ref is under an x-* extension path
+	Index                 *SpecIndex            `json:"-"`                        // index that contains this reference.
+	RemoteLocation        string                `json:"remoteLocation,omitempty"`
+	Path                  string                `json:"path,omitempty"`               // this won't always be available.
+	RequiredRefProperties map[string][]string   `json:"requiredProperties,omitempty"` // definition names (eg, #/definitions/One) to a list of required properties on this definition which reference that definition
+	HasSiblingProperties  bool                  `json:"-"`                            // indicates if ref has sibling properties
+	SiblingProperties     map[string]*yaml.Node `json:"-"`                            // stores sibling property nodes
+	SiblingKeys           []*yaml.Node          `json:"-"`                            // stores sibling key nodes
+	In                    string                `json:"-"`                            // parameter location (path, query, header, cookie) - cached for performance
 }
 
 // ReferenceMapped is a helper struct for mapped references put into sequence (we lose the key)
@@ -175,6 +177,10 @@ type SpecIndexConfig struct {
 	// the file is a JSON Schema. To allow JSON Schema files to be included set this to true.
 	SkipDocumentCheck bool
 
+	// SkipExternalRefResolution will skip resolving external $ref references (those not starting with #).
+	// When enabled, external references will be left as-is during model building.
+	SkipExternalRefResolution bool
+
 	// ExtractRefsSequentially will extract all references sequentially, which means the index will look up references
 	// as it finds them, vs looking up everything asynchronously.
 	// This is a more thorough way of building the index, but it's slower. It's required building a document
@@ -210,6 +216,10 @@ type SpecIndexConfig struct {
 	// MergeReferencedProperties enables merging of properties from referenced schemas with local properties.
 	// When enabled, properties from referenced schemas will be merged with local sibling properties.
 	MergeReferencedProperties bool
+
+	// ResolveNestedRefsWithDocumentContext uses the referenced document's path/index as the base for any nested refs.
+	// This is disabled by default to preserve historical resolver behavior.
+	ResolveNestedRefsWithDocumentContext bool
 
 	// PropertyMergeStrategy defines how to handle conflicts when merging properties.
 	PropertyMergeStrategy datamodel.PropertyMergeStrategy
@@ -264,6 +274,7 @@ func (s *SpecIndexConfig) ToDocumentConfiguration() *datamodel.DocumentConfigura
 		TransformSiblingRefs:                  s.TransformSiblingRefs,
 		MergeReferencedProperties:             s.MergeReferencedProperties,
 		PropertyMergeStrategy:                 strategy,
+		SkipExternalRefResolution:             s.SkipExternalRefResolution,
 		Logger:                                s.Logger,
 	}
 }

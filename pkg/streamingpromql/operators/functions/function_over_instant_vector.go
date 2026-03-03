@@ -149,6 +149,10 @@ func (m *FunctionOverInstantVector) Finalize(ctx context.Context) error {
 func (m *FunctionOverInstantVector) Close() {
 	m.Inner.Close()
 
+	for _, sa := range m.ScalarArgs {
+		sa.Close()
+	}
+
 	for _, sd := range m.scalarArgsData {
 		types.FPointSlicePool.Put(&sd.Samples, m.MemoryConsumptionTracker)
 	}

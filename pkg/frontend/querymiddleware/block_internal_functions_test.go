@@ -11,11 +11,11 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 func TestBlockInternalFunctionsMiddleware(t *testing.T) {
@@ -51,7 +51,7 @@ func TestBlockInternalFunctionsMiddleware(t *testing.T) {
 }
 
 func createTestRequest(t *testing.T, qs string) *PrometheusInstantQueryRequest {
-	expr, err := parser.ParseExpr(qs)
+	expr, err := promqlext.NewPromQLParser().ParseExpr(qs)
 	require.NoError(t, err)
 
 	return NewPrometheusInstantQueryRequest("/", nil, timestamp.FromTime(time.Now()), 5*time.Minute, expr, Options{}, nil, "")

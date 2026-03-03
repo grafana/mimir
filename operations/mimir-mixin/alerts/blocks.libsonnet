@@ -265,8 +265,11 @@
             severity: 'warning',
           },
           annotations: {
-            message: '%(product)s store-gateway in %(alert_aggregation_variables)s is querying level 1 blocks, indicating the compactor may not be keeping up with compaction.' % $._config,
-          },
+                         message: '%(product)s store-gateway in %(alert_aggregation_variables)s is querying level 1 blocks, indicating the compactor may not be keeping up with compaction.' % $._config,
+                       }
+                       // Alternative dashboards for investigation:
+                       //   - Mimir / Queries (mimir-queries.json)
+                       + $.dashboardURLAnnotation('mimir-compactor.json'),
         },
       ],
     },

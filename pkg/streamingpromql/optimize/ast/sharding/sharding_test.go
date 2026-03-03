@@ -38,7 +38,7 @@ func createEngine(t *testing.T, shardCount int) (promql.QueryEngine, *prometheus
 		planner.RegisterASTOptimizationPass(NewOptimizationPass(limits, 0, reg, log.NewNopLogger()))
 	}
 
-	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0, false), stats.NewQueryMetrics(reg), planner)
+	engine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(reg), planner)
 	require.NoError(t, err)
 
 	return engine, reg

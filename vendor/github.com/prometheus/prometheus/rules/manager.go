@@ -161,6 +161,9 @@ type ManagerOptions struct {
 
 	// FeatureRegistry is used to register rule manager features.
 	FeatureRegistry features.Collector
+
+	// Parser is the PromQL parser used for parsing rule expressions.
+	Parser parser.Parser
 }
 
 // NewManager returns an implementation of Manager, ready to be started
@@ -181,8 +184,12 @@ func NewManager(o *ManagerOptions) *Manager {
 		o.Metrics = NewGroupMetrics(o.Registerer)
 	}
 
+	if o.Parser == nil {
+		o.Parser = parser.NewParser(parser.Options{})
+	}
+
 	if o.GroupLoader == nil {
-		o.GroupLoader = FileLoader{}
+		o.GroupLoader = FileLoader{parser: o.Parser}
 	}
 
 	if o.RuleConcurrencyController == nil {
@@ -353,14 +360,18 @@ type GroupLoader interface {
 }
 
 // FileLoader is the default GroupLoader implementation. It defers to rulefmt.ParseFile
-// and parser.ParseExpr.
-type FileLoader struct{}
-
-func (FileLoader) Load(identifier string, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*rulefmt.RuleGroups, []error) {
-	return rulefmt.ParseFile(identifier, ignoreUnknownFields, nameValidationScheme)
+// for loading and uses the configured Parser for expression parsing.
+type FileLoader struct {
+	parser parser.Parser
 }
 
-func (FileLoader) Parse(query string) (parser.Expr, error) { return parser.ParseExpr(query) }
+func (fl FileLoader) Load(identifier string, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*rulefmt.RuleGroups, []error) {
+	return rulefmt.ParseFile(identifier, ignoreUnknownFields, nameValidationScheme, fl.parser)
+}
+
+func (fl FileLoader) Parse(query string) (parser.Expr, error) {
+	return fl.parser.ParseExpr(query)
+}
 
 // LoadGroups reads groups from a list of files.
 func (m *Manager) LoadGroups(
@@ -653,7 +664,7 @@ func FromMaps(maps ...map[string]string) labels.Labels {
 }
 
 // ParseFiles parses the rule files corresponding to glob patterns.
-func ParseFiles(patterns []string, nameValidationScheme model.ValidationScheme) error {
+func ParseFiles(patterns []string, nameValidationScheme model.ValidationScheme, p parser.Parser) error {
 	files := map[string]string{}
 	for _, pat := range patterns {
 		fns, err := filepath.Glob(pat)
@@ -673,7 +684,7 @@ func ParseFiles(patterns []string, nameValidationScheme model.ValidationScheme) 
 		}
 	}
 	for fn, pat := range files {
-		_, errs := rulefmt.ParseFile(fn, false, nameValidationScheme)
+		_, errs := rulefmt.ParseFile(fn, false, nameValidationScheme, p)
 		if len(errs) > 0 {
 			return fmt.Errorf("parse rules from file %q (pattern: %q): %w", fn, pat, errors.Join(errs...))
 		}

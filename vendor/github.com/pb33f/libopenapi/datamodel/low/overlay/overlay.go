@@ -5,7 +5,7 @@ package overlay
 
 import (
 	"context"
-	"crypto/sha256"
+	"hash/maphash"
 
 	"github.com/pb33f/libopenapi/datamodel/low"
 	"github.com/pb33f/libopenapi/index"
@@ -121,32 +121,31 @@ func (o *Overlay) GetExtensions() *orderedmap.Map[low.KeyReference[string], low.
 	return o.Extensions
 }
 
-// Hash will return a consistent SHA256 Hash of the Overlay object
-func (o *Overlay) Hash() [32]byte {
-	sb := low.GetStringBuilder()
-	defer low.PutStringBuilder(sb)
-
-	if !o.Overlay.IsEmpty() {
-		sb.WriteString(o.Overlay.Value)
-		sb.WriteByte('|')
-	}
-	if !o.Info.IsEmpty() {
-		sb.WriteString(low.GenerateHashString(o.Info.Value))
-		sb.WriteByte('|')
-	}
-	if !o.Extends.IsEmpty() {
-		sb.WriteString(o.Extends.Value)
-		sb.WriteByte('|')
-	}
-	if !o.Actions.IsEmpty() {
-		for _, action := range o.Actions.Value {
-			sb.WriteString(low.GenerateHashString(action.Value))
-			sb.WriteByte('|')
+// Hash will return a consistent Hash of the Overlay object
+func (o *Overlay) Hash() uint64 {
+	return low.WithHasher(func(h *maphash.Hash) uint64 {
+		if !o.Overlay.IsEmpty() {
+			h.WriteString(o.Overlay.Value)
+			h.WriteByte(low.HASH_PIPE)
 		}
-	}
-	for _, ext := range low.HashExtensions(o.Extensions) {
-		sb.WriteString(ext)
-		sb.WriteByte('|')
-	}
-	return sha256.Sum256([]byte(sb.String()))
+		if !o.Info.IsEmpty() {
+			h.WriteString(low.GenerateHashString(o.Info.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !o.Extends.IsEmpty() {
+			h.WriteString(o.Extends.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !o.Actions.IsEmpty() {
+			for _, action := range o.Actions.Value {
+				h.WriteString(low.GenerateHashString(action.Value))
+				h.WriteByte(low.HASH_PIPE)
+			}
+		}
+		for _, ext := range low.HashExtensions(o.Extensions) {
+			h.WriteString(ext)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		return h.Sum64()
+	})
 }

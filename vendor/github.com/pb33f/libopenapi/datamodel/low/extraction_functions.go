@@ -4,20 +4,18 @@
 package low
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
+	"errors"
 	"fmt"
-	"hash"
+	"hash/maphash"
 	"net/url"
+	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
-	"unsafe"
 
 	jsonpathconfig "github.com/pb33f/jsonpath/pkg/jsonpath/config"
 
@@ -40,6 +38,10 @@ var stringBuilderPool = sync.Pool{
 // hashCache is a global cache for computed hash values to avoid redundant calculations.
 // Uses sync.Map for thread-safe concurrent access.
 var hashCache sync.Map
+
+// ErrExternalRefSkipped is returned by LocateRefNodeWithContext when
+// SkipExternalRefResolution is enabled and the reference is external.
+var ErrExternalRefSkipped = errors.New("external reference resolution skipped")
 
 // ClearHashCache clears the global hash cache. This should be called before
 // starting a new document comparison to ensure clean state.
@@ -87,8 +89,8 @@ func HashExtensions(ext *orderedmap.Map[KeyReference[string], ValueReference[*ya
 	f := []string{}
 
 	for e, node := range orderedmap.SortAlpha(ext).FromOldest() {
-		b, _ := yaml.Marshal(node.GetValue())
-		f = append(f, fmt.Sprintf("%s-%x", e.Value, sha256.Sum256([]byte(b))))
+		// Use content-only hash (not index.HashNode which includes line/column)
+		f = append(f, fmt.Sprintf("%s-%s", e.Value, hashYamlNodeFast(node.GetValue())))
 	}
 
 	return f
@@ -119,36 +121,82 @@ func LocateRefNodeWithContext(ctx context.Context, root *yaml.Node, idx *index.S
 				root.Line, root.Column), ctx
 		}
 
+		if idx != nil && idx.GetConfig() != nil && idx.GetConfig().SkipExternalRefResolution && utils.IsExternalRef(rv) {
+			return nil, idx, ErrExternalRefSkipped, ctx
+		}
+
+		origRef := rv
+		resolvedRef := rv
+		if scope := index.GetSchemaIdScope(ctx); scope != nil && scope.BaseUri != "" {
+			if resolved, err := index.ResolveRefAgainstSchemaId(rv, scope); err == nil && resolved != "" {
+				resolvedRef = resolved
+			}
+		}
+		searchRefs := []string{origRef}
+		if resolvedRef != origRef {
+			searchRefs = append(searchRefs, resolvedRef)
+		}
+
 		// run through everything and return as soon as we find a match.
 		// this operates as fast as possible as ever
 		collections := generateIndexCollection(idx)
 		var found map[string]*index.Reference
 		for _, collection := range collections {
 			found = collection()
-			if found != nil && found[rv] != nil {
-				// if this is a ref node, we need to keep diving
-				// until we hit something that isn't a ref.
-				if jh, _, _ := utils.IsNodeRefValue(found[rv].Node); jh {
-					// if this node is circular, stop drop and roll.
-					if !IsCircular(found[rv].Node, idx) && found[rv].Node != root {
-						return LocateRefNodeWithContext(ctx, found[rv].Node, idx)
-					} else {
+			if found != nil {
+				for _, candidate := range searchRefs {
+					if found[candidate] == nil {
+						continue
+					}
+					foundRef := found[candidate]
+					foundIndex := idx
+					if foundRef.Index != nil {
+						foundIndex = foundRef.Index
+					}
+					if foundIndex != nil && foundRef.RemoteLocation != "" &&
+						foundIndex.GetSpecAbsolutePath() != foundRef.RemoteLocation {
+						if rolo := foundIndex.GetRolodex(); rolo != nil {
+							for _, candidateIdx := range append(rolo.GetIndexes(), rolo.GetRootIndex()) {
+								if candidateIdx == nil {
+									continue
+								}
+								if candidateIdx.GetSpecAbsolutePath() == foundRef.RemoteLocation {
+									foundIndex = candidateIdx
+									break
+								}
+							}
+						}
+					}
+					foundCtx := ctx
+					if foundRef.RemoteLocation != "" {
+						foundCtx = context.WithValue(foundCtx, index.CurrentPathKey, foundRef.RemoteLocation)
+					}
+					foundCtx = applyResolvedSchemaIdScope(foundCtx, foundRef, foundIndex)
+					// if this is a ref node, we need to keep diving
+					// until we hit something that isn't a ref.
+					if jh, _, _ := utils.IsNodeRefValue(foundRef.Node); jh {
+						// if this node is circular, stop drop and roll.
+						if !IsCircular(foundRef.Node, foundIndex) && foundRef.Node != root {
+							return LocateRefNodeWithContext(foundCtx, foundRef.Node, foundIndex)
+						}
 
-						crr := GetCircularReferenceResult(found[rv].Node, idx)
+						crr := GetCircularReferenceResult(foundRef.Node, foundIndex)
 						jp := ""
 						if crr != nil {
 							jp = crr.GenerateJourneyPath()
 						}
-						return found[rv].Node, idx, fmt.Errorf("circular reference '%s' found during lookup at line "+
+						return foundRef.Node, foundIndex, fmt.Errorf("circular reference '%s' found during lookup at line "+
 							"%d, column %d, It cannot be resolved",
 							jp,
-							found[rv].Node.Line,
-							found[rv].Node.Column), ctx
+							foundRef.Node.Line,
+							foundRef.Node.Column), foundCtx
 					}
+					return utils.NodeAlias(foundRef.Node), foundIndex, nil, foundCtx
 				}
-				return utils.NodeAlias(found[rv].Node), idx, nil, ctx
 			}
 		}
+
+		rv = resolvedRef
 
 		// Obtain the absolute filepath/URL of the spec in which we are trying to
 		// resolve the reference value [rv] from. It's either available from the
@@ -181,7 +229,7 @@ func LocateRefNodeWithContext(ctx context.Context, root *yaml.Node, idx *index.S
 						if p != "" && explodedRefValue[0] != "" {
 							// We are resolving the relative URL against the absolute URL of
 							// the spec containing the reference.
-							u.Path = utils.ReplaceWindowsDriveWithLinuxPath(filepath.Join(p, explodedRefValue[0]))
+							u.Path = utils.ReplaceWindowsDriveWithLinuxPath(utils.CheckPathOverlap(p, explodedRefValue[0], string(os.PathSeparator)))
 						}
 						u.Fragment = ""
 						// Turn the reference value [rv] into the absolute filepath/URL we
@@ -202,24 +250,24 @@ func LocateRefNodeWithContext(ctx context.Context, root *yaml.Node, idx *index.S
 								sp := strings.Split(specPath, "#")
 								// Create a clean (absolute?) path to the file containing the
 								// referenced value.
-								abs, _ = filepath.Abs(filepath.Join(filepath.Dir(sp[0]), explodedRefValue[0]))
+								abs = idx.ResolveRelativeFilePath(filepath.Dir(sp[0]), explodedRefValue[0])
 							}
 							rv = fmt.Sprintf("%s#%s", abs, explodedRefValue[1])
 						} else {
 							// We don't have a path for the schema we are trying to resolve
 							// relative references from. This likely happens when the schema
-							// is the root schema, i.e. the file given to libopenapi as entry.
+							// is the root schema, i.e., the file given to libopenapi as an entry.
 							//
 
 							// check for a config BaseURL and use that if it exists.
-							if idx.GetConfig().BaseURL != nil {
+							if idx.GetConfig() != nil && idx.GetConfig().BaseURL != nil {
 								u := *idx.GetConfig().BaseURL
 								p := ""
 								if u.Path != "" {
 									p = u.Path
 								}
 
-								u.Path = utils.ReplaceWindowsDriveWithLinuxPath(filepath.Join(p, explodedRefValue[0]))
+								u.Path = utils.ReplaceWindowsDriveWithLinuxPath(utils.CheckPathOverlap(p, explodedRefValue[0], string(os.PathSeparator)))
 								rv = fmt.Sprintf("%s#%s", u.String(), explodedRefValue[1])
 							}
 						}
@@ -232,21 +280,21 @@ func LocateRefNodeWithContext(ctx context.Context, root *yaml.Node, idx *index.S
 					if strings.HasPrefix(specPath, "http") {
 						u, _ := url.Parse(specPath)
 						p := filepath.Dir(u.Path)
-						abs, _ := filepath.Abs(filepath.Join(p, rv))
+						abs, _ := filepath.Abs(utils.CheckPathOverlap(p, rv, string(os.PathSeparator)))
 						u.Path = utils.ReplaceWindowsDriveWithLinuxPath(abs)
 						rv = u.String()
 
 					} else {
 						if specPath != "" {
 
-							abs, _ := filepath.Abs(filepath.Join(filepath.Dir(specPath), rv))
+							abs := idx.ResolveRelativeFilePath(filepath.Dir(specPath), rv)
 							rv = abs
 
 						} else {
 							// check for a config baseURL and use that if it exists.
 							if idx.GetConfig().BaseURL != nil {
 								u := *idx.GetConfig().BaseURL
-								abs, _ := filepath.Abs(filepath.Join(u.Path, rv))
+								abs, _ := filepath.Abs(utils.CheckPathOverlap(u.Path, rv, string(os.PathSeparator)))
 								u.Path = utils.ReplaceWindowsDriveWithLinuxPath(abs)
 								rv = u.String()
 							}
@@ -258,6 +306,7 @@ func LocateRefNodeWithContext(ctx context.Context, root *yaml.Node, idx *index.S
 
 		foundRef, fIdx, newCtx := idx.SearchIndexForReferenceWithContext(ctx, rv)
 		if foundRef != nil {
+			newCtx = applyResolvedSchemaIdScope(newCtx, foundRef, fIdx)
 			return utils.NodeAlias(foundRef.Node), fIdx, nil, newCtx
 		}
 
@@ -278,6 +327,40 @@ func LocateRefNodeWithContext(ctx context.Context, root *yaml.Node, idx *index.S
 			rv, root.Line, root.Column), ctx
 	}
 	return nil, idx, nil, ctx
+}
+
+func applyResolvedSchemaIdScope(ctx context.Context, ref *index.Reference, idx *index.SpecIndex) context.Context {
+	if ref == nil || ref.Node == nil {
+		return ctx
+	}
+	idValue := index.FindSchemaIdInNode(ref.Node)
+	if idValue == "" {
+		return ctx
+	}
+
+	scope := index.GetSchemaIdScope(ctx)
+	base := ""
+	if ref.RemoteLocation != "" {
+		base = ref.RemoteLocation
+	} else if idx != nil {
+		base = idx.GetSpecAbsolutePath()
+	}
+	if scope == nil {
+		scope = index.NewSchemaIdScope(base)
+		ctx = index.WithSchemaIdScope(ctx, scope)
+	}
+
+	parentBase := scope.BaseUri
+	if parentBase == "" {
+		parentBase = base
+	}
+	resolved, err := index.ResolveSchemaId(idValue, parentBase)
+	if err != nil || resolved == "" {
+		resolved = idValue
+	}
+	updated := scope.Copy()
+	updated.PushId(resolved)
+	return index.WithSchemaIdScope(ctx, updated)
 }
 
 // LocateRefNode will perform a complete lookup for a $ref node. This function searches the entire index for
@@ -307,6 +390,10 @@ func ExtractObjectRaw[T Buildable[N], N any](ctx context.Context, key, root *yam
 			if err != nil {
 				circError = err
 			}
+		} else if errors.Is(err, ErrExternalRefSkipped) {
+			var n T = new(N)
+			SetReference(n, rv, root)
+			return n, nil, true, rv
 		} else {
 			if err != nil {
 				return nil, fmt.Errorf("object extraction failed: %s", err.Error()), isReference, referenceValue
@@ -357,6 +444,12 @@ func ExtractObject[T Buildable[N], N any](ctx context.Context, label string, roo
 			if err != nil {
 				circError = err
 			}
+		} else if errors.Is(err, ErrExternalRefSkipped) {
+			var n T = new(N)
+			SetReference(n, refVal, root)
+			res := NodeReference[T]{Value: n, KeyNode: rl, ValueNode: root}
+			res.SetReference(refVal, root)
+			return res, nil
 		} else {
 			if err != nil {
 				return NodeReference[T]{}, fmt.Errorf("object extraction failed: %s", err.Error())
@@ -379,6 +472,12 @@ func ExtractObject[T Buildable[N], N any](ctx context.Context, label string, roo
 					if lerr != nil {
 						circError = lerr
 					}
+				} else if errors.Is(lerr, ErrExternalRefSkipped) {
+					var n T = new(N)
+					SetReference(n, rVal, vn)
+					res := NodeReference[T]{Value: n, KeyNode: ln, ValueNode: vn}
+					res.SetReference(rVal, vn)
+					return res, nil
 				} else {
 					if lerr != nil {
 						return NodeReference[T]{}, fmt.Errorf("object extraction failed: %s", lerr.Error())
@@ -424,8 +523,34 @@ func SetReference(obj any, ref string, refNode *yaml.Node) {
 		return
 	}
 
+	// Ensure the embedded *Reference is initialized before calling SetReference.
+	// Buildable types embed *Reference (a pointer) which is nil after new(T).
+	// Calling SetReference on a nil *Reference would panic.
+	initEmbeddedReference(obj)
+
 	if r, ok := obj.(SetReferencer); ok {
 		r.SetReference(ref, refNode)
+	}
+}
+
+// initEmbeddedReference uses reflection to find and initialize a nil *Reference
+// field embedded in obj. This is needed when objects are created via new(T) without
+// calling Build(), which normally initializes the embedded *Reference.
+func initEmbeddedReference(obj any) {
+	v := reflect.ValueOf(obj)
+	if v.Kind() != reflect.Ptr || v.IsNil() {
+		return
+	}
+	v = v.Elem()
+	if v.Kind() != reflect.Struct {
+		return
+	}
+	f := v.FieldByName("Reference")
+	if !f.IsValid() || f.Kind() != reflect.Ptr || !f.IsNil() {
+		return
+	}
+	if f.Type() == reflect.TypeOf((*Reference)(nil)) {
+		f.Set(reflect.ValueOf(new(Reference)))
 	}
 }
 
@@ -449,6 +574,8 @@ func ExtractArray[T Buildable[N], N any](ctx context.Context, label string, root
 			if err != nil {
 				circError = err
 			}
+		} else if errors.Is(err, ErrExternalRefSkipped) {
+			return []ValueReference[T]{}, rl, root, nil
 		} else {
 			return []ValueReference[T]{}, nil, nil, fmt.Errorf("array build failed: reference cannot be found: %s",
 				root.Content[1].Value)
@@ -466,6 +593,8 @@ func ExtractArray[T Buildable[N], N any](ctx context.Context, label string, root
 					if err != nil {
 						circError = err
 					}
+				} else if errors.Is(err, ErrExternalRefSkipped) {
+					return []ValueReference[T]{}, ln, vn, nil
 				} else {
 					if err != nil {
 						return []ValueReference[T]{}, nil, nil,
@@ -513,6 +642,13 @@ func ExtractArray[T Buildable[N], N any](ctx context.Context, label string, root
 					if err != nil {
 						circError = err
 					}
+				} else if errors.Is(err, ErrExternalRefSkipped) {
+					var n T = new(N)
+					SetReference(n, rv, node)
+					v := ValueReference[T]{Value: n, ValueNode: node}
+					v.SetReference(rv, node)
+					items = append(items, v)
+					continue
 				} else {
 					if err != nil {
 						return []ValueReference[T]{}, nil, nil, fmt.Errorf("array build failed: reference cannot be found: %s",
@@ -614,6 +750,13 @@ func ExtractMapNoLookupExtensions[PT Buildable[N], N any](
 					if err != nil {
 						circError = err
 					}
+				} else if errors.Is(err, ErrExternalRefSkipped) {
+					var n PT = new(N)
+					SetReference(n, rv, node)
+					v := ValueReference[PT]{Value: n, ValueNode: node}
+					v.SetReference(rv, node)
+					valueMap.Set(KeyReference[string]{Value: currentKey.Value, KeyNode: currentKey}, v)
+					continue
 				} else {
 					if err != nil {
 						return nil, fmt.Errorf("map build failed: reference cannot be found: %s", err.Error())
@@ -707,6 +850,8 @@ func ExtractMapExtensions[PT Buildable[N], N any](
 			if err != nil {
 				circError = err
 			}
+		} else if errors.Is(err, ErrExternalRefSkipped) {
+			return nil, rl, root, nil
 		} else {
 			return nil, labelNode, valueNode, fmt.Errorf("map build failed: reference cannot be found: %s",
 				root.Content[1].Value)
@@ -724,6 +869,8 @@ func ExtractMapExtensions[PT Buildable[N], N any](
 					if err != nil {
 						circError = err
 					}
+				} else if errors.Is(err, ErrExternalRefSkipped) {
+					return nil, labelNode, valueNode, nil
 				} else {
 					if err != nil {
 						return nil, labelNode, valueNode, fmt.Errorf("map build failed: reference cannot be found: %s",
@@ -814,6 +961,15 @@ func ExtractMapExtensions[PT Buildable[N], N any](
 					if err != nil {
 						circError = err
 					}
+				} else if errors.Is(err, ErrExternalRefSkipped) {
+					var n PT = new(N)
+					SetReference(n, refVal, en)
+					v := ValueReference[PT]{Value: n, ValueNode: en}
+					v.SetReference(refVal, en)
+					return mappingResult[PT]{
+						k: KeyReference[string]{KeyNode: input.label, Value: input.label.Value},
+						v: v,
+					}, nil
 				} else {
 					if err != nil {
 						return mappingResult[PT]{}, fmt.Errorf("flat map build failed: reference cannot be found: %s",
@@ -952,9 +1108,9 @@ func GenerateHashString(v any) string {
 
 	if h, ok := v.(Hashable); ok {
 		if h != nil {
-			// Use hex.EncodeToString which is more efficient than fmt.Sprintf
+			// Format uint64 hash as hex string
 			hash := h.Hash()
-			hashStr = hex.EncodeToString(hash[:])
+			hashStr = strconv.FormatUint(hash, 16)
 		}
 	} else if n, ok := v.(*yaml.Node); ok {
 		// Fast path for common YAML node types to avoid marshaling
@@ -1005,9 +1161,7 @@ func GenerateHashString(v any) string {
 			str = fmt.Sprint(v)
 		}
 
-		// Use hex.EncodeToString which is more efficient than fmt.Sprintf
-		hash := sha256.Sum256([]byte(str))
-		hashStr = hex.EncodeToString(hash[:])
+		hashStr = strconv.FormatUint(maphash.String(globalHashSeed, str), 16)
 	}
 
 	// Store in cache if we have a valid pointer and caching is enabled for this type
@@ -1026,32 +1180,30 @@ func hashYamlNodeFast(n *yaml.Node) string {
 	}
 
 	// Try cache first for complex nodes
+	// Use pointer directly as key - *yaml.Node pointers are stable and comparable
 	if n.Kind != yaml.ScalarNode {
-		cacheKey := uintptr(unsafe.Pointer(n))
-		if cached, ok := hashCache.Load(cacheKey); ok {
+		if cached, ok := hashCache.Load(n); ok {
 			return cached.(string)
 		}
 	}
 
-	// Use a hasher instead of marshaling
-	h := sha256.New()
+	h := hasherPool.Get().(*maphash.Hash)
+	h.Reset()
 	visited := make(map[*yaml.Node]bool)
 	hashNodeTree(h, n, visited)
-
-	// Use hex.EncodeToString which is more efficient than fmt.Sprintf
-	result := hex.EncodeToString(h.Sum(nil))
+	result := strconv.FormatUint(h.Sum64(), 16)
+	hasherPool.Put(h)
 
 	// Cache complex nodes
 	if n.Kind != yaml.ScalarNode {
-		cacheKey := uintptr(unsafe.Pointer(n))
-		hashCache.Store(cacheKey, result)
+		hashCache.Store(n, result)
 	}
 
 	return result
 }
 
 // hashNodeTree walks the YAML tree and hashes it without marshaling
-func hashNodeTree(h hash.Hash, n *yaml.Node, visited map[*yaml.Node]bool) {
+func hashNodeTree(h *maphash.Hash, n *yaml.Node, visited map[*yaml.Node]bool) {
 	if n == nil {
 		return
 	}
@@ -1071,6 +1223,12 @@ func hashNodeTree(h hash.Hash, n *yaml.Node, visited map[*yaml.Node]bool) {
 		h.Write([]byte(n.Anchor))
 	}
 
+	// CRITICAL: Snapshot Content to prevent TOCTOU races
+	// This captures the slice header (pointer, len, cap) atomically.
+	// Even if another goroutine reassigns n.Content later, our local
+	// 'content' variable still refers to the original backing array.
+	content := n.Content
+
 	// Hash based on node type
 	switch n.Kind {
 	case yaml.ScalarNode:
@@ -1078,7 +1236,7 @@ func hashNodeTree(h hash.Hash, n *yaml.Node, visited map[*yaml.Node]bool) {
 
 	case yaml.SequenceNode:
 		h.Write([]byte("["))
-		for _, child := range n.Content {
+		for _, child := range content {
 			hashNodeTree(h, child, visited)
 			h.Write([]byte(","))
 		}
@@ -1086,25 +1244,33 @@ func hashNodeTree(h hash.Hash, n *yaml.Node, visited map[*yaml.Node]bool) {
 
 	case yaml.MappingNode:
 		h.Write([]byte("{"))
+
+		// Guard against empty mapping nodes
+		if len(content) == 0 {
+			h.Write([]byte("}"))
+			return
+		}
+
 		// For maps, we need consistent ordering
 		// Collect key-value pairs and sort by key hash
 		type kvPair struct {
-			keyHash   string
+			keyHash   uint64
 			keyNode   *yaml.Node
 			valueNode *yaml.Node
 		}
-		pairs := make([]kvPair, 0, len(n.Content)/2)
+		pairs := make([]kvPair, 0, len(content)/2)
 
-		for i := 0; i < len(n.Content); i += 2 {
-			if i+1 < len(n.Content) {
-				// Hash the key for sorting
-				keyH := sha256.New()
-				hashNodeTree(keyH, n.Content[i], visited)
+		for i := 0; i < len(content); i += 2 {
+			if i+1 < len(content) {
+				keyH := hasherPool.Get().(*maphash.Hash)
+				keyH.Reset()
+				hashNodeTree(keyH, content[i], visited)
 				pairs = append(pairs, kvPair{
-					keyHash:   fmt.Sprintf("%x", keyH.Sum(nil)),
-					keyNode:   n.Content[i],
-					valueNode: n.Content[i+1],
+					keyHash:   keyH.Sum64(),
+					keyNode:   content[i],
+					valueNode: content[i+1],
 				})
+				hasherPool.Put(keyH)
 			}
 		}
 
@@ -1124,7 +1290,7 @@ func hashNodeTree(h hash.Hash, n *yaml.Node, visited map[*yaml.Node]bool) {
 
 	case yaml.DocumentNode:
 		h.Write([]byte("DOC["))
-		for _, child := range n.Content {
+		for _, child := range content {
 			hashNodeTree(h, child, visited)
 		}
 		h.Write([]byte("]"))
@@ -1149,21 +1315,22 @@ func CompareYAMLNodes(left, right *yaml.Node) bool {
 		return false
 	}
 
-	// Use the existing hashNodeTree function to generate consistent hashes
-	leftHash := sha256.New()
-	rightHash := sha256.New()
+	leftH := hasherPool.Get().(*maphash.Hash)
+	leftH.Reset()
+	rightH := hasherPool.Get().(*maphash.Hash)
+	rightH.Reset()
 
 	leftVisited := make(map[*yaml.Node]bool)
 	rightVisited := make(map[*yaml.Node]bool)
 
-	hashNodeTree(leftHash, left, leftVisited)
-	hashNodeTree(rightHash, right, rightVisited)
+	hashNodeTree(leftH, left, leftVisited)
+	hashNodeTree(rightH, right, rightVisited)
 
-	leftSum := leftHash.Sum(nil)
-	rightSum := rightHash.Sum(nil)
+	result := leftH.Sum64() == rightH.Sum64()
 
-	// Compare the hash bytes directly
-	return bytes.Equal(leftSum, rightSum)
+	hasherPool.Put(leftH)
+	hasherPool.Put(rightH)
+	return result
 }
 
 // YAMLNodeToBytes converts a YAML node to bytes in a more efficient way than yaml.Marshal
@@ -1185,14 +1352,17 @@ func HashYAMLNodeSlice(nodes []*yaml.Node) string {
 		return ""
 	}
 
-	h := sha256.New()
+	h := hasherPool.Get().(*maphash.Hash)
+	h.Reset()
 	visited := make(map[*yaml.Node]bool)
 
 	for _, node := range nodes {
 		hashNodeTree(h, node, visited)
 	}
 
-	return fmt.Sprintf("%x", h.Sum(nil))
+	result := strconv.FormatUint(h.Sum64(), 16)
+	hasherPool.Put(h)
+	return result
 }
 
 // AppendMapHashes will append all the hashes of a map to a slice of strings.

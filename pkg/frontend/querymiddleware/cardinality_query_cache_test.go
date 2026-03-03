@@ -58,7 +58,7 @@ func TestCardinalityQueryCache_RoundTrip_WithTenantFederation(t *testing.T) {
 			// Create the request.
 			reqURL := mustParseURL(t, `/prometheus/api/v1/cardinality/label_names?selector={job="test"}&limit=100`)
 			reqCacheKey := tenant.JoinTenantIDs(testData.tenantIDs) + ":job=\"test\"\x00inmemory\x00100"
-			reqHashedCacheKey := cardinalityLabelNamesQueryCachePrefix + cacheHashKey(reqCacheKey)
+			reqHashedCacheKey := cardinalityLabelNamesQueryCachePrefix + hashCacheKey(reqCacheKey)
 
 			req := &http.Request{URL: reqURL}
 			req = req.WithContext(user.InjectOrgID(context.Background(), tenant.JoinTenantIDs(testData.tenantIDs)))
@@ -105,13 +105,13 @@ func TestCardinalityQueryCache_RoundTrip(t *testing.T) {
 			reqPath:        "/prometheus/api/v1/cardinality/label_names",
 			reqData:        url.Values{"selector": []string{`{job="test"}`}, "limit": []string{"100"}, "count_method": []string{"active"}},
 			cacheKey:       "user-1:job=\"test\"\x00active\x00100",
-			hashedCacheKey: cardinalityLabelNamesQueryCachePrefix + cacheHashKey("user-1:job=\"test\"\x00active\x00100"),
+			hashedCacheKey: cardinalityLabelNamesQueryCachePrefix + hashCacheKey("user-1:job=\"test\"\x00active\x00100"),
 		},
 		"label values request": {
 			reqPath:        "/prometheus/api/v1/cardinality/label_values",
 			reqData:        url.Values{"selector": []string{`{job="test"}`}, "label_names[]": []string{"metric_1", "metric_2"}, "limit": []string{"100"}},
 			cacheKey:       "user-1:metric_1\x01metric_2\x00job=\"test\"\x00inmemory\x00100",
-			hashedCacheKey: cardinalityLabelValuesQueryCachePrefix + cacheHashKey("user-1:metric_1\x01metric_2\x00job=\"test\"\x00inmemory\x00100"),
+			hashedCacheKey: cardinalityLabelValuesQueryCachePrefix + hashCacheKey("user-1:metric_1\x01metric_2\x00job=\"test\"\x00inmemory\x00100"),
 		},
 	})
 }

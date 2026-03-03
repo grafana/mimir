@@ -4,6 +4,7 @@ package continuoustest
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"time"
@@ -12,8 +13,11 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/multierror"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
 	"golang.org/x/time/rate"
+
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 const (
@@ -165,6 +169,51 @@ func (t *WriteReadOOOTest) RunInner(ctx context.Context, now time.Time, writeLim
 			return
 		}
 	}
+
+	level.Info(t.logger).Log(
+		"msg", "write summary",
+		"inorder_from", t.inOrderSamples.queryMinTime,
+		"inorder_to", t.inOrderSamples.lastWrittenTimestamp,
+		"ooo_from", t.outOfOrderSamples.queryMinTime,
+		"ooo_to", t.outOfOrderSamples.lastWrittenTimestamp,
+		"ooo_now", oooNow,
+	)
+
+	query := querySumFloat(metricName)
+
+	inorderRanges, inorderInstants, err := t.getInorderQueryTimeRanges(now)
+	if err != nil {
+		errs.Add(err)
+	}
+	for _, timeRange := range inorderRanges {
+		err := t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1], floatTypeLabel, query, generateSineWaveValue, inorderWriteInterval, &t.inOrderSamples)
+		if err != nil {
+			errs.Add(err)
+		}
+	}
+	for _, ts := range inorderInstants {
+		err := t.runInstantQueryAndVerifyResult(ctx, ts, floatTypeLabel, query, generateSineWaveValue, inorderWriteInterval, &t.inOrderSamples)
+		if err != nil {
+			errs.Add(err)
+		}
+	}
+
+	oooRanges, oooInstants, err := t.getOutOfOrderQueryTimeRanges(now)
+	if err != nil {
+		errs.Add(err)
+	}
+	for _, timeRange := range oooRanges {
+		err := t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1], floatTypeLabel, query, generateSineWaveValue, outOfOrderWriteInterval, &t.outOfOrderSamples)
+		if err != nil {
+			errs.Add(err)
+		}
+	}
+	for _, ts := range oooInstants {
+		err := t.runInstantQueryAndVerifyResult(ctx, ts, floatTypeLabel, query, generateSineWaveValue, outOfOrderWriteInterval, &t.outOfOrderSamples)
+		if err != nil {
+			errs.Add(err)
+		}
+	}
 }
 
 func (t *WriteReadOOOTest) nextInorderWriteTimestamp(now time.Time, interval time.Duration, records *MetricHistory) time.Time {
@@ -226,6 +275,176 @@ func (t *WriteReadOOOTest) recoverPast(ctx context.Context, now time.Time, metri
 	outOfOrderRecords.queryMinTime = from
 	outOfOrderRecords.queryMaxTime = to
 	level.Info(t.logger).Log("msg", "Found time range for densely written samples", "from", from, "to", to)
+
+	return nil
+}
+
+// getInorderQueryTimeRanges calculates some ranges to query to validate the in-order samples.
+func (t *WriteReadOOOTest) getInorderQueryTimeRanges(now time.Time) (ranges [][2]time.Time, instants []time.Time, err error) {
+	adjustedQueryMinTime, adjustedQueryMaxTime, err := t.adjustQueryTimeRange(now, &t.inOrderSamples, "inorder")
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Last 24h range query.
+	ranges = append(ranges, [2]time.Time{
+		maxTime(adjustedQueryMinTime, now.Add(-24*time.Hour)),
+		adjustedQueryMaxTime,
+	})
+
+	// Instant query at the most recent point.
+	instants = append(instants, adjustedQueryMaxTime)
+
+	// Instant query at 24h ago.
+	instant24hAgo := maxTime(adjustedQueryMinTime, now.Add(-24*time.Hour))
+	if !instant24hAgo.Equal(adjustedQueryMaxTime) {
+		instants = append(instants, instant24hAgo)
+	}
+
+	// Random instant query (minute-aligned).
+	randInstant := alignTimestampToInterval(randTime(adjustedQueryMinTime, adjustedQueryMaxTime), inorderWriteInterval)
+	instants = append(instants, randInstant)
+
+	return ranges, instants, nil
+}
+
+// getOutOfOrderQueryTimeRanges returns time ranges for range queries and timestamps for instant queries,
+// targeting the dense region where out-of-order samples have been written (before now - MaxOOOLag).
+func (t *WriteReadOOOTest) getOutOfOrderQueryTimeRanges(now time.Time) (ranges [][2]time.Time, instants []time.Time, err error) {
+	adjustedQueryMinTime, adjustedQueryMaxTime, err := t.adjustQueryTimeRange(now, &t.outOfOrderSamples, "ooo")
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// The border where OOO samples stop being written.
+	oooLagBorder := now.Add(-t.cfg.MaxOOOLag)
+
+	// Range query over the dense region (before the OOO lag border).
+	// This verifies that all 20s samples (:00, :20, :40) are present.
+	if adjustedQueryMinTime.Before(oooLagBorder) {
+		ranges = append(ranges, [2]time.Time{
+			maxTime(adjustedQueryMinTime, oooLagBorder.Add(-24*time.Hour)),
+			minTime(adjustedQueryMaxTime, oooLagBorder),
+		})
+	}
+
+	// Instant query in the dense region (random, 20s-aligned).
+	if adjustedQueryMinTime.Before(oooLagBorder) {
+		denseEnd := minTime(adjustedQueryMaxTime, oooLagBorder)
+		denseInstant := alignTimestampToInterval(randTime(adjustedQueryMinTime, denseEnd), outOfOrderWriteInterval)
+		instants = append(instants, denseInstant)
+	}
+
+	// Instant query at the border.
+	borderInstant := alignTimestampToInterval(oooLagBorder, outOfOrderWriteInterval)
+	if !borderInstant.Before(adjustedQueryMinTime) && !borderInstant.After(adjustedQueryMaxTime) {
+		instants = append(instants, borderInstant)
+	}
+
+	return ranges, instants, nil
+}
+
+// adjustQueryTimeRange validates records have data and adjusts the query time range
+// to honor MaxQueryAge and the current time.
+func (t *WriteReadOOOTest) adjustQueryTimeRange(now time.Time, records *MetricHistory, label string) (adjustedMin, adjustedMax time.Time, err error) {
+	if records.queryMinTime.IsZero() || records.queryMaxTime.IsZero() {
+		level.Info(t.logger).Log("msg", "Skipped queries because there's no valid time range to query", "type", label)
+		return time.Time{}, time.Time{}, errors.New("no valid time range to query")
+	}
+
+	adjustedMin = maxTime(records.queryMinTime, now.Add(-t.cfg.MaxQueryAge))
+	if records.queryMaxTime.Before(adjustedMin) {
+		level.Info(t.logger).Log("msg", "Skipped queries because there's no valid time range to query after honoring configured max query age", "type", label, "min_valid_time", records.queryMinTime, "max_valid_time", records.queryMaxTime, "max_query_age", t.cfg.MaxQueryAge)
+		return time.Time{}, time.Time{}, errors.New("no valid time range to query after honoring configured max query age")
+	}
+
+	adjustedMax = minTime(records.queryMaxTime, now)
+	return adjustedMin, adjustedMax, nil
+}
+
+func (t *WriteReadOOOTest) runInstantQueryAndVerifyResult(ctx context.Context, ts time.Time, typeLabel, metricSumQuery string, generateValue generateValueFunc, step time.Duration, records *MetricHistory) error {
+	// Align the query timestamp to the step interval to avoid false positives.
+	ts = maxTime(records.queryMinTime, alignTimestampToInterval(ts, step))
+	if records.queryMaxTime.Before(ts) {
+		return nil
+	}
+
+	sp, ctx := spanlogger.New(ctx, t.logger, tracer, "WriteReadOOOTest.runInstantQueryAndVerifyResult")
+	defer sp.Finish()
+
+	logger := log.With(sp, "query", metricSumQuery, "ts", ts, "ts_milli", ts.UnixMilli(), "type", typeLabel, "protocol", t.client.Protocol())
+	level.Debug(logger).Log("msg", "Running instant query")
+
+	t.metrics.queriesTotal.WithLabelValues(typeLabel).Inc()
+	queryStart := time.Now()
+	vector, err := t.client.Query(ctx, metricSumQuery, ts, WithResultsCacheEnabled(false))
+	t.metrics.queriesLatency.WithLabelValues(typeLabel, "false").Observe(time.Since(queryStart).Seconds())
+	if err != nil {
+		t.metrics.queriesFailedTotal.WithLabelValues(typeLabel).Inc()
+		level.Warn(logger).Log("msg", "Failed to execute instant query", "err", err)
+		return fmt.Errorf("failed to execute instant query: %w", err)
+	}
+
+	// Convert the vector to matrix to reuse the same results comparison utility.
+	matrix := make(model.Matrix, 0, len(vector))
+	for _, entry := range vector {
+		matrix = append(matrix, &model.SampleStream{
+			Metric: entry.Metric,
+			Values: []model.SamplePair{{
+				Timestamp: entry.Timestamp,
+				Value:     entry.Value,
+			}},
+		})
+	}
+
+	t.metrics.queryResultChecksTotal.WithLabelValues(typeLabel).Inc()
+	_, err = verifySamplesSum(matrix, t.cfg.NumSeries, 0, generateValue, nil, nil)
+	if err != nil {
+		t.metrics.queryResultChecksFailedTotal.WithLabelValues(typeLabel).Inc()
+		level.Warn(logger).Log("msg", "Instant query result check failed", "err", err)
+		return fmt.Errorf("instant query result check failed: %w", err)
+	}
+
+	level.Info(logger).Log("msg", "Instant query result check succeeded")
+
+	return nil
+}
+
+func (t *WriteReadOOOTest) runRangeQueryAndVerifyResult(ctx context.Context, start, end time.Time, typeLabel, metricSumQuery string, generateValue generateValueFunc, step time.Duration, records *MetricHistory) error {
+	// Align start, end and step to write interval to avoid false positives when checking results correctness.
+	start = maxTime(records.queryMinTime, alignTimestampToInterval(start, step))
+	end = minTime(records.queryMaxTime, alignTimestampToInterval(end, step))
+	if end.Before(start) {
+		return nil
+	}
+
+	queryStep := getQueryStep(start, end, step)
+
+	sp, ctx := spanlogger.New(ctx, t.logger, tracer, "WriteReadOOOTest.runRangeQueryAndVerifyResult")
+	defer sp.Finish()
+
+	logger := log.With(sp, "query", metricSumQuery, "start", start.UnixMilli(), "end", end.UnixMilli(), "step", queryStep, "type", typeLabel, "protocol", t.client.Protocol())
+	level.Debug(logger).Log("msg", "Running range query")
+
+	t.metrics.queriesTotal.WithLabelValues(typeLabel).Inc()
+	queryStart := time.Now()
+	matrix, err := t.client.QueryRange(ctx, metricSumQuery, start, end, queryStep, WithResultsCacheEnabled(false))
+	t.metrics.queriesLatency.WithLabelValues(typeLabel, "false").Observe(time.Since(queryStart).Seconds())
+	if err != nil {
+		t.metrics.queriesFailedTotal.WithLabelValues(typeLabel).Inc()
+		level.Warn(logger).Log("msg", "Failed to execute range query", "err", err)
+		return fmt.Errorf("failed to execute range query: %w", err)
+	}
+
+	t.metrics.queryResultChecksTotal.WithLabelValues(typeLabel).Inc()
+	_, err = verifySamplesSum(matrix, t.cfg.NumSeries, queryStep, generateValue, nil, nil)
+	if err != nil {
+		t.metrics.queryResultChecksFailedTotal.WithLabelValues(typeLabel).Inc()
+		level.Warn(logger).Log("msg", "Range query result check failed", "err", err)
+		return fmt.Errorf("range query result check failed: %w", err)
+	}
+
+	level.Info(logger).Log("msg", "Range query result check succeeded")
 
 	return nil
 }

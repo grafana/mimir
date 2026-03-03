@@ -14,10 +14,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/promql/parser"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -133,6 +133,7 @@ func (l *labelsQueryOptimizer) optimizeRequest(ctx context.Context, req *http.Re
 }
 
 func optimizeLabelsRequestMatchers(rawMatcherSets []string) (_ []string, optimized bool, _ error) {
+	parser := promqlext.NewPromQLParser()
 	matcherSets, err := parser.ParseMetricSelectors(rawMatcherSets)
 	if err != nil {
 		return nil, false, err

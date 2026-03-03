@@ -18,7 +18,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -27,11 +26,6 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/testdatagen"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 )
-
-func init() {
-	// This enables duration arithmetic https://github.com/prometheus/prometheus/pull/16249.
-	parser.ExperimentalDurationExpr = true
-}
 
 var (
 	Start         = time.Now()
@@ -64,7 +58,7 @@ func RunCorrectnessTests(t *testing.T, runTestCase func(t *testing.T, testCase C
 			Query:                  `sum(metric_counter offset -5s)`,
 			ExpectedShardedQueries: 1,
 		},
-		"sum() offset aritmetic": {
+		"sum() offset arithmetic": {
 			Query:                  `sum(metric_counter offset (10s - 5s))`,
 			ExpectedShardedQueries: 1,
 		},
@@ -80,7 +74,7 @@ func RunCorrectnessTests(t *testing.T, runTestCase func(t *testing.T, testCase C
 			Query:                  `sum(rate(metric_counter[1m]))`,
 			ExpectedShardedQueries: 1,
 		},
-		"sum(rate()) range aritmetic": {
+		"sum(rate()) range arithmetic": {
 			Query:                  `sum(rate(metric_counter[30s+30s]))`,
 			ExpectedShardedQueries: 1,
 		},
@@ -651,10 +645,6 @@ type queryShardingFunctionCorrectnessTest struct {
 type functionCorrectnessTestRunner func(t *testing.T, expr string, numShards int, allowedErr error, queryable storage.Queryable)
 
 func RunFunctionCorrectnessTests(t *testing.T, runTestCase functionCorrectnessTestRunner) {
-	// We want to test experimental functions too.
-	t.Cleanup(func() { parser.EnableExperimentalFunctions = false })
-	parser.EnableExperimentalFunctions = true
-
 	testsForBoth := []queryShardingFunctionCorrectnessTest{
 		{fn: "count_over_time", rangeQuery: true},
 		{fn: "delta", rangeQuery: true},

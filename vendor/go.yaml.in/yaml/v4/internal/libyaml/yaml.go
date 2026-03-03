@@ -1,30 +1,18 @@
-//
-// Copyright (c) 2011-2019 Canonical Ltd
-// Copyright (c) 2006-2010 Kirill Simonov
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy of
-// this software and associated documentation files (the "Software"), to deal in
-// the Software without restriction, including without limitation the rights to
-// use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
-// of the Software, and to permit persons to whom the Software is furnished to do
-// so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
+// Copyright 2006-2010 Kirill Simonov
+// Copyright 2011-2019 Canonical Ltd
+// Copyright 2025 The go-yaml Project Contributors
+// SPDX-License-Identifier: Apache-2.0 AND MIT
+
+// Core libyaml types and structures.
+// Defines Parser, Emitter, Event, Token, and related constants for YAML
+// processing.
 
 package libyaml
 
 import (
 	"fmt"
 	"io"
+	"strings"
 )
 
 // VersionDirective holds the YAML version directive data.
@@ -33,11 +21,23 @@ type VersionDirective struct {
 	minor int8 // The minor version number.
 }
 
+// Major returns the major version number.
+func (v *VersionDirective) Major() int { return int(v.major) }
+
+// Minor returns the minor version number.
+func (v *VersionDirective) Minor() int { return int(v.minor) }
+
 // TagDirective holds the YAML tag directive data.
 type TagDirective struct {
 	handle []byte // The tag handle.
 	prefix []byte // The tag prefix.
 }
+
+// GetHandle returns the tag handle.
+func (t *TagDirective) GetHandle() string { return string(t.handle) }
+
+// GetPrefix returns the tag prefix.
+func (t *TagDirective) GetPrefix() string { return string(t.prefix) }
 
 type Encoding int
 
@@ -63,6 +63,25 @@ const (
 	CRLN_BREAK // Use CR LN for line breaks (DOS style).
 )
 
+type QuoteStyle int
+
+// Quote style types for required quoting.
+const (
+	QuoteSingle QuoteStyle = iota // Prefer single quotes when quoting is required.
+	QuoteDouble                   // Prefer double quotes when quoting is required.
+	QuoteLegacy                   // Legacy behavior: double in representer, single in emitter.
+)
+
+// ScalarStyle returns the scalar style for this quote preference in the
+// representer/serializer context.
+// In this context, both QuoteDouble and QuoteLegacy use double quotes.
+func (q QuoteStyle) ScalarStyle() ScalarStyle {
+	if q == QuoteDouble || q == QuoteLegacy {
+		return DOUBLE_QUOTED_SCALAR_STYLE
+	}
+	return SINGLE_QUOTED_SCALAR_STYLE
+}
+
 type ErrorType int
 
 // Many bad things could happen with the parser and emitter.
@@ -82,15 +101,29 @@ const (
 // Mark holds the pointer position.
 type Mark struct {
 	Index  int // The position index.
-	Line   int // The position line.
-	Column int // The position column.
+	Line   int // The position line (1-indexed).
+	Column int // The position column (0-indexed internally, displayed as 1-indexed).
+}
+
+func (m Mark) String() string {
+	var builder strings.Builder
+	if m.Line == 0 {
+		return "<unknown position>"
+	}
+
+	fmt.Fprintf(&builder, "line %d", m.Line)
+	if m.Column != 0 {
+		fmt.Fprintf(&builder, ", column %d", m.Column+1)
+	}
+
+	return builder.String()
 }
 
 // Node Styles
 
-type Style int8
+type styleInt int8
 
-type ScalarStyle Style
+type ScalarStyle styleInt
 
 // Scalar styles.
 const (
@@ -122,7 +155,7 @@ func (style ScalarStyle) String() string {
 	}
 }
 
-type SequenceStyle Style
+type SequenceStyle styleInt
 
 // Sequence styles.
 const (
@@ -133,7 +166,7 @@ const (
 	FLOW_SEQUENCE_STYLE  // The flow sequence style.
 )
 
-type MappingStyle Style
+type MappingStyle styleInt
 
 // Mapping styles.
 const (
@@ -175,10 +208,11 @@ const (
 	KEY_TOKEN         // A KEY token.
 	VALUE_TOKEN       // A VALUE token.
 
-	ALIAS_TOKEN  // An ALIAS token.
-	ANCHOR_TOKEN // An ANCHOR token.
-	TAG_TOKEN    // A TAG token.
-	SCALAR_TOKEN // A SCALAR token.
+	ALIAS_TOKEN   // An ALIAS token.
+	ANCHOR_TOKEN  // An ANCHOR token.
+	TAG_TOKEN     // A TAG token.
+	SCALAR_TOKEN  // A SCALAR token.
+	COMMENT_TOKEN // A COMMENT token.
 )
 
 func (tt TokenType) String() string {
@@ -227,6 +261,8 @@ func (tt TokenType) String() string {
 		return "TAG_TOKEN"
 	case SCALAR_TOKEN:
 		return "SCALAR_TOKEN"
+	case COMMENT_TOKEN:
+		return "COMMENT_TOKEN"
 	}
 	return "<unknown token>"
 }
@@ -315,10 +351,10 @@ type Event struct {
 	encoding Encoding
 
 	// The version directive (for DOCUMENT_START_EVENT).
-	version_directive *VersionDirective
+	versionDirective *VersionDirective
 
 	// The list of tag directives (for DOCUMENT_START_EVENT).
-	tag_directives []TagDirective
+	tagDirectives []TagDirective
 
 	// The comments
 	HeadComment []byte
@@ -349,6 +385,15 @@ type Event struct {
 func (e *Event) ScalarStyle() ScalarStyle     { return ScalarStyle(e.Style) }
 func (e *Event) SequenceStyle() SequenceStyle { return SequenceStyle(e.Style) }
 func (e *Event) MappingStyle() MappingStyle   { return MappingStyle(e.Style) }
+
+// GetEncoding returns the stream encoding (for STREAM_START_EVENT).
+func (e *Event) GetEncoding() Encoding { return e.encoding }
+
+// GetVersionDirective returns the version directive (for DOCUMENT_START_EVENT).
+func (e *Event) GetVersionDirective() *VersionDirective { return e.versionDirective }
+
+// GetTagDirectives returns the tag directives (for DOCUMENT_START_EVENT).
+func (e *Event) GetTagDirectives() []TagDirective { return e.tagDirectives }
 
 // Nodes
 
@@ -393,8 +438,8 @@ type NodePair struct {
 	value int // The value of the element.
 }
 
-// Node represents a single node in the YAML document tree.
-type Node struct {
+// parserNode represents a single node in the YAML document tree.
+type parserNode struct {
 	typ NodeType // The node type.
 	tag []byte   // The node tag.
 
@@ -429,7 +474,7 @@ type Node struct {
 // Document structure.
 type Document struct {
 	// The document nodes.
-	nodes []Node
+	nodes []parserNode
 
 	// The version directive.
 	version_directive *VersionDirective
@@ -465,7 +510,7 @@ type ReadHandler func(parser *Parser, buffer []byte) (n int, err error)
 
 // SimpleKey holds information about a potential simple key.
 type SimpleKey struct {
-	possible     bool // Is a simple key possible?
+	flow_level   int  // What flow level is the key at?
 	required     bool // Is a simple key required?
 	token_number int  // The number of the token.
 	mark         Mark // The position mark.
@@ -560,23 +605,9 @@ type AliasData struct {
 // Parser structure holds all information about the current
 // state of the parser.
 type Parser struct {
-	// Error handling
-
-	ErrorType ErrorType // Error type.
-
-	Problem string // Error description.
-
-	// The byte about which the problem occurred.
-	ProblemOffset int
-	ProblemValue  int
-	ProblemMark   Mark
-
-	// The error Context.
-	Context     string
-	ContextMark Mark
+	lastError error
 
 	// Reader stuff
-
 	read_handler ReadHandler // Read handler.
 
 	input_reader io.Reader // File input data.
@@ -626,9 +657,10 @@ type Parser struct {
 	indent  int   // The current indentation level.
 	indents []int // The indentation levels stack.
 
-	simple_key_allowed bool        // May a simple key occur at the current position?
-	simple_keys        []SimpleKey // The stack of simple keys.
-	simple_keys_by_tok map[int]int // possible simple_key indexes indexed by token_number
+	simple_key_allowed  bool        // May a simple key occur at the current position?
+	simple_key_possible bool        // Is the current simple key possible?
+	simple_key          SimpleKey   // The current simple key.
+	simple_key_stack    []SimpleKey // The stack of simple keys.
 
 	// Parser stuff
 
@@ -637,7 +669,7 @@ type Parser struct {
 	marks          []Mark         // The stack of marks.
 	tag_directives []TagDirective // The list of TAG directives.
 
-	// Dumper stuff
+	// Representer stuff
 
 	aliases []AliasData // The alias data.
 
@@ -645,14 +677,14 @@ type Parser struct {
 }
 
 type Comment struct {
-	scan_mark  Mark // Position where scanning for comments started
-	token_mark Mark // Position after which tokens will be associated with this comment
-	start_mark Mark // Position of '#' comment mark
-	end_mark   Mark // Position where comment terminated
+	ScanMark  Mark // Position where scanning for comments started
+	TokenMark Mark // Position after which tokens will be associated with this comment
+	StartMark Mark // Position of '#' comment mark
+	EndMark   Mark // Position where comment terminated
 
-	head []byte
-	line []byte
-	foot []byte
+	Head []byte
+	Line []byte
+	Foot []byte
 }
 
 // Emitter Definitions
@@ -712,18 +744,16 @@ type Emitter struct {
 	buffer     []byte // The working buffer.
 	buffer_pos int    // The current position of the buffer.
 
-	raw_buffer     []byte // The raw buffer.
-	raw_buffer_pos int    // The current position of the buffer.
-
 	encoding Encoding // The stream encoding.
 
 	// Emitter stuff
 
-	canonical  bool      // If the output is in the canonical style?
-	BestIndent int       // The number of indentation spaces.
-	best_width int       // The preferred width of the output lines.
-	unicode    bool      // Allow unescaped non-ASCII characters?
-	line_break LineBreak // The preferred line break.
+	canonical       bool       // If the output is in the canonical style?
+	BestIndent      int        // The number of indentation spaces.
+	best_width      int        // The preferred width of the output lines.
+	unicode         bool       // Allow unescaped non-ASCII characters?
+	line_break      LineBreak  // The preferred line break.
+	quotePreference QuoteStyle // Preferred quote style when quoting is required.
 
 	state  EmitterState   // The current emitter state.
 	states []EmitterState // The stack of states.
@@ -786,7 +816,7 @@ type Emitter struct {
 
 	key_line_comment []byte
 
-	// Dumper stuff
+	// Representer stuff
 
 	opened bool // If the stream was already opened?
 	closed bool // If the stream was already closed?

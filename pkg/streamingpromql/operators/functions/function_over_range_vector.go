@@ -237,6 +237,10 @@ func (m *FunctionOverRangeVector) Finalize(ctx context.Context) error {
 func (m *FunctionOverRangeVector) Close() {
 	m.Inner.Close()
 
+	for _, sa := range m.ScalarArgs {
+		sa.Close()
+	}
+
 	for _, d := range m.scalarArgsData {
 		types.FPointSlicePool.Put(&d.Samples, m.MemoryConsumptionTracker)
 	}

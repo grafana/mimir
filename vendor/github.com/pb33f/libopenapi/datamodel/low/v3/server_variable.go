@@ -1,7 +1,7 @@
 package v3
 
 import (
-	"crypto/sha256"
+	"hash/maphash"
 	"sort"
 
 	"github.com/pb33f/libopenapi/datamodel/low"
@@ -42,32 +42,30 @@ func (s *ServerVariable) GetExtensions() *orderedmap.Map[low.KeyReference[string
 	return s.Extensions
 }
 
-// Hash will return a consistent SHA256 Hash of the ServerVariable object
-func (s *ServerVariable) Hash() [32]byte {
-	// Use string builder pool
-	sb := low.GetStringBuilder()
-	defer low.PutStringBuilder(sb)
-
-	// Pre-allocate and sort enum values
-	if len(s.Enum) > 0 {
-		keys := make([]string, len(s.Enum))
-		for i := range s.Enum {
-			keys[i] = s.Enum[i].Value
+// Hash will return a consistent Hash of the ServerVariable object
+func (s *ServerVariable) Hash() uint64 {
+	return low.WithHasher(func(h *maphash.Hash) uint64 {
+		// Pre-allocate and sort enum values
+		if len(s.Enum) > 0 {
+			keys := make([]string, len(s.Enum))
+			for i := range s.Enum {
+				keys[i] = s.Enum[i].Value
+			}
+			sort.Strings(keys)
+			for _, key := range keys {
+				h.WriteString(key)
+				h.WriteByte(low.HASH_PIPE)
+			}
 		}
-		sort.Strings(keys)
-		for _, key := range keys {
-			sb.WriteString(key)
-			sb.WriteByte('|')
-		}
-	}
 
-	if !s.Default.IsEmpty() {
-		sb.WriteString(s.Default.Value)
-		sb.WriteByte('|')
-	}
-	if !s.Description.IsEmpty() {
-		sb.WriteString(s.Description.Value)
-		sb.WriteByte('|')
-	}
-	return sha256.Sum256([]byte(sb.String()))
+		if !s.Default.IsEmpty() {
+			h.WriteString(s.Default.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !s.Description.IsEmpty() {
+			h.WriteString(s.Description.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		return h.Sum64()
+	})
 }

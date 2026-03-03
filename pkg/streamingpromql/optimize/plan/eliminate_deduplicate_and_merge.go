@@ -5,6 +5,7 @@ package plan
 import (
 	"context"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
@@ -15,6 +16,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // EliminateDeduplicateAndMergeOptimizationPass removes redundant DeduplicateAndMerge nodes from the plan.
@@ -27,9 +29,10 @@ import (
 type EliminateDeduplicateAndMergeOptimizationPass struct {
 	attempts prometheus.Counter
 	modified prometheus.Counter
+	logger   log.Logger
 }
 
-func NewEliminateDeduplicateAndMergeOptimizationPass(reg prometheus.Registerer) *EliminateDeduplicateAndMergeOptimizationPass {
+func NewEliminateDeduplicateAndMergeOptimizationPass(reg prometheus.Registerer, logger log.Logger) *EliminateDeduplicateAndMergeOptimizationPass {
 	return &EliminateDeduplicateAndMergeOptimizationPass{
 		attempts: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_mimir_query_engine_eliminate_dedupe_attempted_total",
@@ -39,6 +42,7 @@ func NewEliminateDeduplicateAndMergeOptimizationPass(reg prometheus.Registerer) 
 			Name: "cortex_mimir_query_engine_eliminate_dedupe_modified_total",
 			Help: "Total number of queries where the optimization pass has been able to eliminate DeduplicateAndMerge nodes for.",
 		}),
+		logger: logger,
 	}
 }
 
@@ -46,10 +50,11 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) Name() string {
 	return "Eliminate DeduplicateAndMerge"
 }
 
-func (e *EliminateDeduplicateAndMergeOptimizationPass) Apply(_ context.Context, plan *planning.QueryPlan, _ planning.QueryPlanVersion) (*planning.QueryPlan, error) {
+func (e *EliminateDeduplicateAndMergeOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, _ planning.QueryPlanVersion) (*planning.QueryPlan, error) {
+	spanlog := spanlogger.FromContext(ctx, e.logger)
 	e.attempts.Inc()
 
-	newRoot, eliminatedAny, err := e.apply(plan.Root, plan.Parameters.EnableDelayedNameRemoval)
+	newRoot, eliminated, err := e.apply(plan.Root, plan.Parameters.EnableDelayedNameRemoval)
 
 	if err != nil {
 		return nil, err
@@ -59,35 +64,36 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) Apply(_ context.Context, 
 		plan.Root = newRoot
 	}
 
-	if eliminatedAny {
+	if eliminated > 0 {
+		spanlog.DebugLog("msg", "eliminated DeduplicateAndMerge node(s)", "eliminated", eliminated)
 		e.modified.Inc()
 	}
 
 	return plan, nil
 }
 
-func (e *EliminateDeduplicateAndMergeOptimizationPass) apply(node planning.Node, delayedNameRemoval bool) (planning.Node, bool, error) {
+func (e *EliminateDeduplicateAndMergeOptimizationPass) apply(node planning.Node, delayedNameRemoval bool) (planning.Node, int, error) {
 	// Try to eliminate DeduplicateAndMerge nodes in children first.
-	var eliminatedAny bool
+	var eliminated int
 
 	for idx := range node.ChildCount() {
 		replacement, eliminatedInChild, err := e.apply(node.Child(idx), delayedNameRemoval)
 		if err != nil {
-			return nil, false, err
+			return nil, 0, err
 		}
 
-		eliminatedAny = eliminatedAny || eliminatedInChild
+		eliminated += eliminatedInChild
 
 		if replacement != nil {
 			if err := node.ReplaceChild(idx, replacement); err != nil {
-				return nil, false, err
+				return nil, 0, err
 			}
 		}
 	}
 
 	deduplicateAndMerge, isDeduplicateAndMerge := node.(*core.DeduplicateAndMerge)
 	if !isDeduplicateAndMerge {
-		return nil, eliminatedAny, nil
+		return nil, eliminated, nil
 	}
 
 	var (
@@ -102,12 +108,13 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) apply(node planning.Node,
 	}
 
 	if err != nil {
-		return nil, false, err
+		return nil, 0, err
 	} else if ok {
-		return deduplicateAndMerge.Inner, true, nil
+		eliminated++
+		return deduplicateAndMerge.Inner, eliminated, nil
 	}
 
-	return nil, eliminatedAny, nil
+	return nil, eliminated, nil
 }
 
 func canEliminateDeduplicateAndMergeDelayedNameRemoval(node planning.Node) bool {

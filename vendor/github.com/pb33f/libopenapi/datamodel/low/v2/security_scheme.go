@@ -5,8 +5,7 @@ package v2
 
 import (
 	"context"
-	"crypto/sha256"
-	"strings"
+	"hash/maphash"
 
 	"github.com/pb33f/libopenapi/datamodel/low"
 	"github.com/pb33f/libopenapi/index"
@@ -52,33 +51,45 @@ func (ss *SecurityScheme) Build(ctx context.Context, _, root *yaml.Node, idx *in
 	return nil
 }
 
-// Hash will return a consistent SHA256 Hash of the SecurityScheme object
-func (ss *SecurityScheme) Hash() [32]byte {
-	var f []string
-	if !ss.Type.IsEmpty() {
-		f = append(f, ss.Type.Value)
-	}
-	if !ss.Description.IsEmpty() {
-		f = append(f, ss.Description.Value)
-	}
-	if !ss.Name.IsEmpty() {
-		f = append(f, ss.Name.Value)
-	}
-	if !ss.In.IsEmpty() {
-		f = append(f, ss.In.Value)
-	}
-	if !ss.Flow.IsEmpty() {
-		f = append(f, ss.Flow.Value)
-	}
-	if !ss.AuthorizationUrl.IsEmpty() {
-		f = append(f, ss.AuthorizationUrl.Value)
-	}
-	if !ss.TokenUrl.IsEmpty() {
-		f = append(f, ss.TokenUrl.Value)
-	}
-	if !ss.Scopes.IsEmpty() {
-		f = append(f, low.GenerateHashString(ss.Scopes.Value))
-	}
-	f = append(f, low.HashExtensions(ss.Extensions)...)
-	return sha256.Sum256([]byte(strings.Join(f, "|")))
+// Hash will return a consistent Hash of the SecurityScheme object
+func (ss *SecurityScheme) Hash() uint64 {
+	return low.WithHasher(func(h *maphash.Hash) uint64 {
+		if !ss.Type.IsEmpty() {
+			h.WriteString(ss.Type.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !ss.Description.IsEmpty() {
+			h.WriteString(ss.Description.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !ss.Name.IsEmpty() {
+			h.WriteString(ss.Name.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !ss.In.IsEmpty() {
+			h.WriteString(ss.In.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !ss.Flow.IsEmpty() {
+			h.WriteString(ss.Flow.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !ss.AuthorizationUrl.IsEmpty() {
+			h.WriteString(ss.AuthorizationUrl.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !ss.TokenUrl.IsEmpty() {
+			h.WriteString(ss.TokenUrl.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !ss.Scopes.IsEmpty() {
+			h.WriteString(low.GenerateHashString(ss.Scopes.Value))
+			h.WriteByte(low.HASH_PIPE)
+		}
+		for _, ext := range low.HashExtensions(ss.Extensions) {
+			h.WriteString(ext)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		return h.Sum64()
+	})
 }

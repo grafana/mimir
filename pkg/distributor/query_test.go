@@ -217,6 +217,9 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunksPerQueryLimitIsReac
 						},
 					})
 
+					dedupMetrics := limiter.NewSeriesDeduplicatorMetrics(reg[0])
+					userCtx = limiter.ContextWithNewSeriesLabelsDeduplicator(userCtx, dedupMetrics)
+
 					// Push a number of series below the max chunks limit. Each series has 1 sample,
 					// so expect 1 chunk per series when querying back.
 					initialSeries := limit / 3
@@ -296,6 +299,9 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReac
 				},
 			})
 
+			metrics := limiter.NewSeriesDeduplicatorMetrics(reg[0])
+			userCtx = limiter.ContextWithNewSeriesLabelsDeduplicator(userCtx, metrics)
+
 			// Push a number of series below the max series limit.
 			initialSeries := maxSeriesLimit
 			writeReq := makeWriteRequest(0, initialSeries, 0, false, true, "foo")
@@ -365,6 +371,8 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIs
 		limits:            limits,
 		replicationFactor: 1,
 	})
+	metrics := limiter.NewSeriesDeduplicatorMetrics(reg[0])
+	ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx, metrics)
 
 	allSeriesMatchers := []*labels.Matcher{
 		labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+"),
@@ -465,6 +473,8 @@ func TestDistributor_QueryStream_ShouldSuccessfullyRunOnSlowIngesterWithStreamin
 			// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 			ctx := user.InjectOrgID(context.Background(), "test")
 			ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
+			metrics := limiter.NewSeriesDeduplicatorMetrics(reg[0])
+			ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx, metrics)
 			ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 
 			// Push series.

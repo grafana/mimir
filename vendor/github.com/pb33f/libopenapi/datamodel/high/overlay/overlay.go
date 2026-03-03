@@ -13,10 +13,10 @@ import (
 // Overlay represents a high-level OpenAPI Overlay document.
 // https://spec.openapis.org/overlay/v1.0.0
 type Overlay struct {
-	Overlay    string                               `json:"overlay,omitempty" yaml:"overlay,omitempty"`
-	Info       *Info                                `json:"info,omitempty" yaml:"info,omitempty"`
-	Extends    string                               `json:"extends,omitempty" yaml:"extends,omitempty"`
-	Actions    []*Action                            `json:"actions,omitempty" yaml:"actions,omitempty"`
+	Overlay    string                              `json:"overlay,omitempty" yaml:"overlay,omitempty"`
+	Info       *Info                               `json:"info,omitempty" yaml:"info,omitempty"`
+	Extends    string                              `json:"extends,omitempty" yaml:"extends,omitempty"`
+	Actions    []*Action                           `json:"actions,omitempty" yaml:"actions,omitempty"`
 	Extensions *orderedmap.Map[string, *yaml.Node] `json:"-" yaml:"-"`
 	low        *low.Overlay
 }

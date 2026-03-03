@@ -1,5 +1,5 @@
 # Pin kube version so results are the same for running in CI and locally where the installed kube version may be different.
-kubeVersionOverride: "1.29"
+kubeVersionOverride: "1.32"
 
 alertmanager:
   zoneAwareReplication:
@@ -12,6 +12,7 @@ ingester:
   zoneAwareReplication:
     enabled: true
     topologyKey: 'kubernetes.io/hostname'
+    minTimeBetweenZonesDownscale: 2h
     zones:
     - name: zone-a
       extraAffinity:
@@ -51,6 +52,7 @@ store_gateway:
   zoneAwareReplication:
     enabled: true
     topologyKey: 'kubernetes.io/hostname'
+    minTimeBetweenZonesDownscale: 10m
     zones:
     - name: zone-a
       nodeSelector:

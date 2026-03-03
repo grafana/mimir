@@ -2,6 +2,8 @@ package nfstatus
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"sync"
 	"time"
 
@@ -12,14 +14,41 @@ import (
 	"github.com/prometheus/common/model"
 )
 
+type NotificationHistoryAlert struct {
+	*types.Alert
+	ExtraData json.RawMessage
+}
+
 type NotificationHistoryEntry struct {
-	Alerts          []*types.Alert
+	Alerts          []NotificationHistoryAlert
+	GroupKey        string
 	Retry           bool
 	NotificationErr error
 	Duration        time.Duration
 	ReceiverName    string
+	IntegrationName string
+	IntegrationIdx  int
 	GroupLabels     model.LabelSet
 	PipelineTime    time.Time
+}
+
+func (e NotificationHistoryEntry) Validate() error {
+	var errs []error
+
+	if e.ReceiverName == "" {
+		errs = append(errs, errors.New("missing receiver name"))
+	}
+	if e.GroupLabels == nil {
+		errs = append(errs, errors.New("missing group labels"))
+	}
+	if e.PipelineTime.IsZero() {
+		errs = append(errs, errors.New("missing pipeline time"))
+	}
+	if e.GroupKey == "" {
+		errs = append(errs, errors.New("missing group key"))
+	}
+
+	return errors.Join(errs...)
 }
 
 type NotificationHistorian interface {
@@ -33,10 +62,42 @@ type Integration struct {
 	integration *notify.Integration
 }
 
+// NotifyInfo is informational data about notification attempts.
+type NotifyInfo struct {
+	ExtraData []json.RawMessage
+}
+
+// Notifier is an extended version of notify.Notifier which returns the
+// context with any modifications made to it by intermediate hooks.
+type Notifier interface {
+	Notify(context.Context, ...*types.Alert) (NotifyInfo, bool, error)
+}
+
+// NotifierAdapter adapts an upstream notify.Notifier to our Notifier
+type NotifierAdapter struct {
+	n notify.Notifier
+}
+
+// NotifierAdapter adapts an upstream notify.Notifier to our Notifier
+func NewNotifierAdapter(n notify.Notifier) Notifier {
+	return NotifierAdapter{n: n}
+}
+
+func (n NotifierAdapter) Notify(ctx context.Context, alerts ...*types.Alert) (NotifyInfo, bool, error) {
+	retry, err := n.n.Notify(ctx, alerts...)
+	return NotifyInfo{}, retry, err
+}
+
 // NewIntegration returns a new integration.
-func NewIntegration(notifier notify.Notifier, rs notify.ResolvedSender, name string, idx int, receiverName string, notificationHistorian NotificationHistorian, logger log.Logger) *Integration {
+func NewIntegration(notifier Notifier, rs notify.ResolvedSender, name string, idx int, receiverName string, notificationHistorian NotificationHistorian, logger log.Logger) *Integration {
 	// Wrap the provided Notifier with our own, which will capture notification attempt errors.
-	status := &statusCaptureNotifier{upstream: notifier, notificationHistorian: notificationHistorian, logger: logger}
+	status := &statusCaptureNotifier{
+		integrationName:       name,
+		integrationIdx:        idx,
+		upstream:              notifier,
+		notificationHistorian: notificationHistorian,
+		logger:                logger,
+	}
 
 	integration := notify.NewIntegration(status, rs, name, idx, receiverName)
 
@@ -95,7 +156,9 @@ func GetIntegrations(integrations []*Integration) []*notify.Integration {
 
 // statusCaptureNotifier is used to wrap a notify.Notifer and capture information about attempts.
 type statusCaptureNotifier struct {
-	upstream              notify.Notifier
+	integrationName       string
+	integrationIdx        int
+	upstream              Notifier
 	notificationHistorian NotificationHistorian
 	logger                log.Logger
 
@@ -108,10 +171,10 @@ type statusCaptureNotifier struct {
 // Notify implements the Notifier interface.
 func (n *statusCaptureNotifier) Notify(ctx context.Context, alerts ...*types.Alert) (bool, error) {
 	start := time.Now()
-	retry, err := n.upstream.Notify(ctx, alerts...)
+	info, retry, err := n.upstream.Notify(ctx, alerts...)
 	duration := time.Since(start)
 
-	go n.recordNotificationHistory(ctx, alerts, retry, err, duration)
+	go n.recordNotificationHistory(ctx, alerts, retry, err, duration, info)
 
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
@@ -123,35 +186,48 @@ func (n *statusCaptureNotifier) Notify(ctx context.Context, alerts ...*types.Ale
 	return retry, err
 }
 
-func (n *statusCaptureNotifier) recordNotificationHistory(ctx context.Context, alerts []*types.Alert, retry bool, err error, duration time.Duration) {
+func (n *statusCaptureNotifier) recordNotificationHistory(ctx context.Context, alerts []*types.Alert, retry bool, err error, duration time.Duration, info NotifyInfo) {
 	if n.notificationHistorian == nil {
 		return
 	}
-	receiverName, ok := notify.ReceiverName(ctx)
-	if !ok {
-		level.Warn(n.logger).Log("msg", "failed to get receiver name from context, skipping notification history write")
-		return
-	}
-	groupLabels, ok := notify.GroupLabels(ctx)
-	if !ok {
-		level.Warn(n.logger).Log("msg", "failed to get group labels from context, skipping notification history write")
-		return
-	}
-	pipelineTime, ok := notify.Now(ctx)
-	if !ok {
-		level.Warn(n.logger).Log("msg", "failed to get pipeline time from context, skipping notification history write")
-		return
+
+	// Extract context values
+	receiverName, _ := notify.ReceiverName(ctx)
+	groupLabels, _ := notify.GroupLabels(ctx)
+	pipelineTime, _ := notify.Now(ctx)
+	groupKey, _ := notify.GroupKey(ctx)
+
+	// Inject ExtraData into alerts.
+	extraData := info.ExtraData
+	entryAlerts := make([]NotificationHistoryAlert, len(alerts))
+	for i := range alerts {
+		entryAlerts[i] = NotificationHistoryAlert{
+			Alert: alerts[i],
+		}
+		if i < len(extraData) {
+			entryAlerts[i].ExtraData = extraData[i]
+		}
 	}
 
-	n.notificationHistorian.Record(ctx, NotificationHistoryEntry{
-		Alerts:          alerts,
+	entry := NotificationHistoryEntry{
+		Alerts:          entryAlerts,
+		GroupKey:        groupKey,
 		Retry:           retry,
 		NotificationErr: err,
 		Duration:        duration,
 		ReceiverName:    receiverName,
+		IntegrationName: n.integrationName,
+		IntegrationIdx:  n.integrationIdx,
 		GroupLabels:     groupLabels,
 		PipelineTime:    pipelineTime,
-	})
+	}
+
+	if validationErr := entry.Validate(); validationErr != nil {
+		level.Warn(n.logger).Log("msg", "failed to validate notification history entry, skipping notification history write", "error", validationErr)
+		return
+	}
+
+	n.notificationHistorian.Record(ctx, entry)
 }
 
 // GetReport returns information about the last notification attempt.

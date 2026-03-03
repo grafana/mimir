@@ -785,13 +785,14 @@ func TestConcurrentFetchers(t *testing.T) {
 
 		logger := log.NewNopLogger()
 		reg := prometheus.NewPedanticRegistry()
-		metrics := NewReaderMetrics(reg, noopReaderMetricsSource{}, topicName, nil)
+		kpromMetrics := NewKafkaReaderClientMetrics(ReaderMetricsPrefix, "partition-reader", reg)
+		readerMetrics := NewReaderMetrics(reg, noopReaderMetricsSource{}, topicName, kpromMetrics)
 
 		client := newKafkaProduceClient(t, clusterAddr)
 
 		// This instantiates the fields of kprom.
 		// This is usually done by franz-go, but since now we use the metrics ourselves, we need to instantiate the metrics ourselves.
-		metrics.kprom.OnNewClient(client)
+		kpromMetrics.OnNewClient(client)
 
 		offsetReader := newPartitionOffsetClient(client, topicName, reg, logger)
 
@@ -814,7 +815,7 @@ func TestConcurrentFetchers(t *testing.T) {
 			OnRangeErrorResumeFromStart,
 			startOffsetsReader,
 			fastFetchBackoffConfig,
-			&metrics,
+			&readerMetrics,
 		)
 		assert.ErrorContains(t, err, "failed to find topic ID")
 		assert.ErrorIs(t, err, mockErr)
@@ -1288,11 +1289,12 @@ func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Cli
 	logger := testingLogger.WithT(t)
 
 	reg := prometheus.NewPedanticRegistry()
-	metrics := NewReaderMetrics(reg, noopReaderMetricsSource{}, topic, nil)
+	kpromMetrics := NewKafkaReaderClientMetrics(ReaderMetricsPrefix, "partition-reader", reg)
+	readerMetrics := NewReaderMetrics(reg, noopReaderMetricsSource{}, topic, kpromMetrics)
 
 	// This instantiates the fields of kprom.
 	// This is usually done by franz-go, but since now we use the metrics ourselves, we need to instantiate the metrics ourselves.
-	metrics.kprom.OnNewClient(client)
+	kpromMetrics.OnNewClient(client)
 
 	offsetReader := newPartitionOffsetClient(client, topic, reg, logger)
 
@@ -1315,7 +1317,7 @@ func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Cli
 		rangeErrorPolicy,
 		startOffsetsReader,
 		fastFetchBackoffConfig,
-		&metrics,
+		&readerMetrics,
 	)
 	require.NoError(t, err)
 

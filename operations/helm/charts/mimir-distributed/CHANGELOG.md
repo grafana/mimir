@@ -29,6 +29,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [CHANGE] Update minimum supported Kubernetes version to 1.32. This reflects the fact that Grafana does not test with older versions of Kubernetes. #14335
 * [CHANGE] Set default memory ballast for ruler to 1GiB to reduce GC pressure during startup. #13376
 * [CHANGE] Set docker.io as the default registry for mimir image. #13267
 * [ENHANCEMENT] Add Support to customize gossip ring k8s service annotations. #12718
@@ -39,6 +40,9 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Upgrade to Helm v4. #13661
 * [ENHANCEMENT] Default image tag to Chart.AppVersion. Use `image.tag` value to override the image tag. #13453
 * [ENHANCEMENT] Kafka: Made log retention period configurable via `kafka.logRetentionHours`. #13866
+* [ENHANCEMENT] Allow overwriting `grafana.com/min-time-between-zones-downscale` annotation value for ingester and store-gateway via `zoneAwareReplication.minTimeBetweenZonesDownscale`. #14411
+* [ENHANCEMENT] Upgrade rollout-operator chart to [0.43.0](https://github.com/grafana/helm-charts/blob/main/charts/rollout-operator). #14463
+* [ENHANCEMENT] Add support for custom labels on PersistentVolumeClaim resources for alertmanager, compactor, ingester, and store-gateway. #14373
 * [BUGFIX] Fix missing newline for custom pod labels. #13325
 * [BUGFIX] Upgrade rollout-operator chart to 0.37.1, which fixes server-tls.self-signed-cert.dns-name to use the full release name instead of always being set to `rollout-operator.NAMESPACE.svc`. If upgrading from 6.0.0 or 6.0.1, delete the `certificate` secret created by the rollout-operator pod and recreate the rollout-operator pod. #13357
 * [BUGFIX] Delete gateway's serviceMonitor #13481

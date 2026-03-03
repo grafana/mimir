@@ -579,6 +579,10 @@ alertmanager:
     #
     annotations: {}
 
+    # Alertmanager data Persistent Volume Claim labels
+    #
+    labels: {}
+
     # Alertmanager data Persistent Volume access modes
     # Must match those of existing PV or dynamic provisioner
     # Ref: http://kubernetes.io/docs/user-guide/persistent-volumes/
@@ -992,6 +996,10 @@ ingester:
     #
     annotations: {}
 
+    # Ingester data Persistent Volume Claim labels
+    #
+    labels: {}
+
     # Ingester data Persistent Volume access modes
     # Must match those of existing PV or dynamic provisioner
     # Ref: http://kubernetes.io/docs/user-guide/persistent-volumes/
@@ -1079,6 +1087,8 @@ ingester:
     enabled: true
     # -- Maximum number of ingesters that can be unavailable per zone during rollout
     maxUnavailable: 50
+    # -- Minimum time for the rollout operator to wait between ingester zone down scales
+    minTimeBetweenZonesDownscale: 12h
     # -- topologyKey to use in pod anti-affinity. If unset, no anti-affinity rules are generated. If set, the generated anti-affinity rule makes sure that pods from different zones do not mix.
     # E.g.: topologyKey: 'kubernetes.io/hostname'
     topologyKey: null
@@ -2190,6 +2200,10 @@ store_gateway:
     #
     annotations: {}
 
+    # Store-gateway data Persistent Volume Claim labels
+    #
+    labels: {}
+
     # Store-gateway data Persistent Volume access modes
     # Must match those of existing PV or dynamic provisioner
     # Ref: http://kubernetes.io/docs/user-guide/persistent-volumes/
@@ -2278,6 +2292,8 @@ store_gateway:
     enabled: true
     # -- Maximum number of store-gateways that can be unavailable per zone during rollout
     maxUnavailable: 50
+    # -- Minimum time for the rollout operator to wait between store-gateway zone down scales
+    minTimeBetweenZonesDownscale: 30m
     # -- topologyKey to use in pod anti-affinity. If unset, no anti-affinity rules are generated. If set, the generated anti-affinity rule makes sure that pods from different zones do not mix.
     # E.g.: topologyKey: 'kubernetes.io/hostname'
     topologyKey: null
@@ -2433,6 +2449,10 @@ compactor:
     # compactor data Persistent Volume Claim annotations
     #
     annotations: {}
+
+    # compactor data Persistent Volume Claim labels
+    #
+    labels: {}
 
     # compactor data Persistent Volume access modes
     # Must match those of existing PV or dynamic provisioner

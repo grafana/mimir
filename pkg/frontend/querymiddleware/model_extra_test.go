@@ -15,10 +15,10 @@ import (
 	"unsafe"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/propagation"
 )
 
@@ -177,6 +177,7 @@ func TestPrometheusRangeQueryRequest_MinTMaxT(t *testing.T) {
 	start := now
 	end := now.Add(17 * time.Minute)
 	defaultLookback := 1 * time.Minute
+	parser := promqlext.NewPromQLParser()
 
 	testCases := map[string]struct {
 		query        string
@@ -282,6 +283,7 @@ func TestPrometheusRangeQueryRequest_MinTMaxT(t *testing.T) {
 func TestPrometheusInstantQueryRequest_MinTMaxT(t *testing.T) {
 	now := time.Now()
 	defaultLookback := 1 * time.Minute
+	parser := promqlext.NewPromQLParser()
 
 	testCases := map[string]struct {
 		query        string

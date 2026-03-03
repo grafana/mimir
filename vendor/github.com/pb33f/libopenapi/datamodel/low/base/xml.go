@@ -2,8 +2,7 @@ package base
 
 import (
 	"context"
-	"crypto/sha256"
-	"strconv"
+	"hash/maphash"
 
 	"github.com/pb33f/libopenapi/datamodel/low"
 	"github.com/pb33f/libopenapi/index"
@@ -63,39 +62,37 @@ func (x *XML) GetIndex() *index.SpecIndex {
 	return x.index
 }
 
-// Hash generates a SHA256 hash of the XML object using properties
-func (x *XML) Hash() [32]byte {
-	// Use string builder pool
-	sb := low.GetStringBuilder()
-	defer low.PutStringBuilder(sb)
-
-	if !x.Name.IsEmpty() {
-		sb.WriteString(x.Name.Value)
-		sb.WriteByte('|')
-	}
-	if !x.Namespace.IsEmpty() {
-		sb.WriteString(x.Namespace.Value)
-		sb.WriteByte('|')
-	}
-	if !x.Prefix.IsEmpty() {
-		sb.WriteString(x.Prefix.Value)
-		sb.WriteByte('|')
-	}
-	if !x.Attribute.IsEmpty() {
-		sb.WriteString(strconv.FormatBool(x.Attribute.Value))
-		sb.WriteByte('|')
-	}
-	if !x.NodeType.IsEmpty() {
-		sb.WriteString(x.NodeType.Value)
-		sb.WriteByte('|')
-	}
-	if !x.Wrapped.IsEmpty() {
-		sb.WriteString(strconv.FormatBool(x.Wrapped.Value))
-		sb.WriteByte('|')
-	}
-	for _, ext := range low.HashExtensions(x.Extensions) {
-		sb.WriteString(ext)
-		sb.WriteByte('|')
-	}
-	return sha256.Sum256([]byte(sb.String()))
+// Hash generates a hash of the XML object using properties
+func (x *XML) Hash() uint64 {
+	return low.WithHasher(func(h *maphash.Hash) uint64 {
+		if !x.Name.IsEmpty() {
+			h.WriteString(x.Name.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !x.Namespace.IsEmpty() {
+			h.WriteString(x.Namespace.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !x.Prefix.IsEmpty() {
+			h.WriteString(x.Prefix.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !x.Attribute.IsEmpty() {
+			low.HashBool(h, x.Attribute.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !x.NodeType.IsEmpty() {
+			h.WriteString(x.NodeType.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		if !x.Wrapped.IsEmpty() {
+			low.HashBool(h, x.Wrapped.Value)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		for _, ext := range low.HashExtensions(x.Extensions) {
+			h.WriteString(ext)
+			h.WriteByte(low.HASH_PIPE)
+		}
+		return h.Sum64()
+	})
 }

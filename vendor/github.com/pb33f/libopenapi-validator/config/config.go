@@ -230,6 +230,7 @@ var defaultIgnoredHeaders = []string{
 	"if-match", "if-none-match", "if-modified-since",
 	"last-modified", "transfer-encoding", "vary", "x-forwarded-for",
 	"x-forwarded-proto", "x-real-ip", "x-request-id",
+	"request-start-time", // Added by some API clients for timing
 }
 
 // GetEffectiveStrictIgnoredHeaders returns the list of headers to ignore

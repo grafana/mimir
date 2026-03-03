@@ -4,12 +4,24 @@
 package v3
 
 import (
+	"context"
+
 	"github.com/pb33f/libopenapi/datamodel/high"
+	lowmodel "github.com/pb33f/libopenapi/datamodel/low"
 	low "github.com/pb33f/libopenapi/datamodel/low/v3"
+	"github.com/pb33f/libopenapi/index"
 	"github.com/pb33f/libopenapi/orderedmap"
 	"github.com/pb33f/libopenapi/utils"
 	"go.yaml.in/yaml/v4"
 )
+
+// buildLowSecurityScheme builds a low-level SecurityScheme from a resolved YAML node.
+func buildLowSecurityScheme(node *yaml.Node, idx *index.SpecIndex) (*low.SecurityScheme, error) {
+	var ss low.SecurityScheme
+	lowmodel.BuildModel(node, &ss)
+	ss.Build(context.Background(), nil, node, idx)
+	return &ss, nil
+}
 
 // SecurityScheme represents a high-level OpenAPI 3+ SecurityScheme object that is backed by a low-level one.
 //
@@ -99,6 +111,16 @@ func (s *SecurityScheme) MarshalYAMLInline() (interface{}, error) {
 	if s.Reference != "" {
 		return utils.CreateRefNode(s.Reference), nil
 	}
+
+	// resolve external reference if present
+	if s.low != nil {
+		// buildLowSecurityScheme never returns an error, so we can ignore it
+		rendered, _ := high.RenderExternalRef(s.low, buildLowSecurityScheme, NewSecurityScheme)
+		if rendered != nil {
+			return rendered, nil
+		}
+	}
+
 	return high.RenderInline(s, s.low)
 }
 
@@ -110,6 +132,16 @@ func (s *SecurityScheme) MarshalYAMLInlineWithContext(ctx any) (interface{}, err
 	if s.Reference != "" {
 		return utils.CreateRefNode(s.Reference), nil
 	}
+
+	// resolve external reference if present
+	if s.low != nil {
+		// buildLowSecurityScheme never returns an error, so we can ignore it
+		rendered, _ := high.RenderExternalRefWithContext(s.low, buildLowSecurityScheme, NewSecurityScheme, ctx)
+		if rendered != nil {
+			return rendered, nil
+		}
+	}
+
 	return high.RenderInlineWithContext(s, s.low, ctx)
 }
 

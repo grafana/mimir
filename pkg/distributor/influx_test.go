@@ -35,6 +35,9 @@ func TestInfluxHandleSeriesPush(t *testing.T) {
 		},
 	}
 
+	const defaultLineProtocol = "measurement,t1=v1 f1=2 1465839830100400200"
+	const defaultLineProtocolLen = len(defaultLineProtocol)
+
 	tests := []struct {
 		name                string
 		url                 string
@@ -46,13 +49,14 @@ func TestInfluxHandleSeriesPush(t *testing.T) {
 		{
 			name:         "POST",
 			url:          "/write",
-			data:         "measurement,t1=v1 f1=2 1465839830100400200",
+			data:         defaultLineProtocol,
 			expectedCode: http.StatusNoContent,
 			push: func(t *testing.T) PushFunc {
 				return func(_ context.Context, pushReq *Request) error {
 					req, err := pushReq.WriteRequest()
 					assert.Equal(t, defaultExpectedWriteRequest, req)
 					assert.Nil(t, err)
+					assert.Equal(t, defaultLineProtocolLen, pushReq.UncompressedBodySize())
 					return err
 				}
 			},
@@ -61,13 +65,14 @@ func TestInfluxHandleSeriesPush(t *testing.T) {
 		{
 			name:         "POST with precision",
 			url:          "/write?precision=ns",
-			data:         "measurement,t1=v1 f1=2 1465839830100400200",
+			data:         defaultLineProtocol,
 			expectedCode: http.StatusNoContent,
 			push: func(t *testing.T) PushFunc {
 				return func(_ context.Context, pushReq *Request) error {
 					req, err := pushReq.WriteRequest()
 					assert.Equal(t, defaultExpectedWriteRequest, req)
 					assert.Nil(t, err)
+					assert.Equal(t, defaultLineProtocolLen, pushReq.UncompressedBodySize())
 					return err
 				}
 			},
@@ -84,6 +89,7 @@ func TestInfluxHandleSeriesPush(t *testing.T) {
 					assert.Nil(t, req)
 					assert.ErrorContains(t, err, "unable to parse")
 					assert.ErrorContains(t, err, "missing field value")
+					assert.Equal(t, 0, pushReq.UncompressedBodySize())
 					return err
 				}
 			},
@@ -95,11 +101,11 @@ func TestInfluxHandleSeriesPush(t *testing.T) {
 			data:         "measurement,t1=v1 f1=2 1465839830100400200",
 			expectedCode: http.StatusBadRequest,
 			push: func(t *testing.T) PushFunc {
-				// return func(ctx context.Context, req *mimirpb.WriteRequest) error {
 				return func(_ context.Context, pushReq *Request) error {
 					req, err := pushReq.WriteRequest()
 					assert.Nil(t, req)
 					assert.ErrorContains(t, err, "precision supplied is not valid")
+					assert.Equal(t, 0, pushReq.UncompressedBodySize())
 					return err
 				}
 			},
@@ -108,11 +114,14 @@ func TestInfluxHandleSeriesPush(t *testing.T) {
 		{
 			name:         "internal server error",
 			url:          "/write",
-			data:         "measurement,t1=v1 f1=2 1465839830100400200",
+			data:         defaultLineProtocol,
 			expectedCode: http.StatusServiceUnavailable,
 			push: func(t *testing.T) PushFunc {
-				return func(_ context.Context, _ *Request) error {
-					assert.Error(t, context.DeadlineExceeded)
+				return func(_ context.Context, pushReq *Request) error {
+					req, err := pushReq.WriteRequest()
+					assert.Equal(t, defaultExpectedWriteRequest, req)
+					assert.Nil(t, err)
+					assert.Equal(t, defaultLineProtocolLen, pushReq.UncompressedBodySize())
 					return context.DeadlineExceeded
 				}
 			},
@@ -128,6 +137,7 @@ func TestInfluxHandleSeriesPush(t *testing.T) {
 					req, err := pushReq.WriteRequest()
 					assert.Nil(t, req)
 					assert.Error(t, influxio.ErrReadLimitExceeded)
+					assert.Equal(t, 0, pushReq.UncompressedBodySize())
 					return err
 				}
 			},

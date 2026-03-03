@@ -20,6 +20,7 @@ import (
 
 	"github.com/prometheus/common/route"
 
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/web/api/testhelpers"
 )
 
@@ -33,7 +34,7 @@ func newTestAPI(t *testing.T, cfg testhelpers.APIConfig) *testhelpers.APIWrapper
 	api := NewAPI(
 		params.QueryEngine,
 		params.Queryable,
-		nil, // appendable
+		nil, nil, // appendables
 		params.ExemplarQueryable,
 		func(ctx context.Context) ScrapePoolsRetriever {
 			return adaptScrapePoolsRetriever(params.ScrapePoolsRetriever(ctx))
@@ -90,19 +91,20 @@ func newTestAPI(t *testing.T, cfg testhelpers.APIConfig) *testhelpers.APIWrapper
 		params.NotificationsSub,
 		params.Gatherer,
 		params.Registerer,
-		nil,              // statsRenderer
-		false,            // rwEnabled
-		nil,              // acceptRemoteWriteProtoMsgs
-		false,            // otlpEnabled
-		false,            // otlpDeltaToCumulative
-		false,            // otlpNativeDeltaIngestion
-		false,            // stZeroIngestionEnabled
-		5*time.Minute,    // lookbackDelta
-		false,            // enableTypeAndUnitLabels
-		false,            // appendMetadata
-		nil,              // overrideErrorCode
-		nil,              // featureRegistry
-		OpenAPIOptions{}, // openAPIOptions
+		nil,                                // statsRenderer
+		false,                              // rwEnabled
+		nil,                                // acceptRemoteWriteProtoMsgs
+		false,                              // otlpEnabled
+		false,                              // otlpDeltaToCumulative
+		false,                              // otlpNativeDeltaIngestion
+		false,                              // stZeroIngestionEnabled
+		5*time.Minute,                      // lookbackDelta
+		false,                              // enableTypeAndUnitLabels
+		false,                              // appendMetadata
+		nil,                                // overrideErrorCode
+		nil,                                // featureRegistry
+		OpenAPIOptions{},                   // openAPIOptions
+		parser.NewParser(parser.Options{}), // promqlParser
 	)
 
 	// Register routes.

@@ -263,6 +263,13 @@ func (cfg *Config) Validate(log.Logger) error {
 		return fmt.Errorf("ring tokens can only be disabled when gRPC push is disabled")
 	}
 
+	if err := cfg.PushReactiveLimiter.Validate(); err != nil {
+		return err
+	}
+	if err := cfg.ReadReactiveLimiter.Validate(); err != nil {
+		return err
+	}
+
 	return cfg.IngesterRing.Validate()
 }
 
@@ -330,7 +337,7 @@ type Ingester struct {
 
 	costAttributionMgr *costattribution.Manager
 
-	tsdbMetrics *tsdbMetrics
+	tsdbMetrics *mimir_tsdb.TSDBMetrics
 
 	forceCompactTrigger chan requestWithUsersAndCallback
 	shipTrigger         chan requestWithUsersAndCallback
@@ -387,7 +394,7 @@ func newIngester(cfg Config, limits *validation.Overrides, ingestersRing ring.Re
 	replicationFactor.Set(int64(cfg.IngesterRing.ReplicationFactor))
 	ringStoreName.Set(cfg.IngesterRing.KVStore.Store)
 
-	metrics := newTSDBMetrics(registerer, logger)
+	metrics := mimir_tsdb.NewTSDBMetrics(prometheus.WrapRegistererWithPrefix("cortex_ingester_", registerer), logger)
 
 	return &Ingester{
 		cfg:    cfg,
@@ -414,7 +421,7 @@ func newIngester(cfg Config, limits *validation.Overrides, ingestersRing ring.Re
 				MaxItems:              cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheMaxItems,
 				MaxBytes:              cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheMaxBytes,
 				Force:                 cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheForce,
-				Metrics:               metrics.headPostingsForMatchersCacheMetrics,
+				Metrics:               tsdb.NewPostingsForMatchersCacheMetrics(prometheus.WrapRegistererWithPrefix("cortex_ingester_tsdb_head_", registerer)),
 				PostingsClonerFactory: lookupplan.ActualSelectedPostingsClonerFactory{},
 			},
 		),
@@ -428,7 +435,7 @@ func newIngester(cfg Config, limits *validation.Overrides, ingestersRing ring.Re
 				MaxItems:              cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheMaxItems,
 				MaxBytes:              cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheMaxBytes,
 				Force:                 cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheForce,
-				Metrics:               metrics.blockPostingsForMatchersCacheMetrics,
+				Metrics:               tsdb.NewPostingsForMatchersCacheMetrics(prometheus.WrapRegistererWithPrefix("cortex_ingester_tsdb_block_", registerer)),
 				PostingsClonerFactory: lookupplan.ActualSelectedPostingsClonerFactory{},
 			},
 		),
@@ -2447,7 +2454,7 @@ func (i *Ingester) executeStreamingQuery(ctx context.Context, db *userTSDB, from
 // NOTE: Do not use this struct directly. Get it from getChunkSeriesNode()
 // and put it back using putChunkSeriesNode() when you are done using it.
 type chunkSeriesNode struct {
-	series []storage.ChunkSeries
+	series []storage.ChunkIterable
 	next   *chunkSeriesNode
 }
 
@@ -2461,7 +2468,7 @@ func getChunkSeriesNode() *chunkSeriesNode {
 	sn := chunkSeriesNodePool.Get()
 	if sn == nil {
 		sn = &chunkSeriesNode{
-			series: make([]storage.ChunkSeries, 0, chunkSeriesNodeSize),
+			series: make([]storage.ChunkIterable, 0, chunkSeriesNodeSize),
 		}
 	}
 	return sn
@@ -2488,9 +2495,10 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.Chunk
 
 	seriesInBatch := make([]client.QueryStreamSeries, 0, queryStreamBatchSize)
 
-	// Why retain the storage.ChunkSeries instead of their chunks.Iterator? If we get the iterators here,
-	// we can't re-use them. Re-using iterators has a bigger impact on allocations/memory than trying to
-	// avoid holding labels reference in ChunkSeries.
+	// We retain the iterator factory returned by IteratorFactory() rather than the full storage.ChunkSeries,
+	// so that we don't hold references to labels or other series data longer than necessary.
+	// The factory retains only the minimum data required to create the chunk iterator, and still supports
+	// iterator reuse in sendStreamingQueryChunks().
 	//
 	// It is non-trivial to know the total number of series here, so we use a linked list of slices
 	// of series and re-use them for future use as well. Even if we did know total number of series
@@ -2507,7 +2515,7 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.Chunk
 			lastSeriesNode.next = newNode
 			lastSeriesNode = newNode
 		}
-		lastSeriesNode.series = append(lastSeriesNode.series, series)
+		lastSeriesNode.series = append(lastSeriesNode.series, series.IteratorFactory())
 		seriesCount++
 
 		chunkCount, err := series.ChunkCount()
@@ -2839,7 +2847,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		}
 	}
 
-	i.tsdbMetrics.setRegistryForUser(userID, tsdbPromReg)
+	i.tsdbMetrics.SetRegistryForTenant(userID, tsdbPromReg)
 
 	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.Enabled {
 		// Generate initial statistics only after the TSDB has been opened and initialized.
@@ -3734,7 +3742,7 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 	}()
 
 	i.metrics.memUsers.Dec()
-	i.tsdbMetrics.removeRegistryForUser(userID)
+	i.tsdbMetrics.RemoveRegistryForTenant(userID)
 
 	i.deleteUserMetadata(userID)
 	i.metrics.deletePerUserMetrics(userID)
@@ -4418,7 +4426,7 @@ func (i *Ingester) UserRegistryHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	reg := i.tsdbMetrics.regs.GetRegistryForTenant(userID)
+	reg := i.tsdbMetrics.RegistryForTenant(userID)
 	if reg == nil {
 		http.Error(w, "user registry not found", http.StatusNotFound)
 		return

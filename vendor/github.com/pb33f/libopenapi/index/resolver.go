@@ -4,6 +4,7 @@
 package index
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/url"
@@ -348,6 +349,48 @@ func visitIndex(res *Resolver, idx *SpecIndex) {
 	}
 }
 
+// searchReferenceWithContext resolves a reference using document context when enabled in the config.
+func (resolver *Resolver) searchReferenceWithContext(sourceRef, searchRef *Reference) (*Reference, *SpecIndex, context.Context) {
+	if resolver.specIndex == nil || resolver.specIndex.config == nil || !resolver.specIndex.config.ResolveNestedRefsWithDocumentContext {
+		ref, idx := resolver.specIndex.SearchIndexForReferenceByReference(searchRef)
+		return ref, idx, context.Background()
+	}
+
+	searchIndex := resolver.specIndex
+	if searchRef != nil && searchRef.Index != nil {
+		searchIndex = searchRef.Index
+	} else if sourceRef != nil && sourceRef.Index != nil {
+		searchIndex = sourceRef.Index
+	}
+
+	ctx := context.Background()
+	currentPath := ""
+	if sourceRef != nil {
+		currentPath = sourceRef.RemoteLocation
+	}
+	if currentPath == "" && searchIndex != nil {
+		currentPath = searchIndex.specAbsolutePath
+	}
+	if currentPath != "" {
+		ctx = context.WithValue(ctx, CurrentPathKey, currentPath)
+	}
+	if searchRef != nil || sourceRef != nil {
+		base := ""
+		if searchRef != nil && searchRef.SchemaIdBase != "" {
+			base = searchRef.SchemaIdBase
+		} else if sourceRef != nil && sourceRef.SchemaIdBase != "" {
+			base = sourceRef.SchemaIdBase
+		}
+		if base != "" {
+			scope := NewSchemaIdScope(base)
+			scope.PushId(base)
+			ctx = WithSchemaIdScope(ctx, scope)
+		}
+	}
+
+	return searchIndex.SearchIndexForReferenceByReferenceWithContext(ctx, searchRef)
+}
+
 // VisitReference will visit a reference as part of a journey and will return resolved nodes.
 func (resolver *Resolver) VisitReference(ref *Reference, seen map[string]bool, journey []*Reference, resolve bool) []*yaml.Node {
 	resolver.referencesVisited++
@@ -362,7 +405,8 @@ func (resolver *Resolver) VisitReference(ref *Reference, seen map[string]bool, j
 	if ref != nil {
 		journey = append(journey, ref)
 		seenRelatives := make(map[int]bool)
-		relatives := resolver.extractRelatives(ref, ref.Node, nil, seen, journey, seenRelatives, resolve, 0)
+		base := resolver.resolveSchemaIdBase(ref.SchemaIdBase, ref.Node)
+		relatives := resolver.extractRelatives(ref, ref.Node, nil, seen, journey, seenRelatives, resolve, 0, base)
 
 		seen = make(map[string]bool)
 
@@ -374,7 +418,7 @@ func (resolver *Resolver) VisitReference(ref *Reference, seen map[string]bool, j
 				if j.FullDefinition == r.FullDefinition {
 
 					var foundDup *Reference
-					foundRef, _ := resolver.specIndex.SearchIndexForReferenceByReference(r)
+					foundRef, _, _ := resolver.searchReferenceWithContext(ref, r)
 					if foundRef != nil {
 						foundDup = foundRef
 					}
@@ -421,7 +465,7 @@ func (resolver *Resolver) VisitReference(ref *Reference, seen map[string]bool, j
 
 			if !skip {
 				var original *Reference
-				foundRef, _ := resolver.specIndex.SearchIndexForReferenceByReference(r)
+				foundRef, _, _ := resolver.searchReferenceWithContext(ref, r)
 				if foundRef != nil {
 					original = foundRef
 				}
@@ -484,7 +528,7 @@ func (resolver *Resolver) isInfiniteCircularDependency(ref *Reference, visitedDe
 
 func (resolver *Resolver) extractRelatives(ref *Reference, node, parent *yaml.Node,
 	foundRelatives map[string]bool,
-	journey []*Reference, seen map[int]bool, resolve bool, depth int,
+	journey []*Reference, seen map[int]bool, resolve bool, depth int, schemaIdBase string,
 ) []*Reference {
 	if len(journey) > 100 {
 		return nil
@@ -517,6 +561,7 @@ func (resolver *Resolver) extractRelatives(ref *Reference, node, parent *yaml.No
 		return nil
 	}
 
+	currentBase := resolver.resolveSchemaIdBase(schemaIdBase, node)
 	var found []*Reference
 
 	if node != nil && len(node.Content) > 0 {
@@ -530,13 +575,13 @@ func (resolver *Resolver) extractRelatives(ref *Reference, node, parent *yaml.No
 				depth++
 
 				var foundRef *Reference
-				foundRef, _ = resolver.specIndex.SearchIndexForReferenceByReference(ref)
+				foundRef, _, _ = resolver.searchReferenceWithContext(ref, ref)
 				if foundRef != nil && !foundRef.Circular {
-					found = append(found, resolver.extractRelatives(foundRef, n, node, foundRelatives, journey, seen, resolve, depth)...)
+					found = append(found, resolver.extractRelatives(foundRef, n, node, foundRelatives, journey, seen, resolve, depth, currentBase)...)
 					depth--
 				}
 				if foundRef == nil {
-					found = append(found, resolver.extractRelatives(ref, n, node, foundRelatives, journey, seen, resolve, depth)...)
+					found = append(found, resolver.extractRelatives(ref, n, node, foundRelatives, journey, seen, resolve, depth, currentBase)...)
 					depth--
 				}
 
@@ -554,6 +599,14 @@ func (resolver *Resolver) extractRelatives(ref *Reference, node, parent *yaml.No
 
 				value := node.Content[i+1].Value
 				value = strings.ReplaceAll(value, "\\\\", "\\")
+
+				// If SkipExternalRefResolution is enabled, skip external refs entirely
+				if resolver.specIndex != nil && resolver.specIndex.config != nil &&
+					resolver.specIndex.config.SkipExternalRefResolution && utils.IsExternalRef(value) {
+					skip = true
+					continue
+				}
+
 				var locatedRef *Reference
 				var fullDef string
 				var definition string
@@ -583,7 +636,7 @@ func (resolver *Resolver) extractRelatives(ref *Reference, node, parent *yaml.No
 								fileDef := strings.Split(ref.FullDefinition, "#/")
 
 								// extract the location of the ref and build a full def path.
-								abs, _ := filepath.Abs(utils.CheckPathOverlap(filepath.Dir(fileDef[0]), exp[0], string(filepath.Separator)))
+								abs := resolver.resolveLocalRefPath(filepath.Dir(fileDef[0]), exp[0])
 								// abs = utils.ReplaceWindowsDriveWithLinuxPath(abs)
 								fullDef = fmt.Sprintf("%s#/%s", abs, exp[1])
 
@@ -591,10 +644,14 @@ func (resolver *Resolver) extractRelatives(ref *Reference, node, parent *yaml.No
 						}
 					} else {
 						// local component, full def is based on passed in ref
-						if strings.HasPrefix(ref.FullDefinition, "http") {
+						baseLocation := ref.FullDefinition
+						if ref.RemoteLocation != "" {
+							baseLocation = ref.RemoteLocation
+						}
+						if strings.HasPrefix(baseLocation, "http") {
 
 							// split the http URI into parts
-							httpExp := strings.Split(ref.FullDefinition, "#/")
+							httpExp := strings.Split(baseLocation, "#/")
 
 							// parse a URL from the full def
 							u, _ := url.Parse(httpExp[0])
@@ -604,7 +661,7 @@ func (resolver *Resolver) extractRelatives(ref *Reference, node, parent *yaml.No
 
 						} else {
 							// split the full def into parts
-							fileDef := strings.Split(ref.FullDefinition, "#/")
+							fileDef := strings.Split(baseLocation, "#/")
 							fullDef = fmt.Sprintf("%s#/%s", fileDef[0], exp[1])
 						}
 					}
@@ -618,7 +675,11 @@ func (resolver *Resolver) extractRelatives(ref *Reference, node, parent *yaml.No
 					} else {
 
 						// split the full def into parts
-						fileDef := strings.Split(ref.FullDefinition, "#/")
+						baseLocation := ref.FullDefinition
+						if ref.RemoteLocation != "" {
+							baseLocation = ref.RemoteLocation
+						}
+						fileDef := strings.Split(baseLocation, "#/")
 
 						// is the file def a http link?
 						if strings.HasPrefix(fileDef[0], "http") {
@@ -628,20 +689,27 @@ func (resolver *Resolver) extractRelatives(ref *Reference, node, parent *yaml.No
 							fullDef = u.String()
 
 						} else {
-							fullDef, _ = filepath.Abs(utils.CheckPathOverlap(filepath.Dir(fileDef[0]), exp[0], string(filepath.Separator)))
+							fullDef = resolver.resolveLocalRefPath(filepath.Dir(fileDef[0]), exp[0])
 						}
 
 					}
 				}
 
+				if currentBase != "" {
+					fullDef = resolveRefWithSchemaBase(value, currentBase)
+				}
+
 				searchRef := &Reference{
 					Definition:     definition,
 					FullDefinition: fullDef,
+					RawRef:         value,
+					SchemaIdBase:   currentBase,
 					RemoteLocation: ref.RemoteLocation,
 					IsRemote:       true,
+					Index:          ref.Index,
 				}
 
-				locatedRef, _ = resolver.specIndex.SearchIndexForReferenceByReference(searchRef)
+				locatedRef, _, _ = resolver.searchReferenceWithContext(ref, searchRef)
 
 				if locatedRef == nil {
 					_, path := utils.ConvertComponentIdIntoFriendlyPathSearch(value)
@@ -702,7 +770,7 @@ func (resolver *Resolver) extractRelatives(ref *Reference, node, parent *yaml.No
 								if d, _, l := utils.IsNodeRefValue(v); d {
 
 									// create full definition lookup based on ref.
-									def := resolver.buildDefPath(ref, l)
+									def := resolver.buildDefPathWithSchemaBase(ref, l, currentBase)
 
 									mappedRefs, _ := resolver.specIndex.SearchIndexForReference(def)
 									if mappedRefs != nil && !mappedRefs.Circular {
@@ -747,7 +815,7 @@ func (resolver *Resolver) extractRelatives(ref *Reference, node, parent *yaml.No
 								if d, _, l := utils.IsNodeRefValue(v); d {
 
 									// create full definition lookup based on ref.
-									def := resolver.buildDefPath(ref, l)
+									def := resolver.buildDefPathWithSchemaBase(ref, l, currentBase)
 
 									mappedRefs, _ := resolver.specIndex.SearchIndexForReference(def)
 									if mappedRefs != nil && !mappedRefs.Circular {
@@ -793,7 +861,7 @@ func (resolver *Resolver) extractRelatives(ref *Reference, node, parent *yaml.No
 							v := node.Content[i+1].Content[q]
 							if utils.IsNodeMap(v) {
 								if d, _, l := utils.IsNodeRefValue(v); d {
-									def := resolver.buildDefPath(ref, l)
+									def := resolver.buildDefPathWithSchemaBase(ref, l, currentBase)
 									mappedRefs, _ := resolver.specIndex.SearchIndexForReference(def)
 									if mappedRefs != nil && !mappedRefs.Circular {
 										circ := false
@@ -832,7 +900,7 @@ func (resolver *Resolver) extractRelatives(ref *Reference, node, parent *yaml.No
 								} else {
 									depth++
 									found = append(found, resolver.extractRelatives(ref, v, n,
-										foundRelatives, journey, seen, resolve, depth)...)
+										foundRelatives, journey, seen, resolve, depth, currentBase)...)
 								}
 							}
 						}
@@ -865,16 +933,14 @@ func (resolver *Resolver) buildDefPath(ref *Reference, l string) string {
 						z := strings.Split(ref.FullDefinition, "#/")
 						if len(z) == 2 {
 							if len(z[0]) > 0 {
-								abs, _ := filepath.Abs(utils.CheckPathOverlap(filepath.Dir(z[0]),
-									exp[0], string(filepath.Separator)))
+								abs := resolver.resolveLocalRefPath(filepath.Dir(z[0]), exp[0])
 								def = fmt.Sprintf("%s#/%s", abs, exp[1])
 							} else {
 								abs, _ := filepath.Abs(exp[0])
 								def = fmt.Sprintf("%s#/%s", abs, exp[1])
 							}
 						} else {
-							abs, _ := filepath.Abs(utils.CheckPathOverlap(filepath.Dir(ref.FullDefinition),
-								exp[0], string(filepath.Separator)))
+							abs := resolver.resolveLocalRefPath(filepath.Dir(ref.FullDefinition), exp[0])
 							def = fmt.Sprintf("%s#/%s", abs, exp[1])
 						}
 					}
@@ -916,13 +982,50 @@ func (resolver *Resolver) buildDefPath(ref *Reference, l string) string {
 				def = u.String()
 			} else {
 				lookupRef := strings.Split(ref.FullDefinition, "#/")
-				abs, _ := filepath.Abs(utils.CheckPathOverlap(filepath.Dir(lookupRef[0]), l, string(filepath.Separator)))
+				abs := resolver.resolveLocalRefPath(filepath.Dir(lookupRef[0]), l)
 				def = abs
 			}
 		}
 	}
 
 	return def
+}
+
+func (resolver *Resolver) resolveLocalRefPath(base, ref string) string {
+	if resolver != nil && resolver.specIndex != nil {
+		return resolver.specIndex.ResolveRelativeFilePath(base, ref)
+	}
+	abs, _ := filepath.Abs(utils.CheckPathOverlap(base, ref, string(filepath.Separator)))
+	return abs
+}
+
+func (resolver *Resolver) buildDefPathWithSchemaBase(ref *Reference, l string, schemaIdBase string) string {
+	if schemaIdBase != "" {
+		normalized := resolveRefWithSchemaBase(l, schemaIdBase)
+		if normalized != l {
+			return normalized
+		}
+	}
+	return resolver.buildDefPath(ref, l)
+}
+
+func (resolver *Resolver) resolveSchemaIdBase(parentBase string, node *yaml.Node) string {
+	if node == nil {
+		return parentBase
+	}
+	idValue := FindSchemaIdInNode(node)
+	if idValue == "" {
+		return parentBase
+	}
+	base := parentBase
+	if base == "" && resolver.specIndex != nil {
+		base = resolver.specIndex.specAbsolutePath
+	}
+	resolved, err := ResolveSchemaId(idValue, base)
+	if err != nil || resolved == "" {
+		return idValue
+	}
+	return resolved
 }
 
 func (resolver *Resolver) ResolvePendingNodes() {

@@ -14,7 +14,6 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
-	promRules "github.com/prometheus/prometheus/rules"
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
 
@@ -72,7 +71,7 @@ func TestClient_LoadRuleGroups(t *testing.T) {
 
 	client, err := NewLocalRulesClient(rulestore.LocalStoreConfig{
 		Directory: dir,
-	}, promRules.FileLoader{})
+	})
 	require.NoError(t, err)
 
 	t.Run("all rule groups", func(t *testing.T) {

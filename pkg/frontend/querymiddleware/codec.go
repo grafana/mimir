@@ -43,6 +43,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -364,7 +365,7 @@ func (c Codec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryRequest, er
 	}
 
 	query := reqValues.Get("query")
-	queryExpr, err := parser.ParseExpr(query)
+	queryExpr, err := promqlext.NewPromQLParser().ParseExpr(query)
 	if err != nil {
 		return nil, DecorateWithParamName(err, "query")
 	}
@@ -391,7 +392,7 @@ func (c Codec) decodeInstantQueryRequest(r *http.Request) (MetricsQueryRequest, 
 	}
 
 	query := reqValues.Get("query")
-	queryExpr, err := parser.ParseExpr(query)
+	queryExpr, err := promqlext.NewPromQLParser().ParseExpr(query)
 	if err != nil {
 		return nil, DecorateWithParamName(err, "query")
 	}

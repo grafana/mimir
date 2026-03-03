@@ -104,14 +104,19 @@ func LabelMatchersFromPrometheusType(matchers []*labels.Matcher) []*LabelMatcher
 	converted := make([]*LabelMatcher, 0, len(matchers))
 
 	for _, m := range matchers {
-		converted = append(converted, &LabelMatcher{
-			Name:  m.Name,
-			Value: m.Value,
-			Type:  m.Type,
-		})
+		matcher := LabelMatcherFromPrometheusType(m)
+		converted = append(converted, &matcher)
 	}
 
 	return converted
+}
+
+func LabelMatcherFromPrometheusType(m *labels.Matcher) LabelMatcher {
+	return LabelMatcher{
+		Name:  m.Name,
+		Value: m.Value,
+		Type:  m.Type,
+	}
 }
 
 func LabelMatchersToOperatorType(matchers []*LabelMatcher) types.Matchers {
@@ -131,10 +136,27 @@ func LabelMatchersToOperatorType(matchers []*LabelMatcher) types.Matchers {
 	return converted
 }
 
+func LabelMatchersToPrometheusType(matchers []*LabelMatcher) ([]*labels.Matcher, error) {
+	if len(matchers) == 0 {
+		return nil, nil
+	}
+
+	converted := make([]*labels.Matcher, 0, len(matchers))
+
+	for _, m := range matchers {
+		matcher, err := labels.NewMatcher(m.Type, m.Name, m.Value)
+		if err != nil {
+			return nil, err
+		}
+
+		converted = append(converted, matcher)
+	}
+
+	return converted, nil
+}
+
 func matchersEqual(a, b *LabelMatcher) bool {
-	return a.Type == b.Type &&
-		a.Name == b.Name &&
-		a.Value == b.Value
+	return a.Equal(b)
 }
 
 // LabelMatchersStringer generates a human-readable version of multiple LabelMatchers

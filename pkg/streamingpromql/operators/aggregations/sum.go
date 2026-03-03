@@ -21,6 +21,7 @@ type SumAggregationGroup struct {
 	floatCompensatingValues      []float64 // Compensation value for Kahan summation.
 	floatPresent                 []bool
 	histogramSums                []*histogram.FloatHistogram
+	histogramCompensatingValues  []*histogram.FloatHistogram // Compensation histograms for Kahan summation.
 	histogramPointCount          int
 	histogramCounterResetTracker *histogramCounterResetTracker
 }
@@ -86,6 +87,11 @@ func (g *SumAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 			return err
 		}
 		g.histogramSums = g.histogramSums[:timeRange.StepCount]
+		g.histogramCompensatingValues, err = types.HistogramSlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
+		if err != nil {
+			return err
+		}
+		g.histogramCompensatingValues = g.histogramCompensatingValues[:timeRange.StepCount]
 		g.histogramCounterResetTracker, err = newHistogramCounterResetTracker(timeRange.StepCount, memoryConsumptionTracker)
 		if err != nil {
 			return err
@@ -122,7 +128,7 @@ func (g *SumAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 		}
 
 		var nhcbBoundsReconciled bool
-		g.histogramSums[outputIdx], _, nhcbBoundsReconciled, err = g.histogramSums[outputIdx].Add(p.H)
+		g.histogramCompensatingValues[outputIdx], _, nhcbBoundsReconciled, err = g.histogramSums[outputIdx].KahanAdd(p.H, g.histogramCompensatingValues[outputIdx])
 		if err != nil {
 			// Unable to add histograms together (likely due to invalid combination of histograms). Make sure we don't emit a sample at this timestamp.
 			g.histogramSums[outputIdx] = invalidCombinationOfHistograms
@@ -212,6 +218,16 @@ func (g *SumAggregationGroup) ComputeOutputSeries(_ types.ScalarData, timeRange 
 		for i, h := range g.histogramSums {
 			if h != nil && h != invalidCombinationOfHistograms {
 				t := timeRange.StartT + int64(i)*timeRange.IntervalMilliseconds
+
+				// Apply Kahan compensation to get the final accurate result
+				if g.histogramCompensatingValues[i] != nil {
+					// Use regular Add (not KahanAdd) to apply the final compensation
+					h, _, _, err = h.Add(g.histogramCompensatingValues[i])
+					if err != nil {
+						return types.InstantVectorSeriesData{}, hasMixedData, err
+					}
+				}
+
 				histogramPoints = append(histogramPoints, promql.HPoint{T: t, H: h.Compact(0)})
 
 				// Remove histogram from slice to ensure it's not mutated when the slice is reused.
@@ -228,6 +244,7 @@ func (g *SumAggregationGroup) Close(memoryConsumptionTracker *limiter.MemoryCons
 	types.Float64SlicePool.Put(&g.floatCompensatingValues, memoryConsumptionTracker)
 	types.BoolSlicePool.Put(&g.floatPresent, memoryConsumptionTracker)
 	types.HistogramSlicePool.Put(&g.histogramSums, memoryConsumptionTracker)
+	types.HistogramSlicePool.Put(&g.histogramCompensatingValues, memoryConsumptionTracker)
 	if g.histogramCounterResetTracker != nil {
 		g.histogramCounterResetTracker.close()
 		g.histogramCounterResetTracker = nil
