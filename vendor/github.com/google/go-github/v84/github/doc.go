@@ -8,7 +8,7 @@ Package github provides a client for using the GitHub API.
 
 Usage:
 
-	import "github.com/google/go-github/v83/github"
+	import "github.com/google/go-github/v84/github"
 
 Construct a new GitHub client, then use the various services on the client to
 access different parts of the GitHub API. For example:
@@ -150,7 +150,7 @@ recommended when making requests using short-lived credentials such as a
 GitHub App installation token.
 
 Learn more about GitHub conditional requests at
-https://docs.github.com/rest/overview/resources-in-the-rest-api#conditional-requests.
+https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api?apiVersion=2022-11-28#use-conditional-requests-if-appropriate.
 
 # Creating and Updating Resources
 
