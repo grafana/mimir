@@ -220,7 +220,10 @@ func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpir
 
 	// Note: a plan job will never be created if there is already an active plan job (even if we're about to expire a lease).
 	// Therefore lease expiration and planning are mutually exclusive.
-	planJob := jt.computePlan(plan, planningInterval, compactionWaitPeriod, now)
+	var planJob *TrackedPlanJob
+	if plan {
+		planJob = jt.computePlan(planningInterval, compactionWaitPeriod, now)
+	}
 
 	if len(reviveJobs) == 0 && len(deleteJobs) == 0 && planJob == nil {
 		return false, nil
@@ -307,11 +310,7 @@ func (jt *JobTracker) computeLeaseExpiration(leaseDuration time.Duration, now ti
 // compactionWaitPeriod is the period of time compactors wait before compacting L1 blocks.
 // This function only computes what needs to change without persisting or modifying in-memory state.
 // A write lock must be held in order to call this function.
-func (jt *JobTracker) computePlan(plan bool, planningInterval, compactionWaitPeriod time.Duration, now time.Time) *TrackedPlanJob {
-	if !plan {
-		return nil
-	}
-
+func (jt *JobTracker) computePlan(planningInterval, compactionWaitPeriod time.Duration, now time.Time) *TrackedPlanJob {
 	if _, ok := jt.incompleteJobs[planJobId]; ok {
 		// There is already a plan job
 		return nil
