@@ -274,11 +274,25 @@ func (w *GzipResponseWriter) Close() error {
 // an http.Flusher.
 func (w *GzipResponseWriter) Flush() {
 	if w.gw == nil && !w.ignore {
-		// Only flush once startGzip or startPlain has been called.
+		if w.buf == nil {
+			// No data has been written yet; nothing to flush. Leave the gzip/plain
+			// decision to the first Write call so large subsequent writes can still
+			// be gzip-compressed.
+			return
+		}
+		// For NDJSON streaming responses, start plain passthrough immediately so
+		// each batch reaches the client without waiting for minSize bytes to
+		// accumulate. NDJSON is a line-delimited streaming format where per-chunk
+		// gzip compression provides no benefit, so we skip gzip entirely here.
 		//
-		// Flush is thus a no-op until we're certain whether a plain
-		// or gzipped response will be served.
-		return
+		// For all other content types the gzip/plain decision is left to Write(),
+		// preserving the existing behaviour.
+		if w.Header().Get(contentType) != "application/x-ndjson" {
+			return
+		}
+		if err := w.startPlain(); err != nil {
+			return
+		}
 	}
 
 	if w.gw != nil {

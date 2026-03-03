@@ -460,6 +460,54 @@ func TestStatusCodes(t *testing.T) {
 	}
 }
 
+func TestFlushNDJSON(t *testing.T) {
+	tc := []struct {
+		name        string
+		contentType string
+		acceptGzip  bool
+		payload     string
+		shouldGzip  bool
+	}{
+		{"Small streaming payload", "application/x-ndjson", true, "small payload", false},
+		{"Large streaming payload", "application/x-ndjson", true, testBody, true},
+		{"Small streaming payload - does not accept gzip", "application/x-ndjson", false, "small payload", false},
+		{"Large streaming payload  does not accept gzip", "application/x-ndjson", false, testBody, false},
+		{"Small non-streaming payload", "text/plain", true, "small payload", true},
+		{"Large non-streaming payload", "text/plain", true, testBody, true},
+	}
+	for _, tt := range tc {
+		t.Run(tt.name, func(t *testing.T) {
+			body := []byte(tt.payload)
+
+			handler := GzipHandler(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
+				rw.Header().Set("Content-Type", tt.contentType)
+				// write the test case body (small or large payload)
+				_, _ = rw.Write(body)
+				rw.(http.Flusher).Flush()
+				// Write a large body after the first flush - the gzip determination will already have been made
+				// Note that for the current real-world usages of sending batched ndjson results, each batch will roughly be the same size.
+				_, _ = rw.Write([]byte(testBody))
+			}))
+			r := httptest.NewRequest(http.MethodGet, "/", nil)
+			if tt.acceptGzip {
+				r.Header.Set("Accept-Encoding", "gzip")
+			}
+
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, r)
+
+			res := w.Result()
+			assert.Equal(t, http.StatusOK, res.StatusCode)
+
+			if tt.shouldGzip {
+				assert.Equal(t, "gzip", res.Header.Get("Content-Encoding"), "Expected gzip Content-Encoding")
+			} else {
+				assert.Empty(t, res.Header.Get("Content-Encoding"), "Unexpected gzip Content-Encoding")
+			}
+		})
+	}
+}
+
 func TestFlushBeforeWrite(t *testing.T) {
 	b := []byte(testBody)
 	handler := GzipHandler(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
