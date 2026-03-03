@@ -806,6 +806,14 @@ func (a *APIMeta) GetVerifiablePasswordAuthentication() bool {
 	return *a.VerifiablePasswordAuthentication
 }
 
+// GetActionsInbound returns the ActionsInbound field.
+func (a *APIMetaDomains) GetActionsInbound() *ActionsInboundDomains {
+	if a == nil {
+		return nil
+	}
+	return a.ActionsInbound
+}
+
 // GetArtifactAttestations returns the ArtifactAttestations field.
 func (a *APIMetaDomains) GetArtifactAttestations() *APIMetaArtifactAttestations {
 	if a == nil {
@@ -7174,6 +7182,14 @@ func (c *CreateWorkflowDispatchEventRequest) GetInputs() map[string]any {
 	return c.Inputs
 }
 
+// GetReturnRunDetails returns the ReturnRunDetails field if it's non-nil, zero value otherwise.
+func (c *CreateWorkflowDispatchEventRequest) GetReturnRunDetails() bool {
+	if c == nil || c.ReturnRunDetails == nil {
+		return false
+	}
+	return *c.ReturnRunDetails
+}
+
 // GetCreated returns the Created field if it's non-nil, zero value otherwise.
 func (c *CreationInfo) GetCreated() Timestamp {
 	if c == nil || c.Created == nil {
@@ -10476,6 +10492,30 @@ func (f *FieldValue) GetProjectNumber() int64 {
 		return 0
 	}
 	return *f.ProjectNumber
+}
+
+// GetCreatedAt returns the CreatedAt field if it's non-nil, zero value otherwise.
+func (f *FineGrainedPersonalAccessTokenRequest) GetCreatedAt() Timestamp {
+	if f == nil || f.CreatedAt == nil {
+		return Timestamp{}
+	}
+	return *f.CreatedAt
+}
+
+// GetTokenExpiresAt returns the TokenExpiresAt field if it's non-nil, zero value otherwise.
+func (f *FineGrainedPersonalAccessTokenRequest) GetTokenExpiresAt() Timestamp {
+	if f == nil || f.TokenExpiresAt == nil {
+		return Timestamp{}
+	}
+	return *f.TokenExpiresAt
+}
+
+// GetTokenLastUsedAt returns the TokenLastUsedAt field if it's non-nil, zero value otherwise.
+func (f *FineGrainedPersonalAccessTokenRequest) GetTokenLastUsedAt() Timestamp {
+	if f == nil || f.TokenLastUsedAt == nil {
+		return Timestamp{}
+	}
+	return *f.TokenLastUsedAt
 }
 
 // GetIdentifier returns the Identifier field if it's non-nil, zero value otherwise.
@@ -29318,6 +29358,14 @@ func (t *Team) GetSlug() string {
 	return *t.Slug
 }
 
+// GetType returns the Type field if it's non-nil, zero value otherwise.
+func (t *Team) GetType() string {
+	if t == nil || t.Type == nil {
+		return ""
+	}
+	return *t.Type
+}
+
 // GetURL returns the URL field if it's non-nil, zero value otherwise.
 func (t *Team) GetURL() string {
 	if t == nil || t.URL == nil {
@@ -31684,6 +31732,30 @@ func (w *WorkflowDispatchEvent) GetWorkflow() string {
 		return ""
 	}
 	return *w.Workflow
+}
+
+// GetHTMLURL returns the HTMLURL field if it's non-nil, zero value otherwise.
+func (w *WorkflowDispatchRunDetails) GetHTMLURL() string {
+	if w == nil || w.HTMLURL == nil {
+		return ""
+	}
+	return *w.HTMLURL
+}
+
+// GetRunURL returns the RunURL field if it's non-nil, zero value otherwise.
+func (w *WorkflowDispatchRunDetails) GetRunURL() string {
+	if w == nil || w.RunURL == nil {
+		return ""
+	}
+	return *w.RunURL
+}
+
+// GetWorkflowRunID returns the WorkflowRunID field if it's non-nil, zero value otherwise.
+func (w *WorkflowDispatchRunDetails) GetWorkflowRunID() int64 {
+	if w == nil || w.WorkflowRunID == nil {
+		return 0
+	}
+	return *w.WorkflowRunID
 }
 
 // GetCheckRunURL returns the CheckRunURL field if it's non-nil, zero value otherwise.

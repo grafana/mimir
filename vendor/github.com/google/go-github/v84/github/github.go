@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	Version = "v83.0.0"
+	Version = "v84.0.0"
 
 	HeaderRateLimit     = "X-Ratelimit-Limit"
 	HeaderRateRemaining = "X-Ratelimit-Remaining"
@@ -744,8 +744,7 @@ func (r *Response) populatePageValues() {
 
 			if cursor := q.Get("cursor"); cursor != "" {
 				for _, segment := range segments[1:] {
-					switch strings.TrimSpace(segment) {
-					case `rel="next"`:
+					if strings.TrimSpace(segment) == `rel="next"` {
 						r.Cursor = cursor
 					}
 				}
@@ -1792,25 +1791,33 @@ func Ptr[T any](v T) *T {
 // to store v and returns a pointer to it.
 //
 // Deprecated: use Ptr instead.
-func Bool(v bool) *bool { return &v }
+//
+//go:fix inline
+func Bool(v bool) *bool { return Ptr(v) }
 
 // Int is a helper routine that allocates a new int value
 // to store v and returns a pointer to it.
 //
 // Deprecated: use Ptr instead.
-func Int(v int) *int { return &v }
+//
+//go:fix inline
+func Int(v int) *int { return Ptr(v) }
 
 // Int64 is a helper routine that allocates a new int64 value
 // to store v and returns a pointer to it.
 //
 // Deprecated: use Ptr instead.
-func Int64(v int64) *int64 { return &v }
+//
+//go:fix inline
+func Int64(v int64) *int64 { return Ptr(v) }
 
 // String is a helper routine that allocates a new string value
 // to store v and returns a pointer to it.
 //
 // Deprecated: use Ptr instead.
-func String(v string) *string { return &v }
+//
+//go:fix inline
+func String(v string) *string { return Ptr(v) }
 
 // roundTripperFunc creates a RoundTripper (transport).
 type roundTripperFunc func(*http.Request) (*http.Response, error)
