@@ -1047,7 +1047,6 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 	}
 }
 
-
 type singleHostRoundTripper struct {
 	host string
 	next http.RoundTripper

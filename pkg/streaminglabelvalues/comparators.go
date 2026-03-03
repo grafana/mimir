@@ -1,9 +1,10 @@
 package streaminglabelvalues
 
 import (
-	"github.com/grafana/mimir/pkg/storage"
 	"math"
 	"strings"
+
+	"github.com/grafana/mimir/pkg/storage"
 )
 
 type ComparerAlpha struct {

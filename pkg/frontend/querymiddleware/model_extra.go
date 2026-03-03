@@ -8,7 +8,6 @@ package querymiddleware
 import (
 	"bytes"
 	"fmt"
-	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"io"
 	"net/http"
 	"slices"
@@ -26,6 +25,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
@@ -864,6 +864,7 @@ type SearchQueryRequest struct {
 	FuzzThreshold    int
 	FuzzAlg          string
 	CaseSensitive    bool
+	IncludeScore     bool
 	SortBy           streaminglabelvalues.SortBy
 	SortDir          streaminglabelvalues.SortDirection
 	Operator         streaminglabelvalues.Operator

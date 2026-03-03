@@ -832,9 +832,9 @@ func TestCodec_DecodeSearchQueryRequest(t *testing.T) {
 			},
 		},
 		{
-			name:  "defaults when no params set",
-			path:  "/api/v1/search/metric_names",
-			query: "",
+			name:        "defaults when no params set",
+			path:        "/api/v1/search/metric_names",
+			query:       "",
 			expectedReq: defaults("/api/v1/search/metric_names"),
 		},
 
@@ -867,6 +867,19 @@ func TestCodec_DecodeSearchQueryRequest(t *testing.T) {
 			path:      "/api/v1/search/metric_names",
 			query:     "case_sensitive=maybe",
 			expectErr: "invalid case_sensitive - expected a bool but got maybe",
+		},
+
+		{
+			name:  "search with include_score",
+			path:  "/api/v1/search/label_names",
+			query: "search=http&include_score=true",
+			expectedReq: &SearchQueryRequest{
+				Path:         "/api/v1/search/label_names",
+				Search:       []string{"http"},
+				IncludeScore: true,
+				FuzzAlg:      "jaro",
+				BatchSize:    1000,
+			},
 		},
 
 		// ── label_name ────────────────────────────────────────────────────────────
@@ -907,9 +920,9 @@ func TestCodec_DecodeSearchQueryRequest(t *testing.T) {
 			},
 		},
 		{
-			name:  "fuzz_threshold boundary min (0)",
-			path:  "/api/v1/search/metric_names",
-			query: "fuzz_threshold=0",
+			name:        "fuzz_threshold boundary min (0)",
+			path:        "/api/v1/search/metric_names",
+			query:       "fuzz_threshold=0",
 			expectedReq: defaults("/api/v1/search/metric_names"),
 		},
 		{
@@ -954,9 +967,9 @@ func TestCodec_DecodeSearchQueryRequest(t *testing.T) {
 			},
 		},
 		{
-			name:  "fuzz_alg explicit jaro",
-			path:  "/api/v1/search/metric_names",
-			query: "fuzz_alg=jaro",
+			name:        "fuzz_alg explicit jaro",
+			path:        "/api/v1/search/metric_names",
+			query:       "fuzz_alg=jaro",
 			expectedReq: defaults("/api/v1/search/metric_names"),
 		},
 		{
@@ -1024,9 +1037,9 @@ func TestCodec_DecodeSearchQueryRequest(t *testing.T) {
 			},
 		},
 		{
-			name:  "sort_by none explicit",
-			path:  "/api/v1/search/metric_names",
-			query: "sort_by=none",
+			name:        "sort_by none explicit",
+			path:        "/api/v1/search/metric_names",
+			query:       "sort_by=none",
 			expectedReq: defaults("/api/v1/search/metric_names"),
 		},
 		{
@@ -1060,9 +1073,9 @@ func TestCodec_DecodeSearchQueryRequest(t *testing.T) {
 			},
 		},
 		{
-			name:  "sort_dir asc explicit",
-			path:  "/api/v1/search/metric_names",
-			query: "sort_dir=asc",
+			name:        "sort_dir asc explicit",
+			path:        "/api/v1/search/metric_names",
+			query:       "sort_dir=asc",
 			expectedReq: defaults("/api/v1/search/metric_names"),
 		},
 		{
@@ -1085,9 +1098,9 @@ func TestCodec_DecodeSearchQueryRequest(t *testing.T) {
 			},
 		},
 		{
-			name:  "limit zero explicit",
-			path:  "/api/v1/search/metric_names",
-			query: "limit=0",
+			name:        "limit zero explicit",
+			path:        "/api/v1/search/metric_names",
+			query:       "limit=0",
 			expectedReq: defaults("/api/v1/search/metric_names"),
 		},
 		{

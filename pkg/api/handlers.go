@@ -337,9 +337,9 @@ func NewQuerierHandler(
 	router.Path(path.Join(promPrefix, "/format_query")).Methods("GET", "POST").Handler(formattingQueryStats.Wrap(promRouter))
 
 	searchQueryStats := usagestats.NewRequestsMiddleware("querier_search_query_requests")
-	router.Path(path.Join(promPrefix, "/search/metric_names")).Methods("GET", "POST").Handler(searchQueryStats.Wrap(querier.SearchMetricNamesHandler(queryable, limits)))
-	router.Path(path.Join(promPrefix, "/search/label_names")).Methods("GET", "POST").Handler(searchQueryStats.Wrap(querier.SearchLabelNamesHandler(queryable, limits)))
-	router.Path(path.Join(promPrefix, "/search/label_values")).Methods("GET", "POST").Handler(searchQueryStats.Wrap(querier.SearchLabelValuesHandler(queryable, limits)))
+	router.Path(path.Join(promPrefix, "/search/metric_names")).Methods("GET", "POST").Handler(searchQueryStats.Wrap(querier.SearchMetricNamesHandler(queryable, limits, logger)))
+	router.Path(path.Join(promPrefix, "/search/label_names")).Methods("GET", "POST").Handler(searchQueryStats.Wrap(querier.SearchLabelNamesHandler(queryable, limits, logger)))
+	router.Path(path.Join(promPrefix, "/search/label_values")).Methods("GET", "POST").Handler(searchQueryStats.Wrap(querier.SearchLabelValuesHandler(queryable, limits, logger)))
 
 	// Track execution time.
 	return stats.NewWallTimeMiddleware().Wrap(router)
