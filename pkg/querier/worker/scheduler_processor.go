@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"io"
 	"net/http"
 	"strings"
@@ -341,6 +342,16 @@ func contextWithSpanFromRequest(ctx context.Context, request *schedulerpb.Schedu
 }
 
 func (sp *schedulerProcessor) runHttpRequest(ctx context.Context, logger log.Logger, queryID uint64, frontendAddress string, stats *querier_stats.SafeStats, request *httpgrpc.HTTPRequest) {
+	// For search query paths, use the true streaming path if the handler supports it.
+	// This bypasses the httptest.Recorder buffering so each batch is sent to the
+	// query-frontend as it is produced, rather than after the full response is buffered.
+	if request != nil && isStreamingSearchQueryPath(request.Url) {
+		if sh, ok := sp.httpHandler.(streamingHTTPHandler); ok {
+			sp.runStreamingHttpRequest(ctx, logger, queryID, frontendAddress, stats, request, sh)
+			return
+		}
+	}
+
 	response, err := sp.httpHandler.Handle(ctx, request)
 	if err != nil {
 		var ok bool
@@ -372,6 +383,66 @@ func (sp *schedulerProcessor) runHttpRequest(ctx context.Context, logger log.Log
 	// still be incrementing stats when sent for marshaling below.
 	stats = stats.Copy()
 	sp.sendHttpResponseToQueryFrontend(ctx, logger, queryID, frontendAddress, stats, response, shouldStream)
+}
+
+// isStreamingSearchQueryPath reports whether the given URL is a streaming search endpoint that
+// should be streamed without buffering the entire response.
+// The input may include a query string; only the path component is checked.
+func isStreamingSearchQueryPath(rawURL string) bool {
+	path, _, _ := strings.Cut(rawURL, "?")
+	return strings.HasSuffix(path, streaminglabelvalues.SearchMetricNamesPathSuffix) ||
+		strings.HasSuffix(path, streaminglabelvalues.SearchLabelNamesPathSuffix) ||
+		strings.HasSuffix(path, streaminglabelvalues.SearchLabelValuesPathSuffix)
+}
+
+// runStreamingHttpRequest serves a search request using the streaming path: the HTTP
+// handler writes directly to a grpcStreamingResponseWriter, which forwards each
+// Flush() as a gRPC body chunk to the query-frontend without buffering the full body.
+//
+// If the handler returns without calling Flush() (e.g. an early error response), the
+// accumulated response is sent via the normal buffered path.
+func (sp *schedulerProcessor) runStreamingHttpRequest(
+	ctx context.Context,
+	logger log.Logger,
+	queryID uint64,
+	frontendAddress string,
+	stats *querier_stats.SafeStats,
+	request *httpgrpc.HTTPRequest,
+	handler streamingHTTPHandler,
+) {
+	// Use WithoutCancel for the gRPC stream context so we can still notify the
+	// query-frontend even if the request context has been cancelled.
+	frontendCtx := context.WithoutCancel(ctx)
+
+	w := newGrpcStreamingResponseWriter(frontendCtx, ctx, queryID, frontendAddress, sp.frontendPool, logger, stats, sp.maxMessageSize)
+
+	// Run the handler. The handler calls w.Flush() for each NDJSON batch, which
+	// directly sends a gRPC body chunk to the query-frontend.
+	if err := handler.ServeHTTPWithWriter(ctx, request, w); err != nil {
+		level.Error(logger).Log("msg", "error serving streaming search request", "err", err)
+	}
+
+	if w.StreamOpened() {
+		// At least one batch was flushed — close the gRPC stream.
+		w.CloseStream()
+		return
+	}
+
+	// The handler returned without flushing - an error will have occurred.
+	// Fall back to the buffered path so the client still gets a response.
+	response := w.AsHTTPResponse()
+
+	// It is unlikely the message size test is going to be needed here - but added as a safeguard.
+	if msgSize := response.Size(); msgSize >= sp.maxMessageSize {
+		level.Error(logger).Log("msg", "response larger than max message size", "size", msgSize, "max_message_size", sp.maxMessageSize)
+		errMsg := fmt.Sprintf("response larger than the max message size (%d vs %d)", msgSize, sp.maxMessageSize)
+		response = &httpgrpc.HTTPResponse{
+			Code: http.StatusRequestEntityTooLarge,
+			Body: []byte(errMsg),
+		}
+	}
+	stats = stats.Copy()
+	sp.sendHttpResponseToQueryFrontend(ctx, logger, queryID, frontendAddress, stats, response, false)
 }
 
 func (sp *schedulerProcessor) sendHttpResponseToQueryFrontend(ctx context.Context, logger log.Logger, queryID uint64, frontendAddress string, stats *querier_stats.SafeStats, response *httpgrpc.HTTPResponse, shouldStream bool) {
