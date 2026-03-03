@@ -36,14 +36,15 @@ const (
 type Rotator struct {
 	services.Service
 
-	leaseDuration                  time.Duration
-	planningInterval               time.Duration
-	compactionWaitPeriod           time.Duration
-	maintenanceInterval            time.Duration
-	intervalsBeforeLeaseExpiration int
-	metrics                        *schedulerMetrics
-	rotationIndexCounter           *atomic.Int32 // only increments, overflow is okay
-	logger                         log.Logger
+	leaseDuration                    time.Duration
+	planningInterval                 time.Duration
+	compactionWaitPeriod             time.Duration
+	maintenanceInterval              time.Duration
+	intervalsBeforeLeaseExpiration   int
+	intervalsBeforeColdStartPlanning int
+	metrics                          *schedulerMetrics
+	rotationIndexCounter             *atomic.Int32 // only increments, overflow is okay
+	logger                           log.Logger
 
 	mtx            sync.RWMutex
 	tenantStateMap map[string]*TenantRotationState
@@ -55,19 +56,20 @@ type TenantRotationState struct {
 	rotationIndex int
 }
 
-func NewRotator(leaseDuration, planningInterval, compactionWaitPeriod, maintenanceInterval time.Duration, intervalsBeforeLeaseExpiration int, metrics *schedulerMetrics, logger log.Logger) *Rotator {
+func NewRotator(leaseDuration, planningInterval, compactionWaitPeriod, maintenanceInterval time.Duration, intervalsBeforeLeaseExpiration, intervalsBeforeColdStartPlanning int, metrics *schedulerMetrics, logger log.Logger) *Rotator {
 	r := &Rotator{
-		leaseDuration:                  leaseDuration,
-		planningInterval:               planningInterval,
-		compactionWaitPeriod:           compactionWaitPeriod,
-		maintenanceInterval:            maintenanceInterval,
-		intervalsBeforeLeaseExpiration: intervalsBeforeLeaseExpiration,
-		metrics:                        metrics,
-		rotationIndexCounter:           atomic.NewInt32(0),
-		mtx:                            sync.RWMutex{},
-		tenantStateMap:                 make(map[string]*TenantRotationState),
-		rotation:                       make([]string, 0, 10), // initial size doesn't really matter
-		logger:                         logger,
+		leaseDuration:                    leaseDuration,
+		planningInterval:                 planningInterval,
+		compactionWaitPeriod:             compactionWaitPeriod,
+		maintenanceInterval:              maintenanceInterval,
+		intervalsBeforeLeaseExpiration:   intervalsBeforeLeaseExpiration,
+		intervalsBeforeColdStartPlanning: intervalsBeforeColdStartPlanning,
+		metrics:                          metrics,
+		rotationIndexCounter:             atomic.NewInt32(0),
+		mtx:                              sync.RWMutex{},
+		tenantStateMap:                   make(map[string]*TenantRotationState),
+		rotation:                         make([]string, 0, 10), // initial size doesn't really matter
+		logger:                           logger,
 	}
 
 	r.Service = services.NewTimerService(maintenanceInterval, nil, r.iter, nil)
@@ -77,12 +79,21 @@ func NewRotator(leaseDuration, planningInterval, compactionWaitPeriod, maintenan
 func (r *Rotator) iter(ctx context.Context) error {
 	// TimerService is single threaded and this is the only usage of the intervalsBeforeLeaseExpiration variable so accessing and mutating it is safe
 	expireLeases := true
+	plan := true
 	if r.intervalsBeforeLeaseExpiration > 0 {
 		r.intervalsBeforeLeaseExpiration--
 		expireLeases = false
 	}
+	// RecoverFrom sets intervalsBeforeColdStartPlanning before the service is started and is the only other use of this variable so accessing and mutating it is safe
+	if r.intervalsBeforeColdStartPlanning > 0 {
+		r.intervalsBeforeColdStartPlanning--
+		plan = false
+	}
 
-	r.Maintenance(ctx, expireLeases)
+	if plan || expireLeases {
+		r.Maintenance(ctx, expireLeases, plan)
+	}
+
 	return nil
 }
 
@@ -98,6 +109,11 @@ func (r *Rotator) PrepareForShutdown() {
 func (r *Rotator) RecoverFrom(jobTrackers map[string]*JobTracker) {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
+
+	if len(jobTrackers) > 0 {
+		// This is not a cold start
+		r.intervalsBeforeColdStartPlanning = 0
+	}
 
 	// Place recovered tenants that have pending work in the rotation
 	for tenant, jobTracker := range jobTrackers {
@@ -301,7 +317,7 @@ func (r *Rotator) RemoveTenant(tenant string) (*JobTracker, bool) {
 	return tenantState.tracker, true
 }
 
-func (r *Rotator) Maintenance(ctx context.Context, enforceLeaseExpiration bool) {
+func (r *Rotator) Maintenance(ctx context.Context, enforceLeaseExpiration, plan bool) {
 	r.mtx.RLock()
 	addRotationFor := make([]string, 0, 10) // size is arbitrary
 	for tenant, tenantState := range r.tenantStateMap {
@@ -309,7 +325,7 @@ func (r *Rotator) Maintenance(ctx context.Context, enforceLeaseExpiration bool) 
 			r.mtx.RUnlock()
 			return
 		}
-		transition, err := tenantState.tracker.Maintenance(r.leaseDuration, enforceLeaseExpiration, r.planningInterval, r.compactionWaitPeriod)
+		transition, err := tenantState.tracker.Maintenance(r.leaseDuration, enforceLeaseExpiration, plan, r.planningInterval, r.compactionWaitPeriod)
 		if err != nil {
 			level.Warn(r.logger).Log("msg", "background maintenance failed for job tracker", "user", tenant, "err", err)
 		} else if transition {
