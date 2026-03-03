@@ -165,10 +165,12 @@ func TestIngestStorageKafkaAuth(t *testing.T) {
 			require.NoError(t, ingester.WaitSumMetrics(e2e.Greater(0), "cortex_ingester_memory_series"))
 
 			// Query the series back and verify the result matches what was pushed.
-			result, err := client.Query("test_series", now)
-			require.NoError(t, err)
-			require.Equal(t, model.ValVector, result.Type())
-			assert.Equal(t, expectedVector, result.(model.Vector))
+			require.EventuallyWithT(t, func(c *assert.CollectT) {
+				result, err := client.Query("test_series", now)
+				require.NoError(c, err)
+				require.Equal(c, model.ValVector, result.Type())
+				assert.Equal(c, expectedVector, result.(model.Vector))
+			}, 10*time.Second, time.Second/2)
 		})
 	}
 }
