@@ -338,6 +338,7 @@ lint: check-makefiles check-merge-conflicts
 		./pkg/cardinality... \
 		./pkg/compactor... \
 		./pkg/continuoustest... \
+		./pkg/scheduler... \
 		./pkg/util/... \
 		./cmd/... \
 		./integration/...
