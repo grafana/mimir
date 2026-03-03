@@ -373,3 +373,56 @@ func requireNotPresent(t *testing.T, buffer *SeriesDataRingBuffer[types.InstantV
 	_, found := buffer.GetIfPresent(seriesIndex)
 	require.False(t, found, "should not find series in buffer")
 }
+
+func TestSeriesDataRingBuffer_ResizeAfterRemovalThroughWrapAround(t *testing.T) {
+	buffer := &SeriesDataRingBuffer[types.InstantVectorSeriesData]{}
+
+	s1 := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 1, F: 1}}}
+	s2 := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 2, F: 2}}}
+	s3 := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 3, F: 3}}}
+	s4 := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 4, F: 4}}}
+	buffer.Append(s1, 121)
+	buffer.Append(s2, 122)
+	buffer.Append(s3, 123)
+	buffer.Append(s4, 124)
+
+	// Remove the first elements, creating space at the start of the underlying slice
+	buffer.Remove(121)
+	buffer.Remove(122)
+
+	// Append some new elements at the start of the underlying slice
+	s5 := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 5, F: 5}}}
+	s6 := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 6, F: 6}}}
+	buffer.Append(s5, 125)
+	buffer.Append(s6, 126)
+
+	// Remove elements in the middle, creating tombstones
+	buffer.Remove(124)
+	buffer.Remove(125)
+
+	// Now the underlying slice should be:
+	// 0: 125 (tombstoned)
+	// 1: 126
+	// 2: 123 (active, start of buffer)
+	// 3: 124 (tombstoned)
+	//
+	// Remove the first element to trigger clean up of the tombstones through the wrap around.
+	buffer.Remove(123)
+	require.Equal(t, 1, buffer.startIndex, "should correctly update start index after removing tombstones through wrapped around buffer")
+
+	// The buffer now has length 1, and space for 3 more elements in the slice. Add 4 to make sure the buffer can resize correctly after cleaning up tombstones.
+	s7 := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 7, F: 7}}}
+	s8 := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 8, F: 8}}}
+	s9 := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 9, F: 9}}}
+	s10 := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 10, F: 10}}}
+	buffer.Append(s7, 127)
+	buffer.Append(s8, 128)
+	buffer.Append(s9, 129)
+	buffer.Append(s10, 130)
+
+	requirePresent(t, buffer, 126, s6)
+	requirePresent(t, buffer, 127, s7)
+	requirePresent(t, buffer, 128, s8)
+	requirePresent(t, buffer, 129, s9)
+	requirePresent(t, buffer, 130, s10)
+}
