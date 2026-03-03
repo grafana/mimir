@@ -102,7 +102,7 @@ func (b *SeriesDataRingBuffer[T]) removeAtPosition(position int) T {
 	case 0:
 		// We've just removed the first element. Clear it and any tombstones that follow.
 		for b.elementCount > 0 && !b.getElementAtPosition(0).present {
-			b.startIndex++
+			b.startIndex = (b.startIndex + 1) % len(b.elements)
 			b.elementCount--
 		}
 	case b.elementCount - 1:
