@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
 FROM golang:1.24-alpine AS build
 WORKDIR /src
 COPY cmd/oauthtokenserver/* .
