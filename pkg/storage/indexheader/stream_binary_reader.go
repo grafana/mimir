@@ -215,7 +215,7 @@ func (r *StreamBinaryReader) loadSparseHeader(ctx context.Context, logger log.Lo
 	}
 
 	// 2. Fall back to the bucket
-	bucketSparseHeaderBytes, err := tryReadBucketSparseHeader(ctx, logger, bkt, id)
+	bucketSparseHeaderBytes, err := getSparseHeaderBytes(ctx, id, bkt, logger)
 	if err == nil {
 		// Try to load the downloaded sparse header
 		err = r.loadFromSparseIndexHeader(logger, bucketSparseHeaderBytes, postingOffsetsInMemSampling)
@@ -243,35 +243,6 @@ func (r *StreamBinaryReader) loadSparseHeader(ctx context.Context, logger log.Lo
 	tryWriteSparseHeadersToFile(logger, sparseHeadersPath, sparseHeaders)
 
 	return nil
-}
-
-// tryReadBucketSparseHeader attempts to download the sparse header from the object store.
-// It returns the sparse header data if successful, nil + error otherwise.
-func tryReadBucketSparseHeader(ctx context.Context, logger log.Logger, bkt objstore.InstrumentedBucketReader, id ulid.ULID) ([]byte, error) {
-	if bkt == nil {
-		return nil, fmt.Errorf("bucket is nil")
-	}
-	sparseHeaderObjPath := filepath.Join(id.String(), block.SparseIndexHeaderFilename)
-
-	reader, err := bkt.ReaderWithExpectedErrs(bkt.IsObjNotFoundErr).Get(ctx, sparseHeaderObjPath)
-	if err != nil {
-		return nil, fmt.Errorf("getting sparse index-header from bucket: %w", err)
-	}
-	defer runutil.CloseWithLogOnErr(logger, reader, "close sparse index-header reader")
-
-	data, err := io.ReadAll(reader)
-	if err != nil {
-		return nil, fmt.Errorf("reading sparse index-header from bucket: %w", err)
-	}
-
-	// Check if we've been canceled after downloading
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-
-	level.Info(logger).Log("msg", "downloaded sparse index-header from bucket")
-
-	return data, nil
 }
 
 // loadFromSparseIndexHeader load from sparse index-header on disk.
