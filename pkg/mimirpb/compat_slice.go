@@ -76,6 +76,14 @@ func FromLabelsToLabelAdapters(ls labels.Labels) []LabelAdapter {
 	return *(*[]LabelAdapter)(unsafe.Pointer(&ls))
 }
 
+// AppendLabelsToLabelAdapters appends the labels from ls into dst, reusing dst's
+// backing array when it has sufficient capacity.
+// In the slicelabels build, FromLabelsToLabelAdapters is a zero-cost cast so we
+// simply return that directly, ignoring dst.
+func AppendLabelsToLabelAdapters(dst []LabelAdapter, ls labels.Labels) []LabelAdapter {
+	return FromLabelsToLabelAdapters(ls)
+}
+
 // CompareLabelAdapters returns 0 if a==b, <0 if a < b, and >0 if a > b.
 func CompareLabelAdapters(a, b []LabelAdapter) int {
 	return labels.Compare(FromLabelAdaptersToLabels(a), FromLabelAdaptersToLabels(b))

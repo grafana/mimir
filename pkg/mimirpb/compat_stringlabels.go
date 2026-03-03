@@ -64,6 +64,17 @@ func FromLabelsToLabelAdapters(ls labels.Labels) []LabelAdapter {
 	return r
 }
 
+// AppendLabelsToLabelAdapters appends the labels from ls into dst, reusing dst's
+// backing array when it has sufficient capacity. This avoids a heap allocation
+// per series in the streaming query hot path compared to FromLabelsToLabelAdapters.
+func AppendLabelsToLabelAdapters(dst []LabelAdapter, ls labels.Labels) []LabelAdapter {
+	dst = dst[:0]
+	ls.Range(func(l labels.Label) {
+		dst = append(dst, LabelAdapter{Name: l.Name, Value: l.Value})
+	})
+	return dst
+}
+
 // CompareLabelAdapters returns be 0 if a==b, <0 if a < b, and >0 if a > b.
 func CompareLabelAdapters(a, b []LabelAdapter) int {
 	l := len(a)

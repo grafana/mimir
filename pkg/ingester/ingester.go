@@ -2480,6 +2480,29 @@ func putChunkSeriesNode(sn *chunkSeriesNode) {
 	chunkSeriesNodePool.Put(sn)
 }
 
+// streamingSeriesBatchPool pools []client.QueryStreamSeries slices used in
+// sendStreamingQuerySeries. Reusing these slices lets us also reuse the
+// Labels []LabelAdapter backing arrays stored in each slot, eliminating one
+// heap allocation per series on the hot streaming query path.
+var streamingSeriesBatchPool zeropool.Pool[[]client.QueryStreamSeries]
+
+func getStreamingSeriesBatch() []client.QueryStreamSeries {
+	b := streamingSeriesBatchPool.Get()
+	if b == nil {
+		b = make([]client.QueryStreamSeries, 0, queryStreamBatchSize)
+	}
+	return b
+}
+
+// putStreamingSeriesBatch returns the batch slice to the pool.
+// The Labels slices inside each slot are retained (not nil'd out) so their
+// backing arrays can be reused by AppendLabelsToLabelAdapters on the next cycle.
+func putStreamingSeriesBatch(b []client.QueryStreamSeries) {
+	// Retain the full-capacity slice (including the Labels backing arrays in each
+	// slot up to queryStreamBatchSize) so the next caller can reuse them.
+	streamingSeriesBatchPool.Put(b[:0])
+}
+
 func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.ChunkQuerier, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (*chunkSeriesNode, int, error) {
 	// Disable chunks trimming, so that we don't have to rewrite chunks which have samples outside
 	// the requested from/through range. PromQL engine can handle it.
@@ -2493,7 +2516,15 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.Chunk
 		return nil, 0, errors.Wrap(ss.Err(), "selecting series from ChunkQuerier")
 	}
 
-	seriesInBatch := make([]client.QueryStreamSeries, 0, queryStreamBatchSize)
+	// Get a pooled batch slice. The slice's capacity is queryStreamBatchSize and each
+	// QueryStreamSeries slot may already hold a Labels backing array from a previous
+	// call, allowing AppendLabelsToLabelAdapters to reuse that memory instead of
+	// allocating a new []LabelAdapter per series.
+	seriesInBatch := getStreamingSeriesBatch()
+	// Ensure we return the batch to the pool on all exit paths. We use a pointer
+	// indirection so the defer captures the current slice header (pointer, len, cap)
+	// even if seriesInBatch is reassigned during the loop.
+	defer func() { putStreamingSeriesBatch(seriesInBatch) }()
 
 	// We retain the iterator factory returned by IteratorFactory() rather than the full storage.ChunkSeries,
 	// so that we don't hold references to labels or other series data longer than necessary.
@@ -2523,10 +2554,15 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.Chunk
 			return nil, 0, errors.Wrap(err, "getting ChunkSeries chunk count")
 		}
 
-		seriesInBatch = append(seriesInBatch, client.QueryStreamSeries{
-			Labels:     mimirpb.FromLabelsToLabelAdapters(series.Labels()),
-			ChunkCount: int64(chunkCount),
-		})
+		// Determine the index this series will occupy in the batch so we can
+		// reuse the existing Labels backing array from a previous cycle.
+		batchIdx := len(seriesInBatch)
+		seriesInBatch = seriesInBatch[:batchIdx+1]
+		// AppendLabelsToLabelAdapters reuses the existing backing array of the
+		// Labels slice when it has enough capacity, avoiding a heap allocation
+		// per series on the hot streaming query path.
+		seriesInBatch[batchIdx].Labels = mimirpb.AppendLabelsToLabelAdapters(seriesInBatch[batchIdx].Labels, series.Labels())
+		seriesInBatch[batchIdx].ChunkCount = int64(chunkCount)
 
 		if len(seriesInBatch) >= queryStreamBatchSize {
 			err := client.SendQueryStream(stream, &client.QueryStreamResponse{
@@ -2536,6 +2572,8 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.Chunk
 				return nil, 0, err
 			}
 
+			// Reset length to zero but preserve the capacity and the Labels backing
+			// arrays in each slot so they can be reused in the next batch cycle.
 			seriesInBatch = seriesInBatch[:0]
 		}
 	}
