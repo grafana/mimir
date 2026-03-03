@@ -209,7 +209,7 @@ func (r *BucketBinaryReader) loadSparseHeader(
 	}()
 
 	// 2. Fall back to the bucket
-	sparseData, err = tryReadBucketSparseHeader(ctx, logger, bkt, id)
+	sparseData, err = getSparseHeaderBytes(ctx, id, bkt, logger)
 	if err == nil {
 		// Try to load the downloaded sparse header
 		err = r.loadFromSparseIndexHeader(logger, sparseData, postingOffsetsInMemSampling)
