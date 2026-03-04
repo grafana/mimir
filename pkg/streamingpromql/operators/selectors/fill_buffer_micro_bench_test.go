@@ -148,7 +148,7 @@ func BenchmarkFillBufferMicro_SteadyState(b *testing.B) {
 		interval      = 15 * time.Second
 	)
 	numSamples := int(totalDuration/interval) + 1 // 121 samples
-	numSteps := int(totalDuration / stepDur)       // 30 steps
+	numSteps := int(totalDuration / stepDur)      // 30 steps
 
 	t0 := int64(0)
 	chunk := buildXORChunk(t0, interval, numSamples)

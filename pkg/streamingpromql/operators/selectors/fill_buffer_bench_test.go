@@ -4,6 +4,7 @@ package selectors
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -62,7 +63,7 @@ func BenchmarkFillBuffer_SteadyState(b *testing.B) {
 
 		for {
 			_, err := rv.NextStepSamples(ctx)
-			if err == types.EOS {
+			if errors.Is(err, types.EOS) {
 				break
 			}
 			if err != nil {
@@ -108,7 +109,7 @@ func BenchmarkFillBuffer_InitialSeek(b *testing.B) {
 
 		for {
 			_, err := rv.NextStepSamples(ctx)
-			if err == types.EOS {
+			if errors.Is(err, types.EOS) {
 				break
 			}
 			if err != nil {
@@ -165,7 +166,7 @@ func BenchmarkFillBuffer_ManySeriesInitialSeek(b *testing.B) {
 			require.NoError(b, rv.NextSeries(ctx))
 			for {
 				_, err := rv.NextStepSamples(ctx)
-				if err == types.EOS {
+				if errors.Is(err, types.EOS) {
 					break
 				}
 				if err != nil {
