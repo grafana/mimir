@@ -121,8 +121,9 @@ func (s *TenantDiscoverer) discoverTenants(ctx context.Context) error {
 			tracker, ok := s.rotator.RemoveTenant(tenant)
 			if !ok {
 				level.Warn(logger).Log("msg", "attempted to remove tenant from rotator, but the tenant was unexpectedly missing")
+				continue
 			}
-			err = s.jpm.DeleteTenant(tenant)
+			err := tracker.persister.Drop()
 			if err != nil {
 				level.Warn(logger).Log("msg", "failed removing tenant bucket from compactor scheduler", "err", err)
 				if ok {

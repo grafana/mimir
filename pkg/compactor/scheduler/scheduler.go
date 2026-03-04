@@ -48,8 +48,9 @@ type Config struct {
 	TenantDiscoveryInterval                     time.Duration  `yaml:"tenant_discovery_interval" category:"experimental"`
 	UserDiscoveryBackoff                        backoff.Config `yaml:"user_discovery_backoff" category:"experimental"`
 	PersistenceType                             string         `yaml:"persistence_type" category:"experimental"`
-	BboltPath                                   string         `yaml:"bbolt_db_path" category:"experimental"`
 	RepeatedFailureReportThreshold              int            `yaml:"repeated_failure_report_threshold" category:"experimental"`
+	BboltDir                                    string         `yaml:"bbolt_dir" category:"experimental"`
+	BboltShardCount                             int            `yaml:"bbolt_shard_count" category:"experimental"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
@@ -61,8 +62,9 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.MaintenanceIntervalsBeforeColdStartPlanning, "compactor-scheduler.maintenance-intervals-before-cold-start-planning", 4, "The number of maintenance intervals before planning occurs when starting from no recovered state. Nonpositive values are all treated as zero.")
 	f.DurationVar(&cfg.TenantDiscoveryInterval, "compactor-scheduler.tenant-discovery-interval", 10*time.Minute, "The duration of time between bucket listings to discover new tenants.")
 	f.StringVar(&cfg.PersistenceType, "compactor-scheduler.persistence-type", "bbolt", "The type of persistence the compactor scheduler should use. Valid values: none, bbolt")
-	f.StringVar(&cfg.BboltPath, "compactor-scheduler.bbolt.db-path", "bbolt_1.db", "The path to the bbolt database file for the compactor scheduler.")
 	f.IntVar(&cfg.RepeatedFailureReportThreshold, "compactor-scheduler.repeated-failure-report-threshold", 2, "The number of times a job can fail before a repeated failure is recorded. 0 for no limit.")
+	f.StringVar(&cfg.BboltDir, "compactor-scheduler.bbolt.dir", "./data-compactor-scheduler", "The directory where bbolt shard database files are stored for the compactor scheduler.")
+	f.IntVar(&cfg.BboltShardCount, "compactor-scheduler.bbolt.shard-count", 16, "The target number of bbolt database shards for the compactor scheduler.")
 	cfg.UserDiscoveryBackoff.RegisterFlagsWithPrefix("compactor-scheduler", f)
 }
 
@@ -86,8 +88,11 @@ func (cfg *Config) Validate() error {
 		return errors.New("compactor-scheduler.repeated-failure-report-threshold must be non-negative")
 	}
 	if cfg.PersistenceType == "bbolt" {
-		if cfg.BboltPath == "" {
-			return errors.New("compactor-scheduler.bbolt.db-path must be set")
+		if cfg.BboltDir == "" {
+			return errors.New("compactor-scheduler.bbolt.dir must be set")
+		}
+		if cfg.BboltShardCount < 1 {
+			return errors.New("compactor-scheduler.bbolt.shard-count must be at least 1")
 		}
 	}
 	return nil
