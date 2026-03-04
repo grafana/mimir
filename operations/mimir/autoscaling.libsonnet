@@ -691,7 +691,7 @@
   // Distributors
   //
 
-  newDistributorScaledObject(name, extra_matchers='')::
+  newDistributorScaledObject(name, extra_matchers='', weight=1)::
     $.newResourceScaledObject(
       name=name,
       container_name='distributor',
@@ -705,6 +705,7 @@
       with_ready_trigger=true,
       extra_matchers=extra_matchers,
       with_memory_trigger=!$._config.distributor_gomemlimit_enabled,
+      weight=weight,
     ) + (
       {
         spec+: {
