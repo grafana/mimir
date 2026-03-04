@@ -745,21 +745,24 @@ func BenchmarkNewLazyBinaryReader_LoadReader(b *testing.B) {
 			for _, benchFactory := range benchFactories {
 				b.Run(fmt.Sprintf("Names=%d/Values=%d/Reader=%s", len(nameSymbols), len(valueSymbols), benchFactory.name), func(b *testing.B) {
 					b.ReportAllocs()
-					b.StopTimer()
-					lazyReader, _, bktReg := benchFactory.factory()
-					b.StartTimer()
 
-					baselineMetrics := test.RecordBucketMetrics(b, bktReg, []string{"get", "get_range"})
+					for i := 0; i < b.N; i++ {
+						b.StopTimer()
+						lazyReader, _, bktReg := benchFactory.factory()
+						baselineMetrics := test.RecordBucketMetrics(b, bktReg, []string{"get", "get_range"})
 
-					_, err := lazyReader.loadReader()
-					require.NoError(b, err)
+						b.StartTimer()
+						_, err := lazyReader.loadReader()
+						require.NoError(b, err)
 
-					b.StopTimer()
-					err = lazyReader.Close()
-					require.NoError(b, err)
+						b.StopTimer()
+						err = lazyReader.Close()
+						require.NoError(b, err)
 
-					metricsDiff := test.RecordBucketMetricsDiff(b, bktReg, []string{"get", "get_range"}, baselineMetrics)
-					test.ReportBucketMetrics(b, metricsDiff)
+						metricsDiff := test.RecordBucketMetricsDiff(b, bktReg, []string{"get", "get_range"}, baselineMetrics)
+						test.ReportBucketMetrics(b, metricsDiff)
+					}
+
 				})
 			}
 		}
