@@ -48,8 +48,6 @@ type BucketBinaryReader struct {
 		index  uint32
 		symbol string
 	}
-
-	indexVersion int
 }
 
 // NewBucketBinaryReader creates a new BucketBinaryReader that reads index header data
@@ -131,7 +129,7 @@ func (r *BucketBinaryReader) loadSparseHeader(
 	logger = log.With(logger, "path", sparseHeadersPath, "inmem_sampling_rate", postingOffsetsInMemSampling)
 
 	// Only v2 indexes use sparse headers
-	if r.indexVersion != index.FormatV2 {
+	if r.toc.IndexVersion != index.FormatV2 {
 		return r.loadFromIndexHeader(logger, cfg, postingOffsetsInMemSampling)
 	}
 
@@ -205,7 +203,7 @@ func (r *BucketBinaryReader) loadFromSparseIndexHeader(logger log.Logger, sparse
 		return err
 	}
 
-	r.symbols, err = streamindex.NewSymbolsFromSparseHeader(r.factory, sparseHeaders.Symbols, r.indexVersion, int(r.toc.Symbols))
+	r.symbols, err = streamindex.NewSymbolsFromSparseHeader(r.factory, sparseHeaders.Symbols, r.toc.IndexVersion, int(r.toc.Symbols))
 	if err != nil {
 		return fmt.Errorf("cannot load symbols from sparse index-header: %w", err)
 	}
@@ -222,7 +220,7 @@ func (r *BucketBinaryReader) loadFromSparseIndexHeader(logger log.Logger, sparse
 func (r *BucketBinaryReader) loadFromIndexHeader(logger log.Logger, cfg Config, postingOffsetsInMemSampling int) error {
 	var err error
 	r.symbols, r.postingsOffsetTable, err = buildSparseHeaderFromIndexHeader(
-		r.indexVersion, r.toc, r.factory, postingOffsetsInMemSampling, cfg.VerifyOnLoad, logger,
+		r.toc.IndexVersion, r.toc, r.factory, postingOffsetsInMemSampling, cfg.VerifyOnLoad, logger,
 	)
 	return err
 }
@@ -255,7 +253,7 @@ func (r *BucketBinaryReader) Close() error {
 
 // IndexVersion implements Reader.
 func (r *BucketBinaryReader) IndexVersion(context.Context) (int, error) {
-	return r.indexVersion, nil
+	return r.toc.IndexVersion, nil
 }
 
 // PostingsOffset implements Reader.
