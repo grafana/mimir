@@ -5184,69 +5184,67 @@ kafka:
   # CLI flag: -ingest-storage.kafka.tls-enabled
   [tls_enabled: <boolean> | default = false]
 
-  tls:
-    # (advanced) Path to the client certificate, which will be used for
-    # authenticating with the server. Also requires the key path to be
-    # configured.
-    # CLI flag: -ingest-storage.kafka.tls-cert-path
-    [tls_cert_path: <string> | default = ""]
+  # (advanced) Path to the client certificate, which will be used for
+  # authenticating with the server. Also requires the key path to be configured.
+  # CLI flag: -ingest-storage.kafka.tls-cert-path
+  [tls_cert_path: <string> | default = ""]
 
-    # (advanced) Path to the key for the client certificate. Also requires the
-    # client certificate to be configured.
-    # CLI flag: -ingest-storage.kafka.tls-key-path
-    [tls_key_path: <string> | default = ""]
+  # (advanced) Path to the key for the client certificate. Also requires the
+  # client certificate to be configured.
+  # CLI flag: -ingest-storage.kafka.tls-key-path
+  [tls_key_path: <string> | default = ""]
 
-    # (advanced) Path to the CA certificates to validate server certificate
-    # against. If not set, the host's root CA certificates are used.
-    # CLI flag: -ingest-storage.kafka.tls-ca-path
-    [tls_ca_path: <string> | default = ""]
+  # (advanced) Path to the CA certificates to validate server certificate
+  # against. If not set, the host's root CA certificates are used.
+  # CLI flag: -ingest-storage.kafka.tls-ca-path
+  [tls_ca_path: <string> | default = ""]
 
-    # (advanced) Override the expected name on the server certificate.
-    # CLI flag: -ingest-storage.kafka.tls-server-name
-    [tls_server_name: <string> | default = ""]
+  # (advanced) Override the expected name on the server certificate.
+  # CLI flag: -ingest-storage.kafka.tls-server-name
+  [tls_server_name: <string> | default = ""]
 
-    # (advanced) Skip validating server certificate.
-    # CLI flag: -ingest-storage.kafka.tls-insecure-skip-verify
-    [tls_insecure_skip_verify: <boolean> | default = false]
+  # (advanced) Skip validating server certificate.
+  # CLI flag: -ingest-storage.kafka.tls-insecure-skip-verify
+  [tls_insecure_skip_verify: <boolean> | default = false]
 
-    # (advanced) Override the default cipher suite list (separated by commas).
-    # Allowed values:
-    #
-    # Secure Ciphers:
-    # - TLS_AES_128_GCM_SHA256
-    # - TLS_AES_256_GCM_SHA384
-    # - TLS_CHACHA20_POLY1305_SHA256
-    # - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA
-    # - TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA
-    # - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA
-    # - TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA
-    # - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
-    # - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
-    # - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
-    # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
-    # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
-    # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-    #
-    # Insecure Ciphers:
-    # - TLS_RSA_WITH_RC4_128_SHA
-    # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
-    # - TLS_RSA_WITH_AES_128_CBC_SHA
-    # - TLS_RSA_WITH_AES_256_CBC_SHA
-    # - TLS_RSA_WITH_AES_128_CBC_SHA256
-    # - TLS_RSA_WITH_AES_128_GCM_SHA256
-    # - TLS_RSA_WITH_AES_256_GCM_SHA384
-    # - TLS_ECDHE_ECDSA_WITH_RC4_128_SHA
-    # - TLS_ECDHE_RSA_WITH_RC4_128_SHA
-    # - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
-    # - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
-    # - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
-    # CLI flag: -ingest-storage.kafka.tls-cipher-suites
-    [tls_cipher_suites: <string> | default = ""]
+  # (advanced) Override the default cipher suite list (separated by commas).
+  # Allowed values:
+  #
+  # Secure Ciphers:
+  # - TLS_AES_128_GCM_SHA256
+  # - TLS_AES_256_GCM_SHA384
+  # - TLS_CHACHA20_POLY1305_SHA256
+  # - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA
+  # - TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA
+  # - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA
+  # - TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA
+  # - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+  # - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+  # - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+  # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+  # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+  # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+  #
+  # Insecure Ciphers:
+  # - TLS_RSA_WITH_RC4_128_SHA
+  # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
+  # - TLS_RSA_WITH_AES_128_CBC_SHA
+  # - TLS_RSA_WITH_AES_256_CBC_SHA
+  # - TLS_RSA_WITH_AES_128_CBC_SHA256
+  # - TLS_RSA_WITH_AES_128_GCM_SHA256
+  # - TLS_RSA_WITH_AES_256_GCM_SHA384
+  # - TLS_ECDHE_ECDSA_WITH_RC4_128_SHA
+  # - TLS_ECDHE_RSA_WITH_RC4_128_SHA
+  # - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
+  # - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
+  # - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
+  # CLI flag: -ingest-storage.kafka.tls-cipher-suites
+  [tls_cipher_suites: <string> | default = ""]
 
-    # (advanced) Override the default minimum TLS version. Allowed values:
-    # VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
-    # CLI flag: -ingest-storage.kafka.tls-min-version
-    [tls_min_version: <string> | default = ""]
+  # (advanced) Override the default minimum TLS version. Allowed values:
+  # VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  # CLI flag: -ingest-storage.kafka.tls-min-version
+  [tls_min_version: <string> | default = ""]
 
   # The consumer group used by the consumer to track the last consumed offset.
   # The consumer group must be different for each ingester. If the configured

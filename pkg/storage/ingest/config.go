@@ -102,7 +102,7 @@ type KafkaConfig struct {
 
 	SASL       KafkaAuthConfig `yaml:",inline"`
 	TLSEnabled bool            `yaml:"tls_enabled"`
-	TLS        TLSClientConfig `yaml:"tls"`
+	TLS        TLSClientConfig `yaml:",inline"`
 
 	ConsumerGroup                         string        `yaml:"consumer_group"`
 	ConsumerGroupOffsetCommitInterval     time.Duration `yaml:"consumer_group_offset_commit_interval"`
