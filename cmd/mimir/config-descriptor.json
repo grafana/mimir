@@ -8849,6 +8849,16 @@
               "fieldType": "string"
             },
             {
+              "kind": "field",
+              "name": "tls_enabled",
+              "required": false,
+              "desc": "Enable TLS for the Kafka client connection.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ingest-storage.kafka.tls-enabled",
+              "fieldType": "boolean"
+            },
+            {
               "kind": "block",
               "name": "tls",
               "required": false,
@@ -8856,53 +8866,80 @@
               "blockEntries": [
                 {
                   "kind": "field",
-                  "name": "ca_file_path",
+                  "name": "tls_cert_path",
                   "required": false,
-                  "desc": "Path to the CA certificate file to verify Kafka brokers. If not set, the system's root CA certificates will be used.",
+                  "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "ingest-storage.kafka.tls-ca-file",
-                  "fieldType": "string"
+                  "fieldFlag": "ingest-storage.kafka.tls-cert-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "field",
-                  "name": "cert_file_path",
+                  "name": "tls_key_path",
                   "required": false,
-                  "desc": "Path to the client certificate file for mTLS authentication to Kafka.",
+                  "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "ingest-storage.kafka.tls-cert-file",
-                  "fieldType": "string"
+                  "fieldFlag": "ingest-storage.kafka.tls-key-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "field",
-                  "name": "key_file_path",
+                  "name": "tls_ca_path",
                   "required": false,
-                  "desc": "Path to the client key file for mTLS authentication to Kafka.",
+                  "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "ingest-storage.kafka.tls-key-file",
-                  "fieldType": "string"
+                  "fieldFlag": "ingest-storage.kafka.tls-ca-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "field",
-                  "name": "server_name",
+                  "name": "tls_server_name",
                   "required": false,
-                  "desc": "Override the expected name on the server certificate for Kafka brokers.",
+                  "desc": "Override the expected name on the server certificate.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "ingest-storage.kafka.tls-server-name",
-                  "fieldType": "string"
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "field",
-                  "name": "insecure_skip_verify",
+                  "name": "tls_insecure_skip_verify",
                   "required": false,
-                  "desc": "Skip TLS certificate verification. This is insecure and should only be used for testing.",
+                  "desc": "Skip validating server certificate.",
                   "fieldValue": null,
                   "fieldDefaultValue": false,
                   "fieldFlag": "ingest-storage.kafka.tls-insecure-skip-verify",
-                  "fieldType": "boolean"
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_cipher_suites",
+                  "required": false,
+                  "desc": "Override the default cipher suite list (separated by commas). Allowed values:\n\nSecure Ciphers:\n- TLS_AES_128_GCM_SHA256\n- TLS_AES_256_GCM_SHA384\n- TLS_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256\n\nInsecure Ciphers:\n- TLS_RSA_WITH_RC4_128_SHA\n- TLS_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA\n- TLS_RSA_WITH_AES_256_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA256\n- TLS_RSA_WITH_AES_128_GCM_SHA256\n- TLS_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_ECDSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256\n",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ingest-storage.kafka.tls-cipher-suites",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_min_version",
+                  "required": false,
+                  "desc": "Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ingest-storage.kafka.tls-min-version",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
                 }
               ],
               "fieldValue": null,

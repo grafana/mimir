@@ -104,8 +104,8 @@ func TestIngestStorageKafkaAuth(t *testing.T) {
 				))
 
 				return map[string]string{
-					"-ingest-storage.kafka.tls-cert-file": filepath.Join(e2e.ContainerSharedDir, "kafka-client.crt"),
-					"-ingest-storage.kafka.tls-key-file":  filepath.Join(e2e.ContainerSharedDir, "kafka-client.key"),
+					"-ingest-storage.kafka.tls-cert-path": filepath.Join(e2e.ContainerSharedDir, "kafka-client.crt"),
+					"-ingest-storage.kafka.tls-key-path":  filepath.Join(e2e.ContainerSharedDir, "kafka-client.key"),
 				}
 			},
 		},

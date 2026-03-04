@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/flagext"
 
 	"github.com/grafana/mimir/pkg/util"
@@ -36,7 +37,7 @@ var (
 	ErrInconsistentSASLCredentials       = fmt.Errorf("the SASL username and password must be both configured to enable SASL authentication")
 	ErrSASLOauthbearerBadConfig          = fmt.Errorf("either the OAuth token or a file path to load the token from must be configured to enable SASL OAUTHBEARER authentication")
 	ErrInvalidSASLMechanism              = fmt.Errorf("the configured SASL mechanism is invalid, must be one of: %s", util.JoinStrings(saslMechanismOptions, ", "))
-	ErrInconsistentMTLSCredentials       = errors.New("both certificate and key files must be provided for mTLS authentication")
+
 	ErrInvalidIngestionConcurrencyMax    = errors.New("ingest-storage.kafka.ingestion-concurrency-max must either be set to 0 or to a value greater than 0")
 	ErrInvalidIngestionConcurrencyParams = errors.New("ingest-storage.kafka.ingestion-concurrency-queue-capacity, ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample, ingest-storage.kafka.ingestion-concurrency-batch-size and ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard must be greater than 0")
 	ErrInvalidAutoCreateTopicParams      = errors.New("ingest-storage.kafka.auto-create-topic-default-partitions must be -1 or greater than 0 when ingest-storage.kafka.auto-create-topic-default-partitions=true")
@@ -98,8 +99,9 @@ type KafkaConfig struct {
 	WriteTimeout time.Duration          `yaml:"write_timeout"`
 	WriteClients int                    `yaml:"write_clients"`
 
-	SASL KafkaAuthConfig `yaml:",inline"`
-	TLS  KafkaTLSConfig  `yaml:"tls"`
+	SASL       KafkaAuthConfig  `yaml:",inline"`
+	TLSEnabled bool             `yaml:"tls_enabled"`
+	TLS        tls.ClientConfig `yaml:"tls"`
 
 	ConsumerGroup                         string        `yaml:"consumer_group"`
 	ConsumerGroupOffsetCommitInterval     time.Duration `yaml:"consumer_group_offset_commit_interval"`
@@ -215,7 +217,8 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 	f.IntVar(&cfg.IngestionConcurrencyEstimatedBytesPerSample, prefix+"ingestion-concurrency-estimated-bytes-per-sample", 500, "The estimated number of bytes a sample has at time of ingestion. This value is used to estimate the timeseries without decompressing them. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.")
 
 	cfg.SASL.RegisterFlagsWithPrefix(prefix+"sasl-", f)
-	cfg.TLS.RegisterFlagsWithPrefix(prefix+"tls-", f)
+	f.BoolVar(&cfg.TLSEnabled, prefix+"tls-enabled", false, "Enable TLS for the Kafka client connection.")
+	cfg.TLS.RegisterFlagsWithPrefix(prefix, f)
 }
 
 func (cfg *KafkaConfig) Validate() error {
@@ -285,8 +288,10 @@ func (cfg *KafkaConfig) Validate() error {
 		return err
 	}
 
-	if err := cfg.TLS.Validate(); err != nil {
-		return err
+	if cfg.TLSEnabled {
+		if _, err := cfg.TLS.GetTLSConfig(); err != nil {
+			return fmt.Errorf("invalid TLS config: %w", err)
+		}
 	}
 
 	return nil
@@ -408,25 +413,4 @@ func (cfg *KafkaAuthConfig) Validate() error {
 	}
 
 	return nil
-}
-
-type KafkaTLSConfig struct {
-	CAFilePath            string `yaml:"ca_file_path"`
-	CertFilePath          string `yaml:"cert_file_path"`
-	KeyFilePath           string `yaml:"key_file_path"`
-	ServerName            string `yaml:"server_name"`
-	InsecureSkipTLSVerify bool   `yaml:"insecure_skip_verify"`
-}
-
-func (cfg *KafkaTLSConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.StringVar(&cfg.CAFilePath, prefix+"ca-file", "", "Path to the CA certificate file to verify Kafka brokers. If not set, the system's root CA certificates will be used.")
-	f.StringVar(&cfg.CertFilePath, prefix+"cert-file", "", "Path to the client certificate file for mTLS authentication to Kafka.")
-	f.StringVar(&cfg.KeyFilePath, prefix+"key-file", "", "Path to the client key file for mTLS authentication to Kafka.")
-	f.StringVar(&cfg.ServerName, prefix+"server-name", "", "Override the expected name on the server certificate for Kafka brokers.")
-	f.BoolVar(&cfg.InsecureSkipTLSVerify, prefix+"insecure-skip-verify", false, "Skip TLS certificate verification. This is insecure and should only be used for testing.")
-}
-
-func (cfg *KafkaTLSConfig) Validate() error {
-	_, err := cfg.tlsConfig()
-	return err
 }

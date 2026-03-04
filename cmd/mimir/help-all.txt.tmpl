@@ -1519,16 +1519,22 @@ Usage of ./cmd/mimir/mimir:
     	The username used to authenticate to Kafka using SASL. To enable SASL, configure both the username and password.
   -ingest-storage.kafka.target-consumer-lag-at-startup duration
     	The best-effort maximum lag a consumer tries to achieve at startup. Set both -ingest-storage.kafka.target-consumer-lag-at-startup and -ingest-storage.kafka.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 2s)
-  -ingest-storage.kafka.tls-ca-file string
-    	Path to the CA certificate file to verify Kafka brokers. If not set, the system's root CA certificates will be used.
-  -ingest-storage.kafka.tls-cert-file string
-    	Path to the client certificate file for mTLS authentication to Kafka.
+  -ingest-storage.kafka.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -ingest-storage.kafka.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -ingest-storage.kafka.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -ingest-storage.kafka.tls-enabled
+    	Enable TLS for the Kafka client connection.
   -ingest-storage.kafka.tls-insecure-skip-verify
-    	Skip TLS certificate verification. This is insecure and should only be used for testing.
-  -ingest-storage.kafka.tls-key-file string
-    	Path to the client key file for mTLS authentication to Kafka.
+    	Skip validating server certificate.
+  -ingest-storage.kafka.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -ingest-storage.kafka.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ingest-storage.kafka.tls-server-name string
-    	Override the expected name on the server certificate for Kafka brokers.
+    	Override the expected name on the server certificate.
   -ingest-storage.kafka.topic string
     	The Kafka topic name.
   -ingest-storage.kafka.use-compressed-bytes-as-fetch-max-bytes
