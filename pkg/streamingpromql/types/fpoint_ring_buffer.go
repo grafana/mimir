@@ -234,35 +234,15 @@ func (b *FPointRingBuffer) ViewUntilSearchingBackwards(maxT int64, existing *FPo
 		existing = &FPointRingBufferView{buffer: b}
 	}
 
-	nextPositionToCheck := b.size - 1
-
-	for nextPositionToCheck >= 0 && b.PointAt(nextPositionToCheck).T > maxT {
-		nextPositionToCheck--
-	}
-
-	existing.offset = 0
-	existing.size = nextPositionToCheck + 1
-	return existing
-}
-
-// ViewUntilWithSinglePointOvershoot returns a view into this buffer including only points with
-// timestamps ≤ maxT, exploiting the caller's guarantee that at most one trailing point in the
-// buffer can have a timestamp > maxT.
-//
-// This is more efficient than ViewUntilSearchingBackwards for callers (such as fillBuffer) that
-// always stop appending after the first point that exceeds maxT, because the boundary check
-// reduces to a single comparison rather than a loop.
-//
-// existing is an existing view instance for this buffer that is reused if provided. It can be nil.
-// The returned view is no longer valid if this buffer is modified (eg. a point is added, or the buffer is reset or closed).
-func (b *FPointRingBuffer) ViewUntilWithSinglePointOvershoot(maxT int64, existing *FPointRingBufferView) *FPointRingBufferView {
-	if existing == nil {
-		existing = &FPointRingBufferView{buffer: b}
-	}
-
+	// Peel the first iteration: use a direct array access rather than routing through PointAt.
+	// fillBuffer guarantees at most one trailing point past maxT in the common case, so this
+	// single check exits immediately without entering the loop.
 	size := b.size
 	if size > 0 && b.points[(b.firstIndex+size-1)&b.pointsIndexMask].T > maxT {
 		size--
+		for size > 0 && b.points[(b.firstIndex+size-1)&b.pointsIndexMask].T > maxT {
+			size--
+		}
 	}
 
 	existing.offset = 0

@@ -96,9 +96,9 @@ func BenchmarkNextStepSamples(b *testing.B) {
 	}
 }
 
-// BenchmarkViewUntilSearchingBackwards benchmarks the old O(k) backward-scan
-// view method. Pair with BenchmarkViewUntilWithSinglePointOvershoot to see the
-// isolated gain from the optimisation.
+// BenchmarkViewUntilSearchingBackwards benchmarks the ViewUntilSearchingBackwards
+// method called by NextStepSamples on the hot path. The buffer is set up with one
+// trailing point past maxT, which is the common case guaranteed by fillBuffer.
 func BenchmarkViewUntilSearchingBackwards(b *testing.B) {
 	for _, n := range []int{8, 32, 128} {
 		n := n
@@ -116,31 +116,6 @@ func BenchmarkViewUntilSearchingBackwards(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				view = buf.ViewUntilSearchingBackwards(maxT, view)
-			}
-			_ = view
-		})
-	}
-}
-
-// BenchmarkViewUntilWithSinglePointOvershoot benchmarks the new O(1) view method
-// that exploits the guarantee that fillBuffer appends at most one point past maxT.
-func BenchmarkViewUntilWithSinglePointOvershoot(b *testing.B) {
-	for _, n := range []int{8, 32, 128} {
-		n := n
-		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
-			mc := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
-			buf := types.NewFPointRingBuffer(mc)
-			for i := 0; i < n; i++ {
-				if err := buf.Append(promql.FPoint{T: int64(i * 1000), F: float64(i)}); err != nil {
-					b.Fatal(err)
-				}
-			}
-			maxT := int64((n - 2) * 1000) // last point is past maxT
-			var view *types.FPointRingBufferView
-			b.ReportAllocs()
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				view = buf.ViewUntilWithSinglePointOvershoot(maxT, view)
 			}
 			_ = view
 		})
