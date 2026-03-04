@@ -528,7 +528,7 @@ func (g *grpcStreamWriter) Write(ctx context.Context, msg *frontendv2pb.QueryRes
 		// may result in sending only part of the response to the query-frontend).
 		//
 		// However, if we're trying to send an error, it doesn't matter if previous attempts failed, we should always try to send
-		// the message to query-frontends.
+		// the message to the query-frontend.
 		//
 		// Sending a message in this case is safe: if we're sending an error, we won't send part of a successful response that the query-frontend could
 		// misinterpret as the entire response.
