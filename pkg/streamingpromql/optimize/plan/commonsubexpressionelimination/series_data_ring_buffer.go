@@ -208,8 +208,9 @@ func (b *SeriesDataRingBuffer[T]) tryToFindElementPositionForSeriesIndex(seriesI
 	seriesIndexAppearsInTail := seriesIndex > b.elements[len(b.elements)-1].seriesIndex
 
 	if haveWrappedAround && seriesIndexAppearsInTail {
-		headSize := b.startIndex + b.elementCount - len(b.elements)
-		posInTail, found := slices.BinarySearchFunc(b.elements[0:b.elementCount-headSize], seriesIndex, cmp)
+		tailSize := b.startIndex + b.elementCount - len(b.elements)
+		headSize := b.elementCount - tailSize
+		posInTail, found := slices.BinarySearchFunc(b.elements[0:tailSize], seriesIndex, cmp)
 
 		return posInTail + headSize, found
 	}
