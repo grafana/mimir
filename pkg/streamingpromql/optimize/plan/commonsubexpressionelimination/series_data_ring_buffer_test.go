@@ -298,6 +298,58 @@ func TestSeriesDataRingBuffer_FindElementPositionForSeriesIndex(t *testing.T) {
 			buffer.findElementPositionForSeriesIndex(131)
 		})
 	})
+
+	t.Run("buffer wrapped around with gap between head and tail portion of slice", func(t *testing.T) {
+		buffer := &SeriesDataRingBuffer[types.InstantVectorSeriesData]{}
+
+		s1 := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 1, F: 1}}}
+		s2 := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 2, F: 2}}}
+		s3 := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 3, F: 3}}}
+		s4 := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 4, F: 4}}}
+		s5 := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 5, F: 5}}}
+		s6 := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 6, F: 6}}}
+		s7 := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 7, F: 7}}}
+		s8 := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 8, F: 8}}}
+		s9 := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 9, F: 9}}}
+		s10 := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 9, F: 9}}}
+		buffer.Append(s1, 121)
+		buffer.Append(s2, 122)
+		buffer.Append(s3, 123)
+		buffer.Append(s4, 124)
+		buffer.Append(s5, 125)
+		buffer.Remove(121)
+		buffer.Remove(122)
+		buffer.Remove(123)
+
+		// At this point, the underlying slice should have length 8, with three elements empty at the beginning of the slice, and another three elements empty at the end of the slice.
+		require.Len(t, buffer.elements, 8)
+		require.Equal(t, 2, buffer.Size())
+
+		// Fill all but one element of the underlying slice (leaving one unused element in the middle).
+		buffer.Append(s6, 126)
+		buffer.Append(s7, 127)
+		buffer.Append(s8, 128)
+		buffer.Append(s9, 129)
+		buffer.Append(s10, 130)
+		require.Len(t, buffer.elements, 8)
+		require.Equal(t, 7, buffer.Size())
+
+		require.Equal(t, 0, buffer.findElementPositionForSeriesIndex(124))
+		require.Equal(t, 1, buffer.findElementPositionForSeriesIndex(125))
+		require.Equal(t, 2, buffer.findElementPositionForSeriesIndex(126))
+		require.Equal(t, 3, buffer.findElementPositionForSeriesIndex(127))
+		require.Equal(t, 4, buffer.findElementPositionForSeriesIndex(128))
+		require.Equal(t, 5, buffer.findElementPositionForSeriesIndex(129))
+		require.Equal(t, 6, buffer.findElementPositionForSeriesIndex(130))
+
+		require.PanicsWithValue(t, "attempted to find element position for series index 123, but it is not present in this buffer (first series index is 124, last series index is 130)", func() {
+			buffer.findElementPositionForSeriesIndex(123)
+		})
+
+		require.PanicsWithValue(t, "attempted to find element position for series index 131, but it is not present in this buffer (first series index is 124, last series index is 130)", func() {
+			buffer.findElementPositionForSeriesIndex(131)
+		})
+	})
 }
 
 func TestSeriesDataRingBuffer_GetIfPresent(t *testing.T) {
