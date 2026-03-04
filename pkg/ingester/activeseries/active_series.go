@@ -558,18 +558,25 @@ func (s *seriesStripe) reloadConfig(asm *asmodel.Matchers, cat *costattribution.
 		s.activeMatchingNativeHistogramBuckets = resizeAndClear(len(asm.MatcherNames()), s.activeMatchingNativeHistogramBuckets)
 	}
 
+	updateEntryIfMatchersChanged := func(ref storage.SeriesRef, entry seriesEntry, lazyMatches func() asmodel.PreAllocDynamicSlice) {
+		if matchersChanged {
+			entry.matches = lazyMatches()
+			s.incrementMatchingCounters(entry)
+			s.refs[ref] = entry
+		}
+	}
+	incrementCatIfChanged := func(lbls labels.Labels, entry seriesEntry) {
+		if catChanged {
+			cat.Increment(lbls, time.Unix(0, entry.nanos.Load()), entry.numNativeHistogramBuckets)
+		}
+	}
+
 	if matchersChanged || catChanged {
 		buf := labels.NewScratchBuilder(128)
 		for ref, entry := range s.refs {
 			if c, ok := resolved[ref]; ok {
-				if matchersChanged {
-					entry.matches = c.matches
-					s.incrementMatchingCounters(entry)
-				}
-				if catChanged {
-					cat.Increment(c.labels, time.Unix(0, entry.nanos.Load()), entry.numNativeHistogramBuckets)
-				}
-				s.refs[ref] = entry
+				updateEntryIfMatchersChanged(ref, entry, func() asmodel.PreAllocDynamicSlice { return c.matches })
+				incrementCatIfChanged(c.labels, entry)
 				continue
 			}
 
@@ -579,22 +586,14 @@ func (s *seriesStripe) reloadConfig(asm *asmodel.Matchers, cat *costattribution.
 				s.activeSeriesAttributionFailureCounter.Add(1)
 				// If we failed to lookup the series (which shouldn't happen as we're notified of deletions),
 				// we still need to update the entry.matches to make sure it has a coherent size with the matchers we're setting.
-				if matchersChanged {
-					entry.matches = asm.Matches(labels.EmptyLabels())
-					s.incrementMatchingCounters(entry)
-					s.refs[ref] = entry
-				}
+				updateEntryIfMatchersChanged(ref, entry, func() asmodel.PreAllocDynamicSlice { return asm.Matches(labels.EmptyLabels()) })
+				// We do not increment CAT here, because it shouldn't happen, and because nobody would decrement it later.
+				// Or we could do it, if you want to, anyway, this should not happen, why am I even spending my energy writing this comment?
 				continue
 			}
 			lbls := buf.Labels()
-			if catChanged {
-				cat.Increment(lbls, time.Unix(0, entry.nanos.Load()), entry.numNativeHistogramBuckets)
-			}
-			if matchersChanged {
-				entry.matches = asm.Matches(lbls)
-				s.incrementMatchingCounters(entry)
-				s.refs[ref] = entry
-			}
+			incrementCatIfChanged(lbls, entry)
+			updateEntryIfMatchersChanged(ref, entry, func() asmodel.PreAllocDynamicSlice { return asm.Matches(lbls) })
 		}
 	}
 
