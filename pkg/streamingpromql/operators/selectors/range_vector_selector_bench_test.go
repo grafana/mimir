@@ -4,6 +4,7 @@ package selectors
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -84,7 +85,7 @@ func BenchmarkNextStepSamples(b *testing.B) {
 			}
 			for {
 				_, err := rv2.NextStepSamples(ctx)
-				if err == types.EOS {
+				if errors.Is(err, types.EOS) {
 					break
 				}
 				if err != nil {
