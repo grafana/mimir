@@ -12,6 +12,8 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
+
+	mimirstorage "github.com/grafana/mimir/pkg/storage"
 )
 
 // LazyQueryable wraps a storage.Queryable
@@ -83,6 +85,16 @@ func (l LazyQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, 
 // Close implements Storage.Querier
 func (l LazyQuerier) Close() error {
 	return l.next.Close()
+}
+
+// SearchLabelNames implements mimirstorage.Searcher.
+func (l LazyQuerier) SearchLabelNames(ctx context.Context, hints *mimirstorage.SearchHints, matchers ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
+	return l.next.(mimirstorage.Searcher).SearchLabelNames(ctx, hints, matchers...)
+}
+
+// SearchLabelValues implements mimirstorage.Searcher.
+func (l LazyQuerier) SearchLabelValues(ctx context.Context, name string, hints *mimirstorage.SearchHints, matchers ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
+	return l.next.(mimirstorage.Searcher).SearchLabelValues(ctx, name, hints, matchers...)
 }
 
 type lazySeriesSet struct {

@@ -10,6 +10,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 
+	mimirstorage "github.com/grafana/mimir/pkg/storage"
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
@@ -63,4 +64,12 @@ func (q *memoryTrackingQuerier) LabelNames(ctx context.Context, hints *storage.L
 
 func (q *memoryTrackingQuerier) Close() error {
 	return q.inner.Close()
+}
+
+func (q *memoryTrackingQuerier) SearchLabelNames(ctx context.Context, hints *mimirstorage.SearchHints, matchers ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
+	return q.inner.(mimirstorage.Searcher).SearchLabelNames(ctx, hints, matchers...)
+}
+
+func (q *memoryTrackingQuerier) SearchLabelValues(ctx context.Context, name string, hints *mimirstorage.SearchHints, matchers ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
+	return q.inner.(mimirstorage.Searcher).SearchLabelValues(ctx, name, hints, matchers...)
 }

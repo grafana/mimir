@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"slices"
 	"strings"
 
 	"github.com/go-kit/log"
@@ -101,15 +100,6 @@ func buildSearchHints(params *searchParams) *mimirstorage.SearchHints {
 	return hints
 }
 
-// searcherFor returns the querier's native Searcher implementation if available,
-// otherwise wraps it in a StreamingSearch that provides the same interface.
-func searcherFor(q storage.Querier) mimirstorage.Searcher {
-	if s, ok := q.(mimirstorage.Searcher); ok {
-		return s
-	}
-	return streaminglabelvalues.NewStreamingSearch(q)
-}
-
 func doSearchHandler(queryable storage.SampleAndChunkQueryable, _ *validation.Overrides, logger log.Logger, handler string, searchExec searchExecutor, requireLabelNameParam bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -138,7 +128,7 @@ func doSearchHandler(queryable storage.SampleAndChunkQueryable, _ *validation.Ov
 		}
 		defer q.Close()
 
-		searcher := searcherFor(q)
+		searcher := q.(mimirstorage.Searcher)
 		hints := buildSearchHints(params)
 
 		vs, err := searchExec(ctx, searcher, hints, params)
@@ -153,7 +143,7 @@ func doSearchHandler(queryable storage.SampleAndChunkQueryable, _ *validation.Ov
 		writer := newStreamingWriter(w, streaminglabelvalues.NewSearchResultFactory(params.includeScore))
 		writer.init()
 
-		err = streamSearchResults(vs, hints, params.batchSize, params.limit, writer)
+		err = streamResults(vs, params.batchSize, params.limit, writer)
 		if err != nil {
 			// we have an error after we have started streaming .... try to write the error to the stream
 			level.Error(log).Log("msg", "error writing streaming search results", "tenant", tenant, "err", err)
@@ -189,66 +179,22 @@ func SearchLabelValuesHandler(queryable storage.SampleAndChunkQueryable, overrid
 	return doSearchHandler(queryable, overrides, logger, "SearchLabelNamesHandler", searchExec, true)
 }
 
-// streamSearchResults writes results from vs to writer.
-// If hints.Compare is set, all values are accumulated and sorted before applying the
-// limit and writing in batches. Otherwise the limit is enforced during streaming.
-func streamSearchResults(vs mimirstorage.SearcherValueSet, hints *mimirstorage.SearchHints, batchSize, limit int, writer *streamingWriter) error {
-	if hints.Compare != nil {
-		return streamSorted(vs, hints, batchSize, limit, writer)
-	}
-	return streamUnsorted(vs, batchSize, limit, writer)
-}
-
-// streamSorted accumulates all values, sorts them with hints.Compare, applies the limit,
-// then writes in batches.
-func streamSorted(vs mimirstorage.SearcherValueSet, hints *mimirstorage.SearchHints, batchSize, limit int, writer *streamingWriter) error {
-	all := make([]mimirstorage.FilteredResult, 0, 1000) // TODO proper memory allocation
-	for vs.Next() {
-		all = append(all, vs.At())
-		// TODO perodically check for error / cancel
-	}
-	if err := vs.Err(); err != nil {
-		_ = writer.writeError(err)
-		return nil
-	}
-
-	slices.SortFunc(all, hints.Compare.Compare)
-
-	hasMore := limit > 0 && len(all) > limit
-	if hasMore {
-		all = all[:limit]
-	}
-
-	results := make([]streaminglabelvalues.SearchResult, 0, batchSize)
-	for i := 0; i < len(all); i += batchSize {
-		end := min(i+batchSize, len(all))
-		results = results[:0]
-		for _, fr := range all[i:end] {
-			results = append(results, writer.factory(fr))
-		}
-		if err := writer.writeBatch(results); err != nil {
-			return err
-		}
-	}
-	if err := writer.writeEnd(hasMore); err != nil {
-		return err
-	}
-	return nil
-}
-
-// streamUnsorted streams values from vs directly, enforcing the limit during iteration.
-func streamUnsorted(vs mimirstorage.SearcherValueSet, batchSize, limit int, writer *streamingWriter) error {
+// streamResults writes results from vs to writer in batches of batchSize.
+// When limit > 0, iteration stops after limit values have been consumed.
+// Sorting is the Searcher's responsibility (via labelSearchStream.drainAndSort);
+// hasMore is read from the stream's limitReached flag, or detected by peeking.
+func streamResults(vs mimirstorage.SearcherValueSet, batchSize, limit int, writer *streamingWriter) error {
 	results := make([]streaminglabelvalues.SearchResult, 0, batchSize)
 	total := 0
 	for vs.Next() && (limit == 0 || total < limit) {
 		results = append(results, writer.factory(vs.At()))
+		total++
 		if len(results) >= batchSize {
 			if err := writer.writeBatch(results); err != nil {
 				return err
 			}
 			results = results[:0]
 		}
-		total++
 	}
 	if err := vs.Err(); err != nil {
 		if len(results) > 0 {
@@ -262,10 +208,15 @@ func streamUnsorted(vs mimirstorage.SearcherValueSet, batchSize, limit int, writ
 			return err
 		}
 	}
-	if err := writer.writeEnd(vs.Next()); err != nil {
-		return err
+	// hasMore is true if the Searcher set limitReached (sorted or unsorted eager-limit),
+	// or if there is a next item in the stream that we haven't consumed.
+	hasMore := false
+	if stream, ok := vs.(*labelSearchStream); ok && stream.limitReached {
+		hasMore = true
+	} else {
+		hasMore = vs.Next()
 	}
-	return nil
+	return writer.writeEnd(hasMore)
 }
 
 // parseSearchParams parses common search query parameters from an HTTP request.

@@ -572,33 +572,3 @@ func TestSearchLabelNamesHandler_ContextCancellation(t *testing.T) {
 	assert.True(t, errFound, "expected an error status chunk in the response")
 	assert.True(t, vs.closeCalled, "expected iterator Close() to have been called")
 }
-
-// TestStreamingSearch_ContextCancellation verifies that a cancelled context stops
-// the producer goroutine and the SearcherValueSet reports the cancellation.
-func TestStreamingSearch_ContextCancellation(t *testing.T) {
-	// Use a querier that returns enough values to fill the channel buffer so the
-	// producer will block trying to send, giving cancellation something to interrupt.
-	many := make([]string, 512)
-	for i := range many {
-		many[i] = "label"
-	}
-	q := &searchTestQuerier{labelNames: many}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // cancel immediately before the producer even starts
-
-	ss := searcherFor(q)
-	vs, err := ss.SearchLabelNames(ctx, nil)
-	require.NoError(t, err)
-	defer vs.Close()
-
-	// Drain; the producer should exit quickly due to cancelled context.
-	for vs.Next() {
-	}
-	// Err() should return the context cancellation error (or nil if the producer
-	// managed to finish before noticing the cancellation).
-	err = vs.Err()
-	if err != nil {
-		assert.ErrorIs(t, err, context.Canceled)
-	}
-}

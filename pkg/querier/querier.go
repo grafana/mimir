@@ -33,6 +33,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 
+	mimirstorage "github.com/grafana/mimir/pkg/storage"
 	"github.com/grafana/mimir/pkg/querier/engine"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
@@ -680,6 +681,56 @@ func (mq *multiQuerier) LabelNames(ctx context.Context, hints *storage.LabelHint
 	}
 
 	return util.MergeSlices(sets...), warnings, nil
+}
+
+// SearchLabelNames implements mimirstorage.Searcher.
+func (mq *multiQuerier) SearchLabelNames(ctx context.Context, hints *mimirstorage.SearchHints, matchers ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
+	spanLog, ctx := spanlogger.New(ctx, mq.logger, tracer, "multiQuerier.SearchLabelNames")
+	defer spanLog.Finish()
+
+	// Save ctx before getQueriers may overwrite it with nil on error.
+	savedCtx := ctx
+	ctx, queriers, _, _, err := mq.getQueriers(ctx, mq.minT, mq.maxT, matchers...)
+	if errors.Is(err, errEmptyTimeRange) {
+		return emptySearcherValueSet(savedCtx), nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	searchers := make([]mimirstorage.Searcher, len(queriers))
+	for i, q := range queriers {
+		searchers[i] = q.(mimirstorage.Searcher)
+	}
+
+	return fanOutSearch(ctx, hints, searchers, func(ctx context.Context, s mimirstorage.Searcher, h *mimirstorage.SearchHints) (mimirstorage.SearcherValueSet, error) {
+		return s.SearchLabelNames(ctx, h, matchers...)
+	})
+}
+
+// SearchLabelValues implements mimirstorage.Searcher.
+func (mq *multiQuerier) SearchLabelValues(ctx context.Context, name string, hints *mimirstorage.SearchHints, matchers ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
+	spanLog, ctx := spanlogger.New(ctx, mq.logger, tracer, "multiQuerier.SearchLabelValues")
+	defer spanLog.Finish()
+
+	// Save ctx before getQueriers may overwrite it with nil on error.
+	savedCtx := ctx
+	ctx, queriers, _, _, err := mq.getQueriers(ctx, mq.minT, mq.maxT, matchers...)
+	if errors.Is(err, errEmptyTimeRange) {
+		return emptySearcherValueSet(savedCtx), nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	searchers := make([]mimirstorage.Searcher, len(queriers))
+	for i, q := range queriers {
+		searchers[i] = q.(mimirstorage.Searcher)
+	}
+
+	return fanOutSearch(ctx, hints, searchers, func(ctx context.Context, s mimirstorage.Searcher, h *mimirstorage.SearchHints) (mimirstorage.SearcherValueSet, error) {
+		return s.SearchLabelValues(ctx, name, h, matchers...)
+	})
 }
 
 // storeQueriers stores the created queriers so they can be cleaned up when this querier is eventually cleaned up.
