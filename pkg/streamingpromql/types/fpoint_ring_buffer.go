@@ -245,6 +245,31 @@ func (b *FPointRingBuffer) ViewUntilSearchingBackwards(maxT int64, existing *FPo
 	return existing
 }
 
+// ViewUntilWithSinglePointOvershoot returns a view into this buffer including only points with
+// timestamps ≤ maxT, exploiting the caller's guarantee that at most one trailing point in the
+// buffer can have a timestamp > maxT.
+//
+// This is more efficient than ViewUntilSearchingBackwards for callers (such as fillBuffer) that
+// always stop appending after the first point that exceeds maxT, because the boundary check
+// reduces to a single comparison rather than a loop.
+//
+// existing is an existing view instance for this buffer that is reused if provided. It can be nil.
+// The returned view is no longer valid if this buffer is modified (eg. a point is added, or the buffer is reset or closed).
+func (b *FPointRingBuffer) ViewUntilWithSinglePointOvershoot(maxT int64, existing *FPointRingBufferView) *FPointRingBufferView {
+	if existing == nil {
+		existing = &FPointRingBufferView{buffer: b}
+	}
+
+	size := b.size
+	if size > 0 && b.points[(b.firstIndex+size-1)&b.pointsIndexMask].T > maxT {
+		size--
+	}
+
+	existing.offset = 0
+	existing.size = size
+	return existing
+}
+
 // PointAt returns the point at index 'position'.
 // Note that it is the caller's responsibility to have checked that the buffer size is greater than the given position.
 func (b *FPointRingBuffer) PointAt(position int) promql.FPoint {

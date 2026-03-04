@@ -175,10 +175,15 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 		// A ViewAll can be used since we know that this buffer only contains points within the requested range.
 		m.stepData.Floats = m.floats.ViewAll(m.stepData.Floats)
 	} else {
-		m.stepData.Floats = m.floats.ViewUntilSearchingBackwards(rangeEnd, m.stepData.Floats)
+		// fillBuffer guarantees at most one point past rangeEnd in the float buffer (it returns
+		// immediately after appending the first such point). Use the O(1) single-overshoot variant
+		// instead of the general backward-scanning ViewUntilSearchingBackwards.
+		m.stepData.Floats = m.floats.ViewUntilWithSinglePointOvershoot(rangeEnd, m.stepData.Floats)
 	}
 
-	m.stepData.Histograms = m.histograms.ViewUntilSearchingBackwards(rangeEnd, m.stepData.Histograms)
+	// fillBuffer guarantees at most one point past rangeEnd in the histogram buffer for the same
+	// reason. Use the O(1) single-overshoot variant.
+	m.stepData.Histograms = m.histograms.ViewUntilWithSinglePointOvershoot(rangeEnd, m.stepData.Histograms)
 	m.stepData.RangeStart = originalRangeStart // important to return the original range start so that functions like rate() can determine the range duration regardless of smoothed / anchored
 	m.stepData.RangeEnd = originalRangeEnd
 
