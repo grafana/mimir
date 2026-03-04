@@ -10,19 +10,15 @@ import (
 	"compress/gzip"
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"sync"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
 
@@ -35,23 +31,18 @@ import (
 )
 
 type StreamBinaryReaderMetrics struct {
-	decbufFactory      *streamencoding.DecbufFactoryMetrics
-	indexVersionLoaded *prometheus.CounterVec
+	decbufFactory *streamencoding.DecbufFactoryMetrics
 }
 
 func NewStreamBinaryReaderMetrics(reg prometheus.Registerer) *StreamBinaryReaderMetrics {
 	return &StreamBinaryReaderMetrics{
 		decbufFactory: streamencoding.NewDecbufFactoryMetrics(reg),
-		indexVersionLoaded: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "indexheader_tsdb_index_loaded_total",
-			Help: "Total number of index headers loaded by TSDB index file format version.",
-		}, []string{"version"}),
 	}
 }
 
 type StreamBinaryReader struct {
 	factory streamencoding.DecbufFactory
-	toc     *BinaryTOC
+	toc     *TOCCompat
 
 	// Symbols struct that keeps only 1/postingOffsetsInMemSampling in the memory, then looks up the
 	// rest via seeking to offsets in the index-header.
@@ -72,8 +63,7 @@ type StreamBinaryReader struct {
 
 	postingsOffsetTable streamindex.PostingOffsetTable
 
-	version      int
-	indexVersion int
+	indexHeaderVersion int
 }
 
 // NewStreamBinaryReader loads or builds new index-header if not present on disk.
@@ -118,58 +108,12 @@ func NewFileStreamBinaryReader(ctx context.Context, binPath string, id ulid.ULID
 		factory: streamencoding.NewFilePoolDecbufFactory(binPath, cfg.MaxIdleFileHandles, metrics.decbufFactory),
 	}
 
-	// Create a new raw decoding buffer with access to the entire index-header file to
-	// read initial version information and the table of contents.
-	d := r.factory.NewRawDecbuf()
-	defer runutil.CloseWithErrCapture(&err, &d, "new file stream binary reader")
-	if err = d.Err(); err != nil {
-		return nil, fmt.Errorf("cannot create decoding buffer: %w", err)
-	}
-
-	// Grab the full length of the index header before we read any of it. This is needed
-	// so that we can skip directly to the table of contents at the end of file.
-	indexHeaderSize := d.Len()
-	if magic := d.Be32(); magic != MagicIndex {
-		return nil, fmt.Errorf("invalid magic number %x", magic)
-	}
-
-	level.Debug(logger).Log("msg", "index header file size", "bytes", indexHeaderSize)
-
-	r.version = int(d.Byte())
-	r.indexVersion = int(d.Byte())
-
-	// As of now this value is also the actual end of the last posting list. In the future
-	// it may be some bytes after the actual end (e.g. in case Prometheus starts adding padding
-	// after the last posting list).
-	// This value used to be the offset of the postings offset table up to and including Mimir 2.7.
-	// After that this is the offset of the label indices table.
-	// So what we read here will depend on what version of Mimir created the index header file.
-	indexLastPostingListEndBound := d.Be64()
-
-	if err = d.Err(); err != nil {
-		return nil, fmt.Errorf("cannot read version and index version: %w", err)
-	}
-
-	if r.version != BinaryFormatV1 {
-		return nil, fmt.Errorf("unknown index-header file version %d", r.version)
-	}
-
-	// Keep track of the TSDB index file format version. We want to remove support for
-	// the v1 format but need to confirm that we don't have any uses of it. Mimir has
-	// never written the v1 format but it's possible that instances of it were uploaded
-	// via the compactor. See https://github.com/grafana/mimir/issues/13808
-	metrics.indexVersionLoaded.WithLabelValues(strconv.Itoa(r.indexVersion)).Inc()
-	if r.indexVersion != index.FormatV2 {
-		level.Warn(logger).Log("msg", "deprecated TSDB index version loaded for index-header", "version", r.indexVersion)
-	}
-
-	r.toc, err = newBinaryTOCFromFile(d, indexHeaderSize)
-	if err != nil {
+	if r.toc, r.indexHeaderVersion, err = TOCFromIndexHeader(castagnoliTable, r.factory, logger); err != nil {
 		return nil, fmt.Errorf("cannot read table-of-contents: %w", err)
 	}
 
 	// Load symbols and postings offset table
-	if err = r.loadSparseHeader(ctx, logger, cfg, indexLastPostingListEndBound, postingOffsetsInMemSampling, sparseHeadersPath, bkt, id); err != nil {
+	if err = r.loadSparseHeader(ctx, logger, cfg, postingOffsetsInMemSampling, sparseHeadersPath, bkt, id); err != nil {
 		return nil, fmt.Errorf("cannot load sparse index-header: %w", err)
 	}
 
@@ -193,10 +137,10 @@ func NewFileStreamBinaryReader(ctx context.Context, binPath string, id ulid.ULID
 // It prioritizes: 1) Local file 2) Object store 3) Generating from the index-header
 // It returns an error if the sparse header cannot be loaded from any of the sources.
 // If the sparse header was not found on disk, it will try to write it after generating or downloading it. If writing fails, loadSparseHeader does not return an error.
-func (r *StreamBinaryReader) loadSparseHeader(ctx context.Context, logger log.Logger, cfg Config, indexLastPostingListEndBound uint64, postingOffsetsInMemSampling int, sparseHeadersPath string, bkt objstore.InstrumentedBucketReader, id ulid.ULID) error {
+func (r *StreamBinaryReader) loadSparseHeader(ctx context.Context, logger log.Logger, cfg Config, postingOffsetsInMemSampling int, sparseHeadersPath string, bkt objstore.InstrumentedBucketReader, id ulid.ULID) error {
 	// Only v2 indexes use sparse headers
-	if r.indexVersion != index.FormatV2 {
-		return r.loadFromIndexHeader(logger, cfg, indexLastPostingListEndBound, postingOffsetsInMemSampling)
+	if r.toc.IndexVersion != index.FormatV2 {
+		return r.loadFromIndexHeader(logger, cfg, postingOffsetsInMemSampling)
 	}
 
 	// 1. Try to load from local file first
@@ -232,7 +176,7 @@ func (r *StreamBinaryReader) loadSparseHeader(ctx context.Context, logger log.Lo
 	}
 
 	// 3. Generate from index-header as a last resort
-	if err = r.loadFromIndexHeader(logger, cfg, indexLastPostingListEndBound, postingOffsetsInMemSampling); err != nil {
+	if err = r.loadFromIndexHeader(logger, cfg, postingOffsetsInMemSampling); err != nil {
 		return fmt.Errorf("cannot load sparse index-header from full index-header: %w", err)
 	}
 	level.Info(logger).Log("msg", "generated sparse index-header from full index-header")
@@ -253,12 +197,12 @@ func (r *StreamBinaryReader) loadFromSparseIndexHeader(logger log.Logger, sparse
 	}()
 
 	level.Debug(logger).Log("msg", "loading sparse index-header from disk")
-	sparseHeaders, err := decodeSparseData(logger, sparseData)
+	sparseHeaders, err := decodeGZipSparseHeader(sparseData, logger)
 	if err != nil {
 		return err
 	}
 
-	r.symbols, err = streamindex.NewSymbolsFromSparseHeader(r.factory, sparseHeaders.Symbols, r.indexVersion, int(r.toc.Symbols))
+	r.symbols, err = streamindex.NewSymbolsFromSparseHeader(r.factory, sparseHeaders.Symbols, r.toc.IndexVersion, int(r.toc.Symbols))
 	if err != nil {
 		return fmt.Errorf("cannot load symbols from sparse index-header: %w", err)
 	}
@@ -271,47 +215,13 @@ func (r *StreamBinaryReader) loadFromSparseIndexHeader(logger log.Logger, sparse
 	return nil
 }
 
-func decodeSparseData(logger log.Logger, sparseData []byte) (*indexheaderpb.Sparse, error) {
-	sparseHeaders := &indexheaderpb.Sparse{}
-
-	gzipped := bytes.NewReader(sparseData)
-	gzipReader, err := gzip.NewReader(gzipped)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create sparse index-header gzip reader: %w", err)
-	}
-	defer runutil.CloseWithLogOnErr(logger, gzipReader, "close sparse index-header gzip reader")
-
-	sparseData, err = io.ReadAll(gzipReader)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read sparse index-header: %w", err)
-	}
-
-	if err := sparseHeaders.Unmarshal(sparseData); err != nil {
-		return nil, fmt.Errorf("failed to decode sparse index-header file: %w", err)
-	}
-	return sparseHeaders, err
-}
-
 // loadFromIndexHeader loads in symbols and postings offset table from the index-header.
-func (r *StreamBinaryReader) loadFromIndexHeader(logger log.Logger, cfg Config, indexLastPostingListEndBound uint64, postingOffsetsInMemSampling int) (err error) {
-	start := time.Now()
-	defer func() {
-		level.Info(logger).Log("msg", "loaded sparse index-header from full index-header", "elapsed", time.Since(start))
-	}()
-
-	level.Info(logger).Log("msg", "loading sparse index-header from full index-header")
-
-	r.symbols, err = streamindex.NewSymbols(r.factory, r.indexVersion, int(r.toc.Symbols), cfg.VerifyOnLoad)
-	if err != nil {
-		return fmt.Errorf("cannot load symbols from full index-header: %w", err)
-	}
-
-	r.postingsOffsetTable, err = streamindex.NewPostingOffsetTable(r.factory, int(r.toc.PostingsOffsetTable), r.indexVersion, indexLastPostingListEndBound, postingOffsetsInMemSampling, cfg.VerifyOnLoad)
-	if err != nil {
-		return fmt.Errorf("cannot load postings offset table from full index-header: %w", err)
-	}
-
-	return nil
+func (r *StreamBinaryReader) loadFromIndexHeader(logger log.Logger, cfg Config, postingOffsetsInMemSampling int) error {
+	var err error
+	r.symbols, r.postingsOffsetTable, err = buildSparseHeaderFromIndexHeader(
+		r.toc.IndexVersion, r.toc, r.factory, postingOffsetsInMemSampling, cfg.VerifyOnLoad, logger,
+	)
+	return err
 }
 
 // writeSparseHeadersToFile uses protocol buffer to write sparseHeaders to disk at sparseHeadersPath.
@@ -355,34 +265,8 @@ func tryWriteSparseHeadersToFile(logger log.Logger, sparseHeadersPath string, sp
 	logger.Log("elapsed", time.Since(start))
 }
 
-// newBinaryTOCFromFile return parsed TOC from given Decbuf. The Decbuf is expected to be
-// configured to access the entirety of the index-header file.
-func newBinaryTOCFromFile(d streamencoding.Decbuf, indexHeaderSize int) (*BinaryTOC, error) {
-	tocOffset := indexHeaderSize - BinaryTOCLen
-	if d.ResetAt(tocOffset); d.Err() != nil {
-		return nil, d.Err()
-	}
-
-	if d.CheckCrc32(castagnoliTable); d.Err() != nil {
-		return nil, d.Err()
-	}
-
-	d.ResetAt(tocOffset)
-	symbols := d.Be64()
-	postingsOffsetTable := d.Be64()
-
-	if err := d.Err(); err != nil {
-		return nil, err
-	}
-
-	return &BinaryTOC{
-		Symbols:             symbols,
-		PostingsOffsetTable: postingsOffsetTable,
-	}, nil
-}
-
 func (r *StreamBinaryReader) IndexVersion(context.Context) (int, error) {
-	return r.indexVersion, nil
+	return r.toc.IndexVersion, nil
 }
 
 func (r *StreamBinaryReader) PostingsOffset(_ context.Context, name string, value string) (index.Range, error) {
@@ -397,12 +281,6 @@ func (r *StreamBinaryReader) PostingsOffset(_ context.Context, name string, valu
 }
 
 func (r *StreamBinaryReader) LookupSymbol(_ context.Context, o uint32) (string, error) {
-	if r.indexVersion == index.FormatV1 {
-		// For v1 little trick is needed. Refs are actual offset inside index, not index-header. This is different
-		// of the header length difference between two files.
-		o += HeaderLen - index.HeaderLen
-	}
-
 	if s, ok := r.nameSymbols[o]; ok {
 		return s, nil
 	}
@@ -465,11 +343,11 @@ func (r *StreamBinaryReader) Close() error {
 }
 
 // TOC returns the table of contents for the index-header.
-func (r *StreamBinaryReader) TOC() *BinaryTOC {
+func (r *StreamBinaryReader) TOC() *TOCCompat {
 	return r.toc
 }
 
 // IndexHeaderVersion returns the version of the index-header file format.
 func (r *StreamBinaryReader) IndexHeaderVersion() int {
-	return r.version
+	return r.indexHeaderVersion
 }
