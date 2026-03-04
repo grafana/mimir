@@ -195,7 +195,8 @@ If you are no longer using Consul or etcd for any other purpose in your Mimir de
 
 ## Helm-specific guidance
 
-If you're using the `mimir-distributed` Helm chart, the migration steps are the same but use Helm values instead of direct YAML configuration. For example:
+If you're using the `mimir-distributed` Helm chart, the migration steps are the same but use Helm values instead of direct YAML configuration.
+Note that you **shouldn't** supply the configuration for the `memberlist` store yourself. Doing so will produce an invalid distributor configuration. For example:
 
 ```yaml
 mimir:
