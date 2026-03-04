@@ -1522,7 +1522,6 @@ func BenchmarkActiveSeries_ReloadMatchersConfig(b *testing.B) {
 				for l := 'a'; l <= 'z'; l++ {
 					labelsStrings = append(labelsStrings, fmt.Sprintf("%c%d", l, s%100), fmt.Sprintf("%c%d", l, s))
 				}
-				existingLabels[ref] = labels.FromStrings(labelsStrings...)
 				ls := labels.FromStrings(labelsStrings...)
 				existingLabels[ref] = ls
 				c.UpdateSeries(ls, ref, currentTime, -1, false, nil)
