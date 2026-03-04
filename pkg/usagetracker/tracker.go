@@ -30,7 +30,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/ingest"
-	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerclient"
+	"github.com/grafana/mimir/pkg/usagetracker/trackerop"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -453,7 +453,7 @@ losingPartitions:
 			continue
 		}
 
-		replicationSet, err := t.partitionRing.GetReplicationSetForPartitionAndOperation(pid, usagetrackerclient.TrackSeriesOp)
+		replicationSet, err := t.partitionRing.GetReplicationSetForPartitionAndOperation(pid, trackerop.TrackSeriesOp)
 		if err != nil {
 			level.Error(logger).Log("msg", "unable to get replication set for partition", "err", err)
 			continue
