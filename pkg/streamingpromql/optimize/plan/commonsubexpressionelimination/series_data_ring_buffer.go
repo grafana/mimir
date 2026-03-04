@@ -212,7 +212,6 @@ func (b *SeriesDataRingBuffer[T]) tryToFindElementPositionForSeriesIndex(seriesI
 		headSize := b.elementCount - tailSize
 		posInTail, found := slices.BinarySearchFunc(b.elements[0:tailSize], seriesIndex, cmp)
 
-
 		return posInTail + headSize, found
 	}
 
