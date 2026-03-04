@@ -3,6 +3,7 @@
 package ingest
 
 import (
+	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
@@ -13,7 +14,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/backoff"
-	"github.com/grafana/dskit/crypto/tls"
+	dskittls "github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/flagext"
 
 	"github.com/grafana/mimir/pkg/util"
@@ -99,9 +100,9 @@ type KafkaConfig struct {
 	WriteTimeout time.Duration          `yaml:"write_timeout"`
 	WriteClients int                    `yaml:"write_clients"`
 
-	SASL       KafkaAuthConfig  `yaml:",inline"`
-	TLSEnabled bool             `yaml:"tls_enabled"`
-	TLS        tls.ClientConfig `yaml:"tls"`
+	SASL       KafkaAuthConfig `yaml:",inline"`
+	TLSEnabled bool            `yaml:"tls_enabled"`
+	TLS        TLSClientConfig `yaml:"tls"`
 
 	ConsumerGroup                         string        `yaml:"consumer_group"`
 	ConsumerGroupOffsetCommitInterval     time.Duration `yaml:"consumer_group_offset_commit_interval"`
@@ -290,7 +291,7 @@ func (cfg *KafkaConfig) Validate() error {
 
 	if cfg.TLSEnabled {
 		if _, err := cfg.TLS.GetTLSConfig(); err != nil {
-			return fmt.Errorf("invalid TLS config: %w", err)
+			return fmt.Errorf("invalid Kafka TLS config: %w", err)
 		}
 	}
 
@@ -413,4 +414,18 @@ func (cfg *KafkaAuthConfig) Validate() error {
 	}
 
 	return nil
+}
+
+type TLSClientConfig struct {
+	dskittls.ClientConfig `yaml:",inline"`
+	resolved              *tls.Config `yaml:"-"`
+}
+
+func (c *TLSClientConfig) GetTLSConfig() (*tls.Config, error) {
+	if c.resolved != nil {
+		return c.resolved, nil
+	}
+	var err error
+	c.resolved, err = c.ClientConfig.GetTLSConfig()
+	return c.resolved, err
 }
