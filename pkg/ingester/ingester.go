@@ -606,6 +606,14 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		i.subservicesWatcher.WatchService(i.statisticsService)
 	}
 
+	// Verify and init kafka offset catalogue.
+	if cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.Enabled {
+		// This check is here instead of Config.Validate() because Config.IngestStorageConfig is injected after validation.
+		if !cfg.IngestStorageConfig.Enabled {
+			return nil, fmt.Errorf("kafka offset catalogue can only be enabled when ingest storage is enabled")
+		}
+	}
+
 	i.BasicService = services.NewBasicService(i.starting, i.ingesterRunning, i.stopping).WithName("ingester")
 	return i, nil
 }
