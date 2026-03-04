@@ -499,6 +499,18 @@ func (s *seriesStripe) initialize(asm *asmodel.Matchers, deleted *deletedSeries,
 	s.cat = cat
 }
 
+func (s *seriesStripe) incrementMatchingCounters(entry seriesEntry) {
+	ml := entry.matches.Len()
+	for i := 0; i < ml; i++ {
+		match := entry.matches.Get(i)
+		s.activeMatching[match]++
+		if entry.numNativeHistogramBuckets >= 0 {
+			s.activeMatchingNativeHistograms[match]++
+			s.activeMatchingNativeHistogramBuckets[match] += uint32(entry.numNativeHistogramBuckets)
+		}
+	}
+}
+
 func (s *seriesStripe) reloadConfig(asm *asmodel.Matchers, cat *costattribution.ActiveSeriesTracker, matchersChanged bool, catChanged bool, idx tsdb.IndexReader) {
 	type resolvedSeries struct {
 		labels  labels.Labels
@@ -552,6 +564,7 @@ func (s *seriesStripe) reloadConfig(asm *asmodel.Matchers, cat *costattribution.
 			if c, ok := resolved[ref]; ok {
 				if matchersChanged {
 					entry.matches = c.matches
+					s.incrementMatchingCounters(entry)
 				}
 				if catChanged {
 					cat.Increment(c.labels, time.Unix(0, entry.nanos.Load()), entry.numNativeHistogramBuckets)
@@ -568,6 +581,7 @@ func (s *seriesStripe) reloadConfig(asm *asmodel.Matchers, cat *costattribution.
 				// we still need to update the entry.matches to make sure it has a coherent size with the matchers we're setting.
 				if matchersChanged {
 					entry.matches = asm.Matches(labels.EmptyLabels())
+					s.incrementMatchingCounters(entry)
 					s.refs[ref] = entry
 				}
 				continue
@@ -578,6 +592,7 @@ func (s *seriesStripe) reloadConfig(asm *asmodel.Matchers, cat *costattribution.
 			}
 			if matchersChanged {
 				entry.matches = asm.Matches(lbls)
+				s.incrementMatchingCounters(entry)
 				s.refs[ref] = entry
 			}
 		}
@@ -585,9 +600,6 @@ func (s *seriesStripe) reloadConfig(asm *asmodel.Matchers, cat *costattribution.
 
 	if catChanged {
 		s.cat = cat
-	}
-	if matchersChanged {
-		s.oldestEntryTs.Store(0) // force purge to recount
 	}
 }
 
@@ -636,15 +648,7 @@ func (s *seriesStripe) purge(keepUntil time.Time, idx tsdb.IndexReader) {
 			s.activeNativeHistograms++
 			s.activeNativeHistogramBuckets += uint32(entry.numNativeHistogramBuckets)
 		}
-		ml := entry.matches.Len()
-		for i := 0; i < ml; i++ {
-			match := entry.matches.Get(i)
-			s.activeMatching[match]++
-			if entry.numNativeHistogramBuckets >= 0 {
-				s.activeMatchingNativeHistograms[match]++
-				s.activeMatchingNativeHistogramBuckets[match] += uint32(entry.numNativeHistogramBuckets)
-			}
-		}
+		s.incrementMatchingCounters(entry)
 		if ts < oldest {
 			oldest = ts
 		}
