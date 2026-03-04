@@ -124,20 +124,9 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	// Cache hot fields into locals to reduce pointer-chasing and struct-field
-	// indirection on every iteration of the inner step loop.
-	//
-	// stepFunc: avoids reloading m.Func (a value-type struct) and then reading
-	// the StepFunc field on every call through the hot loop.
-	//
-	// scalarArgsData / memTracker / emitAnnotation / timeRange: these are read
-	// on every step; keeping them in local variables lets the compiler keep them
-	// in registers rather than reloading from the heap pointer on each iteration.
-	stepFunc := m.Func.StepFunc
-	scalarArgsData := m.scalarArgsData
-	memTracker := m.MemoryConsumptionTracker
-	emitAnnotation := m.emitAnnotationFunc
-	timeRange := m.timeRange
+	defer func() {
+		m.currentSeriesIndex++
+	}()
 
 	data := types.InstantVectorSeriesData{}
 
@@ -150,16 +139,13 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 				m.seriesValidationFunc(data, m.metricNames.GetMetricNameForSeries(m.currentSeriesIndex), m.emitAnnotationFunc)
 			}
 
-			m.currentSeriesIndex++
 			return data, nil
 		} else if err != nil {
-			m.currentSeriesIndex++
 			return types.InstantVectorSeriesData{}, err
 		}
 
-		f, hasFloat, h, err := stepFunc(step, scalarArgsData, timeRange, emitAnnotation, memTracker)
+		f, hasFloat, h, err := m.Func.StepFunc(step, m.scalarArgsData, m.timeRange, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
 		if err != nil {
-			m.currentSeriesIndex++
 			return types.InstantVectorSeriesData{}, err
 		}
 		if hasFloat {
@@ -167,10 +153,9 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 				// Only get FPoint slice once we are sure we have float points.
 				// This potentially over-allocates as some points may be histograms, but this is expected to be rare.
 
-				remainingStepCount := timeRange.StepCount - int(timeRange.PointIndex(step.StepT)) // Only get a slice for the number of points remaining in the query range.
-				data.Floats, err = types.FPointSlicePool.Get(remainingStepCount, memTracker)
+				remainingStepCount := m.timeRange.StepCount - int(m.timeRange.PointIndex(step.StepT)) // Only get a slice for the number of points remaining in the query range.
+				data.Floats, err = types.FPointSlicePool.Get(remainingStepCount, m.MemoryConsumptionTracker)
 				if err != nil {
-					m.currentSeriesIndex++
 					return types.InstantVectorSeriesData{}, err
 				}
 			}
@@ -181,10 +166,9 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 				// Only get HPoint slice once we are sure we have histogram points.
 				// This potentially over-allocates as some points may be floats, but this is expected to be rare.
 
-				remainingStepCount := timeRange.StepCount - int(timeRange.PointIndex(step.StepT)) // Only get a slice for the number of points remaining in the query range.
-				data.Histograms, err = types.HPointSlicePool.Get(remainingStepCount, memTracker)
+				remainingStepCount := m.timeRange.StepCount - int(m.timeRange.PointIndex(step.StepT)) // Only get a slice for the number of points remaining in the query range.
+				data.Histograms, err = types.HPointSlicePool.Get(remainingStepCount, m.MemoryConsumptionTracker)
 				if err != nil {
-					m.currentSeriesIndex++
 					return types.InstantVectorSeriesData{}, err
 				}
 			}

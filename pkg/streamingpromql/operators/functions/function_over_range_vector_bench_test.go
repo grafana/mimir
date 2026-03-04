@@ -59,7 +59,7 @@ func (s *syntheticRangeVectorOperator) Prepare(_ context.Context, _ *types.Prepa
 	return nil
 }
 func (s *syntheticRangeVectorOperator) AfterPrepare(_ context.Context) error { return nil }
-func (s *syntheticRangeVectorOperator) Finalize(_ context.Context) error      { return nil }
+func (s *syntheticRangeVectorOperator) Finalize(_ context.Context) error     { return nil }
 func (s *syntheticRangeVectorOperator) SeriesMetadata(_ context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {
 	meta := make([]types.SeriesMetadata, benchNumSeries)
 	for i := range meta {
@@ -146,12 +146,6 @@ func BenchmarkFunctionOverRangeVector_NextSeries(b *testing.B) {
 		samples := samples
 		for _, fn := range funcs {
 			fn := fn
-			name := b.Name() + "/" + fn.name
-			if samples == 2 {
-				name += "/sparse"
-			} else {
-				name += "/dense"
-			}
 			b.Run(fn.name+"/"+map[int]string{2: "sparse", 60: "dense"}[samples], func(b *testing.B) {
 				ctx := context.Background()
 				memTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
@@ -259,7 +253,7 @@ func (s *syntheticHistogramRangeVectorOperator) Prepare(_ context.Context, _ *ty
 	return nil
 }
 func (s *syntheticHistogramRangeVectorOperator) AfterPrepare(_ context.Context) error { return nil }
-func (s *syntheticHistogramRangeVectorOperator) Finalize(_ context.Context) error      { return nil }
+func (s *syntheticHistogramRangeVectorOperator) Finalize(_ context.Context) error     { return nil }
 func (s *syntheticHistogramRangeVectorOperator) SeriesMetadata(_ context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {
 	meta := make([]types.SeriesMetadata, benchNumSeries)
 	for i := range meta {

@@ -58,6 +58,7 @@
   * `-blocks-storage.tsdb.block-postings-for-matchers-cache-ttl`
   * `-blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes`
   * `-blocks-storage.tsdb.block-postings-for-matchers-cache-force`
+* [ENHANCEMENT] Querier: Improve streaming PromQL engine performance by caching hot struct fields in local variables before the inner step loop in `FunctionOverRangeVector.NextSeries`. #14566
 * [ENHANCEMENT] OTLP: De-duplicate `target_info` samples with conflicting timestamps. #13204
 * [ENHANCEMENT] Query-frontend: Include the number of remote execution requests performed for a request in query stats logs emitted by query-frontends when remote execution is enabled. #13248
 * [ENHANCEMENT] Update Docker base images from `alpine:3.22.1` to `alpine:3.22.2`. #12991
