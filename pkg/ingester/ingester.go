@@ -620,6 +620,14 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		i.subservicesWatcher.WatchService(i.statisticsService)
 	}
 
+	// Verify and init kafka offset catalogue.
+	if cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.Enabled {
+		// This check is here instead of Config.Validate() because Config.IngestStorageConfig is injected after validation.
+		if !cfg.IngestStorageConfig.Enabled {
+			return nil, fmt.Errorf("kafka offset catalogue can only be enabled when ingest storage is enabled")
+		}
+	}
+
 	i.BasicService = services.NewBasicService(i.starting, i.ingesterRunning, i.stopping).WithName("ingester")
 	return i, nil
 }
@@ -2749,6 +2757,10 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		return userDB.blocksToDelete(blocks)
 	}
 
+	if i.cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.Enabled {
+		userDB.offsetCatalogue = newOffsetCatalogue(userLogger, udir, userID, i.ingestPartitionID)
+	}
+
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
 	// Create a new user database
 	db, err := tsdb.Open(udir, util_log.SlogFromGoKit(userLogger), tsdbPromReg, &tsdb.Options{
@@ -3272,6 +3284,9 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		}
+
+		// Sync user DB's offset catalogue in the end of this compaction cycle.
+		i.offsetCataloguesSync(ctx)
 	}
 	return nil
 }
@@ -3664,6 +3679,35 @@ func filterUsersToCompactToReduceInMemorySeries(numMemorySeries, earlyCompaction
 	return usersToCompact
 }
 
+func (i *Ingester) offsetCataloguesSync(ctx context.Context) {
+	if !i.cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.Enabled {
+		return
+	}
+
+	// If any block was cut from the head and discovered in this sync tick,
+	// all series in the block are guaranteed to come from below this lastSeenOffset.
+	// Note: for normal compaction cycle, that cuts head at "chunkRange * 3/2",
+	// this offset overshoots by ~1h. This is technically correct, but very conservative.
+	offsetHW := i.ingestReader.LastSeenOffset()
+
+	_ = concurrency.ForEachUser(ctx, i.getTSDBUsers(), i.cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.SyncConcurrency, func(ctx context.Context, userID string) error {
+		// Get the user's DB. If the user doesn't exist, we skip it.
+		db := i.getTSDB(userID)
+		if db == nil || db.offsetCatalogue == nil {
+			return nil
+		}
+
+		err := db.offsetCatalogue.Sync(ctx, offsetHW)
+		if err != nil {
+			level.Warn(i.logger).Log("msg", "offset catalogue sync failed", "user", userID, "offset", offsetHW, "err", err)
+		} else {
+			level.Debug(i.logger).Log("msg", "successfully sync offset catalogue", "user", userID, "offset", offsetHW)
+		}
+
+		return nil
+	})
+}
+
 func (i *Ingester) closeAndDeleteIdleUserTSDBs(ctx context.Context) error {
 	for _, userID := range i.getTSDBUsers() {
 		if ctx.Err() != nil {
@@ -3784,6 +3828,7 @@ func (i *Ingester) Flush() {
 
 	// Always pass math.MaxInt64 as forcedCompactionMaxTime because we want to compact the whole TSDB head.
 	i.compactBlocks(ctx, true, math.MaxInt64, nil)
+	i.offsetCataloguesSync(ctx)
 	if i.cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled() {
 		i.shipBlocks(ctx, nil)
 	}

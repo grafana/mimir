@@ -255,9 +255,7 @@ func TestIterBlockMetas(t *testing.T) {
 			Version: 1,
 		},
 	}.WriteToDir(log.NewNopLogger(), path.Join(dir, id3.String())))
-	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-	shipper := newShipper(nil, overrides, "", newShipperMetrics(nil), dir, nil, block.TestSource)
-	metas, err := shipper.blockMetasFromOldest()
+	metas, err := blockMetasFromOldest(dir)
 	require.NoError(t, err)
 	require.True(t, slices.IsSortedFunc(metas, func(a, b *block.Meta) int {
 		return cmp.Compare(a.MinTime, b.MinTime)

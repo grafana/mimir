@@ -288,6 +288,12 @@ type TSDBConfig struct {
 
 		StatisticsCollectionFrequency time.Duration `yaml:"statistics_collection_frequency" category:"experimental"`
 	} `yaml:"index_lookup_planning" category:"experimental"`
+
+	OffsetCatalogue struct {
+		Enabled bool `yaml:"enabled" category:"experimental"`
+
+		SyncConcurrency int `yaml:"sync_concurrency" category:"experimental"`
+	} `yaml:"offset_catalogue" category:"experimental"`
 }
 
 // RegisterFlags registers the TSDBConfig flags.
@@ -342,6 +348,9 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.IndexLookupPlanning.StatisticsCollectionFrequency, "blocks-storage.tsdb.index-lookup-planning.statistics-collection-frequency", time.Hour, "How frequently to collect block statistics, which are used in query execution optimization. 0 to disable.")
 	f.Float64Var(&cfg.IndexLookupPlanning.ComparisonPortion, "blocks-storage.tsdb.index-lookup-planning.comparison-portion", 0.0, "Portion of queries where a mirrored chunk querier compares results with and without index lookup planning. Value between 0 (disabled) and 1 (all queries).")
 	cfg.IndexLookupPlanning.RegisterFlags(f, "blocks-storage.tsdb.index-lookup-planning.")
+
+	f.BoolVar(&cfg.OffsetCatalogue.Enabled, "blocks-storage.tsdb.offset-catalogue.enabled", false, "Controls the maintaining of kafka offset catalogue per block.")
+	f.IntVar(&cfg.OffsetCatalogue.SyncConcurrency, "blocks-storage.tsdb.offset-catalogue.sync-concurrency", 10, "Maximum number of tenants concurrently syncing offset catalogue to disk.")
 
 	cfg.HeadCompactionIntervalJitterEnabled = true
 	cfg.HeadCompactionIntervalWhileStarting = 30 * time.Second
