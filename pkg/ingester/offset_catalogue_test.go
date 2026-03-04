@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/require"
 
@@ -23,7 +24,7 @@ func TestOffsetCatalogue(t *testing.T) {
 		id := ulid.MustNew(1, nil)
 		createBlock(t, dir, id, block.Meta{BlockMeta: tsdb.BlockMeta{ULID: id}})
 
-		c := newOffsetCatalogue(log.NewNopLogger(), dir, userID, 1)
+		c := newOffsetCatalogue(log.NewNopLogger(), newOffsetCatalogueMetrics(prometheus.NewRegistry()), dir, userID, 1)
 		require.NoError(t, c.Sync(t.Context(), 100))
 
 		data, err := readOffsetCatalogueFromFile(dir)
@@ -37,7 +38,7 @@ func TestOffsetCatalogue(t *testing.T) {
 		id1, id2 := ulid.MustNew(1, nil), ulid.MustNew(2, nil)
 
 		createBlock(t, dir, id1, block.Meta{BlockMeta: tsdb.BlockMeta{ULID: id1}})
-		c := newOffsetCatalogue(log.NewNopLogger(), dir, userID, 1)
+		c := newOffsetCatalogue(log.NewNopLogger(), newOffsetCatalogueMetrics(prometheus.NewRegistry()), dir, userID, 1)
 		require.NoError(t, c.Sync(t.Context(), 50))
 
 		// New block appears; second Sync must not overwrite id1's watermark.
@@ -56,7 +57,7 @@ func TestOffsetCatalogue(t *testing.T) {
 
 		createBlock(t, dir, id1, block.Meta{BlockMeta: tsdb.BlockMeta{ULID: id1}})
 		createBlock(t, dir, id2, block.Meta{BlockMeta: tsdb.BlockMeta{ULID: id2}})
-		c := newOffsetCatalogue(log.NewNopLogger(), dir, userID, 1)
+		c := newOffsetCatalogue(log.NewNopLogger(), newOffsetCatalogueMetrics(prometheus.NewRegistry()), dir, userID, 1)
 		require.NoError(t, c.Sync(t.Context(), 10))
 
 		// Remove id1 (shipped / retention-deleted).
@@ -71,7 +72,7 @@ func TestOffsetCatalogue(t *testing.T) {
 
 	t.Run("no blocks", func(t *testing.T) {
 		dir := t.TempDir()
-		c := newOffsetCatalogue(log.NewNopLogger(), dir, userID, 1)
+		c := newOffsetCatalogue(log.NewNopLogger(), newOffsetCatalogueMetrics(prometheus.NewRegistry()), dir, userID, 1)
 		require.NoError(t, c.Sync(t.Context(), 42))
 
 		data, err := readOffsetCatalogueFromFile(dir)

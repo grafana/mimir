@@ -13,10 +13,40 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/runutil"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/grafana/mimir/pkg/util/atomicfs"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
+
+type offsetCatalogueMetrics struct {
+	syncs            prometheus.Counter
+	syncFailures     prometheus.Counter
+	lastSyncTime     prometheus.Gauge
+	lastSyncedOffset prometheus.Gauge
+}
+
+func newOffsetCatalogueMetrics(reg prometheus.Registerer) *offsetCatalogueMetrics {
+	return &offsetCatalogueMetrics{
+		syncs: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingester_offset_catalogue_syncs_total",
+			Help: "Total number of successful offset catalogue syncs.",
+		}),
+		syncFailures: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingester_offset_catalogue_sync_failures_total",
+			Help: "Total number of offset catalogue sync failures.",
+		}),
+		lastSyncTime: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_ingester_offset_catalogue_last_sync_timestamp_seconds",
+			Help: "Unix timestamp (in seconds) of the last successful offset catalogue sync.",
+		}),
+		lastSyncedOffset: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_ingester_offset_catalogue_last_synced_offset",
+			Help: "The last-seen offset used as the high-water mark in the most recent successful offset catalogue sync.",
+		}),
+	}
+}
 
 const (
 	offsetCatalogueVersion = 1
@@ -39,14 +69,16 @@ type offsetCatalogueData struct {
 
 type offsetCatalogue struct {
 	logger    log.Logger
+	metrics   *offsetCatalogueMetrics
 	dir       string
 	userID    string
 	partition int32
 }
 
-func newOffsetCatalogue(logger log.Logger, dir, userID string, partition int32) *offsetCatalogue {
+func newOffsetCatalogue(logger log.Logger, metrics *offsetCatalogueMetrics, dir, userID string, partition int32) *offsetCatalogue {
 	return &offsetCatalogue{
 		logger:    logger,
+		metrics:   metrics,
 		dir:       dir,
 		userID:    userID,
 		partition: partition,
@@ -55,9 +87,15 @@ func newOffsetCatalogue(logger log.Logger, dir, userID string, partition int32) 
 
 const offsetCatalogueFilename = "offset-catalogue.json"
 
-func (c *offsetCatalogue) Sync(ctx context.Context, offsetHW int64) error {
+func (c *offsetCatalogue) Sync(ctx context.Context, offsetHW int64) (err error) {
 	spanLogger, ctx := spanlogger.New(ctx, c.logger, tracer, "Ingester.OffsetCatalogue.Sync")
 	defer spanLogger.Finish()
+
+	defer func() {
+		if err != nil && !errors.Is(err, context.Canceled) {
+			c.metrics.syncFailures.Inc()
+		}
+	}()
 
 	oldData, err := readOffsetCatalogueFromFile(c.dir)
 	if errors.Is(err, os.ErrNotExist) {
@@ -95,7 +133,15 @@ func (c *offsetCatalogue) Sync(ctx context.Context, offsetHW int64) error {
 		}
 	}
 
-	return writeOffsetCatalogueToFile(c.dir, data)
+	if err := writeOffsetCatalogueToFile(c.dir, data); err != nil {
+		return err
+	}
+
+	c.metrics.syncs.Inc()
+	c.metrics.lastSyncTime.SetToCurrentTime()
+	c.metrics.lastSyncedOffset.Set(float64(offsetHW))
+
+	return nil
 }
 
 func readOffsetCatalogueFromFile(dir string) (offsetCatalogueData, error) {
