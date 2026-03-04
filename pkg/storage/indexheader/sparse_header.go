@@ -7,11 +7,13 @@ package indexheader
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -19,11 +21,71 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/thanos-io/objstore"
 
+	streamencoding "github.com/grafana/mimir/pkg/storage/indexheader/encoding"
+	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
+	"github.com/grafana/mimir/pkg/storage/indexheader/indexheaderpb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/atomicfs"
 )
 
-func downloadSparseHeader(
+func buildSparseHeaderFromIndexHeader(
+	indexVersion int,
+	//toc *BinaryTOC,
+	toc *TOCCompat,
+	decbufFactory streamencoding.DecbufFactory,
+	postingOffsetsInMemSampling int,
+	doChecksum bool,
+	ll log.Logger,
+) (*streamindex.Symbols, streamindex.PostingOffsetTable, error) {
+	start := time.Now()
+	defer func() {
+		level.Info(ll).Log("msg", "loaded sparse index-header from full index-header", "elapsed", time.Since(start))
+	}()
+
+	level.Info(ll).Log("msg", "loading sparse index-header from full index-header")
+
+	symbols, err := streamindex.NewSymbols(decbufFactory, indexVersion, int(toc.Symbols), doChecksum)
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot load symbols from full index-header: %w", err)
+	}
+
+	postingsOffsetTable, err := streamindex.NewPostingOffsetTable(
+		decbufFactory,
+		int(toc.PostingsOffsetTable),
+		indexVersion,
+		toc.PostingsListEnd,
+		postingOffsetsInMemSampling,
+		doChecksum,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot load postings offset table from full index-header: %w", err)
+	}
+
+	return symbols, postingsOffsetTable, nil
+}
+
+func decodeGZipSparseHeader(sparseData []byte, ll log.Logger) (*indexheaderpb.Sparse, error) {
+	sparseHeaders := &indexheaderpb.Sparse{}
+
+	gzipped := bytes.NewReader(sparseData)
+	gzipReader, err := gzip.NewReader(gzipped)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create sparse index-header gzip reader: %w", err)
+	}
+	defer runutil.CloseWithLogOnErr(ll, gzipReader, "close sparse index-header gzip reader")
+
+	sparseData, err = io.ReadAll(gzipReader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read sparse index-header: %w", err)
+	}
+
+	if err := sparseHeaders.Unmarshal(sparseData); err != nil {
+		return nil, fmt.Errorf("failed to decode sparse index-header file: %w", err)
+	}
+	return sparseHeaders, err
+}
+
+func downloadSparseHeaderBytes(
 	ctx context.Context,
 	id ulid.ULID,
 	bkt objstore.InstrumentedBucketReader,

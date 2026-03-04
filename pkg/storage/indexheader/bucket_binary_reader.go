@@ -32,7 +32,7 @@ type BucketBinaryReader struct {
 	bkt     objstore.BucketReader
 	factory *streamencoding.BucketDecbufFactory
 
-	toc *index.TOC
+	toc *TOCCompat
 
 	// Symbols struct that keeps only 1/postingOffsetsInMemSampling in the memory, then looks up the
 	// rest via seeking to offsets in the index-header.
@@ -91,6 +91,7 @@ func NewBucketBinaryReader(
 	}
 
 	// Read the index file header (magic + versions)
+	// TODO move more of this logic into TOCFromTSDBIndexBytes to match local-file impl
 	headerBytes, err := r.fetchRange(ctx, indexPath, 0, index.HeaderLen)
 	if err != nil {
 		return nil, fmt.Errorf("read index file header: %w", err)
@@ -106,8 +107,8 @@ func NewBucketBinaryReader(
 
 	r.indexVersion = int(headerBytes[4])
 
-	if r.indexVersion != index.FormatV1 && r.indexVersion != index.FormatV2 {
-		return nil, fmt.Errorf("unknown index format version %d", r.indexVersion)
+	if r.indexVersion != index.FormatV2 {
+		return nil, fmt.Errorf("unknown or unsupported index format version %d", r.indexVersion)
 	}
 
 	tocBytes, err := r.fetchRange(ctx, indexPath, indexAttrs.Size-indexTOCLen-crc32.Size, indexTOCLen+crc32.Size)
@@ -115,23 +116,15 @@ func NewBucketBinaryReader(
 		return nil, fmt.Errorf("read index TOC: %w", err)
 	}
 
-	r.toc, err = index.NewTOCFromByteSlice(realByteSlice(tocBytes))
+	r.toc, err = TOCFromTSDBIndexBytes(r.indexVersion, tocBytes)
 	if err != nil {
-		return nil, fmt.Errorf("parse index TOC: %w", err)
-	}
-
-	// Determine the end bound for posting lists
-	// For index v2, this is the offset of label indices table
-	// For index v1, this is the offset of postings table
-	indexLastPostingListEndBound := r.toc.PostingsTable
-	if r.indexVersion == index.FormatV2 {
-		indexLastPostingListEndBound = r.toc.LabelIndicesTable
+		return nil, err
 	}
 
 	sparseHeadersPath := filepath.Join(dir, block.SparseIndexHeaderFilename)
 
 	// Load symbols and postings offset table
-	if err = r.loadSparseHeader(ctx, logger, cfg, indexLastPostingListEndBound, postingOffsetsInMemSampling, sparseHeadersPath, bkt, blockID); err != nil {
+	if err = r.loadSparseHeader(ctx, logger, cfg, postingOffsetsInMemSampling, sparseHeadersPath, bkt, blockID); err != nil {
 		return nil, fmt.Errorf("cannot load sparse index-header: %w", err)
 	}
 
@@ -159,7 +152,6 @@ func (r *BucketBinaryReader) loadSparseHeader(
 	ctx context.Context,
 	logger log.Logger,
 	cfg Config,
-	indexLastPostingListEndBound uint64,
 	postingOffsetsInMemSampling int,
 	sparseHeadersPath string,
 	bkt objstore.InstrumentedBucketReader,
@@ -169,7 +161,7 @@ func (r *BucketBinaryReader) loadSparseHeader(
 
 	// Only v2 indexes use sparse headers
 	if r.indexVersion != index.FormatV2 {
-		return r.loadFromIndexHeader(logger, cfg, indexLastPostingListEndBound, postingOffsetsInMemSampling)
+		return r.loadFromIndexHeader(logger, cfg, postingOffsetsInMemSampling)
 	}
 
 	// 1. Try to load from local file first
@@ -221,7 +213,7 @@ func (r *BucketBinaryReader) loadSparseHeader(
 		level.Info(logger).Log("msg", "could not download sparse index-header from bucket; reconstructing from index-header", "err", err)
 	}
 
-	if err = r.loadFromIndexHeader(logger, cfg, indexLastPostingListEndBound, postingOffsetsInMemSampling); err != nil {
+	if err = r.loadFromIndexHeader(logger, cfg, postingOffsetsInMemSampling); err != nil {
 		return fmt.Errorf("cannot load sparse index-header from full index-header: %w", err)
 	}
 	level.Info(logger).Log("msg", "generated sparse index-header from full index-header")
@@ -237,7 +229,7 @@ func (r *BucketBinaryReader) loadFromSparseIndexHeader(logger log.Logger, sparse
 	}()
 
 	level.Debug(logger).Log("msg", "loading sparse index-header from disk")
-	sparseHeaders, err := decodeSparseData(logger, sparseData)
+	sparseHeaders, err := decodeGZipSparseHeader(sparseData, logger)
 	if err != nil {
 		return err
 	}
@@ -247,7 +239,7 @@ func (r *BucketBinaryReader) loadFromSparseIndexHeader(logger log.Logger, sparse
 		return fmt.Errorf("cannot load symbols from sparse index-header: %w", err)
 	}
 
-	r.postingsOffsetTable, err = streamindex.NewPostingOffsetTableFromSparseHeader(r.factory, sparseHeaders.PostingsOffsetTable, int(r.toc.PostingsTable), postingOffsetsInMemSampling)
+	r.postingsOffsetTable, err = streamindex.NewPostingOffsetTableFromSparseHeader(r.factory, sparseHeaders.PostingsOffsetTable, int(r.toc.PostingsOffsetTable), postingOffsetsInMemSampling)
 	if err != nil {
 		return fmt.Errorf("cannot load postings offset table from sparse index-header: %w", err)
 	}
@@ -256,25 +248,12 @@ func (r *BucketBinaryReader) loadFromSparseIndexHeader(logger log.Logger, sparse
 }
 
 // loadFromIndexHeader loads in symbols and postings offset table from the index-header.
-func (r *BucketBinaryReader) loadFromIndexHeader(logger log.Logger, cfg Config, indexLastPostingListEndBound uint64, postingOffsetsInMemSampling int) (err error) {
-	start := time.Now()
-	defer func() {
-		level.Info(logger).Log("msg", "loaded sparse index-header from full index-header", "elapsed", time.Since(start))
-	}()
-
-	level.Info(logger).Log("msg", "loading sparse index-header from full index-header")
-
-	r.symbols, err = streamindex.NewSymbols(r.factory, r.indexVersion, int(r.toc.Symbols), cfg.VerifyOnLoad)
-	if err != nil {
-		return fmt.Errorf("cannot load symbols from full index-header: %w", err)
-	}
-
-	r.postingsOffsetTable, err = streamindex.NewPostingOffsetTable(r.factory, int(r.toc.PostingsTable), r.indexVersion, indexLastPostingListEndBound, postingOffsetsInMemSampling, cfg.VerifyOnLoad)
-	if err != nil {
-		return fmt.Errorf("cannot load postings offset table from full index-header: %w", err)
-	}
-
-	return nil
+func (r *BucketBinaryReader) loadFromIndexHeader(logger log.Logger, cfg Config, postingOffsetsInMemSampling int) error {
+	var err error
+	r.symbols, r.postingsOffsetTable, err = buildSparseHeaderFromIndexHeader(
+		r.indexVersion, r.toc, r.factory, postingOffsetsInMemSampling, cfg.VerifyOnLoad, logger,
+	)
+	return err
 }
 
 // fetchRange fetches a range of bytes from the object storage.
@@ -322,12 +301,6 @@ func (r *BucketBinaryReader) PostingsOffset(_ context.Context, name string, valu
 
 // LookupSymbol implements Reader.
 func (r *BucketBinaryReader) LookupSymbol(_ context.Context, o uint32) (string, error) {
-	if r.indexVersion == index.FormatV1 {
-		// For v1, refs are actual offset inside index, not index-header.
-		// Adjust for the header length difference.
-		o += HeaderLen - index.HeaderLen
-	}
-
 	if s, ok := r.nameSymbols[o]; ok {
 		return s, nil
 	}

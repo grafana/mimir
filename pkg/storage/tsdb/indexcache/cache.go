@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	cacheTypePostings          = "Postings"
+	cacheTypePostings          = "PostingsOffsets"
 	cacheTypeSeriesForRef      = "SeriesForRef"
 	cacheTypeExpandedPostings  = "ExpandedPostings"
 	cacheTypeSeriesForPostings = "SeriesForPostings"
