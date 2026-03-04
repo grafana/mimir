@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
@@ -152,7 +153,7 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 	histogramObserved := false
 	if fillBufferRequired {
 		// Note - fillBuffer may result in the buffer having a point after the rangeEnd.
-		histogramObserved, err = m.fillBuffer(m.floats, m.histograms, rangeStart, originalRangeEnd, m.Selector.Anchored || m.Selector.Smoothed)
+		histogramObserved, err = m.fillBuffer(m.floats, m.histograms, rangeStart, originalRangeEnd)
 		if err != nil {
 			return nil, err
 		}
@@ -191,23 +192,53 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 // points are accumulated into the buffer if they have a timestamp greater than rangeStart with the accumulation stopping
 // once a point with a timestamp greater than or equal to rangeEnd has been accumulated.
 // As such, no point is accumulated for rangeStart and there may be one point after rangeEnd in the buffer.
-func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histograms *types.HPointRingBuffer, rangeStart, rangeEnd int64, smoothedOrAnchored bool) (bool, error) {
+func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histograms *types.HPointRingBuffer, rangeStart, rangeEnd int64) (bool, error) {
 	// Keep filling the buffer until we reach the end of the range or the end of the iterator.
 	histogramObserved := false
 
-	for {
-		valueType := m.chunkIterator.Next()
+	// Hoist the iterator to a local variable to avoid repeated struct-field dereferences
+	// through the interface pointer in the tight inner loop.
+	iter := m.chunkIterator
 
+	// Advance to the next unprocessed sample.
+	valueType := iter.Next()
+
+	// If the first sample is still before rangeStart, use Seek to jump forward in one
+	// interface call rather than calling Next()+At() for every skipped sample.
+	// This is especially beneficial for the first step of a long-range query, where many
+	// samples may precede the range window.
+	// We only do this when a float sample at or before rangeStart is seen — for histograms
+	// we fall through to the normal per-sample loop below since AtT is already cheap.
+	if valueType == chunkenc.ValFloat {
+		t, _ := iter.At()
+		if t <= rangeStart {
+			// There are samples before the window — Seek ahead to skip them all at once.
+			// Seek advances to the first sample with T >= rangeStart+1 (i.e., T > rangeStart),
+			// which is exactly the condition the original per-sample skip was checking.
+			valueType = iter.Seek(rangeStart + 1)
+			if valueType == chunkenc.ValNone {
+				return histogramObserved, iter.Err()
+			}
+		}
+	}
+
+	for {
 		switch valueType {
 		case chunkenc.ValNone:
 			// No more data. We are done.
-			return histogramObserved, m.chunkIterator.Err()
+			return histogramObserved, iter.Err()
 		case chunkenc.ValFloat:
-			t, f := m.chunkIterator.At()
-			if value.IsStaleNaN(f) || t <= rangeStart {
-				// Range vectors ignore stale markers
+			t, f := iter.At()
+			if t <= rangeStart {
+				// This sample is before the window — skip it.
+				// (Reached only if the initial seek path was not taken, e.g. first sample
+				// was a histogram and we looped back.)
+				break
+			}
+			if math.Float64bits(f) == value.StaleNaN {
+				// Range vectors ignore stale markers.
 				// https://github.com/prometheus/prometheus/issues/3746#issuecomment-361572859
-				continue
+				break
 			}
 
 			// We might append a sample beyond the range end, but this is OK:
@@ -221,23 +252,23 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 				return histogramObserved, nil
 			}
 		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
-			t := m.chunkIterator.AtT()
+			t := iter.AtT()
 
 			if t <= rangeStart {
-				continue
+				break
 			}
 
 			hPoint, err := histograms.NextPoint()
 			if err != nil {
 				return false, err
 			}
-			hPoint.T, hPoint.H = m.chunkIterator.AtFloatHistogram(hPoint.H)
+			hPoint.T, hPoint.H = iter.AtFloatHistogram(hPoint.H)
 			if value.IsStaleNaN(hPoint.H.Sum) {
 				// Range vectors ignore stale markers
 				// https://github.com/prometheus/prometheus/issues/3746#issuecomment-361572859
 				// We have to remove the last point since we didn't actually use it, and NextPoint already allocated it.
 				histograms.RemoveLastPoint()
-				continue
+				break
 			}
 
 			histogramObserved = true
@@ -248,6 +279,8 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 		default:
 			return false, fmt.Errorf("unknown value type %s", valueType.String())
 		}
+
+		valueType = iter.Next()
 	}
 }
 
