@@ -300,6 +300,9 @@ type Ingester struct {
 	// Metrics shared across all per-tenant shippers.
 	shipperMetrics *shipperMetrics
 
+	// Metrics shared across all per-tenant offset catalogues.
+	offsetCatalogueMetrics *offsetCatalogueMetrics
+
 	subservicesForPartitionReplay          *services.Manager
 	subservicesAfterIngesterRingLifecycler *services.Manager
 
@@ -389,14 +392,15 @@ func newIngester(cfg Config, limits *validation.Overrides, ingestersRing ring.Re
 
 		instanceRing: ingestersRing,
 
-		tsdbs:               make(map[string]*userTSDB),
-		usersMetadata:       make(map[string]*userMetricsMetadata),
-		bucket:              bucketClient,
-		tsdbMetrics:         metrics,
-		shipperMetrics:      newShipperMetrics(registerer),
-		forceCompactTrigger: make(chan requestWithUsersAndCallback),
-		shipTrigger:         make(chan requestWithUsersAndCallback),
-		seriesHashCache:     hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
+		tsdbs:                  make(map[string]*userTSDB),
+		usersMetadata:          make(map[string]*userMetricsMetadata),
+		bucket:                 bucketClient,
+		tsdbMetrics:            metrics,
+		shipperMetrics:         newShipperMetrics(registerer),
+		offsetCatalogueMetrics: newOffsetCatalogueMetrics(registerer),
+		forceCompactTrigger:    make(chan requestWithUsersAndCallback),
+		shipTrigger:            make(chan requestWithUsersAndCallback),
+		seriesHashCache:        hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
 		headPostingsForMatchersCacheFactory: tsdb.NewPostingsForMatchersCacheFactory(
 			tsdb.PostingsForMatchersCacheConfig{
 				Shared:                cfg.BlocksStorageConfig.TSDB.SharedPostingsForMatchersCache,
