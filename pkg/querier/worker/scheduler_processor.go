@@ -530,10 +530,10 @@ func (g *grpcStreamWriter) Write(ctx context.Context, msg *frontendv2pb.QueryRes
 		// However, if we're trying to send an error, it doesn't matter if previous attempts failed, we should always try to send
 		// the message to query-frontends.
 		//
-		// This is safe: if we're sending an error, we won't send part of a successful response that the query-frontend could
+		// Sending a message in this case is safe: if we're sending an error, we won't send part of a successful response that the query-frontend could
 		// misinterpret as the entire response.
 		//
-		// This is also necessary: in the case where the initial attempt to send a message to the query-frontend fails, we want
+		// Sending a message in this case is also necessary: in the case where the initial attempt to send a message to the query-frontend fails, we want
 		// to try to send an error to the query-frontend so that it doesn't just wait for a response that won't arrive (which will eventually cause
 		// the query to time out). One specific example: if the initial message exceeds the gRPC max message size limit, we need to
 		// tell the query-frontend that no response is coming.
