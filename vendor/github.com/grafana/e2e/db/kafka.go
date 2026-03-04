@@ -78,7 +78,7 @@ const (
 	KafkaAuthSASLScramSHA512
 	KafkaAuthSASLOAuthToken
 	KafkaAuthSASLOAuthTokenFile
-	KafkaAuthSASLMTLS
+	KafkaAuthMTLS
 )
 
 const (
@@ -155,7 +155,7 @@ func (s *KafkaService) Start(networkName, sharedDir string) (err error) {
 		// Kafka 4.0+ requires JWKS URLs to be explicitly allowed via this JVM system property.
 		vars["KAFKA_OPTS"] = fmt.Sprintf("-Dorg.apache.kafka.sasl.oauthbearer.allowed.urls=http://%s/dex/keys", s.cfg.DexEndpoint)
 
-	case KafkaAuthSASLMTLS:
+	case KafkaAuthMTLS:
 		// Generate a CA and a server certificate, write them as PEM files
 		// to the shared directory, then convert them to JKS keystores via
 		// a one-off Docker container (using openssl + keytool from the
@@ -458,7 +458,7 @@ func newKafkaTLSCA() (*kafkaTLSCA, error) {
 // encoded in PKCS#8 format.
 func (ca *kafkaTLSCA) WriteCertificate(template *x509.Certificate, certPath, keyPath string) error {
 	if ca == nil {
-		return errors.New("WriteCertificate requires KafkaConfig.AuthMode: KafkaAuthSASLMTLS and calling Start first")
+		return errors.New("WriteCertificate requires KafkaConfig.AuthMode: KafkaAuthMTLS and calling Start first")
 	}
 
 	key, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)

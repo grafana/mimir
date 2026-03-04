@@ -87,7 +87,7 @@ func TestIngestStorageKafkaAuth(t *testing.T) {
 		},
 		"mTLS": {
 			setup: func(t *testing.T, s *e2e.Scenario) (e2edb.KafkaConfig, map[string]string) {
-				return e2edb.KafkaConfig{AuthMode: e2edb.KafkaAuthSASLMTLS}, nil
+				return e2edb.KafkaConfig{AuthMode: e2edb.KafkaAuthMTLS}, nil
 			},
 			postStart: func(t *testing.T, s *e2e.Scenario, kafka *e2edb.KafkaService) map[string]string {
 				clientCertPath := filepath.Join(s.SharedDir(), "kafka-client.crt")
