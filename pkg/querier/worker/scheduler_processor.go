@@ -524,7 +524,7 @@ func newGrpcStreamWriter(queryID uint64, frontendAddress string, clientPool fron
 
 func (g *grpcStreamWriter) Write(ctx context.Context, msg *frontendv2pb.QueryResultStreamRequest) error {
 	if g.failed && msg.GetError() == nil {
-		// If the stream has already failed, don't try to send any further messages (as we might try to create a new stream, which
+		// If sending a previous message failed, don't try to send any further messages (as we might try to create a new stream, which
 		// may result in sending only part of the response to the query-frontend).
 		//
 		// However, if we're trying to send an error, it doesn't matter if previous attempts failed, we should always try to send
