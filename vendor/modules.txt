@@ -269,7 +269,7 @@ github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding
 # github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.18
 ## explicit; go 1.23
 github.com/aws/aws-sdk-go-v2/service/internal/presigned-url
-# github.com/aws/aws-sdk-go-v2/service/s3 v1.96.1
+# github.com/aws/aws-sdk-go-v2/service/s3 v1.96.2
 ## explicit; go 1.23
 github.com/aws/aws-sdk-go-v2/service/s3/types
 # github.com/aws/aws-sdk-go-v2/service/signin v1.0.5
@@ -390,12 +390,13 @@ github.com/docker/go-units
 # github.com/dustin/go-humanize v1.0.1
 ## explicit; go 1.16
 github.com/dustin/go-humanize
-# github.com/ebitengine/purego v0.9.1
+# github.com/ebitengine/purego v0.10.0
 ## explicit; go 1.18
 github.com/ebitengine/purego
 github.com/ebitengine/purego/internal/cgo
 github.com/ebitengine/purego/internal/fakecgo
 github.com/ebitengine/purego/internal/strings
+github.com/ebitengine/purego/internal/xreflect
 # github.com/edsrzf/mmap-go v1.2.0
 ## explicit; go 1.17
 github.com/edsrzf/mmap-go
@@ -653,9 +654,9 @@ github.com/google/go-cmp/cmp/internal/diff
 github.com/google/go-cmp/cmp/internal/flags
 github.com/google/go-cmp/cmp/internal/function
 github.com/google/go-cmp/cmp/internal/value
-# github.com/google/go-github/v83 v83.0.0
-## explicit; go 1.24.0
-github.com/google/go-github/v83/github
+# github.com/google/go-github/v84 v84.0.0
+## explicit; go 1.25.0
+github.com/google/go-github/v84/github
 # github.com/google/go-querystring v1.2.0
 ## explicit; go 1.13
 github.com/google/go-querystring/query
@@ -719,11 +720,12 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-# github.com/grafana/alerting v0.0.0-20260223215711-4271d73d344a
+# github.com/grafana/alerting v0.0.0-20260227181651-5106b6285f2d
 ## explicit; go 1.24.0
 github.com/grafana/alerting/cluster
 github.com/grafana/alerting/definition
 github.com/grafana/alerting/http
+github.com/grafana/alerting/http/v0mimir1
 github.com/grafana/alerting/images
 github.com/grafana/alerting/models
 github.com/grafana/alerting/notify
@@ -1224,7 +1226,7 @@ github.com/pmezard/go-difflib/difflib
 # github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55
 ## explicit; go 1.14
 github.com/power-devops/perfstat
-# github.com/prometheus/alertmanager v0.31.1 => github.com/grafana/prometheus-alertmanager v0.25.1-0.20260220111149-e5bb689fb805
+# github.com/prometheus/alertmanager v0.31.1 => github.com/grafana/prometheus-alertmanager v0.25.1-0.20260225120258-18275ca76b0c
 ## explicit; go 1.24.0
 github.com/prometheus/alertmanager/api
 github.com/prometheus/alertmanager/api/metrics
@@ -1240,6 +1242,7 @@ github.com/prometheus/alertmanager/api/v2/restapi/operations/silence
 github.com/prometheus/alertmanager/asset
 github.com/prometheus/alertmanager/cluster
 github.com/prometheus/alertmanager/cluster/clusterpb
+github.com/prometheus/alertmanager/cluster/clusterutil
 github.com/prometheus/alertmanager/config
 github.com/prometheus/alertmanager/dispatch
 github.com/prometheus/alertmanager/featurecontrol
@@ -1251,20 +1254,6 @@ github.com/prometheus/alertmanager/matchers/parse
 github.com/prometheus/alertmanager/nflog
 github.com/prometheus/alertmanager/nflog/nflogpb
 github.com/prometheus/alertmanager/notify
-github.com/prometheus/alertmanager/notify/discord
-github.com/prometheus/alertmanager/notify/email
-github.com/prometheus/alertmanager/notify/msteams
-github.com/prometheus/alertmanager/notify/msteamsv2
-github.com/prometheus/alertmanager/notify/opsgenie
-github.com/prometheus/alertmanager/notify/pagerduty
-github.com/prometheus/alertmanager/notify/pushover
-github.com/prometheus/alertmanager/notify/slack
-github.com/prometheus/alertmanager/notify/sns
-github.com/prometheus/alertmanager/notify/telegram
-github.com/prometheus/alertmanager/notify/victorops
-github.com/prometheus/alertmanager/notify/webex
-github.com/prometheus/alertmanager/notify/webhook
-github.com/prometheus/alertmanager/notify/wechat
 github.com/prometheus/alertmanager/pkg/labels
 github.com/prometheus/alertmanager/provider
 github.com/prometheus/alertmanager/provider/mem
@@ -1421,7 +1410,7 @@ github.com/segmentio/fasthash/fnv1a
 # github.com/sercand/kuberesolver/v6 v6.0.1
 ## explicit; go 1.22.0
 github.com/sercand/kuberesolver/v6
-# github.com/shirou/gopsutil/v4 v4.26.1
+# github.com/shirou/gopsutil/v4 v4.26.2
 ## explicit; go 1.24.0
 github.com/shirou/gopsutil/v4/common
 github.com/shirou/gopsutil/v4/cpu
@@ -1559,6 +1548,9 @@ github.com/xlab/treeprint
 # github.com/yusufpapurcu/wmi v1.2.4
 ## explicit; go 1.16
 github.com/yusufpapurcu/wmi
+# go.etcd.io/bbolt v1.3.6
+## explicit; go 1.12
+go.etcd.io/bbolt
 # go.etcd.io/etcd/api/v3 v3.6.8
 ## explicit; go 1.24.0
 go.etcd.io/etcd/api/v3/authpb
@@ -2317,5 +2309,5 @@ sigs.k8s.io/yaml
 # github.com/munnerz/goautoneg => github.com/grafana/goautoneg v0.0.0-20240607115440-f335c04c58ce
 # github.com/opentracing-contrib/go-stdlib => github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956
 # github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc v0.0.0-20231024023642-e9298576254f
-# github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20260220111149-e5bb689fb805
+# github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20260225120258-18275ca76b0c
 # github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20251017074411-ea1e8f863e1d

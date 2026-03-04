@@ -1203,7 +1203,7 @@ func TestGrpcStreamWriter_InitialSendSucceedsAfterRetry(t *testing.T) {
 	}
 }
 
-func TestGrpcStreamWriter_InitialSendFails(t *testing.T) {
+func TestGrpcStreamWriter_InitialSendFails_SendingSubsequentNonErrorMessage(t *testing.T) {
 	const queryID = uint64(1234)
 	const frontendAddress = "the-query-frontend:1234"
 
@@ -1250,11 +1250,52 @@ func TestGrpcStreamWriter_InitialSendFails(t *testing.T) {
 	}
 }
 
-// Sending subsequent message fails
-// - does not retry
-// - removes client from pool
-// - subsequent Write calls fail without trying to send any messages
-// - calling Close does nothing except closing stream
+func TestGrpcStreamWriter_InitialSendFails_SendingSubsequentErrorMessage(t *testing.T) {
+	const queryID = uint64(1234)
+	const frontendAddress = "the-query-frontend:1234"
+
+	testCases := map[string]*mockFrontendClientPool{
+		"all GetClientFor calls fail": {
+			nextGetClientForCallsShouldFail: maxNotifyFrontendRetries,
+		},
+		"all QueryResultStream calls fail": {
+			nextQueryResultStreamCallsShouldFail: maxNotifyFrontendRetries,
+		},
+		"all Send calls fail": {
+			nextSendCallsShouldFail: maxNotifyFrontendRetries,
+		},
+		"some of each calls fail": {
+			// This test won't work if maxNotifyFrontendRetries is changed to not allow at least 4 attempts.
+			nextGetClientForCallsShouldFail:      1,
+			nextQueryResultStreamCallsShouldFail: 1,
+			nextSendCallsShouldFail:              maxNotifyFrontendRetries - 2,
+		},
+	}
+
+	for name, pool := range testCases {
+		t.Run(name, func(t *testing.T) {
+			expectedRetrievedClientCount := pool.nextGetClientForCallsShouldFail +
+				pool.nextQueryResultStreamCallsShouldFail +
+				pool.nextSendCallsShouldFail
+
+			writer := newGrpcStreamWriter(queryID, frontendAddress, pool, log.NewNopLogger())
+			ctx := context.Background()
+
+			msg1 := createTestStreamingMessage("first message")
+			require.Error(t, writer.Write(ctx, msg1))
+			require.Empty(t, pool.sentMessages, "should not have sent message")
+
+			require.Equal(t, expectedRetrievedClientCount, pool.retrievedClientCount, "should retrieve client from pool for each attempt")
+
+			msg2 := createErrorMessage("something went wrong")
+			require.NoError(t, writer.Write(ctx, msg2), "should still try to send error message to query-frontend even if initial send fails")
+
+			writer.Close(ctx)
+			require.Equal(t, []*frontendv2pb.QueryResultStreamRequest{msg2}, pool.sentMessages)
+		})
+	}
+}
+
 func TestGrpcStreamWriter_SubsequentSendFails(t *testing.T) {
 	const queryID = uint64(1234)
 	const frontendAddress = "the-query-frontend:1234"
@@ -1272,8 +1313,37 @@ func TestGrpcStreamWriter_SubsequentSendFails(t *testing.T) {
 	pool.nextSendCallsShouldFail++
 	msg2 := createTestStreamingMessage("second message")
 	require.EqualError(t, writer.Write(ctx, msg2), "calling Send failed")
-
 	require.Equal(t, 1, pool.retrievedClientCount, "should not attempt to retrieve another client")
+
+	msg3 := createTestStreamingMessage("third message")
+	require.EqualError(t, writer.Write(ctx, msg3), "the query-frontend stream has already failed")
+	require.Equal(t, 1, pool.retrievedClientCount, "should not attempt to retrieve another client")
+
+	writer.Close(ctx)
+	require.True(t, pool.streamClosed, "stream should have been closed")
+}
+
+func TestGrpcStreamWriter_SubsequentSendFails_SendingSubsequentErrorMessage(t *testing.T) {
+	const queryID = uint64(1234)
+	const frontendAddress = "the-query-frontend:1234"
+
+	pool := &mockFrontendClientPool{}
+	writer := newGrpcStreamWriter(queryID, frontendAddress, pool, log.NewNopLogger())
+	ctx := context.Background()
+
+	msg1 := createTestStreamingMessage("first message")
+	require.NoError(t, writer.Write(ctx, msg1))
+
+	require.Equal(t, []*frontendv2pb.QueryResultStreamRequest{msg1}, pool.sentMessages, "should have sent message")
+	require.Equal(t, queryID, msg1.QueryID, "should set query ID on sent message")
+
+	pool.nextSendCallsShouldFail++
+	msg2 := createTestStreamingMessage("second message")
+	require.EqualError(t, writer.Write(ctx, msg2), "calling Send failed")
+	require.Equal(t, 1, pool.retrievedClientCount, "should not attempt to retrieve another client")
+
+	msg3 := createErrorMessage("something went wrong")
+	require.NoError(t, writer.Write(ctx, msg3))
 
 	writer.Close(ctx)
 	require.True(t, pool.streamClosed, "stream should have been closed")
@@ -1366,13 +1436,25 @@ func TestGrpcStreamWriter_CancelledRequestContext(t *testing.T) {
 }
 
 func createTestStreamingMessage(msg string) *frontendv2pb.QueryResultStreamRequest {
-	// In the real use, sending an error is a terminal message, and so sending multiple errors is unexpected,
-	// but the code under test here doesn't care.
+	return &frontendv2pb.QueryResultStreamRequest{
+		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+				Message: &querierpb.EvaluateQueryResponse_StringValue{
+					StringValue: &querierpb.EvaluateQueryResponseStringValue{
+						Value: msg,
+					},
+				},
+			},
+		},
+	}
+}
+
+func createErrorMessage(msg string) *frontendv2pb.QueryResultStreamRequest {
 	return &frontendv2pb.QueryResultStreamRequest{
 		Data: &frontendv2pb.QueryResultStreamRequest_Error{
 			Error: &querierpb.Error{
-				Type:    mimirpb.QUERY_ERROR_TYPE_NOT_ACCEPTABLE,
 				Message: msg,
+				Type:    mimirpb.QUERY_ERROR_TYPE_NOT_ACCEPTABLE,
 			},
 		},
 	}
