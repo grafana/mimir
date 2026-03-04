@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package pushover
+package v0mimir1
 
 import (
 	"context"
@@ -26,7 +26,7 @@ import (
 	"github.com/go-kit/log/level"
 	commoncfg "github.com/prometheus/common/config"
 
-	"github.com/prometheus/alertmanager/config"
+	httpcfg "github.com/grafana/alerting/http/v0mimir1"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/template"
 	"github.com/prometheus/alertmanager/types"
@@ -43,7 +43,7 @@ const (
 
 // Notifier implements a Notifier for Pushover notifications.
 type Notifier struct {
-	conf    *config.PushoverConfig
+	conf    *Config
 	tmpl    *template.Template
 	logger  log.Logger
 	client  *http.Client
@@ -52,8 +52,8 @@ type Notifier struct {
 }
 
 // New returns a new Pushover notifier.
-func New(c *config.PushoverConfig, t *template.Template, l log.Logger, httpOpts ...commoncfg.HTTPClientOption) (*Notifier, error) {
-	client, err := commoncfg.NewClientFromConfig(*c.HTTPConfig, "pushover", httpOpts...)
+func New(c *Config, t *template.Template, l log.Logger, httpOpts ...commoncfg.HTTPClientOption) (*Notifier, error) {
+	client, err := httpcfg.NewClientFromConfig(c.HTTPConfig, "pushover", httpOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -164,7 +164,7 @@ func (n *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error)
 	u.RawQuery = parameters.Encode()
 	// Don't log the URL as it contains secret data (see #1825).
 	level.Debug(n.logger).Log("msg", "Sending message", "incident", key)
-	resp, err := notify.PostText(ctx, n.client, u.String(), nil)
+	resp, err := notify.PostText(ctx, n.client, u.String(), nil) //nolint:bodyclose
 	if err != nil {
 		return true, notify.RedactURL(err)
 	}

@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package msteamsv2
+package v0mimir2
 
 import (
 	"bytes"
@@ -28,10 +28,13 @@ import (
 	commoncfg "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/template"
 	"github.com/prometheus/alertmanager/types"
+
+	"github.com/grafana/alerting/receivers"
+
+	httpcfg "github.com/grafana/alerting/http/v0mimir1"
 )
 
 const (
@@ -41,12 +44,12 @@ const (
 )
 
 type Notifier struct {
-	conf         *config.MSTeamsV2Config
+	conf         *Config
 	tmpl         *template.Template
 	logger       log.Logger
 	client       *http.Client
 	retrier      *notify.Retrier
-	webhookURL   *config.SecretURL
+	webhookURL   *receivers.SecretURL
 	postJSONFunc func(ctx context.Context, client *http.Client, url string, body io.Reader) (*http.Response, error)
 }
 
@@ -85,8 +88,8 @@ type teamsMessage struct {
 }
 
 // New returns a new notifier that uses the Microsoft Teams Power Platform connector.
-func New(c *config.MSTeamsV2Config, t *template.Template, l log.Logger, httpOpts ...commoncfg.HTTPClientOption) (*Notifier, error) {
-	client, err := commoncfg.NewClientFromConfig(*c.HTTPConfig, "msteamsv2", httpOpts...)
+func New(c *Config, t *template.Template, l log.Logger, httpOpts ...commoncfg.HTTPClientOption) (*Notifier, error) {
+	client, err := httpcfg.NewClientFromConfig(c.HTTPConfig, "msteamsv2", httpOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -186,7 +189,7 @@ func (n *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error)
 		return false, err
 	}
 
-	resp, err := n.postJSONFunc(ctx, n.client, url, &payload)
+	resp, err := n.postJSONFunc(ctx, n.client, url, &payload) //nolint:bodyclose
 	if err != nil {
 		return true, notify.RedactURL(err)
 	}

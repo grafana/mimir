@@ -29,6 +29,20 @@ import (
 	alertingNotify "github.com/grafana/alerting/notify"
 	"github.com/grafana/alerting/notify/nfstatus"
 	alertingReceivers "github.com/grafana/alerting/receivers"
+	discord_v0mimir1 "github.com/grafana/alerting/receivers/discord/v0mimir1"
+	email_v0mimir1 "github.com/grafana/alerting/receivers/email/v0mimir1"
+	opsgenie_v0mimir1 "github.com/grafana/alerting/receivers/opsgenie/v0mimir1"
+	pagerduty_v0mimir1 "github.com/grafana/alerting/receivers/pagerduty/v0mimir1"
+	pushover_v0mimir1 "github.com/grafana/alerting/receivers/pushover/v0mimir1"
+	slack_v0mimir1 "github.com/grafana/alerting/receivers/slack/v0mimir1"
+	sns_v0mimir1 "github.com/grafana/alerting/receivers/sns/v0mimir1"
+	teams_v0mimir1 "github.com/grafana/alerting/receivers/teams/v0mimir1"
+	teams_v0mimir2 "github.com/grafana/alerting/receivers/teams/v0mimir2"
+	telegram_v0mimir1 "github.com/grafana/alerting/receivers/telegram/v0mimir1"
+	victorops_v0mimir1 "github.com/grafana/alerting/receivers/victorops/v0mimir1"
+	webex_v0mimir1 "github.com/grafana/alerting/receivers/webex/v0mimir1"
+	webhook_v0mimir1 "github.com/grafana/alerting/receivers/webhook/v0mimir1"
+	wechat_v0mimir1 "github.com/grafana/alerting/receivers/wechat/v0mimir1"
 	alertingTemplates "github.com/grafana/alerting/templates"
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/alertmanager/api"
@@ -40,20 +54,6 @@ import (
 	"github.com/prometheus/alertmanager/inhibit"
 	"github.com/prometheus/alertmanager/nflog"
 	"github.com/prometheus/alertmanager/notify"
-	"github.com/prometheus/alertmanager/notify/discord"
-	"github.com/prometheus/alertmanager/notify/email"
-	"github.com/prometheus/alertmanager/notify/msteams"
-	"github.com/prometheus/alertmanager/notify/msteamsv2"
-	"github.com/prometheus/alertmanager/notify/opsgenie"
-	"github.com/prometheus/alertmanager/notify/pagerduty"
-	"github.com/prometheus/alertmanager/notify/pushover"
-	"github.com/prometheus/alertmanager/notify/slack"
-	"github.com/prometheus/alertmanager/notify/sns"
-	"github.com/prometheus/alertmanager/notify/telegram"
-	"github.com/prometheus/alertmanager/notify/victorops"
-	"github.com/prometheus/alertmanager/notify/webex"
-	"github.com/prometheus/alertmanager/notify/webhook"
-	"github.com/prometheus/alertmanager/notify/wechat"
 	"github.com/prometheus/alertmanager/provider/mem"
 	"github.com/prometheus/alertmanager/silence"
 	"github.com/prometheus/alertmanager/template"
@@ -813,7 +813,7 @@ func buildGrafanaReceiverIntegrations(emailCfg alertingReceivers.EmailSenderConf
 // buildReceiverIntegrations builds a list of integration notifiers off of a
 // receiver config.
 // Taken from https://github.com/prometheus/alertmanager/blob/94d875f1227b29abece661db1a68c001122d1da5/cmd/alertmanager/main.go#L112-L159.
-func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, wrapper func(string, notify.Notifier) notify.Notifier) ([]*nfstatus.Integration, error) {
+func buildReceiverIntegrations(nc definition.Receiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, wrapper func(string, notify.Notifier) notify.Notifier) ([]*nfstatus.Integration, error) {
 	var (
 		errs         types.MultiError
 		integrations []*nfstatus.Integration
@@ -835,46 +835,46 @@ func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, fire
 	}
 
 	for i, c := range nc.WebhookConfigs {
-		add("webhook", i, c, func(l log.Logger) (notify.Notifier, error) { return webhook.New(c, tmpl, l, httpOps...) })
+		add("webhook", i, c, func(l log.Logger) (notify.Notifier, error) { return webhook_v0mimir1.New(c, tmpl, l, httpOps...) })
 	}
 	for i, c := range nc.EmailConfigs {
-		add("email", i, c, func(l log.Logger) (notify.Notifier, error) { return email.New(c, tmpl, l), nil })
+		add("email", i, c, func(l log.Logger) (notify.Notifier, error) { return email_v0mimir1.New(c, tmpl, l), nil })
 	}
 	for i, c := range nc.PagerdutyConfigs {
-		add("pagerduty", i, c, func(l log.Logger) (notify.Notifier, error) { return pagerduty.New(c, tmpl, l, httpOps...) })
+		add("pagerduty", i, c, func(l log.Logger) (notify.Notifier, error) { return pagerduty_v0mimir1.New(c, tmpl, l, httpOps...) })
 	}
 	for i, c := range nc.OpsGenieConfigs {
-		add("opsgenie", i, c, func(l log.Logger) (notify.Notifier, error) { return opsgenie.New(c, tmpl, l, httpOps...) })
+		add("opsgenie", i, c, func(l log.Logger) (notify.Notifier, error) { return opsgenie_v0mimir1.New(c, tmpl, l, httpOps...) })
 	}
 	for i, c := range nc.WechatConfigs {
-		add("wechat", i, c, func(l log.Logger) (notify.Notifier, error) { return wechat.New(c, tmpl, l, httpOps...) })
+		add("wechat", i, c, func(l log.Logger) (notify.Notifier, error) { return wechat_v0mimir1.New(c, tmpl, l, httpOps...) })
 	}
 	for i, c := range nc.SlackConfigs {
-		add("slack", i, c, func(l log.Logger) (notify.Notifier, error) { return slack.New(c, tmpl, l, httpOps...) })
+		add("slack", i, c, func(l log.Logger) (notify.Notifier, error) { return slack_v0mimir1.New(c, tmpl, l, httpOps...) })
 	}
 	for i, c := range nc.VictorOpsConfigs {
-		add("victorops", i, c, func(l log.Logger) (notify.Notifier, error) { return victorops.New(c, tmpl, l, httpOps...) })
+		add("victorops", i, c, func(l log.Logger) (notify.Notifier, error) { return victorops_v0mimir1.New(c, tmpl, l, httpOps...) })
 	}
 	for i, c := range nc.PushoverConfigs {
-		add("pushover", i, c, func(l log.Logger) (notify.Notifier, error) { return pushover.New(c, tmpl, l, httpOps...) })
+		add("pushover", i, c, func(l log.Logger) (notify.Notifier, error) { return pushover_v0mimir1.New(c, tmpl, l, httpOps...) })
 	}
 	for i, c := range nc.SNSConfigs {
-		add("sns", i, c, func(l log.Logger) (notify.Notifier, error) { return sns.New(c, tmpl, l, httpOps...) })
+		add("sns", i, c, func(l log.Logger) (notify.Notifier, error) { return sns_v0mimir1.New(c, tmpl, l, httpOps...) })
 	}
 	for i, c := range nc.TelegramConfigs {
-		add("telegram", i, c, func(l log.Logger) (notify.Notifier, error) { return telegram.New(c, tmpl, l, httpOps...) })
+		add("telegram", i, c, func(l log.Logger) (notify.Notifier, error) { return telegram_v0mimir1.New(c, tmpl, l, httpOps...) })
 	}
 	for i, c := range nc.DiscordConfigs {
-		add("discord", i, c, func(l log.Logger) (notify.Notifier, error) { return discord.New(c, tmpl, l, httpOps...) })
+		add("discord", i, c, func(l log.Logger) (notify.Notifier, error) { return discord_v0mimir1.New(c, tmpl, l, httpOps...) })
 	}
 	for i, c := range nc.WebexConfigs {
-		add("webex", i, c, func(l log.Logger) (notify.Notifier, error) { return webex.New(c, tmpl, l, httpOps...) })
+		add("webex", i, c, func(l log.Logger) (notify.Notifier, error) { return webex_v0mimir1.New(c, tmpl, l, httpOps...) })
 	}
 	for i, c := range nc.MSTeamsConfigs {
-		add("msteams", i, c, func(l log.Logger) (notify.Notifier, error) { return msteams.New(c, tmpl, l, httpOps...) })
+		add("msteams", i, c, func(l log.Logger) (notify.Notifier, error) { return teams_v0mimir1.New(c, tmpl, l, httpOps...) })
 	}
 	for i, c := range nc.MSTeamsV2Configs {
-		add("msteamsv2", i, c, func(l log.Logger) (notify.Notifier, error) { return msteamsv2.New(c, tmpl, l, httpOps...) })
+		add("msteamsv2", i, c, func(l log.Logger) (notify.Notifier, error) { return teams_v0mimir2.New(c, tmpl, l, httpOps...) })
 	}
 	// If we add support for more integrations, we need to add them to validation as well. See validation.allowedIntegrationNames field.
 	if errs.Len() > 0 {
@@ -888,7 +888,7 @@ func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, fire
 func grafanaToUpstreamConfig(cfg *definition.PostableApiAlertingConfig) config.Config {
 	rcvs := make([]config.Receiver, 0, len(cfg.Receivers))
 	for _, r := range cfg.Receivers {
-		rcvs = append(rcvs, r.Receiver)
+		rcvs = append(rcvs, config.Receiver{Name: r.Name})
 	}
 
 	return config.Config{

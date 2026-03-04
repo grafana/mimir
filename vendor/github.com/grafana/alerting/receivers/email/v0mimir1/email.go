@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package email
+package v0mimir1
 
 import (
 	"bytes"
@@ -35,24 +35,28 @@ import (
 	"github.com/go-kit/log/level"
 	commoncfg "github.com/prometheus/common/config"
 
-	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/template"
 	"github.com/prometheus/alertmanager/types"
+
+	httpcfg "github.com/grafana/alerting/http/v0mimir1"
 )
 
 // Email implements a Notifier for email notifications.
 type Email struct {
-	conf     *config.EmailConfig
+	conf     *Config
 	tmpl     *template.Template
 	logger   log.Logger
 	hostname string
 }
 
 // New returns a new Email notifier.
-func New(c *config.EmailConfig, t *template.Template, l log.Logger) *Email {
+func New(c *Config, t *template.Template, l log.Logger) *Email {
+	if c.Headers == nil {
+		c.Headers = make(map[string]string)
+	}
 	if _, ok := c.Headers["Subject"]; !ok {
-		c.Headers["Subject"] = config.DefaultEmailSubject
+		c.Headers["Subject"] = DefaultEmailSubject
 	}
 	if _, ok := c.Headers["To"]; !ok {
 		c.Headers["To"] = c.To
@@ -131,7 +135,8 @@ func (n *Email) Notify(ctx context.Context, as ...*types.Alert) (bool, error) {
 		success = false
 	)
 	if n.conf.Smarthost.Port == "465" {
-		tlsConfig, err := commoncfg.NewTLSConfig(&n.conf.TLSConfig)
+		commonTls := httpcfg.ToCommonTLSConfig(n.conf.TLSConfig)
+		tlsConfig, err := commoncfg.NewTLSConfig(&commonTls)
 		if err != nil {
 			return false, fmt.Errorf("parse TLS configuration: %w", err)
 		}
@@ -173,12 +178,13 @@ func (n *Email) Notify(ctx context.Context, as ...*types.Alert) (bool, error) {
 	}
 
 	// Global Config guarantees RequireTLS is not nil.
-	if *n.conf.RequireTLS {
+	if n.conf.RequireTLS != nil && *n.conf.RequireTLS {
 		if ok, _ := c.Extension("STARTTLS"); !ok {
 			return true, fmt.Errorf("'require_tls' is true (default) but %q does not advertise the STARTTLS extension", n.conf.Smarthost)
 		}
 
-		tlsConf, err := commoncfg.NewTLSConfig(&n.conf.TLSConfig)
+		commonTls := httpcfg.ToCommonTLSConfig(n.conf.TLSConfig)
+		tlsConf, err := commoncfg.NewTLSConfig(&commonTls)
 		if err != nil {
 			return false, fmt.Errorf("parse TLS configuration: %w", err)
 		}
@@ -339,6 +345,7 @@ type loginAuth struct {
 	username, password string
 }
 
+// LoginAuth returns an Auth that implements the LOGIN authentication mechanism.
 func LoginAuth(username, password string) smtp.Auth {
 	return &loginAuth{username, password}
 }
@@ -347,7 +354,7 @@ func (a *loginAuth) Start(server *smtp.ServerInfo) (string, []byte, error) {
 	return "LOGIN", []byte{}, nil
 }
 
-// Used for AUTH LOGIN. (Maybe password should be encrypted).
+// Next is used for AUTH LOGIN. (Maybe password should be encrypted).
 func (a *loginAuth) Next(fromServer []byte, more bool) ([]byte, error) {
 	if more {
 		switch strings.ToLower(string(fromServer)) {

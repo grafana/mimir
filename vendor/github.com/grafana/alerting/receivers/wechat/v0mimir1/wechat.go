@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package wechat
+package v0mimir1
 
 import (
 	"bytes"
@@ -28,7 +28,7 @@ import (
 	"github.com/go-kit/log/level"
 	commoncfg "github.com/prometheus/common/config"
 
-	"github.com/prometheus/alertmanager/config"
+	httpcfg "github.com/grafana/alerting/http/v0mimir1"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/template"
 	"github.com/prometheus/alertmanager/types"
@@ -36,7 +36,7 @@ import (
 
 // Notifier implements a Notifier for wechat notifications.
 type Notifier struct {
-	conf   *config.WechatConfig
+	conf   *Config
 	tmpl   *template.Template
 	logger log.Logger
 	client *http.Client
@@ -71,8 +71,8 @@ type weChatResponse struct {
 }
 
 // New returns a new Wechat notifier.
-func New(c *config.WechatConfig, t *template.Template, l log.Logger, httpOpts ...commoncfg.HTTPClientOption) (*Notifier, error) {
-	client, err := commoncfg.NewClientFromConfig(*c.HTTPConfig, "wechat", httpOpts...)
+func New(c *Config, t *template.Template, l log.Logger, httpOpts ...commoncfg.HTTPClientOption) (*Notifier, error) {
+	client, err := httpcfg.NewClientFromConfig(c.HTTPConfig, "wechat", httpOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +99,7 @@ func (n *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error)
 	if n.accessToken == "" || time.Since(n.accessTokenAt) > 2*time.Hour {
 		parameters := url.Values{}
 		parameters.Add("corpsecret", tmpl(string(n.conf.APISecret)))
-		parameters.Add("corpid", tmpl(string(n.conf.CorpID)))
+		parameters.Add("corpid", tmpl(n.conf.CorpID))
 		if err != nil {
 			return false, fmt.Errorf("templating error: %w", err)
 		}
@@ -108,7 +108,7 @@ func (n *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error)
 		u.Path += "gettoken"
 		u.RawQuery = parameters.Encode()
 
-		resp, err := notify.Get(ctx, n.client, u.String())
+		resp, err := notify.Get(ctx, n.client, u.String()) //nolint:bodyclose
 		if err != nil {
 			return true, notify.RedactURL(err)
 		}
@@ -161,7 +161,7 @@ func (n *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error)
 	q.Set("access_token", n.accessToken)
 	postMessageURL.RawQuery = q.Encode()
 
-	resp, err := notify.PostJSON(ctx, n.client, postMessageURL.String(), &buf)
+	resp, err := notify.PostJSON(ctx, n.client, postMessageURL.String(), &buf) //nolint:bodyclose
 	if err != nil {
 		return true, notify.RedactURL(err)
 	}

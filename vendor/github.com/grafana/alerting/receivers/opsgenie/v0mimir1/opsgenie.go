@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package opsgenie
+package v0mimir1
 
 import (
 	"bytes"
@@ -27,7 +27,7 @@ import (
 	commoncfg "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/alertmanager/config"
+	httpcfg "github.com/grafana/alerting/http/v0mimir1"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/template"
 	"github.com/prometheus/alertmanager/types"
@@ -38,7 +38,7 @@ const maxMessageLenRunes = 130
 
 // Notifier implements a Notifier for OpsGenie notifications.
 type Notifier struct {
-	conf    *config.OpsGenieConfig
+	conf    *Config
 	tmpl    *template.Template
 	logger  log.Logger
 	client  *http.Client
@@ -46,8 +46,8 @@ type Notifier struct {
 }
 
 // New returns a new OpsGenie notifier.
-func New(c *config.OpsGenieConfig, t *template.Template, l log.Logger, httpOpts ...commoncfg.HTTPClientOption) (*Notifier, error) {
-	client, err := commoncfg.NewClientFromConfig(*c.HTTPConfig, "opsgenie", httpOpts...)
+func New(c *Config, t *template.Template, l log.Logger, httpOpts ...commoncfg.HTTPClientOption) (*Notifier, error) {
+	client, err := httpcfg.NewClientFromConfig(c.HTTPConfig, "opsgenie", httpOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +102,7 @@ func (n *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error)
 
 	for _, req := range requests {
 		req.Header.Set("User-Agent", notify.UserAgentHeader)
-		resp, err := n.client.Do(req)
+		resp, err := n.client.Do(req) //nolint:bodyclose
 		if err != nil {
 			return true, err
 		}
@@ -155,7 +155,7 @@ func (n *Notifier) createRequests(ctx context.Context, as ...*types.Alert) ([]*h
 		alias  = key.Hash()
 		alerts = types.Alerts(as...)
 	)
-	switch alerts.Status() {
+	switch alerts.Status() { //nolint:exhaustive
 	case model.AlertResolved:
 		resolvedEndpointURL := n.conf.APIURL.Copy()
 		resolvedEndpointURL.Path += fmt.Sprintf("v2/alerts/%s/close", alias)

@@ -33,6 +33,7 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/grafana/alerting/cluster"
+	"github.com/grafana/alerting/definition"
 	"github.com/grafana/alerting/images"
 	"github.com/grafana/alerting/notify/nfstatus"
 	"github.com/grafana/alerting/notify/stages"
@@ -557,7 +558,7 @@ func TestReceivers(
 			// Create an APIReceiver with a single integration so we
 			// can identify invalid receiver integration configs
 			singleIntReceiver := &APIReceiver{
-				ConfigReceiver: config.Receiver{
+				ConfigReceiver: definition.Receiver{
 					Name: receiver.Name,
 				},
 				ReceiverConfig: models.ReceiverConfig{

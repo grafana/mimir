@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package sns
+package v0mimir1
 
 import (
 	"context"
@@ -31,7 +31,7 @@ import (
 	"github.com/go-kit/log/level"
 	commoncfg "github.com/prometheus/common/config"
 
-	"github.com/prometheus/alertmanager/config"
+	httpcfg "github.com/grafana/alerting/http/v0mimir1"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/template"
 	"github.com/prometheus/alertmanager/types"
@@ -39,7 +39,7 @@ import (
 
 // Notifier implements a Notifier for SNS notifications.
 type Notifier struct {
-	conf    *config.SNSConfig
+	conf    *Config
 	tmpl    *template.Template
 	logger  log.Logger
 	client  *http.Client
@@ -47,8 +47,8 @@ type Notifier struct {
 }
 
 // New returns a new SNS notification handler.
-func New(c *config.SNSConfig, t *template.Template, l log.Logger, httpOpts ...commoncfg.HTTPClientOption) (*Notifier, error) {
-	client, err := commoncfg.NewClientFromConfig(*c.HTTPConfig, "sns", httpOpts...)
+func New(c *Config, t *template.Template, l log.Logger, httpOpts ...commoncfg.HTTPClientOption) (*Notifier, error) {
+	client, err := httpcfg.NewClientFromConfig(c.HTTPConfig, "sns", httpOpts...)
 	if err != nil {
 		return nil, err
 	}

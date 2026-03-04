@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package telegram
+package v0mimir1
 
 import (
 	"context"
@@ -25,7 +25,7 @@ import (
 	commoncfg "github.com/prometheus/common/config"
 	"gopkg.in/telebot.v3"
 
-	"github.com/prometheus/alertmanager/config"
+	httpcfg "github.com/grafana/alerting/http/v0mimir1"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/template"
 	"github.com/prometheus/alertmanager/types"
@@ -36,7 +36,7 @@ const maxMessageLenRunes = 4096
 
 // Notifier implements a Notifier for telegram notifications.
 type Notifier struct {
-	conf    *config.TelegramConfig
+	conf    *Config
 	tmpl    *template.Template
 	logger  log.Logger
 	client  *telebot.Bot
@@ -44,8 +44,8 @@ type Notifier struct {
 }
 
 // New returns a new Telegram notification handler.
-func New(conf *config.TelegramConfig, t *template.Template, l log.Logger, httpOpts ...commoncfg.HTTPClientOption) (*Notifier, error) {
-	httpclient, err := commoncfg.NewClientFromConfig(*conf.HTTPConfig, "telegram", httpOpts...)
+func New(conf *Config, t *template.Template, l log.Logger, httpOpts ...commoncfg.HTTPClientOption) (*Notifier, error) {
+	httpclient, err := httpcfg.NewClientFromConfig(conf.HTTPConfig, "telegram", httpOpts...)
 	if err != nil {
 		return nil, err
 	}

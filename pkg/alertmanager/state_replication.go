@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/alertmanager/cluster"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
+	"github.com/prometheus/alertmanager/cluster/clusterutil"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
@@ -271,7 +272,7 @@ func (s *state) MergeGrafanaState(fs []*clusterpb.FullState) error {
 
 	for _, fs := range fs {
 		for _, p := range fs.Parts {
-			if cluster.OversizedMessage(p.Data) {
+			if clusterutil.OversizedMessage(p.Data) {
 				// When merging state, upstream Alertmanager code drops oversized messages.
 				// Manually broadcast oversized Grafana states to avoid missing silences/nflog entries.
 				s.broadcast(p.Key, p.Data)

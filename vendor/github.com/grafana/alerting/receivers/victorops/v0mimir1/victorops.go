@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package victorops
+package v0mimir1
 
 import (
 	"bytes"
@@ -27,7 +27,7 @@ import (
 	commoncfg "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/alertmanager/config"
+	httpcfg "github.com/grafana/alerting/http/v0mimir1"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/template"
 	"github.com/prometheus/alertmanager/types"
@@ -38,7 +38,7 @@ const maxMessageLenRunes = 20480
 
 // Notifier implements a Notifier for VictorOps notifications.
 type Notifier struct {
-	conf    *config.VictorOpsConfig
+	conf    *Config
 	tmpl    *template.Template
 	logger  log.Logger
 	client  *http.Client
@@ -46,8 +46,8 @@ type Notifier struct {
 }
 
 // New returns a new VictorOps notifier.
-func New(c *config.VictorOpsConfig, t *template.Template, l log.Logger, httpOpts ...commoncfg.HTTPClientOption) (*Notifier, error) {
-	client, err := commoncfg.NewClientFromConfig(*c.HTTPConfig, "victorops", httpOpts...)
+func New(c *Config, t *template.Template, l log.Logger, httpOpts ...commoncfg.HTTPClientOption) (*Notifier, error) {
+	client, err := httpcfg.NewClientFromConfig(c.HTTPConfig, "victorops", httpOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +97,7 @@ func (n *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error)
 		return true, err
 	}
 
-	resp, err := notify.PostJSON(ctx, n.client, apiURL.String(), buf)
+	resp, err := notify.PostJSON(ctx, n.client, apiURL.String(), buf) //nolint:bodyclose
 	if err != nil {
 		return true, notify.RedactURL(err)
 	}

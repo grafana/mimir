@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package discord
+package v0mimir1
 
 import (
 	"bytes"
@@ -24,13 +24,15 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	commoncfg "github.com/prometheus/common/config"
-	"github.com/prometheus/common/model"
-
-	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/template"
 	"github.com/prometheus/alertmanager/types"
+	commoncfg "github.com/prometheus/common/config"
+	"github.com/prometheus/common/model"
+
+	"github.com/grafana/alerting/receivers"
+
+	httpcfg "github.com/grafana/alerting/http/v0mimir1"
 )
 
 const (
@@ -48,17 +50,17 @@ const (
 
 // Notifier implements a Notifier for Discord notifications.
 type Notifier struct {
-	conf       *config.DiscordConfig
+	conf       *Config
 	tmpl       *template.Template
 	logger     log.Logger
 	client     *http.Client
 	retrier    *notify.Retrier
-	webhookURL *config.SecretURL
+	webhookURL *receivers.SecretURL
 }
 
 // New returns a new Discord notifier.
-func New(c *config.DiscordConfig, t *template.Template, l log.Logger, httpOpts ...commoncfg.HTTPClientOption) (*Notifier, error) {
-	client, err := commoncfg.NewClientFromConfig(*c.HTTPConfig, "discord", httpOpts...)
+func New(c *Config, t *template.Template, l log.Logger, httpOpts ...commoncfg.HTTPClientOption) (*Notifier, error) {
+	client, err := httpcfg.NewClientFromConfig(c.HTTPConfig, "discord", httpOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -151,6 +153,7 @@ func (n *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error)
 	if err != nil {
 		return true, notify.RedactURL(err)
 	}
+	defer resp.Body.Close()
 
 	shouldRetry, err := n.retrier.Check(resp.StatusCode, resp.Body)
 	if err != nil {

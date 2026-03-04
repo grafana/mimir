@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package webhook
+package v0mimir1
 
 import (
 	"bytes"
@@ -25,23 +25,24 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/alertmanager/tracing"
 	commoncfg "github.com/prometheus/common/config"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/template"
-	"github.com/prometheus/alertmanager/tracing"
 	"github.com/prometheus/alertmanager/types"
+
+	httpcfg "github.com/grafana/alerting/http/v0mimir1"
 )
 
 var tracer = otel.Tracer("github.com/prometheus/alertmanager/notify/webhook")
 
 // Notifier implements a Notifier for generic webhooks.
 type Notifier struct {
-	conf    *config.WebhookConfig
+	conf    *Config
 	tmpl    *template.Template
 	logger  log.Logger
 	client  *http.Client
@@ -49,8 +50,8 @@ type Notifier struct {
 }
 
 // New returns a new Webhook.
-func New(conf *config.WebhookConfig, t *template.Template, l log.Logger, httpOpts ...commoncfg.HTTPClientOption) (*Notifier, error) {
-	client, err := commoncfg.NewClientFromConfig(*conf.HTTPConfig, "webhook", httpOpts...)
+func New(conf *Config, t *template.Template, l log.Logger, httpOpts ...commoncfg.HTTPClientOption) (*Notifier, error) {
+	client, err := httpcfg.NewClientFromConfig(conf.HTTPConfig, "webhook", httpOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -131,7 +132,7 @@ func (n *Notifier) Notify(ctx context.Context, alerts ...*types.Alert) (bool, er
 		ctx = postCtx
 	}
 
-	resp, err := notify.PostJSON(ctx, n.client, url, &buf)
+	resp, err := notify.PostJSON(ctx, n.client, url, &buf) //nolint:bodyclose
 	if err != nil {
 		if ctx.Err() != nil {
 			err = fmt.Errorf("%w: %w", err, context.Cause(ctx))

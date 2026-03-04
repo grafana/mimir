@@ -14,6 +14,22 @@ import (
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/pkg/labels"
 	"github.com/prometheus/common/model"
+
+	discord_v0mimir1 "github.com/grafana/alerting/receivers/discord/v0mimir1"
+	email_v0mimir1 "github.com/grafana/alerting/receivers/email/v0mimir1"
+	jira_v0mimir1 "github.com/grafana/alerting/receivers/jira/v0mimir1"
+	opsgenie_v0mimir1 "github.com/grafana/alerting/receivers/opsgenie/v0mimir1"
+	pagerduty_v0mimir1 "github.com/grafana/alerting/receivers/pagerduty/v0mimir1"
+	pushover_v0mimir1 "github.com/grafana/alerting/receivers/pushover/v0mimir1"
+	slack_v0mimir1 "github.com/grafana/alerting/receivers/slack/v0mimir1"
+	sns_v0mimir1 "github.com/grafana/alerting/receivers/sns/v0mimir1"
+	teams_v0mimir1 "github.com/grafana/alerting/receivers/teams/v0mimir1"
+	teams_v0mimir2 "github.com/grafana/alerting/receivers/teams/v0mimir2"
+	telegram_v0mimir1 "github.com/grafana/alerting/receivers/telegram/v0mimir1"
+	victorops_v0mimir1 "github.com/grafana/alerting/receivers/victorops/v0mimir1"
+	webex_v0mimir1 "github.com/grafana/alerting/receivers/webex/v0mimir1"
+	webhook_v0mimir1 "github.com/grafana/alerting/receivers/webhook/v0mimir1"
+	wechat_v0mimir1 "github.com/grafana/alerting/receivers/wechat/v0mimir1"
 )
 
 type Provenance string
@@ -499,7 +515,7 @@ func (m ObjectMatchers) MarshalJSON() ([]byte, error) {
 
 // nolint:revive
 type PostableApiReceiver struct {
-	config.Receiver          `yaml:",inline"`
+	Receiver                 `yaml:",inline"`
 	PostableGrafanaReceivers `yaml:",inline"`
 }
 
@@ -512,7 +528,7 @@ func (r *PostableApiReceiver) UnmarshalYAML(unmarshal func(interface{}) error) e
 		return err
 	}
 
-	type plain config.Receiver
+	type plain Receiver
 	if err := unmarshal((*plain)(&r.Receiver)); err != nil {
 		return err
 	}
@@ -623,3 +639,37 @@ type TemplateKind string
 
 const GrafanaTemplateKind TemplateKind = "grafana"
 const MimirTemplateKind TemplateKind = "mimir"
+
+// Receiver configuration provides configuration on how to contact a receiver.
+type Receiver struct {
+	// A unique identifier for this receiver.
+	Name string `yaml:"name" json:"name"`
+
+	DiscordConfigs   []*discord_v0mimir1.Config   `yaml:"discord_configs,omitempty" json:"discord_configs,omitempty"`
+	EmailConfigs     []*email_v0mimir1.Config     `yaml:"email_configs,omitempty" json:"email_configs,omitempty"`
+	PagerdutyConfigs []*pagerduty_v0mimir1.Config `yaml:"pagerduty_configs,omitempty" json:"pagerduty_configs,omitempty"`
+	SlackConfigs     []*slack_v0mimir1.Config     `yaml:"slack_configs,omitempty" json:"slack_configs,omitempty"`
+	WebhookConfigs   []*webhook_v0mimir1.Config   `yaml:"webhook_configs,omitempty" json:"webhook_configs,omitempty"`
+	OpsGenieConfigs  []*opsgenie_v0mimir1.Config  `yaml:"opsgenie_configs,omitempty" json:"opsgenie_configs,omitempty"`
+	WechatConfigs    []*wechat_v0mimir1.Config    `yaml:"wechat_configs,omitempty" json:"wechat_configs,omitempty"`
+	PushoverConfigs  []*pushover_v0mimir1.Config  `yaml:"pushover_configs,omitempty" json:"pushover_configs,omitempty"`
+	VictorOpsConfigs []*victorops_v0mimir1.Config `yaml:"victorops_configs,omitempty" json:"victorops_configs,omitempty"`
+	SNSConfigs       []*sns_v0mimir1.Config       `yaml:"sns_configs,omitempty" json:"sns_configs,omitempty"`
+	TelegramConfigs  []*telegram_v0mimir1.Config  `yaml:"telegram_configs,omitempty" json:"telegram_configs,omitempty"`
+	WebexConfigs     []*webex_v0mimir1.Config     `yaml:"webex_configs,omitempty" json:"webex_configs,omitempty"`
+	MSTeamsConfigs   []*teams_v0mimir1.Config     `yaml:"msteams_configs,omitempty" json:"msteams_configs,omitempty"`
+	MSTeamsV2Configs []*teams_v0mimir2.Config     `yaml:"msteamsv2_configs,omitempty" json:"msteamsv2_configs,omitempty"`
+	JiraConfigs      []*jira_v0mimir1.Config      `yaml:"jira_configs,omitempty" json:"jira_configs,omitempty"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface for Receiver.
+func (c *Receiver) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	type plain Receiver
+	if err := unmarshal((*plain)(c)); err != nil {
+		return err
+	}
+	if c.Name == "" {
+		return fmt.Errorf("missing name in receiver")
+	}
+	return nil
+}
