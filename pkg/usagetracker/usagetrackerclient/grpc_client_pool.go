@@ -101,10 +101,11 @@ func (c *usageTrackerClient) RemoteAddress() string {
 	return c.conn.Target()
 }
 
-// grpcclientInstrument is a copy of grpcclient.Instrument, but it doesn't add the ClientUserHeaderInterceptor for the method that doesn't need auth.
+// grpcclientInstrument is a copy of grpcclient.Instrument, but it doesn't add the ClientUserHeaderInterceptor for methods that don't need auth.
 func grpcclientInstrument(requestDuration *prometheus.HistogramVec, instrumentationLabelOptions ...middleware.InstrumentationOption) ([]grpc.UnaryClientInterceptor, []grpc.StreamClientInterceptor) {
 	noAuthMethods := map[string]bool{
 		"/usagetrackerpb.UsageTracker/GetUsersCloseToLimit": true,
+		"/usagetrackerpb.UsageTracker/TrackSeriesBatch":     true,
 	}
 	var (
 		unary  []grpc.UnaryClientInterceptor

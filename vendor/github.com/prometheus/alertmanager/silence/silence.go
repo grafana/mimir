@@ -36,6 +36,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/alertmanager/cluster/clusterutil"
 	"github.com/prometheus/alertmanager/matchers/compat"
 	"github.com/prometheus/alertmanager/pkg/labels"
 	pb "github.com/prometheus/alertmanager/silence/silencepb"
@@ -356,7 +357,7 @@ func New(o Options) (*Silences, error) {
 		retention:          o.Retention,
 		limits:             o.Limits,
 		broadcast:          func([]byte) {},
-		isReliableDelivery: func([]byte) bool { return false },
+		isReliableDelivery: clusterutil.OversizedMessage,
 		st:                 state{},
 	}
 	s.metrics = newMetrics(o.Metrics, s)

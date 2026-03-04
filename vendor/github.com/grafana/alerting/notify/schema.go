@@ -11,27 +11,42 @@ import (
 	"github.com/grafana/alerting/receivers/alertmanager"
 	"github.com/grafana/alerting/receivers/dingding"
 	"github.com/grafana/alerting/receivers/discord"
+	discordV0 "github.com/grafana/alerting/receivers/discord/v0mimir1"
 	"github.com/grafana/alerting/receivers/email"
+	emailV0 "github.com/grafana/alerting/receivers/email/v0mimir1"
 	"github.com/grafana/alerting/receivers/googlechat"
 	"github.com/grafana/alerting/receivers/jira"
+	jiraV0 "github.com/grafana/alerting/receivers/jira/v0mimir1"
 	"github.com/grafana/alerting/receivers/kafka"
 	"github.com/grafana/alerting/receivers/line"
 	"github.com/grafana/alerting/receivers/mqtt"
 	"github.com/grafana/alerting/receivers/oncall"
 	"github.com/grafana/alerting/receivers/opsgenie"
+	opsgenieV0 "github.com/grafana/alerting/receivers/opsgenie/v0mimir1"
 	"github.com/grafana/alerting/receivers/pagerduty"
+	pagerdutyV0 "github.com/grafana/alerting/receivers/pagerduty/v0mimir1"
 	"github.com/grafana/alerting/receivers/pushover"
+	pushoverV0 "github.com/grafana/alerting/receivers/pushover/v0mimir1"
 	"github.com/grafana/alerting/receivers/schema"
 	"github.com/grafana/alerting/receivers/sensugo"
 	"github.com/grafana/alerting/receivers/slack"
+	slackV0 "github.com/grafana/alerting/receivers/slack/v0mimir1"
 	"github.com/grafana/alerting/receivers/sns"
+	snsV0 "github.com/grafana/alerting/receivers/sns/v0mimir1"
 	"github.com/grafana/alerting/receivers/teams"
+	msteamsV01 "github.com/grafana/alerting/receivers/teams/v0mimir1"
+	msteamsV02 "github.com/grafana/alerting/receivers/teams/v0mimir2"
 	"github.com/grafana/alerting/receivers/telegram"
+	telegramV0 "github.com/grafana/alerting/receivers/telegram/v0mimir1"
 	"github.com/grafana/alerting/receivers/threema"
 	"github.com/grafana/alerting/receivers/victorops"
+	victoropsV0 "github.com/grafana/alerting/receivers/victorops/v0mimir1"
 	"github.com/grafana/alerting/receivers/webex"
+	webexV0 "github.com/grafana/alerting/receivers/webex/v0mimir1"
 	"github.com/grafana/alerting/receivers/webhook"
+	webhookV0 "github.com/grafana/alerting/receivers/webhook/v0mimir1"
 	"github.com/grafana/alerting/receivers/wechat"
+	wechatV0 "github.com/grafana/alerting/receivers/wechat/v0mimir1"
 	"github.com/grafana/alerting/receivers/wecom"
 )
 
@@ -235,7 +250,11 @@ func IntegrationTypeFromMimirTypeReflect(t reflect.Type) (schema.IntegrationType
 		return "", errors.New("nil type")
 	}
 	if t.Kind() == reflect.Struct {
-		return IntegrationTypeFromString(strings.ToLower(strings.TrimSuffix(t.Name(), "Config")))
+		itype, ok := v0integrationTypeToIntegrationType[t]
+		if !ok {
+			return "", errors.New("not a v0mimir config type")
+		}
+		return itype, nil
 	}
 	if t.Kind() == reflect.Ptr {
 		return IntegrationTypeFromMimirTypeReflect(t.Elem())
@@ -244,4 +263,23 @@ func IntegrationTypeFromMimirTypeReflect(t reflect.Type) (schema.IntegrationType
 		return IntegrationTypeFromMimirTypeReflect(t.Elem())
 	}
 	return "", errors.New("not a struct or slice")
+}
+
+// TODO make it more efficient and self maintained
+var v0integrationTypeToIntegrationType = map[reflect.Type]schema.IntegrationType{
+	reflect.TypeOf(discordV0.Config{}):   discord.Type,
+	reflect.TypeOf(emailV0.Config{}):     email.Type,
+	reflect.TypeOf(pagerdutyV0.Config{}): pagerduty.Type,
+	reflect.TypeOf(slackV0.Config{}):     slack.Type,
+	reflect.TypeOf(webhookV0.Config{}):   webhook.Type,
+	reflect.TypeOf(opsgenieV0.Config{}):  opsgenie.Type,
+	reflect.TypeOf(wechatV0.Config{}):    wechat.Type,
+	reflect.TypeOf(pushoverV0.Config{}):  pushover.Type,
+	reflect.TypeOf(victoropsV0.Config{}): victorops.Type,
+	reflect.TypeOf(snsV0.Config{}):       sns.Type,
+	reflect.TypeOf(telegramV0.Config{}):  telegram.Type,
+	reflect.TypeOf(webexV0.Config{}):     webex.Type,
+	reflect.TypeOf(msteamsV01.Config{}):  msteamsV01.Schema.TypeAlias,
+	reflect.TypeOf(msteamsV02.Config{}):  msteamsV02.Schema.TypeAlias,
+	reflect.TypeOf(jiraV0.Config{}):      jira.Type,
 }

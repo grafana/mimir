@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
+	"github.com/prometheus/alertmanager/cluster/clusterutil"
 )
 
 const defaultQueueSize = 200
@@ -34,6 +35,27 @@ type ChannelOption func(*channelConfig)
 type channelConfig struct {
 	reliableDelivery bool
 	queueSize        int
+}
+
+// ChannelOptions holds the resolved channel configuration.
+// Use ResolveOptions to obtain this from a list of ChannelOption values.
+type ChannelOptions struct {
+	ReliableDelivery bool
+	QueueSize        int
+}
+
+// ResolveOptions applies the given ChannelOption functions and returns the resolved configuration.
+// This is useful for external ClusterPeer implementations that need to extract configuration
+// from ChannelOption values (e.g., queue size for custom channel implementations).
+func ResolveOptions(opts ...ChannelOption) ChannelOptions {
+	cfg := channelConfig{queueSize: defaultQueueSize}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	return ChannelOptions{
+		ReliableDelivery: cfg.reliableDelivery,
+		QueueSize:        cfg.queueSize,
+	}
 }
 
 // WithReliableDelivery configures the channel to send all messages reliably
@@ -85,10 +107,7 @@ func NewChannel(
 	reg prometheus.Registerer,
 	opts ...ChannelOption,
 ) *Channel {
-	cfg := channelConfig{queueSize: defaultQueueSize}
-	for _, opt := range opts {
-		opt(&cfg)
-	}
+	resolved := ResolveOptions(opts...)
 
 	oversizeGossipMessageFailureTotal := prometheus.NewCounter(prometheus.CounterOpts{
 		Name:        "alertmanager_oversized_gossip_message_failure_total",
@@ -122,8 +141,8 @@ func NewChannel(
 		send:                              send,
 		peers:                             peers,
 		logger:                            logger,
-		msgc:                              make(chan []byte, cfg.queueSize),
-		reliableDelivery:                  cfg.reliableDelivery,
+		msgc:                              make(chan []byte, resolved.QueueSize),
+		reliableDelivery:                  resolved.ReliableDelivery,
 		sendOversize:                      sendOversize,
 		oversizeGossipMessageFailureTotal: oversizeGossipMessageFailureTotal,
 		oversizeGossipMessageDroppedTotal: oversizeGossipMessageDroppedTotal,
@@ -188,11 +207,5 @@ func (c *Channel) Broadcast(b []byte) {
 // peers (via TCP), either because the channel is configured for reliable
 // delivery or because the message is oversized.
 func (c *Channel) ReliableDelivery(b []byte) bool {
-	return c.reliableDelivery || OversizedMessage(b)
-}
-
-// OversizedMessage indicates whether or not the byte payload should be sent
-// via TCP.
-func OversizedMessage(b []byte) bool {
-	return len(b) > MaxGossipPacketSize/2
+	return c.reliableDelivery || clusterutil.OversizedMessage(b)
 }

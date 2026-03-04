@@ -38,6 +38,7 @@ type config struct {
 	showUlidTime        bool
 	showSources         bool
 	showParents         bool
+	showHints           bool
 	showCompactionLevel bool
 	showBlockSize       bool
 	showStats           bool
@@ -62,6 +63,7 @@ func main() {
 	flag.BoolVar(&cfg.showUlidTime, "show-ulid-time", false, "Show time from ULID")
 	flag.BoolVar(&cfg.showSources, "show-sources", false, "Show compaction sources")
 	flag.BoolVar(&cfg.showParents, "show-parents", false, "Show parent blocks")
+	flag.BoolVar(&cfg.showHints, "show-hints", false, "Show compaction hints")
 	flag.BoolVar(&cfg.showCompactionLevel, "show-compaction-level", false, "Show compaction level")
 	flag.BoolVar(&cfg.showBlockSize, "show-block-size", false, "Show size of block based on details in meta.json, if available")
 	flag.BoolVar(&cfg.showStats, "show-stats", false, "Show block stats (number of series, chunks, samples)")
@@ -199,6 +201,10 @@ func buildBlocksList(metas map[ulid.ULID]*block.Meta, deleteMarkerDetails map[ul
 			m["parents"] = p
 		}
 
+		if cfg.showHints {
+			m["hints"] = b.Compaction.Hints
+		}
+
 		blocks = append(blocks, m)
 	}
 
@@ -214,57 +220,60 @@ func printTabbedOutput(blocks []map[string]any, cfg config) {
 	defer tabber.Flush()
 
 	// Header
-	fmt.Fprintf(tabber, "Block ID\t")
+	fmt.Fprintf(tabber, "Block ID")
 	if cfg.splitCount > 0 {
-		fmt.Fprintf(tabber, "Split ID\t")
+		fmt.Fprintf(tabber, "\tSplit ID")
 	}
 	if cfg.showUlidTime {
-		fmt.Fprintf(tabber, "ULID Time\t")
+		fmt.Fprintf(tabber, "\tULID Time")
 	}
-	fmt.Fprintf(tabber, "Min Time\t")
-	fmt.Fprintf(tabber, "Max Time\t")
-	fmt.Fprintf(tabber, "Duration\t")
-	fmt.Fprintf(tabber, "No Compact\t")
+	fmt.Fprintf(tabber, "\tMin Time")
+	fmt.Fprintf(tabber, "\tMax Time")
+	fmt.Fprintf(tabber, "\tDuration")
+	fmt.Fprintf(tabber, "\tNo Compact")
 	if cfg.showDeleted {
-		fmt.Fprintf(tabber, "Deletion Time\t")
+		fmt.Fprintf(tabber, "\tDeletion Time")
 	}
 	if cfg.showCompactionLevel {
-		fmt.Fprintf(tabber, "Lvl\t")
+		fmt.Fprintf(tabber, "\tLvl")
 	}
 	if cfg.showBlockSize {
-		fmt.Fprintf(tabber, "Size\t")
+		fmt.Fprintf(tabber, "\tSize")
 	}
 	if cfg.showStats {
-		fmt.Fprintf(tabber, "Series\t")
-		fmt.Fprintf(tabber, "Samples\t")
-		fmt.Fprintf(tabber, "Chunks\t")
+		fmt.Fprintf(tabber, "\tSeries")
+		fmt.Fprintf(tabber, "\tSamples")
+		fmt.Fprintf(tabber, "\tChunks")
 	}
 	if cfg.showLabels {
-		fmt.Fprintf(tabber, "Labels\t")
+		fmt.Fprintf(tabber, "\tLabels")
 	}
 	if cfg.showSources {
-		fmt.Fprintf(tabber, "Sources\t")
+		fmt.Fprintf(tabber, "\tSources")
 	}
 	if cfg.showParents {
-		fmt.Fprintf(tabber, "Parents\t")
+		fmt.Fprintf(tabber, "\tParents")
+	}
+	if cfg.showHints {
+		fmt.Fprintf(tabber, "\tHints")
 	}
 	fmt.Fprintln(tabber)
 
 	for _, b := range blocks {
-		fmt.Fprintf(tabber, "%v\t", b["blockID"])
+		fmt.Fprintf(tabber, "%v", b["blockID"])
 		if cfg.splitCount > 0 {
-			fmt.Fprintf(tabber, "%d\t", b["splitID"])
+			fmt.Fprintf(tabber, "\t%d", b["splitID"])
 		}
 		if cfg.showUlidTime {
-			fmt.Fprintf(tabber, "%v\t", b["ulidTime"])
+			fmt.Fprintf(tabber, "\t%v", b["ulidTime"])
 		}
-		fmt.Fprintf(tabber, "%v\t", b["minTime"])
-		fmt.Fprintf(tabber, "%v\t", b["maxTime"])
-		fmt.Fprintf(tabber, "%v\t", b["duration"])
+		fmt.Fprintf(tabber, "\t%v", b["minTime"])
+		fmt.Fprintf(tabber, "\t%v", b["maxTime"])
+		fmt.Fprintf(tabber, "\t%v", b["duration"])
 
 		if val, ok := b["noCompact"]; ok {
 			val := val.(noCompactSummary)
-			fmt.Fprintf(tabber, "%v\t", []string{
+			fmt.Fprintf(tabber, "\t%v", []string{
 				fmt.Sprintf("Time: %s", val.Time),
 				fmt.Sprintf("Reason: %s", val.Reason),
 			})
@@ -274,38 +283,40 @@ func printTabbedOutput(blocks []map[string]any, cfg config) {
 
 		if cfg.showDeleted {
 			if val, ok := b["deletionTime"]; ok {
-				fmt.Fprintf(tabber, "%v\t", val)
+				fmt.Fprintf(tabber, "\t%v", val)
 			} else {
 				fmt.Fprintf(tabber, "\t") // no deletion time.
 			}
 		}
 
 		if cfg.showCompactionLevel {
-			fmt.Fprintf(tabber, "%d\t", b["level"])
+			fmt.Fprintf(tabber, "\t%d", b["level"])
 		}
 
 		if cfg.showBlockSize {
-			fmt.Fprintf(tabber, "%s\t", b["size"])
+			fmt.Fprintf(tabber, "\t%s", b["size"])
 		}
 
 		if cfg.showStats {
-			fmt.Fprintf(tabber, "%d\t", b["numSeries"])
-			fmt.Fprintf(tabber, "%d\t", b["numSamples"])
-			fmt.Fprintf(tabber, "%d\t", b["numChunks"])
+			fmt.Fprintf(tabber, "\t%d", b["numSeries"])
+			fmt.Fprintf(tabber, "\t%d", b["numSamples"])
+			fmt.Fprintf(tabber, "\t%d", b["numChunks"])
 		}
 
 		if cfg.showLabels {
-			fmt.Fprintf(tabber, "%s\t", b["labels"])
+			fmt.Fprintf(tabber, "\t%s", b["labels"])
 		}
 
 		if cfg.showSources {
-			// No tab at the end.
-			fmt.Fprintf(tabber, "%v", b["sources"])
+			fmt.Fprintf(tabber, "\t%v", b["sources"])
 		}
 
 		if cfg.showParents {
-			// No tab at the end.
-			fmt.Fprintf(tabber, "%v", b["parents"])
+			fmt.Fprintf(tabber, "\t%v", b["parents"])
+		}
+
+		if cfg.showHints {
+			fmt.Fprintf(tabber, "\t%v", b["hints"])
 		}
 
 		fmt.Fprintln(tabber)

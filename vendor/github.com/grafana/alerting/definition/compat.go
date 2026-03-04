@@ -8,6 +8,9 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/prometheus/alertmanager/config"
+
+	"github.com/grafana/alerting/http/v0mimir1"
+	"github.com/grafana/alerting/receivers"
 )
 
 // LoadCompat loads a PostableApiAlertingConfig from a YAML configuration
@@ -38,7 +41,7 @@ func LoadCompat(rawCfg []byte) (*PostableApiAlertingConfig, error) {
 		}
 		for _, wh := range rcv.WebhookConfigs {
 			if wh.HTTPConfig == nil {
-				wh.HTTPConfig = c.Global.HTTPConfig
+				wh.HTTPConfig = v0mimir1.FromCommonHTTPClientConfig(c.Global.HTTPConfig)
 			}
 		}
 		for _, ec := range rcv.EmailConfigs {
@@ -46,7 +49,7 @@ func LoadCompat(rawCfg []byte) (*PostableApiAlertingConfig, error) {
 				if c.Global.SMTPSmarthost.String() == "" {
 					return nil, errors.New("no global SMTP smarthost set")
 				}
-				ec.Smarthost = c.Global.SMTPSmarthost
+				ec.Smarthost = receivers.HostPort(c.Global.SMTPSmarthost)
 			}
 			if ec.From == "" {
 				if c.Global.SMTPFrom == "" {
@@ -61,10 +64,10 @@ func LoadCompat(rawCfg []byte) (*PostableApiAlertingConfig, error) {
 				ec.AuthUsername = c.Global.SMTPAuthUsername
 			}
 			if ec.AuthPassword == "" {
-				ec.AuthPassword = c.Global.SMTPAuthPassword
+				ec.AuthPassword = receivers.Secret(c.Global.SMTPAuthPassword)
 			}
 			if ec.AuthSecret == "" {
-				ec.AuthSecret = c.Global.SMTPAuthSecret
+				ec.AuthSecret = receivers.Secret(c.Global.SMTPAuthSecret)
 			}
 			if ec.AuthIdentity == "" {
 				ec.AuthIdentity = c.Global.SMTPAuthIdentity
@@ -76,40 +79,40 @@ func LoadCompat(rawCfg []byte) (*PostableApiAlertingConfig, error) {
 		}
 		for _, sc := range rcv.SlackConfigs {
 			if sc.HTTPConfig == nil {
-				sc.HTTPConfig = c.Global.HTTPConfig
+				sc.HTTPConfig = v0mimir1.FromCommonHTTPClientConfig(c.Global.HTTPConfig)
 			}
 			if sc.APIURL == nil {
 				if c.Global.SlackAPIURL == nil {
 					return nil, errors.New("no global Slack API URL set")
 				}
-				sc.APIURL = c.Global.SlackAPIURL
+				sc.APIURL = (*receivers.SecretURL)(c.Global.SlackAPIURL)
 			}
 		}
 		for _, poc := range rcv.PushoverConfigs {
 			if poc.HTTPConfig == nil {
-				poc.HTTPConfig = c.Global.HTTPConfig
+				poc.HTTPConfig = v0mimir1.FromCommonHTTPClientConfig(c.Global.HTTPConfig)
 			}
 		}
 		for _, pdc := range rcv.PagerdutyConfigs {
 			if pdc.HTTPConfig == nil {
-				pdc.HTTPConfig = c.Global.HTTPConfig
+				pdc.HTTPConfig = v0mimir1.FromCommonHTTPClientConfig(c.Global.HTTPConfig)
 			}
 			if pdc.URL == nil {
 				if c.Global.PagerdutyURL == nil {
 					return nil, errors.New("no global PagerDuty URL set")
 				}
-				pdc.URL = c.Global.PagerdutyURL
+				pdc.URL = (*receivers.URL)(c.Global.PagerdutyURL)
 			}
 		}
 		for _, ogc := range rcv.OpsGenieConfigs {
 			if ogc.HTTPConfig == nil {
-				ogc.HTTPConfig = c.Global.HTTPConfig
+				ogc.HTTPConfig = v0mimir1.FromCommonHTTPClientConfig(c.Global.HTTPConfig)
 			}
 			if ogc.APIURL == nil {
 				if c.Global.OpsGenieAPIURL == nil {
 					return nil, errors.New("no global OpsGenie URL set")
 				}
-				ogc.APIURL = c.Global.OpsGenieAPIURL
+				ogc.APIURL = (*receivers.URL)(c.Global.OpsGenieAPIURL)
 			}
 			if !strings.HasSuffix(ogc.APIURL.Path, "/") {
 				ogc.APIURL.Path += "/"
@@ -118,26 +121,26 @@ func LoadCompat(rawCfg []byte) (*PostableApiAlertingConfig, error) {
 				if c.Global.OpsGenieAPIKey == "" {
 					return nil, errors.New("no global OpsGenie API Key set")
 				}
-				ogc.APIKey = c.Global.OpsGenieAPIKey
+				ogc.APIKey = receivers.Secret(c.Global.OpsGenieAPIKey)
 			}
 		}
 		for _, wcc := range rcv.WechatConfigs {
 			if wcc.HTTPConfig == nil {
-				wcc.HTTPConfig = c.Global.HTTPConfig
+				wcc.HTTPConfig = v0mimir1.FromCommonHTTPClientConfig(c.Global.HTTPConfig)
 			}
 
 			if wcc.APIURL == nil {
 				if c.Global.WeChatAPIURL == nil {
 					return nil, errors.New("no global Wechat URL set")
 				}
-				wcc.APIURL = c.Global.WeChatAPIURL
+				wcc.APIURL = (*receivers.URL)(c.Global.WeChatAPIURL)
 			}
 
 			if wcc.APISecret == "" {
 				if c.Global.WeChatAPISecret == "" {
 					return nil, errors.New("no global Wechat ApiSecret set")
 				}
-				wcc.APISecret = c.Global.WeChatAPISecret
+				wcc.APISecret = receivers.Secret(c.Global.WeChatAPISecret)
 			}
 
 			if wcc.CorpID == "" {
@@ -153,13 +156,13 @@ func LoadCompat(rawCfg []byte) (*PostableApiAlertingConfig, error) {
 		}
 		for _, voc := range rcv.VictorOpsConfigs {
 			if voc.HTTPConfig == nil {
-				voc.HTTPConfig = c.Global.HTTPConfig
+				voc.HTTPConfig = v0mimir1.FromCommonHTTPClientConfig(c.Global.HTTPConfig)
 			}
 			if voc.APIURL == nil {
 				if c.Global.VictorOpsAPIURL == nil {
 					return nil, errors.New("no global VictorOps URL set")
 				}
-				voc.APIURL = c.Global.VictorOpsAPIURL
+				voc.APIURL = (*receivers.URL)(c.Global.VictorOpsAPIURL)
 			}
 			if !strings.HasSuffix(voc.APIURL.Path, "/") {
 				voc.APIURL.Path += "/"
@@ -168,26 +171,26 @@ func LoadCompat(rawCfg []byte) (*PostableApiAlertingConfig, error) {
 				if c.Global.VictorOpsAPIKey == "" {
 					return nil, errors.New("no global VictorOps API Key set")
 				}
-				voc.APIKey = c.Global.VictorOpsAPIKey
+				voc.APIKey = receivers.Secret(c.Global.VictorOpsAPIKey)
 			}
 		}
 		for _, sns := range rcv.SNSConfigs {
 			if sns.HTTPConfig == nil {
-				sns.HTTPConfig = c.Global.HTTPConfig
+				sns.HTTPConfig = v0mimir1.FromCommonHTTPClientConfig(c.Global.HTTPConfig)
 			}
 		}
 
 		for _, telegram := range rcv.TelegramConfigs {
 			if telegram.HTTPConfig == nil {
-				telegram.HTTPConfig = c.Global.HTTPConfig
+				telegram.HTTPConfig = v0mimir1.FromCommonHTTPClientConfig(c.Global.HTTPConfig)
 			}
 			if telegram.APIUrl == nil {
-				telegram.APIUrl = c.Global.TelegramAPIUrl
+				telegram.APIUrl = (*receivers.URL)(c.Global.TelegramAPIUrl)
 			}
 		}
 		for _, discord := range rcv.DiscordConfigs {
 			if discord.HTTPConfig == nil {
-				discord.HTTPConfig = c.Global.HTTPConfig
+				discord.HTTPConfig = v0mimir1.FromCommonHTTPClientConfig(c.Global.HTTPConfig)
 			}
 			if discord.WebhookURL == nil {
 				return nil, errors.New("no discord webhook URL provided")
@@ -199,12 +202,12 @@ func LoadCompat(rawCfg []byte) (*PostableApiAlertingConfig, error) {
 					return nil, errors.New("no global Webex URL set")
 				}
 
-				webex.APIURL = c.Global.WebexAPIURL
+				webex.APIURL = (*receivers.URL)(c.Global.WebexAPIURL)
 			}
 		}
 		for _, msteams := range rcv.MSTeamsConfigs {
 			if msteams.HTTPConfig == nil {
-				msteams.HTTPConfig = c.Global.HTTPConfig
+				msteams.HTTPConfig = v0mimir1.FromCommonHTTPClientConfig(c.Global.HTTPConfig)
 			}
 			if msteams.WebhookURL == nil {
 				return nil, errors.New("no msteams webhook URL provided")
@@ -212,7 +215,7 @@ func LoadCompat(rawCfg []byte) (*PostableApiAlertingConfig, error) {
 		}
 		for _, msteamsv2 := range rcv.MSTeamsV2Configs {
 			if msteamsv2.HTTPConfig == nil {
-				msteamsv2.HTTPConfig = c.Global.HTTPConfig
+				msteamsv2.HTTPConfig = v0mimir1.FromCommonHTTPClientConfig(c.Global.HTTPConfig)
 			}
 			if msteamsv2.WebhookURL == nil && len(msteamsv2.WebhookURLFile) == 0 {
 				return nil, errors.New("no msteamsv2 webhook URL provided")
@@ -220,13 +223,13 @@ func LoadCompat(rawCfg []byte) (*PostableApiAlertingConfig, error) {
 		}
 		for _, jira := range rcv.JiraConfigs {
 			if jira.HTTPConfig == nil {
-				jira.HTTPConfig = c.Global.HTTPConfig
+				jira.HTTPConfig = v0mimir1.FromCommonHTTPClientConfig(c.Global.HTTPConfig)
 			}
 			if jira.APIURL == nil {
 				if c.Global.JiraAPIURL == nil {
 					return nil, errors.New("no global Jira Cloud URL set")
 				}
-				jira.APIURL = c.Global.JiraAPIURL
+				jira.APIURL = (*receivers.URL)(c.Global.JiraAPIURL)
 			}
 		}
 		names[rcv.Name] = struct{}{}
