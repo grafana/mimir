@@ -911,9 +911,12 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 
 		idx := userDB.Head().MustIndex()
 
+		var oldMatcherNames []string
 		if matchersChanged || catChanged {
 			if matchersChanged {
-				i.metrics.deletePerUserCustomTrackerMetrics(userDB.userID, userDB.activeSeries.CurrentMatcherNames())
+				// We shouldn't delete the metrics yet, just in case a metrics scrape happens while we're reloading,
+				// we don't want to trigger a staleness NaN in the metrics.
+				oldMatcherNames = userDB.activeSeries.CurrentMatcherNames()
 			}
 			userDB.activeSeries.ReloadSeriesConfig(
 				asmodel.NewMatchers(newMatchersConfig),
@@ -968,6 +971,22 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 				i.metrics.activeNativeHistogramBucketsCustomTrackersPerUser.WithLabelValues(userID, name).Set(float64(activeMatchingBuckets[idx]))
 			} else {
 				i.metrics.activeNativeHistogramBucketsCustomTrackersPerUser.DeleteLabelValues(userID, name)
+			}
+		}
+
+		// Remove the metrics belonging to old matchers now.
+		if matchersChanged {
+			newNames := userDB.activeSeries.CurrentMatcherNames()
+			newNamesSet := make(map[string]struct{}, len(newNames))
+			for _, name := range newNames {
+				newNamesSet[name] = struct{}{}
+			}
+			for _, oldName := range oldMatcherNames {
+				if _, exists := newNamesSet[oldName]; !exists {
+					i.metrics.activeSeriesCustomTrackersPerUser.DeleteLabelValues(userID, oldName)
+					i.metrics.activeSeriesCustomTrackersPerUserNativeHistograms.DeleteLabelValues(userID, oldName)
+					i.metrics.activeNativeHistogramBucketsCustomTrackersPerUser.DeleteLabelValues(userID, oldName)
+				}
 			}
 		}
 	}
