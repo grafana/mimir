@@ -31,6 +31,7 @@ import (
 
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -662,4 +663,106 @@ func BenchmarkNewLazyBinaryReader(b *testing.B) {
 			wg.Wait()
 		})
 	}
+}
+
+func BenchmarkNewLazyBinaryReader_LoadReader(b *testing.B) {
+	ctx := context.Background()
+
+	bucketDir := b.TempDir()
+	bkt, err := filesystem.NewBucket(filepath.Join(bucketDir, "bkt"))
+	require.NoError(b, err)
+	instrBkt := objstore.WithNoopInstr(bkt)
+	b.Cleanup(func() {
+		require.NoError(b, bkt.Close())
+	})
+
+	for _, nameCount := range []int{200} {
+		for _, valueCount := range []int{500, 1000, 5000} {
+			nameSymbols := generateSymbols("name", nameCount)
+			valueSymbols := generateSymbols("value", valueCount)
+			idIndexV2, err := block.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
+			require.NoError(b, err)
+			_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), nil)
+			require.NoError(b, err)
+
+			indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
+			require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
+
+			diskReaderBenchFactory := func() (*LazyBinaryReader, objstore.InstrumentedBucketReader, *prometheus.Registry) {
+				cfg := bucketcache.NewCachingBucketConfig() // Caches nothing by default
+				ll := log.NewNopLogger()
+				bktReg := prometheus.NewPedanticRegistry()
+
+				metricsBkt := objstore.WrapWithMetrics(instrBkt, prometheus.WrapRegistererWithPrefix("thanos_", bktReg), "")
+				cachingBucket, err := bucketcache.NewCachingBucket("test", metricsBkt, cfg, log.NewNopLogger(), bktReg)
+				require.NoError(b, err)
+
+				diskReaderFactory := func() (Reader, error) {
+					return NewStreamBinaryReader(
+						ctx, ll, cachingBucket, bucketDir, idIndexV2, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+				}
+				lazyReader, err := NewLazyBinaryReader(
+					ctx, Config{},
+					diskReaderFactory, ll, cachingBucket, bucketDir, idIndexV2,
+					NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop(),
+				)
+				require.NoError(b, err)
+
+				return lazyReader, cachingBucket, bktReg
+			}
+
+			bucketReaderBenchFactory := func() (*LazyBinaryReader, objstore.InstrumentedBucketReader, *prometheus.Registry) {
+				cfg := bucketcache.NewCachingBucketConfig() // Caches nothing by default
+				ll := log.NewNopLogger()
+				bktReg := prometheus.NewPedanticRegistry()
+
+				metricsBkt := objstore.WrapWithMetrics(instrBkt, prometheus.WrapRegistererWithPrefix("thanos_", bktReg), "")
+				cachingBucket, err := bucketcache.NewCachingBucket("test", metricsBkt, cfg, log.NewNopLogger(), bktReg)
+				require.NoError(b, err)
+
+				bucketReaderFactory := func() (Reader, error) {
+					return NewBucketBinaryReader(ctx, ll, cachingBucket, bucketDir, idIndexV2, 32, Config{})
+				}
+
+				lazyReader, err := NewLazyBinaryReader(
+					ctx, Config{BucketReader: BucketReaderConfig{Enabled: true}},
+					bucketReaderFactory, ll, cachingBucket, bucketDir, idIndexV2,
+					NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop(),
+				)
+				require.NoError(b, err)
+
+				return lazyReader, cachingBucket, bktReg
+			}
+
+			benchFactories := []struct {
+				name    string
+				factory func() (*LazyBinaryReader, objstore.InstrumentedBucketReader, *prometheus.Registry)
+			}{
+				{"disk", diskReaderBenchFactory},
+				{"bucket", bucketReaderBenchFactory},
+			}
+			b.ResetTimer()
+			for _, benchFactory := range benchFactories {
+				b.Run(fmt.Sprintf("Names=%d/Values=%d/Reader=%s", len(nameSymbols), len(valueSymbols), benchFactory.name), func(b *testing.B) {
+					b.ReportAllocs()
+					b.StopTimer()
+					lazyReader, _, bktReg := benchFactory.factory()
+					b.StartTimer()
+
+					baselineMetrics := test.RecordBucketMetrics(b, bktReg, []string{"get", "get_range"})
+
+					_, err := lazyReader.loadReader()
+					require.NoError(b, err)
+
+					b.StopTimer()
+					err = lazyReader.Close()
+					require.NoError(b, err)
+
+					metricsDiff := test.RecordBucketMetricsDiff(b, bktReg, []string{"get", "get_range"}, baselineMetrics)
+					test.ReportBucketMetrics(b, metricsDiff)
+				})
+			}
+		}
+	}
+
 }
