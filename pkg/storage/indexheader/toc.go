@@ -3,6 +3,8 @@
 package indexheader
 
 import (
+	"context"
+	"encoding/binary"
 	"fmt"
 	"hash/crc32"
 
@@ -10,6 +12,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/runutil"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/thanos-io/objstore"
 
 	streamencoding "github.com/grafana/mimir/pkg/storage/indexheader/encoding"
 )
@@ -35,7 +38,38 @@ type TOCCompat struct {
 	PostingsOffsetTable uint64
 }
 
-func TOCFromTSDBIndexBytes(indexVersion int, tocBytes []byte) (*TOCCompat, error) {
+// TOCFromBucketTSDBIndex builds the TOCCompat from the full Prometheus block index TOC in the bucket.
+// A plain bucket reader is used rather than a bucket-based Decbuf to reduce object storage operations,
+// as the Decbuf interface and implementations are designed for forward scanning.
+func TOCFromBucketTSDBIndex(
+	ctx context.Context,
+	bkt objstore.BucketReader,
+	indexPath string,
+	indexAttrs objstore.ObjectAttributes,
+) (*TOCCompat, error) {
+	headerBytes, err := fetchRange(ctx, bkt, indexPath, 0, index.HeaderLen)
+	if err != nil {
+		return nil, fmt.Errorf("read index file header: %w", err)
+	}
+
+	if len(headerBytes) != index.HeaderLen {
+		return nil, fmt.Errorf("unexpected index file header length: %d", len(headerBytes))
+	}
+
+	if magic := binary.BigEndian.Uint32(headerBytes[0:4]); magic != index.MagicIndex {
+		return nil, fmt.Errorf("invalid magic number %x", magic)
+	}
+
+	indexVersion := int(headerBytes[4])
+	if indexVersion != index.FormatV2 {
+		return nil, fmt.Errorf("unknown or unsupported index format version %d", indexVersion)
+	}
+
+	tocBytes, err := fetchRange(ctx, bkt, indexPath, indexAttrs.Size-indexTOCLen-crc32.Size, indexTOCLen+crc32.Size)
+	if err != nil {
+		return nil, fmt.Errorf("read index TOC: %w", err)
+	}
+
 	tsdbTOC, err := index.NewTOCFromByteSlice(realByteSlice(tocBytes))
 	if err != nil {
 		return nil, fmt.Errorf("parse index TOC: %w", err)
@@ -53,6 +87,9 @@ func TOCFromTSDBIndexBytes(indexVersion int, tocBytes []byte) (*TOCCompat, error
 
 }
 
+// TOCFromIndexHeader builds the TOCCompact from the on-disk Mimir index-header BinaryFormatV1.
+// While any DecbufFactory implementation will work, including a bucket-based Decbuf,
+// the parsing is only compatible with the on-disk format which does not exist in the bucket.
 func TOCFromIndexHeader(
 	castagnoliTable *crc32.Table,
 	decbufFactory streamencoding.DecbufFactory,

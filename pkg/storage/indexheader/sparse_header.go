@@ -30,7 +30,6 @@ import (
 
 func buildSparseHeaderFromIndexHeader(
 	indexVersion int,
-	//toc *BinaryTOC,
 	toc *TOCCompat,
 	decbufFactory streamencoding.DecbufFactory,
 	postingOffsetsInMemSampling int,

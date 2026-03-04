@@ -4,9 +4,7 @@ package indexheader
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
-	"hash/crc32"
 	"io"
 	"os"
 	"path/filepath"
@@ -80,8 +78,7 @@ func NewBucketBinaryReader(
 	indexPath := filepath.Join(blockID.String(), block.IndexFilename)
 
 	r := &BucketBinaryReader{
-		bkt: bkt,
-
+		bkt:     bkt,
 		factory: streamencoding.NewBucketDecbufFactory(ctx, bkt, indexPath),
 	}
 
@@ -90,33 +87,7 @@ func NewBucketBinaryReader(
 		return nil, fmt.Errorf("get index file attributes: %w", err)
 	}
 
-	// Read the index file header (magic + versions)
-	// TODO move more of this logic into TOCFromTSDBIndexBytes to match local-file impl
-	headerBytes, err := r.fetchRange(ctx, indexPath, 0, index.HeaderLen)
-	if err != nil {
-		return nil, fmt.Errorf("read index file header: %w", err)
-	}
-
-	if len(headerBytes) != index.HeaderLen {
-		return nil, fmt.Errorf("unexpected index file header length: %d", len(headerBytes))
-	}
-
-	if magic := binary.BigEndian.Uint32(headerBytes[0:4]); magic != index.MagicIndex {
-		return nil, fmt.Errorf("invalid magic number %x", magic)
-	}
-
-	r.indexVersion = int(headerBytes[4])
-
-	if r.indexVersion != index.FormatV2 {
-		return nil, fmt.Errorf("unknown or unsupported index format version %d", r.indexVersion)
-	}
-
-	tocBytes, err := r.fetchRange(ctx, indexPath, indexAttrs.Size-indexTOCLen-crc32.Size, indexTOCLen+crc32.Size)
-	if err != nil {
-		return nil, fmt.Errorf("read index TOC: %w", err)
-	}
-
-	r.toc, err = TOCFromTSDBIndexBytes(r.indexVersion, tocBytes)
+	r.toc, err = TOCFromBucketTSDBIndex(ctx, r.bkt, indexPath, indexAttrs)
 	if err != nil {
 		return nil, err
 	}
@@ -257,8 +228,8 @@ func (r *BucketBinaryReader) loadFromIndexHeader(logger log.Logger, cfg Config, 
 }
 
 // fetchRange fetches a range of bytes from the object storage.
-func (r *BucketBinaryReader) fetchRange(ctx context.Context, objectPath string, offset, length int64) (data []byte, err error) {
-	rc, err := r.bkt.GetRange(ctx, objectPath, offset, length)
+func fetchRange(ctx context.Context, bkt objstore.BucketReader, objectPath string, offset, length int64) (data []byte, err error) {
+	rc, err := bkt.GetRange(ctx, objectPath, offset, length)
 	if err != nil {
 		return nil, fmt.Errorf("get range [%d, %d): %w", offset, offset+length, err)
 	}
