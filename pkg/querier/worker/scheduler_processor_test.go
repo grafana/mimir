@@ -1366,13 +1366,14 @@ func TestGrpcStreamWriter_CancelledRequestContext(t *testing.T) {
 }
 
 func createTestStreamingMessage(msg string) *frontendv2pb.QueryResultStreamRequest {
-	// In the real use, sending an error is a terminal message, and so sending multiple errors is unexpected,
-	// but the code under test here doesn't care.
 	return &frontendv2pb.QueryResultStreamRequest{
-		Data: &frontendv2pb.QueryResultStreamRequest_Error{
-			Error: &querierpb.Error{
-				Type:    mimirpb.QUERY_ERROR_TYPE_NOT_ACCEPTABLE,
-				Message: msg,
+		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+				Message: &querierpb.EvaluateQueryResponse_StringValue{
+					StringValue: &querierpb.EvaluateQueryResponseStringValue{
+						Value: msg,
+					},
+				},
 			},
 		},
 	}
