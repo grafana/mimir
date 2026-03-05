@@ -844,13 +844,12 @@ func TestOptimizationPass(t *testing.T) {
 			expr: `rate(foo{status="success"}[5m]) / rate(foo[5m])`,
 			expectedPlan: `
 				- BinaryExpression: LHS / RHS
-					- LHS: DeduplicateAndMerge
-						- DuplicateFilter: {status="success"}
-							- ref#1 Duplicate
+					- LHS: DuplicateFilter: {status="success"}
+						- ref#1 Duplicate
+							- DeduplicateAndMerge
 								- FunctionCall: rate(...)
 									- MatrixSelector: {__name__="foo"}[5m0s]
-					- RHS: DeduplicateAndMerge
-						- ref#1 Duplicate ...
+					- RHS: ref#1 Duplicate ...
 			`,
 			expectedDuplicateNodes:               1,
 			expectedDuplicateSelectorsEliminated: 0,
@@ -914,14 +913,13 @@ func TestOptimizationPass(t *testing.T) {
 			expectedPlan: `
 				- BinaryExpression: LHS / RHS
 					- LHS: AggregateExpression: sum
-						- DeduplicateAndMerge
-							- DuplicateFilter: {status="success"}
-								- ref#1 Duplicate
+						- DuplicateFilter: {status="success"}
+							- ref#1 Duplicate
+								- DeduplicateAndMerge
 									- FunctionCall: rate(...)
 										- MatrixSelector: {__name__="foo"}[5m0s]
 					- RHS: AggregateExpression: sum
-						- DeduplicateAndMerge
-							- ref#1 Duplicate ...
+						- ref#1 Duplicate ...
 			`,
 			expectedDuplicateNodes:               1,
 			expectedDuplicateSelectorsEliminated: 0,
@@ -1904,6 +1902,13 @@ func TestIsSafeToApplyFilteringAfter(t *testing.T) {
 			group: groupWithFilterOnMetricName,
 			expectedSafeWithDelayedNameRemovalDisabled: false,
 			expectedSafeWithDelayedNameRemovalEnabled:  false,
+		},
+
+		"deduplicate and merge node": {
+			node:  &core.DeduplicateAndMerge{},
+			group: groupWithNoFilters,
+			expectedSafeWithDelayedNameRemovalDisabled: true,
+			expectedSafeWithDelayedNameRemovalEnabled:  true,
 		},
 
 		"node with no special handling in IsSafeToApplyFilteringAfter": {
