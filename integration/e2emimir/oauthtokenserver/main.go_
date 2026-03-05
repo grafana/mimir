@@ -1,5 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+// NOTE: This is file is a fixture meant to be copied into an image by
+// the accompanying Dockerfile.
+//
+// It is a .go_ file in the directory as package github.com/grafana/mimir/integration/e2emimir/oauthtokenserver
+// so that go mod vendor includes it when vendoring the package.
+//
+// It cannot be a .go file, or there would be two different packages in the same
+// directory.
+//
+// It cannot be in a separate directory, because `go mod vendor` only includes
+// files living alongside Go files in imported packages, and main pacakges
+// cannot be imported.
+
 // Command oauthtokenserver is a small HTTP server that listens on a Unix domain
 // socket and responds with a fresh OAuth token fetched from a Dex instance.
 // It is used in integration tests to test the HTTP socket OAuth authentication
