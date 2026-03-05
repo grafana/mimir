@@ -197,7 +197,7 @@ func (r *StreamBinaryReader) loadFromSparseIndexHeader(logger log.Logger, sparse
 		return err
 	}
 
-	r.symbols, err = streamindex.NewSymbolsFromSparseHeader(r.factory, sparseHeaders.Symbols, r.toc.IndexVersion, int(r.toc.Symbols))
+	r.symbols, err = streamindex.NewSymbolsFromSparseHeader(r.factory, sparseHeaders.Symbols, int(r.toc.Symbols))
 	if err != nil {
 		return fmt.Errorf("cannot load symbols from sparse index-header: %w", err)
 	}
