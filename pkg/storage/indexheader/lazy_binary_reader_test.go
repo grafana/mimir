@@ -665,10 +665,10 @@ func BenchmarkNewLazyBinaryReader(b *testing.B) {
 	}
 }
 
-// BenchmarkNewLazyBinaryReader_LoadReader benchmarks the cost of the index header Reader when it is finally loaded.
+// BenchmarkLazyBinaryReader_LoadReader benchmarks the cost of the index header Reader when it is finally loaded.
 // With lazy-loading enabled, the Readers are not fully initialized until they are first queried,
 // which incurs different costs depending on the Reader implementation.
-func BenchmarkNewLazyBinaryReader_LoadReader(b *testing.B) {
+func BenchmarkLazyBinaryReader_LoadReader(b *testing.B) {
 	ctx := context.Background()
 
 	bucketDir := b.TempDir()
