@@ -128,11 +128,6 @@ func (r *BucketBinaryReader) loadSparseHeader(
 ) (err error) {
 	logger = log.With(logger, "path", sparseHeadersPath, "inmem_sampling_rate", postingOffsetsInMemSampling)
 
-	// Only v2 indexes use sparse headers
-	if r.toc.IndexVersion != index.FormatV2 {
-		return r.loadFromIndexHeader(logger, cfg, postingOffsetsInMemSampling)
-	}
-
 	// 1. Try to load from local file first
 	sparseData, err := os.ReadFile(sparseHeadersPath)
 	if err == nil {
