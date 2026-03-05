@@ -265,32 +265,70 @@ func marshalWriteRequestToRecords(partitionID int32, tenantID string, req *mimir
 }
 
 func marshalWriteRequestsToRecords(partitionID int32, tenantID string, reqs []*mimirpb.WriteRequest) ([]*kgo.Record, error) {
-	records := make([]*kgo.Record, 0, len(reqs))
-
+	// Compute the total buffer size needed for all record keys and values upfront,
+	// so we can satisfy them with a single allocation. We also batch-allocate the
+	// kgo.Record structs to avoid per-record heap allocations.
+	totalBufSize := 0
+	keyLen := len(tenantID)
 	for _, req := range reqs {
-		rec, err := marshalWriteRequestToRecord(partitionID, tenantID, req, req.Size())
-		if err != nil {
-			return nil, err
-		}
+		totalBufSize += keyLen + req.Size()
+	}
 
-		records = append(records, rec)
+	// Single allocation for all keys and values.
+	buf := make([]byte, totalBufSize)
+	// Batch-allocate all kgo.Record structs in a single slice.
+	recordsBuf := make([]kgo.Record, len(reqs))
+	records := make([]*kgo.Record, len(reqs))
+
+	offset := 0
+	for i, req := range reqs {
+		reqSize := req.Size()
+
+		// Copy tenantID into the key portion of the buffer.
+		key := buf[offset : offset+keyLen]
+		copy(key, tenantID)
+		offset += keyLen
+
+		// Marshal the request value into the value portion of the buffer.
+		valueBuf := buf[offset : offset+reqSize]
+		n, err := req.MarshalToSizedBuffer(valueBuf)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to serialise write request")
+		}
+		value := valueBuf[:n]
+		offset += reqSize
+
+		recordsBuf[i] = kgo.Record{
+			Key:       key,
+			Value:     value,
+			Partition: partitionID,
+		}
+		records[i] = &recordsBuf[i]
 	}
 
 	return records, nil
 }
 
 func marshalWriteRequestToRecord(partitionID int32, tenantID string, req *mimirpb.WriteRequest, reqSize int) (*kgo.Record, error) {
-	// Marshal the request.
-	data := make([]byte, reqSize)
-	n, err := req.MarshalToSizedBuffer(data[:reqSize])
+	// Single allocation for both the record key (tenantID) and the marshalled value.
+	keyLen := len(tenantID)
+	buf := make([]byte, keyLen+reqSize)
+
+	// Copy the tenantID into the key portion.
+	copy(buf, tenantID)
+	key := buf[:keyLen]
+
+	// Marshal the request into the value portion.
+	valueBuf := buf[keyLen:]
+	n, err := req.MarshalToSizedBuffer(valueBuf)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to serialise write request")
 	}
-	data = data[:n]
+	value := valueBuf[:n]
 
 	return &kgo.Record{
-		Key:       []byte(tenantID), // We don't partition based on the key, so the value here doesn't make any difference.
-		Value:     data,
+		Key:       key, // We don't partition based on the key, so the value here doesn't make any difference.
+		Value:     value,
 		Partition: partitionID,
 	}, nil
 }
