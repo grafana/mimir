@@ -2912,10 +2912,21 @@ func (i *Ingester) createBlockChunkQuerier(userID string, b tsdb.BlockReader, mi
 // returns a function that computes the generation label for a block relative to the TSDB head. Generation 0 is the head
 // block; persisted blocks get generation 1, 2, ... counting back in block-range units from the head's MinTime.
 func blockGenerationCalculator(db *userTSDB, blockRange int64) func(b tsdb.BlockReader) string {
+	rangeHeadULID := ulid.MustParse("0000000000XXXXXXXRANGEHEAD")
+
 	return func(b tsdb.BlockReader) string {
-		gen := (db.Head().MinTime() - b.Meta().MinTime) / blockRange
-		if gen < 0 {
-			gen = 0
+		if b.Meta().ULID == rangeHeadULID {
+			return "0"
+		}
+
+		headMinTime := db.Head().MinTime()
+		if headMinTime == math.MaxInt64 {
+			return "1"
+		}
+
+		gen := (headMinTime - b.Meta().MinTime) / blockRange
+		if gen < 1 {
+			gen = 1
 		}
 		return strconv.FormatInt(gen, 10)
 	}
