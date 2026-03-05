@@ -31,6 +31,7 @@ import (
 
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -662,4 +663,122 @@ func BenchmarkNewLazyBinaryReader(b *testing.B) {
 			wg.Wait()
 		})
 	}
+}
+
+// BenchmarkLazyBinaryReader_LoadReader benchmarks the cost of the index header Reader when it is finally loaded.
+// With lazy-loading enabled, the Readers are not fully initialized until they are first queried,
+// which incurs different costs depending on the Reader implementation.
+func BenchmarkLazyBinaryReader_LoadReader(b *testing.B) {
+	ctx := context.Background()
+
+	bucketDir := b.TempDir()
+	bkt, err := filesystem.NewBucket(filepath.Join(bucketDir, "bkt"))
+	require.NoError(b, err)
+	instrBkt := objstore.WithNoopInstr(bkt)
+	b.Cleanup(func() {
+		require.NoError(b, bkt.Close())
+	})
+
+	// Each benchmark iteration requires a fresh LazyBinaryReader.
+	// Re-using the same lazy reader will not incur the cost of initializing the underlying Reader implementations.
+	type benchFactory func(*bucketcache.CachingBucket, *prometheus.Registry) *LazyBinaryReader
+
+	for _, nameCount := range []int{50, 100} {
+		for _, valueCount := range []int{100, 500, 1000} {
+			nameSymbols := generateSymbols("name", nameCount)
+			valueSymbols := generateSymbols("value", valueCount)
+
+			idIndexV2, err := block.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
+			require.NoError(b, err)
+			_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), nil)
+			require.NoError(b, err)
+
+			indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
+			require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
+
+			diskReaderBenchFactory := func(
+				cachingBucket *bucketcache.CachingBucket,
+				bktReg *prometheus.Registry,
+			) *LazyBinaryReader {
+				ll := log.NewNopLogger()
+				diskReaderFactory := func() (Reader, error) {
+					return NewStreamBinaryReader(
+						ctx, ll, cachingBucket, bucketDir, idIndexV2, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+				}
+				lazyReader, err := NewLazyBinaryReader(
+					ctx, Config{},
+					diskReaderFactory, ll, cachingBucket, bucketDir, idIndexV2,
+					NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop(),
+				)
+				require.NoError(b, err)
+
+				return lazyReader
+			}
+
+			bucketReaderBenchFactory := func(
+				cachingBucket *bucketcache.CachingBucket,
+				bktReg *prometheus.Registry,
+			) *LazyBinaryReader {
+				ll := log.NewNopLogger()
+				bucketReaderFactory := func() (Reader, error) {
+					return NewBucketBinaryReader(ctx, ll, cachingBucket, bucketDir, idIndexV2, 32, Config{})
+				}
+				lazyReader, err := NewLazyBinaryReader(
+					ctx, Config{BucketReader: BucketReaderConfig{Enabled: true}},
+					bucketReaderFactory, ll, cachingBucket, bucketDir, idIndexV2,
+					NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop(),
+				)
+				require.NoError(b, err)
+
+				return lazyReader
+			}
+
+			benchFactories := []struct {
+				name    string
+				factory benchFactory
+			}{
+				{"disk", diskReaderBenchFactory},
+				{"bucket", bucketReaderBenchFactory},
+			}
+			b.ResetTimer()
+			for _, benchFactory := range benchFactories {
+				b.Run(fmt.Sprintf("Names=%d/Values=%d/Reader=%s", len(nameSymbols), len(valueSymbols), benchFactory.name), func(b *testing.B) {
+					b.ReportAllocs()
+
+					for i := 0; i < b.N; i++ {
+						b.StopTimer()
+						cfg := bucketcache.NewCachingBucketConfig() // Caches nothing by default
+						bktReg := prometheus.NewPedanticRegistry()
+
+						metricsBkt := objstore.WrapWithMetrics(instrBkt, prometheus.WrapRegistererWithPrefix("thanos_", bktReg), "")
+						cachingBucket, err := bucketcache.NewCachingBucket("test", metricsBkt, cfg, log.NewNopLogger(), bktReg)
+						require.NoError(b, err)
+
+						// Time remains stopped while lazy reader is initialized;
+						// we only want to measure the cost of when the actual lazy load occurs later.
+						lazyReader := benchFactory.factory(cachingBucket, bktReg)
+
+						// CachingBucket metrics are re-used between iterations; record baseline for later diff.
+						baselineMetrics := test.RecordBucketMetrics(b, bktReg, []string{"get", "get_range"})
+						b.StartTimer()
+
+						reader, err := lazyReader.loadReader()
+						require.NoError(b, err)
+
+						b.StopTimer()
+
+						err = reader.Close()
+						require.NoError(b, err)
+						err = lazyReader.Close()
+						require.NoError(b, err)
+
+						metricsDiff := test.RecordBucketMetricsDiff(b, bktReg, []string{"get", "get_range"}, baselineMetrics)
+						test.ReportBucketMetrics(b, metricsDiff)
+					}
+
+				})
+			}
+		}
+	}
+
 }
