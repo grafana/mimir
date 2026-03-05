@@ -1928,6 +1928,16 @@ store_gateway_client:
 # CLI flag: -querier.enable-delayed-name-removal-prometheus-engine
 [enable_delayed_name_removal_prometheus_engine: <boolean> | default = false]
 
+# (experimental) Enable native OTel resource attribute metadata for the info()
+# function.
+# CLI flag: -querier.enable-native-metadata
+[enable_native_metadata: <boolean> | default = false]
+
+# (experimental) Strategy for info() to resolve resource attributes. Valid
+# values: target-info, resource-attributes, hybrid.
+# CLI flag: -querier.info-resource-strategy
+[info_resource_strategy: <string> | default = "target-info"]
+
 mimir_query_engine:
   # (experimental) Enable pruning query expressions that are toggled off with
   # constants.
@@ -2233,6 +2243,10 @@ results_cache:
 # active series queries.
 # CLI flag: -query-frontend.use-active-series-decoder
 [use_active_series_decoder: <boolean> | default = false]
+
+# (experimental) True to enable sharding of resource attributes queries.
+# CLI flag: -query-frontend.shard-resource-attributes-queries
+[shard_resource_attributes_queries: <boolean> | default = false]
 
 # (advanced) Comma-separated list of request header names to allow to pass
 # through to the rest of the query path. This is in addition to a list of
@@ -4417,6 +4431,16 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -querier.max-label-values-limit
 [max_label_values_limit: <int> | default = 0]
 
+# Maximum number of series the resource attributes endpoints return. If the
+# requested limit exceeds this value, it is clamped. 0 to disable.
+# CLI flag: -querier.max-resource-attributes-query-limit
+[max_resource_attributes_query_limit: <int> | default = 10000]
+
+# (advanced) Maximum estimated memory for the per-query resource attributes
+# cache. 0 to disable.
+# CLI flag: -querier.max-resource-attributes-cache-size-bytes
+[max_resource_attributes_cache_size_bytes: <int> | default = 52428800]
+
 # (advanced) Most recent allowed cacheable result per-tenant, to prevent caching
 # very recent results that might still be in flux.
 # CLI flag: -query-frontend.max-cache-freshness
@@ -4489,6 +4513,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # The value 0 disables the cache.
 # CLI flag: -query-frontend.results-cache-ttl-for-labels-query
 [results_cache_ttl_for_labels_query: <duration> | default = 0s]
+
+# Time to live duration for cached resource attributes query results. The value
+# 0 disables the cache.
+# CLI flag: -query-frontend.results-cache-ttl-for-resource-attributes-query
+[results_cache_ttl_for_resource_attributes_query: <duration> | default = 0s]
 
 # Time to live duration for cached non-transient errors
 # CLI flag: -query-frontend.results-cache-ttl-for-errors
@@ -5673,6 +5702,11 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.series-fetch-preference
   [series_fetch_preference: <float> | default = 0.75]
 
+  # (advanced) How long cached Parquet series-metadata data is kept in memory
+  # after last access. 0 to disable eviction.
+  # CLI flag: -blocks-storage.bucket-store.parquet-cache-idle-timeout
+  [parquet_cache_idle_timeout: <duration> | default = 30m]
+
 tsdb:
   # Directory to store TSDBs (including WAL) in the ingesters. This directory is
   # required to be persisted between restarts.
@@ -5881,6 +5915,26 @@ tsdb:
   # in the head.
   # CLI flag: -blocks-storage.tsdb.timely-head-compaction-enabled
   [timely_head_compaction_enabled: <boolean> | default = false]
+
+  # (experimental) Whether to persist OTel resource attributes per time series
+  # as metadata in Prometheus TSDB blocks. Resource attributes are stored in
+  # series_metadata.parquet files within blocks and can be queried via the
+  # /api/v1/resource_attributes endpoint.
+  # CLI flag: -blocks-storage.tsdb.otel-persist-resource-attributes
+  [otel_persist_resource_attributes: <boolean> | default = false]
+
+  # (experimental) Enable the in-memory resource attribute inverted index for
+  # O(1) reverse lookup by attribute key:value. When disabled, the index is not
+  # built in memory or written to Parquet during compaction.
+  # CLI flag: -blocks-storage.tsdb.otel-resource-attr-index-enabled
+  [otel_resource_attr_index_enabled: <boolean> | default = false]
+
+  # (experimental) Comma-separated list of additional descriptive resource
+  # attribute names to include in the inverted index. Identifying attributes
+  # (service.name, service.namespace, service.instance.id) are always indexed
+  # when the index is enabled.
+  # CLI flag: -blocks-storage.tsdb.otel-indexed-resource-attributes
+  [otel_indexed_resource_attributes: <string> | default = ""]
 
   index_lookup_planning:
     # (advanced) Cost for iterating postings that have been retrieved from the

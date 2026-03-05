@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/alecthomas/units"
+	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -109,7 +110,8 @@ var (
 	errInvalidWALReplayConcurrency                  = errors.New("invalid TSDB WAL replay concurrency")
 	errInvalidStripeSize                            = errors.New("invalid TSDB stripe size")
 	errInvalidStreamingBatchSize                    = errors.New("invalid store-gateway streaming batch size")
-	errInvalidEarlyHeadCompactionMinSeriesReduction = errors.New("early compaction minimum series reduction percentage must be a value between 0 and 100 (included)")
+	errInvalidEarlyHeadCompactionMinSeriesReduction        = errors.New("early compaction minimum series reduction percentage must be a value between 0 and 100 (included)")
+	errResourceAttrIndexRequiresPersistResourceAttributes = errors.New("otel_resource_attr_index_enabled requires otel_persist_resource_attributes to be enabled")
 	errEarlyCompactionRequiresActiveSeries          = fmt.Errorf("early compaction requires -%s to be enabled", activeseries.EnabledFlag)
 	errEmptyBlockranges                             = errors.New("empty block ranges for TSDB")
 	errInvalidIgnoreDeletionMarksDelayConfig        = fmt.Errorf("value for -%s must be less than -%s", ignoreDeletionMarksWhileQueryingDelayFlag, ignoreDeletionMarksInStoreGatewayDelayFlag)
@@ -274,6 +276,10 @@ type TSDBConfig struct {
 	// without requiring 1.5x the chunk range worth of data in the head.
 	TimelyHeadCompaction bool `yaml:"timely_head_compaction_enabled" category:"experimental"`
 
+	OTelPersistResourceAttributes bool                  `yaml:"otel_persist_resource_attributes" category:"experimental"`
+	OTelResourceAttrIndexEnabled  bool                  `yaml:"otel_resource_attr_index_enabled" category:"experimental"`
+	OTelIndexedResourceAttributes flagext.StringSliceCSV `yaml:"otel_indexed_resource_attributes" category:"experimental"`
+
 	IndexLookupPlanning struct {
 		lookupplan.CostConfig `yaml:",inline"`
 
@@ -338,6 +344,9 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage, "blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage", 15, "When the early compaction is enabled, the early compaction is triggered only if the estimated series reduction is at least the configured percentage (0-100).")
 	f.BoolVar(&cfg.TimelyHeadCompaction, "blocks-storage.tsdb.timely-head-compaction-enabled", false, "Allows head compaction to happen when the min block range can no longer be appended, without requiring 1.5x the chunk range worth of data in the head.")
 	f.BoolVar(&cfg.BiggerOutOfOrderBlocksForOldSamples, "blocks-storage.tsdb.bigger-out-of-order-blocks-for-old-samples", false, "When enabled, ingester produces 24h blocks for out-of-order data that is before the current day, instead of the usual 2h blocks.")
+	f.BoolVar(&cfg.OTelPersistResourceAttributes, "blocks-storage.tsdb.otel-persist-resource-attributes", false, "Whether to persist OTel resource attributes per time series as metadata in Prometheus TSDB blocks. Resource attributes are stored in series_metadata.parquet files within blocks and can be queried via the /api/v1/resource_attributes endpoint.")
+	f.BoolVar(&cfg.OTelResourceAttrIndexEnabled, "blocks-storage.tsdb.otel-resource-attr-index-enabled", false, "Enable the in-memory resource attribute inverted index for O(1) reverse lookup by attribute key:value. When disabled, the index is not built in memory or written to Parquet during compaction.")
+	f.Var(&cfg.OTelIndexedResourceAttributes, "blocks-storage.tsdb.otel-indexed-resource-attributes", "Comma-separated list of additional descriptive resource attribute names to include in the inverted index. Identifying attributes (service.name, service.namespace, service.instance.id) are always indexed when the index is enabled.")
 	f.BoolVar(&cfg.IndexLookupPlanning.Enabled, "blocks-storage.tsdb.index-lookup-planning.enabled", false, "Controls the collection of statistics and whether to defer some vector selector matchers to sequential scans. This leads to better performance.")
 	f.DurationVar(&cfg.IndexLookupPlanning.StatisticsCollectionFrequency, "blocks-storage.tsdb.index-lookup-planning.statistics-collection-frequency", time.Hour, "How frequently to collect block statistics, which are used in query execution optimization. 0 to disable.")
 	f.Float64Var(&cfg.IndexLookupPlanning.ComparisonPortion, "blocks-storage.tsdb.index-lookup-planning.comparison-portion", 0.0, "Portion of queries where a mirrored chunk querier compares results with and without index lookup planning. Value between 0 (disabled) and 1 (all queries).")
@@ -387,6 +396,10 @@ func (cfg *TSDBConfig) Validate(activeSeriesCfg activeseries.Config) error {
 
 	if cfg.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage < 0 || cfg.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage > 100 {
 		return errInvalidEarlyHeadCompactionMinSeriesReduction
+	}
+
+	if cfg.OTelResourceAttrIndexEnabled && !cfg.OTelPersistResourceAttributes {
+		return errResourceAttrIndexRequiresPersistResourceAttributes
 	}
 
 	if cfg.IndexLookupPlanning.Enabled {
@@ -453,8 +466,9 @@ type BucketStoreConfig struct {
 	// Controls advanced options for index-header file reading.
 	IndexHeader indexheader.Config `yaml:"index_header" category:"advanced"`
 
-	StreamingBatchSize    int     `yaml:"streaming_series_batch_size" category:"advanced"`
-	SeriesFetchPreference float64 `yaml:"series_fetch_preference" category:"advanced"`
+	StreamingBatchSize      int           `yaml:"streaming_series_batch_size" category:"advanced"`
+	SeriesFetchPreference   float64       `yaml:"series_fetch_preference" category:"advanced"`
+	ParquetCacheIdleTimeout time.Duration `yaml:"parquet_cache_idle_timeout" category:"advanced"`
 }
 
 // RegisterFlags registers the BucketStore flags
@@ -482,6 +496,7 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 	f.Uint64Var(&cfg.PartitionerMaxGapBytes, "blocks-storage.bucket-store.partitioner-max-gap-bytes", DefaultPartitionerMaxGapSize, "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests.")
 	f.IntVar(&cfg.StreamingBatchSize, "blocks-storage.bucket-store.batch-series-size", 5000, "This option controls how many series to fetch per batch. The batch size must be greater than 0.")
 	f.Float64Var(&cfg.SeriesFetchPreference, "blocks-storage.bucket-store.series-fetch-preference", 0.75, "This parameter controls the trade-off in fetching series versus fetching postings to fulfill a series request. Increasing the series preference results in fetching more series and reducing the volume of postings fetched. Reducing the series preference results in the opposite. Increase this parameter to reduce the rate of fetched series bytes (see \"Mimir / Queries\" dashboard) or API calls to the object store. Must be a positive floating point number.")
+	f.DurationVar(&cfg.ParquetCacheIdleTimeout, "blocks-storage.bucket-store.parquet-cache-idle-timeout", 30*time.Minute, "How long cached Parquet series-metadata data is kept in memory after last access. 0 to disable eviction.")
 }
 
 // Validate the config.

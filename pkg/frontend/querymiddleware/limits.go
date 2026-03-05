@@ -92,6 +92,9 @@ type Limits interface {
 	// ResultsCacheTTLForLabelsQuery returns TTL for cached results for label names and values queries.
 	ResultsCacheTTLForLabelsQuery(userID string) time.Duration
 
+	// ResultsCacheTTLForResourceAttributesQuery returns TTL for cached results for resource attributes queries.
+	ResultsCacheTTLForResourceAttributesQuery(userID string) time.Duration
+
 	// ResultsCacheTTLForErrors returns TTL for cached non-transient errors.
 	ResultsCacheTTLForErrors(userID string) time.Duration
 

@@ -750,6 +750,95 @@ func (r *bucketIndexReader) LookupLabelsSymbols(ctx context.Context, symbolized 
 	return builder.Labels(), nil
 }
 
+// resolvedPostingRef holds the resolved labels and StableHash for a posting ref.
+type resolvedPostingRef struct {
+	hash uint64
+	lbls labels.Labels
+}
+
+// resolvePostingRefsLabelsOnly loads series labels from the block index without
+// computing StableHash. Use this when the caller needs labels but not the hash
+// (e.g. the non-filter resource attributes path).
+func (r *bucketIndexReader) resolvePostingRefsLabelsOnly(ctx context.Context, refs []storage.SeriesRef, stats *safeQueryStats) (map[uint64]labels.Labels, error) {
+	if len(refs) == 0 {
+		return nil, nil
+	}
+
+	slices.Sort(refs)
+
+	loaded, err := r.preloadSeries(ctx, refs, stats)
+	if err != nil {
+		return nil, errors.Wrap(err, "preload series for ref resolution")
+	}
+
+	lsetPool := pool.NewSlabPool[symbolizedLabel](pool.NoopPool{}, 256)
+	qs := newQueryStats()
+	var chksBuf []chunks.Meta
+	var builder labels.ScratchBuilder
+
+	result := make(map[uint64]labels.Labels, len(refs))
+	for _, ref := range refs {
+		ok, syms, err := loaded.unsafeLoadSeries(ref, &chksBuf, true, qs, lsetPool)
+		if err != nil {
+			return nil, errors.Wrapf(err, "load series %d", ref)
+		}
+		if !ok {
+			continue
+		}
+
+		lbls, err := r.LookupLabelsSymbols(ctx, syms, &builder)
+		if err != nil {
+			return nil, errors.Wrapf(err, "resolve labels for series %d", ref)
+		}
+		result[uint64(ref)] = lbls
+	}
+
+	return result, nil
+}
+
+// resolvePostingRefsWithLabels loads series labels from the block index and computes
+// StableHash for each posting ref. Returns both the labels and hash, avoiding the
+// need for a separate series set iteration when labels are also needed.
+func (r *bucketIndexReader) resolvePostingRefsWithLabels(ctx context.Context, refs []storage.SeriesRef, stats *safeQueryStats) (map[uint64]resolvedPostingRef, error) {
+	if len(refs) == 0 {
+		return nil, nil
+	}
+
+	slices.Sort(refs)
+
+	loaded, err := r.preloadSeries(ctx, refs, stats)
+	if err != nil {
+		return nil, errors.Wrap(err, "preload series for ref resolution")
+	}
+
+	lsetPool := pool.NewSlabPool[symbolizedLabel](pool.NoopPool{}, 256)
+	qs := newQueryStats()
+	var chksBuf []chunks.Meta
+	var builder labels.ScratchBuilder
+
+	result := make(map[uint64]resolvedPostingRef, len(refs))
+	for _, ref := range refs {
+		ok, syms, err := loaded.unsafeLoadSeries(ref, &chksBuf, true, qs, lsetPool)
+		if err != nil {
+			return nil, errors.Wrapf(err, "load series %d", ref)
+		}
+		if !ok {
+			continue
+		}
+
+		lbls, err := r.LookupLabelsSymbols(ctx, syms, &builder)
+		if err != nil {
+			return nil, errors.Wrapf(err, "resolve labels for series %d", ref)
+		}
+		result[uint64(ref)] = resolvedPostingRef{
+			hash: labels.StableHash(lbls),
+			lbls: lbls,
+		}
+	}
+
+	return result, nil
+}
+
 // bucketIndexLoadedSeries holds the result of a series load operation.
 type bucketIndexLoadedSeries struct {
 	// Keeps the series that have been loaded from the index.

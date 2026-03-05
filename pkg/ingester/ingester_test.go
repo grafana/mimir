@@ -12270,3 +12270,4 @@ func makeTestRW2WriteRequest(syms *rw2util.SymbolTableBuilder) *mimirpb.WriteReq
 
 	return req
 }
+

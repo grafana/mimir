@@ -8,6 +8,7 @@ package querier
 import (
 	"context"
 	crand "crypto/rand"
+	"fmt"
 	"io"
 	"math"
 	"math/rand"
@@ -3297,14 +3298,16 @@ func (m *blocksFinderMock) GetBlocks(ctx context.Context, userID string, minT, m
 }
 
 type storeGatewayClientMock struct {
-	remoteAddr                string
-	remoteZone                string
-	mockedSeriesResponses     []*storepb.SeriesResponse
-	mockedSeriesErr           error
-	mockedLabelNamesResponse  *storepb.LabelNamesResponse
-	mockedLabelNamesErr       error
-	mockedLabelValuesResponse *storepb.LabelValuesResponse
-	mockedLabelValuesErr      error
+	remoteAddr                        string
+	remoteZone                        string
+	mockedSeriesResponses             []*storepb.SeriesResponse
+	mockedSeriesErr                   error
+	mockedLabelNamesResponse          *storepb.LabelNamesResponse
+	mockedLabelNamesErr               error
+	mockedLabelValuesResponse         *storepb.LabelValuesResponse
+	mockedLabelValuesErr              error
+	mockedResourceAttributesResponses []*storepb.ResourceAttributesResponse
+	mockedResourceAttributesErr       error
 }
 
 func (m *storeGatewayClientMock) Series(ctx context.Context, _ *storepb.SeriesRequest, _ ...grpc.CallOption) (storegatewaypb.StoreGateway_SeriesClient, error) {
@@ -3335,6 +3338,17 @@ func (m *storeGatewayClientMock) RemoteZone() string {
 	return m.remoteZone
 }
 
+func (m *storeGatewayClientMock) ResourceAttributes(ctx context.Context, _ *storepb.ResourceAttributesRequest, _ ...grpc.CallOption) (storegatewaypb.StoreGateway_ResourceAttributesClient, error) {
+	if m.mockedResourceAttributesErr != nil {
+		return nil, m.mockedResourceAttributesErr
+	}
+	resps := slices.Clone(m.mockedResourceAttributesResponses)
+	return &storeGatewayResourceAttributesClientMock{
+		ClientStream:    grpcClientStreamMock{ctx: ctx},
+		mockedResponses: resps,
+	}, nil
+}
+
 type storeGatewaySeriesClientMock struct {
 	grpc.ClientStream
 
@@ -3349,6 +3363,21 @@ func (m *storeGatewaySeriesClientMock) Recv() (*storepb.SeriesResponse, error) {
 		return nil, io.EOF
 	}
 
+	res := m.mockedResponses[0]
+	m.mockedResponses = m.mockedResponses[1:]
+	return res, nil
+}
+
+type storeGatewayResourceAttributesClientMock struct {
+	grpc.ClientStream
+
+	mockedResponses []*storepb.ResourceAttributesResponse
+}
+
+func (m *storeGatewayResourceAttributesClientMock) Recv() (*storepb.ResourceAttributesResponse, error) {
+	if len(m.mockedResponses) == 0 {
+		return nil, io.EOF
+	}
 	res := m.mockedResponses[0]
 	m.mockedResponses = m.mockedResponses[1:]
 	return res, nil
@@ -3416,6 +3445,11 @@ func (m *cancelerStoreGatewayClientMock) RemoteZone() string {
 	return m.remoteZone
 }
 
+func (m *cancelerStoreGatewayClientMock) ResourceAttributes(ctx context.Context, _ *storepb.ResourceAttributesRequest, _ ...grpc.CallOption) (storegatewaypb.StoreGateway_ResourceAttributesClient, error) {
+	m.cancel()
+	return nil, ctx.Err()
+}
+
 type blocksStoreLimitsMock struct {
 	maxLabelsQueryLength               time.Duration
 	maxChunksPerQuery                  int
@@ -3442,6 +3476,10 @@ func (m *blocksStoreLimitsMock) StoreGatewayTenantShardSizePerZone(_ string) int
 
 func (m *blocksStoreLimitsMock) StoreGatewayExpandedReplication(_ string) bool {
 	return m.storeGatewayExpandedReplication
+}
+
+func (m *blocksStoreLimitsMock) MaxResourceAttributesCacheSizeBytes(_ string) int {
+	return 0
 }
 
 func (m *blocksStoreLimitsMock) S3SSEType(_ string) string {
@@ -3784,4 +3822,209 @@ func TestShouldRetry(t *testing.T) {
 			assert.Equal(t, testData.expected, shouldRetry(testData.err))
 		})
 	}
+}
+
+func TestBlocksStoreQueryable_ResourceAttributes(t *testing.T) {
+	block1 := &bucketindex.Block{ID: ulid.MustNew(1, nil), MinTime: 100, MaxTime: 200}
+	block2 := &bucketindex.Block{ID: ulid.MustNew(2, nil), MinTime: 100, MaxTime: 200}
+
+	minT := int64(100)
+	maxT := int64(200)
+	matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "1")}
+
+	// Helper to build resource attributes responses with hints.
+	buildResourceAttributesResponses := func(items []*storepb.ResourceAttributesSeriesData, blockIDs ...ulid.ULID) []*storepb.ResourceAttributesResponse {
+		var resps []*storepb.ResourceAttributesResponse
+		if len(items) > 0 {
+			resps = append(resps, &storepb.ResourceAttributesResponse{Items: items})
+		}
+		if len(blockIDs) > 0 {
+			hints := &hintspb.ResourceAttributesResponseHints{}
+			for _, id := range blockIDs {
+				hints.AddQueriedBlock(id)
+			}
+			anyHints, err := types.MarshalAny(hints)
+			require.NoError(t, err)
+			resps = append(resps, &storepb.ResourceAttributesResponse{Hints: anyHints})
+		}
+		return resps
+	}
+
+	sampleItems := []*storepb.ResourceAttributesSeriesData{
+		{
+			Labels: map[string]string{"a": "1"},
+			Versions: []*storepb.ResourceVersionData{
+				{Identifying: map[string]string{"service.name": "svc-a"}, MinTimeMs: 100, MaxTimeMs: 200},
+			},
+		},
+	}
+
+	tests := map[string]struct {
+		finderResult      bucketindex.Blocks
+		finderErr         error
+		storeSetResponses []interface{} // map[BlocksStoreClient][]ulid.ULID or error
+		expectedResults   []*storepb.ResourceAttributesSeriesData
+		expectedErr       string
+	}{
+		"no blocks found": {
+			finderResult: nil,
+		},
+		"finder error": {
+			finderErr:   errors.New("finder failed"),
+			expectedErr: "finder failed",
+		},
+		"GetClientsFor error on first attempt": {
+			finderResult:      bucketindex.Blocks{block1},
+			storeSetResponses: []interface{}{errors.New("no clients available")},
+			expectedErr:       "no clients available",
+		},
+		"single store, all blocks returned": {
+			finderResult: bucketindex.Blocks{block1, block2},
+			storeSetResponses: []interface{}{
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{
+						remoteAddr:                        "1.1.1.1",
+						mockedResourceAttributesResponses: buildResourceAttributesResponses(sampleItems, block1.ID, block2.ID),
+					}: {block1.ID, block2.ID},
+				},
+			},
+			expectedResults: sampleItems,
+		},
+		"retriable error triggers retry, second attempt succeeds": {
+			finderResult: bucketindex.Blocks{block1},
+			storeSetResponses: []interface{}{
+				// First attempt: store fails with a retriable error.
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{
+						remoteAddr:                  "1.1.1.1",
+						mockedResourceAttributesErr: errors.New("connection refused"),
+					}: {block1.ID},
+				},
+				// Second attempt: new store succeeds.
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{
+						remoteAddr:                        "2.2.2.2",
+						mockedResourceAttributesResponses: buildResourceAttributesResponses(sampleItems, block1.ID),
+					}: {block1.ID},
+				},
+			},
+			expectedResults: sampleItems,
+		},
+		"non-retriable error returns immediately": {
+			finderResult: bucketindex.Blocks{block1},
+			storeSetResponses: []interface{}{
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{
+						remoteAddr:                  "1.1.1.1",
+						mockedResourceAttributesErr: gogoStatus.New(codes.Code(http.StatusUnprocessableEntity), "non-retriable").Err(),
+					}: {block1.ID},
+				},
+			},
+			expectedErr: "non-retriable",
+		},
+		"blocks missing after all retries returns partial results": {
+			finderResult: bucketindex.Blocks{block1, block2},
+			storeSetResponses: []interface{}{
+				// Store only returns hints for block1, not block2.
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{
+						remoteAddr:                        "1.1.1.1",
+						mockedResourceAttributesResponses: buildResourceAttributesResponses(sampleItems, block1.ID),
+					}: {block1.ID, block2.ID},
+				},
+				// Second attempt also fails to get block2 (GetClientsFor error ends the retry loop).
+				errors.New("no more clients"),
+			},
+			// Despite missing block2, we still get partial results for block1.
+			expectedResults: sampleItems,
+		},
+	}
+
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			finder := &blocksFinderMock{}
+			finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(
+				tc.finderResult,
+				&bucketindex.Metadata{},
+				tc.finderErr,
+			)
+
+			reg := prometheus.NewPedanticRegistry()
+			q := &BlocksStoreQueryable{
+				stores:             &blocksStoreSetMock{mockedResponses: tc.storeSetResponses},
+				finder:             finder,
+				dynamicReplication: newDynamicReplication(),
+				logger:             log.NewNopLogger(),
+				metrics:            newBlocksStoreQueryableMetrics(reg),
+			}
+
+			ctx := user.InjectOrgID(context.Background(), "user-1")
+			results, err := q.ResourceAttributes(ctx, minT, maxT, matchers, 0, nil)
+
+			if tc.expectedErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.expectedErr)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tc.expectedResults, results)
+			}
+		})
+	}
+}
+
+func TestBlocksStoreQueryable_ResourceAttributes_StreamEarlyBreak(t *testing.T) {
+	// When limit is set, fetchResourceAttributesFromStore should stop consuming the stream
+	// once enough results have been accumulated.
+	block1 := &bucketindex.Block{ID: ulid.MustNew(1, nil), MinTime: 100, MaxTime: 200}
+
+	hints := &hintspb.ResourceAttributesResponseHints{}
+	hints.AddQueriedBlock(block1.ID)
+	anyHints, err := types.MarshalAny(hints)
+	require.NoError(t, err)
+
+	// Create 5 items. The first response includes hints so the retry loop
+	// knows the block was queried regardless of early stream termination.
+	var resps []*storepb.ResourceAttributesResponse
+	for i := 0; i < 5; i++ {
+		item := &storepb.ResourceAttributesSeriesData{
+			Labels: map[string]string{"a": fmt.Sprintf("%d", i)},
+			Versions: []*storepb.ResourceVersionData{
+				{Identifying: map[string]string{"service.name": "svc"}, MinTimeMs: 100, MaxTimeMs: 200},
+			},
+		}
+		resp := &storepb.ResourceAttributesResponse{Items: []*storepb.ResourceAttributesSeriesData{item}}
+		if i == 0 {
+			resp.Hints = anyHints // attach hints to first message
+		}
+		resps = append(resps, resp)
+	}
+
+	finder := &blocksFinderMock{}
+	finder.On("GetBlocks", mock.Anything, "user-1", int64(100), int64(200)).Return(
+		bucketindex.Blocks{block1}, &bucketindex.Metadata{}, nil,
+	)
+
+	reg := prometheus.NewPedanticRegistry()
+	q := &BlocksStoreQueryable{
+		stores: &blocksStoreSetMock{mockedResponses: []interface{}{
+			map[BlocksStoreClient][]ulid.ULID{
+				&storeGatewayClientMock{
+					remoteAddr:                        "1.1.1.1",
+					mockedResourceAttributesResponses: resps,
+				}: {block1.ID},
+			},
+		}},
+		finder:             finder,
+		dynamicReplication: newDynamicReplication(),
+		logger:             log.NewNopLogger(),
+		metrics:            newBlocksStoreQueryableMetrics(reg),
+	}
+
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+	matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "1")}
+
+	// Request with limit=2 — should get at most 2 results due to early break.
+	results, err := q.ResourceAttributes(ctx, 100, 200, matchers, 2, nil)
+	require.NoError(t, err)
+	assert.LessOrEqual(t, len(results), 2, "stream should break early when limit is reached")
 }

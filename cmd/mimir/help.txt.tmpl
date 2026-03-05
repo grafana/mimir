@@ -593,6 +593,8 @@ Usage of ./cmd/mimir/mimir:
     	Limit how long back data (series and metadata) can be queried, up until <lookback> duration ago. This limit is enforced in the query-frontend, querier and ruler for instant, range and remote read queries. For metadata queries like series, label names, label values queries the limit is enforced in the querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.
   -querier.max-query-parallelism int
     	Maximum number of split (by time) or partial (by shard) queries that will be scheduled in parallel by the query-frontend for a single input query. This limit is introduced to have a fairer query scheduling and avoid a single query over a large time range saturating all available queriers. (default 14)
+  -querier.max-resource-attributes-query-limit int
+    	Maximum number of series the resource attributes endpoints return. If the requested limit exceeds this value, it is clamped. 0 to disable. (default 10000)
   -querier.max-samples int
     	Maximum number of samples a single query can load into memory. This config option should be set on query-frontend too when query sharding is enabled. (default 50000000)
   -querier.max-series-query-limit int
@@ -661,6 +663,8 @@ Usage of ./cmd/mimir/mimir:
     	Time to live duration for cached label names and label values query results. The value 0 disables the cache.
   -query-frontend.results-cache-ttl-for-out-of-order-time-window duration
     	Time to live duration for cached query results if query falls into out-of-order time window. This is lower than -query-frontend.results-cache-ttl so that incoming out-of-order samples are returned in the query results sooner. (default 10m)
+  -query-frontend.results-cache-ttl-for-resource-attributes-query duration
+    	Time to live duration for cached resource attributes query results. The value 0 disables the cache.
   -query-frontend.results-cache.backend string
     	Backend for query-frontend results cache, if not empty. Supported values: memcached.
   -query-frontend.results-cache.compression string

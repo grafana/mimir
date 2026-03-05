@@ -49,6 +49,7 @@ blocks_storage:
     dir: /data
     head_postings_for_matchers_cache_force: true
     block_postings_for_matchers_cache_force: true
+    otel_persist_resource_attributes: true
 
   bucket_store:
     index_cache:

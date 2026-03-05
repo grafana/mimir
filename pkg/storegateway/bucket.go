@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -34,6 +35,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/thanos-io/objstore"
 	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/atomic"
@@ -56,6 +58,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -130,6 +133,10 @@ type BucketStore struct {
 
 	// postingsStrategy is a strategy shared among all tenants.
 	postingsStrategy postingsSelectionStrategy
+
+	// Background service that evicts idle Parquet caches.
+	parquetCacheIdleTimeout time.Duration
+	parquetEvictionService  services.Service
 }
 
 type noopCache struct{}
@@ -244,6 +251,14 @@ func NewBucketStore(
 		option(s)
 	}
 
+	s.parquetCacheIdleTimeout = bucketStoreConfig.ParquetCacheIdleTimeout
+	if s.parquetCacheIdleTimeout > 0 {
+		s.parquetEvictionService = services.NewTimerService(
+			s.parquetCacheIdleTimeout/10, nil, s.evictIdleParquetCaches, nil)
+	} else {
+		s.parquetEvictionService = services.NewIdleService(nil, nil)
+	}
+
 	s.indexReaderPool = indexheader.NewReaderPool(s.logger, bucketStoreConfig.IndexHeader, s.lazyLoadingGate, metrics.indexHeaderReaderMetrics)
 
 	if bucketStoreConfig.IndexHeader.LazyLoadingEnabled {
@@ -267,11 +282,15 @@ func NewBucketStore(
 
 func (s *BucketStore) start(context.Context) error {
 	// Use context.Background() so that we stop the index reader pool ourselves and do it after closing all blocks.
-	return services.StartAndAwaitRunning(context.Background(), s.indexReaderPool)
+	if err := services.StartAndAwaitRunning(context.Background(), s.indexReaderPool); err != nil {
+		return err
+	}
+	return services.StartAndAwaitRunning(context.Background(), s.parquetEvictionService)
 }
 
 func (s *BucketStore) stop(err error) error {
 	errs := multierror.New(err)
+	errs.Add(services.StopAndAwaitTerminated(context.Background(), s.parquetEvictionService))
 	errs.Add(s.closeAllBlocks())
 	// The snapshotter depends on the reader pool, so we close the snapshotter first.
 	errs.Add(services.StopAndAwaitTerminated(context.Background(), s.snapshotter))
@@ -1588,6 +1607,783 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 	}, nil
 }
 
+// resourceAttributesMaxSizeBytes is the max size per streaming response batch.
+const resourceAttributesMaxSizeBytes = 1 * 1024 * 1024
+
+// ResourceAttributes returns OTel resource attributes for series matching the matchers.
+// It reads the series_metadata.parquet files from blocks in object storage.
+func (s *BucketStore) ResourceAttributes(req *storepb.ResourceAttributesRequest, srv storegatewaypb.StoreGateway_ResourceAttributesServer) error {
+	ctx := srv.Context()
+	spanLog := spanlogger.FromContext(ctx, s.logger)
+
+	matchers, err := storepb.MatchersToPromMatchers(req.Matchers...)
+	if err != nil {
+		return status.Error(codes.InvalidArgument, errors.Wrap(err, "translate matchers").Error())
+	}
+
+	var reqBlockMatchers []*labels.Matcher
+	if req.Hints != nil {
+		reqHints := &hintspb.ResourceAttributesRequestHints{}
+		if err := types.UnmarshalAny(req.Hints, reqHints); err != nil {
+			return status.Error(codes.InvalidArgument, errors.Wrap(err, "unmarshal resource attributes request hints").Error())
+		}
+		reqBlockMatchers, err = storepb.MatchersToPromMatchers(reqHints.BlockMatchers...)
+		if err != nil {
+			return status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints block matchers").Error())
+		}
+	}
+
+	g, gctx := errgroup.WithContext(ctx)
+
+	var resultsMtx sync.Mutex
+	var allItems []*storepb.ResourceAttributesSeriesData
+	limit := req.Limit
+
+	resourceAttrFilters := req.ResourceAttrFilters
+
+	resHints := &hintspb.ResourceAttributesResponseHints{}
+
+	// Iterate over blocks matching the time range.
+	// Use the query gate to limit concurrent per-block work, matching the Series path.
+	stats := newSafeQueryStats()
+	s.blockSet.filter(req.Start, req.End, reqBlockMatchers, func(b *bucketBlock) {
+		resHints.AddQueriedBlock(b.meta.ULID)
+		// Create the index reader inside the filter callback (under closedMtx.RLock)
+		// so that pendingReaders.Add(1) prevents Close() from completing while
+		// the goroutine runs. This matches the pattern in LabelNames/LabelValues.
+		indexr := b.indexReader(s.postingsStrategy)
+
+		g.Go(func() error {
+			defer runutil.CloseWithLogOnErr(b.logger, indexr, "resource attributes index reader")
+
+			if err := s.queryGate.Start(gctx); err != nil {
+				return err
+			}
+			defer s.queryGate.Done()
+
+			b.ensureIndexHeaderLoaded(gctx, stats)
+
+			var items []*storepb.ResourceAttributesSeriesData
+			var err error
+			if len(resourceAttrFilters) > 0 {
+				items, err = s.blockResourceAttributesByFilter(gctx, b, indexr, resourceAttrFilters, req.Start, req.End, stats)
+			} else {
+				items, err = s.blockResourceAttributes(gctx, b, indexr, matchers, req.Start, req.End, stats)
+			}
+			if err != nil {
+				return errors.Wrapf(err, "block %s", b.meta.ULID)
+			}
+
+			if len(items) > 0 {
+				resultsMtx.Lock()
+				allItems = append(allItems, items...)
+				resultsMtx.Unlock()
+			}
+			return nil
+		})
+	})
+
+	if err := g.Wait(); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return status.Error(codes.Canceled, err.Error())
+		}
+		return status.Error(codes.Internal, err.Error())
+	}
+
+	spanLog.DebugLog("msg", "collected resource attributes from blocks", "count", len(allItems))
+
+	// Deduplicate by labels key (keeping all versions merged)
+	deduped := deduplicateResourceAttributeItems(allItems)
+
+	// Apply limit after deduplication
+	if limit > 0 && int64(len(deduped)) > limit {
+		deduped = deduped[:limit]
+	}
+
+	// Send results in batches
+	if err := sendResourceAttributesBatched(srv, deduped, resourceAttributesMaxSizeBytes); err != nil {
+		return err
+	}
+
+	// Send response hints with queried block ULIDs (used by querier for block tracking).
+	anyHints, err := types.MarshalAny(resHints)
+	if err != nil {
+		return status.Error(codes.Unknown, errors.Wrap(err, "marshal resource attributes response hints").Error())
+	}
+	return srv.Send(&storepb.ResourceAttributesResponse{Hints: anyHints})
+}
+
+// maxPrefetchBytes is the maximum size of a series_metadata.parquet file
+// that we'll load into memory. Files larger than this are rejected to
+// guard against OOM from unexpectedly large or corrupt objects.
+const maxPrefetchBytes = 256 << 20 // 256 MiB
+
+// prefetchedReaderAt fetches the entire object into memory and serves
+// ReadAt from the buffer. This avoids 150+ HTTP range requests that
+// parquet-go would otherwise issue when lazily reading footer, page
+// indices, bloom filters, column chunks and pages.
+type prefetchedReaderAt struct {
+	data []byte
+}
+
+func newPrefetchedReaderAt(ctx context.Context, bkt objstore.BucketReader, name string, size int64) (*prefetchedReaderAt, error) {
+	if size > maxPrefetchBytes {
+		return nil, fmt.Errorf("series metadata file too large to prefetch: %d bytes (max %d)", size, maxPrefetchBytes)
+	}
+	rc, err := bkt.GetRange(ctx, name, 0, size)
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+	buf := make([]byte, size)
+	if _, err := io.ReadFull(rc, buf); err != nil {
+		return nil, err
+	}
+	return &prefetchedReaderAt{data: buf}, nil
+}
+
+func (r *prefetchedReaderAt) ReadAt(p []byte, off int64) (int, error) {
+	if off < 0 || off >= int64(len(r.data)) {
+		return 0, io.EOF
+	}
+	n := copy(p, r.data[off:])
+	if n < len(p) {
+		return n, io.EOF
+	}
+	return n, nil
+}
+
+// fetchParquetData returns the prefetched series_metadata.parquet data,
+// fetching and caching it on first access. Returns (nil, 0, nil) if the
+// file does not exist or is empty.
+//
+// IMPORTANT: This method must NOT acquire closedMtx while holding parquetMu
+// (or vice-versa) to avoid lock-ordering deadlocks with Close().
+func (b *bucketBlock) fetchParquetData(ctx context.Context) (*prefetchedReaderAt, int64, error) {
+	b.parquetMu.Lock()
+	if b.parquetReader != nil {
+		r, s := b.parquetReader, b.parquetSize
+		b.parquetMu.Unlock()
+		b.parquetUsedAt.Store(time.Now().UnixNano())
+		return r, s, nil
+	}
+	if b.parquetNoFile {
+		b.parquetMu.Unlock()
+		return nil, 0, nil
+	}
+	b.parquetMu.Unlock()
+
+	// Fetch outside the lock. Concurrent fetches for the same block are
+	// possible but rare (gated by queryGate) and harmless — only one is stored.
+	parquetPath := path.Join(b.meta.ULID.String(), seriesmetadata.SeriesMetadataFilename)
+	attrs, err := b.bkt.Attributes(ctx, parquetPath)
+	if err != nil {
+		if b.bkt.IsObjNotFoundErr(err) {
+			b.parquetMu.Lock()
+			b.parquetNoFile = true
+			b.parquetMu.Unlock()
+			return nil, 0, nil
+		}
+		return nil, 0, err
+	}
+	if attrs.Size == 0 {
+		b.parquetMu.Lock()
+		b.parquetNoFile = true
+		b.parquetMu.Unlock()
+		return nil, 0, nil
+	}
+
+	reader, err := newPrefetchedReaderAt(ctx, b.bkt, parquetPath, attrs.Size)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	b.parquetMu.Lock()
+	if b.parquetReader == nil {
+		b.parquetReader = reader
+		b.parquetSize = attrs.Size
+	}
+	r, s := b.parquetReader, b.parquetSize
+	b.parquetMu.Unlock()
+	b.parquetUsedAt.Store(time.Now().UnixNano())
+	return r, s, nil
+}
+
+// evictIdleParquetCaches scans all blocks and evicts Parquet caches that have been idle
+// for longer than the configured timeout. Called periodically by the timer service.
+func (s *BucketStore) evictIdleParquetCaches(_ context.Context) error {
+	threshold := time.Now().Add(-s.parquetCacheIdleTimeout).UnixNano()
+	s.blockSet.forEach(func(b *bucketBlock) {
+		b.evictParquetIfIdleSince(threshold)
+	})
+	return nil
+}
+
+// evictParquetIfIdleSince evicts cached Parquet data if it was last accessed before the given threshold.
+// Returns true if eviction occurred. Does not clear parquetNoFile (negative cache is permanent).
+func (b *bucketBlock) evictParquetIfIdleSince(threshold int64) bool {
+	b.parquetMu.Lock()
+	defer b.parquetMu.Unlock()
+	if b.parquetReader == nil {
+		return false
+	}
+	if b.parquetUsedAt.Load() > threshold {
+		return false
+	}
+	b.parquetReader = nil
+	b.parquetSize = 0
+	return true
+}
+
+// blockResourceAttributes reads resource attributes for matching series from a single block.
+// The caller must provide a pre-created indexr (created inside the blockSet.filter callback
+// to prevent the block from being closed while this method runs).
+func (s *BucketStore) blockResourceAttributes(ctx context.Context, b *bucketBlock, indexr *bucketIndexReader, matchers []*labels.Matcher, startMs, endMs int64, stats *safeQueryStats) ([]*storepb.ResourceAttributesSeriesData, error) {
+	readerAt, size, err := b.fetchParquetData(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "fetch parquet data")
+	}
+	if readerAt == nil {
+		return nil, nil
+	}
+
+	postings, pendingMatchers, err := indexr.ExpandedPostings(ctx, matchers, stats)
+	if err != nil {
+		return nil, errors.Wrap(err, "expanded postings")
+	}
+	if len(postings) == 0 {
+		return nil, nil
+	}
+
+	// ExpandedPostings returns byte-offset refs (series_id * 16 for v2+ indexes),
+	// while the Parquet file stores raw series IDs. We need to convert when filtering.
+	indexVersion, err := indexr.block.indexHeaderReader.IndexVersion(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "get index version")
+	}
+	seriesByteAlign := uint64(1)
+	if indexVersion >= 2 {
+		seriesByteAlign = 16
+	}
+
+	// Build a set of Parquet-space series IDs for filtering during streaming.
+	postingsSet := make(map[uint64]struct{}, len(postings))
+	for _, ref := range postings {
+		postingsSet[uint64(ref)/seriesByteAlign] = struct{}{}
+	}
+
+	// Step 2: Stream resource data from Parquet, skipping non-matching refs.
+	pf, err := seriesmetadata.OpenParquetFile(util_log.SlogFromGoKit(s.logger), readerAt, size)
+	if err != nil {
+		return nil, errors.Wrap(err, "open parquet file")
+	}
+	resourcesByPostingRef := make(map[uint64][]*storepb.ResourceVersionData)
+	// Track seen versions per series to dedup across row groups,
+	// matching the pattern in blockResourceAttributesByFilter.
+	type versionKeyFwd struct {
+		minTime     int64
+		maxTime     int64
+		identifying string
+	}
+	seenVersions := make(map[uint64]map[versionKeyFwd]struct{})
+
+	minTimeMs := int64(math.MinInt64)
+	if startMs != 0 {
+		minTimeMs = startMs
+	}
+	maxTimeMs := int64(math.MaxInt64)
+	if endMs != 0 {
+		maxTimeMs = endMs
+	}
+	err = seriesmetadata.StreamVersionedResourcesFromFile(util_log.SlogFromGoKit(s.logger), pf,
+		seriesmetadata.WithSeriesRefFilter(func(seriesRef uint64) bool {
+			_, ok := postingsSet[seriesRef]
+			return ok
+		}),
+		seriesmetadata.WithTimeRange(minTimeMs, maxTimeMs),
+		seriesmetadata.WithOnVersionedResource(func(seriesRef uint64, vr *seriesmetadata.VersionedResource) error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			// Convert parquet series ID back to byte-offset ref for label resolution.
+			ref := seriesRef * seriesByteAlign
+			seen := seenVersions[ref]
+			for _, rv := range vr.Versions {
+				vk := versionKeyFwd{minTime: rv.MinTime, maxTime: rv.MaxTime, identifying: identifyingKey(rv.Identifying)}
+				if seen != nil {
+					if _, dup := seen[vk]; dup {
+						continue
+					}
+				}
+				var entities []*storepb.EntityData
+				for _, e := range rv.Entities {
+					entities = append(entities, &storepb.EntityData{
+						Type:        e.Type,
+						Id:          e.ID,
+						Description: e.Description,
+					})
+				}
+				resourcesByPostingRef[ref] = append(resourcesByPostingRef[ref], &storepb.ResourceVersionData{
+					Identifying: rv.Identifying,
+					Descriptive: rv.Descriptive,
+					Entities:    entities,
+					MinTimeMs:   rv.MinTime,
+					MaxTimeMs:   rv.MaxTime,
+				})
+				if seen == nil {
+					seen = make(map[versionKeyFwd]struct{})
+					seenVersions[ref] = seen
+				}
+				seen[vk] = struct{}{}
+			}
+			return nil
+		}))
+	if err != nil {
+		return nil, errors.Wrap(err, "stream resource attributes from parquet")
+	}
+
+	if len(resourcesByPostingRef) == 0 {
+		return nil, nil
+	}
+
+	// Step 3: Resolve labels only for refs that actually have Parquet metadata.
+	// This avoids preloadSeries + label resolution for the (potentially vast)
+	// majority of matching postings that have no resource metadata.
+	refsToResolve := make([]storage.SeriesRef, 0, len(resourcesByPostingRef))
+	for ref := range resourcesByPostingRef {
+		refsToResolve = append(refsToResolve, storage.SeriesRef(ref))
+	}
+	slices.Sort(refsToResolve)
+
+	resolvedLabels, err := indexr.resolvePostingRefsLabelsOnly(ctx, refsToResolve, stats)
+	if err != nil {
+		return nil, errors.Wrap(err, "resolve posting refs")
+	}
+
+	// Step 4: Build the result, applying pending matchers.
+	var result []*storepb.ResourceAttributesSeriesData
+
+	for _, ref := range refsToResolve {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		uref := uint64(ref)
+
+		lbls, ok := resolvedLabels[uref]
+		if !ok {
+			level.Debug(s.logger).Log("msg", "skipping series ref with no resolved labels", "ref", uref)
+			continue
+		}
+
+		// Apply any pending matchers that ExpandedPostings couldn't resolve.
+		if len(pendingMatchers) > 0 {
+			matched := true
+			for _, m := range pendingMatchers {
+				if !m.Matches(lbls.Get(m.Name)) {
+					matched = false
+					break
+				}
+			}
+			if !matched {
+				continue
+			}
+		}
+
+		versions := resourcesByPostingRef[uref]
+		if len(versions) == 0 {
+			continue
+		}
+
+		labelsMap := make(map[string]string, lbls.Len())
+		lbls.Range(func(l labels.Label) {
+			labelsMap[l.Name] = l.Value
+		})
+
+		result = append(result, &storepb.ResourceAttributesSeriesData{
+			Labels:   labelsMap,
+			Versions: versions,
+		})
+	}
+
+	return result, nil
+}
+
+// blockResourceAttributesByFilter performs reverse lookup of resource attributes by filter.
+// The caller must provide a pre-created indexr (created inside the blockSet.filter callback
+// to prevent the block from being closed while this method runs).
+func (s *BucketStore) blockResourceAttributesByFilter(ctx context.Context, b *bucketBlock, indexr *bucketIndexReader, filters []*storepb.ResourceAttrFilter, startMs, endMs int64, stats *safeQueryStats) ([]*storepb.ResourceAttributesSeriesData, error) {
+	readerAt, size, err := b.fetchParquetData(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "fetch parquet data")
+	}
+	if readerAt == nil {
+		return nil, nil
+	}
+
+	// Open the Parquet file once and share across both streaming passes.
+	pf, err := seriesmetadata.OpenParquetFile(util_log.SlogFromGoKit(s.logger), readerAt, size)
+	if err != nil {
+		return nil, errors.Wrap(err, "open parquet file")
+	}
+
+	// resolvePostingRefsWithLabels expects byte-offset refs (series_id * 16 for v2+),
+	// while the Parquet file stores raw series IDs. Compute the alignment factor.
+	indexVersion, err := indexr.block.indexHeaderReader.IndexVersion(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "get index version")
+	}
+	seriesByteAlign := uint64(1)
+	if indexVersion >= 2 {
+		seriesByteAlign = 16
+	}
+
+	// Step 1: Stream the inverted index to find series refs matching all filters.
+	// Build per-filter match sets, then intersect.
+	perFilterHashes := make([]map[uint64]struct{}, len(filters))
+	for i := range perFilterHashes {
+		perFilterHashes[i] = make(map[uint64]struct{})
+	}
+
+	// Pre-build a lookup map for O(1) filter matching instead of O(filters) per row.
+	filterLookup := make(map[string]map[string][]int, len(filters))
+	for i, f := range filters {
+		if filterLookup[f.Key] == nil {
+			filterLookup[f.Key] = make(map[string][]int)
+		}
+		filterLookup[f.Key][f.Value] = append(filterLookup[f.Key][f.Value], i)
+	}
+
+	err = seriesmetadata.StreamResourceAttrIndexFromFile(pf,
+		seriesmetadata.WithOnAttrIndexEntry(func(key, value string, seriesRef uint64) error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			ref := seriesRef
+			if vals, ok := filterLookup[key]; ok {
+				if indices, ok := vals[value]; ok {
+					for _, idx := range indices {
+						perFilterHashes[idx][ref] = struct{}{}
+					}
+				}
+			}
+			return nil
+		}))
+	if err != nil {
+		return nil, errors.Wrap(err, "stream resource attr index")
+	}
+
+	// Intersect all filter results (AND semantics).
+	if len(perFilterHashes) == 0 {
+		return nil, nil
+	}
+	matchingHashes := perFilterHashes[0]
+	for i := 1; i < len(perFilterHashes); i++ {
+		intersected := make(map[uint64]struct{})
+		for h := range matchingHashes {
+			if _, ok := perFilterHashes[i][h]; ok {
+				intersected[h] = struct{}{}
+			}
+		}
+		matchingHashes = intersected
+	}
+	if len(matchingHashes) == 0 {
+		return nil, nil
+	}
+
+	// Step 2: Stream resource data only for matching hashes.
+	// Accumulate by labelsHash to handle cross-row-group duplicates.
+	resultsByHash := make(map[uint64]*storepb.ResourceAttributesSeriesData)
+	// Track seen versions per series to dedup across row groups.
+	type versionKey struct {
+		minTime     int64
+		maxTime     int64
+		identifying string
+	}
+	seenVersions := make(map[uint64]map[versionKey]struct{})
+
+	minTimeMs := int64(math.MinInt64)
+	if startMs != 0 {
+		minTimeMs = startMs
+	}
+	maxTimeMs := int64(math.MaxInt64)
+	if endMs != 0 {
+		maxTimeMs = endMs
+	}
+	err = seriesmetadata.StreamVersionedResourcesFromFile(util_log.SlogFromGoKit(s.logger), pf,
+		seriesmetadata.WithSeriesRefFilter(func(seriesRef uint64) bool {
+			_, ok := matchingHashes[seriesRef]
+			return ok
+		}),
+		seriesmetadata.WithTimeRange(minTimeMs, maxTimeMs),
+		seriesmetadata.WithOnVersionedResource(func(parquetRef uint64, vr *seriesmetadata.VersionedResource) error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			ref := parquetRef
+
+			var filteredVersions []*storepb.ResourceVersionData
+			seen := seenVersions[ref]
+			for _, rv := range vr.Versions {
+				vk := versionKey{minTime: rv.MinTime, maxTime: rv.MaxTime, identifying: identifyingKey(rv.Identifying)}
+				if seen != nil {
+					if _, dup := seen[vk]; dup {
+						continue
+					}
+				}
+				var entities []*storepb.EntityData
+				for _, e := range rv.Entities {
+					entities = append(entities, &storepb.EntityData{
+						Type:        e.Type,
+						Id:          e.ID,
+						Description: e.Description,
+					})
+				}
+				filteredVersions = append(filteredVersions, &storepb.ResourceVersionData{
+					Identifying: rv.Identifying,
+					Descriptive: rv.Descriptive,
+					Entities:    entities,
+					MinTimeMs:   rv.MinTime,
+					MaxTimeMs:   rv.MaxTime,
+				})
+				if seen == nil {
+					seen = make(map[versionKey]struct{})
+					seenVersions[ref] = seen
+				}
+				seen[vk] = struct{}{}
+			}
+
+			if len(filteredVersions) == 0 {
+				return nil
+			}
+
+			existing, ok := resultsByHash[ref]
+			if !ok {
+				existing = &storepb.ResourceAttributesSeriesData{
+					Labels: map[string]string{"__series_hash__": strconv.FormatUint(ref, 16)},
+				}
+				resultsByHash[ref] = existing
+			}
+			existing.Versions = append(existing.Versions, filteredVersions...)
+			return nil
+		}))
+	if err != nil {
+		return nil, errors.Wrap(err, "stream versioned resources")
+	}
+
+	if len(resultsByHash) == 0 {
+		return nil, nil
+	}
+
+	// Resolve posting refs to StableHash and real labels for cross-block
+	// deduplication. Parquet files store raw series IDs (not byte-offset
+	// SeriesRefs), which differ across blocks for the same series.
+	// StableHash is consistent. We also need the real labels (not just the
+	// synthetic __series_hash__ placeholder) so the response is usable by callers.
+	// resolvePostingRefsWithLabels expects byte-offset refs, so multiply.
+	refsToResolve := make([]storage.SeriesRef, 0, len(resultsByHash))
+	for ref := range resultsByHash {
+		refsToResolve = append(refsToResolve, storage.SeriesRef(ref*seriesByteAlign))
+	}
+	slices.Sort(refsToResolve)
+
+	resolved, err := indexr.resolvePostingRefsWithLabels(ctx, refsToResolve, stats)
+	if err != nil {
+		return nil, errors.Wrap(err, "resolve posting refs to stable hash and labels")
+	}
+
+	// Re-key results using StableHash and replace synthetic labels with real ones.
+	// Iterate refsToResolve (sorted) for deterministic ordering.
+	resolvedResults := make(map[uint64]*storepb.ResourceAttributesSeriesData, len(resultsByHash))
+	var resolvedHashes []uint64
+	for _, ref := range refsToResolve {
+		uref := uint64(ref)
+		// Look up in resultsByHash using parquet-space ref (divide back).
+		parquetRef := uref / seriesByteAlign
+		item, ok := resultsByHash[parquetRef]
+		if !ok {
+			continue
+		}
+		rp, ok := resolved[uref]
+		if !ok {
+			level.Debug(s.logger).Log("msg", "skipping series ref with no resolved stable hash", "ref", uref)
+			continue
+		}
+
+		// Replace the synthetic __series_hash__ placeholder with real labels.
+		labelsMap := make(map[string]string, rp.lbls.Len())
+		rp.lbls.Range(func(l labels.Label) {
+			labelsMap[l.Name] = l.Value
+		})
+		item.Labels = labelsMap
+
+		if existing, ok := resolvedResults[rp.hash]; ok {
+			existing.Versions = append(existing.Versions, item.Versions...)
+		} else {
+			resolvedResults[rp.hash] = item
+			resolvedHashes = append(resolvedHashes, rp.hash)
+		}
+	}
+
+	// Convert map to slice. Use resolvedHashes for deterministic order.
+	slices.Sort(resolvedHashes)
+	result := make([]*storepb.ResourceAttributesSeriesData, 0, len(resolvedResults))
+	for _, hash := range resolvedHashes {
+		result = append(result, resolvedResults[hash])
+	}
+	return result, nil
+}
+
+// deduplicateResourceAttributeItems deduplicates items by series labels,
+// merging resource versions from different blocks.
+func deduplicateResourceAttributeItems(items []*storepb.ResourceAttributesSeriesData) []*storepb.ResourceAttributesSeriesData {
+	if len(items) == 0 {
+		return items
+	}
+
+	// Build a dedup key from labels. Reuse a single sorted-keys slice and
+	// strings.Builder across all items to minimize allocations.
+	type seriesKey string
+	var sortedKeys []string
+	var buf strings.Builder
+	makeKey := func(lbls map[string]string) seriesKey {
+		sortedKeys = sortedKeys[:0]
+		for k := range lbls {
+			sortedKeys = append(sortedKeys, k)
+		}
+		slices.Sort(sortedKeys)
+
+		buf.Reset()
+		for _, k := range sortedKeys {
+			buf.WriteString(k)
+			buf.WriteByte(0)
+			buf.WriteString(lbls[k])
+			buf.WriteByte(1)
+		}
+		return seriesKey(buf.String())
+	}
+
+	byKey := make(map[seriesKey]*storepb.ResourceAttributesSeriesData)
+
+	for _, item := range items {
+		key := makeKey(item.Labels)
+		existing, ok := byKey[key]
+		if !ok {
+			byKey[key] = item
+			continue
+		}
+
+		// Merge versions, deduplicating by time range and identifying attributes
+		existing.Versions = mergeResourceVersions(existing.Versions, item.Versions)
+	}
+
+	// Sort keys for deterministic output order, so that limit truncation
+	// returns a reproducible subset.
+	keys := make([]seriesKey, 0, len(byKey))
+	for k := range byKey {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+
+	result := make([]*storepb.ResourceAttributesSeriesData, 0, len(byKey))
+	for _, k := range keys {
+		result = append(result, byKey[k])
+	}
+	return result
+}
+
+// identifyingKey builds a deterministic string from identifying attributes
+// for use as part of a deduplication key. Keys are sorted to ensure
+// consistent output regardless of map iteration order.
+func identifyingKey(m map[string]string) string {
+	if len(m) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	var b strings.Builder
+	for _, k := range keys {
+		b.WriteString(k)
+		b.WriteByte(0) // key-value separator
+		b.WriteString(m[k])
+		b.WriteByte(1) // pair terminator
+	}
+	return b.String()
+}
+
+// mergeResourceVersions merges two slices of resource versions, deduplicating by time range and identifying attributes.
+func mergeResourceVersions(a, b []*storepb.ResourceVersionData) []*storepb.ResourceVersionData {
+	if len(a) == 0 {
+		return b
+	}
+	if len(b) == 0 {
+		return a
+	}
+
+	type versionKey struct {
+		minTime        int64
+		maxTime        int64
+		identifyingKey string
+	}
+
+	seen := make(map[versionKey]bool)
+	result := make([]*storepb.ResourceVersionData, 0, len(a)+len(b))
+
+	for _, v := range a {
+		key := versionKey{v.MinTimeMs, v.MaxTimeMs, identifyingKey(v.Identifying)}
+		if !seen[key] {
+			seen[key] = true
+			result = append(result, v)
+		}
+	}
+
+	for _, v := range b {
+		key := versionKey{v.MinTimeMs, v.MaxTimeMs, identifyingKey(v.Identifying)}
+		if !seen[key] {
+			seen[key] = true
+			result = append(result, v)
+		}
+	}
+
+	return result
+}
+
+// sendResourceAttributesBatched sends resource attributes in batches to avoid exceeding message size limits.
+func sendResourceAttributesBatched(srv storegatewaypb.StoreGateway_ResourceAttributesServer, items []*storepb.ResourceAttributesSeriesData, maxBatchSize int) error {
+	if len(items) == 0 {
+		return nil
+	}
+
+	resp := &storepb.ResourceAttributesResponse{}
+	currentSize := 0
+
+	for _, item := range items {
+		itemSize := item.Size()
+
+		if currentSize+itemSize > maxBatchSize && len(resp.Items) > 0 {
+			if err := srv.Send(resp); err != nil {
+				return errors.Wrap(err, "send response batch")
+			}
+			resp = &storepb.ResourceAttributesResponse{}
+			currentSize = 0
+		}
+
+		resp.Items = append(resp.Items, item)
+		currentSize += itemSize
+	}
+
+	// Send remaining items
+	if len(resp.Items) > 0 {
+		if err := srv.Send(resp); err != nil {
+			return errors.Wrap(err, "send final response batch")
+		}
+	}
+
+	return nil
+}
+
 // blockLabelValues returns sorted values of the label with requested name,
 // optionally restricting the search to the series that match the matchers provided.
 // - First we fetch all possible values for this label from the index.
@@ -1993,6 +2789,18 @@ type bucketBlock struct {
 
 	// Indicates whether the block was queried.
 	queried atomic.Bool
+
+	// Cached prefetched series_metadata.parquet data. Protected by parquetMu
+	// during normal operation. Close() accesses these without parquetMu after
+	// pendingReaders.Wait() guarantees no concurrent readers.
+	// IMPORTANT: Never nest parquetMu inside closedMtx or vice-versa.
+	parquetMu     sync.Mutex
+	parquetReader *prefetchedReaderAt
+	parquetSize   int64
+	parquetNoFile bool // true if series_metadata.parquet doesn't exist for this block
+
+	// Last time parquet data was accessed, used for idle eviction. Updated atomically.
+	parquetUsedAt atomic.Int64
 }
 
 func newBucketBlock(
@@ -2134,6 +2942,11 @@ func (b *bucketBlock) Close() error {
 	b.closedMtx.Unlock()
 
 	b.pendingReaders.Wait()
+
+	// Safe without parquetMu: pendingReaders.Wait() above guarantees all
+	// in-flight queries using this block are done.
+	b.parquetReader = nil
+	b.parquetSize = 0
 
 	return b.indexHeaderReader.Close()
 }

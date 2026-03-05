@@ -49,7 +49,7 @@ func TimeseriesFromPool() *TimeSeries {
 
 	// Panic if the pool returns a TimeSeries that wasn't properly cleaned,
 	// which is indicative of a hard bug that we want to catch as soon as possible.
-	if len(ts.Labels) > 0 || len(ts.Samples) > 0 || len(ts.Histograms) > 0 || len(ts.Exemplars) > 0 || ts.CreatedTimestamp != 0 || ts.SkipUnmarshalingExemplars {
+	if len(ts.Labels) > 0 || len(ts.Samples) > 0 || len(ts.Histograms) > 0 || len(ts.Exemplars) > 0 || ts.CreatedTimestamp != 0 || ts.SkipUnmarshalingExemplars || ts.ResourceAttributes != nil || ts.ScopeAttributes != nil {
 		panic("pool returned dirty TimeSeries: this indicates a bug where ReuseTimeseries was called on a TimeSeries still in use")
 	}
 
@@ -88,6 +88,42 @@ func ReuseTimeseries(ts *TimeSeries) {
 
 	ts.CreatedTimestamp = 0
 	ts.SkipUnmarshalingExemplars = false
+
+	// Clear string fields in ResourceAttributes/ScopeAttributes that may reference
+	// gRPC buffers before releasing the pointer, matching the Labels pattern above.
+	if ts.ResourceAttributes != nil {
+		for i := range ts.ResourceAttributes.Identifying {
+			ts.ResourceAttributes.Identifying[i].Key = ""
+			ts.ResourceAttributes.Identifying[i].Value = ""
+		}
+		for i := range ts.ResourceAttributes.Descriptive {
+			ts.ResourceAttributes.Descriptive[i].Key = ""
+			ts.ResourceAttributes.Descriptive[i].Value = ""
+		}
+		for i := range ts.ResourceAttributes.Entities {
+			ts.ResourceAttributes.Entities[i].Type = ""
+			for j := range ts.ResourceAttributes.Entities[i].ID {
+				ts.ResourceAttributes.Entities[i].ID[j].Key = ""
+				ts.ResourceAttributes.Entities[i].ID[j].Value = ""
+			}
+			for j := range ts.ResourceAttributes.Entities[i].Description {
+				ts.ResourceAttributes.Entities[i].Description[j].Key = ""
+				ts.ResourceAttributes.Entities[i].Description[j].Value = ""
+			}
+		}
+	}
+	ts.ResourceAttributes = nil
+
+	if ts.ScopeAttributes != nil {
+		ts.ScopeAttributes.Name = ""
+		ts.ScopeAttributes.Version = ""
+		ts.ScopeAttributes.SchemaURL = ""
+		for i := range ts.ScopeAttributes.Attrs {
+			ts.ScopeAttributes.Attrs[i].Key = ""
+			ts.ScopeAttributes.Attrs[i].Value = ""
+		}
+	}
+	ts.ScopeAttributes = nil
 
 	ClearExemplars(ts)
 	timeSeriesPool.Put(ts)

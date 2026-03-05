@@ -4,6 +4,7 @@ package engine
 
 import (
 	"flag"
+	"fmt"
 	"strings"
 	"time"
 
@@ -34,6 +35,9 @@ type Config struct {
 
 	EnableDelayedNameRemovalPrometheusEngine bool `yaml:"enable_delayed_name_removal_prometheus_engine" category:"experimental"`
 
+	EnableNativeMetadata bool   `yaml:"enable_native_metadata" category:"experimental"`
+	InfoResourceStrategy string `yaml:"info_resource_strategy" category:"experimental"`
+
 	MimirQueryEngine streamingpromql.EngineOpts `yaml:"mimir_query_engine" category:"experimental"`
 }
 
@@ -52,11 +56,18 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.DefaultEvaluationInterval, "querier.default-evaluation-interval", time.Minute, sharedWithQueryFrontend("The default evaluation interval or step size for subqueries."))
 	f.DurationVar(&cfg.LookbackDelta, "querier.lookback-delta", 5*time.Minute, sharedWithQueryFrontend("Time since the last sample after which a time series is considered stale and ignored by expression evaluations."))
 	f.BoolVar(&cfg.EnableDelayedNameRemovalPrometheusEngine, "querier.enable-delayed-name-removal-prometheus-engine", false, "Enable the experimental PromQL feature for delayed name removal in the Prometheus engine. Note that this only applies when the Prometheus engine is selected or used as fallback from the Mimir Query Engine.")
+	f.BoolVar(&cfg.EnableNativeMetadata, "querier.enable-native-metadata", false, "Enable native OTel resource attribute metadata for the info() function.")
+	f.StringVar(&cfg.InfoResourceStrategy, "querier.info-resource-strategy", "target-info", "Strategy for info() to resolve resource attributes. Valid values: target-info, resource-attributes, hybrid.")
 
 	cfg.MimirQueryEngine.RegisterFlags(f)
 }
 
 func (cfg *Config) Validate() error {
+	switch cfg.InfoResourceStrategy {
+	case "target-info", "resource-attributes", "hybrid", "":
+	default:
+		return fmt.Errorf("invalid -querier.info-resource-strategy %q: must be one of target-info, resource-attributes, hybrid", cfg.InfoResourceStrategy)
+	}
 	return cfg.MimirQueryEngine.Validate()
 }
 
@@ -78,6 +89,8 @@ func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.Activit
 		},
 		// This only applies to the fallback Prometheus engine. MQE's is defined per-tenant via limits.
 		EnableDelayedNameRemoval: cfg.EnableDelayedNameRemovalPrometheusEngine,
+		EnableNativeMetadata:     cfg.EnableNativeMetadata,
+		InfoResourceStrategy:     promql.InfoResourceStrategy(cfg.InfoResourceStrategy),
 		Parser:                   promqlext.NewPromQLParser(),
 	}
 
