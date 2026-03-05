@@ -134,10 +134,6 @@ func TOCFromIndexHeader(
 		return nil, 0, fmt.Errorf("cannot read version and index version: %w", err)
 	}
 
-	if indexHeaderVersion != BinaryFormatV1 {
-		return nil, 0, fmt.Errorf("unknown index-header file version %d", indexHeaderVersion)
-	}
-
 	indexHeaderTOCOffset := indexHeaderSize - BinaryTOCLen
 	if decbuf.ResetAt(indexHeaderTOCOffset); decbuf.Err() != nil {
 		return nil, 0, decbuf.Err()
