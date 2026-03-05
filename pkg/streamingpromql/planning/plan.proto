@@ -5,6 +5,7 @@ syntax = "proto3";
 package planning;
 
 import "gogoproto/gogo.proto";
+import "google/protobuf/duration.proto";
 
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
@@ -23,6 +24,11 @@ message EncodedQueryPlan {
   uint64 version = 6 [
     (gogoproto.casttype) = "QueryPlanVersion",
     (gogoproto.jsontag) = "version" // Override default value to remove 'omitempty'
+  ];
+
+  google.protobuf.Duration lookbackDelta = 7 [
+    (gogoproto.nullable) = false,
+    (gogoproto.stdduration) = true
   ];
 }
 

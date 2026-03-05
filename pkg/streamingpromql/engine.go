@@ -44,7 +44,7 @@ func init() {
 var tracer = otel.Tracer("pkg/streamingpromql")
 var errPerStepStatsNotSupported = errors.New("per-step stats are not supported by Mimir query engine")
 
-const defaultLookbackDelta = 5 * time.Minute // This should be the same value as github.com/prometheus/prometheus/promql.defaultLookbackDelta.
+const DefaultLookbackDelta = 5 * time.Minute // This should be the same value as github.com/prometheus/prometheus/promql.defaultLookbackDelta.
 
 func NewEngine(opts EngineOpts, metrics *stats.QueryMetrics, planner *QueryPlanner) (*Engine, error) {
 	var cacheFactory *cache.CacheFactory
@@ -136,7 +136,7 @@ func NewEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *Q
 func DetermineLookbackDelta(opts promql.EngineOpts) time.Duration {
 	lookbackDelta := opts.LookbackDelta
 	if lookbackDelta == 0 {
-		lookbackDelta = defaultLookbackDelta
+		lookbackDelta = DefaultLookbackDelta
 	}
 
 	return lookbackDelta
@@ -205,18 +205,22 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 		return nil, fmt.Errorf("could not get 'enable delayed name removal' setting for tenant: %w", err)
 	}
 
-	plan, err := e.planner.NewQueryPlan(ctx, qs, timeRange, enableDelayedNameRemoval, NoopPlanningObserver{})
-	if err != nil {
-		return nil, err
-	}
-
 	if opts == nil {
 		opts = promql.NewPrometheusQueryOpts(false, 0)
+	}
+
+	if opts.EnablePerStepStats() {
+		return nil, errPerStepStatsNotSupported
 	}
 
 	lookbackDelta := opts.LookbackDelta()
 	if lookbackDelta == 0 {
 		lookbackDelta = e.lookbackDelta
+	}
+
+	plan, err := e.planner.NewQueryPlan(ctx, qs, timeRange, lookbackDelta, enableDelayedNameRemoval, NoopPlanningObserver{})
+	if err != nil {
+		return nil, err
 	}
 
 	nodeRequests := []NodeEvaluationRequest{
@@ -226,7 +230,7 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 		},
 	}
 
-	evaluator, err := e.materializeAndCreateEvaluator(ctx, queryable, opts, plan.Parameters, nodeRequests, lookbackDelta)
+	evaluator, err := e.materializeAndCreateEvaluator(ctx, queryable, plan.Parameters, nodeRequests)
 	if err != nil {
 		return nil, err
 	}
@@ -266,20 +270,11 @@ type NodeEvaluationRequest struct {
 	operator types.Operator
 }
 
-func (e *Engine) NewEvaluator(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, params *planning.QueryParameters, nodeRequests []NodeEvaluationRequest) (*Evaluator, error) {
-	if opts == nil {
-		opts = promql.NewPrometheusQueryOpts(false, 0)
-	}
-
-	lookbackDelta := opts.LookbackDelta()
-	if lookbackDelta == 0 {
-		lookbackDelta = e.lookbackDelta
-	}
-
-	return e.materializeAndCreateEvaluator(ctx, queryable, opts, params, nodeRequests, lookbackDelta)
+func (e *Engine) NewEvaluator(ctx context.Context, queryable storage.Queryable, params *planning.QueryParameters, nodeRequests []NodeEvaluationRequest) (*Evaluator, error) {
+	return e.materializeAndCreateEvaluator(ctx, queryable, params, nodeRequests)
 }
 
-func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, params *planning.QueryParameters, nodeRequests []NodeEvaluationRequest, lookbackDelta time.Duration) (*Evaluator, error) {
+func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable storage.Queryable, params *planning.QueryParameters, nodeRequests []NodeEvaluationRequest) (*Evaluator, error) {
 	span, ctx := tracing.StartSpanFromContext(ctx, "Engine.materializeAndCreateEvaluator")
 	defer span.Finish()
 
@@ -289,10 +284,6 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 	}
 
 	defer e.activeQueryTracker.Delete(queryID)
-
-	if opts.EnablePerStepStats() {
-		return nil, errPerStepStatsNotSupported
-	}
 
 	maxEstimatedMemoryConsumptionPerQuery, err := e.limitsProvider.GetMaxEstimatedMemoryConsumptionPerQuery(ctx)
 	if err != nil {
@@ -306,7 +297,6 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 		Annotations:              annotations.New(),
 		QueryStats:               types.NewQueryStats(),
-		LookbackDelta:            lookbackDelta,
 		EagerLoadSelectors:       e.eagerLoadSelectors,
 		QueryParameters:          params,
 		Logger:                   e.logger,

@@ -20,7 +20,6 @@ import (
 	"github.com/grafana/dskit/server"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -171,8 +170,7 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *query
 		return
 	}
 
-	opts := promql.NewPrometheusQueryOpts(false, 0)
-	e, err := d.engine.NewEvaluator(ctx, d.queryable, opts, req.Plan.DecodeParameters(), nodeRequests)
+	e, err := d.engine.NewEvaluator(ctx, d.queryable, req.Plan.DecodeParameters(), nodeRequests)
 	if err != nil {
 		resp.WriteError(ctx, apierror.TypeBadData, fmt.Errorf("could not materialize query: %w", err))
 		return

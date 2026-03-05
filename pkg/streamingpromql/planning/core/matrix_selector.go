@@ -153,7 +153,7 @@ func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, time
 	}
 
 	if m.Anchored || m.Smoothed {
-		selector.LookbackDelta = params.LookbackDelta
+		selector.LookbackDelta = params.QueryParameters.LookbackDelta
 	}
 
 	o := selectors.NewRangeVectorSelector(selector, params.MemoryConsumptionTracker, params.QueryStats)

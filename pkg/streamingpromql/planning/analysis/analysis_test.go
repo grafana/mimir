@@ -3,7 +3,6 @@
 package analysis
 
 import (
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -45,6 +44,7 @@ func TestHandler(t *testing.T) {
 				  "duration": 1234000000,
 				  "outputPlan": {
 					"timeRange": {"startT": 1640995200000, "endT": 1640995200000, "intervalMilliseconds": 1, "isInstant": true},
+					"lookbackDelta": 300000000000,
 					"nodes": [
 					  {"type": "VectorSelector", "description": "{__name__=\"up\"}"}
 					],
@@ -57,6 +57,7 @@ func TestHandler(t *testing.T) {
 				  "duration": null,
 				  "outputPlan": {
 					"timeRange": {"startT": 1640995200000, "endT": 1640995200000, "intervalMilliseconds": 1, "isInstant": true},
+					"lookbackDelta": 300000000000,
 					"nodes": [
 					  {"type": "VectorSelector", "description": "{__name__=\"up\"}"}
 					],
@@ -91,6 +92,7 @@ func TestHandler(t *testing.T) {
 				  "duration": 1234000000,
 				  "outputPlan": {
 					"timeRange": {"startT": 1640995200000, "endT": 1640998800000, "intervalMilliseconds": 10000},
+					"lookbackDelta": 300000000000,
 					"nodes": [
 					  {"type": "VectorSelector", "description": "{__name__=\"up\"}"}
 					],
@@ -103,6 +105,7 @@ func TestHandler(t *testing.T) {
 				  "duration": null,
 				  "outputPlan": {
 					"timeRange": {"startT": 1640995200000, "endT": 1640998800000, "intervalMilliseconds": 10000},
+					"lookbackDelta": 300000000000,
 					"nodes": [
 					  {"type": "VectorSelector", "description": "{__name__=\"up\"}"}
 					],
@@ -135,6 +138,7 @@ func TestHandler(t *testing.T) {
 				  "duration": 1234000000,
 				  "outputPlan": {
 					"timeRange": {"startT": 1640995200000, "endT": 1640995200000, "intervalMilliseconds": 1, "isInstant": true},
+					"lookbackDelta": 300000000000,
 					"nodes": [
 					  {"type": "VectorSelector", "description": "{__name__=\"up\"} @ 1640995200000 (2022-01-01T00:00:00Z)"}
 					],
@@ -147,6 +151,7 @@ func TestHandler(t *testing.T) {
 				  "duration": null,
 				  "outputPlan": {
 					"timeRange": {"startT": 1640995200000, "endT": 1640995200000, "intervalMilliseconds": 1, "isInstant": true},
+					"lookbackDelta": 300000000000,
 					"nodes": [
 					  {"type": "VectorSelector", "description": "{__name__=\"up\"} @ 1640995200000 (2022-01-01T00:00:00Z)"}
 					],
@@ -375,6 +380,7 @@ func TestHandler_Sharding(t *testing.T) {
 				  "duration": 1234000000,
 				  "outputPlan": {
 					"timeRange": {"startT": 1640995200000, "endT": 1640995200000, "intervalMilliseconds": 1, "isInstant": true},
+					"lookbackDelta": 300000000000,
 					"nodes": [
 					  {"type": "VectorSelector", "description": "{__query_shard__=\"1_of_3\", __name__=\"up\"}"},
 					  {"type": "AggregateExpression", "children": [0], "description": "sum", "childrenLabels": [""]},
@@ -395,6 +401,7 @@ func TestHandler_Sharding(t *testing.T) {
 				  "duration": null,
 				  "outputPlan": {
 					"timeRange": {"startT": 1640995200000, "endT": 1640995200000, "intervalMilliseconds": 1, "isInstant": true},
+					"lookbackDelta": 300000000000,
 					"nodes": [
 					  {"type": "VectorSelector", "description": "{__query_shard__=\"1_of_3\", __name__=\"up\"}"},
 					  {"type": "AggregateExpression", "children": [0], "description": "sum", "childrenLabels": [""]},
@@ -438,6 +445,7 @@ func TestHandler_Sharding(t *testing.T) {
 				  "duration": 1234000000,
 				  "outputPlan": {
 					"timeRange": {"startT": 1640995200000, "endT": 1640995200000, "intervalMilliseconds": 1, "isInstant": true},
+					"lookbackDelta": 300000000000,
 					"nodes": [
 					  {"type": "VectorSelector", "description": "{__query_shard__=\"1_of_2\", __name__=\"up\"}"},
 					  {"type": "AggregateExpression", "children": [0], "description": "sum", "childrenLabels": [""]},
@@ -456,6 +464,7 @@ func TestHandler_Sharding(t *testing.T) {
 				  "duration": null,
 				  "outputPlan": {
 					"timeRange": {"startT": 1640995200000, "endT": 1640995200000, "intervalMilliseconds": 1, "isInstant": true},
+					"lookbackDelta": 300000000000,
 					"nodes": [
 					  {"type": "VectorSelector", "description": "{__query_shard__=\"1_of_2\", __name__=\"up\"}"},
 					  {"type": "AggregateExpression", "children": [0], "description": "sum", "childrenLabels": [""]},
@@ -492,8 +501,6 @@ func TestHandler_Sharding(t *testing.T) {
 			handler.ServeHTTP(resp, req)
 
 			body := resp.Body.String()
-
-			fmt.Println(body)
 
 			require.JSONEq(t, testCase.expectedResponse, body)
 			require.Equal(t, "application/json", resp.Header().Get("Content-Type"))

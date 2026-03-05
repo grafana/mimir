@@ -40,6 +40,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 	instantQueryEncodedTimeRange := planning.EncodedQueryTimeRange{StartT: 1000, EndT: 1000, IntervalMilliseconds: 1, IsInstant: true}
 	rangeQuery := types.NewRangeQueryTimeRange(timestamp.Time(3000), timestamp.Time(5000), time.Second)
 	rangeQueryEncodedTimeRange := planning.EncodedQueryTimeRange{StartT: 3000, EndT: 5000, IntervalMilliseconds: 1000}
+	lookbackDelta := 3 * time.Minute
 
 	testCases := map[string]struct {
 		expr                     string
@@ -53,8 +54,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			timeRange: instantQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  0,
+				TimeRange:     instantQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				RootNode:      0,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -79,8 +81,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			timeRange: rangeQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: rangeQueryEncodedTimeRange,
-				RootNode:  0,
+				TimeRange:     rangeQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				RootNode:      0,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -105,9 +108,10 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			timeRange: instantQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  0,
-				Version:   0,
+				TimeRange:     instantQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				RootNode:      0,
+				Version:       0,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -129,9 +133,10 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			timeRange: rangeQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: rangeQueryEncodedTimeRange,
-				RootNode:  1,
-				Version:   1,
+				TimeRange:     rangeQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				RootNode:      1,
+				Version:       1,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -160,9 +165,10 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			timeRange: rangeQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: rangeQueryEncodedTimeRange,
-				RootNode:  1,
-				Version:   planning.QueryPlanV1,
+				TimeRange:     rangeQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				RootNode:      1,
+				Version:       planning.QueryPlanV1,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -191,9 +197,10 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			timeRange: rangeQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: rangeQueryEncodedTimeRange,
-				RootNode:  1,
-				Version:   planning.QueryPlanV1,
+				TimeRange:     rangeQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				RootNode:      1,
+				Version:       planning.QueryPlanV1,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -222,8 +229,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			timeRange: instantQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  0,
+				TimeRange:     instantQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				RootNode:      0,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -245,8 +253,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			timeRange: instantQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  0,
+				TimeRange:     instantQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				RootNode:      0,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
@@ -268,8 +277,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			timeRange: instantQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  0,
+				TimeRange:     instantQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				RootNode:      0,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
@@ -292,9 +302,10 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			timeRange: rangeQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: rangeQueryEncodedTimeRange,
-				RootNode:  3,
-				Version:   1,
+				TimeRange:     rangeQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				RootNode:      3,
+				Version:       1,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
@@ -344,9 +355,10 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			timeRange: rangeQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: rangeQueryEncodedTimeRange,
-				RootNode:  3,
-				Version:   1,
+				TimeRange:     rangeQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				RootNode:      3,
+				Version:       1,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
@@ -396,8 +408,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			timeRange: instantQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  0,
+				TimeRange:     instantQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				RootNode:      0,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -418,8 +431,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			timeRange: instantQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  0,
+				TimeRange:     instantQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				RootNode:      0,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_NUMBER_LITERAL,
@@ -438,8 +452,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			timeRange: instantQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  0,
+				TimeRange:     instantQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				RootNode:      0,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_STRING_LITERAL,
@@ -458,8 +473,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			timeRange: instantQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  0,
+				TimeRange:     instantQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				RootNode:      0,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
@@ -478,8 +494,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			timeRange: instantQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  1,
+				TimeRange:     instantQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				RootNode:      1,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
@@ -506,8 +523,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			timeRange: instantQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  2,
+				TimeRange:     instantQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				RootNode:      2,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -548,8 +566,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			timeRange: instantQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  1,
+				TimeRange:     instantQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				RootNode:      1,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -581,8 +600,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			timeRange: instantQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  1,
+				TimeRange:     instantQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				RootNode:      1,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -615,8 +635,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			timeRange: instantQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  1,
+				TimeRange:     instantQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				RootNode:      1,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -650,8 +671,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			timeRange: instantQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  2,
+				TimeRange:     instantQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				RootNode:      2,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -692,9 +714,10 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			timeRange: instantQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  2,
-				Version:   0,
+				TimeRange:     instantQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				RootNode:      2,
+				Version:       0,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_NUMBER_LITERAL,
@@ -733,9 +756,10 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			timeRange: rangeQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: rangeQueryEncodedTimeRange,
-				RootNode:  3,
-				Version:   planning.QueryPlanV1,
+				TimeRange:     rangeQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				RootNode:      3,
+				Version:       planning.QueryPlanV1,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_NUMBER_LITERAL,
@@ -781,8 +805,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			timeRange: instantQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  3,
+				TimeRange:     instantQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				RootNode:      3,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_NUMBER_LITERAL,
@@ -831,8 +856,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			timeRange: instantQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  3,
+				TimeRange:     instantQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				RootNode:      3,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -882,8 +908,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			timeRange: instantQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  2,
+				TimeRange:     instantQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				RootNode:      2,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -927,8 +954,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			timeRange: instantQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  2,
+				TimeRange:     instantQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				RootNode:      2,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -975,8 +1003,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			timeRange: instantQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  2,
+				TimeRange:     instantQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				RootNode:      2,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -1023,8 +1052,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			timeRange: instantQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  2,
+				TimeRange:     instantQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				RootNode:      2,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -1073,8 +1103,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			timeRange: instantQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  1,
+				TimeRange:     instantQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				RootNode:      1,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -1107,8 +1138,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			timeRange: instantQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  1,
+				TimeRange:     instantQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				RootNode:      1,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -1141,8 +1173,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			timeRange: instantQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  1,
+				TimeRange:     instantQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				RootNode:      1,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -1176,9 +1209,10 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			timeRange: instantQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  1,
-				Version:   0,
+				TimeRange:     instantQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				RootNode:      1,
+				Version:       0,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -1214,6 +1248,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange:                instantQueryEncodedTimeRange,
+				LookbackDelta:            lookbackDelta,
 				RootNode:                 2,
 				EnableDelayedNameRemoval: true,
 				Version:                  planning.QueryPlanV1,
@@ -1255,6 +1290,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange:                rangeQueryEncodedTimeRange,
+				LookbackDelta:            lookbackDelta,
 				RootNode:                 3,
 				Version:                  planning.QueryPlanV1,
 				EnableDelayedNameRemoval: true,
@@ -1309,6 +1345,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange:                rangeQueryEncodedTimeRange,
+				LookbackDelta:            lookbackDelta,
 				RootNode:                 3,
 				Version:                  planning.QueryPlanV1,
 				EnableDelayedNameRemoval: false,
@@ -1363,6 +1400,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange:                rangeQueryEncodedTimeRange,
+				LookbackDelta:            lookbackDelta,
 				RootNode:                 5,
 				Version:                  planning.QueryPlanV1,
 				EnableDelayedNameRemoval: false,
@@ -1434,9 +1472,10 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			timeRange: instantQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  0,
-				Version:   planning.QueryPlanV4,
+				TimeRange:     instantQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				RootNode:      0,
+				Version:       planning.QueryPlanV4,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
@@ -1459,9 +1498,10 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			timeRange: instantQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  0,
-				Version:   planning.QueryPlanV4,
+				TimeRange:     instantQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				RootNode:      0,
+				Version:       planning.QueryPlanV4,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
@@ -1496,7 +1536,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 
-			originalPlan, err := planner.NewQueryPlan(ctx, testCase.expr, testCase.timeRange, testCase.enableDelayedNameRemoval, NoopPlanningObserver{})
+			originalPlan, err := planner.NewQueryPlan(ctx, testCase.expr, testCase.timeRange, lookbackDelta, testCase.enableDelayedNameRemoval, NoopPlanningObserver{})
 			require.NoError(t, err)
 
 			requireHistogramCounts(t, reg, "cortex_mimir_query_engine_plan_stage_latency_seconds", `
@@ -1536,7 +1576,7 @@ func TestToEncodedPlan_SpecificNodesRequested(t *testing.T) {
 
 	expr := `topk(5, foo)`
 	ctx := context.Background()
-	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(time.Now()), false, NoopPlanningObserver{})
+	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(time.Now()), DefaultLookbackDelta, false, NoopPlanningObserver{})
 	require.NoError(t, err)
 
 	aggregationNode := plan.Root.(*core.AggregateExpression)
@@ -1558,7 +1598,7 @@ func TestToEncodedPlan_SameNodeProvidedMultipleTimes(t *testing.T) {
 
 	expr := `sum(foo)`
 	ctx := context.Background()
-	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(time.Now()), false, NoopPlanningObserver{})
+	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(time.Now()), DefaultLookbackDelta, false, NoopPlanningObserver{})
 	require.NoError(t, err)
 
 	encoded, nodes, err := plan.ToEncodedPlan(false, true, plan.Root, plan.Root)
@@ -1576,7 +1616,7 @@ func TestPlanCreation_OptimisationPassGeneratesPlanWithHigherVersionThanAllowed(
 
 	planner.RegisterQueryPlanOptimizationPass(&optimizationPassThatGeneratesHigherVersionPlanThanAllowed{})
 
-	plan, err := planner.NewQueryPlan(context.Background(), "foo", types.NewInstantQueryTimeRange(time.Now()), false, NoopPlanningObserver{})
+	plan, err := planner.NewQueryPlan(context.Background(), "foo", types.NewInstantQueryTimeRange(time.Now()), DefaultLookbackDelta, false, NoopPlanningObserver{})
 	require.EqualError(t, err, "maximum supported query plan version is 12, but generated plan version is 13 - this is a bug")
 	require.Nil(t, plan)
 }
@@ -1747,7 +1787,7 @@ func TestDeduplicateAndMergePlanning(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, false, observer)
+			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, DefaultLookbackDelta, false, observer)
 			require.NoError(t, err)
 			actual := p.String()
 			require.Equal(t, testutils.TrimIndent(testCase.expectedPlan), actual)
@@ -1783,7 +1823,7 @@ func BenchmarkPlanEncodingAndDecoding(b *testing.B) {
 
 	for _, expr := range testCases {
 		b.Run(expr, func(b *testing.B) {
-			plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(timestamp.Time(0)), false, NoopPlanningObserver{})
+			plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(timestamp.Time(0)), DefaultLookbackDelta, false, NoopPlanningObserver{})
 			require.NoError(b, err)
 
 			b.Run("encode", func(b *testing.B) {
@@ -1837,7 +1877,7 @@ func TestQueryPlanner_ActivityTracking(t *testing.T) {
 
 	expr := "test"
 	timeRange := types.NewInstantQueryTimeRange(time.Now())
-	_, err = planner.NewQueryPlan(context.Background(), expr, timeRange, false, NoopPlanningObserver{})
+	_, err = planner.NewQueryPlan(context.Background(), expr, timeRange, DefaultLookbackDelta, false, NoopPlanningObserver{})
 	require.NoError(t, err)
 
 	expectedPlanningActivities := []trackedQuery{
