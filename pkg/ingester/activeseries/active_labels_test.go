@@ -54,8 +54,7 @@ func TestIsLabelValueActive(t *testing.T) {
 		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), -1, false, nil)
 	}
 
-	valid := activeSeries.Purge(mockedTime, nil)
-	require.True(t, valid)
+	activeSeries.Purge(mockedTime, nil)
 
 	result, err := IsLabelValueActive(ctx, reader, activeSeries, "a", "1")
 	require.NoError(t, err)
