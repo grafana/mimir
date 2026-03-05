@@ -336,6 +336,7 @@ func (s *KafkaService) generateTLSCerts(networkName, sharedDir string) error {
 	}
 
 	brokerHostname := fmt.Sprintf("%s-kafka", networkName)
+	serverKeyPath := filepath.Join(tlsDir, "server.key")
 	if err := ca.WriteCertificate(
 		&x509.Certificate{
 			Subject:     pkix.Name{CommonName: "kafka"},
@@ -343,9 +344,14 @@ func (s *KafkaService) generateTLSCerts(networkName, sharedDir string) error {
 			ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		},
 		filepath.Join(tlsDir, "server.crt"),
-		filepath.Join(tlsDir, "server.key"),
+		serverKeyPath,
 	); err != nil {
 		return fmt.Errorf("writing server certificate: %w", err)
+	}
+
+	// Make the key readable by the Docker container.
+	if err := os.Chmod(serverKeyPath, 0644); err != nil {
+		return fmt.Errorf("chmod server key: %w", err)
 	}
 
 	return nil
