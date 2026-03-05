@@ -20,12 +20,24 @@ import (
 
 const sep = rune(0x80)
 
+// sliceToMapThreshold is the number of unique attribution keys at which
+// IncrementReceivedSamples switches from a slice-based linear scan to a map
+// for aggregating sample counts. For typical workloads (1-10 unique keys),
+// the slice approach is much faster and avoids allocations.
+const sliceToMapThreshold = 16
+
 type observation struct {
 	lastUpdate         atomic.Int64
 	receivedSample     atomic.Float64
 	discardedSampleMtx sync.RWMutex
 	discardedSample    map[string]*atomic.Float64
 	totalDiscarded     atomic.Float64
+}
+
+// keyCount pairs an attribution key with its aggregated sample count.
+type keyCount struct {
+	key   string
+	count int
 }
 
 type SampleTracker struct {
@@ -158,22 +170,65 @@ func (st *SampleTracker) IncrementReceivedSamples(req *mimirpb.WriteRequest, now
 
 	// We precompute the cost attribution per request before update Observations and State to avoid frequently update the atomic counters.
 	// This is based on the assumption that usually a single WriteRequest will have samples that belong to the same or few cost attribution groups.
-	dict := make(map[string]int)
+	//
+	// We use a slice instead of a map to aggregate counts by key. The number of unique attribution
+	// keys per request is typically very small (1-5), so linear scan is fast and avoids map overhead
+	// and per-timeseries string allocations. A string is only allocated when a new unique key is first
+	// seen. The comparison `existingKey == string(bufBytes)` is optimized by the Go compiler to avoid
+	// allocating a new string.
+	// If the number of unique keys exceeds sliceToMapThreshold, we fall back to a map for efficiency.
+	var keyCounts []keyCount
+	var dict map[string]int
+	useMap := false
 	buf := bufferPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	defer bufferPool.Put(buf)
 	for _, ts := range req.Timeseries {
 		st.fillKeyFromLabelAdapters(ts.Labels, buf)
-		dict[string(buf.Bytes())] += len(ts.Samples) + len(ts.Histograms)
+		sampleCount := len(ts.Samples) + len(ts.Histograms)
+		bufBytes := buf.Bytes()
+
+		if useMap {
+			dict[string(bufBytes)] += sampleCount
+			continue
+		}
+
+		// Linear scan for matching key; typically very few unique keys per request.
+		found := false
+		for i := range keyCounts {
+			if keyCounts[i].key == string(bufBytes) {
+				keyCounts[i].count += sampleCount
+				found = true
+				break
+			}
+		}
+		if !found {
+			// Only allocate a string for genuinely new keys.
+			key := string(bufBytes)
+			keyCounts = append(keyCounts, keyCount{key: key, count: sampleCount})
+
+			// If too many unique keys, switch to map-based aggregation.
+			if len(keyCounts) >= sliceToMapThreshold {
+				dict = make(map[string]int, len(keyCounts))
+				for _, kc := range keyCounts {
+					dict[kc.key] = kc.count
+				}
+				keyCounts = nil
+				useMap = true
+			}
+		}
 	}
 
 	// Update the observations for each label set and update the state per request,
 	// this would be less precised than per sample but it's more efficient
-	var total float64
-	for k, v := range dict {
-		count := float64(v)
-		st.updateObservations(k, now, count, 0, nil)
-		total += count
+	if useMap {
+		for k, v := range dict {
+			st.updateObservations(k, now, float64(v), 0, nil)
+		}
+	} else {
+		for _, kc := range keyCounts {
+			st.updateObservations(kc.key, now, float64(kc.count), 0, nil)
+		}
 	}
 }
 
