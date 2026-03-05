@@ -291,6 +291,7 @@
       - ".data-minio:/data:delegated"
   "nginx":
     "depends_on":
+      - "distributor-1"
       - "ingester-zone-a-1"
       - "alertmanager-1"
       - "ruler-1"
@@ -299,7 +300,7 @@
       - "grafana"
     "environment":
       - "NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx"
-      - "DISTRIBUTOR_HOST=ingester-zone-a-1:8080"
+      - "DISTRIBUTOR_HOST=distributor-1:8080"
       - "ALERT_MANAGER_HOST=alertmanager-1:8080"
       - "RULER_HOST=ruler-1:8080"
       - "QUERY_FRONTEND_HOST=query-frontend:8080"

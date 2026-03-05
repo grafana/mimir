@@ -115,6 +115,10 @@ type Block struct {
 
 	// Labels contains the external labels from the block's metadata.
 	Labels map[string]string `json:"labels,omitempty"`
+
+	// SeriesMetadata contains optional stats about the OTel series metadata Parquet file.
+	// Nil when no metadata is present.
+	SeriesMetadata *tsdb.BlockSeriesMetadata `json:"series_metadata,omitempty"`
 }
 
 // Within returns whether the block contains samples within the provided range.
@@ -155,6 +159,7 @@ func (m *Block) ThanosMeta() *block.Meta {
 				Level: m.CompactionLevel,
 				Hints: compactionHints,
 			},
+			SeriesMetadata: m.SeriesMetadata,
 		},
 		Thanos: block.ThanosMeta{
 			Version:      block.ThanosVersion1,
@@ -201,6 +206,7 @@ func BlockFromThanosMeta(meta block.Meta) *Block {
 		CompactionLevel:  meta.Compaction.Level,
 		OutOfOrder:       meta.Compaction.FromOutOfOrder(),
 		Labels:           maps.Clone(meta.Thanos.Labels),
+		SeriesMetadata:   meta.SeriesMetadata,
 	}
 }
 

@@ -158,8 +158,6 @@ type Schema struct {
 	RootNode *yaml.Node
 	index    *index.SpecIndex
 	context  context.Context
-	hashed   uint64     // quick hash of the schema, used for quick equality checking
-	hashLock sync.Mutex // lock to prevent concurrent hashing of the same schema
 	*low.Reference
 	low.NodeMap
 }

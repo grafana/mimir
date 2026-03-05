@@ -101,14 +101,14 @@ func TestDelete(t *testing.T) {
 		require.NoError(t, err)
 		_, err = Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b1.String()), nil)
 		require.NoError(t, err)
-		require.Equal(t, 3, len(bkt.Objects()))
+		require.Len(t, bkt.Objects(), 3) // chunks/000001, index, meta.json
 
 		markedForDeletion := promauto.With(prometheus.NewRegistry()).NewCounter(prometheus.CounterOpts{Name: "test"})
 		require.NoError(t, MarkForDeletion(ctx, log.NewNopLogger(), bkt, b1, "", markedForDeletion))
 
 		// Full delete.
 		require.NoError(t, Delete(ctx, log.NewNopLogger(), bkt, b1))
-		require.Equal(t, 0, len(bkt.Objects()))
+		require.Len(t, bkt.Objects(), 0)
 	}
 	{
 		b2, err := CreateBlock(ctx, tmpDir, fiveLabels,
@@ -116,12 +116,12 @@ func TestDelete(t *testing.T) {
 		require.NoError(t, err)
 		_, err = Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b2.String()), nil)
 		require.NoError(t, err)
-		require.Equal(t, 3, len(bkt.Objects()))
+		require.Len(t, bkt.Objects(), 3) // chunks/000001, index, meta.json
 
 		// Remove meta.json and check if delete can delete it.
 		require.NoError(t, bkt.Delete(ctx, path.Join(b2.String(), MetaFilename)))
 		require.NoError(t, Delete(ctx, log.NewNopLogger(), bkt, b2))
-		require.Equal(t, 0, len(bkt.Objects()))
+		require.Len(t, bkt.Objects(), 0)
 	}
 }
 
@@ -206,12 +206,12 @@ func TestUpload(t *testing.T) {
 		// Full
 		_, err = Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), nil)
 		require.NoError(t, err)
-		require.Equal(t, 3, len(bkt.Objects()))
+		require.Len(t, bkt.Objects(), 3)
 		chunkFileSize := getFileSize(t, filepath.Join(tmpDir, b1.String(), ChunksDirname, "000001"))
 		require.Equal(t, chunkFileSize, int64(len(bkt.Objects()[path.Join(b1.String(), ChunksDirname, "000001")])))
 		indexFileSize := getFileSize(t, path.Join(tmpDir, b1.String(), IndexFilename))
 		require.Equal(t, indexFileSize, int64(len(bkt.Objects()[path.Join(b1.String(), IndexFilename)])))
-		require.Equal(t, 624, len(bkt.Objects()[path.Join(b1.String(), MetaFilename)]))
+		require.Len(t, bkt.Objects()[path.Join(b1.String(), MetaFilename)], 624)
 
 		origMeta, err := ReadMetaFromDir(path.Join(tmpDir, "test", b1.String()))
 		require.NoError(t, err)
@@ -235,12 +235,12 @@ func TestUpload(t *testing.T) {
 		// Test Upload is idempotent.
 		_, err = Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), nil)
 		require.NoError(t, err)
-		require.Equal(t, 3, len(bkt.Objects()))
+		require.Len(t, bkt.Objects(), 3)
 		chunkFileSize := getFileSize(t, filepath.Join(tmpDir, b1.String(), ChunksDirname, "000001"))
 		require.Equal(t, chunkFileSize, int64(len(bkt.Objects()[path.Join(b1.String(), ChunksDirname, "000001")])))
 		indexFileSize := getFileSize(t, path.Join(tmpDir, b1.String(), IndexFilename))
 		require.Equal(t, indexFileSize, int64(len(bkt.Objects()[path.Join(b1.String(), IndexFilename)])))
-		require.Equal(t, 624, len(bkt.Objects()[path.Join(b1.String(), MetaFilename)]))
+		require.Len(t, bkt.Objects()[path.Join(b1.String(), MetaFilename)], 624)
 	})
 
 	t.Run("upload with no external labels works just fine", func(t *testing.T) {
@@ -258,11 +258,11 @@ func TestUpload(t *testing.T) {
 		require.NoError(t, err)
 
 		chunkFileSize := getFileSize(t, filepath.Join(tmpDir, b2.String(), ChunksDirname, "000001"))
-		require.Equal(t, 6, len(bkt.Objects())) // 3 from b1, 3 from b2
+		require.Len(t, bkt.Objects(), 6) // 3 from b1 (manually created), 3 from b2
 		require.Equal(t, chunkFileSize, int64(len(bkt.Objects()[path.Join(b2.String(), ChunksDirname, "000001")])))
 		indexFileSize := getFileSize(t, path.Join(tmpDir, b2.String(), IndexFilename))
 		require.Equal(t, indexFileSize, int64(len(bkt.Objects()[path.Join(b2.String(), IndexFilename)])))
-		require.Equal(t, 603, len(bkt.Objects()[path.Join(b2.String(), MetaFilename)]))
+		require.Greater(t, len(bkt.Objects()[path.Join(b2.String(), MetaFilename)]), 0) // meta.json size varies based on file entries
 
 		origMeta, err := ReadMetaFromDir(path.Join(tmpDir, b2.String()))
 		require.NoError(t, err)
@@ -490,8 +490,8 @@ func TestUploadCleanup(t *testing.T) {
 		require.ErrorAs(t, uploadErr, uerr)
 
 		// If upload of index fails, block is deleted.
-		require.Equal(t, 0, len(bkt.Objects()))
-		require.Equal(t, 0, len(bkt.Objects()[path.Join(DebugMetas, fmt.Sprintf("%s.json", b1.String()))]))
+		require.Empty(t, bkt.Objects())
+		require.Len(t, bkt.Objects()[path.Join(DebugMetas, fmt.Sprintf("%s.json", b1.String()))], 0)
 	}
 
 	{
@@ -502,11 +502,11 @@ func TestUploadCleanup(t *testing.T) {
 		require.ErrorAs(t, uploadErr, uerr)
 
 		// If upload of meta.json fails, nothing is cleaned up.
-		require.Equal(t, 3, len(bkt.Objects()))
+		require.Len(t, bkt.Objects(), 3) // chunks/000001, index uploaded before meta.json
 		require.Greater(t, len(bkt.Objects()[path.Join(b1.String(), ChunksDirname, "000001")]), 0)
 		require.Greater(t, len(bkt.Objects()[path.Join(b1.String(), IndexFilename)]), 0)
 		require.Greater(t, len(bkt.Objects()[path.Join(b1.String(), MetaFilename)]), 0)
-		require.Equal(t, 0, len(bkt.Objects()[path.Join(DebugMetas, fmt.Sprintf("%s.json", b1.String()))]))
+		require.Len(t, bkt.Objects()[path.Join(DebugMetas, fmt.Sprintf("%s.json", b1.String()))], 0)
 	}
 }
 

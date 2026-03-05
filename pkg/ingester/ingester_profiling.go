@@ -61,6 +61,15 @@ func (s queryStreamStream) Context() context.Context {
 	return s.ctx
 }
 
+type resourceAttributesStream struct {
+	ctx context.Context
+	client.Ingester_ResourceAttributesServer
+}
+
+func (s resourceAttributesStream) Context() context.Context {
+	return s.ctx
+}
+
 // isTraceSampled checks if the current trace is sampled
 func isTraceSampled(ctx context.Context) bool {
 	return trace.SpanFromContext(ctx).SpanContext().IsSampled()
@@ -232,6 +241,20 @@ func (i *ProfilingWrapper) ActiveSeries(request *client.ActiveSeriesRequest, ser
 	}
 
 	return i.ing.ActiveSeries(request, server)
+}
+
+func (i *ProfilingWrapper) ResourceAttributes(request *client.ResourceAttributesRequest, server client.Ingester_ResourceAttributesServer) error {
+	ctx := server.Context()
+	if isTraceSampled(ctx) {
+		userID, _ := tenant.TenantID(ctx)
+		labels := pprof.Labels("userID", userID)
+		defer pprof.SetGoroutineLabels(ctx)
+		ctx = pprof.WithLabels(ctx, labels)
+		pprof.SetGoroutineLabels(ctx)
+		server = resourceAttributesStream{ctx, server}
+	}
+
+	return i.ing.ResourceAttributes(request, server)
 }
 
 func (i *ProfilingWrapper) FlushHandler(w http.ResponseWriter, r *http.Request) {

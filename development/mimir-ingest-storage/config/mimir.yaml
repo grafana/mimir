@@ -50,6 +50,7 @@ blocks_storage:
     ship_interval: 0s # disable ingester block shipping; block-builder does that job.
     head_postings_for_matchers_cache_force: true
     block_postings_for_matchers_cache_force: true
+    otel_persist_resource_attributes: true
 
   bucket_store:
     index_cache:

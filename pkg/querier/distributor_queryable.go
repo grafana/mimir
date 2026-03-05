@@ -44,6 +44,7 @@ type Distributor interface {
 	LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (uint64, *client.LabelValuesCardinalityResponse, error)
 	ActiveSeries(ctx context.Context, matchers []*labels.Matcher) ([]labels.Labels, error)
 	ActiveNativeHistogramMetrics(ctx context.Context, matchers []*labels.Matcher) (*cardinality.ActiveNativeHistogramMetricsResponse, error)
+	ResourceAttributes(ctx context.Context, startMs, endMs int64, matchers []*labels.Matcher, limit int64, resourceAttrFilters []*client.ResourceAttrFilter) ([]*client.SeriesResourceAttributes, error)
 }
 
 func NewDistributorQueryable(distributor Distributor, cfgProvider distributorQueryableConfigProvider, queryMetrics *stats.QueryMetrics, logger log.Logger) storage.Queryable {
@@ -57,6 +58,7 @@ func NewDistributorQueryable(distributor Distributor, cfgProvider distributorQue
 
 type distributorQueryableConfigProvider interface {
 	QueryIngestersWithin(userID string) time.Duration
+	MaxResourceAttributesCacheSizeBytes(userID string) int
 }
 
 type distributorQueryable struct {
@@ -67,14 +69,24 @@ type distributorQueryable struct {
 }
 
 func (d distributorQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
-	return &distributorQuerier{
+	baseQuerier := &distributorQuerier{
 		logger:       d.logger,
 		distributor:  d.distributor,
 		mint:         mint,
 		maxt:         maxt,
 		queryMetrics: d.queryMetrics,
 		cfgProvider:  d.cfgProvider,
-	}, nil
+	}
+
+	// Wrap with resource querier cache to support info() PromQL function
+	return NewResourceQuerierCache(
+		baseQuerier,
+		&distributorResourceFetcher{distributor: d.distributor},
+		mint,
+		maxt,
+		d.cfgProvider.MaxResourceAttributesCacheSizeBytes,
+		d.logger,
+	), nil
 }
 
 type distributorQuerier struct {

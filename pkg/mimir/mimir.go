@@ -880,7 +880,8 @@ type Mimir struct {
 	RuntimeConfig                    *runtimeconfig.Manager
 	QuerierQueryable                 prom_storage.SampleAndChunkQueryable
 	ExemplarQueryable                prom_storage.ExemplarQueryable
-	StoreQueryable                   prom_storage.Queryable
+	AdditionalStorageQueryables      []querier.TimeRangeQueryable
+	BlocksStoreQueryable             querier.ResourceAttributesBlocksQueryable
 	MetadataSupplier                 querier.MetadataSupplier
 	QuerierEngine                    promql.QueryEngine
 	QuerierLifecycler                *ring.BasicLifecycler

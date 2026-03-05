@@ -728,6 +728,10 @@ func (m multiTenantMockLimits) ResultsCacheTTLForLabelsQuery(userID string) time
 	return m.byTenant[userID].resultsCacheTTLForLabelsQuery
 }
 
+func (m multiTenantMockLimits) ResultsCacheTTLForResourceAttributesQuery(userID string) time.Duration {
+	return m.byTenant[userID].resultsCacheTTLForResourceAttributesQuery
+}
+
 func (m multiTenantMockLimits) ResultsCacheTTLForErrors(userID string) time.Duration {
 	return m.byTenant[userID].resultsCacheTTLForErrors
 }
@@ -789,37 +793,38 @@ func (m multiTenantMockLimits) LabelsQueryOptimizerEnabled(userID string) bool {
 }
 
 type mockLimits struct {
-	maxQueryLookback                     time.Duration
-	maxQueryLength                       time.Duration
-	maxTotalQueryLength                  time.Duration
-	maxQueryExpressionSizeBytes          int
-	maxCacheFreshness                    time.Duration
-	maxQueryParallelism                  int
-	maxShardedQueries                    int
-	maxRegexpSizeBytes                   int
-	totalShards                          int
-	compactorShards                      int
-	compactorBlocksRetentionPeriod       time.Duration
-	outOfOrderTimeWindow                 time.Duration
-	creationGracePeriod                  time.Duration
-	nativeHistogramsIngestionEnabled     bool
-	resultsCacheTTL                      time.Duration
-	resultsCacheOutOfOrderWindowTTL      time.Duration
-	resultsCacheTTLForCardinalityQuery   time.Duration
-	resultsCacheTTLForLabelsQuery        time.Duration
-	resultsCacheTTLForErrors             time.Duration
-	resultsCacheForUnalignedQueryEnabled bool
-	enabledPromQLExperimentalFunctions   []string
-	enabledPromQLExtendedRangeSelectors  []string
-	prom2RangeCompat                     bool
-	blockedQueries                       []validation.BlockedQuery
-	limitedQueries                       []validation.LimitedQuery
-	blockedRequests                      []validation.BlockedRequest
-	alignQueriesWithStep                 bool
-	queryIngestersWithin                 time.Duration
-	ingestStorageReadConsistency         string
-	subquerySpinOffEnabled               bool
-	labelsQueryOptimizerEnabled          bool
+	maxQueryLookback                          time.Duration
+	maxQueryLength                            time.Duration
+	maxTotalQueryLength                       time.Duration
+	maxQueryExpressionSizeBytes               int
+	maxCacheFreshness                         time.Duration
+	maxQueryParallelism                       int
+	maxShardedQueries                         int
+	maxRegexpSizeBytes                        int
+	totalShards                               int
+	compactorShards                           int
+	compactorBlocksRetentionPeriod            time.Duration
+	outOfOrderTimeWindow                      time.Duration
+	creationGracePeriod                       time.Duration
+	nativeHistogramsIngestionEnabled          bool
+	resultsCacheTTL                           time.Duration
+	resultsCacheOutOfOrderWindowTTL           time.Duration
+	resultsCacheTTLForCardinalityQuery        time.Duration
+	resultsCacheTTLForLabelsQuery             time.Duration
+	resultsCacheTTLForResourceAttributesQuery time.Duration
+	resultsCacheTTLForErrors                  time.Duration
+	resultsCacheForUnalignedQueryEnabled      bool
+	enabledPromQLExperimentalFunctions        []string
+	enabledPromQLExtendedRangeSelectors       []string
+	prom2RangeCompat                          bool
+	blockedQueries                            []validation.BlockedQuery
+	limitedQueries                            []validation.LimitedQuery
+	blockedRequests                           []validation.BlockedRequest
+	alignQueriesWithStep                      bool
+	queryIngestersWithin                      time.Duration
+	ingestStorageReadConsistency              string
+	subquerySpinOffEnabled                    bool
+	labelsQueryOptimizerEnabled               bool
 }
 
 func (m mockLimits) MaxQueryLookback(string) time.Duration {
@@ -898,6 +903,10 @@ func (m mockLimits) LimitedQueries(userID string) []validation.LimitedQuery {
 
 func (m mockLimits) ResultsCacheTTLForLabelsQuery(string) time.Duration {
 	return m.resultsCacheTTLForLabelsQuery
+}
+
+func (m mockLimits) ResultsCacheTTLForResourceAttributesQuery(string) time.Duration {
+	return m.resultsCacheTTLForResourceAttributesQuery
 }
 
 func (m mockLimits) ResultsCacheForUnalignedQueryEnabled(string) bool {

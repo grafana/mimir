@@ -91,6 +91,7 @@ func OTLPHandler(
 	keepIdentifyingOTelResourceAttributesConfig KeepIdentifyingOTelResourceAttributesConfig,
 	retryCfg RetryConfig,
 	OTLPPushMiddlewares []OTLPPushMiddleware,
+	persistResourceAttributes bool,
 	push PushFunc,
 	pushMetrics *PushMetrics,
 	reg prometheus.Registerer,
@@ -115,7 +116,7 @@ func OTLPHandler(
 			allowTranslationHeaders,
 			limits, resourceAttributePromotionConfig, keepIdentifyingOTelResourceAttributesConfig,
 			otlpConverter, pushMetrics, discardedDueToOtelParseError,
-			OTLPPushMiddlewares,
+			OTLPPushMiddlewares, persistResourceAttributes,
 			&schemeOverride,
 		)
 
@@ -248,6 +249,7 @@ func newOTLPParser(
 	pushMetrics *PushMetrics,
 	discardedDueToOtelParseError *prometheus.CounterVec,
 	OTLPPushMiddlewares []OTLPPushMiddleware,
+	persistResourceAttributes bool,
 	schemeOverride **model.ValidationScheme,
 ) parserFunc {
 	if resourceAttributePromotionConfig == nil {
@@ -422,6 +424,7 @@ func newOTLPParser(
 			allowUTF8:                         !translationStrategy.ShouldEscape(),
 			underscoreSanitization:            limits.OTelLabelNameUnderscoreSanitization(tenantID),
 			preserveMultipleUnderscores:       limits.OTelLabelNamePreserveMultipleUnderscores(tenantID),
+			persistResourceAttributes:         persistResourceAttributes,
 		}
 		metrics, metadata, metricsDropped, err := otelMetricsToSeriesAndMetadata(
 			ctx,
@@ -672,6 +675,7 @@ type conversionOptions struct {
 	allowUTF8                         bool
 	underscoreSanitization            bool
 	preserveMultipleUnderscores       bool
+	persistResourceAttributes         bool
 }
 
 func otelMetricsToSeriesAndMetadata(
@@ -693,6 +697,7 @@ func otelMetricsToSeriesAndMetadata(
 		LabelNamePreserveMultipleUnderscores: opts.preserveMultipleUnderscores,
 	}
 	converter.appender.EnableCreatedTimestampZeroIngestion = opts.enableCTZeroIngestion
+	converter.appender.PersistResourceAttributes = opts.persistResourceAttributes
 	mimirTS, metadata := converter.ToSeriesAndMetadata(ctx, md, settings, logger)
 
 	dropped := converter.DroppedTotal()

@@ -813,6 +813,17 @@ func (index *SpecIndex) ExtractRefs(ctx context.Context, node, parent *yaml.Node
 // This function uses singleflight to deduplicate concurrent lookups for the same reference,
 // channel-based collection to avoid mutex contention during resolution, and sorts results
 // by input position for deterministic ordering.
+
+// isExternalReference checks whether a Reference originated from an external $ref.
+// ref.Definition may have been transformed (e.g., HTTP URL with fragment becomes "#/fragment"),
+// so we also check the original raw ref value.
+func isExternalReference(ref *Reference) bool {
+	if ref == nil {
+		return false
+	}
+	return utils.IsExternalRef(ref.Definition) || utils.IsExternalRef(ref.RawRef)
+}
+
 func (index *SpecIndex) ExtractComponentsFromRefs(ctx context.Context, refs []*Reference) []*Reference {
 	if len(refs) == 0 {
 		return nil
@@ -841,7 +852,7 @@ func (index *SpecIndex) ExtractComponentsFromRefs(ctx context.Context, refs []*R
 				index.refLock.Unlock()
 			} else {
 				// If SkipExternalRefResolution is enabled, don't record errors for external refs
-				if index.config != nil && index.config.SkipExternalRefResolution && utils.IsExternalRef(ref.Definition) {
+				if index.config != nil && index.config.SkipExternalRefResolution && isExternalReference(ref) {
 					continue
 				}
 				// Record error for definitive failure
@@ -964,7 +975,7 @@ func (index *SpecIndex) ExtractComponentsFromRefs(ctx context.Context, refs []*R
 			index.refLock.Unlock()
 		} else {
 			// If SkipExternalRefResolution is enabled, don't record errors for external refs
-			if index.config != nil && index.config.SkipExternalRefResolution && utils.IsExternalRef(ref.Definition) {
+			if index.config != nil && index.config.SkipExternalRefResolution && isExternalReference(ref) {
 				continue
 			}
 			// Definitive failure - record error
