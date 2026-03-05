@@ -402,6 +402,22 @@ func TestOptimizationPass(t *testing.T) {
 			expectedDuplicateNodesReplacedCount:   1,
 			expectedAggregationNodesReplacedCount: 3,
 		},
+		"subset selector elimination with nested function": {
+			expr: `sum(rate(foo{status="success"}[5m])) / sum(rate(foo[5m]))`,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS
+					- LHS: MultiAggregationInstance: sum, filters: {status="success"}
+						- ref#1 MultiAggregationGroup
+							- DeduplicateAndMerge
+								- FunctionCall: rate(...)
+									- MatrixSelector: {__name__="foo"}[5m0s]
+					- RHS: MultiAggregationInstance: sum
+						- ref#1 MultiAggregationGroup ...
+			`,
+			expectedDuplicateNodesExaminedCount:   1,
+			expectedDuplicateNodesReplacedCount:   1,
+			expectedAggregationNodesReplacedCount: 2,
+		},
 	}
 
 	for name, testCase := range testCases {
