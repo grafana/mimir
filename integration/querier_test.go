@@ -70,7 +70,7 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, series
 	commonFlags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
 		"-blocks-storage.tsdb.block-ranges-period":      blockRangePeriod.String(),
 		"-blocks-storage.tsdb.ship-interval":            "1s",
-		"-blocks-storage.tsdb.retention-period":         "1ms", // Retention period counts from the moment the block was uploaded to storage so we're setting it deliberatelly small so block gets deleted as soon as possible
+		"-blocks-storage.tsdb.retention-period":         "1ms", // Retention period counts from the moment the block was uploaded to storage so we're setting it deliberately small so block gets deleted as soon as possible
 		"-compactor.first-level-compaction-wait-period": "1m",  // Do not compact aggressively
 	})
 
@@ -109,7 +109,7 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, series
 	require.Equal(t, 200, res.StatusCode)
 
 	// Wait until the TSDB head is compacted and shipped to the storage.
-	// The shipped block contains the 1st series, while the 2ns series is in the head.
+	// The shipped block contains the 1st series, while the 2nd series is in the head.
 	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_shipper_uploads_total"))
 	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_memory_series"))
 	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(2), "cortex_ingester_memory_series_created_total"))
@@ -181,7 +181,7 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, series
 			require.NoError(t, querier.WaitSumMetrics(e2e.Equals(float64(512+(512*storeGateways.NumInstances()))), "cortex_ring_tokens_total"))
 
 			// Wait until the store-gateway has synched the new uploaded blocks. When sharding is enabled
-			// we don't known which store-gateway instance will synch the blocks, so we need to wait on
+			// we don't know which store-gateway instance will sync the blocks, so we need to wait on
 			// metrics extracted from all instances.
 			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2), "cortex_bucket_store_blocks_loaded"))
 
