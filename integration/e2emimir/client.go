@@ -322,16 +322,16 @@ func (c *Client) PushOTLPPayload(payload []byte, contentType string) (*http.Resp
 }
 
 // Query runs an instant query.
-func (c *Client) Query(query string, ts time.Time) (model.Value, error) {
+func (c *Client) Query(query string, ts time.Time, opts ...promv1.Option) (model.Value, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	value, _, err := c.querierClient.Query(ctx, query, ts)
+	value, _, err := c.querierClient.Query(ctx, query, ts, opts...)
 	return value, err
 }
 
-// Query runs a query range.
-func (c *Client) QueryRange(query string, start, end time.Time, step time.Duration) (model.Value, error) {
+// QueryRange runs a range query.
+func (c *Client) QueryRange(query string, start, end time.Time, step time.Duration, opts ...promv1.Option) (model.Value, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
@@ -339,7 +339,7 @@ func (c *Client) QueryRange(query string, start, end time.Time, step time.Durati
 		Start: start,
 		End:   end,
 		Step:  step,
-	})
+	}, opts...)
 	return value, err
 }
 
