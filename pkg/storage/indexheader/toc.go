@@ -94,8 +94,7 @@ func TOCFromIndexHeader(
 	castagnoliTable *crc32.Table,
 	decbufFactory streamencoding.DecbufFactory,
 	ll log.Logger,
-) (*TOCCompat, int, error) {
-	var err error
+) (toc *TOCCompat, indexHeaderVersion int, err error) {
 	// Create a new raw decoding buffer with access to the entire index-header file to
 	// read initial version information and the table of contents.
 	decbuf := decbufFactory.NewRawDecbuf()
@@ -113,7 +112,7 @@ func TOCFromIndexHeader(
 
 	level.Debug(ll).Log("msg", "index header file size", "bytes", indexHeaderSize)
 
-	indexHeaderVersion := int(decbuf.Byte())
+	indexHeaderVersion = int(decbuf.Byte())
 	indexVersion := int(decbuf.Byte())
 	if indexVersion != index.FormatV2 {
 		return nil, 0, fmt.Errorf("unknown or unsupported index format version %d", indexVersion)
@@ -147,15 +146,16 @@ func TOCFromIndexHeader(
 	symbols := decbuf.Be64()
 	postingsOffsetTable := decbuf.Be64()
 
-	if err := decbuf.Err(); err != nil {
+	if err = decbuf.Err(); err != nil {
 		return nil, 0, err
 	}
 
-	return &TOCCompat{
+	toc = &TOCCompat{
 		IndexVersion: indexVersion,
 		Symbols:      symbols,
 
 		PostingsListEnd:     postingsListEnd,
 		PostingsOffsetTable: postingsOffsetTable,
-	}, indexHeaderVersion, nil
+	}
+	return toc, indexHeaderVersion, nil
 }
