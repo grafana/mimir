@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/integration/e2emimir"
+	"github.com/grafana/mimir/integration/e2emimir/oauthtokenserver"
 )
 
 func TestIngestStorageKafkaAuth(t *testing.T) {
@@ -82,6 +83,45 @@ func TestIngestStorageKafkaAuth(t *testing.T) {
 				}, map[string]string{"-ingest-storage.kafka.sasl-oauthbearer-file-path": "/shared/oauth-token.json"}
 			},
 		},
+		"SASL OAUTHBEARER HTTP socket": {
+			setup: func(t *testing.T, s *e2e.Scenario) (e2edb.KafkaConfig, map[string]string) {
+				dex := e2edb.NewDex()
+				require.NoError(t, s.StartAndWaitReady(dex))
+
+				// Build the OAuth token server image.
+				oauthTokenServerImage, err := oauthtokenserver.BuildImage()
+				require.NoError(t, err)
+
+				// Start a sidecar that listens on a Unix domain socket and serves
+				// HTTP responses with fresh OAuth tokens fetched from Dex.
+				tokenServer := e2e.NewConcreteService(
+					"oauth-token-server",
+					oauthTokenServerImage,
+					nil, // use default entrypoint
+					e2e.NewCmdReadinessProbe(e2e.NewCommand("test", "-S", "/shared/oauth.sock")),
+					0, // dummy port
+				)
+				tokenServer.SetEnvVars(map[string]string{
+					"SOCKET_PATH":   "/shared/oauth.sock",
+					"DEX_URL":       "http://" + dex.NetworkHTTPEndpoint(),
+					"CLIENT_ID":     e2edb.DexClientID,
+					"CLIENT_SECRET": e2edb.DexClientSecret,
+					"USERNAME":      e2edb.DexUserEmail,
+					"PASSWORD":      e2edb.DexUserPassword,
+				})
+				require.NoError(t, s.StartAndWaitReady(tokenServer))
+
+				t.Cleanup(func() {
+					_ = tokenServer.Kill()
+					_, _ = e2emimir.RunInContainerShell(s, "rm -f /shared/oauth.sock")
+				})
+
+				return e2edb.KafkaConfig{
+					AuthMode:    e2edb.KafkaAuthSASLOAuthTokenFile,
+					DexEndpoint: dex.NetworkHTTPEndpoint(),
+				}, map[string]string{"-ingest-storage.kafka.sasl-oauthbearer-http-socket-path": "/shared/oauth.sock"}
+			},
+		},
 	}
 
 	for testName, tc := range tests {
@@ -125,10 +165,12 @@ func TestIngestStorageKafkaAuth(t *testing.T) {
 			require.NoError(t, ingester.WaitSumMetrics(e2e.Greater(0), "cortex_ingester_memory_series"))
 
 			// Query the series back and verify the result matches what was pushed.
-			result, err := client.Query("test_series", now)
-			require.NoError(t, err)
-			require.Equal(t, model.ValVector, result.Type())
-			assert.Equal(t, expectedVector, result.(model.Vector))
+			require.EventuallyWithT(t, func(c *assert.CollectT) {
+				result, err := client.Query("test_series", now)
+				require.NoError(c, err)
+				require.Equal(c, model.ValVector, result.Type())
+				assert.Equal(c, expectedVector, result.(model.Vector))
+			}, 10*time.Second, time.Second/2)
 		})
 	}
 }
