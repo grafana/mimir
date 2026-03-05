@@ -136,7 +136,6 @@ func NewLazyBinaryReader(
 ) (*LazyBinaryReader, error) {
 	localBlockDir := filepath.Join(localTenantDir, id.String())
 	indexHeaderPath := filepath.Join(localBlockDir, block.IndexHeaderFilename)
-	//sparseHeaderPath := filepath.Join(dir, block.SparseIndexHeaderFilename)
 
 	if df, err := os.Open(localBlockDir); err != nil && os.IsNotExist(err) {
 		if err := os.MkdirAll(localBlockDir, os.ModePerm); err != nil {
