@@ -378,7 +378,9 @@ func (s *BucketStore) InitialSync(ctx context.Context) error {
 		return errors.Wrap(err, "sync block")
 	}
 	if s.indexHeaderCfg.LazyLoadingEnabled {
-		s.loadBlocks(ctx, previouslyLoadedBlocks)
+		// We make a best-effort attempt to eager-load all blocks
+		// which were open before the store-gateway restarted.
+		s.eagerLoadBlocks(ctx, previouslyLoadedBlocks)
 	}
 
 	err := s.cleanUpUnownedBlocks()
@@ -403,7 +405,7 @@ func (s *BucketStore) tryRestoreLoadedBlocksSet() map[ulid.ULID]struct{} {
 	return previouslyLoadedBlocks
 }
 
-func (s *BucketStore) loadBlocks(ctx context.Context, blocks map[ulid.ULID]struct{}) {
+func (s *BucketStore) eagerLoadBlocks(ctx context.Context, blocks map[ulid.ULID]struct{}) {
 	// This is not happening during a request so we can ignore the stats.
 	ignoredStats := newSafeQueryStats()
 	// We ignore the time the block was used because it can only be in the map if it was still loaded before the shutdown
@@ -2120,7 +2122,8 @@ func (b *bucketBlock) ensureIndexHeaderLoaded(ctx context.Context, stats *safeQu
 	span.SetAttributes(attribute.Stringer("blockID", b.meta.ULID))
 
 	loadStartTime := time.Now()
-	// Call IndexVersion to lazy load the index header if it lazy-loaded.
+	// Call IndexVersion - the first usage of the indexHeaderReader will force loading of the index header
+	// if the indexHeaderReader is configured to lazy-load.
 	_, _ = b.indexHeaderReader.IndexVersion(ctx)
 	stats.update(func(stats *queryStats) {
 		stats.streamingSeriesIndexHeaderLoadDuration += time.Since(loadStartTime)
