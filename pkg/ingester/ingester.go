@@ -954,7 +954,6 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 		attributedActiveSeriesFailure := userDB.activeSeries.ActiveSeriesAttributionFailureCount()
 		if attributedActiveSeriesFailure > 0 {
 			i.metrics.attributedActiveSeriesFailuresPerUser.WithLabelValues(userID).Add(attributedActiveSeriesFailure)
-``
 		}
 
 		for idx, name := range userDB.activeSeries.CurrentMatcherNames() {
