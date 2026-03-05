@@ -41,6 +41,32 @@ func (q *searchTestQuerier) LabelValues(_ context.Context, name string, _ *stora
 
 func (q *searchTestQuerier) Close() error { return nil }
 
+func (q *searchTestQuerier) SearchLabelNames(_ context.Context, hints *mimirstorage.MimirSearchHints, _ ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
+	filter := streaminglabelvalues.BuildFilterChains(hints.Search, hints.CaseInsensitive, streaminglabelvalues.Operator(hints.Operator), hints.FuzzThreshold)
+	var results []string
+	for _, n := range q.labelNames {
+		if filter == nil {
+			results = append(results, n)
+		} else if ok, _ := filter.Accept(n); ok {
+			results = append(results, n)
+		}
+	}
+	return &sliceSearcherValueSet{values: results}, nil
+}
+
+func (q *searchTestQuerier) SearchLabelValues(_ context.Context, name string, hints *mimirstorage.MimirSearchHints, _ ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
+	filter := streaminglabelvalues.BuildFilterChains(hints.Search, hints.CaseInsensitive, streaminglabelvalues.Operator(hints.Operator), hints.FuzzThreshold)
+	var results []string
+	for _, v := range q.labelValues[name] {
+		if filter == nil {
+			results = append(results, v)
+		} else if ok, _ := filter.Accept(v); ok {
+			results = append(results, v)
+		}
+	}
+	return &sliceSearcherValueSet{values: results}, nil
+}
+
 func newSearchTestQueryable(labelNames []string, labelValues map[string][]string) mockSampleAndChunkQueryable {
 	q := &searchTestQuerier{labelNames: labelNames, labelValues: labelValues}
 	return mockSampleAndChunkQueryable{
@@ -186,9 +212,16 @@ func TestFilterChain(t *testing.T) {
 
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
-			hints := buildSearchHints(&tc.params)
+			mimirHints := buildMimirSearchHints(&tc.params)
+			filter := streaminglabelvalues.BuildFilterChains(mimirHints.Search, mimirHints.CaseInsensitive, streaminglabelvalues.Operator(mimirHints.Operator), mimirHints.FuzzThreshold)
 			for _, input := range tc.input {
-				accepted, score := hints.Filter.Accept(input)
+				var accepted bool
+				var score float64
+				if filter != nil {
+					accepted, score = filter.Accept(input)
+				} else {
+					accepted, score = true, -1
+				}
 				require.Equalf(t, tc.expected[input].accepted, accepted, "%s should have accepted %v but got %v", input, tc.expected[input].accepted, score)
 				require.InDeltaf(t, tc.expected[input].score, score, 0.02, "%s should have score %v but got %v", input, tc.expected[input].score, score)
 			}
@@ -345,11 +378,11 @@ type searchTestNativeSearcher struct {
 	searchLabelValues map[string][]string
 }
 
-func (q *searchTestNativeSearcher) SearchLabelNames(_ context.Context, _ *mimirstorage.SearchHints, _ ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
+func (q *searchTestNativeSearcher) SearchLabelNames(_ context.Context, _ *mimirstorage.MimirSearchHints, _ ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
 	return &sliceSearcherValueSet{values: q.searchLabelNames}, nil
 }
 
-func (q *searchTestNativeSearcher) SearchLabelValues(_ context.Context, name string, _ *mimirstorage.SearchHints, _ ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
+func (q *searchTestNativeSearcher) SearchLabelValues(_ context.Context, name string, _ *mimirstorage.MimirSearchHints, _ ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
 	return &sliceSearcherValueSet{values: q.searchLabelValues[name]}, nil
 }
 
@@ -503,12 +536,12 @@ type cancellingNativeSearcher struct {
 	vs *cancellingSearcherValueSet
 }
 
-func (q *cancellingNativeSearcher) SearchLabelNames(ctx context.Context, _ *mimirstorage.SearchHints, _ ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
+func (q *cancellingNativeSearcher) SearchLabelNames(ctx context.Context, _ *mimirstorage.MimirSearchHints, _ ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
 	q.vs.ctx = ctx
 	return q.vs, nil
 }
 
-func (q *cancellingNativeSearcher) SearchLabelValues(ctx context.Context, _ string, _ *mimirstorage.SearchHints, _ ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
+func (q *cancellingNativeSearcher) SearchLabelValues(ctx context.Context, _ string, _ *mimirstorage.MimirSearchHints, _ ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
 	q.vs.ctx = ctx
 	return q.vs, nil
 }
