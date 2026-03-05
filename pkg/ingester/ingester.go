@@ -2909,14 +2909,19 @@ func (i *Ingester) createBlockChunkQuerier(userID string, b tsdb.BlockReader, mi
 	return mirroredQuerier, nil
 }
 
-// returns a function that computes the generation label for a block relative to the TSDB head. Generation 0 is the head
-// block; persisted blocks get generation 1, 2, ... counting back in block-range units from the head's MinTime.
+// returns a function that computes the generation label for a block relative to the TSDB head.
+// Generation 0 is the head block; persisted blocks get generation 1, 2, etc counting back in block-range units
+// from the head's MinTime.
 func blockGenerationCalculator(db *userTSDB, blockRange int64) func(b tsdb.BlockReader) string {
 	return func(b tsdb.BlockReader) string {
-		gen := (db.Head().MinTime() - b.Meta().MinTime) / blockRange
-		if gen < 0 {
-			gen = 0
+		if _, ok := b.(*tsdb.RangeHead); ok {
+			return "0" // Special case: querying head block
 		}
+		headMinTime := db.Head().MinTime()
+		if headMinTime == math.MaxInt64 {
+			return "unknown" // Edge case: head is empty, and the query touches block generation >=1
+		}
+		gen := max(1, (headMinTime-b.Meta().MinTime)/blockRange)
 		return strconv.FormatInt(gen, 10)
 	}
 }
