@@ -913,6 +913,7 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 
 		var oldMatcherNames []string
 		if matchersChanged || catChanged {
+			level.Debug(i.logger).Log("msg", "active series config changed, reloading", "user", userID, "matchers_changed", matchersChanged, "cost_attribution_changed", catChanged)
 			if matchersChanged {
 				// We shouldn't delete the metrics yet, just in case a metrics scrape happens while we're reloading,
 				// we don't want to trigger a staleness NaN in the metrics.
@@ -950,9 +951,10 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 			i.metrics.activeNativeHistogramBucketsPerUser.DeleteLabelValues(userID)
 		}
 
-		AttributedActiveSeriesFailure := userDB.activeSeries.ActiveSeriesAttributionFailureCount()
-		if AttributedActiveSeriesFailure > 0 {
-			i.metrics.attributedActiveSeriesFailuresPerUser.WithLabelValues(userID).Add(AttributedActiveSeriesFailure)
+		attributedActiveSeriesFailure := userDB.activeSeries.ActiveSeriesAttributionFailureCount()
+		if attributedActiveSeriesFailure > 0 {
+			i.metrics.attributedActiveSeriesFailuresPerUser.WithLabelValues(userID).Add(attributedActiveSeriesFailure)
+``
 		}
 
 		for idx, name := range userDB.activeSeries.CurrentMatcherNames() {
