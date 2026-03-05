@@ -2,7 +2,9 @@ package templates
 
 import (
 	"fmt"
+	"maps"
 	"net/url"
+	"slices"
 	"sync"
 
 	"github.com/go-kit/log"
@@ -79,6 +81,11 @@ func (tp *Factory) GetTemplate(kind Kind) (*Template, error) {
 		*t.ExternalURL = *tp.cfg.ExternalURL
 	}
 	return result, nil
+}
+
+// Kinds returns kinds that have user-defined templates
+func (tp *Factory) Kinds() []Kind {
+	return slices.Collect(maps.Keys(tp.templates))
 }
 
 // WithTemplate creates a new factory that has the provided TemplateDefinition. If definition with the same name already exists for this kind, it is replaced.
