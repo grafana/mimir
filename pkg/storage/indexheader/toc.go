@@ -88,8 +88,9 @@ func TOCFromBucketTSDBIndex(
 }
 
 // TOCFromIndexHeader builds the TOCCompact from the on-disk Mimir index-header BinaryFormatV1.
-// While any DecbufFactory implementation will work, including a bucket-based Decbuf,
-// the parsing is only compatible with the on-disk format which does not exist in the bucket.
+// The BinaryFormatV1 has different offsets than the full Prometheus block index in the bucket:
+// it only has two main sections, which are copies of the Symbols table and PostingsOffsets table,
+// and it has different header/metadata and TOC formats.
 func TOCFromIndexHeader(
 	castagnoliTable *crc32.Table,
 	decbufFactory streamencoding.DecbufFactory,
