@@ -804,7 +804,7 @@ func newPartitionBatcher(partition int32, maxSeriesPerBatch int, logger log.Logg
 		userSeries:  nil,
 		seriesCount: 0,
 
-		flushChan:    make(chan struct{}),
+		flushChan:    make(chan struct{}, 1),
 		stoppingChan: stopping,
 
 		trackerClient: trackerClient,

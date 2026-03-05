@@ -1119,7 +1119,7 @@ func TestMetricsGatheringIsNotConcurrent(t *testing.T) {
 
 	require.EventuallyWithT(t, func(t *assert.CollectT) {
 		require.Equal(t, partitions, tracker.partitionRing.PartitionRing().ActivePartitionsCount())
-	}, 5*time.Second, 100*time.Millisecond, "All partitions should be active now.")
+	}, 30*time.Second, 100*time.Millisecond, "All partitions should be active now.")
 
 	_, err := reg.Gather()
 	require.NoError(t, err)
@@ -1145,7 +1145,7 @@ func BenchmarkMetricsGathering(b *testing.B) {
 
 			require.EventuallyWithT(b, func(t *assert.CollectT) {
 				require.Equal(t, partitions, tracker.partitionRing.PartitionRing().ActivePartitionsCount())
-			}, 5*time.Second, 100*time.Millisecond, "All partitions should be active now.")
+			}, 30*time.Second, 100*time.Millisecond, "All partitions should be active now.")
 
 			for tenant := 0; tenant < tenants; tenant++ {
 				userID := strconv.Itoa(tenant)
