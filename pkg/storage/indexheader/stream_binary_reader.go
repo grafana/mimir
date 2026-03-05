@@ -138,11 +138,6 @@ func NewFileStreamBinaryReader(ctx context.Context, binPath string, id ulid.ULID
 // It returns an error if the sparse header cannot be loaded from any of the sources.
 // If the sparse header was not found on disk, it will try to write it after generating or downloading it. If writing fails, loadSparseHeader does not return an error.
 func (r *StreamBinaryReader) loadSparseHeader(ctx context.Context, logger log.Logger, cfg Config, postingOffsetsInMemSampling int, sparseHeadersPath string, bkt objstore.InstrumentedBucketReader, id ulid.ULID) error {
-	// Only v2 indexes use sparse headers
-	if r.toc.IndexVersion != index.FormatV2 {
-		return r.loadFromIndexHeader(logger, cfg, postingOffsetsInMemSampling)
-	}
-
 	// 1. Try to load from local file first
 	localSparseHeaderBytes, err := os.ReadFile(sparseHeadersPath)
 	if err == nil {
