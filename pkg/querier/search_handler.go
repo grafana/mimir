@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -27,7 +26,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-type searchExecutor func(ctx context.Context, searcher mimirstorage.Searcher, hints *mimirstorage.SearchHints, params *searchParams) (mimirstorage.SearcherValueSet, error)
+type searchExecutor func(ctx context.Context, searcher mimirstorage.MimirSearcher, hints *mimirstorage.MimirSearchHints, params *searchParams) (mimirstorage.SearcherValueSet, error)
 
 // searchParams holds parsed parameters common to all search endpoints.
 type searchParams struct {
@@ -47,57 +46,19 @@ type searchParams struct {
 	labelName     string
 }
 
-// buildSearchHints constructs a SearchHints from the parsed search params.
-// When search terms are present, a FilterChains is built and attached as hints.Filter:
-//   - A string-matching chain (FilterContains) accepts values containing any/all terms.
-//   - An optional fuzzy-matching chain (FilterJaro) accepts near-matches above the threshold.
-//
-// The two chains are OR'd together so that a value accepted by either chain is included.
-func buildSearchHints(params *searchParams) *mimirstorage.SearchHints {
-	hints := &mimirstorage.SearchHints{Limit: params.limit}
-
-	chain := streaminglabelvalues.NewFilterChains(params.caseSensitive)
-	hints.Filter = chain
-
-	if len(params.search) > 0 {
-
-		// String-matching chain: each search term becomes a FilterContains.
-		stringChain := streaminglabelvalues.NewFilterChain(params.operation, len(params.search))
-		for _, s := range params.search {
-			term := s
-			if !params.caseSensitive {
-				term = strings.ToLower(s)
-			}
-			stringChain.AddFilter(streaminglabelvalues.NewFilterContains(term))
-		}
-		chain.AddFilterChain(stringChain)
-
-		// Optional fuzzy-matching chain: each search term becomes a FilterJaro.
-		if params.fuzzThreshold > 0 {
-			fuzzChain := streaminglabelvalues.NewFilterChain(params.operation, len(params.search))
-			threshold := float64(params.fuzzThreshold) / 100.0
-			for _, s := range params.search {
-				term := s
-				if !params.caseSensitive {
-					term = strings.ToLower(s)
-				}
-				fuzzChain.AddFilter(streaminglabelvalues.NewFilterJaro(term, threshold))
-			}
-			chain.AddFilterChain(fuzzChain)
-		}
+// buildMimirSearchHints constructs a MimirSearchHints from the parsed search params.
+// The raw parameters are stored directly so they can be serialised and sent to remote
+// nodes (store-gateway, ingester) without needing a Go closure.
+func buildMimirSearchHints(params *searchParams) *mimirstorage.MimirSearchHints {
+	return &mimirstorage.MimirSearchHints{
+		Search:          params.search,
+		CaseInsensitive: !params.caseSensitive,
+		FuzzThreshold:   float64(params.fuzzThreshold) / 100.0,
+		Operator:        int(params.operation),
+		SortBy:          int(params.sortBy),
+		SortOrder:       int(params.sortDir),
+		Limit:           params.limit,
 	}
-
-	if params.sortBy == streaminglabelvalues.Alpha && params.sortDir == streaminglabelvalues.Asc {
-		hints.Compare = &streaminglabelvalues.ComparerAlpha{}
-	} else if params.sortBy == streaminglabelvalues.Alpha {
-		hints.Compare = &streaminglabelvalues.ComparerAlphaDesc{}
-	} else if params.sortBy == streaminglabelvalues.Score && params.sortDir == streaminglabelvalues.Desc {
-		hints.Compare = streaminglabelvalues.NewCompareScore(params.search)
-	} else {
-		// TODO
-	}
-
-	return hints
 }
 
 func doSearchHandler(queryable storage.SampleAndChunkQueryable, _ *validation.Overrides, logger log.Logger, handler string, searchExec searchExecutor, requireLabelNameParam bool) http.Handler {
@@ -128,8 +89,8 @@ func doSearchHandler(queryable storage.SampleAndChunkQueryable, _ *validation.Ov
 		}
 		defer q.Close()
 
-		searcher := q.(mimirstorage.Searcher)
-		hints := buildSearchHints(params)
+		searcher := q.(mimirstorage.MimirSearcher)
+		hints := buildMimirSearchHints(params)
 
 		vs, err := searchExec(ctx, searcher, hints, params)
 		if err != nil {
@@ -157,7 +118,7 @@ func doSearchHandler(queryable storage.SampleAndChunkQueryable, _ *validation.Ov
 
 // SearchMetricNamesHandler returns an HTTP handler for GET/POST /api/v1/search/metric_names.
 func SearchMetricNamesHandler(queryable storage.SampleAndChunkQueryable, overrides *validation.Overrides, logger log.Logger) http.Handler {
-	searchExec := func(ctx context.Context, searcher mimirstorage.Searcher, hints *mimirstorage.SearchHints, params *searchParams) (mimirstorage.SearcherValueSet, error) {
+	searchExec := func(ctx context.Context, searcher mimirstorage.MimirSearcher, hints *mimirstorage.MimirSearchHints, params *searchParams) (mimirstorage.SearcherValueSet, error) {
 		return searcher.SearchLabelValues(ctx, model.MetricNameLabel, hints, params.matchers...)
 	}
 	return doSearchHandler(queryable, overrides, logger, "SearchMetricNamesHandler", searchExec, false)
@@ -165,7 +126,7 @@ func SearchMetricNamesHandler(queryable storage.SampleAndChunkQueryable, overrid
 
 // SearchLabelNamesHandler returns an HTTP handler for GET/POST /api/v1/search/label_names.
 func SearchLabelNamesHandler(queryable storage.SampleAndChunkQueryable, overrides *validation.Overrides, logger log.Logger) http.Handler {
-	searchExec := func(ctx context.Context, searcher mimirstorage.Searcher, hints *mimirstorage.SearchHints, params *searchParams) (mimirstorage.SearcherValueSet, error) {
+	searchExec := func(ctx context.Context, searcher mimirstorage.MimirSearcher, hints *mimirstorage.MimirSearchHints, params *searchParams) (mimirstorage.SearcherValueSet, error) {
 		return searcher.SearchLabelNames(ctx, hints, params.matchers...)
 	}
 	return doSearchHandler(queryable, overrides, logger, "SearchLabelNamesHandler", searchExec, false)
@@ -173,7 +134,7 @@ func SearchLabelNamesHandler(queryable storage.SampleAndChunkQueryable, override
 
 // SearchLabelValuesHandler returns an HTTP handler for GET/POST /api/v1/search/label_values.
 func SearchLabelValuesHandler(queryable storage.SampleAndChunkQueryable, overrides *validation.Overrides, logger log.Logger) http.Handler {
-	searchExec := func(ctx context.Context, searcher mimirstorage.Searcher, hints *mimirstorage.SearchHints, params *searchParams) (mimirstorage.SearcherValueSet, error) {
+	searchExec := func(ctx context.Context, searcher mimirstorage.MimirSearcher, hints *mimirstorage.MimirSearchHints, params *searchParams) (mimirstorage.SearcherValueSet, error) {
 		return searcher.SearchLabelValues(ctx, params.labelName, hints, params.matchers...)
 	}
 	return doSearchHandler(queryable, overrides, logger, "SearchLabelNamesHandler", searchExec, true)
