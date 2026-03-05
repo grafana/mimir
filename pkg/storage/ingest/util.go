@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/http"
 	"os"
 	"strconv"
 	"time"
@@ -167,6 +169,10 @@ func kafkaAuthOptions(cfg KafkaAuthConfig) []kgo.Opt {
 				err = json.Unmarshal(f, &a)
 				return a, err
 			})
+		case cfg.OauthbearerHTTPSocketPath != "":
+			m = oauth.Oauth(func(ctx context.Context) (oauth.Auth, error) {
+				return requestOAuthToken(ctx, cfg.OauthbearerHTTPSocketPath, cfg.OauthbearerHTTPSocketTimeout)
+			})
 		default:
 			panic(fmt.Errorf("SASL mechanism is %s but no way to get token defined", SASLMechanismOauthbearer))
 		}
@@ -175,6 +181,43 @@ func kafkaAuthOptions(cfg KafkaAuthConfig) []kgo.Opt {
 	}
 
 	return []kgo.Opt{kgo.SASL(m)}
+}
+
+func requestOAuthToken(ctx context.Context, socketPath string, timeout time.Duration) (oauth.Auth, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	transport := &http.Transport{
+		DisableKeepAlives: true,
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
+		},
+	}
+
+	client := &http.Client{
+		Transport: transport,
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://token/", nil)
+	if err != nil {
+		return oauth.Auth{}, fmt.Errorf("creating request for OAuth HTTP socket %s: %w", socketPath, err)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return oauth.Auth{}, fmt.Errorf("requesting token from OAuth HTTP socket %s: %w", socketPath, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return oauth.Auth{}, fmt.Errorf("requesting token from OAuth HTTP socket %s: unexpected status %s", socketPath, resp.Status)
+	}
+
+	var a oauth.Auth
+	if err := json.NewDecoder(resp.Body).Decode(&a); err != nil {
+		return oauth.Auth{}, fmt.Errorf("parsing OAuth token from socket %s: %w", socketPath, err)
+	}
+	return a, nil
 }
 
 func recordsTracer() *kotel.Tracer {

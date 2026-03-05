@@ -36,7 +36,7 @@ var (
 	ErrInconsistentConsumerLagAtStartup  = fmt.Errorf("the target and max consumer lag at startup must be either both set to 0 or to a value greater than 0")
 	ErrInvalidMaxConsumerLagAtStartup    = fmt.Errorf("the configured max consumer lag at startup must greater or equal than the configured target consumer lag")
 	ErrInconsistentSASLCredentials       = fmt.Errorf("the SASL username and password must be both configured to enable SASL authentication")
-	ErrSASLOauthbearerBadConfig          = fmt.Errorf("either the OAuth token or a file path to load the token from must be configured to enable SASL OAUTHBEARER authentication")
+	ErrSASLOauthbearerBadConfig          = fmt.Errorf("exactly one of OAuth token, file path, or HTTP socket path must be configured to enable SASL OAUTHBEARER authentication")
 	ErrInvalidSASLMechanism              = fmt.Errorf("the configured SASL mechanism is invalid, must be one of: %s", util.JoinStrings(saslMechanismOptions, ", "))
 
 	ErrInvalidIngestionConcurrencyMax    = errors.New("ingest-storage.kafka.ingestion-concurrency-max must either be set to 0 or to a value greater than 0")
@@ -369,7 +369,9 @@ type KafkaAuthConfig struct {
 	OauthbearerZid        string                    `yaml:"sasl_oauthbearer_zid"`
 	OauthbearerExtensions flagext.LimitsMap[string] `yaml:"sasl_oauthbearer_extensions"`
 
-	OauthbearerFilePath string `yaml:"sasl_oauthbearer_file_path"`
+	OauthbearerFilePath          string        `yaml:"sasl_oauthbearer_file_path"`
+	OauthbearerHTTPSocketPath    string        `yaml:"sasl_oauthbearer_http_socket_path"`
+	OauthbearerHTTPSocketTimeout time.Duration `yaml:"sasl_oauthbearer_http_socket_timeout"`
 }
 
 func (cfg *KafkaAuthConfig) RegisterFlags(f *flag.FlagSet) {
@@ -390,6 +392,9 @@ func (cfg *KafkaAuthConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagS
 	f.Var(&cfg.OauthbearerExtensions, prefix+"oauthbearer-extensions", "Optional additional OAuth extensions to include when authenticating to Kafka using SASL OAUTHBEARER as a JSON object.")
 
 	f.StringVar(&cfg.OauthbearerFilePath, prefix+"oauthbearer-file-path", "", `Path to a file containing an OAuth token to authenticate to Kafka. The file is read anew on every reauthentication, so it can be updated with fresh tokens. The file must be in JSON format, adhering to this JSON schema: {"type": "object", "required": ["token"], "properties": {"token": {"type": "string"}, "zid": {"type": "string"}, "extensions": {"type": "object", "additionalProperties": {"type": "string"}}}}`)
+
+	f.StringVar(&cfg.OauthbearerHTTPSocketPath, prefix+"oauthbearer-http-socket-path", "", `Path to a Unix domain socket to fetch an OAuth token from via HTTP. On every authentication or reauthentication, an HTTP GET / request is made to the socket and the response body is read as JSON. The JSON schema is the same as for `+prefix+`oauthbearer-file-path.`)
+	f.DurationVar(&cfg.OauthbearerHTTPSocketTimeout, prefix+"oauthbearer-http-socket-timeout", 10*time.Second, "Timeout for requesting the token from the HTTP socket.")
 }
 
 func (cfg *KafkaAuthConfig) Validate() error {
@@ -405,7 +410,21 @@ func (cfg *KafkaAuthConfig) Validate() error {
 		}
 
 	case SASLMechanismOauthbearer:
-		if (cfg.OauthbearerToken.String() == "") == (cfg.OauthbearerFilePath == "") {
+		hasToken := cfg.OauthbearerToken.String() != ""
+		hasFile := cfg.OauthbearerFilePath != ""
+		hasSocket := cfg.OauthbearerHTTPSocketPath != ""
+		// Exactly one of the three options must be configured.
+		numSet := 0
+		if hasToken {
+			numSet++
+		}
+		if hasFile {
+			numSet++
+		}
+		if hasSocket {
+			numSet++
+		}
+		if numSet != 1 {
 			return ErrSASLOauthbearerBadConfig
 		}
 

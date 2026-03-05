@@ -607,6 +607,8 @@
   "ingest-storage.kafka.sasl-oauthbearer-zid": "",
   "ingest-storage.kafka.sasl-oauthbearer-extensions": {},
   "ingest-storage.kafka.sasl-oauthbearer-file-path": "",
+  "ingest-storage.kafka.sasl-oauthbearer-http-socket-path": "",
+  "ingest-storage.kafka.sasl-oauthbearer-http-socket-timeout": 10000000000,
   "ingest-storage.kafka.tls-cert-path": "",
   "ingest-storage.kafka.tls-key-path": "",
   "ingest-storage.kafka.tls-ca-path": "",

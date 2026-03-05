@@ -8850,6 +8850,26 @@
             },
             {
               "kind": "field",
+              "name": "sasl_oauthbearer_http_socket_path",
+              "required": false,
+              "desc": "Path to a Unix domain socket to fetch an OAuth token from via HTTP. On every authentication or reauthentication, an HTTP GET / request is made to the socket and the response body is read as JSON. The JSON schema is the same as for ingest-storage.kafka.sasl-oauthbearer-file-path.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingest-storage.kafka.sasl-oauthbearer-http-socket-path",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "sasl_oauthbearer_http_socket_timeout",
+              "required": false,
+              "desc": "Timeout for requesting the token from the HTTP socket.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "ingest-storage.kafka.sasl-oauthbearer-http-socket-timeout",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
               "name": "tls_enabled",
               "required": false,
               "desc": "Enable TLS for the Kafka client connection.",

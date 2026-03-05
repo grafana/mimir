@@ -604,6 +604,11 @@ func IsSafeToApplyFilteringAfter(node planning.Node, group SharedSelectorGroup, 
 
 		return true, nil
 
+	case *core.DeduplicateAndMerge:
+		// It's always safe to apply filtering after a DeduplicateAndMerge node given DeduplicateAndMerge produces
+		// the same series as the inner node, just with samples for series with identical labels merged into one series.
+		return true, nil
+
 	// FIXME: we can apply filtering later for some binary operations (eg. vector/scalar combinations like foo{env="bar"} * 2)
 	// but these have been omitted for now in the interests of simplicity, as they're not common scenarios.
 
