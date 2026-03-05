@@ -1002,26 +1002,33 @@ func TestUsageTracker_CleanupSnapshots(t *testing.T) {
 		require.NoError(t, err)
 
 		now := time.Now()
+		legacySnapshotFilename := func(time time.Time, instanceID string, partitionID int32) string {
+			return fmt.Sprintf("snapshot-%d-p%d-%s.bin", time.UnixMilli(), partitionID, instanceID)
+		}
+
 		filenamesToDelete := []string{
-			snapshotFilename(now.Add(-idleTimeout*(snapshotCleanupIdleTimeoutFactor*10)), "usage-tracker-zone-a-0", 0),
-			snapshotFilename(now.Add(-idleTimeout*(snapshotCleanupIdleTimeoutFactor*10)), "usage-tracker-zone-a-0", 1),
-			snapshotFilename(now.Add(-idleTimeout*(snapshotCleanupIdleTimeoutFactor+1)), "usage-tracker-zone-a-1", 0),
-			snapshotFilename(now.Add(-idleTimeout*(snapshotCleanupIdleTimeoutFactor+1)), "usage-tracker-zone-a-1", 1),
-			snapshotFilename(now.Add(-idleTimeout*snapshotCleanupIdleTimeoutFactor-time.Minute), "usage-tracker-zone-a-1", 0),
-			snapshotFilename(now.Add(-idleTimeout*snapshotCleanupIdleTimeoutFactor-time.Minute), "usage-tracker-zone-a-1", 1),
+			snapshotFilename(now.Add(-idleTimeout*(snapshotCleanupIdleTimeoutFactor*10)), "usage-tracker-zone-a-0", 0, 0),
+			snapshotFilename(now.Add(-idleTimeout*(snapshotCleanupIdleTimeoutFactor*10)), "usage-tracker-zone-a-0", 1, 0),
+			snapshotFilename(now.Add(-idleTimeout*(snapshotCleanupIdleTimeoutFactor+1)), "usage-tracker-zone-a-1", 0, 0),
+			snapshotFilename(now.Add(-idleTimeout*(snapshotCleanupIdleTimeoutFactor+1)), "usage-tracker-zone-a-1", 1, 0),
+			snapshotFilename(now.Add(-idleTimeout*snapshotCleanupIdleTimeoutFactor-time.Minute), "usage-tracker-zone-a-1", 0, 0),
+			snapshotFilename(now.Add(-idleTimeout*snapshotCleanupIdleTimeoutFactor-time.Minute), "usage-tracker-zone-a-1", 1, 0),
+			// And make sure we can still clean up filenames such as the ones usage-tracker USED to produce.
+			legacySnapshotFilename(now.Add(-idleTimeout*(snapshotCleanupIdleTimeoutFactor*10)), "usage-tracker-zone-a-0", 2),
 		}
 		for _, filename := range filenamesToDelete {
 			require.NoError(t, snapshotsBucket.Upload(t.Context(), filename, strings.NewReader(`snapshot`), nil), "failed to upload snapshot %s", filename)
 		}
 		filenamesToKeep := []string{
-			snapshotFilename(now.Add(-idleTimeout*snapshotCleanupIdleTimeoutFactor+time.Minute), "usage-tracker-zone-a-1", 0),
-			snapshotFilename(now.Add(-idleTimeout*snapshotCleanupIdleTimeoutFactor+time.Minute), "usage-tracker-zone-a-1", 1),
-			snapshotFilename(now.Add(-idleTimeout*5), "usage-tracker-zone-a-1", 0),
-			snapshotFilename(now.Add(-idleTimeout*5), "usage-tracker-zone-a-1", 1),
-			snapshotFilename(now.Add(-idleTimeout), "usage-tracker-zone-b-2", 0),
-			snapshotFilename(now.Add(-idleTimeout), "usage-tracker-zone-b-3", 5),
-			snapshotFilename(now.Add(-idleTimeout/10), "usage-tracker-zone-a-4", 2),
-			snapshotFilename(now.Add(-idleTimeout/10), "usage-tracker-zone-a-5", 3),
+			snapshotFilename(now.Add(-idleTimeout*snapshotCleanupIdleTimeoutFactor+time.Minute), "usage-tracker-zone-a-1", 0, 0),
+			snapshotFilename(now.Add(-idleTimeout*snapshotCleanupIdleTimeoutFactor+time.Minute), "usage-tracker-zone-a-1", 1, 0),
+			snapshotFilename(now.Add(-idleTimeout*5), "usage-tracker-zone-a-1", 0, 0),
+			snapshotFilename(now.Add(-idleTimeout*5), "usage-tracker-zone-a-1", 1, 0),
+			snapshotFilename(now.Add(-idleTimeout), "usage-tracker-zone-b-2", 0, 0),
+			snapshotFilename(now.Add(-idleTimeout), "usage-tracker-zone-b-3", 5, 0),
+			snapshotFilename(now.Add(-idleTimeout/10), "usage-tracker-zone-a-4", 2, 0),
+			snapshotFilename(now.Add(-idleTimeout/10), "usage-tracker-zone-a-5", 3, 0),
+			legacySnapshotFilename(now.Add(-idleTimeout/10), "usage-tracker-zone-a-5", 4),
 		}
 		for _, filename := range filenamesToKeep {
 			require.NoError(t, snapshotsBucket.Upload(t.Context(), filename, strings.NewReader(`snapshot`), nil), "failed to upload snapshot %s", filename)
@@ -1074,7 +1081,7 @@ func TestUsageTracker_CleanupSnapshots(t *testing.T) {
 		require.Nil(t, ut.snapshotCleanupsTotal)
 
 		// Upload a file.
-		require.NoError(t, ut.snapshotsBucket.Upload(t.Context(), snapshotFilename(time.Now().Add(-10*snapshotCleanupIdleTimeoutFactor*ut.cfg.IdleTimeout), "usage-tracker-zone-a-1", 0), strings.NewReader("snapshot"), nil))
+		require.NoError(t, ut.snapshotsBucket.Upload(t.Context(), snapshotFilename(time.Now().Add(-10*snapshotCleanupIdleTimeoutFactor*ut.cfg.IdleTimeout), "usage-tracker-zone-a-1", 0, 0), strings.NewReader("snapshot"), nil))
 
 		// Wait for a second, we run cleanups every 100ms.
 		time.Sleep(time.Second)

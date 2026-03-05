@@ -797,6 +797,7 @@ func (p *partitionHandler) publishSnapshot(ctx context.Context) error {
 
 	firstSnapshotEventOffset := p.lastPublishedEventOffset.Load()
 	lastSnapshotEventOffset := int64(0)
+	fileIdx := 0
 
 	writeFileAndPublishEvent := func() error {
 		if len(file.Data) == 0 {
@@ -808,7 +809,8 @@ func (p *partitionHandler) publishSnapshot(ctx context.Context) error {
 			level.Error(p.logger).Log("msg", "failed to marshal snapshot file", "err", err)
 			return errors.Wrap(err, "failed to marshal snapshot file")
 		}
-		filename := snapshotFilename(time.Now(), p.cfg.InstanceRing.InstanceID, p.partitionID)
+		filename := snapshotFilename(time.Now(), p.cfg.InstanceRing.InstanceID, p.partitionID, fileIdx)
+		fileIdx++
 		if err := p.snapshotsBucket.Upload(ctx, filename, bytes.NewReader(fileData)); err != nil {
 			level.Error(p.logger).Log("msg", "failed to upload snapshot file to bucket", "filename", filename, "err", err)
 			return errors.Wrap(err, "failed to upload snapshot file to bucket")
