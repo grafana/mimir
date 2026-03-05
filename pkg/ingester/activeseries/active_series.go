@@ -533,6 +533,7 @@ func (s *seriesStripe) reloadConfig(asm *asmodel.Matchers, cat *costattribution.
 	// Lookup each series in the tsdb, take its labels and if matchers changed, evaluate the new matches (this is the slowest operation with hundreds of custom trackers).
 	for ref := range resolved {
 		entry := resolvedSeries{}
+		// ScratchBuilder must be per-iteration: labels reference the builder's buffer and must survive across iterations.
 		buf := labels.NewScratchBuilder(128)
 		if err := idx.Series(ref, &buf, nil); err != nil {
 			// Don't store these, this should never happen,
@@ -580,7 +581,7 @@ func (s *seriesStripe) reloadConfig(asm *asmodel.Matchers, cat *costattribution.
 				continue
 			}
 
-			// It's possible that a series have may been added while we were in the lookup phase,
+			// It's possible that a series may have been added while we were in the lookup phase,
 			// So we need to keep this logic here for those.
 			if err := idx.Series(ref, &buf, nil); err != nil {
 				s.activeSeriesAttributionFailureCounter.Add(1)
