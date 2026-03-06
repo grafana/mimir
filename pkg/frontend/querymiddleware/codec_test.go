@@ -74,7 +74,9 @@ func requireEqualMetricsQueryRequest(t *testing.T, expected, actual MetricsQuery
 	require.Equal(t, expected.GetStats(), actual.GetStats())
 }
 
-func TestCodec_EncodeMetricsQueryRequest(t *testing.T) {
+func TestCodec_EncodeMetricsQueryRequest_Roundtrip(t *testing.T) {
+	// Note that this test decodes a request URL and then encodes the request again
+	// to compare the results.
 	codec := newTestCodec()
 	codec.lookbackDelta = 6 * time.Minute
 
@@ -224,6 +226,55 @@ func TestCodec_EncodeMetricsQueryRequest(t *testing.T) {
 			encodedReq, err := codec.EncodeMetricsQueryRequest(ctx, req)
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedEncodedUrl, encodedReq.RequestURI)
+
+			actualUserID, _, err := user.ExtractOrgIDFromHTTPRequest(encodedReq)
+			require.NoError(t, err)
+			require.Equal(t, userID, actualUserID)
+		})
+	}
+}
+
+func TestCodec_EncodeMetricsQueryRequest_Oneway(t *testing.T) {
+	codec := newTestCodec()
+
+	for name, tc := range map[string]struct {
+		request     MetricsQueryRequest
+		expectedUrl string
+	}{
+		"no lookback_delta set": {
+			request: NewPrometheusInstantQueryRequest(
+				"/api/v1/query",
+				nil,
+				1234567890000,
+				time.Duration(0),
+				parseQuery(t, "up"),
+				Options{},
+				nil,
+				"",
+			),
+			expectedUrl: "/api/v1/query?query=up&time=1234567890",
+		},
+		"with lookback_delta set": {
+			request: NewPrometheusInstantQueryRequest(
+				"/api/v1/query",
+				nil,
+				1234567890000,
+				time.Duration(50*time.Second),
+				parseQuery(t, "up"),
+				Options{},
+				nil,
+				"",
+			),
+			expectedUrl: "/api/v1/query?lookback_delta=50&query=up&time=1234567890",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			const userID = "user-1"
+			ctx := user.InjectOrgID(context.Background(), userID)
+
+			encodedReq, err := codec.EncodeMetricsQueryRequest(ctx, tc.request)
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedUrl, encodedReq.RequestURI)
 
 			actualUserID, _, err := user.ExtractOrgIDFromHTTPRequest(encodedReq)
 			require.NoError(t, err)
