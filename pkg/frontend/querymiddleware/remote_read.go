@@ -15,6 +15,7 @@ import (
 
 	"github.com/golang/snappy"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage/remote"
 	"go.opentelemetry.io/otel/trace"
@@ -32,6 +33,8 @@ const (
 	matchersLogKey = "matchers"
 	startLogKey    = "start"
 )
+
+var errCantGetQueryOptsForRemoteReadRequest = errors.New("cannot get PromQL query options from remote read query request")
 
 type remoteReadRoundTripper struct {
 	next http.RoundTripper
@@ -224,6 +227,10 @@ type remoteReadQueryRequest struct {
 	path      string
 	query     *prompb.Query
 	promQuery string
+}
+
+func (r *remoteReadQueryRequest) GetQueryOpts() (promql.QueryOpts, error) {
+	return nil, errCantGetQueryOptsForRemoteReadRequest
 }
 
 func (r *remoteReadQueryRequest) AddSpanTags(_ trace.Span) {

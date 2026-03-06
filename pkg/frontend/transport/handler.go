@@ -458,6 +458,10 @@ func paramValueFromDetails(details *querymiddleware.QueryDetails, paramName stri
 		if details.Step != 0 {
 			return strconv.FormatInt(details.Step.Milliseconds(), 10)
 		}
+	case "lookback_delta":
+		if details.LookbackDelta != 0 {
+			return details.LookbackDelta.String()
+		}
 	}
 	return ""
 }
