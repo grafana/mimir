@@ -726,11 +726,13 @@ func (c Codec) EncodeMetricsQueryRequest(ctx context.Context, r MetricsQueryRequ
 	switch r := r.(type) {
 	case *PrometheusRangeQueryRequest:
 		values := url.Values{
-			"start":          []string{encodeTime(r.GetStart())},
-			"end":            []string{encodeTime(r.GetEnd())},
-			"step":           []string{encodeDurationMs(r.GetStep())},
-			"lookback_delta": []string{encodeDuration(r.GetLookbackDelta())},
-			"query":          []string{r.GetQuery()},
+			"start": []string{encodeTime(r.GetStart())},
+			"end":   []string{encodeTime(r.GetEnd())},
+			"step":  []string{encodeDurationMs(r.GetStep())},
+			"query": []string{r.GetQuery()},
+		}
+		if l := r.GetLookbackDelta(); l != 0 {
+			values["lookback_delta"] = []string{encodeDuration(l)}
 		}
 		if s := r.GetStats(); s != "" {
 			values["stats"] = []string{s}
@@ -741,9 +743,11 @@ func (c Codec) EncodeMetricsQueryRequest(ctx context.Context, r MetricsQueryRequ
 		}
 	case *PrometheusInstantQueryRequest:
 		values := url.Values{
-			"time":           []string{encodeTime(r.GetTime())},
-			"lookback_delta": []string{encodeDuration(r.GetLookbackDelta())},
-			"query":          []string{r.GetQuery()},
+			"time":  []string{encodeTime(r.GetTime())},
+			"query": []string{r.GetQuery()},
+		}
+		if l := r.GetLookbackDelta(); l != 0 {
+			values["lookback_delta"] = []string{encodeDuration(l)}
 		}
 		if s := r.GetStats(); s != "" {
 			values["stats"] = []string{s}
