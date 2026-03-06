@@ -118,8 +118,9 @@ func (s queryStatsMiddleware) populateQueryDetails(ctx context.Context, req Metr
 		details.End = time.UnixMilli(req.GetEnd())
 	}
 	details.Step = time.Duration(req.GetStep()) * time.Millisecond
+	details.LookbackDelta = req.GetLookbackDelta()
 
-	minT, maxT, ok := ExtractMinMaxTime(ctx, req, s.lookbackDelta)
+	minT, maxT, ok := ExtractMinMaxTime(ctx, req, req.GetLookbackDelta())
 	if !ok {
 		return
 	}
@@ -154,8 +155,9 @@ type QueryDetails struct {
 	// MinT and MaxT are the earliest and latest points in time which the query might try to use.
 	// For example, they account for range selectors and @ modifiers.
 	// MinT and MaxT may be zero-valued if the query doesn't process samples.
-	MinT, MaxT time.Time
-	Step       time.Duration
+	MinT, MaxT    time.Time
+	Step          time.Duration
+	LookbackDelta time.Duration
 
 	ResultsCacheMissBytes int
 	ResultsCacheHitBytes  int
