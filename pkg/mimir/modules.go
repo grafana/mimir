@@ -997,7 +997,14 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	handler := transport.NewHandler(t.Cfg.Frontend.Handler, roundTripper, util_log.Logger, t.Registerer)
 	// Allow the Prometheus engine to be explicitly selected if MQE is in use and a fallback is configured.
 	fallbackInjector := propagation.Middleware(&streamingpromqlcompat.EngineFallbackExtractor{})
-	t.API.RegisterQueryFrontendHandler(fallbackInjector.Wrap(handler), t.BuildInfoHandler, t.Cfg.Frontend.Handler.MaxBodySize)
+	wrappedHandler := fallbackInjector.Wrap(handler)
+	if t.Cfg.LabelAccessControlEnabled {
+		// Wrap the handler so LBAC policies from the X-Prom-Label-Policy header are
+		// extracted into the request context before the round tripper runs. This is
+		// required for WrapTripperware to see the policy set when computing the cache key.
+		wrappedHandler = querier_labelaccess.NewLabelAccessMiddleware(util_log.Logger).Wrap(wrappedHandler)
+	}
+	t.API.RegisterQueryFrontendHandler(wrappedHandler, t.BuildInfoHandler, t.Cfg.Frontend.Handler.MaxBodySize)
 
 	w := services.NewFailureWatcher()
 	return services.NewBasicService(func(_ context.Context) error {
