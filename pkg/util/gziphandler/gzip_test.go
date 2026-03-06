@@ -222,7 +222,7 @@ func TestGzipHandlerNoBody(t *testing.T) {
 			if test.body != nil {
 				_, _ = w.Write(test.body)
 			}
-		}))
+		}), gzip.DefaultCompression)
 
 		rec := httptest.NewRecorder()
 		// TODO: in Go1.7 httptest.NewRequest was introduced this should be used
@@ -294,7 +294,7 @@ func TestGzipHandlerContentLength(t *testing.T) {
 			for _, b := range test.bodies {
 				_, _ = w.Write(b)
 			}
-		}))
+		}), gzip.DefaultCompression)
 		req := &http.Request{
 			Method: "GET",
 			URL:    &url.URL{Path: "/", Scheme: "http", Host: ln.Addr().String()},
@@ -380,7 +380,7 @@ func TestGzipDoubleClose(t *testing.T) {
 		// NewGzipLevelHandler's handler defer
 		_, _ = w.Write([]byte("test"))
 		w.(io.Closer).Close()
-	}))
+	}), gzip.DefaultCompression)
 
 	r := httptest.NewRequest("GET", "/", nil)
 	r.Header.Set("Accept-Encoding", "gzip")
@@ -415,7 +415,7 @@ func TestGzipHandlerDoubleWriteHeader(t *testing.T) {
 		w.WriteHeader(304)
 		// Ensure that after a Write the header isn't triggered again on close
 		_, _ = w.Write(nil)
-	}))
+	}), gzip.DefaultCompression)
 	wrapper := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w = &panicOnSecondWriteHeaderWriter{
 			ResponseWriter: w,
@@ -448,7 +448,7 @@ func TestGzipHandlerDoubleWriteHeader(t *testing.T) {
 }
 
 func TestStatusCodes(t *testing.T) {
-	handler := GzipHandler(http.NotFoundHandler())
+	handler := GzipHandler(http.NotFoundHandler(), gzip.DefaultCompression)
 	r := httptest.NewRequest("GET", "/", nil)
 	r.Header.Set("Accept-Encoding", "gzip")
 	w := httptest.NewRecorder()
@@ -466,7 +466,7 @@ func TestFlushBeforeWrite(t *testing.T) {
 		rw.WriteHeader(http.StatusNotFound)
 		rw.(http.Flusher).Flush()
 		_, _ = rw.Write(b)
-	}))
+	}), gzip.DefaultCompression)
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Header.Set("Accept-Encoding", "gzip")
 	w := httptest.NewRecorder()
@@ -484,14 +484,14 @@ func TestImplementFlusher(t *testing.T) {
 	GzipHandler(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
 		_, okFlusher := rw.(http.Flusher)
 		assert.True(t, okFlusher, "response writer must implement http.Flusher")
-	})).ServeHTTP(httptest.NewRecorder(), request)
+	}), gzip.DefaultCompression).ServeHTTP(httptest.NewRecorder(), request)
 }
 
 func TestIgnoreSubsequentWriteHeader(t *testing.T) {
 	handler := GzipHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(500)
 		w.WriteHeader(404)
-	}))
+	}), gzip.DefaultCompression)
 	r := httptest.NewRequest("GET", "/", nil)
 	r.Header.Set("Accept-Encoding", "gzip")
 	w := httptest.NewRecorder()
@@ -509,7 +509,7 @@ func TestDontWriteWhenNotWrittenTo(t *testing.T) {
 	// either.
 
 	handler0 := GzipHandler(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-	}))
+	}), gzip.DefaultCompression)
 
 	handler1 := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		handler0.ServeHTTP(w, r)
@@ -680,5 +680,5 @@ func newTestHandler(body string) http.Handler {
 		default:
 			_, _ = io.WriteString(w, body)
 		}
-	}))
+	}), gzip.DefaultCompression)
 }

@@ -117,6 +117,17 @@
           "fieldFlag": "http.prometheus-http-prefix",
           "fieldType": "string",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "response_compression_level",
+          "required": false,
+          "desc": "Compression level for HTTP responses when gzip compression is requested by the client. Valid values are 1 (fastest) to 9 (best compression), or -1 for the default compression level.",
+          "fieldValue": null,
+          "fieldDefaultValue": -1,
+          "fieldFlag": "http.response-compression-level",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,

@@ -158,6 +158,12 @@ api:
   # CLI flag: -http.prometheus-http-prefix
   [prometheus_http_prefix: <string> | default = "/prometheus"]
 
+  # (experimental) Compression level for HTTP responses when gzip compression is
+  # requested by the client. Valid values are 1 (fastest) to 9 (best
+  # compression), or -1 for the default compression level.
+  # CLI flag: -http.response-compression-level
+  [response_compression_level: <int> | default = -1]
+
 # The server block configures the HTTP and gRPC server of the launched
 # service(s).
 [server: <server>]
