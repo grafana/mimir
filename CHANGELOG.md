@@ -1,7 +1,10 @@
 # Changelog
 
-## Unreleased
+## 3.0.4
 
+### Grafana Mimir
+
+* [BUGFIX] Update module go.opentelemetry.io/otel/sdk to v1.40.0 to address [CVE-2026-24051](https://www.cve.org/CVERecord?id=CVE-2026-24051). #14431
 * [BUGFIX] Update to Go v1.25.8 to address [CVE-2026-27142](https://pkg.go.dev/vuln/GO-2026-4603), [CVE-2026-27139](https://pkg.go.dev/vuln/GO-2026-4602), [CVE-2026-25679](https://pkg.go.dev/vuln/GO-2026-4601), [CVE-2026-27138](https://pkg.go.dev/vuln/GO-2026-4600), [CVE-2026-27137](https://pkg.go.dev/vuln/GO-2026-4599). #14623
 
 ## 3.0.3
