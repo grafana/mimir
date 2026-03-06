@@ -7,6 +7,7 @@ package mimir
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
 	"flag"
@@ -44,6 +45,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
+	"github.com/grafana/mimir/pkg/api"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/frontend"
@@ -193,6 +195,9 @@ func TestMimir(t *testing.T) {
 		},
 		MemberlistKV: memberlist.KVConfig{
 			WatchPrefixBufferSize: 128,
+		},
+		API: api.Config{
+			GzipCompressionLevel: gzip.DefaultCompression,
 		},
 	}
 	require.NoError(t, cfg.Server.LogLevel.Set("info"))
