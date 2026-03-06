@@ -48,7 +48,7 @@ func ParseTime(s string) (int64, error) {
 	return 0, errors.Newf("cannot parse %q to a valid timestamp", s)
 }
 
-// ParseDurationMS parses the string into an int64 duration, the elapsed nanoseconds between two instants
+// ParseDurationMS parses the string into an int64 duration, the elapsed milliseconds between two instants
 func ParseDurationMS(s string) (int64, error) {
 	if d, err := strconv.ParseFloat(s, 64); err == nil {
 		ts := d * float64(time.Second/time.Millisecond)

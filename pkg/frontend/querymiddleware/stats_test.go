@@ -35,11 +35,12 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 		"happy path range query": {
 			args: args{
 				req: []MetricsQueryRequest{&PrometheusRangeQueryRequest{
-					path:      "/query_range",
-					start:     util.TimeToMillis(start),
-					end:       util.TimeToMillis(end),
-					step:      step.Milliseconds(),
-					queryExpr: parseQuery(t, `sum(sum_over_time(metric{app="test",namespace=~"short"}[5m]))`),
+					path:          "/query_range",
+					start:         util.TimeToMillis(start),
+					end:           util.TimeToMillis(end),
+					step:          step.Milliseconds(),
+					queryExpr:     parseQuery(t, `sum(sum_over_time(metric{app="test",namespace=~"short"}[5m]))`),
+					lookbackDelta: 5 * time.Minute,
 				}},
 			},
 			expectedMetrics: `
@@ -56,12 +57,13 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 			cortex_query_frontend_regexp_matchers_optimized_total 1
 			`,
 			expectedQueryDetails: QueryDetails{
-				QuerierStats: &querier_stats.SafeStats{},
-				Start:        start.Truncate(time.Millisecond),
-				End:          end.Truncate(time.Millisecond),
-				MinT:         start.Truncate(time.Millisecond).Add(-5 * time.Minute).Add(time.Millisecond), // query range is left-open, but minT is inclusive
-				MaxT:         end.Truncate(time.Millisecond),
-				Step:         step,
+				QuerierStats:  &querier_stats.SafeStats{},
+				Start:         start.Truncate(time.Millisecond),
+				End:           end.Truncate(time.Millisecond),
+				MinT:          start.Truncate(time.Millisecond).Add(-5 * time.Minute).Add(time.Millisecond), // query range is left-open, but minT is inclusive
+				MaxT:          end.Truncate(time.Millisecond),
+				Step:          step,
+				LookbackDelta: 5 * time.Minute,
 			},
 		},
 		"explicit consistency range query": {
@@ -127,11 +129,12 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 			cortex_query_frontend_regexp_matchers_optimized_total 1
 			`,
 			expectedQueryDetails: QueryDetails{
-				QuerierStats: &querier_stats.SafeStats{},
-				Start:        start.Truncate(time.Millisecond),
-				End:          start.Truncate(time.Millisecond),
-				MinT:         start.Truncate(time.Millisecond).Add(-5 * time.Minute).Add(time.Millisecond), // query range is left-open, but minT is inclusive
-				MaxT:         start.Truncate(time.Millisecond),
+				QuerierStats:  &querier_stats.SafeStats{},
+				Start:         start.Truncate(time.Millisecond),
+				End:           start.Truncate(time.Millisecond),
+				MinT:          start.Truncate(time.Millisecond).Add(-5 * time.Minute).Add(time.Millisecond), // query range is left-open, but minT is inclusive
+				MaxT:          start.Truncate(time.Millisecond),
+				LookbackDelta: 5 * time.Minute,
 			},
 		},
 		"remote read queries without hints": {
@@ -238,7 +241,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			runForEngines(t, func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine) {
 				reg := prometheus.NewPedanticRegistry()
-				mw := newQueryStatsMiddleware(reg, opts)
+				mw := newQueryStatsMiddleware(reg)
 				ctx := context.Background()
 				if tt.args.ctx != nil {
 					ctx = tt.args.ctx

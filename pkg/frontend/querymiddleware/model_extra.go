@@ -17,6 +17,7 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/util/jsonutil"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
@@ -178,6 +179,10 @@ func (r *PrometheusRangeQueryRequest) GetLookbackDelta() time.Duration {
 
 func (r *PrometheusRangeQueryRequest) GetStats() string {
 	return r.stats
+}
+
+func (r *PrometheusRangeQueryRequest) GetQueryOpts() (promql.QueryOpts, error) {
+	return createQueryOpts(r.stats, r.lookbackDelta)
 }
 
 // WithID clones the current `PrometheusRangeQueryRequest` with the provided ID.
@@ -399,6 +404,10 @@ func (r *PrometheusInstantQueryRequest) GetLookbackDelta() time.Duration {
 
 func (r *PrometheusInstantQueryRequest) GetStats() string {
 	return r.stats
+}
+
+func (r *PrometheusInstantQueryRequest) GetQueryOpts() (promql.QueryOpts, error) {
+	return createQueryOpts(r.stats, r.lookbackDelta)
 }
 
 func (r *PrometheusInstantQueryRequest) WithID(id int64) (MetricsQueryRequest, error) {
@@ -1107,4 +1116,8 @@ func cloneHeaders(headers []*PrometheusHeader) []*PrometheusHeader {
 		cp[i] = &PrometheusHeader{Name: h.Name, Values: slices.Clone(h.Values)}
 	}
 	return cp
+}
+
+func createQueryOpts(stats string, lookbackDelta time.Duration) (promql.QueryOpts, error) {
+	return promql.NewPrometheusQueryOpts(stats == "all", lookbackDelta), nil
 }

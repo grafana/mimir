@@ -192,12 +192,17 @@ func ExecuteQueryOnQueryable(ctx context.Context, r MetricsQueryRequest, engine 
 }
 
 func newQuery(ctx context.Context, r MetricsQueryRequest, engine promql.QueryEngine, queryable storage.Queryable) (promql.Query, error) {
+	opts, err := r.GetQueryOpts()
+	if err != nil {
+		return nil, err
+	}
+
 	switch r := r.(type) {
 	case *PrometheusRangeQueryRequest:
 		return engine.NewRangeQuery(
 			ctx,
 			queryable,
-			nil,
+			opts,
 			r.GetQuery(),
 			util.TimeFromMillis(r.GetStart()),
 			util.TimeFromMillis(r.GetEnd()),
@@ -207,7 +212,7 @@ func newQuery(ctx context.Context, r MetricsQueryRequest, engine promql.QueryEng
 		return engine.NewInstantQuery(
 			ctx,
 			queryable,
-			nil,
+			opts,
 			r.GetQuery(),
 			util.TimeFromMillis(r.GetTime()),
 		)

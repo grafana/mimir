@@ -15,13 +15,11 @@ import (
 
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
-	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 type queryStatsMiddleware struct {
-	lookbackDelta                     time.Duration
 	regexpMatcherCount                prometheus.Counter
 	regexpMatcherOptimizedCount       prometheus.Counter
 	consistencyCounter                *prometheus.CounterVec
@@ -29,7 +27,7 @@ type queryStatsMiddleware struct {
 	next                              MetricsQueryHandler
 }
 
-func newQueryStatsMiddleware(reg prometheus.Registerer, engineOpts promql.EngineOpts) MetricsQueryMiddleware {
+func newQueryStatsMiddleware(reg prometheus.Registerer) MetricsQueryMiddleware {
 	regexpMatcherCount := promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_query_frontend_regexp_matchers_total",
 		Help: "Total number of regexp matchers",
@@ -52,7 +50,6 @@ func newQueryStatsMiddleware(reg prometheus.Registerer, engineOpts promql.Engine
 
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &queryStatsMiddleware{
-			lookbackDelta:                     streamingpromql.DetermineLookbackDelta(engineOpts),
 			regexpMatcherCount:                regexpMatcherCount,
 			regexpMatcherOptimizedCount:       regexpMatcherOptimizedCount,
 			consistencyCounter:                consistencyCounter,
@@ -118,8 +115,9 @@ func (s queryStatsMiddleware) populateQueryDetails(ctx context.Context, req Metr
 		details.End = time.UnixMilli(req.GetEnd())
 	}
 	details.Step = time.Duration(req.GetStep()) * time.Millisecond
+	details.LookbackDelta = req.GetLookbackDelta()
 
-	minT, maxT, ok := ExtractMinMaxTime(ctx, req, s.lookbackDelta)
+	minT, maxT, ok := ExtractMinMaxTime(ctx, req, req.GetLookbackDelta())
 	if !ok {
 		return
 	}
@@ -154,8 +152,9 @@ type QueryDetails struct {
 	// MinT and MaxT are the earliest and latest points in time which the query might try to use.
 	// For example, they account for range selectors and @ modifiers.
 	// MinT and MaxT may be zero-valued if the query doesn't process samples.
-	MinT, MaxT time.Time
-	Step       time.Duration
+	MinT, MaxT    time.Time
+	Step          time.Duration
+	LookbackDelta time.Duration
 
 	ResultsCacheMissBytes int
 	ResultsCacheHitBytes  int
