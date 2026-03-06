@@ -367,7 +367,7 @@ func TestProjectionPushdownOptimizationPass(t *testing.T) {
 
 			planner.RegisterQueryPlanOptimizationPass(plan.NewProjectionPushdownOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
 
-			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, false, observer)
+			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
 			require.NoError(t, err)
 			actual := p.String()
 			require.Equal(t, testutils.TrimIndent(testCase.expectedPlan), actual)

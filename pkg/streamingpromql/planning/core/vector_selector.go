@@ -117,7 +117,7 @@ func MaterializeVectorSelector(v *VectorSelector, _ *planning.Materializer, time
 		TimeRange:                timeRange,
 		Timestamp:                TimestampFromTime(v.Timestamp),
 		Offset:                   v.Offset.Milliseconds(),
-		LookbackDelta:            params.LookbackDelta,
+		LookbackDelta:            params.QueryParameters.LookbackDelta,
 		Matchers:                 LabelMatchersToOperatorType(v.Matchers),
 		EagerLoad:                params.EagerLoadSelectors,
 		SkipHistogramBuckets:     v.SkipHistogramBuckets,

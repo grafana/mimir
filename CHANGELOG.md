@@ -195,6 +195,7 @@
 * [BUGFIX] Querier: Fix strategy used to select partitions to query when some partions are Inactive since longer than lookback period and shuffle sharding is disabled. #14261
 * [BUGFIX] Block-builder-scheduler: Fix data race when reading partition state during pending jobs enqueueing. #14489
 * [BUGFIX] Querier: Fix issue where queries can time out if remote execution is enabled and sending the initial message from queriers to query-frontends fails. #14557
+* [BUGFIX] Querier: Fix issue where different sharded legs of a query could be evaluated with different lookback deltas if different queriers were configured with different default lookback deltas. #14575
 
 ### Mixin
 

@@ -1900,10 +1900,10 @@ func TestEvaluator_ReportsMemoryConsumptionLimit(t *testing.T) {
 
 	ctx := context.Background()
 	expr := "some_metric"
-	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(timestamp.Time(0)), false, NoopPlanningObserver{})
+	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(timestamp.Time(0)), DefaultLookbackDelta, false, NoopPlanningObserver{})
 	require.NoError(t, err)
 
-	evaluator, err := engine.NewEvaluator(ctx, storage, nil, plan.Parameters, []NodeEvaluationRequest{{Node: plan.Root, TimeRange: plan.Parameters.TimeRange}})
+	evaluator, err := engine.NewEvaluator(ctx, storage, plan.Parameters, []NodeEvaluationRequest{{Node: plan.Root, TimeRange: plan.Parameters.TimeRange}})
 	require.NoError(t, err)
 
 	err = evaluator.Evaluate(ctx, noopEvaluationObserver{})
@@ -3935,11 +3935,11 @@ func TestQueryStatementLookbackDelta(t *testing.T) {
 
 		t.Run("lookback delta not set in query options", func(t *testing.T) {
 			queryOpts := promql.NewPrometheusQueryOpts(false, 0)
-			runTest(t, engine, queryOpts, defaultLookbackDelta)
+			runTest(t, engine, queryOpts, DefaultLookbackDelta)
 		})
 
 		t.Run("no query options provided", func(t *testing.T) {
-			runTest(t, engine, nil, defaultLookbackDelta)
+			runTest(t, engine, nil, DefaultLookbackDelta)
 		})
 
 		t.Run("lookback delta set in query options", func(t *testing.T) {
