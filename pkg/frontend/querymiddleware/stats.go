@@ -15,13 +15,11 @@ import (
 
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
-	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 type queryStatsMiddleware struct {
-	lookbackDelta                     time.Duration
 	regexpMatcherCount                prometheus.Counter
 	regexpMatcherOptimizedCount       prometheus.Counter
 	consistencyCounter                *prometheus.CounterVec
@@ -52,7 +50,6 @@ func newQueryStatsMiddleware(reg prometheus.Registerer, engineOpts promql.Engine
 
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &queryStatsMiddleware{
-			lookbackDelta:                     streamingpromql.DetermineLookbackDelta(engineOpts),
 			regexpMatcherCount:                regexpMatcherCount,
 			regexpMatcherOptimizedCount:       regexpMatcherOptimizedCount,
 			consistencyCounter:                consistencyCounter,
