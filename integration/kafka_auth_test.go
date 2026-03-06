@@ -101,7 +101,7 @@ REQ="${REQ}&client_secret=` + e2edb.DexClientSecret + `"
 RESP=$(wget -q -O- --post-data "$REQ" http://dex:5556/dex/token)
 
 # Extract the access_token field and wrap it in the expected JSON schema.
-TOKEN=$(printf '%s' "$RESP" | sed -n 's/.*"access_token":\s*"\([^"]*\)".*/\1/p')
+TOKEN=$(printf '%s' "$RESP" | sed -n 's/.*"access_token":[[:space:]]*"\([^"]*\)".*/\1/p')
 BODY="{\"token\":\"$TOKEN\"}"
 
 printf 'HTTP/1.1 200 OK\r\n'
