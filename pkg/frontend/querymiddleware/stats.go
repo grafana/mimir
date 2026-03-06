@@ -27,7 +27,7 @@ type queryStatsMiddleware struct {
 	next                              MetricsQueryHandler
 }
 
-func newQueryStatsMiddleware(reg prometheus.Registerer, engineOpts promql.EngineOpts) MetricsQueryMiddleware {
+func newQueryStatsMiddleware(reg prometheus.Registerer) MetricsQueryMiddleware {
 	regexpMatcherCount := promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_query_frontend_regexp_matchers_total",
 		Help: "Total number of regexp matchers",
