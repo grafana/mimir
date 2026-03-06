@@ -721,7 +721,11 @@ func BenchmarkLazyBinaryReader_LoadReader(b *testing.B) {
 			) *LazyBinaryReader {
 				ll := log.NewNopLogger()
 				bucketReaderFactory := func() (Reader, error) {
-					return NewBucketBinaryReader(ctx, ll, cachingBucket, bucketDir, idIndexV2, 32, Config{})
+					return NewBucketBinaryReader(
+						ctx, ll, cachingBucket, bucketDir,
+						idIndexV2, 32, Config{},
+						NewStreamBinaryReaderMetrics(nil),
+					)
 				}
 				lazyReader, err := NewLazyBinaryReader(
 					ctx, Config{BucketReader: BucketReaderConfig{Enabled: true}},

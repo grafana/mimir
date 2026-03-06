@@ -177,7 +177,7 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 			cachingBucket, err := bucketcache.NewCachingBucket("test", metricsBkt, cfg, log.NewNopLogger(), bucketReg)
 			require.NoError(b, err)
 
-			bucketReader, err := NewBucketBinaryReader(ctx, log.NewNopLogger(), cachingBucket, bucketDir, idIndexV2, 32, Config{})
+			bucketReader, err := NewBucketBinaryReader(ctx, log.NewNopLogger(), cachingBucket, bucketDir, idIndexV2, 32, Config{}, NewStreamBinaryReaderMetrics(nil))
 			require.NoError(b, err)
 			b.Cleanup(func() { require.NoError(b, bucketReader.Close()) })
 
@@ -244,7 +244,7 @@ func BenchmarkLabelValuesOffsetsIndexV2_WithPrefix(b *testing.B) {
 	metricsBkt := objstore.WrapWithMetrics(instrBkt, prometheus.WrapRegistererWithPrefix("thanos_", bucketReg), "")
 	cachingBucket, err := bucketcache.NewCachingBucket("test", metricsBkt, cfg, log.NewNopLogger(), bucketReg)
 	require.NoError(b, err)
-	bucketReader, err := NewBucketBinaryReader(ctx, log.NewNopLogger(), cachingBucket, bucketDir, blockID, 32, Config{})
+	bucketReader, err := NewBucketBinaryReader(ctx, log.NewNopLogger(), cachingBucket, bucketDir, blockID, 32, Config{}, NewStreamBinaryReaderMetrics(nil))
 	require.NoError(b, err)
 	b.Cleanup(func() { require.NoError(b, bucketReader.Close()) })
 
