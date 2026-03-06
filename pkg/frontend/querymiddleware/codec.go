@@ -731,6 +731,8 @@ func (c Codec) EncodeMetricsQueryRequest(ctx context.Context, r MetricsQueryRequ
 			"step":  []string{encodeDurationMs(r.GetStep())},
 			"query": []string{r.GetQuery()},
 		}
+		// Check if lookback delta has a non-zero value before encoding
+		// the request since it's not valid to request a lookback of "0".
 		if l := r.GetLookbackDelta(); l != 0 {
 			values["lookback_delta"] = []string{encodeDuration(l)}
 		}
@@ -746,6 +748,8 @@ func (c Codec) EncodeMetricsQueryRequest(ctx context.Context, r MetricsQueryRequ
 			"time":  []string{encodeTime(r.GetTime())},
 			"query": []string{r.GetQuery()},
 		}
+		// Check if lookback delta has a non-zero value before encoding
+		// the request since it's not valid to request a lookback of "0".
 		if l := r.GetLookbackDelta(); l != 0 {
 			values["lookback_delta"] = []string{encodeDuration(l)}
 		}
