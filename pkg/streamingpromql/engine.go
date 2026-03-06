@@ -271,6 +271,11 @@ type NodeEvaluationRequest struct {
 }
 
 func (e *Engine) NewEvaluator(ctx context.Context, queryable storage.Queryable, params *planning.QueryParameters, nodeRequests []NodeEvaluationRequest) (*Evaluator, error) {
+	if params.LookbackDelta == 0 {
+		// If we've received a query plan from an older query-frontend that does not explicitly set the lookback delta, use the configured default value.
+		params.LookbackDelta = e.lookbackDelta
+	}
+
 	return e.materializeAndCreateEvaluator(ctx, queryable, params, nodeRequests)
 }
 
