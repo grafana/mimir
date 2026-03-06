@@ -27,10 +27,11 @@ import (
 
 // BucketBinaryReader reads index header data directly from object storage.
 type BucketBinaryReader struct {
-	bkt     objstore.BucketReader
-	factory *streamencoding.BucketDecbufFactory
+	symbolsTOC         *TOCCompat
+	postingsOffsetsTOC *TOCCompat
 
-	toc *TOCCompat
+	symbolsDecbufFactory         streamencoding.DecbufFactory
+	postingsOffsetsDecbufFactory streamencoding.DecbufFactory
 
 	// Symbols struct that keeps only 1/postingOffsetsInMemSampling in the memory, then looks up the
 	// rest via seeking to offsets in the index-header.
@@ -60,6 +61,7 @@ func NewBucketBinaryReader(
 	blockID ulid.ULID,
 	postingOffsetsInMemSampling int,
 	cfg Config,
+	metrics *StreamBinaryReaderMetrics,
 ) (*BucketBinaryReader, error) {
 	spanLog, ctx := spanlogger.New(ctx, logger, tracer, "indexheader.NewBucketBinaryReader")
 	defer spanLog.Finish()
@@ -73,21 +75,39 @@ func NewBucketBinaryReader(
 		_ = df.Close()
 	}
 
-	indexPath := filepath.Join(blockID.String(), block.IndexFilename)
+	r := &BucketBinaryReader{}
 
-	r := &BucketBinaryReader{
-		bkt:     bkt,
-		factory: streamencoding.NewBucketDecbufFactory(ctx, bkt, indexPath),
-	}
+	bucketBlockIndexPath := filepath.Join(blockID.String(), block.IndexFilename)
+	bucketBlockIndexDecbufFactory := streamencoding.NewBucketDecbufFactory(ctx, bkt, bucketBlockIndexPath)
 
-	indexAttrs, err := bkt.Attributes(ctx, indexPath)
+	indexAttrs, err := bkt.Attributes(ctx, bucketBlockIndexPath)
 	if err != nil {
 		return nil, fmt.Errorf("get index file attributes: %w", err)
 	}
-
-	r.toc, err = TOCFromBucketTSDBIndex(ctx, r.bkt, indexPath, indexAttrs)
+	bucketBlockTOC, err := TOCFromBucketTSDBIndex(ctx, bkt, bucketBlockIndexPath, indexAttrs)
 	if err != nil {
 		return nil, err
+	}
+
+	if cfg.BucketReader.BucketIndexSections == SectionAll {
+		// Both Symbols and Postings Offsets are read from bucket
+		r.symbolsDecbufFactory = bucketBlockIndexDecbufFactory
+		r.postingsOffsetsDecbufFactory = bucketBlockIndexDecbufFactory
+
+		r.symbolsTOC = bucketBlockTOC
+		r.postingsOffsetsTOC = bucketBlockTOC
+	} else {
+		// Currently, the only other option is SectionPostingsOffsetTable;
+		// Symbols are read from disk and Postings Offsets are read from bucket
+		r.symbolsDecbufFactory = streamencoding.NewFilePoolDecbufFactory(
+			filepath.Join(dir, block.IndexHeaderFilename), cfg.MaxIdleFileHandles, metrics.decbufFactory,
+		)
+		r.postingsOffsetsDecbufFactory = bucketBlockIndexDecbufFactory
+
+		if r.symbolsTOC, _, err = TOCFromIndexHeader(castagnoliTable, r.symbolsDecbufFactory, logger); err != nil {
+			return nil, fmt.Errorf("cannot read table-of-contents: %w", err)
+		}
+		r.postingsOffsetsTOC = bucketBlockTOC
 	}
 
 	sparseHeadersPath := filepath.Join(dir, block.SparseIndexHeaderFilename)
@@ -198,12 +218,12 @@ func (r *BucketBinaryReader) loadFromSparseIndexHeader(logger log.Logger, sparse
 		return err
 	}
 
-	r.symbols, err = streamindex.NewSymbolsFromSparseHeader(r.factory, sparseHeaders.Symbols, int(r.toc.Symbols))
+	r.symbols, err = streamindex.NewSymbolsFromSparseHeader(r.symbolsDecbufFactory, sparseHeaders.Symbols, int(r.symbolsTOC.Symbols))
 	if err != nil {
 		return fmt.Errorf("cannot load symbols from sparse index-header: %w", err)
 	}
 
-	r.postingsOffsetTable, err = streamindex.NewPostingOffsetTableFromSparseHeader(r.factory, sparseHeaders.PostingsOffsetTable, int(r.toc.PostingsOffsetTable), postingOffsetsInMemSampling)
+	r.postingsOffsetTable, err = streamindex.NewPostingOffsetTableFromSparseHeader(r.postingsOffsetsDecbufFactory, sparseHeaders.PostingsOffsetTable, int(r.postingsOffsetsTOC.PostingsOffsetTable), postingOffsetsInMemSampling)
 	if err != nil {
 		return fmt.Errorf("cannot load postings offset table from sparse index-header: %w", err)
 	}
@@ -215,7 +235,7 @@ func (r *BucketBinaryReader) loadFromSparseIndexHeader(logger log.Logger, sparse
 func (r *BucketBinaryReader) loadFromIndexHeader(logger log.Logger, cfg Config, postingOffsetsInMemSampling int) error {
 	var err error
 	r.symbols, r.postingsOffsetTable, err = buildSparseHeaderFromIndexHeader(
-		r.toc.IndexVersion, r.toc, r.factory, postingOffsetsInMemSampling, cfg.VerifyOnLoad, logger,
+		r.postingsOffsetsTOC.IndexVersion, r.postingsOffsetsTOC, r.postingsOffsetsDecbufFactory, postingOffsetsInMemSampling, cfg.VerifyOnLoad, logger,
 	)
 	return err
 }
@@ -242,13 +262,13 @@ func fetchRange(ctx context.Context, bkt objstore.BucketReader, objectPath strin
 
 // Close implements Reader.
 func (r *BucketBinaryReader) Close() error {
-	r.factory.Close()
+	r.postingsOffsetsDecbufFactory.Close()
 	return nil
 }
 
 // IndexVersion implements Reader.
 func (r *BucketBinaryReader) IndexVersion(context.Context) (int, error) {
-	return r.toc.IndexVersion, nil
+	return r.postingsOffsetsTOC.IndexVersion, nil
 }
 
 // PostingsOffset implements Reader.
