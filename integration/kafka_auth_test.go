@@ -17,7 +17,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/integration/e2emimir"
-	"github.com/grafana/mimir/integration/e2emimir/oauthtokenserver"
 )
 
 func TestIngestStorageKafkaAuth(t *testing.T) {
@@ -88,33 +87,43 @@ func TestIngestStorageKafkaAuth(t *testing.T) {
 				dex := e2edb.NewDex()
 				require.NoError(t, s.StartAndWaitReady(dex))
 
-				// Build the OAuth token server image.
-				oauthTokenServerImage, err := oauthtokenserver.BuildImage()
+				// We need to run the server for the domain socket in a
+				// container because sharing sockets with the host doesn't
+				// always work. Let's use a simple script.
+				handlerScript := `#!/bin/sh
+
+# Fetch a fresh token from Dex over the Docker network.
+REQ='grant_type=password&scope=openid'
+REQ="${REQ}&username=` + e2edb.DexUserEmail + `"
+REQ="${REQ}&password=` + e2edb.DexUserPassword + `"
+REQ="${REQ}&client_id=` + e2edb.DexClientID + `"
+REQ="${REQ}&client_secret=` + e2edb.DexClientSecret + `"
+RESP=$(wget -q -O- --post-data "$REQ" http://dex:5556/dex/token)
+
+# Extract the access_token field and wrap it in the expected JSON schema.
+TOKEN=$(printf '%s' "$RESP" | sed -n 's/.*"access_token":[[:space:]]*"\([^"]*\)".*/\1/p')
+BODY="{\"token\":\"$TOKEN\"}"
+
+printf 'HTTP/1.1 200 OK\r\n'
+printf 'Content-Type: application/json\r\n'
+printf 'Content-Length: %d\r\n' "${#BODY}"
+printf '\r\n'
+printf '%s' "$BODY"
+`
+
+				err := os.WriteFile(filepath.Join(s.SharedDir(), "oauth-handler.sh"), []byte(handlerScript), 0755)
 				require.NoError(t, err)
 
-				// Start a sidecar that listens on a Unix domain socket and serves
-				// HTTP responses with fresh OAuth tokens fetched from Dex.
-				tokenServer := e2e.NewConcreteService(
-					"oauth-token-server",
-					oauthTokenServerImage,
-					nil, // use default entrypoint
-					e2e.NewCmdReadinessProbe(e2e.NewCommand("test", "-S", "/shared/oauth.sock")),
-					0, // dummy port
+				socatSvc := e2e.NewConcreteService(
+					"oauth-proxy",
+					e2emimir.ShellImage,
+					e2e.NewCommandWithoutEntrypoint("sh", "-c",
+						`apk add --no-cache socat >/dev/null 2>&1 &&`+
+							`rm -f /shared/oauth.sock &&`+
+							`exec socat UNIX-LISTEN:/shared/oauth.sock,fork,mode=777 SYSTEM:/shared/oauth-handler.sh`),
+					e2e.NewCmdReadinessProbe(e2e.NewCommandWithoutEntrypoint("test", "-S", "/shared/oauth.sock")),
 				)
-				tokenServer.SetEnvVars(map[string]string{
-					"SOCKET_PATH":   "/shared/oauth.sock",
-					"DEX_URL":       "http://" + dex.NetworkHTTPEndpoint(),
-					"CLIENT_ID":     e2edb.DexClientID,
-					"CLIENT_SECRET": e2edb.DexClientSecret,
-					"USERNAME":      e2edb.DexUserEmail,
-					"PASSWORD":      e2edb.DexUserPassword,
-				})
-				require.NoError(t, s.StartAndWaitReady(tokenServer))
-
-				t.Cleanup(func() {
-					_ = tokenServer.Kill()
-					_, _ = e2emimir.RunInContainerShell(s, "rm -f /shared/oauth.sock")
-				})
+				require.NoError(t, s.StartAndWaitReady(socatSvc))
 
 				return e2edb.KafkaConfig{
 					AuthMode:    e2edb.KafkaAuthSASLOAuthTokenFile,
