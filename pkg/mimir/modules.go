@@ -679,6 +679,14 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		&querierapi.ConsistencyExtractor{},
 	)
 
+	if t.Cfg.Querier.FilterQueryablesEnabled {
+		t.Extractors = append(t.Extractors, &querier.FilterQueryablesExtractor{})
+	}
+
+	if t.Cfg.LabelAccessControlEnabled {
+		t.Extractors = append(t.Extractors, querier_labelaccess.NewExtractor())
+	}
+
 	extractor := &propagation.MultiExtractor{Extractors: t.Extractors}
 	metrics := querier.NewRequestMetrics(t.Registerer)
 	var dispatcher *querier.Dispatcher
@@ -818,6 +826,10 @@ func (t *Mimir) initIngester() (serv services.Service, err error) {
 func (t *Mimir) initQueryFrontendCodec() (services.Service, error) {
 	// Add our default injectors.
 	t.Injectors = append(t.Injectors, &querierapi.ConsistencyInjector{})
+
+	if t.Cfg.LabelAccessControlEnabled {
+		t.Injectors = append(t.Injectors, frontend_labelaccess.NewInjector())
+	}
 
 	t.QueryFrontendCodec = querymiddleware.NewCodec(
 		t.Registerer,
