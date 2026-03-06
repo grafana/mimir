@@ -15,49 +15,77 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
+// unmarshalBlockedQueries unmarshals blocked queries from YAML, matching the production
+// code path. Non-regex patterns are canonicalized (labels sorted, whitespace normalized).
+// Regex patterns must also use YAML parsing to validate escaping (use single quotes '\d+'
+// or double backslashes "\\d+" for regex special characters).
+func unmarshalBlockedQueries(t *testing.T, yamlStr string) []validation.BlockedQuery {
+	t.Helper()
+
+	// Initialize with minimal required defaults to pass validation
+	limits := validation.Limits{
+		IngestStorageReadConsistency: "eventual", // Required for validation
+	}
+
+	err := yaml.Unmarshal([]byte(yamlStr), &limits)
+	require.NoError(t, err)
+
+	return limits.BlockedQueries
+}
+
 func TestQueryBlockerMiddleware_RangeAndInstantQuery(t *testing.T) {
 	tests := []struct {
 		name            string
 		query           string
-		limits          mockLimits
+		limitsYAML      string
 		expectedBlocked bool
 	}{
 		{
-			name:   "doesn't block queries due to empty limits",
-			limits: mockLimits{},
-			query:  "rate(metric_counter[5m])",
+			name:  "doesn't block queries due to empty limits",
+			query: "rate(metric_counter[5m])",
 		},
 		{
 			name: "blocks single line query non regex pattern",
-			limits: mockLimits{
-				blockedQueries: []validation.BlockedQuery{
-					{Pattern: "rate(metric_counter[5m])", Regex: false},
-				},
-			},
+			limitsYAML: `
+blocked_queries:
+  - pattern: "rate(metric_counter[5m])"
+    regex: false
+`,
 			query:           "rate(metric_counter[5m])",
 			expectedBlocked: true,
 		},
 		{
+			name: "blocks query with non-canonical pattern (label order differs) - validates canonicalization",
+			limitsYAML: `
+blocked_queries:
+  - pattern: 'up{pod="test", job="test"}'
+    regex: false
+`,
+			query:           `up{job="test",pod="test"}`, // Query has labels in different order
+			expectedBlocked: true,
+		},
+		{
 			name: "not blocks single line query non regex pattern",
-			limits: mockLimits{
-				blockedQueries: []validation.BlockedQuery{
-					{Pattern: "rate(metric_counter[5m])", Regex: false},
-				},
-			},
+			limitsYAML: `
+blocked_queries:
+  - pattern: "rate(metric_counter[5m])"
+    regex: false
+`,
 			query: "rate(metric_counter[15m])",
 		},
 		{
 			name: "blocks multiple line query non regex pattern",
-			limits: mockLimits{
-				blockedQueries: []validation.BlockedQuery{
-					{Pattern: `rate(metric_counter[5m]) / rate(other_counter[5m])`, Regex: false},
-				},
-			},
+			limitsYAML: `
+blocked_queries:
+  - pattern: "rate(metric_counter[5m]) / rate(other_counter[5m])"
+    regex: false
+`,
 			query: `
 				rate(metric_counter[5m])
 				/
@@ -67,11 +95,11 @@ func TestQueryBlockerMiddleware_RangeAndInstantQuery(t *testing.T) {
 		},
 		{
 			name: "not blocks multiple line query non regex pattern",
-			limits: mockLimits{
-				blockedQueries: []validation.BlockedQuery{
-					{Pattern: "rate(metric_counter[5m])", Regex: false},
-				},
-			},
+			limitsYAML: `
+blocked_queries:
+  - pattern: "rate(metric_counter[5m])"
+    regex: false
+`,
 			query: `
 				rate(metric_counter[15m])
 				/
@@ -80,22 +108,21 @@ func TestQueryBlockerMiddleware_RangeAndInstantQuery(t *testing.T) {
 		},
 		{
 			name: "blocks single line query regex pattern",
-			limits: mockLimits{
-				blockedQueries: []validation.BlockedQuery{
-					{Pattern: ".*metric_counter.*", Regex: true},
-				},
-			},
+			limitsYAML: `
+blocked_queries:
+  - pattern: ".*metric_counter.*"
+    regex: true
+`,
 			query:           "rate(metric_counter[5m])",
 			expectedBlocked: true,
 		},
 		{
 			name: "blocks multiple line query regex pattern",
-			limits: mockLimits{
-				blockedQueries: []validation.BlockedQuery{
-					// We need to turn on the s flag to allow dot matches newlines.
-					{Pattern: "(?s).*metric_counter.*", Regex: true},
-				},
-			},
+			limitsYAML: `
+blocked_queries:
+  - pattern: "(?s).*metric_counter.*"
+    regex: true
+`,
 			query: `
 				rate(other_counter[15m])
 				/
@@ -105,17 +132,22 @@ func TestQueryBlockerMiddleware_RangeAndInstantQuery(t *testing.T) {
 		},
 		{
 			name: "invalid regex pattern",
-			limits: mockLimits{
-				blockedQueries: []validation.BlockedQuery{
-					{Pattern: "[a-9}", Regex: true},
-				},
-			},
+			limitsYAML: `
+blocked_queries:
+  - pattern: "[a-9}"
+    regex: true
+`,
 			query: "rate(metric_counter[5m])",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			var limits mockLimits
+			if tt.limitsYAML != "" {
+				limits.blockedQueries = unmarshalBlockedQueries(t, tt.limitsYAML)
+			}
+
 			reqs := map[string]MetricsQueryRequest{
 				"range query": &PrometheusRangeQueryRequest{
 					queryExpr: parseQuery(t, tt.query),
@@ -133,7 +165,7 @@ func TestQueryBlockerMiddleware_RangeAndInstantQuery(t *testing.T) {
 						Help: "Number of queries that were rejected by the cluster administrator.",
 					}, []string{"user", "reason"})
 					logger := log.NewNopLogger()
-					mw := newQueryBlockerMiddleware(tt.limits, logger, blockedQueriesCounter)
+					mw := newQueryBlockerMiddleware(limits, logger, blockedQueriesCounter)
 					_, err := mw.Wrap(&mockNextHandler{t: t, shouldContinue: !tt.expectedBlocked}).Do(user.InjectOrgID(context.Background(), "test"), req)
 
 					if tt.expectedBlocked {
@@ -165,68 +197,81 @@ func TestQueryBlockerMiddleware_RemoteRead(t *testing.T) {
 
 	tests := []struct {
 		name            string
-		limits          mockLimits
+		limitsYAML      string
 		expectedBlocked bool
 	}{
 		{
-			name:   "doesn't block queries due to empty limits",
-			limits: mockLimits{},
+			name: "doesn't block queries due to empty limits",
 		},
 		{
 			name: "blocks query via non regex pattern",
-			limits: mockLimits{
-				blockedQueries: []validation.BlockedQuery{
-					{Pattern: `{__name__="metric_counter",pod=~"app-.*"}`, Regex: false},
-				},
-			},
+			limitsYAML: `
+blocked_queries:
+  - pattern: '{__name__="metric_counter",pod=~"app-.*"}'
+    regex: false
+`,
 			expectedBlocked: true,
 		},
 		{
 			name: "not blocks query via non regex pattern",
-			limits: mockLimits{
-				blockedQueries: []validation.BlockedQuery{
-					{Pattern: `{__name__="another_metric",pod=~"app-.*"}`, Regex: false},
-				},
-			},
+			limitsYAML: `
+blocked_queries:
+  - pattern: '{__name__="another_metric",pod=~"app-.*"}'
+    regex: false
+`,
 		},
 		{
 			name: "blocks query via regex pattern",
-			limits: mockLimits{
-				blockedQueries: []validation.BlockedQuery{
-					{Pattern: ".*metric_counter.*", Regex: true},
-				},
-			},
+			limitsYAML: `
+blocked_queries:
+  - pattern: ".*metric_counter.*"
+    regex: true
+`,
 			expectedBlocked: true,
 		},
 		{
 			name: "blocks query via regex pattern, with begin/end curly brackets used as a trick to match only remote read requests",
-			limits: mockLimits{
-				blockedQueries: []validation.BlockedQuery{
-					{Pattern: "\\{.*metric_counter.*\\}", Regex: true},
-				},
-			},
+			limitsYAML: `
+blocked_queries:
+  - pattern: '\{.*metric_counter.*\}'
+    regex: true
+`,
+			expectedBlocked: true,
+		},
+		{
+			name: "blocks query via regex pattern with double-quote escaping (alternative to single quotes)",
+			limitsYAML: `
+blocked_queries:
+  - pattern: "\\{.*metric_counter.*\\}"
+    regex: true
+`,
 			expectedBlocked: true,
 		},
 		{
 			name: "not blocks query via regex pattern",
-			limits: mockLimits{
-				blockedQueries: []validation.BlockedQuery{
-					{Pattern: ".*another_metric.*", Regex: true},
-				},
-			},
+			limitsYAML: `
+blocked_queries:
+  - pattern: ".*another_metric.*"
+    regex: true
+`,
 		},
 		{
 			name: "invalid regex pattern",
-			limits: mockLimits{
-				blockedQueries: []validation.BlockedQuery{
-					{Pattern: "[a-9}", Regex: true},
-				},
-			},
+			limitsYAML: `
+blocked_queries:
+  - pattern: "[a-9}"
+    regex: true
+`,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			var limits mockLimits
+			if tt.limitsYAML != "" {
+				limits.blockedQueries = unmarshalBlockedQueries(t, tt.limitsYAML)
+			}
+
 			req, err := remoteReadToMetricsQueryRequest(remoteReadPathSuffix, query)
 			require.NoError(t, err)
 
@@ -236,7 +281,7 @@ func TestQueryBlockerMiddleware_RemoteRead(t *testing.T) {
 				Help: "Number of queries that were rejected by the cluster administrator.",
 			}, []string{"user", "reason"})
 			logger := log.NewNopLogger()
-			mw := newQueryBlockerMiddleware(tt.limits, logger, blockedQueriesCounter)
+			mw := newQueryBlockerMiddleware(limits, logger, blockedQueriesCounter)
 			_, err = mw.Wrap(&mockNextHandler{t: t, shouldContinue: !tt.expectedBlocked}).Do(user.InjectOrgID(context.Background(), "test"), req)
 
 			if tt.expectedBlocked {
