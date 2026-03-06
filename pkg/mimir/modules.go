@@ -55,6 +55,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/engine"
+	querier_labelaccess "github.com/grafana/mimir/pkg/querier/labelaccess"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
@@ -663,6 +664,11 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	t.Cfg.Worker.MaxConcurrentRequests = t.Cfg.Querier.EngineConfig.MaxConcurrent
 	t.Cfg.Worker.QuerySchedulerDiscovery = t.Cfg.QueryScheduler.ServiceDiscovery
 
+	if t.Cfg.LabelAccessControlEnabled {
+		t.QuerierQueryable = querier_labelaccess.WrapQueryable(t.QuerierQueryable, util_log.Logger)
+		t.ExemplarQueryable = querier_labelaccess.WrapExemplarQueryable(t.ExemplarQueryable, util_log.Logger)
+	}
+
 	// Add the default propagators.
 	t.Extractors = append(
 		t.Extractors,
@@ -701,6 +707,10 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		t.Overrides,
 		extractor,
 	)
+
+	if t.Cfg.LabelAccessControlEnabled {
+		internalQuerierRouter = querier_labelaccess.NewLabelAccessMiddleware(util_log.Logger).Wrap(internalQuerierRouter)
+	}
 
 	// If the querier is running standalone without the query-frontend or query-scheduler, we must register it's internal
 	// HTTP handler externally and provide the external Mimir Server HTTP handler to the frontend worker
