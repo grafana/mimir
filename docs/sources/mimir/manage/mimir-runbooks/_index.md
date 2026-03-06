@@ -720,7 +720,7 @@ _Look for: bucket sync errors, ring join failures, or object storage authenticat
 
 How to **fix** it:
 
-There are three options:yes
+There are three options:
 
 - Reduce the replicas of store-gateways so that they match the highest number of shards per tenant or
 - Increase the shard size of one or more tenants to match the number of replicas or
