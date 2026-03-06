@@ -436,13 +436,17 @@ func httpHeadersToProm(httpH http.Header) []*PrometheusHeader {
 }
 
 func (c Codec) decodeLookbackDelta(reqValues *url.Values) (time.Duration, error) {
-	if !reqValues.Has("lookback_delta") {
+	if !reqValues.Has(lookbackDeltaParamDecodable.paramName) {
 		return c.lookbackDelta, nil
 	}
 
 	lookbackDelta, err := lookbackDeltaParamDecodable.Decode(reqValues)
 	if err != nil {
 		return 0, err
+	}
+
+	if lookbackDelta <= 0 {
+		return 0, DecorateWithParamName(fmt.Errorf("must be greater than 0, got %s", reqValues.Get(lookbackDeltaParamDecodable.paramName)), lookbackDeltaParamDecodable.paramName)
 	}
 
 	return time.Duration(lookbackDelta) * time.Millisecond, nil

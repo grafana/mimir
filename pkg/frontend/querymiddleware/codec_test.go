@@ -180,6 +180,10 @@ func TestCodec_EncodeMetricsQueryRequest(t *testing.T) {
 			expectedErr: apierror.New(apierror.TypeBadData, `invalid parameter "lookback_delta": cannot parse "baz" to a valid duration`),
 		},
 		{
+			url:         "/api/v1/query_range?start=123&end=456&step=2m&lookback_delta=-1",
+			expectedErr: apierror.New(apierror.TypeBadData, `invalid parameter "lookback_delta": must be greater than 0, got -1`),
+		},
+		{
 			url:         "/api/v1/query_range?start=123&end=456&step=-1",
 			expectedErr: errNegativeStep,
 		},
@@ -190,6 +194,10 @@ func TestCodec_EncodeMetricsQueryRequest(t *testing.T) {
 		{
 			url:         "/api/v1/query?time=123&lookback_delta=baz",
 			expectedErr: apierror.New(apierror.TypeBadData, `invalid parameter "lookback_delta": cannot parse "baz" to a valid duration`),
+		},
+		{
+			url:         "/api/v1/query?time=123&lookback_delta=-1",
+			expectedErr: apierror.New(apierror.TypeBadData, `invalid parameter "lookback_delta": must be greater than 0, got -1`),
 		},
 	} {
 		t.Run(tc.url, func(t *testing.T) {
