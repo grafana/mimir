@@ -465,7 +465,7 @@ func ContentTypes(types []string) Option {
 // the client supports it (via the Accept-Encoding header). Responses will be
 // compressed at the given gzip compression level.
 func GzipHandler(h http.Handler, level int) http.Handler {
-	wrapper, _ := NewGzipLevelHandler(level)
+	wrapper := MustNewGzipLevelHandler(level)
 	return wrapper(h)
 }
 
