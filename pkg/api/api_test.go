@@ -6,6 +6,7 @@
 package api
 
 import (
+	"compress/gzip"
 	"fmt"
 	"net"
 	"net/http"
@@ -79,7 +80,7 @@ func TestNewApiWithInvalidSourceIPExtractor(t *testing.T) {
 }
 
 func TestApiGzip(t *testing.T) {
-	cfg := Config{}
+	cfg := Config{GzipCompressionLevel: gzip.DefaultCompression}
 	serverCfg := getServerConfig(t)
 	federationCfg := tenantfederation.Config{}
 	srv, err := server.New(serverCfg)
@@ -210,7 +211,7 @@ func TestApiIngesterShutdown(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := Config{}
+			cfg := Config{GzipCompressionLevel: gzip.DefaultCompression}
 			serverCfg := getServerConfig(t)
 			federationCfg := tenantfederation.Config{}
 			srv, err := server.New(serverCfg)
