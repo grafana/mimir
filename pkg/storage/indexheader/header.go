@@ -111,7 +111,7 @@ type Section string
 
 const (
 	//SectionSymbolsTable        Section = "symbols-table"
-	//SectionPostingsOffsetTable Section = "postings-offset-table"
+	SectionPostingsOffsetTable Section = "postings-offset-table"
 
 	SectionAll Section = "all"
 )
@@ -127,11 +127,11 @@ type BucketReaderConfig struct {
 
 func (cfg *BucketReaderConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, "Enable reading TSDB index-header sections from object storage. When enabled, the configured -blocks-storage.bucket-store.index-header.bucket-reader.index-sections are not downloaded to local disk.")
-	f.StringVar((*string)(&cfg.BucketIndexSections), prefix+"index-sections", string(SectionAll), fmt.Sprintf("Index sections to read from object storage instead of local disk. Valid sections: %s", SectionAll))
+	f.StringVar((*string)(&cfg.BucketIndexSections), prefix+"index-sections", string(SectionPostingsOffsetTable), fmt.Sprintf("Index sections to read from object storage instead of local disk. Valid sections: %s, %s", SectionAll, SectionPostingsOffsetTable))
 }
 
 func (cfg *BucketReaderConfig) Validate() error {
-	if !slices.Contains([]Section{SectionAll}, cfg.BucketIndexSections) {
+	if !slices.Contains([]Section{SectionAll, SectionPostingsOffsetTable}, cfg.BucketIndexSections) {
 		return errInvalidIndexHeaderSection
 	}
 	return nil

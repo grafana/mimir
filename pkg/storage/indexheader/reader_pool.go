@@ -95,7 +95,7 @@ func (p *ReaderPool) NewBinaryReader(
 
 	if cfg.BucketReader.Enabled {
 		readerFactory = func() (Reader, error) {
-			return NewBucketBinaryReader(ctx, logger, bkt, dir, id, postingOffsetsInMemSampling, cfg)
+			return NewBucketBinaryReader(ctx, logger, bkt, dir, id, postingOffsetsInMemSampling, cfg, p.metrics.streamReader)
 		}
 	} else {
 		readerFactory = func() (Reader, error) {
