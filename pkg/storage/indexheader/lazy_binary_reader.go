@@ -146,7 +146,7 @@ func NewLazyBinaryReader(
 	}
 
 	g := errgroup.Group{}
-	if !cfg.BucketReader.Enabled {
+	if !(cfg.BucketReader.Enabled && cfg.BucketReader.BucketIndexSections == SectionAll) {
 		g.Go(func() error {
 			return ensureIndexHeaderOnDisk(ctx, logger, bkt, id, indexHeaderPath)
 		})
