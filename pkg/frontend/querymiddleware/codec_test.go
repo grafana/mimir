@@ -34,6 +34,7 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 	"github.com/grafana/mimir/pkg/util/promqlext"
@@ -2187,7 +2188,7 @@ func newTestCodecWithHeaders(propagateHeaders []string) Codec {
 }
 
 func newTestCodecWithFormatAndHeaders(format string, propagateHeaders []string) Codec {
-	return NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, format, propagateHeaders, &api.ConsistencyInjector{})
+	return NewCodec(prometheus.NewPedanticRegistry(), streamingpromql.DefaultLookbackDelta, format, propagateHeaders, &api.ConsistencyInjector{})
 }
 
 func mustSucceed[T any](value T, err error) T {

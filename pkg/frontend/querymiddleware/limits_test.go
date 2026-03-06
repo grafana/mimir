@@ -918,11 +918,12 @@ func TestLimitedRoundTripper_MaxQueryParallelism(t *testing.T) {
 
 	codec := newTestCodec()
 	r, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusRangeQueryRequest{
-		path:      "/api/v1/query_range",
-		start:     time.Now().Add(-time.Hour).Unix(),
-		end:       time.Now().Unix(),
-		step:      int64(1 * time.Second * time.Millisecond),
-		queryExpr: parseQuery(t, `foo`),
+		path:          "/api/v1/query_range",
+		start:         time.Now().Add(-time.Hour).Unix(),
+		end:           time.Now().Unix(),
+		step:          int64(1 * time.Second * time.Millisecond),
+		queryExpr:     parseQuery(t, `foo`),
+		lookbackDelta: streamingpromql.DefaultLookbackDelta,
 	})
 	require.NoError(t, err)
 
@@ -963,11 +964,12 @@ func TestLimitedRoundTripper_MaxQueryParallelismLateScheduling(t *testing.T) {
 
 	codec := newTestCodec()
 	r, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusRangeQueryRequest{
-		path:      "/api/v1/query_range",
-		start:     time.Now().Add(time.Hour).Unix(),
-		end:       util.TimeToMillis(time.Now()),
-		step:      int64(1 * time.Second * time.Millisecond),
-		queryExpr: parseQuery(t, `foo`),
+		path:          "/api/v1/query_range",
+		start:         time.Now().Add(time.Hour).Unix(),
+		end:           util.TimeToMillis(time.Now()),
+		step:          int64(1 * time.Second * time.Millisecond),
+		queryExpr:     parseQuery(t, `foo`),
+		lookbackDelta: streamingpromql.DefaultLookbackDelta,
 	})
 	require.Nil(t, err)
 
@@ -1005,11 +1007,12 @@ func TestLimitedRoundTripper_OriginalRequestContextCancellation(t *testing.T) {
 
 	codec := newTestCodec()
 	r, err := codec.EncodeMetricsQueryRequest(reqCtx, &PrometheusRangeQueryRequest{
-		path:      "/api/v1/query_range",
-		start:     time.Now().Add(time.Hour).Unix(),
-		end:       util.TimeToMillis(time.Now()),
-		step:      int64(1 * time.Second * time.Millisecond),
-		queryExpr: parseQuery(t, `foo`),
+		path:          "/api/v1/query_range",
+		start:         time.Now().Add(time.Hour).Unix(),
+		end:           util.TimeToMillis(time.Now()),
+		step:          int64(1 * time.Second * time.Millisecond),
+		queryExpr:     parseQuery(t, `foo`),
+		lookbackDelta: streamingpromql.DefaultLookbackDelta,
 	})
 	require.Nil(t, err)
 
