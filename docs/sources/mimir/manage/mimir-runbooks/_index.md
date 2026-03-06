@@ -1672,7 +1672,7 @@ sum by (pod, operation) (
 - Check the `store-gateways` logs which should contain details about the error such as tenant or object id, e.g. with the following Grafana Loki query:
 
 ```logql
-{namespace="cortex-prod-04", container="store-gateway"} |= "level=warn"
+{namespace="<namespace>", container="store-gateway"} |= "level=warn"
 ```
 
 You might find logs similar to the following:
