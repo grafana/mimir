@@ -47,6 +47,7 @@ import (
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/frontend"
+	frontend_labelaccess "github.com/grafana/mimir/pkg/frontend/labelaccess"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/transport"
 	v2 "github.com/grafana/mimir/pkg/frontend/v2"
@@ -905,6 +906,11 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		panic(fmt.Sprintf("invalid config not caught by validation: unknown PromQL engine '%s'", t.Cfg.Frontend.QueryEngine))
 	}
 
+	if t.Cfg.LabelAccessControlEnabled {
+		defaultGenerator := querymiddleware.NewDefaultCacheKeyGenerator(t.QueryFrontendCodec, t.Cfg.Frontend.QueryMiddleware.SplitQueriesByInterval)
+		t.Cfg.Frontend.QueryMiddleware.CacheKeyGenerator = frontend_labelaccess.NewCacheSplitter(defaultGenerator)
+	}
+
 	tripperware, err := querymiddleware.NewTripperware(
 		t.Cfg.Frontend.QueryMiddleware,
 		util_log.Logger,
@@ -927,6 +933,10 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	)
 	if err != nil {
 		return nil, err
+	}
+
+	if t.Cfg.LabelAccessControlEnabled {
+		tripperware = frontend_labelaccess.WrapTripperware(tripperware)
 	}
 
 	t.QueryFrontendTripperware = tripperware
