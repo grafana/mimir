@@ -1002,8 +1002,8 @@ func TestUsageTracker_CleanupSnapshots(t *testing.T) {
 		require.NoError(t, err)
 
 		now := time.Now()
-		legacySnapshotFilename := func(time time.Time, instanceID string, partitionID int32) string {
-			return fmt.Sprintf("snapshot-%d-p%d-%s.bin", time.UnixMilli(), partitionID, instanceID)
+		legacySnapshotFilename := func(ts time.Time, instanceID string, partitionID int32) string {
+			return fmt.Sprintf("snapshot-%d-p%d-%s.bin", ts.UnixMilli(), partitionID, instanceID)
 		}
 
 		filenamesToDelete := []string{
