@@ -15,7 +15,6 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -65,30 +64,35 @@ func requireEqualMetricsQueryRequest(t *testing.T, expected, actual MetricsQuery
 	require.Equal(t, expected.GetStart(), actual.GetStart())
 	require.Equal(t, expected.GetEnd(), actual.GetEnd())
 	require.Equal(t, expected.GetStep(), actual.GetStep())
+	require.Equal(t, expected.GetLookbackDelta(), actual.GetLookbackDelta())
 	require.Equal(t, expected.GetQuery(), actual.GetQuery())
 	require.Equal(t, expected.GetMinT(), actual.GetMinT())
 	require.Equal(t, expected.GetMaxT(), actual.GetMaxT())
 	require.Equal(t, expected.GetOptions(), actual.GetOptions())
 	require.Equal(t, expected.GetHints(), actual.GetHints())
+	require.Equal(t, expected.GetStats(), actual.GetStats())
 }
 
 func TestCodec_EncodeMetricsQueryRequest(t *testing.T) {
 	codec := newTestCodec()
+	codec.lookbackDelta = 6 * time.Minute
 
-	for i, tc := range []struct {
-		url         string
-		expected    MetricsQueryRequest
-		expectedErr error
+	for _, tc := range []struct {
+		url                string
+		expectedEncodedUrl string
+		expected           MetricsQueryRequest
+		expectedErr        error
 	}{
 		{
-			url: "/api/v1/query_range?end=1536716880&query=sum+by+%28namespace%29+%28container_memory_rss%29&start=1536673680&step=120",
+			url:                "/api/v1/query_range?end=1536716880&query=sum+by+%28namespace%29+%28container_memory_rss%29&start=1536673680&step=120",
+			expectedEncodedUrl: "/api/v1/query_range?end=1536716880&lookback_delta=360&query=sum+by+%28namespace%29+%28container_memory_rss%29&start=1536673680&step=120",
 			expected: NewPrometheusRangeQueryRequest(
 				"/api/v1/query_range",
 				nil,
 				1536673680*1e3,
 				1536716880*1e3,
 				(2 * time.Minute).Milliseconds(),
-				0,
+				codec.lookbackDelta,
 				parseQuery(t, "sum(container_memory_rss) by (namespace)"),
 				Options{},
 				nil,
@@ -97,27 +101,58 @@ func TestCodec_EncodeMetricsQueryRequest(t *testing.T) {
 		},
 		// Same as above, but with stats=all.
 		{
-			url: "/api/v1/query_range?end=1536716880&query=sum+by+%28namespace%29+%28container_memory_rss%29&start=1536673680&stats=all&step=120",
+			url:                "/api/v1/query_range?end=1536716880&query=sum+by+%28namespace%29+%28container_memory_rss%29&start=1536673680&stats=all&step=120",
+			expectedEncodedUrl: "/api/v1/query_range?end=1536716880&lookback_delta=360&query=sum+by+%28namespace%29+%28container_memory_rss%29&start=1536673680&stats=all&step=120",
 			expected: NewPrometheusRangeQueryRequest(
 				"/api/v1/query_range",
 				nil,
 				1536673680*1e3,
 				1536716880*1e3,
 				(2 * time.Minute).Milliseconds(),
-				0,
+				codec.lookbackDelta,
 				parseQuery(t, "sum(container_memory_rss) by (namespace)"),
 				Options{},
 				nil,
 				"all",
 			),
 		},
+		// Same as above, but with an explicit lookback delta.
 		{
-			url: "/api/v1/query?query=sum+by+%28namespace%29+%28container_memory_rss%29&time=1536716880",
+			url: "/api/v1/query_range?end=1536716880&lookback_delta=182&query=sum+by+%28namespace%29+%28container_memory_rss%29&start=1536673680&step=120",
+			expected: NewPrometheusRangeQueryRequest(
+				"/api/v1/query_range",
+				nil,
+				1536673680*1e3,
+				1536716880*1e3,
+				(2 * time.Minute).Milliseconds(),
+				3*time.Minute+2*time.Second,
+				parseQuery(t, "sum(container_memory_rss) by (namespace)"),
+				Options{},
+				nil,
+				"",
+			),
+		},
+		{
+			url:                "/api/v1/query?query=sum+by+%28namespace%29+%28container_memory_rss%29&time=1536716880",
+			expectedEncodedUrl: "/api/v1/query?lookback_delta=360&query=sum+by+%28namespace%29+%28container_memory_rss%29&time=1536716880",
 			expected: NewPrometheusInstantQueryRequest(
 				"/api/v1/query",
 				nil,
 				1536716880*1e3,
-				0*time.Minute,
+				codec.lookbackDelta,
+				parseQuery(t, "sum(container_memory_rss) by (namespace)"),
+				Options{},
+				nil,
+				"",
+			),
+		},
+		{
+			url: "/api/v1/query?lookback_delta=182&query=sum+by+%28namespace%29+%28container_memory_rss%29&time=1536716880",
+			expected: NewPrometheusInstantQueryRequest(
+				"/api/v1/query",
+				nil,
+				1536716880*1e3,
+				3*time.Minute+2*time.Second,
 				parseQuery(t, "sum(container_memory_rss) by (namespace)"),
 				Options{},
 				nil,
@@ -126,11 +161,11 @@ func TestCodec_EncodeMetricsQueryRequest(t *testing.T) {
 		},
 		{
 			url:         "/api/v1/query_range?start=foo",
-			expectedErr: apierror.New(apierror.TypeBadData, "invalid parameter \"start\": cannot parse \"foo\" to a valid timestamp"),
+			expectedErr: apierror.New(apierror.TypeBadData, `invalid parameter "start": cannot parse "foo" to a valid timestamp`),
 		},
 		{
 			url:         "/api/v1/query_range?start=123&end=bar",
-			expectedErr: apierror.New(apierror.TypeBadData, "invalid parameter \"end\": cannot parse \"bar\" to a valid timestamp"),
+			expectedErr: apierror.New(apierror.TypeBadData, `invalid parameter "end": cannot parse "bar" to a valid timestamp`),
 		},
 		{
 			url:         "/api/v1/query_range?start=123&end=0",
@@ -138,7 +173,11 @@ func TestCodec_EncodeMetricsQueryRequest(t *testing.T) {
 		},
 		{
 			url:         "/api/v1/query_range?start=123&end=456&step=baz",
-			expectedErr: apierror.New(apierror.TypeBadData, "invalid parameter \"step\": cannot parse \"baz\" to a valid duration"),
+			expectedErr: apierror.New(apierror.TypeBadData, `invalid parameter "step": cannot parse "baz" to a valid duration`),
+		},
+		{
+			url:         "/api/v1/query_range?start=123&end=456&step=2m&lookback_delta=baz",
+			expectedErr: apierror.New(apierror.TypeBadData, `invalid parameter "lookback_delta": cannot parse "baz" to a valid duration`),
 		},
 		{
 			url:         "/api/v1/query_range?start=123&end=456&step=-1",
@@ -148,8 +187,16 @@ func TestCodec_EncodeMetricsQueryRequest(t *testing.T) {
 			url:         "/api/v1/query_range?start=0&end=11001&step=1",
 			expectedErr: errStepTooSmall,
 		},
+		{
+			url:         "/api/v1/query?time=123&lookback_delta=baz",
+			expectedErr: apierror.New(apierror.TypeBadData, `invalid parameter "lookback_delta": cannot parse "baz" to a valid duration`),
+		},
 	} {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
+		t.Run(tc.url, func(t *testing.T) {
+			if tc.expectedEncodedUrl == "" {
+				tc.expectedEncodedUrl = tc.url
+			}
+
 			const userID = "user-1"
 
 			r, err := http.NewRequest("GET", tc.url, nil)
@@ -167,7 +214,7 @@ func TestCodec_EncodeMetricsQueryRequest(t *testing.T) {
 
 			encodedReq, err := codec.EncodeMetricsQueryRequest(ctx, req)
 			require.NoError(t, err)
-			require.Equal(t, tc.url, encodedReq.RequestURI)
+			require.Equal(t, tc.expectedEncodedUrl, encodedReq.RequestURI)
 
 			actualUserID, _, err := user.ExtractOrgIDFromHTTPRequest(encodedReq)
 			require.NoError(t, err)
@@ -1823,7 +1870,7 @@ func TestCodec_DecodeEncode_Metrics(t *testing.T) {
 
 			const userID = "user-1"
 
-			queryURL := "/api/v1/query?query=sum+by+%28namespace%29+%28container_memory_rss%29&time=1704270202.066"
+			queryURL := "/api/v1/query?lookback_delta=123&query=sum+by+%28namespace%29+%28container_memory_rss%29&time=1704270202.066"
 			expected, err := http.NewRequest("GET", queryURL, nil)
 			require.NoError(t, err)
 			expected.Body = http.NoBody
