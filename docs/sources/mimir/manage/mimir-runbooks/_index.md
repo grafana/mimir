@@ -398,6 +398,38 @@ This alert occurs when a ruler is unable to validate whether or not it should cl
 
 When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for the [`MimirGossipMembersTooHigh`](#MimirGossipMembersTooHigh) and [`MimirGossipMembersTooLow`](#MimirGossipMembersTooLow) alerts.
 
+#### How to investigate
+
+**Step 1: Confirm which rulers are producing ring check errors**
+
+```promql
+# Nonzero rate confirms active errors. Note the job label to identify the affected component.
+rate(cortex_ruler_ring_check_errors_total{namespace="<namespace>"}[5m])
+```
+
+**Step 2: Check for unhealthy ruler ring members**
+
+```promql
+# Nonzero results identify ruler instances stuck in a non-ACTIVE state.
+# These are likely causing the ring check to fail.
+cortex_ring_members{namespace="<namespace>", container="ruler", state!="ACTIVE"}
+```
+
+_If result > 0: a stale or unhealthy ruler entry exists in the ring. Navigate to the ruler ring admin page (`/ruler/ring` on any Mimir component) and click **Forget** for the affected instance._
+
+_If result == 0: the ring members are all healthy. The failure is likely in the KV store backend or Memberlist — proceed to Step 3._
+
+**Step 3: Check ruler logs for ring errors**
+
+```logql
+{namespace="<namespace>", container="ruler"} |= "ring"
+  | logfmt
+  | level="error"
+  | line_format "{{.ts}} {{.msg}} {{.err}}"
+```
+
+_Look for: `"failed to check ring"`, `"context deadline exceeded"`, `"ring not initialised"`, `"memberlist"`._
+
 ### MimirRulerTooManyFailedPushes
 
 This alert fires when rulers cannot push new samples (result of rule evaluation) to ingesters.
@@ -613,7 +645,32 @@ This alert fires when a Mimir store-gateway is not successfully scanning blocks 
 
 How to **investigate**:
 
-- Look for any scan error in the store-gateway logs (ie. networking or rate limiting issues)
+**Step 1: Identify which store-gateway pods have stale syncs**
+
+```promql
+# Seconds since each store-gateway last successfully synced the bucket.
+# Alert fires when this exceeds 1800s (30m). Note the pod label.
+time() - cortex_bucket_stores_blocks_last_successful_sync_timestamp_seconds{namespace="<namespace>", component="store-gateway"} > 1800
+```
+
+**Step 2: Check object storage error rate for store-gateways**
+
+```promql
+# Nonzero rate confirms active bucket operation failures — likely the root cause.
+sum by (pod, operation) (
+    rate(thanos_objstore_bucket_operation_failures_total{namespace="<namespace>", component="store-gateway"}[5m])
+) > 0
+```
+
+**Step 3: Check store-gateway logs for sync errors**
+
+```logql
+{namespace="<namespace>", container="store-gateway"} |= "level=error"
+  | logfmt
+  | line_format "{{.ts}} {{.pod}} {{.msg}} {{.err}}"
+```
+
+_Look for: networking errors, object storage rate limiting (`429`), authentication failures, or `"failed to sync bucket"`._
 
 ### MimirStoreGatewayNoSyncedTenants
 
@@ -626,6 +683,41 @@ How it **works**:
 - When the tenant shard size is less than the replicas of store-gateways, some store-gateways may not get any tenants' blocks sharded to them.
 - This is more likely to happen in Mimir clusters with fewer number of tenants.
 
+#### How to investigate
+
+**Step 1: Confirm which store-gateway pods have zero synced tenants**
+
+```promql
+# Pods reporting 0 are idle.
+cortex_bucket_stores_tenants_synced{namespace="<namespace>", container="store-gateway"} == 0
+```
+
+**Step 2: Count active store-gateway ring members**
+
+```promql
+# Total ACTIVE store-gateway instances in the ring
+count(cortex_ring_members{namespace="<namespace>", container="store-gateway", state="ACTIVE"})
+```
+
+_Compare this count to the configured `store_gateway_tenant_shard_size` for your tenants. If the shard size is less than the replica count, some store-gateways will legitimately own no tenants._
+
+**Step 3: Check per-tenant shard sizes**
+
+```promql
+# Shows the configured shard size per tenant. 0 = tenant is sharded across all store-gateways.
+cortex_limits_overrides{namespace="<namespace>", limit_name="store_gateway_tenant_shard_size"}
+```
+
+**Step 4: Check store-gateway logs for sync errors** (only if the idle pod count is unexpected)
+
+```logql
+{namespace="<namespace>", container="store-gateway"} |= "level=error"
+  | logfmt
+  | line_format "{{.ts}} {{.pod}} {{.msg}} {{.err}}"
+```
+
+_Look for: bucket sync errors, ring join failures, or object storage authentication issues._
+
 How to **fix** it:
 
 There are three options:
@@ -633,6 +725,8 @@ There are three options:
 - Reduce the replicas of store-gateways so that they match the highest number of shards per tenant or
 - Increase the shard size of one or more tenants to match the number of replicas or
 - Set the shard size of one or more tenant to `0`; this will shard this tenant's blocks across all store-gateways.
+
+To adjust shard sizes see [Store-gateway shuffle sharding](https://github.com/grafana/mimir/blob/main/docs/sources/mimir/configure/configure-shuffle-sharding/index.md#store-gateway-shuffle-sharding).
 
 ### MimirCompactorNotCleaningUpBlocks
 
@@ -939,6 +1033,61 @@ as well as which query components are utilized to service the queries.
 See also [Investigating query evaluation issues](#investigating-query-evaluation-issues).
 
 Note that elevated measures of _inflight_ queries at any part of the read path are likely a symptom and not a cause.
+
+**Step 1: Confirm current queue depth by job**
+
+```promql
+# Queue length per scheduler job.
+sum by (job) (
+    cortex_query_scheduler_queue_length{namespace="<namespace>"}
+)
+```
+
+**Step 2: Check how many querier workers are connected**
+
+```promql
+# Number of querier worker connections to the scheduler.
+# A sudden drop indicates queriers have disconnected or crashed.
+sum by (job) (
+    cortex_query_scheduler_connected_querier_clients{namespace="<namespace>"}
+)
+```
+
+**Step 3: Check querier saturation (inflight requests)**
+
+```promql
+# Inflight requests being processed by queriers right now.
+# If this equals the total querier concurrency, queriers are saturated.
+sum by (job) (
+    cortex_query_scheduler_querier_inflight_requests{namespace="<namespace>"}
+)
+```
+
+_Decision:_
+
+- _Queriers **saturated** (inflight ≈ capacity) and queue growing: queriers cannot keep up. Scale up queriers or reduce query load._
+- _Queriers **idle** (low inflight) but queue growing: queriers are not consuming work. Check querier-to-scheduler connectivity and querier health._
+- _Queue non-empty but **no queriers connected** (Step 2 returns 0): queriers have disconnected. Check querier pod status and logs._
+
+**Step 4: Check time queries are spending in queue**
+
+```promql
+# 99th percentile queue wait time in seconds.
+# Values > a few seconds indicate severe querier starvation.
+histogram_quantile(0.99, sum by (le, job) (
+    rate(cortex_query_scheduler_queue_duration_seconds_bucket{namespace="<namespace>"}[5m])
+))
+```
+
+**Step 5: Check scheduler and querier logs for errors**
+
+```logql
+{namespace="<namespace>", container=~"query-scheduler|querier"} |= "level=error"
+  | logfmt
+  | line_format "{{.ts}} {{.container}} {{.msg}} {{.err}}"
+```
+
+_Look for: `"failed to forward request"`, `"context deadline exceeded"`, `"no healthy upstream"`, OOM-related messages._
 
 ### MimirCacheRequestErrors
 
@@ -1508,10 +1657,22 @@ How it **works**:
 
 How to **investigate**
 
+**Step 1: Confirm the error rate and which operations are failing**
+
+```promql
+# Shows failure rate per operation type (e.g. get, get_range, exists).
+# The operation label identifies what kind of bucket access is failing.
+sum by (pod, operation) (
+    rate(thanos_objstore_bucket_operation_failures_total{namespace="<namespace>", component="store-gateway"}[5m])
+) > 0
+```
+
+**Step 2: Check store-gateway logs for details**
+
 - Check the `store-gateways` logs which should contain details about the error such as tenant or object id, e.g. with the following Grafana Loki query:
 
-```
-{cluster="<cluster>",namespace="<namespace>", name=~"store-gateway.*"} |= "level=warn"
+```logql
+{namespace="<namespace>", container="store-gateway"} |= "level=warn"
 ```
 
 You might find logs similar to the following:
@@ -1637,6 +1798,25 @@ However, under normal circumstances, all queriers should run the same version of
 How to **investigate**:
 
 - Check that all queriers are running the same Mimir version.
+
+**Confirm the version spread across querier pods**
+
+```promql
+# Shows the maximum supported query plan version reported by each querier.
+# All pods in the same query path should report the same value.
+cortex_querier_maximum_supported_query_plan_version{namespace="<namespace>"}
+```
+
+_If values differ: pods running older Mimir versions will report a lower number. This is expected during a rollout and resolves automatically once all pods are updated._
+
+#### Verify resolution
+
+```promql
+# Should return no results (min == max) once all queriers agree
+min by (namespace) (cortex_querier_maximum_supported_query_plan_version{namespace="<namespace>"})
+!=
+max by (namespace) (cortex_querier_maximum_supported_query_plan_version{namespace="<namespace>"})
+```
 
 ### MimirMixedQueryFrontendQueryPlanVersionSupport
 
