@@ -67,7 +67,7 @@ func (a *indexHeaderAnalyzer) SeriesWithLabel(_ context.Context, _ string) Serie
 }
 
 // TOC returns the table of contents for index-header specific analysis.
-func (a *indexHeaderAnalyzer) TOC() *indexheader.BinaryTOC {
+func (a *indexHeaderAnalyzer) TOC() *indexheader.TOCCompat {
 	return a.reader.TOC()
 }
 

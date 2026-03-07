@@ -41,10 +41,9 @@ type Symbols struct {
 const symbolFactor = 32
 
 // NewSymbolsFromSparseHeader reads from sparse index header and returns a Symbols object for symbol lookups.
-func NewSymbolsFromSparseHeader(factory streamencoding.DecbufFactory, symbols *indexheaderpb.Symbols, version int, offset int) (s *Symbols, err error) {
+func NewSymbolsFromSparseHeader(factory streamencoding.DecbufFactory, symbols *indexheaderpb.Symbols, offset int) (s *Symbols, err error) {
 	s = &Symbols{
 		factory:     factory,
-		version:     version,
 		tableOffset: offset,
 	}
 
