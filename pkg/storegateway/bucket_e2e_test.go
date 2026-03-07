@@ -8,6 +8,7 @@ package storegateway
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"math"
 	"net/http"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/grpcutil"
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/grafana/dskit/services"
@@ -26,11 +28,15 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
+	tsdbindex "github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -38,6 +44,7 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/indexcache"
+	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -1097,6 +1104,292 @@ func emptyToNil(values []string) []string {
 }
 
 type suiteFactory func(...prepareStoreConfigOption) *storeSuite
+
+func TestBucketStore_ResourceAttributes(t *testing.T) {
+	ctx := context.Background()
+	logger := log.NewNopLogger()
+	bkt := objstore.NewInMemBucket()
+	dir := t.TempDir()
+
+	series := []labels.Labels{
+		labels.FromStrings("a", "1", "b", "1"),
+		labels.FromStrings("a", "1", "b", "2"),
+		labels.FromStrings("a", "2", "b", "1"),
+		labels.FromStrings("a", "2", "b", "2"),
+		// Need at least 3 series for CreateBlock (floats, histograms, float histograms).
+		labels.FromStrings("a", "1", "c", "1"),
+		labels.FromStrings("a", "1", "c", "2"),
+		labels.FromStrings("a", "2", "c", "1"),
+		labels.FromStrings("a", "2", "c", "2"),
+	}
+	extLset := labels.FromStrings("ext1", "value1")
+
+	now := time.Now()
+	mint := timestamp.FromTime(now)
+	maxt := timestamp.FromTime(now.Add(2 * time.Hour))
+
+	blockID, err := block.CreateBlock(ctx, dir, series, 10, mint, maxt, extLset)
+	require.NoError(t, err)
+
+	blockDir := filepath.Join(dir, blockID.String())
+
+	// Read the index to find actual posting refs for series we want to annotate.
+	indexPath := filepath.Join(blockDir, "index")
+	indexReader, err := tsdbindex.NewFileReader(indexPath, tsdbindex.DecodePostingsRaw)
+	require.NoError(t, err)
+
+	// Get the posting ref for series {a="1", b="1"} by iterating postings.
+	p, err := indexReader.Postings(ctx, "a", "1")
+	require.NoError(t, err)
+
+	// Collect all posting refs for series matching a="1".
+	var seriesRefsA1 []storage.SeriesRef
+	for p.Next() {
+		seriesRefsA1 = append(seriesRefsA1, p.At())
+	}
+	require.NoError(t, p.Err())
+	require.True(t, len(seriesRefsA1) > 0, "expected at least one posting ref for a=1")
+
+	// The parquet file stores series IDs (the same values returned by Postings()).
+	// For v2 indexes, these are byte_offset / 16.
+	firstRef := seriesRefsA1[0]
+	parquetRef := uint64(firstRef)
+
+	require.NoError(t, indexReader.Close())
+
+	// Write a series_metadata.parquet file with resource attributes for firstRef.
+	memMeta := seriesmetadata.NewMemSeriesMetadata()
+	memMeta.ResourceStore().Set(parquetRef, seriesmetadata.NewResourceVersion(
+		map[string]string{"service.name": "svc-a"},
+		map[string]string{"host.name": "host-1"},
+		nil,
+		mint, maxt,
+	))
+	// SetLabels is only used for the in-memory reader's LabelsForHash;
+	// the Parquet writer uses it for the labels column.
+	memMeta.SetLabels(parquetRef, series[0])
+
+	slogger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	_, err = seriesmetadata.WriteFileWithOptions(slogger, blockDir, memMeta, seriesmetadata.WriterOptions{
+		EnableInvertedIndex: true,
+	})
+	require.NoError(t, err)
+
+	// Upload block (includes the parquet file).
+	_, err = block.Upload(ctx, logger, bkt, blockDir, nil)
+	require.NoError(t, err)
+
+	// Create a second block without metadata to test that blocks without parquet files are handled.
+	mint2 := timestamp.FromTime(now.Add(2 * time.Hour))
+	maxt2 := timestamp.FromTime(now.Add(4 * time.Hour))
+	blockID2, err := block.CreateBlock(ctx, dir, series, 10, mint2, maxt2, extLset)
+	require.NoError(t, err)
+	_, err = block.Upload(ctx, logger, bkt, filepath.Join(dir, blockID2.String()), nil)
+	require.NoError(t, err)
+
+	// Set up BucketStore.
+	reg := prometheus.NewRegistry()
+	cfg := mimir_tsdb.BucketStoreConfig{
+		StreamingBatchSize:          10,
+		BlockSyncConcurrency:        20,
+		PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
+		IndexHeader: indexheader.Config{
+			EagerLoadingPersistInterval: time.Minute,
+			LazyLoadingEnabled:          true,
+			LazyLoadingIdleTimeout:      time.Minute,
+		},
+	}
+
+	const userID = "tenant"
+	metaFetcher, err := block.NewMetaFetcher(logger, 20, objstore.WithNoopInstr(bkt), dir, nil, []block.MetadataFilter{}, 0)
+	require.NoError(t, err)
+
+	store, err := NewBucketStore(
+		userID,
+		objstore.WithNoopInstr(bkt),
+		newTestBucketIndexMetadataReader(t, bkt, userID),
+		metaFetcher,
+		dir,
+		cfg,
+		selectAllStrategy{},
+		newStaticChunksLimiterFactory(0),
+		newStaticSeriesLimiterFactory(0),
+		newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+		hashcache.NewSeriesHashCache(1024*1024),
+		NewBucketStoreMetrics(reg),
+		WithLogger(logger),
+		WithIndexCache(noopCache{}),
+	)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, store))
+	require.NoError(t, store.InitialSync(ctx))
+	t.Cleanup(func() {
+		require.NoError(t, store.RemoveBlocksAndClose())
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, store))
+	})
+
+	t.Run("basic forward lookup", func(t *testing.T) {
+		req := &storepb.ResourceAttributesRequest{
+			Start: mint,
+			End:   maxt,
+			Matchers: []storepb.LabelMatcher{
+				{Type: storepb.LabelMatcher_EQ, Name: "a", Value: "1"},
+			},
+		}
+		srv := &resourceAttributesServerMock{ctx: ctx}
+		err := store.ResourceAttributes(req, srv)
+		require.NoError(t, err)
+
+		// Collect items and hints.
+		var items []*storepb.ResourceAttributesSeriesData
+		var hints hintspb.ResourceAttributesResponseHints
+		for _, resp := range srv.responses {
+			items = append(items, resp.Items...)
+			if resp.Hints != nil {
+				require.NoError(t, types.UnmarshalAny(resp.Hints, &hints))
+			}
+		}
+
+		// We should have at least one result with resource attributes.
+		require.NotEmpty(t, items, "expected at least one resource attributes item")
+
+		// Verify the resource data matches what we wrote.
+		found := false
+		for _, item := range items {
+			if item.Labels["a"] == "1" && item.Labels["b"] == "1" {
+				require.Len(t, item.Versions, 1)
+				assert.Equal(t, map[string]string{"service.name": "svc-a"}, item.Versions[0].Identifying)
+				assert.Equal(t, map[string]string{"host.name": "host-1"}, item.Versions[0].Descriptive)
+				found = true
+			}
+		}
+		assert.True(t, found, "expected to find resource attributes for series {a=1, b=1}")
+
+		// Hints should contain the queried block ID.
+		blockIDs := make([]string, 0, len(hints.QueriedBlocks))
+		for _, b := range hints.QueriedBlocks {
+			blockIDs = append(blockIDs, b.Id)
+		}
+		assert.Contains(t, blockIDs, blockID.String())
+	})
+
+	t.Run("no matching series", func(t *testing.T) {
+		req := &storepb.ResourceAttributesRequest{
+			Start: mint,
+			End:   maxt,
+			Matchers: []storepb.LabelMatcher{
+				{Type: storepb.LabelMatcher_EQ, Name: "nonexistent", Value: "label"},
+			},
+		}
+		srv := &resourceAttributesServerMock{ctx: ctx}
+		err := store.ResourceAttributes(req, srv)
+		require.NoError(t, err)
+
+		// Should still get hints but no items.
+		var items []*storepb.ResourceAttributesSeriesData
+		for _, resp := range srv.responses {
+			items = append(items, resp.Items...)
+		}
+		assert.Empty(t, items)
+	})
+
+	t.Run("time range filtering", func(t *testing.T) {
+		// Query a time range that doesn't overlap with any block.
+		req := &storepb.ResourceAttributesRequest{
+			Start: maxt2 + 1000,
+			End:   maxt2 + 2000,
+			Matchers: []storepb.LabelMatcher{
+				{Type: storepb.LabelMatcher_EQ, Name: "a", Value: "1"},
+			},
+		}
+		srv := &resourceAttributesServerMock{ctx: ctx}
+		err := store.ResourceAttributes(req, srv)
+		require.NoError(t, err)
+
+		var items []*storepb.ResourceAttributesSeriesData
+		for _, resp := range srv.responses {
+			items = append(items, resp.Items...)
+		}
+		assert.Empty(t, items)
+	})
+
+	t.Run("response hints contain queried blocks", func(t *testing.T) {
+		// Query the full time range covering both blocks.
+		req := &storepb.ResourceAttributesRequest{
+			Start: mint,
+			End:   maxt2,
+			Matchers: []storepb.LabelMatcher{
+				{Type: storepb.LabelMatcher_EQ, Name: "a", Value: "1"},
+			},
+		}
+		srv := &resourceAttributesServerMock{ctx: ctx}
+		err := store.ResourceAttributes(req, srv)
+		require.NoError(t, err)
+
+		var hints hintspb.ResourceAttributesResponseHints
+		for _, resp := range srv.responses {
+			if resp.Hints != nil {
+				require.NoError(t, types.UnmarshalAny(resp.Hints, &hints))
+			}
+		}
+
+		// Both blocks should be queried.
+		blockIDs := make(map[string]struct{})
+		for _, b := range hints.QueriedBlocks {
+			blockIDs[b.Id] = struct{}{}
+		}
+		assert.Contains(t, blockIDs, blockID.String())
+		assert.Contains(t, blockIDs, blockID2.String())
+	})
+
+	t.Run("reverse lookup by resource attr filter", func(t *testing.T) {
+		req := &storepb.ResourceAttributesRequest{
+			Start: mint,
+			End:   maxt,
+			ResourceAttrFilters: []*storepb.ResourceAttrFilter{
+				{Key: "service.name", Value: "svc-a"},
+			},
+		}
+		srv := &resourceAttributesServerMock{ctx: ctx}
+		err := store.ResourceAttributes(req, srv)
+		require.NoError(t, err)
+
+		var items []*storepb.ResourceAttributesSeriesData
+		for _, resp := range srv.responses {
+			items = append(items, resp.Items...)
+		}
+
+		// The inverted index should find the series with service.name=svc-a.
+		require.NotEmpty(t, items, "expected at least one result from reverse lookup")
+
+		// Verify the result has the correct resource data.
+		found := false
+		for _, item := range items {
+			for _, v := range item.Versions {
+				if v.Identifying["service.name"] == "svc-a" {
+					found = true
+				}
+			}
+		}
+		assert.True(t, found, "expected to find resource with service.name=svc-a in reverse lookup")
+	})
+}
+
+// resourceAttributesServerMock implements storegatewaypb.StoreGateway_ResourceAttributesServer for testing.
+type resourceAttributesServerMock struct {
+	grpc.ServerStream
+	ctx       context.Context
+	responses []*storepb.ResourceAttributesResponse
+}
+
+func (m *resourceAttributesServerMock) Send(resp *storepb.ResourceAttributesResponse) error {
+	m.responses = append(m.responses, resp)
+	return nil
+}
+
+func (m *resourceAttributesServerMock) Context() context.Context {
+	return m.ctx
+}
 
 func foreachStore(t *testing.T, runTest func(t *testing.T, newSuite suiteFactory)) {
 	t.Parallel()

@@ -379,6 +379,16 @@ func (g *StoreGateway) LabelValues(ctx context.Context, req *storepb.LabelValues
 	return g.stores.LabelValues(ctx, req)
 }
 
+// ResourceAttributes implements the storegatewaypb.StoreGatewayServer interface.
+func (g *StoreGateway) ResourceAttributes(req *storepb.ResourceAttributesRequest, srv storegatewaypb.StoreGateway_ResourceAttributesServer) error {
+	ix := g.tracker.Insert(func() string {
+		return requestActivity(srv.Context(), "StoreGateway/ResourceAttributes", req)
+	})
+	defer g.tracker.Delete(ix)
+
+	return g.stores.ResourceAttributes(req, srv)
+}
+
 func requestActivity(ctx context.Context, name string, req interface{}) string {
 	user := getUserIDFromGRPCContext(ctx)
 	traceID, _ := tracing.ExtractSampledTraceID(ctx)

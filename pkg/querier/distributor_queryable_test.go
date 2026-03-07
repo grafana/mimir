@@ -878,6 +878,11 @@ func (m *mockDistributor) ActiveNativeHistogramMetrics(ctx context.Context, matc
 	return args.Get(0).(*cardinality.ActiveNativeHistogramMetricsResponse), args.Error(1)
 }
 
+func (m *mockDistributor) ResourceAttributes(ctx context.Context, startMs, endMs int64, matchers []*labels.Matcher, limit int64, resourceAttrFilters []*client.ResourceAttrFilter) ([]*client.SeriesResourceAttributes, error) {
+	args := m.Called(ctx, startMs, endMs, matchers, limit, resourceAttrFilters)
+	return args.Get(0).([]*client.SeriesResourceAttributes), args.Error(1)
+}
+
 type mockConfigProvider struct {
 	queryIngestersWithin time.Duration
 	seenUserIDs          []string
@@ -890,4 +895,8 @@ func newMockConfigProvider(duration time.Duration) *mockConfigProvider {
 func (p *mockConfigProvider) QueryIngestersWithin(userID string) time.Duration {
 	p.seenUserIDs = append(p.seenUserIDs, userID)
 	return p.queryIngestersWithin
+}
+
+func (p *mockConfigProvider) MaxResourceAttributesCacheSizeBytes(_ string) int {
+	return 0
 }

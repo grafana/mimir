@@ -41,6 +41,8 @@ const (
 	labelNamesPathSuffix                              = "/api/v1/labels"
 	remoteReadPathSuffix                              = "/api/v1/read"
 	seriesPathSuffix                                  = "/api/v1/series"
+	resourceAttributesPathSuffix                      = "/api/v1/resources"
+	resourceAttributesSeriesPathSuffix                = "/api/v1/resources/series"
 
 	queryTypeInstant                      = "query"
 	queryTypeRange                        = "query_range"
@@ -49,6 +51,7 @@ const (
 	queryTypeLabels                       = "label_names_and_values"
 	queryTypeActiveSeries                 = "active_series"
 	queryTypeActiveNativeHistogramMetrics = "active_native_histogram_metrics"
+	queryTypeResourceAttributes           = "resource_attributes"
 	queryTypeOther                        = "other"
 )
 
@@ -74,6 +77,7 @@ type Config struct {
 	TargetSeriesPerShard                      uint64             `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
 	ShardActiveSeriesQueries                  bool               `yaml:"shard_active_series_queries" category:"experimental"`
 	UseActiveSeriesDecoder                    bool               `yaml:"use_active_series_decoder" category:"experimental"`
+	ShardResourceAttributesQueries            bool               `yaml:"shard_resource_attributes_queries" category:"experimental"`
 
 	// CacheKeyGenerator allows to inject a CacheKeyGenerator to use for generating cache keys.
 	// If nil, the querymiddleware package uses a DefaultCacheKeyGenerator with SplitQueriesByInterval.
@@ -115,6 +119,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.QueryResultResponseFormat, "query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
 	f.BoolVar(&cfg.ShardActiveSeriesQueries, "query-frontend.shard-active-series-queries", false, "True to enable sharding of active series queries.")
 	f.BoolVar(&cfg.UseActiveSeriesDecoder, "query-frontend.use-active-series-decoder", false, "Set to true to use the zero-allocation response decoder for active series queries.")
+	f.BoolVar(&cfg.ShardResourceAttributesQueries, "query-frontend.shard-resource-attributes-queries", false, "True to enable sharding of resource attributes queries.")
 	f.BoolVar(&cfg.CacheSamplesProcessedStats, "query-frontend.cache-samples-processed-stats", false, "Cache statistics of processed samples on results cache. Deprecated: has no effect.")
 	cfg.ResultsCache.RegisterFlags(f)
 
@@ -317,17 +322,23 @@ func newQueryTripperware(
 		activeNativeHistogramMetrics := next
 		labels := next
 		series := next
+		resourceAttributes := next
 
 		if cfg.MaxRetries > 0 {
 			cardinality = newRetryRoundTripper(cardinality, log, cfg.MaxRetries, retryMetrics)
 			series = newRetryRoundTripper(series, log, cfg.MaxRetries, retryMetrics)
 			labels = newRetryRoundTripper(labels, log, cfg.MaxRetries, retryMetrics)
-			activeSeries = newRetryRoundTripper(series, log, cfg.MaxRetries, retryMetrics)
+			activeSeries = newRetryRoundTripper(activeSeries, log, cfg.MaxRetries, retryMetrics)
+			resourceAttributes = newRetryRoundTripper(resourceAttributes, log, cfg.MaxRetries, retryMetrics)
 		}
 
 		if cfg.ShardActiveSeriesQueries {
 			activeSeries = newShardActiveSeriesMiddleware(activeSeries, cfg.UseActiveSeriesDecoder, limits, log)
 			activeNativeHistogramMetrics = newShardActiveNativeHistogramMetricsMiddleware(activeNativeHistogramMetrics, limits, log)
+		}
+
+		if cfg.ShardResourceAttributesQueries {
+			resourceAttributes = newShardResourceAttributesMiddleware(resourceAttributes, limits, log)
 		}
 
 		// Enforce read consistency after caching.
@@ -341,6 +352,7 @@ func newQueryTripperware(
 			activeNativeHistogramMetrics = newReadConsistencyRoundTripper(activeNativeHistogramMetrics, ingestStorageTopicOffsetsReaders, limits, log, metrics)
 			labels = newReadConsistencyRoundTripper(labels, ingestStorageTopicOffsetsReaders, limits, log, metrics)
 			series = newReadConsistencyRoundTripper(series, ingestStorageTopicOffsetsReaders, limits, log, metrics)
+			resourceAttributes = newReadConsistencyRoundTripper(resourceAttributes, ingestStorageTopicOffsetsReaders, limits, log, metrics)
 			remoteRead = newReadConsistencyRoundTripper(remoteRead, ingestStorageTopicOffsetsReaders, limits, log, metrics)
 			next = newReadConsistencyRoundTripper(next, ingestStorageTopicOffsetsReaders, limits, log, metrics)
 		}
@@ -349,6 +361,7 @@ func newQueryTripperware(
 		if cfg.CacheResults {
 			cardinality = newCardinalityQueryCacheRoundTripper(c, cacheKeyGenerator, limits, cardinality, log, registerer)
 			labels = newLabelsQueryCacheRoundTripper(c, cacheKeyGenerator, limits, labels, log, registerer)
+			resourceAttributes = newResourceAttributesQueryCacheRoundTripper(c, cacheKeyGenerator, limits, resourceAttributes, log, registerer)
 		}
 
 		// Optimize labels queries after validation.
@@ -381,6 +394,10 @@ func newQueryTripperware(
 				return labels.RoundTrip(r)
 			case IsSeriesQuery(r.URL.Path):
 				return series.RoundTrip(r)
+			case IsResourceAttributesSeriesQuery(r.URL.Path):
+				return resourceAttributes.RoundTrip(r)
+			case IsResourceAttributesQuery(r.URL.Path):
+				return resourceAttributes.RoundTrip(r)
 			case IsRemoteReadQuery(r.URL.Path):
 				return remoteRead.RoundTrip(r)
 			default:
@@ -630,6 +647,10 @@ func newQueryCountTripperware(registerer prometheus.Registerer) Tripperware {
 				op = queryTypeActiveNativeHistogramMetrics
 			case IsLabelsQuery(r.URL.Path):
 				op = queryTypeLabels
+			case IsResourceAttributesSeriesQuery(r.URL.Path):
+				op = queryTypeResourceAttributes
+			case IsResourceAttributesQuery(r.URL.Path):
+				op = queryTypeResourceAttributes
 			}
 
 			tenantIDs, err := tenant.TenantIDs(r.Context())
@@ -681,6 +702,14 @@ func IsActiveSeriesQuery(path string) bool {
 
 func IsActiveNativeHistogramMetricsQuery(path string) bool {
 	return strings.HasSuffix(path, cardinalityActiveNativeHistogramMetricsPathSuffix)
+}
+
+func IsResourceAttributesSeriesQuery(path string) bool {
+	return strings.HasSuffix(path, resourceAttributesSeriesPathSuffix)
+}
+
+func IsResourceAttributesQuery(path string) bool {
+	return strings.HasSuffix(path, resourceAttributesPathSuffix) && !IsResourceAttributesSeriesQuery(path)
 }
 
 func IsRemoteReadQuery(path string) bool {

@@ -45,7 +45,7 @@ const (
 )
 
 var maxBlockUploadSizeBytesFormat = "block exceeds the maximum block size limit of %d bytes"
-var rePath = regexp.MustCompile(`^(index|chunks/\d{6})$`)
+var rePath = regexp.MustCompile(`^(index|chunks/\d{6}|series_metadata\.parquet)$`)
 var errValidationCompleted = cancellation.NewErrorf("validation completed")
 
 // StartBlockUpload handles request for starting block upload.

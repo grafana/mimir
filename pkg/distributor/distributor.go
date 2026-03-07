@@ -273,6 +273,9 @@ type Config struct {
 	// IngestStorageConfig is dynamically injected because defined outside of distributor config.
 	IngestStorageConfig ingest.Config `yaml:"-"`
 
+	// OTelPersistResourceAttributes is dynamically injected from blocks-storage TSDB config.
+	OTelPersistResourceAttributes bool `yaml:"-"`
+
 	// Limits for distributor
 	DefaultLimits    InstanceLimits         `yaml:"instance_limits"`
 	InstanceLimitsFn func() *InstanceLimits `yaml:"-"`
@@ -3215,6 +3218,212 @@ func maxFromZones[T ~float64 | ~uint64](seriesCountByZone map[string]T) (val T) 
 		}
 	}
 	return val
+}
+
+// ResourceAttributes queries the ingester replication set for OTel resource attributes
+// matching the given selector. It combines and deduplicates the results.
+func (d *Distributor) ResourceAttributes(ctx context.Context, startMs, endMs int64, matchers []*labels.Matcher, limit int64, resourceAttrFilters []*ingester_client.ResourceAttrFilter) ([]*ingester_client.SeriesResourceAttributes, error) {
+	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// When ingest storage is disabled, if ingesters are running in a single zone we can't tolerate any errors.
+	if !d.cfg.IngestStorageConfig.Enabled && len(replicationSets) == 1 && replicationSets[0].ZoneCount() == 1 {
+		replicationSets[0].MaxErrors = 0
+	}
+
+	req, err := ingester_client.ToResourceAttributesRequest(startMs, endMs, matchers, limit, resourceAttrFilters)
+	if err != nil {
+		return nil, err
+	}
+
+	res := newResourceAttributesResponse()
+
+	ingesterQuery := func(ctx context.Context, client ingester_client.IngesterClient) (any, error) {
+		// This function is invoked purely for its side effects on the captured
+		// resourceAttributesResponse, its return value is never used.
+		type ignored struct{}
+
+		log, ctx := spanlogger.New(ctx, d.log, tracer, "Distributor.ResourceAttributes.queryIngester")
+		defer log.Finish()
+
+		stream, err := client.ResourceAttributes(ctx, req)
+		if err != nil {
+			if errors.Is(globalerror.WrapGRPCErrorWithContextError(ctx, err), context.Canceled) {
+				return ignored{}, nil
+			}
+			level.Error(log).Log("msg", "error creating resource attributes response stream", "err", err)
+			log.SetError()
+			return nil, err
+		}
+
+		defer func() {
+			err = util.CloseAndExhaust[*ingester_client.ResourceAttributesResponse](stream)
+			if err != nil && !errors.Is(globalerror.WrapGRPCErrorWithContextError(ctx, err), context.Canceled) {
+				level.Warn(d.log).Log("msg", "error closing resource attributes response stream", "err", err)
+			}
+		}()
+
+		for {
+			msg, err := stream.Recv()
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				if errors.Is(globalerror.WrapGRPCErrorWithContextError(ctx, err), context.Canceled) {
+					return ignored{}, nil
+				}
+				level.Error(log).Log("msg", "error receiving resource attributes response", "err", err)
+				log.SetError()
+				return nil, err
+			}
+
+			res.add(msg.Items)
+		}
+
+		return ignored{}, nil
+	}
+
+	_, err = forReplicationSets(ctx, d, replicationSets, ingesterQuery)
+	if err != nil {
+		return nil, err
+	}
+
+	return res.result(), nil
+}
+
+// resourceAttributesResponse is a helper to merge/deduplicate ResourceAttributes responses from ingesters.
+// It uses a hash map with collision handling (matching the pattern in MimirAppender.processLabelsAndMetadata)
+// to correctly handle the rare but possible case of two distinct label sets hashing to the same uint64.
+type resourceAttributesResponse struct {
+	m          sync.Mutex
+	series     map[uint64]*ingester_client.SeriesResourceAttributes
+	collisions map[uint64][]*ingester_client.SeriesResourceAttributes
+}
+
+func newResourceAttributesResponse() *resourceAttributesResponse {
+	return &resourceAttributesResponse{
+		series: map[uint64]*ingester_client.SeriesResourceAttributes{},
+	}
+}
+
+func (r *resourceAttributesResponse) add(items []*ingester_client.SeriesResourceAttributes) {
+	r.m.Lock()
+	defer r.m.Unlock()
+
+	for _, item := range items {
+		lbls := mimirpb.FromLabelAdaptersToLabels(item.Labels)
+		lblHash := labels.StableHash(lbls)
+
+		existing, ok := r.series[lblHash]
+		if !ok {
+			// First time seeing this hash, store it with a deep copy of labels
+			// and a cloned Versions slice. The original slice may be backed by
+			// gRPC receive buffer memory that is released after the stream closes.
+			r.series[lblHash] = &ingester_client.SeriesResourceAttributes{
+				Labels:   mimirpb.FromLabelsToLabelAdapters(lbls.Copy()),
+				Versions: slices.Clone(item.Versions),
+			}
+			continue
+		}
+
+		// Hash exists — check if the labels actually match.
+		if labels.Equal(lbls, mimirpb.FromLabelAdaptersToLabels(existing.Labels)) {
+			r.mergeVersions(existing, item)
+			continue
+		}
+
+		// Hash collision — check the collision list.
+		if r.collisions != nil {
+			found := false
+			for _, col := range r.collisions[lblHash] {
+				if labels.Equal(lbls, mimirpb.FromLabelAdaptersToLabels(col.Labels)) {
+					r.mergeVersions(col, item)
+					found = true
+					break
+				}
+			}
+			if found {
+				continue
+			}
+		}
+
+		// New series with a colliding hash.
+		if r.collisions == nil {
+			r.collisions = make(map[uint64][]*ingester_client.SeriesResourceAttributes)
+		}
+		r.collisions[lblHash] = append(r.collisions[lblHash], &ingester_client.SeriesResourceAttributes{
+			Labels:   mimirpb.FromLabelsToLabelAdapters(lbls.Copy()),
+			Versions: slices.Clone(item.Versions),
+		})
+	}
+}
+
+// versionDedupKey deduplicates versions in mergeVersions. Using a struct key
+// with a pre-serialized identifying-attrs string gives O(E+N) dedup.
+type versionDedupKey struct {
+	minTime     int64
+	maxTime     int64
+	identifying string
+}
+
+// mergeVersions merges resource attribute versions from a new item into the existing one.
+// It deduplicates versions by time range AND identifying attributes, so that two versions
+// from different replicas covering the same time range but with different attribute content
+// are not incorrectly collapsed.
+func (r *resourceAttributesResponse) mergeVersions(existing, newItem *ingester_client.SeriesResourceAttributes) {
+	// Build set from existing versions.
+	seen := make(map[versionDedupKey]struct{}, len(existing.Versions))
+	for _, v := range existing.Versions {
+		seen[versionDedupKey{v.MinTimeMs, v.MaxTimeMs, identifyingAttrsKey(v.Identifying)}] = struct{}{}
+	}
+	for _, newVer := range newItem.Versions {
+		key := versionDedupKey{newVer.MinTimeMs, newVer.MaxTimeMs, identifyingAttrsKey(newVer.Identifying)}
+		if _, ok := seen[key]; !ok {
+			seen[key] = struct{}{}
+			existing.Versions = append(existing.Versions, newVer)
+		}
+	}
+}
+
+// identifyingAttrsKey builds a deterministic string from identifying attributes
+// for use as a map key. Keys are sorted for consistent output.
+func identifyingAttrsKey(m map[string]string) string {
+	if len(m) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	var b strings.Builder
+	for _, k := range keys {
+		b.WriteString(k)
+		b.WriteByte(0)
+		b.WriteString(m[k])
+		b.WriteByte(1)
+	}
+	return b.String()
+}
+
+func (r *resourceAttributesResponse) result() []*ingester_client.SeriesResourceAttributes {
+	r.m.Lock()
+	defer r.m.Unlock()
+
+	n := len(r.series)
+	for _, items := range r.collisions {
+		n += len(items)
+	}
+	result := make([]*ingester_client.SeriesResourceAttributes, 0, n)
+	for _, item := range r.series {
+		result = append(result, item)
+	}
+	for _, items := range r.collisions {
+		result = append(result, items...)
+	}
+	return result
 }
 
 // LabelNames returns the names of all labels from series with samples timestamp between from and to, and matching

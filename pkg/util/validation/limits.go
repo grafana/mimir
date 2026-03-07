@@ -59,6 +59,8 @@ const (
 	MaxSeriesQueryLimitFlag                     = "querier.max-series-query-limit"
 	MaxLabelNamesLimitFlag                      = "querier.max-label-names-limit"
 	MaxLabelValuesLimitFlag                     = "querier.max-label-values-limit"
+	MaxResourceAttributesQueryLimitFlag         = "querier.max-resource-attributes-query-limit"
+	MaxResourceAttributesCacheSizeBytesFlag     = "querier.max-resource-attributes-cache-size-bytes"
 	MaxTotalQueryLengthFlag                     = "query-frontend.max-total-query-length"
 	MaxQueryExpressionSizeBytesFlag             = "query-frontend.max-query-expression-size-bytes"
 	MaxActiveSeriesPerUserFlag                  = "distributor.max-active-series-per-user"
@@ -208,6 +210,8 @@ type Limits struct {
 	MaxSeriesQueryLimit                   int            `yaml:"max_series_query_limit" json:"max_series_query_limit"`
 	MaxLabelNamesLimit                    int            `yaml:"max_label_names_limit" json:"max_label_names_limit"`
 	MaxLabelValuesLimit                   int            `yaml:"max_label_values_limit" json:"max_label_values_limit"`
+	MaxResourceAttributesQueryLimit       int            `yaml:"max_resource_attributes_query_limit" json:"max_resource_attributes_query_limit"`
+	MaxResourceAttributesCacheSizeBytes   int            `yaml:"max_resource_attributes_cache_size_bytes" json:"max_resource_attributes_cache_size_bytes" category:"advanced"`
 	MaxCacheFreshness                     model.Duration `yaml:"max_cache_freshness" json:"max_cache_freshness" category:"advanced"`
 	MaxQueriersPerTenant                  int            `yaml:"max_queriers_per_tenant" json:"max_queriers_per_tenant"`
 	QueryShardingTotalShards              int            `yaml:"query_sharding_total_shards" json:"query_sharding_total_shards"`
@@ -217,23 +221,24 @@ type Limits struct {
 	EnableDelayedNameRemoval              bool           `yaml:"enable_delayed_name_removal" json:"enable_delayed_name_removal" category:"experimental"`
 
 	// Query-frontend limits.
-	MaxTotalQueryLength                    model.Duration         `yaml:"max_total_query_length" json:"max_total_query_length"`
-	ResultsCacheTTL                        model.Duration         `yaml:"results_cache_ttl" json:"results_cache_ttl"`
-	ResultsCacheTTLForOutOfOrderTimeWindow model.Duration         `yaml:"results_cache_ttl_for_out_of_order_time_window" json:"results_cache_ttl_for_out_of_order_time_window"`
-	ResultsCacheTTLForCardinalityQuery     model.Duration         `yaml:"results_cache_ttl_for_cardinality_query" json:"results_cache_ttl_for_cardinality_query"`
-	ResultsCacheTTLForLabelsQuery          model.Duration         `yaml:"results_cache_ttl_for_labels_query" json:"results_cache_ttl_for_labels_query"`
-	ResultsCacheTTLForErrors               model.Duration         `yaml:"results_cache_ttl_for_errors" json:"results_cache_ttl_for_errors"`
-	ResultsCacheForUnalignedQueryEnabled   bool                   `yaml:"cache_unaligned_requests" json:"cache_unaligned_requests" category:"advanced"`
-	MaxQueryExpressionSizeBytes            int                    `yaml:"max_query_expression_size_bytes" json:"max_query_expression_size_bytes"`
-	BlockedQueries                         BlockedQueriesConfig   `yaml:"blocked_queries,omitempty" json:"blocked_queries,omitempty" doc:"nocli|description=List of queries to block."`
-	LimitedQueries                         LimitedQueriesConfig   `yaml:"limited_queries,omitempty" json:"limited_queries,omitempty" doc:"nocli|description=List of queries to limit and duration to limit them for." category:"experimental"`
-	BlockedRequests                        BlockedRequestsConfig  `yaml:"blocked_requests,omitempty" json:"blocked_requests,omitempty" doc:"nocli|description=List of HTTP requests to block." category:"experimental"`
-	AlignQueriesWithStep                   bool                   `yaml:"align_queries_with_step" json:"align_queries_with_step"`
-	EnabledPromQLExperimentalFunctions     flagext.StringSliceCSV `yaml:"enabled_promql_experimental_functions" json:"enabled_promql_experimental_functions"`
-	EnabledPromQLExtendedRangeSelectors    flagext.StringSliceCSV `yaml:"enabled_promql_extended_range_selectors" json:"enabled_promql_extended_range_selectors"`
-	Prom2RangeCompat                       bool                   `yaml:"prom2_range_compat" json:"prom2_range_compat" category:"experimental"`
-	SubquerySpinOffEnabled                 bool                   `yaml:"subquery_spin_off_enabled" json:"subquery_spin_off_enabled" category:"experimental"`
-	LabelsQueryOptimizerEnabled            bool                   `yaml:"labels_query_optimizer_enabled" json:"labels_query_optimizer_enabled" category:"advanced"`
+	MaxTotalQueryLength                       model.Duration         `yaml:"max_total_query_length" json:"max_total_query_length"`
+	ResultsCacheTTL                           model.Duration         `yaml:"results_cache_ttl" json:"results_cache_ttl"`
+	ResultsCacheTTLForOutOfOrderTimeWindow    model.Duration         `yaml:"results_cache_ttl_for_out_of_order_time_window" json:"results_cache_ttl_for_out_of_order_time_window"`
+	ResultsCacheTTLForCardinalityQuery        model.Duration         `yaml:"results_cache_ttl_for_cardinality_query" json:"results_cache_ttl_for_cardinality_query"`
+	ResultsCacheTTLForLabelsQuery             model.Duration         `yaml:"results_cache_ttl_for_labels_query" json:"results_cache_ttl_for_labels_query"`
+	ResultsCacheTTLForResourceAttributesQuery model.Duration         `yaml:"results_cache_ttl_for_resource_attributes_query" json:"results_cache_ttl_for_resource_attributes_query"`
+	ResultsCacheTTLForErrors                  model.Duration         `yaml:"results_cache_ttl_for_errors" json:"results_cache_ttl_for_errors"`
+	ResultsCacheForUnalignedQueryEnabled      bool                   `yaml:"cache_unaligned_requests" json:"cache_unaligned_requests" category:"advanced"`
+	MaxQueryExpressionSizeBytes               int                    `yaml:"max_query_expression_size_bytes" json:"max_query_expression_size_bytes"`
+	BlockedQueries                            BlockedQueriesConfig   `yaml:"blocked_queries,omitempty" json:"blocked_queries,omitempty" doc:"nocli|description=List of queries to block."`
+	LimitedQueries                            LimitedQueriesConfig   `yaml:"limited_queries,omitempty" json:"limited_queries,omitempty" doc:"nocli|description=List of queries to limit and duration to limit them for." category:"experimental"`
+	BlockedRequests                           BlockedRequestsConfig  `yaml:"blocked_requests,omitempty" json:"blocked_requests,omitempty" doc:"nocli|description=List of HTTP requests to block." category:"experimental"`
+	AlignQueriesWithStep                      bool                   `yaml:"align_queries_with_step" json:"align_queries_with_step"`
+	EnabledPromQLExperimentalFunctions        flagext.StringSliceCSV `yaml:"enabled_promql_experimental_functions" json:"enabled_promql_experimental_functions"`
+	EnabledPromQLExtendedRangeSelectors       flagext.StringSliceCSV `yaml:"enabled_promql_extended_range_selectors" json:"enabled_promql_extended_range_selectors"`
+	Prom2RangeCompat                          bool                   `yaml:"prom2_range_compat" json:"prom2_range_compat" category:"experimental"`
+	SubquerySpinOffEnabled                    bool                   `yaml:"subquery_spin_off_enabled" json:"subquery_spin_off_enabled" category:"experimental"`
+	LabelsQueryOptimizerEnabled               bool                   `yaml:"labels_query_optimizer_enabled" json:"labels_query_optimizer_enabled" category:"advanced"`
 
 	// Cardinality
 	CardinalityAnalysisEnabled                    bool `yaml:"cardinality_analysis_enabled" json:"cardinality_analysis_enabled"`
@@ -319,7 +324,6 @@ type Limits struct {
 	OTelTranslationStrategy                  OTelTranslationStrategyValue `yaml:"otel_translation_strategy" json:"otel_translation_strategy" category:"experimental"`
 	OTelLabelNameUnderscoreSanitization      bool                         `yaml:"otel_label_name_underscore_sanitization" json:"otel_label_name_underscore_sanitization" category:"advanced"`
 	OTelLabelNamePreserveMultipleUnderscores bool                         `yaml:"otel_label_name_preserve_multiple_underscores" json:"otel_label_name_preserve_multiple_underscores" category:"advanced"`
-
 	// Ingest storage.
 	IngestStorageReadConsistency       string `yaml:"ingest_storage_read_consistency" json:"ingest_storage_read_consistency" category:"experimental"`
 	IngestionPartitionsTenantShardSize int    `yaml:"ingestion_partitions_tenant_shard_size" json:"ingestion_partitions_tenant_shard_size" category:"experimental"`
@@ -376,7 +380,6 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.OTelTranslationStrategy, "distributor.otel-translation-strategy", fmt.Sprintf("Translation strategy to apply in OTLP endpoint for metric and label names. If unspecified (the default), the strategy is derived from -validation.name-validation-scheme and -distributor.otel-metric-suffixes-enabled. Supported values: %s.", strings.Join([]string{`""`, string(otlptranslator.UnderscoreEscapingWithSuffixes), string(otlptranslator.UnderscoreEscapingWithoutSuffixes), string(otlptranslator.NoUTF8EscapingWithSuffixes), string(otlptranslator.NoTranslation)}, ", ")))
 	f.BoolVar(&l.OTelLabelNameUnderscoreSanitization, "distributor.otel-label-name-underscore-sanitization", true, "If enabled, prefixes label names starting with a single underscore with `key_` when translating OTel attribute names. Defaults to true.")
 	f.BoolVar(&l.OTelLabelNamePreserveMultipleUnderscores, "distributor.otel-label-name-preserve-underscores", true, "If enabled, keeps multiple consecutive underscores in label names when translating OTel attribute names. Defaults to true.")
-
 	f.Var(&l.IngestionArtificialDelay, "distributor.ingestion-artificial-delay", "Target ingestion delay to apply to all tenants. If set to a non-zero value, the distributor will artificially delay ingestion time-frame by the specified duration by computing the difference between actual ingestion and the target. There is no delay on actual ingestion of samples, it is only the response back to the client.")
 
 	_ = l.NameValidationScheme.Set(model.LegacyValidation.String())
@@ -415,6 +418,8 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxSeriesQueryLimit, MaxSeriesQueryLimitFlag, 0, "Maximum number of series, the series endpoint queries. This limit is enforced in the querier. If the requested limit is outside of the allowed value, the request doesn't fail, but is manipulated to only query data up to the allowed limit. Set to 0 to disable.")
 	f.IntVar(&l.MaxLabelNamesLimit, MaxLabelNamesLimitFlag, 0, "Maximum number of names the label names endpoint returns. This limit is enforced in the querier. If the requested limit is outside of the allowed value, the request doesn't fail, but is manipulated to only query data up to the allowed limit. Set to 0 to disable.")
 	f.IntVar(&l.MaxLabelValuesLimit, MaxLabelValuesLimitFlag, 0, "Maximum number of values the label values endpoint returns. This limit is enforced in the querier. If the requested limit is outside of the allowed value, the request doesn't fail, but is manipulated to only query data up to the allowed limit. Set to 0 to disable.")
+	f.IntVar(&l.MaxResourceAttributesQueryLimit, MaxResourceAttributesQueryLimitFlag, 10000, "Maximum number of series the resource attributes endpoints return. If the requested limit exceeds this value, it is clamped. 0 to disable.")
+	f.IntVar(&l.MaxResourceAttributesCacheSizeBytes, MaxResourceAttributesCacheSizeBytesFlag, 50*1024*1024, "Maximum estimated memory for the per-query resource attributes cache. 0 to disable.")
 
 	f.IntVar(&l.LabelNamesAndValuesResultsMaxSizeBytes, "querier.label-names-and-values-results-max-size-bytes", 400*1024*1024, "Maximum size in bytes of distinct label names and values. When querier receives response from ingester, it merges the response with responses from other ingesters. This maximum size limit is applied to the merged(distinct) results. If the limit is reached, an error is returned.")
 	f.IntVar(&l.ActiveSeriesResultsMaxSizeBytes, "querier.active-series-results-max-size-bytes", 400*1024*1024, "Maximum size of an active series or active native histogram series request result shard in bytes. 0 to disable.")
@@ -484,6 +489,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.ResultsCacheTTLForOutOfOrderTimeWindow, resultsCacheTTLForOutOfOrderWindowFlag, fmt.Sprintf("Time to live duration for cached query results if query falls into out-of-order time window. This is lower than -%s so that incoming out-of-order samples are returned in the query results sooner.", resultsCacheTTLFlag))
 	f.Var(&l.ResultsCacheTTLForCardinalityQuery, "query-frontend.results-cache-ttl-for-cardinality-query", "Time to live duration for cached cardinality query results. The value 0 disables the cache.")
 	f.Var(&l.ResultsCacheTTLForLabelsQuery, "query-frontend.results-cache-ttl-for-labels-query", "Time to live duration for cached label names and label values query results. The value 0 disables the cache.")
+	f.Var(&l.ResultsCacheTTLForResourceAttributesQuery, "query-frontend.results-cache-ttl-for-resource-attributes-query", "Time to live duration for cached resource attributes query results. The value 0 disables the cache.")
 	_ = l.ResultsCacheTTLForErrors.Set("5m")
 	f.Var(&l.ResultsCacheTTLForErrors, "query-frontend.results-cache-ttl-for-errors", "Time to live duration for cached non-transient errors")
 	f.BoolVar(&l.ResultsCacheForUnalignedQueryEnabled, "query-frontend.cache-unaligned-requests", false, "Cache requests that are not step-aligned.")
@@ -1007,6 +1013,16 @@ func (o *Overrides) MaxLabelValuesLimit(userID string) int {
 	return o.getOverridesForUser(userID).MaxLabelValuesLimit
 }
 
+// MaxResourceAttributesQueryLimit returns the maximum number of series the resource attributes endpoints return.
+func (o *Overrides) MaxResourceAttributesQueryLimit(userID string) int {
+	return o.getOverridesForUser(userID).MaxResourceAttributesQueryLimit
+}
+
+// MaxResourceAttributesCacheSizeBytes returns the maximum estimated memory for the per-query resource attributes cache.
+func (o *Overrides) MaxResourceAttributesCacheSizeBytes(userID string) int {
+	return o.getOverridesForUser(userID).MaxResourceAttributesCacheSizeBytes
+}
+
 // MaxCacheFreshness returns the period after which results are cacheable,
 // to prevent caching of very recent results.
 func (o *Overrides) MaxCacheFreshness(userID string) time.Duration {
@@ -1513,6 +1529,10 @@ func (o *Overrides) ResultsCacheTTLForCardinalityQuery(user string) time.Duratio
 
 func (o *Overrides) ResultsCacheTTLForLabelsQuery(user string) time.Duration {
 	return time.Duration(o.getOverridesForUser(user).ResultsCacheTTLForLabelsQuery)
+}
+
+func (o *Overrides) ResultsCacheTTLForResourceAttributesQuery(user string) time.Duration {
+	return time.Duration(o.getOverridesForUser(user).ResultsCacheTTLForResourceAttributesQuery)
 }
 
 func (o *Overrides) ResultsCacheTTLForErrors(user string) time.Duration {

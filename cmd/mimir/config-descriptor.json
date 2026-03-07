@@ -2543,6 +2543,28 @@
           "fieldCategory": "experimental"
         },
         {
+          "kind": "field",
+          "name": "enable_native_metadata",
+          "required": false,
+          "desc": "Enable native OTel resource attribute metadata for the info() function.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "querier.enable-native-metadata",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "info_resource_strategy",
+          "required": false,
+          "desc": "Strategy for info() to resolve resource attributes. Valid values: target-info, resource-attributes, hybrid.",
+          "fieldValue": null,
+          "fieldDefaultValue": "target-info",
+          "fieldFlag": "querier.info-resource-strategy",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
           "kind": "block",
           "name": "mimir_query_engine",
           "required": false,
@@ -5874,6 +5896,27 @@
         },
         {
           "kind": "field",
+          "name": "max_resource_attributes_query_limit",
+          "required": false,
+          "desc": "Maximum number of series the resource attributes endpoints return. If the requested limit exceeds this value, it is clamped. 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 10000,
+          "fieldFlag": "querier.max-resource-attributes-query-limit",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
+          "name": "max_resource_attributes_cache_size_bytes",
+          "required": false,
+          "desc": "Maximum estimated memory for the per-query resource attributes cache. 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 52428800,
+          "fieldFlag": "querier.max-resource-attributes-cache-size-bytes",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "max_cache_freshness",
           "required": false,
           "desc": "Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux.",
@@ -5993,6 +6036,16 @@
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "query-frontend.results-cache-ttl-for-labels-query",
+          "fieldType": "duration"
+        },
+        {
+          "kind": "field",
+          "name": "results_cache_ttl_for_resource_attributes_query",
+          "required": false,
+          "desc": "Time to live duration for cached resource attributes query results. The value 0 disables the cache.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "query-frontend.results-cache-ttl-for-resource-attributes-query",
           "fieldType": "duration"
         },
         {
@@ -8615,6 +8668,17 @@
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "query-frontend.use-active-series-decoder",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "shard_resource_attributes_queries",
+          "required": false,
+          "desc": "True to enable sharding of resource attributes queries.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.shard-resource-attributes-queries",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
@@ -11429,6 +11493,17 @@
               "fieldFlag": "blocks-storage.bucket-store.series-fetch-preference",
               "fieldType": "float",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "parquet_cache_idle_timeout",
+              "required": false,
+              "desc": "How long cached Parquet series-metadata data is kept in memory after last access. 0 to disable eviction.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1800000000000,
+              "fieldFlag": "blocks-storage.bucket-store.parquet-cache-idle-timeout",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
             }
           ],
           "fieldValue": null,
@@ -11821,6 +11896,39 @@
               "fieldDefaultValue": false,
               "fieldFlag": "blocks-storage.tsdb.timely-head-compaction-enabled",
               "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "otel_persist_resource_attributes",
+              "required": false,
+              "desc": "Whether to persist OTel resource attributes per time series as metadata in Prometheus TSDB blocks. Resource attributes are stored in series_metadata.parquet files within blocks and can be queried via the /api/v1/resource_attributes endpoint.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.tsdb.otel-persist-resource-attributes",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "otel_resource_attr_index_enabled",
+              "required": false,
+              "desc": "Enable the in-memory resource attribute inverted index for O(1) reverse lookup by attribute key:value. When disabled, the index is not built in memory or written to Parquet during compaction.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.tsdb.otel-resource-attr-index-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "otel_indexed_resource_attributes",
+              "required": false,
+              "desc": "Comma-separated list of additional descriptive resource attribute names to include in the inverted index. Identifying attributes (service.name, service.namespace, service.instance.id) are always indexed when the index is enabled.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "blocks-storage.tsdb.otel-indexed-resource-attributes",
+              "fieldType": "string",
               "fieldCategory": "experimental"
             },
             {

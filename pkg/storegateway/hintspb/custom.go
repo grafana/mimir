@@ -24,3 +24,9 @@ func (m *LabelValuesResponseHints) AddQueriedBlock(id ulid.ULID) {
 		Id: id.String(),
 	})
 }
+
+func (m *ResourceAttributesResponseHints) AddQueriedBlock(id ulid.ULID) {
+	m.QueriedBlocks = append(m.QueriedBlocks, Block{
+		Id: id.String(),
+	})
+}

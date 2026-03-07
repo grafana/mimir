@@ -35,6 +35,9 @@ store_gateway:
       consul:
         host: consul:8500
 
+querier:
+  query_store_after: 0s  # Query store-gateway for all time ranges (default 12h)
+
 blocks_storage:
   backend: s3
 
@@ -43,9 +46,11 @@ blocks_storage:
     ship_interval: 1m
     block_ranges_period: [ 2h ]
     retention_period: 3h
+    otel_persist_resource_attributes: true
 
   bucket_store:
     sync_dir: /data/mimir-tsdb-querier
+    sync_interval: 1m  # Faster sync for demo/development (default is 15m)
 
   s3:
     endpoint:          minio:9000

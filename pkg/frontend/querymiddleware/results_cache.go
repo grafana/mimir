@@ -210,6 +210,12 @@ type CacheKeyGenerator interface {
 	// LabelValuesCardinality should return a nil *GenericQueryCacheKey when it returns an error and
 	// should always return non-nil *GenericQueryCacheKey when the returned error is nil.
 	LabelValuesCardinality(r *http.Request) (*GenericQueryCacheKey, error)
+
+	// ResourceAttributes should return a cache key for a resource attributes request. The cache key does not need to contain the tenant ID.
+	// ResourceAttributes can return ErrUnsupportedRequest, in which case the response won't be treated as an error, but the item will still not be cached.
+	// ResourceAttributes should return a nil *GenericQueryCacheKey when it returns an error and
+	// should always return non-nil *GenericQueryCacheKey when the returned error is nil.
+	ResourceAttributes(r *http.Request) (*GenericQueryCacheKey, error)
 }
 
 type DefaultCacheKeyGenerator struct {

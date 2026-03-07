@@ -176,6 +176,20 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expectedErr: errIgnoreDeletionMarksDelayTooShort,
 		},
+		"should fail if otel_resource_attr_index_enabled is set without otel_persist_resource_attributes": {
+			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
+				cfg.TSDB.OTelResourceAttrIndexEnabled = true
+				cfg.TSDB.OTelPersistResourceAttributes = false
+			},
+			expectedErr: errResourceAttrIndexRequiresPersistResourceAttributes,
+		},
+		"should pass if both otel_resource_attr_index_enabled and otel_persist_resource_attributes are set": {
+			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
+				cfg.TSDB.OTelResourceAttrIndexEnabled = true
+				cfg.TSDB.OTelPersistResourceAttributes = true
+			},
+			expectedErr: nil,
+		},
 	}
 
 	for testName, testData := range tests {

@@ -40,6 +40,7 @@ func TestTimeseriesFromPool(t *testing.T) {
 		{"exemplars", &TimeSeries{Exemplars: []Exemplar{{Value: 1, TimestampMs: 2}}}},
 		{"CreatedTimestamp", &TimeSeries{CreatedTimestamp: 1234567890}},
 		{"SkipUnmarshalingExemplars", &TimeSeries{SkipUnmarshalingExemplars: true}},
+		{"ResourceAttributes", &TimeSeries{ResourceAttributes: &ResourceAttributes{Timestamp: 1234567890}}},
 	}
 	for _, tc := range dirtyPoolTests {
 		t.Run("panics if pool returns dirty TimeSeries with "+tc.name, func(t *testing.T) {

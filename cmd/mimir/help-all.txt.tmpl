@@ -613,6 +613,8 @@ Usage of ./cmd/mimir/mimir:
     	How long to cache list of blocks for each tenant. (default 5m0s)
   -blocks-storage.bucket-store.metadata-cache.tenants-list-ttl duration
     	How long to cache list of tenants in the bucket. (default 15m0s)
+  -blocks-storage.bucket-store.parquet-cache-idle-timeout duration
+    	How long cached Parquet series-metadata data is kept in memory after last access. 0 to disable eviction. (default 30m0s)
   -blocks-storage.bucket-store.partitioner-max-gap-bytes uint
     	Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests. (default 524288)
   -blocks-storage.bucket-store.posting-offsets-in-mem-sampling int
@@ -835,6 +837,12 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] How frequently to collect block statistics, which are used in query execution optimization. 0 to disable. (default 1h0m0s)
   -blocks-storage.tsdb.memory-snapshot-on-shutdown
     	[experimental] True to enable snapshotting of in-memory TSDB data on disk when shutting down.
+  -blocks-storage.tsdb.otel-indexed-resource-attributes comma-separated-list-of-strings
+    	[experimental] Comma-separated list of additional descriptive resource attribute names to include in the inverted index. Identifying attributes (service.name, service.namespace, service.instance.id) are always indexed when the index is enabled.
+  -blocks-storage.tsdb.otel-persist-resource-attributes
+    	[experimental] Whether to persist OTel resource attributes per time series as metadata in Prometheus TSDB blocks. Resource attributes are stored in series_metadata.parquet files within blocks and can be queried via the /api/v1/resource_attributes endpoint.
+  -blocks-storage.tsdb.otel-resource-attr-index-enabled
+    	[experimental] Enable the in-memory resource attribute inverted index for O(1) reverse lookup by attribute key:value. When disabled, the index is not built in memory or written to Parquet during compaction.
   -blocks-storage.tsdb.out-of-order-capacity-max int
     	[experimental] Maximum capacity for out of order chunks, in samples between 1 and 255. (default 32)
   -blocks-storage.tsdb.retention-period duration
@@ -2103,6 +2111,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable the experimental Prometheus feature for delayed name removal within MQE, which only works if remote execution and running sharding within MQE is enabled.
   -querier.enable-delayed-name-removal-prometheus-engine
     	[experimental] Enable the experimental PromQL feature for delayed name removal in the Prometheus engine. Note that this only applies when the Prometheus engine is selected or used as fallback from the Mimir Query Engine.
+  -querier.enable-native-metadata
+    	[experimental] Enable native OTel resource attribute metadata for the info() function.
   -querier.enable-query-engine-fallback
     	[experimental] If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine. (default true)
   -querier.filter-queryables-enabled
@@ -2157,6 +2167,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -querier.id string
     	Querier ID, sent to the query-frontend to identify requests from the same querier. Defaults to hostname.
+  -querier.info-resource-strategy string
+    	[experimental] Strategy for info() to resolve resource attributes. Valid values: target-info, resource-attributes, hybrid. (default "target-info")
   -querier.label-names-and-values-results-max-size-bytes int
     	Maximum size in bytes of distinct label names and values. When querier receives response from ingester, it merges the response with responses from other ingesters. This maximum size limit is applied to the merged(distinct) results. If the limit is reached, an error is returned. (default 419430400)
   -querier.label-values-max-cardinality-label-names-per-request int
@@ -2187,6 +2199,10 @@ Usage of ./cmd/mimir/mimir:
     	Limit how long back data (series and metadata) can be queried, up until <lookback> duration ago. This limit is enforced in the query-frontend, querier and ruler for instant, range and remote read queries. For metadata queries like series, label names, label values queries the limit is enforced in the querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.
   -querier.max-query-parallelism int
     	Maximum number of split (by time) or partial (by shard) queries that will be scheduled in parallel by the query-frontend for a single input query. This limit is introduced to have a fairer query scheduling and avoid a single query over a large time range saturating all available queriers. (default 14)
+  -querier.max-resource-attributes-cache-size-bytes int
+    	Maximum estimated memory for the per-query resource attributes cache. 0 to disable. (default 52428800)
+  -querier.max-resource-attributes-query-limit int
+    	Maximum number of series the resource attributes endpoints return. If the requested limit exceeds this value, it is clamped. 0 to disable. (default 10000)
   -querier.max-samples int
     	Maximum number of samples a single query can load into memory. This config option should be set on query-frontend too when query sharding is enabled. (default 50000000)
   -querier.max-series-query-limit int
@@ -2565,6 +2581,8 @@ Usage of ./cmd/mimir/mimir:
     	Time to live duration for cached label names and label values query results. The value 0 disables the cache.
   -query-frontend.results-cache-ttl-for-out-of-order-time-window duration
     	Time to live duration for cached query results if query falls into out-of-order time window. This is lower than -query-frontend.results-cache-ttl so that incoming out-of-order samples are returned in the query results sooner. (default 10m)
+  -query-frontend.results-cache-ttl-for-resource-attributes-query duration
+    	Time to live duration for cached resource attributes query results. The value 0 disables the cache.
   -query-frontend.results-cache.backend string
     	Backend for query-frontend results cache, if not empty. Supported values: memcached.
   -query-frontend.results-cache.compression string
@@ -2617,6 +2635,8 @@ Usage of ./cmd/mimir/mimir:
     	Number of concurrent workers forwarding queries to single query-scheduler. (default 5)
   -query-frontend.shard-active-series-queries
     	[experimental] True to enable sharding of active series queries.
+  -query-frontend.shard-resource-attributes-queries
+    	[experimental] True to enable sharding of resource attributes queries.
   -query-frontend.split-queries-by-interval duration
     	Split range queries by an interval and execute in parallel. You should use a multiple of 24 hours to optimize querying blocks. 0 to disable it. (default 24h0m0s)
   -query-frontend.subquery-spin-off-enabled

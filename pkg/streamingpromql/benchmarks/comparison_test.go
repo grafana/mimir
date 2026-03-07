@@ -258,3 +258,7 @@ type alwaysQueryIngestersConfigProvider struct{}
 func (a alwaysQueryIngestersConfigProvider) QueryIngestersWithin(string) time.Duration {
 	return time.Duration(math.MaxInt64)
 }
+
+func (a alwaysQueryIngestersConfigProvider) MaxResourceAttributesCacheSizeBytes(string) int {
+	return 0
+}
