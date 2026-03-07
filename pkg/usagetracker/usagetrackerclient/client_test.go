@@ -1093,9 +1093,18 @@ func TestUsageTrackerClient_TrackSeriesBatch(t *testing.T) {
 		series5Partition1 := uint64(partitions[0].Tokens[1] - 2)
 		series6Partition1 := uint64(partitions[0].Tokens[2] - 2) // This will exceed the threshold
 
-		// Add series that will exceed the max batch series threshold (5)
-		// First 3 series should not trigger flush
-		err := c.TrackSeriesAsync(t.Context(), "user-1", []uint64{series1Partition1, series2Partition1, series3Partition1})
+		err := c.TrackSeriesAsync(t.Context(), "user-0", []uint64{series1Partition1})
+		require.NoError(t, err)
+
+		// Since we've just sent the first call to this partition, its flushWorker goroutine will be launching.
+		// Give it some time for this to happen on oversubscribed CI-type systems.
+		time.Sleep(500 * time.Millisecond)
+
+		// Verify no flush yet
+		instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
+
+		// Now, two more- still not exceeding the threshold of 5.
+		err = c.TrackSeriesAsync(t.Context(), "user-1", []uint64{series2Partition1, series3Partition1})
 		require.NoError(t, err)
 
 		// Verify no flush yet
@@ -1124,12 +1133,16 @@ func TestUsageTrackerClient_TrackSeriesBatch(t *testing.T) {
 		batchReq := req.(*usagetrackerpb.TrackSeriesBatchRequest)
 		require.Len(t, batchReq.Partitions, 1)
 		require.Equal(t, int32(1), batchReq.Partitions[0].Partition)
-		require.Len(t, batchReq.Partitions[0].Users, 2)
+		require.Len(t, batchReq.Partitions[0].Users, 3)
 		require.EqualValues(t, batchReq.Partitions[0].Users,
 			[]*usagetrackerpb.TrackSeriesBatchUser{
 				{
+					UserID:       "user-0",
+					SeriesHashes: []uint64{series1Partition1},
+				},
+				{
 					UserID:       "user-1",
-					SeriesHashes: []uint64{series1Partition1, series2Partition1, series3Partition1},
+					SeriesHashes: []uint64{series2Partition1, series3Partition1},
 				},
 				{
 					UserID:       "user-2",

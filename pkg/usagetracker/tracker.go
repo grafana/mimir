@@ -934,11 +934,14 @@ func parseInstanceID(instanceID string) (int32, error) {
 	return int32(seq), nil //nolint:gosec
 }
 
-func snapshotFilename(time time.Time, instanceID string, partitionID int32) string {
-	return fmt.Sprintf("snapshot-%d-p%d-%s.bin", time.UnixMilli(), partitionID, instanceID)
+func snapshotFilename(ts time.Time, instanceID string, partitionID int32, fileIdx int) string {
+	return fmt.Sprintf("snapshot-%d-f%d-p%d-%s.bin", ts.UnixMilli(), fileIdx, partitionID, instanceID)
 }
 
-var snapshotRegexp = regexp.MustCompile(`^snapshot-(\d+)-p(\d+)-([a-zA-Z0-9_-]+)\.bin$`)
+// snapshotRegexp matches both legacy filenames (without file index) and current
+// filenames (with file index) so that cleanupSnapshots can handle both formats
+// during a rolling upgrade.
+var snapshotRegexp = regexp.MustCompile(`^snapshot-(\d+)-(?:f\d+-)?p(\d+)-([a-zA-Z0-9_-]+)\.bin$`)
 
 func (t *UsageTracker) cleanupSnapshots(ctx context.Context) error {
 	const (
