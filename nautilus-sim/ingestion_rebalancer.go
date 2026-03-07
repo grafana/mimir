@@ -64,7 +64,7 @@ func (sim *Simulation) ingestionWeightedMovePhase() (int, float64) {
 	moves := 0
 	churnUsed := 0.0
 
-	for churnUsed < sim.cfg.MoveChurnFraction {
+	for moves < sim.cfg.IngestionMoveBudget && churnUsed < sim.cfg.MoveChurnFraction {
 		mean := meanFloat64(sim.partitionIngestion)
 		if mean == 0 {
 			break

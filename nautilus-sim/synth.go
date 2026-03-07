@@ -8,12 +8,14 @@ import (
 	"sort"
 )
 
-func nautilusHash(metricName string, labelHash uint32) uint32 {
+func nautilusHash(metricName string, labelHash uint32, metricBits int) uint32 {
 	h := fnv.New32a()
 	h.Write([]byte(metricName))
 	mh := h.Sum32()
-	// High 22 bits from metric name hash, low 10 bits from label hash.
-	return (mh & 0xFFFFFC00) | (labelHash & 0x3FF)
+	labelBits := uint(32 - metricBits)
+	metricMask := uint32(0xFFFFFFFF) << labelBits
+	labelMask := ^metricMask
+	return (mh & metricMask) | (labelHash & labelMask)
 }
 
 func generateSyntheticData(cfg Config, rng *rand.Rand) ([]MetricInfo, []Series) {
@@ -41,7 +43,7 @@ func generateSyntheticData(cfg Config, rng *rand.Rand) ([]MetricInfo, []Series) 
 		for j := 0; j < c; j++ {
 			series = append(series, Series{
 				MetricIndex: mi,
-				Hash:        nautilusHash(metrics[mi].Name, rng.Uint32()),
+				Hash:        nautilusHash(metrics[mi].Name, rng.Uint32(), cfg.MetricHashBits),
 			})
 		}
 	}

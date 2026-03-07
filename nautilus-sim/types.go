@@ -119,6 +119,18 @@ func computeStats(values []float64) Stats {
 	}
 }
 
+func normalizeByTotal(vs []float64) []float64 {
+	total := sumFloat64(vs)
+	if total == 0 {
+		return vs
+	}
+	out := make([]float64, len(vs))
+	for i, v := range vs {
+		out[i] = v / total
+	}
+	return out
+}
+
 func sumFloat64(vs []float64) float64 {
 	s := 0.0
 	for _, v := range vs {

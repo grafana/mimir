@@ -92,8 +92,8 @@ func (sim *Simulation) Run() {
 		sim.tickCatchUps()
 		sim.computeLoads()
 
-		ingStats := computeStats(sim.partitionIngestion)
-		qryStats := computeStats(sim.ingesterQuery)
+		ingStats := computeStats(normalizeByTotal(sim.partitionIngestion))
+		qryStats := computeStats(normalizeByTotal(sim.ingesterQuery))
 		catchupCount, catchupLoad := sim.catchUpStats()
 
 		var ingMoves int
