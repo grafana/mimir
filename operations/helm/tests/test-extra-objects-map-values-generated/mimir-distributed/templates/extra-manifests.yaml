@@ -1,0 +1,19 @@
+---
+# Source: mimir-distributed/templates/extra-manifests.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: extra-secret-test-extra-objects-map-values-map
+  namespace: 'citestns'
+stringData:
+  password: test-password
+type: Opaque
+---
+# Source: mimir-distributed/templates/extra-manifests.yaml
+apiVersion: v1
+data:
+  map.yml: 'test.map-format: true'
+kind: ConfigMap
+metadata:
+  name: extra-cm-test-extra-objects-map-values-map
+  namespace: 'citestns'
