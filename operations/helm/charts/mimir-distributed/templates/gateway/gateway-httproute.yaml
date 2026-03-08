@@ -1,0 +1,59 @@
+{{- if .Values.gateway.httproute.enabled }}
+apiVersion: {{ .Values.gateway.httproute.apiVersion }}
+kind: {{ .Values.gateway.httproute.kind }}
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "gateway") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "gateway") | nindent 4 }}
+    {{- with .Values.gateway.httproute.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.gateway.httproute.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  namespace: {{ .Release.Namespace | quote }}
+spec:
+  {{- with .Values.gateway.httproute.parentRefs }}
+  parentRefs:
+    {{- range . }}
+    - name: {{ tpl .name $ }}
+      {{- if .namespace }}
+      namespace: {{ tpl .namespace $ }}
+      {{- end }}
+      {{- if .sectionName }}
+      sectionName: {{ tpl .sectionName $ }}
+      {{- end }}
+      {{- if .kind }}
+      kind: {{ .kind }}
+      {{- end }}
+      {{- if .group }}
+      group: {{ .group }}
+      {{- end }}
+      {{- if .port }}
+      port: {{ .port }}
+      {{- end }}
+    {{- end }}
+  {{- end }}
+  {{- with .Values.gateway.httproute.hostnames }}
+  hostnames:
+    {{- range . }}
+    - {{ tpl . $ | quote }}
+    {{- end }}
+  {{- end }}
+  rules:
+    - {{- if .Values.gateway.httproute.matches }}
+      matches:
+      {{- toYaml .Values.gateway.httproute.matches | nindent 8 }}
+      {{- end }}
+      {{- if .Values.gateway.httproute.filters }}
+      filters:
+      {{- toYaml .Values.gateway.httproute.filters | nindent 8 }}
+      {{- end }}
+      backendRefs:
+        - name: {{ include "mimir.gateway.service.name" . }}
+          port: {{ .Values.gateway.service.port }}
+    {{- with .Values.gateway.httproute.additionalRules }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}

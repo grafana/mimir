@@ -2,6 +2,8 @@
 
 ## main / unreleased
 
+* [FEATURE] HTTPRoute: Add support k8s Gateway API HTTPRoute #14439
+
 ### Grafana Mimir
 
 * [CHANGE] Ingester: Changed default value of `-include-tenant-id-in-profile-labels` from false to true. #13375
