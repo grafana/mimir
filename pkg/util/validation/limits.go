@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/otlptranslator"
 	"github.com/prometheus/prometheus/model/relabel"
@@ -778,7 +779,7 @@ func (o *Overrides) RequestBurstSize(userID string) int {
 
 // IngestionRate returns the limit on ingester rate (samples per second).
 func (o *Overrides) IngestionRate(userID string) float64 {
-	return o.getOverridesForUser(userID).IngestionRate
+	return o.getOverridesForUserWithMetadata(userID).IngestionRate
 }
 
 // LabelNamesAndValuesResultsMaxSizeBytes returns the maximum size in bytes of distinct label names and values
@@ -899,7 +900,7 @@ func (o *Overrides) PastGracePeriod(userID string) time.Duration {
 // - Default MaxActiveSeriesPerUser
 // - Default MaxGlobalSeriesPerUser
 func (o *Overrides) MaxActiveOrGlobalSeriesPerUser(userID string) int {
-	overrides := o.getOverridesForUser(userID)
+	overrides := o.getOverridesForUserWithMetadata(userID)
 	if maxActive := overrides.MaxActiveSeriesPerUser; maxActive > 0 {
 		return maxActive
 	}
@@ -1644,6 +1645,31 @@ func (o *Overrides) getOverridesForUser(userID string) *Limits {
 		}
 	}
 	return o.defaultLimits
+}
+
+func (o *Overrides) getOverridesForUserWithMetadata(userID string) *Limits {
+	if o.tenantLimits != nil {
+		tenantID, md, err := tenant.ParseWithMetadata(userID)
+		if err != nil {
+			return o.getOverridesForUser(userID)
+		}
+		// Attempt the <tenant>:<source>=<x>:<a>=<b> limit.
+		if limits := o.tenantLimits.ByUserID(userID); limits != nil {
+			return limits
+		}
+		// Attempt the <tenant>:source=<value> limit.
+		if source, ok := md.Get("source"); ok {
+			baseMd := tenant.NewMetadata()
+			baseMd.Set("source", source)
+			if limits := o.tenantLimits.ByUserID(baseMd.WithTenant(tenantID)); limits != nil {
+				return limits
+			}
+		}
+		if limits := o.tenantLimits.ByUserID(tenantID); limits != nil {
+			return limits
+		}
+	}
+	return o.getOverridesForUser(userID)
 }
 
 // AllTrueBooleansPerTenant returns true only if limit func is true for all given tenants
