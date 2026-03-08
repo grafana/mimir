@@ -42,7 +42,7 @@ blocks_storage:
     # write requests to fail with out of bounds errors
     block_ranges_period: ["2m"]
     # retention_period must be larger than block_ranges_period and querier.query_store_after
-    retention_period: 15m
+    retention_period: 20m
     ship_interval: 1m
 
     # Always use the PostingsForMatchers() cache in order to exercise it.
@@ -55,7 +55,7 @@ blocks_storage:
     sync_interval: 1m
     # ignore_blocks_within and sync_interval must be small enough for the store-gateways
     # to discover & load new blocks shipped from the ingesters before they begin to be queried.
-    # With querier.query_store_after: 10m and sync_interval: 1m, anything larger than 2m causes issues.
+    # With querier.query_store_after: 15m and sync_interval: 1m, anything larger than 2m causes issues.
     # Slightly larger values for ignore_blocks_within work if sync_interval is reduced.
     ignore_blocks_within: 2m
 
@@ -166,11 +166,12 @@ frontend_worker:
 
 querier:
   # query_store_after must be smaller than blocks_storage.tsdb.retention_period
-  query_store_after: 10m
+  query_store_after: 15m
 
 query_scheduler:
   # Change to "dns" to switch to query-scheduler DNS-based service discovery.
   service_discovery_mode: "ring"
+  max_outstanding_requests_per_tenant: 800
 
 limits:
   # Limit max query time range to 31d

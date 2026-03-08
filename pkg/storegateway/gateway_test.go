@@ -790,7 +790,7 @@ func TestStoreGateway_SyncShouldKeepPreviousBlocksIfInstanceIsUnhealthyInTheRing
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_bucket_store_blocks_loaded Number of currently loaded blocks.
 			# TYPE cortex_bucket_store_blocks_loaded gauge
-			cortex_bucket_store_blocks_loaded{component="store-gateway"} 1
+			cortex_bucket_store_blocks_loaded{component="store-gateway",level="1"} 1
 
 			# HELP cortex_bucket_store_block_loads_total Total number of remote block loading attempts.
 			# TYPE cortex_bucket_store_block_loads_total counter
@@ -834,7 +834,7 @@ func TestStoreGateway_SyncShouldKeepPreviousBlocksIfInstanceIsUnhealthyInTheRing
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_bucket_store_blocks_loaded Number of currently loaded blocks.
 			# TYPE cortex_bucket_store_blocks_loaded gauge
-			cortex_bucket_store_blocks_loaded{component="store-gateway"} 1
+			cortex_bucket_store_blocks_loaded{component="store-gateway",level="1"} 1
 
 			# HELP cortex_bucket_store_block_loads_total Total number of remote block loading attempts.
 			# TYPE cortex_bucket_store_block_loads_total counter
@@ -871,7 +871,7 @@ func TestStoreGateway_SyncShouldKeepPreviousBlocksIfInstanceIsUnhealthyInTheRing
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_bucket_store_blocks_loaded Number of currently loaded blocks.
 			# TYPE cortex_bucket_store_blocks_loaded gauge
-			cortex_bucket_store_blocks_loaded{component="store-gateway"} 1
+			cortex_bucket_store_blocks_loaded{component="store-gateway",level="1"} 1
 
 			# HELP cortex_bucket_store_block_loads_total Total number of remote block loading attempts.
 			# TYPE cortex_bucket_store_block_loads_total counter
@@ -907,7 +907,7 @@ func TestStoreGateway_SyncShouldKeepPreviousBlocksIfInstanceIsUnhealthyInTheRing
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_bucket_store_blocks_loaded Number of currently loaded blocks.
 			# TYPE cortex_bucket_store_blocks_loaded gauge
-			cortex_bucket_store_blocks_loaded{component="store-gateway"} 1
+			cortex_bucket_store_blocks_loaded{component="store-gateway",level="1"} 1
 
 			# HELP cortex_bucket_store_block_loads_total Total number of remote block loading attempts.
 			# TYPE cortex_bucket_store_block_loads_total counter

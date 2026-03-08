@@ -29,6 +29,7 @@
 * [CHANGE] Ingester: Removed the `-target=flusher` mode. If you need to flush ingester data, use the `/ingester/flush` HTTP endpoint instead. #14032
 * [CHANGE] Limits: Add new limit `-validation.max-active-series-additional-custom-trackers` (default: 0) to control the maximum number of additional custom trackers per tenant. This limit only applies to `active_series_additional_custom_trackers`, not to `-ingester.active-series-custom-trackers`. Set to 0 (the default) to disable the limit. #14226 #14256
 * [CHANGE] Querier and query-frontend: The experimental `-querier.mimir-query-engine.enable-common-subexpression-elimination-for-range-vector-expressions-in-instant-queries` and `-querier.mimir-query-engine.enable-skipping-histogram-decoding` flags have been removed. Both were previously enabled by default and now cannot be disabled. #14237
+* [CHANGE] Store-gateway: Add compaction `level` label to `cortex_bucket_store_blocks_loaded` gauge. Sum across all `level` values to get total blocks loaded as before. #14446
 * [FEATURE] Distributor: add `cortex_distributor_request_body_compression_ratio` histogram that tracks the compression of write requests. #14232
 * [FEATURE] Distributor: add `-distributor.otel-label-name-underscore-sanitization` and `-distributor.otel-label-name-preserve-underscores` that control sanitization of underscores during OTLP translation. #13133
 * [FEATURE] Query-frontends: Automatically adjust features used in query plans generated for remote execution based on what the available queriers support. #13017 #13164 #13544
@@ -224,6 +225,7 @@
   * `MimirKafkaClientBufferedProduceBytesTooHigh` → `MimirKafkaClientProduceBufferHigh`
 * [CHANGE] Alerts: Replaced `MimirCompactorSkippedUnhealthyBlocks` with more generic `MimirCompactorSkippedBlocks`. #13876
 * [CHANGE] Dashboards: replace usage of `container_spec_cpu_quota / container_spec_cpu_period` with `kube_pod_container_resource_limits` for calculation of CPU limits. #14425
+* [CHANGE] Dashboards: Update "Blocks currently owned" panel on Queries dashboard to aggregate across new compaction `level` label for `cortex_bucket_store_blocks_loaded` in order to maintain existing panel behavior. #14446
 * [ENHANCEMENT] Alerts: Add more native histogram versions of alerts using classic histograms. #13814
 * [ENHANCEMENT] Alerts: Improve `MimirCompactorNotRunningCompaction` alert to be restart-resistant. Added warning severity alerts for early detection (6h threshold) and lowered the `since-startup` critical duration from 24h to 12h. #14282
 * [ENHANCEMENT] Dashboards: Support native histograms in the Alertmanager, Compactor, Queries, Rollout operator, Reads, RemoteRuler-Reads, Ruler, and Writes dashboards. #13556 #13621 #13629 #13673 #13690 #13678 #13633 #13672
