@@ -1184,7 +1184,7 @@ func TestQuerySharding_Annotations(t *testing.T) {
 					mockLimits{},
 					newTestCodec(),
 					nil,
-					nil,
+					DefaultCacheKeyGenerator{interval: day},
 					nil,
 					nil,
 					log.NewNopLogger(),
