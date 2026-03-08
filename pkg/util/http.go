@@ -23,7 +23,6 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/grafana/dskit/flagext"
-	"github.com/klauspost/compress/zstd"
 	"github.com/pierrec/lz4/v4"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -232,23 +231,21 @@ func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, 
 			return decompressSnappyFromBuffer(buffers, buf, maxSize, sp)
 		}
 	case Gzip:
-		gzReader, err := gzip.NewReader(reader)
+		gzReader, err := NewPooledGzipReader(reader)
 		if err != nil {
 			return nil, fmt.Errorf("create gzip reader: %w", err)
 		}
-
-		defer func() {
-			_ = gzReader.Close()
-		}()
+		defer gzReader.Close()
 		reader = gzReader
 	case Lz4:
 		reader = lz4.NewReader(reader)
 	case Zstd:
-		var err error
-		reader, err = zstd.NewReader(reader)
+		zstdReader, err := NewPooledZstdReader(reader)
 		if err != nil {
 			return nil, fmt.Errorf("unable to create zstd reader: %w", err)
 		}
+		defer zstdReader.Close()
+		reader = zstdReader
 	default:
 		return nil, fmt.Errorf("unrecognized compression type %v", compression)
 	}

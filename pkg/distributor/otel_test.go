@@ -1223,6 +1223,36 @@ func BenchmarkOTLPHandlerWithLargeMessage(b *testing.B) {
 			req.Body.(*reusableReader).Reset()
 		}
 	})
+
+	b.Run("protobuf_gzip", func(b *testing.B) {
+		md := pmetric.NewMetrics()
+		createResourceMetrics(md)
+		exportReq := pmetricotlp.NewExportRequestFromMetrics(md)
+		req := createOTLPProtoRequest(b, exportReq, "gzip")
+
+		b.ResetTimer()
+		for range b.N {
+			resp := httptest.NewRecorder()
+			handler.ServeHTTP(resp, req)
+			require.Equal(b, http.StatusOK, resp.Code)
+			req.Body.(*reusableReader).Reset()
+		}
+	})
+
+	b.Run("protobuf_zstd", func(b *testing.B) {
+		md := pmetric.NewMetrics()
+		createResourceMetrics(md)
+		exportReq := pmetricotlp.NewExportRequestFromMetrics(md)
+		req := createOTLPProtoRequest(b, exportReq, "zstd")
+
+		b.ResetTimer()
+		for range b.N {
+			resp := httptest.NewRecorder()
+			handler.ServeHTTP(resp, req)
+			require.Equal(b, http.StatusOK, resp.Code)
+			req.Body.(*reusableReader).Reset()
+		}
+	})
 }
 
 func createOTLPProtoRequest(tb testing.TB, metricRequest pmetricotlp.ExportRequest, compression string) *http.Request {
