@@ -1043,6 +1043,11 @@ ring:
   # CLI flag: -distributor.ring.instance-enable-ipv6
   [instance_enable_ipv6: <boolean> | default = false]
 
+  # (advanced) The availability zone where this instance is running. Used for
+  # zone-aware rate limiting.
+  # CLI flag: -distributor.ring.instance-availability-zone
+  [instance_availability_zone: <string> | default = ""]
+
   # (advanced) Number of consecutive timeout periods after which Mimir
   # automatically removes an unhealthy instance in the ring. Set to 0 to disable
   # auto-forget.

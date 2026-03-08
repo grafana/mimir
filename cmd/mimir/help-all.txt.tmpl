@@ -1413,6 +1413,8 @@ Usage of ./cmd/mimir/mimir:
     	Heartbeat timeout after which Mimir marks distributors as unhealthy in the ring. (default 1m0s)
   -distributor.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
+  -distributor.ring.instance-availability-zone string
+    	The availability zone where this instance is running. Used for zone-aware rate limiting.
   -distributor.ring.instance-enable-ipv6
     	Enable using an IPv6 instance address.
   -distributor.ring.instance-id string
