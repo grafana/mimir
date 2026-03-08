@@ -469,6 +469,8 @@ Usage of ./cmd/mimir/mimir:
     	The username used to authenticate to Kafka using SASL. To enable SASL, configure both the username and password.
   -ingest-storage.kafka.target-consumer-lag-at-startup duration
     	The best-effort maximum lag a consumer tries to achieve at startup. Set both -ingest-storage.kafka.target-consumer-lag-at-startup and -ingest-storage.kafka.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 2s)
+  -ingest-storage.kafka.tls-enabled
+    	Enable TLS for the Kafka client connection.
   -ingest-storage.kafka.topic string
     	The Kafka topic name.
   -ingest-storage.kafka.use-compressed-bytes-as-fetch-max-bytes

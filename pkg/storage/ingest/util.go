@@ -112,6 +112,14 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 
 	opts = append(opts, kafkaAuthOptions(cfg.SASL)...)
 
+	if cfg.TLSEnabled {
+		tlsConfig, err := cfg.TLS.GetTLSConfig()
+		if err != nil {
+			panic("must call Validate before trying to construct Kafka options")
+		}
+		opts = append(opts, kgo.DialTLSConfig(tlsConfig))
+	}
+
 	opts = append(opts, kgo.WithHooks(kotel.NewKotel(kotel.WithTracer(recordsTracer())).Hooks()...))
 
 	if metrics != nil {

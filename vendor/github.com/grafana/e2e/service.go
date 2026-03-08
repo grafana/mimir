@@ -43,6 +43,7 @@ type ConcreteService struct {
 	cmd          *exec.Cmd
 	readiness    ReadinessProbe
 	privileged   bool
+	volumes      map[string]string // host path -> container path
 
 	// Maps container ports to dynamically binded local ports.
 	networkPortsContainerToLocal map[int]int
@@ -95,6 +96,10 @@ func (s *ConcreteService) SetEnvVars(env map[string]string) {
 
 func (s *ConcreteService) SetUser(user string) {
 	s.user = user
+}
+
+func (s *ConcreteService) SetVolumes(volumes map[string]string) {
+	s.volumes = volumes
 }
 
 func (s *ConcreteService) SetPrivileged(privileged bool) {
@@ -315,6 +320,11 @@ func (s *ConcreteService) buildDockerRunArgs(networkName, sharedDir string) []st
 
 	// Mount the shared/ directory into the container
 	args = append(args, "-v", fmt.Sprintf("%s:%s:z", sharedDir, ContainerSharedDir))
+
+	// Mount additional volumes
+	for hostPath, containerPath := range s.volumes {
+		args = append(args, "-v", fmt.Sprintf("%s:%s:z", hostPath, containerPath))
+	}
 
 	// Environment variables
 	for name, value := range s.env {

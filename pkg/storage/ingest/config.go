@@ -3,6 +3,7 @@
 package ingest
 
 import (
+	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/backoff"
+	dskittls "github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/flagext"
 
 	"github.com/grafana/mimir/pkg/util"
@@ -36,6 +38,7 @@ var (
 	ErrInconsistentSASLCredentials       = fmt.Errorf("the SASL username and password must be both configured to enable SASL authentication")
 	ErrSASLOauthbearerBadConfig          = fmt.Errorf("exactly one of OAuth token, file path, or HTTP socket path must be configured to enable SASL OAUTHBEARER authentication")
 	ErrInvalidSASLMechanism              = fmt.Errorf("the configured SASL mechanism is invalid, must be one of: %s", util.JoinStrings(saslMechanismOptions, ", "))
+
 	ErrInvalidIngestionConcurrencyMax    = errors.New("ingest-storage.kafka.ingestion-concurrency-max must either be set to 0 or to a value greater than 0")
 	ErrInvalidIngestionConcurrencyParams = errors.New("ingest-storage.kafka.ingestion-concurrency-queue-capacity, ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample, ingest-storage.kafka.ingestion-concurrency-batch-size and ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard must be greater than 0")
 	ErrInvalidAutoCreateTopicParams      = errors.New("ingest-storage.kafka.auto-create-topic-default-partitions must be -1 or greater than 0 when ingest-storage.kafka.auto-create-topic-default-partitions=true")
@@ -97,7 +100,9 @@ type KafkaConfig struct {
 	WriteTimeout time.Duration          `yaml:"write_timeout"`
 	WriteClients int                    `yaml:"write_clients"`
 
-	SASL KafkaAuthConfig `yaml:",inline"`
+	SASL       KafkaAuthConfig `yaml:",inline"`
+	TLSEnabled bool            `yaml:"tls_enabled"`
+	TLS        TLSClientConfig `yaml:",inline"`
 
 	ConsumerGroup                         string        `yaml:"consumer_group"`
 	ConsumerGroupOffsetCommitInterval     time.Duration `yaml:"consumer_group_offset_commit_interval"`
@@ -213,6 +218,8 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 	f.IntVar(&cfg.IngestionConcurrencyEstimatedBytesPerSample, prefix+"ingestion-concurrency-estimated-bytes-per-sample", 500, "The estimated number of bytes a sample has at time of ingestion. This value is used to estimate the timeseries without decompressing them. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.")
 
 	cfg.SASL.RegisterFlagsWithPrefix(prefix+"sasl-", f)
+	f.BoolVar(&cfg.TLSEnabled, prefix+"tls-enabled", false, "Enable TLS for the Kafka client connection.")
+	cfg.TLS.RegisterFlagsWithPrefix(prefix, f)
 }
 
 func (cfg *KafkaConfig) Validate() error {
@@ -278,7 +285,17 @@ func (cfg *KafkaConfig) Validate() error {
 		return ErrInvalidAutoCreateTopicParams
 	}
 
-	return cfg.SASL.Validate()
+	if err := cfg.SASL.Validate(); err != nil {
+		return err
+	}
+
+	if cfg.TLSEnabled {
+		if _, err := cfg.TLS.GetTLSConfig(); err != nil {
+			return fmt.Errorf("invalid Kafka TLS config: %w", err)
+		}
+	}
+
+	return nil
 }
 
 // GetConsumerGroup returns the consumer group to use for the given instanceID and partitionID.
@@ -416,4 +433,18 @@ func (cfg *KafkaAuthConfig) Validate() error {
 	}
 
 	return nil
+}
+
+type TLSClientConfig struct {
+	dskittls.ClientConfig `yaml:",inline"`
+	resolved              *tls.Config `yaml:"-"`
+}
+
+func (c *TLSClientConfig) GetTLSConfig() (*tls.Config, error) {
+	if c.resolved != nil {
+		return c.resolved, nil
+	}
+	var err error
+	c.resolved, err = c.ClientConfig.GetTLSConfig()
+	return c.resolved, err
 }
