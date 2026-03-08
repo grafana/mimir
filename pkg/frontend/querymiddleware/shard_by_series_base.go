@@ -28,6 +28,12 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
+const (
+	// ErrMergingPartialResponseStr is the error message used when merging partial responses from sharded queries fails.
+	// This is used by the recommendations service (backend-enterprise repo) to determine whether to retry requests.
+	ErrMergingPartialResponseStr = "error merging partial responses"
+)
+
 type shardBySeriesBase struct {
 	upstream http.RoundTripper
 	limits   Limits
