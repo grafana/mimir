@@ -40,6 +40,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/distributor/otlpappender"
+	"github.com/grafana/mimir/pkg/distributor/otlparena"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	utillog "github.com/grafana/mimir/pkg/util/log"
@@ -85,6 +86,7 @@ func OTLPHandler(
 	pushMetrics *PushMetrics,
 	reg prometheus.Registerer,
 	logger log.Logger,
+	enableArenaAllocation bool,
 ) http.Handler {
 	discardedDueToOtelParseError := validation.DiscardedSamplesCounter(reg, otelParseError)
 
@@ -98,7 +100,16 @@ func OTLPHandler(
 			}
 		}
 
-		otlpConverter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
+		var arena *otlparena.Arena
+		var appender *otlpappender.MimirAppender
+		if enableArenaAllocation {
+			arena = otlparena.Get()
+			defer arena.Release()
+			appender = otlpappender.NewCombinedAppenderWithSlices(arena.GetTimeseriesSlice(), arena.GetMetadataSlice())
+		} else {
+			appender = otlpappender.NewCombinedAppender()
+		}
+		otlpConverter := newOTLPMimirConverter(appender)
 
 		parser := newOTLPParser(
 			limits, resourceAttributePromotionConfig, keepIdentifyingOTelResourceAttributesConfig,
