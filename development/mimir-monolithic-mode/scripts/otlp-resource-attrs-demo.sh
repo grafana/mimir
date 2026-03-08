@@ -518,7 +518,14 @@ echo -e "${GRAY}Note: Scope attributes are persisted to TSDB but not yet exposed
 # Small delay to ensure metrics are ingested
 sleep 1
 
-query_resources '{__name__=~".+"}' "All resource attributes in head:"
+# In cloud mode, scope to demo series only (the tenant has many other series with resource attrs).
+if [ "$CLOUD_MODE" = true ]; then
+    ALL_DEMO_MATCH='{job=~"(production|staging)/(payment|order)-service"}'
+else
+    ALL_DEMO_MATCH='{__name__=~".+"}'
+fi
+
+query_resources "$ALL_DEMO_MATCH" "All resource attributes in head:"
 
 # === PHASE 3: WAL Replay Verification ===
 if [ "$CLOUD_MODE" = true ]; then
@@ -558,7 +565,7 @@ else
 
     # Query again to verify data survived WAL replay
     echo -e "${BOLD}Querying after WAL replay:${RESET}\n"
-    query_resources '{__name__=~".+"}' "Resource attributes after WAL replay:"
+    query_resources "$ALL_DEMO_MATCH" "Resource attributes after WAL replay:"
 
     echo -e "\n${GREEN}Resource attributes survived WAL replay!${RESET}"
 fi
@@ -587,7 +594,7 @@ print_phase 5 "Querying resource attributes from persisted blocks"
 
 echo -e "${GRAY}Now querying will also include data from store-gateways (if blocks are available).${RESET}\n"
 
-query_resources '{__name__=~".+"}' "Resource attributes (from both head and blocks):"
+query_resources "$ALL_DEMO_MATCH" "Resource attributes (from both head and blocks):"
 
 # === PHASE 6: Demonstrate descriptive attributes changing over time ===
 print_phase 6 "Descriptive attributes changing over time"
