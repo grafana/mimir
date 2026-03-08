@@ -461,8 +461,10 @@ func (o *Object) ReadAt(b []byte, offset int64) (n int, err error) {
 	// Save and restore currOffset so ReadAt doesn't affect sequential Read operations.
 	// Per io.ReaderAt: "ReadAt should not affect nor be affected by the underlying seek offset."
 	savedOffset := o.currOffset
+	savedPrevErr := o.prevErr
 	defer func() {
 		o.currOffset = savedOffset
+		o.prevErr = savedPrevErr
 		o.seekData = true // Force next Read to re-establish stream at correct position
 	}()
 
