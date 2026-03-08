@@ -7,6 +7,8 @@ MIMIR_DIR=$(realpath "${SCRIPT_DIR}/../../../")
 # Parse args.
 INDEX=""
 TOTAL=""
+INCLUDE_PATTERN=""
+EXCLUDE_PATTERN=""
 
 while [[ $# -gt 0 ]]
 do
@@ -20,6 +22,16 @@ do
       INDEX="$2"
       shift # skip --index
       shift # skip index value
+      ;;
+    --include)
+      INCLUDE_PATTERN="$2"
+      shift # skip --include
+      shift # skip include value
+      ;;
+    --exclude)
+      EXCLUDE_PATTERN="$2"
+      shift # skip --exclude
+      shift # skip exclude value
       ;;
     *)  break
       ;;
@@ -44,8 +56,18 @@ fi
 # List all tests.
 ALL_TESTS=$(go list "${MIMIR_DIR}/..." | sort)
 
+FILTERED_TESTS="$ALL_TESTS"
+
+if [[ -n "$INCLUDE_PATTERN" ]]; then
+    FILTERED_TESTS=$(echo "$FILTERED_TESTS" | grep -e "$INCLUDE_PATTERN" || true)
+fi
+
+if [[ -n "$EXCLUDE_PATTERN" ]]; then
+    FILTERED_TESTS=$(echo "$FILTERED_TESTS" | grep -v -e "$EXCLUDE_PATTERN" || true)
+fi
+
 # Filter tests by the requested group.
-GROUP_TESTS=$(echo "$ALL_TESTS" | awk -v TOTAL=$TOTAL -v INDEX=$INDEX 'NR % TOTAL == INDEX')
+GROUP_TESTS=$(echo "$FILTERED_TESTS" | awk -v TOTAL=$TOTAL -v INDEX=$INDEX 'NR % TOTAL == INDEX')
 
 # The tests in the MQE benchmarks package load an enormous amount of data, which causes the
 # race detector to consume a large amount of memory and run incredibly slowly on CI.
