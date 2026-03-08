@@ -1,0 +1,64 @@
+{{- /*gotype: github.com/grafana/mimir/pkg/blockbuilder/scheduler.schedulerPartitionsContents */ -}}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Block Builder Scheduler: Partitions</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .offset-empty { color: #666; font-style: italic; }
+        .summary { background-color: #f8f9fa; padding: 10px; margin-bottom: 20px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+<h1>Block Builder Scheduler: Partitions</h1>
+<p>Current time: {{ .Now }}</p>
+
+<div class="summary">
+    <h3>Summary</h3>
+    <p><strong>Total Partitions:</strong> {{ len .Partitions }}</p>
+</div>
+
+<table>
+    <thead>
+    <tr>
+        <th>Partition</th>
+        <th>Topic</th>
+        <th>Committed Offset</th>
+        <th>Planned Offset</th>
+        <th>End Offset</th>
+        <th>Pending Jobs</th>
+        <th>Last Updated</th>
+    </tr>
+    </thead>
+    <tbody style="font-family: monospace;">
+    {{ range .Partitions }}
+        <tr>
+            <td>{{ .Partition }}</td>
+            <td>{{ .Topic }}</td>
+            <td class="{{ if eq .CommittedOffset -1 }}offset-empty{{ end }}">
+                {{ if eq .CommittedOffset -1 }}Not set{{ else }}{{ .CommittedOffset }}{{ end }}
+            </td>
+            <td class="{{ if eq .PlannedOffset -1 }}offset-empty{{ end }}">
+                {{ if eq .PlannedOffset -1 }}Not set{{ else }}{{ .PlannedOffset }}{{ end }}
+            </td>
+            <td class="{{ if eq .EndOffset -1 }}offset-empty{{ end }}">
+                {{ if eq .EndOffset -1 }}Not tracked{{ else }}{{ .EndOffset }}{{ end }}
+            </td>
+            <td>{{ .PendingJobs }}</td>
+            <td>{{ .LastUpdated }}</td>
+        </tr>
+    {{ else }}
+        <tr>
+            <td colspan="7" style="text-align: center; color: #666;">No partitions found</td>
+        </tr>
+    {{ end }}
+    </tbody>
+</table>
+
+<p><a href="../jobs">View Jobs</a> | <a href="../status">View Status</a></p>
+</body>
+</html>
