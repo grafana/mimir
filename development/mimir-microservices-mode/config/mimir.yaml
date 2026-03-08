@@ -42,7 +42,7 @@ blocks_storage:
     # write requests to fail with out of bounds errors
     block_ranges_period: ["2m"]
     # retention_period must be larger than block_ranges_period and querier.query_store_after
-    retention_period: 15m
+    retention_period: 20m
     ship_interval: 1m
 
     # Always use the PostingsForMatchers() cache in order to exercise it.
@@ -52,12 +52,17 @@ blocks_storage:
 
   bucket_store:
     sync_dir: /tmp/mimir-tsdb-querier
-    sync_interval: 1m
+    sync_interval: 30s
     # ignore_blocks_within and sync_interval must be small enough for the store-gateways
     # to discover & load new blocks shipped from the ingesters before they begin to be queried.
     # With querier.query_store_after: 10m and sync_interval: 1m, anything larger than 2m causes issues.
     # Slightly larger values for ignore_blocks_within work if sync_interval is reduced.
     ignore_blocks_within: 2m
+
+    index_header:
+      bucket_reader:
+        enabled: true
+        cache_enabled: true
 
     index_cache:
       backend: memcached
@@ -126,7 +131,7 @@ alertmanager_storage:
 
 compactor:
   data_dir: "/tmp/mimir-compactor"
-  block_ranges: [ 2m, 4m, 8m, 16m ]
+  block_ranges: [ 2m, 8m, 16m, 32m ]
   compaction_interval: 1m
   compaction_concurrency: 2
   cleanup_interval: 1m
@@ -166,11 +171,12 @@ frontend_worker:
 
 querier:
   # query_store_after must be smaller than blocks_storage.tsdb.retention_period
-  query_store_after: 10m
+  query_store_after: 15m
 
 query_scheduler:
   # Change to "dns" to switch to query-scheduler DNS-based service discovery.
   service_discovery_mode: "ring"
+  max_outstanding_requests_per_tenant: 1600
 
 limits:
   # Limit max query time range to 31d
