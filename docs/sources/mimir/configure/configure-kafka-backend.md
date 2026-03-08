@@ -6,7 +6,6 @@ menuTitle: Kafka
 title: Configure the Grafana Mimir Kafka backend
 weight: 130
 ---
-
 # Configure the Grafana Mimir Kafka backend
 
 Grafana Mimir supports using Kafka as the first layer of ingestion in the ingest storage architecture. This configuration allows for scalable, decoupled ingestion that separates write and read paths to improve performance and resilience.
@@ -43,14 +42,6 @@ Some Kafka-compatible implementations have different behavior for the Kafka API.
 To set up Mimir to work with different Kafka backends, you need to configure some parameters.
 Here are the Kafka flavors and additional configurations needed to set them up in Mimir.
 
-### Apache Kafka
-
-Use the default options with Apache Kafka. No additional configuration is needed.
-
-### Confluent Kafka
-
-Use the default options with Confluent Kafka. No additional configuration is needed.
-
 ### Warpstream
 
 Configure the following CLI flags or their YAML equivalent.
@@ -58,3 +49,17 @@ Configure the following CLI flags or their YAML equivalent.
 ```
 -ingest-storage.kafka.use-compressed-bytes-as-fetch-max-bytes=false
 ```
+
+### Apache Kafka
+
+Use the default options with Apache Kafka. No additional configuration is needed.
+
+### Redpanda
+
+Use the default options with [Redpanda](https://github.com/redpanda-data/redpanda). No additional configuration is required. [working example](https://github.com/meticulo3366/redpanda-mimir-integration)
+
+### Confluent Kafka
+
+Use the default options with Confluent Kafka. No additional configuration is needed.
+
+
