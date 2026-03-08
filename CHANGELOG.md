@@ -138,6 +138,7 @@
 * [ENHANCEMENT] Ingest storage: Allow configuring multiple Kafka seed brokers via `-ingest-storage.kafka.address` (comma-separated). #14328
 * [ENHANCEMENT] MQE: Add experimental support for eliminating selectors that are a subset of another selector. Enable with `-querier.mimir-query-engine.enable-subset-selector-elimination=true`. #14456 #14457 #14546 #14559 #14561
 * [ENHANCEMENT] Ingest storage: Add `-ingest-storage.kafka.client-rack` flag to enable rack awareness. #14434
+* [ENHANCEMENT] Ingester: Add `cortex_ingester_queried_blocks_total` metric to track TSDB block generations queried. #14572
 * [ENHANCEMENT] Distributor, ingest storage: Add `cortex_distributor_received_bytes_total` and `cortex_ingest_storage_writer_input_bytes_total` metrics to measure Remote Write v2 symbols table compression effectiveness. #14453
 * [ENHANCEMENT] Store-gateway: Added `cortex_bucket_store_chunk_size_estimate_type_total` metric to track how often do we infer the size of a chunk or use the default size. #14477
 * [ENHANCEMENT] Block-builder: Expose per-tenant TSDB metrics. #14364

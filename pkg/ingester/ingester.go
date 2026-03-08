@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -2768,6 +2769,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		}
 		return userDB.blocksToDelete(blocks)
 	}
+	blockGeneration := blockGenerationCalculator(userDB, blockRanges[0])
 
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
 	// Create a new user database
@@ -2804,6 +2806,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		SecondaryHashFunction:                secondaryTSDBHashFunctionForUser(userID),
 		IndexLookupPlannerFunc:               userDB.getIndexLookupPlannerFunc(),
 		BlockChunkQuerierFunc: func(b tsdb.BlockReader, mint, maxt int64) (storage.ChunkQuerier, error) {
+			i.metrics.queriedBlocks.WithLabelValues(blockGeneration(b)).Inc()
 			return i.createBlockChunkQuerier(userID, b, mint, maxt)
 		},
 	}, nil)
@@ -2904,6 +2907,23 @@ func (i *Ingester) createBlockChunkQuerier(userID string, b tsdb.BlockReader, mi
 	)
 
 	return mirroredQuerier, nil
+}
+
+// returns a function that computes the generation label for a block relative to the TSDB head.
+// Generation 0 is the head block; persisted blocks get generation 1, 2, etc counting back in block-range units
+// from the head's MinTime.
+func blockGenerationCalculator(db *userTSDB, blockRange int64) func(b tsdb.BlockReader) string {
+	return func(b tsdb.BlockReader) string {
+		if _, ok := b.(*tsdb.RangeHead); ok {
+			return "0" // Special case: querying head block
+		}
+		headMinTime := db.Head().MinTime()
+		if headMinTime == math.MaxInt64 {
+			return "unknown" // Edge case: head is empty, and the query touches block generation >=1
+		}
+		gen := max(1, (headMinTime-b.Meta().MinTime)/blockRange)
+		return strconv.FormatInt(gen, 10)
+	}
 }
 
 func (i *Ingester) closeAllTSDB() {
