@@ -164,6 +164,7 @@ func (l *labelAccessQuerier) LabelValues(ctx context.Context, name string, hints
 	for k := range unique {
 		values = append(values, k)
 	}
+	sort.Strings(values)
 	return values, nil, nil
 }
 
