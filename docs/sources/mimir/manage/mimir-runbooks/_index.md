@@ -665,8 +665,9 @@ sum by (pod, operation) (
 **Step 3: Check store-gateway logs for sync errors**
 
 ```logql
-{namespace="<namespace>", container="store-gateway"} |= "level=error"
+{namespace="<namespace>", container="store-gateway"}
   | logfmt
+  | level="error"
   | line_format "{{.ts}} {{.pod}} {{.msg}} {{.err}}"
 ```
 
