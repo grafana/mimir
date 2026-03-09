@@ -1672,7 +1672,8 @@ sum by (pod, operation) (
 
 **Step 2: Check store-gateway logs for details**
 
-- Check the `store-gateways` logs which should contain details about the error such as tenant or object id, e.g. with the following Grafana Loki query:
+- Check the `store-gateway` logs which should contain details about the error such as tenant or object id, e.g. with the following Grafana Loki query:
+- ```
 
 ```logql
 {namespace="<namespace>", container="store-gateway"} |= "level=warn"
