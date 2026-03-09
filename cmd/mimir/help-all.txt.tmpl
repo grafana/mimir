@@ -385,6 +385,8 @@ Usage of ./cmd/mimir/mimir:
     	Allows to disable enforcement of the label count limit "max_label_names_per_series" via X-Mimir-SkipLabelCountValidation header on the http write path. Allowing this for external clients allows any client to send invalid label counts. After enabling it, requests with a specific HTTP header set to true will not have label counts validated.
   -api.skip-label-name-validation-header-enabled
     	Allows to skip label name validation via X-Mimir-SkipLabelNameValidation header on the http write path. Use with caution as it breaks PromQL. Allowing this for external clients allows any client to send invalid label names. After enabling it, requests with a specific HTTP header set to true will not have label names validated.
+  -auth.label-access-control-enabled
+    	[experimental] If enabled, Mimir enforces label-based access control on metric read queries using the X-Prom-Label-Policy HTTP header.
   -auth.multitenancy-enabled
     	When set to true, incoming HTTP requests must specify tenant ID in HTTP X-Scope-OrgId header. When set to false, tenant ID from -auth.no-auth-tenant is used instead. (default true)
   -auth.no-auth-tenant string
