@@ -46,11 +46,12 @@ func TestQueryBlockerMiddleware_RangeAndInstantQuery(t *testing.T) {
 		expectedBlocked bool
 	}{
 		{
-			name:  "doesn't block queries due to empty limits",
-			query: "rate(metric_counter[5m])",
+			name:            "empty limits",
+			query:           "rate(metric_counter[5m])",
+			expectedBlocked: false,
 		},
 		{
-			name: "blocks single line query non regex pattern",
+			name: "single line non-regex pattern",
 			limitsYAML: `
 blocked_queries:
   - pattern: "rate(metric_counter[5m])"
@@ -60,7 +61,7 @@ blocked_queries:
 			expectedBlocked: true,
 		},
 		{
-			name: "blocks query with non-canonical pattern (label order differs) - validates canonicalization",
+			name: "non-canonical pattern - label order differs",
 			limitsYAML: `
 blocked_queries:
   - pattern: 'up{pod="test", job="test"}'
@@ -70,7 +71,7 @@ blocked_queries:
 			expectedBlocked: true,
 		},
 		{
-			name: "blocks query with non-canonical pattern (extra whitespace and trailing comma)",
+			name: "non-canonical pattern - extra whitespace and trailing comma",
 			limitsYAML: `
 blocked_queries:
   - pattern: 'up{ job="test" , pod="test" , }'
@@ -80,7 +81,7 @@ blocked_queries:
 			expectedBlocked: true,
 		},
 		{
-			name: "blocks query with non-canonical pattern (function with extra whitespace)",
+			name: "non-canonical pattern - function with extra whitespace",
 			limitsYAML: `
 blocked_queries:
   - pattern: 'rate( metric_counter[ 5m ] )'
@@ -90,7 +91,7 @@ blocked_queries:
 			expectedBlocked: true,
 		},
 		{
-			name: "blocks query with non-canonical pattern (aggregation with extra whitespace)",
+			name: "non-canonical pattern - aggregation with extra whitespace",
 			limitsYAML: `
 blocked_queries:
   - pattern: 'sum( rate(metric_counter[5m]) )'
@@ -100,7 +101,7 @@ blocked_queries:
 			expectedBlocked: true,
 		},
 		{
-			name: "blocks query with non-canonical pattern (aggregation with grouping and extra whitespace)",
+			name: "non-canonical pattern - aggregation with by() and extra whitespace",
 			limitsYAML: `
 blocked_queries:
   - pattern: 'sum( rate(metric_counter[5m]) ) by ( job , pod )'
@@ -110,7 +111,7 @@ blocked_queries:
 			expectedBlocked: true,
 		},
 		{
-			name: "does not block aggregation when by() clause labels in different order (not canonicalized)",
+			name: "by() labels not sorted - different order doesn't match",
 			limitsYAML: `
 blocked_queries:
   - pattern: 'sum(rate(metric_counter[5m])) by(job,pod)'
@@ -120,16 +121,17 @@ blocked_queries:
 			expectedBlocked: false,
 		},
 		{
-			name: "not blocks single line query non regex pattern",
+			name: "different pattern - no match",
 			limitsYAML: `
 blocked_queries:
   - pattern: "rate(metric_counter[5m])"
     regex: false
 `,
-			query: "rate(metric_counter[15m])",
+			query:           "rate(metric_counter[15m])",
+			expectedBlocked: false,
 		},
 		{
-			name: "blocks multiple line query non regex pattern",
+			name: "multiple line non-regex pattern",
 			limitsYAML: `
 blocked_queries:
   - pattern: "rate(metric_counter[5m]) / rate(other_counter[5m])"
@@ -143,7 +145,7 @@ blocked_queries:
 			expectedBlocked: true,
 		},
 		{
-			name: "not blocks multiple line query non regex pattern",
+			name: "multiple line different pattern - no match",
 			limitsYAML: `
 blocked_queries:
   - pattern: "rate(metric_counter[5m])"
@@ -154,9 +156,10 @@ blocked_queries:
 				/
 				rate(other_counter[15m])
 			`,
+			expectedBlocked: false,
 		},
 		{
-			name: "blocks single line query regex pattern",
+			name: "single line regex pattern",
 			limitsYAML: `
 blocked_queries:
   - pattern: ".*metric_counter.*"
@@ -166,7 +169,7 @@ blocked_queries:
 			expectedBlocked: true,
 		},
 		{
-			name: "blocks multiple line query regex pattern",
+			name: "multiple line regex pattern",
 			limitsYAML: `
 blocked_queries:
   - pattern: "(?s).*metric_counter.*"
@@ -180,31 +183,34 @@ blocked_queries:
 			expectedBlocked: true,
 		},
 		{
-			name: "does not block regex pattern with out-of-order labels (regex not canonicalized)",
+			name: "regex not canonicalized - out-of-order labels don't match",
 			limitsYAML: `
 blocked_queries:
   - pattern: 'up\{pod="test",job="test"\}'
     regex: true
 `,
-			query: `up{job="test",pod="test"}`, // Canonical query has different label order
+			query:           `up{job="test",pod="test"}`, // Canonical query has different label order
+			expectedBlocked: false,
 		},
 		{
-			name: "does not block regex pattern with extra whitespace (regex not canonicalized)",
+			name: "regex not canonicalized - extra whitespace doesn't match",
 			limitsYAML: `
 blocked_queries:
   - pattern: 'rate\( metric_counter\[ 5m \] \)'
     regex: true
 `,
-			query: `rate(metric_counter[5m])`, // Canonical query has no extra whitespace
+			query:           `rate(metric_counter[5m])`, // Canonical query has no extra whitespace
+			expectedBlocked: false,
 		},
 		{
-			name: "invalid regex pattern",
+			name: "invalid regex pattern - no match",
 			limitsYAML: `
 blocked_queries:
   - pattern: "[a-9}"
     regex: true
 `,
-			query: "rate(metric_counter[5m])",
+			query:           "rate(metric_counter[5m])",
+			expectedBlocked: false,
 		},
 	}
 
@@ -268,10 +274,11 @@ func TestQueryBlockerMiddleware_RemoteRead(t *testing.T) {
 		expectedBlocked bool
 	}{
 		{
-			name: "doesn't block queries due to empty limits",
+			name:            "empty limits",
+			expectedBlocked: false,
 		},
 		{
-			name: "blocks query via non regex pattern",
+			name: "non-regex pattern",
 			limitsYAML: `
 blocked_queries:
   - pattern: '{__name__="metric_counter",pod=~"app-.*"}'
@@ -280,15 +287,16 @@ blocked_queries:
 			expectedBlocked: true,
 		},
 		{
-			name: "not blocks query via non regex pattern",
+			name: "different non-regex pattern - no match",
 			limitsYAML: `
 blocked_queries:
   - pattern: '{__name__="another_metric",pod=~"app-.*"}'
     regex: false
 `,
+			expectedBlocked: false,
 		},
 		{
-			name: "blocks query via regex pattern",
+			name: "regex pattern",
 			limitsYAML: `
 blocked_queries:
   - pattern: ".*metric_counter.*"
@@ -297,7 +305,7 @@ blocked_queries:
 			expectedBlocked: true,
 		},
 		{
-			name: "blocks query via regex pattern, with begin/end curly brackets used as a trick to match only remote read requests",
+			name: "regex with escaped braces for remote read",
 			limitsYAML: `
 blocked_queries:
   - pattern: '\{.*metric_counter.*\}'
@@ -306,7 +314,7 @@ blocked_queries:
 			expectedBlocked: true,
 		},
 		{
-			name: "blocks query via regex pattern with double-quote escaping (alternative to single quotes)",
+			name: "regex with double-quote escaping",
 			limitsYAML: `
 blocked_queries:
   - pattern: "\\{.*metric_counter.*\\}"
@@ -315,20 +323,22 @@ blocked_queries:
 			expectedBlocked: true,
 		},
 		{
-			name: "not blocks query via regex pattern",
+			name: "different regex pattern - no match",
 			limitsYAML: `
 blocked_queries:
   - pattern: ".*another_metric.*"
     regex: true
 `,
+			expectedBlocked: false,
 		},
 		{
-			name: "invalid regex pattern",
+			name: "invalid regex pattern - no match",
 			limitsYAML: `
 blocked_queries:
   - pattern: "[a-9}"
     regex: true
 `,
+			expectedBlocked: false,
 		},
 	}
 
