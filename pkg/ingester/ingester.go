@@ -377,6 +377,11 @@ type Ingester struct {
 	ingestPartitionID         int32
 	ingestPartitionLifecycler *ring.PartitionInstanceLifecycler
 
+	// latestKafkaRecordTimestamp tracks the most recent Kafka record timestamp
+	// seen by the ingester (unix milliseconds). Used to provide a Kafka-time-aware
+	// "now" for active series purging when ingest storage is enabled.
+	latestKafkaRecordTimestamp atomic.Int64
+
 	circuitBreaker  ingesterCircuitBreaker
 	reactiveLimiter *ingesterReactiveLimiter
 }
@@ -887,7 +892,7 @@ func (i *Ingester) metricsUpdaterServiceRunning(ctx context.Context) error {
 			}
 			i.tsdbsMtx.RUnlock()
 		case <-activeSeriesTickerChan:
-			i.updateActiveSeries(time.Now())
+			i.updateActiveSeries(i.activeSeriesNow())
 		case <-usageStatsUpdateTicker.C:
 			i.updateUsageStats()
 		case <-limitMetricsUpdateTicker.C:
@@ -896,6 +901,15 @@ func (i *Ingester) metricsUpdaterServiceRunning(ctx context.Context) error {
 			return nil
 		}
 	}
+}
+
+func (i *Ingester) activeSeriesNow() time.Time {
+	if i.cfg.IngestStorageConfig.Enabled {
+		if tsMs := i.latestKafkaRecordTimestamp.Load(); tsMs > 0 {
+			return time.UnixMilli(tsMs)
+		}
+	}
+	return time.Now()
 }
 
 func (i *Ingester) updateActiveSeries(now time.Time) {
@@ -1353,7 +1367,8 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	spanlog.DebugLog("event", "acquired append lock")
 
 	var (
-		startAppend = time.Now()
+		startAppend          = time.Now()
+		appendWallClockStart = startAppend
 
 		// Keep track of some stats which are tracked only if the samples will be
 		// successfully committed
@@ -1457,6 +1472,10 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		)
 	)
 
+	if ts, ok := ingest.RecordTimestampFromContext(ctx); ok {
+		startAppend = ts
+	}
+
 	// Walk the samples, appending them to the users database
 	app := db.Appender(ctx).(extendedAppender)
 	spanlog.DebugLog("event", "got appender for timeseries", "series", len(req.Timeseries))
@@ -1490,7 +1509,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	}
 
 	// At this point all samples have been added to the appender, so we can track the time it took.
-	i.metrics.appenderAddDuration.Observe(time.Since(startAppend).Seconds())
+	i.metrics.appenderAddDuration.Observe(time.Since(appendWallClockStart).Seconds())
 
 	spanlog.DebugLog(
 		"event", "start commit",
@@ -1523,6 +1542,16 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	i.metrics.ingestedExemplarsFail.Add(float64(stats.failedExemplarsCount))
 	appendedSamplesStats.Inc(int64(stats.succeededSamplesCount))
 	appendedExemplarsStats.Inc(int64(stats.succeededExemplarsCount))
+
+	if ts, ok := ingest.RecordTimestampFromContext(ctx); ok {
+		for {
+			cur := i.latestKafkaRecordTimestamp.Load()
+			tsMs := ts.UnixMilli()
+			if tsMs <= cur || i.latestKafkaRecordTimestamp.CompareAndSwap(cur, tsMs) {
+				break
+			}
+		}
+	}
 
 	group := i.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(i.limits, userID, req.Timeseries), startAppend)
 
@@ -3283,10 +3312,10 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 			i.compactBlocks(ctx, false, 0, nil)
 
 			// Check if any TSDB Head should be compacted to reduce the number of in-memory series.
-			i.compactBlocksToReduceInMemorySeries(ctx, time.Now())
+			i.compactBlocksToReduceInMemorySeries(ctx, i.activeSeriesNow())
 
 			// Check if any TSDB Head should be compacted based on per-tenant owned series thresholds.
-			i.compactBlocksToReducePerTenantOwnedSeries(ctx, time.Now())
+			i.compactBlocksToReducePerTenantOwnedSeries(ctx, i.activeSeriesNow())
 
 			// Decrement the counter after compaction is complete
 			i.numCompactionsInProgress.Dec()

@@ -1771,3 +1771,58 @@ func BenchmarkPusherConsumer_ParallelPusher_MultiTenant(b *testing.B) {
 		}
 	}
 }
+
+func TestRecordTimestampContext(t *testing.T) {
+	t.Run("returns false on plain context", func(t *testing.T) {
+		_, ok := RecordTimestampFromContext(context.Background())
+		assert.False(t, ok)
+	})
+
+	t.Run("round-trips through context", func(t *testing.T) {
+		ts := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+		ctx := ContextWithRecordTimestamp(context.Background(), ts)
+		got, ok := RecordTimestampFromContext(ctx)
+		assert.True(t, ok)
+		assert.Equal(t, ts, got)
+	})
+}
+
+func TestPusherConsumer_RecordTimestampPropagation(t *testing.T) {
+	const tenantID = "t1"
+	wr := &mimirpb.WriteRequest{
+		Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")},
+	}
+	wrBytes, err := wr.Marshal()
+	require.NoError(t, err)
+
+	recordTimestamp := time.Date(2025, 6, 15, 10, 30, 0, 0, time.UTC)
+
+	var capturedCtx context.Context
+	pusher := pusherFunc(func(ctx context.Context, _ *mimirpb.WriteRequest) error {
+		capturedCtx = ctx
+		return nil
+	})
+
+	kcfg := KafkaConfig{}
+	flagext.DefaultValues(&kcfg)
+	kcfg.IngestionConcurrencyMax = 0
+
+	metrics := NewPusherConsumerMetrics(prometheus.NewPedanticRegistry())
+	c := NewPusherConsumer(pusher, kcfg, metrics, log.NewNopLogger())
+
+	records := func(yield func(*kgo.Record) bool) {
+		rec := createRecord("test-topic", 1, wrBytes, 1)
+		rec.Context = t.Context()
+		rec.Key = []byte(tenantID)
+		rec.Timestamp = recordTimestamp
+		yield(rec)
+	}
+
+	err = c.Consume(t.Context(), records)
+	require.NoError(t, err)
+	require.NotNil(t, capturedCtx)
+
+	got, ok := RecordTimestampFromContext(capturedCtx)
+	assert.True(t, ok)
+	assert.Equal(t, recordTimestamp, got)
+}
