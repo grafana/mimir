@@ -398,3 +398,28 @@ func TestHashCollisionResistance(t *testing.T) {
 
 	require.Equal(t, len(hashes), instanceCount)
 }
+
+func TestHashStructuralCollision(t *testing.T) {
+	// Two OR'd single-matcher policies and one AND'd two-matcher policy must not collide.
+	// Before the fix both produced the same hash because no delimiters were written between
+	// policies or between matchers within a policy.
+	m1 := labels.MustNewMatcher(labels.MatchEqual, "env", "prod")
+	m2 := labels.MustNewMatcher(labels.MatchEqual, "class", "open")
+
+	// [{env="prod"}, {class="open"}] — OR: series matches env=prod OR class=open
+	orPolicy := LabelPolicySet{
+		"tenant": {
+			{Selector: []*labels.Matcher{m1}},
+			{Selector: []*labels.Matcher{m2}},
+		},
+	}
+
+	// [{env="prod", class="open"}] — AND: series must match both env=prod AND class=open
+	andPolicy := LabelPolicySet{
+		"tenant": {
+			{Selector: []*labels.Matcher{m1, m2}},
+		},
+	}
+
+	require.NotEqual(t, orPolicy.Hash(), andPolicy.Hash(), "OR and AND policies must produce different hashes")
+}
