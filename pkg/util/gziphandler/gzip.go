@@ -462,10 +462,10 @@ func ContentTypes(types []string) Option {
 }
 
 // GzipHandler wraps an HTTP handler, to transparently gzip the response body if
-// the client supports it (via the Accept-Encoding header). This will compress at
-// the default compression level.
-func GzipHandler(h http.Handler) http.Handler {
-	wrapper, _ := NewGzipLevelHandler(gzip.DefaultCompression)
+// the client supports it (via the Accept-Encoding header). Responses will be
+// compressed at the given gzip compression level.
+func GzipHandler(h http.Handler, level int) http.Handler {
+	wrapper := MustNewGzipLevelHandler(level)
 	return wrapper(h)
 }
 

@@ -1113,12 +1113,12 @@ func TestOptimizationPass(t *testing.T) {
 			}
 
 			if testCase.expectUnchanged {
-				p, err := plannerWithoutOptimizationPass.NewQueryPlan(ctx, testCase.expr, timeRange, false, observer)
+				p, err := plannerWithoutOptimizationPass.NewQueryPlan(ctx, testCase.expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
 				require.NoError(t, err)
 				testCase.expectedPlan = p.String()
 			}
 
-			p, err := plannerWithOptimizationPass.NewQueryPlan(ctx, testCase.expr, timeRange, false, observer)
+			p, err := plannerWithOptimizationPass.NewQueryPlan(ctx, testCase.expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
 			require.NoError(t, err)
 			actual := p.String()
 			require.Equal(t, testutils.TrimIndent(testCase.expectedPlan), actual)
@@ -1375,7 +1375,7 @@ func TestOptimizationPass_HintsHandling(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 
-			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, false, observer)
+			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
 			require.NoError(t, err)
 			actual := p.String()
 			require.Equal(t, testutils.TrimIndent(testCase.expectedPlan), actual)
@@ -1395,7 +1395,7 @@ func TestOptimizationPass_SubsetSelectorEliminationDisabled(t *testing.T) {
 		planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{})
 		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(enabled, nil, opts.Logger))
 
-		plan, err := planner.NewQueryPlan(ctx, expr, timeRange, false, observer)
+		plan, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
 		require.NoError(t, err)
 		require.Equal(t, testutils.TrimIndent(expectedPlan), plan.String())
 	}
@@ -1490,7 +1490,7 @@ func BenchmarkOptimizationPass(b *testing.B) {
 	for _, expr := range testCases {
 		b.Run(expr, func(b *testing.B) {
 			for b.Loop() {
-				_, err := planner.NewQueryPlan(ctx, expr, timeRange, false, observer)
+				_, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
 
 				if err != nil {
 					require.NoError(b, err)

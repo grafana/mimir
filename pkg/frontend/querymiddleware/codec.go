@@ -124,6 +124,8 @@ type MetricsQueryRequest interface {
 	// GetStats returns the stats parameter for the request.
 	// See WithStats() comment for more details.
 	GetStats() string
+	// GetQueryOpts returns the query options for the request.
+	GetQueryOpts() (promql.QueryOpts, error)
 	// WithID clones the current request with the provided ID.
 	WithID(id int64) (MetricsQueryRequest, error)
 	// WithStartEnd clone the current request with different start and end timestamp.
@@ -364,6 +366,11 @@ func (c Codec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryRequest, er
 		return nil, err
 	}
 
+	lookbackDelta, err := c.decodeLookbackDelta(&reqValues)
+	if err != nil {
+		return nil, err
+	}
+
 	query := reqValues.Get("query")
 	queryExpr, err := promqlext.NewPromQLParser().ParseExpr(query)
 	if err != nil {
@@ -374,8 +381,9 @@ func (c Codec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryRequest, er
 	DecodeOptions(r, &options)
 
 	stats := reqValues.Get("stats")
+
 	req := NewPrometheusRangeQueryRequest(
-		r.URL.Path, httpHeadersToProm(r.Header), start, end, step, c.lookbackDelta, queryExpr, options, nil, stats,
+		r.URL.Path, httpHeadersToProm(r.Header), start, end, step, lookbackDelta, queryExpr, options, nil, stats,
 	)
 	return req, nil
 }
@@ -391,6 +399,11 @@ func (c Codec) decodeInstantQueryRequest(r *http.Request) (MetricsQueryRequest, 
 		return nil, DecorateWithParamName(err, "time")
 	}
 
+	lookbackDelta, err := c.decodeLookbackDelta(&reqValues)
+	if err != nil {
+		return nil, err
+	}
+
 	query := reqValues.Get("query")
 	queryExpr, err := promqlext.NewPromQLParser().ParseExpr(query)
 	if err != nil {
@@ -403,7 +416,7 @@ func (c Codec) decodeInstantQueryRequest(r *http.Request) (MetricsQueryRequest, 
 	stats := reqValues.Get("stats")
 
 	req := NewPrometheusInstantQueryRequest(
-		r.URL.Path, httpHeadersToProm(r.Header), time, c.lookbackDelta, queryExpr, options, nil, stats,
+		r.URL.Path, httpHeadersToProm(r.Header), time, lookbackDelta, queryExpr, options, nil, stats,
 	)
 	return req, nil
 }
@@ -420,6 +433,23 @@ func httpHeadersToProm(httpH http.Header) []*PrometheusHeader {
 		return strings.Compare(a.Name, b.Name)
 	})
 	return headers
+}
+
+func (c Codec) decodeLookbackDelta(reqValues *url.Values) (time.Duration, error) {
+	if !reqValues.Has(lookbackDeltaParamDecodable.paramName) {
+		return c.lookbackDelta, nil
+	}
+
+	lookbackDelta, err := lookbackDeltaParamDecodable.Decode(reqValues)
+	if err != nil {
+		return 0, err
+	}
+
+	if lookbackDelta <= 0 {
+		return 0, DecorateWithParamName(fmt.Errorf("must be greater than 0, got %s", reqValues.Get(lookbackDeltaParamDecodable.paramName)), lookbackDeltaParamDecodable.paramName)
+	}
+
+	return time.Duration(lookbackDelta) * time.Millisecond, nil
 }
 
 // DecodeLabelsSeriesQueryRequest decodes a LabelsSeriesQueryRequest from an http request.
@@ -534,7 +564,8 @@ func (p PromTimeParamDecoder) Decode(reqValues *url.Values) (int64, error) {
 
 var rangeStartParamDecodable = PromTimeParamDecoder{"start", RFC3339OrUnixMS, false, nil}
 var rangeEndParamDecodable = PromTimeParamDecoder{"end", RFC3339OrUnixMS, false, nil}
-var rangeStepEndParamDecodable = PromTimeParamDecoder{"step", DurationMSOrFloatMS, false, nil}
+var rangeStepParamDecodable = PromTimeParamDecoder{"step", DurationMSOrFloatMS, false, nil}
+var lookbackDeltaParamDecodable = PromTimeParamDecoder{"lookback_delta", DurationMSOrFloatMS, false, nil}
 
 // DecodeRangeQueryTimeParams encapsulates Prometheus instant query time param parsing,
 // emulating the logic in prometheus/prometheus/web/api/v1#API.query_range.
@@ -553,7 +584,7 @@ func DecodeRangeQueryTimeParams(reqValues *url.Values) (start, end, step int64, 
 		return 0, 0, 0, errEndBeforeStart
 	}
 
-	step, err = rangeStepEndParamDecodable.Decode(reqValues)
+	step, err = rangeStepParamDecodable.Decode(reqValues)
 	if err != nil {
 		return 0, 0, 0, err
 	}
@@ -700,6 +731,11 @@ func (c Codec) EncodeMetricsQueryRequest(ctx context.Context, r MetricsQueryRequ
 			"step":  []string{encodeDurationMs(r.GetStep())},
 			"query": []string{r.GetQuery()},
 		}
+		// Check if lookback delta has a non-zero value before encoding
+		// the request since it's not valid to request a lookback of "0".
+		if l := r.GetLookbackDelta(); l != 0 {
+			values["lookback_delta"] = []string{encodeDuration(l)}
+		}
 		if s := r.GetStats(); s != "" {
 			values["stats"] = []string{s}
 		}
@@ -711,6 +747,11 @@ func (c Codec) EncodeMetricsQueryRequest(ctx context.Context, r MetricsQueryRequ
 		values := url.Values{
 			"time":  []string{encodeTime(r.GetTime())},
 			"query": []string{r.GetQuery()},
+		}
+		// Check if lookback delta has a non-zero value before encoding
+		// the request since it's not valid to request a lookback of "0".
+		if l := r.GetLookbackDelta(); l != 0 {
+			values["lookback_delta"] = []string{encodeDuration(l)}
 		}
 		if s := r.GetStats(); s != "" {
 			values["stats"] = []string{s}
@@ -1313,6 +1354,10 @@ func readResponseBody(res *http.Response) ([]byte, error) {
 func encodeTime(t int64) string {
 	f := float64(t) / 1.0e3
 	return strconv.FormatFloat(f, 'f', -1, 64)
+}
+
+func encodeDuration(d time.Duration) string {
+	return encodeDurationMs(d.Milliseconds())
 }
 
 func encodeDurationMs(d int64) string {

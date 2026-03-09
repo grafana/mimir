@@ -386,7 +386,10 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 
 	ctx = ContextWithHeadersToPropagate(ctx, headers)
 	ctx = ContextWithRequestHintsAndOptions(ctx, r.GetHints(), r.GetOptions())
-	opts := promql.NewPrometheusQueryOpts(r.GetStats() == "all", 0)
+	opts, err := r.GetQueryOpts()
+	if err != nil {
+		return nil, err
+	}
 
 	var q promql.Query
 

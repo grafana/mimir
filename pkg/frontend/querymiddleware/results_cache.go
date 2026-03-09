@@ -229,13 +229,20 @@ func NewDefaultCacheKeyGenerator(codec Codec, interval time.Duration) DefaultCac
 func (g DefaultCacheKeyGenerator) QueryRequest(_ context.Context, tenantID string, r MetricsQueryRequest) string {
 	startInterval := r.GetStart() / g.interval.Milliseconds()
 	stepOffset := r.GetStart() % r.GetStep()
+	isDefaultLookbackDelta := r.GetLookbackDelta() == g.codec.lookbackDelta
 
-	// Use original format for step-aligned request, so that we can use existing cached results for such requests.
-	if stepOffset == 0 {
-		return fmt.Sprintf("%s:%s:%d:%d", tenantID, r.GetQuery(), r.GetStep(), startInterval)
+	// Use original format if the default lookback delta was requested on the request (or no specific value was requested),
+	// so that we can use existing cached results for such requests.
+	if isDefaultLookbackDelta {
+		// Use original format for step-aligned request, so that we can use existing cached results for such requests.
+		if stepOffset == 0 {
+			return fmt.Sprintf("%s:%s:%d:%d", tenantID, r.GetQuery(), r.GetStep(), startInterval)
+		}
+
+		return fmt.Sprintf("%s:%s:%d:%d:%d", tenantID, r.GetQuery(), r.GetStep(), startInterval, stepOffset)
 	}
 
-	return fmt.Sprintf("%s:%s:%d:%d:%d", tenantID, r.GetQuery(), r.GetStep(), startInterval, stepOffset)
+	return fmt.Sprintf("%s:%s:%d:%d:%d:%s", tenantID, r.GetQuery(), r.GetStep(), startInterval, stepOffset, r.GetLookbackDelta())
 }
 
 func (g DefaultCacheKeyGenerator) QueryRequestError(_ context.Context, tenantID string, r MetricsQueryRequest) string {

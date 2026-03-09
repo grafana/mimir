@@ -897,11 +897,6 @@ func (i *Ingester) metricsUpdaterServiceRunning(ctx context.Context) error {
 	}
 }
 
-func (i *Ingester) replaceMatchersAndTrackers(asm *asmodel.Matchers, cat *costattribution.ActiveSeriesTracker, userDB *userTSDB, now time.Time) {
-	i.metrics.deletePerUserCustomTrackerMetrics(userDB.userID, userDB.activeSeries.CurrentMatcherNames())
-	userDB.activeSeries.ReloadMatchersAndTrackers(asm, cat, now)
-}
-
 func (i *Ingester) updateActiveSeries(now time.Time) {
 	for _, userID := range i.getTSDBUsers() {
 		userDB := i.getTSDB(userID)
@@ -911,62 +906,87 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 
 		newMatchersConfig := i.limits.ActiveSeriesCustomTrackersConfig(userID)
 		newCostAttributionActiveSeriesTracker := i.costAttributionMgr.ActiveSeriesTracker(userID)
-		if userDB.activeSeries.ConfigDiffers(newMatchersConfig, newCostAttributionActiveSeriesTracker) {
-			i.replaceMatchersAndTrackers(asmodel.NewMatchers(newMatchersConfig), newCostAttributionActiveSeriesTracker, userDB, now)
-		}
+		matchersChanged := userDB.activeSeries.MatchersDiffer(newMatchersConfig)
+		catChanged := userDB.activeSeries.CostAttributionDiffers(newCostAttributionActiveSeriesTracker)
 
 		idx := userDB.Head().MustIndex()
-		valid := userDB.activeSeries.Purge(now, idx)
+
+		var oldMatcherNames []string
+		if matchersChanged || catChanged {
+			level.Debug(i.logger).Log("msg", "active series config changed, reloading", "user", userID, "matchers_changed", matchersChanged, "cost_attribution_changed", catChanged)
+			if matchersChanged {
+				// We shouldn't delete the metrics yet, just in case a metrics scrape happens while we're reloading,
+				// we don't want to trigger a staleness NaN in the metrics.
+				oldMatcherNames = userDB.activeSeries.CurrentMatcherNames()
+			}
+			userDB.activeSeries.ReloadSeriesConfig(
+				asmodel.NewMatchers(newMatchersConfig),
+				newCostAttributionActiveSeriesTracker,
+				matchersChanged, catChanged, idx,
+			)
+		}
+
+		userDB.activeSeries.Purge(now, idx)
 		idx.Close()
 
-		if !valid {
-			// Active series config has been reloaded, exposing loading metric until MetricsIdleTimeout passes.
-			i.metrics.activeSeriesLoading.WithLabelValues(userID).Set(1)
+		allActive, activeMatching, allActiveOTLP, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets := userDB.activeSeries.ActiveWithMatchers()
+		if allActive > 0 {
+			i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(allActive))
 		} else {
-			allActive, activeMatching, allActiveOTLP, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets := userDB.activeSeries.ActiveWithMatchers()
-			i.metrics.activeSeriesLoading.DeleteLabelValues(userID)
-			if allActive > 0 {
-				i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(allActive))
-			} else {
-				i.metrics.activeSeriesPerUser.DeleteLabelValues(userID)
-			}
-			if allActiveOTLP > 0 {
-				i.metrics.activeSeriesPerUserOTLP.WithLabelValues(userID).Set(float64(allActiveOTLP))
-			} else {
-				i.metrics.activeSeriesPerUserOTLP.DeleteLabelValues(userID)
-			}
-			if allActiveHistograms > 0 {
-				i.metrics.activeSeriesPerUserNativeHistograms.WithLabelValues(userID).Set(float64(allActiveHistograms))
-			} else {
-				i.metrics.activeSeriesPerUserNativeHistograms.DeleteLabelValues(userID)
-			}
-			if allActiveBuckets > 0 {
-				i.metrics.activeNativeHistogramBucketsPerUser.WithLabelValues(userID).Set(float64(allActiveBuckets))
-			} else {
-				i.metrics.activeNativeHistogramBucketsPerUser.DeleteLabelValues(userID)
-			}
+			i.metrics.activeSeriesPerUser.DeleteLabelValues(userID)
+		}
+		if allActiveOTLP > 0 {
+			i.metrics.activeSeriesPerUserOTLP.WithLabelValues(userID).Set(float64(allActiveOTLP))
+		} else {
+			i.metrics.activeSeriesPerUserOTLP.DeleteLabelValues(userID)
+		}
+		if allActiveHistograms > 0 {
+			i.metrics.activeSeriesPerUserNativeHistograms.WithLabelValues(userID).Set(float64(allActiveHistograms))
+		} else {
+			i.metrics.activeSeriesPerUserNativeHistograms.DeleteLabelValues(userID)
+		}
+		if allActiveBuckets > 0 {
+			i.metrics.activeNativeHistogramBucketsPerUser.WithLabelValues(userID).Set(float64(allActiveBuckets))
+		} else {
+			i.metrics.activeNativeHistogramBucketsPerUser.DeleteLabelValues(userID)
+		}
 
-			AttributedActiveSeriesFailure := userDB.activeSeries.ActiveSeriesAttributionFailureCount()
-			if AttributedActiveSeriesFailure > 0 {
-				i.metrics.attributedActiveSeriesFailuresPerUser.WithLabelValues(userID).Add(AttributedActiveSeriesFailure)
-			}
+		attributedActiveSeriesFailure := userDB.activeSeries.ActiveSeriesAttributionFailureCount()
+		if attributedActiveSeriesFailure > 0 {
+			i.metrics.attributedActiveSeriesFailuresPerUser.WithLabelValues(userID).Add(attributedActiveSeriesFailure)
+		}
 
-			for idx, name := range userDB.activeSeries.CurrentMatcherNames() {
-				// We only set the metrics for matchers that actually exist, to avoid increasing cardinality with zero valued metrics.
-				if activeMatching[idx] > 0 {
-					i.metrics.activeSeriesCustomTrackersPerUser.WithLabelValues(userID, name).Set(float64(activeMatching[idx]))
-				} else {
-					i.metrics.activeSeriesCustomTrackersPerUser.DeleteLabelValues(userID, name)
-				}
-				if activeMatchingHistograms[idx] > 0 {
-					i.metrics.activeSeriesCustomTrackersPerUserNativeHistograms.WithLabelValues(userID, name).Set(float64(activeMatchingHistograms[idx]))
-				} else {
-					i.metrics.activeSeriesCustomTrackersPerUserNativeHistograms.DeleteLabelValues(userID, name)
-				}
-				if activeMatchingBuckets[idx] > 0 {
-					i.metrics.activeNativeHistogramBucketsCustomTrackersPerUser.WithLabelValues(userID, name).Set(float64(activeMatchingBuckets[idx]))
-				} else {
-					i.metrics.activeNativeHistogramBucketsCustomTrackersPerUser.DeleteLabelValues(userID, name)
+		for idx, name := range userDB.activeSeries.CurrentMatcherNames() {
+			// We only set the metrics for matchers that actually exist, to avoid increasing cardinality with zero valued metrics.
+			if activeMatching[idx] > 0 {
+				i.metrics.activeSeriesCustomTrackersPerUser.WithLabelValues(userID, name).Set(float64(activeMatching[idx]))
+			} else {
+				i.metrics.activeSeriesCustomTrackersPerUser.DeleteLabelValues(userID, name)
+			}
+			if activeMatchingHistograms[idx] > 0 {
+				i.metrics.activeSeriesCustomTrackersPerUserNativeHistograms.WithLabelValues(userID, name).Set(float64(activeMatchingHistograms[idx]))
+			} else {
+				i.metrics.activeSeriesCustomTrackersPerUserNativeHistograms.DeleteLabelValues(userID, name)
+			}
+			if activeMatchingBuckets[idx] > 0 {
+				i.metrics.activeNativeHistogramBucketsCustomTrackersPerUser.WithLabelValues(userID, name).Set(float64(activeMatchingBuckets[idx]))
+			} else {
+				i.metrics.activeNativeHistogramBucketsCustomTrackersPerUser.DeleteLabelValues(userID, name)
+			}
+		}
+
+		// Remove the metrics belonging to old matchers now.
+		if matchersChanged {
+			newNames := userDB.activeSeries.CurrentMatcherNames()
+			newNamesSet := make(map[string]struct{}, len(newNames))
+			for _, name := range newNames {
+				newNamesSet[name] = struct{}{}
+			}
+			for _, oldName := range oldMatcherNames {
+				if _, exists := newNamesSet[oldName]; !exists {
+					i.metrics.activeSeriesCustomTrackersPerUser.DeleteLabelValues(userID, oldName)
+					i.metrics.activeSeriesCustomTrackersPerUserNativeHistograms.DeleteLabelValues(userID, oldName)
+					i.metrics.activeNativeHistogramBucketsCustomTrackersPerUser.DeleteLabelValues(userID, oldName)
 				}
 			}
 		}
