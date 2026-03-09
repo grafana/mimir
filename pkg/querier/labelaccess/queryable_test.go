@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -211,6 +212,37 @@ func TestLabelAccessChunkQuerier_Select(t *testing.T) {
 	})
 }
 
+func TestLabelAccessChunkSeriesSet_Next_ConsumesSkippedSeriesChunks(t *testing.T) {
+	var skippedIteratorCalls int
+	var allowedIteratorCalls int
+
+	set := &labelAccessChunkSeriesSet{
+		selectors: []promSelector{
+			{labels.MustNewMatcher(labels.MatchEqual, "allow", "true")},
+		},
+		upstream: &mockChunkSeriesSet{
+			series: []storage.ChunkSeries{
+				&trackingChunkSeries{
+					labels:        labels.FromStrings("allow", "false"),
+					iteratorCalls: &skippedIteratorCalls,
+				},
+				&trackingChunkSeries{
+					labels:        labels.FromStrings("allow", "true"),
+					iteratorCalls: &allowedIteratorCalls,
+				},
+			},
+		},
+		logger: log.NewNopLogger(),
+	}
+
+	require.True(t, set.Next())
+	require.NotNil(t, set.At())
+	_ = set.At().Iterator(nil)
+
+	assert.Equal(t, 1, skippedIteratorCalls)
+	assert.Equal(t, 1, allowedIteratorCalls)
+}
+
 func TestPromSelector_Matches(t *testing.T) {
 	t.Run("does not match", func(t *testing.T) {
 		matcher1, err := labels.NewMatcher(labels.MatchEqual, "method", "GET")
@@ -235,6 +267,70 @@ func TestPromSelector_Matches(t *testing.T) {
 			"path", "/",
 		)))
 	})
+}
+
+type trackingChunkSeries struct {
+	labels        labels.Labels
+	iteratorCalls *int
+}
+
+func (s *trackingChunkSeries) Labels() labels.Labels {
+	return s.labels
+}
+
+func (s *trackingChunkSeries) Iterator(chunks.Iterator) chunks.Iterator {
+	*s.iteratorCalls = *s.iteratorCalls + 1
+	return noopChunkIterator{}
+}
+
+func (s *trackingChunkSeries) ChunkCount() (int, error) {
+	return 0, nil
+}
+
+func (s *trackingChunkSeries) IteratorFactory() storage.ChunkIterable {
+	return s
+}
+
+type mockChunkSeriesSet struct {
+	series []storage.ChunkSeries
+	idx    int
+}
+
+func (s *mockChunkSeriesSet) Next() bool {
+	if s.idx >= len(s.series) {
+		return false
+	}
+	s.idx++
+	return true
+}
+
+func (s *mockChunkSeriesSet) At() storage.ChunkSeries {
+	if s.idx == 0 || s.idx > len(s.series) {
+		return nil
+	}
+	return s.series[s.idx-1]
+}
+
+func (s *mockChunkSeriesSet) Err() error {
+	return nil
+}
+
+func (s *mockChunkSeriesSet) Warnings() annotations.Annotations {
+	return nil
+}
+
+type noopChunkIterator struct{}
+
+func (noopChunkIterator) At() chunks.Meta {
+	return chunks.Meta{}
+}
+
+func (noopChunkIterator) Next() bool {
+	return false
+}
+
+func (noopChunkIterator) Err() error {
+	return nil
 }
 
 func TestLabelPoliciesToPromSelectors(t *testing.T) {
