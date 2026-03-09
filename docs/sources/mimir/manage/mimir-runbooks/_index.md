@@ -712,8 +712,9 @@ cortex_limits_overrides{namespace="<namespace>", limit_name="store_gateway_tenan
 **Step 4: Check store-gateway logs for sync errors** (only if the idle pod count is unexpected)
 
 ```logql
-{namespace="<namespace>", container="store-gateway"} |= "level=error"
+{namespace="<namespace>", container="store-gateway"}
   | logfmt
+  | level="error"
   | line_format "{{.ts}} {{.pod}} {{.msg}} {{.err}}"
 ```
 
