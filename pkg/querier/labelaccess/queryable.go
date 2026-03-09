@@ -354,9 +354,9 @@ func (l *labelAccessSeriesSet) Next() bool {
 
 				return true
 			}
-
-			level.Debug(l.logger).Log("msg", "label match not found on query", "selector", s, "series", lbls)
 		}
+
+		level.Debug(l.logger).Log("msg", "label match not found on query", "selectors", l.selectors, "series", lbls)
 
 		seriesToSkip = append(seriesToSkip, l.curSeries)
 	}
