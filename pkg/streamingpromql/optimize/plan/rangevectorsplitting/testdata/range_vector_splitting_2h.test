@@ -422,7 +422,7 @@ clear
 
 # ===== first_over_time / last_over_time =====
 
-load 30m
+load 1h
   fisrt_last_metric{env="prod"} 10 20 30 40 50 60 70
 
 eval instant at 6h first_over_time(fisrt_last_metric[5h])
