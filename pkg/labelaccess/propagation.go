@@ -49,6 +49,12 @@ func (l LabelPolicySet) GetLabelPolicySet() (LabelPolicySet, error) {
 
 // Hash iterates through the tenant map in ascending order and returns a base32-encoded
 // SHA1 hash of all tenants and their label policies.
+//
+// Delimiters used (none of these can appear in tenant IDs, label names, or label values):
+//
+//	\x00 separates matchers within a single policy (AND boundary)
+//	\x01 separates policies within a tenant (OR boundary)
+//	\x02 separates the tenant name from its policies
 func (l LabelPolicySet) Hash() string {
 	tenants := make([]string, 0, len(l))
 	for t := range l {
@@ -58,9 +64,16 @@ func (l LabelPolicySet) Hash() string {
 	sort.Strings(tenants)
 	for _, t := range tenants {
 		_, _ = h.Write([]byte(t))
-		for _, p := range l[t] {
-			for i := range p.Selector {
-				_, _ = h.Write([]byte(p.Selector[i].String()))
+		_, _ = h.Write([]byte{'\x02'}) // tenant/policies boundary
+		for i, p := range l[t] {
+			if i > 0 {
+				_, _ = h.Write([]byte{'\x01'}) // policy (OR) boundary
+			}
+			for j := range p.Selector {
+				if j > 0 {
+					_, _ = h.Write([]byte{'\x00'}) // matcher (AND) boundary
+				}
+				_, _ = h.Write([]byte(p.Selector[j].String()))
 			}
 		}
 	}
