@@ -1470,7 +1470,7 @@ func blocksFingerprint(blocks []*Block) string {
 // (which doubled peak memory), this chains block readers using NewLayeredReader.
 // Each block's parquetReader already has data loaded + inverted index populated
 // from Parquet (in denormalizeRows Phase 4).
-func (db *DB) mergeBlockMetadata(blocks []*Block) (seriesmetadata.Reader, error) {
+func (*DB) mergeBlockMetadata(blocks []*Block) (seriesmetadata.Reader, error) {
 	var readers []seriesmetadata.Reader
 	for _, b := range blocks {
 		mr, err := b.InternalSeriesMetadata()
