@@ -54,7 +54,7 @@ func (l LabelPolicySet) Hash() string {
 	for t := range l {
 		tenants = append(tenants, t)
 	}
-	h := sha1.New()
+	h := sha1.New() //nolint:gosec // SHA1 is used for non-cryptographic hashing
 	sort.Strings(tenants)
 	for _, t := range tenants {
 		_, _ = h.Write([]byte(t))
