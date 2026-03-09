@@ -437,10 +437,11 @@ func TestLabelAccessQuerier_LabelValues(t *testing.T) {
 				{Selector: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "class", "secret")}},
 			},
 		})
-		lbls, _, err := q.LabelValues(ctx, "env", &storage.LabelHints{})
-		require.NoError(t, err)
-		sort.Strings(lbls)
-		assert.Equal(t, []string{"dev", "prd"}, lbls)
+		for range 20 {
+			lbls, _, err := q.LabelValues(ctx, "env", &storage.LabelHints{})
+			require.NoError(t, err)
+			assert.Equal(t, []string{"dev", "prd"}, lbls)
+		}
 	})
 
 	t.Run("single selector and matcher", func(t *testing.T) {
