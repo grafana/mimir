@@ -398,7 +398,9 @@ keytool -importcert \
 
 printf '%%s' "$STORE_PASS" > "$SECRETS_DIR/keystore_creds"
 printf '%%s' "$STORE_PASS" > "$SECRETS_DIR/key_creds"
-printf '%%s' "$STORE_PASS" > "$SECRETS_DIR/truststore_creds"`,
+printf '%%s' "$STORE_PASS" > "$SECRETS_DIR/truststore_creds"
+
+chmod -R a+r "$SECRETS_DIR"`,
 		kafkaSSLStorePassword,
 		e2e.ContainerSharedDir, kafkaTLSDir,
 		e2e.ContainerSharedDir, kafkaTLSSecretsDir,
@@ -406,6 +408,7 @@ printf '%%s' "$STORE_PASS" > "$SECRETS_DIR/truststore_creds"`,
 
 	output, err := e2e.RunCommandAndGetOutput(
 		"docker", "run", "--rm",
+		"--user", "0:0",
 		"-v", fmt.Sprintf("%s:%s:z", sharedDir, e2e.ContainerSharedDir),
 		images.Kafka,
 		"/bin/bash", "-c", script,
