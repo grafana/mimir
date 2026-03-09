@@ -382,6 +382,12 @@ type Ingester struct {
 	// "now" for active series purging when ingest storage is enabled.
 	latestKafkaRecordTimestamp atomic.Int64
 
+	// lastKafkaActiveSeriesUpdate tracks the last Kafka time (unix milliseconds) at which
+	// updateActiveSeries was triggered inline during record consumption. This ensures
+	// active series are purged at approximately UpdatePeriod intervals in Kafka time,
+	// even when records are replayed faster than real-time.
+	lastKafkaActiveSeriesUpdate atomic.Int64
+
 	circuitBreaker  ingesterCircuitBreaker
 	reactiveLimiter *ingesterReactiveLimiter
 }
@@ -1544,11 +1550,25 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	appendedExemplarsStats.Inc(int64(stats.succeededExemplarsCount))
 
 	if ts, ok := ingest.RecordTimestampFromContext(ctx); ok {
+		tsMs := ts.UnixMilli()
 		for {
 			cur := i.latestKafkaRecordTimestamp.Load()
-			tsMs := ts.UnixMilli()
 			if tsMs <= cur || i.latestKafkaRecordTimestamp.CompareAndSwap(cur, tsMs) {
 				break
+			}
+		}
+
+		if i.cfg.ActiveSeriesMetrics.Enabled {
+			updatePeriodMs := i.cfg.ActiveSeriesMetrics.UpdatePeriod.Milliseconds()
+			for {
+				lastUpdate := i.lastKafkaActiveSeriesUpdate.Load()
+				if tsMs-lastUpdate < updatePeriodMs {
+					break
+				}
+				if i.lastKafkaActiveSeriesUpdate.CompareAndSwap(lastUpdate, tsMs) {
+					i.updateActiveSeries(ts)
+					break
+				}
 			}
 		}
 	}
