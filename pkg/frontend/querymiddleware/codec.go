@@ -314,15 +314,7 @@ func (Codec) MergeResponse(responses ...Response) (Response, error) {
 
 	// Merge the responses.
 	slices.SortFunc(promResponses, func(a, b *PrometheusResponse) int {
-		aTime := int64(-1)
-		if len(a.Data.Result) > 0 && len(a.Data.Result[0].Samples) > 0 {
-			aTime = a.Data.Result[0].Samples[0].TimestampMs
-		}
-		bTime := int64(-1)
-		if len(b.Data.Result) > 0 && len(b.Data.Result[0].Samples) > 0 {
-			bTime = b.Data.Result[0].Samples[0].TimestampMs
-		}
-		return cmp.Compare(aTime, bTime)
+		return cmp.Compare(firstSeriesTimestamp(a), firstSeriesTimestamp(b))
 	})
 
 	return &PrometheusResponseWithFinalizer{
@@ -1228,6 +1220,25 @@ func (Codec) negotiateContentType(acceptHeader string) (string, formatter) {
 	}
 
 	return "", nil
+}
+
+// firstSeriesTimestamp returns the earliest timestamp across the samples and histograms
+// of the first series in the response, or -1 if there are none.
+func firstSeriesTimestamp(r *PrometheusResponse) int64 {
+	if len(r.Data.Result) == 0 {
+		return -1
+	}
+	t := int64(-1)
+	s := r.Data.Result[0]
+	if len(s.Samples) > 0 {
+		t = s.Samples[0].TimestampMs
+	}
+	if len(s.Histograms) > 0 {
+		if ht := s.Histograms[0].TimestampMs; t == -1 || ht < t {
+			t = ht
+		}
+	}
+	return t
 }
 
 func matrixMerge(resps []*PrometheusResponse) []SampleStream {
