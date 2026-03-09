@@ -1084,9 +1084,10 @@ histogram_quantile(0.99, sum by (le, job) (
 **Step 5: Check scheduler and querier logs for errors**
 
 ```logql
-{namespace="<namespace>", container=~"query-scheduler|querier"} |= "level=error"
+{namespace="<namespace>", container="store-gateway"}
   | logfmt
-  | line_format "{{.ts}} {{.container}} {{.msg}} {{.err}}"
+  | level="error"
+  | line_format "{{.ts}} {{.pod}} {{.msg}} {{.err}}"
 ```
 
 _Look for: `"failed to forward request"`, `"context deadline exceeded"`, `"no healthy upstream"`, OOM-related messages._
