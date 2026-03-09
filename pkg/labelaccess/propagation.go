@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/base32"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"net/http"
@@ -56,15 +57,30 @@ func (l LabelPolicySet) Hash() string {
 	}
 	h := sha1.New() //nolint:gosec // SHA1 is used for non-cryptographic hashing
 	sort.Strings(tenants)
+	writeHashLen(h, len(tenants))
 	for _, t := range tenants {
-		_, _ = h.Write([]byte(t))
-		for _, p := range l[t] {
+		writeHashString(h, t)
+		policies := l[t]
+		writeHashLen(h, len(policies))
+		for _, p := range policies {
+			writeHashLen(h, len(p.Selector))
 			for i := range p.Selector {
-				_, _ = h.Write([]byte(p.Selector[i].String()))
+				writeHashString(h, p.Selector[i].String())
 			}
 		}
 	}
 	return base32.StdEncoding.EncodeToString(h.Sum(nil))
+}
+
+func writeHashString(h interface{ Write([]byte) (int, error) }, s string) {
+	writeHashLen(h, len(s))
+	_, _ = h.Write([]byte(s))
+}
+
+func writeHashLen(h interface{ Write([]byte) (int, error) }, n int) {
+	var b [binary.MaxVarintLen64]byte
+	l := binary.PutUvarint(b[:], uint64(n))
+	_, _ = h.Write(b[:l])
 }
 
 func policyToHeaderValue(instanceName string, policy *LabelPolicy) (string, error) {

@@ -421,6 +421,13 @@ func (l *labelAccessChunkQuerier) Select(
 		return l.next.Select(ctx, sortSeries, hints, matchers...)
 	}
 
+	// If there is only one LBAC policy attached, then we can skip selecting everything and then filtering.
+	// We can just add the LBAC selectors to matchers and select only what is required.
+	if len(selectors) == 1 {
+		matchers = l.mergeMatchers(matchers, selectors[0])
+		return l.next.Select(ctx, sortSeries, hints, matchers...)
+	}
+
 	return &labelAccessChunkSeriesSet{
 		selectors: selectors,
 		upstream:  l.next.Select(ctx, sortSeries, hints, matchers...),

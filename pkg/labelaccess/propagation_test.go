@@ -398,3 +398,24 @@ func TestHashCollisionResistance(t *testing.T) {
 
 	require.Equal(t, len(hashes), instanceCount)
 }
+
+func TestHashDistinguishesPolicyStructure(t *testing.T) {
+	setA := LabelPolicySet{
+		"x": {
+			{Selector: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "1")}},
+			{Selector: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "b", "2")}},
+		},
+	}
+	setB := LabelPolicySet{
+		"x": {
+			{
+				Selector: []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchEqual, "a", "1"),
+					labels.MustNewMatcher(labels.MatchEqual, "b", "2"),
+				},
+			},
+		},
+	}
+
+	require.NotEqual(t, setA.Hash(), setB.Hash())
+}
