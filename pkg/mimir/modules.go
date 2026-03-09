@@ -665,7 +665,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	t.Cfg.Worker.QuerySchedulerDiscovery = t.Cfg.QueryScheduler.ServiceDiscovery
 
 	if t.Cfg.LabelAccessControlEnabled {
-		t.QuerierQueryable = querier_labelaccess.WrapQueryable(t.QuerierQueryable, util_log.Logger)
+		t.QuerierQueryable = querier_labelaccess.WrapQueryable(t.QuerierQueryable, util_log.Logger, t.Registerer)
 		t.ExemplarQueryable = querier_labelaccess.WrapExemplarQueryable(t.ExemplarQueryable, util_log.Logger)
 	}
 

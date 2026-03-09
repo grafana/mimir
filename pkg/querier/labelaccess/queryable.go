@@ -11,6 +11,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -24,9 +26,39 @@ import (
 
 var tracer = otel.Tracer("pkg/querier/labelaccess")
 
+type lbacMetrics struct {
+	filteredSeriesTotal  prometheus.Counter
+	policiesAppliedTotal prometheus.Counter
+}
+
+func newLBACMetrics(reg prometheus.Registerer) lbacMetrics {
+	return lbacMetrics{
+		filteredSeriesTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_querier_lbac_filtered_series_total",
+			Help: "Total number of series filtered out by LBAC enforcement.",
+		}),
+		policiesAppliedTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_querier_lbac_policies_applied_total",
+			Help: "Total number of queries where LBAC enforcement was applied.",
+		}),
+	}
+}
+
+func (m lbacMetrics) incFilteredSeries() {
+	if m.filteredSeriesTotal != nil {
+		m.filteredSeriesTotal.Inc()
+	}
+}
+
+func (m lbacMetrics) incPoliciesApplied() {
+	if m.policiesAppliedTotal != nil {
+		m.policiesAppliedTotal.Inc()
+	}
+}
+
 // WrapQueryable wraps the provided queryable with a labelAccessQueryable.
-func WrapQueryable(next storage.SampleAndChunkQueryable, logger log.Logger) storage.SampleAndChunkQueryable {
-	return &labelAccessQueryable{next, logger}
+func WrapQueryable(next storage.SampleAndChunkQueryable, logger log.Logger, reg prometheus.Registerer) storage.SampleAndChunkQueryable {
+	return &labelAccessQueryable{next: next, logger: logger, metrics: newLBACMetrics(reg)}
 }
 
 // promSelector encompasses multiple Prometheus label Matchers, translated from shared label policy types.
@@ -67,8 +99,9 @@ func labelPoliciesToPromSelectors(policies []*shared.LabelPolicy) []promSelector
 }
 
 type labelAccessQueryable struct {
-	next   storage.SampleAndChunkQueryable
-	logger log.Logger
+	next    storage.SampleAndChunkQueryable
+	logger  log.Logger
+	metrics lbacMetrics
 }
 
 // Querier returns a new Querier on the storage. Fulfils the storage.Queryable interface.
@@ -81,6 +114,7 @@ func (l *labelAccessQueryable) Querier(mint int64, maxt int64) (storage.Querier,
 		labelQuerier: nextQuerier,
 		querier:      nextQuerier,
 		logger:       l.logger,
+		metrics:      l.metrics,
 	}, nil
 }
 
@@ -95,6 +129,7 @@ func (l *labelAccessQueryable) ChunkQuerier(mint, maxt int64) (storage.ChunkQuer
 		labelAccessQuerier: labelAccessQuerier{
 			labelQuerier: nextQuerier,
 			logger:       l.logger,
+			metrics:      l.metrics,
 		},
 		next: nextQuerier,
 	}, nil
@@ -104,6 +139,7 @@ type labelAccessQuerier struct {
 	querier      storage.Querier
 	labelQuerier storage.LabelQuerier // Separate field to allow reuse in labelAccessChunkQuerier
 	logger       log.Logger
+	metrics      lbacMetrics
 }
 
 // LabelValues returns all potential values for a label name.
@@ -259,6 +295,8 @@ func (l *labelAccessQuerier) Select(
 		return l.querier.Select(ctx, sortSeries, hints, matchers...)
 	}
 
+	l.metrics.incPoliciesApplied()
+
 	// If there is only one LBAC policy attached, then we can skip selecting everything and then filtering.
 	// We can just add the LBAC selectors to matchers and select only what is required.
 	if len(selectors) == 1 {
@@ -271,6 +309,7 @@ func (l *labelAccessQuerier) Select(
 		selectors: selectors,
 		upstream:  l.querier.Select(ctx, sortSeries, hints, matchers...),
 		logger:    l.logger,
+		metrics:   l.metrics,
 	}
 }
 
@@ -322,13 +361,11 @@ type labelAccessSeriesSet struct {
 	upstream  storage.SeriesSet
 	logger    log.Logger
 	curSeries storage.Series
+	metrics   lbacMetrics
 }
 
 // Next iterates through the upstream series set and returns true for the next series that matches
 // one of the policy selectors.
-// TODO: Logging to debug this feature
-// TODO: Add metrics for this feature
-// TODO: Low hanging fruit to optimize this feature to pre-process/buffer upcoming series that match a series selector
 func (l *labelAccessSeriesSet) Next() bool {
 	var seriesToSkip []storage.Series
 
@@ -358,6 +395,7 @@ func (l *labelAccessSeriesSet) Next() bool {
 			level.Debug(l.logger).Log("msg", "label match not found on query", "selector", s, "series", lbls)
 		}
 
+		l.metrics.incFilteredSeries()
 		seriesToSkip = append(seriesToSkip, l.curSeries)
 	}
 	l.curSeries = nil
@@ -421,10 +459,13 @@ func (l *labelAccessChunkQuerier) Select(
 		return l.next.Select(ctx, sortSeries, hints, matchers...)
 	}
 
+	l.metrics.incPoliciesApplied()
+
 	return &labelAccessChunkSeriesSet{
 		selectors: selectors,
 		upstream:  l.next.Select(ctx, sortSeries, hints, matchers...),
 		logger:    l.logger,
+		metrics:   l.metrics,
 	}
 }
 
@@ -433,13 +474,11 @@ type labelAccessChunkSeriesSet struct {
 	upstream  storage.ChunkSeriesSet
 	curSeries storage.ChunkSeries
 	logger    log.Logger
+	metrics   lbacMetrics
 }
 
 // Next iterates through the upstream series set and returns true for the next series that matches
 // one of the policy selectors.
-// TODO: Logging to debug this feature
-// TODO: Add metrics for this feature
-// TODO: Low hanging fruit to optimize this feature to pre-process/buffer upcoming series that match a series selector
 func (l *labelAccessChunkSeriesSet) Next() bool {
 	var seriesToSkip []storage.ChunkSeries
 
@@ -458,6 +497,7 @@ func (l *labelAccessChunkSeriesSet) Next() bool {
 			}
 		}
 
+		l.metrics.incFilteredSeries()
 		seriesToSkip = append(seriesToSkip, l.curSeries)
 	}
 	l.curSeries = nil
