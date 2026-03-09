@@ -337,14 +337,14 @@ func (c minMaxOverTimeCodec) Unmarshal(bytes []byte) ([]MinMaxOverTimeIntermedia
 var MinMaxOverTimeCodec = minMaxOverTimeCodec{}
 
 var SplitFirstOverTime = NewSplitOperatorFactory[FirstLastOverTimeIntermediate](
-	firstLastOverTimeGenerate,
+	firstOverTimeGenerate,
 	firstOverTimeCombine,
 	FirstLastOverTimeCodec,
 	functions.FirstOverTime,
 	functions.FUNCTION_FIRST_OVER_TIME,
 )
 
-func firstLastOverTimeGenerate(step *types.RangeVectorStepData, _ types.EmitAnnotationFunc, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (FirstLastOverTimeIntermediate, error) {
+func firstOverTimeGenerate(step *types.RangeVectorStepData, _ types.EmitAnnotationFunc, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (FirstLastOverTimeIntermediate, error) {
 	f, hasFloat, h, err := functions.FirstOverTime.StepFunc(step, nil, types.QueryTimeRange{}, emitAnnotationNoop, memoryConsumptionTracker)
 	if err != nil {
 		return FirstLastOverTimeIntermediate{}, err
@@ -377,12 +377,31 @@ func firstOverTimeCombine(pieces []FirstLastOverTimeIntermediate, _ int64, _ int
 }
 
 var SplitLastOverTime = NewSplitOperatorFactory[FirstLastOverTimeIntermediate](
-	firstLastOverTimeGenerate,
+	lastOverTimeGenerate,
 	lastOverTimeCombine,
 	FirstLastOverTimeCodec,
 	functions.LastOverTime,
 	functions.FUNCTION_LAST_OVER_TIME,
 )
+
+func lastOverTimeGenerate(step *types.RangeVectorStepData, _ types.EmitAnnotationFunc, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (FirstLastOverTimeIntermediate, error) {
+	f, hasFloat, h, err := functions.LastOverTime.StepFunc(step, nil, types.QueryTimeRange{}, emitAnnotationNoop, memoryConsumptionTracker)
+	if err != nil {
+		return FirstLastOverTimeIntermediate{}, err
+	}
+
+	result := FirstLastOverTimeIntermediate{
+		F:        f,
+		HasFloat: hasFloat,
+	}
+
+	if !hasFloat && h != nil {
+		histProto := mimirpb.FromFloatHistogramToHistogramProto(0, h)
+		result.H = &histProto
+	}
+
+	return result, nil
+}
 
 func lastOverTimeCombine(pieces []FirstLastOverTimeIntermediate, _ int64, _ int64, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 	for i := len(pieces) - 1; i >= 0; i-- {
