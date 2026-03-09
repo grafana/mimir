@@ -46,6 +46,9 @@ Experimental configuration and flags are subject to change.
 
 The following features are currently experimental:
 
+- Auth
+  - Label-Based Access Control (LBAC) for metric read queries
+    - `-auth.label-access-control-enabled`
 - Cost attribution
   - Configure labels for cost attribution
     - `-validation.cost-attribution-labels-structured`
