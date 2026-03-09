@@ -8,9 +8,8 @@ import (
 	"net/http"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
-	"github.com/grafana/mimir/pkg/util/propagation"
-
 	shared "github.com/grafana/mimir/pkg/labelaccess"
+	"github.com/grafana/mimir/pkg/util/propagation"
 )
 
 type contextKey int
