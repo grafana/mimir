@@ -47,6 +47,7 @@ blocks_storage:
     block_ranges_period: [ 2h ]
     retention_period: 3h
     otel_persist_resource_attributes: true
+    otel_resource_attr_index_enabled: true
 
   bucket_store:
     sync_dir: /data/mimir-tsdb-querier
