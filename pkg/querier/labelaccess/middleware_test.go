@@ -10,11 +10,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 
 	shared "github.com/grafana/mimir/pkg/labelaccess"
-	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/propagation"
 )
 
@@ -65,7 +65,7 @@ func Test_labelAccessMiddleware_Wrap(t *testing.T) {
 	for name, data := range tests {
 		t.Run(name, func(t *testing.T) {
 			l := &labelAccessMiddleware{
-				logger: util_log.Logger,
+				logger: log.NewNopLogger(),
 			}
 			handler := l.Wrap(mockHandler{})
 			request, err := http.NewRequestWithContext(context.Background(), "GET", data.url, http.NoBody)
