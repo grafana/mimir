@@ -183,8 +183,8 @@ github.com/aws/aws-sdk-go-v2/service/kafka v1.48.0 h1:CKRWqysU9INeoi0nTI9gDzDAJk
 github.com/aws/aws-sdk-go-v2/service/kafka v1.48.0/go.mod h1:tWnHS64fg5ydLHivFlCAtEh/1iMNzr56QsH3F+UTwD4=
 github.com/aws/aws-sdk-go-v2/service/lightsail v1.50.11 h1:VM5e5M39zRSs+aT0O9SoxHjUXqXxhbw3Yi0FdMQWPIc=
 github.com/aws/aws-sdk-go-v2/service/lightsail v1.50.11/go.mod h1:0jvzYPIQGCpnY/dmdaotTk2JH4QuBlnW0oeyrcGLWJ4=
-github.com/aws/aws-sdk-go-v2/service/s3 v1.96.3 h1:+d0SsTvxtIJt4tSJ6wr+jrxEMDa6XeupjRv8H7Qitkk=
-github.com/aws/aws-sdk-go-v2/service/s3 v1.96.3/go.mod h1:ROUNFvFWPwBlOu687WJNQ9cPvd2ccpFrnCiA1YGz50o=
+github.com/aws/aws-sdk-go-v2/service/s3 v1.96.4 h1:4ExZyubQ6LQQVuF2Qp9OsfEvsTdAWh5Gfwf6PgIdLdk=
+github.com/aws/aws-sdk-go-v2/service/s3 v1.96.4/go.mod h1:NF3JcMGOiARAss1ld3WGORCw71+4ExDD2cbbdKS5PpA=
 github.com/aws/aws-sdk-go-v2/service/signin v1.0.5 h1:VrhDvQib/i0lxvr3zqlUwLwJP4fpmpyD9wYG1vfSu+Y=
 github.com/aws/aws-sdk-go-v2/service/signin v1.0.5/go.mod h1:k029+U8SY30/3/ras4G/Fnv/b88N4mAfliNn08Dem4M=
 github.com/aws/aws-sdk-go-v2/service/sso v1.30.10 h1:+VTRawC4iVY58pS/lzpo0lnoa/SYNGF4/B/3/U5ro8Y=

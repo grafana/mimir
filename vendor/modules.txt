@@ -269,7 +269,7 @@ github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding
 # github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.19
 ## explicit; go 1.24
 github.com/aws/aws-sdk-go-v2/service/internal/presigned-url
-# github.com/aws/aws-sdk-go-v2/service/s3 v1.96.3
+# github.com/aws/aws-sdk-go-v2/service/s3 v1.96.4
 ## explicit; go 1.24
 github.com/aws/aws-sdk-go-v2/service/s3/types
 # github.com/aws/aws-sdk-go-v2/service/signin v1.0.5
