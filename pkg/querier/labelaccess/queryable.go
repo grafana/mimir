@@ -461,6 +461,13 @@ func (l *labelAccessChunkQuerier) Select(
 
 	l.metrics.incPoliciesApplied()
 
+	// If there is only one LBAC policy attached, merge the LBAC matchers into the upstream call
+	// so that storage-layer index filtering can be leveraged, avoiding unnecessary I/O.
+	if len(selectors) == 1 {
+		matchers = l.mergeMatchers(matchers, selectors[0])
+		return l.next.Select(ctx, sortSeries, hints, matchers...)
+	}
+
 	return &labelAccessChunkSeriesSet{
 		selectors: selectors,
 		upstream:  l.next.Select(ctx, sortSeries, hints, matchers...),

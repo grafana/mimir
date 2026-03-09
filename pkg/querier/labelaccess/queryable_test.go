@@ -213,6 +213,48 @@ func TestLabelAccessChunkQuerier_Select(t *testing.T) {
 		ss := q.Select(ctx, false, nil)
 		require.Nil(t, ss, "the Select call should be delegated to the upstream querier")
 	})
+
+	t.Run("single label selector merges LBAC matchers into upstream call", func(t *testing.T) {
+		const tenantID = "test"
+
+		selectMatcher1 := labels.MustNewMatcher(labels.MatchEqual, "env", "prd")
+		selectMatcher2 := labels.MustNewMatcher(labels.MatchEqual, "user", tenantID)
+		lbacMatcher1 := labels.MustNewMatcher(labels.MatchNotEqual, "class", "secret")
+		lbacMatcher2 := labels.MustNewMatcher(labels.MatchEqual, "user", tenantID) // duplicate of selectMatcher2
+
+		policySet := shared.LabelPolicySet{
+			tenantID: {
+				{Selector: []*labels.Matcher{lbacMatcher1, lbacMatcher2}},
+			},
+		}
+		ctx := user.InjectOrgID(shared.InjectLabelMatchersContext(context.Background(), policySet), tenantID)
+		next := &MockQueryable{
+			TB: t,
+			ExpectedChunkQuerierCalls: []QuerierCall{
+				{
+					ExpectedMinT: 0,
+					ExpectedMaxT: 1,
+				},
+			},
+			ExpectedChunkSelectCalls: []ChunkSelectCall{
+				{
+					ArgSortSeries: false,
+					ArgMatchers:   []*labels.Matcher{selectMatcher1, selectMatcher2, lbacMatcher1},
+					ReturnValue: func() storage.ChunkSeriesSet {
+						return nil
+					},
+				},
+			},
+		}
+		queryable := &labelAccessQueryable{
+			logger: log.NewNopLogger(),
+			next:   next,
+		}
+		q, err := queryable.ChunkQuerier(0, 1)
+		require.NoError(t, err)
+		ss := q.Select(ctx, false, nil, selectMatcher1, selectMatcher2)
+		require.Nil(t, ss, "the Select call should be delegated to the upstream querier with merged matchers")
+	})
 }
 
 func TestLabelAccessChunkSeriesSet_Next_ConsumesSkippedSeriesChunks(t *testing.T) {
