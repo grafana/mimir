@@ -70,6 +70,56 @@ blocked_queries:
 			expectedBlocked: true,
 		},
 		{
+			name: "blocks query with non-canonical pattern (extra whitespace and trailing comma)",
+			limitsYAML: `
+blocked_queries:
+  - pattern: 'up{ job="test" , pod="test" , }'
+    regex: false
+`,
+			query:           `up{job="test",pod="test"}`, // Query is canonical (no extra whitespace/comma)
+			expectedBlocked: true,
+		},
+		{
+			name: "blocks query with non-canonical pattern (function with extra whitespace)",
+			limitsYAML: `
+blocked_queries:
+  - pattern: 'rate( metric_counter[ 5m ] )'
+    regex: false
+`,
+			query:           `rate(metric_counter[5m])`, // Query is canonical (no extra whitespace)
+			expectedBlocked: true,
+		},
+		{
+			name: "blocks query with non-canonical pattern (aggregation with extra whitespace)",
+			limitsYAML: `
+blocked_queries:
+  - pattern: 'sum( rate(metric_counter[5m]) )'
+    regex: false
+`,
+			query:           `sum(rate(metric_counter[5m]))`, // Query is canonical (no extra whitespace)
+			expectedBlocked: true,
+		},
+		{
+			name: "blocks query with non-canonical pattern (aggregation with grouping and extra whitespace)",
+			limitsYAML: `
+blocked_queries:
+  - pattern: 'sum( rate(metric_counter[5m]) ) by ( job , pod )'
+    regex: false
+`,
+			query:           `sum(rate(metric_counter[5m])) by(job,pod)`, // Query is canonical (no extra whitespace)
+			expectedBlocked: true,
+		},
+		{
+			name: "does not block aggregation when by() clause labels in different order (not canonicalized)",
+			limitsYAML: `
+blocked_queries:
+  - pattern: 'sum(rate(metric_counter[5m])) by(job,pod)'
+    regex: false
+`,
+			query:           `sum(rate(metric_counter[5m])) by(pod,job)`, // Different label order in by()
+			expectedBlocked: false,
+		},
+		{
 			name: "not blocks single line query non regex pattern",
 			limitsYAML: `
 blocked_queries:
@@ -128,6 +178,24 @@ blocked_queries:
 				rate(metric_counter[15m])
 			`,
 			expectedBlocked: true,
+		},
+		{
+			name: "does not block regex pattern with out-of-order labels (regex not canonicalized)",
+			limitsYAML: `
+blocked_queries:
+  - pattern: 'up\{pod="test",job="test"\}'
+    regex: true
+`,
+			query: `up{job="test",pod="test"}`, // Canonical query has different label order
+		},
+		{
+			name: "does not block regex pattern with extra whitespace (regex not canonicalized)",
+			limitsYAML: `
+blocked_queries:
+  - pattern: 'rate\( metric_counter\[ 5m \] \)'
+    regex: true
+`,
+			query: `rate(metric_counter[5m])`, // Canonical query has no extra whitespace
 		},
 		{
 			name: "invalid regex pattern",
