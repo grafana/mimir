@@ -12,10 +12,9 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 
+	shared "github.com/grafana/mimir/pkg/labelaccess"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
-
-	shared "github.com/grafana/mimir/pkg/labelaccess"
 )
 
 // WrapExemplarQueryable wraps the provided queryable with a labelAccessExemplarQueryable. This
