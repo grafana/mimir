@@ -8,10 +8,13 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -435,8 +438,8 @@ func (q *mockQuerier) Close() error {
 	panic("unimplemented")
 }
 
-func (q *mockQuerier) Select(context.Context, bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
-	panic("unimplemented")
+func (q *mockQuerier) Select(_ context.Context, _ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
+	return storage.EmptySeriesSet()
 }
 
 func TestMockQuerier_LabelValues(t *testing.T) {
@@ -708,4 +711,81 @@ func TestLabelAccessQuerier_LabelNames(t *testing.T) {
 		assert.Empty(t, names)
 		assert.Error(t, err)
 	})
+}
+
+func TestLBACMetrics_FilteredSeries(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	metrics := newLBACMetrics(reg)
+
+	// Test via labelAccessChunkSeriesSet, which has existing mock infrastructure.
+	set := &labelAccessChunkSeriesSet{
+		selectors: []promSelector{
+			{labels.MustNewMatcher(labels.MatchEqual, "allow", "true")},
+		},
+		upstream: &mockChunkSeriesSet{
+			series: []storage.ChunkSeries{
+				&trackingChunkSeries{labels: labels.FromStrings("allow", "false")},
+				&trackingChunkSeries{labels: labels.FromStrings("allow", "false")},
+				&trackingChunkSeries{labels: labels.FromStrings("allow", "true")},
+			},
+		},
+		logger:  log.NewNopLogger(),
+		metrics: metrics,
+	}
+
+	for set.Next() {
+	}
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_querier_lbac_filtered_series_total Total number of series filtered out by LBAC enforcement.
+		# TYPE cortex_querier_lbac_filtered_series_total counter
+		cortex_querier_lbac_filtered_series_total 2
+		# HELP cortex_querier_lbac_policies_applied_total Total number of queries where LBAC enforcement was applied.
+		# TYPE cortex_querier_lbac_policies_applied_total counter
+		cortex_querier_lbac_policies_applied_total 0
+	`), "cortex_querier_lbac_filtered_series_total", "cortex_querier_lbac_policies_applied_total"))
+}
+
+func TestLBACMetrics_PoliciesApplied(t *testing.T) {
+	const tenantID = "test"
+	reg := prometheus.NewPedanticRegistry()
+	metrics := newLBACMetrics(reg)
+
+	upstreamSeries := []labels.Labels{
+		labels.FromStrings("env", "dev", "class", "open"),
+		labels.FromStrings("env", "prd", "class", "secret"),
+	}
+	upstream := &mockQuerier{series: upstreamSeries}
+
+	q := &labelAccessQuerier{
+		querier:      upstream,
+		labelQuerier: upstream,
+		logger:       log.NewNopLogger(),
+		metrics:      metrics,
+	}
+
+	// Single-selector LBAC: policiesAppliedTotal should be incremented.
+	ctx := user.InjectOrgID(context.Background(), tenantID)
+	ctx = shared.InjectLabelMatchersContext(ctx, shared.LabelPolicySet{
+		tenantID: {{Selector: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "class", "secret")}}},
+	})
+	q.Select(ctx, false, nil)
+
+	// Multi-selector LBAC: policiesAppliedTotal should be incremented again.
+	ctx = shared.InjectLabelMatchersContext(ctx, shared.LabelPolicySet{
+		tenantID: {
+			{Selector: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "env", "dev")}},
+			{Selector: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "class", "secret")}},
+		},
+	})
+	q.Select(ctx, false, nil)
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_querier_lbac_filtered_series_total Total number of series filtered out by LBAC enforcement.
+		# TYPE cortex_querier_lbac_filtered_series_total counter
+		cortex_querier_lbac_filtered_series_total 0
+		# HELP cortex_querier_lbac_policies_applied_total Total number of queries where LBAC enforcement was applied.
+		# TYPE cortex_querier_lbac_policies_applied_total counter
+		cortex_querier_lbac_policies_applied_total 2
+	`), "cortex_querier_lbac_filtered_series_total", "cortex_querier_lbac_policies_applied_total"))
 }
