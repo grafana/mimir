@@ -850,7 +850,7 @@ github.com/grafana/dskit/test
 github.com/grafana/dskit/timeutil
 github.com/grafana/dskit/tracing
 github.com/grafana/dskit/user
-# github.com/grafana/e2e v0.1.2-0.20260213092851-e558763e8376
+# github.com/grafana/e2e v0.1.2-0.20260305091629-d3fde5f84288
 ## explicit; go 1.25.5
 github.com/grafana/e2e
 github.com/grafana/e2e/cache
