@@ -495,6 +495,11 @@ overrides_exporter:
 # runs, ensuring inactive cost attribution entries are purged.
 # CLI flag: -cost-attribution.cleanup-interval
 [cost_attribution_cleanup_interval: <duration> | default = 3m]
+
+# (experimental) If enabled, Mimir enforces label-based access control on metric
+# read queries using the X-Prom-Label-Policy HTTP header.
+# CLI flag: -auth.label-access-control-enabled
+[label_access_control_enabled: <boolean> | default = false]
 ```
 
 ### common
