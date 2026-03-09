@@ -78,9 +78,6 @@ const (
 
 	// MinCompactorPartialBlockDeletionDelay is the minimum partial blocks deletion delay that can be configured in Mimir.
 	MinCompactorPartialBlockDeletionDelay = 4 * time.Hour
-
-	// TenantMetadataKeySource is the key of the source attribute in tenant.Metadata.
-	TenantMetadataKeySource = "source"
 )
 
 var (
@@ -803,11 +800,11 @@ func (o *Overrides) LabelValuesMaxCardinalityLabelNamesPerRequest(userID string)
 
 // IngestionBurstSize returns the burst size for ingestion rate.
 func (o *Overrides) IngestionBurstSize(userID string) int {
-	return o.getOverridesForUser(userID).IngestionBurstSize
+	return o.getOverridesForUserWithMetadata(userID).IngestionBurstSize
 }
 
 func (o *Overrides) IngestionBurstFactor(userID string) float64 {
-	burstFactor := o.getOverridesForUser(userID).IngestionBurstFactor
+	burstFactor := o.getOverridesForUserWithMetadata(userID).IngestionBurstFactor
 	if burstFactor < 1 {
 		return 0
 	}
@@ -1534,7 +1531,7 @@ func (o *Overrides) Prom2RangeCompat(userID string) bool {
 }
 
 func (o *Overrides) OTelMetricSuffixesEnabled(tenantID string) bool {
-	return o.getOverridesForUser(tenantID).OTelMetricSuffixesEnabled
+	return o.getOverridesForUserWithMetadata(tenantID).OTelMetricSuffixesEnabled
 }
 
 func (o *Overrides) OTelCreatedTimestampZeroIngestionEnabled(tenantID string) bool {
@@ -1666,28 +1663,63 @@ func (o *Overrides) getOverridesForUser(userID string) *Limits {
 }
 
 func (o *Overrides) getOverridesForUserWithMetadata(userID string) *Limits {
-	if o.tenantLimits != nil {
-		tenantID, md, err := tenant.ParseWithMetadata(userID)
-		if err != nil {
-			return o.getOverridesForUser(userID)
-		}
-		// Attempt the <tenant>:<source>=<x>:<a>=<b> limit.
-		if limits := o.tenantLimits.ByUserID(userID); limits != nil {
-			return limits
-		}
-		// Attempt the <tenant>:source=<value> limit.
-		if source, ok := md.Get(TenantMetadataKeySource); ok {
-			baseMd := tenant.NewMetadata()
-			baseMd.Set(TenantMetadataKeySource, source)
-			if limits := o.tenantLimits.ByUserID(baseMd.WithTenant(tenantID)); limits != nil {
-				return limits
-			}
-		}
-		if limits := o.tenantLimits.ByUserID(tenantID); limits != nil {
-			return limits
-		}
+	limits := o.getOverridesForUser(userID)
+	if o.tenantLimits == nil {
+		return limits
 	}
-	return o.getOverridesForUser(userID)
+	tenantID, tenantMd, err := tenant.ParseWithMetadata(userID)
+	if err != nil {
+		return limits
+	}
+	if tenantID == userID {
+		return limits
+	}
+
+	// The provided userID has metadata. Iterate KV pairs and merge limits.
+	dst := copyLimits(o.getOverridesForUser(tenantID))
+	tmpMd := tenant.NewMetadata()
+	for key, val := range tenantMd.Iter() {
+		tmpMd.Set(key, val)
+		full := tmpMd.WithTenant(tenantID)
+		suffix := full[len(tenantID):]
+		dst = mergeLimits(dst, o.tenantLimits.ByUserID(suffix))
+		dst = mergeLimits(dst, o.tenantLimits.ByUserID(full))
+		tmpMd.Remove(key)
+	}
+	dst = mergeLimits(dst, o.tenantLimits.ByUserID(userID))
+	return dst
+}
+
+// mergeLimits merges overlay into dst in place. If dst is nil, a copy of
+// overlay is returned. Only non-zero fields from overlay are applied.
+func mergeLimits(dst, overlay *Limits) *Limits {
+	if overlay == nil {
+		return dst
+	}
+	if dst == nil {
+		return copyLimits(overlay)
+	}
+	if overlay.MaxActiveSeriesPerUser > 0 {
+		dst.MaxActiveSeriesPerUser = overlay.MaxActiveSeriesPerUser
+	}
+	if overlay.IngestionRate > 0 {
+		dst.IngestionRate = overlay.IngestionRate
+	}
+	if overlay.IngestionBurstSize > 0 {
+		dst.IngestionBurstSize = overlay.IngestionBurstSize
+	}
+	if overlay.IngestionBurstFactor > 0 {
+		dst.IngestionBurstFactor = overlay.IngestionBurstFactor
+	}
+	if overlay.OTelMetricSuffixesEnabled {
+		dst.OTelMetricSuffixesEnabled = true
+	}
+	return dst
+}
+
+func copyLimits(l *Limits) *Limits {
+	cp := *l
+	return &cp
 }
 
 // AllTrueBooleansPerTenant returns true only if limit func is true for all given tenants

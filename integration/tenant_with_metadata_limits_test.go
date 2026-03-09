@@ -17,8 +17,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/integration/e2emimir"
-	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+const metadataKeySource = "source"
 
 // TestTenantWithMetadataLimits tests that subtenants can have their own series limits
 // that are independent of the main tenant's limits. This enables subtenants to
@@ -54,7 +55,7 @@ func TestTenantWithMetadataLimits(t *testing.T) {
 	defer s.Close()
 
 	md := tenant.NewMetadata()
-	md.Set(validation.TenantMetadataKeySource, testSource)
+	md.Set(metadataKeySource, testSource)
 	sourcePlaceholderKey := md.WithTenant("")
 
 	md.Set(testRunKey, knownTestID)
@@ -171,7 +172,7 @@ overrides:
 	})
 
 	t.Run("unknown source uses default tenant limit", func(t *testing.T) {
-		md.Set(validation.TenantMetadataKeySource, "unknown-src")
+		md.Set(metadataKeySource, "unknown-src")
 		md.Set(testRunKey, knownTestID)
 		orgID := md.WithTenant(mainTenantID)
 		t.Logf("using tenant ID %q", orgID)
@@ -183,7 +184,7 @@ overrides:
 	})
 
 	t.Run("unknown test ID uses default test-run limit", func(t *testing.T) {
-		md.Set(validation.TenantMetadataKeySource, testSource)
+		md.Set(metadataKeySource, testSource)
 		md.Set(testRunKey, "unknown-789")
 		orgID := md.WithTenant(mainTenantID)
 		t.Logf("using tenant ID %q", orgID)
@@ -195,7 +196,7 @@ overrides:
 	})
 
 	t.Run("known test ID uses exact specified limit", func(t *testing.T) {
-		md.Set(validation.TenantMetadataKeySource, testSource)
+		md.Set(metadataKeySource, testSource)
 		md.Set(testRunKey, knownTestID)
 		orgID := md.WithTenant(mainTenantID)
 		t.Logf("using tenant ID %q", orgID)
