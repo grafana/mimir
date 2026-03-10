@@ -10,7 +10,7 @@ help:
 # WARNING: do not commit to a repository!
 -include Makefile.local
 
-.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks check-mixin-mimirtool-rules build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-getting-started mixin-screenshots
+.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc check-reference-help push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks check-mixin-mimirtool-rules build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-getting-started mixin-screenshots
 .DEFAULT_GOAL := all
 
 # Version number
@@ -117,7 +117,7 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 		--build-arg=goproxyValue=$(GOPROXY_VALUE) \
 		--build-arg=USE_BINARY_SUFFIX=true \
 		--build-arg=BINARY_SUFFIX=_race \
-		--build-arg=BASEIMG="gcr.io/distroless/base-nossl-debian12" \
+		--build-arg=BASEIMG="gcr.io/distroless/base-nossl-debian12@sha256:c8430558b9a8688298c060ddc5e6f2993c8a092dee8a6b7058139ac8472e8ad0" \
 		-t $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG_RACE) $(@D)/
 	@echo
 	@echo Go binaries were built using GOOS=$(GOOS) and GOARCH=$(GOARCH)
@@ -130,7 +130,6 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 # Other options are documented in https://docs.docker.com/engine/reference/commandline/buildx_build/#output.
 # CI workflow uses PUSH_MULTIARCH_TARGET="type=oci,dest=file.oci" to store images locally for next steps in the pipeline.
 PUSH_MULTIARCH_TARGET ?= type=registry
-PUSH_MULTIARCH_TARGET_CONTINUOUS_TEST ?= type=registry
 
 # This target compiles mimir for linux/amd64 and linux/arm64 and then builds and pushes a multiarch image to the target repository.
 # We don't do separate building of single-platform and multiplatform images here (as we do for push-multiarch-build-image), as
@@ -225,7 +224,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr14254-96964b1601
+LATEST_BUILD_IMAGE_TAG ?= pr14623-d117630282
 
 # TTY is parameterized to allow CI and scripts to run builds,
 # as it currently disallows TTY devices.
@@ -449,6 +448,9 @@ lint: check-makefiles check-merge-conflicts
 		-path ./integration \
 		-include '*.go'
 
+	# Ensure gRPC buffers aren't released too early
+	go run ./tools/lint-buffer-holder
+
 format: ## Run gofmt and goimports.
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec gofmt -w -s {} \;
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec goimports -w -local github.com/grafana/mimir {} \;
@@ -611,6 +613,18 @@ check-helm-tests: build-helm-tests helm-conftest-test
 
 endif
 
+%.pb.go.expdiff: ## Regenerates expected diff files from the current content of .pb.go files.
+%.pb.go.expdiff: %.pb.go
+	@echo "Regenerating $@"
+	$(eval PBGO_FILE := $(patsubst %.pb.go.expdiff,%.pb.go,$@))
+	$(eval PROTO_FILE := $(patsubst %.pb.go.expdiff,%.proto,$@))
+	@cp $(PBGO_FILE) $(PBGO_FILE).bak
+	@touch $(PROTO_FILE)
+	@$(MAKE) -B $(PBGO_FILE)
+	@git diff --no-index $(PBGO_FILE).bak $(PBGO_FILE) | sed 's/.pb.go.bak/.pb.go/g' > $@ || true
+	@rm $(PBGO_FILE).bak
+	@./tools/apply-expected-diffs.sh $(PBGO_FILE)
+
 .PHONY: check-makefiles
 check-makefiles: ## Check the makefiles format.
 check-makefiles: format-makefiles
@@ -643,6 +657,15 @@ check-doc: ## Check the documentation files are up to date.
 check-doc: doc
 	@find . -name "*.md" | xargs git diff --exit-code -- \
 	|| (echo "Please update generated documentation by running 'make doc' and committing the changes" && false)
+
+check-reference-help: ## Check the reference help documentation is up to date.
+check-reference-help: reference-help
+	@git diff --exit-code -- \
+		cmd/mimir/help.txt.tmpl \
+		cmd/mimir/help-all.txt.tmpl \
+		cmd/mimir/config-descriptor.json \
+		operations/mimir/mimir-flags-defaults.json \
+	|| (echo "Please update generated reference documentation by running 'make reference-help' and committing the changes" && false)
 
 # Tool is developed in the grafana/technical-documentation repository:
 # https://github.com/grafana/technical-documentation/tree/main/tools/doc-validator
@@ -727,6 +750,7 @@ check-helm-jsonnet-diff: operations/helm/charts/mimir-distributed/charts build-j
 	@./operations/compare-helm-with-jsonnet/compare-helm-with-jsonnet.sh
 
 build-jsonnet-tests: ## Build the jsonnet tests.
+	@rm -f ./operations/mimir-tests/*-generated.yaml
 	@./operations/mimir-tests/build.sh
 
 jsonnet-conftest-quick-test: ## Does not rebuild the yaml manifests, use the target jsonnet-conftest-test for that
