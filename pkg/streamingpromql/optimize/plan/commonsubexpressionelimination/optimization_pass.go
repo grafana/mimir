@@ -524,11 +524,9 @@ func (e *OptimizationPass) findCommonSubexpressionLength(group SharedSelectorGro
 		firstSelector, _ := firstPath.NodeAtOffsetFromLeaf(0)
 
 		if group.hasSubsetSelectors() {
-			var parent planning.Node
-
-			if length < len(firstPath)-2 {
-				parent, _ = firstPath.NodeAtOffsetFromLeaf(length + 1)
-			}
+			// The call below is safe to do without a bounds check: we explicitly exclude the root node above,
+			// so we'll always be able to get the parent of the current node.
+			parent, _ := firstPath.NodeAtOffsetFromLeaf(length + 1)
 
 			if safe, err := IsSafeToApplyFilteringAfter(firstNode, parent, group, delayedNameRemovalEnabled); err != nil {
 				return -1, err
