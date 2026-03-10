@@ -14,6 +14,33 @@ import (
 	"github.com/grafana/mimir/pkg/storage/ingest"
 )
 
+func TestCompartmentTokens_WriteRequestIndexes(t *testing.T) {
+	ct := &compartmentTokens{
+		indexes: []int{2, 5, 8, 11},
+		tokens:  []uint32{100, 200, 300, 400},
+	}
+
+	t.Run("remaps token-level indexes to WriteRequest indexes", func(t *testing.T) {
+		result := ct.writeRequestIndexes([]int{0, 2})
+		assert.Equal(t, []int{2, 8}, result)
+	})
+
+	t.Run("single index", func(t *testing.T) {
+		result := ct.writeRequestIndexes([]int{3})
+		assert.Equal(t, []int{11}, result)
+	})
+
+	t.Run("all indexes", func(t *testing.T) {
+		result := ct.writeRequestIndexes([]int{0, 1, 2, 3})
+		assert.Equal(t, []int{2, 5, 8, 11}, result)
+	})
+
+	t.Run("empty indexes", func(t *testing.T) {
+		result := ct.writeRequestIndexes([]int{})
+		assert.Empty(t, result)
+	})
+}
+
 func TestGetCompartmentTokensForWriteRequest(t *testing.T) {
 	userID := "user-1"
 
