@@ -427,18 +427,16 @@ func TestSplitAndCacheMiddleware_ResultsCache_NativeHistogramPartialCacheHit(t *
 
 	rc := mw.Wrap(HandlerFunc(func(_ context.Context, req MetricsQueryRequest) (Response, error) {
 		downstreamCalls++
-		switch req.GetStart() {
-		case Tmid: // first query or the missing [T0, Tmid] sub-request of the second query
-			if req.GetEnd() == T1 {
-				// first query: [Tmid, T1]
-				return mockPrometheusResponseWithSamplesAndHistograms(seriesLabels, nil, []mimirpb.FloatHistogramPair{
-					{TimestampMs: Tmid, Histogram: histAtTmid},
-					{TimestampMs: T1, Histogram: histAtT1},
-				}), nil
-			}
-			// second query sub-request: [Tmid, Tmid] edge – shouldn't happen in this setup
-			return NewEmptyPrometheusResponse(), nil
-		case T0:
+		start := req.GetStart()
+		end := req.GetEnd()
+		switch {
+		case start == Tmid && end == T1:
+			// first query: [Tmid, T1]
+			return mockPrometheusResponseWithSamplesAndHistograms(seriesLabels, nil, []mimirpb.FloatHistogramPair{
+				{TimestampMs: Tmid, Histogram: histAtTmid},
+				{TimestampMs: T1, Histogram: histAtT1},
+			}), nil
+		case start == T0 && end == Tmid:
 			// second query sub-request: [T0, Tmid]
 			return mockPrometheusResponseWithSamplesAndHistograms(seriesLabels, nil, []mimirpb.FloatHistogramPair{
 				{TimestampMs: T0, Histogram: histAtT0},
@@ -446,7 +444,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_NativeHistogramPartialCacheHit(t *
 			}), nil
 		default:
 			t.Errorf("unexpected downstream request start=%d end=%d", req.GetStart(), req.GetEnd())
-			return NewEmptyPrometheusResponse(), nil
+			return nil, fmt.Errorf("unexpected request start=%d end=%d", req.GetStart(), req.GetEnd())
 		}
 	}))
 
