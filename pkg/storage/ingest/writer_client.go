@@ -22,7 +22,7 @@ import (
 //
 // The input prometheus.Registerer must be wrapped with a prefix (the names of metrics
 // registered don't have a prefix).
-func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, logger log.Logger, reg prometheus.Registerer) (*kgo.Client, error) {
+func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, defaultTopic string, logger log.Logger, reg prometheus.Registerer) (*kgo.Client, error) {
 	// Do not export the client ID, because we use it to specify options to the backend.
 	metrics := kprom.NewMetrics(
 		"", // No prefix. We expect the input prometheus.Registered to be wrapped with a prefix.
@@ -43,7 +43,6 @@ func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, 
 		kgo.WithHooks(NewKafkaClientExtendedMetrics(reg)),
 
 		kgo.RequiredAcks(kgo.AllISRAcks()),
-		kgo.DefaultProduceTopic(kafkaCfg.Topic),
 
 		// We set the partition field in each record.
 		kgo.RecordPartitioner(kgo.ManualPartitioner()),
@@ -88,6 +87,10 @@ func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, 
 		kgo.MaxBufferedRecords(math.MaxInt), // Use a high value to set it as unlimited, because the client doesn't support "0 as unlimited".
 		kgo.MaxBufferedBytes(0),
 	)
+
+	if defaultTopic != "" {
+		opts = append(opts, kgo.DefaultProduceTopic(defaultTopic))
+	}
 
 	return kgo.NewClient(opts...)
 }

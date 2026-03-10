@@ -5501,6 +5501,22 @@ migration:
   # CLI flag: -ingest-storage.migration.ingest-storage-max-wait-time
   [ingest_storage_max_wait_time: <duration> | default = 0s]
 
+compartments:
+  # Whether compartments are enabled. When enabled, series are sharded across
+  # multiple Kafka topics based on metric name.
+  # CLI flag: -ingest-storage.compartments.enabled
+  [enabled: <boolean> | default = false]
+
+  # The number of read compartments. Each compartment uses a dedicated Kafka
+  # topic.
+  # CLI flag: -ingest-storage.compartments.num-compartments
+  [num_compartments: <int> | default = 0]
+
+  # The topic name template with a "<compartment-id>" placeholder that gets
+  # replaced with the compartment ID (e.g. mimir-read-comp-<compartment-id>).
+  # CLI flag: -ingest-storage.compartments.topic-format
+  [topic_format: <string> | default = ""]
+
 # (advanced) Number of tenants to concurrently fsync WAL and WBL before Kafka
 # offsets are committed, must be at least 1.
 # CLI flag: -ingest-storage.write-logs-fsync-before-kafka-commit-concurrency

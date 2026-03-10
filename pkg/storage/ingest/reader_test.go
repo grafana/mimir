@@ -3186,7 +3186,7 @@ func newKafkaProduceClient(t *testing.T, addrs string, opts ...writerTestCfgOpt)
 		opt(&cfg)
 	}
 
-	writeClient, err := NewKafkaWriterClient(cfg, defaultMaxInflightProduceRequests, testingLogger.WithT(t), prometheus.NewPedanticRegistry())
+	writeClient, err := NewKafkaWriterClient(cfg, defaultMaxInflightProduceRequests, cfg.Topic, testingLogger.WithT(t), prometheus.NewPedanticRegistry())
 
 	require.NoError(t, err)
 	t.Cleanup(writeClient.Close)

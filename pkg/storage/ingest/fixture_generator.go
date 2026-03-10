@@ -371,7 +371,7 @@ func (g *FixtureGenerator) ProduceWriteRequests(ctx context.Context, kafkaAddres
 	cfg.Topic = topic
 	cfg.DisableLinger = true
 
-	client, err := NewKafkaWriterClient(cfg, 20, log.NewNopLogger(), nil)
+	client, err := NewKafkaWriterClient(cfg, 20, cfg.Topic, log.NewNopLogger(), nil)
 	if err != nil {
 		return 0, fmt.Errorf("failed to create Kafka client: %w", err)
 	}
@@ -397,7 +397,7 @@ func (g *FixtureGenerator) ProduceWriteRequests(ctx context.Context, kafkaAddres
 		}
 
 		// Serialize the WriteRequest to Kafka records.
-		records, _, err := serializer.ToRecords(partitionID, tenantID, req, math.MaxInt)
+		records, _, err := serializer.ToRecords(topic, partitionID, tenantID, req, math.MaxInt)
 		if err != nil {
 			return numRecordsProduced, fmt.Errorf("failed to serialize WriteRequest: %w", err)
 		}
