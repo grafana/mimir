@@ -17,7 +17,7 @@ const (
 
 var (
 	ErrCompartmentsInvalidNumCompartments = errors.New("compartments num_compartments must be greater than 0 when compartments are enabled")
-	ErrCompartmentsInvalidTopicFormat     = fmt.Errorf("compartments topic_format must contain the %q placeholder when compartments are enabled", compartmentIDPlaceholder)
+	ErrCompartmentsEmptyTopicFormat       = errors.New("compartments topic_format must not be empty when compartments are enabled")
 )
 
 // CompartmentsConfig holds the configuration for read compartments.
@@ -27,6 +27,7 @@ type CompartmentsConfig struct {
 	TopicFormat     string `yaml:"topic_format"`
 }
 
+// RegisterFlagsWithPrefix registers the flags for CompartmentsConfig with the given prefix.
 func (cfg *CompartmentsConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, "Whether compartments are enabled. When enabled, series are sharded across multiple Kafka topics based on metric name.")
 	f.IntVar(&cfg.NumCompartments, prefix+"num-compartments", 0, "The number of read compartments. Each compartment uses a dedicated Kafka topic.")
@@ -41,16 +42,15 @@ func (cfg *CompartmentsConfig) Validate() error {
 	if cfg.NumCompartments <= 0 {
 		return ErrCompartmentsInvalidNumCompartments
 	}
-	if !strings.Contains(cfg.TopicFormat, compartmentIDPlaceholder) {
-		return ErrCompartmentsInvalidTopicFormat
+	if cfg.TopicFormat == "" {
+		return ErrCompartmentsEmptyTopicFormat
 	}
 	return nil
 }
 
 // CompartmentRouter assigns series to compartments based on a hash of the user ID and metric name.
 type CompartmentRouter struct {
-	numCompartments int
-	topics          []string
+	topics []string
 }
 
 // NewCompartmentRouter creates a new CompartmentRouter that pre-computes topic names for each compartment.
@@ -60,8 +60,7 @@ func NewCompartmentRouter(cfg CompartmentsConfig) *CompartmentRouter {
 		topics[i] = strings.ReplaceAll(cfg.TopicFormat, compartmentIDPlaceholder, fmt.Sprintf("%d", i))
 	}
 	return &CompartmentRouter{
-		numCompartments: cfg.NumCompartments,
-		topics:          topics,
+		topics: topics,
 	}
 }
 
@@ -70,7 +69,7 @@ func NewCompartmentRouter(cfg CompartmentsConfig) *CompartmentRouter {
 // and taking modulo numCompartments.
 func (r *CompartmentRouter) CompartmentForMetric(userID, metricName string) int {
 	hash := mimirpb.ShardByMetricName(userID, metricName)
-	return int(hash % uint32(r.numCompartments))
+	return int(hash % uint32(len(r.topics)))
 }
 
 // TopicForMetric returns the topic for a given tenant's metric name.
@@ -80,7 +79,7 @@ func (r *CompartmentRouter) TopicForMetric(userID, metricName string) string {
 
 // NumCompartments returns the number of compartments.
 func (r *CompartmentRouter) NumCompartments() int {
-	return r.numCompartments
+	return len(r.topics)
 }
 
 // Topic returns the topic for the given compartment index.

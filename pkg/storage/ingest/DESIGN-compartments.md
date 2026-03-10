@@ -56,7 +56,7 @@ The `CompartmentsConfig` controls compartment behaviour:
 
 The `CompartmentRouter` assigns series to compartments:
 
-1. It hashes `userID + metricName` using `mimirpb.ShardByMetricName()` (FNV-32a based).
+1. It hashes `userID + metricName` using `mimirpb.ShardByMetricName()` (FNV-32 based).
 2. It takes `hash % num_compartments` to determine the compartment index.
 3. It returns the pre-computed topic name for that compartment index.
 
@@ -66,7 +66,7 @@ Compartment assignment is per-tenant: the same metric name from different tenant
 
 The distributor wires compartment routing into the write path using two-level sharding:
 
-1. **Compartment level**: Each series and metadata item is assigned to a compartment based on `hash(userID + metricName) % numCompartments`. This groups items into `compartmentTokens` structs, each carrying a topic name, item indexes, and partition-ring tokens.
+1. **Compartment level**: Each series and metadata item is assigned to a compartment based on `mimirpb.ShardByMetricName(userID, metricName) % numCompartments`. This groups items into `compartmentTokens` structs, each carrying a topic name, item indexes, and partition-ring tokens.
 
 2. **Partition level**: For each compartment, `ring.DoBatchWithOptions` distributes items across partitions using the standard labels-hash sharding. Each compartment's DoBatch runs concurrently via `errgroup`.
 

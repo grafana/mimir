@@ -51,13 +51,13 @@ func TestCompartmentsConfig_Validate(t *testing.T) {
 			wantErr: ErrCompartmentsInvalidNumCompartments,
 		},
 		{
-			name: "enabled with missing placeholder in topic_format",
+			name: "enabled with topic_format without placeholder is valid",
 			cfg: CompartmentsConfig{
 				Enabled:         true,
 				NumCompartments: 3,
 				TopicFormat:     "mimir-read-comp",
 			},
-			wantErr: ErrCompartmentsInvalidTopicFormat,
+			wantErr: nil,
 		},
 		{
 			name: "enabled with empty topic_format",
@@ -66,7 +66,7 @@ func TestCompartmentsConfig_Validate(t *testing.T) {
 				NumCompartments: 3,
 				TopicFormat:     "",
 			},
-			wantErr: ErrCompartmentsInvalidTopicFormat,
+			wantErr: ErrCompartmentsEmptyTopicFormat,
 		},
 	}
 

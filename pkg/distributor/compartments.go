@@ -61,6 +61,10 @@ func getCompartmentTokensForWriteRequest(
 	}
 
 	for i, ts := range req.Timeseries {
+		// UnsafeMetricNameFromLabelAdapters returns a reference into the pooled request buffer.
+		// This is safe because CompartmentForMetric only hashes the string and does not retain it.
+		// If __name__ is missing, metricName is empty and the series gets a deterministic compartment
+		// based on userID alone.
 		metricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ts.Labels)
 		compartmentIdx := router.CompartmentForMetric(userID, string(metricName))
 		token := tokenForLabels(userID, ts.Labels)
