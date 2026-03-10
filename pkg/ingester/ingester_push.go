@@ -426,6 +426,8 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		minAppendTime,
 		req.Source == mimirpb.OTLP,
 		db.db,
+		req.ResourceTable,
+		req.ScopeTable,
 	); pushSamplesToAppenderErr != nil {
 		if err := app.Rollback(); err != nil {
 			level.Warn(i.logger).Log("msg", "failed to rollback appender on error", "user", userID, "err", err)
@@ -562,6 +564,8 @@ func (i *Ingester) pushSamplesToAppender(
 	minAppendTime int64,
 	isOTLP bool,
 	tsdbDB *tsdb.DB,
+	resourceTable []mimirpb.ResourceAttributes,
+	scopeTable []mimirpb.ScopeAttributes,
 ) error {
 	// Fetch limits once per push request both to avoid processing half the request differently.
 	var (
@@ -576,6 +580,48 @@ func (i *Ingester) pushSamplesToAppender(
 	var builder labels.ScratchBuilder
 	var nonCopiedLabels labels.Labels
 	var entrySortBuf []mimirpb.AttributeEntry
+
+	// Pre-convert resource table entries: hash once, build context once.
+	type resourceTableEntry struct {
+		contentHash uint64
+		ctx         *storage.ResourceContext // nil if empty identifying attrs
+	}
+	var resourceCache []resourceTableEntry
+	if len(resourceTable) > 0 {
+		resourceCache = make([]resourceTableEntry, len(resourceTable))
+		for ri := range resourceTable {
+			ra := &resourceTable[ri]
+			if len(ra.Identifying) > 0 {
+				contentHash, buf := hashResourceAttributesRaw(ra, entrySortBuf)
+				entrySortBuf = buf
+				resourceCache[ri] = resourceTableEntry{
+					contentHash: contentHash,
+					ctx: &storage.ResourceContext{
+						Identifying: entriesToMap(ra.Identifying),
+						Descriptive: entriesToMap(ra.Descriptive),
+						Entities:    convertResourceEntities(ra.Entities),
+					},
+				}
+			}
+		}
+	}
+
+	// Pre-convert scope table entries: build context once.
+	var scopeCache []*storage.ScopeContext
+	if len(scopeTable) > 0 {
+		scopeCache = make([]*storage.ScopeContext, len(scopeTable))
+		for si := range scopeTable {
+			sa := &scopeTable[si]
+			if sa.Name != "" || sa.Version != "" || sa.SchemaURL != "" || len(sa.Attrs) > 0 {
+				scopeCache[si] = &storage.ScopeContext{
+					Name:      strings.Clone(sa.Name),
+					Version:   strings.Clone(sa.Version),
+					SchemaURL: strings.Clone(sa.SchemaURL),
+					Attrs:     entriesToMap(sa.Attrs),
+				}
+			}
+		}
+	}
 
 	// idx is used to decrease active series count in case of error for cost attribution.
 	idx := i.getTSDB(userID).Head().MustIndex()
@@ -649,38 +695,25 @@ func (i *Ingester) pushSamplesToAppender(
 
 		ingestCreatedTimestamp := ts.CreatedTimestamp > 0
 
-		// Build resource context once per time series.
-		// Hash-first: compute content hash from raw entries (zero-alloc), then check
-		// if the TSDB already has this hash for this series. On the >99% hot path
-		// where content hasn't changed, skip entriesToMap entirely.
+		// Resolve resource context from pre-built cache.
 		var resourceCtx *storage.ResourceContext
-		if ts.ResourceAttributes != nil && len(ts.ResourceAttributes.Identifying) > 0 {
-			metricName := nonCopiedLabels.Get(model.MetricNameLabel)
-			if metricName != "target_info" {
-				contentHash, buf := hashResourceAttributesRaw(ts.ResourceAttributes, entrySortBuf)
-				entrySortBuf = buf
-				labelsHash := labels.StableHash(nonCopiedLabels)
-				if !tsdbDB.ResourceHasContentHash(labelsHash, contentHash) {
-					resourceCtx = &storage.ResourceContext{
-						Identifying: entriesToMap(ts.ResourceAttributes.Identifying),
-						Descriptive: entriesToMap(ts.ResourceAttributes.Descriptive),
-						Entities:    convertResourceEntities(ts.ResourceAttributes.Entities),
+		if ts.ResourceRef > 0 && int(ts.ResourceRef-1) < len(resourceCache) {
+			entry := &resourceCache[ts.ResourceRef-1]
+			if entry.ctx != nil {
+				metricName := nonCopiedLabels.Get(model.MetricNameLabel)
+				if metricName != "target_info" {
+					labelsHash := labels.StableHash(nonCopiedLabels)
+					if !tsdbDB.ResourceHasContentHash(labelsHash, entry.contentHash) {
+						resourceCtx = entry.ctx
 					}
 				}
 			}
 		}
 
-		// Build scope context once per time series.
+		// Resolve scope context from pre-built cache.
 		var scopeCtx *storage.ScopeContext
-		if ts.ScopeAttributes != nil {
-			if ts.ScopeAttributes.Name != "" || ts.ScopeAttributes.Version != "" || ts.ScopeAttributes.SchemaURL != "" || len(ts.ScopeAttributes.Attrs) > 0 {
-				scopeCtx = &storage.ScopeContext{
-					Name:      strings.Clone(ts.ScopeAttributes.Name),
-					Version:   strings.Clone(ts.ScopeAttributes.Version),
-					SchemaURL: strings.Clone(ts.ScopeAttributes.SchemaURL),
-					Attrs:     entriesToMap(ts.ScopeAttributes.Attrs),
-				}
-			}
+		if ts.ScopeRef > 0 && int(ts.ScopeRef-1) < len(scopeCache) {
+			scopeCtx = scopeCache[ts.ScopeRef-1]
 		}
 
 		// Pre-validate exemplars for attachment to the first successful sample.

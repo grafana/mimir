@@ -562,7 +562,7 @@ func TestMimirAppender(t *testing.T) {
 						}
 					}
 
-					series, metadata := appender.GetResult()
+					series, metadata, _, _ := appender.GetResult()
 					series = testutil.RemoveEmptyObjectFromSeries(series)
 					require.Equal(t, expectedTimeseries, series)
 					require.Equal(t, tc.expectMetadata, metadata)
@@ -673,26 +673,27 @@ func TestMimirAppender_ResourceContext(t *testing.T) {
 
 			tc.appends(t, appender, tc.resource)
 
-			series, _ := appender.GetResult()
+			series, _, resourceTable, _ := appender.GetResult()
 			require.Len(t, series, 1)
 
 			if tc.expectResourceAttrs == nil {
-				require.Nil(t, series[0].ResourceAttributes)
+				require.Equal(t, int32(0), series[0].ResourceRef)
 			} else {
-				require.NotNil(t, series[0].ResourceAttributes)
+				require.Greater(t, series[0].ResourceRef, int32(0))
+				resAttrs := resourceTable[series[0].ResourceRef-1]
 				// Check identifying attrs
-				require.Equal(t, len(tc.expectResourceAttrs.Identifying), len(series[0].ResourceAttributes.Identifying))
+				require.Equal(t, len(tc.expectResourceAttrs.Identifying), len(resAttrs.Identifying))
 				for i, expected := range tc.expectResourceAttrs.Identifying {
-					require.Equal(t, expected.Key, series[0].ResourceAttributes.Identifying[i].Key)
-					require.Equal(t, expected.Value, series[0].ResourceAttributes.Identifying[i].Value)
+					require.Equal(t, expected.Key, resAttrs.Identifying[i].Key)
+					require.Equal(t, expected.Value, resAttrs.Identifying[i].Value)
 				}
 				// Check descriptive attrs
-				require.Equal(t, len(tc.expectResourceAttrs.Descriptive), len(series[0].ResourceAttributes.Descriptive))
+				require.Equal(t, len(tc.expectResourceAttrs.Descriptive), len(resAttrs.Descriptive))
 				for i, expected := range tc.expectResourceAttrs.Descriptive {
-					require.Equal(t, expected.Key, series[0].ResourceAttributes.Descriptive[i].Key)
-					require.Equal(t, expected.Value, series[0].ResourceAttributes.Descriptive[i].Value)
+					require.Equal(t, expected.Key, resAttrs.Descriptive[i].Key)
+					require.Equal(t, expected.Value, resAttrs.Descriptive[i].Value)
 				}
-				require.Equal(t, tc.expectResourceAttrs.Timestamp, series[0].ResourceAttributes.Timestamp)
+				require.Equal(t, tc.expectResourceAttrs.Timestamp, resAttrs.Timestamp)
 			}
 		})
 	}
@@ -769,25 +770,74 @@ func TestMimirAppender_ScopeContext(t *testing.T) {
 				})
 			require.NoError(t, err)
 
-			series, _ := appender.GetResult()
+			series, _, _, scopeTable := appender.GetResult()
 			require.Len(t, series, 1)
 
 			if tc.expectScopeAttrs == nil {
-				require.Nil(t, series[0].ScopeAttributes)
+				require.Equal(t, int32(0), series[0].ScopeRef)
 			} else {
-				require.NotNil(t, series[0].ScopeAttributes)
-				require.Equal(t, tc.expectScopeAttrs.Name, series[0].ScopeAttributes.Name)
-				require.Equal(t, tc.expectScopeAttrs.Version, series[0].ScopeAttributes.Version)
-				require.Equal(t, tc.expectScopeAttrs.SchemaURL, series[0].ScopeAttributes.SchemaURL)
-				require.Equal(t, tc.expectScopeAttrs.Timestamp, series[0].ScopeAttributes.Timestamp)
-				require.Equal(t, len(tc.expectScopeAttrs.Attrs), len(series[0].ScopeAttributes.Attrs))
+				require.Greater(t, series[0].ScopeRef, int32(0))
+				scopeAttrs := scopeTable[series[0].ScopeRef-1]
+				require.Equal(t, tc.expectScopeAttrs.Name, scopeAttrs.Name)
+				require.Equal(t, tc.expectScopeAttrs.Version, scopeAttrs.Version)
+				require.Equal(t, tc.expectScopeAttrs.SchemaURL, scopeAttrs.SchemaURL)
+				require.Equal(t, tc.expectScopeAttrs.Timestamp, scopeAttrs.Timestamp)
+				require.Equal(t, len(tc.expectScopeAttrs.Attrs), len(scopeAttrs.Attrs))
 				for i, expected := range tc.expectScopeAttrs.Attrs {
-					require.Equal(t, expected.Key, series[0].ScopeAttributes.Attrs[i].Key)
-					require.Equal(t, expected.Value, series[0].ScopeAttributes.Attrs[i].Value)
+					require.Equal(t, expected.Key, scopeAttrs.Attrs[i].Key)
+					require.Equal(t, expected.Value, scopeAttrs.Attrs[i].Value)
 				}
 			}
 		})
 	}
+}
+
+func TestMimirAppender_TableTimestampUpdatedToMax(t *testing.T) {
+	resource := &storage.ResourceContext{
+		Identifying: map[string]string{"service.name": "myservice"},
+	}
+	scope := &storage.ScopeContext{
+		Name:    "github.com/example/payment",
+		Version: "1.2.0",
+	}
+
+	appender := NewCombinedAppender()
+	appender.PersistResourceAttributes = true
+
+	// Append first series at t=1000.
+	_, err := appender.Append(0,
+		labels.FromStrings(model.MetricNameLabel, "metric_a", "a", "1"),
+		0, 1000, 1.0, nil, nil,
+		storage.AppendV2Options{
+			Metadata:         metadata.Metadata{Type: model.MetricTypeGauge},
+			MetricFamilyName: "metric_a",
+			Resource:         resource,
+			Scope:            scope,
+		})
+	require.NoError(t, err)
+
+	// Append second series at t=2000 with the same resource/scope pointers.
+	_, err = appender.Append(0,
+		labels.FromStrings(model.MetricNameLabel, "metric_b", "a", "1"),
+		0, 2000, 2.0, nil, nil,
+		storage.AppendV2Options{
+			Metadata:         metadata.Metadata{Type: model.MetricTypeGauge},
+			MetricFamilyName: "metric_b",
+			Resource:         resource,
+			Scope:            scope,
+		})
+	require.NoError(t, err)
+
+	series, _, resourceTable, scopeTable := appender.GetResult()
+	require.Len(t, series, 2)
+
+	// Both series should reference the same table entries.
+	require.Equal(t, series[0].ResourceRef, series[1].ResourceRef)
+	require.Equal(t, series[0].ScopeRef, series[1].ScopeRef)
+
+	// The table entry timestamps should be the max (2000).
+	require.Equal(t, int64(2000), resourceTable[series[0].ResourceRef-1].Timestamp)
+	require.Equal(t, int64(2000), scopeTable[series[0].ScopeRef-1].Timestamp)
 }
 
 // adapted from pkg/distributor/distributor_test.go

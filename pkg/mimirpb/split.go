@@ -73,6 +73,8 @@ func SplitWriteRequestByMaxMarshalSizeRW2(req *WriteRequest, reqSize, maxSize in
 			skipNormalizeMetadataMetricName: req.skipNormalizeMetadataMetricName,
 			skipDeduplicateMetadata:         req.skipDeduplicateMetadata,
 			TimeseriesRW2:                   make([]TimeSeriesRW2, 0, estimatedTimeseriesPerPartialReq),
+			ResourceTable:                   req.ResourceTable,
+			ScopeTable:                      req.ScopeTable,
 		}
 
 		return r, r.Size()
@@ -137,6 +139,8 @@ func splitTimeseriesByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) []
 			SkipLabelValidation:             req.SkipLabelValidation,
 			skipNormalizeMetadataMetricName: req.skipNormalizeMetadataMetricName,
 			skipDeduplicateMetadata:         req.skipDeduplicateMetadata,
+			ResourceTable:                   req.ResourceTable,
+			ScopeTable:                      req.ScopeTable,
 		}
 
 		return r, r.Size()
@@ -204,6 +208,8 @@ func splitMetadataByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) []*W
 			skipUnmarshalingExemplars:       req.skipUnmarshalingExemplars,
 			skipNormalizeMetadataMetricName: req.skipNormalizeMetadataMetricName,
 			skipDeduplicateMetadata:         req.skipDeduplicateMetadata,
+			ResourceTable:                   req.ResourceTable,
+			ScopeTable:                      req.ScopeTable,
 		}
 		return r, r.Size()
 	}

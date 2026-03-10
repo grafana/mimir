@@ -147,25 +147,31 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 
 		metricName := nonCopiedLabels.Get(model.MetricNameLabel)
 
-		// Build resource context once per time series.
+		// Resolve resource context from dedup table.
 		var resourceCtx *storage.ResourceContext
-		if ts.ResourceAttributes != nil && len(ts.ResourceAttributes.Identifying) > 0 && metricName != "target_info" {
-			resourceCtx = &storage.ResourceContext{
-				Identifying: entriesToMap(ts.ResourceAttributes.Identifying),
-				Descriptive: entriesToMap(ts.ResourceAttributes.Descriptive),
-				Entities:    convertResourceEntities(ts.ResourceAttributes.Entities),
+		if ts.ResourceRef > 0 && int(ts.ResourceRef-1) < len(req.ResourceTable) {
+			ra := &req.ResourceTable[ts.ResourceRef-1]
+			if len(ra.Identifying) > 0 && metricName != "target_info" {
+				resourceCtx = &storage.ResourceContext{
+					Identifying: entriesToMap(ra.Identifying),
+					Descriptive: entriesToMap(ra.Descriptive),
+					Entities:    convertResourceEntities(ra.Entities),
+				}
 			}
 		}
 
-		// Build scope context once per time series.
+		// Resolve scope context from dedup table.
 		var scopeCtx *storage.ScopeContext
-		if ts.ScopeAttributes != nil && metricName != "target_info" {
-			if ts.ScopeAttributes.Name != "" || ts.ScopeAttributes.Version != "" || ts.ScopeAttributes.SchemaURL != "" || len(ts.ScopeAttributes.Attrs) > 0 {
-				scopeCtx = &storage.ScopeContext{
-					Name:      strings.Clone(ts.ScopeAttributes.Name),
-					Version:   strings.Clone(ts.ScopeAttributes.Version),
-					SchemaURL: strings.Clone(ts.ScopeAttributes.SchemaURL),
-					Attrs:     entriesToMap(ts.ScopeAttributes.Attrs),
+		if ts.ScopeRef > 0 && int(ts.ScopeRef-1) < len(req.ScopeTable) {
+			sa := &req.ScopeTable[ts.ScopeRef-1]
+			if metricName != "target_info" {
+				if sa.Name != "" || sa.Version != "" || sa.SchemaURL != "" || len(sa.Attrs) > 0 {
+					scopeCtx = &storage.ScopeContext{
+						Name:      strings.Clone(sa.Name),
+						Version:   strings.Clone(sa.Version),
+						SchemaURL: strings.Clone(sa.SchemaURL),
+						Attrs:     entriesToMap(sa.Attrs),
+					}
 				}
 			}
 		}

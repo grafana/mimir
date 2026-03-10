@@ -426,7 +426,7 @@ func newOTLPParser(
 			preserveMultipleUnderscores:       limits.OTelLabelNamePreserveMultipleUnderscores(tenantID),
 			persistResourceAttributes:         persistResourceAttributes,
 		}
-		metrics, metadata, metricsDropped, err := otelMetricsToSeriesAndMetadata(
+		metrics, metadata, resourceTable, scopeTable, metricsDropped, err := otelMetricsToSeriesAndMetadata(
 			ctx,
 			otlpConverter,
 			otlpReq.Metrics(),
@@ -464,6 +464,8 @@ func newOTLPParser(
 		req.Source = mimirpb.OTLP
 		req.Timeseries = metrics
 		req.Metadata = metadata
+		req.ResourceTable = resourceTable
+		req.ScopeTable = scopeTable
 		return uncompressedBodySize, nil
 	}
 }
@@ -684,7 +686,7 @@ func otelMetricsToSeriesAndMetadata(
 	md pmetric.Metrics,
 	opts conversionOptions,
 	logger log.Logger,
-) ([]mimirpb.PreallocTimeseries, []*mimirpb.MetricMetadata, int, error) {
+) ([]mimirpb.PreallocTimeseries, []*mimirpb.MetricMetadata, []mimirpb.ResourceAttributes, []mimirpb.ScopeAttributes, int, error) {
 	settings := prometheusremotewrite.Settings{
 		AddMetricSuffixes:                    opts.addSuffixes,
 		PromoteResourceAttributes:            prometheusremotewrite.NewPromoteResourceAttributes(config.OTLPConfig{PromoteResourceAttributes: opts.promoteResourceAttributes}),
@@ -698,13 +700,13 @@ func otelMetricsToSeriesAndMetadata(
 	}
 	converter.appender.EnableCreatedTimestampZeroIngestion = opts.enableCTZeroIngestion
 	converter.appender.PersistResourceAttributes = opts.persistResourceAttributes
-	mimirTS, metadata := converter.ToSeriesAndMetadata(ctx, md, settings, logger)
+	mimirTS, metadata, resourceTable, scopeTable := converter.ToSeriesAndMetadata(ctx, md, settings, logger)
 
 	dropped := converter.DroppedTotal()
 	if len(mimirTS) == 0 && dropped > 0 {
-		return nil, nil, dropped, converter.Err()
+		return nil, nil, nil, nil, dropped, converter.Err()
 	}
-	return mimirTS, metadata, dropped, nil
+	return mimirTS, metadata, resourceTable, scopeTable, dropped, nil
 }
 
 type otlpMimirConverter struct {
@@ -721,15 +723,15 @@ func newOTLPMimirConverter(appender *otlpappender.MimirAppender) *otlpMimirConve
 	}
 }
 
-func (c *otlpMimirConverter) ToSeriesAndMetadata(ctx context.Context, md pmetric.Metrics, settings prometheusremotewrite.Settings, logger log.Logger) ([]mimirpb.PreallocTimeseries, []*mimirpb.MetricMetadata) {
+func (c *otlpMimirConverter) ToSeriesAndMetadata(ctx context.Context, md pmetric.Metrics, settings prometheusremotewrite.Settings, logger log.Logger) ([]mimirpb.PreallocTimeseries, []*mimirpb.MetricMetadata, []mimirpb.ResourceAttributes, []mimirpb.ScopeAttributes) {
 	if c.err != nil {
-		return nil, nil
+		return nil, nil, nil, nil
 	}
 
 	_, c.err = c.converter.FromMetrics(ctx, md, settings)
 
-	timeseries, metadata := c.appender.GetResult()
-	return timeseries, metadata
+	timeseries, metadata, resourceTable, scopeTable := c.appender.GetResult()
+	return timeseries, metadata, resourceTable, scopeTable
 }
 
 func (c *otlpMimirConverter) DroppedTotal() int {

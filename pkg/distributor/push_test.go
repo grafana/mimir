@@ -132,7 +132,7 @@ func TestOTelMetricsToMetadata(t *testing.T) {
 				},
 			}
 			converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
-			_, res, _, err := otelMetricsToSeriesAndMetadata(context.Background(), converter, otelMetrics, conversionOptions{
+			_, res, _, _, _, err := otelMetricsToSeriesAndMetadata(context.Background(), converter, otelMetrics, conversionOptions{
 				addSuffixes: tc.enableSuffixes,
 			}, log.NewNopLogger())
 			require.NoError(t, err)

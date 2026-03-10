@@ -96,6 +96,8 @@ func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols *CommonSymbol
 		skipUnmarshalingExemplars:       rw1.skipUnmarshalingExemplars,
 		skipNormalizeMetadataMetricName: rw1.skipNormalizeMetadataMetricName,
 		skipDeduplicateMetadata:         rw1.skipDeduplicateMetadata,
+		ResourceTable:                   rw1.ResourceTable,
+		ScopeTable:                      rw1.ScopeTable,
 	}
 
 	symbols := symbolsTableFromPool()

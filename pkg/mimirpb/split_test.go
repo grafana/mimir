@@ -354,6 +354,99 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 	})
 }
 
+func TestSplitWriteRequestByMaxMarshalSize_PropagatesTables(t *testing.T) {
+	resourceTable := []ResourceAttributes{
+		{
+			Identifying: []AttributeEntry{{Key: "service.name", Value: "myservice"}},
+			Descriptive: []AttributeEntry{{Key: "host.name", Value: "myhost"}},
+			Timestamp:   1000,
+		},
+	}
+	scopeTable := []ScopeAttributes{
+		{
+			Name:      "github.com/example/payment",
+			Version:   "1.2.0",
+			Timestamp: 1000,
+		},
+	}
+
+	t.Run("RW1 timeseries split propagates tables", func(t *testing.T) {
+		req := &WriteRequest{
+			Source:              RULE,
+			SkipLabelValidation: true,
+			ResourceTable:       resourceTable,
+			ScopeTable:          scopeTable,
+			Timeseries: []PreallocTimeseries{
+				{TimeSeries: &TimeSeries{
+					Labels:      FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "series_1", "pod", "pod-1")),
+					Samples:     []Sample{{TimestampMs: 1000}},
+					ResourceRef: 1,
+					ScopeRef:    1,
+				}},
+				{TimeSeries: &TimeSeries{
+					Labels:      FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "series_2", "pod", "pod-2")),
+					Samples:     []Sample{{TimestampMs: 2000}},
+					ResourceRef: 1,
+					ScopeRef:    1,
+				}},
+			},
+		}
+
+		// Use a small limit to force splitting into 2 partials.
+		partials := SplitWriteRequestByMaxMarshalSize(req, req.Size(), 1)
+		require.GreaterOrEqual(t, len(partials), 2)
+
+		for _, partial := range partials {
+			assert.Equal(t, resourceTable, partial.ResourceTable, "partial should have ResourceTable")
+			assert.Equal(t, scopeTable, partial.ScopeTable, "partial should have ScopeTable")
+		}
+	})
+
+	t.Run("RW1 metadata split propagates tables", func(t *testing.T) {
+		req := &WriteRequest{
+			Source:              RULE,
+			SkipLabelValidation: true,
+			ResourceTable:       resourceTable,
+			ScopeTable:          scopeTable,
+			Metadata: []*MetricMetadata{
+				{Type: COUNTER, MetricFamilyName: "series_1", Help: "first"},
+				{Type: COUNTER, MetricFamilyName: "series_2", Help: "second"},
+			},
+		}
+
+		partials := SplitWriteRequestByMaxMarshalSize(req, req.Size(), 1)
+		require.GreaterOrEqual(t, len(partials), 2)
+
+		for _, partial := range partials {
+			assert.Equal(t, resourceTable, partial.ResourceTable, "partial should have ResourceTable")
+			assert.Equal(t, scopeTable, partial.ScopeTable, "partial should have ScopeTable")
+		}
+	})
+
+	t.Run("RW2 split propagates tables", func(t *testing.T) {
+		req := &WriteRequest{
+			Source:              RULE,
+			SkipLabelValidation: true,
+			ResourceTable:       resourceTable,
+			ScopeTable:          scopeTable,
+			SymbolsRW2:          []string{"", model.MetricNameLabel, "series_1", "series_2", "pod", "pod-1", "pod-2"},
+			TimeseriesRW2: []TimeSeriesRW2{
+				{LabelsRefs: []uint32{1, 2, 4, 5}, Samples: []Sample{{TimestampMs: 1000}}},
+				{LabelsRefs: []uint32{1, 3, 4, 6}, Samples: []Sample{{TimestampMs: 2000}}},
+			},
+		}
+
+		// Use a small limit to force splitting into 2 partials.
+		partials := SplitWriteRequestByMaxMarshalSizeRW2(req, req.Size(), 1, 0, nil)
+		require.GreaterOrEqual(t, len(partials), 2)
+
+		for _, partial := range partials {
+			assert.Equal(t, resourceTable, partial.ResourceTable, "partial should have ResourceTable")
+			assert.Equal(t, scopeTable, partial.ScopeTable, "partial should have ScopeTable")
+		}
+	})
+}
+
 func TestSplitWriteRequestByMaxMarshalSize_Fuzzy(t *testing.T) {
 	const numRuns = 1000
 
@@ -443,6 +536,8 @@ func TestSplitWriteRequestByMaxMarshalSize_WriteRequestHasChanged(t *testing.T) 
 		"TimeseriesRW2",
 		"SkipLabelValidation",
 		"SkipLabelCountValidation",
+		"ResourceTable",
+		"ScopeTable",
 		"skipUnmarshalingExemplars",
 		"skipNormalizeMetadataMetricName",
 		"skipDeduplicateMetadata",

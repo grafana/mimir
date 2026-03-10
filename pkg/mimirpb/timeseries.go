@@ -649,19 +649,9 @@ func DeepCopyTimeseries(dst, src PreallocTimeseries, keepHistograms, keepExempla
 		}
 	}
 
-	// Copy the resource attributes.
-	if srcTs.ResourceAttributes != nil {
-		dstTs.ResourceAttributes = DeepCopyResourceAttributes(srcTs.ResourceAttributes)
-	} else {
-		dstTs.ResourceAttributes = nil
-	}
-
-	// Copy the scope attributes.
-	if srcTs.ScopeAttributes != nil {
-		dstTs.ScopeAttributes = DeepCopyScopeAttributes(srcTs.ScopeAttributes)
-	} else {
-		dstTs.ScopeAttributes = nil
-	}
+	// Copy the table refs (simple int32 values).
+	dstTs.ResourceRef = srcTs.ResourceRef
+	dstTs.ScopeRef = srcTs.ScopeRef
 
 	return dst
 }
@@ -882,6 +872,8 @@ func (m *WriteRequest) ForIndexes(indexes []int, initialMetadataIndex int) *Writ
 		Metadata:            metadata,
 		Source:              m.Source,
 		SkipLabelValidation: m.SkipLabelValidation,
+		ResourceTable:       m.ResourceTable,
+		ScopeTable:          m.ScopeTable,
 	}
 }
 
@@ -904,34 +896,7 @@ func (ts *TimeSeries) MakeReferencesSafeToRetain() {
 			ts.Exemplars[i].Labels[j].Value = strings.Clone(l.Value)
 		}
 	}
-	if ts.ResourceAttributes != nil {
-		for i, e := range ts.ResourceAttributes.Identifying {
-			ts.ResourceAttributes.Identifying[i].Key = strings.Clone(e.Key)
-			ts.ResourceAttributes.Identifying[i].Value = strings.Clone(e.Value)
-		}
-		for i, e := range ts.ResourceAttributes.Descriptive {
-			ts.ResourceAttributes.Descriptive[i].Key = strings.Clone(e.Key)
-			ts.ResourceAttributes.Descriptive[i].Value = strings.Clone(e.Value)
-		}
-		for i, entity := range ts.ResourceAttributes.Entities {
-			ts.ResourceAttributes.Entities[i].Type = strings.Clone(entity.Type)
-			for j, attr := range entity.ID {
-				ts.ResourceAttributes.Entities[i].ID[j].Key = strings.Clone(attr.Key)
-				ts.ResourceAttributes.Entities[i].ID[j].Value = strings.Clone(attr.Value)
-			}
-			for j, attr := range entity.Description {
-				ts.ResourceAttributes.Entities[i].Description[j].Key = strings.Clone(attr.Key)
-				ts.ResourceAttributes.Entities[i].Description[j].Value = strings.Clone(attr.Value)
-			}
-		}
-	}
-	if ts.ScopeAttributes != nil {
-		ts.ScopeAttributes.Name = strings.Clone(ts.ScopeAttributes.Name)
-		ts.ScopeAttributes.Version = strings.Clone(ts.ScopeAttributes.Version)
-		ts.ScopeAttributes.SchemaURL = strings.Clone(ts.ScopeAttributes.SchemaURL)
-		for i, e := range ts.ScopeAttributes.Attrs {
-			ts.ScopeAttributes.Attrs[i].Key = strings.Clone(e.Key)
-			ts.ScopeAttributes.Attrs[i].Value = strings.Clone(e.Value)
-		}
-	}
+	// ResourceRef/ScopeRef are int32 table indices — no strings to clone.
+	// The table entries in WriteRequest.ResourceTable/ScopeTable have their
+	// own string lifecycle managed at the WriteRequest level.
 }

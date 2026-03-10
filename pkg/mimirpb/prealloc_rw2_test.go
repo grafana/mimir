@@ -520,6 +520,43 @@ func TestWriteRequestRW2Conversion(t *testing.T) {
 	})
 }
 
+func TestWriteRequestRW2Conversion_PropagatesTables(t *testing.T) {
+	resourceTable := []ResourceAttributes{
+		{
+			Identifying: []AttributeEntry{{Key: "service.name", Value: "myservice"}},
+			Timestamp:   1000,
+		},
+	}
+	scopeTable := []ScopeAttributes{
+		{
+			Name:      "github.com/example/payment",
+			Version:   "1.2.0",
+			Timestamp: 1000,
+		},
+	}
+
+	req := &WriteRequest{
+		Timeseries: []PreallocTimeseries{
+			{
+				TimeSeries: &TimeSeries{
+					Labels:      FromLabelsToLabelAdapters(labels.FromMap(map[string]string{"__name__": "my_metric", "job": "foo"})),
+					Samples:     []Sample{{Value: 1, TimestampMs: 1000}},
+					ResourceRef: 1,
+					ScopeRef:    1,
+				},
+			},
+		},
+		ResourceTable: resourceTable,
+		ScopeTable:    scopeTable,
+	}
+
+	rw2, err := FromWriteRequestToRW2Request(req, nil, 0)
+
+	require.NoError(t, err)
+	require.Equal(t, resourceTable, rw2.ResourceTable)
+	require.Equal(t, scopeTable, rw2.ScopeTable)
+}
+
 func TestExemplarConversion(t *testing.T) {
 	symbols := writev2.NewSymbolTable()
 	// Pre-populate symbols table with some common values
@@ -693,6 +730,8 @@ func TestWriteRequestRW2Conversion_WriteRequestHasChanged(t *testing.T) {
 		"TimeseriesRW2",
 		"SkipLabelValidation",
 		"SkipLabelCountValidation",
+		"ResourceTable",
+		"ScopeTable",
 		"skipUnmarshalingExemplars",
 		"skipNormalizeMetadataMetricName",
 		"skipDeduplicateMetadata",

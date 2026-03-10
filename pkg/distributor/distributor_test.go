@@ -9276,6 +9276,73 @@ func TestDistributor_Push_SendMessageMetadata(t *testing.T) {
 	require.Equal(t, 1, ingesters[0].countCalls("Push"))
 }
 
+func TestDistributor_Push_PreservesResourceAndScopeTables(t *testing.T) {
+	const userID = "test"
+
+	distributors, ingesters, _, _ := prepare(t, prepConfig{
+		numIngesters:      1,
+		happyIngesters:    1,
+		numDistributors:   1,
+		replicationFactor: 1,
+	})
+
+	require.Len(t, distributors, 1)
+	require.Len(t, ingesters, 1)
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+
+	resourceTable := []mimirpb.ResourceAttributes{
+		{
+			Identifying: []mimirpb.AttributeEntry{{Key: "service.name", Value: "my-svc"}},
+			Descriptive: []mimirpb.AttributeEntry{{Key: "host.name", Value: "my-host"}},
+			Timestamp:   1000,
+		},
+	}
+	scopeTable := []mimirpb.ScopeAttributes{
+		{
+			Name:      "my-scope",
+			Version:   "1.0",
+			Timestamp: 1000,
+		},
+	}
+
+	req := &mimirpb.WriteRequest{
+		Timeseries: []mimirpb.PreallocTimeseries{
+			makeTimeseries([]string{model.MetricNameLabel, "test_metric"}, makeSamples(time.Now().UnixMilli(), 1), nil, nil),
+		},
+		ResourceTable: resourceTable,
+		ScopeTable:    scopeTable,
+		Source:        mimirpb.OTLP,
+	}
+	req.Timeseries[0].ResourceRef = 1
+	req.Timeseries[0].ScopeRef = 1
+
+	_, err := distributors[0].Push(ctx, req)
+	require.NoError(t, err)
+
+	// Inspect the request received by the mock ingester (cloned via marshal/unmarshal in trackCall).
+	require.Equal(t, 1, ingesters[0].countCalls("Push"))
+	ingesters[0].assertCalledFunc("Push", func(args ...any) {
+		received := args[1].(*mimirpb.WriteRequest)
+
+		require.Len(t, received.ResourceTable, 1, "ResourceTable should survive distributor→ingester split")
+		assert.Equal(t, "service.name", received.ResourceTable[0].Identifying[0].Key)
+		assert.Equal(t, "my-svc", received.ResourceTable[0].Identifying[0].Value)
+		assert.Equal(t, "host.name", received.ResourceTable[0].Descriptive[0].Key)
+		assert.Equal(t, "my-host", received.ResourceTable[0].Descriptive[0].Value)
+
+		require.Len(t, received.ScopeTable, 1, "ScopeTable should survive distributor→ingester split")
+		assert.Equal(t, "my-scope", received.ScopeTable[0].Name)
+		assert.Equal(t, "1.0", received.ScopeTable[0].Version)
+
+		require.Len(t, received.Timeseries, 1)
+		assert.Equal(t, int32(1), received.Timeseries[0].ResourceRef)
+		assert.Equal(t, int32(1), received.Timeseries[0].ScopeRef)
+
+		assert.Equal(t, mimirpb.OTLP, received.Source)
+	})
+}
+
 func TestQueryIngestersRingZoneSorter(t *testing.T) {
 	testCases := map[string]struct {
 		instances []ring.InstanceDesc

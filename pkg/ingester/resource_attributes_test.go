@@ -292,21 +292,24 @@ func TestResourceAttributes_ShardMatcherStripped(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "test")
 
-	// Push a series with resource attributes.
+	// Push a series with resource attributes via table dedup.
 	ts := mimirpb.TimeSeries{
 		Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "test_metric", "job", "test-job")),
 		Samples: []mimirpb.Sample{
 			{TimestampMs: 1000, Value: 1.0},
 		},
-		ResourceAttributes: &mimirpb.ResourceAttributes{
-			Identifying: []mimirpb.AttributeEntry{{Key: "service.name", Value: "my-service"}},
-			Descriptive: []mimirpb.AttributeEntry{{Key: "service.version", Value: "1.0"}},
-			Timestamp:   1000,
-		},
+		ResourceRef: 1, // 1-based index into ResourceTable
 	}
 	req := &mimirpb.WriteRequest{
 		Source:     mimirpb.API,
 		Timeseries: []mimirpb.PreallocTimeseries{{TimeSeries: &ts}},
+		ResourceTable: []mimirpb.ResourceAttributes{
+			{
+				Identifying: []mimirpb.AttributeEntry{{Key: "service.name", Value: "my-service"}},
+				Descriptive: []mimirpb.AttributeEntry{{Key: "service.version", Value: "1.0"}},
+				Timestamp:   1000,
+			},
+		},
 	}
 	_, err := i.Push(ctx, req)
 	require.NoError(t, err)
