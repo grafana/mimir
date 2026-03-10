@@ -85,6 +85,7 @@ func TestJobWaitPeriodElapsed(t *testing.T) {
 
 	tests := map[string]struct {
 		waitPeriod        time.Duration
+		oooWaitPeriod     time.Duration
 		skipFutureMaxTime bool
 		jobBlocks         []jobBlock
 		expectedElapsed   bool
@@ -193,6 +194,76 @@ func TestJobWaitPeriodElapsed(t *testing.T) {
 			expectedErr:  "mocked error",
 			expectedMeta: meta2,
 		},
+		"ooo wait period disabled - ooo blocks skipped": {
+			waitPeriod:        10 * time.Minute,
+			oooWaitPeriod:     0,
+			skipFutureMaxTime: false,
+			jobBlocks: []jobBlock{
+				{meta: meta5, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-20 * time.Minute)}},
+				{meta: meta6, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-5 * time.Minute)}},
+			},
+			expectedElapsed: true,
+			expectedMeta:    nil,
+		},
+		"ooo block uploaded within ooo wait period": {
+			waitPeriod:        10 * time.Minute,
+			oooWaitPeriod:     10 * time.Minute,
+			skipFutureMaxTime: false,
+			jobBlocks: []jobBlock{
+				{meta: meta5, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-20 * time.Minute)}},
+				{meta: meta6, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-5 * time.Minute)}},
+			},
+			expectedElapsed: false,
+			expectedMeta:    meta6,
+		},
+		"ooo block uploaded beyond ooo wait period": {
+			waitPeriod:        10 * time.Minute,
+			oooWaitPeriod:     10 * time.Minute,
+			skipFutureMaxTime: false,
+			jobBlocks: []jobBlock{
+				{meta: meta5, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-20 * time.Minute)}},
+				{meta: meta6, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-15 * time.Minute)}},
+			},
+			expectedElapsed: true,
+			expectedMeta:    nil,
+		},
+		"mixed job with different thresholds - in-order blocks use wait period": {
+			waitPeriod:        10 * time.Minute,
+			oooWaitPeriod:     5 * time.Minute,
+			skipFutureMaxTime: false,
+			jobBlocks: []jobBlock{
+				// In-order block uploaded 7 min ago - within 10 min wait period
+				{meta: meta1, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-7 * time.Minute)}},
+				// OOO block uploaded 7 min ago - beyond 5 min OOO wait period
+				{meta: meta5, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-7 * time.Minute)}},
+			},
+			expectedElapsed: false,
+			expectedMeta:    meta1,
+		},
+		"mixed job with different thresholds - ooo blocks use ooo wait period": {
+			waitPeriod:        5 * time.Minute,
+			oooWaitPeriod:     10 * time.Minute,
+			skipFutureMaxTime: false,
+			jobBlocks: []jobBlock{
+				// In-order block uploaded 7 min ago - beyond 5 min wait period
+				{meta: meta1, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-7 * time.Minute)}},
+				// OOO block uploaded 7 min ago - within 10 min OOO wait period
+				{meta: meta5, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-7 * time.Minute)}},
+			},
+			expectedElapsed: false,
+			expectedMeta:    meta5,
+		},
+		"both wait periods disabled": {
+			waitPeriod:        0,
+			oooWaitPeriod:     0,
+			skipFutureMaxTime: false,
+			jobBlocks: []jobBlock{
+				{meta: meta1, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-5 * time.Minute)}},
+				{meta: meta5, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-5 * time.Minute)}},
+			},
+			expectedElapsed: true,
+			expectedMeta:    nil,
+		},
 	}
 
 	for testName, testData := range tests {
@@ -207,7 +278,7 @@ func TestJobWaitPeriodElapsed(t *testing.T) {
 				userBucket.MockAttributes(path.Join(b.meta.ULID.String(), block.MetaFilename), b.attrs, b.attrsErr)
 			}
 
-			elapsed, meta, err := jobWaitPeriodElapsed(context.Background(), job, testData.waitPeriod, testData.skipFutureMaxTime, userBucket, log.NewNopLogger())
+			elapsed, meta, err := jobWaitPeriodElapsed(context.Background(), job, testData.waitPeriod, testData.oooWaitPeriod, testData.skipFutureMaxTime, userBucket, log.NewNopLogger())
 			if testData.expectedErr != "" {
 				require.Error(t, err)
 				assert.ErrorContains(t, err, testData.expectedErr)

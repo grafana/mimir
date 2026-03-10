@@ -97,6 +97,7 @@ type Config struct {
 	CompactionRetries           int                     `yaml:"compaction_retries" category:"advanced"`
 	CompactionConcurrency       int                     `yaml:"compaction_concurrency" category:"advanced"`
 	CompactionWaitPeriod        time.Duration           `yaml:"first_level_compaction_wait_period"`
+	CompactionOOOWaitPeriod     time.Duration           `yaml:"first_level_compaction_ooo_wait_period"`
 	CompactionSkipFutureMaxTime bool                    `yaml:"first_level_compaction_skip_future_max_time" category:"experimental"`
 	CleanupInterval             time.Duration           `yaml:"cleanup_interval" category:"advanced"`
 	CleanupConcurrency          int                     `yaml:"cleanup_concurrency" category:"advanced"`
@@ -151,7 +152,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.MaxCompactionTime, "compactor.max-compaction-time", time.Hour, "Max time for starting compactions for a single tenant. After this time no new compactions for the tenant are started before next compaction cycle. This can help in multi-tenant environments to avoid single tenant using all compaction time, but also in single-tenant environments to force new discovery of blocks more often. 0 = disabled.")
 	f.IntVar(&cfg.CompactionRetries, "compactor.compaction-retries", 3, "How many times to retry a failed compaction within a single compaction run.")
 	f.IntVar(&cfg.CompactionConcurrency, "compactor.compaction-concurrency", 1, "Max number of concurrent compactions running.")
-	f.DurationVar(&cfg.CompactionWaitPeriod, "compactor.first-level-compaction-wait-period", 25*time.Minute, "How long the compactor waits before compacting first-level blocks that are uploaded by the ingesters. This configuration option allows for the reduction of cases where the compactor begins to compact blocks before all ingesters have uploaded their blocks to the storage.")
+	f.DurationVar(&cfg.CompactionWaitPeriod, "compactor.first-level-compaction-wait-period", 25*time.Minute, "How long the compactor waits before compacting first-level blocks that are uploaded by the ingesters or block-builders. This configuration option allows for the reduction of cases where the compactor begins to compact blocks before all ingesters have uploaded their blocks to the storage. Does not apply to out-of-order blocks.")
+	f.DurationVar(&cfg.CompactionOOOWaitPeriod, "compactor.first-level-compaction-ooo-wait-period", 0, "How long the compactor waits before compacting first-level blocks containing out-of-order samples. When set to 0 (default), out-of-order blocks do not delay compaction.")
 	f.BoolVar(&cfg.CompactionSkipFutureMaxTime, "compactor.first-level-compaction-skip-future-max-time", false, "When enabled, the compactor skips first-level compaction jobs if any source block has a MaxTime more recent than the wait period threshold. This prevents premature compaction of blocks that may still receive late-arriving data.")
 	f.DurationVar(&cfg.CleanupInterval, "compactor.cleanup-interval", 15*time.Minute, "How frequently the compactor should run blocks cleanup and maintenance, as well as update the bucket index.")
 	f.IntVar(&cfg.CleanupConcurrency, "compactor.cleanup-concurrency", 20, "Max number of tenants for which blocks cleanup and maintenance should run concurrently.")
@@ -816,6 +818,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		c.shardingStrategy.ownJob,
 		c.jobsOrder,
 		c.compactorCfg.CompactionWaitPeriod,
+		c.compactorCfg.CompactionOOOWaitPeriod,
 		c.compactorCfg.CompactionSkipFutureMaxTime,
 		c.compactorCfg.BlockSyncConcurrency,
 		c.bucketCompactorMetrics,
