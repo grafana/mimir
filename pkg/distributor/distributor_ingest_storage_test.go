@@ -28,6 +28,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kfake"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
@@ -1609,6 +1610,143 @@ func TestDistributor_ActiveSeries_AvailabilityAndConsistencyWithIngestStorage(t 
 			}
 		})
 	}
+}
+
+func TestDistributor_Push_WithCompartments(t *testing.T) {
+	ctx := user.InjectOrgID(context.Background(), "user")
+	now := time.Now()
+
+	createRequest := func() *mimirpb.WriteRequest {
+		return &mimirpb.WriteRequest{
+			Timeseries: []mimirpb.PreallocTimeseries{
+				makeTimeseries([]string{model.MetricNameLabel, "metric_a"}, makeSamples(now.UnixMilli(), 1), nil, nil),
+				makeTimeseries([]string{model.MetricNameLabel, "metric_b"}, makeSamples(now.UnixMilli(), 2), nil, nil),
+				makeTimeseries([]string{model.MetricNameLabel, "metric_c"}, makeSamples(now.UnixMilli(), 3), nil, nil),
+				makeTimeseries([]string{model.MetricNameLabel, "metric_d"}, makeSamples(now.UnixMilli(), 4), nil, nil),
+			},
+			Metadata: []*mimirpb.MetricMetadata{
+				{MetricFamilyName: "metric_a", Type: mimirpb.COUNTER},
+				{MetricFamilyName: "metric_b", Type: mimirpb.GAUGE},
+			},
+		}
+	}
+
+	const numCompartments = 3
+	compartmentTopics := make([]string, numCompartments)
+	for i := range compartmentTopics {
+		compartmentTopics[i] = fmt.Sprintf("comp-%d", i)
+	}
+
+	limits := prepareDefaultLimits()
+
+	// Create a Kafka cluster seeded with the default topic + compartment topics.
+	kafkaCluster, _ := testkafka.CreateCluster(t, 3, kafkaTopic, func() []kfake.Opt {
+		return []kfake.Opt{kfake.SeedTopics(3, compartmentTopics...)}
+	})
+
+	testConfig := prepConfig{
+		numDistributors:         1,
+		ingestStorageEnabled:    true,
+		ingestStoragePartitions: 3,
+		ingestStorageKafka:      kafkaCluster,
+		limits:                  limits,
+		configure: func(cfg *Config) {
+			cfg.IngestStorageConfig.KafkaConfig.WriteClients = 3
+			cfg.IngestStorageConfig.Compartments.Enabled = true
+			cfg.IngestStorageConfig.Compartments.NumCompartments = numCompartments
+			cfg.IngestStorageConfig.Compartments.TopicFormat = "comp-<compartment-id>"
+		},
+	}
+
+	distributors, _, _, _ := prepare(t, testConfig)
+	require.Len(t, distributors, 1)
+
+	// Push the request.
+	res, err := distributors[0].Push(ctx, createRequest())
+	require.NoError(t, err)
+	assert.Equal(t, emptyResponse, res)
+
+	// Read records from ALL compartment topics and verify series are distributed.
+	router := ingest.NewCompartmentRouter(ingest.CompartmentsConfig{
+		Enabled:         true,
+		NumCompartments: numCompartments,
+		TopicFormat:     "comp-<compartment-id>",
+	})
+
+	// Collect metric names per topic.
+	metricsByTopic := map[string][]string{}
+	for _, topic := range compartmentTopics {
+		records := readAllRecordsFromKafkaTopics(t, kafkaCluster.ListenAddrs(), []string{topic}, 3, time.Second)
+		for _, record := range records {
+			req := &mimirpb.WriteRequest{}
+			require.NoError(t, req.Unmarshal(record.Value))
+			for _, ts := range req.Timeseries {
+				metricName, err := extract.UnsafeMetricNameFromLabelAdapters(ts.Labels)
+				require.NoError(t, err)
+				metricsByTopic[topic] = append(metricsByTopic[topic], metricName)
+			}
+		}
+		slices.Sort(metricsByTopic[topic])
+	}
+
+	// Verify all 4 metrics are present across all topics.
+	allMetrics := []string{}
+	for _, metrics := range metricsByTopic {
+		allMetrics = append(allMetrics, metrics...)
+	}
+	slices.Sort(allMetrics)
+	assert.Equal(t, []string{"metric_a", "metric_b", "metric_c", "metric_d"}, allMetrics)
+
+	// Verify each metric ended up in the correct topic based on the router.
+	for _, metricName := range []string{"metric_a", "metric_b", "metric_c", "metric_d"} {
+		expectedTopic := router.TopicForMetric("user", metricName)
+		assert.Contains(t, metricsByTopic[expectedTopic], metricName, "metric %s should be in topic %s", metricName, expectedTopic)
+	}
+
+	// Verify no records ended up in the default topic.
+	defaultRecords := readAllRecordsFromKafkaTopics(t, kafkaCluster.ListenAddrs(), []string{kafkaTopic}, 3, time.Second)
+	assert.Empty(t, defaultRecords, "no records should be in the default topic when compartments are enabled")
+}
+
+func readAllRecordsFromKafkaTopics(t testing.TB, kafkaAddresses []string, topics []string, numPartitions int32, timeout time.Duration) []*kgo.Record {
+	// Read all partitions from the beginning for the given topics.
+	topicOffsets := make(map[string]map[int32]kgo.Offset, len(topics))
+	for _, topic := range topics {
+		offsets := make(map[int32]kgo.Offset, numPartitions)
+		for partitionID := int32(0); partitionID < numPartitions; partitionID++ {
+			offsets[partitionID] = kgo.NewOffset().AtStart()
+		}
+		topicOffsets[topic] = offsets
+	}
+
+	kafkaClient, err := kgo.NewClient(
+		kgo.SeedBrokers(kafkaAddresses...),
+		kgo.RetryBackoffFn(func(_ int) time.Duration { return 10 * time.Millisecond }),
+		kgo.FetchMaxWait(timeout/4),
+		kgo.ConsumePartitions(topicOffsets))
+
+	require.NoError(t, err)
+	t.Cleanup(kafkaClient.Close)
+
+	var records []*kgo.Record
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+
+		fetches := kafkaClient.PollFetches(ctx)
+		if err := fetches.Err(); err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				break
+			}
+			t.Fatal(err)
+		}
+
+		fetches.EachRecord(func(record *kgo.Record) {
+			records = append(records, record)
+		})
+	}
+
+	return records
 }
 
 func readAllRecordsFromKafka(t testing.TB, kafkaAddresses []string, numPartitions int32, timeout time.Duration) []*kgo.Record {
