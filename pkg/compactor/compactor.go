@@ -97,7 +97,7 @@ type Config struct {
 	CompactionRetries           int                     `yaml:"compaction_retries" category:"advanced"`
 	CompactionConcurrency       int                     `yaml:"compaction_concurrency" category:"advanced"`
 	CompactionWaitPeriod        time.Duration           `yaml:"first_level_compaction_wait_period"`
-	CompactionOOOWaitPeriod     time.Duration           `yaml:"first_level_compaction_ooo_wait_period"`
+	CompactionOOOWaitPeriod     time.Duration           `yaml:"first_level_compaction_ooo_wait_period" category:"experimental"`
 	CompactionSkipFutureMaxTime bool                    `yaml:"first_level_compaction_skip_future_max_time" category:"experimental"`
 	CleanupInterval             time.Duration           `yaml:"cleanup_interval" category:"advanced"`
 	CleanupConcurrency          int                     `yaml:"cleanup_concurrency" category:"advanced"`
