@@ -25,6 +25,7 @@ import (
 const (
 	labelNamesQueryCachePrefix  = "ln:"
 	labelValuesQueryCachePrefix = "lv:"
+	infoLabelsQueryCachePrefix  = "il:"
 
 	stringParamSeparator = rune(0)
 )
@@ -59,9 +60,20 @@ func (g DefaultCacheKeyGenerator) LabelValues(r *http.Request) (*GenericQueryCac
 	}
 
 	var cacheKeyPrefix string
+	var metricMatch string
 	switch labelValuesReq.(type) {
 	case *PrometheusLabelNamesQueryRequest:
-		cacheKeyPrefix = labelNamesQueryCachePrefix
+		if IsInfoLabelsQuery(r.URL.Path) {
+			cacheKeyPrefix = infoLabelsQueryCachePrefix
+			// Include metric_match parameter in cache key for info_labels requests.
+			// Default is "target_info" if not specified.
+			metricMatch = r.FormValue("metric_match")
+			if metricMatch == "" {
+				metricMatch = "target_info"
+			}
+		} else {
+			cacheKeyPrefix = labelNamesQueryCachePrefix
+		}
 	case *PrometheusLabelValuesQueryRequest:
 		cacheKeyPrefix = labelValuesQueryCachePrefix
 	}
@@ -80,6 +92,7 @@ func (g DefaultCacheKeyGenerator) LabelValues(r *http.Request) (*GenericQueryCac
 		labelValuesReq.GetLabelName(),
 		labelMatcherSets,
 		labelValuesReq.GetLimit(),
+		metricMatch,
 	)
 
 	return &GenericQueryCacheKey{
@@ -88,7 +101,7 @@ func (g DefaultCacheKeyGenerator) LabelValues(r *http.Request) (*GenericQueryCac
 	}, nil
 }
 
-func generateLabelsQueryRequestCacheKey(startTime, endTime int64, labelName string, matcherSets [][]*labels.Matcher, limit uint64) string {
+func generateLabelsQueryRequestCacheKey(startTime, endTime int64, labelName string, matcherSets [][]*labels.Matcher, limit uint64, metricMatch string) string {
 	var (
 		twoHoursMillis = (2 * time.Hour).Milliseconds()
 		b              = strings.Builder{}
@@ -127,6 +140,12 @@ func generateLabelsQueryRequestCacheKey(startTime, endTime int64, labelName stri
 	if limit > 0 {
 		b.WriteRune(stringParamSeparator)
 		b.WriteString(strconv.Itoa(int(limit)))
+	}
+
+	// Add metric_match for info_labels queries.
+	if metricMatch != "" {
+		b.WriteRune(stringParamSeparator)
+		b.WriteString(metricMatch)
 	}
 
 	return b.String()

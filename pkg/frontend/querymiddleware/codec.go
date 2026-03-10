@@ -482,7 +482,7 @@ func (Codec) DecodeLabelsSeriesQueryRequest(_ context.Context, r *http.Request) 
 			Limit:            limit,
 		}, nil
 	}
-	if IsLabelNamesQuery(r.URL.Path) {
+	if IsLabelNamesQuery(r.URL.Path) || IsInfoLabelsQuery(r.URL.Path) {
 		return &PrometheusLabelNamesQueryRequest{
 			Path:             r.URL.Path,
 			Headers:          headers,
