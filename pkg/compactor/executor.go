@@ -4,10 +4,12 @@ package compactor
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -18,6 +20,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/timeutil"
 	"github.com/oklog/ulid/v2"
@@ -75,9 +78,69 @@ func (e *standaloneExecutor) stop() error {
 	return nil
 }
 
+var (
+	errInvalidSchedulerEndpoint          = fmt.Errorf("invalid compactor.scheduler-client.scheduler-endpoint, required when scheduler-worker.enabled is true")
+	errInvalidSchedulerUpdateInterval    = fmt.Errorf("invalid compactor.scheduler-client.update-interval, interval must be positive")
+	errInvalidSchedulerLeasingMinBackoff = fmt.Errorf("invalid compactor.scheduler-client.leasing-min-backoff, must be positive")
+	errInvalidSchedulerLeasingMaxBackoff = fmt.Errorf("invalid compactor.scheduler-client.leasing-max-backoff, must be greater than min backoff")
+	errInvalidSchedulerUpdateMinBackoff  = fmt.Errorf("invalid compactor.scheduler-client.update-min-backoff, must be positive")
+	errInvalidSchedulerUpdateMaxBackoff  = fmt.Errorf("invalid compactor.scheduler-client.update-max-backoff, must be greater than min backoff")
+)
+
+type SchedulerClientConfig struct {
+	Enabled                      bool              `yaml:"enabled" category:"experimental"`
+	SchedulerEndpoint            string            `yaml:"scheduler_endpoint" category:"experimental"`
+	GRPCClientConfig             grpcclient.Config `yaml:"grpc_client_config" category:"experimental"`
+	LeasingMinBackoff            time.Duration     `yaml:"leasing_min_backoff" category:"experimental"`
+	LeasingMaxBackoff            time.Duration     `yaml:"leasing_max_backoff" category:"experimental"`
+	UpdateInterval               time.Duration     `yaml:"update_interval" category:"experimental"`
+	UpdateMinBackoff             time.Duration     `yaml:"update_min_backoff" category:"experimental"`
+	UpdateMaxBackoff             time.Duration     `yaml:"update_max_backoff" category:"experimental"`
+	CompactionDirCleanupInterval time.Duration     `yaml:"compaction_dir_cleanup_interval" category:"experimental"`
+}
+
+func (cfg *SchedulerClientConfig) RegisterFlags(f *flag.FlagSet) {
+	flagPrefix := "compactor.scheduler-client."
+	f.BoolVar(&cfg.Enabled, flagPrefix+"enabled", false, "Controls whether compactors should contact a scheduler to request work.")
+	f.StringVar(&cfg.SchedulerEndpoint, flagPrefix+"endpoint", "", "Compactor scheduler endpoint.")
+	f.DurationVar(&cfg.UpdateInterval, flagPrefix+"update-interval", 15*time.Second, "Interval between scheduler job lease updates.")
+	f.DurationVar(&cfg.LeasingMinBackoff, flagPrefix+"leasing-min-backoff", 100*time.Millisecond, "Minimum backoff time between scheduler job lease requests.")
+	f.DurationVar(&cfg.LeasingMaxBackoff, flagPrefix+"leasing-max-backoff", 2*time.Minute, "Maximum backoff time between scheduler job lease requests.")
+	f.DurationVar(&cfg.UpdateMinBackoff, flagPrefix+"update-min-backoff", 1*time.Second, "Minimum backoff time for compaction executor retries when sending scheduler status updates.")
+	f.DurationVar(&cfg.UpdateMaxBackoff, flagPrefix+"update-max-backoff", 32*time.Second, "Maximum backoff time for compaction executor retries when sending scheduler status updates.")
+	f.DurationVar(&cfg.CompactionDirCleanupInterval, flagPrefix+"compaction-dir-cleanup-interval", 30*time.Minute, "Defines how frequently to clean up the compaction working directory. The directory is cleaned on startup and then only when this interval has elapsed since the last cleanup. Set to 0 to disable periodic cleanup.")
+	cfg.GRPCClientConfig.RegisterFlagsWithPrefix(flagPrefix+"grpc-client-config", f)
+}
+
+func (cfg *SchedulerClientConfig) Validate() error {
+	if !cfg.Enabled {
+		return nil
+	}
+	if strings.TrimSpace(cfg.SchedulerEndpoint) == "" {
+		return errInvalidSchedulerEndpoint
+	}
+	if cfg.UpdateInterval <= 0 {
+		return errInvalidSchedulerUpdateInterval
+	}
+	if cfg.LeasingMinBackoff <= 0 {
+		return errInvalidSchedulerLeasingMinBackoff
+	}
+	if cfg.LeasingMaxBackoff <= cfg.LeasingMinBackoff {
+		return errInvalidSchedulerLeasingMaxBackoff
+	}
+	if cfg.UpdateMinBackoff <= 0 {
+		return errInvalidSchedulerUpdateMinBackoff
+	}
+	if cfg.UpdateMaxBackoff <= cfg.UpdateMinBackoff {
+		return errInvalidSchedulerUpdateMaxBackoff
+	}
+	return nil
+}
+
 // schedulerExecutor requests compaction jobs from an external scheduler.
 type schedulerExecutor struct {
-	cfg                      Config
+	compactorCfg             Config
+	cfg                      SchedulerClientConfig
 	logger                   log.Logger
 	schedulerClient          compactorschedulerpb.CompactorSchedulerClient
 	schedulerConn            *grpc.ClientConn
@@ -88,7 +151,8 @@ type schedulerExecutor struct {
 
 func newSchedulerExecutor(cfg Config, logger log.Logger, invalidClusterValidation *prometheus.CounterVec) (*schedulerExecutor, error) {
 	executor := &schedulerExecutor{
-		cfg:                      cfg,
+		compactorCfg:             cfg,
+		cfg:                      cfg.SchedulerClientConfig,
 		logger:                   logger,
 		invalidClusterValidation: invalidClusterValidation,
 	}
@@ -105,7 +169,7 @@ func newSchedulerExecutor(cfg Config, logger log.Logger, invalidClusterValidatio
 			}
 			return false
 		}).
-		WithBackoff(cfg.ExecutorRetryMinBackoff, cfg.ExecutorRetryMaxBackoff).
+		WithBackoff(cfg.SchedulerClientConfig.UpdateMinBackoff, cfg.SchedulerClientConfig.UpdateMaxBackoff).
 		WithJitter(500 * time.Millisecond).
 		WithMaxAttempts(-1).
 		Build())
@@ -128,8 +192,8 @@ func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) er
 	compactDir := filepath.Join(c.compactorCfg.DataDir, "compact")
 
 	b := backoff.New(ctx, backoff.Config{
-		MinBackoff: e.cfg.SchedulerMinLeasingBackoff,
-		MaxBackoff: e.cfg.SchedulerMaxLeasingBackoff,
+		MinBackoff: e.cfg.LeasingMinBackoff,
+		MaxBackoff: e.cfg.LeasingMaxBackoff,
 	})
 
 	for {
@@ -208,7 +272,7 @@ func (e *schedulerExecutor) cleanupCompactionDir(compactDir string) error {
 
 // startJobStatusUpdater starts a goroutine that sends periodic IN_PROGRESS keep-alive updates
 func (e *schedulerExecutor) startJobStatusUpdater(ctx context.Context, c *MultitenantCompactor, key *compactorschedulerpb.JobKey, spec *compactorschedulerpb.JobSpec, cancelJob context.CancelCauseFunc) {
-	ticker := time.NewTicker(e.cfg.SchedulerUpdateInterval)
+	ticker := time.NewTicker(e.cfg.UpdateInterval)
 	defer ticker.Stop()
 
 	jobId := key.Id
@@ -394,20 +458,10 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		NewLabelRemoverFilter(compactionIgnoredLabels),
 	}
 
-	var maxLookback = c.cfgProvider.CompactorMaxLookback(userID)
-	if c.cfgProvider.CompactorBlockUploadEnabled(userID) {
-		maxLookback = 0
-	}
-
-	syncDir := c.metaSyncDirForUser(userID)
-	fetcher, err := block.NewMetaFetcher(userLogger, c.compactorCfg.MetaSyncConcurrency, userBucket, syncDir, reg, fetcherFilters, maxLookback)
+	syncDir := "" // indicates not wanting to cache metadata on disk
+	fetcher, err := block.NewMetaFetcher(userLogger, c.compactorCfg.MetaSyncConcurrency, userBucket, syncDir, reg, fetcherFilters, 0)
 	if err != nil {
 		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, errors.Wrap(err, "failed to create meta fetcher")
-	}
-
-	syncer, err := newMetaSyncer(userLogger, reg, userBucket, fetcher, nil, c.blocksMarkedForDeletion)
-	if err != nil {
-		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, errors.Wrap(err, "failed to create syncer")
 	}
 
 	blockIDs := make([]ulid.ULID, len(spec.Job.BlockIds))
@@ -418,7 +472,8 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		}
 	}
 
-	if err := syncer.SyncRequestedMetas(ctx, blockIDs); err != nil {
+	metaMap, err := fetcher.FetchRequestedMetas(ctx, blockIDs)
+	if err != nil {
 		// If a block was not found, ABANDON the job, it will never succeed.
 		if errors.Is(err, block.ErrorSyncMetaNotFound) {
 			level.Warn(userLogger).Log("msg", "blocks not found in object storage, abandoning job", "err", err)
@@ -427,7 +482,7 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, errors.Wrap(err, "failed to sync metas")
 	}
 
-	jobMetas, err := getJobMetas(syncer, blockIDs)
+	jobMetas, err := getJobMetas(metaMap, blockIDs)
 	if err != nil {
 		level.Error(userLogger).Log("msg", "blocks not found after sync, abandoning job", "err", err)
 		return compactorschedulerpb.UPDATE_TYPE_ABANDON, err
@@ -441,6 +496,12 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 	job, err := buildCompactionJobFromMetas(userID, key.Id, jobMetas, spec, splitNumShards)
 	if err != nil {
 		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, err
+	}
+
+	// Note: The syncer isn't used in single job execution (only during full BucketCompactor.Compact), but we construct it rather than pass nil to guard against future changes
+	syncer, err := newMetaSyncer(userLogger, reg, userBucket, fetcher, NewShardAwareDeduplicateFilter(), c.blocksMarkedForDeletion)
+	if err != nil {
+		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, errors.Wrap(err, "failed to create syncer")
 	}
 
 	compactor, err := c.newBucketCompactor(ctx, userID, userLogger, userBucket, syncer, reg)
@@ -486,7 +547,8 @@ func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *Multitena
 	reg := prometheus.NewRegistry()
 	defer c.syncerMetrics.gatherThanosSyncerMetrics(reg, userLogger)
 
-	syncer, err := c.createMetaSyncerForUser(tenant, userBucket, userLogger, reg)
+	syncDir := "" // indicates not wanting to cache metadata on disk
+	syncer, err := c.createMetaSyncerForUser(tenant, userBucket, userLogger, syncDir, reg)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create meta syncer")
 	}
@@ -574,13 +636,13 @@ func (e *schedulerExecutor) sendPlannedJobs(ctx context.Context, key *compactors
 	})
 }
 
-func getJobMetas(syncer *metaSyncer, blockIDs []ulid.ULID) ([]*block.Meta, error) {
-	allMetas := syncer.Metas()
+func getJobMetas(metas map[ulid.ULID]*block.Meta, blockIDs []ulid.ULID) ([]*block.Meta, error) {
 	jobMetas := make([]*block.Meta, 0, len(blockIDs))
 	for _, blockID := range blockIDs {
-		meta, ok := allMetas[blockID]
+		meta, ok := metas[blockID]
 		if !ok {
-			return nil, fmt.Errorf("block %s not found in synced metadata", blockID.String())
+			// A block not being found in the retrieved metadata means it was filtered. The job is no longer valid.
+			return nil, fmt.Errorf("block %s not found in retrieved metadata", blockID.String())
 		}
 		jobMetas = append(jobMetas, meta)
 	}

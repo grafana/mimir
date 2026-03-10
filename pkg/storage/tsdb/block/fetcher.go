@@ -8,6 +8,7 @@ package block
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path"
@@ -304,7 +305,7 @@ type response struct {
 	exceededLookbackCount  float64
 }
 
-func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletion bool, blockIDs []ulid.ULID) (interface{}, error) {
+func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletion bool) (interface{}, error) {
 	var (
 		resp = response{
 			metas:   make(map[ulid.ULID]*Meta),
@@ -378,19 +379,6 @@ func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletio
 	// Workers scheduled, distribute blocks.
 	eg.Go(func() error {
 		defer close(ch)
-
-		// If specific block IDs are provided, download directly without iterating over the bucket,
-		// otherwise, discover blocks via f.bkt.Iter
-		if len(blockIDs) > 0 {
-			for _, id := range blockIDs {
-				select {
-				case <-ctx.Done():
-					return ctx.Err()
-				case ch <- id:
-				}
-			}
-			return nil
-		}
 
 		return f.bkt.Iter(ctx, "", func(name string) error {
 			id, ok := IsBlockDir(name)
@@ -475,7 +463,7 @@ func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletio
 //
 // Returned error indicates a failure in fetching metadata. Returned meta can be assumed as correct, with some blocks missing.
 func (f *MetaFetcher) Fetch(ctx context.Context) (metas map[ulid.ULID]*Meta, partials map[ulid.ULID]error, err error) {
-	metas, partials, err = f.fetch(ctx, false, nil)
+	metas, partials, err = f.fetch(ctx, false)
 	return
 }
 
@@ -485,11 +473,11 @@ func (f *MetaFetcher) Fetch(ctx context.Context) (metas map[ulid.ULID]*Meta, par
 //
 // Returned error indicates a failure in fetching metadata. Returned meta can be assumed as correct, with some blocks missing.
 func (f *MetaFetcher) FetchWithoutMarkedForDeletion(ctx context.Context) (metas map[ulid.ULID]*Meta, partials map[ulid.ULID]error, err error) {
-	metas, partials, err = f.fetch(ctx, true, nil)
+	metas, partials, err = f.fetch(ctx, true)
 	return
 }
 
-func (f *MetaFetcher) fetch(ctx context.Context, excludeMarkedForDeletion bool, blockIDs []ulid.ULID) (_ map[ulid.ULID]*Meta, _ map[ulid.ULID]error, err error) {
+func (f *MetaFetcher) fetch(ctx context.Context, excludeMarkedForDeletion bool) (_ map[ulid.ULID]*Meta, _ map[ulid.ULID]error, err error) {
 	start := time.Now()
 	defer func() {
 		f.metrics.SyncDuration.Observe(time.Since(start).Seconds())
@@ -503,7 +491,7 @@ func (f *MetaFetcher) fetch(ctx context.Context, excludeMarkedForDeletion bool, 
 	// Run this in thread safe run group.
 	v, err := f.g.Do("", func() (i interface{}, err error) {
 		// NOTE: First go routine context will go through.
-		return f.fetchMetadata(ctx, excludeMarkedForDeletion, blockIDs)
+		return f.fetchMetadata(ctx, excludeMarkedForDeletion)
 	})
 	if err != nil {
 		return nil, nil, err
@@ -549,24 +537,50 @@ func (f *MetaFetcher) countCached() int {
 	return len(f.cached)
 }
 
-// FetchRequestedMetas fetches metadata for specific block IDs without iterating through the bucket.
+// FetchRequestedMetas fetches metadata for specific block IDs directly from object storage,
+// without iterating the bucket. Filters are applied after loading.
 // Returns an error if any of the requested block metadata fails to load.
 func (f *MetaFetcher) FetchRequestedMetas(ctx context.Context, blockIDs []ulid.ULID) (map[ulid.ULID]*Meta, error) {
 	if len(blockIDs) == 0 {
 		return nil, errNoBlocksProvided
 	}
 
-	metas, partial, err := f.fetch(ctx, false, blockIDs)
-	if err != nil {
+	// Prefill the channel uncontested
+	ch := make(chan ulid.ULID, len(blockIDs))
+	for _, id := range blockIDs {
+		ch <- id
+	}
+	close(ch)
+
+	var (
+		metas = make(map[ulid.ULID]*Meta, len(blockIDs))
+		mtx   sync.Mutex
+		eg    errgroup.Group
+	)
+
+	for i := 0; i < f.concurrency; i++ {
+		eg.Go(func() error {
+			for id := range ch {
+				meta, err := f.loadMeta(ctx, id)
+				if err != nil {
+					return fmt.Errorf("load meta for block %s: %w", id, err)
+				}
+				mtx.Lock()
+				metas[id] = meta
+				mtx.Unlock()
+			}
+			return nil
+		})
+	}
+
+	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
 
-	if len(partial) > 0 {
-		merr := multierror.New()
-		for _, err := range partial {
-			merr.Add(err)
+	for _, filter := range f.filters {
+		if err := filter.Filter(ctx, metas, f.metrics.Synced); err != nil {
+			return nil, errors.Wrap(err, "filter metas")
 		}
-		return nil, errors.Wrap(merr.Err(), "failed to sync requested blocks' metas")
 	}
 
 	return metas, nil

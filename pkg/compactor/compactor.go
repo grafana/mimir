@@ -24,7 +24,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/flagext"
-	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
@@ -52,12 +51,8 @@ const (
 )
 
 const (
-	planningModeStandalone = "standalone"
-	planningModeScheduler  = "scheduler"
-)
-
-var (
-	compactionPlanningModes = []string{planningModeScheduler, planningModeStandalone}
+	modeStandalone = "standalone"
+	modeScheduler  = "scheduler"
 )
 
 var (
@@ -67,11 +62,6 @@ var (
 	errInvalidMaxClosingBlocksConcurrency         = fmt.Errorf("invalid max-closing-blocks-concurrency value, must be positive")
 	errInvalidSymbolFlushersConcurrency           = fmt.Errorf("invalid symbols-flushers-concurrency value, must be positive")
 	errInvalidMaxBlockUploadValidationConcurrency = fmt.Errorf("invalid max-block-upload-validation-concurrency value, can't be negative")
-	errInvalidPlanningMode                        = fmt.Errorf("invalid planning-mode, supported values: %s", strings.Join(compactionPlanningModes, ", "))
-	errInvalidSchedulerEndpoint                   = fmt.Errorf("invalid scheduler-endpoint, required when compactor mode is %q", planningModeScheduler)
-	errInvalidSchedulerUpdateInterval             = fmt.Errorf("invalid scheduler-update-interval, interval must be positive")
-	errInvalidSchedulerMinLeasingBackoff          = fmt.Errorf("invalid scheduler-min-backoff, must be positive")
-	errInvalidSchedulerMaxLeasingBackoff          = fmt.Errorf("invalid scheduler-max-backoff, must be greater than min backoff")
 	RingOp                                        = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
 
 	// compactionIgnoredLabels defines the external labels that compactor will
@@ -148,21 +138,14 @@ type Config struct {
 	SparseIndexHeadersSamplingRate int                `yaml:"-"`
 	SparseIndexHeadersConfig       indexheader.Config `yaml:"-"`
 
-	// Scheduler mode options
-	PlanningMode                 string            `yaml:"planning_mode" category:"experimental"`
-	SchedulerEndpoint            string            `yaml:"scheduler_endpoint" category:"experimental"`
-	SchedulerUpdateInterval      time.Duration     `yaml:"scheduler_update_interval" category:"experimental"`
-	SchedulerMinLeasingBackoff   time.Duration     `yaml:"scheduler_min_backoff" category:"experimental"`
-	SchedulerMaxLeasingBackoff   time.Duration     `yaml:"scheduler_max_backoff" category:"experimental"`
-	GRPCClientConfig             grpcclient.Config `yaml:"grpc_client_config" category:"experimental"`
-	ExecutorRetryMinBackoff      time.Duration     `yaml:"executor_retry_min_backoff" category:"experimental"`
-	ExecutorRetryMaxBackoff      time.Duration     `yaml:"executor_retry_max_backoff" category:"experimental"`
-	CompactionDirCleanupInterval time.Duration     `yaml:"compaction_dir_cleanup_interval" category:"experimental"`
+	// Configuration for interacting with a compaction job scheduler
+	SchedulerClientConfig SchedulerClientConfig `yaml:"scheduler_client" category:"experimental" doc:"hidden"`
 }
 
 // RegisterFlags registers the MultitenantCompactor flags.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.ShardingRing.RegisterFlags(f, logger)
+	cfg.SchedulerClientConfig.RegisterFlags(f)
 
 	cfg.BlockRanges = mimir_tsdb.DurationList{2 * time.Hour, 12 * time.Hour, 24 * time.Hour}
 	cfg.retryMinBackoff = 10 * time.Second
@@ -181,15 +164,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.CleanupInterval, "compactor.cleanup-interval", 15*time.Minute, "How frequently the compactor should run blocks cleanup and maintenance, as well as update the bucket index.")
 	f.IntVar(&cfg.CleanupConcurrency, "compactor.cleanup-concurrency", 20, "Max number of tenants for which blocks cleanup and maintenance should run concurrently.")
 	f.StringVar(&cfg.CompactionJobsOrder, "compactor.compaction-jobs-order", CompactionOrderOldestFirst, fmt.Sprintf("The sorting to use when deciding which compaction jobs should run first for a given tenant. Supported values are: %s.", strings.Join(CompactionOrders, ", ")))
-	f.StringVar(&cfg.PlanningMode, "compactor.planning-mode", planningModeStandalone, fmt.Sprintf("Compactor operation mode. Supported values are: %s (plan and execute compactions), %s (request jobs from a remote scheduler).", planningModeStandalone, planningModeScheduler))
-	f.StringVar(&cfg.SchedulerEndpoint, "compactor.scheduler-endpoint", "", "Compactor scheduler endpoint. Required when compactor mode is 'scheduler'.")
-	f.DurationVar(&cfg.SchedulerUpdateInterval, "compactor.scheduler-update-interval", 15*time.Second, "Interval between scheduler job lease updates.")
-	f.DurationVar(&cfg.SchedulerMinLeasingBackoff, "compactor.scheduler-min-leasing-backoff", 100*time.Millisecond, "Minimum backoff time between scheduler job lease requests.")
-	f.DurationVar(&cfg.SchedulerMaxLeasingBackoff, "compactor.scheduler-max-leasing-backoff", 2*time.Minute, "Maximum backoff time between scheduler job lease requests.")
-	f.DurationVar(&cfg.ExecutorRetryMinBackoff, "compactor.executor-min-retry-backoff", 1*time.Second, "Minimum backoff time for compaction executor retries when sending scheduler status updates.")
-	f.DurationVar(&cfg.ExecutorRetryMaxBackoff, "compactor.executor-max-retry-backoff", 32*time.Second, "Maximum backoff time for compaction executor retries when sending scheduler status updates.")
-	f.DurationVar(&cfg.CompactionDirCleanupInterval, "compactor.compaction-dir-cleanup-interval", 30*time.Minute, "Defines how frequently to clean up the compaction working directory. The directory is cleaned on startup and then only when this interval has elapsed since the last cleanup. Set to 0 to disable periodic cleanup.")
-	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("compactor.scheduler", f)
 	f.DurationVar(&cfg.DeletionDelay, "compactor.deletion-delay", 12*time.Hour, "Time before a block marked for deletion is deleted from bucket. "+
 		"If not 0, blocks will be marked for deletion and the compactor component will permanently delete blocks marked for deletion from the bucket. "+
 		"If 0, blocks will be deleted straight away. Note that deleting blocks immediately can cause query failures.")
@@ -238,24 +212,8 @@ func (cfg *Config) Validate(logger log.Logger) error {
 	if !slices.Contains(CompactionOrders, cfg.CompactionJobsOrder) {
 		return errInvalidCompactionOrder
 	}
-
-	if !slices.Contains(compactionPlanningModes, cfg.PlanningMode) {
-		return errInvalidPlanningMode
-	}
-
-	if cfg.PlanningMode == planningModeScheduler {
-		if strings.TrimSpace(cfg.SchedulerEndpoint) == "" {
-			return errInvalidSchedulerEndpoint
-		}
-		if cfg.SchedulerUpdateInterval <= 0 {
-			return errInvalidSchedulerUpdateInterval
-		}
-		if cfg.SchedulerMinLeasingBackoff <= 0 {
-			return errInvalidSchedulerMinLeasingBackoff
-		}
-		if cfg.SchedulerMaxLeasingBackoff <= cfg.SchedulerMinLeasingBackoff {
-			return errInvalidSchedulerMaxLeasingBackoff
-		}
+	if err := cfg.SchedulerClientConfig.Validate(); err != nil {
+		return err
 	}
 
 	return nil
@@ -330,7 +288,6 @@ type MultitenantCompactor struct {
 	// Client used to run operations on the bucket storing blocks.
 	bucketClient objstore.Bucket
 
-	// compactionExecutor used to set the planning and compaction strategy
 	executor compactionExecutor
 
 	// Ring used for sharding compactions.
@@ -498,11 +455,17 @@ func newMultitenantCompactor(
 		return float64(c.blockUploadValidations.Load())
 	})
 
+	var mode string
+	if compactorCfg.SchedulerClientConfig.Enabled {
+		mode = modeScheduler
+	} else {
+		mode = modeStandalone
+	}
 	promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "cortex_compactor_info",
-		Help: "Information about the compactor. The mode label indicates the planning mode (standalone or scheduler).",
+		Help: "Information about the compactor. The mode label indicates the compactor mode (standalone or scheduler).",
 		ConstLabels: prometheus.Labels{
-			"mode": compactorCfg.PlanningMode,
+			"mode": mode,
 		},
 	}, func() float64 { return 1 })
 
@@ -554,14 +517,14 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 		return err
 	}
 
-	// Initialize the MultitenantCompactor's executor. If cfg.PlanningMode is set to 'scheduler', the compactor
-	// will periodically request to lease a job from a scheduler service at cfg.SchedulerEndpoint.
-	if c.compactorCfg.PlanningMode == planningModeScheduler {
+	if c.compactorCfg.SchedulerClientConfig.Enabled {
+		// Leases planning and compaction jobs from the compaction scheduler
 		c.executor, err = newSchedulerExecutor(c.compactorCfg, c.logger, c.invalidClusterValidation)
 		if err != nil {
 			return fmt.Errorf("failed to create scheduler executor: %w", err)
 		}
 	} else {
+		// Uses the ring to shard jobs between compactor instances
 		c.executor = &standaloneExecutor{}
 	}
 
@@ -834,7 +797,7 @@ func (c *MultitenantCompactor) compactUserWithRetries(ctx context.Context, userI
 	return lastErr
 }
 
-func (c *MultitenantCompactor) createMetaSyncerForUser(userID string, userBucket objstore.InstrumentedBucket, userLogger log.Logger, reg prometheus.Registerer) (*metaSyncer, error) {
+func (c *MultitenantCompactor) createMetaSyncerForUser(userID string, userBucket objstore.InstrumentedBucket, userLogger log.Logger, syncDir string, reg prometheus.Registerer) (*metaSyncer, error) {
 	// Filters out duplicate blocks that can be formed from two or more overlapping
 	// blocks that fully submatch the source blocks of the older blocks.
 	deduplicateBlocksFilter := NewShardAwareDeduplicateFilter()
@@ -854,7 +817,7 @@ func (c *MultitenantCompactor) createMetaSyncerForUser(userID string, userBucket
 		maxLookback = 0
 	}
 
-	fetcher, err := block.NewMetaFetcher(userLogger, c.compactorCfg.MetaSyncConcurrency, userBucket, c.metaSyncDirForUser(userID), reg, fetcherFilters, maxLookback)
+	fetcher, err := block.NewMetaFetcher(userLogger, c.compactorCfg.MetaSyncConcurrency, userBucket, syncDir, reg, fetcherFilters, maxLookback)
 	if err != nil {
 		return nil, err
 	}
@@ -881,7 +844,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 	reg := prometheus.NewRegistry()
 	defer c.syncerMetrics.gatherThanosSyncerMetrics(reg, userLogger)
 
-	syncer, err := c.createMetaSyncerForUser(userID, userBucket, userLogger, reg)
+	syncer, err := c.createMetaSyncerForUser(userID, userBucket, userLogger, c.metaSyncDirForUser(userID), reg)
 	if err != nil {
 		return err
 	}

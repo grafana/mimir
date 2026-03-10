@@ -45,11 +45,11 @@ var (
 	testBlockID2 = ulid.MustNew(2, nil)
 )
 
-func makeTestCompactorConfig(planningMode, schedulerAddress string) Config {
+func makeTestCompactorConfig() Config {
 	cfg := Config{}
 	flagext.DefaultValues(&cfg)
-	cfg.PlanningMode = planningMode
-	cfg.SchedulerEndpoint = schedulerAddress
+	cfg.SchedulerClientConfig.Enabled = true
+	cfg.SchedulerClientConfig.SchedulerEndpoint = "localhost:9095"
 	cfg.DataDir = "/tmp/compactor-test"
 	cfg.SparseIndexHeadersSamplingRate = 32
 	return cfg
@@ -63,8 +63,8 @@ func makeSchedulerTestConfig(t *testing.T) Config {
 	cfg.ShardingRing.Common.InstanceID = "compactor-1"
 	cfg.ShardingRing.Common.InstanceAddr = "1.2.3.4"
 	cfg.ShardingRing.Common.KVStore.Mock = ringStore
-	cfg.SchedulerEndpoint = "localhost:9095"
-	cfg.PlanningMode = planningModeScheduler
+	cfg.SchedulerClientConfig.SchedulerEndpoint = "localhost:9095"
+	cfg.SchedulerClientConfig.Enabled = true
 	return cfg
 }
 
@@ -237,8 +237,8 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 			mockSchedulerClient := &mockCompactorSchedulerClient{}
 			tc.setupMock(mockSchedulerClient)
 
-			cfg := makeTestCompactorConfig(planningModeScheduler, "localhost:9095")
-			cfg.SchedulerUpdateInterval = 1 * time.Hour
+			cfg := makeTestCompactorConfig()
+			cfg.SchedulerClientConfig.UpdateInterval = 1 * time.Hour
 			cfg.CompactionConcurrency = 1
 
 			var bucketClient objstore.Bucket = objstore.NewInMemBucket()
@@ -337,9 +337,9 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 			tc.setupMock(mockSchedulerClient)
 
 			cfg := makeSchedulerTestConfig(t)
-			cfg.SchedulerUpdateInterval = 1 * time.Hour
-			cfg.SchedulerMinLeasingBackoff = 100 * time.Millisecond
-			cfg.SchedulerMaxLeasingBackoff = 400 * time.Millisecond
+			cfg.SchedulerClientConfig.UpdateInterval = 1 * time.Hour
+			cfg.SchedulerClientConfig.LeasingMinBackoff = 100 * time.Millisecond
+			cfg.SchedulerClientConfig.LeasingMaxBackoff = 400 * time.Millisecond
 
 			bucketClient := &bucket.ClientMock{}
 			bucketClient.MockIter("user-1/", []string{}, nil)
@@ -366,7 +366,7 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 				}()
 
 				// Iteration 1 should fire immediately
-				waitTimeout := 2 * cfg.SchedulerMaxLeasingBackoff
+				waitTimeout := 2 * cfg.SchedulerClientConfig.LeasingMaxBackoff
 				sleepUntil(t, func() bool { return mockSchedulerClient.GetLeaseJobCallCount() == 1 }, waitTimeout)
 				delay1 := sleepUntil(t, func() bool { return mockSchedulerClient.GetLeaseJobCallCount() == 2 }, waitTimeout)
 				delay2 := sleepUntil(t, func() bool { return mockSchedulerClient.GetLeaseJobCallCount() == 3 }, waitTimeout)
@@ -376,7 +376,7 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 
 				// if it grows, back-off grows its jitter window as follows:
 				// [start,start*2) -> [start*2, start*4) -> [start*4, start*8) -> ... until max is reached]
-				maxFirstDelay := 2 * cfg.SchedulerMinLeasingBackoff
+				maxFirstDelay := 2 * cfg.SchedulerClientConfig.LeasingMinBackoff
 				assert.LessOrEqual(t, delay1, maxFirstDelay)
 				if tc.expectGrowingDelay {
 					assert.GreaterOrEqual(t, delay2, maxFirstDelay, "second delay should grow")
@@ -426,10 +426,10 @@ func TestSchedulerExecutor_ServicesLifecycle(t *testing.T) {
 
 func TestSchedulerExecutor_UnreachableScheduler(t *testing.T) {
 	cfg := makeSchedulerTestConfig(t)
-	cfg.SchedulerEndpoint = "unreachable-scheduler:9095"
+	cfg.SchedulerClientConfig.SchedulerEndpoint = "unreachable-scheduler:9095"
 	c, _, _, _, _ := prepare(t, cfg, objstore.NewInMemBucket())
 
-	// Starting should succeed if a valid cfg.SchedulerEndpoint string is passed, do not Dial w. block
+	// Starting should succeed if a valid scheduler endpoint is passed, do not Dial w. block
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c), "compactor should start even when scheduler is unreachable")
 	assert.Equal(t, services.Running, c.State())
 
@@ -471,7 +471,7 @@ func TestSchedulerExecutor_PlannedJobsRetryBehavior(t *testing.T) {
 		},
 	}
 
-	cfg := makeTestCompactorConfig(planningModeScheduler, "localhost:9095")
+	cfg := makeTestCompactorConfig()
 
 	schedulerExec := newTestSchedulerExecutor(t, cfg, mockSchedulerClient)
 
@@ -505,8 +505,8 @@ func TestSchedulerExecutor_NoGoRoutineLeak(t *testing.T) {
 		},
 	}
 
-	cfg := makeTestCompactorConfig(planningModeScheduler, "localhost:9095")
-	cfg.SchedulerUpdateInterval = 10 * time.Millisecond // Short interval to trigger the updater quickly
+	cfg := makeTestCompactorConfig()
+	cfg.SchedulerClientConfig.UpdateInterval = 10 * time.Millisecond // Short interval to trigger the updater quickly
 
 	bucketClient := &bucket.ClientMock{}
 	bucketClient.MockIter("test-tenant/markers/", []string{}, nil)
@@ -537,8 +537,8 @@ func TestSchedulerExecutor_JobCancellationOn_NotFoundResponse(t *testing.T) {
 		},
 	}
 
-	cfg := makeTestCompactorConfig(planningModeScheduler, "localhost:9095")
-	cfg.SchedulerUpdateInterval = 10 * time.Millisecond
+	cfg := makeTestCompactorConfig()
+	cfg.SchedulerClientConfig.UpdateInterval = 10 * time.Millisecond
 
 	schedulerExec := newTestSchedulerExecutor(t, cfg, mockSchedulerClient)
 
@@ -558,7 +558,7 @@ func TestSchedulerExecutor_JobCancellationOn_NotFoundResponse(t *testing.T) {
 		go schedulerExec.startJobStatusUpdater(ctx, mockCompactor, jobKey, jobSpec, cancel)
 
 		// we expect the job to be canceled after on the second update attempt
-		sleepUntil(t, func() bool { return mockSchedulerClient.GetUpdateJobCallCount() == 2 }, 3*cfg.SchedulerUpdateInterval)
+		sleepUntil(t, func() bool { return mockSchedulerClient.GetUpdateJobCallCount() == 2 }, 3*cfg.SchedulerClientConfig.UpdateInterval)
 		synctest.Wait()
 		require.Error(t, ctx.Err(), "job context should have been canceled after NOT_FOUND response")
 	})
@@ -620,7 +620,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_InvalidInput(t *testing.T) {
 
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
-			cfg := makeTestCompactorConfig(planningModeScheduler, "localhost:9095")
+			cfg := makeTestCompactorConfig()
 			schedulerExec := newTestSchedulerExecutor(t, cfg, nil)
 
 			c, _, _, _, _ := prepareWithConfigProvider(t, cfg, &bucket.ClientMock{}, newMockConfigProvider())
@@ -720,7 +720,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
-			cfg := makeTestCompactorConfig(planningModeScheduler, "localhost:9095")
+			cfg := makeTestCompactorConfig()
 
 			bkt := objstore.NewInMemBucket()
 

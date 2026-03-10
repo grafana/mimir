@@ -128,37 +128,31 @@ func TestConfig_Validate(t *testing.T) {
 			setup:    func(cfg *Config) { cfg.SymbolsFlushersConcurrency = 0 },
 			expected: errInvalidSymbolFlushersConcurrency.Error(),
 		},
-		"should pass with standalone planning mode": {
+		"should pass with scheduler client disabled": {
 			setup: func(cfg *Config) {
-				cfg.PlanningMode = planningModeStandalone
+				cfg.SchedulerClientConfig.Enabled = false
 			},
 			expected: "",
 		},
-		"should pass with scheduler mode and valid address": {
+		"should pass with scheduler client enabled and scheduler endpoint": {
 			setup: func(cfg *Config) {
-				cfg.PlanningMode = planningModeScheduler
-				cfg.SchedulerEndpoint = "localhost:9095"
+				cfg.SchedulerClientConfig.Enabled = true
+				cfg.SchedulerClientConfig.SchedulerEndpoint = "localhost:9095"
 			},
 			expected: "",
 		},
-		"should fail with scheduler mode but no address": {
+		"should fail with scheduler client enabled and no scheduler endpoint": {
 			setup: func(cfg *Config) {
-				cfg.PlanningMode = planningModeScheduler
-				cfg.SchedulerEndpoint = ""
+				cfg.SchedulerClientConfig.Enabled = true
+				cfg.SchedulerClientConfig.SchedulerEndpoint = ""
 			},
 			expected: errInvalidSchedulerEndpoint.Error(),
 		},
-		"should fail with invalid planning mode": {
+		"should fail with scheduler mode enabled and zero update interval": {
 			setup: func(cfg *Config) {
-				cfg.PlanningMode = "invalid-mode"
-			},
-			expected: errInvalidPlanningMode.Error(),
-		},
-		"should fail with scheduler mode and zero update interval": {
-			setup: func(cfg *Config) {
-				cfg.PlanningMode = planningModeScheduler
-				cfg.SchedulerEndpoint = "localhost:9095"
-				cfg.SchedulerUpdateInterval = 0
+				cfg.SchedulerClientConfig.Enabled = true
+				cfg.SchedulerClientConfig.SchedulerEndpoint = "localhost:9095"
+				cfg.SchedulerClientConfig.UpdateInterval = 0
 			},
 			expected: errInvalidSchedulerUpdateInterval.Error(),
 		},

@@ -120,19 +120,6 @@ func (s *metaSyncer) SyncMetas(ctx context.Context) error {
 	return nil
 }
 
-// SyncRequestedMetas fetches and synchronizes metadata for a given set of blocks.
-func (s *metaSyncer) SyncRequestedMetas(ctx context.Context, blockIDs []ulid.ULID) error {
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
-	metas, err := s.fetcher.FetchRequestedMetas(ctx, blockIDs)
-	if err != nil {
-		return err
-	}
-
-	s.blocks = metas
-	return nil
-}
-
 // Metas returns loaded metadata blocks since last sync.
 func (s *metaSyncer) Metas() map[ulid.ULID]*block.Meta {
 	s.mtx.Lock()
@@ -1150,7 +1137,7 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 // Returns nil if the error was recognized and handled successfully, otherwise returns a non-nil error.
 func (c *BucketCompactor) handleKnownCompactionErrors(ctx context.Context, job *Job, err error) error {
 	if ok, issue347Err := isIssue347Error(err); ok {
-		return repairIssue347(ctx, c.logger, c.bkt, c.sy.metrics.blocksMarkedForDeletion, issue347Err)
+		return repairIssue347(ctx, c.logger, c.bkt, c.metrics.blocksMarkedForDeletion, issue347Err)
 	}
 
 	// If the block has an out of order chunk and we have been configured to skip it,

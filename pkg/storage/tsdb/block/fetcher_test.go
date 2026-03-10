@@ -658,7 +658,7 @@ func TestMetaFetcher_CacheMetrics(t *testing.T) {
 	}
 }
 
-func TestMetaFetcher_FetchRequestedBlocks(t *testing.T) {
+func TestMetaFetcher_FetchRequestedMetas(t *testing.T) {
 	var (
 		ctx    = context.Background()
 		logger = log.NewNopLogger()
@@ -680,6 +680,7 @@ func TestMetaFetcher_FetchRequestedBlocks(t *testing.T) {
 
 	tests := map[string]struct {
 		requestedBlocks  []ulid.ULID
+		filters          []MetadataFilter
 		expectError      bool
 		expectedCount    int
 		shouldContain    []ulid.ULID
@@ -687,10 +688,16 @@ func TestMetaFetcher_FetchRequestedBlocks(t *testing.T) {
 	}{
 		"should fetch only requested blocks": {
 			requestedBlocks:  blockIDs[:2],
-			expectError:      false,
 			expectedCount:    2,
 			shouldContain:    blockIDs[:2],
 			shouldNotContain: blockIDs[2:],
+		},
+		"should apply filters to fetched metas": {
+			requestedBlocks:  blockIDs[:3],
+			filters:          []MetadataFilter{&removeBlockFilter{id: blockIDs[0]}},
+			expectedCount:    2,
+			shouldContain:    blockIDs[1:3],
+			shouldNotContain: []ulid.ULID{blockIDs[0]},
 		},
 		"should error on empty block IDs list": {
 			requestedBlocks: []ulid.ULID{},
@@ -709,7 +716,7 @@ func TestMetaFetcher_FetchRequestedBlocks(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			f, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), t.TempDir(), reg, nil, 0)
+			f, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), t.TempDir(), reg, tc.filters, 0)
 			require.NoError(t, err)
 
 			metas, err := f.FetchRequestedMetas(ctx, tc.requestedBlocks)
@@ -731,4 +738,14 @@ func TestMetaFetcher_FetchRequestedBlocks(t *testing.T) {
 			}
 		})
 	}
+}
+
+// removeBlockFilter is a MetadataFilter that removes a specific block from metas
+type removeBlockFilter struct {
+	id ulid.ULID
+}
+
+func (f *removeBlockFilter) Filter(_ context.Context, metas map[ulid.ULID]*Meta, _ GaugeVec) error {
+	delete(metas, f.id)
+	return nil
 }
