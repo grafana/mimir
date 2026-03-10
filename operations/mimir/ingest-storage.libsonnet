@@ -5,7 +5,7 @@
 
     // When false and ingest storage is enabled, ingesters will run without tokens in the ring.
     // This is only valid when ingest_storage_enabled is true.
-    ingest_storage_ingester_ring_tokens_enabled: true,
+    ingest_storage_ingester_ring_tokens_enabled: !$._config.ingest_storage_enabled,
 
     // Mimir ingesters migrated from classic architecture to partitions run their instances hash ring
     // on a dedicated prefix, which has been introduced as part of the migration process.
@@ -36,6 +36,7 @@
   //
 
   assert !$._config.ingest_storage_enabled || $._config.ruler_remote_evaluation_enabled : 'ingest storage requires ruler remote evaluation',
+  assert $._config.ingest_storage_enabled || $._config.ingest_storage_ingester_ring_tokens_enabled : 'do not disable ingester ring tokens in Mimir clusters running the classic architecture',
 
   // The generic ingest storage config that should be applied to every component.
   ingest_storage_args::

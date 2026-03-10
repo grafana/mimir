@@ -10,7 +10,7 @@ weight: 30
 # Grafana Mimir ingester
 
 The ingester is a stateful component that processes the most recently ingested samples and makes them available for querying.
-[Queriers](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/querier/) read recent data from ingesters and older data from long-term object storage via [store-gateways](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/store-gateway/).
+[Queriers](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/querier/) read recent data from ingesters and older data from long-term object storage via [store-gateways](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/store-gateway/).
 
 The ingester stores data both in memory and on disk for a configurable retention period.
 In-memory series are periodically compacted into an on-disk format called a TSDB block and then uploaded to object storage. This process happens every two hours by default.

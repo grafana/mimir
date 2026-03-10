@@ -314,15 +314,7 @@ func (Codec) MergeResponse(responses ...Response) (Response, error) {
 
 	// Merge the responses.
 	slices.SortFunc(promResponses, func(a, b *PrometheusResponse) int {
-		aTime := int64(-1)
-		if len(a.Data.Result) > 0 && len(a.Data.Result[0].Samples) > 0 {
-			aTime = a.Data.Result[0].Samples[0].TimestampMs
-		}
-		bTime := int64(-1)
-		if len(b.Data.Result) > 0 && len(b.Data.Result[0].Samples) > 0 {
-			bTime = b.Data.Result[0].Samples[0].TimestampMs
-		}
-		return cmp.Compare(aTime, bTime)
+		return cmp.Compare(firstSeriesTimestamp(a), firstSeriesTimestamp(b))
 	})
 
 	return &PrometheusResponseWithFinalizer{
@@ -726,11 +718,15 @@ func (c Codec) EncodeMetricsQueryRequest(ctx context.Context, r MetricsQueryRequ
 	switch r := r.(type) {
 	case *PrometheusRangeQueryRequest:
 		values := url.Values{
-			"start":          []string{encodeTime(r.GetStart())},
-			"end":            []string{encodeTime(r.GetEnd())},
-			"step":           []string{encodeDurationMs(r.GetStep())},
-			"lookback_delta": []string{encodeDuration(r.GetLookbackDelta())},
-			"query":          []string{r.GetQuery()},
+			"start": []string{encodeTime(r.GetStart())},
+			"end":   []string{encodeTime(r.GetEnd())},
+			"step":  []string{encodeDurationMs(r.GetStep())},
+			"query": []string{r.GetQuery()},
+		}
+		// Check if lookback delta has a non-zero value before encoding
+		// the request since it's not valid to request a lookback of "0".
+		if l := r.GetLookbackDelta(); l != 0 {
+			values["lookback_delta"] = []string{encodeDuration(l)}
 		}
 		if s := r.GetStats(); s != "" {
 			values["stats"] = []string{s}
@@ -741,9 +737,13 @@ func (c Codec) EncodeMetricsQueryRequest(ctx context.Context, r MetricsQueryRequ
 		}
 	case *PrometheusInstantQueryRequest:
 		values := url.Values{
-			"time":           []string{encodeTime(r.GetTime())},
-			"lookback_delta": []string{encodeDuration(r.GetLookbackDelta())},
-			"query":          []string{r.GetQuery()},
+			"time":  []string{encodeTime(r.GetTime())},
+			"query": []string{r.GetQuery()},
+		}
+		// Check if lookback delta has a non-zero value before encoding
+		// the request since it's not valid to request a lookback of "0".
+		if l := r.GetLookbackDelta(); l != 0 {
+			values["lookback_delta"] = []string{encodeDuration(l)}
 		}
 		if s := r.GetStats(); s != "" {
 			values["stats"] = []string{s}
@@ -1220,6 +1220,25 @@ func (Codec) negotiateContentType(acceptHeader string) (string, formatter) {
 	}
 
 	return "", nil
+}
+
+// firstSeriesTimestamp returns the earliest timestamp across the samples and histograms
+// of the first series in the response, or -1 if there are none.
+func firstSeriesTimestamp(r *PrometheusResponse) int64 {
+	if len(r.Data.Result) == 0 {
+		return -1
+	}
+	t := int64(-1)
+	s := r.Data.Result[0]
+	if len(s.Samples) > 0 {
+		t = s.Samples[0].TimestampMs
+	}
+	if len(s.Histograms) > 0 {
+		if ht := s.Histograms[0].TimestampMs; t == -1 || ht < t {
+			t = ht
+		}
+	}
+	return t
 }
 
 func matrixMerge(resps []*PrometheusResponse) []SampleStream {
