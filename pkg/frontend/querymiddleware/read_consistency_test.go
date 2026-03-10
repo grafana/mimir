@@ -192,7 +192,7 @@ func produceKafkaRecords(t *testing.T, clusterAddr, topic string, records ...*kg
 	cfg := createKafkaConfig(clusterAddr, topic)
 	reg := prometheus.NewPedanticRegistry()
 
-	writeClient, err := ingest.NewKafkaWriterClient(cfg, 1, log.NewNopLogger(), reg)
+	writeClient, err := ingest.NewKafkaWriterClient(cfg, 1, cfg.Topic, log.NewNopLogger(), reg)
 	require.NoError(t, err)
 	t.Cleanup(writeClient.Close)
 
