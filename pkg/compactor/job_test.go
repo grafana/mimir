@@ -49,10 +49,10 @@ func TestJobWaitPeriodElapsed(t *testing.T) {
 	meta4 := &block.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(4, nil), Compaction: tsdb.BlockMetaCompaction{Level: 2}}}
 
 	// OOO blocks
-	meta5 := &block.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(5, nil), Compaction: tsdb.BlockMetaCompaction{Level: 1}}}
-	meta6 := &block.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(6, nil), Compaction: tsdb.BlockMetaCompaction{Level: 1}}}
-	meta5.Compaction.SetOutOfOrder()
-	meta6.Compaction.SetOutOfOrder()
+	oooMeta1 := &block.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(5, nil), Compaction: tsdb.BlockMetaCompaction{Level: 1}}}
+	oooMeta2 := &block.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(6, nil), Compaction: tsdb.BlockMetaCompaction{Level: 1}}}
+	oooMeta1.Compaction.SetOutOfOrder()
+	oooMeta2.Compaction.SetOutOfOrder()
 
 	// Blocks with min-/max-time
 	now := time.Now()
@@ -136,8 +136,8 @@ func TestJobWaitPeriodElapsed(t *testing.T) {
 			waitPeriod:        10 * time.Minute,
 			skipFutureMaxTime: false,
 			jobBlocks: []jobBlock{
-				{meta: meta5, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-20 * time.Minute)}},
-				{meta: meta6, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-5 * time.Minute)}},
+				{meta: oooMeta1, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-20 * time.Minute)}},
+				{meta: oooMeta2, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-5 * time.Minute)}},
 			},
 			expectedElapsed: true,
 			expectedMeta:    nil,
@@ -194,40 +194,40 @@ func TestJobWaitPeriodElapsed(t *testing.T) {
 			expectedErr:  "mocked error",
 			expectedMeta: meta2,
 		},
-		"ooo wait period disabled - ooo blocks skipped": {
+		"ooo wait period disabled - ooo blocks not considered, period elapsed": {
 			waitPeriod:        10 * time.Minute,
 			oooWaitPeriod:     0,
 			skipFutureMaxTime: false,
 			jobBlocks: []jobBlock{
-				{meta: meta5, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-20 * time.Minute)}},
-				{meta: meta6, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-5 * time.Minute)}},
+				{meta: oooMeta1, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-20 * time.Minute)}},
+				{meta: oooMeta2, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-5 * time.Minute)}},
 			},
 			expectedElapsed: true,
 			expectedMeta:    nil,
 		},
-		"ooo block uploaded within ooo wait period": {
+		"ooo block uploaded within ooo wait period, period not elapsed": {
 			waitPeriod:        10 * time.Minute,
 			oooWaitPeriod:     10 * time.Minute,
 			skipFutureMaxTime: false,
 			jobBlocks: []jobBlock{
-				{meta: meta5, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-20 * time.Minute)}},
-				{meta: meta6, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-5 * time.Minute)}},
+				{meta: oooMeta1, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-20 * time.Minute)}},
+				{meta: oooMeta2, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-5 * time.Minute)}},
 			},
 			expectedElapsed: false,
-			expectedMeta:    meta6,
+			expectedMeta:    oooMeta2,
 		},
-		"ooo block uploaded beyond ooo wait period": {
+		"ooo block uploaded beyond ooo wait period, period elapsed": {
 			waitPeriod:        10 * time.Minute,
 			oooWaitPeriod:     10 * time.Minute,
 			skipFutureMaxTime: false,
 			jobBlocks: []jobBlock{
-				{meta: meta5, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-20 * time.Minute)}},
-				{meta: meta6, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-15 * time.Minute)}},
+				{meta: oooMeta1, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-20 * time.Minute)}},
+				{meta: oooMeta2, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-15 * time.Minute)}},
 			},
 			expectedElapsed: true,
 			expectedMeta:    nil,
 		},
-		"mixed job with different thresholds - in-order blocks use wait period": {
+		"mixed job with ooo block not clearing threshold, period not elapsed": {
 			waitPeriod:        10 * time.Minute,
 			oooWaitPeriod:     5 * time.Minute,
 			skipFutureMaxTime: false,
@@ -235,12 +235,12 @@ func TestJobWaitPeriodElapsed(t *testing.T) {
 				// In-order block uploaded 7 min ago - within 10 min wait period
 				{meta: meta1, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-7 * time.Minute)}},
 				// OOO block uploaded 7 min ago - beyond 5 min OOO wait period
-				{meta: meta5, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-7 * time.Minute)}},
+				{meta: oooMeta1, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-7 * time.Minute)}},
 			},
 			expectedElapsed: false,
 			expectedMeta:    meta1,
 		},
-		"mixed job with different thresholds - ooo blocks use ooo wait period": {
+		"mixed job with inorder block not clearing threshold, period elapsed": {
 			waitPeriod:        5 * time.Minute,
 			oooWaitPeriod:     10 * time.Minute,
 			skipFutureMaxTime: false,
@@ -248,18 +248,18 @@ func TestJobWaitPeriodElapsed(t *testing.T) {
 				// In-order block uploaded 7 min ago - beyond 5 min wait period
 				{meta: meta1, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-7 * time.Minute)}},
 				// OOO block uploaded 7 min ago - within 10 min OOO wait period
-				{meta: meta5, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-7 * time.Minute)}},
+				{meta: oooMeta1, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-7 * time.Minute)}},
 			},
 			expectedElapsed: false,
-			expectedMeta:    meta5,
+			expectedMeta:    oooMeta1,
 		},
-		"both wait periods disabled": {
+		"both wait periods disabled, period elapsed": {
 			waitPeriod:        0,
 			oooWaitPeriod:     0,
 			skipFutureMaxTime: false,
 			jobBlocks: []jobBlock{
 				{meta: meta1, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-5 * time.Minute)}},
-				{meta: meta5, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-5 * time.Minute)}},
+				{meta: oooMeta1, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-5 * time.Minute)}},
 			},
 			expectedElapsed: true,
 			expectedMeta:    nil,
