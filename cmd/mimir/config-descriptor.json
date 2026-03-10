@@ -12133,10 +12133,20 @@
           "kind": "field",
           "name": "first_level_compaction_wait_period",
           "required": false,
-          "desc": "How long the compactor waits before compacting first-level blocks that are uploaded by the ingesters. This configuration option allows for the reduction of cases where the compactor begins to compact blocks before all ingesters have uploaded their blocks to the storage.",
+          "desc": "How long the compactor waits before compacting first-level blocks that are uploaded by the ingesters or block-builders. This configuration option allows for the reduction of cases where the compactor begins to compact blocks before all ingesters have uploaded their blocks to the storage. Does not apply to out-of-order blocks.",
           "fieldValue": null,
           "fieldDefaultValue": 1500000000000,
           "fieldFlag": "compactor.first-level-compaction-wait-period",
+          "fieldType": "duration"
+        },
+        {
+          "kind": "field",
+          "name": "first_level_compaction_ooo_wait_period",
+          "required": false,
+          "desc": "How long the compactor waits before compacting first-level blocks containing out-of-order samples. When set to 0 (default), out-of-order blocks do not delay compaction.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "compactor.first-level-compaction-ooo-wait-period",
           "fieldType": "duration"
         },
         {

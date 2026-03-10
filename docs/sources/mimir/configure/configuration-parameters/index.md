@@ -6053,11 +6053,18 @@ The `compactor` block configures the compactor component.
 [compaction_concurrency: <int> | default = 1]
 
 # How long the compactor waits before compacting first-level blocks that are
-# uploaded by the ingesters. This configuration option allows for the reduction
-# of cases where the compactor begins to compact blocks before all ingesters
-# have uploaded their blocks to the storage.
+# uploaded by the ingesters or block-builders. This configuration option allows
+# for the reduction of cases where the compactor begins to compact blocks before
+# all ingesters have uploaded their blocks to the storage. Does not apply to
+# out-of-order blocks.
 # CLI flag: -compactor.first-level-compaction-wait-period
 [first_level_compaction_wait_period: <duration> | default = 25m]
+
+# How long the compactor waits before compacting first-level blocks containing
+# out-of-order samples. When set to 0 (default), out-of-order blocks do not
+# delay compaction.
+# CLI flag: -compactor.first-level-compaction-ooo-wait-period
+[first_level_compaction_ooo_wait_period: <duration> | default = 0s]
 
 # (experimental) When enabled, the compactor skips first-level compaction jobs
 # if any source block has a MaxTime more recent than the wait period threshold.

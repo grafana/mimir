@@ -858,6 +858,7 @@
   "compactor.compaction-retries": 3,
   "compactor.compaction-concurrency": 1,
   "compactor.first-level-compaction-wait-period": 1500000000000,
+  "compactor.first-level-compaction-ooo-wait-period": 0,
   "compactor.cleanup-interval": 900000000000,
   "compactor.cleanup-concurrency": 20,
   "compactor.deletion-delay": 43200000000000,
