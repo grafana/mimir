@@ -11,6 +11,8 @@ import (
 	"slices"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -157,7 +159,7 @@ func (job *Job) String() string {
 // elapsed for the input job. If the wait period has not elapsed, then this function
 // also returns the Meta of the first source block encountered for which the wait
 // period has not elapsed yet.
-func jobWaitPeriodElapsed(ctx context.Context, job *Job, waitPeriod time.Duration, skipFutureMaxTime bool, userBucket objstore.Bucket) (bool, *block.Meta, error) {
+func jobWaitPeriodElapsed(ctx context.Context, job *Job, waitPeriod time.Duration, skipFutureMaxTime bool, userBucket objstore.Bucket, logger log.Logger) (bool, *block.Meta, error) {
 	if waitPeriod <= 0 {
 		return true, nil, nil
 	}
@@ -175,16 +177,17 @@ func jobWaitPeriodElapsed(ctx context.Context, job *Job, waitPeriod time.Duratio
 			continue
 		}
 
-		if skipFutureMaxTime && timestamp.Time(meta.MaxTime).After(threshold) {
-			return false, meta, nil
-		}
-
 		attrs, err := block.GetMetaAttributes(ctx, meta, userBucket)
 		if err != nil {
 			return false, meta, err
 		}
 
 		if attrs.LastModified.After(threshold) {
+			return false, meta, nil
+		}
+
+		if skipFutureMaxTime && timestamp.Time(meta.MaxTime).After(threshold) {
+			level.Info(logger).Log("msg", "skipping compaction job because block max time is within the wait period, despite Last Modified being old enough", "block", meta.ULID.String(), "blockMaxTime", meta.MaxTime, "threshold", threshold, "lastModified", attrs.LastModified)
 			return false, meta, nil
 		}
 	}
