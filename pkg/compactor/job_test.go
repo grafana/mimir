@@ -151,6 +151,15 @@ func TestJobWaitPeriodElapsed(t *testing.T) {
 			expectedElapsed: false,
 			expectedMeta:    meta8,
 		},
+		"block with MaxTime more than wait period but LastModified old enough": {
+			waitPeriod:        10 * time.Minute,
+			skipFutureMaxTime: true,
+			jobBlocks: []jobBlock{
+				{meta: meta8, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-20 * time.Minute)}},
+			},
+			expectedElapsed: false,
+			expectedMeta:    meta8,
+		},
 		"block with max-time since more than the wait period but skip-future-max-time disabled": {
 			waitPeriod:        10 * time.Minute,
 			skipFutureMaxTime: false,
