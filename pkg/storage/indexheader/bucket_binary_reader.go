@@ -77,6 +77,27 @@ func NewBucketBinaryReader(
 
 	r := &BucketBinaryReader{}
 
+	// For now, we still require the full index-header on disk
+	localIndexHeaderPath := filepath.Join(dir, block.IndexHeaderFilename)
+
+	_, err := os.Stat(localIndexHeaderPath)
+	if err != nil {
+		level.Debug(spanLog).Log(
+			"msg", "index-header not found on disk disk; recreating",
+			"path", localIndexHeaderPath, "err", err,
+		)
+
+		start := time.Now()
+		if err := WriteBinary(ctx, bkt, blockID, localIndexHeaderPath); err != nil {
+			return nil, fmt.Errorf("cannot write index header: %w", err)
+		}
+
+		level.Debug(spanLog).Log(
+			"msg", "built index-header file",
+			"path", localIndexHeaderPath, "elapsed", time.Since(start),
+		)
+	}
+
 	bucketBlockIndexPath := filepath.Join(blockID.String(), block.IndexFilename)
 	bucketBlockIndexDecbufFactory := streamencoding.NewBucketDecbufFactory(ctx, bkt, bucketBlockIndexPath)
 
@@ -100,7 +121,7 @@ func NewBucketBinaryReader(
 		// Currently, the only other option is SectionPostingsOffsetTable;
 		// Symbols are read from disk and Postings Offsets are read from bucket
 		r.symbolsDecbufFactory = streamencoding.NewFilePoolDecbufFactory(
-			filepath.Join(dir, block.IndexHeaderFilename), cfg.MaxIdleFileHandles, metrics.decbufFactory,
+			localIndexHeaderPath, cfg.MaxIdleFileHandles, metrics.decbufFactory,
 		)
 		r.postingsOffsetsDecbufFactory = bucketBlockIndexDecbufFactory
 
