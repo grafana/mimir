@@ -22,6 +22,7 @@ import (
 	_ "github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/sharding" // Imported for side effects: registering the __sharded_concat__ function with the parser.
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
@@ -1433,6 +1434,41 @@ func TestOptimizationPass_SubsetSelectorEliminationDisabled(t *testing.T) {
 	})
 }
 
+func TestOptimizationPass_RangeVectorSplittingEnabled(t *testing.T) {
+	ctx := context.Background()
+	timeRange := types.NewInstantQueryTimeRange(time.Date(2026, 3, 10, 0, 0, 0, 0, time.UTC))
+	observer := streamingpromql.NoopPlanningObserver{}
+
+	opts := streamingpromql.NewTestEngineOpts()
+	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+	planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{})
+	planner.RegisterQueryPlanOptimizationPass(rangevectorsplitting.NewOptimizationPass(2*time.Hour, opts.Limits, time.Now, opts.CommonOpts.Reg, opts.Logger))
+	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, nil, opts.Logger))
+
+	expr := `sum(rate(metric{env="prod"}[6h])) / sum(rate(metric[6h]))`
+	plan, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
+	require.NoError(t, err)
+
+	expectedPlan := `
+		- BinaryExpression: LHS / RHS
+			- LHS: AggregateExpression: sum
+				- DeduplicateAndMerge
+					- SplitFunctionCall: splits=4 [(1773079200000,1773086399999], (1773086399999,1773093599999]*, (1773093599999,1773100799999]*, (1773100799999,1773100800000]]
+						- FunctionCall: rate(...)
+							- DuplicateFilter: {env="prod"}
+								- ref#1 Duplicate
+									- MatrixSelector: {__name__="metric"}[6h0m0s]
+			- RHS: AggregateExpression: sum
+				- DeduplicateAndMerge
+					- SplitFunctionCall: splits=4 [(1773079200000,1773086399999], (1773086399999,1773093599999]*, (1773093599999,1773100799999]*, (1773100799999,1773100800000]]
+						- FunctionCall: rate(...)
+							- ref#1 Duplicate ...
+		`
+
+	require.Equal(t, testutils.TrimIndent(expectedPlan), plan.String())
+}
+
 func BenchmarkOptimizationPass(b *testing.B) {
 	testCases := []string{
 		`foo`,
@@ -1921,11 +1957,11 @@ func TestIsSafeToApplyFilteringAfter(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			safe, err := commonsubexpressionelimination.IsSafeToApplyFilteringAfter(testCase.node, testCase.group, false)
+			safe, err := commonsubexpressionelimination.IsSafeToApplyFilteringAfter(testCase.node, nil, testCase.group, false)
 			require.NoError(t, err)
 			require.Equal(t, testCase.expectedSafeWithDelayedNameRemovalDisabled, safe)
 
-			safe, err = commonsubexpressionelimination.IsSafeToApplyFilteringAfter(testCase.node, testCase.group, true)
+			safe, err = commonsubexpressionelimination.IsSafeToApplyFilteringAfter(testCase.node, nil, testCase.group, true)
 			require.NoError(t, err)
 			require.Equal(t, testCase.expectedSafeWithDelayedNameRemovalEnabled, safe)
 		})
