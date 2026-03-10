@@ -535,12 +535,12 @@ func newPartitionHandlerTestHelper(t *testing.T) *partitionHandlerTestHelper {
 	reg := prometheus.NewRegistry()
 
 	// Create Kafka writer for events storage.
-	eventsKafkaWriter, err := ingest.NewKafkaWriterClient(cfg.EventsStorageWriter, 20, logger, prometheus.WrapRegistererWith(prometheus.Labels{"component": eventsKafkaWriterComponent}, reg))
+	eventsKafkaWriter, err := ingest.NewKafkaWriterClient(cfg.EventsStorageWriter, 20, cfg.EventsStorageWriter.Topic, logger, prometheus.WrapRegistererWith(prometheus.Labels{"component": eventsKafkaWriterComponent}, reg))
 	require.NoError(t, err)
 	t.Cleanup(eventsKafkaWriter.Close)
 
 	// Create Kafka writer for snapshots metadata storage.
-	snapshotsKafkaWriter, err := ingest.NewKafkaWriterClient(cfg.SnapshotsMetadataWriter, 20, logger, prometheus.WrapRegistererWith(prometheus.Labels{"component": snapshotsKafkaWriterComponent}, reg))
+	snapshotsKafkaWriter, err := ingest.NewKafkaWriterClient(cfg.SnapshotsMetadataWriter, 20, cfg.SnapshotsMetadataWriter.Topic, logger, prometheus.WrapRegistererWith(prometheus.Labels{"component": snapshotsKafkaWriterComponent}, reg))
 	require.NoError(t, err)
 	t.Cleanup(snapshotsKafkaWriter.Close)
 

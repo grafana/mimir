@@ -91,6 +91,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		fetches := consumer.PollFetches(fetchCtx)
 		require.NoError(t, fetches.Err())
 		require.Len(t, fetches.Records(), 1)
+		assert.Equal(t, topicName, fetches.Records()[0].Topic)
 		assert.Equal(t, []byte(tenantID), fetches.Records()[0].Key)
 
 		received := deserializeRecord(t, fetches.Records()[0])
@@ -1120,6 +1121,184 @@ func TestProduceResultsErr(t *testing.T) {
 
 		err := produceResultsErr(results)
 		assert.ErrorContains(t, err, "failed to write to partitions [1]")
+	})
+}
+
+func TestWriter_MultiWriteSync(t *testing.T) {
+	const (
+		topicName     = "test"
+		numPartitions = 10
+		tenantID      = "user-1"
+	)
+
+	var (
+		ctx     = context.Background()
+		series1 = []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")}
+		series2 = []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_2")}
+		series3 = []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_3")}
+	)
+
+	t.Run("should write records to multiple partitions", func(t *testing.T) {
+		t.Parallel()
+
+		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+		writer, reg := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+
+		req1 := &mimirpb.WriteRequest{Timeseries: series1, Source: mimirpb.API}
+		req2 := &mimirpb.WriteRequest{Timeseries: series2, Source: mimirpb.API}
+		req3 := &mimirpb.WriteRequest{Timeseries: series3, Source: mimirpb.API}
+		totalInputSize := req1.Size() + req2.Size() + req3.Size()
+
+		partitionRequests := []PartitionWriteRequest{
+			{PartitionID: 0, WriteRequest: req1},
+			{PartitionID: 1, WriteRequest: req2},
+			{PartitionID: 2, WriteRequest: req3},
+		}
+
+		err := writer.MultiWriteSync(ctx, topicName, tenantID, partitionRequests)
+		require.NoError(t, err)
+
+		// Read back from each partition and verify.
+		var totalSentBytes int
+		for _, pr := range partitionRequests {
+			consumer, err := kgo.NewClient(kgo.SeedBrokers(clusterAddr), kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{
+				topicName: {pr.PartitionID: kgo.NewOffset().AtStart()},
+			}))
+			require.NoError(t, err)
+			t.Cleanup(consumer.Close)
+
+			fetchCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			t.Cleanup(cancel)
+
+			fetches := consumer.PollFetches(fetchCtx)
+			require.NoError(t, fetches.Err())
+			require.Len(t, fetches.Records(), 1)
+			assert.Equal(t, pr.PartitionID, fetches.Records()[0].Partition)
+			totalSentBytes += len(fetches.Records()[0].Value)
+
+			received := mimirpb.WriteRequest{}
+			require.NoError(t, received.Unmarshal(fetches.Records()[0].Value))
+			require.Len(t, received.Timeseries, len(pr.WriteRequest.Timeseries))
+
+			for idx, expected := range pr.WriteRequest.Timeseries {
+				assert.Equal(t, expected.Labels, received.Timeseries[idx].Labels)
+				assert.Equal(t, expected.Samples, received.Timeseries[idx].Samples)
+			}
+		}
+
+		// Check metrics.
+		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+			# HELP cortex_ingest_storage_writer_input_bytes_total Total number of bytes in write requests before conversion to the Kafka record format.
+			# TYPE cortex_ingest_storage_writer_input_bytes_total counter
+			cortex_ingest_storage_writer_input_bytes_total %d
+
+			# HELP cortex_ingest_storage_writer_sent_bytes_total Total number of bytes produced to the Kafka backend.
+			# TYPE cortex_ingest_storage_writer_sent_bytes_total counter
+			cortex_ingest_storage_writer_sent_bytes_total %d
+
+			# HELP cortex_ingest_storage_writer_records_per_write_request The number of records a single per-partition write request has been split into.
+			# TYPE cortex_ingest_storage_writer_records_per_write_request histogram
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="1"} 3
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="2"} 3
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="4"} 3
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="8"} 3
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="16"} 3
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="32"} 3
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="64"} 3
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="128"} 3
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="+Inf"} 3
+			cortex_ingest_storage_writer_records_per_write_request_sum 3
+			cortex_ingest_storage_writer_records_per_write_request_count 3
+
+			# HELP cortex_ingest_storage_writer_produce_records_enqueued_total Total number of Kafka records enqueued to be sent to the Kafka backend (includes records that fail to be successfully sent to the Kafka backend).
+			# TYPE cortex_ingest_storage_writer_produce_records_enqueued_total counter
+			cortex_ingest_storage_writer_produce_records_enqueued_total{client_id="0"} 3
+		`, totalInputSize, totalSentBytes)),
+			"cortex_ingest_storage_writer_input_bytes_total",
+			"cortex_ingest_storage_writer_sent_bytes_total",
+			"cortex_ingest_storage_writer_records_per_write_request",
+			"cortex_ingest_storage_writer_produce_records_enqueued_total"))
+	})
+
+	t.Run("should skip empty requests", func(t *testing.T) {
+		t.Parallel()
+
+		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+		writer, reg := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+
+		nonEmptyReq := &mimirpb.WriteRequest{Timeseries: series1, Source: mimirpb.API}
+		inputSize := nonEmptyReq.Size()
+
+		partitionRequests := []PartitionWriteRequest{
+			{PartitionID: 0, WriteRequest: &mimirpb.WriteRequest{}},
+			{PartitionID: 1, WriteRequest: nonEmptyReq},
+		}
+
+		err := writer.MultiWriteSync(ctx, topicName, tenantID, partitionRequests)
+		require.NoError(t, err)
+
+		// Only partition 1 should have records.
+		consumer, err := kgo.NewClient(kgo.SeedBrokers(clusterAddr), kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{
+			topicName: {1: kgo.NewOffset().AtStart()},
+		}))
+		require.NoError(t, err)
+		t.Cleanup(consumer.Close)
+
+		fetchCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		t.Cleanup(cancel)
+
+		fetches := consumer.PollFetches(fetchCtx)
+		require.NoError(t, fetches.Err())
+		require.Len(t, fetches.Records(), 1)
+		assert.Equal(t, int32(1), fetches.Records()[0].Partition)
+
+		// Check metrics: only the non-empty partition should be tracked.
+		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+			# HELP cortex_ingest_storage_writer_input_bytes_total Total number of bytes in write requests before conversion to the Kafka record format.
+			# TYPE cortex_ingest_storage_writer_input_bytes_total counter
+			cortex_ingest_storage_writer_input_bytes_total %d
+
+			# HELP cortex_ingest_storage_writer_sent_bytes_total Total number of bytes produced to the Kafka backend.
+			# TYPE cortex_ingest_storage_writer_sent_bytes_total counter
+			cortex_ingest_storage_writer_sent_bytes_total %d
+
+			# HELP cortex_ingest_storage_writer_records_per_write_request The number of records a single per-partition write request has been split into.
+			# TYPE cortex_ingest_storage_writer_records_per_write_request histogram
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="1"} 1
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="2"} 1
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="4"} 1
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="8"} 1
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="16"} 1
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="32"} 1
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="64"} 1
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="128"} 1
+			cortex_ingest_storage_writer_records_per_write_request_bucket{le="+Inf"} 1
+			cortex_ingest_storage_writer_records_per_write_request_sum 1
+			cortex_ingest_storage_writer_records_per_write_request_count 1
+
+			# HELP cortex_ingest_storage_writer_produce_records_enqueued_total Total number of Kafka records enqueued to be sent to the Kafka backend (includes records that fail to be successfully sent to the Kafka backend).
+			# TYPE cortex_ingest_storage_writer_produce_records_enqueued_total counter
+			cortex_ingest_storage_writer_produce_records_enqueued_total{client_id="0"} 1
+		`, inputSize, len(fetches.Records()[0].Value))),
+			"cortex_ingest_storage_writer_input_bytes_total",
+			"cortex_ingest_storage_writer_sent_bytes_total",
+			"cortex_ingest_storage_writer_records_per_write_request",
+			"cortex_ingest_storage_writer_produce_records_enqueued_total"))
+	})
+
+	t.Run("should return nil when all partition requests are empty", func(t *testing.T) {
+		t.Parallel()
+
+		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+
+		partitionRequests := []PartitionWriteRequest{
+			{PartitionID: 0, WriteRequest: &mimirpb.WriteRequest{}},
+			{PartitionID: 1, WriteRequest: &mimirpb.WriteRequest{}},
+		}
+
+		err := writer.MultiWriteSync(ctx, topicName, tenantID, partitionRequests)
+		require.NoError(t, err)
 	})
 }
 

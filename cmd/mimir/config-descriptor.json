@@ -9398,6 +9398,46 @@
           "fieldDefaultValue": null
         },
         {
+          "kind": "block",
+          "name": "compartments",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "enabled",
+              "required": false,
+              "desc": "Whether compartments are enabled. When enabled, series are sharded across multiple Kafka topics based on metric name.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ingest-storage.compartments.enabled",
+              "fieldType": "boolean"
+            },
+            {
+              "kind": "field",
+              "name": "num_compartments",
+              "required": false,
+              "desc": "The number of read compartments. Each compartment uses a dedicated Kafka topic.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ingest-storage.compartments.num-compartments",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "topic_format",
+              "required": false,
+              "desc": "The topic name template with a \"\u003ccompartment-id\u003e\" placeholder that gets replaced with the compartment ID (e.g. mimir-read-comp-\u003ccompartment-id\u003e).",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingest-storage.compartments.topic-format",
+              "fieldType": "string"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
           "kind": "field",
           "name": "write_logs_fsync_before_kafka_commit_concurrency",
           "required": false,

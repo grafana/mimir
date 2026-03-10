@@ -1308,7 +1308,7 @@ func BenchmarkIngester_ReplayFromKafka_Dump(b *testing.B) {
 			writerCfg.Address = cfg.IngestStorageConfig.KafkaConfig.Address
 			writerCfg.DisableLinger = true
 
-			client, err := ingest.NewKafkaWriterClient(writerCfg, 20, log.NewNopLogger(), nil)
+			client, err := ingest.NewKafkaWriterClient(writerCfg, 20, writerCfg.Topic, log.NewNopLogger(), nil)
 			require.NoError(b, err)
 			b.Cleanup(func() { client.Close() })
 
