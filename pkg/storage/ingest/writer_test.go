@@ -68,7 +68,7 @@ func TestWriter_WriteSync(t *testing.T) {
 
 		req := &mimirpb.WriteRequest{Timeseries: multiSeries, Metadata: nil, Source: mimirpb.API}
 		inputSize := req.Size()
-		err := writer.WriteSync(ctx, partitionID, tenantID, req)
+		err := writer.WriteSync(ctx, topicName, partitionID, tenantID, req)
 		require.NoError(t, err)
 
 		// Ensure it was processed before returning.
@@ -85,6 +85,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		fetches := consumer.PollFetches(fetchCtx)
 		require.NoError(t, fetches.Err())
 		require.Len(t, fetches.Records(), 1)
+		assert.Equal(t, topicName, fetches.Records()[0].Topic)
 		assert.Equal(t, []byte(tenantID), fetches.Records()[0].Key)
 
 		received := mimirpb.WriteRequest{}
@@ -151,7 +152,7 @@ func TestWriter_WriteSync(t *testing.T) {
 			return nil, nil, false
 		})
 
-		err := writer.WriteSync(ctx, partitionID, tenantID, expectedReq)
+		err := writer.WriteSync(ctx, topicName, partitionID, tenantID, expectedReq)
 		require.NoError(t, err)
 
 		// Ensure it was processed before returning.
@@ -244,7 +245,7 @@ func TestWriter_WriteSync(t *testing.T) {
 
 				// Write to partitions.
 				for partitionID, series := range seriesPerPartition {
-					err := writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series, Metadata: nil, Source: mimirpb.API})
+					err := writer.WriteSync(ctx, topicName, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series, Metadata: nil, Source: mimirpb.API})
 					require.NoError(t, err)
 				}
 
@@ -333,7 +334,7 @@ func TestWriter_WriteSync(t *testing.T) {
 
 		// Write the first record, which is expected to be sent immediately.
 		runAsync(&wg, func() {
-			assert.NoError(t, writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series1, Metadata: nil, Source: mimirpb.API}))
+			assert.NoError(t, writer.WriteSync(ctx, topicName, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series1, Metadata: nil, Source: mimirpb.API}))
 		})
 
 		// Once the 1st Produce request is received by the server but still processing (there's a 1s sleep),
@@ -344,7 +345,7 @@ func TestWriter_WriteSync(t *testing.T) {
 			secondRequestCtx, cancelSecondRequest := context.WithTimeout(ctx, 10*time.Millisecond)
 			t.Cleanup(cancelSecondRequest)
 
-			assert.ErrorIs(t, writer.WriteSync(secondRequestCtx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series2, Metadata: nil, Source: mimirpb.API}), context.DeadlineExceeded)
+			assert.ErrorIs(t, writer.WriteSync(secondRequestCtx, topicName, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series2, Metadata: nil, Source: mimirpb.API}), context.DeadlineExceeded)
 		})
 
 		runAsyncAfter(&wg, firstRequestReceived, func() {
@@ -353,7 +354,7 @@ func TestWriter_WriteSync(t *testing.T) {
 				return client.BufferedProduceRecords() == 2
 			}, time.Second, 10*time.Millisecond)
 
-			assert.NoError(t, writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series3, Metadata: nil, Source: mimirpb.API}))
+			assert.NoError(t, writer.WriteSync(ctx, topicName, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series3, Metadata: nil, Source: mimirpb.API}))
 		})
 
 		// Wait until all 3 requests have been buffered.
@@ -407,11 +408,11 @@ func TestWriter_WriteSync(t *testing.T) {
 		wg := sync.WaitGroup{}
 
 		runAsync(&wg, func() {
-			assert.NoError(t, writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series1, Metadata: nil, Source: mimirpb.API}))
+			assert.NoError(t, writer.WriteSync(ctx, topicName, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series1, Metadata: nil, Source: mimirpb.API}))
 		})
 
 		runAsyncAfter(&wg, firstRequestReceived, func() {
-			assert.NoError(t, writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series2, Metadata: nil, Source: mimirpb.API}))
+			assert.NoError(t, writer.WriteSync(ctx, topicName, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series2, Metadata: nil, Source: mimirpb.API}))
 		})
 
 		runAsyncAfter(&wg, firstRequestReceived, func() {
@@ -420,7 +421,7 @@ func TestWriter_WriteSync(t *testing.T) {
 			// and not because it's waiting for the 1st call to complete.
 			time.Sleep(100 * time.Millisecond)
 
-			assert.NoError(t, writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series3, Metadata: nil, Source: mimirpb.API}))
+			assert.NoError(t, writer.WriteSync(ctx, topicName, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series3, Metadata: nil, Source: mimirpb.API}))
 		})
 
 		wg.Wait()
@@ -436,7 +437,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		writer, reg := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
 
 		// Write to a non-existing partition.
-		err := writer.WriteSync(ctx, 100, tenantID, &mimirpb.WriteRequest{Timeseries: multiSeries, Metadata: nil, Source: mimirpb.API})
+		err := writer.WriteSync(ctx, topicName, 100, tenantID, &mimirpb.WriteRequest{Timeseries: multiSeries, Metadata: nil, Source: mimirpb.API})
 		require.Error(t, err)
 
 		// Check metrics.
@@ -467,7 +468,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		})
 
 		startTime := time.Now()
-		require.Equal(t, kgo.ErrRecordTimeout, writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series1, Metadata: nil, Source: mimirpb.API}))
+		require.Equal(t, kgo.ErrRecordTimeout, writer.WriteSync(ctx, topicName, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series1, Metadata: nil, Source: mimirpb.API}))
 		elapsedTime := time.Since(startTime)
 
 		require.Greater(t, elapsedTime, kafkaCfg.WriteTimeout/2)
@@ -523,7 +524,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		// The 1st request is expected to fail because Kafka will take longer than the configured timeout.
 		runAsync(&wg, func() {
 			startTime := time.Now()
-			assert.Equal(t, kgo.ErrRecordTimeout, writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series1, Metadata: nil, Source: mimirpb.API}))
+			assert.Equal(t, kgo.ErrRecordTimeout, writer.WriteSync(ctx, topicName, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series1, Metadata: nil, Source: mimirpb.API}))
 			elapsedTime := time.Since(startTime)
 
 			// It should take nearly the client's write timeout.
@@ -541,7 +542,7 @@ func TestWriter_WriteSync(t *testing.T) {
 			time.Sleep(kafkaCfg.WriteTimeout + writerRequestTimeoutOverhead - delay)
 
 			startTime := time.Now()
-			assert.Equal(t, kgo.ErrRecordTimeout, writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series2, Metadata: nil, Source: mimirpb.API}))
+			assert.Equal(t, kgo.ErrRecordTimeout, writer.WriteSync(ctx, topicName, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series2, Metadata: nil, Source: mimirpb.API}))
 			elapsedTime := time.Since(startTime)
 
 			// We expect to fail once the previous request fails, so it should take nearly the client's write timeout
@@ -578,7 +579,7 @@ func TestWriter_WriteSync(t *testing.T) {
 			return nil, nil, false
 		})
 
-		err := writer.WriteSync(ctx, partitionID, tenantID, req)
+		err := writer.WriteSync(ctx, topicName, partitionID, tenantID, req)
 		require.Equal(t, ErrWriteRequestDataItemTooLarge, err)
 
 		// Ensure it was processed before returning.
@@ -653,7 +654,7 @@ func TestWriter_WriteSync(t *testing.T) {
 
 		// Estimate the size of each record written in this test.
 		writeReq := createWriteRequest()
-		writeReqRecords, err := marshalWriteRequestToRecords(partitionID, tenantID, writeReq, writeReq.Size(), maxProducerRecordDataBytesLimit, mimirpb.SplitWriteRequestByMaxMarshalSize)
+		writeReqRecords, err := marshalWriteRequestToRecords(topicName, partitionID, tenantID, writeReq, writeReq.Size(), maxProducerRecordDataBytesLimit, mimirpb.SplitWriteRequestByMaxMarshalSize)
 		require.NoError(t, err)
 		require.Len(t, writeReqRecords, 1)
 		estimatedRecordSize := len(writeReqRecords[0].Value)
@@ -711,7 +712,7 @@ func TestWriter_WriteSync(t *testing.T) {
 			partition := i
 
 			runAsync(&goroutines, func() {
-				err := writer.WriteSync(ctx, partition, tenantID, createWriteRequest())
+				err := writer.WriteSync(ctx, topicName, partition, tenantID, createWriteRequest())
 				t.Logf("WriteSync() returned with error: %v", err)
 
 				// Keep track of the returned error (if any).
@@ -772,7 +773,7 @@ func TestWriter_WriteSync(t *testing.T) {
 			partition := i
 
 			runAsync(&goroutines, func() {
-				require.NoError(t, writer.WriteSync(ctx, partition, tenantID, createWriteRequest()))
+				require.NoError(t, writer.WriteSync(ctx, topicName, partition, tenantID, createWriteRequest()))
 			})
 		}
 
@@ -799,12 +800,12 @@ func TestWriter_WriteSync(t *testing.T) {
 		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
 		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
 
-		err := writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: multiSeries, Metadata: nil, Source: mimirpb.API})
+		err := writer.WriteSync(ctx, topicName, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: multiSeries, Metadata: nil, Source: mimirpb.API})
 		require.NoError(t, err)
 
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, writer))
 
-		err = writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: multiSeries, Metadata: nil, Source: mimirpb.API})
+		err = writer.WriteSync(ctx, topicName, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: multiSeries, Metadata: nil, Source: mimirpb.API})
 		require.Equal(t, err, ErrWriterNotRunning)
 	})
 }
@@ -863,7 +864,7 @@ func TestWriter_WriteSync_HighConcurrencyOnKafkaClientBufferFull(t *testing.T) {
 					return
 
 				default:
-					if err := writer.WriteSync(ctx, partitionID, tenantID, createRandomWriteRequest()); err == nil {
+					if err := writer.WriteSync(ctx, topicName, partitionID, tenantID, createRandomWriteRequest()); err == nil {
 						writeSuccessCount.Inc()
 					} else {
 						assert.ErrorIs(t, err, kgo.ErrMaxBuffered)
@@ -934,7 +935,7 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 
 	t.Run("should return 1 record if the input WriteRequest size is less than the size limit", func(t *testing.T) {
 		req := testReq(t)
-		records, err := marshalWriteRequestToRecords(1, "user-1", req, req.Size(), req.Size()*2, mimirpb.SplitWriteRequestByMaxMarshalSize)
+		records, err := marshalWriteRequestToRecords("test", 1, "user-1", req, req.Size(), req.Size()*2, mimirpb.SplitWriteRequestByMaxMarshalSize)
 		require.NoError(t, err)
 		require.Len(t, records, 1)
 
@@ -947,7 +948,7 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 
 	t.Run("should return 1 record if the input WriteRequest in RW2 size is less than the size limit", func(t *testing.T) {
 		req := testReqV2(t)
-		records, err := marshalWriteRequestToRecords(1, "user-1", req, req.Size(), req.Size()*2, splitRequestVersionTwo)
+		records, err := marshalWriteRequestToRecords("test", 1, "user-1", req, req.Size(), req.Size()*2, splitRequestVersionTwo)
 		require.NoError(t, err)
 		require.Len(t, records, 1)
 
@@ -1009,7 +1010,7 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 		const limit = 100
 		req := testReq(t)
 
-		records, err := marshalWriteRequestToRecords(1, "user-1", req, req.Size(), limit, mimirpb.SplitWriteRequestByMaxMarshalSize)
+		records, err := marshalWriteRequestToRecords("test", 1, "user-1", req, req.Size(), limit, mimirpb.SplitWriteRequestByMaxMarshalSize)
 		require.NoError(t, err)
 		require.Len(t, records, 4)
 
@@ -1053,7 +1054,7 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 		const limit = 100
 		req := testReqV2(t)
 
-		records, err := marshalWriteRequestToRecords(1, "user-1", req, req.Size(), limit, splitRequestVersionTwo)
+		records, err := marshalWriteRequestToRecords("test", 1, "user-1", req, req.Size(), limit, splitRequestVersionTwo)
 		require.NoError(t, err)
 		require.Len(t, records, 3)
 
@@ -1142,7 +1143,7 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 		const limit = 1
 		req := testReq(t)
 
-		records, err := marshalWriteRequestToRecords(1, "user-1", req, req.Size(), limit, mimirpb.SplitWriteRequestByMaxMarshalSize)
+		records, err := marshalWriteRequestToRecords("test", 1, "user-1", req, req.Size(), limit, mimirpb.SplitWriteRequestByMaxMarshalSize)
 		require.NoError(t, err)
 		require.Len(t, records, 6)
 
@@ -1203,7 +1204,7 @@ func BenchmarkMarshalWriteRequestToRecords_NoSplitting(b *testing.B) {
 
 	b.Run("marshalWriteRequestToRecords()", func(b *testing.B) {
 		for n := 0; n < b.N; n++ {
-			records, err := marshalWriteRequestToRecords(1, "user-1", req, req.Size(), 1024*1024*1024, requestSplitter)
+			records, err := marshalWriteRequestToRecords("test", 1, "user-1", req, req.Size(), 1024*1024*1024, requestSplitter)
 			if err != nil {
 				b.Fatal(err)
 			}

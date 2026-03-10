@@ -286,7 +286,7 @@ func NewUsageTracker(cfg Config, instanceRing *ring.Ring, partitionRing *ring.Mu
 	}
 
 	eventsWriterReg := prometheus.WrapRegistererWithPrefix(writerMetricsPrefix, prometheus.WrapRegistererWith(prometheus.Labels{"component": eventsKafkaWriterComponent}, t.registerer))
-	t.eventsKafkaWriter, err = ingest.NewKafkaWriterClient(t.cfg.EventsStorageWriter, 20, t.logger, eventsWriterReg)
+	t.eventsKafkaWriter, err = ingest.NewKafkaWriterClient(t.cfg.EventsStorageWriter, 20, t.cfg.EventsStorageWriter.Topic, t.logger, eventsWriterReg)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create Kafka writer client for usage-tracker")
 	}
@@ -298,7 +298,7 @@ func NewUsageTracker(cfg Config, instanceRing *ring.Ring, partitionRing *ring.Mu
 		}
 	}
 	snapshotsWriterReg := prometheus.WrapRegistererWithPrefix(writerMetricsPrefix, prometheus.WrapRegistererWith(prometheus.Labels{"component": snapshotsKafkaWriterComponent}, t.registerer))
-	t.snapshotsMetadataKafkaWriter, err = ingest.NewKafkaWriterClient(t.cfg.SnapshotsMetadataWriter, 20, t.logger, snapshotsWriterReg)
+	t.snapshotsMetadataKafkaWriter, err = ingest.NewKafkaWriterClient(t.cfg.SnapshotsMetadataWriter, 20, t.cfg.SnapshotsMetadataWriter.Topic, t.logger, snapshotsWriterReg)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create Kafka writer client for usage-tracker snapshots metadata")
 	}

@@ -2306,7 +2306,7 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 			}
 
 			ctx := remoteRequestContext()
-			err = d.ingestStorageWriter.WriteSync(ctx, int32(partitionID), tenantID, req)
+			err = d.ingestStorageWriter.WriteSync(ctx, d.cfg.IngestStorageConfig.KafkaConfig.Topic, int32(partitionID), tenantID, req)
 			err = wrapPartitionPushError(err, int32(partitionID))
 			err = wrapDeadlineExceededPushError(err)
 

@@ -147,7 +147,7 @@ func (w *Writer) stopping(_ error) error {
 
 // WriteSync the input data to the ingest storage. The function blocks until the data has been successfully committed,
 // or an error occurred.
-func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string, req *mimirpb.WriteRequest) error {
+func (w *Writer) WriteSync(ctx context.Context, topic string, partitionID int32, userID string, req *mimirpb.WriteRequest) error {
 	startTime := time.Now()
 
 	// Nothing to do if the input data is empty.
@@ -156,7 +156,7 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string
 	}
 
 	// Create records out of the write request.
-	records, reqSizeBytes, err := w.serializer.ToRecords(partitionID, userID, req, w.kafkaCfg.ProducerMaxRecordSizeBytes)
+	records, reqSizeBytes, err := w.serializer.ToRecords(topic, partitionID, userID, req, w.kafkaCfg.ProducerMaxRecordSizeBytes)
 	if err != nil {
 		return err
 	}
@@ -230,7 +230,9 @@ func (w *Writer) getKafkaWriterForPartition(partitionID int32) (*KafkaProducer, 
 	// Add the client ID to logger so that we can easily distinguish Kafka clients in logs.
 	clientLogger := log.With(w.logger, "client_id", clientID)
 
-	newClient, err := NewKafkaWriterClient(w.kafkaCfg, w.maxInflightProduceRequests, clientLogger, clientReg)
+	// The Writer does not use a default topic because the topic is set on each record individually,
+	// allowing writes to different topics (compartments).
+	newClient, err := NewKafkaWriterClient(w.kafkaCfg, w.maxInflightProduceRequests, "", clientLogger, clientReg)
 	if err != nil {
 		return nil, err
 	}
@@ -250,10 +252,10 @@ type requestSplitter func(req *mimirpb.WriteRequest, reqSize, maxSize int) []*mi
 // have their data size limited to maxSize. The reason is that the WriteRequest is split
 // by each individual Timeseries and Metadata: if a single Timeseries or Metadata is bigger than
 // maxSize, than the resulting record will be bigger than the limit as well.
-func marshalWriteRequestToRecords(partitionID int32, tenantID string, req *mimirpb.WriteRequest, reqSize, maxSize int, split requestSplitter) ([]*kgo.Record, error) {
+func marshalWriteRequestToRecords(topic string, partitionID int32, tenantID string, req *mimirpb.WriteRequest, reqSize, maxSize int, split requestSplitter) ([]*kgo.Record, error) {
 	if reqSize <= maxSize {
 		// No need to split the request. We can take a fast path.
-		rec, err := marshalWriteRequestToRecord(partitionID, tenantID, req, reqSize)
+		rec, err := marshalWriteRequestToRecord(topic, partitionID, tenantID, req, reqSize)
 		if err != nil {
 			return nil, err
 		}
@@ -261,14 +263,14 @@ func marshalWriteRequestToRecords(partitionID int32, tenantID string, req *mimir
 		return []*kgo.Record{rec}, nil
 	}
 
-	return marshalWriteRequestsToRecords(partitionID, tenantID, split(req, reqSize, maxSize))
+	return marshalWriteRequestsToRecords(topic, partitionID, tenantID, split(req, reqSize, maxSize))
 }
 
-func marshalWriteRequestsToRecords(partitionID int32, tenantID string, reqs []*mimirpb.WriteRequest) ([]*kgo.Record, error) {
+func marshalWriteRequestsToRecords(topic string, partitionID int32, tenantID string, reqs []*mimirpb.WriteRequest) ([]*kgo.Record, error) {
 	records := make([]*kgo.Record, 0, len(reqs))
 
 	for _, req := range reqs {
-		rec, err := marshalWriteRequestToRecord(partitionID, tenantID, req, req.Size())
+		rec, err := marshalWriteRequestToRecord(topic, partitionID, tenantID, req, req.Size())
 		if err != nil {
 			return nil, err
 		}
@@ -279,7 +281,7 @@ func marshalWriteRequestsToRecords(partitionID int32, tenantID string, reqs []*m
 	return records, nil
 }
 
-func marshalWriteRequestToRecord(partitionID int32, tenantID string, req *mimirpb.WriteRequest, reqSize int) (*kgo.Record, error) {
+func marshalWriteRequestToRecord(topic string, partitionID int32, tenantID string, req *mimirpb.WriteRequest, reqSize int) (*kgo.Record, error) {
 	// Marshal the request.
 	data := make([]byte, reqSize)
 	n, err := req.MarshalToSizedBuffer(data[:reqSize])
@@ -289,6 +291,7 @@ func marshalWriteRequestToRecord(partitionID int32, tenantID string, req *mimirp
 	data = data[:n]
 
 	return &kgo.Record{
+		Topic:     topic,
 		Key:       []byte(tenantID), // We don't partition based on the key, so the value here doesn't make any difference.
 		Value:     data,
 		Partition: partitionID,
