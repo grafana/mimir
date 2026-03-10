@@ -8,9 +8,11 @@ package ingester
 import (
 	"context"
 	"math"
+	"slices"
 	"strings"
 	"time"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/failsafe-go/failsafe-go/adaptivelimiter"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/middleware"
@@ -21,6 +23,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -422,6 +425,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		minAppendTimeAvailable,
 		minAppendTime,
 		req.Source == mimirpb.OTLP,
+		db.db,
 	); pushSamplesToAppenderErr != nil {
 		if err := app.Rollback(); err != nil {
 			level.Warn(i.logger).Log("msg", "failed to rollback appender on error", "user", userID, "err", err)
@@ -557,6 +561,7 @@ func (i *Ingester) pushSamplesToAppender(
 	minAppendTimeAvailable bool,
 	minAppendTime int64,
 	isOTLP bool,
+	tsdbDB *tsdb.DB,
 ) error {
 	// Fetch limits once per push request both to avoid processing half the request differently.
 	var (
@@ -570,6 +575,7 @@ func (i *Ingester) pushSamplesToAppender(
 
 	var builder labels.ScratchBuilder
 	var nonCopiedLabels labels.Labels
+	var entrySortBuf []mimirpb.AttributeEntry
 
 	// idx is used to decrease active series count in case of error for cost attribution.
 	idx := i.getTSDB(userID).Head().MustIndex()
@@ -644,14 +650,22 @@ func (i *Ingester) pushSamplesToAppender(
 		ingestCreatedTimestamp := ts.CreatedTimestamp > 0
 
 		// Build resource context once per time series.
+		// Hash-first: compute content hash from raw entries (zero-alloc), then check
+		// if the TSDB already has this hash for this series. On the >99% hot path
+		// where content hasn't changed, skip entriesToMap entirely.
 		var resourceCtx *storage.ResourceContext
 		if ts.ResourceAttributes != nil && len(ts.ResourceAttributes.Identifying) > 0 {
 			metricName := nonCopiedLabels.Get(model.MetricNameLabel)
 			if metricName != "target_info" {
-				resourceCtx = &storage.ResourceContext{
-					Identifying: entriesToMap(ts.ResourceAttributes.Identifying),
-					Descriptive: entriesToMap(ts.ResourceAttributes.Descriptive),
-					Entities:    convertResourceEntities(ts.ResourceAttributes.Entities),
+				contentHash, buf := hashResourceAttributesRaw(ts.ResourceAttributes, entrySortBuf)
+				entrySortBuf = buf
+				labelsHash := labels.StableHash(nonCopiedLabels)
+				if !tsdbDB.ResourceHasContentHash(labelsHash, contentHash) {
+					resourceCtx = &storage.ResourceContext{
+						Identifying: entriesToMap(ts.ResourceAttributes.Identifying),
+						Descriptive: entriesToMap(ts.ResourceAttributes.Descriptive),
+						Entities:    convertResourceEntities(ts.ResourceAttributes.Entities),
+					}
 				}
 			}
 		}
@@ -994,6 +1008,81 @@ func entriesToMap(entries []mimirpb.AttributeEntry) map[string]string {
 		m[strings.Clone(e.Key)] = strings.Clone(e.Value)
 	}
 	return m
+}
+
+// hashAttributeEntries computes the same hash as seriesmetadata.hashAttrs produces
+// for the equivalent map[string]string, without creating the map. Entries are sorted
+// by key for determinism, matching hashAttrs' sorted-keys approach.
+func hashAttributeEntries(h *xxhash.Digest, entries []mimirpb.AttributeEntry, sortBuf []mimirpb.AttributeEntry) []mimirpb.AttributeEntry {
+	// Reuse sort buffer to avoid allocation.
+	sortBuf = sortBuf[:0]
+	if cap(sortBuf) < len(entries) {
+		sortBuf = make([]mimirpb.AttributeEntry, 0, len(entries))
+	}
+	sortBuf = append(sortBuf, entries...)
+	slices.SortFunc(sortBuf, func(a, b mimirpb.AttributeEntry) int {
+		if a.Key < b.Key {
+			return -1
+		}
+		if a.Key > b.Key {
+			return 1
+		}
+		return 0
+	})
+	for _, e := range sortBuf {
+		_, _ = h.WriteString(e.Key)
+		_, _ = h.Write([]byte{0})
+		_, _ = h.WriteString(e.Value)
+		_, _ = h.Write([]byte{0})
+	}
+	return sortBuf
+}
+
+// hashResourceAttributesRaw computes a content hash from raw ResourceAttributes
+// that matches hashResourceCommitDataReusable for equivalent data.
+// Zero-allocation on the hot path (reuses sortBuf).
+func hashResourceAttributesRaw(ra *mimirpb.ResourceAttributes, sortBuf []mimirpb.AttributeEntry) (uint64, []mimirpb.AttributeEntry) {
+	var h xxhash.Digest
+
+	sortBuf = hashAttributeEntries(&h, ra.Identifying, sortBuf)
+	_, _ = h.Write([]byte{1})
+	sortBuf = hashAttributeEntries(&h, ra.Descriptive, sortBuf)
+	_, _ = h.Write([]byte{1})
+
+	// Sort entities by type, matching hashResourceCommitDataReusable.
+	entities := ra.Entities
+	if len(entities) > 1 {
+		slices.SortFunc(entities, func(a, b mimirpb.ResourceEntity) int {
+			at, bt := a.Type, b.Type
+			if at == "" {
+				at = "resource"
+			}
+			if bt == "" {
+				bt = "resource"
+			}
+			if at < bt {
+				return -1
+			}
+			if at > bt {
+				return 1
+			}
+			return 0
+		})
+	}
+	for _, e := range entities {
+		entityType := e.Type
+		if entityType == "" {
+			entityType = "resource"
+		}
+		_, _ = h.WriteString(entityType)
+		_, _ = h.Write([]byte{0})
+		sortBuf = hashAttributeEntries(&h, e.ID, sortBuf)
+		_, _ = h.Write([]byte{1})
+		sortBuf = hashAttributeEntries(&h, e.Description, sortBuf)
+		_, _ = h.Write([]byte{1})
+	}
+
+	return h.Sum64(), sortBuf
 }
 
 // convertResourceEntities converts ResourceEntity slice to storage.EntityData slice.
