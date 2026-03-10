@@ -369,7 +369,7 @@ func firstOverTimeCombine(pieces []FirstLastOverTimeIntermediate, _ int64, _ int
 			return p.F, true, nil, nil
 		}
 		if p.H != nil {
-			return 0, false, mimirpb.FromFloatHistogramProtoToFloatHistogram(p.H), nil
+			return 0, false, mimirpb.FromFloatHistogramProtoToFloatHistogram(p.H).Copy(), nil
 		}
 	}
 
@@ -410,7 +410,7 @@ func lastOverTimeCombine(pieces []FirstLastOverTimeIntermediate, _ int64, _ int6
 			return p.F, true, nil, nil
 		}
 		if p.H != nil {
-			return 0, false, mimirpb.FromFloatHistogramProtoToFloatHistogram(p.H), nil
+			return 0, false, mimirpb.FromFloatHistogramProtoToFloatHistogram(p.H).Copy(), nil
 		}
 	}
 
