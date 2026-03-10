@@ -2420,11 +2420,17 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 		return nil
 	}
 
+	selectHints := initSelectHints(int64(from), int64(through))
+	selectHints = configSelectHintsWithShard(selectHints, shard)
+	// Disable chunks trimming, so that we don't have to rewrite chunks which have samples outside
+	// the requested from/through range. PromQL engine can handle it.
+	selectHints = configSelectHintsWithDisabledTrimming(selectHints)
+
 	numSamples := 0
 	numSeries := 0
 
 	spanlog.DebugLog("msg", "using executeStreamingQuery")
-	numSeries, numSamples, err = i.executeStreamingQuery(ctx, db, int64(from), int64(through), matchers, shard, stream, req.StreamingChunksBatchSize, spanlog)
+	numSeries, numSamples, err = i.executeStreamingQuery(ctx, db, selectHints, matchers, stream, req.StreamingChunksBatchSize, spanlog)
 	if err != nil {
 		return err
 	}
@@ -2435,13 +2441,13 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	return nil
 }
 
-func (i *Ingester) executeStreamingQuery(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer, batchSize uint64, spanlog *spanlogger.SpanLogger) (numSeries, numSamples int, _ error) {
+func (i *Ingester) executeStreamingQuery(ctx context.Context, db *userTSDB, hints *storage.SelectHints, matchers []*labels.Matcher, stream client.Ingester_QueryStreamServer, batchSize uint64, spanlog *spanlogger.SpanLogger) (numSeries, numSamples int, _ error) {
 	var q storage.ChunkQuerier
 	var err error
 	if i.limits.OutOfOrderTimeWindow(db.userID) > 0 {
-		q, err = db.UnorderedChunkQuerier(from, through)
+		q, err = db.UnorderedChunkQuerier(hints.Start, hints.End)
 	} else {
-		q, err = db.ChunkQuerier(from, through)
+		q, err = db.ChunkQuerier(hints.Start, hints.End)
 	}
 	if err != nil {
 		return 0, 0, err
@@ -2450,7 +2456,7 @@ func (i *Ingester) executeStreamingQuery(ctx context.Context, db *userTSDB, from
 	// The querier must remain open until we've finished streaming chunks.
 	defer q.Close()
 
-	allSeries, numSeries, err := i.sendStreamingQuerySeries(ctx, q, from, through, matchers, shard, stream)
+	allSeries, numSeries, err := i.sendStreamingQuerySeries(ctx, q, hints, matchers, stream)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -2500,13 +2506,7 @@ func putChunkSeriesNode(sn *chunkSeriesNode) {
 	chunkSeriesNodePool.Put(sn)
 }
 
-func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.ChunkQuerier, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (*chunkSeriesNode, int, error) {
-	// Disable chunks trimming, so that we don't have to rewrite chunks which have samples outside
-	// the requested from/through range. PromQL engine can handle it.
-	hints := initSelectHints(from, through)
-	hints = configSelectHintsWithShard(hints, shard)
-	hints = configSelectHintsWithDisabledTrimming(hints)
-
+func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.ChunkQuerier, hints *storage.SelectHints, matchers []*labels.Matcher, stream client.Ingester_QueryStreamServer) (*chunkSeriesNode, int, error) {
 	// Series must be sorted so that they can be read by the querier in the order the PromQL engine expects.
 	ss := q.Select(ctx, true, hints, matchers...)
 	if ss.Err() != nil {
