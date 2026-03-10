@@ -204,6 +204,9 @@ type Distributor struct {
 	// ingestStorageWriter is the writer used when ingest storage is enabled.
 	ingestStorageWriter *ingest.Writer
 
+	// compartmentRouter routes series to compartment topics. Nil when compartments are disabled.
+	compartmentRouter *ingest.CompartmentRouter
+
 	// partitionsRing is the hash ring holding ingester partitions. It's used when ingest storage is enabled.
 	partitionsRing *ring.PartitionInstanceRing
 
@@ -752,6 +755,10 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	if cfg.IngestStorageConfig.Enabled {
 		d.ingestStorageWriter = ingest.NewWriter(d.cfg.IngestStorageConfig.KafkaConfig, log, reg)
 		subservices = append(subservices, d.ingestStorageWriter)
+
+		if cfg.IngestStorageConfig.Compartments.Enabled {
+			d.compartmentRouter = ingest.NewCompartmentRouter(cfg.IngestStorageConfig.Compartments)
+		}
 	}
 
 	// Init usage-tracker client (if enabled).
@@ -2123,9 +2130,6 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 		ctx = ingester_client.WithSlabPool(ctx, slabPool)
 	}
 
-	// Get both series and metadata keys in one slice.
-	keys, initialMetadataIndex := getSeriesAndMetadataTokens(userID, req)
-
 	var (
 		ingestersSubring  ring.DoBatchRing
 		partitionsSubring ring.DoBatchRing
@@ -2150,7 +2154,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 	// once all backend requests have completed (see cleanup function passed to sendWriteRequestToBackends()).
 	cleanupInDefer = false
 
-	return d.sendWriteRequestToBackends(ctx, userID, req, keys, initialMetadataIndex, ingestersSubring, partitionsSubring, pushReq.CleanUp)
+	return d.sendWriteRequestToBackends(ctx, userID, req, ingestersSubring, partitionsSubring, pushReq.CleanUp)
 }
 
 // sendWriteRequestToBackends sends the input req data to backends. The backends could be:
@@ -2158,7 +2162,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 // - Ingest storage partitions, when partitionsSubring is not nil
 //
 // The input cleanup function is guaranteed to be called after all requests to all backends have completed.
-func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, ingestersSubring, partitionsSubring ring.DoBatchRing, cleanup func()) error {
+func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, ingestersSubring, partitionsSubring ring.DoBatchRing, cleanup func()) error {
 	var (
 		wg            = sync.WaitGroup{}
 		partitionsErr error
@@ -2223,10 +2227,13 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 
 	// Keep it easy if there's only 1 backend to write to.
 	if partitionsSubring == nil {
+		keys, initialMetadataIndex := getSeriesAndMetadataTokens(tenantID, req)
 		return d.sendWriteRequestToIngesters(ctx, ingestersSubring, req, keys, initialMetadataIndex, remoteRequestContext, batchOptions)
 	}
 	if ingestersSubring == nil {
-		return d.sendWriteRequestToPartitions(ctx, tenantID, partitionsSubring, req, keys, initialMetadataIndex, partitionsRequestContext, batchOptions)
+		defaultTopic := d.cfg.IngestStorageConfig.KafkaConfig.Topic
+		ct, initialMetadataIndex := getCompartmentTokensForWriteRequest(d.compartmentRouter, defaultTopic, tenantID, req)
+		return d.sendWriteRequestToPartitions(ctx, tenantID, partitionsSubring, req, ct, initialMetadataIndex, partitionsRequestContext, batchOptions)
 	}
 
 	// Prepare a callback function that will call the input cleanup callback function only after
@@ -2237,6 +2244,10 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 			batchCleanup()
 		}
 	}
+
+	keys, initialMetadataIndex := getSeriesAndMetadataTokens(tenantID, req)
+	defaultTopic := d.cfg.IngestStorageConfig.KafkaConfig.Topic
+	ct, _ := getCompartmentTokensForWriteRequest(d.compartmentRouter, defaultTopic, tenantID, req)
 
 	// Write both to ingesters and partitions.
 	wg.Add(2)
@@ -2250,7 +2261,7 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 	go func() {
 		defer wg.Done()
 
-		partitionsErr = d.sendWriteRequestToPartitions(ctx, tenantID, partitionsSubring, req, keys, initialMetadataIndex, partitionsRequestContext, batchOptions)
+		partitionsErr = d.sendWriteRequestToPartitions(ctx, tenantID, partitionsSubring, req, ct, initialMetadataIndex, partitionsRequestContext, batchOptions)
 	}()
 
 	// Wait until all backends have done.
@@ -2294,26 +2305,46 @@ func (d *Distributor) sendWriteRequestToIngesters(ctx context.Context, tenantRin
 	return errors.Wrap(err, "send data to ingesters")
 }
 
-func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID string, tenantRing ring.DoBatchRing, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, remoteRequestContext func() context.Context, batchOptions ring.DoBatchOptions) error {
-	err := ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, tenantRing, keys,
-		func(partition ring.InstanceDesc, indexes []int) error {
-			req := req.ForIndexes(indexes, initialMetadataIndex)
+func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID string, tenantRing ring.DoBatchRing, req *mimirpb.WriteRequest, cts []compartmentTokens, initialMetadataIndex int, remoteRequestContext func() context.Context, batchOptions ring.DoBatchOptions) error {
+	// Wrap cleanup to fire once after ALL compartment DoBatch calls complete.
+	numCompartments := int64(len(cts))
+	originalCleanup := batchOptions.Cleanup
+	if originalCleanup == nil {
+		originalCleanup = func() {}
+	}
+	remaining := atomic.NewInt64(numCompartments)
+	batchOptions.Cleanup = func() {
+		if remaining.Dec() == 0 {
+			originalCleanup()
+		}
+	}
 
-			// The partition ID is stored in the ring.InstanceDesc Id.
-			partitionID, err := strconv.ParseUint(partition.Id, 10, 31)
-			if err != nil {
-				return err
-			}
+	// Use an errgroup without context cancellation so that a failure in one compartment
+	// (e.g. a client error) does not cancel DoBatch calls for other compartments.
+	var g errgroup.Group
+	for _, ct := range cts {
+		g.Go(func() error {
+			return ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, tenantRing, ct.tokens,
+				func(partition ring.InstanceDesc, tokenIndexes []int) error {
+					subReq := req.ForIndexes(ct.writeRequestIndexes(tokenIndexes), initialMetadataIndex)
 
-			ctx := remoteRequestContext()
-			err = d.ingestStorageWriter.WriteSync(ctx, d.cfg.IngestStorageConfig.KafkaConfig.Topic, int32(partitionID), tenantID, req)
-			err = wrapPartitionPushError(err, int32(partitionID))
-			err = wrapDeadlineExceededPushError(err)
+					partitionID, err := strconv.ParseUint(partition.Id, 10, 31)
+					if err != nil {
+						return err
+					}
 
-			return err
-		}, batchOptions,
-	)
+					ctx := remoteRequestContext()
+					err = d.ingestStorageWriter.WriteSync(ctx, ct.topic, int32(partitionID), tenantID, subReq)
+					err = wrapPartitionPushError(err, int32(partitionID))
+					err = wrapDeadlineExceededPushError(err)
 
+					return err
+				}, batchOptions,
+			)
+		})
+	}
+
+	err := g.Wait()
 	// Since data may be written to different backends it may be helpful to clearly identify which backend failed.
 	return errors.Wrap(err, "send data to partitions")
 }

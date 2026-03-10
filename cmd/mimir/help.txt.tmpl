@@ -401,6 +401,12 @@ Usage of ./cmd/mimir/mimir:
     	Print basic help.
   -help-all
     	Print help, also including advanced and experimental parameters.
+  -ingest-storage.compartments.enabled
+    	Whether compartments are enabled. When enabled, series are sharded across multiple Kafka topics based on metric name.
+  -ingest-storage.compartments.num-compartments int
+    	The number of read compartments. Each compartment uses a dedicated Kafka topic.
+  -ingest-storage.compartments.topic-format string
+    	The topic name template with a "<compartment-id>" placeholder that gets replaced with the compartment ID (e.g. mimir-read-comp-<compartment-id>).
   -ingest-storage.enabled
     	True to enable the ingestion via object storage.
   -ingest-storage.kafka.address comma-separated-list-of-strings
