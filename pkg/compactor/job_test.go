@@ -231,7 +231,7 @@ func TestJobWaitPeriodElapsed(t *testing.T) {
 			expectedElapsed: true,
 			expectedMeta:    nil,
 		},
-		"mixed job with ooo block not clearing threshold, period not elapsed": {
+		"mixed job with ooo block not clearing threshold, period elapsed": {
 			waitPeriod:        10 * time.Minute,
 			oooWaitPeriod:     5 * time.Minute,
 			skipFutureMaxTime: false,
