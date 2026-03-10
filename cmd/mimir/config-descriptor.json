@@ -12147,7 +12147,8 @@
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "compactor.first-level-compaction-ooo-wait-period",
-          "fieldType": "duration"
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",

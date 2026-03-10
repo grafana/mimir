@@ -6060,9 +6060,9 @@ The `compactor` block configures the compactor component.
 # CLI flag: -compactor.first-level-compaction-wait-period
 [first_level_compaction_wait_period: <duration> | default = 25m]
 
-# How long the compactor waits before compacting first-level blocks containing
-# out-of-order samples. When set to 0 (default), out-of-order blocks do not
-# delay compaction.
+# (experimental) How long the compactor waits before compacting first-level
+# blocks containing out-of-order samples. When set to 0 (default), out-of-order
+# blocks do not delay compaction.
 # CLI flag: -compactor.first-level-compaction-ooo-wait-period
 [first_level_compaction_ooo_wait_period: <duration> | default = 0s]
 
