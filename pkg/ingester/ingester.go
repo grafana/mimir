@@ -2922,6 +2922,9 @@ func blockGenerationCalculator(db *userTSDB, blockRange int64) func(b tsdb.Block
 			return "unknown" // Edge case: head is empty, and the query touches block generation >=1
 		}
 		gen := max(1, (headMinTime-b.Meta().MinTime)/blockRange)
+		if gen > 100 {
+			return "100+" // Bound generation's cardinality. A tenant with very large OOO window can query a very old block, but we don't need to be precise.
+		}
 		return strconv.FormatInt(gen, 10)
 	}
 }

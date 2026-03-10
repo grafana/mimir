@@ -12296,6 +12296,11 @@ func TestBlockGenerationCalculator(t *testing.T) {
 			&testMinTimeBlockReader{minTime: headMinTime + blockRange},
 			"1",
 		},
+		{
+			"persisted block with capped generation label",
+			&testMinTimeBlockReader{minTime: headMinTime - 110*blockRange},
+			"100+",
+		},
 	}
 
 	for _, tc := range testCases {
