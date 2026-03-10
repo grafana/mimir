@@ -776,11 +776,11 @@ local filename = 'mimir-tenants.json';
           title,
           |||
             Number of alerts currently tracked by the alerts limiter per tenant.
-            This value is averaged across alertmanager replicas.
+            This value is summed across alertmanager replicas.
           |||
         ) +
         $.queryPanel(
-          'avg(cortex_alertmanager_alerts_limiter_current_alerts{%(job)s, user="$user"})' % {
+          'sum(cortex_alertmanager_alerts_limiter_current_alerts{%(job)s, user="$user"})' % {
             job: $.jobMatcher($._config.job_names.alertmanager),
           },
           'alerts'
@@ -795,11 +795,11 @@ local filename = 'mimir-tenants.json';
           |||
             Total size in bytes of alerts currently tracked by the alerts limiter per tenant.
             The size includes labels, annotations, and generator URL of each alert.
-            This value is averaged across alertmanager replicas.
+            This value is summed across alertmanager replicas.
           |||
         ) +
         $.queryPanel(
-          'avg(cortex_alertmanager_alerts_limiter_current_alerts_size_bytes{%(job)s, user="$user"})' % {
+          'sum(cortex_alertmanager_alerts_limiter_current_alerts_size_bytes{%(job)s, user="$user"})' % {
             job: $.jobMatcher($._config.job_names.alertmanager),
           },
           'size'

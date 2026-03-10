@@ -2220,7 +2220,7 @@
                },
                {
                   "datasource": "$datasource",
-                  "description": "### Alerts tracked by limiter\nNumber of alerts currently tracked by the alerts limiter per tenant.\nThis value is averaged across alertmanager replicas.\n\n",
+                  "description": "### Alerts tracked by limiter\nNumber of alerts currently tracked by the alerts limiter per tenant.\nThis value is summed across alertmanager replicas.\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -2258,7 +2258,7 @@
                   "span": 2,
                   "targets": [
                      {
-                        "expr": "avg(cortex_alertmanager_alerts_limiter_current_alerts{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir))\", user=\"$user\"})",
+                        "expr": "sum(cortex_alertmanager_alerts_limiter_current_alerts{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir))\", user=\"$user\"})",
                         "format": "time_series",
                         "legendFormat": "alerts",
                         "legendLink": null
@@ -2269,7 +2269,7 @@
                },
                {
                   "datasource": "$datasource",
-                  "description": "### Alerts size tracked by limiter\nTotal size in bytes of alerts currently tracked by the alerts limiter per tenant.\nThe size includes labels, annotations, and generator URL of each alert.\nThis value is averaged across alertmanager replicas.\n\n",
+                  "description": "### Alerts size tracked by limiter\nTotal size in bytes of alerts currently tracked by the alerts limiter per tenant.\nThe size includes labels, annotations, and generator URL of each alert.\nThis value is summed across alertmanager replicas.\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -2307,7 +2307,7 @@
                   "span": 2,
                   "targets": [
                      {
-                        "expr": "avg(cortex_alertmanager_alerts_limiter_current_alerts_size_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir))\", user=\"$user\"})",
+                        "expr": "sum(cortex_alertmanager_alerts_limiter_current_alerts_size_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir))\", user=\"$user\"})",
                         "format": "time_series",
                         "legendFormat": "size",
                         "legendLink": null
