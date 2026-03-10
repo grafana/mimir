@@ -581,10 +581,11 @@ func (i *Ingester) pushSamplesToAppender(
 	var nonCopiedLabels labels.Labels
 	var entrySortBuf []mimirpb.AttributeEntry
 
-	// Pre-convert resource table entries: hash once, build context once.
+	// Pre-convert resource table entries: hash eagerly (zero-alloc), build context lazily.
 	type resourceTableEntry struct {
 		contentHash uint64
-		ctx         *storage.ResourceContext // nil if empty identifying attrs
+		ra          *mimirpb.ResourceAttributes // raw proto ref (valid for request lifetime)
+		ctx         *storage.ResourceContext     // lazily built on first access
 	}
 	var resourceCache []resourceTableEntry
 	if len(resourceTable) > 0 {
@@ -596,28 +597,29 @@ func (i *Ingester) pushSamplesToAppender(
 				entrySortBuf = buf
 				resourceCache[ri] = resourceTableEntry{
 					contentHash: contentHash,
-					ctx: &storage.ResourceContext{
-						Identifying: entriesToMap(ra.Identifying),
-						Descriptive: entriesToMap(ra.Descriptive),
-						Entities:    convertResourceEntities(ra.Entities),
-					},
+					ra:          ra,
 				}
 			}
 		}
 	}
 
-	// Pre-convert scope table entries: build context once.
-	var scopeCache []*storage.ScopeContext
+	// Pre-convert scope table entries: hash eagerly (zero-alloc), build context lazily.
+	type scopeTableEntry struct {
+		contentHash uint64
+		sa          *mimirpb.ScopeAttributes // raw proto ref (valid for request lifetime)
+		ctx         *storage.ScopeContext     // lazily built on first access
+	}
+	var scopeCache []scopeTableEntry
 	if len(scopeTable) > 0 {
-		scopeCache = make([]*storage.ScopeContext, len(scopeTable))
+		scopeCache = make([]scopeTableEntry, len(scopeTable))
 		for si := range scopeTable {
 			sa := &scopeTable[si]
 			if sa.Name != "" || sa.Version != "" || sa.SchemaURL != "" || len(sa.Attrs) > 0 {
-				scopeCache[si] = &storage.ScopeContext{
-					Name:      strings.Clone(sa.Name),
-					Version:   strings.Clone(sa.Version),
-					SchemaURL: strings.Clone(sa.SchemaURL),
-					Attrs:     entriesToMap(sa.Attrs),
+				contentHash, buf := hashScopeAttributesRaw(sa, entrySortBuf)
+				entrySortBuf = buf
+				scopeCache[si] = scopeTableEntry{
+					contentHash: contentHash,
+					sa:          sa,
 				}
 			}
 		}
@@ -695,26 +697,55 @@ func (i *Ingester) pushSamplesToAppender(
 
 		ingestCreatedTimestamp := ts.CreatedTimestamp > 0
 
-		// Resolve resource context from pre-built cache.
+		// Resolve resource and scope contexts from pre-built cache.
+		// labelsHash is computed once and reused for both resource and scope checks.
 		var resourceCtx *storage.ResourceContext
+		var scopeCtx *storage.ScopeContext
+		var labelsHash uint64
+		var labelsHashComputed bool
+
 		if ts.ResourceRef > 0 && int(ts.ResourceRef-1) < len(resourceCache) {
 			entry := &resourceCache[ts.ResourceRef-1]
-			if entry.ctx != nil {
+			if entry.ra != nil {
 				metricName := nonCopiedLabels.Get(model.MetricNameLabel)
 				if metricName != "target_info" {
-					labelsHash := labels.StableHash(nonCopiedLabels)
+					labelsHash = labels.StableHash(nonCopiedLabels)
+					labelsHashComputed = true
 					if !tsdbDB.ResourceHasContentHash(labelsHash, entry.contentHash) {
+						if entry.ctx == nil {
+							entry.ctx = &storage.ResourceContext{
+								Identifying: entriesToMap(entry.ra.Identifying),
+								Descriptive: entriesToMap(entry.ra.Descriptive),
+								Entities:    convertResourceEntities(entry.ra.Entities),
+							}
+						}
 						resourceCtx = entry.ctx
 					}
 				}
 			}
 		}
 
-		// Resolve scope context from pre-built cache.
-		var scopeCtx *storage.ScopeContext
 		if ts.ScopeRef > 0 && int(ts.ScopeRef-1) < len(scopeCache) {
-			scopeCtx = scopeCache[ts.ScopeRef-1]
+			entry := &scopeCache[ts.ScopeRef-1]
+			if entry.sa != nil {
+				if !labelsHashComputed {
+					labelsHash = labels.StableHash(nonCopiedLabels)
+					labelsHashComputed = true
+				}
+				if !tsdbDB.ScopeHasContentHash(labelsHash, entry.contentHash) {
+					if entry.ctx == nil {
+						entry.ctx = &storage.ScopeContext{
+							Name:      strings.Clone(entry.sa.Name),
+							Version:   strings.Clone(entry.sa.Version),
+							SchemaURL: strings.Clone(entry.sa.SchemaURL),
+							Attrs:     entriesToMap(entry.sa.Attrs),
+						}
+					}
+					scopeCtx = entry.ctx
+				}
+			}
 		}
+		_ = labelsHashComputed
 
 		// Pre-validate exemplars for attachment to the first successful sample.
 		// This ensures exemplars are committed atomically with samples in a single
@@ -1114,6 +1145,23 @@ func hashResourceAttributesRaw(ra *mimirpb.ResourceAttributes, sortBuf []mimirpb
 		sortBuf = hashAttributeEntries(&h, e.Description, sortBuf)
 		_, _ = h.Write([]byte{1})
 	}
+
+	return h.Sum64(), sortBuf
+}
+
+// hashScopeAttributesRaw computes a content hash from raw ScopeAttributes
+// that matches hashScopeCommitDataReusable for equivalent data.
+// Zero-allocation on the hot path (reuses sortBuf).
+func hashScopeAttributesRaw(sa *mimirpb.ScopeAttributes, sortBuf []mimirpb.AttributeEntry) (uint64, []mimirpb.AttributeEntry) {
+	var h xxhash.Digest
+
+	_, _ = h.WriteString(sa.Name)
+	_, _ = h.Write([]byte{0})
+	_, _ = h.WriteString(sa.Version)
+	_, _ = h.Write([]byte{0})
+	_, _ = h.WriteString(sa.SchemaURL)
+	_, _ = h.Write([]byte{0})
+	sortBuf = hashAttributeEntries(&h, sa.Attrs, sortBuf)
 
 	return h.Sum64(), sortBuf
 }
