@@ -56,10 +56,10 @@ var (
 )
 
 type Config struct {
-	Enabled      bool                `yaml:"enabled"`
-	KafkaConfig  KafkaConfig         `yaml:"kafka"`
-	Migration    MigrationConfig     `yaml:"migration"`
-	Compartments CompartmentsConfig  `yaml:"compartments"`
+	Enabled      bool               `yaml:"enabled"`
+	KafkaConfig  KafkaConfig        `yaml:"kafka"`
+	Migration    MigrationConfig    `yaml:"migration"`
+	Compartments CompartmentsConfig `yaml:"compartments"`
 
 	WriteLogsFsyncBeforeKafkaCommitConcurrency int `yaml:"write_logs_fsync_before_kafka_commit_concurrency" category:"advanced"`
 }
