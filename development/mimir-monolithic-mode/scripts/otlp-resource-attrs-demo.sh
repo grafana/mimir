@@ -582,9 +582,27 @@ else
     flush_response=$(curl -s -X POST "${FLUSH_ENDPOINT}")
     echo -e "${GREEN}Flush triggered${RESET}"
 
-    # Wait for flush to complete
-    echo -e "${GRAY}Waiting for flush to complete...${RESET}"
-    sleep 5
+    # Wait for flush to complete and store-gateway to sync blocks.
+    # The store-gateway sync_interval is 1m, so we poll until the demo series
+    # appear in the resources endpoint (up to 90s).
+    echo -e "${GRAY}Waiting for flush and store-gateway block sync...${RESET}"
+    demo_match_encoded=$(printf '%s' '{job=~"(production|staging)/(payment|order)-service"}' | jq -sRr @uri)
+    blocks_ready=false
+    for i in $(seq 1 45); do
+        count=$(curl -s "${AUTH_HEADER[@]}" "${RESOURCES_ENDPOINT}?match[]=${demo_match_encoded}" | jq '.data.series | length' 2>/dev/null)
+        if [ "$count" != "null" ] && [ "$count" -gt 0 ] 2>/dev/null; then
+            blocks_ready=true
+            break
+        fi
+        printf "\r  Waiting for blocks to load... %ds" "$((i * 2))"
+        sleep 2
+    done
+    echo ""
+    if [ "$blocks_ready" = true ]; then
+        echo -e "${GREEN}Blocks loaded — demo series available from store-gateway${RESET}"
+    else
+        echo -e "${YELLOW}Warning: Store-gateway may not have synced blocks yet${RESET}"
+    fi
 
     echo -e "\n${GREEN}Blocks should now contain resource attributes in series_metadata.parquet files${RESET}"
 fi
