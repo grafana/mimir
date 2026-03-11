@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	shared "github.com/grafana/dskit/labelaccess"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
-	shared "github.com/grafana/mimir/pkg/labelaccess"
 	"github.com/grafana/mimir/pkg/util/propagation"
 )
 

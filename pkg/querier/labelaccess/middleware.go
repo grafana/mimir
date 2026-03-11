@@ -12,7 +12,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/middleware"
 
-	shared "github.com/grafana/mimir/pkg/labelaccess"
+	shared "github.com/grafana/dskit/labelaccess"
 	"github.com/grafana/mimir/pkg/util/propagation"
 )
 

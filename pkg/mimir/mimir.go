@@ -25,6 +25,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/kv/memberlist"
+	"github.com/grafana/dskit/labelaccess"
 	"github.com/grafana/dskit/modules"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/ring"
@@ -79,6 +80,7 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/noauth"
 	"github.com/grafana/mimir/pkg/util/process"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/grafana/mimir/pkg/util/validation/exporter"
@@ -932,6 +934,8 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 		}
 		os.Exit(0)
 	}
+
+	labelaccess.SetSelectorParser(promqlext.NewPromQLParser().ParseMetricSelector)
 
 	setUpGoRuntimeMetrics(cfg, reg)
 

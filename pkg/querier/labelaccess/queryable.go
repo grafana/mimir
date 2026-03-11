@@ -20,7 +20,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"go.opentelemetry.io/otel"
 
-	shared "github.com/grafana/mimir/pkg/labelaccess"
+	shared "github.com/grafana/dskit/labelaccess"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 

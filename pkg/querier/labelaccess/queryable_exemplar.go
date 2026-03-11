@@ -12,7 +12,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 
-	shared "github.com/grafana/mimir/pkg/labelaccess"
+	shared "github.com/grafana/dskit/labelaccess"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )

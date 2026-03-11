@@ -14,7 +14,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 
-	shared "github.com/grafana/mimir/pkg/labelaccess"
+	shared "github.com/grafana/dskit/labelaccess"
 	"github.com/grafana/mimir/pkg/util/propagation"
 )
 

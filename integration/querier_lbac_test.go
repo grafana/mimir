@@ -17,8 +17,8 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/require"
 
+	labelaccesspkg "github.com/grafana/dskit/labelaccess"
 	"github.com/grafana/mimir/integration/e2emimir"
-	labelaccesspkg "github.com/grafana/mimir/pkg/labelaccess"
 )
 
 // TestLabelBasedAccessControl verifies end-to-end LBAC filtering:
