@@ -139,7 +139,6 @@ func (cfg *SchedulerClientConfig) Validate() error {
 
 // schedulerExecutor requests compaction jobs from an external scheduler.
 type schedulerExecutor struct {
-	compactorCfg             Config
 	cfg                      SchedulerClientConfig
 	logger                   log.Logger
 	schedulerClient          compactorschedulerpb.CompactorSchedulerClient
@@ -149,10 +148,9 @@ type schedulerExecutor struct {
 	lastCleanupTime          time.Time
 }
 
-func newSchedulerExecutor(cfg Config, logger log.Logger, invalidClusterValidation *prometheus.CounterVec) (*schedulerExecutor, error) {
+func newSchedulerExecutor(cfg SchedulerClientConfig, logger log.Logger, invalidClusterValidation *prometheus.CounterVec) (*schedulerExecutor, error) {
 	executor := &schedulerExecutor{
-		compactorCfg:             cfg,
-		cfg:                      cfg.SchedulerClientConfig,
+		cfg:                      cfg,
 		logger:                   logger,
 		invalidClusterValidation: invalidClusterValidation,
 	}
@@ -169,7 +167,7 @@ func newSchedulerExecutor(cfg Config, logger log.Logger, invalidClusterValidatio
 			}
 			return false
 		}).
-		WithBackoff(cfg.SchedulerClientConfig.UpdateMinBackoff, cfg.SchedulerClientConfig.UpdateMaxBackoff).
+		WithBackoff(cfg.UpdateMinBackoff, cfg.UpdateMaxBackoff).
 		WithJitter(500 * time.Millisecond).
 		WithMaxAttempts(-1).
 		Build())
