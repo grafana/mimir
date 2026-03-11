@@ -456,8 +456,8 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		NewLabelRemoverFilter(compactionIgnoredLabels),
 	}
 
-	syncDir := "" // indicates not wanting to cache metadata on disk
-	fetcher, err := block.NewMetaFetcher(userLogger, c.compactorCfg.MetaSyncConcurrency, userBucket, syncDir, reg, fetcherFilters, 0)
+	cacheDir := "" // indicates not wanting to cache metadata on disk
+	fetcher, err := block.NewMetaFetcher(userLogger, c.compactorCfg.MetaSyncConcurrency, userBucket, cacheDir, reg, fetcherFilters, 0)
 	if err != nil {
 		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, errors.Wrap(err, "failed to create meta fetcher")
 	}
