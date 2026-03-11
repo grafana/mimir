@@ -37,7 +37,6 @@ func getCompartmentTokensForWriteRequest(
 ) ([]compartmentTokens, int) {
 	// When compartments are disabled, return a single entry with the default topic.
 	if router == nil {
-		var tokens []uint32
 		tokens, initialMetadataIndex := getSeriesAndMetadataTokens(userID, req)
 
 		indexes := make([]int, len(tokens))
