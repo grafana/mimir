@@ -144,7 +144,6 @@ func TestNextSize(t *testing.T) {
 
 func TestLimitAwareGrowth(t *testing.T) {
 	const perShard uint64 = 1000
-	const totalLimit = perShard * NumShards
 	m := New(uint32(perShard))
 	total := atomic.NewUint64(0)
 
