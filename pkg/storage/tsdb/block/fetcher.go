@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/thanos-io/objstore"
+	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/util/extprom"
@@ -545,22 +546,21 @@ func (f *MetaFetcher) FetchRequestedMetas(ctx context.Context, blockIDs []ulid.U
 		return nil, errNoBlocksProvided
 	}
 
-	// Prefill the channel uncontested
-	ch := make(chan ulid.ULID, len(blockIDs))
-	for _, id := range blockIDs {
-		ch <- id
-	}
-	close(ch)
-
 	var (
 		metas = make(map[ulid.ULID]*Meta, len(blockIDs))
 		mtx   sync.Mutex
 		eg    errgroup.Group
+		idx   = atomic.NewInt64(-1)
 	)
 
 	for i := 0; i < f.concurrency; i++ {
 		eg.Go(func() error {
-			for id := range ch {
+			for {
+				i := int(idx.Inc())
+				if i >= len(blockIDs) {
+					return nil
+				}
+				id := blockIDs[i]
 				meta, err := f.loadMeta(ctx, id)
 				if err != nil {
 					return fmt.Errorf("load meta for block %s: %w", id, err)
@@ -569,7 +569,6 @@ func (f *MetaFetcher) FetchRequestedMetas(ctx context.Context, blockIDs []ulid.U
 				metas[id] = meta
 				mtx.Unlock()
 			}
-			return nil
 		})
 	}
 
