@@ -31,7 +31,11 @@ spec:
         name: {{ .name }}
         {{- if .annotations }}
         annotations:
-          {{ toYaml .annotations | nindent 10 }}
+          {{- toYaml .annotations | nindent 10 }}
+        {{- end }}
+        {{- if .labels }}
+        labels:
+          {{- toYaml .labels | nindent 10 }}
         {{- end }}
       spec:
         {{- if .storageClass }}

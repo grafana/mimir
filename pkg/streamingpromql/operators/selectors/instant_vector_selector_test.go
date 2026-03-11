@@ -188,7 +188,7 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 			endTime := startTime.Add(time.Duration(testCase.stepCount-1) * time.Minute)
 
 			ctx := context.Background()
-			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 			selector := &InstantVectorSelector{
 				Selector: &Selector{
 					Queryable: storage,
@@ -236,7 +236,7 @@ func TestInstantVectorSelector_SliceSizing(t *testing.T) {
 			endTime := timeZero.Add(7 * time.Minute)
 
 			ctx := context.Background()
-			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 			selector := &InstantVectorSelector{
 				Selector: &Selector{
 					Queryable: storage,

@@ -38,9 +38,9 @@
     'querier.ring.prefix': 'ruler-querier-zone-%s/' % zone,
   },
 
-  ruler_querier_zone_a_args:: $.ruler_querier_args + $.blocks_metadata_zone_a_caching_config + $.rulerQuerySchedulerClientZoneArgs('a') + $.rulerQuerierClientZoneArgs('a') + rulerQuerierZoneArgs('a'),
-  ruler_querier_zone_b_args:: $.ruler_querier_args + $.blocks_metadata_zone_b_caching_config + $.rulerQuerySchedulerClientZoneArgs('b') + $.rulerQuerierClientZoneArgs('b') + rulerQuerierZoneArgs('b'),
-  ruler_querier_zone_c_args:: $.ruler_querier_args + $.blocks_metadata_zone_c_caching_config + $.rulerQuerySchedulerClientZoneArgs('c') + $.rulerQuerierClientZoneArgs('c') + rulerQuerierZoneArgs('c'),
+  ruler_querier_zone_a_args:: $.ruler_querier_args + $.blocks_metadata_zone_a_caching_config + $.rulerQuerySchedulerClientZoneArgs('a') + $.rulerQuerierClientZoneArgs('a') + rulerQuerierZoneArgs('a') + $.rangeVectorSplittingZoneCachingConfig('a'),
+  ruler_querier_zone_b_args:: $.ruler_querier_args + $.blocks_metadata_zone_b_caching_config + $.rulerQuerySchedulerClientZoneArgs('b') + $.rulerQuerierClientZoneArgs('b') + rulerQuerierZoneArgs('b') + $.rangeVectorSplittingZoneCachingConfig('b'),
+  ruler_querier_zone_c_args:: $.ruler_querier_args + $.blocks_metadata_zone_c_caching_config + $.rulerQuerySchedulerClientZoneArgs('c') + $.rulerQuerierClientZoneArgs('c') + rulerQuerierZoneArgs('c') + $.rangeVectorSplittingZoneCachingConfig('c'),
 
   ruler_querier_zone_a_env_map:: {},
   ruler_querier_zone_b_env_map:: {},
@@ -138,9 +138,9 @@
   local isRulerQueryFrontendAutoscalingZoneBEnabled = isZoneBEnabled && $._config.autoscaling_ruler_query_frontend_enabled,
   local isRulerQueryFrontendAutoscalingZoneCEnabled = isZoneCEnabled && $._config.autoscaling_ruler_query_frontend_enabled,
 
-  ruler_query_frontend_zone_a_args:: $.ruler_query_frontend_args + $.query_frontend_zone_a_caching_config + $.rulerQuerySchedulerClientZoneArgs('a') + $.rulerQuerierClientZoneArgs('a'),
-  ruler_query_frontend_zone_b_args:: $.ruler_query_frontend_args + $.query_frontend_zone_b_caching_config + $.rulerQuerySchedulerClientZoneArgs('b') + $.rulerQuerierClientZoneArgs('b'),
-  ruler_query_frontend_zone_c_args:: $.ruler_query_frontend_args + $.query_frontend_zone_c_caching_config + $.rulerQuerySchedulerClientZoneArgs('c') + $.rulerQuerierClientZoneArgs('c'),
+  ruler_query_frontend_zone_a_args:: $.ruler_query_frontend_args + $.query_frontend_zone_a_caching_config + $.rulerQuerySchedulerClientZoneArgs('a') + $.rulerQuerierClientZoneArgs('a') + $.rangeVectorSplittingZoneCachingConfig('a'),
+  ruler_query_frontend_zone_b_args:: $.ruler_query_frontend_args + $.query_frontend_zone_b_caching_config + $.rulerQuerySchedulerClientZoneArgs('b') + $.rulerQuerierClientZoneArgs('b') + $.rangeVectorSplittingZoneCachingConfig('b'),
+  ruler_query_frontend_zone_c_args:: $.ruler_query_frontend_args + $.query_frontend_zone_c_caching_config + $.rulerQuerySchedulerClientZoneArgs('c') + $.rulerQuerierClientZoneArgs('c') + $.rangeVectorSplittingZoneCachingConfig('c'),
 
   ruler_query_frontend_zone_a_env_map:: {},
   ruler_query_frontend_zone_b_env_map:: {},

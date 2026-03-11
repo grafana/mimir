@@ -565,6 +565,8 @@ func TestPartitionCacheExtents(t *testing.T) {
 func TestDefaultSplitter_QueryRequest(t *testing.T) {
 	t.Parallel()
 	codec := newTestCodec()
+	defaultLookbackDelta := 10 * time.Minute
+	codec.lookbackDelta = defaultLookbackDelta
 
 	ctx := context.Background()
 
@@ -574,20 +576,24 @@ func TestDefaultSplitter_QueryRequest(t *testing.T) {
 		interval time.Duration
 		want     string
 	}{
-		{"0", &PrometheusRangeQueryRequest{start: 0, step: 10, queryExpr: parseQuery(t, "foo{}")}, 30 * time.Minute, "fake:foo:10:0"},
-		{"<30m", &PrometheusRangeQueryRequest{start: toMs(10 * time.Minute), step: 10, queryExpr: parseQuery(t, "foo{}")}, 30 * time.Minute, "fake:foo:10:0"},
-		{"30m", &PrometheusRangeQueryRequest{start: toMs(30 * time.Minute), step: 10, queryExpr: parseQuery(t, "foo{}")}, 30 * time.Minute, "fake:foo:10:1"},
-		{"91m", &PrometheusRangeQueryRequest{start: toMs(91 * time.Minute), step: 10, queryExpr: parseQuery(t, "foo{}")}, 30 * time.Minute, "fake:foo:10:3"},
-		{"91m_5m", &PrometheusRangeQueryRequest{start: toMs(91 * time.Minute), step: 5 * time.Minute.Milliseconds(), queryExpr: parseQuery(t, "foo")}, 30 * time.Minute, "fake:foo:300000:3:60000"},
-		{"0", &PrometheusRangeQueryRequest{start: 0, step: 10, queryExpr: parseQuery(t, "foo{}")}, 24 * time.Hour, "fake:foo:10:0"},
-		{"<1d", &PrometheusRangeQueryRequest{start: toMs(22 * time.Hour), step: 10, queryExpr: parseQuery(t, "foo{}")}, 24 * time.Hour, "fake:foo:10:0"},
-		{"4d", &PrometheusRangeQueryRequest{start: toMs(4 * 24 * time.Hour), step: 10, queryExpr: parseQuery(t, "foo{}")}, 24 * time.Hour, "fake:foo:10:4"},
-		{"3d5h", &PrometheusRangeQueryRequest{start: toMs(77 * time.Hour), step: 10, queryExpr: parseQuery(t, "foo{}")}, 24 * time.Hour, "fake:foo:10:3"},
-		{"1111m", &PrometheusRangeQueryRequest{start: 1111 * time.Minute.Milliseconds(), step: 10 * time.Minute.Milliseconds(), queryExpr: parseQuery(t, "foo")}, 1 * time.Hour, "fake:foo:600000:18:60000"},
+		{"0", &PrometheusRangeQueryRequest{start: 0, step: 10, queryExpr: parseQuery(t, "foo{}"), lookbackDelta: defaultLookbackDelta}, 30 * time.Minute, "fake:foo:10:0"},
+		{"<30m", &PrometheusRangeQueryRequest{start: toMs(10 * time.Minute), step: 10, queryExpr: parseQuery(t, "foo{}"), lookbackDelta: defaultLookbackDelta}, 30 * time.Minute, "fake:foo:10:0"},
+		{"30m", &PrometheusRangeQueryRequest{start: toMs(30 * time.Minute), step: 10, queryExpr: parseQuery(t, "foo{}"), lookbackDelta: defaultLookbackDelta}, 30 * time.Minute, "fake:foo:10:1"},
+		{"91m", &PrometheusRangeQueryRequest{start: toMs(91 * time.Minute), step: 10, queryExpr: parseQuery(t, "foo{}"), lookbackDelta: defaultLookbackDelta}, 30 * time.Minute, "fake:foo:10:3"},
+		{"91m_5ms", &PrometheusRangeQueryRequest{start: toMs(91 * time.Minute), step: 5 * time.Minute.Milliseconds(), queryExpr: parseQuery(t, "foo"), lookbackDelta: defaultLookbackDelta}, 30 * time.Minute, "fake:foo:300000:3:60000"},
+		{"0", &PrometheusRangeQueryRequest{start: 0, step: 10, queryExpr: parseQuery(t, "foo{}"), lookbackDelta: defaultLookbackDelta}, 24 * time.Hour, "fake:foo:10:0"},
+		{"<1d", &PrometheusRangeQueryRequest{start: toMs(22 * time.Hour), step: 10, queryExpr: parseQuery(t, "foo{}"), lookbackDelta: defaultLookbackDelta}, 24 * time.Hour, "fake:foo:10:0"},
+		{"4d", &PrometheusRangeQueryRequest{start: toMs(4 * 24 * time.Hour), step: 10, queryExpr: parseQuery(t, "foo{}"), lookbackDelta: defaultLookbackDelta}, 24 * time.Hour, "fake:foo:10:4"},
+		{"3d5h", &PrometheusRangeQueryRequest{start: toMs(77 * time.Hour), step: 10, queryExpr: parseQuery(t, "foo{}"), lookbackDelta: defaultLookbackDelta}, 24 * time.Hour, "fake:foo:10:3"},
+		{"1111m", &PrometheusRangeQueryRequest{start: 1111 * time.Minute.Milliseconds(), step: 10 * time.Minute.Milliseconds(), queryExpr: parseQuery(t, "foo"), lookbackDelta: defaultLookbackDelta}, 1 * time.Hour, "fake:foo:600000:18:60000"},
+		{"30m with non-default lookback delta", &PrometheusRangeQueryRequest{start: toMs(30 * time.Minute), step: 10, queryExpr: parseQuery(t, "foo{}"), lookbackDelta: 3 * time.Minute}, 30 * time.Minute, "fake:foo:10:1:0:3m0s"},
+		{"91m_5ms with non-default lookback delta", &PrometheusRangeQueryRequest{start: toMs(91 * time.Minute), step: 5 * time.Minute.Milliseconds(), queryExpr: parseQuery(t, "foo"), lookbackDelta: 3 * time.Minute}, 30 * time.Minute, "fake:foo:300000:3:60000:3m0s"},
 	}
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("%s - %s", tt.name, tt.interval), func(t *testing.T) {
-			if got := (DefaultCacheKeyGenerator{codec: codec, interval: tt.interval}).QueryRequest(ctx, "fake", tt.r); got != tt.want {
+			cacheKeyGenerator := NewDefaultCacheKeyGenerator(codec, tt.interval)
+
+			if got := cacheKeyGenerator.QueryRequest(ctx, "fake", tt.r); got != tt.want {
 				t.Errorf("generateKey() = %v, want %v", got, tt.want)
 			}
 		})

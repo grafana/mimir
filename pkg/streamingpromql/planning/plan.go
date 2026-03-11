@@ -29,8 +29,6 @@ func (v QueryPlanVersion) String() string {
 	return strconv.FormatUint(uint64(v), 10)
 }
 
-var MaximumSupportedQueryPlanVersion = QueryPlanV6
-
 // IMPORTANT:
 // Do not change the value or meaning of these constants once they have been merged.
 // Doing so could result in queriers receiving query plans they don't understand, which could
@@ -58,6 +56,14 @@ const QueryPlanV5 = QueryPlanVersion(5)
 // QueryPlanV6 introduces support for query splitting with intermediate result caching.
 const QueryPlanV6 = QueryPlanVersion(6)
 
+// QueryPlanV7 introduces support for subset selector elimination.
+const QueryPlanV7 = QueryPlanVersion(7)
+
+// QueryPlanV8 introduces support for subset selector elimination in multi-aggregation nodes.
+const QueryPlanV8 = QueryPlanVersion(8)
+
+var MaximumSupportedQueryPlanVersion = QueryPlanV8
+
 type QueryPlan struct {
 	Root       Node
 	Parameters *QueryParameters
@@ -73,6 +79,7 @@ type QueryParameters struct {
 	OriginalExpression       string
 	TimeRange                types.QueryTimeRange
 	EnableDelayedNameRemoval bool
+	LookbackDelta            time.Duration
 }
 
 // Node represents a node in the query plan graph.
@@ -228,7 +235,6 @@ type OperatorParameters struct {
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	Annotations              *annotations.Annotations
 	QueryStats               *types.QueryStats
-	LookbackDelta            time.Duration
 	EagerLoadSelectors       bool
 	QueryParameters          *QueryParameters
 	Logger                   log.Logger
@@ -279,6 +285,7 @@ func (p *QueryPlan) ToEncodedPlan(includeDescriptions bool, includeDetails bool,
 		TimeRange:                ToEncodedTimeRange(p.Parameters.TimeRange),
 		OriginalExpression:       p.Parameters.OriginalExpression,
 		EnableDelayedNameRemoval: p.Parameters.EnableDelayedNameRemoval,
+		LookbackDelta:            p.Parameters.LookbackDelta,
 		Version:                  p.Version,
 	}
 
@@ -438,6 +445,7 @@ func (p *EncodedQueryPlan) DecodeParameters() *QueryParameters {
 		OriginalExpression:       p.OriginalExpression,
 		TimeRange:                p.TimeRange.ToDecodedTimeRange(),
 		EnableDelayedNameRemoval: p.EnableDelayedNameRemoval,
+		LookbackDelta:            p.LookbackDelta,
 	}
 }
 

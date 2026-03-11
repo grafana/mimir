@@ -121,15 +121,18 @@ func RecordSerializerFromVersion(version int) recordSerializer {
 
 // recordSerializer converts a WriteRequest to one or more kafka records.
 type recordSerializer interface {
-	ToRecords(partitionID int32, tenantID string, req *mimirpb.WriteRequest, maxSize int) ([]*kgo.Record, error)
+	// ToRecords returns the Kafka records and the input request size (before any format conversion).
+	ToRecords(partitionID int32, tenantID string, req *mimirpb.WriteRequest, maxSize int) ([]*kgo.Record, int, error)
 }
 
 // versionZeroRecordSerializer produces records of version 0.
 // Record Version 0 is a valid remote write 1.0 request with no provided version header.
 type versionZeroRecordSerializer struct{}
 
-func (v versionZeroRecordSerializer) ToRecords(partitionID int32, tenantID string, req *mimirpb.WriteRequest, maxSize int) ([]*kgo.Record, error) {
-	return marshalWriteRequestToRecords(partitionID, tenantID, req, maxSize, mimirpb.SplitWriteRequestByMaxMarshalSize)
+func (v versionZeroRecordSerializer) ToRecords(partitionID int32, tenantID string, req *mimirpb.WriteRequest, maxSize int) ([]*kgo.Record, int, error) {
+	reqSize := req.Size()
+	records, err := marshalWriteRequestToRecords(partitionID, tenantID, req, reqSize, maxSize, mimirpb.SplitWriteRequestByMaxMarshalSize)
+	return records, reqSize, err
 }
 
 // versionOneRecordSerializer produces records of version 1.
@@ -137,34 +140,37 @@ func (v versionZeroRecordSerializer) ToRecords(partitionID int32, tenantID strin
 // The value is identical to record version 0. It can be understood by a consumer speaking record version 0.
 type versionOneRecordSerializer struct{}
 
-func (v versionOneRecordSerializer) ToRecords(partitionID int32, tenantID string, req *mimirpb.WriteRequest, maxSize int) ([]*kgo.Record, error) {
-	records, err := marshalWriteRequestToRecords(partitionID, tenantID, req, maxSize, mimirpb.SplitWriteRequestByMaxMarshalSize)
+func (v versionOneRecordSerializer) ToRecords(partitionID int32, tenantID string, req *mimirpb.WriteRequest, maxSize int) ([]*kgo.Record, int, error) {
+	reqSize := req.Size()
+	records, err := marshalWriteRequestToRecords(partitionID, tenantID, req, reqSize, maxSize, mimirpb.SplitWriteRequestByMaxMarshalSize)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	for _, r := range records {
 		r.Headers = append(r.Headers, RecordVersionHeader(1))
 	}
-	return records, nil
+	return records, reqSize, nil
 }
 
 type versionTwoRecordSerializer struct{}
 
-func (v versionTwoRecordSerializer) ToRecords(partitionID int32, tenantID string, req *mimirpb.WriteRequest, maxSize int) ([]*kgo.Record, error) {
+func (v versionTwoRecordSerializer) ToRecords(partitionID int32, tenantID string, req *mimirpb.WriteRequest, maxSize int) ([]*kgo.Record, int, error) {
+	inputSize := req.Size() // Capture original RW1 size before conversion
+
 	reqv2, err := mimirpb.FromWriteRequestToRW2Request(req, V2CommonSymbols, V2RecordSymbolOffset)
 	defer mimirpb.ReuseRW2(reqv2)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to convert RW1 request to RW2")
+		return nil, 0, errors.Wrap(err, "failed to convert RW1 request to RW2")
 	}
 
-	records, err := marshalWriteRequestToRecords(partitionID, tenantID, reqv2, maxSize, splitRequestVersionTwo)
+	records, err := marshalWriteRequestToRecords(partitionID, tenantID, reqv2, reqv2.Size(), maxSize, splitRequestVersionTwo)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to serialise write request")
+		return nil, 0, errors.Wrap(err, "failed to serialise write request")
 	}
 	for _, r := range records {
 		r.Headers = append(r.Headers, RecordVersionHeader(2))
 	}
-	return records, nil
+	return records, inputSize, nil
 }
 
 func DeserializeRecordContent(content []byte, wr *mimirpb.PreallocWriteRequest, version int) error {

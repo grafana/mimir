@@ -66,7 +66,9 @@ func TestWriter_WriteSync(t *testing.T) {
 			return nil, nil, false
 		})
 
-		err := writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: multiSeries, Metadata: nil, Source: mimirpb.API})
+		req := &mimirpb.WriteRequest{Timeseries: multiSeries, Metadata: nil, Source: mimirpb.API}
+		inputSize := req.Size()
+		err := writer.WriteSync(ctx, partitionID, tenantID, req)
 		require.NoError(t, err)
 
 		// Ensure it was processed before returning.
@@ -96,6 +98,10 @@ func TestWriter_WriteSync(t *testing.T) {
 
 		// Check metrics.
 		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+			# HELP cortex_ingest_storage_writer_input_bytes_total Total number of bytes in write requests before conversion to the Kafka record format.
+			# TYPE cortex_ingest_storage_writer_input_bytes_total counter
+			cortex_ingest_storage_writer_input_bytes_total %d
+
 			# HELP cortex_ingest_storage_writer_sent_bytes_total Total number of bytes produced to the Kafka backend.
 			# TYPE cortex_ingest_storage_writer_sent_bytes_total counter
 			cortex_ingest_storage_writer_sent_bytes_total %d
@@ -117,7 +123,8 @@ func TestWriter_WriteSync(t *testing.T) {
 			# HELP cortex_ingest_storage_writer_produce_records_enqueued_total Total number of Kafka records enqueued to be sent to the Kafka backend (includes records that fail to be successfully sent to the Kafka backend).
 			# TYPE cortex_ingest_storage_writer_produce_records_enqueued_total counter
 			cortex_ingest_storage_writer_produce_records_enqueued_total{client_id="0"} 1
-		`, len(fetches.Records()[0].Value))),
+		`, inputSize, len(fetches.Records()[0].Value))),
+			"cortex_ingest_storage_writer_input_bytes_total",
 			"cortex_ingest_storage_writer_sent_bytes_total",
 			"cortex_ingest_storage_writer_records_per_write_request",
 			"cortex_ingest_storage_writer_produce_records_enqueued_total"))
@@ -183,9 +190,13 @@ func TestWriter_WriteSync(t *testing.T) {
 		assert.Equal(t, expectedReq, &actualMergedReq)
 
 		// Check metrics.
-		expectedBytes := len(records[0].Value) + len(records[1].Value)
+		expectedSentBytes := len(records[0].Value) + len(records[1].Value)
 
 		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+			# HELP cortex_ingest_storage_writer_input_bytes_total Total number of bytes in write requests before conversion to the Kafka record format.
+			# TYPE cortex_ingest_storage_writer_input_bytes_total counter
+			cortex_ingest_storage_writer_input_bytes_total %d
+
 			# HELP cortex_ingest_storage_writer_sent_bytes_total Total number of bytes produced to the Kafka backend.
 			# TYPE cortex_ingest_storage_writer_sent_bytes_total counter
 			cortex_ingest_storage_writer_sent_bytes_total %d
@@ -207,7 +218,8 @@ func TestWriter_WriteSync(t *testing.T) {
 			# HELP cortex_ingest_storage_writer_produce_records_enqueued_total Total number of Kafka records enqueued to be sent to the Kafka backend (includes records that fail to be successfully sent to the Kafka backend).
 			# TYPE cortex_ingest_storage_writer_produce_records_enqueued_total counter
 			cortex_ingest_storage_writer_produce_records_enqueued_total{client_id="0"} 2
-		`, expectedBytes)),
+		`, expectedReq.Size(), expectedSentBytes)),
+			"cortex_ingest_storage_writer_input_bytes_total",
 			"cortex_ingest_storage_writer_sent_bytes_total",
 			"cortex_ingest_storage_writer_records_per_write_request",
 			"cortex_ingest_storage_writer_produce_records_enqueued_total"))
@@ -595,6 +607,10 @@ func TestWriter_WriteSync(t *testing.T) {
 
 		// Check metrics.
 		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+			# HELP cortex_ingest_storage_writer_input_bytes_total Total number of bytes in write requests before conversion to the Kafka record format.
+			# TYPE cortex_ingest_storage_writer_input_bytes_total counter
+			cortex_ingest_storage_writer_input_bytes_total %d
+
 			# HELP cortex_ingest_storage_writer_sent_bytes_total Total number of bytes produced to the Kafka backend.
 			# TYPE cortex_ingest_storage_writer_sent_bytes_total counter
 			cortex_ingest_storage_writer_sent_bytes_total %d
@@ -620,7 +636,8 @@ func TestWriter_WriteSync(t *testing.T) {
 			# HELP cortex_ingest_storage_writer_produce_records_failed_total Total number of Kafka records that failed to be sent to the Kafka backend.
 			# TYPE cortex_ingest_storage_writer_produce_records_failed_total counter
 			cortex_ingest_storage_writer_produce_records_failed_total{client_id="0",reason="record-too-large"} 1
-		`, len(fetches.Records()[0].Value))),
+		`, req.Size(), len(fetches.Records()[0].Value))),
+			"cortex_ingest_storage_writer_input_bytes_total",
 			"cortex_ingest_storage_writer_sent_bytes_total",
 			"cortex_ingest_storage_writer_records_per_write_request",
 			"cortex_ingest_storage_writer_produce_records_enqueued_total",
@@ -635,7 +652,8 @@ func TestWriter_WriteSync(t *testing.T) {
 		}
 
 		// Estimate the size of each record written in this test.
-		writeReqRecords, err := marshalWriteRequestToRecords(partitionID, tenantID, createWriteRequest(), maxProducerRecordDataBytesLimit, mimirpb.SplitWriteRequestByMaxMarshalSize)
+		writeReq := createWriteRequest()
+		writeReqRecords, err := marshalWriteRequestToRecords(partitionID, tenantID, writeReq, writeReq.Size(), maxProducerRecordDataBytesLimit, mimirpb.SplitWriteRequestByMaxMarshalSize)
 		require.NoError(t, err)
 		require.Len(t, writeReqRecords, 1)
 		estimatedRecordSize := len(writeReqRecords[0].Value)
@@ -916,7 +934,7 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 
 	t.Run("should return 1 record if the input WriteRequest size is less than the size limit", func(t *testing.T) {
 		req := testReq(t)
-		records, err := marshalWriteRequestToRecords(1, "user-1", req, req.Size()*2, mimirpb.SplitWriteRequestByMaxMarshalSize)
+		records, err := marshalWriteRequestToRecords(1, "user-1", req, req.Size(), req.Size()*2, mimirpb.SplitWriteRequestByMaxMarshalSize)
 		require.NoError(t, err)
 		require.Len(t, records, 1)
 
@@ -929,7 +947,7 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 
 	t.Run("should return 1 record if the input WriteRequest in RW2 size is less than the size limit", func(t *testing.T) {
 		req := testReqV2(t)
-		records, err := marshalWriteRequestToRecords(1, "user-1", req, req.Size()*2, splitRequestVersionTwo)
+		records, err := marshalWriteRequestToRecords(1, "user-1", req, req.Size(), req.Size()*2, splitRequestVersionTwo)
 		require.NoError(t, err)
 		require.Len(t, records, 1)
 
@@ -991,7 +1009,7 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 		const limit = 100
 		req := testReq(t)
 
-		records, err := marshalWriteRequestToRecords(1, "user-1", req, limit, mimirpb.SplitWriteRequestByMaxMarshalSize)
+		records, err := marshalWriteRequestToRecords(1, "user-1", req, req.Size(), limit, mimirpb.SplitWriteRequestByMaxMarshalSize)
 		require.NoError(t, err)
 		require.Len(t, records, 4)
 
@@ -1035,7 +1053,7 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 		const limit = 100
 		req := testReqV2(t)
 
-		records, err := marshalWriteRequestToRecords(1, "user-1", req, limit, splitRequestVersionTwo)
+		records, err := marshalWriteRequestToRecords(1, "user-1", req, req.Size(), limit, splitRequestVersionTwo)
 		require.NoError(t, err)
 		require.Len(t, records, 3)
 
@@ -1124,7 +1142,7 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 		const limit = 1
 		req := testReq(t)
 
-		records, err := marshalWriteRequestToRecords(1, "user-1", req, limit, mimirpb.SplitWriteRequestByMaxMarshalSize)
+		records, err := marshalWriteRequestToRecords(1, "user-1", req, req.Size(), limit, mimirpb.SplitWriteRequestByMaxMarshalSize)
 		require.NoError(t, err)
 		require.Len(t, records, 6)
 
@@ -1185,7 +1203,7 @@ func BenchmarkMarshalWriteRequestToRecords_NoSplitting(b *testing.B) {
 
 	b.Run("marshalWriteRequestToRecords()", func(b *testing.B) {
 		for n := 0; n < b.N; n++ {
-			records, err := marshalWriteRequestToRecords(1, "user-1", req, 1024*1024*1024, requestSplitter)
+			records, err := marshalWriteRequestToRecords(1, "user-1", req, req.Size(), 1024*1024*1024, requestSplitter)
 			if err != nil {
 				b.Fatal(err)
 			}

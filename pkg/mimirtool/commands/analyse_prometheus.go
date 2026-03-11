@@ -162,7 +162,10 @@ func AnalyzePrometheus(api v1.API, metrics model.LabelValues, skip func(model.La
 		defer cancel()
 
 		var result model.Value
-		query := string("count by (job) (" + metric + ")")
+		// The __ignore_usage__ label selector tells Adaptive Metrics' recommendations
+		// service to not factor this query into its analysis.
+		// See https://grafana.com/docs/grafana-cloud/adaptive-telemetry/adaptive-metrics/manage-recommendations/understand-recommended-rules/#make-the-recommendations-service-ignore-a-query
+		query := fmt.Sprintf(`count by (job) (%s{__ignore_usage__=""})`, metric)
 		err := withBackoff(ctx, func() error {
 			var err error
 			result, _, err = api.Query(ctx, query, time.Now())

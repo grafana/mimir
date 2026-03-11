@@ -141,7 +141,8 @@ func (m *httpConnectionTTLMiddleware) removeIdleExpiredConnections() {
 }
 
 // removeExpiredConnection checks if the given connection expired, and in that case removes it from the cache.
-// If the connection is not yet tracked, it creates a new entry. If it exists and is not expired, it updates lastSeen.
+// If the connection is not yet tracked, it creates a new entry. If it exists and is not expired, it updates lastSeen
+// and resets the idleExpired flag (preventing a subsequent idle cleanup pass from deleting the entry).
 // Returns a boolean indicating if the given connection has been removed.
 func (m *httpConnectionTTLMiddleware) removeExpiredConnection(conn string) bool {
 	now := time.Now()
@@ -160,6 +161,7 @@ func (m *httpConnectionTTLMiddleware) removeExpiredConnection(conn string) bool 
 	}
 	if !state.isExpired() {
 		state.lastSeen = now
+		state.idleExpired = false
 		m.connectionsMu.Unlock()
 		return false
 	}

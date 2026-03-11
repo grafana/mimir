@@ -86,7 +86,7 @@ func TestAggregator_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(context.Background())
 			aggregator, err := NewAggregator(parser.SUM, testCase.grouping, false, memoryConsumptionTracker, annotations.New(), types.NewInstantQueryTimeRange(time.Now()), posrange.PositionRange{})
 			require.NoError(t, err)
 

@@ -30,7 +30,7 @@ func TestFunctionOverInstantVector(t *testing.T) {
 			{Floats: []promql.FPoint{{T: 0, F: 1}}},
 			{Floats: []promql.FPoint{{T: 0, F: 2}}},
 		},
-		MemoryConsumptionTracker: limiter.NewMemoryConsumptionTracker(ctx, 0, nil, ""),
+		MemoryConsumptionTracker: limiter.NewUnlimitedMemoryConsumptionTracker(ctx),
 	}
 
 	metadataFuncCalled := false
@@ -49,7 +49,7 @@ func TestFunctionOverInstantVector(t *testing.T) {
 
 	operator := &FunctionOverInstantVector{
 		Inner:                    inner,
-		MemoryConsumptionTracker: limiter.NewMemoryConsumptionTracker(ctx, 0, nil, ""),
+		MemoryConsumptionTracker: limiter.NewUnlimitedMemoryConsumptionTracker(ctx),
 		Func: FunctionOverInstantVectorDefinition{
 			SeriesDataFunc: mustBeCalledSeriesData,
 			SeriesMetadataFunction: SeriesMetadataFunctionDefinition{
@@ -71,7 +71,7 @@ func TestFunctionOverInstantVector(t *testing.T) {
 
 func TestFunctionOverInstantVectorWithScalarArgs(t *testing.T) {
 	ctx := context.Background()
-	tracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	tracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	inner := &operators.TestOperator{
 		Series: []labels.Labels{
 			labels.FromStrings("series", "0"),
@@ -91,6 +91,8 @@ func TestFunctionOverInstantVectorWithScalarArgs(t *testing.T) {
 	scalarOperator2 := &testScalarOperator{
 		value: types.ScalarData{Samples: []promql.FPoint{{T: 60, F: 4}}},
 	}
+
+	require.NoError(t, tracker.IncreaseMemoryConsumption(4*types.FPointSize, limiter.FPointSlices))
 
 	expectedSeriesDataFuncCalledTimes := 0
 	seriesDataFuncCalledTimes := 0
@@ -123,10 +125,16 @@ func TestFunctionOverInstantVectorWithScalarArgs(t *testing.T) {
 	expectedSeriesDataFuncCalledTimes++
 
 	require.Equal(t, expectedSeriesDataFuncCalledTimes, seriesDataFuncCalledTimes, "Supplied SeriesDataFunc was called once for each Series")
+
+	operator.Close()
+	require.True(t, inner.Closed)
+	require.True(t, scalarOperator1.closed)
+	require.True(t, scalarOperator2.closed)
 }
 
 type testScalarOperator struct {
-	value types.ScalarData
+	value  types.ScalarData
+	closed bool
 }
 
 func (t *testScalarOperator) GetValues(_ context.Context) (types.ScalarData, error) {
@@ -149,4 +157,6 @@ func (t *testScalarOperator) Finalize(_ context.Context) error {
 	return nil
 }
 
-func (t *testScalarOperator) Close() {}
+func (t *testScalarOperator) Close() {
+	t.closed = true
+}

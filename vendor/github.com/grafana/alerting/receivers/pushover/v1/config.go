@@ -95,186 +95,87 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 	return settings, nil
 }
 
-func Schema() schema.IntegrationSchemaVersion {
-	pushoverSoundOptions := []schema.SelectOption{
+var Schema = schema.IntegrationSchemaVersion{
+	Version:   Version,
+	CanCreate: true,
+	Options: []schema.Field{
 		{
-			Value: "default",
-			Label: "Default",
-		},
-		{
-			Value: "pushover",
-			Label: "Pushover",
-		}, {
-			Value: "bike",
-			Label: "Bike",
-		}, {
-			Value: "bugle",
-			Label: "Bugle",
-		}, {
-			Value: "cashregister",
-			Label: "Cashregister",
-		}, {
-			Value: "classical",
-			Label: "Classical",
-		}, {
-			Value: "cosmic",
-			Label: "Cosmic",
-		}, {
-			Value: "falling",
-			Label: "Falling",
-		}, {
-			Value: "gamelan",
-			Label: "Gamelan",
-		}, {
-			Value: "incoming",
-			Label: "Incoming",
-		}, {
-			Value: "intermission",
-			Label: "Intermission",
-		}, {
-			Value: "magic",
-			Label: "Magic",
-		}, {
-			Value: "mechanical",
-			Label: "Mechanical",
-		}, {
-			Value: "pianobar",
-			Label: "Pianobar",
-		}, {
-			Value: "siren",
-			Label: "Siren",
-		}, {
-			Value: "spacealarm",
-			Label: "Spacealarm",
-		}, {
-			Value: "tugboat",
-			Label: "Tugboat",
-		}, {
-			Value: "alien",
-			Label: "Alien",
-		}, {
-			Value: "climb",
-			Label: "Climb",
-		}, {
-			Value: "persistent",
-			Label: "Persistent",
-		}, {
-			Value: "echo",
-			Label: "Echo",
-		}, {
-			Value: "updown",
-			Label: "Updown",
-		}, {
-			Value: "none",
-			Label: "None",
-		},
-	}
-
-	pushoverPriorityOptions := []schema.SelectOption{
-		{
-			Value: "2",
-			Label: "Emergency",
+			Label:        "API Token",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			Placeholder:  "Application token",
+			PropertyName: "apiToken",
+			Required:     true,
+			Secure:       true,
 		},
 		{
-			Value: "1",
-			Label: "High",
+			Label:        "User key(s)",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			Placeholder:  "comma-separated list",
+			PropertyName: "userKey",
+			Required:     true,
+			Secure:       true,
 		},
 		{
-			Value: "0",
-			Label: "Normal",
+			Label:        "Device(s) (optional)",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			Placeholder:  "comma-separated list; leave empty to send to all devices",
+			PropertyName: "device",
 		},
 		{
-			Value: "-1",
-			Label: "Low",
+			Label:         "Alerting priority",
+			Element:       schema.ElementTypeSelect,
+			SelectOptions: pushoverPriorityOptions,
+			PropertyName:  "priority",
 		},
 		{
-			Value: "-2",
-			Label: "Lowest",
+			Label:         "OK priority",
+			Element:       schema.ElementTypeSelect,
+			SelectOptions: pushoverPriorityOptions,
+			PropertyName:  "okPriority",
 		},
-	}
-
-	return schema.IntegrationSchemaVersion{
-		Version:   Version,
-		CanCreate: true,
-		Options: []schema.Field{
-			{
-				Label:        "API Token",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				Placeholder:  "Application token",
-				PropertyName: "apiToken",
-				Required:     true,
-				Secure:       true,
-			},
-			{
-				Label:        "User key(s)",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				Placeholder:  "comma-separated list",
-				PropertyName: "userKey",
-				Required:     true,
-				Secure:       true,
-			},
-			{
-				Label:        "Device(s) (optional)",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				Placeholder:  "comma-separated list; leave empty to send to all devices",
-				PropertyName: "device",
-			},
-			{
-				Label:         "Alerting priority",
-				Element:       schema.ElementTypeSelect,
-				SelectOptions: pushoverPriorityOptions,
-				PropertyName:  "priority",
-			},
-			{
-				Label:         "OK priority",
-				Element:       schema.ElementTypeSelect,
-				SelectOptions: pushoverPriorityOptions,
-				PropertyName:  "okPriority",
-			},
-			{
-				Description:  "How often (in seconds) the Pushover servers will send the same alerting or OK notification to the user.",
-				Label:        "Retry (Only used for Emergency Priority)",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				Placeholder:  "minimum 30 seconds",
-				PropertyName: "retry",
-			},
-			{
-				Description:  "How many seconds the alerting or OK notification will continue to be retried.",
-				Label:        "Expire (Only used for Emergency Priority)",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				Placeholder:  "maximum 10800 seconds",
-				PropertyName: "expire",
-			},
-			{
-				Label:         "Alerting sound",
-				Element:       schema.ElementTypeSelect,
-				SelectOptions: pushoverSoundOptions,
-				PropertyName:  "sound",
-			},
-			{
-				Label:         "OK sound",
-				Element:       schema.ElementTypeSelect,
-				SelectOptions: pushoverSoundOptions,
-				PropertyName:  "okSound",
-			},
-			{ // New in 9.3.
-				Label:        "Title",
-				Element:      schema.ElementTypeTextArea,
-				InputType:    schema.InputTypeText,
-				Placeholder:  templates.DefaultMessageTitleEmbed,
-				PropertyName: "title",
-			},
-			{ // New in 8.0.
-				Label:        "Message",
-				Element:      schema.ElementTypeTextArea,
-				Placeholder:  templates.DefaultMessageEmbed,
-				PropertyName: "message",
-			},
+		{
+			Description:  "How often (in seconds) the Pushover servers will send the same alerting or OK notification to the user.",
+			Label:        "Retry (Only used for Emergency Priority)",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			Placeholder:  "minimum 30 seconds",
+			PropertyName: "retry",
 		},
-	}
+		{
+			Description:  "How many seconds the alerting or OK notification will continue to be retried.",
+			Label:        "Expire (Only used for Emergency Priority)",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			Placeholder:  "maximum 10800 seconds",
+			PropertyName: "expire",
+		},
+		{
+			Label:         "Alerting sound",
+			Element:       schema.ElementTypeSelect,
+			SelectOptions: pushoverSoundOptions,
+			PropertyName:  "sound",
+		},
+		{
+			Label:         "OK sound",
+			Element:       schema.ElementTypeSelect,
+			SelectOptions: pushoverSoundOptions,
+			PropertyName:  "okSound",
+		},
+		{ // New in 9.3.
+			Label:        "Title",
+			Element:      schema.ElementTypeTextArea,
+			InputType:    schema.InputTypeText,
+			Placeholder:  templates.DefaultMessageTitleEmbed,
+			PropertyName: "title",
+		},
+		{ // New in 8.0.
+			Label:        "Message",
+			Element:      schema.ElementTypeTextArea,
+			Placeholder:  templates.DefaultMessageEmbed,
+			PropertyName: "message",
+		},
+	},
 }

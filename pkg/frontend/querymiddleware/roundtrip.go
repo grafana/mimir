@@ -414,7 +414,7 @@ func newQueryMiddlewares(
 
 	queryBlockerMiddleware := newQueryBlockerMiddleware(limits, log, blockedQueriesCounter)
 	queryLimiterMiddleware := newQueryLimiterMiddleware(cacheClient, cacheKeyGenerator, limits, log, blockedQueriesCounter)
-	queryStatsMiddleware := newQueryStatsMiddleware(registerer, engineOpts)
+	queryStatsMiddleware := newQueryStatsMiddleware(registerer)
 	prom2CompatMiddleware := newProm2RangeCompatMiddleware(limits, log, registerer)
 	blockInternalFunctionsMiddleware := newBlockInternalFunctionsMiddleware(cfg.InternalFunctionNames, log)
 

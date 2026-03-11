@@ -703,8 +703,8 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 	}
 	for _, tc := range parserTestCases {
 		t.Run(tc.name, func(t *testing.T) {
-			parserFunc := func(context.Context, *http.Request, int, *util.RequestBuffers, *mimirpb.PreallocWriteRequest, log.Logger) error {
-				return tc.err
+			parserFunc := func(context.Context, *http.Request, int, *util.RequestBuffers, *mimirpb.PreallocWriteRequest, log.Logger) (int, error) {
+				return 0, tc.err
 			}
 			pushFunc := func(_ context.Context, req *Request) error {
 				_, err := req.WriteRequest() // just read the body so we can trigger the parser
@@ -790,8 +790,8 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			parserFunc := func(context.Context, *http.Request, int, *util.RequestBuffers, *mimirpb.PreallocWriteRequest, log.Logger) error {
-				return nil
+			parserFunc := func(context.Context, *http.Request, int, *util.RequestBuffers, *mimirpb.PreallocWriteRequest, log.Logger) (int, error) {
+				return 0, nil
 			}
 			pushFunc := func(_ context.Context, req *Request) error {
 				_, err := req.WriteRequest() // just read the body so we can trigger the parser
@@ -1910,6 +1910,8 @@ func TestHandler_CompressionRatioMetric(t *testing.T) {
 	pushMetrics := newPushMetrics(reg)
 	pushFunc := func(ctx context.Context, pushReq *Request) error {
 		_, err := pushReq.WriteRequest()
+		// Verify UncompressedBodySize matches the protobuf size (wire bytes after snappy decompression).
+		assert.Equal(t, len(protobuf), pushReq.UncompressedBodySize(), "UncompressedBodySize should match uncompressed protobuf size")
 		return err
 	}
 	handler := Handler(100000, nil, nil, false, false, validation.MockDefaultOverrides(), RetryConfig{}, pushFunc, pushMetrics, log.NewNopLogger())
@@ -1953,6 +1955,8 @@ func TestOTLPHandler_CompressionRatioMetric(t *testing.T) {
 	pushMetrics := newPushMetrics(reg)
 	pushFunc := func(ctx context.Context, pushReq *Request) error {
 		_, err := pushReq.WriteRequest()
+		// Verify UncompressedBodySize matches the OTLP body size.
+		assert.Equal(t, len(body), pushReq.UncompressedBodySize(), "UncompressedBodySize should match OTLP request body size")
 		return err
 	}
 	handler := OTLPHandler(

@@ -34,6 +34,7 @@ type BucketStoreMetrics struct {
 	seriesBlocksQueried   *prometheus.SummaryVec
 	resultSeriesCount     prometheus.Summary
 	chunkSizeBytes        prometheus.Histogram
+	chunkSizeEstimateType *prometheus.CounterVec
 	queriesDropped        *prometheus.CounterVec
 	seriesRefetches       prometheus.Counter
 
@@ -177,6 +178,10 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 			32, 256, 512, 1024, 32 * 1024, 256 * 1024, 512 * 1024, 1024 * 1024, 32 * 1024 * 1024, 256 * 1024 * 1024, 512 * 1024 * 1024,
 		},
 	})
+	m.chunkSizeEstimateType = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_bucket_store_chunk_size_estimate_type_total",
+		Help: "Number of time we estimated the size of a chunk with a given type.",
+	}, []string{"type"})
 
 	m.indexHeaderReaderMetrics = indexheader.NewReaderPoolMetrics(prometheus.WrapRegistererWithPrefix("cortex_bucket_store_", reg))
 

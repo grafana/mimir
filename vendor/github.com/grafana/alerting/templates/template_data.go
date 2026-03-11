@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -24,16 +25,25 @@ import (
 
 	"github.com/grafana/alerting/models"
 	"github.com/grafana/alerting/templates/gomplate"
+	"github.com/grafana/alerting/utils"
 )
 
 type KV = template.KV
 type Data = template.Data
-type Template = template.Template
+type Template struct {
+	*template.Template
+	limits     Limits
+	AppVersion string
+}
 
 var (
 	// Provides current time. Can be overwritten in tests.
-	timeNow        = time.Now
-	ErrInvalidKind = errors.New("invalid template kind")
+	timeNow                   = time.Now
+	ErrInvalidKind            = errors.New("invalid template kind")
+	ErrTemplateOutputTooLarge = errors.New("template output exceeds maximum size")
+	DefaultLimits             = Limits{
+		MaxTemplateOutputSize: 10 * 1024 * 1024,
+	}
 )
 
 // Kind represents the type or category of a template. It is used to differentiate between various template kinds.
@@ -113,6 +123,7 @@ type ExtendedAlert struct {
 	SilenceURL    string             `json:"silenceURL"`
 	DashboardURL  string             `json:"dashboardURL"`
 	PanelURL      string             `json:"panelURL"`
+	RuleUID       string             `json:"ruleUID,omitempty"`
 	Values        map[string]float64 `json:"values"`
 	ValueString   string             `json:"valueString"` // TODO: Remove in Grafana 10
 	ImageURL      string             `json:"imageURL,omitempty"`
@@ -133,6 +144,7 @@ type ExtendedData struct {
 	CommonAnnotations KV `json:"commonAnnotations"`
 
 	ExternalURL string `json:"externalURL"`
+	AppVersion  string `json:"appVersion,omitempty"`
 
 	// Webhook-specific fields
 	GroupKey string `json:"groupKey"`
@@ -155,7 +167,7 @@ func addFuncs(text *tmpltext.Template, html *tmplhtml.Template) {
 }
 
 // fromContent calls Parse on all provided template content and returns the resulting Template. Content equivalent to templates.FromGlobs.
-func fromContent(tmpls []string, options ...template.Option) (*Template, error) {
+func fromContent(tmpls []string, options ...template.Option) (*template.Template, error) {
 	t, err := template.New(options...)
 	if err != nil {
 		return nil, err
@@ -204,6 +216,7 @@ func extendAlert(alert template.Alert, externalURL string, logger log.Logger) *E
 		EndsAt:       alert.EndsAt,
 		GeneratorURL: alert.GeneratorURL,
 		Fingerprint:  alert.Fingerprint,
+		RuleUID:      alert.Labels[models.RuleUIDLabel],
 	}
 
 	if alert.Annotations[models.OrgIDAnnotation] != "" {
@@ -361,8 +374,9 @@ func ExtendData(data *Data, logger log.Logger) *ExtendedData {
 }
 
 func TmplText(ctx context.Context, tmpl *Template, alerts []*types.Alert, l log.Logger, tmplErr *error) (func(string) string, *ExtendedData) {
-	promTmplData := notify.GetTemplateData(ctx, tmpl, alerts, l)
+	promTmplData := notify.GetTemplateData(ctx, tmpl.Template, alerts, l)
 	data := ExtendData(promTmplData, l)
+	data.AppVersion = tmpl.AppVersion
 
 	if groupKey, err := notify.ExtractGroupKey(ctx); err == nil {
 		data.GroupKey = groupKey.String()
@@ -374,9 +388,30 @@ func TmplText(ctx context.Context, tmpl *Template, alerts []*types.Alert, l log.
 		if *tmplErr != nil {
 			return
 		}
-		s, *tmplErr = tmpl.ExecuteTextString(name, data)
+		s, *tmplErr = executeTextString(tmpl, name, data)
 		return s
 	}, data
+}
+
+// This is a copy of method ExecuteTextString of Template with addition of utils.LimitedWriter
+func executeTextString(tmpl *Template, text string, data *ExtendedData) (string, error) {
+	if text == "" {
+		return "", nil
+	}
+	textTmpl, err := tmpl.Text()
+	if err != nil {
+		return "", err
+	}
+	textTmpl, err = textTmpl.New("").Option("missingkey=zero").Parse(text)
+	if err != nil {
+		return "", err
+	}
+	var buf bytes.Buffer
+	err = textTmpl.Execute(utils.NewLimitedWriter(&buf, tmpl.limits.MaxTemplateOutputSize), data)
+	if errors.Is(err, utils.ErrWriteLimitExceeded) {
+		err = ErrTemplateOutputTooLarge
+	}
+	return buf.String(), err
 }
 
 // Firing returns the subset of alerts that are firing.

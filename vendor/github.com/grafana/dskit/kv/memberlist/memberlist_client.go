@@ -604,21 +604,6 @@ func (m *KV) starting(ctx context.Context) error {
 	}
 	m.delegateReady.Store(true)
 
-	// Start propagation delay tracker if enabled.
-	if m.cfg.PropagationDelayTracker.Enabled {
-		m.propagationDelayTracker = NewPropagationDelayTracker(
-			m,
-			m.cfg.PropagationDelayTracker,
-			m.memberlist.LocalNode().Name,
-			m.logger,
-			m.registerer,
-		)
-		if err := m.propagationDelayTracker.StartAsync(ctx); err != nil {
-			level.Warn(m.logger).Log("msg", "failed to start propagation delay tracker", "err", err)
-			m.propagationDelayTracker = nil
-		}
-	}
-
 	// Try to fast-join memberlist cluster in Starting state, so that we don't start with empty KV store.
 	if len(m.cfg.JoinMembers) > 0 {
 		if err := m.fastJoinMembersOnStartup(ctx); err != nil {
@@ -649,6 +634,22 @@ func (m *KV) running(ctx context.Context) error {
 	ok := m.joinMembersOnStartup(ctx)
 	if !ok && m.cfg.AbortIfJoinFails {
 		return errFailedToJoinCluster
+	}
+
+	// Start propagation delay tracker after joining the cluster, so that the first
+	// WatchKey callback has the full cluster state and correctly skips pre-existing beacons.
+	if m.cfg.PropagationDelayTracker.Enabled {
+		m.propagationDelayTracker = NewPropagationDelayTracker(
+			m,
+			m.cfg.PropagationDelayTracker,
+			m.memberlist.LocalNode().Name,
+			m.logger,
+			m.registerer,
+		)
+		if err := m.propagationDelayTracker.StartAsync(ctx); err != nil {
+			level.Warn(m.logger).Log("msg", "failed to start propagation delay tracker", "err", err)
+			m.propagationDelayTracker = nil
+		}
 	}
 
 	var tickerChan <-chan time.Time

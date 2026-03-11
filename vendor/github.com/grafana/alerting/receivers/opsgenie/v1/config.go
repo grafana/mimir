@@ -128,107 +128,107 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 	}, nil
 }
 
-func Schema() schema.IntegrationSchemaVersion {
-	return schema.IntegrationSchemaVersion{
-		Version:   Version,
-		CanCreate: true,
-		Options: []schema.Field{
-			{
-				Label:        "API Key",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				Placeholder:  "OpsGenie API Key",
-				PropertyName: "apiKey",
-				Required:     true,
-				Secure:       true,
-			},
-			{
-				Label:        "Alert API URL",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				Placeholder:  "https://api.opsgenie.com/v2/alerts",
-				PropertyName: "apiUrl",
-				Required:     true,
-			},
-			{
-				Label:        "Message",
-				Description:  "Alert text limited to 130 characters.",
-				Element:      schema.ElementTypeTextArea,
-				InputType:    schema.InputTypeText,
-				Placeholder:  templates.DefaultMessageTitleEmbed,
-				PropertyName: "message",
-			},
-			{
-				Label:        "Description",
-				Description:  "A description of the incident.",
-				Element:      schema.ElementTypeTextArea,
-				PropertyName: "description",
-			},
-			{
-				Label:        "Auto close incidents",
-				Element:      schema.ElementTypeCheckbox,
-				Description:  "Automatically close alerts in OpsGenie once the alert goes back to ok.",
-				PropertyName: "autoClose",
-			}, {
-				Label:        "Override priority",
-				Element:      schema.ElementTypeCheckbox,
-				Description:  "Allow the alert priority to be set using the og_priority label.",
-				PropertyName: "overridePriority",
-			},
-			{
-				Label:   "Send notification tags as",
-				Element: schema.ElementTypeSelect,
-				SelectOptions: []schema.SelectOption{
-					{
-						Value: SendTags,
-						Label: "Tags",
-					},
-					{
-						Value: SendDetails,
-						Label: "Extra Properties",
-					},
-					{
-						Value: SendBoth,
-						Label: "Tags & Extra Properties",
-					},
+var Schema = schema.IntegrationSchemaVersion{
+	Version:    Version,
+	CanCreate:  true,
+	Deprecated: false,
+	Options: []schema.Field{
+		{
+			Label:        "API Key",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			Placeholder:  "OpsGenie API Key",
+			PropertyName: "apiKey",
+			Required:     true,
+			Secure:       true,
+		},
+		{
+			Label:        "Alert API URL",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			Placeholder:  "https://api.opsgenie.com/v2/alerts",
+			PropertyName: "apiUrl",
+			Required:     true,
+			Protected:    true,
+		},
+		{
+			Label:        "Message",
+			Description:  "Alert text limited to 130 characters.",
+			Element:      schema.ElementTypeTextArea,
+			InputType:    schema.InputTypeText,
+			Placeholder:  templates.DefaultMessageTitleEmbed,
+			PropertyName: "message",
+		},
+		{
+			Label:        "Description",
+			Description:  "A description of the incident.",
+			Element:      schema.ElementTypeTextArea,
+			PropertyName: "description",
+		},
+		{
+			Label:        "Auto close incidents",
+			Element:      schema.ElementTypeCheckbox,
+			Description:  "Automatically close alerts in OpsGenie once the alert goes back to ok.",
+			PropertyName: "autoClose",
+		}, {
+			Label:        "Override priority",
+			Element:      schema.ElementTypeCheckbox,
+			Description:  "Allow the alert priority to be set using the og_priority label.",
+			PropertyName: "overridePriority",
+		},
+		{
+			Label:   "Send notification tags as",
+			Element: schema.ElementTypeSelect,
+			SelectOptions: []schema.SelectOption{
+				{
+					Value: SendTags,
+					Label: "Tags",
 				},
-				Description:  "Send the common annotations to Opsgenie as either Extra Properties, Tags or both",
-				PropertyName: "sendTagsAs",
+				{
+					Value: SendDetails,
+					Label: "Extra Properties",
+				},
+				{
+					Value: SendBoth,
+					Label: "Tags & Extra Properties",
+				},
 			},
-			// New in 10.3
-			{
-				Label:        "Responders",
-				PropertyName: "responders",
-				Description:  "If the API key belongs to a team, this field is ignored.",
-				Element:      schema.ElementSubformArray,
-				SubformOptions: []schema.Field{
-					{
-						Label:        "Type",
-						Description:  fmt.Sprintf("%s or a template", strings.Join(SupportedResponderTypes, ", ")),
-						Element:      schema.ElementTypeInput,
-						Required:     true,
-						PropertyName: "type",
-					},
-					{
-						Label:        "Name",
-						Element:      schema.ElementTypeInput,
-						Description:  "Name of the responder. Must be specified if ID and Username are empty or if the type is 'teams'.",
-						PropertyName: "name",
-					},
-					{
-						Label:        "ID",
-						Element:      schema.ElementTypeInput,
-						Description:  "ID of the responder. Must be specified if name and Username are empty.",
-						PropertyName: "id",
-					},
-					{
-						Label:        "Username",
-						Element:      schema.ElementTypeInput,
-						Description:  "User name of the responder. Must be specified if ID and Name are empty.",
-						PropertyName: "username",
-					},
+			Description:  "Send the common annotations to Opsgenie as either Extra Properties, Tags or both",
+			PropertyName: "sendTagsAs",
+		},
+		// New in 10.3
+		{
+			Label:        "Responders",
+			PropertyName: "responders",
+			Description:  "If the API key belongs to a team, this field is ignored.",
+			Element:      schema.ElementSubformArray,
+			SubformOptions: []schema.Field{
+				{
+					Label:        "Type",
+					Description:  fmt.Sprintf("%s or a template", strings.Join(SupportedResponderTypes, ", ")),
+					Element:      schema.ElementTypeInput,
+					Required:     true,
+					PropertyName: "type",
+				},
+				{
+					Label:        "Name",
+					Element:      schema.ElementTypeInput,
+					Description:  "Name of the responder. Must be specified if ID and Username are empty or if the type is 'teams'.",
+					PropertyName: "name",
+				},
+				{
+					Label:        "ID",
+					Element:      schema.ElementTypeInput,
+					Description:  "ID of the responder. Must be specified if name and Username are empty.",
+					PropertyName: "id",
+				},
+				{
+					Label:        "Username",
+					Element:      schema.ElementTypeInput,
+					Description:  "User name of the responder. Must be specified if ID and Name are empty.",
+					PropertyName: "username",
 				},
 			},
 		},
-	}
+	},
 }

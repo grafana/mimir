@@ -157,6 +157,11 @@ func (wn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 		}
 	}
 
+	if parsedURL == NoopURL {
+		level.Debug(l).Log("msg", "skipping webhook notification, URL is set to noop")
+		return true, nil
+	}
+
 	cmd := &receivers.SendWebhookSettings{
 		URL:        parsedURL,
 		User:       wn.settings.User,

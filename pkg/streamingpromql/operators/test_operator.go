@@ -22,6 +22,8 @@ type TestOperator struct {
 	Closed                   bool
 	Position                 posrange.PositionRange
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
+
+	MatchersProvided types.Matchers
 }
 
 var _ types.InstantVectorOperator = &TestOperator{}
@@ -31,6 +33,8 @@ func (t *TestOperator) ExpressionPosition() posrange.PositionRange {
 }
 
 func (t *TestOperator) SeriesMetadata(_ context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	t.MatchersProvided = matchers
+
 	if len(t.Series) == 0 {
 		return nil, nil
 	}

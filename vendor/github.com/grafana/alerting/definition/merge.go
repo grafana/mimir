@@ -12,7 +12,6 @@ import (
 )
 
 var (
-	ErrNoMatchers              = errors.New("matchers must not be empty")
 	ErrInvalidMatchers         = errors.New("only equality matchers are allowed")
 	ErrDuplicateMatchers       = errors.New("matchers should be unique")
 	ErrSubtreeMatchersConflict = errors.New("subtree matchers conflict with existing Grafana routes, merging will break existing notifications")
@@ -65,9 +64,6 @@ type MergeOpts struct {
 }
 
 func (o MergeOpts) Validate() error {
-	if len(o.SubtreeMatchers) == 0 {
-		return ErrNoMatchers
-	}
 	seenNames := make(map[string]struct{}, len(o.SubtreeMatchers))
 	for _, matcher := range o.SubtreeMatchers {
 		if _, ok := seenNames[matcher.Name]; ok {
@@ -84,9 +80,13 @@ func (o MergeOpts) Validate() error {
 // MergeResult represents the result of merging two Alertmanager configurations.
 // It contains the unified configuration and maps of renamed receivers and time intervals.
 type MergeResult struct {
-	Config               PostableApiAlertingConfig
-	RenamedReceivers     map[string]string
-	RenamedTimeIntervals map[string]string
+	Config PostableApiAlertingConfig
+	RenameResources
+}
+
+type RenameResources struct {
+	Receivers     map[string]string
+	TimeIntervals map[string]string
 }
 
 // Merge combines two Alertmanager configurations into a single unified configuration.
@@ -134,17 +134,20 @@ func Merge(a, b PostableApiAlertingConfig, opts MergeOpts) (MergeResult, error) 
 	if err := opts.Validate(); err != nil {
 		return MergeResult{}, err
 	}
-	match, err := checkIfMatchersUsed(opts.SubtreeMatchers, a.Route.Routes)
-	if err != nil {
-		return MergeResult{}, err
-	}
-	if match {
-		return MergeResult{}, fmt.Errorf("%w: sub tree matchers: %s", ErrSubtreeMatchersConflict, opts.SubtreeMatchers)
+
+	if len(opts.SubtreeMatchers) > 0 {
+		match, err := checkIfMatchersUsed(opts.SubtreeMatchers, a.Route.Routes)
+		if err != nil {
+			return MergeResult{}, err
+		}
+		if match {
+			return MergeResult{}, fmt.Errorf("%w: sub tree matchers: %s", ErrSubtreeMatchersConflict, opts.SubtreeMatchers)
+		}
 	}
 
-	mergedReceivers, renamedReceivers := mergeReceivers(a.Receivers, b.Receivers, opts.DedupSuffix)
+	mergedReceivers, renamedReceivers := MergeReceivers(a.Receivers, b.Receivers, opts.DedupSuffix)
 
-	mergedMuteTime, mergedTimeInterval, renamedTimeIntervals := mergeTimeIntervals(
+	mergedTimeInterval, renamedTimeIntervals := MergeTimeIntervals(
 		a.MuteTimeIntervals,
 		a.TimeIntervals,
 		b.MuteTimeIntervals,
@@ -152,17 +155,24 @@ func Merge(a, b PostableApiAlertingConfig, opts MergeOpts) (MergeResult, error) 
 		opts.DedupSuffix,
 	)
 
-	renameReceiversInRoutes([]*Route{b.Route}, renamedReceivers, renamedTimeIntervals)
-
-	if a.Route == nil {
-		return MergeResult{}, fmt.Errorf("cannot merge into undefined routing tree")
+	renamed := RenameResources{
+		Receivers:     renamedReceivers,
+		TimeIntervals: renamedTimeIntervals,
 	}
-	if b.Route == nil {
-		return MergeResult{}, fmt.Errorf("cannot merge undefined routing tree")
-	}
-	route := mergeRoutes(*a.Route, *b.Route, opts.SubtreeMatchers)
 
-	inhibitRules := mergeInhibitRules(a.InhibitRules, b.InhibitRules, opts.SubtreeMatchers)
+	route := a.Route
+	inhibitRules := a.InhibitRules
+	if len(opts.SubtreeMatchers) > 0 {
+		RenameResourceUsagesInRoutes([]*Route{b.Route}, renamed)
+		if route == nil {
+			return MergeResult{}, fmt.Errorf("cannot merge into undefined routing tree")
+		}
+		if b.Route == nil {
+			return MergeResult{}, fmt.Errorf("cannot merge undefined routing tree")
+		}
+		route = MergeRoutes(*route, *b.Route, opts.SubtreeMatchers)
+		inhibitRules = MergeInhibitRules(inhibitRules, b.InhibitRules, opts.SubtreeMatchers)
+	}
 
 	return MergeResult{
 		Config: PostableApiAlertingConfig{
@@ -170,46 +180,87 @@ func Merge(a, b PostableApiAlertingConfig, opts MergeOpts) (MergeResult, error) 
 				Global:            nil, // Grafana does not have global.
 				Route:             route,
 				InhibitRules:      inhibitRules,
-				MuteTimeIntervals: mergedMuteTime,
+				MuteTimeIntervals: a.MuteTimeIntervals,
 				TimeIntervals:     mergedTimeInterval,
 				Templates:         nil, // we do not use this.
 			},
 			Receivers: mergedReceivers,
 		},
-		RenamedReceivers:     renamedReceivers,
-		RenamedTimeIntervals: renamedTimeIntervals,
+		RenameResources: renamed,
 	}, nil
 }
 
-func mergeTimeIntervals(amt []config.MuteTimeInterval, ati []config.TimeInterval, bmt []config.MuteTimeInterval, bti []config.TimeInterval, suffix string) ([]config.MuteTimeInterval, []config.TimeInterval, map[string]string) {
-	usedNames := make(map[string]struct{}, len(amt)+len(bti)+len(bmt)+len(ati))
-	for _, r := range amt {
-		usedNames[r.Name] = struct{}{}
-	}
-	for _, r := range ati {
-		usedNames[r.Name] = struct{}{}
-	}
-	renamed := make(map[string]string, len(bmt)+len(bti))
-	for _, r := range bmt {
-		name := getUniqueName(r.Name, suffix, usedNames)
-		if name != r.Name {
-			renamed[r.Name] = name
-			r.Name = name
-		}
-		amt = append(amt, r)
-	}
-	for _, r := range bti {
-		name := getUniqueName(r.Name, suffix, usedNames)
-		if name != r.Name {
-			renamed[r.Name] = name
-			r.Name = name
-		}
-		ati = append(ati, r)
-	}
-	return amt, ati, renamed
+// DeduplicateResources merges existing and incoming resources (receivers and time intervals) and ensures unique names by applying suffixes. Returns renamed resources for tracking adjustments made.
+func DeduplicateResources(a, b PostableApiAlertingConfig, opts MergeOpts) (RenameResources, error) {
+	_, renamedReceivers := MergeReceivers(a.Receivers, b.Receivers, opts.DedupSuffix)
+
+	_, renamedTimeIntervals := MergeTimeIntervals(
+		a.MuteTimeIntervals,
+		a.TimeIntervals,
+		b.MuteTimeIntervals,
+		b.TimeIntervals,
+		opts.DedupSuffix,
+	)
+	return RenameResources{
+		Receivers:     renamedReceivers,
+		TimeIntervals: renamedTimeIntervals,
+	}, nil
 }
 
-func mergeRoutes(a, b Route, matcher config.Matchers) *Route {
+// MergeTimeIntervals merges existing and incoming time intervals and mute intervals, ensuring unique names by applying suffixes.
+// It returns a merged list of time intervals and a map of renamed interval names for tracking adjustments made. Mute time intervals are converted to time intervals.
+func MergeTimeIntervals(
+	existingMuteIntervals []config.MuteTimeInterval,
+	existingTimeIntervals []config.TimeInterval,
+	incomingMuteIntervals []config.MuteTimeInterval,
+	incomingTimeIntervals []config.TimeInterval,
+	suffix string,
+) ([]config.TimeInterval, map[string]string) {
+	// combine all incoming intervals into a single list
+	incomingAll := make([]config.TimeInterval, 0, len(incomingTimeIntervals)+len(incomingMuteIntervals))
+	incomingAll = append(incomingAll, incomingTimeIntervals...)
+	for _, interval := range incomingMuteIntervals {
+		incomingAll = append(incomingAll, config.TimeInterval(interval))
+	}
+	usedNames := createIndexTimeIntervals(existingMuteIntervals, existingTimeIntervals, incomingAll)
+	result := make([]config.TimeInterval, 0, len(existingTimeIntervals)+len(incomingMuteIntervals)+len(incomingTimeIntervals))
+	result = append(result, existingTimeIntervals...)
+	renames := make(map[string]string)
+	for idx, interval := range incomingAll {
+		curName := interval.Name
+		if i, ok := usedNames[curName]; ok && i != idx { // if the name is already used by another interval, append a suffix.
+			newName := getUniqueName(curName, suffix, usedNames)
+			renames[curName] = newName
+			usedNames[newName] = idx
+			interval.Name = newName
+		}
+		result = append(result, interval)
+	}
+	return result, renames
+}
+
+func createIndexTimeIntervals(
+	existingMuteIntervals []config.MuteTimeInterval,
+	existingTimeIntervals []config.TimeInterval,
+	incomingTimeIntervals []config.TimeInterval,
+) map[string]int {
+	// usedNames is a map of existing interval names where value is the index of the interval that holds the name in the incoming list.
+	usedNames := make(map[string]int, len(existingMuteIntervals)+len(existingTimeIntervals)+len(incomingTimeIntervals))
+	for _, r := range existingMuteIntervals {
+		usedNames[r.Name] = -1
+	}
+	for _, r := range existingTimeIntervals {
+		usedNames[r.Name] = -1
+	}
+	for idx, r := range incomingTimeIntervals {
+		if _, ok := usedNames[r.Name]; !ok {
+			usedNames[r.Name] = idx
+		}
+	}
+	return usedNames
+}
+
+func MergeRoutes(a, b Route, matcher config.Matchers) *Route {
 	// get a and b by value so we get shallow copies of the top level routes, which we can modify.
 	// make sure "b" route has all defaults set explicitly to avoid inheriting "a"'s default route settings.
 	defaultOpts := dispatch.DefaultRouteOpts
@@ -265,31 +316,32 @@ func checkIfMatchersUsed(matchers config.Matchers, routes []*Route) (bool, error
 	return false, nil
 }
 
-func renameReceiversInRoutes(routes []*Route, renamed map[string]string, intervals map[string]string) {
+// RenameResourceUsagesInRoutes updates the receiver and mute/active time intervals of routes based on the provided rename resources.
+func RenameResourceUsagesInRoutes(routes []*Route, renames RenameResources) {
 	for _, r := range routes {
 		if r == nil {
 			continue
 		}
 		if r.Receiver != "" {
-			if newName, ok := renamed[r.Receiver]; ok {
+			if newName, ok := renames.Receivers[r.Receiver]; ok {
 				r.Receiver = newName
 			}
 		}
 		for i := range r.MuteTimeIntervals {
-			if newName, ok := intervals[r.MuteTimeIntervals[i]]; ok {
+			if newName, ok := renames.TimeIntervals[r.MuteTimeIntervals[i]]; ok {
 				r.MuteTimeIntervals[i] = newName
 			}
 		}
 		for i := range r.ActiveTimeIntervals {
-			if newName, ok := intervals[r.ActiveTimeIntervals[i]]; ok {
+			if newName, ok := renames.TimeIntervals[r.ActiveTimeIntervals[i]]; ok {
 				r.ActiveTimeIntervals[i] = newName
 			}
 		}
-		renameReceiversInRoutes(r.Routes, renamed, intervals)
+		RenameResourceUsagesInRoutes(r.Routes, renames)
 	}
 }
 
-func mergeInhibitRules(a, b []config.InhibitRule, matcher config.Matchers) []config.InhibitRule {
+func MergeInhibitRules(a, b []config.InhibitRule, matcher config.Matchers) []config.InhibitRule {
 	result := make([]config.InhibitRule, 0, len(a)+len(b))
 	result = append(result, a...)
 	for _, rule := range b {
@@ -300,30 +352,45 @@ func mergeInhibitRules(a, b []config.InhibitRule, matcher config.Matchers) []con
 	return result
 }
 
-func mergeReceivers(a, b []*PostableApiReceiver, suffix string) ([]*PostableApiReceiver, map[string]string) {
-	result := make([]*PostableApiReceiver, 0, len(a)+len(b))
-	usedNames := make(map[string]struct{}, cap(result))
-	for _, r := range a {
-		usedNames[r.Name] = struct{}{}
-		result = append(result, r)
-	}
-
-	renamed := make(map[string]string, len(b))
-
-	for _, r := range b {
-		name := getUniqueName(r.Name, suffix, usedNames)
-		if name != r.Name {
-			renamed[r.Name] = name
-			r.Name = name
+// MergeReceivers merges two lists of PostableApiReceiver objects, ensuring unique names by appending a suffix if necessary.
+// It returns the combined list of receivers and a map of renamed original names to their new unique names.
+// The items of the existing list are added to the result list as is whereas the items of incoming list are copied (shallow copy)
+// and renamed if necessary.
+func MergeReceivers(existing, incoming []*PostableApiReceiver, suffix string) ([]*PostableApiReceiver, map[string]string) {
+	result := make([]*PostableApiReceiver, 0, len(existing)+len(incoming))
+	result = append(result, existing...)
+	usedNames := createIndexReceivers(existing, incoming)
+	renames := make(map[string]string)
+	for idx, r := range incoming {
+		if r == nil {
+			continue
 		}
-		result = append(result, r)
-		usedNames[r.Name] = struct{}{}
+		cpy := *r
+		if i, ok := usedNames[cpy.Name]; ok && i != idx {
+			newName := getUniqueName(cpy.Name, suffix, usedNames)
+			renames[cpy.Name] = newName
+			cpy.Name = newName
+			usedNames[cpy.Name] = i
+		}
+		result = append(result, &cpy)
 	}
-
-	return result, renamed
+	return result, renames
 }
 
-func getUniqueName(name string, suffix string, usedNames map[string]struct{}) string {
+func createIndexReceivers(existing, incoming []*PostableApiReceiver) map[string]int {
+	usedNames := make(map[string]int, len(existing)+len(incoming))
+	for _, e := range existing {
+		usedNames[e.Name] = -1
+	}
+	for idx, i := range incoming {
+		if _, ok := usedNames[i.Name]; !ok {
+			usedNames[i.Name] = idx
+		}
+	}
+	return usedNames
+}
+
+func getUniqueName[T any](name string, suffix string, usedNames map[string]T) string {
 	result := name
 	done := false
 	for i := 0; i <= math.MaxInt32; i++ {

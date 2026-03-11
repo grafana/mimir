@@ -37,9 +37,8 @@ func TestNativeHistogramPostings_Expand(t *testing.T) {
 		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), buckets, false, nil)
 	}
 
-	valid := activeSeries.Purge(mockedTime, nil)
+	activeSeries.Purge(mockedTime, nil)
 	allActive, _, _, _, _, _, _ := activeSeries.ActiveWithMatchers()
-	require.True(t, valid)
 	require.Equal(t, 2, allActive)
 
 	activeSeriesPostings := NewNativeHistogramPostings(activeSeries, storagePostings)
@@ -73,9 +72,8 @@ func TestNativeHistogramPostings_ExpandWithBucketCount(t *testing.T) {
 		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), buckets, false, nil)
 	}
 
-	valid := activeSeries.Purge(mockedTime, nil)
+	activeSeries.Purge(mockedTime, nil)
 	allActive, _, _, _, _, _, _ := activeSeries.ActiveWithMatchers()
-	require.True(t, valid)
 	require.Equal(t, 5, allActive)
 
 	activeSeriesPostings := NewNativeHistogramPostings(activeSeries, storagePostings)
@@ -117,9 +115,8 @@ func TestNativeHistogramPostings_SeekSkipsNonNative(t *testing.T) {
 		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), buckets, false, nil)
 	}
 
-	valid := activeSeries.Purge(mockedTime, nil)
+	activeSeries.Purge(mockedTime, nil)
 	allActive, _, _, _, _, _, _ := activeSeries.ActiveWithMatchers()
-	require.True(t, valid)
 	require.Equal(t, 2, allActive)
 
 	activeSeriesPostings := NewNativeHistogramPostings(activeSeries, storagePostings)
@@ -154,9 +151,8 @@ func TestNativeHistogramPostings_Seek(t *testing.T) {
 		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), buckets, false, nil)
 	}
 
-	valid := activeSeries.Purge(mockedTime, nil)
+	activeSeries.Purge(mockedTime, nil)
 	allActive, _, _, _, _, _, _ := activeSeries.ActiveWithMatchers()
-	require.True(t, valid)
 	require.Equal(t, 2, allActive)
 
 	activeSeriesPostings := NewNativeHistogramPostings(activeSeries, storagePostings)
@@ -190,9 +186,8 @@ func TestNativeHistogramPostings_SeekToEnd(t *testing.T) {
 		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), 10, false, nil)
 	}
 
-	valid := activeSeries.Purge(mockedTime, nil)
+	activeSeries.Purge(mockedTime, nil)
 	allActive, _, _, _, _, _, _ := activeSeries.ActiveWithMatchers()
-	require.True(t, valid)
 	require.Equal(t, 0, allActive)
 
 	activeSeriesPostings := NewNativeHistogramPostings(activeSeries, storagePostings)

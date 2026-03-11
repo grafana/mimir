@@ -77,6 +77,12 @@ type QueryPlanner struct {
 }
 
 func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) (*QueryPlanner, error) {
+	return NewQueryPlannerWithTime(opts, versionProvider, time.Now)
+}
+
+// NewQueryPlannerWithTime is like NewQueryPlanner but uses the given time function. Useful for tests that need a fixed
+// "now" for OOO window calculations).
+func NewQueryPlannerWithTime(opts EngineOpts, versionProvider QueryPlanVersionProvider, timeNow func() time.Time) (*QueryPlanner, error) {
 	planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, versionProvider)
 	if err != nil {
 		return nil, err
@@ -111,22 +117,28 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 	// This optimization pass must be registered before common subexpression elimination, if that is enabled.
 	planner.RegisterQueryPlanOptimizationPass(plan.NewSkipHistogramDecodingOptimizationPass())
 
-	if opts.EnableProjectionPushdown {
-		// This optimization pass must be registered before common subexpression elimination, if that is enabled.
-		planner.RegisterQueryPlanOptimizationPass(plan.NewProjectionPushdownOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
-	}
-
-	// Run range vector splitting pass before CSE.
+	// Range vector splitting doesn't support projection pushdown at the moment. Its optimisation pass should therefore
+	// run before the projection pushdown pass. If a selector is wrapped in a SplitFunctionCall, it will be skipped by
+	// projection pushdown.
 	if opts.RangeVectorSplitting.Enabled {
 		splitInterval := opts.RangeVectorSplitting.SplitInterval
 		if splitInterval <= 0 {
 			return nil, errors.New("range vector splitting is enabled but split interval is not greater than 0")
 		}
-		planner.RegisterQueryPlanOptimizationPass(rangevectorsplitting.NewOptimizationPass(splitInterval, opts.Limits, time.Now, opts.CommonOpts.Reg, opts.Logger))
+		planner.RegisterQueryPlanOptimizationPass(rangevectorsplitting.NewOptimizationPass(splitInterval, opts.Limits, timeNow, opts.CommonOpts.Reg, opts.Logger))
+	}
+
+	if opts.EnableProjectionPushdown {
+		// This optimization pass must be registered before common subexpression elimination, if that is enabled.
+		planner.RegisterQueryPlanOptimizationPass(plan.NewProjectionPushdownOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
+	}
+
+	if opts.EnableSubsetSelectorElimination && !opts.EnableCommonSubexpressionElimination {
+		return nil, errors.New("cannot enable subset selector elimination without common subexpression elimination")
 	}
 
 	if opts.EnableCommonSubexpressionElimination {
-		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
+		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.EnableSubsetSelectorElimination, opts.CommonOpts.Reg, opts.Logger))
 	}
 
 	if opts.EnableMultiAggregation {
@@ -249,7 +261,7 @@ func (p *QueryPlanner) ParseAndApplyASTOptimizationPasses(ctx context.Context, q
 	return expr, nil
 }
 
-func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange types.QueryTimeRange, enableDelayedNameRemoval bool, observer PlanningObserver) (*planning.QueryPlan, error) {
+func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange types.QueryTimeRange, lookbackDelta time.Duration, enableDelayedNameRemoval bool, observer PlanningObserver) (*planning.QueryPlan, error) {
 	spanLogger, ctx := spanlogger.New(ctx, p.logger, tracer, "QueryPlanner.NewQueryPlan")
 	defer spanLogger.Finish()
 	spanLogger.SetTag("query", qs)
@@ -295,6 +307,7 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 				TimeRange:                timeRange,
 				OriginalExpression:       qs,
 				EnableDelayedNameRemoval: enableDelayedNameRemoval,
+				LookbackDelta:            lookbackDelta,
 			},
 		}
 

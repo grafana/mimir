@@ -29,7 +29,7 @@ func TestInstantVectorSeriesData_Clone(t *testing.T) {
 		},
 	}
 
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(context.Background())
 	cloned, err := original.Clone(memoryConsumptionTracker)
 
 	require.NoError(t, err)
@@ -335,7 +335,7 @@ func TestQueryTimeRange(t *testing.T) {
 }
 
 func TestRangeVectorStepData_SubStep(t *testing.T) {
-	memoryTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+	memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(context.Background())
 	floats := NewFPointRingBuffer(memoryTracker)
 	histograms := NewHPointRingBuffer(memoryTracker)
 
@@ -462,7 +462,7 @@ func TestRangeVectorStepData_SubStep_ErrorCases(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			memoryTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+			memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(context.Background())
 			floats := NewFPointRingBuffer(memoryTracker)
 			histograms := NewHPointRingBuffer(memoryTracker)
 

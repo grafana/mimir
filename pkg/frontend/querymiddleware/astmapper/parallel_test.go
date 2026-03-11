@@ -239,6 +239,11 @@ func TestFunctionsWithDefaultsIsUpToDate(t *testing.T) {
 				return
 			}
 
+			if f.Name == "histogram_quantiles" {
+				// histogram_quantiles is variadic with extra quantile scalar arguments, not a timestamp.
+				return
+			}
+
 			// Rest of the functions with known defaults are functions with a default time() argument.
 			require.Containsf(t, FuncsWithDefaultTimeArg, name, "Function %q has variable arguments, and it's not in the list of functions with default time() argument.", f.Name)
 		})

@@ -85,6 +85,7 @@ func checkListNode(node *parse.ListNode, executedTmpls map[string]struct{}) {
 }
 
 func checkNode(node parse.Node, executedTmpls map[string]struct{}) {
+	//nolint:exhaustive
 	switch node.Type() {
 	// The node is an if statement (with optional else)
 	case parse.NodeIf:

@@ -749,6 +749,10 @@ func (p *UncachedSplit[T]) Finalize(ctx context.Context) error {
 		return nil
 	}
 
+	if err := p.operator.Finalize(ctx); err != nil {
+		return err
+	}
+
 	for rangeIdx, splitRange := range p.ranges {
 		if !splitRange.Cacheable {
 			continue
@@ -778,9 +782,7 @@ func (p *UncachedSplit[T]) Finalize(ctx context.Context) error {
 }
 
 func (p *UncachedSplit[T]) Close() {
-	if p.operator != nil {
-		p.operator.Close()
-	}
+	p.operator.Close()
 }
 
 func (p *UncachedSplit[T]) AppendMergedSeriesIndex(splitLocalIdx int, mergedIdx int) {

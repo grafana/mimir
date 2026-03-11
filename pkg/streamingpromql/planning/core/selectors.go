@@ -8,23 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 )
 
 func describeSelector(matchers []*LabelMatcher, ts *time.Time, offset time.Duration, rng *time.Duration, skipHistogramBuckets, anchored, smooothed, counterAware bool, projectionLabels []string, projectionInclude bool) string {
 	builder := &strings.Builder{}
-	builder.WriteRune('{')
-	for i, m := range matchers {
-		if i > 0 {
-			builder.WriteString(", ")
-		}
-
-		// Convert to the Prometheus type so we can use its String().
-		promMatcher := labels.Matcher{Type: m.Type, Name: m.Name, Value: m.Value}
-		builder.WriteString(promMatcher.String())
-	}
-	builder.WriteRune('}')
+	FormatMatchers(builder, matchers)
 
 	if rng != nil {
 		builder.WriteRune('[')

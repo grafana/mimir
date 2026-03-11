@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/alertmanager/cluster"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
+	"github.com/prometheus/alertmanager/cluster/clusterutil"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
@@ -128,7 +129,7 @@ func newReplicatedStates(userID string, rf int, re Replicator, st alertstore.Ale
 }
 
 // AddState adds a new state that will be replicated using the ReplicationFunc. It returns a channel to which the client can broadcast messages of the state to be sent.
-func (s *state) AddState(key string, cs cluster.State, _ prometheus.Registerer) cluster.ClusterChannel {
+func (s *state) AddState(key string, cs cluster.State, _ prometheus.Registerer, _ ...cluster.ChannelOption) cluster.ClusterChannel {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
@@ -271,7 +272,7 @@ func (s *state) MergeGrafanaState(fs []*clusterpb.FullState) error {
 
 	for _, fs := range fs {
 		for _, p := range fs.Parts {
-			if cluster.OversizedMessage(p.Data) {
+			if clusterutil.OversizedMessage(p.Data) {
 				// When merging state, upstream Alertmanager code drops oversized messages.
 				// Manually broadcast oversized Grafana states to avoid missing silences/nflog entries.
 				s.broadcast(p.Key, p.Data)
@@ -342,4 +343,10 @@ type stateChannel struct {
 // Broadcast receives a message to be replicated by the state.
 func (c *stateChannel) Broadcast(b []byte) {
 	c.s.broadcast(c.key, b)
+}
+
+// ReliableDelivery returns true if the message was delivered reliably to all peers.
+// In Mimir, all messages are replicated via the distributor, so all deliveries are reliable.
+func (c *stateChannel) ReliableDelivery([]byte) bool {
+	return true
 }

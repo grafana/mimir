@@ -119,6 +119,10 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) apply(node planning.Node,
 
 func canEliminateDeduplicateAndMergeDelayedNameRemoval(node planning.Node) bool {
 	switch node := node.(type) {
+	case *core.BinaryExpression:
+		return node.Op != core.BINARY_LOR
+	case *core.DropName:
+		return areSeriesUniqueDropName(node)
 	case *core.FunctionCall:
 		if isLabelReplaceOrJoinFunction(node) {
 			return false
@@ -131,8 +135,6 @@ func canEliminateDeduplicateAndMergeDelayedNameRemoval(node planning.Node) bool 
 		}
 
 		return true
-	case *core.DropName:
-		return areSeriesUniqueDropName(node)
 	default:
 		return true
 	}
@@ -185,7 +187,6 @@ func canEliminateDeduplicateAndMerge(node planning.Node) (bool, error) {
 		}
 
 		return true, nil
-
 	default:
 		return false, nil
 	}

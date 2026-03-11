@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -58,11 +59,6 @@ func NewOptimizationPass(splitInterval time.Duration, limits limitsProvider, tim
 
 func (o *OptimizationPass) Name() string {
 	return "Range vector splitting"
-}
-
-// TestOnlySetTimeNow sets the time function. For tests only.
-func (o *OptimizationPass) TestOnlySetTimeNow(timeNow func() time.Time) {
-	o.timeNow = timeNow
 }
 
 func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
@@ -152,6 +148,13 @@ func (o *OptimizationPass) trySplitFunction(ctx context.Context, functionCall *c
 		return nil, "unsupported_inner_node", nil
 	}
 
+	// Skip splitting for the fake selectors that subquery spinoff generates for now. These selectors will ignore the
+	// sub time ranges from splitting and instead always query for the entire original range, so each split would end up
+	// fetching more data than needed.
+	if ms, ok := inner.(*core.MatrixSelector); ok && optimize.IsSpunOff(ms) {
+		return nil, "subquery_spinoff", nil
+	}
+
 	if !inner.GetRangeParams().IsSet {
 		// Should always be set if it's a splittable node
 		return nil, "", fmt.Errorf("time range params not specified")
@@ -198,11 +201,8 @@ func (o *OptimizationPass) trySplitFunction(ctx context.Context, functionCall *c
 			SplitRanges:       splitRanges,
 			InnerNodeCacheKey: inner.SplittingCacheKey(),
 		},
+		Inner: functionCall,
 	}
-	if err := n.SetChildren([]planning.Node{functionCall}); err != nil {
-		return nil, "", err
-	}
-
 	return n, "", nil
 }
 

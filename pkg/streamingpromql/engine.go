@@ -44,7 +44,7 @@ func init() {
 var tracer = otel.Tracer("pkg/streamingpromql")
 var errPerStepStatsNotSupported = errors.New("per-step stats are not supported by Mimir query engine")
 
-const defaultLookbackDelta = 5 * time.Minute // This should be the same value as github.com/prometheus/prometheus/promql.defaultLookbackDelta.
+const DefaultLookbackDelta = 5 * time.Minute // This should be the same value as github.com/prometheus/prometheus/promql.defaultLookbackDelta.
 
 func NewEngine(opts EngineOpts, metrics *stats.QueryMetrics, planner *QueryPlanner) (*Engine, error) {
 	var cacheFactory *cache.CacheFactory
@@ -56,10 +56,10 @@ func NewEngine(opts EngineOpts, metrics *stats.QueryMetrics, planner *QueryPlann
 		}
 		level.Info(opts.Logger).Log("msg", "intermediate results cache enabled", "backend", opts.RangeVectorSplitting.IntermediateResultsCache.Backend)
 	}
-	return newEngineWithCache(opts, metrics, planner, cacheFactory)
+	return NewEngineWithCache(opts, metrics, planner, cacheFactory)
 }
 
-func newEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *QueryPlanner, intermediateCache *cache.CacheFactory) (*Engine, error) {
+func NewEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *QueryPlanner, intermediateCache *cache.CacheFactory) (*Engine, error) {
 	if !opts.CommonOpts.EnableAtModifier {
 		return nil, errors.New("disabling @ modifier not supported by Mimir query engine")
 	}
@@ -103,17 +103,12 @@ func newEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *Q
 		planning.NODE_TYPE_DROP_NAME:             planning.NodeMaterializerFunc[*core.DropName](core.MaterializeDropName),
 
 		planning.NODE_TYPE_DUPLICATE:                  planning.RangeAwareNodeMaterializerFunc[*commonsubexpressionelimination.Duplicate](commonsubexpressionelimination.MaterializeDuplicate),
+		planning.NODE_TYPE_DUPLICATE_FILTER:           planning.RangeAwareNodeMaterializerFunc[*commonsubexpressionelimination.DuplicateFilter](commonsubexpressionelimination.MaterializeDuplicateFilter),
 		planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION:  planning.NodeMaterializerFunc[*core.StepInvariantExpression](core.MaterializeStepInvariantExpression),
 		planning.NODE_TYPE_MULTI_AGGREGATION_GROUP:    planning.NodeMaterializerFunc[*multiaggregation.MultiAggregationGroup](multiaggregation.MaterializeMultiAggregationGroup),
 		planning.NODE_TYPE_MULTI_AGGREGATION_INSTANCE: planning.NodeMaterializerFunc[*multiaggregation.MultiAggregationInstance](multiaggregation.MaterializeMultiAggregationInstance),
-	}
 
-	if opts.RangeVectorSplitting.Enabled {
-		nodeMaterializers[planning.NODE_TYPE_SPLIT_FUNCTION_OVER_RANGE_VECTOR] = rangevectorsplitting.NewMaterializer(intermediateCache)
-	} else {
-		nodeMaterializers[planning.NODE_TYPE_SPLIT_FUNCTION_OVER_RANGE_VECTOR] = planning.NewDisabledMaterializer(
-			errors.New("split function node is present but range vector splitting is disabled, this could happen if splitting is enabled on the query-frontend but not in the querier"),
-		)
+		planning.NODE_TYPE_SPLIT_FUNCTION_OVER_RANGE_VECTOR: rangevectorsplitting.NewMaterializer(opts.RangeVectorSplitting.Enabled, intermediateCache, opts.Logger),
 	}
 
 	return &Engine{
@@ -141,7 +136,7 @@ func newEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *Q
 func DetermineLookbackDelta(opts promql.EngineOpts) time.Duration {
 	lookbackDelta := opts.LookbackDelta
 	if lookbackDelta == 0 {
-		lookbackDelta = defaultLookbackDelta
+		lookbackDelta = DefaultLookbackDelta
 	}
 
 	return lookbackDelta
@@ -210,18 +205,22 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 		return nil, fmt.Errorf("could not get 'enable delayed name removal' setting for tenant: %w", err)
 	}
 
-	plan, err := e.planner.NewQueryPlan(ctx, qs, timeRange, enableDelayedNameRemoval, NoopPlanningObserver{})
-	if err != nil {
-		return nil, err
-	}
-
 	if opts == nil {
 		opts = promql.NewPrometheusQueryOpts(false, 0)
+	}
+
+	if opts.EnablePerStepStats() {
+		return nil, errPerStepStatsNotSupported
 	}
 
 	lookbackDelta := opts.LookbackDelta()
 	if lookbackDelta == 0 {
 		lookbackDelta = e.lookbackDelta
+	}
+
+	plan, err := e.planner.NewQueryPlan(ctx, qs, timeRange, lookbackDelta, enableDelayedNameRemoval, NoopPlanningObserver{})
+	if err != nil {
+		return nil, err
 	}
 
 	nodeRequests := []NodeEvaluationRequest{
@@ -231,7 +230,7 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 		},
 	}
 
-	evaluator, err := e.materializeAndCreateEvaluator(ctx, queryable, opts, plan.Parameters, nodeRequests, lookbackDelta)
+	evaluator, err := e.materializeAndCreateEvaluator(ctx, queryable, plan.Parameters, nodeRequests)
 	if err != nil {
 		return nil, err
 	}
@@ -271,20 +270,16 @@ type NodeEvaluationRequest struct {
 	operator types.Operator
 }
 
-func (e *Engine) NewEvaluator(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, params *planning.QueryParameters, nodeRequests []NodeEvaluationRequest) (*Evaluator, error) {
-	if opts == nil {
-		opts = promql.NewPrometheusQueryOpts(false, 0)
+func (e *Engine) NewEvaluator(ctx context.Context, queryable storage.Queryable, params *planning.QueryParameters, nodeRequests []NodeEvaluationRequest) (*Evaluator, error) {
+	if params.LookbackDelta == 0 {
+		// If we've received a query plan from an older query-frontend that does not explicitly set the lookback delta, use the configured default value.
+		params.LookbackDelta = e.lookbackDelta
 	}
 
-	lookbackDelta := opts.LookbackDelta()
-	if lookbackDelta == 0 {
-		lookbackDelta = e.lookbackDelta
-	}
-
-	return e.materializeAndCreateEvaluator(ctx, queryable, opts, params, nodeRequests, lookbackDelta)
+	return e.materializeAndCreateEvaluator(ctx, queryable, params, nodeRequests)
 }
 
-func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, params *planning.QueryParameters, nodeRequests []NodeEvaluationRequest, lookbackDelta time.Duration) (*Evaluator, error) {
+func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable storage.Queryable, params *planning.QueryParameters, nodeRequests []NodeEvaluationRequest) (*Evaluator, error) {
 	span, ctx := tracing.StartSpanFromContext(ctx, "Engine.materializeAndCreateEvaluator")
 	defer span.Finish()
 
@@ -294,10 +289,6 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 	}
 
 	defer e.activeQueryTracker.Delete(queryID)
-
-	if opts.EnablePerStepStats() {
-		return nil, errPerStepStatsNotSupported
-	}
 
 	maxEstimatedMemoryConsumptionPerQuery, err := e.limitsProvider.GetMaxEstimatedMemoryConsumptionPerQuery(ctx)
 	if err != nil {
@@ -311,7 +302,6 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 		Annotations:              annotations.New(),
 		QueryStats:               types.NewQueryStats(),
-		LookbackDelta:            lookbackDelta,
 		EagerLoadSelectors:       e.eagerLoadSelectors,
 		QueryParameters:          params,
 		Logger:                   e.logger,

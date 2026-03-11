@@ -858,13 +858,14 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 				- DeduplicateAndMerge
 					- DropName
 						- BinaryExpression: LHS or RHS
-							- LHS: BinaryExpression: LHS or RHS
-								- LHS: VectorSelector: {__name__="foo"}
-								- RHS: VectorSelector: {__name__="bar"}
+							- LHS: DeduplicateAndMerge
+								- BinaryExpression: LHS or RHS
+									- LHS: VectorSelector: {__name__="foo"}
+									- RHS: VectorSelector: {__name__="bar"}
 							- RHS: VectorSelector: {__name__="baz"}
 				`,
 			nodesEliminatedWithoutDelayedNameRemoval: 0,
-			nodesEliminatedWithDelayedNameRemoval:    1,
+			nodesEliminatedWithDelayedNameRemoval:    0,
 		},
 		"nested binary operations with rate functions": {
 			expr: `rate(foo[5m]) or rate(bar[5m]) or rate(baz[5m])`,
@@ -884,16 +885,17 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 				- DeduplicateAndMerge
 					- DropName
 						- BinaryExpression: LHS or RHS
-							- LHS: BinaryExpression: LHS or RHS
-								- LHS: FunctionCall: rate(...)
-									- MatrixSelector: {__name__="foo"}[5m0s]
-								- RHS: FunctionCall: rate(...)
-									- MatrixSelector: {__name__="bar"}[5m0s]
+							- LHS: DeduplicateAndMerge
+								- BinaryExpression: LHS or RHS
+									- LHS: FunctionCall: rate(...)
+										- MatrixSelector: {__name__="foo"}[5m0s]
+									- RHS: FunctionCall: rate(...)
+										- MatrixSelector: {__name__="bar"}[5m0s]
 							- RHS: FunctionCall: rate(...)
 								- MatrixSelector: {__name__="baz"}[5m0s]
 				`,
 			nodesEliminatedWithoutDelayedNameRemoval: 3,
-			nodesEliminatedWithDelayedNameRemoval:    4,
+			nodesEliminatedWithDelayedNameRemoval:    3,
 		},
 		"nested binary operations not wrapped in DeduplicateAndMerge, with one eligible for elimination": {
 			expr: `rate(bar[5m]) / (baz * foo)`,
@@ -936,12 +938,13 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 						- BinaryExpression: LHS or RHS
 							- LHS: FunctionCall: rate(...)
 								- MatrixSelector: {__name__="bar"}[5m0s]
-							- RHS: BinaryExpression: LHS or RHS
-								- LHS: VectorSelector: {__name__="baz"}
-								- RHS: VectorSelector: {__name__="foo"}
+							- RHS: DeduplicateAndMerge
+								- BinaryExpression: LHS or RHS
+									- LHS: VectorSelector: {__name__="baz"}
+									- RHS: VectorSelector: {__name__="foo"}
 				`,
 			nodesEliminatedWithoutDelayedNameRemoval: 1,
-			nodesEliminatedWithDelayedNameRemoval:    2,
+			nodesEliminatedWithDelayedNameRemoval:    1,
 		},
 	}
 
@@ -956,7 +959,7 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 				opts1 := streamingpromql.NewTestEngineOpts()
 				plannerNoOpt, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts1, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 				require.NoError(t, err)
-				planBefore, err := plannerNoOpt.NewQueryPlan(ctx, testCase.expr, timeRange, enableDelayedNameRemoval, observer)
+				planBefore, err := plannerNoOpt.NewQueryPlan(ctx, testCase.expr, timeRange, streamingpromql.DefaultLookbackDelta, enableDelayedNameRemoval, observer)
 				require.NoError(t, err)
 				nodesBefore := countDeduplicateAndMergeNodes(planBefore.Root)
 
@@ -965,7 +968,7 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 				plannerWithOpt, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts2, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 				require.NoError(t, err)
 				plannerWithOpt.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass(opts2.CommonOpts.Reg, opts2.Logger))
-				planAfter, err := plannerWithOpt.NewQueryPlan(ctx, testCase.expr, timeRange, enableDelayedNameRemoval, observer)
+				planAfter, err := plannerWithOpt.NewQueryPlan(ctx, testCase.expr, timeRange, streamingpromql.DefaultLookbackDelta, enableDelayedNameRemoval, observer)
 				require.NoError(t, err)
 				nodesAfter := countDeduplicateAndMergeNodes(planAfter.Root)
 

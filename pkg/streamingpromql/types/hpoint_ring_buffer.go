@@ -328,6 +328,44 @@ func (v HPointRingBufferView) EquivalentFloatSampleCount() int64 {
 	return count
 }
 
+// EquivalentFloatSampleCountUntil returns the number of samples in this buffer with timestamp up to and including maxT.
+func (b *HPointRingBuffer) EquivalentFloatSampleCountUntil(maxT int64) int64 {
+	count := int64(0)
+
+	for i := range b.size {
+		p := b.pointAt(i)
+
+		if p.T > maxT {
+			// We've reached the end of the range we need to search.
+			break
+		}
+
+		count += EquivalentFloatSampleCount(p.H)
+	}
+
+	return count
+}
+
+// EquivalentFloatSampleCountBetween returns the number of samples in this buffer with timestamp after minT and up to and including maxT.
+func (b *HPointRingBuffer) EquivalentFloatSampleCountBetween(minT, maxT int64) int64 {
+	count := int64(0)
+
+	for i := range b.size {
+		p := b.pointAt(i)
+
+		if p.T > maxT {
+			// We've reached the end of the range we need to search.
+			break
+		} else if p.T <= minT {
+			continue
+		}
+
+		count += EquivalentFloatSampleCount(p.H)
+	}
+
+	return count
+}
+
 // Any returns true if this ring buffer view contains any points.
 func (v HPointRingBufferView) Any() bool {
 	return v.size != 0

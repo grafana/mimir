@@ -158,6 +158,12 @@ api:
   # CLI flag: -http.prometheus-http-prefix
   [prometheus_http_prefix: <string> | default = "/prometheus"]
 
+  # (experimental) Compression level for HTTP responses when gzip compression is
+  # requested by the client. Valid values are 1 (fastest) to 9 (best
+  # compression), or -1 for the default compression level.
+  # CLI flag: -http.response-compression-level
+  [response_compression_level: <int> | default = -1]
+
 # The server block configures the HTTP and gRPC server of the launched
 # service(s).
 [server: <server>]
@@ -1939,6 +1945,10 @@ mimir_query_engine:
   # CLI flag: -querier.mimir-query-engine.enable-common-subexpression-elimination
   [enable_common_subexpression_elimination: <boolean> | default = true]
 
+  # (experimental) Enable subset selector elimination when evaluating queries.
+  # CLI flag: -querier.mimir-query-engine.enable-subset-selector-elimination
+  [enable_subset_selector_elimination: <boolean> | default = false]
+
   # (experimental) Enable generating selectors for one side of a binary
   # expression based on results from the other side.
   # CLI flag: -querier.mimir-query-engine.enable-narrow-binary-selectors
@@ -2634,12 +2644,12 @@ alertmanager_client:
 
   [basic_auth_username: <string> | default = ""]
 
-  basic_auth_password:
+  [basic_auth_password: <string> | default = ""]
 
   oauth2:
     [client_id: <string> | default = ""]
 
-    client_secret:
+    [client_secret: <string> | default = ""]
 
     [token_url: <string> | default = ""]
 
@@ -5115,6 +5125,11 @@ kafka:
   # CLI flag: -ingest-storage.kafka.client-id
   [client_id: <string> | default = ""]
 
+  # The rack identifier for this Kafka client. Corresponds to the Kafka
+  # client.rack setting.
+  # CLI flag: -ingest-storage.kafka.client-rack
+  [client_rack: <string> | default = ""]
+
   # The maximum time allowed to open a connection to a Kafka broker.
   # CLI flag: -ingest-storage.kafka.dial-timeout
   [dial_timeout: <duration> | default = 2s]
@@ -5170,6 +5185,83 @@ kafka:
   # "additionalProperties": {"type": "string"}}}}
   # CLI flag: -ingest-storage.kafka.sasl-oauthbearer-file-path
   [sasl_oauthbearer_file_path: <string> | default = ""]
+
+  # Path to a Unix domain socket to fetch an OAuth token from via HTTP. On every
+  # authentication or reauthentication, an HTTP GET / request is made to the
+  # socket and the response body is read as JSON. The JSON schema is the same as
+  # for ingest-storage.kafka.sasl-oauthbearer-file-path.
+  # CLI flag: -ingest-storage.kafka.sasl-oauthbearer-http-socket-path
+  [sasl_oauthbearer_http_socket_path: <string> | default = ""]
+
+  # Timeout for requesting the token from the HTTP socket.
+  # CLI flag: -ingest-storage.kafka.sasl-oauthbearer-http-socket-timeout
+  [sasl_oauthbearer_http_socket_timeout: <duration> | default = 10s]
+
+  # Enable TLS for the Kafka client connection.
+  # CLI flag: -ingest-storage.kafka.tls-enabled
+  [tls_enabled: <boolean> | default = false]
+
+  # (advanced) Path to the client certificate, which will be used for
+  # authenticating with the server. Also requires the key path to be configured.
+  # CLI flag: -ingest-storage.kafka.tls-cert-path
+  [tls_cert_path: <string> | default = ""]
+
+  # (advanced) Path to the key for the client certificate. Also requires the
+  # client certificate to be configured.
+  # CLI flag: -ingest-storage.kafka.tls-key-path
+  [tls_key_path: <string> | default = ""]
+
+  # (advanced) Path to the CA certificates to validate server certificate
+  # against. If not set, the host's root CA certificates are used.
+  # CLI flag: -ingest-storage.kafka.tls-ca-path
+  [tls_ca_path: <string> | default = ""]
+
+  # (advanced) Override the expected name on the server certificate.
+  # CLI flag: -ingest-storage.kafka.tls-server-name
+  [tls_server_name: <string> | default = ""]
+
+  # (advanced) Skip validating server certificate.
+  # CLI flag: -ingest-storage.kafka.tls-insecure-skip-verify
+  [tls_insecure_skip_verify: <boolean> | default = false]
+
+  # (advanced) Override the default cipher suite list (separated by commas).
+  # Allowed values:
+  #
+  # Secure Ciphers:
+  # - TLS_AES_128_GCM_SHA256
+  # - TLS_AES_256_GCM_SHA384
+  # - TLS_CHACHA20_POLY1305_SHA256
+  # - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA
+  # - TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA
+  # - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA
+  # - TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA
+  # - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+  # - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+  # - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+  # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+  # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+  # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+  #
+  # Insecure Ciphers:
+  # - TLS_RSA_WITH_RC4_128_SHA
+  # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
+  # - TLS_RSA_WITH_AES_128_CBC_SHA
+  # - TLS_RSA_WITH_AES_256_CBC_SHA
+  # - TLS_RSA_WITH_AES_128_CBC_SHA256
+  # - TLS_RSA_WITH_AES_128_GCM_SHA256
+  # - TLS_RSA_WITH_AES_256_GCM_SHA384
+  # - TLS_ECDHE_ECDSA_WITH_RC4_128_SHA
+  # - TLS_ECDHE_RSA_WITH_RC4_128_SHA
+  # - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
+  # - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
+  # - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
+  # CLI flag: -ingest-storage.kafka.tls-cipher-suites
+  [tls_cipher_suites: <string> | default = ""]
+
+  # (advanced) Override the default minimum TLS version. Allowed values:
+  # VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  # CLI flag: -ingest-storage.kafka.tls-min-version
+  [tls_min_version: <string> | default = ""]
 
   # The consumer group used by the consumer to track the last consumed offset.
   # The consumer group must be different for each ingester. If the configured

@@ -359,14 +359,21 @@ func (s *BlockBuilderScheduler) enqueuePendingJobsWorker(ctx context.Context) {
 // enqueuePendingJobs moves per-partition pending jobs to the active job queue
 // for assignment to workers, subject to the job creation policy.
 func (s *BlockBuilderScheduler) enqueuePendingJobs() {
+	s.mu.Lock()
+	pending := make(map[int32]int, len(s.partState))
+
+	defer func() {
+		// Unlock the scheduler before populating metrics. Unblocks the concurrent goroutines a tiny bit faster.
+		s.mu.Unlock()
+
+		for partition, count := range pending {
+			s.metrics.pendingJobs.WithLabelValues(fmt.Sprint(partition)).Set(float64(count))
+		}
+	}()
+
 	// For each partition, attempt to enqueue jobs until we run into a rejection
 	// from the job creation policy. Pending jobs are created in order of their
 	// offsets, therefore pulling from the front achieves the same.
-
-	pending := make(map[int32]int, len(s.partState))
-
-	s.mu.Lock()
-
 	for partition, ps := range s.partState {
 		pending[partition] = ps.pendingJobs.Len()
 
@@ -399,14 +406,6 @@ func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 			ps.pendingJobs.Remove(e)
 			ps.addPlannedJob(jobID, *spec)
 		}
-	}
-
-	s.mu.Unlock()
-
-	// And update the pending jobs metric.
-
-	for partition, count := range pending {
-		s.metrics.pendingJobs.WithLabelValues(fmt.Sprint(partition)).Set(float64(count))
 	}
 }
 

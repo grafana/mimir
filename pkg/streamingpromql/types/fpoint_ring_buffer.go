@@ -246,7 +246,7 @@ func (b *FPointRingBuffer) ViewUntilSearchingBackwards(maxT int64, existing *FPo
 }
 
 // PointAt returns the point at index 'position'.
-// Note that it is the caller's responsibility to have checked that the buffer size is gt the given position.
+// Note that it is the caller's responsibility to have checked that the buffer size is greater than the given position.
 func (b *FPointRingBuffer) PointAt(position int) promql.FPoint {
 	return b.points[(b.firstIndex+position)&b.pointsIndexMask]
 }
@@ -260,6 +260,37 @@ func (b *FPointRingBuffer) Last() promql.FPoint {
 // Count returns the current number of points in the buffer.
 func (b *FPointRingBuffer) Count() int {
 	return b.size
+}
+
+// CountUntil returns the number of samples in this buffer with timestamp up to and including maxT.
+func (b *FPointRingBuffer) CountUntil(maxT int64) int {
+	count := b.size
+
+	for count > 0 && b.PointAt(count-1).T > maxT {
+		count--
+	}
+
+	return count
+}
+
+// CountBetween returns the number of samples in this buffer with timestamp after minT and up to and including maxT.
+func (b *FPointRingBuffer) CountBetween(minT, maxT int64) int {
+	// Why do this rather than just loop over all the elements?
+	// It's expected that most of the elements in the buffer are in the time range, so it's faster
+	// to check for points outside the range at the start and end to count how many are in the range.
+	countToMaxT := b.CountUntil(maxT)
+
+	if countToMaxT == 0 {
+		return 0
+	}
+
+	countAtOrBeforeMinT := 0
+
+	for countAtOrBeforeMinT < countToMaxT && b.PointAt(countAtOrBeforeMinT).T <= minT {
+		countAtOrBeforeMinT++
+	}
+
+	return countToMaxT - countAtOrBeforeMinT
 }
 
 // Reset clears the contents of this buffer, but retains the underlying point slice for future reuse.

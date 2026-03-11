@@ -29,7 +29,7 @@ func TestMemoryConsumptionTrackerFromContext(t *testing.T) {
 
 	t.Run("exists", func(t *testing.T) {
 		ctx := context.Background()
-		existing := NewMemoryConsumptionTracker(ctx, 0, nil, "")
+		existing := NewUnlimitedMemoryConsumptionTracker(ctx)
 		require.NoError(t, existing.IncreaseMemoryConsumption(uint64(512), IngesterChunks))
 
 		ctx = context.WithValue(ctx, memoryConsumptionTracker, existing)
@@ -43,7 +43,7 @@ func TestMemoryConsumptionTrackerFromContext(t *testing.T) {
 
 func TestAddToContext(t *testing.T) {
 	ctx := context.Background()
-	existing := NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	existing := NewUnlimitedMemoryConsumptionTracker(ctx)
 	require.NoError(t, existing.IncreaseMemoryConsumption(uint64(512), IngesterChunks))
 
 	ctx = AddMemoryTrackerToContext(ctx, existing)
@@ -171,7 +171,7 @@ func BenchmarkMemoryConsumptionTracker(b *testing.B) {
 	const source = IngesterChunks
 
 	b.Run("no limits single threaded", func(b *testing.B) {
-		l := NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+		l := NewUnlimitedMemoryConsumptionTracker(context.Background())
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			_ = l.IncreaseMemoryConsumption(uint64(b.N), source)
@@ -198,7 +198,7 @@ func BenchmarkMemoryConsumptionTracker(b *testing.B) {
 	})
 
 	b.Run("no limits multiple threads", func(b *testing.B) {
-		l := NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+		l := NewUnlimitedMemoryConsumptionTracker(context.Background())
 		wg := sync.WaitGroup{}
 		run := atomic.NewBool(true)
 

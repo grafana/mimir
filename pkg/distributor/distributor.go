@@ -103,6 +103,7 @@ const (
 type usageTrackerGenericClient interface {
 	services.Service
 	TrackSeries(ctx context.Context, userID string, series []uint64) ([]uint64, error)
+	TrackSeriesAsync(ctx context.Context, userID string, series []uint64) error
 	CanTrackAsync(userID string) bool
 }
 
@@ -149,6 +150,7 @@ type Distributor struct {
 	receivedMetadata                 *prometheus.CounterVec
 	receivedNativeHistogramSamples   *prometheus.CounterVec
 	receivedNativeHistogramBuckets   *prometheus.CounterVec
+	receivedBytes                    *prometheus.CounterVec
 	incomingRequests                 *prometheus.CounterVec
 	incomingSamples                  *prometheus.CounterVec
 	incomingExemplars                *prometheus.CounterVec
@@ -535,6 +537,10 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Name: "cortex_distributor_received_native_histogram_buckets_total",
 			Help: "The total number of received native histogram buckets, excluding rejected and deduped samples.",
 		}, []string{"user"}),
+		receivedBytes: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_received_bytes_total",
+			Help: "The total number of uncompressed bytes received in the original request body (before any protocol conversion). Excludes requests rejected by middleware (e.g., rate limiting, size limits, HA deduplication) but includes bytes from requests where individual samples may be filtered or rejected during processing.",
+		}, []string{"user"}),
 		incomingRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_requests_in_total",
 			Help: "The total number of requests that have come in to the distributor, including rejected or deduped requests.",
@@ -757,7 +763,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			return nil, errors.New("usage-tracker instance ring is required")
 		}
 
-		d.usageTrackerClient = usagetrackerclient.NewUsageTrackerClient("distributor", d.cfg.UsageTrackerClient, usageTrackerPartitionRing, usageTrackerInstanceRing, d.limits, log, reg)
+		d.usageTrackerClient = usagetrackerclient.NewUsageTrackerClient("distributor", d.cfg.UsageTrackerClient, usageTrackerPartitionRing, usageTrackerInstanceRing, d.limits, log, reg, d)
 		subservices = append(subservices, d.usageTrackerClient)
 	}
 
@@ -874,6 +880,7 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.receivedMetadata.DeleteLabelValues(userID)
 	d.receivedNativeHistogramSamples.DeleteLabelValues(userID)
 	d.receivedNativeHistogramBuckets.DeleteLabelValues(userID)
+	d.receivedBytes.DeleteLabelValues(userID)
 	d.incomingSamples.DeleteLabelValues(userID)
 	d.incomingExemplars.DeleteLabelValues(userID)
 	d.incomingMetadata.DeleteLabelValues(userID)
@@ -1519,11 +1526,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 				return newIngestionBurstSizeLimitedError(limiterBurst, totalN)
 			}
 
-			burstSize := d.limits.IngestionBurstSize(userID)
-			if d.limits.IngestionBurstFactor(userID) > 0 {
-				burstSize = int(d.limits.IngestionRate(userID) * d.limits.IngestionBurstFactor(userID))
-			}
-			return newIngestionRateLimitedError(d.limits.IngestionRate(userID), burstSize)
+			return newIngestionRateLimitedError(d.limits.IngestionRate(userID), limiterBurst)
 		}
 
 		// totalN included samples, exemplars and metadata. Ingester follows this pattern when computing its ingestion rate.
@@ -1617,8 +1620,18 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 		if d.usageTrackerClient.CanTrackAsync(userID) {
 			// User is far from limit.
 			// We can perform the track call in parallel with the metrics ingestion hoping that no series would be rejected.
-			cleanup := d.parallelUsageTrackerClientTrackSeriesCall(ctx, userID, seriesHashes)
-			pushReq.AddCleanup(cleanup)
+
+			d.asyncUsageTrackerCalls.WithLabelValues(userID).Inc()
+
+			if d.cfg.UsageTrackerClient.UseBatchedTracking {
+				if err := d.usageTrackerClient.TrackSeriesAsync(ctx, userID, seriesHashes); err != nil {
+					level.Error(d.log).Log("msg", "failed to track series asynchronously", "err", err, "user", userID, "series", len(seriesHashes))
+				}
+			} else {
+				cleanup := d.parallelUsageTrackerClientTrackSeriesCall(ctx, userID, seriesHashes)
+				pushReq.AddCleanup(cleanup)
+			}
+
 			return next(ctx, pushReq)
 		}
 
@@ -1652,7 +1665,6 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 }
 
 func (d *Distributor) parallelUsageTrackerClientTrackSeriesCall(ctx context.Context, userID string, seriesHashes []uint64) func() {
-	d.asyncUsageTrackerCalls.WithLabelValues(userID).Inc()
 	done := make(chan struct{}, 1)
 	t0 := time.Now()
 	asyncTrackingCtx, cancelAsyncTracking := context.WithCancelCause(ctx)
@@ -1689,6 +1701,12 @@ func (d *Distributor) parallelUsageTrackerClientTrackSeriesCall(ctx context.Cont
 		}
 	}
 }
+
+func (d *Distributor) ObserveAsyncUsageTrackerRejection(userID string) {
+	d.asyncUsageTrackerCallsWithRejectedSeries.WithLabelValues(userID).Inc()
+}
+
+var _ usagetrackerclient.UsageTrackerRejectionObserver = (*Distributor)(nil)
 
 // filterOutRejectedSeries filters out time series from the WriteRequest based on rejected hashes and returns discarded samples count.
 // It updates the WriteRequest in place and optimizes memory by reusing preallocated time series.
@@ -2043,7 +2061,7 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 
 // Push is gRPC method registered as client.IngesterServer and distributor.DistributorServer.
 func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
-	pushReq := NewParsedRequest(req)
+	pushReq := NewParsedRequest(req, req.Size())
 	pushReq.AddCleanup(func() {
 		req.FreeBuffer()
 		mimirpb.ReuseSlice(req.Timeseries)
@@ -2091,7 +2109,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 		return err
 	}
 
-	d.updateReceivedMetrics(req, userID)
+	d.updateReceivedMetrics(ctx, pushReq, userID)
 
 	if len(req.Timeseries) == 0 && len(req.Metadata) == 0 {
 		return nil
@@ -2346,7 +2364,8 @@ func tokenForMetadata(userID string, metricName string) uint32 {
 	return mimirpb.ShardByMetricName(userID, metricName)
 }
 
-func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID string) {
+func (d *Distributor) updateReceivedMetrics(ctx context.Context, pushReq *Request, userID string) {
+	req, _ := pushReq.WriteRequest()
 	var receivedSamples, receivedHistograms, receivedHistogramBuckets, receivedExemplars, receivedMetadata int
 	for _, ts := range req.Timeseries {
 		receivedSamples += len(ts.Samples)
@@ -2364,6 +2383,15 @@ func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID st
 	d.receivedNativeHistogramBuckets.WithLabelValues(userID).Add(float64(receivedHistogramBuckets))
 	d.receivedExemplars.WithLabelValues(userID).Add(float64(receivedExemplars))
 	d.receivedMetadata.WithLabelValues(userID).Add(float64(receivedMetadata))
+
+	// Use the uncompressed body size (original wire bytes).
+	// This properly accounts for different protocols (e.g., RW2, OTLP).
+	reqSize := pushReq.UncompressedBodySize()
+	if reqSize == 0 {
+		// Fallback if unknown.
+		reqSize = req.Size()
+	}
+	d.receivedBytes.WithLabelValues(userID).Add(float64(reqSize))
 }
 
 // forReplicationSets runs f, in parallel, for all ingesters in the input replicationSets.

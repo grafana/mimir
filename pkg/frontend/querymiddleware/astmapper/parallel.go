@@ -29,6 +29,7 @@ var NonParallelFuncs = []string{
 	"absent_over_time",
 	"info", // TODO: Find out whether can be parallelizable.
 	"histogram_quantile",
+	"histogram_quantiles",
 	"limitk",
 	"limit_ratio",
 	"sort_desc",

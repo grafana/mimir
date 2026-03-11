@@ -423,6 +423,344 @@ func TestRemovePartitionCommand(t *testing.T) {
 	})
 }
 
+func TestAddOwnerCommand(t *testing.T) {
+	t.Parallel()
+
+	t.Run("successfully adds a new owner", func(t *testing.T) {
+		t.Parallel()
+		ctx := context.Background()
+
+		// Start a seed memberlist node.
+		seedKV, seedClient := startMemberlistKV(t)
+
+		// Pre-create the partition the owner will own.
+		err := seedClient.CAS(ctx, ingester.PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+			ringDesc := ring.GetOrCreatePartitionRingDesc(in)
+			ringDesc.AddPartition(0, ring.PartitionActive, time.Now())
+			return ringDesc, true, nil
+		})
+		require.NoError(t, err)
+
+		// Get the seed node's listening port.
+		seedAddr := net.JoinHostPort("127.0.0.1", strconv.Itoa(seedKV.GetListeningPort()))
+
+		// Add the owner.
+		cmd := &AddOwnerCommand{
+			memberlistJoin:     []string{seedAddr},
+			memberlistBindPort: 0,
+			ownerIDs:           "ingester-zone-a-0",
+			partitionID:        "0",
+			stdin:              strings.NewReader("yes\n"),
+			logger:             log.NewNopLogger(),
+		}
+
+		err = cmd.run()
+		require.NoError(t, err)
+
+		// Verify the owner was added.
+		require.Eventually(t, func() bool {
+			val, err := seedClient.Get(ctx, ingester.PartitionRingKey)
+			if err != nil || val == nil {
+				return false
+			}
+			ringDesc, ok := val.(*ring.PartitionRingDesc)
+			if !ok {
+				return false
+			}
+			if !ringDesc.HasOwner("ingester-zone-a-0") {
+				return false
+			}
+			owner := ringDesc.Owners["ingester-zone-a-0"]
+			return owner.State == ring.OwnerActive && owner.OwnedPartition == 0
+		}, 5*time.Second, 100*time.Millisecond, "owner should be added with active state owning partition 0")
+	})
+
+	t.Run("fails if owner already exists", func(t *testing.T) {
+		t.Parallel()
+		ctx := context.Background()
+
+		// Start a seed memberlist node.
+		seedKV, seedClient := startMemberlistKV(t)
+
+		// Pre-create a partition and owner.
+		err := seedClient.CAS(ctx, ingester.PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+			ringDesc := ring.GetOrCreatePartitionRingDesc(in)
+			now := time.Now()
+			ringDesc.AddPartition(0, ring.PartitionActive, now)
+			ringDesc.AddOrUpdateOwner("ingester-zone-a-0", ring.OwnerActive, 0, now)
+			return ringDesc, true, nil
+		})
+		require.NoError(t, err)
+
+		// Get the seed node's listening port.
+		seedAddr := net.JoinHostPort("127.0.0.1", strconv.Itoa(seedKV.GetListeningPort()))
+
+		// Try to add the same owner again - should fail.
+		cmd := &AddOwnerCommand{
+			memberlistJoin:     []string{seedAddr},
+			memberlistBindPort: 0,
+			ownerIDs:           "ingester-zone-a-0",
+			partitionID:        "0",
+			stdin:              strings.NewReader("yes\n"),
+			logger:             log.NewNopLogger(),
+		}
+
+		err = cmd.run()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), `owner "ingester-zone-a-0" already exists`)
+	})
+
+	t.Run("successfully adds multiple owners to the same partition", func(t *testing.T) {
+		t.Parallel()
+		ctx := context.Background()
+
+		// Start a seed memberlist node.
+		seedKV, seedClient := startMemberlistKV(t)
+
+		// Pre-create the partition.
+		err := seedClient.CAS(ctx, ingester.PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+			ringDesc := ring.GetOrCreatePartitionRingDesc(in)
+			ringDesc.AddPartition(0, ring.PartitionActive, time.Now())
+			return ringDesc, true, nil
+		})
+		require.NoError(t, err)
+
+		// Get the seed node's listening port.
+		seedAddr := net.JoinHostPort("127.0.0.1", strconv.Itoa(seedKV.GetListeningPort()))
+
+		// Add two owners at once.
+		cmd := &AddOwnerCommand{
+			memberlistJoin:     []string{seedAddr},
+			memberlistBindPort: 0,
+			ownerIDs:           "ingester-zone-a-0,ingester-zone-b-0",
+			partitionID:        "0",
+			stdin:              strings.NewReader("yes\n"),
+			logger:             log.NewNopLogger(),
+		}
+
+		err = cmd.run()
+		require.NoError(t, err)
+
+		// Verify both owners were added.
+		require.Eventually(t, func() bool {
+			val, err := seedClient.Get(ctx, ingester.PartitionRingKey)
+			if err != nil || val == nil {
+				return false
+			}
+			ringDesc, ok := val.(*ring.PartitionRingDesc)
+			if !ok {
+				return false
+			}
+			return ringDesc.HasOwner("ingester-zone-a-0") && ringDesc.HasOwner("ingester-zone-b-0")
+		}, 5*time.Second, 100*time.Millisecond, "both owners should be added")
+	})
+
+	t.Run("fails if any owner already exists when adding multiple", func(t *testing.T) {
+		t.Parallel()
+		ctx := context.Background()
+
+		// Start a seed memberlist node.
+		seedKV, seedClient := startMemberlistKV(t)
+
+		// Pre-create a partition and one existing owner.
+		err := seedClient.CAS(ctx, ingester.PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+			ringDesc := ring.GetOrCreatePartitionRingDesc(in)
+			now := time.Now()
+			ringDesc.AddPartition(0, ring.PartitionActive, now)
+			ringDesc.AddOrUpdateOwner("ingester-zone-b-0", ring.OwnerActive, 0, now)
+			return ringDesc, true, nil
+		})
+		require.NoError(t, err)
+
+		// Get the seed node's listening port.
+		seedAddr := net.JoinHostPort("127.0.0.1", strconv.Itoa(seedKV.GetListeningPort()))
+
+		// Try to add zone-a and zone-b - should fail because zone-b already exists.
+		cmd := &AddOwnerCommand{
+			memberlistJoin:     []string{seedAddr},
+			memberlistBindPort: 0,
+			ownerIDs:           "ingester-zone-a-0,ingester-zone-b-0",
+			partitionID:        "0",
+			stdin:              strings.NewReader("yes\n"),
+			logger:             log.NewNopLogger(),
+		}
+
+		err = cmd.run()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), `owner "ingester-zone-b-0" already exists`)
+
+		// Verify zone-a was NOT added (atomic failure).
+		val, err := seedClient.Get(ctx, ingester.PartitionRingKey)
+		require.NoError(t, err)
+		ringDesc := val.(*ring.PartitionRingDesc)
+		require.False(t, ringDesc.HasOwner("ingester-zone-a-0"), "zone-a owner should not be added when operation fails")
+		require.True(t, ringDesc.HasOwner("ingester-zone-b-0"), "zone-b owner should still exist")
+	})
+}
+
+func TestRemoveOwnerCommand(t *testing.T) {
+	t.Parallel()
+
+	t.Run("successfully removes an owner", func(t *testing.T) {
+		t.Parallel()
+		ctx := context.Background()
+
+		// Start a seed memberlist node.
+		seedKV, seedClient := startMemberlistKV(t)
+
+		// Pre-create a partition with an owner.
+		err := seedClient.CAS(ctx, ingester.PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+			ringDesc := ring.GetOrCreatePartitionRingDesc(in)
+			now := time.Now()
+			ringDesc.AddPartition(0, ring.PartitionActive, now)
+			ringDesc.AddOrUpdateOwner("ingester-zone-c-0", ring.OwnerActive, 0, now)
+			return ringDesc, true, nil
+		})
+		require.NoError(t, err)
+
+		// Get the seed node's listening port.
+		seedAddr := net.JoinHostPort("127.0.0.1", strconv.Itoa(seedKV.GetListeningPort()))
+
+		// Remove the owner.
+		cmd := &RemoveOwnerCommand{
+			memberlistJoin:     []string{seedAddr},
+			memberlistBindPort: 0,
+			ownerIDs:           "ingester-zone-c-0",
+			stdin:              strings.NewReader("yes\n"),
+			logger:             log.NewNopLogger(),
+		}
+
+		err = cmd.run()
+		require.NoError(t, err)
+
+		// Verify the owner was removed but the partition still exists.
+		require.Eventually(t, func() bool {
+			val, err := seedClient.Get(ctx, ingester.PartitionRingKey)
+			if err != nil || val == nil {
+				return false
+			}
+			ringDesc, ok := val.(*ring.PartitionRingDesc)
+			if !ok {
+				return false
+			}
+			return ringDesc.HasPartition(0) && !ringDesc.HasOwner("ingester-zone-c-0")
+		}, 5*time.Second, 100*time.Millisecond, "owner should be removed but partition should remain")
+	})
+
+	t.Run("fails if owner does not exist", func(t *testing.T) {
+		t.Parallel()
+
+		// Start a seed memberlist node.
+		seedKV, _ := startMemberlistKV(t)
+
+		// Get the seed node's listening port.
+		seedAddr := net.JoinHostPort("127.0.0.1", strconv.Itoa(seedKV.GetListeningPort()))
+
+		// Try to remove an owner that doesn't exist - should fail.
+		cmd := &RemoveOwnerCommand{
+			memberlistJoin:     []string{seedAddr},
+			memberlistBindPort: 0,
+			ownerIDs:           "ingester-zone-c-0",
+			stdin:              strings.NewReader("yes\n"),
+			logger:             log.NewNopLogger(),
+		}
+
+		err := cmd.run()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), `owner "ingester-zone-c-0" does not exist`)
+	})
+
+	t.Run("successfully removes multiple owners", func(t *testing.T) {
+		t.Parallel()
+		ctx := context.Background()
+
+		// Start a seed memberlist node.
+		seedKV, seedClient := startMemberlistKV(t)
+
+		// Pre-create a partition with multiple owners.
+		err := seedClient.CAS(ctx, ingester.PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+			ringDesc := ring.GetOrCreatePartitionRingDesc(in)
+			now := time.Now()
+			ringDesc.AddPartition(0, ring.PartitionActive, now)
+			ringDesc.AddOrUpdateOwner("ingester-zone-a-0", ring.OwnerActive, 0, now)
+			ringDesc.AddOrUpdateOwner("ingester-zone-b-0", ring.OwnerActive, 0, now)
+			ringDesc.AddOrUpdateOwner("ingester-zone-c-0", ring.OwnerActive, 0, now)
+			return ringDesc, true, nil
+		})
+		require.NoError(t, err)
+
+		// Get the seed node's listening port.
+		seedAddr := net.JoinHostPort("127.0.0.1", strconv.Itoa(seedKV.GetListeningPort()))
+
+		// Remove zone-b and zone-c owners.
+		cmd := &RemoveOwnerCommand{
+			memberlistJoin:     []string{seedAddr},
+			memberlistBindPort: 0,
+			ownerIDs:           "ingester-zone-b-0,ingester-zone-c-0",
+			stdin:              strings.NewReader("yes\n"),
+			logger:             log.NewNopLogger(),
+		}
+
+		err = cmd.run()
+		require.NoError(t, err)
+
+		// Verify zone-b and zone-c owners are removed, zone-a remains.
+		require.Eventually(t, func() bool {
+			val, err := seedClient.Get(ctx, ingester.PartitionRingKey)
+			if err != nil || val == nil {
+				return false
+			}
+			ringDesc, ok := val.(*ring.PartitionRingDesc)
+			if !ok {
+				return false
+			}
+			return ringDesc.HasOwner("ingester-zone-a-0") &&
+				!ringDesc.HasOwner("ingester-zone-b-0") &&
+				!ringDesc.HasOwner("ingester-zone-c-0")
+		}, 5*time.Second, 100*time.Millisecond, "zone-b and zone-c owners should be removed, zone-a should remain")
+	})
+
+	t.Run("fails if any owner does not exist when removing multiple", func(t *testing.T) {
+		t.Parallel()
+		ctx := context.Background()
+
+		// Start a seed memberlist node.
+		seedKV, seedClient := startMemberlistKV(t)
+
+		// Pre-create one owner.
+		err := seedClient.CAS(ctx, ingester.PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+			ringDesc := ring.GetOrCreatePartitionRingDesc(in)
+			now := time.Now()
+			ringDesc.AddPartition(0, ring.PartitionActive, now)
+			ringDesc.AddOrUpdateOwner("ingester-zone-a-0", ring.OwnerActive, 0, now)
+			return ringDesc, true, nil
+		})
+		require.NoError(t, err)
+
+		// Get the seed node's listening port.
+		seedAddr := net.JoinHostPort("127.0.0.1", strconv.Itoa(seedKV.GetListeningPort()))
+
+		// Try to remove zone-a and zone-b owners - should fail because zone-b doesn't exist.
+		cmd := &RemoveOwnerCommand{
+			memberlistJoin:     []string{seedAddr},
+			memberlistBindPort: 0,
+			ownerIDs:           "ingester-zone-a-0,ingester-zone-b-0",
+			stdin:              strings.NewReader("yes\n"),
+			logger:             log.NewNopLogger(),
+		}
+
+		err = cmd.run()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), `owner "ingester-zone-b-0" does not exist`)
+
+		// Verify zone-a was NOT removed (atomic failure).
+		val, err := seedClient.Get(ctx, ingester.PartitionRingKey)
+		require.NoError(t, err)
+		ringDesc := val.(*ring.PartitionRingDesc)
+		require.True(t, ringDesc.HasOwner("ingester-zone-a-0"), "zone-a owner should still exist when operation fails")
+	})
+}
+
 func TestParsePartitionIDs(t *testing.T) {
 	t.Parallel()
 

@@ -52,6 +52,29 @@ type RemovePartitionCommand struct {
 	stdin                  io.Reader // For testing; defaults to os.Stdin if nil.
 }
 
+// AddOwnerCommand handles the add-owner subcommand.
+type AddOwnerCommand struct {
+	memberlistJoin         []string
+	memberlistClusterLabel string
+	memberlistBindPort     int
+	ownerIDs               string
+	partitionID            string
+	verbose                bool
+	logger                 log.Logger
+	stdin                  io.Reader // For testing; defaults to os.Stdin if nil.
+}
+
+// RemoveOwnerCommand handles the remove-owner subcommand.
+type RemoveOwnerCommand struct {
+	memberlistJoin         []string
+	memberlistClusterLabel string
+	memberlistBindPort     int
+	ownerIDs               string
+	verbose                bool
+	logger                 log.Logger
+	stdin                  io.Reader // For testing; defaults to os.Stdin if nil.
+}
+
 // Register is used to register the command to a parent command.
 func (c *PartitionRingCommand) Register(app *kingpin.Application, _ EnvVarNames, logConfig *LoggerConfig) {
 	partitionRingCmd := app.Command("partition-ring", "Commands for managing the ingest storage partition ring.")
@@ -84,22 +107,70 @@ func (c *PartitionRingCommand) Register(app *kingpin.Application, _ EnvVarNames,
 			return removeCmd.run()
 		})
 
-	// Register common flags on all subcommands.
+	// Register add-owner subcommand.
+	addOwnerCmd := &AddOwnerCommand{}
+	addOwnerCmdClause := partitionRingCmd.Command("add-owner", "Forcefully add an owner to the ingest storage partition ring.").
+		Action(func(_ *kingpin.ParseContext) error {
+			if addOwnerCmd.verbose {
+				addOwnerCmd.logger = logConfig.Logger()
+			} else {
+				addOwnerCmd.logger = log.NewNopLogger()
+			}
+			return addOwnerCmd.run()
+		})
+
+	// Register remove-owner subcommand.
+	removeOwnerCmd := &RemoveOwnerCommand{}
+	removeOwnerCmdClause := partitionRingCmd.Command("remove-owner", "Forcefully remove an owner from the ingest storage partition ring.").
+		Action(func(_ *kingpin.ParseContext) error {
+			if removeOwnerCmd.verbose {
+				removeOwnerCmd.logger = logConfig.Logger()
+			} else {
+				removeOwnerCmd.logger = log.NewNopLogger()
+			}
+			return removeOwnerCmd.run()
+		})
+
+	// Register partition.id flag on partition subcommands and add-owner.
+	for _, cfg := range []struct {
+		cmd          *kingpin.CmdClause
+		partitionIDs *string
+	}{
+		{addPartitionCmd, &addCmd.partitionIDs},
+		{removePartitionCmd, &removeCmd.partitionIDs},
+		{addOwnerCmdClause, &addOwnerCmd.partitionID},
+	} {
+		cfg.cmd.Flag("partition.id", "Comma-separated list of partition IDs (must be >= 0).").
+			Required().
+			StringVar(cfg.partitionIDs)
+	}
+
+	// Register owner.id flag on owner subcommands.
+	for _, cfg := range []struct {
+		cmd      *kingpin.CmdClause
+		ownerIDs *string
+	}{
+		{addOwnerCmdClause, &addOwnerCmd.ownerIDs},
+		{removeOwnerCmdClause, &removeOwnerCmd.ownerIDs},
+	} {
+		cfg.cmd.Flag("owner.id", "Comma-separated list of owner IDs (ingester instance names).").
+			Required().
+			StringVar(cfg.ownerIDs)
+	}
+
+	// Register memberlist and verbose flags on all subcommands.
 	for _, cfg := range []struct {
 		cmd                    *kingpin.CmdClause
-		partitionIDs           *string
 		memberlistJoin         *[]string
 		memberlistClusterLabel *string
 		memberlistBindPort     *int
 		verbose                *bool
 	}{
-		{addPartitionCmd, &addCmd.partitionIDs, &addCmd.memberlistJoin, &addCmd.memberlistClusterLabel, &addCmd.memberlistBindPort, &addCmd.verbose},
-		{removePartitionCmd, &removeCmd.partitionIDs, &removeCmd.memberlistJoin, &removeCmd.memberlistClusterLabel, &removeCmd.memberlistBindPort, &removeCmd.verbose},
+		{addPartitionCmd, &addCmd.memberlistJoin, &addCmd.memberlistClusterLabel, &addCmd.memberlistBindPort, &addCmd.verbose},
+		{removePartitionCmd, &removeCmd.memberlistJoin, &removeCmd.memberlistClusterLabel, &removeCmd.memberlistBindPort, &removeCmd.verbose},
+		{addOwnerCmdClause, &addOwnerCmd.memberlistJoin, &addOwnerCmd.memberlistClusterLabel, &addOwnerCmd.memberlistBindPort, &addOwnerCmd.verbose},
+		{removeOwnerCmdClause, &removeOwnerCmd.memberlistJoin, &removeOwnerCmd.memberlistClusterLabel, &removeOwnerCmd.memberlistBindPort, &removeOwnerCmd.verbose},
 	} {
-		cfg.cmd.Flag("partition.id", "Comma-separated list of partition IDs (must be >= 0).").
-			Required().
-			StringVar(cfg.partitionIDs)
-
 		cfg.cmd.Flag("memberlist.join", "Address of a memberlist node to join. Can be specified multiple times.").
 			Required().
 			StringsVar(cfg.memberlistJoin)
@@ -254,6 +325,103 @@ func (c *RemovePartitionCommand) getStdin() io.Reader {
 	return os.Stdin
 }
 
+func (c *AddOwnerCommand) run() error {
+	// Parse owner IDs.
+	ownerIDs, err := parseOwnerIDs(c.ownerIDs)
+	if err != nil {
+		return err
+	}
+
+	partitionIDs, err := parsePartitionIDs(c.partitionID)
+	if err != nil {
+		return err
+	}
+	if len(partitionIDs) != 1 {
+		return fmt.Errorf("exactly one partition ID is required, got %d", len(partitionIDs))
+	}
+	partitionID := partitionIDs[0]
+
+	// Ask for confirmation.
+	message := fmt.Sprintf(`WARNING: This is a dangerous operation NOT intended for production systems.
+Adding owners directly to the ring bypasses normal ingester lifecycle.
+About to add owner(s) %v to partition %d.`, ownerIDs, partitionID)
+	if err := askForConfirmation(message, c.getStdin()); err != nil {
+		return err
+	}
+
+	// Use a timeout to avoid hanging indefinitely if memberlist can't join.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	// Initialize memberlist KV.
+	fmt.Fprintln(os.Stderr, "Joining memberlist cluster...")
+	kvClient, cleanup, err := initMemberlistKV(ctx, c.memberlistJoin, c.memberlistClusterLabel, c.memberlistBindPort, c.logger)
+	if err != nil {
+		return errors.Wrap(err, "failed to initialize memberlist KV")
+	}
+	defer cleanup()
+	fmt.Fprintln(os.Stderr, "Successfully joined memberlist cluster.")
+
+	// Perform the CAS operation to add the owners.
+	if err := addOwners(ctx, kvClient, ownerIDs, ring.OwnerActive, partitionID); err != nil {
+		return err
+	}
+
+	fmt.Fprintf(os.Stderr, "Successfully added owner(s) %v to partition %d.\n", ownerIDs, partitionID)
+	return nil
+}
+
+func (c *AddOwnerCommand) getStdin() io.Reader {
+	if c.stdin != nil {
+		return c.stdin
+	}
+	return os.Stdin
+}
+
+func (c *RemoveOwnerCommand) run() error {
+	// Parse owner IDs.
+	ownerIDs, err := parseOwnerIDs(c.ownerIDs)
+	if err != nil {
+		return err
+	}
+
+	// Ask for confirmation.
+	message := fmt.Sprintf(`WARNING: This is a dangerous operation NOT intended for production systems.
+Removing owners directly from the ring bypasses normal ingester lifecycle.
+About to remove owner(s) %v from the ring.`, ownerIDs)
+	if err := askForConfirmation(message, c.getStdin()); err != nil {
+		return err
+	}
+
+	// Use a timeout to avoid hanging indefinitely if memberlist can't join.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	// Initialize memberlist KV.
+	fmt.Fprintln(os.Stderr, "Joining memberlist cluster...")
+	kvClient, cleanup, err := initMemberlistKV(ctx, c.memberlistJoin, c.memberlistClusterLabel, c.memberlistBindPort, c.logger)
+	if err != nil {
+		return errors.Wrap(err, "failed to initialize memberlist KV")
+	}
+	defer cleanup()
+	fmt.Fprintln(os.Stderr, "Successfully joined memberlist cluster.")
+
+	// Perform the CAS operation to remove the owners.
+	if err := removeOwners(ctx, kvClient, ownerIDs); err != nil {
+		return err
+	}
+
+	fmt.Fprintf(os.Stderr, "Successfully removed owner(s) %v from the ring.\n", ownerIDs)
+	return nil
+}
+
+func (c *RemoveOwnerCommand) getStdin() io.Reader {
+	if c.stdin != nil {
+		return c.stdin
+	}
+	return os.Stdin
+}
+
 // askForConfirmation prints the given message to stderr and asks the user to type 'yes' to confirm.
 // The message can be multiline and should not include a trailing newline.
 func askForConfirmation(message string, stdin io.Reader) error {
@@ -377,4 +545,71 @@ func removePartitions(ctx context.Context, kvClient kv.Client, partitionIDs []in
 
 		return ringDesc, true, nil
 	})
+}
+
+func addOwners(ctx context.Context, kvClient kv.Client, ownerIDs []string, state ring.OwnerState, partitionID int32) error {
+	return kvClient.CAS(ctx, ingester.PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		ringDesc := ring.GetOrCreatePartitionRingDesc(in)
+
+		// Validate the target partition exists before making any changes.
+		if !ringDesc.HasPartition(partitionID) {
+			return nil, false, fmt.Errorf("partition %d does not exist in the ring", partitionID)
+		}
+
+		// First pass: validate ALL owners before making any changes.
+		for _, ownerID := range ownerIDs {
+			if ringDesc.HasOwner(ownerID) {
+				return nil, false, fmt.Errorf("owner %q already exists in the ring", ownerID)
+			}
+		}
+
+		// Second pass: add all owners.
+		now := time.Now()
+		for _, ownerID := range ownerIDs {
+			ringDesc.AddOrUpdateOwner(ownerID, state, partitionID, now)
+		}
+
+		return ringDesc, true, nil
+	})
+}
+
+func removeOwners(ctx context.Context, kvClient kv.Client, ownerIDs []string) error {
+	return kvClient.CAS(ctx, ingester.PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		ringDesc := ring.GetOrCreatePartitionRingDesc(in)
+
+		// First pass: validate ALL owners before making any changes.
+		for _, ownerID := range ownerIDs {
+			if !ringDesc.HasOwner(ownerID) {
+				return nil, false, fmt.Errorf("owner %q does not exist in the ring", ownerID)
+			}
+		}
+
+		// Second pass: remove all owners.
+		for _, ownerID := range ownerIDs {
+			ringDesc.RemoveOwner(ownerID)
+		}
+
+		return ringDesc, true, nil
+	})
+}
+
+// parseOwnerIDs parses a comma-separated list of owner IDs.
+func parseOwnerIDs(input string) ([]string, error) {
+	seen := map[string]struct{}{}
+	var ids []string
+	for _, s := range strings.Split(input, ",") {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		if _, ok := seen[s]; ok {
+			return nil, fmt.Errorf("duplicate owner ID %q", s)
+		}
+		seen[s] = struct{}{}
+		ids = append(ids, s)
+	}
+	if len(ids) == 0 {
+		return nil, errors.New("at least one owner ID is required")
+	}
+	return ids, nil
 }

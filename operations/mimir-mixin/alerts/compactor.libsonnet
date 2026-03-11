@@ -187,7 +187,7 @@
           },
           annotations: {
             message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has been OOMKilled {{ printf "%%.2f" $value }} times in the last %(time_window)s.' % ($._config + settings),
-          },
+          } + $.dashboardURLAnnotation('mimir-compactor-resources.json'),
         }
         for settings in [
           { severity: 'warning', threshold: 2, time_window: '4h' },
@@ -197,5 +197,12 @@
     },
   ],
 
-  groups+: $.withRunbookURL('https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#%s', $.withExtraLabelsAnnotations(alertGroups)),
+  groups+:
+    $.withRunbookURL(
+      'https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#%s',
+      $.withDashboardURL(
+        'mimir-compactor.json',
+        $.withExtraLabelsAnnotations(alertGroups)
+      )
+    ),
 }

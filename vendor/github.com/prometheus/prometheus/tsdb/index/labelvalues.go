@@ -349,7 +349,7 @@ func findNonContainedPostings(p Postings, candidates []Postings) (indexes []int,
 		// If p.At() != h.at(), we can keep h.at(), otherwise we skip past it
 		if p.At() != h.at() {
 			indexes = append(indexes, h.popIndex())
-		} else if err := h.next(); err != nil {
+		} else if err := h.seekHead(h.at() + 1); err != nil {
 			return nil, err
 		}
 	}

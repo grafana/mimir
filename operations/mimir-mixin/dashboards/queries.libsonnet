@@ -55,7 +55,7 @@ local filename = 'mimir-queries.json';
     assert std.md5(filename) == 'b3abe8d5c040395cc36615cb4334c92d' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Queries') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
-    .addShowNativeLatencyVariable()
+    .addShowNativeLatencyVariable($.latencyVariableDefault())
     // This selector allows to switch the read path components queried in this dashboard.
     // Since the labels matcher used by this selector is very wide (includes multiple components)
     // whenever you want to show panels for a specific component (e.g. query-frontend) you can safely

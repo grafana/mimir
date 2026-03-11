@@ -72,6 +72,9 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 		}
 	}
 
+	// Compute the expected request size for metric assertions.
+	expectedRequestSize := createRequest().Size()
+
 	tests := map[string]struct {
 		shardSize                    int
 		kafkaPartitionCustomResponse map[int32]*kmsg.ProduceResponse
@@ -232,14 +235,19 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 					# TYPE cortex_distributor_received_exemplars_total counter
 					cortex_distributor_received_exemplars_total{user="user"} 1
 
+					# HELP cortex_distributor_received_bytes_total The total number of uncompressed bytes received in the original request body (before any protocol conversion). Excludes requests rejected by middleware (e.g., rate limiting, size limits, HA deduplication) but includes bytes from requests where individual samples may be filtered or rejected during processing.
+					# TYPE cortex_distributor_received_bytes_total counter
+					cortex_distributor_received_bytes_total{user="user"} %d
+
 					# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
 					# TYPE cortex_distributor_latest_seen_sample_timestamp_seconds gauge
 					cortex_distributor_latest_seen_sample_timestamp_seconds{user="user"} %f
-				`, float64(now.UnixMilli())/1000.)),
+				`, expectedRequestSize, float64(now.UnixMilli())/1000.)),
 				"cortex_distributor_received_requests_total",
 				"cortex_distributor_received_samples_total",
 				"cortex_distributor_received_exemplars_total",
 				"cortex_distributor_received_metadata_total",
+				"cortex_distributor_received_bytes_total",
 				"cortex_distributor_requests_in_total",
 				"cortex_distributor_samples_in_total",
 				"cortex_distributor_exemplars_in_total",

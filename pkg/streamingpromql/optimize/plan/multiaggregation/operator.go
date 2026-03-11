@@ -5,6 +5,7 @@ package multiaggregation
 import (
 	"context"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -20,6 +21,7 @@ type MultiAggregatorGroupEvaluator struct {
 
 	instances []*MultiAggregatorInstanceOperator
 
+	nextSeriesIndex            int
 	haveComputedSeriesMetadata bool
 	prepareCalled              bool
 	afterPrepareCalled         bool
@@ -70,17 +72,9 @@ func (m *MultiAggregatorGroupEvaluator) ComputeOutputSeriesForAllInstances(ctx c
 	defer types.SeriesMetadataSlicePool.Put(&innerSeries, m.memoryConsumptionTracker)
 
 	for _, instance := range m.instances {
-		if instance.aggregator == nil {
-			// Already closed.
-			continue
-		}
-
-		groups, err := instance.aggregator.ComputeGroups(innerSeries)
-		if err != nil {
+		if err := instance.computeGroups(innerSeries); err != nil {
 			return err
 		}
-
-		instance.outputSeriesMetadata = groups
 	}
 
 	return nil
@@ -92,18 +86,21 @@ func (m *MultiAggregatorGroupEvaluator) ReadNextSeries(ctx context.Context) erro
 		return err
 	}
 
-	lastIndex := len(m.instances) - 1
+	thisSeriesIndex := m.nextSeriesIndex
+	lastInstanceToConsumeSeries := m.findIndexOfLastInstanceToConsumeSeries(thisSeriesIndex)
+	m.nextSeriesIndex++
+
+	if lastInstanceToConsumeSeries == -1 {
+		types.PutInstantVectorSeriesData(data, m.memoryConsumptionTracker)
+		return nil
+	}
+
 	for idx, instance := range m.instances {
-		isLastInstance := idx == lastIndex
-
-		if instance.aggregator == nil {
-			// Already closed.
-			if isLastInstance {
-				types.PutInstantVectorSeriesData(data, m.memoryConsumptionTracker)
-			}
-
+		if !instance.needToConsumeSeries(thisSeriesIndex) {
 			continue
 		}
+
+		isLastInstance := idx == lastInstanceToConsumeSeries
 
 		if err := instance.aggregator.AccumulateNextInnerSeries(data, isLastInstance); err != nil {
 			return err
@@ -111,6 +108,16 @@ func (m *MultiAggregatorGroupEvaluator) ReadNextSeries(ctx context.Context) erro
 	}
 
 	return nil
+}
+
+func (m *MultiAggregatorGroupEvaluator) findIndexOfLastInstanceToConsumeSeries(unfilteredSeriesIndex int) int {
+	for idx := len(m.instances) - 1; idx >= 0; idx-- {
+		if m.instances[idx].needToConsumeSeries(unfilteredSeriesIndex) {
+			return idx
+		}
+	}
+
+	return -1
 }
 
 func (m *MultiAggregatorGroupEvaluator) Finalize(ctx context.Context) error {
@@ -139,6 +146,11 @@ type MultiAggregatorInstanceOperator struct {
 	group              *MultiAggregatorGroupEvaluator
 	expressionPosition posrange.PositionRange
 	aggregator         *aggregations.Aggregator
+	filters            []*labels.Matcher
+
+	// unfilteredSeriesBitmap contains one entry per unfiltered input series, where true indicates that it passes this instance's filters.
+	// If this instance has no filters, this is nil.
+	unfilteredSeriesBitmap []bool
 
 	outputSeriesMetadata []types.SeriesMetadata
 
@@ -152,6 +164,7 @@ func (m *MultiAggregatorInstanceOperator) Configure(
 	op parser.ItemType,
 	grouping []string,
 	without bool,
+	filters []*labels.Matcher,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	timeRange types.QueryTimeRange,
@@ -164,6 +177,7 @@ func (m *MultiAggregatorInstanceOperator) Configure(
 	}
 
 	m.expressionPosition = expressionPosition
+	m.filters = filters
 
 	return nil
 }
@@ -176,7 +190,10 @@ func (m *MultiAggregatorInstanceOperator) AfterPrepare(ctx context.Context) erro
 	return m.group.AfterPrepare(ctx)
 }
 
-func (m *MultiAggregatorInstanceOperator) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+func (m *MultiAggregatorInstanceOperator) SeriesMetadata(ctx context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {
+	// Note that we deliberately ignore the matchers passed here as we can't use them: there's no
+	// guarantee that they apply to other instances in the same group.
+
 	if !m.group.haveComputedSeriesMetadata {
 		if err := m.group.ComputeOutputSeriesForAllInstances(ctx); err != nil {
 			return nil, err
@@ -186,6 +203,65 @@ func (m *MultiAggregatorInstanceOperator) SeriesMetadata(ctx context.Context, ma
 	series := m.outputSeriesMetadata
 	m.outputSeriesMetadata = nil
 	return series, nil
+}
+
+func (m *MultiAggregatorInstanceOperator) computeGroups(unfilteredSeries []types.SeriesMetadata) error {
+	if m.aggregator == nil {
+		// Already closed.
+		return nil
+	}
+
+	var filteredSeries []types.SeriesMetadata
+
+	if len(m.filters) == 0 {
+		filteredSeries = unfilteredSeries
+	} else {
+		var err error
+		filteredSeries, err = types.SeriesMetadataSlicePool.Get(len(unfilteredSeries), m.group.memoryConsumptionTracker)
+		if err != nil {
+			return err
+		}
+
+		m.unfilteredSeriesBitmap, err = types.BoolSlicePool.Get(len(unfilteredSeries), m.group.memoryConsumptionTracker)
+		if err != nil {
+			return err
+		}
+
+		for _, series := range unfilteredSeries {
+			matches := m.matchesSeries(series.Labels)
+			m.unfilteredSeriesBitmap = append(m.unfilteredSeriesBitmap, matches)
+
+			if matches {
+				filteredSeries, err = types.AppendSeriesMetadata(m.group.memoryConsumptionTracker, filteredSeries, series)
+				if err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	var err error
+	m.outputSeriesMetadata, err = m.aggregator.ComputeGroups(filteredSeries)
+	if err != nil {
+		return err
+	}
+
+	if len(m.filters) != 0 {
+		// If we got a new slice to hold the filtered list of series, return it to the pool now.
+		types.SeriesMetadataSlicePool.Put(&filteredSeries, m.group.memoryConsumptionTracker)
+	}
+
+	return nil
+}
+
+func (m *MultiAggregatorInstanceOperator) matchesSeries(series labels.Labels) bool {
+	for _, filter := range m.filters {
+		if !filter.Matches(series.Get(filter.Name)) {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (m *MultiAggregatorInstanceOperator) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
@@ -200,6 +276,19 @@ func (m *MultiAggregatorInstanceOperator) NextSeries(ctx context.Context) (types
 	}
 
 	return m.aggregator.ComputeNextOutputSeries()
+}
+
+func (m *MultiAggregatorInstanceOperator) needToConsumeSeries(unfilteredSeriesIndex int) bool {
+	if m.aggregator == nil {
+		// Closed.
+		return false
+	}
+
+	if len(m.filters) == 0 {
+		return true
+	}
+
+	return m.unfilteredSeriesBitmap[unfilteredSeriesIndex]
 }
 
 func (m *MultiAggregatorInstanceOperator) Finalize(ctx context.Context) error {
@@ -222,6 +311,9 @@ func (m *MultiAggregatorInstanceOperator) Close() {
 		m.aggregator.Close()
 		m.aggregator = nil
 	}
+
+	types.BoolSlicePool.Put(&m.unfilteredSeriesBitmap, m.group.memoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&m.outputSeriesMetadata, m.group.memoryConsumptionTracker)
 
 	m.group.Close()
 }

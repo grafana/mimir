@@ -39,12 +39,12 @@ var (
 // If string is non-empty, it will be added as comment.
 // If yaml value is non-empty, it will be marshaled as yaml under the same key as it would appear in config.
 type ExamplerConfig interface {
-	ExampleDoc() (comment string, yaml interface{})
+	ExampleDoc() (comment string, yaml any)
 }
 
 type FieldExample struct {
 	Comment string
-	Yaml    interface{}
+	Yaml    any
 }
 
 type ConfigBlock struct {
@@ -124,11 +124,11 @@ func Flags(cfg flagext.RegistererWithLogger, logger log.Logger) map[uintptr]*fla
 
 // Config returns a slice of ConfigBlocks. The first ConfigBlock is a recursively expanded cfg.
 // The remaining entries in the slice are all (root or not) ConfigBlocks.
-func Config(cfg interface{}, flags map[uintptr]*flag.Flag, rootBlocks []RootBlock) ([]*ConfigBlock, error) {
+func Config(cfg any, flags map[uintptr]*flag.Flag, rootBlocks []RootBlock) ([]*ConfigBlock, error) {
 	return config(nil, cfg, flags, rootBlocks)
 }
 
-func config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag, rootBlocks []RootBlock) ([]*ConfigBlock, error) {
+func config(block *ConfigBlock, cfg any, flags map[uintptr]*flag.Flag, rootBlocks []RootBlock) ([]*ConfigBlock, error) {
 	blocks := []*ConfigBlock{}
 
 	// If the input block is nil it means we're generating the doc for the top-level block
@@ -510,115 +510,57 @@ func getFieldExample(fieldKey string, fieldType reflect.Type) *FieldExample {
 	comment, yml := ex.ExampleDoc()
 	return &FieldExample{
 		Comment: comment,
-		Yaml:    map[string]interface{}{fieldKey: yml},
+		Yaml:    map[string]any{fieldKey: yml},
 	}
 }
 
-func getCustomFieldEntry(cfg interface{}, field reflect.StructField, fieldValue reflect.Value, flags map[uintptr]*flag.Flag) (*ConfigEntry, error) {
-	if field.Type == reflect.TypeOf(dslog.Level{}) {
-		fieldFlag, err := getFieldFlag(field, fieldValue, flags)
-		if err != nil || fieldFlag == nil {
-			return nil, err
-		}
+func getCustomFieldEntry(cfg any, field reflect.StructField, fieldValue reflect.Value, flags map[uintptr]*flag.Flag) (*ConfigEntry, error) {
+	var fieldType string
 
-		return &ConfigEntry{
-			Kind:          KindField,
-			Name:          getFieldName(field),
-			Required:      isFieldRequired(field),
-			FieldFlag:     fieldFlag.Name,
-			FieldDesc:     getFieldDescription(cfg, field, fieldFlag.Usage),
-			FieldType:     "string",
-			FieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
-			FieldCategory: getFieldCategory(field, fieldFlag.Name),
-		}, nil
-	}
-	if field.Type == reflect.TypeOf(flagext.URLValue{}) {
-		fieldFlag, err := getFieldFlag(field, fieldValue, flags)
-		if err != nil || fieldFlag == nil {
-			return nil, err
-		}
-
-		return &ConfigEntry{
-			Kind:          KindField,
-			Name:          getFieldName(field),
-			Required:      isFieldRequired(field),
-			FieldFlag:     fieldFlag.Name,
-			FieldDesc:     getFieldDescription(cfg, field, fieldFlag.Usage),
-			FieldType:     "url",
-			FieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
-			FieldCategory: getFieldCategory(field, fieldFlag.Name),
-		}, nil
-	}
-	if field.Type == reflect.TypeOf(flagext.Secret{}) {
-		fieldFlag, err := getFieldFlag(field, fieldValue, flags)
-		if err != nil || fieldFlag == nil {
-			return nil, err
-		}
-
-		return &ConfigEntry{
-			Kind:          KindField,
-			Name:          getFieldName(field),
-			Required:      isFieldRequired(field),
-			FieldFlag:     fieldFlag.Name,
-			FieldDesc:     getFieldDescription(cfg, field, fieldFlag.Usage),
-			FieldType:     "string",
-			FieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
-			FieldCategory: getFieldCategory(field, fieldFlag.Name),
-		}, nil
-	}
-	if field.Type == reflect.TypeOf(model.Duration(0)) {
-		fieldFlag, err := getFieldFlag(field, fieldValue, flags)
-		if err != nil || fieldFlag == nil {
-			return nil, err
-		}
-
-		return &ConfigEntry{
-			Kind:          KindField,
-			Name:          getFieldName(field),
-			Required:      isFieldRequired(field),
-			FieldFlag:     fieldFlag.Name,
-			FieldDesc:     getFieldDescription(cfg, field, fieldFlag.Usage),
-			FieldType:     "duration",
-			FieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
-			FieldCategory: getFieldCategory(field, fieldFlag.Name),
-		}, nil
-	}
-	if field.Type == reflect.TypeOf(flagext.Time{}) {
-		fieldFlag, err := getFieldFlag(field, fieldValue, flags)
-		if err != nil || fieldFlag == nil {
-			return nil, err
-		}
-
-		return &ConfigEntry{
-			Kind:          KindField,
-			Name:          getFieldName(field),
-			Required:      isFieldRequired(field),
-			FieldFlag:     fieldFlag.Name,
-			FieldDesc:     getFieldDescription(cfg, field, fieldFlag.Usage),
-			FieldType:     "time",
-			FieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
-			FieldCategory: getFieldCategory(field, fieldFlag.Name),
-		}, nil
-	}
-	if field.Type == reflect.TypeOf(s3.BucketLookupType(0)) {
-		fieldFlag, err := getFieldFlag(field, fieldValue, flags)
-		if err != nil || fieldFlag == nil {
-			return nil, err
-		}
-
-		return &ConfigEntry{
-			Kind:          KindField,
-			Name:          getFieldName(field),
-			Required:      isFieldRequired(field),
-			FieldFlag:     fieldFlag.Name,
-			FieldDesc:     getFieldDescription(cfg, field, fieldFlag.Usage),
-			FieldType:     "string",
-			FieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
-			FieldCategory: getFieldCategory(field, fieldFlag.Name),
-		}, nil
+	switch field.Type {
+	case reflect.TypeFor[dslog.Level]():
+		fieldType = "string"
+	case reflect.TypeFor[flagext.URLValue]():
+		fieldType = "url"
+	case reflect.TypeFor[flagext.Secret]():
+		fieldType = "string"
+	case reflect.TypeFor[model.Duration]():
+		fieldType = "duration"
+	case reflect.TypeFor[flagext.Time]():
+		fieldType = "time"
+	case reflect.TypeFor[s3.BucketLookupType]():
+		fieldType = "string"
+	default:
+		// Not a supported custom field type
+		return nil, nil
 	}
 
-	return nil, nil
+	// Field or parent (block) field may have `doc:nocli` set and/or the flag may not exist.
+	// TODO: getFieldFlag() never returns an error. Consider refactoring leveraging `doc:nocli`
+	// struct tag.
+	fieldFlag, err := getFieldFlag(field, fieldValue, flags)
+	if err != nil {
+		return nil, err
+	}
+
+	e := &ConfigEntry{
+		Kind:          KindField,
+		Name:          getFieldName(field),
+		Required:      isFieldRequired(field),
+		FieldType:     fieldType,
+		FieldDesc:     getFieldDescription(cfg, field, ""),
+		FieldDefault:  getFieldDefault(field, ""),
+		FieldCategory: getFieldCategory(field, ""),
+	}
+
+	if fieldFlag != nil {
+		e.FieldFlag = fieldFlag.Name
+		e.FieldDesc = getFieldDescription(cfg, field, fieldFlag.Usage)
+		e.FieldDefault = getFieldDefault(field, fieldFlag.DefValue)
+		e.FieldCategory = getFieldCategory(field, fieldFlag.Name)
+	}
+
+	return e, nil
 }
 
 func getFieldCategory(field reflect.StructField, name string) string {
@@ -655,7 +597,7 @@ func isFieldInline(f reflect.StructField) bool {
 	return yamlFieldInlineParser.MatchString(f.Tag.Get("yaml"))
 }
 
-func getFieldDescription(cfg interface{}, field reflect.StructField, fallback string) string {
+func getFieldDescription(cfg any, field reflect.StructField, fallback string) string {
 	if desc := getDocTagValue(field, "description"); desc != "" {
 		return desc
 	}

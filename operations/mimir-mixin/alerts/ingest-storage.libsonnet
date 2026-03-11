@@ -22,7 +22,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     labels: $.histogramLabels({ severity: 'warning' }, histogram_type, nhcb=false),
     annotations: {
       message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s in "starting" phase is not reducing consumption lag of write requests read from Kafka.' % $._config,
-    },
+    } + $.dashboardURLAnnotation('mimir-writes.json'),
   },
 
   local runningIngesterReceiveDelayTooHigh(histogram_type, threshold_value, for_duration, threshold_label) = {
@@ -201,7 +201,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
           annotations: {
             message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s fails to enforce strong-consistency on read-path.' % $._config,
-          },
+          } + $.dashboardURLAnnotation('mimir-queries.json'),
         },
 
         // Alert firing if ingesters are receiving an unexpected high number of strongly consistent requests without an offset specified.
@@ -355,8 +355,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
             severity: 'critical',
           },
           annotations: {
-            message: '%(product)s ingesters in %(alert_aggregation_variables)s have fewer ingesters consuming than active partitions.' % $._config,
-          },
+                         message: '%(product)s ingesters in %(alert_aggregation_variables)s have fewer ingesters consuming than active partitions.' % $._config,
+                       }
+                       // Alternative dashboards for investigation:
+                       //   - Mimir / Reads (mimir-reads.json)
+                       + $.dashboardURLAnnotation('mimir-writes.json'),
         },
       ],
     },

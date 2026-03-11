@@ -83,7 +83,7 @@ func (u *URL) Copy() *URL {
 // MarshalYAML implements the yaml.Marshaler interface for URL.
 func (u URL) MarshalYAML() (interface{}, error) {
 	if u.URL != nil {
-		return u.URL.String(), nil
+		return u.String(), nil
 	}
 	return nil, nil
 }
@@ -105,7 +105,7 @@ func (u *URL) UnmarshalYAML(unmarshal func(interface{}) error) error {
 // MarshalJSON implements the json.Marshaler interface for URL.
 func (u URL) MarshalJSON() ([]byte, error) {
 	if u.URL != nil {
-		return json.Marshal(u.URL.String())
+		return json.Marshal(u.String())
 	}
 	return []byte("null"), nil
 }

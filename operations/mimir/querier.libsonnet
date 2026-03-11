@@ -14,6 +14,7 @@
     $._config.queryBlocksStorageConfig +
     $._config.querySchedulerRingClientConfig +
     $.blocks_metadata_caching_config +
+    $.range_vector_splitting_caching_config +
     $.bucket_index_config +
     $.querierUseQuerySchedulerArgs('query-scheduler') +
     {
