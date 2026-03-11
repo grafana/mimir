@@ -533,9 +533,8 @@ func newPartitionHandlerTestHelper(t *testing.T) *partitionHandlerTestHelper {
 	require.NoError(t, err)
 	t.Cleanup(snapshotsKafkaWriter.Close)
 
-	rawSnapshotsBucket, err := bucket.NewClient(context.Background(), cfg.SnapshotsStorage, "usage-tracker-snapshots", logger, reg)
+	snapshotsBucket, err := bucket.NewClient(context.Background(), cfg.SnapshotsStorage, "usage-tracker-snapshots", logger, reg)
 	require.NoError(t, err)
-	snapshotsBucket := &minUploadDelayBucket{InstrumentedBucket: rawSnapshotsBucket, minDelay: time.Millisecond}
 
 	eventsKafkaReader, err := ingest.NewKafkaReaderClient(cfg.EventsStorageReader, ingest.NewKafkaReaderClientMetrics(ingest.ReaderMetricsPrefix, "test-helper", prometheus.NewRegistry()), logger)
 	require.NoError(t, err)
@@ -661,22 +660,6 @@ func (s *slowBucket) Get(ctx context.Context, name string) (io.ReadCloser, error
 		return nil, ctx.Err()
 	}
 	return s.Bucket.Get(ctx, name)
-}
-
-// minUploadDelayBucket wraps a bucket and ensures each Upload takes at least minDelay.
-// This prevents snapshot filename collisions caused by millisecond-resolution timestamps.
-type minUploadDelayBucket struct {
-	objstore.InstrumentedBucket
-	minDelay time.Duration
-}
-
-func (b *minUploadDelayBucket) Upload(ctx context.Context, name string, r io.Reader, opts ...objstore.ObjectUploadOption) error {
-	start := time.Now()
-	err := b.InstrumentedBucket.Upload(ctx, name, r, opts...)
-	if elapsed := time.Since(start); elapsed < b.minDelay {
-		time.Sleep(b.minDelay - elapsed)
-	}
-	return err
 }
 
 type getCounterBucketReader struct {
