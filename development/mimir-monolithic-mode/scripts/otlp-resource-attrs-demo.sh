@@ -574,6 +574,8 @@ fi
 if [ "$CLOUD_MODE" = true ]; then
     print_phase 4 "Compacting TSDB head to persist resource attributes to disk (SKIPPED)"
     echo -e "${YELLOW}Skipped in cloud mode: /ingester/flush endpoint not exposed${RESET}"
+    echo -e "${GRAY}Ingesters compact the head to blocks on their own schedule (~2h), so block${RESET}"
+    echo -e "${GRAY}persistence cannot be demonstrated interactively in cloud mode.${RESET}"
 else
     print_phase 4 "Compacting TSDB head to persist resource attributes to disk"
 

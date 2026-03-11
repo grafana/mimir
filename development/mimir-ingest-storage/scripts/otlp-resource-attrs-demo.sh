@@ -543,12 +543,21 @@ echo -e "${GRAY}Note: Scope attributes are persisted to TSDB but not yet exposed
 # Small delay to ensure metrics are ingested
 sleep 2
 
-query_resources '{__name__=~".+"}' "All resource attributes in ingesters:"
+# In cloud mode, scope to demo series only (the tenant has many other series with resource attrs).
+if [ "$CLOUD_MODE" = true ]; then
+    ALL_DEMO_MATCH='{job=~"(production|staging)/(payment|order)-service"}'
+else
+    ALL_DEMO_MATCH='{__name__=~".+"}'
+fi
+
+query_resources "$ALL_DEMO_MATCH" "All resource attributes in ingesters:"
 
 # === PHASE 3: Wait for Block Builder ===
 if [ "$CLOUD_MODE" = true ]; then
     print_phase 3 "Waiting for Block Builder to create blocks (SKIPPED)"
     echo -e "${YELLOW}Skipped in cloud mode: block builder runs automatically${RESET}"
+    echo -e "${GRAY}Block builder processes Kafka data on its own schedule, so block${RESET}"
+    echo -e "${GRAY}persistence cannot be demonstrated interactively in cloud mode.${RESET}"
 else
     print_phase 3 "Waiting for Block Builder to create blocks"
 
@@ -562,18 +571,28 @@ else
     echo -e "  - Scheduling interval: 30s (checks for work every 30s)"
     echo -e "  - Job size: 1m (processes 1 minute of Kafka data per job)"
     echo -e ""
-    echo -e "${YELLOW}Waiting ~90 seconds for block builder to process data...${RESET}"
-    echo -e "${GRAY}(This simulates real-world behavior where blocks are created automatically)${RESET}\n"
+    echo -e "${YELLOW}Waiting for block builder + store-gateway block sync...${RESET}"
+    echo -e "${GRAY}(Block builder processes Kafka data, then store-gateway syncs blocks)${RESET}\n"
 
-    # Wait with progress indicator
-    WAIT_TIME=90
-    for i in $(seq 1 $WAIT_TIME); do
-        printf "\r${GRAY}Progress: [%-50s] %d/%d seconds${RESET}" "$(printf '#%.0s' $(seq 1 $((i * 50 / WAIT_TIME))))" "$i" "$WAIT_TIME"
-        sleep 1
+    demo_match_encoded=$(printf '%s' '{job=~"(production|staging)/(payment|order)-service"}' | jq -sRr @uri)
+    blocks_ready=false
+    for i in $(seq 1 45); do
+        count=$(curl -s "${AUTH_HEADER[@]}" "${RESOURCES_ENDPOINT}?match[]=${demo_match_encoded}" | jq '.data.series | length' 2>/dev/null)
+        if [ "$count" != "null" ] && [ "$count" -gt 0 ] 2>/dev/null; then
+            blocks_ready=true
+            break
+        fi
+        printf "\r  Waiting for blocks to load... %ds" "$((i * 2))"
+        sleep 2
     done
-    echo -e "\n"
+    echo ""
+    if [ "$blocks_ready" = true ]; then
+        echo -e "${GREEN}Blocks loaded — demo series available from store-gateway${RESET}"
+    else
+        echo -e "${YELLOW}Warning: Store-gateway may not have synced blocks yet${RESET}"
+    fi
 
-    echo -e "${GREEN}Block builder should have created blocks with series_metadata.parquet files${RESET}"
+    echo -e "\n${GREEN}Block builder created blocks with series_metadata.parquet files${RESET}"
 fi
 
 # === PHASE 4: Query from blocks ===
@@ -581,7 +600,7 @@ print_phase 4 "Querying resource attributes from persisted blocks"
 
 echo -e "${GRAY}Now querying will also include data from store-gateways (blocks in object storage).${RESET}\n"
 
-query_resources '{__name__=~".+"}' "Resource attributes (from both ingesters and blocks):"
+query_resources "$ALL_DEMO_MATCH" "Resource attributes (from both ingesters and blocks):"
 
 # === PHASE 5: Demonstrate descriptive attributes changing over time ===
 print_phase 5 "Descriptive attributes changing over time"
