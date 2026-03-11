@@ -30,10 +30,14 @@ type TOCCompat struct {
 
 	Symbols uint64
 
-	// PostingsListEnd is used by pkg/storage/indexheader/index.PostingOffsetTable
+	// PostingsListEnd is not a standard part of a block index TOC,
+	// but is required by pkg/storage/indexheader/index.PostingOffsetTable
 	// to mark the end of the last postings list entry in the index.
-	// We refer to the end of the postings list rather than the start of the next index section,
-	// as which section is next can vary across Prometheus TSDB index and Mimir index-header versions.
+	//
+	// Mimir currently only supports Prometheus index.FormatV2,
+	// in which the end of the Postings list is the beginning of the Label Indices table.
+	// Prometheus block index TOC only contains start offsets for sections, not end offsets,
+	// so we use Label Indices Table offset as the end bound of the Postings List.
 	PostingsListEnd     uint64
 	PostingsOffsetTable uint64
 }
@@ -87,10 +91,10 @@ func TOCFromBucketTSDBIndex(
 
 }
 
-// TOCFromIndexHeader builds the TOCCompact from the on-disk Mimir index-header BinaryFormatV1.
-// The BinaryFormatV1 has different offsets than the full Prometheus block index in the bucket:
-// it only has two main sections, which are copies of the Symbols table and PostingsOffsets table,
-// and it has different header/metadata and TOC formats.
+// TOCFromIndexHeader builds a TOCCompat from the on-disk Mimir index-header BinaryFormatV1.
+// The BinaryFormatV1 only has two main sections, which are copies of the Symbols and PostingsOffsets tables,
+// and it has a different layout for the header/metadata and TOC.
+// This results in different offsets for the relevant sections than a full Prometheus block index in the bucket.
 func TOCFromIndexHeader(
 	castagnoliTable *crc32.Table,
 	decbufFactory streamencoding.DecbufFactory,
@@ -123,14 +127,7 @@ func TOCFromIndexHeader(
 		return nil, 0, fmt.Errorf("unknown or unsupported index format version %d", indexVersion)
 	}
 
-	// As of now this value is also the actual end of the last posting list. In the future
-	// it may be some bytes after the actual end (e.g. in case Prometheus starts adding padding
-	// after the last posting list).
-	// This value used to be the offset of the postings offset table up to and including Mimir 2.7.
-	// After that this is the offset of the label indices table.
-	// So what we read here will depend on what version of Mimir created the index header file.
 	postingsListEnd := decbuf.Be64()
-
 	if err = decbuf.Err(); err != nil {
 		return nil, 0, fmt.Errorf("cannot read version and index version: %w", err)
 	}

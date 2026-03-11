@@ -28,14 +28,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/atomicfs"
 )
 
-func buildSparseHeaderFromIndexHeader(
-	indexVersion int,
-	toc *TOCCompat,
-	decbufFactory streamencoding.DecbufFactory,
-	postingOffsetsInMemSampling int,
-	doChecksum bool,
-	ll log.Logger,
-) (*streamindex.Symbols, streamindex.PostingOffsetTable, error) {
+func buildSparseHeaderFromIndexHeader(toc *TOCCompat, decbufFactory streamencoding.DecbufFactory, postingOffsetsInMemSampling int, doChecksum bool, ll log.Logger) (*streamindex.Symbols, streamindex.PostingOffsetTable, error) {
 	start := time.Now()
 	defer func() {
 		level.Info(ll).Log("msg", "loaded sparse index-header from full index-header", "elapsed", time.Since(start))
@@ -43,7 +36,7 @@ func buildSparseHeaderFromIndexHeader(
 
 	level.Info(ll).Log("msg", "loading sparse index-header from full index-header")
 
-	symbols, err := streamindex.NewSymbols(decbufFactory, indexVersion, int(toc.Symbols), doChecksum)
+	symbols, err := streamindex.NewSymbols(decbufFactory, toc.IndexVersion, int(toc.Symbols), doChecksum)
 	if err != nil {
 		return nil, nil, fmt.Errorf("cannot load symbols from full index-header: %w", err)
 	}
@@ -51,7 +44,7 @@ func buildSparseHeaderFromIndexHeader(
 	postingsOffsetTable, err := streamindex.NewPostingOffsetTable(
 		decbufFactory,
 		int(toc.PostingsOffsetTable),
-		indexVersion,
+		toc.IndexVersion,
 		toc.PostingsListEnd,
 		postingOffsetsInMemSampling,
 		doChecksum,

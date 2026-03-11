@@ -215,7 +215,7 @@ func (r *BucketBinaryReader) loadFromSparseIndexHeader(logger log.Logger, sparse
 func (r *BucketBinaryReader) loadFromIndexHeader(logger log.Logger, cfg Config, postingOffsetsInMemSampling int) error {
 	var err error
 	r.symbols, r.postingsOffsetTable, err = buildSparseHeaderFromIndexHeader(
-		r.toc.IndexVersion, r.toc, r.factory, postingOffsetsInMemSampling, cfg.VerifyOnLoad, logger,
+		r.toc, r.factory, postingOffsetsInMemSampling, cfg.VerifyOnLoad, logger,
 	)
 	return err
 }
