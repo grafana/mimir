@@ -2307,12 +2307,16 @@ func (d *Distributor) sendWriteRequestToIngesters(ctx context.Context, tenantRin
 
 func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID string, tenantRing ring.DoBatchRing, req *mimirpb.WriteRequest, cts []compartmentTokens, initialMetadataIndex int, remoteRequestContext func() context.Context, batchOptions ring.DoBatchOptions) error {
 	// Wrap cleanup to fire once after ALL compartment DoBatch calls complete.
-	numCompartments := int64(len(cts))
+	// If there are no compartments (empty request), call cleanup immediately and return.
 	originalCleanup := batchOptions.Cleanup
 	if originalCleanup == nil {
 		originalCleanup = func() {}
 	}
-	remaining := atomic.NewInt64(numCompartments)
+	if len(cts) == 0 {
+		originalCleanup()
+		return nil
+	}
+	remaining := atomic.NewInt64(int64(len(cts)))
 	batchOptions.Cleanup = func() {
 		if remaining.Dec() == 0 {
 			originalCleanup()
