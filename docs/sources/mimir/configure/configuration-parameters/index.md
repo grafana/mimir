@@ -2644,12 +2644,12 @@ alertmanager_client:
 
   [basic_auth_username: <string> | default = ""]
 
-  basic_auth_password:
+  [basic_auth_password: <string> | default = ""]
 
   oauth2:
     [client_id: <string> | default = ""]
 
-    client_secret:
+    [client_secret: <string> | default = ""]
 
     [token_url: <string> | default = ""]
 

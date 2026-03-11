@@ -14138,12 +14138,13 @@
               "fieldType": "string"
             },
             {
-              "kind": "block",
+              "kind": "field",
               "name": "basic_auth_password",
               "required": false,
               "desc": "",
               "fieldValue": null,
-              "fieldDefaultValue": null
+              "fieldDefaultValue": "",
+              "fieldType": "string"
             },
             {
               "kind": "block",
@@ -14161,12 +14162,13 @@
                   "fieldType": "string"
                 },
                 {
-                  "kind": "block",
+                  "kind": "field",
                   "name": "client_secret",
                   "required": false,
                   "desc": "",
                   "fieldValue": null,
-                  "fieldDefaultValue": null
+                  "fieldDefaultValue": "",
+                  "fieldType": "string"
                 },
                 {
                   "kind": "field",
