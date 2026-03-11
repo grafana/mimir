@@ -1,12 +1,15 @@
 # Changelog
 
+## Unreleased
+
+* [BUGFIX] Update to Go v1.25.8 to address [CVE-2026-27142](https://pkg.go.dev/vuln/GO-2026-4603), [CVE-2026-27139](https://pkg.go.dev/vuln/GO-2026-4602), [CVE-2026-25679](https://pkg.go.dev/vuln/GO-2026-4601), [CVE-2026-27138](https://pkg.go.dev/vuln/GO-2026-4600), [CVE-2026-27137](https://pkg.go.dev/vuln/GO-2026-4599). #14623
+
 ## 3.0.3
 
 ### Grafana Mimir
 
 * [BUGFIX] Update to Go v1.25.7 to address [CVE-2025-61726](https://pkg.go.dev/vuln/GO-2026-4341). #14242 #14254
 * [BUGFIX] Ruler: Add path traversal checks when parsing namespaces and groups, which prevents namespace and group name from containing non-local paths. #14245
-* [BUGFIX] Update to Go v1.25.8 to address [CVE-2026-27142](https://pkg.go.dev/vuln/GO-2026-4603), [CVE-2026-27139](https://pkg.go.dev/vuln/GO-2026-4602), [CVE-2026-25679](https://pkg.go.dev/vuln/GO-2026-4601), [CVE-2026-27138](https://pkg.go.dev/vuln/GO-2026-4600), [CVE-2026-27137](https://pkg.go.dev/vuln/GO-2026-4599). #14623
 
 ## 3.0.2
 
