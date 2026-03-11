@@ -1964,6 +1964,42 @@ func (h *Head) FsyncWLSegments() error {
 	return nil
 }
 
+// mmapDirtyHeadChunks only mmaps head chunks for series that have been marked
+// dirty since the last call. This is much more efficient than mmapHeadChunks
+// when only a small fraction of series have new chunks to mmap.
+func (h *Head) mmapDirtyHeadChunks() {
+	var count int
+	for i := 0; i < h.series.size; i++ {
+		h.series.locks[i].Lock()
+		dirty := h.series.dirty[i]
+		h.series.dirty[i] = map[chunks.HeadSeriesRef]struct{}{}
+		h.series.locks[i].Unlock()
+
+		for ref := range dirty {
+			s := h.series.getByID(ref)
+			if s == nil {
+				continue
+			}
+			s.Lock()
+			count += s.mmapChunks(h.chunkDiskMapper)
+			s.Unlock()
+		}
+	}
+	h.metrics.mmapChunksTotal.Add(float64(count))
+}
+
+// markDirtyForMmap marks a series as having head chunks that need to be mmapped.
+func (s *stripeSeries) markDirtyForMmap(series *memSeries) {
+	if series.headChunks == nil || series.headChunks.prev == nil {
+		return
+	}
+
+	i := uint64(series.ref) & uint64(s.size-1)
+	s.locks[i].Lock()
+	s.dirty[i][series.ref] = struct{}{}
+	s.locks[i].Unlock()
+}
+
 // seriesHashmap lets TSDB find a memSeries by its label set, via a 64-bit hash.
 // There is one map for the common case where the hash value is unique, and a
 // second map for the case that two series have the same hash value.
@@ -2051,6 +2087,7 @@ type stripeSeries struct {
 	series                  []map[chunks.HeadSeriesRef]*memSeries // Sharded by ref. A series ref is the value of `size` when the series was being newly added.
 	hashes                  []seriesHashmap                       // Sharded by label hash.
 	locks                   []stripeLock                          // Sharded by ref for series access, by label hash for hashes access.
+	dirty                   []map[chunks.HeadSeriesRef]struct{}   // Series with head chunks needing mmap. Sharded by ref.
 	seriesLifecycleCallback SeriesLifecycleCallback
 }
 
@@ -2066,11 +2103,13 @@ func newStripeSeries(stripeSize int, seriesCallback SeriesLifecycleCallback) *st
 		series:                  make([]map[chunks.HeadSeriesRef]*memSeries, stripeSize),
 		hashes:                  make([]seriesHashmap, stripeSize),
 		locks:                   make([]stripeLock, stripeSize),
+		dirty:                   make([]map[chunks.HeadSeriesRef]struct{}, stripeSize),
 		seriesLifecycleCallback: seriesCallback,
 	}
 
 	for i := range s.series {
 		s.series[i] = map[chunks.HeadSeriesRef]*memSeries{}
+		s.dirty[i] = map[chunks.HeadSeriesRef]struct{}{}
 	}
 	for i := range s.hashes {
 		s.hashes[i] = seriesHashmap{
