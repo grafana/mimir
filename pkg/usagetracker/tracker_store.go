@@ -236,7 +236,7 @@ func (t *trackerStore) cleanup(now time.Time) {
 	for tenantID, tenant := range tenantsClone {
 		for _, shard := range tenant.shards {
 			shard.Lock()
-			removed := shard.Cleanup(watermark, tenant.currentLimit.Load())
+			removed := shard.Cleanup(watermark, tenant.currentLimit)
 			shard.Unlock()
 
 			if removed > 0 {

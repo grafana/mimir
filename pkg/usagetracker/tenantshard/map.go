@@ -190,7 +190,7 @@ func (m *Map) Count() int {
 	return int(m.resident - m.dead)
 }
 
-func (m *Map) Cleanup(watermark clock.Minutes, limit uint64) int {
+func (m *Map) Cleanup(watermark clock.Minutes, limit *atomic.Uint64) int {
 	removed := 0
 	for i := range m.data {
 		for j, entry := range m.data[i] {
@@ -208,7 +208,11 @@ func (m *Map) Cleanup(watermark clock.Minutes, limit uint64) int {
 		}
 	}
 	if m.dead > m.limit/2 {
-		m.rehash(m.nextSize(limit))
+		var lim uint64
+		if limit != nil {
+			lim = limit.Load()
+		}
+		m.rehash(m.nextSize(lim))
 	}
 	return removed
 }

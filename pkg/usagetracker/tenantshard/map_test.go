@@ -57,7 +57,7 @@ func TestMap(t *testing.T) {
 
 	{
 		// Cleanup first wave of series
-		removed := m.Cleanup(clock.Minutes(1), 0)
+		removed := m.Cleanup(clock.Minutes(1), nil)
 		series.Add(-uint64(removed))
 		expectedSeries := (events - 1) * seriesPerEvent
 
@@ -134,7 +134,7 @@ func TestNextSize(t *testing.T) {
 		for i := uint64(0); i < 200; i++ {
 			m.Load(i, 1)
 		}
-		m.Cleanup(1, 0)
+		m.Cleanup(1, nil)
 		require.True(t, m.dead >= m.resident/2)
 		alive := m.resident - m.dead
 		got := m.nextSize(0)
@@ -209,6 +209,6 @@ func BenchmarkMapCleanup(b *testing.B) {
 	b.ResetTimer()
 	watermark := now.Add(-idleTimeout)
 	for i := 0; i < b.N; i++ {
-		maps[i].Cleanup(clock.ToMinutes(watermark), 0)
+		maps[i].Cleanup(clock.ToMinutes(watermark), nil)
 	}
 }
