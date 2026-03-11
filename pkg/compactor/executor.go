@@ -496,13 +496,7 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, err
 	}
 
-	// Note: The syncer isn't used in single job execution (only during full BucketCompactor.Compact), but we construct it rather than pass nil to guard against future changes
-	syncer, err := newMetaSyncer(userLogger, reg, userBucket, fetcher, NewShardAwareDeduplicateFilter(), c.blocksMarkedForDeletion)
-	if err != nil {
-		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, errors.Wrap(err, "failed to create syncer")
-	}
-
-	compactor, err := c.newBucketCompactor(ctx, userID, userLogger, userBucket, syncer, reg)
+	compactor, err := c.newBucketCompactor(ctx, userID, userLogger, userBucket, reg)
 	if err != nil {
 		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, errors.Wrap(err, "failed to create bucket compactor")
 	}
@@ -545,15 +539,15 @@ func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *Multitena
 	reg := prometheus.NewRegistry()
 	defer c.syncerMetrics.gatherThanosSyncerMetrics(reg, userLogger)
 
-	syncDir := "" // indicates not wanting to cache metadata on disk
-	syncer, err := c.createMetaSyncerForUser(tenant, userBucket, userLogger, syncDir, reg)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create meta syncer")
-	}
-
-	bucketCompactor, err := c.newBucketCompactor(ctx, tenant, userLogger, userBucket, syncer, reg)
+	bucketCompactor, err := c.newBucketCompactor(ctx, tenant, userLogger, userBucket, reg)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating bucket compactor")
+	}
+
+	cacheDir := "" // indicates not wanting to cache metadata on disk
+	syncer, err := c.createMetaSyncerForUser(tenant, userBucket, userLogger, cacheDir, reg)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create meta syncer")
 	}
 
 	level.Info(userLogger).Log("msg", "start sync of metas")
