@@ -1731,9 +1731,10 @@ func readAllRecordsFromKafkaTopics(t testing.TB, kafkaAddresses []string, topics
 	var records []*kgo.Record
 	for {
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
-		defer cancel()
 
 		fetches := kafkaClient.PollFetches(ctx)
+		cancel()
+
 		if err := fetches.Err(); err != nil {
 			if errors.Is(err, context.DeadlineExceeded) {
 				break
