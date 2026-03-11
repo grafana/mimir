@@ -79,7 +79,7 @@ func (e *standaloneExecutor) stop() error {
 }
 
 var (
-	errInvalidSchedulerEndpoint          = fmt.Errorf("invalid compactor.scheduler-client.scheduler-endpoint, required when scheduler-worker.enabled is true")
+	errInvalidSchedulerEndpoint          = fmt.Errorf("invalid compactor.scheduler-client.scheduler-endpoint, required when compactor.scheduler-client.enabled is true")
 	errInvalidSchedulerUpdateInterval    = fmt.Errorf("invalid compactor.scheduler-client.update-interval, interval must be positive")
 	errInvalidSchedulerLeasingMinBackoff = fmt.Errorf("invalid compactor.scheduler-client.leasing-min-backoff, must be positive")
 	errInvalidSchedulerLeasingMaxBackoff = fmt.Errorf("invalid compactor.scheduler-client.leasing-max-backoff, must be greater than min backoff")
