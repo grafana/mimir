@@ -5684,6 +5684,12 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.partitioner-max-gap-bytes
   [partitioner_max_gap_bytes: <int> | default = 524288]
 
+  # (experimental) Max size - in bytes - of a gap for which the partitioner
+  # aggregates together two bucket GET object requests. Overrides the
+  # 'bucket-store.partitioner-max-gap-bytes' when requesting chunks
+  # CLI flag: -blocks-storage.bucket-store.partitioner-max-gap-bytes-chunks
+  [partitioner_max_gap_bytes_chunks: <int> | default = 0]
+
   # (advanced) Controls what is the ratio of postings offsets that the store
   # will hold in memory.
   # CLI flag: -blocks-storage.bucket-store.posting-offsets-in-mem-sampling

@@ -615,6 +615,8 @@ Usage of ./cmd/mimir/mimir:
     	How long to cache list of tenants in the bucket. (default 15m0s)
   -blocks-storage.bucket-store.partitioner-max-gap-bytes uint
     	Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests. (default 524288)
+  -blocks-storage.bucket-store.partitioner-max-gap-bytes-chunks uint
+    	[experimental] Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests. Overrides the 'bucket-store.partitioner-max-gap-bytes' when requesting chunks
   -blocks-storage.bucket-store.posting-offsets-in-mem-sampling int
     	Controls what is the ratio of postings offsets that the store will hold in memory. (default 32)
   -blocks-storage.bucket-store.series-fetch-preference float

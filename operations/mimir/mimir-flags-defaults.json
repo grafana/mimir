@@ -807,6 +807,7 @@
   "blocks-storage.bucket-store.ignore-blocks-within": 36000000000000,
   "blocks-storage.bucket-store.series-hash-cache-max-size-bytes": 1073741824,
   "blocks-storage.bucket-store.partitioner-max-gap-bytes": 524288,
+  "blocks-storage.bucket-store.partitioner-max-gap-bytes-chunks": 0,
   "blocks-storage.bucket-store.posting-offsets-in-mem-sampling": 32,
   "blocks-storage.bucket-store.index-header.max-idle-file-handles": 1,
   "blocks-storage.bucket-store.index-header.lazy-loading-enabled": true,
