@@ -261,7 +261,7 @@ blocked_queries:
 	}
 }
 
-func TestQueryBlockerMiddleware_OnlyBlockIfRangeQueryNotAlignedWithStep(t *testing.T) {
+func TestQueryBlockerMiddleware_UnalignedRangeQueries(t *testing.T) {
 	var (
 		step           = time.Minute
 		alignedStart   = timestamp.Time(0).Add(100 * step)
@@ -403,7 +403,7 @@ blocked_queries:
 	}
 }
 
-func TestQueryBlockerMiddleware_OnlyBlockIfRangeQueryNotAlignedWithStep_InstantAndRemoteRead(t *testing.T) {
+func TestQueryBlockerMiddleware_UnalignedRangeQueries_InstantAndRemoteRead(t *testing.T) {
 	tests := []struct {
 		name       string
 		limitsYAML string
