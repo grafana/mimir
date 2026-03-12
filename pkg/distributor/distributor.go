@@ -1293,11 +1293,10 @@ func getReplicasAndInfos(req *mimirpb.WriteRequest, haReplicaLabel, haClusterLab
 			// The replica info is stored in a map where the key is the replica itself.
 			// The replica labels are references to the request buffer, which will be reused.
 			// To safely use the replica as map key, we need to clone its labels.
-			rKey := currentReplica
-			rKey.cluster = strings.Clone(currentReplica.cluster)
-			rKey.replica = strings.Clone(currentReplica.replica)
+			currentReplica.cluster = strings.Clone(currentReplica.cluster)
+			currentReplica.replica = strings.Clone(currentReplica.replica)
 			info = &replicaInfo{}
-			replicaInfos[rKey] = info
+			replicaInfos[currentReplica] = info
 		}
 		info.sampleCount += len(ts.Samples) + len(ts.Histograms)
 		previousReplica = currentReplica
