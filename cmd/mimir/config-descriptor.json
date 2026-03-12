@@ -11391,7 +11391,7 @@
               "required": false,
               "desc": "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests. Overrides the 'bucket-store.partitioner-max-gap-bytes' when requesting chunks",
               "fieldValue": null,
-              "fieldDefaultValue": 524288,
+              "fieldDefaultValue": 0,
               "fieldFlag": "blocks-storage.bucket-store.partitioner-max-gap-bytes-chunks",
               "fieldType": "int",
               "fieldCategory": "experimental"
