@@ -1628,7 +1628,7 @@ func TestLimits_Validate(t *testing.T) {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
 				cfg.NameValidationScheme = model.LegacyValidation
-				cfg.OTelMetricSuffixesEnabled = false
+				cfg.OTelMetricSuffixesEnabled = boolPtr(false)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes)
 				return cfg
 			}(),
@@ -1639,7 +1639,7 @@ func TestLimits_Validate(t *testing.T) {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
 				cfg.NameValidationScheme = model.LegacyValidation
-				cfg.OTelMetricSuffixesEnabled = true
+				cfg.OTelMetricSuffixesEnabled = boolPtr(true)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithSuffixes)
 				return cfg
 			}(),
@@ -1650,7 +1650,7 @@ func TestLimits_Validate(t *testing.T) {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
 				cfg.NameValidationScheme = model.UTF8Validation
-				cfg.OTelMetricSuffixesEnabled = true
+				cfg.OTelMetricSuffixesEnabled = boolPtr(true)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoUTF8EscapingWithSuffixes)
 				return cfg
 			}(),
@@ -1661,7 +1661,7 @@ func TestLimits_Validate(t *testing.T) {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
 				cfg.NameValidationScheme = model.UTF8Validation
-				cfg.OTelMetricSuffixesEnabled = false
+				cfg.OTelMetricSuffixesEnabled = boolPtr(false)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoTranslation)
 				return cfg
 			}(),
@@ -1672,7 +1672,7 @@ func TestLimits_Validate(t *testing.T) {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
 				cfg.NameValidationScheme = model.LegacyValidation
-				cfg.OTelMetricSuffixesEnabled = false
+				cfg.OTelMetricSuffixesEnabled = boolPtr(false)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue("")
 				return cfg
 			}(),
@@ -1687,7 +1687,7 @@ func TestLimits_Validate(t *testing.T) {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
 				cfg.NameValidationScheme = model.LegacyValidation
-				cfg.OTelMetricSuffixesEnabled = true
+				cfg.OTelMetricSuffixesEnabled = boolPtr(true)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue("")
 				return cfg
 			}(),
@@ -1702,7 +1702,7 @@ func TestLimits_Validate(t *testing.T) {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
 				cfg.NameValidationScheme = model.UTF8Validation
-				cfg.OTelMetricSuffixesEnabled = true
+				cfg.OTelMetricSuffixesEnabled = boolPtr(true)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue("")
 				return cfg
 			}(),
@@ -1717,7 +1717,7 @@ func TestLimits_Validate(t *testing.T) {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
 				cfg.NameValidationScheme = model.UTF8Validation
-				cfg.OTelMetricSuffixesEnabled = false
+				cfg.OTelMetricSuffixesEnabled = boolPtr(false)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue("")
 				return cfg
 			}(),
@@ -1732,7 +1732,7 @@ func TestLimits_Validate(t *testing.T) {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
 				cfg.NameValidationScheme = model.UTF8Validation
-				cfg.OTelMetricSuffixesEnabled = false
+				cfg.OTelMetricSuffixesEnabled = boolPtr(false)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes)
 				return cfg
 			}(),
@@ -1743,7 +1743,7 @@ func TestLimits_Validate(t *testing.T) {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
 				cfg.NameValidationScheme = model.LegacyValidation
-				cfg.OTelMetricSuffixesEnabled = true
+				cfg.OTelMetricSuffixesEnabled = boolPtr(true)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes)
 				return cfg
 			}(),
@@ -1754,7 +1754,7 @@ func TestLimits_Validate(t *testing.T) {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
 				cfg.NameValidationScheme = model.UTF8Validation
-				cfg.OTelMetricSuffixesEnabled = true
+				cfg.OTelMetricSuffixesEnabled = boolPtr(true)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithSuffixes)
 				return cfg
 			}(),
@@ -1765,7 +1765,7 @@ func TestLimits_Validate(t *testing.T) {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
 				cfg.NameValidationScheme = model.LegacyValidation
-				cfg.OTelMetricSuffixesEnabled = false
+				cfg.OTelMetricSuffixesEnabled = boolPtr(false)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithSuffixes)
 				return cfg
 			}(),
@@ -1776,7 +1776,7 @@ func TestLimits_Validate(t *testing.T) {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
 				cfg.NameValidationScheme = model.LegacyValidation
-				cfg.OTelMetricSuffixesEnabled = true
+				cfg.OTelMetricSuffixesEnabled = boolPtr(true)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoUTF8EscapingWithSuffixes)
 				return cfg
 			}(),
@@ -1787,7 +1787,7 @@ func TestLimits_Validate(t *testing.T) {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
 				cfg.NameValidationScheme = model.UTF8Validation
-				cfg.OTelMetricSuffixesEnabled = false
+				cfg.OTelMetricSuffixesEnabled = boolPtr(false)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoUTF8EscapingWithSuffixes)
 				return cfg
 			}(),
@@ -1798,7 +1798,7 @@ func TestLimits_Validate(t *testing.T) {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
 				cfg.NameValidationScheme = model.LegacyValidation
-				cfg.OTelMetricSuffixesEnabled = false
+				cfg.OTelMetricSuffixesEnabled = boolPtr(false)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoTranslation)
 				return cfg
 			}(),
@@ -1809,7 +1809,7 @@ func TestLimits_Validate(t *testing.T) {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
 				cfg.NameValidationScheme = model.UTF8Validation
-				cfg.OTelMetricSuffixesEnabled = true
+				cfg.OTelMetricSuffixesEnabled = boolPtr(true)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoTranslation)
 				return cfg
 			}(),
@@ -2424,7 +2424,7 @@ func TestOverrides_OTelTranslationStrategy(t *testing.T) {
 				"tenant1": {
 					OTelTranslationStrategy:   OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithSuffixes),
 					NameValidationScheme:      model.UTF8Validation,
-					OTelMetricSuffixesEnabled: false,
+					OTelMetricSuffixesEnabled: boolPtr(false),
 				},
 			},
 			tenantID:                    "tenant1",
@@ -2436,7 +2436,7 @@ func TestOverrides_OTelTranslationStrategy(t *testing.T) {
 				"tenant1": {
 					OTelTranslationStrategy:   OTelTranslationStrategyValue(""),
 					NameValidationScheme:      model.LegacyValidation,
-					OTelMetricSuffixesEnabled: true,
+					OTelMetricSuffixesEnabled: boolPtr(true),
 				},
 			},
 			tenantID:                    "tenant1",
@@ -2448,7 +2448,7 @@ func TestOverrides_OTelTranslationStrategy(t *testing.T) {
 				"tenant1": {
 					OTelTranslationStrategy:   OTelTranslationStrategyValue(""),
 					NameValidationScheme:      model.LegacyValidation,
-					OTelMetricSuffixesEnabled: false,
+					OTelMetricSuffixesEnabled: boolPtr(false),
 				},
 			},
 			tenantID:                    "tenant1",
@@ -2460,7 +2460,7 @@ func TestOverrides_OTelTranslationStrategy(t *testing.T) {
 				"tenant1": {
 					OTelTranslationStrategy:   OTelTranslationStrategyValue(""),
 					NameValidationScheme:      model.UTF8Validation,
-					OTelMetricSuffixesEnabled: true,
+					OTelMetricSuffixesEnabled: boolPtr(true),
 				},
 			},
 			tenantID:                    "tenant1",
@@ -2472,7 +2472,7 @@ func TestOverrides_OTelTranslationStrategy(t *testing.T) {
 				"tenant1": {
 					OTelTranslationStrategy:   OTelTranslationStrategyValue(""),
 					NameValidationScheme:      model.UTF8Validation,
-					OTelMetricSuffixesEnabled: false,
+					OTelMetricSuffixesEnabled: boolPtr(false),
 				},
 			},
 			tenantID:                    "tenant1",
@@ -2501,7 +2501,7 @@ func TestOverrides_OTelTranslationStrategy(t *testing.T) {
 			"tenant1": {
 				OTelTranslationStrategy:   OTelTranslationStrategyValue(""),
 				NameValidationScheme:      model.ValidationScheme(999), // Invalid scheme
-				OTelMetricSuffixesEnabled: true,
+				OTelMetricSuffixesEnabled: boolPtr(true),
 			},
 		}
 
@@ -2518,4 +2518,8 @@ func getDefaultLimits() Limits {
 	limits := Limits{}
 	flagext.DefaultValues(&limits)
 	return limits
+}
+
+func boolPtr(b bool) *bool {
+	return &b
 }
