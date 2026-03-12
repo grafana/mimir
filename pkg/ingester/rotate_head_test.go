@@ -210,6 +210,60 @@ func TestRotateHead_LabelNamesAndValues(t *testing.T) {
 	require.Contains(t, names, "env")
 }
 
+func TestRotateHead_ManySeries(t *testing.T) {
+	db, err := tsdb.Open(t.TempDir(), promslog.NewNopLogger(), nil, tsdb.DefaultOptions(), nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+	ctx := context.Background()
+
+	// Insert series in an order where ref order != label-sorted order.
+	// Series are appended: "z_metric" first, then "a_metric", then "m_metric".
+	// Label sort order would be: a_metric < m_metric < z_metric, which
+	// differs from the ref assignment order (z=1, a=2, m=3).
+	app := db.Appender(ctx)
+	_, err = app.Append(0, labels.FromStrings("__name__", "z_metric", "instance", "host1"), 100, 1.0)
+	require.NoError(t, err)
+	_, err = app.Append(0, labels.FromStrings("__name__", "a_metric", "instance", "host1"), 100, 2.0)
+	require.NoError(t, err)
+	_, err = app.Append(0, labels.FromStrings("__name__", "m_metric", "instance", "host1"), 100, 3.0)
+	require.NoError(t, err)
+	// Add more with different instances to create cross-label ordering.
+	_, err = app.Append(0, labels.FromStrings("__name__", "up", "job", "beta"), 100, 4.0)
+	require.NoError(t, err)
+	_, err = app.Append(0, labels.FromStrings("__name__", "scrape_duration", "job", "alpha"), 100, 5.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	require.NoError(t, db.RotateHead())
+
+	// Append to the new head so we query across both.
+	app = db.Appender(ctx)
+	_, err = app.Append(0, labels.FromStrings("__name__", "new_metric"), 200, 6.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	q, err := db.Querier(0, 300)
+	require.NoError(t, err)
+	defer q.Close()
+
+	ss := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
+	count := 0
+	for ss.Next() {
+		s := ss.At()
+		iter := s.Iterator(nil)
+		samples := 0
+		for iter.Next() != 0 {
+			samples++
+		}
+		require.NoError(t, iter.Err())
+		require.Equal(t, 1, samples, "series %s should have 1 sample", s.Labels())
+		count++
+	}
+	require.NoError(t, ss.Err())
+	require.Equal(t, 6, count, "expected 6 series (5 from retired head + 1 from active)")
+}
+
 func TestRotateHead_EmptyHeadSkipped(t *testing.T) {
 	db, err := tsdb.Open(t.TempDir(), promslog.NewNopLogger(), nil, tsdb.DefaultOptions(), nil)
 	require.NoError(t, err)

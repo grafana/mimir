@@ -1855,17 +1855,18 @@ func (db *DB) RotateHead() error {
 	db.retiredHeadSeq++
 	retiredDir := filepath.Join(db.dir, fmt.Sprintf("retired-head-%d", db.retiredHeadSeq))
 
-	indexReader, err := buildRetiredHeadIndex(oldHead, retiredDir)
+	indexReader, chunkRefMap, err := buildRetiredHeadIndex(oldHead, retiredDir)
 	if err != nil {
 		return fmt.Errorf("build retired head index: %w", err)
 	}
 
 	rh := &retiredHead{
-		head:   oldHead,
-		indexr: indexReader,
-		dir:    retiredDir,
-		minT:   oldMinT,
-		maxT:   oldMaxT,
+		head:        oldHead,
+		indexr:      indexReader,
+		chunkRefMap: chunkRefMap,
+		dir:         retiredDir,
+		minT:        oldMinT,
+		maxT:        oldMaxT,
 	}
 
 	// Clear MemPostings from the old head to reclaim memory.

@@ -23,6 +23,8 @@ import (
 	"github.com/oklog/ulid/v2"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
@@ -33,32 +35,54 @@ import (
 // Chunk data is still served from the original Head's stripeSeries and
 // ChunkDiskMapper.
 type retiredHead struct {
-	head    *Head       // kept alive for chunk reads via stripeSeries + ChunkDiskMapper
-	indexr  IndexReader // 1-in-32 sampled, disk-backed (wraps *index.Reader + PostingsForMatchers)
-	dir     string      // directory containing the index file
-	minT    int64
-	maxT    int64
-	blockID ulid.ULID
+	head        *Head                              // kept alive for chunk reads via stripeSeries + ChunkDiskMapper
+	indexr      IndexReader                        // 1-in-32 sampled, disk-backed
+	chunkRefMap map[chunks.ChunkRef]chunks.ChunkRef // fake monotonic ref → real head chunk ref
+	dir         string                             // directory containing the index file
+	minT        int64
+	maxT        int64
+	blockID     ulid.ULID
 }
 
 var _ BlockReader = (*retiredHead)(nil)
 
 func (rh *retiredHead) Index() (IndexReader, error) {
-	return retiredHeadIndexReader{rh.indexr}, nil
+	return retiredHeadNonClosingIndexReader{rh.indexr}, nil
 }
 
-// retiredHeadIndexReader wraps the retired head's index reader so that
-// Close() is a no-op. Ownership of the underlying reader stays with the
-// retiredHead — it is closed only when retiredHead.Close() is called.
-// This matches the pattern used by blockIndexReader for regular blocks.
-type retiredHeadIndexReader struct {
+// retiredHeadNonClosingIndexReader wraps the retired head's index reader
+// so that Close() is a no-op. Ownership of the underlying reader stays
+// with the retiredHead — it is closed only when retiredHead.Close() is
+// called. This matches the pattern used by blockIndexReader for blocks.
+type retiredHeadNonClosingIndexReader struct {
 	IndexReader
 }
 
-func (retiredHeadIndexReader) Close() error { return nil }
+func (retiredHeadNonClosingIndexReader) Close() error { return nil }
 
 func (rh *retiredHead) Chunks() (ChunkReader, error) {
-	return rh.head.chunksRange(math.MinInt64, math.MaxInt64, rh.head.iso.State(math.MinInt64, math.MaxInt64))
+	cr, err := rh.head.chunksRange(math.MinInt64, math.MaxInt64, rh.head.iso.State(math.MinInt64, math.MaxInt64))
+	if err != nil {
+		return nil, err
+	}
+	return &retiredHeadChunkReader{ChunkReader: cr, refMap: rh.chunkRefMap}, nil
+}
+
+// retiredHeadChunkReader translates fake chunk refs (written to the
+// index file to satisfy the monotonically-increasing constraint) back
+// to the original head chunk refs before delegating to headChunkReader.
+type retiredHeadChunkReader struct {
+	ChunkReader
+	refMap map[chunks.ChunkRef]chunks.ChunkRef
+}
+
+func (r *retiredHeadChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error) {
+	realRef, ok := r.refMap[meta.Ref]
+	if !ok {
+		return nil, nil, fmt.Errorf("unknown retired head chunk ref %d", meta.Ref)
+	}
+	meta.Ref = realRef
+	return r.ChunkReader.ChunkOrIterable(meta)
 }
 
 func (rh *retiredHead) Tombstones() (tombstones.Reader, error) {
@@ -107,15 +131,17 @@ func (rh *retiredHead) OverlapsClosedInterval(mint, maxt int64) bool {
 // head's current data and opens it with the 1-in-32 sampled reader.
 //
 // The index file contains symbols, series (labels + chunk metas), and
-// postings. No chunk data is written — only index metadata.
-func buildRetiredHeadIndex(head *Head, dir string) (IndexReader, error) {
+// postings. Chunk metas are written with fake monotonically-increasing
+// refs to satisfy the index writer's ordering constraint; the returned
+// chunkRefMap translates these back to the real head chunk refs.
+func buildRetiredHeadIndex(head *Head, dir string) (IndexReader, map[chunks.ChunkRef]chunks.ChunkRef, error) {
 	if err := os.MkdirAll(dir, 0o777); err != nil {
-		return nil, fmt.Errorf("create retired head dir: %w", err)
+		return nil, nil, fmt.Errorf("create retired head dir: %w", err)
 	}
 
 	ir, err := head.Index()
 	if err != nil {
-		return nil, fmt.Errorf("get head index reader: %w", err)
+		return nil, nil, fmt.Errorf("get head index reader: %w", err)
 	}
 	defer ir.Close()
 
@@ -124,62 +150,78 @@ func buildRetiredHeadIndex(head *Head, dir string) (IndexReader, error) {
 
 	iw, err := index.NewWriter(ctx, indexPath)
 	if err != nil {
-		return nil, fmt.Errorf("create index writer: %w", err)
+		return nil, nil, fmt.Errorf("create index writer: %w", err)
 	}
 
 	syms := ir.Symbols()
 	for syms.Next() {
 		if err := iw.AddSymbol(syms.At()); err != nil {
 			_ = iw.Close()
-			return nil, fmt.Errorf("add symbol: %w", err)
+			return nil, nil, fmt.Errorf("add symbol: %w", err)
 		}
 	}
 	if err := syms.Err(); err != nil {
 		_ = iw.Close()
-		return nil, fmt.Errorf("iterate symbols: %w", err)
+		return nil, nil, fmt.Errorf("iterate symbols: %w", err)
 	}
 
 	k, v := index.AllPostingsKey()
 	allPostings, err := ir.Postings(ctx, k, v)
 	if err != nil {
 		_ = iw.Close()
-		return nil, fmt.Errorf("get all postings: %w", err)
+		return nil, nil, fmt.Errorf("get all postings: %w", err)
 	}
+	allPostings = ir.SortedPostings(allPostings)
 
+	// Write series in label-sorted order with new sequential refs.
+	// Chunk metas are written with fake monotonically-increasing refs
+	// because the real head chunk refs (which encode seriesID+chunkID)
+	// are NOT monotonically increasing when iterated in label order.
 	var (
-		builder labels.ScratchBuilder
-		chks    []chunks.Meta
+		builder     labels.ScratchBuilder
+		chks        []chunks.Meta
+		seriesID    storage.SeriesRef
+		fakeRef     chunks.ChunkRef
+		chunkRefMap = make(map[chunks.ChunkRef]chunks.ChunkRef)
 	)
 	for allPostings.Next() {
-		ref := allPostings.At()
+		headRef := allPostings.At()
 		chks = chks[:0]
 
-		if err := ir.Series(ref, &builder, &chks); err != nil {
+		if err := ir.Series(headRef, &builder, &chks); err != nil {
 			_ = iw.Close()
-			return nil, fmt.Errorf("read series %d: %w", ref, err)
+			return nil, nil, fmt.Errorf("read series %d: %w", headRef, err)
 		}
-		if err := iw.AddSeries(ref, builder.Labels(), chks...); err != nil {
+
+		for i := range chks {
+			chunkRefMap[fakeRef] = chks[i].Ref
+			chks[i].Ref = fakeRef
+			fakeRef++
+		}
+
+		if err := iw.AddSeries(seriesID, builder.Labels(), chks...); err != nil {
 			_ = iw.Close()
-			return nil, fmt.Errorf("write series %d: %w", ref, err)
+			return nil, nil, fmt.Errorf("write series %d: %w", seriesID, err)
 		}
+		seriesID++
 	}
 	if err := allPostings.Err(); err != nil {
 		_ = iw.Close()
-		return nil, fmt.Errorf("iterate postings: %w", err)
+		return nil, nil, fmt.Errorf("iterate postings: %w", err)
 	}
 
 	if err := iw.Close(); err != nil {
-		return nil, fmt.Errorf("close index writer: %w", err)
+		return nil, nil, fmt.Errorf("close index writer: %w", err)
 	}
 
 	fileReader, err := index.NewFileReader(indexPath, index.DecodePostingsRaw)
 	if err != nil {
-		return nil, fmt.Errorf("open index reader: %w", err)
+		return nil, nil, fmt.Errorf("open index reader: %w", err)
 	}
 
 	pfmc := DefaultPostingsForMatchersCacheFactory.NewPostingsForMatchersCache(nil)
 	var blockID ulid.ULID
-	return indexReaderWithPostingsForMatchers{blockID, fileReader, pfmc}, nil
+	return indexReaderWithPostingsForMatchers{blockID, fileReader, pfmc}, chunkRefMap, nil
 }
 
 // clearMemPostings replaces the head's MemPostings with an empty instance,
