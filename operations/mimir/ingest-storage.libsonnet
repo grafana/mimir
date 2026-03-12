@@ -245,3 +245,32 @@
   assert $._config.ingest_storage_kafka_producer_record_version >= 0 && $._config.ingest_storage_kafka_producer_record_version <= max_producer_record_version
          : 'the Kafka record version must be in the range [0, %s]' % max_producer_record_version,
 }
+
++ {
+  _config+:: {
+    // When true and ingest storage is enabled, automatically set -ingest-storage.kafka.client-rack
+    // on each ingester zone to its zone name. This enables Kafka rack-aware consumption so that
+    // ingesters prefer reading from Kafka replicas in the same availability zone, reducing cross-AZ traffic.
+    ingest_storage_set_client_rack: true,
+  },
+
+  ingester_zone_a_args+:: if !($._config.ingest_storage_enabled && $._config.ingest_storage_set_client_rack) then {} else {
+    'ingest-storage.kafka.client-rack': 'zone-a',
+  },
+  ingester_zone_b_args+:: if !($._config.ingest_storage_enabled && $._config.ingest_storage_set_client_rack) then {} else {
+    'ingest-storage.kafka.client-rack': 'zone-b',
+  },
+  ingester_zone_c_args+:: if !($._config.ingest_storage_enabled && $._config.ingest_storage_set_client_rack) then {} else {
+    'ingest-storage.kafka.client-rack': 'zone-c',
+  },
+
+  distributor_zone_a_args+:: if !($._config.ingest_storage_enabled && $._config.ingest_storage_set_client_rack) then {} else {
+    'ingest-storage.kafka.client-rack': 'zone-a',
+  },
+  distributor_zone_b_args+:: if !($._config.ingest_storage_enabled && $._config.ingest_storage_set_client_rack) then {} else {
+    'ingest-storage.kafka.client-rack': 'zone-b',
+  },
+  distributor_zone_c_args+:: if !($._config.ingest_storage_enabled && $._config.ingest_storage_set_client_rack) then {} else {
+    'ingest-storage.kafka.client-rack': 'zone-c',
+  },
+}
