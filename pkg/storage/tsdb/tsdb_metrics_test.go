@@ -256,6 +256,48 @@ func TestTSDBMetrics(t *testing.T) {
 			cortex_ingester_tsdb_wbl_replay_unknown_refs_total{type="exemplars", user="user1"} 12345
 			cortex_ingester_tsdb_wbl_replay_unknown_refs_total{type="exemplars", user="user2"} 85787
 			cortex_ingester_tsdb_wbl_replay_unknown_refs_total{type="exemplars", user="user3"} 999
+
+			# HELP cortex_ingester_tsdb_head_seriesmetadata_resource_entries Number of series with resource metadata in the head block.
+			# TYPE cortex_ingester_tsdb_head_seriesmetadata_resource_entries gauge
+			cortex_ingester_tsdb_head_seriesmetadata_resource_entries 3.073061e+06
+
+			# HELP cortex_ingester_tsdb_head_seriesmetadata_scope_entries Number of series with scope metadata in the head block.
+			# TYPE cortex_ingester_tsdb_head_seriesmetadata_scope_entries gauge
+			cortex_ingester_tsdb_head_seriesmetadata_scope_entries 3.172192e+06
+
+			# HELP cortex_ingester_tsdb_head_seriesmetadata_resource_versions Total number of resource metadata versions across all series in the head block.
+			# TYPE cortex_ingester_tsdb_head_seriesmetadata_resource_versions gauge
+			cortex_ingester_tsdb_head_seriesmetadata_resource_versions 3.271323e+06
+
+			# HELP cortex_ingester_tsdb_head_seriesmetadata_scope_versions Total number of scope metadata versions across all series in the head block.
+			# TYPE cortex_ingester_tsdb_head_seriesmetadata_scope_versions gauge
+			cortex_ingester_tsdb_head_seriesmetadata_scope_versions 3.370454e+06
+
+			# HELP cortex_ingester_tsdb_head_seriesmetadata_resource_canonical Number of unique canonical resource metadata entries in the head block.
+			# TYPE cortex_ingester_tsdb_head_seriesmetadata_resource_canonical gauge
+			cortex_ingester_tsdb_head_seriesmetadata_resource_canonical 3.469585e+06
+
+			# HELP cortex_ingester_tsdb_head_seriesmetadata_scope_canonical Number of unique canonical scope metadata entries in the head block.
+			# TYPE cortex_ingester_tsdb_head_seriesmetadata_scope_canonical gauge
+			cortex_ingester_tsdb_head_seriesmetadata_scope_canonical 3.568716e+06
+
+			# HELP cortex_ingester_tsdb_head_seriesmetadata_attr_index_keys Number of distinct keys in the resource attribute inverted index.
+			# TYPE cortex_ingester_tsdb_head_seriesmetadata_attr_index_keys gauge
+			cortex_ingester_tsdb_head_seriesmetadata_attr_index_keys 3.667847e+06
+
+			# HELP cortex_ingester_tsdb_head_seriesmetadata_content_changes_total Total number of series metadata content changes (new version created).
+			# TYPE cortex_ingester_tsdb_head_seriesmetadata_content_changes_total counter
+			cortex_ingester_tsdb_head_seriesmetadata_content_changes_total{kind="resource"} 3.766978e+06
+			cortex_ingester_tsdb_head_seriesmetadata_content_changes_total{kind="scope"} 3.866109e+06
+
+			# HELP cortex_ingester_tsdb_head_seriesmetadata_inserts_total Total number of first-time series metadata inserts.
+			# TYPE cortex_ingester_tsdb_head_seriesmetadata_inserts_total counter
+			cortex_ingester_tsdb_head_seriesmetadata_inserts_total{kind="resource"} 3.96524e+06
+			cortex_ingester_tsdb_head_seriesmetadata_inserts_total{kind="scope"} 4.064371e+06
+
+			# HELP cortex_ingester_tsdb_head_seriesmetadata_wal_replay_duration_seconds Time spent replaying series metadata (resources and scopes) from the WAL.
+			# TYPE cortex_ingester_tsdb_head_seriesmetadata_wal_replay_duration_seconds gauge
+			cortex_ingester_tsdb_head_seriesmetadata_wal_replay_duration_seconds 4.163502e+06
 	`))
 	require.NoError(t, err)
 }
@@ -486,6 +528,48 @@ func TestTSDBMetricsWithRemoval(t *testing.T) {
 			# TYPE cortex_ingester_tsdb_wbl_replay_unknown_refs_total counter
 			cortex_ingester_tsdb_wbl_replay_unknown_refs_total{type="exemplars", user="user1"} 12345
 			cortex_ingester_tsdb_wbl_replay_unknown_refs_total{type="exemplars", user="user2"} 85787
+
+			# HELP cortex_ingester_tsdb_head_seriesmetadata_resource_entries Number of series with resource metadata in the head block.
+			# TYPE cortex_ingester_tsdb_head_seriesmetadata_resource_entries gauge
+			cortex_ingester_tsdb_head_seriesmetadata_resource_entries 3.042092e+06
+
+			# HELP cortex_ingester_tsdb_head_seriesmetadata_scope_entries Number of series with scope metadata in the head block.
+			# TYPE cortex_ingester_tsdb_head_seriesmetadata_scope_entries gauge
+			cortex_ingester_tsdb_head_seriesmetadata_scope_entries 3.140224e+06
+
+			# HELP cortex_ingester_tsdb_head_seriesmetadata_resource_versions Total number of resource metadata versions across all series in the head block.
+			# TYPE cortex_ingester_tsdb_head_seriesmetadata_resource_versions gauge
+			cortex_ingester_tsdb_head_seriesmetadata_resource_versions 3.238356e+06
+
+			# HELP cortex_ingester_tsdb_head_seriesmetadata_scope_versions Total number of scope metadata versions across all series in the head block.
+			# TYPE cortex_ingester_tsdb_head_seriesmetadata_scope_versions gauge
+			cortex_ingester_tsdb_head_seriesmetadata_scope_versions 3.336488e+06
+
+			# HELP cortex_ingester_tsdb_head_seriesmetadata_resource_canonical Number of unique canonical resource metadata entries in the head block.
+			# TYPE cortex_ingester_tsdb_head_seriesmetadata_resource_canonical gauge
+			cortex_ingester_tsdb_head_seriesmetadata_resource_canonical 3.43462e+06
+
+			# HELP cortex_ingester_tsdb_head_seriesmetadata_scope_canonical Number of unique canonical scope metadata entries in the head block.
+			# TYPE cortex_ingester_tsdb_head_seriesmetadata_scope_canonical gauge
+			cortex_ingester_tsdb_head_seriesmetadata_scope_canonical 3.532752e+06
+
+			# HELP cortex_ingester_tsdb_head_seriesmetadata_attr_index_keys Number of distinct keys in the resource attribute inverted index.
+			# TYPE cortex_ingester_tsdb_head_seriesmetadata_attr_index_keys gauge
+			cortex_ingester_tsdb_head_seriesmetadata_attr_index_keys 3.630884e+06
+
+			# HELP cortex_ingester_tsdb_head_seriesmetadata_content_changes_total Total number of series metadata content changes (new version created).
+			# TYPE cortex_ingester_tsdb_head_seriesmetadata_content_changes_total counter
+			cortex_ingester_tsdb_head_seriesmetadata_content_changes_total{kind="resource"} 3.766978e+06
+			cortex_ingester_tsdb_head_seriesmetadata_content_changes_total{kind="scope"} 3.866109e+06
+
+			# HELP cortex_ingester_tsdb_head_seriesmetadata_inserts_total Total number of first-time series metadata inserts.
+			# TYPE cortex_ingester_tsdb_head_seriesmetadata_inserts_total counter
+			cortex_ingester_tsdb_head_seriesmetadata_inserts_total{kind="resource"} 3.96524e+06
+			cortex_ingester_tsdb_head_seriesmetadata_inserts_total{kind="scope"} 4.064371e+06
+
+			# HELP cortex_ingester_tsdb_head_seriesmetadata_wal_replay_duration_seconds Time spent replaying series metadata (resources and scopes) from the WAL.
+			# TYPE cortex_ingester_tsdb_head_seriesmetadata_wal_replay_duration_seconds gauge
+			cortex_ingester_tsdb_head_seriesmetadata_wal_replay_duration_seconds 4.121544e+06
 	`))
 	require.NoError(t, err)
 }
@@ -756,6 +840,50 @@ func populateTSDBMetrics(base float64) *prometheus.Registry {
 		Help: "Total number of unknown series references encountered during WBL replay pprus.",
 	}, []string{"type"})
 	tsdbWblReplayUnknownRefsTotal.WithLabelValues("exemplars").Add(base)
+
+	promauto.With(r).NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_head_seriesmetadata_resource_entries",
+	}).Set(31 * base)
+
+	promauto.With(r).NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_head_seriesmetadata_scope_entries",
+	}).Set(32 * base)
+
+	promauto.With(r).NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_head_seriesmetadata_resource_versions",
+	}).Set(33 * base)
+
+	promauto.With(r).NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_head_seriesmetadata_scope_versions",
+	}).Set(34 * base)
+
+	promauto.With(r).NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_head_seriesmetadata_resource_canonical",
+	}).Set(35 * base)
+
+	promauto.With(r).NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_head_seriesmetadata_scope_canonical",
+	}).Set(36 * base)
+
+	promauto.With(r).NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_head_seriesmetadata_attr_index_keys",
+	}).Set(37 * base)
+
+	smContentChanges := promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_head_seriesmetadata_content_changes_total",
+	}, []string{"kind"})
+	smContentChanges.WithLabelValues("resource").Add(38 * base)
+	smContentChanges.WithLabelValues("scope").Add(39 * base)
+
+	smInserts := promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_head_seriesmetadata_inserts_total",
+	}, []string{"kind"})
+	smInserts.WithLabelValues("resource").Add(40 * base)
+	smInserts.WithLabelValues("scope").Add(41 * base)
+
+	promauto.With(r).NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_head_seriesmetadata_wal_replay_duration_seconds",
+	}).Set(42 * base)
 
 	return r
 }
