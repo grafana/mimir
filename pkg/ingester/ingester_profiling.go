@@ -144,6 +144,32 @@ func (i *ProfilingWrapper) LabelNames(ctx context.Context, request *client.Label
 	return i.ing.LabelNames(ctx, request)
 }
 
+func (i *ProfilingWrapper) SearchLabelNames(request *client.SearchLabelValuesRequest, server client.Ingester_SearchLabelNamesServer) error {
+	ctx := server.Context()
+	if isTraceSampled(ctx) {
+		userID, _ := tenant.TenantID(ctx)
+		labels := pprof.Labels("userID", userID)
+		defer pprof.SetGoroutineLabels(ctx)
+		ctx = pprof.WithLabels(ctx, labels)
+		pprof.SetGoroutineLabels(ctx)
+	}
+
+	return i.ing.SearchLabelNames(request, server)
+}
+
+func (i *ProfilingWrapper) SearchLabelValues(request *client.SearchLabelValuesRequest, server client.Ingester_SearchLabelValuesServer) error {
+	ctx := server.Context()
+	if isTraceSampled(ctx) {
+		userID, _ := tenant.TenantID(ctx)
+		labels := pprof.Labels("userID", userID)
+		defer pprof.SetGoroutineLabels(ctx)
+		ctx = pprof.WithLabels(ctx, labels)
+		pprof.SetGoroutineLabels(ctx)
+	}
+
+	return i.ing.SearchLabelValues(request, server)
+}
+
 func (i *ProfilingWrapper) UserStats(ctx context.Context, request *client.UserStatsRequest) (*client.UserStatsResponse, error) {
 	if isTraceSampled(ctx) {
 		userID, _ := tenant.TenantID(ctx)

@@ -37,6 +37,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	mimirstorage "github.com/grafana/mimir/pkg/storage"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -1478,6 +1479,12 @@ func (m *errDistributor) LabelValuesForLabelName(context.Context, model.Time, mo
 	return nil, errDistributorError
 }
 func (m *errDistributor) LabelNames(context.Context, model.Time, model.Time, *storage.LabelHints, ...*labels.Matcher) ([]string, error) {
+	return nil, errDistributorError
+}
+func (m *errDistributor) SearchLabelNames(context.Context, model.Time, model.Time, *mimirstorage.MimirSearchHints, ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
+	return nil, errDistributorError
+}
+func (m *errDistributor) SearchLabelValues(context.Context, model.Time, model.Time, model.LabelName, *mimirstorage.MimirSearchHints, ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
 	return nil, errDistributorError
 }
 func (m *errDistributor) MetricsForLabelMatchers(context.Context, model.Time, model.Time, *storage.SelectHints, ...*labels.Matcher) ([]labels.Labels, error) {

@@ -22,6 +22,8 @@ service Ingester {
 
   rpc LabelValues(LabelValuesRequest) returns (LabelValuesResponse) {}
   rpc LabelNames(LabelNamesRequest) returns (LabelNamesResponse) {}
+  rpc SearchLabelNames(SearchLabelValuesRequest) returns (stream SearchLabelValuesResponse) {}
+  rpc SearchLabelValues(SearchLabelValuesRequest) returns (stream SearchLabelValuesResponse) {}
   rpc UserStats(UserStatsRequest) returns (UserStatsResponse) {}
   rpc AllUserStats(UserStatsRequest) returns (UsersStatsResponse) {}
   rpc MetricsForLabelMatchers(MetricsForLabelMatchersRequest) returns (MetricsForLabelMatchersResponse) {}
@@ -154,6 +156,56 @@ message LabelNamesRequest {
 
 message LabelNamesResponse {
   repeated string label_names = 1;
+}
+
+enum FilterOperator {
+  OR  = 0;  // accept if ANY term matches (default)
+  AND = 1;  // accept only if ALL terms match
+}
+
+enum SortBy {
+  SORT_BY_NONE  = 0;
+  SORT_BY_ALPHA = 1;
+  SORT_BY_SCORE = 2;
+}
+
+enum SortOrder {
+  SORT_ORDER_ASC  = 0;
+  SORT_ORDER_DESC = 1;
+}
+
+// SearchLabelValuesFilter carries filter and sort parameters so the ingester can apply
+// them server-side before transmitting values over the wire.
+message SearchLabelValuesFilter {
+  repeated string search_terms     = 1;
+  bool            case_insensitive = 2;
+  FilterOperator  operator         = 3;
+  double          fuzz_threshold   = 4;
+  SortBy          sort_by          = 5;
+  SortOrder       sort_order       = 6;
+}
+
+// SearchLabelValuesRequest is the unified request for SearchLabelNames and SearchLabelValues.
+// label_name is empty for label name searches, and required for label value searches.
+message SearchLabelValuesRequest {
+  string        label_name         = 1;
+  int64         start_timestamp_ms = 2;
+  int64         end_timestamp_ms   = 3;
+  LabelMatchers matchers           = 4;
+  int64         limit              = 5;
+  SearchLabelValuesFilter  filter             = 6;
+}
+
+// SearchLabelValuesResult is a single item in a streaming search response.
+// score is only meaningful when sort_by == 2 (score sort); otherwise it is 0.
+message SearchLabelValuesResult {
+  string value = 1;
+  double score = 2;
+}
+
+// SearchLabelValuesResponse is the streaming response for SearchLabelNames and SearchLabelValues.
+message SearchLabelValuesResponse {
+  repeated SearchLabelValuesResult results = 1;
 }
 
 message UserStatsRequest {

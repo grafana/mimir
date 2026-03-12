@@ -13,8 +13,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mimirstorage "github.com/grafana/mimir/pkg/storage"
-	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 )
+
+var _ mimirstorage.MimirSearcher = (*fanOutSearcher)(nil)
 
 // fixedValueSet is a SearcherValueSet backed by a fixed slice of strings.
 type fixedValueSet struct {
@@ -38,36 +39,36 @@ func (s *fixedValueSet) Warnings() annotations.Annotations { return nil }
 func (s *fixedValueSet) Err() error                        { return nil }
 func (s *fixedValueSet) Close()                            {}
 
-// fanOutSearcher is a simple Searcher that returns a fixed list of values.
+// fanOutSearcher is a simple MimirSearcher that returns a fixed list of values.
 type fanOutSearcher struct {
-	names          []string
-	values         []string
-	err            error
-	capturedHints  []*mimirstorage.SearchHints
+	names         []string
+	values        []string
+	err           error
+	capturedHints []*mimirstorage.MimirSearchHints
 }
 
-func (m *fanOutSearcher) SearchLabelNames(_ context.Context, hints *mimirstorage.SearchHints, _ ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
+func (m *fanOutSearcher) SearchLabelNames(_ context.Context, hints *mimirstorage.MimirSearchHints, _ ...*labels.Matcher) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
 	m.capturedHints = append(m.capturedHints, hints)
 	if m.err != nil {
-		return nil, m.err
+		return nil, nil, m.err
 	}
-	return &fixedValueSet{items: m.names}, nil
+	return &fixedValueSet{items: m.names}, nil, nil
 }
 
-func (m *fanOutSearcher) SearchLabelValues(_ context.Context, _ string, hints *mimirstorage.SearchHints, _ ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
+func (m *fanOutSearcher) SearchLabelValues(_ context.Context, _ string, hints *mimirstorage.MimirSearchHints, _ ...*labels.Matcher) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
 	m.capturedHints = append(m.capturedHints, hints)
 	if m.err != nil {
-		return nil, m.err
+		return nil, nil, m.err
 	}
-	return &fixedValueSet{items: m.values}, nil
+	return &fixedValueSet{items: m.values}, nil, nil
 }
 
 func TestFanOutSearch_Dedup(t *testing.T) {
 	s1 := &fanOutSearcher{names: []string{"a", "b", "c"}}
 	s2 := &fanOutSearcher{names: []string{"b", "c", "d"}}
 
-	vs, err := fanOutSearch(context.Background(), nil, []mimirstorage.Searcher{s1, s2},
-		func(ctx context.Context, s mimirstorage.Searcher, h *mimirstorage.SearchHints) (mimirstorage.SearcherValueSet, error) {
+	vs, _, err := fanOutSearch(context.Background(), nil, []mimirstorage.MimirSearcher{s1, s2},
+		func(ctx context.Context, s mimirstorage.MimirSearcher, h *mimirstorage.MimirSearchHints) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
 			return s.SearchLabelNames(ctx, h)
 		},
 	)
@@ -80,21 +81,17 @@ func TestFanOutSearch_Dedup(t *testing.T) {
 }
 
 func TestFanOutSearch_FilterPassedToSubSearchers(t *testing.T) {
-	chain := streaminglabelvalues.NewFilterChains(false)
-	c := streaminglabelvalues.NewFilterChain(streaminglabelvalues.Or, 1)
-	c.AddFilter(streaminglabelvalues.NewFilterContains("job"))
-	chain.AddFilterChain(c)
-
-	hints := &mimirstorage.SearchHints{
-		Filter:  chain,
-		Compare: reverseAlphaComparator{},
-		Limit:   5,
+	hints := &mimirstorage.MimirSearchHints{
+		Search:    []string{"job"},
+		SortBy:    1, // alpha
+		SortOrder: 1, // desc
+		Limit:     5,
 	}
 
 	s1 := &fanOutSearcher{names: []string{"job", "namespace"}}
 
-	vs, err := fanOutSearch(context.Background(), hints, []mimirstorage.Searcher{s1},
-		func(ctx context.Context, s mimirstorage.Searcher, h *mimirstorage.SearchHints) (mimirstorage.SearcherValueSet, error) {
+	vs, _, err := fanOutSearch(context.Background(), hints, []mimirstorage.MimirSearcher{s1},
+		func(ctx context.Context, s mimirstorage.MimirSearcher, h *mimirstorage.MimirSearchHints) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
 			return s.SearchLabelNames(ctx, h)
 		},
 	)
@@ -104,20 +101,21 @@ func TestFanOutSearch_FilterPassedToSubSearchers(t *testing.T) {
 	require.Len(t, s1.capturedHints, 1)
 	subHints := s1.capturedHints[0]
 	require.NotNil(t, subHints)
-	// Filter is passed to sub-Searchers; Compare and Limit are stripped.
-	assert.NotNil(t, subHints.Filter)
-	assert.Nil(t, subHints.Compare)
-	assert.Equal(t, 0, subHints.Limit)
+	// Full hints are pushed to sub-Searchers so they can return pre-sorted results for k-way merge.
+	assert.NotEmpty(t, subHints.Search)
+	assert.Equal(t, 1, subHints.SortBy)
+	assert.Equal(t, 5, subHints.Limit)
 }
 
 func TestFanOutSearch_ComparatorSortsAcrossSearchers(t *testing.T) {
-	s1 := &fanOutSearcher{names: []string{"a", "c"}}
-	s2 := &fanOutSearcher{names: []string{"b", "d"}}
+	// Sub-searchers return values pre-sorted in alpha-desc order (as they would after receiving hints).
+	s1 := &fanOutSearcher{names: []string{"c", "a"}}
+	s2 := &fanOutSearcher{names: []string{"d", "b"}}
 
-	hints := &mimirstorage.SearchHints{Compare: reverseAlphaComparator{}}
+	hints := &mimirstorage.MimirSearchHints{SortBy: 1, SortOrder: 1} // alpha desc
 
-	vs, err := fanOutSearch(context.Background(), hints, []mimirstorage.Searcher{s1, s2},
-		func(ctx context.Context, s mimirstorage.Searcher, h *mimirstorage.SearchHints) (mimirstorage.SearcherValueSet, error) {
+	vs, _, err := fanOutSearch(context.Background(), hints, []mimirstorage.MimirSearcher{s1, s2},
+		func(ctx context.Context, s mimirstorage.MimirSearcher, h *mimirstorage.MimirSearchHints) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
 			return s.SearchLabelNames(ctx, h)
 		},
 	)
@@ -126,18 +124,19 @@ func TestFanOutSearch_ComparatorSortsAcrossSearchers(t *testing.T) {
 
 	got, err := drainValueSet(vs)
 	require.NoError(t, err)
-	// reverseAlphaComparator sorts z→a, so expected: d, c, b, a
+	// alpha-desc sorts z→a, so expected: d, c, b, a
 	assert.Equal(t, []string{"d", "c", "b", "a"}, got)
 }
 
 func TestFanOutSearch_LimitAfterSort(t *testing.T) {
-	s1 := &fanOutSearcher{names: []string{"a", "c"}}
-	s2 := &fanOutSearcher{names: []string{"b", "d"}}
+	// Sub-searchers return values pre-sorted in alpha-desc order (as they would after receiving hints).
+	s1 := &fanOutSearcher{names: []string{"c", "a"}}
+	s2 := &fanOutSearcher{names: []string{"d", "b"}}
 
-	hints := &mimirstorage.SearchHints{Compare: reverseAlphaComparator{}, Limit: 2}
+	hints := &mimirstorage.MimirSearchHints{SortBy: 1, SortOrder: 1, Limit: 2} // alpha desc, limit 2
 
-	vs, err := fanOutSearch(context.Background(), hints, []mimirstorage.Searcher{s1, s2},
-		func(ctx context.Context, s mimirstorage.Searcher, h *mimirstorage.SearchHints) (mimirstorage.SearcherValueSet, error) {
+	vs, _, err := fanOutSearch(context.Background(), hints, []mimirstorage.MimirSearcher{s1, s2},
+		func(ctx context.Context, s mimirstorage.MimirSearcher, h *mimirstorage.MimirSearchHints) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
 			return s.SearchLabelNames(ctx, h)
 		},
 	)
@@ -154,10 +153,10 @@ func TestFanOutSearch_LimitWithoutSort(t *testing.T) {
 	s1 := &fanOutSearcher{names: []string{"a", "b", "c"}}
 	s2 := &fanOutSearcher{names: []string{"d", "e", "f"}}
 
-	hints := &mimirstorage.SearchHints{Limit: 3}
+	hints := &mimirstorage.MimirSearchHints{Limit: 3}
 
-	vs, err := fanOutSearch(context.Background(), hints, []mimirstorage.Searcher{s1, s2},
-		func(ctx context.Context, s mimirstorage.Searcher, h *mimirstorage.SearchHints) (mimirstorage.SearcherValueSet, error) {
+	vs, _, err := fanOutSearch(context.Background(), hints, []mimirstorage.MimirSearcher{s1, s2},
+		func(ctx context.Context, s mimirstorage.MimirSearcher, h *mimirstorage.MimirSearchHints) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
 			return s.SearchLabelNames(ctx, h)
 		},
 	)
@@ -174,8 +173,8 @@ func TestFanOutSearch_ErrorPropagates(t *testing.T) {
 	s1 := &fanOutSearcher{names: []string{"a", "b"}}
 	s2 := &fanOutSearcher{err: errors.New("searcher failed")}
 
-	vs, err := fanOutSearch(context.Background(), nil, []mimirstorage.Searcher{s1, s2},
-		func(ctx context.Context, s mimirstorage.Searcher, h *mimirstorage.SearchHints) (mimirstorage.SearcherValueSet, error) {
+	vs, _, err := fanOutSearch(context.Background(), nil, []mimirstorage.MimirSearcher{s1, s2},
+		func(ctx context.Context, s mimirstorage.MimirSearcher, h *mimirstorage.MimirSearchHints) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
 			return s.SearchLabelNames(ctx, h)
 		},
 	)
@@ -187,8 +186,8 @@ func TestFanOutSearch_ErrorPropagates(t *testing.T) {
 }
 
 func TestFanOutSearch_EmptySearchers(t *testing.T) {
-	vs, err := fanOutSearch(context.Background(), nil, nil,
-		func(ctx context.Context, s mimirstorage.Searcher, h *mimirstorage.SearchHints) (mimirstorage.SearcherValueSet, error) {
+	vs, _, err := fanOutSearch(context.Background(), nil, nil,
+		func(ctx context.Context, s mimirstorage.MimirSearcher, h *mimirstorage.MimirSearchHints) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
 			return s.SearchLabelNames(ctx, h)
 		},
 	)

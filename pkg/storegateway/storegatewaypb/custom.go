@@ -45,6 +45,18 @@ func (c *customStoreGatewayClient) LabelValues(ctx context.Context, in *storepb.
 	return res, globalerror.WrapGRPCErrorWithContextError(ctx, err)
 }
 
+// SearchLabelNames implements StoreGatewayClient.
+func (c *customStoreGatewayClient) SearchLabelNames(ctx context.Context, in *storepb.SearchLabelNamesRequest, opts ...grpc.CallOption) (*storepb.LabelNamesResponse, error) {
+	res, err := c.wrapped.SearchLabelNames(ctx, in, opts...)
+	return res, globalerror.WrapGRPCErrorWithContextError(ctx, err)
+}
+
+// SearchLabelValues implements StoreGatewayClient.
+func (c *customStoreGatewayClient) SearchLabelValues(ctx context.Context, in *storepb.SearchLabelValuesRequest, opts ...grpc.CallOption) (*storepb.LabelValuesResponse, error) {
+	res, err := c.wrapped.SearchLabelValues(ctx, in, opts...)
+	return res, globalerror.WrapGRPCErrorWithContextError(ctx, err)
+}
+
 // customStoreGatewayClient is a custom StoreGateway_SeriesClient which wraps well known gRPC errors into standard golang errors.
 type customSeriesClient struct {
 	*customClientStream

@@ -1,8 +1,8 @@
 diff --git a/pkg/ingester/client/ingester.pb.go b/pkg/ingester/client/ingester.pb.go
-index 5e8a0e3da6..3c290e1541 100644
+index 9791db76f8..7d90051ed9 100644
 --- a/pkg/ingester/client/ingester.pb.go
 +++ b/pkg/ingester/client/ingester.pb.go
-@@ -603,9 +603,6 @@ func (m *ActiveSeriesRequest) GetType() ActiveSeriesRequest_RequestType {
+@@ -624,9 +624,6 @@ func (m *ActiveSeriesRequest) GetType() ActiveSeriesRequest_RequestType {
  //
  // Only one of these two options will be populated.
  type QueryStreamResponse struct {
@@ -12,7 +12,7 @@ index 5e8a0e3da6..3c290e1541 100644
  	StreamingSeries       []QueryStreamSeries       `protobuf:"bytes,3,rep,name=streaming_series,json=streamingSeries,proto3" json:"streaming_series"`
  	IsEndOfSeriesStream   bool                      `protobuf:"varint,4,opt,name=is_end_of_series_stream,json=isEndOfSeriesStream,proto3" json:"is_end_of_series_stream,omitempty"`
  	StreamingSeriesChunks []QueryStreamSeriesChunks `protobuf:"bytes,5,rep,name=streaming_series_chunks,json=streamingSeriesChunks,proto3" json:"streaming_series_chunks"`
-@@ -760,9 +757,6 @@ func (m *QueryStreamSeriesChunks) GetChunks() []Chunk {
+@@ -781,9 +778,6 @@ func (m *QueryStreamSeriesChunks) GetChunks() []Chunk {
  }
  
  type ExemplarQueryResponse struct {
@@ -22,7 +22,7 @@ index 5e8a0e3da6..3c290e1541 100644
  	Timeseries []mimirpb.TimeSeries `protobuf:"bytes,1,rep,name=timeseries,proto3" json:"timeseries"`
  }
  
-@@ -1305,9 +1299,6 @@ func (m *MetricsForLabelMatchersRequest) GetLimit() int64 {
+@@ -1666,9 +1660,6 @@ func (m *MetricsForLabelMatchersRequest) GetLimit() int64 {
  }
  
  type MetricsForLabelMatchersResponse struct {
@@ -32,7 +32,7 @@ index 5e8a0e3da6..3c290e1541 100644
  	Metric []*mimirpb.Metric `protobuf:"bytes,1,rep,name=metric,proto3" json:"metric,omitempty"`
  }
  
-@@ -1453,9 +1444,6 @@ func (m *MetricsMetadataResponse) GetMetadata() []*mimirpb.MetricMetadata {
+@@ -1814,9 +1805,6 @@ func (m *MetricsMetadataResponse) GetMetadata() []*mimirpb.MetricMetadata {
  }
  
  type ActiveSeriesResponse struct {

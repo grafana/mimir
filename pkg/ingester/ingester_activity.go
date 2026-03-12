@@ -81,6 +81,24 @@ func (i *ActivityTrackerWrapper) LabelNames(ctx context.Context, request *client
 	return i.ing.LabelNames(ctx, request)
 }
 
+func (i *ActivityTrackerWrapper) SearchLabelNames(request *client.SearchLabelValuesRequest, server client.Ingester_SearchLabelNamesServer) error {
+	ix := i.tracker.Insert(func() string {
+		return requestActivity(server.Context(), "Ingester/SearchLabelNames", request)
+	})
+	defer i.tracker.Delete(ix)
+
+	return i.ing.SearchLabelNames(request, server)
+}
+
+func (i *ActivityTrackerWrapper) SearchLabelValues(request *client.SearchLabelValuesRequest, server client.Ingester_SearchLabelValuesServer) error {
+	ix := i.tracker.Insert(func() string {
+		return requestActivity(server.Context(), "Ingester/SearchLabelValues", request)
+	})
+	defer i.tracker.Delete(ix)
+
+	return i.ing.SearchLabelValues(request, server)
+}
+
 func (i *ActivityTrackerWrapper) UserStats(ctx context.Context, request *client.UserStatsRequest) (*client.UserStatsResponse, error) {
 	ix := i.tracker.Insert(func() string {
 		return requestActivity(ctx, "Ingester/UserStats", request)

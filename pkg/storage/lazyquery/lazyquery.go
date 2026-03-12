@@ -87,14 +87,14 @@ func (l LazyQuerier) Close() error {
 	return l.next.Close()
 }
 
-// SearchLabelNames implements mimirstorage.Searcher.
-func (l LazyQuerier) SearchLabelNames(ctx context.Context, hints *mimirstorage.SearchHints, matchers ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
-	return l.next.(mimirstorage.Searcher).SearchLabelNames(ctx, hints, matchers...)
+// SearchLabelNames implements mimirstorage.MimirSearcher.
+func (l LazyQuerier) SearchLabelNames(ctx context.Context, hints *mimirstorage.MimirSearchHints, matchers ...*labels.Matcher) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
+	return l.next.(mimirstorage.MimirSearcher).SearchLabelNames(ctx, hints, matchers...)
 }
 
-// SearchLabelValues implements mimirstorage.Searcher.
-func (l LazyQuerier) SearchLabelValues(ctx context.Context, name string, hints *mimirstorage.SearchHints, matchers ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
-	return l.next.(mimirstorage.Searcher).SearchLabelValues(ctx, name, hints, matchers...)
+// SearchLabelValues implements mimirstorage.MimirSearcher.
+func (l LazyQuerier) SearchLabelValues(ctx context.Context, name string, hints *mimirstorage.MimirSearchHints, matchers ...*labels.Matcher) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
+	return l.next.(mimirstorage.MimirSearcher).SearchLabelValues(ctx, name, hints, matchers...)
 }
 
 type lazySeriesSet struct {

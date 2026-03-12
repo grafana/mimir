@@ -252,3 +252,49 @@ message LabelValuesResponseHints {
   // queried_blocks is the list of blocks that have been queried.
   repeated Block queried_blocks = 1 [(gogoproto.nullable) = false];
 }
+
+enum FilterOperator {
+  OR  = 0;  // accept if ANY term matches (default)
+  AND = 1;  // accept only if ALL terms match
+}
+
+enum SortBy {
+  SORT_BY_NONE  = 0;
+  SORT_BY_ALPHA = 1;
+  SORT_BY_SCORE = 2;
+}
+
+enum SortOrder {
+  SORT_ORDER_ASC  = 0;
+  SORT_ORDER_DESC = 1;
+}
+
+// SearchFilter carries filter and sort parameters so the store-gateway can apply
+// them server-side before transmitting values over the wire.
+message SearchFilter {
+  repeated string search_terms     = 1;
+  bool            case_insensitive = 2;
+  FilterOperator  operator         = 3;
+  double          fuzz_threshold   = 4;
+  SortBy          sort_by          = 5;
+  SortOrder       sort_order       = 6;
+}
+
+message SearchLabelNamesRequest {
+  int64 start = 3;
+  int64 end   = 4;
+  repeated LabelMatcher matchers = 6 [(gogoproto.nullable) = false];
+  int64 limit = 7;
+  LabelNamesRequestHints  request_hints  = 8;
+  SearchFilter            search_filter  = 9;
+}
+
+message SearchLabelValuesRequest {
+  string label = 1;
+  int64  start = 4;
+  int64  end   = 5;
+  repeated LabelMatcher matchers = 7 [(gogoproto.nullable) = false];
+  int64 limit = 8;
+  LabelValuesRequestHints request_hints  = 9;
+  SearchFilter            search_filter  = 10;
+}

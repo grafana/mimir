@@ -41,7 +41,7 @@ func (q *searchTestQuerier) LabelValues(_ context.Context, name string, _ *stora
 
 func (q *searchTestQuerier) Close() error { return nil }
 
-func (q *searchTestQuerier) SearchLabelNames(_ context.Context, hints *mimirstorage.MimirSearchHints, _ ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
+func (q *searchTestQuerier) SearchLabelNames(_ context.Context, hints *mimirstorage.MimirSearchHints, _ ...*labels.Matcher) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
 	filter := streaminglabelvalues.BuildFilterChains(hints.Search, hints.CaseInsensitive, streaminglabelvalues.Operator(hints.Operator), hints.FuzzThreshold)
 	var results []string
 	for _, n := range q.labelNames {
@@ -51,10 +51,10 @@ func (q *searchTestQuerier) SearchLabelNames(_ context.Context, hints *mimirstor
 			results = append(results, n)
 		}
 	}
-	return &sliceSearcherValueSet{values: results}, nil
+	return &sliceSearcherValueSet{values: results}, nil, nil
 }
 
-func (q *searchTestQuerier) SearchLabelValues(_ context.Context, name string, hints *mimirstorage.MimirSearchHints, _ ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
+func (q *searchTestQuerier) SearchLabelValues(_ context.Context, name string, hints *mimirstorage.MimirSearchHints, _ ...*labels.Matcher) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
 	filter := streaminglabelvalues.BuildFilterChains(hints.Search, hints.CaseInsensitive, streaminglabelvalues.Operator(hints.Operator), hints.FuzzThreshold)
 	var results []string
 	for _, v := range q.labelValues[name] {
@@ -64,7 +64,7 @@ func (q *searchTestQuerier) SearchLabelValues(_ context.Context, name string, hi
 			results = append(results, v)
 		}
 	}
-	return &sliceSearcherValueSet{values: results}, nil
+	return &sliceSearcherValueSet{values: results}, nil, nil
 }
 
 func newSearchTestQueryable(labelNames []string, labelValues map[string][]string) mockSampleAndChunkQueryable {
@@ -378,12 +378,12 @@ type searchTestNativeSearcher struct {
 	searchLabelValues map[string][]string
 }
 
-func (q *searchTestNativeSearcher) SearchLabelNames(_ context.Context, _ *mimirstorage.MimirSearchHints, _ ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
-	return &sliceSearcherValueSet{values: q.searchLabelNames}, nil
+func (q *searchTestNativeSearcher) SearchLabelNames(_ context.Context, _ *mimirstorage.MimirSearchHints, _ ...*labels.Matcher) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
+	return &sliceSearcherValueSet{values: q.searchLabelNames}, nil, nil
 }
 
-func (q *searchTestNativeSearcher) SearchLabelValues(_ context.Context, name string, _ *mimirstorage.MimirSearchHints, _ ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
-	return &sliceSearcherValueSet{values: q.searchLabelValues[name]}, nil
+func (q *searchTestNativeSearcher) SearchLabelValues(_ context.Context, name string, _ *mimirstorage.MimirSearchHints, _ ...*labels.Matcher) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
+	return &sliceSearcherValueSet{values: q.searchLabelValues[name]}, nil, nil
 }
 
 // newSearchTestNativeSearchableQueryable returns a queryable whose querier
@@ -536,14 +536,14 @@ type cancellingNativeSearcher struct {
 	vs *cancellingSearcherValueSet
 }
 
-func (q *cancellingNativeSearcher) SearchLabelNames(ctx context.Context, _ *mimirstorage.MimirSearchHints, _ ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
+func (q *cancellingNativeSearcher) SearchLabelNames(ctx context.Context, _ *mimirstorage.MimirSearchHints, _ ...*labels.Matcher) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
 	q.vs.ctx = ctx
-	return q.vs, nil
+	return q.vs, nil, nil
 }
 
-func (q *cancellingNativeSearcher) SearchLabelValues(ctx context.Context, _ string, _ *mimirstorage.MimirSearchHints, _ ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
+func (q *cancellingNativeSearcher) SearchLabelValues(ctx context.Context, _ string, _ *mimirstorage.MimirSearchHints, _ ...*labels.Matcher) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
 	q.vs.ctx = ctx
-	return q.vs, nil
+	return q.vs, nil, nil
 }
 
 // TestSearchLabelNamesHandler_ContextCancellation verifies that when a request is cancelled

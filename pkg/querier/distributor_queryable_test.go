@@ -29,6 +29,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	mimirstorage "github.com/grafana/mimir/pkg/storage"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -847,6 +848,14 @@ func (m *mockDistributor) LabelValuesForLabelName(ctx context.Context, from, to 
 func (m *mockDistributor) LabelNames(ctx context.Context, from, to model.Time, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
 	args := m.Called(ctx, from, to, hints, matchers)
 	return args.Get(0).([]string), args.Error(1)
+}
+func (m *mockDistributor) SearchLabelNames(ctx context.Context, from, to model.Time, hints *mimirstorage.MimirSearchHints, matchers ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
+	args := m.Called(ctx, from, to, hints, matchers)
+	return args.Get(0).(mimirstorage.SearcherValueSet), args.Error(1)
+}
+func (m *mockDistributor) SearchLabelValues(ctx context.Context, from, to model.Time, label model.LabelName, hints *mimirstorage.MimirSearchHints, matchers ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
+	args := m.Called(ctx, from, to, label, hints, matchers)
+	return args.Get(0).(mimirstorage.SearcherValueSet), args.Error(1)
 }
 func (m *mockDistributor) MetricsForLabelMatchers(ctx context.Context, from, to model.Time, hints *storage.SelectHints, matchers ...*labels.Matcher) ([]labels.Labels, error) {
 	args := m.Called(ctx, from, to, hints, matchers)

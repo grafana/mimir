@@ -76,3 +76,13 @@ func (m *IngesterServerMock) ActiveSeries(req *ActiveSeriesRequest, srv Ingester
 	args := m.Called(req, srv)
 	return args.Error(0)
 }
+
+func (m *IngesterServerMock) SearchLabelNames(req *SearchLabelValuesRequest, srv Ingester_SearchLabelNamesServer) error {
+	args := m.Called(req, srv)
+	return args.Error(0)
+}
+
+func (m *IngesterServerMock) SearchLabelValues(req *SearchLabelValuesRequest, srv Ingester_SearchLabelValuesServer) error {
+	args := m.Called(req, srv)
+	return args.Error(0)
+}

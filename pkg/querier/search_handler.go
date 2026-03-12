@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sort"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -14,6 +15,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
@@ -26,7 +28,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-type searchExecutor func(ctx context.Context, searcher mimirstorage.MimirSearcher, hints *mimirstorage.MimirSearchHints, params *searchParams) (mimirstorage.SearcherValueSet, error)
+type searchExecutor func(ctx context.Context, searcher mimirstorage.MimirSearcher, hints *mimirstorage.MimirSearchHints, params *searchParams) (mimirstorage.SearcherValueSet, annotations.Annotations, error)
 
 // searchParams holds parsed parameters common to all search endpoints.
 type searchParams struct {
@@ -92,7 +94,7 @@ func doSearchHandler(queryable storage.SampleAndChunkQueryable, _ *validation.Ov
 		searcher := q.(mimirstorage.MimirSearcher)
 		hints := buildMimirSearchHints(params)
 
-		vs, err := searchExec(ctx, searcher, hints, params)
+		vs, callWarns, err := searchExec(ctx, searcher, hints, params)
 		if err != nil {
 			// we have not started the stream, so we can return with a 4xx error
 			level.Error(log).Log("msg", "unable to invoke search", "tenant", tenant, "err", err)
@@ -104,7 +106,7 @@ func doSearchHandler(queryable storage.SampleAndChunkQueryable, _ *validation.Ov
 		writer := newStreamingWriter(w, streaminglabelvalues.NewSearchResultFactory(params.includeScore))
 		writer.init()
 
-		err = streamResults(vs, params.batchSize, params.limit, writer)
+		err = streamResults(vs, params.batchSize, params.limit, writer, callWarns)
 		if err != nil {
 			// we have an error after we have started streaming .... try to write the error to the stream
 			level.Error(log).Log("msg", "error writing streaming search results", "tenant", tenant, "err", err)
@@ -118,7 +120,7 @@ func doSearchHandler(queryable storage.SampleAndChunkQueryable, _ *validation.Ov
 
 // SearchMetricNamesHandler returns an HTTP handler for GET/POST /api/v1/search/metric_names.
 func SearchMetricNamesHandler(queryable storage.SampleAndChunkQueryable, overrides *validation.Overrides, logger log.Logger) http.Handler {
-	searchExec := func(ctx context.Context, searcher mimirstorage.MimirSearcher, hints *mimirstorage.MimirSearchHints, params *searchParams) (mimirstorage.SearcherValueSet, error) {
+	searchExec := func(ctx context.Context, searcher mimirstorage.MimirSearcher, hints *mimirstorage.MimirSearchHints, params *searchParams) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
 		return searcher.SearchLabelValues(ctx, model.MetricNameLabel, hints, params.matchers...)
 	}
 	return doSearchHandler(queryable, overrides, logger, "SearchMetricNamesHandler", searchExec, false)
@@ -126,7 +128,7 @@ func SearchMetricNamesHandler(queryable storage.SampleAndChunkQueryable, overrid
 
 // SearchLabelNamesHandler returns an HTTP handler for GET/POST /api/v1/search/label_names.
 func SearchLabelNamesHandler(queryable storage.SampleAndChunkQueryable, overrides *validation.Overrides, logger log.Logger) http.Handler {
-	searchExec := func(ctx context.Context, searcher mimirstorage.MimirSearcher, hints *mimirstorage.MimirSearchHints, params *searchParams) (mimirstorage.SearcherValueSet, error) {
+	searchExec := func(ctx context.Context, searcher mimirstorage.MimirSearcher, hints *mimirstorage.MimirSearchHints, params *searchParams) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
 		return searcher.SearchLabelNames(ctx, hints, params.matchers...)
 	}
 	return doSearchHandler(queryable, overrides, logger, "SearchLabelNamesHandler", searchExec, false)
@@ -134,7 +136,7 @@ func SearchLabelNamesHandler(queryable storage.SampleAndChunkQueryable, override
 
 // SearchLabelValuesHandler returns an HTTP handler for GET/POST /api/v1/search/label_values.
 func SearchLabelValuesHandler(queryable storage.SampleAndChunkQueryable, overrides *validation.Overrides, logger log.Logger) http.Handler {
-	searchExec := func(ctx context.Context, searcher mimirstorage.MimirSearcher, hints *mimirstorage.MimirSearchHints, params *searchParams) (mimirstorage.SearcherValueSet, error) {
+	searchExec := func(ctx context.Context, searcher mimirstorage.MimirSearcher, hints *mimirstorage.MimirSearchHints, params *searchParams) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
 		return searcher.SearchLabelValues(ctx, params.labelName, hints, params.matchers...)
 	}
 	return doSearchHandler(queryable, overrides, logger, "SearchLabelNamesHandler", searchExec, true)
@@ -144,7 +146,11 @@ func SearchLabelValuesHandler(queryable storage.SampleAndChunkQueryable, overrid
 // When limit > 0, iteration stops after limit values have been consumed.
 // Sorting is the Searcher's responsibility (via labelSearchStream.drainAndSort);
 // hasMore is read from the stream's limitReached flag, or detected by peeking.
-func streamResults(vs mimirstorage.SearcherValueSet, batchSize, limit int, writer *streamingWriter) error {
+// callWarns contains annotations returned at search-invocation time (e.g. limit clamped).
+//
+// TODO(warnings): also wire in per-result-stream annotations from intermediate nodes
+// (store-gateway, ingester) once those are plumbed through the streaming protocol.
+func streamResults(vs mimirstorage.SearcherValueSet, batchSize, limit int, writer *streamingWriter, callWarns annotations.Annotations) error {
 	results := make([]streaminglabelvalues.SearchResult, 0, batchSize)
 	total := 0
 	for vs.Next() && (limit == 0 || total < limit) {
@@ -177,7 +183,9 @@ func streamResults(vs mimirstorage.SearcherValueSet, batchSize, limit int, write
 	} else {
 		hasMore = vs.Next()
 	}
-	return writer.writeEnd(hasMore)
+	// Merge iteration-time warnings (e.g. limit hit during sorted drain) with call-time warnings.
+	allWarns := callWarns.Merge(vs.Warnings())
+	return writer.writeEnd(hasMore, allWarns)
 }
 
 // parseSearchParams parses common search query parameters from an HTTP request.
@@ -305,8 +313,17 @@ func (w *streamingWriter) writeBatch(results []streaminglabelvalues.SearchResult
 	return nil
 }
 
-func (w *streamingWriter) writeEnd(hasMore bool) error {
-	if err := w.encoder.Encode(map[string]any{"status": "success", "has_more": hasMore}); err != nil {
+func (w *streamingWriter) writeEnd(hasMore bool, warns annotations.Annotations) error {
+	msg := map[string]any{"status": "success", "has_more": hasMore}
+	if len(warns) > 0 {
+		warnStrs := make([]string, 0, len(warns))
+		for s := range warns {
+			warnStrs = append(warnStrs, s)
+		}
+		sort.Strings(warnStrs)
+		msg["warnings"] = warnStrs
+	}
+	if err := w.encoder.Encode(msg); err != nil {
 		return err
 	}
 	if w.canFlush {

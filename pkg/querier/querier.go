@@ -33,9 +33,9 @@ import (
 	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 
-	mimirstorage "github.com/grafana/mimir/pkg/storage"
 	"github.com/grafana/mimir/pkg/querier/engine"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	mimirstorage "github.com/grafana/mimir/pkg/storage"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/storage/series"
@@ -574,6 +574,9 @@ func (mq *multiQuerier) LabelValues(ctx context.Context, name string, hints *sto
 	}
 
 	var warnings annotations.Annotations
+
+	level.Info(mq.logger).Log("msg", "SearchLabelValues", "labelName", name, "userId", userID, "limit", hints.Limit, "user-limit", mq.limits.MaxLabelValuesLimit(userID))
+
 	limit := clampToMaxLimit(spanLog, hints.Limit, mq.limits.MaxLabelValuesLimit(userID), validation.MaxLabelValuesLimitFlag)
 	if limit > 0 && hints.Limit != limit {
 		warnings.Add(NewMaxLimitError(hints.Limit, limit, validation.MaxLabelValuesLimitFlag))
@@ -683,8 +686,8 @@ func (mq *multiQuerier) LabelNames(ctx context.Context, hints *storage.LabelHint
 	return util.MergeSlices(sets...), warnings, nil
 }
 
-// SearchLabelNames implements mimirstorage.Searcher.
-func (mq *multiQuerier) SearchLabelNames(ctx context.Context, hints *mimirstorage.SearchHints, matchers ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
+// SearchLabelNames implements mimirstorage.MimirSearcher.
+func (mq *multiQuerier) SearchLabelNames(ctx context.Context, hints *mimirstorage.MimirSearchHints, matchers ...*labels.Matcher) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
 	spanLog, ctx := spanlogger.New(ctx, mq.logger, tracer, "multiQuerier.SearchLabelNames")
 	defer spanLog.Finish()
 
@@ -692,24 +695,45 @@ func (mq *multiQuerier) SearchLabelNames(ctx context.Context, hints *mimirstorag
 	savedCtx := ctx
 	ctx, queriers, _, _, err := mq.getQueriers(ctx, mq.minT, mq.maxT, matchers...)
 	if errors.Is(err, errEmptyTimeRange) {
-		return emptySearcherValueSet(savedCtx), nil
+		return emptySearcherValueSet(savedCtx), nil, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	searchers := make([]mimirstorage.Searcher, len(queriers))
+	userID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Clamp the requested limit to the per-tenant maximum, matching the LabelNames path.
+	if hints == nil {
+		hints = &mimirstorage.MimirSearchHints{}
+	} else {
+		hintsCopy := *hints
+		hints = &hintsCopy
+	}
+	maxLimit := mq.limits.MaxLabelNamesLimit(userID)
+	limit := clampToMaxLimit(spanLog, hints.Limit, maxLimit, validation.MaxLabelNamesLimitFlag)
+	var warns annotations.Annotations
+	if limit > 0 && hints.Limit != limit {
+		warns = warns.Add(NewMaxLimitError(hints.Limit, limit, validation.MaxLabelNamesLimitFlag))
+	}
+	hints.Limit = limit
+
+	searchers := make([]mimirstorage.MimirSearcher, len(queriers))
 	for i, q := range queriers {
-		searchers[i] = q.(mimirstorage.Searcher)
+		searchers[i] = q.(mimirstorage.MimirSearcher)
 	}
 
-	return fanOutSearch(ctx, hints, searchers, func(ctx context.Context, s mimirstorage.Searcher, h *mimirstorage.SearchHints) (mimirstorage.SearcherValueSet, error) {
+	vs, subWarns, err := fanOutSearch(ctx, hints, searchers, func(ctx context.Context, s mimirstorage.MimirSearcher, h *mimirstorage.MimirSearchHints) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
 		return s.SearchLabelNames(ctx, h, matchers...)
 	})
+	return vs, warns.Merge(subWarns), err
 }
 
-// SearchLabelValues implements mimirstorage.Searcher.
-func (mq *multiQuerier) SearchLabelValues(ctx context.Context, name string, hints *mimirstorage.SearchHints, matchers ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
+// SearchLabelValues implements mimirstorage.MimirSearcher.
+func (mq *multiQuerier) SearchLabelValues(ctx context.Context, name string, hints *mimirstorage.MimirSearchHints, matchers ...*labels.Matcher) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
 	spanLog, ctx := spanlogger.New(ctx, mq.logger, tracer, "multiQuerier.SearchLabelValues")
 	defer spanLog.Finish()
 
@@ -717,20 +741,41 @@ func (mq *multiQuerier) SearchLabelValues(ctx context.Context, name string, hint
 	savedCtx := ctx
 	ctx, queriers, _, _, err := mq.getQueriers(ctx, mq.minT, mq.maxT, matchers...)
 	if errors.Is(err, errEmptyTimeRange) {
-		return emptySearcherValueSet(savedCtx), nil
+		return emptySearcherValueSet(savedCtx), nil, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	searchers := make([]mimirstorage.Searcher, len(queriers))
+	userID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Clamp the requested limit to the per-tenant maximum, matching the LabelValues path.
+	if hints == nil {
+		hints = &mimirstorage.MimirSearchHints{}
+	} else {
+		hintsCopy := *hints
+		hints = &hintsCopy
+	}
+	maxLimit := mq.limits.MaxLabelValuesLimit(userID)
+	limit := clampToMaxLimit(spanLog, hints.Limit, maxLimit, validation.MaxLabelValuesLimitFlag)
+	var warns annotations.Annotations
+	if limit > 0 && hints.Limit != limit {
+		warns = warns.Add(NewMaxLimitError(hints.Limit, limit, validation.MaxLabelValuesLimitFlag))
+	}
+	hints.Limit = limit
+
+	searchers := make([]mimirstorage.MimirSearcher, len(queriers))
 	for i, q := range queriers {
-		searchers[i] = q.(mimirstorage.Searcher)
+		searchers[i] = q.(mimirstorage.MimirSearcher)
 	}
 
-	return fanOutSearch(ctx, hints, searchers, func(ctx context.Context, s mimirstorage.Searcher, h *mimirstorage.SearchHints) (mimirstorage.SearcherValueSet, error) {
+	vs, subWarns, err := fanOutSearch(ctx, hints, searchers, func(ctx context.Context, s mimirstorage.MimirSearcher, h *mimirstorage.MimirSearchHints) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
 		return s.SearchLabelValues(ctx, name, h, matchers...)
 	})
+	return vs, warns.Merge(subWarns), err
 }
 
 // storeQueriers stores the created queriers so they can be cleaned up when this querier is eventually cleaned up.

@@ -5,10 +5,12 @@ package querier
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/tenant"
@@ -19,19 +21,22 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	mimirstorage "github.com/grafana/mimir/pkg/storage"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
+	"github.com/grafana/mimir/pkg/streaminglabelvalues"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // labelSearchStream is a SearcherValueSet backed by a channel populated by a background goroutine.
 // The producer sends FilteredResults to ch and then closes it.
 // If an error occurs the producer sets err before closing ch.
-// The err and limitReached fields are written before close(ch) and read only after Next() observes
-// channel close, so no mutex is needed.
+// The err, warnings, and limitReached fields are written before close(ch) and read only after
+// Next() observes channel close, so no mutex is needed.
 //
-// When hints.Compare is set, Next() buffers all results on the first call, sorts them, applies
+// When compare is set, Next() buffers all results on the first call, sorts them, applies
 // the limit, and then serves them in order. Otherwise results stream out as they arrive.
 type labelSearchStream struct {
 	ch           <-chan mimirstorage.FilteredResult
@@ -39,16 +44,18 @@ type labelSearchStream struct {
 	ctx          context.Context
 	cancel       context.CancelFunc
 	err          error
+	warnings     annotations.Annotations
 	limitReached bool // set by the dedup goroutine before it cancels; suppresses context.Canceled in Err()
-	hints        *mimirstorage.SearchHints
-	// sorted* fields are used only when hints.Compare != nil.
+	hints        *mimirstorage.MimirSearchHints
+	compare      mimirstorage.Comparator
+	// sorted* fields are used only when compare != nil.
 	sorted     []mimirstorage.FilteredResult
 	sortedPos  int
 	sortedInit bool
 }
 
 func (s *labelSearchStream) Next() bool {
-	if s.hints != nil && s.hints.Compare != nil {
+	if s.compare != nil {
 		return s.nextSorted()
 	}
 	// Non-blocking check first: prefer already-buffered values over a cancelled context
@@ -75,7 +82,7 @@ func (s *labelSearchStream) Next() bool {
 	}
 }
 
-// nextSorted is called when hints.Compare != nil. On the first invocation it drains the
+// nextSorted is called when compare != nil. On the first invocation it drains the
 // channel, sorts all results using the comparator, applies the limit, and then serves
 // items sequentially from the sorted slice.
 func (s *labelSearchStream) nextSorted() bool {
@@ -92,29 +99,41 @@ func (s *labelSearchStream) nextSorted() bool {
 }
 
 // drainAndSort drains ch into s.sorted, then sorts and limits the slice.
+// All items must be collected before sorting so that the comparator can
+// determine the correct top-K; the limit is applied by sortAndTruncate.
 func (s *labelSearchStream) drainAndSort() {
 	for {
 		select {
 		case v, ok := <-s.ch:
 			if !ok {
-				sort.Slice(s.sorted, func(i, j int) bool {
-					return s.hints.Compare.Compare(s.sorted[i], s.sorted[j]) < 0
-				})
-				if s.hints.Limit > 0 && len(s.sorted) > s.hints.Limit {
-					s.sorted = s.sorted[:s.hints.Limit]
-					s.limitReached = true
-				}
+				s.sortAndTruncate()
 				return
 			}
 			s.sorted = append(s.sorted, v)
 		case <-s.ctx.Done():
+			s.sortAndTruncate()
 			return
 		}
 	}
 }
 
+// sortAndTruncate sorts s.sorted in-place and truncates it to hints.Limit.
+func (s *labelSearchStream) sortAndTruncate() {
+	if len(s.sorted) == 0 {
+		return
+	}
+	sort.Slice(s.sorted, func(i, j int) bool {
+		return s.compare.Compare(s.sorted[i], s.sorted[j]) < 0
+	})
+	if s.hints != nil && s.hints.Limit > 0 && len(s.sorted) > s.hints.Limit {
+		s.sorted = s.sorted[:s.hints.Limit]
+		s.limitReached = true
+		s.warnings = s.warnings.Add(NewMaxLimitError(0, s.hints.Limit, "search result limit"))
+	}
+}
+
 func (s *labelSearchStream) At() mimirstorage.FilteredResult   { return s.current }
-func (s *labelSearchStream) Warnings() annotations.Annotations { return nil }
+func (s *labelSearchStream) Warnings() annotations.Annotations { return s.warnings }
 func (s *labelSearchStream) Err() error {
 	// When the limit was reached the background goroutine cancelled the context itself
 	// as a stop signal; that is not a caller-visible error.
@@ -136,47 +155,60 @@ func (s *labelSearchStream) Close() {
 
 // dedupSink deduplicates values sent to an output channel, enforcing an eager limit on the
 // unsorted path. It is not goroutine-safe and is intended to run inside a single goroutine.
+// seen stores xxhash fingerprints of observed values rather than the full strings, keeping
+// per-entry memory at a fixed 8 bytes regardless of label name/value length.
 type dedupSink struct {
-	seen   map[string]struct{}
+	seen   map[uint64]struct{}
 	count  int
 	outCh  chan<- mimirstorage.FilteredResult
-	hints  *mimirstorage.SearchHints
+	hints  *mimirstorage.MimirSearchHints
+	filter *streaminglabelvalues.FilterChains
 	stream *labelSearchStream
 	cancel context.CancelFunc
 	ctx    context.Context
 }
 
-func newDedupSink(outCh chan<- mimirstorage.FilteredResult, hints *mimirstorage.SearchHints, stream *labelSearchStream, cancel context.CancelFunc, ctx context.Context) *dedupSink {
+// buildSearchFilter builds a FilterChains from hints, or returns nil when no filtering is needed.
+func buildSearchFilter(hints *mimirstorage.MimirSearchHints) *streaminglabelvalues.FilterChains {
+	if hints == nil || len(hints.Search) == 0 {
+		return nil
+	}
+	return streaminglabelvalues.BuildFilterChains(hints.Search, hints.CaseInsensitive, streaminglabelvalues.Operator(hints.Operator), hints.FuzzThreshold)
+}
+
+func newDedupSink(outCh chan<- mimirstorage.FilteredResult, hints *mimirstorage.MimirSearchHints, filter *streaminglabelvalues.FilterChains, stream *labelSearchStream, cancel context.CancelFunc, ctx context.Context) *dedupSink {
 	return &dedupSink{
-		seen:   make(map[string]struct{}),
+		seen:   make(map[uint64]struct{}),
 		outCh:  outCh,
 		hints:  hints,
+		filter: filter,
 		stream: stream,
 		cancel: cancel,
 		ctx:    ctx,
 	}
 }
 
-// add deduplicates value, applies hints.Filter if set, enforces the eager limit on the
+// add deduplicates value, applies the filter if set, enforces the eager limit on the
 // unsorted path, and forwards accepted values to outCh.
 // Returns false when the caller should stop iterating: either the limit was reached or
 // the context is done. Returns true if the caller may continue.
 func (d *dedupSink) add(value string) bool {
-	if _, exists := d.seen[value]; exists {
+	h := xxhash.Sum64String(value)
+	if _, exists := d.seen[h]; exists {
 		return true
 	}
-	d.seen[value] = struct{}{}
+	d.seen[h] = struct{}{}
 
 	score := -1.0
-	if d.hints != nil && d.hints.Filter != nil {
-		accepted, s := d.hints.Filter.Accept(value)
+	if d.filter != nil {
+		accepted, s := d.filter.Accept(value)
 		if !accepted {
 			return true
 		}
 		score = s
 	}
 
-	if d.hints != nil && d.hints.Compare == nil && d.hints.Limit > 0 && d.count >= d.hints.Limit {
+	if d.hints != nil && d.hints.SortBy == 0 && d.hints.Limit > 0 && d.count >= d.hints.Limit {
 		d.stream.limitReached = true
 		d.cancel()
 		return false
@@ -191,13 +223,31 @@ func (d *dedupSink) add(value string) bool {
 	}
 }
 
-// SearchLabelNames implements mimirstorage.Searcher.
+// comparatorFromHints builds a Comparator from the sort fields of a MimirSearchHints.
+// Returns nil when no sorting is requested (SortBy == 0).
+func comparatorFromHints(h *mimirstorage.MimirSearchHints) mimirstorage.Comparator {
+	if h == nil || h.SortBy == 0 {
+		return nil
+	}
+	if h.SortBy == 1 { // Alpha
+		if h.SortOrder == 1 { // Desc
+			return &streaminglabelvalues.ComparerAlphaDesc{}
+		}
+		return &streaminglabelvalues.ComparerAlpha{}
+	}
+	if h.SortBy == 2 { // Score
+		return streaminglabelvalues.NewCompareScore(h.Search)
+	}
+	return nil
+}
+
+// SearchLabelNames implements mimirstorage.MimirSearcher.
 // It returns a SearcherValueSet immediately; fetching and deduplication run in the background.
 // As each store-gateway responds its label names are deduplicated and streamed to the caller.
-func (q *blocksStoreQuerier) SearchLabelNames(ctx context.Context, hints *mimirstorage.SearchHints, matchers ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
+func (q *blocksStoreQuerier) SearchLabelNames(ctx context.Context, hints *mimirstorage.MimirSearchHints, matchers ...*labels.Matcher) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
 	tenantID, err := tenant.TenantID(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	minT, maxT := q.minT, q.maxT
@@ -211,6 +261,7 @@ func (q *blocksStoreQuerier) SearchLabelNames(ctx context.Context, hints *mimirs
 
 	ctx, cancel := context.WithCancel(ctx)
 	outCh := make(chan mimirstorage.FilteredResult, 256)
+	// compare is always nil here: sorted output is produced by the collect+merge path below.
 	stream := &labelSearchStream{ch: outCh, ctx: ctx, cancel: cancel, hints: hints}
 
 	go func() {
@@ -221,54 +272,84 @@ func (q *blocksStoreQuerier) SearchLabelNames(ctx context.Context, hints *mimirs
 
 		convertedMatchers := convertMatchersToLabelMatcher(matchers)
 		storeHints := searchHintsToLabelHints(hints)
+		sf := mimirHintsToStoreSearchFilter(hints)
 
 		// sgCh carries sorted []string slices from each store-gateway as it finishes.
-		// Buffer of 32 lets store-gateways publish without waiting for the dedup loop.
+		// Buffer of 32 lets store-gateways publish without waiting for the downstream goroutine.
 		sgCh := make(chan []string, 32)
 
-		// Dedup goroutine: reads from sgCh, deduplicates, applies filter and limit,
-		// and sends unique values to outCh.
-		dedupDone := make(chan struct{})
-		go func() {
-			defer close(dedupDone)
-			sink := newDedupSink(outCh, hints, stream, cancel, ctx)
-			for names := range sgCh {
-				for _, name := range names {
-					if !sink.add(name) {
-						return
-					}
+		queryF := func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64, indexMeta *bucketindex.Metadata) ([]ulid.ULID, error) {
+			return q.fetchLabelNamesFromStoreStreaming(ctx, clients, minT, maxT, tenantID, storeHints, convertedMatchers, sf, indexMeta, sgCh)
+		}
+
+		if hints != nil && hints.SortBy != 0 {
+			// Sorted path: collect all per-gateway sorted slices, merge them, then emit in order.
+			var collected [][]string
+			collectDone := make(chan struct{})
+			go func() {
+				defer close(collectDone)
+				for names := range sgCh {
+					collected = append(collected, names)
+				}
+			}()
+
+			if err := q.queryWithConsistencyCheck(ctx, spanLog, minT, maxT, tenantID, nil, queryF); err != nil {
+				close(sgCh)
+				<-collectDone
+				if !stream.limitReached {
+					stream.err = err
+				}
+				return
+			}
+			close(sgCh)
+			<-collectDone
+
+			names := mergeAndSort(collected, hints, buildSearchFilter(hints))
+			for _, name := range names {
+				select {
+				case outCh <- mimirstorage.FilteredResult{Value: name, Score: -1}:
+				case <-ctx.Done():
+					return
 				}
 			}
-		}()
+		} else {
+			// Unsorted path: dedup eagerly as results arrive.
+			dedupDone := make(chan struct{})
+			go func() {
+				defer close(dedupDone)
+				sink := newDedupSink(outCh, hints, buildSearchFilter(hints), stream, cancel, ctx)
+				for names := range sgCh {
+					for _, name := range names {
+						if !sink.add(name) {
+							return
+						}
+					}
+				}
+			}()
 
-		queryF := func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64, indexMeta *bucketindex.Metadata) ([]ulid.ULID, error) {
-			return q.fetchLabelNamesFromStoreStreaming(ctx, clients, minT, maxT, tenantID, storeHints, convertedMatchers, indexMeta, sgCh)
-		}
-
-		if err := q.queryWithConsistencyCheck(ctx, spanLog, minT, maxT, tenantID, nil, queryF); err != nil {
+			if err := q.queryWithConsistencyCheck(ctx, spanLog, minT, maxT, tenantID, nil, queryF); err != nil {
+				close(sgCh)
+				<-dedupDone
+				if !stream.limitReached {
+					stream.err = err
+				}
+				return
+			}
 			close(sgCh)
 			<-dedupDone
-			// Don't overwrite a limit-triggered cancellation with context.Canceled.
-			if !stream.limitReached {
-				stream.err = err
-			}
-			return
 		}
-
-		close(sgCh)
-		<-dedupDone
 	}()
 
-	return stream, nil
+	return stream, nil, nil
 }
 
-// SearchLabelValues implements mimirstorage.Searcher.
+// SearchLabelValues implements mimirstorage.MimirSearcher.
 // It returns a SearcherValueSet immediately; fetching and deduplication run in the background.
 // As each store-gateway responds its label values are deduplicated and streamed to the caller.
-func (q *blocksStoreQuerier) SearchLabelValues(ctx context.Context, name string, hints *mimirstorage.SearchHints, matchers ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
+func (q *blocksStoreQuerier) SearchLabelValues(ctx context.Context, name string, hints *mimirstorage.MimirSearchHints, matchers ...*labels.Matcher) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
 	tenantID, err := tenant.TenantID(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	minT, maxT := q.minT, q.maxT
@@ -283,6 +364,7 @@ func (q *blocksStoreQuerier) SearchLabelValues(ctx context.Context, name string,
 
 	// This is where filtered + de-duplicated results are sent
 	outCh := make(chan mimirstorage.FilteredResult, 256)
+	// compare is always nil here: sorted output is produced by the collect+merge path below.
 	stream := &labelSearchStream{ch: outCh, ctx: ctx, cancel: cancel, hints: hints}
 
 	go func() {
@@ -292,42 +374,147 @@ func (q *blocksStoreQuerier) SearchLabelValues(ctx context.Context, name string,
 		defer spanLog.Finish()
 
 		storeHints := searchHintsToLabelHints(hints)
+		sf := mimirHintsToStoreSearchFilter(hints)
 
-		// This is the channel that the store-gateway records are written to - note this is a []string
+		// sgCh carries sorted []string slices from each store-gateway as it finishes.
+		// Buffer of 32 lets store-gateways publish without waiting for the downstream goroutine.
 		sgCh := make(chan []string, 32)
 
-		dedupDone := make(chan struct{})
-		go func() {
-			defer close(dedupDone)
-			sink := newDedupSink(outCh, hints, stream, cancel, ctx)
-			for values := range sgCh {
-				for _, v := range values {
-					if !sink.add(v) {
-						return
-					}
+		queryF := func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64, indexMeta *bucketindex.Metadata) ([]ulid.ULID, error) {
+			return q.fetchLabelValuesFromStoreStreaming(ctx, name, clients, minT, maxT, tenantID, storeHints, matchers, sf, indexMeta, sgCh)
+		}
+
+		if hints != nil && hints.SortBy != 0 {
+			// Sorted path: collect all per-gateway sorted slices, merge them, then emit in order.
+			var collected [][]string
+			collectDone := make(chan struct{})
+			go func() {
+				defer close(collectDone)
+				for values := range sgCh {
+					collected = append(collected, values)
+				}
+			}()
+
+			if err := q.queryWithConsistencyCheck(ctx, spanLog, minT, maxT, tenantID, nil, queryF); err != nil {
+				close(sgCh)
+				<-collectDone
+				if !stream.limitReached {
+					stream.err = err
+				}
+				return
+			}
+			close(sgCh)
+			<-collectDone
+
+			values := mergeAndSort(collected, hints, buildSearchFilter(hints))
+			for _, v := range values {
+				select {
+				case outCh <- mimirstorage.FilteredResult{Value: v, Score: -1}:
+				case <-ctx.Done():
+					return
 				}
 			}
-		}()
+		} else {
+			// Unsorted path: dedup eagerly as results arrive.
+			dedupDone := make(chan struct{})
+			go func() {
+				defer close(dedupDone)
+				sink := newDedupSink(outCh, hints, buildSearchFilter(hints), stream, cancel, ctx)
+				for values := range sgCh {
+					for _, v := range values {
+						if !sink.add(v) {
+							return
+						}
+					}
+				}
+			}()
 
-		queryF := func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64, indexMeta *bucketindex.Metadata) ([]ulid.ULID, error) {
-			return q.fetchLabelValuesFromStoreStreaming(ctx, name, clients, minT, maxT, tenantID, storeHints, matchers, indexMeta, sgCh)
-		}
-
-		if err := q.queryWithConsistencyCheck(ctx, spanLog, minT, maxT, tenantID, nil, queryF); err != nil {
+			if err := q.queryWithConsistencyCheck(ctx, spanLog, minT, maxT, tenantID, nil, queryF); err != nil {
+				close(sgCh)
+				<-dedupDone
+				if !stream.limitReached {
+					stream.err = err
+				}
+				return
+			}
 			close(sgCh)
 			<-dedupDone
-			// Don't overwrite a limit-triggered cancellation with context.Canceled.
-			if !stream.limitReached {
-				stream.err = err
-			}
-			return
 		}
-
-		close(sgCh)
-		<-dedupDone
 	}()
 
-	return stream, nil
+	return stream, nil, nil
+}
+
+// mimirHintsToStoreSearchFilter converts MimirSearchHints to a storepb.SearchFilter so the
+// store-gateway can apply filter and sort server-side before transmitting values over the wire.
+// Returns nil when there is nothing useful to send (no search terms and no sort).
+func mimirHintsToStoreSearchFilter(h *mimirstorage.MimirSearchHints) *storepb.SearchFilter {
+	if h == nil || (len(h.Search) == 0 && h.SortBy == 0) {
+		return nil
+	}
+	op := storepb.OR
+	if h.Operator == 1 {
+		op = storepb.AND
+	}
+	return &storepb.SearchFilter{
+		SearchTerms:     h.Search,
+		CaseInsensitive: h.CaseInsensitive,
+		Operator:        op,
+		FuzzThreshold:   h.FuzzThreshold,
+		SortBy:          storepb.SortBy(h.SortBy),
+		SortOrder:       storepb.SortOrder(h.SortOrder),
+	}
+}
+
+// createSearchLabelNamesRequest builds a SearchLabelNamesRequest scoped to the given block IDs and
+// carrying an optional SearchFilter for server-side filtering.
+func createSearchLabelNamesRequest(minT, maxT int64, blockIDs []ulid.ULID, hints *storage.LabelHints, matchers []storepb.LabelMatcher, sf *storepb.SearchFilter) *storepb.SearchLabelNamesRequest {
+	var limit int64
+	if hints != nil && hints.Limit > 0 {
+		limit = int64(hints.Limit)
+	}
+	return &storepb.SearchLabelNamesRequest{
+		Start:    minT,
+		End:      maxT,
+		Matchers: matchers,
+		Limit:    limit,
+		RequestHints: &storepb.LabelNamesRequestHints{
+			BlockMatchers: []storepb.LabelMatcher{
+				{
+					Type:  storepb.LabelMatcher_RE,
+					Name:  block.BlockIDLabel,
+					Value: strings.Join(convertULIDsToString(blockIDs), "|"),
+				},
+			},
+		},
+		SearchFilter: sf,
+	}
+}
+
+// createSearchLabelValuesRequest builds a SearchLabelValuesRequest scoped to the given block IDs and
+// carrying an optional SearchFilter for server-side filtering.
+func createSearchLabelValuesRequest(minT, maxT int64, label string, blockIDs []ulid.ULID, hints *storage.LabelHints, matchers []*labels.Matcher, sf *storepb.SearchFilter) *storepb.SearchLabelValuesRequest {
+	var limit int64
+	if hints != nil && hints.Limit > 0 {
+		limit = int64(hints.Limit)
+	}
+	return &storepb.SearchLabelValuesRequest{
+		Label:    label,
+		Start:    minT,
+		End:      maxT,
+		Matchers: convertMatchersToLabelMatcher(matchers),
+		Limit:    limit,
+		RequestHints: &storepb.LabelValuesRequestHints{
+			BlockMatchers: []storepb.LabelMatcher{
+				{
+					Type:  storepb.LabelMatcher_RE,
+					Name:  block.BlockIDLabel,
+					Value: strings.Join(convertULIDsToString(blockIDs), "|"),
+				},
+			},
+		},
+		SearchFilter: sf,
+	}
 }
 
 // fetchLabelNamesFromStoreStreaming fans out label-names requests to the given store-gateway
@@ -341,6 +528,7 @@ func (q *blocksStoreQuerier) fetchLabelNamesFromStoreStreaming(
 	tenantID string,
 	hints *storage.LabelHints,
 	matchers []storepb.LabelMatcher,
+	sf *storepb.SearchFilter,
 	indexMeta *bucketindex.Metadata,
 	resultCh chan<- []string,
 ) ([]ulid.ULID, error) {
@@ -355,12 +543,9 @@ func (q *blocksStoreQuerier) fetchLabelNamesFromStoreStreaming(
 
 	for c, blockIDs := range clients {
 		g.Go(func() error {
-			req, err := createLabelNamesRequest(minT, maxT, blockIDs, hints, matchers)
-			if err != nil {
-				return fmt.Errorf("failed to create label names request: %w", err)
-			}
+			req := createSearchLabelNamesRequest(minT, maxT, blockIDs, hints, matchers, sf)
 
-			namesResp, err := c.LabelNames(gCtx, req)
+			namesResp, err := c.SearchLabelNames(gCtx, req)
 			if err != nil {
 				if shouldRetry(err) {
 					level.Warn(spanLog).Log("msg", "failed to fetch label names; error is retriable", "remote", c.RemoteAddress(), "err", err)
@@ -414,6 +599,7 @@ func (q *blocksStoreQuerier) fetchLabelValuesFromStoreStreaming(
 	tenantID string,
 	hints *storage.LabelHints,
 	matchers []*labels.Matcher,
+	sf *storepb.SearchFilter,
 	indexMeta *bucketindex.Metadata,
 	resultCh chan<- []string,
 ) ([]ulid.ULID, error) {
@@ -428,12 +614,9 @@ func (q *blocksStoreQuerier) fetchLabelValuesFromStoreStreaming(
 
 	for c, blockIDs := range clients {
 		g.Go(func() error {
-			req, err := createLabelValuesRequest(minT, maxT, name, blockIDs, hints, matchers...)
-			if err != nil {
-				return fmt.Errorf("failed to create label values request: %w", err)
-			}
+			req := createSearchLabelValuesRequest(minT, maxT, name, blockIDs, hints, matchers, sf)
 
-			valuesResp, err := c.LabelValues(gCtx, req)
+			valuesResp, err := c.SearchLabelValues(gCtx, req)
 			if err != nil {
 				if shouldRetry(err) {
 					level.Warn(spanLog).Log("msg", "failed to fetch label values; error is retriable", "remote", c.RemoteAddress(), "err", err)
@@ -453,10 +636,6 @@ func (q *blocksStoreQuerier) fetchLabelValuesFromStoreStreaming(
 				"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
 				"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "))
 
-			// Values returned need not be sorted, but we sort them here so that
-			// the dedup goroutine can detect duplicates without sorting the entire seen-set.
-			// (Sorting is not strictly needed for correctness since we use a seen-map,
-			// but it is cheap and keeps the output order predictable within each SG batch.)
 			select {
 			case resultCh <- valuesResp.Values:
 			case <-gCtx.Done():
@@ -525,12 +704,32 @@ func clampMinT(minT, maxT, maxQueryLength int64) int64 {
 	return minT
 }
 
-// searchHintsToLabelHints converts a SearchHints to a storage.LabelHints for use with
-// store-gateway requests. The filter is not pushed down to the store-gateway; it is applied
-// locally after collecting results.
-func searchHintsToLabelHints(hints *mimirstorage.SearchHints) *storage.LabelHints {
-	// Do not request a limit if we have a sort order defined
-	if hints == nil || hints.Compare != nil {
+// mergeAndSort combines sorted slices from multiple store-gateways and applies the
+// requested sort order. For alpha sort it performs a k-way sorted merge (util.MergeSlices);
+// for score sort it deduplicates across all slices and re-scores using MergeSlicesAndSortByScore.
+// The limit is applied after sorting.
+func mergeAndSort(collected [][]string, hints *mimirstorage.MimirSearchHints, filter *streaminglabelvalues.FilterChains) []string {
+	var result []string
+	if hints.SortBy == 2 { // score
+		result = streaminglabelvalues.MergeSlicesAndSortByScore(collected, filter, hints.SortOrder != 0)
+	} else {
+		// alpha (SortBy == 1): each slice is already alpha-sorted; k-way merge preserves order.
+		result = util.MergeSlices(collected...)
+		if hints.SortOrder == 1 { // desc
+			slices.Reverse(result)
+		}
+	}
+	if hints.Limit > 0 && len(result) > hints.Limit {
+		result = result[:hints.Limit]
+	}
+	return result
+}
+
+// searchHintsToLabelHints converts a MimirSearchHints to a storage.LabelHints for use with
+// store-gateway requests. No limit is pushed when sorting is requested, because all results
+// must be returned to apply the global sort correctly.
+func searchHintsToLabelHints(hints *mimirstorage.MimirSearchHints) *storage.LabelHints {
+	if hints == nil || hints.SortBy != 0 {
 		return nil
 	}
 	return &storage.LabelHints{Limit: hints.Limit}

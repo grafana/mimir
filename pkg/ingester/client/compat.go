@@ -197,6 +197,27 @@ func FromLabelNamesRequest(req *LabelNamesRequest) (int64, int64, *storage.Label
 	return req.StartTimestampMs, req.EndTimestampMs, hints, matchers, nil
 }
 
+// FromSearchRequest unpacks a SearchLabelValuesRequest proto.
+// The returned label name is empty for SearchLabelNames calls.
+func FromSearchRequest(req *SearchLabelValuesRequest) (string, int64, int64, *storage.LabelHints, []*labels.Matcher, error) {
+	var err error
+	var hints *storage.LabelHints
+	var matchers []*labels.Matcher
+
+	if req.Matchers != nil {
+		matchers, err = FromLabelMatchers(req.Matchers.Matchers)
+		if err != nil {
+			return "", 0, 0, nil, nil, err
+		}
+	}
+
+	if req.Limit > 0 {
+		hints = &storage.LabelHints{Limit: int(req.Limit)}
+	}
+
+	return req.LabelName, req.StartTimestampMs, req.EndTimestampMs, hints, matchers, nil
+}
+
 func ToActiveSeriesRequest(matchers []*labels.Matcher) (*ActiveSeriesRequest, error) {
 	ms, err := ToLabelMatchers(matchers)
 	if err != nil {

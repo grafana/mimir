@@ -22,7 +22,6 @@ import (
 	mimirstorage "github.com/grafana/mimir/pkg/storage"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
-	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 )
 
 // reverseAlphaComparator sorts FilteredResults in reverse alphabetical order by Value.
@@ -54,7 +53,7 @@ func TestBlocksStoreQuerier_SearchLabelNames(t *testing.T) {
 	tests := map[string]struct {
 		storeSetResponses []any
 		finderErr         error
-		hints             *mimirstorage.SearchHints
+		hints             *mimirstorage.MimirSearchHints
 		expectedValues    []string
 		expectedErrRegex  string
 		unordered         bool
@@ -115,13 +114,7 @@ func TestBlocksStoreQuerier_SearchLabelNames(t *testing.T) {
 					}: {block1},
 				},
 			},
-			hints: func() *mimirstorage.SearchHints {
-				chain := streaminglabelvalues.NewFilterChains(false)
-				c := streaminglabelvalues.NewFilterChain(streaminglabelvalues.Or, 1)
-				c.AddFilter(streaminglabelvalues.NewFilterContains("job"))
-				chain.AddFilterChain(c)
-				return &mimirstorage.SearchHints{Filter: chain}
-			}(),
+			hints:          &mimirstorage.MimirSearchHints{Search: []string{"job"}},
 			expectedValues: []string{"job"},
 		},
 		"limit is applied to results": {
@@ -136,7 +129,7 @@ func TestBlocksStoreQuerier_SearchLabelNames(t *testing.T) {
 					}: {block1},
 				},
 			},
-			hints:          &mimirstorage.SearchHints{Limit: 2},
+			hints:          &mimirstorage.MimirSearchHints{Limit: 2},
 			expectedValues: []string{"__name__", "job"},
 		},
 		"store-gateway returns a non-retriable error": {
@@ -166,7 +159,7 @@ func TestBlocksStoreQuerier_SearchLabelNames(t *testing.T) {
 					}: {block1},
 				},
 			},
-			hints:          &mimirstorage.SearchHints{Compare: reverseAlphaComparator{}},
+			hints:          &mimirstorage.MimirSearchHints{SortBy: 1, SortOrder: 1}, // alpha desc
 			expectedValues: []string{"namespace", "job", "__name__"},
 		},
 		"comparator with limit applies limit after sort": {
@@ -181,8 +174,8 @@ func TestBlocksStoreQuerier_SearchLabelNames(t *testing.T) {
 					}: {block1},
 				},
 			},
-			// Reverse-alpha order: namespace, job, __name__. Limit 2 keeps first two.
-			hints:          &mimirstorage.SearchHints{Compare: reverseAlphaComparator{}, Limit: 2},
+			// Alpha-desc order: namespace, job, __name__. Limit 2 keeps first two.
+			hints:          &mimirstorage.MimirSearchHints{SortBy: 1, SortOrder: 1, Limit: 2},
 			expectedValues: []string{"namespace", "job"},
 		},
 		"comparator with filter and limit": {
@@ -197,14 +190,8 @@ func TestBlocksStoreQuerier_SearchLabelNames(t *testing.T) {
 					}: {block1},
 				},
 			},
-			// Filter keeps "job" and "namespace"; reverse-alpha gives namespace, job; limit 1 → namespace.
-			hints: func() *mimirstorage.SearchHints {
-				chain := streaminglabelvalues.NewFilterChains(false)
-				c := streaminglabelvalues.NewFilterChain(streaminglabelvalues.Or, 1)
-				c.AddFilter(streaminglabelvalues.NewFilterContains("e"))
-				chain.AddFilterChain(c)
-				return &mimirstorage.SearchHints{Filter: chain, Compare: reverseAlphaComparator{}, Limit: 1}
-			}(),
+			// Search "e" keeps "job" (has 'e') and "namespace" (has 'e'); alpha-desc: namespace, job; limit 1 → namespace.
+			hints:          &mimirstorage.MimirSearchHints{Search: []string{"e"}, SortBy: 1, SortOrder: 1, Limit: 1},
 			expectedValues: []string{"namespace"},
 		},
 	}
@@ -233,7 +220,7 @@ func TestBlocksStoreQuerier_SearchLabelNames(t *testing.T) {
 				limits:             &blocksStoreLimitsMock{},
 			}
 
-			vs, err := q.SearchLabelNames(ctx, tc.hints)
+			vs, _, err := q.SearchLabelNames(ctx, tc.hints)
 			require.NoError(t, err)
 			defer vs.Close()
 
@@ -265,7 +252,7 @@ func TestBlocksStoreQuerier_SearchLabelValues(t *testing.T) {
 	tests := map[string]struct {
 		storeSetResponses []any
 		finderErr         error
-		hints             *mimirstorage.SearchHints
+		hints             *mimirstorage.MimirSearchHints
 		expectedValues    []string
 		expectedErrRegex  string
 		unordered         bool
@@ -322,13 +309,7 @@ func TestBlocksStoreQuerier_SearchLabelValues(t *testing.T) {
 					}: {block1},
 				},
 			},
-			hints: func() *mimirstorage.SearchHints {
-				chain := streaminglabelvalues.NewFilterChains(false)
-				c := streaminglabelvalues.NewFilterChain(streaminglabelvalues.Or, 1)
-				c.AddFilter(streaminglabelvalues.NewFilterContains("_b"))
-				chain.AddFilterChain(c)
-				return &mimirstorage.SearchHints{Filter: chain}
-			}(),
+			hints:          &mimirstorage.MimirSearchHints{Search: []string{"_b"}},
 			expectedValues: []string{"metric_b"},
 		},
 		"limit is applied to results": {
@@ -343,7 +324,7 @@ func TestBlocksStoreQuerier_SearchLabelValues(t *testing.T) {
 					}: {block1},
 				},
 			},
-			hints:          &mimirstorage.SearchHints{Limit: 1},
+			hints:          &mimirstorage.MimirSearchHints{Limit: 1},
 			expectedValues: []string{"metric_a"},
 		},
 		"store-gateway returns a non-retriable error": {
@@ -373,7 +354,7 @@ func TestBlocksStoreQuerier_SearchLabelValues(t *testing.T) {
 					}: {block1},
 				},
 			},
-			hints:          &mimirstorage.SearchHints{Compare: reverseAlphaComparator{}},
+			hints:          &mimirstorage.MimirSearchHints{SortBy: 1, SortOrder: 1}, // alpha desc
 			expectedValues: []string{"metric_c", "metric_b", "metric_a"},
 		},
 		"comparator with limit applies limit after sort": {
@@ -388,8 +369,8 @@ func TestBlocksStoreQuerier_SearchLabelValues(t *testing.T) {
 					}: {block1},
 				},
 			},
-			// Reverse-alpha: metric_c, metric_b, metric_a. Limit 2 keeps first two.
-			hints:          &mimirstorage.SearchHints{Compare: reverseAlphaComparator{}, Limit: 2},
+			// Alpha-desc: metric_c, metric_b, metric_a. Limit 2 keeps first two.
+			hints:          &mimirstorage.MimirSearchHints{SortBy: 1, SortOrder: 1, Limit: 2},
 			expectedValues: []string{"metric_c", "metric_b"},
 		},
 	}
@@ -418,7 +399,7 @@ func TestBlocksStoreQuerier_SearchLabelValues(t *testing.T) {
 				limits:             &blocksStoreLimitsMock{},
 			}
 
-			vs, err := q.SearchLabelValues(ctx, model.MetricNameLabel, tc.hints)
+			vs, _, err := q.SearchLabelValues(ctx, model.MetricNameLabel, tc.hints)
 			require.NoError(t, err)
 			defer vs.Close()
 
@@ -440,10 +421,10 @@ func TestBlocksStoreQuerier_SearchLabelValues(t *testing.T) {
 
 
 func TestLabelSearchStream(t *testing.T) {
-	newStream := func(hints *mimirstorage.SearchHints, values ...string) (*labelSearchStream, context.CancelFunc) {
+	newStream := func(hints *mimirstorage.MimirSearchHints, values ...string) (*labelSearchStream, context.CancelFunc) {
 		ch := make(chan mimirstorage.FilteredResult, len(values)+1)
 		ctx, cancel := context.WithCancel(context.Background())
-		s := &labelSearchStream{ch: ch, ctx: ctx, cancel: cancel, hints: hints}
+		s := &labelSearchStream{ch: ch, ctx: ctx, cancel: cancel, hints: hints, compare: comparatorFromHints(hints)}
 		for _, v := range values {
 			ch <- mimirstorage.FilteredResult{Value: v, Score: -1}
 		}
@@ -459,14 +440,14 @@ func TestLabelSearchStream(t *testing.T) {
 	})
 
 	t.Run("sorted path buffers and sorts all values", func(t *testing.T) {
-		s, _ := newStream(&mimirstorage.SearchHints{Compare: reverseAlphaComparator{}}, "b", "a", "c")
+		s, _ := newStream(&mimirstorage.MimirSearchHints{SortBy: 1, SortOrder: 1}, "b", "a", "c")
 		got, err := drainValueSet(s)
 		require.NoError(t, err)
 		assert.Equal(t, []string{"c", "b", "a"}, got)
 	})
 
 	t.Run("sorted path applies limit after sort", func(t *testing.T) {
-		s, _ := newStream(&mimirstorage.SearchHints{Compare: reverseAlphaComparator{}, Limit: 2}, "b", "a", "c")
+		s, _ := newStream(&mimirstorage.MimirSearchHints{SortBy: 1, SortOrder: 1, Limit: 2}, "b", "a", "c")
 		got, err := drainValueSet(s)
 		require.NoError(t, err)
 		assert.Equal(t, []string{"c", "b"}, got)
@@ -512,7 +493,7 @@ func TestLabelSearchStream(t *testing.T) {
 	t.Run("context cancelled during sorted drain stops collecting and reports error", func(t *testing.T) {
 		ch := make(chan mimirstorage.FilteredResult) // unbuffered — no values will arrive
 		ctx, cancel := context.WithCancel(context.Background())
-		s := &labelSearchStream{ch: ch, ctx: ctx, cancel: cancel, hints: &mimirstorage.SearchHints{Compare: reverseAlphaComparator{}}}
+		s := &labelSearchStream{ch: ch, ctx: ctx, cancel: cancel, compare: reverseAlphaComparator{}}
 
 		cancel() // cancel before Next() is ever called
 

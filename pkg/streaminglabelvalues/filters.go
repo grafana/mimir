@@ -4,6 +4,7 @@ package streaminglabelvalues
 
 import (
 	"math"
+	"sort"
 	"strings"
 
 	"github.com/grafana/mimir/pkg/storage"
@@ -147,4 +148,105 @@ func (c FilterJaro) Accept(value string) (accepted bool, score float64) {
 		return true, score
 	}
 	return false, noscore
+}
+
+// BuildFilterChains constructs a FilterChains from the given search parameters.
+// Returns nil if searchTerms is empty, indicating no filtering should be applied.
+// The returned FilterChains is safe to call concurrently from multiple goroutines.
+func BuildFilterChains(searchTerms []string, caseInsensitive bool, op Operator, fuzzThreshold float64) *FilterChains {
+	if len(searchTerms) == 0 {
+		return nil
+	}
+
+	chain := NewFilterChains(!caseInsensitive)
+
+	sc := NewFilterChain(op, len(searchTerms))
+	for _, term := range searchTerms {
+		if caseInsensitive {
+			term = strings.ToLower(term)
+		}
+		sc.AddFilter(NewFilterContains(term))
+	}
+	chain.AddFilterChain(sc)
+
+	if fuzzThreshold > 0 {
+		fc := NewFilterChain(op, len(searchTerms))
+		for _, term := range searchTerms {
+			if caseInsensitive {
+				term = strings.ToLower(term)
+			}
+			fc.AddFilter(NewFilterJaro(term, fuzzThreshold))
+		}
+		chain.AddFilterChain(fc)
+	}
+
+	return chain
+}
+
+// ScoreAndSort scores values using filter and sorts them by score in-place.
+// If ascending is false, highest score first; if true, lowest score first.
+// If filter is nil, values are returned unchanged.
+func ScoreAndSort(values []string, filter *FilterChains, ascending bool) []string {
+	if filter == nil || len(values) == 0 {
+		return values
+	}
+	scores := make([]float64, len(values))
+	for i, v := range values {
+		_, scores[i] = filter.Accept(v)
+	}
+	sort.Sort(scoreSort{values: values, scores: scores, ascending: ascending})
+	return values
+}
+
+// scoreSort implements sort.Interface to sort values and scores in parallel.
+type scoreSort struct {
+	values    []string
+	scores    []float64
+	ascending bool
+}
+
+func (s scoreSort) Len() int { return len(s.values) }
+func (s scoreSort) Less(i, j int) bool {
+	if s.ascending {
+		return s.scores[i] < s.scores[j]
+	}
+	return s.scores[i] > s.scores[j]
+}
+func (s scoreSort) Swap(i, j int) {
+	s.values[i], s.values[j] = s.values[j], s.values[i]
+	s.scores[i], s.scores[j] = s.scores[j], s.scores[i]
+}
+
+// MergeSlicesAndSortByScore deduplicates values from multiple slices, scores each
+// unique value using filter, and returns them sorted by score. If filter is nil,
+// values are deduplicated in insertion order without scoring.
+func MergeSlicesAndSortByScore(ss [][]string, filter *FilterChains, ascending bool) []string {
+	seen := make(map[string]struct{})
+	var unique []string
+	for _, slice := range ss {
+		for _, v := range slice {
+			if _, ok := seen[v]; !ok {
+				seen[v] = struct{}{}
+				unique = append(unique, v)
+			}
+		}
+	}
+	return ScoreAndSort(unique, filter, ascending)
+}
+
+// ApplyFilterChains filters values in-place using a pre-built FilterChains.
+// The returned slice shares the same backing array as the input.
+// If chain is nil all values are retained unchanged.
+func ApplyFilterChains(values []string, chain *FilterChains) []string {
+	if chain == nil {
+		return values
+	}
+	n := 0
+	for _, v := range values {
+		if accepted, _ := chain.Accept(v); accepted {
+			values[n] = v
+			n++
+		}
+	}
+	return values[:n]
 }

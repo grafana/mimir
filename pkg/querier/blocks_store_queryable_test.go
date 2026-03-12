@@ -3327,6 +3327,14 @@ func (m *storeGatewayClientMock) LabelValues(context.Context, *storepb.LabelValu
 	return m.mockedLabelValuesResponse, m.mockedLabelValuesErr
 }
 
+func (m *storeGatewayClientMock) SearchLabelNames(_ context.Context, _ *storepb.SearchLabelNamesRequest, _ ...grpc.CallOption) (*storepb.LabelNamesResponse, error) {
+	return m.mockedLabelNamesResponse, m.mockedLabelNamesErr
+}
+
+func (m *storeGatewayClientMock) SearchLabelValues(_ context.Context, _ *storepb.SearchLabelValuesRequest, _ ...grpc.CallOption) (*storepb.LabelValuesResponse, error) {
+	return m.mockedLabelValuesResponse, m.mockedLabelValuesErr
+}
+
 func (m *storeGatewayClientMock) RemoteAddress() string {
 	return m.remoteAddr
 }
@@ -3404,6 +3412,16 @@ func (m *cancelerStoreGatewayClientMock) LabelNames(ctx context.Context, _ *stor
 }
 
 func (m *cancelerStoreGatewayClientMock) LabelValues(ctx context.Context, _ *storepb.LabelValuesRequest, _ ...grpc.CallOption) (*storepb.LabelValuesResponse, error) {
+	m.cancel()
+	return nil, ctx.Err()
+}
+
+func (m *cancelerStoreGatewayClientMock) SearchLabelNames(ctx context.Context, _ *storepb.SearchLabelNamesRequest, _ ...grpc.CallOption) (*storepb.LabelNamesResponse, error) {
+	m.cancel()
+	return nil, ctx.Err()
+}
+
+func (m *cancelerStoreGatewayClientMock) SearchLabelValues(ctx context.Context, _ *storepb.SearchLabelValuesRequest, _ ...grpc.CallOption) (*storepb.LabelValuesResponse, error) {
 	m.cancel()
 	return nil, ctx.Err()
 }

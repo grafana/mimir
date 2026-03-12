@@ -43,6 +43,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -54,7 +55,9 @@ import (
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	mimirstorage "github.com/grafana/mimir/pkg/storage"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerclient"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/extract"
@@ -3240,6 +3243,281 @@ func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, hints
 	}
 
 	return values, nil
+}
+
+// ingesterSearchNamesValueSet wraps a server-streaming gRPC client as a SearcherValueSet.
+// Each Recv() call fetches the next batch of SearchLabelValuesResult items from the ingester.
+type ingesterSearchNamesValueSet struct {
+	stream  ingester_client.Ingester_SearchLabelNamesClient
+	batch   []*ingester_client.SearchLabelValuesResult
+	pos     int
+	current mimirstorage.FilteredResult
+	err     error
+}
+
+func (s *ingesterSearchNamesValueSet) Next() bool {
+	for s.pos >= len(s.batch) {
+		resp, err := s.stream.Recv()
+		if err == io.EOF {
+			return false
+		}
+		if err != nil {
+			s.err = err
+			return false
+		}
+		s.batch = resp.Results
+		s.pos = 0
+	}
+	r := s.batch[s.pos]
+	s.pos++
+	s.current = mimirstorage.FilteredResult{Value: r.Value, Score: r.Score}
+	return true
+}
+
+func (s *ingesterSearchNamesValueSet) At() mimirstorage.FilteredResult { return s.current }
+func (s *ingesterSearchNamesValueSet) Warnings() annotations.Annotations {
+	return nil
+}
+func (s *ingesterSearchNamesValueSet) Err() error { return s.err }
+func (s *ingesterSearchNamesValueSet) Close() {
+	// Drain any remaining items so the gRPC goroutine can finish.
+	for {
+		_, err := s.stream.Recv()
+		if err != nil {
+			return
+		}
+	}
+}
+
+// ingesterSearchValuesValueSet wraps a server-streaming gRPC client for label values.
+type ingesterSearchValuesValueSet struct {
+	stream  ingester_client.Ingester_SearchLabelValuesClient
+	batch   []*ingester_client.SearchLabelValuesResult
+	pos     int
+	current mimirstorage.FilteredResult
+	err     error
+}
+
+func (s *ingesterSearchValuesValueSet) Next() bool {
+	for s.pos >= len(s.batch) {
+		resp, err := s.stream.Recv()
+		if err == io.EOF {
+			return false
+		}
+		if err != nil {
+			s.err = err
+			return false
+		}
+		s.batch = resp.Results
+		s.pos = 0
+	}
+	r := s.batch[s.pos]
+	s.pos++
+	s.current = mimirstorage.FilteredResult{Value: r.Value, Score: r.Score}
+	return true
+}
+
+func (s *ingesterSearchValuesValueSet) At() mimirstorage.FilteredResult { return s.current }
+func (s *ingesterSearchValuesValueSet) Warnings() annotations.Annotations {
+	return nil
+}
+func (s *ingesterSearchValuesValueSet) Err() error { return s.err }
+func (s *ingesterSearchValuesValueSet) Close() {
+	for {
+		_, err := s.stream.Recv()
+		if err != nil {
+			return
+		}
+	}
+}
+
+// distributorSearchValueSet is a channel-backed SearcherValueSet returned by the Distributor.
+// Results are merged by a background goroutine and pushed to ch.
+type distributorSearchValueSet struct {
+	ch           <-chan mimirstorage.FilteredResult
+	cur          mimirstorage.FilteredResult
+	ctx          context.Context
+	cancel       context.CancelFunc
+	err          error
+	limitReached bool
+}
+
+func (s *distributorSearchValueSet) Next() bool {
+	v, ok := <-s.ch
+	if !ok {
+		return false
+	}
+	s.cur = v
+	return true
+}
+
+func (s *distributorSearchValueSet) At() mimirstorage.FilteredResult { return s.cur }
+func (s *distributorSearchValueSet) Warnings() annotations.Annotations {
+	return nil
+}
+func (s *distributorSearchValueSet) Err() error  { return s.err }
+func (s *distributorSearchValueSet) Close()      { s.cancel() }
+
+// distributorComparatorFromHints builds a Comparator from MimirSearchHints.
+// Returns nil when no sorting is requested.
+func distributorComparatorFromHints(h *mimirstorage.MimirSearchHints) mimirstorage.Comparator {
+	if h == nil || h.SortBy == 0 {
+		return nil
+	}
+	if h.SortBy == 1 { // Alpha
+		if h.SortOrder == 1 { // Desc
+			return &streaminglabelvalues.ComparerAlphaDesc{}
+		}
+		return &streaminglabelvalues.ComparerAlpha{}
+	}
+	if h.SortBy == 2 { // Score
+		return streaminglabelvalues.NewCompareScore(h.Search)
+	}
+	return nil
+}
+
+// mimirHintsToIngesterSearchFilter converts MimirSearchHints to a SearchLabelValuesFilter proto.
+func mimirHintsToIngesterSearchFilter(h *mimirstorage.MimirSearchHints) *ingester_client.SearchLabelValuesFilter {
+	if h == nil || (len(h.Search) == 0 && h.SortBy == 0) {
+		return nil
+	}
+	op := ingester_client.OR
+	if h.Operator == 1 {
+		op = ingester_client.AND
+	}
+	return &ingester_client.SearchLabelValuesFilter{
+		SearchTerms:     h.Search,
+		CaseInsensitive: h.CaseInsensitive,
+		Operator:        op,
+		FuzzThreshold:   h.FuzzThreshold,
+		SortBy:          ingester_client.SortBy(h.SortBy),
+		SortOrder:       ingester_client.SortOrder(h.SortOrder),
+	}
+}
+
+// SearchLabelNames returns a SearcherValueSet of label names matching the search criteria from ingesters.
+// Each ingester streams sorted/filtered batches; the distributor merges them and returns a merged stream.
+func (d *Distributor) SearchLabelNames(ctx context.Context, from, to model.Time, hints *mimirstorage.MimirSearchHints, matchers ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
+	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	ms, err := ingester_client.ToLabelMatchers(matchers)
+	if err != nil {
+		return nil, err
+	}
+
+	sf := mimirHintsToIngesterSearchFilter(hints)
+	req := &ingester_client.SearchLabelValuesRequest{
+		StartTimestampMs: int64(from),
+		EndTimestampMs:   int64(to),
+		Matchers:         &ingester_client.LabelMatchers{Matchers: ms},
+		Filter:           sf,
+	}
+	if hints != nil && hints.Limit > 0 {
+		req.Limit = int64(hints.Limit)
+	}
+
+	// Use the outer ctx (not the per-instance context from DoUntilQuorum) so that
+	// DoUntilQuorum's defer cancel() does not kill the streams when it returns.
+	// The streams must outlive the forReplicationSets call; they are cleaned up when
+	// mergeCtx is cancelled (limit hit) or when the outer ctx is cancelled (request done).
+	streamCtx := ctx
+	streams, err := forReplicationSets(ctx, d, replicationSets, func(_ context.Context, ic ingester_client.IngesterClient) (ingester_client.Ingester_SearchLabelNamesClient, error) {
+		return ic.SearchLabelNames(streamCtx, req)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	iters := make([]mimirstorage.SearcherValueSet, len(streams))
+	for i, s := range streams {
+		iters[i] = &ingesterSearchNamesValueSet{stream: s}
+	}
+
+	mergeCtx, cancel := context.WithCancel(ctx)
+	outCh := make(chan mimirstorage.FilteredResult, 256)
+	result := &distributorSearchValueSet{ch: outCh, ctx: mergeCtx, cancel: cancel}
+
+	go func() {
+		defer close(outCh)
+		cmp := distributorComparatorFromHints(hints)
+		var mergeErr error
+		if cmp != nil {
+			mergeErr = mimirstorage.KWayMergeValueSets(mergeCtx, cancel, iters, hints, cmp, outCh, &result.limitReached)
+		} else {
+			mergeErr = mimirstorage.UnsortedDedupValueSets(mergeCtx, cancel, iters, hints, outCh, &result.limitReached)
+		}
+		if mergeErr != nil && !result.limitReached {
+			result.err = mergeErr
+		}
+	}()
+
+	return result, nil
+}
+
+// SearchLabelValues returns a SearcherValueSet of label values matching the search criteria from ingesters.
+// Each ingester streams sorted/filtered batches; the distributor merges them and returns a merged stream.
+func (d *Distributor) SearchLabelValues(ctx context.Context, from, to model.Time, label model.LabelName, hints *mimirstorage.MimirSearchHints, matchers ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
+	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	ms, err := ingester_client.ToLabelMatchers(matchers)
+	if err != nil {
+		return nil, err
+	}
+
+	sf := mimirHintsToIngesterSearchFilter(hints)
+	req := &ingester_client.SearchLabelValuesRequest{
+		LabelName:        string(label),
+		StartTimestampMs: int64(from),
+		EndTimestampMs:   int64(to),
+		Matchers:         &ingester_client.LabelMatchers{Matchers: ms},
+		Filter:           sf,
+	}
+	if hints != nil && hints.Limit > 0 {
+		req.Limit = int64(hints.Limit)
+	}
+
+	// Use the outer ctx (not the per-instance context from DoUntilQuorum) so that
+	// DoUntilQuorum's defer cancel() does not kill the streams when it returns.
+	// The streams must outlive the forReplicationSets call; they are cleaned up when
+	// mergeCtx is cancelled (limit hit) or when the outer ctx is cancelled (request done).
+	streamCtx := ctx
+	streams, err := forReplicationSets(ctx, d, replicationSets, func(_ context.Context, ic ingester_client.IngesterClient) (ingester_client.Ingester_SearchLabelValuesClient, error) {
+		return ic.SearchLabelValues(streamCtx, req)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	iters := make([]mimirstorage.SearcherValueSet, len(streams))
+	for i, s := range streams {
+		iters[i] = &ingesterSearchValuesValueSet{stream: s}
+	}
+
+	mergeCtx, cancel := context.WithCancel(ctx)
+	outCh := make(chan mimirstorage.FilteredResult, 256)
+	result := &distributorSearchValueSet{ch: outCh, ctx: mergeCtx, cancel: cancel}
+
+	go func() {
+		defer close(outCh)
+		cmp := distributorComparatorFromHints(hints)
+		var mergeErr error
+		if cmp != nil {
+			mergeErr = mimirstorage.KWayMergeValueSets(mergeCtx, cancel, iters, hints, cmp, outCh, &result.limitReached)
+		} else {
+			mergeErr = mimirstorage.UnsortedDedupValueSets(mergeCtx, cancel, iters, hints, outCh, &result.limitReached)
+		}
+		if mergeErr != nil && !result.limitReached {
+			result.err = mergeErr
+		}
+	}()
+
+	return result, nil
 }
 
 // MetricsForLabelMatchers returns a list of series with samples timestamps between from and through, and series labels

@@ -65,3 +65,18 @@ type Searcher interface {
 	// The SearcherValueSet iterator is ordered by any given Comparator.
 	SearchLabelValues(ctx context.Context, name string, hints *SearchHints, matchers ...*labels.Matcher) (SearcherValueSet, error)
 }
+
+type MimirSearchHints struct {
+	Search          []string
+	CaseInsensitive bool
+	FuzzThreshold   float64
+	Operator        int // Or = 0, And = 1
+	SortBy          int // 0=none, 1=alpha, 2=score
+	SortOrder       int // 0=asc, 1=desc
+	Limit           int // 0=unlimited
+}
+
+type MimirSearcher interface {
+	SearchLabelNames(ctx context.Context, hints *MimirSearchHints, matchers ...*labels.Matcher) (SearcherValueSet, annotations.Annotations, error)
+	SearchLabelValues(ctx context.Context, name string, hints *MimirSearchHints, matchers ...*labels.Matcher) (SearcherValueSet, annotations.Annotations, error)
+}
