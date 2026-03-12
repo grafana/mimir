@@ -1394,11 +1394,15 @@ func removeHAReplicaLabels(req *mimirpb.WriteRequest, lastAccepted int, replicas
 }
 
 func sliceUnacceptedRequests(req *mimirpb.WriteRequest, lastAccepted int) func() {
-	originalLen := len(req.Timeseries)
+	originalTimeseries := req.Timeseries
 	req.Timeseries = req.Timeseries[:lastAccepted+1]
 	return func() {
-		// Restore the length so that we can put back all the series in the request to the memory pool
-		req.Timeseries = req.Timeseries[:originalLen]
+		// Restore the original slice header so that we can put back all the series in the request
+		// to the memory pool. We save the full slice header (pointer, length, capacity) rather than
+		// just the length because downstream middlewares may replace req.Timeseries with a slice
+		// backed by a different array (e.g. via RemoveSliceIndexes), which would make a
+		// req.Timeseries[:originalLen] reslice panic with a capacity mismatch.
+		req.Timeseries = originalTimeseries
 	}
 }
 
