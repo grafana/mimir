@@ -9678,7 +9678,6 @@ func (m *mockHATracker) cleanupHATrackerMetricsForUser(userID string) {
 }
 
 func TestDistributor_replicaObserved(t *testing.T) {
-	//limits := &validation.Overrides{}
 	userID := "test-user"
 	cluster := "c1"
 	replica := "r1"
