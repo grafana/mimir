@@ -9644,22 +9644,55 @@ func BenchmarkDistributor_HaDedupMiddleware(b *testing.B) {
 		userID              = "user-1"
 		ctx                 = user.InjectOrgID(context.Background(), userID)
 		numSeriesPerRequest = 1024
-
-		testConfig = prepConfig{
-			numDistributors: 1,
-		}
+		cluster             = "test-cluster"
+		replica             = "replica-1"
 	)
 
 	testCases := map[string]struct {
-		rejectedSeriesPercentage float64
+		numClusters  int
+		numReplicas  int
+		acceptedOnly bool
 	}{
-		"no series rejected": {
-			rejectedSeriesPercentage: 0,
+		"1 cluster 1 replica all accepted": {
+			numClusters:  1,
+			numReplicas:  1,
+			acceptedOnly: true,
+		},
+		"1 cluster 2 replicas all accepted": {
+			numClusters:  1,
+			numReplicas:  2,
+			acceptedOnly: true,
+		},
+		"1 cluster 2 replicas with rejected": {
+			numClusters:  1,
+			numReplicas:  2,
+			acceptedOnly: false,
 		},
 	}
 
-	for testName, _ := range testCases {
+	for testName, tc := range testCases {
 		b.Run(testName, func(b *testing.B) {
+			var limits validation.Limits
+			flagext.DefaultValues(&limits)
+			limits.AcceptHASamples = true
+			limits.HAMaxClusters = tc.numClusters
+
+			testConfig := prepConfig{
+				numDistributors: 1,
+				enableTracker:   true,
+				limits:          &limits,
+			}
+
+			// Create a distributor.
+			distributors, _, _, _ := prepare(b, testConfig)
+			require.Len(b, distributors, 1)
+
+			// Pre-register the accepted replica so the HA tracker knows which replica to accept.
+			if tc.acceptedOnly {
+				err := distributors[0].HATracker.checkReplica(ctx, userID, cluster, replica, now, now)
+				require.NoError(b, err)
+			}
+
 			// Pre-generate all write requests that will be used in this test.
 			reqs := make([]*mimirpb.WriteRequest, 0, b.N)
 			for r := 0; r < b.N; r++ {
@@ -9667,18 +9700,28 @@ func BenchmarkDistributor_HaDedupMiddleware(b *testing.B) {
 					Timeseries: make([]mimirpb.PreallocTimeseries, 0, numSeriesPerRequest),
 				}
 
-				for s := 0; s < numSeriesPerRequest; s++ {
-					req.Timeseries = append(req.Timeseries, makeTimeseries([]string{model.MetricNameLabel, fmt.Sprintf("series_%d", s)}, makeSamples(now.UnixMilli(), float64(s)), nil, nil))
+				seriesPerReplica := numSeriesPerRequest / (tc.numClusters * tc.numReplicas)
+				for c := 0; c < tc.numClusters; c++ {
+					for rep := 0; rep < tc.numReplicas; rep++ {
+						replicaName := replica
+						if rep > 0 {
+							replicaName = fmt.Sprintf("replica-%d", rep+1)
+						}
+						clusterName := cluster
+						if c > 0 {
+							clusterName = fmt.Sprintf("cluster-%d", c+1)
+						}
+						for s := 0; s < seriesPerReplica; s++ {
+							req.Timeseries = append(req.Timeseries, makeTimeseries(
+								[]string{model.MetricNameLabel, fmt.Sprintf("series_%d", s), "__replica__", replicaName, "cluster", clusterName},
+								makeSamples(now.UnixMilli(), float64(s)), nil, nil,
+							))
+						}
+					}
 				}
 
 				reqs = append(reqs, req)
 			}
-
-			// Create a distributor.
-			distributors, _, _, _ := prepare(b, testConfig)
-			require.Len(b, distributors, 1)
-
-			distributors[0].cfg.HATrackerConfig.EnableHATracker = true
 
 			// Get the middleware function.
 			noop := func(_ context.Context, _ *Request) error { return nil }
