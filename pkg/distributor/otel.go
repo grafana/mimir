@@ -350,18 +350,21 @@ func newOTLPParser(
 			}
 		}
 
-		tenantID, err := tenant.TenantID(ctx)
+		tenantID, tenantMd, err := tenant.ExtractWithMetadata(ctx)
 		if err != nil {
 			return 0, err
 		}
+
 		enableCTZeroIngestion := limits.OTelCreatedTimestampZeroIngestionEnabled(tenantID)
 		promoteResourceAttributes := resourceAttributePromotionConfig.PromoteOTelResourceAttributes(tenantID)
 		keepIdentifyingResourceAttributes := keepIdentifyingOTelResourceAttributesConfig.OTelKeepIdentifyingResourceAttributes(tenantID)
 		convertHistogramsToNHCB := limits.OTelConvertHistogramsToNHCB(tenantID)
 		promoteScopeMetadata := limits.OTelPromoteScopeMetadata(tenantID)
 		allowDeltaTemporality := limits.OTelNativeDeltaIngestion(tenantID)
-		translationStrategy := limits.OTelTranslationStrategy(tenantID)
-		validateTranslationStrategy(translationStrategy, limits, tenantID)
+
+		fullTenantId := tenantMd.WithTenant(tenantID)
+		translationStrategy := limits.OTelTranslationStrategy(fullTenantId)
+		validateTranslationStrategy(translationStrategy, limits, fullTenantId)
 
 		pushMetrics.IncOTLPRequest(tenantID)
 		pushMetrics.ObserveRequestBodySize(tenantID, "otlp", int64(uncompressedBodySize), r.ContentLength)
@@ -377,7 +380,7 @@ func newOTLPParser(
 			promoteResourceAttributes:         promoteResourceAttributes,
 			allowDeltaTemporality:             allowDeltaTemporality,
 			allowUTF8:                         !translationStrategy.ShouldEscape(),
-			underscoreSanitization:            limits.OTelLabelNameUnderscoreSanitization(tenantID),
+			underscoreSanitization:            limits.OTelLabelNameUnderscoreSanitization(fullTenantId),
 			preserveMultipleUnderscores:       limits.OTelLabelNamePreserveMultipleUnderscores(tenantID),
 		}
 		metrics, metadata, metricsDropped, err := otelMetricsToSeriesAndMetadata(

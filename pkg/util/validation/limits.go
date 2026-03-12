@@ -308,7 +308,7 @@ type Limits struct {
 	AlertmanagerNotifyHookTimeout              model.Duration         `yaml:"alertmanager_notify_hook_timeout" json:"alertmanager_notify_hook_timeout"`
 
 	// OpenTelemetry
-	OTelMetricSuffixesEnabled                bool                         `yaml:"otel_metric_suffixes_enabled" json:"otel_metric_suffixes_enabled" category:"advanced"`
+	OTelMetricSuffixesEnabled                *bool                        `yaml:"otel_metric_suffixes_enabled" json:"otel_metric_suffixes_enabled" category:"advanced"`
 	OTelCreatedTimestampZeroIngestionEnabled bool                         `yaml:"otel_created_timestamp_zero_ingestion_enabled" json:"otel_created_timestamp_zero_ingestion_enabled" category:"experimental"`
 	PromoteOTelResourceAttributes            flagext.StringSliceCSV       `yaml:"promote_otel_resource_attributes" json:"promote_otel_resource_attributes" category:"experimental"`
 	OTelKeepIdentifyingResourceAttributes    bool                         `yaml:"otel_keep_identifying_resource_attributes" json:"otel_keep_identifying_resource_attributes" category:"experimental"`
@@ -366,7 +366,8 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.CreationGracePeriod, CreationGracePeriodFlag, "Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + creation_grace_period)'. This configuration is enforced in the distributor and ingester.")
 	f.Var(&l.PastGracePeriod, PastGracePeriodFlag, "Controls how far into the past incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is lower than '(now - OOO window - past_grace_period)'. This configuration is enforced in the distributor and ingester. 0 to disable.")
 	f.BoolVar(&l.EnforceMetadataMetricName, "validation.enforce-metadata-metric-name", true, "Enforce every metadata has a metric name.")
-	f.BoolVar(&l.OTelMetricSuffixesEnabled, "distributor.otel-metric-suffixes-enabled", false, "Whether to enable automatic suffixes to names of metrics ingested through OTLP.")
+	l.OTelMetricSuffixesEnabled = new(bool)
+	f.BoolVar(l.OTelMetricSuffixesEnabled, "distributor.otel-metric-suffixes-enabled", false, "Whether to enable automatic suffixes to names of metrics ingested through OTLP.")
 	f.BoolVar(&l.OTelCreatedTimestampZeroIngestionEnabled, "distributor.otel-created-timestamp-zero-ingestion-enabled", false, "Whether to enable translation of OTel start timestamps to Prometheus zero samples in the OTLP endpoint.")
 	f.Var(&l.PromoteOTelResourceAttributes, "distributor.otel-promote-resource-attributes", "Optionally specify OTel resource attributes to promote to labels.")
 	f.BoolVar(&l.OTelKeepIdentifyingResourceAttributes, "distributor.otel-keep-identifying-resource-attributes", false, "Whether to keep identifying OTel resource attributes in the target_info metric on top of converting to job and instance labels.")
@@ -564,6 +565,9 @@ func (l *Limits) unmarshal(decode func(any) error) error {
 
 		// Reset the merged custom active series trackers config, to not interfere with the default limits.
 		l.activeSeriesMergedCustomTrackersConfig = atomic.NewPointer[asmodel.CustomTrackersConfig](nil)
+
+		// Reset this param to be nil, since it is set during RegisterFlags.
+		l.OTelMetricSuffixesEnabled = nil
 	}
 
 	// Decode into a reflection-crafted struct that has fields for the extensions.
@@ -601,15 +605,16 @@ func (l *Limits) MarshalYAML() (interface{}, error) {
 
 // Validate the Limits.
 func (l *Limits) Validate() error {
+	validationScheme := model.LegacyValidation
 	switch l.NameValidationScheme {
 	case model.UTF8Validation, model.LegacyValidation:
+		validationScheme = l.NameValidationScheme
 	case model.UnsetValidation:
-		l.NameValidationScheme = model.LegacyValidation
+		// Do nothing.
 	default:
 		return fmt.Errorf("unrecognized name validation scheme: %s", l.NameValidationScheme)
 	}
 
-	validationScheme := l.NameValidationScheme
 	switch otlptranslator.TranslationStrategyOption(l.OTelTranslationStrategy) {
 	case otlptranslator.UnderscoreEscapingWithoutSuffixes:
 		if validationScheme != model.LegacyValidation {
@@ -618,7 +623,7 @@ func (l *Limits) Validate() error {
 				l.OTelTranslationStrategy, model.LegacyValidation,
 			)
 		}
-		if l.OTelMetricSuffixesEnabled {
+		if l.OTelMetricSuffixesEnabled != nil && *l.OTelMetricSuffixesEnabled {
 			return fmt.Errorf("OTLP translation strategy %s is not allowed unless metric suffixes are disabled", l.OTelTranslationStrategy)
 		}
 	case otlptranslator.UnderscoreEscapingWithSuffixes:
@@ -628,7 +633,7 @@ func (l *Limits) Validate() error {
 				l.OTelTranslationStrategy, model.LegacyValidation,
 			)
 		}
-		if !l.OTelMetricSuffixesEnabled {
+		if l.OTelMetricSuffixesEnabled == nil || !*l.OTelMetricSuffixesEnabled {
 			return fmt.Errorf("OTLP translation strategy %s is not allowed unless metric suffixes are enabled", l.OTelTranslationStrategy)
 		}
 	case otlptranslator.NoUTF8EscapingWithSuffixes:
@@ -638,7 +643,7 @@ func (l *Limits) Validate() error {
 				l.OTelTranslationStrategy, model.UTF8Validation,
 			)
 		}
-		if !l.OTelMetricSuffixesEnabled {
+		if l.OTelMetricSuffixesEnabled == nil || !*l.OTelMetricSuffixesEnabled {
 			return fmt.Errorf("OTLP translation strategy %s is not allowed unless metric suffixes are enabled", l.OTelTranslationStrategy)
 		}
 	case otlptranslator.NoTranslation:
@@ -648,7 +653,7 @@ func (l *Limits) Validate() error {
 				l.OTelTranslationStrategy, model.UTF8Validation,
 			)
 		}
-		if l.OTelMetricSuffixesEnabled {
+		if l.OTelMetricSuffixesEnabled != nil && *l.OTelMetricSuffixesEnabled {
 			return fmt.Errorf("OTLP translation strategy %s is not allowed unless metric suffixes are disabled", l.OTelTranslationStrategy)
 		}
 	case "":
@@ -1531,7 +1536,8 @@ func (o *Overrides) Prom2RangeCompat(userID string) bool {
 }
 
 func (o *Overrides) OTelMetricSuffixesEnabled(tenantID string) bool {
-	return o.getOverridesForUserWithMetadata(tenantID).OTelMetricSuffixesEnabled
+	v := o.getOverridesForUserWithMetadata(tenantID).OTelMetricSuffixesEnabled
+	return v != nil && *v
 }
 
 func (o *Overrides) OTelCreatedTimestampZeroIngestionEnabled(tenantID string) bool {
@@ -1559,7 +1565,7 @@ func (o *Overrides) OTelNativeDeltaIngestion(tenantID string) bool {
 }
 
 func (o *Overrides) OTelTranslationStrategy(tenantID string) otlptranslator.TranslationStrategyOption {
-	strategy := otlptranslator.TranslationStrategyOption(o.getOverridesForUser(tenantID).OTelTranslationStrategy)
+	strategy := otlptranslator.TranslationStrategyOption(o.getOverridesForUserWithMetadata(tenantID).OTelTranslationStrategy)
 	if strategy != "" {
 		return strategy
 	}
@@ -1586,7 +1592,7 @@ func (o *Overrides) OTelTranslationStrategy(tenantID string) otlptranslator.Tran
 }
 
 func (o *Overrides) OTelLabelNameUnderscoreSanitization(tenantID string) bool {
-	return o.getOverridesForUser(tenantID).OTelLabelNameUnderscoreSanitization
+	return o.getOverridesForUserWithMetadata(tenantID).OTelLabelNameUnderscoreSanitization
 }
 
 func (o *Overrides) OTelLabelNamePreserveMultipleUnderscores(tenantID string) bool {
@@ -1643,7 +1649,11 @@ func (o *Overrides) LabelsQueryOptimizerEnabled(userID string) bool {
 
 // NameValidationScheme returns the name validation scheme to use for a particular tenant.
 func (o *Overrides) NameValidationScheme(userID string) model.ValidationScheme {
-	return o.getOverridesForUser(userID).NameValidationScheme
+	scheme := o.getOverridesForUserWithMetadata(userID).NameValidationScheme
+	if scheme == model.UnsetValidation {
+		return model.LegacyValidation
+	}
+	return scheme
 }
 
 // CardinalityAnalysisMaxResults returns the maximum number of results that
@@ -1711,8 +1721,14 @@ func mergeLimits(dst, overlay *Limits) *Limits {
 	if overlay.IngestionBurstFactor > 0 {
 		dst.IngestionBurstFactor = overlay.IngestionBurstFactor
 	}
-	if overlay.OTelMetricSuffixesEnabled {
-		dst.OTelMetricSuffixesEnabled = true
+	if overlay.OTelMetricSuffixesEnabled != nil {
+		dst.OTelMetricSuffixesEnabled = overlay.OTelMetricSuffixesEnabled
+	}
+	if overlay.NameValidationScheme != model.UnsetValidation {
+		dst.NameValidationScheme = overlay.NameValidationScheme
+	}
+	if overlay.OTelTranslationStrategy != "" {
+		dst.OTelTranslationStrategy = overlay.OTelTranslationStrategy
 	}
 	return dst
 }

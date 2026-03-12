@@ -1628,7 +1628,7 @@ func TestLimits_Validate(t *testing.T) {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
 				cfg.NameValidationScheme = model.LegacyValidation
-				cfg.OTelMetricSuffixesEnabled = false
+				cfg.OTelMetricSuffixesEnabled = boolPtr(false)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes)
 				return cfg
 			}(),
@@ -1639,7 +1639,7 @@ func TestLimits_Validate(t *testing.T) {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
 				cfg.NameValidationScheme = model.LegacyValidation
-				cfg.OTelMetricSuffixesEnabled = true
+				cfg.OTelMetricSuffixesEnabled = boolPtr(true)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithSuffixes)
 				return cfg
 			}(),
@@ -1650,7 +1650,7 @@ func TestLimits_Validate(t *testing.T) {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
 				cfg.NameValidationScheme = model.UTF8Validation
-				cfg.OTelMetricSuffixesEnabled = true
+				cfg.OTelMetricSuffixesEnabled = boolPtr(true)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoUTF8EscapingWithSuffixes)
 				return cfg
 			}(),
@@ -1661,7 +1661,7 @@ func TestLimits_Validate(t *testing.T) {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
 				cfg.NameValidationScheme = model.UTF8Validation
-				cfg.OTelMetricSuffixesEnabled = false
+				cfg.OTelMetricSuffixesEnabled = boolPtr(false)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoTranslation)
 				return cfg
 			}(),
@@ -1672,7 +1672,7 @@ func TestLimits_Validate(t *testing.T) {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
 				cfg.NameValidationScheme = model.LegacyValidation
-				cfg.OTelMetricSuffixesEnabled = false
+				cfg.OTelMetricSuffixesEnabled = boolPtr(false)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue("")
 				return cfg
 			}(),
@@ -1687,7 +1687,7 @@ func TestLimits_Validate(t *testing.T) {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
 				cfg.NameValidationScheme = model.LegacyValidation
-				cfg.OTelMetricSuffixesEnabled = true
+				cfg.OTelMetricSuffixesEnabled = boolPtr(true)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue("")
 				return cfg
 			}(),
@@ -1702,7 +1702,7 @@ func TestLimits_Validate(t *testing.T) {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
 				cfg.NameValidationScheme = model.UTF8Validation
-				cfg.OTelMetricSuffixesEnabled = true
+				cfg.OTelMetricSuffixesEnabled = boolPtr(true)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue("")
 				return cfg
 			}(),
@@ -1717,7 +1717,7 @@ func TestLimits_Validate(t *testing.T) {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
 				cfg.NameValidationScheme = model.UTF8Validation
-				cfg.OTelMetricSuffixesEnabled = false
+				cfg.OTelMetricSuffixesEnabled = boolPtr(false)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue("")
 				return cfg
 			}(),
@@ -1732,7 +1732,7 @@ func TestLimits_Validate(t *testing.T) {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
 				cfg.NameValidationScheme = model.UTF8Validation
-				cfg.OTelMetricSuffixesEnabled = false
+				cfg.OTelMetricSuffixesEnabled = boolPtr(false)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes)
 				return cfg
 			}(),
@@ -1743,7 +1743,7 @@ func TestLimits_Validate(t *testing.T) {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
 				cfg.NameValidationScheme = model.LegacyValidation
-				cfg.OTelMetricSuffixesEnabled = true
+				cfg.OTelMetricSuffixesEnabled = boolPtr(true)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes)
 				return cfg
 			}(),
@@ -1754,7 +1754,7 @@ func TestLimits_Validate(t *testing.T) {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
 				cfg.NameValidationScheme = model.UTF8Validation
-				cfg.OTelMetricSuffixesEnabled = true
+				cfg.OTelMetricSuffixesEnabled = boolPtr(true)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithSuffixes)
 				return cfg
 			}(),
@@ -1765,7 +1765,7 @@ func TestLimits_Validate(t *testing.T) {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
 				cfg.NameValidationScheme = model.LegacyValidation
-				cfg.OTelMetricSuffixesEnabled = false
+				cfg.OTelMetricSuffixesEnabled = boolPtr(false)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithSuffixes)
 				return cfg
 			}(),
@@ -1776,7 +1776,7 @@ func TestLimits_Validate(t *testing.T) {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
 				cfg.NameValidationScheme = model.LegacyValidation
-				cfg.OTelMetricSuffixesEnabled = true
+				cfg.OTelMetricSuffixesEnabled = boolPtr(true)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoUTF8EscapingWithSuffixes)
 				return cfg
 			}(),
@@ -1787,7 +1787,7 @@ func TestLimits_Validate(t *testing.T) {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
 				cfg.NameValidationScheme = model.UTF8Validation
-				cfg.OTelMetricSuffixesEnabled = false
+				cfg.OTelMetricSuffixesEnabled = boolPtr(false)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoUTF8EscapingWithSuffixes)
 				return cfg
 			}(),
@@ -1798,7 +1798,7 @@ func TestLimits_Validate(t *testing.T) {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
 				cfg.NameValidationScheme = model.LegacyValidation
-				cfg.OTelMetricSuffixesEnabled = false
+				cfg.OTelMetricSuffixesEnabled = boolPtr(false)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoTranslation)
 				return cfg
 			}(),
@@ -1809,7 +1809,7 @@ func TestLimits_Validate(t *testing.T) {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
 				cfg.NameValidationScheme = model.UTF8Validation
-				cfg.OTelMetricSuffixesEnabled = true
+				cfg.OTelMetricSuffixesEnabled = boolPtr(true)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoTranslation)
 				return cfg
 			}(),
@@ -2417,7 +2417,7 @@ func TestOverrides_OTelTranslationStrategy(t *testing.T) {
 				"tenant1": {
 					OTelTranslationStrategy:   OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithSuffixes),
 					NameValidationScheme:      model.UTF8Validation,
-					OTelMetricSuffixesEnabled: false,
+					OTelMetricSuffixesEnabled: boolPtr(false),
 				},
 			},
 			tenantID:                    "tenant1",
@@ -2429,7 +2429,7 @@ func TestOverrides_OTelTranslationStrategy(t *testing.T) {
 				"tenant1": {
 					OTelTranslationStrategy:   OTelTranslationStrategyValue(""),
 					NameValidationScheme:      model.LegacyValidation,
-					OTelMetricSuffixesEnabled: true,
+					OTelMetricSuffixesEnabled: boolPtr(true),
 				},
 			},
 			tenantID:                    "tenant1",
@@ -2441,7 +2441,7 @@ func TestOverrides_OTelTranslationStrategy(t *testing.T) {
 				"tenant1": {
 					OTelTranslationStrategy:   OTelTranslationStrategyValue(""),
 					NameValidationScheme:      model.LegacyValidation,
-					OTelMetricSuffixesEnabled: false,
+					OTelMetricSuffixesEnabled: boolPtr(false),
 				},
 			},
 			tenantID:                    "tenant1",
@@ -2453,7 +2453,7 @@ func TestOverrides_OTelTranslationStrategy(t *testing.T) {
 				"tenant1": {
 					OTelTranslationStrategy:   OTelTranslationStrategyValue(""),
 					NameValidationScheme:      model.UTF8Validation,
-					OTelMetricSuffixesEnabled: true,
+					OTelMetricSuffixesEnabled: boolPtr(true),
 				},
 			},
 			tenantID:                    "tenant1",
@@ -2465,7 +2465,7 @@ func TestOverrides_OTelTranslationStrategy(t *testing.T) {
 				"tenant1": {
 					OTelTranslationStrategy:   OTelTranslationStrategyValue(""),
 					NameValidationScheme:      model.UTF8Validation,
-					OTelMetricSuffixesEnabled: false,
+					OTelMetricSuffixesEnabled: boolPtr(false),
 				},
 			},
 			tenantID:                    "tenant1",
@@ -2494,7 +2494,7 @@ func TestOverrides_OTelTranslationStrategy(t *testing.T) {
 			"tenant1": {
 				OTelTranslationStrategy:   OTelTranslationStrategyValue(""),
 				NameValidationScheme:      model.ValidationScheme(999), // Invalid scheme
-				OTelMetricSuffixesEnabled: true,
+				OTelMetricSuffixesEnabled: boolPtr(true),
 			},
 		}
 
@@ -2577,7 +2577,7 @@ func TestOverridesWithMetadata(t *testing.T) {
 			MaxActiveSeriesPerUser:    50000,
 			IngestionBurstSize:        50000,
 			IngestionBurstFactor:      5.0,
-			OTelMetricSuffixesEnabled: true,
+			OTelMetricSuffixesEnabled: boolPtr(true),
 		},
 		"tenant-a:run-id=specific:source=test-run": {
 			IngestionRate:          9999,
@@ -2817,13 +2817,38 @@ func TestMergeLimits(t *testing.T) {
 		},
 		"merges OTelMetricSuffixesEnabled true overlay": {
 			dst:     &Limits{IngestionRate: 10},
-			overlay: &Limits{OTelMetricSuffixesEnabled: true},
-			want:    Limits{IngestionRate: 10, OTelMetricSuffixesEnabled: true},
+			overlay: &Limits{OTelMetricSuffixesEnabled: boolPtr(true)},
+			want:    Limits{IngestionRate: 10, OTelMetricSuffixesEnabled: boolPtr(true)},
 		},
-		"OTelMetricSuffixesEnabled false overlay does not override true dst": {
-			dst:     &Limits{OTelMetricSuffixesEnabled: true},
-			overlay: &Limits{OTelMetricSuffixesEnabled: false},
-			want:    Limits{OTelMetricSuffixesEnabled: true},
+		"OTelMetricSuffixesEnabled false overlay overrides true dst": {
+			dst:     &Limits{OTelMetricSuffixesEnabled: boolPtr(true)},
+			overlay: &Limits{OTelMetricSuffixesEnabled: boolPtr(false)},
+			want:    Limits{OTelMetricSuffixesEnabled: boolPtr(false)},
+		},
+		"OTelMetricSuffixesEnabled nil overlay does not override dst": {
+			dst:     &Limits{OTelMetricSuffixesEnabled: boolPtr(true)},
+			overlay: &Limits{},
+			want:    Limits{OTelMetricSuffixesEnabled: boolPtr(true)},
+		},
+		"merges NameValidationScheme when overlay is set": {
+			dst:     &Limits{IngestionRate: 10, NameValidationScheme: model.LegacyValidation},
+			overlay: &Limits{NameValidationScheme: model.UTF8Validation},
+			want:    Limits{IngestionRate: 10, NameValidationScheme: model.UTF8Validation},
+		},
+		"NameValidationScheme unset overlay does not override dst": {
+			dst:     &Limits{NameValidationScheme: model.UTF8Validation},
+			overlay: &Limits{NameValidationScheme: model.UnsetValidation},
+			want:    Limits{NameValidationScheme: model.UTF8Validation},
+		},
+		"merges OTelTranslationStrategy when overlay is set": {
+			dst:     &Limits{IngestionRate: 10},
+			overlay: &Limits{OTelTranslationStrategy: OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes)},
+			want:    Limits{IngestionRate: 10, OTelTranslationStrategy: OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes)},
+		},
+		"OTelTranslationStrategy empty overlay does not override dst": {
+			dst:     &Limits{OTelTranslationStrategy: OTelTranslationStrategyValue(otlptranslator.NoTranslation)},
+			overlay: &Limits{},
+			want:    Limits{OTelTranslationStrategy: OTelTranslationStrategyValue(otlptranslator.NoTranslation)},
 		},
 		"all mergeable fields": {
 			dst: &Limits{
@@ -2837,14 +2862,18 @@ func TestMergeLimits(t *testing.T) {
 				MaxActiveSeriesPerUser:    200,
 				IngestionBurstSize:        2000,
 				IngestionBurstFactor:      3.0,
-				OTelMetricSuffixesEnabled: true,
+				OTelMetricSuffixesEnabled: boolPtr(true),
+				NameValidationScheme:      model.UTF8Validation,
+				OTelTranslationStrategy:   OTelTranslationStrategyValue(otlptranslator.NoTranslation),
 			},
 			want: Limits{
 				IngestionRate:             20,
 				MaxActiveSeriesPerUser:    200,
 				IngestionBurstSize:        2000,
 				IngestionBurstFactor:      3.0,
-				OTelMetricSuffixesEnabled: true,
+				OTelMetricSuffixesEnabled: boolPtr(true),
+				NameValidationScheme:      model.UTF8Validation,
+				OTelTranslationStrategy:   OTelTranslationStrategyValue(otlptranslator.NoTranslation),
 			},
 		},
 	}
@@ -2863,6 +2892,8 @@ func TestMergeLimits(t *testing.T) {
 			assert.Equal(t, tc.want.IngestionBurstSize, got.IngestionBurstSize)
 			assert.Equal(t, tc.want.IngestionBurstFactor, got.IngestionBurstFactor)
 			assert.Equal(t, tc.want.OTelMetricSuffixesEnabled, got.OTelMetricSuffixesEnabled)
+			assert.Equal(t, tc.want.NameValidationScheme, got.NameValidationScheme)
+			assert.Equal(t, tc.want.OTelTranslationStrategy, got.OTelTranslationStrategy)
 
 			if tc.dst != nil && tc.overlay != nil {
 				assert.Same(t, tc.dst, got, "mergeLimits must return dst when both are non-nil")
@@ -2872,6 +2903,10 @@ func TestMergeLimits(t *testing.T) {
 			}
 		})
 	}
+}
+
+func boolPtr(b bool) *bool {
+	return &b
 }
 
 func getDefaultLimits() Limits {

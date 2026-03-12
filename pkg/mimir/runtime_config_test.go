@@ -59,6 +59,7 @@ overrides:
 	expected.MaxGlobalSeriesPerMetric = 7000
 	expected.RulerMaxRulesPerRuleGroup = 20
 	expected.RulerMaxRuleGroupsPerTenant = 20
+	expected.OTelMetricSuffixesEnabled = nil
 
 	loadedLimits := runtimeCfg.(*runtimeConfigValues).TenantLimits
 	require.Equal(t, 3, len(loadedLimits))
