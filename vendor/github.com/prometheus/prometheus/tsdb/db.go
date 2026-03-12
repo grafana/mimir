@@ -454,6 +454,10 @@ type DB struct {
 
 	// blockPostingsForMatchersCacheFactory returns a factory for creating PostingsForMatchersCache instances for compacted blocks.
 	blockPostingsForMatchersCacheFactory PostingsForMatchersCacheFactory
+
+	retiredHeadsMtx sync.RWMutex
+	retiredHeads    []*retiredHead // frozen, read-only heads (newest first)
+	retiredHeadSeq  int           // monotonically increasing counter for retired head directories
 }
 
 type dbMetrics struct {
@@ -1832,6 +1836,116 @@ func (db *DB) compactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID
 	return ulids, nil
 }
 
+// RotateHead freezes the current head, builds a 1-in-32 sampled index
+// file for it, and creates a new active head for writes. The frozen head
+// becomes a retiredHead that is still queryable through its disk-backed index.
+func (db *DB) RotateHead() error {
+	db.cmtx.Lock()
+	defer db.cmtx.Unlock()
+
+	oldHead := db.head
+	if oldHead.NumSeries() == 0 {
+		return nil
+	}
+
+	oldMinT := oldHead.MinTime()
+	oldMaxT := oldHead.MaxTime()
+
+	// Build index file for the old head.
+	db.retiredHeadSeq++
+	retiredDir := filepath.Join(db.dir, fmt.Sprintf("retired-head-%d", db.retiredHeadSeq))
+
+	indexReader, err := buildRetiredHeadIndex(oldHead, retiredDir)
+	if err != nil {
+		return fmt.Errorf("build retired head index: %w", err)
+	}
+
+	rh := &retiredHead{
+		head:   oldHead,
+		indexr: indexReader,
+		dir:    retiredDir,
+		minT:   oldMinT,
+		maxT:   oldMaxT,
+	}
+
+	// Clear MemPostings from the old head to reclaim memory.
+	// Queries now go through the file-based reader.
+	clearMemPostings(oldHead)
+
+	// Create a new head with its own WAL and chunks directory.
+	newHeadDir := filepath.Join(db.dir, fmt.Sprintf("head-%d", db.retiredHeadSeq))
+	if err := os.MkdirAll(newHeadDir, 0o777); err != nil {
+		return fmt.Errorf("create new head dir: %w", err)
+	}
+
+	newOpts := DefaultHeadOptions()
+	newOpts.ChunkRange = oldHead.opts.ChunkRange
+	newOpts.ChunkDirRoot = newHeadDir
+	newOpts.ChunkPool = oldHead.opts.ChunkPool
+	newOpts.ChunkWriteBufferSize = oldHead.opts.ChunkWriteBufferSize
+	newOpts.ChunkEndTimeVariance = oldHead.opts.ChunkEndTimeVariance
+	newOpts.ChunkWriteQueueSize = oldHead.opts.ChunkWriteQueueSize
+	newOpts.SamplesPerChunk = oldHead.opts.SamplesPerChunk
+	newOpts.StripeSize = oldHead.opts.StripeSize
+	newOpts.SeriesCallback = oldHead.opts.SeriesCallback
+	newOpts.EnableExemplarStorage = oldHead.opts.EnableExemplarStorage
+	newOpts.MaxExemplars.Store(oldHead.opts.MaxExemplars.Load())
+	newOpts.EnableMemorySnapshotOnShutdown = false
+	newOpts.OutOfOrderTimeWindow.Store(oldHead.opts.OutOfOrderTimeWindow.Load())
+	newOpts.OutOfOrderCapMax.Store(oldHead.opts.OutOfOrderCapMax.Load())
+	newOpts.EnableSharding = oldHead.opts.EnableSharding
+	newOpts.IsolationDisabled = oldHead.opts.IsolationDisabled
+	newOpts.PostingsForMatchersCacheFactory = oldHead.opts.PostingsForMatchersCacheFactory
+	newOpts.IndexLookupPlannerFunc = oldHead.opts.IndexLookupPlannerFunc
+
+	// Create a WAL for the new head.
+	newWalDir := filepath.Join(newHeadDir, "wal")
+	newWal, err := wlog.NewSize(db.logger, nil, newWalDir, wlog.DefaultSegmentSize, compression.None)
+	if err != nil {
+		return fmt.Errorf("create new head WAL: %w", err)
+	}
+
+	newHead, err := NewHead(nil, db.logger, newWal, nil, newOpts, nil)
+	if err != nil {
+		return fmt.Errorf("create new head: %w", err)
+	}
+	if err := newHead.Init(oldMaxT); err != nil {
+		return fmt.Errorf("init new head: %w", err)
+	}
+
+	// Swap the head and add the retired head.
+	db.mtx.Lock()
+	db.head = newHead
+	db.mtx.Unlock()
+
+	db.retiredHeadsMtx.Lock()
+	db.retiredHeads = append([]*retiredHead{rh}, db.retiredHeads...)
+	db.retiredHeadsMtx.Unlock()
+
+	return nil
+}
+
+// DropRetiredHeadsBefore drops all retired heads whose MaxTime is
+// strictly before the given threshold.
+func (db *DB) DropRetiredHeadsBefore(maxt int64) error {
+	db.retiredHeadsMtx.Lock()
+	defer db.retiredHeadsMtx.Unlock()
+
+	var kept []*retiredHead
+	var closeErrs []error
+	for _, rh := range db.retiredHeads {
+		if rh.maxT < maxt {
+			if err := rh.Close(); err != nil {
+				closeErrs = append(closeErrs, err)
+			}
+		} else {
+			kept = append(kept, rh)
+		}
+	}
+	db.retiredHeads = kept
+	return errors.Join(closeErrs...)
+}
+
 // compactHead compacts the given RangeHead.
 // The db.cmtx should be held before calling this method.
 func (db *DB) compactHead(head *RangeHead, truncateMemory bool) error {
@@ -2445,6 +2559,15 @@ func (db *DB) Close() error {
 	if db.head != nil {
 		errs = append(errs, db.head.Close())
 	}
+
+	// Close all retired heads.
+	db.retiredHeadsMtx.Lock()
+	for _, rh := range db.retiredHeads {
+		errs = append(errs, rh.Close())
+	}
+	db.retiredHeads = nil
+	db.retiredHeadsMtx.Unlock()
+
 	return errors.Join(errs...)
 }
 
@@ -2579,6 +2702,20 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 		blockQueriers = append(blockQueriers, headQuerier)
 	}
 
+	// Fan out across retired heads.
+	db.retiredHeadsMtx.RLock()
+	retiredSnapshot := db.retiredHeads
+	db.retiredHeadsMtx.RUnlock()
+	for _, rh := range retiredSnapshot {
+		if rh.OverlapsClosedInterval(mint, maxt) {
+			q, err := db.blockQuerierFunc(rh, mint, maxt)
+			if err != nil {
+				return nil, fmt.Errorf("open querier for retired head: %w", err)
+			}
+			blockQueriers = append(blockQueriers, q)
+		}
+	}
+
 	for _, b := range blocks {
 		q, err := db.blockQuerierFunc(b, mint, maxt)
 		if err != nil {
@@ -2654,6 +2791,20 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 
 	if headQuerier != nil {
 		blockQueriers = append(blockQueriers, headQuerier)
+	}
+
+	// Fan out across retired heads.
+	db.retiredHeadsMtx.RLock()
+	retiredSnapshot := db.retiredHeads
+	db.retiredHeadsMtx.RUnlock()
+	for _, rh := range retiredSnapshot {
+		if rh.OverlapsClosedInterval(mint, maxt) {
+			q, err := db.blockChunkQuerierFunc(rh, mint, maxt)
+			if err != nil {
+				return nil, fmt.Errorf("open chunk querier for retired head: %w", err)
+			}
+			blockQueriers = append(blockQueriers, q)
+		}
 	}
 
 	for _, b := range blocks {

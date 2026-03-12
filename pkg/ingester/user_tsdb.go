@@ -311,6 +311,17 @@ func (u *userTSDB) compactHead(blockDuration, forcedCompactionMaxTime int64) err
 	return u.db.CompactOOOHead(context.Background())
 }
 
+// rotateHead freezes the current head and creates a new one for writes.
+// The frozen head becomes a read-only retired head with a 1-in-32 sampled index.
+func (u *userTSDB) rotateHead() error {
+	if ok, s := u.changeState(active, forceCompacting); !ok {
+		return fmt.Errorf("TSDB head cannot be rotated because it is not in active state (possibly being closed or blocks shipping in progress): %s", s.String())
+	}
+	defer u.changeState(forceCompacting, active)
+
+	return u.db.RotateHead()
+}
+
 // nextForcedHeadCompactionRange computes the next TSDB head range to compact when a forced compaction
 // is triggered. If the returned isValid is false, then the returned range should not be compacted.
 func nextForcedHeadCompactionRange(blockDuration, headMinTime, headMaxTime, forcedMaxTime int64) (minTime, maxTime int64, isValid, isLast bool) {
