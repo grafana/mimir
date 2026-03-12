@@ -546,12 +546,10 @@ func (f *MetaFetcher) FetchRequestedMetas(ctx context.Context, blockIDs []ulid.U
 		return nil, errNoBlocksProvided
 	}
 
-	var (
-		metas = make(map[ulid.ULID]*Meta, len(blockIDs))
-		mtx   sync.Mutex
-		eg    errgroup.Group
-		idx   = atomic.NewInt64(-1)
-	)
+	var mtx sync.Mutex
+	metas := make(map[ulid.ULID]*Meta, len(blockIDs))
+	idx := atomic.NewInt64(-1)
+	eg, egCtx := errgroup.WithContext(ctx)
 
 	for i := 0; i < f.concurrency; i++ {
 		eg.Go(func() error {
@@ -561,7 +559,7 @@ func (f *MetaFetcher) FetchRequestedMetas(ctx context.Context, blockIDs []ulid.U
 					return nil
 				}
 				id := blockIDs[i]
-				meta, err := f.loadMeta(ctx, id)
+				meta, err := f.loadMeta(egCtx, id)
 				if err != nil {
 					return fmt.Errorf("load meta for block %s: %w", id, err)
 				}
