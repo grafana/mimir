@@ -4518,6 +4518,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 #       - pattern: rate(metric_counter[5m])
 #         regex: false
 #         reason: because the query is misconfigured
+#         only_block_if_range_query_not_aligned_with_step: false
 blocked_queries:
   - # PromQL expression pattern to match.
     [pattern: <string> | default = ""]
@@ -4528,6 +4529,11 @@ blocked_queries:
 
     # Reason returned to clients when rejecting matching queries.
     [reason: <string> | default = ""]
+
+    # If true, only block the query if the query time range is not aligned to
+    # the step, meaning the query is not eligible for range query result
+    # caching. Has no effect on instant queries or remote read requests.
+    [only_block_if_range_query_not_aligned_with_step: <boolean> | default = ]
 
 # (experimental) List of queries to limit and duration to limit them for.
 # Example:

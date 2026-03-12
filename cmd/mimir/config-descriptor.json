@@ -6066,6 +6066,15 @@
                 "fieldValue": null,
                 "fieldDefaultValue": "",
                 "fieldType": "string"
+              },
+              {
+                "kind": "field",
+                "name": "only_block_if_range_query_not_aligned_with_step",
+                "required": false,
+                "desc": "If true, only block the query if the query time range is not aligned to the step, meaning the query is not eligible for range query result caching. Has no effect on instant queries or remote read requests.",
+                "fieldValue": null,
+                "fieldDefaultValue": false,
+                "fieldType": "boolean"
               }
             ],
             "fieldValue": null,
