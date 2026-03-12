@@ -34,7 +34,7 @@ runs:
         
         DIRNAME="$(dirname "$TARGET")"
         NAME="$(basename "$DIRNAME")"
-        make \
+        make -j2 \
           BUILD_IN_CONTAINER=false \
           PUSH_MULTIARCH_TARGET="type=oci,dest=$OUTPUT_DIR/$NAME.oci" \
           push-multiarch-$TARGET
