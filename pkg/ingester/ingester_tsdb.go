@@ -220,6 +220,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		PostingsClonerFactory:                lookupplan.ActualSelectedPostingsClonerFactory{},
 		EnableSTAsZeroSample:                 false, // Handled manually for proper counting.
 		EnableNativeMetadata:                 i.cfg.BlocksStorageConfig.TSDB.OTelPersistResourceAttributes,
+		EnableScopeMetadata:                  i.cfg.BlocksStorageConfig.TSDB.OTelPersistScopeAttributes,
 		EnableResourceAttrIndex:              i.cfg.BlocksStorageConfig.TSDB.OTelResourceAttrIndexEnabled,
 		IndexedResourceAttrs:                 stringSliceToSet(i.cfg.BlocksStorageConfig.TSDB.OTelIndexedResourceAttributes),
 		SecondaryHashFunction:                secondaryTSDBHashFunctionForUser(userID),
