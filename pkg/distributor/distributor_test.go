@@ -5837,6 +5837,38 @@ func TestSortByAccepted(t *testing.T) {
 	}
 }
 
+func TestSliceUnacceptedRequests_RestoreAfterRemoveSliceIndexes(t *testing.T) {
+	const totalTimeseries = 100
+	const lastAccepted = 49 // first 50 are accepted
+
+	req := &mimirpb.WriteRequest{
+		Timeseries: make([]mimirpb.PreallocTimeseries, totalTimeseries),
+	}
+	for i := range req.Timeseries {
+		req.Timeseries[i] = mimirpb.PreallocTimeseries{
+			TimeSeries: &mimirpb.TimeSeries{
+				Labels: []mimirpb.LabelAdapter{{Name: "id", Value: fmt.Sprintf("%d", i)}},
+			},
+		}
+	}
+
+	// Slice the request to only accepted timeseries, and capture the cleanup.
+	cleanup := sliceUnacceptedRequests(req, lastAccepted)
+	require.Len(t, req.Timeseries, lastAccepted+1)
+
+	// Simulate downstream middleware replacing req.Timeseries with a shorter slice
+	// backed by a different array (which can happen via RemoveSliceIndexes or other
+	// slice operations). This reproduces the panic seen in production where the
+	// cleanup tried req.Timeseries[:originalLen] but the capacity was too small.
+	smallerSlice := make([]mimirpb.PreallocTimeseries, lastAccepted+1-3)
+	copy(smallerSlice, req.Timeseries)
+	req.Timeseries = smallerSlice
+
+	// The cleanup must not panic and must restore the original length.
+	require.NotPanics(t, cleanup)
+	require.Len(t, req.Timeseries, totalTimeseries)
+}
+
 func mustNewMatcher(t labels.MatchType, n, v string) *labels.Matcher {
 	m, err := labels.NewMatcher(t, n, v)
 	if err != nil {
