@@ -1191,13 +1191,6 @@ type replicaInfo struct {
 
 // replicaObserved checks if a sample from a given replica should be accepted for ingestion based on HA deduplication rules.
 func (d *Distributor) replicaObserved(ctx context.Context, userID string, replica haReplica, ts int64) (replicaState, error) {
-	span := trace.SpanFromContext(ctx)
-	span.SetAttributes(
-		// Make a copy of these, since they may be retained as tags
-		attribute.String("cluster", strings.Clone(replica.cluster)),
-		attribute.String("replica", strings.Clone(replica.replica)),
-	)
-
 	isAccepted, err := d.checkSample(ctx, userID, replica.cluster, replica.replica, ts)
 	if err != nil {
 		var replicasDidNotMatch *replicasDidNotMatchError
