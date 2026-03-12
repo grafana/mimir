@@ -561,8 +561,7 @@ func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *Multitena
 		return nil, errors.Wrap(err, "blocks garbage collect")
 	}
 
-	grouper := c.blocksGrouperFactory(ctx, c.compactorCfg, c.cfgProvider, tenant, userLogger, reg)
-	jobs, err := grouper.Groups(syncer.Metas())
+	jobs, err := bucketCompactor.grouper.Groups(syncer.Metas())
 	if err != nil {
 		return nil, errors.Wrap(err, "group compaction jobs")
 	}
