@@ -38,8 +38,8 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-// DefaultBlockDuration is the default blockRange, which today is always 2h.
-var DefaultBlockDuration = 2 * time.Hour.Milliseconds()
+// DefaultBlockRange is the default blockRange, which today is always 2h.
+var DefaultBlockRange = 2 * time.Hour.Milliseconds()
 
 type TSDBBuilder struct {
 	partitionID int32
@@ -360,8 +360,8 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 
 	db, err := tsdb.Open(udir, util_log.SlogFromGoKit(userLogger), tsdbPromReg, &tsdb.Options{
 		RetentionDuration:                    0,
-		MinBlockDuration:                     DefaultBlockDuration,
-		MaxBlockDuration:                     DefaultBlockDuration,
+		MinBlockDuration:                     DefaultBlockRange,
+		MaxBlockDuration:                     DefaultBlockRange,
 		NoLockfile:                           true,
 		StripeSize:                           b.cfg.BlocksStorage.TSDB.StripeSize,
 		HeadChunksWriteBufferSize:            b.cfg.BlocksStorage.TSDB.HeadChunksWriteBufferSize,
@@ -471,7 +471,7 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 			}(time.Now())
 
 			// Compact everything but skip truncating memory and the WAL because the whole DB is closed immediately after anyway (see below).
-			if err := db.compactBlocks(ctx, DefaultBlockDuration, math.MaxInt64, false); err != nil {
+			if err := db.compactBlocks(ctx, DefaultBlockRange, math.MaxInt64, false); err != nil {
 				return err
 			}
 
