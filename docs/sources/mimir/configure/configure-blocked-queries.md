@@ -25,14 +25,14 @@ overrides:
 
       # block this query only if it's a range query and the time range is not aligned to the step (i.e. not eligible for range query result caching)
       - pattern: 'sum(rate(node_cpu_seconds_total{env="prod"}[1m]))'
-        only_block_if_range_query_not_aligned_with_step: true
+        unaligned_range_queries: true
 ```
 
 The blocking is enforced on instant and range queries as well as remote read queries.
 
 For instant and range queries the pattern is evaluated against the query, for remote read requests, the pattern is evaluated against each set of matchers, as if the matchers formed a vector selector. If any set of matchers is blocked, the whole remote read request is rejected.
 
-Setting `only_block_if_range_query_not_aligned_with_step: true` on a rule causes the rule to only block range queries where the time range is not aligned to the step.
+Setting `unaligned_range_queries: true` on a rule causes the rule to only block range queries where the time range is not aligned to the step.
 Such queries are not eligible for [range query result caching](https://grafana.com/docs/mimir/latest/references/architecture/components/query-frontend/#caching) by default.
 This can be useful to discourage unaligned queries without impacting clients that already send aligned requests.
 Matching instant queries and remote read requests are not blocked.

@@ -61,7 +61,7 @@ func (qb *queryBlockerMiddleware) isBlocked(tenant string, req MetricsQueryReque
 	query := req.GetQuery()
 
 	for ruleIndex, block := range blocks {
-		if block.OnlyBlockIfRangeQueryNotAlignedWithStep {
+		if block.UnalignedRangeQueries {
 			_, isRangeQuery := req.(*PrometheusRangeQueryRequest)
 
 			if !isRangeQuery || isRequestStepAligned(req) {

@@ -278,11 +278,11 @@ func TestQueryBlockerMiddleware_OnlyBlockIfRangeQueryNotAlignedWithStep(t *testi
 		expectedBlocked bool
 	}{
 		{
-			name: "unaligned range query is blocked when only_block_if_range_query_not_aligned_with_step is true",
+			name: "unaligned range query is blocked when unaligned_range_queries is true",
 			limitsYAML: `
 blocked_queries:
   - pattern: "rate(metric_counter[5m])"
-    only_block_if_range_query_not_aligned_with_step: true
+    unaligned_range_queries: true
 `,
 			query:           "rate(metric_counter[5m])",
 			start:           unalignedStart,
@@ -290,11 +290,11 @@ blocked_queries:
 			expectedBlocked: true,
 		},
 		{
-			name: "aligned range query is not blocked when only_block_if_range_query_not_aligned_with_step is true",
+			name: "aligned range query is not blocked when unaligned_range_queries is true",
 			limitsYAML: `
 blocked_queries:
   - pattern: "rate(metric_counter[5m])"
-    only_block_if_range_query_not_aligned_with_step: true
+    unaligned_range_queries: true
 `,
 			query:           "rate(metric_counter[5m])",
 			start:           alignedStart,
@@ -302,11 +302,11 @@ blocked_queries:
 			expectedBlocked: false,
 		},
 		{
-			name: "unaligned range query is blocked regardless of only_block_if_range_query_not_aligned_with_step when it is false",
+			name: "unaligned range query is blocked regardless of unaligned_range_queries when it is false",
 			limitsYAML: `
 blocked_queries:
   - pattern: "rate(metric_counter[5m])"
-    only_block_if_range_query_not_aligned_with_step: false
+    unaligned_range_queries: false
 `,
 			query:           "rate(metric_counter[5m])",
 			start:           unalignedStart,
@@ -314,11 +314,11 @@ blocked_queries:
 			expectedBlocked: true,
 		},
 		{
-			name: "aligned range query is blocked when only_block_if_range_query_not_aligned_with_step is false",
+			name: "aligned range query is blocked when unaligned_range_queries is false",
 			limitsYAML: `
 blocked_queries:
   - pattern: "rate(metric_counter[5m])"
-    only_block_if_range_query_not_aligned_with_step: false
+    unaligned_range_queries: false
 `,
 			query:           "rate(metric_counter[5m])",
 			start:           alignedStart,
@@ -326,12 +326,12 @@ blocked_queries:
 			expectedBlocked: true,
 		},
 		{
-			name: "regex pattern: unaligned range query is blocked when only_block_if_range_query_not_aligned_with_step is true",
+			name: "regex pattern: unaligned range query is blocked when unaligned_range_queries is true",
 			limitsYAML: `
 blocked_queries:
   - pattern: ".*metric_counter.*"
     regex: true
-    only_block_if_range_query_not_aligned_with_step: true
+    unaligned_range_queries: true
 `,
 			query:           "rate(metric_counter[5m])",
 			start:           unalignedStart,
@@ -339,12 +339,12 @@ blocked_queries:
 			expectedBlocked: true,
 		},
 		{
-			name: "regex pattern: aligned range query is not blocked when only_block_if_range_query_not_aligned_with_step is true",
+			name: "regex pattern: aligned range query is not blocked when unaligned_range_queries is true",
 			limitsYAML: `
 blocked_queries:
   - pattern: ".*metric_counter.*"
     regex: true
-    only_block_if_range_query_not_aligned_with_step: true
+    unaligned_range_queries: true
 `,
 			query:           "rate(metric_counter[5m])",
 			start:           alignedStart,
@@ -356,7 +356,7 @@ blocked_queries:
 			limitsYAML: `
 blocked_queries:
   - pattern: "rate(metric_counter[5m])"
-    only_block_if_range_query_not_aligned_with_step: true
+    unaligned_range_queries: true
   - pattern: "rate(metric_counter[5m])"
     reason: "blocked by second rule"
 `,
@@ -414,7 +414,7 @@ func TestQueryBlockerMiddleware_OnlyBlockIfRangeQueryNotAlignedWithStep_InstantA
 			limitsYAML: `
 blocked_queries:
   - pattern: "rate(metric_counter[5m])"
-    only_block_if_range_query_not_aligned_with_step: true
+    unaligned_range_queries: true
 `,
 			makeReq: func(t *testing.T) MetricsQueryRequest {
 				return &PrometheusInstantQueryRequest{queryExpr: parseQuery(t, "rate(metric_counter[5m])")}
@@ -425,7 +425,7 @@ blocked_queries:
 			limitsYAML: `
 blocked_queries:
   - pattern: '{__name__="metric_counter"}'
-    only_block_if_range_query_not_aligned_with_step: true
+    unaligned_range_queries: true
 `,
 			makeReq: func(t *testing.T) MetricsQueryRequest {
 				req, err := remoteReadToMetricsQueryRequest(remoteReadPathSuffix, &prompb.Query{
