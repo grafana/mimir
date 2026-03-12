@@ -42,11 +42,6 @@ type LabelPolicy struct {
 // LabelPolicySet maps tenant IDs to their label policies.
 type LabelPolicySet map[string][]*LabelPolicy
 
-// GetLabelPolicySet implements LabelPolicies.
-func (l LabelPolicySet) GetLabelPolicySet() (LabelPolicySet, error) {
-	return l, nil
-}
-
 // Hash iterates through the tenant map in ascending order and returns a base32-encoded
 // SHA1 hash of all tenants and their label policies.
 //
