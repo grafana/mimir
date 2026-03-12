@@ -263,14 +263,4 @@
   ingester_zone_c_args+:: if !($._config.ingest_storage_enabled && $._config.ingest_storage_set_client_rack) then {} else {
     'ingest-storage.kafka.client-rack': 'zone-c',
   },
-
-  distributor_zone_a_args+:: if !($._config.ingest_storage_enabled && $._config.ingest_storage_set_client_rack) then {} else {
-    'ingest-storage.kafka.client-rack': 'zone-a',
-  },
-  distributor_zone_b_args+:: if !($._config.ingest_storage_enabled && $._config.ingest_storage_set_client_rack) then {} else {
-    'ingest-storage.kafka.client-rack': 'zone-b',
-  },
-  distributor_zone_c_args+:: if !($._config.ingest_storage_enabled && $._config.ingest_storage_set_client_rack) then {} else {
-    'ingest-storage.kafka.client-rack': 'zone-c',
-  },
 }

@@ -38,13 +38,6 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
         '-query-frontend.results-cache.memcached.addresses',
         '-ruler-storage.cache.memcached.addresses',
       ]
-    ) + (
-      // client.rack is an alternative way to get the Kafka client to connect
-      // to brokers in the same zone. The address(es) shouldn't be expected to
-      // include the zone then.
-      if $._config.ingest_storage_set_client_rack then [
-        '-ingest-storage.kafka.address',
-      ] else []
     ),
 
     // Environment variables to exclude from multi-zone config validation.
