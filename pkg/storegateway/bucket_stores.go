@@ -123,6 +123,11 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		lazyLoadingGate = timeoutGate{delegate: lazyLoadingGate, timeout: cfg.BucketStore.IndexHeader.LazyLoadingConcurrencyQueueTimeout}
 	}
 
+	maxGapBytesChunks := cfg.BucketStore.PartitionerMaxGapBytesChunks
+	if maxGapBytesChunks == 0 {
+		maxGapBytesChunks = cfg.BucketStore.PartitionerMaxGapBytes
+	}
+
 	u := &BucketStores{
 		logger:             logger,
 		cfg:                cfg,
@@ -135,8 +140,13 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		metaFetcherMetrics: NewMetadataFetcherMetrics(logger),
 		queryGate:          queryGate,
 		lazyLoadingGate:    lazyLoadingGate,
-		partitioners:       newGapBasedPartitioners(cfg.BucketStore.PartitionerMaxGapBytes, reg),
-		seriesHashCache:    hashcache.NewSeriesHashCache(cfg.BucketStore.SeriesHashCacheMaxBytes),
+		partitioners: newGapBasedPartitioners(
+			maxGapBytesChunks,
+			cfg.BucketStore.PartitionerMaxGapBytes,
+			cfg.BucketStore.PartitionerMaxGapBytes,
+			reg,
+		),
+		seriesHashCache: hashcache.NewSeriesHashCache(cfg.BucketStore.SeriesHashCacheMaxBytes),
 		syncBackoffConfig: backoff.Config{
 			MinBackoff: 1 * time.Second,
 			MaxBackoff: 10 * time.Second,

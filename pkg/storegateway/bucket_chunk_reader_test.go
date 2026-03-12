@@ -377,6 +377,7 @@ func TestBucketChunkReader_loadChunks_verifiesCRC32(t *testing.T) {
 				buf.Write(binary.BigEndian.AppendUint32(nil, tc.crcs[i]))
 			}
 
+			const maxGapBytes = 1_000_000
 			bucketReader := mockObjectStoreBucketReader{b: buf.Bytes()}
 			block := &bucketBlock{
 				meta: &block.Meta{
@@ -385,7 +386,7 @@ func TestBucketChunkReader_loadChunks_verifiesCRC32(t *testing.T) {
 					},
 				},
 				bkt:          bucketReader,
-				partitioners: newGapBasedPartitioners(1_000_000, prometheus.NewRegistry()),
+				partitioners: newGapBasedPartitioners(maxGapBytes, maxGapBytes, maxGapBytes, prometheus.NewRegistry()),
 				chunkObjs:    []string{"segment-0"},
 			}
 
