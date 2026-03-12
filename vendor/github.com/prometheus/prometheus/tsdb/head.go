@@ -1969,22 +1969,33 @@ func (h *Head) FsyncWLSegments() error {
 // when only a small fraction of series have new chunks to mmap.
 func (h *Head) mmapDirtyHeadChunks() {
 	var count int
-	for i := 0; i < h.series.size; i++ {
+	dirty := h.seriesPool.Get()[:0]
+	for i := range h.series.size {
 		h.series.locks[i].Lock()
-		dirty := h.series.dirty[i]
-		h.series.dirty[i] = map[chunks.HeadSeriesRef]struct{}{}
+		dirtyMap := h.series.dirty[i]
+		if len(dirtyMap) == 0 {
+			h.series.locks[i].Unlock()
+			continue
+		}
+
+		// Collect series pointers while holding the lock — avoids
+		// a second ref lookup after releasing.
+		dirty = dirty[:0]
+		for ref := range dirtyMap {
+			if s := h.series.series[i][ref]; s != nil {
+				dirty = append(dirty, s)
+			}
+		}
+		clear(dirtyMap) // reuse backing storage, zero allocs steady-state
 		h.series.locks[i].Unlock()
 
-		for ref := range dirty {
-			s := h.series.getByID(ref)
-			if s == nil {
-				continue
-			}
+		for _, s := range dirty {
 			s.Lock()
 			count += s.mmapChunks(h.chunkDiskMapper)
 			s.Unlock()
 		}
 	}
+	h.seriesPool.Put(dirty[:0])
 	h.metrics.mmapChunksTotal.Add(float64(count))
 }
 
