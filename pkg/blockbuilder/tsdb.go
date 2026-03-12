@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"iter"
 	"math"
 	"os"
 	"path/filepath"
@@ -397,17 +396,17 @@ func (b *TSDBBuilder) NotifyPreCommit(_ context.Context) error {
 }
 
 func (b *TSDBBuilder) CompactToReduceInMemorySeries(ctx context.Context) {
-	if b.blocksStorageCfg.TSDB.EarlyHeadCompactionMinInMemorySeries <= 0 {
+	if b.cfg.BlocksStorage.TSDB.EarlyHeadCompactionMinInMemorySeries <= 0 {
 		return
 	}
 
 	// No need to prematurely compact TSDB heads if the number of in-memory series is below a critical threshold.
 	totalMemorySeries := b.seriesCount.Load()
-	if totalMemorySeries < b.blocksStorageCfg.TSDB.EarlyHeadCompactionMinInMemorySeries {
+	if totalMemorySeries < b.cfg.BlocksStorage.TSDB.EarlyHeadCompactionMinInMemorySeries {
 		return
 	}
 
-	level.Info(b.logger).Log("msg", "the number of in-memory series is higher than the configured early compaction threshold", "in_memory_series", totalMemorySeries, "early_compaction_threshold", b.blocksStorageCfg.TSDB.EarlyHeadCompactionMinInMemorySeries)
+	level.Info(b.logger).Log("msg", "the number of in-memory series is higher than the configured early compaction threshold", "in_memory_series", totalMemorySeries, "early_compaction_threshold", b.cfg.BlocksStorage.TSDB.EarlyHeadCompactionMinInMemorySeries)
 }
 
 // Function to upload the blocks.
@@ -571,9 +570,13 @@ func (u *userTSDB) PostDeletion(metrics map[chunks.HeadSeriesRef]labels.Labels) 
 	u.instanceSeriesCount.Sub(int64(len(metrics)))
 }
 
-func (u *userTSDB) compactBlocks(ctx context.Context, blockDur, maxTime int64, truncateMemory bool) error {
+func (u *userTSDB) compactBlocks(ctx context.Context, blockRange, maxTime int64, truncateMemory bool) error {
 	// Compact all in-order data.
-	for rh := range u.headRanges(blockDur, maxTime) {
+	mint, maxt := u.Head().MinTime(), u.Head().MaxTime()
+	mint = (mint / blockRange) * blockRange
+	for blockMint := mint; blockMint <= maxt; blockMint += blockRange {
+		blockMaxt := min(blockMint+blockRange-1, maxTime)
+		rh := tsdb.NewRangeHead(u.Head(), blockMint, blockMaxt)
 		var err error
 		if truncateMemory {
 			err = u.DB.CompactHead(rh)
@@ -591,21 +594,6 @@ func (u *userTSDB) compactBlocks(ctx context.Context, blockDur, maxTime int64, t
 	}
 
 	return nil
-}
-
-func (u *userTSDB) headRanges(blockDur, maxTime int64) iter.Seq[*tsdb.RangeHead] {
-	return func(yield func(*tsdb.RangeHead) bool) {
-		h := u.Head()
-		mint, maxt := h.MinTime(), h.MaxTime()
-		mint = (mint / blockDur) * blockDur
-		for blockMint := mint; blockMint <= maxt; blockMint += blockDur {
-			blockMaxt := min(blockMint+blockDur, maxTime) - 1
-			rh := tsdb.NewRangeHead(h, blockMint, blockMaxt)
-			if !yield(rh) {
-				return
-			}
-		}
-	}
 }
 
 // buildSparseIndexHeaders builds sparse index-headers for all blocks in the metas list in the directory.
