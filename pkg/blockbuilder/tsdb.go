@@ -542,7 +542,7 @@ type userTSDB struct {
 	*tsdb.DB
 	userID string
 
-	instanceSeriesCount *atomic.Int64 // Shared across all userTSDB instances created by ingester.
+	instanceSeriesCount *atomic.Int64 // Shared across all userTSDB instances created by block-builder.
 
 	// Used as a protective mechanism, to make sure block-builder respects per-tenant max global series limit.
 	// The value is inclusive.
