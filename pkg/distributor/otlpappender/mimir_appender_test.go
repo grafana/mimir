@@ -701,12 +701,12 @@ func TestMimirAppender_ResourceContext(t *testing.T) {
 
 func TestMimirAppender_ScopeContext(t *testing.T) {
 	testCases := map[string]struct {
-		persistResourceAttributes bool
-		scope                     *storage.ScopeContext
-		expectScopeAttrs          *mimirpb.ScopeAttributes
+		persistScopeAttributes bool
+		scope                  *storage.ScopeContext
+		expectScopeAttrs       *mimirpb.ScopeAttributes
 	}{
 		"scope attributes disabled": {
-			persistResourceAttributes: false,
+			persistScopeAttributes: false,
 			scope: &storage.ScopeContext{
 				Name:    "github.com/example/payment",
 				Version: "1.2.0",
@@ -714,7 +714,7 @@ func TestMimirAppender_ScopeContext(t *testing.T) {
 			expectScopeAttrs: nil,
 		},
 		"scope attributes enabled with name and version": {
-			persistResourceAttributes: true,
+			persistScopeAttributes: true,
 			scope: &storage.ScopeContext{
 				Name:    "github.com/example/payment",
 				Version: "1.2.0",
@@ -726,7 +726,7 @@ func TestMimirAppender_ScopeContext(t *testing.T) {
 			},
 		},
 		"scope attributes enabled with all fields": {
-			persistResourceAttributes: true,
+			persistScopeAttributes: true,
 			scope: &storage.ScopeContext{
 				Name:      "github.com/example/payment",
 				Version:   "1.2.0",
@@ -744,21 +744,21 @@ func TestMimirAppender_ScopeContext(t *testing.T) {
 			},
 		},
 		"nil scope context": {
-			persistResourceAttributes: true,
-			scope:                     nil,
-			expectScopeAttrs:          nil,
+			persistScopeAttributes: true,
+			scope:                  nil,
+			expectScopeAttrs:       nil,
 		},
 		"empty scope context": {
-			persistResourceAttributes: true,
-			scope:                     &storage.ScopeContext{},
-			expectScopeAttrs:          nil, // All fields empty, so not stored
+			persistScopeAttributes: true,
+			scope:                  &storage.ScopeContext{},
+			expectScopeAttrs:       nil, // All fields empty, so not stored
 		},
 	}
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			appender := NewCombinedAppender()
-			appender.PersistResourceAttributes = tc.persistResourceAttributes
+			appender.PersistScopeAttributes = tc.persistScopeAttributes
 
 			_, err := appender.Append(0,
 				labels.FromStrings(model.MetricNameLabel, "my_metric"),
@@ -803,6 +803,7 @@ func TestMimirAppender_TableTimestampUpdatedToMax(t *testing.T) {
 
 	appender := NewCombinedAppender()
 	appender.PersistResourceAttributes = true
+	appender.PersistScopeAttributes = true
 
 	// Append first series at t=1000.
 	_, err := appender.Append(0,

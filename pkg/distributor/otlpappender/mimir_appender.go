@@ -32,6 +32,8 @@ type MimirAppender struct {
 	ValidIntervalCreatedTimestampZeroIngestion int64
 	// PersistResourceAttributes enables storing OTel resource attributes per series.
 	PersistResourceAttributes bool
+	// PersistScopeAttributes enables storing OTel scope attributes per series.
+	PersistScopeAttributes bool
 
 	series   []mimirpb.PreallocTimeseries
 	metadata []*mimirpb.MetricMetadata
@@ -187,7 +189,7 @@ func (c *MimirAppender) createNewSeries(idx *labelsIdx, collisionIdx int, hash u
 
 	// Attach scope attributes via table ref if enabled and we have any.
 	// Skip target_info series since it's synthesized from resource attributes.
-	if c.PersistResourceAttributes && metricName != "target_info" && opts.Scope != nil {
+	if c.PersistScopeAttributes && metricName != "target_info" && opts.Scope != nil {
 		if opts.Scope.Name != "" || opts.Scope.Version != "" || opts.Scope.SchemaURL != "" || len(opts.Scope.Attrs) > 0 {
 			ref, ok := c.scopeTableMap[opts.Scope]
 			if !ok {

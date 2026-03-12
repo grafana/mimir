@@ -92,6 +92,7 @@ func OTLPHandler(
 	retryCfg RetryConfig,
 	OTLPPushMiddlewares []OTLPPushMiddleware,
 	persistResourceAttributes bool,
+	persistScopeAttributes bool,
 	push PushFunc,
 	pushMetrics *PushMetrics,
 	reg prometheus.Registerer,
@@ -116,7 +117,7 @@ func OTLPHandler(
 			allowTranslationHeaders,
 			limits, resourceAttributePromotionConfig, keepIdentifyingOTelResourceAttributesConfig,
 			otlpConverter, pushMetrics, discardedDueToOtelParseError,
-			OTLPPushMiddlewares, persistResourceAttributes,
+			OTLPPushMiddlewares, persistResourceAttributes, persistScopeAttributes,
 			&schemeOverride,
 		)
 
@@ -250,6 +251,7 @@ func newOTLPParser(
 	discardedDueToOtelParseError *prometheus.CounterVec,
 	OTLPPushMiddlewares []OTLPPushMiddleware,
 	persistResourceAttributes bool,
+	persistScopeAttributes bool,
 	schemeOverride **model.ValidationScheme,
 ) parserFunc {
 	if resourceAttributePromotionConfig == nil {
@@ -425,6 +427,7 @@ func newOTLPParser(
 			underscoreSanitization:            limits.OTelLabelNameUnderscoreSanitization(tenantID),
 			preserveMultipleUnderscores:       limits.OTelLabelNamePreserveMultipleUnderscores(tenantID),
 			persistResourceAttributes:         persistResourceAttributes,
+			persistScopeAttributes:            persistScopeAttributes,
 		}
 		metrics, metadata, resourceTable, scopeTable, metricsDropped, err := otelMetricsToSeriesAndMetadata(
 			ctx,
@@ -678,6 +681,7 @@ type conversionOptions struct {
 	underscoreSanitization            bool
 	preserveMultipleUnderscores       bool
 	persistResourceAttributes         bool
+	persistScopeAttributes            bool
 }
 
 func otelMetricsToSeriesAndMetadata(
@@ -700,6 +704,7 @@ func otelMetricsToSeriesAndMetadata(
 	}
 	converter.appender.EnableCreatedTimestampZeroIngestion = opts.enableCTZeroIngestion
 	converter.appender.PersistResourceAttributes = opts.persistResourceAttributes
+	converter.appender.PersistScopeAttributes = opts.persistScopeAttributes
 	mimirTS, metadata, resourceTable, scopeTable := converter.ToSeriesAndMetadata(ctx, md, settings, logger)
 
 	dropped := converter.DroppedTotal()

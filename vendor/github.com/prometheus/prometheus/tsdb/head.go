@@ -501,9 +501,9 @@ type headMetrics struct {
 	walReplayUnknownRefsTotal  *prometheus.CounterVec
 	wblReplayUnknownRefsTotal  *prometheus.CounterVec
 
-	seriesmetadataContentChanges       *prometheus.CounterVec
-	seriesmetadataInserts              *prometheus.CounterVec
-	seriesmetadataWALReplayDuration    prometheus.Gauge
+	seriesmetadataContentChanges    *prometheus.CounterVec
+	seriesmetadataInserts           *prometheus.CounterVec
+	seriesmetadataWALReplayDuration prometheus.Gauge
 }
 
 const (

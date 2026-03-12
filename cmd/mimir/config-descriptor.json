@@ -12100,6 +12100,17 @@
             },
             {
               "kind": "field",
+              "name": "otel_persist_scope_attributes",
+              "required": false,
+              "desc": "Whether to persist OTel scope attributes (name, version, schema URL, and custom attributes) per time series as metadata in Prometheus TSDB blocks. Requires -blocks-storage.tsdb.otel-persist-resource-attributes to be enabled.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.tsdb.otel-persist-scope-attributes",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "otel_resource_attr_index_enabled",
               "required": false,
               "desc": "Enable the in-memory resource attribute inverted index for O(1) reverse lookup by attribute key:value. When disabled, the index is not built in memory or written to Parquet during compaction.",

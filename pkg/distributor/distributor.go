@@ -292,6 +292,8 @@ type Config struct {
 
 	// OTelPersistResourceAttributes is dynamically injected from blocks-storage TSDB config.
 	OTelPersistResourceAttributes bool `yaml:"-"`
+	// OTelPersistScopeAttributes is dynamically injected from blocks-storage TSDB config.
+	OTelPersistScopeAttributes bool `yaml:"-"`
 
 	// Limits for distributor
 	DefaultLimits    InstanceLimits         `yaml:"instance_limits"`

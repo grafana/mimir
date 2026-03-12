@@ -514,6 +514,7 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	t.Cfg.Distributor.PreferAvailabilityZones = t.Cfg.Querier.PreferAvailabilityZones
 	t.Cfg.Distributor.IngestStorageConfig = t.Cfg.IngestStorage
 	t.Cfg.Distributor.OTelPersistResourceAttributes = t.Cfg.BlocksStorage.TSDB.OTelPersistResourceAttributes
+	t.Cfg.Distributor.OTelPersistScopeAttributes = t.Cfg.BlocksStorage.TSDB.OTelPersistScopeAttributes
 	t.Cfg.Distributor.UsageTrackerEnabled = t.Cfg.UsageTracker.Enabled
 
 	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides,

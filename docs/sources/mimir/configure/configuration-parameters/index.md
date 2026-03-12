@@ -6077,6 +6077,13 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.otel-persist-resource-attributes
   [otel_persist_resource_attributes: <boolean> | default = false]
 
+  # (experimental) Whether to persist OTel scope attributes (name, version,
+  # schema URL, and custom attributes) per time series as metadata in Prometheus
+  # TSDB blocks. Requires -blocks-storage.tsdb.otel-persist-resource-attributes
+  # to be enabled.
+  # CLI flag: -blocks-storage.tsdb.otel-persist-scope-attributes
+  [otel_persist_scope_attributes: <boolean> | default = false]
+
   # (experimental) Enable the in-memory resource attribute inverted index for
   # O(1) reverse lookup by attribute key:value. When disabled, the index is not
   # built in memory or written to Parquet during compaction.

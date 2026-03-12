@@ -651,7 +651,6 @@ func (m *MemSeriesMetadata) RemoveFromResourceAttrIndex(labelsHash uint64, vr *V
 	}
 }
 
-
 // collectAttrNames adds all attribute names from a resource version to the name set.
 func collectAttrNames(names map[string]struct{}, rv *ResourceVersion) {
 	for k := range rv.Identifying {

@@ -103,19 +103,20 @@ const (
 
 // Validation errors
 var (
-	errInvalidShipConcurrency                       = errors.New("invalid TSDB ship concurrency")
-	errInvalidCompactionInterval                    = errors.New("invalid TSDB compaction interval")
-	errInvalidCompactionConcurrency                 = errors.New("invalid TSDB compaction concurrency")
-	errInvalidWALSegmentSizeBytes                   = errors.New("invalid TSDB WAL segment size bytes")
-	errInvalidWALReplayConcurrency                  = errors.New("invalid TSDB WAL replay concurrency")
-	errInvalidStripeSize                            = errors.New("invalid TSDB stripe size")
-	errInvalidStreamingBatchSize                    = errors.New("invalid store-gateway streaming batch size")
-	errInvalidEarlyHeadCompactionMinSeriesReduction        = errors.New("early compaction minimum series reduction percentage must be a value between 0 and 100 (included)")
-	errResourceAttrIndexRequiresPersistResourceAttributes = errors.New("otel_resource_attr_index_enabled requires otel_persist_resource_attributes to be enabled")
-	errEarlyCompactionRequiresActiveSeries          = fmt.Errorf("early compaction requires -%s to be enabled", activeseries.EnabledFlag)
-	errEmptyBlockranges                             = errors.New("empty block ranges for TSDB")
-	errInvalidIgnoreDeletionMarksDelayConfig        = fmt.Errorf("value for -%s must be less than -%s", ignoreDeletionMarksWhileQueryingDelayFlag, ignoreDeletionMarksInStoreGatewayDelayFlag)
-	errIgnoreDeletionMarksDelayTooShort             = fmt.Errorf("value for -%s must be greater than %v× -%s to ensure that newly compacted blocks are queried before old blocks are ignored", ignoreDeletionMarksWhileQueryingDelayFlag, NewBlockDiscoveryDelayMultiplier, syncIntervalFlag)
+	errInvalidShipConcurrency                                  = errors.New("invalid TSDB ship concurrency")
+	errInvalidCompactionInterval                               = errors.New("invalid TSDB compaction interval")
+	errInvalidCompactionConcurrency                            = errors.New("invalid TSDB compaction concurrency")
+	errInvalidWALSegmentSizeBytes                              = errors.New("invalid TSDB WAL segment size bytes")
+	errInvalidWALReplayConcurrency                             = errors.New("invalid TSDB WAL replay concurrency")
+	errInvalidStripeSize                                       = errors.New("invalid TSDB stripe size")
+	errInvalidStreamingBatchSize                               = errors.New("invalid store-gateway streaming batch size")
+	errInvalidEarlyHeadCompactionMinSeriesReduction            = errors.New("early compaction minimum series reduction percentage must be a value between 0 and 100 (included)")
+	errResourceAttrIndexRequiresPersistResourceAttributes      = errors.New("otel_resource_attr_index_enabled requires otel_persist_resource_attributes to be enabled")
+	errPersistScopeAttributesRequiresPersistResourceAttributes = errors.New("otel_persist_scope_attributes requires otel_persist_resource_attributes to be enabled")
+	errEarlyCompactionRequiresActiveSeries                     = fmt.Errorf("early compaction requires -%s to be enabled", activeseries.EnabledFlag)
+	errEmptyBlockranges                                        = errors.New("empty block ranges for TSDB")
+	errInvalidIgnoreDeletionMarksDelayConfig                   = fmt.Errorf("value for -%s must be less than -%s", ignoreDeletionMarksWhileQueryingDelayFlag, ignoreDeletionMarksInStoreGatewayDelayFlag)
+	errIgnoreDeletionMarksDelayTooShort                        = fmt.Errorf("value for -%s must be greater than %v× -%s to ensure that newly compacted blocks are queried before old blocks are ignored", ignoreDeletionMarksWhileQueryingDelayFlag, NewBlockDiscoveryDelayMultiplier, syncIntervalFlag)
 )
 
 // BlocksStorageConfig holds the config information for the blocks storage.
@@ -276,8 +277,9 @@ type TSDBConfig struct {
 	// without requiring 1.5x the chunk range worth of data in the head.
 	TimelyHeadCompaction bool `yaml:"timely_head_compaction_enabled" category:"experimental"`
 
-	OTelPersistResourceAttributes bool                  `yaml:"otel_persist_resource_attributes" category:"experimental"`
-	OTelResourceAttrIndexEnabled  bool                  `yaml:"otel_resource_attr_index_enabled" category:"experimental"`
+	OTelPersistResourceAttributes bool                   `yaml:"otel_persist_resource_attributes" category:"experimental"`
+	OTelPersistScopeAttributes    bool                   `yaml:"otel_persist_scope_attributes" category:"experimental"`
+	OTelResourceAttrIndexEnabled  bool                   `yaml:"otel_resource_attr_index_enabled" category:"experimental"`
 	OTelIndexedResourceAttributes flagext.StringSliceCSV `yaml:"otel_indexed_resource_attributes" category:"experimental"`
 
 	IndexLookupPlanning struct {
@@ -351,6 +353,7 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.TimelyHeadCompaction, "blocks-storage.tsdb.timely-head-compaction-enabled", false, "Allows head compaction to happen when the min block range can no longer be appended, without requiring 1.5x the chunk range worth of data in the head.")
 	f.BoolVar(&cfg.BiggerOutOfOrderBlocksForOldSamples, "blocks-storage.tsdb.bigger-out-of-order-blocks-for-old-samples", false, "When enabled, ingester produces 24h blocks for out-of-order data that is before the current day, instead of the usual 2h blocks.")
 	f.BoolVar(&cfg.OTelPersistResourceAttributes, "blocks-storage.tsdb.otel-persist-resource-attributes", false, "Whether to persist OTel resource attributes per time series as metadata in Prometheus TSDB blocks. Resource attributes are stored in series_metadata.parquet files within blocks and can be queried via the /api/v1/resource_attributes endpoint.")
+	f.BoolVar(&cfg.OTelPersistScopeAttributes, "blocks-storage.tsdb.otel-persist-scope-attributes", false, "Whether to persist OTel scope attributes (name, version, schema URL, and custom attributes) per time series as metadata in Prometheus TSDB blocks. Requires -blocks-storage.tsdb.otel-persist-resource-attributes to be enabled.")
 	f.BoolVar(&cfg.OTelResourceAttrIndexEnabled, "blocks-storage.tsdb.otel-resource-attr-index-enabled", false, "Enable the in-memory resource attribute inverted index for O(1) reverse lookup by attribute key:value. When disabled, the index is not built in memory or written to Parquet during compaction.")
 	f.Var(&cfg.OTelIndexedResourceAttributes, "blocks-storage.tsdb.otel-indexed-resource-attributes", "Comma-separated list of additional descriptive resource attribute names to include in the inverted index. Identifying attributes (service.name, service.namespace, service.instance.id) are always indexed when the index is enabled.")
 	f.BoolVar(&cfg.IndexLookupPlanning.Enabled, "blocks-storage.tsdb.index-lookup-planning.enabled", false, "Controls the collection of statistics and whether to defer some vector selector matchers to sequential scans. This leads to better performance.")
@@ -409,6 +412,10 @@ func (cfg *TSDBConfig) Validate(activeSeriesCfg activeseries.Config) error {
 
 	if cfg.OTelResourceAttrIndexEnabled && !cfg.OTelPersistResourceAttributes {
 		return errResourceAttrIndexRequiresPersistResourceAttributes
+	}
+
+	if cfg.OTelPersistScopeAttributes && !cfg.OTelPersistResourceAttributes {
+		return errPersistScopeAttributesRequiresPersistResourceAttributes
 	}
 
 	if cfg.IndexLookupPlanning.Enabled {
