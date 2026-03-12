@@ -232,7 +232,7 @@ func (m *Map) EnsureCapacity(n uint32) {
 func (m *Map) nextSize(limit uint64) uint32 {
 	perShard := limit / NumShards
 	alive := uint64(m.resident - m.dead)
-	target := uint64(m.resident) * 5 / 4
+	target := alive * 5 / 4
 	// Only let the limit influence growth when it represents a real constraint.
 	if perShard > target && perShard <= math.MaxUint32 {
 		target = perShard
