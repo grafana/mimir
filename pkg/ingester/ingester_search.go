@@ -3,6 +3,7 @@
 package ingester
 
 import (
+	"fmt"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -20,6 +21,11 @@ import (
 
 // TODO - what is a sane value here?
 const searchBatchSize = 1024
+
+const (
+	searchLabelValues = "Ingester.SearchLabelValues"
+	searchLabelNames  = "Ingester.SearchLabelNames"
+)
 
 func initSpanLog(spanlog *spanlogger.SpanLogger, userId string, mint, maxt int64, hints *storage.LabelHints, matchers []*labels.Matcher, filter *client.SearchLabelValuesFilter) {
 	spanlog.SetSpanAndLogTag("user", userId)
@@ -52,106 +58,21 @@ func initSpanLog(spanlog *spanlogger.SpanLogger, userId string, mint, maxt int64
 // It is identical to LabelNames but applies the SearchLabelValuesFilter before the limit,
 // and streams results back in batches.
 func (i *Ingester) SearchLabelNames(req *client.SearchLabelValuesRequest, stream client.Ingester_SearchLabelNamesServer) (err error) {
-	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
-	now := time.Now()
-
-	spanlog, ctx := spanlogger.New(stream.Context(), i.logger, tracer, "Ingester.SearchLabelNames")
-	defer spanlog.Finish()
-
-	userID, err := tenant.TenantID(ctx)
-	if err != nil {
-		level.Error(spanlog).Log("msg", "unable to determine tenant from context", "err", err)
-		return err
-	}
-
-	_, mint, maxt, hints, matchers, err := client.FromSearchRequest(req)
-	if err != nil {
-		level.Error(spanlog).Log("msg", "unable to parse search label names request", "err", err)
-		return err
-	}
-
-	initSpanLog(spanlog, userID, mint, maxt, hints, matchers, req.Filter)
-
-	if err := i.enforceReadConsistency(ctx, userID); err != nil {
-		level.Error(spanlog).Log("msg", "unable to enforce read consistency", "err", err)
-		return err
-	}
-
-	db := i.getTSDB(userID)
-	if db == nil {
-		level.Error(spanlog).Log("msg", "unable to access TSDB for user", "err", err)
-		return nil
-	}
-
-	q, err := db.Querier(mint, maxt)
-	if err != nil {
-		level.Error(spanlog).Log("msg", "unable to access Querier", "err", err)
-		return err
-	}
-	defer q.Close()
-
-	searchFilter := buildSearchFilter(req.Filter)
-
-	// TODO: replace q.LabelNames with a streaming Searcher once Prometheus exposes one —
-	// that would avoid buffering all label names in memory before filtering/sorting/streaming,
-	// letting us pipe values directly from TSDB into the gRPC stream.
-	names, _, err := q.LabelNames(ctx, hints, matchers...)
-	if err != nil {
-		level.Error(spanlog).Log("msg", "unable to query LabelValues", "err", err)
-		return err
-	}
-
-	names = streaminglabelvalues.ApplyFilterChains(names, searchFilter)
-	names = applySearchSort(names, req.Filter, searchFilter)
-
-	if hints != nil && hints.Limit > 0 && len(names) > hints.Limit {
-		names = names[:hints.Limit]
-	}
-
-	scoreSortActive := req.Filter != nil && req.Filter.SortBy == client.SORT_BY_SCORE
-
-	level.Info(spanlog).Log("msg", "Preparing to stream batch", "results", len(names), "ms", time.Since(now).Milliseconds())
-
-	// Pre-allocate result structs once; stream.Send marshals synchronously so they can be reused.
-	resultsBuf := make([]*client.SearchLabelValuesResult, searchBatchSize)
-	for k := range resultsBuf {
-		resultsBuf[k] = &client.SearchLabelValuesResult{}
-	}
-
-	for start := 0; start < len(names); start += searchBatchSize {
-		end := min(start+searchBatchSize, len(names))
-		results := resultsBuf[:end-start]
-		for j, v := range names[start:end] {
-			score := 0.0
-			if scoreSortActive && searchFilter != nil {
-				_, score = searchFilter.Accept(v)
-			}
-			results[j].Value = strings.Clone(v)
-			results[j].Score = score
-		}
-
-		if err := stream.Send(&client.SearchLabelValuesResponse{Results: results}); err != nil {
-			level.Error(spanlog).Log("msg", "unexpected error sending results to stream", "err", err)
-			return err
-		}
-		if err := ctx.Err(); err != nil {
-			return nil
-		}
-	}
-
-	level.Info(spanlog).Log("msg", "Complete", "results", len(names), "ms", time.Since(now).Milliseconds())
-
-	return nil
+	return i.doSearchLabelValues(req, stream, searchLabelNames)
 }
 
 // SearchLabelValues implements client.IngesterServer.
 // It is identical to LabelValues but applies the SearchLabelValuesFilter before the limit,
 // and streams results back in batches.
 func (i *Ingester) SearchLabelValues(req *client.SearchLabelValuesRequest, stream client.Ingester_SearchLabelValuesServer) (err error) {
+	return i.doSearchLabelValues(req, stream, searchLabelValues)
+}
+
+func (i *Ingester) doSearchLabelValues(req *client.SearchLabelValuesRequest, stream client.Ingester_SearchLabelValuesServer, method string) (err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 	now := time.Now()
 
-	spanlog, ctx := spanlogger.New(stream.Context(), i.logger, tracer, "Ingester.SearchLabelValues")
+	spanlog, ctx := spanlogger.New(stream.Context(), i.logger, tracer, method)
 	defer spanlog.Finish()
 
 	userID, err := tenant.TenantID(ctx)
@@ -167,7 +88,14 @@ func (i *Ingester) SearchLabelValues(req *client.SearchLabelValuesRequest, strea
 	}
 
 	initSpanLog(spanlog, userID, mint, maxt, hints, matchers, req.Filter)
-	spanlog.SetSpanAndLogTag("label", labelName)
+
+	if labelName == "" && method == searchLabelValues {
+		err = fmt.Errorf("missing label name")
+		level.Error(spanlog).Log("msg", "unable to parse search label values request", "err", err)
+		return err
+	} else if labelName != "" {
+		spanlog.SetSpanAndLogTag("label", labelName)
+	}
 
 	if err := i.enforceReadConsistency(ctx, userID); err != nil {
 		level.Error(spanlog).Log("msg", "unable to enforce read consistency", "err", err)
@@ -189,12 +117,18 @@ func (i *Ingester) SearchLabelValues(req *client.SearchLabelValuesRequest, strea
 
 	searchFilter := buildSearchFilter(req.Filter)
 
-	// TODO: replace q.LabelValues with a streaming Searcher once Prometheus exposes one —
+	// TODO: replace q.LabelValues with a streaming Searcher once Prometheus exposes one
 	// that would avoid buffering all label values in memory before filtering/sorting/streaming,
 	// letting us pipe values directly from TSDB into the gRPC stream.
-	vals, _, err := q.LabelValues(ctx, labelName, hints, matchers...)
+	var vals []string
+	switch method {
+	case searchLabelValues:
+		vals, _, err = q.LabelValues(ctx, labelName, hints, matchers...)
+	case searchLabelNames:
+		vals, _, err = q.LabelNames(ctx, hints, matchers...)
+	}
 	if err != nil {
-		level.Error(spanlog).Log("msg", "unable to query LabelValues", "err", err)
+		level.Error(spanlog).Log("msg", "unable to perform query", "err", err)
 		return err
 	}
 
