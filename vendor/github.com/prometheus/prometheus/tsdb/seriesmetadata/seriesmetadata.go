@@ -122,6 +122,41 @@ func iterScopesFlatInline(ctx context.Context, mr Reader, f func(labelsHash uint
 	})
 }
 
+// InlineFlatResourceIteratorWithContentHash extends InlineFlatResourceIterator
+// with a cached contentHash parameter. For single-version inline entries, the
+// MemStore's cached contentHash is passed directly (non-zero), avoiding
+// recomputation during writes. Multi-version entries pass contentHash=0.
+type InlineFlatResourceIteratorWithContentHash interface {
+	IterVersionedResourcesFlatInlineWithContentHash(ctx context.Context, f func(labelsHash uint64, versions []*ResourceVersion, inlineMinTime, inlineMaxTime int64, isInline bool, contentHash uint64) error) error
+}
+
+// InlineFlatScopeIteratorWithContentHash is the scope equivalent.
+type InlineFlatScopeIteratorWithContentHash interface {
+	IterVersionedScopesFlatInlineWithContentHash(ctx context.Context, f func(labelsHash uint64, versions []*ScopeVersion, inlineMinTime, inlineMaxTime int64, isInline bool, contentHash uint64) error) error
+}
+
+// iterResourcesFlatInlineWithContentHash uses the WithContentHash variant if available,
+// falls back to InlineFlatResourceIterator (contentHash=0), then IterVersionedResources.
+func iterResourcesFlatInlineWithContentHash(ctx context.Context, mr Reader, f func(labelsHash uint64, versions []*ResourceVersion, inlineMinTime, inlineMaxTime int64, isInline bool, contentHash uint64) error) error {
+	if ch, ok := mr.(InlineFlatResourceIteratorWithContentHash); ok {
+		return ch.IterVersionedResourcesFlatInlineWithContentHash(ctx, f)
+	}
+	return iterResourcesFlatInline(ctx, mr, func(labelsHash uint64, versions []*ResourceVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error {
+		return f(labelsHash, versions, inlineMinTime, inlineMaxTime, isInline, 0)
+	})
+}
+
+// iterScopesFlatInlineWithContentHash uses the WithContentHash variant if available,
+// falls back to InlineFlatScopeIterator (contentHash=0), then IterVersionedScopes.
+func iterScopesFlatInlineWithContentHash(ctx context.Context, mr Reader, f func(labelsHash uint64, versions []*ScopeVersion, inlineMinTime, inlineMaxTime int64, isInline bool, contentHash uint64) error) error {
+	if ch, ok := mr.(InlineFlatScopeIteratorWithContentHash); ok {
+		return ch.IterVersionedScopesFlatInlineWithContentHash(ctx, f)
+	}
+	return iterScopesFlatInline(ctx, mr, func(labelsHash uint64, versions []*ScopeVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error {
+		return f(labelsHash, versions, inlineMinTime, inlineMaxTime, isInline, 0)
+	})
+}
+
 // numAttrIndexStripes is the number of shards in the inverted attribute index.
 // Must be a power of two for fast modulo via bitmask.
 const numAttrIndexStripes = 256
@@ -461,6 +496,10 @@ func (m *MemSeriesMetadata) IterVersionedResourcesFlatInline(ctx context.Context
 	return m.ResourceStore().IterVersionedFlatInline(ctx, f)
 }
 
+func (m *MemSeriesMetadata) IterVersionedResourcesFlatInlineWithContentHash(ctx context.Context, f func(labelsHash uint64, versions []*ResourceVersion, inlineMinTime, inlineMaxTime int64, isInline bool, contentHash uint64) error) error {
+	return m.ResourceStore().IterVersionedFlatInlineWithContentHash(ctx, f)
+}
+
 func (m *MemSeriesMetadata) TotalResources() uint64 {
 	return m.ResourceStore().TotalEntries()
 }
@@ -493,6 +532,10 @@ func (m *MemSeriesMetadata) IterVersionedScopes(ctx context.Context, f func(labe
 
 func (m *MemSeriesMetadata) IterVersionedScopesFlatInline(ctx context.Context, f func(labelsHash uint64, versions []*ScopeVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error) error {
 	return m.ScopeStore().IterVersionedFlatInline(ctx, f)
+}
+
+func (m *MemSeriesMetadata) IterVersionedScopesFlatInlineWithContentHash(ctx context.Context, f func(labelsHash uint64, versions []*ScopeVersion, inlineMinTime, inlineMaxTime int64, isInline bool, contentHash uint64) error) error {
+	return m.ScopeStore().IterVersionedFlatInlineWithContentHash(ctx, f)
 }
 
 func (m *MemSeriesMetadata) TotalScopes() uint64 {
@@ -1276,9 +1319,14 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 	{
 		contentTable := make(map[uint64]metadataRow)
 		var mappingRows []metadataRow
+		var indexRows []metadataRow
 		var keysBuf []string
+		var seen map[uint64]struct{}
+		if opts.EnableInvertedIndex {
+			seen = make(map[uint64]struct{})
+		}
 
-		err := iterResourcesFlatInline(context.Background(), mr, func(labelsHash uint64, versions []*ResourceVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error {
+		err := iterResourcesFlatInlineWithContentHash(context.Background(), mr, func(labelsHash uint64, versions []*ResourceVersion, inlineMinTime, inlineMaxTime int64, isInline bool, cachedContentHash uint64) error {
 			if opts.HashFilter != nil && !opts.HashFilter(labelsHash) {
 				return nil
 			}
@@ -1293,20 +1341,17 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 			if seen != nil {
 				clear(seen)
 			}
-			for _, rv := range versions {
+			for i, rv := range versions {
 				var contentHash uint64
-				contentHash, keysBuf = hashResourceContentReusable(rv, keysBuf)
+				if isInline && cachedContentHash != 0 {
+					contentHash = cachedContentHash
+				} else {
+					contentHash, keysBuf = hashResourceContentReusable(rv, keysBuf)
+				}
 				if _, exists := contentTable[contentHash]; !exists {
 					contentTable[contentHash] = buildResourceTableRow(contentHash, rv)
-				} else {
-					existing := contentTable[contentHash]
-					existingVersion := parseResourceContent(logger, &existing)
-					if !ResourceVersionsEqual(existingVersion, rv) {
-						logger.Warn("Hash collision detected in content-addressed table",
-							"kind", string(KindResource), "content_hash", contentHash, "labels_hash", labelsHash)
-					}
 				}
-					minTime, maxTime := rv.MinTime, rv.MaxTime
+				minTime, maxTime := rv.MinTime, rv.MaxTime
 				if isInline {
 					minTime, maxTime = inlineMinTime, inlineMaxTime
 				}
@@ -1319,6 +1364,7 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 				})
 				// Build inverted index rows inline (Fix 1: avoids second iteration).
 				if seen != nil {
+					_ = i // suppress unused warning
 					for k, v := range rv.Identifying {
 						ch := attrKeyValueHash(k, v)
 						if _, exists := seen[ch]; !exists {
@@ -1381,6 +1427,16 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 		if err := writeNamespaceRows(writer, mappingRows, opts.MaxRowsPerRowGroup); err != nil {
 			return 0, fmt.Errorf("write %s mapping rows: %w", KindResource, err)
 		}
+
+		// Write inverted index rows built inline during the resource pass.
+		if len(indexRows) > 0 {
+			sortMetadataRows(indexRows)
+			metadataCounts["resource_attr_index_count"] = len(indexRows)
+			totalRows += len(indexRows)
+			if err := writeNamespaceRows(writer, indexRows, opts.MaxRowsPerRowGroup); err != nil {
+				return 0, fmt.Errorf("write resource attr index rows: %w", err)
+			}
+		}
 	}
 
 	// --- Scopes ---
@@ -1389,7 +1445,7 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 		var mappingRows []metadataRow
 		var keysBuf []string
 
-		err := iterScopesFlatInline(context.Background(), mr, func(labelsHash uint64, versions []*ScopeVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error {
+		err := iterScopesFlatInlineWithContentHash(context.Background(), mr, func(labelsHash uint64, versions []*ScopeVersion, inlineMinTime, inlineMaxTime int64, isInline bool, cachedContentHash uint64) error {
 			if opts.HashFilter != nil && !opts.HashFilter(labelsHash) {
 				return nil
 			}
@@ -1401,20 +1457,18 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 				}
 				seriesRef = ref
 			}
-			for _, sv := range versions {
+			for i, sv := range versions {
 				var contentHash uint64
-				contentHash, keysBuf = hashScopeContentReusable(sv, keysBuf)
+				if isInline && cachedContentHash != 0 {
+					contentHash = cachedContentHash
+				} else {
+					contentHash, keysBuf = hashScopeContentReusable(sv, keysBuf)
+				}
+				_ = i // suppress unused warning
 				if _, exists := contentTable[contentHash]; !exists {
 					contentTable[contentHash] = buildScopeTableRow(contentHash, sv)
-				} else {
-					existing := contentTable[contentHash]
-					existingVersion := parseScopeContent(&existing)
-					if !ScopeVersionsEqual(existingVersion, sv) {
-						logger.Warn("Hash collision detected in content-addressed table",
-							"kind", string(KindScope), "content_hash", contentHash, "labels_hash", labelsHash)
-					}
 				}
-					minTime, maxTime := sv.MinTime, sv.MaxTime
+				minTime, maxTime := sv.MinTime, sv.MaxTime
 				if isInline {
 					minTime, maxTime = inlineMinTime, inlineMaxTime
 				}
@@ -1450,19 +1504,6 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 		}
 		if err := writeNamespaceRows(writer, mappingRows, opts.MaxRowsPerRowGroup); err != nil {
 			return 0, fmt.Errorf("write %s mapping rows: %w", KindScope, err)
-		}
-	}
-
-	// Optionally build and write resource attribute inverted index rows.
-	if opts.EnableInvertedIndex {
-		indexRows := buildResourceAttrIndexRows(mr, opts.RefResolver, opts.IndexedResourceAttrs, opts.HashFilter)
-		if len(indexRows) > 0 {
-			sortMetadataRows(indexRows)
-			metadataCounts["resource_attr_index_count"] = len(indexRows)
-			totalRows += len(indexRows)
-			if err := writeNamespaceRows(writer, indexRows, opts.MaxRowsPerRowGroup); err != nil {
-				return 0, fmt.Errorf("write resource attr index rows: %w", err)
-			}
 		}
 	}
 
