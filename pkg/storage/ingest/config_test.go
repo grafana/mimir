@@ -171,8 +171,8 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.SASL.Mechanism = SASLMechanismOauthbearer
-				require.NoError(t, cfg.KafkaConfig.SASL.OauthbearerToken.Set("foo"))
-				cfg.KafkaConfig.SASL.OauthbearerFilePath = "bar"
+				require.NoError(t, cfg.KafkaConfig.SASL.Oauthbearer.Secret.Token.Set("foo"))
+				cfg.KafkaConfig.SASL.Oauthbearer.FilePath = "bar"
 			},
 			expectedErr: ErrSASLOauthbearerBadConfig,
 		},
@@ -182,7 +182,7 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.SASL.Mechanism = SASLMechanismOauthbearer
-				require.NoError(t, cfg.KafkaConfig.SASL.OauthbearerToken.Set("foo"))
+				require.NoError(t, cfg.KafkaConfig.SASL.Oauthbearer.Secret.Token.Set("foo"))
 			},
 		},
 		"should succeed if SASL mechanism is OAUTHBEARER and a file path to the token is passed": {
@@ -191,7 +191,7 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.SASL.Mechanism = SASLMechanismOauthbearer
-				cfg.KafkaConfig.SASL.OauthbearerFilePath = "foo"
+				cfg.KafkaConfig.SASL.Oauthbearer.FilePath = "foo"
 			},
 		},
 		"should succeed if SASL mechanism is OAUTHBEARER and an HTTP socket path is passed": {
@@ -200,7 +200,7 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.SASL.Mechanism = SASLMechanismOauthbearer
-				cfg.KafkaConfig.SASL.OauthbearerHTTPSocketPath = "/tmp/oauth.sock"
+				cfg.KafkaConfig.SASL.Oauthbearer.HTTPSocketPath = "/tmp/oauth.sock"
 			},
 		},
 		"should fail if SASL mechanism is OAUTHBEARER with both file path and HTTP socket path": {
@@ -209,8 +209,8 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.SASL.Mechanism = SASLMechanismOauthbearer
-				cfg.KafkaConfig.SASL.OauthbearerFilePath = "foo"
-				cfg.KafkaConfig.SASL.OauthbearerHTTPSocketPath = "/tmp/oauth.sock"
+				cfg.KafkaConfig.SASL.Oauthbearer.FilePath = "foo"
+				cfg.KafkaConfig.SASL.Oauthbearer.HTTPSocketPath = "/tmp/oauth.sock"
 			},
 			expectedErr: ErrSASLOauthbearerBadConfig,
 		},
@@ -220,8 +220,8 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.SASL.Mechanism = SASLMechanismOauthbearer
-				require.NoError(t, cfg.KafkaConfig.SASL.OauthbearerToken.Set("foo"))
-				cfg.KafkaConfig.SASL.OauthbearerHTTPSocketPath = "/tmp/oauth.sock"
+				require.NoError(t, cfg.KafkaConfig.SASL.Oauthbearer.Secret.Token.Set("foo"))
+				cfg.KafkaConfig.SASL.Oauthbearer.HTTPSocketPath = "/tmp/oauth.sock"
 			},
 			expectedErr: ErrSASLOauthbearerBadConfig,
 		},

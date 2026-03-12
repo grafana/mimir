@@ -363,7 +363,7 @@ type KafkaAuthConfig struct {
 	Username string         `yaml:"sasl_username"`
 	Password flagext.Secret `yaml:"sasl_password"`
 
-	// For OAUTHBEARER mechanism
+	Oauthbearer KafkaAuthOauthbearerConfig `yaml:",inline"`
 
 	OauthbearerToken      flagext.Secret            `yaml:"sasl_oauthbearer_token"`
 	OauthbearerZid        string                    `yaml:"sasl_oauthbearer_zid"`
@@ -383,18 +383,7 @@ func (cfg *KafkaAuthConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagS
 	f.Var(&cfg.Mechanism, prefix+"mechanism", fmt.Sprintf("The SASL mechanism used to authenticate to Kafka. Supported values: %s. For backwards-compatibility, PLAIN with no username nor password disables SASL.", util.JoinStrings(saslMechanismOptions, ", ")))
 	f.StringVar(&cfg.Username, prefix+"username", "", "The username used to authenticate to Kafka using SASL. To enable SASL, configure both the username and password.")
 	f.Var(&cfg.Password, prefix+"password", "The password used to authenticate to Kafka using SASL. To enable SASL, configure both the username and password.")
-
-	f.Var(&cfg.OauthbearerToken, prefix+"oauthbearer-token", "The OAuth token to use to authenticate to Kafka. Consider "+prefix+"oauthbearer-file-path instead.")
-	f.StringVar(&cfg.OauthbearerZid, prefix+"oauthbearer-zid", "", "Optional authorization ID to use when authenticating to Kafka using SASL OAUTHBEARER.")
-	if !cfg.OauthbearerExtensions.IsInitialized() {
-		cfg.OauthbearerExtensions = flagext.NewLimitsMap[string](nil)
-	}
-	f.Var(&cfg.OauthbearerExtensions, prefix+"oauthbearer-extensions", "Optional additional OAuth extensions to include when authenticating to Kafka using SASL OAUTHBEARER as a JSON object.")
-
-	f.StringVar(&cfg.OauthbearerFilePath, prefix+"oauthbearer-file-path", "", `Path to a file containing an OAuth token to authenticate to Kafka. The file is read anew on every reauthentication, so it can be updated with fresh tokens. The file must be in JSON format, adhering to this JSON schema: {"type": "object", "required": ["token"], "properties": {"token": {"type": "string"}, "zid": {"type": "string"}, "extensions": {"type": "object", "additionalProperties": {"type": "string"}}}}`)
-
-	f.StringVar(&cfg.OauthbearerHTTPSocketPath, prefix+"oauthbearer-http-socket-path", "", `Path to a Unix domain socket to fetch an OAuth token from via HTTP. On every authentication or reauthentication, an HTTP GET / request is made to the socket and the response body is read as JSON. The JSON schema is the same as for `+prefix+`oauthbearer-file-path.`)
-	f.DurationVar(&cfg.OauthbearerHTTPSocketTimeout, prefix+"oauthbearer-http-socket-timeout", 10*time.Second, "Timeout for requesting the token from the HTTP socket.")
+	cfg.Oauthbearer.RegisterFlagsWithPrefix(prefix+"oauthbearer-", f)
 }
 
 func (cfg *KafkaAuthConfig) Validate() error {
@@ -410,29 +399,97 @@ func (cfg *KafkaAuthConfig) Validate() error {
 		}
 
 	case SASLMechanismOauthbearer:
-		hasToken := cfg.OauthbearerToken.String() != ""
-		hasFile := cfg.OauthbearerFilePath != ""
-		hasSocket := cfg.OauthbearerHTTPSocketPath != ""
-		// Exactly one of the three options must be configured.
-		numSet := 0
-		if hasToken {
-			numSet++
-		}
-		if hasFile {
-			numSet++
-		}
-		if hasSocket {
-			numSet++
-		}
-		if numSet != 1 {
-			return ErrSASLOauthbearerBadConfig
-		}
+		return cfg.Oauthbearer.Validate()
 
 	default:
 		return ErrInvalidSASLMechanism
 	}
 
 	return nil
+}
+
+// kafkaSASLConfig defines how to get a SASL secret: either from a static secret
+// provided in config, from a file, or with HTTP through a domain socket.
+//
+// Exactly one source must be configured; call Validate to enforce this.
+//
+// Because this struct is generic, it cannot have distinct YAML struct tags
+// for each kind of staticSecretConfig. Concrete structs with the same shape (so
+// they can be converted to kafkaSASLConfig) are used instead.
+type kafkaSASLConfig[T staticSecretConfig] struct {
+	Secret            T
+	FilePath          string
+	HTTPSocketPath    string
+	HTTPSocketTimeout time.Duration
+}
+
+var errNoSecret = errors.New("no static credentials provided")
+
+// Validate returns errMultipleSources unless exactly one of the static secret,
+// file path, or HTTP socket path is configured.
+func (cfg kafkaSASLConfig[T]) Validate(errMultipleSources error) error {
+	err := cfg.Secret.Validate()
+	if err != nil && !errors.Is(err, errNoSecret) {
+		return err
+	}
+	hasStaticSecret := err == nil
+	sourceFound := false
+	for _, source := range []bool{
+		hasStaticSecret,
+		cfg.FilePath != "",
+		cfg.HTTPSocketPath != "",
+	} {
+		if source {
+			if sourceFound {
+				return errMultipleSources
+			}
+			sourceFound = true
+		}
+	}
+	return nil
+}
+
+// KafkaAuthOauthbearerConfig holds OAUTHBEARER-specific SASL configuration.
+type KafkaAuthOauthbearerConfig struct {
+	Secret            KafkaOauthbearerStaticConfig `yaml:",inline"`
+	FilePath          string                       `yaml:"sasl_oauthbearer_file_path"`
+	HTTPSocketPath    string                       `yaml:"sasl_oauthbearer_http_socket_path"`
+	HTTPSocketTimeout time.Duration                `yaml:"sasl_oauthbearer_http_socket_timeout"`
+}
+
+func (cfg *KafkaAuthOauthbearerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	cfg.Secret.RegisterFlagsWithPrefix(prefix, f)
+	f.StringVar(&cfg.FilePath, prefix+"file-path", "", `Path to a file containing an OAuth token to authenticate to Kafka. The file is read anew on every reauthentication, so it can be updated with fresh tokens. The file must be in JSON format, adhering to this JSON schema: {"type": "object", "required": ["token"], "properties": {"token": {"type": "string"}, "zid": {"type": "string"}, "extensions": {"type": "object", "additionalProperties": {"type": "string"}}}}`)
+	f.StringVar(&cfg.HTTPSocketPath, prefix+"http-socket-path", "", `Path to a Unix domain socket to fetch an OAuth token from via HTTP. On every authentication or reauthentication, an HTTP GET / request is made to the socket and the response body is read as JSON. The JSON schema is the same as for `+prefix+`file-path.`)
+	f.DurationVar(&cfg.HTTPSocketTimeout, prefix+"http-socket-timeout", 10*time.Second, "Timeout for requesting the token from the HTTP socket.")
+}
+
+func (cfg KafkaAuthOauthbearerConfig) Validate() error {
+	return (kafkaSASLConfig[KafkaOauthbearerStaticConfig])(cfg).Validate(ErrSASLOauthbearerBadConfig)
+}
+
+// KafkaOauthbearerStaticConfig holds static OAUTHBEARER credentials.
+type KafkaOauthbearerStaticConfig struct {
+	Token      flagext.Secret            `yaml:"sasl_oauthbearer_token"`
+	Zid        string                    `yaml:"sasl_oauthbearer_zid"`
+	Extensions flagext.LimitsMap[string] `yaml:"sasl_oauthbearer_extensions"`
+}
+
+// Validate returns ErrSecretNotProvided when no token has been set.
+func (s KafkaOauthbearerStaticConfig) Validate() error {
+	if s.Token.String() == "" {
+		return errNoSecret
+	}
+	return nil
+}
+
+func (cfg *KafkaOauthbearerStaticConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	f.Var(&cfg.Token, prefix+"token", "The OAuth token to use to authenticate to Kafka. Consider "+prefix+"file-path instead.")
+	f.StringVar(&cfg.Zid, prefix+"zid", "", "Optional authorization ID to use when authenticating to Kafka using SASL OAUTHBEARER.")
+	if !cfg.Extensions.IsInitialized() {
+		cfg.Extensions = flagext.NewLimitsMap[string](nil)
+	}
+	f.Var(&cfg.Extensions, prefix+"extensions", "Optional additional OAuth extensions to include when authenticating to Kafka using SASL OAUTHBEARER as a JSON object.")
 }
 
 type TLSClientConfig struct {
