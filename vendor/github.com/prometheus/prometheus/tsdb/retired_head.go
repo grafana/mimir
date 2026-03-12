@@ -145,7 +145,6 @@ func buildRetiredHeadIndex(head *Head, dir string) (IndexReader, error) {
 		_ = iw.Close()
 		return nil, fmt.Errorf("get all postings: %w", err)
 	}
-	allPostings = ir.SortedPostings(allPostings)
 
 	var (
 		builder labels.ScratchBuilder

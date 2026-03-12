@@ -3445,15 +3445,22 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 
 		default:
 			if i.cfg.IngestStorageConfig.Enabled {
-				reason = "rotation"
-				err = userDB.rotateHead()
-				if err == nil {
-					// Drop retired heads whose data is older than retention.
-					retentionDuration := i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds()
-					cutoff := time.Now().UnixMilli() - retentionDuration
-					if dropErr := userDB.db.DropRetiredHeadsBefore(cutoff); dropErr != nil {
-						level.Warn(i.logger).Log("msg", "failed to drop retired heads", "user", userID, "err", dropErr)
+				rotationInterval := i.cfg.BlocksStorageConfig.TSDB.HeadRotationInterval
+				lastRotation := userDB.lastHeadRotation.Load()
+				now := time.Now()
+				if rotationInterval <= 0 || now.UnixMilli()-lastRotation >= rotationInterval.Milliseconds() {
+					reason = "rotation"
+					err = userDB.rotateHead()
+					if err == nil {
+						userDB.lastHeadRotation.Store(now.UnixMilli())
+						retentionDuration := i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds()
+						cutoff := now.UnixMilli() - retentionDuration
+						if dropErr := userDB.db.DropRetiredHeadsBefore(cutoff); dropErr != nil {
+							level.Warn(i.logger).Log("msg", "failed to drop retired heads", "user", userID, "err", dropErr)
+						}
 					}
+				} else {
+					reason = "rotation-skipped"
 				}
 			} else {
 				reason = "regular"

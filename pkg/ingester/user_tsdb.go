@@ -127,6 +127,9 @@ type userTSDB struct {
 	// Unix timestamp (milliseconds) of last early head compaction (any type).
 	lastEarlyCompaction atomic.Int64
 
+	// Unix timestamp (milliseconds) of last head rotation.
+	lastHeadRotation atomic.Int64
+
 	// for statistics
 	ingestedAPISamples  *util_math.EwmaRate
 	ingestedRuleSamples *util_math.EwmaRate
