@@ -3395,6 +3395,8 @@ func mimirHintsToIngesterSearchFilter(h *mimirstorage.MimirSearchHints) *ingeste
 	}
 }
 
+// TODO: add unit tests for SearchLabelNames and SearchLabelValues covering fan-out, dedup, and limit enforcement.
+
 // SearchLabelNames returns a SearcherValueSet of label names matching the search criteria from ingesters.
 // Each ingester streams sorted/filtered batches; the distributor merges them and returns a merged stream.
 func (d *Distributor) SearchLabelNames(ctx context.Context, from, to model.Time, hints *mimirstorage.MimirSearchHints, matchers ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {

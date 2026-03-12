@@ -35,7 +35,7 @@ type testSearchLabelNamesServer struct {
 	names []string
 }
 
-func (s *testSearchLabelNamesServer) Send(resp *client.SearchResponse) error {
+func (s *testSearchLabelNamesServer) Send(resp *client.SearchLabelValuesResponse) error {
 	for _, r := range resp.Results {
 		s.names = append(s.names, r.Value)
 	}
@@ -65,7 +65,7 @@ type testSearchLabelValuesServer struct {
 	values []string
 }
 
-func (s *testSearchLabelValuesServer) Send(resp *client.SearchResponse) error {
+func (s *testSearchLabelValuesServer) Send(resp *client.SearchLabelValuesResponse) error {
 	for _, r := range resp.Results {
 		s.values = append(s.values, r.Value)
 	}
