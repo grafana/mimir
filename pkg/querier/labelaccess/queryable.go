@@ -26,36 +26,6 @@ import (
 
 var tracer = otel.Tracer("pkg/querier/labelaccess")
 
-type lbacMetrics struct {
-	filteredSeriesTotal  prometheus.Counter
-	policiesAppliedTotal prometheus.Counter
-}
-
-func newLBACMetrics(reg prometheus.Registerer) lbacMetrics {
-	return lbacMetrics{
-		filteredSeriesTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_querier_lbac_filtered_series_total",
-			Help: "Total number of series filtered out by LBAC enforcement.",
-		}),
-		policiesAppliedTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_querier_lbac_policies_applied_total",
-			Help: "Total number of queries where LBAC enforcement was applied.",
-		}),
-	}
-}
-
-func (m lbacMetrics) incFilteredSeries() {
-	if m.filteredSeriesTotal != nil {
-		m.filteredSeriesTotal.Inc()
-	}
-}
-
-func (m lbacMetrics) incPoliciesApplied() {
-	if m.policiesAppliedTotal != nil {
-		m.policiesAppliedTotal.Inc()
-	}
-}
-
 // WrapQueryable wraps the provided queryable with a labelAccessQueryable.
 func WrapQueryable(next storage.SampleAndChunkQueryable, logger log.Logger, reg prometheus.Registerer) storage.SampleAndChunkQueryable {
 	return &labelAccessQueryable{next: next, logger: logger, metrics: newLBACMetrics(reg)}
@@ -96,6 +66,36 @@ func labelPoliciesToPromSelectors(policies []*shared.LabelPolicy) []promSelector
 		selectors = append(selectors, selector)
 	}
 	return selectors
+}
+
+type lbacMetrics struct {
+	filteredSeriesTotal  prometheus.Counter
+	policiesAppliedTotal prometheus.Counter
+}
+
+func newLBACMetrics(reg prometheus.Registerer) lbacMetrics {
+	return lbacMetrics{
+		filteredSeriesTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_querier_lbac_filtered_series_total",
+			Help: "Total number of series filtered out by LBAC enforcement.",
+		}),
+		policiesAppliedTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_querier_lbac_policies_applied_total",
+			Help: "Total number of queries where LBAC enforcement was applied.",
+		}),
+	}
+}
+
+func (m lbacMetrics) incFilteredSeries() {
+	if m.filteredSeriesTotal != nil {
+		m.filteredSeriesTotal.Inc()
+	}
+}
+
+func (m lbacMetrics) incPoliciesApplied() {
+	if m.policiesAppliedTotal != nil {
+		m.policiesAppliedTotal.Inc()
+	}
 }
 
 type labelAccessQueryable struct {
