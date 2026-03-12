@@ -284,9 +284,8 @@ func (*config) handleRPC(
 
 		var metricAttrs []attribute.KeyValue
 		if gctx != nil {
-			// Don't use gctx.metricAttrSet here, because it requires passing
-			// multiple RecordOptions, which would call metric.mergeSets and
-			// allocate a new set for each Record call.
+			// Don't pass multiple RecordOptions here, because it would call
+			// metric.mergeSets and allocate a new set for each Record call.
 			metricAttrs = make([]attribute.KeyValue, 0, len(gctx.metricAttrs)+1)
 			metricAttrs = append(metricAttrs, gctx.metricAttrs...)
 		}
