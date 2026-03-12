@@ -9655,7 +9655,7 @@ func BenchmarkDistributor_HaDedupMiddleware(b *testing.B) {
 			b.ResetTimer()
 
 			for n := 0; n < b.N; n++ {
-				err := fn(ctx, newRequest(func() (req *mimirpb.WriteRequest, cleanup func(), err error) { return reqs[n], func() {}, nil }))
+				err := fn(ctx, newRequest(func() (req *mimirpb.WriteRequest, cleanup func(), uncompressedBodySize int, err error) { return reqs[n], func() {}, 0, nil }))
 				require.NoError(b, err)
 			}
 		})
