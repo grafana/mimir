@@ -484,6 +484,7 @@ func (m *FunctionOverRangeVectorSplit[T]) Finalize(ctx context.Context) error {
 		"ranges_total", uncachedRangeCount+cachedRangeCount,
 		"ranges_cached", cachedRangeCount,
 		"ranges_uncached", uncachedRangeCount,
+		"eligible_to_store_results_in_cache", shouldCache,
 		"cache_entries_read", m.cacheStats.ReadEntries,
 		"cache_entries_written", m.cacheStats.WrittenEntries,
 		"max_series_per_entry", m.cacheStats.MaxSeries,
