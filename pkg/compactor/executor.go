@@ -215,6 +215,8 @@ func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) er
 			continue
 		case <-ctx.Done():
 			return nil
+		case err := <-c.ringSubservicesWatcher.Chan():
+			return fmt.Errorf("compactor subservice failed: %w", err)
 		}
 	}
 }
