@@ -2437,7 +2437,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			},
 			expectedErr: "",
 		},
-		"HA dedup; 4 clusters 8 replicas evenly split": {
+		"HA dedup; 512 clusters 2 replicas evenly split": {
 			prepareConfig: func(limits *validation.Limits) {
 				limits.AcceptHASamples = true
 				limits.HAMaxClusters = 100
