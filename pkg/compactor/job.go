@@ -196,7 +196,7 @@ func jobWaitPeriodElapsed(ctx context.Context, job *Job, waitPeriod time.Duratio
 		}
 
 		if skipFutureMaxTime && timestamp.Time(meta.MaxTime).After(blockThreshold) {
-			level.Info(logger).Log("msg", "skipping compaction job because block max time is within the wait period, despite Last Modified being old enough", "block", meta.ULID.String(), "blockMaxTime", meta.MaxTime, "threshold", threshold, "lastModified", attrs.LastModified)
+			level.Info(logger).Log("msg", "skipping compaction job because block max time is within the wait period, despite Last Modified being old enough", "block", meta.ULID.String(), "blockMaxTime", meta.MaxTime, "threshold", blockThreshold, "lastModified", attrs.LastModified)
 			return false, meta, nil
 		}
 	}
