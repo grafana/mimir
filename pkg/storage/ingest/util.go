@@ -21,6 +21,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/twmb/franz-go/pkg/sasl"
+	awssasl "github.com/twmb/franz-go/pkg/sasl/aws"
 	"github.com/twmb/franz-go/pkg/sasl/oauth"
 	"github.com/twmb/franz-go/pkg/sasl/plain"
 	"github.com/twmb/franz-go/pkg/sasl/scram"
@@ -153,6 +154,8 @@ func kafkaAuthOptions(cfg KafkaAuthConfig) []kgo.Opt {
 		}.AsMechanism()
 	case SASLMechanismOauthbearer:
 		m = cfg.Oauthbearer.mechanism()
+	case SASLMechanismMSKIAM:
+		m = cfg.MSKIAM.mechanism()
 	default:
 		panic(fmt.Errorf("unknown SASL mechanism: %v", cfg.Mechanism))
 	}
@@ -160,8 +163,8 @@ func kafkaAuthOptions(cfg KafkaAuthConfig) []kgo.Opt {
 	return []kgo.Opt{kgo.SASL(m)}
 }
 
-// staticSecretConfig configures a static secret. It may be empty.
-type staticSecretConfig interface {
+// saslSecretConfig configures a static secret. It may be empty.
+type saslSecretConfig interface {
 	// Validate returns errNoSecret when no static secret are set.
 	// It may return other validation errors.
 	Validate() error
@@ -184,13 +187,29 @@ func (s KafkaOauthbearerStaticConfig) mechanism() (sasl.Mechanism, bool) {
 	}.AsMechanism(), true
 }
 
-// Mechanism returns the sasl.Mechanism for this credential configuration.
-func saslMechanism[T staticSecretConfig, A any](cfg kafkaSASLConfig[T], setCallback func(func(context.Context) (A, error)) sasl.Mechanism) sasl.Mechanism {
+func (cfg KafkaAuthMSKIAMConfig) mechanism() sasl.Mechanism {
+	return saslMechanism((kafkaSASLConfig[KafkaMSKIAMStaticConfig])(cfg), awssasl.ManagedStreamingIAM)
+}
+
+func (s KafkaMSKIAMStaticConfig) mechanism() (sasl.Mechanism, bool) {
+	if err := s.Validate(); err != nil {
+		return nil, false
+	}
+	return awssasl.Auth{
+		AccessKey:    s.AccessKey.String(),
+		SecretKey:    s.SecretKey.String(),
+		SessionToken: s.SessionToken.String(),
+		UserAgent:    s.UserAgent,
+	}.AsManagedStreamingIAMMechanism(), true
+}
+
+// saslMechanism returns the sasl.Mechanism to be passed to the Kafka client.
+func saslMechanism[T saslSecretConfig, A any](cfg kafkaSASLConfig[T], fromCallback func(func(context.Context) (A, error)) sasl.Mechanism) sasl.Mechanism {
 	if m, ok := cfg.Secret.mechanism(); ok {
 		return m
 	}
 	if cfg.FilePath != "" {
-		return setCallback(func(ctx context.Context) (A, error) {
+		return fromCallback(func(ctx context.Context) (A, error) {
 			f, err := os.ReadFile(cfg.FilePath)
 			if err != nil {
 				var zero A
@@ -201,7 +220,7 @@ func saslMechanism[T staticSecretConfig, A any](cfg kafkaSASLConfig[T], setCallb
 		})
 	}
 	if cfg.HTTPSocketPath != "" {
-		return setCallback(func(ctx context.Context) (A, error) {
+		return fromCallback(func(ctx context.Context) (A, error) {
 			return requestJSONFromSocket[A](ctx, cfg.HTTPSocketPath, cfg.HTTPSocketTimeout)
 		})
 	}

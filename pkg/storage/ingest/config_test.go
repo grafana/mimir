@@ -156,6 +156,64 @@ func TestConfig_Validate(t *testing.T) {
 				require.NoError(t, cfg.KafkaConfig.SASL.Password.Set("supersecret"))
 			},
 		},
+		"should fail if SASL mechanism is AWS_MSK_IAM but no way to get credentials is configured": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.SASL.Mechanism = SASLMechanismMSKIAM
+			},
+			expectedErr: ErrSASLMSKIAMBadConfig,
+		},
+		"should fail if SASL mechanism is AWS_MSK_IAM with both file path and HTTP socket path": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.SASL.Mechanism = SASLMechanismMSKIAM
+				cfg.KafkaConfig.SASL.MSKIAM.FilePath = "/path/to/creds.json"
+				cfg.KafkaConfig.SASL.MSKIAM.HTTPSocketPath = "/tmp/aws.sock"
+			},
+			expectedErr: ErrSASLMSKIAMBadConfig,
+		},
+		"should succeed if SASL mechanism is AWS_MSK_IAM and static credentials are passed": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.SASL.Mechanism = SASLMechanismMSKIAM
+				require.NoError(t, cfg.KafkaConfig.SASL.MSKIAM.Secret.AccessKey.Set("AKID"))
+			},
+		},
+		"should succeed if SASL mechanism is AWS_MSK_IAM and a file path is passed": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.SASL.Mechanism = SASLMechanismMSKIAM
+				cfg.KafkaConfig.SASL.MSKIAM.FilePath = "/path/to/creds.json"
+			},
+		},
+		"should succeed if SASL mechanism is AWS_MSK_IAM and an HTTP socket path is passed": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.SASL.Mechanism = SASLMechanismMSKIAM
+				cfg.KafkaConfig.SASL.MSKIAM.HTTPSocketPath = "/tmp/aws.sock"
+			},
+		},
+		"should fail if SASL mechanism is AWS_MSK_IAM with both static credentials and file path": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.SASL.Mechanism = SASLMechanismMSKIAM
+				require.NoError(t, cfg.KafkaConfig.SASL.MSKIAM.Secret.AccessKey.Set("AKID"))
+				cfg.KafkaConfig.SASL.MSKIAM.FilePath = "/path/to/creds.json"
+			},
+			expectedErr: ErrSASLMSKIAMBadConfig,
+		},
 		"should fail if SASL mechanism is OAUTHBEARER but no way to get the token is configured": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true

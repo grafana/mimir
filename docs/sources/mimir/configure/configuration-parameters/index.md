@@ -5154,8 +5154,8 @@ kafka:
   [write_clients: <int> | default = 1]
 
   # The SASL mechanism used to authenticate to Kafka. Supported values: PLAIN,
-  # SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER. For backwards-compatibility,
-  # PLAIN with no username nor password disables SASL.
+  # SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER, AWS_MSK_IAM. For
+  # backwards-compatibility, PLAIN with no username nor password disables SASL.
   # CLI flag: -ingest-storage.kafka.sasl-mechanism
   [sasl_mechanism: <string> | default = "PLAIN"]
 
@@ -5203,6 +5203,46 @@ kafka:
   # Timeout for requesting the token from the HTTP socket.
   # CLI flag: -ingest-storage.kafka.sasl-oauthbearer-http-socket-timeout
   [sasl_oauthbearer_http_socket_timeout: <duration> | default = 10s]
+
+  # The AWS access key ID to authenticate to Kafka using SASL AWS_MSK_IAM.
+  # Consider ingest-storage.kafka.sasl-msk-iam-file-path instead.
+  # CLI flag: -ingest-storage.kafka.sasl-msk-iam-access-key
+  [sasl_msk_iam_access_key: <string> | default = ""]
+
+  # The AWS secret access key to authenticate to Kafka using SASL AWS_MSK_IAM.
+  # Consider ingest-storage.kafka.sasl-msk-iam-file-path instead.
+  # CLI flag: -ingest-storage.kafka.sasl-msk-iam-secret-key
+  [sasl_msk_iam_secret_key: <string> | default = ""]
+
+  # Optional AWS session token to authenticate to Kafka using SASL AWS_MSK_IAM.
+  # CLI flag: -ingest-storage.kafka.sasl-msk-iam-session-token
+  [sasl_msk_iam_session_token: <string> | default = ""]
+
+  # Optional user agent to use when authenticating to Kafka using SASL
+  # AWS_MSK_IAM.
+  # CLI flag: -ingest-storage.kafka.sasl-msk-iam-user-agent
+  [sasl_msk_iam_user_agent: <string> | default = ""]
+
+  # Path to a file containing AWS credentials to authenticate to Kafka using
+  # SASL AWS_MSK_IAM. The file is read anew on every reauthentication, so it can
+  # be updated with fresh credentials. The file must be in JSON format, adhering
+  # to this JSON schema: {"type": "object", "required": ["AccessKey",
+  # "SecretKey"], "properties": {"AccessKey": {"type": "string"}, "SecretKey":
+  # {"type": "string"}, "SessionToken": {"type": "string"}, "UserAgent":
+  # {"type": "string"}}}
+  # CLI flag: -ingest-storage.kafka.sasl-msk-iam-file-path
+  [sasl_msk_iam_file_path: <string> | default = ""]
+
+  # Path to a Unix domain socket to fetch AWS credentials from via HTTP. On
+  # every authentication or reauthentication, an HTTP GET / request is made to
+  # the socket and the response body is read as JSON. The JSON schema is the
+  # same as for ingest-storage.kafka.sasl-msk-iam-file-path.
+  # CLI flag: -ingest-storage.kafka.sasl-msk-iam-http-socket-path
+  [sasl_msk_iam_http_socket_path: <string> | default = ""]
+
+  # Timeout for requesting AWS credentials from the HTTP socket.
+  # CLI flag: -ingest-storage.kafka.sasl-msk-iam-http-socket-timeout
+  [sasl_msk_iam_http_socket_timeout: <duration> | default = 10s]
 
   # Enable TLS for the Kafka client connection.
   # CLI flag: -ingest-storage.kafka.tls-enabled

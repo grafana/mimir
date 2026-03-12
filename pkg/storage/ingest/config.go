@@ -37,6 +37,7 @@ var (
 	ErrInvalidMaxConsumerLagAtStartup    = fmt.Errorf("the configured max consumer lag at startup must greater or equal than the configured target consumer lag")
 	ErrInconsistentSASLCredentials       = fmt.Errorf("the SASL username and password must be both configured to enable SASL authentication")
 	ErrSASLOauthbearerBadConfig          = fmt.Errorf("exactly one of OAuth token, file path, or HTTP socket path must be configured to enable SASL OAUTHBEARER authentication")
+	ErrSASLMSKIAMBadConfig               = fmt.Errorf("exactly one of static credentials, file path, or HTTP socket path must be configured to enable SASL AWS_MSK_IAM authentication")
 	ErrInvalidSASLMechanism              = fmt.Errorf("the configured SASL mechanism is invalid, must be one of: %s", util.JoinStrings(saslMechanismOptions, ", "))
 
 	ErrInvalidIngestionConcurrencyMax    = errors.New("ingest-storage.kafka.ingestion-concurrency-max must either be set to 0 or to a value greater than 0")
@@ -351,9 +352,10 @@ const (
 	SASLMechanismScramSHA256 SASLMechanism = "SCRAM-SHA-256"
 	SASLMechanismScramSHA512 SASLMechanism = "SCRAM-SHA-512"
 	SASLMechanismOauthbearer SASLMechanism = "OAUTHBEARER"
+	SASLMechanismMSKIAM      SASLMechanism = "AWS_MSK_IAM"
 )
 
-var saslMechanismOptions = []SASLMechanism{SASLMechanismPlain, SASLMechanismScramSHA256, SASLMechanismScramSHA512, SASLMechanismOauthbearer}
+var saslMechanismOptions = []SASLMechanism{SASLMechanismPlain, SASLMechanismScramSHA256, SASLMechanismScramSHA512, SASLMechanismOauthbearer, SASLMechanismMSKIAM}
 
 type KafkaAuthConfig struct {
 	Mechanism SASLMechanism `yaml:"sasl_mechanism"`
@@ -365,13 +367,7 @@ type KafkaAuthConfig struct {
 
 	Oauthbearer KafkaAuthOauthbearerConfig `yaml:",inline"`
 
-	OauthbearerToken      flagext.Secret            `yaml:"sasl_oauthbearer_token"`
-	OauthbearerZid        string                    `yaml:"sasl_oauthbearer_zid"`
-	OauthbearerExtensions flagext.LimitsMap[string] `yaml:"sasl_oauthbearer_extensions"`
-
-	OauthbearerFilePath          string        `yaml:"sasl_oauthbearer_file_path"`
-	OauthbearerHTTPSocketPath    string        `yaml:"sasl_oauthbearer_http_socket_path"`
-	OauthbearerHTTPSocketTimeout time.Duration `yaml:"sasl_oauthbearer_http_socket_timeout"`
+	MSKIAM KafkaAuthMSKIAMConfig `yaml:",inline"`
 }
 
 func (cfg *KafkaAuthConfig) RegisterFlags(f *flag.FlagSet) {
@@ -384,6 +380,7 @@ func (cfg *KafkaAuthConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagS
 	f.StringVar(&cfg.Username, prefix+"username", "", "The username used to authenticate to Kafka using SASL. To enable SASL, configure both the username and password.")
 	f.Var(&cfg.Password, prefix+"password", "The password used to authenticate to Kafka using SASL. To enable SASL, configure both the username and password.")
 	cfg.Oauthbearer.RegisterFlagsWithPrefix(prefix+"oauthbearer-", f)
+	cfg.MSKIAM.RegisterFlagsWithPrefix(prefix+"msk-iam-", f)
 }
 
 func (cfg *KafkaAuthConfig) Validate() error {
@@ -401,6 +398,9 @@ func (cfg *KafkaAuthConfig) Validate() error {
 	case SASLMechanismOauthbearer:
 		return cfg.Oauthbearer.Validate()
 
+	case SASLMechanismMSKIAM:
+		return cfg.MSKIAM.Validate()
+
 	default:
 		return ErrInvalidSASLMechanism
 	}
@@ -416,7 +416,7 @@ func (cfg *KafkaAuthConfig) Validate() error {
 // Because this struct is generic, it cannot have distinct YAML struct tags
 // for each kind of staticSecretConfig. Concrete structs with the same shape (so
 // they can be converted to kafkaSASLConfig) are used instead.
-type kafkaSASLConfig[T staticSecretConfig] struct {
+type kafkaSASLConfig[T saslSecretConfig] struct {
 	Secret            T
 	FilePath          string
 	HTTPSocketPath    string
@@ -490,6 +490,48 @@ func (cfg *KafkaOauthbearerStaticConfig) RegisterFlagsWithPrefix(prefix string, 
 		cfg.Extensions = flagext.NewLimitsMap[string](nil)
 	}
 	f.Var(&cfg.Extensions, prefix+"extensions", "Optional additional OAuth extensions to include when authenticating to Kafka using SASL OAUTHBEARER as a JSON object.")
+}
+
+// KafkaAuthMSKIAMConfig holds AWS_MSK_IAM-specific SASL configuration.
+type KafkaAuthMSKIAMConfig struct {
+	Secret            KafkaMSKIAMStaticConfig `yaml:",inline"`
+	FilePath          string                  `yaml:"sasl_msk_iam_file_path"`
+	HTTPSocketPath    string                  `yaml:"sasl_msk_iam_http_socket_path"`
+	HTTPSocketTimeout time.Duration           `yaml:"sasl_msk_iam_http_socket_timeout"`
+}
+
+func (cfg *KafkaAuthMSKIAMConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	cfg.Secret.RegisterFlagsWithPrefix(prefix, f)
+	f.StringVar(&cfg.FilePath, prefix+"file-path", "", `Path to a file containing AWS credentials to authenticate to Kafka using SASL AWS_MSK_IAM. The file is read anew on every reauthentication, so it can be updated with fresh credentials. The file must be in JSON format, adhering to this JSON schema: {"type": "object", "required": ["AccessKey", "SecretKey"], "properties": {"AccessKey": {"type": "string"}, "SecretKey": {"type": "string"}, "SessionToken": {"type": "string"}, "UserAgent": {"type": "string"}}}`)
+	f.StringVar(&cfg.HTTPSocketPath, prefix+"http-socket-path", "", `Path to a Unix domain socket to fetch AWS credentials from via HTTP. On every authentication or reauthentication, an HTTP GET / request is made to the socket and the response body is read as JSON. The JSON schema is the same as for `+prefix+`file-path.`)
+	f.DurationVar(&cfg.HTTPSocketTimeout, prefix+"http-socket-timeout", 10*time.Second, "Timeout for requesting AWS credentials from the HTTP socket.")
+}
+
+func (cfg KafkaAuthMSKIAMConfig) Validate() error {
+	return (kafkaSASLConfig[KafkaMSKIAMStaticConfig])(cfg).Validate(ErrSASLMSKIAMBadConfig)
+}
+
+// KafkaMSKIAMStaticConfig holds static AWS_MSK_IAM credentials.
+type KafkaMSKIAMStaticConfig struct {
+	AccessKey    flagext.Secret `yaml:"sasl_msk_iam_access_key"`
+	SecretKey    flagext.Secret `yaml:"sasl_msk_iam_secret_key"`
+	SessionToken flagext.Secret `yaml:"sasl_msk_iam_session_token"`
+	UserAgent    string         `yaml:"sasl_msk_iam_user_agent"`
+}
+
+// Validate returns ErrSecretNotProvided when no access key has been set.
+func (s KafkaMSKIAMStaticConfig) Validate() error {
+	if s.AccessKey.String() == "" {
+		return errNoSecret
+	}
+	return nil
+}
+
+func (cfg *KafkaMSKIAMStaticConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	f.Var(&cfg.AccessKey, prefix+"access-key", "The AWS access key ID to authenticate to Kafka using SASL AWS_MSK_IAM. Consider "+prefix+"file-path instead.")
+	f.Var(&cfg.SecretKey, prefix+"secret-key", "The AWS secret access key to authenticate to Kafka using SASL AWS_MSK_IAM. Consider "+prefix+"file-path instead.")
+	f.Var(&cfg.SessionToken, prefix+"session-token", "Optional AWS session token to authenticate to Kafka using SASL AWS_MSK_IAM.")
+	f.StringVar(&cfg.UserAgent, prefix+"user-agent", "", "Optional user agent to use when authenticating to Kafka using SASL AWS_MSK_IAM.")
 }
 
 type TLSClientConfig struct {
