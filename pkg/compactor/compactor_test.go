@@ -128,6 +128,34 @@ func TestConfig_Validate(t *testing.T) {
 			setup:    func(cfg *Config) { cfg.SymbolsFlushersConcurrency = 0 },
 			expected: errInvalidSymbolFlushersConcurrency.Error(),
 		},
+		"should pass with scheduler client disabled": {
+			setup: func(cfg *Config) {
+				cfg.SchedulerClientConfig.Enabled = false
+			},
+			expected: "",
+		},
+		"should pass with scheduler client enabled and scheduler endpoint": {
+			setup: func(cfg *Config) {
+				cfg.SchedulerClientConfig.Enabled = true
+				cfg.SchedulerClientConfig.SchedulerEndpoint = "localhost:9095"
+			},
+			expected: "",
+		},
+		"should fail with scheduler client enabled and no scheduler endpoint": {
+			setup: func(cfg *Config) {
+				cfg.SchedulerClientConfig.Enabled = true
+				cfg.SchedulerClientConfig.SchedulerEndpoint = ""
+			},
+			expected: errInvalidSchedulerEndpoint.Error(),
+		},
+		"should fail with scheduler mode enabled and zero update interval": {
+			setup: func(cfg *Config) {
+				cfg.SchedulerClientConfig.Enabled = true
+				cfg.SchedulerClientConfig.SchedulerEndpoint = "localhost:9095"
+				cfg.SchedulerClientConfig.UpdateInterval = 0
+			},
+			expected: errInvalidSchedulerUpdateInterval.Error(),
+		},
 	}
 
 	for testName, testData := range tests {
