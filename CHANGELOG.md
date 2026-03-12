@@ -46,7 +46,7 @@
 * [FEATURE] Store-gateway: Add `-store-gateway.sharding-ring.excluded-zones` flag to exclude specific zones from the store-gateway ring. #14120
 * [FEATURE] Ingest storage: Add `-ingest-storage.kafka.sasl-mechanism` flag supporting more ways to authenticate with Kafka. #14307 #14344 #14540
 * [FEATURE] Ingest storage: Add `-ingest-storage.kafka.tls*` flags to connect to Kafka using TLS. #14550
-* [FEATURE] MQE: Add experimental support for splitting and caching intermediate results for functions over range vectors in instant queries. #13472 #14479 #14506 #14499 #14517 #14536 #14614
+* [FEATURE] MQE: Add experimental support for splitting and caching intermediate results for functions over range vectors in instant queries. #13472 #14479 #14506 #14499 #14517 #14536 #14614 #14645
 * [ENHANCEMENT] Memberlist: Add experimental propagation delay tracker to measure gossip propagation delay across the memberlist cluster. Enable with `-memberlist.propagation-delay-tracker.enabled=true`. #14312 #14406
 * [ENHANCEMENT] Compactor: Add 0-100% jitter to the first compaction interval to spread compactions when multiple compactors start simultaneously. #14280
 * [ENHANCEMENT] Compactor, Store-gateway: Remove experimental setting `-compactor.upload-sparse-index-headers` and always upload sparse index-headers. This improves lazy loading performance in the store-gateway. #13089 #13882
@@ -79,6 +79,7 @@
 * [ENHANCEMENT] Usage-tracker: Improved snapshot loading by doing it in parallel with GOMAXPROCS workers. #13608 #13622
 * [ENHANCEMENT] Usage-tracker, distributor: Make usage-tracker calls asynchronous for users who are far enough from the series limits. #13427
 * [ENHANCEMENT] Usage-tracker: Ensure tenant shards have enough capacity when loading a snapshot. #13607
+* [ENHANCEMENT] Usage-tracker: Limit-aware map growth in tenant shards to avoid excessive memory allocation when tenants grow slightly beyond their limit. #14642
 * [ENHANCEMENT] Ruler: Implemented `OperatorControllableErrorClassifier` for rule evaluation, allowing differentiation between operator-controllable errors (e.g., storage failures, 5xx errors, rate limiting) and user-controllable errors (e.g., bad queries, validation errors, 4xx errors). This change affects the rule evaluation failure metric `prometheus_rule_evaluation_failures_total`, which now includes a `reason` label with values `operator` or `user` to distinguish between them. #13313, #13470
 * [ENHANCEMENT] Store-gateway: Added `cortex_bucket_store_block_discovery_latency_seconds` metric to track time from block creation to discovery by store-gateway. #13489 #13552 #13963
 * [ENHANCEMENT] Alertmanager, distributor, querier, ruler: Added experimental CLI flags to configure a grace period for health checks for connections to other services or other replicas. The default value of 0 preserves the existing behaviour of immediately removing connections that have failed a health check. #13521 #13846
@@ -146,6 +147,7 @@
 * [ENHANCEMENT] Block-builder: Add experimental `-block-builder.generate-sparse-index-headers` option. Construct and upload sparse index headers to object storage as part of block creation to make the sparse headers available to store-gateways when loading uncompacted blocks. #14494
 * [ENHANCEMENT] Add experimental `-http.response-compression-level` CLI flag to set the gzip compression level used for compressed HTTP responses. #14586
 * [ENHANCEMENT] Query-frontend: Add support for `lookback_delta` query parameter for instant and range queries. #14582 #14588
+* [ENHANCEMENT] Query-frontend: Extend query blocking to optionally only apply a blocking rule if the query is an unaligned range query. Set `unaligned_range_queries: true` to enable. #14643
 * [BUGFIX] Mimir: Fix false positive in filesystem path overlap detection when one path is a string prefix of another but not an ancestor directory. #14426
 * [BUGFIX] Build: Fixed config descriptor generation to correctly handle custom field types without CLI flags. #14632
 * [BUGFIX] Query-frontend: Fixed blocked queries tests to use production code path instead of bypassing YAML parsing and canonicalization. #14585
@@ -255,6 +257,7 @@
 * [ENHANCEMENT] Dashboards: Add "Forced TSDB head compactions in progress" panel to "Mimir / Writes" dashboard. #14248
 * [ENHANCEMENT] Dashboards: Improve "Last successful run per-compactor replica" table in the compactor dashboard to show time since process start for compactors that haven't completed their first run yet. #14285
 * [ENHANCEMENT] Alerts: Add dashboard_url annotations to Prometheus alerts. #14458
+* [ENHANCEMENT] Dashboards: Split the "All series" panel in the Tenants dashboard into "Active series" and "Owned & in-memory series" panels, and added the active series limit. #14648
 * [BUGFIX] Dashboards: Fix issue where throughput dashboard panels would group all gRPC requests that resulted in a status containing an underscore into one series with no name. #13184
 * [BUGFIX] Dashboards: Filter out 0s from `max_series` limit on Writes Resources > Ingester > In-memory series panel. #13419
 * [BUGFIX] Dashboards: Fix issue where the "Tenant gateway requests" panels on Tenants dashboard would show data from all components. #13940

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
@@ -150,6 +151,15 @@ func TestJobWaitPeriodElapsed(t *testing.T) {
 			expectedElapsed: false,
 			expectedMeta:    meta8,
 		},
+		"block with MaxTime more than wait period but LastModified old enough": {
+			waitPeriod:        10 * time.Minute,
+			skipFutureMaxTime: true,
+			jobBlocks: []jobBlock{
+				{meta: meta8, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-20 * time.Minute)}},
+			},
+			expectedElapsed: false,
+			expectedMeta:    meta8,
+		},
 		"block with max-time since more than the wait period but skip-future-max-time disabled": {
 			waitPeriod:        10 * time.Minute,
 			skipFutureMaxTime: false,
@@ -197,7 +207,7 @@ func TestJobWaitPeriodElapsed(t *testing.T) {
 				userBucket.MockAttributes(path.Join(b.meta.ULID.String(), block.MetaFilename), b.attrs, b.attrsErr)
 			}
 
-			elapsed, meta, err := jobWaitPeriodElapsed(context.Background(), job, testData.waitPeriod, testData.skipFutureMaxTime, userBucket)
+			elapsed, meta, err := jobWaitPeriodElapsed(context.Background(), job, testData.waitPeriod, testData.skipFutureMaxTime, userBucket, log.NewNopLogger())
 			if testData.expectedErr != "" {
 				require.Error(t, err)
 				assert.ErrorContains(t, err, testData.expectedErr)

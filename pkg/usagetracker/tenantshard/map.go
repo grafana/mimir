@@ -7,6 +7,7 @@ package tenantshard
 
 import (
 	"iter"
+	"math"
 	"sync"
 
 	"go.uber.org/atomic"
@@ -16,6 +17,9 @@ import (
 
 const (
 	indexEntryBits = 7
+
+	// NumShards is the number of shards used by the tracker store per tenant.
+	NumShards = 16
 )
 
 // Map is an open-addressing hash map based on Abseil's flat_hash_map.
@@ -84,7 +88,11 @@ func New(sz uint32) (m *Map) {
 // If track is false, then the value is only updated if it's greater than the current value.
 func (m *Map) Put(key uint64, value clock.Minutes, series, limit *atomic.Uint64, track bool) (created, rejected bool) {
 	if m.resident >= m.limit {
-		m.rehash(m.nextSize())
+		var lim uint64
+		if limit != nil {
+			lim = limit.Load()
+		}
+		m.rehash(m.nextSize(lim))
 	}
 
 	if value == 0xff {
@@ -140,7 +148,7 @@ func (m *Map) insert(key uint64, pfx prefix, entry xorData, i uint32, matches bi
 // No limits are checked, and series count should be incremented by the caller.
 func (m *Map) Load(key uint64, value clock.Minutes) {
 	if m.resident >= m.limit {
-		m.rehash(m.nextSize())
+		m.rehash(m.nextSize(0))
 	}
 
 	if value == 0xff {
@@ -182,7 +190,7 @@ func (m *Map) Count() int {
 	return int(m.resident - m.dead)
 }
 
-func (m *Map) Cleanup(watermark clock.Minutes) int {
+func (m *Map) Cleanup(watermark clock.Minutes, limit *atomic.Uint64) int {
 	removed := 0
 	for i := range m.data {
 		for j, entry := range m.data[i] {
@@ -200,7 +208,11 @@ func (m *Map) Cleanup(watermark clock.Minutes) int {
 		}
 	}
 	if m.dead > m.limit/2 {
-		m.rehash(m.nextSize())
+		var lim uint64
+		if limit != nil {
+			lim = limit.Load()
+		}
+		m.rehash(m.nextSize(lim))
 	}
 	return removed
 }
@@ -214,12 +226,24 @@ func (m *Map) EnsureCapacity(n uint32) {
 	}
 }
 
-func (m *Map) nextSize() (n uint32) {
-	n = uint32(len(m.index)) * 2
-	if m.dead >= (m.resident / 2) {
-		n = uint32(len(m.index))
+// nextSize computes the number of groups for the next rehash.
+// limit is the total tenant series limit across all shards; it is divided by NumShards internally.
+// limit=0 means no limit (used by Load): grows by resident*1.25.
+func (m *Map) nextSize(limit uint64) uint32 {
+	perShard := limit / NumShards
+	alive := uint64(m.resident - m.dead)
+	target := alive * 5 / 4
+	// Only let the limit influence growth when it represents a real constraint.
+	if perShard > target && perShard <= math.MaxUint32 {
+		target = perShard
 	}
-	return
+	if target < alive {
+		target = alive
+	}
+	if target > math.MaxUint32 {
+		target = math.MaxUint32
+	}
+	return numGroups(uint32(target))
 }
 
 func (m *Map) rehash(n uint32) {
@@ -240,12 +264,12 @@ func (m *Map) rehash(n uint32) {
 }
 
 // numGroups returns the minimum number of groups needed to store |n| elems.
-func numGroups(n uint32) (groups uint32) {
-	groups = (n + maxAvgGroupLoad - 1) / maxAvgGroupLoad
-	if groups == 0 {
-		groups = 1
+func numGroups(n uint32) uint32 {
+	if n == 0 {
+		return 1
 	}
-	return
+	// Use (n-1)/d+1 instead of (n+d-1)/d to avoid uint32 overflow when n is large.
+	return (n-1)/maxAvgGroupLoad + 1
 }
 
 // splitHash extracts the prefix and suffix components from a 64 bit hash.
