@@ -1840,6 +1840,7 @@ func (db *DB) compactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID
 // file for it, and creates a new active head for writes. The frozen head
 // becomes a retiredHead that is still queryable through its disk-backed index.
 func (db *DB) RotateHead() error {
+
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
 
@@ -1921,7 +1922,10 @@ func (db *DB) RotateHead() error {
 
 	db.retiredHeadsMtx.Lock()
 	db.retiredHeads = append([]*retiredHead{rh}, db.retiredHeads...)
+	rhl := len(db.retiredHeads)
 	db.retiredHeadsMtx.Unlock()
+
+	db.logger.Info("rotated head", "retired_head_count", rhl)
 
 	return nil
 }
@@ -1933,9 +1937,11 @@ func (db *DB) DropRetiredHeadsBefore(maxt int64) error {
 	defer db.retiredHeadsMtx.Unlock()
 
 	var kept []*retiredHead
+	closed := 0
 	var closeErrs []error
 	for _, rh := range db.retiredHeads {
 		if rh.maxT < maxt {
+			closed++
 			if err := rh.Close(); err != nil {
 				closeErrs = append(closeErrs, err)
 			}
@@ -1944,6 +1950,7 @@ func (db *DB) DropRetiredHeadsBefore(maxt int64) error {
 		}
 	}
 	db.retiredHeads = kept
+	db.logger.Info("dropped retired heads", "dropped_count", closed, "close_errors", closeErrs)
 	return errors.Join(closeErrs...)
 }
 
