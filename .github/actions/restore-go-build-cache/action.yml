@@ -26,6 +26,7 @@ runs:
     - name: Move Go build cache to GOCACHE
       shell: bash
       run: |
+        GOCACHE=$(go env GOCACHE)
         if [ -d "$RESTORE_PATH" ] && [ "$RESTORE_PATH" != "$GOCACHE" ]; then
           rm -rf "$GOCACHE"
           mv "$RESTORE_PATH" "$GOCACHE"
