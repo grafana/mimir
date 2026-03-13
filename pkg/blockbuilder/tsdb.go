@@ -3,6 +3,7 @@
 package blockbuilder
 
 import (
+	"container/heap"
 	"context"
 	"errors"
 	"fmt"
@@ -54,7 +55,7 @@ type TSDBBuilder struct {
 	tsdbBuilderMetrics tsdbBuilderMetrics
 	tsdbMetrics        *mimir_tsdb.TSDBMetrics
 
-	// Number of series in memory, across all tenants.
+	// Number of series in memory across all tenants.
 	seriesCount atomic.Int64
 }
 
@@ -279,25 +280,6 @@ var (
 	zeroFloatHistogram = &histogram.FloatHistogram{}
 )
 
-func (b *TSDBBuilder) getTSDB(tenant tsdbTenant) *userTSDB {
-	b.tsdbsMu.RLock()
-	defer b.tsdbsMu.RUnlock()
-	db := b.tsdbs[tenant]
-	return db
-}
-
-func (b *TSDBBuilder) getTSDBTenants() []tsdbTenant {
-	b.tsdbsMu.RLock()
-	defer b.tsdbsMu.RUnlock()
-
-	tenants := make([]tsdbTenant, 0, len(b.tsdbs))
-	for tenant := range b.tsdbs {
-		tenants = append(tenants, tenant)
-	}
-
-	return tenants
-}
-
 func (b *TSDBBuilder) getOrCreateTSDB(tenant tsdbTenant) (*userTSDB, error) {
 	b.tsdbsMu.RLock()
 	db := b.tsdbs[tenant]
@@ -395,18 +377,106 @@ func (b *TSDBBuilder) NotifyPreCommit(_ context.Context) error {
 	return nil
 }
 
-func (b *TSDBBuilder) CompactToReduceInMemorySeries(ctx context.Context) {
+func (b *TSDBBuilder) CompactToReduceInMemorySeries(ctx context.Context, now time.Time) error {
 	if b.cfg.BlocksStorage.TSDB.EarlyHeadCompactionMinInMemorySeries <= 0 {
-		return
+		return nil
 	}
 
-	// No need to prematurely compact TSDB heads if the number of in-memory series is below a critical threshold.
-	totalMemorySeries := b.seriesCount.Load()
-	if totalMemorySeries < b.cfg.BlocksStorage.TSDB.EarlyHeadCompactionMinInMemorySeries {
-		return
+	// No need to prematurely compact TSDB heads if total number of in-memory series is below a critical threshold.
+	totalSeries := b.seriesCount.Load()
+	earlyCompactionThreshold := b.cfg.BlocksStorage.TSDB.EarlyHeadCompactionMinInMemorySeries
+	if totalSeries < earlyCompactionThreshold {
+		return nil
 	}
 
-	level.Info(b.logger).Log("msg", "the number of in-memory series is higher than the configured early compaction threshold", "in_memory_series", totalMemorySeries, "early_compaction_threshold", b.cfg.BlocksStorage.TSDB.EarlyHeadCompactionMinInMemorySeries)
+	b.tsdbsMu.Lock()
+	defer b.tsdbsMu.Unlock()
+
+	level.Warn(b.logger).Log(
+		"msg", "number of in-memory series is higher than configured early compaction threshold",
+		"num_tsdb", len(b.tsdbs),
+		"total_in_memory_series", totalSeries,
+		"early_compaction_threshold", earlyCompactionThreshold,
+	)
+
+	if len(b.tsdbs) == 0 {
+		return nil
+	}
+
+	// Estimate series reduction opportunity for each tenant.
+	ests := make(seriesReductionEstimations, 0, len(b.tsdbs))
+	for tenant, db := range b.tsdbs {
+		numSeries := db.Head().NumSeries()
+		if numSeries == 0 {
+			continue
+		}
+
+		est := seriesReductionEstimation{
+			tenant:     tenant,
+			estimation: numSeries,
+		}
+		heap.Push(&ests, est)
+	}
+
+	for ests.Len() > 0 {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		totalSeries := b.seriesCount.Load()
+		if totalSeries < earlyCompactionThreshold {
+			break
+		}
+
+		est := heap.Pop(&ests).(seriesReductionEstimation)
+		db := b.tsdbs[est.tenant]
+
+		maxTime := max(db.Head().MaxTime(), db.Head().MaxOOOTime())
+		if maxTime == math.MinInt64 {
+			continue
+		}
+
+		b.tsdbBuilderMetrics.earlyCompactionsTriggered.WithLabelValues(strconv.Itoa(int(est.tenant.partitionID))).Inc()
+
+		// Compact up to maxTime; memory truncation will force GC.
+		if err := db.compactBlocks(ctx, DefaultBlockRange, maxTime, true); err != nil {
+			return fmt.Errorf("early head compaction: partition %d, user %s: %w", est.tenant.partitionID, est.tenant.tenantID, err)
+		}
+
+		level.Info(b.logger).Log(
+			"msg", "early head compaction completed",
+			"partition", est.tenant.partitionID,
+			"user", est.tenant.tenantID,
+			"before_in_memory_series", est.estimation,
+			"after_in_memory_series", db.Head().NumSeries(),
+		)
+	}
+
+	return nil
+}
+
+type seriesReductionEstimation struct {
+	tenant     tsdbTenant
+	estimation uint64
+}
+
+// seriesReductionEstimations implements heap.Interface.
+type seriesReductionEstimations []seriesReductionEstimation
+
+func (s seriesReductionEstimations) Len() int           { return len(s) }
+func (s seriesReductionEstimations) Less(i, j int) bool { return s[i].estimation > s[j].estimation } // heap is sorted in descending order by estimation
+func (s seriesReductionEstimations) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
+
+func (s *seriesReductionEstimations) Push(x any) {
+	*s = append(*s, x.(seriesReductionEstimation))
+}
+
+func (s *seriesReductionEstimations) Pop() any {
+	old := *s
+	n := len(old)
+	item := old[n-1]
+	*s = old[0 : n-1]
+	return item
 }
 
 // Function to upload the blocks.
@@ -542,7 +612,8 @@ type userTSDB struct {
 	*tsdb.DB
 	userID string
 
-	instanceSeriesCount *atomic.Int64 // Shared across all userTSDB instances created by block-builder.
+	// Shared across all userTSDB instances created by block-builder.
+	instanceSeriesCount *atomic.Int64
 
 	// Used as a protective mechanism, to make sure block-builder respects per-tenant max global series limit.
 	// The value is inclusive.
