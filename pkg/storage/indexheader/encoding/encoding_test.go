@@ -17,6 +17,7 @@ import (
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 
+	"github.com/grafana/mimir/pkg/util/filepool"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -829,7 +830,7 @@ func runAllBufReaderTypes(tb test.TB, caseName string, bytes []byte, testFn func
 	require.NoError(tb, os.WriteFile(filePath, bytes, 0700))
 
 	reg := prometheus.NewPedanticRegistry()
-	diskFactory := NewFilePoolDecbufFactory(filePath, 0, NewDecbufFactoryMetrics(reg))
+	diskFactory := NewFilePoolDecbufFactory(filePath, 0, filepool.NewFilePoolMetrics(reg))
 	tb.Cleanup(func() {
 		_ = diskFactory.Close()
 	})

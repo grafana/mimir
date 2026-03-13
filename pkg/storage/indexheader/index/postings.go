@@ -27,7 +27,16 @@ const (
 	CheckContextEveryNIterations = 1024
 )
 
-type PostingOffsetTable interface {
+// PostingListOffset contains the start and end offset of a posting list.
+// The Start is inclusive and is the byte offset of the number_of_entries field of a posting list.
+// The End is exclusive and is typically the byte offset of the CRC32 field.
+// The End might be bigger than the actual posting ending, but not larger than the whole index file.
+type PostingListOffset struct {
+	LabelValue string
+	Off        index.Range
+}
+
+type PostingOffsetsTableReader interface {
 	// PostingsOffset returns the byte range of the postings section for the label with the given name and value.
 	// The Start is inclusive and is the byte offset of the number_of_entries field of a posting list.
 	// The End is exclusive and is typically the byte offset of the CRC32 field.
@@ -49,148 +58,77 @@ type PostingOffsetTable interface {
 	PostingOffsetInMemSampling() int
 }
 
-// PostingListOffset contains the start and end offset of a posting list.
-// The Start is inclusive and is the byte offset of the number_of_entries field of a posting list.
-// The End is exclusive and is typically the byte offset of the CRC32 field.
-// The End might be bigger than the actual posting ending, but not larger than the whole index file.
-type PostingListOffset struct {
-	LabelValue string
-	Off        index.Range
+// LabelSparsePostingsOffsets contains the offsets within the Postings Offsets table
+// for a sparse set of Postings Offsets table entries with the same label name.
+// This enables a fast in-memory binary search of a subset of table entries
+// in order to bound the size of the actual table scan.
+//
+// Postings Offsets table entries contain a "key": a label (name, value) pair
+// and a "value": the start offset in the Postings List for that label (name, value).
+// This type does *not* capture those values pointing to the Postings list,
+// only the location of the label (name, value) entries within the Postings Offsets table.
+type LabelSparsePostingsOffsets struct {
+	SparseOffsets []LabelValuePostingsOffset
+	LastValOffset int64
 }
 
-func NewPostingOffsetTable(factory streamencoding.DecbufFactory, tableOffset int, indexVersion int, indexLastPostingListEndBound uint64, postingOffsetsInMemSampling int, doChecksum bool) (PostingOffsetTable, error) {
-	switch indexVersion {
-	case index.FormatV2:
-		return newV2PostingOffsetTable(factory, tableOffset, indexLastPostingListEndBound, postingOffsetsInMemSampling, doChecksum)
-	}
-
-	return nil, fmt.Errorf("unknown or unsupported index version %v", indexVersion)
-
+type LabelValuePostingsOffset struct {
+	// label value.
+	value string
+	// offset of this entry in posting offset table in index-header file.
+	tableOff int
 }
 
-func newV2PostingOffsetTable(factory streamencoding.DecbufFactory, tableOffset int, indexLastPostingListEndBound uint64, postingOffsetsInMemSampling int, doChecksum bool) (table *PostingOffsetTableV2, err error) {
-	t := PostingOffsetTableV2{
-		factory:                     factory,
-		tableOffset:                 tableOffset,
-		postings:                    map[string]*postingValueOffsets{},
-		postingOffsetsInMemSampling: postingOffsetsInMemSampling,
+// prefixOffsets returns the index of the first matching offset (start) and the index of the first non-matching (end).
+// If all SparseOffsets match the prefix, then end will equal the length of SparseOffsets.
+// prefixOffsets returns false when no SparseOffsets match this prefix.
+func (e *LabelSparsePostingsOffsets) prefixOffsets(prefix string) (start, end int, found bool) {
+	// Find the first offset that is greater or equal to the value.
+	start = sort.Search(len(e.SparseOffsets), func(i int) bool {
+		return prefix <= e.SparseOffsets[i].value
+	})
+
+	// We always include the last value in the SparseOffsets,
+	// and given that prefix is always less or equal than the value,
+	// we can conclude that there are no values with this prefix.
+	if start == len(e.SparseOffsets) {
+		return 0, 0, false
 	}
 
-	var d streamencoding.Decbuf
-	if doChecksum {
-		d = factory.NewDecbufAtChecked(tableOffset, castagnoliTable)
-	} else {
-		d = factory.NewDecbufAtUnchecked(tableOffset)
+	// Prefix is lower than the first value in the SparseOffsets, and that first value doesn't have this prefix.
+	// Next values won't have the prefix, so we can return early.
+	if start == 0 && prefix < e.SparseOffsets[0].value && !strings.HasPrefix(e.SparseOffsets[0].value, prefix) {
+		return 0, 0, false
 	}
 
-	defer runutil.CloseWithErrCapture(&err, &d, "read offset table")
-
-	remainingCount := d.Be32()
-	currentName := ""
-	valuesForCurrentKey := 0
-	lastEntryOffsetInTable := -1
-
-	for d.Err() == nil && remainingCount > 0 {
-		lastName := currentName
-		offsetInTable := d.Offset()
-		keyCount := d.Uvarint()
-
-		// The Postings offset table takes only 2 keys per entry (name and value of label).
-		if keyCount != 2 {
-			return nil, errors.Errorf("unexpected key length for posting table %d", keyCount)
-		}
-
-		// Important: this value is only valid as long as we don't perform any further reads from d.
-		// If we need to retain its value, we must copy it before performing another read.
-		if unsafeName := d.UnsafeUvarintBytes(); len(t.postings) == 0 || lastName != string(unsafeName) {
-			newName := string(unsafeName)
-
-			if lastEntryOffsetInTable != -1 {
-				// We haven't recorded the last offset for the last value of the previous name.
-				// Go back and read the last value for the previous name.
-				newValueOffsetInTable := d.Offset()
-				d.ResetAt(lastEntryOffsetInTable)
-				d.Uvarint()          // Skip the key count
-				d.SkipUvarintBytes() // Skip the name
-				value := d.UvarintStr()
-				t.postings[lastName].offsets = append(t.postings[lastName].offsets, postingOffset{value: value, tableOff: lastEntryOffsetInTable})
-
-				// Skip ahead to where we were before we called ResetAt() above.
-				d.Skip(newValueOffsetInTable - d.Offset())
-			}
-
-			currentName = newName
-			t.postings[currentName] = &postingValueOffsets{}
-			valuesForCurrentKey = 0
-		}
-
-		// Retain every 1-in-postingOffsetsInMemSampling entries, starting with the first one.
-		if valuesForCurrentKey%postingOffsetsInMemSampling == 0 {
-			value := d.UvarintStr()
-			off := d.Uvarint64()
-			t.postings[currentName].offsets = append(t.postings[currentName].offsets, postingOffset{value: value, tableOff: offsetInTable})
-
-			if lastName != currentName {
-				t.postings[lastName].lastValOffset = int64(off - crc32.Size)
-			}
-
-			// If the current value is the last one for this name, we don't need to record it again.
-			lastEntryOffsetInTable = -1
-		} else {
-			// We only need to store this value if it's the last one for this name.
-			// Record our current position in the table and come back to it if it turns out this is the last value.
-			lastEntryOffsetInTable = offsetInTable
-
-			// Skip over the value and offset.
-			d.SkipUvarintBytes()
-			d.Uvarint64()
-		}
-
-		valuesForCurrentKey++
-		remainingCount--
+	// If the value is not equal to the prefix, this value might have the prefix.
+	// But maybe the values in the previous offset also had the prefix,
+	// so we need to step back one offset to find all values with this prefix.
+	// Unless, of course, we are at the first offset.
+	if start > 0 && e.SparseOffsets[start].value != prefix {
+		start--
 	}
 
-	if lastEntryOffsetInTable != -1 {
-		// We haven't recorded the last offset for the last value of the last key
-		// Go back and read the last value for the last key.
-		d.ResetAt(lastEntryOffsetInTable)
-		d.Uvarint()          // Skip the key count
-		d.SkipUvarintBytes() // Skip the key
-		value := d.UvarintStr()
-		t.postings[currentName].offsets = append(t.postings[currentName].offsets, postingOffset{value: value, tableOff: lastEntryOffsetInTable})
-	}
-
-	if d.Err() != nil {
-		return nil, errors.Wrap(d.Err(), "read postings table")
-	}
-
-	if len(t.postings) > 0 {
-		// In case lastValOffset is unknown as we don't have next posting anymore. Guess from the index table of contents.
-		// The last posting list ends before the label offset table.
-		// In worst case we will overfetch a few bytes.
-		t.postings[currentName].lastValOffset = int64(indexLastPostingListEndBound) - crc32.Size
-	}
-
-	// Trim any extra space in the slices.
-	for k, v := range t.postings {
-		if len(v.offsets) == cap(v.offsets) {
-			continue
-		}
-
-		l := make([]postingOffset, len(v.offsets))
-		copy(l, v.offsets)
-		t.postings[k].offsets = l
-	}
-
-	return &t, nil
+	// Find the first offset which is larger than the prefix and doesn't have the prefix.
+	// All values at and after that offset will not match the prefix.
+	end = sort.Search(len(e.SparseOffsets)-start, func(i int) bool {
+		return prefix < e.SparseOffsets[i+start].value && !strings.HasPrefix(e.SparseOffsets[i+start].value, prefix)
+	})
+	end += start
+	return start, end, true
 }
 
-func NewPostingOffsetTableFromSparseHeader(factory streamencoding.DecbufFactory, postingsOffsetTable *indexheaderpb.PostingOffsetTable, tableOffset int, postingOffsetsInMemSampling int) (table *PostingOffsetTableV2, err error) {
-	t := PostingOffsetTableV2{
-		factory:                     factory,
-		tableOffset:                 tableOffset,
-		postings:                    make(map[string]*postingValueOffsets, len(postingsOffsetTable.Postings)),
-		postingOffsetsInMemSampling: postingOffsetsInMemSampling,
+func NewPostingOffsetTableFromSparseHeader(
+	factory streamencoding.DecbufFactory,
+	postingsOffsetTable *indexheaderpb.PostingOffsetTable,
+	tableOffset int,
+	sparseSampleFactor int,
+) (table *PostingOffsetsTableV2, err error) {
+	t := PostingOffsetsTableV2{
+		factory:               factory,
+		tableOffset:           tableOffset,
+		sparsePostingsOffsets: make(map[string]*LabelSparsePostingsOffsets, len(postingsOffsetTable.Postings)),
+		sparseSampleFactor:    sparseSampleFactor,
 	}
 
 	pbSampling := int(postingsOffsetTable.GetPostingOffsetInMemorySampling())
@@ -198,13 +136,13 @@ func NewPostingOffsetTableFromSparseHeader(factory streamencoding.DecbufFactory,
 		return nil, fmt.Errorf("sparse index-header sampling rate not set")
 	}
 
-	if pbSampling > postingOffsetsInMemSampling {
+	if pbSampling > sparseSampleFactor {
 		return nil, fmt.Errorf("sparse index-header sampling rate exceeds in-mem-sampling rate")
 	}
 
 	// if the sampling rate in the sparse index-header is set lower (more frequent) than
-	// the configured postingOffsetsInMemSampling we downsample to the configured rate
-	step, ok := stepSize(pbSampling, postingOffsetsInMemSampling)
+	// the configured sparseSampleFactor we downsample to the configured rate
+	step, ok := stepSize(pbSampling, sparseSampleFactor)
 	if !ok {
 		return nil, fmt.Errorf("sparse index-header sampling rate not compatible with in-mem-sampling rate")
 	}
@@ -217,113 +155,240 @@ func NewPostingOffsetTableFromSparseHeader(factory streamencoding.DecbufFactory,
 			downsampledLen++
 		}
 
-		t.postings[sName] = &postingValueOffsets{offsets: make([]postingOffset, downsampledLen)}
+		t.sparsePostingsOffsets[sName] = &LabelSparsePostingsOffsets{SparseOffsets: make([]LabelValuePostingsOffset, downsampledLen)}
 		for i, sPostingOff := range sOffsets.Offsets {
 			if i%step == 0 {
-				t.postings[sName].offsets[i/step] = postingOffset{value: sPostingOff.Value, tableOff: int(sPostingOff.TableOff)}
+				t.sparsePostingsOffsets[sName].SparseOffsets[i/step] = LabelValuePostingsOffset{value: sPostingOff.Value, tableOff: int(sPostingOff.TableOff)}
 			}
 
 			if i == olen-1 {
-				t.postings[sName].offsets[downsampledLen-1] = postingOffset{value: sPostingOff.Value, tableOff: int(sPostingOff.TableOff)}
+				t.sparsePostingsOffsets[sName].SparseOffsets[downsampledLen-1] = LabelValuePostingsOffset{value: sPostingOff.Value, tableOff: int(sPostingOff.TableOff)}
 			}
 		}
-		t.postings[sName].lastValOffset = sOffsets.LastValOffset
+		t.sparsePostingsOffsets[sName].LastValOffset = sOffsets.LastValOffset
 	}
 	return &t, err
 }
 
-type PostingOffsetTableV2 struct {
-	// Map of LabelName to a list of some LabelValues's position in the offset table.
-	// The first and last values for each name are always present, we keep only 1/postingOffsetsInMemSampling of the rest.
-	postings map[string]*postingValueOffsets
+func NewPostingOffsetTableReaderFromIndexHeader(
+	decbufFactory streamencoding.DecbufFactory,
+	tableOffset int,
+	indexVersion int,
+	indexLastPostingListEndBound uint64,
+	sparseSampleFactor int,
+	doChecksum bool,
+) (PostingOffsetsTableReader, error) {
+	switch indexVersion {
+	case index.FormatV2:
+		return newV2PostingOffsetTableReader(decbufFactory, tableOffset, indexLastPostingListEndBound, sparseSampleFactor, doChecksum)
+	}
 
-	postingOffsetsInMemSampling int
+	return nil, fmt.Errorf("unknown or unsupported index version %v", indexVersion)
+}
+
+func newV2PostingOffsetTableReader(
+	decbufFactory streamencoding.DecbufFactory,
+	tableOffset int,
+	indexLastPostingListEndBound uint64,
+	sparseSampleFactor int,
+	doChecksum bool,
+) (table *PostingOffsetsTableV2, err error) {
+	sparsePostingsOffsets, err := SparseValuesFromPostingsOffsetsTable(
+		decbufFactory, tableOffset, doChecksum, sparseSampleFactor, indexLastPostingListEndBound,
+	)
+
+	return &PostingOffsetsTableV2{
+		factory:               decbufFactory,
+		tableOffset:           tableOffset,
+		sparsePostingsOffsets: sparsePostingsOffsets,
+		sparseSampleFactor:    sparseSampleFactor,
+	}, nil
+}
+
+func SparseValuesFromPostingsOffsetsTable(
+	decbufFactory streamencoding.DecbufFactory,
+	tableOffset int,
+	doChecksum bool,
+	sparseSampleFactor int,
+	indexLastPostingListEndBound uint64,
+) (sparsePostingsOffsets map[string]*LabelSparsePostingsOffsets, err error) {
+	var decbuf streamencoding.Decbuf
+	if doChecksum {
+		decbuf = decbufFactory.NewDecbufAtChecked(tableOffset, castagnoliTable)
+	} else {
+		decbuf = decbufFactory.NewDecbufAtUnchecked(tableOffset)
+	}
+
+	defer runutil.CloseWithErrCapture(&err, &decbuf, "decode postings offsets table")
+	if err := decbuf.Err(); err != nil {
+		return nil, fmt.Errorf("init postings offsets table decoding buffer: %w", decbuf.Err())
+	}
+
+	// Postings Offsets table format:
+	// ┌─────────────────────┬──────────────────────┐
+	// │ len <4b>            │ #entries <4b>        │
+	// ├─────────────────────┴──────────────────────┤
+	// │ ┌────────────────────────────────────────┐ │
+	// │ │  n = 2 <1b>                            │ │
+	// │ ├──────────────────────┬─────────────────┤ │
+	// │ │ len(name) <uvarint>  │ name <bytes>    │ │
+	// │ ├──────────────────────┼─────────────────┤ │
+	// │ │ len(value) <uvarint> │ value <bytes>   │ │
+	// │ ├──────────────────────┴─────────────────┤ │
+	// │ │  offset <uvarint64>                    │ │
+	// │ └────────────────────────────────────────┘ │
+	// │                    . . .                   │
+	// ├────────────────────────────────────────────┤
+	// │  CRC32 <4b>                                │
+	// └────────────────────────────────────────────┘
+
+	sparsePostingsOffsets = map[string]*LabelSparsePostingsOffsets{}
+
+	remainingCount := decbuf.Be32()
+	currentName := ""
+	valuesForCurrentKey := 0
+	lastEntryOffsetInTable := -1
+
+	for decbuf.Err() == nil && remainingCount > 0 {
+		lastName := currentName
+		offsetInTable := decbuf.Offset()
+		keyCount := decbuf.Uvarint()
+
+		// The Postings offset table takes only 2 keys per entry (name and value of label).
+		if keyCount != 2 {
+			return nil, errors.Errorf("unexpected key length for posting table %d", keyCount)
+		}
+
+		// Important: this value is only valid as long as we don't perform any further reads from decbuf.
+		// If we need to retain its value, we must copy it before performing another read.
+		if unsafeName := decbuf.UnsafeUvarintBytes(); len(sparsePostingsOffsets) == 0 || lastName != string(unsafeName) {
+			newName := string(unsafeName)
+
+			if lastEntryOffsetInTable != -1 {
+				// We haven't recorded the last offset for the last value of the previous name.
+				// Go back and read the last value for the previous name.
+				newValueOffsetInTable := decbuf.Offset()
+				decbuf.ResetAt(lastEntryOffsetInTable)
+				decbuf.Uvarint()          // Skip the key count
+				decbuf.SkipUvarintBytes() // Skip the name
+				value := decbuf.UvarintStr()
+				sparsePostingsOffsets[lastName].SparseOffsets = append(sparsePostingsOffsets[lastName].SparseOffsets, LabelValuePostingsOffset{value: value, tableOff: lastEntryOffsetInTable})
+
+				// Skip ahead to where we were before we called ResetAt() above.
+				decbuf.Skip(newValueOffsetInTable - decbuf.Offset())
+			}
+
+			currentName = newName
+			sparsePostingsOffsets[currentName] = &LabelSparsePostingsOffsets{}
+			valuesForCurrentKey = 0
+		}
+
+		// Retain every 1-in-sparseSampleFactor entries, starting with the first one.
+		if valuesForCurrentKey%sparseSampleFactor == 0 {
+			value := decbuf.UvarintStr()
+			off := decbuf.Uvarint64()
+			sparsePostingsOffsets[currentName].SparseOffsets = append(
+				sparsePostingsOffsets[currentName].SparseOffsets,
+				LabelValuePostingsOffset{value: value, tableOff: offsetInTable},
+			)
+
+			if lastName != currentName {
+				sparsePostingsOffsets[lastName].LastValOffset = int64(off - crc32.Size)
+			}
+
+			// If the current value is the last one for this name, we don't need to record it again.
+			lastEntryOffsetInTable = -1
+		} else {
+			// We only need to store this value if it's the last one for this name.
+			// Record our current position in the table and come back to it if it turns out this is the last value.
+			lastEntryOffsetInTable = offsetInTable
+
+			// Skip over the value and offset.
+			decbuf.SkipUvarintBytes()
+			decbuf.Uvarint64()
+		}
+
+		valuesForCurrentKey++
+		remainingCount--
+	}
+
+	if lastEntryOffsetInTable != -1 {
+		// We haven't recorded the last offset for the last value of the last key
+		// Go back and read the last value for the last key.
+		decbuf.ResetAt(lastEntryOffsetInTable)
+		decbuf.Uvarint()          // Skip the key count
+		decbuf.SkipUvarintBytes() // Skip the key
+		value := decbuf.UvarintStr()
+		sparsePostingsOffsets[currentName].SparseOffsets = append(sparsePostingsOffsets[currentName].SparseOffsets, LabelValuePostingsOffset{value: value, tableOff: lastEntryOffsetInTable})
+	}
+
+	if decbuf.Err() != nil {
+		return nil, errors.Wrap(decbuf.Err(), "read sparsePostingsOffsets table")
+	}
+
+	if len(sparsePostingsOffsets) > 0 {
+		// In case LastValOffset is unknown as we don't have next posting anymore. Guess from the index table of contents.
+		// The last posting list ends before the label offset table.
+		// In worst case we will overfetch a few bytes.
+		sparsePostingsOffsets[currentName].LastValOffset = int64(indexLastPostingListEndBound) - crc32.Size
+	}
+
+	// Trim any extra space in the slices.
+	for k, v := range sparsePostingsOffsets {
+		if len(v.SparseOffsets) == cap(v.SparseOffsets) {
+			continue
+		}
+
+		l := make([]LabelValuePostingsOffset, len(v.SparseOffsets))
+		copy(l, v.SparseOffsets)
+		sparsePostingsOffsets[k].SparseOffsets = l
+	}
+
+	return sparsePostingsOffsets, nil
+}
+
+type PostingOffsetsTableV2 struct {
+	// Map of LabelName to a list of some LabelValues's position in the offset table.
+	// The first and last values for each name are always present,
+	// we keep only 1/sparseSampleFactor of the rest.
+	sparsePostingsOffsets map[string]*LabelSparsePostingsOffsets
+
+	sparseSampleFactor int
 
 	factory     streamencoding.DecbufFactory
 	tableOffset int
 }
 
-type postingValueOffsets struct {
-	offsets       []postingOffset
-	lastValOffset int64
-}
-
-// prefixOffsets returns the index of the first matching offset (start) and the index of the first non-matching (end).
-// If all offsets match the prefix, then end will equal the length of offsets.
-// prefixOffsets returns false when no offsets match this prefix.
-func (e *postingValueOffsets) prefixOffsets(prefix string) (start, end int, found bool) {
-	// Find the first offset that is greater or equal to the value.
-	start = sort.Search(len(e.offsets), func(i int) bool {
-		return prefix <= e.offsets[i].value
-	})
-
-	// We always include the last value in the offsets,
-	// and given that prefix is always less or equal than the value,
-	// we can conclude that there are no values with this prefix.
-	if start == len(e.offsets) {
-		return 0, 0, false
-	}
-
-	// Prefix is lower than the first value in the offsets, and that first value doesn't have this prefix.
-	// Next values won't have the prefix, so we can return early.
-	if start == 0 && prefix < e.offsets[0].value && !strings.HasPrefix(e.offsets[0].value, prefix) {
-		return 0, 0, false
-	}
-
-	// If the value is not equal to the prefix, this value might have the prefix.
-	// But maybe the values in the previous offset also had the prefix,
-	// so we need to step back one offset to find all values with this prefix.
-	// Unless, of course, we are at the first offset.
-	if start > 0 && e.offsets[start].value != prefix {
-		start--
-	}
-
-	// Find the first offset which is larger than the prefix and doesn't have the prefix.
-	// All values at and after that offset will not match the prefix.
-	end = sort.Search(len(e.offsets)-start, func(i int) bool {
-		return prefix < e.offsets[i+start].value && !strings.HasPrefix(e.offsets[i+start].value, prefix)
-	})
-	end += start
-	return start, end, true
-}
-
-type postingOffset struct {
-	// label value.
-	value string
-	// offset of this entry in posting offset table in index-header file.
-	tableOff int
-}
-
-func (t *PostingOffsetTableV2) PostingsOffset(name string, value string) (r index.Range, found bool, err error) {
-	e, ok := t.postings[name]
+func (t *PostingOffsetsTableV2) PostingsOffset(name string, value string) (r index.Range, found bool, err error) {
+	e, ok := t.sparsePostingsOffsets[name]
 	if !ok {
 		return index.Range{}, false, nil
 	}
 
-	if value < e.offsets[0].value {
+	if value < e.SparseOffsets[0].value {
 		// The desired value sorts before the first known value.
 		return index.Range{}, false, nil
 	}
 
 	d := t.factory.NewDecbufAtUnchecked(t.tableOffset)
-	defer runutil.CloseWithErrCapture(&err, &d, "get postings offsets")
+	defer runutil.CloseWithErrCapture(&err, &d, "get sparsePostingsOffsets SparseOffsets")
 	if err := d.Err(); err != nil {
 		return index.Range{}, false, err
 	}
 
-	i := sort.Search(len(e.offsets), func(i int) bool { return e.offsets[i].value >= value })
+	i := sort.Search(len(e.SparseOffsets), func(i int) bool { return e.SparseOffsets[i].value >= value })
 
-	if i == len(e.offsets) {
+	if i == len(e.SparseOffsets) {
 		// The desired value sorts after the last known value.
 		return index.Range{}, false, nil
 	}
 
-	if i > 0 && e.offsets[i].value != value {
+	if i > 0 && e.SparseOffsets[i].value != value {
 		// Need to look from previous entry.
 		i--
 	}
 
-	d.ResetAt(e.offsets[i].tableOff)
+	d.ResetAt(e.SparseOffsets[i].tableOff)
 	nAndNameSize := 0
 
 	for d.Err() == nil {
@@ -349,9 +414,9 @@ func (t *PostingOffsetTableV2) PostingsOffset(name string, value string) (r inde
 		if currentValue == value {
 			rng := index.Range{Start: postingOffset + postingLengthFieldSize}
 
-			if i+1 == len(e.offsets) {
-				// No more offsets for this name.
-				rng.End = e.lastValOffset
+			if i+1 == len(e.SparseOffsets) {
+				// No more SparseOffsets for this name.
+				rng.End = e.LastValOffset
 			} else {
 				// There's at least one more value for this name, use that as the end of the range.
 				skipNAndName(&d, &nAndNameSize)
@@ -361,7 +426,7 @@ func (t *PostingOffsetTableV2) PostingsOffset(name string, value string) (r inde
 			}
 
 			if d.Err() != nil {
-				return index.Range{}, false, errors.Wrap(d.Err(), "get postings offset entry")
+				return index.Range{}, false, errors.Wrap(d.Err(), "get sparsePostingsOffsets offset entry")
 			}
 
 			return rng, true, nil
@@ -369,47 +434,47 @@ func (t *PostingOffsetTableV2) PostingsOffset(name string, value string) (r inde
 	}
 
 	if d.Err() != nil {
-		return index.Range{}, false, errors.Wrap(d.Err(), "get postings offset entry")
+		return index.Range{}, false, errors.Wrap(d.Err(), "get sparsePostingsOffsets offset entry")
 	}
 
 	// If we get to here, there is no entry for value.
 	return index.Range{}, false, nil
 }
 
-func (t *PostingOffsetTableV2) LabelValuesOffsets(ctx context.Context, name, prefix string, filter func(string) bool) (_ []PostingListOffset, err error) {
-	e, ok := t.postings[name]
+func (t *PostingOffsetsTableV2) LabelValuesOffsets(ctx context.Context, name, prefix string, filter func(string) bool) (_ []PostingListOffset, err error) {
+	e, ok := t.sparsePostingsOffsets[name]
 	if !ok {
 		return nil, nil
 	}
-	if len(e.offsets) == 0 {
+	if len(e.SparseOffsets) == 0 {
 		return nil, nil
 	}
 
-	offsetsStart, offsetsEnd := 0, len(e.offsets)
+	offsetsStart, offsetsEnd := 0, len(e.SparseOffsets)
 	if prefix != "" {
 		offsetsStart, offsetsEnd, ok = e.prefixOffsets(prefix)
 		if !ok {
 			return nil, nil
 		}
 	}
-	offsets := make([]PostingListOffset, 0, (offsetsEnd-offsetsStart)*t.postingOffsetsInMemSampling)
+	offsets := make([]PostingListOffset, 0, (offsetsEnd-offsetsStart)*t.sparseSampleFactor)
 
 	// Don't Crc32 the entire postings offset table, this is very slow
 	// so hope any issues were caught at startup.
 	d := t.factory.NewDecbufAtUnchecked(t.tableOffset)
 	defer runutil.CloseWithErrCapture(&err, &d, "get label values")
 
-	d.ResetAt(e.offsets[offsetsStart].tableOff)
+	d.ResetAt(e.SparseOffsets[offsetsStart].tableOff)
 
-	// The last value of a label gets its own offset in e.offsets.
-	// If that value matches, then later we should use e.lastValOffset
+	// The last value of a label gets its own offset in e.SparseOffsets.
+	// If that value matches, then later we should use e.LastValOffset
 	// as the end offset of the value instead of reading the next value (because there will be no next value).
-	lastValMatches := offsetsEnd == len(e.offsets)
+	lastValMatches := offsetsEnd == len(e.SparseOffsets)
 	// noMoreMatchesMarkerVal is the value after which we know there are no more matching values.
 	// noMoreMatchesMarkerVal itself may or may not match.
-	noMoreMatchesMarkerVal := e.offsets[len(e.offsets)-1].value
+	noMoreMatchesMarkerVal := e.SparseOffsets[len(e.SparseOffsets)-1].value
 	if !lastValMatches {
-		noMoreMatchesMarkerVal = e.offsets[offsetsEnd].value
+		noMoreMatchesMarkerVal = e.SparseOffsets[offsetsEnd].value
 	}
 
 	type pEntry struct {
@@ -475,7 +540,7 @@ func (t *PostingOffsetTableV2) LabelValuesOffsets(ctx context.Context, name, pre
 		// We peek at the next list, so we can use its offset as the end offset of the current one.
 		if currEntry.LabelValue == noMoreMatchesMarkerVal && lastValMatches {
 			// There is no next value though. Since we only need the offset, we can use what we have in the sampled postings.
-			currEntry.Off.End = e.lastValOffset
+			currEntry.Off.End = e.LastValOffset
 		} else {
 			nextEntry = readNextList()
 
@@ -489,11 +554,11 @@ func (t *PostingOffsetTableV2) LabelValuesOffsets(ctx context.Context, name, pre
 	return offsets, d.Err()
 }
 
-func (t *PostingOffsetTableV2) LabelNames() ([]string, error) {
-	labelNames := make([]string, 0, len(t.postings))
+func (t *PostingOffsetsTableV2) LabelNames() ([]string, error) {
+	labelNames := make([]string, 0, len(t.sparsePostingsOffsets))
 	allPostingsKeyName, _ := index.AllPostingsKey()
 
-	for name := range t.postings {
+	for name := range t.sparsePostingsOffsets {
 		if name == allPostingsKeyName {
 			continue
 		}
@@ -506,29 +571,29 @@ func (t *PostingOffsetTableV2) LabelNames() ([]string, error) {
 	return labelNames, nil
 }
 
-func (t *PostingOffsetTableV2) PostingOffsetInMemSampling() int {
+func (t *PostingOffsetsTableV2) PostingOffsetInMemSampling() int {
 	if t != nil {
-		return t.postingOffsetsInMemSampling
+		return t.sparseSampleFactor
 	}
 	return 0
 }
 
 // ToSparsePostingOffsetTable loads all postings offset table data into a sparse index-header to be persisted to disk
-func (t *PostingOffsetTableV2) ToSparsePostingOffsetTable() (table *indexheaderpb.PostingOffsetTable) {
+func (t *PostingOffsetsTableV2) ToSparsePostingOffsetTable() (table *indexheaderpb.PostingOffsetTable) {
 	sparseHeaders := &indexheaderpb.PostingOffsetTable{
-		Postings:                      make(map[string]*indexheaderpb.PostingValueOffsets, len(t.postings)),
-		PostingOffsetInMemorySampling: int64(t.postingOffsetsInMemSampling),
+		Postings:                      make(map[string]*indexheaderpb.PostingValueOffsets, len(t.sparsePostingsOffsets)),
+		PostingOffsetInMemorySampling: int64(t.sparseSampleFactor),
 	}
 
-	for name, offsets := range t.postings {
+	for name, offsets := range t.sparsePostingsOffsets {
 		sparseHeaders.Postings[name] = &indexheaderpb.PostingValueOffsets{}
-		postingOffsets := make([]*indexheaderpb.PostingOffset, len(offsets.offsets))
+		postingOffsets := make([]*indexheaderpb.PostingOffset, len(offsets.SparseOffsets))
 
-		for i, postingOff := range offsets.offsets {
+		for i, postingOff := range offsets.SparseOffsets {
 			postingOffsets[i] = &indexheaderpb.PostingOffset{Value: postingOff.value, TableOff: int64(postingOff.tableOff)}
 		}
 		sparseHeaders.Postings[name].Offsets = postingOffsets
-		sparseHeaders.Postings[name].LastValOffset = offsets.lastValOffset
+		sparseHeaders.Postings[name].LastValOffset = offsets.LastValOffset
 	}
 
 	return sparseHeaders

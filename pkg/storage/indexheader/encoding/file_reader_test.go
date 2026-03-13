@@ -12,7 +12,7 @@ import (
 
 type closer struct{}
 
-func (c closer) put(file *os.File) error {
+func (c closer) Put(file *os.File) error {
 	return file.Close()
 }
 

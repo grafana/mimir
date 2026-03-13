@@ -14,14 +14,14 @@ import (
 
 func TestPostingValueOffsets(t *testing.T) {
 	testCases := map[string]struct {
-		existingOffsets []postingOffset
+		existingOffsets []LabelValuePostingsOffset
 		prefix          string
 		expectedFound   bool
 		expectedStart   int
 		expectedEnd     int
 	}{
 		"prefix not found": {
-			existingOffsets: []postingOffset{
+			existingOffsets: []LabelValuePostingsOffset{
 				{value: "010"},
 				{value: "019"},
 				{value: "030"},
@@ -31,7 +31,7 @@ func TestPostingValueOffsets(t *testing.T) {
 			expectedFound: false,
 		},
 		"prefix matches only one sampled offset": {
-			existingOffsets: []postingOffset{
+			existingOffsets: []LabelValuePostingsOffset{
 				{value: "010"},
 				{value: "019"},
 				{value: "030"},
@@ -42,8 +42,8 @@ func TestPostingValueOffsets(t *testing.T) {
 			expectedStart: 1,
 			expectedEnd:   2,
 		},
-		"prefix matches all offsets": {
-			existingOffsets: []postingOffset{
+		"prefix matches all SparseOffsets": {
+			existingOffsets: []LabelValuePostingsOffset{
 				{value: "010"},
 				{value: "019"},
 				{value: "030"},
@@ -55,7 +55,7 @@ func TestPostingValueOffsets(t *testing.T) {
 			expectedEnd:   4,
 		},
 		"prefix matches only last offset": {
-			existingOffsets: []postingOffset{
+			existingOffsets: []LabelValuePostingsOffset{
 				{value: "010"},
 				{value: "019"},
 				{value: "030"},
@@ -66,8 +66,8 @@ func TestPostingValueOffsets(t *testing.T) {
 			expectedStart: 3,
 			expectedEnd:   4,
 		},
-		"prefix matches multiple offsets": {
-			existingOffsets: []postingOffset{
+		"prefix matches multiple SparseOffsets": {
+			existingOffsets: []LabelValuePostingsOffset{
 				{value: "010"},
 				{value: "019"},
 				{value: "020"},
@@ -80,7 +80,7 @@ func TestPostingValueOffsets(t *testing.T) {
 			expectedEnd:   3,
 		},
 		"prefix matches only first offset": {
-			existingOffsets: []postingOffset{
+			existingOffsets: []LabelValuePostingsOffset{
 				{value: "010"},
 				{value: "019"},
 				{value: "020"},
@@ -96,7 +96,7 @@ func TestPostingValueOffsets(t *testing.T) {
 
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			offsets := postingValueOffsets{offsets: testCase.existingOffsets}
+			offsets := LabelSparsePostingsOffsets{SparseOffsets: testCase.existingOffsets}
 			start, end, found := offsets.prefixOffsets(testCase.prefix)
 			assert.Equal(t, testCase.expectedStart, start)
 			assert.Equal(t, testCase.expectedEnd, end)
@@ -219,7 +219,7 @@ func Test_NewPostingOffsetTableFromSparseHeader(t *testing.T) {
 				assert.Error(t, err)
 			} else {
 				assert.NoError(t, err)
-				assert.Equal(t, testCase.expectedLen, len(tbl.postings["__name__"].offsets))
+				assert.Equal(t, testCase.expectedLen, len(tbl.sparsePostingsOffsets["__name__"].SparseOffsets))
 			}
 
 		})

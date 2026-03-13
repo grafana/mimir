@@ -16,7 +16,7 @@ import (
 const readerBufferSize = 4096
 
 type poolCloser interface {
-	put(*os.File) error
+	Put(*os.File) error
 }
 
 type fileReader struct {
@@ -149,5 +149,5 @@ func (f *fileReader) Close() error {
 	// we reset the buffer when we retrieve it from the pool instead.
 	bufferPool.Put(f.buf)
 	// File handles are pooled, so we don't actually close the handle here, just return it.
-	return f.closer.put(f.file)
+	return f.closer.Put(f.file)
 }

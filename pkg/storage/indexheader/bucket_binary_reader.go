@@ -34,8 +34,8 @@ type BucketBinaryReader struct {
 
 	// Symbols struct that keeps only 1/postingOffsetsInMemSampling in the memory, then looks up the
 	// rest via seeking to offsets in the index-header.
-	symbols             *streamindex.Symbols
-	postingsOffsetTable streamindex.PostingOffsetTable
+	symbols             *streamindex.SymbolsTableReader
+	postingsOffsetTable streamindex.PostingOffsetsTableReader
 
 	// In-memory table label name symbol lookups;
 	// total size is minimal and label names account for ~half of all symbol lookups.
@@ -113,10 +113,10 @@ func NewBucketBinaryReader(
 	return r, nil
 }
 
-// loadSparseHeader loads the sparse header from disk, object store, or constructs it from the index-header.
+// DownloadOrGenerateSparseHeader loads the sparse header from disk, object store, or constructs it from the index-header.
 // It prioritizes: 1) Local file 2) Object store 3) Generating from the index-header
 // It returns an error if the sparse header cannot be loaded from any of the sources.
-// If the sparse header was not found on disk, it will try to write it after generating or downloading it. If writing fails, loadSparseHeader does not return an error.
+// If the sparse header was not found on disk, it will try to write it after generating or downloading it. If writing fails, DownloadOrGenerateSparseHeader does not return an error.
 func (r *BucketBinaryReader) loadSparseHeader(
 	ctx context.Context,
 	logger log.Logger,
@@ -198,7 +198,7 @@ func (r *BucketBinaryReader) loadFromSparseIndexHeader(logger log.Logger, sparse
 		return err
 	}
 
-	r.symbols, err = streamindex.NewSymbolsFromSparseHeader(r.factory, sparseHeaders.Symbols, int(r.toc.Symbols))
+	r.symbols, err = streamindex.NewSymbolsTableReaderFromSparseHeader(r.factory, sparseHeaders.Symbols, int(r.toc.Symbols))
 	if err != nil {
 		return fmt.Errorf("cannot load symbols from sparse index-header: %w", err)
 	}
