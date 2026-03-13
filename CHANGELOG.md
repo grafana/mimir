@@ -151,6 +151,7 @@
 * [ENHANCEMENT] Store-gateway: Add experimental flag `blocks-storage.bucket-store.partitioner-max-gap-bytes-chunks` to specify the gap size for the chunks partitioner. #14649
 * [ENHANCEMENT] Compactor: Add expermental `-compactor.first-level-compaction-ooo-wait-period` to configure a separate compaction wait period for out-of-order blocks. It's an analogue of `-compactor.first-level-compaction-wait-period`, which currently ignores out-of-order blocks. #14627
 * [ENHANCEMENT] HA: Deduplicate per sample instead of per batch. #13665
+* [BUGFIX] Distributor: Fix race condition where usage-tracker partition ring may not be initialized before the distributor service starts, causing `usage-tracker partition ring is required` error on startup. #14675
 * [BUGFIX] Mimir: Fix false positive in filesystem path overlap detection when one path is a string prefix of another but not an ancestor directory. #14426
 * [BUGFIX] Build: Fixed config descriptor generation to correctly handle custom field types without CLI flags. #14632
 * [BUGFIX] Query-frontend: Fixed blocked queries tests to use production code path instead of bypassing YAML parsing and canonicalization. #14585
