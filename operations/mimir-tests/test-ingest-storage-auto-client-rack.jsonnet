@@ -1,5 +1,5 @@
 // Test that ingest_storage_set_client_rack sets -ingest-storage.kafka.client-rack on each ingester zone.
-(import 'test-multi-az-write-path.jsonnet') {
+(import 'test-multi-zone.jsonnet') {
   _config+:: {
     // Configure features required by ingest storage.
     ruler_enabled: true,
