@@ -1,0 +1,82 @@
+# Reusable workflow that compiles Go packages and saves the build cache.
+# Used by the warmup-go-build-cache-* jobs in test-build-deploy.yml.
+#
+# Compile test and build binaries once and save the Go build cache, so that the
+# test and build jobs can reuse it. The cache is keyed by go.sum hash: it's rebuilt only
+# when dependencies change. This means test jobs will still need to compile source files
+# changed since the cache was created, but dependencies (the bulk of compilation time) and
+# unchanged Mimir source files are cached.
+#
+# The cache is compiled and saved only on main by default. GitHub Actions caches created on
+# main are accessible from all branches, while caches created on PR branches are scoped to
+# that branch only. Building only on main keeps cache storage small and ensures all branches
+# benefit from the shared cache. Set the FORCE_BUILD_CACHE_WARMUP env var at the top of
+# test-build-deploy.yml to 'true' to enable cache warmup on all branches.
+name: Warmup Go build cache
+
+on:
+  workflow_call:
+    inputs:
+      go-version:
+        description: Go version to use
+        required: true
+        type: string
+      cache-key-prefix:
+        description: Cache key prefix (e.g., "go-build-cache-integration")
+        required: true
+        type: string
+      make-target:
+        description: Makefile target to run for warming the cache
+        required: true
+        type: string
+      force:
+        description: Force cache warmup even on non-main branches
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  warmup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        if: github.ref == 'refs/heads/main' || inputs.force
+        with:
+          persist-credentials: false
+          sparse-checkout: go.sum
+      # enableCrossOsArchive is required because the cache may be restored in a container
+      # job, where actions/cache sees a different OS identifier than the host runner that
+      # saved it. Without this flag, the OS is included in the cache version hash and the
+      # restore would miss.
+      - name: Check if Go build cache exists
+        id: check-cache
+        if: github.ref == 'refs/heads/main' || inputs.force
+        uses: actions/cache/restore@v4
+        with:
+          path: /home/runner/.cache/go-build
+          key: ${{ inputs.cache-key-prefix }}-${{ hashFiles('go.sum') }}
+          enableCrossOsArchive: true
+          lookup-only: true
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || inputs.force)
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
+        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || inputs.force)
+        with:
+          go-version: ${{ inputs.go-version }}
+          cache: false
+      - name: Warm Go build cache
+        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || inputs.force)
+        run: make BUILD_IN_CONTAINER=false "$MAKE_TARGET"
+        env:
+          MAKE_TARGET: ${{ inputs.make-target }}
+      - name: Print Go build cache size
+        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || inputs.force)
+        run: du -sh /home/runner/.cache/go-build
+      - uses: actions/cache/save@v4
+        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || inputs.force)
+        with:
+          path: /home/runner/.cache/go-build
+          key: ${{ inputs.cache-key-prefix }}-${{ hashFiles('go.sum') }}
+          enableCrossOsArchive: true

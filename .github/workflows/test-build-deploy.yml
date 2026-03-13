@@ -11,7 +11,7 @@ on:
 
 env:
   # Set to 'true' to force Go build cache warmup on all branches (useful when iterating on cache changes).
-  # When 'false', the cache is only built on main (see warmup-go-build-cache.yml for details).
+  # When 'false', the cache is only built on main (see warmup-go-build-cache-on-host.yml for details).
   FORCE_BUILD_CACHE_WARMUP: 'true'
 
 permissions:
@@ -35,10 +35,16 @@ jobs:
       - name: Get build image from Makefile
         id: build_image_step
         run: echo "build_image=$(make print-build-image)" >> "$GITHUB_OUTPUT"
+      # env context is not available in jobs.<id>.with when calling reusable workflows,
+      # so we capture it here as a job output that can be referenced via needs.prepare.outputs.
+      - name: Get force build cache warmup setting
+        id: force_warmup_step
+        run: echo "force=${{ env.FORCE_BUILD_CACHE_WARMUP == 'true' }}" >> "$GITHUB_OUTPUT"
     outputs:
       build_image: ${{ steps.build_image_step.outputs.build_image }}
       # Determine if we will deploy (aka push) the image to the registry.
       is_deploy: ${{ (startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/r')) && github.event_name == 'push' && github.repository == 'grafana/mimir' }}
+      force_build_cache_warmup: ${{ steps.force_warmup_step.outputs.force }}
 
   goversion:
     runs-on: ubuntu-latest
@@ -151,71 +157,40 @@ jobs:
       - name: Check Helm Tests
         run: make BUILD_IN_CONTAINER=false check-helm-tests
 
-  # See warmup-go-build-cache.yml for how the Go build cache warmup works.
+  # See warmup-go-build-cache-on-host.yml for how the Go build cache warmup works.
   # There are three separate warmup jobs because different compilation flags produce different
   # cache entries: integration tests (no -race), unit tests (-race), and image builds
   # (CGO_ENABLED=0, multi-arch).
   warmup-go-build-cache-integration-tests:
-    needs: [goversion]
-    uses: ./.github/workflows/warmup-go-build-cache.yml
+    needs: [prepare, goversion]
+    uses: ./.github/workflows/warmup-go-build-cache-on-host.yml
     with:
       go-version: ${{ needs.goversion.outputs.version }}
       cache-key-prefix: go-build-cache-integration
       make-target: warmup-build-cache-integration-tests
-      force: ${{ env.FORCE_BUILD_CACHE_WARMUP == 'true' }}
+      force: ${{ needs.prepare.outputs.force_build_cache_warmup == 'true' }}
 
   # Same as above but for unit tests, which compile with -race (producing different cache
   # entries) and run inside a container.
   warmup-go-build-cache-unit-tests:
     needs: [prepare]
-    runs-on: ubuntu-latest
-    container:
-      image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        if: github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true'
-        with:
-          persist-credentials: false
-          sparse-checkout: go.sum
-      - name: Check if Go build cache exists
-        id: check-cache
-        if: github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true'
-        uses: actions/cache/restore@v4
-        with:
-          path: /go/cache
-          key: go-build-cache-unit-${{ hashFiles('go.sum') }}
-          enableCrossOsArchive: true
-          lookup-only: true
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
-        with:
-          persist-credentials: false
-      - name: Run Git Config
-        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
-        run: git config --global --add safe.directory '*'
-      - name: Warm Go build cache
-        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
-        run: make BUILD_IN_CONTAINER=false warmup-build-cache-unit-tests
-      - name: Print Go build cache size
-        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
-        run: du -sh /go/cache
-      - uses: actions/cache/save@v4
-        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
-        with:
-          path: /go/cache
-          key: go-build-cache-unit-${{ hashFiles('go.sum') }}
-          enableCrossOsArchive: true
+    uses: ./.github/workflows/warmup-go-build-cache-in-container.yml
+    with:
+      container-image: ${{ needs.prepare.outputs.build_image }}
+      cache-key-prefix: go-build-cache-unit
+      make-target: warmup-build-cache-unit-tests
+      force: ${{ needs.prepare.outputs.force_build_cache_warmup == 'true' }}
 
   # Same as the other warmup jobs but for image builds, which use CGO_ENABLED=0 (no race)
   # with -tags netgo,stringlabels.
   warmup-go-build-cache-image-builds:
-    needs: [goversion]
-    uses: ./.github/workflows/warmup-go-build-cache.yml
+    needs: [prepare, goversion]
+    uses: ./.github/workflows/warmup-go-build-cache-on-host.yml
     with:
       go-version: ${{ needs.goversion.outputs.version }}
       cache-key-prefix: go-build-cache-image
       make-target: warmup-build-cache-image-builds
-      force: ${{ env.FORCE_BUILD_CACHE_WARMUP == 'true' }}
+      force: ${{ needs.prepare.outputs.force_build_cache_warmup == 'true' }}
 
   test:
     runs-on: ubuntu-latest
@@ -242,11 +217,10 @@ jobs:
         with:
           persist-credentials: false
       - name: Restore Go build cache
-        uses: actions/cache/restore@v4
+        uses: ./.github/actions/restore-go-build-cache
         with:
-          path: /go/cache
-          key: go-build-cache-unit-${{ hashFiles('go.sum') }}
-          enableCrossOsArchive: true
+          cache-key: go-build-cache-unit-${{ hashFiles('go.sum') }}
+          restore-path: /go/cache
       - name: Install GitHub CLI
         run: ./.github/workflows/scripts/install-gh.sh
       - name: Run Git Config
@@ -420,11 +394,10 @@ jobs:
           persist-credentials: false
       # Race-enabled image uses CGO_ENABLED=1 -race -tags=netgo,stringlabels, same as unit tests.
       - name: Restore Go build cache
-        uses: actions/cache/restore@v4
+        uses: ./.github/actions/restore-go-build-cache
         with:
-          path: /go/cache
-          key: go-build-cache-unit-${{ hashFiles('go.sum') }}
-          enableCrossOsArchive: true
+          cache-key: go-build-cache-unit-${{ hashFiles('go.sum') }}
+          restore-path: /go/cache
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Install Docker Client
