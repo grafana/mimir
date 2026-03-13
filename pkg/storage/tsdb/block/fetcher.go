@@ -551,7 +551,7 @@ func (f *MetaFetcher) FetchRequestedMetas(ctx context.Context, blockIDs []ulid.U
 	idx := atomic.NewInt64(-1)
 	eg, egCtx := errgroup.WithContext(ctx)
 
-	for range f.concurrency {
+	for range min(f.concurrency, len(blockIDs)) {
 		eg.Go(func() error {
 			for {
 				i := int(idx.Inc())
