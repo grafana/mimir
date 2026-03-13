@@ -53,13 +53,14 @@ GROUP_TESTS=$(echo "$ALL_TESTS" | awk -v TOTAL=$TOTAL -v INDEX=$INDEX 'NR % TOTA
 # don't bother running the benchmark tests with the race detector enabled.
 SKIP_RACE_DETECTOR_PATTERN="^github.com/grafana/mimir/pkg/streamingpromql/benchmarks$"
 
-echo "This group will run the following tests:"
-echo "$GROUP_TESTS"
-if echo "$GROUP_TESTS" | grep -q -e "$SKIP_RACE_DETECTOR_PATTERN"; then
-    echo
-    echo "These tests will run with the race detector disabled:"
-    echo "$GROUP_TESTS" | grep -e "$SKIP_RACE_DETECTOR_PATTERN"
-fi
+echo "This group will run the following tests (race detector enabled unless stated otherwise):"
+echo "$GROUP_TESTS" | while read -r pkg; do
+    if echo "$pkg" | grep -q -e "$SKIP_RACE_DETECTOR_PATTERN"; then
+        echo "$pkg (race detector disabled)"
+    else
+        echo "$pkg"
+    fi
+done
 echo
 
 EXIT_CODE=0
