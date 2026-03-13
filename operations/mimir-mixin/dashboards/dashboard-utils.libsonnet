@@ -260,8 +260,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     },
 
-  qpsPanelNativeHistogram(metricName, selector, statusLabelName='status_code')::
-    super.qpsPanelNativeHistogram(metricName, selector, statusLabelName) +
+  qpsPanelNativeHistogram(metricName, selector, statusLabelName='status_code', nativeOnly=false)::
+    super.qpsPanelNativeHistogram(metricName, selector, statusLabelName, nativeOnly) +
     $.aliasColors(qpsPanelColors) + {
       fieldConfig+: {
         defaults+: {
