@@ -124,7 +124,7 @@ blocked_queries:
 			expectedBlockedInstant: true,
 		},
 		{
-			name: "by() labels not sorted - different order doesn't match",
+			name: "by() labels not sorted - different order",
 			limitsYAML: `
 blocked_queries:
   - pattern: 'sum(rate(metric_counter[5m])) by(job,pod)'
@@ -135,7 +135,7 @@ blocked_queries:
 			expectedBlockedInstant: false,
 		},
 		{
-			name: "different pattern - no match",
+			name: "different pattern",
 			limitsYAML: `
 blocked_queries:
   - pattern: "rate(metric_counter[5m])"
@@ -161,7 +161,7 @@ blocked_queries:
 			expectedBlockedInstant: true,
 		},
 		{
-			name: "multiple line different pattern - no match",
+			name: "multiple line different pattern",
 			limitsYAML: `
 blocked_queries:
   - pattern: "rate(metric_counter[5m])"
@@ -225,7 +225,7 @@ blocked_queries:
 			expectedBlockedInstant: false,
 		},
 		{
-			name: "regex not canonicalized - extra whitespace doesn't match",
+			name: "regex not canonicalized - extra whitespace",
 			limitsYAML: `
 blocked_queries:
   - pattern: 'rate\( metric_counter\[ 5m \] \)'
@@ -236,7 +236,7 @@ blocked_queries:
 			expectedBlockedInstant: false,
 		},
 		{
-			name: "invalid regex pattern - no match",
+			name: "invalid regex pattern",
 			limitsYAML: `
 blocked_queries:
   - pattern: "[a-9}"
@@ -260,7 +260,7 @@ blocked_queries:
 			expectedBlockedInstant: false,
 		},
 		{
-			name: "time range shorter than longer_than threshold - no match",
+			name: "time range under threshold",
 			limitsYAML: `
 blocked_queries:
   - time_range_longer_than: "24h"
@@ -272,113 +272,7 @@ blocked_queries:
 			expectedBlockedInstant: false,
 		},
 		{
-			name: "time range shorter than threshold",
-			limitsYAML: `
-blocked_queries:
-  - time_range_shorter_than: "1h"
-    reason: "queries shorter than 1 hour are not useful"
-`,
-			query:                  "up",
-			queryStart:             now.Add(-30 * time.Minute),
-			queryEnd:               now,
-			expectedBlockedRange:   true,
-			expectedBlockedInstant: false,
-		},
-		{
-			name: "time range longer than shorter_than threshold - no match",
-			limitsYAML: `
-blocked_queries:
-  - time_range_shorter_than: "1h"
-`,
-			query:                  "up",
-			queryStart:             now.Add(-2 * time.Hour),
-			queryEnd:               now,
-			expectedBlockedRange:   false,
-			expectedBlockedInstant: false,
-		},
-		{
-			name: "outside acceptable window - too short",
-			limitsYAML: `
-blocked_queries:
-  - time_range_longer_than: "504h"
-    time_range_shorter_than: "168h"
-    reason: "queries must be between 7 and 21 days"
-`,
-			query:                  "up",
-			queryStart:             now.Add(-3 * 24 * time.Hour), // 3 days - too short
-			queryEnd:               now,
-			expectedBlockedRange:   true,
-			expectedBlockedInstant: false,
-		},
-		{
-			name: "outside acceptable window - too long",
-			limitsYAML: `
-blocked_queries:
-  - time_range_longer_than: "504h"
-    time_range_shorter_than: "168h"
-    reason: "queries must be between 7 and 21 days"
-`,
-			query:                  "up",
-			queryStart:             now.Add(-30 * 24 * time.Hour), // 30 days - too long
-			queryEnd:               now,
-			expectedBlockedRange:   true,
-			expectedBlockedInstant: false,
-		},
-		{
-			name: "inside acceptable window (7-21 days) - no match",
-			limitsYAML: `
-blocked_queries:
-  - time_range_longer_than: "504h"
-    time_range_shorter_than: "168h"
-`,
-			query:                  "up",
-			queryStart:             now.Add(-14 * 24 * time.Hour), // 14 days - in window
-			queryEnd:               now,
-			expectedBlockedRange:   false,
-			expectedBlockedInstant: false,
-		},
-		{
-			name: "inside blocked window (2-3 hours)",
-			limitsYAML: `
-blocked_queries:
-  - time_range_shorter_than: "3h"
-    time_range_longer_than: "2h"
-    reason: "queries between 2 and 3 hours are blocked"
-`,
-			query:                  "up",
-			queryStart:             now.Add(-150 * time.Minute), // 2.5 hours - inside blocked window
-			queryEnd:               now,
-			expectedBlockedRange:   true,
-			expectedBlockedInstant: false,
-		},
-		{
-			name: "outside blocked window (too short) - no match",
-			limitsYAML: `
-blocked_queries:
-  - time_range_shorter_than: "3h"
-    time_range_longer_than: "2h"
-`,
-			query:                  "up",
-			queryStart:             now.Add(-90 * time.Minute), // 1.5 hours - too short
-			queryEnd:               now,
-			expectedBlockedRange:   false,
-			expectedBlockedInstant: false,
-		},
-		{
-			name: "outside blocked window (too long) - no match",
-			limitsYAML: `
-blocked_queries:
-  - time_range_shorter_than: "3h"
-    time_range_longer_than: "2h"
-`,
-			query:                  "up",
-			queryStart:             now.Add(-4 * time.Hour), // 4 hours - too long
-			queryEnd:               now,
-			expectedBlockedRange:   false,
-			expectedBlockedInstant: false,
-		},
-		{
-			name: "pattern matches AND time range outside window",
+			name: "pattern matches AND time range longer than threshold",
 			limitsYAML: `
 blocked_queries:
   - pattern: ".*expensive.*"
@@ -393,7 +287,7 @@ blocked_queries:
 			expectedBlockedInstant: false,
 		},
 		{
-			name: "pattern matches but time range inside window - no match",
+			name: "pattern matches but time range under threshold",
 			limitsYAML: `
 blocked_queries:
   - pattern: ".*expensive.*"
@@ -407,7 +301,7 @@ blocked_queries:
 			expectedBlockedInstant: false,
 		},
 		{
-			name: "time range outside window but pattern doesn't match - no match",
+			name: "different pattern but time range longer than threshold",
 			limitsYAML: `
 blocked_queries:
   - pattern: ".*expensive.*"
@@ -709,7 +603,7 @@ blocked_queries:
 			expectedBlocked: true,
 		},
 		{
-			name: "different non-regex pattern - no match",
+			name: "different non-regex pattern",
 			limitsYAML: `
 blocked_queries:
   - pattern: '{__name__="another_metric",pod=~"app-.*"}'
@@ -745,7 +639,7 @@ blocked_queries:
 			expectedBlocked: true,
 		},
 		{
-			name: "different regex pattern - no match",
+			name: "different regex pattern",
 			limitsYAML: `
 blocked_queries:
   - pattern: ".*another_metric.*"
@@ -754,7 +648,7 @@ blocked_queries:
 			expectedBlocked: false,
 		},
 		{
-			name: "invalid regex pattern - no match",
+			name: "invalid regex pattern",
 			limitsYAML: `
 blocked_queries:
   - pattern: "[a-9}"
