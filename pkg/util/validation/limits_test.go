@@ -1771,6 +1771,17 @@ func TestLimits_Validate(t *testing.T) {
 			}(),
 			expectedErr: fmt.Errorf("OTLP translation strategy UnderscoreEscapingWithSuffixes is not allowed unless metric suffixes are enabled"),
 		},
+		"should fail if otel_translation_strategy is UnderscoreEscapingWithSuffixes and name_validation_scheme is legacy and metric name suffixes are unset but disabled by default": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.NameValidationScheme = model.LegacyValidation
+				cfg.OTelMetricSuffixesEnabled = nil
+				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithSuffixes)
+				return cfg
+			}(),
+			expectedErr: fmt.Errorf("OTLP translation strategy UnderscoreEscapingWithSuffixes is not allowed unless metric suffixes are enabled"),
+		},
 		"should fail if otel_translation_strategy is NoUTF8EscapingWithSuffixes and name_validation_scheme is legacy and metric name suffixes are enabled": {
 			cfg: func() Limits {
 				cfg := Limits{}

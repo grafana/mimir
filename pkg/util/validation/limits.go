@@ -616,6 +616,11 @@ func (l *Limits) Validate() error {
 	}
 
 	validationScheme := l.NameValidationScheme
+	suffixesEnabled := l.OTelMetricSuffixesEnabled != nil && *l.OTelMetricSuffixesEnabled
+	if l.OTelMetricSuffixesEnabled == nil && defaultLimits != nil && defaultLimits.OTelMetricSuffixesEnabled != nil {
+		suffixesEnabled = *defaultLimits.OTelMetricSuffixesEnabled
+	}
+
 	switch otlptranslator.TranslationStrategyOption(l.OTelTranslationStrategy) {
 	case otlptranslator.UnderscoreEscapingWithoutSuffixes:
 		if validationScheme != model.LegacyValidation {
@@ -624,7 +629,7 @@ func (l *Limits) Validate() error {
 				l.OTelTranslationStrategy, model.LegacyValidation,
 			)
 		}
-		if l.OTelMetricSuffixesEnabled != nil && *l.OTelMetricSuffixesEnabled {
+		if suffixesEnabled {
 			return fmt.Errorf("OTLP translation strategy %s is not allowed unless metric suffixes are disabled", l.OTelTranslationStrategy)
 		}
 	case otlptranslator.UnderscoreEscapingWithSuffixes:
@@ -634,7 +639,7 @@ func (l *Limits) Validate() error {
 				l.OTelTranslationStrategy, model.LegacyValidation,
 			)
 		}
-		if l.OTelMetricSuffixesEnabled != nil && !*l.OTelMetricSuffixesEnabled {
+		if !suffixesEnabled {
 			return fmt.Errorf("OTLP translation strategy %s is not allowed unless metric suffixes are enabled", l.OTelTranslationStrategy)
 		}
 	case otlptranslator.NoUTF8EscapingWithSuffixes:
@@ -644,7 +649,7 @@ func (l *Limits) Validate() error {
 				l.OTelTranslationStrategy, model.UTF8Validation,
 			)
 		}
-		if l.OTelMetricSuffixesEnabled != nil && !*l.OTelMetricSuffixesEnabled {
+		if !suffixesEnabled {
 			return fmt.Errorf("OTLP translation strategy %s is not allowed unless metric suffixes are enabled", l.OTelTranslationStrategy)
 		}
 	case otlptranslator.NoTranslation:
@@ -654,7 +659,7 @@ func (l *Limits) Validate() error {
 				l.OTelTranslationStrategy, model.UTF8Validation,
 			)
 		}
-		if l.OTelMetricSuffixesEnabled != nil && *l.OTelMetricSuffixesEnabled {
+		if suffixesEnabled {
 			return fmt.Errorf("OTLP translation strategy %s is not allowed unless metric suffixes are disabled", l.OTelTranslationStrategy)
 		}
 	case "":
