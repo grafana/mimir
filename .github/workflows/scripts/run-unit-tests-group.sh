@@ -53,49 +53,48 @@ GROUP_TESTS=$(echo "$ALL_TESTS" | awk -v TOTAL=$TOTAL -v INDEX=$INDEX 'NR % TOTA
 # don't bother running the benchmark tests with the race detector enabled.
 SKIP_RACE_DETECTOR_PATTERN="^github.com/grafana/mimir/pkg/streamingpromql/benchmarks$"
 
-TESTS_TO_RUN_WITH_RACE_DETECTOR=$(echo "$GROUP_TESTS" | grep -v -e "$SKIP_RACE_DETECTOR_PATTERN")
-TESTS_TO_RUN_WITHOUT_RACE_DETECTOR=$(echo "$GROUP_TESTS" | grep -e "$SKIP_RACE_DETECTOR_PATTERN")
-
 echo "This group will run the following tests:"
 echo "$GROUP_TESTS"
+if echo "$GROUP_TESTS" | grep -q -e "$SKIP_RACE_DETECTOR_PATTERN"; then
+    echo
+    echo "These tests will run with the race detector disabled:"
+    echo "$GROUP_TESTS" | grep -e "$SKIP_RACE_DETECTOR_PATTERN"
+fi
 echo
 
-if [[ -n "$TESTS_TO_RUN_WITH_RACE_DETECTOR" ]]; then
-    echo "These tests will run with the race detector enabled:"
-    echo "$TESTS_TO_RUN_WITH_RACE_DETECTOR"
-    echo
+EXIT_CODE=0
+FAILED_PACKAGES=""
 
-    # shellcheck disable=SC2086 # we *want* word splitting of TESTS_TO_RUN_WITH_RACE_DETECTOR.
-    go test -tags="${BUILD_TAGS}" -timeout 30m -race ${TESTS_TO_RUN_WITH_RACE_DETECTOR} 2>&1 | tee /tmp/test-output.log
-    RACE_ENABLED_EXIT_CODE=${PIPESTATUS[0]}
-    echo
-else
-    RACE_ENABLED_EXIT_CODE=0
-fi
+for pkg in $GROUP_TESTS; do
+    if echo "$pkg" | grep -q -e "$SKIP_RACE_DETECTOR_PATTERN"; then
+        RACE_FLAG=""
+    else
+        RACE_FLAG="-race"
+    fi
 
-if [[ -n "$TESTS_TO_RUN_WITHOUT_RACE_DETECTOR" ]]; then
-    echo "These tests will run with the race detector disabled (if any):"
-    echo "$TESTS_TO_RUN_WITHOUT_RACE_DETECTOR"
-    echo
+    # shellcheck disable=SC2086 # we *want* word splitting of RACE_FLAG.
+    go test -tags="${BUILD_TAGS}" -timeout 30m $RACE_FLAG "$pkg" 2>&1 | tee /tmp/test-pkg-output.log
+    PKG_EXIT_CODE=${PIPESTATUS[0]}
 
-    # shellcheck disable=SC2086 # we *want* word splitting of TESTS_TO_RUN_WITHOUT_RACE_DETECTOR.
-    go test -tags="${BUILD_TAGS}" -timeout 30m ${TESTS_TO_RUN_WITHOUT_RACE_DETECTOR} 2>&1 | tee -a /tmp/test-output.log
-    RACE_DISABLED_EXIT_CODE=${PIPESTATUS[0]}
-    echo
-else
-    RACE_DISABLED_EXIT_CODE=0
-fi
+    if [[ $PKG_EXIT_CODE -ne 0 ]]; then
+        echo "Retrying failed package: $pkg"
+        echo
 
-# Extract all failed packages
-FAILED_PACKAGES=$(grep "FAIL\s*github.com/grafana/mimir/.*" /tmp/test-output.log | awk '{print $2}' | sort -u | tr '\n' ' ')
+        # shellcheck disable=SC2086 # we *want* word splitting of RACE_FLAG.
+        go test -tags="${BUILD_TAGS}" -timeout 30m $RACE_FLAG "$pkg" 2>&1 | tee /tmp/test-pkg-output.log
+        PKG_EXIT_CODE=${PIPESTATUS[0]}
 
-# Store in GitHub environment variable if any packages failed
+        if [[ $PKG_EXIT_CODE -ne 0 ]]; then
+            EXIT_CODE=1
+            FAILED_PACKAGES="${FAILED_PACKAGES} ${pkg}"
+        fi
+    fi
+done
+
+# Store in GitHub environment variable if any packages failed.
+FAILED_PACKAGES=$(echo "$FAILED_PACKAGES" | xargs)
 if [[ -n "$FAILED_PACKAGES" ]]; then
     echo "FAILED_PACKAGES=${FAILED_PACKAGES}" >> "$GITHUB_ENV"
 fi
 
-if [[ $RACE_ENABLED_EXIT_CODE -ne 0 ]]; then
-    exit $RACE_ENABLED_EXIT_CODE
-fi
-
-exit $RACE_DISABLED_EXIT_CODE
+exit $EXIT_CODE
