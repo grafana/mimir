@@ -1368,7 +1368,16 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		// We don't want to send samples beyond the last accepted sample - that was deduplicated
 		d.updateHADedupeMetrics(userID, group, replicaInfos, samplesPerState, req, lastAccepted)
 
-		pushReq.AddCleanup(sliceUnacceptedRequests(req, lastAccepted))
+		// Free the unaccepted (deduplicated/rejected) timeseries immediately and truncate
+		// the slice so downstream middleware only sees accepted timeseries. We must NOT
+		// defer restoration of the original slice header because downstream middleware
+		// (e.g., validation, relabeling) may compact req.Timeseries via RemoveSliceIndexes,
+		// which shifts elements in the backing array. Restoring the original header would
+		// then expose duplicate references, causing double-frees when ReuseSlice runs.
+		for i := lastAccepted + 1; i < len(req.Timeseries); i++ {
+			mimirpb.ReusePreallocTimeseries(&req.Timeseries[i])
+		}
+		req.Timeseries = req.Timeseries[:lastAccepted+1]
 
 		if len(req.Timeseries) > 0 {
 			if pushErr := next(ctx, pushReq); pushErr != nil {
@@ -1390,19 +1399,6 @@ func removeHAReplicaLabels(req *mimirpb.WriteRequest, lastAccepted int, replicas
 		// storing series in Mimir. If we kept the replica label we would end up with another series for the same
 		// series we're trying to dedupe when HA tracking moves over to a different replica.
 		req.Timeseries[i].RemoveLabel(haReplicaLabel)
-	}
-}
-
-func sliceUnacceptedRequests(req *mimirpb.WriteRequest, lastAccepted int) func() {
-	originalTimeseries := req.Timeseries
-	req.Timeseries = req.Timeseries[:lastAccepted+1]
-	return func() {
-		// Restore the original slice header so that we can put back all the series in the request
-		// to the memory pool. We save the full slice header (pointer, length, capacity) rather than
-		// just the length because downstream middlewares may replace req.Timeseries with a slice
-		// backed by a different array (e.g. via RemoveSliceIndexes), which would make a
-		// req.Timeseries[:originalLen] reslice panic with a capacity mismatch.
-		req.Timeseries = originalTimeseries
 	}
 }
 
