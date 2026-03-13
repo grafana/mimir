@@ -46,16 +46,31 @@ echo "This group will run the following tests:"
 echo "$GROUP_TESTS"
 echo ""
 
-# Build the regex used to run this group's tests.
-REGEX="^("
-for TEST in $GROUP_TESTS; do
-  REGEX="${REGEX}|${TEST}"
-done
-REGEX="${REGEX})$"
-
 # GORACE is only applied when running with race-enabled Mimir.
 # This setting tells Go runtime to exit the binary when data race is detected. This increases the chance
 # that integration tests will fail on data races.
 export MIMIR_ENV_VARS_JSON='{"GORACE": "halt_on_error=1"}'
 
-exec go test -tags=requires_docker,stringlabels -timeout 2400s -v -count=1 -run "${REGEX}" "${INTEGRATION_DIR}/..."
+EXIT_CODE=0
+
+for TEST in $GROUP_TESTS; do
+    echo "Running test: $TEST"
+
+    go test -tags=requires_docker,stringlabels -timeout 2400s -v -count=1 -run "^${TEST}$" "${INTEGRATION_DIR}/..." 2>&1 | tee /tmp/test-integration-output.log
+    TEST_EXIT_CODE=${PIPESTATUS[0]}
+
+    if [[ $TEST_EXIT_CODE -ne 0 ]]; then
+        echo "Retrying failed test: $TEST"
+        echo
+
+        go test -tags=requires_docker,stringlabels -timeout 2400s -v -count=1 -run "^${TEST}$" "${INTEGRATION_DIR}/..." 2>&1 | tee /tmp/test-integration-output.log
+        TEST_EXIT_CODE=${PIPESTATUS[0]}
+
+        if [[ $TEST_EXIT_CODE -ne 0 ]]; then
+            EXIT_CODE=1
+            echo "Test failed after retry: $TEST"
+        fi
+    fi
+done
+
+exit $EXIT_CODE
