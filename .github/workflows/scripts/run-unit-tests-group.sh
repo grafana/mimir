@@ -52,6 +52,7 @@ GROUP_TESTS=$(echo "$ALL_TESTS" | awk -v TOTAL=$TOTAL -v INDEX=$INDEX 'NR % TOTA
 # race detector to consume a large amount of memory and run incredibly slowly on CI.
 # The same code is tested by other unit tests which run with the race detector enabled, so
 # don't bother running the benchmark tests with the race detector enabled.
+# If you add packages here, also update warmup-build-cache-unit-tests in the Makefile.
 SKIP_RACE_DETECTOR_PATTERN="^github.com/grafana/mimir/pkg/streamingpromql/benchmarks$"
 
 echo "This group will run the following tests (race detector enabled unless stated otherwise):"
