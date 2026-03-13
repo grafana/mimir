@@ -305,8 +305,8 @@ jobs:
       - name: Move Go build cache to GOCACHE
         run: |
           if [ -d /home/runner/.cache/go-build ]; then
-            rm -rf /go/cache
-            mv /home/runner/.cache/go-build /go/cache
+            rm -rf "$GOCACHE"
+            mv /home/runner/.cache/go-build "$GOCACHE"
           fi
       - name: Build
         uses: ./.github/actions/build-image
@@ -338,8 +338,8 @@ jobs:
       - name: Move Go build cache to GOCACHE
         run: |
           if [ -d /home/runner/.cache/go-build ]; then
-            rm -rf /go/cache
-            mv /home/runner/.cache/go-build /go/cache
+            rm -rf "$GOCACHE"
+            mv /home/runner/.cache/go-build "$GOCACHE"
           fi
       - name: Build
         uses: ./.github/actions/build-image
@@ -371,8 +371,8 @@ jobs:
       - name: Move Go build cache to GOCACHE
         run: |
           if [ -d /home/runner/.cache/go-build ]; then
-            rm -rf /go/cache
-            mv /home/runner/.cache/go-build /go/cache
+            rm -rf "$GOCACHE"
+            mv /home/runner/.cache/go-build "$GOCACHE"
           fi
       - name: Build
         uses: ./.github/actions/build-image
@@ -404,8 +404,8 @@ jobs:
       - name: Move Go build cache to GOCACHE
         run: |
           if [ -d /home/runner/.cache/go-build ]; then
-            rm -rf /go/cache
-            mv /home/runner/.cache/go-build /go/cache
+            rm -rf "$GOCACHE"
+            mv /home/runner/.cache/go-build "$GOCACHE"
           fi
       - name: Build
         uses: ./.github/actions/build-image
@@ -437,8 +437,8 @@ jobs:
       - name: Move Go build cache to GOCACHE
         run: |
           if [ -d /home/runner/.cache/go-build ]; then
-            rm -rf /go/cache
-            mv /home/runner/.cache/go-build /go/cache
+            rm -rf "$GOCACHE"
+            mv /home/runner/.cache/go-build "$GOCACHE"
           fi
       - name: Build
         uses: ./.github/actions/build-image
