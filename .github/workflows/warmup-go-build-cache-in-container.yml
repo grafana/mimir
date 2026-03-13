@@ -30,7 +30,7 @@ jobs:
   warmup:
     runs-on: ubuntu-latest
     container:
-      image: ${{ inputs.container-image }}
+      image: ${{ inputs.container-image }} # zizmor: ignore[unpinned-images] The image input produced by the prepare step is pinned
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         if: github.ref == 'refs/heads/main' || inputs.force
