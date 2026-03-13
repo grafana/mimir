@@ -791,7 +791,7 @@ integration-tests-race: cmd/mimir/$(UPTODATE_RACE)
 	go test -timeout 30m -tags=requires_docker,stringlabels ./integration/...
 
 # The following targets compile test/build binaries without running them, populating the Go build
-# cache. They are used by the go-warmup-build-cache-* CI jobs so that the actual test and build
+# cache. They are used by the warmup-go-build-cache-* CI jobs so that the actual test and build
 # jobs can skip most compilation. The flags here MUST match the ones used by the real targets.
 
 warmup-build-cache-integration-tests: ## Warm the Go build cache for integration tests.
