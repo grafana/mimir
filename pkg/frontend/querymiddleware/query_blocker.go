@@ -75,48 +75,34 @@ func (qb *queryBlockerMiddleware) isBlocked(tenant string, req MetricsQueryReque
 			}
 		}
 
-		hasPatternCheck := strings.TrimSpace(block.Pattern) != ""
-		hasLongerThan := block.TimeRangeLongerThan > 0
+		pattern := strings.TrimSpace(block.Pattern)
 
-		if !hasPatternCheck && !hasLongerThan {
-			continue
-		}
+		// Check literal match first, even if regex query. Backwards compatibility.
+		patternMatches := pattern == strings.TrimSpace(query)
 
-		patternMatches := false
-		if hasPatternCheck {
-			if block.Regex {
-				r, err := labels.NewFastRegexMatcher(block.Pattern)
-				if err != nil {
-					level.Error(logger).Log("msg", "query blocker regex does not compile, ignoring query blocker", "pattern", block.Pattern, "err", err, "index", ruleIndex)
-					continue
-				}
-				if r.MatchString(query) {
-					patternMatches = true
-				}
-			} else {
-				if strings.TrimSpace(block.Pattern) == strings.TrimSpace(query) {
-					patternMatches = true
-				}
+		if block.Regex {
+			r, err := labels.NewFastRegexMatcher(block.Pattern)
+			if err != nil {
+				level.Error(logger).Log("msg", "query blocker regex does not compile, ignoring query blocker", "pattern", block.Pattern, "err", err, "index", ruleIndex)
+				continue
+			}
+			if r.MatchString(query) {
+				patternMatches = true
 			}
 		}
 
-		timeRangeViolation := false
-		if hasLongerThan && !isInstantQuery {
-			if queryDuration > time.Duration(block.TimeRangeLongerThan) {
-				timeRangeViolation = true
-			}
-		}
+		timeRangeViolation := !isInstantQuery &&
+			block.TimeRangeLongerThan > 0 &&
+			queryDuration > time.Duration(block.TimeRangeLongerThan)
 
 		shouldBlock := false
-
 		switch {
-		case hasPatternCheck && hasLongerThan:
+		case pattern != "" && block.TimeRangeLongerThan > 0:
 			shouldBlock = patternMatches && timeRangeViolation
-		case hasPatternCheck:
+		case pattern != "":
 			shouldBlock = patternMatches
-		case hasLongerThan:
+		case block.TimeRangeLongerThan > 0:
 			shouldBlock = timeRangeViolation
-		default:
 		}
 
 		if shouldBlock {
