@@ -284,6 +284,7 @@
 * [CHANGE] Reduced dynamic replication factor when running store-gateways with replication factor set to a value higher than 3. #14304
 * [CHANGE] Disable ingester ring tokens by default when ingest storage architecture is enabled. #14613
 * [CHANGE] Querier: Set `ignoreNullValues` to false by default for KEDA `ScaledObject` to prevent autoscaling down when there is no data returned from scaling metrics. #14641
+* [CHANGE] Ingester: Change default ingestion concurrency configuration used by ingest storage architecture, to maximize throughput when consuming records from Kafka. #14668
 * [FEATURE] Add multi-zone support for read path components (memcached, querier, query-frontend, query-scheduler, ruler, and ruler remote evaluation stack). Add multi-AZ support for ingester and store-gateway multi-zone deployments. Add memberlist-bridge support for zone-aware memberlist routing. #13559 #13628 #13636 #13915 #14260 #14301
 * [FEATURE] Add deletion protection support for ingesters and store-gateways StatefulSet. It can be enabled by setting `ingester_deletion_protection_enabled` and `store_gateway_deletion_protection_enabled` in the `_config` block. #13819
 * [FEATURE] Shuffle sharding: Add the following configuration options to enable the experimental per-zone store-gateway shard size: #13908 #13941
