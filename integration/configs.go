@@ -292,6 +292,10 @@ blocks_storage:
 			flags["-ingest-storage.kafka.sasl-mechanism"] = "SCRAM-SHA-512"
 		case e2edb.KafkaAuthSASLOAuthToken, e2edb.KafkaAuthSASLOAuthTokenFile:
 			flags["-ingest-storage.kafka.sasl-mechanism"] = "OAUTHBEARER"
+		case e2edb.KafkaAuthMTLS:
+			flags["-ingest-storage.kafka.tls-enabled"] = "true"
+			flags["-ingest-storage.kafka.tls-ca-path"] = filepath.Join(e2e.ContainerSharedDir, e2edb.KafkaTLSCACertFile)
+
 		}
 		return flags
 	}

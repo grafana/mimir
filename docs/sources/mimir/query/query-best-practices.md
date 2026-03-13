@@ -15,7 +15,7 @@ The way you write queries for Grafana Mimir affects the speed and quality of you
 
 ## Use label matchers
 
-To reduce the initial size of your dataset, apply label matchers to your query. Label matchers help you to filter your data based on its associated labels. For example, you if you have a label called `app_name`, you can append `app_name="myapp"` to your query.
+To reduce the initial size of your dataset, apply label matchers to your query. Label matchers help you to filter your data based on its associated labels. For example, if you have a label called `app_name`, you can append `app_name="myapp"` to your query.
 
 Whenever possible, use an exact label match, such as `label="value"`, instead of a regular expression, such as `label=~"pattern"`. Regular expressions are more computationally expensive.
 

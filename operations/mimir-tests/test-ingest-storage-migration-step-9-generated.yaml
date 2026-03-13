@@ -949,7 +949,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-        image: grafana/mimir:3.0.3
+        image: grafana/mimir:3.0.4
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -1055,7 +1055,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "5"
-        image: grafana/mimir:3.0.3
+        image: grafana/mimir:3.0.4
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -1140,7 +1140,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.3
+        image: grafana/mimir:3.0.4
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -1217,7 +1217,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.3
+        image: grafana/mimir:3.0.4
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -1373,7 +1373,7 @@ spec:
         - -store-gateway.tenant-shard-size=3
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.3
+        image: grafana/mimir:3.0.4
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -1477,7 +1477,7 @@ spec:
         - -target=querier
         - -usage-stats.installation-mode=jsonnet
         env: []
-        image: grafana/mimir:3.0.3
+        image: grafana/mimir:3.0.4
         imagePullPolicy: IfNotPresent
         name: ruler-querier
         ports:
@@ -1568,7 +1568,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.3
+        image: grafana/mimir:3.0.4
         imagePullPolicy: IfNotPresent
         name: ruler-query-frontend
         ports:
@@ -1645,7 +1645,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.3
+        image: grafana/mimir:3.0.4
         imagePullPolicy: IfNotPresent
         name: ruler-query-scheduler
         ports:
@@ -1719,7 +1719,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        image: grafana/mimir:3.0.3
+        image: grafana/mimir:3.0.4
         imagePullPolicy: IfNotPresent
         name: alertmanager
         ports:
@@ -1822,7 +1822,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.3
+        image: grafana/mimir:3.0.4
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -1928,8 +1928,16 @@ spec:
         - -ingest-storage.ingestion-partition-tenant-shard-size=1
         - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.client-rack=zone-a
         - -ingest-storage.kafka.consumer-group-offset-commit-interval=5s
+        - -ingest-storage.kafka.fetch-concurrency-max=12
+        - -ingest-storage.kafka.ingestion-concurrency-batch-size=150
+        - -ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample=500
+        - -ingest-storage.kafka.ingestion-concurrency-max=8
+        - -ingest-storage.kafka.ingestion-concurrency-queue-capacity=3
+        - -ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard=40
         - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
+        - -ingest-storage.kafka.max-buffered-bytes=1000000000
         - -ingest-storage.kafka.topic=ingest
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
@@ -1968,7 +1976,7 @@ spec:
           value: 1Gi
         - name: Z
           value: "123"
-        image: grafana/mimir:3.0.3
+        image: grafana/mimir:3.0.4
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -2074,8 +2082,16 @@ spec:
         - -ingest-storage.ingestion-partition-tenant-shard-size=1
         - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.client-rack=zone-b
         - -ingest-storage.kafka.consumer-group-offset-commit-interval=5s
+        - -ingest-storage.kafka.fetch-concurrency-max=12
+        - -ingest-storage.kafka.ingestion-concurrency-batch-size=150
+        - -ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample=500
+        - -ingest-storage.kafka.ingestion-concurrency-max=8
+        - -ingest-storage.kafka.ingestion-concurrency-queue-capacity=3
+        - -ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard=40
         - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
+        - -ingest-storage.kafka.max-buffered-bytes=1000000000
         - -ingest-storage.kafka.topic=ingest
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
@@ -2108,7 +2124,7 @@ spec:
           value: all-ingesters
         - name: GOMAXPROCS
           value: "9"
-        image: grafana/mimir:3.0.3
+        image: grafana/mimir:3.0.4
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -2492,7 +2508,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.0.3
+        image: grafana/mimir:3.0.4
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -2638,7 +2654,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.0.3
+        image: grafana/mimir:3.0.4
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -2782,7 +2798,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.0.3
+        image: grafana/mimir:3.0.4
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:

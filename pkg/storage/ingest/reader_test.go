@@ -2382,7 +2382,7 @@ func TestPartitionReader_ShouldNotMissRecordsIfKafkaReturnsAFetchBothWithAnError
 	const (
 		topicName            = "test"
 		partitionID          = 1
-		totalProducedRecords = 10000
+		totalProducedRecords = 1000
 		recordSizeBytes      = initialBytesPerRecord
 		maxBufferedBytes     = (totalProducedRecords * initialBytesPerRecord) / 100
 	)
@@ -2457,8 +2457,8 @@ func TestPartitionReader_ShouldNotMissRecordsIfKafkaReturnsAFetchBothWithAnError
 							return nil, fmt.Errorf("expected 1 partition in the response, got %d", len(res.Topics[0].Partitions)), true
 						}
 
-						// Simulate a 10% error rate in the Kafka responses, mixed with records.
-						if rand.Int()%10 == 0 {
+						// Simulate a 25% error rate in the Kafka responses, mixed with records.
+						if rand.Int()%4 == 0 {
 							// Make a copy so we don't overwrite the cached version, which will be later requested again.
 							resCopy := &kmsg.FetchResponse{Version: req.Version}
 							if err := resCopy.ReadFrom(res.AppendTo(nil)); err != nil {

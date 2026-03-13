@@ -56,6 +56,7 @@ import (
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 	"go.uber.org/atomic"
+	"go.uber.org/goleak"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
@@ -76,6 +77,21 @@ import (
 	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+func TestMain(m *testing.M) {
+	util_test.VerifyNoLeakTestMain(m,
+		// TestIngester_Startup_PartitionRingActiveBlocksOnInstanceRingActive
+		// tests ingester failure on startup, which does not clean up all goroutines.
+		// This goroutine will be detected by other tests running in parallel with VerifyNoLeak.
+		goleak.IgnoreAnyFunction("github.com/grafana/dskit/services.funcBasedListener.Failed"),
+
+		// TestIngester_OpenExistingTSDBOnStartup rollback subtests create corrupt chunks_head
+		// files to trigger a tsdb.Open() failure. Prometheus TSDB internally starts WAL and
+		// chunkWriteQueue goroutines before encountering the error and doesn't clean them up.
+		goleak.IgnoreAnyFunction("github.com/prometheus/prometheus/tsdb/wlog.(*WL).run"),
+		goleak.IgnoreAnyFunction("github.com/prometheus/prometheus/tsdb/chunks.(*chunkWriteQueue).start.func1"),
+	)
+}
 
 func mustNewActiveSeriesCustomTrackersConfigFromMap(t *testing.T, source map[string]string) asmodel.CustomTrackersConfig {
 	m, err := asmodel.NewCustomTrackersConfig(source)
@@ -7160,7 +7176,11 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 				assert.Contains(t, startErr.Error(), testData.expectedErr)
 			}
 
-			defer services.StopAndAwaitTerminated(context.Background(), ingester) //nolint:errcheck
+			t.Cleanup(func() {
+				_ = services.StopAndAwaitTerminated(context.Background(), ingester)
+				ingester.closeAllTSDB()
+				ingester.subservicesWatcher.Close()
+			})
 			testData.check(t, ingester)
 		})
 	}
@@ -7309,7 +7329,11 @@ func TestIngester_closeAndDeleteUserTSDBIfIdle_shouldNotCloseTSDBIfShippingIsInP
 	}))
 
 	// Run blocks shipping in a separate go routine.
-	go i.shipBlocks(ctx, nil)
+	shipDone := make(chan struct{})
+	go func() {
+		defer close(shipDone)
+		i.shipBlocks(ctx, nil)
+	}()
 
 	// Wait until shipping starts.
 	test.Poll(t, 1*time.Second, activeShipping, func() interface{} {
@@ -7319,6 +7343,9 @@ func TestIngester_closeAndDeleteUserTSDBIfIdle_shouldNotCloseTSDBIfShippingIsInP
 	})
 
 	assert.Equal(t, tsdbNotActive, i.closeAndDeleteUserTSDBIfIdle(userID))
+
+	// Wait for shipBlocks goroutine to finish to avoid goroutine leak.
+	<-shipDone
 }
 
 func TestIngester_closingAndOpeningTsdbConcurrently(t *testing.T) {
@@ -7770,6 +7797,9 @@ func TestIngester_flushing(t *testing.T) {
 			i, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
 			require.NoError(t, err)
 			startAndWaitHealthy(t, i, r)
+			t.Cleanup(func() {
+				i.closeAllTSDB()
+			})
 
 			// mock user's shipper
 			tc.action(t, i, reg)
@@ -8791,8 +8821,11 @@ func TestIngester_instanceLimitsMetrics(t *testing.T) {
 		return &l
 	}
 
-	_, _, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
+	ing, _, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		ing.subservicesWatcher.Close()
+	})
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_ingester_instance_limits Instance limits used by this ingester.
@@ -11951,6 +11984,10 @@ func TestIngester_PrepareUnregisterHandler(t *testing.T) {
 			test.Poll(t, 1*time.Second, 1, func() interface{} {
 				return healthyInstancesCount(ingester.instanceRing)
 			})
+		} else {
+			t.Cleanup(func() {
+				ingester.subservicesWatcher.Close()
+			})
 		}
 
 		return ingester
@@ -12238,6 +12275,113 @@ func TestIngester_NotifyPreCommit(t *testing.T) {
 
 	// As there are three users, fsync should have been called at least three times
 	assert.GreaterOrEqual(t, fsyncCountAfter-fsyncCountBefore, uint64(3))
+}
+
+// testMinTimeBlockReader implements tsdb.BlockReader with a fixed MinTime.
+type testMinTimeBlockReader struct {
+	tsdb.BlockReader
+	minTime int64
+}
+
+func (s *testMinTimeBlockReader) Meta() tsdb.BlockMeta {
+	return tsdb.BlockMeta{MinTime: s.minTime}
+}
+
+func TestBlockGenerationCalculator(t *testing.T) {
+	const blockRange = int64((2 * time.Hour) / time.Millisecond)
+
+	db, err := tsdb.Open(t.TempDir(), nil, nil, tsdb.DefaultOptions(), nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+	headMinTime := int64((10 * time.Hour) / time.Millisecond)
+	app := db.Appender(t.Context())
+	_, err = app.Append(0, labels.FromStrings("foo", "bar"), headMinTime, 1)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	userDB := &userTSDB{db: db}
+	blockGen := blockGenerationCalculator(userDB, blockRange)
+
+	testCases := []struct {
+		name        string
+		blockReader tsdb.BlockReader
+		wantGen     string
+	}{
+		{
+			"head block",
+			tsdb.NewRangeHead(db.Head(), 0, headMinTime+blockRange),
+			"0",
+		},
+		{
+			"persisted block generation 1",
+			&testMinTimeBlockReader{minTime: headMinTime - blockRange},
+			"1",
+		},
+		{
+			"persisted block generation 3",
+			&testMinTimeBlockReader{minTime: headMinTime - 3*blockRange - time.Minute.Milliseconds()},
+			"3",
+		},
+		{
+			"persisted block with minTime equal to head",
+			&testMinTimeBlockReader{minTime: headMinTime},
+			"1",
+		},
+		{
+			"persisted block with minTime after head",
+			&testMinTimeBlockReader{minTime: headMinTime + blockRange},
+			"1",
+		},
+		{
+			"persisted block with capped generation label",
+			&testMinTimeBlockReader{minTime: headMinTime - 110*blockRange},
+			"100+",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.wantGen, blockGen(tc.blockReader))
+		})
+	}
+}
+
+func TestBlockGenerationCalculator_EmptyHead(t *testing.T) {
+	const blockRange = int64((2 * time.Hour) / time.Millisecond)
+
+	db, err := tsdb.Open(t.TempDir(), nil, nil, tsdb.DefaultOptions(), nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+	require.Equal(t, int64(math.MaxInt64), db.Head().MinTime())
+
+	userDB := &userTSDB{db: db}
+	blockGen := blockGenerationCalculator(userDB, blockRange)
+
+	testCases := []struct {
+		name        string
+		blockReader tsdb.BlockReader
+		wantGen     string
+	}{
+		{
+			"querying head block",
+			tsdb.NewRangeHead(db.Head(), 0, 1000),
+			"0",
+		},
+		{
+			"querying persisted block",
+			&testMinTimeBlockReader{minTime: 1000},
+			// This is an edge case: we can't figure how old persisted block is comparing to DB's head, when the head was truncated.
+			"unknown",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.wantGen, blockGen(tc.blockReader))
+		})
+	}
 }
 
 func makeTestRW2WriteRequest(syms *rw2util.SymbolTableBuilder) *mimirpb.WriteRequest {

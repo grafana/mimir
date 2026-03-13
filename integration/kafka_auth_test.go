@@ -4,6 +4,8 @@
 package integration
 
 import (
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,7 +23,8 @@ import (
 
 func TestIngestStorageKafkaAuth(t *testing.T) {
 	tests := map[string]struct {
-		setup func(*testing.T, *e2e.Scenario) (e2edb.KafkaConfig, map[string]string)
+		setup     func(*testing.T, *e2e.Scenario) (e2edb.KafkaConfig, map[string]string)
+		postStart func(*testing.T, *e2e.Scenario, *e2edb.KafkaService) map[string]string
 	}{
 		"no auth": {
 			setup: func(t *testing.T, s *e2e.Scenario) (e2edb.KafkaConfig, map[string]string) {
@@ -80,6 +83,30 @@ func TestIngestStorageKafkaAuth(t *testing.T) {
 					AuthMode:    e2edb.KafkaAuthSASLOAuthTokenFile,
 					DexEndpoint: dex.NetworkHTTPEndpoint(),
 				}, map[string]string{"-ingest-storage.kafka.sasl-oauthbearer-file-path": "/shared/oauth-token.json"}
+			},
+		},
+		"mTLS": {
+			setup: func(t *testing.T, s *e2e.Scenario) (e2edb.KafkaConfig, map[string]string) {
+				return e2edb.KafkaConfig{AuthMode: e2edb.KafkaAuthMTLS}, nil
+			},
+			postStart: func(t *testing.T, s *e2e.Scenario, kafka *e2edb.KafkaService) map[string]string {
+				clientCertPath := filepath.Join(s.SharedDir(), "kafka-client.crt")
+				clientKeyPath := filepath.Join(s.SharedDir(), "kafka-client.key")
+
+				// Write client certificate using Kafka's configured CA.
+				require.NoError(t, kafka.WriteCertificate(
+					&x509.Certificate{
+						Subject:     pkix.Name{CommonName: "mimir"},
+						ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+					},
+					clientCertPath,
+					clientKeyPath,
+				))
+
+				return map[string]string{
+					"-ingest-storage.kafka.tls-cert-path": filepath.Join(e2e.ContainerSharedDir, "kafka-client.crt"),
+					"-ingest-storage.kafka.tls-key-path":  filepath.Join(e2e.ContainerSharedDir, "kafka-client.key"),
+				}
 			},
 		},
 		"SASL OAUTHBEARER HTTP socket": {
@@ -143,6 +170,11 @@ printf '%s' "$BODY"
 			consul := e2edb.NewConsul()
 			kafka := kafkaConfig.New()
 			require.NoError(t, s.StartAndWaitReady(consul, kafka))
+
+			if tc.postStart != nil {
+				extraFlags := tc.postStart(t, s, kafka)
+				flags = mergeFlags(flags, extraFlags)
+			}
 
 			flags = mergeFlags(
 				IngestStorageFlags(kafkaConfig.AuthMode),

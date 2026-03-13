@@ -37,7 +37,6 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"go.uber.org/atomic"
-	"go.uber.org/goleak"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
@@ -48,15 +47,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-var goleakOpts = []goleak.Option{
-	// TestIngester_Startup_PartitionRingActiveBlocksOnInstanceRingActive
-	// tests ingester failure on startup, which does not clean up all goroutines.
-	// This goroutine will be detected by other tests running in parallel with VerifyNoLeak.
-	goleak.IgnoreAnyFunction("github.com/grafana/dskit/services.funcBasedListener.Failed"),
-}
-
 func TestIngester_Startup_PartitionRingActiveBlocksOnInstanceRingActive(t *testing.T) {
-	util_test.VerifyNoLeak(t, goleakOpts...)
 	var err error
 
 	cfg := defaultIngesterTestConfig(t)
@@ -167,7 +158,6 @@ func TestIngester_Startup_PartitionRingActiveBlocksOnInstanceRingActive(t *testi
 }
 
 func TestIngester_Start(t *testing.T) {
-	util_test.VerifyNoLeak(t, goleakOpts...)
 
 	t.Run("should replay the partition at startup (after a restart) and then join the ingesters and partitions ring", func(t *testing.T) {
 		var (
@@ -890,6 +880,9 @@ func TestIngester_compactionServiceInterval(t *testing.T) {
 					_ = services.StopAndAwaitTerminated(context.Background(), ingester)
 				})
 			case services.Running:
+				t.Cleanup(func() {
+					ingester.subservicesWatcher.Close()
+				})
 			default:
 				t.Fatalf("unsupported state %s", tt.state)
 			}
@@ -999,6 +992,9 @@ func TestIngester_timeToNextZoneAwareCompaction(t *testing.T) {
 			cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = defaultBaseHeadCompactionInterval
 
 			ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, nil, util_test.NewTestingLogger(t))
+			t.Cleanup(func() {
+				ingester.subservicesWatcher.Close()
+			})
 
 			headCompactionInterval := ingester.timeToNextZoneAwareCompaction(fakeNow, tt.zones)
 			require.Equal(t, tt.expected, headCompactionInterval)
