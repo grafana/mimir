@@ -82,3 +82,19 @@ message FirstLastOverTimeIntermediate {
 message FirstLastOverTimeIntermediateList {
   repeated FirstLastOverTimeIntermediate results = 1 [(gogoproto.nullable) = false];
 }
+
+message AvgOverTimeIntermediate {
+  double sumF = 1;
+  double compF = 2;
+  double incrementalAvg = 3;
+  double countF = 4;
+  bool useIncrementalCalc = 5;
+
+  cortexpb.Histogram avgH = 6;
+  int64 cntH = 7;
+  bool forceEmptyResult = 8;
+}
+
+message AvgOverTimeIntermediateList {
+  repeated AvgOverTimeIntermediate results = 1 [(gogoproto.nullable) = false];
+}
