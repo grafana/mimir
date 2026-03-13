@@ -637,9 +637,9 @@ func (u *userTSDB) compactBlocks(ctx context.Context, blockRange, maxTime int64,
 		rh := tsdb.NewRangeHead(u.Head(), blockMint, blockMaxt)
 		var err error
 		if truncateMemory {
-			err = u.DB.CompactHead(rh)
+			err = u.CompactHead(rh)
 		} else {
-			err = u.DB.CompactHeadWithoutTruncation(rh)
+			err = u.CompactHeadWithoutTruncation(rh)
 		}
 		if err != nil {
 			return err
