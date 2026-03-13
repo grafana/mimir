@@ -247,7 +247,22 @@ blocked_queries:
 			expectedBlockedInstant: false,
 		},
 		{
-			name: "literal pattern with regex metacharacters and regex: true should match literally",
+			name: "invalid regex pattern with time_range_longer_than",
+			limitsYAML: `
+blocked_queries:
+  - pattern: "[a-9}"
+    regex: true
+    time_range_longer_than: "1h"
+    reason: "invalid regex - must bail out to avoid matching all queries"
+`,
+			query:                  "rate(metric_counter[5m])",
+			queryStart:             now.Add(-25 * time.Hour), // Over 1h threshold
+			queryEnd:               now,
+			expectedBlockedRange:   false, // Must bail out, invalid regex could match anything
+			expectedBlockedInstant: false,
+		},
+		{
+			name: "literal pattern with regex metacharacters and regex: true",
 			limitsYAML: `
 blocked_queries:
   - pattern: "rate(metric_counter[5m])"
