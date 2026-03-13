@@ -146,6 +146,15 @@ jobs:
       - name: Check Helm Tests
         run: make BUILD_IN_CONTAINER=false check-helm-tests
 
+  # Compile all test binaries once and save the Go build cache, so that test jobs can reuse it.
+  # The cache is keyed by go.sum hash: it's rebuilt only when dependencies change. This means
+  # test jobs will still need to compile source files changed since the cache was created, but
+  # dependencies (the bulk of compilation time) and unchanged Mimir source files are cached.
+  #
+  # We hardcode /home/runner/.cache/go-build instead of using ~ because actions/cache includes
+  # the resolved absolute path in its internal version hash. In container jobs, ~ resolves to
+  # /github/home instead of /home/runner, causing a version mismatch and cache miss even when
+  # the key matches. There is no runner.home context variable, so hardcoding is the only option.
   go-build-cache-warmup:
     needs: [goversion, prepare]
     runs-on: ubuntu-latest
@@ -159,7 +168,7 @@ jobs:
         id: check-cache
         uses: actions/cache/restore@v4
         with:
-          path: ~/.cache/go-build
+          path: /home/runner/.cache/go-build
           key: go-build-cache-${{ hashFiles('go.sum') }}
           lookup-only: true
       # Full checkout, setup-go, and compilation only if the cache doesn't exist.
@@ -176,16 +185,20 @@ jobs:
         if: steps.check-cache.outputs.cache-hit != 'true'
         run: |
           # Compile all test binaries without running any tests (-run=^$ matches nothing).
-          # This populates GOCACHE so that test jobs can skip compilation.
+          # The tags and flags must match what the actual test jobs use, otherwise the
+          # cache entries won't be reused.
+          # Integration tests: -tags=requires_docker,stringlabels
           go test -run=^$ -count=1 -tags=requires_docker,stringlabels ./integration/... 2>&1 || true
-          go test -run=^$ -count=1 ./cmd/... ./pkg/... ./tools/... 2>&1 || true
+          # Unit tests: -tags=netgo,stringlabels with -race, and also -tags=netgo,stringlabels,nopools with -race
+          go test -run=^$ -count=1 -tags=netgo,stringlabels -race ./cmd/... ./pkg/... ./tools/... 2>&1 || true
+          go test -run=^$ -count=1 -tags=netgo,stringlabels,nopools -race ./cmd/... ./pkg/... ./tools/... 2>&1 || true
       - name: Print Go build cache size
         if: steps.check-cache.outputs.cache-hit != 'true'
-        run: du -sh ~/.cache/go-build
+        run: du -sh /home/runner/.cache/go-build
       - uses: actions/cache/save@v4
         if: steps.check-cache.outputs.cache-hit != 'true'
         with:
-          path: ~/.cache/go-build
+          path: /home/runner/.cache/go-build
           key: go-build-cache-${{ hashFiles('go.sum') }}
 
   test:
@@ -212,18 +225,20 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
-      # The cache was saved from ~/.cache/go-build (host runner path) by the warmup job.
-      # actions/cache restores to the same absolute path, so we restore there and then
-      # copy to /go/cache which is GOCACHE in the build container.
+      # Unit tests run in a container where GOCACHE is /go/cache, but the cache was saved from
+      # /home/runner/.cache/go-build by the warmup job. We restore to the same absolute path
+      # (so that actions/cache version hash matches), then copy to the container's GOCACHE.
+      # Integration tests don't need this copy because they run directly on the host where
+      # /home/runner/.cache/go-build is already the default GOCACHE.
       - name: Restore Go build cache
         uses: actions/cache/restore@v4
         with:
-          path: ~/.cache/go-build
+          path: /home/runner/.cache/go-build
           key: go-build-cache-${{ hashFiles('go.sum') }}
       - name: Copy build cache to container GOCACHE
         run: |
-          if [ -d ~/.cache/go-build ]; then
-            cp -a ~/.cache/go-build/* /go/cache/ 2>/dev/null || true
+          if [ -d /home/runner/.cache/go-build ]; then
+            cp -a /home/runner/.cache/go-build/* /go/cache/ 2>/dev/null || true
           fi
       - name: Install GitHub CLI
         run: ./.github/workflows/scripts/install-gh.sh
@@ -420,7 +435,7 @@ jobs:
       - name: Restore Go build cache
         uses: actions/cache/restore@v4
         with:
-          path: ~/.cache/go-build
+          path: /home/runner/.cache/go-build
           key: go-build-cache-${{ hashFiles('go.sum') }}
       - name: Run Git Config
         run: git config --global --add safe.directory '*'

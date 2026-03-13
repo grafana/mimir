@@ -37,6 +37,7 @@ if [[ -z "$TOTAL" ]]; then
 fi
 
 # List all tests.
+# If you change the build tags or CLI flags, update the go-build-cache-warmup CI job too.
 ALL_TESTS=$(go test -tags=requires_docker,stringlabels -list 'Test.*' "${INTEGRATION_DIR}/..." | grep -E '^Test.*' | sort)
 
 # Filter tests by the requested group.
