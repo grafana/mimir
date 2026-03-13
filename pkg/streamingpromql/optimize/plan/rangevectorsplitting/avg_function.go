@@ -58,12 +58,18 @@ func avgOverTimeGenerate(step *types.RangeVectorStepData, emitAnnotation types.E
 	if haveHistograms {
 		h, err := functions.AvgHistograms(hHead, hTail, emitAnnotation)
 		if err != nil {
+			err = functions.NativeHistogramErrorToAnnotation(err, emitAnnotation)
+		}
+
+		if err != nil {
 			return AvgOverTimeIntermediate{}, err
 		}
 
-		protoH := mimirpb.FromFloatHistogramToHistogramProto(0, h)
-		result.AvgH = &protoH
-		result.CntH = int64(len(hHead)) + int64(len(hTail))
+		if h != nil {
+			protoH := mimirpb.FromFloatHistogramToHistogramProto(0, h)
+			result.AvgH = &protoH
+			result.CntH = int64(len(hHead)) + int64(len(hTail))
+		}
 	}
 
 	return result, nil
