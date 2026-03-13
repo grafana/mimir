@@ -77,7 +77,7 @@ func (qb *queryBlockerMiddleware) isBlocked(tenant string, req MetricsQueryReque
 
 		pattern := strings.TrimSpace(block.Pattern)
 
-		// Check literal match first, even if regex query. Backwards compatibility.
+		// Check literal match regardless of regex setting (backwards compatibility).
 		patternMatches := pattern == strings.TrimSpace(query)
 
 		if block.Regex {
