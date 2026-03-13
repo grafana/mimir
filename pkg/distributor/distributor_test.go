@@ -9679,12 +9679,7 @@ func BenchmarkDistributor_HaDedupMiddleware(b *testing.B) {
 			numReplicas:  1,
 			acceptedOnly: true,
 		},
-		"1 cluster 2 replicas all accepted": {
-			numClusters:  1,
-			numReplicas:  2,
-			acceptedOnly: true,
-		},
-		"1 cluster 2 replicas with rejected": {
+		"1 cluster 2 replicas with deduped": {
 			numClusters:  1,
 			numReplicas:  2,
 			acceptedOnly: false,
@@ -9754,7 +9749,12 @@ func BenchmarkDistributor_HaDedupMiddleware(b *testing.B) {
 				err := fn(ctx, newRequest(func() (req *mimirpb.WriteRequest, cleanup func(), uncompressedBodySize int, err error) {
 					return reqs[n], func() {}, 0, nil
 				}))
-				require.NoError(b, err)
+				if tc.acceptedOnly {
+					require.NoError(b, err)
+				} else {
+					var replicasErr replicasDidNotMatchError
+					require.ErrorAs(b, err, &replicasErr)
+				}
 			}
 		})
 	}
