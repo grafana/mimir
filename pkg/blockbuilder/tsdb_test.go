@@ -321,6 +321,59 @@ type testHistogram struct {
 	shouldDiscard bool
 }
 
+func TestTSDBBuilder_CompactToReduceInMemorySeries(t *testing.T) {
+	const (
+		user1       = "user1"
+		user2       = "user2"
+		user3       = "user3"
+		partitionID = int32(0)
+	)
+
+	config, overrides := blockBuilderConfig(t, "kafka:9092", nil)
+	config.BlocksStorage.TSDB.EarlyHeadCompactionMinInMemorySeries = 8
+
+	logger := log.NewNopLogger()
+	registry := prometheus.NewPedanticRegistry()
+	tsdbBuilderMetrics := newTSDBBuilderMetrics(prometheus.NewPedanticRegistry())
+	tsdbMetrics := mimir_tsdb.NewTSDBMetrics(registry, logger)
+	builder := NewTSDBBuilder(partitionID, config, overrides, logger, tsdbBuilderMetrics, tsdbMetrics)
+	t.Cleanup(func() { require.NoError(t, builder.Close()) })
+
+	// Push 5 distinct series for each test tenants (15 total, above the threshold).
+	processingRange := time.Hour.Milliseconds()
+	lastEnd := 2 * processingRange
+	ts := lastEnd + (processingRange / 2)
+	for seriesID := range 5 {
+		for _, userID := range []string{user1, user2, user3} {
+			ctx := user.InjectOrgID(t.Context(), userID)
+			req := createWriteRequest(strconv.Itoa(seriesID), floatSample(ts, float64(seriesID)), nil)
+			require.NoError(t, builder.PushToStorageAndReleaseRequest(ctx, &req))
+		}
+	}
+
+	for _, userID := range []string{user1, user2, user3} {
+		db, err := builder.getOrCreateTSDB(tsdbTenant{partitionID: partitionID, tenantID: userID})
+		require.NoError(t, err)
+		require.Equal(t, uint64(5), db.Head().NumSeries())
+		require.Empty(t, db.Blocks())
+	}
+
+	require.NoError(t, builder.CompactToReduceInMemorySeries(t.Context()))
+
+	// Early compaction compacts tenants with the most series first and stops once series count drops below the threshold.
+	// At least two tenant must have been compacted.
+	var compacted int
+	for _, userID := range []string{user1, user2, user3} {
+		db, err := builder.getOrCreateTSDB(tsdbTenant{partitionID: partitionID, tenantID: userID})
+		require.NoError(t, err)
+		if db.Head().NumSeries() == 0 {
+			require.NotEmpty(t, db.Blocks())
+			compacted++
+		}
+	}
+	require.Equal(t, 2, compacted)
+}
+
 func TestTSDBBuilder_CompactAndUpload_fail(t *testing.T) {
 	partitionID := int32(0)
 	userID := "user1"
