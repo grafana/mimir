@@ -107,11 +107,11 @@ func (g *oneToOneBinaryOperationRightSide) latestRightSeriesIndex() int {
 	return g.rightSeriesIndices[len(g.rightSeriesIndices)-1]
 }
 
-func (g *oneToOneBinaryOperationRightSide) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+func (g *oneToOneBinaryOperationRightSide) Finalize(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
 	types.IntSlicePool.Put(&g.leftSidePresence, memoryConsumptionTracker)
 
 	// If this right side was used for all of its corresponding output series, then mergedData will have already been returned to the pool by the evaluator's computeResult.
-	// However, if the operator is being closed early, then we need to return mergedData to the pool.
+	// However, if the operator is being finalized early, then we need to return mergedData to the pool.
 	types.PutInstantVectorSeriesData(g.mergedData, memoryConsumptionTracker)
 	g.mergedData = types.InstantVectorSeriesData{}
 }
@@ -515,10 +515,10 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 	}
 
 	if isLastUseOfRightSide {
-		// We've passed ownership of mergedData to the evaluator, so clear it now to avoid returning it to the pool in Close().
+		// We've passed ownership of mergedData to the evaluator, so clear it now to avoid returning it to the pool in Finalize().
 		rightSide.mergedData = types.InstantVectorSeriesData{}
 
-		rightSide.Close(b.MemoryConsumptionTracker)
+		rightSide.Finalize(b.MemoryConsumptionTracker)
 	}
 
 	return finalResult, nil
@@ -632,7 +632,7 @@ func (b *OneToOneVectorVectorBinaryOperation) Finalize(ctx context.Context) erro
 	}
 
 	for _, s := range b.remainingSeries {
-		s.rightSide.Close(b.MemoryConsumptionTracker)
+		s.rightSide.Finalize(b.MemoryConsumptionTracker)
 	}
 
 	b.remainingSeries = nil

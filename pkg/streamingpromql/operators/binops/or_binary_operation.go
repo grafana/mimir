@@ -347,7 +347,7 @@ func (o *OrBinaryOperation) readNextRightSeries(ctx context.Context) (types.Inst
 	group.rightSeriesCount--
 	if group.rightSeriesCount == 0 {
 		// This is the last right series for the group, return it to the pool.
-		group.Close(o.MemoryConsumptionTracker)
+		group.Finalize(o.MemoryConsumptionTracker)
 	}
 
 	return data, nil
@@ -379,7 +379,7 @@ func (o *OrBinaryOperation) Finalize(ctx context.Context) error {
 			continue
 		}
 
-		g.Close(o.MemoryConsumptionTracker)
+		g.Finalize(o.MemoryConsumptionTracker)
 	}
 
 	o.leftSeriesGroups = nil
@@ -389,7 +389,7 @@ func (o *OrBinaryOperation) Finalize(ctx context.Context) error {
 			continue
 		}
 
-		g.Close(o.MemoryConsumptionTracker)
+		g.Finalize(o.MemoryConsumptionTracker)
 	}
 
 	o.rightSeriesGroups = nil
@@ -442,6 +442,6 @@ func (g *orGroup) FilterRightSeries(rightData types.InstantVectorSeriesData, mem
 	return filterSeries(rightData, g.leftSamplePresence, false, memoryConsumptionTracker, timeRange)
 }
 
-func (g *orGroup) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+func (g *orGroup) Finalize(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
 	types.BoolSlicePool.Put(&g.leftSamplePresence, memoryConsumptionTracker)
 }

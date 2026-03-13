@@ -62,9 +62,9 @@ type groupedBinaryOperationOutputSeries struct {
 	oneSide  *oneSide
 }
 
-func (g *groupedBinaryOperationOutputSeries) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
-	g.manySide.Close(memoryConsumptionTracker)
-	g.oneSide.Close(memoryConsumptionTracker)
+func (g *groupedBinaryOperationOutputSeries) Finalize(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+	g.manySide.Finalize(memoryConsumptionTracker)
+	g.oneSide.Finalize(memoryConsumptionTracker)
 }
 
 type groupedBinaryOperationOutputSeriesWithLabels struct {
@@ -88,7 +88,7 @@ func (s *manySide) latestSeriesIndex() int {
 	return s.seriesIndices[len(s.seriesIndices)-1]
 }
 
-func (s *manySide) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+func (s *manySide) Finalize(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
 	types.PutInstantVectorSeriesData(s.mergedData, memoryConsumptionTracker)
 	s.mergedData = types.InstantVectorSeriesData{}
 }
@@ -111,7 +111,7 @@ func (s *oneSide) latestSeriesIndex() int {
 	return s.seriesIndices[len(s.seriesIndices)-1]
 }
 
-func (s *oneSide) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+func (s *oneSide) Finalize(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
 	types.PutInstantVectorSeriesData(s.mergedData, memoryConsumptionTracker)
 	s.mergedData = types.InstantVectorSeriesData{}
 
@@ -798,7 +798,7 @@ func (g *GroupedVectorVectorBinaryOperation) Finalize(ctx context.Context) error
 	}
 
 	for _, s := range g.remainingSeries {
-		s.Close(g.MemoryConsumptionTracker)
+		s.Finalize(g.MemoryConsumptionTracker)
 	}
 
 	g.remainingSeries = nil

@@ -248,7 +248,7 @@ func (a *AndUnlessBinaryOperation) computeNextSeries(ctx context.Context) (types
 
 		if thisSeriesGroup.leftSeriesCount == 0 {
 			// This is the last series for this group, return it to the pool.
-			thisSeriesGroup.Close(a.MemoryConsumptionTracker)
+			thisSeriesGroup.Finalize(a.MemoryConsumptionTracker)
 		}
 
 		return filteredData, nil
@@ -312,7 +312,7 @@ func (a *AndUnlessBinaryOperation) Finalize(ctx context.Context) error {
 			continue
 		}
 
-		group.Close(a.MemoryConsumptionTracker)
+		group.Finalize(a.MemoryConsumptionTracker)
 	}
 
 	a.leftSeriesGroups = nil
@@ -368,6 +368,6 @@ func (g *andGroup) FilterLeftSeries(leftData types.InstantVectorSeriesData, memo
 	return filterSeries(leftData, g.rightSamplePresence, !isUnless, memoryConsumptionTracker, timeRange)
 }
 
-func (g *andGroup) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+func (g *andGroup) Finalize(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
 	types.BoolSlicePool.Put(&g.rightSamplePresence, memoryConsumptionTracker)
 }
