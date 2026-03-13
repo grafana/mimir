@@ -246,7 +246,7 @@ jobs:
           key: go-build-cache-unit-${{ hashFiles('go.sum') }}
 
   # Same as the other warmup jobs but for image builds, which use CGO_ENABLED=0 (no race)
-  # with -tags netgo,stringlabels. The image build jobs share most transitive dependencies.
+  # with -tags netgo,stringlabels.
   warmup-go-build-cache-image-builds:
     needs: [prepare]
     runs-on: ubuntu-latest
