@@ -1381,7 +1381,9 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 
 		if len(req.Timeseries) > 0 {
 			if pushErr := next(ctx, pushReq); pushErr != nil {
-				errs.Add(pushErr)
+				// Return only the push error: combining it with dedup errors in a multierror
+				// would let errors.As find replicasDidNotMatchError first, masking 5xx with 202.
+				return pushErr
 			}
 		}
 
