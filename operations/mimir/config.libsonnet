@@ -334,6 +334,7 @@
 
     // These are all the flags for the default limits.
     distributorLimitsConfig: {
+      [if std.get($._config.limits, 'max_active_series_per_user') != null then 'distributor.max-active-series-per-user']: $._config.limits.max_active_series_per_user,
       'distributor.ingestion-rate-limit': $._config.limits.ingestion_rate,
       'distributor.ingestion-burst-size': $._config.limits.ingestion_burst_size,
     },

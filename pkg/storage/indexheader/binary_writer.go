@@ -85,10 +85,10 @@ func WriteBinary(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID, f
 	}
 	defer runutil.CloseWithErrCapture(&err, bw, "close binary writer for %s", tmpFilename)
 
-	// We put the end of the last posting list as the beginning of the label indices table.
-	// As of now this value is also the actual end of the last posting list. In the future
-	// it may be some bytes after the actual end (e.g. in case Prometheus starts adding padding
-	// after the last posting list).
+	// Mimir currently only supports Prometheus index.FormatV2,
+	// in which the end of the Postings list is the beginning of the Label Indices table.
+	// Prometheus block index TOC only contains start offsets for sections, not end offsets,
+	// so we use Label Indices Table offset as the end bound of the Postings List.
 	if err := bw.AddIndexMeta(indexVersion, ir.toc.LabelIndicesTable); err != nil {
 		return errors.Wrap(err, "add index meta")
 	}
@@ -362,12 +362,12 @@ func (fw *FileWriter) Remove() error {
 	return os.Remove(fw.name)
 }
 
-func (w *binaryWriter) AddIndexMeta(indexVersion int, indexLastPostingListEndBound uint64) error {
+func (w *binaryWriter) AddIndexMeta(indexVersion int, postingsListEnd uint64) error {
 	w.buf.Reset()
 	w.buf.PutByte(byte(indexVersion))
-	// This value used to be the offset of the postings offset table up to and including Mimir 2.7.
-	// After that this is the offset of the label indices table.
-	w.buf.PutBE64(indexLastPostingListEndBound)
+	// Prometheus block index TOC only contains start offsets for sections, not end offsets,
+	// so we use the start offset of the next section as the end bound of the Postings List.
+	w.buf.PutBE64(postingsListEnd)
 	return w.f.Write(w.buf.Get())
 }
 

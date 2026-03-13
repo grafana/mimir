@@ -85,7 +85,7 @@ type Merger interface {
 	MergeResponse(...Response) (Response, error)
 }
 
-// MetricsQueryRequest represents an instant or query range request that can be process by middlewares.
+// MetricsQueryRequest represents a remote read, instant query or range query request that can be processed by middlewares.
 type MetricsQueryRequest interface {
 	// GetID returns the ID of the request used to correlate downstream requests and responses.
 	GetID() int64

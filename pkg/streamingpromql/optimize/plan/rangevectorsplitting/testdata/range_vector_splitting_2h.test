@@ -419,3 +419,74 @@ eval instant at 6h increase(counter_b_total[5h]) - increase(counter_a_total[5h])
   {} 18000
 
 clear
+
+# ===== first_over_time / last_over_time =====
+
+load 1h
+  first_last_metric{env="prod"} 10 20 30 40 50 60 70
+
+eval instant at 6h first_over_time(first_last_metric[5h])
+  {__name__="first_last_metric", env="prod"} 30
+
+eval instant at 6h first_over_time(first_last_metric[5h])
+  {__name__="first_last_metric", env="prod"} 30
+
+eval instant at 6h first_over_time(first_last_metric[6h])
+  {__name__="first_last_metric", env="prod"} 20
+
+eval instant at 6h first_over_time(first_last_metric[6h])
+  {__name__="first_last_metric", env="prod"} 20
+
+eval instant at 6h first_over_time(first_last_metric[7h])
+  {__name__="first_last_metric", env="prod"} 10
+
+eval instant at 6h first_over_time(first_last_metric[7h])
+  {__name__="first_last_metric", env="prod"} 10
+
+eval instant at 6h last_over_time(first_last_metric[5h])
+  {__name__="first_last_metric", env="prod"} 70
+
+eval instant at 6h last_over_time(first_last_metric[5h])
+  {__name__="first_last_metric", env="prod"} 70
+
+clear
+
+load 1h
+  first_last_metric_hist{env="prod"} {{schema:0 sum:10 count:10 buckets:[10]}} {{schema:0 sum:20 count:20 buckets:[20]}} {{schema:0 sum:30 count:30 buckets:[30]}} {{schema:0 sum:40 count:40 buckets:[40]}} {{schema:0 sum:50 count:50 buckets:[50]}}
+
+eval instant at 5h first_over_time(first_last_metric_hist[6h])
+  {__name__="first_last_metric_hist", env="prod"} {{schema:0 sum:10 count:10 buckets:[10]}}
+
+eval instant at 5h first_over_time(first_last_metric_hist[6h])
+  {__name__="first_last_metric_hist", env="prod"} {{schema:0 sum:10 count:10 buckets:[10]}}
+
+eval instant at 6h last_over_time(first_last_metric_hist[6h])
+  {__name__="first_last_metric_hist", env="prod"} {{schema:0 sum:50 count:50 buckets:[50]}}
+
+eval instant at 6h last_over_time(first_last_metric_hist[6h])
+  {__name__="first_last_metric_hist", env="prod"} {{schema:0 sum:50 count:50 buckets:[50]}}
+
+clear
+
+load 1h
+  first_last_metric_mixed{env="prod"} 10 {{schema:0 sum:20 count:20 buckets:[20]}} 30 {{schema:0 sum:40 count:40 buckets:[40]}} {{schema:0 sum:50 count:50 buckets:[50]}}
+
+eval instant at 5h first_over_time(first_last_metric_mixed[6h])
+  {__name__="first_last_metric_mixed", env="prod"} 10
+
+eval instant at 5h first_over_time(first_last_metric_mixed[6h])
+  {__name__="first_last_metric_mixed", env="prod"} 10
+
+eval instant at 4h first_over_time(first_last_metric_mixed[2h])
+  {__name__="first_last_metric_mixed", env="prod"} {{schema:0 sum:40 count:40 buckets:[40]}}
+
+eval instant at 4h first_over_time(first_last_metric_mixed[2h])
+  {__name__="first_last_metric_mixed", env="prod"} {{schema:0 sum:40 count:40 buckets:[40]}}
+
+eval instant at 2h last_over_time(first_last_metric_mixed[6h])
+  {__name__="first_last_metric_mixed", env="prod"} 30
+
+eval instant at 2h last_over_time(first_last_metric_mixed[6h])
+  {__name__="first_last_metric_mixed", env="prod"} 30
+
+clear

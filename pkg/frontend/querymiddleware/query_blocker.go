@@ -61,6 +61,14 @@ func (qb *queryBlockerMiddleware) isBlocked(tenant string, req MetricsQueryReque
 	query := req.GetQuery()
 
 	for ruleIndex, block := range blocks {
+		if block.UnalignedRangeQueries {
+			_, isRangeQuery := req.(*PrometheusRangeQueryRequest)
+
+			if !isRangeQuery || isRequestStepAligned(req) {
+				continue
+			}
+		}
+
 		if strings.TrimSpace(block.Pattern) == strings.TrimSpace(query) {
 			level.Info(logger).Log("msg", "query blocker matched with exact match policy", "query", query, "index", ruleIndex)
 			return true, block.Reason

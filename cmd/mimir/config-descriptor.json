@@ -6066,6 +6066,15 @@
                 "fieldValue": null,
                 "fieldDefaultValue": "",
                 "fieldType": "string"
+              },
+              {
+                "kind": "field",
+                "name": "unaligned_range_queries",
+                "required": false,
+                "desc": "If true, only block the query if the query time range is not aligned to the step, meaning the query is not eligible for range query result caching. If enabled, instant queries and remote read requests will not be blocked.",
+                "fieldValue": null,
+                "fieldDefaultValue": false,
+                "fieldType": "boolean"
               }
             ],
             "fieldValue": null,
@@ -14138,12 +14147,13 @@
               "fieldType": "string"
             },
             {
-              "kind": "block",
+              "kind": "field",
               "name": "basic_auth_password",
               "required": false,
               "desc": "",
               "fieldValue": null,
-              "fieldDefaultValue": null
+              "fieldDefaultValue": "",
+              "fieldType": "string"
             },
             {
               "kind": "block",
@@ -14161,12 +14171,13 @@
                   "fieldType": "string"
                 },
                 {
-                  "kind": "block",
+                  "kind": "field",
                   "name": "client_secret",
                   "required": false,
                   "desc": "",
                   "fieldValue": null,
-                  "fieldDefaultValue": null
+                  "fieldDefaultValue": "",
+                  "fieldType": "string"
                 },
                 {
                   "kind": "field",

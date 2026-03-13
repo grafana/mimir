@@ -22,7 +22,7 @@ import (
 
 var refsPool zeropool.Pool[[]uint64]
 
-const shards = 16
+const shards = tenantshard.NumShards
 const noLimit = math.MaxUint64
 
 // trackerStore holds the core business logic of the usage-tracker abstracted in a testable way.
@@ -236,7 +236,7 @@ func (t *trackerStore) cleanup(now time.Time) {
 	for tenantID, tenant := range tenantsClone {
 		for _, shard := range tenant.shards {
 			shard.Lock()
-			removed := shard.Cleanup(watermark)
+			removed := shard.Cleanup(watermark, tenant.currentLimit)
 			shard.Unlock()
 
 			if removed > 0 {

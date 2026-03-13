@@ -438,13 +438,14 @@ func (m *FunctionOverRangeVectorSplit[T]) Finalize(ctx context.Context) error {
 	// if a binary operation short-circuits evaluation early. A cached partial intermediate result might result in an
 	// incorrect calculation for a query spanning a different time range.
 	// TODO: It might be worth processing any remaining series so we can cache the result.
+	shouldCache := true
 	if !m.metadataConsumed {
 		level.Debug(logger).Log("msg", "skipping caching as SeriesMetadata() was not called")
-		return nil
+		shouldCache = false
 	}
 	if m.currentSeriesIdx < len(m.seriesToSplits) {
 		level.Debug(logger).Log("msg", "skipping caching as not all series processed by NextSeries()")
-		return nil
+		shouldCache = false
 	}
 
 	m.finalizeStart = time.Now()
@@ -461,7 +462,7 @@ func (m *FunctionOverRangeVectorSplit[T]) Finalize(ctx context.Context) error {
 	}
 
 	for _, split := range m.splits {
-		if err := split.Finalize(ctx); err != nil {
+		if err := split.Finalize(ctx, shouldCache); err != nil {
 			return err
 		}
 	}
@@ -483,6 +484,7 @@ func (m *FunctionOverRangeVectorSplit[T]) Finalize(ctx context.Context) error {
 		"ranges_total", uncachedRangeCount+cachedRangeCount,
 		"ranges_cached", cachedRangeCount,
 		"ranges_uncached", uncachedRangeCount,
+		"eligible_to_store_results_in_cache", shouldCache,
 		"cache_entries_read", m.cacheStats.ReadEntries,
 		"cache_entries_written", m.cacheStats.WrittenEntries,
 		"max_series_per_entry", m.cacheStats.MaxSeries,
@@ -519,7 +521,7 @@ type Split[T any] interface {
 	// This is used to make sure annotations emitted when generating the result for an uncached split reference the
 	// correct metric name.
 	AppendMergedSeriesIndex(splitLocalIdx int, mergedIdx int)
-	Finalize(ctx context.Context) error
+	Finalize(ctx context.Context, storeResultsInCache bool) error
 	Close()
 	IsCached() bool
 	RangeCount() int
@@ -592,7 +594,7 @@ func (c *CachedSplit[T]) GetResultsAt(_ context.Context, idx int) ([]T, error) {
 	return []T{c.results[idx]}, nil
 }
 
-func (c *CachedSplit[T]) Finalize(ctx context.Context) error {
+func (c *CachedSplit[T]) Finalize(ctx context.Context, storeResultsInCache bool) error {
 	for _, w := range c.annotations.Warnings {
 		c.parent.Annotations.Add(querierpb.NewWarningAnnotation(w))
 	}
@@ -744,13 +746,19 @@ func (p *UncachedSplit[T]) emitAndCaptureAnnotation(rangeIdx int, localSeriesIdx
 	p.rangeAnnotations[rangeIdx].Add(annotationErr)
 }
 
-func (p *UncachedSplit[T]) Finalize(ctx context.Context) error {
+func (p *UncachedSplit[T]) Finalize(ctx context.Context, storeResultsInCache bool) error {
 	if p.finalized {
 		return nil
 	}
 
 	if err := p.operator.Finalize(ctx); err != nil {
 		return err
+	}
+
+	p.finalized = true
+
+	if !storeResultsInCache {
+		return nil
 	}
 
 	for rangeIdx, splitRange := range p.ranges {
@@ -777,7 +785,6 @@ func (p *UncachedSplit[T]) Finalize(ctx context.Context) error {
 		}
 	}
 
-	p.finalized = true
 	return nil
 }
 

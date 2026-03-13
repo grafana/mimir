@@ -72,3 +72,13 @@ message RateIntermediate {
 message RateIntermediateList {
   repeated RateIntermediate results = 1 [(gogoproto.nullable) = false];
 }
+
+message FirstLastOverTimeIntermediate {
+  double f = 1;
+  bool hasFloat = 2;
+  cortexpb.Histogram h = 3;
+}
+
+message FirstLastOverTimeIntermediateList {
+  repeated FirstLastOverTimeIntermediate results = 1 [(gogoproto.nullable) = false];
+}

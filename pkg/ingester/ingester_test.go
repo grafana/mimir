@@ -12240,6 +12240,113 @@ func TestIngester_NotifyPreCommit(t *testing.T) {
 	assert.GreaterOrEqual(t, fsyncCountAfter-fsyncCountBefore, uint64(3))
 }
 
+// testMinTimeBlockReader implements tsdb.BlockReader with a fixed MinTime.
+type testMinTimeBlockReader struct {
+	tsdb.BlockReader
+	minTime int64
+}
+
+func (s *testMinTimeBlockReader) Meta() tsdb.BlockMeta {
+	return tsdb.BlockMeta{MinTime: s.minTime}
+}
+
+func TestBlockGenerationCalculator(t *testing.T) {
+	const blockRange = int64((2 * time.Hour) / time.Millisecond)
+
+	db, err := tsdb.Open(t.TempDir(), nil, nil, tsdb.DefaultOptions(), nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+	headMinTime := int64((10 * time.Hour) / time.Millisecond)
+	app := db.Appender(t.Context())
+	_, err = app.Append(0, labels.FromStrings("foo", "bar"), headMinTime, 1)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	userDB := &userTSDB{db: db}
+	blockGen := blockGenerationCalculator(userDB, blockRange)
+
+	testCases := []struct {
+		name        string
+		blockReader tsdb.BlockReader
+		wantGen     string
+	}{
+		{
+			"head block",
+			tsdb.NewRangeHead(db.Head(), 0, headMinTime+blockRange),
+			"0",
+		},
+		{
+			"persisted block generation 1",
+			&testMinTimeBlockReader{minTime: headMinTime - blockRange},
+			"1",
+		},
+		{
+			"persisted block generation 3",
+			&testMinTimeBlockReader{minTime: headMinTime - 3*blockRange - time.Minute.Milliseconds()},
+			"3",
+		},
+		{
+			"persisted block with minTime equal to head",
+			&testMinTimeBlockReader{minTime: headMinTime},
+			"1",
+		},
+		{
+			"persisted block with minTime after head",
+			&testMinTimeBlockReader{minTime: headMinTime + blockRange},
+			"1",
+		},
+		{
+			"persisted block with capped generation label",
+			&testMinTimeBlockReader{minTime: headMinTime - 110*blockRange},
+			"100+",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.wantGen, blockGen(tc.blockReader))
+		})
+	}
+}
+
+func TestBlockGenerationCalculator_EmptyHead(t *testing.T) {
+	const blockRange = int64((2 * time.Hour) / time.Millisecond)
+
+	db, err := tsdb.Open(t.TempDir(), nil, nil, tsdb.DefaultOptions(), nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+	require.Equal(t, int64(math.MaxInt64), db.Head().MinTime())
+
+	userDB := &userTSDB{db: db}
+	blockGen := blockGenerationCalculator(userDB, blockRange)
+
+	testCases := []struct {
+		name        string
+		blockReader tsdb.BlockReader
+		wantGen     string
+	}{
+		{
+			"querying head block",
+			tsdb.NewRangeHead(db.Head(), 0, 1000),
+			"0",
+		},
+		{
+			"querying persisted block",
+			&testMinTimeBlockReader{minTime: 1000},
+			// This is an edge case: we can't figure how old persisted block is comparing to DB's head, when the head was truncated.
+			"unknown",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.wantGen, blockGen(tc.blockReader))
+		})
+	}
+}
+
 func makeTestRW2WriteRequest(syms *rw2util.SymbolTableBuilder) *mimirpb.WriteRequest {
 	req := &mimirpb.WriteRequest{
 		TimeseriesRW2: []mimirpb.TimeSeriesRW2{
