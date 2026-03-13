@@ -1926,7 +1926,7 @@ metadata:
   namespace: default
 spec:
   minReadySeconds: 10
-  replicas: 2
+  replicas: 3
   revisionHistoryLimit: 10
   selector:
     matchLabels:
@@ -2011,7 +2011,7 @@ metadata:
   namespace: default
 spec:
   minReadySeconds: 10
-  replicas: 2
+  replicas: 3
   revisionHistoryLimit: 10
   selector:
     matchLabels:
