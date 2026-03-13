@@ -225,7 +225,6 @@ jobs:
         with:
           path: /go/cache
           key: go-build-cache-unit-${{ hashFiles('go.sum') }}
-          enableCrossOsArchive: true
           lookup-only: true
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
@@ -245,7 +244,6 @@ jobs:
         with:
           path: /go/cache
           key: go-build-cache-unit-${{ hashFiles('go.sum') }}
-          enableCrossOsArchive: true
 
   # Same as the other warmup jobs but for image builds, which use CGO_ENABLED=0 (no race)
   # with -tags netgo,stringlabels. The image build jobs share most transitive dependencies.
@@ -267,7 +265,6 @@ jobs:
         with:
           path: /go/cache
           key: go-build-cache-image-${{ hashFiles('go.sum') }}
-          enableCrossOsArchive: true
           lookup-only: true
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
@@ -287,7 +284,6 @@ jobs:
         with:
           path: /go/cache
           key: go-build-cache-image-${{ hashFiles('go.sum') }}
-          enableCrossOsArchive: true
 
   test:
     runs-on: ubuntu-latest
@@ -318,7 +314,6 @@ jobs:
         with:
           path: /go/cache
           key: go-build-cache-unit-${{ hashFiles('go.sum') }}
-          enableCrossOsArchive: true
       - name: Install GitHub CLI
         run: ./.github/workflows/scripts/install-gh.sh
       - name: Run Git Config
@@ -370,7 +365,6 @@ jobs:
         with:
           path: /go/cache
           key: go-build-cache-image-${{ hashFiles('go.sum') }}
-          enableCrossOsArchive: true
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -394,7 +388,6 @@ jobs:
         with:
           path: /go/cache
           key: go-build-cache-image-${{ hashFiles('go.sum') }}
-          enableCrossOsArchive: true
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -418,7 +411,6 @@ jobs:
         with:
           path: /go/cache
           key: go-build-cache-image-${{ hashFiles('go.sum') }}
-          enableCrossOsArchive: true
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -442,7 +434,6 @@ jobs:
         with:
           path: /go/cache
           key: go-build-cache-image-${{ hashFiles('go.sum') }}
-          enableCrossOsArchive: true
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -466,7 +457,6 @@ jobs:
         with:
           path: /go/cache
           key: go-build-cache-image-${{ hashFiles('go.sum') }}
-          enableCrossOsArchive: true
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -506,7 +496,6 @@ jobs:
         with:
           path: /go/cache
           key: go-build-cache-unit-${{ hashFiles('go.sum') }}
-          enableCrossOsArchive: true
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Install Docker Client
