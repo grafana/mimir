@@ -11,7 +11,7 @@ on:
 
 env:
   # Set to 'true' to force Go build cache warmup on all branches (useful when iterating on cache changes).
-  # When 'false', the cache is only built on main (see warmup-go-build-cache-integration-tests job for details).
+  # When 'false', the cache is only built on main (see warmup-go-build-cache.yml for details).
   FORCE_BUILD_CACHE_WARMUP: 'true'
 
 permissions:
@@ -151,59 +151,18 @@ jobs:
       - name: Check Helm Tests
         run: make BUILD_IN_CONTAINER=false check-helm-tests
 
-  # Compile integration test binaries once and save the Go build cache, so that the
-  # integration test jobs can reuse it. The cache is keyed by go.sum hash: it's rebuilt only
-  # when dependencies change. This means test jobs will still need to compile source files
-  # changed since the cache was created, but dependencies (the bulk of compilation time) and
-  # unchanged Mimir source files are cached.
-  #
-  # The cache is compiled and saved only on main by default. GitHub Actions caches created on
-  # main are accessible from all branches, while caches created on PR branches are scoped to
-  # that branch only. Building only on main keeps cache storage small and ensures all branches
-  # benefit from the shared cache. Set the FORCE_BUILD_CACHE_WARMUP env var at the top of
-  # this file to 'true' to enable cache warmup on all branches.
-  #
+  # See warmup-go-build-cache.yml for how the Go build cache warmup works.
   # There are three separate warmup jobs because different compilation flags produce different
   # cache entries: integration tests (no -race), unit tests (-race), and image builds
   # (CGO_ENABLED=0, multi-arch).
   warmup-go-build-cache-integration-tests:
-    needs: [goversion, prepare]
-    runs-on: ubuntu-latest
-    steps:
-      # Sparse checkout of go.sum only, to compute the cache key without fetching the full repo.
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        if: github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true'
-        with:
-          persist-credentials: false
-          sparse-checkout: go.sum
-      - name: Check if Go build cache exists
-        id: check-cache
-        if: github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true'
-        uses: actions/cache/restore@v4
-        with:
-          path: /home/runner/.cache/go-build
-          key: go-build-cache-integration-${{ hashFiles('go.sum') }}
-          lookup-only: true
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
-        with:
-          persist-credentials: false
-      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
-        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
-        with:
-          go-version: ${{ needs.goversion.outputs.version }}
-          cache: false
-      - name: Warm Go build cache
-        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
-        run: make BUILD_IN_CONTAINER=false warmup-build-cache-integration-tests
-      - name: Print Go build cache size
-        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
-        run: du -sh /home/runner/.cache/go-build
-      - uses: actions/cache/save@v4
-        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
-        with:
-          path: /home/runner/.cache/go-build
-          key: go-build-cache-integration-${{ hashFiles('go.sum') }}
+    needs: [goversion]
+    uses: ./.github/workflows/warmup-go-build-cache.yml
+    with:
+      go-version: ${{ needs.goversion.outputs.version }}
+      cache-key-prefix: go-build-cache-integration
+      make-target: warmup-build-cache-integration-tests
+      force: ${{ env.FORCE_BUILD_CACHE_WARMUP == 'true' }}
 
   # Same as above but for unit tests, which compile with -race (producing different cache
   # entries) and run inside a container.
@@ -248,51 +207,15 @@ jobs:
           enableCrossOsArchive: true
 
   # Same as the other warmup jobs but for image builds, which use CGO_ENABLED=0 (no race)
-  # with -tags netgo,stringlabels. The image build jobs share most transitive dependencies.
-  # This job runs on the host (not in a container) so that when all steps are skipped on
-  # non-main branches, it completes in ~2s instead of ~30s (container startup overhead).
-  # This is safe because CGO_ENABLED=0 means no C toolchain is involved, so the Go build
-  # cache entries are identical regardless of the environment. enableCrossOsArchive is used
-  # so that container-based image build jobs can restore the cache.
+  # with -tags netgo,stringlabels.
   warmup-go-build-cache-image-builds:
     needs: [goversion]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        if: github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true'
-        with:
-          persist-credentials: false
-          sparse-checkout: go.sum
-      - name: Check if Go build cache exists
-        id: check-cache
-        if: github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true'
-        uses: actions/cache/restore@v4
-        with:
-          path: /home/runner/.cache/go-build
-          key: go-build-cache-image-${{ hashFiles('go.sum') }}
-          enableCrossOsArchive: true
-          lookup-only: true
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
-        with:
-          persist-credentials: false
-      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
-        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
-        with:
-          go-version: ${{ needs.goversion.outputs.version }}
-          cache: false
-      - name: Warm Go build cache
-        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
-        run: make BUILD_IN_CONTAINER=false warmup-build-cache-image-builds
-      - name: Print Go build cache size
-        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
-        run: du -sh /home/runner/.cache/go-build
-      - uses: actions/cache/save@v4
-        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
-        with:
-          path: /home/runner/.cache/go-build
-          key: go-build-cache-image-${{ hashFiles('go.sum') }}
-          enableCrossOsArchive: true
+    uses: ./.github/workflows/warmup-go-build-cache.yml
+    with:
+      go-version: ${{ needs.goversion.outputs.version }}
+      cache-key-prefix: go-build-cache-image
+      make-target: warmup-build-cache-image-builds
+      force: ${{ env.FORCE_BUILD_CACHE_WARMUP == 'true' }}
 
   test:
     runs-on: ubuntu-latest
@@ -370,12 +293,21 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
+      # Restore to the same path used by the warmup job (host runner) and move to the
+      # container's GOCACHE. actions/cache includes the path in its version hash, so the
+      # restore path must match the save path for the cache to be found.
       - name: Restore Go build cache
         uses: actions/cache/restore@v4
         with:
-          path: /go/cache
+          path: /home/runner/.cache/go-build
           key: go-build-cache-image-${{ hashFiles('go.sum') }}
           enableCrossOsArchive: true
+      - name: Move Go build cache to GOCACHE
+        run: |
+          if [ -d /home/runner/.cache/go-build ]; then
+            rm -rf /go/cache
+            mv /home/runner/.cache/go-build /go/cache
+          fi
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -394,12 +326,21 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
+      # Restore to the same path used by the warmup job (host runner) and move to the
+      # container's GOCACHE. actions/cache includes the path in its version hash, so the
+      # restore path must match the save path for the cache to be found.
       - name: Restore Go build cache
         uses: actions/cache/restore@v4
         with:
-          path: /go/cache
+          path: /home/runner/.cache/go-build
           key: go-build-cache-image-${{ hashFiles('go.sum') }}
           enableCrossOsArchive: true
+      - name: Move Go build cache to GOCACHE
+        run: |
+          if [ -d /home/runner/.cache/go-build ]; then
+            rm -rf /go/cache
+            mv /home/runner/.cache/go-build /go/cache
+          fi
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -418,12 +359,21 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
+      # Restore to the same path used by the warmup job (host runner) and move to the
+      # container's GOCACHE. actions/cache includes the path in its version hash, so the
+      # restore path must match the save path for the cache to be found.
       - name: Restore Go build cache
         uses: actions/cache/restore@v4
         with:
-          path: /go/cache
+          path: /home/runner/.cache/go-build
           key: go-build-cache-image-${{ hashFiles('go.sum') }}
           enableCrossOsArchive: true
+      - name: Move Go build cache to GOCACHE
+        run: |
+          if [ -d /home/runner/.cache/go-build ]; then
+            rm -rf /go/cache
+            mv /home/runner/.cache/go-build /go/cache
+          fi
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -442,12 +392,21 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
+      # Restore to the same path used by the warmup job (host runner) and move to the
+      # container's GOCACHE. actions/cache includes the path in its version hash, so the
+      # restore path must match the save path for the cache to be found.
       - name: Restore Go build cache
         uses: actions/cache/restore@v4
         with:
-          path: /go/cache
+          path: /home/runner/.cache/go-build
           key: go-build-cache-image-${{ hashFiles('go.sum') }}
           enableCrossOsArchive: true
+      - name: Move Go build cache to GOCACHE
+        run: |
+          if [ -d /home/runner/.cache/go-build ]; then
+            rm -rf /go/cache
+            mv /home/runner/.cache/go-build /go/cache
+          fi
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -466,12 +425,21 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
+      # Restore to the same path used by the warmup job (host runner) and move to the
+      # container's GOCACHE. actions/cache includes the path in its version hash, so the
+      # restore path must match the save path for the cache to be found.
       - name: Restore Go build cache
         uses: actions/cache/restore@v4
         with:
-          path: /go/cache
+          path: /home/runner/.cache/go-build
           key: go-build-cache-image-${{ hashFiles('go.sum') }}
           enableCrossOsArchive: true
+      - name: Move Go build cache to GOCACHE
+        run: |
+          if [ -d /home/runner/.cache/go-build ]; then
+            rm -rf /go/cache
+            mv /home/runner/.cache/go-build /go/cache
+          fi
       - name: Build
         uses: ./.github/actions/build-image
         with:
