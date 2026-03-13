@@ -799,8 +799,10 @@ warmup-build-cache-integration-tests: ## Warm the Go build cache for integration
 	go build ./tools/pre-pull-images/... 2>&1 || true
 
 warmup-build-cache-unit-tests: ## Warm the Go build cache for unit tests.
-	go test -run=^$ -count=1 -tags=$(GO_TAGS) -race ./... 2>&1 || true
-	go test -run=^$ -count=1 -tags=$(GO_TAGS),nopools -race ./... 2>&1 || true
+	go test -run=^$ -count=1 -tags=$(GO_TAGS) -race $$(go list ./... | grep -v 'pkg/streamingpromql/benchmarks$$') 2>&1 || true
+	go test -run=^$ -count=1 -tags=$(GO_TAGS) github.com/grafana/mimir/pkg/streamingpromql/benchmarks 2>&1 || true
+	go test -run=^$ -count=1 -tags=$(GO_TAGS),nopools -race $$(go list ./... | grep -v 'pkg/streamingpromql/benchmarks$$') 2>&1 || true
+	go test -run=^$ -count=1 -tags=$(GO_TAGS),nopools github.com/grafana/mimir/pkg/streamingpromql/benchmarks 2>&1 || true
 
 IMAGE_EXES := $(foreach dir,$(DOCKER_IMAGE_DIRS),$(wildcard $(dir)/main.go))
 warmup-build-cache-image-builds: ## Warm the Go build cache for image builds.
