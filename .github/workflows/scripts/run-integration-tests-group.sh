@@ -37,7 +37,7 @@ if [[ -z "$TOTAL" ]]; then
 fi
 
 # List all tests.
-# If you change the build tags or CLI flags, update warmup-build-cache-integration-tests in the Makefile too.
+# If you change the build tags or CLI flags, update warmup-build-cache-tests in the Makefile too.
 ALL_TESTS=$(go test -tags=requires_docker,stringlabels -list 'Test.*' "${INTEGRATION_DIR}/..." | grep -E '^Test.*' | sort)
 
 # Filter tests by the requested group.

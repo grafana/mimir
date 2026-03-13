@@ -10,7 +10,7 @@ help:
 # WARNING: do not commit to a repository!
 -include Makefile.local
 
-.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc check-reference-help push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks check-mixin-mimirtool-rules build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-getting-started mixin-screenshots warmup-build-cache-integration-tests warmup-build-cache-unit-tests warmup-build-cache-image-builds
+.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc check-reference-help push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks check-mixin-mimirtool-rules build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-getting-started mixin-screenshots warmup-build-cache-tests warmup-build-cache-image-builds
 .DEFAULT_GOAL := all
 
 # Version number
@@ -794,13 +794,11 @@ integration-tests-race: cmd/mimir/$(UPTODATE_RACE)
 # cache. They are used by the go-warmup-build-cache-* CI jobs so that the actual test and build
 # jobs can skip most compilation. The flags here MUST match the ones used by the real targets.
 
-warmup-build-cache-integration-tests: ## Warm the Go build cache for integration tests.
-	go test -run=^$ -count=1 -tags=requires_docker,stringlabels ./integration/... 2>&1 || true
-	go build ./tools/pre-pull-images/... 2>&1 || true
-
-warmup-build-cache-unit-tests: ## Warm the Go build cache for unit tests.
+warmup-build-cache-tests: ## Warm the Go build cache for unit and integration tests.
 	go test -run=^$ -count=1 -tags=$(GO_TAGS) -race ./... 2>&1 || true
 	go test -run=^$ -count=1 -tags=$(GO_TAGS),nopools -race ./... 2>&1 || true
+	go test -run=^$ -count=1 -tags=requires_docker,stringlabels ./integration/... 2>&1 || true
+	go build ./tools/pre-pull-images/... 2>&1 || true
 
 IMAGE_EXES := $(foreach dir,$(DOCKER_IMAGE_DIRS),$(wildcard $(dir)/main.go))
 warmup-build-cache-image-builds: ## Warm the Go build cache for image builds.
