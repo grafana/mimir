@@ -5463,6 +5463,59 @@ func TestHaDedupeMiddleware(t *testing.T) {
 	}
 }
 
+func TestHaDedupeMiddleware_PushErrorNotMaskedByDedupError(t *testing.T) {
+	ctx := user.InjectOrgID(context.Background(), "user")
+	const replica1 = "replicaA"
+	const replica2 = "replicaB"
+	const cluster1 = "clusterA"
+
+	var limits validation.Limits
+	flagext.DefaultValues(&limits)
+	limits.AcceptHASamples = true
+	limits.MaxLabelValueLength = 15
+
+	ds, _, _, _ := prepare(t, prepConfig{
+		numDistributors: 1,
+		limits:          &limits,
+		enableTracker:   true,
+	})
+
+	pushErr := ingesterPushError{message: "failed pushing to ingester", cause: mimirpb.ERROR_CAUSE_UNKNOWN}
+	callCount := 0
+	next := func(_ context.Context, pushReq *Request) error {
+		callCount++
+		if callCount > 1 {
+			return pushErr
+		}
+		return nil
+	}
+
+	middleware := ds[0].prePushHaDedupeMiddleware(next)
+
+	// Establish replica1 as primary.
+	r1 := makeWriteRequestForGenerators(3, labelSetGenWithReplicaAndCluster(replica1, cluster1), nil, nil)
+	pushReq1 := NewParsedRequest(r1, r1.Size())
+	pushReq1.AddCleanup(func() {})
+	err := middleware(ctx, pushReq1)
+	require.NoError(t, err)
+
+	// Send a mixed request: some series from replica1 (accepted) and some from replica2 (deduped).
+	// The push of accepted series will fail. The returned error must reflect the push failure, not the dedup.
+	r2 := makeWriteRequestForGenerators(2, labelSetGenWithReplicaAndCluster(replica1, cluster1), nil, nil)
+	r3 := makeWriteRequestForGenerators(2, labelSetGenWithReplicaAndCluster(replica2, cluster1), nil, nil)
+	r2.Timeseries = append(r2.Timeseries, r3.Timeseries...)
+
+	pushReq2 := NewParsedRequest(r2, r2.Size())
+	pushReq2.AddCleanup(func() {})
+	err = middleware(ctx, pushReq2)
+	require.Error(t, err)
+
+	handledErr := ds[0].handlePushError(err)
+	stat, ok := grpcutil.ErrorToStatus(handledErr)
+	require.True(t, ok)
+	require.Equal(t, codes.Internal, stat.Code(), "push error must not be masked by dedup error (AlreadyExists/202)")
+}
+
 func TestInstanceLimitsBeforeHaDedupe(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "user")
 
