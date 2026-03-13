@@ -1233,17 +1233,31 @@ func getEarliestSampleTimestamp(req *mimirpb.WriteRequest, defaultTimestamp int6
 }
 
 func (d *Distributor) processHaReplicas(ctx context.Context, userID string, sampleTimestamp int64, replicaInfos map[haReplica]*replicaInfo) (map[replicaState]int, error) {
-	var errs multierror.MultiError
+	var rejectionErrs, dedupErrs multierror.MultiError
 	samplesPerState := make(map[replicaState]int)
 	for replicaKey, info := range replicaInfos {
 		if info.state.equals(replicaRejectedUnknown) {
 			state, replicaErr := d.replicaObserved(ctx, userID, replicaKey, sampleTimestamp)
 			if replicaErr != nil {
-				errs.Add(replicaErr)
+				// Collect rejection errors before dedup errors so that toErrorWithGRPCStatus
+				// deterministically picks the higher-severity gRPC status code.
+				if state == replicaDeduped {
+					dedupErrs.Add(replicaErr)
+				} else {
+					rejectionErrs.Add(replicaErr)
+				}
 			}
 			info.state = state
 		}
 		samplesPerState[info.state] += info.sampleCount
+	}
+
+	var errs multierror.MultiError
+	for _, err := range rejectionErrs {
+		errs.Add(err)
+	}
+	for _, err := range dedupErrs {
+		errs.Add(err)
 	}
 	return samplesPerState, errs.Err()
 }
