@@ -796,10 +796,11 @@ integration-tests-race: cmd/mimir/$(UPTODATE_RACE)
 
 warmup-build-cache-integration-tests: ## Warm the Go build cache for integration tests.
 	go test -run=^$ -count=1 -tags=requires_docker,stringlabels ./integration/... 2>&1 || true
+	go build ./tools/pre-pull-images/... 2>&1 || true
 
 warmup-build-cache-unit-tests: ## Warm the Go build cache for unit tests.
-	go test -run=^$ -count=1 -tags=$(GO_TAGS) -race ./cmd/mimir/... 2>&1 || true
-	go test -run=^$ -count=1 -tags=$(GO_TAGS),nopools -race ./cmd/mimir/... 2>&1 || true
+	go test -run=^$ -count=1 -tags=$(GO_TAGS) -race ./... 2>&1 || true
+	go test -run=^$ -count=1 -tags=$(GO_TAGS),nopools -race ./... 2>&1 || true
 
 IMAGE_EXES := $(foreach dir,$(DOCKER_IMAGE_DIRS),$(wildcard $(dir)/main.go))
 warmup-build-cache-image-builds: ## Warm the Go build cache for image builds.

@@ -9,6 +9,11 @@ on:
       - mimir-[0-9]+.[0-9]+.[0-9]+**
   pull_request:
 
+env:
+  # Set to 'true' to force Go build cache warmup on all branches (useful when iterating on cache changes).
+  # When 'false', the cache is only built on main (see warmup-go-build-cache-integration-tests job for details).
+  FORCE_BUILD_CACHE_WARMUP: 'true'
+
 permissions:
   contents: read
 
@@ -152,6 +157,12 @@ jobs:
   # changed since the cache was created, but dependencies (the bulk of compilation time) and
   # unchanged Mimir source files are cached.
   #
+  # The cache is compiled and saved only on main by default. GitHub Actions caches created on
+  # main are accessible from all branches, while caches created on PR branches are scoped to
+  # that branch only. Building only on main keeps cache storage small and ensures all branches
+  # benefit from the shared cache. Set the FORCE_BUILD_CACHE_WARMUP env var at the top of
+  # this file to 'true' to enable cache warmup on all branches.
+  #
   # actions/cache includes the OS in its internal version hash, so we need separate warmup
   # jobs for integration tests (host runner) and unit tests (container).
   warmup-go-build-cache-integration-tests:
@@ -170,24 +181,23 @@ jobs:
           path: /home/runner/.cache/go-build
           key: go-build-cache-integration-${{ hashFiles('go.sum') }}
           lookup-only: true
-      # Full checkout, setup-go, and compilation only if the cache doesn't exist.
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        if: steps.check-cache.outputs.cache-hit != 'true'
+        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         with:
           persist-credentials: false
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
-        if: steps.check-cache.outputs.cache-hit != 'true'
+        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         with:
           go-version: ${{ needs.goversion.outputs.version }}
           cache: false
       - name: Warm Go build cache
-        if: steps.check-cache.outputs.cache-hit != 'true'
+        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         run: make BUILD_IN_CONTAINER=false warmup-build-cache-integration-tests
       - name: Print Go build cache size
-        if: steps.check-cache.outputs.cache-hit != 'true'
+        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         run: du -sh /home/runner/.cache/go-build
       - uses: actions/cache/save@v4
-        if: steps.check-cache.outputs.cache-hit != 'true'
+        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         with:
           path: /home/runner/.cache/go-build
           key: go-build-cache-integration-${{ hashFiles('go.sum') }}
@@ -212,22 +222,21 @@ jobs:
           key: go-build-cache-unit-${{ hashFiles('go.sum') }}
           enableCrossOsArchive: true
           lookup-only: true
-      # Full checkout and compilation only if the cache doesn't exist.
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        if: steps.check-cache.outputs.cache-hit != 'true'
+        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         with:
           persist-credentials: false
       - name: Run Git Config
-        if: steps.check-cache.outputs.cache-hit != 'true'
+        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         run: git config --global --add safe.directory '*'
       - name: Warm Go build cache
-        if: steps.check-cache.outputs.cache-hit != 'true'
+        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         run: make BUILD_IN_CONTAINER=false warmup-build-cache-unit-tests
       - name: Print Go build cache size
-        if: steps.check-cache.outputs.cache-hit != 'true'
+        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         run: du -sh /go/cache
       - uses: actions/cache/save@v4
-        if: steps.check-cache.outputs.cache-hit != 'true'
+        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         with:
           path: /go/cache
           key: go-build-cache-unit-${{ hashFiles('go.sum') }}
@@ -318,20 +327,20 @@ jobs:
           enableCrossOsArchive: true
           lookup-only: true
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        if: steps.check-cache.outputs.cache-hit != 'true'
+        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         with:
           persist-credentials: false
       - name: Run Git Config
-        if: steps.check-cache.outputs.cache-hit != 'true'
+        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         run: git config --global --add safe.directory '*'
       - name: Warm Go build cache
-        if: steps.check-cache.outputs.cache-hit != 'true'
+        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         run: make BUILD_IN_CONTAINER=false warmup-build-cache-image-builds
       - name: Print Go build cache size
-        if: steps.check-cache.outputs.cache-hit != 'true'
+        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         run: du -sh /go/cache
       - uses: actions/cache/save@v4
-        if: steps.check-cache.outputs.cache-hit != 'true'
+        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         with:
           path: /go/cache
           key: go-build-cache-image-${{ hashFiles('go.sum') }}
