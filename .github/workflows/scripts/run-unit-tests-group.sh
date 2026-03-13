@@ -85,8 +85,8 @@ for pkg in $GROUP_TESTS; do
         fi
 
         # shellcheck disable=SC2086 # we *want* word splitting of RACE_FLAG.
-        go test -tags="${BUILD_TAGS}" -timeout 30m $RACE_FLAG "$pkg" 2>&1 | tee /tmp/test-pkg-output.log
-        PKG_EXIT_CODE=${PIPESTATUS[0]}
+        go test -tags="${BUILD_TAGS}" -timeout 30m $RACE_FLAG "$pkg"
+        PKG_EXIT_CODE=$?
 
         if [[ $PKG_EXIT_CODE -eq 0 ]]; then
             break

@@ -67,8 +67,8 @@ for TEST in $GROUP_TESTS; do
         fi
 
         # If you change the build tags or CLI flags, update warmup-build-cache-integration-tests in the Makefile too.
-        go test -tags=requires_docker,stringlabels -timeout 2400s -v -count=1 -run "^${TEST}$" "${INTEGRATION_DIR}/..." 2>&1 | tee /tmp/test-integration-output.log
-        TEST_EXIT_CODE=${PIPESTATUS[0]}
+        go test -tags=requires_docker,stringlabels -timeout 2400s -v -count=1 -run "^${TEST}$" "${INTEGRATION_DIR}/..."
+        TEST_EXIT_CODE=$?
 
         if [[ $TEST_EXIT_CODE -eq 0 ]]; then
             break
