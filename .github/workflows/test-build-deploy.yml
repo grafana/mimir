@@ -12,7 +12,7 @@ on:
 env:
   # Set to 'true' to force Go build cache warmup on all branches (useful when iterating on cache changes).
   # When 'false', the cache is only built on main (see warmup-go-build-cache-integration-tests job for details).
-  FORCE_BUILD_CACHE_WARMUP: 'false'
+  FORCE_BUILD_CACHE_WARMUP: 'true'
 
 permissions:
   contents: read
@@ -249,11 +249,14 @@ jobs:
 
   # Same as the other warmup jobs but for image builds, which use CGO_ENABLED=0 (no race)
   # with -tags netgo,stringlabels. The image build jobs share most transitive dependencies.
+  # This job runs on the host (not in a container) so that when all steps are skipped on
+  # non-main branches, it completes in ~2s instead of ~30s (container startup overhead).
+  # This is safe because CGO_ENABLED=0 means no C toolchain is involved, so the Go build
+  # cache entries are identical regardless of the environment. enableCrossOsArchive is used
+  # so that container-based image build jobs can restore the cache.
   warmup-go-build-cache-image-builds:
-    needs: [prepare]
+    needs: [goversion]
     runs-on: ubuntu-latest
-    container:
-      image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         if: github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true'
@@ -265,7 +268,7 @@ jobs:
         if: github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true'
         uses: actions/cache/restore@v4
         with:
-          path: /go/cache
+          path: /home/runner/.cache/go-build
           key: go-build-cache-image-${{ hashFiles('go.sum') }}
           enableCrossOsArchive: true
           lookup-only: true
@@ -273,19 +276,21 @@ jobs:
         if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         with:
           persist-credentials: false
-      - name: Run Git Config
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
         if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
-        run: git config --global --add safe.directory '*'
+        with:
+          go-version: ${{ needs.goversion.outputs.version }}
+          cache: false
       - name: Warm Go build cache
         if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         run: make BUILD_IN_CONTAINER=false warmup-build-cache-image-builds
       - name: Print Go build cache size
         if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
-        run: du -sh /go/cache
+        run: du -sh /home/runner/.cache/go-build
       - uses: actions/cache/save@v4
         if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         with:
-          path: /go/cache
+          path: /home/runner/.cache/go-build
           key: go-build-cache-image-${{ hashFiles('go.sum') }}
           enableCrossOsArchive: true
 
