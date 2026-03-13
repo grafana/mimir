@@ -334,14 +334,17 @@ jobs:
       - name: Warm Go build cache
         if: steps.check-cache.outputs.cache-hit != 'true'
         run: |
-          # The tags and flags must match what the Makefile uses for image builds (GO_FLAGS
-          # with CGO_ENABLED=0), otherwise the cache entries won't be reused.
+          # The tags, flags, GOOS, and GOARCH must match what the Makefile uses for image
+          # builds (GO_FLAGS with CGO_ENABLED=0), otherwise the cache entries won't be reused.
           # We omit -ldflags since they only affect linking, not compilation.
-          CGO_ENABLED=0 go build -tags=netgo,stringlabels ./cmd/mimir/... 2>&1 || true
-          CGO_ENABLED=0 go build -tags=netgo,stringlabels ./cmd/mimirtool/... 2>&1 || true
-          CGO_ENABLED=0 go build -tags=netgo,stringlabels ./cmd/query-tee/... 2>&1 || true
-          CGO_ENABLED=0 go build -tags=netgo,stringlabels ./cmd/metaconvert/... 2>&1 || true
-          CGO_ENABLED=0 go build -tags=netgo,stringlabels ./tools/copyblocks/... 2>&1 || true
+          # The Makefile compiles for both amd64 and arm64, so we warm both.
+          for arch in amd64 arm64; do
+            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -tags=netgo,stringlabels ./cmd/mimir/... 2>&1 || true
+            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -tags=netgo,stringlabels ./cmd/mimirtool/... 2>&1 || true
+            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -tags=netgo,stringlabels ./cmd/query-tee/... 2>&1 || true
+            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -tags=netgo,stringlabels ./cmd/metaconvert/... 2>&1 || true
+            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -tags=netgo,stringlabels ./tools/copyblocks/... 2>&1 || true
+          done
       - name: Print Go build cache size
         if: steps.check-cache.outputs.cache-hit != 'true'
         run: du -sh /go/cache
