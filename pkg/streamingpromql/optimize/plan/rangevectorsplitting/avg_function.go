@@ -45,7 +45,7 @@ func avgOverTimeGenerate(step *types.RangeVectorStepData, emitAnnotation types.E
 
 	if haveFloats {
 		// To minimize floating-point precision loss, track the sum, count, and compensation.
-		// If a standard sum-based average overflow, switches to incremental calculation.
+		// If a standard sum-based average overflows, switches to incremental calculation.
 		sum, compensation, incrementalAvg, count, useIncrementalAvg := avgFloats(fHead, fTail)
 
 		result.SumF = sum
@@ -59,10 +59,13 @@ func avgOverTimeGenerate(step *types.RangeVectorStepData, emitAnnotation types.E
 		h, err := functions.AvgHistograms(hHead, hTail, emitAnnotation)
 		if err != nil {
 			err = functions.NativeHistogramErrorToAnnotation(err, emitAnnotation)
-		}
-
-		if err != nil {
-			return AvgOverTimeIntermediate{}, err
+			// In case of schema incompatibility, the error was converted to annotation and empty result should be returned
+			// Save the flag to preserve the behavior on combine stage
+			if err == nil {
+				result.ForceEmptyResult = true
+			} else {
+				return AvgOverTimeIntermediate{}, err
+			}
 		}
 
 		if h != nil {
@@ -121,8 +124,14 @@ func avgOverTimeCombine(pieces []AvgOverTimeIntermediate, _ int64, _ int64, emit
 	nhcbBoundsReconciledSeen := false
 
 	for _, p := range pieces {
+		// Check if any piece encountered schema mix condition, return empty result
+		if p.ForceEmptyResult {
+			emitAnnotation(annotations.NewMixedExponentialCustomHistogramsWarning)
+			return 0, false, nil, nil
+		}
+
 		// There are two modes used to combine intermediate pieces depending on whether overflow has been encountered.
-		// In a simple mode accumulates sums and counts across all pieces using Kahan compensated summation to reduce floating-point error,
+		// In a simple mode, it accumulates sums and counts across all pieces using Kahan compensated summation to reduce floating-point error,
 		// then computes the final average at the end.
 		// Incremental mode is used when a partial sum overflows, maintains a running weighted average without forming a combined sum.
 		if p.CountF > 0 {

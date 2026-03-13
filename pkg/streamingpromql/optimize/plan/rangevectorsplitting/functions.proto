@@ -92,6 +92,7 @@ message AvgOverTimeIntermediate {
 
   cortexpb.Histogram avgH = 6;
   int64 cntH = 7;
+  bool forceEmptyResult = 8;
 }
 
 message AvgOverTimeIntermediateList {
