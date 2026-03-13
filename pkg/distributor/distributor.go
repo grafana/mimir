@@ -1376,11 +1376,17 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 			errs.Add(processErr)
 		}
 
+		// Capture labels before sortByAccepted reorders timeseries and mixes rejection types.
+		var tooManyClustersLabels []mimirpb.LabelAdapter
+		if samplesPerState[replicaRejectedTooManyClusters] > 0 {
+			tooManyClustersLabels = findLabelsForRejectedTooManyClusters(replicaInfos, replicas, req)
+		}
+
 		lastAccepted := sortByAccepted(req, replicaInfos, replicas)
 		removeHAReplicaLabels(req, lastAccepted, replicas, replicaInfos, haReplicaLabel)
 
 		// We don't want to send samples beyond the last accepted sample - that was deduplicated
-		d.updateHADedupeMetrics(userID, group, replicaInfos, samplesPerState, req, lastAccepted)
+		d.updateHADedupeMetrics(userID, group, replicaInfos, samplesPerState, tooManyClustersLabels)
 
 		// Free the unaccepted (deduplicated/rejected) timeseries immediately and truncate
 		// the slice so downstream middleware only sees accepted timeseries. We must NOT
@@ -1419,7 +1425,7 @@ func removeHAReplicaLabels(req *mimirpb.WriteRequest, lastAccepted int, replicas
 }
 
 // updateHADedupeMetrics updates metrics related to HA deduplication.
-func (d *Distributor) updateHADedupeMetrics(userID, group string, replicaInfos map[haReplica]*replicaInfo, samplesPerState map[replicaState]int, req *mimirpb.WriteRequest, lastAccepted int) {
+func (d *Distributor) updateHADedupeMetrics(userID, group string, replicaInfos map[haReplica]*replicaInfo, samplesPerState map[replicaState]int, tooManyClustersLabels []mimirpb.LabelAdapter) {
 	for replica, info := range replicaInfos {
 		if info.state.equals(replicaDeduped) && info.sampleCount > 0 {
 			cluster := strings.Clone(replica.cluster) // Make a copy of this, since it may be retained as labels on our metrics
@@ -1430,13 +1436,26 @@ func (d *Distributor) updateHADedupeMetrics(userID, group string, replicaInfos m
 		d.nonHASamples.WithLabelValues(userID).Add(float64(samplesPerState[replicaNotHA]))
 	}
 	if samplesPerState[replicaRejectedTooManyClusters] > 0 {
-		var labels []mimirpb.LabelAdapter
-		if lastAccepted+1 < len(req.Timeseries) {
-			labels = req.Timeseries[lastAccepted+1].Labels
-		}
-		d.costAttributionMgr.SampleTracker(userID).IncrementDiscardedSamples(labels, float64(samplesPerState[replicaRejectedTooManyClusters]), reasonTooManyHAClusters, time.Now())
+		d.costAttributionMgr.SampleTracker(userID).IncrementDiscardedSamples(tooManyClustersLabels, float64(samplesPerState[replicaRejectedTooManyClusters]), reasonTooManyHAClusters, time.Now())
 		d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(samplesPerState[replicaRejectedTooManyClusters]))
 	}
+}
+
+// findLabelsForRejectedTooManyClusters finds labels from a timeseries whose replica was rejected for too many clusters.
+func findLabelsForRejectedTooManyClusters(replicaInfos map[haReplica]*replicaInfo, replicas []haReplica, req *mimirpb.WriteRequest) []mimirpb.LabelAdapter {
+	var rejectedReplica haReplica
+	for replica, info := range replicaInfos {
+		if info.state.equals(replicaRejectedTooManyClusters) {
+			rejectedReplica = replica
+			break
+		}
+	}
+	for i, r := range replicas {
+		if r == rejectedReplica {
+			return req.Timeseries[i].Labels
+		}
+	}
+	return nil
 }
 
 // sortByAccepted returns the index of the last accepted timeseries in the write request based on the ha dedup states of the replicas
