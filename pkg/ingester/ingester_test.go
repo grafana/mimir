@@ -56,6 +56,7 @@ import (
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 	"go.uber.org/atomic"
+	"go.uber.org/goleak"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
@@ -76,6 +77,21 @@ import (
 	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+func TestMain(m *testing.M) {
+	util_test.VerifyNoLeakTestMain(m,
+		// TestIngester_Startup_PartitionRingActiveBlocksOnInstanceRingActive
+		// tests ingester failure on startup, which does not clean up all goroutines.
+		// This goroutine will be detected by other tests running in parallel with VerifyNoLeak.
+		goleak.IgnoreAnyFunction("github.com/grafana/dskit/services.funcBasedListener.Failed"),
+
+		// TestIngester_OpenExistingTSDBOnStartup rollback subtests create corrupt chunks_head
+		// files to trigger a tsdb.Open() failure. Prometheus TSDB internally starts WAL and
+		// chunkWriteQueue goroutines before encountering the error and doesn't clean them up.
+		goleak.IgnoreAnyFunction("github.com/prometheus/prometheus/tsdb/wlog.(*WL).run"),
+		goleak.IgnoreAnyFunction("github.com/prometheus/prometheus/tsdb/chunks.(*chunkWriteQueue).start.func1"),
+	)
+}
 
 func mustNewActiveSeriesCustomTrackersConfigFromMap(t *testing.T, source map[string]string) asmodel.CustomTrackersConfig {
 	m, err := asmodel.NewCustomTrackersConfig(source)
@@ -7160,7 +7176,11 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 				assert.Contains(t, startErr.Error(), testData.expectedErr)
 			}
 
-			defer services.StopAndAwaitTerminated(context.Background(), ingester) //nolint:errcheck
+			t.Cleanup(func() {
+				_ = services.StopAndAwaitTerminated(context.Background(), ingester)
+				ingester.closeAllTSDB()
+				ingester.subservicesWatcher.Close()
+			})
 			testData.check(t, ingester)
 		})
 	}
@@ -7309,7 +7329,11 @@ func TestIngester_closeAndDeleteUserTSDBIfIdle_shouldNotCloseTSDBIfShippingIsInP
 	}))
 
 	// Run blocks shipping in a separate go routine.
-	go i.shipBlocks(ctx, nil)
+	shipDone := make(chan struct{})
+	go func() {
+		defer close(shipDone)
+		i.shipBlocks(ctx, nil)
+	}()
 
 	// Wait until shipping starts.
 	test.Poll(t, 1*time.Second, activeShipping, func() interface{} {
@@ -7319,6 +7343,9 @@ func TestIngester_closeAndDeleteUserTSDBIfIdle_shouldNotCloseTSDBIfShippingIsInP
 	})
 
 	assert.Equal(t, tsdbNotActive, i.closeAndDeleteUserTSDBIfIdle(userID))
+
+	// Wait for shipBlocks goroutine to finish to avoid goroutine leak.
+	<-shipDone
 }
 
 func TestIngester_closingAndOpeningTsdbConcurrently(t *testing.T) {
@@ -7770,6 +7797,9 @@ func TestIngester_flushing(t *testing.T) {
 			i, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
 			require.NoError(t, err)
 			startAndWaitHealthy(t, i, r)
+			t.Cleanup(func() {
+				i.closeAllTSDB()
+			})
 
 			// mock user's shipper
 			tc.action(t, i, reg)
@@ -8791,8 +8821,11 @@ func TestIngester_instanceLimitsMetrics(t *testing.T) {
 		return &l
 	}
 
-	_, _, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
+	ing, _, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		ing.subservicesWatcher.Close()
+	})
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_ingester_instance_limits Instance limits used by this ingester.
@@ -11950,6 +11983,10 @@ func TestIngester_PrepareUnregisterHandler(t *testing.T) {
 
 			test.Poll(t, 1*time.Second, 1, func() interface{} {
 				return healthyInstancesCount(ingester.instanceRing)
+			})
+		} else {
+			t.Cleanup(func() {
+				ingester.subservicesWatcher.Close()
 			})
 		}
 
