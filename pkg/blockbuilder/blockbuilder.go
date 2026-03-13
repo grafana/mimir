@@ -434,20 +434,24 @@ func (b *BlockBuilder) consumePartitionSection(
 		fetchPoller = &fetchWrapper{f}
 	}
 
-	// Prefetch records in a background goroutine so there was next batch at hands
-	// at the beginning of every consumption loop below.
+	// Prefetch records in a background goroutine so the next batch is at hand
+	// at the beginning of every consumption loop iteration below.
+	fetchCtx, fetchCancel := context.WithCancel(ctx)
 	fetches := make(chan kgo.Fetches)
-	defer func() { <-fetches }()
-	go func(ctx context.Context) {
+	defer func() {
+		fetchCancel()
+		<-fetches
+	}()
+	go func() {
 		defer close(fetches)
 		for {
 			select {
-			case fetches <- fetchPoller.PollFetches(ctx):
-			case <-ctx.Done():
+			case fetches <- fetchPoller.PollFetches(fetchCtx):
+			case <-fetchCtx.Done():
 				return
 			}
 		}
-	}(ctx)
+	}()
 
 	level.Info(logger).Log("msg", "start consuming", "partition", partition, "start_offset", startOffset, "end_offset", endOffset)
 
