@@ -146,7 +146,7 @@ jobs:
       - name: Check Helm Tests
         run: make BUILD_IN_CONTAINER=false check-helm-tests
 
-  # Compile integration test binaries once and save the Go build cache, so that the 20
+  # Compile integration test binaries once and save the Go build cache, so that the
   # integration test jobs can reuse it. The cache is keyed by go.sum hash: it's rebuilt only
   # when dependencies change. This means test jobs will still need to compile source files
   # changed since the cache was created, but dependencies (the bulk of compilation time) and
@@ -305,10 +305,57 @@ jobs:
   test-docs:
     uses: ./.github/workflows/test-docs.yml
 
+  # Same as the other warmup jobs but for image builds, which use CGO_ENABLED=0 (no race)
+  # with -tags netgo,stringlabels. The image build jobs share most transitive dependencies.
+  go-build-cache-warmup-image-builds:
+    needs: [prepare]
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+          sparse-checkout: go.sum
+      - name: Check if Go build cache exists
+        id: check-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /go/cache
+          key: go-build-cache-image-${{ hashFiles('go.sum') }}
+          lookup-only: true
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        if: steps.check-cache.outputs.cache-hit != 'true'
+        with:
+          persist-credentials: false
+      - name: Run Git Config
+        if: steps.check-cache.outputs.cache-hit != 'true'
+        run: git config --global --add safe.directory '*'
+      - name: Warm Go build cache
+        if: steps.check-cache.outputs.cache-hit != 'true'
+        run: |
+          # The tags and flags must match what the Makefile uses for image builds (GO_FLAGS
+          # with CGO_ENABLED=0), otherwise the cache entries won't be reused.
+          # We omit -ldflags since they only affect linking, not compilation.
+          CGO_ENABLED=0 go build -tags=netgo,stringlabels ./cmd/mimir/... 2>&1 || true
+          CGO_ENABLED=0 go build -tags=netgo,stringlabels ./cmd/mimirtool/... 2>&1 || true
+          CGO_ENABLED=0 go build -tags=netgo,stringlabels ./cmd/query-tee/... 2>&1 || true
+          CGO_ENABLED=0 go build -tags=netgo,stringlabels ./cmd/metaconvert/... 2>&1 || true
+          CGO_ENABLED=0 go build -tags=netgo,stringlabels ./tools/copyblocks/... 2>&1 || true
+      - name: Print Go build cache size
+        if: steps.check-cache.outputs.cache-hit != 'true'
+        run: du -sh /go/cache
+      - uses: actions/cache/save@v4
+        if: steps.check-cache.outputs.cache-hit != 'true'
+        with:
+          path: /go/cache
+          key: go-build-cache-image-${{ hashFiles('go.sum') }}
+
   build-metaconvert-image:
     runs-on: ubuntu-latest
     needs:
       - prepare
+      - go-build-cache-warmup-image-builds
     container:
       image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
@@ -316,6 +363,11 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
+      - name: Restore Go build cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /go/cache
+          key: go-build-cache-image-${{ hashFiles('go.sum') }}
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -326,6 +378,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - prepare
+      - go-build-cache-warmup-image-builds
     container:
       image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
@@ -333,6 +386,11 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
+      - name: Restore Go build cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /go/cache
+          key: go-build-cache-image-${{ hashFiles('go.sum') }}
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -343,6 +401,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - prepare
+      - go-build-cache-warmup-image-builds
     container:
       image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
@@ -350,6 +409,11 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
+      - name: Restore Go build cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /go/cache
+          key: go-build-cache-image-${{ hashFiles('go.sum') }}
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -360,6 +424,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - prepare
+      - go-build-cache-warmup-image-builds
     container:
       image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
@@ -367,6 +432,11 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
+      - name: Restore Go build cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /go/cache
+          key: go-build-cache-image-${{ hashFiles('go.sum') }}
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -377,6 +447,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - prepare
+      - go-build-cache-warmup-image-builds
     container:
       image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
@@ -384,6 +455,11 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
+      - name: Restore Go build cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /go/cache
+          key: go-build-cache-image-${{ hashFiles('go.sum') }}
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -409,6 +485,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - prepare
+      - go-build-cache-warmup-unit-tests
     container:
       image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
@@ -416,6 +493,12 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
+      # Race-enabled image uses CGO_ENABLED=1 -race -tags=netgo,stringlabels, same as unit tests.
+      - name: Restore Go build cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /go/cache
+          key: go-build-cache-unit-${{ hashFiles('go.sum') }}
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Install Docker Client
