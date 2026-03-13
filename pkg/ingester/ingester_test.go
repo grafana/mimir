@@ -66,6 +66,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/chunk"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -12413,4 +12414,75 @@ func makeTestRW2WriteRequest(syms *rw2util.SymbolTableBuilder) *mimirpb.WriteReq
 	req.SymbolsRW2 = syms.GetSymbols()
 
 	return req
+}
+
+func TestActiveSeriesNow(t *testing.T) {
+	t.Run("returns wall clock when ingest storage disabled", func(t *testing.T) {
+		i := &Ingester{}
+		i.cfg.IngestStorageConfig.Enabled = false
+
+		before := time.Now()
+		got := i.activeSeriesNow()
+		after := time.Now()
+
+		assert.False(t, got.Before(before))
+		assert.False(t, got.After(after))
+	})
+
+	t.Run("returns wall clock when ingest storage enabled but no timestamp set", func(t *testing.T) {
+		i := &Ingester{}
+		i.cfg.IngestStorageConfig.Enabled = true
+
+		before := time.Now()
+		got := i.activeSeriesNow()
+		after := time.Now()
+
+		assert.False(t, got.Before(before))
+		assert.False(t, got.After(after))
+	})
+
+	t.Run("returns Kafka timestamp when ingest storage enabled and timestamp set", func(t *testing.T) {
+		i := &Ingester{}
+		i.cfg.IngestStorageConfig.Enabled = true
+
+		kafkaTs := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+		i.latestKafkaRecordTimestamp.Store(kafkaTs.UnixMilli())
+
+		got := i.activeSeriesNow()
+		assert.Equal(t, kafkaTs.UnixMilli(), got.UnixMilli())
+	})
+}
+
+func TestKafkaTimestampPropagation(t *testing.T) {
+	cfg := defaultIngesterTestConfig(t)
+	cfg.ActiveSeriesMetrics.Enabled = true
+
+	i, _, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
+
+	kafkaTs := time.Now().Add(-5 * time.Minute)
+	ctx := user.InjectOrgID(context.Background(), userID)
+	ctx = ingest.ContextWithRecordTimestamp(ctx, kafkaTs)
+
+	req := mockWriteRequest(t, labels.FromStrings(model.MetricNameLabel, "test_metric"), 1, time.Now().UnixMilli())
+
+	err = i.PushWithCleanup(ctx, req, func() {})
+	require.NoError(t, err)
+
+	// Verify latestKafkaRecordTimestamp was updated.
+	assert.Equal(t, kafkaTs.UnixMilli(), i.latestKafkaRecordTimestamp.Load())
+
+	// Verify activeSeriesNow falls back to wall clock since ingest storage is disabled.
+	before := time.Now()
+	got := i.activeSeriesNow()
+	after := time.Now()
+	assert.False(t, got.Before(before))
+	assert.False(t, got.After(after))
+
+	// Enable ingest storage config to test activeSeriesNow uses the stored Kafka timestamp.
+	i.cfg.IngestStorageConfig.Enabled = true
+	got = i.activeSeriesNow()
+	assert.Equal(t, kafkaTs.UnixMilli(), got.UnixMilli())
 }
