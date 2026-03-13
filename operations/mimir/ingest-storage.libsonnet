@@ -90,7 +90,7 @@
   ingest_storage_kafka_ingestion_args:: {
     local estimated_bytes_per_sample = if $._config.ingest_storage_kafka_producer_record_version == 2 then 200 else 500,
 
-    'ingest-storage.kafka.fetch-concurrency-max': '12',
+    'ingest-storage.kafka.fetch-concurrency-max': 12,
     'ingest-storage.kafka.ingestion-concurrency-batch-size': 150,
     'ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample': estimated_bytes_per_sample,
     'ingest-storage.kafka.ingestion-concurrency-queue-capacity': 3,
