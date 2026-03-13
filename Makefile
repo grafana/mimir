@@ -801,11 +801,13 @@ warmup-build-cache-unit-tests: ## Warm the Go build cache for unit tests.
 	go test -run=^$ -count=1 -tags=$(GO_TAGS) -race ./cmd/mimir/... 2>&1 || true
 	go test -run=^$ -count=1 -tags=$(GO_TAGS),nopools -race ./cmd/mimir/... 2>&1 || true
 
+IMAGE_EXES := $(foreach dir,$(DOCKER_IMAGE_DIRS),$(wildcard $(dir)/main.go))
 warmup-build-cache-image-builds: ## Warm the Go build cache for image builds.
 	@for arch in amd64 arm64; do \
-		for exe in $(EXES); do \
-			echo "Warming cache: GOARCH=$$arch $$(dirname $$exe)/..."; \
-			CGO_ENABLED=0 GOOS=linux GOARCH=$$arch go build $(GO_FLAGS) ./$$(dirname $$exe)/... 2>&1 || true; \
+		for main in $(IMAGE_EXES); do \
+			dir=$$(dirname $$main); \
+			echo "Warming cache: GOARCH=$$arch $$dir/..."; \
+			CGO_ENABLED=0 GOOS=linux GOARCH=$$arch go build $(GO_FLAGS) ./$$dir/... 2>&1 || true; \
 		done; \
 	done
 
