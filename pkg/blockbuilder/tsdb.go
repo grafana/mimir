@@ -3,13 +3,13 @@
 package blockbuilder
 
 import (
-	"container/heap"
 	"context"
 	"errors"
 	"fmt"
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -377,7 +377,7 @@ func (b *TSDBBuilder) NotifyPreCommit(_ context.Context) error {
 	return nil
 }
 
-func (b *TSDBBuilder) CompactToReduceInMemorySeries(ctx context.Context, now time.Time) error {
+func (b *TSDBBuilder) CompactToReduceInMemorySeries(ctx context.Context) error {
 	if b.cfg.BlocksStorage.TSDB.EarlyHeadCompactionMinInMemorySeries <= 0 {
 		return nil
 	}
@@ -403,22 +403,29 @@ func (b *TSDBBuilder) CompactToReduceInMemorySeries(ctx context.Context, now tim
 		return nil
 	}
 
-	// Estimate series reduction opportunity for each tenant.
-	ests := make(seriesReductionEstimations, 0, len(b.tsdbs))
+	// Sort tenants by series count descending to compact the largest ones first.
+	ests := make([]seriesReductionEstimation, 0, len(b.tsdbs))
 	for tenant, db := range b.tsdbs {
 		numSeries := db.Head().NumSeries()
 		if numSeries == 0 {
 			continue
 		}
-
-		est := seriesReductionEstimation{
+		ests = append(ests, seriesReductionEstimation{
 			tenant:     tenant,
 			estimation: numSeries,
-		}
-		heap.Push(&ests, est)
+		})
 	}
+	slices.SortFunc(ests, func(a, b seriesReductionEstimation) int {
+		if a.estimation > b.estimation {
+			return -1
+		}
+		if a.estimation < b.estimation {
+			return 1
+		}
+		return 0
+	})
 
-	for ests.Len() > 0 {
+	for _, est := range ests {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -428,7 +435,6 @@ func (b *TSDBBuilder) CompactToReduceInMemorySeries(ctx context.Context, now tim
 			break
 		}
 
-		est := heap.Pop(&ests).(seriesReductionEstimation)
 		db := b.tsdbs[est.tenant]
 
 		maxTime := max(db.Head().MaxTime(), db.Head().MaxOOOTime())
@@ -458,25 +464,6 @@ func (b *TSDBBuilder) CompactToReduceInMemorySeries(ctx context.Context, now tim
 type seriesReductionEstimation struct {
 	tenant     tsdbTenant
 	estimation uint64
-}
-
-// seriesReductionEstimations implements heap.Interface.
-type seriesReductionEstimations []seriesReductionEstimation
-
-func (s seriesReductionEstimations) Len() int           { return len(s) }
-func (s seriesReductionEstimations) Less(i, j int) bool { return s[i].estimation > s[j].estimation } // heap is sorted in descending order by estimation
-func (s seriesReductionEstimations) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
-
-func (s *seriesReductionEstimations) Push(x any) {
-	*s = append(*s, x.(seriesReductionEstimation))
-}
-
-func (s *seriesReductionEstimations) Pop() any {
-	old := *s
-	n := len(old)
-	item := old[n-1]
-	*s = old[0 : n-1]
-	return item
 }
 
 // Function to upload the blocks.

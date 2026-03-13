@@ -460,7 +460,7 @@ func (b *BlockBuilder) consumePartitionSection(
 
 		// Early head compaction is a safety net to try reducing number of in-memory series across all tenants.
 		// For the majority of cases it's a noop.
-		err := builder.CompactToReduceInMemorySeries(ctx, time.Now())
+		err := builder.CompactToReduceInMemorySeries(ctx)
 		if err != nil {
 			level.Error(logger).Log("msg", "failed to run early head compaction", "err", err)
 		}
