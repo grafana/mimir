@@ -769,6 +769,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 			}
 		}
 		group := d.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(d.limits, userID, req.Timeseries), time.Now())
+		tooManyClustersGroup := group
 		numSamples := 0
 		for _, ts := range req.Timeseries {
 			numSamples += len(ts.Samples) + len(ts.Histograms)
@@ -817,6 +818,9 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 			}
 			samplesPerState[state] += numSamples
 		}
+		if samplesPerState[replicaRejectedTooManyClusters] > 0 {
+			tooManyClustersGroup = groupForState(userID, req, replicaStates, getReplicaForSample, replicaRejectedTooManyClusters, d.limits, group)
+		}
 		lastAccepted := sortByAccepted(req, replicaStates, getReplicaForSample)
 		var getReplicaState func(haReplica) replicaState
 		if isOneReplica {
@@ -857,18 +861,24 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 				d.nonHASamples.WithLabelValues(userID).Add(float64(samplesPerState[replicaNotHA]))
 			}
 			if samplesPerState[replicaRejectedTooManyClusters] > 0 {
-				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(samplesPerState[replicaRejectedTooManyClusters]))
+				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, tooManyClustersGroup).Add(float64(samplesPerState[replicaRejectedTooManyClusters]))
 			}
 		}
 
 		var resp *mimirpb.WriteResponse
+		var pushErr error
 		if len(req.Timeseries) > 0 {
 			cleanupInDefer = false
-			resp, err = next(ctx, pushReq)
+			resp, pushErr = next(ctx, pushReq)
 		}
-		errs.Add(err)
+		errs.Add(pushErr)
+		if pushErr != nil {
+			return nil, pushErr
+		}
 
-		if samplesPerState[replicaDeduped] > 0 {
+		if samplesPerState[replicaRejectedTooManyClusters] > 0 {
+			return nil, httpgrpc.Errorf(http.StatusBadRequest, errs.Err().Error())
+		} else if samplesPerState[replicaDeduped] > 0 {
 			return nil, httpgrpc.Errorf(http.StatusAccepted, errs.Err().Error())
 		} else if len(errs) > 0 {
 			return nil, httpgrpc.Errorf(http.StatusBadRequest, errs.Err().Error()) // ermmm?
@@ -924,6 +934,16 @@ func sortByAccepted(req *mimirpb.WriteRequest, replicaStates map[haReplica]repli
 	}
 
 	return lastAccepted
+}
+
+func groupForState(userID string, req *mimirpb.WriteRequest, replicaStates map[haReplica]replicaState, getReplicaForSample func(int) haReplica, state replicaState, limits *validation.Overrides, fallback string) string {
+	for i := range req.Timeseries {
+		if replicaStates[getReplicaForSample(i)]&state != 0 {
+			return validation.GroupLabel(limits, userID, req.Timeseries[i:i+1])
+		}
+	}
+
+	return fallback
 }
 
 func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {

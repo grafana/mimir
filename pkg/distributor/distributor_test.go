@@ -54,6 +54,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/push"
@@ -2866,6 +2867,129 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			assert.Equal(t, tc.expectedNextCalls, nextCallCount)
 		})
 	}
+}
+
+func TestHaDedupeMiddleware_DedupDoesNotMaskPushError(t *testing.T) {
+	const (
+		userID   = "user"
+		replica1 = "replicaA"
+		replica2 = "replicaB"
+		cluster1 = "clusterA"
+	)
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+	requestForReplica := func(replica string) *mimirpb.WriteRequest {
+		return makeWriteRequestForGenerators(1, labelSetGenWithReplicaAndCluster(replica, cluster1), nil, nil)
+	}
+
+	nextCalls := 0
+	pushErr := httpgrpc.Errorf(http.StatusServiceUnavailable, "ingester unavailable")
+	next := func(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
+		nextCalls++
+		defer pushReq.CleanUp()
+
+		if nextCalls == 2 {
+			return nil, pushErr
+		}
+
+		return nil, nil
+	}
+
+	var limits validation.Limits
+	flagext.DefaultValues(&limits)
+	limits.AcceptHASamples = true
+	limits.MaxLabelValueLength = 15
+	limits.HAMaxClusters = 100
+
+	ds, _, _ := prepare(t, prepConfig{
+		numDistributors: 1,
+		limits:          &limits,
+		enableTracker:   true,
+	})
+	ds[0].activeGroups = util.NewActiveGroupsCleanupService(time.Minute, time.Hour, 100, ds[0].RemoveGroupMetricsForUser)
+	middleware := ds[0].prePushHaDedupeMiddleware(next)
+
+	_, err := middleware(ctx, push.NewParsedRequest(requestForReplica(replica1)))
+	require.NoError(t, err)
+
+	mixedReq := requestForReplica(replica1)
+	mixedReq.Timeseries = append(mixedReq.Timeseries, requestForReplica(replica2).Timeseries...)
+
+	_, err = middleware(ctx, push.NewParsedRequest(mixedReq))
+	require.Error(t, err)
+	resp, ok := httpgrpc.HTTPResponseFromError(err)
+	require.True(t, ok)
+	assert.Equal(t, http.StatusServiceUnavailable, int(resp.Code))
+	assert.Equal(t, 2, nextCalls)
+}
+
+func TestHaDedupeMiddleware_MixedRejectionsReturnBadRequestAndUseTooManyClustersGroup(t *testing.T) {
+	const (
+		userID         = "user"
+		replica1       = "replicaA"
+		replica2       = "replicaB"
+		cluster1       = "clusterA"
+		cluster2       = "clusterB"
+		dedupGroup     = "dedup-group"
+		tooManyGroup   = "too-many-group"
+		primaryGroup   = "primary-group"
+		requestsToTest = 20
+	)
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+	requestForReplicaClusterGroup := func(replica, cluster, group string) *mimirpb.WriteRequest {
+		return makeWriteRequestForGenerators(1, func(int) []mimirpb.LabelAdapter {
+			return []mimirpb.LabelAdapter{
+				{Name: "__name__", Value: "foo"},
+				{Name: "__replica__", Value: replica},
+				{Name: "bar", Value: "baz"},
+				{Name: "cluster", Value: cluster},
+				{Name: "group", Value: group},
+				{Name: "sample", Value: "0"},
+			}
+		}, nil, nil)
+	}
+
+	nextCalls := 0
+	next := func(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
+		nextCalls++
+		pushReq.CleanUp()
+		return nil, nil
+	}
+
+	var limits validation.Limits
+	flagext.DefaultValues(&limits)
+	limits.AcceptHASamples = true
+	limits.MaxLabelValueLength = 15
+	limits.HAMaxClusters = 1
+	limits.SeparateMetricsGroupLabel = "group"
+
+	ds, _, _ := prepare(t, prepConfig{
+		numDistributors: 1,
+		limits:          &limits,
+		enableTracker:   true,
+	})
+	ds[0].activeGroups = util.NewActiveGroupsCleanupService(time.Minute, time.Hour, 100, ds[0].RemoveGroupMetricsForUser)
+	middleware := ds[0].prePushHaDedupeMiddleware(next)
+
+	_, err := middleware(ctx, push.NewParsedRequest(requestForReplicaClusterGroup(replica1, cluster1, primaryGroup)))
+	require.NoError(t, err)
+
+	for i := 0; i < requestsToTest; i++ {
+		mixedReq := requestForReplicaClusterGroup(replica2, cluster1, dedupGroup)
+		mixedReq.Timeseries = append(mixedReq.Timeseries, requestForReplicaClusterGroup(replica1, cluster2, tooManyGroup).Timeseries...)
+
+		_, err = middleware(ctx, push.NewParsedRequest(mixedReq))
+		require.Error(t, err)
+
+		resp, ok := httpgrpc.HTTPResponseFromError(err)
+		require.True(t, ok)
+		assert.Equal(t, http.StatusBadRequest, int(resp.Code))
+	}
+
+	assert.Equal(t, 1, nextCalls)
+	assert.Equal(t, float64(requestsToTest), testutil.ToFloat64(ds[0].discardedSamplesTooManyHaClusters.WithLabelValues(userID, tooManyGroup)))
+	assert.Equal(t, float64(0), testutil.ToFloat64(ds[0].discardedSamplesTooManyHaClusters.WithLabelValues(userID, dedupGroup)))
 }
 
 func TestInstanceLimitsBeforeHaDedupe(t *testing.T) {
