@@ -317,8 +317,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		// Must be the same as in blocksToCompactDirs.
 		bdir := filepath.Join(subDir, meta.ULID.String())
 
-		// Download the block directory, using the metadata we already have to avoid re-downloading meta.json
-		if err := block.Download(ctx, jobLogger, c.bkt, meta.ULID, bdir, meta); err != nil {
+		if err := block.Download(ctx, jobLogger, c.bkt, meta.ULID, bdir); err != nil {
 			return fmt.Errorf("download block %s: %w", meta.ULID, err)
 		}
 
@@ -707,7 +706,7 @@ func repairIssue347(ctx context.Context, logger log.Logger, bkt objstore.Bucket,
 	}()
 
 	bdir := filepath.Join(tmpdir, ie.id.String())
-	if err := block.Download(ctx, logger, bkt, ie.id, bdir, nil); err != nil {
+	if err := block.Download(ctx, logger, bkt, ie.id, bdir); err != nil {
 		return fmt.Errorf("download block %s: %w", ie.id, err)
 	}
 
