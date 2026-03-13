@@ -102,7 +102,7 @@ type SchedulerClientConfig struct {
 func (cfg *SchedulerClientConfig) RegisterFlags(f *flag.FlagSet) {
 	flagPrefix := "compactor.scheduler-client."
 	f.BoolVar(&cfg.Enabled, flagPrefix+"enabled", false, "Controls whether compactors should contact a scheduler to request work.")
-	f.StringVar(&cfg.SchedulerEndpoint, flagPrefix+"endpoint", "", "Compactor scheduler endpoint.")
+	f.StringVar(&cfg.SchedulerEndpoint, flagPrefix+"scheduler-endpoint", "", "Compactor scheduler endpoint.")
 	f.DurationVar(&cfg.UpdateInterval, flagPrefix+"update-interval", 15*time.Second, "Interval between scheduler job lease updates.")
 	f.DurationVar(&cfg.LeasingMinBackoff, flagPrefix+"leasing-min-backoff", 100*time.Millisecond, "Minimum backoff time between scheduler job lease requests.")
 	f.DurationVar(&cfg.LeasingMaxBackoff, flagPrefix+"leasing-max-backoff", 2*time.Minute, "Maximum backoff time between scheduler job lease requests.")
