@@ -247,6 +247,18 @@ blocked_queries:
 			expectedBlockedInstant: false,
 		},
 		{
+			name: "literal pattern with regex metacharacters and regex: true should match literally",
+			limitsYAML: `
+blocked_queries:
+  - pattern: "rate(metric_counter[5m])"
+    regex: true
+    reason: "literal pattern accidentally marked as regex"
+`,
+			query:                  "rate(metric_counter[5m])",
+			expectedBlockedRange:   true,
+			expectedBlockedInstant: true,
+		},
+		{
 			name: "time range longer than threshold",
 			limitsYAML: `
 blocked_queries:
