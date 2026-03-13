@@ -92,7 +92,7 @@ func TestBucketBlock_matchLabels(t *testing.T) {
 		},
 	}
 
-	b, err := newBucketBlock(context.Background(), "test", log.NewNopLogger(), NewBucketStoreMetrics(nil), meta, bkt, path.Join(dir, blockID.String()), nil, nil, blockPartitioners{})
+	b, err := newBucketBlock(context.Background(), "test", log.NewNopLogger(), NewBucketStoreMetrics(nil), meta, bkt, path.Join(dir, blockID.String()), nil, nil, nil, blockPartitioners{})
 	assert.NoError(t, err)
 
 	cases := []struct {
@@ -1086,6 +1086,7 @@ func testBlockToBucketBlock(tb testing.TB, testBlock *fixtures.BucketTestBlock) 
 			logger:            log.NewNopLogger(),
 			metrics:           NewBucketStoreMetrics(nil),
 			indexHeaderReader: indexReader,
+			indexHeaderCache:  indexcache.NoopHeaderCache{},
 			indexCache:        noopCache{},
 			chunkObjs:         chunkObjects,
 			bkt:               testBlock.InstrBkt,
@@ -1713,13 +1714,14 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		assert.NoError(t, err)
 
 		b1 = &bucketBlock{
-			indexCache:   indexCache,
-			logger:       logger,
-			metrics:      NewBucketStoreMetrics(nil),
-			bkt:          bkt,
-			meta:         meta,
-			partitioners: newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
-			chunkObjs:    []string{filepath.Join(id.String(), "chunks", "000001")},
+			indexCache:       indexCache,
+			indexHeaderCache: indexcache.NoopHeaderCache{},
+			logger:           logger,
+			metrics:          NewBucketStoreMetrics(nil),
+			bkt:              bkt,
+			meta:             meta,
+			partitioners:     newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+			chunkObjs:        []string{filepath.Join(id.String(), "chunks", "000001")},
 		}
 		b1.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b1.meta.ULID, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.NewStreamBinaryReaderMetrics(nil), indexheader.Config{})
 		assert.NoError(t, err)
@@ -1752,13 +1754,14 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		assert.NoError(t, err)
 
 		b2 = &bucketBlock{
-			indexCache:   indexCache,
-			logger:       logger,
-			metrics:      NewBucketStoreMetrics(nil),
-			bkt:          bkt,
-			meta:         meta,
-			partitioners: newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
-			chunkObjs:    []string{filepath.Join(id.String(), "chunks", "000001")},
+			indexCache:       indexCache,
+			indexHeaderCache: indexcache.NoopHeaderCache{},
+			logger:           logger,
+			metrics:          NewBucketStoreMetrics(nil),
+			bkt:              bkt,
+			meta:             meta,
+			partitioners:     newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+			chunkObjs:        []string{filepath.Join(id.String(), "chunks", "000001")},
 		}
 		b2.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b2.meta.ULID, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.NewStreamBinaryReaderMetrics(nil), indexheader.Config{})
 		assert.NoError(t, err)

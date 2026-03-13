@@ -122,11 +122,13 @@ var (
 
 type BucketReaderConfig struct {
 	Enabled             bool    `yaml:"enabled" category:"experimental"`
+	CacheEnabled        bool    `yaml:"cache_enabled" category:"experimental"`
 	BucketIndexSections Section `yaml:"index_sections"  category:"experimental"`
 }
 
 func (cfg *BucketReaderConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, "Enable reading TSDB index-header sections from object storage. When enabled, the configured -blocks-storage.bucket-store.index-header.bucket-reader.index-sections are not downloaded to local disk.")
+	f.BoolVar(&cfg.CacheEnabled, prefix+"cache-enabled", false, "Enable caching resolved postings offsets using the index-header cache backend and config")
 	f.StringVar((*string)(&cfg.BucketIndexSections), prefix+"index-sections", string(SectionAll), fmt.Sprintf("Index sections to read from object storage instead of local disk. Valid sections: %s", SectionAll))
 }
 

@@ -123,23 +123,37 @@ type IndexCache interface {
 }
 
 // NewIndexCache creates a new index cache based on the input configuration.
-func NewIndexCache(cfg IndexCacheConfig, logger log.Logger, registerer prometheus.Registerer) (IndexCache, error) {
+func NewIndexCache(
+	cfg IndexCacheConfig, logger log.Logger, registerer prometheus.Registerer,
+) (IndexCache, PostingsOffsetTableCache, error) {
 	switch cfg.Backend {
 	case BackendInMemory:
-		return NewInMemoryIndexCacheWithConfig(cfg.InMemory, registerer, logger)
+		indexCache, err := NewInMemoryIndexCacheWithConfig(cfg.InMemory, registerer, logger)
+		if err != nil {
+			return nil, nil, err
+		}
+		headerCache, err := NewInMemoryPostingsOffsetTableCacheWithConfig(cfg.InMemory, logger)
+		if err != nil {
+			return nil, nil, err
+		}
+		return indexCache, headerCache, nil
 	case BackendMemcached:
-		return newMemcachedIndexCache(cfg.Memcached, logger, registerer)
+		client, err := cache.NewMemcachedClientWithConfig(logger, "index-cache", cfg.Memcached, prometheus.WrapRegistererWithPrefix("thanos_", registerer))
+		if err != nil {
+			return nil, nil, errors.Wrap(err, "create index cache memcached client")
+		}
+		indexCache, err := newMemcachedIndexCache(client, logger, registerer)
+		if err != nil {
+			return nil, nil, err
+		}
+		headerCache := NewRemotePostingsOffsetTableCache(client, logger)
+		return indexCache, headerCache, nil
 	default:
-		return nil, errUnsupportedIndexCacheBackend
+		return nil, nil, errUnsupportedIndexCacheBackend
 	}
 }
 
-func newMemcachedIndexCache(cfg cache.MemcachedClientConfig, logger log.Logger, registerer prometheus.Registerer) (IndexCache, error) {
-	client, err := cache.NewMemcachedClientWithConfig(logger, "index-cache", cfg, prometheus.WrapRegistererWithPrefix("thanos_", registerer))
-	if err != nil {
-		return nil, errors.Wrap(err, "create index cache memcached client")
-	}
-
+func newMemcachedIndexCache(client *cache.MemcachedClient, logger log.Logger, registerer prometheus.Registerer) (IndexCache, error) {
 	c, err := NewRemoteIndexCache(logger, client, registerer)
 	if err != nil {
 		return nil, errors.Wrap(err, "create memcached-based index cache")

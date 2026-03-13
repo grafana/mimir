@@ -1,0 +1,399 @@
+goroutine profile: total 248
+100 @ 0x8ecb0 0x22ba8 0x22764 0x616638 0x974e4
+#	0x616637	google.golang.org/grpc.(*Server).serverWorker+0x57	/__w/backend-enterprise/backend-enterprise/vendor/google.golang.org/grpc/server.go:664
+
+27 @ 0x8ecb0 0x6c81c 0x887b00 0x974e4
+#	0x887aff	github.com/grafana/dskit/services.(*BasicService).AddListener.func2+0xaf	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/basic_service.go:355
+
+16 @ 0x8ecb0 0x6c81c 0x9a3c94 0x974e4
+#	0x9a3c93	github.com/grafana/dskit/kv/memberlist.(*KV).processValueUpdate+0x93	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/kv/memberlist/memberlist_client.go:1424
+
+12 @ 0x8ecb0 0x6c81c 0x8871fc 0x88715c 0x2466080 0x886828 0x974e4
+#	0x8871fb	github.com/grafana/dskit/services.(*BasicService).awaitState+0x6b	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/basic_service.go:297
+#	0x88715b	github.com/grafana/dskit/services.(*BasicService).AwaitTerminated+0x2b	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/basic_service.go:293
+#	0x246607f	github.com/grafana/dskit/modules.(*moduleService).run+0x2f		/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/modules/module_service.go:100
+#	0x886827	github.com/grafana/dskit/services.(*BasicService).main+0x147		/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/basic_service.go:193
+
+11 @ 0x8ecb0 0x22ba8 0x22764 0x1f69964 0x974e4
+#	0x1f69963	github.com/grafana/mimir/pkg/storage/ingest.(*ConcurrentFetchers).run+0x113	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/mimir/pkg/storage/ingest/fetcher.go:691
+
+11 @ 0x8ecb0 0x51990 0x8dea0 0xf7638 0xf8850 0xf8841 0x1bf228 0x1cf2d4 0x40b680 0x16fd50 0x16fe98 0x410174 0x974e4
+#	0x8de9f		internal/poll.runtime_pollWait+0x9f		$GOROOT/src/runtime/netpoll.go:351
+#	0xf7637		internal/poll.(*pollDesc).wait+0x27		$GOROOT/src/internal/poll/fd_poll_runtime.go:84
+#	0xf884f		internal/poll.(*pollDesc).waitRead+0x1df	$GOROOT/src/internal/poll/fd_poll_runtime.go:89
+#	0xf8840		internal/poll.(*FD).Read+0x1d0			$GOROOT/src/internal/poll/fd_unix.go:165
+#	0x1bf227	net.(*netFD).Read+0x27				$GOROOT/src/net/fd_posix.go:68
+#	0x1cf2d3	net.(*conn).Read+0x33				$GOROOT/src/net/net.go:196
+#	0x40b67f	net/http.(*connReader).Read+0x22f		$GOROOT/src/net/http/server.go:812
+#	0x16fd4f	bufio.(*Reader).fill+0xdf			$GOROOT/src/bufio/bufio.go:113
+#	0x16fe97	bufio.(*Reader).Peek+0x57			$GOROOT/src/bufio/bufio.go:152
+#	0x410173	net/http.(*conn).serve+0x653			$GOROOT/src/net/http/server.go:2145
+
+5 @ 0x8ecb0 0x22ba8 0x22764 0x9ad268 0x974e4
+#	0x9ad267	github.com/grafana/dskit/kv/memberlist.(*TCPTransport).writeWorker+0x77	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/kv/memberlist/tcp_transport.go:495
+
+2 @ 0x8ecb0 0x51990 0x8dea0 0xf7638 0xf8850 0xf8841 0x1bf228 0x1cf2d4 0x40b0b8 0x974e4
+#	0x8de9f		internal/poll.runtime_pollWait+0x9f		$GOROOT/src/runtime/netpoll.go:351
+#	0xf7637		internal/poll.(*pollDesc).wait+0x27		$GOROOT/src/internal/poll/fd_poll_runtime.go:84
+#	0xf884f		internal/poll.(*pollDesc).waitRead+0x1df	$GOROOT/src/internal/poll/fd_poll_runtime.go:89
+#	0xf8840		internal/poll.(*FD).Read+0x1d0			$GOROOT/src/internal/poll/fd_unix.go:165
+#	0x1bf227	net.(*netFD).Read+0x27				$GOROOT/src/net/fd_posix.go:68
+#	0x1cf2d3	net.(*conn).Read+0x33				$GOROOT/src/net/net.go:196
+#	0x40b0b7	net/http.(*connReader).backgroundRead+0x37	$GOROOT/src/net/http/server.go:702
+
+2 @ 0x8ecb0 0x6c81c 0x1f84b6c 0x886828 0x974e4
+#	0x1f84b6b	github.com/grafana/mimir/pkg/storage/ingest.NewGenericOffsetReader[...].NewTimerService.func4+0xab	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/services.go:31
+#	0x886827	github.com/grafana/dskit/services.(*BasicService).main+0x147						/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/basic_service.go:193
+
+2 @ 0x8ecb0 0x6c81c 0x978438 0x974e4
+#	0x978437	github.com/hashicorp/memberlist.(*Memberlist).triggerFunc+0xc7	/__w/backend-enterprise/backend-enterprise/vendor/github.com/hashicorp/memberlist/state.go:173
+
+1 @ 0x28a74 0x91420 0x8ba2dc 0x974e4
+#	0x9141f		os/signal.signal_recv+0x2f	$GOROOT/src/runtime/sigqueue.go:152
+#	0x8ba2db	os/signal.loop+0x1b		$GOROOT/src/os/signal/signal_unix.go:23
+
+1 @ 0x4dc9c 0x8da44 0x4e28e4 0x4e2710 0x4dfe84 0xa0a944 0xa0b1f0 0x411c58 0x4136f0 0x8b217c 0x9ecdf8 0x411c58 0x2b7698c 0x411c58 0x9f700c 0x9c4c60 0x9c4ac0 0x9f6c9c 0x411c58 0x9f73ec 0x411c58 0x9ee410 0x411c58 0x9e53a4 0x9e403c 0x411c58 0x9f8f3c 0x411c58 0x42f0c0 0x410048 0x974e4
+# labels: {"span_name":"HTTP GET - debug_pprof"}
+#	0x4e28e3	runtime/pprof.writeRuntimeProfile+0xb3											$GOROOT/src/runtime/pprof/pprof.go:788
+#	0x4e270f	runtime/pprof.writeGoroutine+0x4f											$GOROOT/src/runtime/pprof/pprof.go:747
+#	0x4dfe83	runtime/pprof.(*Profile).WriteTo+0x143											$GOROOT/src/runtime/pprof/pprof.go:371
+#	0xa0a943	net/http/pprof.handler.ServeHTTP+0x413											$GOROOT/src/net/http/pprof/pprof.go:272
+#	0xa0b1ef	net/http/pprof.Index+0xbf												$GOROOT/src/net/http/pprof/pprof.go:389
+#	0x411c57	net/http.HandlerFunc.ServeHTTP+0x37											$GOROOT/src/net/http/server.go:2322
+#	0x4136ef	net/http.(*ServeMux).ServeHTTP+0x18f											$GOROOT/src/net/http/server.go:2861
+#	0x8b217b	github.com/gorilla/mux.(*Router).ServeHTTP+0x18b									/__w/backend-enterprise/backend-enterprise/vendor/github.com/gorilla/mux/mux.go:212
+#	0x9ecdf7	github.com/grafana/dskit/middleware.ClusterValidationMiddleware.func1.1+0x1b7						/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/middleware/http_cluster.go:130
+#	0x411c57	net/http.HandlerFunc.ServeHTTP+0x37											$GOROOT/src/net/http/server.go:2322
+#	0x2b7698b	github.com/grafana/backend-enterprise/pkg/enterprise/mimir/init.(*MimirEnterprise).initGEMResponseHeader.func1.1+0x13b	/__w/backend-enterprise/backend-enterprise/pkg/enterprise/mimir/init/added_modules.go:1174
+#	0x411c57	net/http.HandlerFunc.ServeHTTP+0x37											$GOROOT/src/net/http/server.go:2322
+#	0x9f700b	github.com/grafana/dskit/middleware.(*Instrument).Wrap.Instrument.Wrap.func1.2+0x3b					/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/middleware/instrument.go:99
+#	0x9c4c5f	github.com/felixge/httpsnoop.(*Metrics).CaptureMetrics+0x15f								/__w/backend-enterprise/backend-enterprise/vendor/github.com/felixge/httpsnoop/capture_metrics.go:84
+#	0x9c4abf	github.com/felixge/httpsnoop.CaptureMetricsFn+0x4f									/__w/backend-enterprise/backend-enterprise/vendor/github.com/felixge/httpsnoop/capture_metrics.go:39
+#	0x9f6c9b	github.com/grafana/dskit/middleware.(*Instrument).Wrap.Instrument.Wrap.func1+0x1ab					/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/middleware/instrument.go:98
+#	0x411c57	net/http.HandlerFunc.ServeHTTP+0x37											$GOROOT/src/net/http/server.go:2322
+#	0x9f73eb	github.com/grafana/dskit/middleware.(*Log).Wrap.Log.Wrap.func1+0x1db							/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/middleware/logging.go:92
+#	0x411c57	net/http.HandlerFunc.ServeHTTP+0x37											$GOROOT/src/net/http/server.go:2322
+#	0x9ee40f	github.com/grafana/dskit/middleware.Tracer.wrapWithOTel.func1+0x63f							/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/middleware/http_tracing.go:152
+#	0x411c57	net/http.HandlerFunc.ServeHTTP+0x37											$GOROOT/src/net/http/server.go:2322
+#	0x9e53a3	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp.(*middleware).serveHTTP+0xf23				/__w/backend-enterprise/backend-enterprise/vendor/go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp/handler.go:178
+#	0x9e403b	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp.NewMiddleware.func1.1+0x3b				/__w/backend-enterprise/backend-enterprise/vendor/go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp/handler.go:66
+#	0x411c57	net/http.HandlerFunc.ServeHTTP+0x37											$GOROOT/src/net/http/server.go:2322
+#	0x9f8f3b	github.com/grafana/dskit/middleware.(*RouteInjector).Wrap.RouteInjector.Wrap.func1+0x6b					/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/middleware/route_injector.go:24
+#	0x411c57	net/http.HandlerFunc.ServeHTTP+0x37											$GOROOT/src/net/http/server.go:2322
+#	0x42f0bf	net/http.serverHandler.ServeHTTP+0xaf											$GOROOT/src/net/http/server.go:3340
+#	0x410047	net/http.(*conn).serve+0x527												$GOROOT/src/net/http/server.go:2109
+
+1 @ 0x8ecb0 0x21c94 0x218e8 0x887f1c 0x88b860 0x886bc4 0x887ac4 0x974e4
+#	0x887f1b	github.com/grafana/dskit/services.(*FailureWatcher).WatchService.func1+0x7b	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/failure_watcher.go:52
+#	0x88b85f	github.com/grafana/dskit/services.funcBasedListener.Failed+0x5f			/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/services.go:93
+#	0x886bc3	github.com/grafana/dskit/services.(*BasicService).main.func4.1+0x33		/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/basic_service.go:220
+#	0x887ac3	github.com/grafana/dskit/services.(*BasicService).AddListener.func2+0x73	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/basic_service.go:361
+
+1 @ 0x8ecb0 0x22ba8 0x22744 0x1e3b0ac 0x1e532d4 0x974e4
+# labels: {"span_name":"concurrentFetcher.fetch"}
+#	0x1e3b0ab	github.com/twmb/franz-go/pkg/kgo.(*broker).waitResp+0xdb	/__w/backend-enterprise/backend-enterprise/vendor/github.com/twmb/franz-go/pkg/kgo/broker.go:285
+#	0x1e532d3	github.com/twmb/franz-go/pkg/kgo.(*Broker).request.func1+0x183	/__w/backend-enterprise/backend-enterprise/vendor/github.com/twmb/franz-go/pkg/kgo/client.go:2305
+
+1 @ 0x8ecb0 0x22ba8 0x22744 0x1f826c4 0x886828 0x974e4
+#	0x1f826c3	github.com/grafana/mimir/pkg/storage/ingest.NewPartitionOffsetWatcher.NewIdleService.func1+0x33	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/services.go:13
+#	0x886827	github.com/grafana/dskit/services.(*BasicService).main+0x147					/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/basic_service.go:193
+
+1 @ 0x8ecb0 0x22ba8 0x22744 0x2526260 0xa8bf20 0x974e4
+#	0x252625f	github.com/grafana/mimir/pkg/mimir.ignoreSignalHandler.Loop+0x1f	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/mimir/pkg/mimir/server_service.go:70
+#	0xa8bf1f	github.com/grafana/dskit/server.(*Server).Run.func1+0x2f		/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/server/server.go:635
+
+1 @ 0x8ecb0 0x22ba8 0x22744 0x2526944 0x886828 0x974e4
+#	0x2526943	github.com/grafana/mimir/pkg/mimir.(*Mimir).initActivityTracker.NewIdleService.func2+0x33	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/services.go:13
+#	0x886827	github.com/grafana/dskit/services.(*BasicService).main+0x147					/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/basic_service.go:193
+
+1 @ 0x8ecb0 0x22ba8 0x22744 0x2529884 0x886828 0x974e4
+#	0x2529883	github.com/grafana/mimir/pkg/mimir.(*Mimir).initSanityCheck-fm.(*Mimir).initSanityCheck.NewIdleService.func2+0x33	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/services.go:13
+#	0x886827	github.com/grafana/dskit/services.(*BasicService).main+0x147								/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/basic_service.go:193
+
+1 @ 0x8ecb0 0x22ba8 0x22744 0xa8bd74 0x25151bc 0x974e4
+#	0xa8bd73	github.com/grafana/dskit/server.(*Server).Run+0x1e3					/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/server/server.go:671
+#	0x25151bb	github.com/grafana/mimir/pkg/mimir.(*Mimir).initServer.NewServerService.func4.1+0x4b	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/mimir/pkg/mimir/server_service.go:30
+
+1 @ 0x8ecb0 0x22ba8 0x22764 0x1b2f448 0x974e4
+#	0x1b2f447	github.com/grafana/mimir/pkg/util/log.getWriter.WithFlushPeriod.func1.1+0x77	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/log/buffered.go:76
+
+1 @ 0x8ecb0 0x22ba8 0x22764 0x1c5b8cc 0x974e4
+#	0x1c5b8cb	github.com/grafana/mimir/pkg/alertmanager.init.0.func1+0x3b	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/mimir/pkg/alertmanager/alertmanager.go:173
+
+1 @ 0x8ecb0 0x51990 0x8dea0 0xf7638 0xf8850 0xf8841 0x1bf228 0x1cf2d4 0x428b38 0x16fd50 0x16fe98 0x429760 0x974e4
+#	0x8de9f		internal/poll.runtime_pollWait+0x9f		$GOROOT/src/runtime/netpoll.go:351
+#	0xf7637		internal/poll.(*pollDesc).wait+0x27		$GOROOT/src/internal/poll/fd_poll_runtime.go:84
+#	0xf884f		internal/poll.(*pollDesc).waitRead+0x1df	$GOROOT/src/internal/poll/fd_poll_runtime.go:89
+#	0xf8840		internal/poll.(*FD).Read+0x1d0			$GOROOT/src/internal/poll/fd_unix.go:165
+#	0x1bf227	net.(*netFD).Read+0x27				$GOROOT/src/net/fd_posix.go:68
+#	0x1cf2d3	net.(*conn).Read+0x33				$GOROOT/src/net/net.go:196
+#	0x428b37	net/http.(*persistConn).Read+0x47		$GOROOT/src/net/http/transport.go:2125
+#	0x16fd4f	bufio.(*Reader).fill+0xdf			$GOROOT/src/bufio/bufio.go:113
+#	0x16fe97	bufio.(*Reader).Peek+0x57			$GOROOT/src/bufio/bufio.go:152
+#	0x42975f	net/http.(*persistConn).readLoop+0x10f		$GOROOT/src/net/http/transport.go:2278
+
+1 @ 0x8ecb0 0x51990 0x8dea0 0xf7638 0xf8850 0xf8841 0x1bf228 0x1cf2d4 0xa7638 0x1e41bcc 0x1e41b8d 0x974e4
+# labels: {"span_name":"concurrentFetcher.fetch"}
+#	0x8de9f		internal/poll.runtime_pollWait+0x9f					$GOROOT/src/runtime/netpoll.go:351
+#	0xf7637		internal/poll.(*pollDesc).wait+0x27					$GOROOT/src/internal/poll/fd_poll_runtime.go:84
+#	0xf884f		internal/poll.(*pollDesc).waitRead+0x1df				$GOROOT/src/internal/poll/fd_poll_runtime.go:89
+#	0xf8840		internal/poll.(*FD).Read+0x1d0						$GOROOT/src/internal/poll/fd_unix.go:165
+#	0x1bf227	net.(*netFD).Read+0x27							$GOROOT/src/net/fd_posix.go:68
+#	0x1cf2d3	net.(*conn).Read+0x33							$GOROOT/src/net/net.go:196
+#	0xa7637		io.ReadAtLeast+0x97							$GOROOT/src/io/io.go:335
+#	0x1e41bcb	io.ReadFull+0x11b							$GOROOT/src/io/io.go:354
+#	0x1e41b8c	github.com/twmb/franz-go/pkg/kgo.(*brokerCxn).readConn.func2+0xdc	/__w/backend-enterprise/backend-enterprise/vendor/github.com/twmb/franz-go/pkg/kgo/broker.go:1205
+
+1 @ 0x8ecb0 0x51990 0x8dea0 0xf7638 0xfbc1c 0xfbc0d 0x1c0a28 0x1d7e14 0x1d6e6c 0x9aab58 0x974e4
+#	0x8de9f		internal/poll.runtime_pollWait+0x9f					$GOROOT/src/runtime/netpoll.go:351
+#	0xf7637		internal/poll.(*pollDesc).wait+0x27					$GOROOT/src/internal/poll/fd_poll_runtime.go:84
+#	0xfbc1b		internal/poll.(*pollDesc).waitRead+0x21b				$GOROOT/src/internal/poll/fd_poll_runtime.go:89
+#	0xfbc0c		internal/poll.(*FD).Accept+0x20c					$GOROOT/src/internal/poll/fd_unix.go:613
+#	0x1c0a27	net.(*netFD).accept+0x27						$GOROOT/src/net/fd_unix.go:161
+#	0x1d7e13	net.(*TCPListener).accept+0x23						$GOROOT/src/net/tcpsock_posix.go:159
+#	0x1d6e6b	net.(*TCPListener).Accept+0x2b						$GOROOT/src/net/tcpsock.go:380
+#	0x9aab57	github.com/grafana/dskit/kv/memberlist.(*TCPTransport).tcpListen+0x77	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/kv/memberlist/tcp_transport.go:236
+
+1 @ 0x8ecb0 0x51990 0x8dea0 0xf7638 0xfbc1c 0xfbc0d 0x1c0a28 0x1d7e14 0x1d6e6c 0x9e84f8 0x41502c 0xa8be90 0x974e4
+#	0x8de9f		internal/poll.runtime_pollWait+0x9f					$GOROOT/src/runtime/netpoll.go:351
+#	0xf7637		internal/poll.(*pollDesc).wait+0x27					$GOROOT/src/internal/poll/fd_poll_runtime.go:84
+#	0xfbc1b		internal/poll.(*pollDesc).waitRead+0x21b				$GOROOT/src/internal/poll/fd_poll_runtime.go:89
+#	0xfbc0c		internal/poll.(*FD).Accept+0x20c					$GOROOT/src/internal/poll/fd_unix.go:613
+#	0x1c0a27	net.(*netFD).accept+0x27						$GOROOT/src/net/fd_unix.go:161
+#	0x1d7e13	net.(*TCPListener).accept+0x23						$GOROOT/src/net/tcpsock_posix.go:159
+#	0x1d6e6b	net.(*TCPListener).Accept+0x2b						$GOROOT/src/net/tcpsock.go:380
+#	0x9e84f7	github.com/grafana/dskit/middleware.(*countingListener).Accept+0x27	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/middleware/counting_listener.go:26
+#	0x41502b	net/http.(*Server).Serve+0x24b						$GOROOT/src/net/http/server.go:3463
+#	0xa8be8f	github.com/grafana/dskit/server.(*Server).Run.func2+0x4f		/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/server/server.go:645
+
+1 @ 0x8ecb0 0x51990 0x8dea0 0xf7638 0xfbc1c 0xfbc0d 0x1c0a28 0x1d7e14 0x1d6e6c 0x9e84f8 0x618364 0xa8bdd0 0x974e4
+#	0x8de9f		internal/poll.runtime_pollWait+0x9f					$GOROOT/src/runtime/netpoll.go:351
+#	0xf7637		internal/poll.(*pollDesc).wait+0x27					$GOROOT/src/internal/poll/fd_poll_runtime.go:84
+#	0xfbc1b		internal/poll.(*pollDesc).waitRead+0x21b				$GOROOT/src/internal/poll/fd_poll_runtime.go:89
+#	0xfbc0c		internal/poll.(*FD).Accept+0x20c					$GOROOT/src/internal/poll/fd_unix.go:613
+#	0x1c0a27	net.(*netFD).accept+0x27						$GOROOT/src/net/fd_unix.go:161
+#	0x1d7e13	net.(*TCPListener).accept+0x23						$GOROOT/src/net/tcpsock_posix.go:159
+#	0x1d6e6b	net.(*TCPListener).Accept+0x2b						$GOROOT/src/net/tcpsock.go:380
+#	0x9e84f7	github.com/grafana/dskit/middleware.(*countingListener).Accept+0x27	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/middleware/counting_listener.go:26
+#	0x618363	google.golang.org/grpc.(*Server).Serve+0x3e3				/__w/backend-enterprise/backend-enterprise/vendor/google.golang.org/grpc/server.go:917
+#	0xa8bdcf	github.com/grafana/dskit/server.(*Server).Run.func3+0x2f		/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/server/server.go:667
+
+1 @ 0x8ecb0 0x6c81c 0x1812c58 0x974e4
+#	0x1812c57	github.com/dgraph-io/ristretto.(*Cache).processItems+0xc7	/__w/backend-enterprise/backend-enterprise/vendor/github.com/dgraph-io/ristretto/cache.go:459
+
+1 @ 0x8ecb0 0x6c81c 0x18143e0 0x974e4
+#	0x18143df	github.com/dgraph-io/ristretto.(*defaultPolicy).processItems+0x5f	/__w/backend-enterprise/backend-enterprise/vendor/github.com/dgraph-io/ristretto/policy.go:101
+
+1 @ 0x8ecb0 0x6c81c 0x1af0c8c 0x886828 0x974e4
+#	0x1af0c8b	github.com/grafana/mimir/pkg/util.NewActiveGroupsCleanupService.NewTimerService.func1+0xab	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/services.go:31
+#	0x886827	github.com/grafana/dskit/services.(*BasicService).main+0x147					/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/basic_service.go:193
+
+1 @ 0x8ecb0 0x6c81c 0x1af74b0 0x974e4
+#	0x1af74af	github.com/grafana/mimir/pkg/util.NewVariableTicker.func1+0x8f	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/mimir/pkg/util/time.go:141
+
+1 @ 0x8ecb0 0x6c81c 0x1c8c85c 0x886828 0x974e4
+#	0x1c8c85b	github.com/grafana/mimir/pkg/costattribution.NewManager.NewTimerService.func1+0xab	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/services.go:31
+#	0x886827	github.com/grafana/dskit/services.(*BasicService).main+0x147				/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/basic_service.go:193
+
+1 @ 0x8ecb0 0x6c81c 0x1e3ced0 0x974e4
+#	0x1e3cecf	github.com/twmb/franz-go/pkg/kgo.(*Client).reapConnectionsLoop+0xdf	/__w/backend-enterprise/backend-enterprise/vendor/github.com/twmb/franz-go/pkg/kgo/broker.go:626
+
+1 @ 0x8ecb0 0x6c81c 0x1e41850 0x1e42460 0x1e441ac 0x1e43ec4 0x974e4
+# labels: {"span_name":"concurrentFetcher.fetch"}
+#	0x1e4184f	github.com/twmb/franz-go/pkg/kgo.(*brokerCxn).readConn+0x26f	/__w/backend-enterprise/backend-enterprise/vendor/github.com/twmb/franz-go/pkg/kgo/broker.go:1221
+#	0x1e4245f	github.com/twmb/franz-go/pkg/kgo.(*brokerCxn).readResponse+0x5f	/__w/backend-enterprise/backend-enterprise/vendor/github.com/twmb/franz-go/pkg/kgo/broker.go:1296
+#	0x1e441ab	github.com/twmb/franz-go/pkg/kgo.(*brokerCxn).handleResp+0x8b	/__w/backend-enterprise/backend-enterprise/vendor/github.com/twmb/franz-go/pkg/kgo/broker.go:1537
+#	0x1e43ec3	github.com/twmb/franz-go/pkg/kgo.(*brokerCxn).handleResps+0xf3	/__w/backend-enterprise/backend-enterprise/vendor/github.com/twmb/franz-go/pkg/kgo/broker.go:1527
+
+1 @ 0x8ecb0 0x6c81c 0x1e53030 0x1f6862c 0x1f6860d 0x1f685c9 0x1f69d24 0x974e4
+# labels: {"span_name":"concurrentFetcher.fetch"}
+#	0x1e5302f	github.com/twmb/franz-go/pkg/kgo.(*Broker).request+0x18f				/__w/backend-enterprise/backend-enterprise/vendor/github.com/twmb/franz-go/pkg/kgo/client.go:2314
+#	0x1f6862b	github.com/twmb/franz-go/pkg/kgo.(*Broker).Request+0x37b				/__w/backend-enterprise/backend-enterprise/vendor/github.com/twmb/franz-go/pkg/kgo/client.go:2281
+#	0x1f6860c	github.com/twmb/franz-go/pkg/kmsg.(*FetchRequest).RequestWith+0x35c			/__w/backend-enterprise/backend-enterprise/vendor/github.com/twmb/franz-go/pkg/kmsg/generated.go:4331
+#	0x1f685c8	github.com/grafana/mimir/pkg/storage/ingest.(*ConcurrentFetchers).fetchSingle+0x318	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/mimir/pkg/storage/ingest/fetcher.go:578
+#	0x1f69d23	github.com/grafana/mimir/pkg/storage/ingest.(*ConcurrentFetchers).run+0x4d3		/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/mimir/pkg/storage/ingest/fetcher.go:707
+
+1 @ 0x8ecb0 0x6c81c 0x1e7ac00 0x974e4
+#	0x1e7abff	github.com/twmb/franz-go/pkg/kgo.(*consumerSession).manageFetchConcurrency+0xff	/__w/backend-enterprise/backend-enterprise/vendor/github.com/twmb/franz-go/pkg/kgo/consumer.go:1581
+
+1 @ 0x8ecb0 0x6c81c 0x1e9c3f8 0x974e4
+#	0x1e9c3f7	github.com/twmb/franz-go/pkg/kgo.(*Client).updateMetadataLoop+0x667	/__w/backend-enterprise/backend-enterprise/vendor/github.com/twmb/franz-go/pkg/kgo/metadata.go:210
+
+1 @ 0x8ecb0 0x6c81c 0x1f67700 0x1f754f4 0x1f75410 0x886828 0x974e4
+#	0x1f676ff	github.com/grafana/mimir/pkg/storage/ingest.(*ConcurrentFetchers).PollFetches+0x9f	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/mimir/pkg/storage/ingest/fetcher.go:434
+#	0x1f754f3	github.com/grafana/mimir/pkg/storage/ingest.(*PartitionReader).processNextFetches+0x73	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/mimir/pkg/storage/ingest/reader.go:323
+#	0x1f7540f	github.com/grafana/mimir/pkg/storage/ingest.(*PartitionReader).run+0x5f			/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/mimir/pkg/storage/ingest/reader.go:312
+#	0x886827	github.com/grafana/dskit/services.(*BasicService).main+0x147				/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/basic_service.go:193
+
+1 @ 0x8ecb0 0x6c81c 0x1f6adf0 0x974e4
+#	0x1f6adef	github.com/grafana/mimir/pkg/storage/ingest.(*ConcurrentFetchers).start+0x67f	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/mimir/pkg/storage/ingest/fetcher.go:913
+
+1 @ 0x8ecb0 0x6c81c 0x1f7a428 0x886828 0x974e4
+#	0x1f7a427	github.com/grafana/mimir/pkg/storage/ingest.(*partitionCommitter).run+0xb7	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/mimir/pkg/storage/ingest/reader.go:993
+#	0x886827	github.com/grafana/dskit/services.(*BasicService).main+0x147			/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/basic_service.go:193
+
+1 @ 0x8ecb0 0x6c81c 0x1f7b9fc 0x886828 0x974e4
+#	0x1f7b9fb	github.com/grafana/mimir/pkg/storage/ingest.NewReaderMetrics.NewTimerService.func4+0xab	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/services.go:31
+#	0x886827	github.com/grafana/dskit/services.(*BasicService).main+0x147				/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/basic_service.go:193
+
+1 @ 0x8ecb0 0x6c81c 0x23799f0 0x886828 0x974e4
+#	0x23799ef	github.com/grafana/mimir/pkg/usagestats.(*Reporter).running+0x2df	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/mimir/pkg/usagestats/reporter.go:170
+#	0x886827	github.com/grafana/dskit/services.(*BasicService).main+0x147		/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/basic_service.go:193
+
+1 @ 0x8ecb0 0x6c81c 0x238666c 0x886828 0x974e4
+#	0x238666b	github.com/grafana/mimir/pkg/ingester.New.NewTimerService.func2+0xab	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/services.go:31
+#	0x886827	github.com/grafana/dskit/services.(*BasicService).main+0x147		/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/basic_service.go:193
+
+1 @ 0x8ecb0 0x6c81c 0x23888b4 0x886828 0x974e4
+#	0x23888b3	github.com/grafana/mimir/pkg/ingester.(*Ingester).metricsUpdaterServiceRunning+0x253	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/mimir/pkg/ingester/ingester.go:916
+#	0x886827	github.com/grafana/dskit/services.(*BasicService).main+0x147				/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/basic_service.go:193
+
+1 @ 0x8ecb0 0x6c81c 0x2388e2c 0x974e4
+#	0x2388e2b	github.com/grafana/mimir/pkg/ingester.(*Ingester).metricsUpdaterServiceRunning.func1+0xdb	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/mimir/pkg/ingester/ingester.go:887
+
+1 @ 0x8ecb0 0x6c81c 0x2397f04 0x886828 0x974e4
+#	0x2397f03	github.com/grafana/mimir/pkg/ingester.(*Ingester).compactionServiceRunning+0x163	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/mimir/pkg/ingester/ingester.go:3250
+#	0x886827	github.com/grafana/dskit/services.(*BasicService).main+0x147				/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/basic_service.go:193
+
+1 @ 0x8ecb0 0x6c81c 0x23b21f4 0x886828 0x974e4
+#	0x23b21f3	github.com/grafana/mimir/pkg/ingester.(*ownedSeriesService).running+0xd3	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/mimir/pkg/ingester/owned_series.go:135
+#	0x886827	github.com/grafana/dskit/services.(*BasicService).main+0x147			/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/basic_service.go:193
+
+1 @ 0x8ecb0 0x6c81c 0x2469c40 0x886828 0x974e4
+#	0x2469c3f	github.com/grafana/dskit/runtimeconfig.(*Manager).loop+0x16f	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/runtimeconfig/manager.go:145
+#	0x886827	github.com/grafana/dskit/services.(*BasicService).main+0x147	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/basic_service.go:193
+
+1 @ 0x8ecb0 0x6c81c 0x2515100 0x886828 0x974e4
+#	0x25150ff	github.com/grafana/mimir/pkg/mimir.(*Mimir).initServer.NewServerService.func4+0xbf	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/mimir/pkg/mimir/server_service.go:33
+#	0x886827	github.com/grafana/dskit/services.(*BasicService).main+0x147				/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/basic_service.go:193
+
+1 @ 0x8ecb0 0x6c81c 0x29db870 0x886828 0x974e4
+#	0x29db86f	github.com/grafana/backend-enterprise/pkg/cloud/bi.(*DistributorWriteEventProcessor).run+0xbf	/__w/backend-enterprise/backend-enterprise/pkg/cloud/bi/wrapper.go:104
+#	0x886827	github.com/grafana/dskit/services.(*BasicService).main+0x147					/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/basic_service.go:193
+
+1 @ 0x8ecb0 0x6c81c 0x2a0d04c 0x886828 0x974e4
+#	0x2a0d04b	github.com/grafana/backend-enterprise/pkg/enterprise/license.(*Manager).run+0x12b	/__w/backend-enterprise/backend-enterprise/pkg/enterprise/license/manager.go:136
+#	0x886827	github.com/grafana/dskit/services.(*BasicService).main+0x147				/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/basic_service.go:193
+
+1 @ 0x8ecb0 0x6c81c 0x42ae84 0x974e4
+#	0x42ae83	net/http.(*persistConn).writeLoop+0x93	$GOROOT/src/net/http/transport.go:2600
+
+1 @ 0x8ecb0 0x6c81c 0x723b48 0x722c60 0x974e4
+#	0x723b47	go.opentelemetry.io/otel/sdk/trace.(*batchSpanProcessor).processQueue+0xc7	/__w/backend-enterprise/backend-enterprise/vendor/go.opentelemetry.io/otel/sdk/trace/batch_span_processor.go:327
+#	0x722c5f	go.opentelemetry.io/otel/sdk/trace.NewBatchSpanProcessor.func2+0x4f		/__w/backend-enterprise/backend-enterprise/vendor/go.opentelemetry.io/otel/sdk/trace/batch_span_processor.go:129
+
+1 @ 0x8ecb0 0x6c81c 0x83c2c4 0x83c194 0x974e4
+#	0x83c2c3	go.opentelemetry.io/contrib/samplers/jaegerremote.(*Sampler).pollControllerWithTicker+0x73	/__w/backend-enterprise/backend-enterprise/vendor/go.opentelemetry.io/contrib/samplers/jaegerremote/sampler_remote.go:135
+#	0x83c193	go.opentelemetry.io/contrib/samplers/jaegerremote.(*Sampler).pollController+0x53		/__w/backend-enterprise/backend-enterprise/vendor/go.opentelemetry.io/contrib/samplers/jaegerremote/sampler_remote.go:128
+
+1 @ 0x8ecb0 0x6c81c 0x8871fc 0x23c18c8 0x2465f60 0x886728 0x974e4
+#	0x8871fb	github.com/grafana/dskit/services.(*BasicService).awaitState+0x6b	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/basic_service.go:297
+#	0x23c18c7	github.com/grafana/dskit/services.(*BasicService).AwaitRunning+0x37	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/basic_service.go:288
+#	0x2465f5f	github.com/grafana/dskit/modules.(*moduleService).start+0x35f		/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/modules/module_service.go:88
+#	0x886727	github.com/grafana/dskit/services.(*BasicService).main+0x47		/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/basic_service.go:160
+
+1 @ 0x8ecb0 0x6c81c 0x889164 0x2512804 0x2b8068c 0x2b867f4 0x58ae8 0x974e4
+#	0x889163	github.com/grafana/dskit/services.(*Manager).AwaitStopped+0x63					/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/manager.go:153
+#	0x2512803	github.com/grafana/mimir/pkg/mimir.(*Mimir).Run+0x933						/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/mimir/pkg/mimir/mimir.go:1129
+#	0x2b8068b	github.com/grafana/backend-enterprise/pkg/enterprise/mimir/init.(*MimirEnterprise).Run+0x3b	/__w/backend-enterprise/backend-enterprise/pkg/enterprise/mimir/init/mimir.go:245
+#	0x2b867f3	main.main+0x11e3										/__w/backend-enterprise/backend-enterprise/cmd/enterprise-metrics/main.go:269
+#	0x58ae7		runtime.main+0x277										$GOROOT/src/runtime/proc.go:285
+
+1 @ 0x8ecb0 0x6c81c 0x88a0e0 0x974e4
+#	0x88a0df	github.com/grafana/dskit/services.(*Manager).AddListener.func2+0xaf	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/manager.go:263
+
+1 @ 0x8ecb0 0x6c81c 0x96b250 0x974e4
+#	0x96b24f	github.com/hashicorp/memberlist.(*Memberlist).checkBroadcastQueueDepth+0xcf	/__w/backend-enterprise/backend-enterprise/vendor/github.com/hashicorp/memberlist/memberlist.go:789
+
+1 @ 0x8ecb0 0x6c81c 0x96b300 0x974e4
+#	0x96b2ff	github.com/hashicorp/memberlist.(*Memberlist).streamListen+0x7f	/__w/backend-enterprise/backend-enterprise/vendor/github.com/hashicorp/memberlist/net.go:225
+
+1 @ 0x8ecb0 0x6c81c 0x96cbec 0x974e4
+#	0x96cbeb	github.com/hashicorp/memberlist.(*Memberlist).packetListen+0x8b	/__w/backend-enterprise/backend-enterprise/vendor/github.com/hashicorp/memberlist/net.go:359
+
+1 @ 0x8ecb0 0x6c81c 0x96dd10 0x974e4
+#	0x96dd0f	github.com/hashicorp/memberlist.(*Memberlist).packetHandler+0x5f	/__w/backend-enterprise/backend-enterprise/vendor/github.com/hashicorp/memberlist/net.go:503
+
+1 @ 0x8ecb0 0x6c81c 0x978564 0x974e4
+#	0x978563	github.com/hashicorp/memberlist.(*Memberlist).pushPullTrigger+0xe3	/__w/backend-enterprise/backend-enterprise/vendor/github.com/hashicorp/memberlist/state.go:200
+
+1 @ 0x8ecb0 0x6c81c 0x99b15c 0x886828 0x974e4
+#	0x99b15b	github.com/grafana/dskit/kv/memberlist.(*KVInitService).running+0x7b	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/kv/memberlist/kv_init_service.go:76
+#	0x886827	github.com/grafana/dskit/services.(*BasicService).main+0x147		/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/basic_service.go:193
+
+1 @ 0x8ecb0 0x6c81c 0x99d9c0 0x886828 0x974e4
+#	0x99d9bf	github.com/grafana/dskit/kv/memberlist.(*KV).running+0x27f	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/kv/memberlist/memberlist_client.go:632
+#	0x886827	github.com/grafana/dskit/services.(*BasicService).main+0x147	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/basic_service.go:193
+
+1 @ 0x8ecb0 0x6c81c 0x9a0680 0x99b6e8 0x1a99f60 0x9b2734 0x1a99edc 0x1ac6a68 0x886828 0x974e4
+# labels: {"span_name":"WatchKey"}
+#	0x9a067f	github.com/grafana/dskit/kv/memberlist.(*KV).WatchKey+0x24f	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/kv/memberlist/memberlist_client.go:998
+#	0x99b6e7	github.com/grafana/dskit/kv/memberlist.(*Client).WatchKey+0x67	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/kv/memberlist/memberlist_client.go:103
+#	0x1a99f5f	github.com/grafana/dskit/kv.metrics.WatchKey.func1+0x3f		/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/kv/metrics.go:104
+#	0x9b2733	github.com/grafana/dskit/instrument.CollectedRequest+0x203	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/instrument/instrument.go:172
+#	0x1a99edb	github.com/grafana/dskit/kv.metrics.WatchKey+0x8b		/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/kv/metrics.go:103
+#	0x1ac6a67	github.com/grafana/dskit/ring.(*PartitionRingWatcher).loop+0x97	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/ring/partition_ring_watcher.go:94
+#	0x886827	github.com/grafana/dskit/services.(*BasicService).main+0x147	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/basic_service.go:193
+
+1 @ 0x8ecb0 0x6c81c 0x9a0680 0x99b6e8 0x1a9c844 0x1a99f60 0x9b2734 0x1a99edc 0x1acde90 0x886828 0x974e4
+# labels: {"span_name":"WatchKey"}
+#	0x9a067f	github.com/grafana/dskit/kv/memberlist.(*KV).WatchKey+0x24f	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/kv/memberlist/memberlist_client.go:998
+#	0x99b6e7	github.com/grafana/dskit/kv/memberlist.(*Client).WatchKey+0x67	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/kv/memberlist/memberlist_client.go:103
+#	0x1a9c843	github.com/grafana/dskit/kv.(*prefixedKVClient).WatchKey+0x63	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/kv/prefix.go:45
+#	0x1a99f5f	github.com/grafana/dskit/kv.metrics.WatchKey.func1+0x3f		/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/kv/metrics.go:104
+#	0x9b2733	github.com/grafana/dskit/instrument.CollectedRequest+0x203	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/instrument/instrument.go:172
+#	0x1a99edb	github.com/grafana/dskit/kv.metrics.WatchKey+0x8b		/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/kv/metrics.go:103
+#	0x1acde8f	github.com/grafana/dskit/ring.(*Ring).loop+0x9f			/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/ring/ring.go:401
+#	0x886827	github.com/grafana/dskit/services.(*BasicService).main+0x147	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/basic_service.go:193
+
+1 @ 0x8ecb0 0x6c81c 0xa09578 0xa09be8 0x411c58 0x4136f0 0x8b217c 0x9ecdf8 0x411c58 0x2b7698c 0x411c58 0x9f700c 0x9c4c60 0x9c4ac0 0x9f6c9c 0x411c58 0x9f73ec 0x411c58 0x9ee410 0x411c58 0x9e53a4 0x9e403c 0x411c58 0x9f8f3c 0x411c58 0x42f0c0 0x410048 0x974e4
+# labels: {"span_name":"HTTP GET - debug_pprof"}
+#	0xa09577	net/http/pprof.sleep+0x87												$GOROOT/src/net/http/pprof/pprof.go:117
+#	0xa09be7	net/http/pprof.Profile+0x2c7												$GOROOT/src/net/http/pprof/pprof.go:163
+#	0x411c57	net/http.HandlerFunc.ServeHTTP+0x37											$GOROOT/src/net/http/server.go:2322
+#	0x4136ef	net/http.(*ServeMux).ServeHTTP+0x18f											$GOROOT/src/net/http/server.go:2861
+#	0x8b217b	github.com/gorilla/mux.(*Router).ServeHTTP+0x18b									/__w/backend-enterprise/backend-enterprise/vendor/github.com/gorilla/mux/mux.go:212
+#	0x9ecdf7	github.com/grafana/dskit/middleware.ClusterValidationMiddleware.func1.1+0x1b7						/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/middleware/http_cluster.go:130
+#	0x411c57	net/http.HandlerFunc.ServeHTTP+0x37											$GOROOT/src/net/http/server.go:2322
+#	0x2b7698b	github.com/grafana/backend-enterprise/pkg/enterprise/mimir/init.(*MimirEnterprise).initGEMResponseHeader.func1.1+0x13b	/__w/backend-enterprise/backend-enterprise/pkg/enterprise/mimir/init/added_modules.go:1174
+#	0x411c57	net/http.HandlerFunc.ServeHTTP+0x37											$GOROOT/src/net/http/server.go:2322
+#	0x9f700b	github.com/grafana/dskit/middleware.(*Instrument).Wrap.Instrument.Wrap.func1.2+0x3b					/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/middleware/instrument.go:99
+#	0x9c4c5f	github.com/felixge/httpsnoop.(*Metrics).CaptureMetrics+0x15f								/__w/backend-enterprise/backend-enterprise/vendor/github.com/felixge/httpsnoop/capture_metrics.go:84
+#	0x9c4abf	github.com/felixge/httpsnoop.CaptureMetricsFn+0x4f									/__w/backend-enterprise/backend-enterprise/vendor/github.com/felixge/httpsnoop/capture_metrics.go:39
+#	0x9f6c9b	github.com/grafana/dskit/middleware.(*Instrument).Wrap.Instrument.Wrap.func1+0x1ab					/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/middleware/instrument.go:98
+#	0x411c57	net/http.HandlerFunc.ServeHTTP+0x37											$GOROOT/src/net/http/server.go:2322
+#	0x9f73eb	github.com/grafana/dskit/middleware.(*Log).Wrap.Log.Wrap.func1+0x1db							/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/middleware/logging.go:92
+#	0x411c57	net/http.HandlerFunc.ServeHTTP+0x37											$GOROOT/src/net/http/server.go:2322
+#	0x9ee40f	github.com/grafana/dskit/middleware.Tracer.wrapWithOTel.func1+0x63f							/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/middleware/http_tracing.go:152
+#	0x411c57	net/http.HandlerFunc.ServeHTTP+0x37											$GOROOT/src/net/http/server.go:2322
+#	0x9e53a3	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp.(*middleware).serveHTTP+0xf23				/__w/backend-enterprise/backend-enterprise/vendor/go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp/handler.go:178
+#	0x9e403b	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp.NewMiddleware.func1.1+0x3b				/__w/backend-enterprise/backend-enterprise/vendor/go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp/handler.go:66
+#	0x411c57	net/http.HandlerFunc.ServeHTTP+0x37											$GOROOT/src/net/http/server.go:2322
+#	0x9f8f3b	github.com/grafana/dskit/middleware.(*RouteInjector).Wrap.RouteInjector.Wrap.func1+0x6b					/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/middleware/route_injector.go:24
+#	0x411c57	net/http.HandlerFunc.ServeHTTP+0x37											$GOROOT/src/net/http/server.go:2322
+#	0x42f0bf	net/http.serverHandler.ServeHTTP+0xaf											$GOROOT/src/net/http/server.go:3340
+#	0x410047	net/http.(*conn).serve+0x527												$GOROOT/src/net/http/server.go:2109
+
+1 @ 0x8ecb0 0x6c81c 0xa82f94 0x25129e0 0x974e4
+#	0xa82f93	github.com/grafana/dskit/signals.(*Handler).Loop+0xf3		/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/signals/signals.go:55
+#	0x25129df	github.com/grafana/mimir/pkg/mimir.(*Mimir).Run.func4+0x2f	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/mimir/pkg/mimir/mimir.go:1110
+
+1 @ 0x8ecb0 0x6d5c4 0x6d5a5 0x90958 0xa3328 0x887a20 0x888468 0x2387aec 0x2387460 0x886728 0x974e4
+#	0x90957		sync.runtime_SemacquireWaitGroup+0x37						$GOROOT/src/runtime/sema.go:114
+#	0xa3327		sync.(*WaitGroup).Wait+0xa7							$GOROOT/src/sync/waitgroup.go:206
+#	0x887a1f	github.com/grafana/dskit/services.(*BasicService).AddListener.func3+0xef	/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/basic_service.go:382
+#	0x888467	github.com/grafana/dskit/services.(*FailureWatcher).Close+0xe7			/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/failure_watcher.go:94
+#	0x2387aeb	github.com/grafana/mimir/pkg/ingester.(*Ingester).starting.func1+0x3b		/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/mimir/pkg/ingester/ingester.go:670
+#	0x238745f	github.com/grafana/mimir/pkg/ingester.(*Ingester).starting+0x71f		/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/mimir/pkg/ingester/ingester.go:809
+#	0x886727	github.com/grafana/dskit/services.(*BasicService).main+0x47			/__w/backend-enterprise/backend-enterprise/vendor/github.com/grafana/dskit/services/basic_service.go:160
+
+1 @ 0x8ecb0 0x932f0 0x2b4383c 0x974e4
+#	0x932ef		time.Sleep+0x14f														$GOROOT/src/runtime/time.go:363
+#	0x2b4383b	github.com/grafana/backend-enterprise/pkg/enterprise/mimir/instrumentation.(*RuntimeMetrics).recordSchedulerLatency+0x3b	/__w/backend-enterprise/backend-enterprise/pkg/enterprise/mimir/instrumentation/runtime.go:39
+
+1 @ 0x8ecb0 0x932f0 0x4e2df0 0x974e4
+# labels: {"span_name":"HTTP GET - debug_pprof"}
+#	0x932ef		time.Sleep+0x14f			$GOROOT/src/runtime/time.go:363
+#	0x4e2def	runtime/pprof.profileWriter+0x4f	$GOROOT/src/runtime/pprof/pprof.go:863
+
+
