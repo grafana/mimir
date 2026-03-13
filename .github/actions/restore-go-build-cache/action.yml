@@ -1,0 +1,28 @@
+# Restore Go build cache saved by the warmup-go-build-cache reusable workflow.
+#
+# The warmup jobs that use the reusable workflow run on the host runner, saving the cache
+# from /home/runner/.cache/go-build. actions/cache includes the path in its version hash,
+# so we must restore to the same path. When the consuming job runs in a container (where
+# GOCACHE differs, e.g. /go/cache), the restored cache is moved to $GOCACHE.
+name: Restore Go build cache
+description: Restores the Go build cache saved by a warmup job and moves it to GOCACHE if needed.
+inputs:
+  cache-key:
+    description: Cache key to restore (must match the key used by the warmup job)
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Restore Go build cache
+      uses: actions/cache/restore@v4
+      with:
+        path: /home/runner/.cache/go-build
+        key: ${{ inputs.cache-key }}
+        enableCrossOsArchive: true
+    - name: Move Go build cache to GOCACHE
+      shell: bash
+      run: |
+        if [ -d /home/runner/.cache/go-build ] && [ "/home/runner/.cache/go-build" != "$GOCACHE" ]; then
+          rm -rf "$GOCACHE"
+          mv /home/runner/.cache/go-build "$GOCACHE"
+        fi

@@ -293,21 +293,10 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
-      # Restore to the same path used by the warmup job (host runner) and move to the
-      # container's GOCACHE. actions/cache includes the path in its version hash, so the
-      # restore path must match the save path for the cache to be found.
       - name: Restore Go build cache
-        uses: actions/cache/restore@v4
+        uses: ./.github/actions/restore-go-build-cache
         with:
-          path: /home/runner/.cache/go-build
-          key: go-build-cache-image-${{ hashFiles('go.sum') }}
-          enableCrossOsArchive: true
-      - name: Move Go build cache to GOCACHE
-        run: |
-          if [ -d /home/runner/.cache/go-build ]; then
-            rm -rf "$GOCACHE"
-            mv /home/runner/.cache/go-build "$GOCACHE"
-          fi
+          cache-key: go-build-cache-image-${{ hashFiles('go.sum') }}
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -326,21 +315,10 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
-      # Restore to the same path used by the warmup job (host runner) and move to the
-      # container's GOCACHE. actions/cache includes the path in its version hash, so the
-      # restore path must match the save path for the cache to be found.
       - name: Restore Go build cache
-        uses: actions/cache/restore@v4
+        uses: ./.github/actions/restore-go-build-cache
         with:
-          path: /home/runner/.cache/go-build
-          key: go-build-cache-image-${{ hashFiles('go.sum') }}
-          enableCrossOsArchive: true
-      - name: Move Go build cache to GOCACHE
-        run: |
-          if [ -d /home/runner/.cache/go-build ]; then
-            rm -rf "$GOCACHE"
-            mv /home/runner/.cache/go-build "$GOCACHE"
-          fi
+          cache-key: go-build-cache-image-${{ hashFiles('go.sum') }}
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -359,21 +337,10 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
-      # Restore to the same path used by the warmup job (host runner) and move to the
-      # container's GOCACHE. actions/cache includes the path in its version hash, so the
-      # restore path must match the save path for the cache to be found.
       - name: Restore Go build cache
-        uses: actions/cache/restore@v4
+        uses: ./.github/actions/restore-go-build-cache
         with:
-          path: /home/runner/.cache/go-build
-          key: go-build-cache-image-${{ hashFiles('go.sum') }}
-          enableCrossOsArchive: true
-      - name: Move Go build cache to GOCACHE
-        run: |
-          if [ -d /home/runner/.cache/go-build ]; then
-            rm -rf "$GOCACHE"
-            mv /home/runner/.cache/go-build "$GOCACHE"
-          fi
+          cache-key: go-build-cache-image-${{ hashFiles('go.sum') }}
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -392,21 +359,10 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
-      # Restore to the same path used by the warmup job (host runner) and move to the
-      # container's GOCACHE. actions/cache includes the path in its version hash, so the
-      # restore path must match the save path for the cache to be found.
       - name: Restore Go build cache
-        uses: actions/cache/restore@v4
+        uses: ./.github/actions/restore-go-build-cache
         with:
-          path: /home/runner/.cache/go-build
-          key: go-build-cache-image-${{ hashFiles('go.sum') }}
-          enableCrossOsArchive: true
-      - name: Move Go build cache to GOCACHE
-        run: |
-          if [ -d /home/runner/.cache/go-build ]; then
-            rm -rf "$GOCACHE"
-            mv /home/runner/.cache/go-build "$GOCACHE"
-          fi
+          cache-key: go-build-cache-image-${{ hashFiles('go.sum') }}
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -425,21 +381,10 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
-      # Restore to the same path used by the warmup job (host runner) and move to the
-      # container's GOCACHE. actions/cache includes the path in its version hash, so the
-      # restore path must match the save path for the cache to be found.
       - name: Restore Go build cache
-        uses: actions/cache/restore@v4
+        uses: ./.github/actions/restore-go-build-cache
         with:
-          path: /home/runner/.cache/go-build
-          key: go-build-cache-image-${{ hashFiles('go.sum') }}
-          enableCrossOsArchive: true
-      - name: Move Go build cache to GOCACHE
-        run: |
-          if [ -d /home/runner/.cache/go-build ]; then
-            rm -rf "$GOCACHE"
-            mv /home/runner/.cache/go-build "$GOCACHE"
-          fi
+          cache-key: go-build-cache-image-${{ hashFiles('go.sum') }}
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -528,10 +473,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Restore Go build cache
-        uses: actions/cache/restore@v4
+        uses: ./.github/actions/restore-go-build-cache
         with:
-          path: /home/runner/.cache/go-build
-          key: go-build-cache-integration-${{ hashFiles('go.sum') }}
+          cache-key: go-build-cache-integration-${{ hashFiles('go.sum') }}
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Symlink Expected Path to Workspace
