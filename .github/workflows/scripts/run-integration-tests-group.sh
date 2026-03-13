@@ -54,23 +54,30 @@ export MIMIR_ENV_VARS_JSON='{"GORACE": "halt_on_error=1"}'
 
 EXIT_CODE=0
 
+# Run one test at a time so that a failure can be retried individually without re-running
+# the entire group.
+MAX_ATTEMPTS=2
+
 for TEST in $GROUP_TESTS; do
-    echo "Running test: $TEST"
-
-    go test -tags=requires_docker,stringlabels -timeout 2400s -v -count=1 -run "^${TEST}$" "${INTEGRATION_DIR}/..." 2>&1 | tee /tmp/test-integration-output.log
-    TEST_EXIT_CODE=${PIPESTATUS[0]}
-
-    if [[ $TEST_EXIT_CODE -ne 0 ]]; then
-        echo "Retrying failed test: $TEST"
-        echo
+    for ATTEMPT in $(seq 1 $MAX_ATTEMPTS); do
+        if [[ $ATTEMPT -gt 1 ]]; then
+            echo "Retrying failed test: $TEST"
+            echo
+        else
+            echo "Running test: $TEST"
+        fi
 
         go test -tags=requires_docker,stringlabels -timeout 2400s -v -count=1 -run "^${TEST}$" "${INTEGRATION_DIR}/..." 2>&1 | tee /tmp/test-integration-output.log
         TEST_EXIT_CODE=${PIPESTATUS[0]}
 
-        if [[ $TEST_EXIT_CODE -ne 0 ]]; then
-            EXIT_CODE=1
-            echo "Test failed after retry: $TEST"
+        if [[ $TEST_EXIT_CODE -eq 0 ]]; then
+            break
         fi
+    done
+
+    if [[ $TEST_EXIT_CODE -ne 0 ]]; then
+        EXIT_CODE=1
+        echo "Test failed after $MAX_ATTEMPTS attempts: $TEST"
     fi
 done
 

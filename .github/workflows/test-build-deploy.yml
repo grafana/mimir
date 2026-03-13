@@ -163,8 +163,8 @@ jobs:
   # benefit from the shared cache. Set the FORCE_BUILD_CACHE_WARMUP env var at the top of
   # this file to 'true' to enable cache warmup on all branches.
   #
-  # actions/cache includes the OS in its internal version hash, so we need separate warmup
-  # jobs for integration tests (host runner) and unit tests (container).
+  # We have separate warmup jobs because unit tests compile with -race while integration
+  # tests don't, and the -race flag produces different compilation output (separate cache entries).
   warmup-go-build-cache-integration-tests:
     needs: [goversion, prepare]
     runs-on: ubuntu-latest

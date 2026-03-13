@@ -67,6 +67,10 @@ echo
 EXIT_CODE=0
 FAILED_PACKAGES=""
 
+# Run one package at a time so that a failure can be retried individually without re-running
+# the entire group.
+MAX_ATTEMPTS=2
+
 for pkg in $GROUP_TESTS; do
     if echo "$pkg" | grep -q -e "$SKIP_RACE_DETECTOR_PATTERN"; then
         RACE_FLAG=""
@@ -74,22 +78,24 @@ for pkg in $GROUP_TESTS; do
         RACE_FLAG="-race"
     fi
 
-    # shellcheck disable=SC2086 # we *want* word splitting of RACE_FLAG.
-    go test -tags="${BUILD_TAGS}" -timeout 30m $RACE_FLAG "$pkg" 2>&1 | tee /tmp/test-pkg-output.log
-    PKG_EXIT_CODE=${PIPESTATUS[0]}
-
-    if [[ $PKG_EXIT_CODE -ne 0 ]]; then
-        echo "Retrying failed package: $pkg"
-        echo
+    for ATTEMPT in $(seq 1 $MAX_ATTEMPTS); do
+        if [[ $ATTEMPT -gt 1 ]]; then
+            echo "Retrying failed package: $pkg"
+            echo
+        fi
 
         # shellcheck disable=SC2086 # we *want* word splitting of RACE_FLAG.
         go test -tags="${BUILD_TAGS}" -timeout 30m $RACE_FLAG "$pkg" 2>&1 | tee /tmp/test-pkg-output.log
         PKG_EXIT_CODE=${PIPESTATUS[0]}
 
-        if [[ $PKG_EXIT_CODE -ne 0 ]]; then
-            EXIT_CODE=1
-            FAILED_PACKAGES="${FAILED_PACKAGES} ${pkg}"
+        if [[ $PKG_EXIT_CODE -eq 0 ]]; then
+            break
         fi
+    done
+
+    if [[ $PKG_EXIT_CODE -ne 0 ]]; then
+        EXIT_CODE=1
+        FAILED_PACKAGES="${FAILED_PACKAGES} ${pkg}"
     fi
 done
 
