@@ -428,7 +428,7 @@ func newMultitenantCompactor(
 			Help: "Number of times a compaction failed because the compactor disk was out of space.",
 		}),
 		schedulerLastContact: promauto.With(registerer).NewGauge(prometheus.GaugeOpts{
-			Name: "cortex_compactor_scheduler_last_contact_timestamp_seconds",
+			Name: "cortex_compactor_last_scheduler_contact_timestamp_seconds",
 			Help: "Unix timestamp of the last successful contact with the scheduler. Only updated in scheduler mode.",
 		}),
 		blocksMarkedForDeletion: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
