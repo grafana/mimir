@@ -795,7 +795,7 @@ integration-tests-race: cmd/mimir/$(UPTODATE_RACE)
 # jobs can skip most compilation. The flags here MUST match the ones used by the real targets.
 
 warmup-build-cache-integration-tests: ## Warm the Go build cache for integration tests.
-	go test -run=^$ -count=1 -tags=requires_docker,stringlabels ./integration/... 2>&1 || true
+	go test -run=^$ -count=1 -tags=requires_docker,stringlabels ./integration/ 2>&1 || true
 	go build ./tools/pre-pull-images/... 2>&1 || true
 
 warmup-build-cache-unit-tests: ## Warm the Go build cache for unit tests.

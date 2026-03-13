@@ -1,5 +1,6 @@
 #!/bin/bash
 # SPDX-License-Identifier: AGPL-3.0-only
+set -o pipefail
 
 SCRIPT_DIR=$(cd `dirname $0` && pwd)
 MIMIR_DIR=$(realpath "${SCRIPT_DIR}/../../../")
@@ -46,7 +47,12 @@ fi
 ALL_TESTS=$(go list "${MIMIR_DIR}/..." | sort)
 
 # Filter tests by the requested group.
-GROUP_TESTS=$(echo "$ALL_TESTS" | awk -v TOTAL=$TOTAL -v INDEX=$INDEX 'NR % TOTAL == INDEX')
+GROUP_TESTS=$(echo "$ALL_TESTS" | awk -v TOTAL="$TOTAL" -v INDEX="$INDEX" 'NR % TOTAL == INDEX')
+
+if [[ -z "$GROUP_TESTS" ]]; then
+    echo "ERROR: No packages found for group $INDEX of $TOTAL. This likely indicates a compilation error or misconfiguration."
+    exit 1
+fi
 
 # The tests in the MQE benchmarks package load an enormous amount of data, which causes the
 # race detector to consume a large amount of memory and run incredibly slowly on CI.

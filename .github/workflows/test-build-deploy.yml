@@ -12,7 +12,7 @@ on:
 env:
   # Set to 'true' to force Go build cache warmup on all branches (useful when iterating on cache changes).
   # When 'false', the cache is only built on main (see warmup-go-build-cache-integration-tests job for details).
-  FORCE_BUILD_CACHE_WARMUP: 'true'
+  FORCE_BUILD_CACHE_WARMUP: 'false'
 
 permissions:
   contents: read
