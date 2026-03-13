@@ -206,6 +206,7 @@ message SearchLabelValuesResult {
 // SearchLabelValuesResponse is the streaming response for SearchLabelNames and SearchLabelValues.
 message SearchLabelValuesResponse {
   repeated SearchLabelValuesResult results = 1;
+  repeated string warnings = 2;
 }
 
 message UserStatsRequest {

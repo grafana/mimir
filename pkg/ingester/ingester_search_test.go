@@ -31,14 +31,16 @@ func collectSearchLabelNames(i *Ingester, ctx context.Context, req *client.Searc
 // testSearchLabelNamesServer is a test implementation of Ingester_SearchLabelNamesServer.
 type testSearchLabelNamesServer struct {
 	grpc.ServerStream
-	ctx   context.Context
-	names []string
+	ctx      context.Context
+	names    []string
+	warnings []string
 }
 
 func (s *testSearchLabelNamesServer) Send(resp *client.SearchLabelValuesResponse) error {
 	for _, r := range resp.Results {
 		s.names = append(s.names, r.Value)
 	}
+	s.warnings = append(s.warnings, resp.Warnings...)
 	return nil
 }
 
@@ -58,17 +60,37 @@ func collectSearchLabelValues(i *Ingester, ctx context.Context, req *client.Sear
 	return srv.values, nil
 }
 
+// collectSearchLabelNamesWithWarnings calls SearchLabelNames and collects results and warnings.
+func collectSearchLabelNamesWithWarnings(i *Ingester, ctx context.Context, req *client.SearchLabelValuesRequest) (names []string, warnings []string, err error) {
+	srv := &testSearchLabelNamesServer{ctx: ctx}
+	if err := i.SearchLabelNames(req, srv); err != nil {
+		return nil, nil, err
+	}
+	return srv.names, srv.warnings, nil
+}
+
+// collectSearchLabelValuesWithWarnings calls SearchLabelValues and collects results and warnings.
+func collectSearchLabelValuesWithWarnings(i *Ingester, ctx context.Context, req *client.SearchLabelValuesRequest) (values []string, warnings []string, err error) {
+	srv := &testSearchLabelValuesServer{ctx: ctx}
+	if err := i.SearchLabelValues(req, srv); err != nil {
+		return nil, nil, err
+	}
+	return srv.values, srv.warnings, nil
+}
+
 // testSearchLabelValuesServer is a test implementation of Ingester_SearchLabelValuesServer.
 type testSearchLabelValuesServer struct {
 	grpc.ServerStream
-	ctx    context.Context
-	values []string
+	ctx      context.Context
+	values   []string
+	warnings []string
 }
 
 func (s *testSearchLabelValuesServer) Send(resp *client.SearchLabelValuesResponse) error {
 	for _, r := range resp.Results {
 		s.values = append(s.values, r.Value)
 	}
+	s.warnings = append(s.warnings, resp.Warnings...)
 	return nil
 }
 
@@ -358,5 +380,292 @@ func Test_Ingester_SearchLabelValues(t *testing.T) {
 		values, err := collectSearchLabelValues(i, emptyCtx, req)
 		require.NoError(t, err)
 		assert.Empty(t, values)
+	})
+
+	t.Run("streaming early-exit: limit stops iteration before all values are read", func(t *testing.T) {
+		// "status" has values {"200", "500"} sorted. With Limit=1, only one value
+		// should be returned, confirming that iteration stops after the first match.
+		req := &client.SearchLabelValuesRequest{
+			LabelName:      "status",
+			EndTimestampMs: math.MaxInt64,
+			Limit:          1,
+		}
+		values, err := collectSearchLabelValues(i, ctx, req)
+		require.NoError(t, err)
+		require.Len(t, values, 1)
+		// TSDB returns values in sorted order; the first alpha value must be "200".
+		assert.Equal(t, "200", values[0])
+	})
+
+	t.Run("streaming with filter and limit: filter applied before limit", func(t *testing.T) {
+		// Only "200" matches the filter; limit=1 should return exactly that value.
+		req := &client.SearchLabelValuesRequest{
+			LabelName:      "status",
+			EndTimestampMs: math.MaxInt64,
+			Filter:         &client.SearchLabelValuesFilter{SearchTerms: []string{"2"}},
+			Limit:          1,
+		}
+		values, err := collectSearchLabelValues(i, ctx, req)
+		require.NoError(t, err)
+		require.Len(t, values, 1)
+		assert.Equal(t, "200", values[0])
+	})
+}
+
+func Test_Ingester_SearchLabelNames_MaxLimitWarning(t *testing.T) {
+	// Series produce 3 distinct label names: __name__, status, route.
+	series := []struct {
+		lbls      labels.Labels
+		value     float64
+		timestamp int64
+	}{
+		{labels.FromStrings(model.MetricNameLabel, "test_1", "status", "200", "route", "get_user"), 1, 100000},
+		{labels.FromStrings(model.MetricNameLabel, "test_2"), 2, 200000},
+	}
+
+	ctx := user.InjectOrgID(context.Background(), "test")
+
+	pushSeries := func(i *Ingester) {
+		for _, s := range series {
+			req := mockWriteRequest(t, s.lbls, s.value, s.timestamp)
+			_, err := i.Push(ctx, req)
+			require.NoError(t, err)
+		}
+	}
+
+	t.Run("limit=0 (unlimited): no warning emitted", func(t *testing.T) {
+		limits := defaultLimitsTestConfig()
+		limits.MaxLabelNamesLimit = 0
+		i, r, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(t), limits, nil, "", nil)
+		require.NoError(t, err)
+		startAndWaitHealthy(t, i, r)
+		pushSeries(i)
+
+		names, warnings, err := collectSearchLabelNamesWithWarnings(i, ctx, &client.SearchLabelValuesRequest{EndTimestampMs: math.MaxInt64})
+		require.NoError(t, err)
+		assert.ElementsMatch(t, []string{"__name__", "status", "route"}, names)
+		assert.Empty(t, warnings)
+	})
+
+	t.Run("limit=2: warning emitted, results truncated", func(t *testing.T) {
+		limits := defaultLimitsTestConfig()
+		limits.MaxLabelNamesLimit = 2
+		i, r, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(t), limits, nil, "", nil)
+		require.NoError(t, err)
+		startAndWaitHealthy(t, i, r)
+		pushSeries(i)
+
+		names, warnings, err := collectSearchLabelNamesWithWarnings(i, ctx, &client.SearchLabelValuesRequest{EndTimestampMs: math.MaxInt64})
+		require.NoError(t, err)
+		assert.Len(t, names, 2)
+		require.Len(t, warnings, 1)
+		assert.Contains(t, warnings[0], "the label names search has exceeded the allowed number of records")
+	})
+
+	t.Run("limit=10: no warning (fewer names than limit)", func(t *testing.T) {
+		limits := defaultLimitsTestConfig()
+		limits.MaxLabelNamesLimit = 10
+		i, r, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(t), limits, nil, "", nil)
+		require.NoError(t, err)
+		startAndWaitHealthy(t, i, r)
+		pushSeries(i)
+
+		names, warnings, err := collectSearchLabelNamesWithWarnings(i, ctx, &client.SearchLabelValuesRequest{EndTimestampMs: math.MaxInt64})
+		require.NoError(t, err)
+		assert.ElementsMatch(t, []string{"__name__", "status", "route"}, names)
+		assert.Empty(t, warnings)
+	})
+}
+
+func Test_Ingester_SearchLabelValues_MaxLimitWarning(t *testing.T) {
+	// Series produce 2 distinct values for "status": "200", "500".
+	series := []struct {
+		lbls      labels.Labels
+		value     float64
+		timestamp int64
+	}{
+		{labels.FromStrings(model.MetricNameLabel, "test_1", "status", "200"), 1, 100000},
+		{labels.FromStrings(model.MetricNameLabel, "test_1", "status", "500"), 1, 110000},
+	}
+
+	ctx := user.InjectOrgID(context.Background(), "test")
+
+	pushSeries := func(i *Ingester) {
+		for _, s := range series {
+			req := mockWriteRequest(t, s.lbls, s.value, s.timestamp)
+			_, err := i.Push(ctx, req)
+			require.NoError(t, err)
+		}
+	}
+
+	req := func() *client.SearchLabelValuesRequest {
+		return &client.SearchLabelValuesRequest{LabelName: "status", EndTimestampMs: math.MaxInt64}
+	}
+
+	t.Run("limit=0 (unlimited): no warning emitted", func(t *testing.T) {
+		limits := defaultLimitsTestConfig()
+		limits.MaxLabelValuesLimit = 0
+		i, r, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(t), limits, nil, "", nil)
+		require.NoError(t, err)
+		startAndWaitHealthy(t, i, r)
+		pushSeries(i)
+
+		values, warnings, err := collectSearchLabelValuesWithWarnings(i, ctx, req())
+		require.NoError(t, err)
+		assert.ElementsMatch(t, []string{"200", "500"}, values)
+		assert.Empty(t, warnings)
+	})
+
+	t.Run("limit=1: warning emitted, results truncated", func(t *testing.T) {
+		limits := defaultLimitsTestConfig()
+		limits.MaxLabelValuesLimit = 1
+		i, r, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(t), limits, nil, "", nil)
+		require.NoError(t, err)
+		startAndWaitHealthy(t, i, r)
+		pushSeries(i)
+
+		values, warnings, err := collectSearchLabelValuesWithWarnings(i, ctx, req())
+		require.NoError(t, err)
+		assert.Len(t, values, 1)
+		require.Len(t, warnings, 1)
+		assert.Contains(t, warnings[0], "the label values search has exceeded the allowed number of records")
+	})
+
+	t.Run("limit=10: no warning (fewer values than limit)", func(t *testing.T) {
+		limits := defaultLimitsTestConfig()
+		limits.MaxLabelValuesLimit = 10
+		i, r, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(t), limits, nil, "", nil)
+		require.NoError(t, err)
+		startAndWaitHealthy(t, i, r)
+		pushSeries(i)
+
+		values, warnings, err := collectSearchLabelValuesWithWarnings(i, ctx, req())
+		require.NoError(t, err)
+		assert.ElementsMatch(t, []string{"200", "500"}, values)
+		assert.Empty(t, warnings)
+	})
+}
+
+func Test_Ingester_SearchLabelNames_MaxBytesLimit(t *testing.T) {
+	// Series produce 3 distinct label names: __name__ (8 bytes), status (6 bytes), route (5 bytes).
+	series := []struct {
+		lbls      labels.Labels
+		value     float64
+		timestamp int64
+	}{
+		{labels.FromStrings(model.MetricNameLabel, "test_1", "status", "200", "route", "get_user"), 1, 100000},
+	}
+
+	ctx := user.InjectOrgID(context.Background(), "test")
+
+	setup := func(t *testing.T, maxBytes int) *Ingester {
+		limits := defaultLimitsTestConfig()
+		limits.LabelNamesAndValuesResultsMaxSizeBytes = maxBytes
+		i, r, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(t), limits, nil, "", nil)
+		require.NoError(t, err)
+		startAndWaitHealthy(t, i, r)
+		for _, s := range series {
+			req := mockWriteRequest(t, s.lbls, s.value, s.timestamp)
+			_, err := i.Push(ctx, req)
+			require.NoError(t, err)
+		}
+		return i
+	}
+
+	t.Run("limit=0 (unlimited): no error", func(t *testing.T) {
+		i := setup(t, 0)
+		names, err := collectSearchLabelNames(i, ctx, &client.SearchLabelValuesRequest{EndTimestampMs: math.MaxInt64})
+		require.NoError(t, err)
+		assert.ElementsMatch(t, []string{"__name__", "status", "route"}, names)
+	})
+
+	t.Run("no-sort path: limit smaller than first name triggers error", func(t *testing.T) {
+		// "__name__" is 8 bytes; a limit of 4 is exceeded on the first value.
+		i := setup(t, 4)
+		_, err := collectSearchLabelNames(i, ctx, &client.SearchLabelValuesRequest{EndTimestampMs: math.MaxInt64})
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "buffer exceeded max size")
+	})
+
+	t.Run("sort path: cumulative bytes limit exceeded during buffering", func(t *testing.T) {
+		// With sort, all values are buffered before sending. Total bytes = 8+6+5 = 19;
+		// a limit of 10 is exceeded when buffering the third name.
+		i := setup(t, 10)
+		_, err := collectSearchLabelNames(i, ctx, &client.SearchLabelValuesRequest{
+			EndTimestampMs: math.MaxInt64,
+			Filter:         &client.SearchLabelValuesFilter{SortBy: 1},
+		})
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "buffer exceeded max size")
+	})
+
+	t.Run("limit=1000: no error", func(t *testing.T) {
+		i := setup(t, 1000)
+		names, err := collectSearchLabelNames(i, ctx, &client.SearchLabelValuesRequest{EndTimestampMs: math.MaxInt64})
+		require.NoError(t, err)
+		assert.ElementsMatch(t, []string{"__name__", "status", "route"}, names)
+	})
+}
+
+func Test_Ingester_SearchLabelValues_MaxBytesLimit(t *testing.T) {
+	// Series produce 2 distinct values for "status": "200" (3 bytes), "500" (3 bytes).
+	series := []struct {
+		lbls      labels.Labels
+		value     float64
+		timestamp int64
+	}{
+		{labels.FromStrings(model.MetricNameLabel, "test_1", "status", "200"), 1, 100000},
+		{labels.FromStrings(model.MetricNameLabel, "test_1", "status", "500"), 1, 110000},
+	}
+
+	ctx := user.InjectOrgID(context.Background(), "test")
+
+	setup := func(t *testing.T, maxBytes int) *Ingester {
+		limits := defaultLimitsTestConfig()
+		limits.LabelNamesAndValuesResultsMaxSizeBytes = maxBytes
+		i, r, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(t), limits, nil, "", nil)
+		require.NoError(t, err)
+		startAndWaitHealthy(t, i, r)
+		for _, s := range series {
+			req := mockWriteRequest(t, s.lbls, s.value, s.timestamp)
+			_, err := i.Push(ctx, req)
+			require.NoError(t, err)
+		}
+		return i
+	}
+
+	statusReq := func(filter *client.SearchLabelValuesFilter) *client.SearchLabelValuesRequest {
+		return &client.SearchLabelValuesRequest{LabelName: "status", EndTimestampMs: math.MaxInt64, Filter: filter}
+	}
+
+	t.Run("limit=0 (unlimited): no error", func(t *testing.T) {
+		i := setup(t, 0)
+		values, err := collectSearchLabelValues(i, ctx, statusReq(nil))
+		require.NoError(t, err)
+		assert.ElementsMatch(t, []string{"200", "500"}, values)
+	})
+
+	t.Run("no-sort path: limit smaller than first value triggers error", func(t *testing.T) {
+		// "200" is 3 bytes; a limit of 2 is exceeded on the first value.
+		i := setup(t, 2)
+		_, err := collectSearchLabelValues(i, ctx, statusReq(nil))
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "buffer exceeded max size")
+	})
+
+	t.Run("sort path: cumulative bytes limit exceeded during buffering", func(t *testing.T) {
+		// With sort, both values are buffered. Total = 3+3 = 6 bytes; limit of 4 is exceeded
+		// after buffering the second value.
+		i := setup(t, 4)
+		_, err := collectSearchLabelValues(i, ctx, statusReq(&client.SearchLabelValuesFilter{SortBy: 1}))
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "buffer exceeded max size")
+	})
+
+	t.Run("limit=1000: no error", func(t *testing.T) {
+		i := setup(t, 1000)
+		values, err := collectSearchLabelValues(i, ctx, statusReq(nil))
+		require.NoError(t, err)
+		assert.ElementsMatch(t, []string{"200", "500"}, values)
 	})
 }

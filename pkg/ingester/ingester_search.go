@@ -3,29 +3,39 @@
 package ingester
 
 import (
+	"context"
 	"fmt"
-	"github.com/grafana/mimir/pkg/util"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/storage"
-	"slices"
 	"strings"
-	"time"
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-// TODO - what is a sane value here?
-const searchBatchSize = 1024
-
 const (
-	searchLabelValues = "Ingester.SearchLabelValues"
-	searchLabelNames  = "Ingester.SearchLabelNames"
+	// the size of the internal channel where we pass labels/values from the producer to consumer side. We keep this small to avoid potentially needing to deal with memory growth in this buffer
+	internalChannelSize = 100
+	// the size of the batches that we stream back to the querier. // TODO - what is a good sane value here? Should these become set via config?
+	streamingBatchSize = 1024
+	searchLabelValues  = "Ingester.SearchLabelValues"
+	searchLabelNames   = "Ingester.SearchLabelNames"
 )
+
+// streamingLabelValuesReader is satisfied by *headIndexReader and *index.Reader,
+// which expose LabelValuesFor for lazy iteration over label values.
+// Neither type includes this method on the public tsdb.IndexReader interface.
+type streamingLabelValuesReader interface {
+	LabelValuesFor(postings index.Postings, name string) storage.LabelValues
+}
 
 func initSpanLog(spanlog *spanlogger.SpanLogger, userId string, mint, maxt int64, hints *storage.LabelHints, matchers []*labels.Matcher, filter *client.SearchLabelValuesFilter) {
 	spanlog.SetSpanAndLogTag("user", userId)
@@ -70,7 +80,6 @@ func (i *Ingester) SearchLabelValues(req *client.SearchLabelValuesRequest, strea
 
 func (i *Ingester) doSearchLabelValues(req *client.SearchLabelValuesRequest, stream client.Ingester_SearchLabelValuesServer, method string) (err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
-	now := time.Now()
 
 	spanlog, ctx := spanlogger.New(stream.Context(), i.logger, tracer, method)
 	defer spanlog.Finish()
@@ -81,6 +90,11 @@ func (i *Ingester) doSearchLabelValues(req *client.SearchLabelValuesRequest, str
 		return err
 	}
 
+	// The max bytes of labels/values which can be buffered during the search.
+	// TODO - note these are -querier.label-names-and-values-results-max-size-bytes - so we need to update something to allow this in the ingester
+	maxBytesLimit := i.limits.LabelNamesAndValuesResultsMaxSizeBytes(userID)
+
+	// extract the relevant params from the search request
 	labelName, mint, maxt, hints, matchers, err := client.FromSearchRequest(req)
 	if err != nil {
 		level.Error(spanlog).Log("msg", "unable to parse search label values request", "err", err)
@@ -108,71 +122,219 @@ func (i *Ingester) doSearchLabelValues(req *client.SearchLabelValuesRequest, str
 		return nil
 	}
 
-	q, err := db.Querier(mint, maxt)
-	if err != nil {
-		level.Error(spanlog).Log("msg", "unable to access Querier", "err", err)
-		return err
-	}
-	defer q.Close()
-
 	searchFilter := buildSearchFilter(req.Filter)
 
-	// TODO: replace q.LabelValues with a streaming Searcher once Prometheus exposes one
-	// that would avoid buffering all label values in memory before filtering/sorting/streaming,
-	// letting us pipe values directly from TSDB into the gRPC stream.
-	var vals []string
+	var produce func(ch chan<- string) (annotations.Annotations, error)
 	switch method {
 	case searchLabelValues:
-		vals, _, err = q.LabelValues(ctx, labelName, hints, matchers...)
+		// Label values are obtained from the TSDB head and then any TSDB files
+		// We provide a channel so that we can enforce flow control between the reading of the TSDB files and
+		// the batching/streaming of results back to the querier.
+		// This avoids the need to accumulate all results in memory before streaming.
+		produce = func(ch chan<- string) (annotations.Annotations, error) {
+			return produceLabelValues(ctx, db.db, mint, maxt, labelName, matchers, searchFilter, ch)
+		}
 	case searchLabelNames:
-		vals, _, err = q.LabelNames(ctx, hints, matchers...)
+		q, err := db.Querier(mint, maxt)
+		if err != nil {
+			level.Error(spanlog).Log("msg", "unable to access Querier", "err", err)
+			return err
+		}
+		// TODO - once we have the prometheus side changes, this production of label names should become streaming compatible.
+		produce = func(ch chan<- string) (annotations.Annotations, error) {
+			return produceLabelNames(ctx, q, hints, matchers, searchFilter, ch)
+		}
+	default:
+		return nil
 	}
-	if err != nil {
-		level.Error(spanlog).Log("msg", "unable to perform query", "err", err)
+
+	limit := int(req.Limit)
+	bufSize := streamingBatchSize
+	if limit > 0 {
+		bufSize = min(limit, streamingBatchSize)
+	}
+
+	batch := make([]*client.SearchLabelValuesResult, bufSize)
+	for k := range batch {
+		batch[k] = &client.SearchLabelValuesResult{}
+	}
+
+	iter := newingesterSearcherValueSet(produce, req.Filter, limit, maxBytesLimit)
+	defer iter.Close()
+
+	batchIdx := 0
+	for iter.Next() {
+		*batch[batchIdx] = iter.At()
+		batchIdx++
+		if batchIdx == len(batch) {
+			if err := stream.Send(&client.SearchLabelValuesResponse{Results: batch}); err != nil {
+				return err
+			}
+			batchIdx = 0
+		}
+	}
+
+	if err := iter.Err(); err != nil {
 		return err
 	}
 
-	vals = streaminglabelvalues.ApplyFilterChains(vals, searchFilter)
-	vals = applySearchSort(vals, req.Filter, searchFilter)
-
-	if hints != nil && hints.Limit > 0 && len(vals) > hints.Limit {
-		vals = vals[:hints.Limit]
-	}
-
-	level.Info(spanlog).Log("msg", "Preparing to stream batch", "results", len(vals), "ms", time.Since(now).Milliseconds())
-
-	scoreSortActive := req.Filter != nil && req.Filter.SortBy == client.SORT_BY_SCORE
-
-	// Pre-allocate result structs once; stream.Send marshals synchronously so they can be reused.
-	resultsBuf := make([]*client.SearchLabelValuesResult, searchBatchSize)
-	for k := range resultsBuf {
-		resultsBuf[k] = &client.SearchLabelValuesResult{}
-	}
-
-	for start := 0; start < len(vals); start += searchBatchSize {
-		end := min(start+searchBatchSize, len(vals))
-		results := resultsBuf[:end-start]
-		for j, v := range vals[start:end] {
-			score := 0.0
-			if scoreSortActive && searchFilter != nil {
-				_, score = searchFilter.Accept(v)
-			}
-			// Copy strings since label value strings may point to memory-mapped regions
-			// that become invalid after Querier.Close is called.
-			results[j].Value = strings.Clone(v)
-			results[j].Score = score
-		}
-
-		if err := stream.Send(&client.SearchLabelValuesResponse{Results: results}); err != nil {
-			level.Error(spanlog).Log("msg", "unexpected error sending results to stream", "err", err)
+	if batchIdx > 0 {
+		if err := stream.Send(&client.SearchLabelValuesResponse{Results: batch[:batchIdx]}); err != nil {
 			return err
 		}
-		if err := ctx.Err(); err != nil {
-			return nil
+	}
+	return sendWarnings(stream, iter.Warnings())
+}
+
+// sendWarnings sends any accumulated warnings (if any) as a final response message with no results.
+func sendWarnings(stream client.Ingester_SearchLabelValuesServer, warns annotations.Annotations) error {
+	if len(warns) == 0 {
+		return nil
+	}
+	warningStrs := make([]string, 0, len(warns))
+	for _, err := range warns {
+		warningStrs = append(warningStrs, err.Error())
+	}
+	return stream.Send(&client.SearchLabelValuesResponse{Warnings: warningStrs})
+}
+
+// produceLabelNames fetches all label names from q, applies searchFilter, and sends each
+// accepted name to ch. Sends are cancelled via ctx. The querier is closed before returning.
+func produceLabelNames(
+	ctx context.Context,
+	q storage.Querier,
+	hints *storage.LabelHints,
+	matchers []*labels.Matcher,
+	searchFilter *streaminglabelvalues.FilterChains,
+	ch chan<- string,
+) (annotations.Annotations, error) {
+	defer q.Close() //nolint:errcheck
+	// TODO: TSDB has no streaming LabelNames iterator (unlike LabelValuesFor).
+	// To avoid buffering all label names, Prometheus would need to add
+	// LabelNamesFor(postings index.Postings) storage.LabelValues to its IndexReader interface.
+	vals, warnings, err := q.LabelNames(ctx, hints, matchers...)
+	if err != nil {
+		return warnings, err
+	}
+	vals = streaminglabelvalues.ApplyFilterChains(vals, searchFilter)
+
+	for _, v := range vals {
+		select {
+		case ch <- v:
+		case <-ctx.Done():
+			return warnings, ctx.Err()
+		}
+	}
+	return warnings, nil
+}
+
+// produceLabelValues reads label values from the TSDB head and all overlapping blocks,
+// filtering via searchFilter, and sends each accepted value to ch.
+// The caller must drain ch even if an error is returned.
+func produceLabelValues(
+	ctx context.Context,
+	tsdbDB *tsdb.DB,
+	mint, maxt int64,
+	name string,
+	matchers []*labels.Matcher,
+	searchFilter *streaminglabelvalues.FilterChains,
+	ch chan<- string,
+) (annotations.Annotations, error) {
+	// Head covers in-memory (recent) series; skip if its time range doesn't overlap [mint, maxt].
+	head := tsdbDB.Head()
+	if head.MaxTime() >= mint && head.MinTime() <= maxt {
+		headIR, err := head.Index()
+		if err != nil {
+			return nil, err
+		}
+		if err = produceLabelValuesFromReader(ctx, headIR, name, matchers, searchFilter, ch); err != nil {
+			return nil, err
 		}
 	}
 
-	level.Info(spanlog).Log("msg", "Complete", "results", len(vals), "ms", time.Since(now).Milliseconds())
+	// Persisted blocks overlapping [mint, maxt].
+	for _, b := range tsdbDB.Blocks() {
+		if b.MaxTime() < mint || b.MinTime() > maxt {
+			continue
+		}
+		ir, err := b.Index()
+		if err != nil {
+			return nil, err
+		}
+		if err = produceLabelValuesFromReader(ctx, ir, name, matchers, searchFilter, ch); err != nil {
+			return nil, err
+		}
+	}
+	return nil, nil
+}
+
+// produceLabelValuesFromReader reads filtered label values from a single IndexReader and
+// sends each to ch. Sends are cancelled via ctx. The reader is closed before returning.
+func produceLabelValuesFromReader(
+	ctx context.Context,
+	r tsdb.IndexReader,
+	name string,
+	matchers []*labels.Matcher,
+	searchFilter *streaminglabelvalues.FilterChains,
+	ch chan<- string,
+) error {
+	defer r.Close() //nolint:errcheck
+
+	var (
+		postings index.Postings
+		err      error
+	)
+	if len(matchers) == 0 {
+		// PostingsForMatchers with no matchers returns EmptyPostings (Intersect of nothing).
+		// Use the AllPostings key instead to get every series.
+		k, v := index.AllPostingsKey()
+		postings, err = r.Postings(ctx, k, v)
+	} else {
+		postings, err = r.PostingsForMatchers(ctx, false, matchers...)
+	}
+	if err != nil {
+		return err
+	}
+
+	send := func(v string) error {
+		select {
+		case ch <- v:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	if sr, ok := r.(streamingLabelValuesReader); ok {
+		iter := sr.LabelValuesFor(postings, name)
+		defer iter.Close() //nolint:errcheck
+		for iter.Next() {
+			v := iter.At()
+			if searchFilter != nil {
+				if accepted, _ := searchFilter.Accept(v); !accepted {
+					continue
+				}
+			}
+			if err := send(v); err != nil {
+				return err
+			}
+		}
+		return iter.Err()
+	}
+
+	// Fallback for any IndexReader that doesn't implement LabelValuesFor - not expected to happen
+	// TODO - hopefully this can be replaced to avoid allocating all these values
+	vals, err := r.LabelValues(ctx, name, nil, matchers...)
+	if err != nil {
+		return err
+	}
+	vals = streaminglabelvalues.ApplyFilterChains(vals, searchFilter)
+
+	for _, v := range vals {
+		if err := send(v); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -187,24 +349,4 @@ func buildSearchFilter(sf *client.SearchLabelValuesFilter) *streaminglabelvalues
 		op = streaminglabelvalues.And
 	}
 	return streaminglabelvalues.BuildFilterChains(sf.SearchTerms, sf.CaseInsensitive, op, sf.FuzzThreshold)
-}
-
-// applySearchSort sorts values according to the sort_by/sort_order fields in sf.
-// For alpha-asc (default from TSDB) no reordering is needed.
-// For alpha-desc the slice is reversed.
-// For score sort, ScoreAndSort is called using the pre-built filter.
-// If sf is nil or sort_by is 0, values are returned unchanged.
-func applySearchSort(values []string, sf *client.SearchLabelValuesFilter, filter *streaminglabelvalues.FilterChains) []string {
-	if sf == nil || sf.SortBy == client.SORT_BY_NONE {
-		return values
-	}
-	switch sf.SortBy {
-	case client.SORT_BY_ALPHA:
-		if sf.SortOrder == client.SORT_ORDER_DESC {
-			slices.Reverse(values)
-		}
-	case client.SORT_BY_SCORE: // filter provides scoring; falls back to unchanged if no filter
-		values = streaminglabelvalues.ScoreAndSort(values, filter, sf.SortOrder != client.SORT_ORDER_ASC)
-	}
-	return values
 }
