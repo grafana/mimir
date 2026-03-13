@@ -52,6 +52,7 @@ type Operator interface {
 	// It must be safe to call Finalize multiple times.
 	// Finalize must not call any method other than Finalize on another operator and is expected to call Finalize on
 	// any nested operators.
+	// Once Finalize has been called, calling methods other than Close may result in unpredictable behaviour, corruption or crashes.
 	Finalize(ctx context.Context) error
 }
 
