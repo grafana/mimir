@@ -35,7 +35,7 @@ type BucketBinaryReader struct {
 	// Symbols struct that keeps only 1/postingOffsetsInMemSampling in the memory, then looks up the
 	// rest via seeking to offsets in the index-header.
 	symbols             *streamindex.SymbolsTableReader
-	postingsOffsetTable streamindex.PostingOffsetsTableReader
+	postingsOffsetTable streamindex.PostingsOffsetsTableReader
 
 	// In-memory table label name symbol lookups;
 	// total size is minimal and label names account for ~half of all symbol lookups.
@@ -113,10 +113,10 @@ func NewBucketBinaryReader(
 	return r, nil
 }
 
-// DownloadOrGenerateSparseHeader loads the sparse header from disk, object store, or constructs it from the index-header.
+// DownloadOrBuildSparseHeader loads the sparse header from disk, object store, or constructs it from the index-header.
 // It prioritizes: 1) Local file 2) Object store 3) Generating from the index-header
 // It returns an error if the sparse header cannot be loaded from any of the sources.
-// If the sparse header was not found on disk, it will try to write it after generating or downloading it. If writing fails, DownloadOrGenerateSparseHeader does not return an error.
+// If the sparse header was not found on disk, it will try to write it after generating or downloading it. If writing fails, DownloadOrBuildSparseHeader does not return an error.
 func (r *BucketBinaryReader) loadSparseHeader(
 	ctx context.Context,
 	logger log.Logger,
@@ -165,7 +165,7 @@ func (r *BucketBinaryReader) loadSparseHeader(
 	}()
 
 	// 2. Fall back to the bucket
-	sparseData, err = getSparseHeaderBytes(ctx, id, bkt, logger)
+	sparseData, err = getSparseHeaderBytesFromBucket(ctx, id, bkt, logger)
 	if err == nil {
 		// Try to load the downloaded sparse header
 		err = r.loadFromSparseIndexHeader(logger, sparseData, postingOffsetsInMemSampling)

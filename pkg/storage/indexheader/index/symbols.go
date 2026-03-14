@@ -16,7 +16,6 @@ import (
 	"github.com/grafana/dskit/runutil"
 
 	streamencoding "github.com/grafana/mimir/pkg/storage/indexheader/encoding"
-	"github.com/grafana/mimir/pkg/storage/indexheader/indexheaderpb"
 )
 
 // The table gets initialized with sync.Once but may still cause a race
@@ -39,41 +38,41 @@ type SymbolsTableReader struct {
 
 const symbolFactor = 32
 
-// NewSymbolsTableReaderFromSparseHeader reads from sparse index header and returns a Symbols object for symbol lookups.
-func NewSymbolsTableReaderFromSparseHeader(factory streamencoding.DecbufFactory, sparseSymbols *indexheaderpb.Symbols, offset int) (s *SymbolsTableReader, err error) {
-	s = &SymbolsTableReader{
-		decbufFactory: factory,
-		tableOffset:   offset,
-	}
-
-	s.sparseOffsets = make([]int, len(sparseSymbols.Offsets))
-
-	for i, offset := range sparseSymbols.Offsets {
-		s.sparseOffsets[i] = int(offset)
-	}
-
-	s.allSymbolsCount = int(sparseSymbols.SymbolsCount)
-
-	return s, nil
-}
-
-// NewSymbolsTableReaderFromIndexHeader returns a SymbolsTableReader object for symbol lookups.
-func NewSymbolsTableReaderFromIndexHeader(
-	decbufFactory streamencoding.DecbufFactory, indexVersion, tableOffset int, doChecksum bool,
-) (s *SymbolsTableReader, err error) {
-	allSymbolsCount, sparseOffsets, err := SparseValuesFromSymbolsTable(decbufFactory, tableOffset, doChecksum)
-	if err != nil {
-		return nil, err
-	}
-
-	return &SymbolsTableReader{
-		indexVersion:    indexVersion,
-		tableOffset:     tableOffset,
-		decbufFactory:   decbufFactory,
-		allSymbolsCount: allSymbolsCount,
-		sparseOffsets:   sparseOffsets,
-	}, nil
-}
+//// NewSymbolsTableReaderFromSparseHeader reads from sparse index header and returns a Symbols object for symbol lookups.
+//func NewSymbolsTableReaderFromSparseHeader(factory streamencoding.DecbufFactory, sparseSymbols *indexheaderpb.Symbols, offset int) (s *SymbolsTableReader, err error) {
+//	s = &SymbolsTableReader{
+//		decbufFactory: factory,
+//		tableOffset:   offset,
+//	}
+//
+//	s.sparseOffsets = make([]int, len(sparseSymbols.Offsets))
+//
+//	for i, offset := range sparseSymbols.Offsets {
+//		s.sparseOffsets[i] = int(offset)
+//	}
+//
+//	s.allSymbolsCount = int(sparseSymbols.SymbolsCount)
+//
+//	return s, nil
+//}
+//
+//// NewSymbolsTableReaderFromIndexHeader returns a SymbolsTableReader object for symbol lookups.
+//func NewSymbolsTableReaderFromIndexHeader(
+//	decbufFactory streamencoding.DecbufFactory, indexVersion, tableOffset int, doChecksum bool,
+//) (s *SymbolsTableReader, err error) {
+//	allSymbolsCount, sparseOffsets, err := SparseValuesFromSymbolsTable(decbufFactory, tableOffset, doChecksum)
+//	if err != nil {
+//		return nil, err
+//	}
+//
+//	return &SymbolsTableReader{
+//		indexVersion:    indexVersion,
+//		tableOffset:     tableOffset,
+//		decbufFactory:   decbufFactory,
+//		allSymbolsCount: allSymbolsCount,
+//		sparseOffsets:   sparseOffsets,
+//	}, nil
+//}
 
 func SparseValuesFromSymbolsTable(
 	decbufFactory streamencoding.DecbufFactory,

@@ -22,32 +22,32 @@ func TestPostingValueOffsets(t *testing.T) {
 	}{
 		"prefix not found": {
 			existingOffsets: []LabelValuePostingsOffset{
-				{value: "010"},
-				{value: "019"},
-				{value: "030"},
-				{value: "031"},
+				{Value: "010"},
+				{Value: "019"},
+				{Value: "030"},
+				{Value: "031"},
 			},
 			prefix:        "a",
 			expectedFound: false,
 		},
 		"prefix matches only one sampled offset": {
 			existingOffsets: []LabelValuePostingsOffset{
-				{value: "010"},
-				{value: "019"},
-				{value: "030"},
-				{value: "031"},
+				{Value: "010"},
+				{Value: "019"},
+				{Value: "030"},
+				{Value: "031"},
 			},
 			prefix:        "02",
 			expectedFound: true,
 			expectedStart: 1,
 			expectedEnd:   2,
 		},
-		"prefix matches all SparseOffsets": {
+		"prefix matches all SparseTableOffsets": {
 			existingOffsets: []LabelValuePostingsOffset{
-				{value: "010"},
-				{value: "019"},
-				{value: "030"},
-				{value: "031"},
+				{Value: "010"},
+				{Value: "019"},
+				{Value: "030"},
+				{Value: "031"},
 			},
 			prefix:        "0",
 			expectedFound: true,
@@ -56,23 +56,23 @@ func TestPostingValueOffsets(t *testing.T) {
 		},
 		"prefix matches only last offset": {
 			existingOffsets: []LabelValuePostingsOffset{
-				{value: "010"},
-				{value: "019"},
-				{value: "030"},
-				{value: "031"},
+				{Value: "010"},
+				{Value: "019"},
+				{Value: "030"},
+				{Value: "031"},
 			},
 			prefix:        "031",
 			expectedFound: true,
 			expectedStart: 3,
 			expectedEnd:   4,
 		},
-		"prefix matches multiple SparseOffsets": {
+		"prefix matches multiple SparseTableOffsets": {
 			existingOffsets: []LabelValuePostingsOffset{
-				{value: "010"},
-				{value: "019"},
-				{value: "020"},
-				{value: "030"},
-				{value: "031"},
+				{Value: "010"},
+				{Value: "019"},
+				{Value: "020"},
+				{Value: "030"},
+				{Value: "031"},
 			},
 			prefix:        "02",
 			expectedFound: true,
@@ -81,11 +81,11 @@ func TestPostingValueOffsets(t *testing.T) {
 		},
 		"prefix matches only first offset": {
 			existingOffsets: []LabelValuePostingsOffset{
-				{value: "010"},
-				{value: "019"},
-				{value: "020"},
-				{value: "030"},
-				{value: "031"},
+				{Value: "010"},
+				{Value: "019"},
+				{Value: "020"},
+				{Value: "030"},
+				{Value: "031"},
 			},
 			prefix:        "015",
 			expectedFound: true,
@@ -96,7 +96,7 @@ func TestPostingValueOffsets(t *testing.T) {
 
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			offsets := LabelSparsePostingsOffsets{SparseOffsets: testCase.existingOffsets}
+			offsets := LabelSparsePostingsOffsets{SparseTableOffsets: testCase.existingOffsets}
 			start, end, found := offsets.prefixOffsets(testCase.prefix)
 			assert.Equal(t, testCase.expectedStart, start)
 			assert.Equal(t, testCase.expectedEnd, end)
@@ -219,7 +219,7 @@ func Test_NewPostingOffsetTableFromSparseHeader(t *testing.T) {
 				assert.Error(t, err)
 			} else {
 				assert.NoError(t, err)
-				assert.Equal(t, testCase.expectedLen, len(tbl.sparsePostingsOffsets["__name__"].SparseOffsets))
+				assert.Equal(t, testCase.expectedLen, len(tbl.sparsePostingsOffsets["__name__"].SparseTableOffsets))
 			}
 
 		})

@@ -6,8 +6,6 @@
 package indexheader
 
 import (
-	"bytes"
-	"compress/gzip"
 	"context"
 	"fmt"
 	"os"
@@ -24,9 +22,7 @@ import (
 
 	streamencoding "github.com/grafana/mimir/pkg/storage/indexheader/encoding"
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
-	"github.com/grafana/mimir/pkg/storage/indexheader/indexheaderpb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/util/atomicfs"
 	"github.com/grafana/mimir/pkg/util/filepool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -51,7 +47,7 @@ type SplitStreamBinaryReader struct {
 	postingsOffsetsDecbufFactory streamencoding.DecbufFactory
 
 	symbolsTable        *streamindex.SymbolsTableReader
-	postingsOffsetTable streamindex.PostingOffsetsTableReader
+	postingsOffsetTable streamindex.PostingsOffsetsTableReader
 
 	// In-memory table of symbol lookups for all label names present in block;
 	// Populated in the constructor by pulling all label names from the Postings Offsets table
@@ -86,9 +82,12 @@ func NewSplitStreamBinaryReader(
 	spanLog, ctx := spanlogger.New(ctx, ll, tracer, "indexheader.NewStreamBinaryReader")
 	defer spanLog.Finish()
 
+	localBlockDir := filepath.Join(localTenantDir, blockID.String())
+	localIndexHeaderPath := filepath.Join(localBlockDir, block.IndexHeaderFilename)
+	localSparseHeaderPath := filepath.Join(localBlockDir, block.SparseIndexHeaderFilename)
+
 	// Ensure local block directory exists on disk to hold the sparse index-header
 	// and any sections of the full index-header which are not read from the bucket.
-	localBlockDir := filepath.Join(localTenantDir, blockID.String())
 	if df, err := os.Open(localBlockDir); err != nil && os.IsNotExist(err) {
 		if err := os.MkdirAll(localBlockDir, os.ModePerm); err != nil {
 			return nil, fmt.Errorf("cannot create local block dir: %w", err)
@@ -97,10 +96,27 @@ func NewSplitStreamBinaryReader(
 		_ = df.Close()
 	}
 
-	localIndexHeaderPath := filepath.Join(localBlockDir, block.IndexHeaderFilename)
-
 	// Ensure index-header is downloaded to local block directory
 	if _, err := os.Stat(localIndexHeaderPath); err != nil {
+		level.Debug(spanLog).Log(
+			"msg", "failed to stat index-header on local disk; will create from bucket block index",
+			"path", localIndexHeaderPath, "err", err,
+		)
+		start := time.Now()
+		if err := WriteBinary(ctx, tenantBkt, blockID, localIndexHeaderPath); err != nil {
+			return nil, fmt.Errorf("cannot write index header: %w", err)
+		}
+		level.Debug(spanLog).Log(
+			"msg", "created index-header on local disk from bucket block index",
+			"path", localIndexHeaderPath, "elapsed", time.Since(start),
+		)
+	}
+
+	// Ensure sparse index-header is downloaded to local block directory
+	// and parse the sparse header values into memory
+	// TODO change this to sparse index header stuff and call LoadSparseHeaderFromDisk,
+	//   then fall back to DownloadOrBuildSparseHeader.
+	if _, err := os.Stat(localSparseHeaderPath); err != nil {
 		level.Debug(spanLog).Log(
 			"msg", "failed to stat index-header on local disk; will create from bucket block index",
 			"path", localIndexHeaderPath, "err", err,
@@ -211,7 +227,7 @@ type StreamBinaryReader struct {
 		symbol string
 	}
 
-	postingsOffsetTable streamindex.PostingOffsetsTableReader
+	postingsOffsetTable streamindex.PostingsOffsetsTableReader
 
 	indexHeaderVersion int
 }
@@ -257,47 +273,6 @@ func (r *StreamBinaryReader) loadFromIndexHeader(logger log.Logger, cfg Config, 
 		r.toc, r.factory, postingOffsetsInMemSampling, cfg.VerifyOnLoad, logger,
 	)
 	return err
-}
-
-// writeSparseHeadersToFile uses protocol buffer to write sparseHeaders to disk at sparseHeadersPath.
-func writeSparseHeadersToFile(sparseHeadersPath string, sparseHeaders *indexheaderpb.Sparse) (retErr error) {
-	out, err := sparseHeaders.Marshal()
-	if err != nil {
-		return fmt.Errorf("failed to encode sparse index-header: %w", err)
-	}
-
-	gzipped := &bytes.Buffer{}
-	gzipWriter := gzip.NewWriter(gzipped)
-
-	if _, err := gzipWriter.Write(out); err != nil {
-		return fmt.Errorf("failed to gzip sparse index-header: %w", err)
-	}
-
-	if err := gzipWriter.Close(); err != nil {
-		return fmt.Errorf("failed to close gzip sparse index-header: %w", err)
-	}
-
-	if err := atomicfs.CreateFile(sparseHeadersPath, gzipped); err != nil {
-		return fmt.Errorf("failed to write sparse index-header file: %w", err)
-	}
-
-	return nil
-}
-
-// tryWriteSparseHeadersToFile attempts to write the sparse header to disk.
-// If it fails, it will log a warning.
-func tryWriteSparseHeadersToFile(logger log.Logger, sparseHeadersPath string, sparseHeaders *indexheaderpb.Sparse) {
-	start := time.Now()
-	level.Debug(logger).Log("msg", "writing sparse index-header to disk")
-
-	err := writeSparseHeadersToFile(sparseHeadersPath, sparseHeaders)
-
-	if err != nil {
-		logger = log.With(level.Warn(logger), "msg", "error writing sparse header to disk; will continue loading block", "err", err)
-	} else {
-		logger = log.With(level.Info(logger), "msg", "wrote sparse header to disk")
-	}
-	logger.Log("elapsed", time.Since(start))
 }
 
 func (r *StreamBinaryReader) IndexVersion(context.Context) (int, error) {

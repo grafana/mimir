@@ -69,7 +69,7 @@ func TestSymbolsV2(t *testing.T) {
 		s, err := NewSymbolsTableReaderFromIndexHeader(decbufFactory, index.FormatV2, symbolsStart, true)
 		require.NoError(t, err)
 
-		// We store only 4 SparseOffsets to symbols.
+		// We store only 4 SparseTableOffsets to symbols.
 		require.Len(t, s.sparseOffsets, 4)
 
 		t.Run(fmt.Sprintf("Lookup/DecbufFactory=%s", factoryName), func(t *testing.T) {
@@ -94,7 +94,7 @@ func TestSymbolsV2(t *testing.T) {
 
 		t.Run(fmt.Sprintf("ForEachSymbol/DecbufFactory=%s", factoryName), func(t *testing.T) {
 			// Use ForEachSymbol to build an offset -> symbol mapping and ensure
-			// that it matches the expected SparseOffsets and symbols.
+			// that it matches the expected SparseTableOffsets and symbols.
 			var symbols []string
 			expected := make(map[uint32]string)
 			for i := 99; i >= 0; i-- {
