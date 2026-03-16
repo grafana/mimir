@@ -4,6 +4,7 @@ package commonsubexpressionelimination
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 
@@ -32,6 +33,8 @@ type RangeVectorDuplicationBuffer struct {
 	// Multiple RangeVectorDuplicationConsumers will call RangeVectorDuplicationBuffer.Prepare() and AfterPrepare(), so this ensures idempotency.
 	prepareCalled      bool
 	afterPrepareCalled bool
+
+	stats *types.OperatorEvaluationStats
 }
 
 func NewRangeVectorDuplicationBuffer(inner types.RangeVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *RangeVectorDuplicationBuffer {
@@ -254,6 +257,11 @@ func (b *RangeVectorDuplicationBuffer) CloseConsumer(consumer *RangeVectorDuplic
 
 	if b.allConsumersClosed() {
 		b.Inner.Close()
+
+		if b.stats != nil {
+			b.stats.Close()
+			b.stats = nil
+		}
 	}
 }
 
@@ -417,6 +425,47 @@ func (b *RangeVectorDuplicationBuffer) allConsumersFinalized() bool {
 	return true
 }
 
+func (b *RangeVectorDuplicationBuffer) QueryStats(ctx context.Context, consumer *RangeVectorDuplicationConsumer) (*types.OperatorEvaluationStats, error) {
+	if !b.allConsumersFinalized() {
+		return nil, errors.New("RangeVectorDuplicationBuffer: cannot get stats when one or more consumers are not finalized")
+	}
+
+	if consumer.hasReadStats {
+		return nil, errors.New("RangeVectorDuplicationBuffer: cannot get stats twice for the same consumer")
+	}
+
+	if b.stats == nil {
+		var err error
+		b.stats, err = b.Inner.Stats(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	consumer.hasReadStats = true
+
+	// TODO: handle subsets
+
+	if b.allConsumersHaveReadStats() {
+		// Last consumer, return stats without cloning.
+		stats := b.stats
+		b.stats = nil
+		return stats, nil
+	}
+
+	return b.stats.Clone()
+}
+
+func (b *RangeVectorDuplicationBuffer) allConsumersHaveReadStats() bool {
+	for _, consumer := range b.consumers {
+		if !consumer.hasReadStats {
+			return false
+		}
+	}
+
+	return true
+}
+
 type bufferedRangeVectorStepData struct {
 	stepData        *types.RangeVectorStepData
 	floatBuffer     *types.FPointRingBuffer
@@ -469,6 +518,7 @@ type RangeVectorDuplicationConsumer struct {
 	hasReadCurrentSeriesSamples  bool
 	finalized                    bool
 	closed                       bool
+	hasReadStats                 bool
 
 	// unfilteredSeriesBitmap contains one entry per unfiltered input series, where true indicates that it passes this consumer's filters.
 	// If this consumer has no filters, this is nil.
@@ -528,6 +578,10 @@ func (d *RangeVectorDuplicationConsumer) AfterPrepare(ctx context.Context) error
 
 func (d *RangeVectorDuplicationConsumer) Finalize(ctx context.Context) error {
 	return d.Buffer.Finalize(ctx, d)
+}
+
+func (d *RangeVectorDuplicationConsumer) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return d.Buffer.QueryStats(ctx, d)
 }
 
 func (d *RangeVectorDuplicationConsumer) Close() {
