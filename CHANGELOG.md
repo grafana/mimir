@@ -31,6 +31,7 @@
 * [CHANGE] Querier and query-frontend: The experimental `-querier.mimir-query-engine.enable-common-subexpression-elimination-for-range-vector-expressions-in-instant-queries` and `-querier.mimir-query-engine.enable-skipping-histogram-decoding` flags have been removed. Both were previously enabled by default and now cannot be disabled. #14237
 * [CHANGE] Query-frontend: The per-query memory consumption limit now considers the estimated memory consumed by buffered messages received from queriers but not yet consumed. #14775
 * [CHANGE] Querier: The flag `-querier.filter-queryables-enabled` is deprecated and will be removed in Mimir 3.3. #14843
+* [FEATURE] Distributor: Derive limits based on tenant metadata. Supported limits are `max_active_series_per_user`, `ingestion_rate`, `ingestion_burst_size`, `ingestion_burst_factor`, `otel_metric_suffixes_enabled`, `name_validation_scheme` and `otel_translation_strategy`. #14289
 * [FEATURE] Distributor: add `cortex_distributor_request_body_compression_ratio` histogram that tracks the compression of write requests. #14232
 * [FEATURE] Distributor: add `-distributor.otel-label-name-underscore-sanitization` and `-distributor.otel-label-name-preserve-underscores` that control sanitization of underscores during OTLP translation. #13133
 * [FEATURE] Query-frontends: Automatically adjust features used in query plans generated for remote execution based on what the available queriers support. #13017 #13164 #13544
