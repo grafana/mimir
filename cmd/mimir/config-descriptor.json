@@ -6786,6 +6786,16 @@
         },
         {
           "kind": "field",
+          "name": "compactor_ooo_split_and_merge_shards",
+          "required": false,
+          "desc": "The number of shards to use when splitting out-of-order blocks. 0 to use the value of -compactor.split-and-merge-shards. Only applies to blocks with the out-of-order external label, see -ingester.out-of-order-blocks-external-label-enabled.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "compactor.ooo-split-and-merge-shards",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
           "name": "compactor_split_groups",
           "required": false,
           "desc": "Number of groups that blocks for splitting should be grouped into. Each group of blocks is then split separately. Number of output split shards is controlled by -compactor.split-and-merge-shards.",

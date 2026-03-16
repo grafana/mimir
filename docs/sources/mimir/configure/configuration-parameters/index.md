@@ -4899,6 +4899,13 @@ ruler_alertmanager_client_config:
 # CLI flag: -compactor.split-and-merge-shards
 [compactor_split_and_merge_shards: <int> | default = 0]
 
+# The number of shards to use when splitting out-of-order blocks. 0 to use the
+# value of -compactor.split-and-merge-shards. Only applies to blocks with the
+# out-of-order external label, see
+# -ingester.out-of-order-blocks-external-label-enabled.
+# CLI flag: -compactor.ooo-split-and-merge-shards
+[compactor_ooo_split_and_merge_shards: <int> | default = 0]
+
 # Number of groups that blocks for splitting should be grouped into. Each group
 # of blocks is then split separately. Number of output split shards is
 # controlled by -compactor.split-and-merge-shards.

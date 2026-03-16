@@ -271,6 +271,7 @@ type Limits struct {
 	// Compactor.
 	CompactorBlocksRetentionPeriod        model.Duration `yaml:"compactor_blocks_retention_period" json:"compactor_blocks_retention_period"`
 	CompactorSplitAndMergeShards          int            `yaml:"compactor_split_and_merge_shards" json:"compactor_split_and_merge_shards"`
+	CompactorOOOSplitAndMergeShards       int            `yaml:"compactor_ooo_split_and_merge_shards" json:"compactor_ooo_split_and_merge_shards"`
 	CompactorSplitGroups                  int            `yaml:"compactor_split_groups" json:"compactor_split_groups"`
 	CompactorTenantShardSize              int            `yaml:"compactor_tenant_shard_size" json:"compactor_tenant_shard_size"`
 	CompactorPartialBlockDeletionDelay    model.Duration `yaml:"compactor_partial_block_deletion_delay" json:"compactor_partial_block_deletion_delay"`
@@ -466,6 +467,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 
 	f.Var(&l.CompactorBlocksRetentionPeriod, "compactor.blocks-retention-period", "Delete blocks containing samples older than the specified retention period. Also used by query-frontend to avoid querying beyond the retention period by instant, range or remote read queries. 0 to disable.")
 	f.IntVar(&l.CompactorSplitAndMergeShards, "compactor.split-and-merge-shards", 0, "The number of shards to use when splitting blocks. 0 to disable splitting.")
+	f.IntVar(&l.CompactorOOOSplitAndMergeShards, "compactor.ooo-split-and-merge-shards", 0, "The number of shards to use when splitting out-of-order blocks. 0 to use the value of -compactor.split-and-merge-shards. Only applies to blocks with the out-of-order external label, see -ingester.out-of-order-blocks-external-label-enabled.")
 	f.IntVar(&l.CompactorSplitGroups, "compactor.split-groups", 1, "Number of groups that blocks for splitting should be grouped into. Each group of blocks is then split separately. Number of output split shards is controlled by -compactor.split-and-merge-shards.")
 	f.IntVar(&l.CompactorTenantShardSize, "compactor.compactor-tenant-shard-size", 0, "Max number of compactors that can compact blocks for single tenant. 0 to disable the limit and use all compactors.")
 	_ = l.CompactorPartialBlockDeletionDelay.Set("1d")
@@ -1185,6 +1187,17 @@ func (o *Overrides) CompactorBlocksRetentionPeriod(userID string) time.Duration 
 // CompactorSplitAndMergeShards returns the number of shards to use when splitting blocks.
 func (o *Overrides) CompactorSplitAndMergeShards(userID string) int {
 	return o.getOverridesForUser(userID).CompactorSplitAndMergeShards
+}
+
+// CompactorOOOSplitAndMergeShards returns the number of shards to use when splitting out-of-order blocks.
+// It only applies to blocks with the out-of-order external label. Such blocks are only generated when -ingester.out-of-order-blocks-external-label-enabled is set.
+// If the value is 0 or not set, it falls back to CompactorSplitAndMergeShards.
+func (o *Overrides) CompactorOOOSplitAndMergeShards(userID string) int {
+	oooShards := o.getOverridesForUser(userID).CompactorOOOSplitAndMergeShards
+	if oooShards > 0 {
+		return oooShards
+	}
+	return o.CompactorSplitAndMergeShards(userID)
 }
 
 // CompactorSplitGroups returns the number of groups that blocks for splitting should be grouped into.

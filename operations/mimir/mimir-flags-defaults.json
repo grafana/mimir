@@ -470,6 +470,7 @@
   "store-gateway.tenant-shard-size-per-zone": 0,
   "compactor.blocks-retention-period": 0,
   "compactor.split-and-merge-shards": 0,
+  "compactor.ooo-split-and-merge-shards": 0,
   "compactor.split-groups": 1,
   "compactor.compactor-tenant-shard-size": 0,
   "compactor.partial-block-deletion-delay": 86400000000000,
