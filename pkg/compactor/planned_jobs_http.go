@@ -93,12 +93,21 @@ func (c *MultitenantCompactor) PlannedJobsHandler(w http.ResponseWriter, req *ht
 	tenantSplitGroups := c.cfgProvider.CompactorSplitGroups(tenantID)
 
 	tenantMergeShards := c.cfgProvider.CompactorSplitAndMergeShards(tenantID)
+	tenantOOOMergeShards := c.cfgProvider.CompactorOOOSplitAndMergeShards(tenantID)
 
 	mergeShards := tenantMergeShards
 	if sc := req.Form.Get("merge_shards"); sc != "" {
 		mergeShards, _ = strconv.Atoi(sc)
 		if mergeShards < 0 {
 			mergeShards = 0
+		}
+	}
+
+	oooMergeShards := tenantOOOMergeShards
+	if sc := req.Form.Get("ooo_merge_shards"); sc != "" {
+		oooMergeShards, _ = strconv.Atoi(sc)
+		if oooMergeShards < 0 {
+			oooMergeShards = 0
 		}
 	}
 
@@ -117,7 +126,7 @@ func (c *MultitenantCompactor) PlannedJobsHandler(w http.ResponseWriter, req *ht
 		return
 	}
 
-	jobs, err := estimateCompactionJobsFromBucketIndex(req.Context(), tenantID, bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider), idx, c.compactorCfg.BlockRanges, mergeShards, splitGroups)
+	jobs, err := estimateCompactionJobsFromBucketIndex(req.Context(), tenantID, bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider), idx, c.compactorCfg.BlockRanges, mergeShards, oooMergeShards, splitGroups)
 	if err != nil {
 		level.Error(c.logger).Log("msg", "failed to compute compaction jobs from bucket index for tenant while listing compaction jobs", "user", tenantID, "err", err)
 		util.WriteTextResponse(w, "Failed to compute compaction jobs from bucket index")
