@@ -32,12 +32,13 @@ func main() {
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 
 	cfg := struct {
-		bucket      bucket.Config
-		userID      string
-		blockRanges mimir_tsdb.DurationList
-		shardCount  int
-		splitGroups int
-		sorting     string
+		bucket        bucket.Config
+		userID        string
+		blockRanges   mimir_tsdb.DurationList
+		shardCount    int
+		oooShardCount int
+		splitGroups   int
+		sorting       string
 	}{}
 
 	logger := gokitlog.NewNopLogger()
@@ -48,6 +49,7 @@ func main() {
 	flag.Var(&cfg.blockRanges, "block-ranges", "List of compaction time ranges.")
 	flag.StringVar(&cfg.userID, "user", "", "User (tenant)")
 	flag.IntVar(&cfg.shardCount, "shard-count", 4, "Shard count")
+	flag.IntVar(&cfg.oooShardCount, "ooo-shard-count", 0, "Shard count for out-of-order blocks (0 to use shard-count)")
 	flag.IntVar(&cfg.splitGroups, "split-groups", 4, "Split groups")
 	flag.StringVar(&cfg.sorting, "sorting", compactor.CompactionOrderOldestFirst, "One of: "+strings.Join(compactor.CompactionOrders, ", ")+".")
 
@@ -96,7 +98,7 @@ func main() {
 
 	fmt.Fprintf(tabber, "Job No.\tStart Time\tEnd Time\tBlocks\tJob Key\n")
 
-	grouper := compactor.NewSplitAndMergeGrouper(cfg.userID, cfg.blockRanges.ToMilliseconds(), uint32(cfg.shardCount), uint32(cfg.splitGroups), logger)
+	grouper := compactor.NewSplitAndMergeGrouper(cfg.userID, cfg.blockRanges.ToMilliseconds(), uint32(cfg.shardCount), uint32(cfg.oooShardCount), uint32(cfg.splitGroups), logger)
 	jobs, err := grouper.Groups(metas)
 	if err != nil {
 		log.Fatalln("failed to plan compaction:", err)
