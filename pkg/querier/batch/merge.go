@@ -6,6 +6,7 @@
 package batch
 
 import (
+	"cmp"
 	"container/heap"
 	"slices"
 
@@ -196,7 +197,7 @@ func partitionChunks(cs []GenericChunk) [][]GenericChunk {
 	}
 
 	slices.SortFunc(cs, func(a, b GenericChunk) int {
-		return int(a.MinTime - b.MinTime)
+		return cmp.Compare(a.MinTime, b.MinTime)
 	})
 
 	css := [][]GenericChunk{}
