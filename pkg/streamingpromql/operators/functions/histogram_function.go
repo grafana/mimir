@@ -277,6 +277,7 @@ func (h *HistogramFunction) SeriesMetadata(ctx context.Context, matchers types.M
 	h.remainingGroupsBytes = uint64(cap(h.remainingGroups)) * bucketGroupPointerSize
 	if err = h.memoryConsumptionTracker.IncreaseMemoryConsumption(h.remainingGroupsBytes, limiter.BucketGroupPointerSlices); err != nil {
 		h.remainingGroupsBytes = 0
+		types.SeriesMetadataSlicePool.Put(&seriesMetadata, h.memoryConsumptionTracker)
 		return nil, err
 	}
 	for _, g := range groups {
@@ -289,6 +290,7 @@ func (h *HistogramFunction) SeriesMetadata(ctx context.Context, matchers types.M
 		}
 		seriesMetadata, err = types.AppendSeriesMetadata(h.memoryConsumptionTracker, seriesMetadata, labelsMetadata)
 		if err != nil {
+			types.SeriesMetadataSlicePool.Put(&seriesMetadata, h.memoryConsumptionTracker)
 			return nil, err
 		}
 
