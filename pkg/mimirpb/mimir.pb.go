@@ -7653,7 +7653,9 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 	}
 
 	if m.unmarshalFromRW2 {
-		m.Metadata = metadata.slice()
+		if metadata != nil {
+			m.Metadata = metadata.slice()
+		}
 		m.rw2symbols.releasePages()
 	}
 
