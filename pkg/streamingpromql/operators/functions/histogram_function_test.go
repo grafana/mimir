@@ -6,6 +6,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 
@@ -130,4 +131,89 @@ func TestHistogramFunction_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
 			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeriesOrder), outputSeries)
 		})
 	}
+}
+
+// TestHistogramFunction_MemoryTracking verifies that seriesGroupPairs and remainingGroups
+// are accounted for in the memory consumption tracker.
+func TestHistogramFunction_MemoryTracking(t *testing.T) {
+	ctx := context.Background()
+
+	// A simple classic histogram: 4 bucket series + 1 implicit classic group = 5 groups total.
+	inputSeries := []labels.Labels{
+		labels.FromStrings("__name__", "series", "le", "0.1"),
+		labels.FromStrings("__name__", "series", "le", "1"),
+		labels.FromStrings("__name__", "series", "le", "10"),
+		labels.FromStrings("__name__", "series", "le", "+Inf"),
+	}
+
+	newHistogramFunction := func(tracker *limiter.MemoryConsumptionTracker) *HistogramFunction {
+		return &HistogramFunction{
+			f: &histogramQuantile{
+				phArg:                    &testScalarOperator{},
+				memoryConsumptionTracker: tracker,
+			},
+			inner:                    &operators.TestOperator{Series: append([]labels.Labels{}, inputSeries...), MemoryConsumptionTracker: tracker},
+			innerSeriesMetricNames:   &operators.MetricNames{},
+			memoryConsumptionTracker: tracker,
+		}
+	}
+
+	t.Run("SeriesGroupPairSlices and BucketGroupPointerSlices are tracked after SeriesMetadata", func(t *testing.T) {
+		tracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+		hOp := newHistogramFunction(tracker)
+
+		_, err := hOp.SeriesMetadata(ctx, nil)
+		require.NoError(t, err)
+
+		// seriesGroupPairs: pool rounds 4 up to 4 (already a power of two).
+		expectedSGP := uint64(4) * seriesGroupPairSize
+		require.Equal(t, expectedSGP, tracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.SeriesGroupPairSlices),
+			"seriesGroupPairs memory should be tracked")
+
+		// remainingGroups: 4 native groups + 1 classic group = 5, each a pointer.
+		expectedBGP := uint64(5) * bucketGroupPointerSize
+		require.Equal(t, expectedBGP, tracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.BucketGroupPointerSlices),
+			"remainingGroups memory should be tracked")
+
+		hOp.Close()
+	})
+
+	t.Run("SeriesGroupPairSlices and BucketGroupPointerSlices are released after Close", func(t *testing.T) {
+		tracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+		hOp := newHistogramFunction(tracker)
+
+		_, err := hOp.SeriesMetadata(ctx, nil)
+		require.NoError(t, err)
+
+		hOp.Close()
+
+		require.Equal(t, uint64(0), tracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.SeriesGroupPairSlices),
+			"seriesGroupPairs memory should be released after Close")
+		require.Equal(t, uint64(0), tracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.BucketGroupPointerSlices),
+			"remainingGroups memory should be released after Close")
+	})
+
+	t.Run("memory limit is enforced for seriesGroupPairs allocation", func(t *testing.T) {
+		// Measure how many bytes the inner TestOperator's SeriesMetadata consumes.
+		// We'll use this as the limit so that the very next allocation (seriesGroupPairPool.Get)
+		// exceeds it.
+		unlimited := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+		probe := &operators.TestOperator{Series: append([]labels.Labels{}, inputSeries...), MemoryConsumptionTracker: unlimited}
+		_, err := probe.SeriesMetadata(ctx, nil)
+		require.NoError(t, err)
+		innerBytes := unlimited.CurrentEstimatedMemoryConsumptionBytes()
+
+		// Set the limit to exactly the inner bytes consumed so the next allocation
+		// (seriesGroupPairPool.Get inside HistogramFunction.SeriesMetadata) exceeds it.
+		rejectionCounter := prometheus.NewCounter(prometheus.CounterOpts{Name: "test_rejections_total"})
+		limited := limiter.NewMemoryConsumptionTracker(ctx, innerBytes, rejectionCounter, "test query")
+		hOp := newHistogramFunction(limited)
+
+		_, err = hOp.SeriesMetadata(ctx, nil)
+		require.Error(t, err, "SeriesMetadata should fail when memory limit is too small for seriesGroupPairs")
+		require.Contains(t, err.Error(), "query exceeded")
+
+		// Close should not panic even after a failed SeriesMetadata.
+		hOp.Close()
+	})
 }

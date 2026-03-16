@@ -49,8 +49,9 @@ type HistogramFunction struct {
 	expressionPosition     posrange.PositionRange
 	innerSeriesMetricNames *operators.MetricNames // We need to keep track of the metric names for annotations.NewBadBucketLabelWarning
 
-	seriesGroupPairs []seriesGroupPair // Each series belongs to 2 groups. One with the `le` label, and one without. Sometimes, these are the same group.
-	remainingGroups  []*bucketGroup    // One entry per group, in the order we want to return them.
+	seriesGroupPairs     []seriesGroupPair // Each series belongs to 2 groups. One with the `le` label, and one without. Sometimes, these are the same group.
+	remainingGroups      []*bucketGroup    // One entry per group, in the order we want to return them.
+	remainingGroupsBytes uint64            // Memory tracked for the remainingGroups slice.
 }
 
 var _ types.InstantVectorOperator = &HistogramFunction{}
@@ -81,6 +82,22 @@ type seriesGroupPair struct {
 var bucketGroupPool = zeropool.New(func() *bucketGroup {
 	return &bucketGroup{}
 })
+
+const (
+	seriesGroupPairSize    = uint64(unsafe.Sizeof(seriesGroupPair{}))
+	bucketGroupPointerSize = uint64(unsafe.Sizeof((*bucketGroup)(nil)))
+)
+
+var seriesGroupPairPool = types.NewLimitingBucketedPool(
+	pool.NewBucketedPool(types.MaxExpectedSeriesPerResult, func(size int) []seriesGroupPair {
+		return make([]seriesGroupPair, 0, size)
+	}),
+	limiter.SeriesGroupPairSlices,
+	seriesGroupPairSize,
+	true, // clearOnGet: zero out stale pointers and strings from previous use
+	nil,
+	nil,
+)
 
 var pointBucketPool = types.NewLimitingBucketedPool(
 	pool.NewBucketedPool(types.MaxExpectedPointsPerSeries, func(size int) []promql.Buckets {
@@ -196,7 +213,11 @@ func (h *HistogramFunction) SeriesMetadata(ctx context.Context, matchers types.M
 
 	h.innerSeriesMetricNames.CaptureMetricNames(innerSeries)
 	groups := map[string]groupWithLabels{}
-	h.seriesGroupPairs = make([]seriesGroupPair, len(innerSeries))
+	h.seriesGroupPairs, err = seriesGroupPairPool.Get(len(innerSeries), h.memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+	h.seriesGroupPairs = h.seriesGroupPairs[:len(innerSeries)]
 	b := make([]byte, 0, 1024)
 	lb := labels.NewBuilder(labels.EmptyLabels())
 
@@ -245,7 +266,19 @@ func (h *HistogramFunction) SeriesMetadata(ctx context.Context, matchers types.M
 		return nil, err
 	}
 
+	// We track remainingGroups manually rather than using a LimitingBucketedPool because
+	// NextSeries advances through the slice by reslicing in place (h.remainingGroups = h.remainingGroups[1:]).
+	// Each reslice reduces cap by one, so LimitingBucketedPool.Put would decrease memory by a smaller
+	// amount than was originally tracked, leaving a phantom balance in the tracker.
+	// By recording the byte count at allocation time in remainingGroupsBytes and releasing that
+	// fixed amount in Close, we correctly account for the memory regardless of how far through
+	// the slice NextSeries has advanced.
 	h.remainingGroups = make([]*bucketGroup, 0, len(groups))
+	h.remainingGroupsBytes = uint64(cap(h.remainingGroups)) * bucketGroupPointerSize
+	if err = h.memoryConsumptionTracker.IncreaseMemoryConsumption(h.remainingGroupsBytes, limiter.BucketGroupPointerSlices); err != nil {
+		h.remainingGroupsBytes = 0
+		return nil, err
+	}
 	for _, g := range groups {
 		var labelsMetadata types.SeriesMetadata
 		if h.enableDelayedNameRemoval {
@@ -275,7 +308,9 @@ func (h *HistogramFunction) NextSeries(ctx context.Context) (types.InstantVector
 		return types.InstantVectorSeriesData{}, types.EOS
 	}
 
-	// Determine next group to return
+	// Determine next group to return.
+	// Note: this reslice reduces cap(h.remainingGroups) by one on each call, which is why
+	// remainingGroups cannot use LimitingBucketedPool (see comment at allocation site above).
 	thisGroup := h.remainingGroups[0]
 	h.remainingGroups = h.remainingGroups[1:]
 	defer func() {
@@ -520,6 +555,11 @@ func (h *HistogramFunction) Finalize(ctx context.Context) error {
 func (h *HistogramFunction) Close() {
 	h.inner.Close()
 	h.f.Close()
+	seriesGroupPairPool.Put(&h.seriesGroupPairs, h.memoryConsumptionTracker)
+	if h.remainingGroupsBytes > 0 {
+		h.memoryConsumptionTracker.DecreaseMemoryConsumption(h.remainingGroupsBytes, limiter.BucketGroupPointerSlices)
+		h.remainingGroupsBytes = 0
+	}
 }
 
 type bucketGroupSorter struct {
