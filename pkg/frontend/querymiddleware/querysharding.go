@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
@@ -157,17 +158,14 @@ func ExecuteQueryOnQueryable(ctx context.Context, r MetricsQueryRequest, engine 
 	// Note that the positions based on the original query may be wrong as the rewritten
 	// query which is actually used is different, but the user does not see the rewritten
 	// query, so we pass in an empty string as the query so the positions will be hidden.
-	warn, info := res.Warnings.AsStrings("", 0, 0)
+	warningErrors, infoErrors := res.Warnings.AsErrorsSplit("", 0, 0)
 
 	if annotationAccumulator != nil {
-		// Add any annotations returned by the sharded queries, and remove any duplicates.
-		// We remove any position information for the same reason as above: the position information
-		// relates to the rewritten expression sent to queriers, not the original expression provided by the user.
+		// Add any annotations returned by the sharded queries, merging properly
+		// (e.g. counts are accumulated for possibleNonCounterErr).
 		accumulatedWarnings, accumulatedInfos := annotationAccumulator.getAll()
-		warn = append(warn, removeAllAnnotationPositionInformation(accumulatedWarnings)...)
-		info = append(info, removeAllAnnotationPositionInformation(accumulatedInfos)...)
-		warn = removeDuplicates(warn)
-		info = removeDuplicates(info)
+		warningErrors = append(warningErrors, accumulatedWarnings...)
+		infoErrors = append(infoErrors, accumulatedInfos...)
 	}
 
 	var headers []*PrometheusHeader
@@ -183,11 +181,11 @@ func ExecuteQueryOnQueryable(ctx context.Context, r MetricsQueryRequest, engine 
 				ResultType: string(res.Value.Type()),
 				Result:     extracted,
 			},
-			Headers:  headers,
-			Warnings: warn,
-			Infos:    info,
+			Headers: headers,
 		},
-		finalizer: qry.Close,
+		finalizer:     qry.Close,
+		WarningErrors: warningErrors,
+		InfoErrors:    infoErrors,
 	}, nil
 }
 
@@ -531,69 +529,57 @@ func longestRegexpMatcherBytes(expr parser.Expr) int {
 	return longest
 }
 
-// AnnotationAccumulator collects annotations returned by sharded queries.
+// AnnotationAccumulator collects annotation errors returned by sharded queries.
+// It stores typed errors so they can be properly merged (e.g. count accumulation
+// for possibleNonCounterErr) rather than just deduplicated by string.
 type AnnotationAccumulator struct {
-	warnings *sync.Map
-	infos    *sync.Map
+	mu       sync.Mutex
+	warnings annotations.Annotations
+	infos    annotations.Annotations
 }
 
 func NewAnnotationAccumulator() *AnnotationAccumulator {
-	return &AnnotationAccumulator{
-		warnings: &sync.Map{},
-		infos:    &sync.Map{},
+	return &AnnotationAccumulator{}
+}
+
+// addAnnotationErrors collects typed annotation errors from a response.
+//
+// addAnnotationErrors is safe to call from multiple goroutines.
+func (a *AnnotationAccumulator) addAnnotationErrors(warningErrors, infoErrors []error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for _, w := range warningErrors {
+		a.warnings.Add(w)
+	}
+	for _, i := range infoErrors {
+		a.infos.Add(i)
 	}
 }
 
-// addWarning collects the warning annotation w.
+// addAnnotationStrings collects string annotations from a response that was
+// deserialized from the wire (no typed errors available). These are stored as
+// plain errors and can still be deduplicated by string value.
 //
-// addWarning is safe to call from multiple goroutines.
-func (a *AnnotationAccumulator) addWarning(w string) {
-	// We use LoadOrStore here to add the annotation if it doesn't already exist or otherwise do nothing.
-	a.warnings.LoadOrStore(w, struct{}{})
-}
-
-// addWarnings collects all of the warning annotations in warnings.
-//
-// addWarnings is safe to call from multiple goroutines.
-func (a *AnnotationAccumulator) addWarnings(warnings []string) {
+// addAnnotationStrings is safe to call from multiple goroutines.
+func (a *AnnotationAccumulator) addAnnotationStrings(warnings, infos []string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	for _, w := range warnings {
-		a.addWarning(w)
+		a.warnings.Add(errors.New(w))
 	}
-}
-
-// addInfo collects the info annotation i.
-//
-// addInfo is safe to call from multiple goroutines.
-func (a *AnnotationAccumulator) addInfo(i string) {
-	// We use LoadOrStore here to add the annotation if it doesn't already exist or otherwise do nothing.
-	a.infos.LoadOrStore(i, struct{}{})
-}
-
-// addInfos collects all of the info annotations in infos.
-//
-// addInfo is safe to call from multiple goroutines.
-func (a *AnnotationAccumulator) addInfos(infos []string) {
 	for _, i := range infos {
-		a.addInfo(i)
+		a.infos.Add(errors.New(i))
 	}
 }
 
-// getAll returns all annotations collected by this accumulator.
+// getAll returns all annotations collected by this accumulator as typed errors.
 //
-// getAll may return inconsistent or unexpected results if it is called concurrently with addInfo or addWarning.
-func (a *AnnotationAccumulator) getAll() (warnings, infos []string) {
-	return getAllKeys(a.warnings), getAllKeys(a.infos)
-}
-
-func getAllKeys(m *sync.Map) []string {
-	var keys []string
-
-	m.Range(func(k, _ interface{}) bool {
-		keys = append(keys, k.(string))
-		return true
-	})
-
-	return keys
+// getAll may return inconsistent or unexpected results if it is called concurrently
+// with add methods.
+func (a *AnnotationAccumulator) getAll() (warnings, infos []error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.warnings.AsErrors(), a.infos.AsErrors()
 }
 
 // removeDuplicates removes duplicate entries from s.

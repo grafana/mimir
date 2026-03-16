@@ -105,8 +105,11 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 		}
 
 		q.responseHeaders.mergeHeaders(promRes.Headers)
-		q.annotationAccumulator.addInfos(promRes.Infos)
-		q.annotationAccumulator.addWarnings(promRes.Warnings)
+		if warningErrs, infoErrs := GetAnnotationErrors(resp); warningErrs != nil || infoErrs != nil {
+			q.annotationAccumulator.addAnnotationErrors(warningErrs, infoErrs)
+		} else {
+			q.annotationAccumulator.addAnnotationStrings(promRes.Warnings, promRes.Infos)
+		}
 		return newSeriesSetFromEmbeddedQueriesResults([][]SampleStream{resStreams}, hints)
 	case astmapper.SubqueryMetricName:
 		expr := values[astmapper.SubqueryQueryLabelName]
@@ -198,8 +201,11 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 				return storage.ErrSeriesSet(err)
 			}
 			sets[idx] = newSeriesSetFromEmbeddedQueriesResults([][]SampleStream{resStreams}, hints)
-			q.annotationAccumulator.addInfos(promRes.Infos)
-			q.annotationAccumulator.addWarnings(promRes.Warnings)
+			if warningErrs, infoErrs := GetAnnotationErrors(resp); warningErrs != nil || infoErrs != nil {
+				q.annotationAccumulator.addAnnotationErrors(warningErrs, infoErrs)
+			} else {
+				q.annotationAccumulator.addAnnotationStrings(promRes.Warnings, promRes.Infos)
+			}
 		}
 
 		return storage.NewMergeSeriesSet(sets, 0, storage.ChainedSeriesMerge)
