@@ -144,7 +144,7 @@
 * [ENHANCEMENT] Ingester: Add `cortex_ingester_queried_blocks_total` metric to track TSDB block generations queried. #14572
 * [ENHANCEMENT] Distributor, ingest storage: Add `cortex_distributor_received_bytes_total` and `cortex_ingest_storage_writer_input_bytes_total` metrics to measure Remote Write v2 symbols table compression effectiveness. #14453
 * [ENHANCEMENT] Store-gateway: Added `cortex_bucket_store_chunk_size_estimate_type_total` metric to track how often do we infer the size of a chunk or use the default size. #14477
-* [ENHANCEMENT] Block-builder: Expose per-tenant TSDB metrics. #14364
+* [ENHANCEMENT] Block-builder: Expose per-tenant TSDB metrics. #14364 #14699
 * [ENHANCEMENT] Block-builder: Add experimental `-block-builder.generate-sparse-index-headers` option. Construct and upload sparse index headers to object storage as part of block creation to make the sparse headers available to store-gateways when loading uncompacted blocks. #14494
 * [ENHANCEMENT] Add experimental `-http.response-compression-level` CLI flag to set the gzip compression level used for compressed HTTP responses. #14586
 * [ENHANCEMENT] Query-frontend: Add support for `lookback_delta` query parameter for instant and range queries. #14582 #14588
