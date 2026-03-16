@@ -4,6 +4,7 @@ package compactor
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"math"
@@ -14,7 +15,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/efficientgo/core/errors"
 	"github.com/failsafe-go/failsafe-go"
 	"github.com/failsafe-go/failsafe-go/retrypolicy"
 	"github.com/go-kit/log"
@@ -233,20 +233,20 @@ func (e *schedulerExecutor) stop() error {
 func emptyCompactionDir(compactDir string) error {
 	// Ensure directory exists first
 	if err := os.MkdirAll(compactDir, 0750); err != nil {
-		return errors.Wrap(err, "failed to create compaction directory")
+		return fmt.Errorf("failed to create compaction directory: %w", err)
 	}
 
 	// Read all entries in the directory
 	entries, err := os.ReadDir(compactDir)
 	if err != nil {
-		return errors.Wrap(err, "failed to read compaction directory")
+		return fmt.Errorf("failed to read compaction directory: %w", err)
 	}
 
 	// Remove each entry
 	for _, entry := range entries {
 		path := filepath.Join(compactDir, entry.Name())
 		if err := os.RemoveAll(path); err != nil {
-			return errors.Wrapf(err, "failed to remove %s", path)
+			return fmt.Errorf("failed to remove %q: %w", path, err)
 		}
 	}
 	return nil
@@ -461,14 +461,14 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 	cacheDir := "" // indicates not wanting to cache metadata on disk
 	fetcher, err := block.NewMetaFetcher(userLogger, c.compactorCfg.MetaSyncConcurrency, userBucket, cacheDir, reg, fetcherFilters, 0)
 	if err != nil {
-		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, errors.Wrap(err, "failed to create meta fetcher")
+		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, fmt.Errorf("failed to create meta fetcher: %w", err)
 	}
 
 	blockIDs := make([]ulid.ULID, len(spec.Job.BlockIds))
 	for i, id := range spec.Job.BlockIds {
 		if err := blockIDs[i].UnmarshalBinary(id); err != nil {
 			level.Error(userLogger).Log("msg", "invalid block ID, abandoning job", "tenant", userID, "err", err)
-			return compactorschedulerpb.UPDATE_TYPE_ABANDON, errors.Wrapf(err, "failed to parse block ID")
+			return compactorschedulerpb.UPDATE_TYPE_ABANDON, fmt.Errorf("failed to parse block ID: %w", err)
 		}
 	}
 
@@ -479,7 +479,7 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 			level.Warn(userLogger).Log("msg", "blocks not found in object storage, abandoning job", "err", err)
 			return compactorschedulerpb.UPDATE_TYPE_ABANDON, err
 		}
-		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, errors.Wrap(err, "failed to sync metas")
+		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, fmt.Errorf("failed to sync metas: %w", err)
 	}
 
 	jobMetas, err := getJobMetas(metaMap, blockIDs)
@@ -500,7 +500,7 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 
 	compactor, err := c.newBucketCompactor(ctx, userID, userLogger, userBucket, reg)
 	if err != nil {
-		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, errors.Wrap(err, "failed to create bucket compactor")
+		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, fmt.Errorf("failed to create bucket compactor: %w", err)
 	}
 
 	// Track that a compaction job has started
@@ -542,28 +542,28 @@ func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *Multitena
 
 	bucketCompactor, err := c.newBucketCompactor(ctx, tenant, userLogger, userBucket, reg)
 	if err != nil {
-		return nil, errors.Wrap(err, "creating bucket compactor")
+		return nil, fmt.Errorf("creating bucket compactor: %w", err)
 	}
 
 	cacheDir := "" // indicates not wanting to cache metadata on disk
 	syncer, err := c.createMetaSyncerForUser(tenant, userBucket, userLogger, cacheDir, reg)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to create meta syncer")
+		return nil, fmt.Errorf("failed to create meta syncer: %w", err)
 	}
 
 	level.Info(userLogger).Log("msg", "start sync of metas")
 	if err := syncer.SyncMetas(ctx); err != nil {
-		return nil, errors.Wrap(err, "sync")
+		return nil, fmt.Errorf("meta sync failed: %w", err)
 	}
 
 	level.Info(userLogger).Log("msg", "start of GC")
 	if err := syncer.GarbageCollect(ctx); err != nil {
-		return nil, errors.Wrap(err, "blocks garbage collect")
+		return nil, fmt.Errorf("blocks garbage collect: %w", err)
 	}
 
 	jobs, err := bucketCompactor.grouper.Groups(syncer.Metas())
 	if err != nil {
-		return nil, errors.Wrap(err, "group compaction jobs")
+		return nil, fmt.Errorf("group compaction jobs: %w", err)
 	}
 
 	if c.jobsOrder != nil {
@@ -676,7 +676,7 @@ func buildCompactionJobFromMetas(userID string, groupKey string, jobMetas []*blo
 	job := newJob(userID, groupKey, externalLabels, resolution, spec.Job.Split, splitNumShards, shardingKey)
 	for _, meta := range jobMetas {
 		if err := job.AppendMeta(meta); err != nil {
-			return nil, errors.Wrap(err, "failed to append block metadata to job")
+			return nil, fmt.Errorf("failed to append block metadata to job: %w", err)
 		}
 	}
 
