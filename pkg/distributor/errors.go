@@ -171,12 +171,13 @@ func (e reactiveLimiterExceededError) IsSoft() bool {
 
 var _ Error = reactiveLimiterExceededError{}
 
-func newActiveSeriesLimitedError(totalSeriesInThisRequest, rejectedSeriesFromThisRequest, limit, httpStatusCode int) activeSeriesLimitedError {
+func newActiveSeriesLimitedError(totalSeriesInThisRequest, rejectedSeriesFromThisRequest, limit, httpStatusCode int, rejectedSamples int64) activeSeriesLimitedError {
 	return activeSeriesLimitedError{
 		totalSeriesInThisRequest:      totalSeriesInThisRequest,
 		rejectedSeriesFromThisRequest: rejectedSeriesFromThisRequest,
 		limit:                         limit,
 		httpStatusCode:                httpStatusCode,
+		rejectedSamples:               rejectedSamples,
 	}
 }
 
@@ -185,6 +186,7 @@ type activeSeriesLimitedError struct {
 	rejectedSeriesFromThisRequest int
 	limit                         int
 	httpStatusCode                int
+	rejectedSamples               int64
 }
 
 func (e activeSeriesLimitedError) Error() string {
@@ -196,7 +198,7 @@ func (e activeSeriesLimitedError) Cause() mimirpb.ErrorCause {
 }
 
 func (e activeSeriesLimitedError) IsSoft() bool {
-	return false
+	return e.rejectedSeriesFromThisRequest > 0 && e.rejectedSeriesFromThisRequest < e.totalSeriesInThisRequest
 }
 
 func (e activeSeriesLimitedError) HTTPStatusCode() int {

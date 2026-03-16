@@ -1108,11 +1108,11 @@ func TestHandler_toHTTPStatus(t *testing.T) {
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 		},
 		"an activeSeriesLimitedError with default 429 gets translated into an HTTP 429": {
-			err:                newActiveSeriesLimitedError(100, 25, 50, http.StatusTooManyRequests),
+			err:                newActiveSeriesLimitedError(100, 25, 50, http.StatusTooManyRequests, 0),
 			expectedHTTPStatus: http.StatusTooManyRequests,
 		},
 		"an activeSeriesLimitedError with overridden 400 gets translated into an HTTP 400": {
-			err:                newActiveSeriesLimitedError(100, 25, 50, http.StatusBadRequest),
+			err:                newActiveSeriesLimitedError(100, 25, 50, http.StatusBadRequest, 0),
 			expectedHTTPStatus: http.StatusBadRequest,
 		},
 	}
