@@ -314,15 +314,15 @@ type MultitenantCompactor struct {
 	compactionRunInterval          prometheus.Gauge
 	blocksMarkedForDeletion        prometheus.Counter
 
-	invalidClusterValidation *prometheus.CounterVec
-
 	// outOfSpace is a separate metric for out-of-space errors because this is a common issue which often requires an operator to investigate,
 	// so alerts need to be able to treat it with higher priority than other compaction errors.
 	outOfSpace prometheus.Counter
 
-	// schedulerLastContact tracks the last time a compactor successfully contacted the scheduler. This metric is only set when the
-	// compactor is running in scheduler mode.
+	// schedulerLastContact tracks the last time a compactor successfully contacted the scheduler
 	schedulerLastContact prometheus.Gauge
+
+	// invalidClusterValidation tracks the number of cluster validation errors during communication with the scheduler
+	invalidClusterValidation *prometheus.CounterVec
 
 	// Metrics shared across all BucketCompactor instances.
 	bucketCompactorMetrics *BucketCompactorMetrics
@@ -427,10 +427,6 @@ func newMultitenantCompactor(
 			Name: "cortex_compactor_disk_out_of_space_errors_total",
 			Help: "Number of times a compaction failed because the compactor disk was out of space.",
 		}),
-		schedulerLastContact: promauto.With(registerer).NewGauge(prometheus.GaugeOpts{
-			Name: "cortex_compactor_last_scheduler_contact_timestamp_seconds",
-			Help: "Unix timestamp of the last successful contact with the scheduler. Only updated in scheduler mode.",
-		}),
 		blocksMarkedForDeletion: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
 			Name:        blocksMarkedForDeletionName,
 			Help:        blocksMarkedForDeletionHelp,
@@ -457,20 +453,6 @@ func newMultitenantCompactor(
 		return float64(c.blockUploadValidations.Load())
 	})
 
-	var mode string
-	if compactorCfg.SchedulerClientConfig.Enabled {
-		mode = modeScheduler
-	} else {
-		mode = modeStandalone
-	}
-	promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "cortex_compactor_info",
-		Help: "Information about the compactor. The mode label indicates the compactor mode (standalone or scheduler).",
-		ConstLabels: prometheus.Labels{
-			"mode": mode,
-		},
-	}, func() float64 { return 1 })
-
 	c.bucketCompactorMetrics = NewBucketCompactorMetrics(c.blocksMarkedForDeletion, registerer)
 
 	if len(compactorCfg.EnabledTenants) > 0 {
@@ -489,7 +471,30 @@ func newMultitenantCompactor(
 
 	// The last successful compaction run metric is exposed as seconds since epoch, so we need to use seconds for this metric.
 	c.compactionRunInterval.Set(c.compactorCfg.CompactionInterval.Seconds())
-	c.invalidClusterValidation = util.NewRequestInvalidClusterValidationLabelsTotalCounter(registerer, "compactor", util.GRPCProtocol)
+
+	var (
+		mode         string
+		schedulerReg prometheus.Registerer // used to register metrics only used in the scheduler mode conditionally
+	)
+	if compactorCfg.SchedulerClientConfig.Enabled {
+		mode = modeScheduler
+		schedulerReg = registerer
+	} else {
+		mode = modeStandalone
+	}
+	promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "cortex_compactor_info",
+		Help: "Information about the compactor. The mode label indicates the compactor mode (standalone or scheduler).",
+		ConstLabels: prometheus.Labels{
+			"mode": mode,
+		},
+	}, func() float64 { return 1 })
+
+	c.schedulerLastContact = promauto.With(schedulerReg).NewGauge(prometheus.GaugeOpts{
+		Name: "cortex_compactor_last_scheduler_contact_timestamp_seconds",
+		Help: "Unix timestamp of the last successful contact with the scheduler. Only updated in scheduler mode.",
+	})
+	c.invalidClusterValidation = util.NewRequestInvalidClusterValidationLabelsTotalCounter(schedulerReg, "compactor", util.GRPCProtocol)
 
 	return c, nil
 }
