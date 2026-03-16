@@ -7,7 +7,6 @@ import (
 	"fmt"
 
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/util/annotations"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -97,8 +96,8 @@ func (f ProtobufFormatter) EncodeQueryResponseWithAnnotations(resp *PrometheusRe
 		Status:    status,
 		ErrorType: errorType,
 		Error:     resp.Error,
-		Warnings:  errorsToAnnotationErrors(warningErrors),
-		Infos:     errorsToAnnotationErrors(infoErrors),
+		Warnings:  mimirpb.ErrorsToAnnotationErrors(warningErrors),
+		Infos:     mimirpb.ErrorsToAnnotationErrors(infoErrors),
 	}
 
 	if resp.Data != nil {
@@ -137,55 +136,6 @@ func (f ProtobufFormatter) EncodeQueryResponseWithAnnotations(resp *PrometheusRe
 	}
 
 	return payload.Marshal()
-}
-
-// errorsToAnnotationErrors converts typed annotation errors to their protobuf representation.
-func errorsToAnnotationErrors(errs []error) []mimirpb.AnnotationError {
-	if len(errs) == 0 {
-		return nil
-	}
-	result := make([]mimirpb.AnnotationError, len(errs))
-	for i, err := range errs {
-		d := annotations.ExtractAnnotationData(err)
-		ae := mimirpb.AnnotationError{
-			Type:    mimirpb.AnnotationErrorType(d.Type),
-			Message: d.Message,
-		}
-		// Map opaque Fields to the concrete proto fields.
-		if len(d.Fields) > 0 {
-			ae.Count = int32(d.Fields["count"])
-			ae.MinTs = int64(d.Fields["min_ts"])
-			ae.MaxTs = int64(d.Fields["max_ts"])
-			ae.MinBucket = d.Fields["min_bucket"]
-			ae.MaxBucket = d.Fields["max_bucket"]
-			ae.MaxDiff = d.Fields["max_diff"]
-		}
-		result[i] = ae
-	}
-	return result
-}
-
-// annotationErrorsToErrors converts protobuf annotation errors back to typed Go errors.
-func annotationErrorsToErrors(aes []mimirpb.AnnotationError) []error {
-	if len(aes) == 0 {
-		return nil
-	}
-	result := make([]error, len(aes))
-	for i, ae := range aes {
-		result[i] = annotations.AnnotationFromData(annotations.AnnotationData{
-			Type:    annotations.AnnotationType(ae.Type),
-			Message: ae.Message,
-			Fields: map[string]float64{
-				"count":      float64(ae.Count),
-				"min_ts":     float64(ae.MinTs),
-				"max_ts":     float64(ae.MaxTs),
-				"min_bucket": ae.MinBucket,
-				"max_bucket": ae.MaxBucket,
-				"max_diff":   ae.MaxDiff,
-			},
-		})
-	}
-	return result
 }
 
 func (ProtobufFormatter) encodeStringData(data []SampleStream) (mimirpb.StringData, error) {
@@ -360,8 +310,8 @@ func (f ProtobufFormatter) DecodeQueryResponseWithAnnotations(buf []byte) (*Prom
 		Infos:     mimirpb.AnnotationErrorsToStrings(resp.Infos),
 	}
 
-	warningErrors := annotationErrorsToErrors(resp.Warnings)
-	infoErrors := annotationErrorsToErrors(resp.Infos)
+	warningErrors := mimirpb.AnnotationErrorsToErrors(resp.Warnings)
+	infoErrors := mimirpb.AnnotationErrorsToErrors(resp.Infos)
 
 	return promResp, warningErrors, infoErrors, nil
 }
