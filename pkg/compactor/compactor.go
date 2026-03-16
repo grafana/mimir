@@ -231,6 +231,11 @@ type ConfigProvider interface {
 	// CompactorSplitAndMergeShards returns the number of shards to use when splitting blocks.
 	CompactorSplitAndMergeShards(userID string) int
 
+	// CompactorOOOSplitAndMergeShards returns the number of shards to use when splitting out-of-order blocks.
+	// Only applies to blocks/jobs with the out-of-order external label.
+	// If the value is 0 or not set, it falls back to CompactorSplitAndMergeShards.
+	CompactorOOOSplitAndMergeShards(userID string) int
+
 	// CompactorSplitGroups returns the number of groups that blocks used for splitting should
 	// be grouped into. Different groups are then split by different jobs.
 	CompactorSplitGroups(userID string) int

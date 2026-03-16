@@ -28,16 +28,23 @@ type SplitAndMergeGrouper struct {
 	// Number of shards to split source blocks into.
 	shardCount uint32
 
+	// Number of shards to split out-of-order source blocks into.
+	// If 0, shardCount is used for OOO blocks as well.
+	// Only applies to blocks/jobs with the out-of-order external label.
+	oooShardCount uint32
+
 	// Number of groups that blocks used for splitting are grouped into.
 	splitGroupsCount uint32
 }
 
 // NewSplitAndMergeGrouper makes a new SplitAndMergeGrouper. The provided ranges must be sorted.
 // If shardCount is 0, the splitting stage is disabled.
+// If oooShardCount is 0, shardCount is used for out-of-order blocks as well.
 func NewSplitAndMergeGrouper(
 	userID string,
 	ranges []int64,
 	shardCount uint32,
+	oooShardCount uint32,
 	splitGroupsCount uint32,
 	logger log.Logger,
 ) *SplitAndMergeGrouper {
@@ -45,6 +52,7 @@ func NewSplitAndMergeGrouper(
 		userID:           userID,
 		ranges:           ranges,
 		shardCount:       shardCount,
+		oooShardCount:    oooShardCount,
 		splitGroupsCount: splitGroupsCount,
 		logger:           logger,
 	}
@@ -56,9 +64,11 @@ func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*block.Meta) (res []*
 		flatBlocks = append(flatBlocks, b)
 	}
 
-	for _, job := range planCompaction(g.userID, flatBlocks, g.ranges, g.shardCount, g.splitGroupsCount) {
+	for _, job := range planCompaction(g.userID, flatBlocks, g.ranges, g.shardCount, g.oooShardCount, g.splitGroupsCount) {
+		shardCount := effectiveShardCount(job.blocks, g.shardCount, g.oooShardCount)
+
 		// Sanity check: if splitting is disabled, we don't expect any job for the split stage.
-		if g.shardCount <= 0 && job.stage == stageSplit {
+		if shardCount <= 0 && job.stage == stageSplit {
 			return nil, fmt.Errorf("unexpected split stage job because splitting is disabled: %s", job.String())
 		}
 
@@ -82,7 +92,7 @@ func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*block.Meta) (res []*
 			externalLabels,
 			resolution,
 			job.stage == stageSplit,
-			g.shardCount,
+			shardCount,
 			job.shardingKey(),
 		)
 
@@ -99,10 +109,22 @@ func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*block.Meta) (res []*
 	return res, nil
 }
 
+// effectiveShardCount returns the shard count to use for the given blocks.
+// OOO blocks use oooShardCount if it's > 0, otherwise they fall back to shardCount.
+func effectiveShardCount(blocks []*block.Meta, shardCount, oooShardCount uint32) uint32 {
+	if len(blocks) > 0 && blocks[0].Thanos.Labels[block.OutOfOrderExternalLabel] == block.OutOfOrderExternalLabelValue {
+		if oooShardCount > 0 {
+			return oooShardCount
+		}
+	}
+	return shardCount
+}
+
 // planCompaction analyzes the input blocks and returns a list of compaction jobs that can be
 // run concurrently. Each returned job may belong either to this compactor instance or another one
 // in the cluster, so the caller should check if they belong to their instance before running them.
-func planCompaction(userID string, blocks []*block.Meta, ranges []int64, shardCount, splitGroups uint32) (jobs []*job) {
+// If oooShardCount is 0, shardCount is used for out-of-order blocks as well.
+func planCompaction(userID string, blocks []*block.Meta, ranges []int64, shardCount, oooShardCount, splitGroups uint32) (jobs []*job) {
 	if len(blocks) == 0 || len(ranges) == 0 {
 		return nil
 	}
@@ -119,9 +141,13 @@ func planCompaction(userID string, blocks []*block.Meta, ranges []int64, shardCo
 		// Sort blocks by min time.
 		sortMetasByMinTime(mainBlocks)
 
+		// Determine the effective shard count for this group.
+		// OOO blocks (identified by the __out_of_order__ label) may use a different shard count.
+		groupShardCount := effectiveShardCount(mainBlocks, shardCount, oooShardCount)
+
 		for _, tr := range ranges {
 		nextJob:
-			for _, job := range planCompactionByRange(userID, mainBlocks, tr, tr == ranges[0], shardCount, splitGroups) {
+			for _, job := range planCompactionByRange(userID, mainBlocks, tr, tr == ranges[0], groupShardCount, splitGroups) {
 				// We can plan a job only if it doesn't conflict with other jobs already planned.
 				// Since we run the planning for each compaction range in increasing order, we guarantee
 				// that a job for the current time range is planned only if there's no other job for the
