@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kfake"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/twmb/franz-go/plugin/kprom"
@@ -807,6 +808,126 @@ func TestWriter_WriteSync(t *testing.T) {
 
 		err = writer.WriteSync(ctx, 0, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: multiSeries, Metadata: nil, Source: mimirpb.API})
 		require.Equal(t, err, ErrWriterNotRunning)
+	})
+
+	t.Run("should return error when compartmentID is out of bounds", func(t *testing.T) {
+		t.Parallel()
+
+		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+
+		err := writer.WriteSync(ctx, 99, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: multiSeries, Metadata: nil, Source: mimirpb.API})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "out of bounds")
+
+		err = writer.WriteSync(ctx, -1, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: multiSeries, Metadata: nil, Source: mimirpb.API})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "out of bounds")
+	})
+}
+
+func TestWriter_WriteSync_WithCompartments(t *testing.T) {
+	const (
+		numPartitions = 3
+		partitionID   = 0
+		tenantID      = "user-1"
+	)
+
+	ctx := context.Background()
+
+	t.Run("should write to correct topic per compartment", func(t *testing.T) {
+		t.Parallel()
+
+		topic0 := "comp-0"
+		topic1 := "comp-1"
+
+		// Create a cluster with both compartment topics.
+		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topic0, func() []kfake.Opt {
+			return []kfake.Opt{kfake.SeedTopics(numPartitions, topic1)}
+		})
+
+		kafkaCfg := createTestKafkaConfig(clusterAddr, "comp-<compartment-id>")
+		compartmentsCfg := CompartmentsConfig{
+			Enabled:         true,
+			NumCompartments: 2,
+		}
+
+		reg := prometheus.NewPedanticRegistry()
+		writer := NewWriter(kafkaCfg, compartmentsCfg, test.NewTestingLogger(t), reg)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, writer))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, writer))
+		})
+
+		series0 := []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_for_comp_0")}
+		series1 := []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_for_comp_1")}
+
+		// Write to compartment 0.
+		err := writer.WriteSync(ctx, 0, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series0, Metadata: nil, Source: mimirpb.API})
+		require.NoError(t, err)
+
+		// Write to compartment 1.
+		err = writer.WriteSync(ctx, 1, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series1, Metadata: nil, Source: mimirpb.API})
+		require.NoError(t, err)
+
+		// Read back from each topic and verify records landed in the right place.
+		consumer0, err := kgo.NewClient(kgo.SeedBrokers(clusterAddr), kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{topic0: {partitionID: kgo.NewOffset().AtStart()}}))
+		require.NoError(t, err)
+		t.Cleanup(consumer0.Close)
+
+		consumer1, err := kgo.NewClient(kgo.SeedBrokers(clusterAddr), kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{topic1: {partitionID: kgo.NewOffset().AtStart()}}))
+		require.NoError(t, err)
+		t.Cleanup(consumer1.Close)
+
+		fetchCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+
+		fetches0 := consumer0.PollFetches(fetchCtx)
+		require.NoError(t, fetches0.Err())
+		assert.Equal(t, 1, len(fetches0.Records()), "expected 1 record in compartment 0 topic")
+		assert.Equal(t, topic0, fetches0.Records()[0].Topic)
+
+		fetches1 := consumer1.PollFetches(fetchCtx)
+		require.NoError(t, fetches1.Err())
+		assert.Equal(t, 1, len(fetches1.Records()), "expected 1 record in compartment 1 topic")
+		assert.Equal(t, topic1, fetches1.Records()[0].Topic)
+	})
+
+	t.Run("should use distinct Kafka clients per compartment", func(t *testing.T) {
+		t.Parallel()
+
+		topic0 := "comp-0"
+		topic1 := "comp-1"
+
+		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topic0, func() []kfake.Opt {
+			return []kfake.Opt{kfake.SeedTopics(numPartitions, topic1)}
+		})
+
+		kafkaCfg := createTestKafkaConfig(clusterAddr, "comp-<compartment-id>")
+		compartmentsCfg := CompartmentsConfig{
+			Enabled:         true,
+			NumCompartments: 2,
+		}
+
+		reg := prometheus.NewPedanticRegistry()
+		writer := NewWriter(kafkaCfg, compartmentsCfg, test.NewTestingLogger(t), reg)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, writer))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, writer))
+		})
+
+		// Trigger lazy client creation for both compartments.
+		req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")}, Source: mimirpb.API}
+		require.NoError(t, writer.WriteSync(ctx, 0, partitionID, tenantID, req))
+		require.NoError(t, writer.WriteSync(ctx, 1, partitionID, tenantID, req))
+
+		// Verify each compartment has its own producer (not shared).
+		writer.writersMx.RLock()
+		assert.Len(t, writer.writers, 2, "expected 2 compartments")
+		assert.NotNil(t, writer.writers[0][0], "compartment 0 producer should be initialized")
+		assert.NotNil(t, writer.writers[1][0], "compartment 1 producer should be initialized")
+		assert.NotSame(t, writer.writers[0][0], writer.writers[1][0], "compartments should have distinct producers")
+		writer.writersMx.RUnlock()
 	})
 }
 

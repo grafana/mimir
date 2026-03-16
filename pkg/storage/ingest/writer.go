@@ -145,11 +145,11 @@ func NewWriter(kafkaCfg KafkaConfig, compartmentsCfg CompartmentsConfig, logger 
 
 func (w *Writer) starting(_ context.Context) error {
 	if w.kafkaCfg.AutoCreateTopicEnabled {
-		// Deduplicate by address to avoid redundant calls when multiple compartments
-		// share the same Kafka backend (e.g. in dev mode).
+		// Deduplicate by address+topic to avoid redundant CreateTopic calls when multiple
+		// compartments resolve to the same Kafka backend and topic (e.g. in dev mode).
 		seen := map[string]bool{}
 		for _, cfg := range w.compartmentConfigs {
-			addrKey := cfg.Address.String()
+			addrKey := cfg.Address.String() + "/" + cfg.Topic
 			if seen[addrKey] {
 				continue
 			}
@@ -190,10 +190,16 @@ func (w *Writer) WriteSync(ctx context.Context, compartmentID int, partitionID i
 		return nil
 	}
 
+	if compartmentID < 0 || compartmentID >= len(w.compartmentConfigs) {
+		return fmt.Errorf("compartment ID %d is out of bounds (num compartments: %d)", compartmentID, len(w.compartmentConfigs))
+	}
+
 	// Get the topic from the per-compartment config.
 	topic := w.compartmentConfigs[compartmentID].Topic
 
 	// Create records out of the write request.
+	// ProducerMaxRecordSizeBytes is the same across all compartments (only address, topic,
+	// and SASL credentials are parameterized per compartment).
 	records, reqSizeBytes, err := w.serializer.ToRecords(topic, partitionID, userID, req, w.kafkaCfg.ProducerMaxRecordSizeBytes)
 	if err != nil {
 		return err
@@ -235,10 +241,6 @@ func (w *Writer) WriteSync(ctx context.Context, compartmentID int, partitionID i
 }
 
 func (w *Writer) getKafkaWriterForPartition(compartmentID int, partitionID int32) (*KafkaProducer, error) {
-	if compartmentID < 0 || compartmentID >= len(w.writers) {
-		return nil, fmt.Errorf("compartment ID %d is out of bounds (num compartments: %d)", compartmentID, len(w.writers))
-	}
-
 	// Check if the writer has already been created.
 	w.writersMx.RLock()
 	clientID := int(partitionID) % len(w.writers[compartmentID])
@@ -272,8 +274,7 @@ func (w *Writer) getKafkaWriterForPartition(compartmentID int, partitionID int32
 		clientLabel = strconv.Itoa(clientID)
 	}
 
-	// Add the client ID to metrics so that they don't clash when the Writer is configured
-	// to run with multiple Kafka clients.
+	// Add the client label to metrics so that they don't clash across compartments and clients.
 	clientReg := prometheus.WrapRegistererWithPrefix(writerMetricsPrefix,
 		prometheus.WrapRegistererWith(prometheus.Labels{"client_id": clientLabel}, w.registerer))
 
