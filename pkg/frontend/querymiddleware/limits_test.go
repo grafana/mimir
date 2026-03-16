@@ -1224,8 +1224,8 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 						},
 					},
 				},
-				Warnings: []string{},
-				Infos:    []string{},
+				Warnings: nil,
+				Infos:    nil,
 			},
 		},
 
@@ -1247,8 +1247,8 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 						},
 					},
 				},
-				Warnings: []string{},
-				Infos:    []string{},
+				Warnings: nil,
+				Infos:    nil,
 			},
 		},
 
@@ -1266,8 +1266,8 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 						},
 					},
 				},
-				Warnings: []string{},
-				Infos:    []string{},
+				Warnings: nil,
+				Infos:    nil,
 			},
 			expectedSamplesProcessed: 1,
 		},
@@ -1289,8 +1289,8 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 						},
 					},
 				},
-				Warnings: []string{},
-				Infos:    []string{},
+				Warnings: nil,
+				Infos:    nil,
 			},
 		},
 
@@ -1308,11 +1308,15 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 					ResultType: model.ValVector.String(),
 					Result:     []SampleStream{},
 				},
-				Warnings: []string{
+				Warnings: mimirpb.StringsToAnnotationErrors([]string{
 					`PromQL warning: bucket label "le" is missing or has a malformed value of "" (1:25)`,
-				},
-				Infos: []string{
-					`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "some_metric" (1:30)`,
+				}),
+				Infos: []mimirpb.AnnotationError{
+					{
+						Type:    mimirpb.ANNOTATION_POSSIBLE_NON_COUNTER,
+						Message: `PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "some_metric"`,
+						Count:   1,
+					},
 				},
 			},
 		},

@@ -23,6 +23,7 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util"
@@ -419,7 +420,7 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 		return nil, err
 	}
 
-	warnings, infos := res.Warnings.AsStrings(r.GetQuery(), 0, 0)
+	warningErrors, infoErrors := res.Warnings.AsErrorsSplit(r.GetQuery(), 0, 0)
 
 	if localStats := stats.FromContext(ctx); localStats != nil {
 		engineStats := q.Stats()
@@ -443,8 +444,8 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 				ResultType: string(res.Value.Type()),
 				Result:     data,
 			},
-			Warnings: warnings,
-			Infos:    infos,
+			Warnings: mimirpb.ErrorsToAnnotationErrors(warningErrors),
+			Infos:    mimirpb.ErrorsToAnnotationErrors(infoErrors),
 		},
 		finalizer: q.Close,
 	}

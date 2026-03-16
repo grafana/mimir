@@ -40,6 +40,21 @@ var (
 func init() {
 	jsoniter.RegisterTypeEncoderFunc("querymiddleware.PrometheusData", prometheusDataJsoniterEncode, func(unsafe.Pointer) bool { return false })
 	jsoniter.RegisterTypeDecoderFunc("querymiddleware.PrometheusData", prometheusDataJsoniterDecode)
+
+	// AnnotationError is serialized as a plain string (its Message) in the JSON API
+	// so that the Prometheus HTTP API contract ("warnings": ["msg", ...]) is preserved.
+	jsoniter.RegisterTypeEncoderFunc("mimirpb.AnnotationError", func(ptr unsafe.Pointer, stream *jsoniter.Stream) {
+		ae := (*mimirpb.AnnotationError)(ptr)
+		stream.WriteString(ae.Message)
+	}, func(ptr unsafe.Pointer) bool {
+		ae := (*mimirpb.AnnotationError)(ptr)
+		return ae.Message == ""
+	})
+	jsoniter.RegisterTypeDecoderFunc("mimirpb.AnnotationError", func(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
+		ae := (*mimirpb.AnnotationError)(ptr)
+		ae.Type = mimirpb.ANNOTATION_GENERIC
+		ae.Message = iter.ReadString()
+	})
 }
 
 // NewEmptyPrometheusResponse returns an empty successful Prometheus query range response.

@@ -275,9 +275,9 @@ func (Codec) MergeResponse(responses ...Response) (Response, error) {
 
 	promResponses := make([]*PrometheusResponse, 0, len(responses))
 	promCloses := make([]func(), 0, len(responses))
-	promWarningsMap := make(map[string]struct{}, 0)
-	promInfosMap := make(map[string]struct{}, 0)
-	var present struct{}
+
+	// Use an AnnotationAccumulator for proper typed error merging across responses.
+	accumulator := NewAnnotationAccumulator()
 
 	for _, res := range responses {
 		pr, ok := res.GetPrometheusResponse()
@@ -293,24 +293,17 @@ func (Codec) MergeResponse(responses ...Response) (Response, error) {
 		}
 
 		promResponses = append(promResponses, pr)
-		for _, warning := range pr.Warnings {
-			promWarningsMap[warning] = present
-		}
-		for _, info := range pr.Infos {
-			promInfosMap[info] = present
-		}
+
+		// Collect typed annotation errors for proper merging.
+		accumulator.addAnnotationErrors(
+			mimirpb.AnnotationErrorsToErrors(pr.Warnings),
+			mimirpb.AnnotationErrorsToErrors(pr.Infos),
+		)
+
 		promCloses = append(promCloses, res.Close)
 	}
 
-	var promWarnings []string
-	for warning := range promWarningsMap {
-		promWarnings = append(promWarnings, warning)
-	}
-
-	var promInfos []string
-	for info := range promInfosMap {
-		promInfos = append(promInfos, info)
-	}
+	mergedWarnings, mergedInfos := accumulator.getAll()
 
 	// Merge the responses.
 	slices.SortFunc(promResponses, func(a, b *PrometheusResponse) int {
@@ -324,8 +317,8 @@ func (Codec) MergeResponse(responses ...Response) (Response, error) {
 				ResultType: model.ValMatrix.String(),
 				Result:     matrixMerge(promResponses),
 			},
-			Warnings: promWarnings,
-			Infos:    promInfos,
+			Warnings: mimirpb.ErrorsToAnnotationErrors(mergedWarnings),
+			Infos:    mimirpb.ErrorsToAnnotationErrors(mergedInfos),
 		},
 		finalizer: func() {
 			for _, close := range promCloses {
@@ -969,6 +962,7 @@ func (c Codec) DecodeMetricsQueryResponse(ctx context.Context, r *http.Response,
 	}
 
 	start := time.Now()
+
 	resp, err := formatter.DecodeQueryResponse(buf)
 	if err != nil {
 		return nil, apierror.Newf(apierror.TypeInternal, "error decoding response: %v", err)
@@ -984,6 +978,7 @@ func (c Codec) DecodeMetricsQueryResponse(ctx context.Context, r *http.Response,
 	for h, hv := range r.Header {
 		resp.Headers = append(resp.Headers, &PrometheusHeader{Name: h, Values: hv})
 	}
+
 	return resp, nil
 }
 

@@ -15,6 +15,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -210,16 +211,13 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 	// Note that the positions based on the original query may be wrong as the rewritten
 	// query which is actually used is different, but the user does not see the rewritten
 	// query, so we pass in an empty string as the query so the positions will be hidden.
-	warn, info := res.Warnings.AsStrings("", 0, 0)
+	warningErrors, infoErrors := res.Warnings.AsErrorsSplit("", 0, 0)
 
-	// Add any annotations returned by the sharded queries, and remove any duplicates.
-	// We remove any position information for the same reason as above: the position information
-	// relates to the rewritten expression sent to queriers, not the original expression provided by the user.
-	accumulatedWarnings, accumulatedInfos := annotationAccumulator.getAll()
-	warn = append(warn, removeAllAnnotationPositionInformation(accumulatedWarnings)...)
-	info = append(info, removeAllAnnotationPositionInformation(accumulatedInfos)...)
-	warn = removeDuplicates(warn)
-	info = removeDuplicates(info)
+	// Merge the outer query's annotations into the accumulator so that
+	// overlapping typed annotations (e.g. possibleNonCounterErr for the same
+	// metric) are properly merged rather than appended as duplicates.
+	annotationAccumulator.addAnnotationErrors(warningErrors, infoErrors)
+	warningErrors, infoErrors = annotationAccumulator.getAll()
 
 	return &PrometheusResponseWithFinalizer{
 		PrometheusResponse: &PrometheusResponse{
@@ -229,8 +227,8 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 				Result:     extracted,
 			},
 			Headers:  queryable.getResponseHeaders(),
-			Warnings: warn,
-			Infos:    info,
+			Warnings: mimirpb.ErrorsToAnnotationErrors(warningErrors),
+			Infos:    mimirpb.ErrorsToAnnotationErrors(infoErrors),
 		},
 		finalizer: qry.Close,
 	}, nil

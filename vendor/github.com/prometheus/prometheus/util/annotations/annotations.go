@@ -84,6 +84,40 @@ func (a Annotations) AsErrors() []error {
 	return arr
 }
 
+func (a Annotations) AsErrorsSplit(query string, maxWarnings, maxInfos int) (warnings, infos []error) {
+	warnings = make([]error, 0, maxWarnings+1)
+	infos = make([]error, 0, maxInfos+1)
+	warnSkipped := 0
+	infoSkipped := 0
+	for _, err := range a {
+		var anErr annoError
+		if errors.As(err, &anErr) {
+			anErr.SetQuery(query)
+		}
+		switch {
+		case errors.Is(err, PromQLInfo):
+			if maxInfos == 0 || len(infos) < maxInfos {
+				infos = append(infos, err)
+			} else {
+				infoSkipped++
+			}
+		default:
+			if maxWarnings == 0 || len(warnings) < maxWarnings {
+				warnings = append(warnings, err)
+			} else {
+				warnSkipped++
+			}
+		}
+	}
+	if warnSkipped > 0 {
+		warnings = append(warnings, fmt.Errorf("%d more warning annotations omitted", warnSkipped))
+	}
+	if infoSkipped > 0 {
+		infos = append(infos, fmt.Errorf("%d more info annotations omitted", infoSkipped))
+	}
+	return warnings, infos
+}
+
 // AsStrings is a convenience function to return the annotations map as 2 slices
 // of strings, separated into warnings and infos. The query string is used to get the
 // line number and character offset positioning info of the elements which trigger an
@@ -98,6 +132,7 @@ func (a Annotations) AsStrings(query string, maxWarnings, maxInfos int) (warning
 		var anErr annoError
 		if errors.As(err, &anErr) {
 			anErr.SetQuery(query)
+			anErr.SetFinal()
 		}
 		switch {
 		case errors.Is(err, PromQLInfo):
@@ -180,6 +215,7 @@ type annoError interface {
 	// AsStrings(), so before that we deduplicate based on the raw error string when query is empty,
 	// and the full error string with details will only be shown in the end when query is set.
 	SetQuery(string)
+	SetFinal()
 	// We can define custom merge functions to merge individual annotations of the same type if they have
 	// the same raw error string.
 	Merge(error) error
@@ -204,6 +240,9 @@ func (e *annoErr) Unwrap() error {
 
 func (e *annoErr) SetQuery(query string) {
 	e.Query = query
+}
+
+func (e *annoErr) SetFinal() {
 }
 
 // We do not merge generic annotations, instead we just ignore the provided error
@@ -302,12 +341,68 @@ func NewMixedExponentialCustomHistogramsWarning(metricName string, pos posrange.
 	}
 }
 
+type possibleNonCounterErr struct {
+	PositionRange posrange.PositionRange
+	Err           error
+	Query         string
+	count         int
+	final         bool
+}
+
+func (e *possibleNonCounterErr) Error() string {
+	if !e.final {
+		return e.Err.Error()
+	}
+	msg := fmt.Sprintf("%s, over %d samples", e.Err, e.count)
+	if e.Query != "" {
+		msg = fmt.Sprintf("%s (%s)", msg, e.PositionRange.StartPosInput(e.Query, 0))
+	}
+	return msg
+}
+
+func (e *possibleNonCounterErr) Unwrap() error {
+	return e.Err
+}
+
+func (e *possibleNonCounterErr) SetQuery(query string) {
+	e.Query = query
+}
+
+func (e *possibleNonCounterErr) SetFinal() {
+	e.final = true
+}
+
+func (e *possibleNonCounterErr) Merge(other error) error {
+	o := &possibleNonCounterErr{}
+	ok := errors.As(other, &o)
+	if !ok {
+		return e
+	}
+	if e.Err.Error() != o.Err.Error() {
+		return e
+	}
+	o.count += e.count
+	return o
+}
+
+func (e *possibleNonCounterErr) annotationType() AnnotationType {
+	return AnnotationTypePossibleNonCounter
+}
+func (e *possibleNonCounterErr) rawMessage() string { return e.Err.Error() }
+func (e *possibleNonCounterErr) mergeFields() map[string]float64 {
+	return map[string]float64{"count": float64(e.count)}
+}
+func (e *possibleNonCounterErr) applyMergeFields(m map[string]float64) {
+	e.count = int(m["count"])
+}
+
 // NewPossibleNonCounterInfo is used when a named counter metric with only float samples does not
 // have the suffixes _total, _sum, _count, or _bucket.
-func NewPossibleNonCounterInfo(metricName string, pos posrange.PositionRange) error {
-	return &annoErr{
+func NewPossibleNonCounterInfo(metricName string, pos posrange.PositionRange, count int) error {
+	return &possibleNonCounterErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w %q", PossibleNonCounterInfo, metricName),
+		count:         count,
 	}
 }
 
@@ -327,21 +422,26 @@ type histogramQuantileForcedMonotonicityErr struct {
 	minTs, maxTs                  int64
 	minBucket, maxBucket, maxDiff float64
 	count                         int
+	final                         bool
 }
 
 func (e *histogramQuantileForcedMonotonicityErr) Error() string {
-	if e.Query == "" {
-		return e.Err.Error()
+	msg := e.Err.Error()
+	if !e.final {
+		return msg
 	}
 	// Allow setting all configurable fields (except count since that is not configurable
 	// by user) to 0 to keep the original message until merging annotations is fully
 	// supported in MQE.
-	if e.minTs == 0 && e.maxTs == 0 && e.minBucket == 0 && e.maxBucket == 0 && e.maxDiff == 0 {
-		return fmt.Sprintf("%s (%s)", e.Err, e.PositionRange.StartPosInput(e.Query, 0))
+	if !(e.minTs == 0 && e.maxTs == 0 && e.minBucket == 0 && e.maxBucket == 0 && e.maxDiff == 0) {
+		startTime := time.Unix(e.minTs/1000, 0).UTC().Format(time.RFC3339)
+		endTime := time.Unix(e.maxTs/1000, 0).UTC().Format(time.RFC3339)
+		msg = fmt.Sprintf("%s, from buckets %g to %g, with a max diff of %.2g, over %d samples from %s to %s", msg, e.minBucket, e.maxBucket, e.maxDiff, e.count+1, startTime, endTime)
 	}
-	startTime := time.Unix(e.minTs/1000, 0).UTC().Format(time.RFC3339)
-	endTime := time.Unix(e.maxTs/1000, 0).UTC().Format(time.RFC3339)
-	return fmt.Sprintf("%s, from buckets %g to %g, with a max diff of %.2g, over %d samples from %s to %s (%s)", e.Err, e.minBucket, e.maxBucket, e.maxDiff, e.count+1, startTime, endTime, e.PositionRange.StartPosInput(e.Query, 0))
+	if e.Query != "" {
+		msg = fmt.Sprintf("%s (%s)", msg, e.PositionRange.StartPosInput(e.Query, 0))
+	}
+	return msg
 }
 
 func (e *histogramQuantileForcedMonotonicityErr) Unwrap() error {
@@ -350,6 +450,10 @@ func (e *histogramQuantileForcedMonotonicityErr) Unwrap() error {
 
 func (e *histogramQuantileForcedMonotonicityErr) SetQuery(query string) {
 	e.Query = query
+}
+
+func (e *histogramQuantileForcedMonotonicityErr) SetFinal() {
+	e.final = true
 }
 
 func (e *histogramQuantileForcedMonotonicityErr) Merge(other error) error {
@@ -378,6 +482,29 @@ func (e *histogramQuantileForcedMonotonicityErr) Merge(other error) error {
 	}
 	o.count += e.count + 1
 	return o
+}
+
+func (e *histogramQuantileForcedMonotonicityErr) annotationType() AnnotationType {
+	return AnnotationTypeHistogramQuantileForcedMonotonicity
+}
+func (e *histogramQuantileForcedMonotonicityErr) rawMessage() string { return e.Err.Error() }
+func (e *histogramQuantileForcedMonotonicityErr) mergeFields() map[string]float64 {
+	return map[string]float64{
+		"count":      float64(e.count),
+		"min_ts":     float64(e.minTs),
+		"max_ts":     float64(e.maxTs),
+		"min_bucket": e.minBucket,
+		"max_bucket": e.maxBucket,
+		"max_diff":   e.maxDiff,
+	}
+}
+func (e *histogramQuantileForcedMonotonicityErr) applyMergeFields(m map[string]float64) {
+	e.count = int(m["count"])
+	e.minTs = int64(m["min_ts"])
+	e.maxTs = int64(m["max_ts"])
+	e.minBucket = m["min_bucket"]
+	e.maxBucket = m["max_bucket"]
+	e.maxDiff = m["max_diff"]
 }
 
 // NewHistogramQuantileForcedMonotonicityInfo is used when the input (classic histograms) to
