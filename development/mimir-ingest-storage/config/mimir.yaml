@@ -19,11 +19,6 @@ ingest_storage:
   compartments:
     enabled: true
     num_compartments: 10
-    # Use the default topic name as the topic format (no <compartment-id> variation) so that
-    # all compartments write to the same "mimir-ingest" topic. This is a temporary workaround
-    # because ingesters don't yet support consuming from different topics. It allows testing
-    # the distributor's compartment routing logic end-to-end without requiring ingester changes.
-    topic_format: mimir-ingest
 
 ingester:
   push_grpc_method_enabled: false

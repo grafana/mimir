@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -28,7 +29,6 @@ func TestCompartmentsConfig_Validate(t *testing.T) {
 			cfg: CompartmentsConfig{
 				Enabled:         true,
 				NumCompartments: 3,
-				TopicFormat:     "mimir-read-comp-<compartment-id>",
 			},
 			wantErr: nil,
 		},
@@ -37,7 +37,6 @@ func TestCompartmentsConfig_Validate(t *testing.T) {
 			cfg: CompartmentsConfig{
 				Enabled:         true,
 				NumCompartments: 0,
-				TopicFormat:     "mimir-read-comp-<compartment-id>",
 			},
 			wantErr: ErrCompartmentsInvalidNumCompartments,
 		},
@@ -46,27 +45,8 @@ func TestCompartmentsConfig_Validate(t *testing.T) {
 			cfg: CompartmentsConfig{
 				Enabled:         true,
 				NumCompartments: -1,
-				TopicFormat:     "mimir-read-comp-<compartment-id>",
 			},
 			wantErr: ErrCompartmentsInvalidNumCompartments,
-		},
-		{
-			name: "enabled with topic_format without placeholder is valid",
-			cfg: CompartmentsConfig{
-				Enabled:         true,
-				NumCompartments: 3,
-				TopicFormat:     "mimir-read-comp",
-			},
-			wantErr: nil,
-		},
-		{
-			name: "enabled with empty topic_format",
-			cfg: CompartmentsConfig{
-				Enabled:         true,
-				NumCompartments: 3,
-				TopicFormat:     "",
-			},
-			wantErr: ErrCompartmentsEmptyTopicFormat,
 		},
 	}
 
@@ -82,27 +62,14 @@ func TestCompartmentsConfig_Validate(t *testing.T) {
 	}
 }
 
-func TestCompartmentRouter_Topic(t *testing.T) {
-	cfg := CompartmentsConfig{
-		Enabled:         true,
-		NumCompartments: 3,
-		TopicFormat:     "mimir-read-comp-<compartment-id>",
-	}
-	router := NewCompartmentRouter(cfg)
-
-	assert.Equal(t, 3, router.NumCompartments())
-	assert.Equal(t, "mimir-read-comp-0", router.Topic(0))
-	assert.Equal(t, "mimir-read-comp-1", router.Topic(1))
-	assert.Equal(t, "mimir-read-comp-2", router.Topic(2))
-}
-
 func TestCompartmentRouter_CompartmentForMetric(t *testing.T) {
 	cfg := CompartmentsConfig{
 		Enabled:         true,
 		NumCompartments: 4,
-		TopicFormat:     "mimir-read-comp-<compartment-id>",
 	}
 	router := NewCompartmentRouter(cfg)
+
+	assert.Equal(t, 4, router.NumCompartments())
 
 	t.Run("deterministic assignment", func(t *testing.T) {
 		c1 := router.CompartmentForMetric("tenant-1", "up")
@@ -118,57 +85,70 @@ func TestCompartmentRouter_CompartmentForMetric(t *testing.T) {
 		}
 	})
 
-	t.Run("consistent with TopicForMetric", func(t *testing.T) {
-		for i := 0; i < 100; i++ {
-			metric := fmt.Sprintf("metric_%d", i)
-			idx := router.CompartmentForMetric("tenant-1", metric)
-			topic := router.TopicForMetric("tenant-1", metric)
-			assert.Equal(t, router.Topic(idx), topic)
-		}
-	})
-}
-
-func TestCompartmentRouter_TopicForMetric(t *testing.T) {
-	cfg := CompartmentsConfig{
-		Enabled:         true,
-		NumCompartments: 4,
-		TopicFormat:     "mimir-read-comp-<compartment-id>",
-	}
-	router := NewCompartmentRouter(cfg)
-
-	t.Run("deterministic assignment", func(t *testing.T) {
-		topic1 := router.TopicForMetric("tenant-1", "up")
-		topic2 := router.TopicForMetric("tenant-1", "up")
-		assert.Equal(t, topic1, topic2, "same user+metric should always map to the same topic")
-	})
-
 	t.Run("different tenants may get different compartments for the same metric", func(t *testing.T) {
-		seen := map[string]bool{}
+		seen := map[int]bool{}
 		for i := 0; i < 1000; i++ {
-			topic := router.TopicForMetric(fmt.Sprintf("tenant-%d", i), "up")
-			seen[topic] = true
+			c := router.CompartmentForMetric(fmt.Sprintf("tenant-%d", i), "up")
+			seen[c] = true
 		}
 		assert.Equal(t, 4, len(seen), "expected all 4 compartments to be assigned across 1000 tenants with the same metric")
 	})
 
 	t.Run("all compartments get assigned with enough metrics", func(t *testing.T) {
-		seen := map[string]bool{}
-		// With enough different metrics, all compartments should be hit.
+		seen := map[int]bool{}
 		for i := 0; i < 1000; i++ {
-			topic := router.TopicForMetric("tenant-1", fmt.Sprintf("metric_%d", i))
-			seen[topic] = true
+			c := router.CompartmentForMetric("tenant-1", fmt.Sprintf("metric_%d", i))
+			seen[c] = true
 		}
 		assert.Equal(t, 4, len(seen), "expected all 4 compartments to be assigned at least one metric")
 	})
+}
 
-	t.Run("returned topics are valid", func(t *testing.T) {
-		validTopics := map[string]bool{
-			"mimir-read-comp-0": true,
-			"mimir-read-comp-1": true,
-			"mimir-read-comp-2": true,
-			"mimir-read-comp-3": true,
+func TestKafkaConfigForCompartment(t *testing.T) {
+	t.Run("replaces placeholder in all fields", func(t *testing.T) {
+		base := KafkaConfig{
+			Address:  flagext.StringSliceCSV{"kafka-<compartment-id>.example.com:9092", "kafka-<compartment-id>.backup.com:9092"},
+			Topic:    "mimir-ingest-<compartment-id>",
+			SASL: KafkaAuthConfig{
+				Username: "user-<compartment-id>",
+				Password: flagext.SecretWithValue("pass-<compartment-id>"),
+			},
 		}
-		topic := router.TopicForMetric("user-a", "http_requests_total")
-		assert.True(t, validTopics[topic], "topic %q should be one of the pre-computed topics", topic)
+
+		cfg := KafkaConfigForCompartment(base, 3)
+
+		assert.Equal(t, flagext.StringSliceCSV{"kafka-3.example.com:9092", "kafka-3.backup.com:9092"}, cfg.Address)
+		assert.Equal(t, "mimir-ingest-3", cfg.Topic)
+		assert.Equal(t, "user-3", cfg.SASL.Username)
+		assert.Equal(t, "pass-3", cfg.SASL.Password.String())
+	})
+
+	t.Run("no placeholder leaves values unchanged", func(t *testing.T) {
+		base := KafkaConfig{
+			Address: flagext.StringSliceCSV{"kafka.example.com:9092"},
+			Topic:   "mimir-ingest",
+			SASL: KafkaAuthConfig{
+				Username: "user",
+				Password: flagext.SecretWithValue("pass"),
+			},
+		}
+
+		cfg := KafkaConfigForCompartment(base, 5)
+
+		assert.Equal(t, flagext.StringSliceCSV{"kafka.example.com:9092"}, cfg.Address)
+		assert.Equal(t, "mimir-ingest", cfg.Topic)
+		assert.Equal(t, "user", cfg.SASL.Username)
+		assert.Equal(t, "pass", cfg.SASL.Password.String())
+	})
+
+	t.Run("does not alias the original address slice", func(t *testing.T) {
+		base := KafkaConfig{
+			Address: flagext.StringSliceCSV{"kafka-<compartment-id>.example.com:9092"},
+			Topic:   "topic",
+		}
+
+		cfg := KafkaConfigForCompartment(base, 1)
+		assert.Equal(t, "kafka-1.example.com:9092", string(cfg.Address[0]))
+		assert.Equal(t, "kafka-<compartment-id>.example.com:9092", string(base.Address[0]), "original should not be modified")
 	})
 }

@@ -787,7 +787,7 @@ type ownedSeriesWithPartitionsRingTestContext struct {
 // Push series to Kafka, and wait for ingester to ingest them.
 func (c *ownedSeriesWithPartitionsRingTestContext) pushUserSeries(t *testing.T) {
 	// Create a Kafka writer and then write all series.
-	writer := ingest.NewWriter(c.cfg.IngestStorageConfig.KafkaConfig, log.NewNopLogger(), nil)
+	writer := ingest.NewWriter(c.cfg.IngestStorageConfig.KafkaConfig, ingest.CompartmentsConfig{}, log.NewNopLogger(), nil)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), writer))
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), writer))
@@ -795,7 +795,7 @@ func (c *ownedSeriesWithPartitionsRingTestContext) pushUserSeries(t *testing.T) 
 
 	for _, s := range c.seriesToWrite {
 		req := mockWriteRequest(t, s.Labels, s.Samples[0].Val, s.Samples[0].TS)
-		require.NoError(t, writer.WriteSync(context.Background(), c.cfg.IngestStorageConfig.KafkaConfig.Topic, c.partitionID, c.user, req))
+		require.NoError(t, writer.WriteSync(context.Background(), 0, c.partitionID, c.user, req))
 	}
 
 	// Wait until the ingester ingested all series from Kafka.

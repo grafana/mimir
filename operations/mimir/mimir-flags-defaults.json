@@ -641,7 +641,6 @@
   "ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample": 500,
   "ingest-storage.migration.ingest-storage-max-wait-time": 0,
   "ingest-storage.compartments.num-compartments": 0,
-  "ingest-storage.compartments.topic-format": "",
   "ingest-storage.write-logs-fsync-before-kafka-commit-concurrency": 4,
   "blocks-storage.backend": "filesystem",
   "blocks-storage.s3.endpoint": "",

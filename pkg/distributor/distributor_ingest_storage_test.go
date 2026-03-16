@@ -1652,9 +1652,10 @@ func TestDistributor_Push_WithCompartments(t *testing.T) {
 		limits:                  limits,
 		configure: func(cfg *Config) {
 			cfg.IngestStorageConfig.KafkaConfig.WriteClients = 3
+			// Use <compartment-id> placeholder in the topic so each compartment writes to a different topic.
+			cfg.IngestStorageConfig.KafkaConfig.Topic = "comp-<compartment-id>"
 			cfg.IngestStorageConfig.Compartments.Enabled = true
 			cfg.IngestStorageConfig.Compartments.NumCompartments = numCompartments
-			cfg.IngestStorageConfig.Compartments.TopicFormat = "comp-<compartment-id>"
 		},
 	}
 
@@ -1670,7 +1671,6 @@ func TestDistributor_Push_WithCompartments(t *testing.T) {
 	router := ingest.NewCompartmentRouter(ingest.CompartmentsConfig{
 		Enabled:         true,
 		NumCompartments: numCompartments,
-		TopicFormat:     "comp-<compartment-id>",
 	})
 
 	// Collect metric names per topic.
@@ -1697,13 +1697,14 @@ func TestDistributor_Push_WithCompartments(t *testing.T) {
 	slices.Sort(allMetrics)
 	assert.Equal(t, []string{"metric_a", "metric_b", "metric_c", "metric_d"}, allMetrics)
 
-	// Verify each metric ended up in the correct topic based on the router.
+	// Verify each metric ended up in the correct compartment's topic based on the router.
 	for _, metricName := range []string{"metric_a", "metric_b", "metric_c", "metric_d"} {
-		expectedTopic := router.TopicForMetric("user", metricName)
+		expectedCompartment := router.CompartmentForMetric("user", metricName)
+		expectedTopic := fmt.Sprintf("comp-%d", expectedCompartment)
 		assert.Contains(t, metricsByTopic[expectedTopic], metricName, "metric %s should be in topic %s", metricName, expectedTopic)
 	}
 
-	// Verify no records ended up in the default topic.
+	// Verify no records ended up in the default topic (which has the unresolved placeholder).
 	defaultRecords := readAllRecordsFromKafkaTopics(t, kafkaCluster.ListenAddrs(), []string{kafkaTopic}, 3, time.Second)
 	assert.Empty(t, defaultRecords, "no records should be in the default topic when compartments are enabled")
 }

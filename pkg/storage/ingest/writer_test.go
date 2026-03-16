@@ -68,7 +68,7 @@ func TestWriter_WriteSync(t *testing.T) {
 
 		req := &mimirpb.WriteRequest{Timeseries: multiSeries, Metadata: nil, Source: mimirpb.API}
 		inputSize := req.Size()
-		err := writer.WriteSync(ctx, topicName, partitionID, tenantID, req)
+		err := writer.WriteSync(ctx, 0, partitionID, tenantID, req)
 		require.NoError(t, err)
 
 		// Ensure it was processed before returning.
@@ -152,7 +152,7 @@ func TestWriter_WriteSync(t *testing.T) {
 			return nil, nil, false
 		})
 
-		err := writer.WriteSync(ctx, topicName, partitionID, tenantID, expectedReq)
+		err := writer.WriteSync(ctx, 0, partitionID, tenantID, expectedReq)
 		require.NoError(t, err)
 
 		// Ensure it was processed before returning.
@@ -245,7 +245,7 @@ func TestWriter_WriteSync(t *testing.T) {
 
 				// Write to partitions.
 				for partitionID, series := range seriesPerPartition {
-					err := writer.WriteSync(ctx, topicName, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series, Metadata: nil, Source: mimirpb.API})
+					err := writer.WriteSync(ctx, 0, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series, Metadata: nil, Source: mimirpb.API})
 					require.NoError(t, err)
 				}
 
@@ -309,7 +309,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
 
 		// Get the underlying Kafka client used by the writer.
-		client, err := writer.getKafkaWriterForPartition(partitionID)
+		client, err := writer.getKafkaWriterForPartition(0, partitionID)
 		require.NoError(t, err)
 
 		cluster.ControlKey(int16(kmsg.Produce), func(request kmsg.Request) (kmsg.Response, error, bool) {
@@ -334,7 +334,7 @@ func TestWriter_WriteSync(t *testing.T) {
 
 		// Write the first record, which is expected to be sent immediately.
 		runAsync(&wg, func() {
-			assert.NoError(t, writer.WriteSync(ctx, topicName, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series1, Metadata: nil, Source: mimirpb.API}))
+			assert.NoError(t, writer.WriteSync(ctx, 0, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series1, Metadata: nil, Source: mimirpb.API}))
 		})
 
 		// Once the 1st Produce request is received by the server but still processing (there's a 1s sleep),
@@ -345,7 +345,7 @@ func TestWriter_WriteSync(t *testing.T) {
 			secondRequestCtx, cancelSecondRequest := context.WithTimeout(ctx, 10*time.Millisecond)
 			t.Cleanup(cancelSecondRequest)
 
-			assert.ErrorIs(t, writer.WriteSync(secondRequestCtx, topicName, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series2, Metadata: nil, Source: mimirpb.API}), context.DeadlineExceeded)
+			assert.ErrorIs(t, writer.WriteSync(secondRequestCtx, 0, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series2, Metadata: nil, Source: mimirpb.API}), context.DeadlineExceeded)
 		})
 
 		runAsyncAfter(&wg, firstRequestReceived, func() {
@@ -354,7 +354,7 @@ func TestWriter_WriteSync(t *testing.T) {
 				return client.BufferedProduceRecords() == 2
 			}, time.Second, 10*time.Millisecond)
 
-			assert.NoError(t, writer.WriteSync(ctx, topicName, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series3, Metadata: nil, Source: mimirpb.API}))
+			assert.NoError(t, writer.WriteSync(ctx, 0, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series3, Metadata: nil, Source: mimirpb.API}))
 		})
 
 		// Wait until all 3 requests have been buffered.
@@ -408,11 +408,11 @@ func TestWriter_WriteSync(t *testing.T) {
 		wg := sync.WaitGroup{}
 
 		runAsync(&wg, func() {
-			assert.NoError(t, writer.WriteSync(ctx, topicName, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series1, Metadata: nil, Source: mimirpb.API}))
+			assert.NoError(t, writer.WriteSync(ctx, 0, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series1, Metadata: nil, Source: mimirpb.API}))
 		})
 
 		runAsyncAfter(&wg, firstRequestReceived, func() {
-			assert.NoError(t, writer.WriteSync(ctx, topicName, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series2, Metadata: nil, Source: mimirpb.API}))
+			assert.NoError(t, writer.WriteSync(ctx, 0, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series2, Metadata: nil, Source: mimirpb.API}))
 		})
 
 		runAsyncAfter(&wg, firstRequestReceived, func() {
@@ -421,7 +421,7 @@ func TestWriter_WriteSync(t *testing.T) {
 			// and not because it's waiting for the 1st call to complete.
 			time.Sleep(100 * time.Millisecond)
 
-			assert.NoError(t, writer.WriteSync(ctx, topicName, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series3, Metadata: nil, Source: mimirpb.API}))
+			assert.NoError(t, writer.WriteSync(ctx, 0, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series3, Metadata: nil, Source: mimirpb.API}))
 		})
 
 		wg.Wait()
@@ -437,7 +437,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		writer, reg := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
 
 		// Write to a non-existing partition.
-		err := writer.WriteSync(ctx, topicName, 100, tenantID, &mimirpb.WriteRequest{Timeseries: multiSeries, Metadata: nil, Source: mimirpb.API})
+		err := writer.WriteSync(ctx, 0, 100, tenantID, &mimirpb.WriteRequest{Timeseries: multiSeries, Metadata: nil, Source: mimirpb.API})
 		require.Error(t, err)
 
 		// Check metrics.
@@ -468,7 +468,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		})
 
 		startTime := time.Now()
-		require.Equal(t, kgo.ErrRecordTimeout, writer.WriteSync(ctx, topicName, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series1, Metadata: nil, Source: mimirpb.API}))
+		require.Equal(t, kgo.ErrRecordTimeout, writer.WriteSync(ctx, 0, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series1, Metadata: nil, Source: mimirpb.API}))
 		elapsedTime := time.Since(startTime)
 
 		require.Greater(t, elapsedTime, kafkaCfg.WriteTimeout/2)
@@ -524,7 +524,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		// The 1st request is expected to fail because Kafka will take longer than the configured timeout.
 		runAsync(&wg, func() {
 			startTime := time.Now()
-			assert.Equal(t, kgo.ErrRecordTimeout, writer.WriteSync(ctx, topicName, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series1, Metadata: nil, Source: mimirpb.API}))
+			assert.Equal(t, kgo.ErrRecordTimeout, writer.WriteSync(ctx, 0, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series1, Metadata: nil, Source: mimirpb.API}))
 			elapsedTime := time.Since(startTime)
 
 			// It should take nearly the client's write timeout.
@@ -542,7 +542,7 @@ func TestWriter_WriteSync(t *testing.T) {
 			time.Sleep(kafkaCfg.WriteTimeout + writerRequestTimeoutOverhead - delay)
 
 			startTime := time.Now()
-			assert.Equal(t, kgo.ErrRecordTimeout, writer.WriteSync(ctx, topicName, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series2, Metadata: nil, Source: mimirpb.API}))
+			assert.Equal(t, kgo.ErrRecordTimeout, writer.WriteSync(ctx, 0, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series2, Metadata: nil, Source: mimirpb.API}))
 			elapsedTime := time.Since(startTime)
 
 			// We expect to fail once the previous request fails, so it should take nearly the client's write timeout
@@ -579,7 +579,7 @@ func TestWriter_WriteSync(t *testing.T) {
 			return nil, nil, false
 		})
 
-		err := writer.WriteSync(ctx, topicName, partitionID, tenantID, req)
+		err := writer.WriteSync(ctx, 0, partitionID, tenantID, req)
 		require.Equal(t, ErrWriteRequestDataItemTooLarge, err)
 
 		// Ensure it was processed before returning.
@@ -712,7 +712,7 @@ func TestWriter_WriteSync(t *testing.T) {
 			partition := i
 
 			runAsync(&goroutines, func() {
-				err := writer.WriteSync(ctx, topicName, partition, tenantID, createWriteRequest())
+				err := writer.WriteSync(ctx, 0, partition, tenantID, createWriteRequest())
 				t.Logf("WriteSync() returned with error: %v", err)
 
 				// Keep track of the returned error (if any).
@@ -773,7 +773,7 @@ func TestWriter_WriteSync(t *testing.T) {
 			partition := i
 
 			runAsync(&goroutines, func() {
-				require.NoError(t, writer.WriteSync(ctx, topicName, partition, tenantID, createWriteRequest()))
+				require.NoError(t, writer.WriteSync(ctx, 0, partition, tenantID, createWriteRequest()))
 			})
 		}
 
@@ -800,12 +800,12 @@ func TestWriter_WriteSync(t *testing.T) {
 		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
 		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
 
-		err := writer.WriteSync(ctx, topicName, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: multiSeries, Metadata: nil, Source: mimirpb.API})
+		err := writer.WriteSync(ctx, 0, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: multiSeries, Metadata: nil, Source: mimirpb.API})
 		require.NoError(t, err)
 
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, writer))
 
-		err = writer.WriteSync(ctx, topicName, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: multiSeries, Metadata: nil, Source: mimirpb.API})
+		err = writer.WriteSync(ctx, 0, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: multiSeries, Metadata: nil, Source: mimirpb.API})
 		require.Equal(t, err, ErrWriterNotRunning)
 	})
 }
@@ -864,7 +864,7 @@ func TestWriter_WriteSync_HighConcurrencyOnKafkaClientBufferFull(t *testing.T) {
 					return
 
 				default:
-					if err := writer.WriteSync(ctx, topicName, partitionID, tenantID, createRandomWriteRequest()); err == nil {
+					if err := writer.WriteSync(ctx, 0, partitionID, tenantID, createRandomWriteRequest()); err == nil {
 						writeSuccessCount.Inc()
 					} else {
 						assert.ErrorIs(t, err, kgo.ErrMaxBuffered)
@@ -895,7 +895,7 @@ func TestWriter_WriteSync_HighConcurrencyOnKafkaClientBufferFull(t *testing.T) {
 	require.NotZero(t, writeFailureCount.Load())
 
 	// We expect the buffered bytes to get down to 0 once all write requests completed.
-	producer, err := writer.getKafkaWriterForPartition(partitionID)
+	producer, err := writer.getKafkaWriterForPartition(0, partitionID)
 	require.NoError(t, err)
 	require.Zero(t, producer.bufferedBytes.Load())
 }
@@ -1395,7 +1395,7 @@ func createTestKafkaConfig(clusterAddr, topicName string) KafkaConfig {
 func createTestWriter(t *testing.T, cfg KafkaConfig) (*Writer, prometheus.Gatherer) {
 	reg := prometheus.NewPedanticRegistry()
 
-	writer := NewWriter(cfg, test.NewTestingLogger(t), reg)
+	writer := NewWriter(cfg, CompartmentsConfig{}, test.NewTestingLogger(t), reg)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), writer))
 
 	t.Cleanup(func() {

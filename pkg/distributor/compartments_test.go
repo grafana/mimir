@@ -56,12 +56,12 @@ func TestGetCompartmentTokensForWriteRequest(t *testing.T) {
 		},
 	}
 
-	t.Run("no router returns single compartmentTokens with default topic", func(t *testing.T) {
-		cts, initialMetadataIndex := getCompartmentTokensForWriteRequest(nil, "default-topic", userID, req)
+	t.Run("no router returns single compartmentTokens with compartmentID 0", func(t *testing.T) {
+		cts, initialMetadataIndex := getCompartmentTokensForWriteRequest(nil, userID, req)
 
 		assert.Equal(t, 3, initialMetadataIndex)
 		require.Len(t, cts, 1)
-		assert.Equal(t, "default-topic", cts[0].topic)
+		assert.Equal(t, 0, cts[0].compartmentID)
 
 		// All 5 items (3 series + 2 metadata) should be in the single entry.
 		assert.Len(t, cts[0].indexes, 5)
@@ -81,16 +81,16 @@ func TestGetCompartmentTokensForWriteRequest(t *testing.T) {
 		router := ingest.NewCompartmentRouter(ingest.CompartmentsConfig{
 			Enabled:         true,
 			NumCompartments: 3,
-			TopicFormat:     "comp-<compartment-id>",
 		})
 
-		cts, initialMetadataIndex := getCompartmentTokensForWriteRequest(router, "unused", userID, req)
+		cts, initialMetadataIndex := getCompartmentTokensForWriteRequest(router, userID, req)
 		assert.Equal(t, 3, initialMetadataIndex)
 
-		// Verify each returned compartmentTokens has the correct topic and non-empty items.
+		// Verify each returned compartmentTokens has a valid compartment ID and non-empty items.
 		allIndexes := map[int]bool{}
 		for _, ct := range cts {
-			assert.Contains(t, []string{"comp-0", "comp-1", "comp-2"}, ct.topic)
+			assert.GreaterOrEqual(t, ct.compartmentID, 0)
+			assert.Less(t, ct.compartmentID, 3)
 			assert.Equal(t, len(ct.indexes), len(ct.tokens))
 			for _, idx := range ct.indexes {
 				assert.False(t, allIndexes[idx], "index %d appears in multiple compartments", idx)
@@ -125,10 +125,9 @@ func TestGetCompartmentTokensForWriteRequest(t *testing.T) {
 		router := ingest.NewCompartmentRouter(ingest.CompartmentsConfig{
 			Enabled:         true,
 			NumCompartments: 3,
-			TopicFormat:     "comp-<compartment-id>",
 		})
 
-		cts, _ := getCompartmentTokensForWriteRequest(router, "unused", userID, noNameReq)
+		cts, _ := getCompartmentTokensForWriteRequest(router, userID, noNameReq)
 
 		totalItems := 0
 		for _, ct := range cts {

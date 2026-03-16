@@ -64,10 +64,15 @@ type Writer struct {
 	logger     log.Logger
 	registerer prometheus.Registerer
 
+	// Per-compartment configs (with placeholders resolved). When compartments are disabled,
+	// this contains a single entry: the base KafkaConfig.
+	compartmentConfigs []KafkaConfig
+
 	// We support multiple Kafka clients to better parallelize the workload. The number of
 	// clients is fixed during the Writer lifecycle, but they're initialised lazily.
+	// writers is indexed as [compartmentID][clientID].
 	writersMx  sync.RWMutex
-	writers    []*KafkaProducer
+	writers    [][]*KafkaProducer
 	serializer recordSerializer
 
 	// Metrics.
@@ -81,7 +86,7 @@ type Writer struct {
 	maxInflightProduceRequests int
 }
 
-func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registerer) *Writer {
+func NewWriter(kafkaCfg KafkaConfig, compartmentsCfg CompartmentsConfig, logger log.Logger, reg prometheus.Registerer) *Writer {
 	writeLatency := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:                            "cortex_ingest_storage_writer_latency_seconds",
 		Help:                            "Latency to write an incoming request to the Kafka backend, after the request has been split to per-partition Kafka records. Latency is tracked individually for each partition.",
@@ -91,11 +96,27 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 		Buckets:                         prometheus.DefBuckets,
 	}, []string{"outcome"})
 
+	// Build per-compartment configs.
+	var compartmentConfigs []KafkaConfig
+	var writers [][]*KafkaProducer
+	if compartmentsCfg.Enabled {
+		compartmentConfigs = make([]KafkaConfig, compartmentsCfg.NumCompartments)
+		writers = make([][]*KafkaProducer, compartmentsCfg.NumCompartments)
+		for i := 0; i < compartmentsCfg.NumCompartments; i++ {
+			compartmentConfigs[i] = KafkaConfigForCompartment(kafkaCfg, i)
+			writers[i] = make([]*KafkaProducer, kafkaCfg.WriteClients)
+		}
+	} else {
+		compartmentConfigs = []KafkaConfig{kafkaCfg}
+		writers = [][]*KafkaProducer{make([]*KafkaProducer, kafkaCfg.WriteClients)}
+	}
+
 	w := &Writer{
 		kafkaCfg:                   kafkaCfg,
 		logger:                     logger,
 		registerer:                 reg,
-		writers:                    make([]*KafkaProducer, kafkaCfg.WriteClients),
+		compartmentConfigs:         compartmentConfigs,
+		writers:                    writers,
 		serializer:                 recordSerializerFromCfg(kafkaCfg),
 		maxInflightProduceRequests: defaultMaxInflightProduceRequests,
 
@@ -124,7 +145,19 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 
 func (w *Writer) starting(_ context.Context) error {
 	if w.kafkaCfg.AutoCreateTopicEnabled {
-		return CreateTopic(w.kafkaCfg, w.logger)
+		// Deduplicate by address to avoid redundant calls when multiple compartments
+		// share the same Kafka backend (e.g. in dev mode).
+		seen := map[string]bool{}
+		for _, cfg := range w.compartmentConfigs {
+			addrKey := cfg.Address.String()
+			if seen[addrKey] {
+				continue
+			}
+			seen[addrKey] = true
+			if err := CreateTopic(cfg, w.logger); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
@@ -133,13 +166,15 @@ func (w *Writer) stopping(_ error) error {
 	w.writersMx.Lock()
 	defer w.writersMx.Unlock()
 
-	for idx, client := range w.writers {
-		if client == nil {
-			continue
-		}
+	for compartmentID := range w.writers {
+		for clientID, client := range w.writers[compartmentID] {
+			if client == nil {
+				continue
+			}
 
-		client.Close()
-		w.writers[idx] = nil
+			client.Close()
+			w.writers[compartmentID][clientID] = nil
+		}
 	}
 
 	return nil
@@ -147,13 +182,16 @@ func (w *Writer) stopping(_ error) error {
 
 // WriteSync the input data to the ingest storage. The function blocks until the data has been successfully committed,
 // or an error occurred.
-func (w *Writer) WriteSync(ctx context.Context, topic string, partitionID int32, userID string, req *mimirpb.WriteRequest) error {
+func (w *Writer) WriteSync(ctx context.Context, compartmentID int, partitionID int32, userID string, req *mimirpb.WriteRequest) error {
 	startTime := time.Now()
 
 	// Nothing to do if the input data is empty.
 	if req.IsEmpty() {
 		return nil
 	}
+
+	// Get the topic from the per-compartment config.
+	topic := w.compartmentConfigs[compartmentID].Topic
 
 	// Create records out of the write request.
 	records, reqSizeBytes, err := w.serializer.ToRecords(topic, partitionID, userID, req, w.kafkaCfg.ProducerMaxRecordSizeBytes)
@@ -162,7 +200,7 @@ func (w *Writer) WriteSync(ctx context.Context, topic string, partitionID int32,
 	}
 
 	// Write to backend.
-	writer, err := w.getKafkaWriterForPartition(partitionID)
+	writer, err := w.getKafkaWriterForPartition(compartmentID, partitionID)
 	if err != nil {
 		return err
 	}
@@ -196,11 +234,15 @@ func (w *Writer) WriteSync(ctx context.Context, topic string, partitionID int32,
 	return nil
 }
 
-func (w *Writer) getKafkaWriterForPartition(partitionID int32) (*KafkaProducer, error) {
+func (w *Writer) getKafkaWriterForPartition(compartmentID int, partitionID int32) (*KafkaProducer, error) {
+	if compartmentID < 0 || compartmentID >= len(w.writers) {
+		return nil, fmt.Errorf("compartment ID %d is out of bounds (num compartments: %d)", compartmentID, len(w.writers))
+	}
+
 	// Check if the writer has already been created.
 	w.writersMx.RLock()
-	clientID := int(partitionID) % len(w.writers)
-	writer := w.writers[clientID]
+	clientID := int(partitionID) % len(w.writers[compartmentID])
+	writer := w.writers[compartmentID][clientID]
 	w.writersMx.RUnlock()
 
 	if writer != nil {
@@ -217,28 +259,35 @@ func (w *Writer) getKafkaWriterForPartition(partitionID int32) (*KafkaProducer, 
 	}
 
 	// Ensure a new writer wasn't created in the meanwhile. If so, use it.
-	writer = w.writers[clientID]
+	writer = w.writers[compartmentID][clientID]
 	if writer != nil {
 		return writer, nil
+	}
+
+	// Build a label that includes compartment ID when there are multiple compartments.
+	var clientLabel string
+	if len(w.compartmentConfigs) > 1 {
+		clientLabel = fmt.Sprintf("%d-%d", compartmentID, clientID)
+	} else {
+		clientLabel = strconv.Itoa(clientID)
 	}
 
 	// Add the client ID to metrics so that they don't clash when the Writer is configured
 	// to run with multiple Kafka clients.
 	clientReg := prometheus.WrapRegistererWithPrefix(writerMetricsPrefix,
-		prometheus.WrapRegistererWith(prometheus.Labels{"client_id": strconv.Itoa(clientID)}, w.registerer))
+		prometheus.WrapRegistererWith(prometheus.Labels{"client_id": clientLabel}, w.registerer))
 
 	// Add the client ID to logger so that we can easily distinguish Kafka clients in logs.
-	clientLogger := log.With(w.logger, "client_id", clientID)
+	clientLogger := log.With(w.logger, "client_id", clientLabel)
 
-	// The Writer does not use a default topic because the topic is set on each record individually,
-	// allowing writes to different topics (compartments).
-	newClient, err := NewKafkaWriterClient(w.kafkaCfg, w.maxInflightProduceRequests, "", clientLogger, clientReg)
+	cfg := w.compartmentConfigs[compartmentID]
+	newClient, err := NewKafkaWriterClient(cfg, w.maxInflightProduceRequests, cfg.Topic, clientLogger, clientReg)
 	if err != nil {
 		return nil, err
 	}
 
-	newWriter := NewKafkaProducer(newClient, w.kafkaCfg.ProducerMaxBufferedBytes, clientReg)
-	w.writers[clientID] = newWriter
+	newWriter := NewKafkaProducer(newClient, cfg.ProducerMaxBufferedBytes, clientReg)
+	w.writers[compartmentID][clientID] = newWriter
 	return newWriter, nil
 }
 

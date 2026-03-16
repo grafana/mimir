@@ -11,9 +11,9 @@ import (
 // compartmentTokens holds the partition-ring tokens for all series/metadata
 // items that belong to a single compartment.
 type compartmentTokens struct {
-	topic   string   // Kafka topic for this compartment.
-	indexes []int    // Indexes into the combined series+metadata of the WriteRequest.
-	tokens  []uint32 // Parallel to indexes: partition-ring tokens.
+	compartmentID int      // Compartment index (used to select the correct Kafka backend).
+	indexes       []int    // Indexes into the combined series+metadata of the WriteRequest.
+	tokens        []uint32 // Parallel to indexes: partition-ring tokens.
 }
 
 // writeRequestIndexes maps token-level indexes (as returned by ring.DoBatchWithOptions callback)
@@ -28,14 +28,13 @@ func (ct *compartmentTokens) writeRequestIndexes(tokenIndexes []int) []int {
 
 // getCompartmentTokensForWriteRequest groups series and metadata by compartment, computing
 // partition-ring tokens for each item. When the router is nil (compartments disabled),
-// it returns a single compartmentTokens entry with the default topic.
+// it returns a single compartmentTokens entry with compartmentID 0.
 func getCompartmentTokensForWriteRequest(
 	router *ingest.CompartmentRouter,
-	defaultTopic string,
 	userID string,
 	req *mimirpb.WriteRequest,
 ) ([]compartmentTokens, int) {
-	// When compartments are disabled, return a single entry with the default topic.
+	// When compartments are disabled, return a single entry with compartmentID 0.
 	if router == nil {
 		tokens, initialMetadataIndex := getSeriesAndMetadataTokens(userID, req)
 
@@ -45,9 +44,9 @@ func getCompartmentTokensForWriteRequest(
 		}
 
 		return []compartmentTokens{{
-			topic:   defaultTopic,
-			indexes: indexes,
-			tokens:  tokens,
+			compartmentID: 0,
+			indexes:       indexes,
+			tokens:        tokens,
 		}}, initialMetadataIndex
 	}
 
@@ -57,7 +56,7 @@ func getCompartmentTokensForWriteRequest(
 	numCompartments := router.NumCompartments()
 	byCompartment := make([]compartmentTokens, numCompartments)
 	for c := 0; c < numCompartments; c++ {
-		byCompartment[c].topic = router.Topic(c)
+		byCompartment[c].compartmentID = c
 	}
 
 	for i, ts := range req.Timeseries {

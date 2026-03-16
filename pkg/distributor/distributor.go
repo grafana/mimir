@@ -753,7 +753,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	}
 
 	if cfg.IngestStorageConfig.Enabled {
-		d.ingestStorageWriter = ingest.NewWriter(d.cfg.IngestStorageConfig.KafkaConfig, log, reg)
+		d.ingestStorageWriter = ingest.NewWriter(d.cfg.IngestStorageConfig.KafkaConfig, d.cfg.IngestStorageConfig.Compartments, log, reg)
 		subservices = append(subservices, d.ingestStorageWriter)
 
 		if cfg.IngestStorageConfig.Compartments.Enabled {
@@ -2231,8 +2231,7 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 		return d.sendWriteRequestToIngesters(ctx, ingestersSubring, req, keys, initialMetadataIndex, remoteRequestContext, batchOptions)
 	}
 	if ingestersSubring == nil {
-		defaultTopic := d.cfg.IngestStorageConfig.KafkaConfig.Topic
-		ct, initialMetadataIndex := getCompartmentTokensForWriteRequest(d.compartmentRouter, defaultTopic, tenantID, req)
+		ct, initialMetadataIndex := getCompartmentTokensForWriteRequest(d.compartmentRouter, tenantID, req)
 		return d.sendWriteRequestToPartitions(ctx, tenantID, partitionsSubring, req, ct, initialMetadataIndex, partitionsRequestContext, batchOptions)
 	}
 
@@ -2246,8 +2245,7 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 	}
 
 	keys, initialMetadataIndex := getSeriesAndMetadataTokens(tenantID, req)
-	defaultTopic := d.cfg.IngestStorageConfig.KafkaConfig.Topic
-	ct, _ := getCompartmentTokensForWriteRequest(d.compartmentRouter, defaultTopic, tenantID, req)
+	ct, _ := getCompartmentTokensForWriteRequest(d.compartmentRouter, tenantID, req)
 
 	// Write both to ingesters and partitions.
 	wg.Add(2)
@@ -2338,7 +2336,7 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 					}
 
 					ctx := remoteRequestContext()
-					err = d.ingestStorageWriter.WriteSync(ctx, ct.topic, int32(partitionID), tenantID, subReq)
+					err = d.ingestStorageWriter.WriteSync(ctx, ct.compartmentID, int32(partitionID), tenantID, subReq)
 					err = wrapPartitionPushError(err, int32(partitionID))
 					err = wrapDeadlineExceededPushError(err)
 

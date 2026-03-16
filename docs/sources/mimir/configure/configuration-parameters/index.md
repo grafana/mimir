@@ -5436,19 +5436,16 @@ migration:
 
 compartments:
   # Whether compartments are enabled. When enabled, series are sharded across
-  # multiple Kafka topics based on metric name.
+  # different Kafka backends based on metric name. Each compartment is fully
+  # parametrized via the <compartment-id> placeholder in the standard Kafka
+  # config fields (address, topic, sasl-username, sasl-password).
   # CLI flag: -ingest-storage.compartments.enabled
   [enabled: <boolean> | default = false]
 
   # The number of read compartments. Each compartment uses a dedicated Kafka
-  # topic.
+  # backend.
   # CLI flag: -ingest-storage.compartments.num-compartments
   [num_compartments: <int> | default = 0]
-
-  # The topic name template with a "<compartment-id>" placeholder that gets
-  # replaced with the compartment ID (e.g. mimir-read-comp-<compartment-id>).
-  # CLI flag: -ingest-storage.compartments.topic-format
-  [topic_format: <string> | default = ""]
 
 # (advanced) Number of tenants to concurrently fsync WAL and WBL before Kafka
 # offsets are committed, must be at least 1.
