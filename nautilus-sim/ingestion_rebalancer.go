@@ -2,18 +2,19 @@ package main
 
 import "sort"
 
-func (sim *Simulation) runIngestionRebalancer() (int, float64) {
+func (sim *Simulation) runIngestionRebalancer() (moves, merges, splits int, churn float64) {
 	if computeMaxMean(sim.partitionIngestion) <= sim.cfg.BalanceTarget {
-		return 0, 0
+		return 0, 0, 0, 0
 	}
-	sim.ingestionMergePhase()
-	moves, churn := sim.ingestionWeightedMovePhase()
-	sim.ingestionSplitPhase()
-	return moves, churn
+	merges = sim.ingestionMergePhase()
+	moves, churn = sim.ingestionWeightedMovePhase()
+	splits = sim.ingestionSplitPhase()
+	return moves, merges, splits, churn
 }
 
 // Phase 1: merge adjacent cold hash ranges on the same partition to defragment.
-func (sim *Simulation) ingestionMergePhase() {
+func (sim *Simulation) ingestionMergePhase() int {
+	count := 0
 	for _, p := range sim.partitions {
 		if len(p.HashRanges) <= sim.cfg.MinRangesPerPartition {
 			continue
@@ -50,6 +51,7 @@ func (sim *Simulation) ingestionMergePhase() {
 				delete(sim.rangeIngestion, a)
 				delete(sim.rangeIngestion, b)
 				merged = true
+				count++
 				break
 			}
 			if !merged {
@@ -57,6 +59,7 @@ func (sim *Simulation) ingestionMergePhase() {
 			}
 		}
 	}
+	return count
 }
 
 // Phase 2: weighted moves from overloaded to underloaded partitions.
@@ -141,7 +144,8 @@ func (sim *Simulation) ingestionWeightedMovePhase() (int, float64) {
 // necessary because the Nautilus hash packs each metric into a narrow band
 // (~1024 values for 22/10 bit layout) that may require many bisections to
 // isolate from a large initial range.
-func (sim *Simulation) ingestionSplitPhase() {
+func (sim *Simulation) ingestionSplitPhase() int {
+	count := 0
 	for {
 		totalLoad := 0.0
 		totalRanges := 0
@@ -152,7 +156,7 @@ func (sim *Simulation) ingestionSplitPhase() {
 			}
 		}
 		if totalRanges == 0 {
-			return
+			return count
 		}
 		meanLoad := totalLoad / float64(totalRanges)
 
@@ -178,15 +182,16 @@ func (sim *Simulation) ingestionSplitPhase() {
 				p.HashRanges[a] = struct{}{}
 				p.HashRanges[b] = struct{}{}
 
-			aIng, aQry := sim.computeRangeLoads(a)
-			bIng, bQry := sim.computeRangeLoads(b)
-			delete(sim.rangeIngestion, hr)
-			delete(sim.rangeQuery, hr)
-			sim.rangeIngestion[a] = aIng
-			sim.rangeIngestion[b] = bIng
-			sim.rangeQuery[a] = aQry
-			sim.rangeQuery[b] = bQry
-			anySplit = true
+				aIng, aQry := sim.computeRangeLoads(a)
+				bIng, bQry := sim.computeRangeLoads(b)
+				delete(sim.rangeIngestion, hr)
+				delete(sim.rangeQuery, hr)
+				sim.rangeIngestion[a] = aIng
+				sim.rangeIngestion[b] = bIng
+				sim.rangeQuery[a] = aQry
+				sim.rangeQuery[b] = bQry
+				anySplit = true
+				count++
 			}
 		}
 
@@ -194,6 +199,7 @@ func (sim *Simulation) ingestionSplitPhase() {
 			break
 		}
 	}
+	return count
 }
 
 func sortedRanges(hrs map[HashRange]struct{}) []HashRange {

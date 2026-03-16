@@ -88,6 +88,14 @@ func (sim *Simulation) Run() {
 		progressInterval = 1
 	}
 
+	prevIngMax := 0.0
+	prevQryMax := 0.0
+	stableRounds := 0
+	stepsSinceChange := 0
+	const stabilityImprovementThreshold = 0.02
+	const stabilityRoundsNeeded = 2
+	minConvergenceSteps := sim.cfg.IngestionRebalanceInterval * 8
+
 	for t := 0; t < sim.cfg.NumSteps; t++ {
 		sim.tickCatchUps()
 		sim.computeLoads()
@@ -96,10 +104,37 @@ func (sim *Simulation) Run() {
 		qryStats := computeStats(normalizeByTotal(sim.ingesterQuery))
 		catchupCount, catchupLoad := sim.catchUpStats()
 
-		var ingMoves int
+		stepsSinceChange++
+		if t > 0 && t%sim.cfg.IngestionRebalanceInterval == 0 && stepsSinceChange > minConvergenceSteps {
+			ingImproved := prevIngMax > 0 && (prevIngMax-ingStats.Max)/prevIngMax > stabilityImprovementThreshold
+			qryImproved := prevQryMax > 0 && (prevQryMax-qryStats.Max)/prevQryMax > stabilityImprovementThreshold
+			if !ingImproved && !qryImproved {
+				stableRounds++
+			} else {
+				stableRounds = 0
+			}
+			prevIngMax = ingStats.Max
+			prevQryMax = qryStats.Max
+		}
+
+		loadChange := false
+		if stableRounds >= stabilityRoundsNeeded {
+			reshuffleWeights(sim.metrics, sim.rng)
+			sim.computeLoads()
+			ingStats = computeStats(normalizeByTotal(sim.partitionIngestion))
+			qryStats = computeStats(normalizeByTotal(sim.ingesterQuery))
+			stableRounds = 0
+			prevIngMax = 0
+			prevQryMax = 0
+			stepsSinceChange = 0
+			loadChange = true
+			fmt.Fprintf(os.Stderr, "  step %d: load change (system was stable)\n", t)
+		}
+
+		var ingMoves, ingMerges, ingSplits int
 		var ingChurn float64
 		if t > 0 && t%sim.cfg.IngestionRebalanceInterval == 0 {
-			ingMoves, ingChurn = sim.runIngestionRebalancer()
+			ingMoves, ingMerges, ingSplits, ingChurn = sim.runIngestionRebalancer()
 		}
 
 		qryMoves := 0
@@ -107,7 +142,27 @@ func (sim *Simulation) Run() {
 			qryMoves = sim.runQueryRebalancer()
 		}
 
-		w.WriteRow(t, ingStats, qryStats, ingMoves, qryMoves, ingChurn, catchupCount, catchupLoad)
+		ingRanges := 0
+		var ingMaxRangeLoad float64
+		var ingMaxRangeWidth uint64
+		var bestHR HashRange
+		for _, p := range sim.partitions {
+			ingRanges += len(p.HashRanges)
+			for hr := range p.HashRanges {
+				if load := sim.rangeIngestion[hr]; load > ingMaxRangeLoad {
+					ingMaxRangeLoad = load
+					bestHR = hr
+				}
+			}
+		}
+		ingMaxRangeWidth = bestHR.Size()
+		totalIng := sumFloat64(sim.partitionIngestion)
+		ingMaxRangeLoadFrac := 0.0
+		if totalIng > 0 {
+			ingMaxRangeLoadFrac = ingMaxRangeLoad / totalIng
+		}
+
+		w.WriteRow(t, ingStats, qryStats, ingMoves, ingMerges, ingSplits, ingRanges, ingMaxRangeLoadFrac, ingMaxRangeWidth, qryMoves, ingChurn, catchupCount, catchupLoad, loadChange)
 
 		if t > 0 && t%progressInterval == 0 {
 			fmt.Fprintf(os.Stderr, "  step %d/%d\n", t, sim.cfg.NumSteps)

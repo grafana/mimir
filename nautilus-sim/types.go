@@ -72,7 +72,7 @@ type CatchUpEntry struct {
 }
 
 type Stats struct {
-	Min, Max, Mean, P99, Stddev, MaxMean float64
+	Min, Max, Mean, P1, P5, P50, P99, Stddev, MaxMean float64
 }
 
 func computeStats(values []float64) Stats {
@@ -90,12 +90,15 @@ func computeStats(values []float64) Stats {
 	}
 	mean := sum / float64(n)
 
-	p99Idx := int(math.Ceil(float64(n)*0.99)) - 1
-	if p99Idx >= n {
-		p99Idx = n - 1
-	}
-	if p99Idx < 0 {
-		p99Idx = 0
+	pctIdx := func(pct float64) int {
+		idx := int(math.Ceil(float64(n)*pct)) - 1
+		if idx >= n {
+			idx = n - 1
+		}
+		if idx < 0 {
+			idx = 0
+		}
+		return idx
 	}
 
 	sumSqDiff := 0.0
@@ -113,7 +116,10 @@ func computeStats(values []float64) Stats {
 		Min:     sorted[0],
 		Max:     sorted[n-1],
 		Mean:    mean,
-		P99:     sorted[p99Idx],
+		P1:      sorted[pctIdx(0.01)],
+		P5:      sorted[pctIdx(0.05)],
+		P50:     sorted[pctIdx(0.50)],
+		P99:     sorted[pctIdx(0.99)],
 		Stddev:  math.Sqrt(sumSqDiff / float64(n)),
 		MaxMean: maxMean,
 	}

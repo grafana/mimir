@@ -108,6 +108,16 @@ func distributeWithSkew(total, n int, topFraction float64, rng *rand.Rand) []int
 	return counts
 }
 
+func reshuffleWeights(metrics []MetricInfo, rng *rand.Rand) {
+	n := len(metrics)
+	iw := zipfWeights(n, 1.2, rng)
+	qw := zipfWeights(n, 1.2, rng)
+	for i := range metrics {
+		metrics[i].IngestionWeight = iw[i]
+		metrics[i].QueryWeight = qw[i]
+	}
+}
+
 func zipfWeights(n int, exponent float64, rng *rand.Rand) []float64 {
 	w := make([]float64, n)
 	for i := range w {
