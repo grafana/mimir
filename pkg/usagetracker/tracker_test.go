@@ -121,6 +121,7 @@ func TestUsageTracker_Tracking(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, resp.RejectedSeriesHashes, 2)
 	})
+
 }
 
 func TestUsageTracker_BatchTracking(t *testing.T) {
@@ -167,6 +168,45 @@ func TestUsageTracker_BatchTracking(t *testing.T) {
 				{UserID: "tenant2", RejectedSeriesHashes: []uint64{3}},
 			}},
 		})
+	})
+
+	t.Run("batch tracking cancelled context returns error", func(t *testing.T) {
+		t.Parallel()
+
+		tracker := newReadyTestUsageTracker(t, map[string]*validation.Limits{
+			"tenant1": {
+				MaxActiveSeriesPerUser: testPartitionsCount * 10000,
+				MaxGlobalSeriesPerUser: testPartitionsCount * 10000,
+			},
+		})
+
+		users := make([]*usagetrackerpb.TrackSeriesBatchUser, 2048)
+		for i := range users {
+			users[i] = &usagetrackerpb.TrackSeriesBatchUser{
+				UserID:       "tenant1",
+				SeriesHashes: []uint64{uint64(i)},
+			}
+		}
+
+		// Pre-track all series so subsequent calls won't create new series
+		// and won't race through publishCreatedSeries.
+		_, err := tracker.TrackSeriesBatch(t.Context(), &usagetrackerpb.TrackSeriesBatchRequest{
+			Partitions: []*usagetrackerpb.TrackSeriesBatchPartition{
+				{Partition: 0, Users: users},
+			},
+		})
+		require.NoError(t, err)
+
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+
+		_, err = tracker.TrackSeriesBatch(ctx, &usagetrackerpb.TrackSeriesBatchRequest{
+			Partitions: []*usagetrackerpb.TrackSeriesBatchPartition{
+				{Partition: 0, Users: users},
+			},
+		})
+		require.Error(t, err)
+		require.ErrorIs(t, err, context.Canceled)
 	})
 
 	t.Run("batch tracking redundant user", func(t *testing.T) {
