@@ -162,22 +162,20 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 				require.Len(t, points, 4)
 			},
 		},
-		// FIXME: this test currently fails due to https://github.com/prometheus/prometheus/issues/14172
-		//
-		//"point has same value as a previous point, but there is a float value in between": {
-		//	data: `
-		//        load 1m
-		//            my_metric {{schema:0 sum:3 count:2 buckets:[1 0 1]}} 2 {{schema:0 sum:3 count:2 buckets:[1 0 1]}}
-		//    `,
-		//	stepCount: 3,
-		//	check: func(t *testing.T, hPoints []promql.HPoint, fPoints []promql.FPoint) {
-		//		require.Len(t, hPoints, 2)
-		//		require.Equal(t, 3.0, hPoints[0].H.Sum)
-		//		require.Equal(t, 3.0, hPoints[1].H.Sum)
-		//
-		//		require.Equal(t, []promql.FPoint{{T: 60000, F: 2}}, fPoints)
-		//	},
-		//},
+		"point has same value as a previous point, but there is a float value in between": {
+			data: `
+		       load 1m
+		           my_metric {{schema:0 sum:3 count:2 buckets:[1 0 1]}} 2 {{schema:0 sum:3 count:2 buckets:[1 0 1]}}
+		   `,
+			stepCount: 3,
+			check: func(t *testing.T, hPoints []promql.HPoint, fPoints []promql.FPoint) {
+				require.Len(t, hPoints, 2)
+				require.Equal(t, 3.0, hPoints[0].H.Sum)
+				require.Equal(t, 3.0, hPoints[1].H.Sum)
+
+				require.Equal(t, []promql.FPoint{{T: 60000, F: 2}}, fPoints)
+			},
+		},
 	}
 
 	for name, testCase := range testCases {
