@@ -647,6 +647,25 @@ func TestErrorCauseToHTTPStatusCode(t *testing.T) {
 	}
 }
 
+func TestActiveSeriesLimitedError_IsSoft(t *testing.T) {
+	tests := map[string]struct {
+		total    int
+		rejected int
+		soft     bool
+	}{
+		"all rejected":  {total: 10, rejected: 10, soft: false},
+		"some rejected": {total: 10, rejected: 3, soft: true},
+		"one rejected":  {total: 10, rejected: 1, soft: true},
+		"none rejected": {total: 10, rejected: 0, soft: false},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			err := newActiveSeriesLimitedError(tc.total, tc.rejected, 100, 5)
+			assert.Equal(t, tc.soft, err.IsSoft())
+		})
+	}
+}
+
 func checkDistributorError(t *testing.T, err error, expectedCause mimirpb.ErrorCause) {
 	var distributorErr Error
 	require.ErrorAs(t, err, &distributorErr)
