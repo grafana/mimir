@@ -24,6 +24,7 @@ import (
 	"runtime"
 	"strconv"
 	"sync"
+	stdatomic "sync/atomic" //nolint:depguard // atomic.Bool is 8 bytes (nocmp alignment); stdatomic.Bool is 4 and fits in struct padding.
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -1965,50 +1966,37 @@ func (h *Head) FsyncWLSegments() error {
 }
 
 // mmapDirtyHeadChunks only mmaps head chunks for series that have been marked
-// dirty since the last call. This is much more efficient than mmapHeadChunks
-// when only a small fraction of series have new chunks to mmap.
+// dirty since the last call. It uses a lock-free atomic Load to skip clean
+// series (the common case), only acquiring the series lock for dirty ones.
 func (h *Head) mmapDirtyHeadChunks() {
 	var count int
-	dirty := h.seriesPool.Get()[:0]
 	for i := range h.series.size {
-		h.series.locks[i].Lock()
-		dirtyMap := h.series.dirty[i]
-		if len(dirtyMap) == 0 {
-			h.series.locks[i].Unlock()
-			continue
-		}
-
-		// Collect series pointers while holding the lock — avoids
-		// a second ref lookup after releasing.
-		dirty = dirty[:0]
-		for ref := range dirtyMap {
-			if s := h.series.series[i][ref]; s != nil {
-				dirty = append(dirty, s)
+		h.series.locks[i].RLock()
+		for _, series := range h.series.series[i] {
+			if !series.dirtyForMmap.Load() {
+				continue
 			}
-		}
-		clear(dirtyMap) // reuse backing storage, zero allocs steady-state
-		h.series.locks[i].Unlock()
 
-		for _, s := range dirty {
-			s.Lock()
-			count += s.mmapChunks(h.chunkDiskMapper)
-			s.Unlock()
+			series.Lock()
+			series.dirtyForMmap.Store(false)
+			count += series.mmapChunks(h.chunkDiskMapper)
+			series.Unlock()
 		}
+		h.series.locks[i].RUnlock()
 	}
-	h.seriesPool.Put(dirty[:0])
+
 	h.metrics.mmapChunksTotal.Add(float64(count))
 }
 
 // markDirtyForMmap marks a series as having head chunks that need to be mmapped.
-func (s *stripeSeries) markDirtyForMmap(series *memSeries) {
+// Callers must hold the series lock, since it reads series.headChunks without
+// acquiring it. WAL replay is exempt (single-threaded per shard).
+func markDirtyForMmap(series *memSeries) {
 	if series.headChunks == nil || series.headChunks.prev == nil {
 		return
 	}
 
-	i := uint64(series.ref) & uint64(s.size-1)
-	s.locks[i].Lock()
-	s.dirty[i][series.ref] = struct{}{}
-	s.locks[i].Unlock()
+	series.dirtyForMmap.Store(true)
 }
 
 // seriesHashmap lets TSDB find a memSeries by its label set, via a 64-bit hash.
@@ -2098,7 +2086,6 @@ type stripeSeries struct {
 	series                  []map[chunks.HeadSeriesRef]*memSeries // Sharded by ref. A series ref is the value of `size` when the series was being newly added.
 	hashes                  []seriesHashmap                       // Sharded by label hash.
 	locks                   []stripeLock                          // Sharded by ref for series access, by label hash for hashes access.
-	dirty                   []map[chunks.HeadSeriesRef]struct{}   // Series with head chunks needing mmap. Sharded by ref.
 	seriesLifecycleCallback SeriesLifecycleCallback
 }
 
@@ -2114,13 +2101,11 @@ func newStripeSeries(stripeSize int, seriesCallback SeriesLifecycleCallback) *st
 		series:                  make([]map[chunks.HeadSeriesRef]*memSeries, stripeSize),
 		hashes:                  make([]seriesHashmap, stripeSize),
 		locks:                   make([]stripeLock, stripeSize),
-		dirty:                   make([]map[chunks.HeadSeriesRef]struct{}, stripeSize),
 		seriesLifecycleCallback: seriesCallback,
 	}
 
 	for i := range s.series {
 		s.series[i] = map[chunks.HeadSeriesRef]*memSeries{}
-		s.dirty[i] = map[chunks.HeadSeriesRef]struct{}{}
 	}
 	for i := range s.hashes {
 		s.hashes[i] = seriesHashmap{
@@ -2544,6 +2529,12 @@ type memSeries struct {
 	nextAt                           int64 // Timestamp at which to cut the next chunk.
 	histogramChunkHasComputedEndTime bool  // True if nextAt has been predicted for the current histograms chunk; false otherwise.
 	pendingCommit                    bool  // Whether there are samples waiting to be committed to this series.
+	// dirtyForMmap is set when a new head chunk is cut, signaling that
+	// mmapDirtyHeadChunks should process this series. Uses sync/atomic.Bool
+	// (4 bytes, align 4) which fits in the existing padding before lastValue
+	// with no struct size increase. Must be sync/atomic (not go.uber.org/atomic
+	// which is 8 bytes and would grow the struct).
+	dirtyForMmap stdatomic.Bool
 
 	// We keep the last value here (in addition to appending it to the chunk) so we can check for duplicates.
 	lastValue float64
