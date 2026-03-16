@@ -22,54 +22,61 @@ import (
 type AnnotationType int
 
 const (
-	AnnotationTypeGeneric                                AnnotationType = 0
-	AnnotationTypePossibleNonCounter                     AnnotationType = 1
-	AnnotationTypeHistogramQuantileForcedMonotonicity    AnnotationType = 2
+	AnnotationTypeGeneric                             AnnotationType = 0
+	AnnotationTypePossibleNonCounter                  AnnotationType = 1
+	AnnotationTypeHistogramQuantileForcedMonotonicity AnnotationType = 2
 )
 
-// AnnotationData is a portable representation of a typed annotation error,
-// suitable for serialization to/from protobuf or other wire formats.
-type AnnotationData struct {
-	Type      AnnotationType
-	// Message is the Err.Error() string — the deduplication/merge key.
-	Message   string
-	// Count is used by possibleNonCounterErr and histogramQuantileForcedMonotonicityErr.
-	Count     int
-	// Fields below are used only by histogramQuantileForcedMonotonicityErr.
-	MinTs     int64
-	MaxTs     int64
-	MinBucket float64
-	MaxBucket float64
-	MaxDiff   float64
+// mergeableAnnotation is implemented by annotation types that carry mergeable
+// state beyond their message string. Adding a new mergeable annotation type
+// only requires:
+//  1. Implementing this interface on the concrete type.
+//  2. Registering a factory in init() below.
+//
+// No changes to AnnotationData or the Extract/From functions are needed.
+type mergeableAnnotation interface {
+	annotationType() AnnotationType
+	rawMessage() string              // Err.Error() — the merge key, without position/count decoration.
+	mergeFields() map[string]float64 // Type-specific merge state as an opaque key-value map.
+	applyMergeFields(map[string]float64)
 }
 
-// ExtractAnnotationData extracts the portable data from a typed annotation error.
-// For unrecognized error types, it returns a generic annotation with the error message.
+// AnnotationData is a portable, type-agnostic representation of a typed annotation error,
+// suitable for serialization to/from protobuf or other wire formats.
+// Fields holds the type-specific merge state; its key names are defined by each
+// concrete type's mergeFields/applyMergeFields implementation.
+type AnnotationData struct {
+	Type    AnnotationType
+	Message string
+	Fields  map[string]float64
+}
+
+// annotationFactory creates a zero-value instance of a mergeable annotation
+// with the given raw message. The caller will apply merge state via applyMergeFields.
+type annotationFactory func(msg string) mergeableAnnotation
+
+var annotationFactories = map[AnnotationType]annotationFactory{}
+
+func init() {
+	annotationFactories[AnnotationTypePossibleNonCounter] = func(msg string) mergeableAnnotation {
+		return &possibleNonCounterErr{Err: fmt.Errorf("%s", msg)}
+	}
+	annotationFactories[AnnotationTypeHistogramQuantileForcedMonotonicity] = func(msg string) mergeableAnnotation {
+		return &histogramQuantileForcedMonotonicityErr{Err: fmt.Errorf("%s", msg)}
+	}
+}
+
+// ExtractAnnotationData extracts a portable representation from a typed annotation error.
+// For unrecognized error types it returns a generic annotation with the error message.
 func ExtractAnnotationData(err error) AnnotationData {
-	var pnc *possibleNonCounterErr
-	if errors.As(err, &pnc) {
+	var m mergeableAnnotation
+	if errors.As(err, &m) {
 		return AnnotationData{
-			Type:    AnnotationTypePossibleNonCounter,
-			Message: pnc.Err.Error(),
-			Count:   pnc.count,
+			Type:    m.annotationType(),
+			Message: m.rawMessage(),
+			Fields:  m.mergeFields(),
 		}
 	}
-
-	var hq *histogramQuantileForcedMonotonicityErr
-	if errors.As(err, &hq) {
-		return AnnotationData{
-			Type:      AnnotationTypeHistogramQuantileForcedMonotonicity,
-			Message:   hq.Err.Error(),
-			Count:     hq.count,
-			MinTs:     hq.minTs,
-			MaxTs:     hq.maxTs,
-			MinBucket: hq.minBucket,
-			MaxBucket: hq.maxBucket,
-			MaxDiff:   hq.maxDiff,
-		}
-	}
-
-	// Generic annoErr or plain error — just preserve the message.
 	return AnnotationData{
 		Type:    AnnotationTypeGeneric,
 		Message: err.Error(),
@@ -79,26 +86,13 @@ func ExtractAnnotationData(err error) AnnotationData {
 // AnnotationFromData reconstructs a typed annotation error from its portable representation.
 // The reconstructed error supports Merge() for proper annotation combining.
 func AnnotationFromData(d AnnotationData) error {
-	switch d.Type {
-	case AnnotationTypePossibleNonCounter:
-		return &possibleNonCounterErr{
-			Err:   fmt.Errorf("%s", d.Message),
-			count: d.Count,
+	if f, ok := annotationFactories[d.Type]; ok {
+		a := f(d.Message)
+		if len(d.Fields) > 0 {
+			a.applyMergeFields(d.Fields)
 		}
-	case AnnotationTypeHistogramQuantileForcedMonotonicity:
-		return &histogramQuantileForcedMonotonicityErr{
-			Err:       fmt.Errorf("%s", d.Message),
-			count:     d.Count,
-			minTs:     d.MinTs,
-			maxTs:     d.MaxTs,
-			minBucket: d.MinBucket,
-			maxBucket: d.MaxBucket,
-			maxDiff:   d.MaxDiff,
-		}
-	default:
-		// Generic: wrap as annoErr so it still implements annoError interface.
-		return &annoErr{
-			Err: fmt.Errorf("%s", d.Message),
-		}
+		return a.(error)
 	}
+	// Generic or unknown: wrap as annoErr so it still implements annoError.
+	return &annoErr{Err: fmt.Errorf("%s", d.Message)}
 }

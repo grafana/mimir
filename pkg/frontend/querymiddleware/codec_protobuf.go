@@ -149,16 +149,20 @@ func errorsToAnnotationErrors(errs []error) []mimirpb.AnnotationError {
 	result := make([]mimirpb.AnnotationError, len(errs))
 	for i, err := range errs {
 		d := annotations.ExtractAnnotationData(err)
-		result[i] = mimirpb.AnnotationError{
-			Type:      mimirpb.AnnotationErrorType(d.Type),
-			Message:   d.Message,
-			Count:     int32(d.Count),
-			MinTs:     d.MinTs,
-			MaxTs:     d.MaxTs,
-			MinBucket: d.MinBucket,
-			MaxBucket: d.MaxBucket,
-			MaxDiff:   d.MaxDiff,
+		ae := mimirpb.AnnotationError{
+			Type:    mimirpb.AnnotationErrorType(d.Type),
+			Message: d.Message,
 		}
+		// Map opaque Fields to the concrete proto fields.
+		if len(d.Fields) > 0 {
+			ae.Count = int32(d.Fields["count"])
+			ae.MinTs = int64(d.Fields["min_ts"])
+			ae.MaxTs = int64(d.Fields["max_ts"])
+			ae.MinBucket = d.Fields["min_bucket"]
+			ae.MaxBucket = d.Fields["max_bucket"]
+			ae.MaxDiff = d.Fields["max_diff"]
+		}
+		result[i] = ae
 	}
 	return result
 }
@@ -171,14 +175,16 @@ func annotationErrorsToErrors(aes []mimirpb.AnnotationError) []error {
 	result := make([]error, len(aes))
 	for i, ae := range aes {
 		result[i] = annotations.AnnotationFromData(annotations.AnnotationData{
-			Type:      annotations.AnnotationType(ae.Type),
-			Message:   ae.Message,
-			Count:     int(ae.Count),
-			MinTs:     ae.MinTs,
-			MaxTs:     ae.MaxTs,
-			MinBucket: ae.MinBucket,
-			MaxBucket: ae.MaxBucket,
-			MaxDiff:   ae.MaxDiff,
+			Type:    annotations.AnnotationType(ae.Type),
+			Message: ae.Message,
+			Fields: map[string]float64{
+				"count":      float64(ae.Count),
+				"min_ts":     float64(ae.MinTs),
+				"max_ts":     float64(ae.MaxTs),
+				"min_bucket": ae.MinBucket,
+				"max_bucket": ae.MaxBucket,
+				"max_diff":   ae.MaxDiff,
+			},
 		})
 	}
 	return result
