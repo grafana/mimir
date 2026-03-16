@@ -151,7 +151,9 @@ func (s *OperatorEvaluationStats) ExtendStepInvariantToFullRange(timeRange Query
 		return nil, err
 	}
 
-	expanded.newSamplesReadPerStep[0] = s.newSamplesReadPerStep[0]
+	if timeRange.StepCount > 0 {
+		expanded.newSamplesReadPerStep[0] = s.newSamplesReadPerStep[0]
+	}
 
 	for idx := range timeRange.StepCount {
 		expanded.samplesProcessedPerStep[idx] = s.samplesProcessedPerStep[0]
