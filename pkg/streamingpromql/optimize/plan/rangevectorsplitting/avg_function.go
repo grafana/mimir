@@ -56,23 +56,20 @@ func avgOverTimeGenerate(step *types.RangeVectorStepData, emitAnnotation types.E
 	}
 
 	if haveHistograms {
-		h, err := functions.AvgHistograms(hHead, hTail, emitAnnotation)
+		h, err := functions.SumHistograms(hHead, hTail, emitAnnotation)
 		if err != nil {
-			err = functions.NativeHistogramErrorToAnnotation(err, emitAnnotation)
-			// In case of schema incompatibility, the error was converted to annotation and empty result should be returned
-			// Save the flag to preserve the behavior on combine stage
-			if err == nil {
-				result.ForceEmptyResult = true
-			} else {
-				return AvgOverTimeIntermediate{}, err
-			}
+			return AvgOverTimeIntermediate{}, err
 		}
 
-		if h != nil {
-			protoH := mimirpb.FromFloatHistogramToHistogramProto(0, h)
-			result.AvgH = &protoH
-			result.CntH = int64(len(hHead)) + int64(len(hTail))
+		// In case of schema incompatibility, the error was converted to annotation and empty result should be returned
+		if h == nil {
+			result.ForceEmptyResult = true
+			return result, nil
 		}
+
+		protoH := mimirpb.FromFloatHistogramToHistogramProto(0, h)
+		result.SumH = &protoH
+		result.CountH = int64(len(hHead)) + int64(len(hTail))
 	}
 
 	return result, nil
@@ -103,7 +100,7 @@ func avgFloats(head, tail []promql.FPoint) (float64, float64, float64, float64, 
 				c = c / (count - 1)
 			}
 
-			if isBounded(incrementalAvg, p.F) {
+			if shouldUpdateIncrementalAvg(incrementalAvg, p.F) {
 				incrementalAvg, c = floats.KahanSumInc(p.F/count-(incrementalAvg+c)/count, incrementalAvg, c)
 			}
 		}
@@ -119,14 +116,13 @@ func avgOverTimeCombine(pieces []AvgOverTimeIntermediate, _ int64, _ int64, emit
 	sumF, compensationF, countF, incrementalAvgF := 0.0, 0.0, 0.0, 0.0
 	useIncrementalCalculation := false
 
-	var incrementalAvgH *histogram.FloatHistogram
+	var sumH, compensationH *histogram.FloatHistogram
 	countH := 0.0
 	nhcbBoundsReconciledSeen := false
 
 	for _, p := range pieces {
 		// Check if any piece encountered schema mix condition, return empty result
 		if p.ForceEmptyResult {
-			emitAnnotation(annotations.NewMixedExponentialCustomHistogramsWarning)
 			return 0, false, nil, nil
 		}
 
@@ -156,17 +152,23 @@ func avgOverTimeCombine(pieces []AvgOverTimeIntermediate, _ int64, _ int64, emit
 					} else {
 						sumF = newSum
 						compensationF = newC
+
+						countF += p.CountF
+						continue
 					}
 				}
 
-				pieceIncrementalAvg := p.IncrementalAvg + p.CompF
+				pieceIncrementalAvg := p.IncrementalAvg
+				pieceCompensation := p.CompF
 				if !p.UseIncrementalCalc {
-					pieceIncrementalAvg = (p.SumF + p.CompF) / p.CountF
+					pieceIncrementalAvg = p.SumF / p.CountF
+					pieceCompensation = p.CompF / p.CountF
 				}
 
-				if useIncrementalCalculation && isBounded(incrementalAvgF, pieceIncrementalAvg) {
+				if shouldUpdateIncrementalAvg(incrementalAvgF, pieceIncrementalAvg) {
 					q := p.CountF / (countF + p.CountF)
 					incrementalAvgF, compensationF = floats.KahanSumInc(pieceIncrementalAvg*q-(incrementalAvgF+compensationF)*q, incrementalAvgF, compensationF)
+					incrementalAvgF, compensationF = floats.KahanSumInc(pieceCompensation*q, incrementalAvgF, compensationF)
 				}
 
 				countF += p.CountF
@@ -179,41 +181,30 @@ func avgOverTimeCombine(pieces []AvgOverTimeIntermediate, _ int64, _ int64, emit
 			}
 		}
 
-		// Histograms are always combined incrementally using the weighted-average algorithm
-		if p.AvgH != nil {
-			h := mimirpb.FromFloatHistogramProtoToFloatHistogram(p.AvgH)
+		if p.SumH != nil {
+			h := mimirpb.FromFloatHistogramProtoToFloatHistogram(p.SumH)
 
-			if incrementalAvgH == nil {
-				incrementalAvgH = h.Copy()
-				countH = float64(p.CntH)
+			if sumH == nil {
+				sumH = h.Copy()
+				countH = float64(p.CountH)
 			} else {
-				pieceCnt := float64(p.CntH)
-				totalCnt := countH + pieceCnt
+				pieceCnt := float64(p.CountH)
 
-				q := pieceCnt / totalCnt
-				pieceAvgPart := h.Copy().Mul(q)
-				prevAvgPart := incrementalAvgH.Copy().Mul(q)
-
-				if _, _, nhcbBoundsReconciled, err := incrementalAvgH.Add(pieceAvgPart); err != nil {
+				var nhcbBoundsReconciled bool
+				var err error
+				if compensationH, _, nhcbBoundsReconciled, err = sumH.KahanAdd(h, compensationH); err != nil {
 					err = functions.NativeHistogramErrorToAnnotation(err, emitAnnotation)
 					return 0, false, nil, err
 				} else if nhcbBoundsReconciled {
 					nhcbBoundsReconciledSeen = true
 				}
 
-				if _, _, nhcbBoundsReconciled, err := incrementalAvgH.Sub(prevAvgPart); err != nil {
-					err = functions.NativeHistogramErrorToAnnotation(err, emitAnnotation)
-					return 0, false, nil, err
-				} else if nhcbBoundsReconciled {
-					nhcbBoundsReconciledSeen = true
-				}
-
-				countH = totalCnt
+				countH += pieceCnt
 			}
 		}
 	}
 
-	if countF > 0 && incrementalAvgH != nil {
+	if countF > 0 && sumH != nil {
 		emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
 		return 0, false, nil, nil
 	}
@@ -230,10 +221,20 @@ func avgOverTimeCombine(pieces []AvgOverTimeIntermediate, _ int64, _ int64, emit
 		return (sumF + compensationF) / countF, true, nil, nil
 	}
 
-	return 0, false, incrementalAvgH, nil
+	if sumH != nil {
+		if compensationH != nil {
+			if _, _, _, err := sumH.Add(compensationH); err != nil {
+				err = functions.NativeHistogramErrorToAnnotation(err, emitAnnotation)
+				return 0, false, nil, err
+			}
+		}
+		return 0, false, sumH.Div(countH), nil
+	}
+
+	return 0, false, nil, nil
 }
 
-func isBounded(runningAvg, nextPoint float64) bool {
+func shouldUpdateIncrementalAvg(runningAvg, nextPoint float64) bool {
 	// If we get here, we've hit overflow at some point in the range.
 	if math.IsInf(runningAvg, 0) {
 		if math.IsInf(nextPoint, 0) && (runningAvg > 0) == (nextPoint > 0) {
