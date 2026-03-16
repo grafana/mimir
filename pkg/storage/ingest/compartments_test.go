@@ -107,8 +107,8 @@ func TestCompartmentRouter_CompartmentForMetric(t *testing.T) {
 func TestKafkaConfigForCompartment(t *testing.T) {
 	t.Run("replaces placeholder in all fields", func(t *testing.T) {
 		base := KafkaConfig{
-			Address:  flagext.StringSliceCSV{"kafka-<compartment-id>.example.com:9092", "kafka-<compartment-id>.backup.com:9092"},
-			Topic:    "mimir-ingest-<compartment-id>",
+			Address: flagext.StringSliceCSV{"kafka-<compartment-id>.example.com:9092", "kafka-<compartment-id>.backup.com:9092"},
+			Topic:   "mimir-ingest-<compartment-id>",
 			SASL: KafkaAuthConfig{
 				Username: "user-<compartment-id>",
 				Password: flagext.SecretWithValue("pass-<compartment-id>"),
