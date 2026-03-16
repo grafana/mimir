@@ -7,7 +7,7 @@ package batch
 
 import (
 	"container/heap"
-	"sort"
+	"slices"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -195,7 +195,9 @@ func partitionChunks(cs []GenericChunk) [][]GenericChunk {
 		return [][]GenericChunk{{cs[0]}}
 	}
 
-	sort.Sort(byMinTime(cs))
+	slices.SortFunc(cs, func(a, b GenericChunk) int {
+		return int(a.MinTime - b.MinTime)
+	})
 
 	css := [][]GenericChunk{}
 outer:
@@ -213,9 +215,3 @@ outer:
 
 	return css
 }
-
-type byMinTime []GenericChunk
-
-func (b byMinTime) Len() int           { return len(b) }
-func (b byMinTime) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
-func (b byMinTime) Less(i, j int) bool { return b[i].MinTime < b[j].MinTime }
