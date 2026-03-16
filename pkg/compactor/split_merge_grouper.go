@@ -109,10 +109,15 @@ func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*block.Meta) (res []*
 	return res, nil
 }
 
+// isOOOBlock returns true if the block is an out-of-order block.
+func isOOOBlock(b *block.Meta) bool {
+	return b.Thanos.Labels[block.OutOfOrderExternalLabel] == block.OutOfOrderExternalLabelValue
+}
+
 // effectiveShardCount returns the shard count to use for the given blocks.
 // OOO blocks use oooShardCount if it's > 0, otherwise they fall back to shardCount.
 func effectiveShardCount(blocks []*block.Meta, shardCount, oooShardCount uint32) uint32 {
-	if len(blocks) > 0 && blocks[0].Thanos.Labels[block.OutOfOrderExternalLabel] == block.OutOfOrderExternalLabelValue {
+	if len(blocks) > 0 && isOOOBlock(blocks[0]) {
 		if oooShardCount > 0 {
 			return oooShardCount
 		}
