@@ -1654,7 +1654,6 @@ func TestSelectorsAreDuplicateOrSubset(t *testing.T) {
 			},
 		},
 
-		// FIXME: it'd be nice to support this case, but this is currently not supported.
 		"second selector is subset of first when considering regex, narrower selector uses regex": {
 			firstSelector:  `{a=~"(a|b|c)"}`,
 			secondSelector: `{a=~"(a|b)"}`,
@@ -1663,6 +1662,14 @@ func TestSelectorsAreDuplicateOrSubset(t *testing.T) {
 		"second selector is subset of first when considering regex, narrower selector uses exact matcher": {
 			firstSelector:  `{a=~"(a|b|c)"}`,
 			secondSelector: `{a="a"}`,
+			expectedResult: commonsubexpressionelimination.SubsetSelectors,
+			expectedSubsetMatchers: []*core.LabelMatcher{
+				{Name: "a", Type: labels.MatchEqual, Value: "a"},
+			},
+		},
+		"second selector is not a subset of first, exact matcher value does not match regex": {
+			firstSelector:  `{a=~"(a|b|c)"}`,
+			secondSelector: `{a="z"}`,
 			expectedResult: commonsubexpressionelimination.NotDuplicateOrSubset,
 		},
 	}
