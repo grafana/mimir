@@ -41,3 +41,16 @@ datasources:
   uid: jaeger
   orgID: 1
   url: http://jaeger:16686/
+
+- name: Mimir Querier
+  type: prometheus
+  access: proxy
+  uid: mimirquerier
+  orgID: 1
+  url: http://querier:8005/prometheus
+- name: Mimir Query Frontend
+  type: prometheus
+  access: proxy
+  uid: mimirqueryfrontend
+  orgID: 1
+  url: http://query-frontend:8007/prometheus
