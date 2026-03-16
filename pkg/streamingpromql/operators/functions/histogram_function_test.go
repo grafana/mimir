@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 
@@ -205,7 +206,7 @@ func TestHistogramFunction_MemoryTracking(t *testing.T) {
 
 		// Set the limit to exactly the inner bytes consumed so the next allocation
 		// (seriesGroupPairPool.Get inside HistogramFunction.SeriesMetadata) exceeds it.
-		rejectionCounter := prometheus.NewCounter(prometheus.CounterOpts{Name: "test_rejections_total"})
+		rejectionCounter := promauto.With(prometheus.NewRegistry()).NewCounter(prometheus.CounterOpts{Name: "test_rejections_total"})
 		limited := limiter.NewMemoryConsumptionTracker(ctx, innerBytes, rejectionCounter, "test query")
 		hOp := newHistogramFunction(limited)
 
