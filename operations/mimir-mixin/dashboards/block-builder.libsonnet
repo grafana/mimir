@@ -193,6 +193,18 @@ local filename = 'mimir-block-builder.json';
     .addRow(
       $.row('Block builder resources')
       .addPanel(
+        $.timeseriesPanel('In-memory series') +
+        $.panelDescription(
+          'In-memory series',
+          'Number of in-memory series handled by each block-builder instance.',
+        ) +
+        $.queryPanel(
+          'sum by (%(per_instance_label)) (cortex_blockbuilder_memory_series{%(job)s})' % { per_instance_label: $._config.per_instance_label, job: $.jobMatcher($._config.job_names.block_builder) },
+          '{{%(per_instance_label)}}' % $._config.per_instance_label,
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'short' }, custom+: { fillOpacity: 0 } } },
+      )
+      .addPanel(
         $.containerCPUUsagePanelByComponent('block_builder'),
       )
       .addPanel(
