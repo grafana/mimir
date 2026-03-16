@@ -436,10 +436,10 @@ func (b *BlockBuilder) consumePartitionSection(
 
 	// Prefetch records in a background goroutine so the next batch is at hand
 	// at the beginning of every consumption loop iteration below.
-	fetchCtx, fetchCancel := context.WithCancel(ctx)
+	fetchCtx, fetchCancel := context.WithCancelCause(ctx)
 	fetches := make(chan kgo.Fetches)
 	defer func() {
-		fetchCancel()
+		fetchCancel(fmt.Errorf("%w: partition %d: done consuming", context.Canceled, partition))
 		<-fetches
 	}()
 	go func() {
