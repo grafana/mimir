@@ -139,6 +139,10 @@ type PrometheusResponseExtractor struct{}
 // Extract extracts response for specific a range from a response.
 // The from Response is not closed, nor is it finalizer returned as part of the new response.
 // It is the responsibility of the caller to close their input resources.
+//
+// Annotations (Warnings/Infos) are intentionally not copied: they are transient,
+// time-dependent state that must not be cached. Fresh query executions regenerate
+// them, and caching them would lead to stale duplicates on partial cache hits.
 func (PrometheusResponseExtractor) Extract(start, end int64, from Response) Response {
 	promRes, ok := from.GetPrometheusResponse()
 	if !ok {
@@ -152,11 +156,9 @@ func (PrometheusResponseExtractor) Extract(start, end int64, from Response) Resp
 		}
 	}
 	return &PrometheusResponse{
-		Status:   promRes.Status,
-		Data:     data,
-		Headers:  promRes.Headers,
-		Warnings: promRes.Warnings,
-		Infos:    promRes.Infos,
+		Status:  promRes.Status,
+		Data:    data,
+		Headers: promRes.Headers,
 	}
 }
 
@@ -164,6 +166,10 @@ func (PrometheusResponseExtractor) Extract(start, end int64, from Response) Resp
 // we anyways do not need headers for sending back the response so this saves some space by reducing size of the objects.
 // The supplied Response is not closed, nor is it finalizer returned as part of the new response.
 // It is the responsibility of the caller to close their input resources.
+//
+// Annotations (Warnings/Infos) are intentionally not copied: they are transient,
+// time-dependent state that must not be cached. Fresh query executions regenerate
+// them, and caching them would lead to stale duplicates on partial cache hits.
 func (PrometheusResponseExtractor) ResponseWithoutHeaders(resp Response) Response {
 	promRes, ok := resp.GetPrometheusResponse()
 	if !ok {
@@ -177,10 +183,8 @@ func (PrometheusResponseExtractor) ResponseWithoutHeaders(resp Response) Respons
 		}
 	}
 	return &PrometheusResponse{
-		Status:   promRes.Status,
-		Data:     data,
-		Warnings: promRes.Warnings,
-		Infos:    promRes.Infos,
+		Status: promRes.Status,
+		Data:   data,
 	}
 }
 
