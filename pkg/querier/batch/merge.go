@@ -190,6 +190,11 @@ func (h *iteratorHeap) Pop() interface{} {
 
 // Build a list of lists of non-overlapping chunks.
 func partitionChunks(cs []GenericChunk) [][]GenericChunk {
+	if len(cs) == 1 {
+		// Fast path for common case of just a single chunk.
+		return [][]GenericChunk{{cs[0]}}
+	}
+
 	sort.Sort(byMinTime(cs))
 
 	css := [][]GenericChunk{}
