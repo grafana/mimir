@@ -160,11 +160,7 @@ func (q *shardedQuerier) handleEmbeddedQueries(ctx context.Context, queries []as
 		respClosers[idx] = resp.Close
 
 		q.responseHeaders.mergeHeaders(promRes.Headers)
-		if warningErrs, infoErrs := GetAnnotationErrors(resp); warningErrs != nil || infoErrs != nil {
-			q.annotationAccumulator.addAnnotationErrors(warningErrs, infoErrs)
-		} else {
-			q.annotationAccumulator.addAnnotationStrings(promRes.Warnings, promRes.Infos)
-		}
+		q.annotationAccumulator.addAnnotations(promRes.Warnings, promRes.Infos)
 
 		return nil
 	})

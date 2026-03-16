@@ -181,11 +181,11 @@ func ExecuteQueryOnQueryable(ctx context.Context, r MetricsQueryRequest, engine 
 				ResultType: string(res.Value.Type()),
 				Result:     extracted,
 			},
-			Headers: headers,
+			Headers:  headers,
+			Warnings: mimirpb.ErrorsToAnnotationErrors(warningErrors),
+			Infos:    mimirpb.ErrorsToAnnotationErrors(infoErrors),
 		},
-		finalizer:     qry.Close,
-		WarningErrors: warningErrors,
-		InfoErrors:    infoErrors,
+		finalizer: qry.Close,
 	}, nil
 }
 
@@ -546,6 +546,9 @@ func NewAnnotationAccumulator() *AnnotationAccumulator {
 //
 // addAnnotationErrors is safe to call from multiple goroutines.
 func (a *AnnotationAccumulator) addAnnotationErrors(warningErrors, infoErrors []error) {
+	if a == nil {
+		return
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	for _, w := range warningErrors {
@@ -556,20 +559,18 @@ func (a *AnnotationAccumulator) addAnnotationErrors(warningErrors, infoErrors []
 	}
 }
 
-// addAnnotationStrings collects string annotations from a response that was
-// deserialized from the wire (no typed errors available). These are stored as
-// plain errors and can still be deduplicated by string value.
+// addAnnotations collects typed annotation errors from a PrometheusResponse
+// where Warnings/Infos are []mimirpb.AnnotationError.
 //
-// addAnnotationStrings is safe to call from multiple goroutines.
-func (a *AnnotationAccumulator) addAnnotationStrings(warnings, infos []string) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	for _, w := range warnings {
-		a.warnings.Add(errors.New(w))
+// addAnnotations is safe to call from multiple goroutines.
+func (a *AnnotationAccumulator) addAnnotations(warnings, infos []mimirpb.AnnotationError) {
+	if a == nil {
+		return
 	}
-	for _, i := range infos {
-		a.infos.Add(errors.New(i))
-	}
+	a.addAnnotationErrors(
+		mimirpb.AnnotationErrorsToErrors(warnings),
+		mimirpb.AnnotationErrorsToErrors(infos),
+	)
 }
 
 // getAll returns all annotations collected by this accumulator as typed errors.
@@ -577,6 +578,9 @@ func (a *AnnotationAccumulator) addAnnotationStrings(warnings, infos []string) {
 // getAll may return inconsistent or unexpected results if it is called concurrently
 // with add methods.
 func (a *AnnotationAccumulator) getAll() (warnings, infos []error) {
+	if a == nil {
+		return nil, nil
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.warnings.AsErrors(), a.infos.AsErrors()
@@ -598,9 +602,9 @@ func removeAnnotationPositionInformation(annotation string) string {
 
 // removeAllAnnotationPositionInformation removes position information from each annotation in annotations,
 // modifying annotations in-place and returning it for convenience.
-func removeAllAnnotationPositionInformation(annotations []string) []string {
-	for i, annotation := range annotations {
-		annotations[i] = removeAnnotationPositionInformation(annotation)
+func removeAllAnnotationPositionInformation(annotations []mimirpb.AnnotationError) []mimirpb.AnnotationError {
+	for i := range annotations {
+		annotations[i].Message = removeAnnotationPositionInformation(annotations[i].Message)
 	}
 
 	return annotations

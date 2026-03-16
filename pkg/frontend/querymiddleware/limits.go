@@ -23,6 +23,7 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util"
@@ -443,10 +444,10 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 				ResultType: string(res.Value.Type()),
 				Result:     data,
 			},
+			Warnings: mimirpb.ErrorsToAnnotationErrors(warningErrors),
+			Infos:    mimirpb.ErrorsToAnnotationErrors(infoErrors),
 		},
-		finalizer:     q.Close,
-		WarningErrors: warningErrors,
-		InfoErrors:    infoErrors,
+		finalizer: q.Close,
 	}
 
 	return resp, nil

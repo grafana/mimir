@@ -243,20 +243,6 @@ type formatter interface {
 	ContentType() v1.MIMEType
 }
 
-// typedAnnotationEncoder is optionally implemented by formatters that support
-// encoding typed annotation errors alongside the response. This preserves
-// Merge() semantics across the wire (e.g. count accumulation for possibleNonCounterErr).
-type typedAnnotationEncoder interface {
-	EncodeQueryResponseWithAnnotations(resp *PrometheusResponse, warningErrors, infoErrors []error) ([]byte, error)
-}
-
-// typedAnnotationDecoder is optionally implemented by formatters that support
-// decoding typed annotation errors from the response. When available, the decoded
-// response is wrapped in a PrometheusResponseWithFinalizer carrying typed errors.
-type typedAnnotationDecoder interface {
-	DecodeQueryResponseWithAnnotations(buf []byte) (resp *PrometheusResponse, warningErrors, infoErrors []error, err error)
-}
-
 var jsonFormatterInstance = jsonFormatter{}
 
 var knownFormats = []formatter{
@@ -308,13 +294,11 @@ func (Codec) MergeResponse(responses ...Response) (Response, error) {
 
 		promResponses = append(promResponses, pr)
 
-		// Prefer typed errors for proper merging; fall back to strings from wire responses.
-		warningErrors, infoErrors := GetAnnotationErrors(res)
-		if warningErrors != nil || infoErrors != nil {
-			accumulator.addAnnotationErrors(warningErrors, infoErrors)
-		} else {
-			accumulator.addAnnotationStrings(pr.Warnings, pr.Infos)
-		}
+		// Collect typed annotation errors for proper merging.
+		accumulator.addAnnotationErrors(
+			mimirpb.AnnotationErrorsToErrors(pr.Warnings),
+			mimirpb.AnnotationErrorsToErrors(pr.Infos),
+		)
 
 		promCloses = append(promCloses, res.Close)
 	}
@@ -333,14 +317,14 @@ func (Codec) MergeResponse(responses ...Response) (Response, error) {
 				ResultType: model.ValMatrix.String(),
 				Result:     matrixMerge(promResponses),
 			},
+			Warnings: mimirpb.ErrorsToAnnotationErrors(mergedWarnings),
+			Infos:    mimirpb.ErrorsToAnnotationErrors(mergedInfos),
 		},
 		finalizer: func() {
 			for _, close := range promCloses {
 				close()
 			}
 		},
-		WarningErrors: mergedWarnings,
-		InfoErrors:    mergedInfos,
 	}, nil
 }
 
@@ -979,16 +963,7 @@ func (c Codec) DecodeMetricsQueryResponse(ctx context.Context, r *http.Response,
 
 	start := time.Now()
 
-	var resp *PrometheusResponse
-	var warningErrors, infoErrors []error
-
-	// If the formatter supports typed annotation decoding, use it to reconstruct
-	// typed errors that can be properly merged across sharded queries.
-	if tad, ok := formatter.(typedAnnotationDecoder); ok {
-		resp, warningErrors, infoErrors, err = tad.DecodeQueryResponseWithAnnotations(buf)
-	} else {
-		resp, err = formatter.DecodeQueryResponse(buf)
-	}
+	resp, err := formatter.DecodeQueryResponse(buf)
 	if err != nil {
 		return nil, apierror.Newf(apierror.TypeInternal, "error decoding response: %v", err)
 	}
@@ -1002,17 +977,6 @@ func (c Codec) DecodeMetricsQueryResponse(ctx context.Context, r *http.Response,
 
 	for h, hv := range r.Header {
 		resp.Headers = append(resp.Headers, &PrometheusHeader{Name: h, Values: hv})
-	}
-
-	// If we decoded typed annotations, wrap in PrometheusResponseWithFinalizer
-	// so they flow through the middleware pipeline for proper merging.
-	if warningErrors != nil || infoErrors != nil {
-		return &PrometheusResponseWithFinalizer{
-			PrometheusResponse: resp,
-			finalizer:          func() {},
-			WarningErrors:      warningErrors,
-			InfoErrors:         infoErrors,
-		}, nil
 	}
 
 	return resp, nil
@@ -1130,35 +1094,13 @@ func (c Codec) EncodeMetricsQueryResponse(ctx context.Context, req *http.Request
 		sp.SetAttributes(attribute.Int("series", len(a.Data.Result)))
 	}
 
-	// At the serialization boundary, populate string Warnings/Infos from typed errors
-	// if the response carries them. This is where []error → []string conversion happens.
-	warningErrors, infoErrors := GetAnnotationErrors(res)
-	if warningErrors != nil || infoErrors != nil {
-		a.Warnings = make([]string, 0, len(warningErrors))
-		for _, w := range warningErrors {
-			a.Warnings = append(a.Warnings, w.Error())
-		}
-		a.Infos = make([]string, 0, len(infoErrors))
-		for _, i := range infoErrors {
-			a.Infos = append(a.Infos, i.Error())
-		}
-	}
-
 	selectedContentType, formatter := c.negotiateContentType(req.Header.Get("Accept"))
 	if formatter == nil {
 		return nil, apierror.New(apierror.TypeNotAcceptable, "none of the content types in the Accept header are supported")
 	}
 
 	start := time.Now()
-	var b []byte
-	var err error
-	// If the formatter supports typed annotations and we have them, encode them
-	// alongside the response so they can be properly merged on the receiving end.
-	if tae, ok := formatter.(typedAnnotationEncoder); ok && (warningErrors != nil || infoErrors != nil) {
-		b, err = tae.EncodeQueryResponseWithAnnotations(a, warningErrors, infoErrors)
-	} else {
-		b, err = formatter.EncodeQueryResponse(a)
-	}
+	b, err := formatter.EncodeQueryResponse(a)
 	if err != nil {
 		return nil, apierror.Newf(apierror.TypeInternal, "error encoding response: %v", err)
 	}

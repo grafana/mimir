@@ -15,6 +15,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -225,10 +226,10 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 				ResultType: string(res.Value.Type()),
 				Result:     extracted,
 			},
-			Headers: queryable.getResponseHeaders(),
+			Headers:  queryable.getResponseHeaders(),
+			Warnings: mimirpb.ErrorsToAnnotationErrors(warningErrors),
+			Infos:    mimirpb.ErrorsToAnnotationErrors(infoErrors),
 		},
-		finalizer:     qry.Close,
-		WarningErrors: warningErrors,
-		InfoErrors:    infoErrors,
+		finalizer: qry.Close,
 	}, nil
 }
