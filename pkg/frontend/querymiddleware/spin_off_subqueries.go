@@ -212,10 +212,11 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 	// query, so we pass in an empty string as the query so the positions will be hidden.
 	warningErrors, infoErrors := res.Warnings.AsErrorsSplit("", 0, 0)
 
-	// Add any annotations returned by the subqueries, merging properly.
-	accumulatedWarnings, accumulatedInfos := annotationAccumulator.getAll()
-	warningErrors = append(warningErrors, accumulatedWarnings...)
-	infoErrors = append(infoErrors, accumulatedInfos...)
+	// Merge the outer query's annotations into the accumulator so that
+	// overlapping typed annotations (e.g. possibleNonCounterErr for the same
+	// metric) are properly merged rather than appended as duplicates.
+	annotationAccumulator.addAnnotationErrors(warningErrors, infoErrors)
+	warningErrors, infoErrors = annotationAccumulator.getAll()
 
 	return &PrometheusResponseWithFinalizer{
 		PrometheusResponse: &PrometheusResponse{

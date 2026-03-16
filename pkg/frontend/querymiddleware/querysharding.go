@@ -161,11 +161,11 @@ func ExecuteQueryOnQueryable(ctx context.Context, r MetricsQueryRequest, engine 
 	warningErrors, infoErrors := res.Warnings.AsErrorsSplit("", 0, 0)
 
 	if annotationAccumulator != nil {
-		// Add any annotations returned by the sharded queries, merging properly
-		// (e.g. counts are accumulated for possibleNonCounterErr).
-		accumulatedWarnings, accumulatedInfos := annotationAccumulator.getAll()
-		warningErrors = append(warningErrors, accumulatedWarnings...)
-		infoErrors = append(infoErrors, accumulatedInfos...)
+		// Merge the outer query's annotations into the accumulator so that
+		// overlapping typed annotations (e.g. possibleNonCounterErr for the same
+		// metric) are properly merged rather than appended as duplicates.
+		annotationAccumulator.addAnnotationErrors(warningErrors, infoErrors)
+		warningErrors, infoErrors = annotationAccumulator.getAll()
 	}
 
 	var headers []*PrometheusHeader
