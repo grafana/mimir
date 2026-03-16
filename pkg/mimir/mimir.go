@@ -231,6 +231,7 @@ func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
 			"ingester_client":                  &c.IngesterClient.GRPCClientConfig.ClusterValidation,
 			"frontend_worker_frontend_client":  &c.Worker.QueryFrontendGRPCClientConfig.ClusterValidation,
 			"frontend_worker_scheduler_client": &c.Worker.QuerySchedulerGRPCClientConfig.ClusterValidation,
+			"compactor_scheduler_client":       &c.Compactor.SchedulerClientConfig.GRPCClientConfig.ClusterValidation,
 			"block_builder_scheduler_client":   &c.BlockBuilder.SchedulerConfig.GRPCClientConfig.ClusterValidation,
 			"frontend_query_scheduler_client":  &c.Frontend.FrontendV2.GRPCClientConfig.ClusterValidation,
 			"querier_store_gateway_client":     &c.Querier.StoreGatewayClient.ClusterValidation,
@@ -358,6 +359,9 @@ func (c *Config) Validate(log log.Logger) error {
 	}
 	if err := c.Common.InstrumentRefLeaks.Validate(); err != nil {
 		return errors.Wrap(err, "invalid instrument-ref-leaks config")
+	}
+	if err := c.API.Validate(); err != nil {
+		return errors.Wrap(err, "invalid API config")
 	}
 
 	// validate the default limits
@@ -638,6 +642,11 @@ func (c *Config) validateFilesystemPaths(logger log.Logger) error {
 
 // isAbsPathOverlapping returns whether the two input absolute paths overlap.
 func isAbsPathOverlapping(firstAbsPath, secondAbsPath string) bool {
+	// The root "/" overlaps with every absolute path.
+	if firstAbsPath == "/" || secondAbsPath == "/" {
+		return true
+	}
+
 	firstBase, firstName := filepath.Split(firstAbsPath)
 	secondBase, secondName := filepath.Split(secondAbsPath)
 
@@ -648,7 +657,9 @@ func isAbsPathOverlapping(firstAbsPath, secondAbsPath string) bool {
 	}
 
 	// The base directories are different, but they could still overlap if one is the child of the other one.
-	return strings.HasPrefix(firstAbsPath, secondAbsPath) || strings.HasPrefix(secondAbsPath, firstAbsPath)
+	// We append "/" to ensure we match on path segment boundaries and avoid false positives
+	// like "/data/tsdb" matching "/data/tsdb-compactor/cache".
+	return strings.HasPrefix(firstAbsPath, secondAbsPath+"/") || strings.HasPrefix(secondAbsPath, firstAbsPath+"/")
 }
 
 func (c *Config) registerServerFlagsWithChangedDefaultValues(fs *flag.FlagSet) {

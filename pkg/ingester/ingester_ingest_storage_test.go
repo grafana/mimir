@@ -37,7 +37,6 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"go.uber.org/atomic"
-	"go.uber.org/goleak"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
@@ -48,15 +47,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-var goleakOpts = []goleak.Option{
-	// TestIngester_Startup_PartitionRingActiveBlocksOnInstanceRingActive
-	// tests ingester failure on startup, which does not clean up all goroutines.
-	// This goroutine will be detected by other tests running in parallel with VerifyNoLeak.
-	goleak.IgnoreAnyFunction("github.com/grafana/dskit/services.funcBasedListener.Failed"),
-}
-
 func TestIngester_Startup_PartitionRingActiveBlocksOnInstanceRingActive(t *testing.T) {
-	util_test.VerifyNoLeak(t, goleakOpts...)
 	var err error
 
 	cfg := defaultIngesterTestConfig(t)
@@ -167,7 +158,6 @@ func TestIngester_Startup_PartitionRingActiveBlocksOnInstanceRingActive(t *testi
 }
 
 func TestIngester_Start(t *testing.T) {
-	util_test.VerifyNoLeak(t, goleakOpts...)
 
 	t.Run("should replay the partition at startup (after a restart) and then join the ingesters and partitions ring", func(t *testing.T) {
 		var (
@@ -890,6 +880,9 @@ func TestIngester_compactionServiceInterval(t *testing.T) {
 					_ = services.StopAndAwaitTerminated(context.Background(), ingester)
 				})
 			case services.Running:
+				t.Cleanup(func() {
+					ingester.subservicesWatcher.Close()
+				})
 			default:
 				t.Fatalf("unsupported state %s", tt.state)
 			}
@@ -999,6 +992,9 @@ func TestIngester_timeToNextZoneAwareCompaction(t *testing.T) {
 			cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = defaultBaseHeadCompactionInterval
 
 			ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, nil, util_test.NewTestingLogger(t))
+			t.Cleanup(func() {
+				ingester.subservicesWatcher.Close()
+			})
 
 			headCompactionInterval := ingester.timeToNextZoneAwareCompaction(fakeNow, tt.zones)
 			require.Equal(t, tt.expected, headCompactionInterval)
@@ -1145,6 +1141,98 @@ func createTestIngesterWithIngestStorage(
 	require.NoError(t, err)
 
 	return ingester, kafkaCluster, prw
+}
+
+func TestIngester_ActiveSeriesPurgeWithKafkaTimestamps(t *testing.T) {
+	var (
+		ctx         = context.Background()
+		cfg         = defaultIngesterTestConfig(t)
+		reg         = prometheus.NewRegistry()
+		user1       = "user-1"
+		user2       = "user-2"
+		baseTime    = time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		idleTimeout = 20 * time.Minute
+	)
+
+	cfg.ActiveSeriesMetrics.Enabled = true
+	cfg.ActiveSeriesMetrics.IdleTimeout = idleTimeout
+	// Use a long update period so that the wall-clock ticker never fires during this test.
+	// Only the inline Kafka-time-based purge trigger should update active series.
+	cfg.ActiveSeriesMetrics.UpdatePeriod = 10 * time.Minute
+
+	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+	ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, reg, util_test.NewTestingLogger(t))
+
+	partitionID, err := ingest.IngesterPartitionID(cfg.IngesterRing.InstanceID)
+	require.NoError(t, err)
+
+	kafkaClient, err := kgo.NewClient(
+		kgo.SeedBrokers(cfg.IngestStorageConfig.KafkaConfig.Address...),
+		kgo.RecordPartitioner(kgo.ManualPartitioner()),
+	)
+	require.NoError(t, err)
+	t.Cleanup(kafkaClient.Close)
+
+	produceRecord := func(tenantID string, seriesName string, kafkaTimestamp time.Time) {
+		wreq := &mimirpb.WriteRequest{
+			Timeseries: []mimirpb.PreallocTimeseries{{
+				TimeSeries: &mimirpb.TimeSeries{
+					Labels:  mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, seriesName)),
+					Samples: []mimirpb.Sample{{TimestampMs: kafkaTimestamp.UnixMilli(), Value: 1}},
+				},
+			}},
+			Source: mimirpb.API,
+		}
+		data, err := wreq.Marshal()
+		require.NoError(t, err)
+
+		results := kafkaClient.ProduceSync(ctx, &kgo.Record{
+			Topic:     cfg.IngestStorageConfig.KafkaConfig.Topic,
+			Key:       []byte(tenantID),
+			Value:     data,
+			Headers:   []kgo.RecordHeader{ingest.RecordVersionHeader(1)},
+			Partition: partitionID,
+			Timestamp: kafkaTimestamp,
+		})
+		require.NoError(t, results.FirstErr())
+	}
+
+	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
+	})
+
+	// Phase 1: Produce 20 series for user1 at T0.
+	// The first record triggers an inline purge (Kafka time jumps from 0 to T0 > UpdatePeriod),
+	// but since no series exist yet, it has no effect on counts.
+	for i := 0; i < 20; i++ {
+		produceRecord(user1, fmt.Sprintf("series_%d", i), baseTime)
+	}
+
+	// Phase 2: Produce 20 series for user2 at T0+21min (past idle timeout for user1).
+	// The first record triggers an inline purge because Kafka time advanced by 21min > UpdatePeriod (10min).
+	// This purge runs with now=T0+21min, which purges user1's series (last seen at T0, idle for 21min > 20min timeout).
+	// After the purge, user2 has 1 active series (just added), but user1's 20 series are purged.
+	futureTime := baseTime.Add(idleTimeout + 1*time.Minute)
+	for i := 0; i < 20; i++ {
+		produceRecord(user2, fmt.Sprintf("series_%d", i), futureTime)
+	}
+
+	// Phase 3: Produce one more record at T0+32min to trigger another inline purge
+	// (advances by 11min from T0+21min > UpdatePeriod of 10min). This purge updates the
+	// active series counts to reflect all 20 of user2's series.
+	finalTime := futureTime.Add(cfg.ActiveSeriesMetrics.UpdatePeriod + 1*time.Minute)
+	produceRecord(user2, "series_final", finalTime)
+
+	// Wait for all records to be consumed and the inline purge to update metrics.
+	// user1's series should be purged (0 active), user2 should have 21 active series.
+	test.Poll(t, 10*time.Second, nil, func() interface{} {
+		return testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+			# HELP cortex_ingester_active_series Number of currently active series per user.
+			# TYPE cortex_ingester_active_series gauge
+			cortex_ingester_active_series{user="%s"} 21
+		`, user2)), "cortex_ingester_active_series")
+	})
 }
 
 // BenchmarkIngester_ReplayFromKafka tests the ingester replaying records from Kafka at startup.

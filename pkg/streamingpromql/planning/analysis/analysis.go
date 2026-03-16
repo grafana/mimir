@@ -175,7 +175,7 @@ type PlanningStage struct {
 // Analyze performs query planning and produces a report on the query planning process.
 func Analyze(ctx context.Context, planner *streamingpromql.QueryPlanner, qs string, timeRange types.QueryTimeRange, enableDelayedNameRemoval bool) (*Result, error) {
 	observer := NewAnalysisPlanningObserver(qs, timeRange)
-	_, err := planner.NewQueryPlan(ctx, qs, timeRange, enableDelayedNameRemoval, observer)
+	_, err := planner.NewQueryPlan(ctx, qs, timeRange, streamingpromql.DefaultLookbackDelta, enableDelayedNameRemoval, observer)
 	if err != nil {
 		return nil, err
 	}

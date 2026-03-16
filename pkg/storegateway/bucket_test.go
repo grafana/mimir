@@ -77,6 +77,10 @@ const (
 	labelLongSuffix = "aaaaaaaaaabbbbbbbbbbccccccccccdddddddddd"
 )
 
+func newGapBasedPartitionersHelper(maxGapBytes uint64) blockPartitioners {
+	return newGapBasedPartitioners(maxGapBytes, maxGapBytes, maxGapBytes, nil)
+}
+
 func TestBucketBlock_matchLabels(t *testing.T) {
 	dir := t.TempDir()
 
@@ -1090,7 +1094,7 @@ func testBlockToBucketBlock(tb testing.TB, testBlock *fixtures.BucketTestBlock) 
 			chunkObjs:         chunkObjects,
 			bkt:               testBlock.InstrBkt,
 			meta:              testBlock.Meta,
-			partitioners:      newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+			partitioners:      newGapBasedPartitionersHelper(mimir_tsdb.DefaultPartitionerMaxGapSize),
 		}
 	}
 }
@@ -1477,7 +1481,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 			selectAllStrategy{},
 			newStaticChunksLimiterFactory(0),
 			newStaticSeriesLimiterFactory(0),
-			newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+			newGapBasedPartitionersHelper(mimir_tsdb.DefaultPartitionerMaxGapSize),
 			hashcache.NewSeriesHashCache(1024*1024),
 			NewBucketStoreMetrics(reg),
 			testData.options...,
@@ -1610,7 +1614,7 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 						selectAllStrategy{},
 						newStaticChunksLimiterFactory(0),
 						newStaticSeriesLimiterFactory(0),
-						newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+						newGapBasedPartitionersHelper(mimir_tsdb.DefaultPartitionerMaxGapSize),
 						hashcache.NewSeriesHashCache(1024*1024),
 						NewBucketStoreMetrics(nil),
 						WithLogger(logger),
@@ -1718,7 +1722,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			metrics:      NewBucketStoreMetrics(nil),
 			bkt:          bkt,
 			meta:         meta,
-			partitioners: newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+			partitioners: newGapBasedPartitionersHelper(mimir_tsdb.DefaultPartitionerMaxGapSize),
 			chunkObjs:    []string{filepath.Join(id.String(), "chunks", "000001")},
 		}
 		b1.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b1.meta.ULID, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.NewStreamBinaryReaderMetrics(nil), indexheader.Config{})
@@ -1757,7 +1761,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			metrics:      NewBucketStoreMetrics(nil),
 			bkt:          bkt,
 			meta:         meta,
-			partitioners: newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+			partitioners: newGapBasedPartitionersHelper(mimir_tsdb.DefaultPartitionerMaxGapSize),
 			chunkObjs:    []string{filepath.Join(id.String(), "chunks", "000001")},
 		}
 		b2.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b2.meta.ULID, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.NewStreamBinaryReaderMetrics(nil), indexheader.Config{})
@@ -1944,7 +1948,7 @@ func TestBucketStore_Series_ErrorUnmarshallingRequestHints(t *testing.T) {
 		selectAllStrategy{},
 		newStaticChunksLimiterFactory(100),
 		newStaticSeriesLimiterFactory(0),
-		newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+		newGapBasedPartitionersHelper(mimir_tsdb.DefaultPartitionerMaxGapSize),
 		hashcache.NewSeriesHashCache(1024*1024),
 		NewBucketStoreMetrics(nil),
 		WithLogger(logger),
@@ -2002,7 +2006,7 @@ func TestBucketStore_Series_CanceledRequest(t *testing.T) {
 		selectAllStrategy{},
 		newStaticChunksLimiterFactory(100),
 		newStaticSeriesLimiterFactory(0),
-		newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+		newGapBasedPartitionersHelper(mimir_tsdb.DefaultPartitionerMaxGapSize),
 		hashcache.NewSeriesHashCache(1024*1024),
 		NewBucketStoreMetrics(nil),
 		WithLogger(logger),
@@ -2071,7 +2075,7 @@ func TestBucketStore_Series_TimeoutGate(t *testing.T) {
 		selectAllStrategy{},
 		newStaticChunksLimiterFactory(0),
 		newStaticSeriesLimiterFactory(0),
-		newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+		newGapBasedPartitionersHelper(mimir_tsdb.DefaultPartitionerMaxGapSize),
 		hashcache.NewSeriesHashCache(1024*1024),
 		NewBucketStoreMetrics(nil),
 		WithLogger(logger),
@@ -2154,7 +2158,7 @@ func TestBucketStore_Series_InvalidRequest(t *testing.T) {
 		selectAllStrategy{},
 		newStaticChunksLimiterFactory(100),
 		newStaticSeriesLimiterFactory(0),
-		newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+		newGapBasedPartitionersHelper(mimir_tsdb.DefaultPartitionerMaxGapSize),
 		hashcache.NewSeriesHashCache(1024*1024),
 		NewBucketStoreMetrics(nil),
 		WithLogger(logger),
@@ -2281,7 +2285,7 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 		selectAllStrategy{},
 		newStaticChunksLimiterFactory(1000),
 		newStaticSeriesLimiterFactory(0),
-		newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+		newGapBasedPartitionersHelper(mimir_tsdb.DefaultPartitionerMaxGapSize),
 		hashcache.NewSeriesHashCache(1024*1024),
 		NewBucketStoreMetrics(nil),
 		WithLogger(logger),
@@ -2443,7 +2447,7 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 						selectAllStrategy{},
 						newStaticChunksLimiterFactory(testData.chunksLimit),
 						newStaticSeriesLimiterFactory(testData.seriesLimit),
-						newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+						newGapBasedPartitionersHelper(mimir_tsdb.DefaultPartitionerMaxGapSize),
 						hashcache.NewSeriesHashCache(1024*1024),
 						NewBucketStoreMetrics(nil),
 					)
@@ -2563,7 +2567,7 @@ func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketS
 		selectAllStrategy{},
 		newStaticChunksLimiterFactory(100),
 		newStaticSeriesLimiterFactory(0),
-		newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+		newGapBasedPartitionersHelper(mimir_tsdb.DefaultPartitionerMaxGapSize),
 		hashcache.NewSeriesHashCache(1024*1024),
 		NewBucketStoreMetrics(nil),
 		opts...,

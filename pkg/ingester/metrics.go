@@ -29,6 +29,7 @@ type ingesterMetrics struct {
 	queriedSamples       prometheus.Histogram
 	queriedExemplars     prometheus.Histogram
 	queriedSeries        *prometheus.HistogramVec
+	queriedBlocks        *prometheus.CounterVec
 	discardedSeriesRatio prometheus.Histogram
 
 	memMetadata             prometheus.Gauge
@@ -36,7 +37,6 @@ type ingesterMetrics struct {
 	memMetadataCreatedTotal *prometheus.CounterVec
 	memMetadataRemovedTotal *prometheus.CounterVec
 
-	activeSeriesLoading                               *prometheus.GaugeVec
 	activeSeriesPerUser                               *prometheus.GaugeVec
 	activeSeriesPerUserOTLP                           *prometheus.GaugeVec
 	activeSeriesCustomTrackersPerUser                 *prometheus.GaugeVec
@@ -182,6 +182,10 @@ func newIngesterMetrics(
 			Buckets:                     prometheus.ExponentialBuckets(10, 8, 6),
 			NativeHistogramBucketFactor: 1.1,
 		}, []string{"stage"}),
+		queriedBlocks: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ingester_queried_blocks_total",
+			Help: "Number of times blocks were queried by generation. Generation 0 is the head block; higher generations count persisted blocks back from the head (1 = most recent).",
+		}, []string{"generation"}),
 		discardedSeriesRatio: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
 			Name:                        "cortex_ingester_discarded_series_ratio",
 			Help:                        `Ratio of discarded series during query processing. These are series fetched from the index, but then discarded because they don't match the vector selector. This is the ratio of cortex_ingester_queried_series{stage="index"} over {stage="send"}.`,
@@ -316,12 +320,6 @@ func newIngesterMetrics(
 		}, []string{"user"}),
 
 		// Not registered automatically, but only if activeSeriesEnabled is true.
-		activeSeriesLoading: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
-			Name: "cortex_ingester_active_series_loading",
-			Help: "Indicates that active series configuration is being reloaded, and waiting to become stable. While this metric is non zero, values from active series metrics shouldn't be considered.",
-		}, []string{"user"}),
-
-		// Not registered automatically, but only if activeSeriesEnabled is true.
 		activeSeriesPerUser: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_ingester_active_series",
 			Help: "Number of currently active series per user.",
@@ -451,7 +449,6 @@ func (m *ingesterMetrics) deletePerGroupMetricsForUser(userID, group string) {
 }
 
 func (m *ingesterMetrics) deletePerUserCustomTrackerMetrics(userID string, customTrackerMetrics []string) {
-	m.activeSeriesLoading.DeleteLabelValues(userID)
 	m.activeSeriesPerUser.DeleteLabelValues(userID)
 	m.activeSeriesPerUserOTLP.DeleteLabelValues(userID)
 	m.activeSeriesPerUserNativeHistograms.DeleteLabelValues(userID)

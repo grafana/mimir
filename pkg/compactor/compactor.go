@@ -27,7 +27,6 @@ import (
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
-	"github.com/grafana/dskit/timeutil"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/thanos-io/objstore"
@@ -49,6 +48,11 @@ const (
 const (
 	blocksMarkedForDeletionName = "cortex_compactor_blocks_marked_for_deletion_total"
 	blocksMarkedForDeletionHelp = "Total number of blocks marked for deletion in compactor."
+)
+
+const (
+	modeStandalone = "standalone"
+	modeScheduler  = "scheduler"
 )
 
 var (
@@ -97,6 +101,7 @@ type Config struct {
 	CompactionRetries           int                     `yaml:"compaction_retries" category:"advanced"`
 	CompactionConcurrency       int                     `yaml:"compaction_concurrency" category:"advanced"`
 	CompactionWaitPeriod        time.Duration           `yaml:"first_level_compaction_wait_period"`
+	CompactionOOOWaitPeriod     time.Duration           `yaml:"first_level_compaction_ooo_wait_period" category:"experimental"`
 	CompactionSkipFutureMaxTime bool                    `yaml:"first_level_compaction_skip_future_max_time" category:"experimental"`
 	CleanupInterval             time.Duration           `yaml:"cleanup_interval" category:"advanced"`
 	CleanupConcurrency          int                     `yaml:"cleanup_concurrency" category:"advanced"`
@@ -133,11 +138,15 @@ type Config struct {
 	// on store-gateway/bucket store index-header configuration.
 	SparseIndexHeadersSamplingRate int                `yaml:"-"`
 	SparseIndexHeadersConfig       indexheader.Config `yaml:"-"`
+
+	// Configuration for interacting with a compaction job scheduler
+	SchedulerClientConfig SchedulerClientConfig `yaml:"scheduler_client" category:"experimental" doc:"hidden"`
 }
 
 // RegisterFlags registers the MultitenantCompactor flags.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.ShardingRing.RegisterFlags(f, logger)
+	cfg.SchedulerClientConfig.RegisterFlags(f)
 
 	cfg.BlockRanges = mimir_tsdb.DurationList{2 * time.Hour, 12 * time.Hour, 24 * time.Hour}
 	cfg.retryMinBackoff = 10 * time.Second
@@ -151,7 +160,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.MaxCompactionTime, "compactor.max-compaction-time", time.Hour, "Max time for starting compactions for a single tenant. After this time no new compactions for the tenant are started before next compaction cycle. This can help in multi-tenant environments to avoid single tenant using all compaction time, but also in single-tenant environments to force new discovery of blocks more often. 0 = disabled.")
 	f.IntVar(&cfg.CompactionRetries, "compactor.compaction-retries", 3, "How many times to retry a failed compaction within a single compaction run.")
 	f.IntVar(&cfg.CompactionConcurrency, "compactor.compaction-concurrency", 1, "Max number of concurrent compactions running.")
-	f.DurationVar(&cfg.CompactionWaitPeriod, "compactor.first-level-compaction-wait-period", 25*time.Minute, "How long the compactor waits before compacting first-level blocks that are uploaded by the ingesters. This configuration option allows for the reduction of cases where the compactor begins to compact blocks before all ingesters have uploaded their blocks to the storage.")
+	f.DurationVar(&cfg.CompactionWaitPeriod, "compactor.first-level-compaction-wait-period", 25*time.Minute, "How long the compactor waits before compacting first-level blocks that are uploaded by the ingesters or block-builders. This configuration option allows for the reduction of cases where the compactor begins to compact blocks before all ingesters have uploaded their blocks to the storage. Does not apply to out-of-order blocks.")
+	f.DurationVar(&cfg.CompactionOOOWaitPeriod, "compactor.first-level-compaction-ooo-wait-period", 0, "How long the compactor waits before compacting first-level blocks containing out-of-order samples. When set to 0 (default), out-of-order blocks do not delay compaction.")
 	f.BoolVar(&cfg.CompactionSkipFutureMaxTime, "compactor.first-level-compaction-skip-future-max-time", false, "When enabled, the compactor skips first-level compaction jobs if any source block has a MaxTime more recent than the wait period threshold. This prevents premature compaction of blocks that may still receive late-arriving data.")
 	f.DurationVar(&cfg.CleanupInterval, "compactor.cleanup-interval", 15*time.Minute, "How frequently the compactor should run blocks cleanup and maintenance, as well as update the bucket index.")
 	f.IntVar(&cfg.CleanupConcurrency, "compactor.cleanup-concurrency", 20, "Max number of tenants for which blocks cleanup and maintenance should run concurrently.")
@@ -203,6 +213,9 @@ func (cfg *Config) Validate(logger log.Logger) error {
 	}
 	if !slices.Contains(CompactionOrders, cfg.CompactionJobsOrder) {
 		return errInvalidCompactionOrder
+	}
+	if err := cfg.SchedulerClientConfig.Validate(); err != nil {
+		return err
 	}
 
 	return nil
@@ -277,6 +290,8 @@ type MultitenantCompactor struct {
 	// Client used to run operations on the bucket storing blocks.
 	bucketClient objstore.Bucket
 
+	executor compactionExecutor
+
 	// Ring used for sharding compactions.
 	ringLifecycler         *ring.BasicLifecycler
 	ring                   *ring.Ring
@@ -302,6 +317,12 @@ type MultitenantCompactor struct {
 	// outOfSpace is a separate metric for out-of-space errors because this is a common issue which often requires an operator to investigate,
 	// so alerts need to be able to treat it with higher priority than other compaction errors.
 	outOfSpace prometheus.Counter
+
+	// schedulerLastContact tracks the last time a compactor successfully contacted the scheduler
+	schedulerLastContact prometheus.Gauge
+
+	// invalidClusterValidation tracks the number of cluster validation errors during communication with the scheduler
+	invalidClusterValidation *prometheus.CounterVec
 
 	// Metrics shared across all BucketCompactor instances.
 	bucketCompactorMetrics *BucketCompactorMetrics
@@ -451,6 +472,30 @@ func newMultitenantCompactor(
 	// The last successful compaction run metric is exposed as seconds since epoch, so we need to use seconds for this metric.
 	c.compactionRunInterval.Set(c.compactorCfg.CompactionInterval.Seconds())
 
+	var (
+		mode         string
+		schedulerReg prometheus.Registerer // used to register metrics only used in the scheduler mode conditionally
+	)
+	if compactorCfg.SchedulerClientConfig.Enabled {
+		mode = modeScheduler
+		schedulerReg = registerer
+	} else {
+		mode = modeStandalone
+	}
+	promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "cortex_compactor_info",
+		Help: "Information about the compactor. The mode label indicates the compactor mode (standalone or scheduler).",
+		ConstLabels: prometheus.Labels{
+			"mode": mode,
+		},
+	}, func() float64 { return 1 })
+
+	c.schedulerLastContact = promauto.With(schedulerReg).NewGauge(prometheus.GaugeOpts{
+		Name: "cortex_compactor_last_scheduler_contact_timestamp_seconds",
+		Help: "Unix timestamp of the last successful contact with the scheduler. Only updated in scheduler mode.",
+	})
+	c.invalidClusterValidation = util.NewRequestInvalidClusterValidationLabelsTotalCounter(schedulerReg, "compactor", util.GRPCProtocol)
+
 	return c, nil
 }
 
@@ -477,6 +522,17 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	c.ring, c.ringLifecycler, err = newRingAndLifecycler(c.compactorCfg.ShardingRing, c.logger, c.registerer)
 	if err != nil {
 		return err
+	}
+
+	if c.compactorCfg.SchedulerClientConfig.Enabled {
+		// Leases planning and compaction jobs from the compaction scheduler
+		c.executor, err = newSchedulerExecutor(c.compactorCfg.SchedulerClientConfig, c.logger, c.invalidClusterValidation)
+		if err != nil {
+			return fmt.Errorf("failed to create scheduler executor: %w", err)
+		}
+	} else {
+		// Uses the ring to shard jobs between compactor instances
+		c.executor = &standaloneExecutor{}
 	}
 
 	c.ringSubservices, err = services.NewManager(c.ringLifecycler, c.ring)
@@ -581,6 +637,13 @@ func newRingAndLifecycler(cfg RingConfig, logger log.Logger, reg prometheus.Regi
 func (c *MultitenantCompactor) stopping(_ error) error {
 	ctx := context.Background()
 
+	// Stop executor first to clean up any resources
+	if c.executor != nil {
+		if err := c.executor.stop(); err != nil {
+			level.Warn(c.logger).Log("msg", "failed to stop executor", "err", err)
+		}
+	}
+
 	services.StopAndAwaitTerminated(ctx, c.blocksCleaner) //nolint:errcheck
 	if c.ringSubservices != nil {
 		return services.StopManagerAndAwaitStopped(ctx, c.ringSubservices)
@@ -589,26 +652,7 @@ func (c *MultitenantCompactor) stopping(_ error) error {
 }
 
 func (c *MultitenantCompactor) running(ctx context.Context) error {
-	// Run an initial compaction before starting the interval.
-	c.compactUsers(ctx)
-
-	// Apply 0-100% jitter to the first tick to spread compactions when multiple
-	// compactors start at the same time and the initial run completes quickly.
-	firstInterval := util.DurationWithNegativeJitter(c.compactorCfg.CompactionInterval, 1.0) + 1
-	standardInterval := util.DurationWithJitter(c.compactorCfg.CompactionInterval, 0.05)
-	stopTicker, tickerChan := timeutil.NewVariableTicker(firstInterval, standardInterval)
-	defer stopTicker()
-
-	for {
-		select {
-		case <-tickerChan:
-			c.compactUsers(ctx)
-		case <-ctx.Done():
-			return nil
-		case err := <-c.ringSubservicesWatcher.Chan():
-			return fmt.Errorf("compactor subservice failed: %w", err)
-		}
-	}
+	return c.executor.run(ctx, c)
 }
 
 func (c *MultitenantCompactor) compactUsers(ctx context.Context) {
@@ -760,13 +804,7 @@ func (c *MultitenantCompactor) compactUserWithRetries(ctx context.Context, userI
 	return lastErr
 }
 
-func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) error {
-	userBucket := bucket.NewUserBucketClient(userID, c.bucketClient, c.cfgProvider)
-	userLogger := util_log.WithUserID(userID, c.logger)
-
-	reg := prometheus.NewRegistry()
-	defer c.syncerMetrics.gatherThanosSyncerMetrics(reg, userLogger)
-
+func (c *MultitenantCompactor) createMetaSyncerForUser(userID string, userBucket objstore.InstrumentedBucket, userLogger log.Logger, cacheDir string, reg prometheus.Registerer) (*metaSyncer, error) {
 	// Filters out duplicate blocks that can be formed from two or more overlapping
 	// blocks that fully submatch the source blocks of the older blocks.
 	deduplicateBlocksFilter := NewShardAwareDeduplicateFilter()
@@ -786,9 +824,9 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		maxLookback = 0
 	}
 
-	fetcher, err := block.NewMetaFetcher(userLogger, c.compactorCfg.MetaSyncConcurrency, userBucket, c.metaSyncDirForUser(userID), reg, fetcherFilters, maxLookback)
+	fetcher, err := block.NewMetaFetcher(userLogger, c.compactorCfg.MetaSyncConcurrency, userBucket, cacheDir, reg, fetcherFilters, maxLookback)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	syncer, err := newMetaSyncer(
@@ -800,12 +838,39 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		c.blocksMarkedForDeletion,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to create syncer: %w", err)
+		return nil, fmt.Errorf("failed to create syncer: %w", err)
 	}
 
-	compactor, err := NewBucketCompactor(
+	return syncer, nil
+}
+
+func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) error {
+	userBucket := bucket.NewUserBucketClient(userID, c.bucketClient, c.cfgProvider)
+	userLogger := util_log.WithUserID(userID, c.logger)
+
+	reg := prometheus.NewRegistry()
+	defer c.syncerMetrics.gatherThanosSyncerMetrics(reg, userLogger)
+
+	compactor, err := c.newBucketCompactor(ctx, userID, userLogger, userBucket, reg)
+	if err != nil {
+		return fmt.Errorf("failed to create bucket compactor: %w", err)
+	}
+
+	syncer, err := c.createMetaSyncerForUser(userID, userBucket, userLogger, c.metaSyncDirForUser(userID), reg)
+	if err != nil {
+		return err
+	}
+
+	if err := compactor.Compact(ctx, syncer, c.compactorCfg.MaxCompactionTime); err != nil {
+		return fmt.Errorf("compaction: %w", err)
+	}
+
+	return nil
+}
+
+func (c *MultitenantCompactor) newBucketCompactor(ctx context.Context, userID string, userLogger log.Logger, userBucket objstore.Bucket, reg *prometheus.Registry) (*BucketCompactor, error) {
+	return NewBucketCompactor(
 		userLogger,
-		syncer,
 		c.blocksGrouperFactory(ctx, c.compactorCfg, c.cfgProvider, userID, userLogger, reg),
 		c.blocksPlanner,
 		c.blocksCompactor,
@@ -816,6 +881,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		c.shardingStrategy.ownJob,
 		c.jobsOrder,
 		c.compactorCfg.CompactionWaitPeriod,
+		c.compactorCfg.CompactionOOOWaitPeriod,
 		c.compactorCfg.CompactionSkipFutureMaxTime,
 		c.compactorCfg.BlockSyncConcurrency,
 		c.bucketCompactorMetrics,
@@ -823,15 +889,6 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		c.compactorCfg.SparseIndexHeadersConfig,
 		c.cfgProvider.CompactorMaxPerBlockUploadConcurrency(userID),
 	)
-	if err != nil {
-		return fmt.Errorf("failed to create bucket compactor: %w", err)
-	}
-
-	if err := compactor.Compact(ctx, c.compactorCfg.MaxCompactionTime); err != nil {
-		return fmt.Errorf("compaction: %w", err)
-	}
-
-	return nil
 }
 
 func (c *MultitenantCompactor) discoverUsersWithRetries(ctx context.Context) ([]string, error) {

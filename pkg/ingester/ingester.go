@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -375,6 +376,17 @@ type Ingester struct {
 	ingestReader              *ingest.PartitionReader
 	ingestPartitionID         int32
 	ingestPartitionLifecycler *ring.PartitionInstanceLifecycler
+
+	// latestKafkaRecordTimestamp tracks the most recent Kafka record timestamp
+	// seen by the ingester (unix milliseconds). Used to provide a Kafka-time-aware
+	// "now" for active series purging when ingest storage is enabled.
+	latestKafkaRecordTimestamp atomic.Int64
+
+	// lastKafkaActiveSeriesUpdate tracks the last Kafka time (unix milliseconds) at which
+	// updateActiveSeries was triggered inline during record consumption. This ensures
+	// active series are purged at approximately UpdatePeriod intervals in Kafka time,
+	// even when records are replayed faster than real-time.
+	lastKafkaActiveSeriesUpdate atomic.Int64
 
 	circuitBreaker  ingesterCircuitBreaker
 	reactiveLimiter *ingesterReactiveLimiter
@@ -886,7 +898,7 @@ func (i *Ingester) metricsUpdaterServiceRunning(ctx context.Context) error {
 			}
 			i.tsdbsMtx.RUnlock()
 		case <-activeSeriesTickerChan:
-			i.updateActiveSeries(time.Now())
+			i.updateActiveSeries(i.activeSeriesNow())
 		case <-usageStatsUpdateTicker.C:
 			i.updateUsageStats()
 		case <-limitMetricsUpdateTicker.C:
@@ -897,9 +909,13 @@ func (i *Ingester) metricsUpdaterServiceRunning(ctx context.Context) error {
 	}
 }
 
-func (i *Ingester) replaceMatchersAndTrackers(asm *asmodel.Matchers, cat *costattribution.ActiveSeriesTracker, userDB *userTSDB, now time.Time) {
-	i.metrics.deletePerUserCustomTrackerMetrics(userDB.userID, userDB.activeSeries.CurrentMatcherNames())
-	userDB.activeSeries.ReloadMatchersAndTrackers(asm, cat, now)
+func (i *Ingester) activeSeriesNow() time.Time {
+	if i.cfg.IngestStorageConfig.Enabled {
+		if tsMs := i.latestKafkaRecordTimestamp.Load(); tsMs > 0 {
+			return time.UnixMilli(tsMs)
+		}
+	}
+	return time.Now()
 }
 
 func (i *Ingester) updateActiveSeries(now time.Time) {
@@ -911,62 +927,87 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 
 		newMatchersConfig := i.limits.ActiveSeriesCustomTrackersConfig(userID)
 		newCostAttributionActiveSeriesTracker := i.costAttributionMgr.ActiveSeriesTracker(userID)
-		if userDB.activeSeries.ConfigDiffers(newMatchersConfig, newCostAttributionActiveSeriesTracker) {
-			i.replaceMatchersAndTrackers(asmodel.NewMatchers(newMatchersConfig), newCostAttributionActiveSeriesTracker, userDB, now)
-		}
+		matchersChanged := userDB.activeSeries.MatchersDiffer(newMatchersConfig)
+		catChanged := userDB.activeSeries.CostAttributionDiffers(newCostAttributionActiveSeriesTracker)
 
 		idx := userDB.Head().MustIndex()
-		valid := userDB.activeSeries.Purge(now, idx)
+
+		var oldMatcherNames []string
+		if matchersChanged || catChanged {
+			level.Debug(i.logger).Log("msg", "active series config changed, reloading", "user", userID, "matchers_changed", matchersChanged, "cost_attribution_changed", catChanged)
+			if matchersChanged {
+				// We shouldn't delete the metrics yet, just in case a metrics scrape happens while we're reloading,
+				// we don't want to trigger a staleness NaN in the metrics.
+				oldMatcherNames = userDB.activeSeries.CurrentMatcherNames()
+			}
+			userDB.activeSeries.ReloadSeriesConfig(
+				asmodel.NewMatchers(newMatchersConfig),
+				newCostAttributionActiveSeriesTracker,
+				matchersChanged, catChanged, idx,
+			)
+		}
+
+		userDB.activeSeries.Purge(now, idx)
 		idx.Close()
 
-		if !valid {
-			// Active series config has been reloaded, exposing loading metric until MetricsIdleTimeout passes.
-			i.metrics.activeSeriesLoading.WithLabelValues(userID).Set(1)
+		allActive, activeMatching, allActiveOTLP, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets := userDB.activeSeries.ActiveWithMatchers()
+		if allActive > 0 {
+			i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(allActive))
 		} else {
-			allActive, activeMatching, allActiveOTLP, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets := userDB.activeSeries.ActiveWithMatchers()
-			i.metrics.activeSeriesLoading.DeleteLabelValues(userID)
-			if allActive > 0 {
-				i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(allActive))
-			} else {
-				i.metrics.activeSeriesPerUser.DeleteLabelValues(userID)
-			}
-			if allActiveOTLP > 0 {
-				i.metrics.activeSeriesPerUserOTLP.WithLabelValues(userID).Set(float64(allActiveOTLP))
-			} else {
-				i.metrics.activeSeriesPerUserOTLP.DeleteLabelValues(userID)
-			}
-			if allActiveHistograms > 0 {
-				i.metrics.activeSeriesPerUserNativeHistograms.WithLabelValues(userID).Set(float64(allActiveHistograms))
-			} else {
-				i.metrics.activeSeriesPerUserNativeHistograms.DeleteLabelValues(userID)
-			}
-			if allActiveBuckets > 0 {
-				i.metrics.activeNativeHistogramBucketsPerUser.WithLabelValues(userID).Set(float64(allActiveBuckets))
-			} else {
-				i.metrics.activeNativeHistogramBucketsPerUser.DeleteLabelValues(userID)
-			}
+			i.metrics.activeSeriesPerUser.DeleteLabelValues(userID)
+		}
+		if allActiveOTLP > 0 {
+			i.metrics.activeSeriesPerUserOTLP.WithLabelValues(userID).Set(float64(allActiveOTLP))
+		} else {
+			i.metrics.activeSeriesPerUserOTLP.DeleteLabelValues(userID)
+		}
+		if allActiveHistograms > 0 {
+			i.metrics.activeSeriesPerUserNativeHistograms.WithLabelValues(userID).Set(float64(allActiveHistograms))
+		} else {
+			i.metrics.activeSeriesPerUserNativeHistograms.DeleteLabelValues(userID)
+		}
+		if allActiveBuckets > 0 {
+			i.metrics.activeNativeHistogramBucketsPerUser.WithLabelValues(userID).Set(float64(allActiveBuckets))
+		} else {
+			i.metrics.activeNativeHistogramBucketsPerUser.DeleteLabelValues(userID)
+		}
 
-			AttributedActiveSeriesFailure := userDB.activeSeries.ActiveSeriesAttributionFailureCount()
-			if AttributedActiveSeriesFailure > 0 {
-				i.metrics.attributedActiveSeriesFailuresPerUser.WithLabelValues(userID).Add(AttributedActiveSeriesFailure)
-			}
+		attributedActiveSeriesFailure := userDB.activeSeries.ActiveSeriesAttributionFailureCount()
+		if attributedActiveSeriesFailure > 0 {
+			i.metrics.attributedActiveSeriesFailuresPerUser.WithLabelValues(userID).Add(attributedActiveSeriesFailure)
+		}
 
-			for idx, name := range userDB.activeSeries.CurrentMatcherNames() {
-				// We only set the metrics for matchers that actually exist, to avoid increasing cardinality with zero valued metrics.
-				if activeMatching[idx] > 0 {
-					i.metrics.activeSeriesCustomTrackersPerUser.WithLabelValues(userID, name).Set(float64(activeMatching[idx]))
-				} else {
-					i.metrics.activeSeriesCustomTrackersPerUser.DeleteLabelValues(userID, name)
-				}
-				if activeMatchingHistograms[idx] > 0 {
-					i.metrics.activeSeriesCustomTrackersPerUserNativeHistograms.WithLabelValues(userID, name).Set(float64(activeMatchingHistograms[idx]))
-				} else {
-					i.metrics.activeSeriesCustomTrackersPerUserNativeHistograms.DeleteLabelValues(userID, name)
-				}
-				if activeMatchingBuckets[idx] > 0 {
-					i.metrics.activeNativeHistogramBucketsCustomTrackersPerUser.WithLabelValues(userID, name).Set(float64(activeMatchingBuckets[idx]))
-				} else {
-					i.metrics.activeNativeHistogramBucketsCustomTrackersPerUser.DeleteLabelValues(userID, name)
+		for idx, name := range userDB.activeSeries.CurrentMatcherNames() {
+			// We only set the metrics for matchers that actually exist, to avoid increasing cardinality with zero valued metrics.
+			if activeMatching[idx] > 0 {
+				i.metrics.activeSeriesCustomTrackersPerUser.WithLabelValues(userID, name).Set(float64(activeMatching[idx]))
+			} else {
+				i.metrics.activeSeriesCustomTrackersPerUser.DeleteLabelValues(userID, name)
+			}
+			if activeMatchingHistograms[idx] > 0 {
+				i.metrics.activeSeriesCustomTrackersPerUserNativeHistograms.WithLabelValues(userID, name).Set(float64(activeMatchingHistograms[idx]))
+			} else {
+				i.metrics.activeSeriesCustomTrackersPerUserNativeHistograms.DeleteLabelValues(userID, name)
+			}
+			if activeMatchingBuckets[idx] > 0 {
+				i.metrics.activeNativeHistogramBucketsCustomTrackersPerUser.WithLabelValues(userID, name).Set(float64(activeMatchingBuckets[idx]))
+			} else {
+				i.metrics.activeNativeHistogramBucketsCustomTrackersPerUser.DeleteLabelValues(userID, name)
+			}
+		}
+
+		// Remove the metrics belonging to old matchers now.
+		if matchersChanged {
+			newNames := userDB.activeSeries.CurrentMatcherNames()
+			newNamesSet := make(map[string]struct{}, len(newNames))
+			for _, name := range newNames {
+				newNamesSet[name] = struct{}{}
+			}
+			for _, oldName := range oldMatcherNames {
+				if _, exists := newNamesSet[oldName]; !exists {
+					i.metrics.activeSeriesCustomTrackersPerUser.DeleteLabelValues(userID, oldName)
+					i.metrics.activeSeriesCustomTrackersPerUserNativeHistograms.DeleteLabelValues(userID, oldName)
+					i.metrics.activeNativeHistogramBucketsCustomTrackersPerUser.DeleteLabelValues(userID, oldName)
 				}
 			}
 		}
@@ -1332,7 +1373,8 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	spanlog.DebugLog("event", "acquired append lock")
 
 	var (
-		startAppend = time.Now()
+		startAppend          = time.Now()
+		appendWallClockStart = startAppend
 
 		// Keep track of some stats which are tracked only if the samples will be
 		// successfully committed
@@ -1436,6 +1478,10 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		)
 	)
 
+	if ts, ok := ingest.RecordTimestampFromContext(ctx); ok {
+		startAppend = ts
+	}
+
 	// Walk the samples, appending them to the users database
 	app := db.Appender(ctx).(extendedAppender)
 	spanlog.DebugLog("event", "got appender for timeseries", "series", len(req.Timeseries))
@@ -1469,7 +1515,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	}
 
 	// At this point all samples have been added to the appender, so we can track the time it took.
-	i.metrics.appenderAddDuration.Observe(time.Since(startAppend).Seconds())
+	i.metrics.appenderAddDuration.Observe(time.Since(appendWallClockStart).Seconds())
 
 	spanlog.DebugLog(
 		"event", "start commit",
@@ -1502,6 +1548,30 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	i.metrics.ingestedExemplarsFail.Add(float64(stats.failedExemplarsCount))
 	appendedSamplesStats.Inc(int64(stats.succeededSamplesCount))
 	appendedExemplarsStats.Inc(int64(stats.succeededExemplarsCount))
+
+	if ts, ok := ingest.RecordTimestampFromContext(ctx); ok {
+		tsMs := ts.UnixMilli()
+		for {
+			cur := i.latestKafkaRecordTimestamp.Load()
+			if tsMs <= cur || i.latestKafkaRecordTimestamp.CompareAndSwap(cur, tsMs) {
+				break
+			}
+		}
+
+		if i.cfg.ActiveSeriesMetrics.Enabled {
+			updatePeriodMs := i.cfg.ActiveSeriesMetrics.UpdatePeriod.Milliseconds()
+			for {
+				lastUpdate := i.lastKafkaActiveSeriesUpdate.Load()
+				if tsMs-lastUpdate < updatePeriodMs {
+					break
+				}
+				if i.lastKafkaActiveSeriesUpdate.CompareAndSwap(lastUpdate, tsMs) {
+					i.updateActiveSeries(ts)
+					break
+				}
+			}
+		}
+	}
 
 	group := i.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(i.limits, userID, req.Timeseries), startAppend)
 
@@ -2400,11 +2470,17 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 		return nil
 	}
 
+	selectHints := initSelectHints(int64(from), int64(through))
+	selectHints = configSelectHintsWithShard(selectHints, shard)
+	// Disable chunks trimming, so that we don't have to rewrite chunks which have samples outside
+	// the requested from/through range. PromQL engine can handle it.
+	selectHints = configSelectHintsWithDisabledTrimming(selectHints)
+
 	numSamples := 0
 	numSeries := 0
 
 	spanlog.DebugLog("msg", "using executeStreamingQuery")
-	numSeries, numSamples, err = i.executeStreamingQuery(ctx, db, int64(from), int64(through), matchers, shard, stream, req.StreamingChunksBatchSize, spanlog)
+	numSeries, numSamples, err = i.executeStreamingQuery(ctx, db, selectHints, matchers, stream, req.StreamingChunksBatchSize, spanlog)
 	if err != nil {
 		return err
 	}
@@ -2415,13 +2491,13 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	return nil
 }
 
-func (i *Ingester) executeStreamingQuery(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer, batchSize uint64, spanlog *spanlogger.SpanLogger) (numSeries, numSamples int, _ error) {
+func (i *Ingester) executeStreamingQuery(ctx context.Context, db *userTSDB, hints *storage.SelectHints, matchers []*labels.Matcher, stream client.Ingester_QueryStreamServer, batchSize uint64, spanlog *spanlogger.SpanLogger) (numSeries, numSamples int, _ error) {
 	var q storage.ChunkQuerier
 	var err error
 	if i.limits.OutOfOrderTimeWindow(db.userID) > 0 {
-		q, err = db.UnorderedChunkQuerier(from, through)
+		q, err = db.UnorderedChunkQuerier(hints.Start, hints.End)
 	} else {
-		q, err = db.ChunkQuerier(from, through)
+		q, err = db.ChunkQuerier(hints.Start, hints.End)
 	}
 	if err != nil {
 		return 0, 0, err
@@ -2430,7 +2506,7 @@ func (i *Ingester) executeStreamingQuery(ctx context.Context, db *userTSDB, from
 	// The querier must remain open until we've finished streaming chunks.
 	defer q.Close()
 
-	allSeries, numSeries, err := i.sendStreamingQuerySeries(ctx, q, from, through, matchers, shard, stream)
+	allSeries, numSeries, err := i.sendStreamingQuerySeries(ctx, q, hints, matchers, stream)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -2480,13 +2556,7 @@ func putChunkSeriesNode(sn *chunkSeriesNode) {
 	chunkSeriesNodePool.Put(sn)
 }
 
-func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.ChunkQuerier, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (*chunkSeriesNode, int, error) {
-	// Disable chunks trimming, so that we don't have to rewrite chunks which have samples outside
-	// the requested from/through range. PromQL engine can handle it.
-	hints := initSelectHints(from, through)
-	hints = configSelectHintsWithShard(hints, shard)
-	hints = configSelectHintsWithDisabledTrimming(hints)
-
+func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.ChunkQuerier, hints *storage.SelectHints, matchers []*labels.Matcher, stream client.Ingester_QueryStreamServer) (*chunkSeriesNode, int, error) {
 	// Series must be sorted so that they can be read by the querier in the order the PromQL engine expects.
 	ss := q.Select(ctx, true, hints, matchers...)
 	if ss.Err() != nil {
@@ -2748,6 +2818,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		}
 		return userDB.blocksToDelete(blocks)
 	}
+	blockGeneration := blockGenerationCalculator(userDB, blockRanges[0])
 
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
 	// Create a new user database
@@ -2784,6 +2855,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		SecondaryHashFunction:                secondaryTSDBHashFunctionForUser(userID),
 		IndexLookupPlannerFunc:               userDB.getIndexLookupPlannerFunc(),
 		BlockChunkQuerierFunc: func(b tsdb.BlockReader, mint, maxt int64) (storage.ChunkQuerier, error) {
+			i.metrics.queriedBlocks.WithLabelValues(blockGeneration(b)).Inc()
 			return i.createBlockChunkQuerier(userID, b, mint, maxt)
 		},
 	}, nil)
@@ -2884,6 +2956,26 @@ func (i *Ingester) createBlockChunkQuerier(userID string, b tsdb.BlockReader, mi
 	)
 
 	return mirroredQuerier, nil
+}
+
+// returns a function that computes the generation label for a block relative to the TSDB head.
+// Generation 0 is the head block; persisted blocks get generation 1, 2, etc counting back in block-range units
+// from the head's MinTime.
+func blockGenerationCalculator(db *userTSDB, blockRange int64) func(b tsdb.BlockReader) string {
+	return func(b tsdb.BlockReader) string {
+		if _, ok := b.(*tsdb.RangeHead); ok {
+			return "0" // Special case: querying head block
+		}
+		headMinTime := db.Head().MinTime()
+		if headMinTime == math.MaxInt64 {
+			return "unknown" // Edge case: head is empty, and the query touches block generation >=1
+		}
+		gen := max(1, (headMinTime-b.Meta().MinTime)/blockRange)
+		if gen > 100 {
+			return "100+" // Bound generation's cardinality. A tenant with very large OOO window can query a very old block, but we don't need to be precise.
+		}
+		return strconv.FormatInt(gen, 10)
+	}
 }
 
 func (i *Ingester) closeAllTSDB() {
@@ -3240,10 +3332,10 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 			i.compactBlocks(ctx, false, 0, nil)
 
 			// Check if any TSDB Head should be compacted to reduce the number of in-memory series.
-			i.compactBlocksToReduceInMemorySeries(ctx, time.Now())
+			i.compactBlocksToReduceInMemorySeries(ctx, i.activeSeriesNow())
 
 			// Check if any TSDB Head should be compacted based on per-tenant owned series thresholds.
-			i.compactBlocksToReducePerTenantOwnedSeries(ctx, time.Now())
+			i.compactBlocksToReducePerTenantOwnedSeries(ctx, i.activeSeriesNow())
 
 			// Decrement the counter after compaction is complete
 			i.numCompactionsInProgress.Dec()

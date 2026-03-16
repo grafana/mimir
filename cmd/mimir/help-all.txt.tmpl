@@ -615,6 +615,8 @@ Usage of ./cmd/mimir/mimir:
     	How long to cache list of tenants in the bucket. (default 15m0s)
   -blocks-storage.bucket-store.partitioner-max-gap-bytes uint
     	Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests. (default 524288)
+  -blocks-storage.bucket-store.partitioner-max-gap-bytes-chunks uint
+    	[experimental] Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests. Overrides the 'bucket-store.partitioner-max-gap-bytes' when requesting chunks
   -blocks-storage.bucket-store.posting-offsets-in-mem-sampling int
     	Controls what is the ratio of postings offsets that the store will hold in memory. (default 32)
   -blocks-storage.bucket-store.series-fetch-preference float
@@ -1081,10 +1083,12 @@ Usage of ./cmd/mimir/mimir:
     	Comma separated list of tenants that cannot be compacted by the compactor. If specified, and the compactor would normally pick a given tenant for compaction (via -compactor.enabled-tenants or sharding), it will be ignored instead.
   -compactor.enabled-tenants comma-separated-list-of-strings
     	Comma separated list of tenants that can be compacted. If specified, only these tenants will be compacted by the compactor, otherwise all tenants can be compacted. Subject to sharding.
+  -compactor.first-level-compaction-ooo-wait-period duration
+    	[experimental] How long the compactor waits before compacting first-level blocks containing out-of-order samples. When set to 0 (default), out-of-order blocks do not delay compaction.
   -compactor.first-level-compaction-skip-future-max-time
     	[experimental] When enabled, the compactor skips first-level compaction jobs if any source block has a MaxTime more recent than the wait period threshold. This prevents premature compaction of blocks that may still receive late-arriving data.
   -compactor.first-level-compaction-wait-period duration
-    	How long the compactor waits before compacting first-level blocks that are uploaded by the ingesters. This configuration option allows for the reduction of cases where the compactor begins to compact blocks before all ingesters have uploaded their blocks to the storage. (default 25m0s)
+    	How long the compactor waits before compacting first-level blocks that are uploaded by the ingesters or block-builders. This configuration option allows for the reduction of cases where the compactor begins to compact blocks before all ingesters have uploaded their blocks to the storage. Does not apply to out-of-order blocks. (default 25m0s)
   -compactor.max-block-upload-validation-concurrency int
     	Max number of uploaded blocks that can be validated concurrently. 0 = no limit. (default 1)
   -compactor.max-closing-blocks-concurrency int
@@ -1447,6 +1451,8 @@ Usage of ./cmd/mimir/mimir:
     	HTTP URL path under which the Alertmanager ui and api will be served. (default "/alertmanager")
   -http.prometheus-http-prefix string
     	HTTP URL path under which the Prometheus api will be served. (default "/prometheus")
+  -http.response-compression-level int
+    	[experimental] Compression level for HTTP responses when gzip compression is requested by the client. Valid values are 1 (fastest) to 9 (best compression), or -1 for the default compression level. (default -1)
   -include-tenant-id-in-profile-labels
     	[experimental] Include tenant ID in pprof labels for profiling. Currently only supported by the ingester. This can help debug performance issues for specific tenants. (default true)
   -ingest-storage.enabled
@@ -1509,6 +1515,10 @@ Usage of ./cmd/mimir/mimir:
     	Optional additional OAuth extensions to include when authenticating to Kafka using SASL OAUTHBEARER as a JSON object. (default {})
   -ingest-storage.kafka.sasl-oauthbearer-file-path string
     	Path to a file containing an OAuth token to authenticate to Kafka. The file is read anew on every reauthentication, so it can be updated with fresh tokens. The file must be in JSON format, adhering to this JSON schema: {"type": "object", "required": ["token"], "properties": {"token": {"type": "string"}, "zid": {"type": "string"}, "extensions": {"type": "object", "additionalProperties": {"type": "string"}}}}
+  -ingest-storage.kafka.sasl-oauthbearer-http-socket-path string
+    	Path to a Unix domain socket to fetch an OAuth token from via HTTP. On every authentication or reauthentication, an HTTP GET / request is made to the socket and the response body is read as JSON. The JSON schema is the same as for ingest-storage.kafka.sasl-oauthbearer-file-path.
+  -ingest-storage.kafka.sasl-oauthbearer-http-socket-timeout duration
+    	Timeout for requesting the token from the HTTP socket. (default 10s)
   -ingest-storage.kafka.sasl-oauthbearer-token string
     	The OAuth token to use to authenticate to Kafka. Consider ingest-storage.kafka.sasl-oauthbearer-file-path instead.
   -ingest-storage.kafka.sasl-oauthbearer-zid string
@@ -1519,6 +1529,22 @@ Usage of ./cmd/mimir/mimir:
     	The username used to authenticate to Kafka using SASL. To enable SASL, configure both the username and password.
   -ingest-storage.kafka.target-consumer-lag-at-startup duration
     	The best-effort maximum lag a consumer tries to achieve at startup. Set both -ingest-storage.kafka.target-consumer-lag-at-startup and -ingest-storage.kafka.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 2s)
+  -ingest-storage.kafka.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -ingest-storage.kafka.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -ingest-storage.kafka.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -ingest-storage.kafka.tls-enabled
+    	Enable TLS for the Kafka client connection.
+  -ingest-storage.kafka.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -ingest-storage.kafka.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -ingest-storage.kafka.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -ingest-storage.kafka.tls-server-name string
+    	Override the expected name on the server certificate.
   -ingest-storage.kafka.topic string
     	The Kafka topic name.
   -ingest-storage.kafka.use-compressed-bytes-as-fetch-max-bytes

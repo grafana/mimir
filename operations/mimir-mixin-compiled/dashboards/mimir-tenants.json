@@ -8,25 +8,7 @@
          }
       ],
       "annotations": {
-         "list": [
-            {
-               "datasource": "$datasource",
-               "enable": true,
-               "expr": "sum by (user) (cortex_ingester_active_series_loading{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=\"$user\"}) > 0",
-               "filter": {
-                  "exclude": false,
-                  "ids": [
-                     2,
-                     7,
-                     8
-                  ]
-               },
-               "hide": true,
-               "iconColor": "yellow",
-               "name": "Active Series Reload",
-               "titleFormat": "Active series reloading for user {{user}}"
-            }
-         ]
+         "list": [ ]
       },
       "editable": true,
       "gnetId": null,
@@ -77,7 +59,7 @@
             "panels": [
                {
                   "datasource": "$datasource",
-                  "description": "### All series\nNumber of active, in-memory, and owned series per user, and active series matching custom trackers (in parenthesis).\nNote that these counts include all series regardless of the type of data (counter, gauge, native histogram, etc.).\nNote that active series matching custom trackers are included in the total active series count.\n\n",
+                  "description": "### Active series\nNumber of active series per user, and active series matching custom trackers (in parenthesis).\nNote that these counts include all series regardless of the type of data (counter, gauge, native histogram, etc.).\nNote that active series matching custom trackers are included in the total active series count.\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -103,7 +85,7 @@
                         {
                            "matcher": {
                               "id": "byName",
-                              "options": "limit"
+                              "options": "active series limit"
                            },
                            "properties": [
                               {
@@ -131,20 +113,8 @@
                         "sort": "none"
                      }
                   },
-                  "span": 4,
+                  "span": 3,
                   "targets": [
-                     {
-                        "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (\n    (\n  cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=\"$user\"}\n  - cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=\"$user\"}\n)\n unless on (job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        (\n  cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=\"$user\"}\n  - cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=\"$user\"}\n)\n,\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
-                        "format": "time_series",
-                        "legendFormat": "in-memory",
-                        "legendLink": null
-                     },
-                     {
-                        "expr": "max(cortex_limits_overrides{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter))\", limit_name=\"max_global_series_per_user\", user=\"$user\"})\nor\nmax(cortex_limits_defaults{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter))\", limit_name=\"max_global_series_per_user\"})\n",
-                        "format": "time_series",
-                        "legendFormat": "limit",
-                        "legendLink": null
-                     },
                      {
                         "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (\n    cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=\"$user\"} unless on (job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=\"$user\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
                         "format": "time_series",
@@ -152,9 +122,9 @@
                         "legendLink": null
                      },
                      {
-                        "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (\n    cortex_ingester_owned_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=\"$user\"} unless on (job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        cortex_ingester_owned_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=\"$user\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
+                        "expr": "max(cortex_limits_overrides{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter))\", limit_name=\"max_active_series_per_user\", user=\"$user\"})\nor\nmax(cortex_limits_defaults{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter))\", limit_name=\"max_active_series_per_user\"})\n",
                         "format": "time_series",
-                        "legendFormat": "owned",
+                        "legendFormat": "active series limit",
                         "legendLink": null
                      },
                      {
@@ -164,7 +134,87 @@
                         "legendLink": null
                      }
                   ],
-                  "title": "All series",
+                  "title": "Active series",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "description": "### Owned & in-memory series\nNumber of in-memory and owned series per user.\nNote that these counts include all series regardless of the type of data (counter, gauge, native histogram, etc.).\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "ingester limit"
+                           },
+                           "properties": [
+                              {
+                                 "id": "custom.fillOpacity",
+                                 "value": 0
+                              },
+                              {
+                                 "id": "custom.lineStyle",
+                                 "value": {
+                                    "fill": "dash"
+                                 }
+                              }
+                           ]
+                        }
+                     ]
+                  },
+                  "id": 3,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 3,
+                  "targets": [
+                     {
+                        "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (\n    (\n  cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=\"$user\"}\n  - cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=\"$user\"}\n)\n unless on (job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        (\n  cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=\"$user\"}\n  - cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=\"$user\"}\n)\n,\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
+                        "format": "time_series",
+                        "legendFormat": "in-memory",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (\n    cortex_ingester_owned_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=\"$user\"} unless on (job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        cortex_ingester_owned_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=\"$user\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
+                        "format": "time_series",
+                        "legendFormat": "owned",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "max(cortex_limits_overrides{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter))\", limit_name=\"max_global_series_per_user\", user=\"$user\"})\nor\nmax(cortex_limits_defaults{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter))\", limit_name=\"max_global_series_per_user\"})\n",
+                        "format": "time_series",
+                        "legendFormat": "ingester limit",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Owned & in-memory series",
                   "type": "timeseries"
                },
                {
@@ -215,7 +265,7 @@
                         }
                      ]
                   },
-                  "id": 3,
+                  "id": 4,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -226,7 +276,7 @@
                         "sort": "desc"
                      }
                   },
-                  "span": 4,
+                  "span": 3,
                   "targets": [
                      {
                         "expr": "min by (job) (cortex_ingester_local_limits{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", limit=\"max_global_series_per_user\", user=\"$user\"})\n",
@@ -292,7 +342,7 @@
                         }
                      ]
                   },
-                  "id": 4,
+                  "id": 5,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -303,7 +353,7 @@
                         "sort": "desc"
                      }
                   },
-                  "span": 4,
+                  "span": 3,
                   "targets": [
                      {
                         "expr": "min by (job) (cortex_ingester_local_limits{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", limit=\"max_global_series_per_user\", user=\"$user\"})\n",
@@ -359,7 +409,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 5,
+                  "id": 6,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -408,7 +458,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 6,
+                  "id": 7,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -476,7 +526,7 @@
                         }
                      ]
                   },
-                  "id": 7,
+                  "id": 8,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -550,7 +600,7 @@
                         }
                      ]
                   },
-                  "id": 8,
+                  "id": 9,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -617,7 +667,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 9,
+                  "id": 10,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -685,7 +735,7 @@
                         }
                      ]
                   },
-                  "id": 10,
+                  "id": 11,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -740,7 +790,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 11,
+                  "id": 12,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -789,7 +839,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 12,
+                  "id": 13,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -850,7 +900,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 13,
+                  "id": 14,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -918,7 +968,7 @@
                         }
                      ]
                   },
-                  "id": 14,
+                  "id": 15,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -973,7 +1023,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 15,
+                  "id": 16,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1028,7 +1078,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 16,
+                  "id": 17,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1083,7 +1133,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 17,
+                  "id": 18,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1144,7 +1194,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 18,
+                  "id": 19,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1193,7 +1243,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 19,
+                  "id": 20,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1242,7 +1292,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 20,
+                  "id": 21,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1291,7 +1341,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 21,
+                  "id": 22,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1352,7 +1402,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 22,
+                  "id": 23,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1401,7 +1451,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 23,
+                  "id": 24,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1481,7 +1531,7 @@
                         }
                      ]
                   },
-                  "id": 24,
+                  "id": 25,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1536,7 +1586,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 25,
+                  "id": 26,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1584,7 +1634,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 26,
+                  "id": 27,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1632,7 +1682,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 27,
+                  "id": 28,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1714,7 +1764,7 @@
                      ]
                   },
                   "fill": 1,
-                  "id": 28,
+                  "id": 29,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1834,7 +1884,7 @@
                      ]
                   },
                   "fill": 1,
-                  "id": 29,
+                  "id": 30,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1944,7 +1994,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 30,
+                  "id": 31,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2008,7 +2058,7 @@
                         }
                      ]
                   },
-                  "id": 31,
+                  "id": 32,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2068,7 +2118,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 32,
+                  "id": 33,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2153,7 +2203,7 @@
                         }
                      ]
                   },
-                  "id": 33,
+                  "id": 34,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2207,7 +2257,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 34,
+                  "id": 35,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2273,7 +2323,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 35,
+                  "id": 36,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2322,7 +2372,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 36,
+                  "id": 37,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2370,7 +2420,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 37,
+                  "id": 38,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2442,7 +2492,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 38,
+                  "id": 39,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2491,7 +2541,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 39,
+                  "id": 40,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2539,7 +2589,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 40,
+                  "id": 41,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2612,7 +2662,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 41,
+                  "id": 42,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2661,7 +2711,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 42,
+                  "id": 43,
                   "links": [ ],
                   "options": {
                      "legend": {

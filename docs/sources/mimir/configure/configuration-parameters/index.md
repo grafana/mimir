@@ -158,6 +158,12 @@ api:
   # CLI flag: -http.prometheus-http-prefix
   [prometheus_http_prefix: <string> | default = "/prometheus"]
 
+  # (experimental) Compression level for HTTP responses when gzip compression is
+  # requested by the client. Valid values are 1 (fastest) to 9 (best
+  # compression), or -1 for the default compression level.
+  # CLI flag: -http.response-compression-level
+  [response_compression_level: <int> | default = -1]
+
 # The server block configures the HTTP and gRPC server of the launched
 # service(s).
 [server: <server>]
@@ -2638,12 +2644,12 @@ alertmanager_client:
 
   [basic_auth_username: <string> | default = ""]
 
-  basic_auth_password:
+  [basic_auth_password: <string> | default = ""]
 
   oauth2:
     [client_id: <string> | default = ""]
 
-    client_secret:
+    [client_secret: <string> | default = ""]
 
     [token_url: <string> | default = ""]
 
@@ -4512,6 +4518,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 #       - pattern: rate(metric_counter[5m])
 #         regex: false
 #         reason: because the query is misconfigured
+#         unaligned_range_queries: false
 blocked_queries:
   - # PromQL expression pattern to match.
     [pattern: <string> | default = ""]
@@ -4522,6 +4529,12 @@ blocked_queries:
 
     # Reason returned to clients when rejecting matching queries.
     [reason: <string> | default = ""]
+
+    # If true, only block the query if the query time range is not aligned to
+    # the step, meaning the query is not eligible for range query result
+    # caching. If enabled, instant queries and remote read requests will not be
+    # blocked.
+    [unaligned_range_queries: <boolean> | default = ]
 
 # (experimental) List of queries to limit and duration to limit them for.
 # Example:
@@ -5180,6 +5193,83 @@ kafka:
   # CLI flag: -ingest-storage.kafka.sasl-oauthbearer-file-path
   [sasl_oauthbearer_file_path: <string> | default = ""]
 
+  # Path to a Unix domain socket to fetch an OAuth token from via HTTP. On every
+  # authentication or reauthentication, an HTTP GET / request is made to the
+  # socket and the response body is read as JSON. The JSON schema is the same as
+  # for ingest-storage.kafka.sasl-oauthbearer-file-path.
+  # CLI flag: -ingest-storage.kafka.sasl-oauthbearer-http-socket-path
+  [sasl_oauthbearer_http_socket_path: <string> | default = ""]
+
+  # Timeout for requesting the token from the HTTP socket.
+  # CLI flag: -ingest-storage.kafka.sasl-oauthbearer-http-socket-timeout
+  [sasl_oauthbearer_http_socket_timeout: <duration> | default = 10s]
+
+  # Enable TLS for the Kafka client connection.
+  # CLI flag: -ingest-storage.kafka.tls-enabled
+  [tls_enabled: <boolean> | default = false]
+
+  # (advanced) Path to the client certificate, which will be used for
+  # authenticating with the server. Also requires the key path to be configured.
+  # CLI flag: -ingest-storage.kafka.tls-cert-path
+  [tls_cert_path: <string> | default = ""]
+
+  # (advanced) Path to the key for the client certificate. Also requires the
+  # client certificate to be configured.
+  # CLI flag: -ingest-storage.kafka.tls-key-path
+  [tls_key_path: <string> | default = ""]
+
+  # (advanced) Path to the CA certificates to validate server certificate
+  # against. If not set, the host's root CA certificates are used.
+  # CLI flag: -ingest-storage.kafka.tls-ca-path
+  [tls_ca_path: <string> | default = ""]
+
+  # (advanced) Override the expected name on the server certificate.
+  # CLI flag: -ingest-storage.kafka.tls-server-name
+  [tls_server_name: <string> | default = ""]
+
+  # (advanced) Skip validating server certificate.
+  # CLI flag: -ingest-storage.kafka.tls-insecure-skip-verify
+  [tls_insecure_skip_verify: <boolean> | default = false]
+
+  # (advanced) Override the default cipher suite list (separated by commas).
+  # Allowed values:
+  #
+  # Secure Ciphers:
+  # - TLS_AES_128_GCM_SHA256
+  # - TLS_AES_256_GCM_SHA384
+  # - TLS_CHACHA20_POLY1305_SHA256
+  # - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA
+  # - TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA
+  # - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA
+  # - TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA
+  # - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+  # - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+  # - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+  # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+  # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+  # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+  #
+  # Insecure Ciphers:
+  # - TLS_RSA_WITH_RC4_128_SHA
+  # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
+  # - TLS_RSA_WITH_AES_128_CBC_SHA
+  # - TLS_RSA_WITH_AES_256_CBC_SHA
+  # - TLS_RSA_WITH_AES_128_CBC_SHA256
+  # - TLS_RSA_WITH_AES_128_GCM_SHA256
+  # - TLS_RSA_WITH_AES_256_GCM_SHA384
+  # - TLS_ECDHE_ECDSA_WITH_RC4_128_SHA
+  # - TLS_ECDHE_RSA_WITH_RC4_128_SHA
+  # - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
+  # - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
+  # - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
+  # CLI flag: -ingest-storage.kafka.tls-cipher-suites
+  [tls_cipher_suites: <string> | default = ""]
+
+  # (advanced) Override the default minimum TLS version. Allowed values:
+  # VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  # CLI flag: -ingest-storage.kafka.tls-min-version
+  [tls_min_version: <string> | default = ""]
+
   # The consumer group used by the consumer to track the last consumed offset.
   # The consumer group must be different for each ingester. If the configured
   # consumer group contains the '<partition>' placeholder, it is replaced with
@@ -5594,6 +5684,12 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.partitioner-max-gap-bytes
   [partitioner_max_gap_bytes: <int> | default = 524288]
 
+  # (experimental) Max size - in bytes - of a gap for which the partitioner
+  # aggregates together two bucket GET object requests. Overrides the
+  # 'bucket-store.partitioner-max-gap-bytes' when requesting chunks
+  # CLI flag: -blocks-storage.bucket-store.partitioner-max-gap-bytes-chunks
+  [partitioner_max_gap_bytes_chunks: <int> | default = 0]
+
   # (advanced) Controls what is the ratio of postings offsets that the store
   # will hold in memory.
   # CLI flag: -blocks-storage.bucket-store.posting-offsets-in-mem-sampling
@@ -5957,11 +6053,18 @@ The `compactor` block configures the compactor component.
 [compaction_concurrency: <int> | default = 1]
 
 # How long the compactor waits before compacting first-level blocks that are
-# uploaded by the ingesters. This configuration option allows for the reduction
-# of cases where the compactor begins to compact blocks before all ingesters
-# have uploaded their blocks to the storage.
+# uploaded by the ingesters or block-builders. This configuration option allows
+# for the reduction of cases where the compactor begins to compact blocks before
+# all ingesters have uploaded their blocks to the storage. Does not apply to
+# out-of-order blocks.
 # CLI flag: -compactor.first-level-compaction-wait-period
 [first_level_compaction_wait_period: <duration> | default = 25m]
+
+# (experimental) How long the compactor waits before compacting first-level
+# blocks containing out-of-order samples. When set to 0 (default), out-of-order
+# blocks do not delay compaction.
+# CLI flag: -compactor.first-level-compaction-ooo-wait-period
+[first_level_compaction_ooo_wait_period: <duration> | default = 0s]
 
 # (experimental) When enabled, the compactor skips first-level compaction jobs
 # if any source block has a MaxTime more recent than the wait period threshold.

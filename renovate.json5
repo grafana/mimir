@@ -133,7 +133,7 @@
         'mimir-build-image/Dockerfile',
       ],
       rebaseWhen: 'behind-base-branch',
-      gitIgnoredAuthors: ['mimir-github-bot@users.noreply.github.com'],
+      gitIgnoredAuthors: ['199097951+mimir-github-bot[bot]@users.noreply.github.com'],
     }
   ],
   branchPrefix: 'deps-update/',

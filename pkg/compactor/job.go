@@ -11,6 +11,8 @@ import (
 	"slices"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -157,8 +159,8 @@ func (job *Job) String() string {
 // elapsed for the input job. If the wait period has not elapsed, then this function
 // also returns the Meta of the first source block encountered for which the wait
 // period has not elapsed yet.
-func jobWaitPeriodElapsed(ctx context.Context, job *Job, waitPeriod time.Duration, skipFutureMaxTime bool, userBucket objstore.Bucket) (bool, *block.Meta, error) {
-	if waitPeriod <= 0 {
+func jobWaitPeriodElapsed(ctx context.Context, job *Job, waitPeriod time.Duration, oooWaitPeriod time.Duration, skipFutureMaxTime bool, userBucket objstore.Bucket, logger log.Logger) (bool, *block.Meta, error) {
+	if waitPeriod <= 0 && oooWaitPeriod <= 0 {
 		return true, nil, nil
 	}
 
@@ -166,17 +168,22 @@ func jobWaitPeriodElapsed(ctx context.Context, job *Job, waitPeriod time.Duratio
 		return true, nil, nil
 	}
 
-	// Check if the job contains any source block uploaded more recently than "wait period" ago,
-	// ignoring out of order blocks.
-	threshold := time.Now().Add(-waitPeriod)
+	now := time.Now()
+	threshold := now.Add(-waitPeriod)
+	oooThreshold := now.Add(-oooWaitPeriod)
 
 	for _, meta := range job.Metas() {
-		if meta.OutOfOrder || meta.Compaction.FromOutOfOrder() {
-			continue
+		isOOO := meta.OutOfOrder || meta.Compaction.FromOutOfOrder()
+
+		blockWaitPeriod := waitPeriod
+		blockThreshold := threshold
+		if isOOO {
+			blockWaitPeriod = oooWaitPeriod
+			blockThreshold = oooThreshold
 		}
 
-		if skipFutureMaxTime && timestamp.Time(meta.MaxTime).After(threshold) {
-			return false, meta, nil
+		if blockWaitPeriod <= 0 {
+			continue
 		}
 
 		attrs, err := block.GetMetaAttributes(ctx, meta, userBucket)
@@ -184,7 +191,12 @@ func jobWaitPeriodElapsed(ctx context.Context, job *Job, waitPeriod time.Duratio
 			return false, meta, err
 		}
 
-		if attrs.LastModified.After(threshold) {
+		if attrs.LastModified.After(blockThreshold) {
+			return false, meta, nil
+		}
+
+		if skipFutureMaxTime && timestamp.Time(meta.MaxTime).After(blockThreshold) {
+			level.Info(logger).Log("msg", "skipping compaction job because block max time is within the wait period, despite Last Modified being old enough", "block", meta.ULID.String(), "blockMaxTime", meta.MaxTime, "threshold", blockThreshold, "lastModified", attrs.LastModified)
 			return false, meta, nil
 		}
 	}

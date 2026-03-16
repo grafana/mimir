@@ -46,7 +46,7 @@ import (
 
 func TestTripperware_RangeQuery(t *testing.T) {
 	var (
-		query        = "/api/v1/query_range?end=1536716880&query=sum+by+%28namespace%29+%28container_memory_rss%29&start=1536673680&step=120"
+		query        = "/api/v1/query_range?end=1536716880&lookback_delta=180&query=sum+by+%28namespace%29+%28container_memory_rss%29&start=1536673680&step=120"
 		responseBody = `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[1536673680,"137"],[1536673780,"137"]]}]}}`
 	)
 
@@ -58,7 +58,7 @@ func TestTripperware_RangeQuery(t *testing.T) {
 					w.Header().Set("Content-Type", jsonMimeType)
 					_, err = w.Write([]byte(responseBody))
 				} else {
-					_, err = w.Write([]byte("bar"))
+					_, err = w.Write([]byte("got request for non-query URL"))
 				}
 				if err != nil {
 					t.Fatal(err)
@@ -77,11 +77,13 @@ func TestTripperware_RangeQuery(t *testing.T) {
 	}
 
 	engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
+	codec := newTestCodec()
+	codec.lookbackDelta = 3 * time.Minute
 	tw, err := NewTripperware(
 		Config{},
 		log.NewNopLogger(),
 		mockLimits{},
-		newTestCodec(),
+		codec,
 		nil,
 		engine,
 		engineOpts,
@@ -97,7 +99,7 @@ func TestTripperware_RangeQuery(t *testing.T) {
 	for i, tc := range []struct {
 		path, expectedBody string
 	}{
-		{"/foo", "bar"},
+		{"/foo", "got request for non-query URL"},
 		{query, responseBody},
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {

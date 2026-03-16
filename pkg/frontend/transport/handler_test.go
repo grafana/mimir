@@ -103,8 +103,9 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			cfg:  HandlerConfig{QueryStatsEnabled: true, MaxBodySize: 1024},
 			request: func() *http.Request {
 				form := url.Values{
-					"query": []string{"some_metric"},
-					"time":  []string{"42"},
+					"query":          []string{"some_metric"},
+					"time":           []string{"42"},
+					"lookback_delta": []string{"600"},
 				}
 				r := httptest.NewRequest("POST", "/api/v1/query", strings.NewReader(form.Encode()))
 				r.Header.Add("Content-Type", "application/x-www-form-urlencoded")
@@ -114,29 +115,31 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			downstreamResponse: makeSuccessfulDownstreamResponse(),
 			expectedStatusCode: 200,
 			expectedParams: url.Values{
-				"query": []string{"some_metric"},
-				"time":  []string{"42"},
+				"query":          []string{"some_metric"},
+				"time":           []string{"42"},
+				"lookback_delta": []string{"600"},
 			},
 			expectedMetrics:              6,
-			expectedActivity:             "user:12345 UA:test-user-agent req:POST /api/v1/query query=some_metric&time=42",
+			expectedActivity:             "user:12345 UA:test-user-agent req:POST /api/v1/query lookback_delta=600&query=some_metric&time=42",
 			expectedReadConsistencyLevel: "",
 		},
 		{
 			name: "handler with stats enabled, GET request with params",
 			cfg:  HandlerConfig{QueryStatsEnabled: true},
 			request: func() *http.Request {
-				r := httptest.NewRequest("GET", "/api/v1/query?query=some_metric&time=42", nil)
+				r := httptest.NewRequest("GET", "/api/v1/query?query=some_metric&time=42&lookback_delta=600", nil)
 				r.Header.Add("User-Agent", "test-user-agent")
 				return r
 			},
 			downstreamResponse: makeSuccessfulDownstreamResponse(),
 			expectedStatusCode: 200,
 			expectedParams: url.Values{
-				"query": []string{"some_metric"},
-				"time":  []string{"42"},
+				"query":          []string{"some_metric"},
+				"time":           []string{"42"},
+				"lookback_delta": []string{"600"},
 			},
 			expectedMetrics:              6,
-			expectedActivity:             "user:12345 UA:test-user-agent req:GET /api/v1/query query=some_metric&time=42",
+			expectedActivity:             "user:12345 UA:test-user-agent req:GET /api/v1/query lookback_delta=600&query=some_metric&time=42",
 			expectedReadConsistencyLevel: "",
 		},
 		{

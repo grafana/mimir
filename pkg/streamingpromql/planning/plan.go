@@ -79,6 +79,7 @@ type QueryParameters struct {
 	OriginalExpression       string
 	TimeRange                types.QueryTimeRange
 	EnableDelayedNameRemoval bool
+	LookbackDelta            time.Duration
 }
 
 // Node represents a node in the query plan graph.
@@ -234,7 +235,6 @@ type OperatorParameters struct {
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	Annotations              *annotations.Annotations
 	QueryStats               *types.QueryStats
-	LookbackDelta            time.Duration
 	EagerLoadSelectors       bool
 	QueryParameters          *QueryParameters
 	Logger                   log.Logger
@@ -285,6 +285,7 @@ func (p *QueryPlan) ToEncodedPlan(includeDescriptions bool, includeDetails bool,
 		TimeRange:                ToEncodedTimeRange(p.Parameters.TimeRange),
 		OriginalExpression:       p.Parameters.OriginalExpression,
 		EnableDelayedNameRemoval: p.Parameters.EnableDelayedNameRemoval,
+		LookbackDelta:            p.Parameters.LookbackDelta,
 		Version:                  p.Version,
 	}
 
@@ -444,6 +445,7 @@ func (p *EncodedQueryPlan) DecodeParameters() *QueryParameters {
 		OriginalExpression:       p.OriginalExpression,
 		TimeRange:                p.TimeRange.ToDecodedTimeRange(),
 		EnableDelayedNameRemoval: p.EnableDelayedNameRemoval,
+		LookbackDelta:            p.LookbackDelta,
 	}
 }
 

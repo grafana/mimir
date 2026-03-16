@@ -46,14 +46,12 @@ type ActiveSeries struct {
 	stripes [numStripes]seriesStripe
 	deleted deletedSeries
 
-	// configMutex protects matchers, cat and lastMatchersUpdate. shared by matchers and cat
-	configMutex      sync.RWMutex
-	matchers         *asmodel.Matchers
-	lastConfigUpdate time.Time
-	cat              *costattribution.ActiveSeriesTracker
+	// configMutex protects matchers and cat.
+	configMutex sync.RWMutex
+	matchers    *asmodel.Matchers
+	cat         *costattribution.ActiveSeriesTracker
 
 	// The duration after which series become inactive.
-	// Also used to determine if enough time has passed since configuration reload for valid results.
 	timeout time.Duration
 }
 
@@ -126,7 +124,7 @@ func NewActiveSeries(asm *asmodel.Matchers, timeout time.Duration, cat *costattr
 
 	// Stripes are pre-allocated so that we only read on them and no lock is required.
 	for i := 0; i < numStripes; i++ {
-		c.stripes[i].reinitialize(asm, &c.deleted, cat)
+		c.stripes[i].initialize(asm, &c.deleted, cat)
 	}
 
 	return c
@@ -138,21 +136,30 @@ func (c *ActiveSeries) CurrentMatcherNames() []string {
 	return c.matchers.MatcherNames()
 }
 
-func (c *ActiveSeries) ConfigDiffers(ctCfg asmodel.CustomTrackersConfig, caCfg *costattribution.ActiveSeriesTracker) bool {
+func (c *ActiveSeries) MatchersDiffer(ctCfg asmodel.CustomTrackersConfig) bool {
 	c.configMutex.RLock()
 	defer c.configMutex.RUnlock()
-	return ctCfg.String() != c.matchers.Config().String() || caCfg != c.cat
+	return ctCfg.String() != c.matchers.Config().String()
 }
 
-func (c *ActiveSeries) ReloadMatchersAndTrackers(asm *asmodel.Matchers, cat *costattribution.ActiveSeriesTracker, now time.Time) {
+func (c *ActiveSeries) CostAttributionDiffers(caCfg *costattribution.ActiveSeriesTracker) bool {
+	c.configMutex.RLock()
+	defer c.configMutex.RUnlock()
+	return caCfg != c.cat
+}
+
+func (c *ActiveSeries) ReloadSeriesConfig(asm *asmodel.Matchers, cat *costattribution.ActiveSeriesTracker, matchersChanged bool, catChanged bool, idx tsdb.IndexReader) {
 	c.configMutex.Lock()
 	defer c.configMutex.Unlock()
 	for i := 0; i < numStripes; i++ {
-		c.stripes[i].reinitialize(asm, &c.deleted, cat)
+		c.stripes[i].reloadConfig(asm, cat, matchersChanged, catChanged, idx)
 	}
-	c.matchers = asm
-	c.cat = cat
-	c.lastConfigUpdate = now
+	if matchersChanged {
+		c.matchers = asm
+	}
+	if catChanged {
+		c.cat = cat
+	}
 }
 
 // UpdateSeries updates series timestamp to 'now'. Function is called to make a copy of labels if entry doesn't exist yet.
@@ -183,16 +190,13 @@ func (c *ActiveSeries) PostDeletion(deleted map[chunks.HeadSeriesRef]labels.Labe
 	}
 }
 
-// Purge purges expired entries and returns true if enough time has passed since
-// last reload. This should be called periodically to avoid unbounded memory
-// growth.
-func (c *ActiveSeries) Purge(now time.Time, idx tsdb.IndexReader) bool {
+// Purge purges expired entries. This should be called periodically to avoid
+// unbounded memory growth.
+func (c *ActiveSeries) Purge(now time.Time, idx tsdb.IndexReader) {
 	c.configMutex.Lock()
 	defer c.configMutex.Unlock()
 	purgeTime := now.Add(-c.timeout)
 	c.purge(purgeTime, idx)
-
-	return !c.lastConfigUpdate.After(purgeTime)
 }
 
 // purge removes expired entries from the cache.
@@ -477,8 +481,8 @@ func (s *seriesStripe) clear() {
 	}
 }
 
-// Reinitialize assigns new matchers and corresponding size activeMatching slices.
-func (s *seriesStripe) reinitialize(asm *asmodel.Matchers, deleted *deletedSeries, cat *costattribution.ActiveSeriesTracker) {
+// initialize assigns matchers and corresponding size activeMatching slices.
+func (s *seriesStripe) initialize(asm *asmodel.Matchers, deleted *deletedSeries, cat *costattribution.ActiveSeriesTracker) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.deleted = deleted
@@ -493,6 +497,110 @@ func (s *seriesStripe) reinitialize(asm *asmodel.Matchers, deleted *deletedSerie
 	s.activeMatchingNativeHistograms = resizeAndClear(len(asm.MatcherNames()), s.activeMatchingNativeHistograms)
 	s.activeMatchingNativeHistogramBuckets = resizeAndClear(len(asm.MatcherNames()), s.activeMatchingNativeHistogramBuckets)
 	s.cat = cat
+}
+
+func (s *seriesStripe) incrementMatchingCounters(entry seriesEntry) {
+	ml := entry.matches.Len()
+	for i := 0; i < ml; i++ {
+		match := entry.matches.Get(i)
+		s.activeMatching[match]++
+		if entry.numNativeHistogramBuckets >= 0 {
+			s.activeMatchingNativeHistograms[match]++
+			s.activeMatchingNativeHistogramBuckets[match] += uint32(entry.numNativeHistogramBuckets)
+		}
+	}
+}
+
+func (s *seriesStripe) reloadConfig(asm *asmodel.Matchers, cat *costattribution.ActiveSeriesTracker, matchersChanged bool, catChanged bool, idx tsdb.IndexReader) {
+	type resolvedSeries struct {
+		labels  labels.Labels
+		matches asmodel.PreAllocDynamicSlice
+	}
+
+	// Holding s.mu.Lock() stalls the write pipeline, and we want to avoid that as much as possible.
+	// So we'll do the updates in three phases: pre-fetch, lookup, and update.
+	//
+	// Pre-fetch phase.
+	// Take the mutex, copy refs ids, and release the mutex.
+	s.mu.Lock()
+	resolved := make(map[storage.SeriesRef]resolvedSeries, len(s.refs))
+	for ref := range s.refs {
+		resolved[ref] = resolvedSeries{}
+	}
+	s.mu.Unlock()
+
+	// Lookup phase, this is the slowest part that we don't want to do while holding s.mu
+	// Lookup each series in the tsdb, take its labels and if matchers changed, evaluate the new matches (this is the slowest operation with hundreds of custom trackers).
+	for ref := range resolved {
+		entry := resolvedSeries{}
+		// ScratchBuilder must be per-iteration: labels reference the builder's buffer and must survive across iterations.
+		buf := labels.NewScratchBuilder(128)
+		if err := idx.Series(ref, &buf, nil); err != nil {
+			// Don't store these, this should never happen,
+			// it doesn't make sense to have the code repeated twice for something that shouldn't happen.
+			delete(resolved, ref)
+			continue
+		}
+		entry.labels = buf.Labels()
+		if matchersChanged {
+			entry.matches = asm.Matches(entry.labels)
+		}
+		resolved[ref] = entry
+	}
+
+	// Update phase.
+	// Do what we came to do: update matchers, update CAT.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if matchersChanged {
+		s.matchers = asm
+		s.activeMatching = resizeAndClear(len(asm.MatcherNames()), s.activeMatching)
+		s.activeMatchingNativeHistograms = resizeAndClear(len(asm.MatcherNames()), s.activeMatchingNativeHistograms)
+		s.activeMatchingNativeHistogramBuckets = resizeAndClear(len(asm.MatcherNames()), s.activeMatchingNativeHistogramBuckets)
+	}
+
+	updateEntryIfMatchersChanged := func(ref storage.SeriesRef, entry seriesEntry, lazyMatches func() asmodel.PreAllocDynamicSlice) {
+		if matchersChanged {
+			entry.matches = lazyMatches()
+			s.incrementMatchingCounters(entry)
+			s.refs[ref] = entry
+		}
+	}
+	incrementCatIfChanged := func(lbls labels.Labels, entry seriesEntry) {
+		if catChanged {
+			cat.Increment(lbls, time.Unix(0, entry.nanos.Load()), entry.numNativeHistogramBuckets)
+		}
+	}
+
+	if matchersChanged || catChanged {
+		buf := labels.NewScratchBuilder(128)
+		for ref, entry := range s.refs {
+			if c, ok := resolved[ref]; ok {
+				updateEntryIfMatchersChanged(ref, entry, func() asmodel.PreAllocDynamicSlice { return c.matches })
+				incrementCatIfChanged(c.labels, entry)
+				continue
+			}
+
+			// It's possible that a series may have been added while we were in the lookup phase,
+			// So we need to keep this logic here for those.
+			if err := idx.Series(ref, &buf, nil); err != nil {
+				s.activeSeriesAttributionFailureCounter.Add(1)
+				// If we failed to lookup the series (which shouldn't happen as we're notified of deletions),
+				// we still need to update the entry.matches to make sure it has a coherent size with the matchers we're setting.
+				updateEntryIfMatchersChanged(ref, entry, func() asmodel.PreAllocDynamicSlice { return asm.Matches(labels.EmptyLabels()) })
+				// We do not increment CAT here, because it shouldn't happen, and because nobody would decrement it later.
+				// Or we could do it, if you want to, anyway, this should not happen, why am I even spending my energy writing this comment?
+				continue
+			}
+			lbls := buf.Labels()
+			incrementCatIfChanged(lbls, entry)
+			updateEntryIfMatchersChanged(ref, entry, func() asmodel.PreAllocDynamicSlice { return asm.Matches(lbls) })
+		}
+	}
+
+	if catChanged {
+		s.cat = cat
+	}
 }
 
 func (s *seriesStripe) purge(keepUntil time.Time, idx tsdb.IndexReader) {
@@ -540,15 +648,7 @@ func (s *seriesStripe) purge(keepUntil time.Time, idx tsdb.IndexReader) {
 			s.activeNativeHistograms++
 			s.activeNativeHistogramBuckets += uint32(entry.numNativeHistogramBuckets)
 		}
-		ml := entry.matches.Len()
-		for i := 0; i < ml; i++ {
-			match := entry.matches.Get(i)
-			s.activeMatching[match]++
-			if entry.numNativeHistogramBuckets >= 0 {
-				s.activeMatchingNativeHistograms[match]++
-				s.activeMatchingNativeHistogramBuckets[match] += uint32(entry.numNativeHistogramBuckets)
-			}
-		}
+		s.incrementMatchingCounters(entry)
 		if ts < oldest {
 			oldest = ts
 		}

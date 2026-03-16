@@ -1092,6 +1092,12 @@ ingester:
     # -- topologyKey to use in pod anti-affinity. If unset, no anti-affinity rules are generated. If set, the generated anti-affinity rule makes sure that pods from different zones do not mix.
     # E.g.: topologyKey: 'kubernetes.io/hostname'
     topologyKey: null
+    # -- When true and zone-aware replication is enabled, automatically set the
+    # -ingest-storage.kafka.client-rack flag on each ingester zone to its zone name.
+    # This enables Kafka rack-aware consumption so that ingesters prefer reading
+    # from Kafka replicas in the same availability zone, reducing cross-AZ traffic.
+    # Set to false if you want to manage client-rack manually via extraArgs.
+    autoIngestStorageClientRack: true
     # -- Auxiliary values for migration, see https://grafana.com/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-from-single-zone-with-helm/
     migration:
       # -- Indicate if migration is ongoing for multi zone ingester

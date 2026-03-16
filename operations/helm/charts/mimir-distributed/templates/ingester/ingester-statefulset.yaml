@@ -153,6 +153,9 @@ spec:
             - "-config.file=/etc/mimir/mimir.yaml"
             {{- if $zoneName }}
             - "-ingester.ring.instance-availability-zone={{ $zoneName }}"
+            {{- if and .Values.ingester.zoneAwareReplication.autoIngestStorageClientRack (ne (dig "ingest_storage" "enabled" true .Values.mimir.structuredConfig) false) }}
+            - "-ingest-storage.kafka.client-rack={{ $zoneName }}"
+            {{- end }}
             {{- else }}
             - "-ingester.ring.instance-availability-zone=zone-default"
             {{- if .Values.ingester.zoneAwareReplication.migration.enabled }}

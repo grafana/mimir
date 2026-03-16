@@ -375,6 +375,119 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 	`)))
 }
 
+// TestSplitAndCacheMiddleware_ResultsCache_NativeHistogramPartialCacheHit exercises a bug where
+// MergeResponse sorts responses only by float-sample timestamps, so for a native histogram-only
+// series all responses have the same sort key (-1). The cached response covering [Tmid, T1]
+// therefore stays first in the merged slice; matrixMerge then treats the downstream response
+// covering [T0, Tmid] as a backwards-overlap and drops it entirely, returning only [Tmid, T1].
+func TestSplitAndCacheMiddleware_ResultsCache_NativeHistogramPartialCacheHit(t *testing.T) {
+	// Three equidistant step-aligned timestamps within the same day.
+	const step = 60 * 1000 // 60 s in ms
+
+	T0 := parseTimeRFC3339(t, "2021-10-14T00:00:00Z").UnixMilli()
+	Tmid := T0 + step
+	T1 := T0 + 2*step
+
+	seriesLabels := []mimirpb.LabelAdapter{{Name: "__name__", Value: "hist_metric"}}
+
+	makeHist := func(count float64) *mimirpb.FloatHistogram {
+		return &mimirpb.FloatHistogram{
+			CounterResetHint: histogram.GaugeType,
+			Schema:           0,
+			ZeroThreshold:    0.001,
+			ZeroCount:        1,
+			Count:            count,
+			Sum:              count * 2,
+			PositiveSpans:    []mimirpb.BucketSpan{{Offset: 0, Length: 1}},
+			PositiveBuckets:  []float64{count},
+		}
+	}
+
+	histAtT0 := makeHist(10)
+	histAtTmid := makeHist(20)
+	histAtT1 := makeHist(30)
+
+	// The downstream handler is called twice:
+	//   1. first query  [Tmid, T1]  → returns histograms at Tmid and T1
+	//   2. second query [T0, Tmid]  → returns histograms at T0 and Tmid (partial cache miss)
+	downstreamCalls := 0
+	mw := newSplitAndCacheMiddleware(
+		false, // no time-splitting so that each query is a single cache key
+		true,
+		24*time.Hour,
+		mockLimits{resultsCacheTTL: resultsCacheTTL},
+		newTestCodec(),
+		cache.NewInstrumentedMockCache(),
+		DefaultCacheKeyGenerator{interval: day},
+		PrometheusResponseExtractor{},
+		resultsCacheAlwaysEnabled,
+		log.NewNopLogger(),
+		prometheus.NewPedanticRegistry(),
+	)
+
+	rc := mw.Wrap(HandlerFunc(func(_ context.Context, req MetricsQueryRequest) (Response, error) {
+		downstreamCalls++
+		start := req.GetStart()
+		end := req.GetEnd()
+		switch {
+		case start == Tmid && end == T1:
+			// first query: [Tmid, T1]
+			return mockPrometheusResponseWithSamplesAndHistograms(seriesLabels, nil, []mimirpb.FloatHistogramPair{
+				{TimestampMs: Tmid, Histogram: histAtTmid},
+				{TimestampMs: T1, Histogram: histAtT1},
+			}), nil
+		case start == T0 && end == Tmid:
+			// second query sub-request: [T0, Tmid]
+			return mockPrometheusResponseWithSamplesAndHistograms(seriesLabels, nil, []mimirpb.FloatHistogramPair{
+				{TimestampMs: T0, Histogram: histAtT0},
+				{TimestampMs: Tmid, Histogram: histAtTmid},
+			}), nil
+		default:
+			t.Errorf("unexpected downstream request start=%d end=%d", req.GetStart(), req.GetEnd())
+			return nil, fmt.Errorf("unexpected request start=%d end=%d", req.GetStart(), req.GetEnd())
+		}
+	}))
+
+	ctx := user.InjectOrgID(context.Background(), "1")
+
+	// First query: [Tmid, T1] – populates the cache.
+	firstReq := MetricsQueryRequest(&PrometheusRangeQueryRequest{
+		path:      "/api/v1/query_range",
+		start:     Tmid,
+		end:       T1,
+		step:      step,
+		queryExpr: parseQuery(t, `hist_metric`),
+	})
+	resp, err := rc.Do(ctx, firstReq)
+	require.NoError(t, err)
+	pr, ok := resp.GetPrometheusResponse()
+	require.True(t, ok)
+	require.Equal(t, 1, downstreamCalls)
+	require.Len(t, pr.Data.Result, 1)
+	require.Len(t, pr.Data.Result[0].Histograms, 2, "first query: expected 2 histograms")
+
+	// Second query: [T0, T1] – should yield a partial cache hit for [Tmid, T1] and fetch
+	// [T0, Tmid] from downstream, then merge all three histogram points.
+	secondReq := MetricsQueryRequest(&PrometheusRangeQueryRequest{
+		path:      "/api/v1/query_range",
+		start:     T0,
+		end:       T1,
+		step:      step,
+		queryExpr: parseQuery(t, `hist_metric`),
+	})
+	resp, err = rc.Do(ctx, secondReq)
+	require.NoError(t, err)
+	pr, ok = resp.GetPrometheusResponse()
+	require.True(t, ok)
+	require.Equal(t, 2, downstreamCalls, "downstream should be called exactly once more for the missing [T0, Tmid] range")
+	require.Len(t, pr.Data.Result, 1)
+	// The merged result must contain histograms at T0, Tmid and T1.
+	require.Len(t, pr.Data.Result[0].Histograms, 3, "second query: expected 3 histograms (T0, Tmid, T1), got %d", len(pr.Data.Result[0].Histograms))
+	require.Equal(t, T0, pr.Data.Result[0].Histograms[0].TimestampMs)
+	require.Equal(t, Tmid, pr.Data.Result[0].Histograms[1].TimestampMs)
+	require.Equal(t, T1, pr.Data.Result[0].Histograms[2].TimestampMs)
+}
+
 func TestSplitAndCacheMiddleware_ResultsCacheNoStore(t *testing.T) {
 	cacheBackend := cache.NewInstrumentedMockCache()
 

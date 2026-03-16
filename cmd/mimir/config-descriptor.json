@@ -117,6 +117,17 @@
           "fieldFlag": "http.prometheus-http-prefix",
           "fieldType": "string",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "response_compression_level",
+          "required": false,
+          "desc": "Compression level for HTTP responses when gzip compression is requested by the client. Valid values are 1 (fastest) to 9 (best compression), or -1 for the default compression level.",
+          "fieldValue": null,
+          "fieldDefaultValue": -1,
+          "fieldFlag": "http.response-compression-level",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -6055,6 +6066,15 @@
                 "fieldValue": null,
                 "fieldDefaultValue": "",
                 "fieldType": "string"
+              },
+              {
+                "kind": "field",
+                "name": "unaligned_range_queries",
+                "required": false,
+                "desc": "If true, only block the query if the query time range is not aligned to the step, meaning the query is not eligible for range query result caching. If enabled, instant queries and remote read requests will not be blocked.",
+                "fieldValue": null,
+                "fieldDefaultValue": false,
+                "fieldType": "boolean"
               }
             ],
             "fieldValue": null,
@@ -8850,6 +8870,113 @@
             },
             {
               "kind": "field",
+              "name": "sasl_oauthbearer_http_socket_path",
+              "required": false,
+              "desc": "Path to a Unix domain socket to fetch an OAuth token from via HTTP. On every authentication or reauthentication, an HTTP GET / request is made to the socket and the response body is read as JSON. The JSON schema is the same as for ingest-storage.kafka.sasl-oauthbearer-file-path.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingest-storage.kafka.sasl-oauthbearer-http-socket-path",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "sasl_oauthbearer_http_socket_timeout",
+              "required": false,
+              "desc": "Timeout for requesting the token from the HTTP socket.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "ingest-storage.kafka.sasl-oauthbearer-http-socket-timeout",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "tls_enabled",
+              "required": false,
+              "desc": "Enable TLS for the Kafka client connection.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ingest-storage.kafka.tls-enabled",
+              "fieldType": "boolean"
+            },
+            {
+              "kind": "field",
+              "name": "tls_cert_path",
+              "required": false,
+              "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingest-storage.kafka.tls-cert-path",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_key_path",
+              "required": false,
+              "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingest-storage.kafka.tls-key-path",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_ca_path",
+              "required": false,
+              "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingest-storage.kafka.tls-ca-path",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_server_name",
+              "required": false,
+              "desc": "Override the expected name on the server certificate.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingest-storage.kafka.tls-server-name",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_insecure_skip_verify",
+              "required": false,
+              "desc": "Skip validating server certificate.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ingest-storage.kafka.tls-insecure-skip-verify",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_cipher_suites",
+              "required": false,
+              "desc": "Override the default cipher suite list (separated by commas). Allowed values:\n\nSecure Ciphers:\n- TLS_AES_128_GCM_SHA256\n- TLS_AES_256_GCM_SHA384\n- TLS_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256\n\nInsecure Ciphers:\n- TLS_RSA_WITH_RC4_128_SHA\n- TLS_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA\n- TLS_RSA_WITH_AES_256_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA256\n- TLS_RSA_WITH_AES_128_GCM_SHA256\n- TLS_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_ECDSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256\n",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingest-storage.kafka.tls-cipher-suites",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_min_version",
+              "required": false,
+              "desc": "Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingest-storage.kafka.tls-min-version",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
               "name": "consumer_group",
               "required": false,
               "desc": "The consumer group used by the consumer to track the last consumed offset. The consumer group must be different for each ingester. If the configured consumer group contains the '\u003cpartition\u003e' placeholder, it is replaced with the actual partition ID owned by the ingester. When empty (recommended), Mimir uses the ingester instance ID to guarantee uniqueness.",
@@ -11260,6 +11387,17 @@
             },
             {
               "kind": "field",
+              "name": "partitioner_max_gap_bytes_chunks",
+              "required": false,
+              "desc": "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests. Overrides the 'bucket-store.partitioner-max-gap-bytes' when requesting chunks",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "blocks-storage.bucket-store.partitioner-max-gap-bytes-chunks",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "postings_offsets_in_mem_sampling",
               "required": false,
               "desc": "Controls what is the ratio of postings offsets that the store will hold in memory.",
@@ -11995,11 +12133,22 @@
           "kind": "field",
           "name": "first_level_compaction_wait_period",
           "required": false,
-          "desc": "How long the compactor waits before compacting first-level blocks that are uploaded by the ingesters. This configuration option allows for the reduction of cases where the compactor begins to compact blocks before all ingesters have uploaded their blocks to the storage.",
+          "desc": "How long the compactor waits before compacting first-level blocks that are uploaded by the ingesters or block-builders. This configuration option allows for the reduction of cases where the compactor begins to compact blocks before all ingesters have uploaded their blocks to the storage. Does not apply to out-of-order blocks.",
           "fieldValue": null,
           "fieldDefaultValue": 1500000000000,
           "fieldFlag": "compactor.first-level-compaction-wait-period",
           "fieldType": "duration"
+        },
+        {
+          "kind": "field",
+          "name": "first_level_compaction_ooo_wait_period",
+          "required": false,
+          "desc": "How long the compactor waits before compacting first-level blocks containing out-of-order samples. When set to 0 (default), out-of-order blocks do not delay compaction.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "compactor.first-level-compaction-ooo-wait-period",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -14020,12 +14169,13 @@
               "fieldType": "string"
             },
             {
-              "kind": "block",
+              "kind": "field",
               "name": "basic_auth_password",
               "required": false,
               "desc": "",
               "fieldValue": null,
-              "fieldDefaultValue": null
+              "fieldDefaultValue": "",
+              "fieldType": "string"
             },
             {
               "kind": "block",
@@ -14043,12 +14193,13 @@
                   "fieldType": "string"
                 },
                 {
-                  "kind": "block",
+                  "kind": "field",
                   "name": "client_secret",
                   "required": false,
                   "desc": "",
                   "fieldValue": null,
-                  "fieldDefaultValue": null
+                  "fieldDefaultValue": "",
+                  "fieldType": "string"
                 },
                 {
                   "kind": "field",

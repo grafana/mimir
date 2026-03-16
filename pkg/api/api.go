@@ -6,7 +6,9 @@
 package api
 
 import (
+	"compress/gzip"
 	"flag"
+	"fmt"
 	"net/http"
 	"path"
 	"strings"
@@ -60,6 +62,8 @@ type Config struct {
 	AlertmanagerHTTPPrefix string `yaml:"alertmanager_http_prefix" category:"advanced"`
 	PrometheusHTTPPrefix   string `yaml:"prometheus_http_prefix" category:"advanced"`
 
+	GzipCompressionLevel int `yaml:"response_compression_level" category:"experimental"`
+
 	// The following configs are injected by the upstream caller.
 	ServerPrefix       string               `yaml:"-"`
 	HTTPAuthMiddleware middleware.Interface `yaml:"-"`
@@ -82,6 +86,15 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.StringVar(&cfg.AlertmanagerHTTPPrefix, prefix+"http.alertmanager-http-prefix", "/alertmanager", "HTTP URL path under which the Alertmanager ui and api will be served.")
 	f.StringVar(&cfg.PrometheusHTTPPrefix, prefix+"http.prometheus-http-prefix", "/prometheus", "HTTP URL path under which the Prometheus api will be served.")
+	f.IntVar(&cfg.GzipCompressionLevel, prefix+"http.response-compression-level", gzip.DefaultCompression, fmt.Sprintf("Compression level for HTTP responses when gzip compression is requested by the client. Valid values are 1 (fastest) to 9 (best compression), or %d for the default compression level.", gzip.DefaultCompression))
+}
+
+func (cfg *Config) Validate() error {
+	if (cfg.GzipCompressionLevel < 1 || cfg.GzipCompressionLevel > 9) && cfg.GzipCompressionLevel != gzip.DefaultCompression {
+		return fmt.Errorf("invalid gzip compression level: %d, must be between 1 and 9 or %d for default compression level", cfg.GzipCompressionLevel, gzip.DefaultCompression)
+	}
+
+	return nil
 }
 
 type API struct {
@@ -170,7 +183,7 @@ func (a *API) newRoute(path string, handler http.Handler, isPrefix, auth, gzip b
 		handler = a.AuthMiddleware.Wrap(handler)
 	}
 	if gzip {
-		handler = gziphandler.GzipHandler(handler)
+		handler = gziphandler.GzipHandler(handler, a.cfg.GzipCompressionLevel)
 	}
 	if isPrefix {
 		route = a.server.HTTP.PathPrefix(path)

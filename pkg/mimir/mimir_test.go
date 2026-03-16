@@ -7,6 +7,7 @@ package mimir
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
 	"flag"
@@ -44,6 +45,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
+	"github.com/grafana/mimir/pkg/api"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/frontend"
@@ -193,6 +195,9 @@ func TestMimir(t *testing.T) {
 		},
 		MemberlistKV: memberlist.KVConfig{
 			WatchPrefixBufferSize: 128,
+		},
+		API: api.Config{
+			GzipCompressionLevel: gzip.DefaultCompression,
 		},
 	}
 	require.NoError(t, cfg.Server.LogLevel.Set("info"))
@@ -783,6 +788,16 @@ func TestIsAbsPathOverlapping(t *testing.T) {
 			expected: true,
 		},
 		{
+			first:    "/",
+			second:   "/data/tsdb",
+			expected: true,
+		},
+		{
+			first:    "/data/tsdb",
+			second:   "/",
+			expected: true,
+		},
+		{
 			first:    "/data",
 			second:   "/data-more",
 			expected: false,
@@ -806,6 +821,23 @@ func TestIsAbsPathOverlapping(t *testing.T) {
 			first:    "/path/to/data",
 			second:   "/path/to/more/data",
 			expected: false,
+		},
+		// Paths at different depths where one is a string prefix of the other
+		// but NOT a path ancestor (regression test for path boundary check).
+		{
+			first:    "/data/tsdb",
+			second:   "/data/tsdb-compactor/cache",
+			expected: false,
+		},
+		{
+			first:    "/data/tsdb-compactor/cache",
+			second:   "/data/tsdb",
+			expected: false,
+		},
+		{
+			first:    "/data/tsdb",
+			second:   "/data/tsdb/wal",
+			expected: true,
 		},
 	}
 

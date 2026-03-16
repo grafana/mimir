@@ -22,6 +22,7 @@ import (
 	_ "github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/sharding" // Imported for side effects: registering the __sharded_concat__ function with the parser.
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
@@ -844,13 +845,12 @@ func TestOptimizationPass(t *testing.T) {
 			expr: `rate(foo{status="success"}[5m]) / rate(foo[5m])`,
 			expectedPlan: `
 				- BinaryExpression: LHS / RHS
-					- LHS: DeduplicateAndMerge
-						- DuplicateFilter: {status="success"}
-							- ref#1 Duplicate
+					- LHS: DuplicateFilter: {status="success"}
+						- ref#1 Duplicate
+							- DeduplicateAndMerge
 								- FunctionCall: rate(...)
 									- MatrixSelector: {__name__="foo"}[5m0s]
-					- RHS: DeduplicateAndMerge
-						- ref#1 Duplicate ...
+					- RHS: ref#1 Duplicate ...
 			`,
 			expectedDuplicateNodes:               1,
 			expectedDuplicateSelectorsEliminated: 0,
@@ -914,14 +914,13 @@ func TestOptimizationPass(t *testing.T) {
 			expectedPlan: `
 				- BinaryExpression: LHS / RHS
 					- LHS: AggregateExpression: sum
-						- DeduplicateAndMerge
-							- DuplicateFilter: {status="success"}
-								- ref#1 Duplicate
+						- DuplicateFilter: {status="success"}
+							- ref#1 Duplicate
+								- DeduplicateAndMerge
 									- FunctionCall: rate(...)
 										- MatrixSelector: {__name__="foo"}[5m0s]
 					- RHS: AggregateExpression: sum
-						- DeduplicateAndMerge
-							- ref#1 Duplicate ...
+						- ref#1 Duplicate ...
 			`,
 			expectedDuplicateNodes:               1,
 			expectedDuplicateSelectorsEliminated: 0,
@@ -1115,12 +1114,12 @@ func TestOptimizationPass(t *testing.T) {
 			}
 
 			if testCase.expectUnchanged {
-				p, err := plannerWithoutOptimizationPass.NewQueryPlan(ctx, testCase.expr, timeRange, false, observer)
+				p, err := plannerWithoutOptimizationPass.NewQueryPlan(ctx, testCase.expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
 				require.NoError(t, err)
 				testCase.expectedPlan = p.String()
 			}
 
-			p, err := plannerWithOptimizationPass.NewQueryPlan(ctx, testCase.expr, timeRange, false, observer)
+			p, err := plannerWithOptimizationPass.NewQueryPlan(ctx, testCase.expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
 			require.NoError(t, err)
 			actual := p.String()
 			require.Equal(t, testutils.TrimIndent(testCase.expectedPlan), actual)
@@ -1377,7 +1376,7 @@ func TestOptimizationPass_HintsHandling(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 
-			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, false, observer)
+			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
 			require.NoError(t, err)
 			actual := p.String()
 			require.Equal(t, testutils.TrimIndent(testCase.expectedPlan), actual)
@@ -1397,7 +1396,7 @@ func TestOptimizationPass_SubsetSelectorEliminationDisabled(t *testing.T) {
 		planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{})
 		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(enabled, nil, opts.Logger))
 
-		plan, err := planner.NewQueryPlan(ctx, expr, timeRange, false, observer)
+		plan, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
 		require.NoError(t, err)
 		require.Equal(t, testutils.TrimIndent(expectedPlan), plan.String())
 	}
@@ -1433,6 +1432,41 @@ func TestOptimizationPass_SubsetSelectorEliminationDisabled(t *testing.T) {
 	t.Run("feature disabled, querier does not support SSE", func(t *testing.T) {
 		runTest(t, expr, false, planning.QueryPlanV6, expectedPlanWithoutSSE)
 	})
+}
+
+func TestOptimizationPass_RangeVectorSplittingEnabled(t *testing.T) {
+	ctx := context.Background()
+	timeRange := types.NewInstantQueryTimeRange(time.Date(2026, 3, 10, 0, 0, 0, 0, time.UTC))
+	observer := streamingpromql.NoopPlanningObserver{}
+
+	opts := streamingpromql.NewTestEngineOpts()
+	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+	planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{})
+	planner.RegisterQueryPlanOptimizationPass(rangevectorsplitting.NewOptimizationPass(2*time.Hour, opts.Limits, time.Now, opts.CommonOpts.Reg, opts.Logger))
+	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, nil, opts.Logger))
+
+	expr := `sum(rate(metric{env="prod"}[6h])) / sum(rate(metric[6h]))`
+	plan, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
+	require.NoError(t, err)
+
+	expectedPlan := `
+		- BinaryExpression: LHS / RHS
+			- LHS: AggregateExpression: sum
+				- DeduplicateAndMerge
+					- SplitFunctionCall: splits=4 [(1773079200000,1773086399999], (1773086399999,1773093599999]*, (1773093599999,1773100799999]*, (1773100799999,1773100800000]]
+						- FunctionCall: rate(...)
+							- DuplicateFilter: {env="prod"}
+								- ref#1 Duplicate
+									- MatrixSelector: {__name__="metric"}[6h0m0s]
+			- RHS: AggregateExpression: sum
+				- DeduplicateAndMerge
+					- SplitFunctionCall: splits=4 [(1773079200000,1773086399999], (1773086399999,1773093599999]*, (1773093599999,1773100799999]*, (1773100799999,1773100800000]]
+						- FunctionCall: rate(...)
+							- ref#1 Duplicate ...
+		`
+
+	require.Equal(t, testutils.TrimIndent(expectedPlan), plan.String())
 }
 
 func BenchmarkOptimizationPass(b *testing.B) {
@@ -1492,7 +1526,7 @@ func BenchmarkOptimizationPass(b *testing.B) {
 	for _, expr := range testCases {
 		b.Run(expr, func(b *testing.B) {
 			for b.Loop() {
-				_, err := planner.NewQueryPlan(ctx, expr, timeRange, false, observer)
+				_, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
 
 				if err != nil {
 					require.NoError(b, err)
@@ -1906,6 +1940,13 @@ func TestIsSafeToApplyFilteringAfter(t *testing.T) {
 			expectedSafeWithDelayedNameRemovalEnabled:  false,
 		},
 
+		"deduplicate and merge node": {
+			node:  &core.DeduplicateAndMerge{},
+			group: groupWithNoFilters,
+			expectedSafeWithDelayedNameRemovalDisabled: true,
+			expectedSafeWithDelayedNameRemovalEnabled:  true,
+		},
+
 		"node with no special handling in IsSafeToApplyFilteringAfter": {
 			node:  &core.NumberLiteral{},
 			group: groupWithNoFilters,
@@ -1916,11 +1957,11 @@ func TestIsSafeToApplyFilteringAfter(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			safe, err := commonsubexpressionelimination.IsSafeToApplyFilteringAfter(testCase.node, testCase.group, false)
+			safe, err := commonsubexpressionelimination.IsSafeToApplyFilteringAfter(testCase.node, nil, testCase.group, false)
 			require.NoError(t, err)
 			require.Equal(t, testCase.expectedSafeWithDelayedNameRemovalDisabled, safe)
 
-			safe, err = commonsubexpressionelimination.IsSafeToApplyFilteringAfter(testCase.node, testCase.group, true)
+			safe, err = commonsubexpressionelimination.IsSafeToApplyFilteringAfter(testCase.node, nil, testCase.group, true)
 			require.NoError(t, err)
 			require.Equal(t, testCase.expectedSafeWithDelayedNameRemovalEnabled, safe)
 		})
