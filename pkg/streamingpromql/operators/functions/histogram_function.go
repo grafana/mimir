@@ -559,6 +559,10 @@ func (h *HistogramFunction) Finalize(ctx context.Context) error {
 	return h.inner.Finalize(ctx)
 }
 
+func (h *HistogramFunction) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return h.inner.Stats(ctx)
+}
+
 func (h *HistogramFunction) Close() {
 	h.inner.Close()
 	h.f.Close()

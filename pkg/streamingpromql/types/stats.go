@@ -6,6 +6,7 @@
 package types
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"unsafe"
@@ -163,4 +164,29 @@ func (s *OperatorEvaluationStats) ExtendStepInvariantToFullRange(timeRange Query
 func (s *OperatorEvaluationStats) Close() {
 	Int64SlicePool.Put(&s.samplesProcessedPerStep, s.memoryConsumptionTracker)
 	Int64SlicePool.Put(&s.newSamplesReadPerStep, s.memoryConsumptionTracker)
+}
+
+// CombineStats retrieves and combines query stats from multiple operators.
+// The caller is responsible for calling Close() on the returned stats.
+func CombineStats(ctx context.Context, operators ...Operator) (*OperatorEvaluationStats, error) {
+	var combined *OperatorEvaluationStats
+
+	for _, op := range operators {
+		stats, err := op.Stats(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		if combined == nil {
+			combined = stats
+			continue
+		}
+
+		if err := combined.Add(stats); err != nil {
+			return nil, err
+		}
+		stats.Close()
+	}
+
+	return combined, nil
 }

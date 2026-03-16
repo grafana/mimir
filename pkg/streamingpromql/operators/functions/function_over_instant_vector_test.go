@@ -164,6 +164,10 @@ func (t *testScalarOperator) Finalize(_ context.Context) error {
 	return nil
 }
 
+func (t *testScalarOperator) Stats(_ context.Context) (*types.OperatorEvaluationStats, error) {
+	return nil, nil
+}
+
 func (t *testScalarOperator) Close() {
 	t.closed = true
 }

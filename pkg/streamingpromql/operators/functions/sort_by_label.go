@@ -164,6 +164,10 @@ func (s *SortByLabel) Finalize(ctx context.Context) error {
 	return s.inner.Finalize(ctx)
 }
 
+func (s *SortByLabel) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return s.inner.Stats(ctx)
+}
+
 func (s *SortByLabel) Close() {
 	s.inner.Close()
 }

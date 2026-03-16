@@ -318,6 +318,10 @@ func (t *InstantQuery) Finalize(ctx context.Context) error {
 	return t.Param.Finalize(ctx)
 }
 
+func (t *InstantQuery) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return types.CombineStats(ctx, t.Inner, t.Param)
+}
+
 func (t *InstantQuery) Close() {
 	t.Inner.Close()
 	t.Param.Close()
