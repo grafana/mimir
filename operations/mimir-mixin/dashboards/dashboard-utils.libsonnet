@@ -315,13 +315,15 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ],
     },
 
-  perInstanceLatencyPanelNativeHistogram(quantile, metric, selector, legends=null, instanceLabel=$._config.per_instance_label, from_recording=false)::
-    local queries = [
-      utils.showClassicHistogramQuery(utils.ncHistogramQuantile(quantile, metric, utils.toPrometheusSelectorNaked(selector), [instanceLabel], from_recording=from_recording)),
-      utils.showNativeHistogramQuery(utils.ncHistogramQuantile(quantile, metric, utils.toPrometheusSelectorNaked(selector), [instanceLabel], from_recording=from_recording)),
-    ];
+  perInstanceLatencyPanelNativeHistogram(quantile, metric, selector, legends=null, instanceLabel=$._config.per_instance_label, from_recording=false, nativeOnly=false)::
+    local q = utils.ncHistogramQuantile(quantile, metric, utils.toPrometheusSelectorNaked(selector), [instanceLabel], from_recording=from_recording);
+    local queries = if nativeOnly then
+      [q.native]
+    else
+      [utils.showClassicHistogramQuery(q), utils.showNativeHistogramQuery(q)];
+    local emptyLegends = if nativeOnly then [''] else ['', ''];
     if legends == null then
-      $.hiddenLegendQueryPanel(queries, ['', ''])
+      $.hiddenLegendQueryPanel(queries, emptyLegends)
     else
       $.queryPanel(queries, legends),
 
@@ -1393,8 +1395,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     },
 
-  latencyRecordingRulePanelNativeHistogram(metric, selectors, extra_selectors=[], multiplier='1e3', sum_by=[])::
-    utils.latencyRecordingRulePanelNativeHistogram(metric, selectors, extra_selectors, multiplier, sum_by) + {
+  latencyRecordingRulePanelNativeHistogram(metric, selectors, extra_selectors=[], multiplier='1e3', sum_by=[], nativeOnly=false)::
+    utils.latencyRecordingRulePanelNativeHistogram(metric, selectors, extra_selectors, multiplier, sum_by, nativeOnly) + {
       // Hide yaxes from JSON Model; it's not supported by timeseriesPanel.
       yaxes:: super.yaxes,
       fieldConfig+: {
