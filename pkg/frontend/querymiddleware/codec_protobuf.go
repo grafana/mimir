@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/util/annotations"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -77,6 +78,110 @@ func (f ProtobufFormatter) EncodeQueryResponse(resp *PrometheusResponse) ([]byte
 	}
 
 	return payload.Marshal()
+}
+
+// EncodeQueryResponseWithAnnotations encodes a query response with typed annotation errors
+// that preserve Merge() semantics across the wire.
+func (f ProtobufFormatter) EncodeQueryResponseWithAnnotations(resp *PrometheusResponse, warningErrors, infoErrors []error) ([]byte, error) {
+	status, err := mimirpb.StatusFromPrometheusString(resp.Status)
+	if err != nil {
+		return nil, err
+	}
+
+	errorType, err := mimirpb.ErrorTypeFromPrometheusString(resp.ErrorType)
+	if err != nil {
+		return nil, err
+	}
+
+	payload := mimirpb.QueryResponse{
+		Status:        status,
+		ErrorType:     errorType,
+		Error:         resp.Error,
+		Warnings:      resp.Warnings,
+		Infos:         resp.Infos,
+		TypedWarnings: errorsToAnnotationErrors(warningErrors),
+		TypedInfos:    errorsToAnnotationErrors(infoErrors),
+	}
+
+	if resp.Data != nil {
+		switch resp.Data.ResultType {
+		case model.ValString.String():
+			data, err := f.encodeStringData(resp.Data.Result)
+			if err != nil {
+				return nil, err
+			}
+
+			payload.Data = &mimirpb.QueryResponse_String_{String_: &data}
+
+		case model.ValScalar.String():
+			data, err := f.encodeScalarData(resp.Data.Result)
+			if err != nil {
+				return nil, err
+			}
+
+			payload.Data = &mimirpb.QueryResponse_Scalar{Scalar: &data}
+
+		case model.ValVector.String():
+			data, err := f.encodeVectorData(resp.Data.Result)
+			if err != nil {
+				return nil, err
+			}
+
+			payload.Data = &mimirpb.QueryResponse_Vector{Vector: &data}
+
+		case model.ValMatrix.String():
+			data := f.encodeMatrixData(resp.Data.Result)
+			payload.Data = &mimirpb.QueryResponse_Matrix{Matrix: &data}
+
+		default:
+			return nil, fmt.Errorf("unknown result type '%s'", resp.Data.ResultType)
+		}
+	}
+
+	return payload.Marshal()
+}
+
+// errorsToAnnotationErrors converts typed annotation errors to their protobuf representation.
+func errorsToAnnotationErrors(errs []error) []mimirpb.AnnotationError {
+	if len(errs) == 0 {
+		return nil
+	}
+	result := make([]mimirpb.AnnotationError, len(errs))
+	for i, err := range errs {
+		d := annotations.ExtractAnnotationData(err)
+		result[i] = mimirpb.AnnotationError{
+			Type:      mimirpb.AnnotationErrorType(d.Type),
+			Message:   d.Message,
+			Count:     int32(d.Count),
+			MinTs:     d.MinTs,
+			MaxTs:     d.MaxTs,
+			MinBucket: d.MinBucket,
+			MaxBucket: d.MaxBucket,
+			MaxDiff:   d.MaxDiff,
+		}
+	}
+	return result
+}
+
+// annotationErrorsToErrors converts protobuf annotation errors back to typed Go errors.
+func annotationErrorsToErrors(aes []mimirpb.AnnotationError) []error {
+	if len(aes) == 0 {
+		return nil
+	}
+	result := make([]error, len(aes))
+	for i, ae := range aes {
+		result[i] = annotations.AnnotationFromData(annotations.AnnotationData{
+			Type:      annotations.AnnotationType(ae.Type),
+			Message:   ae.Message,
+			Count:     int(ae.Count),
+			MinTs:     ae.MinTs,
+			MaxTs:     ae.MaxTs,
+			MinBucket: ae.MinBucket,
+			MaxBucket: ae.MaxBucket,
+			MaxDiff:   ae.MaxDiff,
+		})
+	}
+	return result
 }
 
 func (ProtobufFormatter) encodeStringData(data []SampleStream) (mimirpb.StringData, error) {
@@ -216,6 +321,45 @@ func (f ProtobufFormatter) DecodeQueryResponse(buf []byte) (*PrometheusResponse,
 		Warnings:  resp.Warnings,
 		Infos:     resp.Infos,
 	}, nil
+}
+
+// DecodeQueryResponseWithAnnotations decodes a protobuf query response and also
+// returns any typed annotation errors found in the TypedWarnings/TypedInfos fields.
+func (f ProtobufFormatter) DecodeQueryResponseWithAnnotations(buf []byte) (*PrometheusResponse, []error, []error, error) {
+	var resp mimirpb.QueryResponse
+
+	if err := resp.Unmarshal(buf); err != nil {
+		return nil, nil, nil, err
+	}
+
+	status, err := resp.Status.ToPrometheusString()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	errorType, err := resp.ErrorType.ToPrometheusString()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	data, err := f.decodeData(resp)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	promResp := &PrometheusResponse{
+		Status:    status,
+		ErrorType: errorType,
+		Error:     resp.Error,
+		Data:      data,
+		Warnings:  resp.Warnings,
+		Infos:     resp.Infos,
+	}
+
+	warningErrors := annotationErrorsToErrors(resp.TypedWarnings)
+	infoErrors := annotationErrorsToErrors(resp.TypedInfos)
+
+	return promResp, warningErrors, infoErrors, nil
 }
 
 func (f ProtobufFormatter) decodeData(resp mimirpb.QueryResponse) (*PrometheusData, error) {
