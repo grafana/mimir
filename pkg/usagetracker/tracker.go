@@ -673,14 +673,14 @@ func (t *UsageTracker) stop(_ error) error {
 }
 
 // TrackSeries implements usagetrackerpb.UsageTrackerServer.
-func (t *UsageTracker) TrackSeries(_ context.Context, req *usagetrackerpb.TrackSeriesRequest) (*usagetrackerpb.TrackSeriesResponse, error) {
+func (t *UsageTracker) TrackSeries(ctx context.Context, req *usagetrackerpb.TrackSeriesRequest) (*usagetrackerpb.TrackSeriesResponse, error) {
 	partition := req.Partition
 	p, err := t.runningPartition(partition)
 	if err != nil {
 		return nil, err
 	}
 
-	rejected, err := p.store.trackSeries(context.Background(), req.UserID, req.SeriesHashes, time.Now())
+	rejected, err := p.store.trackSeries(ctx, req.UserID, req.SeriesHashes, time.Now())
 	if err != nil {
 		return nil, err
 	}
@@ -688,10 +688,11 @@ func (t *UsageTracker) TrackSeries(_ context.Context, req *usagetrackerpb.TrackS
 }
 
 // TrackSeriesBatch implements usagetrackerpb.UsageTrackerServer.
-func (t *UsageTracker) TrackSeriesBatch(_ context.Context, req *usagetrackerpb.TrackSeriesBatchRequest) (*usagetrackerpb.TrackSeriesBatchResponse, error) {
+func (t *UsageTracker) TrackSeriesBatch(ctx context.Context, req *usagetrackerpb.TrackSeriesBatchRequest) (*usagetrackerpb.TrackSeriesBatchResponse, error) {
 	response := usagetrackerpb.TrackSeriesBatchResponse{}
 	now := time.Now()
 
+	iterations := 0
 	for _, rp := range req.Partitions {
 		p, err := t.runningPartition(rp.Partition)
 		if err != nil {
@@ -701,7 +702,13 @@ func (t *UsageTracker) TrackSeriesBatch(_ context.Context, req *usagetrackerpb.T
 		userRejections := []*usagetrackerpb.TrackSeriesBatchRejectionUser{}
 
 		for _, r := range rp.Users {
-			rejected, err := p.store.trackSeries(context.Background(), r.UserID, r.SeriesHashes, now)
+			iterations++
+			if iterations%1024 == 0 { // mod pow2: it's faster.
+				if err := ctx.Err(); err != nil {
+					return nil, err
+				}
+			}
+			rejected, err := p.store.trackSeries(ctx, r.UserID, r.SeriesHashes, now)
 			if err != nil {
 				return nil, errors.Wrapf(err, "unable to track series for partition %d, user %s", rp.Partition, r.UserID)
 			}
