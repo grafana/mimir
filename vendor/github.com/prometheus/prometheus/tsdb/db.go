@@ -1861,11 +1861,20 @@ func (db *DB) RotateHead() error {
 		return fmt.Errorf("build retired head index: %w", err)
 	}
 
+	// The original head (created by tsdb.Open) has ChunkDirRoot == db.dir,
+	// which we must never delete. Rotated heads live in their own head-N/
+	// subdirectories that are safe to remove when the retired head is dropped.
+	headDir := oldHead.opts.ChunkDirRoot
+	if headDir == db.dir {
+		headDir = ""
+	}
+
 	rh := &retiredHead{
 		head:        oldHead,
 		indexr:      indexReader,
 		chunkRefMap: chunkRefMap,
 		dir:         retiredDir,
+		headDir:     headDir,
 		minT:        oldMinT,
 		maxT:        oldMaxT,
 	}

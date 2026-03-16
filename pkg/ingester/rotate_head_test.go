@@ -5,6 +5,7 @@ package ingester
 import (
 	"context"
 	"math"
+	"path/filepath"
 	"testing"
 
 	"github.com/prometheus/common/promslog"
@@ -120,7 +121,8 @@ func TestRotateHead_MultipleRotations(t *testing.T) {
 }
 
 func TestDropRetiredHeadsBefore(t *testing.T) {
-	db, err := tsdb.Open(t.TempDir(), promslog.NewNopLogger(), nil, tsdb.DefaultOptions(), nil)
+	dbDir := t.TempDir()
+	db, err := tsdb.Open(dbDir, promslog.NewNopLogger(), nil, tsdb.DefaultOptions(), nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
 
@@ -145,6 +147,13 @@ func TestDropRetiredHeadsBefore(t *testing.T) {
 	_, err = app.Append(0, labels.FromStrings("gen", "active"), 10000, 3.0)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
+
+	// Verify the head-1 and retired-head-1 directories exist (from first rotation).
+	require.DirExists(t, filepath.Join(dbDir, "head-1"))
+	require.DirExists(t, filepath.Join(dbDir, "retired-head-1"))
+	// head-2 and retired-head-2 from second rotation.
+	require.DirExists(t, filepath.Join(dbDir, "head-2"))
+	require.DirExists(t, filepath.Join(dbDir, "retired-head-2"))
 
 	// Verify all 3 series are queryable.
 	q, err := db.Querier(0, math.MaxInt64)
@@ -172,6 +181,23 @@ func TestDropRetiredHeadsBefore(t *testing.T) {
 	require.NoError(t, ss.Err())
 	require.NoError(t, q.Close())
 	require.Equal(t, 2, count, "old retired head should have been dropped")
+
+	// The first retired head's index dir should be gone.
+	require.NoDirExists(t, filepath.Join(dbDir, "retired-head-1"))
+	// head-1/ still exists — it belongs to retired head 2 (the head created
+	// during the first rotation, retired during the second).
+	require.DirExists(t, filepath.Join(dbDir, "head-1"))
+	// The second retired head's directories should still exist.
+	require.DirExists(t, filepath.Join(dbDir, "head-2"))
+	require.DirExists(t, filepath.Join(dbDir, "retired-head-2"))
+
+	// Now drop the second retired head too.
+	require.NoError(t, db.DropRetiredHeadsBefore(6000))
+
+	require.NoDirExists(t, filepath.Join(dbDir, "retired-head-2"))
+	require.NoDirExists(t, filepath.Join(dbDir, "head-1"))
+	// The active head's directory should still exist.
+	require.DirExists(t, filepath.Join(dbDir, "head-2"))
 }
 
 func TestRotateHead_LabelNamesAndValues(t *testing.T) {

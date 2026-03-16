@@ -39,6 +39,7 @@ type retiredHead struct {
 	indexr      IndexReader                        // 1-in-32 sampled, disk-backed
 	chunkRefMap map[chunks.ChunkRef]chunks.ChunkRef // fake monotonic ref → real head chunk ref
 	dir         string                             // directory containing the index file
+	headDir     string                             // head's ChunkDirRoot (WAL + chunks); removed on Close
 	minT        int64
 	maxT        int64
 	blockID     ulid.ULID
@@ -106,19 +107,22 @@ func (rh *retiredHead) Size() int64 {
 }
 
 // Close releases all resources: closes the index reader, closes the
-// underlying head (which closes its ChunkDiskMapper), and removes the
-// index directory from disk.
+// underlying head (which closes its ChunkDiskMapper and WAL), removes
+// the index directory and the head's data directory from disk.
 func (rh *retiredHead) Close() error {
 	indexErr := rh.indexr.Close()
 	headErr := rh.head.Close()
-	removeErr := os.RemoveAll(rh.dir)
-	if indexErr != nil {
-		return indexErr
+	removeIdxErr := os.RemoveAll(rh.dir)
+	var removeHeadErr error
+	if rh.headDir != "" {
+		removeHeadErr = os.RemoveAll(rh.headDir)
 	}
-	if headErr != nil {
-		return headErr
+	for _, err := range []error{indexErr, headErr, removeIdxErr, removeHeadErr} {
+		if err != nil {
+			return err
+		}
 	}
-	return removeErr
+	return nil
 }
 
 // OverlapsClosedInterval reports whether the retired head's time range
