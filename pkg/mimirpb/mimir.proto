@@ -286,13 +286,11 @@ message QueryResponse {
     MatrixData matrix = 7;
   }
 
-  repeated string warnings = 8;
-  repeated string infos = 9;
+  reserved 8, 9; // Previously repeated string warnings/infos; replaced by typed fields below.
 
   // Typed annotation errors for proper merging across sharded queries.
-  // When present, these take precedence over the string warnings/infos fields.
-  repeated AnnotationError typed_warnings = 10 [(gogoproto.nullable) = false];
-  repeated AnnotationError typed_infos = 11 [(gogoproto.nullable) = false];
+  repeated AnnotationError warnings = 10 [(gogoproto.nullable) = false];
+  repeated AnnotationError infos = 11 [(gogoproto.nullable) = false];
 }
 
 enum AnnotationErrorType {

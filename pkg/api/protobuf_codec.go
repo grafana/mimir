@@ -43,8 +43,8 @@ func (c protobufCodec) Encode(resp *v1.Response) ([]byte, error) {
 		Status:    status,
 		ErrorType: errorType,
 		Error:     resp.Error,
-		Warnings:  resp.Warnings,
-		Infos:     resp.Infos,
+		Warnings:  mimirpb.StringsToAnnotationErrors(resp.Warnings),
+		Infos:     mimirpb.StringsToAnnotationErrors(resp.Infos),
 	}
 
 	if resp.Data != nil {
