@@ -11,7 +11,7 @@ remove a deprecated item from the third major release after it has been deprecat
   * __How to migrate__: replace usages of port 8080 with port 80; these usages can be in dashboards, Prometheus remote-write configurations, or automation for updating rules.
 * NGINX configuration via `nginx` top-level values sections is being merged with by the `gateway` section. The
   `nginx` section is deprecated in `4.0.0` and was removed in `6.0.0` (originally planned for `7.0.0`).
-  * __How to migrate__: refer to [Migrate to using the unified proxy deployment for NGINX and GEM gateway](https://grafana.com/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-to-unified-proxy-deployment/)
+  * __How to migrate__: refer to [Migrate to the unified gateway deployment for NGINX and GEM gateway in Helm](https://grafana.com/docs/helm-charts/mimir-distributed/v5.8.x/migration-guides/migrate-to-unified-proxy-deployment/)
 
 ## Format of changelog
 
