@@ -77,7 +77,7 @@ func TestInfluxIngestion(t *testing.T) {
 		labels.MustNewMatcher(labels.MatchEqual, "user", "user-1"))))
 
 	// Query the series.
-	result, err := c.Query("series_f1", now)
+	result, _, err := c.Query("series_f1", now)
 	require.NoError(t, err)
 	require.Equal(t, model.ValVector, result.Type())
 	assert.Equal(t, expectedVector, result.(model.Vector))
@@ -90,7 +90,7 @@ func TestInfluxIngestion(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"__name__", "__proxy_source__", "foo"}, labelNames)
 
-	rangeResult, err := c.QueryRange("series_f1", now.Add(-15*time.Minute), now, 15*time.Second)
+	rangeResult, _, err := c.QueryRange("series_f1", now.Add(-15*time.Minute), now, 15*time.Second)
 	require.NoError(t, err)
 	require.Equal(t, model.ValMatrix, rangeResult.Type())
 	require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))

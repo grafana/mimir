@@ -207,7 +207,7 @@ printf '%s' "$BODY"
 
 			// Query the series back and verify the result matches what was pushed.
 			require.EventuallyWithT(t, func(c *assert.CollectT) {
-				result, err := client.Query("test_series", now)
+				result, _, err := client.Query("test_series", now)
 				require.NoError(c, err)
 				require.Equal(c, model.ValVector, result.Type())
 				assert.Equal(c, expectedVector, result.(model.Vector))

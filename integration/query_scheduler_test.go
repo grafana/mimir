@@ -112,7 +112,7 @@ func runTestQuerySchedulerWithMaxUsedInstances(t *testing.T, seriesName string, 
 	require.Equal(t, 200, res.StatusCode)
 
 	// Query the series.
-	result, err := c.Query(seriesName, now)
+	result, _, err := c.Query(seriesName, now)
 	require.NoError(t, err)
 	require.Equal(t, model.ValVector, result.Type())
 	assert.Equal(t, expectedVector, result.(model.Vector))
@@ -127,7 +127,7 @@ func runTestQuerySchedulerWithMaxUsedInstances(t *testing.T, seriesName string, 
 	require.NoError(t, notInUseScheduler.WaitSumMetricsWithOptions(e2e.Greater(0), []string{"cortex_query_scheduler_connected_frontend_clients"}))
 
 	// Query the series.
-	result, err = c.Query(seriesName, now)
+	result, _, err = c.Query(seriesName, now)
 	require.NoError(t, err)
 	require.Equal(t, model.ValVector, result.Type())
 	assert.Equal(t, expectedVector, result.(model.Vector))

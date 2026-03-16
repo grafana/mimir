@@ -536,14 +536,14 @@ func TestIngesterQuerying(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, http.StatusOK, res.StatusCode)
 
-			result, err := client.QueryRange(query, queryStart, queryEnd, queryStep)
+			result, _, err := client.QueryRange(query, queryStart, queryEnd, queryStep)
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedQueryResult, result)
 
 			// The PromQL engine does some special handling for the timestamp() function which previously
 			// caused queries to fail when streaming chunks was enabled, so check that this regression
 			// has not been reintroduced.
-			result, err = client.QueryRange(timestampQuery, queryStart, queryEnd, queryStep)
+			result, _, err = client.QueryRange(timestampQuery, queryStart, queryEnd, queryStep)
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedTimestampQueryResult, result)
 
@@ -640,7 +640,7 @@ func TestIngesterQueryingWithRequestMinimization(t *testing.T) {
 	require.Equal(t, 200, res.StatusCode)
 
 	// Verify we can query the data we just pushed.
-	queryResult, err := client.Query(seriesName, now)
+	queryResult, _, err := client.Query(seriesName, now)
 	require.NoError(t, err)
 	require.Equal(t, model.ValVector, queryResult.Type())
 	require.Equal(t, expectedVector, queryResult.(model.Vector))
@@ -749,7 +749,7 @@ func TestIngesterReportGRPCStatusCodes(t *testing.T) {
 	pushRequests := sums[0]
 	require.Equal(t, pushRequests, 1.0)
 
-	result, err := client.QueryRange(query, queryStart, queryEnd, queryStep)
+	result, _, err := client.QueryRange(query, queryStart, queryEnd, queryStep)
 	require.NoError(t, err)
 	require.Equal(t, expectedQueryResult, result)
 

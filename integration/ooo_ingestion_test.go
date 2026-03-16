@@ -81,7 +81,7 @@ func TestOOOIngestion(t *testing.T) {
 	expectedMatrix[0].Values = append(expectedMatrix[0].Values, model.SamplePair{Timestamp: expectedVector[0].Timestamp, Value: expectedVector[0].Value})
 
 	// Query float series.
-	rangeResult, err := c.QueryRange(floatSeriesName, nowTS.Add(-time.Minute), nowTS, time.Minute)
+	rangeResult, _, err := c.QueryRange(floatSeriesName, nowTS.Add(-time.Minute), nowTS, time.Minute)
 	require.NoError(t, err)
 	require.Equal(t, model.ValMatrix, rangeResult.Type())
 	require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))
@@ -110,7 +110,7 @@ func TestOOOIngestion(t *testing.T) {
 	expectedMatrix[0].Histograms = append(expectedMatrix[0].Histograms, model.SampleHistogramPair{Timestamp: expectedVector[0].Timestamp, Histogram: expectedVector[0].Histogram})
 
 	// Query int histogram series.
-	rangeResult, err = c.QueryRange(intHistogramSeriesName, nowTS.Add(-time.Minute), nowTS, time.Minute)
+	rangeResult, _, err = c.QueryRange(intHistogramSeriesName, nowTS.Add(-time.Minute), nowTS, time.Minute)
 	require.NoError(t, err)
 	require.Equal(t, model.ValMatrix, rangeResult.Type())
 	require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))
@@ -139,7 +139,7 @@ func TestOOOIngestion(t *testing.T) {
 	expectedMatrix[0].Histograms = append(expectedMatrix[0].Histograms, model.SampleHistogramPair{Timestamp: expectedVector[0].Timestamp, Histogram: expectedVector[0].Histogram})
 
 	// Query float histogram series.
-	rangeResult, err = c.QueryRange(floatHistogramSeriesName, nowTS.Add(-time.Minute), nowTS, time.Minute)
+	rangeResult, _, err = c.QueryRange(floatHistogramSeriesName, nowTS.Add(-time.Minute), nowTS, time.Minute)
 	require.NoError(t, err)
 	require.Equal(t, model.ValMatrix, rangeResult.Type())
 	require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))

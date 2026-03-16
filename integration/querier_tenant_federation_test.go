@@ -131,7 +131,7 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), queryFrontend.HTTPEndpoint(), "", "", strings.Join(tenantIDs, "|"))
 	require.NoError(t, err)
 
-	result, err := c.Query("series_1", now)
+	result, _, err := c.Query("series_1", now)
 	require.NoError(t, err)
 
 	assert.ElementsMatch(t, mergeResults(tenantIDs, expectedVectors), result.(model.Vector))

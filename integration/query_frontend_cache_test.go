@@ -111,7 +111,7 @@ func runTestPushSeriesAndUnalignedQuery(t *testing.T, c *e2emimir.Client, queryF
 		c, err := e2emimir.NewClient("", queryFrontendAligned.HTTPEndpoint(), "", "", user)
 		require.NoError(t, err)
 
-		res, err := c.QueryRange(seriesName, start, end, step)
+		res, _, err := c.QueryRange(seriesName, start, end, step)
 		require.NoError(t, err)
 
 		// Verify that returned range has sample appearing after "sampleTime", all ts are step-aligned (truncated to step).
@@ -126,7 +126,7 @@ func runTestPushSeriesAndUnalignedQuery(t *testing.T, c *e2emimir.Client, queryF
 		c, err := e2emimir.NewClient("", queryFrontendUnaligned.HTTPEndpoint(), "", "", user)
 		require.NoError(t, err)
 
-		res, err := c.QueryRange(seriesName, start, end, step)
+		res, _, err := c.QueryRange(seriesName, start, end, step)
 		require.NoError(t, err)
 
 		// Verify that returned result is not step-aligned ("now" is not step-aligned)

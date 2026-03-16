@@ -127,7 +127,7 @@ func testOTLPIngestion(t *testing.T, opts testOTLPIngestionOpts) {
 	metricQuery := fmt.Sprintf(`{"%s"}`, convertedMetricName)
 
 	// Query the series.
-	result, err := c.Query(metricQuery, now)
+	result, _, err := c.Query(metricQuery, now)
 	require.NoError(t, err)
 	require.Equal(t, model.ValVector, result.Type())
 	assert.Equal(t, expectedVector, result.(model.Vector))
@@ -140,7 +140,7 @@ func testOTLPIngestion(t *testing.T, opts testOTLPIngestionOpts) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"__name__", "foo"}, labelNames)
 
-	rangeResult, err := c.QueryRange(metricQuery, now.Add(-15*time.Minute), now, 15*time.Second)
+	rangeResult, _, err := c.QueryRange(metricQuery, now.Add(-15*time.Minute), now, 15*time.Second)
 	require.NoError(t, err)
 	require.Equal(t, model.ValMatrix, rangeResult.Type())
 	require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))
@@ -194,7 +194,7 @@ func testOTLPIngestion(t *testing.T, opts testOTLPIngestionOpts) {
 
 	// UTF-8 format names have to be in quotes.
 	histogramQuery := fmt.Sprintf(`{"%s"}`, convertedHistogramName)
-	result, err = c.Query(histogramQuery, now)
+	result, _, err = c.Query(histogramQuery, now)
 	require.NoError(t, err)
 
 	want := expectedVector[0]
@@ -369,7 +369,7 @@ func testOTLPHistogramIngestion(t *testing.T, enableExplicitHistogramToNHCB bool
 	// Query the histogram series
 	if enableExplicitHistogramToNHCB {
 		// Verify that when flag is disabled, OTel explicit bucket histograms are converted to native histograms with custom buckets
-		result, err := c.Query("explicit_bucket_histogram_series", now)
+		result, _, err := c.Query("explicit_bucket_histogram_series", now)
 		require.NoError(t, err)
 		require.Equal(t, result.(model.Vector)[0].Histogram, &model.SampleHistogram{
 			Count: model.FloatString(10),
@@ -407,14 +407,14 @@ func testOTLPHistogramIngestion(t *testing.T, enableExplicitHistogramToNHCB bool
 			{`explicit_bucket_histogram_series_bucket{le="+Inf"}`, 10},
 		}
 		for _, exp := range expected {
-			result, err := c.Query(exp.name, now)
+			result, _, err := c.Query(exp.name, now)
 			require.NoError(t, err)
 			require.Equal(t, exp.value, result.(model.Vector)[0].Value)
 		}
 	}
 
 	// Verify that OTel exponential histograms are converted to native histograms
-	result, err := c.Query("exponential_histogram_series", now)
+	result, _, err := c.Query("exponential_histogram_series", now)
 	require.NoError(t, err)
 	require.Equal(t, result.(model.Vector)[0].Histogram.Count, model.FloatString(15))
 	require.Equal(t, result.(model.Vector)[0].Histogram.Sum, model.FloatString(25))
@@ -599,7 +599,7 @@ func testStartTimeHandling(t *testing.T, enableCTzero bool) {
 
 			for _, metric := range []string{counterMetric, histogramMetric} {
 				t.Run(metric, func(t *testing.T) {
-					result, err := c.Query(metric+"[1h]", now.Add(30*time.Minute))
+					result, _, err := c.Query(metric+"[1h]", now.Add(30*time.Minute))
 					require.NoError(t, err)
 
 					m, ok := result.(model.Matrix)
@@ -652,7 +652,7 @@ func testStartTimeHandling(t *testing.T, enableCTzero bool) {
 					// the injected zero histogram has a scale == 0.
 					// The resolution isn't returned directly, but we can check the
 					// number of buckets to see if some were merged together.
-					result, err = c.Query("rate("+metric+"[1m])", now.Add(1*time.Second))
+					result, _, err = c.Query("rate("+metric+"[1m])", now.Add(1*time.Second))
 					require.NoError(t, err)
 
 					v, ok := result.(model.Vector)

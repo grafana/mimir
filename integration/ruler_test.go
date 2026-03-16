@@ -1139,7 +1139,7 @@ func TestRulerFederatedRules(t *testing.T) {
 			// Wait until rule evaluation resulting series had been pushed
 			require.NoError(t, ingester.WaitSumMetrics(e2e.Greater(totalSeriesBeforeEval[0]), "cortex_ingester_memory_series"))
 
-			result, err := c.Query(ruleName, time.Now())
+			result, _, err := c.Query(ruleName, time.Now())
 			require.NoError(t, err)
 			tc.assertEvalResult(result.(model.Vector))
 		})
@@ -1307,7 +1307,7 @@ func TestRulerRemoteEvaluation(t *testing.T) {
 			))
 
 			// Assert rule evaluation result
-			result, err := c.Query(ruleName, time.Now())
+			result, _, err := c.Query(ruleName, time.Now())
 			require.NoError(t, err)
 			tc.assertEvalResult(result.(model.Vector))
 		})

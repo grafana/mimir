@@ -86,7 +86,7 @@ func TestZoneAwareReplication(t *testing.T) {
 
 	// Query back series => all good
 	for metricName, expectedVector := range expectedVectors {
-		result, err := client.Query(metricName, now)
+		result, _, err := client.Query(metricName, now)
 		require.NoError(t, err)
 		require.Equal(t, model.ValVector, result.Type())
 		assert.Equal(t, expectedVector, result.(model.Vector))
@@ -107,7 +107,7 @@ func TestZoneAwareReplication(t *testing.T) {
 
 	// Query back series => all good
 	for metricName, expectedVector := range expectedVectors {
-		result, err := client.Query(metricName, now)
+		result, _, err := client.Query(metricName, now)
 		require.NoError(t, err)
 		require.Equal(t, model.ValVector, result.Type())
 		assert.Equal(t, expectedVector, result.(model.Vector))
@@ -128,7 +128,7 @@ func TestZoneAwareReplication(t *testing.T) {
 
 	// Query back series => all good
 	for metricName, expectedVector := range expectedVectors {
-		result, err := client.Query(metricName, now)
+		result, _, err := client.Query(metricName, now)
 		require.NoError(t, err)
 		require.Equal(t, model.ValVector, result.Type())
 		assert.Equal(t, expectedVector, result.(model.Vector))
