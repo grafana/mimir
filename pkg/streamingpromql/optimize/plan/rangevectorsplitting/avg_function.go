@@ -126,6 +126,36 @@ func avgOverTimeCombine(pieces []AvgOverTimeIntermediate, _ int64, _ int64, emit
 			return 0, false, nil, nil
 		}
 
+		if p.SumH != nil {
+			h := mimirpb.FromFloatHistogramProtoToFloatHistogram(p.SumH)
+
+			if avgSoFarH == nil {
+				countH = float64(p.CountH)
+				avgSoFarH = h.Copy().Div(countH)
+			} else {
+				pieceCnt := float64(p.CountH)
+				totalCnt := pieceCnt + countH
+
+				q := countH / totalCnt
+				if compensationH != nil {
+					compensationH.Mul(q)
+				}
+
+				toAdd := h.Copy().Div(totalCnt)
+
+				var nhcbBoundsReconciled bool
+				var err error
+				if compensationH, _, nhcbBoundsReconciled, err = avgSoFarH.Mul(q).KahanAdd(toAdd, compensationH); err != nil {
+					err = functions.NativeHistogramErrorToAnnotation(err, emitAnnotation)
+					return 0, false, nil, err
+				} else if nhcbBoundsReconciled {
+					nhcbBoundsReconciledSeen = true
+				}
+
+				countH += pieceCnt
+			}
+		}
+
 		// There are two modes used to combine intermediate pieces depending on whether overflow has been encountered.
 		// In a simple mode, it accumulates sums and counts across all pieces using Kahan compensated summation to reduce floating-point error,
 		// then computes the final average at the end.
@@ -178,36 +208,6 @@ func avgOverTimeCombine(pieces []AvgOverTimeIntermediate, _ int64, _ int64, emit
 				countF = p.CountF
 				incrementalAvgF = p.IncrementalAvg
 				useIncrementalCalculation = p.UseIncrementalCalc
-			}
-		}
-
-		if p.SumH != nil {
-			h := mimirpb.FromFloatHistogramProtoToFloatHistogram(p.SumH)
-
-			if avgSoFarH == nil {
-				countH = float64(p.CountH)
-				avgSoFarH = h.Copy().Div(countH)
-			} else {
-				pieceCnt := float64(p.CountH)
-				totalCnt := pieceCnt + countH
-
-				q := countH / totalCnt
-				if compensationH != nil {
-					compensationH.Mul(q)
-				}
-
-				toAdd := h.Copy().Div(totalCnt)
-
-				var nhcbBoundsReconciled bool
-				var err error
-				if compensationH, _, nhcbBoundsReconciled, err = avgSoFarH.Mul(q).KahanAdd(toAdd, compensationH); err != nil {
-					err = functions.NativeHistogramErrorToAnnotation(err, emitAnnotation)
-					return 0, false, nil, err
-				} else if nhcbBoundsReconciled {
-					nhcbBoundsReconciledSeen = true
-				}
-
-				countH += pieceCnt
 			}
 		}
 	}
