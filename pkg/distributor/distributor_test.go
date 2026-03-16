@@ -2682,8 +2682,6 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 					ctx := user.InjectOrgID(context.Background(), "test")
 					ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
-					dedupMetrics := limiter.NewSeriesDeduplicatorMetrics(prometheus.NewPedanticRegistry())
-					ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx, dedupMetrics)
 
 					// Push fixtures
 					for _, series := range fixtures {
@@ -2694,7 +2692,6 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 
 					// Set up limiter
 					ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(testData.maxSeriesPerQuery, 0, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
-					ctx = limiter.AddMemoryTrackerToContext(ctx, limiter.NewUnlimitedMemoryConsumptionTracker(ctx))
 
 					metrics, err := ds[0].MetricsForLabelMatchers(ctx, now, now, testData.hints, testData.matchers...)
 					if testData.expectedError != nil {
@@ -2804,9 +2801,6 @@ func TestDistributor_MetricsForLabelMatchers_adjustPushDownLimit(t *testing.T) {
 			// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 			ctx := user.InjectOrgID(context.Background(), "test")
 			ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
-			ctx = limiter.AddMemoryTrackerToContext(ctx, limiter.NewUnlimitedMemoryConsumptionTracker(ctx))
-			metrics := limiter.NewSeriesDeduplicatorMetrics(prometheus.NewPedanticRegistry())
-			ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx, metrics)
 
 			for _, series := range fixtures {
 				req := mockWriteRequest(series.lbls, series.value, series.timestamp)

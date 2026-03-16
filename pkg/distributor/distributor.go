@@ -3296,6 +3296,7 @@ func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through
 		}
 	}()
 
+	queryLimiter := mimir_limiter.QueryLimiterFromContextWithFallback(ctx)
 	metrics := map[uint64]labels.Labels{}
 respsLoop:
 	for _, resp := range resps {
@@ -3304,31 +3305,18 @@ respsLoop:
 			if len(metrics) >= resultLimit {
 				break respsLoop
 			}
+
+			if err := queryLimiter.AddSeries(m); err != nil {
+				return nil, err
+			}
+
 			metrics[labels.StableHash(m)] = m
 		}
 	}
 
-	queryLimiter := mimir_limiter.QueryLimiterFromContextWithFallback(ctx)
-	deduplicator, err := mimir_limiter.SeriesLabelsDeduplicatorFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-	tracker, err := mimir_limiter.MemoryConsumptionTrackerFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	result := make([]labels.Labels, 0, len(metrics))
 	for _, m := range metrics {
-		uniqueSeries, err := deduplicator.Deduplicate(m, tracker)
-		if err != nil {
-			return nil, err
-		}
-		if err := queryLimiter.AddSeries(uniqueSeries); err != nil {
-			return nil, err
-		}
-
-		result = append(result, uniqueSeries)
+		result = append(result, m)
 	}
 	return result, nil
 }
