@@ -2638,6 +2638,7 @@ func TestGetOverridesForUserWithMetadata(t *testing.T) {
 		expectedSeries      int
 		expectedBurstSize   int
 		expectedBurstFactor float64
+		expectedOTelSuffix  *bool
 	}{
 		"nil tenantLimits returns defaults": {
 			userID:              "tenant-a:source=test-run",
@@ -2669,12 +2670,13 @@ func TestGetOverridesForUserWithMetadata(t *testing.T) {
 		"single metadata key overrides matched fields, inherits unmatched": {
 			tenantLimits: map[string]*Limits{
 				"tenant-a":                 {IngestionRate: 100, MaxActiveSeriesPerUser: 1000, IngestionBurstSize: 10000},
-				"tenant-a:source=test-run": {IngestionRate: 200},
+				"tenant-a:source=test-run": {IngestionRate: 200, OTelMetricSuffixesEnabled: boolPtr(true)},
 			},
-			userID:            "tenant-a:source=test-run",
-			expectedRate:      200,
-			expectedSeries:    1000,
-			expectedBurstSize: 10000,
+			userID:             "tenant-a:source=test-run",
+			expectedRate:       200,
+			expectedSeries:     1000,
+			expectedBurstSize:  10000,
+			expectedOTelSuffix: boolPtr(true),
 		},
 		"global metadata override (empty tenant prefix) applies to any tenant": {
 			tenantLimits:        map[string]*Limits{":source=test-run": {IngestionRate: 9000}},
@@ -2748,6 +2750,16 @@ func TestGetOverridesForUserWithMetadata(t *testing.T) {
 			userID:              "tenant-a:source=test-run",
 			expectedBurstFactor: 5.0,
 		},
+		"OTelMetricSuffixesEnabled inherited from parent overlay when child omits it": {
+			tenantLimits: map[string]*Limits{
+				"tenant-a":                 {IngestionRate: 100},
+				"tenant-a:source=test-run": {OTelMetricSuffixesEnabled: boolPtr(true)},
+				"tenant-a:run-id=specific:source=test-run": {IngestionRate: 200},
+			},
+			userID:             "tenant-a:run-id=specific:source=test-run",
+			expectedRate:       200,
+			expectedOTelSuffix: boolPtr(true),
+		},
 	}
 
 	for name, tc := range tests {
@@ -2769,6 +2781,9 @@ func TestGetOverridesForUserWithMetadata(t *testing.T) {
 			assert.Equal(t, tc.expectedSeries, got.MaxActiveSeriesPerUser)
 			assert.Equal(t, tc.expectedBurstSize, got.IngestionBurstSize)
 			assert.Equal(t, tc.expectedBurstFactor, got.IngestionBurstFactor)
+			if tc.expectedOTelSuffix != nil {
+				assert.Equal(t, tc.expectedOTelSuffix, got.OTelMetricSuffixesEnabled)
+			}
 		})
 	}
 }
