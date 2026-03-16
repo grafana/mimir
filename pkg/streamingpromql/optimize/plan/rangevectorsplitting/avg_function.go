@@ -159,7 +159,7 @@ func avgOverTimeCombine(pieces []AvgOverTimeIntermediate, _ int64, _ int64, emit
 		// There are two modes used to combine intermediate pieces depending on whether overflow has been encountered.
 		// In a simple mode, it accumulates sums and counts across all pieces using Kahan compensated summation to reduce floating-point error,
 		// then computes the final average at the end.
-		// Incremental mode is used when a partial sum overflows, maintains a running weighted average without forming a combined sum.
+		// Incremental mode is used when a partial sum overflows, maintains a running average without forming a combined sum.
 		if p.CountF > 0 {
 			if countF > 0 {
 				if p.UseIncrementalCalc && !useIncrementalCalculation {
