@@ -209,13 +209,15 @@ index 986c4e1867..dda8609298 100644
  				return err
  			}
  			iNdEx = postIndex
-@@ -7656,12 +7593,6 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
+@@ -7656,14 +7593,6 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
  	if iNdEx > l {
  		return io.ErrUnexpectedEOF
  	}
 -
 -	if m.unmarshalFromRW2 {
--		m.Metadata = metadata.slice()
+-		if metadata != nil {
+-			m.Metadata = metadata.slice()
+-		}
 -		m.rw2symbols.releasePages()
 -	}
 -
