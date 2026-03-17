@@ -139,8 +139,8 @@ func (t *trackerStore) processCreatedSeriesEvent(tenantID string, series []uint6
 	tenant := t.getOrCreateTenant(tenantID)
 	defer tenant.RUnlock()
 
-	// Sort series by shard. We're going to accept all of them, so we can start on shard 0 here.
-	slices.SortFunc(series, func(a, b uint64) int { return int(a%shards) - int(b%shards) })
+	// Group series by shard. We're going to accept all of them, so we can start on shard 0 here.
+	groupByModuloShards(series)
 
 	timestamp := clock.ToMinutes(eventTimestamp)
 	i0 := 0
