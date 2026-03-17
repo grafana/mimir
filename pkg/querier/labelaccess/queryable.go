@@ -495,8 +495,10 @@ func (l *labelAccessChunkSeriesSet) Next() bool {
 			if s.matches(l.curSeries.Labels()) {
 				if len(seriesToSkip) > 0 {
 					l.curSeries = &skipPreviousChunkSeries{
-						seriesToSkip: seriesToSkip,
-						inner:        l.curSeries,
+						state: &skipPreviousChunkSeriesState{
+							seriesToSkip: seriesToSkip,
+						},
+						inner: l.curSeries,
 					}
 				}
 
@@ -526,9 +528,33 @@ func (l *labelAccessChunkSeriesSet) Warnings() annotations.Annotations {
 	return l.upstream.Warnings()
 }
 
-type skipPreviousChunkSeries struct {
+// skipPreviousChunkSeriesState holds the list of filtered-out series that must have
+// their chunk streams consumed before the accepted series can be iterated. The state
+// is shared (via pointer) between skipPreviousChunkSeries and any skipPreviousChunkIterable
+// it creates so that ChunkCount, Iterator, and IteratorFactory-backed iterators all
+// consume the skipped streams at most once.
+//
+// Not safe for concurrent use: the ingester calls ChunkCount and IteratorFactory
+// sequentially in a single goroutine, so no synchronisation is needed.
+type skipPreviousChunkSeriesState struct {
 	seriesToSkip []storage.ChunkSeries
-	inner        storage.ChunkSeries
+	consumed     bool
+}
+
+func (s *skipPreviousChunkSeriesState) consume(iterator chunks.Iterator) chunks.Iterator {
+	if s.consumed {
+		return iterator
+	}
+	for _, series := range s.seriesToSkip {
+		iterator = series.Iterator(iterator)
+	}
+	s.consumed = true
+	return iterator
+}
+
+type skipPreviousChunkSeries struct {
+	state *skipPreviousChunkSeriesState
+	inner storage.ChunkSeries
 }
 
 func (s *skipPreviousChunkSeries) Labels() labels.Labels {
@@ -536,16 +562,12 @@ func (s *skipPreviousChunkSeries) Labels() labels.Labels {
 }
 
 func (s *skipPreviousChunkSeries) Iterator(iterator chunks.Iterator) chunks.Iterator {
-	for _, series := range s.seriesToSkip {
-		iterator = series.Iterator(iterator)
-	}
+	iterator = s.state.consume(iterator)
 	return s.inner.Iterator(iterator)
 }
 
 func (s *skipPreviousChunkSeries) ChunkCount() (int, error) {
-	for _, series := range s.seriesToSkip {
-		_ = series.Iterator(nil)
-	}
+	_ = s.state.consume(nil)
 	return s.inner.ChunkCount()
 }
 
@@ -556,19 +578,17 @@ func (s *skipPreviousChunkSeries) IteratorFactory() storage.ChunkIterable {
 	}
 
 	return &skipPreviousChunkIterable{
-		seriesToSkip: s.seriesToSkip,
-		inner:        innerFactory,
+		state: s.state, // shared pointer: consume() is idempotent
+		inner: innerFactory,
 	}
 }
 
 type skipPreviousChunkIterable struct {
-	seriesToSkip []storage.ChunkSeries
-	inner        storage.ChunkIterable
+	state *skipPreviousChunkSeriesState
+	inner storage.ChunkIterable
 }
 
 func (s *skipPreviousChunkIterable) Iterator(iterator chunks.Iterator) chunks.Iterator {
-	for _, series := range s.seriesToSkip {
-		iterator = series.Iterator(iterator)
-	}
+	iterator = s.state.consume(iterator)
 	return s.inner.Iterator(iterator)
 }
