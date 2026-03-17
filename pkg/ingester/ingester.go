@@ -2473,7 +2473,7 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 
 	selectHints := initSelectHints(int64(from), int64(through))
 	selectHints = configSelectHintsWithShard(selectHints, shard)
-	selectHints = configureSelectHintsWithProjections(selectHints, req.ProjectionInclude, req.ProjectionLabels)
+	selectHints = configSelectHintsWithProjections(selectHints, req.ProjectionInclude, req.ProjectionLabels)
 	// Disable chunks trimming, so that we don't have to rewrite chunks which have samples outside
 	// the requested from/through range. PromQL engine can handle it.
 	selectHints = configSelectHintsWithDisabledTrimming(selectHints)
@@ -4532,7 +4532,7 @@ func configSelectHintsWithDisabledTrimming(hints *storage.SelectHints) *storage.
 	return hints
 }
 
-func configureSelectHintsWithProjections(hints *storage.SelectHints, projectionInclude bool, projectionLabels []string) *storage.SelectHints {
+func configSelectHintsWithProjections(hints *storage.SelectHints, projectionInclude bool, projectionLabels []string) *storage.SelectHints {
 	if projectionInclude {
 		hints.ProjectionInclude = true
 		hints.ProjectionLabels = projectionLabels
