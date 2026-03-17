@@ -2615,9 +2615,9 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.Chunk
 
 		lbls := cs.Labels()
 		lblsSize := lbls.ByteSize()
-		originalLabelBytes += lblsSize
 
 		if hints.ProjectionInclude {
+			originalLabelBytes += lblsSize
 			reduced := projections.Reduce(lbls)
 			// Estimate the size of the series hash label and value since we aren't generating
 			// series hash on ingest currently.
