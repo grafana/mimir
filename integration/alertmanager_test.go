@@ -1138,58 +1138,6 @@ func TestAlertmanagerGrafanaAlertmanagerAPI(t *testing.T) {
 			require.EqualError(t, err, e2emimir.ErrNotFound.Error())
 		}
 	}
-
-	// For Grafana Alertmanager state.
-	{
-		c, err := e2emimir.NewClient("", "", am.HTTPEndpoint(), "", "user-1")
-		require.NoError(t, err)
-		{
-			var state *alertmanager.UserGrafanaState
-			// When no state is set yet, it should not return anything.
-			state, err = c.GetGrafanaAlertmanagerState(context.Background())
-			require.EqualError(t, err, e2emimir.ErrNotFound.Error())
-			require.Nil(t, state)
-
-			// Now, let's set the state.
-			err = c.SetGrafanaAlertmanagerState(context.Background(), "ChEKBW5mbG9nEghzb21lZGF0YQ==")
-			require.NoError(t, err)
-
-			// With a state now set, let's get it back.
-			state, err = c.GetGrafanaAlertmanagerState(context.Background())
-			require.NoError(t, err)
-			require.Equal(t, "ChEKBW5mbG9nEghzb21lZGF0YQ==", state.State)
-		}
-
-		// Let's store state for a different user as well.
-		c, err = e2emimir.NewClient("", "", am.HTTPEndpoint(), "", "user-5")
-		require.NoError(t, err)
-		{
-			var state *alertmanager.UserGrafanaState
-			// When no state is set yet, it should not return anything.
-			state, err = c.GetGrafanaAlertmanagerState(context.Background())
-			require.EqualError(t, err, e2emimir.ErrNotFound.Error())
-			require.Nil(t, state)
-
-			// Now, let's set the state.
-			err = c.SetGrafanaAlertmanagerState(context.Background(), "ChEKBW5mbG9nEghzb21lZGF0YQ==")
-			require.NoError(t, err)
-
-			// With a state now set, let's get it back.
-			state, err = c.GetGrafanaAlertmanagerState(context.Background())
-			require.NoError(t, err)
-			require.Equal(t, "ChEKBW5mbG9nEghzb21lZGF0YQ==", state.State)
-
-			// Now, let's delete it.
-			err = c.DeleteGrafanaAlertmanagerState(context.Background())
-			require.NoError(t, err)
-
-			// Now that the state is deleted, it should not return anything again.
-			state, err = c.GetGrafanaAlertmanagerState(context.Background())
-			require.EqualError(t, err, e2emimir.ErrNotFound.Error())
-			require.Nil(t, state)
-		}
-
-	}
 }
 
 func TestAlertmanagerTestTemplates(t *testing.T) {

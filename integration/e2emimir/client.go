@@ -1295,10 +1295,6 @@ func (c *Client) GetFullState(ctx context.Context) (*alertmanager.UserGrafanaSta
 	return c.getState(ctx, "/api/v1/grafana/full_state")
 }
 
-func (c *Client) GetGrafanaAlertmanagerState(ctx context.Context) (*alertmanager.UserGrafanaState, error) {
-	return c.getState(ctx, "/api/v1/grafana/state")
-}
-
 func (c *Client) getState(ctx context.Context, path string) (*alertmanager.UserGrafanaState, error) {
 	u := c.alertmanagerClient.URL(path, nil)
 
