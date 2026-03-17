@@ -290,7 +290,7 @@ lint-packaging-scripts: packaging/nfpm/mimir/postinstall.sh packaging/nfpm/mimir
 lint-gh-action: operations/mimir-rules-action/entrypoint.sh
 	shellcheck $?
 
-# CGO_ENABLED=0 and -tags matching GO_TAGS align with the image-builds Go build cache,
+# CGO_ENABLED=0 and -tags matching GO_TAGS align with the image-and-lint Go build cache,
 # so golangci-lint and faillint can reuse cached compiled packages.
 LINT_GO_ENV := CGO_ENABLED=0 GOFLAGS="-tags=$(GO_TAGS)"
 

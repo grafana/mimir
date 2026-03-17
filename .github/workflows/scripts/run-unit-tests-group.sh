@@ -43,8 +43,8 @@ if [[ -n "$EXTRA_BUILD_TAGS" ]]; then
     BUILD_TAGS="$BUILD_TAGS,$EXTRA_BUILD_TAGS"
 fi
 
-# List all tests.
-ALL_TESTS=$(go list "${MIMIR_DIR}/..." | sort)
+# List all tests, excluding integration tests which require Docker and a built Mimir image.
+ALL_TESTS=$(go list "${MIMIR_DIR}/..." | grep -v "^github.com/grafana/mimir/integration" | sort)
 
 # Filter tests by the requested group.
 GROUP_TESTS=$(echo "$ALL_TESTS" | awk -v TOTAL="$TOTAL" -v INDEX="$INDEX" 'NR % TOTAL == INDEX')

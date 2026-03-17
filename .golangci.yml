@@ -7,7 +7,7 @@ run:
   # List of build tags, all linters use it.
   # NOTE: requires_libpcap is not included here because it is only needed for
   # tools/trafficdump/, which is linted separately in the Makefile (see lint target).
-  # The tags here match the image-builds Go build cache for faster CI linting.
+  # The tags here match the image-and-lint Go build cache for faster CI linting.
   build-tags:
     - netgo
     - stringlabels
