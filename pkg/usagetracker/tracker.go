@@ -3,9 +3,12 @@
 package usagetracker
 
 import (
+	"cmp"
 	"context"
 	"flag"
 	"fmt"
+	"iter"
+	"math/bits"
 	"net/http"
 	"slices"
 	"strconv"
@@ -25,11 +28,13 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/prometheus/util/zeropool"
 	"github.com/thanos-io/objstore"
 	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+
 	"github.com/grafana/mimir/pkg/usagetracker/trackerop"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 	"github.com/grafana/mimir/pkg/util"
@@ -687,6 +692,81 @@ func (t *UsageTracker) TrackSeries(ctx context.Context, req *usagetrackerpb.Trac
 	return &usagetrackerpb.TrackSeriesResponse{RejectedSeriesHashes: rejected}, nil
 }
 
+// seriesHashesPools is a tiered pool of []uint64 slices bucketed by power-of-2
+// capacity. The caller passes a plain size; the pool rounds up to the next
+// power of 2 internally.
+const seriesPoolMaxBits = 20
+
+var seriesHashesPools [seriesPoolMaxBits + 1]zeropool.Pool[[]uint64]
+
+func getPooledSeriesSlice(n int) []uint64 {
+	if n == 0 {
+		return nil
+	}
+	tier := bits.Len(uint(n - 1))
+	if tier > seriesPoolMaxBits {
+		return make([]uint64, n)
+	}
+	size := 1 << tier
+	s := seriesHashesPools[tier].Get()
+	if cap(s) < size {
+		return make([]uint64, n, size)
+	}
+	return s[:n]
+}
+
+func putPooledSeriesSlice(s []uint64) {
+	tier := bits.TrailingZeros(uint(cap(s)))
+	if tier > seriesPoolMaxBits {
+		return
+	}
+	seriesHashesPools[tier].Put(s[:0])
+}
+
+type mergedUser struct {
+	userID       string
+	seriesHashes []uint64
+}
+
+// iterMergedUsers sorts users by UserID and yields one mergedUser per distinct
+// user with all of their series hashes combined into a single pooled slice.
+// Each pooled slice is returned to the pool after the yield returns, so the
+// caller must not retain seriesHashes across iterations.
+func iterMergedUsers(users []*usagetrackerpb.TrackSeriesBatchUser) iter.Seq[mergedUser] {
+	return func(yield func(mergedUser) bool) {
+		slices.SortFunc(users, func(a, b *usagetrackerpb.TrackSeriesBatchUser) int {
+			return cmp.Compare(a.UserID, b.UserID)
+		})
+
+		for i := 0; i < len(users); {
+			userID := users[i].UserID
+			j := i + 1
+			for j < len(users) && users[j].UserID == userID {
+				j++
+			}
+
+			total := 0
+			for k := i; k < j; k++ {
+				total += len(users[k].SeriesHashes)
+			}
+
+			s := getPooledSeriesSlice(total)
+			off := 0
+			for k := i; k < j; k++ {
+				copy(s[off:], users[k].SeriesHashes)
+				off += len(users[k].SeriesHashes)
+			}
+
+			if !yield(mergedUser{userID: userID, seriesHashes: s}) {
+				putPooledSeriesSlice(s)
+				return
+			}
+			putPooledSeriesSlice(s)
+			i = j
+		}
+	}
+}
+
 // TrackSeriesBatch implements usagetrackerpb.UsageTrackerServer.
 func (t *UsageTracker) TrackSeriesBatch(ctx context.Context, req *usagetrackerpb.TrackSeriesBatchRequest) (*usagetrackerpb.TrackSeriesBatchResponse, error) {
 	response := usagetrackerpb.TrackSeriesBatchResponse{}
@@ -701,20 +781,20 @@ func (t *UsageTracker) TrackSeriesBatch(ctx context.Context, req *usagetrackerpb
 
 		userRejections := []*usagetrackerpb.TrackSeriesBatchRejectionUser{}
 
-		for _, r := range rp.Users {
+		for entry := range iterMergedUsers(rp.Users) {
 			iterations++
-			if iterations%1024 == 0 { // mod pow2: it's faster.
+			if iterations%1024 == 0 {
 				if err := ctx.Err(); err != nil {
 					return nil, err
 				}
 			}
-			rejected, err := p.store.trackSeries(ctx, r.UserID, r.SeriesHashes, now)
+			rejected, err := p.store.trackSeries(ctx, entry.userID, entry.seriesHashes, now)
 			if err != nil {
-				return nil, errors.Wrapf(err, "unable to track series for partition %d, user %s", rp.Partition, r.UserID)
+				return nil, errors.Wrapf(err, "unable to track series for partition %d, user %s", rp.Partition, entry.userID)
 			}
 			if len(rejected) > 0 {
 				userRejections = append(userRejections, &usagetrackerpb.TrackSeriesBatchRejectionUser{
-					UserID:               r.UserID,
+					UserID:               entry.userID,
 					RejectedSeriesHashes: rejected,
 				})
 			}
