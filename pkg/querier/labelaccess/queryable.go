@@ -128,8 +128,13 @@ func (l *labelAccessQueryable) ChunkQuerier(mint, maxt int64) (storage.ChunkQuer
 	return &labelAccessChunkQuerier{
 		labelAccessQuerier: labelAccessQuerier{
 			labelQuerier: nextQuerier,
-			logger:       l.logger,
-			metrics:      l.metrics,
+			// querier is intentionally nil: labelAccessChunkQuerier overrides
+			// Select() and Close(), delegating both to next (storage.ChunkQuerier).
+			// Any future method added to labelAccessQuerier that uses l.querier
+			// would silently nil-dereference via the chunk querier path.
+			querier: nil,
+			logger:  l.logger,
+			metrics: l.metrics,
 		},
 		next: nextQuerier,
 	}, nil
