@@ -135,6 +135,6 @@ func (l *labelAccessExemplarQuerier) Select(start, end int64, matchers ...[]*lab
 		}
 	}
 
-	level.Debug(spanlog).Log("msg", "exemplars filtered by LBAC selectors", "unfiltered", numUnfiltered, "filtered", numFiltered, "selectors", l.stringers)
+	spanlog.DebugLog("msg", "exemplars filtered by LBAC selectors", "unfiltered", numUnfiltered, "filtered", numFiltered, "selectors", l.stringers)
 	return filtered, nil
 }
