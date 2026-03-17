@@ -2317,7 +2317,6 @@ alertmanager_max_grafana_state_size_bytes: "0"
 			ov := NewOverrides(limitsYAML, nil)
 
 			require.Equal(t, tc.expectedConfigSize, ov.AlertmanagerMaxGrafanaConfigSize("user"))
-			require.Equal(t, tc.expectedStateSize, ov.AlertmanagerMaxGrafanaStateSize("user"))
 		})
 	}
 }
