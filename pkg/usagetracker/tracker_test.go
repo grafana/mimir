@@ -1167,6 +1167,114 @@ func TestMetricsGatheringIsNotConcurrent(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestIterMergedUsers(t *testing.T) {
+	t.Parallel()
+
+	type expected struct {
+		userID string
+		hashes []uint64
+	}
+
+	collect := func(users []*usagetrackerpb.TrackSeriesBatchUser) []expected {
+		var got []expected
+		for entry := range iterMergedUsers(users) {
+			got = append(got, expected{userID: entry.userID, hashes: slices.Clone(entry.seriesHashes)})
+		}
+		return got
+	}
+
+	t.Run("no users", func(t *testing.T) {
+		t.Parallel()
+		got := collect(nil)
+		require.Empty(t, got)
+	})
+
+	t.Run("single user single hash", func(t *testing.T) {
+		t.Parallel()
+		got := collect([]*usagetrackerpb.TrackSeriesBatchUser{
+			{UserID: "a", SeriesHashes: []uint64{10}},
+		})
+		require.Equal(t, []expected{{userID: "a", hashes: []uint64{10}}}, got)
+	})
+
+	t.Run("single user multiple hashes", func(t *testing.T) {
+		t.Parallel()
+		got := collect([]*usagetrackerpb.TrackSeriesBatchUser{
+			{UserID: "a", SeriesHashes: []uint64{10, 20, 30}},
+		})
+		require.Equal(t, []expected{{userID: "a", hashes: []uint64{10, 20, 30}}}, got)
+	})
+
+	t.Run("single user no hashes", func(t *testing.T) {
+		t.Parallel()
+		got := collect([]*usagetrackerpb.TrackSeriesBatchUser{
+			{UserID: "a", SeriesHashes: nil},
+		})
+		require.Equal(t, []expected{{userID: "a", hashes: nil}}, got)
+	})
+
+	t.Run("multiple distinct users", func(t *testing.T) {
+		t.Parallel()
+		got := collect([]*usagetrackerpb.TrackSeriesBatchUser{
+			{UserID: "c", SeriesHashes: []uint64{30}},
+			{UserID: "a", SeriesHashes: []uint64{10}},
+			{UserID: "b", SeriesHashes: []uint64{20}},
+		})
+		require.Equal(t, []expected{
+			{userID: "a", hashes: []uint64{10}},
+			{userID: "b", hashes: []uint64{20}},
+			{userID: "c", hashes: []uint64{30}},
+		}, got)
+	})
+
+	t.Run("duplicate users are merged", func(t *testing.T) {
+		t.Parallel()
+		got := collect([]*usagetrackerpb.TrackSeriesBatchUser{
+			{UserID: "a", SeriesHashes: []uint64{1, 2}},
+			{UserID: "b", SeriesHashes: []uint64{10}},
+			{UserID: "a", SeriesHashes: []uint64{3}},
+			{UserID: "b", SeriesHashes: []uint64{20, 30}},
+			{UserID: "a", SeriesHashes: []uint64{4, 5}},
+		})
+		require.Equal(t, []expected{
+			{userID: "a", hashes: []uint64{1, 2, 3, 4, 5}},
+			{userID: "b", hashes: []uint64{10, 20, 30}},
+		}, got)
+	})
+
+	t.Run("duplicate user with some empty hashes", func(t *testing.T) {
+		t.Parallel()
+		got := collect([]*usagetrackerpb.TrackSeriesBatchUser{
+			{UserID: "a", SeriesHashes: nil},
+			{UserID: "a", SeriesHashes: []uint64{1}},
+			{UserID: "a", SeriesHashes: nil},
+		})
+		require.Equal(t, []expected{
+			{userID: "a", hashes: []uint64{1}},
+		}, got)
+	})
+
+	t.Run("early break stops iteration", func(t *testing.T) {
+		t.Parallel()
+		users := []*usagetrackerpb.TrackSeriesBatchUser{
+			{UserID: "a", SeriesHashes: []uint64{1}},
+			{UserID: "b", SeriesHashes: []uint64{2}},
+			{UserID: "c", SeriesHashes: []uint64{3}},
+		}
+		var got []expected
+		for entry := range iterMergedUsers(users) {
+			got = append(got, expected{userID: entry.userID, hashes: slices.Clone(entry.seriesHashes)})
+			if entry.userID == "b" {
+				break
+			}
+		}
+		require.Equal(t, []expected{
+			{userID: "a", hashes: []uint64{1}},
+			{userID: "b", hashes: []uint64{2}},
+		}, got)
+	})
+}
+
 func BenchmarkTrackSeriesBatch(b *testing.B) {
 	const (
 		totalHashes    = 1_000_000
