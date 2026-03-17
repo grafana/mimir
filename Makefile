@@ -303,8 +303,8 @@ lint: check-makefiles check-merge-conflicts
 	# Configured via .golangci.yml (which sets build-tags matching GO_TAGS).
 	$(LINT_GO_ENV) golangci-lint run
 
-	# Lint tools/trafficdump separately because it needs the requires_libpcap build tag.
-	CGO_ENABLED=0 golangci-lint run --build-tags $(GO_TAGS),requires_libpcap ./tools/trafficdump/...
+	# Lint tools/trafficdump separately: it needs requires_libpcap and CGO_ENABLED=1 (for libpcap C bindings).
+	golangci-lint run --build-tags $(GO_TAGS),requires_libpcap ./tools/trafficdump/...
 
 	# Ensure no blocklisted package is imported.
 	$(LINT_GO_ENV) faillint -paths "github.com/bmizerany/assert=github.com/stretchr/testify/assert,\
