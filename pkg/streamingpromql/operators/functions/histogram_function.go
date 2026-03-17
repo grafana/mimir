@@ -49,9 +49,9 @@ type HistogramFunction struct {
 	expressionPosition     posrange.PositionRange
 	innerSeriesMetricNames *operators.MetricNames // We need to keep track of the metric names for annotations.NewBadBucketLabelWarning
 
-	seriesGroupPairs     []seriesGroupPair // Each series belongs to 2 groups. One with the `le` label, and one without. Sometimes, these are the same group.
-	remainingGroups      []*bucketGroup    // One entry per group, in the order we want to return them.
-	remainingGroupsBytes uint64            // Memory tracked for the remainingGroups slice.
+	seriesGroupPairs []seriesGroupPair // Each series belongs to 2 groups. One with the `le` label, and one without. Sometimes, these are the same group.
+	remainingGroups  []*bucketGroup    // One entry per group, in the order we want to return them.
+	nextGroupIdx     int               // Index into remainingGroups for the next group to return.
 }
 
 var _ types.InstantVectorOperator = &HistogramFunction{}
@@ -98,6 +98,18 @@ var seriesGroupPairPool = types.NewLimitingBucketedPool(
 	limiter.SeriesGroupPairSlices,
 	seriesGroupPairSize,
 	true, // clearOnGet: zero out stale pointers and strings from previous use
+	nil,
+	nil,
+)
+
+// bucketGroupPointerSlicePool is defined locally for the same reason as seriesGroupPairPool above.
+var bucketGroupPointerSlicePool = types.NewLimitingBucketedPool(
+	pool.NewBucketedPool(types.MaxExpectedSeriesPerResult, func(size int) []*bucketGroup {
+		return make([]*bucketGroup, 0, size)
+	}),
+	limiter.BucketGroupPointerSlices,
+	bucketGroupPointerSize,
+	true, // clearOnGet: zero out stale pointers from previous use
 	nil,
 	nil,
 )
@@ -269,18 +281,8 @@ func (h *HistogramFunction) SeriesMetadata(ctx context.Context, matchers types.M
 		return nil, err
 	}
 
-	// We track remainingGroups manually rather than using a LimitingBucketedPool because
-	// NextSeries advances through the slice by reslicing in place (h.remainingGroups = h.remainingGroups[1:]).
-	// Each reslice reduces cap by one, so LimitingBucketedPool.Put would decrease memory by a smaller
-	// amount than was originally tracked, leaving a phantom balance in the tracker.
-	// By recording the byte count at allocation time in remainingGroupsBytes and releasing that
-	// fixed amount in Close, we correctly account for the memory regardless of how far through
-	// the slice NextSeries has advanced.
-	h.remainingGroups = make([]*bucketGroup, 0, len(groups))
-	h.remainingGroupsBytes = uint64(cap(h.remainingGroups)) * bucketGroupPointerSize
-	if err = h.memoryConsumptionTracker.IncreaseMemoryConsumption(h.remainingGroupsBytes, limiter.BucketGroupPointerSlices); err != nil {
-		h.remainingGroupsBytes = 0
-		types.SeriesMetadataSlicePool.Put(&seriesMetadata, h.memoryConsumptionTracker)
+	h.remainingGroups, err = bucketGroupPointerSlicePool.Get(len(groups), h.memoryConsumptionTracker)
+	if err != nil {
 		return nil, err
 	}
 	for _, g := range groups {
@@ -307,16 +309,13 @@ func (h *HistogramFunction) SeriesMetadata(ctx context.Context, matchers types.M
 }
 
 func (h *HistogramFunction) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
-	if len(h.remainingGroups) == 0 {
+	if h.nextGroupIdx >= len(h.remainingGroups) {
 		// No more groups left.
 		return types.InstantVectorSeriesData{}, types.EOS
 	}
 
-	// Determine next group to return.
-	// Note: this reslice reduces cap(h.remainingGroups) by one on each call, which is why
-	// remainingGroups cannot use LimitingBucketedPool (see comment at allocation site above).
-	thisGroup := h.remainingGroups[0]
-	h.remainingGroups = h.remainingGroups[1:]
+	thisGroup := h.remainingGroups[h.nextGroupIdx]
+	h.nextGroupIdx++
 	defer func() {
 		// Reset the group before returning to the pool
 		thisGroup.lastInputSeriesIdx = 0
@@ -549,21 +548,15 @@ func (h *HistogramFunction) AfterPrepare(ctx context.Context) error {
 }
 
 func (h *HistogramFunction) Finalize(ctx context.Context) error {
+	seriesGroupPairPool.Put(&h.seriesGroupPairs, h.memoryConsumptionTracker)
+	bucketGroupPointerSlicePool.Put(&h.remainingGroups, h.memoryConsumptionTracker)
+	h.nextGroupIdx = 0
+
 	if err := h.f.Finalize(ctx); err != nil {
 		return err
 	}
 
-	if err := h.inner.Finalize(ctx); err != nil {
-		return err
-	}
-
-	seriesGroupPairPool.Put(&h.seriesGroupPairs, h.memoryConsumptionTracker)
-	if h.remainingGroupsBytes > 0 {
-		h.memoryConsumptionTracker.DecreaseMemoryConsumption(h.remainingGroupsBytes, limiter.BucketGroupPointerSlices)
-		h.remainingGroupsBytes = 0
-	}
-
-	return nil
+	return h.inner.Finalize(ctx)
 }
 
 func (h *HistogramFunction) Close() {

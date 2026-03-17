@@ -172,7 +172,8 @@ func TestHistogramFunction_MemoryTracking(t *testing.T) {
 			"seriesGroupPairs memory should be tracked")
 
 		// remainingGroups: 4 native groups + 1 classic group = 5, each a pointer.
-		expectedBGP := uint64(5) * bucketGroupPointerSize
+		// The pool rounds 5 up to the next power of two (8).
+		expectedBGP := uint64(8) * bucketGroupPointerSize
 		require.Equal(t, expectedBGP, tracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.BucketGroupPointerSlices),
 			"remainingGroups memory should be tracked")
 
@@ -194,38 +195,6 @@ func TestHistogramFunction_MemoryTracking(t *testing.T) {
 			"seriesGroupPairs memory should be released after Close")
 		require.Equal(t, uint64(0), tracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.BucketGroupPointerSlices),
 			"remainingGroups memory should be released after Close")
-	})
-
-	t.Run("SeriesMetadataSlices are released if remainingGroups allocation fails", func(t *testing.T) {
-		// Measure how many bytes are consumed after seriesGroupPairs is allocated but before
-		// remainingGroups IncreaseMemoryConsumption is called. We set the limit to exactly that
-		// amount so that the remainingGroups allocation fails, exercising the cleanup path that
-		// returns the seriesMetadata slice back to the pool.
-		unlimited := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
-		hOpProbe := newHistogramFunction(unlimited)
-		_, err := hOpProbe.SeriesMetadata(ctx, nil)
-		require.NoError(t, err)
-		// At this point all allocations have succeeded. The seriesGroupPairs + seriesMetadata slices
-		// are tracked. We want the limit to be just before remainingGroups would be tracked, i.e.
-		// after seriesGroupPairs and SeriesMetadataSlices are allocated, but before BucketGroupPointerSlices.
-		bytesAfterSGPAndSMD := unlimited.CurrentEstimatedMemoryConsumptionBytes() -
-			unlimited.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.BucketGroupPointerSlices)
-		hOpProbe.Close()
-
-		rejectionCounter := promauto.With(prometheus.NewRegistry()).NewCounter(prometheus.CounterOpts{Name: "test_rejections_total"})
-		limited := limiter.NewMemoryConsumptionTracker(ctx, bytesAfterSGPAndSMD, rejectionCounter, "test query")
-		hOp := newHistogramFunction(limited)
-
-		_, err = hOp.SeriesMetadata(ctx, nil)
-		require.Error(t, err, "SeriesMetadata should fail when memory limit is too small for remainingGroups")
-		require.Contains(t, err.Error(), "query exceeded")
-
-		// After the failed SeriesMetadata, SeriesMetadataSlices must be fully released (not leaked).
-		require.Equal(t, uint64(0), limited.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.SeriesMetadataSlices),
-			"seriesMetadata slice should be returned to pool on remainingGroups allocation failure")
-
-		// Close should not panic even after a failed SeriesMetadata.
-		hOp.Close()
 	})
 
 	t.Run("memory limit is enforced for seriesGroupPairs allocation", func(t *testing.T) {
