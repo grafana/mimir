@@ -772,7 +772,6 @@ func (t *UsageTracker) TrackSeriesBatch(ctx context.Context, req *usagetrackerpb
 	response := usagetrackerpb.TrackSeriesBatchResponse{}
 	now := time.Now()
 
-	iterations := 0
 	for _, rp := range req.Partitions {
 		p, err := t.runningPartition(rp.Partition)
 		if err != nil {
@@ -782,11 +781,8 @@ func (t *UsageTracker) TrackSeriesBatch(ctx context.Context, req *usagetrackerpb
 		userRejections := []*usagetrackerpb.TrackSeriesBatchRejectionUser{}
 
 		for entry := range iterMergedUsers(rp.Users) {
-			iterations++
-			if iterations%1024 == 0 {
-				if err := ctx.Err(); err != nil {
-					return nil, err
-				}
+			if err := ctx.Err(); err != nil {
+				return nil, err
 			}
 			rejected, err := p.store.trackSeries(ctx, entry.userID, entry.seriesHashes, now)
 			if err != nil {
