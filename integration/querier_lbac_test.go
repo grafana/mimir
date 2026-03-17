@@ -82,7 +82,7 @@ func TestLabelBasedAccessControl(t *testing.T) {
 	require.Len(t, result.(model.Vector), 2, "expected both series without LBAC policy")
 
 	// With LBAC header restricting to {access="open"}: only the open series must be returned.
-	lbacHeaderValue := fmt.Sprintf("%s:%s", tenantID, url.QueryEscape(`{access="open"}`))
+	lbacHeaderValue := fmt.Sprintf("%s:%s", tenantID, url.PathEscape(`{access="open"}`))
 	lbacClient, err := e2emimir.NewClient("", queryFrontend.HTTPEndpoint(), "", "", tenantID,
 		e2emimir.WithAddHeader(labelaccesspkg.HTTPHeaderKey, lbacHeaderValue))
 	require.NoError(t, err)
