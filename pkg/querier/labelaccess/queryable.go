@@ -128,8 +128,11 @@ func (l *labelAccessQueryable) ChunkQuerier(mint, maxt int64) (storage.ChunkQuer
 	return &labelAccessChunkQuerier{
 		labelAccessQuerier: labelAccessQuerier{
 			labelQuerier: nextQuerier,
-			logger:       l.logger,
-			metrics:      l.metrics,
+			// querier is intentionally nil because labelAccessChunkQuerier overrides
+			// Select() and Close() and delegates to next storage.ChunkQuerier.
+			querier: nil,
+			logger:  l.logger,
+			metrics: l.metrics,
 		},
 		next: nextQuerier,
 	}, nil
@@ -495,8 +498,10 @@ func (l *labelAccessChunkSeriesSet) Next() bool {
 			if s.matches(l.curSeries.Labels()) {
 				if len(seriesToSkip) > 0 {
 					l.curSeries = &skipPreviousChunkSeries{
-						seriesToSkip: seriesToSkip,
-						inner:        l.curSeries,
+						state: &skipPreviousChunkSeriesState{
+							seriesToSkip: seriesToSkip,
+						},
+						inner: l.curSeries,
 					}
 				}
 
@@ -527,8 +532,8 @@ func (l *labelAccessChunkSeriesSet) Warnings() annotations.Annotations {
 }
 
 type skipPreviousChunkSeries struct {
-	seriesToSkip []storage.ChunkSeries
-	inner        storage.ChunkSeries
+	state *skipPreviousChunkSeriesState
+	inner storage.ChunkSeries
 }
 
 func (s *skipPreviousChunkSeries) Labels() labels.Labels {
@@ -536,16 +541,12 @@ func (s *skipPreviousChunkSeries) Labels() labels.Labels {
 }
 
 func (s *skipPreviousChunkSeries) Iterator(iterator chunks.Iterator) chunks.Iterator {
-	for _, series := range s.seriesToSkip {
-		iterator = series.Iterator(iterator)
-	}
+	iterator = s.state.consume(iterator)
 	return s.inner.Iterator(iterator)
 }
 
 func (s *skipPreviousChunkSeries) ChunkCount() (int, error) {
-	for _, series := range s.seriesToSkip {
-		_ = series.Iterator(nil)
-	}
+	_ = s.state.consume(nil)
 	return s.inner.ChunkCount()
 }
 
@@ -556,19 +557,34 @@ func (s *skipPreviousChunkSeries) IteratorFactory() storage.ChunkIterable {
 	}
 
 	return &skipPreviousChunkIterable{
-		seriesToSkip: s.seriesToSkip,
-		inner:        innerFactory,
+		state: s.state,
+		inner: innerFactory,
 	}
 }
 
-type skipPreviousChunkIterable struct {
+type skipPreviousChunkSeriesState struct {
 	seriesToSkip []storage.ChunkSeries
-	inner        storage.ChunkIterable
+	consumed     bool
 }
 
-func (s *skipPreviousChunkIterable) Iterator(iterator chunks.Iterator) chunks.Iterator {
+func (s *skipPreviousChunkSeriesState) consume(iterator chunks.Iterator) chunks.Iterator {
+	if s.consumed {
+		return iterator
+	}
+
 	for _, series := range s.seriesToSkip {
 		iterator = series.Iterator(iterator)
 	}
+	s.consumed = true
+	return iterator
+}
+
+type skipPreviousChunkIterable struct {
+	state *skipPreviousChunkSeriesState
+	inner storage.ChunkIterable
+}
+
+func (s *skipPreviousChunkIterable) Iterator(iterator chunks.Iterator) chunks.Iterator {
+	iterator = s.state.consume(iterator)
 	return s.inner.Iterator(iterator)
 }
