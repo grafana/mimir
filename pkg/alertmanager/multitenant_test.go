@@ -3888,22 +3888,6 @@ func Test_amConfigFingerprint(t *testing.T) {
 	})
 }
 
-// writeDelimited encodes a gogo-protobuf message with a varint length prefix.
-func writeDelimited(w io.Writer, m gogoproto.Marshaler) (int, error) {
-	buf, err := gogoproto.Marshal(m.(gogoproto.Message))
-	if err != nil {
-		return 0, err
-	}
-	var sizeBuf [binary.MaxVarintLen32]byte
-	n := binary.PutUvarint(sizeBuf[:], uint64(len(buf)))
-	written, err := w.Write(sizeBuf[:n])
-	if err != nil {
-		return written, err
-	}
-	n2, err := w.Write(buf)
-	return written + n2, err
-}
-
 type passthroughAlertmanagerClient struct {
 	server alertmanagerpb.AlertmanagerServer
 }
