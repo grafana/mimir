@@ -220,7 +220,7 @@ func TestLabelAccessChunkQuerier_Select(t *testing.T) {
 	})
 }
 
-func TestLabelAccessChunkSeriesSet_Next_ConsumesSkippedSeriesChunks(t *testing.T) {
+func TestLabelAccessChunkSeriesSet_Next_ConsumesSkippedSeriesChunksOnceAcrossChunkAccessMethods(t *testing.T) {
 	var skippedIteratorCalls int
 	var allowedIteratorCalls int
 
@@ -245,10 +245,20 @@ func TestLabelAccessChunkSeriesSet_Next_ConsumesSkippedSeriesChunks(t *testing.T
 
 	require.True(t, set.Next())
 	require.NotNil(t, set.At())
-	_ = set.At().Iterator(nil)
 
+	// Call all three access methods: skipped series must be consumed exactly once
+	// across all of them, even though each path previously drained seriesToSkip independently.
+	_, err := set.At().ChunkCount()
+	require.NoError(t, err)
+	_ = set.At().Iterator(nil)
+	factory := set.At().IteratorFactory()
+	require.NotNil(t, factory)
+	_ = factory.Iterator(nil)
+
+	// Skipped series drained exactly once despite three access method calls.
 	assert.Equal(t, 1, skippedIteratorCalls)
-	assert.Equal(t, 1, allowedIteratorCalls)
+	// Iterator and IteratorFactory().Iterator each call through; ChunkCount does not.
+	assert.Equal(t, 2, allowedIteratorCalls)
 }
 
 func TestPromSelector_Matches(t *testing.T) {
