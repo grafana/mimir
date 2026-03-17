@@ -626,13 +626,12 @@ func (q *histogramQuantile) AfterPrepare(ctx context.Context) error {
 }
 
 func (q *histogramQuantile) Finalize(ctx context.Context) error {
+	types.FPointSlicePool.Put(&q.phValues.Samples, q.memoryConsumptionTracker)
 	return q.phArg.Finalize(ctx)
 }
 
 func (q *histogramQuantile) Close() {
 	q.phArg.Close()
-
-	types.FPointSlicePool.Put(&q.phValues.Samples, q.memoryConsumptionTracker)
 }
 
 type histogramFraction struct {
@@ -692,17 +691,18 @@ func (f *histogramFraction) AfterPrepare(ctx context.Context) error {
 }
 
 func (f *histogramFraction) Finalize(ctx context.Context) error {
+	types.FPointSlicePool.Put(&f.lowerValues.Samples, f.memoryConsumptionTracker)
+	types.FPointSlicePool.Put(&f.upperValues.Samples, f.memoryConsumptionTracker)
+
 	err := f.lowerArg.Finalize(ctx)
 	if err != nil {
 		return err
 	}
+
 	return f.upperArg.Finalize(ctx)
 }
 
 func (f *histogramFraction) Close() {
 	f.lowerArg.Close()
 	f.upperArg.Close()
-
-	types.FPointSlicePool.Put(&f.lowerValues.Samples, f.memoryConsumptionTracker)
-	types.FPointSlicePool.Put(&f.upperValues.Samples, f.memoryConsumptionTracker)
 }

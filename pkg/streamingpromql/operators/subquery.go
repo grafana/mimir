@@ -141,11 +141,11 @@ func (s *Subquery) AfterPrepare(ctx context.Context) error {
 }
 
 func (s *Subquery) Finalize(ctx context.Context) error {
+	s.histograms.Close()
+	s.floats.Close()
 	return s.Inner.Finalize(ctx)
 }
 
 func (s *Subquery) Close() {
 	s.Inner.Close()
-	s.histograms.Close()
-	s.floats.Close()
 }
