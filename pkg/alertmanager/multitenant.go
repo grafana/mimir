@@ -207,7 +207,6 @@ func (cfg *MultitenantAlertmanagerConfig) CheckExternalURL(alertmanagerHTTPPrefi
 }
 
 type multitenantAlertmanagerMetrics struct {
-	grafanaStateSize              *prometheus.GaugeVec
 	lastReloadSuccessful          *prometheus.GaugeVec
 	lastReloadSuccessfulTimestamp *prometheus.GaugeVec
 	initializationsOnRequestTotal *prometheus.CounterVec
@@ -216,11 +215,6 @@ type multitenantAlertmanagerMetrics struct {
 
 func newMultitenantAlertmanagerMetrics(reg prometheus.Registerer) *multitenantAlertmanagerMetrics {
 	m := &multitenantAlertmanagerMetrics{}
-
-	m.grafanaStateSize = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-		Name: "cortex_alertmanager_grafana_state_size_bytes",
-		Help: "Size of the grafana alertmanager state.",
-	}, []string{"user"})
 
 	m.lastReloadSuccessful = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 		Name: "cortex_alertmanager_config_last_reload_successful",

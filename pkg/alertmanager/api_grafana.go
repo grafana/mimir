@@ -27,18 +27,11 @@ import (
 
 const (
 	errMalformedGrafanaConfigInStore  = "error unmarshalling Grafana configuration from storage"
-	errMarshallingState               = "error marshalling Grafana Alertmanager state"
-	errMarshallingStateJSON           = "error marshalling JSON Grafana Alertmanager state"
 	errMarshallingGrafanaConfigJSON   = "error marshalling JSON Grafana Alertmanager config"
 	errUnmarshallingGrafanaConfigJSON = "error unmarshalling JSON Grafana Alertmanager config"
-	errReadingState                   = "unable to read the Grafana Alertmanager state"
-	errDeletingState                  = "unable to delete the Grafana Alertmanager State"
-	errStoringState                   = "unable to store the Grafana Alertmanager state"
 	errReadingGrafanaConfig           = "unable to read the Grafana Alertmanager config"
 	errDeletingGrafanaConfig          = "unable to delete the Grafana Alertmanager config"
 	errStoringGrafanaConfig           = "unable to store the Grafana Alertmanager config"
-	errBase64DecodeState              = "unable to base64 decode Grafana Alertmanager state"
-	errUnmarshalProtoState            = "unable to unmarshal protobuf for Grafana Alertmanager state"
 
 	statusSuccess = "success"
 	statusError   = "error"
@@ -48,10 +41,6 @@ var (
 	maxGrafanaConfigSizeMsgFormat = globalerror.AlertmanagerMaxGrafanaConfigSize.MessageWithPerTenantLimitConfig(
 		"Alertmanager configuration is too big, limit: %d bytes",
 		validation.AlertmanagerMaxGrafanaConfigSizeFlag,
-	)
-	maxGrafanaStateSizeMsgFormat = globalerror.AlertmanagerMaxGrafanaStateSize.MessageWithPerTenantLimitConfig(
-		"Alertmanager state is too big, limit: %d bytes",
-		validation.AlertmanagerMaxGrafanaStateSizeFlag,
 	)
 )
 

@@ -66,7 +66,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 	"go.opentelemetry.io/otel"
-	"go.uber.org/atomic"
 	"golang.org/x/time/rate"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
@@ -139,9 +138,6 @@ type Alertmanager struct {
 	tmplExternalURL *url.URL
 	emailCfgMtx     sync.RWMutex
 	emailCfg        alertingReceivers.EmailSenderConfig
-
-	// usingGrafanaState indicates if the Grafana Alertmanager state is being used.
-	usingGrafanaState atomic.Bool
 
 	// Pipeline created during last ApplyConfig call. Used for testing only.
 	lastPipeline notify.Stage
