@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
@@ -913,6 +914,12 @@ const (
 //
 // The matchers in first and second must be sorted in the order produced by core.CompareMatchers.
 func SelectorsAreDuplicateOrSubset(first, second []*core.LabelMatcher) (SelectorRelationship, []*core.LabelMatcher) {
+	// Take the fast path out of here if the first selector is longer than the second as they can't be subsets
+	if len(first) > len(second) {
+		return NotDuplicateOrSubset, nil
+	}
+
+	// If they're equal lengths we check if they're exactly identical
 	if len(first) == len(second) {
 		same := slices.EqualFunc(first, second, func(a, b *core.LabelMatcher) bool {
 			return a.Equal(b)
@@ -922,11 +929,7 @@ func SelectorsAreDuplicateOrSubset(first, second []*core.LabelMatcher) (Selector
 			return ExactDuplicateSelectors, nil
 		}
 
-		return NotDuplicateOrSubset, nil
-	}
-
-	if len(first) > len(second) {
-		return NotDuplicateOrSubset, nil
+		// If they're not exactly equal they might be regex subset matches so we'll continue to check for that
 	}
 
 	nextSecondIdx := 0
@@ -950,10 +953,22 @@ func SelectorsAreDuplicateOrSubset(first, second []*core.LabelMatcher) (Selector
 				return NotDuplicateOrSubset, nil
 			}
 
-			// Second matcher sorts before first matcher, so it can't appear in first,
-			// so it could be a subset matcher.
+			// Second matcher sorts before first matcher, and might be a subset
+			if secondMatcher.Name == firstMatcher.Name && innerMatcherIsSubsetOfOuterMatcher(firstMatcher, secondMatcher) {
+				// If they have the same label and the inner (first) is a subset of the outer (second) matcher, we treat the outer (second) as a match
+				if subsetMatchers == nil {
+					// First time we've seen a possible subset matcher, allocate the slice now.
+					subsetMatchers = make([]*core.LabelMatcher, 0, 1)
+				}
+				subsetMatchers = append(subsetMatchers, secondMatcher)
+				nextSecondIdx++
+				foundMatch = true
+				break
+			}
+
+			// Different label, or same label with an extra constraint in a different-length selector:
+			// it's an extra matcher in second that narrows the selection further.
 			if subsetMatchers == nil {
-				// First time we've seen a possible subset matcher, allocate the slice now.
 				subsetMatchers = make([]*core.LabelMatcher, 0, len(second)-len(first))
 			}
 
@@ -972,6 +987,22 @@ func SelectorsAreDuplicateOrSubset(first, second []*core.LabelMatcher) (Selector
 	subsetMatchers = append(subsetMatchers, second[nextSecondIdx:]...)
 
 	return SubsetSelectors, subsetMatchers
+}
+
+// innerMatcherIsSubsetOfOuterMatcher returns true if all label values matching inner also match outer.
+// Currently only handles the case where outer is MatchRegexp and inner is MatchEqual.
+func innerMatcherIsSubsetOfOuterMatcher(outer, inner *core.LabelMatcher) bool {
+	if outer.Type != labels.MatchRegexp || inner.Type != labels.MatchEqual {
+		return false
+	}
+
+	m, err := labels.NewMatcher(labels.MatchRegexp, outer.Name, outer.Value)
+	if err != nil {
+		// We shouldn't have an invalid regex this far into parsing the query
+		return false
+	}
+
+	return m.Matches(inner.Value)
 }
 
 type selector interface {
