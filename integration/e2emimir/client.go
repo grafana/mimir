@@ -784,11 +784,6 @@ type ServerStatus struct {
 	} `json:"config"`
 }
 
-type successResult struct {
-	Status string          `json:"status"`
-	Data   json.RawMessage `json:"data,omitempty"`
-}
-
 // GetPrometheusRules fetches the rules from the Prometheus endpoint /api/v1/rules.
 func (c *Client) GetPrometheusRules(maxGroups int, token string) (*http.Response, []*promv1.RuleGroup, string, error) {
 	url, err := url.Parse(fmt.Sprintf("http://%s/prometheus/api/v1/rules", c.rulerAddress))
