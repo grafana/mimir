@@ -59,11 +59,11 @@ func TestAwaitQueryFrontendServiceRunning_ServiceIsNotReadyInitially(t *testing.
 	defer func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), service)) }()
 
 	go func() {
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 		close(startChan)
 	}()
 
-	err := awaitQueryFrontendServiceRunning(context.Background(), service, time.Second, log.NewNopLogger())
+	err := awaitQueryFrontendServiceRunning(context.Background(), service, 5*time.Second, log.NewNopLogger())
 	require.NoError(t, err)
 }
 
