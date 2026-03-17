@@ -15,6 +15,8 @@ import (
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -54,6 +56,9 @@ func TestDistributor_Push_ShouldEnforceMaxSeriesLimits(t *testing.T) {
 	series5Hash := labels.StableHash(mimirpb.FromLabelAdaptersToLabels(sampleReq.Timeseries[4].Labels))
 
 	testCases := map[string]struct {
+		orgID                                 string
+		expectedTrackedUserID                 string
+		expectedMetricUserID                  string
 		trackSeriesRejectedHashes             []uint64
 		trackSeriesErr                        error
 		expectedAcceptedSeries                []string
@@ -90,12 +95,25 @@ func TestDistributor_Push_ShouldEnforceMaxSeriesLimits(t *testing.T) {
 			canTrackAsync:                      true,
 		},
 		"async: some series rejected": {
+			expectedTrackedUserID:              userID,
+			expectedMetricUserID:               userID,
 			trackSeriesRejectedHashes:          []uint64{series4Hash, series2Hash}, // Rejected asynchronously so they're still ingested.
 			expectedAcceptedSeries:             []string{"series_1", "series_2", "series_3", "series_4", "series_5"},
 			expectedResourceExhaustedErrorCode: false,
 			canTrackAsync:                      true,
 		},
+		"async: some series rejected with tenant metadata": {
+			orgID:                              "user-1:source=test-run",
+			expectedTrackedUserID:              "user-1:source=test-run",
+			expectedMetricUserID:               userID,
+			trackSeriesRejectedHashes:          []uint64{series4Hash, series2Hash},
+			expectedAcceptedSeries:             []string{"series_1", "series_2", "series_3", "series_4", "series_5"},
+			expectedResourceExhaustedErrorCode: false,
+			canTrackAsync:                      true,
+		},
 		"async: failed to track series via usage-tracker": {
+			expectedTrackedUserID:                 userID,
+			expectedMetricUserID:                  userID,
 			trackSeriesErr:                        errors.New("usage-tracker service is unavailable"), // Failed asynchronously, so series are still ingested.
 			expectedAcceptedSeries:                []string{"series_1", "series_2", "series_3", "series_4", "series_5"},
 			expectedResourceExhaustedErrorCode:    false,
@@ -109,6 +127,19 @@ func TestDistributor_Push_ShouldEnforceMaxSeriesLimits(t *testing.T) {
 
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
+
+			orgID := testData.orgID
+			if orgID == "" {
+				orgID = userID
+			}
+			trackedUserID := testData.expectedTrackedUserID
+			if trackedUserID == "" {
+				trackedUserID = userID
+			}
+			metricUserID := testData.expectedMetricUserID
+			if metricUserID == "" {
+				metricUserID = userID
+			}
 
 			testConfig := prepConfig{
 				numDistributors:         1,
@@ -128,14 +159,14 @@ func TestDistributor_Push_ShouldEnforceMaxSeriesLimits(t *testing.T) {
 
 			// Enable the usage-tracker using a client mock.
 			usageTracker := &usageTrackerClientMock{}
-			usageTracker.On("CanTrackAsync", userID).Return(testData.canTrackAsync)
-			usageTracker.On("TrackSeries", mock.Anything, userID, mock.Anything).Return(testData.trackSeriesRejectedHashes, testData.trackSeriesErr)
+			usageTracker.On("CanTrackAsync", trackedUserID).Return(testData.canTrackAsync)
+			usageTracker.On("TrackSeries", mock.Anything, trackedUserID, mock.Anything).Return(testData.trackSeriesRejectedHashes, testData.trackSeriesErr)
 
 			distributors[0].cfg.UsageTrackerEnabled = true
 			distributors[0].usageTrackerClient = usageTracker
 
 			// Send write request.
-			ctx := user.InjectOrgID(context.Background(), userID)
+			ctx := user.InjectOrgID(context.Background(), orgID)
 			res, err := distributors[0].Push(ctx, createWriteRequest())
 			if testData.expectedFailedToEnforceSeriesLimitErr {
 				require.ErrorContains(t, err, "failed to enforce max series limit")
@@ -154,7 +185,7 @@ func TestDistributor_Push_ShouldEnforceMaxSeriesLimits(t *testing.T) {
 
 			// We expect TrackSeries() has been called with all input series hashes, in the same order.
 			usageTracker.AssertNumberOfCalls(t, "TrackSeries", 1)
-			usageTracker.AssertCalled(t, "TrackSeries", mock.Anything, userID, []uint64{series1Hash, series2Hash, series3Hash, series4Hash, series5Hash})
+			usageTracker.AssertCalled(t, "TrackSeries", mock.Anything, trackedUserID, []uint64{series1Hash, series2Hash, series3Hash, series4Hash, series5Hash})
 
 			// Ensure the expected series has been correctly written to partitions.
 			actualSeriesByPartition := readAllMetricNamesByPartitionFromKafka(t, kafkaCluster.ListenAddrs(), testConfig.ingestStoragePartitions, time.Second)
@@ -176,17 +207,17 @@ func TestDistributor_Push_ShouldEnforceMaxSeriesLimits(t *testing.T) {
 			}
 
 			if testData.canTrackAsync {
-				require.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(`
+				require.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(fmt.Sprintf(`
 					# HELP cortex_distributor_async_usage_tracker_calls_total The total number of asynchronous usage-tracker calls performed per user.
 					# TYPE cortex_distributor_async_usage_tracker_calls_total counter
-					cortex_distributor_async_usage_tracker_calls_total{user="user-1"} 1
-				`), "cortex_distributor_async_usage_tracker_calls_total"))
+					cortex_distributor_async_usage_tracker_calls_total{user="%s"} 1
+				`, metricUserID)), "cortex_distributor_async_usage_tracker_calls_total"))
 				if len(testData.trackSeriesRejectedHashes) > 0 {
-					require.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(`
+					require.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(fmt.Sprintf(`
 						# HELP cortex_distributor_async_usage_tracker_calls_with_rejected_series_total The total number of asynchronous usage-tracker calls that rejected series per user.
 						# TYPE cortex_distributor_async_usage_tracker_calls_with_rejected_series_total counter
-						cortex_distributor_async_usage_tracker_calls_with_rejected_series_total{user="user-1"} 1
-					`), "cortex_distributor_async_usage_tracker_calls_with_rejected_series_total"))
+						cortex_distributor_async_usage_tracker_calls_with_rejected_series_total{user="%s"} 1
+					`, metricUserID)), "cortex_distributor_async_usage_tracker_calls_with_rejected_series_total"))
 				} else {
 					require.NoError(t, testutil.GatherAndCompare(regs[0], &bytes.Buffer{}, "cortex_distributor_async_usage_tracker_calls_with_rejected_series_total"))
 				}
@@ -196,6 +227,42 @@ func TestDistributor_Push_ShouldEnforceMaxSeriesLimits(t *testing.T) {
 					"cortex_distributor_async_usage_tracker_calls_with_rejected_series_total",
 				))
 			}
+		})
+	}
+}
+
+func TestDistributor_ObserveAsyncUsageTrackerRejection(t *testing.T) {
+	tests := map[string]struct {
+		userID             string
+		expectedMetricUser string
+	}{
+		"plain tenant ID": {
+			userID:             "user-1",
+			expectedMetricUser: "user-1",
+		},
+		"tenant metadata uses main tenant ID": {
+			userID:             "user-1:source=test-run",
+			expectedMetricUser: "user-1",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			reg := prometheus.NewPedanticRegistry()
+			d := &Distributor{
+				asyncUsageTrackerCallsWithRejectedSeries: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+					Name: "cortex_distributor_async_usage_tracker_calls_with_rejected_series_total",
+					Help: "The total number of asynchronous usage-tracker calls that rejected series per user.",
+				}, []string{"user"}),
+			}
+
+			d.ObserveAsyncUsageTrackerRejection(tc.userID)
+
+			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+				# HELP cortex_distributor_async_usage_tracker_calls_with_rejected_series_total The total number of asynchronous usage-tracker calls that rejected series per user.
+				# TYPE cortex_distributor_async_usage_tracker_calls_with_rejected_series_total counter
+				cortex_distributor_async_usage_tracker_calls_with_rejected_series_total{user="%s"} 1
+			`, tc.expectedMetricUser)), "cortex_distributor_async_usage_tracker_calls_with_rejected_series_total"))
 		})
 	}
 }

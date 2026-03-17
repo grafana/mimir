@@ -196,7 +196,7 @@ overrides:
 		require.NoError(t, err)
 		writtenAfterLimit := pushSeriesUntilLimitOTLP(t, client, "unknown_test_metric", testRunDefaultSeriesLimit)
 		t.Logf("wrote %d series after limit", writtenAfterLimit)
-		require.Less(t, writtenAfterLimit, testRunDefaultSeriesLimit/10, "should not be able to write beyond the limit")
+		require.Less(t, writtenAfterLimit, mainTenantSeriesLimit/10, "should not be able to write beyond the limit")
 	})
 
 	t.Run("unknown test ID uses default test-run limit", func(t *testing.T) {

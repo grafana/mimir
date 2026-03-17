@@ -566,8 +566,9 @@ func (l *Limits) unmarshal(decode func(any) error) error {
 		// Reset the merged custom active series trackers config, to not interfere with the default limits.
 		l.activeSeriesMergedCustomTrackersConfig = atomic.NewPointer[asmodel.CustomTrackersConfig](nil)
 
-		// Reset this param to be nil, since it is set during RegisterFlags.
+		// Reset these params to be nil, since they are set during RegisterFlags.
 		l.OTelMetricSuffixesEnabled = nil
+		l.NameValidationScheme = model.UnsetValidation
 	}
 
 	// Decode into a reflection-crafted struct that has fields for the extensions.
@@ -1537,6 +1538,10 @@ func (o *Overrides) Prom2RangeCompat(userID string) bool {
 
 func (o *Overrides) OTelMetricSuffixesEnabled(tenantID string) bool {
 	v := o.getOverridesForUserWithMetadata(tenantID).OTelMetricSuffixesEnabled
+	if v != nil {
+		return *v
+	}
+	v = o.defaultLimits.OTelMetricSuffixesEnabled
 	return v != nil && *v
 }
 
@@ -1592,7 +1597,7 @@ func (o *Overrides) OTelTranslationStrategy(tenantID string) otlptranslator.Tran
 }
 
 func (o *Overrides) OTelLabelNameUnderscoreSanitization(tenantID string) bool {
-	return o.getOverridesForUserWithMetadata(tenantID).OTelLabelNameUnderscoreSanitization
+	return o.getOverridesForUser(tenantID).OTelLabelNameUnderscoreSanitization
 }
 
 func (o *Overrides) OTelLabelNamePreserveMultipleUnderscores(tenantID string) bool {
@@ -1662,7 +1667,18 @@ func (o *Overrides) CardinalityAnalysisMaxResults(userID string) int {
 	return o.getOverridesForUser(userID).CardinalityAnalysisMaxResults
 }
 
+// trimMetadataSuffix removes metadata from a tenant ID.
+// TODO(juliusmh): temporary solution until grafana/dskit provides this functionality.
+func trimMetadataSuffix(userID string) string {
+	idx := strings.IndexByte(userID, ':')
+	if idx == -1 {
+		return userID
+	}
+	return userID[:idx]
+}
+
 func (o *Overrides) getOverridesForUser(userID string) *Limits {
+	userID = trimMetadataSuffix(userID)
 	if o.tenantLimits != nil {
 		l := o.tenantLimits.ByUserID(userID)
 		if l != nil {
@@ -1722,7 +1738,8 @@ func mergeLimits(dst, overlay *Limits) *Limits {
 		dst.IngestionBurstFactor = overlay.IngestionBurstFactor
 	}
 	if overlay.OTelMetricSuffixesEnabled != nil {
-		dst.OTelMetricSuffixesEnabled = overlay.OTelMetricSuffixesEnabled
+		v := *overlay.OTelMetricSuffixesEnabled
+		dst.OTelMetricSuffixesEnabled = &v
 	}
 	if overlay.NameValidationScheme != model.UnsetValidation {
 		dst.NameValidationScheme = overlay.NameValidationScheme

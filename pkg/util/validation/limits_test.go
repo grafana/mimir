@@ -75,7 +75,7 @@ func TestLimitsLoadingFromYaml(t *testing.T) {
 			input: `{}`,
 			testFunc: func(t *testing.T, l Limits) {
 				assert.Equal(t, 1024, l.MaxLabelNameLength)
-				assert.Equal(t, model.LegacyValidation, l.NameValidationScheme)
+				assert.Equal(t, model.UnsetValidation, l.NameValidationScheme)
 				assert.True(t, l.OTelLabelNameUnderscoreSanitization)
 				assert.True(t, l.OTelLabelNamePreserveMultipleUnderscores)
 			},
@@ -138,7 +138,7 @@ func TestLimitsLoadingFromJson(t *testing.T) {
 			input: `{}`,
 			testFunc: func(t *testing.T, l Limits) {
 				assert.Equal(t, 1024, l.MaxLabelNameLength)
-				assert.Equal(t, model.LegacyValidation, l.NameValidationScheme)
+				assert.Equal(t, model.UnsetValidation, l.NameValidationScheme)
 				assert.True(t, l.OTelLabelNameUnderscoreSanitization)
 				assert.True(t, l.OTelLabelNamePreserveMultipleUnderscores)
 			},

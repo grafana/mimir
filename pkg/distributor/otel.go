@@ -362,9 +362,9 @@ func newOTLPParser(
 		promoteScopeMetadata := limits.OTelPromoteScopeMetadata(tenantID)
 		allowDeltaTemporality := limits.OTelNativeDeltaIngestion(tenantID)
 
-		fullTenantId := tenantMd.WithTenant(tenantID)
-		translationStrategy := limits.OTelTranslationStrategy(fullTenantId)
-		validateTranslationStrategy(translationStrategy, limits, fullTenantId)
+		fullTenantID := tenantMd.WithTenant(tenantID)
+		translationStrategy := limits.OTelTranslationStrategy(fullTenantID)
+		validateTranslationStrategy(translationStrategy, limits, fullTenantID)
 
 		pushMetrics.IncOTLPRequest(tenantID)
 		pushMetrics.ObserveRequestBodySize(tenantID, "otlp", int64(uncompressedBodySize), r.ContentLength)
@@ -380,7 +380,7 @@ func newOTLPParser(
 			promoteResourceAttributes:         promoteResourceAttributes,
 			allowDeltaTemporality:             allowDeltaTemporality,
 			allowUTF8:                         !translationStrategy.ShouldEscape(),
-			underscoreSanitization:            limits.OTelLabelNameUnderscoreSanitization(fullTenantId),
+			underscoreSanitization:            limits.OTelLabelNameUnderscoreSanitization(tenantID),
 			preserveMultipleUnderscores:       limits.OTelLabelNamePreserveMultipleUnderscores(tenantID),
 		}
 		metrics, metadata, metricsDropped, err := otelMetricsToSeriesAndMetadata(
