@@ -1112,10 +1112,10 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 	testBlock := fixtures.SetupTestBlock(tb, appendFunc)
 	defaultTestBlockFactory := testBlockToBucketBlock(tb, testBlock)
 
-	const largerTestBlockSeriesCount = 100_000
+	const largerTestBlockSeriesCount = 10_000
 	largerAppendFunc := func(t testing.TB, appenderFactory func() storage.Appender) {
+		appender := appenderFactory()
 		for i := 0; i < largerTestBlockSeriesCount; i++ {
-			appender := appenderFactory()
 			lbls := oneLabel("l1", fmt.Sprintf("v%d", i))
 			var ref storage.SeriesRef
 			const numSamples = 240 // Write enough samples to have two chunks per series
@@ -1124,8 +1124,8 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 				ref, err = appender.Append(ref, lbls, int64(i*10+j), float64(j))
 				assert.NoError(t, err)
 			}
-			assert.NoError(t, appender.Commit())
 		}
+		assert.NoError(t, appender.Commit())
 	}
 	largerTestBlock := fixtures.SetupTestBlock(tb, largerAppendFunc)
 	largerTestBlockFactory := testBlockToBucketBlock(tb, largerTestBlock)
@@ -1278,7 +1278,7 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 			blockFactory: largerTestBlockFactory,
 			minT:         0,
 			maxT:         math.MaxInt64,
-			batchSize:    5000,
+			batchSize:    500,
 			matchers:     []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", ".*")},
 			expectedSets: func() []seriesChunkRefsSet {
 				series := make([]seriesChunkRefs, 0, largerTestBlockSeriesCount)
@@ -1290,7 +1290,7 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 					return labels.Compare(a.lset, b.lset)
 				})
 
-				const numBatches = largerTestBlockSeriesCount / 5000
+				const numBatches = largerTestBlockSeriesCount / 500
 				sets := make([]seriesChunkRefsSet, numBatches)
 				for setIdx := 0; setIdx < numBatches; setIdx++ {
 					sets[setIdx].series = series[setIdx*largerTestBlockSeriesCount/numBatches : (setIdx+1)*largerTestBlockSeriesCount/numBatches]

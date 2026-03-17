@@ -621,6 +621,12 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 	// The query will fetch 4 series from 3 blocks each, so we do expect to hit a total of 12 chunks.
 	expectedChunks := uint64(4 * 3)
 
+	// Create blocks once into a shared bucket to avoid repeating expensive block creation I/O.
+	bkt := objstore.NewInMemBucket()
+	sharedCfg := defaultPrepareStoreConfig(t)
+	prepareTestBlocks(t, time.Now(), sharedCfg.numBlocks/2, sharedCfg.tempDir, bkt,
+		sharedCfg.series, labels.FromStrings("ext1", "value1"), sharedCfg.nonOverlappingBlocks)
+
 	cases := map[string]struct {
 		maxChunksLimit uint64
 		maxSeriesLimit uint64
@@ -649,16 +655,17 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 
 	for testName, testData := range cases {
 		t.Run(testName, func(t *testing.T) {
+			// Create one store per case (different limiters), reuse across streaming batch sizes.
+			prepConfig := defaultPrepareStoreConfig(t)
+			prepConfig.numBlocks = 0 // blocks already in shared bucket
+			prepConfig.chunksLimiterFactory = newStaticChunksLimiterFactory(testData.maxChunksLimit)
+			prepConfig.seriesLimiterFactory = newStaticSeriesLimiterFactory(testData.maxSeriesLimit)
+
+			s := prepareStoreWithTestBlocks(t, bkt, prepConfig)
+			srv := newStoreGatewayTestServer(t, s.store)
+
 			for _, streamingBatchSize := range []int{0, 1, 5} {
 				t.Run(fmt.Sprintf("streamingBatchSize=%d", streamingBatchSize), func(t *testing.T) {
-					bkt := objstore.NewInMemBucket()
-
-					prepConfig := defaultPrepareStoreConfig(t)
-					prepConfig.chunksLimiterFactory = newStaticChunksLimiterFactory(testData.maxChunksLimit)
-					prepConfig.seriesLimiterFactory = newStaticSeriesLimiterFactory(testData.maxSeriesLimit)
-
-					s := prepareStoreWithTestBlocks(t, bkt, prepConfig)
-
 					req := &storepb.SeriesRequest{
 						Matchers: []storepb.LabelMatcher{
 							{Type: storepb.LabelMatcher_EQ, Name: "a", Value: "1"},
@@ -668,7 +675,6 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 						StreamingChunksBatchSize: uint64(streamingBatchSize),
 					}
 
-					srv := newStoreGatewayTestServer(t, s.store)
 					_, _, _, _, err := srv.Series(context.Background(), req)
 
 					if testData.expectedErr == "" {

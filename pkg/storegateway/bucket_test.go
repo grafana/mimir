@@ -1190,17 +1190,21 @@ func benchmarkExpandedPostings(
 	ctx, cancel := context.WithCancel(context.Background())
 	tb.Cleanup(cancel)
 
+	// Reuse a single block across test cases to avoid repeatedly creating StreamBinaryReader
+	// instances (expensive, especially under the race detector).
+	sharedBlock := newTestBucketBlock()
+
+	var allSeries []labels.Labels
+	if !tb.IsBenchmark() {
+		indexr := newBucketIndexReader(sharedBlock, selectAllStrategy{})
+		allPostings, _, err := indexr.ExpandedPostings(ctx, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "my_made_up_label", "")}, newSafeQueryStats())
+		require.NoError(tb, err)
+		allSeries = loadSeries(ctx, tb, allPostings, indexr)
+	}
+
 	for _, testCase := range fixtures.SeriesSelectorTestCases(tb, series) {
 		tb.Run(testCase.Name, func(tb test.TB) {
-			indexr := newBucketIndexReader(newTestBucketBlock(), selectAllStrategy{})
-
-			var allSeries []labels.Labels
-			if !tb.IsBenchmark() {
-				allPostings, _, err := indexr.ExpandedPostings(ctx, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "my_made_up_label", "")}, newSafeQueryStats())
-				require.NoError(tb, err)
-				allSeries = loadSeries(ctx, tb, allPostings, indexr)
-			}
-
+			indexr := newBucketIndexReader(sharedBlock, selectAllStrategy{})
 			indexrStats := newSafeQueryStats()
 
 			tb.ResetTimer()
@@ -1218,10 +1222,10 @@ func benchmarkExpandedPostings(
 	}
 }
 
-// filterSeries modified series in place and returns a subslice of series.
+// filterSeries returns a new slice containing only the series that match all matchers.
 func filterSeries(series []labels.Labels, ms []*labels.Matcher) []labels.Labels {
-	writeIdx := 0
-	for i, s := range series {
+	result := make([]labels.Labels, 0)
+	for _, s := range series {
 		matches := true
 		for _, m := range ms {
 			if !m.Matches(s.Get(m.Name)) {
@@ -1230,11 +1234,10 @@ func filterSeries(series []labels.Labels, ms []*labels.Matcher) []labels.Labels 
 			}
 		}
 		if matches {
-			series[writeIdx], series[i] = series[i], series[writeIdx]
-			writeIdx++
+			result = append(result, s)
 		}
 	}
-	return series[:writeIdx]
+	return result
 }
 
 func loadSeries(ctx context.Context, tb test.TB, postings []storage.SeriesRef, indexr *bucketIndexReader) []labels.Labels {
@@ -1561,7 +1564,7 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 	marshalledHints, err := types.MarshalAny(hints)
 	require.NoError(t, err)
 
-	runRequest := func(t *testing.T, store *BucketStore, streamBatchSize int) {
+	runRequest := func(t *testing.T, srv *storeTestServer, streamBatchSize int) {
 		req := &storepb.SeriesRequest{
 			MinTime: math.MinInt64,
 			MaxTime: math.MaxInt64,
@@ -1571,7 +1574,6 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 			Hints:                    marshalledHints,
 			StreamingChunksBatchSize: uint64(streamBatchSize),
 		}
-		srv := newStoreGatewayTestServer(t, store)
 		seriesSet, warnings, _, _, err := srv.Series(context.Background(), req)
 		require.NoError(t, err)
 		require.Equal(t, 0, len(warnings), "%v", warnings)
@@ -1627,6 +1629,9 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 						store.RemoveBlocksAndClose()
 					})
 
+					// Create a single gRPC test server shared across all workers.
+					srv := newStoreGatewayTestServer(t, store)
+
 					// Run workers.
 					wg := sync.WaitGroup{}
 					wg.Add(numWorkers)
@@ -1636,7 +1641,7 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 							defer wg.Done()
 
 							for r := 0; r < numRequestsPerWorker; r++ {
-								runRequest(t, store, streamBatchSize)
+								runRequest(t, srv, streamBatchSize)
 							}
 						}()
 					}
