@@ -111,7 +111,6 @@ func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series 
 		tenant.seriesCreated.Add(uint64(len(createdRefs)))
 	}
 
-	level.Debug(t.logger).Log("msg", "tracked series", "tenant", tenantID, "received_len", len(series), "created_len", len(createdRefs), "rejected_len", len(rejectedRefs), "now", timeNow.Unix(), "now_minutes", now)
 	if len(createdRefs) == 0 {
 		return rejectedRefs, nil
 	}
