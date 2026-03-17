@@ -8,7 +8,6 @@ package alertmanager
 import (
 	"context"
 	"crypto/md5"
-	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
