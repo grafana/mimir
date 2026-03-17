@@ -49,10 +49,6 @@ var (
 		"Alertmanager configuration is too big, limit: %d bytes",
 		validation.AlertmanagerMaxGrafanaConfigSizeFlag,
 	)
-	maxGrafanaStateSizeMsgFormat = globalerror.AlertmanagerMaxGrafanaStateSize.MessageWithPerTenantLimitConfig(
-		"Alertmanager state is too big, limit: %d bytes",
-		validation.AlertmanagerMaxGrafanaStateSizeFlag,
-	)
 )
 
 type GrafanaAlertmanagerConfig struct {
@@ -126,39 +122,6 @@ func (gc *UserGrafanaConfig) UnmarshalJSON(data []byte) error {
 
 	if err = gc.Validate(); err != nil {
 		return err
-	}
-
-	return nil
-}
-
-type UserGrafanaState struct {
-	State string `json:"state"`
-}
-
-type PostableUserGrafanaState struct {
-	UserGrafanaState
-
-	// Deprecated: This field is not used.
-	Promoted bool `json:"promoted"`
-}
-
-func (gs *PostableUserGrafanaState) UnmarshalJSON(data []byte) error {
-	type plain PostableUserGrafanaState
-	err := json.Unmarshal(data, (*plain)(gs))
-	if err != nil {
-		return err
-	}
-
-	if err = gs.Validate(); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (gs *UserGrafanaState) Validate() error {
-	if gs.State == "" {
-		return errors.New("no state specified")
 	}
 
 	return nil

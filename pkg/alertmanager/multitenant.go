@@ -207,7 +207,6 @@ func (cfg *MultitenantAlertmanagerConfig) CheckExternalURL(alertmanagerHTTPPrefi
 }
 
 type multitenantAlertmanagerMetrics struct {
-	grafanaStateSize              *prometheus.GaugeVec
 	lastReloadSuccessful          *prometheus.GaugeVec
 	lastReloadSuccessfulTimestamp *prometheus.GaugeVec
 	initializationsOnRequestTotal *prometheus.CounterVec
@@ -216,11 +215,6 @@ type multitenantAlertmanagerMetrics struct {
 
 func newMultitenantAlertmanagerMetrics(reg prometheus.Registerer) *multitenantAlertmanagerMetrics {
 	m := &multitenantAlertmanagerMetrics{}
-
-	m.grafanaStateSize = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-		Name: "cortex_alertmanager_grafana_state_size_bytes",
-		Help: "Size of the grafana alertmanager state.",
-	}, []string{"user"})
 
 	m.lastReloadSuccessful = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 		Name: "cortex_alertmanager_config_last_reload_successful",
@@ -276,9 +270,6 @@ type Limits interface {
 
 	// AlertmanagerMaxConfigSize returns max size of configuration file that user is allowed to upload. If 0, there is no limit.
 	AlertmanagerMaxConfigSize(tenant string) int
-
-	// AlertmanagerMaxGrafanaStateSize returns the max size of the grafana state in bytes. If 0, there is no limit.
-	AlertmanagerMaxGrafanaStateSize(tenant string) int
 
 	// AlertmanagerMaxSilencesCount returns the max number of silences, including expired silences. If negative or 0, there is no limit.
 	AlertmanagerMaxSilencesCount(tenant string) int
