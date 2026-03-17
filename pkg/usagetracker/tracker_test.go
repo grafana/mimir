@@ -1167,6 +1167,66 @@ func TestMetricsGatheringIsNotConcurrent(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestPooledSeriesSlice(t *testing.T) {
+	t.Parallel()
+
+	t.Run("zero returns nil", func(t *testing.T) {
+		t.Parallel()
+		s := getPooledSeriesSlice(0)
+		require.Nil(t, s)
+	})
+
+	t.Run("length and power-of-two capacity", func(t *testing.T) {
+		t.Parallel()
+		for _, n := range []int{1, 2, 3, 4, 5, 7, 8, 9, 15, 16, 17, 100, 1000, 1023, 1024, 1025} {
+			s := getPooledSeriesSlice(n)
+			require.Equal(t, n, len(s), "len for n=%d", n)
+			require.GreaterOrEqual(t, cap(s), n, "cap for n=%d", n)
+			c := cap(s)
+			require.Equal(t, 1, popcount(c), "cap=%d should be a power of 2 for n=%d", c, n)
+			putPooledSeriesSlice(s)
+		}
+	})
+
+	t.Run("oversized allocation", func(t *testing.T) {
+		t.Parallel()
+		n := (1 << seriesPoolMaxBits) + 1
+		s := getPooledSeriesSlice(n)
+		require.Equal(t, n, len(s))
+		putPooledSeriesSlice(s)
+	})
+
+	t.Run("put then get reuses capacity", func(t *testing.T) {
+		t.Parallel()
+		s := getPooledSeriesSlice(500)
+		require.Equal(t, 512, cap(s))
+		putPooledSeriesSlice(s)
+
+		// sync.Pool may evict, but on an immediate get without GC it
+		// should return a slice with the same tier capacity.
+		s2 := getPooledSeriesSlice(500)
+		require.Equal(t, 500, len(s2))
+		require.Equal(t, 512, cap(s2))
+		putPooledSeriesSlice(s2)
+	})
+
+	t.Run("put does not panic on edge cases", func(t *testing.T) {
+		t.Parallel()
+		putPooledSeriesSlice(nil)
+		putPooledSeriesSlice([]uint64{})
+		putPooledSeriesSlice(make([]uint64, 0, 3)) // non-power-of-2 cap
+	})
+}
+
+func popcount(x int) int {
+	n := 0
+	for x > 0 {
+		n += x & 1
+		x >>= 1
+	}
+	return n
+}
+
 func TestIterMergedUsers(t *testing.T) {
 	t.Parallel()
 
@@ -1276,15 +1336,24 @@ func TestIterMergedUsers(t *testing.T) {
 }
 
 func BenchmarkTrackSeriesBatch(b *testing.B) {
-	const (
-		totalHashes    = 1_000_000
-		entriesPerUser = 5
-	)
+	type benchCase struct {
+		numUsers       int
+		totalHashes    int
+		entriesPerUser int
+	}
 
-	for _, numUsers := range []int{1, 50, 950} {
-		b.Run(fmt.Sprintf("users=%d", numUsers), func(b *testing.B) {
-			tenantLimits := make(map[string]*validation.Limits, numUsers)
-			for u := 0; u < numUsers; u++ {
+	cases := []benchCase{
+		{numUsers: 1, totalHashes: 1500, entriesPerUser: 500},
+		{numUsers: 1, totalHashes: 100_000, entriesPerUser: 5},
+		{numUsers: 50, totalHashes: 100_000, entriesPerUser: 500},
+		{numUsers: 950, totalHashes: 100_000, entriesPerUser: 500},
+	}
+
+	for _, tc := range cases {
+		name := fmt.Sprintf("users=%d/hashes=%d/entries=%d", tc.numUsers, tc.totalHashes, tc.entriesPerUser)
+		b.Run(name, func(b *testing.B) {
+			tenantLimits := make(map[string]*validation.Limits, tc.numUsers)
+			for u := 0; u < tc.numUsers; u++ {
 				tenantLimits[strconv.Itoa(u)] = &validation.Limits{
 					MaxActiveSeriesPerUser: testPartitionsCount * 1_000_000,
 					MaxGlobalSeriesPerUser: testPartitionsCount * 1_000_000,
@@ -1304,18 +1373,18 @@ func BenchmarkTrackSeriesBatch(b *testing.B) {
 				require.Equal(t, testPartitionsCount, tracker.partitionRing.PartitionRing().ActivePartitionsCount())
 			}, 5*time.Second, 100*time.Millisecond)
 
-			hashesPerUser := totalHashes / numUsers
-			users := make([]*usagetrackerpb.TrackSeriesBatchUser, 0, numUsers*entriesPerUser)
+			hashesPerUser := tc.totalHashes / tc.numUsers
+			users := make([]*usagetrackerpb.TrackSeriesBatchUser, 0, tc.numUsers*tc.entriesPerUser)
 			seq := uint64(0)
-			for u := 0; u < numUsers; u++ {
+			for u := 0; u < tc.numUsers; u++ {
 				userID := strconv.Itoa(u)
 				n := hashesPerUser
-				if u < totalHashes%numUsers {
+				if u < tc.totalHashes%tc.numUsers {
 					n++
 				}
-				for e := 0; e < entriesPerUser; e++ {
-					chunk := n / entriesPerUser
-					if e < n%entriesPerUser {
+				for e := 0; e < tc.entriesPerUser; e++ {
+					chunk := n / tc.entriesPerUser
+					if e < n%tc.entriesPerUser {
 						chunk++
 					}
 					hashes := make([]uint64, chunk)
