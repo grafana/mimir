@@ -245,6 +245,15 @@ func TestExtractLabelMatchers(t *testing.T) {
 			},
 		},
 	}
+	fooHelloWorldPolicy := &LabelPolicy{
+		Selector: []*labels.Matcher{
+			{
+				Type:  labels.MatchEqual,
+				Name:  "foo",
+				Value: "hello world",
+			},
+		},
+	}
 
 	tests := []struct {
 		name         string
@@ -262,6 +271,15 @@ func TestExtractLabelMatchers(t *testing.T) {
 			want: LabelPolicySet{
 				"user-1": {
 					fooBarPolicy,
+				},
+			},
+		},
+		{
+			name:         "single-header/single-policy/query-escaped-space",
+			headerValues: []string{"user-1:%7Bfoo%3D%22hello+world%22%7D"},
+			want: LabelPolicySet{
+				"user-1": {
+					fooHelloWorldPolicy,
 				},
 			},
 		},

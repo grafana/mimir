@@ -80,7 +80,7 @@ func policyToHeaderValue(instanceName string, policy *LabelPolicy) (string, erro
 	for i := range policy.Selector {
 		matchers[i] = policy.Selector[i].String()
 	}
-	return instanceName + ":" + url.PathEscape("{"+strings.Join(matchers, ", ")+"}"), nil
+	return instanceName + ":" + url.QueryEscape("{"+strings.Join(matchers, ", ")+"}"), nil
 }
 
 func policyFromHeaderValue(headerString string) (string, *LabelPolicy, error) {
@@ -88,7 +88,7 @@ func policyFromHeaderValue(headerString string) (string, *LabelPolicy, error) {
 	if len(components) != 2 {
 		return "", nil, errInvalidHeaderParse
 	}
-	selectorString, err := url.PathUnescape(components[1])
+	selectorString, err := url.QueryUnescape(components[1])
 	if err != nil {
 		return "", nil, fmt.Errorf("%w, '%v'", errInvalidHeaderEscape, err)
 	}
