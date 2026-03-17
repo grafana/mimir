@@ -144,13 +144,14 @@
 * [ENHANCEMENT] Ingester: Add `cortex_ingester_queried_blocks_total` metric to track TSDB block generations queried. #14572
 * [ENHANCEMENT] Distributor, ingest storage: Add `cortex_distributor_received_bytes_total` and `cortex_ingest_storage_writer_input_bytes_total` metrics to measure Remote Write v2 symbols table compression effectiveness. #14453
 * [ENHANCEMENT] Store-gateway: Added `cortex_bucket_store_chunk_size_estimate_type_total` metric to track how often do we infer the size of a chunk or use the default size. #14477
-* [ENHANCEMENT] Block-builder: Expose per-tenant TSDB metrics. #14364
+* [ENHANCEMENT] Block-builder: Expose per-tenant TSDB metrics. #14364 #14699
 * [ENHANCEMENT] Block-builder: Add experimental `-block-builder.generate-sparse-index-headers` option. Construct and upload sparse index headers to object storage as part of block creation to make the sparse headers available to store-gateways when loading uncompacted blocks. #14494
 * [ENHANCEMENT] Add experimental `-http.response-compression-level` CLI flag to set the gzip compression level used for compressed HTTP responses. #14586
 * [ENHANCEMENT] Query-frontend: Add support for `lookback_delta` query parameter for instant and range queries. #14582 #14588
 * [ENHANCEMENT] Query-frontend: Extend query blocking to optionally only apply a blocking rule if the query is an unaligned range query. Set `unaligned_range_queries: true` to enable. #14643
 * [ENHANCEMENT] Store-gateway: Add experimental flag `blocks-storage.bucket-store.partitioner-max-gap-bytes-chunks` to specify the gap size for the chunks partitioner. #14649
 * [ENHANCEMENT] Compactor: Add expermental `-compactor.first-level-compaction-ooo-wait-period` to configure a separate compaction wait period for out-of-order blocks. It's an analogue of `-compactor.first-level-compaction-wait-period`, which currently ignores out-of-order blocks. #14627
+* [ENHANCEMENT] HA: Deduplicate per sample instead of per batch. #13665
 * [BUGFIX] Distributor: Fix race condition where usage-tracker partition ring may not be initialized before the distributor service starts, causing `usage-tracker partition ring is required` error on startup. #14675
 * [BUGFIX] Mimir: Fix false positive in filesystem path overlap detection when one path is a string prefix of another but not an ancestor directory. #14426
 * [BUGFIX] Build: Fixed config descriptor generation to correctly handle custom field types without CLI flags. #14632
@@ -262,7 +263,9 @@
 * [ENHANCEMENT] Dashboards: Add "Forced TSDB head compactions in progress" panel to "Mimir / Writes" dashboard. #14248
 * [ENHANCEMENT] Dashboards: Improve "Last successful run per-compactor replica" table in the compactor dashboard to show time since process start for compactors that haven't completed their first run yet. #14285
 * [ENHANCEMENT] Alerts: Add dashboard_url annotations to Prometheus alerts. #14458
+* [ENHANCEMENT] Dashboards: Change the "Rules" panel in the "Mimir / Reads resources" dashboard to use a stacked visualization. #14707
 * [ENHANCEMENT] Dashboards: Split the "All series" panel in the Tenants dashboard into "Active series" and "Owned & in-memory series" panels, and added the active series limit. #14648
+* [ENHANCEMENT] Dashboards: Add "In memory series" panel to experimental "Mimir / Block-builder" dashboard. #14700
 * [BUGFIX] Dashboards: Fix issue where throughput dashboard panels would group all gRPC requests that resulted in a status containing an underscore into one series with no name. #13184
 * [BUGFIX] Dashboards: Filter out 0s from `max_series` limit on Writes Resources > Ingester > In-memory series panel. #13419
 * [BUGFIX] Dashboards: Fix issue where the "Tenant gateway requests" panels on Tenants dashboard would show data from all components. #13940
