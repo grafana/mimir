@@ -16,13 +16,9 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/go-openapi/strfmt"
-	alertingmodels "github.com/grafana/alerting/models"
-	alertingNotify "github.com/grafana/alerting/notify"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
-	v2_models "github.com/prometheus/alertmanager/api/v2/models"
 	amlabels "github.com/prometheus/alertmanager/pkg/labels"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/common/model"
