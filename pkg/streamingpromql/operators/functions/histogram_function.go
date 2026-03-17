@@ -549,18 +549,21 @@ func (h *HistogramFunction) AfterPrepare(ctx context.Context) error {
 }
 
 func (h *HistogramFunction) Finalize(ctx context.Context) error {
+	// Ensure local resources are always cleaned up even if a child Finalize fails.
+	defer func() {
+		seriesGroupPairPool.Put(&h.seriesGroupPairs, h.memoryConsumptionTracker)
+		if h.remainingGroupsBytes > 0 {
+			h.memoryConsumptionTracker.DecreaseMemoryConsumption(h.remainingGroupsBytes, limiter.BucketGroupPointerSlices)
+			h.remainingGroupsBytes = 0
+		}
+	}()
+
 	if err := h.f.Finalize(ctx); err != nil {
 		return err
 	}
 
 	if err := h.inner.Finalize(ctx); err != nil {
 		return err
-	}
-
-	seriesGroupPairPool.Put(&h.seriesGroupPairs, h.memoryConsumptionTracker)
-	if h.remainingGroupsBytes > 0 {
-		h.memoryConsumptionTracker.DecreaseMemoryConsumption(h.remainingGroupsBytes, limiter.BucketGroupPointerSlices)
-		h.remainingGroupsBytes = 0
 	}
 
 	return nil
