@@ -1167,137 +1167,82 @@ func TestMetricsGatheringIsNotConcurrent(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func BenchmarkTrackSeriesBatch_RedundantUser(b *testing.B) {
-	ikv, pkv, cluster := prepareKVStoreAndKafkaMocks(b)
-	tracker := newTestUsageTrackerWithDeps(b, 0, "zone-a", ikv, pkv, cluster, newUsageTrackerDeps{
-		logger: log.NewNopLogger(),
-		tenantLimits: validation.NewMockTenantLimits(map[string]*validation.Limits{
-			"9960": {
-				MaxActiveSeriesPerUser: testPartitionsCount * 100000,
-				MaxGlobalSeriesPerUser: testPartitionsCount * 100000,
-			},
-		}),
-	}, func(cfg *Config) {
-		cfg.MaxPartitionsToCreatePerReconcile = testPartitionsCount
-	})
-	waitUntilAllTrackersSeeAllInstancesInTheirZones(b, map[string]*UsageTracker{"a0": tracker})
-	require.NoError(b, tracker.reconcilePartitions(b.Context()))
-	require.EventuallyWithT(b, func(t *assert.CollectT) {
-		require.Equal(t, testPartitionsCount, tracker.partitionRing.PartitionRing().ActivePartitionsCount())
-	}, 5*time.Second, 100*time.Millisecond)
-
-	const hashesPerEntry = 3
-	const entries = 500
-
-	users := make([]*usagetrackerpb.TrackSeriesBatchUser, entries)
-	for i := range users {
-		hashes := make([]uint64, hashesPerEntry)
-		for j := range hashes {
-			hashes[j] = uint64(i*hashesPerEntry + j)
-		}
-		users[i] = &usagetrackerpb.TrackSeriesBatchUser{
-			UserID:       "9960",
-			SeriesHashes: hashes,
-		}
-	}
-
-	req := &usagetrackerpb.TrackSeriesBatchRequest{
-		Partitions: []*usagetrackerpb.TrackSeriesBatchPartition{
-			{Partition: 0, Users: users},
-		},
-	}
-
-	// Pre-track to avoid publishCreatedSeries overhead in the benchmark loop.
-	_, err := tracker.TrackSeriesBatch(b.Context(), req)
-	require.NoError(b, err)
-
-	b.ResetTimer()
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		_, err := tracker.TrackSeriesBatch(b.Context(), req)
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
-func BenchmarkTrackSeriesBatch_ManyUsers(b *testing.B) {
+func BenchmarkTrackSeriesBatch(b *testing.B) {
 	const (
-		numUsers         = 950
-		totalHashes      = 1_000_000
-		hashesPerUser    = totalHashes / numUsers
-		hashesRemainder  = totalHashes % numUsers
-		entriesPerUser   = 5
-		hashesPerEntry   = hashesPerUser / entriesPerUser
-		totalEntries     = numUsers * entriesPerUser
+		totalHashes    = 1_000_000
+		entriesPerUser = 5
 	)
 
-	tenantLimits := make(map[string]*validation.Limits, numUsers)
-	for u := 0; u < numUsers; u++ {
-		tenantLimits[strconv.Itoa(u)] = &validation.Limits{
-			MaxActiveSeriesPerUser: testPartitionsCount * 1_000_000,
-			MaxGlobalSeriesPerUser: testPartitionsCount * 1_000_000,
-		}
-	}
-
-	ikv, pkv, cluster := prepareKVStoreAndKafkaMocks(b)
-	tracker := newTestUsageTrackerWithDeps(b, 0, "zone-a", ikv, pkv, cluster, newUsageTrackerDeps{
-		logger:       log.NewNopLogger(),
-		tenantLimits: validation.NewMockTenantLimits(tenantLimits),
-	}, func(cfg *Config) {
-		cfg.MaxPartitionsToCreatePerReconcile = testPartitionsCount
-	})
-	waitUntilAllTrackersSeeAllInstancesInTheirZones(b, map[string]*UsageTracker{"a0": tracker})
-	require.NoError(b, tracker.reconcilePartitions(b.Context()))
-	require.EventuallyWithT(b, func(t *assert.CollectT) {
-		require.Equal(t, testPartitionsCount, tracker.partitionRing.PartitionRing().ActivePartitionsCount())
-	}, 5*time.Second, 100*time.Millisecond)
-
-	users := make([]*usagetrackerpb.TrackSeriesBatchUser, 0, totalEntries)
-	hash := uint64(0)
-	for u := 0; u < numUsers; u++ {
-		userID := strconv.Itoa(u)
-		n := hashesPerUser
-		if u < hashesRemainder {
-			n++
-		}
-		for e := 0; e < entriesPerUser; e++ {
-			chunk := n / entriesPerUser
-			if e < n%entriesPerUser {
-				chunk++
+	for _, numUsers := range []int{1, 50, 950} {
+		b.Run(fmt.Sprintf("users=%d", numUsers), func(b *testing.B) {
+			tenantLimits := make(map[string]*validation.Limits, numUsers)
+			for u := 0; u < numUsers; u++ {
+				tenantLimits[strconv.Itoa(u)] = &validation.Limits{
+					MaxActiveSeriesPerUser: testPartitionsCount * 1_000_000,
+					MaxGlobalSeriesPerUser: testPartitionsCount * 1_000_000,
+				}
 			}
-			hashes := make([]uint64, chunk)
-			for j := range hashes {
-				hashes[j] = hash
-				hash++
-			}
-			users = append(users, &usagetrackerpb.TrackSeriesBatchUser{
-				UserID:       userID,
-				SeriesHashes: hashes,
+
+			ikv, pkv, cluster := prepareKVStoreAndKafkaMocks(b)
+			tracker := newTestUsageTrackerWithDeps(b, 0, "zone-a", ikv, pkv, cluster, newUsageTrackerDeps{
+				logger:       log.NewNopLogger(),
+				tenantLimits: validation.NewMockTenantLimits(tenantLimits),
+			}, func(cfg *Config) {
+				cfg.MaxPartitionsToCreatePerReconcile = testPartitionsCount
 			})
-		}
-	}
+			waitUntilAllTrackersSeeAllInstancesInTheirZones(b, map[string]*UsageTracker{"a0": tracker})
+			require.NoError(b, tracker.reconcilePartitions(b.Context()))
+			require.EventuallyWithT(b, func(t *assert.CollectT) {
+				require.Equal(t, testPartitionsCount, tracker.partitionRing.PartitionRing().ActivePartitionsCount())
+			}, 5*time.Second, 100*time.Millisecond)
 
-	// Shuffle so same-user entries are interleaved, matching real traffic.
-	rng := rand.New(rand.NewPCG(42, 0))
-	rng.Shuffle(len(users), func(i, j int) { users[i], users[j] = users[j], users[i] })
+			hashesPerUser := totalHashes / numUsers
+			users := make([]*usagetrackerpb.TrackSeriesBatchUser, 0, numUsers*entriesPerUser)
+			seq := uint64(0)
+			for u := 0; u < numUsers; u++ {
+				userID := strconv.Itoa(u)
+				n := hashesPerUser
+				if u < totalHashes%numUsers {
+					n++
+				}
+				for e := 0; e < entriesPerUser; e++ {
+					chunk := n / entriesPerUser
+					if e < n%entriesPerUser {
+						chunk++
+					}
+					hashes := make([]uint64, chunk)
+					for j := range hashes {
+						seq++
+						hashes[j] = seq * 0x9E3779B97F4A7C15
+					}
+					users = append(users, &usagetrackerpb.TrackSeriesBatchUser{
+						UserID:       userID,
+						SeriesHashes: hashes,
+					})
+				}
+			}
 
-	req := &usagetrackerpb.TrackSeriesBatchRequest{
-		Partitions: []*usagetrackerpb.TrackSeriesBatchPartition{
-			{Partition: 0, Users: users},
-		},
-	}
+			rng := rand.New(rand.NewPCG(42, 0))
+			rng.Shuffle(len(users), func(i, j int) { users[i], users[j] = users[j], users[i] })
 
-	_, err := tracker.TrackSeriesBatch(b.Context(), req)
-	require.NoError(b, err)
+			req := &usagetrackerpb.TrackSeriesBatchRequest{
+				Partitions: []*usagetrackerpb.TrackSeriesBatchPartition{
+					{Partition: 0, Users: users},
+				},
+			}
 
-	b.ResetTimer()
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		_, err := tracker.TrackSeriesBatch(b.Context(), req)
-		if err != nil {
-			b.Fatal(err)
-		}
+			_, err := tracker.TrackSeriesBatch(b.Context(), req)
+			require.NoError(b, err)
+
+			b.ResetTimer()
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				_, err := tracker.TrackSeriesBatch(b.Context(), req)
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
 	}
 }
 
