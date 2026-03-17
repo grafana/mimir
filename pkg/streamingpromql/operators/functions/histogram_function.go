@@ -88,6 +88,9 @@ const (
 	bucketGroupPointerSize = uint64(unsafe.Sizeof((*bucketGroup)(nil)))
 )
 
+// seriesGroupPairPool is defined locally and not added to the collection of pools provided by the types package
+// because it is being used for seriesGroupPair which is not an exported type.
+// If seriesGroupPair were to be exported then this pool should be moved into limiting_pool.go
 var seriesGroupPairPool = types.NewLimitingBucketedPool(
 	pool.NewBucketedPool(types.MaxExpectedSeriesPerResult, func(size int) []seriesGroupPair {
 		return make([]seriesGroupPair, 0, size)
@@ -277,6 +280,7 @@ func (h *HistogramFunction) SeriesMetadata(ctx context.Context, matchers types.M
 	h.remainingGroupsBytes = uint64(cap(h.remainingGroups)) * bucketGroupPointerSize
 	if err = h.memoryConsumptionTracker.IncreaseMemoryConsumption(h.remainingGroupsBytes, limiter.BucketGroupPointerSlices); err != nil {
 		h.remainingGroupsBytes = 0
+		types.SeriesMetadataSlicePool.Put(&seriesMetadata, h.memoryConsumptionTracker)
 		return nil, err
 	}
 	for _, g := range groups {
@@ -549,17 +553,22 @@ func (h *HistogramFunction) Finalize(ctx context.Context) error {
 		return err
 	}
 
-	return h.inner.Finalize(ctx)
-}
+	if err := h.inner.Finalize(ctx); err != nil {
+		return err
+	}
 
-func (h *HistogramFunction) Close() {
-	h.inner.Close()
-	h.f.Close()
 	seriesGroupPairPool.Put(&h.seriesGroupPairs, h.memoryConsumptionTracker)
 	if h.remainingGroupsBytes > 0 {
 		h.memoryConsumptionTracker.DecreaseMemoryConsumption(h.remainingGroupsBytes, limiter.BucketGroupPointerSlices)
 		h.remainingGroupsBytes = 0
 	}
+
+	return nil
+}
+
+func (h *HistogramFunction) Close() {
+	h.inner.Close()
+	h.f.Close()
 }
 
 type bucketGroupSorter struct {
