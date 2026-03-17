@@ -634,10 +634,6 @@ func (am *Alertmanager) mergePartialExternalState(part *clusterpb.Part) error {
 	return am.state.MergePartialState(part)
 }
 
-func (am *Alertmanager) mergeFullGrafanaState(fs *clusterpb.FullState) error {
-	return am.state.MergeGrafanaState([]*clusterpb.FullState{fs})
-}
-
 func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {
 	return am.state.GetFullState()
 }
