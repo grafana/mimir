@@ -465,12 +465,12 @@ print-go-version: ## Print the go version.
 	@go version | awk '{print $$3}' | sed 's/go//'
 
 test-with-race: ## Run all unit tests with data race detect.
-	go test -tags netgo,stringlabels -timeout 30m -race -count 1 ./...
+	go test -tags netgo,stringlabels -timeout 30m -race -count 1 $$(go list ./... | grep -v "^github.com/grafana/mimir/integration")
 
 cover: ## Run all unit tests with code coverage and generates reports.
 	$(eval COVERDIR := $(shell mktemp -d coverage.XXXXXXXXXX))
 	$(eval COVERFILE := $(shell mktemp $(COVERDIR)/unit.XXXXXXXXXX))
-	go test -tags netgo,stringlabels -timeout 30m -race -count 1 -coverprofile=$(COVERFILE) ./...
+	go test -tags netgo,stringlabels -timeout 30m -race -count 1 -coverprofile=$(COVERFILE) $$(go list ./... | grep -v "^github.com/grafana/mimir/integration")
 	go tool cover -html=$(COVERFILE) -o cover.html
 	go tool cover -func=cover.html | tail -n1
 
