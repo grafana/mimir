@@ -389,3 +389,7 @@ func (sm *TSDBMetrics) SetRegistryForTenant(userID string, registry *prometheus.
 func (sm *TSDBMetrics) RemoveRegistryForTenant(userID string) {
 	sm.regs.RemoveTenantRegistry(userID, false)
 }
+
+func (sm *TSDBMetrics) ForceRemoveRegistryForTenant(userID string) {
+	sm.regs.RemoveTenantRegistry(userID, true)
+}
