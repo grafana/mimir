@@ -7,6 +7,7 @@ package integration
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,7 +16,6 @@ import (
 	"time"
 
 	"github.com/grafana/e2e"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
 
@@ -96,7 +96,7 @@ func writeFileToSharedDir(s *e2e.Scenario, dst string, content []byte) error {
 func copyFileToSharedDir(s *e2e.Scenario, src, dst string) error {
 	content, err := os.ReadFile(filepath.Join(getMimirProjectDir(), src))
 	if err != nil {
-		return errors.Wrapf(err, "unable to read local file %s", src)
+		return fmt.Errorf("unable to read local file %s: %w", src, err)
 	}
 
 	return writeFileToSharedDir(s, dst, content)
