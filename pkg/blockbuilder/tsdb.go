@@ -391,7 +391,7 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 			merr.Add(os.RemoveAll(db.Dir()))
 
 			// Remove all registered per-tenant TSDB metrics. Their local DBs are wiped out from the block-builder no-matter what.
-			b.tsdbMetrics.RemoveRegistryForTenant(tenant.tenantID)
+			b.tsdbMetrics.ForceRemoveRegistryForTenant(tenant.tenantID)
 		}
 
 		// Clear the map so that it can be released from the memory. Not setting to nil in case we want to reuse the TSDBBuilder.
@@ -480,7 +480,7 @@ func (b *TSDBBuilder) Close() error {
 		merr.Add(db.Close())
 		merr.Add(os.RemoveAll(dbDir))
 
-		b.tsdbMetrics.RemoveRegistryForTenant(tenant.tenantID)
+		b.tsdbMetrics.ForceRemoveRegistryForTenant(tenant.tenantID)
 	}
 
 	// Clear the map so that it can be released from the memory. Not setting to nil in case
