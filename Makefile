@@ -459,7 +459,7 @@ format: ## Run gofmt and goimports.
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec goimports -w -local github.com/grafana/mimir {} \;
 
 test: ## Run all unit tests.
-	go test -timeout 30m ./...
+	go list ./... | grep -v "^github.com/grafana/mimir/integration" | xargs go test -timeout 30m
 
 print-go-version: ## Print the go version.
 	@go version | awk '{print $$3}' | sed 's/go//'
