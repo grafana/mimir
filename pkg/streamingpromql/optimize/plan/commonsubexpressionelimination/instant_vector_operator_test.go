@@ -291,7 +291,7 @@ func TestInstantVectorOperator_Buffering_Filtering_IteratingBeforeCallingSeriesM
 	requireNoMemoryConsumption(t, memoryConsumptionTracker)
 }
 
-func TestInstantVectorOperator_Buffering_Filtering_DoesNotBufferForClosedConsumer(t *testing.T) {
+func TestInstantVectorOperator_Buffering_Filtering_DoesNotBufferForFinalizedConsumer(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	inner, expectedData := createTestInstantVectorOperator(t, 6, memoryConsumptionTracker)
@@ -317,10 +317,10 @@ func TestInstantVectorOperator_Buffering_Filtering_DoesNotBufferForClosedConsume
 	require.Equal(t, 2, buffer.buffer.Size(), "the first and second series should be buffered for the first consumer")
 	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
 
-	// Finalize and close the first consumer, check that the data that was being buffered for it is released.
+	// The data being buffered for the first consumer should be released when it's finalized.
 	require.NoError(t, consumer1.Finalize(ctx))
-	consumer1.Close()
 	require.Equal(t, 0, buffer.buffer.Size())
+	consumer1.Close()
 
 	// Check that the inner operator hasn't been closed or finalized yet.
 	require.False(t, inner.Finalized)
@@ -390,10 +390,10 @@ func TestInstantVectorOperator_Buffering_Filtering_DoesNotBufferUnnecessarilyFor
 	require.Equal(t, 1, buffer.buffer.Size(), "only the first series should be buffered for the first consumer")
 	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
 
-	// Finalize and close the first consumer, check that the data that was being buffered for it is released.
+	// The data being buffered for the first consumer should be released when it's finalized.
 	require.NoError(t, consumer1.Finalize(ctx))
-	consumer1.Close()
 	require.Equal(t, 0, buffer.buffer.Size())
+	consumer1.Close()
 
 	// Check that the inner operator hasn't been closed or finalized yet.
 	require.False(t, inner.Finalized)
@@ -401,8 +401,8 @@ func TestInstantVectorOperator_Buffering_Filtering_DoesNotBufferUnnecessarilyFor
 
 	// And the same for the second consumer.
 	require.NoError(t, consumer2.Finalize(ctx))
-	consumer2.Close()
 	require.True(t, inner.Finalized)
+	consumer2.Close()
 	require.True(t, inner.Closed)
 	requireNoMemoryConsumption(t, memoryConsumptionTracker)
 }
@@ -525,7 +525,7 @@ func TestInstantVectorOperator_Filtering_SingleConsumer(t *testing.T) {
 	}
 }
 
-func TestInstantVectorOperator_ClosedWithBufferedData_NoFiltering(t *testing.T) {
+func TestInstantVectorOperator_FinalizedWithBufferedData_NoFiltering(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	inner, expectedData := createTestInstantVectorOperator(t, 3, memoryConsumptionTracker)
@@ -562,8 +562,8 @@ func TestInstantVectorOperator_ClosedWithBufferedData_NoFiltering(t *testing.T) 
 	require.Equal(t, 3, buffer.buffer.Size())
 	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
 
-	// Close the first consumer, and check the data remains buffered for the second consumer.
-	consumer1.Close()
+	// Finalize the first consumer, and check the data remains buffered for the second consumer.
+	require.NoError(t, consumer1.Finalize(ctx))
 	require.Equal(t, 3, buffer.buffer.Size())
 
 	// Read some of the buffered data.
@@ -573,18 +573,18 @@ func TestInstantVectorOperator_ClosedWithBufferedData_NoFiltering(t *testing.T) 
 	require.Equal(t, 2, buffer.buffer.Size())
 	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
 
-	// Close the second consumer, and check that the inner operator was closed and all buffered data was released.
-	consumer2.Close()
-	require.True(t, inner.Closed)
+	// Finalize the second consumer, and check that the inner operator was finalized and all buffered data was released.
+	require.NoError(t, consumer2.Finalize(ctx))
+	require.True(t, inner.Finalized)
 	requireNoMemoryConsumption(t, memoryConsumptionTracker)
 
-	// Make sure it's safe to close either consumer a second time.
-	consumer1.Close()
-	consumer2.Close()
+	// Make sure it's safe to finalize either consumer a second time.
+	require.NoError(t, consumer1.Finalize(ctx))
+	require.NoError(t, consumer2.Finalize(ctx))
 	requireNoMemoryConsumption(t, memoryConsumptionTracker)
 }
 
-func TestInstantVectorOperator_ClosedWithBufferedData_Filtering(t *testing.T) {
+func TestInstantVectorOperator_FinalizedWithBufferedData_Filtering(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	inner, expectedData := createTestInstantVectorOperator(t, 3, memoryConsumptionTracker)
@@ -619,7 +619,7 @@ func TestInstantVectorOperator_ClosedWithBufferedData_Filtering(t *testing.T) {
 	}
 
 	require.Equal(t, 3, buffer.buffer.Size(), "buffer should contain all three series for the remaining two consumers")
-	consumer2.Close()
+	require.NoError(t, consumer2.Finalize(ctx))
 	require.Equal(t, 1, buffer.buffer.Size(), "buffer should only contain remaining series required by remaining consumer")
 
 	d, err := consumer3.NextSeries(ctx)
@@ -628,8 +628,8 @@ func TestInstantVectorOperator_ClosedWithBufferedData_Filtering(t *testing.T) {
 	require.Equal(t, 0, buffer.buffer.Size())
 	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
 
-	consumer1.Close()
-	consumer3.Close()
+	require.NoError(t, consumer1.Finalize(ctx))
+	require.NoError(t, consumer3.Finalize(ctx))
 	requireNoMemoryConsumption(t, memoryConsumptionTracker)
 }
 
