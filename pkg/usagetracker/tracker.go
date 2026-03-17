@@ -744,6 +744,15 @@ func iterMergedUsers(users []*usagetrackerpb.TrackSeriesBatchUser) iter.Seq[merg
 				j++
 			}
 
+			if j == i+1 {
+				// Single entry for this user; use its hashes directly.
+				if !yield(mergedUser{userID: userID, seriesHashes: users[i].SeriesHashes}) {
+					return
+				}
+				i = j
+				continue
+			}
+
 			total := 0
 			for k := i; k < j; k++ {
 				total += len(users[k].SeriesHashes)
