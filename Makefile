@@ -10,7 +10,7 @@ help:
 # WARNING: do not commit to a repository!
 -include Makefile.local
 
-.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc check-reference-help push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks check-mixin-mimirtool-rules build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-getting-started mixin-screenshots
+.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc check-reference-help push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks check-mixin-mimirtool-rules build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-getting-started mixin-screenshots warmup-build-cache-integration-tests warmup-build-cache-unit-tests warmup-build-cache-image-builds
 .DEFAULT_GOAL := all
 
 # Version number
@@ -234,11 +234,12 @@ MIMIR_VERSION := github.com/grafana/mimir/pkg/util/version
 
 REGO_POLICIES_PATH=operations/policies
 
+GO_TAGS := netgo,stringlabels
 GO_FLAGS := -ldflags "\
 		-X $(MIMIR_VERSION).Branch=$(GIT_BRANCH) \
 		-X $(MIMIR_VERSION).Revision=$(GIT_REVISION) \
 		-X $(MIMIR_VERSION).Version=$(VERSION) \
-		-extldflags \"-static\" -s -w" -tags netgo,stringlabels
+		-extldflags \"-static\" -s -w" -tags $(GO_TAGS)
 
 ifeq ($(BUILD_IN_CONTAINER),true)
 
@@ -788,6 +789,30 @@ integration-tests-race: ## Run all integration tests with race-enabled distroles
 integration-tests-race: export MIMIR_IMAGE=$(IMAGE_PREFIX)mimir:$(IMAGE_TAG_RACE)
 integration-tests-race: cmd/mimir/$(UPTODATE_RACE)
 	go test -timeout 30m -tags=requires_docker,stringlabels ./integration/...
+
+# The following targets compile test/build binaries without running them, populating the Go build
+# cache. They are used by the warmup-go-build-cache-* CI jobs so that the actual test and build
+# jobs can skip most compilation. The flags here MUST match the ones used by the real targets.
+
+warmup-build-cache-integration-tests: ## Warm the Go build cache for integration tests.
+	go test -run=^$ -count=1 -tags=requires_docker,stringlabels ./integration/ 2>&1 || true
+	go build ./tools/pre-pull-images/... 2>&1 || true
+
+warmup-build-cache-unit-tests: ## Warm the Go build cache for unit tests.
+	go test -run=^$ -count=1 -tags=$(GO_TAGS) -race ./... 2>&1 || true
+	go test -run=^$ -count=1 -tags=$(GO_TAGS),nopools -race ./... 2>&1 || true
+	# Some packages run without -race (see SKIP_RACE_DETECTOR_PATTERN in run-unit-tests-group.sh).
+	go test -run=^$ -count=1 -tags=$(GO_TAGS) ./pkg/streamingpromql/benchmarks/... 2>&1 || true
+
+IMAGE_EXES := $(foreach dir,$(DOCKER_IMAGE_DIRS),$(wildcard $(dir)/main.go))
+warmup-build-cache-image-builds: ## Warm the Go build cache for image builds.
+	@for arch in amd64 arm64; do \
+		for main in $(IMAGE_EXES); do \
+			dir=$$(dirname $$main); \
+			echo "Warming cache: GOARCH=$$arch $$dir/..."; \
+			CGO_ENABLED=0 GOOS=linux GOARCH=$$arch go build $(GO_FLAGS) ./$$dir/... 2>&1 || true; \
+		done; \
+	done
 
 # Those vars are needed for packages target
 export VERSION

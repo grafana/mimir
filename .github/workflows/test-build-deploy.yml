@@ -9,6 +9,11 @@ on:
       - mimir-[0-9]+.[0-9]+.[0-9]+**
   pull_request:
 
+env:
+  # Set to 'true' to force Go build cache warmup on all branches (useful when iterating on cache changes).
+  # When 'false', the cache is only built on main (see warmup-go-build-cache-integration-tests job for details).
+  FORCE_BUILD_CACHE_WARMUP: 'false'
+
 permissions:
   contents: read
 
@@ -146,19 +151,154 @@ jobs:
       - name: Check Helm Tests
         run: make BUILD_IN_CONTAINER=false check-helm-tests
 
+  # Compile integration test binaries once and save the Go build cache, so that the
+  # integration test jobs can reuse it. The cache is keyed by go.sum hash: it's rebuilt only
+  # when dependencies change. This means test jobs will still need to compile source files
+  # changed since the cache was created, but dependencies (the bulk of compilation time) and
+  # unchanged Mimir source files are cached.
+  #
+  # The cache is compiled and saved only on main by default. GitHub Actions caches created on
+  # main are accessible from all branches, while caches created on PR branches are scoped to
+  # that branch only. Building only on main keeps cache storage small and ensures all branches
+  # benefit from the shared cache. Set the FORCE_BUILD_CACHE_WARMUP env var at the top of
+  # this file to 'true' to enable cache warmup on all branches.
+  #
+  # There are three separate warmup jobs because different compilation flags produce different
+  # cache entries: integration tests (no -race), unit tests (-race), and image builds
+  # (CGO_ENABLED=0, multi-arch).
+  warmup-go-build-cache-integration-tests:
+    needs: [goversion, prepare]
+    runs-on: ubuntu-latest
+    steps:
+      # Sparse checkout of go.sum only, to compute the cache key without fetching the full repo.
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        if: github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true'
+        with:
+          persist-credentials: false
+          sparse-checkout: go.sum
+      - name: Check if Go build cache exists
+        id: check-cache
+        if: github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: /home/runner/.cache/go-build
+          key: go-build-cache-integration-${{ hashFiles('go.sum') }}
+          lookup-only: true
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
+        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
+        with:
+          go-version: ${{ needs.goversion.outputs.version }}
+          cache: false
+      - name: Warm Go build cache
+        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
+        run: make BUILD_IN_CONTAINER=false warmup-build-cache-integration-tests
+      - name: Print Go build cache size
+        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
+        run: du -sh /home/runner/.cache/go-build
+      - uses: actions/cache/save@v4
+        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
+        with:
+          path: /home/runner/.cache/go-build
+          key: go-build-cache-integration-${{ hashFiles('go.sum') }}
+
+  # Same as above but for unit tests, which compile with -race (producing different cache
+  # entries) and run inside a container.
+  warmup-go-build-cache-unit-tests:
+    needs: [prepare]
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        if: github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true'
+        with:
+          persist-credentials: false
+          sparse-checkout: go.sum
+      - name: Check if Go build cache exists
+        id: check-cache
+        if: github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: /go/cache
+          key: go-build-cache-unit-${{ hashFiles('go.sum') }}
+          lookup-only: true
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
+        with:
+          persist-credentials: false
+      - name: Run Git Config
+        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
+        run: git config --global --add safe.directory '*'
+      - name: Warm Go build cache
+        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
+        run: make BUILD_IN_CONTAINER=false warmup-build-cache-unit-tests
+      - name: Print Go build cache size
+        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
+        run: du -sh /go/cache
+      - uses: actions/cache/save@v4
+        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
+        with:
+          path: /go/cache
+          key: go-build-cache-unit-${{ hashFiles('go.sum') }}
+
+  # Same as the other warmup jobs but for image builds, which use CGO_ENABLED=0 (no race)
+  # with -tags netgo,stringlabels.
+  warmup-go-build-cache-image-builds:
+    needs: [prepare]
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        if: github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true'
+        with:
+          persist-credentials: false
+          sparse-checkout: go.sum
+      - name: Check if Go build cache exists
+        id: check-cache
+        if: github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: /go/cache
+          key: go-build-cache-image-${{ hashFiles('go.sum') }}
+          lookup-only: true
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
+        with:
+          persist-credentials: false
+      - name: Run Git Config
+        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
+        run: git config --global --add safe.directory '*'
+      - name: Warm Go build cache
+        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
+        run: make BUILD_IN_CONTAINER=false warmup-build-cache-image-builds
+      - name: Print Go build cache size
+        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
+        run: du -sh /go/cache
+      - uses: actions/cache/save@v4
+        if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
+        with:
+          path: /go/cache
+          key: go-build-cache-image-${{ hashFiles('go.sum') }}
+
   test:
     runs-on: ubuntu-latest
     name: test (${{ matrix.extra_build_tags != '' && format('{0}, ', matrix.extra_build_tags) || '' }}${{ matrix.test_group_id }}, ${{ matrix.test_group_total }})
     strategy:
       # Do not abort other groups when one fails.
       fail-fast: false
-      # Split tests into 4 groups.
+      # Split tests into 10 groups.
       matrix:
-        test_group_id:    [0, 1, 2, 3]
-        test_group_total: [4]
+        test_group_id:    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+        test_group_total: [10]
         extra_build_tags: ["", "nopools"]
     needs:
       - prepare
+      - warmup-go-build-cache-unit-tests
     permissions:
       contents: read
       pull-requests: write
@@ -169,6 +309,11 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
+      - name: Restore Go build cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /go/cache
+          key: go-build-cache-unit-${{ hashFiles('go.sum') }}
       - name: Install GitHub CLI
         run: ./.github/workflows/scripts/install-gh.sh
       - name: Run Git Config
@@ -177,18 +322,10 @@ jobs:
         run: |
           mkdir -p /go/src/github.com/grafana/mimir
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      # We use retry logic for tests to handle flaky tests that might fail intermittently.
-      # The retry action will run the test command up to max_attempts times if it fails.
-      # This helps reduce CI failures caused by temporary issues, timing problems, or race conditions.
-      - name: Run Tests with retry
-        uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3.0.2
-        with:
-          timeout_minutes: 180 # 3 hours so that we rely on the timeout in the makefile
-          max_attempts: 2
-          retry_wait_seconds: 0
-          command: |
-            echo "Running unit tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }})${{ matrix.extra_build_tags != '' && format(' with build tags: {0}', matrix.extra_build_tags) || '' }} with Go version: $(go version)"
-            EXTRA_BUILD_TAGS="${{ matrix.extra_build_tags }}" ./.github/workflows/scripts/run-unit-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
+      - name: Run Tests
+        run: |
+          echo "Running unit tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }})${{ matrix.extra_build_tags != '' && format(' with build tags: {0}', matrix.extra_build_tags) || '' }} with Go version: $(go version)"
+          EXTRA_BUILD_TAGS="${{ matrix.extra_build_tags }}" ./.github/workflows/scripts/run-unit-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
       - name: Notify on streamingpromql failures
         if: failure() && env.FAILED_PACKAGES != '' && contains(github.event.pull_request.labels.*.name, 'vendored-mimir-prometheus-update')
         run: |
@@ -215,6 +352,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - prepare
+      - warmup-go-build-cache-image-builds
     container:
       image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
@@ -222,6 +360,11 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
+      - name: Restore Go build cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /go/cache
+          key: go-build-cache-image-${{ hashFiles('go.sum') }}
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -232,6 +375,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - prepare
+      - warmup-go-build-cache-image-builds
     container:
       image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
@@ -239,6 +383,11 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
+      - name: Restore Go build cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /go/cache
+          key: go-build-cache-image-${{ hashFiles('go.sum') }}
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -249,6 +398,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - prepare
+      - warmup-go-build-cache-image-builds
     container:
       image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
@@ -256,6 +406,11 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
+      - name: Restore Go build cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /go/cache
+          key: go-build-cache-image-${{ hashFiles('go.sum') }}
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -266,6 +421,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - prepare
+      - warmup-go-build-cache-image-builds
     container:
       image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
@@ -273,6 +429,11 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
+      - name: Restore Go build cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /go/cache
+          key: go-build-cache-image-${{ hashFiles('go.sum') }}
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -283,6 +444,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - prepare
+      - warmup-go-build-cache-image-builds
     container:
       image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
@@ -290,6 +452,11 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
+      - name: Restore Go build cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /go/cache
+          key: go-build-cache-image-${{ hashFiles('go.sum') }}
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -315,6 +482,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - prepare
+      - warmup-go-build-cache-unit-tests
     container:
       image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
@@ -322,6 +490,12 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
+      # Race-enabled image uses CGO_ENABLED=1 -race -tags=netgo,stringlabels, same as unit tests.
+      - name: Restore Go build cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /go/cache
+          key: go-build-cache-unit-${{ hashFiles('go.sum') }}
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Install Docker Client
@@ -350,15 +524,15 @@ jobs:
             ./mimir_race_image_distroless
 
   integration:
-    needs: [goversion, build-mimirtool-image, build-race-enabled-image, prepare]
+    needs: [goversion, build-mimirtool-image, build-race-enabled-image, prepare, warmup-go-build-cache-integration-tests]
     runs-on: ubuntu-latest
     strategy:
       # Do not abort other groups when one fails.
       fail-fast: false
-      # Split tests into 6 groups.
+      # Split tests into 20 groups.
       matrix:
-        test_group_id:    [0, 1, 2, 3, 4, 5]
-        test_group_total: [6]
+        test_group_id:    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+        test_group_total: [20]
     steps:
       - name: Upgrade golang
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
@@ -369,6 +543,11 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
+      - name: Restore Go build cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /home/runner/.cache/go-build
+          key: go-build-cache-integration-${{ hashFiles('go.sum') }}
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Symlink Expected Path to Workspace
@@ -402,25 +581,16 @@ jobs:
         # locally and the download time doesn't account in the test execution time, which is subject
         # to a timeout
         run: go run ./tools/pre-pull-images | xargs -n1 -P4 docker pull
-      # We use retry logic for integration tests to handle flaky tests that might fail intermittently.
-      # The retry action will run the test command up to max_attempts times if it fails.
-      # This helps reduce CI failures caused by temporary issues, network problems, or timing conditions
-      # that are common in integration tests with multiple services interacting.
-      - name: Integration Tests with retry
-        uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3.0.2
-        with:
-          timeout_minutes: 180 # 3 hours so that we rely on the timeout in the makefile
-          max_attempts: 2
-          retry_wait_seconds: 0
-          command: |
-            export IMAGE_TAG_RACE=$(make image-tag-race)
-            export MIMIR_IMAGE="grafana/mimir:$IMAGE_TAG_RACE"
-            export IMAGE_TAG=$(make image-tag)
-            export MIMIRTOOL_IMAGE="grafana/mimirtool:$IMAGE_TAG"
-            export MIMIR_CHECKOUT_DIR="/go/src/github.com/grafana/mimir"
-            echo "Running integration tests with image: $MIMIR_IMAGE (Mimir), $MIMIRTOOL_IMAGE (Mimirtool)"
-            echo "Running integration tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }}) with Go version: $(go version)"
-            ./.github/workflows/scripts/run-integration-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
+      - name: Integration Tests
+        run: |
+          export IMAGE_TAG_RACE=$(make image-tag-race)
+          export MIMIR_IMAGE="grafana/mimir:$IMAGE_TAG_RACE"
+          export IMAGE_TAG=$(make image-tag)
+          export MIMIRTOOL_IMAGE="grafana/mimirtool:$IMAGE_TAG"
+          export MIMIR_CHECKOUT_DIR="/go/src/github.com/grafana/mimir"
+          echo "Running integration tests with image: $MIMIR_IMAGE (Mimir), $MIMIRTOOL_IMAGE (Mimirtool)"
+          echo "Running integration tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }}) with Go version: $(go version)"
+          ./.github/workflows/scripts/run-integration-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
 
   deploy:
     needs:
