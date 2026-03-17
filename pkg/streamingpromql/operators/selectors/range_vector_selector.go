@@ -260,13 +260,14 @@ func (m *RangeVectorSelector) AfterPrepare(ctx context.Context) error {
 }
 
 func (m *RangeVectorSelector) Finalize(ctx context.Context) error {
-	// Nothing to do.
+	m.floats.Close()
+	m.histograms.Close()
+	m.chunkIterator = nil
+	m.Selector.Close()
 	return nil
 }
 
 func (m *RangeVectorSelector) Close() {
+	// If the query fails, then Finalize above won't be called, so make sure to close the selector.
 	m.Selector.Close()
-	m.floats.Close()
-	m.histograms.Close()
-	m.chunkIterator = nil
 }

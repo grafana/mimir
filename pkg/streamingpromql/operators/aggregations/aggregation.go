@@ -155,6 +155,11 @@ func (a *Aggregation) AfterPrepare(ctx context.Context) error {
 
 func (a *Aggregation) Finalize(ctx context.Context) error {
 	// The wrapping operator (if any) is responsible for calling Finalize() on whatever provides a.ParamData, so we don't need to do it here.
+	if a.aggregator != nil {
+		a.aggregator.Finalize()
+		a.aggregator = nil
+	}
+
 	return a.Inner.Finalize(ctx)
 }
 
@@ -164,11 +169,6 @@ func (a *Aggregation) SetParamData(data types.ScalarData) {
 
 func (a *Aggregation) Close() {
 	a.Inner.Close()
-
-	if a.aggregator != nil {
-		a.aggregator.Close()
-		a.aggregator = nil
-	}
 }
 
 type groupSorter struct {
@@ -427,7 +427,7 @@ func (a *Aggregator) emitAnnotation(generator types.AnnotationGenerator) {
 	a.Annotations.Add(generator(metricName, a.innerExpressionPosition))
 }
 
-func (a *Aggregator) Close() {
+func (a *Aggregator) Finalize() {
 	if a.ParamData.Samples != nil {
 		types.FPointSlicePool.Put(&a.ParamData.Samples, a.MemoryConsumptionTracker)
 	}

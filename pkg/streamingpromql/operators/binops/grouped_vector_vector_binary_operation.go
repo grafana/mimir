@@ -62,9 +62,9 @@ type groupedBinaryOperationOutputSeries struct {
 	oneSide  *oneSide
 }
 
-func (g *groupedBinaryOperationOutputSeries) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
-	g.manySide.Close(memoryConsumptionTracker)
-	g.oneSide.Close(memoryConsumptionTracker)
+func (g *groupedBinaryOperationOutputSeries) Finalize(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+	g.manySide.Finalize(memoryConsumptionTracker)
+	g.oneSide.Finalize(memoryConsumptionTracker)
 }
 
 type groupedBinaryOperationOutputSeriesWithLabels struct {
@@ -88,7 +88,7 @@ func (s *manySide) latestSeriesIndex() int {
 	return s.seriesIndices[len(s.seriesIndices)-1]
 }
 
-func (s *manySide) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+func (s *manySide) Finalize(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
 	types.PutInstantVectorSeriesData(s.mergedData, memoryConsumptionTracker)
 	s.mergedData = types.InstantVectorSeriesData{}
 }
@@ -111,7 +111,7 @@ func (s *oneSide) latestSeriesIndex() int {
 	return s.seriesIndices[len(s.seriesIndices)-1]
 }
 
-func (s *oneSide) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+func (s *oneSide) Finalize(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
 	types.PutInstantVectorSeriesData(s.mergedData, memoryConsumptionTracker)
 	s.mergedData = types.InstantVectorSeriesData{}
 
@@ -208,7 +208,6 @@ func (g *GroupedVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context,
 			return nil, err
 		}
 
-		g.Close()
 		return nil, nil
 	}
 
@@ -226,7 +225,6 @@ func (g *GroupedVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context,
 			return nil, err
 		}
 
-		g.Close()
 		return nil, nil
 	}
 
@@ -786,6 +784,26 @@ func (g *GroupedVectorVectorBinaryOperation) AfterPrepare(ctx context.Context) e
 }
 
 func (g *GroupedVectorVectorBinaryOperation) Finalize(ctx context.Context) error {
+	types.SeriesMetadataSlicePool.Put(&g.oneSideMetadata, g.MemoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&g.manySideMetadata, g.MemoryConsumptionTracker)
+
+	if g.oneSideBuffer != nil {
+		g.oneSideBuffer.Finalize()
+		g.oneSideBuffer = nil
+	}
+
+	if g.manySideBuffer != nil {
+		g.manySideBuffer.Finalize()
+		g.manySideBuffer = nil
+	}
+
+	for _, s := range g.remainingSeries {
+		s.Finalize(g.MemoryConsumptionTracker)
+	}
+
+	g.remainingSeries = nil
+
+	// We don't need to finalize g.oneSide or g.manySide, as these are either g.Left or g.Right and so will be finalized below.
 	if err := g.Left.Finalize(ctx); err != nil {
 		return err
 	}
@@ -796,24 +814,4 @@ func (g *GroupedVectorVectorBinaryOperation) Finalize(ctx context.Context) error
 func (g *GroupedVectorVectorBinaryOperation) Close() {
 	g.Left.Close()
 	g.Right.Close()
-	// We don't need to close g.oneSide or g.manySide, as these are either g.Left or g.Right and so have been closed above.
-
-	types.SeriesMetadataSlicePool.Put(&g.oneSideMetadata, g.MemoryConsumptionTracker)
-	types.SeriesMetadataSlicePool.Put(&g.manySideMetadata, g.MemoryConsumptionTracker)
-
-	if g.oneSideBuffer != nil {
-		g.oneSideBuffer.Close()
-		g.oneSideBuffer = nil
-	}
-
-	if g.manySideBuffer != nil {
-		g.manySideBuffer.Close()
-		g.manySideBuffer = nil
-	}
-
-	for _, s := range g.remainingSeries {
-		s.Close(g.MemoryConsumptionTracker)
-	}
-
-	g.remainingSeries = nil
 }

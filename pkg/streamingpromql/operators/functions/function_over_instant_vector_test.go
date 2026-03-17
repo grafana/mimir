@@ -75,11 +75,9 @@ func TestFunctionOverInstantVectorWithScalarArgs(t *testing.T) {
 	inner := &operators.TestOperator{
 		Series: []labels.Labels{
 			labels.FromStrings("series", "0"),
-			labels.FromStrings("series", "1"),
 		},
 		Data: []types.InstantVectorSeriesData{
 			{Floats: []promql.FPoint{{T: 0, F: 1}}},
-			{Floats: []promql.FPoint{{T: 0, F: 2}}},
 		},
 		MemoryConsumptionTracker: tracker,
 	}
@@ -92,17 +90,17 @@ func TestFunctionOverInstantVectorWithScalarArgs(t *testing.T) {
 		value: types.ScalarData{Samples: []promql.FPoint{{T: 60, F: 4}}},
 	}
 
-	require.NoError(t, tracker.IncreaseMemoryConsumption(4*types.FPointSize, limiter.FPointSlices))
+	require.NoError(t, tracker.IncreaseMemoryConsumption(3*types.FPointSize, limiter.FPointSlices))
 
 	expectedSeriesDataFuncCalledTimes := 0
 	seriesDataFuncCalledTimes := 0
-	mustBeCalledSeriesData := func(_ types.InstantVectorSeriesData, scalarArgs []types.ScalarData, _ types.QueryTimeRange, _ *limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+	mustBeCalledSeriesData := func(d types.InstantVectorSeriesData, scalarArgs []types.ScalarData, _ types.QueryTimeRange, _ *limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 		seriesDataFuncCalledTimes++
 		// Verify that the scalar arguments are correctly passed and in the order we expect
 		require.Equal(t, 2, len(scalarArgs))
 		require.Equal(t, types.ScalarData{Samples: []promql.FPoint{{T: 0, F: 3}}}, scalarArgs[0])
 		require.Equal(t, types.ScalarData{Samples: []promql.FPoint{{T: 60, F: 4}}}, scalarArgs[1])
-		return types.InstantVectorSeriesData{}, nil
+		return d, nil
 	}
 
 	operator := &FunctionOverInstantVector{
@@ -116,15 +114,22 @@ func TestFunctionOverInstantVectorWithScalarArgs(t *testing.T) {
 	}
 
 	// SeriesMetadata should process scalar args
-	_, err := operator.SeriesMetadata(ctx, nil)
+	m, err := operator.SeriesMetadata(ctx, nil)
 	require.NoError(t, err)
+	types.SeriesMetadataSlicePool.Put(&m, tracker)
 
 	// NextSeries should pass scalarArgsData to SeriesDataFunc, which validates the arguments
-	_, err = operator.NextSeries(ctx)
+	d, err := operator.NextSeries(ctx)
 	require.NoError(t, err)
+	types.PutInstantVectorSeriesData(d, tracker)
 	expectedSeriesDataFuncCalledTimes++
-
 	require.Equal(t, expectedSeriesDataFuncCalledTimes, seriesDataFuncCalledTimes, "Supplied SeriesDataFunc was called once for each Series")
+
+	require.NoError(t, operator.Finalize(ctx))
+	require.True(t, inner.Finalized)
+	require.True(t, scalarOperator1.finalized)
+	require.True(t, scalarOperator2.finalized)
+	require.Equalf(t, uint64(0), tracker.CurrentEstimatedMemoryConsumptionBytes(), "expected 0 memory consumption after Finalize, but have\n%s", tracker.DescribeCurrentMemoryConsumption())
 
 	operator.Close()
 	require.True(t, inner.Closed)
@@ -133,8 +138,9 @@ func TestFunctionOverInstantVectorWithScalarArgs(t *testing.T) {
 }
 
 type testScalarOperator struct {
-	value  types.ScalarData
-	closed bool
+	value     types.ScalarData
+	finalized bool
+	closed    bool
 }
 
 func (t *testScalarOperator) GetValues(_ context.Context) (types.ScalarData, error) {
@@ -154,6 +160,7 @@ func (t *testScalarOperator) AfterPrepare(_ context.Context) error {
 }
 
 func (t *testScalarOperator) Finalize(_ context.Context) error {
+	t.finalized = true
 	return nil
 }
 
