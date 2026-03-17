@@ -22,6 +22,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/instrument"
@@ -48,9 +49,11 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/costattribution"
+	"github.com/grafana/mimir/pkg/distributor/distributorpb"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -81,6 +84,13 @@ var (
 const (
 	// distributorRingKey is the key under which we store the distributors ring in the KVStore.
 	distributorRingKey = "distributor"
+
+	// distributorModeStandalone is the default mode: each distributor writes directly to Warpstream.
+	distributorModeStandalone = "standalone"
+
+	// distributorModeLeveled enables two-level batching: L1 distributors route per-partition
+	// sub-requests to L2 distributors which buffer and merge before writing to Warpstream.
+	distributorModeLeveled = "leveled"
 
 	// metaLabelTenantID is the name of the metric_relabel_configs label with tenant ID.
 	metaLabelTenantID = model.MetaLabelPrefix + "tenant_id"
@@ -204,6 +214,16 @@ type Distributor struct {
 	// ingestStorageWriter is the writer used when ingest storage is enabled.
 	ingestStorageWriter *ingest.Writer
 
+	// l2Buffer buffers per-partition requests and flushes merged RW2 records to Warpstream.
+	// Populated when mode=leveled (L2 role).
+	l2Buffer *L2Buffer
+
+	// l2ClientPool is the pool of L2 distributor clients, populated when mode=leveled (L1 role).
+	l2ClientPool *ring_client.Pool
+
+	// l1RoutingDuration measures the time L1 waits for an L2 ack (mode=leveled only).
+	l1RoutingDuration prometheus.Histogram
+
 	// partitionsRing is the hash ring holding ingester partitions. It's used when ingest storage is enabled.
 	partitionsRing *ring.PartitionInstanceRing
 
@@ -305,6 +325,19 @@ type Config struct {
 	UsageTrackerClient  usagetrackerclient.Config `yaml:"usage_tracker_client" doc:"hidden"`
 
 	ReactiveLimiter reactivelimiter.Config `yaml:"reactive_limiter"`
+
+	// Mode controls whether this distributor acts as a standalone writer or participates in
+	// two-level batching. Valid values: "standalone" (default), "leveled".
+	Mode string `yaml:"mode" category:"experimental"`
+
+	// L2Config holds settings for the L2 buffer (only used when Mode == "leveled").
+	L2Config L2Config `yaml:"l2"`
+
+	// L2ClientConfig holds gRPC client settings for L1→L2 calls (only used when Mode == "leveled").
+	L2ClientConfig grpcclient.Config `yaml:"l2_grpc_client"`
+
+	// L2ClientFactory overrides the default L2 client constructor; used in tests to inject mocks.
+	L2ClientFactory ring_client.PoolFactory `yaml:"-"`
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
@@ -358,6 +391,10 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.EnableStartTimeQuietZero, "distributor.otel-start-time-quiet-zero", false, "Change the implementation of OTel startTime from a real zero to a special NaN value.")
 
 	cfg.DefaultLimits.RegisterFlags(f)
+
+	f.StringVar(&cfg.Mode, "distributor.mode", distributorModeStandalone, "Operating mode for ingest storage writes. 'standalone': each distributor writes directly to Warpstream. 'leveled': L1 distributors route per-partition sub-requests to L2 distributors which buffer and merge before writing to Warpstream.")
+	cfg.L2Config.RegisterFlagsWithPrefix("distributor.l2.", f)
+	cfg.L2ClientConfig.RegisterFlagsWithPrefix("distributor.l2.grpc-client.", f)
 }
 
 // Validate config and returns error on failure
@@ -752,6 +789,23 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	if cfg.IngestStorageConfig.Enabled {
 		d.ingestStorageWriter = ingest.NewWriter(d.cfg.IngestStorageConfig.KafkaConfig, log, reg)
 		subservices = append(subservices, d.ingestStorageWriter)
+	}
+
+	if cfg.Mode == distributorModeLeveled {
+		if distributorsRing == nil {
+			return nil, errors.New("distributor leveled mode requires joining the distributors ring (canJoinDistributorsRing must be true)")
+		}
+		d.l1RoutingDuration = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:    "cortex_distributor_l2_l1_routing_duration_seconds",
+			Help:    "Time L1 distributors spend waiting for an L2 ack per partition write.",
+			Buckets: []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5},
+		})
+		if d.ingestStorageWriter != nil {
+			d.l2Buffer = NewL2Buffer(cfg.L2Config, d.ingestStorageWriter, reg, log)
+			subservices = append(subservices, d.l2Buffer)
+		}
+		d.l2ClientPool = NewL2DistributorPool(cfg.PoolConfig, distributorsRing, cfg.L2ClientConfig, cfg.L2ClientFactory, reg, log)
+		subservices = append(subservices, d.l2ClientPool)
 	}
 
 	// Init usage-tracker client (if enabled).
@@ -2075,6 +2129,19 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 	return nil, handledErr
 }
 
+// PushToPartition is the gRPC handler for L1→L2 calls in leveled mode.
+// It enqueues the request into the L2 buffer for the given partition and blocks until the
+// batch is flushed to Warpstream.
+func (d *Distributor) PushToPartition(ctx context.Context, req *distributorpb.PushToPartitionRequest) (*mimirpb.WriteResponse, error) {
+	if d.l2Buffer == nil {
+		return nil, errors.New("PushToPartition called but this distributor is not running in leveled mode")
+	}
+	if err := d.l2Buffer.Push(ctx, req.PartitionId, req.Request); err != nil {
+		return nil, err
+	}
+	return &mimirpb.WriteResponse{}, nil
+}
+
 func (d *Distributor) handlePushError(pushErr error) error {
 	if errors.Is(pushErr, context.Canceled) {
 		return pushErr
@@ -2306,7 +2373,11 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 			}
 
 			ctx := remoteRequestContext()
-			err = d.ingestStorageWriter.WriteSync(ctx, int32(partitionID), tenantID, req)
+			if d.cfg.Mode == distributorModeLeveled && d.l2ClientPool != nil {
+				err = d.pushToL2(ctx, int32(partitionID), tenantID, req)
+			} else {
+				err = d.ingestStorageWriter.WriteSync(ctx, int32(partitionID), tenantID, req)
+			}
 			err = wrapPartitionPushError(err, int32(partitionID))
 			err = wrapDeadlineExceededPushError(err)
 
@@ -2316,6 +2387,67 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 
 	// Since data may be written to different backends it may be helpful to clearly identify which backend failed.
 	return errors.Wrap(err, "send data to partitions")
+}
+
+// pushToL2 routes a per-partition write request to the owning L2 distributor via jump-hash over
+// the sorted list of healthy distributor instances.
+func (d *Distributor) pushToL2(ctx context.Context, partitionID int32, _ string, req *mimirpb.WriteRequest) (err error) {
+	start := time.Now()
+	defer func() {
+		if d.l1RoutingDuration != nil {
+			d.l1RoutingDuration.Observe(time.Since(start).Seconds())
+		}
+	}()
+	rs, err := d.distributorsRing.GetAllHealthy(ring.WriteNoExtend)
+	if err != nil {
+		return errors.Wrap(err, "get healthy L2 distributors")
+	}
+	if len(rs.Instances) == 0 {
+		return errors.New("no healthy L2 distributors available")
+	}
+
+	// Sort by ID for a deterministic, ring-position-independent ordering.
+	slices.SortFunc(rs.Instances, func(a, b ring.InstanceDesc) int {
+		return strings.Compare(a.Id, b.Id)
+	})
+
+	owner := pickL2Owner(partitionID, rs.Instances)
+	poolClient, err := d.l2ClientPool.GetClientForInstance(owner)
+	if err != nil {
+		return errors.Wrapf(err, "get L2 client for instance %s", owner.Id)
+	}
+
+	// Forward all incoming gRPC metadata (org ID, cluster validation, trace headers, etc.)
+	// from the L1 request context to the outgoing L2 call.
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		ctx = metadata.NewOutgoingContext(ctx, md)
+	}
+
+	_, err = poolClient.(L2DistributorClient).PushToPartition(ctx, &distributorpb.PushToPartitionRequest{
+		PartitionId: partitionID,
+		Request:     req,
+	})
+	return err
+}
+
+// pickL2Owner uses jump consistent hash to assign a partition to one of the sorted instances.
+func pickL2Owner(partitionID int32, sortedInstances []ring.InstanceDesc) ring.InstanceDesc {
+	idx := jumpHash(int64(partitionID), int64(len(sortedInstances)))
+	return sortedInstances[idx]
+}
+
+// jumpHash is the Lamport & Ganesh jump consistent hash algorithm.
+// It maps key uniformly to a bucket in [0, numBuckets).
+// key is treated as uint64 internally to match the reference implementation.
+func jumpHash(key, numBuckets int64) int64 {
+	var b, j int64 = -1, 0
+	k := uint64(key)
+	for j < numBuckets {
+		b = j
+		k = k*2862933555777941757 + 1
+		j = int64(float64(b+1) * (float64(int64(1)<<31) / float64((k>>33)+1)))
+	}
+	return b
 }
 
 // getSeriesAndMetadataTokens returns a slice of tokens for the series and metadata from the request in this specific order.
