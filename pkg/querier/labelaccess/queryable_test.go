@@ -23,7 +23,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	shared "github.com/grafana/mimir/pkg/labelaccess"
-	"github.com/grafana/mimir/pkg/querier"
 )
 
 func newSingleLabelPolicy(t labels.MatchType, n string, v string) *shared.LabelPolicy {
@@ -44,26 +43,20 @@ func newDoubleLabelPolicy(t labels.MatchType, n1 string, v1 string, n2 string, v
 func TestLabelAccessQuerier_Select(t *testing.T) {
 	t.Run("label matchers not in context", func(t *testing.T) {
 		ctx := user.InjectOrgID(shared.InjectLabelMatchersContext(context.Background(), nil), "test")
-		next := &MockQueryable{
-			TB: t,
-			ExpectedQuerierCalls: []QuerierCall{
-				{
-					ExpectedMinT: 0,
-					ExpectedMaxT: 1,
-				},
-			},
-			ExpectedSelectCalls: []SelectCall{
-				{
-					ArgSortSeries: false,
-					ReturnValue: func() storage.SeriesSet {
+		next := &mockQueryable{
+			querier: func(mint, maxt int64) (storage.Querier, error) {
+				require.Equal(t, int64(0), mint)
+				require.Equal(t, int64(1), maxt)
+				return &mockSelectQuerier{
+					selectFn: func(_ context.Context, _ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
 						return nil
 					},
-				},
+				}, nil
 			},
 		}
 		queryable := &labelAccessQueryable{
 			logger: log.NewNopLogger(),
-			next:   querier.NewSampleAndChunkQueryable(next),
+			next:   next,
 		}
 		q, err := queryable.Querier(0, 1)
 		require.NoError(t, err)
@@ -77,26 +70,20 @@ func TestLabelAccessQuerier_Select(t *testing.T) {
 			tenantID: {},
 		}
 		ctx := user.InjectOrgID(shared.InjectLabelMatchersContext(context.Background(), policySet), tenantID)
-		next := &MockQueryable{
-			TB: t,
-			ExpectedQuerierCalls: []QuerierCall{
-				{
-					ExpectedMinT: 0,
-					ExpectedMaxT: 1,
-				},
-			},
-			ExpectedSelectCalls: []SelectCall{
-				{
-					ArgSortSeries: false,
-					ReturnValue: func() storage.SeriesSet {
+		next := &mockQueryable{
+			querier: func(mint, maxt int64) (storage.Querier, error) {
+				require.Equal(t, int64(0), mint)
+				require.Equal(t, int64(1), maxt)
+				return &mockSelectQuerier{
+					selectFn: func(_ context.Context, _ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
 						return nil
 					},
-				},
+				}, nil
 			},
 		}
 		queryable := &labelAccessQueryable{
 			logger: log.NewNopLogger(),
-			next:   querier.NewSampleAndChunkQueryable(next),
+			next:   next,
 		}
 		q, err := queryable.Querier(0, 1)
 		require.NoError(t, err)
@@ -122,27 +109,21 @@ func TestLabelAccessQuerier_Select(t *testing.T) {
 			},
 		}
 		ctx := user.InjectOrgID(shared.InjectLabelMatchersContext(context.Background(), policySet), tenantID)
-		next := &MockQueryable{
-			TB: t,
-			ExpectedQuerierCalls: []QuerierCall{
-				{
-					ExpectedMinT: 0,
-					ExpectedMaxT: 1,
-				},
-			},
-			ExpectedSelectCalls: []SelectCall{
-				{
-					ArgSortSeries: false,
-					ArgMatchers:   []*labels.Matcher{selectMatcher1, selectMatcher2, lbacMatcher1},
-					ReturnValue: func() storage.SeriesSet {
+		next := &mockQueryable{
+			querier: func(mint, maxt int64) (storage.Querier, error) {
+				require.Equal(t, int64(0), mint)
+				require.Equal(t, int64(1), maxt)
+				return &mockSelectQuerier{
+					selectFn: func(_ context.Context, _ bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+						require.Equal(t, []*labels.Matcher{selectMatcher1, selectMatcher2, lbacMatcher1}, matchers)
 						return nil
 					},
-				},
+				}, nil
 			},
 		}
 		queryable := &labelAccessQueryable{
 			logger: log.NewNopLogger(),
-			next:   querier.NewSampleAndChunkQueryable(next),
+			next:   next,
 		}
 		q, err := queryable.Querier(0, 1)
 		require.NoError(t, err)
@@ -154,21 +135,15 @@ func TestLabelAccessQuerier_Select(t *testing.T) {
 func TestLabelAccessChunkQuerier_Select(t *testing.T) {
 	t.Run("label matchers not in context", func(t *testing.T) {
 		ctx := user.InjectOrgID(shared.InjectLabelMatchersContext(context.Background(), nil), "test")
-		next := &MockQueryable{
-			TB: t,
-			ExpectedChunkQuerierCalls: []QuerierCall{
-				{
-					ExpectedMinT: 0,
-					ExpectedMaxT: 1,
-				},
-			},
-			ExpectedChunkSelectCalls: []ChunkSelectCall{
-				{
-					ArgSortSeries: false,
-					ReturnValue: func() storage.ChunkSeriesSet {
+		next := &mockQueryable{
+			chunkQuerier: func(mint, maxt int64) (storage.ChunkQuerier, error) {
+				require.Equal(t, int64(0), mint)
+				require.Equal(t, int64(1), maxt)
+				return &mockChunkSelectQuerier{
+					selectFn: func(_ context.Context, _ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.ChunkSeriesSet {
 						return nil
 					},
-				},
+				}, nil
 			},
 		}
 		queryable := &labelAccessQueryable{
@@ -187,21 +162,15 @@ func TestLabelAccessChunkQuerier_Select(t *testing.T) {
 			tenantID: {},
 		}
 		ctx := user.InjectOrgID(shared.InjectLabelMatchersContext(context.Background(), policySet), tenantID)
-		next := &MockQueryable{
-			TB: t,
-			ExpectedChunkQuerierCalls: []QuerierCall{
-				{
-					ExpectedMinT: 0,
-					ExpectedMaxT: 1,
-				},
-			},
-			ExpectedChunkSelectCalls: []ChunkSelectCall{
-				{
-					ArgSortSeries: false,
-					ReturnValue: func() storage.ChunkSeriesSet {
+		next := &mockQueryable{
+			chunkQuerier: func(mint, maxt int64) (storage.ChunkQuerier, error) {
+				require.Equal(t, int64(0), mint)
+				require.Equal(t, int64(1), maxt)
+				return &mockChunkSelectQuerier{
+					selectFn: func(_ context.Context, _ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.ChunkSeriesSet {
 						return nil
 					},
-				},
+				}, nil
 			},
 		}
 		queryable := &labelAccessQueryable{
@@ -228,22 +197,16 @@ func TestLabelAccessChunkQuerier_Select(t *testing.T) {
 			},
 		}
 		ctx := user.InjectOrgID(shared.InjectLabelMatchersContext(context.Background(), policySet), tenantID)
-		next := &MockQueryable{
-			TB: t,
-			ExpectedChunkQuerierCalls: []QuerierCall{
-				{
-					ExpectedMinT: 0,
-					ExpectedMaxT: 1,
-				},
-			},
-			ExpectedChunkSelectCalls: []ChunkSelectCall{
-				{
-					ArgSortSeries: false,
-					ArgMatchers:   []*labels.Matcher{selectMatcher1, selectMatcher2, lbacMatcher1},
-					ReturnValue: func() storage.ChunkSeriesSet {
+		next := &mockQueryable{
+			chunkQuerier: func(mint, maxt int64) (storage.ChunkQuerier, error) {
+				require.Equal(t, int64(0), mint)
+				require.Equal(t, int64(1), maxt)
+				return &mockChunkSelectQuerier{
+					selectFn: func(_ context.Context, _ bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.ChunkSeriesSet {
+						require.Equal(t, []*labels.Matcher{selectMatcher1, selectMatcher2, lbacMatcher1}, matchers)
 						return nil
 					},
-				},
+				}, nil
 			},
 		}
 		queryable := &labelAccessQueryable{
