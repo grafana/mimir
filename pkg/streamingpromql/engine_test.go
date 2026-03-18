@@ -3540,171 +3540,395 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 	}
 
 	cases := []struct {
-		query                string
-		start                time.Time
-		end                  time.Time
-		interval             time.Duration
-		expectedTotalSamples int64
+		query                       string
+		start                       time.Time
+		end                         time.Time
+		interval                    time.Duration
+		expectedTotalSamples        int64
+		expectedTotalSamplesPerStep promstats.TotalSamplesPerStep
+		expectedSamplesRead         int64
+		expectedSamplesReadPerStep  promstats.TotalSamplesPerStep
+
 		// ...WithMQE expectations are optional and should be set only if a query with MQE reports different stats
 		// (eg. due to optimisations like common subexpression elimination, or due to the different way we count samples in subqueries)
-		expectedTotalSamplesWithMQE int64
+		expectedTotalSamplesWithMQE        int64
+		expectedTotalSamplesPerStepWithMQE promstats.TotalSamplesPerStep
+		expectedSamplesReadWithMQE         int64
+		expectedSamplesReadPerStepWithMQE  promstats.TotalSamplesPerStep
 	}{
 		{
 			query:                `"literal string"`,
 			start:                time.Unix(21, 0),
 			expectedTotalSamples: 0,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				21000: 0,
+			},
+			expectedSamplesRead: 0,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				21000: 0,
+			},
 		},
 		{
 			query:                "1",
 			start:                time.Unix(21, 0),
 			expectedTotalSamples: 0,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				21000: 0,
+			},
+			expectedSamplesRead: 0,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				21000: 0,
+			},
 		},
 		{
 			query:                "metricWith1SampleEvery10Seconds",
 			start:                time.Unix(21, 0),
 			expectedTotalSamples: 1, // 1 sample / 10 seconds
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				21000: 1,
+			},
+			expectedSamplesRead: 1,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				21000: 1,
+			},
 		},
 		{
 			query:                "metricWith1HistogramEvery10Seconds",
 			start:                time.Unix(21, 0),
 			expectedTotalSamples: 13, // 1 histogram HPoint of size 13 / 10 seconds
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				21000: 13,
+			},
+			expectedSamplesRead: 13,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				21000: 13,
+			},
 		},
 		{
 			// timestamp function has a special handling.
 			query:                "timestamp(metricWith1SampleEvery10Seconds)",
 			start:                time.Unix(21, 0),
 			expectedTotalSamples: 1, // 1 sample / 10 seconds
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				21000: 1,
+			},
+			expectedSamplesRead: 1,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				21000: 1,
+			},
 		},
 		{
 			query:                "timestamp(metricWith1HistogramEvery10Seconds)",
 			start:                time.Unix(21, 0),
 			expectedTotalSamples: 1, // 1 float sample (because of timestamp) / 10 seconds
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				21000: 1,
+			},
+			expectedSamplesRead: 1,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				21000: 1,
+			},
 		},
 		{
 			query:                "metricWith1SampleEvery10Seconds",
 			start:                time.Unix(22, 0),
 			expectedTotalSamples: 1, // 1 sample / 10 seconds
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				22000: 1, // Aligned to the step time, not the sample time.
+			},
+			expectedSamplesRead: 1,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				22000: 1,
+			},
 		},
 		{
 			query:                "metricWith1SampleEvery10Seconds offset 10s",
 			start:                time.Unix(21, 0),
 			expectedTotalSamples: 1, // 1 sample / 10 seconds
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				21000: 1,
+			},
+			expectedSamplesRead: 1,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				21000: 1,
+			},
 		},
 		{
 			query:                "metricWith1SampleEvery10Seconds @ 15",
 			start:                time.Unix(21, 0),
 			expectedTotalSamples: 1, // 1 sample / 10 seconds
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				21000: 1,
+			},
+			expectedSamplesRead: 1,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				21000: 1,
+			},
 		},
 		{
 			query:                `metricWith3SampleEvery10Seconds{a="1"}`,
 			start:                time.Unix(21, 0),
 			expectedTotalSamples: 1, // 1 sample / 10 seconds
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				21000: 1,
+			},
+			expectedSamplesRead: 1,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				21000: 1,
+			},
 		},
 		{
 			query:                `metricWith3SampleEvery10Seconds{a="1"} @ 19`,
 			start:                time.Unix(21, 0),
 			expectedTotalSamples: 1, // 1 sample / 10 seconds
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				21000: 1,
+			},
+			expectedSamplesRead: 1,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				21000: 1,
+			},
 		},
 		{
 			query:                `metricWith3SampleEvery10Seconds{a="1"}[20s] @ 19`,
 			start:                time.Unix(21, 0),
 			expectedTotalSamples: 2, // (1 sample / 10 seconds) * 20s
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				21000: 2,
+			},
+			expectedSamplesRead: 2,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				21000: 2,
+			},
 		},
 		{
 			query:                "metricWith3SampleEvery10Seconds",
 			start:                time.Unix(21, 0),
 			expectedTotalSamples: 3, // 3 samples / 10 seconds
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				21000: 3,
+			},
+			expectedSamplesRead: 3,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				21000: 3,
+			},
 		},
 		{
 			query:                "metricWith1SampleEvery10Seconds[60s]",
 			start:                time.Unix(201, 0),
 			expectedTotalSamples: 6, // 1 sample / 10 seconds * 60 seconds
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 6,
+			},
+			expectedSamplesRead: 6,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 6,
+			},
 		},
 		{
 			query:                "metricWith1HistogramEvery10Seconds[60s]",
 			start:                time.Unix(201, 0),
 			expectedTotalSamples: 78, // 1 histogram (size 13 HPoint) / 10 seconds * 60 seconds
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 78,
+			},
+			expectedSamplesRead: 78,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 78,
+			},
 		},
 		{
 			query:                "max_over_time(metricWith1SampleEvery10Seconds[60s])[20s:5s]",
 			start:                time.Unix(201, 0),
 			expectedTotalSamples: 24, // (1 sample / 10 seconds * 60 seconds) * 4
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 24,
+			},
+			expectedSamplesRead: 8, // delta: 6 at step 0 + 2 new over 3 steps
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 8,
+			},
 		},
 		{
 			query:                "max_over_time(metricWith1SampleEvery10Seconds[61s])[20s:5s]",
 			start:                time.Unix(201, 0),
 			expectedTotalSamples: 26, // (1 sample / 10 seconds * 60 seconds) * 4 + 2 as
+			// max_over_time(metricWith1SampleEvery10Seconds[61s]) @ 190 and 200 will return 7 samples.
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 26,
+			},
+			expectedSamplesRead: 8,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 8,
+			},
 		},
 		{
 			query:                "max_over_time(metricWith1HistogramEvery10Seconds[60s])[20s:5s]",
 			start:                time.Unix(201, 0),
 			expectedTotalSamples: 312, // (1 histogram (size 13) / 10 seconds * 60 seconds) * 4
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 312,
+			},
+			expectedSamplesRead: 104,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 104,
+			},
 		},
 		{
 			query:                "metricWith1SampleEvery10Seconds[60s] @ 30",
 			start:                time.Unix(201, 0),
 			expectedTotalSamples: 4, // @ modifier force the evaluation to at 30 seconds - So it brings 4 datapoints (0, 10, 20, 30 seconds) * 1 series
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 4,
+			},
+			expectedSamplesRead: 4,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 4,
+			},
 		},
 		{
 			query:                "metricWith1HistogramEvery10Seconds[60s] @ 30",
 			start:                time.Unix(201, 0),
 			expectedTotalSamples: 52, // @ modifier force the evaluation to at 30 seconds - So it brings 4 datapoints (0, 10, 20, 30 seconds) * 1 series
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 52,
+			},
+			expectedSamplesRead: 52,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 52,
+			},
 		},
 		{
 			query:                "sum(max_over_time(metricWith3SampleEvery10Seconds[60s] @ 30))",
 			start:                time.Unix(201, 0),
 			expectedTotalSamples: 12, // @ modifier force the evaluation to at 30 seconds - So it brings 4 datapoints (0, 10, 20, 30 seconds) * 3 series
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 12,
+			},
+			expectedSamplesRead: 12,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 12,
+			},
 		},
 		{
 			query:                "sum by (b) (max_over_time(metricWith3SampleEvery10Seconds[60s] @ 30))",
 			start:                time.Unix(201, 0),
 			expectedTotalSamples: 12, // @ modifier force the evaluation to at 30 seconds - So it brings 4 datapoints (0, 10, 20, 30 seconds) * 3 series
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 12,
+			},
+			expectedSamplesRead: 12,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 12,
+			},
 		},
 		{
 			query:                "metricWith1SampleEvery10Seconds[60s] offset 10s",
 			start:                time.Unix(201, 0),
 			expectedTotalSamples: 6, // 1 sample / 10 seconds * 60 seconds
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 6,
+			},
+			expectedSamplesRead: 6,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 6,
+			},
 		},
 		{
 			query:                "metricWith3SampleEvery10Seconds[60s]",
 			start:                time.Unix(201, 0),
 			expectedTotalSamples: 18, // 3 sample / 10 seconds * 60 seconds
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 18,
+			},
+			expectedSamplesRead: 18,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 18,
+			},
 		},
 		{
 			query:                "max_over_time(metricWith1SampleEvery10Seconds[60s])",
 			start:                time.Unix(201, 0),
 			expectedTotalSamples: 6, // 1 sample / 10 seconds * 60 seconds
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 6,
+			},
+			expectedSamplesRead: 6,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 6,
+			},
 		},
 		{
 			query:                "absent_over_time(metricWith1SampleEvery10Seconds[60s])",
 			start:                time.Unix(201, 0),
 			expectedTotalSamples: 6, // 1 sample / 10 seconds * 60 seconds
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 6,
+			},
+			expectedSamplesRead: 6,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 6,
+			},
 		},
 		{
 			query:                "max_over_time(metricWith3SampleEvery10Seconds[60s])",
 			start:                time.Unix(201, 0),
 			expectedTotalSamples: 18, // 3 sample / 10 seconds * 60 seconds
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 18,
+			},
+			expectedSamplesRead: 18,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 18,
+			},
 		},
 		{
 			query:                "metricWith1SampleEvery10Seconds[60s:5s]",
 			start:                time.Unix(201, 0),
 			expectedTotalSamples: 12, // 1 sample per query * 12 queries (60/5)
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 12,
+			},
+			expectedSamplesRead: 12,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 12,
+			},
 		},
 		{
 			query:                "metricWith1SampleEvery10Seconds[60s:5s] offset 10s",
 			start:                time.Unix(201, 0),
 			expectedTotalSamples: 12, // 1 sample per query * 12 queries (60/5)
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 12,
+			},
+			expectedSamplesRead: 12, // all subquery steps attributed (steps before first window → step 0)
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 12,
+			},
 		},
 		{
 			query:                "max_over_time(metricWith3SampleEvery10Seconds[60s:5s])",
 			start:                time.Unix(201, 0),
 			expectedTotalSamples: 36, // 3 sample per query * 12 queries (60/5)
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 36,
+			},
+			expectedSamplesRead: 72,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 72,
+			},
 		},
 		{
-			query:                       "sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s])) + sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s]))",
-			start:                       time.Unix(201, 0),
-			expectedTotalSamples:        72, // 2 * (3 sample per query * 12 queries (60/5))
-			expectedTotalSamplesWithMQE: 36, // 72/2 due to common subexpression elimination
+			query:                "sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s])) + sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s]))",
+			start:                time.Unix(201, 0),
+			expectedTotalSamples: 72, // 2 * (3 sample per query * 12 queries (60/5))
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 72,
+			},
+			expectedSamplesRead: 144,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 144,
+			},
 		},
 		{
 			query:                `metricWith3SampleEvery10Seconds{a="1"}`,
@@ -3712,6 +3936,19 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			end:                  time.Unix(220, 0),
 			interval:             5 * time.Second,
 			expectedTotalSamples: 4, // 1 sample per query * 4 steps
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 1,
+				206000: 1,
+				211000: 1,
+				216000: 1,
+			},
+			expectedSamplesRead: 4,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 1,
+				206000: 1,
+				211000: 1,
+				216000: 1,
+			},
 		},
 		{
 			query:                `metricWith3SampleEvery10Seconds{a="1"}`,
@@ -3719,6 +3956,19 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			end:                  time.Unix(223, 0),
 			interval:             5 * time.Second,
 			expectedTotalSamples: 4, // 1 sample per query * 4 steps
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				204000: 1, // aligned to the step time, not the sample time
+				209000: 1,
+				214000: 1,
+				219000: 1,
+			},
+			expectedSamplesRead: 4,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				204000: 1,
+				209000: 1,
+				214000: 1,
+				219000: 1,
+			},
 		},
 		{
 			query:                `metricWith1HistogramEvery10Seconds`,
@@ -3726,6 +3976,19 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			end:                  time.Unix(223, 0),
 			interval:             5 * time.Second,
 			expectedTotalSamples: 52, // 1 histogram (size 13 HPoint) per query * 4 steps
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				204000: 13, // aligned to the step time, not the sample time
+				209000: 13,
+				214000: 13,
+				219000: 13,
+			},
+			expectedSamplesRead: 52,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				204000: 13,
+				209000: 13,
+				214000: 13,
+				219000: 13,
+			},
 		},
 		{
 			// timestamp function has a special handling
@@ -3734,6 +3997,19 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			end:                  time.Unix(220, 0),
 			interval:             5 * time.Second,
 			expectedTotalSamples: 4, // 1 sample per query * 4 steps
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 1,
+				206000: 1,
+				211000: 1,
+				216000: 1,
+			},
+			expectedSamplesRead: 4,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 1,
+				206000: 1,
+				211000: 1,
+				216000: 1,
+			},
 		},
 		{
 			// timestamp function has a special handling
@@ -3742,6 +4018,19 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			end:                  time.Unix(220, 0),
 			interval:             5 * time.Second,
 			expectedTotalSamples: 4, // 1 sample per query * 4 steps
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 1,
+				206000: 1,
+				211000: 1,
+				216000: 1,
+			},
+			expectedSamplesRead: 4,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 1,
+				206000: 1,
+				211000: 1,
+				216000: 1,
+			},
 		},
 		{
 			query:                `max_over_time(metricWith3SampleEvery10Seconds{a="1"}[10s])`,
@@ -3749,6 +4038,19 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			end:                  time.Unix(1021, 0),
 			interval:             10 * time.Second,
 			expectedTotalSamples: 2, // 1 sample per query * 2 steps with data
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				991000:  1,
+				1001000: 1,
+				1011000: 0,
+				1021000: 0,
+			},
+			expectedSamplesRead: 2,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				991000:  1,
+				1001000: 1,
+				1011000: 0,
+				1021000: 0,
+			},
 		},
 		{
 			query:                `metricWith3SampleEvery10Seconds{a="1"} offset 10s`,
@@ -3756,6 +4058,19 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			end:                  time.Unix(220, 0),
 			interval:             5 * time.Second,
 			expectedTotalSamples: 4, // 1 sample per query * 4 steps
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 1,
+				206000: 1,
+				211000: 1,
+				216000: 1,
+			},
+			expectedSamplesRead: 4,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 1,
+				206000: 1,
+				211000: 1,
+				216000: 1,
+			},
 		},
 		{
 			query:                       "max_over_time(metricWith3SampleEvery10Seconds[60s] @ 30)",
@@ -3764,6 +4079,19 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			interval:                    5 * time.Second,
 			expectedTotalSamples:        48, // @ modifier force the evaluation timestamp at 30 seconds - So it brings 4 datapoints (0, 10, 20, 30 seconds) * 3 series * 4 steps
 			expectedTotalSamplesWithMQE: 12, // the @ modifier allows for this range vector to be considered a step invariant
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 12,
+				206000: 12,
+				211000: 12,
+				216000: 12,
+			},
+			expectedSamplesRead: 12, // StepInvariantExpr: added once at step 0 only
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 12,
+				206000: 0,
+				211000: 0,
+				216000: 0,
+			},
 		},
 		{
 			query:                `metricWith3SampleEvery10Seconds`,
@@ -3771,6 +4099,19 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			end:                  time.Unix(220, 0),
 			interval:             5 * time.Second,
 			expectedTotalSamples: 12, // 3 sample per query * 4 steps
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 3,
+				206000: 3,
+				211000: 3,
+				216000: 3,
+			},
+			expectedSamplesRead: 12,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 3,
+				206000: 3,
+				211000: 3,
+				216000: 3,
+			},
 		},
 		{
 			query:                `max_over_time(metricWith3SampleEvery10Seconds[60s])`,
@@ -3778,6 +4119,19 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			end:                  time.Unix(220, 0),
 			interval:             5 * time.Second,
 			expectedTotalSamples: 72, // (3 sample / 10 seconds * 60 seconds) * 4 steps = 72
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 18,
+				206000: 18,
+				211000: 18,
+				216000: 18,
+			},
+			expectedSamplesRead: 21,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 18,
+				206000: 0,
+				211000: 3,
+				216000: 0,
+			},
 		},
 		{
 			query:                       "max_over_time(metricWith3SampleEvery10Seconds[60s:5s])",
@@ -3786,6 +4140,19 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			interval:                    5 * time.Second,
 			expectedTotalSamples:        144, // 3 sample per query * 12 queries (60/5) * 4 steps
 			expectedTotalSamplesWithMQE: 48,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 36,
+				206000: 36,
+				211000: 36,
+				216000: 36,
+			},
+			expectedSamplesRead: 93,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 72,
+				206000: 6,
+				211000: 6,
+				216000: 9, // steps after last outer → last step
+			},
 		},
 		{
 			query:                       "max_over_time(metricWith1SampleEvery10Seconds[60s:5s])",
@@ -3794,6 +4161,19 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			interval:                    5 * time.Second,
 			expectedTotalSamples:        48, // 1 sample per query * 12 queries (60/5) * 4 steps
 			expectedTotalSamplesWithMQE: 16,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 12,
+				206000: 12,
+				211000: 12,
+				216000: 12,
+			},
+			expectedSamplesRead: 31,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 24,
+				206000: 2,
+				211000: 2,
+				216000: 3, // steps after last outer → last step
+			},
 		},
 		{
 			query:                       "sum by (b) (max_over_time(metricWith1SampleEvery10Seconds[60s:5s]))",
@@ -3802,6 +4182,19 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			interval:                    5 * time.Second,
 			expectedTotalSamples:        48, // 1 sample per query * 12 queries (60/5) * 4 steps
 			expectedTotalSamplesWithMQE: 16,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 12,
+				206000: 12,
+				211000: 12,
+				216000: 12,
+			},
+			expectedSamplesRead: 31,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 24,
+				206000: 2,
+				211000: 2,
+				216000: 3, // steps after last outer → last step
+			},
 		},
 		{
 			query:                       "sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s])) + sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s]))",
@@ -3810,6 +4203,19 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			interval:                    5 * time.Second,
 			expectedTotalSamples:        288, // 2 * (3 sample per query * 12 queries (60/5) * 4 steps)
 			expectedTotalSamplesWithMQE: 48,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 72,
+				206000: 72,
+				211000: 72,
+				216000: 72,
+			},
+			expectedSamplesRead: 186,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 144,
+				206000: 12,
+				211000: 12,
+				216000: 18, // steps after last outer → last step
+			},
 		},
 		{
 			query:                       "sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s])) + sum(max_over_time(metricWith1SampleEvery10Seconds[60s:5s]))",
@@ -3818,6 +4224,807 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			interval:                    5 * time.Second,
 			expectedTotalSamples:        192, // (1 sample per query * 12 queries (60/5) + 3 sample per query * 12 queries (60/5)) * 4 steps
 			expectedTotalSamplesWithMQE: 64,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 48,
+				206000: 48,
+				211000: 48,
+				216000: 48,
+			},
+			expectedSamplesRead: 124,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 96,
+				206000: 8,
+				211000: 8,
+				216000: 12, // steps after last outer → last step
+			},
+		},
+
+		// Simple subquery with multiple inner steps - subquery evaluates inner at each step (instant)
+		{
+			query:                "max_over_time(metricWith1SampleEvery10Seconds[20s:10s])",
+			start:                time.Unix(201, 0),
+			expectedTotalSamples: 2, // 2 inner steps * 1 sample
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 2,
+			},
+			expectedSamplesRead: 4,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 4,
+			},
+		},
+
+		// Single inner step (step = range) - corrected values
+		{
+			query:                "sum_over_time(metricWith1SampleEvery10Seconds[30s:30s])",
+			start:                time.Unix(90, 0),
+			expectedTotalSamples: 1, // Actual behavior: single step shows 1 effective sample
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				90000: 1,
+			},
+			expectedSamplesRead: 2, // subquery + outer
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				90000: 2,
+			},
+		},
+
+		// Multiple series subquery - 2 inner steps * 3 series
+		{
+			query:                "sum(max_over_time(metricWith3SampleEvery10Seconds[20s:10s]))",
+			start:                time.Unix(201, 0),
+			expectedTotalSamples: 6,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 6,
+			},
+			expectedSamplesRead: 12,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 12,
+			},
+		},
+
+		// Basic range query with subquery - 2 parent steps, 3 inner steps each
+		{
+			query:                "max_over_time(metricWith1SampleEvery10Seconds[30s:10s])",
+			start:                time.Unix(201, 0),
+			end:                  time.Unix(231, 0),
+			interval:             30 * time.Second,
+			expectedTotalSamples: 6, // 2 parent steps * 3 inner samples
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 3,
+				231000: 3,
+			},
+			expectedSamplesRead: 12,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 6,
+				231000: 6,
+			},
+		},
+
+		// Subquery with single inner step (step = range)
+		{
+			query:                "sum_over_time(metricWith1SampleEvery10Seconds[30s:30s])",
+			start:                time.Unix(90, 0),
+			expectedTotalSamples: 1, // 1 inner step
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				90000: 1,
+			},
+			expectedSamplesRead: 2,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				90000: 2,
+			},
+		},
+
+		// Subquery range query showing delta optimization
+		{
+			query:                "max_over_time(metricWith1SampleEvery10Seconds[20s:10s])",
+			start:                time.Unix(201, 0),
+			end:                  time.Unix(231, 0),
+			interval:             30 * time.Second,
+			expectedTotalSamples: 4,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 2,
+				231000: 2,
+			},
+			expectedSamplesRead: 9,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 4,
+				231000: 5,
+			},
+		},
+
+		// Multiple series subquery - 2 inner steps * 3 series
+		{
+			query:                "sum(max_over_time(metricWith3SampleEvery10Seconds[20s:10s]))",
+			start:                time.Unix(201, 0),
+			expectedTotalSamples: 6,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 6,
+			},
+			expectedSamplesRead: 12,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 12,
+			},
+		},
+
+		// Steps equal to inner range duration - single inner step
+		{
+			query:                "sum_over_time(metricWith1SampleEvery10Seconds[30s:30s])",
+			start:                time.Unix(90, 0),
+			expectedTotalSamples: 1,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				90000: 1,
+			},
+			expectedSamplesRead: 2,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				90000: 2,
+			},
+		},
+
+		// Large step size - single inner step
+		{
+			query:                "avg_over_time(metricWith1SampleEvery10Seconds[60s:2m])",
+			start:                time.Unix(240, 0),
+			expectedTotalSamples: 1,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				240000: 1,
+			},
+			expectedSamplesRead: 2,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				240000: 2,
+			},
+		},
+
+		// High cardinality with multiple steps
+		{
+			query:                "sum_over_time(metricWith3SampleEvery10Seconds[30s:10s])[2m:1m]",
+			start:                time.Unix(180, 0),
+			expectedTotalSamples: 18,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				180000: 18,
+			},
+			expectedSamplesRead: 45, // subquery SamplesRead merged into outer
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				180000: 45,
+			},
+		},
+
+		// Steps larger than inner range
+		{
+			query:                "sum_over_time(metricWith1SampleEvery10Seconds[30s])[2m:1m]",
+			start:                time.Unix(120, 0),
+			expectedTotalSamples: 6,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				120000: 6,
+			},
+			expectedSamplesRead: 6, // subquery SamplesRead merged into outer
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				120000: 6,
+			},
+		},
+
+		// Non-aligned step boundaries
+		{
+			query:                "avg_over_time(metricWith3SampleEvery10Seconds[73s:17s])[5m:43s]",
+			start:                time.Unix(300, 0),
+			expectedTotalSamples: 78,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				300000: 78,
+			},
+			expectedSamplesRead: 102, // all subquery steps attributed (steps before first window → step 0)
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				300000: 102,
+			},
+		},
+
+		// Large step count with reasonable data size
+		{
+			query:                "avg_over_time(metricWith1SampleEvery10Seconds[30s])[30m:10s]",
+			start:                time.Unix(1800, 0),
+			expectedTotalSamples: 302,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				1800000: 302,
+			},
+			expectedSamplesRead: 101, // subquery SamplesRead merged into outer
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				1800000: 101,
+			},
+		},
+
+		// Test with different series cardinality
+		{
+			query:                "sum(rate(metricWith3SampleEvery10Seconds[120s:40s]))[4m:1m]",
+			start:                time.Unix(240, 0),
+			expectedTotalSamples: 33,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				240000: 33,
+			},
+			expectedSamplesRead: 42, // subquery SamplesRead merged into outer
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				240000: 42,
+			},
+		},
+
+		// Histogram function with subquery
+		{
+			query:                "histogram_count(max_over_time(metricWith1HistogramEvery10Seconds[60s]))",
+			start:                time.Unix(201, 0),
+			expectedTotalSamples: 66,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 66,
+			},
+			expectedSamplesRead: 66,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 66,
+			},
+		},
+
+		// Basic aggregation with existing proven pattern
+		{
+			query:                "sum(max_over_time(metricWith3SampleEvery10Seconds[60s]))",
+			start:                time.Unix(201, 0),
+			expectedTotalSamples: 18, // 3 series * 6 samples from existing [60s] pattern
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 18,
+			},
+			expectedSamplesRead: 18, // Single parent step
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 18,
+			},
+		},
+
+		// Histogram subquery
+		{
+			query:                "histogram_count(max_over_time(metricWith1HistogramEvery10Seconds[20s:10s]))",
+			start:                time.Unix(201, 0),
+			expectedTotalSamples: 26,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 26,
+			},
+			expectedSamplesRead: 52,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 52,
+			},
+		},
+
+		// @ modifier subquery
+		{
+			query:                "sum_over_time(metricWith3SampleEvery10Seconds[20s:10s] @ 200)",
+			start:                time.Unix(250, 0),
+			expectedTotalSamples: 6,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				250000: 6,
+			},
+			expectedSamplesRead: 12,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				250000: 12,
+			},
+		},
+
+		// Mixed functions with histogram subquery
+		{
+			query:                "histogram_sum(avg_over_time(metricWith1HistogramEvery10Seconds[1m:20s]))",
+			start:                time.Unix(120, 0),
+			expectedTotalSamples: 39,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				120000: 39,
+			},
+			expectedSamplesRead: 78,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				120000: 78,
+			},
+		},
+
+		// Subquery with @ modifier
+		{
+			query:                "sum_over_time(metricWith3SampleEvery10Seconds[60s:20s] @ 200)",
+			start:                time.Unix(300, 0),
+			expectedTotalSamples: 9,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				300000: 9,
+			},
+			expectedSamplesRead: 18,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				300000: 18,
+			},
+		},
+
+		// Nested subqueries with @ modifier
+		{
+			query:                "sum_over_time(max_over_time(metricWith3SampleEvery10Seconds[60s] @ 300)[5m:1m] @ 600)[10m:2m]",
+			start:                time.Unix(800, 0),
+			expectedTotalSamples: 75,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				800000: 75,
+			},
+			expectedSamplesRead: 33, // subquery SamplesRead merged into outer
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				800000: 33,
+			},
+		},
+
+		// Aggregation with subquery
+		{
+			query:                "sum by (a) (max_over_time(metricWith3SampleEvery10Seconds[20s:10s]))",
+			start:                time.Unix(201, 0),
+			expectedTotalSamples: 6,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 6,
+			},
+			expectedSamplesRead: 12,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 12,
+			},
+		},
+
+		// Range query with aggregation and subquery
+		{
+			query:                "sum by (b) (max_over_time(metricWith3SampleEvery10Seconds[20s:10s]))",
+			start:                time.Unix(201, 0),
+			end:                  time.Unix(261, 0),
+			interval:             30 * time.Second,
+			expectedTotalSamples: 18,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 6,
+				231000: 6,
+				261000: 6,
+			},
+			expectedSamplesRead: 42,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 12,
+				231000: 15,
+				261000: 15,
+			},
+		},
+
+		// Histogram quantile with subquery
+		{
+			query:                "histogram_quantile(0.9, max_over_time(metricWith1HistogramEvery10Seconds[20s:10s]))",
+			start:                time.Unix(201, 0),
+			expectedTotalSamples: 26,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 26,
+			},
+			expectedSamplesRead: 52,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 52,
+			},
+		},
+
+		// Aggregation with subqueries
+		{
+			query:                "sum by (b) (max_over_time(metricWith3SampleEvery10Seconds[1m:20s]))",
+			start:                time.Unix(120, 0),
+			expectedTotalSamples: 9,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				120000: 9,
+			},
+			expectedSamplesRead: 18,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				120000: 18,
+			},
+		},
+
+		// Histogram with many inner steps
+		{
+			query:                "histogram_quantile(0.9, avg_over_time(metricWith1HistogramEvery10Seconds[2m:30s]))",
+			start:                time.Unix(240, 0),
+			expectedTotalSamples: 52,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				240000: 52,
+			},
+			expectedSamplesRead: 104,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				240000: 104,
+			},
+		},
+
+		// Multiple series aggregation with subqueries
+		{
+			query:                "sum by (a) (rate(metricWith3SampleEvery10Seconds[2m:30s]))[15m:5m]",
+			start:                time.Unix(900, 0),
+			expectedTotalSamples: 36,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				900000: 36,
+			},
+			expectedSamplesRead: 108, // subquery SamplesRead merged into outer
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				900000: 108,
+			},
+		},
+
+		// Large window with histogram data
+		{
+			query:                "histogram_sum(rate(metricWith1HistogramEvery10Seconds[5m:1m]))[30m:10m]",
+			start:                time.Unix(1800, 0),
+			expectedTotalSamples: 130,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				1800000: 130,
+			},
+			expectedSamplesRead: 338, // subquery SamplesRead merged into outer
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				1800000: 338,
+			},
+		},
+
+		// Rate function with subquery
+		{
+			query:                "rate(sum_over_time(metricWith1SampleEvery10Seconds[30s])[1m:30s])",
+			start:                time.Unix(240, 0),
+			expectedTotalSamples: 2,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				240000: 2,
+			},
+			expectedSamplesRead: 8,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				240000: 8,
+			},
+		},
+
+		// Subquery with offset modifier
+		{
+			query:                "sum_over_time(metricWith1SampleEvery10Seconds[20s:10s] offset 1m)",
+			start:                time.Unix(240, 0),
+			expectedTotalSamples: 2,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				240000: 2,
+			},
+			expectedSamplesRead: 4,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				240000: 4,
+			},
+		},
+
+		// Simple range query with subquery
+		{
+			query:                "max_over_time(metricWith1SampleEvery10Seconds[30s:15s])",
+			start:                time.Unix(201, 0),
+			end:                  time.Unix(231, 0),
+			interval:             15 * time.Second,
+			expectedTotalSamples: 6,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 2,
+				216000: 2,
+				231000: 2,
+			},
+			expectedSamplesRead: 8,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 4,
+				216000: 2,
+				231000: 2,
+			},
+		},
+
+		// Large time range with subqueries
+		{
+			query:                "increase(metricWith1SampleEvery10Seconds[5m:1m])[30m:10m]",
+			start:                time.Unix(1800, 0),
+			expectedTotalSamples: 10,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				1800000: 10,
+			},
+			expectedSamplesRead: 26, // subquery SamplesRead merged into outer
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				1800000: 26,
+			},
+		},
+
+		// Larger subquery with many steps
+		{
+			query:                "sum_over_time(metricWith3SampleEvery10Seconds[5m:1m])[10m:5m]",
+			start:                time.Unix(600, 0),
+			expectedTotalSamples: 30,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				600000: 30,
+			},
+			expectedSamplesRead: 60, // subquery SamplesRead merged into outer
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				600000: 60,
+			},
+		},
+
+		// Range query with subquery
+		{
+			query:                "max_over_time(metricWith1SampleEvery10Seconds[1m:20s])",
+			start:                time.Unix(120, 0),
+			end:                  time.Unix(300, 0),
+			interval:             60 * time.Second,
+			expectedTotalSamples: 12,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				120000: 3,
+				180000: 3,
+				240000: 3,
+				300000: 3,
+			},
+			expectedSamplesRead: 24,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				120000: 6,
+				180000: 6,
+				240000: 6,
+				300000: 6,
+			},
+		},
+
+		// Range query with histogram subquery
+		{
+			query:                "avg_over_time(metricWith1HistogramEvery10Seconds[2m:1m])",
+			start:                time.Unix(120, 0),
+			end:                  time.Unix(240, 0),
+			interval:             60 * time.Second,
+			expectedTotalSamples: 78,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				120000: 26,
+				180000: 26,
+				240000: 26,
+			},
+			expectedSamplesRead: 104,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				120000: 52,
+				180000: 26,
+				240000: 26,
+			},
+		},
+
+		// Range query with multiple series
+		{
+			query:                "sum(max_over_time(metricWith3SampleEvery10Seconds[1m:30s]))",
+			start:                time.Unix(120, 0),
+			end:                  time.Unix(240, 0),
+			interval:             60 * time.Second,
+			expectedTotalSamples: 18,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				120000: 6,
+				180000: 6,
+				240000: 6,
+			},
+			expectedSamplesRead: 36,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				120000: 12,
+				180000: 12,
+				240000: 12,
+			},
+		},
+
+		// Range queries with subqueries
+		{
+			query:                "max_over_time(metricWith3SampleEvery10Seconds[60s:10s])",
+			start:                time.Unix(200, 0),
+			end:                  time.Unix(400, 0),
+			interval:             30 * time.Second,
+			expectedTotalSamples: 126,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				200000: 18,
+				230000: 18,
+				260000: 18,
+				290000: 18,
+				320000: 18,
+				350000: 18,
+				380000: 18,
+			},
+			expectedSamplesRead: 150,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				200000: 36,
+				230000: 18,
+				260000: 18,
+				290000: 18,
+				320000: 18,
+				350000: 18,
+				380000: 24, // steps after last outer → last step
+			},
+		},
+
+		// Range query with histogram subqueries
+		{
+			query:                "histogram_quantile(0.9, rate(metricWith1HistogramEvery10Seconds[2m:30s]))",
+			start:                time.Unix(240, 0),
+			end:                  time.Unix(600, 0),
+			interval:             60 * time.Second,
+			expectedTotalSamples: 364,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				240000: 52,
+				300000: 52,
+				360000: 52,
+				420000: 52,
+				480000: 52,
+				540000: 52,
+				600000: 52,
+			},
+			expectedSamplesRead: 416,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				240000: 104,
+				300000: 52,
+				360000: 52,
+				420000: 52,
+				480000: 52,
+				540000: 52,
+				600000: 52,
+			},
+		},
+
+		// Range query with multiple series subqueries
+		{
+			query:                "sum(max_over_time(metricWith3SampleEvery10Seconds[80s:20s]))",
+			start:                time.Unix(160, 0),
+			end:                  time.Unix(400, 0),
+			interval:             120 * time.Second,
+			expectedTotalSamples: 36,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				160000: 12,
+				280000: 12,
+				400000: 12,
+			},
+			expectedSamplesRead: 84,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				160000: 24,
+				280000: 30,
+				400000: 30,
+			},
+		},
+
+		// Large range with many samples
+		{
+			query:                "avg_over_time(metricWith1SampleEvery10Seconds[5m:30s])",
+			start:                time.Unix(300, 0),
+			expectedTotalSamples: 10,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				300000: 10,
+			},
+			expectedSamplesRead: 20,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				300000: 20,
+			},
+		},
+
+		// Many small steps
+		{
+			query:                "max_over_time(metricWith1SampleEvery10Seconds[2m:20s])",
+			start:                time.Unix(240, 0),
+			expectedTotalSamples: 6,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				240000: 6,
+			},
+			expectedSamplesRead: 12,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				240000: 12,
+			},
+		},
+
+		// Histogram subquery function
+		{
+			query:                "histogram_count(avg_over_time(metricWith1HistogramEvery10Seconds[1m:30s]))",
+			start:                time.Unix(120, 0),
+			expectedTotalSamples: 26,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				120000: 26,
+			},
+			expectedSamplesRead: 52,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				120000: 52,
+			},
+		},
+
+		// High step count efficiency test - subquery evaluates inner at each step (instant)
+		{
+			query:                "max_over_time(metricWith1SampleEvery10Seconds[300s:10s])",
+			start:                time.Unix(600, 0),
+			expectedTotalSamples: 30, // 30 inner steps * 1 sample per step
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				600000: 30,
+			},
+			expectedSamplesRead: 60,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				600000: 60,
+			},
+		},
+
+		// Complex histogram with nested functions
+		{
+			query:                "rate(histogram_sum(metricWith1HistogramEvery10Seconds)[2m:30s])",
+			start:                time.Unix(240, 0),
+			expectedTotalSamples: 4,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				240000: 4,
+			},
+			expectedSamplesRead: 56,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				240000: 56,
+			},
+		},
+
+		// High step count efficiency test - subquery evaluates inner at each step (instant)
+		{
+			query:                "max_over_time(metricWith1SampleEvery10Seconds[2m:10s])",
+			start:                time.Unix(240, 0),
+			expectedTotalSamples: 12, // 12 inner steps * 1 sample per step
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				240000: 12,
+			},
+			expectedSamplesRead: 24,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				240000: 24,
+			},
+		},
+
+		// Complex histogram function nesting
+		{
+			query:                "histogram_count(rate(metricWith1HistogramEvery10Seconds[2m:30s]))",
+			start:                time.Unix(240, 0),
+			expectedTotalSamples: 52,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				240000: 52,
+			},
+			expectedSamplesRead: 104,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				240000: 104,
+			},
+		},
+
+		// Step equals range duration - subquery single inner step
+		{
+			query:                "sum_over_time(metricWith1SampleEvery10Seconds[60s:60s])",
+			start:                time.Unix(120, 0),
+			expectedTotalSamples: 1, // Single inner step, 1 sample
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				120000: 1,
+			},
+			expectedSamplesRead: 2,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				120000: 2,
+			},
+		},
+
+		// Large step creates sparse sampling - single inner step
+		{
+			query:                "max_over_time(metricWith1SampleEvery10Seconds[30s:2m])",
+			start:                time.Unix(240, 0),
+			expectedTotalSamples: 1, // Single inner step
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				240000: 1,
+			},
+			expectedSamplesRead: 2,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				240000: 2,
+			},
+		},
+
+		// Offset with subquery - 2 inner steps * 3 series
+		{
+			query:                "sum_over_time(metricWith3SampleEvery10Seconds[1m:30s] offset 2m)",
+			start:                time.Unix(300, 0),
+			expectedTotalSamples: 6, // 2 inner steps * 3 series
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				300000: 6,
+			},
+			expectedSamplesRead: 12,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				300000: 12,
+			},
+		},
+
+		// Large step size relative to data frequency - single inner step
+		{
+			query:                "avg_over_time(metricWith1SampleEvery10Seconds[1m:2m])",
+			start:                time.Unix(240, 0),
+			expectedTotalSamples: 1, // Single inner step
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				240000: 1,
+			},
+			expectedSamplesRead: 2,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				240000: 2,
+			},
+		},
+
+		// Subquery with offset and @ modifier combined - 6 inner steps * 3 series
+		{
+			query:                "sum_over_time(metricWith3SampleEvery10Seconds[1m:10s] @ 200 offset 1m)",
+			start:                time.Unix(300, 0),
+			expectedTotalSamples: 18, // 6 inner steps * 3 series
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				300000: 18,
+			},
+			expectedSamplesRead: 36,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				300000: 36,
+			},
 		},
 	}
 
@@ -3831,7 +5038,7 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			}
 
 			mimirSamplesStats := runQueryAndGetSamplesStats(t, mimirEngine, tc.query, tc.start, tc.end, tc.interval)
-			require.Equal(t, tc.expectedTotalSamplesWithMQE, mimirSamplesStats.TotalSamples)
+			require.Equal(t, tc.expectedTotalSamplesWithMQE, mimirSamplesStats.TotalSamples, "total samples returned by MQE does not match expected value")
 		})
 	}
 }
