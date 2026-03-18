@@ -1672,6 +1672,23 @@ func TestSelectorsAreDuplicateOrSubset(t *testing.T) {
 			secondSelector: `{a="z"}`,
 			expectedResult: commonsubexpressionelimination.NotDuplicateOrSubset,
 		},
+		"second selector is subset of first via regex with additional extra matchers": {
+			firstSelector:  `{a=~"(a|b)"}`,
+			secondSelector: `{a="a", c="x"}`,
+			expectedResult: commonsubexpressionelimination.SubsetSelectors,
+			expectedSubsetMatchers: []*core.LabelMatcher{
+				{Name: "a", Type: labels.MatchEqual, Value: "a"},
+				{Name: "c", Type: labels.MatchEqual, Value: "x"},
+			},
+		},
+		"second selector is subset of first via regex with equal matchers on other labels": {
+			firstSelector:  `{a=~"(a|b)", b="x"}`,
+			secondSelector: `{a="a", b="x"}`,
+			expectedResult: commonsubexpressionelimination.SubsetSelectors,
+			expectedSubsetMatchers: []*core.LabelMatcher{
+				{Name: "a", Type: labels.MatchEqual, Value: "a"},
+			},
+		},
 	}
 
 	for name, testCase := range testCases {
