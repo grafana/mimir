@@ -274,7 +274,8 @@ func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpir
 // computeLeaseExpiration iterates through all the active jobs known by the JobTracker to find ones that have expired leases.
 // If a job has an expired lease and has been active under the maximum number of times, it will be returned to the front of the queue.
 // Otherwise a job with an expired lease will be removed from the tracker.
-// This function only computes what needs to change without persisting or modifying in-memory state.
+// This function only computes what needs to change without persisting or modifying in-memory state,
+// but it does update the persistent failure metric if applicable.
 // A write lock must be held in order to call this function.
 func (jt *JobTracker) computeLeaseExpiration(leaseDuration time.Duration, now time.Time) (reviveJobs, deleteJobs []TrackedJob) {
 	var e, next *list.Element
@@ -285,7 +286,7 @@ func (jt *JobTracker) computeLeaseExpiration(leaseDuration time.Duration, now ti
 		j := e.Value.(TrackedJob)
 		if now.Sub(j.StatusTime()) > leaseDuration {
 			// Can the job be returned to the queue?
-			if jt.maxLeases == infiniteLeases || j.NumLeases() < jt.maxLeases {
+			if jt.trackFailure(j) {
 				// Copy before modifying
 				jj := j.CopyBase()
 				jj.ClearLease()
@@ -364,7 +365,7 @@ func (jt *JobTracker) CancelLease(id string, epoch int64) (canceled bool, became
 	}
 
 	wasEmpty := jt.isPendingEmpty()
-	revive := jt.maxLeases == infiniteLeases || j.NumLeases() < jt.maxLeases
+	revive := jt.trackFailure(j)
 	if revive {
 		// Copy the value, don't want to leave a modification if the write fails
 		jj := j.CopyBase()
@@ -385,9 +386,6 @@ func (jt *JobTracker) CancelLease(id string, epoch int64) (canceled bool, became
 		jt.incompleteJobs[jj.ID()] = jt.pending.PushFront(jj)
 		jt.metrics.pendingJobs.Set(float64(jt.pending.Len()))
 
-		if jt.jobFailuresAllowed != infiniteLeases && jj.NumLeases() > jt.jobFailuresAllowed {
-			jt.metrics.persistentJobFailures.Inc()
-		}
 	} else {
 		err := jt.persister.DeleteJob(j)
 		if err != nil {
@@ -404,6 +402,15 @@ func (jt *JobTracker) CancelLease(id string, epoch int64) (canceled bool, became
 	}
 
 	return true, wasEmpty && revive, nil
+}
+
+// trackFailure takes a currently leased job and records a persistent failure
+// if the job exceeded the failure threshold, and returns whether the job can be retried.
+func (jt *JobTracker) trackFailure(j TrackedJob) bool {
+	if jt.jobFailuresAllowed != infiniteLeases && j.NumLeases() > jt.jobFailuresAllowed {
+		jt.metrics.persistentJobFailures.Inc()
+	}
+	return j.ID() == planJobId || jt.maxLeases == infiniteLeases || j.NumLeases() < jt.maxLeases
 }
 
 // OfferCompactionJobs processes the results from a plan job. Since planning offers a fresh view of pending work all remaining pending work
