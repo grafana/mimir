@@ -678,7 +678,7 @@ func TestDistributor_QueryStream_InactivePartitionsLookback(t *testing.T) {
 				})
 
 				// Verify getIngesterReplicationSetsForQuery returns the expected partitions.
-				replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+				replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
 				require.NoError(t, err)
 
 				var actualPartitionIDs []int

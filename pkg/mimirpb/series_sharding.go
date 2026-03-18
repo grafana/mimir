@@ -44,3 +44,30 @@ func ShardByAllLabelAdapters(userID string, ls []LabelAdapter) uint32 {
 	}
 	return h
 }
+
+const (
+	// MetricNameMask selects the top 16 bits of a 32-bit hash, used for metric name locality.
+	MetricNameMask = uint32(0xFFFF0000)
+	// LabelBitsMask selects the bottom 16 bits of a 32-bit hash, used for label differentiation.
+	LabelBitsMask = uint32(0x0000FFFF)
+)
+
+// ShardByMetricNameLocality produces a hash where the most significant 16 bits encode
+// the metric name (via ShardByMetricName) and the least significant 16 bits encode
+// the full label set (via ShardByAllLabelAdapters). This ensures that all series for
+// a given metric name hash to a contiguous range of ring tokens, enabling query-time
+// partition pruning by metric name.
+func ShardByMetricNameLocality(userID string, metricName string, ls []LabelAdapter) uint32 {
+	metricHash := ShardByMetricName(userID, metricName)
+	labelsHash := ShardByAllLabelAdapters(userID, ls)
+	return (metricHash & MetricNameMask) | (labelsHash & LabelBitsMask)
+}
+
+// MetricNameHashRange returns the inclusive hash range [lo, hi] that covers all possible
+// series hashes for a given user and metric name under locality-aware sharding.
+func MetricNameHashRange(userID string, metricName string) (lo, hi uint32) {
+	h := ShardByMetricName(userID, metricName)
+	lo = h & MetricNameMask
+	hi = lo | LabelBitsMask
+	return
+}
