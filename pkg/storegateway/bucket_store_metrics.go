@@ -56,6 +56,11 @@ type BucketStoreMetrics struct {
 	postingsFetchDuration prometheus.Histogram
 
 	indexHeaderReaderMetrics *indexheader.ReaderPoolMetrics
+
+	// Quantify how much the projections optimization helps reduce labels sent to queriers.
+	originalLabelBytes  prometheus.Counter
+	reducedLabelBytes   prometheus.Counter
+	increasedLabelBytes prometheus.Counter
 }
 
 func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
@@ -199,6 +204,18 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 		Name:    "cortex_bucket_store_series_batch_preloading_wait_duration_seconds",
 		Help:    "Time spent by store-gateway waiting until the next batch is loaded, once the store-gateway is ready to send it. This metric is tracked only if the request is split into 2+ batches.",
 		Buckets: durationBuckets,
+	})
+	m.originalLabelBytes = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "cortex_bucket_store_projection_original_label_bytes_total",
+		Help: "Total number of bytes of labels transferred to queriers.",
+	})
+	m.reducedLabelBytes = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "cortex_bucket_store_projection_reduced_label_bytes_total",
+		Help: "Total number of bytes of labels saved using projections.",
+	})
+	m.increasedLabelBytes = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "cortex_bucket_store_projection_increased_label_bytes_total",
+		Help: "Total number of bytes of labels increased using projections.",
 	})
 
 	return &m
