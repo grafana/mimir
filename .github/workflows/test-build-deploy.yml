@@ -80,6 +80,7 @@ jobs:
         with:
           path: /go/cache
           key: go-build-cache-image-and-lint-${{ hashFiles('go.sum') }}
+          restore-keys: go-build-cache-image-and-lint-
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
         # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
@@ -326,6 +327,7 @@ jobs:
         with:
           path: /go/cache
           key: go-build-cache-unit-${{ hashFiles('go.sum') }}
+          restore-keys: go-build-cache-unit-
       - name: Install GitHub CLI
         run: ./.github/workflows/scripts/install-gh.sh
       - name: Run Git Config
@@ -377,6 +379,7 @@ jobs:
         with:
           path: /go/cache
           key: go-build-cache-image-and-lint-${{ hashFiles('go.sum') }}
+          restore-keys: go-build-cache-image-and-lint-
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -400,6 +403,7 @@ jobs:
         with:
           path: /go/cache
           key: go-build-cache-image-and-lint-${{ hashFiles('go.sum') }}
+          restore-keys: go-build-cache-image-and-lint-
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -423,6 +427,7 @@ jobs:
         with:
           path: /go/cache
           key: go-build-cache-image-and-lint-${{ hashFiles('go.sum') }}
+          restore-keys: go-build-cache-image-and-lint-
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -446,6 +451,7 @@ jobs:
         with:
           path: /go/cache
           key: go-build-cache-image-and-lint-${{ hashFiles('go.sum') }}
+          restore-keys: go-build-cache-image-and-lint-
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -469,6 +475,7 @@ jobs:
         with:
           path: /go/cache
           key: go-build-cache-image-and-lint-${{ hashFiles('go.sum') }}
+          restore-keys: go-build-cache-image-and-lint-
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -508,6 +515,7 @@ jobs:
         with:
           path: /go/cache
           key: go-build-cache-unit-${{ hashFiles('go.sum') }}
+          restore-keys: go-build-cache-unit-
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Install Docker Client
@@ -560,6 +568,7 @@ jobs:
         with:
           path: /home/runner/.cache/go-build
           key: go-build-cache-integration-${{ hashFiles('go.sum') }}
+          restore-keys: go-build-cache-integration-
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Symlink Expected Path to Workspace
