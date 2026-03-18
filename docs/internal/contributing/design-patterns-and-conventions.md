@@ -11,6 +11,7 @@ Comment sentences should begin with the name of the thing being described and en
 ### Go import style
 
 Mimir uses the "gci" import organization style with three groups separated by blank lines:
+
 1. stdlib imports, sorted lexicographically
 2. 3rd-party imports, sorted lexicographically
 3. Mimir imports (`github.com/grafana/mimir/...`), sorted lexicographically
