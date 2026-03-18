@@ -38,6 +38,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/promqlext"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 const resultsCacheTTL = 24 * time.Hour
@@ -1423,6 +1424,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 			cacheBackend := cache.NewInstrumentedMockCache()
 			keyGenerator := DefaultCacheKeyGenerator{interval: day}
 
+			logger := log.NewNopLogger()
 			mw := newSplitAndCacheMiddleware(
 				false, // No splitting.
 				true,
@@ -1433,7 +1435,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 				keyGenerator,
 				PrometheusResponseExtractor{},
 				resultsCacheAlwaysEnabled,
-				log.NewNopLogger(),
+				logger,
 				prometheus.NewPedanticRegistry(),
 			).Wrap(HandlerFunc(func(ctx context.Context, req MetricsQueryRequest) (Response, error) {
 				// Generate PerStepStats to test cached samples processed in the Extents.
@@ -1456,7 +1458,8 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 
 			// Store all extents fixtures in the cache.
 			cacheKey := keyGenerator.QueryRequest(ctx, userID, testData.req)
-			mw.storeCacheExtents(cacheKey, []string{userID}, testData.cachedExtents)
+			spanLog, ctx := spanlogger.New(ctx, logger, tracer, "")
+			mw.storeCacheExtents(spanLog, cacheKey, []string{userID}, testData.cachedExtents)
 
 			// Run the request.
 			actualRes, err := mw.Do(ctx, testData.req)
@@ -1482,6 +1485,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 
 func TestSplitAndCacheMiddleware_StoreAndFetchCacheExtents(t *testing.T) {
 	cacheBackend := cache.NewMockCache()
+	logger := log.NewNopLogger()
 	mw := newSplitAndCacheMiddleware(
 		false,
 		true,
@@ -1496,11 +1500,12 @@ func TestSplitAndCacheMiddleware_StoreAndFetchCacheExtents(t *testing.T) {
 		DefaultCacheKeyGenerator{interval: day},
 		PrometheusResponseExtractor{},
 		resultsCacheAlwaysEnabled,
-		log.NewNopLogger(),
+		logger,
 		prometheus.NewPedanticRegistry(),
 	).Wrap(nil).(*splitAndCacheMiddleware)
 
 	ctx := context.Background()
+	spanLog, ctx := spanlogger.New(ctx, logger, tracer, "")
 
 	t.Run("fetchCacheExtents() should return a slice with the same number of input keys but empty extents on cache miss", func(t *testing.T) {
 		actual := mw.fetchCacheExtents(ctx, time.Now(), []string{"tenant"}, []string{"key-1", "key-2", "key-3"})
@@ -1509,8 +1514,8 @@ func TestSplitAndCacheMiddleware_StoreAndFetchCacheExtents(t *testing.T) {
 	})
 
 	t.Run("fetchCacheExtents() should return a slice with the same number of input keys and some extends filled up on partial cache hit", func(t *testing.T) {
-		mw.storeCacheExtents("key-1", []string{"tenant"}, []Extent{mkExtent(10, 20)})
-		mw.storeCacheExtents("key-3", []string{"tenant"}, []Extent{mkExtent(20, 30), mkExtent(40, 50)})
+		mw.storeCacheExtents(spanLog, "key-1", []string{"tenant"}, []Extent{mkExtent(10, 20)})
+		mw.storeCacheExtents(spanLog, "key-3", []string{"tenant"}, []Extent{mkExtent(20, 30), mkExtent(40, 50)})
 
 		actual := mw.fetchCacheExtents(ctx, time.Now(), []string{"tenant"}, []string{"key-1", "key-2", "key-3"})
 		expected := [][]Extent{{mkExtent(10, 20)}, nil, {mkExtent(20, 30), mkExtent(40, 50)}}
@@ -1523,7 +1528,7 @@ func TestSplitAndCacheMiddleware_StoreAndFetchCacheExtents(t *testing.T) {
 		require.NoError(t, err)
 		cacheBackend.SetMultiAsync(map[string][]byte{hashCacheKey("key-1"): buf}, 0)
 
-		mw.storeCacheExtents("key-3", []string{"tenant"}, []Extent{mkExtent(20, 30), mkExtent(40, 50)})
+		mw.storeCacheExtents(spanLog, "key-3", []string{"tenant"}, []Extent{mkExtent(20, 30), mkExtent(40, 50)})
 
 		actual := mw.fetchCacheExtents(ctx, time.Now(), []string{"tenant"}, []string{"key-1", "key-2", "key-3"})
 		expected := [][]Extent{nil, nil, {mkExtent(20, 30), mkExtent(40, 50)}}
@@ -1535,24 +1540,24 @@ func TestSplitAndCacheMiddleware_StoreAndFetchCacheExtents(t *testing.T) {
 
 		// Query time outside of TTL (1h), extent ends outside of OOO window (30m) -- will be filtered out.
 		e1 := mkExtentWithStepAndQueryTime(10, 20, 10, now-3*time.Hour.Milliseconds())
-		mw.storeCacheExtents("key-1", []string{"tenant"}, []Extent{e1})
+		mw.storeCacheExtents(spanLog, "key-1", []string{"tenant"}, []Extent{e1})
 
 		// Query time inside of TTL (1h), extent ends outside of OOO window (30m) -- will be used.
 		e2 := mkExtentWithStepAndQueryTime(20, 30, 10, now-45*time.Minute.Milliseconds())
-		mw.storeCacheExtents("key-2", []string{"tenant"}, []Extent{e2})
+		mw.storeCacheExtents(spanLog, "key-2", []string{"tenant"}, []Extent{e2})
 
 		// Query time outside of (short) TTL (10m), extent ends inside of OOO window (30min)
 		extentEnd := now - 25*time.Minute.Milliseconds()
 		e3 := mkExtentWithStepAndQueryTime(extentEnd-100, extentEnd, 10, now-15*time.Minute.Milliseconds())
-		mw.storeCacheExtents("key-3", []string{"tenant"}, []Extent{e3})
+		mw.storeCacheExtents(spanLog, "key-3", []string{"tenant"}, []Extent{e3})
 
 		// Query time inside of (short) TTL (10m), extent ends inside of OOO window (30min)
 		e4 := mkExtentWithStepAndQueryTime(extentEnd-100, extentEnd, 10, now-5*time.Minute.Milliseconds())
-		mw.storeCacheExtents("key-4", []string{"tenant"}, []Extent{e4})
+		mw.storeCacheExtents(spanLog, "key-4", []string{"tenant"}, []Extent{e4})
 
 		// No query time, extent ends inside of OOO window (30min). This will be used.
 		e5 := mkExtentWithStepAndQueryTime(extentEnd-100, extentEnd, 10, 0)
-		mw.storeCacheExtents("key-5", []string{"tenant"}, []Extent{e5})
+		mw.storeCacheExtents(spanLog, "key-5", []string{"tenant"}, []Extent{e5})
 
 		actual := mw.fetchCacheExtents(ctx, time.UnixMilli(now), []string{"tenant"}, []string{"key-1", "key-2", "key-3", "key-4", "key-5"})
 		expected := [][]Extent{
@@ -2156,6 +2161,7 @@ func Test_evaluateAtModifier(t *testing.T) {
 
 func TestSplitAndCacheMiddlewareLowerTTL(t *testing.T) {
 	mcache := cache.NewMockCache()
+	logger := log.NewNopLogger()
 	m := splitAndCacheMiddleware{
 		limits: mockLimits{
 			outOfOrderTimeWindow:            time.Hour,
@@ -2164,6 +2170,8 @@ func TestSplitAndCacheMiddlewareLowerTTL(t *testing.T) {
 		},
 		cache: mcache,
 	}
+
+	spanLog, _ := spanlogger.New(context.Background(), logger, tracer, "")
 
 	cases := []struct {
 		endTime time.Time
@@ -2198,7 +2206,7 @@ func TestSplitAndCacheMiddlewareLowerTTL(t *testing.T) {
 	for i, c := range cases {
 		// Store.
 		key := fmt.Sprintf("k%d", i)
-		m.storeCacheExtents(key, []string{"ten1"}, []Extent{
+		m.storeCacheExtents(spanLog, key, []string{"ten1"}, []Extent{
 			{Start: 0, End: c.endTime.UnixMilli()},
 		})
 

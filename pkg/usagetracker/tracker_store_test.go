@@ -4,6 +4,7 @@ package usagetracker
 
 import (
 	"context"
+	"fmt"
 	math_bits "math/bits"
 	"math/rand"
 	"os"
@@ -746,4 +747,82 @@ func decodeSnapshot(t *testing.T, data []byte) map[string]map[uint64]clock.Minut
 		res[tenantID] = shard
 	}
 	return res
+}
+
+func BenchmarkGroupByModuloShards(b *testing.B) {
+	r := rand.New(rand.NewSource(0))
+	for _, elements := range []int{100, 1000, 10_000} {
+		b.Run(fmt.Sprintf("series=%d", elements), func(b *testing.B) {
+			inputs := make([][]uint64, b.N)
+			for i := range inputs {
+				inputs[i] = make([]uint64, elements)
+				for j := range inputs[i] {
+					inputs[i][j] = r.Uint64()
+				}
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				groupByModuloShards(inputs[i])
+			}
+		})
+	}
+}
+
+func TestGroupByModuloShards(t *testing.T) {
+	t.Run("empty", func(t *testing.T) {
+		var series []uint64
+		groupByModuloShards(series)
+		requireGroupedByModuloShards(t, series)
+		require.Empty(t, series)
+	})
+
+	t.Run("single element", func(t *testing.T) {
+		series := []uint64{42}
+		original := slices.Clone(series)
+		groupByModuloShards(series)
+		requireGroupedByModuloShards(t, series)
+		require.ElementsMatch(t, series, original)
+	})
+
+	t.Run("basic", func(t *testing.T) {
+		series := []uint64{30, 50, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+		original := slices.Clone(series)
+		groupByModuloShards(series)
+		requireGroupedByModuloShards(t, series)
+		require.ElementsMatch(t, series, original)
+	})
+
+	t.Run("random tests", func(t *testing.T) {
+		r := rand.New(rand.NewSource(0))
+		for i := 0; i < 1000; i++ {
+			series := make([]uint64, r.Int63n(1024))
+			for i := range series {
+				series[i] = r.Uint64()
+			}
+			original := slices.Clone(series)
+			groupByModuloShards(series)
+			requireGroupedByModuloShards(t, series)
+			require.ElementsMatch(t, series, original)
+		}
+	})
+}
+
+func requireGroupedByModuloShards(t *testing.T, series []uint64) {
+	t.Helper()
+	if len(series) == 0 {
+		return
+	}
+	current := series[0] % shards
+	seenModulos := make(map[uint64]bool)
+	seenModulos[current] = true
+	for _, s := range series[1:] {
+		mod := s % shards
+		if mod != current {
+			if seenModulos[mod] {
+				t.Fatalf("modulo %d from s=%d was seen already", mod, s)
+			}
+			current = mod
+			seenModulos[current] = true
+		}
+	}
 }
