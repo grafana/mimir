@@ -1612,28 +1612,34 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 
 			// There are two stages to processing the query. They take different memory depending on whether we're running with stringlabels or not.
 			// At peak we'll hold in memory either A) or B)
+			// Both phases also hold the two []*group slices from groupPointerSlicePool (cap=1, 8 bytes) and
+			// innerGroupPointerSlicePool (5 inner series → cap=8, 64 bytes) = 72 bytes total.
+			// types.HistogramPointerSize is used as a proxy for pointer size (8 bytes on 64-bit platforms).
 			rangeQueryExpectedPeak: max(
 				// A)
 				//   - 5 input series labels (8 series metadata because of bucketed pool rounding to a power of 2)
 				//   - 1 output series metadata (no labels)
-				8*types.SeriesMetadataSize+5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize())+types.SeriesMetadataSize,
+				//   - innerGroupPointerSlicePool (cap=8) + groupPointerSlicePool (cap=1)
+				8*types.SeriesMetadataSize+5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize())+types.SeriesMetadataSize+9*types.HistogramPointerSize,
 				// B)
 				//   - the running total for the sum() (two floats (due to kahan) and a bool at each step, with the number of steps rounded to the nearest power of 2),
 				//   - the next series from the selector
 				//   - the series metadata for the output series (no labels)
-				8*(2*types.Float64Size+types.BoolSize)+8*types.FPointSize+types.SeriesMetadataSize,
+				//   - innerGroupPointerSlicePool (cap=8) + groupPointerSlicePool (cap=1)
+				8*(2*types.Float64Size+types.BoolSize)+8*types.FPointSize+types.SeriesMetadataSize+9*types.HistogramPointerSize,
 			),
 			rangeQueryLimit: max(
 				// A)
-				8*types.SeriesMetadataSize+5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize())+types.SeriesMetadataSize,
+				8*types.SeriesMetadataSize+5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize())+types.SeriesMetadataSize+9*types.HistogramPointerSize,
 				// B)
-				8*(2*types.Float64Size+types.BoolSize)+8*types.FPointSize+types.SeriesMetadataSize,
+				8*(2*types.Float64Size+types.BoolSize)+8*types.FPointSize+types.SeriesMetadataSize+9*types.HistogramPointerSize,
 			),
 
 			// Each series has one sample, which is already a power of two.
-			// At peak we'll hold in memory 9 SeriesMetadata.
-			instantQueryExpectedPeak: 9*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()),
-			instantQueryLimit:        9*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()),
+			// At peak we'll hold in memory 9 SeriesMetadata, plus the two []*group slices
+			// from groupPointerSlicePool (cap=1, 8 bytes) and innerGroupPointerSlicePool (cap=8, 64 bytes).
+			instantQueryExpectedPeak: 9*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()) + 9*types.HistogramPointerSize,
+			instantQueryLimit:        9*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()) + 9*types.HistogramPointerSize,
 		},
 		"limit enabled, query selects more samples than limit but should not load all of them into memory at once, and peak consumption is over limit": {
 			expr:          "sum(some_metric)",
@@ -1652,11 +1658,14 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			expr:          "sum(some_histogram)",
 			shouldSucceed: true,
 
-			rangeQueryExpectedPeak: 2*8*types.HistogramPointerSize + 8*types.HPointSize + types.SeriesMetadataSize + 8*types.CounterResetHintSize,
-			rangeQueryLimit:        2*8*types.HistogramPointerSize + 8*types.HPointSize + types.SeriesMetadataSize + 8*types.CounterResetHintSize,
+			// The sum() aggregator also allocates two []*group slices via groupPointerSlicePool and innerGroupPointerSlicePool.
+			// some_histogram has 2 inner series (cap=2, 16 bytes) and 1 output group (cap=1, 8 bytes) = 24 bytes total.
+			// types.HistogramPointerSize is used as a proxy for pointer size (8 bytes on 64-bit platforms).
+			rangeQueryExpectedPeak: 2*8*types.HistogramPointerSize + 8*types.HPointSize + types.SeriesMetadataSize + 8*types.CounterResetHintSize + 3*types.HistogramPointerSize,
+			rangeQueryLimit:        2*8*types.HistogramPointerSize + 8*types.HPointSize + types.SeriesMetadataSize + 8*types.CounterResetHintSize + 3*types.HistogramPointerSize,
 
-			instantQueryExpectedPeak: types.HPointSize + types.VectorSampleSize + types.SeriesMetadataSize,
-			instantQueryLimit:        types.HPointSize + types.VectorSampleSize + types.SeriesMetadataSize,
+			instantQueryExpectedPeak: types.HPointSize + types.VectorSampleSize + types.SeriesMetadataSize + 3*types.HistogramPointerSize,
+			instantQueryLimit:        types.HPointSize + types.VectorSampleSize + types.SeriesMetadataSize + 3*types.HistogramPointerSize,
 		},
 		"histogram: limit enabled, and query exceeds limit": {
 			expr:          "sum(some_histogram)",
@@ -1666,17 +1675,19 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			// At peak we'll hold in memory:
 			//  - the running total for the sum() (a histogram pointer at each step, with the number of steps rounded to the nearest power of 2),
 			//  - and the next series from the selector.
+			//  - the two []*group slices from groupPointerSlicePool (cap=1, 8 bytes) and innerGroupPointerSlicePool (cap=2, 16 bytes).
 			// The last thing to be allocated is the HistogramPointerSize slice for the running total, so that won't contribute to the peak before the query is aborted.
-			rangeQueryExpectedPeak: 8*types.HPointSize + types.SeriesMetadataSize,
+			rangeQueryExpectedPeak: 8*types.HPointSize + types.SeriesMetadataSize + 3*types.HistogramPointerSize,
 			rangeQueryLimit:        8*types.HPointSize + types.SeriesMetadataSize + 8*types.HistogramPointerSize - 1,
 			// Each series has one sample, which is already a power of two.
 			// At peak we'll hold in memory:
 			//  - the running total for the sum() + compensating value for kahan summation
 			//    (2 histogram pointers),
 			//  - the next series from the selector,
+			//  - the two []*group slices from groupPointerSlicePool and innerGroupPointerSlicePool.
 			//  - and the output sample.
 			// The last thing to be allocated is the vector slice for the final result (after the sum()'s running total has been returned), so those won't contribute to the peak before the query is aborted.
-			instantQueryExpectedPeak: types.HPointSize + types.SeriesMetadataSize + 2*types.HistogramPointerSize + types.CounterResetHintSize,
+			instantQueryExpectedPeak: types.HPointSize + types.SeriesMetadataSize + 2*types.HistogramPointerSize + types.CounterResetHintSize + 3*types.HistogramPointerSize,
 			instantQueryLimit:        types.HPointSize + types.SeriesMetadataSize + types.VectorSampleSize - 1,
 		},
 	}

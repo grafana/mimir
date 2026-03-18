@@ -72,7 +72,9 @@ const (
 	CounterResetHintSlices
 	SeriesGroupPairSlices
 	BucketGroupPointerSlices
-	memoryConsumptionSourceCount = BucketGroupPointerSlices + 1
+	GroupPointerSlices
+	InnerGroupPointerSlices
+	memoryConsumptionSourceCount = InnerGroupPointerSlices + 1
 )
 
 const (
@@ -123,6 +125,10 @@ func (s MemoryConsumptionSource) String() string {
 		return "[]functions.seriesGroupPair"
 	case BucketGroupPointerSlices:
 		return "[]*functions.bucketGroup"
+	case GroupPointerSlices:
+		return "[]*aggregations.group"
+	case InnerGroupPointerSlices:
+		return "[]*aggregations.group (inner series)"
 	default:
 		return unknownMemorySource
 	}
