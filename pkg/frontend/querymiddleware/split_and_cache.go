@@ -263,7 +263,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 
 			for downstreamIdx, downstreamReq := range splitReq.downstreamRequests {
 				downstreamRes := splitReq.downstreamResponses[downstreamIdx]
-				if !isResponseCachable(downstreamRes) {
+				if !responseHeadersAllowCaching(downstreamRes) {
 					continue
 				}
 
