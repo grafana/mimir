@@ -874,7 +874,6 @@ var ownAllJobs = func(*Job) (bool, error) {
 // BucketCompactor compacts blocks in a bucket.
 type BucketCompactor struct {
 	logger                        log.Logger
-	sy                            *metaSyncer
 	grouper                       Grouper
 	comp                          Compactor
 	planner                       Planner
@@ -897,7 +896,6 @@ type BucketCompactor struct {
 // NewBucketCompactor creates a new bucket compactor.
 func NewBucketCompactor(
 	logger log.Logger,
-	sy *metaSyncer,
 	grouper Grouper,
 	planner Planner,
 	comp Compactor,
@@ -926,7 +924,6 @@ func NewBucketCompactor(
 
 	return &BucketCompactor{
 		logger:                        logger,
-		sy:                            sy,
 		grouper:                       grouper,
 		planner:                       planner,
 		comp:                          comp,
@@ -949,7 +946,7 @@ func NewBucketCompactor(
 
 // Compact runs compaction over bucket.
 // If maxCompactionTime is positive then after this time no more new compactions are started.
-func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Duration) (rerr error) {
+func (c *BucketCompactor) Compact(ctx context.Context, syncer *metaSyncer, maxCompactionTime time.Duration) (rerr error) {
 	defer func() {
 		// Do not remove the compactDir if an error has occurred
 		// because potentially on the next run we would not have to download
@@ -1032,18 +1029,18 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 		}
 
 		level.Info(c.logger).Log("msg", "start sync of metas")
-		if err := c.sy.SyncMetas(ctx); err != nil {
+		if err := syncer.SyncMetas(ctx); err != nil {
 			return fmt.Errorf("sync: %w", err)
 		}
 
 		level.Info(c.logger).Log("msg", "start of GC")
 		// Blocks that were compacted are garbage collected after each Compaction.
 		// However if compactor crashes we need to resolve those on startup.
-		if err := c.sy.GarbageCollect(ctx); err != nil {
+		if err := syncer.GarbageCollect(ctx); err != nil {
 			return fmt.Errorf("blocks garbage collect: %w", err)
 		}
 
-		jobs, err := c.grouper.Groups(c.sy.Metas())
+		jobs, err := c.grouper.Groups(syncer.Metas())
 		if err != nil {
 			return fmt.Errorf("build compaction jobs: %w", err)
 		}
@@ -1133,7 +1130,7 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 // Returns nil if the error was recognized and handled successfully, otherwise returns a non-nil error.
 func (c *BucketCompactor) handleKnownCompactionErrors(ctx context.Context, job *Job, err error) error {
 	if ok, issue347Err := isIssue347Error(err); ok {
-		return repairIssue347(ctx, c.logger, c.bkt, c.sy.metrics.blocksMarkedForDeletion, issue347Err)
+		return repairIssue347(ctx, c.logger, c.bkt, c.metrics.blocksMarkedForDeletion, issue347Err)
 	}
 
 	// If the block has an out of order chunk and we have been configured to skip it,

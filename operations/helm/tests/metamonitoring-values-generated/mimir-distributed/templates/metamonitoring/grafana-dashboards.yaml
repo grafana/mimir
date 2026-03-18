@@ -19007,14 +19007,14 @@ data:
                          "defaults": {
                             "custom": {
                                "drawStyle": "line",
-                               "fillOpacity": 1,
+                               "fillOpacity": 20,
                                "lineWidth": 1,
                                "pointSize": 5,
                                "showPoints": "never",
                                "spanNulls": false,
                                "stacking": {
                                   "group": "A",
-                                  "mode": "none"
+                                  "mode": "normal"
                                }
                             },
                             "min": 0,

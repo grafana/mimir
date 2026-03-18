@@ -244,12 +244,12 @@ func TestGroupCompactE2E(t *testing.T) {
 		metrics := NewBucketCompactorMetrics(blocksMarkedForDeletion, prometheus.NewPedanticRegistry())
 		cfg := indexheader.Config{VerifyOnLoad: true}
 		bComp, err := NewBucketCompactor(
-			logger, sy, grouper, planner, comp, dir, bkt, 2, true, ownAllJobs, sortJobsByNewestBlocksFirst, 0, 0, false, 4, metrics, 32, cfg, 8,
+			logger, grouper, planner, comp, dir, bkt, 2, true, ownAllJobs, sortJobsByNewestBlocksFirst, 0, 0, false, 4, metrics, 32, cfg, 8,
 		)
 		require.NoError(t, err)
 
 		// Compaction on empty should not fail.
-		require.NoError(t, bComp.Compact(ctx, 0), 0)
+		require.NoError(t, bComp.Compact(ctx, sy, 0), 0)
 		assert.Equal(t, 0.0, promtest.ToFloat64(sy.metrics.blocksMarkedForDeletion))
 		assert.Equal(t, 0.0, promtest.ToFloat64(sy.metrics.garbageCollectionFailures))
 		assert.Equal(t, 0.0, promtest.ToFloat64(metrics.blocksMarkedForNoCompact.WithLabelValues(block.OutOfOrderChunksNoCompactReason)))
@@ -366,7 +366,7 @@ func TestGroupCompactE2E(t *testing.T) {
 			},
 		})
 
-		require.NoError(t, bComp.Compact(ctx, 0), 0)
+		require.NoError(t, bComp.Compact(ctx, sy, 0), 0)
 		assert.Equal(t, 7.0, promtest.ToFloat64(sy.metrics.blocksMarkedForDeletion))
 		assert.Equal(t, 0.0, promtest.ToFloat64(metrics.blocksMarkedForNoCompact.WithLabelValues(block.OutOfOrderChunksNoCompactReason)))
 		assert.Equal(t, 0.0, promtest.ToFloat64(sy.metrics.garbageCollectionFailures))

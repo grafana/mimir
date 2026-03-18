@@ -22,6 +22,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"math/rand"
@@ -30,7 +31,6 @@ import (
 	"time"
 
 	"github.com/cortexproject/promqlsmith"
-	"github.com/efficientgo/core/errors"
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"

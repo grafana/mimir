@@ -268,6 +268,8 @@ func (v *VectorScalarBinaryOperation) AfterPrepare(ctx context.Context) error {
 }
 
 func (v *VectorScalarBinaryOperation) Finalize(ctx context.Context) error {
+	types.FPointSlicePool.Put(&v.scalarData.Samples, v.MemoryConsumptionTracker)
+
 	if err := v.Scalar.Finalize(ctx); err != nil {
 		return err
 	}
@@ -278,8 +280,6 @@ func (v *VectorScalarBinaryOperation) Finalize(ctx context.Context) error {
 func (v *VectorScalarBinaryOperation) Close() {
 	v.Scalar.Close()
 	v.Vector.Close()
-
-	types.FPointSlicePool.Put(&v.scalarData.Samples, v.MemoryConsumptionTracker)
 }
 
 func (v *VectorScalarBinaryOperation) emitAnnotation(generator types.AnnotationGenerator) {

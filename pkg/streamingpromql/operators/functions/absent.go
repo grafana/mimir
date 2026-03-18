@@ -123,13 +123,12 @@ func (a *Absent) AfterPrepare(ctx context.Context) error {
 }
 
 func (a *Absent) Finalize(ctx context.Context) error {
+	types.BoolSlicePool.Put(&a.presence, a.MemoryConsumptionTracker)
 	return a.Inner.Finalize(ctx)
 }
 
 func (a *Absent) Close() {
 	a.Inner.Close()
-
-	types.BoolSlicePool.Put(&a.presence, a.MemoryConsumptionTracker)
 }
 
 // CreateLabelsForAbsentFunction returns the labels that are uniquely and exactly matched

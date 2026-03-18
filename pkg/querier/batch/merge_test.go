@@ -305,6 +305,54 @@ func TestMergeHistogramCheckHints(t *testing.T) {
 	}
 }
 
+func BenchmarkPartitionChunks(b *testing.B) {
+	testCases := map[string][]GenericChunk{
+		"one chunk": {
+			NewGenericChunk(0, 100, nil),
+		},
+		"two non-overlapping chunks": {
+			NewGenericChunk(0, 100, nil),
+			NewGenericChunk(200, 300, nil),
+		},
+		"five non-overlapping chunks": {
+			NewGenericChunk(0, 100, nil),
+			NewGenericChunk(300, 400, nil),
+			NewGenericChunk(500, 600, nil),
+			NewGenericChunk(700, 800, nil),
+			NewGenericChunk(900, 1000, nil),
+		},
+		"two overlapping chunks": {
+			NewGenericChunk(0, 100, nil),
+			NewGenericChunk(50, 150, nil),
+		},
+		"five overlapping chunks": {
+			NewGenericChunk(0, 100, nil),
+			NewGenericChunk(50, 150, nil),
+			NewGenericChunk(100, 200, nil),
+			NewGenericChunk(150, 250, nil),
+			NewGenericChunk(200, 300, nil),
+		},
+		"three sets of overlapping chunks, each with 2 chunks": {
+			NewGenericChunk(0, 100, nil),
+			NewGenericChunk(50, 150, nil),
+
+			NewGenericChunk(200, 300, nil),
+			NewGenericChunk(250, 350, nil),
+
+			NewGenericChunk(400, 500, nil),
+			NewGenericChunk(450, 550, nil),
+		},
+	}
+
+	for name, testCase := range testCases {
+		b.Run(name, func(b *testing.B) {
+			for b.Loop() {
+				partitionChunks(testCase)
+			}
+		})
+	}
+}
+
 // TestMergeIteratorSeek tests a bug while calling Seek() on mergeIterator.
 func TestMergeIteratorSeek(t *testing.T) {
 	// Samples for 3 chunks.

@@ -187,6 +187,18 @@ func (o *Operator) AfterPrepare(ctx context.Context) error {
 }
 
 func (o *Operator) Finalize(ctx context.Context) error {
+	if o.stepArg != nil {
+		o.stepArg.close()
+	}
+	o.stepArg = nil
+
+	for _, g := range o.seriesToGroups {
+		if g != nil {
+			g.close()
+		}
+	}
+	o.seriesToGroups = nil
+
 	if err := o.Inner.Finalize(ctx); err != nil {
 		return err
 	}
@@ -197,17 +209,6 @@ func (o *Operator) Finalize(ctx context.Context) error {
 func (o *Operator) Close() {
 	o.Inner.Close()
 	o.Param.Close()
-
-	if o.stepArg != nil {
-		o.stepArg.close()
-	}
-
-	for _, g := range o.seriesToGroups {
-		if g != nil {
-			g.close()
-		}
-	}
-
 }
 
 func NewLimitK(

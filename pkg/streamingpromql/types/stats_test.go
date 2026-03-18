@@ -330,3 +330,31 @@ func TestOperatorEvaluationStats_Clone(t *testing.T) {
 	clone.Close()
 	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 }
+
+func TestOperatorEvaluationStats_ExtendStepInvariant(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+	// Create a set of stats corresponding to the single evaluated step.
+	stepInvariant, err := NewOperatorEvaluationStats(NewInstantQueryTimeRange(timestamp.Time(10000)), memoryConsumptionTracker)
+	require.NoError(t, err)
+
+	stepInvariant.samplesProcessedPerStep[0] = 100
+	stepInvariant.newSamplesReadPerStep[0] = 40
+
+	// Extend it to the full time range.
+	start := timestamp.Time(20000)
+	step := time.Minute
+	end := start.Add(2 * step)
+	timeRange := NewRangeQueryTimeRange(start, end, step)
+	extended, err := stepInvariant.ExtendStepInvariantToFullRange(timeRange)
+	require.NoError(t, err)
+
+	require.Equal(t, []int64{100, 100, 100}, extended.samplesProcessedPerStep)
+	require.Equal(t, []int64{40, 0, 0}, extended.newSamplesReadPerStep)
+
+	// Make sure everything was returned to the pool.
+	extended.Close()
+	stepInvariant.Close()
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+}

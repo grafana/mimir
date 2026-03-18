@@ -124,8 +124,8 @@ local filename = 'mimir-block-builder.json';
           'Overview of per-second rate of records fetched from Kafka split by pods.',
         ) +
         $.queryPanel(
-          'sum by (pod) (rate(cortex_ingest_storage_reader_fetch_records_total{%(job)s}[$__rate_interval]))' % { job: $.jobMatcher($._config.job_names.block_builder) },
-          '{{pod}}'
+          'sum by (%(per_instance_label)s) (rate(cortex_ingest_storage_reader_fetch_records_total{%(job)s}[$__rate_interval]))' % { per_instance_label: $._config.per_instance_label, job: $.jobMatcher($._config.job_names.block_builder) },
+          '{{%(per_instance_label)s}}' % $._config.per_instance_label,
         ),
       )
       .addPanel(
@@ -192,6 +192,18 @@ local filename = 'mimir-block-builder.json';
     )
     .addRow(
       $.row('Block builder resources')
+      .addPanel(
+        $.timeseriesPanel('In-memory series') +
+        $.panelDescription(
+          'In-memory series',
+          'Number of in-memory series handled by each block-builder instance.',
+        ) +
+        $.queryPanel(
+          'sum by (%(per_instance_label)s) (cortex_blockbuilder_memory_series{%(job)s})' % { per_instance_label: $._config.per_instance_label, job: $.jobMatcher($._config.job_names.block_builder) },
+          '{{%(per_instance_label)s}}' % $._config.per_instance_label,
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'short' }, custom+: { fillOpacity: 0 } } },
+      )
       .addPanel(
         $.containerCPUUsagePanelByComponent('block_builder'),
       )

@@ -218,12 +218,14 @@ func (v *InstantVectorSelector) AfterPrepare(ctx context.Context) error {
 }
 
 func (v *InstantVectorSelector) Finalize(ctx context.Context) error {
-	// Nothing to do.
+	v.memoizedIterator = nil
+	v.chunkIterator = nil
+
+	v.Selector.Close()
 	return nil
 }
 
 func (v *InstantVectorSelector) Close() {
+	// If the query fails, then Finalize above won't be called, so make sure to close the selector.
 	v.Selector.Close()
-	v.memoizedIterator = nil
-	v.chunkIterator = nil
 }

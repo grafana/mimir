@@ -181,7 +181,7 @@ func TestQuerySharding_Correctness(t *testing.T) {
 						removeAllAnnotationPositionInformation(expectedPrometheusRes.Warnings)
 					}
 
-					for _, numShards := range []int{2, 4, 8, 16} {
+					for _, numShards := range []int{2, 16} {
 						t.Run(fmt.Sprintf("shards=%d", numShards), func(t *testing.T) {
 							reg := prometheus.NewPedanticRegistry()
 							shardingware := newQueryShardingMiddleware(

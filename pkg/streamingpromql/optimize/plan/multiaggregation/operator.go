@@ -296,6 +296,14 @@ func (m *MultiAggregatorInstanceOperator) Finalize(ctx context.Context) error {
 		return nil
 	}
 
+	if m.aggregator != nil {
+		m.aggregator.Finalize()
+		m.aggregator = nil
+	}
+
+	types.BoolSlicePool.Put(&m.unfilteredSeriesBitmap, m.group.memoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&m.outputSeriesMetadata, m.group.memoryConsumptionTracker)
+
 	m.finalized = true
 	return m.group.Finalize(ctx)
 }
@@ -306,15 +314,6 @@ func (m *MultiAggregatorInstanceOperator) Close() {
 	}
 
 	m.closed = true
-
-	if m.aggregator != nil {
-		m.aggregator.Close()
-		m.aggregator = nil
-	}
-
-	types.BoolSlicePool.Put(&m.unfilteredSeriesBitmap, m.group.memoryConsumptionTracker)
-	types.SeriesMetadataSlicePool.Put(&m.outputSeriesMetadata, m.group.memoryConsumptionTracker)
-
 	m.group.Close()
 }
 

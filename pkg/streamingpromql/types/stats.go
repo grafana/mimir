@@ -7,6 +7,7 @@ package types
 
 import (
 	"errors"
+	"fmt"
 	"unsafe"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -134,6 +135,29 @@ func (s *OperatorEvaluationStats) Clone() (*OperatorEvaluationStats, error) {
 	copy(clone.newSamplesReadPerStep, s.newSamplesReadPerStep)
 
 	return clone, nil
+}
+
+// ExtendStepInvariantToFullRange calculates the equivalent statistics for a step invariant
+// operation that is used for multiple steps in a range query.
+//
+// It is the caller's responsibility to call Close on the original OperatorEvaluationStats instance.
+func (s *OperatorEvaluationStats) ExtendStepInvariantToFullRange(timeRange QueryTimeRange) (*OperatorEvaluationStats, error) {
+	if !s.timeRange.IsInstant {
+		return nil, fmt.Errorf("cannot extend step invariant to full range for non-instant time range %v", s.timeRange)
+	}
+
+	expanded, err := NewOperatorEvaluationStats(timeRange, s.memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	expanded.newSamplesReadPerStep[0] = s.newSamplesReadPerStep[0]
+
+	for idx := range timeRange.StepCount {
+		expanded.samplesProcessedPerStep[idx] = s.samplesProcessedPerStep[0]
+	}
+
+	return expanded, nil
 }
 
 func (s *OperatorEvaluationStats) Close() {

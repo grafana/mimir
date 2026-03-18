@@ -152,14 +152,14 @@ func (d *DeduplicateAndMerge) AfterPrepare(ctx context.Context) error {
 }
 
 func (d *DeduplicateAndMerge) Finalize(ctx context.Context) error {
+	if d.buffer != nil {
+		d.buffer.Finalize()
+		d.buffer = nil
+	}
+
 	return d.Inner.Finalize(ctx)
 }
 
 func (d *DeduplicateAndMerge) Close() {
 	d.Inner.Close()
-
-	if d.buffer != nil {
-		d.buffer.Close()
-		d.buffer = nil
-	}
 }

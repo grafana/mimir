@@ -163,15 +163,30 @@ func (b *InstantVectorDuplicationBuffer) CloseConsumer(consumer *InstantVectorDu
 		return
 	}
 
+	b.releaseBufferedData(consumer)
 	consumer.closed = true
+
+	if b.allConsumersClosed() {
+		b.Inner.Close()
+	}
+}
+
+func (b *InstantVectorDuplicationBuffer) releaseBufferedData(consumer *InstantVectorDuplicationConsumer) {
+	if consumer.finalized {
+		return
+	}
+
+	consumer.finalized = true
+
+	defer types.BoolSlicePool.Put(&consumer.unfilteredSeriesBitmap, b.MemoryConsumptionTracker)
 
 	// Remove any buffered series that are no longer needed because they were only being retained for the consumer
 	// that was just closed.
 	earliestSeriesIndexStillToReturn := b.earliestSeriesIndexStillToReturn()
 
 	if earliestSeriesIndexStillToReturn == math.MaxInt {
-		// All other consumers are already closed. Close everything.
-		b.close()
+		// All other consumers are already finalized. Clean up everything.
+		b.releaseAllBufferedData()
 		return
 	}
 
@@ -218,10 +233,18 @@ func (b *InstantVectorDuplicationBuffer) CloseConsumer(consumer *InstantVectorDu
 	}
 }
 
+func (b *InstantVectorDuplicationBuffer) releaseAllBufferedData() {
+	types.SeriesMetadataSlicePool.Put(&b.seriesMetadata, b.MemoryConsumptionTracker)
+
+	for b.buffer.Size() > 0 {
+		types.PutInstantVectorSeriesData(b.buffer.RemoveFirst(), b.MemoryConsumptionTracker)
+	}
+}
+
 func (b *InstantVectorDuplicationBuffer) earliestSeriesIndexStillToReturn() int {
 	idx := math.MaxInt
 	for _, consumer := range b.consumers {
-		if consumer.closed {
+		if consumer.finalized {
 			continue
 		}
 
@@ -233,7 +256,7 @@ func (b *InstantVectorDuplicationBuffer) earliestSeriesIndexStillToReturn() int 
 
 func (b *InstantVectorDuplicationBuffer) allOpenConsumersHaveNoFilters() bool {
 	for _, consumer := range b.consumers {
-		if consumer.closed {
+		if consumer.finalized {
 			continue
 		}
 
@@ -268,7 +291,7 @@ func (b *InstantVectorDuplicationBuffer) Finalize(ctx context.Context, consumer 
 		return nil
 	}
 
-	consumer.finalized = true
+	b.releaseBufferedData(consumer)
 
 	if !b.allConsumersFinalized() {
 		return nil
@@ -287,16 +310,14 @@ func (b *InstantVectorDuplicationBuffer) allConsumersFinalized() bool {
 	return true
 }
 
-func (b *InstantVectorDuplicationBuffer) close() {
-	types.SeriesMetadataSlicePool.Put(&b.seriesMetadata, b.MemoryConsumptionTracker)
-
-	for b.buffer.Size() > 0 {
-		types.PutInstantVectorSeriesData(b.buffer.RemoveFirst(), b.MemoryConsumptionTracker)
+func (b *InstantVectorDuplicationBuffer) allConsumersClosed() bool {
+	for _, consumer := range b.consumers {
+		if !consumer.closed {
+			return false
+		}
 	}
 
-	b.buffer = nil
-
-	b.Inner.Close()
+	return true
 }
 
 type InstantVectorDuplicationConsumer struct {
@@ -342,7 +363,7 @@ func (d *InstantVectorDuplicationConsumer) SeriesMetadata(ctx context.Context, m
 }
 
 func (d *InstantVectorDuplicationConsumer) shouldReturnUnfilteredSeries(unfilteredSeriesIndex int) bool {
-	if d.closed {
+	if d.finalized {
 		return false
 	}
 
@@ -383,7 +404,6 @@ func (d *InstantVectorDuplicationConsumer) Finalize(ctx context.Context) error {
 
 func (d *InstantVectorDuplicationConsumer) Close() {
 	d.Buffer.CloseConsumer(d)
-	types.BoolSlicePool.Put(&d.unfilteredSeriesBitmap, d.Buffer.MemoryConsumptionTracker)
 }
 
 func matchesSeries(filters []*labels.Matcher, series labels.Labels) bool {
