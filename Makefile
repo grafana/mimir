@@ -307,6 +307,58 @@ lint: check-makefiles check-merge-conflicts
 	golangci-lint run --build-tags $(GO_TAGS),requires_libpcap ./tools/trafficdump/...
 
 	# Ensure no blocklisted package is imported.
+	#
+	# github.com/pkg/errors.Cause:
+	# errors.Cause() only work on errors wrapped by github.com/pkg/errors, while it doesn't work
+	# on errors wrapped by golang standard errors package. In Mimir we currently use github.com/pkg/errors
+	# but other vendors we depend on (e.g. Prometheus) just uses the standard errors package.
+	# For this reason, we recommend to not use errors.Cause() anywhere, so that we don't have to
+	# question whether the usage is safe or not.
+	#
+  	# github.com/gogo/status.FromError:
+	# gogo/status allows to easily customize error details while grpc/status doesn't:
+	# for this reason we use gogo/status in several places. However, gogo/status.FromError()
+	# doesn't support wrapped errors, while grpc/status.FromError() does.
+	#
+	# google.golang.org/grpc/status.FromError:
+	# Since we want support for errors wrapping everywhere, to avoid subtle bugs depending
+	# on which status package is imported, we don't allow .FromError() from both packages
+	# and we require to use grpcutil.ErrorToStatus() instead.
+	#
+	# github.com/NYTimes/gziphandler:
+	# We've copied github.com/NYTimes/gziphandler to pkg/util/gziphandler
+	# at least until https://github.com/nytimes/gziphandler/pull/112 is merged
+	#
+	# gopkg.in/yaml.v2:
+	# We don't want to use yaml.v2 anywhere, because we use yaml.v3 now,
+	# and UnamrshalYAML signature is not compatible between them.
+	#
+	# github.com/thanos-io/thanos/pkg:
+	# Ensure packages we imported from Thanos are no longer used.
+	#
+	# sort.SliceIsSorted:
+	# Use the faster slices.IsSortedFunc where we can.
+	#
+	# github.com/grafana/dskit/ring.Read:
+	# Don't use generic ring.Read operation.
+	# ring.Read usually isn't the right choice, and we prefer that each component define its operations explicitly.
+	#
+	# flag:
+	# Do not directly call flag.Parse() and argument getters, to try to reduce risk of misuse.
+	#
+	# github.com/grafana/mimir/pkg/storegateway/storegatewaypb.NewStoreGatewayClient:
+	# Ensure we use our custom gRPC clients.
+	#
+	# github.com/twmb/franz-go/pkg/kgo.AllowAutoTopicCreation:
+	# We don't use topic auto-creation because we don't control the num.partitions.
+	# As a result the topic can be created with the wrong number of partitions.
+	#
+	# github.com/opentracing/opentracing-go:
+	# We don't use opentracing anymore.
+	#
+	# google.golang.org/grpc/metadata.FromIncomingContext:
+	# Use the more performant metadata.ValueFromIncomingContext wherever possible (if not possible, we can always put
+	# a lint ignore directive to skip linting).
 	$(LINT_GO_ENV) faillint -paths "github.com/bmizerany/assert=github.com/stretchr/testify/assert,\
 		golang.org/x/net/context=context,\
 		sync/atomic=go.uber.org/atomic,\
@@ -314,7 +366,24 @@ lint: check-makefiles check-merge-conflicts
 		github.com/go-kit/kit/log/...=github.com/go-kit/log,\
 		github.com/prometheus/client_golang/prometheus.{MultiError}=github.com/prometheus/prometheus/tsdb/errors.{NewMulti},\
 		github.com/weaveworks/common/user.{ExtractOrgID}=github.com/grafana/mimir/pkg/tenant.{TenantID,TenantIDs},\
-		github.com/weaveworks/common/user.{ExtractOrgIDFromHTTPRequest}=github.com/grafana/mimir/pkg/tenant.{ExtractTenantIDFromHTTPRequest}" ./pkg/... ./cmd/... ./tools/... ./integration/...
+		github.com/weaveworks/common/user.{ExtractOrgIDFromHTTPRequest}=github.com/grafana/mimir/pkg/tenant.{ExtractTenantIDFromHTTPRequest},\
+		github.com/pkg/errors.{Cause},\
+		google.golang.org/grpc/status.{FromError}=github.com/grafana/dskit/grpcutil.ErrorToStatus,\
+		github.com/gogo/status.{FromError}=github.com/grafana/dskit/grpcutil.ErrorToStatus,\
+		github.com/NYTimes/gziphandler,\
+		gopkg.in/yaml.v2,\
+		github.com/thanos-io/thanos/pkg/...,\
+		sort.{SliceIsSorted}=slices.IsSortedFunc,\
+		github.com/grafana/dskit/ring.{Read},\
+		flag.{Parse,NArg,Arg,Args}=github.com/grafana/dskit/flagext.{ParseFlagsAndArguments,ParseFlagsWithoutArguments},\
+		github.com/grafana/mimir/pkg/storegateway/storegatewaypb.{NewStoreGatewayClient}=github.com/grafana/mimir/pkg/storegateway/storegatewaypb.NewCustomStoreGatewayClient,\
+		github.com/twmb/franz-go/pkg/kgo.{AllowAutoTopicCreation},\
+		github.com/opentracing/opentracing-go,\
+		github.com/opentracing/opentracing-go/log,\
+		github.com/uber/jaeger-client-go,\
+		github.com/opentracing-contrib/go-stdlib/nethttp,\
+		google.golang.org/grpc/metadata.{FromIncomingContext}=google.golang.org/grpc/metadata.ValueFromIncomingContext" \
+		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# Ensure clean pkg structure.
 	$(LINT_GO_ENV) faillint -paths "\
@@ -326,12 +395,13 @@ lint: check-makefiles check-merge-conflicts
 		./pkg/querier/...
 	$(LINT_GO_ENV) faillint -paths "github.com/grafana/mimir/pkg/querier/..." ./pkg/scheduler/...
 	$(LINT_GO_ENV) faillint -paths "github.com/grafana/mimir/pkg/storage/tsdb/..." ./pkg/storage/bucket/...
-	$(LINT_GO_ENV) faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/alertmanager/alertspb/...
-	$(LINT_GO_ENV) faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/ruler/rulespb/...
-	$(LINT_GO_ENV) faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/storage/sharding/...
-	$(LINT_GO_ENV) faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/querier/engine/...
-	$(LINT_GO_ENV) faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/querier/api/...
-	$(LINT_GO_ENV) faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/util/math/...
+	$(LINT_GO_ENV) faillint -paths "github.com/grafana/mimir/pkg/..." \
+		./pkg/alertmanager/alertspb/... \
+		./pkg/ruler/rulespb/... \
+		./pkg/storage/sharding/... \
+		./pkg/querier/engine/... \
+		./pkg/querier/api/... \
+		./pkg/util/math/...
 
 	# Ensure all errors are reported as APIError
 	$(LINT_GO_ENV) faillint -paths "github.com/weaveworks/common/httpgrpc.{Errorf}=github.com/grafana/mimir/pkg/api/error.Newf" ./pkg/frontend/querymiddleware/...
@@ -350,25 +420,6 @@ lint: check-makefiles check-merge-conflicts
 		./pkg/util/... \
 		./cmd/... \
 		./integration/...
-
-	# errors.Cause() only work on errors wrapped by github.com/pkg/errors, while it doesn't work
-	# on errors wrapped by golang standard errors package. In Mimir we currently use github.com/pkg/errors
-	# but other vendors we depend on (e.g. Prometheus) just uses the standard errors package.
-	# For this reason, we recommend to not use errors.Cause() anywhere, so that we don't have to
-	# question whether the usage is safe or not.
-	$(LINT_GO_ENV) faillint -paths "github.com/pkg/errors.{Cause}" ./pkg/... ./cmd/... ./tools/... ./integration/...
-
-	# gogo/status allows to easily customize error details while grpc/status doesn't:
-	# for this reason we use gogo/status in several places. However, gogo/status.FromError()
-	# doesn't support wrapped errors, while grpc/status.FromError() does.
-	#
-	# Since we want support for errors wrapping everywhere, to avoid subtle bugs depending
-	# on which status package is imported, we don't allow .FromError() from both packages
-	# and we require to use grpcutil.ErrorToStatus() instead.
-	$(LINT_GO_ENV) faillint -paths "\
-		google.golang.org/grpc/status.{FromError}=github.com/grafana/dskit/grpcutil.ErrorToStatus,\
-		github.com/gogo/status.{FromError}=github.com/grafana/dskit/grpcutil.ErrorToStatus" \
-		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# Ensure the query path is supporting multiple tenants
 	$(LINT_GO_ENV) faillint -paths "\
@@ -391,17 +442,6 @@ lint: check-makefiles check-merge-conflicts
 		./pkg/storage/... \
 		./pkg/storegateway/...
 
-	# We've copied github.com/NYTimes/gziphandler to pkg/util/gziphandler
-	# at least until https://github.com/nytimes/gziphandler/pull/112 is merged
-	$(LINT_GO_ENV) faillint -paths "github.com/NYTimes/gziphandler" ./pkg/... ./cmd/... ./tools/... ./integration/...
-
-	# We don't want to use yaml.v2 anywhere, because we use yaml.v3 now,
-	# and UnamrshalYAML signature is not compatible between them.
-	$(LINT_GO_ENV) faillint -paths "gopkg.in/yaml.v2" ./pkg/... ./cmd/... ./tools/... ./integration/...
-
-	# Ensure packages we imported from Thanos are no longer used.
-	$(LINT_GO_ENV) faillint -paths "github.com/thanos-io/thanos/pkg/..." ./pkg/... ./cmd/... ./tools/... ./integration/...
-
 	# Ensure we never use the default registerer and we allow to use a custom one (improves testability).
 	# Also, ensure we use promauto.With() to reduce the chances we forget to register metrics.
 	$(LINT_GO_ENV) faillint -paths \
@@ -410,38 +450,12 @@ lint: check-makefiles check-merge-conflicts
 		github.com/prometheus/client_golang/prometheus.{NewCounter,NewCounterVec,NewCounterFunc,NewGauge,NewGaugeVec,NewGaugeFunc,NewSummary,NewSummaryVec,NewHistogram,NewHistogramVec}=github.com/prometheus/client_golang/prometheus/promauto.With" \
 		./pkg/...
 
-	# Use the faster slices.IsSortedFunc where we can.
-	$(LINT_GO_ENV) faillint -paths "sort.{SliceIsSorted}=slices.IsSortedFunc" ./pkg/... ./cmd/... ./tools/... ./integration/...
-
-	# Don't use generic ring.Read operation.
-	# ring.Read usually isn't the right choice, and we prefer that each component define its operations explicitly.
-	$(LINT_GO_ENV) faillint -paths "github.com/grafana/dskit/ring.{Read}" ./pkg/... ./cmd/... ./tools/... ./integration/...
-
-	# Do not directly call flag.Parse() and argument getters, to try to reduce risk of misuse.
-	$(LINT_GO_ENV) faillint -paths "flag.{Parse,NArg,Arg,Args}=github.com/grafana/dskit/flagext.{ParseFlagsAndArguments,ParseFlagsWithoutArguments}" ./pkg/... ./cmd/... ./tools/... ./integration/...
-
-	# Ensure we use our custom gRPC clients.
-	$(LINT_GO_ENV) faillint -paths "github.com/grafana/mimir/pkg/storegateway/storegatewaypb.{NewStoreGatewayClient}=github.com/grafana/mimir/pkg/storegateway/storegatewaypb.NewCustomStoreGatewayClient" ./pkg/... ./cmd/... ./tools/... ./integration/...
-
 	# Prefer using WithCancelCause in production code, so that cancelled contexts have more information available from context.Cause(ctx).
 	$(LINT_GO_ENV) faillint -ignore-tests -paths "context.{WithCancel}=context.WithCancelCause" ./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# Do not use the object storage client intended only for tools within Mimir itself
 	# Do not check ./tools/... because objtools is intended for use by tools.
 	$(LINT_GO_ENV) faillint -paths "github.com/grafana/mimir/pkg/util/objtools" ./pkg/... ./cmd/... ./integration/...
-
-	# Use the more performant metadata.ValueFromIncomingContext wherever possible (if not possible, we can always put
-	# a lint ignore directive to skip linting).
-	$(LINT_GO_ENV) faillint -paths \
-		"google.golang.org/grpc/metadata.{FromIncomingContext}=google.golang.org/grpc/metadata.ValueFromIncomingContext" \
-		./pkg/... ./cmd/... ./integration/...
-
-	# We don't use topic auto-creation because we don't control the num.partitions.
-	# As a result the topic can be created with the wrong number of partitions.
-	$(LINT_GO_ENV) faillint -paths "github.com/twmb/franz-go/pkg/kgo.{AllowAutoTopicCreation}" ./pkg/... ./cmd/... ./tools/... ./integration/...
-
-	# We don't use opentracing anymore.
-	$(LINT_GO_ENV) faillint -paths "github.com/opentracing/opentracing-go,github.com/opentracing/opentracing-go/log,github.com/uber/jaeger-client-go,github.com/opentracing-contrib/go-stdlib/nethttp" ./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# Ensure lines are sorted after lint:sorted directives.
 	$(LINT_GO_ENV) go run ./tools/lint-sorted/ \
