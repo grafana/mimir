@@ -3226,6 +3226,8 @@ func TestHistogramAnnotations(t *testing.T) {
 
 func TestQueryStats(t *testing.T) {
 	opts := NewTestEngineOpts()
+	opts.CommonOpts.EnablePerStepStats = true
+
 	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	mimirEngine, err := NewEngine(opts, stats.NewQueryMetrics(nil), planner)
@@ -3256,7 +3258,7 @@ func TestQueryStats(t *testing.T) {
 	runQueryAndGetSamplesStats := func(t *testing.T, engine promql.QueryEngine, expr string, isInstantQuery bool) *promstats.QuerySamples {
 		var q promql.Query
 		var err error
-		opts := promql.NewPrometheusQueryOpts(false, 0)
+		opts := promql.NewPrometheusQueryOpts(true, 0)
 		if isInstantQuery {
 			q, err = engine.NewInstantQuery(context.Background(), storage, opts, expr, end)
 		} else {
@@ -3274,13 +3276,20 @@ func TestQueryStats(t *testing.T) {
 	}
 
 	testCases := map[string]struct {
-		expr                      string
-		isInstantQuery            bool
-		expectedTotalSamples      int64
-		skipCompareWithPrometheus string
+		expr                        string
+		isInstantQuery              bool
+		skipCompareWithPrometheus   string
+		expectedTotalSamples        int64
+		expectedTotalSamplesPerStep promstats.TotalSamplesPerStep
+		expectedSamplesRead         int64
+		expectedSamplesReadPerStep  promstats.TotalSamplesPerStep
+
 		// ...WithMQE expectations are optional and should be set only if a query with MQE reports different stats
 		// (eg. due to optimisations like common subexpression elimination, or due to the different way we count samples in subqueries)
-		expectedTotalSamplesWithMQE int64
+		expectedTotalSamplesWithMQE        int64
+		expectedTotalSamplesPerStepWithMQE promstats.TotalSamplesPerStep
+		expectedSamplesReadWithMQE         int64
+		expectedSamplesReadPerStepWithMQE  promstats.TotalSamplesPerStep
 	}{
 		"instant vector selector with point at every time step": {
 			expr:                 `dense_series{}`,
@@ -3485,14 +3494,32 @@ func TestQueryStats(t *testing.T) {
 			prometheusSamplesStats := runQueryAndGetSamplesStats(t, prometheusEngine, testCase.expr, testCase.isInstantQuery)
 			if testCase.skipCompareWithPrometheus == "" {
 				require.Equal(t, testCase.expectedTotalSamples, prometheusSamplesStats.TotalSamples, "invalid test case: expected total samples does not match value from Prometheus' engine")
+				require.Equal(t, &testCase.expectedTotalSamplesPerStep, prometheusSamplesStats.TotalSamplesPerStepMap(), "invalid test case: expected total samples per step does not match value from Prometheus' engine")
+				require.Equal(t, testCase.expectedSamplesRead, prometheusSamplesStats.SamplesRead, "invalid test case: expected samples read does not match value from Prometheus' engine")
+				require.Equal(t, &testCase.expectedSamplesReadPerStep, prometheusSamplesStats.SamplesReadPerStepMap(), "invalid test case: expected samples read does not match value from Prometheus' engine")
 			}
 
 			if testCase.expectedTotalSamplesWithMQE == 0 {
 				testCase.expectedTotalSamplesWithMQE = testCase.expectedTotalSamples
 			}
 
+			if testCase.expectedTotalSamplesPerStepWithMQE == nil {
+				testCase.expectedTotalSamplesPerStepWithMQE = testCase.expectedTotalSamplesPerStep
+			}
+
+			if testCase.expectedSamplesReadWithMQE == 0 {
+				testCase.expectedSamplesReadWithMQE = testCase.expectedSamplesRead
+			}
+
+			if testCase.expectedSamplesReadPerStepWithMQE == nil {
+				testCase.expectedSamplesReadPerStepWithMQE = testCase.expectedSamplesReadPerStep
+			}
+
 			mimirSamplesStats := runQueryAndGetSamplesStats(t, mimirEngine, testCase.expr, testCase.isInstantQuery)
-			require.Equal(t, testCase.expectedTotalSamplesWithMQE, mimirSamplesStats.TotalSamples)
+			require.Equal(t, testCase.expectedTotalSamplesWithMQE, mimirSamplesStats.TotalSamples, "total samples returned by MQE does not match expected value")
+			require.Equal(t, &testCase.expectedTotalSamplesPerStepWithMQE, mimirSamplesStats.TotalSamplesPerStepMap(), "total samples per step returned by MQE does not match expected value")
+			require.Equal(t, testCase.expectedSamplesReadWithMQE, mimirSamplesStats.SamplesRead, "samples read returned by MQE does not match expected value")
+			require.Equal(t, &testCase.expectedSamplesReadPerStepWithMQE, mimirSamplesStats.SamplesReadPerStepMap(), "samples read per step returned by MQE does not match expected value")
 		})
 	}
 }
@@ -3500,6 +3527,8 @@ func TestQueryStats(t *testing.T) {
 func TestQueryStatsUpstreamTestCases(t *testing.T) {
 	// TestCases are taken from Prometheus' TestQueryStatistics.
 	opts := NewTestEngineOpts()
+	opts.CommonOpts.EnablePerStepStats = true
+
 	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	mimirEngine, err := NewEngine(opts, stats.NewQueryMetrics(nil), planner)
@@ -3520,7 +3549,7 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 	runQueryAndGetSamplesStats := func(t *testing.T, engine promql.QueryEngine, expr string, start, end time.Time, interval time.Duration) *promstats.QuerySamples {
 		var q promql.Query
 		var err error
-		opts := promql.NewPrometheusQueryOpts(false, 0)
+		opts := promql.NewPrometheusQueryOpts(true, 0)
 
 		if interval == 0 {
 			// Instant query
@@ -5032,13 +5061,31 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 		t.Run(tc.query, func(t *testing.T) {
 			prometheusSamplesStats := runQueryAndGetSamplesStats(t, prometheusEngine, tc.query, tc.start, tc.end, tc.interval)
 			require.Equal(t, tc.expectedTotalSamples, prometheusSamplesStats.TotalSamples, "invalid test case: expected total samples does not match value from Prometheus' engine")
+			require.Equal(t, &tc.expectedTotalSamplesPerStep, prometheusSamplesStats.TotalSamplesPerStepMap(), "invalid test case: expected total samples per step does not match value from Prometheus' engine")
+			require.Equal(t, tc.expectedSamplesRead, prometheusSamplesStats.SamplesRead, "invalid test case: expected samples read does not match value from Prometheus' engine")
+			require.Equal(t, &tc.expectedSamplesReadPerStep, prometheusSamplesStats.SamplesReadPerStepMap(), "invalid test case: expected samples read does not match value from Prometheus' engine")
 
 			if tc.expectedTotalSamplesWithMQE == 0 {
 				tc.expectedTotalSamplesWithMQE = tc.expectedTotalSamples
 			}
 
+			if tc.expectedTotalSamplesPerStepWithMQE == nil {
+				tc.expectedTotalSamplesPerStepWithMQE = tc.expectedTotalSamplesPerStep
+			}
+
+			if tc.expectedSamplesReadWithMQE == 0 {
+				tc.expectedSamplesReadWithMQE = tc.expectedSamplesRead
+			}
+
+			if tc.expectedSamplesReadPerStepWithMQE == nil {
+				tc.expectedSamplesReadPerStepWithMQE = tc.expectedSamplesReadPerStep
+			}
+
 			mimirSamplesStats := runQueryAndGetSamplesStats(t, mimirEngine, tc.query, tc.start, tc.end, tc.interval)
 			require.Equal(t, tc.expectedTotalSamplesWithMQE, mimirSamplesStats.TotalSamples, "total samples returned by MQE does not match expected value")
+			require.Equal(t, &tc.expectedTotalSamplesPerStepWithMQE, mimirSamplesStats.TotalSamplesPerStepMap(), "total samples per step returned by MQE does not match expected value")
+			require.Equal(t, tc.expectedSamplesReadWithMQE, mimirSamplesStats.SamplesRead, "samples read returned by MQE does not match expected value")
+			require.Equal(t, &tc.expectedSamplesReadPerStepWithMQE, mimirSamplesStats.SamplesReadPerStepMap(), "samples read per step returned by MQE does not match expected value")
 		})
 	}
 }
