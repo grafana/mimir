@@ -116,7 +116,7 @@ func avgOverTimeCombine(pieces []AvgOverTimeIntermediate, _ int64, _ int64, emit
 	sumF, compensationF, countF, incrementalAvgF := 0.0, 0.0, 0.0, 0.0
 	useIncrementalCalculation := false
 
-	var avgSoFarH, compensationH *histogram.FloatHistogram
+	var sumH, compensationH *histogram.FloatHistogram
 	countH := 0.0
 	nhcbBoundsReconciledSeen := false
 
@@ -129,30 +129,20 @@ func avgOverTimeCombine(pieces []AvgOverTimeIntermediate, _ int64, _ int64, emit
 		if p.SumH != nil {
 			h := mimirpb.FromFloatHistogramProtoToFloatHistogram(p.SumH)
 
-			if avgSoFarH == nil {
+			if sumH == nil {
+				sumH = h.Copy()
 				countH = float64(p.CountH)
-				avgSoFarH = h.Copy().Div(countH)
 			} else {
-				pieceCnt := float64(p.CountH)
-				totalCnt := pieceCnt + countH
-
-				q := countH / totalCnt
-				if compensationH != nil {
-					compensationH.Mul(q)
-				}
-
-				toAdd := h.Copy().Div(totalCnt)
-
 				var nhcbBoundsReconciled bool
 				var err error
-				if compensationH, _, nhcbBoundsReconciled, err = avgSoFarH.Mul(q).KahanAdd(toAdd, compensationH); err != nil {
+				if compensationH, _, nhcbBoundsReconciled, err = sumH.KahanAdd(h, compensationH); err != nil {
 					err = functions.NativeHistogramErrorToAnnotation(err, emitAnnotation)
 					return 0, false, nil, err
 				} else if nhcbBoundsReconciled {
 					nhcbBoundsReconciledSeen = true
 				}
 
-				countH += pieceCnt
+				countH += float64(p.CountH)
 			}
 		}
 
@@ -212,7 +202,7 @@ func avgOverTimeCombine(pieces []AvgOverTimeIntermediate, _ int64, _ int64, emit
 		}
 	}
 
-	if countF > 0 && avgSoFarH != nil {
+	if countF > 0 && sumH != nil {
 		emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
 		return 0, false, nil, nil
 	}
@@ -229,16 +219,18 @@ func avgOverTimeCombine(pieces []AvgOverTimeIntermediate, _ int64, _ int64, emit
 		return (sumF + compensationF) / countF, true, nil, nil
 	}
 
-	if avgSoFarH != nil && compensationH != nil {
-		avgSoFarH, _, _, err := avgSoFarH.Add(compensationH)
-		if err != nil {
-			return 0, false, nil, err
+	if sumH != nil {
+		if compensationH != nil {
+			_, _, _, err := sumH.Add(compensationH)
+			if err != nil {
+				return 0, false, nil, err
+			}
 		}
 
-		return 0, false, avgSoFarH, nil
+		return 0, false, sumH.Div(countH), nil
 	}
 
-	return 0, false, avgSoFarH, nil
+	return 0, false, nil, nil
 }
 
 func shouldUpdateIncrementalAvg(runningAvg, nextPoint float64) bool {
