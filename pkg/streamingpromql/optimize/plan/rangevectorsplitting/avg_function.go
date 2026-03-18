@@ -142,7 +142,7 @@ func avgOverTimeCombine(pieces []AvgOverTimeIntermediate, _ int64, _ int64, emit
 				}
 			}
 
-			countH = float64(p.CountH)
+			countH += float64(p.CountH)
 		}
 
 		// There are two modes used to combine intermediate pieces depending on whether overflow has been encountered.
