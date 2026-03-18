@@ -50,7 +50,7 @@ type Config struct {
 	UserDiscoveryBackoff                        backoff.Config `yaml:"user_discovery_backoff" category:"experimental"`
 	PersistenceType                             string         `yaml:"persistence_type" category:"experimental"`
 	BboltPath                                   string         `yaml:"bbolt_db_path" category:"experimental"`
-	JobFailuresAllowed                          int            `yaml:"job_failures_allowed" category:"advanced"`
+	JobFailuresAllowed                          int            `yaml:"job_failures_allowed" category:"experimental"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
