@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/go-kit/log"
@@ -110,27 +111,31 @@ func TestScheduler_PersistentJobFailures(t *testing.T) {
 	})
 
 	t.Run("via lease expiration", func(t *testing.T) {
-		cfg := newTestSchedulerConfig()
-		cfg.LeaseDuration = time.Nanosecond // jobs expire immediately on next Maintenance tick
-		scheduler, reg := newTestScheduler(t, bkt, cfg)
-		jobFailuresAllowed := scheduler.cfg.JobFailuresAllowed
-		ctx := context.Background()
-		scheduler.rotator.Maintenance(ctx, false, true)
+		synctest.Test(t, func(t *testing.T) {
+			cfg := newTestSchedulerConfig()
+			cfg.LeaseDuration = time.Minute
+			scheduler, reg := newTestScheduler(t, bkt, cfg)
+			jobFailuresAllowed := scheduler.cfg.JobFailuresAllowed
+			ctx := context.Background()
+			scheduler.rotator.Maintenance(ctx, false, true)
 
-		leaseAndExpire := func() {
-			resp, err := scheduler.LeaseJob(ctx, &compactorschedulerpb.LeaseJobRequest{WorkerId: "worker1"})
-			require.NoError(t, err)
-			require.NotNil(t, resp.Key)
-			scheduler.rotator.Maintenance(ctx, true, false)
-		}
+			leaseAndExpire := func() {
+				resp, err := scheduler.LeaseJob(ctx, &compactorschedulerpb.LeaseJobRequest{WorkerId: "worker1"})
+				require.NoError(t, err)
+				require.NotNil(t, resp.Key)
+				synctest.Wait()
+				time.Sleep(cfg.LeaseDuration + time.Nanosecond)
+				scheduler.rotator.Maintenance(ctx, true, false)
+			}
 
-		for range jobFailuresAllowed {
+			for range jobFailuresAllowed {
+				leaseAndExpire()
+			}
+			assertCounter(t, reg, 0)
+
 			leaseAndExpire()
-		}
-		assertCounter(t, reg, 0)
-
-		leaseAndExpire()
-		assertCounter(t, reg, 1)
+			assertCounter(t, reg, 1)
+		})
 	})
 }
 
