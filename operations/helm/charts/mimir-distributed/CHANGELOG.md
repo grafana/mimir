@@ -29,7 +29,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## 6.0.6
 
-* [CHANGE] Upgrade Mimir to [3.0.4](https://github.com/grafana/mimir/blob/release-3.0/CHANGELOG.md). #14745
+* [CHANGE] Upgrade Mimir to [3.0.4](https://github.com/grafana/mimir/blob/release-3.0/CHANGELOG.md). #14749
 
 ## 6.0.5
 
