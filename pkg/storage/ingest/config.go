@@ -425,6 +425,8 @@ type kafkaSASLConfig[T saslSecretConfig] struct {
 
 var errNoSecret = errors.New("no static credentials provided")
 
+var errIncompleteMSKIAMSecret = errors.New("both access key and secret key must be configured for static AWS_MSK_IAM credentials")
+
 // Validate returns errMultipleSources unless exactly one of the static secret,
 // file path, or HTTP socket path is configured.
 func (cfg kafkaSASLConfig[T]) Validate(errNoSingleSource error) error {
@@ -522,11 +524,18 @@ type KafkaMSKIAMStaticConfig struct {
 	UserAgent    string         `yaml:"sasl_msk_iam_user_agent"`
 }
 
-// Validate returns ErrSecretNotProvided when no access key has been set.
+// Validate returns errNoSecret when no access key and secret key have been set.
 func (s KafkaMSKIAMStaticConfig) Validate() error {
-	if s.AccessKey.String() == "" {
+	hasAccessKey := s.AccessKey.String() != ""
+	hasSecretKey := s.SecretKey.String() != ""
+
+	if !hasAccessKey && !hasSecretKey {
 		return errNoSecret
 	}
+	if !hasAccessKey || !hasSecretKey {
+		return errIncompleteMSKIAMSecret
+	}
+
 	return nil
 }
 
