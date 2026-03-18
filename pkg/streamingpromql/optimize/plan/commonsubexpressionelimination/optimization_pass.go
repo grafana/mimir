@@ -286,7 +286,24 @@ func (e *OptimizationPass) groupPathsForFirstIteration(paths []path, subsetSelec
 			return 0
 		}
 
-		return len(aSelector.GetMatchers()) - len(bSelector.GetMatchers())
+		aMatchers := aSelector.GetMatchers()
+		bMatchers := bSelector.GetMatchers()
+
+		// The wider scope comes first
+		// Fewer matchers means wider scope, if the difference is non-zero we use that
+		if diff := len(aMatchers) - len(bMatchers); diff != 0 {
+			return diff
+		}
+
+		// If the difference is 0 we use the sum of the matchers to identify the wider scope
+		aSum, bSum := 0, 0
+		for _, m := range aMatchers {
+			aSum += int(m.Type)
+		}
+		for _, m := range bMatchers {
+			bSum += int(m.Type)
+		}
+		return bSum - aSum
 	})
 
 	alreadyGrouped := make([]bool, len(paths)) // ignoreunpooledslice

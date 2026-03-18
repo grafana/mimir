@@ -1085,6 +1085,44 @@ func TestOptimizationPass(t *testing.T) {
 			expectUnchanged:            true,
 			expectedSelectorsInspected: 2,
 		},
+		"subset vector selectors via regex (narrower uses exact matcher)": {
+			expr: `metric_name{status="success"} / metric_name{status=~"(success|canceled)"}`,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS
+					- LHS: DuplicateFilter: {status="success"}
+						- ref#1 Duplicate
+							- VectorSelector: {__name__="metric_name", status=~"(success|canceled)"}
+					- RHS: ref#1 Duplicate ...
+			`,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 0,
+			expectedSubsetSelectorsEliminated:    1,
+			expectedSelectorsInspected:           2,
+		},
+		"subset matrix selectors via regex (narrower uses exact matcher)": {
+			expr: `rate(metric_name{status="success"}[5m]) / rate(metric_name{status=~"(success|canceled)"}[5m])`,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS
+					- LHS: DuplicateFilter: {status="success"}
+						- ref#1 Duplicate
+							- DeduplicateAndMerge
+								- FunctionCall: rate(...)
+									- MatrixSelector: {__name__="metric_name", status=~"(success|canceled)"}[5m0s]
+					- RHS: ref#1 Duplicate ...
+			`,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 0,
+			expectedSubsetSelectorsEliminated:    1,
+			expectedSelectorsInspected:           2,
+		},
+		"subset vector selectors via regex, regex value not matching": {
+			expr:                                 `metric_name{status="unknown"} / metric_name{status=~"(success|canceled)"}`,
+			expectUnchanged:                      true,
+			expectedDuplicateNodes:               0,
+			expectedDuplicateSelectorsEliminated: 0,
+			expectedSubsetSelectorsEliminated:    0,
+			expectedSelectorsInspected:           2,
+		},
 	}
 
 	ctx := context.Background()
