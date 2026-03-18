@@ -4,45 +4,45 @@ package scheduler
 
 import (
 	"context"
+	"flag"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/benbjohnson/clock"
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/atomic"
+	"github.com/thanos-io/objstore"
 
+	"github.com/grafana/dskit/services"
+
+	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 func TestScheduler_LeaseJob_JobsLeasedMetric(t *testing.T) {
-	reg := prometheus.NewPedanticRegistry()
-	metrics := newSchedulerMetrics(reg)
-	clk := clock.NewMock()
+	bkt := objstore.NewInMemBucket()
+	require.NoError(t, bkt.Upload(context.Background(), "tenant1/placeholder", strings.NewReader("")))
 
-	rotator := NewRotator(time.Minute, time.Hour, 15*time.Minute, 2*time.Minute, 3, 4, metrics, log.NewNopLogger())
-	trackerMetrics := metrics.newTrackerMetricsForTenant("tenant1")
-	tracker := NewJobTracker(&NopJobPersister{}, "tenant1", clk, infiniteLeases, infiniteLeases, trackerMetrics)
+	scheduler, reg := newTestScheduler(t, bkt)
+	ctx := context.Background()
 
-	// Trigger planning: a fresh tracker immediately enqueues a plan job.
-	_, err := tracker.Maintenance(time.Minute, false, true, time.Hour, 15*time.Minute)
-	require.NoError(t, err)
+	// Trigger maintenance so tenants' plan jobs are enqueued.
+	scheduler.rotator.Maintenance(ctx, false, true)
 
-	rotator.AddTenant("tenant1", tracker)
-
-	scheduler := &Scheduler{
-		running: atomic.NewBool(true),
-		rotator: rotator,
-		metrics: metrics,
-		logger:  log.NewNopLogger(),
-	}
+	t.Run("no calls", func(t *testing.T) {
+		require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_compactor_scheduler_jobs_leased_total Total number of jobs leased to workers by the scheduler.
+			# TYPE cortex_compactor_scheduler_jobs_leased_total counter
+			cortex_compactor_scheduler_jobs_leased_total 0
+		`), "cortex_compactor_scheduler_jobs_leased_total"))
+	})
 
 	t.Run("increments when job is leased", func(t *testing.T) {
 		req := &compactorschedulerpb.LeaseJobRequest{WorkerId: "worker1"}
-		resp, err := scheduler.LeaseJob(context.Background(), req)
+		resp, err := scheduler.LeaseJob(ctx, req)
 		require.NoError(t, err)
 		require.NotNil(t, resp.Key)
 
@@ -54,9 +54,9 @@ func TestScheduler_LeaseJob_JobsLeasedMetric(t *testing.T) {
 	})
 
 	t.Run("does not increment when no job is available", func(t *testing.T) {
-		// All jobs are now active (leased above), no pending jobs.
+		// The plan job is now active (leased above), no pending jobs.
 		req := &compactorschedulerpb.LeaseJobRequest{WorkerId: "worker2"}
-		resp, err := scheduler.LeaseJob(context.Background(), req)
+		resp, err := scheduler.LeaseJob(ctx, req)
 		require.NoError(t, err)
 		require.Nil(t, resp.Key)
 
@@ -67,4 +67,32 @@ func TestScheduler_LeaseJob_JobsLeasedMetric(t *testing.T) {
 			cortex_compactor_scheduler_jobs_leased_total 1
 		`), "cortex_compactor_scheduler_jobs_leased_total"))
 	})
+}
+
+func newTestSchedulerConfig() Config {
+	var cfg Config
+	cfg.RegisterFlags(flag.NewFlagSet("test", flag.ContinueOnError))
+	cfg.TenantDiscoveryInterval = time.Hour // avoid repeated discovery ticks
+	return cfg
+}
+
+// newTestScheduler creates and starts a Scheduler backed by bkt
+func newTestScheduler(t *testing.T, bkt objstore.Bucket) (*Scheduler, *prometheus.Registry) {
+	t.Helper()
+
+	reg := prometheus.NewPedanticRegistry()
+	metrics := newSchedulerMetrics(reg)
+	compactorCfg := compactor.Config{CompactionWaitPeriod: 15 * time.Minute}
+
+	scheduler, err := newCompactorScheduler(compactorCfg, newTestSchedulerConfig(), util.NewAllowList(nil, nil), bkt, &NopJobPersistenceManager{}, metrics, log.NewNopLogger())
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(func() {
+		cancel()
+		_ = services.StopAndAwaitTerminated(context.Background(), scheduler)
+	})
+	require.NoError(t, services.StartAndAwaitRunning(ctx, scheduler))
+
+	return scheduler, reg
 }

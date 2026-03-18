@@ -20,6 +20,8 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/codes"
 
+	"github.com/thanos-io/objstore"
+
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -119,11 +121,22 @@ func NewCompactorScheduler(
 		return nil, err
 	}
 
-	// TODO: This will need to be moved for testing
 	bkt, err := bucket.NewClient(context.Background(), storageCfg.Bucket, "compactor-scheduler", logger, registerer)
 	if err != nil {
 		return nil, err
 	}
+
+	return newCompactorScheduler(compactorCfg, cfg, allowList, bkt, jpm, metrics, logger)
+}
+
+func newCompactorScheduler(
+	compactorCfg compactor.Config,
+	cfg Config,
+	allowList *util.AllowList,
+	bkt objstore.Bucket,
+	jpm JobPersistenceManager,
+	metrics *schedulerMetrics,
+	logger log.Logger) (*Scheduler, error) {
 
 	rotator := NewRotator(
 		cfg.LeaseDuration,
@@ -158,7 +171,6 @@ func NewCompactorScheduler(
 	scheduler.Service = svc
 
 	return scheduler, nil
-
 }
 
 func (s *Scheduler) createJobTracker(tenant string, jp JobPersister) *JobTracker {
