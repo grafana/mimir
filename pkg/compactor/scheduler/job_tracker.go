@@ -12,6 +12,8 @@ import (
 	"unsafe"
 
 	"github.com/benbjohnson/clock"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 )
@@ -31,6 +33,7 @@ type JobTracker struct {
 	persister JobPersister
 	tenant    string
 	clock     clock.Clock
+	logger    log.Logger
 
 	maxLeases                      int // maximum lease attempts per job where 0 (infiniteLeases) means unlimited. Plan jobs ignore this.
 	repeatedFailureReportThreshold int // number of failures before a repeated failure is recorded. 0 (infiniteLeases) means unlimited.
@@ -45,11 +48,12 @@ type JobTracker struct {
 	completeCompactionJobs []*TrackedCompactionJob  // tracked in order to reject jobs that may be from a stale planning view.
 }
 
-func NewJobTracker(jobPersister JobPersister, tenant string, clock clock.Clock, maxLeases int, repeatedFailureReportThreshold int, metrics *trackerMetrics) *JobTracker {
+func NewJobTracker(jobPersister JobPersister, tenant string, clock clock.Clock, maxLeases int, repeatedFailureReportThreshold int, metrics *trackerMetrics, logger log.Logger) *JobTracker {
 	jt := &JobTracker{
 		persister:                      jobPersister,
 		tenant:                         tenant,
 		clock:                          clock,
+		logger:                         log.With(logger, "user", tenant),
 		maxLeases:                      maxLeases,
 		repeatedFailureReportThreshold: repeatedFailureReportThreshold,
 		metrics:                        metrics,
@@ -410,6 +414,7 @@ func (jt *JobTracker) CancelLease(id string, epoch int64) (canceled bool, became
 func (jt *JobTracker) trackFailure(j TrackedJob) {
 	if jt.repeatedFailureReportThreshold != infiniteLeases && j.NumLeases() > jt.repeatedFailureReportThreshold {
 		jt.metrics.repeatedJobFailures.Inc()
+		level.Error(jt.logger).Log("msg", "job is repeatedly failing", "job_id", j.ID(), "num_leases", j.NumLeases())
 	}
 }
 
