@@ -488,13 +488,13 @@ func (s KafkaOauthbearerStaticConfig) Validate() error {
 	return nil
 }
 
-func (cfg *KafkaOauthbearerStaticConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.Var(&cfg.Token, prefix+"token", "The OAuth token to use to authenticate to Kafka. Consider "+prefix+"file-path instead.")
-	f.StringVar(&cfg.Zid, prefix+"zid", "", "Optional authorization ID to use when authenticating to Kafka using SASL OAUTHBEARER.")
-	if !cfg.Extensions.IsInitialized() {
-		cfg.Extensions = flagext.NewLimitsMap[string](nil)
+func (s *KafkaOauthbearerStaticConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	f.Var(&s.Token, prefix+"token", "The OAuth token to use to authenticate to Kafka. Consider "+prefix+"file-path instead.")
+	f.StringVar(&s.Zid, prefix+"zid", "", "Optional authorization ID to use when authenticating to Kafka using SASL OAUTHBEARER.")
+	if !s.Extensions.IsInitialized() {
+		s.Extensions = flagext.NewLimitsMap[string](nil)
 	}
-	f.Var(&cfg.Extensions, prefix+"extensions", "Optional additional OAuth extensions to include when authenticating to Kafka using SASL OAUTHBEARER as a JSON object.")
+	f.Var(&s.Extensions, prefix+"extensions", "Optional additional OAuth extensions to include when authenticating to Kafka using SASL OAUTHBEARER as a JSON object.")
 }
 
 // KafkaAuthMSKIAMConfig holds AWS_MSK_IAM-specific SASL configuration.
@@ -539,11 +539,11 @@ func (s KafkaMSKIAMStaticConfig) Validate() error {
 	return nil
 }
 
-func (cfg *KafkaMSKIAMStaticConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.Var(&cfg.AccessKey, prefix+"access-key", "The AWS access key ID to authenticate to Kafka using SASL AWS_MSK_IAM. Consider "+prefix+"file-path instead.")
-	f.Var(&cfg.SecretKey, prefix+"secret-key", "The AWS secret access key to authenticate to Kafka using SASL AWS_MSK_IAM. Consider "+prefix+"file-path instead.")
-	f.Var(&cfg.SessionToken, prefix+"session-token", "Optional AWS session token to authenticate to Kafka using SASL AWS_MSK_IAM.")
-	f.StringVar(&cfg.UserAgent, prefix+"user-agent", "", "Optional user agent to use when authenticating to Kafka using SASL AWS_MSK_IAM.")
+func (s *KafkaMSKIAMStaticConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	f.Var(&s.AccessKey, prefix+"access-key", "The AWS access key ID to authenticate to Kafka using SASL AWS_MSK_IAM. Consider "+prefix+"file-path instead.")
+	f.Var(&s.SecretKey, prefix+"secret-key", "The AWS secret access key to authenticate to Kafka using SASL AWS_MSK_IAM. Consider "+prefix+"file-path instead.")
+	f.Var(&s.SessionToken, prefix+"session-token", "Optional AWS session token to authenticate to Kafka using SASL AWS_MSK_IAM.")
+	f.StringVar(&s.UserAgent, prefix+"user-agent", "", "Optional user agent to use when authenticating to Kafka using SASL AWS_MSK_IAM.")
 }
 
 type TLSClientConfig struct {

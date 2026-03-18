@@ -73,9 +73,9 @@ func TestMSKIAMCredentials(t *testing.T) {
 
 func TestMSKIAMStaticCredentials(t *testing.T) {
 	var secret KafkaMSKIAMStaticConfig
-	secret.AccessKey.Set("AKIDEXAMPLE")
-	secret.SecretKey.Set("wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY")
-	secret.SessionToken.Set("AQoDYXdzEJr//some/session/token")
+	require.NoError(t, secret.AccessKey.Set("AKIDEXAMPLE"))
+	require.NoError(t, secret.SecretKey.Set("wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY"))
+	require.NoError(t, secret.SessionToken.Set("AQoDYXdzEJr//some/session/token"))
 
 	cfg := kafkaSASLConfig[KafkaMSKIAMStaticConfig]{Secret: secret}
 
@@ -131,7 +131,7 @@ func TestOauthbearerCredentials(t *testing.T) {
 
 func TestOauthbearerStaticCredentials(t *testing.T) {
 	var secret KafkaOauthbearerStaticConfig
-	secret.Token.Set("some-oauth-token")
+	require.NoError(t, secret.Token.Set("some-oauth-token"))
 	secret.Zid = "some-zid"
 
 	cfg := kafkaSASLConfig[KafkaOauthbearerStaticConfig]{Secret: secret}
@@ -411,6 +411,7 @@ func serveSecretFromSocket(t *testing.T, secret any) string {
 	require.NoError(t, err)
 
 	server := &http.Server{
+		ReadHeaderTimeout: 10 * time.Second,
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(js)
