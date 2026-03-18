@@ -315,7 +315,7 @@ lint: check-makefiles check-merge-conflicts
 	# For this reason, we recommend to not use errors.Cause() anywhere, so that we don't have to
 	# question whether the usage is safe or not.
 	#
-  	# github.com/gogo/status.FromError:
+	# github.com/gogo/status.FromError:
 	# gogo/status allows to easily customize error details while grpc/status doesn't:
 	# for this reason we use gogo/status in several places. However, gogo/status.FromError()
 	# doesn't support wrapped errors, while grpc/status.FromError() does.
