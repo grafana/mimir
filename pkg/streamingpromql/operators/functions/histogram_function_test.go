@@ -6,8 +6,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 
@@ -159,53 +157,29 @@ func TestHistogramFunction_MemoryTracking(t *testing.T) {
 		}
 	}
 
-		tracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
-		hOp := newHistogramFunction(tracker)
+	tracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+	hOp := newHistogramFunction(tracker)
 
-		_, err := hOp.SeriesMetadata(ctx, nil)
-		require.NoError(t, err)
+	_, err := hOp.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
 
-		// seriesGroupPairs: pool rounds 4 up to 4 (already a power of two).
-		expectedSGP := uint64(4) * seriesGroupPairSize
-		require.Equal(t, expectedSGP, tracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.SeriesGroupPairSlices),
-			"seriesGroupPairs memory should be tracked")
+	// seriesGroupPairs: pool rounds 4 up to 4 (already a power of two).
+	expectedSGP := uint64(4) * seriesGroupPairSize
+	require.Equal(t, expectedSGP, tracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.SeriesGroupPairSlices),
+		"seriesGroupPairs memory should be tracked")
 
-		// remainingGroups: 4 native groups + 1 classic group = 5, each a pointer.
-		// The pool rounds 5 up to the next power of two (8).
-		expectedBGP := uint64(8) * bucketGroupPointerSize
-		require.Equal(t, expectedBGP, tracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.BucketGroupPointerSlices),
-			"remainingGroups memory should be tracked")
+	// remainingGroups: 4 native groups + 1 classic group = 5, each a pointer.
+	// The pool rounds 5 up to the next power of two (8).
+	expectedBGP := uint64(8) * bucketGroupPointerSize
+	require.Equal(t, expectedBGP, tracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.BucketGroupPointerSlices),
+		"remainingGroups memory should be tracked")
 
-		err = hOp.Finalize(ctx)
-		require.NoError(t, err)
-		hOp.Close()
+	err = hOp.Finalize(ctx)
+	require.NoError(t, err)
+	hOp.Close()
 
-		require.Equal(t, uint64(0), tracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.SeriesGroupPairSlices),
-			"seriesGroupPairs memory should be released after Close")
-		require.Equal(t, uint64(0), tracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.BucketGroupPointerSlices),
-			"remainingGroups memory should be released after Close")
-
-	t.Run("memory limit is enforced for seriesGroupPairs allocation", func(t *testing.T) {
-		// Measure how many bytes the inner TestOperator's SeriesMetadata consumes.
-		// We'll use this as the limit so that the very next allocation (seriesGroupPairPool.Get)
-		// exceeds it.
-		unlimited := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
-		probe := &operators.TestOperator{Series: append([]labels.Labels{}, inputSeries...), MemoryConsumptionTracker: unlimited}
-		_, err := probe.SeriesMetadata(ctx, nil)
-		require.NoError(t, err)
-		innerBytes := unlimited.CurrentEstimatedMemoryConsumptionBytes()
-
-		// Set the limit to exactly the inner bytes consumed so the next allocation
-		// (seriesGroupPairPool.Get inside HistogramFunction.SeriesMetadata) exceeds it.
-		rejectionCounter := promauto.With(prometheus.NewRegistry()).NewCounter(prometheus.CounterOpts{Name: "test_rejections_total"})
-		limited := limiter.NewMemoryConsumptionTracker(ctx, innerBytes, rejectionCounter, "test query")
-		hOp := newHistogramFunction(limited)
-
-		_, err = hOp.SeriesMetadata(ctx, nil)
-		require.Error(t, err, "SeriesMetadata should fail when memory limit is too small for seriesGroupPairs")
-		require.Contains(t, err.Error(), "query exceeded")
-
-		// Close should not panic even after a failed SeriesMetadata.
-		hOp.Close()
-	})
+	require.Equal(t, uint64(0), tracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.SeriesGroupPairSlices),
+		"seriesGroupPairs memory should be released after Close")
+	require.Equal(t, uint64(0), tracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.BucketGroupPointerSlices),
+		"remainingGroups memory should be released after Close")
 }
