@@ -42,7 +42,6 @@ func init() {
 }
 
 var tracer = otel.Tracer("pkg/streamingpromql")
-var errPerStepStatsNotSupported = errors.New("per-step stats are not supported by Mimir query engine")
 
 const DefaultLookbackDelta = 5 * time.Minute // This should be the same value as github.com/prometheus/prometheus/promql.defaultLookbackDelta.
 
@@ -66,10 +65,6 @@ func NewEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *Q
 
 	if !opts.CommonOpts.EnableNegativeOffset {
 		return nil, errors.New("disabling negative offsets not supported by Mimir query engine")
-	}
-
-	if opts.CommonOpts.EnablePerStepStats {
-		return nil, errPerStepStatsNotSupported
 	}
 
 	if planner == nil {
@@ -207,10 +202,6 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 
 	if opts == nil {
 		opts = promql.NewPrometheusQueryOpts(false, 0)
-	}
-
-	if opts.EnablePerStepStats() {
-		return nil, errPerStepStatsNotSupported
 	}
 
 	lookbackDelta := opts.LookbackDelta()
