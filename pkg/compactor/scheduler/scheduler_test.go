@@ -84,7 +84,6 @@ func TestScheduler_RepeatedJobFailures(t *testing.T) {
 
 	t.Run("via job reassign", func(t *testing.T) {
 		scheduler, reg := newTestScheduler(t, bkt, newTestSchedulerConfig())
-		repeatedFailureThreshold := scheduler.cfg.RepeatedFailureThreshold
 		ctx := context.Background()
 		scheduler.rotator.Maintenance(ctx, false, true)
 
@@ -100,7 +99,7 @@ func TestScheduler_RepeatedJobFailures(t *testing.T) {
 			require.NoError(t, err)
 		}
 
-		for range repeatedFailureThreshold {
+		for range scheduler.cfg.RepeatedFailureReportThreshold {
 			leaseAndCancel()
 		}
 		assertCounter(t, reg, 0)
@@ -114,7 +113,6 @@ func TestScheduler_RepeatedJobFailures(t *testing.T) {
 			cfg := newTestSchedulerConfig()
 			cfg.LeaseDuration = time.Minute
 			scheduler, reg := newTestScheduler(t, bkt, cfg)
-			repeatedFailureThreshold := scheduler.cfg.RepeatedFailureThreshold
 			ctx := context.Background()
 			scheduler.rotator.Maintenance(ctx, false, true)
 
@@ -127,7 +125,7 @@ func TestScheduler_RepeatedJobFailures(t *testing.T) {
 				scheduler.rotator.Maintenance(ctx, true, false)
 			}
 
-			for range repeatedFailureThreshold {
+			for range scheduler.cfg.RepeatedFailureReportThreshold {
 				leaseAndExpire()
 			}
 			assertCounter(t, reg, 0)
