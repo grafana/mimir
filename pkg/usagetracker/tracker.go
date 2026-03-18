@@ -31,11 +31,11 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/usagetracker/trackerop"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
