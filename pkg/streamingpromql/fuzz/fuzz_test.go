@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package streamingpromql
+package fuzz
 
 import (
 	"bufio"
@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streamingpromql"
 	mqetest "github.com/grafana/mimir/pkg/streamingpromql/testutils"
 )
 
@@ -85,11 +86,11 @@ func buildStorage(f *testing.F, dataFile string) storage.Queryable {
 // queryFile is a file path used to seed the queries Fuzz corpus.
 // seedFuzzFunc is a function which actually performs the Fuzz seeding for each query string.
 func buildFuzzTestEnvironment(f *testing.F, dataFile string, queryFile string, seedFuzzFunc seedFuzzFunc) *fuzzTestEnvironment {
-	opts := NewTestEngineOpts()
+	opts := streamingpromql.NewTestEngineOpts()
 
-	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(f, err)
-	mqe, err := NewEngine(opts, stats.NewQueryMetrics(nil), planner)
+	mqe, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(nil), planner)
 	require.NoError(f, err)
 
 	environment := &fuzzTestEnvironment{
@@ -218,7 +219,7 @@ func FuzzQuery(f *testing.F) {
 		}
 	}
 
-	engines := buildFuzzTestEnvironment(f, "testdata/fuzz/data/seed-data.test", "testdata/fuzz/data/seed-queries.test", seedFuzzFunc)
+	engines := buildFuzzTestEnvironment(f, "../testdata/fuzz/data/seed-data.test", "../testdata/fuzz/data/seed-queries.test", seedFuzzFunc)
 
 	// Note - the Go Fuzz interface only allows for simple types to passed into a Fuzz test. We can not pass in Time or Duration variables here
 	f.Fuzz(func(t *testing.T, query string, startEpoch int64, endEpoch int64, durationMilliSecs int64) {
