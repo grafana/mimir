@@ -503,7 +503,7 @@ check-protobuf-format:
 	buf format --diff --exit-code $(addprefix --path=,$(PROTO_DEFS)) || (echo "Please format Protobuf files by running 'make format-protobuf'" && false)
 
 %.md : %.template
-	go run ./tools/doc-generator $< > $@
+	CGO_ENABLED=0 go run -tags $(GO_TAGS) ./tools/doc-generator $< > $@
 
 .PHONY: %.md.embedmd
 %.md.embedmd : %.md
