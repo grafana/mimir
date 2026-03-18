@@ -254,7 +254,8 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 			}
 
 			// Skip caching if the request is not cachable.
-			if cachable, _ := isRequestCachable(splitReq.orig, maxCacheTime, cacheUnalignedRequests, s.logger); !cachable {
+			if cachable, reason := isRequestCachable(splitReq.orig, maxCacheTime, cacheUnalignedRequests, s.logger); !cachable {
+				level.Debug(spanLog).Log("msg", "skipping storing response in cache as request is not cacheable", "key", splitReq.cacheKey, "reason", reason)
 				continue
 			}
 
@@ -263,7 +264,8 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 
 			for downstreamIdx, downstreamReq := range splitReq.downstreamRequests {
 				downstreamRes := splitReq.downstreamResponses[downstreamIdx]
-				if !isResponseCachable(downstreamRes) {
+				if !responseHeadersAllowCaching(downstreamRes) {
+					level.Debug(spanLog).Log("msg", "skipping storing response in cache as response is not cacheable", "key", splitReq.cacheKey, "reason", "forbidden by response headers")
 					continue
 				}
 
@@ -277,6 +279,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 
 			// If extents haven't been updated, we can skip storing it in the cache again.
 			if len(splitReq.cachedExtents) == len(updatedExtents) {
+				level.Debug(spanLog).Log("msg", "skipping storing response in cache as there are no new extents", "key", splitReq.cacheKey)
 				continue
 			}
 
@@ -293,7 +296,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 			}
 
 			// Put back into the cache the filtered ones.
-			s.storeCacheExtents(splitReq.cacheKey, tenantIDs, filteredExtents)
+			s.storeCacheExtents(spanLog, splitReq.cacheKey, tenantIDs, filteredExtents)
 		}
 	}
 
@@ -442,8 +445,9 @@ func (s *splitAndCacheMiddleware) getCacheOptions(tenantIDs []string) (ttl, ttlI
 }
 
 // storeCacheExtents stores the extents for given key in the cache.
-func (s *splitAndCacheMiddleware) storeCacheExtents(key string, tenantIDs []string, extents []Extent) {
+func (s *splitAndCacheMiddleware) storeCacheExtents(spanLog *spanlogger.SpanLogger, key string, tenantIDs []string, extents []Extent) {
 	if len(extents) == 0 {
+		level.Debug(spanLog).Log("msg", "skipping storing response in cache as there are no extents", "key", key)
 		return
 	}
 
@@ -455,10 +459,11 @@ func (s *splitAndCacheMiddleware) storeCacheExtents(key string, tenantIDs []stri
 		Extents: extents,
 	})
 	if err != nil {
-		level.Error(s.logger).Log("msg", "error marshalling cached extent", "err", err)
+		level.Error(spanLog).Log("msg", "error marshalling cached extent", "err", err)
 		return
 	}
 
+	level.Debug(spanLog).Log("msg", "asynchronously storing response in cache", "key", key, "size", len(buf), "ttl", usedTTL, "extents", len(extents))
 	s.cache.SetMultiAsync(map[string][]byte{hashCacheKey(key): buf}, usedTTL)
 }
 
