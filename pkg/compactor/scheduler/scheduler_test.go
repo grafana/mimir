@@ -70,6 +70,9 @@ func TestScheduler_LeaseJob_JobsLeasedMetric(t *testing.T) {
 }
 
 func TestScheduler_PersistentJobFailures(t *testing.T) {
+	bkt := objstore.NewInMemBucket()
+	require.NoError(t, bkt.Upload(context.Background(), "tenant1/placeholder", strings.NewReader("")))
+
 	assertCounter := func(t *testing.T, reg *prometheus.Registry, expected int) {
 		t.Helper()
 		require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
@@ -80,8 +83,6 @@ func TestScheduler_PersistentJobFailures(t *testing.T) {
 	}
 
 	t.Run("via job reassign", func(t *testing.T) {
-		bkt := objstore.NewInMemBucket()
-		require.NoError(t, bkt.Upload(context.Background(), "tenant1/placeholder", strings.NewReader("")))
 		scheduler, reg := newTestScheduler(t, bkt, newTestSchedulerConfig())
 		jobFailuresAllowed := scheduler.cfg.JobFailuresAllowed
 		ctx := context.Background()
@@ -109,8 +110,6 @@ func TestScheduler_PersistentJobFailures(t *testing.T) {
 	})
 
 	t.Run("via lease expiration", func(t *testing.T) {
-		bkt := objstore.NewInMemBucket()
-		require.NoError(t, bkt.Upload(context.Background(), "tenant1/placeholder", strings.NewReader("")))
 		cfg := newTestSchedulerConfig()
 		cfg.LeaseDuration = time.Nanosecond // jobs expire immediately on next Maintenance tick
 		scheduler, reg := newTestScheduler(t, bkt, cfg)
@@ -118,18 +117,19 @@ func TestScheduler_PersistentJobFailures(t *testing.T) {
 		ctx := context.Background()
 		scheduler.rotator.Maintenance(ctx, false, true)
 
-		for range jobFailuresAllowed {
+		leaseAndExpire := func() {
 			resp, err := scheduler.LeaseJob(ctx, &compactorschedulerpb.LeaseJobRequest{WorkerId: "worker1"})
 			require.NoError(t, err)
 			require.NotNil(t, resp.Key)
 			scheduler.rotator.Maintenance(ctx, true, false)
 		}
+
+		for range jobFailuresAllowed {
+			leaseAndExpire()
+		}
 		assertCounter(t, reg, 0)
 
-		resp, err := scheduler.LeaseJob(ctx, &compactorschedulerpb.LeaseJobRequest{WorkerId: "worker1"})
-		require.NoError(t, err)
-		require.NotNil(t, resp.Key)
-		scheduler.rotator.Maintenance(ctx, true, false)
+		leaseAndExpire()
 		assertCounter(t, reg, 1)
 	})
 }
