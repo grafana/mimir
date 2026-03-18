@@ -63,7 +63,7 @@ SKIP_RACE_DETECTOR_PATTERN="^github.com/grafana/mimir/pkg/streamingpromql/(bench
 
 echo "This group will run the following tests (race detector enabled unless stated otherwise):"
 echo "$GROUP_TESTS" | while read -r pkg; do
-    if echo "$pkg" | grep -q -e "$SKIP_RACE_DETECTOR_PATTERN"; then
+    if echo "$pkg" | grep -q --extended-regexp "$SKIP_RACE_DETECTOR_PATTERN"; then
         echo "$pkg (race detector disabled)"
     else
         echo "$pkg"
@@ -79,7 +79,7 @@ FAILED_PACKAGES=""
 MAX_ATTEMPTS=2
 
 for pkg in $GROUP_TESTS; do
-    if echo "$pkg" | grep -q -e "$SKIP_RACE_DETECTOR_PATTERN"; then
+    if echo "$pkg" | grep -q --extended-regexp "$SKIP_RACE_DETECTOR_PATTERN"; then
         RACE_FLAG=""
     else
         RACE_FLAG="-race"
