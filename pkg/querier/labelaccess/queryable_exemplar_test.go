@@ -230,6 +230,21 @@ func TestLabelAccessExemplarQuerier_Select(t *testing.T) {
 		assert.Contains(t, upstream.matchers[1], selectors[0][1])
 	})
 
+	t.Run("single selector with empty upstream matchers still passed directly to upstream", func(t *testing.T) {
+		selectors := labelPoliciesToPromSelectors([]*shared.LabelPolicy{
+			newDoubleLabelPolicy(labels.MatchEqual, "method", "GET", "status_code", "200"),
+		})
+
+		upstream := &mockExemplarQuerier{}
+		querier := newLabelAccessExemplarQuerier(context.Background(), selectors, upstream, log.NewNopLogger())
+
+		_, err := querier.Select(startMs, endMs)
+		require.NoError(t, err)
+		require.Len(t, upstream.matchers, 1)
+		assert.Contains(t, upstream.matchers[0], selectors[0][0])
+		assert.Contains(t, upstream.matchers[0], selectors[0][1])
+	})
+
 	t.Run("upstream error results in error", func(t *testing.T) {
 		// Multiple selectors so we don't short-circuit and just pass the LBAC selector
 		// to the Select method of the upstream querier.
