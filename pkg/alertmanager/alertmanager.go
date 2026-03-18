@@ -8,7 +8,6 @@ package alertmanager
 import (
 	"context"
 	"crypto/md5"
-	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -66,7 +65,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 	"go.opentelemetry.io/otel"
-	"go.uber.org/atomic"
 	"golang.org/x/time/rate"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
@@ -139,9 +137,6 @@ type Alertmanager struct {
 	tmplExternalURL *url.URL
 	emailCfgMtx     sync.RWMutex
 	emailCfg        alertingReceivers.EmailSenderConfig
-
-	// usingGrafanaState indicates if the Grafana Alertmanager state is being used.
-	usingGrafanaState atomic.Bool
 
 	// Pipeline created during last ApplyConfig call. Used for testing only.
 	lastPipeline notify.Stage
@@ -335,7 +330,6 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 	// This route is an experimental Mimir extension to the receivers API, so we put
 	// it under an additional prefix to avoid any confusion with upstream Alertmanager.
 	if cfg.GrafanaAlertmanagerCompatibility {
-		am.mux.Handle("/api/v1/grafana/full_state", http.HandlerFunc(am.GetFullStateHandler))
 		am.mux.Handle("/api/v1/grafana/receivers", http.HandlerFunc(am.GetReceiversHandler))
 		am.mux.Handle("/api/v1/grafana/templates/test", http.HandlerFunc(am.TestTemplatesHandler))
 		am.mux.Handle("/api/v1/grafana/receivers/test", http.HandlerFunc(am.TestReceiversHandler))
@@ -345,44 +339,6 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 
 	// TODO: From this point onward, the alertmanager _might_ receive requests - we need to make sure we've settled and are ready.
 	return am, nil
-}
-
-func (am *Alertmanager) GetFullStateHandler(w http.ResponseWriter, _ *http.Request) {
-	st, err := am.state.GetFullState()
-	if err != nil {
-		level.Error(am.logger).Log("msg", "error getting full state", "err", err)
-		http.Error(w,
-			fmt.Sprintf("error getting full state: %s", err.Error()),
-			http.StatusInternalServerError)
-		return
-	}
-
-	bytes, err := st.Marshal()
-	if err != nil {
-		level.Error(am.logger).Log("msg", "error marshalling full state", "err", err)
-		http.Error(w,
-			fmt.Sprintf("error marshalling full state: %s", err.Error()),
-			http.StatusInternalServerError)
-		return
-	}
-
-	d, err := json.Marshal(successResult{
-		Status: statusSuccess,
-		Data:   &UserGrafanaState{State: base64.StdEncoding.EncodeToString(bytes)},
-	})
-	if err != nil {
-		level.Error(am.logger).Log("msg", "error marshalling success result", "err", err)
-		http.Error(w,
-			fmt.Sprintf("error marshalling success result: %s", err.Error()),
-			http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	if _, err := w.Write(d); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
 }
 
 func (am *Alertmanager) GetReceiversHandler(w http.ResponseWriter, _ *http.Request) {
@@ -632,10 +588,6 @@ func (am *Alertmanager) StopAndWait() {
 
 func (am *Alertmanager) mergePartialExternalState(part *clusterpb.Part) error {
 	return am.state.MergePartialState(part)
-}
-
-func (am *Alertmanager) mergeFullGrafanaState(fs *clusterpb.FullState) error {
-	return am.state.MergeGrafanaState([]*clusterpb.FullState{fs})
 }
 
 func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {

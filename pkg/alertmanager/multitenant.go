@@ -207,7 +207,6 @@ func (cfg *MultitenantAlertmanagerConfig) CheckExternalURL(alertmanagerHTTPPrefi
 }
 
 type multitenantAlertmanagerMetrics struct {
-	grafanaStateSize              *prometheus.GaugeVec
 	lastReloadSuccessful          *prometheus.GaugeVec
 	lastReloadSuccessfulTimestamp *prometheus.GaugeVec
 	initializationsOnRequestTotal *prometheus.CounterVec
@@ -216,11 +215,6 @@ type multitenantAlertmanagerMetrics struct {
 
 func newMultitenantAlertmanagerMetrics(reg prometheus.Registerer) *multitenantAlertmanagerMetrics {
 	m := &multitenantAlertmanagerMetrics{}
-
-	m.grafanaStateSize = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-		Name: "cortex_alertmanager_grafana_state_size_bytes",
-		Help: "Size of the grafana alertmanager state.",
-	}, []string{"user"})
 
 	m.lastReloadSuccessful = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 		Name: "cortex_alertmanager_config_last_reload_successful",
@@ -722,12 +716,6 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 			continue
 		}
 
-		if am.cfg.GrafanaAlertmanagerCompatibilityEnabled {
-			if err := am.syncStates(ctx, cfg); err != nil {
-				level.Error(am.logger).Log("msg", "error syncing states", "err", err, "user", user)
-			}
-		}
-
 		if err := am.setConfig(cfg); err != nil {
 			am.multitenantMetrics.lastReloadSuccessful.WithLabelValues(user).Set(float64(0))
 			level.Warn(am.logger).Log("msg", "error applying config", "err", err, "user", user)
@@ -839,79 +827,6 @@ func (am *MultitenantAlertmanager) isTenantActive(userID string) bool {
 
 	level.Debug(am.logger).Log("msg", "user has no usable config but is receiving requests, keeping Alertmanager active", "user", userID)
 	return true
-}
-
-// syncStates promotes/unpromotes the Grafana state and updates the 'promoted' flag if needed.
-func (am *MultitenantAlertmanager) syncStates(ctx context.Context, cfg amConfig) error {
-	// fetching grafana state first so we can register its size independently of it being promoted or not
-	s, err := am.store.GetFullGrafanaState(ctx, cfg.User)
-	if err != nil {
-		if errors.Is(err, alertspb.ErrNotFound) {
-			// This is expected if the state was already promoted.
-			level.Debug(am.logger).Log("msg", "grafana state not found, skipping promotion", "user", cfg.User)
-			am.multitenantMetrics.grafanaStateSize.DeleteLabelValues(cfg.User)
-			return nil
-		}
-		return err
-	}
-	am.multitenantMetrics.grafanaStateSize.WithLabelValues(cfg.User).Set(float64(s.State.Size()))
-
-	am.alertmanagersMtx.Lock()
-	userAM, ok := am.alertmanagers[cfg.User]
-	am.alertmanagersMtx.Unlock()
-
-	// If we're not using Grafana configuration, we shouldn't use Grafana state.
-	// Update the flag accordingly.
-	if !cfg.UsingGrafanaConfig {
-		if ok && userAM.usingGrafanaState.CompareAndSwap(true, false) {
-			level.Debug(am.logger).Log("msg", "Grafana state unpromoted", "user", cfg.User)
-		}
-		return nil
-	}
-
-	// If the Alertmanager is already using Grafana state, do nothing.
-	if ok && userAM.usingGrafanaState.Load() {
-		return nil
-	}
-
-	// Promote the Grafana Alertmanager state and update the usingGrafanaState flag.
-	level.Debug(am.logger).Log("msg", "promoting Grafana state", "user", cfg.User)
-	// Translate Grafana state keys to Mimir state keys.
-	for i, p := range s.State.Parts {
-		switch p.Key {
-		case "silences":
-			s.State.Parts[i].Key = silencesStateKeyPrefix + cfg.User
-		case "notifications":
-			s.State.Parts[i].Key = nflogStateKeyPrefix + cfg.User
-		default:
-			return fmt.Errorf("unknown part key %q", p.Key)
-		}
-	}
-
-	if !ok {
-		level.Debug(am.logger).Log("msg", "no Alertmanager found, creating new one before applying Grafana state", "user", cfg.User)
-		if err := am.setConfig(cfg); err != nil {
-			return fmt.Errorf("error creating new Alertmanager for user %s: %w", cfg.User, err)
-		}
-		am.alertmanagersMtx.Lock()
-		userAM, ok = am.alertmanagers[cfg.User]
-		am.alertmanagersMtx.Unlock()
-		if !ok {
-			return fmt.Errorf("Alertmanager for user %s not found after creation", cfg.User)
-		}
-	}
-
-	if err := userAM.mergeFullGrafanaState(s.State); err != nil {
-		return err
-	}
-	userAM.usingGrafanaState.Store(true)
-
-	// Delete state.
-	if err := am.store.DeleteFullGrafanaState(ctx, cfg.User); err != nil {
-		return fmt.Errorf("error deleting grafana state for user %s: %w", cfg.User, err)
-	}
-	level.Debug(am.logger).Log("msg", "Grafana state promoted", "user", cfg.User)
-	return nil
 }
 
 type amConfig struct {
