@@ -68,6 +68,44 @@ func TestScheduler_LeaseJob_JobsLeasedMetric(t *testing.T) {
 	})
 }
 
+func TestScheduler_UpdatePlanJob_PersistentFailure(t *testing.T) {
+	bkt := objstore.NewInMemBucket()
+	require.NoError(t, bkt.Upload(context.Background(), "tenant1/placeholder", strings.NewReader("")))
+
+	scheduler, reg := newTestScheduler(t, bkt)
+	jobFailuresAllowed := scheduler.cfg.JobFailuresAllowed
+	ctx := context.Background()
+	scheduler.rotator.Maintenance(ctx, false, true)
+
+	leaseAndCancel := func() {
+		resp, err := scheduler.LeaseJob(ctx, &compactorschedulerpb.LeaseJobRequest{WorkerId: "worker1"})
+		require.NoError(t, err)
+		require.NotNil(t, resp.Key)
+		_, err = scheduler.UpdatePlanJob(ctx, &compactorschedulerpb.UpdatePlanJobRequest{
+			Tenant: resp.Spec.Tenant,
+			Key:    resp.Key,
+			Update: compactorschedulerpb.UPDATE_TYPE_REASSIGN,
+		})
+		require.NoError(t, err)
+	}
+
+	for range jobFailuresAllowed {
+		leaseAndCancel()
+	}
+	require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_compactor_scheduler_persistent_job_failures_total Total number of jobs that have failed more than the allowed number of times.
+		# TYPE cortex_compactor_scheduler_persistent_job_failures_total counter
+		cortex_compactor_scheduler_persistent_job_failures_total{user="tenant1"} 0
+	`), "cortex_compactor_scheduler_persistent_job_failures_total"))
+
+	leaseAndCancel()
+	require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_compactor_scheduler_persistent_job_failures_total Total number of jobs that have failed more than the allowed number of times.
+		# TYPE cortex_compactor_scheduler_persistent_job_failures_total counter
+		cortex_compactor_scheduler_persistent_job_failures_total{user="tenant1"} 1
+	`), "cortex_compactor_scheduler_persistent_job_failures_total"))
+}
+
 func newTestSchedulerConfig() Config {
 	var cfg Config
 	cfg.RegisterFlags(flag.NewFlagSet("test", flag.ContinueOnError))
