@@ -101,9 +101,13 @@ func (l *labelAccessExemplarQuerier) Select(start, end int64, matchers ...[]*lab
 	// that anything returned also satisfies our matchers (intersection). This allows us to avoid
 	// querying all exemplars and then filtering them in memory here.
 	if len(l.selectors) == 1 {
-		for i, m := range matchers {
-			m = append(m, l.selectors[0]...)
-			matchers[i] = m
+		if len(matchers) == 0 {
+			matchers = append(matchers, append([]*labels.Matcher(nil), l.selectors[0]...))
+		} else {
+			for i, m := range matchers {
+				m = append(m, l.selectors[0]...)
+				matchers[i] = m
+			}
 		}
 
 		level.Debug(spanlog).Log("msg", "exemplars filtered by single LBAC selector as upstream matchers", "selector", l.stringers)
