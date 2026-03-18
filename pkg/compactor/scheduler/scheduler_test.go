@@ -69,22 +69,22 @@ func TestScheduler_LeaseJob_JobsLeasedMetric(t *testing.T) {
 	})
 }
 
-func TestScheduler_PersistentJobFailures(t *testing.T) {
+func TestScheduler_RepeatedJobFailures(t *testing.T) {
 	bkt := objstore.NewInMemBucket()
 	require.NoError(t, bkt.Upload(context.Background(), "tenant1/placeholder", strings.NewReader("")))
 
 	assertCounter := func(t *testing.T, reg *prometheus.Registry, expected int) {
 		t.Helper()
 		require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
-			# HELP cortex_compactor_scheduler_persistent_job_failures_total Total number of jobs that have failed more than the allowed number of times.
-			# TYPE cortex_compactor_scheduler_persistent_job_failures_total counter
-			cortex_compactor_scheduler_persistent_job_failures_total{user="tenant1"} %d
-		`, expected)), "cortex_compactor_scheduler_persistent_job_failures_total"))
+			# HELP cortex_compactor_scheduler_repeated_job_failures_total Total number of jobs that have failed more than the allowed number of times.
+			# TYPE cortex_compactor_scheduler_repeated_job_failures_total counter
+			cortex_compactor_scheduler_repeated_job_failures_total{user="tenant1"} %d
+		`, expected)), "cortex_compactor_scheduler_repeated_job_failures_total"))
 	}
 
 	t.Run("via job reassign", func(t *testing.T) {
 		scheduler, reg := newTestScheduler(t, bkt, newTestSchedulerConfig())
-		jobFailuresAllowed := scheduler.cfg.JobFailuresAllowed
+		repeatedFailureThreshold := scheduler.cfg.RepeatedFailureThreshold
 		ctx := context.Background()
 		scheduler.rotator.Maintenance(ctx, false, true)
 
@@ -100,7 +100,7 @@ func TestScheduler_PersistentJobFailures(t *testing.T) {
 			require.NoError(t, err)
 		}
 
-		for range jobFailuresAllowed {
+		for range repeatedFailureThreshold {
 			leaseAndCancel()
 		}
 		assertCounter(t, reg, 0)
@@ -114,7 +114,7 @@ func TestScheduler_PersistentJobFailures(t *testing.T) {
 			cfg := newTestSchedulerConfig()
 			cfg.LeaseDuration = time.Minute
 			scheduler, reg := newTestScheduler(t, bkt, cfg)
-			jobFailuresAllowed := scheduler.cfg.JobFailuresAllowed
+			repeatedFailureThreshold := scheduler.cfg.RepeatedFailureThreshold
 			ctx := context.Background()
 			scheduler.rotator.Maintenance(ctx, false, true)
 
@@ -127,7 +127,7 @@ func TestScheduler_PersistentJobFailures(t *testing.T) {
 				scheduler.rotator.Maintenance(ctx, true, false)
 			}
 
-			for range jobFailuresAllowed {
+			for range repeatedFailureThreshold {
 				leaseAndExpire()
 			}
 			assertCounter(t, reg, 0)

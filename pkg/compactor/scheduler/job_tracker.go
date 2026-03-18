@@ -32,9 +32,9 @@ type JobTracker struct {
 	tenant    string
 	clock     clock.Clock
 
-	maxLeases          int // maximum lease attempts per job where 0 (infiniteLeases) means unlimited. Plan jobs ignore this.
-	jobFailuresAllowed int // number of failures before a persistent failure is recorded. 0 (infiniteLeases) means unlimited.
-	metrics            *trackerMetrics
+	maxLeases                int // maximum lease attempts per job where 0 (infiniteLeases) means unlimited. Plan jobs ignore this.
+	repeatedFailureThreshold int // number of failures before a repeated failure is recorded. 0 (infiniteLeases) means unlimited.
+	metrics                  *trackerMetrics
 
 	mtx                    sync.Mutex
 	pending                *list.List
@@ -45,20 +45,20 @@ type JobTracker struct {
 	completeCompactionJobs []*TrackedCompactionJob  // tracked in order to reject jobs that may be from a stale planning view.
 }
 
-func NewJobTracker(jobPersister JobPersister, tenant string, clock clock.Clock, maxLeases int, jobFailuresAllowed int, metrics *trackerMetrics) *JobTracker {
+func NewJobTracker(jobPersister JobPersister, tenant string, clock clock.Clock, maxLeases int, repeatedFailureThreshold int, metrics *trackerMetrics) *JobTracker {
 	jt := &JobTracker{
-		persister:              jobPersister,
-		tenant:                 tenant,
-		clock:                  clock,
-		maxLeases:              maxLeases,
-		jobFailuresAllowed:     jobFailuresAllowed,
-		metrics:                metrics,
-		mtx:                    sync.Mutex{},
-		pending:                list.New(),
-		active:                 list.New(),
-		isPlanJobLeased:        false,
-		incompleteJobs:         make(map[string]*list.Element),
-		completeCompactionJobs: make([]*TrackedCompactionJob, 0),
+		persister:                jobPersister,
+		tenant:                   tenant,
+		clock:                    clock,
+		maxLeases:                maxLeases,
+		repeatedFailureThreshold: repeatedFailureThreshold,
+		metrics:                  metrics,
+		mtx:                      sync.Mutex{},
+		pending:                  list.New(),
+		active:                   list.New(),
+		isPlanJobLeased:          false,
+		incompleteJobs:           make(map[string]*list.Element),
+		completeCompactionJobs:   make([]*TrackedCompactionJob, 0),
 	}
 	return jt
 }
@@ -275,7 +275,7 @@ func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpir
 // If a job has an expired lease and has been active under the maximum number of times, it will be returned to the front of the queue.
 // Otherwise a job with an expired lease will be removed from the tracker.
 // This function only computes what needs to change without persisting or modifying in-memory state,
-// but it does update the persistent failure metric if applicable.
+// but it does update the repeated failure metric if applicable.
 // A write lock must be held in order to call this function.
 func (jt *JobTracker) computeLeaseExpiration(leaseDuration time.Duration, now time.Time) (reviveJobs, deleteJobs []TrackedJob) {
 	var e, next *list.Element
@@ -404,11 +404,11 @@ func (jt *JobTracker) CancelLease(id string, epoch int64) (canceled bool, became
 	return true, wasEmpty && revive, nil
 }
 
-// trackFailure takes a currently leased job and records a persistent failure
+// trackFailure takes a currently leased job and records a repeated failure
 // if the job exceeded the failure threshold, and returns whether the job can be retried.
 func (jt *JobTracker) trackFailure(j TrackedJob) bool {
-	if jt.jobFailuresAllowed != infiniteLeases && j.NumLeases() > jt.jobFailuresAllowed {
-		jt.metrics.persistentJobFailures.Inc()
+	if jt.repeatedFailureThreshold != infiniteLeases && j.NumLeases() > jt.repeatedFailureThreshold {
+		jt.metrics.repeatedJobFailures.Inc()
 	}
 	return j.ID() == planJobId || jt.maxLeases == infiniteLeases || j.NumLeases() < jt.maxLeases
 }
