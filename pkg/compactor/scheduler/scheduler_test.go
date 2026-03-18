@@ -54,13 +54,12 @@ func TestScheduler_LeaseJob_JobsLeasedMetric(t *testing.T) {
 	})
 
 	t.Run("does not increment when no job is available", func(t *testing.T) {
-		// The plan job is now active (leased above), no pending jobs.
+		// We've already leased the only job we had, so we expect no new leases
 		req := &compactorschedulerpb.LeaseJobRequest{WorkerId: "worker2"}
 		resp, err := scheduler.LeaseJob(ctx, req)
 		require.NoError(t, err)
 		require.Nil(t, resp.Key)
 
-		// Counter should still be 1 from the previous sub-test.
 		require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_compactor_scheduler_jobs_leased_total Total number of jobs leased to workers by the scheduler.
 			# TYPE cortex_compactor_scheduler_jobs_leased_total counter
