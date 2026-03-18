@@ -769,10 +769,27 @@ func BenchmarkGroupByModuloShards(b *testing.B) {
 }
 
 func TestGroupByModuloShards(t *testing.T) {
-	t.Run("basic", func(t *testing.T) {
-		series := []uint64{30, 50, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+	t.Run("empty", func(t *testing.T) {
+		var series []uint64
 		groupByModuloShards(series)
 		requireGroupedByModuloShards(t, series)
+		require.Empty(t, series)
+	})
+
+	t.Run("single element", func(t *testing.T) {
+		series := []uint64{42}
+		original := slices.Clone(series)
+		groupByModuloShards(series)
+		requireGroupedByModuloShards(t, series)
+		require.ElementsMatch(t, series, original)
+	})
+
+	t.Run("basic", func(t *testing.T) {
+		series := []uint64{30, 50, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+		original := slices.Clone(series)
+		groupByModuloShards(series)
+		requireGroupedByModuloShards(t, series)
+		require.ElementsMatch(t, series, original)
 	})
 
 	t.Run("random tests", func(t *testing.T) {
@@ -782,8 +799,10 @@ func TestGroupByModuloShards(t *testing.T) {
 			for i := range series {
 				series[i] = r.Uint64()
 			}
+			original := slices.Clone(series)
 			groupByModuloShards(series)
 			requireGroupedByModuloShards(t, series)
+			require.ElementsMatch(t, series, original)
 		}
 	})
 }
