@@ -159,7 +159,6 @@ func TestHistogramFunction_MemoryTracking(t *testing.T) {
 		}
 	}
 
-	t.Run("SeriesGroupPairSlices and BucketGroupPointerSlices are tracked after SeriesMetadata", func(t *testing.T) {
 		tracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 		hOp := newHistogramFunction(tracker)
 
@@ -177,17 +176,6 @@ func TestHistogramFunction_MemoryTracking(t *testing.T) {
 		require.Equal(t, expectedBGP, tracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.BucketGroupPointerSlices),
 			"remainingGroups memory should be tracked")
 
-		hOp.Close()
-	})
-
-	t.Run("SeriesGroupPairSlices and BucketGroupPointerSlices are released after Finalize", func(t *testing.T) {
-		tracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
-		hOp := newHistogramFunction(tracker)
-
-		_, err := hOp.SeriesMetadata(ctx, nil)
-		require.NoError(t, err)
-
-		hOp.Close()
 		err = hOp.Finalize(ctx)
 		require.NoError(t, err)
 
@@ -195,7 +183,6 @@ func TestHistogramFunction_MemoryTracking(t *testing.T) {
 			"seriesGroupPairs memory should be released after Close")
 		require.Equal(t, uint64(0), tracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.BucketGroupPointerSlices),
 			"remainingGroups memory should be released after Close")
-	})
 
 	t.Run("memory limit is enforced for seriesGroupPairs allocation", func(t *testing.T) {
 		// Measure how many bytes the inner TestOperator's SeriesMetadata consumes.
