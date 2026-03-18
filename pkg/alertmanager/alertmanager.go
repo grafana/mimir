@@ -335,7 +335,6 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 	// This route is an experimental Mimir extension to the receivers API, so we put
 	// it under an additional prefix to avoid any confusion with upstream Alertmanager.
 	if cfg.GrafanaAlertmanagerCompatibility {
-		am.mux.Handle("/api/v1/grafana/full_state", http.HandlerFunc(am.GetFullStateHandler))
 		am.mux.Handle("/api/v1/grafana/receivers", http.HandlerFunc(am.GetReceiversHandler))
 		am.mux.Handle("/api/v1/grafana/templates/test", http.HandlerFunc(am.TestTemplatesHandler))
 		am.mux.Handle("/api/v1/grafana/receivers/test", http.HandlerFunc(am.TestReceiversHandler))
