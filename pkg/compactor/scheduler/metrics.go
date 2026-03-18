@@ -8,10 +8,10 @@ import (
 )
 
 type schedulerMetrics struct {
-	pendingJobs            *prometheus.GaugeVec
-	activeJobs             *prometheus.GaugeVec
-	jobsLeased             prometheus.Counter
-	persistentJobFailures  *prometheus.CounterVec
+	pendingJobs           *prometheus.GaugeVec
+	activeJobs            *prometheus.GaugeVec
+	jobsLeased            prometheus.Counter
+	persistentJobFailures *prometheus.CounterVec
 }
 
 func newSchedulerMetrics(reg prometheus.Registerer) *schedulerMetrics {
