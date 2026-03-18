@@ -503,6 +503,7 @@ check-protobuf-format:
 	buf format --diff --exit-code $(addprefix --path=,$(PROTO_DEFS)) || (echo "Please format Protobuf files by running 'make format-protobuf'" && false)
 
 %.md : %.template
+	# Speed up check-doc in the lint CI job by aligning doc-generator's Go build flags (CGO_ENABLED=0, -tags netgo,stringlabels) with the rest of the lint pipeline, allowing it to reuse the build cache instead of recompiling the entire dependency tree from scratch.
 	CGO_ENABLED=0 go run -tags $(GO_TAGS) ./tools/doc-generator $< > $@
 
 .PHONY: %.md.embedmd
