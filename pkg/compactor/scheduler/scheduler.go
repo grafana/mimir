@@ -82,6 +82,9 @@ func (cfg *Config) Validate() error {
 	if cfg.TenantDiscoveryInterval <= 0 {
 		return errors.New("compactor-scheduler.tenant-discovery-interval must be positive")
 	}
+	if cfg.RepeatedFailureReportThreshold < 0 {
+		return errors.New("compactor-scheduler.repeated-failure-report-threshold must be non-negative")
+	}
 	if cfg.PersistenceType == "bbolt" {
 		if cfg.BboltPath == "" {
 			return errors.New("compactor-scheduler.bbolt.db-path must be set")
