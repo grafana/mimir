@@ -12481,6 +12481,10 @@ func TestKafkaTimestampPropagation(t *testing.T) {
 	assert.False(t, got.Before(before))
 	assert.False(t, got.After(after))
 
+	// Stop the ingester before mutating config to avoid data races with the
+	// metricsUpdaterServiceRunning goroutine that reads IngestStorageConfig.
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), i))
+
 	// Enable ingest storage config to test activeSeriesNow uses the stored Kafka timestamp.
 	i.cfg.IngestStorageConfig.Enabled = true
 	got = i.activeSeriesNow()
