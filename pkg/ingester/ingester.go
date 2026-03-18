@@ -874,7 +874,7 @@ func (i *Ingester) metricsUpdaterServiceRunning(ctx context.Context) error {
 	defer ingestionRateTicker.Stop()
 
 	var activeSeriesTickerChan <-chan time.Time
-	if i.cfg.ActiveSeriesMetrics.Enabled {
+	if i.cfg.ActiveSeriesMetrics.Enabled && !i.cfg.IngestStorageConfig.Enabled {
 		t := time.NewTicker(i.cfg.ActiveSeriesMetrics.UpdatePeriod)
 		activeSeriesTickerChan = t.C
 		defer t.Stop()
