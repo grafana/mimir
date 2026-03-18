@@ -216,7 +216,8 @@ func saslMechanism[T saslSecretConfig, A any](cfg kafkaSASLConfig[T], fromCallba
 				return zero, err
 			}
 			var a A
-			return a, json.Unmarshal(f, &a)
+			err = json.Unmarshal(f, &a)
+			return a, err
 		})
 	}
 	if cfg.HTTPSocketPath != "" {

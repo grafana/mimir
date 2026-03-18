@@ -427,7 +427,7 @@ var errNoSecret = errors.New("no static credentials provided")
 
 // Validate returns errMultipleSources unless exactly one of the static secret,
 // file path, or HTTP socket path is configured.
-func (cfg kafkaSASLConfig[T]) Validate(errMultipleSources error) error {
+func (cfg kafkaSASLConfig[T]) Validate(errNoSingleSource error) error {
 	err := cfg.Secret.Validate()
 	if err != nil && !errors.Is(err, errNoSecret) {
 		return err
@@ -441,10 +441,13 @@ func (cfg kafkaSASLConfig[T]) Validate(errMultipleSources error) error {
 	} {
 		if source {
 			if sourceFound {
-				return errMultipleSources
+				return errNoSingleSource
 			}
 			sourceFound = true
 		}
+	}
+	if !sourceFound {
+		return errNoSingleSource
 	}
 	return nil
 }
