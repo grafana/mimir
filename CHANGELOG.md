@@ -153,6 +153,8 @@
 * [ENHANCEMENT] Compactor: Add expermental `-compactor.first-level-compaction-ooo-wait-period` to configure a separate compaction wait period for out-of-order blocks. It's an analogue of `-compactor.first-level-compaction-wait-period`, which currently ignores out-of-order blocks. #14627
 * [ENHANCEMENT] HA: Deduplicate per sample instead of per batch. #13665
 * [ENHANCEMENT] Usage-tracker: Improve performance of TrackSeriesBatch by preprocessing input data. #14702
+* [ENHANCEMENT] MQE: Improve per-query memory consumption limit enforcement in histogram function evaluations. #14691
+* [ENHANCEMENT] Usage-tracker: Improve performance by using a special shard grouping algorithm. #14715
 * [BUGFIX] Distributor: Fix race condition where usage-tracker partition ring may not be initialized before the distributor service starts, causing `usage-tracker partition ring is required` error on startup. #14675
 * [BUGFIX] Mimir: Fix false positive in filesystem path overlap detection when one path is a string prefix of another but not an ancestor directory. #14426
 * [BUGFIX] Build: Fixed config descriptor generation to correctly handle custom field types without CLI flags. #14632
@@ -267,6 +269,7 @@
 * [ENHANCEMENT] Dashboards: Change the "Rules" panel in the "Mimir / Reads resources" dashboard to use a stacked visualization. #14707
 * [ENHANCEMENT] Dashboards: Split the "All series" panel in the Tenants dashboard into "Active series" and "Owned & in-memory series" panels, and added the active series limit. #14648
 * [ENHANCEMENT] Dashboards: Add "In memory series" panel to experimental "Mimir / Block-builder" dashboard. #14700
+* [ENHANCEMENT] Alerts: Make `MimirInconsistentRuntimeConfig` alert less flaky when performing multiple configuration changes in a row in a large Kubernetes cluster. #14743
 * [BUGFIX] Dashboards: Fix issue where throughput dashboard panels would group all gRPC requests that resulted in a status containing an underscore into one series with no name. #13184
 * [BUGFIX] Dashboards: Filter out 0s from `max_series` limit on Writes Resources > Ingester > In-memory series panel. #13419
 * [BUGFIX] Dashboards: Fix issue where the "Tenant gateway requests" panels on Tenants dashboard would show data from all components. #13940

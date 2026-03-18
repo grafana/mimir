@@ -70,7 +70,9 @@ const (
 	TopKBottomKRangeQuerySeriesSlices
 	Labels
 	CounterResetHintSlices
-	memoryConsumptionSourceCount = CounterResetHintSlices + 1
+	SeriesGroupPairSlices
+	BucketGroupPointerSlices
+	memoryConsumptionSourceCount = BucketGroupPointerSlices + 1
 )
 
 const (
@@ -117,6 +119,10 @@ func (s MemoryConsumptionSource) String() string {
 		return "[]topkbottom.rangeQuerySeries"
 	case Labels:
 		return "labels.Labels"
+	case SeriesGroupPairSlices:
+		return "[]functions.seriesGroupPair"
+	case BucketGroupPointerSlices:
+		return "[]*functions.bucketGroup"
 	default:
 		return unknownMemorySource
 	}

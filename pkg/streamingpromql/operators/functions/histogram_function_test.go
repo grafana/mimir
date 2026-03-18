@@ -131,3 +131,51 @@ func TestHistogramFunction_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
 		})
 	}
 }
+
+// TestHistogramFunction_MemoryTracking verifies that seriesGroupPairs and remainingGroups
+// are accounted for in the memory consumption tracker.
+func TestHistogramFunction_MemoryTracking(t *testing.T) {
+	ctx := context.Background()
+
+	// A simple classic histogram: 4 bucket series + 1 implicit classic group = 5 groups total.
+	inputSeries := []labels.Labels{
+		labels.FromStrings("__name__", "series", "le", "0.1"),
+		labels.FromStrings("__name__", "series", "le", "1"),
+		labels.FromStrings("__name__", "series", "le", "10"),
+		labels.FromStrings("__name__", "series", "le", "+Inf"),
+	}
+
+	tracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+	hOp := &HistogramFunction{
+		f: &histogramQuantile{
+			phArg:                    &testScalarOperator{},
+			memoryConsumptionTracker: tracker,
+		},
+		inner:                    &operators.TestOperator{Series: inputSeries, MemoryConsumptionTracker: tracker},
+		innerSeriesMetricNames:   &operators.MetricNames{},
+		memoryConsumptionTracker: tracker,
+	}
+
+	_, err := hOp.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
+
+	// seriesGroupPairs: pool rounds 4 up to 4 (already a power of two).
+	expectedSGP := uint64(4) * seriesGroupPairSize
+	require.Equal(t, expectedSGP, tracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.SeriesGroupPairSlices),
+		"seriesGroupPairs memory should be tracked")
+
+	// remainingGroups: 4 native groups + 1 classic group = 5, each a pointer.
+	// The pool rounds 5 up to the next power of two (8).
+	expectedBGP := uint64(8) * bucketGroupPointerSize
+	require.Equal(t, expectedBGP, tracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.BucketGroupPointerSlices),
+		"remainingGroups memory should be tracked")
+
+	err = hOp.Finalize(ctx)
+	require.NoError(t, err)
+	hOp.Close()
+
+	require.Equal(t, uint64(0), tracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.SeriesGroupPairSlices),
+		"seriesGroupPairs memory should be released after Close")
+	require.Equal(t, uint64(0), tracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.BucketGroupPointerSlices),
+		"remainingGroups memory should be released after Close")
+}

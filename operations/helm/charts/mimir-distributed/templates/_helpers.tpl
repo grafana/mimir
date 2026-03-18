@@ -542,8 +542,13 @@ which allows us to keep generating everything for the default zone.
 
 {{- if $componentSection.zoneAwareReplication.enabled -}}
 {{- $numberOfZones := len $componentSection.zoneAwareReplication.zones -}}
-{{- if lt $numberOfZones 3 -}}
+{{- $ingestStorageEnabled := ((include "mimir.calculatedConfig" .ctx | fromYaml).ingest_storage).enabled -}}
+{{- /* Allow a minimum of 2 ingester zones with ingest storage enabled */ -}}
+{{- if and (lt $numberOfZones 3) (or (not $ingestStorageEnabled) (ne .component "ingester")) -}}
 {{- fail "When zone-awareness is enabled, you must have at least 3 zones defined." -}}
+{{- end -}}
+{{- if and (lt $numberOfZones 2) (eq .component "ingester") $ingestStorageEnabled -}}
+{{- fail "When zone-awareness and ingest storage are enabled, you must have at least 2 ingester zones defined." -}}
 {{- end -}}
 
 {{- $requestedReplicas := $componentSection.replicas -}}
