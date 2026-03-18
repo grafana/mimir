@@ -28,10 +28,15 @@ jobs:
   prepare:
     runs-on: ubuntu-latest
     steps:
+      # Only the Makefile is needed to run `make print-build-image`, so we use
+      # sparse checkout to avoid fetching the entire repository.
       - name: Check out repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
+          sparse-checkout: |
+            Makefile
+          sparse-checkout-cone-mode: false
       - name: Get build image from Makefile
         id: build_image_step
         run: echo "build_image=$(make print-build-image)" >> "$GITHUB_OUTPUT"
