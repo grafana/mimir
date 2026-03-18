@@ -147,14 +147,14 @@ func TestHistogramFunction_MemoryTracking(t *testing.T) {
 
 	tracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	hOp := &HistogramFunction{
-			f: &histogramQuantile{
-				phArg:                    &testScalarOperator{},
-				memoryConsumptionTracker: tracker,
-			},
-			inner:                    &operators.TestOperator{Series: inputSeries, MemoryConsumptionTracker: tracker},
-			innerSeriesMetricNames:   &operators.MetricNames{},
+		f: &histogramQuantile{
+			phArg:                    &testScalarOperator{},
 			memoryConsumptionTracker: tracker,
-		}
+		},
+		inner:                    &operators.TestOperator{Series: inputSeries, MemoryConsumptionTracker: tracker},
+		innerSeriesMetricNames:   &operators.MetricNames{},
+		memoryConsumptionTracker: tracker,
+	}
 
 	_, err := hOp.SeriesMetadata(ctx, nil)
 	require.NoError(t, err)
