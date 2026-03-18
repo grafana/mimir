@@ -3567,12 +3567,12 @@ func TestQueryStats(t *testing.T) {
 				require.Equal(t, testCase.expectedTotalSamples, prometheusSamplesStats.TotalSamples, "invalid test case: expected total samples does not match value from Prometheus' engine")
 			}
 
-			mimirSamplesStatsWithPlanning := runQueryAndGetSamplesStats(t, mimirEngine, testCase.expr, testCase.isInstantQuery)
-			if testCase.expectedTotalSamplesWithMQE != 0 {
-				require.Equal(t, testCase.expectedTotalSamplesWithMQE, mimirSamplesStatsWithPlanning.TotalSamples)
-			} else {
-				require.Equal(t, testCase.expectedTotalSamples, mimirSamplesStatsWithPlanning.TotalSamples)
+			if testCase.expectedTotalSamplesWithMQE == 0 {
+				testCase.expectedTotalSamplesWithMQE = testCase.expectedTotalSamples
 			}
+
+			mimirSamplesStats := runQueryAndGetSamplesStats(t, mimirEngine, testCase.expr, testCase.isInstantQuery)
+			require.Equal(t, testCase.expectedTotalSamplesWithMQE, mimirSamplesStats.TotalSamples)
 		})
 	}
 }
@@ -3906,12 +3906,12 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			prometheusSamplesStats := runQueryAndGetSamplesStats(t, prometheusEngine, tc.query, tc.start, tc.end, tc.interval)
 			require.Equal(t, tc.expectedTotalSamples, prometheusSamplesStats.TotalSamples, "invalid test case: expected total samples does not match value from Prometheus' engine")
 
-			mimirSamplesStatsWithPlanning := runQueryAndGetSamplesStats(t, mimirEngine, tc.query, tc.start, tc.end, tc.interval)
-			if tc.expectedTotalSamplesWithMQE != 0 {
-				require.Equal(t, tc.expectedTotalSamplesWithMQE, mimirSamplesStatsWithPlanning.TotalSamples)
-			} else {
-				require.Equal(t, tc.expectedTotalSamples, mimirSamplesStatsWithPlanning.TotalSamples)
+			if tc.expectedTotalSamplesWithMQE == 0 {
+				tc.expectedTotalSamplesWithMQE = tc.expectedTotalSamples
 			}
+
+			mimirSamplesStats := runQueryAndGetSamplesStats(t, mimirEngine, tc.query, tc.start, tc.end, tc.interval)
+			require.Equal(t, tc.expectedTotalSamplesWithMQE, mimirSamplesStats.TotalSamples)
 		})
 	}
 }
