@@ -393,7 +393,7 @@ func (b *TSDBBuilder) CompactToReduceInMemorySeries(ctx context.Context) error {
 	defer b.tsdbsMu.Unlock()
 
 	level.Warn(b.logger).Log(
-		"msg", "number of in-memory series is higher than configured early compaction threshold",
+		"msg", "number of in-memory series is higher than configured early head compaction threshold",
 		"num_tsdb", len(b.tsdbs),
 		"total_in_memory_series", totalSeries,
 		"early_compaction_threshold", earlyCompactionThreshold,
