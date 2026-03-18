@@ -305,3 +305,24 @@ func TestJobTracker_CancelLease_PersistentFailure(t *testing.T) {
 		`), "cortex_compactor_scheduler_persistent_job_failures_total"))
 	})
 }
+
+func TestJobTracker_CancelLease_PlanJobAlwaysRevives(t *testing.T) {
+	const maxLeases = 2
+
+	clk := clock.NewMock()
+	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
+	jt := NewJobTracker(&NopJobPersister{}, "test", clk, maxLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("test"))
+
+	_, err := jt.Maintenance(time.Minute, false, true, time.Hour, 15*time.Minute)
+	require.NoError(t, err)
+
+	for range maxLeases + 1 {
+		job, _, err := jt.Lease()
+		require.NoError(t, err)
+		require.NotNil(t, job, "plan job should always be leaseable")
+
+		canceled, _, err := jt.CancelLease(job.Key.Id, job.Key.Epoch)
+		require.NoError(t, err)
+		require.True(t, canceled)
+	}
+}
