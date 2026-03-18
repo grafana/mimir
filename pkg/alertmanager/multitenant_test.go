@@ -8,7 +8,6 @@ package alertmanager
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,7 +28,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	gogoproto "github.com/gogo/protobuf/proto"
 	"github.com/gogo/status"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
