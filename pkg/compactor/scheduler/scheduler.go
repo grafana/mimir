@@ -48,6 +48,7 @@ type Config struct {
 	UserDiscoveryBackoff                        backoff.Config `yaml:"user_discovery_backoff" category:"experimental"`
 	PersistenceType                             string         `yaml:"persistence_type" category:"experimental"`
 	BboltPath                                   string         `yaml:"bbolt_db_path" category:"experimental"`
+	JobFailuresAllowed                          int            `yaml:"job_failures_allowed" category:"advanced"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
@@ -60,6 +61,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.TenantDiscoveryInterval, "compactor-scheduler.tenant-discovery-interval", 10*time.Minute, "The duration of time between bucket listings to discover new tenants.")
 	f.StringVar(&cfg.PersistenceType, "compactor-scheduler.persistence-type", "bbolt", "The type of persistence the compactor scheduler should use. Valid values: none, bbolt")
 	f.StringVar(&cfg.BboltPath, "compactor-scheduler.bbolt.db-path", "bbolt_1.db", "The path to the bbolt database file for the compactor scheduler.")
+	f.IntVar(&cfg.JobFailuresAllowed, "compactor-scheduler.job-failures-allowed", 2, "The maximum number of times a job can fail before a persistent failure is recorded. 0 for no limit.")
 	cfg.UserDiscoveryBackoff.RegisterFlagsWithPrefix("compactor-scheduler", f)
 }
 
@@ -160,7 +162,7 @@ func NewCompactorScheduler(
 }
 
 func (s *Scheduler) createJobTracker(tenant string, jp JobPersister) *JobTracker {
-	return NewJobTracker(jp, tenant, s.clock, s.cfg.MaxLeases, s.metrics.newTrackerMetricsForTenant(tenant))
+	return NewJobTracker(jp, tenant, s.clock, s.cfg.MaxLeases, s.cfg.JobFailuresAllowed, s.metrics.newTrackerMetricsForTenant(tenant))
 }
 
 func (s *Scheduler) start(ctx context.Context) error {
@@ -219,6 +221,7 @@ func (s *Scheduler) LeaseJob(ctx context.Context, req *compactorschedulerpb.Leas
 		return nil, errFailedLeasingJob
 	}
 	if ok {
+		s.metrics.jobsLeased.Inc()
 		level.Info(s.logger).Log("msg", "leased job", "user", response.Spec.Tenant, "job_type", response.Spec.JobType.String(), "id", response.Key.Id, "epoch", response.Key.Epoch, "worker", req.WorkerId)
 		return response, nil
 	}

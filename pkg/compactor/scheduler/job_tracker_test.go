@@ -5,11 +5,13 @@ package scheduler
 import (
 	"container/list"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/benbjohnson/clock"
 	"github.com/prometheus/client_golang/prometheus"
+	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -28,7 +30,7 @@ func at(hour, minute int) time.Time {
 func newTestJobTracker(t *testing.T, clk clock.Clock) *JobTracker {
 	t.Helper()
 	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
-	return NewJobTracker(&NopJobPersister{}, "test", clk, infiniteLeases, metrics.newTrackerMetricsForTenant("test"))
+	return NewJobTracker(&NopJobPersister{}, "test", clk, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("test"))
 }
 
 type errJobPersister struct{ NopJobPersister }
@@ -108,7 +110,7 @@ func TestJobTracker_Maintenance_Planning(t *testing.T) {
 
 	t.Run("returns error on persist failure", func(t *testing.T) {
 		metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
-		jt := NewJobTracker(&errJobPersister{}, "test", clock.New(), infiniteLeases, metrics.newTrackerMetricsForTenant("test"))
+		jt := NewJobTracker(&errJobPersister{}, "test", clock.New(), infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("test"))
 
 		transition, err := jt.Maintenance(leaseDuration, false, true, planningInterval, compactionWaitPeriod)
 		require.Error(t, err)
@@ -118,7 +120,7 @@ func TestJobTracker_Maintenance_Planning(t *testing.T) {
 
 	t.Run("planning skipped when plan is false", func(t *testing.T) {
 		metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
-		jt := NewJobTracker(&errJobPersister{}, "test", clock.New(), infiniteLeases, metrics.newTrackerMetricsForTenant("test"))
+		jt := NewJobTracker(&errJobPersister{}, "test", clock.New(), infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("test"))
 		transition, err := jt.Maintenance(leaseDuration, false, false, planningInterval, compactionWaitPeriod)
 		require.NoError(t, err)
 		require.False(t, transition)
@@ -224,4 +226,82 @@ func TestJobTracker_recoverFrom(t *testing.T) {
 			require.Len(t, jt.incompleteJobs, len(tc.expectedPending)+len(tc.expectedActive))
 		})
 	}
+}
+
+func TestJobTracker_CancelLease_PersistentFailure(t *testing.T) {
+	const jobFailuresAllowed = 2
+
+	newJobTracker := func(t *testing.T) (*JobTracker, *prometheus.Registry) {
+		t.Helper()
+		reg := prometheus.NewPedanticRegistry()
+		metrics := newSchedulerMetrics(reg)
+		jt := NewJobTracker(&NopJobPersister{}, "test-tenant", clock.NewMock(), infiniteLeases, jobFailuresAllowed, metrics.newTrackerMetricsForTenant("test-tenant"))
+		return jt, reg
+	}
+
+	leaseJob := func(jt *JobTracker) {
+		t.Helper()
+		jt.pending.PushBack(NewTrackedCompactionJob("job1", &CompactionJob{}, 1, time.Now()))
+		jt.incompleteJobs["job1"] = jt.pending.Back()
+		jt.metrics.pendingJobs.Set(float64(jt.pending.Len()))
+		_, _, err := jt.Lease()
+		require.NoError(t, err)
+	}
+
+	cancelLease := func(jt *JobTracker) {
+		t.Helper()
+		e := jt.active.Front()
+		require.NotNil(t, e)
+		j := e.Value.(TrackedJob)
+		canceled, _, err := jt.CancelLease(j.ID(), j.Epoch())
+		require.NoError(t, err)
+		require.True(t, canceled)
+	}
+
+	t.Run("no persistent failure below threshold", func(t *testing.T) {
+		jt, reg := newJobTracker(t)
+
+		for i := 0; i < jobFailuresAllowed; i++ {
+			leaseJob(jt)
+			cancelLease(jt)
+		}
+
+		require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_compactor_scheduler_persistent_job_failures_total Total number of jobs that have failed more than the allowed number of times.
+			# TYPE cortex_compactor_scheduler_persistent_job_failures_total counter
+			cortex_compactor_scheduler_persistent_job_failures_total{user="test-tenant"} 0
+		`), "cortex_compactor_scheduler_persistent_job_failures_total"))
+	})
+
+	t.Run("persistent failure recorded above threshold", func(t *testing.T) {
+		jt, reg := newJobTracker(t)
+
+		for i := 0; i < jobFailuresAllowed+1; i++ {
+			leaseJob(jt)
+			cancelLease(jt)
+		}
+
+		require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_compactor_scheduler_persistent_job_failures_total Total number of jobs that have failed more than the allowed number of times.
+			# TYPE cortex_compactor_scheduler_persistent_job_failures_total counter
+			cortex_compactor_scheduler_persistent_job_failures_total{user="test-tenant"} 1
+		`), "cortex_compactor_scheduler_persistent_job_failures_total"))
+	})
+
+	t.Run("no persistent failure when jobFailuresAllowed is infinite", func(t *testing.T) {
+		reg := prometheus.NewPedanticRegistry()
+		metrics := newSchedulerMetrics(reg)
+		jt := NewJobTracker(&NopJobPersister{}, "test-tenant", clock.NewMock(), infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("test-tenant"))
+
+		for i := 0; i < 5; i++ {
+			leaseJob(jt)
+			cancelLease(jt)
+		}
+
+		require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_compactor_scheduler_persistent_job_failures_total Total number of jobs that have failed more than the allowed number of times.
+			# TYPE cortex_compactor_scheduler_persistent_job_failures_total counter
+			cortex_compactor_scheduler_persistent_job_failures_total{user="test-tenant"} 0
+		`), "cortex_compactor_scheduler_persistent_job_failures_total"))
+	})
 }

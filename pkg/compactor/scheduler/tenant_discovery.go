@@ -30,6 +30,7 @@ type TenantDiscoverer struct {
 	userDiscoveryBackoff backoff.Config
 	rotator              *Rotator
 	maxLeases            int
+	jobFailuresAllowed   int
 	knownTenants         map[string]struct{}
 }
 
@@ -51,6 +52,7 @@ func NewTenantDiscoverer(
 		userDiscoveryBackoff: cfg.UserDiscoveryBackoff,
 		rotator:              rotator,
 		maxLeases:            cfg.MaxLeases,
+		jobFailuresAllowed:   cfg.JobFailuresAllowed,
 		knownTenants:         make(map[string]struct{}),
 	}
 	s.Service = services.NewTimerService(cfg.TenantDiscoveryInterval, s.start, s.iter, nil)
@@ -106,7 +108,7 @@ func (s *TenantDiscoverer) discoverTenants(ctx context.Context) error {
 				level.Warn(s.logger).Log("msg", "failed initializing tenant", "user", tenant, "err", err)
 				continue
 			}
-			tracker := NewJobTracker(persister, tenant, s.clock, s.maxLeases, s.metrics.newTrackerMetricsForTenant(tenant))
+			tracker := NewJobTracker(persister, tenant, s.clock, s.maxLeases, s.jobFailuresAllowed, s.metrics.newTrackerMetricsForTenant(tenant))
 			s.rotator.AddTenant(tenant, tracker)
 			s.knownTenants[tenant] = struct{}{}
 		}

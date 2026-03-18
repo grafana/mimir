@@ -32,8 +32,9 @@ type JobTracker struct {
 	tenant    string
 	clock     clock.Clock
 
-	maxLeases int // maximum lease attempts per job where 0 (infiniteLeases) means unlimited. Plan jobs ignore this.
-	metrics   *trackerMetrics
+	maxLeases          int // maximum lease attempts per job where 0 (infiniteLeases) means unlimited. Plan jobs ignore this.
+	jobFailuresAllowed int // number of failures before a persistent failure is recorded. 0 (infiniteLeases) means unlimited.
+	metrics            *trackerMetrics
 
 	mtx                    sync.Mutex
 	pending                *list.List
@@ -44,12 +45,13 @@ type JobTracker struct {
 	completeCompactionJobs []*TrackedCompactionJob  // tracked in order to reject jobs that may be from a stale planning view.
 }
 
-func NewJobTracker(jobPersister JobPersister, tenant string, clock clock.Clock, maxLeases int, metrics *trackerMetrics) *JobTracker {
+func NewJobTracker(jobPersister JobPersister, tenant string, clock clock.Clock, maxLeases int, jobFailuresAllowed int, metrics *trackerMetrics) *JobTracker {
 	jt := &JobTracker{
 		persister:              jobPersister,
 		tenant:                 tenant,
 		clock:                  clock,
 		maxLeases:              maxLeases,
+		jobFailuresAllowed:     jobFailuresAllowed,
 		metrics:                metrics,
 		mtx:                    sync.Mutex{},
 		pending:                list.New(),
@@ -382,6 +384,10 @@ func (jt *JobTracker) CancelLease(id string, epoch int64) (canceled bool, became
 		jt.active.Remove(jt.incompleteJobs[jj.ID()])
 		jt.incompleteJobs[jj.ID()] = jt.pending.PushFront(jj)
 		jt.metrics.pendingJobs.Set(float64(jt.pending.Len()))
+
+		if jt.jobFailuresAllowed != infiniteLeases && jj.NumLeases() > jt.jobFailuresAllowed {
+			jt.metrics.persistentJobFailures.Inc()
+		}
 	} else {
 		err := jt.persister.DeleteJob(j)
 		if err != nil {
