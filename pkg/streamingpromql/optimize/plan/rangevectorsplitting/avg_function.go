@@ -131,7 +131,6 @@ func avgOverTimeCombine(pieces []AvgOverTimeIntermediate, _ int64, _ int64, emit
 
 			if sumH == nil {
 				sumH = h.Copy()
-				countH = float64(p.CountH)
 			} else {
 				var nhcbBoundsReconciled bool
 				var err error
@@ -141,9 +140,9 @@ func avgOverTimeCombine(pieces []AvgOverTimeIntermediate, _ int64, _ int64, emit
 				} else if nhcbBoundsReconciled {
 					nhcbBoundsReconciledSeen = true
 				}
-
-				countH += float64(p.CountH)
 			}
+
+			countH = float64(p.CountH)
 		}
 
 		// There are two modes used to combine intermediate pieces depending on whether overflow has been encountered.
