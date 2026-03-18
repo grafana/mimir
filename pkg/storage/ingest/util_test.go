@@ -57,13 +57,12 @@ func TestMSKIAMCredentials(t *testing.T) {
 			cfg := setUp(t, secret)
 
 			var gotCallback func(context.Context) (awssasl.Auth, error)
-			var expectedMechanism sasl.Mechanism
 			gotMechanism := saslMechanism(cfg, func(callback func(context.Context) (awssasl.Auth, error)) sasl.Mechanism {
 				gotCallback = callback
-				expectedMechanism = awssasl.ManagedStreamingIAM(callback)
-				return expectedMechanism
+				return awssasl.ManagedStreamingIAM(callback)
 			})
-			require.NotNil(t, expectedMechanism, gotMechanism)
+			require.NotNil(t, gotCallback)
+			require.NotNil(t, gotMechanism)
 
 			gotSecret, err := gotCallback(t.Context())
 			require.NoError(t, err)
@@ -116,13 +115,12 @@ func TestOauthbearerCredentials(t *testing.T) {
 			cfg := setUp(t, secret)
 
 			var gotCallback func(context.Context) (oauth.Auth, error)
-			var expectedMechanism sasl.Mechanism
 			gotMechanism := saslMechanism(cfg, func(callback func(context.Context) (oauth.Auth, error)) sasl.Mechanism {
 				gotCallback = callback
-				expectedMechanism = oauth.Oauth(callback)
-				return expectedMechanism
+				return oauth.Oauth(callback)
 			})
-			require.NotNil(t, expectedMechanism, gotMechanism)
+			require.NotNil(t, gotCallback)
+			require.NotNil(t, gotMechanism)
 
 			gotSecret, err := gotCallback(t.Context())
 			require.NoError(t, err)
