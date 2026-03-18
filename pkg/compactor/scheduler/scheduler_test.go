@@ -27,10 +27,9 @@ func TestScheduler_LeaseJob_JobsLeasedMetric(t *testing.T) {
 	trackerMetrics := metrics.newTrackerMetricsForTenant("tenant1")
 	tracker := NewJobTracker(&NopJobPersister{}, "tenant1", clk, infiniteLeases, infiniteLeases, trackerMetrics)
 
-	// Add a pending compaction job to the tracker
-	tracker.pending.PushBack(NewTrackedCompactionJob("job1", &CompactionJob{}, 1, clk.Now()))
-	tracker.incompleteJobs["job1"] = tracker.pending.Back()
-	tracker.metrics.pendingJobs.Set(float64(tracker.pending.Len()))
+	// Trigger planning: a fresh tracker immediately enqueues a plan job.
+	_, err := tracker.Maintenance(time.Minute, false, true, time.Hour, 15*time.Minute)
+	require.NoError(t, err)
 
 	rotator.AddTenant("tenant1", tracker)
 
