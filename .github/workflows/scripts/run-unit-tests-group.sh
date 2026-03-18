@@ -54,16 +54,16 @@ if [[ -z "$GROUP_TESTS" ]]; then
     exit 1
 fi
 
-# The tests in the MQE benchmarks package load an enormous amount of data, which causes the
+# The tests in these MQE packages load an enormous amount of data, which causes the
 # race detector to consume a large amount of memory and run incredibly slowly on CI.
 # The same code is tested by other unit tests which run with the race detector enabled, so
-# don't bother running the benchmark tests with the race detector enabled.
+# don't bother running these tests with the race detector enabled.
 # If you add packages here, also update warmup-build-cache-unit-tests in the Makefile.
-SKIP_RACE_DETECTOR_PATTERN="^github.com/grafana/mimir/pkg/streamingpromql/benchmarks$"
+SKIP_RACE_DETECTOR_PATTERN="^github.com/grafana/mimir/pkg/streamingpromql/(benchmarks|comparisons|fuzz)$"
 
 echo "This group will run the following tests (race detector enabled unless stated otherwise):"
 echo "$GROUP_TESTS" | while read -r pkg; do
-    if echo "$pkg" | grep -q -e "$SKIP_RACE_DETECTOR_PATTERN"; then
+    if echo "$pkg" | grep -q --extended-regexp "$SKIP_RACE_DETECTOR_PATTERN"; then
         echo "$pkg (race detector disabled)"
     else
         echo "$pkg"
@@ -79,7 +79,7 @@ FAILED_PACKAGES=""
 MAX_ATTEMPTS=2
 
 for pkg in $GROUP_TESTS; do
-    if echo "$pkg" | grep -q -e "$SKIP_RACE_DETECTOR_PATTERN"; then
+    if echo "$pkg" | grep -q --extended-regexp "$SKIP_RACE_DETECTOR_PATTERN"; then
         RACE_FLAG=""
     else
         RACE_FLAG="-race"

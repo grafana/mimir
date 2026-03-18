@@ -96,6 +96,11 @@ type ingesterMetrics struct {
 
 	// Index lookup planning comparison outcomes.
 	indexLookupComparisonOutcomes *prometheus.CounterVec
+
+	// Quantify how much the projections optimization helps reduce labels sent to queriers.
+	originalLabelBytes  prometheus.Counter
+	reducedLabelBytes   prometheus.Counter
+	increasedLabelBytes prometheus.Counter
 }
 
 func newIngesterMetrics(
@@ -414,6 +419,19 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_index_lookup_planning_comparison_outcomes_total",
 			Help: "Total number of index lookup planning comparison outcomes when using mirrored chunk querier.",
 		}, []string{"outcome", "user"}),
+
+		originalLabelBytes: promauto.With(r).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingester_projection_original_label_bytes_total",
+			Help: "Total number of bytes of labels transferred to queriers.",
+		}),
+		reducedLabelBytes: promauto.With(r).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingester_projection_reduced_label_bytes_total",
+			Help: "Total number of bytes of labels saved using projections.",
+		}),
+		increasedLabelBytes: promauto.With(r).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingester_projection_increased_label_bytes_total",
+			Help: "Total number of bytes of labels increased using projections.",
+		}),
 	}
 
 	// Initialize expected rejected request labels

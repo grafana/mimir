@@ -64,7 +64,14 @@ groups:
                 An inconsistent runtime config file is used across cluster {{ $labels.cluster }}/{{ $labels.namespace }}.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirinconsistentruntimeconfig
           expr: |
-            count(count by(cluster, namespace, job, sha256) (cortex_runtime_config_hash)) without(sha256) > 1
+            count without(sha256) (
+                count by (cluster, namespace, job, sha256) (cortex_runtime_config_hash)
+                unless
+                # Don't include config hashes that are still being rolled out.
+                # Kubernetes configmap propagation can be slow,
+                # and in large cells we may deploy a new configmap when the previous one isn't still propagated everywhere.
+                (changes((count by (cluster, namespace, job, sha256) (cortex_runtime_config_hash))[10m:]) > 0)
+            )  > 1
           for: 1h
           labels:
             severity: critical
