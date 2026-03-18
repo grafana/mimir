@@ -12,12 +12,11 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
-
-	"github.com/grafana/dskit/services"
 
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"

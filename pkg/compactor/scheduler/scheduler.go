@@ -17,10 +17,9 @@ import (
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/codes"
-
-	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
