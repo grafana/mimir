@@ -242,7 +242,7 @@ func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpir
 	wasEmpty := jt.isPendingEmpty()
 
 	for _, j := range reviveJobs {
-		jt.trackFailure(j)
+		jt.maybeRecordFailure(j)
 		id := j.ID()
 		// This only needs to be checked in the revive case due to plan jobs never respecting a maximum number of leases
 		if id == planJobId {
@@ -254,7 +254,7 @@ func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpir
 	}
 
 	for _, j := range deleteJobs {
-		jt.trackFailure(j)
+		jt.maybeRecordFailure(j)
 		if j.IsLeased() {
 			jt.active.Remove(jt.incompleteJobs[j.ID()])
 			delete(jt.incompleteJobs, j.ID())
@@ -395,7 +395,7 @@ func (jt *JobTracker) CancelLease(id string, epoch int64) (canceled bool, became
 		jt.active.Remove(jt.incompleteJobs[j.ID()])
 		delete(jt.incompleteJobs, j.ID())
 	}
-	jt.trackFailure(j)
+	jt.maybeRecordFailure(j)
 
 	jt.metrics.activeJobs.Set(float64(jt.active.Len()))
 
@@ -406,9 +406,9 @@ func (jt *JobTracker) CancelLease(id string, epoch int64) (canceled bool, became
 	return true, wasEmpty && revive, nil
 }
 
-// trackFailure records a repeated failure metric if the job exceeded the failure threshold.
-func (jt *JobTracker) trackFailure(j TrackedJob) {
-	if jt.repeatedFailureReportThreshold != infiniteLeases && j.NumLeases() > jt.repeatedFailureReportThreshold {
+// maybeRecordFailure records a repeated failure metric if the job failed and exceeded the failure threshold.
+func (jt *JobTracker) maybeRecordFailure(j TrackedJob) {
+	if !j.IsComplete() && jt.repeatedFailureReportThreshold != infiniteLeases && j.NumLeases() > jt.repeatedFailureReportThreshold {
 		jt.metrics.repeatedJobFailures.Inc()
 	}
 }
