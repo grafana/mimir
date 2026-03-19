@@ -306,6 +306,7 @@ func (c *MemcachedClient) SetMultiAsync(data map[string][]byte, ttl time.Duratio
 func (c *MemcachedClient) SetAsync(key string, value []byte, ttl time.Duration) {
 	if c.config.MaxItemSize > 0 && len(value) > c.config.MaxItemSize {
 		c.metrics.skipped.WithLabelValues(opSet, reasonMaxItemSize).Inc()
+		level.Debug(c.logger).Log("msg", "failed to store item to cache because it is too large", "key", key, "size", len(value), "max_item_size", c.config.MaxItemSize)
 		return
 	}
 
@@ -320,7 +321,7 @@ func (c *MemcachedClient) SetAsync(key string, value []byte, ttl time.Duration) 
 
 	if err != nil {
 		c.metrics.skipped.WithLabelValues(opSet, reasonAsyncBufferFull).Inc()
-		level.Debug(c.logger).Log("msg", "failed to store item to cache because the async buffer is full", "err", err, "size", c.config.MaxAsyncBufferSize)
+		level.Debug(c.logger).Log("msg", "failed to store item to cache because the async buffer is full", "key", key, "err", err, "buffer_size", c.config.MaxAsyncBufferSize)
 	}
 }
 
@@ -455,12 +456,11 @@ func (c *MemcachedClient) Delete(ctx context.Context, key string) error {
 		err = c.client.Delete(key)
 	}
 	if err != nil {
-		level.Debug(c.logger).Log(
+		c.trackError(
+			opDelete, err,
 			"msg", "failed to delete cache item",
 			"key", key,
-			"err", err,
 		)
-		c.trackError(opDelete, err)
 	} else {
 		c.metrics.duration.WithLabelValues(opDelete).Observe(time.Since(start).Seconds())
 	}
@@ -494,13 +494,12 @@ func (c *MemcachedClient) incrDecr(ctx context.Context, key string, operation st
 		newValue, err = f()
 	}
 	if err != nil {
-		level.Debug(c.logger).Log(
+		c.trackError(
+			operation, err,
 			"msg", "failed to incr/decr cache item",
 			"operation", operation,
 			"key", key,
-			"err", err,
 		)
-		c.trackError(operation, err)
 	} else {
 		c.metrics.duration.WithLabelValues(operation).Observe(time.Since(start).Seconds())
 	}
@@ -520,12 +519,11 @@ func (c *MemcachedClient) Touch(ctx context.Context, key string, ttl time.Durati
 		err = c.client.Touch(key, int32(ttl.Seconds()))
 	}
 	if err != nil {
-		level.Debug(c.logger).Log(
+		c.trackError(
+			opTouch, err,
 			"msg", "failed to touch cache item",
 			"key", key,
-			"err", err,
 		)
-		c.trackError(opTouch, err)
 	} else {
 		c.metrics.duration.WithLabelValues(opTouch).Observe(time.Since(start).Seconds())
 	}
@@ -564,11 +562,10 @@ func (c *MemcachedClient) FlushAll(ctx context.Context) error {
 		err = c.client.FlushAll()
 	}
 	if err != nil {
-		level.Debug(c.logger).Log(
+		c.trackError(
+			opFlush, err,
 			"msg", "failed to flush all cache",
-			"err", err,
 		)
-		c.trackError(opFlush, err)
 	} else {
 		c.metrics.duration.WithLabelValues(opFlush).Observe(time.Since(start).Seconds())
 	}
@@ -587,14 +584,13 @@ func (c *MemcachedClient) storeOperation(ctx context.Context, key string, value 
 
 	err := f(ctx, key, value, ttl)
 	if err != nil {
-		level.Debug(c.logger).Log(
+		c.trackError(
+			operation, err,
 			"msg", "failed to store item to cache",
 			"operation", operation,
 			"key", key,
 			"sizeBytes", len(value),
-			"err", err,
 		)
-		c.trackError(operation, err)
 	}
 
 	c.metrics.dataSize.WithLabelValues(operation).Observe(float64(len(value)))
@@ -619,7 +615,9 @@ func (c *MemcachedClient) wait() error {
 	return nil
 }
 
-func (c *MemcachedClient) trackError(op string, err error) {
+func (c *MemcachedClient) trackError(op string, err error, msg ...interface{}) {
+	severity := level.DebugValue()
+
 	var connErr *memcache.ConnectTimeoutError
 	var netErr net.Error
 	switch {
@@ -639,9 +637,16 @@ func (c *MemcachedClient) trackError(op string, err error) {
 		c.metrics.failures.WithLabelValues(op, reasonMalformedKey).Inc()
 	case errors.Is(err, memcache.ErrServerError):
 		c.metrics.failures.WithLabelValues(op, reasonServerError).Inc()
+	case errors.Is(err, context.Canceled):
+		c.metrics.failures.WithLabelValues(op, reasonCanceled).Inc()
 	default:
 		c.metrics.failures.WithLabelValues(op, reasonOther).Inc()
+		severity = level.WarnValue() // Log unexpected kinds of errors with higher severity so they're easier to diagnose.
 	}
+
+	logger := log.WithPrefix(c.logger, level.Key(), severity)
+	logger = log.WithSuffix(logger, "err", err)
+	logger.Log(msg...)
 }
 
 func (c *MemcachedClient) getMultiBatched(ctx context.Context, keys []string, opts ...memcache.Option) ([]map[string]*memcache.Item, error) {
@@ -730,8 +735,10 @@ func (c *MemcachedClient) getMultiSingle(ctx context.Context, keys []string, opt
 	items, err = c.client.GetMulti(ctx, keys, opts...)
 
 	if err != nil {
-		level.Debug(c.logger).Log("msg", "failed to get multiple items from memcached", "err", err)
-		c.trackError(opGetMulti, err)
+		c.trackError(
+			opGetMulti, err,
+			"msg", "failed to get multiple items from memcached",
+		)
 	} else {
 		var total int
 		for _, it := range items {

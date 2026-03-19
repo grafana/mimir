@@ -8,7 +8,6 @@ import (
 	"flag"
 	"fmt"
 	"iter"
-	"math/bits"
 	"net/http"
 	"slices"
 	"strconv"
@@ -28,7 +27,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/prometheus/util/zeropool"
 	"github.com/thanos-io/objstore"
 	"github.com/twmb/franz-go/pkg/kgo"
 
@@ -37,6 +35,7 @@ import (
 	"github.com/grafana/mimir/pkg/usagetracker/trackerop"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -691,36 +690,9 @@ func (t *UsageTracker) TrackSeries(ctx context.Context, req *usagetrackerpb.Trac
 	return &usagetrackerpb.TrackSeriesResponse{RejectedSeriesHashes: rejected}, nil
 }
 
-// seriesHashesPools is a tiered pool of []uint64 slices bucketed by power-of-2
-// capacity. The caller passes a plain size; the pool rounds up to the next
-// power of 2 internally.
-const seriesPoolMaxBits = 20
-
-var seriesHashesPools [seriesPoolMaxBits + 1]zeropool.Pool[[]uint64]
-
-func getPooledSeriesSlice(n int) []uint64 {
-	if n == 0 {
-		return nil
-	}
-	tier := bits.Len(uint(n - 1))
-	if tier > seriesPoolMaxBits {
-		return make([]uint64, n)
-	}
-	size := 1 << tier
-	s := seriesHashesPools[tier].Get()
-	if cap(s) < size {
-		return make([]uint64, n, size)
-	}
-	return s[:n]
-}
-
-func putPooledSeriesSlice(s []uint64) {
-	tier := bits.TrailingZeros(uint(cap(s)))
-	if tier > seriesPoolMaxBits {
-		return
-	}
-	seriesHashesPools[tier].Put(s[:0])
-}
+var seriesHashesPool = pool.NewBucketedPool[[]uint64](1<<20, func(size int) []uint64 {
+	return make([]uint64, 0, size)
+})
 
 type mergedUser struct {
 	userID       string
@@ -758,7 +730,7 @@ func iterMergedUsers(users []*usagetrackerpb.TrackSeriesBatchUser) iter.Seq[merg
 				total += len(users[k].SeriesHashes)
 			}
 
-			s := getPooledSeriesSlice(total)
+			s := seriesHashesPool.Get(total)[:total]
 			off := 0
 			for k := i; k < j; k++ {
 				copy(s[off:], users[k].SeriesHashes)
@@ -766,10 +738,10 @@ func iterMergedUsers(users []*usagetrackerpb.TrackSeriesBatchUser) iter.Seq[merg
 			}
 
 			if !yield(mergedUser{userID: userID, seriesHashes: s}) {
-				putPooledSeriesSlice(s)
+				seriesHashesPool.Put(s)
 				return
 			}
-			putPooledSeriesSlice(s)
+			seriesHashesPool.Put(s)
 			i = j
 		}
 	}

@@ -27,6 +27,7 @@ const (
 	reasonTimeout         = "request-timeout"
 	reasonServerError     = "server-error"
 	reasonNetworkError    = "network-error"
+	reasonCanceled        = "canceled"
 	reasonOther           = "other"
 
 	labelCacheName           = "name"
@@ -88,6 +89,7 @@ func newClientMetrics(reg prometheus.Registerer) *clientMetrics {
 		cm.failures.WithLabelValues(op, reasonNotStored)
 		cm.failures.WithLabelValues(op, reasonServerError)
 		cm.failures.WithLabelValues(op, reasonNetworkError)
+		cm.failures.WithLabelValues(op, reasonCanceled)
 		cm.failures.WithLabelValues(op, reasonOther)
 	}
 
