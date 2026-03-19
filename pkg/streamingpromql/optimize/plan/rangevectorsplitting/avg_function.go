@@ -149,7 +149,7 @@ func avgOverTimeCombine(pieces []AvgOverTimeIntermediate, _ int64, _ int64, emit
 				prevAvgPart.CounterResetHint = incrementalAvgH.CounterResetHint
 
 				if compensationH != nil {
-					compensationH.Mul(q)
+					compensationH.Mul(countH / totalCnt)
 				}
 
 				var err error
