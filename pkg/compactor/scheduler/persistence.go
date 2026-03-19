@@ -13,7 +13,7 @@ import (
 func jobPersistenceManagerFactory(cfg Config, logger log.Logger) (JobPersistenceManager, error) {
 	switch cfg.PersistenceType {
 	case "bbolt":
-		return openBboltJobPersistenceManager(cfg.BboltDir, cfg.BboltShardCount, logger)
+		return openBboltJobPersistenceManager(cfg.Bbolt.Dir, cfg.Bbolt.ShardCount, logger)
 	case "none":
 		return &NopJobPersistenceManager{}, nil
 	default:

@@ -18,8 +18,10 @@ func TestJobPersistenceManagerFactory(t *testing.T) {
 		"bbolt persistence": {
 			cfg: Config{
 				PersistenceType: "bbolt",
-				BboltDir:        t.TempDir(),
-				BboltShardCount: 4,
+				Bbolt: BboltConfig{
+					Dir:        t.TempDir(),
+					ShardCount: 4,
+				},
 			},
 			expectError: false,
 		},

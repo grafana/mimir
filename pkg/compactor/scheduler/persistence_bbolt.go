@@ -4,6 +4,7 @@ package scheduler
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -28,6 +29,26 @@ const (
 	// metadataKey is the key within the metadata bucket that holds the PersistenceMetadata protobuf.
 	metadataKey = "metadata"
 )
+
+type BboltConfig struct {
+	Dir        string `yaml:"dir" category:"experimental"`
+	ShardCount int    `yaml:"shard_count" category:"experimental"`
+}
+
+func (cfg *BboltConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	f.StringVar(&cfg.Dir, prefix+".dir", "./data-compactor-scheduler", "The directory where bbolt shard database files are stored for the compactor scheduler.")
+	f.IntVar(&cfg.ShardCount, prefix+".shard-count", 16, "The target number of bbolt database shards for the compactor scheduler.")
+}
+
+func (cfg *BboltConfig) Validate(prefix string) error {
+	if cfg.Dir == "" {
+		return errors.New(prefix + ".dir must be set")
+	}
+	if cfg.ShardCount < 1 {
+		return errors.New(prefix + ".shard-count must be at least 1")
+	}
+	return nil
+}
 
 type BboltJobPersister struct {
 	db     *bbolt.DB
