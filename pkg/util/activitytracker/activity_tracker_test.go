@@ -70,6 +70,7 @@ func checkActivitiesInFile(t *testing.T, file string, expectedActivities []strin
 	var activities []string
 	for ix := range entries {
 		assert.WithinDuration(t, referenceTime, entries[ix].Timestamp, timeDelta)
+		assert.Greater(t, entries[ix].HeapAllocAtInsert, uint64(0))
 		activities = append(activities, entries[ix].Activity)
 	}
 
