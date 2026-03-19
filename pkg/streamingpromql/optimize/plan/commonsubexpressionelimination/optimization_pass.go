@@ -298,10 +298,14 @@ func (e *OptimizationPass) groupPathsForFirstIteration(paths []path, subsetSelec
 		// If the difference is 0 we use the sum of the matchers to identify the wider scope
 		aSum, bSum := 0, 0
 		for _, m := range aMatchers {
-			aSum += int(m.Type)
+			if m.Type == labels.MatchRegexp || m.Type == labels.MatchNotRegexp {
+				aSum++
+			}
 		}
 		for _, m := range bMatchers {
-			bSum += int(m.Type)
+			if m.Type == labels.MatchRegexp || m.Type == labels.MatchNotRegexp {
+				bSum++
+			}
 		}
 		return bSum - aSum
 	})
@@ -1007,9 +1011,15 @@ func SelectorsAreDuplicateOrSubset(first, second []*core.LabelMatcher) (Selector
 }
 
 // innerMatcherIsSubsetOfOuterMatcher returns true if all label values matching inner also match outer.
-// Currently only handles the case where outer is MatchRegexp and inner is MatchEqual.
+// Handles the cases where outer is MatchRegexp or MatchNotRegexp and inner is MatchEqual.
 func innerMatcherIsSubsetOfOuterMatcher(outer, inner *core.LabelMatcher) bool {
-	if outer.Type != labels.MatchRegexp || inner.Type != labels.MatchEqual {
+	if inner.Type != labels.MatchEqual {
+		return false
+	}
+
+	switch outer.Type {
+	case labels.MatchRegexp, labels.MatchNotRegexp:
+	default:
 		return false
 	}
 
@@ -1017,6 +1027,10 @@ func innerMatcherIsSubsetOfOuterMatcher(outer, inner *core.LabelMatcher) bool {
 	if err != nil {
 		// We shouldn't have an invalid regex this far into parsing the query
 		return false
+	}
+
+	if outer.Type == labels.MatchNotRegexp {
+		return !m.Matches(inner.Value)
 	}
 
 	return m.Matches(inner.Value)
