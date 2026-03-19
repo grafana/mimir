@@ -30,8 +30,6 @@
             (time() - max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_compactor_last_successful_run_timestamp_seconds) > 60 * 60 * %(threshold_hours)d)
             and
             (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_compactor_last_successful_run_timestamp_seconds) > 0)
-            unless on(%(alert_aggregation_labels)s, %(per_instance_label)s)
-              cortex_compactor_info{mode="scheduler"}
           ||| % $._config { threshold_hours: alert.threshold_hours },
           labels: {
             severity: alert.severity,
@@ -53,9 +51,7 @@
           expr: |||
             # The "last successful run" metric is updated even if the compactor owns no tenants,
             # so this alert correctly doesn't fire if compactor has nothing to do.
-            (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_compactor_last_successful_run_timestamp_seconds) == 0)
-            unless on(%(alert_aggregation_labels)s, %(per_instance_label)s)
-              cortex_compactor_info{mode="scheduler"}
+            max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_compactor_last_successful_run_timestamp_seconds) == 0
           ||| % $._config,
           labels: {
             severity: alert.severity,
@@ -74,9 +70,7 @@
           // Alert if compactor failed to run 2 consecutive compactions excluding shutdowns.
           alert: $.alertName('CompactorNotRunningCompaction'),
           expr: |||
-            (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (increase(cortex_compactor_runs_failed_total{reason!="shutdown"}[2h])) >= 2)
-            unless on(%(alert_aggregation_labels)s, %(per_instance_label)s)
-              cortex_compactor_info{mode="scheduler"}
+            sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (increase(cortex_compactor_runs_failed_total{reason!="shutdown"}[2h])) >= 2
           ||| % $._config,
           labels: {
             severity: 'critical',

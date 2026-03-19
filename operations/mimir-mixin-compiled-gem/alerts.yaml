@@ -1105,8 +1105,6 @@ groups:
             (time() - max by(cluster, namespace, pod) (cortex_compactor_last_successful_run_timestamp_seconds) > 60 * 60 * 6)
             and
             (max by(cluster, namespace, pod) (cortex_compactor_last_successful_run_timestamp_seconds) > 0)
-            unless on(cluster, namespace, pod)
-              cortex_compactor_info{mode="scheduler"}
           for: 15m
           labels:
             reason: in-last-6h
@@ -1121,8 +1119,6 @@ groups:
             (time() - max by(cluster, namespace, pod) (cortex_compactor_last_successful_run_timestamp_seconds) > 60 * 60 * 24)
             and
             (max by(cluster, namespace, pod) (cortex_compactor_last_successful_run_timestamp_seconds) > 0)
-            unless on(cluster, namespace, pod)
-              cortex_compactor_info{mode="scheduler"}
           for: 15m
           labels:
             reason: in-last-24h
@@ -1134,9 +1130,7 @@ groups:
           expr: |
             # The "last successful run" metric is updated even if the compactor owns no tenants,
             # so this alert correctly doesn't fire if compactor has nothing to do.
-            (max by(cluster, namespace, pod) (cortex_compactor_last_successful_run_timestamp_seconds) == 0)
-            unless on(cluster, namespace, pod)
-              cortex_compactor_info{mode="scheduler"}
+            max by(cluster, namespace, pod) (cortex_compactor_last_successful_run_timestamp_seconds) == 0
           for: 6h
           labels:
             reason: since-startup
@@ -1148,9 +1142,7 @@ groups:
           expr: |
             # The "last successful run" metric is updated even if the compactor owns no tenants,
             # so this alert correctly doesn't fire if compactor has nothing to do.
-            (max by(cluster, namespace, pod) (cortex_compactor_last_successful_run_timestamp_seconds) == 0)
-            unless on(cluster, namespace, pod)
-              cortex_compactor_info{mode="scheduler"}
+            max by(cluster, namespace, pod) (cortex_compactor_last_successful_run_timestamp_seconds) == 0
           for: 12h
           labels:
             reason: since-startup
@@ -1160,9 +1152,7 @@ groups:
             message: GEM Compactor {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} failed to run 2 consecutive compactions.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactornotrunningcompaction
           expr: |
-            (sum by(cluster, namespace, pod) (increase(cortex_compactor_runs_failed_total{reason!="shutdown"}[2h])) >= 2)
-            unless on(cluster, namespace, pod)
-              cortex_compactor_info{mode="scheduler"}
+            sum by(cluster, namespace, pod) (increase(cortex_compactor_runs_failed_total{reason!="shutdown"}[2h])) >= 2
           labels:
             reason: consecutive-failures
             severity: critical
