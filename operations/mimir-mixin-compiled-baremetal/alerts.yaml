@@ -1237,9 +1237,9 @@ groups:
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactorschedulernotcompletingjobs
           expr: |
             sum by(cluster, namespace) (
-              increase(cortex_compactor_scheduler_jobs_completed_total[60m])
+              increase(cortex_compactor_scheduler_jobs_completed_total[6h])
             ) == 0
-          for: 1h
+          for: 30m
           labels:
             severity: critical
         - alert: MimirCompactorOOMKilled

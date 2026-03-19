@@ -217,13 +217,13 @@
         {
           // Alert if the scheduler is not completing any jobs.
           alert: $.alertName('CompactorSchedulerNotCompletingJobs'),
-          'for': '1h',
+          'for': '30m',
           expr: |||
             sum by(%(alert_aggregation_labels)s) (
               increase(cortex_compactor_scheduler_jobs_completed_total[%(range_interval)s])
             ) == 0
           ||| % $._config {
-            range_interval: $.alertRangeInterval(60),
+            range_interval: '6h',
           },
           labels: {
             severity: 'critical',
