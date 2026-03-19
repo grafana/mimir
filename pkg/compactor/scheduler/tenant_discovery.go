@@ -126,10 +126,8 @@ func (s *TenantDiscoverer) discoverTenants(ctx context.Context) error {
 			err := tracker.persister.Drop()
 			if err != nil {
 				level.Warn(logger).Log("msg", "failed removing tenant bucket from compactor scheduler", "err", err)
-				if ok {
-					// Preserve 1:1 with rotator and knownTenants
-					s.rotator.AddTenant(tenant, tracker)
-				}
+				// Preserve 1:1 with rotator and knownTenants
+				s.rotator.AddTenant(tenant, tracker)
 				continue
 			}
 			delete(s.knownTenants, tenant)
