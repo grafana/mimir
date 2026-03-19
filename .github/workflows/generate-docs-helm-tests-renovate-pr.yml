@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   prepare:
-    if: github.event.pull_request.user.login == 'renovate[bot]'
+    if: github.event.pull_request.user.login == 'renovate-sh-app[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
