@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/codes"
 
@@ -48,6 +49,7 @@ type Config struct {
 	UserDiscoveryBackoff                        backoff.Config `yaml:"user_discovery_backoff" category:"experimental"`
 	PersistenceType                             string         `yaml:"persistence_type" category:"experimental"`
 	BboltPath                                   string         `yaml:"bbolt_db_path" category:"experimental"`
+	RepeatedFailureReportThreshold              int            `yaml:"repeated_failure_report_threshold" category:"experimental"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
@@ -60,6 +62,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.TenantDiscoveryInterval, "compactor-scheduler.tenant-discovery-interval", 10*time.Minute, "The duration of time between bucket listings to discover new tenants.")
 	f.StringVar(&cfg.PersistenceType, "compactor-scheduler.persistence-type", "bbolt", "The type of persistence the compactor scheduler should use. Valid values: none, bbolt")
 	f.StringVar(&cfg.BboltPath, "compactor-scheduler.bbolt.db-path", "bbolt_1.db", "The path to the bbolt database file for the compactor scheduler.")
+	f.IntVar(&cfg.RepeatedFailureReportThreshold, "compactor-scheduler.repeated-failure-report-threshold", 2, "The number of times a job can fail before a repeated failure is recorded. 0 for no limit.")
 	cfg.UserDiscoveryBackoff.RegisterFlagsWithPrefix("compactor-scheduler", f)
 }
 
@@ -78,6 +81,9 @@ func (cfg *Config) Validate() error {
 	}
 	if cfg.TenantDiscoveryInterval <= 0 {
 		return errors.New("compactor-scheduler.tenant-discovery-interval must be positive")
+	}
+	if cfg.RepeatedFailureReportThreshold < 0 {
+		return errors.New("compactor-scheduler.repeated-failure-report-threshold must be non-negative")
 	}
 	if cfg.PersistenceType == "bbolt" {
 		if cfg.BboltPath == "" {
@@ -117,11 +123,22 @@ func NewCompactorScheduler(
 		return nil, err
 	}
 
-	// TODO: This will need to be moved for testing
 	bkt, err := bucket.NewClient(context.Background(), storageCfg.Bucket, "compactor-scheduler", logger, registerer)
 	if err != nil {
 		return nil, err
 	}
+
+	return newCompactorScheduler(compactorCfg, cfg, allowList, bkt, jpm, metrics, logger)
+}
+
+func newCompactorScheduler(
+	compactorCfg compactor.Config,
+	cfg Config,
+	allowList *util.AllowList,
+	bkt objstore.Bucket,
+	jpm JobPersistenceManager,
+	metrics *schedulerMetrics,
+	logger log.Logger) (*Scheduler, error) {
 
 	rotator := NewRotator(
 		cfg.LeaseDuration,
@@ -156,11 +173,10 @@ func NewCompactorScheduler(
 	scheduler.Service = svc
 
 	return scheduler, nil
-
 }
 
 func (s *Scheduler) createJobTracker(tenant string, jp JobPersister) *JobTracker {
-	return NewJobTracker(jp, tenant, s.clock, s.cfg.MaxLeases, s.metrics.newTrackerMetricsForTenant(tenant))
+	return NewJobTracker(jp, tenant, s.clock, s.cfg.MaxLeases, s.cfg.RepeatedFailureReportThreshold, s.metrics.newTrackerMetricsForTenant(tenant))
 }
 
 func (s *Scheduler) start(ctx context.Context) error {
@@ -281,6 +297,7 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 			return nil, errNotRunning
 		}
 	}
+	s.metrics.jobsCompleted.WithLabelValues(jobTypePlan).Inc()
 	return &compactorschedulerpb.PlannedJobsResponse{}, nil
 }
 
@@ -364,6 +381,7 @@ func (s *Scheduler) UpdateCompactionJob(ctx context.Context, req *compactorsched
 			return nil, errFailedCompletingJob
 		}
 		if removed {
+			s.metrics.jobsCompleted.WithLabelValues(jobTypeCompaction).Inc()
 			level.Info(logger).Log("msg", "compaction job completed")
 			return &compactorschedulerpb.UpdateJobResponse{}, nil
 		}

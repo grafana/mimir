@@ -47,6 +47,7 @@
 * [FEATURE] Ingest storage: Add `-ingest-storage.kafka.sasl-mechanism` flag supporting more ways to authenticate with Kafka. #14307 #14344 #14540
 * [FEATURE] Ingest storage: Add `-ingest-storage.kafka.tls*` flags to connect to Kafka using TLS. #14550
 * [FEATURE] MQE: Add experimental support for splitting and caching intermediate results for functions over range vectors in instant queries. #13472 #14479 #14506 #14499 #14517 #14536 #14614 #14645
+* [ENHANCEMENT] Query-frontend: Add support for blocking queries exceeding a time range duration with `time_range_longer_than`. #14609
 * [ENHANCEMENT] Memberlist: Add experimental propagation delay tracker to measure gossip propagation delay across the memberlist cluster. Enable with `-memberlist.propagation-delay-tracker.enabled=true`. #14312 #14406
 * [ENHANCEMENT] Compactor: Add 0-100% jitter to the first compaction interval to spread compactions when multiple compactors start simultaneously. #14280
 * [ENHANCEMENT] Compactor, Store-gateway: Remove experimental setting `-compactor.upload-sparse-index-headers` and always upload sparse index-headers. This improves lazy loading performance in the store-gateway. #13089 #13882
@@ -117,7 +118,7 @@
 * [ENHANCEMENT] Compactor: If compaction fails because the result block would exceed the size limit for its postings offsets table, symbol table, or index, mark input blocks for no-compaction to avoid blocking future compactor runs. #13876 #14466 #14482
 * [ENHANCEMENT] Query-frontend: add support for `range()` duration expression. #13931
 * [ENHANCEMENT] Add experimental flag `common.instrument-reference-leaks-percentage` to leaked references to gRPC buffers. #13609 #14083
-* [ENHANCEMENT] Querier: Add experimental flag `-querier.mimir-query-engine.enable-projection-pushdown` to enable an MQE optimization pass for reducing data transferred between queriers and the storage layer. #14006 #14132 #14239 #14241 #14326
+* [ENHANCEMENT] Querier: Add experimental flag `-querier.mimir-query-engine.enable-projection-pushdown` to enable an MQE optimization pass for reducing data transferred between queriers and the storage layer. #14006 #14132 #14239 #14241 #14326 #14720
 * [ENHANCEMENT] MQE: Default to enabling the "eliminate deduplicate and merge" optimization pass via `-querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge`. #14172
 * [ENHANCEMENT] Ingester: Reduce likelihood of ingestion being paused while idle TSDB compaction is in progress. #13978
 * [ENHANCEMENT] Ingester: Extend `cortex_ingester_tsdb_forced_compactions_in_progress` metric to report a value of 1 when there's an idle or forced TSDB head compaction in progress. #13979
@@ -152,7 +153,9 @@
 * [ENHANCEMENT] Store-gateway: Add experimental flag `blocks-storage.bucket-store.partitioner-max-gap-bytes-chunks` to specify the gap size for the chunks partitioner. #14649
 * [ENHANCEMENT] Compactor: Add expermental `-compactor.first-level-compaction-ooo-wait-period` to configure a separate compaction wait period for out-of-order blocks. It's an analogue of `-compactor.first-level-compaction-wait-period`, which currently ignores out-of-order blocks. #14627
 * [ENHANCEMENT] HA: Deduplicate per sample instead of per batch. #13665
-* [ENHANCEMENT] Usage-tracker: Improve performance of TrackSeriesBatch by preprocessing input data. #14702
+* [ENHANCEMENT] Usage-tracker: Improve performance of TrackSeriesBatch by preprocessing input data. #14702 #14734
+* [ENHANCEMENT] MQE: Improve per-query memory consumption limit enforcement in histogram function evaluations. #14691
+* [ENHANCEMENT] Usage-tracker: Improve performance by using a special shard grouping algorithm. #14715
 * [BUGFIX] Distributor: Fix race condition where usage-tracker partition ring may not be initialized before the distributor service starts, causing `usage-tracker partition ring is required` error on startup. #14675
 * [BUGFIX] Mimir: Fix false positive in filesystem path overlap detection when one path is a string prefix of another but not an ancestor directory. #14426
 * [BUGFIX] Build: Fixed config descriptor generation to correctly handle custom field types without CLI flags. #14632
@@ -267,6 +270,7 @@
 * [ENHANCEMENT] Dashboards: Change the "Rules" panel in the "Mimir / Reads resources" dashboard to use a stacked visualization. #14707
 * [ENHANCEMENT] Dashboards: Split the "All series" panel in the Tenants dashboard into "Active series" and "Owned & in-memory series" panels, and added the active series limit. #14648
 * [ENHANCEMENT] Dashboards: Add "In memory series" panel to experimental "Mimir / Block-builder" dashboard. #14700
+* [ENHANCEMENT] Alerts: Make `MimirInconsistentRuntimeConfig` alert less flaky when performing multiple configuration changes in a row in a large Kubernetes cluster. #14743
 * [BUGFIX] Dashboards: Fix issue where throughput dashboard panels would group all gRPC requests that resulted in a status containing an underscore into one series with no name. #13184
 * [BUGFIX] Dashboards: Filter out 0s from `max_series` limit on Writes Resources > Ingester > In-memory series panel. #13419
 * [BUGFIX] Dashboards: Fix issue where the "Tenant gateway requests" panels on Tenants dashboard would show data from all components. #13940

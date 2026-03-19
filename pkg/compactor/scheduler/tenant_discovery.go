@@ -21,16 +21,17 @@ import (
 type TenantDiscoverer struct {
 	services.Service
 
-	logger               log.Logger
-	metrics              *schedulerMetrics
-	clock                clock.Clock
-	allowedTenants       *util.AllowList
-	bkt                  objstore.Bucket
-	jpm                  JobPersistenceManager
-	userDiscoveryBackoff backoff.Config
-	rotator              *Rotator
-	maxLeases            int
-	knownTenants         map[string]struct{}
+	logger                         log.Logger
+	metrics                        *schedulerMetrics
+	clock                          clock.Clock
+	allowedTenants                 *util.AllowList
+	bkt                            objstore.Bucket
+	jpm                            JobPersistenceManager
+	userDiscoveryBackoff           backoff.Config
+	rotator                        *Rotator
+	maxLeases                      int
+	repeatedFailureReportThreshold int
+	knownTenants                   map[string]struct{}
 }
 
 func NewTenantDiscoverer(
@@ -42,16 +43,17 @@ func NewTenantDiscoverer(
 	metrics *schedulerMetrics,
 	logger log.Logger) *TenantDiscoverer {
 	s := &TenantDiscoverer{
-		logger:               logger,
-		metrics:              metrics,
-		clock:                clock.New(),
-		allowedTenants:       allowList,
-		bkt:                  bkt,
-		jpm:                  jpm,
-		userDiscoveryBackoff: cfg.UserDiscoveryBackoff,
-		rotator:              rotator,
-		maxLeases:            cfg.MaxLeases,
-		knownTenants:         make(map[string]struct{}),
+		logger:                         logger,
+		metrics:                        metrics,
+		clock:                          clock.New(),
+		allowedTenants:                 allowList,
+		bkt:                            bkt,
+		jpm:                            jpm,
+		userDiscoveryBackoff:           cfg.UserDiscoveryBackoff,
+		rotator:                        rotator,
+		maxLeases:                      cfg.MaxLeases,
+		repeatedFailureReportThreshold: cfg.RepeatedFailureReportThreshold,
+		knownTenants:                   make(map[string]struct{}),
 	}
 	s.Service = services.NewTimerService(cfg.TenantDiscoveryInterval, s.start, s.iter, nil)
 	return s
@@ -106,7 +108,7 @@ func (s *TenantDiscoverer) discoverTenants(ctx context.Context) error {
 				level.Warn(s.logger).Log("msg", "failed initializing tenant", "user", tenant, "err", err)
 				continue
 			}
-			tracker := NewJobTracker(persister, tenant, s.clock, s.maxLeases, s.metrics.newTrackerMetricsForTenant(tenant))
+			tracker := NewJobTracker(persister, tenant, s.clock, s.maxLeases, s.repeatedFailureReportThreshold, s.metrics.newTrackerMetricsForTenant(tenant))
 			s.rotator.AddTenant(tenant, tracker)
 			s.knownTenants[tenant] = struct{}{}
 		}

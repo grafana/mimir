@@ -180,7 +180,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
         {
           alert: $.alertName('InconsistentRuntimeConfig'),
           expr: |||
-            count(count by(%(alert_aggregation_labels)s, %(per_job_label)s, sha256) (cortex_runtime_config_hash)) without(sha256) > 1
+            count without(sha256) (
+                count by (%(alert_aggregation_labels)s, %(per_job_label)s, sha256) (cortex_runtime_config_hash)
+                unless
+                # Don't include config hashes that are still being rolled out.
+                # Kubernetes configmap propagation can be slow,
+                # and in large cells we may deploy a new configmap when the previous one isn't still propagated everywhere.
+                (changes((count by (%(alert_aggregation_labels)s, %(per_job_label)s, sha256) (cortex_runtime_config_hash))[10m:]) > 0)
+            )  > 1
           ||| % $._config,
           'for': '1h',
           labels: {
