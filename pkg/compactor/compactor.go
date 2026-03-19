@@ -371,7 +371,7 @@ func newMultitenantCompactor(
 ) (*MultitenantCompactor, error) {
 	var (
 		mode string
-		// dedicated registerers for mode-specific metrics
+		// used to register metrics conditionally for each mode
 		standaloneReg prometheus.Registerer
 		schedulerReg  prometheus.Registerer
 	)
