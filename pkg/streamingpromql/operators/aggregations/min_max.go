@@ -7,7 +7,6 @@ package aggregations
 
 import (
 	"math"
-	"unsafe"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -121,5 +120,3 @@ func (g *MinMaxAggregationGroup) Close(memoryConsumptionTracker *limiter.MemoryC
 	types.Float64SlicePool.Put(&g.floatValues, memoryConsumptionTracker)
 	types.BoolSlicePool.Put(&g.floatPresent, memoryConsumptionTracker)
 }
-
-func (g *MinMaxAggregationGroup) StructSize() uint64 { return uint64(unsafe.Sizeof(*g)) }

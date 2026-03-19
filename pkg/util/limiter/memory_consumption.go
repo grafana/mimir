@@ -73,7 +73,6 @@ const (
 	SeriesGroupPairSlices
 	BucketGroupPointerSlices
 	GroupPointerSlices
-	InnerGroupPointerSlices
 	AggregationGroupStructs
 	memoryConsumptionSourceCount = AggregationGroupStructs + 1
 )
@@ -128,8 +127,6 @@ func (s MemoryConsumptionSource) String() string {
 		return "[]*functions.bucketGroup"
 	case GroupPointerSlices:
 		return "[]*aggregations.group"
-	case InnerGroupPointerSlices:
-		return "[]*aggregations.group (inner series)"
 	case AggregationGroupStructs:
 		return "aggregation group structs"
 	default:

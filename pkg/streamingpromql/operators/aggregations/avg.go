@@ -7,7 +7,6 @@ package aggregations
 
 import (
 	"math"
-	"unsafe"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql"
@@ -363,5 +362,3 @@ func (g *AvgAggregationGroup) Close(memoryConsumptionTracker *limiter.MemoryCons
 		g.histogramCounterResetTracker = nil
 	}
 }
-
-func (g *AvgAggregationGroup) StructSize() uint64 { return uint64(unsafe.Sizeof(*g)) }

@@ -95,16 +95,6 @@ var groupPointerSlicePool = types.NewLimitingBucketedPool(
 	true, nil, nil,
 )
 
-// innerGroupPointerSlicePool is defined locally for the same reason as groupPointerSlicePool above.
-var innerGroupPointerSlicePool = types.NewLimitingBucketedPool(
-	pool.NewBucketedPool(types.MaxExpectedSeriesPerResult, func(size int) []*group {
-		return make([]*group, 0, size)
-	}),
-	limiter.InnerGroupPointerSlices,
-	groupPointerSize,
-	true, nil, nil,
-)
-
 func (a *Aggregation) ExpressionPosition() posrange.PositionRange {
 	return a.expressionPosition
 }
@@ -239,7 +229,7 @@ type Aggregator struct {
 
 	metricNames             *operators.MetricNames
 	currentSeriesIndex      int
-	aggregationGroupFactory AggregationGroupFactory
+	aggregationGroupFactory *AggregationGroupFactory
 	emitAnnotationFunc      types.EmitAnnotationFunc
 	innerExpressionPosition posrange.PositionRange
 
@@ -309,7 +299,7 @@ func (a *Aggregator) ComputeGroups(innerSeries []types.SeriesMetadata) ([]types.
 	groupLabelsBytesFunc := a.groupLabelsBytesFunc()
 	groupLabelsFunc := a.groupLabelsFunc()
 	var err error
-	a.remainingInnerSeriesToGroup, err = innerGroupPointerSlicePool.Get(len(innerSeries), a.MemoryConsumptionTracker)
+	a.remainingInnerSeriesToGroup, err = groupPointerSlicePool.Get(len(innerSeries), a.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
@@ -321,14 +311,13 @@ func (a *Aggregator) ComputeGroups(innerSeries []types.SeriesMetadata) ([]types.
 		if !groupExists {
 			g.labels = groupLabelsFunc(series.Labels)
 			g.group = groupPool.Get()
-			g.group.aggregation = a.aggregationGroupFactory()
+			g.group.aggregation = a.aggregationGroupFactory.Create()
 			g.group.remainingSeriesCount = 0
 			g.dropName = series.DropName
 
 			// Note that we only accumulate the aggregation struct size. The group comes from a pool where it's allocation
 			// has already been made and is re-used.
-			cost := g.group.aggregation.StructSize()
-			if err := a.MemoryConsumptionTracker.IncreaseMemoryConsumption(cost, limiter.AggregationGroupStructs); err != nil {
+			if err := a.MemoryConsumptionTracker.IncreaseMemoryConsumption(a.aggregationGroupFactory.StructSize(), limiter.AggregationGroupStructs); err != nil {
 				return nil, err
 			}
 
@@ -446,8 +435,7 @@ func (a *Aggregator) ComputeNextOutputSeries() (types.InstantVectorSeriesData, e
 		a.haveEmittedMixedFloatsAndHistogramsWarning = true
 	}
 
-	cost := thisGroup.aggregation.StructSize()
-	a.MemoryConsumptionTracker.DecreaseMemoryConsumption(cost, limiter.AggregationGroupStructs)
+	a.MemoryConsumptionTracker.DecreaseMemoryConsumption(a.aggregationGroupFactory.StructSize(), limiter.AggregationGroupStructs)
 	thisGroup.aggregation.Close(a.MemoryConsumptionTracker)
 	groupPool.Put(thisGroup)
 
@@ -476,14 +464,13 @@ func (a *Aggregator) Finalize() {
 	}
 
 	for _, g := range a.remainingGroups[a.nextGroupIdx:] {
-		cost := g.aggregation.StructSize()
-		a.MemoryConsumptionTracker.DecreaseMemoryConsumption(cost, limiter.AggregationGroupStructs)
+		a.MemoryConsumptionTracker.DecreaseMemoryConsumption(a.aggregationGroupFactory.StructSize(), limiter.AggregationGroupStructs)
 		g.aggregation.Close(a.MemoryConsumptionTracker)
 		groupPool.Put(g)
 	}
 
 	groupPointerSlicePool.Put(&a.remainingGroups, a.MemoryConsumptionTracker)
-	innerGroupPointerSlicePool.Put(&a.remainingInnerSeriesToGroup, a.MemoryConsumptionTracker)
+	groupPointerSlicePool.Put(&a.remainingInnerSeriesToGroup, a.MemoryConsumptionTracker)
 	a.nextGroupIdx = 0
 	a.nextInnerSeriesIdx = 0
 }

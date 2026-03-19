@@ -6,8 +6,6 @@
 package aggregations
 
 import (
-	"unsafe"
-
 	"github.com/prometheus/prometheus/promql"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -90,5 +88,3 @@ func (g *CountGroupAggregationGroup) ComputeOutputSeries(_ types.ScalarData, tim
 func (g *CountGroupAggregationGroup) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
 	types.Float64SlicePool.Put(&g.values, memoryConsumptionTracker)
 }
-
-func (g *CountGroupAggregationGroup) StructSize() uint64 { return uint64(unsafe.Sizeof(*g)) }
