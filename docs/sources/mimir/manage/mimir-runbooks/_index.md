@@ -940,6 +940,36 @@ How to **investigate**:
 - If the alert `MimirCompactorHasRunOutOfDiskSpace` has fired as well, then investigate that issue first. If there is no disk space available, the compactor will fail to write sparse headers to local disk prior to upload.
 - Look for any errors in the compactor logs, focusing on logs with `method=indexheader.NewStreamBinaryReader`.
 
+### MimirCompactorSchedulerUnreachable
+
+This alert fires when a compactor running in scheduler mode has not contacted the scheduler in the last 15 minutes.
+
+How to **investigate**:
+
+- Check the compactor logs for any errors related to the scheduler connection.
+- Verify the scheduler is running and healthy.
+
+### MimirCompactorSchedulerRepeatedJobFailure
+
+This alert fires when the compactor scheduler has recorded repeated failures for the same job.
+
+How to **investigate**:
+
+- Check the compactor scheduler logs for jobs that are failing repeatedly.
+- Check the compactor (worker) logs for any errors related to the failing jobs.
+
+### MimirCompactorSchedulerNotCompletingJobs
+
+This alert fires when the compactor scheduler has not completed any jobs in the last 30 minutes.
+
+How to **investigate**:
+
+- Verify that compactors are running and able to contact the scheduler.
+- Check the compactor scheduler logs for errors.
+- Check the compactor logs for errors.
+- Check the scheduler's active and pending jobs metrics to see if jobs are being scheduled but not taken up by workers.
+- If there are pending jobs, check whether they are just taking a long time to complete because they are big, or there is some issue preventing them from being completed. In the former case, the alert threshold may need to be adjusted.
+
 ### MimirCompactorOOMKilled
 
 This alert fires when compactor pods have been terminated due to Out of Memory (OOM) conditions.

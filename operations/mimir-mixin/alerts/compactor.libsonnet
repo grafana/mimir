@@ -30,6 +30,8 @@
             (time() - max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_compactor_last_successful_run_timestamp_seconds) > 60 * 60 * %(threshold_hours)d)
             and
             (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_compactor_last_successful_run_timestamp_seconds) > 0)
+            unless on(%(alert_aggregation_labels)s, %(per_instance_label)s)
+              cortex_compactor_info{mode="scheduler"}
           ||| % $._config { threshold_hours: alert.threshold_hours },
           labels: {
             severity: alert.severity,
@@ -51,7 +53,9 @@
           expr: |||
             # The "last successful run" metric is updated even if the compactor owns no tenants,
             # so this alert correctly doesn't fire if compactor has nothing to do.
-            max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_compactor_last_successful_run_timestamp_seconds) == 0
+            (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_compactor_last_successful_run_timestamp_seconds) == 0)
+            unless on(%(alert_aggregation_labels)s, %(per_instance_label)s)
+              cortex_compactor_info{mode="scheduler"}
           ||| % $._config,
           labels: {
             severity: alert.severity,
@@ -70,7 +74,9 @@
           // Alert if compactor failed to run 2 consecutive compactions excluding shutdowns.
           alert: $.alertName('CompactorNotRunningCompaction'),
           expr: |||
-            sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (increase(cortex_compactor_runs_failed_total{reason!="shutdown"}[2h])) >= 2
+            (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (increase(cortex_compactor_runs_failed_total{reason!="shutdown"}[2h])) >= 2)
+            unless on(%(alert_aggregation_labels)s, %(per_instance_label)s)
+              cortex_compactor_info{mode="scheduler"}
           ||| % $._config,
           labels: {
             severity: 'critical',
@@ -163,6 +169,73 @@
           },
           annotations: {
             message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s is failing to build sparse index headers' % $._config,
+          },
+        },
+        {
+          // Alert if a scheduler-mode worker has not contacted the scheduler recently.
+          alert: $.alertName('CompactorSchedulerUnreachable'),
+          'for': '5m',
+          expr: |||
+            (time() - cortex_compactor_last_scheduler_contact_timestamp_seconds > 15 * 60)
+            and
+            (cortex_compactor_last_scheduler_contact_timestamp_seconds > 0)
+          |||,
+          labels: {
+            severity: 'critical',
+            reason: 'not-contacted-recently',
+          },
+          annotations: {
+            message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has not contacted the scheduler in the last 15 minutes.' % $._config,
+          },
+        },
+        {
+          // Alert if a scheduler-mode worker has never contacted the scheduler since startup.
+          alert: $.alertName('CompactorSchedulerUnreachable'),
+          'for': '15m',
+          expr: |||
+            (cortex_compactor_last_scheduler_contact_timestamp_seconds == 0)
+          |||,
+          labels: {
+            severity: 'critical',
+            reason: 'since-startup',
+          },
+          annotations: {
+            message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has not contacted the scheduler since startup.' % $._config,
+          },
+        },
+        {
+          // Alert if the scheduler has recorded repeated job failures.
+          alert: $.alertName('CompactorSchedulerRepeatedJobFailure'),
+          expr: |||
+            sum by(%(alert_aggregation_labels)s) (
+              increase(cortex_compactor_scheduler_repeated_job_failures_total[%(range_interval)s])
+            ) > 0
+          ||| % $._config {
+            range_interval: $.alertRangeInterval(1),
+          },
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: '%(product)s Compactor scheduler in %(alert_aggregation_variables)s has jobs failing repeatedly.' % $._config,
+          },
+        },
+        {
+          // Alert if the scheduler is not completing any jobs.
+          alert: $.alertName('CompactorSchedulerNotCompletingJobs'),
+          'for': '15m',
+          expr: |||
+            sum by(%(alert_aggregation_labels)s) (
+              increase(cortex_compactor_scheduler_jobs_completed_total[%(range_interval)s])
+            ) == 0
+          ||| % $._config {
+            range_interval: $.alertRangeInterval(30),
+          },
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: '%(product)s Compactor scheduler in %(alert_aggregation_variables)s is not completing any jobs.' % $._config,
           },
         },
       ] + [
