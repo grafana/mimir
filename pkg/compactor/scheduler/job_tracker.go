@@ -242,6 +242,7 @@ func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpir
 	wasEmpty := jt.isPendingEmpty()
 
 	for _, j := range reviveJobs {
+		jt.trackFailure(j)
 		id := j.ID()
 		// This only needs to be checked in the revive case due to plan jobs never respecting a maximum number of leases
 		if id == planJobId {
@@ -253,6 +254,7 @@ func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpir
 	}
 
 	for _, j := range deleteJobs {
+		jt.trackFailure(j)
 		if j.IsLeased() {
 			jt.active.Remove(jt.incompleteJobs[j.ID()])
 			delete(jt.incompleteJobs, j.ID())
@@ -274,8 +276,7 @@ func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpir
 // computeLeaseExpiration iterates through all the active jobs known by the JobTracker to find ones that have expired leases.
 // If a job has an expired lease and has been active under the maximum number of times, it will be returned to the front of the queue.
 // Otherwise a job with an expired lease will be removed from the tracker.
-// This function only computes what needs to change without persisting or modifying in-memory state,
-// but it does update the repeated failure metric if applicable.
+// This function only computes what needs to change without persisting or modifying in-memory state.
 // A write lock must be held in order to call this function.
 func (jt *JobTracker) computeLeaseExpiration(leaseDuration time.Duration, now time.Time) (reviveJobs, deleteJobs []TrackedJob) {
 	var e, next *list.Element
@@ -286,7 +287,7 @@ func (jt *JobTracker) computeLeaseExpiration(leaseDuration time.Duration, now ti
 		j := e.Value.(TrackedJob)
 		if now.Sub(j.StatusTime()) > leaseDuration {
 			// Can the job be returned to the queue?
-			if jt.trackFailure(j) {
+			if jt.canRetry(j) {
 				// Copy before modifying
 				jj := j.CopyBase()
 				jj.ClearLease()
@@ -365,7 +366,7 @@ func (jt *JobTracker) CancelLease(id string, epoch int64) (canceled bool, became
 	}
 
 	wasEmpty := jt.isPendingEmpty()
-	revive := jt.trackFailure(j)
+	revive := jt.canRetry(j)
 	if revive {
 		// Copy the value, don't want to leave a modification if the write fails
 		jj := j.CopyBase()
@@ -394,6 +395,7 @@ func (jt *JobTracker) CancelLease(id string, epoch int64) (canceled bool, became
 		jt.active.Remove(jt.incompleteJobs[j.ID()])
 		delete(jt.incompleteJobs, j.ID())
 	}
+	jt.trackFailure(j)
 
 	jt.metrics.activeJobs.Set(float64(jt.active.Len()))
 
@@ -404,12 +406,15 @@ func (jt *JobTracker) CancelLease(id string, epoch int64) (canceled bool, became
 	return true, wasEmpty && revive, nil
 }
 
-// trackFailure takes a currently leased job and records a repeated failure
-// if the job exceeded the failure threshold, and returns whether the job can be retried.
-func (jt *JobTracker) trackFailure(j TrackedJob) bool {
+// trackFailure records a repeated failure metric if the job exceeded the failure threshold.
+func (jt *JobTracker) trackFailure(j TrackedJob) {
 	if jt.repeatedFailureReportThreshold != infiniteLeases && j.NumLeases() > jt.repeatedFailureReportThreshold {
 		jt.metrics.repeatedJobFailures.Inc()
 	}
+}
+
+// canRetry returns whether a failed leased job can be retried.
+func (jt *JobTracker) canRetry(j TrackedJob) bool {
 	return j.ID() == planJobId || jt.maxLeases == infiniteLeases || j.NumLeases() < jt.maxLeases
 }
 
