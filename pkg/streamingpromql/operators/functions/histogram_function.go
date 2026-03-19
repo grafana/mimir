@@ -51,6 +51,7 @@ type HistogramFunction struct {
 
 	seriesGroupPairs []seriesGroupPair // Each series belongs to 2 groups. One with the `le` label, and one without. Sometimes, these are the same group.
 	remainingGroups  []*bucketGroup    // One entry per group, in the order we want to return them.
+	nextGroupIdx     int               // Index into remainingGroups for the next group to return.
 }
 
 var _ types.InstantVectorOperator = &HistogramFunction{}
@@ -81,6 +82,37 @@ type seriesGroupPair struct {
 var bucketGroupPool = zeropool.New(func() *bucketGroup {
 	return &bucketGroup{}
 })
+
+const (
+	seriesGroupPairSize    = uint64(unsafe.Sizeof(seriesGroupPair{}))
+	bucketGroupPointerSize = uint64(unsafe.Sizeof((*bucketGroup)(nil)))
+)
+
+// seriesGroupPairPool is defined locally and not added to the collection of pools provided by the types package
+// because it is being used for seriesGroupPair which is not an exported type.
+// If seriesGroupPair were to be exported then this pool should be moved into limiting_pool.go
+var seriesGroupPairPool = types.NewLimitingBucketedPool(
+	pool.NewBucketedPool(types.MaxExpectedSeriesPerResult, func(size int) []seriesGroupPair {
+		return make([]seriesGroupPair, 0, size)
+	}),
+	limiter.SeriesGroupPairSlices,
+	seriesGroupPairSize,
+	true, // clearOnGet: zero out stale pointers and strings from previous use
+	nil,
+	nil,
+)
+
+// bucketGroupPointerSlicePool is defined locally for the same reason as seriesGroupPairPool above.
+var bucketGroupPointerSlicePool = types.NewLimitingBucketedPool(
+	pool.NewBucketedPool(types.MaxExpectedSeriesPerResult, func(size int) []*bucketGroup {
+		return make([]*bucketGroup, 0, size)
+	}),
+	limiter.BucketGroupPointerSlices,
+	bucketGroupPointerSize,
+	true, // clearOnGet: zero out stale pointers from previous use
+	nil,
+	nil,
+)
 
 var pointBucketPool = types.NewLimitingBucketedPool(
 	pool.NewBucketedPool(types.MaxExpectedPointsPerSeries, func(size int) []promql.Buckets {
@@ -196,7 +228,11 @@ func (h *HistogramFunction) SeriesMetadata(ctx context.Context, matchers types.M
 
 	h.innerSeriesMetricNames.CaptureMetricNames(innerSeries)
 	groups := map[string]groupWithLabels{}
-	h.seriesGroupPairs = make([]seriesGroupPair, len(innerSeries))
+	h.seriesGroupPairs, err = seriesGroupPairPool.Get(len(innerSeries), h.memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+	h.seriesGroupPairs = h.seriesGroupPairs[:len(innerSeries)]
 	b := make([]byte, 0, 1024)
 	lb := labels.NewBuilder(labels.EmptyLabels())
 
@@ -245,7 +281,10 @@ func (h *HistogramFunction) SeriesMetadata(ctx context.Context, matchers types.M
 		return nil, err
 	}
 
-	h.remainingGroups = make([]*bucketGroup, 0, len(groups))
+	h.remainingGroups, err = bucketGroupPointerSlicePool.Get(len(groups), h.memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
 	for _, g := range groups {
 		var labelsMetadata types.SeriesMetadata
 		if h.enableDelayedNameRemoval {
@@ -270,14 +309,13 @@ func (h *HistogramFunction) SeriesMetadata(ctx context.Context, matchers types.M
 }
 
 func (h *HistogramFunction) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
-	if len(h.remainingGroups) == 0 {
+	if h.nextGroupIdx >= len(h.remainingGroups) {
 		// No more groups left.
 		return types.InstantVectorSeriesData{}, types.EOS
 	}
 
-	// Determine next group to return
-	thisGroup := h.remainingGroups[0]
-	h.remainingGroups = h.remainingGroups[1:]
+	thisGroup := h.remainingGroups[h.nextGroupIdx]
+	h.nextGroupIdx++
 	defer func() {
 		// Reset the group before returning to the pool
 		thisGroup.lastInputSeriesIdx = 0
@@ -510,6 +548,10 @@ func (h *HistogramFunction) AfterPrepare(ctx context.Context) error {
 }
 
 func (h *HistogramFunction) Finalize(ctx context.Context) error {
+	seriesGroupPairPool.Put(&h.seriesGroupPairs, h.memoryConsumptionTracker)
+	bucketGroupPointerSlicePool.Put(&h.remainingGroups, h.memoryConsumptionTracker)
+	h.nextGroupIdx = 0
+
 	if err := h.f.Finalize(ctx); err != nil {
 		return err
 	}

@@ -38,7 +38,7 @@ if [[ -z "$TOTAL" ]]; then
 fi
 
 # List all tests.
-ALL_TESTS=$(go test -tags=requires_docker,stringlabels -list 'Test.*' "${INTEGRATION_DIR}" | grep -E '^Test.*' | sort)
+ALL_TESTS=$(go test -tags=stringlabels -list 'Test.*' "${INTEGRATION_DIR}" | grep -E '^Test.*' | sort)
 
 # Filter tests by the requested group.
 GROUP_TESTS=$(echo "$ALL_TESTS" | awk -v TOTAL="$TOTAL" -v INDEX="$INDEX" 'NR % TOTAL == INDEX')
@@ -61,7 +61,7 @@ export MIMIR_ENV_VARS_JSON='{"GORACE": "halt_on_error=1"}'
 # compilation/linking work on every invocation, adding significant overhead across many tests.
 # If you change the build tags here, also update warmup-build-cache-integration-tests in the Makefile.
 TEST_BINARY="${INTEGRATION_DIR}/integration.test"
-go test -tags=requires_docker,stringlabels -c -o "$TEST_BINARY" "${INTEGRATION_DIR}"
+go test -tags=stringlabels -c -o "$TEST_BINARY" "${INTEGRATION_DIR}"
 if [[ $? -ne 0 ]]; then
     echo "ERROR: Failed to compile integration test binary."
     exit 1
