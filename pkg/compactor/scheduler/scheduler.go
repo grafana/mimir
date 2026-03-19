@@ -235,7 +235,6 @@ func (s *Scheduler) LeaseJob(ctx context.Context, req *compactorschedulerpb.Leas
 		return nil, errFailedLeasingJob
 	}
 	if ok {
-		s.metrics.jobsLeased.Inc()
 		level.Info(s.logger).Log("msg", "leased job", "user", response.Spec.Tenant, "job_type", response.Spec.JobType.String(), "id", response.Key.Id, "epoch", response.Key.Epoch, "worker", req.WorkerId)
 		return response, nil
 	}
@@ -298,6 +297,7 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 			return nil, errNotRunning
 		}
 	}
+	s.metrics.jobsCompleted.WithLabelValues(jobTypePlan).Inc()
 	return &compactorschedulerpb.PlannedJobsResponse{}, nil
 }
 
@@ -381,6 +381,7 @@ func (s *Scheduler) UpdateCompactionJob(ctx context.Context, req *compactorsched
 			return nil, errFailedCompletingJob
 		}
 		if removed {
+			s.metrics.jobsCompleted.WithLabelValues(jobTypeCompaction).Inc()
 			level.Info(logger).Log("msg", "compaction job completed")
 			return &compactorschedulerpb.UpdateJobResponse{}, nil
 		}

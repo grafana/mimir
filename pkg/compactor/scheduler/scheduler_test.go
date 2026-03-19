@@ -23,50 +23,76 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-func TestScheduler_LeaseJob_JobsLeasedMetric(t *testing.T) {
+func TestScheduler_JobsCompletedMetric(t *testing.T) {
 	bkt := objstore.NewInMemBucket()
 	require.NoError(t, bkt.Upload(context.Background(), "tenant1/placeholder", strings.NewReader("")))
 
 	scheduler, reg := newTestScheduler(t, bkt, newTestSchedulerConfig())
 	ctx := context.Background()
 
-	// Trigger maintenance so tenants' plan jobs are enqueued.
+	assertCompleted := func(msg string, planCount, compactionCount int) {
+		t.Helper()
+		require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+			# HELP cortex_compactor_scheduler_jobs_completed_total Total number of jobs successfully completed by workers.
+			# TYPE cortex_compactor_scheduler_jobs_completed_total counter
+			cortex_compactor_scheduler_jobs_completed_total{job_type="compaction"} %d
+			cortex_compactor_scheduler_jobs_completed_total{job_type="plan"} %d
+		`, compactionCount, planCount)), "cortex_compactor_scheduler_jobs_completed_total"), msg)
+	}
+
+	// Trigger maintenance so tenant's plan job is enqueued.
 	scheduler.rotator.Maintenance(ctx, false, true)
 
-	t.Run("no calls", func(t *testing.T) {
-		require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
-			# HELP cortex_compactor_scheduler_jobs_leased_total Total number of jobs leased to workers by the scheduler.
-			# TYPE cortex_compactor_scheduler_jobs_leased_total counter
-			cortex_compactor_scheduler_jobs_leased_total 0
-		`), "cortex_compactor_scheduler_jobs_leased_total"))
+	leaseResp, err := scheduler.LeaseJob(ctx, &compactorschedulerpb.LeaseJobRequest{WorkerId: "worker1"})
+	require.NoError(t, err)
+	require.NotNil(t, leaseResp.Key)
+	_, err = scheduler.UpdatePlanJob(ctx, &compactorschedulerpb.UpdatePlanJobRequest{
+		Tenant: leaseResp.Spec.Tenant,
+		Key:    leaseResp.Key,
+		Update: compactorschedulerpb.UPDATE_TYPE_ABANDON,
 	})
+	require.NoError(t, err)
+	assertCompleted("plan job abandoned", 0, 0)
 
-	t.Run("increments when job is leased", func(t *testing.T) {
-		req := &compactorschedulerpb.LeaseJobRequest{WorkerId: "worker1"}
-		resp, err := scheduler.LeaseJob(ctx, req)
-		require.NoError(t, err)
-		require.NotNil(t, resp.Key)
+	// Re-trigger maintenance to re-enqueue the plan job after abandonment.
+	scheduler.rotator.Maintenance(ctx, false, true)
 
-		require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
-			# HELP cortex_compactor_scheduler_jobs_leased_total Total number of jobs leased to workers by the scheduler.
-			# TYPE cortex_compactor_scheduler_jobs_leased_total counter
-			cortex_compactor_scheduler_jobs_leased_total 1
-		`), "cortex_compactor_scheduler_jobs_leased_total"))
+	leaseResp, err = scheduler.LeaseJob(ctx, &compactorschedulerpb.LeaseJobRequest{WorkerId: "worker1"})
+	require.NoError(t, err)
+	require.NotNil(t, leaseResp.Key)
+	_, err = scheduler.PlannedJobs(ctx, &compactorschedulerpb.PlannedJobsRequest{
+		Key:    leaseResp.Key,
+		Tenant: leaseResp.Spec.Tenant,
+		Jobs: []*compactorschedulerpb.PlannedCompactionJob{
+			// Two compaction jobs offered: one to be abandoned, one to be completed below.
+			{Id: "compaction-job-1", Job: &compactorschedulerpb.CompactionJob{BlockIds: [][]byte{[]byte("block-a")}}},
+			{Id: "compaction-job-2", Job: &compactorschedulerpb.CompactionJob{BlockIds: [][]byte{[]byte("block-b")}}},
+		},
 	})
+	require.NoError(t, err)
+	assertCompleted("plan job completed", 1, 0)
 
-	t.Run("does not increment when no job is available", func(t *testing.T) {
-		// We've already leased the only job we had, so we expect no new leases
-		req := &compactorschedulerpb.LeaseJobRequest{WorkerId: "worker2"}
-		resp, err := scheduler.LeaseJob(ctx, req)
-		require.NoError(t, err)
-		require.Nil(t, resp.Key)
-
-		require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
-			# HELP cortex_compactor_scheduler_jobs_leased_total Total number of jobs leased to workers by the scheduler.
-			# TYPE cortex_compactor_scheduler_jobs_leased_total counter
-			cortex_compactor_scheduler_jobs_leased_total 1
-		`), "cortex_compactor_scheduler_jobs_leased_total"))
+	leaseResp, err = scheduler.LeaseJob(ctx, &compactorschedulerpb.LeaseJobRequest{WorkerId: "worker1"})
+	require.NoError(t, err)
+	require.NotNil(t, leaseResp.Key)
+	_, err = scheduler.UpdateCompactionJob(ctx, &compactorschedulerpb.UpdateCompactionJobRequest{
+		Tenant: leaseResp.Spec.Tenant,
+		Key:    leaseResp.Key,
+		Update: compactorschedulerpb.UPDATE_TYPE_ABANDON,
 	})
+	require.NoError(t, err)
+	assertCompleted("compaction job abandoned", 1, 0)
+
+	leaseResp, err = scheduler.LeaseJob(ctx, &compactorschedulerpb.LeaseJobRequest{WorkerId: "worker1"})
+	require.NoError(t, err)
+	require.NotNil(t, leaseResp.Key)
+	_, err = scheduler.UpdateCompactionJob(ctx, &compactorschedulerpb.UpdateCompactionJobRequest{
+		Tenant: leaseResp.Spec.Tenant,
+		Key:    leaseResp.Key,
+		Update: compactorschedulerpb.UPDATE_TYPE_COMPLETE,
+	})
+	require.NoError(t, err)
+	assertCompleted("compaction job completed", 1, 1)
 }
 
 func TestScheduler_RepeatedJobFailures(t *testing.T) {
