@@ -206,3 +206,5 @@ func (q *QuantileAggregationGroup) Close(memoryConsumptionTracker *limiter.Memor
 
 	qGroupPool.Put(&q.qGroups, memoryConsumptionTracker)
 }
+
+func (q *QuantileAggregationGroup) StructSize() uint64 { return uint64(unsafe.Sizeof(*q)) }

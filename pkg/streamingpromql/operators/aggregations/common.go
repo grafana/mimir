@@ -26,6 +26,11 @@ type AggregationGroup interface {
 	// Close releases any resources held by the group.
 	// Close is guaranteed to be called at most once per group.
 	Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker)
+
+	// StructSize returns the size in bytes of the concrete struct, not including pool-backed backing arrays
+	// (which are tracked separately via the memory consumption tracker).
+	// This is used to track the fixed per-group allocation cost.
+	StructSize() uint64
 }
 
 type AggregationGroupFactory func() AggregationGroup

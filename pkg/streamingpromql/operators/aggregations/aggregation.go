@@ -325,6 +325,13 @@ func (a *Aggregator) ComputeGroups(innerSeries []types.SeriesMetadata) ([]types.
 			g.group.remainingSeriesCount = 0
 			g.dropName = series.DropName
 
+			// Note that we only accumulate the aggregation struct size. The group comes from a pool where it's allocation
+			// has already been made and is re-used.
+			cost := g.group.aggregation.StructSize()
+			if err := a.MemoryConsumptionTracker.IncreaseMemoryConsumption(cost, limiter.AggregationGroupStructs); err != nil {
+				return nil, err
+			}
+
 			groups[string(groupLabelsString)] = g
 		}
 
@@ -439,6 +446,8 @@ func (a *Aggregator) ComputeNextOutputSeries() (types.InstantVectorSeriesData, e
 		a.haveEmittedMixedFloatsAndHistogramsWarning = true
 	}
 
+	cost := thisGroup.aggregation.StructSize()
+	a.MemoryConsumptionTracker.DecreaseMemoryConsumption(cost, limiter.AggregationGroupStructs)
 	thisGroup.aggregation.Close(a.MemoryConsumptionTracker)
 	groupPool.Put(thisGroup)
 
@@ -467,6 +476,8 @@ func (a *Aggregator) Finalize() {
 	}
 
 	for _, g := range a.remainingGroups[a.nextGroupIdx:] {
+		cost := g.aggregation.StructSize()
+		a.MemoryConsumptionTracker.DecreaseMemoryConsumption(cost, limiter.AggregationGroupStructs)
 		g.aggregation.Close(a.MemoryConsumptionTracker)
 		groupPool.Put(g)
 	}
