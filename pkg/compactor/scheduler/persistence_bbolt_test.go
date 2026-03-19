@@ -202,7 +202,9 @@ func TestShardForTenant(t *testing.T) {
 	t.Run("multiple shards map within range", func(t *testing.T) {
 		shards := 16
 		for _, tenant := range tenants {
-			require.LessOrEqual(t, shardForTenant(tenant, shards), shards)
+			shard := shardForTenant(tenant, shards)
+			require.GreaterOrEqual(t, shard, 0)
+			require.Less(t, shard, shards)
 		}
 	})
 }

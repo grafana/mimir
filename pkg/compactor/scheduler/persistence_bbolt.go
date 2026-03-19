@@ -341,8 +341,8 @@ func (m *BboltJobPersistenceManager) Close() error {
 }
 
 // shardForTenant returns the shard index for the given tenant
-func shardForTenant(tenant string, shardCount int) int32 {
-	return jumpHash(xxhash.Sum64String(tenant), shardCount)
+func shardForTenant(tenant string, shardCount int) int {
+	return int(jumpHash(xxhash.Sum64String(tenant), shardCount))
 }
 
 // jumpHash consistently chooses a hash bucket number in the range
@@ -644,7 +644,7 @@ func scanShardsForTenants(dbs []*bbolt.DB, targetCount int) (copyTargets [][]str
 				}
 				target, ok := tenantTarget[tenant]
 				if !ok {
-					target = int(shardForTenant(tenant, targetCount))
+					target = shardForTenant(tenant, targetCount)
 					tenantTarget[tenant] = target
 				}
 				if i == target {
