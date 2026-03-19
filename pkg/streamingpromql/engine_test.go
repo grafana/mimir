@@ -1460,7 +1460,7 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 	// sumGroupOverhead is the per-group struct overhead for sum() queries: SumAggregationGroup (136 bytes).
 	// The group container struct comes from a zeropool and is not charged to the query.
 	// This is charged to limiter.AggregationGroupStructs when each group is first created in ComputeGroups.
-	sumGroupOverhead := uint64(136)
+	sumGroupOverhead := uint64(unsafe.SizeOf(aggregations.SumAggregationGroup{}))
 
 	// sumGroupPointerSlicesOverhead is the combined memory of the two pool-allocated []*group slices
 	// used during sum() aggregation over 5 input series:
