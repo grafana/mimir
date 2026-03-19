@@ -803,7 +803,7 @@ github.com/grafana/alerting/templates/email
 github.com/grafana/alerting/templates/gomplate
 github.com/grafana/alerting/templates/mimir
 github.com/grafana/alerting/utils
-# github.com/grafana/dskit v0.0.0-20260318051422-6eb5ee5d450a
+# github.com/grafana/dskit v0.0.0-20260319050051-803e3aef21e3
 ## explicit; go 1.25.7
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/ballast

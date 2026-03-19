@@ -39,13 +39,14 @@ const (
 )
 
 type clientMetrics struct {
-	requests   prometheus.Counter
-	hits       prometheus.Counter
-	operations *prometheus.CounterVec
-	failures   *prometheus.CounterVec
-	skipped    *prometheus.CounterVec
-	duration   *prometheus.HistogramVec
-	dataSize   *prometheus.HistogramVec
+	requests        prometheus.Counter
+	hits            prometheus.Counter
+	operations      *prometheus.CounterVec
+	failures        *prometheus.CounterVec
+	skipped         *prometheus.CounterVec
+	duration        *prometheus.HistogramVec
+	dataSize        *prometheus.HistogramVec
+	skippedDataSize *prometheus.HistogramVec
 }
 
 // newClientMetrics creates a new bundle of metrics about an instance of a cache client. Note
@@ -127,6 +128,7 @@ func newClientMetrics(reg prometheus.Registerer) *clientMetrics {
 		Buckets: []float64{
 			32, 256, 512, 1024, 32 * 1024, 256 * 1024, 512 * 1024, 1024 * 1024, 32 * 1024 * 1024, 256 * 1024 * 1024, 512 * 1024 * 1024,
 		},
+		NativeHistogramBucketFactor: 1.1,
 	},
 		[]string{"operation"},
 	)
@@ -134,6 +136,20 @@ func newClientMetrics(reg prometheus.Registerer) *clientMetrics {
 	cm.dataSize.WithLabelValues(opAdd)
 	cm.dataSize.WithLabelValues(opSet)
 	cm.dataSize.WithLabelValues(opCompareAndSwap)
+
+	cm.skippedDataSize = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name: "operation_skipped_data_size_bytes",
+		Help: "Tracks the size of data not stored in the cache because it exceeds the maximum size limit.",
+		Buckets: []float64{
+			32, 256, 512, 1024, 32 * 1024, 256 * 1024, 512 * 1024, 1024 * 1024, 32 * 1024 * 1024, 256 * 1024 * 1024, 512 * 1024 * 1024,
+		},
+		NativeHistogramBucketFactor: 1.1,
+	},
+		[]string{"operation"},
+	)
+	cm.skippedDataSize.WithLabelValues(opAdd)
+	cm.skippedDataSize.WithLabelValues(opSet)
+	cm.skippedDataSize.WithLabelValues(opCompareAndSwap)
 
 	return cm
 }
