@@ -14,6 +14,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -40,6 +41,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	mqetest "github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -1460,7 +1462,7 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 	// sumGroupOverhead is the per-group struct overhead for sum() queries: SumAggregationGroup (136 bytes).
 	// The group container struct comes from a zeropool and is not charged to the query.
 	// This is charged to limiter.AggregationGroupStructs when each group is first created in ComputeGroups.
-	sumGroupOverhead := uint64(unsafe.SizeOf(aggregations.SumAggregationGroup{}))
+	sumGroupOverhead := uint64(unsafe.Sizeof(aggregations.SumAggregationGroup{}))
 
 	// sumGroupPointerSlicesOverhead is the combined memory of the two pool-allocated []*group slices
 	// used during sum() aggregation over 5 input series:
@@ -1468,7 +1470,7 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 	//   - innerGroupPointerSlicePool: 5 input series → cap=8 after bucketed pool rounding → 8 pointers (64 bytes)
 	//
 	// types.HistogramPointerSize is used as a proxy for pointer size (8 bytes on 64-bit platforms).
-	sumGroupPointerSlicesOverhead := 9 * unsafe.SizeOf(uintptr(0))
+	sumGroupPointerSlicesOverhead := uint64(9 * unsafe.Sizeof(uintptr(0)))
 
 	testCases := map[string]struct {
 		expr                     string

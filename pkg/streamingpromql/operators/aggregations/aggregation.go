@@ -438,6 +438,7 @@ func (a *Aggregator) ComputeNextOutputSeries() (types.InstantVectorSeriesData, e
 	a.MemoryConsumptionTracker.DecreaseMemoryConsumption(a.aggregationGroupFactory.StructSize(), limiter.AggregationGroupStructs)
 	thisGroup.aggregation.Close(a.MemoryConsumptionTracker)
 	groupPool.Put(thisGroup)
+	a.remainingGroups[a.nextGroupIdx-1] = nil
 
 	return seriesData, nil
 }
