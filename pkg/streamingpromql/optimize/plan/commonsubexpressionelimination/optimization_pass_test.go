@@ -1727,6 +1727,48 @@ func TestSelectorsAreDuplicateOrSubset(t *testing.T) {
 				{Name: "a", Type: labels.MatchEqual, Value: "a"},
 			},
 		},
+		"regex: second is subset of first with c=a": {
+			firstSelector:  `{c=~"(a|b)"}`,
+			secondSelector: `{a="x", c="a"}`,
+			expectedResult: commonsubexpressionelimination.SubsetSelectors,
+			expectedSubsetMatchers: []*core.LabelMatcher{
+				{Name: "a", Type: labels.MatchEqual, Value: "x"},
+				{Name: "c", Type: labels.MatchEqual, Value: "a"},
+			},
+		},
+		"regex: second is not subset of first as c is not a": {
+			firstSelector:  `{a=~"(a|b)"}`,
+			secondSelector: `{c="a"}`,
+			expectedResult: commonsubexpressionelimination.NotDuplicateOrSubset,
+		},
+		"regex: second is not subset of first as a is not c": {
+			firstSelector:  `{c=~"(a|b)"}`,
+			secondSelector: `{a="a"}`,
+			expectedResult: commonsubexpressionelimination.NotDuplicateOrSubset,
+		},
+		"regex: second is not subset of first as first is negated": {
+			firstSelector:  `{a!~"(a|b)"}`,
+			secondSelector: `{a="a"}`,
+			expectedResult: commonsubexpressionelimination.NotDuplicateOrSubset,
+		},
+		"regex: second is subset of first via negation of first": {
+			firstSelector:  `{a!~"(a|b)"}`,
+			secondSelector: `{a="x"}`,
+			expectedResult: commonsubexpressionelimination.SubsetSelectors,
+			expectedSubsetMatchers: []*core.LabelMatcher{
+				{Name: "a", Type: labels.MatchEqual, Value: "x"},
+			},
+		},
+		"regex: second is not of first via negation of second": {
+			firstSelector:  `{a=~"(a|b)"}`,
+			secondSelector: `{a!="a"}`,
+			expectedResult: commonsubexpressionelimination.NotDuplicateOrSubset,
+		},
+		"regex: second is subset of first via double negation": {
+			firstSelector:  `{a!~"(a|b)"}`,
+			secondSelector: `{a!="a"}`,
+			expectedResult: commonsubexpressionelimination.NotDuplicateOrSubset,
+		},
 	}
 
 	for name, testCase := range testCases {
