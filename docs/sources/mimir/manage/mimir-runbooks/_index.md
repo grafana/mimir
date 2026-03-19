@@ -749,7 +749,7 @@ This alert fires when a Mimir compactor is not uploading any compacted blocks to
 
 How to **investigate**:
 
-- If the alert `MimirCompactorNotRunningCompaction` has fired as well, then investigate that issue first
+- If the alert `MimirCompactorNotRunningCompaction` has fired as well (standalone mode), or `MimirCompactorSchedulerNotCompletingJobs` (scheduler mode), then investigate that issue first
 - If the alert `MimirIngesterNotShippingBlocks` or `MimirIngesterNotShippingBlocksSinceStart` have fired as well, then investigate that issue first
 - Ensure ingesters are successfully shipping blocks to the storage
 - Look for any error in the compactor logs
