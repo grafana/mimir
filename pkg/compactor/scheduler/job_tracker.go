@@ -254,8 +254,8 @@ func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpir
 	}
 
 	for _, j := range deleteJobs {
-		jt.trackFailure(j)
 		if j.IsLeased() {
+			jt.trackFailure(j)
 			jt.active.Remove(jt.incompleteJobs[j.ID()])
 			delete(jt.incompleteJobs, j.ID())
 		}
