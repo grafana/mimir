@@ -35,7 +35,7 @@ func newSchedulerMetrics(reg prometheus.Registerer) *schedulerMetrics {
 		}, []string{"job_type"}),
 		repeatedJobFailures: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_compactor_scheduler_repeated_job_failures_total",
-			Help: "Total number of jobs that have failed more than the allowed number of times.",
+			Help: "Total number of failures for jobs that exceeded the repeated failure threshold.",
 		}, []string{"user"}),
 	}
 	// Pre-initialize job types labels so we get zeros instead of no data

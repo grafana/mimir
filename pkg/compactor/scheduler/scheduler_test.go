@@ -102,7 +102,7 @@ func TestScheduler_RepeatedJobFailures(t *testing.T) {
 	assertCounter := func(t *testing.T, reg *prometheus.Registry, expected int) {
 		t.Helper()
 		require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
-			# HELP cortex_compactor_scheduler_repeated_job_failures_total Total number of jobs that have failed more than the allowed number of times.
+			# HELP cortex_compactor_scheduler_repeated_job_failures_total Total number of failures for jobs that exceeded the repeated failure threshold.
 			# TYPE cortex_compactor_scheduler_repeated_job_failures_total counter
 			cortex_compactor_scheduler_repeated_job_failures_total{user="tenant1"} %d
 		`, expected)), "cortex_compactor_scheduler_repeated_job_failures_total"))
