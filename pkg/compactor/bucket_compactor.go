@@ -430,7 +430,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			Downsample:   block.ThanosDownsample{Resolution: job.Resolution()},
 			Source:       block.CompactorSource,
 			SegmentFiles: block.GetSegmentFiles(bdir),
-		}, nil)
+		})
 
 		if err != nil {
 			return fmt.Errorf("failed to finalize the block %s: %w", bdir, err)

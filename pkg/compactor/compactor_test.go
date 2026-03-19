@@ -1635,7 +1635,7 @@ func createCustomTSDBBlock(t *testing.T, bkt objstore.Bucket, userID string, ext
 		Labels: externalLabels,
 		Source: "test",
 	}
-	_, err = block.InjectThanosMeta(log.NewNopLogger(), filepath.Join(snapshotDir, blockID.String()), meta, nil)
+	_, err = block.InjectThanosMeta(log.NewNopLogger(), filepath.Join(snapshotDir, blockID.String()), meta)
 	require.NoError(t, err)
 
 	// Copy the block files to the bucket.

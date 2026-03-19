@@ -1124,7 +1124,7 @@ func uploadTestBlock(t testing.TB, tmpDir string, bkt objstore.Bucket, dataSetup
 	_, err = block.InjectThanosMeta(log.NewNopLogger(), filepath.Join(tmpDir, "tmp", id.String()), block.ThanosMeta{
 		Labels: labels.FromStrings("ext1", "1").Map(),
 		Source: block.TestSource,
-	}, nil)
+	})
 	assert.NoError(t, err)
 	_, err = block.Upload(context.Background(), logger, bkt, filepath.Join(tmpDir, "tmp", id.String()), nil)
 	assert.NoError(t, err)
@@ -1349,7 +1349,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 		series = append(series, bSeries...)
 		expectedQueriesBlocks = append(expectedQueriesBlocks, hintspb.Block{Id: id.String()})
 
-		meta, err := block.InjectThanosMeta(logger, filepath.Join(blockDir, id.String()), thanosMeta, nil)
+		meta, err := block.InjectThanosMeta(logger, filepath.Join(blockDir, id.String()), thanosMeta)
 		assert.NoError(t, err)
 
 		assert.NoError(t, meta.WriteToDir(logger, filepath.Join(blockDir, id.String())))
@@ -1716,7 +1716,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		blockDir := filepath.Join(tmpDir, "tmp")
 		id := createBlockFromHead(t, blockDir, h)
 
-		meta, err := block.InjectThanosMeta(log.NewNopLogger(), filepath.Join(blockDir, id.String()), thanosMeta, nil)
+		meta, err := block.InjectThanosMeta(log.NewNopLogger(), filepath.Join(blockDir, id.String()), thanosMeta)
 		assert.NoError(t, err)
 		_, err = block.Upload(context.Background(), logger, bkt, filepath.Join(blockDir, id.String()), nil)
 		assert.NoError(t, err)
@@ -1755,7 +1755,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		blockDir := filepath.Join(tmpDir, "tmp2")
 		id := createBlockFromHead(t, blockDir, h)
 
-		meta, err := block.InjectThanosMeta(log.NewNopLogger(), filepath.Join(blockDir, id.String()), thanosMeta, nil)
+		meta, err := block.InjectThanosMeta(log.NewNopLogger(), filepath.Join(blockDir, id.String()), thanosMeta)
 		assert.NoError(t, err)
 		_, err = block.Upload(context.Background(), logger, bkt, filepath.Join(blockDir, id.String()), nil)
 		assert.NoError(t, err)
@@ -2251,7 +2251,7 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 		Source: block.TestSource,
 	}
 
-	_, err = block.InjectThanosMeta(log.NewNopLogger(), filepath.Join(headOpts.ChunkDirRoot, blk.String()), thanosMeta, nil)
+	_, err = block.InjectThanosMeta(log.NewNopLogger(), filepath.Join(headOpts.ChunkDirRoot, blk.String()), thanosMeta)
 	assert.NoError(t, err)
 
 	// Create a bucket and upload the block there.
@@ -2542,7 +2542,7 @@ func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketS
 	assert.NoError(t, head2.Close())
 
 	for _, blockID := range []ulid.ULID{block1, block2} {
-		_, err := block.InjectThanosMeta(logger, filepath.Join(bktDir, blockID.String()), thanosMeta, nil)
+		_, err := block.InjectThanosMeta(logger, filepath.Join(bktDir, blockID.String()), thanosMeta)
 		assert.NoError(t, err)
 	}
 
