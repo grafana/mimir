@@ -93,7 +93,7 @@ message AvgOverTimeIntermediate {
   // Otherwise, it’s carrying the compensation for the sum.
   double compF = 5;
 
-  cortexpb.Histogram sumH = 6;
+  cortexpb.Histogram avgH = 6;
   int64 countH = 7;
   bool forceEmptyResult = 8;
 }

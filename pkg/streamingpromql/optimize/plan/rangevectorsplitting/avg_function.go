@@ -56,20 +56,23 @@ func avgOverTimeGenerate(step *types.RangeVectorStepData, emitAnnotation types.E
 	}
 
 	if haveHistograms {
-		h, err := functions.SumHistograms(hHead, hTail, emitAnnotation)
+		h, err := functions.AvgHistograms(hHead, hTail, emitAnnotation)
 		if err != nil {
-			return AvgOverTimeIntermediate{}, err
+			err = functions.NativeHistogramErrorToAnnotation(err, emitAnnotation)
+			// In case of schema incompatibility, the error was converted to annotation and empty result should be returned
+			// Save the flag to preserve the behavior on combine stage
+			if err == nil {
+				result.ForceEmptyResult = true
+			} else {
+				return AvgOverTimeIntermediate{}, err
+			}
 		}
 
-		// In case of schema incompatibility, the error was converted to annotation and empty result should be returned
-		if h == nil {
-			result.ForceEmptyResult = true
-			return result, nil
+		if h != nil {
+			protoH := mimirpb.FromFloatHistogramToHistogramProto(0, h)
+			result.AvgH = &protoH
+			result.CountH = int64(len(hHead)) + int64(len(hTail))
 		}
-
-		protoH := mimirpb.FromFloatHistogramToHistogramProto(0, h)
-		result.SumH = &protoH
-		result.CountH = int64(len(hHead)) + int64(len(hTail))
 	}
 
 	return result, nil
@@ -116,7 +119,7 @@ func avgOverTimeCombine(pieces []AvgOverTimeIntermediate, _ int64, _ int64, emit
 	sumF, compensationF, countF, incrementalAvgF := 0.0, 0.0, 0.0, 0.0
 	useIncrementalCalculation := false
 
-	var sumH, compensationH *histogram.FloatHistogram
+	var incrementalAvgH, compensationH *histogram.FloatHistogram
 	countH := 0.0
 	nhcbBoundsReconciledSeen := false
 
@@ -126,23 +129,47 @@ func avgOverTimeCombine(pieces []AvgOverTimeIntermediate, _ int64, _ int64, emit
 			return 0, false, nil, nil
 		}
 
-		if p.SumH != nil {
-			h := mimirpb.FromFloatHistogramProtoToFloatHistogram(p.SumH)
+		// Histograms are always combined incrementally using the weighted-average algorithm
+		if p.AvgH != nil {
+			h := mimirpb.FromFloatHistogramProtoToFloatHistogram(p.AvgH)
 
-			if sumH == nil {
-				sumH = h.Copy()
+			if incrementalAvgH == nil {
+				incrementalAvgH = h.Copy()
+				countH = float64(p.CountH)
 			} else {
-				var nhcbBoundsReconciled bool
+				pieceCnt := float64(p.CountH)
+				totalCnt := countH + pieceCnt
+
+				q := pieceCnt / totalCnt
+				pieceAvgPart := h.Copy().Mul(q)
+				prevAvgPart := incrementalAvgH.Copy().Mul(-q)
+				// Mul(-q) sets CounterResetHint to GaugeType due to negative factor,
+				// which would override incrementalAvgH's hint via adjustCounterReset inside KahanAdd.
+				// Restore the original hint.
+				prevAvgPart.CounterResetHint = incrementalAvgH.CounterResetHint
+
+				if compensationH != nil {
+					compensationH.Mul(q)
+				}
+
 				var err error
-				if compensationH, _, nhcbBoundsReconciled, err = sumH.KahanAdd(h, compensationH); err != nil {
+				var nhcbBoundsReconciled bool
+				if compensationH, _, nhcbBoundsReconciled, err = incrementalAvgH.KahanAdd(pieceAvgPart, compensationH); err != nil {
 					err = functions.NativeHistogramErrorToAnnotation(err, emitAnnotation)
 					return 0, false, nil, err
 				} else if nhcbBoundsReconciled {
 					nhcbBoundsReconciledSeen = true
 				}
-			}
 
-			countH += float64(p.CountH)
+				if compensationH, _, nhcbBoundsReconciled, err = incrementalAvgH.KahanAdd(prevAvgPart, compensationH); err != nil {
+					err = functions.NativeHistogramErrorToAnnotation(err, emitAnnotation)
+					return 0, false, nil, err
+				} else if nhcbBoundsReconciled {
+					nhcbBoundsReconciledSeen = true
+				}
+
+				countH = totalCnt
+			}
 		}
 
 		// There are two modes used to combine intermediate pieces depending on whether overflow has been encountered.
@@ -201,7 +228,7 @@ func avgOverTimeCombine(pieces []AvgOverTimeIntermediate, _ int64, _ int64, emit
 		}
 	}
 
-	if countF > 0 && sumH != nil {
+	if countF > 0 && incrementalAvgH != nil {
 		emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
 		return 0, false, nil, nil
 	}
@@ -218,15 +245,16 @@ func avgOverTimeCombine(pieces []AvgOverTimeIntermediate, _ int64, _ int64, emit
 		return (sumF + compensationF) / countF, true, nil, nil
 	}
 
-	if sumH != nil {
+	if incrementalAvgH != nil {
 		if compensationH != nil {
-			_, _, _, err := sumH.Add(compensationH)
+			_, _, _, err := incrementalAvgH.Add(compensationH)
+
 			if err != nil {
 				return 0, false, nil, err
 			}
 		}
 
-		return 0, false, sumH.Div(countH), nil
+		return 0, false, incrementalAvgH, nil
 	}
 
 	return 0, false, nil, nil
