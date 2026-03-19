@@ -66,6 +66,7 @@ import (
 	mimir_storage "github.com/grafana/mimir/pkg/storage"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -2472,6 +2473,7 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 
 	selectHints := initSelectHints(int64(from), int64(through))
 	selectHints = configSelectHintsWithShard(selectHints, shard)
+	selectHints = configSelectHintsWithProjections(selectHints, req.ProjectionInclude, req.ProjectionLabels)
 	// Disable chunks trimming, so that we don't have to rewrite chunks which have samples outside
 	// the requested from/through range. PromQL engine can handle it.
 	selectHints = configSelectHintsWithDisabledTrimming(selectHints)
@@ -2557,6 +2559,8 @@ func putChunkSeriesNode(sn *chunkSeriesNode) {
 }
 
 func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.ChunkQuerier, hints *storage.SelectHints, matchers []*labels.Matcher, stream client.Ingester_QueryStreamServer) (*chunkSeriesNode, int, error) {
+	spanlog := spanlogger.FromContext(ctx, i.logger)
+
 	// Series must be sorted so that they can be read by the querier in the order the PromQL engine expects.
 	ss := q.Select(ctx, true, hints, matchers...)
 	if ss.Err() != nil {
@@ -2564,6 +2568,22 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.Chunk
 	}
 
 	seriesInBatch := make([]client.QueryStreamSeries, 0, queryStreamBatchSize)
+
+	var (
+		projections *series.ProjectionLabels
+
+		// We keep track of the number of bytes used for the original labels
+		// and the number of bytes saved if we applied the projection optimization.
+		// This allows us to quantify the value of the optimization.
+		originalLabelBytes  uint64
+		reducedLabelBytes   uint64
+		increasedLabelBytes uint64
+	)
+
+	if hints.ProjectionInclude {
+		spanlog.DebugLog("msg", "applying projections to return subset of series labels", "labels", hints.ProjectionLabels)
+		projections = series.NewProjectionLabels(hints.ProjectionLabels)
+	}
 
 	// We retain the iterator factory returned by IteratorFactory() rather than the full storage.ChunkSeries,
 	// so that we don't hold references to labels or other series data longer than necessary.
@@ -2578,23 +2598,40 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.Chunk
 	seriesCount := 0
 
 	for ss.Next() {
-		series := ss.At()
+		cs := ss.At()
 
 		if len(lastSeriesNode.series) == chunkSeriesNodeSize {
 			newNode := getChunkSeriesNode()
 			lastSeriesNode.next = newNode
 			lastSeriesNode = newNode
 		}
-		lastSeriesNode.series = append(lastSeriesNode.series, series.IteratorFactory())
+		lastSeriesNode.series = append(lastSeriesNode.series, cs.IteratorFactory())
 		seriesCount++
 
-		chunkCount, err := series.ChunkCount()
+		chunkCount, err := cs.ChunkCount()
 		if err != nil {
 			return nil, 0, errors.Wrap(err, "getting ChunkSeries chunk count")
 		}
 
+		lbls := cs.Labels()
+
+		if hints.ProjectionInclude {
+			lblsSize := lbls.ByteSize()
+			originalLabelBytes += lblsSize
+
+			reduced := projections.Reduce(lbls)
+			// Estimate the size of the series hash label and value since we aren't generating
+			// series hash on ingest currently.
+			reducedSize := reduced.ByteSize() + uint64(len(series.HashLabelName)) + 42 /* 256-bit hash as base64 */
+			if reducedSize < lblsSize {
+				reducedLabelBytes += lblsSize - reducedSize
+			} else {
+				increasedLabelBytes += reducedSize - lblsSize
+			}
+		}
+
 		seriesInBatch = append(seriesInBatch, client.QueryStreamSeries{
-			Labels:     mimirpb.FromLabelsToLabelAdapters(series.Labels()),
+			Labels:     mimirpb.FromLabelsToLabelAdapters(lbls),
 			ChunkCount: int64(chunkCount),
 		})
 
@@ -2609,6 +2646,10 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.Chunk
 			seriesInBatch = seriesInBatch[:0]
 		}
 	}
+
+	i.metrics.originalLabelBytes.Add(float64(originalLabelBytes))
+	i.metrics.reducedLabelBytes.Add(float64(reducedLabelBytes))
+	i.metrics.increasedLabelBytes.Add(float64(increasedLabelBytes))
 
 	// Send any remaining series, and signal that there are no more.
 	err := client.SendQueryStream(stream, &client.QueryStreamResponse{
@@ -4488,6 +4529,15 @@ func configSelectHintsWithShard(hints *storage.SelectHints, shard *sharding.Shar
 
 func configSelectHintsWithDisabledTrimming(hints *storage.SelectHints) *storage.SelectHints {
 	hints.DisableTrimming = true
+	return hints
+}
+
+func configSelectHintsWithProjections(hints *storage.SelectHints, projectionInclude bool, projectionLabels []string) *storage.SelectHints {
+	if projectionInclude {
+		hints.ProjectionInclude = true
+		hints.ProjectionLabels = projectionLabels
+	}
+
 	return hints
 }
 
