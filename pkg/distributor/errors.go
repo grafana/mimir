@@ -298,27 +298,31 @@ var _ Error = requestRateLimitedError{}
 
 // ingesterPushError is an error used to represent a failed attempt to push to the ingester.
 type ingesterPushError struct {
-	message string
-	cause   mimirpb.ErrorCause
-	soft    bool
+	message         string
+	cause           mimirpb.ErrorCause
+	soft            bool
+	rejectedSamples int64
 }
 
 // newIngesterPushError creates an ingesterPushError error representing the given status object.
 func newIngesterPushError(stat *status.Status, ingesterID string) ingesterPushError {
 	errorCause := mimirpb.ERROR_CAUSE_UNKNOWN
 	softErr := false
+	var rejectedSamples int64
 	details := stat.Details()
 	if len(details) == 1 {
 		if errorDetails, ok := details[0].(*mimirpb.ErrorDetails); ok {
 			errorCause = errorDetails.GetCause()
 			softErr = errorDetails.GetSoft()
+			rejectedSamples = errorDetails.GetRejectedSamples()
 		}
 	}
 	message := fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, stat.Message())
 	return ingesterPushError{
-		message: message,
-		cause:   errorCause,
-		soft:    softErr,
+		message:         message,
+		cause:           errorCause,
+		soft:            softErr,
+		rejectedSamples: rejectedSamples,
 	}
 }
 

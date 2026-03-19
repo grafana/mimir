@@ -491,7 +491,11 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	i.updateMetricsFromPushStats(userID, group, &stats, req.Source, db, i.metrics.discarded)
 
 	if firstPartialErr != nil {
-		return wrapOrAnnotateWithUser(firstPartialErr, userID)
+		wrappedErr := softErrorWithRejectedSamples{
+			err:             firstPartialErr,
+			rejectedSamples: int64(stats.failedSamplesCount),
+		}
+		return wrapOrAnnotateWithUser(wrappedErr, userID)
 	}
 
 	return nil

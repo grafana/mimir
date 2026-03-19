@@ -213,8 +213,11 @@ func OTLPHandler(
 
 func handlePartialOTLPPush(pushErr error, w http.ResponseWriter, r *http.Request, req *Request, logger log.Logger) {
 	var rejectedDataPoints int64
+	var ingPushErr ingesterPushError
 	var asErr activeSeriesLimitedError
-	if errors.As(pushErr, &asErr) {
+	if errors.As(pushErr, &ingPushErr) {
+		rejectedDataPoints = ingPushErr.rejectedSamples
+	} else if errors.As(pushErr, &asErr) {
 		rejectedDataPoints = asErr.rejectedSamples
 	}
 

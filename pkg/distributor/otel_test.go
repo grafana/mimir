@@ -1720,6 +1720,23 @@ func TestHandlerOTLPPush(t *testing.T) {
 			},
 		},
 		{
+			name:       "Soft ingesterPushError with rejected samples",
+			maxMsgSize: 100000,
+			series:     sampleSeries,
+			metadata:   sampleMetadata,
+			verifyFunc: func(*testing.T, context.Context, *Request, testCase) error {
+				return ingesterPushError{message: "some samples rejected", cause: mimirpb.ERROR_CAUSE_BAD_DATA, soft: true, rejectedSamples: 3}
+			},
+			responseCode:          http.StatusOK,
+			responseContentType:   pbContentType,
+			responseContentLength: 27,
+			expectedRetryHeader:   false,
+			expectedPartialSuccess: &colmetricpb.ExportMetricsPartialSuccess{
+				RejectedDataPoints: 3,
+				ErrorMessage:       "some samples rejected",
+			},
+		},
+		{
 			name:       "Soft activeSeriesLimitedError with rejected samples",
 			maxMsgSize: 100000,
 			series:     sampleSeries,
