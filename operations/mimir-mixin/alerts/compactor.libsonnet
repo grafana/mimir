@@ -176,10 +176,10 @@
           alert: $.alertName('CompactorSchedulerUnreachable'),
           'for': '5m',
           expr: |||
-            (time() - cortex_compactor_last_scheduler_contact_timestamp_seconds > 15 * 60)
+            (time() - max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_compactor_last_scheduler_contact_timestamp_seconds) > 15 * 60)
             and
-            (cortex_compactor_last_scheduler_contact_timestamp_seconds > 0)
-          |||,
+            (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_compactor_last_scheduler_contact_timestamp_seconds) > 0)
+          ||| % $._config,
           labels: {
             severity: 'critical',
             reason: 'not-contacted-recently',
@@ -193,8 +193,8 @@
           alert: $.alertName('CompactorSchedulerUnreachable'),
           'for': '15m',
           expr: |||
-            (cortex_compactor_last_scheduler_contact_timestamp_seconds == 0)
-          |||,
+            (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_compactor_last_scheduler_contact_timestamp_seconds) == 0)
+          ||| % $._config,
           labels: {
             severity: 'critical',
             reason: 'since-startup',
@@ -211,7 +211,7 @@
               increase(cortex_compactor_scheduler_repeated_job_failures_total[%(range_interval)s])
             ) > 0
           ||| % $._config {
-            range_interval: $.alertRangeInterval(1),
+            range_interval: $.alertRangeInterval(5),
           },
           labels: {
             severity: 'critical',
@@ -223,13 +223,13 @@
         {
           // Alert if the scheduler is not completing any jobs.
           alert: $.alertName('CompactorSchedulerNotCompletingJobs'),
-          'for': '15m',
+          'for': '1h',
           expr: |||
             sum by(%(alert_aggregation_labels)s) (
               increase(cortex_compactor_scheduler_jobs_completed_total[%(range_interval)s])
             ) == 0
           ||| % $._config {
-            range_interval: $.alertRangeInterval(30),
+            range_interval: $.alertRangeInterval(60),
           },
           labels: {
             severity: 'critical',

@@ -942,7 +942,7 @@ How to **investigate**:
 
 ### MimirCompactorSchedulerUnreachable
 
-This alert fires when a compactor running in scheduler mode has not contacted the scheduler in the last 15 minutes.
+This alert fires when a compactor running in scheduler mode has not contacted the scheduler recently.
 
 How to **investigate**:
 
@@ -960,7 +960,7 @@ How to **investigate**:
 
 ### MimirCompactorSchedulerNotCompletingJobs
 
-This alert fires when the compactor scheduler has not completed any jobs in the last 30 minutes.
+This alert fires when the compactor scheduler has not completed any jobs for an extended period of time.
 
 How to **investigate**:
 
