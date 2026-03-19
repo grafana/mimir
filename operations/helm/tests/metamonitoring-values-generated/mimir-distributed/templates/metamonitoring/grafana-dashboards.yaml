@@ -38733,7 +38733,7 @@ data:
                             "legendLink": null
                          },
                          {
-                            "expr": "max(cortex_limits_overrides{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter))\", limit_name=\"max_active_series_per_user\", user=\"$user\"})\nor\nmax(cortex_limits_defaults{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter))\", limit_name=\"max_active_series_per_user\"})\n",
+                            "expr": "max(cortex_limits_overrides{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter))\", limit_name=\"max_active_series_per_user\", user=\"$user\"})\nor\nmax(cortex_limits_defaults{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter))\", limit_name=\"max_active_series_per_user\"} != 0)\n",
                             "format": "time_series",
                             "legendFormat": "active series limit",
                             "legendLink": null
