@@ -1468,7 +1468,7 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 	//   - innerGroupPointerSlicePool: 5 input series → cap=8 after bucketed pool rounding → 8 pointers (64 bytes)
 	//
 	// types.HistogramPointerSize is used as a proxy for pointer size (8 bytes on 64-bit platforms).
-	sumGroupPointerSlicesOverhead := 9 * types.HistogramPointerSize
+	sumGroupPointerSlicesOverhead := 9 * unsafe.SizeOf(uintptr(0))
 
 	testCases := map[string]struct {
 		expr                     string
