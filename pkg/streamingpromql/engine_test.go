@@ -1467,9 +1467,7 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 	// sumGroupPointerSlicesOverhead is the combined memory of the two pool-allocated []*group slices
 	// used during sum() aggregation over 5 input series:
 	//   - groupPointerSlicePool: 1 output group → cap=1 → 1 pointer (8 bytes)
-	//   - innerGroupPointerSlicePool: 5 input series → cap=8 after bucketed pool rounding → 8 pointers (64 bytes)
-	//
-	// types.HistogramPointerSize is used as a proxy for pointer size (8 bytes on 64-bit platforms).
+	//   - groupPointerSlicePool (for inner groups): 5 input series → cap=8 after bucketed pool rounding → 8 pointers (64 bytes)
 	sumGroupPointerSlicesOverhead := uint64(9 * unsafe.Sizeof(uintptr(0)))
 
 	testCases := map[string]struct {
@@ -1533,14 +1531,14 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 				// A)
 				//   - 5 input series labels (8 series metadata because of bucketed pool rounding to a power of 2)
 				//   - 1 output series metadata (no labels)
-				//   - innerGroupPointerSlicePool (cap=8) + groupPointerSlicePool (cap=1)
+				//   - groupPointerSlicePool (inner) (cap=8) + groupPointerSlicePool (cap=1)
 				//   - 1 sum group struct overhead
 				8*types.SeriesMetadataSize+5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize())+types.SeriesMetadataSize+sumGroupPointerSlicesOverhead+sumGroupOverhead,
 				// B)
 				//   - the running total for the sum() (two floats (due to kahan) and a bool at each step, with the number of steps rounded to the nearest power of 2),
 				//   - the next series from the selector
 				//   - the series metadata for the output series (no labels)
-				//   - innerGroupPointerSlicePool (cap=8) + groupPointerSlicePool (cap=1)
+				//   - groupPointerSlicePool (inner) (cap=8) + groupPointerSlicePool (cap=1)
 				//   - 1 sum group struct overhead
 				8*(2*types.Float64Size+types.BoolSize)+8*types.FPointSize+types.SeriesMetadataSize+sumGroupPointerSlicesOverhead+sumGroupOverhead,
 			),
@@ -1574,7 +1572,7 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			shouldSucceed: true,
 
 			// The sum() aggregator allocates:
-			//  - two []*group slices via groupPointerSlicePool (cap=1, 8 bytes) and innerGroupPointerSlicePool (cap=2, 16 bytes) = 24 bytes total.
+			//  - two []*group slices via groupPointerSlicePool (cap=1, 8 bytes) and groupPointerSlicePool (inner) (cap=2, 16 bytes) = 24 bytes total.
 			//  - 1 sum group struct overhead.
 			// types.HistogramPointerSize is used as a proxy for pointer size (8 bytes on 64-bit platforms).
 			rangeQueryExpectedPeak: 2*8*types.HistogramPointerSize + 8*types.HPointSize + types.SeriesMetadataSize + 8*types.CounterResetHintSize + 3*types.HistogramPointerSize + sumGroupOverhead,
