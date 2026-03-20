@@ -1626,8 +1626,9 @@ func (o *Overrides) IngestionPartitionsTenantWriteShardSize(userID string) int {
 // When IngestionPartitionsTenantWriteShardSize is set (> 0), it is used for writes, clamped to the read shard size.
 // When unset (0), the regular IngestionPartitionsTenantShardSize is used.
 func (o *Overrides) EffectiveIngestionPartitionsTenantWriteShardSize(userID string) int {
-	readSize := o.IngestionPartitionsTenantShardSize(userID)
-	writeSize := o.IngestionPartitionsTenantWriteShardSize(userID)
+	uo := o.getOverridesForUser(userID)
+	readSize := uo.IngestionPartitionsTenantShardSize
+	writeSize := uo.IngestionPartitionsTenantWriteShardSize
 
 	if writeSize <= 0 {
 		return readSize
