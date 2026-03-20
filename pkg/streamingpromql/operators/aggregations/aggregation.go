@@ -315,7 +315,7 @@ func (a *Aggregator) ComputeGroups(innerSeries []types.SeriesMetadata) ([]types.
 			g.group.remainingSeriesCount = 0
 			g.dropName = series.DropName
 
-			// Note that we only accumulate the aggregation struct size. The group comes from a pool where it's allocation
+			// Note that we only accumulate the aggregation struct size. The group comes from a pool where its allocation
 			// has already been made and is re-used.
 			if err := a.MemoryConsumptionTracker.IncreaseMemoryConsumption(a.aggregationGroupFactory.StructSize(), limiter.AggregationGroupStructs); err != nil {
 				return nil, err
