@@ -31,6 +31,7 @@ import (
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/distributor/distributorpb"
+	"github.com/grafana/mimir/pkg/frontend/transport"
 	frontendv2 "github.com/grafana/mimir/pkg/frontend/v2"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/ingester"
@@ -43,7 +44,6 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
-	"github.com/grafana/mimir/pkg/frontend/transport"
 	"github.com/grafana/mimir/pkg/usagetracker"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 	"github.com/grafana/mimir/pkg/util"
@@ -493,6 +493,10 @@ func (a *API) RegisterQueryAnalysisAPI(handler http.Handler) {
 // RegisterQueryFrontendHandler registers the Prometheus routes supported by the
 // Mimir querier service. Currently, this can not be registered simultaneously
 // with the Querier.
+//
+// Note: this route list must be kept in sync with RegisterQueryAPI. They are separate because
+// query-frontend routes require the activity tracker to be placed outside gzip (to cover the
+// full response flush), which newRoute/RegisterRoute do not support.
 func (a *API) RegisterQueryFrontendHandler(h http.Handler, buildInfoHandler http.Handler, at *activitytracker.ActivityTracker) {
 	a.newQueryFrontendRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/read"), h, at, "POST")
 	a.newQueryFrontendRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/query"), h, at, "GET", "POST")
