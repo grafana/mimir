@@ -244,7 +244,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
 #LATEST_BUILD_IMAGE_TAG ?= pr12712-28f11b4f26
-LATEST_BUILD_IMAGE_TAG ?= vldmr-mimir-distributed-6-b5ce756a40
+LATEST_BUILD_IMAGE_TAG ?= pr14765-fe3982a2de
 
 # TTY is parameterized to allow CI and scripts to run builds,
 # as it currently disallows TTY devices.
