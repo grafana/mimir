@@ -973,6 +973,12 @@ func newResponseStreamBuffer(memoryConsumptionTracker *limiter.MemoryConsumption
 // Push will always return nil if msg.payload is nil.
 // Push will increase the memory consumption estimate for this query based on the size of msg.payload, if it is not nil.
 func (b *responseStreamBuffer) Push(msg bufferedMessage) error {
+	if msg.payload != nil {
+		if err := b.memoryConsumptionTracker.IncreaseMemoryConsumption(uint64(msg.payload.Size()), limiter.BufferedQuerierResponses); err != nil {
+			return err
+		}
+	}
+
 	if b.length == cap(b.msgs) {
 		newCap := max(cap(b.msgs)*2, 1)
 		newMsgs := responseMessageSlicePool.Get(newCap)
@@ -991,11 +997,7 @@ func (b *responseStreamBuffer) Push(msg bufferedMessage) error {
 	b.msgs[newIndex] = msg
 	b.length++
 
-	if msg.payload == nil {
-		return nil
-	}
-
-	return b.memoryConsumptionTracker.IncreaseMemoryConsumption(uint64(msg.payload.Size()), limiter.BufferedQuerierResponses)
+	return nil
 }
 
 // Pop removes the earliest message from this buffer.
