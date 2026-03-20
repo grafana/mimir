@@ -1514,7 +1514,7 @@
                         {
                            "matcher": {
                               "id": "byRegexp",
-                              "options": "/.+ - ommkilled/"
+                              "options": "/.+ - oomkilled/"
                            },
                            "properties": [
                               {
