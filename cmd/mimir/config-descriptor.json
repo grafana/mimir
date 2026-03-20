@@ -12149,6 +12149,38 @@
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
+            },
+            {
+              "kind": "block",
+              "name": "offset_catalogue",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "enabled",
+                  "required": false,
+                  "desc": "Controls the maintaining of kafka offset catalogue per block.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "blocks-storage.tsdb.offset-catalogue.enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "sync_concurrency",
+                  "required": false,
+                  "desc": "Maximum number of tenants concurrently syncing offset catalogue to disk.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 10,
+                  "fieldFlag": "blocks-storage.tsdb.offset-catalogue.sync-concurrency",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,

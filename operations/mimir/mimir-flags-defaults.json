@@ -860,6 +860,7 @@
   "blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-smaller-sketch": 1000,
   "blocks-storage.tsdb.index-lookup-planning.comparison-portion": 0,
   "blocks-storage.tsdb.index-lookup-planning.statistics-collection-frequency": 3600000000000,
+  "blocks-storage.tsdb.offset-catalogue.sync-concurrency": 10,
   "compactor.block-ranges": [],
   "compactor.block-sync-concurrency": 8,
   "compactor.meta-sync-concurrency": 20,

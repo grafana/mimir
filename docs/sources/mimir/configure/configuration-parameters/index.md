@@ -6092,6 +6092,17 @@ tsdb:
     # in query execution optimization. 0 to disable.
     # CLI flag: -blocks-storage.tsdb.index-lookup-planning.statistics-collection-frequency
     [statistics_collection_frequency: <duration> | default = 1h]
+
+  offset_catalogue:
+    # (experimental) Controls the maintaining of kafka offset catalogue per
+    # block.
+    # CLI flag: -blocks-storage.tsdb.offset-catalogue.enabled
+    [enabled: <boolean> | default = false]
+
+    # (experimental) Maximum number of tenants concurrently syncing offset
+    # catalogue to disk.
+    # CLI flag: -blocks-storage.tsdb.offset-catalogue.sync-concurrency
+    [sync_concurrency: <int> | default = 10]
 ```
 
 ### compactor
