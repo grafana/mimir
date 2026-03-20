@@ -424,12 +424,16 @@ func prepare(dir string, targetCount int, logger log.Logger) ([]*bbolt.DB, error
 	// Cold start - no existing shard files
 	if existingCount == 0 {
 		level.Info(logger).Log("msg", "no existing shard files found, initializing fresh shards", "shard_count", targetCount)
-		meta := &compactorschedulerpb.PersistenceMetadata{ShardCount: uint32(targetCount)}
-		dbs, err := createShardsIfNeeded(dir, nil, targetCount, logger)
+		dbs, err := appendOpenShards(nil, dir, targetCount, logger)
 		if err != nil {
-			closeDbs(dbs, logger)
 			return nil, err
 		}
+		if err := syncDir(dir); err != nil {
+			closeDbs(dbs, logger)
+			return nil, fmt.Errorf("failed to sync shard directory: %w", err)
+		}
+
+		meta := &compactorschedulerpb.PersistenceMetadata{ShardCount: uint32(targetCount)}
 		if err := writeShardMetadata(dbs[0], meta); err != nil {
 			closeDbs(dbs, logger)
 			return nil, fmt.Errorf("failed to write metadata to shard 0: %w", err)
@@ -437,8 +441,7 @@ func prepare(dir string, targetCount int, logger log.Logger) ([]*bbolt.DB, error
 		return dbs, nil
 	}
 
-	// Open all existing shards and read metadata from shard 0.
-	dbs, err := openShards(dir, existingCount, logger)
+	dbs, err := appendOpenShards(nil, dir, existingCount, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -467,7 +470,7 @@ func prepare(dir string, targetCount int, logger log.Logger) ([]*bbolt.DB, error
 
 	level.Info(logger).Log("msg", "migrating bbolt shards", "stored_shard_count", meta.ShardCount, "target_shard_count", targetCount, "existing_count", existingCount)
 	start := time.Now()
-	migratedDbs, err := runMigration(dir, dbs, targetCount, logger)
+	migratedDbs, err := runMigration(dbs, dir, targetCount, logger)
 	if err != nil {
 		// runMigration handles closing databases itself since it potentially created more
 		return nil, err
@@ -476,15 +479,15 @@ func prepare(dir string, targetCount int, logger log.Logger) ([]*bbolt.DB, error
 	return migratedDbs, nil
 }
 
-// runMigration performs the full migration procedure and closes all databases upon an error.
-func runMigration(dir string, existingDBs []*bbolt.DB, targetCount int, logger log.Logger) (dbs []*bbolt.DB, err error) {
+// runMigration ensures there are targetCount shards and reshards tenants if necessary
+func runMigration(existingDBs []*bbolt.DB, dir string, targetCount int, logger log.Logger) (dbs []*bbolt.DB, err error) {
 	defer func() {
 		if err != nil {
 			closeDbs(dbs, logger)
 		}
 	}()
 
-	dbs, err = createShardsIfNeeded(dir, existingDBs, targetCount, logger)
+	dbs, err = createShardsIfNeeded(existingDBs, dir, targetCount, logger)
 	if err != nil {
 		return dbs, err
 	}
@@ -519,7 +522,7 @@ func runMigration(dir string, existingDBs []*bbolt.DB, targetCount int, logger l
 	return
 }
 
-// openShard opens or creates a single shard file at the given index in dir.
+// openShard opens or creates the shard file for the given index in dir.
 func openShard(dir string, index int) (*bbolt.DB, error) {
 	path := shardFilePath(dir, index)
 	db, err := bbolt.Open(path, 0600, nil)
@@ -529,36 +532,30 @@ func openShard(dir string, index int) (*bbolt.DB, error) {
 	return db, nil
 }
 
-// openShards opens count shard files in dir, creating them if they don't exist.
-func openShards(dir string, count int, logger log.Logger) ([]*bbolt.DB, error) {
-	dbs := make([]*bbolt.DB, 0, count)
-	for i := range count {
+// appendOpenShards opens shard files [len(dbs), end) in dir, appending them to dbs.
+// On error, any newly opened databases are closed and the original slice is returned.
+func appendOpenShards(dbs []*bbolt.DB, dir string, end int, logger log.Logger) ([]*bbolt.DB, error) {
+	begin := len(dbs)
+	for i := begin; i < end; i++ {
 		db, err := openShard(dir, i)
 		if err != nil {
-			closeDbs(dbs, logger)
-			return nil, err
+			closeDbs(dbs[begin:], logger)
+			return dbs[:begin], err
 		}
 		dbs = append(dbs, db)
 	}
 	return dbs, nil
 }
 
-func createShardsIfNeeded(dir string, existingDBs []*bbolt.DB, targetCount int, logger log.Logger) ([]*bbolt.DB, error) {
-	if targetCount <= len(existingDBs) {
+func createShardsIfNeeded(existingDBs []*bbolt.DB, dir string, targetCount int, logger log.Logger) ([]*bbolt.DB, error) {
+	if len(existingDBs) >= targetCount {
 		return existingDBs, nil
 	}
 
-	dbs := make([]*bbolt.DB, len(existingDBs), targetCount)
-	copy(dbs, existingDBs)
-
-	for i := len(existingDBs); i < targetCount; i++ {
-		db, err := openShard(dir, i)
-		if err != nil {
-			// not returning nil dbs to allow for closing
-			return dbs, err
-		}
-		dbs = append(dbs, db)
-		level.Info(logger).Log("msg", "created new shard file", "path", db.Path())
+	dbs, err := appendOpenShards(existingDBs, dir, targetCount, logger)
+	if err != nil {
+		// not returning nil dbs to allow for closing
+		return dbs, err
 	}
 
 	if err := syncDir(dir); err != nil {
