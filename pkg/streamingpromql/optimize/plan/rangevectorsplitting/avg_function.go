@@ -75,7 +75,7 @@ func avgOverTimeGenerate(step *types.RangeVectorStepData, emitAnnotation types.E
 		}
 	}
 
-	return result, haveFloats || result.ForceEmptyResult, nil
+	return result, true, nil
 }
 
 func avgFloats(head, tail []promql.FPoint) (float64, float64, float64, float64, bool) {
