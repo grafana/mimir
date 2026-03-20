@@ -184,14 +184,11 @@ func (m *BboltJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, 
 
 	level.Info(m.logger).Log("msg", "starting job recovery")
 
-	for i, db := range m.dbs {
-		trackers, stats, err := recoverDB(db, m.logger, allowedTenants, jobTrackerFactory)
+	for _, db := range m.dbs {
+		stats, err := recoverDB(db, m.logger, allowedTenants, jobTrackers, jobTrackerFactory)
 		if err != nil {
-			level.Error(m.logger).Log("msg", "failed job recovery for shard", "shard", i, "err", err)
-			return nil, fmt.Errorf("failed recovering shard %d: %w", i, err)
-		}
-		for tenant, tracker := range trackers {
-			jobTrackers[tenant] = tracker
+			level.Error(m.logger).Log("msg", "failed job recovery for shard", "path", db.Path(), "err", err)
+			return nil, fmt.Errorf("failed recovering jobs from %q: %w", db.Path(), err)
 		}
 		numCompactionJobsRecovered += stats.numCompactionJobs
 		numPlanJobsRecovered += stats.numPlanJobs
@@ -219,8 +216,7 @@ type recoveryStats struct {
 }
 
 // recoverDB recovers all job trackers from a single bbolt database.
-func recoverDB(db *bbolt.DB, logger log.Logger, allowedTenants *util.AllowList, jobTrackerFactory func(tenant string, persister JobPersister) *JobTracker) (map[string]*JobTracker, recoveryStats, error) {
-	trackers := make(map[string]*JobTracker)
+func recoverDB(db *bbolt.DB, logger log.Logger, allowedTenants *util.AllowList, jobTrackers map[string]*JobTracker, jobTrackerFactory func(tenant string, persister JobPersister) *JobTracker) (recoveryStats, error) {
 	var stats recoveryStats
 
 	// Iterate through each bucket and create the corresponding JobTracker.
@@ -259,7 +255,7 @@ func recoverDB(db *bbolt.DB, logger log.Logger, allowedTenants *util.AllowList, 
 			jp := newBboltJobPersister(db, []byte(tenant), logger)
 			jt := jobTrackerFactory(tenant, jp)
 			jt.recoverFrom(compactionJobs, planJob)
-			trackers[tenant] = jt
+			jobTrackers[tenant] = jt
 			return nil
 		}); err != nil {
 			return err
@@ -268,7 +264,7 @@ func recoverDB(db *bbolt.DB, logger log.Logger, allowedTenants *util.AllowList, 
 		stats.numBucketCleanups, stats.numKeyCleanups = cleanupBuckets(tx, cleanup, logger)
 		return nil
 	})
-	return trackers, stats, err
+	return stats, err
 }
 
 // keyCleanup is only valid within the transaction in which it was created.
@@ -469,7 +465,7 @@ func prepare(dir string, targetCount int, logger log.Logger) ([]*bbolt.DB, error
 		return dbs, nil
 	}
 
-	level.Info(logger).Log("msg", "migrating bbolt shards", "stored_shard_count", meta.ShardCount, "target_shard_count", targetCount, "existing_files", existingCount)
+	level.Info(logger).Log("msg", "migrating bbolt shards", "stored_shard_count", meta.ShardCount, "target_shard_count", targetCount, "existing_count", existingCount)
 	start := time.Now()
 	migratedDbs, err := runMigration(dir, dbs, targetCount, logger)
 	if err != nil {
