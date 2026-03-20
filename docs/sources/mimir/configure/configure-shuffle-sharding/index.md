@@ -131,8 +131,8 @@ The shuffle sharding implementation in Grafana Mimir has a limitation that preve
 
 Use one of the following methods to safely decrease the tenant shard size:
 
-- (Recommended) Use the write shard size override.
-- Temporarily disable shuffle sharding.
+- (Recommended, ingest storage only) Use the write shard size override.
+- (Classic architecture) Temporarily disable shuffle sharding.
 
 ##### Use the write shard size override
 
@@ -149,7 +149,7 @@ This method allows queries to continue reading from the previous larger set of p
 
 ##### Temporarily disable shuffle sharding
 
-If you're using classic architecture or the write shard size override is otherwise not available, follow these steps:
+If you're using classic architecture, follow these steps:
 
 1. Disable shuffle sharding on the ingester read path via `-querier.shuffle-sharding-ingesters-enabled=false`.
 1. Decrease the configured tenant shard size.
