@@ -12,6 +12,7 @@ import (
 	"github.com/go-kit/log"
 	dskitcache "github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/user"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -1051,6 +1052,88 @@ func TestQuerySplitting_SplittingDisabledOnQuerier_FallsBackToRegularNode(t *tes
 	result := runInstantQuery(t, engine, promStorage, "sum_over_time(some_metric[5h])", ts)
 	require.NoError(t, result.Err)
 	require.Equal(t, expectedScalarResult(ts, 645, "env", "1"), result)
+}
+
+func TestQuerySplitting_PerRangeSeriesMetadata(t *testing.T) {
+	// test_metric{env="1"}: data throughout (t=0..6h)
+	// test_metric{env="2"}: data from t=4h only (t=4h..10h)
+	//
+	// Query at ts=10h with 10h range, split interval 2h produces:
+	//   head:   (0h, 2h-1ms]     — not cached
+	//   block1: (2h-1ms, 4h-1ms] — cached; only env=1
+	//   block2: (4h-1ms, 6h-1ms] — cached; both env=1 and env=2
+	//   block3: (6h-1ms, 8h-1ms] — cached; both env=1 and env=2
+	//   block4: (8h-1ms, 10h-1ms] — cached; only env=2
+	promStorage := promqltest.LoadedStorage(t, `
+        load 1h
+            test_metric{env="1"} 10x6
+            test_metric{env="2"} _ _ _ _ 20x6
+    `)
+	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
+
+	testCases := []struct {
+		name string
+		expr string
+	}{
+		{"sum_over_time", "sum_over_time(test_metric[10h])"},
+		{"count_over_time", "count_over_time(test_metric[10h])"},
+		{"min_over_time", "min_over_time(test_metric[10h])"},
+		{"max_over_time", "max_over_time(test_metric[10h])"},
+		{"first_over_time", "first_over_time(test_metric[10h])"},
+		{"last_over_time", "last_over_time(test_metric[10h])"},
+		{"rate", "rate(test_metric[10h])"},
+		{"increase", "increase(test_metric[10h])"},
+		{"avg_over_time", "avg_over_time(test_metric[10h])"},
+	}
+
+	env1Labels := labels.FromStrings("__name__", "test_metric", "env", "1")
+	env2Labels := labels.FromStrings("__name__", "test_metric", "env", "2")
+
+	block1End := int64(4*time.Hour/time.Millisecond) - 1
+	block2End := int64(6*time.Hour/time.Millisecond) - 1
+	block3End := int64(8*time.Hour/time.Millisecond) - 1
+	block4End := int64(10*time.Hour/time.Millisecond) - 1
+
+	entryLabels := func(entry cache.CachedSeries) []labels.Labels {
+		result := make([]labels.Labels, len(entry.SeriesMetadata))
+		for i, m := range entry.SeriesMetadata {
+			result[i] = mimirpb.FromLabelAdaptersToLabels(m.Labels)
+		}
+		return result
+	}
+	ts := timestamp.Time(0).Add(10 * time.Hour)
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			testCache, mimirEngine := setupEngineAndCache(t)
+
+			result, _ := executeQuery(t, mimirEngine, promStorage, tc.expr, ts)
+			require.NoError(t, result.Err)
+
+			require.Len(t, testCache.items, 4, "unexpected number of entries in cache")
+
+			for _, data := range testCache.items {
+				var entry cache.CachedSeries
+				require.NoError(t, entry.Unmarshal(data))
+
+				switch entry.End {
+				case block1End:
+					require.Equal(t, []labels.Labels{env1Labels}, entryLabels(entry), "block1 should only contain env=1 series")
+				case block2End, block3End:
+					require.Equal(t, []labels.Labels{env1Labels, env2Labels}, entryLabels(entry), "block2/3 should contain both series")
+				case block4End:
+					require.Equal(t, []labels.Labels{env2Labels}, entryLabels(entry), "block4 should only contain env=2 series")
+				}
+			}
+
+			// Verify results are still correct on cache hit
+			hitsBeforeSecondQuery := testCache.hits
+			cachedResult, _ := executeQuery(t, mimirEngine, promStorage, tc.expr, ts)
+			require.NoError(t, cachedResult.Err)
+			require.Equal(t, result.Value, cachedResult.Value)
+			require.Greater(t, testCache.hits, hitsBeforeSecondQuery, "expected cache to be hit on second query")
+		})
+	}
 }
 
 func createSplittingEngineWithCache(t *testing.T, registry *prometheus.Registry, splitInterval time.Duration, enableDelayedNameRemoval bool, enableEliminateDeduplicateAndMerge bool) (promql.QueryEngine, *testCacheBackend) {

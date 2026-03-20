@@ -28,7 +28,7 @@ type SplitGenerateFunc[T any] func(
 	step *types.RangeVectorStepData,
 	emitAnnotation types.EmitAnnotationFunc,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
-) (T, error)
+) (t T, hasValue bool, err error)
 
 // SplitCombineFunc combines intermediate results from multiple split ranges.
 // Histograms within the input ranges must not be modified in place. These histograms can share references with
