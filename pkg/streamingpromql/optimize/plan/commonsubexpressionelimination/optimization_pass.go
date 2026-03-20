@@ -295,19 +295,10 @@ func (e *OptimizationPass) groupPathsForFirstIteration(paths []path, subsetSelec
 			return diff
 		}
 
-		// If the difference is 0 we use the sum of the matchers to identify the wider scope
-		aSum, bSum := 0, 0
-		for _, m := range aMatchers {
-			if m.Type == labels.MatchRegexp || m.Type == labels.MatchNotRegexp {
-				aSum++
-			}
-		}
-		for _, m := range bMatchers {
-			if m.Type == labels.MatchRegexp || m.Type == labels.MatchNotRegexp {
-				bSum++
-			}
-		}
-		return bSum - aSum
+		// If the difference is 0, we use the number of regex matchers to identify the wider scope
+		aRegexMatcherCount := countRegexMatches(aMatchers)
+		bRegexMatcherCount := countRegexMatches(bMatchers)
+		return bRegexMatcherCount - aRegexMatcherCount
 	})
 
 	alreadyGrouped := make([]bool, len(paths)) // ignoreunpooledslice
@@ -366,6 +357,19 @@ func (e *OptimizationPass) groupPathsForFirstIteration(paths []path, subsetSelec
 	}
 
 	return groups, nil
+}
+
+// countRegexMatchers counts the number of matchers that match a regular expression rather than a specific value
+func countRegexMatches(matchers []*core.LabelMatcher) int {
+	count := 0
+
+	for _, m := range matchers {
+		if m.Type == labels.MatchRegexp || m.Type == labels.MatchNotRegexp {
+			count++
+		}
+	}
+
+	return count
 }
 
 // groupPathsForSubsequentIteration returns paths grouped by the node at offset from the leaf.
