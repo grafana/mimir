@@ -2008,19 +2008,7 @@ data:
                             "show": false
                          }
                       ]
-                   }
-                ],
-                "repeat": null,
-                "repeatIteration": null,
-                "repeatRowId": null,
-                "showTitle": true,
-                "title": "Alertmanager Configuration Object Store (Alertmanager accesses)",
-                "titleSize": "h6"
-             },
-             {
-                "collapse": false,
-                "height": "250px",
-                "panels": [
+                   },
                    {
                       "datasource": "$datasource",
                       "fieldConfig": {
@@ -2414,7 +2402,7 @@ data:
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "",
+                "title": "Alertmanager Configuration Object Store (Alertmanager accesses)",
                 "titleSize": "h6"
              },
              {
@@ -5178,19 +5166,7 @@ data:
                             "show": false
                          }
                       ]
-                   }
-                ],
-                "repeat": null,
-                "repeatIteration": null,
-                "repeatRowId": null,
-                "showTitle": true,
-                "title": "",
-                "titleSize": "h6"
-             },
-             {
-                "collapse": false,
-                "height": "250px",
-                "panels": [
+                   },
                    {
                       "datasource": "$datasource",
                       "fieldConfig": {
@@ -5293,7 +5269,7 @@ data:
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "",
+                "title": "Compaction",
                 "titleSize": "h6"
              },
              {
@@ -5913,19 +5889,7 @@ data:
                             "show": false
                          }
                       ]
-                   }
-                ],
-                "repeat": null,
-                "repeatIteration": null,
-                "repeatRowId": null,
-                "showTitle": true,
-                "title": "Object Store",
-                "titleSize": "h6"
-             },
-             {
-                "collapse": false,
-                "height": "250px",
-                "panels": [
+                   },
                    {
                       "datasource": "$datasource",
                       "fieldConfig": {
@@ -6319,7 +6283,7 @@ data:
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "",
+                "title": "Object Store",
                 "titleSize": "h6"
              },
              {
@@ -24985,19 +24949,7 @@ data:
                             "show": false
                          }
                       ]
-                   }
-                ],
-                "repeat": null,
-                "repeatIteration": null,
-                "repeatRowId": null,
-                "showTitle": true,
-                "title": "Blocks object store (store-gateway accesses)",
-                "titleSize": "h6"
-             },
-             {
-                "collapse": false,
-                "height": "250px",
-                "panels": [
+                   },
                    {
                       "datasource": "$datasource",
                       "fieldConfig": {
@@ -25391,7 +25343,7 @@ data:
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "",
+                "title": "Blocks object store (store-gateway accesses)",
                 "titleSize": "h6"
              },
              {
@@ -25672,19 +25624,7 @@ data:
                             "show": false
                          }
                       ]
-                   }
-                ],
-                "repeat": null,
-                "repeatIteration": null,
-                "repeatRowId": null,
-                "showTitle": true,
-                "title": "Blocks object store (querier accesses)",
-                "titleSize": "h6"
-             },
-             {
-                "collapse": false,
-                "height": "250px",
-                "panels": [
+                   },
                    {
                       "datasource": "$datasource",
                       "fieldConfig": {
@@ -26078,7 +26018,7 @@ data:
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "",
+                "title": "Blocks object store (querier accesses)",
                 "titleSize": "h6"
              }
           ],
@@ -36106,19 +36046,7 @@ data:
                             "show": false
                          }
                       ]
-                   }
-                ],
-                "repeat": null,
-                "repeatIteration": null,
-                "repeatRowId": null,
-                "showTitle": true,
-                "title": "Ruler configuration object store (ruler accesses)",
-                "titleSize": "h6"
-             },
-             {
-                "collapse": false,
-                "height": "250px",
-                "panels": [
+                   },
                    {
                       "datasource": "$datasource",
                       "fieldConfig": {
@@ -36512,7 +36440,7 @@ data:
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "",
+                "title": "Ruler configuration object store (ruler accesses)",
                 "titleSize": "h6"
              }
           ],
