@@ -104,11 +104,13 @@ func OTLPHandler(
 
 		otlpConverter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
 
+		var schemeOverride *model.ValidationScheme
 		parser := newOTLPParser(
 			allowTranslationHeaders,
 			limits, resourceAttributePromotionConfig, keepIdentifyingOTelResourceAttributesConfig,
 			otlpConverter, pushMetrics, discardedDueToOtelParseError,
 			OTLPPushMiddlewares,
+			&schemeOverride,
 		)
 
 		supplier := func() (*mimirpb.WriteRequest, func(), int, error) {
@@ -133,6 +135,9 @@ func OTLPHandler(
 		}
 		req := newRequest(supplier)
 		req.contentLength = r.ContentLength
+		req.onInit = func() {
+			req.nameValidationSchemeOverride = schemeOverride
+		}
 
 		pushErr := push(ctx, req)
 		if pushErr == nil {
@@ -237,6 +242,7 @@ func newOTLPParser(
 	pushMetrics *PushMetrics,
 	discardedDueToOtelParseError *prometheus.CounterVec,
 	OTLPPushMiddlewares []OTLPPushMiddleware,
+	schemeOverride **model.ValidationScheme,
 ) parserFunc {
 	if resourceAttributePromotionConfig == nil {
 		resourceAttributePromotionConfig = limits
@@ -384,7 +390,14 @@ func newOTLPParser(
 				translationHeadersApplied = true
 			}
 		}
-		if !translationHeadersApplied {
+		if translationHeadersApplied {
+			// Auto-upgrade the name validation scheme if the effective
+			// translation strategy determined by the headers entails utf8.
+			if !translationStrategy.ShouldEscape() {
+				s := model.UTF8Validation
+				*schemeOverride = &s
+			}
+		} else {
 			validateTranslationStrategy(translationStrategy, limits, limitsKey)
 		}
 

@@ -1840,8 +1840,11 @@ func TestOTLPHandler_TranslationHeaders(t *testing.T) {
 		tenantStrategy          validation.OTelTranslationStrategyValue
 		expectedResponseCode    int
 		expectedErrMessage      string
-		verifyMetricName        string // if set, verify the first series has this metric name
+		verifyMetricName        string               // if set, verify the first series has this metric name
+		expectedSchemeOverride  *model.ValidationScheme // if set, verify the scheme override on the Request
 	}
+
+	utf8Scheme := model.UTF8Validation
 
 	tests := []testCase{
 		{
@@ -1907,6 +1910,7 @@ func TestOTLPHandler_TranslationHeaders(t *testing.T) {
 			tenantSuffixesEnabled:   boolPtr(false),
 			expectedResponseCode:    http.StatusOK,
 			verifyMetricName:        "test.metric_unit",
+			expectedSchemeOverride:  &utf8Scheme,
 		},
 		{
 			name:                    "headers ignored when config flag is disabled",
@@ -1925,6 +1929,7 @@ func TestOTLPHandler_TranslationHeaders(t *testing.T) {
 			tenantSuffixesEnabled:   boolPtr(false),
 			expectedResponseCode:    http.StatusOK,
 			verifyMetricName:        "test.metric_unit",
+			expectedSchemeOverride:  &utf8Scheme,
 		},
 		{
 			name:                    "strategy header overrides tenant strategy",
@@ -1933,6 +1938,7 @@ func TestOTLPHandler_TranslationHeaders(t *testing.T) {
 			tenantStrategy:          validation.OTelTranslationStrategyValue(otlptranslator.NoUTF8EscapingWithSuffixes),
 			expectedResponseCode:    http.StatusOK,
 			verifyMetricName:        "test.metric",
+			expectedSchemeOverride:  &utf8Scheme,
 		},
 		{
 			name:                    "suffix header false combines with tenant strategy NoUTF8EscapingWithSuffixes",
@@ -1941,6 +1947,7 @@ func TestOTLPHandler_TranslationHeaders(t *testing.T) {
 			tenantStrategy:          validation.OTelTranslationStrategyValue(otlptranslator.NoUTF8EscapingWithSuffixes),
 			expectedResponseCode:    http.StatusOK,
 			verifyMetricName:        "test.metric",
+			expectedSchemeOverride:  &utf8Scheme,
 		},
 		{
 			name:                    "suffix header true combines with tenant strategy NoUTF8EscapingWithSuffixes",
@@ -1949,6 +1956,7 @@ func TestOTLPHandler_TranslationHeaders(t *testing.T) {
 			tenantStrategy:          validation.OTelTranslationStrategyValue(otlptranslator.NoUTF8EscapingWithSuffixes),
 			expectedResponseCode:    http.StatusOK,
 			verifyMetricName:        "test.metric_unit",
+			expectedSchemeOverride:  &utf8Scheme,
 		},
 		{
 			name:                    "suffix header false combines with tenant strategy NoTranslation",
@@ -1957,6 +1965,7 @@ func TestOTLPHandler_TranslationHeaders(t *testing.T) {
 			tenantStrategy:          validation.OTelTranslationStrategyValue(otlptranslator.NoTranslation),
 			expectedResponseCode:    http.StatusOK,
 			verifyMetricName:        "test.metric",
+			expectedSchemeOverride:  &utf8Scheme,
 		},
 		{
 			name:                    "suffix header true combines with tenant strategy NoTranslation",
@@ -1965,6 +1974,7 @@ func TestOTLPHandler_TranslationHeaders(t *testing.T) {
 			tenantStrategy:          validation.OTelTranslationStrategyValue(otlptranslator.NoTranslation),
 			expectedResponseCode:    http.StatusOK,
 			verifyMetricName:        "test.metric_unit",
+			expectedSchemeOverride:  &utf8Scheme,
 		},
 		{
 			name:                    "suffix header false combines with tenant strategy UnderscoreEscapingWithSuffixes",
@@ -2034,6 +2044,12 @@ func TestOTLPHandler_TranslationHeaders(t *testing.T) {
 				if tt.verifyMetricName != "" {
 					require.NotEmpty(t, request.Timeseries)
 					require.Equal(t, tt.verifyMetricName, request.Timeseries[0].Labels[0].Value)
+				}
+				if tt.expectedSchemeOverride != nil {
+					require.NotNil(t, pushReq.nameValidationSchemeOverride)
+					require.Equal(t, *tt.expectedSchemeOverride, *pushReq.nameValidationSchemeOverride)
+				} else {
+					require.Nil(t, pushReq.nameValidationSchemeOverride)
 				}
 				return nil
 			}
