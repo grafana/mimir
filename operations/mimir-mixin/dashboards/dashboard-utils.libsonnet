@@ -53,6 +53,25 @@ local utils = import 'mixin-utils/utils.libsonnet';
             for i in std.range(0, n - 1)
           ],
         },
+
+      // splitIntoLines distributes panels across multiple visual lines within the same row,
+      // allowing for multiple "sub-rows" within the same row, making them collapsible together.
+      // panelsPerLine is an array with the number of panels on each line, e.g. [4, 2].
+      splitIntoLines(panelsPerLine)::
+        local allPanels = self.panels;
+        local offsets = std.foldl(
+          function(acc, n) acc + [acc[std.length(acc) - 1] + n],
+          panelsPerLine,
+          [0],
+        );
+        self + {
+          panels: std.flattenArrays([
+            local start = offsets[lineIdx];
+            local n = panelsPerLine[lineIdx];
+            [allPanels[start + i] { span: std.floor(12 / n) } for i in std.range(0, n - 1)]
+            for lineIdx in std.range(0, std.length(panelsPerLine) - 1)
+          ]),
+        },
     },
 
   // Override the dashboard constructor to add:
@@ -1223,7 +1242,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   },
 
   getObjectStoreRows(title, component):: [
-    super.row(title)
+    $.row(title)
     .addPanel(
       $.timeseriesPanel('Operations / sec') +
       $.queryPanel('sum by(operation) (rate(thanos_objstore_bucket_operations_total{%s,component="%s"}[$__rate_interval]))' % [$.namespaceMatcher(), component], '{{operation}}') +
@@ -1242,8 +1261,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addPanel(
       $.timeseriesPanel('Latency of op: Exists') +
       $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="exists"' % [$.namespaceMatcher(), component]),
-    ),
-    $.row('')
+    )
     .addPanel(
       $.timeseriesPanel('Latency of op: Get') +
       $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="get"' % [$.namespaceMatcher(), component]),
@@ -1259,7 +1277,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addPanel(
       $.timeseriesPanel('Latency of op: Delete') +
       $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="delete"' % [$.namespaceMatcher(), component]),
-    ),
+    )
+    .splitIntoLines([4, 4]),
   ],
 
   thanosMemcachedCache(title, jobName, component, cacheName)::

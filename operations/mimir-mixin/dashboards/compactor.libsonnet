@@ -291,9 +291,6 @@ local fixTargetsForTransformations(panel, refIds) = panel {
           |||
         ),
       )
-    )
-    .addRow(
-      $.row('')
       .addPanel(
         $.timeseriesPanel('Average blocks / tenant') +
         $.queryPanel('avg(max by(user) (cortex_bucket_blocks_count{%s}))' % $.jobMatcher($._config.job_names.compactor), 'avg'),
@@ -309,6 +306,7 @@ local fixTargetsForTransformations(panel, refIds) = panel {
         ) +
         $.showAllTooltip,
       )
+      .splitIntoLines([4, 2])
     )
     .addRow(
       $.row('Garbage collector')
