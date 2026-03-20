@@ -24,6 +24,7 @@ import (
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -33,7 +34,6 @@ import (
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/activitytracker"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -91,7 +91,6 @@ type Handler struct {
 	headersToLog []string
 	log          log.Logger
 	roundTripper http.RoundTripper
-	at           *activitytracker.ActivityTracker
 
 	// Metrics.
 	querySeconds          *prometheus.CounterVec
@@ -109,13 +108,12 @@ type Handler struct {
 }
 
 // NewHandler creates a new frontend handler.
-func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logger, reg prometheus.Registerer, at *activitytracker.ActivityTracker) *Handler {
+func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logger, reg prometheus.Registerer) *Handler {
 	h := &Handler{
 		cfg:          cfg,
 		headersToLog: filterHeadersToLog(cfg.LogQueryRequestHeaders),
 		log:          log,
 		roundTripper: roundTripper,
-		at:           at,
 	}
 	h.cond = sync.NewCond(&h.mtx)
 
@@ -226,9 +224,6 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, apierror.New(apierror.TypeBadData, err.Error()))
 		return
 	}
-
-	activityIndex := f.at.Insert(func() string { return httpRequestActivity(r, r.Header.Get("User-Agent"), params) })
-	defer f.at.Delete(activityIndex)
 
 	if isActiveSeriesEndpoint(r) && f.cfg.ActiveSeriesWriteTimeout > 0 {
 		deadline := time.Now().Add(f.cfg.ActiveSeriesWriteTimeout)
@@ -581,6 +576,8 @@ func httpRequestActivity(request *http.Request, userAgent string, requestParams 
 	tenantID := "(unknown)"
 	if tenantIDs, err := tenant.TenantIDs(request.Context()); err == nil {
 		tenantID = tenant.JoinTenantIDs(tenantIDs)
+	} else if orgID, _, err := user.ExtractOrgIDFromHTTPRequest(request); err == nil {
+		tenantID = orgID
 	}
 
 	params := requestParams.Encode()

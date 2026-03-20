@@ -43,9 +43,11 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
+	"github.com/grafana/mimir/pkg/frontend/transport"
 	"github.com/grafana/mimir/pkg/usagetracker"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/activitytracker"
 	"github.com/grafana/mimir/pkg/util/gziphandler"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/propagation"
@@ -491,8 +493,33 @@ func (a *API) RegisterQueryAnalysisAPI(handler http.Handler) {
 // RegisterQueryFrontendHandler registers the Prometheus routes supported by the
 // Mimir querier service. Currently, this can not be registered simultaneously
 // with the Querier.
-func (a *API) RegisterQueryFrontendHandler(h http.Handler, buildInfoHandler http.Handler) {
-	a.RegisterQueryAPI(h, buildInfoHandler)
+func (a *API) RegisterQueryFrontendHandler(h http.Handler, buildInfoHandler http.Handler, at *activitytracker.ActivityTracker) {
+	a.newQueryFrontendRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/read"), h, at, "POST")
+	a.newQueryFrontendRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/query"), h, at, "GET", "POST")
+	a.newQueryFrontendRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/query_range"), h, at, "GET", "POST")
+	a.newQueryFrontendRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/query_exemplars"), h, at, "GET", "POST")
+	a.newQueryFrontendRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/labels"), h, at, "GET", "POST")
+	a.newQueryFrontendRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/label/{name}/values"), h, at, "GET")
+	a.newQueryFrontendRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/series"), h, at, "GET", "POST", "DELETE")
+	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/status/buildinfo"), buildInfoHandler, false, true, "GET")
+	a.newQueryFrontendRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/metadata"), h, at, "GET")
+	a.newQueryFrontendRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/label_names"), h, at, "GET", "POST")
+	a.newQueryFrontendRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/label_values"), h, at, "GET", "POST")
+	a.newQueryFrontendRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/active_series"), h, at, "GET", "POST")
+	a.newQueryFrontendRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/active_native_histogram_metrics"), h, at, "GET", "POST")
+	a.newQueryFrontendRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/format_query"), h, at, "GET", "POST")
+}
+
+// newQueryFrontendRoute registers a single query-frontend route with consistency, auth, gzip, and activity tracking.
+// Activity tracking is placed outside gzip so that the tracker entry outlives gzip's deferred Close.
+func (a *API) newQueryFrontendRoute(p string, handler http.Handler, at *activitytracker.ActivityTracker, methods ...string) *mux.Route {
+	handler = propagation.Middleware(&querierapi.ConsistencyExtractor{}).Wrap(handler)
+	handler = a.AuthMiddleware.Wrap(handler)
+	handler = gziphandler.GzipHandler(handler, a.cfg.GzipCompressionLevel)
+	if at != nil {
+		handler = transport.NewActivityTrackingMiddleware(at, a.logger, handler)
+	}
+	return a.server.HTTP.Path(p).Methods(methods...).Handler(handler)
 }
 
 func (a *API) RegisterQueryFrontend2(f *frontendv2.Frontend) {
