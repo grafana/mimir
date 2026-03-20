@@ -331,8 +331,8 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 
 	db, err := tsdb.Open(udir, util_log.SlogFromGoKit(userLogger), tsdbPromReg, &tsdb.Options{
 		RetentionDuration:                    0,
-		MinBlockDuration:                     2 * time.Hour.Milliseconds(),
-		MaxBlockDuration:                     2 * time.Hour.Milliseconds(),
+		MinBlockDuration:                     5 * time.Minute.Milliseconds(),
+		MaxBlockDuration:                     5 * time.Minute.Milliseconds(),
 		NoLockfile:                           true,
 		StripeSize:                           b.cfg.BlocksStorage.TSDB.StripeSize,
 		HeadChunksWriteBufferSize:            b.cfg.BlocksStorage.TSDB.HeadChunksWriteBufferSize,
@@ -518,7 +518,7 @@ func (u *userTSDB) PostCreation(labels.Labels) {}
 func (u *userTSDB) PostDeletion(map[chunks.HeadSeriesRef]labels.Labels) {}
 
 func (u *userTSDB) compactBlocks(ctx context.Context) error {
-	blockRange := 2 * time.Hour.Milliseconds()
+	blockRange := 5 * time.Minute.Milliseconds()
 
 	// Compact the in-order data.
 	mint, maxt := u.Head().MinTime(), u.Head().MaxTime()
