@@ -44,6 +44,7 @@ type ingesterMetrics struct {
 	activeSeriesCustomTrackersPerUserNativeHistograms *prometheus.GaugeVec
 	activeNativeHistogramBucketsPerUser               *prometheus.GaugeVec
 	activeNativeHistogramBucketsCustomTrackersPerUser *prometheus.GaugeVec
+	activeSeriesLoading                               prometheus.Gauge
 
 	attributedActiveSeriesFailuresPerUser *prometheus.CounterVec
 
@@ -366,6 +367,11 @@ func newIngesterMetrics(
 			Help: "Number of currently active native histogram buckets matching a pre-configured label matchers per user.",
 		}, []string{"user", "name"}),
 
+		activeSeriesLoading: promauto.With(activeSeriesReg).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_ingester_active_series_loading",
+			Help: "1 if active series counts are still warming up and may be underreported, 0 once they are accurate.",
+		}),
+
 		compactionsTriggered: promauto.With(r).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingester_tsdb_compactions_triggered_total",
 			Help: "Total number of triggered compactions.",
@@ -441,6 +447,10 @@ func newIngesterMetrics(
 	m.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests)
 	m.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequestsBytes)
 	m.rejected.WithLabelValues(reasonIngesterMaxInflightReadRequests)
+
+	if activeSeriesEnabled {
+		m.activeSeriesLoading.Set(1)
+	}
 
 	return m
 }

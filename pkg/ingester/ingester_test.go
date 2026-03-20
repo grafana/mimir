@@ -12490,3 +12490,51 @@ func TestKafkaTimestampPropagation(t *testing.T) {
 	got = i.activeSeriesNow()
 	assert.Equal(t, kafkaTs.UnixMilli(), got.UnixMilli())
 }
+
+func TestActiveSeriesLoadingMetric(t *testing.T) {
+	t.Run("classic mode: transitions from 1 to 0 after idle timeout", func(t *testing.T) {
+		registry := prometheus.NewRegistry()
+		cfg := defaultIngesterTestConfig(t)
+		cfg.ActiveSeriesMetrics.Enabled = true
+		cfg.ActiveSeriesMetrics.IdleTimeout = 200 * time.Millisecond
+
+		ing, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, registry)
+		require.NoError(t, err)
+		startAndWaitHealthy(t, ing, r)
+		defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
+
+		// Push a sample so the ingester has a TSDB.
+		ctx := user.InjectOrgID(context.Background(), userID)
+		req := mockWriteRequest(t, labels.FromStrings(model.MetricNameLabel, "test"), 1, time.Now().UnixMilli())
+		require.NoError(t, ing.PushWithCleanup(ctx, req, func() {}))
+
+		// Before idle timeout elapses, metric should be 1.
+		ing.updateActiveSeries(time.Now())
+		require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(`
+			# HELP cortex_ingester_active_series_loading 1 if active series counts are still warming up and may be underreported, 0 once they are accurate.
+			# TYPE cortex_ingester_active_series_loading gauge
+			cortex_ingester_active_series_loading 1
+		`), "cortex_ingester_active_series_loading"))
+
+		// After idle timeout, metric should be 0.
+		ing.updateActiveSeries(time.Now().Add(cfg.ActiveSeriesMetrics.IdleTimeout))
+		require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(`
+			# HELP cortex_ingester_active_series_loading 1 if active series counts are still warming up and may be underreported, 0 once they are accurate.
+			# TYPE cortex_ingester_active_series_loading gauge
+			cortex_ingester_active_series_loading 0
+		`), "cortex_ingester_active_series_loading"))
+	})
+
+	t.Run("disabled: metric is absent", func(t *testing.T) {
+		registry := prometheus.NewRegistry()
+		cfg := defaultIngesterTestConfig(t)
+		cfg.ActiveSeriesMetrics.Enabled = false
+
+		ing, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, registry)
+		require.NoError(t, err)
+		startAndWaitHealthy(t, ing, r)
+		defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
+
+		require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(""), "cortex_ingester_active_series_loading"))
+	})
+}

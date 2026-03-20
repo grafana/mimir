@@ -389,6 +389,11 @@ type Ingester struct {
 	// even when records are replayed faster than real-time.
 	lastKafkaActiveSeriesUpdate atomic.Int64
 
+	// activeSeriesStartMs tracks when the ingester started receiving samples (unix milliseconds).
+	// For classic mode this is wall-clock time when the ticker starts; for Kafka mode it is the
+	// first Kafka record timestamp. Used to determine when active series counts become accurate.
+	activeSeriesStartMs atomic.Int64
+
 	circuitBreaker  ingesterCircuitBreaker
 	reactiveLimiter *ingesterReactiveLimiter
 }
@@ -876,6 +881,7 @@ func (i *Ingester) metricsUpdaterServiceRunning(ctx context.Context) error {
 
 	var activeSeriesTickerChan <-chan time.Time
 	if i.cfg.ActiveSeriesMetrics.Enabled && !i.cfg.IngestStorageConfig.Enabled {
+		i.activeSeriesStartMs.Store(time.Now().UnixMilli())
 		t := time.NewTicker(i.cfg.ActiveSeriesMetrics.UpdatePeriod)
 		activeSeriesTickerChan = t.C
 		defer t.Stop()
@@ -920,6 +926,11 @@ func (i *Ingester) activeSeriesNow() time.Time {
 }
 
 func (i *Ingester) updateActiveSeries(now time.Time) {
+	if startMs := i.activeSeriesStartMs.Load(); startMs > 0 &&
+		now.UnixMilli()-startMs >= i.cfg.ActiveSeriesMetrics.IdleTimeout.Milliseconds() {
+		i.metrics.activeSeriesLoading.Set(0)
+	}
+
 	for _, userID := range i.getTSDBUsers() {
 		userDB := i.getTSDB(userID)
 		if userDB == nil {
@@ -1558,6 +1569,8 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 				break
 			}
 		}
+
+		i.activeSeriesStartMs.CompareAndSwap(0, tsMs)
 
 		if i.cfg.ActiveSeriesMetrics.Enabled {
 			updatePeriodMs := i.cfg.ActiveSeriesMetrics.UpdatePeriod.Milliseconds()
