@@ -1213,49 +1213,6 @@ groups:
           for: 30m
           labels:
             severity: warning
-        - alert: MimirCompactorSchedulerUnreachable
-          annotations:
-            message: GEM Compactor {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not contacted the scheduler in the last 15 minutes.
-            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactorschedulerunreachable
-          expr: |
-            (time() - max by(cluster, namespace, pod) (cortex_compactor_last_scheduler_contact_timestamp_seconds) > 15 * 60)
-            and
-            (max by(cluster, namespace, pod) (cortex_compactor_last_scheduler_contact_timestamp_seconds) > 0)
-          for: 5m
-          labels:
-            reason: not-contacted-recently
-            severity: critical
-        - alert: MimirCompactorSchedulerUnreachable
-          annotations:
-            message: GEM Compactor {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not contacted the scheduler since startup.
-            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactorschedulerunreachable
-          expr: |
-            (max by(cluster, namespace, pod) (cortex_compactor_last_scheduler_contact_timestamp_seconds) == 0)
-          for: 15m
-          labels:
-            reason: since-startup
-            severity: critical
-        - alert: MimirCompactorSchedulerRepeatedJobFailure
-          annotations:
-            message: GEM Compactor scheduler in {{ $labels.cluster }}/{{ $labels.namespace }} has jobs failing repeatedly.
-            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactorschedulerrepeatedjobfailure
-          expr: |
-            sum by(cluster, namespace) (
-              increase(cortex_compactor_scheduler_repeated_job_failures_total[5m])
-            ) > 0
-          labels:
-            severity: critical
-        - alert: MimirCompactorSchedulerNotCompletingJobs
-          annotations:
-            message: GEM Compactor scheduler in {{ $labels.cluster }}/{{ $labels.namespace }} is not completing any jobs.
-            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactorschedulernotcompletingjobs
-          expr: |
-            sum by(cluster, namespace) (
-              increase(cortex_compactor_scheduler_jobs_completed_total[6h])
-            ) == 0
-          for: 30m
-          labels:
-            severity: critical
         - alert: MimirCompactorOOMKilled
           annotations:
             message: GEM Compactor {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} has been OOMKilled {{ printf "%.2f" $value }} times in the last 4h.
