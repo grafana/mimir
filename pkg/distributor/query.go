@@ -128,7 +128,8 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context) ([
 		// that have been inactive for longer than the lookback period.
 		shardSize := 0
 		if d.cfg.ShuffleShardingEnabled {
-			shardSize = d.limits.IngestionPartitionsTenantShardSize(userID)
+			// Use the read shard size, which may be overridden for graceful shard size migration.
+			shardSize = d.limits.IngestionPartitionsTenantReadShardSize(userID)
 		}
 		r, err = r.ShuffleShardWithLookback(userID, shardSize, d.cfg.IngestersLookbackPeriod, time.Now())
 		if err != nil {
