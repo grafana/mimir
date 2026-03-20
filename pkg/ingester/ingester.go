@@ -928,7 +928,7 @@ func (i *Ingester) activeSeriesNow() time.Time {
 func (i *Ingester) updateActiveSeries(now time.Time) {
 	if startMs := i.activeSeriesStartMs.Load(); startMs > 0 &&
 		now.UnixMilli()-startMs >= i.cfg.ActiveSeriesMetrics.IdleTimeout.Milliseconds() {
-		// Active series counts has passed the warm up. 
+		// Active series counts has passed the warm up.
 		// Mark the loading phase off to signal the counts are now accurate.
 		i.metrics.activeSeriesLoading.Set(0)
 	}
