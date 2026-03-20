@@ -385,7 +385,7 @@ func shardFilePath(dir string, index int) string {
 	return filepath.Join(dir, fmt.Sprintf("bbolt_shard_%03d", index))
 }
 
-// countShardFiles returns the number of contiguous shard files in dir (0..n-1).
+// countShardFiles returns the number of contiguous shard files in dir [0..n).
 // Returns an error if the shard files are not contiguous.
 func countShardFiles(dir string) (int, error) {
 	entries, err := os.ReadDir(dir)
@@ -453,7 +453,7 @@ func prepare(dir string, targetCount int, logger log.Logger) ([]*bbolt.DB, error
 	}
 
 	// Verify that no shard files have gone missing. countShardFiles checks that files are
-	// contiguous (0..n-1], but it does not know how many should exist.
+	// contiguous [0..n), but it does not know how many should exist.
 	// On scale up (including cold start) -> metadata written after shard files written
 	// On scale down -> metadata written before shard files deleted
 	// In both cases having more shards than the meta has is okay, but having less is not
