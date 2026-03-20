@@ -74,7 +74,8 @@ const (
 	BucketGroupPointerSlices
 	GroupPointerSlices
 	AggregationGroup
-	memoryConsumptionSourceCount = AggregationGroup + 1
+	BufferedQuerierResponses
+	memoryConsumptionSourceCount = BufferedQuerierResponses + 1
 )
 
 const (
@@ -129,6 +130,8 @@ func (s MemoryConsumptionSource) String() string {
 		return "[]*aggregations.group"
 	case AggregationGroup:
 		return "aggregation.AggregationGroup"
+	case BufferedQuerierResponses:
+		return "buffered querier responses"
 	default:
 		return unknownMemorySource
 	}
