@@ -143,11 +143,13 @@ You can use the `-ingest-storage.ingestion-partition-tenant-write-shard-size` co
 1. Update the main shard size to match the write shard size using the `-ingest-storage.ingestion-partition-tenant-shard-size=<new-smaller-size>` setting.
 1. Remove the write shard size override by setting `-ingest-storage.ingestion-partition-tenant-write-shard-size=0` or removing the runtime configuration override.
 
+This method is only available with ingest storage enabled. If you're using classic architecture, use the method described in the following section instead.
+
 This method allows queries to continue reading from the previous larger set of partitions while new writes go to the smaller set, without requiring you to disable shuffle sharding for all tenants during the migration.
 
 ##### Temporarily disable shuffle sharding
 
-If the write shard size override is not available, follow these steps:
+If you're using classic architecture or the write shard size override is otherwise not available, follow these steps:
 
 1. Disable shuffle sharding on the ingester read path via `-querier.shuffle-sharding-ingesters-enabled=false`.
 1. Decrease the configured tenant shard size.
