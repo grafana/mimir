@@ -1840,7 +1840,7 @@ func TestOTLPHandler_TranslationHeaders(t *testing.T) {
 		tenantStrategy          validation.OTelTranslationStrategyValue
 		expectedResponseCode    int
 		expectedErrMessage      string
-		verifyMetricName        string               // if set, verify the first series has this metric name
+		verifyMetricName        string                  // if set, verify the first series has this metric name
 		expectedSchemeOverride  *model.ValidationScheme // if set, verify the scheme override on the Request
 	}
 
