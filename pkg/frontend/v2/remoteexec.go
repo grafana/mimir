@@ -863,6 +863,10 @@ func (e *eagerLoadingResponseStream) bufferOne(ctx context.Context) bool {
 	}
 
 	if err := e.buffer.Push(bufferedMessage{msg, err}); err != nil {
+		if msg != nil {
+			msg.FreeBuffer()
+		}
+
 		_ = e.buffer.Push(bufferedMessage{nil, err}) // nolint:errcheck // Push will always return nil if the payload is nil.
 		return false
 	}
