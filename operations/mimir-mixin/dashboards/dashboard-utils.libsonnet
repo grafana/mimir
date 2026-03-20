@@ -59,17 +59,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
       // panelsPerLine is an array with the number of panels on each line, e.g. [4, 2].
       splitIntoLines(panelsPerLine)::
         local allPanels = self.panels;
-        local offsets = std.foldl(
-          function(acc, n) acc + [acc[std.length(acc) - 1] + n],
-          panelsPerLine,
-          [0],
-        );
+        local lineStart(i) = std.foldl(function(s, n) s + n, panelsPerLine[:i], 0);
         self + {
           panels: std.flattenArrays([
-            local start = offsets[lineIdx];
-            local n = panelsPerLine[lineIdx];
-            [allPanels[start + i] { span: std.floor(12 / n) } for i in std.range(0, n - 1)]
-            for lineIdx in std.range(0, std.length(panelsPerLine) - 1)
+            [
+              p { span: std.floor(12 / panelsPerLine[i]) }
+              for p in allPanels[lineStart(i):lineStart(i) + panelsPerLine[i]]
+            ]
+            for i in std.range(0, std.length(panelsPerLine) - 1)
           ]),
         },
     },
