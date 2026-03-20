@@ -79,6 +79,10 @@ func (m *experimentalFeaturesMiddleware) Do(ctx context.Context, req MetricsQuer
 	}
 
 	expr := req.GetParsedQuery()
+	if expr == nil {
+		return nil, errRequestNoQuery
+	}
+
 	features := containedExperimentalFeatures(expr)
 	if len(features) == 0 {
 		// This query does not contain any experimental functions, so we can continue to the next middleware.

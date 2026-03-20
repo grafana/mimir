@@ -30,6 +30,10 @@ func newBlockInternalFunctionsMiddleware(functionsToBlock FunctionNamesSet, logg
 
 func (b *blockInternalFunctionsMiddleware) Do(ctx context.Context, request MetricsQueryRequest) (Response, error) {
 	expr := request.GetParsedQuery()
+	if expr == nil {
+		return nil, errRequestNoQuery
+	}
+
 	forbiddenFunctionName := ""
 	containsInternalFunction := astmapper.AnyNode(expr, func(node parser.Node) bool {
 		if call, isCall := node.(*parser.Call); isCall {
