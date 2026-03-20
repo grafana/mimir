@@ -119,6 +119,10 @@ func (c *offsetCatalogue) Sync(ctx context.Context, offsetHW int64) (err error) 
 		Data:      make(map[string]offsetWatermark, len(blocks)),
 	}
 	for id := range blocks {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
 		if mark, ok := oldData.Data[id]; ok {
 			// If block already exists in the previous catalogue, keep it.
 			data.Data[id] = mark

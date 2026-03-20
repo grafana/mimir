@@ -190,6 +190,8 @@ func (i *Ingester) offsetCataloguesSync(ctx context.Context) {
 	// this offset overshoots by ~1h. This is technically correct, but very conservative.
 	offsetHW := i.ingestReader.LastSeenOffset()
 
+	level.Info(i.logger).Log("msg", "syncing offset catalogues for tenants", "last_seen_offset", offsetHW)
+
 	_ = concurrency.ForEachUser(ctx, i.getTSDBUsers(), i.cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.SyncConcurrency, func(ctx context.Context, userID string) error {
 		// Get the user's DB. If the user doesn't exist, we skip it.
 		db := i.getTSDB(userID)
