@@ -1,5 +1,7 @@
 # Grafana Mimir
 
+[![gitcgr](https://gitcgr.com/badge/grafana/mimir.svg)](https://gitcgr.com/grafana/mimir)
+
 <p align="center"><img src="images/logo.png" alt="Grafana Mimir logo" width="400"></p>
 
 Grafana Mimir is an open source software project that provides a scalable long-term storage for [Prometheus](https://prometheus.io). Some of the core strengths of Grafana Mimir include:
