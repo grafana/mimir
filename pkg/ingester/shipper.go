@@ -248,7 +248,8 @@ func listBlocks(dir string) iter.Seq2[ulid.ULID, error] {
 					return
 				}
 			}
-			if !fi.IsDir() {
+			if fi == nil || !fi.IsDir() {
+				// Keep iterating ig either the caller chosen to ignore the error, or the fi can be a block.
 				continue
 			}
 			if !yield(id, nil) {
