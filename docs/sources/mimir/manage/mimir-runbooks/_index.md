@@ -2288,6 +2288,41 @@ This shouldn't happen in normal circumstances and is most likely indicative of a
 - Immediately scale out ingesters to the number of active partitions to consume the data.
 - Check that the ingester shutdowns are working as expected. When ingesters are downscaled, they should set their partition as INACTIVE before shutting down. Ingesters are most likely the cause of this issue.
 
+### MimirUsageTrackerSnapshotUploadFailing
+
+This alert fires when the usage-tracker is failing to upload snapshots to object storage for more than 15 minutes.
+
+How it **works**:
+
+- The usage-tracker periodically uploads snapshots of tracked usage data to object storage.
+- When snapshot uploads fail, the metric `cortex_usage_tracker_snapshot_events_publish_failures_total` is incremented.
+- If the failure rate is greater than 0 for 15 minutes, this alert fires.
+
+How to **investigate**:
+
+- Check the usage-tracker logs for `"failed to publish snapshot"` error messages.
+- Verify that the configured object storage bucket exists and is accessible.
+- Verify that the credentials used by the usage-tracker have write permissions to the bucket.
+- Check for network issues between the usage-tracker and the object storage backend.
+
+### MimirUsageTrackerSnapshotDownloadFailing
+
+This alert fires when the usage-tracker is failing to download snapshots from object storage for more than 15 minutes.
+
+How it **works**:
+
+- The usage-tracker downloads snapshots from object storage to restore previously tracked usage data.
+- When snapshot downloads fail, the metric `cortex_usage_tracker_snapshot_events_errors_total{error="download"}` is incremented.
+- If the failure rate is greater than 0 for 15 minutes, this alert fires.
+
+How to **investigate**:
+
+- Check the usage-tracker logs for `"failed to load snapshot file"` error messages.
+- Verify that the configured object storage bucket exists and is accessible.
+- Verify that the credentials used by the usage-tracker have read permissions to the bucket.
+- Check whether the expected snapshot files exist in the bucket — they may have been deleted or never uploaded.
+- Check for network issues between the usage-tracker and the object storage backend.
+
 ## Errors catalog
 
 Mimir has some codified error IDs that you might see in HTTP responses or logs.

@@ -805,7 +805,7 @@ warmup-build-cache-unit-tests: ## Warm the Go build cache for unit tests.
 	go test -run=^$ -count=1 -tags=$(GO_TAGS) -race ./... 2>&1 || true
 	go test -run=^$ -count=1 -tags=$(GO_TAGS),nopools -race ./... 2>&1 || true
 	# Some packages run without -race (see SKIP_RACE_DETECTOR_PATTERN in run-unit-tests-group.sh).
-	go test -run=^$ -count=1 -tags=$(GO_TAGS) ./pkg/streamingpromql/benchmarks/... 2>&1 || true
+	go test -run=^$ -count=1 -tags=$(GO_TAGS) ./pkg/streamingpromql/benchmarks/... ./pkg/streamingpromql/comparisons/... ./pkg/streamingpromql/fuzz/... 2>&1 || true
 
 IMAGE_EXES := $(foreach dir,$(DOCKER_IMAGE_DIRS),$(wildcard $(dir)/main.go))
 warmup-build-cache-image-and-lint: ## Warm the Go build cache for image builds and linting.

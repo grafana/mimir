@@ -9,7 +9,7 @@ require (
 	github.com/edsrzf/mmap-go v1.2.0
 	github.com/failsafe-go/failsafe-go v0.9.6
 	github.com/go-kit/log v0.2.1
-	github.com/go-openapi/strfmt v0.26.0
+	github.com/go-openapi/strfmt v0.26.1
 	github.com/go-openapi/swag v0.25.4 // indirect
 	github.com/gogo/protobuf v1.3.2
 	github.com/gogo/status v1.1.1
@@ -17,7 +17,7 @@ require (
 	github.com/golang/snappy v1.0.0
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/dskit v0.0.0-20260318051422-6eb5ee5d450a
+	github.com/grafana/dskit v0.0.0-20260319050051-803e3aef21e3
 	github.com/grafana/e2e v0.1.2-0.20260309174126-b5393d4e610f
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/influxdata/influxdb/v2 v2.8.0
@@ -41,10 +41,10 @@ require (
 	go.uber.org/atomic v1.11.0
 	go.uber.org/goleak v1.3.0
 	golang.org/x/crypto v0.49.0
-	golang.org/x/net v0.51.0
+	golang.org/x/net v0.52.0
 	golang.org/x/sync v0.20.0
 	golang.org/x/time v0.15.0
-	google.golang.org/grpc v1.79.2
+	google.golang.org/grpc v1.79.3
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
@@ -124,7 +124,7 @@ require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/basgys/goxml2json v1.1.1-0.20231018121955-e66ee54ceaad // indirect
 	github.com/bboreham/go-loser v0.0.0-20230920113527-fcc2c21820a3 // indirect
-	github.com/buger/jsonparser v1.1.1 // indirect
+	github.com/buger/jsonparser v1.1.2 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cncf/xds/go v0.0.0-20251210132809-ee656c7534f5 // indirect
 	github.com/d4l3k/messagediff v1.2.1 // indirect

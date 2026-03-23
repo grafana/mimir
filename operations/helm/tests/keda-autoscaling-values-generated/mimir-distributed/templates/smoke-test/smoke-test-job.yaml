@@ -16,7 +16,6 @@ spec:
   backoffLimit: 5
   completions: 1
   parallelism: 1
-  selector:
   template:
     metadata:
       labels:

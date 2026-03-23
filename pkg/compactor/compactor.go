@@ -369,6 +369,20 @@ func newMultitenantCompactor(
 	blocksGrouperFactory BlocksGrouperFactory,
 	blocksCompactorFactory BlocksCompactorFactory,
 ) (*MultitenantCompactor, error) {
+	var (
+		mode string
+		// used to register metrics conditionally for each mode
+		standaloneReg prometheus.Registerer
+		schedulerReg  prometheus.Registerer
+	)
+	if compactorCfg.SchedulerClientConfig.Enabled {
+		mode = modeScheduler
+		schedulerReg = registerer
+	} else {
+		mode = modeStandalone
+		standaloneReg = registerer
+	}
+
 	c := &MultitenantCompactor{
 		compactorCfg:           compactorCfg,
 		storageCfg:             storageCfg,
@@ -381,45 +395,45 @@ func newMultitenantCompactor(
 		blocksGrouperFactory:   blocksGrouperFactory,
 		blocksCompactorFactory: blocksCompactorFactory,
 
-		compactionRunsStarted: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+		compactionRunsStarted: promauto.With(standaloneReg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_compactor_runs_started_total",
 			Help: "Total number of compaction runs started.",
 		}),
-		compactionRunsCompleted: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+		compactionRunsCompleted: promauto.With(standaloneReg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_compactor_runs_completed_total",
 			Help: "Total number of compaction runs successfully completed.",
 		}),
-		compactionRunsErred: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+		compactionRunsErred: promauto.With(standaloneReg).NewCounter(prometheus.CounterOpts{
 			Name:        "cortex_compactor_runs_failed_total",
 			Help:        "Total number of compaction runs failed.",
 			ConstLabels: map[string]string{"reason": "error"},
 		}),
-		compactionRunsShutdown: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+		compactionRunsShutdown: promauto.With(standaloneReg).NewCounter(prometheus.CounterOpts{
 			Name:        "cortex_compactor_runs_failed_total",
 			Help:        "Total number of compaction runs failed.",
 			ConstLabels: map[string]string{"reason": "shutdown"},
 		}),
-		compactionRunsLastSuccess: promauto.With(registerer).NewGauge(prometheus.GaugeOpts{
+		compactionRunsLastSuccess: promauto.With(standaloneReg).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_compactor_last_successful_run_timestamp_seconds",
 			Help: "Unix timestamp of the last successful compaction run.",
 		}),
-		compactionRunDiscoveredTenants: promauto.With(registerer).NewGauge(prometheus.GaugeOpts{
+		compactionRunDiscoveredTenants: promauto.With(standaloneReg).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_compactor_tenants_discovered",
 			Help: "Number of tenants discovered during the current compaction run. Reset to 0 when compactor is idle.",
 		}),
-		compactionRunSkippedTenants: promauto.With(registerer).NewGauge(prometheus.GaugeOpts{
+		compactionRunSkippedTenants: promauto.With(standaloneReg).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_compactor_tenants_skipped",
 			Help: "Number of tenants skipped during the current compaction run. Reset to 0 when compactor is idle.",
 		}),
-		compactionRunSucceededTenants: promauto.With(registerer).NewGauge(prometheus.GaugeOpts{
+		compactionRunSucceededTenants: promauto.With(standaloneReg).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_compactor_tenants_processing_succeeded",
 			Help: "Number of tenants successfully processed during the current compaction run. Reset to 0 when compactor is idle.",
 		}),
-		compactionRunFailedTenants: promauto.With(registerer).NewGauge(prometheus.GaugeOpts{
+		compactionRunFailedTenants: promauto.With(standaloneReg).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_compactor_tenants_processing_failed",
 			Help: "Number of tenants failed processing during the current compaction run. Reset to 0 when compactor is idle.",
 		}),
-		compactionRunInterval: promauto.With(registerer).NewGauge(prometheus.GaugeOpts{
+		compactionRunInterval: promauto.With(standaloneReg).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_compactor_compaction_interval_seconds",
 			Help: "The configured interval on which compaction is run in seconds. Useful when compared to the last successful run metric to accurately detect multiple failed compaction runs.",
 		}),
@@ -472,16 +486,6 @@ func newMultitenantCompactor(
 	// The last successful compaction run metric is exposed as seconds since epoch, so we need to use seconds for this metric.
 	c.compactionRunInterval.Set(c.compactorCfg.CompactionInterval.Seconds())
 
-	var (
-		mode         string
-		schedulerReg prometheus.Registerer // used to register metrics only used in the scheduler mode conditionally
-	)
-	if compactorCfg.SchedulerClientConfig.Enabled {
-		mode = modeScheduler
-		schedulerReg = registerer
-	} else {
-		mode = modeStandalone
-	}
 	promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "cortex_compactor_info",
 		Help: "Information about the compactor. The mode label indicates the compactor mode (standalone or scheduler).",

@@ -6075,6 +6075,15 @@
                 "fieldValue": null,
                 "fieldDefaultValue": false,
                 "fieldType": "boolean"
+              },
+              {
+                "kind": "field",
+                "name": "time_range_longer_than",
+                "required": false,
+                "desc": "Block queries with time range longer than this duration. Set to 0 to disable.",
+                "fieldValue": null,
+                "fieldDefaultValue": null,
+                "fieldType": "duration"
               }
             ],
             "fieldValue": null,

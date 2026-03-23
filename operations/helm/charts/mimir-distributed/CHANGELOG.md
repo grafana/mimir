@@ -51,6 +51,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Ensure Kafka can boostrap successfully by using parallel rollout and publishing not-ready addresses. #13650
 * [BUGFIX] Upgrade rollout-operator chart to 0.38.1, which fixes an issue with permissions preventing the rollout-operator from starting when webhooks are not enabled. #13754.
 * [BUGFIX] Fix Kafka image reference to include the registry in the StatefulSet template. #14211.
+* [BUGFIX] Helm: Removed helm's empty selector for the smoke-test-job file that is throwing errors in ArgoCD #14684
 
 ## 6.0.5
 

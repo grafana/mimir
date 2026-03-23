@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"unsafe"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -23,6 +24,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/pool"
 )
 
 type Aggregation struct {
@@ -79,6 +81,19 @@ var _ types.InstantVectorOperator = &Aggregation{}
 var groupPool = zeropool.New(func() *group {
 	return &group{}
 })
+
+const groupPointerSize = uint64(unsafe.Sizeof((*group)(nil)))
+
+// groupPointerSlicePool is defined locally and not added to the collection of pools provided by the types package
+// because group is not exported. If group were to be exported then this pool should be moved into limiting_pool.go.
+var groupPointerSlicePool = types.NewLimitingBucketedPool(
+	pool.NewBucketedPool(types.MaxExpectedSeriesPerResult, func(size int) []*group {
+		return make([]*group, 0, size)
+	}),
+	limiter.GroupPointerSlices,
+	groupPointerSize,
+	true, nil, nil,
+)
 
 func (a *Aggregation) ExpressionPosition() posrange.PositionRange {
 	return a.expressionPosition
@@ -214,12 +229,14 @@ type Aggregator struct {
 
 	metricNames             *operators.MetricNames
 	currentSeriesIndex      int
-	aggregationGroupFactory AggregationGroupFactory
+	aggregationGroupFactory *AggregationGroupFactory
 	emitAnnotationFunc      types.EmitAnnotationFunc
 	innerExpressionPosition posrange.PositionRange
 
 	remainingInnerSeriesToGroup []*group // One entry per series produced by Inner, value is the group for that series
+	nextInnerSeriesIdx          int
 	remainingGroups             []*group // One entry per group, in the order we want to return them
+	nextGroupIdx                int
 
 	haveEmittedMixedFloatsAndHistogramsWarning bool
 }
@@ -281,7 +298,11 @@ func (a *Aggregator) ComputeGroups(innerSeries []types.SeriesMetadata) ([]types.
 	groups := map[string]groupWithLabels{}
 	groupLabelsBytesFunc := a.groupLabelsBytesFunc()
 	groupLabelsFunc := a.groupLabelsFunc()
-	a.remainingInnerSeriesToGroup = make([]*group, 0, len(innerSeries))
+	var err error
+	a.remainingInnerSeriesToGroup, err = groupPointerSlicePool.Get(len(innerSeries), a.MemoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
 
 	for seriesIdx, series := range innerSeries {
 		groupLabelsString := groupLabelsBytesFunc(series.Labels)
@@ -290,9 +311,16 @@ func (a *Aggregator) ComputeGroups(innerSeries []types.SeriesMetadata) ([]types.
 		if !groupExists {
 			g.labels = groupLabelsFunc(series.Labels)
 			g.group = groupPool.Get()
-			g.group.aggregation = a.aggregationGroupFactory()
+			g.group.aggregation = a.aggregationGroupFactory.Create()
 			g.group.remainingSeriesCount = 0
 			g.dropName = series.DropName
+
+			// Note that we only accumulate the aggregation struct size.
+			// The group comes from a pool where its allocation has already been made and is re-used.
+			// The memory consumption of the []*group is tracked, but we don't track the memory consumption of the group instance itself
+			if err := a.MemoryConsumptionTracker.IncreaseMemoryConsumption(a.aggregationGroupFactory.StructSize(), limiter.AggregationGroup); err != nil {
+				return nil, err
+			}
 
 			groups[string(groupLabelsString)] = g
 		}
@@ -313,7 +341,10 @@ func (a *Aggregator) ComputeGroups(innerSeries []types.SeriesMetadata) ([]types.
 		return nil, err
 	}
 
-	a.remainingGroups = make([]*group, 0, len(groups))
+	a.remainingGroups, err = groupPointerSlicePool.Get(len(groups), a.MemoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
 
 	for _, g := range groups {
 		seriesMetadata, err = types.AppendSeriesMetadata(a.MemoryConsumptionTracker, seriesMetadata, types.SeriesMetadata{Labels: g.labels, DropName: g.dropName})
@@ -370,8 +401,8 @@ var groupToSingleSeriesLabelsFunc = func(_ labels.Labels) labels.Labels { return
 // If takeOwnershipOfData is false, the provided data will not be returned to a pool when this function returns,
 // and points within the data slices will not be mutated.
 func (a *Aggregator) AccumulateNextInnerSeries(data types.InstantVectorSeriesData, takeOwnershipOfData bool) error {
-	thisSeriesGroup := a.remainingInnerSeriesToGroup[0]
-	a.remainingInnerSeriesToGroup = a.remainingInnerSeriesToGroup[1:]
+	thisSeriesGroup := a.remainingInnerSeriesToGroup[a.nextInnerSeriesIdx]
+	a.nextInnerSeriesIdx++
 	if err := thisSeriesGroup.aggregation.AccumulateSeries(data, a.TimeRange, a.MemoryConsumptionTracker, a.emitAnnotationFunc, thisSeriesGroup.remainingSeriesCount, takeOwnershipOfData); err != nil {
 		return err
 	}
@@ -388,8 +419,8 @@ func (a *Aggregator) AccumulateNextInnerSeries(data types.InstantVectorSeriesDat
 
 // ComputeNextOutputSeries computes the final result for the next output series from this Aggregator.
 func (a *Aggregator) ComputeNextOutputSeries() (types.InstantVectorSeriesData, error) {
-	thisGroup := a.remainingGroups[0]
-	a.remainingGroups = a.remainingGroups[1:]
+	thisGroup := a.remainingGroups[a.nextGroupIdx]
+	a.nextGroupIdx++
 
 	// Construct the group and return it
 	seriesData, hasMixedData, err := thisGroup.aggregation.ComputeOutputSeries(a.ParamData, a.TimeRange, a.MemoryConsumptionTracker)
@@ -405,8 +436,10 @@ func (a *Aggregator) ComputeNextOutputSeries() (types.InstantVectorSeriesData, e
 		a.haveEmittedMixedFloatsAndHistogramsWarning = true
 	}
 
+	a.MemoryConsumptionTracker.DecreaseMemoryConsumption(a.aggregationGroupFactory.StructSize(), limiter.AggregationGroup)
 	thisGroup.aggregation.Close(a.MemoryConsumptionTracker)
 	groupPool.Put(thisGroup)
+	a.remainingGroups[a.nextGroupIdx-1] = nil
 
 	return seriesData, nil
 }
@@ -414,12 +447,12 @@ func (a *Aggregator) ComputeNextOutputSeries() (types.InstantVectorSeriesData, e
 // IsNextOutputSeriesComplete returns true if all inner series for the next output series have been passed
 // to AccumulateNextInnerSeries.
 func (a *Aggregator) IsNextOutputSeriesComplete() bool {
-	return a.remainingGroups[0].remainingSeriesCount == 0
+	return a.remainingGroups[a.nextGroupIdx].remainingSeriesCount == 0
 }
 
 // HasMoreOutputSeries returns true if there are more output series to produce.
 func (a *Aggregator) HasMoreOutputSeries() bool {
-	return len(a.remainingGroups) > 0
+	return a.nextGroupIdx < len(a.remainingGroups)
 }
 
 func (a *Aggregator) emitAnnotation(generator types.AnnotationGenerator) {
@@ -432,11 +465,14 @@ func (a *Aggregator) Finalize() {
 		types.FPointSlicePool.Put(&a.ParamData.Samples, a.MemoryConsumptionTracker)
 	}
 
-	for _, g := range a.remainingGroups {
+	for _, g := range a.remainingGroups[a.nextGroupIdx:] {
+		a.MemoryConsumptionTracker.DecreaseMemoryConsumption(a.aggregationGroupFactory.StructSize(), limiter.AggregationGroup)
 		g.aggregation.Close(a.MemoryConsumptionTracker)
 		groupPool.Put(g)
 	}
 
-	a.remainingGroups = nil
-	a.remainingInnerSeriesToGroup = nil
+	groupPointerSlicePool.Put(&a.remainingGroups, a.MemoryConsumptionTracker)
+	groupPointerSlicePool.Put(&a.remainingInnerSeriesToGroup, a.MemoryConsumptionTracker)
+	a.nextGroupIdx = 0
+	a.nextInnerSeriesIdx = 0
 }

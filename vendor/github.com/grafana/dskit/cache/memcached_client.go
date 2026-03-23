@@ -304,9 +304,7 @@ func (c *MemcachedClient) SetMultiAsync(data map[string][]byte, ttl time.Duratio
 }
 
 func (c *MemcachedClient) SetAsync(key string, value []byte, ttl time.Duration) {
-	if c.config.MaxItemSize > 0 && len(value) > c.config.MaxItemSize {
-		c.metrics.skipped.WithLabelValues(opSet, reasonMaxItemSize).Inc()
-		level.Debug(c.logger).Log("msg", "failed to store item to cache because it is too large", "key", key, "size", len(value), "max_item_size", c.config.MaxItemSize)
+	if !c.itemSizeIsAcceptable(key, value, opSet) {
 		return
 	}
 
@@ -323,6 +321,17 @@ func (c *MemcachedClient) SetAsync(key string, value []byte, ttl time.Duration) 
 		c.metrics.skipped.WithLabelValues(opSet, reasonAsyncBufferFull).Inc()
 		level.Debug(c.logger).Log("msg", "failed to store item to cache because the async buffer is full", "key", key, "err", err, "buffer_size", c.config.MaxAsyncBufferSize)
 	}
+}
+
+func (c *MemcachedClient) itemSizeIsAcceptable(key string, value []byte, op string) bool {
+	if c.config.MaxItemSize > 0 && len(value) > c.config.MaxItemSize {
+		c.metrics.skipped.WithLabelValues(op, reasonMaxItemSize).Inc()
+		c.metrics.skippedDataSize.WithLabelValues(op).Observe(float64(len(value)))
+		level.Debug(c.logger).Log("msg", "failed to store item to cache because it is too large", "key", key, "size", len(value), "max_item_size", c.config.MaxItemSize, "op", op)
+		return false
+	}
+
+	return true
 }
 
 func (c *MemcachedClient) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
@@ -574,8 +583,7 @@ func (c *MemcachedClient) FlushAll(ctx context.Context) error {
 }
 
 func (c *MemcachedClient) storeOperation(ctx context.Context, key string, value []byte, ttl time.Duration, operation string, f func(ctx context.Context, key string, value []byte, ttl time.Duration) error) error {
-	if c.config.MaxItemSize > 0 && len(value) > c.config.MaxItemSize {
-		c.metrics.skipped.WithLabelValues(operation, reasonMaxItemSize).Inc()
+	if !c.itemSizeIsAcceptable(key, value, operation) {
 		return nil
 	}
 

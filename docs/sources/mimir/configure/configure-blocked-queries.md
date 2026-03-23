@@ -26,11 +26,25 @@ overrides:
       # block this query only if it's a range query and the time range is not aligned to the step (i.e. not eligible for range query result caching)
       - pattern: 'sum(rate(node_cpu_seconds_total{env="prod"}[1m]))'
         unaligned_range_queries: true
+
+      # block queries longer than 7 days
+      - time_range_longer_than: 7d
+        reason: "queries longer than 7 days are not allowed"
+
+      # combine pattern matching with time range filtering
+      - pattern: ".*expensive.*"
+        regex: true
+        time_range_longer_than: 24h
+        reason: "expensive queries over 1 day are blocked"
 ```
 
 The blocking is enforced on instant and range queries as well as remote read queries.
 
 For instant and range queries the pattern is evaluated against the query, for remote read requests, the pattern is evaluated against each set of matchers, as if the matchers formed a vector selector. If any set of matchers is blocked, the whole remote read request is rejected.
+
+Setting `time_range_longer_than` on a rule blocks queries where the time range duration (calculated as `end - start`) exceeds the specified threshold.
+Time range filtering is automatically skipped for instant queries since they query a single point in time.
+When combined with pattern matching, both the pattern must match AND the time range must exceed the threshold for the query to be blocked.
 
 Setting `unaligned_range_queries: true` on a rule causes the rule to only block range queries where the time range is not aligned to the step.
 Such queries are not eligible for [range query result caching](https://grafana.com/docs/mimir/latest/references/architecture/components/query-frontend/#caching) by default.

@@ -29,9 +29,9 @@ func newBlockInternalFunctionsMiddleware(functionsToBlock FunctionNamesSet, logg
 }
 
 func (b *blockInternalFunctionsMiddleware) Do(ctx context.Context, request MetricsQueryRequest) (Response, error) {
-	expr, err := request.GetClonedParsedQuery()
-	if err != nil {
-		return nil, err
+	expr := request.GetParsedQuery()
+	if expr == nil {
+		return nil, errRequestNoQuery
 	}
 
 	forbiddenFunctionName := ""

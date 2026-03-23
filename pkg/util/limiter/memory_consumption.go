@@ -72,7 +72,10 @@ const (
 	CounterResetHintSlices
 	SeriesGroupPairSlices
 	BucketGroupPointerSlices
-	memoryConsumptionSourceCount = BucketGroupPointerSlices + 1
+	GroupPointerSlices
+	AggregationGroup
+	BufferedQuerierResponses
+	memoryConsumptionSourceCount = BufferedQuerierResponses + 1
 )
 
 const (
@@ -123,6 +126,12 @@ func (s MemoryConsumptionSource) String() string {
 		return "[]functions.seriesGroupPair"
 	case BucketGroupPointerSlices:
 		return "[]*functions.bucketGroup"
+	case GroupPointerSlices:
+		return "[]*aggregations.group"
+	case AggregationGroup:
+		return "aggregation.AggregationGroup"
+	case BufferedQuerierResponses:
+		return "buffered querier responses"
 	default:
 		return unknownMemorySource
 	}

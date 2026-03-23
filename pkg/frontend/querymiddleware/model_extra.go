@@ -153,6 +153,10 @@ func (r *PrometheusRangeQueryRequest) GetClonedParsedQuery() (parser.Expr, error
 	return astmapper.CloneExpr(r.queryExpr)
 }
 
+func (r *PrometheusRangeQueryRequest) GetParsedQuery() parser.Expr {
+	return r.queryExpr
+}
+
 // GetMinT returns the minimum timestamp in milliseconds of data to be queried,
 // as determined from the start timestamp and any range vector or offset in the query.
 func (r *PrometheusRangeQueryRequest) GetMinT() int64 {
@@ -364,6 +368,10 @@ func (r *PrometheusInstantQueryRequest) GetClonedParsedQuery() (parser.Expr, err
 	}
 
 	return astmapper.CloneExpr(r.queryExpr)
+}
+
+func (r *PrometheusInstantQueryRequest) GetParsedQuery() parser.Expr {
+	return r.queryExpr
 }
 
 func (r *PrometheusInstantQueryRequest) GetStart() int64 {

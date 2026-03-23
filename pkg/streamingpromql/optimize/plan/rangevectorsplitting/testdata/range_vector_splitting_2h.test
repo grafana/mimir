@@ -490,3 +490,97 @@ eval instant at 2h last_over_time(first_last_metric_mixed[6h])
   {__name__="first_last_metric_mixed", env="prod"} 30
 
 clear
+
+# ===== avg_over_time =====
+
+load 30m
+  avg_metric{env="prod"} 10 15 20 25 30 35 40 45 50 55 60 65 70
+
+eval instant at 6h avg_over_time(avg_metric[5h])
+  {env="prod"} 47.5
+
+eval instant at 6h avg_over_time(avg_metric[5h])
+  {env="prod"} 47.5
+
+clear
+
+load 1h
+  avg_metric_overflow_middle{env="prod"} 1 2 3 4 1.0e+308 1.0e+308 7 8 9
+
+eval instant at 8h avg_over_time(avg_metric_overflow_middle[6h])
+  {env="prod"} 3.3333333333333337e+307
+
+eval instant at 8h avg_over_time(avg_metric_overflow_middle[6h])
+  {env="prod"} 3.3333333333333337e+307
+
+clear
+
+load 1h
+  avg_metric_overflow_hist{env="prod"} {{schema:0 sum:1.0e+308 count:10 buckets:[10]}} {{schema:0 sum:1.0e+308 count:10 buckets:[10]}} {{schema:0 sum:1.0e+308 count:10 buckets:[10]}} {{schema:0 sum:1.0e+308 count:10 buckets:[10]}} {{schema:0 sum:1.0e+308 count:10 buckets:[10]}} {{schema:0 sum:1.0e+308 count:10 buckets:[10]}}
+
+eval instant at 6h avg_over_time(avg_metric_overflow_hist[6h])
+  {env="prod"} {{schema:0 sum:1.0e+308 count:10 buckets:[10]}}
+
+eval instant at 6h avg_over_time(avg_metric_overflow_hist[6h])
+  {env="prod"} {{schema:0 sum:1.0e+308 count:10 buckets:[10]}}
+
+clear
+
+load 30m
+  avg_hist{env="prod"} _ _ _ {{schema:0 sum:10 count:10 buckets:[10]}} _ {{schema:0 sum:20 count:20 buckets:[20]}} _ {{schema:0 sum:30 count:30 buckets:[30]}} _ {{schema:0 sum:40 count:40 buckets:[40]}}
+
+eval instant at 6h avg_over_time(avg_hist[5h])
+  {env="prod"} {{schema:0 sum:25 count:25 buckets:[25]}}
+
+eval instant at 6h avg_over_time(avg_hist[5h])
+  {env="prod"} {{schema:0 sum:25 count:25 buckets:[25]}}
+
+clear
+
+# Floats in one split, histograms in another
+load 1h
+  mixed_avg{env="prod"} _ _ 10 20 _ {{schema:0 sum:100 count:10 buckets:[10]}} _
+
+eval instant at 6h avg_over_time(mixed_avg[5h])
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_avg"
+
+eval instant at 6h avg_over_time(mixed_avg[5h])
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_avg"
+
+clear
+
+# Mixed in one split, floats-only in another
+load 1h
+  mixed_avg_a{env="prod"} _ _ 10 {{schema:0 sum:100 count:10 buckets:[10]}} _ 20 _
+
+eval instant at 6h avg_over_time(mixed_avg_a[5h])
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_avg_a"
+
+eval instant at 6h avg_over_time(mixed_avg_a[5h])
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_avg_a"
+
+clear
+
+# Mixed in one split, histograms-only in another
+load 1h
+  mixed_avg_b{env="prod"} _ _ 10 {{schema:0 sum:100 count:10 buckets:[10]}} _ {{schema:0 sum:200 count:20 buckets:[20]}} _
+
+eval instant at 6h avg_over_time(mixed_avg_b[5h])
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_avg_b"
+
+eval instant at 6h avg_over_time(mixed_avg_b[5h])
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_avg_b"
+
+clear
+
+# Mixed histogram schema
+load 1h
+  mixed_histo_avg{env="prod"} _ _ {{schema:0 sum:100 count:10 buckets:[10]}} {{schema:-53 sum:100 count:10 buckets:[10]}} _ {{schema:0 sum:100 count:10 buckets:[10]}} _
+
+eval instant at 6h avg_over_time(mixed_histo_avg[5h])
+  expect warn msg: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "mixed_histo_avg"
+
+eval instant at 6h avg_over_time(mixed_histo_avg[5h])
+  expect warn msg: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "mixed_histo_avg"
+
+clear

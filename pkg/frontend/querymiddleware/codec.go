@@ -108,6 +108,8 @@ type MetricsQueryRequest interface {
 	//
 	// This function returns an error if the query is invalid or the request has no query.
 	GetClonedParsedQuery() (parser.Expr, error)
+	// GetParsedQuery returns the query, parsed into an AST. The returned expression must not be modified.
+	GetParsedQuery() parser.Expr
 	// GetMinT returns the minimum timestamp in milliseconds of data to be queried,
 	// as determined from the start timestamp and any range vector or offset in the query.
 	GetMinT() int64

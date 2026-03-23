@@ -335,7 +335,7 @@ github.com/beorn7/perks/quantile
 # github.com/bits-and-blooms/bitset v1.24.4
 ## explicit; go 1.16
 github.com/bits-and-blooms/bitset
-# github.com/buger/jsonparser v1.1.1
+# github.com/buger/jsonparser v1.1.2
 ## explicit; go 1.13
 github.com/buger/jsonparser
 # github.com/cenkalti/backoff/v4 v4.3.0
@@ -547,7 +547,7 @@ github.com/go-openapi/runtime/security
 # github.com/go-openapi/spec v0.22.3
 ## explicit; go 1.24.0
 github.com/go-openapi/spec
-# github.com/go-openapi/strfmt v0.26.0
+# github.com/go-openapi/strfmt v0.26.1
 ## explicit; go 1.24.0
 github.com/go-openapi/strfmt
 github.com/go-openapi/strfmt/internal/bsonlite
@@ -803,7 +803,7 @@ github.com/grafana/alerting/templates/email
 github.com/grafana/alerting/templates/gomplate
 github.com/grafana/alerting/templates/mimir
 github.com/grafana/alerting/utils
-# github.com/grafana/dskit v0.0.0-20260318051422-6eb5ee5d450a
+# github.com/grafana/dskit v0.0.0-20260319050051-803e3aef21e3
 ## explicit; go 1.25.7
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/ballast
@@ -1867,7 +1867,7 @@ golang.org/x/exp/slices
 # golang.org/x/mod v0.33.0
 ## explicit; go 1.24.0
 golang.org/x/mod/semver
-# golang.org/x/net v0.51.0
+# golang.org/x/net v0.52.0
 ## explicit; go 1.25.0
 golang.org/x/net/bpf
 golang.org/x/net/context/ctxhttp
@@ -2014,7 +2014,7 @@ google.golang.org/genproto/googleapis/api/monitoredres
 google.golang.org/genproto/googleapis/rpc/code
 google.golang.org/genproto/googleapis/rpc/errdetails
 google.golang.org/genproto/googleapis/rpc/status
-# google.golang.org/grpc v1.79.2
+# google.golang.org/grpc v1.79.3
 ## explicit; go 1.24.0
 google.golang.org/grpc
 google.golang.org/grpc/attributes
