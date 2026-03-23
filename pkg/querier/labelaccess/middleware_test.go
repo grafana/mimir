@@ -51,15 +51,23 @@ func Test_labelAccessMiddleware_Wrap(t *testing.T) {
 		},
 		"expected no errors if request with LBAC but url is not related to cardinality analysis": {
 			url: "/any-url",
+			useLBAC: true,
 		},
-		"expected no errors if request without LBAC and url ends with /cardinality/label_values": {
-			url: "/cardinality/label_values",
+		"expected error if request without LBAC and url ends with /cardinality/label_values": {
+			url:           "/cardinality/label_values",
+			expectedError: "missing X-Prom-Label-Policy header when label-based access control is enabled",
 		},
-		"expected no errors if request without LBAC and url ends with /cardinality/label_names": {
-			url: "/cardinality/label_names",
+		"expected error if request without LBAC and url ends with /cardinality/label_names": {
+			url:           "/cardinality/label_names",
+			expectedError: "missing X-Prom-Label-Policy header when label-based access control is enabled",
 		},
-		"expect no errors for active_series request without LBAC": {
-			url: "/cardinality/active_series",
+		"expect error for active_series request without LBAC": {
+			url:           "/cardinality/active_series",
+			expectedError: "missing X-Prom-Label-Policy header when label-based access control is enabled",
+		},
+		"expected error if request without LBAC and url is not related to cardinality analysis": {
+			url:           "/any-url",
+			expectedError: "missing X-Prom-Label-Policy header when label-based access control is enabled",
 		},
 	}
 	for name, data := range tests {

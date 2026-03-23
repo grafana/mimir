@@ -38,13 +38,16 @@ func (l *labelAccessMiddleware) Wrap(next http.Handler) http.Handler {
 			return
 		}
 
-		if len(matchers) > 0 {
-			level.Debug(l.logger).Log("msg", "extracted label selector policies from HTTP request", "num_matchers", len(matchers))
-			for _, unsupportedEndpoint := range unsupportedEndpoints {
-				if strings.HasSuffix(r.URL.Path, unsupportedEndpoint) {
-					http.Error(w, fmt.Sprintf("%v endpoint doesn't support access policies with label-based access control", r.URL.Path), http.StatusBadRequest)
-					return
-				}
+		if len(matchers) == 0 {
+			http.Error(w, fmt.Sprintf("missing %s header when label-based access control is enabled", shared.HTTPHeaderKey), http.StatusBadRequest)
+			return
+		}
+
+		level.Debug(l.logger).Log("msg", "extracted label selector policies from HTTP request", "num_matchers", len(matchers))
+		for _, unsupportedEndpoint := range unsupportedEndpoints {
+			if strings.HasSuffix(r.URL.Path, unsupportedEndpoint) {
+				http.Error(w, fmt.Sprintf("%v endpoint doesn't support access policies with label-based access control", r.URL.Path), http.StatusBadRequest)
+				return
 			}
 		}
 		r = r.Clone(shared.InjectLabelMatchersContext(r.Context(), matchers))
