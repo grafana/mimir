@@ -149,10 +149,10 @@ jobs:
     strategy:
       # Do not abort other groups when one fails.
       fail-fast: false
-      # Split tests into 4 groups.
+      # Split tests into 10 groups.
       matrix:
-        test_group_id:    [0, 1, 2, 3]
-        test_group_total: [4]
+        test_group_id:    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+        test_group_total: [10]
     needs:
       - prepare
     permissions:
@@ -351,10 +351,10 @@ jobs:
     strategy:
       # Do not abort other groups when one fails.
       fail-fast: false
-      # Split tests into 6 groups.
+      # Split tests into 20 groups.
       matrix:
-        test_group_id:    [0, 1, 2, 3, 4, 5]
-        test_group_total: [6]
+        test_group_id:    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+        test_group_total: [20]
     steps:
       - name: Upgrade golang
         uses: actions/setup-go@v5
