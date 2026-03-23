@@ -14,7 +14,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
-	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
