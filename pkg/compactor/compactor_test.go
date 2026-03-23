@@ -530,7 +530,7 @@ func TestMultitenantCompactor_ShouldIncrementCompactionShutdownIfTheContextIsCan
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 
 	// Wait until at least one compaction run has been counted as shutdown. The variable
-	// first-tick interval introduced in the running() loop may cause a second run to
+	// first-tick interval in the running() loop may cause a second run to
 	// start before we can stop the compactor, so we check for >= 1 rather than == 1.
 	require.Eventually(t, func() bool {
 		return prom_testutil.ToFloat64(c.compactionRunsShutdown) >= 1
