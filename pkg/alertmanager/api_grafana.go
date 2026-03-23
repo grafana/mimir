@@ -37,11 +37,9 @@ const (
 	statusError   = "error"
 )
 
-var (
-	maxGrafanaConfigSizeMsgFormat = globalerror.AlertmanagerMaxGrafanaConfigSize.MessageWithPerTenantLimitConfig(
-		"Alertmanager configuration is too big, limit: %d bytes",
-		validation.AlertmanagerMaxGrafanaConfigSizeFlag,
-	)
+var maxGrafanaConfigSizeMsgFormat = globalerror.AlertmanagerMaxGrafanaConfigSize.MessageWithPerTenantLimitConfig(
+	"Alertmanager configuration is too big, limit: %d bytes",
+	validation.AlertmanagerMaxGrafanaConfigSizeFlag,
 )
 
 type GrafanaAlertmanagerConfig struct {
