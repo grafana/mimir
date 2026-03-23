@@ -67,6 +67,7 @@ import (
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	rulebucketclient "github.com/grafana/mimir/pkg/ruler/rulestore/bucketclient"
 	"github.com/grafana/mimir/pkg/scheduler"
+	"github.com/grafana/mimir/pkg/sharder"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
@@ -144,6 +145,7 @@ type Config struct {
 	MemberlistKV        memberlist.KVConfig                        `yaml:"memberlist"`
 	QueryScheduler      scheduler.Config                           `yaml:"query_scheduler"`
 	UsageStats          usagestats.Config                          `yaml:"usage_stats"`
+	Sharder             sharder.Config                             `yaml:"sharder"`
 	UsageTracker        usagetracker.Config                        `yaml:"usage_tracker" doc:"hidden"`
 	ContinuousTest      continuoustest.Config                      `yaml:"-"`
 	OverridesExporter   exporter.Config                            `yaml:"overrides_exporter"`
@@ -212,6 +214,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.ActivityTracker.RegisterFlags(f)
 	c.QueryScheduler.RegisterFlags(f, logger)
 	c.UsageStats.RegisterFlags(f)
+	c.Sharder.RegisterFlags(f, logger)
 	c.UsageTracker.RegisterFlags(f, logger)
 	c.ContinuousTest.RegisterFlags(f)
 	c.OverridesExporter.RegisterFlags(f, logger)
@@ -902,6 +905,9 @@ type Mimir struct {
 	UsageTracker                     *usagetracker.UsageTracker
 	UsageTrackerPartitionRing        *ring.MultiPartitionInstanceRing
 	UsageTrackerInstanceRing         *ring.Ring
+	Sharder                          *sharder.Sharder
+	SharderPartitionRingWatcher      *ring.PartitionRingWatcher
+	SharderPartitionInstanceRing     *ring.PartitionInstanceRing
 	BlockBuilder                     *blockbuilder.BlockBuilder
 	BlockBuilderScheduler            *blockbuilderscheduler.BlockBuilderScheduler
 	ContinuousTestManager            *continuoustest.Manager

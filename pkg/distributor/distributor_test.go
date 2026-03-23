@@ -2467,7 +2467,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 					}
 
 					// Start the distributor.
-					distributor, err := New(distributorCfg, clientConfig, overrides, nil, cam, ingestersRing, nil, true, nil, nil, nil, log.NewNopLogger())
+					distributor, err := New(distributorCfg, clientConfig, overrides, nil, cam, ingestersRing, nil, nil, true, nil, nil, nil, log.NewNopLogger())
 					require.NoError(b, err)
 					require.NoError(b, services.StartAndAwaitRunning(context.Background(), distributor))
 
@@ -6006,7 +6006,7 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		if reg == nil {
 			reg = prometheus.NewPedanticRegistry()
 		}
-		d, err := New(distributorCfg, clientConfig, overrides, nil, cfg.costAttributionMgr, ingestersRing, partitionsRing, true, nil, nil, reg, logger)
+		d, err := New(distributorCfg, clientConfig, overrides, nil, cfg.costAttributionMgr, ingestersRing, partitionsRing, nil, true, nil, nil, reg, logger)
 		require.NoError(t, err)
 		if !cfg.disableDistributorService {
 			require.NoError(t, services.StartAndAwaitRunning(ctx, d))

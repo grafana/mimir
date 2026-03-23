@@ -60,6 +60,7 @@ import (
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/scheduler"
+	"github.com/grafana/mimir/pkg/sharder"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storegateway"
@@ -120,6 +121,8 @@ const (
 	RuntimeConfig                    string = "runtime-config"
 	SanityCheck                      string = "sanity-check"
 	Server                           string = "server"
+	Sharder                          string = "sharder"
+	SharderPartitionRing             string = "sharder-partitions-ring"
 	StoreGateway                     string = "store-gateway"
 	StoreQueryable                   string = "store-queryable"
 	TenantFederation                 string = "tenant-federation"
@@ -233,6 +236,7 @@ func (t *Mimir) initVault() (services.Service, error) {
 	t.Cfg.Querier.Ring.Common.KVStore.Etcd.TLS.Reader = t.Vault
 	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.Etcd.TLS.Reader = t.Vault
 	t.Cfg.Ruler.Ring.Common.KVStore.Etcd.TLS.Reader = t.Vault
+	t.Cfg.Sharder.PartitionRing.KVStore.Etcd.TLS.Reader = t.Vault
 	t.Cfg.StoreGateway.ShardingRing.KVStore.Etcd.TLS.Reader = t.Vault
 	t.Cfg.UsageTracker.InstanceRing.KVStore.Etcd.TLS.Reader = t.Vault
 	t.Cfg.UsageTracker.PartitionRing.KVStore.Etcd.TLS.Reader = t.Vault
@@ -407,6 +411,36 @@ func (t *Mimir) initIngesterPartitionRing() (services.Service, error) {
 	return t.IngesterPartitionRingWatcher, nil
 }
 
+func (t *Mimir) initSharderPartitionRing() (services.Service, error) {
+	if !t.Cfg.IngestStorage.Enabled || !t.Cfg.IngestStorage.Compartments.Enabled {
+		return nil, nil
+	}
+
+	kvClient, err := kv.NewClient(t.Cfg.Sharder.PartitionRing.KVStore, ring.GetPartitionRingCodec(), kv.RegistererWithKVName(t.Registerer, sharder.PartitionRingName+"-watcher"), util_log.Logger)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating KV store for sharder partitions ring watcher")
+	}
+
+	t.SharderPartitionRingWatcher = ring.NewPartitionRingWatcher(sharder.PartitionRingName, sharder.PartitionRingKey, kvClient, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
+	t.SharderPartitionInstanceRing = ring.NewPartitionInstanceRing(t.SharderPartitionRingWatcher, t.IngesterRing, t.Cfg.Ingester.IngesterRing.HeartbeatTimeout)
+
+	t.API.RegisterSharderPartitionRing(ring.NewPartitionRingPageHandler(t.SharderPartitionRingWatcher, ring.NewPartitionRingEditor(sharder.PartitionRingKey, kvClient)))
+
+	return t.SharderPartitionRingWatcher, nil
+}
+
+func (t *Mimir) initSharder() (services.Service, error) {
+	var err error
+	t.Sharder, err = sharder.New(t.Cfg.Sharder, t.Cfg.IngestStorage, t.IngesterPartitionInstanceRing, util_log.Logger, t.Registerer)
+	if err != nil {
+		return nil, err
+	}
+
+	t.API.RegisterSharder(t.Sharder)
+
+	return t.Sharder, nil
+}
+
 func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 	// Add mappings here for config options that are being migrated to per-tenant limits.
 	// Ex:
@@ -457,6 +491,7 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 	t.Cfg.Compactor.ShardingRing.Common.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Distributor.DistributorRing.Common.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Ingester.IngesterPartitionRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
+	t.Cfg.Sharder.PartitionRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Ingester.IngesterRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.OverridesExporter.Ring.Common.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Querier.Ring.Common.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
@@ -518,6 +553,7 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 
 	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides,
 		t.ActiveGroupsCleanup, t.CostAttributionManager, t.IngesterRing, t.IngesterPartitionInstanceRing,
+		t.SharderPartitionInstanceRing,
 		canJoinDistributorsRing, t.UsageTrackerPartitionRing, t.UsageTrackerInstanceRing, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
@@ -1308,6 +1344,7 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 	t.Cfg.Distributor.DistributorRing.Common.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.Distributor.HATrackerConfig.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.Ingester.IngesterPartitionRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
+	t.Cfg.Sharder.PartitionRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.Ingester.IngesterRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.OverridesExporter.Ring.Common.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.Querier.Ring.Common.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
@@ -1506,6 +1543,8 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(RuntimeConfig, t.initRuntimeConfig, modules.UserInvisibleModule)
 	mm.RegisterModule(SanityCheck, t.initSanityCheck, modules.UserInvisibleModule)
 	mm.RegisterModule(Server, t.initServer, modules.UserInvisibleModule)
+	mm.RegisterModule(Sharder, t.initSharder)
+	mm.RegisterModule(SharderPartitionRing, t.initSharderPartitionRing, modules.UserInvisibleModule)
 	mm.RegisterModule(StoreGateway, t.initStoreGateway)
 	mm.RegisterModule(StoreQueryable, t.initStoreQueryable, modules.UserInvisibleModule)
 	mm.RegisterModule(TenantFederation, t.initTenantFederation, modules.UserInvisibleModule)
@@ -1529,7 +1568,7 @@ func (t *Mimir) setupModuleManager() error {
 		ContinuousTest:                   {API},
 		CostAttributionService:           {API, Overrides},
 		Distributor:                      {DistributorService, API, ActiveGroupsCleanupService, Vault, UsageTrackerInstanceRing, UsageTrackerPartitionRing},
-		DistributorService:               {IngesterRing, IngesterPartitionRing, Overrides, Vault, CostAttributionService},
+		DistributorService:               {IngesterRing, IngesterPartitionRing, SharderPartitionRing, Overrides, Vault, CostAttributionService},
 		Ingester:                         {IngesterService, API, ActiveGroupsCleanupService, Vault},
 		IngesterPartitionRing:            {MemberlistKV, IngesterRing, API},
 		IngesterRing:                     {API, RuntimeConfig, MemberlistKV, Vault},
@@ -1551,6 +1590,8 @@ func (t *Mimir) setupModuleManager() error {
 		RulerStorage:                     {Overrides},
 		RuntimeConfig:                    {API},
 		Server:                           {ActivityTracker, SanityCheck, UsageStats},
+		Sharder:                          {SharderPartitionRing, IngesterPartitionRing, Overrides, API},
+		SharderPartitionRing:             {MemberlistKV, IngesterRing, API},
 		StoreGateway:                     {API, Overrides, MemberlistKV, Vault},
 		StoreQueryable:                   {Overrides, MemberlistKV},
 		TenantFederation:                 {Queryable},

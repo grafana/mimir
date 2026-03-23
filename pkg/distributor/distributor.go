@@ -210,6 +210,10 @@ type Distributor struct {
 	// partitionsRing is the hash ring holding ingester partitions. It's used when ingest storage is enabled.
 	partitionsRing *ring.PartitionInstanceRing
 
+	// sharderPartitionsRing is the hash ring holding sharder partitions. When compartments are enabled,
+	// the distributor routes writes to sharder partitions instead of ingester partitions.
+	sharderPartitionsRing *ring.PartitionInstanceRing
+
 	// usageTrackerClient is the client that should be used to track per-tenant series and
 	// enforce max series limit in the distributor. This field is nil if usage-tracker
 	// is disabled.
@@ -487,7 +491,7 @@ func (m *PushMetrics) deleteUserMetrics(user string) {
 }
 
 // New constructs a new Distributor
-func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMgr *costattribution.Manager, ingestersRing ring.ReadRing, partitionsRing *ring.PartitionInstanceRing, canJoinDistributorsRing bool, usageTrackerPartitionRing *ring.MultiPartitionInstanceRing, usageTrackerInstanceRing ring.ReadRing, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
+func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMgr *costattribution.Manager, ingestersRing ring.ReadRing, partitionsRing *ring.PartitionInstanceRing, sharderPartitionsRing *ring.PartitionInstanceRing, canJoinDistributorsRing bool, usageTrackerPartitionRing *ring.MultiPartitionInstanceRing, usageTrackerInstanceRing ring.ReadRing, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
 	clientMetrics := ingester_client.NewMetrics(reg)
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
@@ -505,6 +509,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		ingestersRing:         ingestersRing,
 		RequestBufferPool:     requestBufferPool,
 		partitionsRing:        partitionsRing,
+		sharderPartitionsRing: sharderPartitionsRing,
 		ingesterPool:          NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
 		healthyInstancesCount: atomic.NewUint32(0),
 		limits:                limits,
@@ -2137,12 +2142,18 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 
 	// Get the tenant's subring to use to either write to ingesters or partitions.
 	if d.cfg.IngestStorageConfig.Enabled {
-		subring, err := d.partitionsRing.ShuffleShard(userID, d.limits.IngestionPartitionsTenantShardSize(userID))
-		if err != nil {
-			return err
-		}
+		if d.compartmentRouter != nil && d.sharderPartitionsRing != nil {
+			// When compartments are enabled and a sharder ring is available, route writes
+			// to sharder partitions. No shuffle sharding for the sharder ring.
+			partitionsSubring = ring.NewActivePartitionBatchRing(d.sharderPartitionsRing.PartitionRing())
+		} else {
+			subring, err := d.partitionsRing.ShuffleShard(userID, d.limits.IngestionPartitionsTenantShardSize(userID))
+			if err != nil {
+				return err
+			}
 
-		partitionsSubring = ring.NewActivePartitionBatchRing(subring.PartitionRing())
+			partitionsSubring = ring.NewActivePartitionBatchRing(subring.PartitionRing())
+		}
 	}
 
 	if !d.cfg.IngestStorageConfig.Enabled || d.cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled {

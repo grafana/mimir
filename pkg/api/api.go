@@ -403,6 +403,21 @@ func (a *API) RegisterIngesterPartitionRing(r http.Handler) {
 	a.RegisterRoute("/ingester/partition-ring", r, false, true, "GET", "POST")
 }
 
+// RegisterSharderPartitionRing registers the ring UI page associated with the sharder partitions ring.
+func (a *API) RegisterSharderPartitionRing(r http.Handler) {
+	a.indexPage.AddLinks(defaultWeight, "Sharder", []IndexPageLink{
+		{Desc: "Partition ring status", Path: "sharder/partition-ring"},
+	})
+	a.RegisterRoute("/sharder/partition-ring", r, false, true, "GET", "POST")
+}
+
+// RegisterSharder registers endpoints associated with the sharder.
+func (a *API) RegisterSharder(s interface {
+	PreparePartitionDownscaleHandler(http.ResponseWriter, *http.Request)
+}) {
+	a.RegisterRoute("/sharder/prepare-partition-downscale", http.HandlerFunc(s.PreparePartitionDownscaleHandler), false, true, "GET", "POST", "DELETE")
+}
+
 // RegisterStoreGateway registers the ring UI page associated with the store-gateway.
 func (a *API) RegisterStoreGateway(s *storegateway.StoreGateway) {
 	storegatewaypb.RegisterStoreGatewayServer(a.server.GRPC, s)

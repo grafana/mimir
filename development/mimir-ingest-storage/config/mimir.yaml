@@ -34,6 +34,13 @@ ingester:
     min_partition_owners_duration:    10s
     delete_inactive_partition_after:  1m
 
+sharder:
+  data_dir: /data/sharder
+  partition_ring:
+    min_partition_owners_count:       1
+    min_partition_owners_duration:    10s
+    delete_inactive_partition_after:  1m
+
 block_builder:
   scheduler_config:
     address: block-builder-scheduler-0:9095
