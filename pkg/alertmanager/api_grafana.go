@@ -3,7 +3,6 @@
 package alertmanager
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,7 +16,6 @@ import (
 	alertingReceivers "github.com/grafana/alerting/receivers"
 	alertingTemplates "github.com/grafana/alerting/templates"
 	"github.com/grafana/dskit/tenant"
-	"github.com/prometheus/alertmanager/cluster/clusterpb"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/util"
