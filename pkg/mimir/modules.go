@@ -912,8 +912,11 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	}
 
 	if t.Cfg.LabelAccessControlEnabled {
-		defaultGenerator := querymiddleware.NewDefaultCacheKeyGenerator(t.QueryFrontendCodec, t.Cfg.Frontend.QueryMiddleware.SplitQueriesByInterval)
-		t.Cfg.Frontend.QueryMiddleware.CacheKeyGenerator = frontend_labelaccess.NewCacheSplitter(defaultGenerator)
+		cacheKeyGenerator := t.Cfg.Frontend.QueryMiddleware.CacheKeyGenerator
+		if cacheKeyGenerator == nil {
+			cacheKeyGenerator = querymiddleware.NewDefaultCacheKeyGenerator(t.QueryFrontendCodec, t.Cfg.Frontend.QueryMiddleware.SplitQueriesByInterval)
+		}
+		t.Cfg.Frontend.QueryMiddleware.CacheKeyGenerator = frontend_labelaccess.NewCacheSplitter(cacheKeyGenerator)
 	}
 
 	tripperware, err := querymiddleware.NewTripperware(
