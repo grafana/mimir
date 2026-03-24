@@ -25,7 +25,6 @@ import (
 type InstantVectorSelector struct {
 	Selector                                 *Selector
 	MemoryConsumptionTracker                 *limiter.MemoryConsumptionTracker
-	QueryStats                               *types.QueryStats
 	ReturnSampleTimestamps                   bool // true if this operator is wrapped directly in the timestamp() function and so should return the underlying sample timestamps.
 	ReturnSampleTimestampsPreserveHistograms bool // Used for info() function to preserve histograms in info metrics while making the floats reflect timestamps.
 
@@ -36,10 +35,9 @@ type InstantVectorSelector struct {
 
 var _ types.InstantVectorOperator = &InstantVectorSelector{}
 
-func NewInstantVectorSelector(selector *Selector, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, stats *types.QueryStats, returnSampleTimestamps, returnSampleTimestampsPreserveHistograms bool) *InstantVectorSelector {
+func NewInstantVectorSelector(selector *Selector, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, returnSampleTimestamps, returnSampleTimestampsPreserveHistograms bool) *InstantVectorSelector {
 	return &InstantVectorSelector{
 		Selector:                                 selector,
-		QueryStats:                               stats,
 		MemoryConsumptionTracker:                 memoryConsumptionTracker,
 		ReturnSampleTimestamps:                   returnSampleTimestamps,
 		ReturnSampleTimestampsPreserveHistograms: returnSampleTimestampsPreserveHistograms,
@@ -188,7 +186,6 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 
 			// For consistency with Prometheus' engine, we convert each histogram point to an equivalent number of float points.
 			sampleCount := types.EquivalentFloatSampleCount(h)
-			v.QueryStats.IncrementSamples(sampleCount)
 			v.evaluationStats.TrackSampleForInstantVectorSelector(stepT, sampleCount, matchesSubsets)
 
 		} else {
@@ -201,7 +198,6 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 					return types.InstantVectorSeriesData{}, err
 				}
 			}
-			v.QueryStats.IncrementSamples(1)
 			v.evaluationStats.TrackSampleForInstantVectorSelector(stepT, 1, matchesSubsets)
 			data.Floats = append(data.Floats, promql.FPoint{T: stepT, F: f})
 		}
