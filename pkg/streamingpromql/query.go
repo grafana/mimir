@@ -42,7 +42,7 @@ type Query struct {
 	string         *promql.String
 	scalar         *promql.Scalar
 	annotations    *annotations.Annotations
-	stats          *types.QueryStats
+	stats          *types.OperatorEvaluationStats
 
 	topLevelValueType parser.ValueType
 	resultIsVector    bool // This is necessary as we need to know what kind of result to return (vector or matrix) if the result is empty.
@@ -302,13 +302,19 @@ func (q *Query) Statement() parser.Statement {
 }
 
 func (q *Query) Stats() *promstats.Statistics {
+	totalSamples, totalSamplesPerStep := q.stats.GetSamplesProcessed()
+	samplesRead, samplesReadPerStep := q.stats.GetSamplesRead()
+
 	return &promstats.Statistics{
 		Timers: promstats.NewQueryTimers(),
 		Samples: &promstats.QuerySamples{
-			TotalSamples:       q.stats.TotalSamples,
-			EnablePerStepStats: false,
-			Interval:           q.topLevelQueryTimeRange.IntervalMilliseconds,
-			StartTimestamp:     q.topLevelQueryTimeRange.StartT,
+			TotalSamples:        totalSamples,
+			TotalSamplesPerStep: totalSamplesPerStep,
+			SamplesRead:         samplesRead,
+			SamplesReadPerStep:  samplesReadPerStep,
+			EnablePerStepStats:  true,
+			Interval:            q.topLevelQueryTimeRange.IntervalMilliseconds,
+			StartTimestamp:      q.topLevelQueryTimeRange.StartT,
 		},
 	}
 }
