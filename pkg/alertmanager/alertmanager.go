@@ -327,12 +327,6 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 		am.mux.Handle(a, http.NotFoundHandler())
 	}
 
-	// This route is an experimental Mimir extension to the receivers API, so we put
-	// it under an additional prefix to avoid any confusion with upstream Alertmanager.
-	if cfg.GrafanaAlertmanagerCompatibility {
-		am.mux.Handle("/api/v1/grafana/templates/test", http.HandlerFunc(am.TestTemplatesHandler))
-	}
-
 	am.dispatcherMetrics = dispatch.NewDispatcherMetrics(true, am.registry)
 
 	// TODO: From this point onward, the alertmanager _might_ receive requests - we need to make sure we've settled and are ready.
@@ -361,6 +355,7 @@ func (am *Alertmanager) GetReceiversHandler(w http.ResponseWriter, _ *http.Reque
 	}
 }
 
+<<<<<<< HEAD
 func (am *Alertmanager) TestTemplatesHandler(w http.ResponseWriter, r *http.Request) {
 	c := alertingNotify.TestTemplatesConfigBodyParams{}
 	if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
@@ -368,6 +363,14 @@ func (am *Alertmanager) TestTemplatesHandler(w http.ResponseWriter, r *http.Requ
 			fmt.Sprintf("error unmarshalling test templates config JSON: %s", err.Error()),
 			http.StatusBadRequest)
 		return
+=======
+func (am *Alertmanager) TestReceiversHandler(w http.ResponseWriter, r *http.Request) {
+	c := alertingNotify.TestReceiversConfigBodyParams{}
+	if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
+		http.Error(w,
+			fmt.Sprintf("error unmarshalling test receivers config JSON: %s", err.Error()),
+			http.StatusBadRequest)
+>>>>>>> 3c452c3a7fa2c238d408bfdac6fce0cc7ccf9fbc
 	}
 
 	am.templatesMtx.RLock()
@@ -383,6 +386,7 @@ func (am *Alertmanager) TestTemplatesHandler(w http.ResponseWriter, r *http.Requ
 	am.templatesMtx.RUnlock()
 	if err != nil {
 		http.Error(w,
+<<<<<<< HEAD
 			fmt.Sprintf("error initializing configured templates: %s", err.Error()),
 			http.StatusInternalServerError)
 		return
@@ -391,6 +395,17 @@ func (am *Alertmanager) TestTemplatesHandler(w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		http.Error(w,
 			fmt.Sprintf("error testing templates: %s", err.Error()),
+=======
+			fmt.Sprintf("error initializing templates: %s", err.Error()),
+			http.StatusInternalServerError)
+		return
+	}
+
+	response, status, err := alertingNotify.TestReceivers(r.Context(), c, am.buildGrafanaReceiverIntegrations, factory)
+	if err != nil {
+		http.Error(w,
+			fmt.Sprintf("error testing receivers: %s", err.Error()),
+>>>>>>> 3c452c3a7fa2c238d408bfdac6fce0cc7ccf9fbc
 			http.StatusInternalServerError)
 		return
 	}
@@ -400,6 +415,11 @@ func (am *Alertmanager) TestTemplatesHandler(w http.ResponseWriter, r *http.Requ
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+<<<<<<< HEAD
+=======
+
+	w.WriteHeader(status)
+>>>>>>> 3c452c3a7fa2c238d408bfdac6fce0cc7ccf9fbc
 }
 
 func (am *Alertmanager) WaitInitialStateSync(ctx context.Context) error {
