@@ -35,9 +35,8 @@ func TestActivityTrackingMiddleware_DeleteAfterInnerHandler(t *testing.T) {
 		assert.Len(t, activities, 1)
 
 		// Simulate work that happens after ServeHTTP returns (e.g. gzip Close).
-		// We use a deferred call on a wrapper to ensure the ordering is correct.
-		defer func() { deferredWriteDone = true }()
 		w.WriteHeader(http.StatusOK)
+		deferredWriteDone = true
 	})
 
 	handler := NewActivityTrackingMiddleware(at, log.NewNopLogger(), inner)
@@ -54,22 +53,6 @@ func TestActivityTrackingMiddleware_DeleteAfterInnerHandler(t *testing.T) {
 	activities, err := activitytracker.LoadUnfinishedEntries(activityFile)
 	require.NoError(t, err)
 	require.Empty(t, activities)
-}
-
-func TestActivityTrackingMiddleware_NilTracker(t *testing.T) {
-	called := false
-	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		called = true
-		w.WriteHeader(http.StatusOK)
-	})
-
-	handler := NewActivityTrackingMiddleware(nil, log.NewNopLogger(), inner)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/query?query=up", nil)
-	resp := httptest.NewRecorder()
-
-	require.NotPanics(t, func() { handler.ServeHTTP(resp, req) })
-	assert.True(t, called)
 }
 
 func TestActivityTrackingMiddleware_TenantIDFromHeader(t *testing.T) {

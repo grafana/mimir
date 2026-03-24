@@ -149,7 +149,7 @@ func newDefaultConfig() *Config {
 func (t *Mimir) initAPI() (services.Service, error) {
 	t.Cfg.API.ServerPrefix = t.Cfg.Server.PathPrefix
 
-	a, err := api.New(t.Cfg.API, t.Cfg.TenantFederation, t.Cfg.Server, t.Server, util_log.Logger)
+	a, err := api.New(t.Cfg.API, t.Cfg.TenantFederation, t.Cfg.Server, t.Server, util_log.Logger, t.ActivityTracker)
 	if err != nil {
 		return nil, err
 	}
@@ -955,7 +955,7 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	handler := transport.NewHandler(t.Cfg.Frontend.Handler, roundTripper, util_log.Logger, t.Registerer)
 	// Allow the Prometheus engine to be explicitly selected if MQE is in use and a fallback is configured.
 	fallbackInjector := propagation.Middleware(&streamingpromqlcompat.EngineFallbackExtractor{})
-	t.API.RegisterQueryFrontendHandler(fallbackInjector.Wrap(handler), t.BuildInfoHandler, t.ActivityTracker)
+	t.API.RegisterQueryFrontendHandler(fallbackInjector.Wrap(handler), t.BuildInfoHandler)
 
 	w := services.NewFailureWatcher()
 	return services.NewBasicService(func(_ context.Context) error {

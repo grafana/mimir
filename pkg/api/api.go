@@ -102,14 +102,15 @@ func (cfg *Config) Validate() error {
 type API struct {
 	AuthMiddleware middleware.Interface
 
-	cfg       Config
-	server    *server.Server
-	logger    log.Logger
-	sourceIPs *middleware.SourceIPExtractor
-	indexPage *IndexPageContent
+	cfg             Config
+	server          *server.Server
+	logger          log.Logger
+	sourceIPs       *middleware.SourceIPExtractor
+	indexPage       *IndexPageContent
+	activityTracker *activitytracker.ActivityTracker
 }
 
-func New(cfg Config, federationCfg tenantfederation.Config, serverCfg server.Config, s *server.Server, logger log.Logger) (*API, error) {
+func New(cfg Config, federationCfg tenantfederation.Config, serverCfg server.Config, s *server.Server, logger log.Logger, at *activitytracker.ActivityTracker) (*API, error) {
 	// Ensure the encoded path is used. Required for the rules API
 	s.HTTP.UseEncodedPath()
 
@@ -124,12 +125,13 @@ func New(cfg Config, federationCfg tenantfederation.Config, serverCfg server.Con
 	}
 
 	api := &API{
-		cfg:            cfg,
-		AuthMiddleware: cfg.HTTPAuthMiddleware,
-		server:         s,
-		logger:         logger,
-		sourceIPs:      sourceIPs,
-		indexPage:      newIndexPageContent(serverCfg.PathPrefix),
+		cfg:             cfg,
+		AuthMiddleware:  cfg.HTTPAuthMiddleware,
+		server:          s,
+		logger:          logger,
+		sourceIPs:       sourceIPs,
+		indexPage:       newIndexPageContent(serverCfg.PathPrefix),
+		activityTracker: at,
 	}
 
 	// If no authentication middleware is present in the config, use the default authentication middleware.
@@ -186,6 +188,10 @@ func (a *API) newRoute(path string, handler http.Handler, isPrefix, auth, gzip b
 	}
 	if gzip {
 		handler = gziphandler.GzipHandler(handler, a.cfg.GzipCompressionLevel)
+	}
+	// Activity tracking is placed outside gzip so that the tracker entry outlives gzip's deferred Close.
+	if a.activityTracker != nil {
+		handler = transport.NewActivityTrackingMiddleware(a.activityTracker, a.logger, handler)
 	}
 	if isPrefix {
 		route = a.server.HTTP.PathPrefix(path)
@@ -493,37 +499,8 @@ func (a *API) RegisterQueryAnalysisAPI(handler http.Handler) {
 // RegisterQueryFrontendHandler registers the Prometheus routes supported by the
 // Mimir querier service. Currently, this can not be registered simultaneously
 // with the Querier.
-//
-// Note: this route list must be kept in sync with RegisterQueryAPI. They are separate because
-// query-frontend routes require the activity tracker to be placed outside gzip (to cover the
-// full response flush), which newRoute/RegisterRoute do not support.
-func (a *API) RegisterQueryFrontendHandler(h http.Handler, buildInfoHandler http.Handler, at *activitytracker.ActivityTracker) {
-	a.newQueryFrontendRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/read"), h, at, "POST")
-	a.newQueryFrontendRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/query"), h, at, "GET", "POST")
-	a.newQueryFrontendRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/query_range"), h, at, "GET", "POST")
-	a.newQueryFrontendRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/query_exemplars"), h, at, "GET", "POST")
-	a.newQueryFrontendRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/labels"), h, at, "GET", "POST")
-	a.newQueryFrontendRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/label/{name}/values"), h, at, "GET")
-	a.newQueryFrontendRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/series"), h, at, "GET", "POST", "DELETE")
-	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/status/buildinfo"), buildInfoHandler, false, true, "GET")
-	a.newQueryFrontendRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/metadata"), h, at, "GET")
-	a.newQueryFrontendRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/label_names"), h, at, "GET", "POST")
-	a.newQueryFrontendRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/label_values"), h, at, "GET", "POST")
-	a.newQueryFrontendRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/active_series"), h, at, "GET", "POST")
-	a.newQueryFrontendRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/active_native_histogram_metrics"), h, at, "GET", "POST")
-	a.newQueryFrontendRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/format_query"), h, at, "GET", "POST")
-}
-
-// newQueryFrontendRoute registers a single query-frontend route with consistency, auth, gzip, and activity tracking.
-// Activity tracking is placed outside gzip so that the tracker entry outlives gzip's deferred Close.
-func (a *API) newQueryFrontendRoute(p string, handler http.Handler, at *activitytracker.ActivityTracker, methods ...string) *mux.Route {
-	handler = propagation.Middleware(&querierapi.ConsistencyExtractor{}).Wrap(handler)
-	handler = a.AuthMiddleware.Wrap(handler)
-	handler = gziphandler.GzipHandler(handler, a.cfg.GzipCompressionLevel)
-	if at != nil {
-		handler = transport.NewActivityTrackingMiddleware(at, a.logger, handler)
-	}
-	return a.server.HTTP.Path(p).Methods(methods...).Handler(handler)
+func (a *API) RegisterQueryFrontendHandler(h http.Handler, buildInfoHandler http.Handler) {
+	a.RegisterQueryAPI(h, buildInfoHandler)
 }
 
 func (a *API) RegisterQueryFrontend2(f *frontendv2.Frontend) {

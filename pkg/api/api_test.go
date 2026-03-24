@@ -41,7 +41,7 @@ func TestNewApiWithoutSourceIPExtractor(t *testing.T) {
 	srv, err := server.New(serverCfg)
 	require.NoError(t, err)
 
-	api, err := New(cfg, federationCfg, serverCfg, srv, &FakeLogger{})
+	api, err := New(cfg, federationCfg, serverCfg, srv, &FakeLogger{}, nil)
 	require.NoError(t, err)
 	require.Nil(t, api.sourceIPs)
 }
@@ -57,7 +57,7 @@ func TestNewApiWithSourceIPExtractor(t *testing.T) {
 	srv, err := server.New(serverCfg)
 	require.NoError(t, err)
 
-	api, err := New(cfg, federationCfg, serverCfg, srv, &FakeLogger{})
+	api, err := New(cfg, federationCfg, serverCfg, srv, &FakeLogger{}, nil)
 	require.NoError(t, err)
 	require.NotNil(t, api.sourceIPs)
 }
@@ -74,7 +74,7 @@ func TestNewApiWithInvalidSourceIPExtractor(t *testing.T) {
 	serverCfg.MetricsNamespace = "with_invalid_source_ip_extractor"
 	federationCfg := tenantfederation.Config{}
 
-	api, err := New(cfg, federationCfg, serverCfg, &s, &FakeLogger{})
+	api, err := New(cfg, federationCfg, serverCfg, &s, &FakeLogger{}, nil)
 	require.Error(t, err)
 	require.Nil(t, api)
 }
@@ -88,7 +88,7 @@ func TestApiGzip(t *testing.T) {
 	go func() { _ = srv.Run() }()
 	t.Cleanup(srv.Stop)
 
-	api, err := New(cfg, federationCfg, serverCfg, srv, log.NewNopLogger())
+	api, err := New(cfg, federationCfg, serverCfg, srv, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -217,7 +217,7 @@ func TestApiIngesterShutdown(t *testing.T) {
 			srv, err := server.New(serverCfg)
 			require.NoError(t, err)
 
-			api, err := New(cfg, federationCfg, serverCfg, srv, log.NewNopLogger())
+			api, err := New(cfg, federationCfg, serverCfg, srv, log.NewNopLogger(), nil)
 			require.NoError(t, err)
 			api.RegisterIngester(&MockIngester{})
 

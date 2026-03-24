@@ -35,19 +35,22 @@ func (m *activityTrackingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Re
 	} else {
 		params, err = util.ParseRequestFormWithoutConsumingBody(r)
 	}
+
 	if err != nil {
-		// This is not expected to happen but if there was an error here and there is a form body which has been consumed
-		// the request is likely to fail.
+		// This is not expected to happen but if there was an error here and the request body can not be restored then the request is no longer valid.
 		level.Error(m.log).Log("msg", "failed to parse request params for activity tracking", "err", err)
-	} else {
-		ix := m.tracker.Insert(func() string {
-			return httpRequestActivity(r, r.Header.Get("User-Agent"), params)
-		})
-		defer m.tracker.Delete(ix)
-		if ix < 0 {
-			// Logging for completeness in case there is an issue with the activity tracker
-			level.Error(m.log).Log("msg", "failed to insert request for activity tracking")
-		}
+		http.Error(w, "failed to parse request params for activity tracking", http.StatusInternalServerError)
+		return
 	}
+
+	ix := m.tracker.Insert(func() string {
+		return httpRequestActivity(r, r.Header.Get("User-Agent"), params)
+	})
+	defer m.tracker.Delete(ix)
+	if ix < 0 {
+		// Logging for completeness in case there is an issue with the activity tracker
+		level.Error(m.log).Log("msg", "failed to insert request for activity tracking")
+	}
+
 	m.next.ServeHTTP(w, r)
 }
