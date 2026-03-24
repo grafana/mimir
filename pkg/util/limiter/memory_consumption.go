@@ -140,32 +140,40 @@ func (s MemoryConsumptionSource) String() string {
 
 // MemoryConsumptionTrackerTracker exposes metrics related to the cumulative in-flight MemoryConsumptionTrackers.
 type MemoryConsumptionTrackerTracker struct {
-	inflight                               sync.Map // map[uint64]*MemoryConsumptionTracker
-	nextID                                 atomic.Uint64
-	maxEstimatedMemoryConsumptionBytes     prometheus.Gauge
-	currentEstimatedMemoryConsumptionBytes prometheus.Gauge
-	peakEstimatedMemoryConsumptionBytes    prometheus.Gauge
-	sampled                                prometheus.Gauge
+	inflight sync.Map // map[uint64]*MemoryConsumptionTracker
+	nextID   atomic.Uint64
+
+	maxDesc     *prometheus.Desc
+	currentDesc *prometheus.Desc
+	peakDesc    *prometheus.Desc
+	sampledDesc *prometheus.Desc
 }
 
 func NewMemoryConsumptionTrackerTracker(reg prometheus.Registerer) *MemoryConsumptionTrackerTracker {
+	if reg == nil {
+		reg = prometheus.NewRegistry()
+	}
 	t := &MemoryConsumptionTrackerTracker{
-		maxEstimatedMemoryConsumptionBytes: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "cortex_querier_inflight_query_max_estimated_memory_consumption_bytes",
-			Help: "Total of the max estimated memory consumption limit across all in-flight queries.",
-		}),
-		currentEstimatedMemoryConsumptionBytes: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "cortex_querier_inflight_query_current_estimated_memory_consumption_bytes",
-			Help: "Total current estimated memory consumption across all in-flight queries.",
-		}),
-		peakEstimatedMemoryConsumptionBytes: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "cortex_querier_inflight_query_peak_estimated_memory_consumption_bytes",
-			Help: "Total peak estimated memory consumption across all in-flight queries.",
-		}),
-		sampled: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "cortex_querier_inflight_query_sampled_total",
-			Help: "Number of in-flight queries sampled during the last metrics collection.",
-		}),
+		maxDesc: prometheus.NewDesc(
+			"cortex_querier_inflight_query_max_estimated_memory_consumption_bytes",
+			"Total of the max estimated memory consumption limit across all in-flight queries.",
+			nil, nil,
+		),
+		currentDesc: prometheus.NewDesc(
+			"cortex_querier_inflight_query_current_estimated_memory_consumption_bytes",
+			"Total current estimated memory consumption across all in-flight queries.",
+			nil, nil,
+		),
+		peakDesc: prometheus.NewDesc(
+			"cortex_querier_inflight_query_peak_estimated_memory_consumption_bytes",
+			"Total peak estimated memory consumption across all in-flight queries.",
+			nil, nil,
+		),
+		sampledDesc: prometheus.NewDesc(
+			"cortex_querier_inflight_query_sampled_total",
+			"Number of in-flight queries sampled during the last metrics collection.",
+			nil, nil,
+		),
 	}
 	reg.MustRegister(t)
 	return t
@@ -192,10 +200,10 @@ func (t *MemoryConsumptionTrackerTracker) Deregister(tracker *MemoryConsumptionT
 
 // Describe implements prometheus.Collector.
 func (t *MemoryConsumptionTrackerTracker) Describe(ch chan<- *prometheus.Desc) {
-	t.maxEstimatedMemoryConsumptionBytes.Describe(ch)
-	t.currentEstimatedMemoryConsumptionBytes.Describe(ch)
-	t.peakEstimatedMemoryConsumptionBytes.Describe(ch)
-	t.sampled.Describe(ch)
+	ch <- t.maxDesc
+	ch <- t.currentDesc
+	ch <- t.peakDesc
+	ch <- t.sampledDesc
 }
 
 // Collect implements prometheus.Collector. It aggregates memory consumption across all in-flight
@@ -212,15 +220,10 @@ func (t *MemoryConsumptionTrackerTracker) Collect(ch chan<- prometheus.Metric) {
 		return true
 	})
 
-	t.maxEstimatedMemoryConsumptionBytes.Set(maxBytes)
-	t.currentEstimatedMemoryConsumptionBytes.Set(currentBytes)
-	t.peakEstimatedMemoryConsumptionBytes.Set(peakBytes)
-	t.sampled.Set(float64(sampled))
-
-	t.maxEstimatedMemoryConsumptionBytes.Collect(ch)
-	t.currentEstimatedMemoryConsumptionBytes.Collect(ch)
-	t.peakEstimatedMemoryConsumptionBytes.Collect(ch)
-	t.sampled.Collect(ch)
+	ch <- prometheus.MustNewConstMetric(t.maxDesc, prometheus.GaugeValue, maxBytes)
+	ch <- prometheus.MustNewConstMetric(t.currentDesc, prometheus.GaugeValue, currentBytes)
+	ch <- prometheus.MustNewConstMetric(t.peakDesc, prometheus.GaugeValue, peakBytes)
+	ch <- prometheus.MustNewConstMetric(t.sampledDesc, prometheus.GaugeValue, float64(sampled))
 }
 
 // MemoryConsumptionTracker tracks the current memory utilisation of a single query, and applies any max in-memory bytes limit.
