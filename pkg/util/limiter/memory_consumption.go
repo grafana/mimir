@@ -6,9 +6,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"weak"
 
 	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/client_golang/prometheus"
@@ -135,6 +138,98 @@ func (s MemoryConsumptionSource) String() string {
 	default:
 		return unknownMemorySource
 	}
+}
+
+type inflightCleanupArg struct {
+	tracker *MemoryConsumptionTrackerTracker
+	id      uint64
+}
+
+// MemoryConsumptionTrackerTracker exposes metrics related to the cumulative in-flight MemoryConsumptionTrackers.
+type MemoryConsumptionTrackerTracker struct {
+	inflight                               sync.Map // map[uint64]weak.Pointer[MemoryConsumptionTracker]
+	nextID                                 atomic.Uint64
+	maxEstimatedMemoryConsumptionBytes     prometheus.Gauge
+	currentEstimatedMemoryConsumptionBytes prometheus.Gauge
+	peakEstimatedMemoryConsumptionBytes    prometheus.Gauge
+	sampled                                prometheus.Gauge
+}
+
+func NewMemoryConsumptionTrackerTracker(reg prometheus.Registerer) *MemoryConsumptionTrackerTracker {
+	t := &MemoryConsumptionTrackerTracker{
+		maxEstimatedMemoryConsumptionBytes: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_querier_inflight_query_max_estimated_memory_consumption_bytes",
+			Help: "Total of the max estimated memory consumption limit across all in-flight queries.",
+		}),
+		currentEstimatedMemoryConsumptionBytes: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_querier_inflight_query_current_estimated_memory_consumption_bytes",
+			Help: "Total current estimated memory consumption across all in-flight queries.",
+		}),
+		peakEstimatedMemoryConsumptionBytes: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_querier_inflight_query_peak_estimated_memory_consumption_bytes",
+			Help: "Total peak estimated memory consumption across all in-flight queries.",
+		}),
+		sampled: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_querier_inflight_query_sampled_total",
+			Help: "Number of in-flight queries sampled during the last metrics collection.",
+		}),
+	}
+	reg.MustRegister(t)
+	return t
+}
+
+// NewMemoryConsumptionTracker returns a new MemoryConsumptionTracker the same as if limiter.MemoryConsumptionTracker() was called. However this new tracker will be included in the accumulated metrics managed by this MemoryConsumptionTrackerTracker.
+func (t *MemoryConsumptionTrackerTracker) NewMemoryConsumptionTracker(ctx context.Context, maxEstimatedMemoryConsumptionBytes uint64, rejectionCount prometheus.Counter, queryDescription string) *MemoryConsumptionTracker {
+	tracker := NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionBytes, rejectionCount, queryDescription)
+	t.track(tracker)
+	return tracker
+}
+
+// track will include this tracker in the accumulated metrics exposed by this MemoryConsumptionTrackerTracker.
+// Note that the tracker is stored as a weak reference and in a sync.Map is used to provides lock-free concurrent access.
+func (t *MemoryConsumptionTrackerTracker) track(tracker *MemoryConsumptionTracker) {
+	id := t.nextID.Add(1)
+	t.inflight.Store(id, weak.Make(tracker))
+	runtime.AddCleanup(tracker, func(arg inflightCleanupArg) {
+		arg.tracker.inflight.Delete(arg.id)
+	}, inflightCleanupArg{tracker: t, id: id})
+}
+
+// Describe implements prometheus.Collector.
+func (t *MemoryConsumptionTrackerTracker) Describe(ch chan<- *prometheus.Desc) {
+	t.maxEstimatedMemoryConsumptionBytes.Describe(ch)
+	t.currentEstimatedMemoryConsumptionBytes.Describe(ch)
+	t.peakEstimatedMemoryConsumptionBytes.Describe(ch)
+	t.sampled.Describe(ch)
+}
+
+// Collect implements prometheus.Collector. It aggregates memory consumption across all in-flight
+// queries and emits the gauge values. Dead weak pointers are removed opportunistically.
+func (t *MemoryConsumptionTrackerTracker) Collect(ch chan<- prometheus.Metric) {
+	var maxBytes, currentBytes, peakBytes float64
+	sampled := 0
+	t.inflight.Range(func(key, value any) bool {
+		tracker := value.(weak.Pointer[MemoryConsumptionTracker]).Value()
+		if tracker == nil {
+			t.inflight.Delete(key)
+			return true
+		}
+		maxBytes += float64(tracker.maxEstimatedMemoryConsumptionBytes)
+		currentBytes += float64(tracker.CurrentEstimatedMemoryConsumptionBytes())
+		peakBytes += float64(tracker.PeakEstimatedMemoryConsumptionBytes())
+		sampled++
+		return true
+	})
+
+	t.maxEstimatedMemoryConsumptionBytes.Set(maxBytes)
+	t.currentEstimatedMemoryConsumptionBytes.Set(currentBytes)
+	t.peakEstimatedMemoryConsumptionBytes.Set(peakBytes)
+	t.sampled.Set(float64(sampled))
+
+	t.maxEstimatedMemoryConsumptionBytes.Collect(ch)
+	t.currentEstimatedMemoryConsumptionBytes.Collect(ch)
+	t.peakEstimatedMemoryConsumptionBytes.Collect(ch)
+	t.sampled.Collect(ch)
 }
 
 // MemoryConsumptionTracker tracks the current memory utilisation of a single query, and applies any max in-memory bytes limit.

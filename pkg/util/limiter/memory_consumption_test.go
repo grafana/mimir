@@ -5,6 +5,7 @@ package limiter
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -256,6 +257,69 @@ func BenchmarkMemoryConsumptionTracker(b *testing.B) {
 
 		require.Equal(b, uint64(0), l.CurrentEstimatedMemoryConsumptionBytes())
 	})
+}
+
+func TestMemoryConsumptionTrackerTracker_Aggregation(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	tt := NewMemoryConsumptionTrackerTracker(reg)
+
+	tracker1 := tt.NewMemoryConsumptionTracker(context.Background(), 100, nil, "query1")
+	tracker2 := tt.NewMemoryConsumptionTracker(context.Background(), 200, nil, "query2")
+
+	// tracker1: add 30 ingester + 20 store-gateway = 50, remove 10 ingester -> current=40, peak=50
+	require.NoError(t, tracker1.IncreaseMemoryConsumption(30, IngesterChunks))
+	require.NoError(t, tracker1.IncreaseMemoryConsumption(20, StoreGatewayChunks))
+	tracker1.DecreaseMemoryConsumption(10, IngesterChunks)
+
+	// tracker2: add 60 ingester -> current=60, peak=60
+	require.NoError(t, tracker2.IncreaseMemoryConsumption(60, IngesterChunks))
+
+	// max=100+200=300, current=40+60=100, peak=50+60=110, sampled=2
+	assertTrackerTrackerMetrics(t, reg, 300, 100, 110, 2)
+}
+
+func TestMemoryConsumptionTrackerTracker_GCCleanup(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	tt := NewMemoryConsumptionTrackerTracker(reg)
+
+	createAndForgetTracker(tt)
+
+	// Two GC cycles: first collects the tracker, second ensures the cleanup goroutine has run.
+	runtime.GC()
+	runtime.Gosched()
+	runtime.GC()
+
+	assertTrackerTrackerMetrics(t, reg, 0, 0, 0, 0)
+}
+
+// createAndForgetTracker creates a tracker that immediately goes out of scope so it can be GC'd.
+func createAndForgetTracker(tt *MemoryConsumptionTrackerTracker) {
+	tracker := tt.NewMemoryConsumptionTracker(context.Background(), 100, nil, "")
+	_ = tracker.IncreaseMemoryConsumption(50, IngesterChunks)
+}
+
+func assertTrackerTrackerMetrics(t *testing.T, reg prometheus.Gatherer, maxBytes, currentBytes, peakBytes float64, sampled int) {
+	t.Helper()
+	expected := fmt.Sprintf(`
+		# HELP cortex_querier_inflight_query_current_estimated_memory_consumption_bytes Total current estimated memory consumption across all in-flight queries.
+		# TYPE cortex_querier_inflight_query_current_estimated_memory_consumption_bytes gauge
+		cortex_querier_inflight_query_current_estimated_memory_consumption_bytes %v
+		# HELP cortex_querier_inflight_query_max_estimated_memory_consumption_bytes Total of the max estimated memory consumption limit across all in-flight queries.
+		# TYPE cortex_querier_inflight_query_max_estimated_memory_consumption_bytes gauge
+		cortex_querier_inflight_query_max_estimated_memory_consumption_bytes %v
+		# HELP cortex_querier_inflight_query_peak_estimated_memory_consumption_bytes Total peak estimated memory consumption across all in-flight queries.
+		# TYPE cortex_querier_inflight_query_peak_estimated_memory_consumption_bytes gauge
+		cortex_querier_inflight_query_peak_estimated_memory_consumption_bytes %v
+		# HELP cortex_querier_inflight_query_sampled_total Number of in-flight queries sampled during the last metrics collection.
+		# TYPE cortex_querier_inflight_query_sampled_total gauge
+		cortex_querier_inflight_query_sampled_total %v
+	`, currentBytes, maxBytes, peakBytes, sampled)
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expected),
+		"cortex_querier_inflight_query_max_estimated_memory_consumption_bytes",
+		"cortex_querier_inflight_query_current_estimated_memory_consumption_bytes",
+		"cortex_querier_inflight_query_peak_estimated_memory_consumption_bytes",
+		"cortex_querier_inflight_query_sampled_total",
+	))
 }
 
 func TestMemoryConsumptionSourceNames(t *testing.T) {
