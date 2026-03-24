@@ -396,6 +396,10 @@ func (s *OperatorEvaluationStats) HasSubsets() bool {
 	return len(s.subsets) > 0
 }
 
+func (s *OperatorEvaluationStats) GetTotalSamplesProcessed() int64 {
+	return sum(s.allSeries.samplesProcessedPerStep)
+}
+
 // FinalizeAndComputePrometheusStats computes an equivalent QuerySamples instance as expected
 // by Prometheus' Query.Stats() method.
 //
