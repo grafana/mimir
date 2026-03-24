@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/dskit/runutil"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/ingest/kmeta"
 	"github.com/grafana/mimir/pkg/util/atomicfs"
@@ -83,6 +84,9 @@ type offsetCatalogue struct {
 	dir       string
 	userID    string
 	partition int32
+
+	// cachedData is a pointer to the latest version of catalogue data.
+	cachedData atomic.Pointer[offsetCatalogueData]
 }
 
 func newOffsetCatalogue(logger log.Logger, metrics *offsetCatalogueMetrics, dir, userID string, partition int32) *offsetCatalogue {
@@ -171,6 +175,8 @@ func (c *offsetCatalogue) Sync(ctx context.Context, offsetHWs kmeta.PartitionOff
 		return err
 	}
 
+	c.cachedData.Store(&data)
+
 	c.metrics.syncs.Inc()
 	c.metrics.lastSyncTime.SetToCurrentTime()
 	for clusterID, offset := range offsets {
@@ -179,6 +185,18 @@ func (c *offsetCatalogue) Sync(ctx context.Context, offsetHWs kmeta.PartitionOff
 	}
 
 	return nil
+}
+
+func (c *offsetCatalogue) Data() offsetCatalogueData {
+	// cachedData is replaced on successful sync; it's safe to return the current copy.
+	if data := c.cachedData.Load(); data != nil {
+		return *data
+	}
+	// Return a dummy version of data, to simplify how the method is used.
+	return offsetCatalogueData{
+		Version: offsetCatalogueVersion,
+		Data:    make(map[string]map[int]offsetWatermark),
+	}
 }
 
 func readOffsetCatalogueFromFile(dir string) (_ offsetCatalogueData, retErr error) {
