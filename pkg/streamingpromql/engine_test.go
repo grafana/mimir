@@ -3418,178 +3418,451 @@ func TestQueryStats(t *testing.T) {
 		"instant vector selector with point at every time step": {
 			expr:                 `dense_series{}`,
 			expectedTotalSamples: 11,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				0: 1, 60000: 1, 120000: 1, 180000: 1, 240000: 1, 300000: 1, 360000: 1, 420000: 1, 480000: 1, 540000: 1, 600000: 1,
+			},
+			expectedSamplesRead: 11,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				0: 1, 60000: 1, 120000: 1, 180000: 1, 240000: 1, 300000: 1, 360000: 1, 420000: 1, 480000: 1, 540000: 1, 600000: 1,
+			},
 		},
 		"instant vector selector with points only in start of time range": {
 			expr:                 `start_series{}`,
 			expectedTotalSamples: 2 + 4, // 2 for original points, plus 4 for lookback to last point.
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				0: 1, 60000: 1, 120000: 1, 180000: 1, 240000: 1, 300000: 1, 360000: 0, 420000: 0, 480000: 0, 540000: 0, 600000: 0,
+			},
+			expectedSamplesRead: 6,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				0: 1, 60000: 1, 120000: 1, 180000: 1, 240000: 1, 300000: 1, 360000: 0, 420000: 0, 480000: 0, 540000: 0, 600000: 0,
+			},
 		},
 		"instant vector selector with points only at end of time range": {
 			expr:                 `end_series{}`,
 			expectedTotalSamples: 6,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				0: 0, 60000: 0, 120000: 0, 180000: 0, 240000: 0, 300000: 1, 360000: 1, 420000: 1, 480000: 1, 540000: 1, 600000: 1,
+			},
+			expectedSamplesRead: 6,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				0: 0, 60000: 0, 120000: 0, 180000: 0, 240000: 0, 300000: 1, 360000: 1, 420000: 1, 480000: 1, 540000: 1, 600000: 1,
+			},
 		},
 		"instant vector selector with sparse points": {
 			expr:                 `sparse_series{}`,
 			expectedTotalSamples: 5 + 4, // 5 for first point at T=0, and 4 for second point at T=7
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				0: 1, 60000: 1, 120000: 1, 180000: 1, 240000: 1, 300000: 0, 360000: 0, 420000: 1, 480000: 1, 540000: 1, 600000: 1,
+			},
+			expectedSamplesRead: 9,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				0: 1, 60000: 1, 120000: 1, 180000: 1, 240000: 1, 300000: 0, 360000: 0, 420000: 1, 480000: 1, 540000: 1, 600000: 1,
+			},
 		},
 		"instant vector selector with stale marker": {
 			expr:                 `stale_series{}`,
 			expectedTotalSamples: 10, // Instant vector selectors ignore stale markers.
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				0: 1, 60000: 1, 120000: 1, 180000: 1, 240000: 1, 300000: 1, 360000: 0, 420000: 1, 480000: 1, 540000: 1, 600000: 1,
+			},
+			expectedSamplesRead: 10,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				0: 1, 60000: 1, 120000: 1, 180000: 1, 240000: 1, 300000: 1, 360000: 0, 420000: 1, 480000: 1, 540000: 1, 600000: 1,
+			},
 		},
 		"instant vector selector with @ modifier": {
 			expr:                 `dense_series{} @ 0`,
 			expectedTotalSamples: 1,
-			isInstantQuery:       true,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				600000: 1,
+			},
+			expectedSamplesRead: 1,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				600000: 1,
+			},
+			isInstantQuery: true,
 		},
 		"instant vector with offset modifier": {
 			expr:                 `dense_series{} offset 2m`,
 			expectedTotalSamples: 9,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				0: 0, 60000: 0, 120000: 1, 180000: 1, 240000: 1, 300000: 1, 360000: 1, 420000: 1, 480000: 1, 540000: 1, 600000: 1,
+			},
+			expectedSamplesRead: 9,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				0: 0, 60000: 0, 120000: 1, 180000: 1, 240000: 1, 300000: 1, 360000: 1, 420000: 1, 480000: 1, 540000: 1, 600000: 1,
+			},
 		},
 		"instant vector with offset modifier before start of the series": {
 			expr:                 `dense_series{} offset 1w`,
 			expectedTotalSamples: 0,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				0: 0, 60000: 0, 120000: 0, 180000: 0, 240000: 0, 300000: 0, 360000: 0, 420000: 0, 480000: 0, 540000: 0, 600000: 0,
+			},
+			expectedSamplesRead: 0,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				0: 0, 60000: 0, 120000: 0, 180000: 0, 240000: 0, 300000: 0, 360000: 0, 420000: 0, 480000: 0, 540000: 0, 600000: 0,
+			},
 		},
 
 		"raw range vector selector with single point": {
 			expr:                 `dense_series[45s]`,
 			isInstantQuery:       true,
 			expectedTotalSamples: 1,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				600000: 1,
+			},
+			expectedSamplesRead: 1,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				600000: 1,
+			},
 		},
 		"raw range vector selector with multiple points": {
 			expr:                 `dense_series[3m45s]`,
 			isInstantQuery:       true,
 			expectedTotalSamples: 4,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				600000: 4,
+			},
+			expectedSamplesRead: 4,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				600000: 4,
+			},
 		},
 		"range vector selector with point at every time step": {
 			expr:                 `sum_over_time(dense_series{}[30s])`,
 			expectedTotalSamples: 11,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				0: 1, 60000: 1, 120000: 1, 180000: 1, 240000: 1, 300000: 1, 360000: 1, 420000: 1, 480000: 1, 540000: 1, 600000: 1,
+			},
+			expectedSamplesRead: 11,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				0: 1, 60000: 1, 120000: 1, 180000: 1, 240000: 1, 300000: 1, 360000: 1, 420000: 1, 480000: 1, 540000: 1, 600000: 1,
+			},
 		},
 		"range vector selector with 2 points at every time step": {
 			expr:                 `sum_over_time(dense_series{}[1m30s])`,
 			expectedTotalSamples: 21,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				0: 1, 60000: 2, 120000: 2, 180000: 2, 240000: 2, 300000: 2, 360000: 2, 420000: 2, 480000: 2, 540000: 2, 600000: 2,
+			},
+			expectedSamplesRead: 11, // Only 1 new sample per step due to overlapping windows.
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				0: 1, 60000: 1, 120000: 1, 180000: 1, 240000: 1, 300000: 1, 360000: 1, 420000: 1, 480000: 1, 540000: 1, 600000: 1,
+			},
 		},
 		"range vector selector with points only in start of time range": {
 			expr:                 `sum_over_time(start_series{}[30s])`,
 			expectedTotalSamples: 2,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				0: 1, 60000: 1, 120000: 0, 180000: 0, 240000: 0, 300000: 0, 360000: 0, 420000: 0, 480000: 0, 540000: 0, 600000: 0,
+			},
+			expectedSamplesRead: 2,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				0: 1, 60000: 1, 120000: 0, 180000: 0, 240000: 0, 300000: 0, 360000: 0, 420000: 0, 480000: 0, 540000: 0, 600000: 0,
+			},
 		},
 		"range vector selector with points only at end of time range": {
 			expr:                 `sum_over_time(end_series{}[30s])`,
 			expectedTotalSamples: 6,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				0: 0, 60000: 0, 120000: 0, 180000: 0, 240000: 0, 300000: 1, 360000: 1, 420000: 1, 480000: 1, 540000: 1, 600000: 1,
+			},
+			expectedSamplesRead: 6,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				0: 0, 60000: 0, 120000: 0, 180000: 0, 240000: 0, 300000: 1, 360000: 1, 420000: 1, 480000: 1, 540000: 1, 600000: 1,
+			},
 		},
 		"range vector selector with sparse points": {
 			expr:                 `sum_over_time(sparse_series{}[30s])`,
 			expectedTotalSamples: 2,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				0: 1, 60000: 0, 120000: 0, 180000: 0, 240000: 0, 300000: 0, 360000: 0, 420000: 1, 480000: 0, 540000: 0, 600000: 0,
+			},
+			expectedSamplesRead: 2,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				0: 1, 60000: 0, 120000: 0, 180000: 0, 240000: 0, 300000: 0, 360000: 0, 420000: 1, 480000: 0, 540000: 0, 600000: 0,
+			},
 		},
 		"range vector selector where range overlaps previous step's range": {
 			expr:                 `sum_over_time(dense_series{}[1m30s])`,
 			expectedTotalSamples: 21, // Each step except the first selects two points.
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				0: 1, 60000: 2, 120000: 2, 180000: 2, 240000: 2, 300000: 2, 360000: 2, 420000: 2, 480000: 2, 540000: 2, 600000: 2,
+			},
+			expectedSamplesRead: 11, // Only 1 new sample per step due to overlapping windows.
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				0: 1, 60000: 1, 120000: 1, 180000: 1, 240000: 1, 300000: 1, 360000: 1, 420000: 1, 480000: 1, 540000: 1, 600000: 1,
+			},
 		},
 		"range vector selector with stale marker": {
 			expr:                 `count_over_time(stale_series{}[1m30s])`,
 			expectedTotalSamples: 19, // Each step except the first selects two points. Range vector selectors ignore stale markers.
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				0: 1, 60000: 2, 120000: 2, 180000: 2, 240000: 2, 300000: 2, 360000: 1, 420000: 1, 480000: 2, 540000: 2, 600000: 2,
+			},
+			expectedSamplesRead: 10, // Only new samples per step; T=6m has stale marker which is not read.
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				0: 1, 60000: 1, 120000: 1, 180000: 1, 240000: 1, 300000: 1, 360000: 0, 420000: 1, 480000: 1, 540000: 1, 600000: 1,
+			},
 		},
 		"expression with multiple selectors": {
 			expr:                 `dense_series{} + end_series{}`,
 			expectedTotalSamples: 11 + 6,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				0: 1, 60000: 1, 120000: 1, 180000: 1, 240000: 1, 300000: 2, 360000: 2, 420000: 2, 480000: 2, 540000: 2, 600000: 2,
+			},
+			expectedSamplesRead: 17,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				0: 1, 60000: 1, 120000: 1, 180000: 1, 240000: 1, 300000: 2, 360000: 2, 420000: 2, 480000: 2, 540000: 2, 600000: 2,
+			},
 		},
 		"instant vector selector with NaNs": {
 			expr:                 `nan_series{}`,
 			expectedTotalSamples: 11,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				0: 1, 60000: 1, 120000: 1, 180000: 1, 240000: 1, 300000: 1, 360000: 1, 420000: 1, 480000: 1, 540000: 1, 600000: 1,
+			},
+			expectedSamplesRead: 11,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				0: 1, 60000: 1, 120000: 1, 180000: 1, 240000: 1, 300000: 1, 360000: 1, 420000: 1, 480000: 1, 540000: 1, 600000: 1,
+			},
 		},
 		"range vector selector with NaNs": {
 			expr:                 `sum_over_time(nan_series{}[1m])`,
 			expectedTotalSamples: 11,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				0: 1, 60000: 1, 120000: 1, 180000: 1, 240000: 1, 300000: 1, 360000: 1, 420000: 1, 480000: 1, 540000: 1, 600000: 1,
+			},
+			expectedSamplesRead: 11,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				0: 1, 60000: 1, 120000: 1, 180000: 1, 240000: 1, 300000: 1, 360000: 1, 420000: 1, 480000: 1, 540000: 1, 600000: 1,
+			},
 		},
 		"instant vector selector with native histograms": {
 			expr:                 `native_histogram_series{}`,
 			expectedTotalSamples: 78,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				0: 13, 60000: 13, 120000: 13, 180000: 13, 240000: 13, 300000: 13, 360000: 0, 420000: 0, 480000: 0, 540000: 0, 600000: 0,
+			},
+			expectedSamplesRead: 78,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				0: 13, 60000: 13, 120000: 13, 180000: 13, 240000: 13, 300000: 13, 360000: 0, 420000: 0, 480000: 0, 540000: 0, 600000: 0,
+			},
 		},
 		"range vector selector with native histograms": {
 			expr:                 `sum_over_time(native_histogram_series{}[1m])`,
 			expectedTotalSamples: 26,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				0: 13, 60000: 13, 120000: 0, 180000: 0, 240000: 0, 300000: 0, 360000: 0, 420000: 0, 480000: 0, 540000: 0, 600000: 0,
+			},
+			expectedSamplesRead: 26,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				0: 13, 60000: 13, 120000: 0, 180000: 0, 240000: 0, 300000: 0, 360000: 0, 420000: 0, 480000: 0, 540000: 0, 600000: 0,
+			},
 		},
 		"range vector selector with @ modifier": {
 			expr:                        `sum_over_time(dense_series{}[2m] @ 300)`,
 			expectedTotalSamples:        22, // each step selects 2 points at T=300 over query range
 			expectedTotalSamplesWithMQE: 2,  // the range vector with @ is step invariant so these 2 samples are re-used for each step
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				0: 2, 60000: 2, 120000: 2, 180000: 2, 240000: 2, 300000: 2, 360000: 2, 420000: 2, 480000: 2, 540000: 2, 600000: 2,
+			},
+			expectedSamplesRead: 2, // Step-invariant expression is only evaluated once.
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				0: 2, 60000: 0, 120000: 0, 180000: 0, 240000: 0, 300000: 0, 360000: 0, 420000: 0, 480000: 0, 540000: 0, 600000: 0,
+			},
 		},
 		"subquery": {
 			expr:                 `dense_series{}[5m:1m]`,
 			expectedTotalSamples: 5,
-			isInstantQuery:       true,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				600000: 5,
+			},
+			expectedSamplesRead: 5,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				600000: 5,
+			},
+			isInstantQuery: true,
 		},
 		"aggregation over subquery": {
 			expr:                 `max_over_time(dense_series{}[5m:1m])`,
 			expectedTotalSamples: 5,
-			isInstantQuery:       true,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				600000: 5,
+			},
+			expectedSamplesRead: 10,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				600000: 10,
+			},
+			isInstantQuery: true,
 		},
 		"aggregation over subquery - range query": {
 			expr:                        `max_over_time(dense_series[5m:1m])`,
 			expectedTotalSamples:        45,
 			expectedTotalSamplesWithMQE: 11,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				0: 1, 60000: 2, 120000: 3, 180000: 4, 240000: 5, 300000: 5, 360000: 5, 420000: 5, 480000: 5, 540000: 5, 600000: 5,
+			},
+			expectedSamplesRead: 22,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				0: 2, 60000: 2, 120000: 2, 180000: 2, 240000: 2, 300000: 2, 360000: 2, 420000: 2, 480000: 2, 540000: 2, 600000: 2,
+			},
 		},
 		"subquery range equals subquery interval": {
 			expr:                 `dense_series[1m:1m]`,
 			expectedTotalSamples: 1,
-			isInstantQuery:       true,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				600000: 1,
+			},
+			expectedSamplesRead: 1,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				600000: 1,
+			},
+			isInstantQuery: true,
 		},
-		"subquery range equals subquery interval -  range query": {
+		"subquery range equals subquery interval - range query": {
 			expr:                 `max_over_time(dense_series{}[1m:1m])`,
 			expectedTotalSamples: 11,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				0: 1, 60000: 1, 120000: 1, 180000: 1, 240000: 1, 300000: 1, 360000: 1, 420000: 1, 480000: 1, 540000: 1, 600000: 1,
+			},
+			expectedSamplesRead: 22,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				0: 2, 60000: 2, 120000: 2, 180000: 2, 240000: 2, 300000: 2, 360000: 2, 420000: 2, 480000: 2, 540000: 2, 600000: 2,
+			},
 		},
 		"subquery resolution greater than subquery interval": {
 			expr:                 `dense_series{}[1m:5m]`,
 			expectedTotalSamples: 1,
-			isInstantQuery:       true,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				600000: 1,
+			},
+			expectedSamplesRead: 1,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				600000: 1,
+			},
+			isInstantQuery: true,
 		},
 		"subquery resolution greater than subquery interval - range query": {
 			expr:                 `max_over_time(dense_series{}[1m:5m])`,
 			expectedTotalSamples: 3,
-			isInstantQuery:       false,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				0: 1, 60000: 0, 120000: 0, 180000: 0, 240000: 0, 300000: 1, 360000: 0, 420000: 0, 480000: 0, 540000: 0, 600000: 1,
+			},
+			expectedSamplesRead: 6,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				0: 2, 60000: 0, 120000: 0, 180000: 0, 240000: 0, 300000: 2, 360000: 0, 420000: 0, 480000: 0, 540000: 0, 600000: 2,
+			},
+			isInstantQuery: false,
 		},
 		"subquery not aligned with parent query": {
 			expr:                 `dense_series{}[5m:44s]`,
 			expectedTotalSamples: 7,
-			isInstantQuery:       true,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				600000: 7,
+			},
+			expectedSamplesRead: 7,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				600000: 7,
+			},
+			isInstantQuery: true,
 		},
 		"subquery not aligned with parent query - range query": {
 			expr:                        `max_over_time(dense_series{}[5m:44s])`,
 			expectedTotalSamples:        57,
 			expectedTotalSamplesWithMQE: 14,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				0: 1, 60000: 2, 120000: 3, 180000: 5, 240000: 6, 300000: 6, 360000: 7, 420000: 7, 480000: 6, 540000: 7, 600000: 7,
+			},
+			expectedSamplesRead: 28,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				0: 2, 60000: 2, 120000: 2, 180000: 4, 240000: 2, 300000: 2, 360000: 4, 420000: 2, 480000: 2, 540000: 4, 600000: 2,
+			},
 		},
 		"classic histogram quantile": {
 			expr:                 `histogram_quantile(0.9, rate(classic_histogram_series[5m]))`,
 			expectedTotalSamples: 30,
-			isInstantQuery:       true,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				600000: 30,
+			},
+			expectedSamplesRead: 30,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				600000: 30,
+			},
+			isInstantQuery: true,
 		},
 		"classic histogram quantile – range query": {
 			expr:                 `histogram_quantile(0.9, rate(classic_histogram_series[5m]))`,
 			expectedTotalSamples: 270,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				0: 6, 60000: 12, 120000: 18, 180000: 24, 240000: 30, 300000: 30, 360000: 30, 420000: 30, 480000: 30, 540000: 30, 600000: 30,
+			},
+			expectedSamplesRead: 66,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				0: 6, 60000: 6, 120000: 6, 180000: 6, 240000: 6, 300000: 6, 360000: 6, 420000: 6, 480000: 6, 540000: 6, 600000: 6,
+			},
 		},
 		"classic histogram fraction": {
 			expr:                 `histogram_fraction(10, 100, rate(classic_histogram_series[5m]))`,
 			expectedTotalSamples: 30,
-			isInstantQuery:       true,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				600000: 30,
+			},
+			expectedSamplesRead: 30,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				600000: 30,
+			},
+			isInstantQuery: true,
 		},
 		"classic histogram fraction – range query": {
 			expr:                 `histogram_fraction(10, 100, rate(classic_histogram_series[5m]))`,
 			expectedTotalSamples: 270,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				0: 6, 60000: 12, 120000: 18, 180000: 24, 240000: 30, 300000: 30, 360000: 30, 420000: 30, 480000: 30, 540000: 30, 600000: 30,
+			},
+			expectedSamplesRead: 66,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				0: 6, 60000: 6, 120000: 6, 180000: 6, 240000: 6, 300000: 6, 360000: 6, 420000: 6, 480000: 6, 540000: 6, 600000: 6,
+			},
 		},
 		"common subexpression elimination": {
 			expr:                        `sum(dense_series) + sum(dense_series)`,
 			isInstantQuery:              true,
 			expectedTotalSamples:        2,
 			expectedTotalSamplesWithMQE: 1,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				600000: 2,
+			},
+			expectedSamplesRead: 2,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				600000: 2,
+			},
 		},
 		"common subexpression elimination inside subquery, instant query": {
 			expr:                        `sum_over_time((sum(dense_series))[5m:1m]) + sum_over_time((count(dense_series))[5m:1m])`,
 			isInstantQuery:              true,
 			expectedTotalSamples:        10,
 			expectedTotalSamplesWithMQE: 5,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				600000: 10,
+			},
+			expectedSamplesRead: 20,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				600000: 20,
+			},
 		},
 		"common subexpression elimination inside subquery, range query": {
 			expr:                        `sum_over_time((sum(dense_series))[5m:1m]) + sum_over_time((count(dense_series))[5m:1m])`,
 			expectedTotalSamples:        90,
 			expectedTotalSamplesWithMQE: 11,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				0: 2, 60000: 4, 120000: 6, 180000: 8, 240000: 10, 300000: 10, 360000: 10, 420000: 10, 480000: 10, 540000: 10, 600000: 10,
+			},
+			expectedSamplesRead: 44,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				0: 4, 60000: 4, 120000: 4, 180000: 4, 240000: 4, 300000: 4, 360000: 4, 420000: 4, 480000: 4, 540000: 4, 600000: 4,
+			},
 		},
 		// Three tests below cover PQE bug: sample counting is incorrect when subqueries with range vector selectors are wrapped in functions.
 		// In MQE it's fixed, so that's why cases have a skipCompareWithPrometheus set.
@@ -3598,18 +3871,39 @@ func TestQueryStats(t *testing.T) {
 			expr:                        `rate(dense_series[1m30s])[5m:1m]`,
 			expectedTotalSamples:        10,
 			expectedTotalSamplesWithMQE: 10,
-			isInstantQuery:              true,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				600000: 10,
+			},
+			expectedSamplesRead: 6,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				600000: 6,
+			},
+			isInstantQuery: true,
 		},
 		"aggregation over subquery with range vector selector": {
 			expr:                        `max_over_time(rate(dense_series[1m30s])[5m:1m])`,
 			expectedTotalSamples:        5,
 			expectedTotalSamplesWithMQE: 10,
-			isInstantQuery:              true,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				600000: 5,
+			},
+			expectedSamplesRead: 11,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				600000: 11,
+			},
+			isInstantQuery: true,
 		},
 		"aggregation over subquery with range vector selector, range query": {
 			expr:                        `max_over_time(rate(dense_series[1m30s])[5m:1m])`,
 			expectedTotalSamples:        40,
 			expectedTotalSamplesWithMQE: 21,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				0: 0, 60000: 1, 120000: 2, 180000: 3, 240000: 4, 300000: 5, 360000: 5, 420000: 5, 480000: 5, 540000: 5, 600000: 5,
+			},
+			expectedSamplesRead: 21,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				0: 1, 60000: 2, 120000: 2, 180000: 2, 240000: 2, 300000: 2, 360000: 2, 420000: 2, 480000: 2, 540000: 2, 600000: 2,
+			},
 		},
 	}
 
