@@ -74,13 +74,7 @@ func (d *Distributor) isQuorumWritePath(p string) bool {
 }
 
 func (d *Distributor) isUnaryWritePath(p string) bool {
-	if strings.HasSuffix(p, "/silences") {
-		return true
-	}
-	if strings.HasSuffix(p, "/api/v1/grafana/receivers/test") {
-		return true
-	}
-	return false
+	return strings.HasSuffix(p, "/silences")
 }
 
 func (d *Distributor) isUnaryDeletePath(p string) bool {
@@ -99,17 +93,6 @@ func (d *Distributor) isQuorumReadPath(p string) (bool, merger.Merger) {
 	}
 	if strings.HasSuffix(path.Dir(p), "/v2/silence") {
 		return true, merger.V2SilenceID{}
-	}
-	return false, nil
-}
-
-func (d *Distributor) isAllReadPath(p string) (bool, merger.Merger) {
-	// When querying receivers status, we need to wait for responses from all three replicas
-	// for best quality results. This is because any of the three could have sent a
-	// notification. This does mean that some requests might fail if a replica is unavailable
-	// but it has not left the ring or been deemed Unhealthy yet.
-	if strings.HasSuffix(p, "/api/v1/grafana/receivers") {
-		return true, merger.ExperimentalReceivers{}
 	}
 	return false, nil
 }
@@ -147,10 +130,6 @@ func (d *Distributor) DistributeRequest(w http.ResponseWriter, r *http.Request) 
 	if r.Method == http.MethodGet || r.Method == http.MethodHead {
 		if ok, m := d.isQuorumReadPath(r.URL.Path); ok {
 			d.doQuorum(userID, w, r, logger, m)
-			return
-		}
-		if ok, m := d.isAllReadPath(r.URL.Path); ok {
-			d.doAll(userID, w, r, logger, m)
 			return
 		}
 
