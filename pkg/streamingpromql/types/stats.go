@@ -363,3 +363,25 @@ func CombineStats[T StatsProvider](ctx context.Context, operators ...T) (*Operat
 type StatsProvider interface {
 	Stats(context.Context) (*OperatorEvaluationStats, error)
 }
+
+// GetSamplesProcessed returns the total count and per-step count of samples processed.
+//
+// The slice returned is returned to a pool when Close is called.
+func (s *OperatorEvaluationStats) GetSamplesProcessed() (int64, []int64) {
+	return sum(s.allSeries.samplesProcessedPerStep), s.allSeries.samplesProcessedPerStep
+}
+
+// GetSamplesRead returns the total count and per-step count of new samples read.
+//
+// The slice returned is returned to a pool when Close is called.
+func (s *OperatorEvaluationStats) GetSamplesRead() (int64, []int64) {
+	return sum(s.allSeries.newSamplesReadPerStep), s.allSeries.newSamplesReadPerStep
+}
+
+func sum(s []int64) int64 {
+	var sum int64
+	for _, v := range s {
+		sum += v
+	}
+	return sum
+}
