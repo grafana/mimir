@@ -734,6 +734,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 				defer q.Close()
 
 				res := q.Exec(context.Background())
+				require.NoError(t, res.Err)
 
 				// Because Histograms are pointers, it is hard to use Equal for the whole result
 				// Instead, compare each point individually.
