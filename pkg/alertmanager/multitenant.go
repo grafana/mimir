@@ -265,9 +265,6 @@ type Limits interface {
 	// when limit == rate.Inf.
 	NotificationBurstSize(tenant string, integration string) int
 
-	// AlertmanagerMaxGrafanaConfigSize returns max size of the grafana configuration file that user is allowed to upload. If 0, there is no limit.
-	AlertmanagerMaxGrafanaConfigSize(tenant string) int
-
 	// AlertmanagerMaxConfigSize returns max size of configuration file that user is allowed to upload. If 0, there is no limit.
 	AlertmanagerMaxConfigSize(tenant string) int
 
@@ -703,15 +700,10 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 	level.Debug(am.logger).Log("msg", "adding configurations", "num_configs", len(cfgMap))
 	amInitSkipped := map[string]struct{}{}
 	for user, cfgs := range cfgMap {
-		cfg, startAM, err := am.computeConfig(cfgs)
-		if err != nil {
-			am.multitenantMetrics.lastReloadSuccessful.WithLabelValues(user).Set(float64(0))
-			level.Warn(am.logger).Log("msg", "error computing config", "err", err, "user", user)
-			continue
-		}
+		cfg := amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL)
 
-		if !startAM {
-			level.Debug(am.logger).Log("msg", "not initializing alertmanager for grafana tenant without a promoted, non-default configuration", "user", user)
+		if cfgs.Mimir.RawConfig != am.fallbackConfig {
+			level.Debug(am.logger).Log("msg", "not initializing alertmanager for tenant with a default configuration", "user", user)
 			amInitSkipped[user] = struct{}{}
 			continue
 		}
@@ -751,50 +743,6 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 	}
 }
 
-// computeConfig takes Mimir and Grafana configurations and returns a config we can use to start an Alertmanager.
-// A bool is returned, indicating whether the Alertmanager should be started.
-//
-// Order of precedence:
-// 1. Custom Mimir configurations
-// 2. Custom, promoted Grafana configurations
-// 3. Default Grafana configurations
-// 4. Default Mimir configurations (lowest precedence, created by default for all tenants)
-func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs) (amConfig, bool, error) {
-	// Custom Mimir configurations have the highest precedence.
-	if cfgs.Mimir.RawConfig != am.fallbackConfig && cfgs.Mimir.RawConfig != "" {
-		if cfgs.Grafana.Promoted {
-			level.Warn(am.logger).Log("msg", "merging configurations not implemented, using mimir config", "user", cfgs.Mimir.User)
-		}
-		am.removeFromSkippedList(cfgs.Mimir.User)
-		return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), true, nil
-	}
-
-	// Unpromoted/empty Grafana configurations are always ignored.
-	if !cfgs.Grafana.Promoted || cfgs.Grafana.RawConfig == "" {
-		// Only return the default Mimir config (lowest precedence) if the tenant is receiving requests.
-		if am.isTenantActive(cfgs.Mimir.User) {
-			return amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL), true, nil
-		}
-		return amConfig{}, false, nil
-	}
-
-	// Custom Grafana configurations have the second highest precedence.
-	if !cfgs.Grafana.Default {
-		am.removeFromSkippedList(cfgs.Mimir.User)
-		cfg, err := am.amConfigFromGrafanaConfig(cfgs.Grafana)
-		return cfg, true, err
-	}
-
-	// We have no custom configs. Check the last activity time to determine whether to start the AM.
-	if !am.isTenantActive(cfgs.Mimir.User) {
-		return amConfig{}, false, nil
-	}
-
-	// Default Grafana configurations have the third highest precedence.
-	cfg, err := am.amConfigFromGrafanaConfig(cfgs.Grafana)
-	return cfg, true, err
-}
-
 // removeFromSkippedList remove a tenant from the 'skipped' tenants list.
 func (am *MultitenantAlertmanager) removeFromSkippedList(userID string) {
 	if !am.cfg.StrictInitializationEnabled {
@@ -830,12 +778,11 @@ func (am *MultitenantAlertmanager) isTenantActive(userID string) bool {
 }
 
 type amConfig struct {
-	User               string
-	RawConfig          string
-	Templates          []definition.PostableApiTemplate
-	TmplExternalURL    *url.URL
-	UsingGrafanaConfig bool
-	EmailConfig        alertingReceivers.EmailSenderConfig
+	User            string
+	RawConfig       string
+	Templates       []definition.PostableApiTemplate
+	TmplExternalURL *url.URL
+	EmailConfig     alertingReceivers.EmailSenderConfig
 }
 
 func (f amConfig) fingerprint() model.Fingerprint {
@@ -864,7 +811,6 @@ func (f amConfig) fingerprint() model.Fingerprint {
 
 	writeString(f.User)
 	writeString(f.RawConfig)
-	writeBool(f.UsingGrafanaConfig)
 	if f.TmplExternalURL != nil {
 		writeString(f.TmplExternalURL.String())
 	} else {
@@ -985,7 +931,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
 	// If no Alertmanager instance exists for this user yet, start one.
 	if !hasExisting {
 		level.Debug(am.logger).Log("msg", "initializing new per-tenant alertmanager", "user", cfg.User)
-		newAM, err := am.newAlertmanager(cfg.User, userAmConfig, cfg.Templates, rawCfg, cfg.TmplExternalURL, cfg.EmailConfig, cfg.UsingGrafanaConfig)
+		newAM, err := am.newAlertmanager(cfg.User, userAmConfig, cfg.Templates, rawCfg, cfg.TmplExternalURL, cfg.EmailConfig)
 		if err != nil {
 			return err
 		}
@@ -996,7 +942,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
 			level.Info(am.logger).Log("msg", "updating per-tenant alertmanager", "user", cfg.User, "old_fingerprint", curFp, "new_fingerprint", cfgFp)
 			am.cfgs[cfg.User] = cfgFp
 			// If the config changed, apply the new one.
-			err := existing.ApplyConfig(userAmConfig, alertingNotify.PostableAPITemplatesToTemplateDefinitions(cfg.Templates), rawCfg, cfg.TmplExternalURL, cfg.EmailConfig, cfg.UsingGrafanaConfig)
+			err := existing.ApplyConfig(userAmConfig, alertingNotify.PostableAPITemplatesToTemplateDefinitions(cfg.Templates), rawCfg, cfg.TmplExternalURL, cfg.EmailConfig)
 			if err != nil {
 				return fmt.Errorf("unable to apply Alertmanager config for user %v: %v", cfg.User, err)
 			}
@@ -1011,7 +957,7 @@ func (am *MultitenantAlertmanager) getTenantDirectory(userID string) string {
 	return filepath.Join(am.cfg.DataDir, userID)
 }
 
-func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *definition.PostableApiAlertingConfig, templates []definition.PostableApiTemplate, rawCfg string, tmplExternalURL *url.URL, emailCfg alertingReceivers.EmailSenderConfig, usingGrafanaConfig bool) (*Alertmanager, error) {
+func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *definition.PostableApiAlertingConfig, templates []definition.PostableApiTemplate, rawCfg string, tmplExternalURL *url.URL, emailCfg alertingReceivers.EmailSenderConfig) (*Alertmanager, error) {
 	reg := prometheus.NewRegistry()
 
 	tenantDir := am.getTenantDirectory(userID)
@@ -1042,7 +988,7 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *defi
 		return nil, fmt.Errorf("unable to start Alertmanager for user %v: %v", userID, err)
 	}
 
-	if err := newAM.ApplyConfig(amConfig, alertingNotify.PostableAPITemplatesToTemplateDefinitions(templates), rawCfg, tmplExternalURL, emailCfg, usingGrafanaConfig); err != nil {
+	if err := newAM.ApplyConfig(amConfig, alertingNotify.PostableAPITemplatesToTemplateDefinitions(templates), rawCfg, tmplExternalURL, emailCfg); err != nil {
 		newAM.Stop()
 		return nil, fmt.Errorf("unable to apply initial config for user %v: %v", userID, err)
 	}
@@ -1173,11 +1119,7 @@ func (am *MultitenantAlertmanager) startAlertmanager(ctx context.Context, userID
 		return nil, errConfigNotFound
 	}
 
-	amConfig, _, err := am.computeConfig(cfg) // The second value indicates whether we should start the AM or not. Ignore it.
-	if err != nil {
-		return nil, fmt.Errorf("failed to compute config: %w", err)
-	}
-
+	amConfig := amConfigFromMimirConfig(cfg.Mimir, am.cfg.ExternalURL.URL)
 	if err := am.setConfig(amConfig); err != nil {
 		return nil, err
 	}

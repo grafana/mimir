@@ -73,7 +73,6 @@ const (
 	alignQueriesWithStepFlag                    = "query-frontend.align-queries-with-step"
 	QueryIngestersWithinFlag                    = "querier.query-ingesters-within"
 	EnableDelayedNameRemovalFlag                = "querier.enable-delayed-name-removal"
-	AlertmanagerMaxGrafanaConfigSizeFlag        = "alertmanager.max-grafana-config-size-bytes"
 	AlertmanagerMaxGrafanaStateSizeFlag         = "alertmanager.max-grafana-state-size-bytes"
 
 	// MinCompactorPartialBlockDeletionDelay is the minimum partial blocks deletion delay that can be configured in Mimir.
@@ -294,7 +293,6 @@ type Limits struct {
 	NotificationRateLimit               float64                    `yaml:"alertmanager_notification_rate_limit" json:"alertmanager_notification_rate_limit"`
 	NotificationRateLimitPerIntegration flagext.LimitsMap[float64] `yaml:"alertmanager_notification_rate_limit_per_integration" json:"alertmanager_notification_rate_limit_per_integration"`
 
-	AlertmanagerMaxGrafanaConfigSizeBytes      flagext.Bytes          `yaml:"alertmanager_max_grafana_config_size_bytes" json:"alertmanager_max_grafana_config_size_bytes"`
 	AlertmanagerMaxConfigSizeBytes             int                    `yaml:"alertmanager_max_config_size_bytes" json:"alertmanager_max_config_size_bytes"`
 	AlertmanagerMaxGrafanaStateSizeBytes       flagext.Bytes          `yaml:"alertmanager_max_grafana_state_size_bytes" json:"alertmanager_max_grafana_state_size_bytes"`
 	AlertmanagerMaxSilencesCount               int                    `yaml:"alertmanager_max_silences_count" json:"alertmanager_max_silences_count"`
@@ -510,8 +508,6 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 		l.NotificationRateLimitPerIntegration = NotificationRateLimitMap()
 	}
 	f.Var(&l.NotificationRateLimitPerIntegration, "alertmanager.notification-rate-limit-per-integration", "Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: "+strings.Join(allowedIntegrationNames, ", ")+".")
-	_ = l.AlertmanagerMaxGrafanaConfigSizeBytes.Set("0")
-	f.Var(&l.AlertmanagerMaxGrafanaConfigSizeBytes, AlertmanagerMaxGrafanaConfigSizeFlag, "Maximum size of the Grafana Alertmanager configuration for a tenant. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxConfigSizeBytes, "alertmanager.max-config-size-bytes", 0, "Maximum size of the Alertmanager configuration for a tenant. 0 = no limit.")
 	_ = l.AlertmanagerMaxGrafanaStateSizeBytes.Set("0")
 	f.Var(&l.AlertmanagerMaxGrafanaStateSizeBytes, AlertmanagerMaxGrafanaStateSizeFlag, "Maximum size of the Grafana Alertmanager state for a tenant. 0 = no limit.")
@@ -1449,10 +1445,6 @@ func (o *Overrides) NotificationBurstSize(user string, integration string) int {
 
 func (o *Overrides) AlertmanagerMaxGrafanaStateSize(userID string) int {
 	return int(o.getOverridesForUser(userID).AlertmanagerMaxGrafanaStateSizeBytes)
-}
-
-func (o *Overrides) AlertmanagerMaxGrafanaConfigSize(userID string) int {
-	return int(o.getOverridesForUser(userID).AlertmanagerMaxGrafanaConfigSizeBytes)
 }
 
 func (o *Overrides) AlertmanagerMaxConfigSize(userID string) int {

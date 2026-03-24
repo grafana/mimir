@@ -38,16 +38,6 @@ type AlertStore interface {
 	// If configuration for the user doesn't exist, no error is reported.
 	DeleteAlertConfig(ctx context.Context, user string) error
 
-	// GetGrafanaAlertConfig returns the Grafana Alertmanager configuration for a user.
-	GetGrafanaAlertConfig(ctx context.Context, user string) (alertspb.GrafanaAlertConfigDesc, error)
-
-	// SetGrafanaAlertConfig stores the Grafana Alertmanager configuration for a user.
-	SetGrafanaAlertConfig(ctx context.Context, cfg alertspb.GrafanaAlertConfigDesc) error
-
-	// DeleteGrafanaAlertConfig delete the Grafana Alertmanager configuration for a user.
-	// If configuration for the user doesn't exist, no error is reported.
-	DeleteGrafanaAlertConfig(ctx context.Context, user string) error
-
 	// ListUsersWithFullState returns the list of users which have had state written.
 	ListUsersWithFullState(ctx context.Context) ([]string, error)
 
@@ -63,7 +53,7 @@ type AlertStore interface {
 }
 
 // NewAlertStore returns a alertmanager store backend client based on the provided cfg.
-func NewAlertStore(ctx context.Context, cfg Config, cfgProvider bucket.TenantConfigProvider, bucketConfig bucketclient.BucketAlertStoreConfig, logger log.Logger, reg prometheus.Registerer) (AlertStore, error) {
+func NewAlertStore(ctx context.Context, cfg Config, cfgProvider bucket.TenantConfigProvider, logger log.Logger, reg prometheus.Registerer) (AlertStore, error) {
 	if cfg.Backend == local.Name {
 		level.Warn(logger).Log("msg", "-alertmanager-storage.backend=local is not suitable for persisting alertmanager state between replicas (silences, notifications); you should switch to an external object store for production use")
 		return local.NewStore(cfg.Local)
@@ -78,5 +68,5 @@ func NewAlertStore(ctx context.Context, cfg Config, cfgProvider bucket.TenantCon
 		return nil, err
 	}
 
-	return bucketclient.NewBucketAlertStore(bucketConfig, bucketClient, cfgProvider, logger), nil
+	return bucketclient.NewBucketAlertStore(bucketClient, cfgProvider, logger), nil
 }

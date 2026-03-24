@@ -463,9 +463,9 @@ func clusterWait(position func() int, timeout time.Duration) func() time.Duratio
 }
 
 // ApplyConfig applies a new configuration to an Alertmanager.
-func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, tmpls []alertingTemplates.TemplateDefinition, rawCfg string, tmplExternalURL *url.URL, emailCfg alertingReceivers.EmailSenderConfig, usingGrafanaConfig bool) error {
+func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, tmpls []alertingTemplates.TemplateDefinition, rawCfg string, tmplExternalURL *url.URL, emailCfg alertingReceivers.EmailSenderConfig) error {
 	cfg := grafanaToUpstreamConfig(conf)
-	integrationsMap, err := am.buildIntegrationsMap(emailCfg, conf.Receivers, tmpls, tmplExternalURL, usingGrafanaConfig)
+	integrationsMap, err := am.buildIntegrationsMap(emailCfg, conf.Receivers, tmpls, tmplExternalURL)
 	if err != nil {
 		return err
 	}
@@ -635,7 +635,7 @@ func (a nfstatusNotifierToNotify) Notify(ctx context.Context, alerts ...*types.A
 }
 
 // buildIntegrationsMap builds a map of name to the list of integration notifiers off of a list of receiver config.
-func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSenderConfig, nc []*definition.PostableApiReceiver, tmpls []alertingTemplates.TemplateDefinition, tmplExternalURL *url.URL, usingGrafanaConfig bool) (map[string][]*nfstatus.Integration, error) {
+func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSenderConfig, nc []*definition.PostableApiReceiver, tmpls []alertingTemplates.TemplateDefinition, tmplExternalURL *url.URL) (map[string][]*nfstatus.Integration, error) {
 	// Create a firewall binded to the per-tenant config.
 	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(am.cfg.UserID, am.cfg.Limits))
 
@@ -693,17 +693,7 @@ func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSen
 	// This might appear different from the above dynamic approach that depends on receiver types, and it is, but
 	// currently AMs should not have mixed receiver types. So, this is a safe (and necessary) workaround.
 	var err error
-	if usingGrafanaConfig {
-		var f *alertingTemplates.Factory
-		tmplCfg, cfgErr := alertingTemplates.NewConfig(am.cfg.UserID, tmplExternalURL.String(), version.Version, alertingTemplates.Limits{})
-		if cfgErr != nil {
-			return nil, cfgErr
-		}
-		f, err = alertingTemplates.NewFactory(tmpls, tmplCfg, am.logger)
-		if err == nil {
-			_, err = f.GetTemplate(alertingTemplates.GrafanaKind)
-		}
-	} else if tmpl == nil {
+	if tmpl == nil {
 		_, err = loadTemplates(tmpls, WithCustomFunctions(am.cfg.UserID))
 	}
 	if err != nil {

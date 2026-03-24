@@ -107,18 +107,6 @@ func (f *Store) DeleteAlertConfig(_ context.Context, _ string) error {
 	return errReadOnly
 }
 
-func (f *Store) GetGrafanaAlertConfig(_ context.Context, _ string) (alertspb.GrafanaAlertConfigDesc, error) {
-	return alertspb.GrafanaAlertConfigDesc{}, errGrafanaStateAndConfig
-}
-
-func (f *Store) SetGrafanaAlertConfig(_ context.Context, _ alertspb.GrafanaAlertConfigDesc) error {
-	return errGrafanaStateAndConfig
-}
-
-func (f *Store) DeleteGrafanaAlertConfig(_ context.Context, _ string) error {
-	return errGrafanaStateAndConfig
-}
-
 // ListUsersWithFullState implements alertstore.AlertStore.
 func (f *Store) ListUsersWithFullState(_ context.Context) ([]string, error) {
 	return []string{}, nil

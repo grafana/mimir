@@ -13,8 +13,7 @@ var (
 
 // AlertConfigDescs is a wrapper for a Mimir and a Grafana Alertmanager configurations.
 type AlertConfigDescs struct {
-	Mimir   AlertConfigDesc
-	Grafana GrafanaAlertConfigDesc
+	Mimir AlertConfigDesc
 }
 
 // ToProto transforms a yaml Alertmanager config and map of template files to an AlertConfigDesc.
