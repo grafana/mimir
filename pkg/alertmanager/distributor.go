@@ -77,9 +77,6 @@ func (d *Distributor) isUnaryWritePath(p string) bool {
 	if strings.HasSuffix(p, "/silences") {
 		return true
 	}
-	if strings.HasSuffix(p, "/api/v1/grafana/templates/test") {
-		return true
-	}
 	if strings.HasSuffix(p, "/api/v1/grafana/receivers/test") {
 		return true
 	}
