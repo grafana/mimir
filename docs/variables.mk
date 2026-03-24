@@ -8,7 +8,7 @@ MIMIR_DOCS_BRANCH := $(patsubst v%.x,release-%,$(MIMIR_DOCS_VERSION))
 endif
 
 # Repo name is the basename of the git root, which may be a worktree with an arbitrary name.
-MIMIR_REPO_NAME := $(shell basename $(GIT_ROOT))
+MIMIR_REPO_NAME := $(notdir $(basename $(GIT_ROOT)))
 
 # List of projects to provide to the make-docs script.
 PROJECTS := mimir:next:$(MIMIR_REPO_NAME) mimir:$(MIMIR_DOCS_VERSION):mimir-$(MIMIR_DOCS_VERSION) helm-charts/mimir-distributed:latest:$(MIMIR_REPO_NAME)
