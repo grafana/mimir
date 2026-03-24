@@ -846,7 +846,6 @@ func TestInstantVectorOperator_Stats(t *testing.T) {
 		labels.MustNewMatcher(labels.MatchEqual, "env", "test"),
 	}
 
-	stats := types.NewQueryStats()
 	timeRange := types.NewInstantQueryTimeRange(timestamp.Time(0))
 	selector := selectors.NewInstantVectorSelector(
 		&selectors.Selector{
@@ -858,7 +857,6 @@ func TestInstantVectorOperator_Stats(t *testing.T) {
 			Subsets:                  []selectors.Subset{{Filter: subset}},
 		},
 		memoryConsumptionTracker,
-		stats,
 		false,
 		false,
 	)

@@ -105,7 +105,6 @@ func MaterializeDataLabelSelector(t *DataLabelSelector, _ *planning.Materializer
 	vectorSelector := selectors.NewInstantVectorSelector(
 		selector,
 		params.MemoryConsumptionTracker,
-		params.QueryStats,
 		false, // returnSampleTimestamps
 		true,  // returnSampleTimestampsPreserveHistograms
 	)
