@@ -185,7 +185,7 @@ func (l *loggingEvaluationObserver) StringEvaluated(ctx context.Context, evaluat
 	return nil
 }
 
-func (l *loggingEvaluationObserver) EvaluationCompleted(ctx context.Context, evaluator *Evaluator, annotations *annotations.Annotations, stats *types.QueryStats) error {
-	l.events = append(l.events, evaluationObserverEvent{event: "EvaluationCompleted", details: fmt.Sprintf("annotations: %v, stats: %v", annotations, *stats)})
+func (l *loggingEvaluationObserver) EvaluationCompleted(ctx context.Context, evaluator *Evaluator, annotations *annotations.Annotations, stats map[planning.Node]*types.OperatorEvaluationStats) error {
+	l.events = append(l.events, evaluationObserverEvent{event: "EvaluationCompleted", details: fmt.Sprintf("annotations: %v, stats: %v", annotations, stats)})
 	return nil
 }

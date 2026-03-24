@@ -1890,7 +1890,7 @@ func (n noopEvaluationObserver) StringEvaluated(ctx context.Context, evaluator *
 	return nil
 }
 
-func (n noopEvaluationObserver) EvaluationCompleted(ctx context.Context, evaluator *Evaluator, annotations *annotations.Annotations, stats *types.QueryStats) error {
+func (n noopEvaluationObserver) EvaluationCompleted(ctx context.Context, evaluator *Evaluator, annotations *annotations.Annotations, stats map[planning.Node]*types.OperatorEvaluationStats) error {
 	return nil
 }
 

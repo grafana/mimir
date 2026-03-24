@@ -244,15 +244,25 @@ func (q *Query) StringEvaluated(_ context.Context, _ *Evaluator, _ planning.Node
 }
 
 // EvaluationCompleted implements the EvaluationObserver interface.
-func (q *Query) EvaluationCompleted(_ context.Context, _ *Evaluator, annotations *annotations.Annotations, stats *types.QueryStats) error {
+func (q *Query) EvaluationCompleted(_ context.Context, _ *Evaluator, annotations *annotations.Annotations, stats map[planning.Node]*types.OperatorEvaluationStats) error {
 	q.annotations = annotations
-	q.stats = stats
+
+	if len(stats) != 1 {
+		return fmt.Errorf("expected exactly one stats entry, but got %d", len(stats))
+	}
+
+	q.stats = stats[q.evaluator.nodeRequests[0].Node]
+
 	return nil
 }
 
 func (q *Query) Close() {
 	q.evaluator.Close()
 	q.returnResultToPool()
+
+	if q.stats != nil {
+		q.stats.Close()
+	}
 
 	if q.engine.pedantic && q.succeeded {
 		// Only bother checking memory consumption if the query succeeded: it's not expected that all memory

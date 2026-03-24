@@ -551,7 +551,7 @@ func (o *evaluationObserver) StringEvaluated(ctx context.Context, evaluator *str
 	})
 }
 
-func (o *evaluationObserver) EvaluationCompleted(ctx context.Context, evaluator *streamingpromql.Evaluator, annotations *annotations.Annotations, evaluationStats *types.QueryStats) error {
+func (o *evaluationObserver) EvaluationCompleted(ctx context.Context, evaluator *streamingpromql.Evaluator, annotations *annotations.Annotations, stats map[planning.Node]*types.OperatorEvaluationStats) error {
 	for _, batch := range o.instantVectorSeriesDataBatches {
 		if len(batch.unsentSeries) > 0 {
 			// Send any outstanding data now.
@@ -571,19 +571,27 @@ func (o *evaluationObserver) EvaluationCompleted(ctx context.Context, evaluator 
 		Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
 			EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
 				Annotations: annos,
-				Stats:       o.populateStats(ctx, evaluationStats),
+				Stats:       o.populateStats(ctx, stats),
+				// TODO: send per-node stats
 			},
 		},
 	})
 }
 
-func (o *evaluationObserver) populateStats(ctx context.Context, evaluationStats *types.QueryStats) querier_stats.Stats {
+func (o *evaluationObserver) populateStats(ctx context.Context, evaluationStats map[planning.Node]*types.OperatorEvaluationStats) querier_stats.Stats {
 	querierStats := querier_stats.FromContext(ctx)
 	if querierStats == nil {
 		return querier_stats.Stats{}
 	}
 
-	querierStats.AddSamplesProcessed(uint64(evaluationStats.TotalSamples))
+	// Calculate the total number of samples processed, in case we're talking to an old query-frontend that doesn't read the per-node stats.
+	totalSamplesProcessed := int64(0)
+	for _, stats := range evaluationStats {
+		processed, _ := stats.GetSamplesProcessed()
+		totalSamplesProcessed += processed
+	}
+
+	querierStats.AddSamplesProcessed(uint64(totalSamplesProcessed))
 	querierStats.AddWallTime(o.timeNow().Sub(o.startTime))
 
 	// Return a copy of the stats to avoid race conditions if anything is still modifying the
