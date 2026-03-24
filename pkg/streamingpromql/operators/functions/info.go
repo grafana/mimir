@@ -384,14 +384,23 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 			continue
 		}
 
-		// Pass the original series metadata along unchanged.
-		f.labelSetsOrder[i] = map[string]int{"inner": 0}
-		totalLabelSetsCount++
+		f.labelSetsOrder[i] = make(map[string]int, len(labelSetsOrder)+1)
+
+		// Only emit the original (un-enriched) series for timestamps without a matching
+		// info series when all data label matchers match empty string.
+		if !hasNonEmptyDataLabelMatcher {
+			f.labelSetsOrder[i]["inner"] = 0
+			totalLabelSetsCount++
+		}
 
 		extraLabelSets[i] = newLabelSets
 		totalLabelSetsCount += len(newLabelSets)
+		offset := 0
+		if !hasNonEmptyDataLabelMatcher {
+			offset = 1
+		}
 		for j, labelSetsHash := range labelSetsOrder {
-			f.labelSetsOrder[i][labelSetsHash] = j + 1
+			f.labelSetsOrder[i][labelSetsHash] = j + offset
 		}
 	}
 
