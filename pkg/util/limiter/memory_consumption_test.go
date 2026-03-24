@@ -5,7 +5,6 @@ package limiter
 import (
 	"context"
 	"fmt"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -276,26 +275,20 @@ func TestMemoryConsumptionTrackerTracker_Aggregation(t *testing.T) {
 
 	// max=100+200=300, current=40+60=100, peak=50+60=110, sampled=2
 	assertTrackerTrackerMetrics(t, reg, 300, 100, 110, 2)
-}
 
-func TestMemoryConsumptionTrackerTracker_GCCleanup(t *testing.T) {
-	reg := prometheus.NewPedanticRegistry()
-	tt := NewMemoryConsumptionTrackerTracker(reg)
+	tt.Deregister(tracker1)
+	assertTrackerTrackerMetrics(t, reg, 200, 60, 60, 1)
 
-	createAndForgetTracker(tt)
-
-	// Two GC cycles: first collects the tracker, second ensures the cleanup goroutine has run.
-	runtime.GC()
-	runtime.Gosched()
-	runtime.GC()
-
+	tt.Deregister(tracker2)
 	assertTrackerTrackerMetrics(t, reg, 0, 0, 0, 0)
-}
 
-// createAndForgetTracker creates a tracker that immediately goes out of scope so it can be GC'd.
-func createAndForgetTracker(tt *MemoryConsumptionTrackerTracker) {
-	tracker := tt.NewMemoryConsumptionTracker(context.Background(), 100, nil, "")
-	_ = tracker.IncreaseMemoryConsumption(50, IngesterChunks)
+	// idempotent
+	tt.Deregister(tracker2)
+	assertTrackerTrackerMetrics(t, reg, 0, 0, 0, 0)
+
+	// deregister a non tracked tracker
+	tt.Deregister(NewMemoryConsumptionTracker(context.Background(), 100, nil, "query3"))
+	assertTrackerTrackerMetrics(t, reg, 0, 0, 0, 0)
 }
 
 func assertTrackerTrackerMetrics(t *testing.T, reg prometheus.Gatherer, maxBytes, currentBytes, peakBytes float64, sampled int) {
