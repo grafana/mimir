@@ -34,7 +34,6 @@ func TestEvaluator(t *testing.T) {
 
 	memoryConsumptionTracker := engine.memoryConsumptionTrackerFactory.NewMemoryConsumptionTracker(context.Background(), 0, "")
 	timeRange := types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(0).Add(2*time.Minute), time.Minute)
-	stats := types.NewQueryStats()
 	lookbackDelta := 5 * time.Minute
 
 	storage := promqltest.LoadedStorage(t, `
@@ -67,7 +66,7 @@ func TestEvaluator(t *testing.T) {
 		LookbackDelta:            lookbackDelta,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 	}
-	instantVectorOperator := selectors.NewInstantVectorSelector(instantVectorSelector, memoryConsumptionTracker, stats, false, false)
+	instantVectorOperator := selectors.NewInstantVectorSelector(instantVectorSelector, memoryConsumptionTracker, false, false)
 
 	rangeVectorNode := &core.MatrixSelector{MatrixSelectorDetails: &core.MatrixSelectorDetails{
 		Matchers: []*core.LabelMatcher{
@@ -83,7 +82,7 @@ func TestEvaluator(t *testing.T) {
 		Range:                    rangeVectorNode.Range,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 	}
-	rangeVectorOperator := selectors.NewRangeVectorSelector(rangeVectorSelector, memoryConsumptionTracker, stats)
+	rangeVectorOperator := selectors.NewRangeVectorSelector(rangeVectorSelector, memoryConsumptionTracker)
 
 	nodeRequests := []NodeEvaluationRequest{
 		{
@@ -111,7 +110,6 @@ func TestEvaluator(t *testing.T) {
 	params := &planning.OperatorParameters{
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 		Annotations:              annotations.New(),
-		QueryStats:               stats,
 	}
 
 	evaluator, err := NewEvaluator(nodeRequests, params, engine, "this expression is not used")
