@@ -115,3 +115,57 @@ func TestOffsetCatalogue(t *testing.T) {
 		require.Empty(t, data.Data)
 	})
 }
+
+func TestOffsetWatermarksCommitted(t *testing.T) {
+	tests := map[string]struct {
+		watermarks map[int]offsetWatermark
+		committed  kmeta.PartitionOffsets
+		expected   bool
+	}{
+		"no watermarks": {
+			watermarks: map[int]offsetWatermark{},
+			committed:  kmeta.NewSingleClusterPartitionOffsets(100),
+			expected:   false,
+		},
+		"single cluster below watermark": {
+			watermarks: map[int]offsetWatermark{0: {Partition: 1, Offset: 100}},
+			committed:  kmeta.NewSingleClusterPartitionOffsets(99),
+			expected:   false,
+		},
+		"single cluster at watermark": {
+			watermarks: map[int]offsetWatermark{0: {Partition: 1, Offset: 100}},
+			committed:  kmeta.NewSingleClusterPartitionOffsets(100),
+			expected:   true,
+		},
+		"multiple clusters, one below watermark": {
+			watermarks: map[int]offsetWatermark{0: {Partition: 1, Offset: 100}, 1: {Partition: 1, Offset: 250}},
+			committed:  kmeta.NewMultiClusterPartitionOffsets([]int64{100, 249}),
+			expected:   false,
+		},
+		"multiple clusters, all reached watermark": {
+			watermarks: map[int]offsetWatermark{0: {Partition: 1, Offset: 100}, 1: {Partition: 1, Offset: 250}},
+			committed:  kmeta.NewMultiClusterPartitionOffsets([]int64{150, 250}),
+			expected:   true,
+		},
+		"cluster without committed offset": {
+			watermarks: map[int]offsetWatermark{0: {Partition: 1, Offset: 100}, 1: {Partition: 1, Offset: 250}},
+			committed:  kmeta.NewMultiClusterPartitionOffsets([]int64{100, -1}),
+			expected:   false,
+		},
+		"cluster without consumed records nor committed offset": {
+			watermarks: map[int]offsetWatermark{0: {Partition: 1, Offset: 100}, 1: {Partition: 1, Offset: -1}},
+			committed:  kmeta.NewMultiClusterPartitionOffsets([]int64{100, -1}),
+			expected:   true,
+		},
+		"cluster missing from committed offsets": {
+			watermarks: map[int]offsetWatermark{0: {Partition: 1, Offset: 100}, 1: {Partition: 1, Offset: 250}},
+			committed:  kmeta.NewSingleClusterPartitionOffsets(100),
+			expected:   false,
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, tc.expected, offsetWatermarksCommitted(tc.watermarks, tc.committed))
+		})
+	}
+}
