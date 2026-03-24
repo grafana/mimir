@@ -199,6 +199,19 @@ func (c *offsetCatalogue) Data() offsetCatalogueData {
 	}
 }
 
+// offsetWatermarksCommitted returns true if the committed offset of every Kafka cluster reached the block's watermark in that cluster.
+func offsetWatermarksCommitted(watermarks map[int]offsetWatermark, committed kmeta.PartitionOffsets) bool {
+	if len(watermarks) == 0 {
+		return false
+	}
+	for clusterID, wm := range watermarks {
+		if wm.Offset > committed.ForKafkaCluster(clusterID) {
+			return false
+		}
+	}
+	return true
+}
+
 func readOffsetCatalogueFromFile(dir string) (_ offsetCatalogueData, retErr error) {
 	filePath := filepath.Join(dir, offsetCatalogueFilename)
 	b, err := os.ReadFile(filePath)

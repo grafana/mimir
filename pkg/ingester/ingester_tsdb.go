@@ -185,7 +185,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		if !userDBReady.Load() {
 			return nil
 		}
-		return userDB.blocksToDelete(blocks)
+		return userDB.blocksToDelete(userLogger, blocks)
 	}
 	blockGeneration := blockGenerationCalculator(userDB, blockRanges[0])
 
