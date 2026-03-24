@@ -63,13 +63,14 @@ type ShipperConfigProvider interface {
 // them to a remote data store.
 // shipper implements BlocksUploader interface.
 type shipper struct {
-	logger      log.Logger
-	cfgProvider ShipperConfigProvider
-	userID      string
-	dir         string
-	metrics     *shipperMetrics
-	bucket      objstore.Bucket
-	source      block.SourceType
+	logger            log.Logger
+	cfgProvider       ShipperConfigProvider
+	userID            string
+	dir               string
+	metrics           *shipperMetrics
+	bucket            objstore.Bucket
+	source            block.SourceType
+	seriesHashEnabled bool
 }
 
 // newShipper creates a new uploader that detects new TSDB blocks in dir and uploads them to
@@ -83,19 +84,21 @@ func newShipper(
 	dir string,
 	bucket objstore.Bucket,
 	source block.SourceType,
+	seriesHashEnabled bool,
 ) *shipper {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 
 	return &shipper{
-		logger:      logger,
-		cfgProvider: cfgProvider,
-		userID:      userID,
-		dir:         dir,
-		bucket:      bucket,
-		metrics:     metrics,
-		source:      source,
+		logger:            logger,
+		cfgProvider:       cfgProvider,
+		userID:            userID,
+		dir:               dir,
+		bucket:            bucket,
+		metrics:           metrics,
+		source:            source,
+		seriesHashEnabled: seriesHashEnabled,
 	}
 }
 
@@ -198,6 +201,10 @@ func (s *shipper) upload(ctx context.Context, logger log.Logger, meta *block.Met
 	if meta.Compaction.FromOutOfOrder() && s.cfgProvider.OutOfOrderBlocksExternalLabelEnabled(s.userID) {
 		// At this point the OOO data was already ingested and compacted, so there's no point in checking for the OOO feature flag
 		meta.Thanos.Labels[block.OutOfOrderExternalLabel] = block.OutOfOrderExternalLabelValue
+	}
+
+	if s.seriesHashEnabled {
+		meta.Thanos.Labels[block.SeriesHashExternalLabel] = block.SeriesHashExternalLabelValue
 	}
 
 	// Upload block with custom metadata.

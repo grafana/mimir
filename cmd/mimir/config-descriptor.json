@@ -5289,6 +5289,17 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "series_hash_enabled",
+          "required": false,
+          "desc": "Set an external label on blocks that indicates the series include a generated unique ID. Required for the MQE projection optimization.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingester.series-hash-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,

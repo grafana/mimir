@@ -50,7 +50,7 @@ func TestShipper(t *testing.T) {
 	logs := &concurrency.SyncBuffer{}
 	logger := log.NewLogfmtLogger(logs)
 	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-	s := newShipper(logger, overrides, "", newShipperMetrics(nil), blocksDir, bkt, block.TestSource)
+	s := newShipper(logger, overrides, "", newShipperMetrics(nil), blocksDir, bkt, block.TestSource, false)
 
 	t.Run("no shipper file yet", func(t *testing.T) {
 		// No shipper file = nothing is reported as shipped.
@@ -191,7 +191,7 @@ func TestShipper_DeceivingUploadErrors(t *testing.T) {
 
 	logger := log.NewLogfmtLogger(os.Stderr)
 	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-	s := newShipper(logger, overrides, "", newShipperMetrics(nil), blocksDir, bkt, block.TestSource)
+	s := newShipper(logger, overrides, "", newShipperMetrics(nil), blocksDir, bkt, block.TestSource, false)
 
 	// Create and upload a block
 	id1 := ulid.MustNew(1, nil)
@@ -256,7 +256,7 @@ func TestIterBlockMetas(t *testing.T) {
 		},
 	}.WriteToDir(log.NewNopLogger(), path.Join(dir, id3.String())))
 	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-	shipper := newShipper(nil, overrides, "", newShipperMetrics(nil), dir, nil, block.TestSource)
+	shipper := newShipper(nil, overrides, "", newShipperMetrics(nil), dir, nil, block.TestSource, false)
 	metas, err := shipper.blockMetasFromOldest()
 	require.NoError(t, err)
 	require.True(t, slices.IsSortedFunc(metas, func(a, b *block.Meta) int {
@@ -269,7 +269,7 @@ func TestShipperAddsSegmentFiles(t *testing.T) {
 
 	inmemory := objstore.NewInMemBucket()
 	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-	s := newShipper(nil, overrides, "", newShipperMetrics(nil), dir, inmemory, block.TestSource)
+	s := newShipper(nil, overrides, "", newShipperMetrics(nil), dir, inmemory, block.TestSource, false)
 
 	id := ulid.MustNew(1, nil)
 	blockDir := path.Join(dir, id.String())
@@ -412,7 +412,7 @@ func TestShipper_AddOOOLabel(t *testing.T) {
 				},
 			}
 			overrides := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(tenantLimits))
-			s := newShipper(logger, overrides, "", newShipperMetrics(nil), blocksDir, bkt, block.TestSource)
+			s := newShipper(logger, overrides, "", newShipperMetrics(nil), blocksDir, bkt, block.TestSource, false)
 
 			createBlock(t, blocksDir, tc.meta.ULID, tc.meta)
 
@@ -425,6 +425,59 @@ func TestShipper_AddOOOLabel(t *testing.T) {
 			readMeta, err := block.DownloadMeta(context.Background(), log.NewNopLogger(), bkt, tc.meta.ULID)
 			require.NoError(t, err)
 			require.Equal(t, tc.oooCompactionHintExpected, readMeta.Compaction.FromOutOfOrder())
+			require.Equal(t, tc.expectedLabels, readMeta.Thanos.Labels)
+		})
+	}
+}
+
+func TestShipper_AddSeriesHashLabel(t *testing.T) {
+	for _, tc := range []struct {
+		id               ulid.ULID
+		serisHashEnabled bool
+		expectedLabels   map[string]string
+	}{
+		{
+			id:               ulid.MustNew(1, nil),
+			serisHashEnabled: false,
+			expectedLabels:   map[string]string{},
+		},
+		{
+			id:               ulid.MustNew(2, nil),
+			serisHashEnabled: true,
+			expectedLabels: map[string]string{
+				block.SeriesHashExternalLabel: block.SeriesHashExternalLabelValue,
+			},
+		},
+	} {
+		t.Run(fmt.Sprintf("series hash enabled=%v", tc.serisHashEnabled), func(t *testing.T) {
+			blocksDir := t.TempDir()
+			bucketDir := t.TempDir()
+
+			bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: bucketDir})
+			require.NoError(t, err)
+
+			logger := log.NewNopLogger()
+			overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+
+			createBlock(t, blocksDir, tc.id, block.Meta{
+				BlockMeta: tsdb.BlockMeta{
+					ULID:    tc.id,
+					MaxTime: 4000,
+					MinTime: 2000,
+					Version: 1,
+					Stats: tsdb.BlockStats{
+						NumSamples: 100,
+					},
+				},
+			})
+
+			s := newShipper(logger, overrides, "", newShipperMetrics(nil), blocksDir, bkt, block.TestSource, tc.serisHashEnabled)
+			uploaded, err := s.Sync(context.Background())
+			require.NoError(t, err)
+			require.Equal(t, 1, uploaded)
+
+			readMeta, err := block.DownloadMeta(context.Background(), logger, bkt, tc.id)
+			require.NoError(t, err)
 			require.Equal(t, tc.expectedLabels, readMeta.Thanos.Labels)
 		})
 	}

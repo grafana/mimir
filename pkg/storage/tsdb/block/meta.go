@@ -65,9 +65,12 @@ const (
 	DeprecatedShardIDExternalLabel = "__shard_id__"
 
 	// OutOfOrderExternalLabel is the external label used to mark blocks containing out-of-order data.
-	OutOfOrderExternalLabel = "__out_of_order__"
-	// OutOfOrderExternalLabelValue is the value to be used for the OutOfOrderExternalLabel label
+	OutOfOrderExternalLabel      = "__out_of_order__"
 	OutOfOrderExternalLabelValue = "true"
+
+	// SeriesHashExternalLabel is the external label used to mark blocks containing series with generated unique IDs.
+	SeriesHashExternalLabel      = "__series_hash__"
+	SeriesHashExternalLabelValue = "true"
 )
 
 // Meta describes the a block's meta. It wraps the known TSDB meta structure and

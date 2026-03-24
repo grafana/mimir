@@ -1677,6 +1677,11 @@ read_reactive_limiter:
   # current inflight requests, after which all requests are rejected
   # CLI flag: -ingester.read-reactive-limiter.max-rejection-factor
   [max_rejection_factor: <float> | default = 3]
+
+# (experimental) Set an external label on blocks that indicates the series
+# include a generated unique ID. Required for the MQE projection optimization.
+# CLI flag: -ingester.series-hash-enabled
+[series_hash_enabled: <boolean> | default = false]
 ```
 
 ### querier

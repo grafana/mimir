@@ -529,6 +529,13 @@ func (b *BlockBuilder) uploadBlocks(ctx context.Context, tenantID, dbDir string,
 			meta.Thanos.Labels[block.OutOfOrderExternalLabel] = block.OutOfOrderExternalLabelValue
 		}
 
+		if b.cfg.SeriesHashEnabled {
+			if meta.Thanos.Labels == nil {
+				meta.Thanos.Labels = map[string]string{}
+			}
+			meta.Thanos.Labels[block.SeriesHashExternalLabel] = block.SeriesHashExternalLabelValue
+		}
+
 		boff := backoff.New(ctx, backoff.Config{
 			MinBackoff: 100 * time.Millisecond,
 			MaxBackoff: time.Minute, // If there is a network hiccup, we prefer to wait longer retrying, than fail the whole section.
