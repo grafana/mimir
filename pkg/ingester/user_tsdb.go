@@ -434,13 +434,39 @@ func (u *userTSDB) PostDeletion(metrics map[chunks.HeadSeriesRef]labels.Labels) 
 }
 
 // blocksToDelete filters the input blocks and returns the blocks which are safe to be deleted from the ingester.
-func (u *userTSDB) blocksToDelete(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
+func (u *userTSDB) blocksToDelete(logger log.Logger, blocks []*tsdb.Block) map[ulid.ULID]struct{} {
 	if u.db == nil {
 		return nil
 	}
 
 	deletable := tsdb.DefaultBlocksToDelete(u.db)(blocks)
 	result := map[ulid.ULID]struct{}{}
+
+	// Offset-catalogue path drops any block whose watermark is at or below the block-builder's committed offset.
+	// Those series are guaranteed to be in object storage already.
+	// It runs over all blocks, not just the ones in deletable.
+	committedOffset := u.committedOffset.Load()
+	if u.offsetCatalogue != nil && committedOffset >= 0 {
+		catalogue := u.offsetCatalogue.Data()
+		if len(catalogue.Data) > 0 {
+			for _, b := range blocks {
+				blockID := b.Meta().ULID
+				if wm, ok := catalogue.Data[blockID.String()]; ok && wm.Offset <= committedOffset {
+					level.Debug(logger).Log(
+						"msg", "delete block due to its offset catalogue watermark",
+						"ulid", blockID.String(),
+						"mint", b.Meta().MinTime,
+						"maxt", b.Meta().MinTime,
+						"out_of_order", b.Meta().OutOfOrder,
+						"watermark", wm.String(),
+						"committed_offset", committedOffset,
+					)
+					//result[blockID] = struct{}{}
+				}
+			}
+		}
+	}
+
 	deadline := time.Now().Add(-u.blockMinRetention)
 
 	// The shipper enabled case goes first because its common in the way we run the ingesters
