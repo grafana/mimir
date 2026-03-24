@@ -54,26 +54,7 @@ Microservices mode deploys each component in separate processes, enabling indepe
 Even though the read path (query-frontend, querier, and store-gateway) runs separately from the write path (distributor and ingester), a healthy ring is typically required for successful queries. If the write components (distributor or ingester) are unavailable or unhealthy, the ring health check may fail, causing read queries to fail. Complete isolation of read versus write availability requires careful configuration of ring settings and failure tolerance.
 {{< /admonition >}}
 
-```mermaid
-flowchart TD
-    subgraph Read_Path
-        Q[Querier]
-    end
-    
-    subgraph Write_Path
-        I[Ingester]
-    end
-    
-    subgraph Shared_State
-        R{Hash Ring}
-    end
-    
-    I -- Heartbeat --> R
-    Q -- 1. Check Health --> R
-    Q -- 2. Read Data --> I
-    
-    R -.->|Unhealthy if Write Path Down| Q
-```
+Specifically, the querier consults the [hash ring](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/hash-ring/) to discover ingesters before reading recent data from them. If ingesters are unhealthy or unavailable, the ring reflects that state and the querier may be unable to satisfy queries for recent data. Achieving true read/write isolation requires zone-aware replication and careful ring configuration so that the loss of write-path components does not reduce the ring below the quorum needed for reads. For more information, refer to [Configuring zone-aware replication](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-zone-aware-replication/).
 
 The following diagrams show how Mimir works in microservices mode using ingest storage and classic architectures. For more information about the two supported architectures in Grafana Mimir, refer to [Grafana Mimir architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/).
 
