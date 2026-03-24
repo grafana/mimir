@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/querierpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
@@ -1086,21 +1087,14 @@ func TestQuerySplitting_PerRangeSeriesMetadata(t *testing.T) {
 		{"avg_over_time", "avg_over_time(test_metric[10h])"},
 	}
 
-	env1Labels := labels.FromStrings("__name__", "test_metric", "env", "1")
-	env2Labels := labels.FromStrings("__name__", "test_metric", "env", "2")
+	env1Labels := querierpb.SeriesMetadata{Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}, {Name: "env", Value: "1"}}}
+	env2Labels := querierpb.SeriesMetadata{Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}, {Name: "env", Value: "2"}}}
 
 	block1End := int64(4*time.Hour/time.Millisecond) - 1
 	block2End := int64(6*time.Hour/time.Millisecond) - 1
 	block3End := int64(8*time.Hour/time.Millisecond) - 1
 	block4End := int64(10*time.Hour/time.Millisecond) - 1
 
-	entryLabels := func(entry cache.CachedSeries) []labels.Labels {
-		result := make([]labels.Labels, len(entry.SeriesMetadata))
-		for i, m := range entry.SeriesMetadata {
-			result[i] = mimirpb.FromLabelAdaptersToLabels(m.Labels)
-		}
-		return result
-	}
 	ts := timestamp.Time(0).Add(10 * time.Hour)
 
 	for _, tc := range testCases {
@@ -1112,19 +1106,23 @@ func TestQuerySplitting_PerRangeSeriesMetadata(t *testing.T) {
 
 			require.Len(t, testCache.items, 4, "unexpected number of entries in cache")
 
+			blockEnds := make([]int64, 0, 4)
 			for _, data := range testCache.items {
 				var entry cache.CachedSeries
 				require.NoError(t, entry.Unmarshal(data))
 
 				switch entry.End {
 				case block1End:
-					require.Equal(t, []labels.Labels{env1Labels}, entryLabels(entry), "block1 should only contain env=1 series")
+					require.Equal(t, []querierpb.SeriesMetadata{env1Labels}, entry.SeriesMetadata, "block1 should only contain env=1 series")
 				case block2End, block3End:
-					require.Equal(t, []labels.Labels{env1Labels, env2Labels}, entryLabels(entry), "block2/3 should contain both series")
+					require.Equal(t, []querierpb.SeriesMetadata{env1Labels, env2Labels}, entry.SeriesMetadata, "block2/3 should contain both series")
 				case block4End:
-					require.Equal(t, []labels.Labels{env2Labels}, entryLabels(entry), "block4 should only contain env=2 series")
+					require.Equal(t, []querierpb.SeriesMetadata{env2Labels}, entry.SeriesMetadata, "block4 should only contain env=2 series")
 				}
+				blockEnds = append(blockEnds, entry.End)
 			}
+			slices.Sort(blockEnds)
+			require.Equal(t, []int64{block1End, block2End, block3End, block4End}, blockEnds, "expected all 4 blocks to be present in cache")
 
 			// Verify results are still correct on cache hit
 			hitsBeforeSecondQuery := testCache.hits

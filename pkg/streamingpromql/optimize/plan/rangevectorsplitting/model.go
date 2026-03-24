@@ -24,6 +24,8 @@ type Range struct {
 }
 
 // SplitGenerateFunc generates an intermediate result for a single split range.
+// hasValue indicates whether the step produced any data for the current series.
+// If false, the series is excluded from the cached results for this range in order to reduce cache entry size
 type SplitGenerateFunc[T any] func(
 	step *types.RangeVectorStepData,
 	emitAnnotation types.EmitAnnotationFunc,
