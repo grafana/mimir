@@ -4322,9 +4322,10 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			},
 		},
 		{
-			query:                "sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s])) + sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s]))",
-			start:                time.Unix(201, 0),
-			expectedTotalSamples: 72, // 2 * (3 sample per query * 12 queries (60/5))
+			query:                       "sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s])) + sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s]))",
+			start:                       time.Unix(201, 0),
+			expectedTotalSamples:        72, // 2 * (3 sample per query * 12 queries (60/5))
+			expectedTotalSamplesWithMQE: 36, // 72/2 due to common subexpression elimination
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				201000: 72,
 			},
