@@ -38,8 +38,9 @@ func (m *activityTrackingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Re
 
 	if err != nil {
 		// This is not expected to happen but if there was an error here and the request body can not be restored then the request is no longer valid.
+		// Rather than fail it here we pass the request to the next handler so it can return its own specific bad request error.
 		level.Error(m.log).Log("msg", "failed to parse request params for activity tracking", "err", err)
-		http.Error(w, "failed to parse request params for activity tracking", http.StatusInternalServerError)
+		m.next.ServeHTTP(w, r)
 		return
 	}
 
