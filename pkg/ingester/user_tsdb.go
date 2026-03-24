@@ -151,6 +151,11 @@ type userTSDB struct {
 	// Only set when ingest storage is enabled.
 	offsetCatalogue *offsetCatalogue
 
+	// committedOffset is the last committed offset observed from the consumer group
+	// configured in offset catalogue. Updated by a background service on the ingester.
+	// -1 means unknown (no offset fetched yet).
+	committedOffset atomic.Int64
+
 	requiresOwnedSeriesUpdate atomic.String // Non-empty string means that we need to recompute "owned series" for the user. Value will be used in the log message.
 
 	postingsCache *tsdb.PostingsForMatchersCache

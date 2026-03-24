@@ -210,6 +210,28 @@ func (i *Ingester) offsetCataloguesSync(ctx context.Context) {
 	})
 }
 
+func (i *Ingester) updateCommittedOffset(ctx context.Context) error {
+	consumerGroup := i.cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.ConsumerGroup
+	offset, exists, err := i.committedOffsetClient.FetchLastCommittedOffset(ctx, consumerGroup, i.ingestPartitionID)
+	if err != nil {
+		level.Warn(i.logger).Log("msg", "failed to fetch committed offset", "consumer_group", consumerGroup, "partition", i.ingestPartitionID, "err", err)
+		return nil
+	}
+	if !exists {
+		return nil
+	}
+
+	level.Info(i.logger).Log("msg", "updating commited offset", "consumer_group", consumerGroup, "partition", i.ingestPartitionID, "offset", offset)
+
+	i.tsdbsMtx.RLock()
+	defer i.tsdbsMtx.RUnlock()
+
+	for _, db := range i.tsdbs {
+		db.committedOffset.Store(offset)
+	}
+	return nil
+}
+
 // compactionServiceInterval returns how frequently the TSDB Head should be checked for compaction.
 // The returned standardInterval is guaranteed to have no jittering or staggering per zone applied.
 // The returned intervals may change over time, depending on the ingester service state.
