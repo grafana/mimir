@@ -21,6 +21,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
@@ -30,8 +31,8 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v3"
 	"google.golang.org/api/googleapi"
-	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	mimirtest "github.com/grafana/mimir/pkg/util/test"
@@ -425,7 +426,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 		return &alertingRule{
 			Name:   name,
 			Query:  "up < 1",
-			State:  "inactive",
+			State:  "unknown",
 			Health: "unknown",
 			Type:   "alerting",
 			Alerts: []*Alert{},
@@ -468,7 +469,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 						&alertingRule{
 							Name:   "UP_ALERT",
 							Query:  "up < 1",
-							State:  "inactive",
+							State:  "unknown",
 							Health: "unknown",
 							Type:   "alerting",
 							Alerts: []*Alert{},
@@ -535,7 +536,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 						&alertingRule{
 							Name:   "UP_ALERT",
 							Query:  "up < 1",
-							State:  "inactive",
+							State:  "unknown",
 							Health: "unknown",
 							Type:   "alerting",
 							Alerts: []*Alert{},
@@ -592,7 +593,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 						&alertingRule{
 							Name:   "UP_ALERT",
 							Query:  "up < 1",
-							State:  "inactive",
+							State:  "unknown",
 							Health: "unknown",
 							Type:   "alerting",
 							Alerts: []*Alert{},
@@ -630,7 +631,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 						&alertingRule{
 							Name:   "UP_ALERT",
 							Query:  "up < 1",
-							State:  "inactive",
+							State:  "unknown",
 							Health: "unknown",
 							Type:   "alerting",
 							Alerts: []*Alert{},
@@ -665,7 +666,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 						&alertingRule{
 							Name:          "UP_ALERT_WITH_KEEP_FIRING_FOR",
 							Query:         "up < 1",
-							State:         "inactive",
+							State:         "unknown",
 							Health:        "unknown",
 							Type:          "alerting",
 							Duration:      time.Minute.Seconds(),
@@ -698,7 +699,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 						&alertingRule{
 							Name:   "UP_ALERT",
 							Query:  "up < 1",
-							State:  "inactive",
+							State:  "unknown",
 							Health: "unknown",
 							Type:   "alerting",
 							Alerts: []*Alert{},
@@ -758,7 +759,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 						&alertingRule{
 							Name:   "UP_ALERT",
 							Query:  "up < 1",
-							State:  "inactive",
+							State:  "unknown",
 							Health: "unknown",
 							Type:   "alerting",
 							Alerts: nil,
@@ -789,7 +790,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 						&alertingRule{
 							Name:   "UP_ALERT",
 							Query:  "up < 1",
-							State:  "inactive",
+							State:  "unknown",
 							Health: "unknown",
 							Type:   "alerting",
 							Alerts: []*Alert{},
@@ -1095,7 +1096,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 						&alertingRule{
 							Name:   "UniqueNamedRuleN3G2",
 							Query:  "up < 1",
-							State:  "inactive",
+							State:  "unknown",
 							Health: "unknown",
 							Type:   "alerting",
 							Alerts: []*Alert{},
@@ -1127,7 +1128,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 						&alertingRule{
 							Name:   "UniqueNamedRuleN3G2",
 							Query:  "up < 1",
-							State:  "inactive",
+							State:  "unknown",
 							Health: "unknown",
 							Type:   "alerting",
 							Alerts: []*Alert{},
@@ -1161,7 +1162,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 						&alertingRule{
 							Name:   "UniqueNamedRuleN3G2",
 							Query:  "up < 1",
-							State:  "inactive",
+							State:  "unknown",
 							Health: "unknown",
 							Type:   "alerting",
 							Alerts: []*Alert{},
@@ -1238,6 +1239,113 @@ func TestRuler_PrometheusRules(t *testing.T) {
 		})
 
 	}
+}
+
+func TestRuler_PrometheusRules_Evaluation(t *testing.T) {
+	const (
+		userID   = "user1"
+		interval = 5 * time.Second
+	)
+
+	groupName := func(group int) string {
+		return fmt.Sprintf(")(_+?/|group%d+/?", group)
+	}
+
+	namespaceName := func(ns int) string {
+		return fmt.Sprintf(")(_+?/|namespace%d+/?", ns)
+	}
+
+	cfg := defaultRulerConfig(t)
+	cfg.TenantFederation.Enabled = true
+	storageRules := map[string]rulespb.RuleGroupList{
+		userID: {
+			{
+				Name:      groupName(1),
+				Namespace: namespaceName(1),
+				User:      userID,
+				Rules: []*rulespb.RuleDesc{
+					createRecordingRule("NonUniqueNamedRule", "up"),
+					createAlertingRule(fmt.Sprintf("UniqueNamedRuleN%dG%d", 1, 1), "up < 1"),
+				},
+				Interval: interval,
+			},
+		},
+	}
+
+	r := prepareRuler(t, cfg, newMockRuleStore(storageRules), withRulerAddrAutomaticMapping(), withLimits(validation.MockDefaultOverrides()), withStart())
+
+	// Rules will be synchronized asynchronously, so we wait until the expected number of rule groups has been synched.
+	test.Poll(t, 5*time.Second, 1, func() interface{} {
+		ctx := user.InjectOrgID(context.Background(), userID)
+		rls, err := r.Rules(ctx, &RulesRequest{})
+		if err != nil {
+			return 0
+		}
+		return len(rls.Groups)
+	})
+
+	a := NewAPI(r, r.store, mimirtest.NewTestingLogger(t))
+	req := requestFor(t, http.MethodGet, "https://localhost:8080/prometheus/api/v1/rules?type=alert", nil, userID)
+
+	type apiResponse struct {
+		Data struct {
+			Groups []struct {
+				Rules []struct {
+					State string `json:"state"`
+				} `json:"rules"`
+				LastEvaluation time.Time `json:"lastEvaluation"`
+				EvaluationTime float64   `json:"evaluationTime"`
+			} `json:"groups"`
+		} `json:"data"`
+	}
+
+	t.Run("initially unknown (before evaluation)", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		a.PrometheusRules(w, req)
+		resp := w.Result()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		var got apiResponse
+		require.NoError(t, json.Unmarshal(body, &got))
+		require.Len(t, got.Data.Groups, 1)
+		require.Zero(t, got.Data.Groups[0].LastEvaluation)
+		require.Zero(t, got.Data.Groups[0].EvaluationTime)
+		require.Len(t, got.Data.Groups[0].Rules, 1)
+		require.Equal(t, got.Data.Groups[0].Rules[0].State, "unknown")
+	})
+
+	// Wait for rule evaluations.
+	test.Poll(t, 5*time.Second, 1, func() interface{} {
+		ctx := user.InjectOrgID(context.Background(), userID)
+		rls, err := r.Rules(ctx, &RulesRequest{})
+		if err != nil {
+			return 0
+		}
+		var evaluated int
+		for _, group := range rls.Groups {
+			if !group.EvaluationTimestamp.IsZero() {
+				evaluated++
+			}
+		}
+		return evaluated
+	})
+
+	t.Run("inactive (after evaluation)", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		a.PrometheusRules(w, req)
+		resp := w.Result()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		var got apiResponse
+		require.NoError(t, json.Unmarshal(body, &got))
+		require.Len(t, got.Data.Groups, 1)
+		require.NotZero(t, got.Data.Groups[0].LastEvaluation)
+		require.NotZero(t, got.Data.Groups[0].EvaluationTime)
+		require.Len(t, got.Data.Groups[0].Rules, 1)
+		require.Equal(t, got.Data.Groups[0].Rules[0].State, "inactive")
+	})
 }
 
 func TestRuler_PrometheusAlerts(t *testing.T) {
@@ -1913,6 +2021,122 @@ rules:
 		t.Run(tt.name, func(t *testing.T) {
 			// POST
 			req := requestFor(t, http.MethodPost, "https://localhost:8080/prometheus/config/v1/rules/namespace", strings.NewReader(tt.input), "user1")
+			w := httptest.NewRecorder()
+
+			router.ServeHTTP(w, req)
+			require.Equal(t, tt.status, w.Code)
+			require.Equal(t, tt.output, w.Body.String())
+		})
+	}
+}
+
+func TestRuler_RulerGroupLimitsByNamespace(t *testing.T) {
+	cfg := defaultRulerConfig(t)
+
+	r := prepareRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)), withStart(), withLimits(validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
+		defaults.RulerMaxRuleGroupsPerTenant = 10
+		defaults.RulerMaxRuleGroupsPerTenantByNamespace = flagext.NewLimitsMapWithData(map[string]int{
+			"namespace_a": 2,
+		}, nil)
+	})))
+
+	a := NewAPI(r, r.store, mimirtest.NewTestingLogger(t))
+
+	tc := []struct {
+		name      string
+		namespace string
+		input     string
+		output    string
+		status    int
+	}{
+		{
+			name:      "first group in namespace_a should succeed",
+			namespace: "namespace_a",
+			status:    202,
+			input: `
+name: test_group_1
+interval: 15s
+rules:
+- record: up_rule
+  expr: up{}
+`,
+			output: "{\"status\":\"success\",\"data\":null,\"errorType\":\"\",\"error\":\"\"}",
+		},
+		{
+			name:      "second group in namespace_a should succeed",
+			namespace: "namespace_a",
+			status:    202,
+			input: `
+name: test_group_2
+interval: 15s
+rules:
+- record: up_rule
+  expr: up{}
+`,
+			output: "{\"status\":\"success\",\"data\":null,\"errorType\":\"\",\"error\":\"\"}",
+		},
+		{
+			name:      "third group in namespace_a should fail (exceeds per-namespace limit of 2)",
+			namespace: "namespace_a",
+			status:    400,
+			input: `
+name: test_group_3
+interval: 15s
+rules:
+- record: up_rule
+  expr: up{}
+`,
+			output: "per-user rule groups limit (limit: 2 actual: 3) exceeded\n",
+		},
+		{
+			name:      "first group in namespace_b should succeed (global limit applies)",
+			namespace: "namespace_b",
+			status:    202,
+			input: `
+name: test_group_1
+interval: 15s
+rules:
+- record: up_rule
+  expr: up{}
+`,
+			output: "{\"status\":\"success\",\"data\":null,\"errorType\":\"\",\"error\":\"\"}",
+		},
+		{
+			name:      "second group in namespace_b should succeed (only 3 total groups, under global limit of 10)",
+			namespace: "namespace_b",
+			status:    202,
+			input: `
+name: test_group_2
+interval: 15s
+rules:
+- record: up_rule
+  expr: up{}
+`,
+			output: "{\"status\":\"success\",\"data\":null,\"errorType\":\"\",\"error\":\"\"}",
+		},
+		{
+			name:      "third group in namespace_b should succeed (only 4 total groups, under global limit of 10)",
+			namespace: "namespace_b",
+			status:    202,
+			input: `
+name: test_group_3
+interval: 15s
+rules:
+- record: up_rule
+  expr: up{}
+`,
+			output: "{\"status\":\"success\",\"data\":null,\"errorType\":\"\",\"error\":\"\"}",
+		},
+	}
+
+	// Define once so the requests build on each other
+	router := mux.NewRouter()
+	router.Path("/prometheus/config/v1/rules/{namespace}").Methods("POST").HandlerFunc(a.CreateRuleGroup)
+
+	for _, tt := range tc {
+		t.Run(tt.name, func(t *testing.T) {
+			// POST
+			req := requestFor(t, http.MethodPost, "https://localhost:8080/prometheus/config/v1/rules/"+tt.namespace, strings.NewReader(tt.input), "user1")
 			w := httptest.NewRecorder()
 
 			router.ServeHTTP(w, req)

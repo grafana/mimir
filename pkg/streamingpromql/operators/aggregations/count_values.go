@@ -53,7 +53,7 @@ func NewCountValues(
 	expressionPosition posrange.PositionRange,
 ) *CountValues {
 	if without {
-		grouping = append(grouping, labels.MetricName)
+		grouping = append(grouping, model.MetricNameLabel)
 	}
 
 	slices.Sort(grouping)
@@ -249,20 +249,34 @@ func (c *CountValues) ExpressionPosition() posrange.PositionRange {
 }
 
 func (c *CountValues) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	return c.Inner.Prepare(ctx, params)
+	if err := c.Inner.Prepare(ctx, params); err != nil {
+		return err
+	}
+	return c.LabelName.Prepare(ctx, params)
+}
+
+func (c *CountValues) AfterPrepare(ctx context.Context) error {
+	if err := c.Inner.AfterPrepare(ctx); err != nil {
+		return err
+	}
+	return c.LabelName.AfterPrepare(ctx)
 }
 
 func (c *CountValues) Finalize(ctx context.Context) error {
-	return c.Inner.Finalize(ctx)
-}
-
-func (c *CountValues) Close() {
-	c.Inner.Close()
-	c.LabelName.Close()
-
 	for _, d := range c.series {
 		types.FPointSlicePool.Put(&d, c.MemoryConsumptionTracker)
 	}
 
 	c.series = nil
+
+	if err := c.Inner.Finalize(ctx); err != nil {
+		return err
+	}
+
+	return c.LabelName.Finalize(ctx)
+}
+
+func (c *CountValues) Close() {
+	c.Inner.Close()
+	c.LabelName.Close()
 }

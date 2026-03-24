@@ -49,7 +49,7 @@ func Test_cardinalityEstimateBucket_QueryRequest_keyFormat(t *testing.T) {
 				time:      requestTime.UnixMilli(),
 				queryExpr: parseQuery(t, "up"),
 			},
-			expected: fmt.Sprintf("QS:%s:%s:%d:%d", cacheHashKey("tenant-a"), cacheHashKey("up"), daysSinceEpoch, 0),
+			expected: fmt.Sprintf("QS:%s:%s:%d:%d", hashCacheKey("tenant-a"), hashCacheKey("up"), daysSinceEpoch, 0),
 		},
 		{
 			name:   "range query",
@@ -59,7 +59,7 @@ func Test_cardinalityEstimateBucket_QueryRequest_keyFormat(t *testing.T) {
 				end:       requestTime.Add(2 * time.Hour).UnixMilli(),
 				queryExpr: parseQuery(t, "up"),
 			},
-			expected: fmt.Sprintf("QS:%s:%s:%d:%d", cacheHashKey("tenant-b"), cacheHashKey("up"), daysSinceEpoch, 0),
+			expected: fmt.Sprintf("QS:%s:%s:%d:%d", hashCacheKey("tenant-b"), hashCacheKey("up"), daysSinceEpoch, 0),
 		},
 		{
 			name:   "range query with large range",
@@ -70,7 +70,7 @@ func Test_cardinalityEstimateBucket_QueryRequest_keyFormat(t *testing.T) {
 				end:       requestTime.Add(25 * time.Hour).UnixMilli(),
 				queryExpr: parseQuery(t, "up"),
 			},
-			expected: fmt.Sprintf("QS:%s:%s:%d:%d", cacheHashKey("tenant-b"), cacheHashKey("up"), daysSinceEpoch, 1),
+			expected: fmt.Sprintf("QS:%s:%s:%d:%d", hashCacheKey("tenant-b"), hashCacheKey("up"), daysSinceEpoch, 1),
 		},
 		{
 			name:   "long userID creates a valid key",
@@ -81,7 +81,7 @@ func Test_cardinalityEstimateBucket_QueryRequest_keyFormat(t *testing.T) {
 				end:       requestTime.Add(25 * time.Hour).UnixMilli(),
 				queryExpr: parseQuery(t, "up"),
 			},
-			expected: fmt.Sprintf("QS:%s:%s:%d:%d", cacheHashKey(longUserID), cacheHashKey("up"), daysSinceEpoch, 1),
+			expected: fmt.Sprintf("QS:%s:%s:%d:%d", hashCacheKey(longUserID), hashCacheKey("up"), daysSinceEpoch, 1),
 		},
 	}
 
@@ -99,7 +99,7 @@ func Test_cardinalityEstimation_lookupCardinalityForKey(t *testing.T) {
 	ctx := context.Background()
 	c := cache.NewInstrumentedMockCache()
 
-	actualKey := fmt.Sprintf("QS:tenant-a:%s:1234:4321", cacheHashKey("up"))
+	actualKey := fmt.Sprintf("QS:tenant-a:%s:1234:4321", hashCacheKey("up"))
 	userID := "tenant-a"
 	actualValue := uint64(25)
 

@@ -14,6 +14,7 @@ import (
 	"sort"
 
 	"github.com/pkg/errors"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/encoding"
@@ -404,7 +405,7 @@ func (s worstCaseFetchedDataStrategy) selectPostings(groups []postingGroup) (sel
 	// to the object store. This is because series are first sorted by their __name__ label
 	// (assuming there are no labels starting with uppercase letters).
 	for i, g := range omitted {
-		if len(g.keys) > 0 && g.keys[0].Name == labels.MetricName {
+		if len(g.keys) > 0 && g.keys[0].Name == model.MetricNameLabel {
 			// Since the underlying slice for selected and omitted in the same, we need to swap the group so that
 			// we don't overwrite the first group when we append to selected.
 			omitted[0], omitted[i] = omitted[i], omitted[0]

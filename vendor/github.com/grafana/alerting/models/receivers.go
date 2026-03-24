@@ -6,18 +6,18 @@ import (
 
 // Type definitions for the Grafana extended version of the /receivers API.
 
-type Receiver struct {
+type ReceiverStatus struct {
 	// Whether the receiver is used in a route or not.
 	Active bool `json:"active"`
 
 	// Integrations configured for this receiver.
-	Integrations []Integration `json:"integrations"`
+	Integrations []IntegrationStatus `json:"integrations"`
 
 	// Name of the receiver.
 	Name string `json:"name"`
 }
 
-type Integration struct {
+type IntegrationStatus struct {
 	// A timestamp indicating the last attempt to deliver a notification regardless of the outcome.
 	// Format: date-time
 	LastNotifyAttempt strfmt.DateTime `json:"lastNotifyAttempt,omitempty"`

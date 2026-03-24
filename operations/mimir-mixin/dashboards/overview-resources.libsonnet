@@ -26,11 +26,13 @@ local filename = 'mimir-overview-resources.json';
       $.row('Writes')
       .addPanel(
         $.timeseriesPanel('CPU') +
-        $.queryPanel($.resourceUtilizationQuery('cpu', $._config.instance_names.write, $._config.container_names.write), '{{%s}}' % $._config.per_instance_label),
+        $.queryPanel($.resourceUtilizationQuery('cpu', $._config.instance_names.write, $._config.container_names.write), '{{%s}}' % $._config.per_instance_label) +
+        $.showAllTooltip,
       )
       .addPanel(
         $.timeseriesPanel('Memory (workingset)') +
         $.queryPanel($.resourceUtilizationQuery('memory_working', $._config.instance_names.write, $._config.container_names.write), '{{%s}}' % $._config.per_instance_label) +
+        $.showAllTooltip +
         { fieldConfig+: { defaults+: { unit: 'bytes' } } },
       )
       .addPanel(
@@ -54,11 +56,13 @@ local filename = 'mimir-overview-resources.json';
       $.row('Reads')
       .addPanel(
         $.timeseriesPanel('CPU') +
-        $.queryPanel($.resourceUtilizationQuery('cpu', $._config.instance_names.read, $._config.container_names.read), '{{%s}}' % $._config.per_instance_label),
+        $.queryPanel($.resourceUtilizationQuery('cpu', $._config.instance_names.read, $._config.container_names.read), '{{%s}}' % $._config.per_instance_label) +
+        $.showAllTooltip,
       )
       .addPanel(
         $.timeseriesPanel('Memory (workingset)') +
         $.queryPanel($.resourceUtilizationQuery('memory_working', $._config.instance_names.read, $._config.container_names.read), '{{%s}}' % $._config.per_instance_label) +
+        $.showAllTooltip +
         { fieldConfig+: { defaults+: { unit: 'bytes' } } },
       )
       .addPanel(
@@ -70,11 +74,13 @@ local filename = 'mimir-overview-resources.json';
       $.row('Backend')
       .addPanel(
         $.timeseriesPanel('CPU') +
-        $.queryPanel($.resourceUtilizationQuery('cpu', $._config.instance_names.backend, $._config.container_names.backend), '{{%s}}' % $._config.per_instance_label),
+        $.queryPanel($.resourceUtilizationQuery('cpu', $._config.instance_names.backend, $._config.container_names.backend), '{{%s}}' % $._config.per_instance_label) +
+        $.showAllTooltip,
       )
       .addPanel(
         $.timeseriesPanel('Memory (workingset)') +
         $.queryPanel($.resourceUtilizationQuery('memory_working', $._config.instance_names.backend, $._config.container_names.backend), '{{%s}}' % $._config.per_instance_label) +
+        $.showAllTooltip +
         { fieldConfig+: { defaults+: { unit: 'bytes' } } },
       )
       .addPanel(

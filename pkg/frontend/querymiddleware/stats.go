@@ -15,12 +15,11 @@ import (
 
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
-	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 type queryStatsMiddleware struct {
-	lookbackDelta                     time.Duration
 	regexpMatcherCount                prometheus.Counter
 	regexpMatcherOptimizedCount       prometheus.Counter
 	consistencyCounter                *prometheus.CounterVec
@@ -28,13 +27,13 @@ type queryStatsMiddleware struct {
 	next                              MetricsQueryHandler
 }
 
-func newQueryStatsMiddleware(reg prometheus.Registerer, engineOpts promql.EngineOpts) MetricsQueryMiddleware {
+func newQueryStatsMiddleware(reg prometheus.Registerer) MetricsQueryMiddleware {
 	regexpMatcherCount := promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "cortex_query_frontend_regexp_matcher_count",
+		Name: "cortex_query_frontend_regexp_matchers_total",
 		Help: "Total number of regexp matchers",
 	})
 	regexpMatcherOptimizedCount := promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "cortex_query_frontend_regexp_matcher_optimized_count",
+		Name: "cortex_query_frontend_regexp_matchers_optimized_total",
 		Help: "Total number of optimized regexp matchers",
 	})
 	consistencyCounter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
@@ -51,7 +50,6 @@ func newQueryStatsMiddleware(reg prometheus.Registerer, engineOpts promql.Engine
 
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &queryStatsMiddleware{
-			lookbackDelta:                     streamingpromql.DetermineLookbackDelta(engineOpts),
 			regexpMatcherCount:                regexpMatcherCount,
 			regexpMatcherOptimizedCount:       regexpMatcherOptimizedCount,
 			consistencyCounter:                consistencyCounter,
@@ -71,7 +69,7 @@ func (s queryStatsMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (
 }
 
 func (s queryStatsMiddleware) trackRegexpMatchers(req MetricsQueryRequest) {
-	expr, err := parser.ParseExpr(req.GetQuery())
+	expr, err := req.GetClonedParsedQuery()
 	if err != nil {
 		return
 	}
@@ -117,8 +115,9 @@ func (s queryStatsMiddleware) populateQueryDetails(ctx context.Context, req Metr
 		details.End = time.UnixMilli(req.GetEnd())
 	}
 	details.Step = time.Duration(req.GetStep()) * time.Millisecond
+	details.LookbackDelta = req.GetLookbackDelta()
 
-	minT, maxT, ok := s.findMinMaxTime(ctx, req)
+	minT, maxT, ok := ExtractMinMaxTime(ctx, req, req.GetLookbackDelta())
 	if !ok {
 		return
 	}
@@ -131,32 +130,6 @@ func (s queryStatsMiddleware) populateQueryDetails(ctx context.Context, req Metr
 	}
 	if maxT != 0 && (details.MaxT.IsZero() || details.MaxT.Before(time.UnixMilli(maxT))) {
 		details.MaxT = time.UnixMilli(maxT)
-	}
-}
-
-func (s queryStatsMiddleware) findMinMaxTime(ctx context.Context, req MetricsQueryRequest) (int64, int64, bool) {
-	switch r := req.(type) {
-	case *PrometheusRangeQueryRequest, *PrometheusInstantQueryRequest:
-		expr, err := parser.ParseExpr(r.GetQuery())
-		if err != nil {
-			return 0, 0, false
-		}
-
-		evalStmt := &parser.EvalStmt{
-			Expr:          expr,
-			Start:         util.TimeFromMillis(req.GetStart()),
-			End:           util.TimeFromMillis(req.GetEnd()),
-			Interval:      time.Duration(req.GetStep()) * time.Millisecond,
-			LookbackDelta: s.lookbackDelta,
-		}
-
-		minT, maxT := promql.FindMinMaxTime(evalStmt)
-		return minT, maxT, true
-	case *remoteReadQueryRequest:
-		minT := r.GetStart() + 1 // The query time range is left-open, but minT is expected to be inclusive.
-		return minT, r.GetEnd(), true
-	default:
-		return 0, 0, false
 	}
 }
 
@@ -179,14 +152,12 @@ type QueryDetails struct {
 	// MinT and MaxT are the earliest and latest points in time which the query might try to use.
 	// For example, they account for range selectors and @ modifiers.
 	// MinT and MaxT may be zero-valued if the query doesn't process samples.
-	MinT, MaxT time.Time
-	Step       time.Duration
+	MinT, MaxT    time.Time
+	Step          time.Duration
+	LookbackDelta time.Duration
 
 	ResultsCacheMissBytes int
 	ResultsCacheHitBytes  int
-	// SamplesProcessedCacheAdjusted represents the total number of samples processed by queriers to produce the query result.
-	// It includes samples has been stored in the query-frontend cache and then fetched to produce the current full query result.
-	SamplesProcessedCacheAdjusted uint64
 }
 
 type contextKey int
@@ -211,4 +182,32 @@ func QueryDetailsFromContext(ctx context.Context) *QueryDetails {
 		return nil
 	}
 	return o.(*QueryDetails)
+}
+
+// ExtractMinMaxTime extracts the min and max timestamps that may be accessed by the query.
+// TODO: do we need the lookbackDelta as an argument? Can't we use req.GetLookbackDelta()?
+func ExtractMinMaxTime(ctx context.Context, req MetricsQueryRequest, lookbackDelta time.Duration) (int64, int64, bool) {
+	switch r := req.(type) {
+	case *PrometheusRangeQueryRequest, *PrometheusInstantQueryRequest:
+		expr, err := promqlext.NewPromQLParser().ParseExpr(r.GetQuery())
+		if err != nil {
+			return 0, 0, false
+		}
+
+		evalStmt := &parser.EvalStmt{
+			Expr:          expr,
+			Start:         util.TimeFromMillis(req.GetStart()),
+			End:           util.TimeFromMillis(req.GetEnd()),
+			Interval:      time.Duration(req.GetStep()) * time.Millisecond,
+			LookbackDelta: lookbackDelta,
+		}
+
+		minT, maxT := promql.FindMinMaxTime(evalStmt)
+		return minT, maxT, true
+	case *remoteReadQueryRequest:
+		minT := r.GetStart() + 1 // The query time range is left-open, but minT is expected to be inclusive.
+		return minT, r.GetEnd(), true
+	default:
+		return 0, 0, false
+	}
 }

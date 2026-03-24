@@ -6,7 +6,6 @@
 package astmapper
 
 import (
-	"errors"
 	"fmt"
 	"testing"
 
@@ -16,6 +15,8 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 func TestCanParallel(t *testing.T) {
@@ -206,7 +207,7 @@ func TestCanParallel_String(t *testing.T) {
 
 	for i, c := range testExpr {
 		t.Run(fmt.Sprintf("[%d]", i), func(t *testing.T) {
-			expr, err := parser.ParseExpr(c.input)
+			expr, err := promqlext.NewPromQLParser().ParseExpr(c.input)
 			require.Nil(t, err)
 			res := CanParallelize(expr, log.NewNopLogger())
 			require.Equal(t, c.expected, res)
@@ -235,6 +236,11 @@ func TestFunctionsWithDefaultsIsUpToDate(t *testing.T) {
 
 			if f.Name == "info" {
 				// the info function is variadic but no parameter is a timestamp, so it's not relevant for sharding purposes.
+				return
+			}
+
+			if f.Name == "histogram_quantiles" {
+				// histogram_quantiles is variadic with extra quantile scalar arguments, not a timestamp.
 				return
 			}
 
@@ -269,7 +275,7 @@ func TestCountVectorSelectors(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			expr, err := parser.ParseExpr(testData.expr)
+			expr, err := promqlext.NewPromQLParser().ParseExpr(testData.expr)
 			require.Nil(t, err)
 			assert.Equal(t, testData.expected, countVectorSelectors(expr))
 		})
@@ -279,56 +285,33 @@ func TestCountVectorSelectors(t *testing.T) {
 func TestEvalPredicate(t *testing.T) {
 	for testName, tc := range map[string]struct {
 		input       string
-		fn          predicate
+		fn          Predicate
 		expectedRes bool
-		expectedErr bool
 	}{
-		"should return error if the predicate returns error": {
-			input: "selector1{} or selector2{}",
-			fn: func(parser.Node) (bool, error) {
-				return false, errors.New("some err")
-			},
-			expectedRes: false,
-			expectedErr: true,
-		},
 		"should return false if the predicate returns false for all nodes in the subtree": {
 			input: "selector1{} or selector2{}",
-			fn: func(parser.Node) (bool, error) {
-				return false, nil
+			fn: func(parser.Node) bool {
+				return false
 			},
 			expectedRes: false,
-			expectedErr: false,
 		},
 		"should return true if the predicate returns true for at least 1 node in the subtree": {
 			input: "selector1{} or selector2{}",
-			fn: func(node parser.Node) (bool, error) {
+			fn: func(node parser.Node) bool {
 				// Return true only for 1 node in the subtree.
 				if node.String() == "selector1" {
-					return true, nil
+					return true
 				}
-				return false, nil
+				return false
 			},
 			expectedRes: true,
-			expectedErr: false,
-		},
-		"hasEmbeddedQueries()": {
-			input:       `sum without(__query_shard__) (__embedded_queries__{__queries__="tstquery"}) or sum(selector)`,
-			fn:          EmbeddedQueriesSquasher.ContainsSquashedExpression,
-			expectedRes: true,
-			expectedErr: false,
 		},
 	} {
 		t.Run(testName, func(t *testing.T) {
-			expr, err := parser.ParseExpr(tc.input)
+			expr, err := promqlext.NewPromQLParser().ParseExpr(tc.input)
 			require.Nil(t, err)
 
-			res, err := anyNode(expr.(parser.Node), tc.fn)
-			if tc.expectedErr {
-				require.Error(t, err)
-			} else {
-				require.Nil(t, err)
-			}
-
+			res := AnyNode(expr.(parser.Node), tc.fn)
 			require.Equal(t, tc.expectedRes, res)
 		})
 	}

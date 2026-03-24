@@ -15,14 +15,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
+	"go.yaml.in/yaml/v3"
 	"golang.org/x/sync/semaphore"
-	"gopkg.in/yaml.v3"
 
+	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -105,7 +105,7 @@ func TestMultiTenantConcurrencyController(t *testing.T) {
 		Opts:     &rules.ManagerOptions{},
 	})
 
-	exp, err := parser.ParseExpr("vector(1)")
+	exp, err := promqlext.NewPromQLParser().ParseExpr("vector(1)")
 	require.NoError(t, err)
 	rule1 := rules.NewRecordingRule("test", exp, labels.Labels{})
 	rule1.SetDependencyRules([]rules.Rule{})

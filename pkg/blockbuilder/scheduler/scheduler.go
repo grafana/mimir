@@ -175,7 +175,7 @@ func (s *BlockBuilderScheduler) completeObservationMode(ctx context.Context) {
 		return
 	}
 
-	s.populateInitialJobs(ctx, consumeOffs, newOffsetFinder(s.adminClient, s.logger))
+	s.populateInitialJobs(ctx, consumeOffs, newOffsetFinder(s.adminClient, s.logger), time.Now())
 	s.observations = nil
 	s.observationComplete = true
 }
@@ -232,7 +232,18 @@ type partitionState struct {
 	committed *advancingOffset
 	planned   *advancingOffset
 
+	// pendingJobs are jobs that are waiting to be enqueued. The job creation policy is what allows them to advance to the plannedJobs list.
 	pendingJobs *list.List
+	// plannedJobs are jobs that are either ready to be assigned, in-progress, or completed.
+	plannedJobs *list.List
+	// plannedJobsMap is a map of jobID to jobState for quick lookup.
+	plannedJobsMap map[string]*jobState
+}
+
+type jobState struct {
+	jobID    string
+	spec     schedulerpb.JobSpec
+	complete bool
 }
 
 const (
@@ -291,6 +302,44 @@ func (s *partitionState) addPendingJob(job *schedulerpb.JobSpec) {
 	s.pendingJobs.PushBack(job)
 }
 
+func (s *partitionState) addPlannedJob(id string, spec schedulerpb.JobSpec) {
+	if s.planned.beyondSpec(spec) {
+		// This shouldn't happen. All callers of addPlannedJob must do so in
+		// increasing offset order.
+		panic(fmt.Sprintf("given spec %d [%d, %d) is behind the current planned offset %d",
+			spec.Partition, spec.StartOffset, spec.EndOffset, s.planned.offset()))
+	}
+
+	js := &jobState{jobID: id, spec: spec, complete: false}
+	s.plannedJobs.PushBack(js)
+	s.plannedJobsMap[js.jobID] = js
+	s.planned.advance(id, spec)
+}
+
+func (s *partitionState) completeJob(jobID string) error {
+	if j, ok := s.plannedJobsMap[jobID]; !ok {
+		return errJobNotFound
+	} else {
+		j.complete = true
+	}
+
+	// Now we both advance the committed offset and garbage collect completed
+	// jobs. As the active jobs list knows about all active jobs for this
+	// partition and its order is maintained, we can advance the committed
+	// offset and GC any completed job(s) at the front of this list.
+
+	for elem := s.plannedJobs.Front(); elem != nil; elem = s.plannedJobs.Front() {
+		js := elem.Value.(*jobState)
+		if !js.complete {
+			break
+		}
+		s.plannedJobs.Remove(elem)
+		delete(s.plannedJobsMap, js.jobID)
+		s.committed.advance(js.jobID, js.spec)
+	}
+	return nil
+}
+
 // enqueuePendingJobsWorker is a worker method that enqueues pending jobs at a regular interval.
 func (s *BlockBuilderScheduler) enqueuePendingJobsWorker(ctx context.Context) {
 	enqueueTick := time.NewTicker(s.cfg.EnqueueInterval)
@@ -310,14 +359,21 @@ func (s *BlockBuilderScheduler) enqueuePendingJobsWorker(ctx context.Context) {
 // enqueuePendingJobs moves per-partition pending jobs to the active job queue
 // for assignment to workers, subject to the job creation policy.
 func (s *BlockBuilderScheduler) enqueuePendingJobs() {
+	s.mu.Lock()
+	pending := make(map[int32]int, len(s.partState))
+
+	defer func() {
+		// Unlock the scheduler before populating metrics. Unblocks the concurrent goroutines a tiny bit faster.
+		s.mu.Unlock()
+
+		for partition, count := range pending {
+			s.metrics.pendingJobs.WithLabelValues(fmt.Sprint(partition)).Set(float64(count))
+		}
+	}()
+
 	// For each partition, attempt to enqueue jobs until we run into a rejection
 	// from the job creation policy. Pending jobs are created in order of their
 	// offsets, therefore pulling from the front achieves the same.
-
-	pending := make(map[int32]int, len(s.partState))
-
-	s.mu.Lock()
-
 	for partition, ps := range s.partState {
 		pending[partition] = ps.pendingJobs.Len()
 
@@ -345,23 +401,15 @@ func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 				// Move onto the next partition.
 				break
 			}
-			// Otherwise, it was successful.
+
+			// Otherwise, it was successful. Move it to the planned jobs list.
 			ps.pendingJobs.Remove(e)
-			// (In the case of a newly planned job, we don't have an epoch yet.)
-			ps.planned.advance(jobKey{jobID, 0}, *spec)
+			ps.addPlannedJob(jobID, *spec)
 		}
-	}
-
-	s.mu.Unlock()
-
-	// And update the pending jobs metric.
-
-	for partition, count := range pending {
-		s.metrics.pendingJobs.WithLabelValues(fmt.Sprint(partition)).Set(float64(count))
 	}
 }
 
-func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context, consumeOffs []partitionOffsets, offStore offsetStore) {
+func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context, consumeOffs []partitionOffsets, offStore offsetStore, endTime time.Time) {
 	// (Note that the lock is already held because we're in startup mode.)
 
 	// While during normal operation we are periodically asking about every
@@ -372,7 +420,6 @@ func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context, consume
 	// those two offsets and seeding the schedule by calling updateEndOffset for
 	// each of them- just like we do during normal operation.
 
-	endTime := time.Now()
 	minScanTime := endTime.Add(-s.cfg.MaxScanAge)
 
 	for _, off := range consumeOffs {
@@ -405,9 +452,11 @@ func (s *BlockBuilderScheduler) getPartitionState(topic string, partition int32)
 	}
 
 	ps := &partitionState{
-		topic:       topic,
-		partition:   partition,
-		pendingJobs: list.New(),
+		topic:          topic,
+		partition:      partition,
+		pendingJobs:    list.New(),
+		plannedJobs:    list.New(),
+		plannedJobsMap: make(map[string]*jobState),
 		planned: &advancingOffset{
 			name:    offsetNamePlanned,
 			off:     offsetEmpty,
@@ -437,8 +486,8 @@ func probeInitialOffsets(ctx context.Context, offs offsetStore, topic string, pa
 	endTime time.Time, jobSize time.Duration, minScanTime time.Time, logger log.Logger) ([]*offsetTime, error) {
 
 	if commit >= end || start >= end {
-		// No new data to consume.
-		return []*offsetTime{}, nil
+		// No new data to consume. Return the single end offset so it is initially registered.
+		return []*offsetTime{{offset: end, time: endTime}}, nil
 	}
 
 	// Pick a more high-resolution interval to scan for the sentinel offsets.
@@ -817,7 +866,9 @@ func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete 
 			return fmt.Errorf("complete job: %w", err)
 		}
 
-		ps.committed.advance(key, j)
+		if err := ps.completeJob(key.id); err != nil {
+			return fmt.Errorf("complete scheduler job: %w", err)
+		}
 		level.Info(logger).Log("msg", "completed job")
 	} else {
 		// It's an in-progress job whose lease we need to renew.
@@ -922,8 +973,11 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 			}
 
 			if obs.complete {
-				// Completed.
-				ps.committed.advance(obs.key, obs.spec)
+				// Completed. Add it to the plan and mark it as such.
+				ps.addPlannedJob(obs.key.id, obs.spec)
+				if err := ps.completeJob(obs.key.id); err != nil {
+					panic(fmt.Sprintf("unable to complete previously planned job %s, %s", obs.key.id, err.Error()))
+				}
 			} else {
 				// An in-progress job that's part of our continuous coverage.
 				if err := s.jobs.importJob(obs.key, obs.workerID, obs.spec); err != nil {
@@ -932,9 +986,8 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 					contiguous = false
 					continue
 				}
+				ps.addPlannedJob(obs.key.id, obs.spec)
 			}
-
-			ps.planned.advance(obs.key, obs.spec)
 		}
 	}
 
@@ -995,17 +1048,17 @@ const (
 // expected to be monotonically increasing and contiguous. Advance will not
 // allow backwards movement. If a gap is detected, a warning is logged and a
 // metric is incremented.
-func (o *advancingOffset) advance(key jobKey, spec schedulerpb.JobSpec) {
+func (o *advancingOffset) advance(jobID string, spec schedulerpb.JobSpec) {
 	if o.beyondSpec(spec) {
 		// Frequent, and expected.
-		level.Debug(o.logger).Log("msg", "ignoring historical job", "offset_name", o.name, "job_id", key.id, "epoch", key.epoch,
+		level.Debug(o.logger).Log("msg", "ignoring historical job", "offset_name", o.name, "job_id", jobID,
 			"partition", spec.Partition, "start_offset", spec.StartOffset, "end_offset", spec.EndOffset, "committed", o.off)
 		return
 	}
 
 	if !o.validNextSpec(spec) {
 		// Gap detected.
-		level.Warn(o.logger).Log("msg", "gap detected in offset advancement", "offset_name", o.name, "job_id", key.id, "epoch", key.epoch,
+		level.Warn(o.logger).Log("msg", "gap detected in offset advancement", "offset_name", o.name, "job_id", jobID,
 			"partition", spec.Partition, "start_offset", spec.StartOffset, "end_offset", spec.EndOffset, "committed", o.off)
 		o.metrics.jobGapDetected.WithLabelValues(o.name).Inc()
 	}

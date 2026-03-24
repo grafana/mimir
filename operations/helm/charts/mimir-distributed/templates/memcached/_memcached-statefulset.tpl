@@ -3,7 +3,7 @@ memcached StatefulSet
 */}}
 {{- define "mimir.memcached.statefulSet" -}}
 {{ with (index $.ctx.Values $.component) }}
-{{- if and .enabled (not $.ctx.Values.federation_frontend.disableOtherComponents) -}}
+{{- if .enabled -}}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -15,6 +15,7 @@ metadata:
   namespace: {{ $.ctx.Release.Namespace | quote }}
 spec:
   podManagementPolicy: {{ .podManagementPolicy }}
+  minReadySeconds: {{ .minReadySeconds }}
   replicas: {{ .replicas }}
   selector:
     matchLabels:

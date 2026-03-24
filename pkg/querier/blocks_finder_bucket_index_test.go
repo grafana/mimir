@@ -38,12 +38,13 @@ func TestBucketIndexBlocksFinder_GetBlocks(t *testing.T) {
 	mark3 := &bucketindex.BlockDeletionMark{ID: block3.ID, DeletionTime: time.Now().Unix()}
 	mark5 := &bucketindex.BlockDeletionMark{ID: block5.ID, DeletionTime: time.Now().Add(-2 * time.Hour).Unix()}
 
-	require.NoError(t, bucketindex.WriteIndex(ctx, bkt, userID, nil, &bucketindex.Index{
+	idx := &bucketindex.Index{
 		Version:            bucketindex.IndexVersion1,
 		Blocks:             bucketindex.Blocks{block1, block2, block3, block4, block5},
 		BlockDeletionMarks: bucketindex.BlockDeletionMarks{mark3, mark5},
 		UpdatedAt:          time.Now().Unix(),
-	}))
+	}
+	require.NoError(t, bucketindex.WriteIndex(ctx, bkt, userID, nil, idx))
 
 	finder := prepareBucketIndexBlocksFinder(t, bkt)
 
@@ -94,9 +95,10 @@ func TestBucketIndexBlocksFinder_GetBlocks(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			blocks, err := finder.GetBlocks(ctx, userID, testData.minT, testData.maxT)
+			blocks, meta, err := finder.GetBlocks(ctx, userID, testData.minT, testData.maxT)
 			require.NoError(t, err)
 			require.ElementsMatch(t, testData.expectedBlocks, blocks)
+			require.Equal(t, idx.Metadata(), meta)
 		})
 	}
 }
@@ -133,7 +135,7 @@ func BenchmarkBucketIndexBlocksFinder_GetBlocks(b *testing.B) {
 	b.ResetTimer()
 
 	for n := 0; n < b.N; n++ {
-		blocks, err := finder.GetBlocks(ctx, userID, 100, 200)
+		blocks, _, err := finder.GetBlocks(ctx, userID, 100, 200)
 		if err != nil || len(blocks) != 11 {
 			b.Fail()
 		}
@@ -147,8 +149,9 @@ func TestBucketIndexBlocksFinder_GetBlocks_BucketIndexDoesNotExist(t *testing.T)
 	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
 	finder := prepareBucketIndexBlocksFinder(t, bkt)
 
-	blocks, err := finder.GetBlocks(ctx, userID, 10, 20)
+	blocks, meta, err := finder.GetBlocks(ctx, userID, 10, 20)
 	require.NoError(t, err)
+	assert.Nil(t, meta)
 	assert.Empty(t, blocks)
 }
 
@@ -162,8 +165,8 @@ func TestBucketIndexBlocksFinder_GetBlocks_BucketIndexIsCorrupted(t *testing.T) 
 	// Upload a corrupted bucket index.
 	require.NoError(t, bkt.Upload(ctx, path.Join(userID, bucketindex.IndexCompressedFilename), strings.NewReader("invalid}!")))
 
-	_, err := finder.GetBlocks(ctx, userID, 10, 20)
-	require.Equal(t, bucketindex.ErrIndexCorrupted, err)
+	_, _, err := finder.GetBlocks(ctx, userID, 10, 20)
+	require.ErrorIs(t, err, bucketindex.ErrIndexCorrupted)
 }
 
 func TestBucketIndexBlocksFinder_GetBlocks_BucketIndexIsTooOld(t *testing.T) {
@@ -181,7 +184,7 @@ func TestBucketIndexBlocksFinder_GetBlocks_BucketIndexIsTooOld(t *testing.T) {
 	}
 	require.NoError(t, bucketindex.WriteIndex(ctx, bkt, userID, nil, idx))
 
-	_, err := finder.GetBlocks(ctx, userID, 10, 20)
+	_, _, err := finder.GetBlocks(ctx, userID, 10, 20)
 	require.EqualError(t, err, newBucketIndexTooOldError(idx.GetUpdatedAt(), finder.cfg.MaxStalePeriod).Error())
 }
 

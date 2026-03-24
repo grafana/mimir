@@ -37,6 +37,9 @@ const (
 	maxImagesPerThreadTs        = 5
 	maxImagesPerThreadTsMessage = "There are more images than can be shown here. To see the panels for all firing and resolved alerts please check Grafana"
 	footerIconURL               = "https://grafana.com/static/assets/img/fav32.png"
+	// Footer is limited to 300 characters:
+	// https://docs.slack.dev/tools/node-slack-sdk/reference/types/interfaces/MessageAttachment/#footer
+	slackMaxFooterLen = 300
 )
 
 // APIURL of where the notification payload is sent. It is public to be overridable in integration tests.
@@ -226,6 +229,7 @@ func (sn *Notifier) Notify(ctx context.Context, alerts ...*types.Alert) (bool, e
 			}
 			var tmplErr error
 			tmpl, _ := templates.TmplText(ctx, sn.tmpl, alerts, l, &tmplErr)
+			imageFooter := sn.footer(tmpl, l, &tmplErr)
 			imageMessage := &slackMessage{
 				Channel:   channelID,
 				Username:  m.Username,
@@ -237,7 +241,7 @@ func (sn *Notifier) Notify(ctx context.Context, alerts ...*types.Alert) (bool, e
 						Color:      tmpl(templates.DefaultMessageColor),
 						Title:      title,
 						Fallback:   text,
-						Footer:     "Grafana v" + sn.appVersion,
+						Footer:     imageFooter,
 						FooterIcon: footerIconURL,
 						Ts:         time.Now().Unix(),
 						ImageURL:   image.URL,
@@ -302,6 +306,8 @@ func (sn *Notifier) createSlackMessage(ctx context.Context, alerts []*types.Aler
 		tmplErr = nil
 	}
 
+	footer := sn.footer(tmpl, l, &tmplErr)
+
 	req := &slackMessage{
 		Channel:   tmpl(sn.settings.Recipient),
 		Username:  tmpl(sn.settings.Username),
@@ -314,7 +320,7 @@ func (sn *Notifier) createSlackMessage(ctx context.Context, alerts []*types.Aler
 				Color:      tmpl(sn.settings.Color),
 				Title:      title,
 				Fallback:   title,
-				Footer:     "Grafana v" + sn.appVersion,
+				Footer:     footer,
 				FooterIcon: footerIconURL,
 				Ts:         time.Now().Unix(),
 				TitleLink:  ruleURL,
@@ -543,6 +549,27 @@ func (sn *Notifier) SendResolved() bool {
 	return !sn.GetDisableResolveMessage()
 }
 
+func (sn *Notifier) footer(tmpl func(string) string, l log.Logger, tmplErr *error) string {
+	footerTmpl := sn.settings.Footer
+	if footerTmpl == "" {
+		footerTmpl = `{{ template "slack.default.footer" . }}`
+	}
+	footer := tmpl(footerTmpl)
+	footer, truncated := receivers.TruncateInRunes(footer, slackMaxFooterLen)
+
+	if truncated {
+		level.Warn(l).Log("msg", "Truncated footer", "max_runes", slackMaxFooterLen)
+	}
+
+	if *tmplErr != nil {
+		level.Warn(l).Log("msg", "failed to template Slack footer", "err", (*tmplErr).Error())
+		// Reset the error as we have logged it.
+		*tmplErr = nil
+	}
+
+	return footer
+}
+
 // initialCommentForImage returns the initial comment for the image.
 // Here is an example of the initial comment for an alert called
 // AlertName with two labels:
@@ -561,7 +588,7 @@ func initialCommentForImage(alert templates.ExtendedAlert) (string, string) {
 
 	titleBuilder.WriteString(" ")
 	if alert.Labels != nil {
-		titleBuilder.WriteString(string(alert.Labels[model.AlertNameLabel]))
+		titleBuilder.WriteString(alert.Labels[model.AlertNameLabel])
 	}
 
 	textBuilder := strings.Builder{}
@@ -747,6 +774,13 @@ func uploadFile(_ context.Context, req *http.Request, logger log.Logger) error {
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
+
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			level.Warn(logger).Log("msg", "Failed to close response body", "err", err)
+		}
+	}()
+
 	// no need to check body, just check the status code
 	return errorForStatusCode(logger, resp.StatusCode)
 }

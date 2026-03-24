@@ -25,8 +25,6 @@ import (
 	"sync"
 
 	"github.com/golang/snappy"
-
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 )
 
 // symbolFlushers writes symbols to provided files in background goroutines.
@@ -48,7 +46,7 @@ func newSymbolFlushers(concurrency int) *symbolFlushers {
 		pool: &sync.Pool{},
 	}
 
-	for i := 0; i < concurrency; i++ {
+	for range concurrency {
 		f.wg.Add(1)
 		go f.loop()
 	}
@@ -192,19 +190,19 @@ func writeSymbolsToFile(filename string, symbols []string) error {
 	sn := snappy.NewBufferedWriter(f)
 	enc := gob.NewEncoder(sn)
 
-	errs := tsdb_errors.NewMulti()
+	var errs []error
 
 	for _, s := range symbols {
 		err := enc.Encode(s)
 		if err != nil {
-			errs.Add(err)
+			errs = append(errs, err)
 			break
 		}
 	}
 
-	errs.Add(sn.Close())
-	errs.Add(f.Close())
-	return errs.Err()
+	errs = append(errs, sn.Close())
+	errs = append(errs, f.Close())
+	return errors.Join(errs...)
 }
 
 // Implements heap.Interface using symbols from files.
@@ -237,12 +235,12 @@ func (s *symbolsHeap) Swap(i, j int) {
 }
 
 // Push implements heap.Interface. Push should add x as element Len().
-func (s *symbolsHeap) Push(x interface{}) {
+func (s *symbolsHeap) Push(x any) {
 	*s = append(*s, x.(*symbolsFile))
 }
 
 // Pop implements heap.Interface. Pop should remove and return element Len() - 1.
-func (s *symbolsHeap) Pop() interface{} {
+func (s *symbolsHeap) Pop() any {
 	l := len(*s)
 	res := (*s)[l-1]
 	*s = (*s)[:l-1]
@@ -310,11 +308,11 @@ func (sit *symbolsIterator) NextSymbol() (string, error) {
 
 // Close all files.
 func (sit *symbolsIterator) Close() error {
-	errs := tsdb_errors.NewMulti()
+	var errs []error
 	for _, f := range sit.files {
-		errs.Add(f.Close())
+		errs = append(errs, f.Close())
 	}
-	return errs.Err()
+	return errors.Join(errs...)
 }
 
 type symbolsFile struct {

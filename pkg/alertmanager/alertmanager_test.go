@@ -7,10 +7,8 @@ package alertmanager
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -543,14 +541,14 @@ route:
 	var emailCfg alertingReceivers.EmailSenderConfig
 	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}, emailCfg, false))
 
-	doGetReceivers := func() []alertingmodels.Receiver {
+	doGetReceivers := func() []alertingmodels.ReceiverStatus {
 		rr := httptest.NewRecorder()
 		am.GetReceiversHandler(rr, nil)
 		require.Equal(t, http.StatusOK, rr.Code)
-		result := []alertingmodels.Receiver{}
+		result := []alertingmodels.ReceiverStatus{}
 		err = json.Unmarshal(rr.Body.Bytes(), &result)
 		assert.NoError(t, err)
-		slices.SortFunc(result, func(a, b alertingmodels.Receiver) int {
+		slices.SortFunc(result, func(a, b alertingmodels.ReceiverStatus) int {
 			return strings.Compare(a.Name, b.Name)
 		})
 		return result
@@ -559,11 +557,11 @@ route:
 	// Check the API returns all receivers but without any notification status.
 
 	result := doGetReceivers()
-	assert.Equal(t, []alertingmodels.Receiver{
+	assert.Equal(t, []alertingmodels.ReceiverStatus{
 		{
 			Name:   "recv-1",
 			Active: true,
-			Integrations: []alertingmodels.Integration{
+			Integrations: []alertingmodels.IntegrationStatus{
 				{
 					Name:                      "webhook",
 					LastNotifyAttemptDuration: "0s",
@@ -575,7 +573,7 @@ route:
 			Name: "recv-2",
 			// Receiver not used in a route.
 			Active: false,
-			Integrations: []alertingmodels.Integration{
+			Integrations: []alertingmodels.IntegrationStatus{
 				{
 					Name:                      "webhook",
 					LastNotifyAttemptDuration: "0s",
@@ -609,7 +607,7 @@ route:
 
 	// Wait for the API to tell us there was a notification attempt.
 
-	result = []alertingmodels.Receiver{}
+	result = []alertingmodels.ReceiverStatus{}
 	require.Eventually(t, func() bool {
 		result = doGetReceivers()
 		return len(result) == 2 &&
@@ -755,64 +753,4 @@ func TestGrafanaAlertmanager(t *testing.T) {
 		Kind:     alertingTemplates.GrafanaKind,
 	}
 	require.Error(t, am.ApplyConfig(cfg, []alertingTemplates.TemplateDefinition{testTemplate}, cfgRaw, &url.URL{}, emailCfg, true))
-}
-
-func TestGetFullStateHandler(t *testing.T) {
-	am, err := New(&Config{
-		UserID:            "test",
-		Logger:            log.NewNopLogger(),
-		Limits:            &mockAlertManagerLimits{},
-		Features:          featurecontrol.NoopFlags{},
-		TenantDataDir:     t.TempDir(),
-		ExternalURL:       &url.URL{Path: "/am"},
-		ShardingEnabled:   true,
-		Store:             prepareInMemoryAlertStore(),
-		Replicator:        &stubReplicator{},
-		ReplicationFactor: 1,
-		PersisterConfig:   PersisterConfig{Interval: time.Hour},
-	}, prometheus.NewPedanticRegistry())
-	require.NoError(t, err)
-	defer am.StopAndWait()
-
-	// Get the state from the Alertmanager.
-	{
-		rec := httptest.NewRecorder()
-		am.GetFullStateHandler(rec, nil)
-		require.Equal(t, http.StatusOK, rec.Code)
-		require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
-
-		body, err := io.ReadAll(rec.Body)
-		require.NoError(t, err)
-
-		var parsedBody struct {
-			Status string `json:"status"`
-			Data   struct {
-				State string `json:"state"`
-			} `json:"data"`
-		}
-		require.NoError(t, json.Unmarshal(body, &parsedBody))
-		require.Equal(t, "success", parsedBody.Status)
-
-		decodedState, err := base64.StdEncoding.DecodeString(parsedBody.Data.State)
-		require.NoError(t, err)
-
-		var parsedState clusterpb.FullState
-		require.NoError(t, parsedState.Unmarshal([]byte(decodedState)))
-		require.Len(t, parsedState.Parts, 2)
-
-		var nflC, silC int
-		for _, p := range parsedState.Parts {
-			switch p.Key {
-			case "nfl:test":
-				nflC++
-			case "sil:test":
-				silC++
-			default:
-				t.Errorf("unexpected part key in full state: %s", p.Key)
-			}
-		}
-
-		require.Equal(t, 1, nflC, "Expected exactly one notification")
-		require.Equal(t, 1, silC, "Expected exactly one silence")
-	}
 }

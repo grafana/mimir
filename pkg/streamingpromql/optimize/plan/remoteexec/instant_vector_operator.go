@@ -10,17 +10,15 @@ import (
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
-	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 type InstantVectorRemoteExec struct {
-	RootPlan                 *planning.QueryPlan
-	Node                     planning.Node
-	TimeRange                types.QueryTimeRange
-	RemoteExecutor           RemoteExecutor
-	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
-	Annotations              *annotations.Annotations
-	QueryStats               *types.QueryStats
+	Node               planning.Node
+	TimeRange          types.QueryTimeRange
+	GroupEvaluator     GroupEvaluator
+	Annotations        *annotations.Annotations
+	QueryStats         *types.QueryStats
+	expressionPosition posrange.PositionRange
 
 	resp      InstantVectorRemoteExecutionResponse
 	finalized bool
@@ -29,11 +27,17 @@ type InstantVectorRemoteExec struct {
 var _ types.InstantVectorOperator = &InstantVectorRemoteExec{}
 
 func (r *InstantVectorRemoteExec) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	r.QueryStats = params.QueryStats
-
 	var err error
-	r.resp, err = r.RemoteExecutor.StartInstantVectorExecution(ctx, r.RootPlan, r.Node, r.TimeRange, r.MemoryConsumptionTracker, r.QueryStats.EnablePerStepStats)
-	return err
+	r.resp, err = r.GroupEvaluator.CreateInstantVectorExecution(ctx, r.Node, r.TimeRange)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (r *InstantVectorRemoteExec) AfterPrepare(ctx context.Context) error {
+	return r.resp.Start(ctx)
 }
 
 func (r *InstantVectorRemoteExec) SeriesMetadata(ctx context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {
@@ -55,11 +59,13 @@ func (r *InstantVectorRemoteExec) Finalize(ctx context.Context) error {
 }
 
 func (r *InstantVectorRemoteExec) ExpressionPosition() posrange.PositionRange {
-	return r.Node.ExpressionPosition()
+	return r.expressionPosition
 }
 
 func (r *InstantVectorRemoteExec) Close() {
 	if r.resp != nil {
 		r.resp.Close()
 	}
+
+	r.finalized = true // Don't try to finalize from a closed stream.
 }

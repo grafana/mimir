@@ -18,7 +18,6 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -27,6 +26,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
+	"github.com/grafana/mimir/pkg/ingester/lookupplan"
 	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -88,13 +88,13 @@ var (
 )
 
 type ownedSeriesState struct {
-	ownedSeriesCount           int // Number of "owned" series, based on current ring.
-	ownedTargetInfoSeriesCount int // Number of "owned" target_info series, based on current ring.
-	shardSize                  int // Tenant shard size when "owned" series was last updated due to ring or shard size changes. Used to detect shard size changes.
-	localSeriesLimit           int // Local series limit when "owned" series was last updated due to ring or shard size changes. Used as a minimum when calculating series limits.
+	ownedSeriesCount int // Number of "owned" series, based on current ring.
+	shardSize        int // Tenant shard size when "owned" series was last updated due to ring or shard size changes. Used to detect shard size changes.
+	localSeriesLimit int // Local series limit when "owned" series was last updated due to ring or shard size changes. Used as a minimum when calculating series limits.
 }
 
 type userTSDB struct {
+	cfg            *Config
 	db             *tsdb.DB
 	userID         string
 	activeSeries   *activeseries.ActiveSeries
@@ -123,6 +123,9 @@ type userTSDB struct {
 
 	// Unix timestamp of last deletion mark check.
 	lastDeletionMarkCheck atomic.Int64
+
+	// Unix timestamp (milliseconds) of last early head compaction (any type).
+	lastEarlyCompaction atomic.Int64
 
 	// for statistics
 	ingestedAPISamples  *util_math.EwmaRate
@@ -171,10 +174,20 @@ func (u *userTSDB) generateHeadStatistics() error {
 	return nil
 }
 
-// getIndexLookupPlanner returns a cached planner or generates one on-demand.
+// getIndexLookupPlannerFunc returns the appropriate index lookup planner function based on configuration.
+// When index lookup planning is enabled, it first checks if a pre-computed planner exists in the repository.
+// If found, it uses the cached planner; otherwise, it falls back to generating statistics on-demand.
+// When disabled, it uses NoopPlanner which performs no optimization.
+// getIndexLookupPlannerFunc returns a cached planner or generates one on-demand.
 // Not all planners are cached after being created, see plannerProvider.getPlanner() for details.
-func (u *userTSDB) getIndexLookupPlanner(blockMeta tsdb.BlockMeta, indexReader tsdb.IndexReader) index.LookupPlanner {
-	return u.plannerProvider.getPlanner(blockMeta, indexReader)
+func (u *userTSDB) getIndexLookupPlannerFunc() tsdb.IndexLookupPlannerFunc {
+	return func(blockMeta tsdb.BlockMeta, indexReader tsdb.IndexReader) index.LookupPlanner {
+		if !u.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.Enabled {
+			return lookupplan.NoopPlanner{}
+		}
+
+		return u.plannerProvider.getPlanner(blockMeta, indexReader)
+	}
 }
 
 func (u *userTSDB) Appender(ctx context.Context) storage.Appender {
@@ -242,6 +255,20 @@ func (u *userTSDB) changeStateToForcedCompaction(from tsdbState, forcedCompactio
 	return u.changeState(from, forceCompacting, func() {
 		u.forcedCompactionMaxTime = forcedCompactionMaxTime
 	})
+}
+
+// setClosingState unconditionally sets the TSDB state to closing.
+// This is used during ingester shutdown to prevent new appends from starting.
+// Unlike changeState, this doesn't require a specific "from" state since during
+// shutdown we need to close regardless of the current state.
+func (u *userTSDB) setClosingState() {
+	u.stateMtx.Lock()
+	defer u.stateMtx.Unlock()
+
+	// Only transition if not already closing or closed
+	if u.state != closing && u.state != closed {
+		u.state = closing
+	}
 }
 
 // compactHead triggers a forced compaction of the TSDB Head. This function compacts the in-order Head
@@ -361,22 +388,15 @@ func (u *userTSDB) getSeriesCountAndMinLocalLimit() (int, int) {
 func (u *userTSDB) PostCreation(metric labels.Labels) {
 	u.instanceSeriesCount.Inc()
 
-	metricName, err := extract.MetricNameFromLabels(metric)
-	if err != nil {
-		// This should never happen because it has already been checked in PreCreation().
-		metricName = ""
-	}
-
 	// If series was just created, it must belong to this ingester. (Unless it was created while replaying WAL,
 	// but we will recompute owned series when ingester joins the ring.)
 	u.ownedStateMtx.Lock()
 	u.ownedState.ownedSeriesCount++
-	if metricName == "target_info" {
-		u.ownedState.ownedTargetInfoSeriesCount++
-	}
 	u.ownedStateMtx.Unlock()
 
-	if metricName == "" {
+	metricName, err := extract.MetricNameFromLabels(metric)
+	if err != nil {
+		// This should never happen because it has already been checked in PreCreation().
 		return
 	}
 	u.seriesInMetric.increaseSeriesForMetric(metricName)
@@ -464,6 +484,11 @@ func (u *userTSDB) getCachedShippedBlocks() map[ulid.ULID]time.Time {
 // getOldestUnshippedBlockTime returns the unix timestamp with milliseconds precision of the oldest
 // TSDB block not shipped to the storage yet, or 0 if all blocks have been shipped.
 func (u *userTSDB) getOldestUnshippedBlockTime() uint64 {
+	// When shipping is disabled, always return 0 because the concept of "unshipped" doesn't apply.
+	if u.shipper == nil {
+		return 0
+	}
+
 	shippedBlocks := u.getCachedShippedBlocks()
 	oldestTs := uint64(0)
 
@@ -588,15 +613,10 @@ const (
 	recomputeOwnedSeriesMaxSeriesDiff = 1000
 )
 
-func (u *userTSDB) recomputeOwnedSeriesWithComputeFn(shardSize int, reason string, logger log.Logger, compute func() (int, int)) (success bool, _ int) {
+func (u *userTSDB) recomputeOwnedSeriesWithComputeFn(shardSize int, reason string, logger log.Logger, compute func() int) (success bool, _ int) {
 	start := time.Now()
 
-	var (
-		ownedSeriesNew, ownedSeriesBefore,
-		ownedTargetInfoSeriesNew, ownedTargetInfoSeriesBefore,
-		shardSizeBefore,
-		localLimitBefore, localLimitNew int
-	)
+	var ownedSeriesNew, ownedSeriesBefore, shardSizeBefore, localLimitBefore, localLimitNew int
 
 	success = false
 	attempts := 0
@@ -605,12 +625,11 @@ func (u *userTSDB) recomputeOwnedSeriesWithComputeFn(shardSize int, reason strin
 
 		os := u.ownedSeriesState()
 		ownedSeriesBefore = os.ownedSeriesCount
-		ownedTargetInfoSeriesBefore = os.ownedTargetInfoSeriesCount
 		shardSizeBefore = os.shardSize
 		localLimitBefore = os.localSeriesLimit
 
 		localLimitNew = u.limiter.maxSeriesPerUser(u.userID, 0)
-		ownedSeriesNew, ownedTargetInfoSeriesNew = compute()
+		ownedSeriesNew = compute()
 
 		u.ownedStateMtx.Lock()
 
@@ -619,14 +638,12 @@ func (u *userTSDB) recomputeOwnedSeriesWithComputeFn(shardSize int, reason strin
 		// (it may or may not include the new series, we don't know).
 		// In that case, just run the computation again -- if there are more attempts left.
 		seriesDiff := u.ownedState.ownedSeriesCount - ownedSeriesBefore
-		targetInfoSeriesDiff := u.ownedState.ownedTargetInfoSeriesCount - ownedTargetInfoSeriesBefore
-		if seriesDiff >= 0 && targetInfoSeriesDiff >= 0 && seriesDiff <= recomputeOwnedSeriesMaxSeriesDiff && targetInfoSeriesDiff <= recomputeOwnedSeriesMaxSeriesDiff {
+		if seriesDiff >= 0 && seriesDiff <= recomputeOwnedSeriesMaxSeriesDiff {
 			success = true
 		}
 
 		// Even if we run the computation again, we can start using our (possibly incorrect) values already.
 		u.ownedState.ownedSeriesCount = ownedSeriesNew
-		u.ownedState.ownedTargetInfoSeriesCount = ownedTargetInfoSeriesNew
 		u.ownedState.shardSize = shardSize
 		u.ownedState.localSeriesLimit = localLimitNew
 
@@ -644,8 +661,6 @@ func (u *userTSDB) recomputeOwnedSeriesWithComputeFn(shardSize int, reason strin
 		"reason", reason,
 		"ownedSeriesBefore", ownedSeriesBefore,
 		"ownedSeriesNew", ownedSeriesNew,
-		"ownedTargetInfoSeriesBefore", ownedTargetInfoSeriesBefore,
-		"ownedTargetInfoSeriesNew", ownedTargetInfoSeriesNew,
 		"shardSizeBefore", shardSizeBefore,
 		"shardSizeNew", shardSize,
 		"localLimitBefore", localLimitBefore,
@@ -666,15 +681,14 @@ func (u *userTSDB) updateTokenRanges(newTokenRanges []uint32) bool {
 	return !prev.Equal(newTokenRanges)
 }
 
-func (u *userTSDB) computeOwnedSeries() (int, int) {
+func (u *userTSDB) computeOwnedSeries() int {
 	// This can happen if ingester doesn't own this tenant anymore.
 	if len(u.ownedTokenRanges) == 0 {
 		u.activeSeries.Clear()
-		return 0, 0
+		return 0
 	}
 
 	count := 0
-	targetInfoCount := 0
 	idx := u.Head().MustIndex()
 	defer idx.Close()
 
@@ -682,14 +696,22 @@ func (u *userTSDB) computeOwnedSeries() (int, int) {
 		for i, sh := range secondaryHashes {
 			if u.ownedTokenRanges.IncludesKey(sh) {
 				count++
-				name, err := idx.LabelValueFor(context.Background(), storage.SeriesRef(refs[i]), model.MetricNameLabel)
-				if err == nil && name == "target_info" {
-					targetInfoCount++
-				}
 			} else {
 				u.activeSeries.Delete(refs[i], idx)
 			}
 		}
 	})
-	return count, targetInfoCount
+	return count
+}
+
+func (u *userTSDB) setLastEarlyCompaction(t time.Time) {
+	u.lastEarlyCompaction.Store(t.UnixMilli())
+}
+
+func (u *userTSDB) getLastEarlyCompaction() time.Time {
+	ts := u.lastEarlyCompaction.Load()
+	if ts == 0 {
+		return time.Time{}
+	}
+	return time.UnixMilli(ts)
 }

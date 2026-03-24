@@ -423,18 +423,14 @@ func (t *RangeQuery) Prepare(ctx context.Context, params *types.PrepareParams) e
 	return t.Param.Prepare(ctx, params)
 }
 
-func (t *RangeQuery) Finalize(ctx context.Context) error {
-	if err := t.Inner.Finalize(ctx); err != nil {
+func (t *RangeQuery) AfterPrepare(ctx context.Context) error {
+	if err := t.Inner.AfterPrepare(ctx); err != nil {
 		return err
 	}
-
-	return t.Param.Finalize(ctx)
+	return t.Param.AfterPrepare(ctx)
 }
 
-func (t *RangeQuery) Close() {
-	t.Inner.Close()
-	t.Param.Close()
-
+func (t *RangeQuery) Finalize(ctx context.Context) error {
 	types.Int64SlicePool.Put(&t.k, t.MemoryConsumptionTracker)
 
 	if t.currentGroup != nil {
@@ -447,6 +443,17 @@ func (t *RangeQuery) Close() {
 	}
 
 	t.remainingGroups = nil
+
+	if err := t.Inner.Finalize(ctx); err != nil {
+		return err
+	}
+
+	return t.Param.Finalize(ctx)
+}
+
+func (t *RangeQuery) Close() {
+	t.Inner.Close()
+	t.Param.Close()
 }
 
 type rangeQueryGroup struct {

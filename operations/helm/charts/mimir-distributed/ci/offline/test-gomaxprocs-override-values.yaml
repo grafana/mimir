@@ -1,5 +1,5 @@
 # Test that user-defined GOMAXPROCS takes precedence over calculated values
-kubeVersionOverride: "1.29"
+kubeVersionOverride: "1.32"
 
 distributor:
   resources:

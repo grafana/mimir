@@ -230,7 +230,7 @@ func (m *mockChunkStreamer) GetChunks(seriesIndex uint64) ([]storepb.AggrChunk, 
 	samples := m.series[m.next].values
 	mint, maxt := int64(math.MaxInt64), int64(math.MinInt64)
 	for _, s := range samples {
-		app.Append(s.t, s.v)
+		app.Append(0, s.t, s.v)
 		if s.t < mint {
 			mint = s.t
 		}
@@ -317,7 +317,7 @@ func TestStoreGatewayStreamReader_HappyPaths(t *testing.T) {
 			ctx := context.Background()
 			mockClient := &mockStoreGatewayQueryStreamClient{ctx: ctx, messages: testCase.messages}
 			queryLimiter := limiter.NewQueryLimiter(0, 0, 0, 0, nil)
-			memoryTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+			memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 			metrics := newBlocksStoreQueryableMetrics(prometheus.NewPedanticRegistry())
 			reader := newStoreGatewayStreamReader(ctx, mockClient, 5, queryLimiter, memoryTracker, &stats.SafeStats{}, metrics, log.NewNopLogger())
 			reader.StartBuffering()
@@ -389,7 +389,7 @@ func TestStoreGatewayStreamReader_AbortsWhenParentContextCancelled(t *testing.T)
 
 			parentCtx, cancel := context.WithCancel(context.Background())
 			queryLimiter := limiter.NewQueryLimiter(0, 0, 0, 0, nil)
-			memoryTracker := limiter.NewMemoryConsumptionTracker(parentCtx, 0, nil, "")
+			memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(parentCtx)
 			metrics := newBlocksStoreQueryableMetrics(prometheus.NewPedanticRegistry())
 			reader := newStoreGatewayStreamReader(parentCtx, mockClient, 3, queryLimiter, memoryTracker, &stats.SafeStats{}, metrics, log.NewNopLogger())
 			cancel()
@@ -421,7 +421,7 @@ func TestStoreGatewayStreamReader_DoesNotAbortWhenStreamContextCancelled(t *test
 	metrics := newBlocksStoreQueryableMetrics(prometheus.NewPedanticRegistry())
 
 	parentCtx := context.Background()
-	memoryTracker := limiter.NewMemoryConsumptionTracker(parentCtx, 0, nil, "")
+	memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(parentCtx)
 	reader := newStoreGatewayStreamReader(parentCtx, mockClient, 3, queryLimiter, memoryTracker, &stats.SafeStats{}, metrics, log.NewNopLogger())
 	reader.StartBuffering()
 
@@ -444,7 +444,7 @@ func TestStoreGatewayStreamReader_ReadingSeriesOutOfOrder(t *testing.T) {
 	ctx := context.Background()
 	mockClient := &mockStoreGatewayQueryStreamClient{ctx: ctx, messages: batchesToMessages(3, batches...)}
 	queryLimiter := limiter.NewQueryLimiter(0, 0, 0, 0, nil)
-	memoryTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	metrics := newBlocksStoreQueryableMetrics(prometheus.NewPedanticRegistry())
 	reader := newStoreGatewayStreamReader(ctx, mockClient, 1, queryLimiter, memoryTracker, &stats.SafeStats{}, metrics, log.NewNopLogger())
 	reader.StartBuffering()
@@ -463,7 +463,7 @@ func TestStoreGatewayStreamReader_ReadingMoreSeriesThanAvailable(t *testing.T) {
 	ctx := context.Background()
 	mockClient := &mockStoreGatewayQueryStreamClient{ctx: ctx, messages: batchesToMessages(3, batches...)}
 	queryLimiter := limiter.NewQueryLimiter(0, 0, 0, 0, nil)
-	memoryTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	metrics := newBlocksStoreQueryableMetrics(prometheus.NewPedanticRegistry())
 	reader := newStoreGatewayStreamReader(ctx, mockClient, 1, queryLimiter, memoryTracker, &stats.SafeStats{}, metrics, log.NewNopLogger())
 	reader.StartBuffering()
@@ -493,7 +493,7 @@ func TestStoreGatewayStreamReader_ReceivedFewerSeriesThanExpected(t *testing.T) 
 	ctx := context.Background()
 	mockClient := &mockStoreGatewayQueryStreamClient{ctx: ctx, messages: batchesToMessages(3, batches...)}
 	queryLimiter := limiter.NewQueryLimiter(0, 0, 0, 0, nil)
-	memoryTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	metrics := newBlocksStoreQueryableMetrics(prometheus.NewPedanticRegistry())
 	reader := newStoreGatewayStreamReader(ctx, mockClient, 3, queryLimiter, memoryTracker, &stats.SafeStats{}, metrics, log.NewNopLogger())
 	reader.StartBuffering()
@@ -548,7 +548,7 @@ func TestStoreGatewayStreamReader_ReceivedMoreSeriesThanExpected(t *testing.T) {
 			ctx := context.Background()
 			mockClient := &mockStoreGatewayQueryStreamClient{ctx: ctx, messages: batchesToMessages(3, batches...)}
 			queryLimiter := limiter.NewQueryLimiter(0, 0, 0, 0, nil)
-			memoryTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+			memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 			metrics := newBlocksStoreQueryableMetrics(prometheus.NewPedanticRegistry())
 			reader := newStoreGatewayStreamReader(ctx, mockClient, 1, queryLimiter, memoryTracker, &stats.SafeStats{}, metrics, log.NewNopLogger())
 			reader.StartBuffering()
@@ -659,7 +659,7 @@ func createChunk(t *testing.T, time int64, value float64) storepb.AggrChunk {
 	app, err := promChunk.Appender()
 	require.NoError(t, err)
 
-	app.Append(time, value)
+	app.Append(0, time, value)
 
 	return storepb.AggrChunk{
 		MinTime: time,

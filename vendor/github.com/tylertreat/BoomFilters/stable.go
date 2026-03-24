@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"hash"
-	"hash/fnv"
 	"io"
 	"math"
 	"math/rand"
@@ -57,7 +56,6 @@ func NewStableBloomFilter(m uint, d uint8, fpRate float64) *StableBloomFilter {
 	cells := NewBuckets(m, d)
 
 	return &StableBloomFilter{
-		hash:        fnv.New64(),
 		m:           m,
 		k:           k,
 		p:           optimalStableP(m, k, d, fpRate),
@@ -86,7 +84,6 @@ func NewUnstableBloomFilter(m uint, fpRate float64) *StableBloomFilter {
 	)
 
 	return &StableBloomFilter{
-		hash:        fnv.New64(),
 		m:           m,
 		k:           k,
 		p:           0,

@@ -72,6 +72,9 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 		}
 	}
 
+	// Compute the expected request size for metric assertions.
+	expectedRequestSize := createRequest().Size()
+
 	tests := map[string]struct {
 		shardSize                    int
 		kafkaPartitionCustomResponse map[int32]*kmsg.ProduceResponse
@@ -153,13 +156,18 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 			kafkaCluster.ControlKey(int16(kmsg.Produce), func(request kmsg.Request) (kmsg.Response, error, bool) {
 				kafkaCluster.KeepControl()
 
-				for _, topic := range request.(*kmsg.ProduceRequest).Topics {
+				produceReq := request.(*kmsg.ProduceRequest)
+				for _, topic := range produceReq.Topics {
 					// For this test to work correctly we expect each request to write only to 1 partition,
 					// because we'll fail the entire request.
 					require.Len(t, topic.Partitions, 1)
 
 					if res := testData.kafkaPartitionCustomResponse[topic.Partitions[0].Partition]; res != nil {
 						res.SetVersion(request.GetVersion())
+						// Copy the TopicID from the request to the response (required for produce v13+)
+						if len(res.Topics) > 0 {
+							res.Topics[0].TopicID = topic.TopicID
+						}
 						return res, nil, true
 					}
 				}
@@ -227,14 +235,19 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 					# TYPE cortex_distributor_received_exemplars_total counter
 					cortex_distributor_received_exemplars_total{user="user"} 1
 
+					# HELP cortex_distributor_received_bytes_total The total number of uncompressed bytes received in the original request body (before any protocol conversion). Excludes requests rejected by middleware (e.g., rate limiting, size limits, HA deduplication) but includes bytes from requests where individual samples may be filtered or rejected during processing.
+					# TYPE cortex_distributor_received_bytes_total counter
+					cortex_distributor_received_bytes_total{user="user"} %d
+
 					# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
 					# TYPE cortex_distributor_latest_seen_sample_timestamp_seconds gauge
 					cortex_distributor_latest_seen_sample_timestamp_seconds{user="user"} %f
-				`, float64(now.UnixMilli())/1000.)),
+				`, expectedRequestSize, float64(now.UnixMilli())/1000.)),
 				"cortex_distributor_received_requests_total",
 				"cortex_distributor_received_samples_total",
 				"cortex_distributor_received_exemplars_total",
 				"cortex_distributor_received_metadata_total",
+				"cortex_distributor_received_bytes_total",
 				"cortex_distributor_requests_in_total",
 				"cortex_distributor_samples_in_total",
 				"cortex_distributor_exemplars_in_total",
@@ -419,8 +432,13 @@ func TestDistributor_Push_ShouldSupportWriteBothToIngestersAndPartitions(t *test
 				kafkaCluster.ControlKey(int16(kmsg.Produce), func(req kmsg.Request) (kmsg.Response, error, bool) {
 					kafkaCluster.KeepControl()
 
-					partitionID := req.(*kmsg.ProduceRequest).Topics[0].Partitions[0].Partition
+					produceReq := req.(*kmsg.ProduceRequest)
+					partitionID := produceReq.Topics[0].Partitions[0].Partition
 					res := testkafka.CreateProduceResponseError(req.GetVersion(), kafkaTopic, partitionID, kerr.InvalidTopicException)
+					// Copy the TopicID from the request to the response (required for produce v13+)
+					if len(res.Topics) > 0 {
+						res.Topics[0].TopicID = produceReq.Topics[0].TopicID
+					}
 
 					return res, nil, true
 				})
@@ -975,7 +993,7 @@ func TestDistributor_UserStats_ShouldSupportIngestStorage(t *testing.T) {
 						ingesterDataByZone:   testData.ingesterDataByZone,
 						ingestStorageEnabled: true,
 						configure: func(config *Config) {
-							config.PreferAvailabilityZone = preferredZone
+							config.PreferAvailabilityZones = []string{preferredZone}
 							config.MinimizeIngesterRequests = minimizeIngesterRequests
 						},
 						limits: func() *validation.Limits {
@@ -1007,12 +1025,12 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistencyWithIngest
 
 	var (
 		// Define fixtures used in tests.
-		series1 = makeTimeseries([]string{labels.MetricName, "series_1", "job", "job-a", "service", "service-1"}, makeSamples(0, 0), nil, nil)
-		series2 = makeTimeseries([]string{labels.MetricName, "series_2", "job", "job-b", "service", "service-1"}, makeSamples(0, 0), nil, nil)
-		series3 = makeTimeseries([]string{labels.MetricName, "series_3", "job", "job-c", "service", "service-1"}, makeSamples(0, 0), nil, nil)
-		series4 = makeTimeseries([]string{labels.MetricName, "series_4", "job", "job-a", "service", "service-1"}, makeSamples(0, 0), nil, nil)
-		series5 = makeTimeseries([]string{labels.MetricName, "series_5", "job", "job-a", "service", "service-2"}, makeSamples(0, 0), nil, nil)
-		series6 = makeTimeseries([]string{labels.MetricName, "series_6", "job", "job-b" /* no service label */}, makeSamples(0, 0), nil, nil)
+		series1 = makeTimeseries([]string{model.MetricNameLabel, "series_1", "job", "job-a", "service", "service-1"}, makeSamples(0, 0), nil, nil)
+		series2 = makeTimeseries([]string{model.MetricNameLabel, "series_2", "job", "job-b", "service", "service-1"}, makeSamples(0, 0), nil, nil)
+		series3 = makeTimeseries([]string{model.MetricNameLabel, "series_3", "job", "job-c", "service", "service-1"}, makeSamples(0, 0), nil, nil)
+		series4 = makeTimeseries([]string{model.MetricNameLabel, "series_4", "job", "job-a", "service", "service-1"}, makeSamples(0, 0), nil, nil)
+		series5 = makeTimeseries([]string{model.MetricNameLabel, "series_5", "job", "job-a", "service", "service-2"}, makeSamples(0, 0), nil, nil)
+		series6 = makeTimeseries([]string{model.MetricNameLabel, "series_6", "job", "job-b" /* no service label */}, makeSamples(0, 0), nil, nil)
 
 		// To keep assertions simple, all tests push all series, and then request the cardinality of the same label names,
 		// so we expect the same response from each successful test.
@@ -1273,7 +1291,7 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistencyWithIngest
 						ingesterDataByZone:   testData.ingesterDataByZone,
 						ingestStorageEnabled: true,
 						configure: func(config *Config) {
-							config.PreferAvailabilityZone = preferredZone
+							config.PreferAvailabilityZones = []string{preferredZone}
 							config.MinimizeIngesterRequests = minimizeIngesterRequests
 						},
 						limits: func() *validation.Limits {
@@ -1563,7 +1581,7 @@ func TestDistributor_ActiveSeries_AvailabilityAndConsistencyWithIngestStorage(t 
 						ingestStorageEnabled: true,
 						configure: func(config *Config) {
 							config.MinimizeIngesterRequests = minimizeIngesterRequests
-							config.PreferAvailabilityZone = preferredZone
+							config.PreferAvailabilityZones = []string{preferredZone}
 						},
 						limits: func() *validation.Limits {
 							limits := prepareDefaultLimits()

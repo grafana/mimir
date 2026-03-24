@@ -6,8 +6,12 @@ import (
 	"bytes"
 	"fmt"
 	"math"
+	"syscall"
+	"testing"
+	"unsafe"
 
 	gogoproto "github.com/gogo/protobuf/proto"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/histogram"
 	"google.golang.org/grpc/encoding"
 	"google.golang.org/grpc/encoding/proto"
@@ -16,9 +20,35 @@ import (
 	"google.golang.org/protobuf/protoadapt"
 )
 
+type CustomCodecConfig struct {
+	InstrumentRefLeaksConfig
+}
+
+var baseCodecV2Name = encoding.GetCodecV2(proto.Name).Name()
+
+func (cfg CustomCodecConfig) codec(reg prometheus.Registerer) *codecV2 {
+	return &codecV2{refLeaksTracker: cfg.tracker(reg)}
+}
+
+var globalCodec encoding.CodecV2
+
+func (cfg CustomCodecConfig) RegisterGlobally(reg prometheus.Registerer) {
+	cfg.maybeStartFreeingInstrumentedBuffers()
+	globalCodec = cfg.codec(reg)
+	encoding.RegisterCodecV2(globalCodec)
+}
+
 func init() {
-	c := encoding.GetCodecV2(proto.Name)
-	encoding.RegisterCodecV2(&codecV2{codec: c})
+	config := CustomCodecConfig{}
+	var reg prometheus.Registerer
+	if testing.Testing() {
+		// Instrument all buffers when testing.
+		config.Percentage = 100
+		config.BeforeReusePeriod = 0
+		config.MaxInflightInstrumentedBytes = 0
+		reg = prometheus.NewRegistry()
+	}
+	config.RegisterGlobally(reg)
 }
 
 // codecV2 customizes gRPC marshalling and unmarshalling.
@@ -26,7 +56,7 @@ func init() {
 // We customize unmarshalling in order to use an optimized path when possible,
 // and to retain the unmarshalling buffer when necessary.
 type codecV2 struct {
-	codec encoding.CodecV2
+	refLeaksTracker
 }
 
 var _ encoding.CodecV2 = &codecV2{}
@@ -96,28 +126,37 @@ func (c *codecV2) Marshal(v any) (mem.BufferSlice, error) {
 	return data, nil
 }
 
-// mem.DefaultBufferPool() only has five sizes: 256 B, 4 KB, 16 KB, 32 KB and 1 MB.
-// This means that for messages between 32 KB and 1 MB, we may over-allocate by up to 992 KB,
-// or ~97%. If we have a lot of messages in this range, we can waste a lot of memory.
-// So instead, we create our own buffer pool with more sizes to reduce this wasted space, and
-// also include pools for larger sizes up to 256 MB.
-var unmarshalSlicePool = mem.NewTieredBufferPool(unmarshalSlicePoolSizes()...)
-
-func unmarshalSlicePoolSizes() []int {
-	var sizes []int
-
-	for s := 256; s <= 256<<20; s <<= 1 {
-		sizes = append(sizes, s)
-	}
-
-	return sizes
+// Unmarshal unmarshals an object using the global codec. Prefer this over
+// calling the Unmarshal method directly, as it will take advantage of leak
+// detection.
+func Unmarshal(data []byte, v gogoproto.Unmarshaler) error {
+	return globalCodec.Unmarshal(mem.BufferSlice{mem.SliceBuffer(data)}, v)
 }
+
+var pageSize = syscall.Getpagesize()
 
 // Unmarshal customizes gRPC unmarshalling.
 // If v implements MessageWithBufferRef, its SetBuffer method is called with the unmarshalling buffer and the buffer's reference count gets incremented.
 // The latter means that v's FreeBuffer method should be called when v is no longer used.
 func (c *codecV2) Unmarshal(data mem.BufferSlice, v any) error {
-	buf := data.MaterializeToBuffer(unmarshalSlicePool)
+	holder, isBufferHolder := v.(MessageWithBufferRef)
+
+	var buf mem.Buffer
+	if isBufferHolder {
+		buf = c.maybeInstrumentRefLeaks(data)
+	}
+
+	if buf == nil {
+		if len(data) == 1 {
+			// BufferSlice.MaterializeToBuffer already has this behavior when
+			// len(data) == 1, but we reproduce it here for explicitness and for
+			// ensuring forward-compatibility.
+			data[0].Ref()
+			buf = data[0]
+		} else {
+			buf = materializeBufferSlice(data)
+		}
+	}
 	// Decrement buf's reference count. Note though that if v implements MessageWithBufferRef,
 	// we increase buf's reference count first so it doesn't go to zero.
 	defer buf.Free()
@@ -133,7 +172,7 @@ func (c *codecV2) Unmarshal(data mem.BufferSlice, v any) error {
 		}
 	}
 
-	if holder, ok := v.(MessageWithBufferRef); ok {
+	if isBufferHolder {
 		buf.Ref()
 		holder.SetBuffer(buf)
 	}
@@ -142,7 +181,7 @@ func (c *codecV2) Unmarshal(data mem.BufferSlice, v any) error {
 }
 
 func (c *codecV2) Name() string {
-	return c.codec.Name()
+	return baseCodecV2Name
 }
 
 // MessageWithBufferRef is an unmarshalling buffer retaining protobuf message.
@@ -156,6 +195,10 @@ type MessageWithBufferRef interface {
 // BufferHolder is a base type for protobuf messages that keep unsafe references to the unmarshalling buffer.
 type BufferHolder struct {
 	buffer mem.Buffer
+}
+
+func (m *BufferHolder) Buffer() mem.Buffer {
+	return m.buffer
 }
 
 func (m *BufferHolder) SetBuffer(buf mem.Buffer) {
@@ -452,6 +495,80 @@ type MarshalerWithSize interface {
 	MarshalWithSize(size int) ([]byte, error)
 }
 
+func metadataSetFromSettings(skipDeduplicateMetadata bool) metadataSet {
+	if skipDeduplicateMetadata {
+		return newPassthroughMetadataSet()
+	}
+	return newDedupingMetadataSet()
+}
+
+// metadataSet is the collection of metadata within a request.
+// It keeps the order at which metadata is added. Metadata may optionally be deduplicated by family name.
+type metadataSet interface {
+	add(family string, mm MetricMetadata)
+	len() int
+	slice() []*MetricMetadata
+}
+
+var _ metadataSet = dedupingMetadataSet{}
+var _ metadataSet = &passthroughMetadataSet{}
+
+// dedupingMetadataSet is a metadataSet that only stores one metadata per metric family.
+// Only the first metadata seen for a given family is kept.
+type dedupingMetadataSet struct {
+	deduplicated map[string]*orderAwareMetricMetadata
+}
+
+func newDedupingMetadataSet() dedupingMetadataSet {
+	return dedupingMetadataSet{
+		deduplicated: make(map[string]*orderAwareMetricMetadata),
+	}
+}
+
+func (m dedupingMetadataSet) add(family string, mm MetricMetadata) {
+	if _, ok := m.deduplicated[family]; ok {
+		// Already have metadata for this metric familiy name.
+		// Since we cannot have multiple definitions of the same
+		// metric family name, we ignore this metadata.
+		return
+	}
+	m.deduplicated[family] = &orderAwareMetricMetadata{MetricMetadata: mm, order: m.len()}
+}
+
+func (m dedupingMetadataSet) len() int {
+	return len(m.deduplicated)
+}
+
+func (m dedupingMetadataSet) slice() []*MetricMetadata {
+	result := make([]*MetricMetadata, m.len())
+	for _, meta := range m.deduplicated {
+		result[meta.order] = &meta.MetricMetadata
+	}
+	return result
+}
+
+type passthroughMetadataSet struct {
+	metadata []*MetricMetadata
+}
+
+func newPassthroughMetadataSet() *passthroughMetadataSet {
+	return &passthroughMetadataSet{
+		metadata: make([]*MetricMetadata, 0),
+	}
+}
+
+func (m *passthroughMetadataSet) add(family string, mm MetricMetadata) {
+	m.metadata = append(m.metadata, &mm)
+}
+
+func (m *passthroughMetadataSet) len() int {
+	return len(m.metadata)
+}
+
+func (m *passthroughMetadataSet) slice() []*MetricMetadata {
+	return m.metadata
+}
+
 // orderAwareMetricMetadata is a tuple (index, metadata) that knows its own position in a metadata slice.
 // It's tied to custom logic that unmarshals RW2 metadata into a map, and allows us to
 // remember the order that metadata arrived in when unmarshalling.
@@ -459,4 +576,40 @@ type orderAwareMetricMetadata struct {
 	MetricMetadata
 	// order is the 0-based index of this metadata object in a wider metadata array.
 	order int
+}
+
+func (m *WriteRequest) FreeBuffer() {
+	m.BufferHolder.FreeBuffer()
+	for _, h := range m.sourceBufferHolders {
+		h.FreeBuffer()
+	}
+	m.sourceBufferHolders = nil
+}
+
+// AddSourceBufferHolder adds a source BufferHolder to the WriteRequest,
+// retaining a strong reference to the source buffer. See
+// [WriteRequest.SourceBufferHolders].
+func (m *WriteRequest) AddSourceBufferHolder(bufh *BufferHolder) {
+	buf := bufh.Buffer()
+	if buf == nil {
+		return
+	}
+	key := bufferKey(buf)
+	if m.sourceBufferHolders == nil {
+		m.sourceBufferHolders = map[uintptr]BufferHolder{}
+	}
+	if _, ok := m.sourceBufferHolders[key]; ok {
+		return
+	}
+	buf.Ref()
+	m.sourceBufferHolders[key] = BufferHolder{buffer: buf}
+}
+
+// bufferKey returns a unique key for the buffer based on the address of its underlying data.
+func bufferKey(buf mem.Buffer) uintptr {
+	data := buf.ReadOnlyData()
+	if len(data) == 0 {
+		return 0
+	}
+	return uintptr(unsafe.Pointer(&data[0]))
 }

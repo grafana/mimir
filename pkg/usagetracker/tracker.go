@@ -3,9 +3,11 @@
 package usagetracker
 
 import (
+	"cmp"
 	"context"
 	"flag"
 	"fmt"
+	"iter"
 	"net/http"
 	"slices"
 	"strconv"
@@ -16,6 +18,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/ring"
@@ -29,9 +32,10 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/ingest"
-	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerclient"
+	"github.com/grafana/mimir/pkg/usagetracker/trackerop"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -51,9 +55,6 @@ const (
 
 type Config struct {
 	Enabled bool `yaml:"enabled"`
-
-	DoNotApplySeriesLimits bool `yaml:"do_not_apply_series_limits"`
-	UseGlobalSeriesLimits  bool `yaml:"use_global_series_limits"`
 
 	Partitions                        int           `yaml:"partitions"`
 	PartitionReconcileInterval        time.Duration `yaml:"partition_reconcile_interval"`
@@ -85,13 +86,16 @@ type Config struct {
 	SnapshotCleanupIntervalJitter float64       `yaml:"snapshot_cleanup_interval_jitter"`
 
 	MaxEventsFetchSize int `yaml:"max_events_fetch_size"`
+
+	UserCloseToLimitPercentageThreshold int `yaml:"user_close_to_limit_percentage_threshold"`
+
+	EnableVerboseSeriesCreationDeletionPrometheusMetrics bool `yaml:"enable_verbose_series_creation_deletion_prometheus_metrics" category:"experimental"`
 }
 
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&c.Enabled, "usage-tracker.enabled", false, "True to enable the usage-tracker.")
 
-	f.BoolVar(&c.DoNotApplySeriesLimits, "usage-tracker.do-not-apply-series-limits", false, "If true, the usage-tracker service tracks all series and does not apply series limits.")
-	f.BoolVar(&c.UseGlobalSeriesLimits, "usage-tracker.use-global-series-limits", false, "If true, the usage-tracker service uses global in-memory series limits instead of the active series limits. This is useful for testing purposes only.") // TODO: Remove in Mimir 3.0
+	flagext.DeprecatedFlag(f, "usage-tracker.use-global-series-limits", "Flag '-usage-tracker.use-global-series-limits' has been deprecated. Usage-tracker will now always fall back to global series limit if active series limit is not defined for a user.", logger)
 
 	f.IntVar(&c.Partitions, "usage-tracker.partitions", 64, "Number of partitions to use for the usage-tracker. This number isn't expected to change after you're already using the usage-tracker.")
 	f.DurationVar(&c.PartitionReconcileInterval, "usage-tracker.partition-reconcile-interval", 10*time.Second, "Interval to reconcile partitions.")
@@ -124,6 +128,10 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Float64Var(&c.SnapshotCleanupIntervalJitter, "usage-tracker.snapshot-cleanup-interval-jitter", 0.25, "Jitter to apply to the snapshot cleanup interval. This is a percentage of the snapshot cleanup interval, e.g. 0.1 means 10% jitter. It should be between 0 and 1.")
 
 	f.IntVar(&c.MaxEventsFetchSize, "usage-tracker.max-events-fetch-size", 100, "Maximum number of events to fetch from Kafka in a single request. This is used to limit the memory usage when fetching events.")
+
+	f.IntVar(&c.UserCloseToLimitPercentageThreshold, "usage-tracker.user-close-to-limit-percentage-threshold", 90, "Percentage of the local series limit after which a user is considered close to the limit. A user is close to the limit if their series count is above this percentage of their local limit.")
+
+	f.BoolVar(&c.EnableVerboseSeriesCreationDeletionPrometheusMetrics, "usage-tracker.enable-verbose-series-creation-deletion-prometheus-metrics", false, "Enable verbose series creation and deletion Prometheus metrics. When enabled, two additional counters per user and partition are exposed (series created and series removed), increasing the cardinality of exposed metrics and impacting the time and resources needed for scraping in deployments with multiple partitions per pod.")
 }
 
 func (c *Config) ValidateForClient() error {
@@ -224,6 +232,15 @@ type UsageTracker struct {
 }
 
 func NewUsageTracker(cfg Config, instanceRing *ring.Ring, partitionRing *ring.MultiPartitionInstanceRing, overrides *validation.Overrides, logger log.Logger, registerer prometheus.Registerer) (*UsageTracker, error) {
+	// Register all usage-tracker's metrics through a single collector, making the inner collectors opaque to the gathering process
+	// and preventing the concurrent collection of metrics from all partitions.
+	// See TestMetricsGatheringIsNotConcurrent for more details.
+	usageTrackerRegisterer := prometheus.NewRegistry()
+	if err := registerer.Register(usageTrackerRegisterer); err != nil {
+		return nil, fmt.Errorf("can't register: %w", err)
+	}
+	registerer = usageTrackerRegisterer
+
 	t := &UsageTracker{
 		cfg:           cfg,
 		instanceRing:  instanceRing,
@@ -334,6 +351,7 @@ func (t *UsageTracker) start(ctx context.Context) error {
 	return nil
 }
 
+// run implements services.RunningFn.
 func (t *UsageTracker) run(ctx context.Context) error {
 	// TODO: check here if all partitions already have owners, in which case we should reconcilePartitions immediately (no need to wait).
 	// If there are no owners yet, this is a cold start, so wait until all instances have joined the ring to avoid re-shuffling.
@@ -349,10 +367,13 @@ func (t *UsageTracker) run(ctx context.Context) error {
 		select {
 		case <-time.After(t.cfg.PartitionReconcileInterval):
 			if err := t.reconcilePartitions(ctx); err != nil {
+				if errors.Is(err, context.Canceled) {
+					return nil
+				}
 				return err
 			}
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil
 		case err := <-t.subservicesWatcher.Chan():
 			return errors.Wrap(err, "usage-tracker dependency failed")
 		case <-snapshotsCleanupTickerChan:
@@ -435,7 +456,7 @@ losingPartitions:
 			continue
 		}
 
-		replicationSet, err := t.partitionRing.GetReplicationSetForPartitionAndOperation(pid, usagetrackerclient.TrackSeriesOp)
+		replicationSet, err := t.partitionRing.GetReplicationSetForPartitionAndOperation(pid, trackerop.TrackSeriesOp)
 		if err != nil {
 			level.Error(logger).Log("msg", "unable to get replication set for partition", "err", err)
 			continue
@@ -467,13 +488,8 @@ losingPartitions:
 
 		logger := log.With(logger, "action", "adding", "partition", pid)
 
-		lim := limiter(t)
-		if t.cfg.DoNotApplySeriesLimits {
-			lim = &unlimitedSeriesLimiter{t}
-		}
-
 		level.Info(logger).Log("msg", "creating new partition handler")
-		p, err := newPartitionHandler(pid, t.cfg, t.partitionKVClient, t.eventsKafkaWriter, t.snapshotsMetadataKafkaWriter, t.snapshotsBucket, lim, t.logger, t.registerer)
+		p, err := newPartitionHandler(pid, t.cfg, t.partitionKVClient, t.eventsKafkaWriter, t.snapshotsMetadataKafkaWriter, t.snapshotsBucket, t, t.logger, t.registerer)
 		if err != nil {
 			return errors.Wrapf(err, "unable to create partition handler %d", pid)
 		}
@@ -660,18 +676,145 @@ func (t *UsageTracker) stop(_ error) error {
 }
 
 // TrackSeries implements usagetrackerpb.UsageTrackerServer.
-func (t *UsageTracker) TrackSeries(_ context.Context, req *usagetrackerpb.TrackSeriesRequest) (*usagetrackerpb.TrackSeriesResponse, error) {
-	t.partitionsMtx.RLock()
-	p, ok := t.partitions[req.Partition]
-	t.partitionsMtx.RUnlock()
-	if !ok {
-		return nil, fmt.Errorf("partition handler %d not found", req.Partition)
+func (t *UsageTracker) TrackSeries(ctx context.Context, req *usagetrackerpb.TrackSeriesRequest) (*usagetrackerpb.TrackSeriesResponse, error) {
+	partition := req.Partition
+	p, err := t.runningPartition(partition)
+	if err != nil {
+		return nil, err
 	}
-	rejected, err := p.store.trackSeries(context.Background(), req.UserID, req.SeriesHashes, time.Now())
+
+	rejected, err := p.store.trackSeries(ctx, req.UserID, req.SeriesHashes, time.Now())
 	if err != nil {
 		return nil, err
 	}
 	return &usagetrackerpb.TrackSeriesResponse{RejectedSeriesHashes: rejected}, nil
+}
+
+var seriesHashesPool = pool.NewBucketedPool[[]uint64](1<<20, func(size int) []uint64 {
+	return make([]uint64, 0, size)
+})
+
+type mergedUser struct {
+	userID       string
+	seriesHashes []uint64
+}
+
+// iterMergedUsers sorts users by UserID and yields one mergedUser per distinct
+// user with all of their series hashes combined into a single pooled slice.
+// Each pooled slice is returned to the pool after the yield returns, so the
+// caller must not retain seriesHashes across iterations.
+func iterMergedUsers(users []*usagetrackerpb.TrackSeriesBatchUser) iter.Seq[mergedUser] {
+	return func(yield func(mergedUser) bool) {
+		slices.SortFunc(users, func(a, b *usagetrackerpb.TrackSeriesBatchUser) int {
+			return cmp.Compare(a.UserID, b.UserID)
+		})
+
+		for i := 0; i < len(users); {
+			userID := users[i].UserID
+			j := i + 1
+			for j < len(users) && users[j].UserID == userID {
+				j++
+			}
+
+			if j == i+1 {
+				// Single entry for this user; use its hashes directly.
+				if !yield(mergedUser{userID: userID, seriesHashes: users[i].SeriesHashes}) {
+					return
+				}
+				i = j
+				continue
+			}
+
+			total := 0
+			for k := i; k < j; k++ {
+				total += len(users[k].SeriesHashes)
+			}
+
+			s := seriesHashesPool.Get(total)[:total]
+			off := 0
+			for k := i; k < j; k++ {
+				copy(s[off:], users[k].SeriesHashes)
+				off += len(users[k].SeriesHashes)
+			}
+
+			if !yield(mergedUser{userID: userID, seriesHashes: s}) {
+				seriesHashesPool.Put(s)
+				return
+			}
+			seriesHashesPool.Put(s)
+			i = j
+		}
+	}
+}
+
+// TrackSeriesBatch implements usagetrackerpb.UsageTrackerServer.
+func (t *UsageTracker) TrackSeriesBatch(ctx context.Context, req *usagetrackerpb.TrackSeriesBatchRequest) (*usagetrackerpb.TrackSeriesBatchResponse, error) {
+	response := usagetrackerpb.TrackSeriesBatchResponse{}
+	now := time.Now()
+
+	for _, rp := range req.Partitions {
+		p, err := t.runningPartition(rp.Partition)
+		if err != nil {
+			return nil, err
+		}
+
+		userRejections := []*usagetrackerpb.TrackSeriesBatchRejectionUser{}
+
+		for entry := range iterMergedUsers(rp.Users) {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			rejected, err := p.store.trackSeries(ctx, entry.userID, entry.seriesHashes, now)
+			if err != nil {
+				return nil, errors.Wrapf(err, "unable to track series for partition %d, user %s", rp.Partition, entry.userID)
+			}
+			if len(rejected) > 0 {
+				userRejections = append(userRejections, &usagetrackerpb.TrackSeriesBatchRejectionUser{
+					UserID:               entry.userID,
+					RejectedSeriesHashes: rejected,
+				})
+			}
+		}
+
+		if len(userRejections) > 0 {
+			response.Rejections = append(response.Rejections, &usagetrackerpb.TrackSeriesBatchRejection{
+				Partition: rp.Partition,
+				Users:     userRejections,
+			})
+		}
+	}
+
+	return &response, nil
+}
+
+// GetUsersCloseToLimit implements usagetrackerpb.UsageTrackerServer.
+func (t *UsageTracker) GetUsersCloseToLimit(_ context.Context, req *usagetrackerpb.GetUsersCloseToLimitRequest) (*usagetrackerpb.GetUsersCloseToLimitResponse, error) {
+	partition := req.Partition
+	p, err := t.runningPartition(partition)
+	if err != nil {
+		return nil, err
+	}
+
+	userIDs := p.store.getSortedUsersCloseToLimit()
+	return &usagetrackerpb.GetUsersCloseToLimitResponse{
+		SortedUserIds: userIDs,
+		Partition:     partition,
+	}, nil
+}
+
+var _ usagetrackerpb.UsageTrackerServer = (*UsageTracker)(nil)
+
+func (t *UsageTracker) runningPartition(partition int32) (*partitionHandler, error) {
+	t.partitionsMtx.RLock()
+	p, ok := t.partitions[partition]
+	t.partitionsMtx.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("partition handler %d not found", partition)
+	}
+	if p.State() != services.Running {
+		return nil, fmt.Errorf("partition handler %d is not running (state: %s)", partition, p.State())
+	}
+	return p, nil
 }
 
 // CheckReady performs a readiness check.
@@ -707,18 +850,10 @@ func (t *UsageTracker) instancesServingPartitions() int32 {
 }
 
 func (t *UsageTracker) localSeriesLimit(userID string) uint64 {
-	var globalLimit int
-	if t.cfg.UseGlobalSeriesLimits {
-		globalLimit = t.overrides.MaxGlobalSeriesPerUser(userID)
-	} else {
-		globalLimit = t.overrides.MaxActiveSeriesPerUser(userID)
-	}
-	if globalLimit <= 0 {
-		return 0
-	}
-
-	// Global limit is equally distributed among all active partitions.
-	return uint64(float64(globalLimit) / float64(t.partitionRing.PartitionRing().ActivePartitionsCount()))
+	limit := t.overrides.MaxActiveOrGlobalSeriesPerUser(userID)
+	// Global limit is equally distributed among all partitions.
+	// We don't care how many are active now, we know how many we expect.
+	return uint64(float64(limit) / float64(t.cfg.Partitions))
 }
 
 func (t *UsageTracker) zonesCount() uint64 {
@@ -922,8 +1057,3 @@ func (t *UsageTracker) cleanupSnapshots(ctx context.Context) error {
 	level.Info(t.logger).Log("msg", "snapshot files cleanup completed", "deleted", deleted, "duration", time.Since(t0))
 	return nil
 }
-
-// unlimitedSeriesLimiter always returns 0 as localSeriesLimit (unlimited).
-type unlimitedSeriesLimiter struct{ *UsageTracker }
-
-func (d unlimitedSeriesLimiter) localSeriesLimit(userID string) uint64 { return 0 }

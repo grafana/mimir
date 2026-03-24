@@ -37,7 +37,12 @@ The collision of series hashes are ignored as they have negligible impact on the
 
 Distributors interact with usage tracker service through the `UsageTrackerClient` in one of the middlewares of the push chain.
 
-A quick overview of this interaction from the Distributor's perspective:
+At startup, and then periodically, distributors fetch the list of users that are close to their series limit from a random partition of the usage tracker service.
+This works under the assumption that every usage-tracker partition has a similar number of series for each user.
+
+Distributors decide whether to perform a synchronous or asynchronous tracking of series based on whether the user is close to their limit or not, and on the minimum series limit configured.
+
+A quick overview of the synchronous interaction from the Distributor's perspective:
 
 - Series ready to be ingested are hashed into uint64 values, these hashes are what Usage tracker service tracks.
 - The hashes are sharded across a fixed number of partitions.
@@ -46,6 +51,12 @@ A quick overview of this interaction from the Distributor's perspective:
 - Usage tracker tracks the series hashes and returns a list of rejected hashes.
 - Distributor filters the `WriteRequest` to remove rejected series hashes.
 - If series are rejected, the distributor returns an error to the client with a `429 Too Many Requests` status code.
+
+If the user has a series limit high enough and it's far enough from their limits, the distributor will track the series asynchronously:
+
+- A goroutine is spawned to track the series in the background while the series are being ingested.
+- When the series are ingested, the distributor waits a configurable extra time for usage-tracker calls to succeed.
+- After that time, usage-tracker calls are canceled.
 
 The middleware is positioned last in the chain to enforce limits after all filtering, relabeling, and transformations.
 

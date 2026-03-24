@@ -6,19 +6,27 @@ local utils = import 'mixin-utils/utils.libsonnet';
     assert std.isArray(strings) : 'simpleRegexpOpt requires that `strings` is an array of strings`';
     '(' + std.join('|', strings) + ')',
 
-  local groupDeploymentByRolloutGroup(metricName) =
-    'sum without(deployment) (label_replace(%s, "rollout_group", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"))' % metricName,
+  local excludeWorkloads(labelName, values) =
+    if std.length(values) == 0 then '' else '{%s!~"%s"}' % [labelName, std.join('|', values)],
 
-  local groupStatefulSetByRolloutGroup(metricName) =
-    'sum by (%s, rollout_group) (label_replace(%s, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))' % [
-      $._config.alert_aggregation_labels,
+  local groupDeploymentByRolloutGroup(metricName, ignore) =
+    'sum without(deployment) (label_replace(%s%s, "rollout_group", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"))' % [
       metricName,
+      excludeWorkloads('deployment', ignore),
     ],
 
-  local groupStatefulSetByRolloutGroupAndRevision(metricName) =
-    'sum by (%s, rollout_group, revision) (label_replace(%s, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))' % [
+  local groupStatefulSetByRolloutGroup(metricName, ignore) =
+    'sum by (%s, rollout_group) (label_replace(%s%s, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))' % [
       $._config.alert_aggregation_labels,
       metricName,
+      excludeWorkloads('statefulset', ignore),
+    ],
+
+  local groupStatefulSetByRolloutGroupAndRevision(metricName, ignore) =
+    'sum by (%s, rollout_group, revision) (label_replace(%s%s, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))' % [
+      $._config.alert_aggregation_labels,
+      metricName,
+      excludeWorkloads('statefulset', ignore),
     ],
 
   local request_metric = 'cortex_request_duration_seconds',
@@ -40,7 +48,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       native: rate(errorQuery.native, totalQuery.native, comment),
     },
 
-  local requestErrorsAlert(histogram) =
+  local requestErrorsAlert(histogram_type) = {
     local query = requestErrorsQuery(
       selector='route!~"%s"' % std.join('|', ['ready'] + $._config.alert_excluded_routes),
       // Note if alert_aggregation_labels is "job", this will repeat the label. But
@@ -53,47 +61,70 @@ local utils = import 'mixin-utils/utils.libsonnet';
         # - 529: used by distributor rate limiting (using 529 instead of 429 to let the client retry)
         # - 598: used by GEM gateway when the client is very slow to send the request and the gateway times out reading the request body
       |||,
-    );
-    if histogram != 'classic' && histogram != 'native'
-    then {}
-    else {
-      alert: $.alertName('RequestErrors'),
-      expr: if histogram == 'classic' then query.classic else query.native,
-      'for': '15m',
-      labels: {
-        severity: 'critical',
-        histogram: histogram,
-      },
-      annotations: {
-        message: |||
-          The route {{ $labels.route }} in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% errors.
-        ||| % $._config,
-      },
-    },
+    ),
+    alert: $.alertName('RequestErrors'),
+    expr: query[histogram_type],
+    'for': '15m',
+    labels: $.histogramLabels({ severity: 'critical' }, histogram_type, nhcb=false),
+    annotations: {
+                   message: |||
+                     The route {{ $labels.route }} in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% errors.
+                   ||| % $._config,
+                 }
+                 // Alternative dashboards for investigation:
+                 //   - Mimir / Reads (mimir-reads.json) - for read path errors
+                 //   - Mimir / Alertmanager (mimir-alertmanager.json) - for alertmanager errors
+                 //   - Mimir / Alertmanager Resources (mimir-alertmanager-resources.json) - for resource starvation
+                 + $.dashboardURLAnnotation('mimir-writes.json'),
+  },
 
-  local rulerRemoteEvaluationFailingAlert(histogram) =
+  local rulerRemoteEvaluationFailingAlert(histogram_type) = {
     local query = requestErrorsQuery(
       selector='route="/httpgrpc.HTTP/Handle", %s' % $.jobMatcher($._config.job_names.ruler_query_frontend),
       error_selector='status_code=~"5.."',
       rate_interval=$.alertRangeInterval(5),
       sum_by=[$._config.alert_aggregation_labels],
-    );
-    if histogram != 'classic' && histogram != 'native'
-    then {}
-    else {
-      alert: $.alertName('RulerRemoteEvaluationFailing'),
-      expr: if histogram == 'classic' then query.classic else query.native,
-      'for': '5m',
-      labels: {
-        severity: 'warning',
-        histogram: histogram,
-      },
-      annotations: {
-        message: |||
-          %(product)s rulers in %(alert_aggregation_variables)s are failing to perform {{ printf "%%.2f" $value }}%% of remote evaluations through the ruler-query-frontend.
-        ||| % $._config,
-      },
+    ),
+    alert: $.alertName('RulerRemoteEvaluationFailing'),
+    expr: query[histogram_type],
+    'for': '5m',
+    labels: $.histogramLabels({ severity: 'warning' }, histogram_type, nhcb=false),
+    annotations: {
+                   message: |||
+                     %(product)s rulers in %(alert_aggregation_variables)s are failing to perform {{ printf "%%.2f" $value }}%% of remote evaluations through the ruler-query-frontend.
+                   ||| % $._config,
+                 }
+                 // Alternative dashboards for investigation:
+                 //   - Mimir / Remote ruler reads resources (mimir-remote-ruler-reads-resources.json)
+                 + $.dashboardURLAnnotation('mimir-remote-ruler-reads.json'),
+  },
+
+  local kvStoreFailure(histogram_type) = {
+    alert: $.alertName('KVStoreFailure'),
+    local sum_by = [$._config.alert_aggregation_labels, $._config.per_instance_label, 'status_code', 'kv_name'],
+    local range_interval = $.alertRangeInterval(1),
+    local numerator = utils.ncHistogramSumBy(utils.ncHistogramCountRate('cortex_kv_request_duration_seconds', 'status_code!~"2.+"', rate_interval=range_interval, from_recording=false), sum_by),
+    local denominator = utils.ncHistogramSumBy(utils.ncHistogramCountRate('cortex_kv_request_duration_seconds', '', rate_interval=range_interval, from_recording=false), sum_by),
+    expr: |||
+      (
+        %(numerator)s
+        /
+        %(denominator)s
+      )
+      # We want to get alerted only in case there's a constant failure.
+      == 1
+    ||| % {
+      numerator: numerator[histogram_type],
+      denominator: denominator[histogram_type],
     },
+    'for': '5m',
+    labels: $.histogramLabels({ severity: 'critical' }, histogram_type, nhcb=false),
+    annotations: {
+      message: |||
+        %(product)s %(alert_instance_variable)s in  %(alert_aggregation_variables)s is failing to talk to the KV store {{ $labels.kv_name }}.
+      ||| % $._config,
+    },
+  },
 
   local alertGroups = [
     {
@@ -118,7 +149,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('RequestLatency'),
           expr: |||
             %(group_prefix_jobs)s_route:cortex_request_duration_seconds:99quantile{route!~"%(excluded_routes)s"}
-               >
+              >
             %(cortex_p99_latency_threshold_seconds)s
           ||| % $._config {
             excluded_routes: std.join('|', [
@@ -134,15 +165,29 @@ local utils = import 'mixin-utils/utils.libsonnet';
             severity: 'warning',
           },
           annotations: {
-            message: |||
-              {{ $labels.%(per_job_label)s }} {{ $labels.route }} is experiencing {{ printf "%%.2f" $value }}s 99th percentile latency.
-            ||| % $._config,
-          },
+                         message: |||
+                           {{ $labels.%(per_job_label)s }} {{ $labels.route }} is experiencing {{ printf "%%.2f" $value }}s 99th percentile latency.
+                         ||| % $._config,
+                       }
+                       // Alternative dashboards for investigation:
+                       //   - Mimir / Scaling (mimir-scaling.json) - for scaling decisions
+                       //   - Mimir / Reads (mimir-reads.json) - for read path latency
+                       //   - Mimir / Slow Queries (mimir-slow-queries.json) - to identify slow queries
+                       //   - Mimir / Queries (mimir-queries.json) - for queue length analysis
+                       //   - Mimir / Alertmanager (mimir-alertmanager.json) - for alertmanager path
+                       + $.dashboardURLAnnotation('mimir-writes.json'),
         },
         {
           alert: $.alertName('InconsistentRuntimeConfig'),
           expr: |||
-            count(count by(%(alert_aggregation_labels)s, %(per_job_label)s, sha256) (cortex_runtime_config_hash)) without(sha256) > 1
+            count without(sha256) (
+                count by (%(alert_aggregation_labels)s, %(per_job_label)s, sha256) (cortex_runtime_config_hash)
+                unless
+                # Don't include config hashes that are still being rolled out.
+                # Kubernetes configmap propagation can be slow,
+                # and in large cells we may deploy a new configmap when the previous one isn't still propagated everywhere.
+                (changes((count by (%(alert_aggregation_labels)s, %(per_job_label)s, sha256) (cortex_runtime_config_hash))[10m:]) > 0)
+            )  > 1
           ||| % $._config,
           'for': '1h',
           labels: {
@@ -185,10 +230,15 @@ local utils = import 'mixin-utils/utils.libsonnet';
             severity: 'critical',
           },
           annotations: {
-            message: |||
-              There are {{ $value }} queued up queries in %(alert_aggregation_variables)s {{ $labels.%(per_job_label)s }}.
-            ||| % $._config,
-          },
+                         message: |||
+                           There are {{ $value }} queued up queries in %(alert_aggregation_variables)s {{ $labels.%(per_job_label)s }}.
+                         ||| % $._config,
+                       }
+                       // Alternative dashboards for investigation:
+                       //   - Mimir / Remote ruler reads (mimir-remote-ruler-reads.json)
+                       //   - Mimir / Reads Resources (mimir-reads-resources.json)
+                       //   - Mimir / Slow Queries (mimir-slow-queries.json)
+                       + $.dashboardURLAnnotation('mimir-reads.json'),
         },
         {
           alert: $.alertName('CacheRequestErrors'),
@@ -246,29 +296,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: '%(product)s %(alert_instance_variable)s in %(alert_aggregation_variables)s has restarted {{ printf "%%.2f" $value }} times in the last 30 mins.' % $._config,
           },
         },
-        {
-          alert: $.alertName('KVStoreFailure'),
-          expr: |||
-            (
-              sum by(%(alert_aggregation_labels)s, %(per_instance_label)s, status_code, kv_name) (rate(cortex_kv_request_duration_seconds_count{status_code!~"2.+"}[%(range_interval)s]))
-              /
-              sum by(%(alert_aggregation_labels)s, %(per_instance_label)s, status_code, kv_name) (rate(cortex_kv_request_duration_seconds_count[%(range_interval)s]))
-            )
-            # We want to get alerted only in case there's a constant failure.
-            == 1
-          ||| % $._config {
-            range_interval: $.alertRangeInterval(1),
-          },
-          'for': '5m',
-          labels: {
-            severity: 'critical',
-          },
-          annotations: {
-            message: |||
-              %(product)s %(alert_instance_variable)s in  %(alert_aggregation_variables)s is failing to talk to the KV store {{ $labels.kv_name }}.
-            ||| % $._config,
-          },
-        },
+        kvStoreFailure('classic'),
+        kvStoreFailure('native'),
         {
           alert: $.alertName('MemoryMapAreasTooHigh'),
           expr: |||
@@ -379,12 +408,17 @@ local utils = import 'mixin-utils/utils.libsonnet';
             severity: 'warning',
           },
           annotations: {
-            message: '%(product)s store-gateway in %(alert_aggregation_variables)s is experiencing {{ $value | humanizePercentage }} errors while doing {{ $labels.operation }} on the object storage.' % $._config,
-          },
+                         message: '%(product)s store-gateway in %(alert_aggregation_variables)s is experiencing {{ $value | humanizePercentage }} errors while doing {{ $labels.operation }} on the object storage.' % $._config,
+                       }
+                       // Alternative dashboards for investigation:
+                       //   - Mimir / Compactor (mimir-compactor.json)
+                       //   - Mimir / Reads Resources (mimir-reads-resources.json)
+                       //   - Mimir / Tenants (mimir-tenants.json)
+                       + $.dashboardURLAnnotation('mimir-object-store.json'),
         },
         {
           // Alert if servers are receiving requests with invalid cluster validation labels (i.e. meant for other clusters).
-          alert: $.alertName('ServerInvalidClusterValidationLabelRequests'),
+          alert: $.alertName('ServerInvalidClusterLabelRequests'),
           expr: |||
             (sum by (%(alert_aggregation_labels)s, protocol) (rate(cortex_server_invalid_cluster_validation_label_requests_total{}[%(range_interval)s]))) > 0
             # Alert only for namespaces with Mimir clusters.
@@ -401,7 +435,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         },
         {
           // Alert if clients' requests are rejected due to invalid cluster validation labels (i.e. there's a mismatch between clients' and servers' cluster validation labels).
-          alert: $.alertName('ClientInvalidClusterValidationLabelRequests'),
+          alert: $.alertName('ClientInvalidClusterLabelRequests'),
           expr: |||
             (sum by (%(alert_aggregation_labels)s, protocol) (rate(cortex_client_invalid_cluster_validation_label_requests_total{}[%(range_interval)s]))) > 0
             # Alert only for namespaces with Mimir clusters.
@@ -416,7 +450,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: '%(product)s clients in %(alert_aggregation_variables)s are having requests rejected due to invalid cluster validation labels.' % $._config,
           },
         },
-      ] + [
         {
           alert: $.alertName('RingMembersMismatch'),
           expr: |||
@@ -451,7 +484,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         },
 
         {
-          alert: $.alertName('HighGRPCConcurrentStreamsPerConnection'),
+          alert: $.alertName('HighGRPCStreamsPerConnection'),
           expr: |||
             max(avg_over_time(grpc_concurrent_streams_by_conn_max[10m])) by (%(alert_aggregation_labels)s, container)
             /
@@ -465,6 +498,93 @@ local utils = import 'mixin-utils/utils.libsonnet';
           annotations: {
             message: |||
               Container {{ $labels.container }} in %(alert_aggregation_variables)s is experiencing high GRPC concurrent streams per connection.
+            ||| % $._config,
+          },
+        },
+
+        {
+          alert: $.alertName('MixedQuerierQueryPlanVersionSupport'),
+          expr: |||
+            min by (%(alert_aggregation_labels)s, %(per_query_path_label)s) (cortex_querier_maximum_supported_query_plan_version)
+            !=
+            max by (%(alert_aggregation_labels)s, %(per_query_path_label)s) (cortex_querier_maximum_supported_query_plan_version)
+          ||| % $._config,
+          'for': '15m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              Queriers in the same %(product)s cluster and query path are reporting different maximum supported query plan versions.
+            |||,
+          },
+        },
+
+        {
+          alert: $.alertName('MixedQueryFrontendQueryPlanVersionSupport'),
+          expr: |||
+            min by (%(alert_aggregation_labels)s, %(per_query_path_label)s) (cortex_query_frontend_querier_ring_calculated_maximum_supported_query_plan_version)
+            !=
+            max by (%(alert_aggregation_labels)s, %(per_query_path_label)s) (cortex_query_frontend_querier_ring_calculated_maximum_supported_query_plan_version)
+          ||| % $._config,
+          'for': '15m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              Query-frontends in the same %(product)s cluster and query path have calculated different maximum supported query plan versions.
+            ||| % $._config,
+          },
+        },
+
+        {
+          alert: $.alertName('QueryFrontendsAndQueriersDisagreeOnSupportedQueryPlanVersion'),
+          expr: |||
+            # The label_replace calls below are so that we can match queriers with container labels like "ruler-querier" to
+            # query-frontends with container labels like "ruler-query-frontend".
+            # We support having the querier/query-frontend part as both a prefix and a suffix to support situations where the
+            # query path name appears at the beginning (eg. "ruler-querier") or at the end (eg. "querier-mqe-test").
+
+            min by (%(alert_aggregation_labels)s, query_path) (
+              label_replace(
+                cortex_querier_maximum_supported_query_plan_version,
+                "query_path", "$2", "%(per_query_path_label)s", "(querier)?-?(.*)-?(querier)?"
+              )
+            )
+            !=
+            min by (%(alert_aggregation_labels)s, query_path) (
+              label_replace(
+                # Exclude the case where query-frontends failed to compute a maximum supported query plan version altogether (reporting -1), as
+                # that is covered by the QueryFrontendNotComputingSupportedQueryPlanVersion alert.
+                cortex_query_frontend_querier_ring_calculated_maximum_supported_query_plan_version != -1,
+                "query_path", "$2", "%(per_query_path_label)s", "(query-frontend)?-?(.*)-?(query-frontend)?"
+              )
+            )
+          ||| % $._config,
+          'for': '15m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              Query-frontends and queriers are reporting different maximum supported query plan versions.
+            ||| % $._config,
+          },
+        },
+
+        {
+          alert: $.alertName('QueryFrontendNotComputingSupportedQueryPlanVersion'),
+          expr: |||
+            count by (%(alert_aggregation_labels)s, %(per_query_path_label)s) (cortex_query_frontend_querier_ring_calculated_maximum_supported_query_plan_version == -1) > 0
+          ||| % $._config,
+          'for': '5m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              Query-frontends are failing to compute a maximum supported query plan version.
             ||| % $._config,
           },
         },
@@ -490,7 +610,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: |||
               Ingester {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s has reached {{ $value | humanizePercentage }} of its series limit.
             ||| % $._config,
-          },
+          } + $.dashboardURLAnnotation('mimir-writes-resources.json'),
         },
         {
           alert: $.alertName('IngesterReachingSeriesLimit'),
@@ -509,7 +629,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: |||
               Ingester {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s has reached {{ $value | humanizePercentage }} of its series limit.
             ||| % $._config,
-          },
+          } + $.dashboardURLAnnotation('mimir-writes-resources.json'),
         },
         {
           alert: $.alertName('IngesterReachingTenantsLimit'),
@@ -528,7 +648,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: |||
               Ingester {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s has reached {{ $value | humanizePercentage }} of its tenant limit.
             ||| % $._config,
-          },
+          } + $.dashboardURLAnnotation('mimir-writes-resources.json'),
         },
         {
           alert: $.alertName('IngesterReachingTenantsLimit'),
@@ -547,7 +667,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: |||
               Ingester {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s has reached {{ $value | humanizePercentage }} of its tenant limit.
             ||| % $._config,
-          },
+          } + $.dashboardURLAnnotation('mimir-writes-resources.json'),
         },
         {
           alert: $.alertName('ReachingTCPConnectionsLimit'),
@@ -563,10 +683,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: |||
               %(product)s instance {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s has reached {{ $value | humanizePercentage }} of its TCP connections limit for {{ $labels.protocol }} protocol.
             ||| % $._config,
-          },
+          } + $.dashboardURLAnnotation('mimir-writes.json'),
         },
         {
-          alert: $.alertName('DistributorReachingInflightPushRequestLimit'),
+          alert: $.alertName('DistributorInflightRequestsHigh'),
           expr: |||
             (
                 (cortex_distributor_inflight_push_requests / ignoring(limit) cortex_distributor_instance_limits{limit="max_inflight_push_requests"})
@@ -582,7 +702,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: |||
               Distributor {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s has reached {{ $value | humanizePercentage }} of its inflight push request limit.
             ||| % $._config,
-          },
+          } + $.dashboardURLAnnotation('mimir-writes-resources.json'),
         },
       ],
     },
@@ -615,11 +735,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ||| % {
           aggregation_labels: $._config.alert_aggregation_labels,
           // Indicates the revision of the StatefulSet used to generate current replicas.
-          kube_statefulset_status_current_revision: groupStatefulSetByRolloutGroupAndRevision('kube_statefulset_status_current_revision'),
+          kube_statefulset_status_current_revision: groupStatefulSetByRolloutGroupAndRevision('kube_statefulset_status_current_revision', $._config.rollout_stuck_alert_ignore_statefulsets),
           // Indicates the revision of the StatefulSet used to generate replicas being updated.
-          kube_statefulset_status_update_revision: groupStatefulSetByRolloutGroupAndRevision('kube_statefulset_status_update_revision'),
-          kube_statefulset_replicas: groupStatefulSetByRolloutGroup('kube_statefulset_replicas'),
-          kube_statefulset_status_replicas_updated: groupStatefulSetByRolloutGroup('kube_statefulset_status_replicas_updated'),
+          kube_statefulset_status_update_revision: groupStatefulSetByRolloutGroupAndRevision('kube_statefulset_status_update_revision', $._config.rollout_stuck_alert_ignore_statefulsets),
+          kube_statefulset_replicas: groupStatefulSetByRolloutGroup('kube_statefulset_replicas', $._config.rollout_stuck_alert_ignore_statefulsets),
+          kube_statefulset_status_replicas_updated: groupStatefulSetByRolloutGroup('kube_statefulset_status_replicas_updated', $._config.rollout_stuck_alert_ignore_statefulsets),
           range_interval: '15m:' + $.alertRangeInterval(1),
         },
         'for': for_duration,
@@ -649,8 +769,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
           * on(%(aggregation_labels)s) group_left max by(%(aggregation_labels)s) (cortex_build_info)
         ||| % {
           aggregation_labels: $._config.alert_aggregation_labels,
-          kube_deployment_spec_replicas: groupDeploymentByRolloutGroup('kube_deployment_spec_replicas'),
-          kube_deployment_status_replicas_updated: groupDeploymentByRolloutGroup('kube_deployment_status_replicas_updated'),
+          kube_deployment_spec_replicas: groupDeploymentByRolloutGroup('kube_deployment_spec_replicas', $._config.rollout_stuck_alert_ignore_deployments),
+          kube_deployment_status_replicas_updated: groupDeploymentByRolloutGroup('kube_deployment_status_replicas_updated', $._config.rollout_stuck_alert_ignore_deployments),
           range_interval: '15m:' + $.alertRangeInterval(1),
         },
         'for': for_duration,
@@ -704,10 +824,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
             severity: 'warning',
           },
           annotations: {
-            message: |||
-              Instance %(alert_instance_variable)s in %(alert_aggregation_variables)s is using too much memory.
-            ||| % $._config,
-          },
+                         message: |||
+                           Instance %(alert_instance_variable)s in %(alert_aggregation_variables)s is using too much memory.
+                         ||| % $._config,
+                       }
+                       // Alternative dashboards for investigation:
+                       //   - Mimir / Scaling (mimir-scaling.json) - for scaling recommendations
+                       + $.dashboardURLAnnotation('mimir-writes-resources.json'),
         },
         {
           alert: $.alertName('AllocatingTooMuchMemory'),
@@ -720,10 +843,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
             severity: 'critical',
           },
           annotations: {
-            message: |||
-              Instance %(alert_instance_variable)s in %(alert_aggregation_variables)s is using too much memory.
-            ||| % $._config,
-          },
+                         message: |||
+                           Instance %(alert_instance_variable)s in %(alert_aggregation_variables)s is using too much memory.
+                         ||| % $._config,
+                       }
+                       // Alternative dashboards for investigation:
+                       //   - Mimir / Scaling (mimir-scaling.json) - for scaling recommendations
+                       + $.dashboardURLAnnotation('mimir-writes-resources.json'),
         },
       ],
     },
@@ -769,10 +895,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
             severity: 'critical',
           },
           annotations: {
-            message: |||
-              %(product)s Ruler %(alert_instance_variable)s in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% errors while evaluating rules.
-            ||| % $._config,
-          },
+                         message: |||
+                           %(product)s Ruler %(alert_instance_variable)s in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% errors while evaluating rules.
+                         ||| % $._config,
+                       }
+                       // Alternative dashboards for investigation:
+                       //   - Mimir / Remote ruler reads resources (mimir-remote-ruler-reads-resources.json)
+                       + $.dashboardURLAnnotation('mimir-remote-ruler-reads.json'),
         },
         {
           alert: $.alertName('RulerMissedEvaluations'),
@@ -922,47 +1051,46 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: '%(product)s gossip-ring service endpoints list in %(alert_aggregation_variables)s is out of sync.' % $._config,
           },
         },
-      ],
-    },
-    {
-      name: 'etcd_alerts',
-      rules: [
         {
-          alert: 'EtcdAllocatingTooMuchMemory',
+          // Alert if there's no available memberlist-bridge pod in any of the zones where it's deployed.
+          alert: $.alertName('MemberlistBridgeZoneUnavailable'),
           expr: |||
-            (
-              container_memory_rss{container="etcd"}
-                /
-              ( container_spec_memory_limit_bytes{container="etcd"} > 0 )
-            ) > 0.65
-          |||,
-          'for': '15m',
-          labels: {
-            severity: 'warning',
-          },
-          annotations: {
-            message: |||
-              Too much memory being used by {{ $labels.namespace }}/%(alert_instance_variable)s - bump memory limit.
-            ||| % $._config,
-          },
-        },
-        {
-          alert: 'EtcdAllocatingTooMuchMemory',
-          expr: |||
-            (
-              container_memory_rss{container="etcd"}
-                /
-              ( container_spec_memory_limit_bytes{container="etcd"} > 0 )
-            ) > 0.8
-          |||,
-          'for': '15m',
+            # Find the expected memberlist-bridge zonal deployments.
+            count by (%(alert_aggregation_labels)s, zone) (
+                label_replace(
+                    kube_deployment_spec_replicas{deployment=~"memberlist-bridge-zone-[abc]"} > 0,
+                    "zone", "$1", "deployment", "memberlist-bridge-(zone-[abc])"
+                )
+            )
+            # Excluding zones where there is at least 1 healthy memberlist-bridge.
+            unless (
+                count by(%(alert_aggregation_labels)s, zone) (
+                    label_replace(
+                        kube_pod_status_ready{pod=~"memberlist-bridge-zone-[abc]-.*", condition="true"} == 1,
+                        "zone", "$1", "pod", "memberlist-bridge-(zone-[abc]).*"
+                    )
+                ) > 0
+            )
+          ||| % $._config,
+          'for': '10m',
           labels: {
             severity: 'critical',
           },
           annotations: {
-            message: |||
-              Too much memory being used by {{ $labels.namespace }}/%(alert_instance_variable)s - bump memory limit.
-            ||| % $._config,
+            message: '%(product)s memberlist-bridge in %(alert_aggregation_variables)s {{ $labels.zone }} has no available pods.' % $._config,
+          },
+        },
+        {
+          alert: $.alertName('MemberlistZoneAwareRoutingAutoFailover'),
+          expr: |||
+            sum by (%(alert_aggregation_labels)s) (rate(memberlist_client_zone_aware_routing_select_nodes_skipped_total[1m])) > 0
+          ||| % $._config,
+          'for': '10m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s memberlist in %(alert_aggregation_variables)s has automatically temporarily disabled zone-aware routing because it detected missing memberlist bridges.' % $._config,
           },
         },
       ],

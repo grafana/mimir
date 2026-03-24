@@ -5,10 +5,13 @@ package commonsubexpressionelimination
 import (
 	"context"
 	"errors"
+	"math/rand/v2"
+	"reflect"
 	"strconv"
 	"testing"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -20,11 +23,10 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-func TestRangeVectorOperator_Buffering(t *testing.T) {
+func TestRangeVectorOperator_Buffering_NoFiltering(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
-	inner := createTestRangeVectorOperator(t, 6, memoryConsumptionTracker)
-	expectedData := inner.data
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+	inner, expectedData := createTestRangeVectorOperator(t, 6, memoryConsumptionTracker)
 
 	buffer := NewRangeVectorDuplicationBuffer(inner, memoryConsumptionTracker)
 	consumer1 := buffer.AddConsumer()
@@ -45,14 +47,14 @@ func TestRangeVectorOperator_Buffering(t *testing.T) {
 	require.NoError(t, err)
 	d, err := consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualData(t, expectedData[0], d, memoryConsumptionTracker)
+	requireEqualDataAndReturnToPool(t, expectedData[0], d, memoryConsumptionTracker)
 	require.Equal(t, 1, buffer.buffer.Size())
 
 	err = consumer1.NextSeries(ctx)
 	require.NoError(t, err)
 	d, err = consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualData(t, expectedData[1], d, memoryConsumptionTracker)
+	requireEqualDataAndReturnToPool(t, expectedData[1], d, memoryConsumptionTracker)
 	require.Equal(t, 2, buffer.buffer.Size())
 
 	// Read the same data from the second consumer, and then keep reading data beyond what has already been buffered.
@@ -60,28 +62,29 @@ func TestRangeVectorOperator_Buffering(t *testing.T) {
 	require.NoError(t, err)
 	d, err = consumer2.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualData(t, expectedData[0], d, memoryConsumptionTracker)
-	require.Equal(t, 2, buffer.buffer.Size(), "buffered data should remain buffered until the next NextSeries or Close call")
+	requireEqualDataAndReturnToPool(t, expectedData[0], d, memoryConsumptionTracker)
+	require.Equal(t, 2, buffer.buffer.Size(), "buffered data should remain buffered until the next NextSeries or Finalize call")
 
 	err = consumer2.NextSeries(ctx)
 	require.NoError(t, err)
+	require.Equal(t, 1, buffer.buffer.Size())
 	d, err = consumer2.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualData(t, expectedData[1], d, memoryConsumptionTracker)
+	requireEqualDataAndReturnToPool(t, expectedData[1], d, memoryConsumptionTracker)
 	require.Equal(t, 1, buffer.buffer.Size())
 
 	err = consumer2.NextSeries(ctx)
 	require.NoError(t, err)
 	d, err = consumer2.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualData(t, expectedData[2], d, memoryConsumptionTracker)
+	requireEqualDataAndReturnToPool(t, expectedData[2], d, memoryConsumptionTracker)
 	require.Equal(t, 1, buffer.buffer.Size())
 
 	err = consumer2.NextSeries(ctx)
 	require.NoError(t, err)
 	d, err = consumer2.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualData(t, expectedData[3], d, memoryConsumptionTracker)
+	requireEqualDataAndReturnToPool(t, expectedData[3], d, memoryConsumptionTracker)
 	require.Equal(t, 2, buffer.buffer.Size())
 
 	// Read some of the buffered data in the first consumer.
@@ -89,14 +92,15 @@ func TestRangeVectorOperator_Buffering(t *testing.T) {
 	require.NoError(t, err)
 	d, err = consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualData(t, expectedData[2], d, memoryConsumptionTracker)
-	require.Equal(t, 2, buffer.buffer.Size(), "buffered data should remain buffered until the next NextSeries or Close call")
+	requireEqualDataAndReturnToPool(t, expectedData[2], d, memoryConsumptionTracker)
+	require.Equal(t, 2, buffer.buffer.Size(), "buffered data should remain buffered until the next NextSeries or Finalize call")
 
 	err = consumer2.NextSeries(ctx)
 	require.NoError(t, err)
+	require.Equal(t, 1, buffer.buffer.Size())
 	d, err = consumer2.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualData(t, expectedData[4], d, memoryConsumptionTracker)
+	requireEqualDataAndReturnToPool(t, expectedData[4], d, memoryConsumptionTracker)
 	require.Equal(t, 2, buffer.buffer.Size())
 
 	// Read some more of the buffered data in the first consumer.
@@ -104,11 +108,11 @@ func TestRangeVectorOperator_Buffering(t *testing.T) {
 	require.NoError(t, err)
 	d, err = consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualData(t, expectedData[3], d, memoryConsumptionTracker)
-	require.Equal(t, 2, buffer.buffer.Size(), "buffered data should remain buffered until the next NextSeries or Close call")
+	requireEqualDataAndReturnToPool(t, expectedData[3], d, memoryConsumptionTracker)
+	require.Equal(t, 2, buffer.buffer.Size(), "buffered data should remain buffered until the next NextSeries or Finalize call")
 
-	// Close the first consumer, check that the data that was being buffered for it is released.
-	consumer1.Close()
+	// Finalize the first consumer, check that the data that was being buffered for it is released.
+	require.NoError(t, consumer1.Finalize(ctx))
 	require.Equal(t, 0, buffer.buffer.Size())
 
 	// Check that the second consumer can still read data and that we don't bother buffering it.
@@ -116,16 +120,269 @@ func TestRangeVectorOperator_Buffering(t *testing.T) {
 	require.NoError(t, err)
 	d, err = consumer2.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualData(t, expectedData[5], d, memoryConsumptionTracker)
+	requireEqualDataAndReturnToPool(t, expectedData[5], d, memoryConsumptionTracker)
 	require.Equal(t, 0, buffer.buffer.Size())
 
 	// Check that the inner operator hasn't been closed or finalized yet.
 	require.False(t, inner.finalized)
 	require.False(t, inner.closed)
 
-	// Finalize each consumer, and check that the inner operator was only finalized after the last consumer is finalized.
+	// Finalize the second consumer, and check that the inner operator was finalized after the last consumer is finalized.
+	require.NoError(t, consumer2.Finalize(ctx))
+	require.True(t, inner.finalized)
+	require.NoError(t, consumer1.Finalize(ctx), "it should be safe to finalize either consumer a second time")
+	require.NoError(t, consumer2.Finalize(ctx), "it should be safe to finalize either consumer a second time")
+
+	// Close both consumers, and check that the inner operator was closed.
+	consumer1.Close()
+	consumer2.Close()
+	require.True(t, inner.closed)
+	requireNoMemoryConsumption(t, memoryConsumptionTracker)
+
+	// Make sure it's safe to close either consumer a second time.
+	consumer1.Close()
+	consumer2.Close()
+	requireNoMemoryConsumption(t, memoryConsumptionTracker)
+}
+
+func TestRangeVectorOperator_Buffering_Filtering_AllConsumersOpen(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+	inner, expectedData := createTestRangeVectorOperator(t, 6, memoryConsumptionTracker)
+
+	buffer := NewRangeVectorDuplicationBuffer(inner, memoryConsumptionTracker)
+	consumer1 := buffer.AddConsumer()
+	consumer2 := buffer.AddConsumer()
+	consumer2.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "1|2|5")})
+
+	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
+	metadata2, err := consumer2.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
+	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.series), metadata1, "first consumer should get expected series metadata")
+	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{inner.series[1], inner.series[2], inner.series[5]}), metadata2, "second consumer should get expected series metadata")
+	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&metadata2, memoryConsumptionTracker)
+
+	// Read some data from the first consumer and ensure that it was buffered for the second consumer, if the second consumer needs that series.
+	err = consumer1.NextSeries(ctx)
+	require.NoError(t, err)
+	d, err := consumer1.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualDataAndReturnToPool(t, expectedData[0], d, memoryConsumptionTracker)
+	require.Equal(t, 0, buffer.buffer.Size())
+	require.Equal(t, 0, cap(buffer.buffer.elements), "should not temporarily buffer data that won't be read by another consumer")
+
+	err = consumer1.NextSeries(ctx)
+	require.NoError(t, err)
+	d, err = consumer1.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualDataAndReturnToPool(t, expectedData[1], d, memoryConsumptionTracker)
+	require.Equal(t, 1, buffer.buffer.Size())
+
+	// Read the same data from the second consumer, and then keep reading data beyond what has already been buffered.
+	err = consumer2.NextSeries(ctx)
+	require.NoError(t, err)
+	d, err = consumer2.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualDataAndReturnToPool(t, expectedData[1], d, memoryConsumptionTracker)
+	require.Equal(t, 1, buffer.buffer.Size(), "buffered data should remain buffered until the next NextSeries or Finalize call")
+
+	err = consumer2.NextSeries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 0, buffer.buffer.Size())
+	d, err = consumer2.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualDataAndReturnToPool(t, expectedData[2], d, memoryConsumptionTracker)
+	require.Equal(t, 1, buffer.buffer.Size())
+
+	err = consumer2.NextSeries(ctx)
+	require.NoError(t, err)
+	d, err = consumer2.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualDataAndReturnToPool(t, expectedData[5], d, memoryConsumptionTracker)
+	require.Equal(t, 4, buffer.buffer.Size())
+
+	// Read the buffered data for the first consumer.
+	err = consumer1.NextSeries(ctx)
+	require.NoError(t, err)
+	d, err = consumer1.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualDataAndReturnToPool(t, expectedData[2], d, memoryConsumptionTracker)
+	require.Equal(t, 4, buffer.buffer.Size(), "buffered data should remain buffered until the next NextSeries or Finalize call")
+
+	// Finalize the first consumer, check that the data that was being buffered for it is released.
 	require.NoError(t, consumer1.Finalize(ctx))
+	require.Equal(t, 0, buffer.buffer.Size())
+
+	// Check that the inner operator hasn't been closed or finalized yet.
 	require.False(t, inner.finalized)
+	require.False(t, inner.closed)
+
+	// Finalize the second consumer, and check that the inner operator was finalized after the last consumer is finalized.
+	require.NoError(t, consumer2.Finalize(ctx))
+	require.True(t, inner.finalized)
+	require.NoError(t, consumer1.Finalize(ctx), "it should be safe to finalize either consumer a second time")
+	require.NoError(t, consumer2.Finalize(ctx), "it should be safe to finalize either consumer a second time")
+
+	// Close both consumers, and check that the inner operator was closed.
+	consumer1.Close()
+	consumer2.Close()
+	require.True(t, inner.closed)
+	requireNoMemoryConsumption(t, memoryConsumptionTracker)
+
+	// Make sure it's safe to close either consumer a second time.
+	consumer1.Close()
+	consumer2.Close()
+	requireNoMemoryConsumption(t, memoryConsumptionTracker)
+}
+
+func TestRangeVectorOperator_Buffering_Filtering_IteratingBeforeCallingSeriesMetadataOnAllConsumers(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+	inner, expectedData := createTestRangeVectorOperator(t, 6, memoryConsumptionTracker)
+
+	buffer := NewRangeVectorDuplicationBuffer(inner, memoryConsumptionTracker)
+	consumer1 := buffer.AddConsumer()
+	consumer2 := buffer.AddConsumer()
+	consumer2.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "1|2|5")})
+
+	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
+	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.series), metadata1, "first consumer should get expected series metadata")
+	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
+
+	// Read some data from the first consumer and ensure that it was buffered for the second consumer, if the second consumer needs that series.
+	err = consumer1.NextSeries(ctx)
+	require.NoError(t, err)
+	d, err := consumer1.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualDataAndReturnToPool(t, expectedData[0], d, memoryConsumptionTracker)
+	require.Equal(t, 0, buffer.buffer.Size())
+	require.Equal(t, 0, cap(buffer.buffer.elements), "should not temporarily buffer data that won't be read by another consumer")
+
+	err = consumer1.NextSeries(ctx)
+	require.NoError(t, err)
+	d, err = consumer1.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualDataAndReturnToPool(t, expectedData[1], d, memoryConsumptionTracker)
+	require.Equal(t, 1, buffer.buffer.Size())
+
+	// Read the same data from the second consumer, and then keep reading data beyond what has already been buffered.
+	metadata2, err := consumer2.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
+	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{inner.series[1], inner.series[2], inner.series[5]}), metadata2, "second consumer should get expected series metadata")
+	types.SeriesMetadataSlicePool.Put(&metadata2, memoryConsumptionTracker)
+
+	err = consumer2.NextSeries(ctx)
+	require.NoError(t, err)
+	d, err = consumer2.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualDataAndReturnToPool(t, expectedData[1], d, memoryConsumptionTracker)
+	require.Equal(t, 1, buffer.buffer.Size(), "buffered data should remain buffered until the next NextSeries or Finalize call")
+
+	err = consumer2.NextSeries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 0, buffer.buffer.Size())
+	d, err = consumer2.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualDataAndReturnToPool(t, expectedData[2], d, memoryConsumptionTracker)
+	require.Equal(t, 1, buffer.buffer.Size())
+
+	err = consumer2.NextSeries(ctx)
+	require.NoError(t, err)
+	d, err = consumer2.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualDataAndReturnToPool(t, expectedData[5], d, memoryConsumptionTracker)
+	require.Equal(t, 4, buffer.buffer.Size())
+
+	// Read the buffered data for the first consumer.
+	err = consumer1.NextSeries(ctx)
+	require.NoError(t, err)
+	d, err = consumer1.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualDataAndReturnToPool(t, expectedData[2], d, memoryConsumptionTracker)
+	require.Equal(t, 4, buffer.buffer.Size(), "buffered data should remain buffered until the next NextSeries or Finalize call")
+
+	// Finalize the first consumer, check that the data that was being buffered for it is released.
+	require.NoError(t, consumer1.Finalize(ctx))
+	require.Equal(t, 0, buffer.buffer.Size())
+
+	// Check that the inner operator hasn't been closed or finalized yet.
+	require.False(t, inner.finalized)
+	require.False(t, inner.closed)
+
+	// Finalize the remaining consumer, and check that the inner operator was finalized after the last consumer is finalized.
+	require.NoError(t, consumer2.Finalize(ctx))
+	require.True(t, inner.finalized)
+	require.NoError(t, consumer1.Finalize(ctx), "it should be safe to finalize either consumer a second time")
+	require.NoError(t, consumer2.Finalize(ctx), "it should be safe to finalize either consumer a second time")
+
+	// Close both consumers, and check that the inner operator was closed.
+	consumer1.Close()
+	consumer2.Close()
+	require.True(t, inner.closed)
+	requireNoMemoryConsumption(t, memoryConsumptionTracker)
+
+	// Make sure it's safe to close either consumer a second time.
+	consumer1.Close()
+	consumer2.Close()
+	requireNoMemoryConsumption(t, memoryConsumptionTracker)
+}
+
+func TestRangeVectorOperator_Buffering_Filtering_DoesNotBufferForFinalizedConsumer(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+	inner, expectedData := createTestRangeVectorOperator(t, 6, memoryConsumptionTracker)
+
+	buffer := NewRangeVectorDuplicationBuffer(inner, memoryConsumptionTracker)
+	consumer1 := buffer.AddConsumer()
+	consumer2 := buffer.AddConsumer()
+	consumer2.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "1|2|5")})
+
+	// Both consumers should get the same series metadata.
+	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
+	metadata2, err := consumer2.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
+	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.series), metadata1, "first consumer should get expected series metadata")
+	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{inner.series[1], inner.series[2], inner.series[5]}), metadata2, "second consumer should get expected series metadata")
+	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&metadata2, memoryConsumptionTracker)
+
+	// Read some data from the second consumer, which will cause the first two series to be buffered for the first consumer.
+	err = consumer2.NextSeries(ctx)
+	require.NoError(t, err)
+	d, err := consumer2.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualDataAndReturnToPool(t, expectedData[1], d, memoryConsumptionTracker)
+	require.Equal(t, 2, buffer.buffer.Size(), "the first and second series should be buffered for the first consumer")
+
+	// The data being buffered for the first consumer should be released when it's finalized.
+	require.NoError(t, consumer1.Finalize(ctx))
+	require.Equal(t, 0, buffer.buffer.Size())
+	consumer1.Close()
+
+	// Check that the inner operator hasn't been closed or finalized yet.
+	require.False(t, inner.finalized)
+	require.False(t, inner.closed)
+
+	// Keep reading data for the second consumer, confirm that no further data is buffered for the first consumer.
+	err = consumer2.NextSeries(ctx)
+	require.NoError(t, err)
+	d, err = consumer2.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualDataAndReturnToPool(t, expectedData[2], d, memoryConsumptionTracker)
+	require.Equal(t, 0, buffer.buffer.Size())
+
+	err = consumer2.NextSeries(ctx)
+	require.NoError(t, err)
+	d, err = consumer2.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualDataAndReturnToPool(t, expectedData[5], d, memoryConsumptionTracker)
+	require.Equal(t, 0, buffer.buffer.Size())
+
+	// Finalize each consumer, and check that the inner operator was only finalized after the last consumer is finalized.
 	require.NoError(t, consumer2.Finalize(ctx))
 	require.True(t, inner.finalized)
 	require.NoError(t, consumer1.Finalize(ctx), "it should be safe to finalize either consumer a second time")
@@ -142,15 +399,190 @@ func TestRangeVectorOperator_Buffering(t *testing.T) {
 	requireNoMemoryConsumption(t, memoryConsumptionTracker)
 }
 
-func requireNoMemoryConsumption(t *testing.T, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
-	require.Equalf(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "expected all instances to be returned to pool, current memory consumption is:\n%v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
+func TestRangeVectorOperator_Buffering_Filtering_DoesNotBufferUnnecessarilyForLaggingConsumer(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+	inner, expectedData := createTestRangeVectorOperator(t, 3, memoryConsumptionTracker)
+
+	buffer := NewRangeVectorDuplicationBuffer(inner, memoryConsumptionTracker)
+	consumer1 := buffer.AddConsumer()
+	consumer1.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "0")})
+	consumer2 := buffer.AddConsumer()
+	consumer2.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "1|2")})
+
+	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
+	metadata2, err := consumer2.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
+	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{inner.series[0]}), metadata1, "first consumer should get expected series metadata")
+	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{inner.series[1], inner.series[2]}), metadata2, "second consumer should get expected series metadata")
+	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&metadata2, memoryConsumptionTracker)
+
+	// Read first series for the second consumer (the second underlying series).
+	// The first series should be buffered for the first consumer, but not the second.
+	err = consumer2.NextSeries(ctx)
+	require.NoError(t, err)
+	d, err := consumer2.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualDataAndReturnToPool(t, expectedData[1], d, memoryConsumptionTracker)
+	require.Equal(t, 1, buffer.buffer.Size(), "only the first series should be buffered for the first consumer")
+
+	err = consumer2.NextSeries(ctx)
+	require.NoError(t, err)
+	d, err = consumer2.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualDataAndReturnToPool(t, expectedData[2], d, memoryConsumptionTracker)
+	require.Equal(t, 1, buffer.buffer.Size(), "only the first series should be buffered for the first consumer")
+
+	// The data being buffered for the first consumer should be released when it's finalized.
+	require.NoError(t, consumer1.Finalize(ctx))
+	require.Equal(t, 0, buffer.buffer.Size())
+	consumer1.Close()
+
+	// Check that the inner operator hasn't been closed or finalized yet.
+	require.False(t, inner.finalized)
+	require.False(t, inner.closed)
+
+	// And the same for the second consumer.
+	require.NoError(t, consumer2.Finalize(ctx))
+	require.True(t, inner.finalized)
+	consumer2.Close()
+	require.True(t, inner.closed)
+	requireNoMemoryConsumption(t, memoryConsumptionTracker)
 }
 
-func TestRangeVectorOperator_ClosedWithBufferedData(t *testing.T) {
+func TestRangeVectorOperator_Buffering_NonContiguousSeries(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
-	inner := createTestRangeVectorOperator(t, 3, memoryConsumptionTracker)
-	expectedData := inner.data
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+	inner, expectedData := createTestRangeVectorOperator(t, 4, memoryConsumptionTracker)
+
+	buffer := NewRangeVectorDuplicationBuffer(inner, memoryConsumptionTracker)
+	consumer1 := buffer.AddConsumer()
+	consumer2 := buffer.AddConsumer()
+	consumer2.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "0")})
+	consumer3 := buffer.AddConsumer()
+	consumer3.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "1|3")})
+
+	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
+	metadata2, err := consumer2.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
+	metadata3, err := consumer3.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
+	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.series), metadata1, "first consumer should get expected series metadata")
+	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{inner.series[0]}), metadata2, "second consumer should get expected series metadata")
+	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{inner.series[1], inner.series[3]}), metadata3, "third consumer should get expected series metadata")
+	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&metadata2, memoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&metadata3, memoryConsumptionTracker)
+
+	// Read all four series from the unfiltered consumer.
+	// Only those series needed for the other consumers should be buffered.
+	err = consumer1.NextSeries(ctx)
+	require.NoError(t, err)
+	d, err := consumer1.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualDataAndReturnToPool(t, expectedData[0], d, memoryConsumptionTracker)
+	require.Equal(t, 1, buffer.buffer.Size())
+
+	err = consumer1.NextSeries(ctx)
+	require.NoError(t, err)
+	d, err = consumer1.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualDataAndReturnToPool(t, expectedData[1], d, memoryConsumptionTracker)
+	require.Equal(t, 2, buffer.buffer.Size())
+
+	err = consumer1.NextSeries(ctx)
+	require.NoError(t, err)
+	d, err = consumer1.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualDataAndReturnToPool(t, expectedData[2], d, memoryConsumptionTracker)
+	require.Equal(t, 2, buffer.buffer.Size(), "should not buffer series at index 2, as it's not needed by any other consumer")
+
+	err = consumer1.NextSeries(ctx)
+	require.NoError(t, err)
+	d, err = consumer1.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualDataAndReturnToPool(t, expectedData[3], d, memoryConsumptionTracker)
+	require.Equal(t, 3, buffer.buffer.Size())
+
+	require.NoError(t, consumer1.Finalize(ctx))
+	consumer1.Close()
+	require.False(t, inner.finalized)
+	require.False(t, inner.closed)
+
+	// Read all the data from consumer 3.
+	err = consumer3.NextSeries(ctx)
+	require.NoError(t, err)
+	d, err = consumer3.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualDataAndReturnToPool(t, expectedData[1], d, memoryConsumptionTracker)
+	require.Equal(t, 3, buffer.buffer.Size(), "buffer size should be unchanged as series at index 0 is required for consumer 2, index 1 should be tombstoned, index 2 is required for consumer 3")
+
+	err = consumer3.NextSeries(ctx)
+	require.NoError(t, err)
+	d, err = consumer3.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualDataAndReturnToPool(t, expectedData[3], d, memoryConsumptionTracker)
+	require.Equal(t, 3, buffer.buffer.Size(), "buffer size should be unchanged as series at index 0 is required for consumer 2, index 1 should be tombstoned, index 2 will be released on next interaction")
+
+	require.NoError(t, consumer3.Finalize(ctx))
+	consumer3.Close()
+	require.Equal(t, 1, buffer.buffer.Size(), "should only be buffering series required by consumer 2 (series 0)")
+	require.False(t, inner.finalized)
+	require.False(t, inner.closed)
+
+	// Read all the data from consumer 2
+	err = consumer2.NextSeries(ctx)
+	require.NoError(t, err)
+	d, err = consumer2.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualDataAndReturnToPool(t, expectedData[0], d, memoryConsumptionTracker)
+	require.Equal(t, 1, buffer.buffer.Size(), "buffered data should remain buffered until the next NextSeries or Finalize call")
+
+	// Make sure everything is cleaned up properly.
+	require.False(t, inner.finalized)
+	require.False(t, inner.closed)
+	require.NoError(t, consumer2.Finalize(ctx))
+	require.True(t, inner.finalized)
+	consumer2.Close()
+	require.True(t, inner.closed)
+	requireNoMemoryConsumption(t, memoryConsumptionTracker)
+}
+
+func TestRangeVectorOperator_Filtering_SingleConsumer(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+	inner, expectedData := createTestRangeVectorOperator(t, 6, memoryConsumptionTracker)
+
+	buffer := NewRangeVectorDuplicationBuffer(inner, memoryConsumptionTracker)
+	consumer1 := buffer.AddConsumer()
+	consumer1.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "1|2|5")})
+
+	expectedSeries := []labels.Labels{inner.series[1], inner.series[2], inner.series[5]}
+	filteredData := []types.InstantVectorSeriesData{expectedData[1], expectedData[2], expectedData[5]}
+
+	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
+	require.Equal(t, testutils.LabelsToSeriesMetadata(expectedSeries), metadata1, "consumer should get expected series metadata")
+	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
+	require.Equal(t, types.Matchers{types.Matcher{Type: labels.MatchRegexp, Name: "idx", Value: "1|2|5"}}, inner.matchersProvided, "filters for sole consumer should be passed to inner operator")
+
+	for idx := range 3 {
+		err := consumer1.NextSeries(ctx)
+		require.NoError(t, err)
+		d, err := consumer1.NextStepSamples(ctx)
+		require.NoError(t, err)
+		requireEqualDataAndReturnToPool(t, filteredData[idx], d, memoryConsumptionTracker)
+		require.Equal(t, 0, buffer.buffer.Size())
+	}
+}
+
+func TestRangeVectorOperator_FinalizedWithBufferedData_NoFiltering(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+	inner, expectedData := createTestRangeVectorOperator(t, 3, memoryConsumptionTracker)
 
 	buffer := NewRangeVectorDuplicationBuffer(inner, memoryConsumptionTracker)
 	consumer1 := buffer.AddConsumer()
@@ -170,25 +602,25 @@ func TestRangeVectorOperator_ClosedWithBufferedData(t *testing.T) {
 	require.NoError(t, err)
 	d, err := consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualData(t, expectedData[0], d, memoryConsumptionTracker)
+	requireEqualDataAndReturnToPool(t, expectedData[0], d, memoryConsumptionTracker)
 	require.Equal(t, 1, buffer.buffer.Size())
 
 	err = consumer1.NextSeries(ctx)
 	require.NoError(t, err)
 	d, err = consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualData(t, expectedData[1], d, memoryConsumptionTracker)
+	requireEqualDataAndReturnToPool(t, expectedData[1], d, memoryConsumptionTracker)
 	require.Equal(t, 2, buffer.buffer.Size())
 
 	err = consumer1.NextSeries(ctx)
 	require.NoError(t, err)
 	d, err = consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualData(t, expectedData[2], d, memoryConsumptionTracker)
+	requireEqualDataAndReturnToPool(t, expectedData[2], d, memoryConsumptionTracker)
 	require.Equal(t, 3, buffer.buffer.Size())
 
-	// Close the first consumer, and check the data remains buffered for the second consumer.
-	consumer1.Close()
+	// Finalize the first consumer, and check the data remains buffered for the second consumer.
+	require.NoError(t, consumer1.Finalize(ctx))
 	require.Equal(t, 3, buffer.buffer.Size())
 
 	// Read some of the buffered data.
@@ -196,18 +628,160 @@ func TestRangeVectorOperator_ClosedWithBufferedData(t *testing.T) {
 	require.NoError(t, err)
 	d, err = consumer2.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualData(t, expectedData[0], d, memoryConsumptionTracker)
-	require.Equal(t, 3, buffer.buffer.Size(), "buffered data should remain in the buffer until the next NextSeries or Close call")
+	requireEqualDataAndReturnToPool(t, expectedData[0], d, memoryConsumptionTracker)
+	require.Equal(t, 3, buffer.buffer.Size(), "buffered data should remain in the buffer until the next NextSeries or Finalize call")
 
-	// Close the second consumer, and check that the inner operator was closed and all buffered data was released.
+	// Finalize the second consumer, and check that the inner operator was finalized and all buffered data was released.
+	require.NoError(t, consumer2.Finalize(ctx))
+	require.True(t, inner.finalized)
+
+	consumer1.Close()
 	consumer2.Close()
-	require.True(t, inner.closed)
 	requireNoMemoryConsumption(t, memoryConsumptionTracker)
 
 	// Make sure it's safe to close either consumer a second time.
 	consumer1.Close()
 	consumer2.Close()
 	requireNoMemoryConsumption(t, memoryConsumptionTracker)
+}
+
+func TestRangeVectorOperator_FinalizedWithBufferedData_Filtering(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+	inner, expectedData := createTestRangeVectorOperator(t, 3, memoryConsumptionTracker)
+
+	buffer := NewRangeVectorDuplicationBuffer(inner, memoryConsumptionTracker)
+	consumer1 := buffer.AddConsumer()
+	consumer2 := buffer.AddConsumer()
+	consumer2.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "0|2")})
+	consumer3 := buffer.AddConsumer()
+	consumer3.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "1")})
+
+	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
+	metadata2, err := consumer2.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
+	metadata3, err := consumer3.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
+	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.series), metadata1, "first consumer should get expected series metadata")
+	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{inner.series[0], inner.series[2]}), metadata2, "second consumer should get expected series metadata")
+	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{inner.series[1]}), metadata3, "third consumer should get expected series metadata")
+	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&metadata2, memoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&metadata3, memoryConsumptionTracker)
+
+	// Read each series from the first consumer, filling the buffer for the other consumers.
+	for idx := range 3 {
+		err = consumer1.NextSeries(ctx)
+		require.NoError(t, err)
+		d, err := consumer1.NextStepSamples(ctx)
+		require.NoError(t, err)
+		requireEqualDataAndReturnToPool(t, expectedData[idx], d, memoryConsumptionTracker)
+		require.Equal(t, idx+1, buffer.buffer.Size())
+	}
+
+	require.Equal(t, 3, buffer.buffer.Size(), "buffer should contain all three series for the remaining two consumers")
+	require.NoError(t, consumer2.Finalize(ctx))
+	require.Equal(t, 1, buffer.buffer.Size(), "buffer should only contain remaining series required by remaining consumer")
+
+	err = consumer3.NextSeries(ctx)
+	require.NoError(t, err)
+	d, err := consumer3.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualDataAndReturnToPool(t, expectedData[1], d, memoryConsumptionTracker)
+	require.Equal(t, 1, buffer.buffer.Size(), "buffered data should remain in the buffer until the next NextSeries or Finalize call")
+
+	require.NoError(t, consumer3.Finalize(ctx))
+	require.Equal(t, 0, buffer.buffer.Size())
+	require.NoError(t, consumer1.Finalize(ctx))
+	requireNoMemoryConsumption(t, memoryConsumptionTracker)
+}
+
+// TestRangeVectorOperator_StepDataStructure is a test to validate that no additional fields have been added to RangeVectorStepData
+// and not been considered in the cloneStepData().
+// This test uses reflection to populate values into all fields, clones the record and asserts that the values match.
+// The test will fail if the cloned record does not match, or there are fields found which this test does not consider.
+// Should this test fail, add the necessary field handling to this test and update range_vector_operator.go cloneStepData().
+func TestRangeVectorOperator_StepDataStructure(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+	data := &types.RangeVectorStepData{}
+
+	fpoints := types.NewFPointRingBuffer(memoryConsumptionTracker)
+	require.NoError(t, fpoints.Use([]promql.FPoint{{T: 10, F: 30.3}}))
+
+	hpoints := types.NewHPointRingBuffer(memoryConsumptionTracker)
+	require.NoError(t, hpoints.Use([]promql.HPoint{{T: 0, H: &histogram.FloatHistogram{Count: 10, Sum: 1}}}))
+
+	// set explicitly to avoid reflection complexity in handling these
+	data.Floats = fpoints.ViewAll(nil)
+	data.Histograms = hpoints.ViewUntilSearchingBackwards(0, nil)
+
+	v := reflect.ValueOf(data).Elem() // reflect on struct value
+	r := v.Type()                     // struct type
+
+	for i := 0; i < v.NumField(); i++ {
+		fieldVal := v.Field(i)
+		fieldType := r.Field(i)
+
+		// we have already poked in values for these
+		if fieldType.Name == "Floats" || fieldType.Name == "Histograms" {
+			continue
+		}
+
+		switch fieldVal.Kind() {
+		case reflect.Int64:
+			fieldVal.SetInt(rand.Int64())
+		case reflect.Bool:
+			fieldVal.SetBool(true)
+		default:
+			require.Fail(t, "unexpected field. field=%s, kind=%v", fieldType.Name, fieldVal.Kind())
+		}
+	}
+
+	clonedStepData, err := cloneStepData(data)
+
+	require.NoError(t, err)
+	require.Equal(t, data, clonedStepData.stepData)
+}
+
+func TestRangeVectorOperator_Cloning_SmoothedAnchored(t *testing.T) {
+	testCases := map[string]struct {
+		stepData types.RangeVectorStepData
+	}{
+		"anchored": {
+			stepData: types.RangeVectorStepData{
+				Anchored: true,
+			},
+		},
+		"smoothed": {
+			stepData: types.RangeVectorStepData{
+				Smoothed: true,
+			},
+		},
+		"not anchored or smoothed": {
+			stepData: types.RangeVectorStepData{
+				Anchored: false,
+				Smoothed: false,
+			},
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+			tc.stepData.Floats = types.NewFPointRingBuffer(memoryConsumptionTracker).ViewAll(nil)
+			tc.stepData.Histograms = types.NewHPointRingBuffer(memoryConsumptionTracker).ViewUntilSearchingBackwards(0, nil)
+			clonedStepData, err := cloneStepData(&tc.stepData)
+			require.NoError(t, err)
+
+			require.Equal(t, tc.stepData.Smoothed, clonedStepData.stepData.Smoothed)
+			require.Equal(t, tc.stepData.Anchored, clonedStepData.stepData.Anchored)
+		})
+	}
+
 }
 
 func TestRangeVectorOperator_Cloning(t *testing.T) {
@@ -223,13 +797,13 @@ func TestRangeVectorOperator_Cloning(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
-	inner := &testRangeVectorOperator{
-		series:                   []labels.Labels{labels.FromStrings(labels.MetricName, "test_series")},
-		data:                     []types.InstantVectorSeriesData{series},
-		stepRange:                time.Minute,
-		memoryConsumptionTracker: memoryConsumptionTracker,
-	}
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+	inner := newTestRangeVectorOperator(
+		[]labels.Labels{labels.FromStrings(model.MetricNameLabel, "test_series")},
+		[]types.InstantVectorSeriesData{series},
+		time.Minute,
+		memoryConsumptionTracker,
+	)
 
 	buffer := NewRangeVectorDuplicationBuffer(inner, memoryConsumptionTracker)
 	consumer1 := buffer.AddConsumer()
@@ -262,10 +836,10 @@ func TestRangeVectorOperator_Cloning(t *testing.T) {
 	require.NotSame(t, inner.floatsView, d1.Floats, "both consumers should get a cloned view of the floats ring buffer")
 	require.NotSame(t, inner.histogramsView, d1.Histograms, "both consumers should get a cloned view of the histograms ring buffer")
 
-	requireEqualData(t, series, d1, memoryConsumptionTracker)
+	requireEqualDataAndReturnToPool(t, series, d1, memoryConsumptionTracker)
 }
 
-func requireEqualData(t *testing.T, expected types.InstantVectorSeriesData, actual *types.RangeVectorStepData, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+func requireEqualDataAndReturnToPool(t *testing.T, expected types.InstantVectorSeriesData, actual *types.RangeVectorStepData, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
 	actualFloats, err := actual.Floats.CopyPoints()
 	require.NoError(t, err)
 	require.Equal(t, expected.Floats, actualFloats)
@@ -277,7 +851,7 @@ func requireEqualData(t *testing.T, expected types.InstantVectorSeriesData, actu
 	types.HPointSlicePool.Put(&actualHistograms, memoryConsumptionTracker)
 }
 
-func createTestRangeVectorOperator(t *testing.T, seriesCount int, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *testRangeVectorOperator {
+func createTestRangeVectorOperator(t *testing.T, seriesCount int, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*testRangeVectorOperator, []types.InstantVectorSeriesData) {
 	series := make([]labels.Labels, 0, seriesCount)
 	data := make([]types.InstantVectorSeriesData, 0, seriesCount)
 
@@ -291,21 +865,21 @@ func createTestRangeVectorOperator(t *testing.T, seriesCount int, memoryConsumpt
 		})
 	}
 
-	return &testRangeVectorOperator{
-		series:                   series,
-		data:                     data,
-		stepRange:                time.Minute,
-		memoryConsumptionTracker: memoryConsumptionTracker,
-	}
+	return newTestRangeVectorOperator(
+		series,
+		data,
+		time.Minute,
+		memoryConsumptionTracker,
+	), data
 }
 
 func TestRangeVectorOperator_ClosingAfterFirstReadFails(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	series, err := types.SeriesMetadataSlicePool.Get(1, memoryConsumptionTracker)
 	require.NoError(t, err)
 
-	series, err = types.AppendSeriesMetadata(memoryConsumptionTracker, series, types.SeriesMetadata{Labels: labels.FromStrings(labels.MetricName, "test_series")})
+	series, err = types.AppendSeriesMetadata(memoryConsumptionTracker, series, types.SeriesMetadata{Labels: labels.FromStrings(model.MetricNameLabel, "test_series")})
 	require.NoError(t, err)
 
 	inner := &failingRangeVectorOperator{series: series, memoryConsumptionTracker: memoryConsumptionTracker}
@@ -331,13 +905,13 @@ func TestRangeVectorOperator_ClosingAfterFirstReadFails(t *testing.T) {
 
 func TestRangeVectorOperator_ClosingAfterSubsequentReadFails(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	series, err := types.SeriesMetadataSlicePool.Get(2, memoryConsumptionTracker)
 	require.NoError(t, err)
 
-	series, err = types.AppendSeriesMetadata(memoryConsumptionTracker, series, types.SeriesMetadata{Labels: labels.FromStrings(labels.MetricName, "test_series_1")})
+	series, err = types.AppendSeriesMetadata(memoryConsumptionTracker, series, types.SeriesMetadata{Labels: labels.FromStrings(model.MetricNameLabel, "test_series_1")})
 	require.NoError(t, err)
-	series, err = types.AppendSeriesMetadata(memoryConsumptionTracker, series, types.SeriesMetadata{Labels: labels.FromStrings(labels.MetricName, "test_series_2")})
+	series, err = types.AppendSeriesMetadata(memoryConsumptionTracker, series, types.SeriesMetadata{Labels: labels.FromStrings(model.MetricNameLabel, "test_series_2")})
 	require.NoError(t, err)
 
 	inner := &failingRangeVectorOperator{series: series, returnErrorAtSeriesIdx: 1, memoryConsumptionTracker: memoryConsumptionTracker}
@@ -380,6 +954,7 @@ func TestRangeVectorOperator_ClosingAfterSubsequentReadFails(t *testing.T) {
 
 type testRangeVectorOperator struct {
 	series                     []labels.Labels
+	currentSeriesIndex         int
 	data                       []types.InstantVectorSeriesData
 	stepRange                  time.Duration
 	haveReadCurrentStepSamples bool
@@ -391,9 +966,22 @@ type testRangeVectorOperator struct {
 	finalized                bool
 	closed                   bool
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	matchersProvided         types.Matchers
 }
 
-func (t *testRangeVectorOperator) SeriesMetadata(_ context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {
+func newTestRangeVectorOperator(series []labels.Labels, data []types.InstantVectorSeriesData, stepRange time.Duration, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *testRangeVectorOperator {
+	return &testRangeVectorOperator{
+		series:                   series,
+		currentSeriesIndex:       -1,
+		data:                     data,
+		stepRange:                stepRange,
+		memoryConsumptionTracker: memoryConsumptionTracker,
+	}
+}
+
+func (t *testRangeVectorOperator) SeriesMetadata(_ context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	t.matchersProvided = matchers
+
 	if len(t.series) == 0 {
 		return nil, nil
 	}
@@ -417,11 +1005,12 @@ func (t *testRangeVectorOperator) SeriesMetadata(_ context.Context, _ types.Matc
 }
 
 func (t *testRangeVectorOperator) NextSeries(_ context.Context) error {
-	if len(t.data) == 0 {
+	if t.currentSeriesIndex >= len(t.series) {
 		return types.EOS
 	}
 
 	t.haveReadCurrentStepSamples = false
+	t.currentSeriesIndex++
 
 	return nil
 }
@@ -441,8 +1030,7 @@ func (t *testRangeVectorOperator) NextStepSamples(_ context.Context) (*types.Ran
 		t.histograms = types.NewHPointRingBuffer(t.memoryConsumptionTracker)
 	}
 
-	d := t.data[0]
-	t.data = t.data[1:]
+	d := t.data[t.currentSeriesIndex]
 	endT := t.stepRange.Milliseconds()
 
 	t.floats.Reset()
@@ -479,13 +1067,12 @@ func (t *testRangeVectorOperator) Prepare(_ context.Context, _ *types.PreparePar
 	return nil
 }
 
-func (t *testRangeVectorOperator) Finalize(_ context.Context) error {
-	t.finalized = true
+func (t *testRangeVectorOperator) AfterPrepare(_ context.Context) error {
 	return nil
 }
 
-func (t *testRangeVectorOperator) Close() {
-	t.closed = true
+func (t *testRangeVectorOperator) Finalize(_ context.Context) error {
+	t.finalized = true
 
 	if t.floats != nil {
 		t.floats.Close()
@@ -499,6 +1086,12 @@ func (t *testRangeVectorOperator) Close() {
 	t.floatsView = nil
 	t.histograms = nil
 	t.histogramsView = nil
+
+	return nil
+}
+
+func (t *testRangeVectorOperator) Close() {
+	t.closed = true
 }
 
 type failingRangeVectorOperator struct {
@@ -513,6 +1106,10 @@ type failingRangeVectorOperator struct {
 	histogramsView *types.HPointRingBufferView
 
 	seriesRead int
+}
+
+func (o *failingRangeVectorOperator) AfterPrepare(ctx context.Context) error {
+	return nil
 }
 
 func (o *failingRangeVectorOperator) SeriesMetadata(_ context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {
@@ -591,4 +1188,8 @@ func (o *failingRangeVectorOperator) Close() {
 
 	o.histograms = nil
 	o.histogramsView = nil
+}
+
+func requireNoMemoryConsumption(t *testing.T, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+	require.Equalf(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "expected all instances to be returned to pool, current memory consumption is:\n%v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
 }

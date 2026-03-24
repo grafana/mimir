@@ -4,6 +4,7 @@ package objtools
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -11,7 +12,6 @@ import (
 
 	"cloud.google.com/go/storage"
 	"github.com/grafana/dskit/cancellation"
-	"github.com/pkg/errors"
 	"google.golang.org/api/iterator"
 )
 
@@ -35,7 +35,7 @@ func (c *GCSClientConfig) Validate(prefix string) error {
 func (c *GCSClientConfig) ToBucket(ctx context.Context) (Bucket, error) {
 	client, err := storage.NewClient(ctx)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to create GCS storage client")
+		return nil, fmt.Errorf("failed to create GCS storage client: %w", err)
 	}
 	return &gcsBucket{
 		client: *client.Bucket(c.BucketName),
@@ -79,13 +79,17 @@ func (bkt *gcsBucket) ClientSideCopy(ctx context.Context, objectName string, dst
 	}
 	reader, err := srcObj.NewReader(ctx)
 	if err != nil {
-		return errors.Wrap(err, "failed to get GCS source object reader")
+		return fmt.Errorf("failed to get GCS source object reader: %w", err)
 	}
 	if err := dstBucket.Upload(ctx, options.destinationObjectName(objectName), reader, reader.Attrs.Size); err != nil {
 		_ = reader.Close()
-		return errors.Wrap(err, "failed to upload GCS source object to destination")
+		return fmt.Errorf("failed to upload GCS source object to destination: %w", err)
 	}
-	return errors.Wrap(reader.Close(), "failed closing GCS source object reader")
+	if err := reader.Close(); err != nil {
+		return fmt.Errorf("failed closing GCS source object reader: %w", err)
+	}
+
+	return nil
 }
 
 func (bkt *gcsBucket) List(ctx context.Context, options ListOptions) (*ListResult, error) {
@@ -122,7 +126,7 @@ func (bkt *gcsBucket) List(ctx context.Context, options ListOptions) (*ListResul
 		}
 
 		if err != nil {
-			return nil, errors.Wrapf(err, "listPrefix: error listing %v", prefix)
+			return nil, fmt.Errorf("listPrefix: error listing %v: %w", prefix, err)
 		}
 
 		if obj.Prefix != "" { // synthetic directory, only returned when recursive=false
@@ -159,10 +163,10 @@ func (bkt *gcsBucket) Upload(ctx context.Context, objectName string, reader io.R
 	w := obj.NewWriter(ctx)
 	n, err := io.Copy(w, reader)
 	if err != nil {
-		return errors.Wrap(err, "failed during copy stage of GCS upload")
+		return fmt.Errorf("failed during copy stage of GCS upload: %w", err)
 	}
 	if n != contentLength {
-		return errors.Wrapf(err, "unexpected content length from copy: expected=%d, actual=%d", contentLength, n)
+		return fmt.Errorf("unexpected content length from copy: expected=%d, actual=%d", contentLength, n)
 	}
 	return w.Close()
 }

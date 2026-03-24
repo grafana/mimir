@@ -31,7 +31,7 @@ func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, 
 
 	// Allow to disable linger in tests.
 	linger := 50 * time.Millisecond
-	if kafkaCfg.disableLinger {
+	if kafkaCfg.DisableLinger {
 		linger = 0
 	}
 
@@ -129,8 +129,11 @@ func NewKafkaProducer(client *kgo.Client, maxBufferedBytes int64, reg prometheus
 
 		// Metrics.
 		bufferedProduceBytes: promauto.With(reg).NewSummary(
+			// The franz-go library exposes "buffered_produce_bytes" metric which is a gauge. Gauges export a snapshot
+			// of the buffer at the time of scraping, but for our use case (alert on 100th percentile) we need to have
+			// higher accuracy, so we also track this metric that gets updated with a high frequency.
 			prometheus.SummaryOpts{
-				Name:       "buffered_produce_bytes",
+				Name:       "buffered_produce_bytes_distribution",
 				Help:       "The buffered produce records in bytes. Quantile buckets keep track of buffered records size over the last 60s.",
 				Objectives: map[float64]float64{0.5: 0.05, 0.99: 0.001, 1: 0.001},
 				MaxAge:     time.Minute,

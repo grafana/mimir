@@ -12,7 +12,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/procfs"
@@ -43,7 +42,7 @@ type combinedScanner struct {
 func (s combinedScanner) Scan() (float64, uint64, error) {
 	ps, err := s.proc.Stat()
 	if err != nil {
-		return 0, 0, errors.Wrap(err, "failed to get process stats")
+		return 0, 0, fmt.Errorf("failed to get process stats: %w", err)
 	}
 
 	metrics.Read(s.memoryTotalSample)
@@ -133,7 +132,11 @@ func (l *UtilizationBasedLimiter) LimitingReason() string {
 func (l *UtilizationBasedLimiter) starting(_ context.Context) error {
 	var err error
 	l.utilizationScanner, err = newCombinedScanner()
-	return errors.Wrap(err, "unable to detect CPU/memory utilization, unsupported platform. Please disable utilization based limiting")
+	if err != nil {
+		return fmt.Errorf("unable to detect CPU/memory utilization, unsupported platform. Please disable utilization based limiting: %w", err)
+	}
+
+	return nil
 }
 
 func (l *UtilizationBasedLimiter) update(_ context.Context) error {

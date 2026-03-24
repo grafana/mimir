@@ -13,6 +13,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+const (
+	BackendMemcached = "memcached"
+)
+
 var (
 	ErrNotStored  = errors.New("item not stored")
 	ErrInvalidTTL = errors.New("invalid TTL")
@@ -24,6 +28,12 @@ type Cache interface {
 	// an empty map is returned and the error tracked/logged. One or more Option
 	// instances may be passed to modify the behavior of this GetMulti call.
 	GetMulti(ctx context.Context, keys []string, opts ...Option) map[string][]byte
+
+	// GetMultiWithError fetches multiple keys at once from a cache and returns an error
+	// if the operation failed. It may return both results and an error if there are only partial
+	// failures. One or more Option instances may be passed to modify the
+	// behavior of this GetMultiWithError call.
+	GetMultiWithError(ctx context.Context, keys []string, opts ...Option) (map[string][]byte, error)
 
 	// SetAsync enqueues an operation to store a key into a cache. In case the underlying
 	// operation fails, the error will be tracked/logged.
@@ -41,9 +51,7 @@ type Cache interface {
 	// be returned.
 	Add(ctx context.Context, key string, value []byte, ttl time.Duration) error
 
-	// Delete deletes a key from a cache. This is a synchronous operation. If an asynchronous
-	// set operation for key is still pending to be processed, it will wait for it to complete
-	// before performing deletion.
+	// Delete deletes a key from a cache.
 	Delete(ctx context.Context, key string) error
 
 	// Stop client and release underlying resources.
@@ -84,10 +92,6 @@ type Allocator interface {
 	// not returned to the caller as cache results.
 	Put(b *[]byte)
 }
-
-const (
-	BackendMemcached = "memcached"
-)
 
 type BackendConfig struct {
 	Backend   string                `yaml:"backend"`

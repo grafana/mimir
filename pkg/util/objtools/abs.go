@@ -4,6 +4,7 @@ package objtools
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -15,7 +16,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/sas"
 	"github.com/grafana/dskit/backoff"
-	"github.com/pkg/errors"
 )
 
 type azureBucket struct {
@@ -59,12 +59,12 @@ func (c *AzureClientConfig) ToBucket() (Bucket, error) {
 	serviceURL := fmt.Sprintf("https://%s.blob.core.windows.net/", c.AccountName)
 	keyCred, err := azblob.NewSharedKeyCredential(c.AccountName, c.AccountKey)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get Azure shared key credential")
+		return nil, fmt.Errorf("failed to get Azure shared key credential: %w", err)
 	}
 	containerURL := serviceURL + c.ContainerName
 	containerClient, err := container.NewClientWithSharedKeyCredential(containerURL, keyCred, nil)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to construct azure container client")
+		return nil, fmt.Errorf("failed to construct azure container client: %w", err)
 	}
 	return &azureBucket{
 		containerClient:         *containerClient,
@@ -78,7 +78,7 @@ func (bkt *azureBucket) Get(ctx context.Context, objectName string, options GetO
 	client := bkt.containerClient.NewBlobClient(objectName)
 	client, err := client.WithVersionID(options.VersionID)
 	if err != nil {
-		return nil, errors.Wrap(err, fmt.Sprintf("could not construct a client with the provided version ID: %s", options.VersionID))
+		return nil, fmt.Errorf("could not construct a client with the provided version ID: %s: %w", options.VersionID, err)
 	}
 
 	response, err := client.DownloadStream(ctx, nil)
@@ -92,7 +92,7 @@ func (bkt *azureBucket) ServerSideCopy(ctx context.Context, objectName string, d
 	sourceClient := bkt.containerClient.NewBlobClient(objectName)
 	sourceClient, err := sourceClient.WithVersionID(options.SourceVersionID)
 	if err != nil {
-		return errors.Wrap(err, fmt.Sprintf("could not construct a client with the provided source version ID: %s", options.SourceVersionID))
+		return fmt.Errorf("could not construct a client with the provided source version ID: %s: %w", options.SourceVersionID, err)
 	}
 	d, ok := dstBucket.(*azureBucket)
 	if !ok {
@@ -145,7 +145,7 @@ func (bkt *azureBucket) ServerSideCopy(ctx context.Context, objectName string, d
 			return nil
 		case blob.CopyStatusTypeFailed:
 			if copyStatusDescription != nil {
-				return errors.Errorf("copy failed, description: %s", *copyStatusDescription)
+				return fmt.Errorf("copy failed, description: %s", *copyStatusDescription)
 			}
 			return errors.New("copy failed")
 		case blob.CopyStatusTypeAborted:
@@ -153,7 +153,7 @@ func (bkt *azureBucket) ServerSideCopy(ctx context.Context, objectName string, d
 		case blob.CopyStatusTypePending:
 			// proceed
 		default:
-			return errors.Errorf("unrecognized copy status: %v", *copyStatus)
+			return fmt.Errorf("unrecognized copy status: %v", *copyStatus)
 		}
 
 		if !backoff.Ongoing() {
@@ -167,13 +167,17 @@ func (bkt *azureBucket) ServerSideCopy(ctx context.Context, objectName string, d
 		}
 	}
 
-	return errors.Wrap(backoff.Err(), "waiting for blob copy status")
+	if err = backoff.Err(); err != nil {
+		return fmt.Errorf("failed waiting for blob copy status: %w", err)
+	}
+
+	return nil
 }
 
 func checkCopyStatus(ctx context.Context, client *blob.Client) (*blob.CopyStatusType, *string, error) {
 	response, err := client.GetProperties(ctx, nil)
 	if err != nil {
-		return nil, nil, errors.Wrapf(err, "failed while checking copy status")
+		return nil, nil, fmt.Errorf("failed while checking copy status: %w", err)
 	}
 	return response.CopyStatus, response.CopyStatusDescription, nil
 }
@@ -182,12 +186,12 @@ func (bkt *azureBucket) ClientSideCopy(ctx context.Context, objectName string, d
 	sourceClient := bkt.containerClient.NewBlobClient(objectName)
 	sourceClient, err := sourceClient.WithVersionID(options.SourceVersionID)
 	if err != nil {
-		return errors.Wrap(err, fmt.Sprintf("could not construct a client with the provided source version ID: %s", options.SourceVersionID))
+		return fmt.Errorf("could not construct a client with the provided source version ID: %s: %w", options.SourceVersionID, err)
 	}
 
 	response, err := sourceClient.DownloadStream(ctx, nil)
 	if err != nil {
-		return errors.Wrap(err, "failed while getting source object from Azure")
+		return fmt.Errorf("failed while getting source object from Azure: %w", err)
 	}
 	if response.ContentLength == nil {
 		return errors.New("source object from Azure did not contain a content length")
@@ -195,9 +199,12 @@ func (bkt *azureBucket) ClientSideCopy(ctx context.Context, objectName string, d
 	body := response.Body
 	if err := dstBucket.Upload(ctx, options.destinationObjectName(objectName), body, *response.ContentLength); err != nil {
 		_ = body.Close()
-		return errors.New("failed uploading source object from Azure to destination")
+		return fmt.Errorf("failed uploading source object from Azure to destination: %w", err)
 	}
-	return errors.Wrap(body.Close(), "failed closing Azure source object reader")
+	if err := body.Close(); err != nil {
+		return fmt.Errorf("failed closing Azure source object reader: %w", err)
+	}
+	return nil
 }
 
 func unpackBlobItem(blobItem *container.BlobItem, isVersioned bool) ObjectAttributes {

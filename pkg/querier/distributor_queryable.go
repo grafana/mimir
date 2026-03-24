@@ -34,7 +34,7 @@ import (
 // Distributor is the read interface to the distributor, made an interface here
 // to reduce package coupling.
 type Distributor interface {
-	QueryStream(ctx context.Context, queryMetrics *stats.QueryMetrics, from, to model.Time, matchers ...*labels.Matcher) (client.CombinedQueryStreamResponse, error)
+	QueryStream(ctx context.Context, queryMetrics *stats.QueryMetrics, from, to model.Time, projectionInclude bool, projectionLabels []string, matchers ...*labels.Matcher) (client.CombinedQueryStreamResponse, error)
 	QueryExemplars(ctx context.Context, from, to model.Time, matchers ...[]*labels.Matcher) (*client.ExemplarQueryResponse, error)
 	LabelValuesForLabelName(ctx context.Context, from, to model.Time, label model.LabelName, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error)
 	LabelNames(ctx context.Context, from model.Time, to model.Time, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error)
@@ -122,18 +122,22 @@ func (q *distributorQuerier) Select(ctx context.Context, _ bool, sp *storage.Sel
 		return series.LabelsToSeriesSet(ms)
 	}
 
-	return q.streamingSelect(ctx, minT, maxT, matchers)
-}
-
-func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int64, matchers []*labels.Matcher) storage.SeriesSet {
-	results, err := q.distributor.QueryStream(ctx, q.queryMetrics, model.Time(minT), model.Time(maxT), matchers...)
-	if err != nil {
-		return storage.ErrSeriesSet(err)
+	var (
+		projectionInclude bool
+		projectionLabels  []string
+	)
+	if sp != nil {
+		projectionInclude = sp.ProjectionInclude
+		projectionLabels = sp.ProjectionLabels
 	}
 
-	sets := []storage.SeriesSet(nil)
-	if len(results.Timeseries) > 0 {
-		sets = append(sets, newTimeSeriesSeriesSet(results.Timeseries))
+	return q.streamingSelect(ctx, minT, maxT, projectionInclude, projectionLabels, matchers)
+}
+
+func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int64, projectionInclude bool, projectionLabels []string, matchers []*labels.Matcher) storage.SeriesSet {
+	results, err := q.distributor.QueryStream(ctx, q.queryMetrics, model.Time(minT), model.Time(maxT), projectionInclude, projectionLabels, matchers...)
+	if err != nil {
+		return storage.ErrSeriesSet(err)
 	}
 
 	var chunkInfo *chunkinfologger.ChunkInfoLogger
@@ -141,60 +145,23 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 		traceID, spanID, _ := tracing.ExtractTraceSpanID(ctx)
 		chunkInfo = chunkinfologger.NewChunkInfoLogger("ingester message", traceID, spanID, q.logger, chunkinfologger.ChunkInfoLoggingFromContext(ctx))
 		chunkInfo.LogSelect("ingester", minT, maxT)
+		chunkInfo.SetMsg("ingester streaming")
 	}
 
-	serieses := make([]storage.Series, 0, len(results.Chunkseries))
-	for i, result := range results.Chunkseries {
-		ls := mimirpb.FromLabelAdaptersToLabels(result.Labels)
+	streamingSeries := make([]storage.Series, 0, len(results.StreamingSeries))
+	streamingChunkSeriesConfig := &streamingChunkSeriesContext{
+		queryMetrics: q.queryMetrics,
+		queryStats:   stats.FromContext(ctx),
+	}
 
-		if chunkInfo != nil {
-			chunkInfo.StartSeries(ls)
-			chunkInfo.FormatIngesterChunkInfo(result.FromIngesterId, result.Chunks)
-			chunkInfo.EndSeries(i == len(results.Chunkseries)-1)
-		}
-
-		// Sometimes the ingester can send series that have no data.
-		if len(result.Chunks) == 0 {
-			continue
-		}
-
-		chunks, err := client.FromChunks(ls, result.Chunks)
-		if err != nil {
-			return storage.ErrSeriesSet(err)
-		}
-
-		serieses = append(serieses, &chunkSeries{
-			labels: ls,
-			chunks: chunks,
+	for i, s := range results.StreamingSeries {
+		streamingSeries = append(streamingSeries, &streamingChunkSeries{
+			labels:    s.Labels,
+			sources:   s.Sources,
+			context:   streamingChunkSeriesConfig,
+			lastOne:   i == len(results.StreamingSeries)-1,
+			chunkInfo: chunkInfo,
 		})
-	}
-
-	if len(serieses) > 0 {
-		sets = append(sets, series.NewConcreteSeriesSetFromUnsortedSeries(serieses))
-	}
-
-	if len(results.StreamingSeries) > 0 {
-		streamingSeries := make([]storage.Series, 0, len(results.StreamingSeries))
-		streamingChunkSeriesConfig := &streamingChunkSeriesContext{
-			queryMetrics: q.queryMetrics,
-			queryStats:   stats.FromContext(ctx),
-		}
-
-		if chunkInfo != nil {
-			chunkInfo.SetMsg("ingester streaming")
-		}
-
-		for i, s := range results.StreamingSeries {
-			streamingSeries = append(streamingSeries, &streamingChunkSeries{
-				labels:    s.Labels,
-				sources:   s.Sources,
-				context:   streamingChunkSeriesConfig,
-				lastOne:   i == len(results.StreamingSeries)-1,
-				chunkInfo: chunkInfo,
-			})
-		}
-
-		sets = append(sets, series.NewConcreteSeriesSetFromSortedSeries(streamingSeries))
 	}
 
 	q.streamReadersMtx.Lock()
@@ -212,14 +179,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 	// Store the stream readers so we can free their buffers when we're done using this Querier.
 	q.streamReaders = append(q.streamReaders, results.StreamReaders...)
 
-	if len(sets) == 0 {
-		return storage.EmptySeriesSet()
-	}
-	if len(sets) == 1 {
-		return sets[0]
-	}
-	// Sets need to be sorted. Both series.NewConcreteSeriesSetFromUnsortedSeries and newTimeSeriesSeriesSet take care of that.
-	return storage.NewMergeSeriesSet(sets, 0, storage.ChainedSeriesMerge)
+	return series.NewConcreteSeriesSetFromSortedSeries(streamingSeries)
 }
 
 func (q *distributorQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {

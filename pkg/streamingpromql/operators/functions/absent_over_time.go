@@ -123,12 +123,15 @@ func (a *AbsentOverTime) Prepare(ctx context.Context, params *types.PrepareParam
 	return a.Inner.Prepare(ctx, params)
 }
 
+func (a *AbsentOverTime) AfterPrepare(ctx context.Context) error {
+	return a.Inner.AfterPrepare(ctx)
+}
+
 func (a *AbsentOverTime) Finalize(ctx context.Context) error {
+	types.BoolSlicePool.Put(&a.presence, a.MemoryConsumptionTracker)
 	return a.Inner.Finalize(ctx)
 }
 
 func (a *AbsentOverTime) Close() {
 	a.Inner.Close()
-
-	types.BoolSlicePool.Put(&a.presence, a.MemoryConsumptionTracker)
 }

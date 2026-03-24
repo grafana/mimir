@@ -8,8 +8,6 @@ title: Grafana Mimir production tips
 weight: 40
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
-
 # Grafana Mimir production tips
 
 This topic provides tips and techniques for you to consider when setting up a production Grafana Mimir cluster.
@@ -219,4 +217,3 @@ Depending on the workload, you might witness latency spikes when Mimir cuts bloc
 To reduce the impact of this behavior, consider the following:
 
 - Upgrade to `2.15+`. Refer to <https://github.com/grafana/mimir/commit/03f2f06e1247e997a0246d72f5c2c1fd9bd386df>.
-- Reduce `-blocks-storage.tsdb.block-ranges-period`, default `2h`. For example. try `1h`.

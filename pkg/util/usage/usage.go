@@ -181,6 +181,10 @@ func ignoreStructType(fieldType reflect.Type) bool {
 	return false
 }
 
+type FlagTyper interface {
+	FlagType() string
+}
+
 func getFlagName(fl *flag.Flag) string {
 	if getter, ok := fl.Value.(flag.Getter); ok {
 		if v := reflect.ValueOf(getter.Get()); v.IsValid() {
@@ -198,12 +202,17 @@ func getFlagName(fl *flag.Flag) string {
 				return "string"
 			case "uint", "uint64":
 				return "uint"
-			case "Secret":
-				return "string"
 			default:
+				if typer, ok := v.Interface().(FlagTyper); ok {
+					return typer.FlagType()
+				}
 				return "value"
 			}
 		}
+	}
+
+	if typer, ok := fl.Value.(FlagTyper); ok {
+		return typer.FlagType()
 	}
 
 	// Check custom types.

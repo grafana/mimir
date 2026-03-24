@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 var testCasesPropagateMatchers = map[string]string{
@@ -128,16 +129,15 @@ var testCasesPropagateMatchers = map[string]string{
 }
 
 func TestPropagateMatchers(t *testing.T) {
-	enableExperimentalFunctionsIfNeeded(t)
 	ctx := context.Background()
 
 	for input, expected := range testCasesPropagateMatchers {
 		t.Run(input, func(t *testing.T) {
 			// We parse the expressions and compare them as strings below so we don't have to worry about formatting in the test cases.
-			expectedExpr, err := parser.ParseExpr(expected)
+			expectedExpr, err := promqlext.NewPromQLParser().ParseExpr(expected)
 			require.NoError(t, err)
 
-			inputExpr, err := parser.ParseExpr(input)
+			inputExpr, err := promqlext.NewPromQLParser().ParseExpr(input)
 			require.NoError(t, err)
 			inputExpr, err = preprocessQuery(t, inputExpr)
 			require.NoError(t, err)
@@ -153,7 +153,6 @@ func TestPropagateMatchers(t *testing.T) {
 }
 
 func TestPropagateMatchersWithData(t *testing.T) {
-	enableExperimentalFunctionsIfNeeded(t)
 	testASTOptimizationPassWithData(t, `
 		load 1m
 			up{foo="bar",baz="fob",boo="far",faf="bob"} 0+1x<num samples>
@@ -183,12 +182,4 @@ func TestFunctionsForVectorSelectorArgumentIndex(t *testing.T) {
 			require.Contains(t, allowedValueTypes, f.ReturnType)
 		})
 	}
-}
-
-func enableExperimentalFunctionsIfNeeded(t *testing.T) {
-	if parser.EnableExperimentalFunctions {
-		return
-	}
-	t.Cleanup(func() { parser.EnableExperimentalFunctions = false })
-	parser.EnableExperimentalFunctions = true
 }

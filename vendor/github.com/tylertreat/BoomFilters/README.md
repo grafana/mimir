@@ -1,5 +1,5 @@
 # Boom Filters
-[![Build Status](https://travis-ci.org/tylertreat/BoomFilters.svg?branch=master)](https://travis-ci.org/tylertreat/BoomFilters) [![GoDoc](https://godoc.org/github.com/tylertreat/BoomFilters?status.png)](https://godoc.org/github.com/tylertreat/BoomFilters)
+[![GoDoc](https://godoc.org/github.com/tylertreat/BoomFilters?status.png)](https://godoc.org/github.com/tylertreat/BoomFilters)
 
 **Boom Filters** are probabilistic data structures for [processing continuous, unbounded streams](http://www.bravenewgeek.com/stream-processing-and-probabilistic-methods/). This includes **Stable Bloom Filters**, **Scalable Bloom Filters**, **Counting Bloom Filters**, **Inverse Bloom Filters**, **Cuckoo Filters**, several variants of **traditional Bloom filters**, **HyperLogLog**, **Count-Min Sketch**, and **MinHash**.
 

@@ -21,8 +21,26 @@ type MatrixSelector struct {
 	*MatrixSelectorDetails
 }
 
+func (m *MatrixSelector) IsSplittable() bool {
+	// TODO: it should be possible to add support for smoothed and anchored, but that will be left for later
+	return !m.Smoothed && !m.Anchored
+}
+
+var _ planning.SplitNode = &MatrixSelector{}
+
 func (m *MatrixSelector) Describe() string {
-	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range, m.SkipHistogramBuckets)
+	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range, m.SkipHistogramBuckets, m.Anchored, m.Smoothed, m.CounterAware, m.ProjectionLabels, m.ProjectionInclude)
+}
+
+// RangeVectorSplittingCacheKey returns the cache key for the matrix selector.
+// The range is not part of the cache key as range vector splitting means that matrix selectors which only differ by
+// the range can share cache entries.
+// The offset and @ modifiers are not part of the cache key as they are adjusted for when calculating split ranges.
+// TODO: when subquery splitting is supported, the logic will have to change - if the matrix selector is not the root
+// inner node, the range plus the offset and @ modifiers will have to be retained.
+// TODO: investigate codegen to keep the cache key up to date when new fields are added to the node.
+func (m *MatrixSelector) SplittingCacheKey() string {
+	return describeSelector(m.Matchers, nil, 0, nil, m.SkipHistogramBuckets, m.Anchored, m.Smoothed, m.CounterAware, m.ProjectionLabels, m.ProjectionInclude)
 }
 
 func (m *MatrixSelector) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -37,8 +55,12 @@ func (m *MatrixSelector) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_MATRIX_SELECTOR
 }
 
-func (m *MatrixSelector) Children() []planning.Node {
-	return nil
+func (m *MatrixSelector) Child(idx int) planning.Node {
+	panic(fmt.Sprintf("node of type MatrixSelector has no children, but attempted to get child at index %d", idx))
+}
+
+func (m *MatrixSelector) ChildCount() int {
+	return 0
 }
 
 func (m *MatrixSelector) SetChildren(children []planning.Node) error {
@@ -49,36 +71,92 @@ func (m *MatrixSelector) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (m *MatrixSelector) EquivalentTo(other planning.Node) bool {
+func (m *MatrixSelector) ReplaceChild(idx int, node planning.Node) error {
+	return fmt.Errorf("node of type MatrixSelector supports no children, but attempted to replace child at index %d", idx)
+}
+
+func (m *MatrixSelector) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherMatrixSelector, ok := other.(*MatrixSelector)
 
 	return ok &&
 		slices.EqualFunc(m.Matchers, otherMatrixSelector.Matchers, matchersEqual) &&
+		m.EquivalentToIgnoringMatchersAndHints(otherMatrixSelector)
+}
+
+func (m *MatrixSelector) EquivalentToIgnoringMatchersAndHints(other planning.Node) bool {
+	otherMatrixSelector, ok := other.(*MatrixSelector)
+
+	return ok &&
 		((m.Timestamp == nil && otherMatrixSelector.Timestamp == nil) || (m.Timestamp != nil && otherMatrixSelector.Timestamp != nil && m.Timestamp.Equal(*otherMatrixSelector.Timestamp))) &&
 		m.Offset == otherMatrixSelector.Offset &&
 		m.Range == otherMatrixSelector.Range &&
-		m.SkipHistogramBuckets == otherMatrixSelector.SkipHistogramBuckets
+		m.Anchored == otherMatrixSelector.Anchored &&
+		m.Smoothed == otherMatrixSelector.Smoothed &&
+		m.CounterAware == otherMatrixSelector.CounterAware
+}
+
+func (m *MatrixSelector) GetMatchers() []*LabelMatcher {
+	return m.Matchers
+}
+
+func (m *MatrixSelector) MergeHints(other planning.Node) error {
+	otherMatrixSelector, ok := other.(*MatrixSelector)
+	if !ok {
+		return fmt.Errorf("cannot merge hints from %T into %T", other, m)
+	}
+
+	m.SkipHistogramBuckets = m.SkipHistogramBuckets && otherMatrixSelector.SkipHistogramBuckets
+	m.ProjectionInclude, m.ProjectionLabels = mergeProjectionLabels(
+		m.ProjectionInclude,
+		m.ProjectionLabels,
+		otherMatrixSelector.ProjectionInclude,
+		otherMatrixSelector.ProjectionLabels,
+	)
+
+	return nil
 }
 
 func (m *MatrixSelector) ChildrenLabels() []string {
 	return nil
 }
 
-func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams planning.RangeParams) (planning.OperatorFactory, error) {
+	selectorRange := m.Range
+	selectorTs := m.Timestamp
+	selectorOffset := m.Offset.Milliseconds()
+	if overrideTimeParams.IsSet {
+		selectorRange = overrideTimeParams.Range
+		if overrideTimeParams.HasTimestamp {
+			selectorTs = &overrideTimeParams.Timestamp
+		} else {
+			selectorTs = nil
+		}
+		selectorOffset = overrideTimeParams.Offset.Milliseconds()
+	}
+
 	selector := &selectors.Selector{
 		Queryable:                params.Queryable,
 		TimeRange:                timeRange,
-		Timestamp:                TimestampFromTime(m.Timestamp),
-		Offset:                   m.Offset.Milliseconds(),
-		Range:                    m.Range,
+		Range:                    selectorRange,
+		Timestamp:                TimestampFromTime(selectorTs),
+		Offset:                   selectorOffset,
 		Matchers:                 LabelMatchersToOperatorType(m.Matchers),
 		EagerLoad:                params.EagerLoadSelectors,
 		SkipHistogramBuckets:     m.SkipHistogramBuckets,
-		ExpressionPosition:       m.ExpressionPosition(),
+		ExpressionPosition:       m.GetExpressionPosition().ToPrometheusType(),
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
+		Anchored:                 m.Anchored,
+		Smoothed:                 m.Smoothed,
+		CounterAware:             m.CounterAware,
+		ProjectionInclude:        m.ProjectionInclude,
+		ProjectionLabels:         m.ProjectionLabels,
 	}
 
-	o := selectors.NewRangeVectorSelector(selector, params.MemoryConsumptionTracker)
+	if m.Anchored || m.Smoothed {
+		selector.LookbackDelta = params.QueryParameters.LookbackDelta
+	}
+
+	o := selectors.NewRangeVectorSelector(selector, params.MemoryConsumptionTracker, params.QueryStats)
 
 	return planning.NewSingleUseOperatorFactory(o), nil
 }
@@ -87,13 +165,39 @@ func (m *MatrixSelector) ResultType() (parser.ValueType, error) {
 	return parser.ValueTypeMatrix, nil
 }
 
-func (m *MatrixSelector) QueriedTimeRange(queryTimeRange types.QueryTimeRange, _ time.Duration) planning.QueriedTimeRange {
-	// Matrix selectors do not use the lookback delta, so we don't pass it below.
-	minT, maxT := selectors.ComputeQueriedTimeRange(queryTimeRange, TimestampFromTime(m.Timestamp), m.Range, m.Offset.Milliseconds(), 0)
-
-	return planning.NewQueriedTimeRange(timestamp.Time(minT), timestamp.Time(maxT))
+func (m *MatrixSelector) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookback time.Duration) (planning.QueriedTimeRange, error) {
+	if !m.Anchored && !m.Smoothed {
+		// Normal matrix selectors do not use the lookback delta, so we don't pass it below.
+		lookback = 0
+	}
+	minT, maxT := selectors.ComputeQueriedTimeRange(queryTimeRange, TimestampFromTime(m.Timestamp), m.Range, m.Offset.Milliseconds(), lookback, m.Anchored, m.Smoothed)
+	return planning.NewQueriedTimeRange(timestamp.Time(minT), timestamp.Time(maxT)), nil
 }
 
-func (m *MatrixSelector) ExpressionPosition() posrange.PositionRange {
-	return m.GetExpressionPosition().ToPrometheusType()
+func (m *MatrixSelector) ExpressionPosition() (posrange.PositionRange, error) {
+	return m.GetExpressionPosition().ToPrometheusType(), nil
+}
+
+func (m *MatrixSelector) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+	if m.Anchored || m.Smoothed {
+		return planning.QueryPlanV4
+	}
+	return planning.QueryPlanVersionZero
+}
+
+func (m *MatrixSelector) GetRange() time.Duration {
+	return m.Range
+}
+
+func (m *MatrixSelector) GetRangeParams() planning.RangeParams {
+	params := planning.RangeParams{
+		IsSet:  true,
+		Range:  m.Range,
+		Offset: m.Offset,
+	}
+	if m.Timestamp != nil {
+		params.HasTimestamp = true
+		params.Timestamp = *m.Timestamp
+	}
+	return params
 }

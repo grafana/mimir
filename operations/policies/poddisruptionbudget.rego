@@ -23,7 +23,7 @@ should_have_poddisruptionbudget(obj) {
 }
 
 any_pdb_selects_object(obj) {
-	input[pdb_object_index].contents.kind == "PodDisruptionBudget"
+	input[pdb_object_index].contents.kind in {"PodDisruptionBudget", "ZoneAwarePodDisruptionBudget"}
 	pdb := input[pdb_object_index].contents
 
 	every matcher in pdb.spec.selector.matchLabels {

@@ -13,6 +13,7 @@ metadata:
     {}
   namespace: "citestns"
 spec:
+  podManagementPolicy: Parallel
   replicas: 1
   selector:
     matchLabels:
@@ -23,11 +24,13 @@ spec:
   template:
     metadata:
       labels:
+        foo: bar
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: kafka
       annotations:
+        baz: qux
       namespace: "citestns"
     spec:
       serviceAccountName: test-oss-topology-spread-constraints-values-mimir
@@ -41,7 +44,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: kafka
-          image: "apache/kafka-native:4.1.0"
+          image: docker.io/apache/kafka-native:4.1.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 9092

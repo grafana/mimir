@@ -2,8 +2,12 @@ package util
 
 import (
 	"math"
+	"time"
 )
 
+// RollingSum maintains a sum over a rolling window.
+//
+// This type is not concurrency safe.
 type RollingSum struct {
 	// For variation and covariance
 	samples []float64
@@ -76,6 +80,9 @@ func (r *RollingSum) Reset() {
 	r.sumSquares = 0
 }
 
+// CorrelationWindow maintains the correlation between two rolling windows.
+//
+// This type is not concurrency safe.
 type CorrelationWindow struct {
 	warmupSamples uint8
 
@@ -143,7 +150,68 @@ func (w *CorrelationWindow) Reset() {
 	w.corrSumXY = 0
 }
 
+// MaxWindow maintains the maximum value over a sliding time window using a monotonic deque.
+// This provides O(1) amortized insertion and O(1) max retrieval.
+//
+// This type is not concurrency safe.
+type MaxWindow struct {
+	window time.Duration
+	deque  []maxWindowEntry
+}
+
+type maxWindowEntry struct {
+	value     int
+	timestamp time.Time
+}
+
+func NewMaxWindow(window time.Duration) MaxWindow {
+	return MaxWindow{window: window}
+}
+
+// Configured returns true if the MaxWindow has a non-zero window duration.
+func (w *MaxWindow) Configured() bool {
+	return w.window > 0
+}
+
+// Add adds a value to the window and returns the current maximum.
+func (w *MaxWindow) Add(value int, now time.Time) int {
+	// Remove expired entries from front
+	cutoff := now.Add(-w.window)
+	start := 0
+	for start < len(w.deque) && !w.deque[start].timestamp.After(cutoff) {
+		start++
+	}
+	w.deque = w.deque[start:]
+
+	// Remove entries from back that are <= the new value
+	for len(w.deque) > 0 && w.deque[len(w.deque)-1].value <= value {
+		w.deque = w.deque[:len(w.deque)-1]
+	}
+
+	// Add new entry
+	w.deque = append(w.deque, maxWindowEntry{value: value, timestamp: now})
+	return w.Value()
+}
+
+// Value gets the current value of the moving average.
+func (w *MaxWindow) Value() int {
+	if !w.Configured() {
+		return 0
+	}
+	return w.deque[0].value
+}
+
+// Reset resets the window to its initial state.
+func (w *MaxWindow) Reset() {
+	if w.Configured() {
+		w.deque = w.deque[:0]
+	}
+}
+
 // BucketedWindow is a time based bucketed sliding window.
+// T is the bucket type.
+//
+// This type is not concurrency safe.
 type BucketedWindow[T any] struct {
 	Clock
 	BucketCount int64
@@ -161,7 +229,7 @@ type BucketedWindow[T any] struct {
 	HeadTime int64
 }
 
-// ExpireBuckets resets any old Buckets and returns the current bucket, sliding the window as needed.
+// ExpireBuckets resets any old buckets and returns the current bucket, sliding the window as needed.
 func (w *BucketedWindow[T]) ExpireBuckets() *T {
 	newHead := w.Clock.Now().UnixNano() / w.BucketNanos
 

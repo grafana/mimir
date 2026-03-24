@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//go:build requires_docker
 
 package integration
 
@@ -805,8 +804,9 @@ func TestInvalidClusterValidationLabel(t *testing.T) {
 	}
 	metadata := []mimirpb.MetricMetadata{
 		{
-			Help: "foo",
-			Unit: "By",
+			MetricFamilyName: "not_foobar",
+			Help:             "foo",
+			Unit:             "By",
 		},
 	}
 

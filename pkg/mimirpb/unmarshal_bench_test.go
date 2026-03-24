@@ -10,7 +10,7 @@ import (
 	promlabels "github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 
-	rw2util "github.com/grafana/mimir/pkg/util/test"
+	"github.com/grafana/mimir/pkg/util/rw2util"
 )
 
 // Measure unmarshal performance between Remote Write 1.0 and 2.0.

@@ -50,6 +50,8 @@ enum AggregationOperation {
   AGGREGATION_BOTTOMK = 10;
   AGGREGATION_COUNT_VALUES = 11;
   AGGREGATION_QUANTILE = 12;
+  AGGREGATION_LIMITK = 13;
+  AGGREGATION_LIMIT_RATIO = 14;
 }
 
 message BinaryExpressionDetails {
@@ -90,6 +92,7 @@ message VectorMatching {
   repeated string matchingLabels = 2;
   bool on = 3;
   repeated string include = 4;
+  VectorMatchFillValues fillValues = 5 [(gogoproto.nullable) = false];
 }
 
 message FunctionCallDetails {
@@ -139,6 +142,10 @@ message VectorSelectorDetails {
   PositionRange expressionPosition = 4 [(gogoproto.nullable) = false];
   bool returnSampleTimestamps = 5;
   bool skipHistogramBuckets = 6;
+  bool smoothed = 7;
+  bool projectionInclude = 8;
+  repeated string projectionLabels = 9;
+  bool returnSampleTimestampsPreserveHistograms = 10;
 }
 
 message MatrixSelectorDetails {
@@ -154,6 +161,11 @@ message MatrixSelectorDetails {
   ];
   PositionRange expressionPosition = 5 [(gogoproto.nullable) = false];
   bool skipHistogramBuckets = 6;
+  bool smoothed = 7;
+  bool anchored = 8;
+  bool counterAware = 9;
+  bool projectionInclude = 10;
+  repeated string projectionLabels = 11;
 }
 
 message SubqueryDetails {
@@ -173,6 +185,8 @@ message SubqueryDetails {
   PositionRange expressionPosition = 5 [(gogoproto.nullable) = false];
 }
 
+message StepInvariantExpressionDetails {}
+
 message LabelMatcher {
   int64 type = 1 [(gogoproto.casttype) = "github.com/prometheus/prometheus/model/labels.MatchType"];
   string name = 2;
@@ -180,5 +194,15 @@ message LabelMatcher {
 }
 
 message DeduplicateAndMergeDetails {
-  bool runDelayedNameRemoval = 1;
+  reserved 1;
+  reserved "runDelayedNameRemoval";
+}
+
+message DropNameDetails {}
+
+message VectorMatchFillValues {
+  double rhs = 1;
+  double lhs = 2;
+  bool rhsSet = 3;
+  bool lhsSet = 4;
 }

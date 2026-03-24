@@ -8,6 +8,7 @@ package bucketclient
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -16,7 +17,6 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/runutil"
-	"github.com/pkg/errors"
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
@@ -46,7 +46,6 @@ const (
 	fetchConcurrency = 16
 
 	grafanaConfigName = "grafana_config"
-	grafanaStateName  = "grafana_fullstate"
 )
 
 // BucketAlertStore is used to support the AlertStore interface against an object storage backend. It is implemented
@@ -117,7 +116,7 @@ func (s *BucketAlertStore) GetAlertConfigs(ctx context.Context, userIDs []string
 		if s.alertsBucket.IsObjNotFoundErr(err) {
 			return nil
 		} else if err != nil {
-			return errors.Wrapf(err, "failed to fetch alertmanager config for user %s", userID)
+			return fmt.Errorf("failed to fetch alertmanager config for user %s: %w", userID, err)
 		}
 		cfg.Mimir = mimirCfg
 
@@ -125,7 +124,7 @@ func (s *BucketAlertStore) GetAlertConfigs(ctx context.Context, userIDs []string
 			grafanaCfg, err := s.getGrafanaAlertConfig(ctx, userID)
 			// Users not having a Grafana alerting configuration is expected.
 			if err != nil && !s.alertsBucket.IsObjNotFoundErr(err) {
-				return errors.Wrapf(err, "failed to fetch grafana alertmanager config for user %s", userID)
+				return fmt.Errorf("failed to fetch grafana alertmanager config for user %s: %w", userID, err)
 			}
 			cfg.Grafana = grafanaCfg
 		}
@@ -247,40 +246,6 @@ func (s *BucketAlertStore) DeleteFullState(ctx context.Context, userID string) e
 	return err
 }
 
-func (s *BucketAlertStore) GetFullGrafanaState(ctx context.Context, userID string) (alertspb.FullStateDesc, error) {
-	bkt := s.getGrafanaAlertmanagerUserBucket(userID)
-	fs := alertspb.FullStateDesc{}
-
-	err := s.get(ctx, bkt, grafanaStateName, &fs)
-	if s.grafanaAMBucket.IsObjNotFoundErr(err) {
-		return fs, alertspb.ErrNotFound
-	}
-
-	return fs, err
-}
-
-func (s *BucketAlertStore) SetFullGrafanaState(ctx context.Context, userID string, fs alertspb.FullStateDesc) error {
-	bkt := s.getGrafanaAlertmanagerUserBucket(userID)
-
-	fsBytes, err := fs.Marshal()
-	if err != nil {
-		return err
-	}
-
-	return bkt.Upload(ctx, grafanaStateName, bytes.NewReader(fsBytes))
-}
-
-func (s *BucketAlertStore) DeleteFullGrafanaState(ctx context.Context, userID string) error {
-	bkt := s.getGrafanaAlertmanagerUserBucket(userID)
-
-	err := bkt.Delete(ctx, grafanaStateName)
-	if bkt.IsObjNotFoundErr(err) {
-		return nil
-	}
-
-	return err
-}
-
 func (s *BucketAlertStore) getAlertConfig(ctx context.Context, userID string) (alertspb.AlertConfigDesc, error) {
 	config := alertspb.AlertConfigDesc{}
 	err := s.get(ctx, s.getUserBucket(userID), userID, &config)
@@ -303,12 +268,12 @@ func (s *BucketAlertStore) get(ctx context.Context, bkt objstore.Bucket, name st
 
 	buf, err := io.ReadAll(readCloser)
 	if err != nil {
-		return errors.Wrapf(err, "failed to read alertmanager config for user %s", name)
+		return fmt.Errorf("failed to read alertmanager config for user %s: %w", name, err)
 	}
 
 	err = proto.Unmarshal(buf, msg)
 	if err != nil {
-		return errors.Wrapf(err, "failed to deserialize alertmanager config for user %s", name)
+		return fmt.Errorf("failed to deserialize alertmanager config for user %s: %w", name, err)
 	}
 
 	return nil

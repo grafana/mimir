@@ -36,7 +36,6 @@ import (
 	"encoding/binary"
 	"encoding/gob"
 	"hash"
-	"hash/fnv"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -68,7 +67,7 @@ type InverseBloomFilter struct {
 func NewInverseBloomFilter(capacity uint) *InverseBloomFilter {
 	return &InverseBloomFilter{
 		array:    make([]*[]byte, capacity),
-		hashPool: &sync.Pool{New: func() interface{} { return fnv.New32() }},
+		hashPool: nil,
 		capacity: capacity,
 	}
 }
@@ -129,11 +128,15 @@ func (i *InverseBloomFilter) getAndSet(index uint32, data []byte) []byte {
 
 // index returns the array index for the given data.
 func (i *InverseBloomFilter) index(data []byte) uint32 {
-	hash := i.hashPool.Get().(hash.Hash32)
-	hash.Write(data)
-	index := hash.Sum32() % uint32(i.capacity)
-	hash.Reset()
-	i.hashPool.Put(hash)
+	var sum uint32
+	if i.hashPool == nil {
+		sum = hash32DefaultFnv(data, nil)
+	} else {
+		hash := i.hashPool.Get().(hash.Hash32)
+		sum = hash32DefaultFnv(data, hash)
+		i.hashPool.Put(hash)
+	}
+	index := sum % uint32(i.capacity)
 	return index
 }
 

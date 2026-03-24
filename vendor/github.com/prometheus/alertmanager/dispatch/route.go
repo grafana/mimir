@@ -135,7 +135,7 @@ func NewRoute(cr *config.Route, parent *Route) *Route {
 
 // NewRoutes returns a slice of routes.
 func NewRoutes(croutes []*config.Route, parent *Route) []*Route {
-	res := []*Route{}
+	res := make([]*Route, 0, len(croutes))
 	for _, cr := range croutes {
 		res = append(res, NewRoute(cr, parent))
 	}

@@ -11,6 +11,16 @@ type Policy[R any] interface {
 	ToExecutor(typeToken R) any
 }
 
+// ResultAgnosticPolicy is a marker interface for policies that do not modify or return alternate results. Such policies
+// can be composed with any as the result type along with policies that have more specific result types.
+type ResultAgnosticPolicy[R any] interface {
+	Policy[R]
+
+	// ResultAgnostic is a marker method that indicates the policy does not provide or modify results, and can therefore be
+	// used with any result type when composing policies.
+	ResultAgnostic()
+}
+
 /*
 FailurePolicyBuilder builds a Policy that allows configurable conditions to determine whether an execution is a failure.
   - By default, any error is considered a failure and will be handled by the policy. You can override this by specifying

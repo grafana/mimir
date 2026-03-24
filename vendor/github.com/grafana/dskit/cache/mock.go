@@ -14,6 +14,7 @@ import (
 var (
 	_ Cache = (*MockCache)(nil)
 	_ Cache = (*InstrumentedMockCache)(nil)
+	_ Cache = (*ErroringMockCache)(nil)
 )
 
 type MockCache struct {
@@ -63,7 +64,12 @@ func (m *MockCache) Add(_ context.Context, key string, value []byte, ttl time.Du
 	return nil
 }
 
-func (m *MockCache) GetMulti(_ context.Context, keys []string, _ ...Option) map[string][]byte {
+func (m *MockCache) GetMulti(ctx context.Context, keys []string, opts ...Option) map[string][]byte {
+	result, _ := m.GetMultiWithError(ctx, keys, opts...)
+	return result
+}
+
+func (m *MockCache) GetMultiWithError(_ context.Context, keys []string, _ ...Option) (map[string][]byte, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -77,7 +83,7 @@ func (m *MockCache) GetMulti(_ context.Context, keys []string, _ ...Option) map[
 		}
 	}
 
-	return found
+	return found, nil
 }
 
 func (m *MockCache) GetItems() map[string]Item {
@@ -165,6 +171,11 @@ func (m *InstrumentedMockCache) GetMulti(ctx context.Context, keys []string, opt
 	return m.cache.GetMulti(ctx, keys, opts...)
 }
 
+func (m *InstrumentedMockCache) GetMultiWithError(ctx context.Context, keys []string, opts ...Option) (map[string][]byte, error) {
+	m.fetchCount.Inc()
+	return m.cache.GetMultiWithError(ctx, keys, opts...)
+}
+
 func (m *InstrumentedMockCache) Name() string {
 	return m.cache.Name()
 }
@@ -202,4 +213,29 @@ func (m *InstrumentedMockCache) CountFetchCalls() int {
 
 func (m *InstrumentedMockCache) CountDeleteCalls() int {
 	return int(m.deleteCount.Load())
+}
+
+// ErroringMockCache is a mock cache that can be configured to return errors
+// from GetMultiWithError. Useful for testing error propagation through cache wrappers.
+type ErroringMockCache struct {
+	*MockCache
+	GetMultiErr error
+}
+
+// NewErroringMockCache creates a new ErroringMockCache with the given error.
+func NewErroringMockCache(err error) *ErroringMockCache {
+	return &ErroringMockCache{
+		MockCache:   NewMockCache(),
+		GetMultiErr: err,
+	}
+}
+
+func (m *ErroringMockCache) GetMulti(ctx context.Context, keys []string, opts ...Option) map[string][]byte {
+	result, _ := m.GetMultiWithError(ctx, keys, opts...)
+	return result
+}
+
+func (m *ErroringMockCache) GetMultiWithError(ctx context.Context, keys []string, opts ...Option) (map[string][]byte, error) {
+	result, _ := m.MockCache.GetMultiWithError(ctx, keys, opts...)
+	return result, m.GetMultiErr
 }

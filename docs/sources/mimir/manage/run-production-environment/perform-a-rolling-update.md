@@ -9,8 +9,6 @@ title: Perform a rolling update to Grafana Mimir
 weight: 20
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
-
 # Perform a rolling update to Grafana Mimir
 
 You can use a rolling update strategy to apply configuration changes to
@@ -57,16 +55,12 @@ If you enabled [zone-aware replication](../../../configure/configure-zone-aware-
 ### Ingesters
 
 [Ingesters](../../../references/architecture/components/ingester/) store recently received samples in memory.
-When an ingester restarts, the samples stored in the restarting ingester are not available for querying until the ingester runs again.
+When an ingester restarts, the samples stored in the restarting ingester are not available for querying until the ingester is running again.
 
-By default, ingesters run with a replication factor equal to `3`.
-Ingesters running with the replication factor of `3` require a quorum of two instances to successfully query any series samples.
-Because series are sharded across all ingesters, Grafana Mimir tolerates up to one unavailable ingester.
-
-To ensure no query fails during a rolling update, roll out changes to one ingester at a time.
+To ensure no query fails during a rolling update, roll out changes to one ingester at a time. This ensures at least one ingester per partition remains available when using the ingest storage architecture, and a majority of ingesters remains available when using the classic architecture.
 
 {{< admonition type="note" >}}
-If you enabled [zone-aware replication](../../../configure/configure-zone-aware-replication/) for ingesters, you can roll out changes to all ingesters in one zone at the same time.
+If you enabled [zone-aware replication](../../../configure/configure-zone-aware-replication/) for ingesters, you can roll out changes to all ingesters in one zone at the same time with either the ingest storage or classic architectures.
 {{< /admonition >}}
 
 ### Store-gateways

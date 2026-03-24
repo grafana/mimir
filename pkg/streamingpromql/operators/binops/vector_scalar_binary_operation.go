@@ -69,7 +69,7 @@ func NewVectorScalarBinaryOperation(
 		Op:                       op,
 		ReturnBool:               returnBool,
 		MemoryConsumptionTracker: opParams.MemoryConsumptionTracker,
-		EnableDelayedNameRemoval: opParams.EnableDelayedNameRemoval,
+		EnableDelayedNameRemoval: opParams.QueryParameters.EnableDelayedNameRemoval,
 
 		timeRange:          timeRange,
 		annotations:        opParams.Annotations,
@@ -78,18 +78,18 @@ func NewVectorScalarBinaryOperation(
 
 	if !b.ScalarIsLeftSide {
 		b.opFunc = func(scalar float64, vectorF float64, vectorH *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, bool, error) {
-			return f(vectorF, scalar, vectorH, nil, true, true)
+			return f(vectorF, scalar, vectorH, nil, true, true, b.emitAnnotation)
 		}
 	} else if op.IsComparisonOperator() && !returnBool {
 		b.opFunc = func(scalar float64, vectorF float64, vectorH *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, bool, error) {
-			_, _, keep, valid, err := f(scalar, vectorF, nil, vectorH, true, true)
+			_, _, keep, valid, err := f(scalar, vectorF, nil, vectorH, true, true, b.emitAnnotation)
 
 			// We always want to return the value from the vector when we're doing a filter-style comparison.
 			return vectorF, vectorH, keep, valid, err
 		}
 	} else {
 		b.opFunc = func(scalar float64, vectorF float64, vectorH *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, bool, error) {
-			return f(scalar, vectorF, nil, vectorH, true, true)
+			return f(scalar, vectorF, nil, vectorH, true, true, b.emitAnnotation)
 		}
 	}
 
@@ -259,7 +259,17 @@ func (v *VectorScalarBinaryOperation) Prepare(ctx context.Context, params *types
 	return v.Vector.Prepare(ctx, params)
 }
 
+func (v *VectorScalarBinaryOperation) AfterPrepare(ctx context.Context) error {
+	if err := v.Scalar.AfterPrepare(ctx); err != nil {
+		return err
+	}
+
+	return v.Vector.AfterPrepare(ctx)
+}
+
 func (v *VectorScalarBinaryOperation) Finalize(ctx context.Context) error {
+	types.FPointSlicePool.Put(&v.scalarData.Samples, v.MemoryConsumptionTracker)
+
 	if err := v.Scalar.Finalize(ctx); err != nil {
 		return err
 	}
@@ -270,8 +280,6 @@ func (v *VectorScalarBinaryOperation) Finalize(ctx context.Context) error {
 func (v *VectorScalarBinaryOperation) Close() {
 	v.Scalar.Close()
 	v.Vector.Close()
-
-	types.FPointSlicePool.Put(&v.scalarData.Samples, v.MemoryConsumptionTracker)
 }
 
 func (v *VectorScalarBinaryOperation) emitAnnotation(generator types.AnnotationGenerator) {

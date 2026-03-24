@@ -32,8 +32,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
@@ -47,17 +45,18 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/indexheader"
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
+	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
+	"github.com/grafana/mimir/pkg/storage/tsdb/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
-	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
-	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -67,11 +66,15 @@ const (
 	labelDecode = "decode"
 
 	targetQueryStreamBatchMessageSize = 1 * 1024 * 1024
+	fallbackStreamingBatchSize        = 256
 )
 
 type BucketStoreStats struct {
 	// BlocksLoadedTotal is the total number of blocks currently loaded in the bucket store.
 	BlocksLoadedTotal int
+	// BlocksLoadedSizeBytes is the total size in bytes of loaded blocks on local disk.
+	// This includes index-header and sparse-index-header files, but not the actual block data in the object storage.
+	BlocksLoadedSizeBytes int64
 }
 
 // BucketStore implements the store API backed by a bucket. It loads all index
@@ -87,6 +90,7 @@ type BucketStore struct {
 	logger          log.Logger
 	metrics         *BucketStoreMetrics
 	bkt             objstore.InstrumentedBucketReader
+	bucketIndexMeta BucketIndexMetadataReader
 	fetcher         block.MetadataFetcher
 	dir             string
 	indexCache      indexcache.IndexCache
@@ -202,6 +206,7 @@ func WithLazyLoadingGate(lazyLoadingGate gate.Gate) BucketStoreOption {
 func NewBucketStore(
 	userID string,
 	bkt objstore.InstrumentedBucketReader,
+	bucketIndexMeta BucketIndexMetadataReader,
 	fetcher block.MetadataFetcher,
 	dir string,
 	bucketStoreConfig tsdb.BucketStoreConfig,
@@ -216,6 +221,7 @@ func NewBucketStore(
 	s := &BucketStore{
 		logger:                      log.NewNopLogger(),
 		bkt:                         bkt,
+		bucketIndexMeta:             bucketIndexMeta,
 		fetcher:                     fetcher,
 		dir:                         dir,
 		indexCache:                  noopCache{},
@@ -241,7 +247,7 @@ func NewBucketStore(
 
 	s.indexReaderPool = indexheader.NewReaderPool(s.logger, bucketStoreConfig.IndexHeader, s.lazyLoadingGate, metrics.indexHeaderReaderMetrics)
 
-	if bucketStoreConfig.IndexHeader.EagerLoadingStartupEnabled {
+	if bucketStoreConfig.IndexHeader.LazyLoadingEnabled {
 		snapConfig := indexheader.SnapshotterConfig{
 			Path:            dir,
 			UserID:          userID,
@@ -292,7 +298,8 @@ func (s *BucketStore) RemoveBlocksAndClose() error {
 // Stats returns statistics about the BucketStore instance.
 func (s *BucketStore) Stats() BucketStoreStats {
 	return BucketStoreStats{
-		BlocksLoadedTotal: s.blockSet.len(),
+		BlocksLoadedTotal:     s.blockSet.len(),
+		BlocksLoadedSizeBytes: s.blockSet.sizeBytes(),
 	}
 }
 
@@ -371,8 +378,10 @@ func (s *BucketStore) InitialSync(ctx context.Context) error {
 	if err := s.syncBlocks(ctx); err != nil {
 		return errors.Wrap(err, "sync block")
 	}
-	if s.indexHeaderCfg.EagerLoadingStartupEnabled {
-		s.loadBlocks(ctx, previouslyLoadedBlocks)
+	if s.indexHeaderCfg.LazyLoadingEnabled {
+		// We make a best-effort attempt to eager-load all blocks
+		// which were open before the store-gateway restarted.
+		s.eagerLoadBlocks(ctx, previouslyLoadedBlocks)
 	}
 
 	err := s.cleanUpUnownedBlocks()
@@ -397,7 +406,7 @@ func (s *BucketStore) tryRestoreLoadedBlocksSet() map[ulid.ULID]struct{} {
 	return previouslyLoadedBlocks
 }
 
-func (s *BucketStore) loadBlocks(ctx context.Context, blocks map[ulid.ULID]struct{}) {
+func (s *BucketStore) eagerLoadBlocks(ctx context.Context, blocks map[ulid.ULID]struct{}) {
 	// This is not happening during a request so we can ignore the stats.
 	ignoredStats := newSafeQueryStats()
 	// We ignore the time the block was used because it can only be in the map if it was still loaded before the shutdown
@@ -449,14 +458,19 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error
 			}
 			level.Error(s.logger).Log("msg", "loading block failed", "elapsed", time.Since(start), "id", meta.ULID, "err", err)
 		} else {
-			level.Info(s.logger).Log("msg", "loaded new block", "elapsed", time.Since(start), "id", meta.ULID)
+			level.Info(s.logger).Log("msg", "loaded new block", "elapsed", time.Since(start), "id", meta.ULID, "compaction_level", meta.Compaction.Level, "num_series", meta.Stats.NumSeries, "ooo", meta.IsOutOfOrder(), "from", meta.MinTime, "to", meta.MaxTime)
 		}
 	}()
 	s.metrics.blockLoads.Inc()
 
+	// Track index-header loading with block compaction level
+	binaryReaderLogger := log.With(s.logger,
+		"id", meta.ULID, "compaction_level", meta.Compaction.Level,
+	)
+
 	indexHeaderReader, err := s.indexReaderPool.NewBinaryReader(
 		ctx,
-		s.logger,
+		binaryReaderLogger,
 		s.bkt,
 		s.dir,
 		meta.ULID,
@@ -555,10 +569,17 @@ type seriesChunks struct {
 
 // Series implements the storegatewaypb.StoreGatewayServer interface.
 func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) (err error) {
-	if req.SkipChunks {
-		// We don't do the streaming call if we are not requesting the chunks.
-		req.StreamingChunksBatchSize = 0
+	ctx := srv.Context()
+	spanLogger := spanlogger.FromContext(ctx, s.logger)
+
+	// Previously, a batch size of 0 was used to indicate this was a Prometheus series request
+	// that didn't need to load any chunk data (in addition to the SkipChunks field) and used
+	// the non-streaming path. Now that Prometheus series requests use the streaming path we
+	// need to make sure that the batch size is always non-zero.
+	if req.StreamingChunksBatchSize == 0 {
+		req.StreamingChunksBatchSize = fallbackStreamingBatchSize
 	}
+
 	defer func() { err = mapSeriesError(err) }()
 
 	matchers, err := storepb.MatchersToPromMatchers(req.Matchers...)
@@ -572,17 +593,26 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 		return status.Error(codes.InvalidArgument, errors.Wrap(err, "parse query sharding label").Error())
 	}
 
-	var (
-		spanLogger       = spanlogger.FromContext(srv.Context(), s.logger)
-		ctx              = srv.Context()
-		stats            = newSafeQueryStats()
-		reqBlockMatchers []*labels.Matcher
-	)
+	stats := newSafeQueryStats()
 	defer s.recordSeriesCallResult(stats)
 	defer s.recordRequestAmbientTime(stats, time.Now())
 
-	if req.Hints != nil {
+	var (
+		reqBlockMatchers  []*labels.Matcher
+		projectionInclude bool
+		projectionLabels  []string
+	)
+	if req.RequestHints != nil {
+		reqBlockMatchers, err = storepb.MatchersToPromMatchers(req.RequestHints.BlockMatchers...)
+		if err != nil {
+			return status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
+		}
+		projectionInclude = req.RequestHints.ProjectionInclude
+		projectionLabels = req.RequestHints.ProjectionLabels
+	} else if req.Hints != nil { //nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
+		// Note that we use a different but equivalent hints type for the opaque field.
 		reqHints := &hintspb.SeriesRequestHints{}
+		//nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
 		if err := types.UnmarshalAny(req.Hints, reqHints); err != nil {
 			return status.Error(codes.InvalidArgument, errors.Wrap(err, "unmarshal series request hints").Error())
 		}
@@ -591,23 +621,25 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 		if err != nil {
 			return status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
 		}
+		projectionInclude = reqHints.ProjectionInclude
+		projectionLabels = reqHints.ProjectionLabels
 	}
 
-	logSeriesRequestToSpan(srv.Context(), s.logger, req.MinTime, req.MaxTime, matchers, reqBlockMatchers, shardSelector, req.StreamingChunksBatchSize)
+	logSeriesRequestToSpan(spanLogger, req.MinTime, req.MaxTime, matchers, reqBlockMatchers, shardSelector, req.StreamingChunksBatchSize)
+
+	defer s.recordBucketIndexDiscoveryDiff(ctx)
 
 	blocks, indexReaders, chunkReaders := s.openBlocksForReading(ctx, req.SkipChunks, req.MinTime, req.MaxTime, reqBlockMatchers, stats)
 	// We must keep the readers open until all their data has been sent.
-	for _, r := range indexReaders {
-		defer runutil.CloseWithLogOnErr(s.logger, r, "close block index reader")
-	}
-	for _, r := range chunkReaders {
-		defer runutil.CloseWithLogOnErr(s.logger, r, "close block chunk reader")
-	}
+	defer func() {
+		for _, r := range indexReaders {
+			runutil.CloseWithLogOnErr(s.logger, r, "close block index reader")
+		}
 
-	var readers *bucketChunkReaders
-	if !req.SkipChunks {
-		readers = newChunkReaders(chunkReaders)
-	}
+		for _, r := range chunkReaders {
+			runutil.CloseWithLogOnErr(s.logger, r, "close block chunk reader")
+		}
+	}()
 
 	// Wait for the query gate only after opening blocks. Opening blocks is usually fast (~1ms),
 	// but sometimes it can take minutes if the block isn't loaded and there is a surge in queries for unloaded blocks.
@@ -617,92 +649,77 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 	}
 	defer done()
 
-	var (
-		streamingIterators *streamingSeriesIterators
-		resHints           = &hintspb.SeriesResponseHints{}
-	)
-	for _, b := range blocks {
-		resHints.AddQueriedBlock(b.meta.ULID)
-
-		if b.meta.Compaction.Level == 1 && b.meta.Thanos.Source == block.ReceiveSource && !b.queried.Load() {
-			level.Debug(s.logger).Log("msg", "queried non-compacted block", "blockId", b.meta.ULID, "ooo", b.meta.Compaction.FromOutOfOrder())
-		}
-
-		b.queried.Store(true)
-	}
-	if err := s.sendHints(srv, resHints); err != nil {
+	// Send hints about the blocks loaded for this query before sending series or stats. Note that we
+	// only send the opaque hints type because we don't want to send the same information in two different
+	// messages (queriers don't expect to have to deduplicate the hints). We are rolling out support for
+	// reading both the opaque and non-opaque type in queriers before switching this.
+	resHints := buildSeriesResponseHints(blocks)
+	if err = s.sendHints(srv, resHints); err != nil {
 		return err
 	}
 
-	streamingSeriesCount := 0
-	if req.StreamingChunksBatchSize > 0 {
-		var (
-			seriesSet       storepb.SeriesSet
-			seriesLoadStart = time.Now()
-			chunksLimiter   = s.chunksLimiterFactory(s.metrics.queriesDropped.WithLabelValues("chunks"))
-			seriesLimiter   = s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
-		)
+	var (
+		streamingSeriesCount int
+		seriesSet            storepb.SeriesSet
+		streamingIterators   *streamingSeriesIterators
+		seriesLoadStart      = time.Now()
+		chunksLimiter        = s.chunksLimiterFactory(s.metrics.queriesDropped.WithLabelValues("chunks"))
+		seriesLimiter        = s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
+	)
 
-		seriesSet, streamingIterators, err = s.createIteratorForChunksStreamingLabelsPhase(ctx, req, blocks, indexReaders, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
-		if err != nil {
-			return err
-		}
+	seriesSet, streamingIterators, err = s.createIteratorForChunksStreamingLabelsPhase(ctx, req, blocks, indexReaders, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
+	if err != nil {
+		return err
+	}
 
-		streamingSeriesCount, err = s.sendStreamingSeriesLabelsAndStats(req, srv, stats, seriesSet)
-		if err != nil {
-			return err
-		}
-		spanLogger.DebugLog(
-			"msg", "sent streaming series",
-			"num_series", streamingSeriesCount,
-			"duration", time.Since(seriesLoadStart),
-		)
+	streamingSeriesCount, err = s.sendStreamingSeriesLabelsAndStats(ctx, req, srv, projectionInclude, projectionLabels, stats, seriesSet)
+	if err != nil {
+		return err
+	}
+	spanLogger.DebugLog(
+		"msg", "sent streaming series",
+		"num_series", streamingSeriesCount,
+		"duration", time.Since(seriesLoadStart),
+	)
 
-		if streamingSeriesCount == 0 {
-			// There is no series to send chunks for.
-			return nil
-		}
+	if streamingSeriesCount == 0 || req.SkipChunks {
+		// There are no series to send chunks for, or we aren't sending chunks.
+		return nil
 	}
 
 	// We create the limiter twice in the case of streaming so that we don't double count the series
 	// and hit the limit prematurely.
-	chunksLimiter := s.chunksLimiterFactory(s.metrics.queriesDropped.WithLabelValues("chunks"))
-	seriesLimiter := s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
+	chunksLimiter = s.chunksLimiterFactory(s.metrics.queriesDropped.WithLabelValues("chunks"))
+	seriesLimiter = s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
 
-	start := time.Now()
-	if req.StreamingChunksBatchSize > 0 {
-		seriesChunkIt := s.createIteratorForChunksStreamingChunksPhase(ctx, readers, stats, chunksLimiter, seriesLimiter, streamingIterators)
-		err = s.sendStreamingChunks(req, srv, seriesChunkIt, stats, streamingSeriesCount)
-	} else {
-		var seriesSet storepb.SeriesSet
-		seriesSet, err = s.createIteratorForNonChunksStreamingRequest(ctx, req, blocks, indexReaders, readers, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
-		if err != nil {
-			return err
-		}
-		err = s.sendSeriesChunks(req, srv, seriesSet, stats)
-	}
+	readers := newChunkReaders(chunkReaders)
+	chunksLoadStart := time.Now()
+
+	seriesChunkIt := s.createIteratorForChunksStreamingChunksPhase(ctx, readers, stats, chunksLimiter, seriesLimiter, streamingIterators)
+	err = s.sendStreamingChunks(req, srv, seriesChunkIt, stats, streamingSeriesCount)
 	if err != nil {
-		return
+		return err
 	}
 
 	numSeries, numChunks := stats.seriesAndChunksCount()
-	debugMessage := "sent series"
-	if req.StreamingChunksBatchSize > 0 {
-		debugMessage = "sent streaming chunks"
-	}
 	spanLogger.DebugLog(
-		"msg", debugMessage,
+		"msg", "sent streaming chunks",
 		"num_series", numSeries,
 		"num_chunks", numChunks,
-		"duration", time.Since(start),
+		"duration", time.Since(chunksLoadStart),
 	)
 
-	if req.StreamingChunksBatchSize == 0 {
-		// Stats were not sent before, so send it now.
-		return s.sendStats(srv, stats)
+	return nil
+}
+
+func buildSeriesResponseHints(blocks []*bucketBlock) *hintspb.SeriesResponseHints {
+	resHints := &hintspb.SeriesResponseHints{}
+	for _, b := range blocks {
+		resHints.AddQueriedBlock(b.meta.ULID)
+		b.queried.Store(true)
 	}
 
-	return nil
+	return resHints
 }
 
 func mapSeriesError(err error) error {
@@ -754,11 +771,16 @@ func (s *BucketStore) limitConcurrentQueries(ctx context.Context, stats *safeQue
 // Since hints and stats need to be sent before the "end of stream" streaming series message,
 // this function also sends the hints and the stats.
 func (s *BucketStore) sendStreamingSeriesLabelsAndStats(
+	ctx context.Context,
 	req *storepb.SeriesRequest,
 	srv storegatewaypb.StoreGateway_SeriesServer,
+	projectionInclude bool,
+	projectionLabels []string,
 	stats *safeQueryStats,
 	seriesSet storepb.SeriesSet,
 ) (numSeries int, err error) {
+	spanlog := spanlogger.FromContext(ctx, s.logger)
+
 	var (
 		encodeDuration = time.Duration(0)
 		sendDuration   = time.Duration(0)
@@ -767,6 +789,22 @@ func (s *BucketStore) sendStreamingSeriesLabelsAndStats(
 		stats.streamingSeriesEncodeResponseDuration += encodeDuration
 		stats.streamingSeriesSendResponseDuration += sendDuration
 	})
+
+	var (
+		projections *series.ProjectionLabels
+
+		// We keep track of the number of bytes used for the original labels
+		// and the number of bytes saved if we applied the projection optimization.
+		// This allows us to quantify the value of the optimization.
+		originalLabelBytes  uint64
+		reducedLabelBytes   uint64
+		increasedLabelBytes uint64
+	)
+
+	if projectionInclude {
+		spanlog.DebugLog("msg", "applying projections to return subset of series labels", "labels", projectionLabels)
+		projections = series.NewProjectionLabels(projectionLabels)
+	}
 
 	seriesBuffer := make([]*storepb.StreamingSeries, req.StreamingChunksBatchSize)
 	for i := range seriesBuffer {
@@ -782,6 +820,20 @@ func (s *BucketStore) sendStreamingSeriesLabelsAndStats(
 		// Although subsequent call to seriesSet.Next() may release the memory of this series object,
 		// it is safe to hold onto the labels because they are not released.
 		lset, _ = seriesSet.At()
+		if projectionInclude {
+			lblsSize := lset.ByteSize()
+			originalLabelBytes += lblsSize
+
+			reduced := projections.Reduce(lset)
+			// Estimate the size of the series hash label and value since we aren't generating
+			// series hash on ingest currently.
+			reducedSize := reduced.ByteSize() + uint64(len(series.HashLabelName)) + 42 /* 256-bit hash as base64 */
+			if reducedSize < lblsSize {
+				reducedLabelBytes += lblsSize - reducedSize
+			} else {
+				increasedLabelBytes += reducedSize - lblsSize
+			}
+		}
 
 		// We are re-using the slice for every batch this way.
 		seriesBatch.Series = seriesBatch.Series[:len(seriesBatch.Series)+1]
@@ -795,6 +847,11 @@ func (s *BucketStore) sendStreamingSeriesLabelsAndStats(
 			seriesBatch.Series = seriesBatch.Series[:0]
 		}
 	}
+
+	s.metrics.originalLabelBytes.Add(float64(originalLabelBytes))
+	s.metrics.reducedLabelBytes.Add(float64(reducedLabelBytes))
+	s.metrics.increasedLabelBytes.Add(float64(increasedLabelBytes))
+
 	if seriesSet.Err() != nil {
 		return 0, errors.Wrap(seriesSet.Err(), "expand series set")
 	}
@@ -918,53 +975,6 @@ func (s *BucketStore) sendStreamingChunks(
 	return it.Err()
 }
 
-func (s *BucketStore) sendSeriesChunks(
-	req *storepb.SeriesRequest,
-	srv storegatewaypb.StoreGateway_SeriesServer,
-	seriesSet storepb.SeriesSet,
-	stats *safeQueryStats,
-) error {
-	var (
-		encodeDuration           time.Duration
-		sendDuration             time.Duration
-		seriesCount, chunksCount int
-	)
-
-	defer stats.update(func(stats *queryStats) {
-		stats.mergedSeriesCount += seriesCount
-		stats.mergedChunksCount += chunksCount
-
-		stats.streamingSeriesEncodeResponseDuration += encodeDuration
-		stats.streamingSeriesSendResponseDuration += sendDuration
-	})
-
-	for seriesSet.Next() {
-		seriesCount++
-		// IMPORTANT: do not retain the memory returned by seriesSet.At() beyond this loop cycle
-		// because the subsequent call to seriesSet.Next() may release it. But it is safe to hold
-		// onto lset because the labels are not released.
-		lset, chks := seriesSet.At()
-		series := storepb.Series{
-			Labels: mimirpb.FromLabelsToLabelAdapters(lset),
-		}
-		if !req.SkipChunks {
-			series.Chunks = chks
-			chunksCount += len(chks)
-			s.metrics.chunkSizeBytes.Observe(float64(chunksSize(chks)))
-		}
-
-		err := s.sendMessage("series", srv, storepb.NewSeriesResponse(&series), &encodeDuration, &sendDuration)
-		if err != nil {
-			return err
-		}
-	}
-	if seriesSet.Err() != nil {
-		return errors.Wrap(seriesSet.Err(), "expand series set")
-	}
-
-	return nil
-}
-
 func (s *BucketStore) sendMessage(typ string, srv storegatewaypb.StoreGateway_SeriesServer, msg interface{}, encodeDuration, sendDuration *time.Duration) error {
 	// We encode it ourselves into a PreparedMsg in order to measure the time it takes.
 	encodeBegin := time.Now()
@@ -1012,8 +1022,7 @@ func (s *BucketStore) sendStats(srv storegatewaypb.StoreGateway_SeriesServer, st
 	return nil
 }
 
-func logSeriesRequestToSpan(ctx context.Context, l log.Logger, minT, maxT int64, matchers, blockMatchers []*labels.Matcher, shardSelector *sharding.ShardSelector, streamingChunksBatchSize uint64) {
-	spanLogger := spanlogger.FromContext(ctx, l)
+func logSeriesRequestToSpan(spanLogger *spanlogger.SpanLogger, minT, maxT int64, matchers, blockMatchers []*labels.Matcher, shardSelector *sharding.ShardSelector, streamingChunksBatchSize uint64) {
 	spanLogger.DebugLog(
 		"msg", "BucketStore.Series",
 		"request min time", time.UnixMilli(minT).UTC().Format(time.RFC3339Nano),
@@ -1030,38 +1039,6 @@ func chunksSize(chks []storepb.AggrChunk) (size int) {
 		size += chk.Size() // This gets the encoded proto size.
 	}
 	return size
-}
-
-// createIteratorForNonChunksStreamingRequest is used when the streaming feature is not enabled.
-func (s *BucketStore) createIteratorForNonChunksStreamingRequest(
-	ctx context.Context,
-	req *storepb.SeriesRequest,
-	blocks []*bucketBlock,
-	indexReaders map[ulid.ULID]*bucketIndexReader,
-	chunkReaders *bucketChunkReaders,
-	shardSelector *sharding.ShardSelector,
-	matchers []*labels.Matcher,
-	chunksLimiter ChunksLimiter,
-	seriesLimiter SeriesLimiter,
-	stats *safeQueryStats,
-) (storepb.SeriesSet, error) {
-	strategy := defaultStrategy
-	if req.SkipChunks {
-		strategy = noChunkRefs
-	}
-	it, err := s.getSeriesIteratorFromBlocks(ctx, req, blocks, indexReaders, shardSelector, matchers, chunksLimiter, seriesLimiter, stats, strategy, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	var set storepb.SeriesSet
-	if !req.SkipChunks {
-		ss := newChunksPreloadingIterator(ctx, s.logger, s.userID, *chunkReaders, it, s.maxSeriesPerBatch, stats)
-		set = newSeriesChunksSeriesSet(ss)
-	} else {
-		set = newSeriesSetWithoutChunks(ctx, it, stats)
-	}
-	return set, nil
 }
 
 // createIteratorForChunksStreamingLabelsPhase is used when streaming feature is enabled.
@@ -1221,6 +1198,9 @@ func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
 	s.metrics.seriesDataSizeTouched.WithLabelValues("chunks", "returned").Observe(float64(stats.chunksTouchedSizeSum))
 
 	s.metrics.resultSeriesCount.Observe(float64(stats.mergedSeriesCount))
+
+	s.metrics.chunkSizeEstimateType.WithLabelValues("inferred").Add(float64(stats.chunksInferredSizeCount))
+	s.metrics.chunkSizeEstimateType.WithLabelValues("fallback").Add(float64(stats.chunksFallbackSizeCount))
 }
 
 func (s *BucketStore) recordLabelNamesCallResult(safeStats *safeQueryStats) {
@@ -1300,6 +1280,25 @@ func (s *BucketStore) recordSeriesHashCacheStats(stats *queryStats) {
 	s.metrics.seriesHashCacheHits.Add(float64(stats.seriesHashCacheHits))
 }
 
+func (s *BucketStore) recordBucketIndexDiscoveryDiff(ctx context.Context) {
+	reqUpdatedAt, err := getBucketIndexUpdatedAtFromGRPCContext(ctx)
+	if err != nil {
+		// This is not a problem by itself.
+		level.Warn(spanlogger.FromContext(ctx, s.logger)).Log("msg", "can't get bucket index versions (updated_at) from request", "err", err)
+		return
+	}
+
+	meta := s.bucketIndexMeta.Metadata()
+	diff := meta.UpdatedAt - reqUpdatedAt
+
+	logger := log.With(spanlogger.FromContext(ctx, s.logger), "ours", meta.UpdatedAt, "requested", reqUpdatedAt, "diff", diff)
+	if diff < 0 {
+		level.Warn(logger).Log("msg", "bucket index version (updated_at) is older than requested")
+	} else {
+		level.Debug(logger).Log("msg", "bucket index versions (updated_at)")
+	}
+}
+
 func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT int64, blockMatchers []*labels.Matcher, stats *safeQueryStats) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]chunkReader) {
 	spanCtx, span := tracer.Start(ctx, "bucket_store_open_blocks_for_reading")
 	defer span.End()
@@ -1344,16 +1343,23 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 	}
 
 	var (
-		stats    = newSafeQueryStats()
-		resHints = &hintspb.LabelNamesResponseHints{}
+		stats          = newSafeQueryStats()
+		resHints       = &storepb.LabelNamesResponseHints{}
+		opaqueResHints = &hintspb.LabelNamesResponseHints{}
 	)
 
 	defer s.recordLabelNamesCallResult(stats)
 	defer s.recordRequestAmbientTime(stats, time.Now())
 
 	var reqBlockMatchers []*labels.Matcher
-	if req.Hints != nil {
+	if req.RequestHints != nil {
+		reqBlockMatchers, err = storepb.MatchersToPromMatchers(req.RequestHints.BlockMatchers...)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
+		}
+	} else if req.Hints != nil { //nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
 		reqHints := &hintspb.LabelNamesRequestHints{}
+		//nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
 		err := types.UnmarshalAny(req.Hints, reqHints)
 		if err != nil {
 			return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "unmarshal label names request hints").Error())
@@ -1365,6 +1371,8 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 		}
 	}
 
+	defer s.recordBucketIndexDiscoveryDiff(ctx)
+
 	g, gctx := errgroup.WithContext(ctx)
 
 	var setsMtx sync.Mutex
@@ -1374,6 +1382,8 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 
 	s.blockSet.filter(req.Start, req.End, reqBlockMatchers, func(b *bucketBlock) {
 		resHints.AddQueriedBlock(b.meta.ULID)
+		opaqueResHints.AddQueriedBlock(b.meta.ULID)
+
 		blocksQueriedByBlockMeta[newBlockQueriedMeta(b.meta)]++
 
 		// This indexReader is here to make sure its block is held open inside the goroutine below.
@@ -1414,7 +1424,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 		}
 	})
 
-	anyHints, err := types.MarshalAny(resHints)
+	anyHints, err := types.MarshalAny(opaqueResHints)
 	if err != nil {
 		return nil, status.Error(codes.Unknown, errors.Wrap(err, "marshal label names response hints").Error())
 	}
@@ -1424,9 +1434,13 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 		names = names[:req.Limit]
 	}
 
+	// Send both opaque and non-opaque response hints. New queriers will prefer
+	// to use the non-opaque type and ignore the opaque one. Old queriers will
+	// ignore the unknown non-opaque type and use the opaque one instead.
 	return &storepb.LabelNamesResponse{
-		Names: names,
-		Hints: anyHints,
+		Names:         names,
+		Hints:         anyHints,
+		ResponseHints: resHints,
 	}, nil
 }
 
@@ -1540,13 +1554,20 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 	defer s.recordLabelValuesCallResult(stats)
 	defer s.recordRequestAmbientTime(stats, time.Now())
 
-	resHints := &hintspb.LabelValuesResponseHints{}
+	resHints := &storepb.LabelValuesResponseHints{}
+	opaqueResHints := &hintspb.LabelValuesResponseHints{}
 
 	g, gctx := errgroup.WithContext(ctx)
 
 	var reqBlockMatchers []*labels.Matcher
-	if req.Hints != nil {
+	if req.RequestHints != nil {
+		reqBlockMatchers, err = storepb.MatchersToPromMatchers(req.RequestHints.BlockMatchers...)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
+		}
+	} else if req.Hints != nil { //nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
 		reqHints := &hintspb.LabelValuesRequestHints{}
+		//nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
 		err := types.UnmarshalAny(req.Hints, reqHints)
 		if err != nil {
 			return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "unmarshal label values request hints").Error())
@@ -1558,10 +1579,13 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 		}
 	}
 
+	defer s.recordBucketIndexDiscoveryDiff(ctx)
+
 	var setsMtx sync.Mutex
 	var sets [][]string
 	s.blockSet.filter(req.Start, req.End, reqBlockMatchers, func(b *bucketBlock) {
 		resHints.AddQueriedBlock(b.meta.ULID)
+		opaqueResHints.AddQueriedBlock(b.meta.ULID)
 
 		// This index reader shouldn't be used for ExpandedPostings, since it doesn't have the correct strategy.
 		// It's here only to make sure the block is held open inside the goroutine below.
@@ -1595,7 +1619,7 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	anyHints, err := types.MarshalAny(resHints)
+	anyHints, err := types.MarshalAny(opaqueResHints)
 	if err != nil {
 		return nil, status.Error(codes.Unknown, errors.Wrap(err, "marshal label values response hints").Error())
 	}
@@ -1605,9 +1629,13 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 		values = values[:req.Limit]
 	}
 
+	// Send both opaque and non-opaque response hints. New queriers will prefer
+	// to use the non-opaque type and ignore the opaque one. Old queriers will
+	// ignore the unknown non-opaque type and use the opaque one instead.
 	return &storepb.LabelValuesResponse{
-		Values: values,
-		Hints:  anyHints,
+		Values:        values,
+		Hints:         anyHints,
+		ResponseHints: resHints,
 	}, nil
 }
 
@@ -1963,6 +1991,28 @@ func (s *bucketBlockSet) timerange() (mint, maxt int64) {
 	return mint, maxt
 }
 
+// sizeBytes returns the total bytes size of all blocks in the set which are not closed.
+func (s *bucketBlockSet) sizeBytes() (v int64) {
+	s.forEach(func(b *bucketBlock) {
+		v += b.blockStats.SizeBytes()
+	})
+	return v
+}
+
+type bucketBlockStats struct {
+	Files []block.File
+}
+
+func (m *bucketBlockStats) SizeBytes() int64 {
+	var b int64
+	for _, f := range m.Files {
+		if f.SizeBytes > 0 {
+			b += f.SizeBytes
+		}
+	}
+	return b
+}
+
 // bucketBlock represents a block that is located in a bucket. It holds intermediate
 // state for the block on local disk.
 type bucketBlock struct {
@@ -1986,6 +2036,9 @@ type bucketBlock struct {
 	// Block's labels used by block-level matchers to filter blocks to query. These are used to select blocks using
 	// request hints' BlockMatchers.
 	blockLabels labels.Labels
+	// Block's stats includes details about on-local disk files (e.g. index-header). The data is different from block.Meta above,
+	// which contains the block's metadata in the bucket.
+	blockStats bucketBlockStats
 
 	expandedPostingsPromises sync.Map
 
@@ -2017,6 +2070,12 @@ func newBucketBlock(
 		indexHeaderReader: indexHeadReader,
 		// Inject the block ID as a label to allow to match blocks by ID.
 		blockLabels: labels.FromStrings(block.BlockIDLabel, meta.ULID.String()),
+	}
+
+	b.blockStats.Files, err = collectBucketBlockFileStats(dir)
+	if err != nil {
+		// Block stats are optional.
+		level.Warn(logger).Log("msg", "failed to collect on-disk stats", "err", err)
 	}
 
 	// Get object handles for all chunk files (segment files) from meta.json, if available.
@@ -2112,7 +2171,8 @@ func (b *bucketBlock) ensureIndexHeaderLoaded(ctx context.Context, stats *safeQu
 	span.SetAttributes(attribute.Stringer("blockID", b.meta.ULID))
 
 	loadStartTime := time.Now()
-	// Call IndexVersion to lazy load the index header if it lazy-loaded.
+	// Call IndexVersion - the first usage of the indexHeaderReader will force loading of the index header
+	// if the indexHeaderReader is configured to lazy-load.
 	_, _ = b.indexHeaderReader.IndexVersion(ctx)
 	stats.update(func(stats *queryStats) {
 		stats.streamingSeriesIndexHeaderLoadDuration += time.Since(loadStartTime)
@@ -2130,6 +2190,31 @@ func (b *bucketBlock) Close() error {
 	return b.indexHeaderReader.Close()
 }
 
+// collectBucketBlockFileStats collects the files of the on-disk block representation.
+func collectBucketBlockFileStats(blockDir string) (res []block.File, _ error) {
+	indexHeaderInfo, err := os.Stat(filepath.Join(blockDir, block.IndexHeaderFilename))
+	if err != nil {
+		return nil, fmt.Errorf("stat %v: %w", filepath.Join(blockDir, block.IndexHeaderFilename), err)
+	}
+	mf := block.File{
+		RelPath:   indexHeaderInfo.Name(),
+		SizeBytes: indexHeaderInfo.Size(),
+	}
+	res = append(res, mf)
+
+	// Sparse index headers are optional and may not exist on disk.
+	sparseHeaderInfo, err := os.Stat(filepath.Join(blockDir, block.SparseIndexHeaderFilename))
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return nil, fmt.Errorf("stat %v: %w", filepath.Join(blockDir, block.SparseIndexHeaderFilename), err)
+		}
+	} else {
+		res = append(res, block.File{RelPath: sparseHeaderInfo.Name(), SizeBytes: sparseHeaderInfo.Size()})
+	}
+
+	return res, err
+}
+
 type Part struct {
 	Start uint64
 	End   uint64
@@ -2145,66 +2230,13 @@ type Partitioner interface {
 	Partition(length int, rng func(int) (uint64, uint64)) []Part
 }
 
-type symbolizedLabel struct {
-	name, value uint32
-}
-
-// decodeSeries decodes a series entry from the given byte slice decoding all chunk metas of the series.
-// If skipChunks is specified decodeSeries does not return any chunks, but only labels and only if there is at least a single chunk.
-// decodeSeries returns false, when there are no chunks for the series.
-func decodeSeries(b []byte, lsetPool *pool.SlabPool[symbolizedLabel], chks *[]chunks.Meta, skipChunks bool) (ok bool, lset []symbolizedLabel, err error) {
-
-	*chks = (*chks)[:0]
-
-	d := encoding.Decbuf{B: b}
-
-	// Read labels without looking up symbols.
-	k := d.Uvarint()
-	lset = lsetPool.Get(k)[:0]
-	for i := 0; i < k; i++ {
-		lno := uint32(d.Uvarint())
-		lvo := uint32(d.Uvarint())
-		lset = append(lset, symbolizedLabel{name: lno, value: lvo})
-	}
-	// Read the chunks meta data.
-	k = d.Uvarint()
-	if k == 0 {
-		return false, nil, d.Err()
-	}
-
-	// First t0 is absolute, rest is just diff so different type is used (Uvarint64).
-	mint := d.Varint64()
-	maxt := int64(d.Uvarint64()) + mint
-	// Similar for first ref.
-	ref := int64(d.Uvarint64())
-
-	for i := 0; i < k; i++ {
-		if i > 0 {
-			mint += int64(d.Uvarint64())
-			maxt = int64(d.Uvarint64()) + mint
-			ref += d.Varint64()
-		}
-
-		// Found a chunk.
-		if skipChunks {
-			// We are not interested in chunks and we know there is at least one, that's enough to return series.
-			return true, lset, nil
-		}
-
-		*chks = append(*chks, chunks.Meta{
-			Ref:     chunks.ChunkRef(ref),
-			MinTime: mint,
-			MaxTime: maxt,
-		})
-
-		mint = maxt
-	}
-	return len(*chks) > 0, lset, d.Err()
-}
-
 func maybeNilShard(shard *sharding.ShardSelector) sharding.ShardSelector {
 	if shard == nil {
 		return sharding.ShardSelector{}
 	}
 	return *shard
+}
+
+type BucketIndexMetadataReader interface {
+	Metadata() *bucketindex.Metadata
 }

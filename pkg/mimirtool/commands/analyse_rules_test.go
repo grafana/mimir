@@ -9,12 +9,14 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirtool/analyze"
 	"github.com/grafana/mimir/pkg/mimirtool/rules"
+	"github.com/grafana/mimir/pkg/mimirtool/util"
 )
 
 var metricsInRuleGroup = []string{
@@ -57,12 +59,12 @@ func TestParseMetricsInRuleFile(t *testing.T) {
 	output := &analyze.MetricsInRuler{}
 	output.OverallMetrics = make(map[string]struct{})
 
-	nss, err := rules.ParseFiles("mimir", []string{"testdata/prometheus_rules.yaml"}, model.UTF8Validation)
+	nss, err := rules.ParseFiles("mimir", []string{"testdata/prometheus_rules.yaml"}, model.UTF8Validation, util.CreatePromQLParser(false), log.NewNopLogger())
 	require.NoError(t, err)
 
 	for _, ns := range nss {
 		for _, group := range ns.Groups {
-			err := analyze.ParseMetricsInRuleGroup(output, group, ns.Namespace)
+			err := analyze.ParseMetricsInRuleGroup(output, group, ns.Namespace, util.CreatePromQLParser(false), log.NewNopLogger())
 			require.NoError(t, err)
 		}
 	}

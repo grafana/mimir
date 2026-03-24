@@ -21,7 +21,7 @@ import (
 )
 
 func TestSeriesList_BasicListOperations(t *testing.T) {
-	list := newSeriesList(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
+	list := newSeriesList(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))
 	require.Equal(t, 0, list.Len())
 
 	series1 := mockSeries{labels.FromStrings("series", "1")}
@@ -59,7 +59,7 @@ func TestSeriesList_OperationsNearBatchBoundaries(t *testing.T) {
 
 	for _, seriesCount := range cases {
 		t.Run(fmt.Sprintf("N=%v", seriesCount), func(t *testing.T) {
-			list := newSeriesList(limiter.NewMemoryConsumptionTracker(ctx, 0, nil, ""))
+			list := newSeriesList(limiter.NewUnlimitedMemoryConsumptionTracker(ctx))
 
 			seriesAdded := make([]storage.Series, 0, seriesCount)
 
@@ -123,7 +123,7 @@ func TestSelector_QueryRanges(t *testing.T) {
 			TimeRange:                timeRange,
 			LookbackDelta:            lookbackDelta,
 			Matchers:                 matchers,
-			MemoryConsumptionTracker: limiter.NewMemoryConsumptionTracker(ctx, 0, nil, ""),
+			MemoryConsumptionTracker: limiter.NewUnlimitedMemoryConsumptionTracker(ctx),
 		}
 
 		_, err := s.SeriesMetadata(ctx, nil)
@@ -147,7 +147,7 @@ func TestSelector_QueryRanges(t *testing.T) {
 			TimeRange:                timeRange,
 			LookbackDelta:            lookbackDelta,
 			Matchers:                 matchers,
-			MemoryConsumptionTracker: limiter.NewMemoryConsumptionTracker(ctx, 0, nil, ""),
+			MemoryConsumptionTracker: limiter.NewUnlimitedMemoryConsumptionTracker(ctx),
 		}
 
 		runtimeMatchers := types.Matchers{
@@ -176,7 +176,7 @@ func TestSelector_QueryRanges(t *testing.T) {
 			TimeRange:                timeRange,
 			Range:                    selectorRange,
 			Matchers:                 matchers,
-			MemoryConsumptionTracker: limiter.NewMemoryConsumptionTracker(ctx, 0, nil, ""),
+			MemoryConsumptionTracker: limiter.NewUnlimitedMemoryConsumptionTracker(ctx),
 		}
 
 		_, err := s.SeriesMetadata(ctx, nil)
@@ -200,7 +200,7 @@ func TestSelector_QueryRanges(t *testing.T) {
 			TimeRange:                timeRange,
 			Range:                    selectorRange,
 			Matchers:                 matchers,
-			MemoryConsumptionTracker: limiter.NewMemoryConsumptionTracker(ctx, 0, nil, ""),
+			MemoryConsumptionTracker: limiter.NewUnlimitedMemoryConsumptionTracker(ctx),
 		}
 
 		runtimeMatchers := types.Matchers{

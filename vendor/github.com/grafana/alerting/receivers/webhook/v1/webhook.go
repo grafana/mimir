@@ -56,12 +56,6 @@ type webhookMessage struct {
 	Message         string `json:"message"`
 }
 
-type extraDataKey int
-
-const (
-	ExtraDataKey extraDataKey = iota
-)
-
 // Notify implements the Notifier interface.
 func (wn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error) {
 	l := wn.GetLogger(ctx)
@@ -99,7 +93,7 @@ func (wn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 	// Augment extended Alert data with any extra data if provided
 	// If there is no extra data in the context or it is malformed,
 	// we simply continue without erroring
-	extraData, ok := getExtraDataFromContext(ctx)
+	extraData, ok := receivers.GetExtraDataFromContext(ctx)
 	if ok && len(data.Alerts) == len(extraData) {
 		for i, ed := range extraData {
 			data.Alerts[i].ExtraData = ed
@@ -163,6 +157,11 @@ func (wn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 		}
 	}
 
+	if parsedURL == NoopURL {
+		level.Debug(l).Log("msg", "skipping webhook notification, URL is set to noop")
+		return true, nil
+	}
+
 	cmd := &receivers.SendWebhookSettings{
 		URL:        parsedURL,
 		User:       wn.settings.User,
@@ -187,11 +186,6 @@ func truncateAlerts(maxAlerts int, alerts []*types.Alert) ([]*types.Alert, int) 
 	}
 
 	return alerts, 0
-}
-
-func getExtraDataFromContext(ctx context.Context) ([]json.RawMessage, bool) {
-	v, ok := ctx.Value(ExtraDataKey).([]json.RawMessage)
-	return v, ok
 }
 
 func (wn *Notifier) SendResolved() bool {

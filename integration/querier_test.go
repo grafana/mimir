@@ -2,7 +2,6 @@
 // Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/integration/querier_test.go
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
-//go:build requires_docker
 
 package integration
 
@@ -17,13 +16,12 @@ import (
 	e2edb "github.com/grafana/e2e/db"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/integration/e2emimir"
-	"github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/indexcache"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -43,19 +41,19 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, series
 	}{
 		"shard size 0, inmemory index cache": {
 			tenantShardSize:   0,
-			indexCacheBackend: tsdb.IndexCacheBackendInMemory,
+			indexCacheBackend: indexcache.BackendInMemory,
 		},
 		"shard size 0, memcached index cache": {
 			tenantShardSize:   0,
-			indexCacheBackend: tsdb.IndexCacheBackendMemcached,
+			indexCacheBackend: indexcache.BackendMemcached,
 		},
 		"shard size 1, memcached index cache": {
 			tenantShardSize:   1,
-			indexCacheBackend: tsdb.IndexCacheBackendMemcached,
+			indexCacheBackend: indexcache.BackendMemcached,
 		},
 		"shard size 1, memcached index cache, query sharding enabled": {
 			tenantShardSize:      1,
-			indexCacheBackend:    tsdb.IndexCacheBackendMemcached,
+			indexCacheBackend:    indexcache.BackendMemcached,
 			queryShardingEnabled: true,
 		},
 	}
@@ -234,10 +232,10 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, series
 			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(0), "thanos_store_index_cache_hits_total"))     // no cache hit cause the cache was empty
 
 			switch backend := testCfg.indexCacheBackend; backend {
-			case tsdb.IndexCacheBackendInMemory:
+			case indexcache.BackendInMemory:
 				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2*2+2+3), "thanos_store_index_cache_items"))             // 2 series both for postings and series cache, 2 expanded postings on one block, 3 on another one
 				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2*2+2+3), "thanos_store_index_cache_items_added_total")) // 2 series both for postings and series cache, 2 expanded postings on one block, 3 on another one
-			case tsdb.IndexCacheBackendMemcached:
+			case indexcache.BackendMemcached:
 				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(9*2), "thanos_cache_operations_total")) // one set for each get
 			default:
 				require.Fail(t, fmt.Sprintf("unrecognized indexCacheBackend: %q", backend))
@@ -254,10 +252,10 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, series
 			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2), "thanos_store_index_cache_hits_total")) // this time has used the index cache
 
 			switch testCfg.indexCacheBackend {
-			case tsdb.IndexCacheBackendInMemory:
+			case indexcache.BackendInMemory:
 				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2*2+2+3), "thanos_store_index_cache_items"))             // as before
 				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2*2+2+3), "thanos_store_index_cache_items_added_total")) // as before
-			case tsdb.IndexCacheBackendMemcached:
+			case indexcache.BackendMemcached:
 				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(9*2+2), "thanos_cache_operations_total")) // as before + 2 gets (expanded postings and series)
 			}
 
@@ -316,13 +314,13 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 		queryShardingEnabled bool
 	}{
 		"inmemory index cache": {
-			indexCacheBackend: tsdb.IndexCacheBackendInMemory,
+			indexCacheBackend: indexcache.BackendInMemory,
 		},
 		"memcached index cache": {
-			indexCacheBackend: tsdb.IndexCacheBackendMemcached,
+			indexCacheBackend: indexcache.BackendMemcached,
 		},
 		"inmemory index cache, query sharding enabled": {
-			indexCacheBackend:    tsdb.IndexCacheBackendInMemory,
+			indexCacheBackend:    indexcache.BackendInMemory,
 			queryShardingEnabled: true,
 		},
 	}
@@ -374,6 +372,9 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 				// Ruler.
 				"-ruler.ring.store":           "consul",
 				"-ruler.ring.consul.hostname": consul.NetworkHTTPEndpoint(),
+				// Querier.
+				"-querier.ring.store":           "consul",
+				"-querier.ring.consul.hostname": consul.NetworkHTTPEndpoint(),
 				// Query-frontend.
 				"-query-frontend.parallelize-shardable-queries": strconv.FormatBool(testCfg.queryShardingEnabled),
 			})
@@ -391,6 +392,7 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 				numTokensPerInstance += 512     // Compactor ring.
 				numTokensPerInstance += 512 * 2 // Store-gateway ring (read both by the querier and store-gateway).
 				numTokensPerInstance += 128     // Ruler ring.
+				numTokensPerInstance++          // Querier ring
 
 				require.NoError(t, replica.WaitSumMetrics(e2e.Equals(float64(numTokensPerInstance*cluster.NumInstances())), "cortex_ring_tokens_total"))
 			}
@@ -478,10 +480,10 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 			require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(expectedCacheRequests)), "thanos_store_index_cache_requests_total"), "expected %v requests", expectedCacheRequests)
 			require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(expectedCacheHits)), "thanos_store_index_cache_hits_total"), "expected %v hits", expectedCacheHits)
 			switch testCfg.indexCacheBackend {
-			case tsdb.IndexCacheBackendInMemory:
+			case indexcache.BackendInMemory:
 				require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64((2*2+2+3)*seriesReplicationFactor)), "thanos_store_index_cache_items"))             // 2 series both for postings and series cache, 2 expanded postings on one block, 3 on another one
 				require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64((2*2+2+3)*seriesReplicationFactor)), "thanos_store_index_cache_items_added_total")) // 2 series both for postings and series cache, 2 expanded postings on one block, 3 on another one
-			case tsdb.IndexCacheBackendMemcached:
+			case indexcache.BackendMemcached:
 				require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(expectedMemcachedOps)), "thanos_cache_operations_total"), "expected %v operations", expectedMemcachedOps)
 			}
 
@@ -501,10 +503,10 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 			require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(expectedCacheHits)), "thanos_store_index_cache_hits_total"), "expected %v hits", expectedCacheHits) // this time has used the index cache
 
 			switch testCfg.indexCacheBackend {
-			case tsdb.IndexCacheBackendInMemory:
+			case indexcache.BackendInMemory:
 				require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64((2*2+2+3)*seriesReplicationFactor)), "thanos_store_index_cache_items"))             // as before
 				require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64((2*2+2+3)*seriesReplicationFactor)), "thanos_store_index_cache_items_added_total")) // as before
-			case tsdb.IndexCacheBackendMemcached:
+			case indexcache.BackendMemcached:
 				require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(expectedMemcachedOps)), "thanos_cache_operations_total"), "expected %v operations", expectedMemcachedOps)
 			}
 
@@ -515,12 +517,20 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 }
 
 func TestMimirPromQLEngine(t *testing.T) {
+	testPromQLEngine(t, "mimir")
+}
+
+func TestPrometheusPromQLEngine(t *testing.T) {
+	testPromQLEngine(t, "prometheus")
+}
+
+func testPromQLEngine(t *testing.T, engineType string) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
 	defer s.Close()
 
 	flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
-		"-querier.query-engine": "mimir",
+		"-querier.query-engine": engineType,
 	})
 
 	consul := e2edb.NewConsul()
@@ -550,7 +560,7 @@ func TestMimirPromQLEngine(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 
-	// Query back the same series using the streaming PromQL engine.
+	// Query back the same series.
 	c, err := e2emimir.NewClient("", querier.HTTPEndpoint(), "", "", "user-1")
 	require.NoError(t, err)
 
@@ -640,7 +650,7 @@ func testMetadataQueriesWithBlocksStorage(
 					matches: []string{lastSeriesInStorageName},
 				},
 			},
-			labelNames: []string{labels.MetricName, firstSeriesInIngesterHeadName},
+			labelNames: []string{model.MetricNameLabel, firstSeriesInIngesterHeadName},
 		},
 		"query metadata entirely inside the ingester range but outside the head range": {
 			from: lastSeriesInIngesterBlocksTs,
@@ -673,7 +683,7 @@ func testMetadataQueriesWithBlocksStorage(
 					matches: []string{firstSeriesInIngesterHeadName},
 				},
 			},
-			labelNames: []string{labels.MetricName, lastSeriesInIngesterBlocksName},
+			labelNames: []string{model.MetricNameLabel, lastSeriesInIngesterBlocksName},
 		},
 		"query metadata partially inside the ingester range": {
 			from: lastSeriesInStorageTs.Add(-blockRangePeriod),
@@ -712,7 +722,7 @@ func testMetadataQueriesWithBlocksStorage(
 					matches: []string{lastSeriesInStorageName, lastSeriesInIngesterBlocksName},
 				},
 			},
-			labelNames: []string{labels.MetricName, lastSeriesInStorageName, lastSeriesInIngesterBlocksName, firstSeriesInIngesterHeadName},
+			labelNames: []string{model.MetricNameLabel, lastSeriesInStorageName, lastSeriesInIngesterBlocksName, firstSeriesInIngesterHeadName},
 		},
 		"query metadata entirely outside the ingester range should not return the head data": {
 			from: lastSeriesInStorageTs.Add(-2 * blockRangePeriod),
@@ -746,7 +756,7 @@ func testMetadataQueriesWithBlocksStorage(
 					matches: []string{firstSeriesInIngesterHeadName},
 				},
 			},
-			labelNames: []string{labels.MetricName, lastSeriesInStorageName},
+			labelNames: []string{model.MetricNameLabel, lastSeriesInStorageName},
 		},
 	}
 
@@ -764,7 +774,7 @@ func testMetadataQueriesWithBlocksStorage(
 			}
 
 			for _, lvt := range tc.labelValuesTests {
-				labelsRes, err := c.LabelValues(labels.MetricName, tc.from, tc.to, lvt.matches)
+				labelsRes, err := c.LabelValues(model.MetricNameLabel, tc.from, tc.to, lvt.matches)
 				require.NoError(t, err)
 				exp := model.LabelValues{}
 				for _, val := range lvt.resp {
@@ -1007,11 +1017,11 @@ func TestHashCollisionHandling(t *testing.T) {
 	tsMillis := e2e.TimeToMilliseconds(now)
 	metric1 := []prompb.Label{
 		{Name: "A", Value: "K6sjsNNczPl"},
-		{Name: labels.MetricName, Value: "fingerprint_collision"},
+		{Name: model.MetricNameLabel, Value: "fingerprint_collision"},
 	}
 	metric2 := []prompb.Label{
 		{Name: "A", Value: "cswpLMIZpwt"},
-		{Name: labels.MetricName, Value: "fingerprint_collision"},
+		{Name: model.MetricNameLabel, Value: "fingerprint_collision"},
 	}
 
 	series = append(series, prompb.TimeSeries{
@@ -1059,7 +1069,7 @@ func TestHashCollisionHandling(t *testing.T) {
 
 func getMetricName(lbls []prompb.Label) string {
 	for _, lbl := range lbls {
-		if lbl.Name == labels.MetricName {
+		if lbl.Name == model.MetricNameLabel {
 			return lbl.Value
 		}
 	}

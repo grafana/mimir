@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/stretchr/testify/assert"
@@ -62,7 +63,7 @@ func TestSeriesChunksSet(t *testing.T) {
 		for r := 0; r < numRuns; r++ {
 			set := newSeriesChunksSet(numSeries, true)
 
-			lset := labels.FromStrings(labels.MetricName, "metric")
+			lset := labels.FromStrings(model.MetricNameLabel, "metric")
 			// Ensure the series slice is made of all zero values. Then write something inside before releasing it again.
 			// The slice is expected to be picked from the pool, at least in some runs (there's an assertion on it at
 			// the end of the test).
@@ -134,11 +135,11 @@ func TestSeriesChunksSet(t *testing.T) {
 func TestSeriesChunksSeriesSet(t *testing.T) {
 	c := generateAggrChunk(6)
 
-	series1 := labels.FromStrings(labels.MetricName, "metric_1")
-	series2 := labels.FromStrings(labels.MetricName, "metric_2")
-	series3 := labels.FromStrings(labels.MetricName, "metric_3")
-	series4 := labels.FromStrings(labels.MetricName, "metric_4")
-	series5 := labels.FromStrings(labels.MetricName, "metric_4")
+	series1 := labels.FromStrings(model.MetricNameLabel, "metric_1")
+	series2 := labels.FromStrings(model.MetricNameLabel, "metric_2")
+	series3 := labels.FromStrings(model.MetricNameLabel, "metric_3")
+	series4 := labels.FromStrings(model.MetricNameLabel, "metric_4")
+	series5 := labels.FromStrings(model.MetricNameLabel, "metric_4")
 
 	// Utility function to create sets, so that each test starts from a clean setup (e.g. releaser is not released).
 	createSets := func() (sets []seriesChunksSet, releasers []*releaserMock) {

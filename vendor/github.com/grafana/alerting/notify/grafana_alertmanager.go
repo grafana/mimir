@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/dispatch"
 	"github.com/prometheus/alertmanager/featurecontrol"
+	"github.com/prometheus/alertmanager/flushlog"
 	"github.com/prometheus/alertmanager/inhibit"
 	"github.com/prometheus/alertmanager/matchers/compat"
 	"github.com/prometheus/alertmanager/nflog"
@@ -32,6 +33,7 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/grafana/alerting/cluster"
+	"github.com/grafana/alerting/definition"
 	"github.com/grafana/alerting/images"
 	"github.com/grafana/alerting/notify/nfstatus"
 	"github.com/grafana/alerting/notify/stages"
@@ -60,7 +62,7 @@ func init() {
 }
 
 type ClusterPeer interface {
-	AddState(string, cluster.State, prometheus.Registerer) cluster.ClusterChannel
+	AddState(string, cluster.State, prometheus.Registerer, ...cluster.ChannelOption) cluster.ClusterChannel
 	Position() int
 	WaitReady(context.Context) error
 }
@@ -88,6 +90,7 @@ type GrafanaAlertmanager struct {
 	inhibitor       *inhibit.Inhibitor
 	silencer        *silence.Silencer
 	silences        *silence.Silences
+	flushLog        *flushlog.FlushLog
 
 	// timeIntervals is the set of all time_intervals and mute_time_intervals from
 	// the configuration.
@@ -136,6 +139,11 @@ type (
 	Notifier         = notify.Notifier
 )
 
+type DynamicLimits struct {
+	Dispatcher DispatcherLimits
+	Templates  templates.Limits
+}
+
 //nolint:revive
 type NotifyReceiver = nfstatus.Receiver
 
@@ -147,7 +155,7 @@ type NotificationsConfiguration struct {
 	Templates         []templates.TemplateDefinition
 	Receivers         []*APIReceiver
 
-	DispatcherLimits DispatcherLimits
+	Limits DynamicLimits
 
 	Raw  []byte
 	Hash [16]byte
@@ -165,6 +173,7 @@ type GrafanaAlertmanagerOpts struct {
 
 	Silences MaintenanceOptions
 	Nflog    MaintenanceOptions
+	FlushLog MaintenanceOptions
 
 	Limits Limits
 
@@ -181,6 +190,8 @@ type GrafanaAlertmanagerOpts struct {
 	Metrics *GrafanaAlertmanagerMetrics
 
 	NotificationHistorian nfstatus.NotificationHistorian
+
+	DispatchTimer DispatchTimer
 }
 
 func (c *GrafanaAlertmanagerOpts) Validate() error {
@@ -190,6 +201,11 @@ func (c *GrafanaAlertmanagerOpts) Validate() error {
 
 	if c.Nflog == nil {
 		return errors.New("notification log maintenance options must be present")
+	}
+
+	// only validate flush log options if using sync'ed dispatcher timer
+	if c.DispatchTimer == DispatchTimerSync && c.FlushLog == nil {
+		return errors.New("flush log maintenance options must be present")
 	}
 
 	if c.EmailSender == nil {
@@ -274,7 +290,7 @@ func NewGrafanaAlertmanager(opts GrafanaAlertmanagerOpts) (*GrafanaAlertmanager,
 	go func() {
 		am.notificationLog.Maintenance(opts.Nflog.MaintenanceFrequency(), snapshotPlaceholder, am.stopc, func() (int64, error) {
 			if _, err := am.notificationLog.GC(); err != nil {
-				level.Error(am.logger).Log("notification log garbage collection", "err", err)
+				level.Error(am.logger).Log("msg", "notification log garbage collection", "err", err)
 			}
 
 			return opts.Nflog.MaintenanceFunc(am.notificationLog)
@@ -287,7 +303,7 @@ func NewGrafanaAlertmanager(opts GrafanaAlertmanagerOpts) (*GrafanaAlertmanager,
 		am.silences.Maintenance(opts.Silences.MaintenanceFrequency(), snapshotPlaceholder, am.stopc, func() (int64, error) {
 			// Delete silences older than the retention period.
 			if _, err := am.silences.GC(); err != nil {
-				level.Error(am.logger).Log("silence garbage collection", "err", err)
+				level.Error(am.logger).Log("msg", "silence garbage collection", "err", err)
 				// Don't return here - we need to snapshot our state first.
 			}
 
@@ -297,13 +313,45 @@ func NewGrafanaAlertmanager(opts GrafanaAlertmanagerOpts) (*GrafanaAlertmanager,
 		am.wg.Done()
 	}()
 
+	// Initialize the flush log only if using sync'ed timer
+	if am.opts.DispatchTimer == DispatchTimerSync {
+		am.flushLog, err = flushlog.New(flushlog.Options{
+			SnapshotReader: strings.NewReader(opts.FlushLog.InitialState()),
+			Retention:      opts.FlushLog.Retention(),
+			Logger:         opts.Logger,
+			Metrics:        opts.Metrics.Registerer,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("unable to initialize the flush log component of alerting: %w", err)
+		}
+		c = opts.Peer.AddState(fmt.Sprintf("flushlog:%d", opts.TenantID), am.flushLog, opts.Metrics.Registerer)
+		am.flushLog.SetBroadcast(c.Broadcast)
+
+		am.wg.Add(1)
+		go func() {
+			am.flushLog.Maintenance(opts.FlushLog.MaintenanceFrequency(), snapshotPlaceholder, am.stopc, func() (int64, error) {
+				if _, err := am.flushLog.GC(); err != nil {
+					level.Error(am.logger).Log("msg", "flush log garbage collection", "err", err)
+				}
+
+				return opts.FlushLog.MaintenanceFunc(am.flushLog)
+			})
+			am.wg.Done()
+		}()
+
+	}
+
 	// Initialize in-memory alerts
 	am.alerts, err = mem.NewAlerts(context.Background(), am.marker, memoryAlertsGCInterval, opts.AlertStoreCallback, am.logger, opts.Metrics.Registerer)
 	if err != nil {
 		return nil, fmt.Errorf("unable to initialize the alert provider component of alerting: %w", err)
 	}
 
-	am.templates, err = templates.NewFactory(nil, am.logger, am.ExternalURL(), fmt.Sprintf("%d", am.TenantID()))
+	cfg, err := templates.NewConfig(fmt.Sprintf("%d", am.TenantID()), am.ExternalURL(), am.opts.Version, templates.DefaultLimits)
+	if err != nil {
+		return nil, fmt.Errorf("unable to initialize the template provider component of alerting: %w", err)
+	}
+	am.templates, err = templates.NewFactory(nil, cfg, am.logger)
 	if err != nil {
 		return nil, err
 	}
@@ -317,6 +365,14 @@ func (am *GrafanaAlertmanager) MergeSilences(sil []byte) error {
 
 func (am *GrafanaAlertmanager) MergeNflog(nflog []byte) error {
 	return am.notificationLog.Merge(nflog)
+}
+
+func (am *GrafanaAlertmanager) MergeFlushLog(flushLog []byte) error {
+	// flushLog will only be initialized if using sync'ed dispatcher timer
+	if am.flushLog != nil {
+		return am.flushLog.Merge(flushLog)
+	}
+	return nil
 }
 
 func (am *GrafanaAlertmanager) TenantID() int64 {
@@ -353,9 +409,9 @@ func (am *GrafanaAlertmanager) StopAndWait() {
 	am.wg.Wait()
 }
 
-// GetReceivers returns the receivers configured as part of the current configuration.
+// GetReceiversStatus returns the status of receivers configured as part of the current configuration.
 // It is safe to call concurrently.
-func (am *GrafanaAlertmanager) GetReceivers() []models.Receiver {
+func (am *GrafanaAlertmanager) GetReceiversStatus() []models.ReceiverStatus {
 	am.reloadConfigMtx.RLock()
 	receivers := am.receivers
 	am.reloadConfigMtx.RUnlock()
@@ -364,14 +420,14 @@ func (am *GrafanaAlertmanager) GetReceivers() []models.Receiver {
 }
 
 // GetReceivers converts the internal receiver status into the API response.
-func GetReceivers(receivers []*nfstatus.Receiver) []models.Receiver {
-	apiReceivers := make([]models.Receiver, 0, len(receivers))
+func GetReceivers(receivers []*nfstatus.Receiver) []models.ReceiverStatus {
+	apiReceivers := make([]models.ReceiverStatus, 0, len(receivers))
 	for _, rcv := range receivers {
 		// Build integrations slice for each receiver.
-		integrations := make([]models.Integration, 0, len(rcv.Integrations()))
+		integrations := make([]models.IntegrationStatus, 0, len(rcv.Integrations()))
 		for _, integration := range rcv.Integrations() {
 			ts, d, err := integration.GetReport()
-			integrations = append(integrations, models.Integration{
+			integrations = append(integrations, models.IntegrationStatus{
 				Name:                      integration.Name(),
 				SendResolved:              integration.SendResolved(),
 				LastNotifyAttempt:         strfmt.DateTime(ts),
@@ -385,7 +441,7 @@ func GetReceivers(receivers []*nfstatus.Receiver) []models.Receiver {
 			})
 		}
 
-		apiReceivers = append(apiReceivers, models.Receiver{
+		apiReceivers = append(apiReceivers, models.ReceiverStatus{
 			Active:       rcv.Active(),
 			Integrations: integrations,
 			Name:         rcv.Name(),
@@ -397,14 +453,14 @@ func GetReceivers(receivers []*nfstatus.Receiver) []models.Receiver {
 
 // job contains all metadata required to test a receiver
 type job struct {
-	Config       *GrafanaIntegrationConfig
+	Config       *models.IntegrationConfig
 	ReceiverName string
-	Notifier     notify.Notifier
+	Notifier     *nfstatus.Integration
 }
 
 // result contains the receiver that was tested and a non-nil error if the test failed
 type result struct {
-	Config       *GrafanaIntegrationConfig
+	Config       *models.IntegrationConfig
 	ReceiverName string
 	Error        error
 }
@@ -490,7 +546,7 @@ func TestReceivers(
 	tmplProvider TemplatesProvider,
 ) (*TestReceiversResult, int, error) {
 	now := time.Now() // The start time of the test
-	testAlert := newTestAlert(c, now, now)
+	testAlert := newTestAlert(c.Alert, now, now)
 
 	// All invalid receiver configurations
 	invalid := make([]result, 0, len(c.Receivers))
@@ -502,8 +558,11 @@ func TestReceivers(
 			// Create an APIReceiver with a single integration so we
 			// can identify invalid receiver integration configs
 			singleIntReceiver := &APIReceiver{
-				GrafanaIntegrations: GrafanaIntegrations{
-					Integrations: []*GrafanaIntegrationConfig{intg},
+				ConfigReceiver: definition.Receiver{
+					Name: receiver.Name,
+				},
+				ReceiverConfig: models.ReceiverConfig{
+					Integrations: []*models.IntegrationConfig{intg},
 				},
 			}
 			integrations, err := buildIntegrationsFunc(singleIntReceiver, tmplProvider)
@@ -548,15 +607,10 @@ func TestReceivers(
 	for i := 0; i < numWorkers; i++ {
 		g.Go(func() error {
 			for next := range workCh {
-				ctx = notify.WithGroupKey(ctx, fmt.Sprintf("%s-%s-%d", next.ReceiverName, testAlert.Labels.Fingerprint(), now.Unix()))
-				ctx = notify.WithGroupLabels(ctx, testAlert.Labels)
-				ctx = notify.WithReceiverName(ctx, next.ReceiverName)
 				v := result{
 					Config:       next.Config,
 					ReceiverName: next.ReceiverName,
-				}
-				if _, err := next.Notifier.Notify(ctx, &testAlert); err != nil {
-					v.Error = err
+					Error:        TestNotifier(ctx, next.Notifier, testAlert, now),
 				}
 				resultCh <- v
 			}
@@ -626,8 +680,9 @@ func TestTemplate(ctx context.Context, c TestTemplatesConfigBodyParams, tmplsFac
 	ctx = notify.WithReceiverName(ctx, DefaultReceiverName)
 	ctx = notify.WithGroupLabels(ctx, labels)
 
-	promTmplData := notify.GetTemplateData(ctx, newTmpl, alerts, logger)
+	promTmplData := notify.GetTemplateData(ctx, newTmpl.Template, alerts, logger)
 	data := templates.ExtendData(promTmplData, logger)
+	data.AppVersion = newTmpl.AppVersion
 
 	// Iterate over each definition in the template and evaluate it.
 	var results TestTemplatesResults
@@ -687,7 +742,11 @@ func (am *GrafanaAlertmanager) buildTimeIntervals(timeIntervals []config.TimeInt
 // ApplyConfig applies a new configuration by re-initializing all components using the configuration provided.
 // It is not safe to call concurrently.
 func (am *GrafanaAlertmanager) ApplyConfig(cfg NotificationsConfiguration) (err error) {
-	factory, err := templates.NewFactory(cfg.Templates, am.logger, am.ExternalURL(), fmt.Sprintf("%d", am.TenantID()))
+	tmplCfg, err := templates.NewConfig(fmt.Sprintf("%d", am.TenantID()), am.ExternalURL(), am.opts.Version, cfg.Limits.Templates)
+	if err != nil {
+		return err
+	}
+	factory, err := templates.NewFactory(cfg.Templates, tmplCfg, am.logger)
 	if err != nil {
 		return err
 	}
@@ -735,10 +794,16 @@ func (am *GrafanaAlertmanager) ApplyConfig(cfg NotificationsConfiguration) (err 
 	silencingStage := notify.NewMuteStage(am.silencer, am.stageMetrics)
 
 	am.route = dispatch.NewRoute(cfg.RoutingTree, nil)
-	am.dispatcher = dispatch.NewDispatcher(am.alerts, am.route, routingStage, am.marker, am.timeoutFunc, cfg.DispatcherLimits, am.logger, am.dispatcherMetrics, nil)
+
+	var dispatchTimer dispatch.TimerFactory
+	if am.opts.DispatchTimer == DispatchTimerSync {
+		dispatchTimer = dispatch.NewSyncTimerFactory(am.flushLog, am.opts.Peer.Position)
+	}
+
+	am.dispatcher = dispatch.NewDispatcher(am.alerts, am.route, routingStage, am.marker, am.timeoutFunc, cfg.Limits.Dispatcher, am.logger, am.dispatcherMetrics, dispatchTimer)
 
 	// TODO: This has not been upstreamed yet. Should be aligned when https://github.com/prometheus/alertmanager/pull/3016 is merged.
-	var receivers []*nfstatus.Receiver
+	receivers := make([]*nfstatus.Receiver, 0, len(integrationsMap))
 	activeReceivers := GetActiveReceiversMap(am.route)
 	for name := range integrationsMap {
 		stage := am.createReceiverStage(name, nfstatus.GetIntegrations(integrationsMap[name]), am.notificationLog)
@@ -848,14 +913,14 @@ func PostableAlertsToAlertmanagerAlerts(postableAlerts amv2.PostableAlerts, now 
 				continue
 			}
 
-			alert.Alert.Labels[model.LabelName(k)] = model.LabelValue(v)
+			alert.Labels[model.LabelName(k)] = model.LabelValue(v)
 		}
 
 		for k, v := range a.Annotations {
 			if len(v) == 0 { // Skip empty annotation.
 				continue
 			}
-			alert.Alert.Annotations[model.LabelName(k)] = model.LabelValue(v)
+			alert.Annotations[model.LabelName(k)] = model.LabelValue(v)
 		}
 
 		// Ensure StartsAt is set.

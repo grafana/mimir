@@ -32,6 +32,7 @@ import (
 	"golang.org/x/net/context/ctxhttp"
 
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 type DefaultMultiTenantManager struct {
@@ -309,7 +310,7 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 				return nil, err
 			}
 
-			ctx, sp := tracer.Start(ctx, "notify", trace.WithAttributes(attribute.String("organization", userID)))
+			ctx, sp := tracer.Start(ctx, "notify", trace.WithAttributes(attribute.String("user", userID)))
 			defer sp.End()
 
 			otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
@@ -442,8 +443,9 @@ func (r *DefaultMultiTenantManager) ValidateRuleGroup(userID string, g rulefmt.R
 	}
 
 	validationScheme := r.limits.NameValidationScheme(userID)
+	parser := promqlext.NewPromQLParser()
 	for i, r := range g.Rules {
-		for _, err := range r.Validate(node.Rules[i], validationScheme) {
+		for _, err := range r.Validate(node.Rules[i], validationScheme, parser) {
 			var ruleName string
 			if r.Alert != "" {
 				ruleName = r.Alert

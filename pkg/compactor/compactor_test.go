@@ -10,6 +10,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -29,17 +30,18 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/regexp"
 	"github.com/oklog/ulid/v2"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
@@ -106,7 +108,7 @@ func TestConfig_Validate(t *testing.T) {
 			setup: func(cfg *Config) {
 				cfg.BlockRanges = mimir_tsdb.DurationList{2 * time.Hour, 12 * time.Hour, 24 * time.Hour, 30 * time.Hour}
 			},
-			expected: errors.Errorf(errInvalidBlockRanges, 30*time.Hour, 24*time.Hour).Error(),
+			expected: fmt.Errorf(errInvalidBlockRanges, 30*time.Hour, 24*time.Hour).Error(),
 		},
 		"should fail on unknown compaction jobs order": {
 			setup: func(cfg *Config) {
@@ -125,6 +127,34 @@ func TestConfig_Validate(t *testing.T) {
 		"should fail on invalid value of symbols-flushers-concurrency": {
 			setup:    func(cfg *Config) { cfg.SymbolsFlushersConcurrency = 0 },
 			expected: errInvalidSymbolFlushersConcurrency.Error(),
+		},
+		"should pass with scheduler client disabled": {
+			setup: func(cfg *Config) {
+				cfg.SchedulerClientConfig.Enabled = false
+			},
+			expected: "",
+		},
+		"should pass with scheduler client enabled and scheduler endpoint": {
+			setup: func(cfg *Config) {
+				cfg.SchedulerClientConfig.Enabled = true
+				cfg.SchedulerClientConfig.SchedulerEndpoint = "localhost:9095"
+			},
+			expected: "",
+		},
+		"should fail with scheduler client enabled and no scheduler endpoint": {
+			setup: func(cfg *Config) {
+				cfg.SchedulerClientConfig.Enabled = true
+				cfg.SchedulerClientConfig.SchedulerEndpoint = ""
+			},
+			expected: errInvalidSchedulerEndpoint.Error(),
+		},
+		"should fail with scheduler mode enabled and zero update interval": {
+			setup: func(cfg *Config) {
+				cfg.SchedulerClientConfig.Enabled = true
+				cfg.SchedulerClientConfig.SchedulerEndpoint = "localhost:9095"
+				cfg.SchedulerClientConfig.UpdateInterval = 0
+			},
+			expected: errInvalidSchedulerUpdateInterval.Error(),
 		},
 	}
 
@@ -491,7 +521,7 @@ func TestMultitenantCompactor_ShouldIncrementCompactionShutdownIfTheContextIsCan
 	bucketClient.MockGet(userID+"/bucket-index.json.gz", "", nil)
 	bucketClient.MockUpload(userID+"/bucket-index.json.gz", nil)
 
-	c, _, tsdbPlannerMock, logs, registry := prepare(t, prepareConfig(t), bucketClient)
+	c, _, tsdbPlannerMock, logs, _ := prepare(t, prepareConfig(t), bucketClient)
 	t.Cleanup(func() {
 		t.Log(logs.String())
 	})
@@ -499,31 +529,24 @@ func TestMultitenantCompactor_ShouldIncrementCompactionShutdownIfTheContextIsCan
 	tsdbPlannerMock.On("Plan", mock.Anything, mock.Anything).Return([]*block.Meta{}, context.Canceled)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 
-	// Wait until the error is recorded.
-	test.Poll(t, time.Second, 1.0, func() interface{} {
-		return prom_testutil.ToFloat64(c.compactionRunsShutdown)
-	})
+	// Wait until at least one compaction run has been counted as shutdown. The variable
+	// first-tick interval in the running() loop may cause a second run to
+	// start before we can stop the compactor, so we check for >= 1 rather than == 1.
+	require.Eventually(t, func() bool {
+		return prom_testutil.ToFloat64(c.compactionRunsShutdown) >= 1
+	}, time.Second, 10*time.Millisecond)
 
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c))
 
-	assert.NoError(t, prom_testutil.GatherAndCompare(registry, strings.NewReader(`
-		# TYPE cortex_compactor_runs_started_total counter
-		# HELP cortex_compactor_runs_started_total Total number of compaction runs started.
-		cortex_compactor_runs_started_total 1
-
-		# TYPE cortex_compactor_runs_completed_total counter
-		# HELP cortex_compactor_runs_completed_total Total number of compaction runs successfully completed.
-		cortex_compactor_runs_completed_total 0
-
-		# TYPE cortex_compactor_runs_failed_total counter
-		# HELP cortex_compactor_runs_failed_total Total number of compaction runs failed.
-		cortex_compactor_runs_failed_total{reason="error"} 0
-		cortex_compactor_runs_failed_total{reason="shutdown"} 1
-	`),
-		"cortex_compactor_runs_started_total",
-		"cortex_compactor_runs_completed_total",
-		"cortex_compactor_runs_failed_total",
-	))
+	// After stopping, verify that all compaction runs (one or more) were counted as
+	// shutdowns. The variable first-tick interval may have caused a second run to start
+	// before the compactor stopped; in that case runs_started and runs_failed{shutdown}
+	// will both be 2, which is still correct behaviour.
+	runsStarted := prom_testutil.ToFloat64(c.compactionRunsStarted)
+	assert.GreaterOrEqual(t, runsStarted, 1.0)
+	assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.compactionRunsCompleted))
+	assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.compactionRunsErred))
+	assert.Equal(t, runsStarted, prom_testutil.ToFloat64(c.compactionRunsShutdown))
 }
 
 func TestMultitenantCompactor_ShouldIterateOverUsersAndRunCompaction(t *testing.T) {
@@ -1468,7 +1491,7 @@ func TestMultitenantCompactor_ShouldSkipCompactionForJobsWithFirstLevelCompactio
 
 	// Mock two tenants, each with 2 overlapping blocks.
 	spec := []*block.SeriesSpec{{
-		Labels: labels.FromStrings(labels.MetricName, "series_1"),
+		Labels: labels.FromStrings(model.MetricNameLabel, "series_1"),
 		Chunks: []chunks.Meta{must(chunks.ChunkFromSamples([]chunks.Sample{
 			testutil.Sample{TS: 1574776800000, Val: 0},
 			testutil.Sample{TS: 1574783999999, Val: 0},
@@ -1605,7 +1628,7 @@ func createCustomTSDBBlock(t *testing.T, bkt objstore.Bucket, userID string, ext
 		Labels: externalLabels,
 		Source: "test",
 	}
-	_, err = block.InjectThanosMeta(log.NewNopLogger(), filepath.Join(snapshotDir, blockID.String()), meta, nil)
+	_, err = block.InjectThanosMeta(log.NewNopLogger(), filepath.Join(snapshotDir, blockID.String()), meta)
 	require.NoError(t, err)
 
 	// Copy the block files to the bucket.
@@ -1768,6 +1791,8 @@ func prepareConfig(t *testing.T) Config {
 
 	// The new default is 25m, but tests rely on the previous value of 0s
 	compactorCfg.CompactionWaitPeriod = 0
+
+	compactorCfg.SparseIndexHeadersSamplingRate = 32
 
 	return compactorCfg
 }
@@ -2292,6 +2317,9 @@ func TestMultitenantCompactor_OutOfOrderCompaction(t *testing.T) {
 		# TYPE cortex_compactor_blocks_marked_for_no_compaction_total counter
 		cortex_compactor_blocks_marked_for_no_compaction_total{reason="block-index-out-of-order-chunk"} 1
 		cortex_compactor_blocks_marked_for_no_compaction_total{reason="critical"} 0
+		cortex_compactor_blocks_marked_for_no_compaction_total{reason="index-exceeds-64gib"} 0
+		cortex_compactor_blocks_marked_for_no_compaction_total{reason="postings-offset-table-too-large"} 0
+		cortex_compactor_blocks_marked_for_no_compaction_total{reason="symbol-table-too-large"} 0
 	`),
 		"cortex_compactor_blocks_marked_for_no_compaction_total",
 	))
@@ -2362,9 +2390,132 @@ func TestMultitenantCompactor_CriticalIssue(t *testing.T) {
 		# TYPE cortex_compactor_blocks_marked_for_no_compaction_total counter
 		cortex_compactor_blocks_marked_for_no_compaction_total{reason="block-index-out-of-order-chunk"} 0
 		cortex_compactor_blocks_marked_for_no_compaction_total{reason="critical"} 1
+		cortex_compactor_blocks_marked_for_no_compaction_total{reason="index-exceeds-64gib"} 0
+		cortex_compactor_blocks_marked_for_no_compaction_total{reason="postings-offset-table-too-large"} 0
+		cortex_compactor_blocks_marked_for_no_compaction_total{reason="symbol-table-too-large"} 0
 	`),
 		"cortex_compactor_blocks_marked_for_no_compaction_total",
 	))
+}
+
+func TestMultitenantCompactor_PermanentCompactionErrors(t *testing.T) {
+	tests := map[string]struct {
+		compactErr      error
+		expectedReason  block.NoCompactReason
+		expectedMetrics string
+	}{
+		"postings offset table too large": {
+			compactErr:     fmt.Errorf("write postings: %w", index.ErrPostingsOffsetTableTooLarge),
+			expectedReason: block.PostingsOffsetTableTooLargeNoCompactReason,
+			expectedMetrics: `
+				# HELP cortex_compactor_blocks_marked_for_no_compaction_total Total number of blocks that were marked for no-compaction.
+				# TYPE cortex_compactor_blocks_marked_for_no_compaction_total counter
+				cortex_compactor_blocks_marked_for_no_compaction_total{reason="block-index-out-of-order-chunk"} 0
+				cortex_compactor_blocks_marked_for_no_compaction_total{reason="critical"} 0
+				cortex_compactor_blocks_marked_for_no_compaction_total{reason="index-exceeds-64gib"} 0
+				cortex_compactor_blocks_marked_for_no_compaction_total{reason="postings-offset-table-too-large"} 2
+				cortex_compactor_blocks_marked_for_no_compaction_total{reason="symbol-table-too-large"} 0
+			`,
+		},
+		"index exceeds 64GiB": {
+			compactErr:     fmt.Errorf("write index: %w", index.ErrIndexExceeds64GiB),
+			expectedReason: block.IndexExceeds64GiBNoCompactReason,
+			expectedMetrics: `
+				# HELP cortex_compactor_blocks_marked_for_no_compaction_total Total number of blocks that were marked for no-compaction.
+				# TYPE cortex_compactor_blocks_marked_for_no_compaction_total counter
+				cortex_compactor_blocks_marked_for_no_compaction_total{reason="block-index-out-of-order-chunk"} 0
+				cortex_compactor_blocks_marked_for_no_compaction_total{reason="critical"} 0
+				cortex_compactor_blocks_marked_for_no_compaction_total{reason="index-exceeds-64gib"} 2
+				cortex_compactor_blocks_marked_for_no_compaction_total{reason="postings-offset-table-too-large"} 0
+				cortex_compactor_blocks_marked_for_no_compaction_total{reason="symbol-table-too-large"} 0
+			`,
+		},
+		"symbol table too large": {
+			compactErr:     fmt.Errorf("write symbols: %w", index.ErrSymbolTableTooLarge),
+			expectedReason: block.SymbolTableTooLargeNoCompactReason,
+			expectedMetrics: `
+				# HELP cortex_compactor_blocks_marked_for_no_compaction_total Total number of blocks that were marked for no-compaction.
+				# TYPE cortex_compactor_blocks_marked_for_no_compaction_total counter
+				cortex_compactor_blocks_marked_for_no_compaction_total{reason="block-index-out-of-order-chunk"} 0
+				cortex_compactor_blocks_marked_for_no_compaction_total{reason="critical"} 0
+				cortex_compactor_blocks_marked_for_no_compaction_total{reason="index-exceeds-64gib"} 0
+				cortex_compactor_blocks_marked_for_no_compaction_total{reason="postings-offset-table-too-large"} 0
+				cortex_compactor_blocks_marked_for_no_compaction_total{reason="symbol-table-too-large"} 2
+			`,
+		},
+	}
+
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			specs := []*block.SeriesSpec{
+				{
+					Labels: labels.FromStrings("__name__", "test_metric"),
+					Chunks: []chunks.Meta{
+						must(chunks.ChunkFromSamples([]chunks.Sample{
+							testutil.Sample{TS: 0, Val: 0},
+							testutil.Sample{TS: 2*time.Hour.Milliseconds() - 1, Val: 1},
+						})),
+					},
+				},
+			}
+
+			const user = "user"
+			storageDir := t.TempDir()
+
+			meta1, err := block.GenerateBlockFromSpec(filepath.Join(storageDir, user), specs)
+			require.NoError(t, err)
+			meta2, err := block.GenerateBlockFromSpec(filepath.Join(storageDir, user), specs)
+			require.NoError(t, err)
+
+			bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
+			require.NoError(t, err)
+
+			cfg := prepareConfig(t)
+			c, tsdbCompactor, tsdbPlanner, logs, registry := prepare(t, cfg, bkt)
+
+			tsdbPlanner.On("Plan", mock.Anything, mock.Anything).Return([]*block.Meta{meta1, meta2}, nil)
+
+			// Mock the compaction to return the permanent error
+			tsdbCompactor.On("Compact", mock.Anything, mock.Anything, mock.Anything).
+				Return([]ulid.ULID(nil), tc.compactErr)
+
+			// Start the compactor
+			require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
+
+			// Wait until a compaction run has been completed
+			test.Poll(t, 10*time.Second, 1.0, func() interface{} {
+				return prom_testutil.ToFloat64(c.compactionRunsCompleted)
+			})
+
+			// Stop the compactor
+			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c))
+
+			// Verify that compactor marked both input blocks for no-compaction
+			r := regexp.MustCompile("level=info component=compactor user=user msg=\"block has been marked for no compaction\" block=([0-9A-Z]+)")
+			matches := r.FindAllStringSubmatch(logs.String(), -1)
+			require.Len(t, matches, 2, "expected two blocks to be marked for no-compaction") // One log per block
+
+			for _, match := range matches {
+				require.Len(t, match, 2) // Full match + capture group
+				blockID := match[1]
+				require.True(t, blockID == meta1.ULID.String() || blockID == meta2.ULID.String(),
+					"marked block %s should be either meta1 or meta2", blockID)
+			}
+
+			for _, meta := range []*block.Meta{meta1, meta2} {
+				m := &block.NoCompactMark{}
+				require.NoError(t, block.ReadMarker(context.Background(), log.NewNopLogger(), objstore.WithNoopInstr(bkt), path.Join(user, meta.ULID.String()), m))
+				require.Equal(t, meta.ULID.String(), m.ID.String())
+				require.NotZero(t, m.NoCompactTime)
+				require.Equal(t, tc.expectedReason, m.Reason)
+			}
+
+			// Verify metrics
+			assert.NoError(t, prom_testutil.GatherAndCompare(registry, strings.NewReader(tc.expectedMetrics),
+				"cortex_compactor_blocks_marked_for_no_compaction_total",
+			))
+		})
+	}
 }
 
 type bucketWithMockedAttributes struct {

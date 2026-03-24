@@ -189,11 +189,10 @@ func TestToErrorWithGRPCStatus(t *testing.T) {
 	ingestionRateLimitedErr := newIngestionRateLimitedError(10, 10)
 	requestRateLimitedErr := newRequestRateLimitedError(10, 10)
 	type testStruct struct {
-		err                         error
-		serviceOverloadErrorEnabled bool
-		expectedGRPCCode            codes.Code
-		expectedErrorMsg            string
-		expectedErrorDetails        *mimirpb.ErrorDetails
+		err                  error
+		expectedGRPCCode     codes.Code
+		expectedErrorMsg     string
+		expectedErrorDetails *mimirpb.ErrorDetails
 	}
 	testCases := map[string]testStruct{
 		"a generic error gets translated into an Internal error with no details": {
@@ -242,53 +241,25 @@ func TestToErrorWithGRPCStatus(t *testing.T) {
 			expectedErrorMsg:     originalMsg,
 			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA},
 		},
-		"an ingestionRateLimitedError with serviceOverloadErrorEnabled gets translated into an Unavailable error with INGESTION_RATE_LIMITED cause": {
-			err:                         ingestionRateLimitedErr,
-			serviceOverloadErrorEnabled: true,
-			expectedGRPCCode:            codes.Unavailable,
-			expectedErrorMsg:            ingestionRateLimitedErr.Error(),
-			expectedErrorDetails:        &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED},
-		},
-		"a DoNotLogError of an ingestionRateLimitedError with serviceOverloadErrorEnabled gets translated into an Unavailable error with INGESTION_RATE_LIMITED cause": {
-			err:                         middleware.DoNotLogError{Err: ingestionRateLimitedErr},
-			serviceOverloadErrorEnabled: true,
-			expectedGRPCCode:            codes.Unavailable,
-			expectedErrorMsg:            ingestionRateLimitedErr.Error(),
-			expectedErrorDetails:        &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED},
-		},
-		"an ingestionRateLimitedError without serviceOverloadErrorEnabled gets translated into a ResourceExhausted error with INGESTION_RATE_LIMITED cause": {
+		"an ingestionRateLimitedError gets translated into a ResourceExhausted error with INGESTION_RATE_LIMITED cause": {
 			err:                  ingestionRateLimitedErr,
 			expectedGRPCCode:     codes.ResourceExhausted,
 			expectedErrorMsg:     ingestionRateLimitedErr.Error(),
 			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED},
 		},
-		"a DoNotLogError of an ingestionRateLimitedError without serviceOverloadErrorEnabled gets translated into a ResourceExhausted error with INGESTION_RATE_LIMITED cause": {
+		"a DoNotLogError of an ingestionRateLimitedError gets translated into a ResourceExhausted error with INGESTION_RATE_LIMITED cause": {
 			err:                  middleware.DoNotLogError{Err: ingestionRateLimitedErr},
 			expectedGRPCCode:     codes.ResourceExhausted,
 			expectedErrorMsg:     ingestionRateLimitedErr.Error(),
 			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED},
 		},
-		"a requestRateLimitedError with serviceOverloadErrorEnabled gets translated into an Unavailable error with REQUEST_RATE_LIMITED cause": {
-			err:                         requestRateLimitedErr,
-			serviceOverloadErrorEnabled: true,
-			expectedGRPCCode:            codes.Unavailable,
-			expectedErrorMsg:            requestRateLimitedErr.Error(),
-			expectedErrorDetails:        &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED},
-		},
-		"a DoNotLogError of a requestRateLimitedError with serviceOverloadErrorEnabled gets translated into an Unavailable error with REQUEST_RATE_LIMITED cause": {
-			err:                         middleware.DoNotLogError{Err: requestRateLimitedErr},
-			serviceOverloadErrorEnabled: true,
-			expectedGRPCCode:            codes.Unavailable,
-			expectedErrorMsg:            requestRateLimitedErr.Error(),
-			expectedErrorDetails:        &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED},
-		},
-		"a requestRateLimitedError without serviceOverloadErrorEnabled gets translated into an ResourceExhausted error with REQUEST_RATE_LIMITED cause": {
+		"a requestRateLimitedError gets translated into an ResourceExhausted error with REQUEST_RATE_LIMITED cause": {
 			err:                  requestRateLimitedErr,
 			expectedGRPCCode:     codes.ResourceExhausted,
 			expectedErrorMsg:     requestRateLimitedErr.Error(),
 			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED},
 		},
-		"a DoNotLogError of a requestRateLimitedError without serviceOverloadErrorEnabled gets translated into an ResourceExhausted error with REQUEST_RATE_LIMITED cause": {
+		"a DoNotLogError of a requestRateLimitedError gets translated into an ResourceExhausted error with REQUEST_RATE_LIMITED cause": {
 			err:                  middleware.DoNotLogError{Err: requestRateLimitedErr},
 			expectedGRPCCode:     codes.ResourceExhausted,
 			expectedErrorMsg:     requestRateLimitedErr.Error(),
@@ -306,15 +277,15 @@ func TestToErrorWithGRPCStatus(t *testing.T) {
 			expectedErrorMsg:     fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA},
 		},
-		"an ingesterPushError with INSTANCE_LIMIT cause gets translated into a Internal error with INSTANCE_LIMIT cause": {
+		"an ingesterPushError with INSTANCE_LIMIT cause gets translated into an Unavailable error with INSTANCE_LIMIT cause": {
 			err:                  newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.ERROR_CAUSE_INSTANCE_LIMIT), ingesterID),
-			expectedGRPCCode:     codes.Internal,
+			expectedGRPCCode:     codes.Unavailable,
 			expectedErrorMsg:     fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_INSTANCE_LIMIT},
 		},
-		"a DoNotLogError of an ingesterPushError with INSTANCE_LIMIT cause gets translated into a Internal error with INSTANCE_LIMIT cause": {
+		"a DoNotLogError of an ingesterPushError with INSTANCE_LIMIT cause gets translated into an Unavailable error with INSTANCE_LIMIT cause": {
 			err:                  middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.ERROR_CAUSE_INSTANCE_LIMIT), ingesterID)},
-			expectedGRPCCode:     codes.Internal,
+			expectedGRPCCode:     codes.Unavailable,
 			expectedErrorMsg:     fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_INSTANCE_LIMIT},
 		},
@@ -381,7 +352,7 @@ func TestToErrorWithGRPCStatus(t *testing.T) {
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			err := toErrorWithGRPCStatus(tc.err, tc.serviceOverloadErrorEnabled)
+			err := toErrorWithGRPCStatus(tc.err)
 
 			stat, ok := grpcutil.ErrorToStatus(err)
 			require.True(t, ok)
@@ -544,9 +515,8 @@ func TestIsIngestionClientError(t *testing.T) {
 
 func TestErrorCauseToGRPCStatusCode(t *testing.T) {
 	type testStruct struct {
-		errorCause                  mimirpb.ErrorCause
-		serviceOverloadErrorEnabled bool
-		expectedGRPCStatusCode      codes.Code
+		errorCause             mimirpb.ErrorCause
+		expectedGRPCStatusCode codes.Code
 	}
 	testCases := map[string]testStruct{
 		"a REPLICAS_DID_NOT_MATCH error cause gets translated into an AlreadyExists": {
@@ -565,33 +535,21 @@ func TestErrorCauseToGRPCStatusCode(t *testing.T) {
 			errorCause:             mimirpb.ERROR_CAUSE_TENANT_LIMIT,
 			expectedGRPCStatusCode: codes.FailedPrecondition,
 		},
-		"an INGESTION_RATE_LIMITED error cause without serviceOverloadErrorEnabled gets translated into a ResourceExhausted": {
-			errorCause:                  mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED,
-			serviceOverloadErrorEnabled: false,
-			expectedGRPCStatusCode:      codes.ResourceExhausted,
+		"an INGESTION_RATE_LIMITED error cause gets translated into a ResourceExhausted": {
+			errorCause:             mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED,
+			expectedGRPCStatusCode: codes.ResourceExhausted,
 		},
-		"an INGESTION_RATE_LIMITED error cause with serviceOverloadErrorEnabled gets translated into an Unavailable": {
-			errorCause:                  mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED,
-			serviceOverloadErrorEnabled: true,
-			expectedGRPCStatusCode:      codes.Unavailable,
-		},
-		"a REQUEST_RATE_LIMITED error cause without serviceOverloadErrorEnabled gets translated into a ResourceExhausted": {
-			errorCause:                  mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED,
-			serviceOverloadErrorEnabled: false,
-			expectedGRPCStatusCode:      codes.ResourceExhausted,
-		},
-		"a REQUEST_RATE_LIMITED error cause with serviceOverloadErrorEnabled gets translated into an Unavailable": {
-			errorCause:                  mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED,
-			serviceOverloadErrorEnabled: true,
-			expectedGRPCStatusCode:      codes.Unavailable,
+		"a REQUEST_RATE_LIMITED error cause gets translated into a ResourceExhausted": {
+			errorCause:             mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED,
+			expectedGRPCStatusCode: codes.ResourceExhausted,
 		},
 		"an UNKNOWN error cause gets translated into an Internal": {
 			errorCause:             mimirpb.ERROR_CAUSE_UNKNOWN,
 			expectedGRPCStatusCode: codes.Internal,
 		},
-		"an INSTANCE_LIMIT error cause gets translated into an Internal": {
+		"an INSTANCE_LIMIT error cause gets translated into an Unavailable": {
 			errorCause:             mimirpb.ERROR_CAUSE_INSTANCE_LIMIT,
-			expectedGRPCStatusCode: codes.Internal,
+			expectedGRPCStatusCode: codes.Unavailable,
 		},
 		"a SERVICE_UNAVAILABLE error cause gets translated into an Internal": {
 			errorCause:             mimirpb.ERROR_CAUSE_SERVICE_UNAVAILABLE,
@@ -616,7 +574,7 @@ func TestErrorCauseToGRPCStatusCode(t *testing.T) {
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			status := errorCauseToGRPCStatusCode(tc.errorCause, tc.serviceOverloadErrorEnabled)
+			status := errorCauseToGRPCStatusCode(tc.errorCause)
 			assert.Equal(t, tc.expectedGRPCStatusCode, status)
 		})
 	}
@@ -624,9 +582,8 @@ func TestErrorCauseToGRPCStatusCode(t *testing.T) {
 
 func TestErrorCauseToHTTPStatusCode(t *testing.T) {
 	type testStruct struct {
-		errorCause                  mimirpb.ErrorCause
-		serviceOverloadErrorEnabled bool
-		expectedHTTPStatus          int
+		errorCause         mimirpb.ErrorCause
+		expectedHTTPStatus int
 	}
 	testCases := map[string]testStruct{
 		"a REPLICAS_DID_NOT_MATCH error cause gets translated into a HTTP 202": {
@@ -645,33 +602,21 @@ func TestErrorCauseToHTTPStatusCode(t *testing.T) {
 			errorCause:         mimirpb.ERROR_CAUSE_TENANT_LIMIT,
 			expectedHTTPStatus: http.StatusBadRequest,
 		},
-		"an INGESTION_RATE_LIMITED error cause without serviceOverloadErrorEnabled gets translated into a HTTP 429": {
-			errorCause:                  mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED,
-			serviceOverloadErrorEnabled: false,
-			expectedHTTPStatus:          http.StatusTooManyRequests,
+		"an INGESTION_RATE_LIMITED error cause gets translated into a HTTP 429": {
+			errorCause:         mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED,
+			expectedHTTPStatus: http.StatusTooManyRequests,
 		},
-		"an INGESTION_RATE_LIMITED error cause with serviceOverloadErrorEnabled gets translated into a HTTP 529": {
-			errorCause:                  mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED,
-			serviceOverloadErrorEnabled: true,
-			expectedHTTPStatus:          StatusServiceOverloaded,
-		},
-		"a REQUEST_RATE_LIMITED error cause without serviceOverloadErrorEnabled gets translated into a HTTP 429": {
-			errorCause:                  mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED,
-			serviceOverloadErrorEnabled: false,
-			expectedHTTPStatus:          http.StatusTooManyRequests,
-		},
-		"a REQUEST_RATE_LIMITED error cause with serviceOverloadErrorEnabled gets translated into a HTTP 529": {
-			errorCause:                  mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED,
-			serviceOverloadErrorEnabled: true,
-			expectedHTTPStatus:          StatusServiceOverloaded,
+		"a REQUEST_RATE_LIMITED error cause gets translated into a HTTP 429": {
+			errorCause:         mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED,
+			expectedHTTPStatus: http.StatusTooManyRequests,
 		},
 		"an UNKNOWN error cause gets translated into a HTTP 500": {
 			errorCause:         mimirpb.ERROR_CAUSE_UNKNOWN,
 			expectedHTTPStatus: http.StatusInternalServerError,
 		},
-		"an INSTANCE_LIMIT error cause gets translated into a HTTP 500": {
+		"an INSTANCE_LIMIT error cause gets translated into a HTTP 503": {
 			errorCause:         mimirpb.ERROR_CAUSE_INSTANCE_LIMIT,
-			expectedHTTPStatus: http.StatusInternalServerError,
+			expectedHTTPStatus: http.StatusServiceUnavailable,
 		},
 		"a SERVICE_UNAVAILABLE error cause gets translated into a HTTP 500": {
 			errorCause:         mimirpb.ERROR_CAUSE_SERVICE_UNAVAILABLE,
@@ -696,7 +641,7 @@ func TestErrorCauseToHTTPStatusCode(t *testing.T) {
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			status := errorCauseToHTTPStatusCode(tc.errorCause, tc.serviceOverloadErrorEnabled)
+			status := errorCauseToHTTPStatusCode(tc.errorCause)
 			assert.Equal(t, tc.expectedHTTPStatus, status)
 		})
 	}

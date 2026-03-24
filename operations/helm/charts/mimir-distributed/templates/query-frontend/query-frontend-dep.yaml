@@ -1,4 +1,4 @@
-{{- if and .Values.query_frontend.enabled (not .Values.federation_frontend.disableOtherComponents) }}
+{{- if .Values.query_frontend.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -70,10 +70,6 @@ spec:
             {{- end }}
             - name: runtime-config
               mountPath: /var/{{ include "mimir.name" . }}
-            {{- if .Values.enterprise.enabled }}
-            - name: license
-              mountPath: /license
-            {{- end }}
             - name: config
               mountPath: /etc/mimir
             - name: storage
@@ -123,11 +119,6 @@ spec:
       volumes:
         - name: config
           {{- include "mimir.configVolume" . | nindent 10 }}
-        {{- if .Values.enterprise.enabled }}
-        - name: license
-          secret:
-            secretName: {{ tpl .Values.license.secretName . }}
-        {{- end }}
         - name: runtime-config
           configMap:
             name: {{ template "mimir.fullname" . }}-runtime

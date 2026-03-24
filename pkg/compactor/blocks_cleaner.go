@@ -7,6 +7,7 @@ package compactor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"slices"
@@ -20,7 +21,6 @@ import (
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid/v2"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/thanos-io/objstore"
@@ -50,7 +50,6 @@ type BlocksCleanerConfig struct {
 	DeleteBlocksConcurrency       int
 	GetDeletionMarkersConcurrency int
 	UpdateBlocksConcurrency       int
-	NoBlocksFileCleanupEnabled    bool
 	CompactionBlockRanges         mimir_tsdb.DurationList // Used for estimating compaction jobs.
 }
 
@@ -262,7 +261,7 @@ func (c *BlocksCleaner) instrumentFinishedCleanupRun(err error, logger log.Logge
 func (c *BlocksCleaner) refreshOwnedUsers(ctx context.Context) (*ownedUsers, error) {
 	users, deleted, err := c.usersScanner.ScanUsers(ctx)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to discover users from bucket")
+		return nil, fmt.Errorf("failed to discover users from bucket: %w", err)
 	}
 
 	rand.Shuffle(len(users), func(i, j int) {
@@ -295,9 +294,18 @@ func (c *BlocksCleaner) cleanUsers(ctx context.Context, users *ownedUsers, logge
 	return c.singleFlight.ForEachNotInFlight(ctx, users.all, func(ctx context.Context, userID string) error {
 		userLogger := util_log.WithUserID(userID, logger)
 		if users.deleted[userID] {
-			return errors.Wrapf(c.deleteUserMarkedForDeletion(ctx, userID, userLogger), "failed to delete user marked for deletion: %s", userID)
+			if err := c.deleteUserMarkedForDeletion(ctx, userID, userLogger); err != nil {
+				return fmt.Errorf("failed to delete user %s marked for deletion: %w", userID, err)
+			}
+
+			return nil
 		}
-		return errors.Wrapf(c.cleanUser(ctx, userID, userLogger), "failed to delete blocks for user: %s", userID)
+
+		if err := c.cleanUser(ctx, userID, userLogger); err != nil {
+			return fmt.Errorf("failed to delete blocks for user %s: %w", userID, err)
+		}
+
+		return nil
 	})
 }
 
@@ -306,20 +314,20 @@ func (c *BlocksCleaner) cleanUsers(ctx context.Context, users *ownedUsers, logge
 func (c *BlocksCleaner) deleteRemainingData(ctx context.Context, userBucket objstore.Bucket, userID string, userLogger log.Logger) error {
 	// Delete bucket index
 	if err := bucketindex.DeleteIndex(ctx, c.bucketClient, userID, c.cfgProvider); err != nil {
-		return errors.Wrap(err, "failed to delete bucket index file")
+		return fmt.Errorf("failed to delete bucket index file: %w", err)
 	}
 	level.Info(userLogger).Log("msg", "deleted bucket index for tenant with no blocks remaining")
 
 	// Delete markers folder
 	if deleted, err := bucket.DeletePrefix(ctx, userBucket, block.MarkersPathname, userLogger); err != nil {
-		return errors.Wrap(err, "failed to delete marker files")
+		return fmt.Errorf("failed to delete marker files: %w", err)
 	} else if deleted > 0 {
 		level.Info(userLogger).Log("msg", "deleted marker files for tenant with no blocks remaining", "count", deleted)
 	}
 
 	// Delete debug folder
 	if deleted, err := bucket.DeletePrefix(ctx, userBucket, block.DebugMetas, userLogger); err != nil {
-		return errors.Wrap(err, "failed to delete "+block.DebugMetas)
+		return fmt.Errorf("failed to delete %s: %w", block.DebugMetas, err)
 	} else if deleted > 0 {
 		level.Info(userLogger).Log("msg", "deleted files under "+block.DebugMetas+" for tenant with no blocks remaining", "count", deleted)
 	}
@@ -376,7 +384,7 @@ func (c *BlocksCleaner) deleteUserMarkedForDeletion(ctx context.Context, userID 
 		c.tenantMarkedBlocks.WithLabelValues(userID).Set(float64(failed))
 		c.tenantPartialBlocks.WithLabelValues(userID).Set(0)
 
-		return errors.Errorf("failed to delete %d blocks", failed)
+		return fmt.Errorf("failed to delete %d blocks", failed)
 	}
 
 	// Given all blocks have been deleted, we can also remove the metrics.
@@ -392,7 +400,7 @@ func (c *BlocksCleaner) deleteUserMarkedForDeletion(ctx context.Context, userID 
 
 	mark, err := mimir_tsdb.ReadTenantDeletionMark(ctx, c.bucketClient, userID, c.logger)
 	if err != nil {
-		return errors.Wrap(err, "failed to read tenant deletion mark")
+		return fmt.Errorf("failed to read tenant deletion mark: %w", err)
 	}
 	if mark == nil {
 		return fmt.Errorf("cannot find tenant deletion mark anymore")
@@ -404,7 +412,11 @@ func (c *BlocksCleaner) deleteUserMarkedForDeletion(ctx context.Context, userID 
 	if deletedBlocks > 0 || mark.FinishedTime == 0 {
 		level.Info(userLogger).Log("msg", "updating finished time in tenant deletion mark")
 		mark.FinishedTime = util.UnixSecondsFromTime(time.Now())
-		return errors.Wrap(mimir_tsdb.WriteTenantDeletionMark(ctx, c.bucketClient, userID, c.cfgProvider, mark), "failed to update tenant deletion mark")
+		if err = mimir_tsdb.WriteTenantDeletionMark(ctx, c.bucketClient, userID, c.cfgProvider, mark); err != nil {
+			return fmt.Errorf("failed to update tenant deletion mark: %w", err)
+		}
+
+		return nil
 	}
 
 	if time.Since(mark.FinishedTime.Time()) < c.cfg.TenantCleanupDelay {
@@ -415,14 +427,14 @@ func (c *BlocksCleaner) deleteUserMarkedForDeletion(ctx context.Context, userID 
 
 	// Let's do a final cleanup of the tenant.
 	if deleted, err := bucket.DeletePrefix(ctx, userBucket, block.DebugMetas, userLogger); err != nil {
-		return errors.Wrap(err, "failed to delete "+block.DebugMetas)
+		return fmt.Errorf("failed to delete %s: %w", block.DebugMetas, err)
 	} else if deleted > 0 {
 		level.Info(userLogger).Log("msg", "deleted files under "+block.DebugMetas+" for tenant marked for deletion", "count", deleted)
 	}
 
 	// Tenant deletion mark file is inside Markers as well.
 	if deleted, err := bucket.DeletePrefix(ctx, userBucket, block.MarkersPathname, userLogger); err != nil {
-		return errors.Wrap(err, "failed to delete marker files")
+		return fmt.Errorf("failed to delete marker files: %w", err)
 	} else if deleted > 0 {
 		level.Info(userLogger).Log("msg", "deleted marker files for tenant marked for deletion", "count", deleted)
 	}
@@ -490,7 +502,7 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 
 	// If there are no more blocks, clean up any remaining files
 	// Otherwise upload the updated index to the storage.
-	if c.cfg.NoBlocksFileCleanupEnabled && len(idx.Blocks) == 0 {
+	if len(idx.Blocks) == 0 {
 		if err := c.deleteRemainingData(ctx, userBucket, userID, userLogger); err != nil {
 			return err
 		}
@@ -723,7 +735,7 @@ func (c *BlocksCleaner) stalePartialBlockLastModifiedTime(ctx context.Context, b
 			}
 			attrib, err := userBucket.Attributes(ctx, name)
 			if err != nil {
-				return errors.Wrapf(err, "failed to get attributes for %s", name)
+				return fmt.Errorf("failed to get attributes for %s: %w", name, err)
 			}
 			return checkModifiedTime(attrib.LastModified)
 		}, objstore.WithRecursiveIter())
@@ -779,8 +791,8 @@ func ConvertBucketIndexToMetasForCompactionJobPlanning(idx *bucketindex.Index) m
 		// always persist labels into the bucket index, but we may have tracked
 		// the shard ID label, so copy that back over if it isn't there.
 		if b.CompactorShardID != "" {
-			if _, found := metas[b.ID].Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel]; !found {
-				metas[b.ID].Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel] = b.CompactorShardID
+			if _, found := metas[b.ID].Thanos.Labels[block.CompactorShardIDExternalLabel]; !found {
+				metas[b.ID].Thanos.Labels[block.CompactorShardIDExternalLabel] = b.CompactorShardID
 			}
 		}
 	}

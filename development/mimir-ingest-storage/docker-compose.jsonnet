@@ -87,11 +87,21 @@ std.manifestYamlDoc({
   },
 
   store_gateways(count):: {
-    ['store-gateway-%d' % id]: mimirService({
-      name: 'store-gateway-' + id,
+    ['store-gateway-zone-a-%d' % id]: mimirService({
+      name: 'store-gateway-zone-a-' + id,
       target: 'store-gateway',
       publishedHttpPort: 8020 + id,
-      jaegerApp: 'store-gateway-%d' % id,
+      jaegerApp: 'store-gateway-zone-a-%d' % id,
+      extraArguments: ['-store-gateway.sharding-ring.instance-availability-zone=zone-a'],
+    })
+    for id in std.range(1, count)
+  } + {
+    ['store-gateway-zone-b-%d' % id]: mimirService({
+      name: 'store-gateway-zone-b-' + id,
+      target: 'store-gateway',
+      publishedHttpPort: 8050 + id,
+      jaegerApp: 'store-gateway-zone-b-%d' % id,
+      extraArguments: ['-store-gateway.sharding-ring.instance-availability-zone=zone-b'],
     })
     for id in std.range(1, count)
   },
@@ -237,7 +247,7 @@ std.manifestYamlDoc({
         '29092:29092',
       ],
       healthcheck: {
-        test: 'nc -z localhost 9092 || exit -1',
+        test: 'kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1',
         start_period: '1s',
         interval: '1s',
         timeout: '1s',
@@ -257,7 +267,7 @@ std.manifestYamlDoc({
         '29093:29093',
       ],
       healthcheck: {
-        test: 'nc -z localhost 9092 || exit -1',
+        test: 'kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1',
         start_period: '1s',
         interval: '1s',
         timeout: '1s',
@@ -277,7 +287,7 @@ std.manifestYamlDoc({
         '29094:29094',
       ],
       healthcheck: {
-        test: 'nc -z localhost 9092 || exit -1',
+        test: 'kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1',
         start_period: '1s',
         interval: '1s',
         timeout: '1s',

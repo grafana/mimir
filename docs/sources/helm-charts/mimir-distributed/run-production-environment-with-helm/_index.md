@@ -204,12 +204,6 @@ see [Configure Grafana Mimir object storage backend](https://grafana.com/docs/mi
        ruler_storage:
          s3:
            bucket_name: mimir-ruler
-
-       # The following admin_client configuration only applies to Grafana Enterprise Metrics deployments:
-       #admin_client:
-       #  storage:
-       #    s3:
-       #      bucket_name: gem-admin
    ```
 
 ## Configure Mimir to use Kafka-compatible backend
@@ -293,8 +287,7 @@ For more meta-monitoring topics, refer to [Monitor Grafana Mimir](https://grafan
 
 The `mimir-distributed` Helm chart makes it easy for you to collect metrics and
 logs from Mimir. The chart uses the Grafana Agent to ship metrics to
-a Prometheus-compatible server and logs to a Loki or GEL (Grafana Enterprise
-Metrics) server.
+a Prometheus-compatible server and logs to a Loki server.
 
 {{< docs/shared source="alloy" lookup="agent-deprecation.md" version="next" >}}
 
@@ -344,7 +337,7 @@ If you need redundancy on the write path before it reaches Mimir, then you
 can set up redundant instances of Prometheus or Grafana Alloy to
 write metrics to Mimir.
 
-For more information, see [Configure high-availability deduplication with Consul](configure-helm-ha-deduplication-consul/).
+For more information, refer to [Configure high-availability deduplication](configure-helm-ha-deduplication/).
 
 ## Deploy on OpenShift
 

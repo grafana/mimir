@@ -10,9 +10,10 @@ import (
 	"time"
 
 	"github.com/alecthomas/kingpin/v2"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/push"
-	"github.com/sirupsen/logrus"
 )
 
 // PushGatewayConfig configures the pushgateway
@@ -21,35 +22,35 @@ type PushGatewayConfig struct {
 	JobName  string
 	Interval time.Duration
 
+	logger     log.Logger
 	pusher     *push.Pusher
 	done       chan struct{}
 	terminated chan struct{}
 }
 
 // Register configures log related flags
-func (l *PushGatewayConfig) Register(app *kingpin.Application, _ EnvVarNames) {
-	app.PreAction(l.setup)
+func (l *PushGatewayConfig) Register(app *kingpin.Application, _ EnvVarNames, logConfig *LoggerConfig) {
+	app.PreAction(func(_ *kingpin.ParseContext) error {
+		l.logger = logConfig.Logger()
+		return l.setup()
+	})
 	app.Flag("push-gateway.endpoint", "url for the push-gateway to register metrics").URLVar(&l.Endpoint)
 	app.Flag("push-gateway.job", "job name to register metrics").StringVar(&l.JobName)
 	app.Flag("push-gateway.interval", "interval to forward metrics to the push gateway").Default("1m").DurationVar(&l.Interval)
 }
 
-func (l *PushGatewayConfig) setup(_ *kingpin.ParseContext) error {
+func (l *PushGatewayConfig) setup() error {
 	if l.Endpoint == nil || l.JobName == "" {
-		logrus.Debugln("push-gateway not configured")
+		level.Debug(l.logger).Log("msg", "push-gateway not configured")
 		return nil
 	}
 
-	logrus.WithFields(logrus.Fields{
-		"endpoint": l.Endpoint,
-		"job_name": l.JobName,
-		"interval": l.Interval.String(),
-	}).Debugln("push-gateway enabled")
+	level.Debug(l.logger).Log("msg", "push-gateway enabled", "endpoint", l.Endpoint, "job_name", l.JobName, "interval", l.Interval.String())
 
 	l.pusher = push.New(l.Endpoint.String(), l.JobName).Gatherer(prometheus.DefaultGatherer)
 	err := l.pusher.Push()
 	if err != nil {
-		logrus.WithError(err).Errorln("unable to forward metrics to pushgateway")
+		level.Error(l.logger).Log("msg", "unable to forward metrics to pushgateway", "err", err)
 	}
 
 	l.done = make(chan struct{})
@@ -69,11 +70,15 @@ func (l *PushGatewayConfig) loop() {
 		select {
 		case <-l.done:
 			err := l.pusher.Add()
-			logrus.WithError(err).Errorln("unable to forward metrics to pushgateway")
+			if err != nil {
+				level.Error(l.logger).Log("msg", "unable to forward metrics to pushgateway", "err", err)
+			}
 			return
 		case <-timer.C:
 			err := l.pusher.Add()
-			logrus.WithError(err).Errorln("unable to forward metrics to pushgateway")
+			if err != nil {
+				level.Error(l.logger).Log("msg", "unable to forward metrics to pushgateway", "err", err)
+			}
 		}
 	}
 }

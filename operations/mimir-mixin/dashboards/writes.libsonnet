@@ -8,7 +8,7 @@ local filename = 'mimir-writes.json';
     assert std.md5(filename) == '8280707b8f16e7b87b840fc1cc92d4c5' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Writes') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
-    .addShowNativeLatencyVariable()
+    .addShowNativeLatencyVariable($.latencyVariableDefault())
     .addRowIf(
       $._config.show_dashboard_descriptions.writes,
       ($.row('Writes dashboard description') { height: '125px', showTitle: false })
@@ -38,6 +38,7 @@ local filename = 'mimir-writes.json';
          height: '100px',
          showTitle: false,
        })
+      .justifyPanels()  // Make sure panels use all width even if 12 columns are not divisible by the number of panels.
       .addPanel(
         $.panel('Samples / sec') +
         $.statPanel(
@@ -71,6 +72,40 @@ local filename = 'mimir-writes.json';
           |||
             The number of series not yet flushed to object storage that are held in ingester memory.
             With classic storage we the sum of series from all ingesters is divided by the replication factor.
+            With ingest storage we take the maximum series of each ingest partition.
+          |||
+        ),
+      )
+      .addPanel(
+        local title = 'Owned series';
+        $.panel(title) +
+        $.statPanel(
+          $.queries.ingester.ingestOrClassicDeduplicatedQuery('sum without (user) (cortex_ingester_owned_series{%s})' % [$.jobMatcher($._config.job_names.ingester)]),
+          format='short'
+        ) +
+        $.panelDescription(
+          title,
+          |||
+            The number of owned series across all ingesters.
+            Owned series are the subset of in-memory series that currently map to the ingester in the ring.
+            With classic storage the sum of series from all ingesters is divided by the replication factor.
+            With ingest storage we take the maximum series of each ingest partition.
+          |||
+        ),
+      )
+      .addPanel(
+        local title = 'Active series';
+        $.panel(title) +
+        $.statPanel(
+          $.queries.ingester.ingestOrClassicDeduplicatedQuery('sum without (user) (cortex_ingester_active_series{%s})' % [$.jobMatcher($._config.job_names.ingester)]),
+          format='short'
+        ) +
+        $.panelDescription(
+          title,
+          |||
+            The number of active series across all ingesters.
+            Active series are series that have received a sample within the active series window (configured via -ingester.active-series-metrics-idle-timeout).
+            With classic storage the sum of series from all ingesters is divided by the replication factor.
             With ingest storage we take the maximum series of each ingest partition.
           |||
         ),
@@ -224,6 +259,78 @@ local filename = 'mimir-writes.json';
       )
     )
     .addRowsIf(std.objectHasAll($._config.injectRows, 'postDistributor'), $._config.injectRows.postDistributor($))
+    .addRowIf(
+      $._config.usage_tracker_enabled,
+      $.row('Usage Tracker (client)')
+      .addPanel(
+        local title = 'Client req / sec';
+        $.timeseriesPanel(title) +
+        $.qpsPanelNativeHistogram($.queries.usage_tracker.clientRequestsPerSecondMetric, $.namespaceMatcher()) +
+        $.panelDescription(
+          title,
+          |||
+            The number of tracking requests sent through the Usage Tracker client, which are later multiplexed into individual requests to the Usage Tracker service instances.
+          |||
+        ),
+      )
+      .addPanel(
+        local title = 'Async req / sec';
+        $.timeseriesPanel(title) +
+        $.queryPanel([
+          |||
+            sum(rate(cortex_distributor_async_usage_tracker_calls_total{%s}[$__rate_interval]))
+          ||| % [$.jobMatcher(std.set($._config.job_names.distributor + $._config.job_names.ruler))],
+          |||
+            sum(rate(cortex_distributor_async_usage_tracker_calls_with_rejected_series_total{%s}[$__rate_interval]))
+          ||| % [$.jobMatcher(std.set($._config.job_names.distributor + $._config.job_names.ruler))],
+        ], [
+          'Asynchronous requests / sec',
+          'Asynchronous requests / sec that rejected series that were ingested',
+        ]) + {
+          fieldConfig+: {
+            defaults+: { unit: 'reqps' },
+          },
+        } +
+        $.panelDescription(
+          title,
+          |||
+            The number of tracking requests sent asynchronously to the Usage Tracker client, while proceeding with the write request.
+            Some of those requests may have rejected the series that were actually ingested.
+          |||
+        ),
+      )
+      .addPanel(
+        local title = 'Client latency';
+        $.timeseriesPanel(title) +
+        $.latencyRecordingRulePanelNativeHistogram($.queries.usage_tracker.clientRequestsPerSecondMetric, $.jobSelector(std.set($._config.job_names.distributor + $._config.job_names.ruler))) +
+        $.panelDescription(
+          title,
+          |||
+            Time taken to track all series in remote write request, eventually sharding the tracking among multiple usage-tracker instances.
+          |||
+        )
+      )
+      .addPanel(
+        $.timeseriesPanel('Client per %s p99 latency' % $._config.per_instance_label) +
+        $.perInstanceLatencyPanelNativeHistogram('0.99', $.queries.usage_tracker.clientRequestsPerSecondMetric, $.jobSelector(std.set($._config.job_names.distributor + $._config.job_names.ruler)))
+      )
+    )
+    .addRowIf(
+      $._config.usage_tracker_enabled,
+      $.row('Usage Tracker')
+      .addPanel(
+        $.timeseriesPanel('Requests / sec') +
+        $.qpsPanelNativeHistogram($.queries.usage_tracker.requestsPerSecondMetric, $.queries.usage_tracker.trackSeriesRequestsPerSecondSelector)
+      )
+      .addPanel(
+        $.timeseriesPanel('Latency') +
+        $.latencyRecordingRulePanelNativeHistogram($.queries.usage_tracker.requestsPerSecondMetric, $.jobSelector($._config.job_names.usage_tracker) + [utils.selector.re('route', $.queries.usage_tracker.trackSeriesRequestsPerSecondRouteRegex)])
+      )
+      .addPanel(
+        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
+        $.perInstanceLatencyPanelNativeHistogram('0.99', $.queries.usage_tracker.requestsPerSecondMetric, $.jobSelector($._config.job_names.usage_tracker) + [utils.selector.re('route', $.queries.usage_tracker.trackSeriesRequestsPerSecondRouteRegex)])
+      )
+    )
     .addRowIf(
       $._config.show_grpc_ingestion_panels,
       ($.row('Ingester'))
@@ -458,6 +565,22 @@ local filename = 'mimir-writes.json';
       .addPanel(
         $.ingestStorageIngesterEndToEndLatencyWhenStartingPanel(),
       )
+      .addPanel(
+        $.timeseriesPanel('Forced TSDB head compactions in progress') +
+        $.panelDescription(
+          'Forced TSDB head compactions in progress',
+          |||
+            The number of ingesters currently performing a forced TSDB head compaction. During a forced compaction,
+            Kafka consumption may be paused, which is a common cause of elevated — but temporary — end-to-end latency.
+          |||
+        ) +
+        $.queryPanel([
+          'sum(max_over_time(cortex_ingester_tsdb_forced_compactions_in_progress{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+        ], [
+          'In progress',
+        ]) +
+        { fieldConfig+: { defaults+: { unit: 'short' } } },
+      )
     )
     .addRowIf(
       $._config.show_ingest_storage_panels,
@@ -607,7 +730,7 @@ local filename = 'mimir-writes.json';
       )
       .addPanel(
         $.timeseriesPanel('Upload latency') +
-        $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="ingester",operation="upload"}' % $.jobMatcher($._config.job_names.ingester)) +
+        $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="ingester",operation="upload"' % $.jobMatcher($._config.job_names.ingester)) +
         $.panelDescription(
           'Upload latency',
           |||
@@ -637,7 +760,7 @@ local filename = 'mimir-writes.json';
       )
       .addPanel(
         $.timeseriesPanel('Compactions latency') +
-        $.latencyPanel('cortex_ingester_tsdb_compaction_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.ingester)) +
+        $.ncLatencyPanel('cortex_ingester_tsdb_compaction_duration_seconds', '%s' % $.jobMatcher($._config.job_names.ingester)) +
         $.panelDescription(
           'Compaction latency',
           |||

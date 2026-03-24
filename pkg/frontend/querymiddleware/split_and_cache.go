@@ -92,12 +92,11 @@ type splitAndCacheMiddleware struct {
 	splitInterval time.Duration
 
 	// Results caching.
-	cacheEnabled               bool
-	cache                      cache.Cache
-	splitter                   CacheKeyGenerator
-	extractor                  Extractor
-	shouldCacheReq             shouldCacheFn
-	cacheSamplesProcessedStats bool
+	cacheEnabled   bool
+	cache          cache.Cache
+	splitter       CacheKeyGenerator
+	extractor      Extractor
+	shouldCacheReq shouldCacheFn
 
 	// Can be set from tests
 	currentTime func() time.Time
@@ -107,7 +106,6 @@ type splitAndCacheMiddleware struct {
 func newSplitAndCacheMiddleware(
 	splitEnabled bool,
 	cacheEnabled bool,
-	cacheSamplesProcessedStats bool,
 	splitInterval time.Duration,
 	limits Limits,
 	merger Merger,
@@ -121,20 +119,19 @@ func newSplitAndCacheMiddleware(
 
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &splitAndCacheMiddleware{
-			splitEnabled:               splitEnabled,
-			cacheEnabled:               cacheEnabled,
-			cacheSamplesProcessedStats: cacheSamplesProcessedStats,
-			next:                       next,
-			limits:                     limits,
-			merger:                     merger,
-			splitInterval:              splitInterval,
-			metrics:                    metrics,
-			cache:                      cache,
-			splitter:                   splitter,
-			extractor:                  extractor,
-			shouldCacheReq:             shouldCacheReq,
-			logger:                     logger,
-			currentTime:                time.Now,
+			splitEnabled:   splitEnabled,
+			cacheEnabled:   cacheEnabled,
+			next:           next,
+			limits:         limits,
+			merger:         merger,
+			splitInterval:  splitInterval,
+			metrics:        metrics,
+			cache:          cache,
+			splitter:       splitter,
+			extractor:      extractor,
+			shouldCacheReq: shouldCacheReq,
+			logger:         logger,
+			currentTime:    time.Now,
 		}
 	})
 }
@@ -151,21 +148,12 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 	maxCacheTime := int64(model.Now().Add(-maxCacheFreshness))
 	cacheUnalignedRequests := validation.AllTrueBooleansPerTenant(tenantIDs, s.limits.ResultsCacheForUnalignedQueryEnabled)
 
-	// Force queier to track PerStepStats, so they could be cached.
-	if s.cacheSamplesProcessedStats {
-		req, err = req.WithStats("all")
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	// Split the input requests by the configured interval (eg. day).
 	// Returns the input request if splitting is disabled.
 	splitReqs, err := s.splitRequestByInterval(req)
 	if err != nil {
 		return nil, err
 	}
-	perStepStats := make([][]stats.StepStat, 0, splitReqs.countDownstreamRequests()+splitReqs.countCachedResponses())
 	// Lookup the results cache.
 	if isCacheEnabled {
 		s.metrics.queryResultCacheAttemptedCount.Add(float64(len(splitReqs)))
@@ -200,10 +188,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 
 			// We have some extents. This means some parts of the response has been cached and we need
 			// to generate the queries for the missing parts.
-			requests, responses, extentStepStats, err := partitionCacheExtents(lookupReqs[lookupIdx].orig, extents, defaultMinCacheExtent, s.extractor)
-			if len(extentStepStats) > 0 {
-				perStepStats = append(perStepStats, extentStepStats)
-			}
+			requests, responses, err := partitionCacheExtents(lookupReqs[lookupIdx].orig, extents, defaultMinCacheExtent, s.extractor)
 			if err != nil {
 				return nil, err
 			}
@@ -269,7 +254,8 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 			}
 
 			// Skip caching if the request is not cachable.
-			if cachable, _ := isRequestCachable(splitReq.orig, maxCacheTime, cacheUnalignedRequests, s.logger); !cachable {
+			if cachable, reason := isRequestCachable(splitReq.orig, maxCacheTime, cacheUnalignedRequests, s.logger); !cachable {
+				level.Debug(spanLog).Log("msg", "skipping storing response in cache as request is not cacheable", "key", splitReq.cacheKey, "reason", reason)
 				continue
 			}
 
@@ -278,12 +264,12 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 
 			for downstreamIdx, downstreamReq := range splitReq.downstreamRequests {
 				downstreamRes := splitReq.downstreamResponses[downstreamIdx]
-				downstreamStats := splitReq.downstreamStatistics[downstreamIdx]
-				if !isResponseCachable(downstreamRes) {
+				if !responseHeadersAllowCaching(downstreamRes) {
+					level.Debug(spanLog).Log("msg", "skipping storing response in cache as response is not cacheable", "key", splitReq.cacheKey, "reason", "forbidden by response headers")
 					continue
 				}
 
-				extent, err := toExtent(ctx, downstreamReq, s.extractor.ResponseWithoutHeaders(downstreamRes), queryTime, downstreamStats.LoadSamplesProcessedPerStep())
+				extent, err := toExtent(ctx, downstreamReq, s.extractor.ResponseWithoutHeaders(downstreamRes), queryTime)
 				if err != nil {
 					return nil, err
 				}
@@ -293,6 +279,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 
 			// If extents haven't been updated, we can skip storing it in the cache again.
 			if len(splitReq.cachedExtents) == len(updatedExtents) {
+				level.Debug(spanLog).Log("msg", "skipping storing response in cache as there are no new extents", "key", splitReq.cacheKey)
 				continue
 			}
 
@@ -309,10 +296,9 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 			}
 
 			// Put back into the cache the filtered ones.
-			s.storeCacheExtents(splitReq.cacheKey, tenantIDs, filteredExtents)
+			s.storeCacheExtents(spanLog, splitReq.cacheKey, tenantIDs, filteredExtents)
 		}
 	}
-	reportSamplesProcessed(ctx, append(perStepStats, queryStats.LoadSamplesProcessedPerStep()))
 
 	// We can finally build the response, which is the merge of all downstream responses and the responses
 	// we've got from the cache (if any).
@@ -364,7 +350,7 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, now tim
 	hashedKeys := make([]string, 0, len(keys))
 	hashedKeysIdx := make(map[string]int, len(keys))
 	for idx, key := range keys {
-		hashed := cacheHashKey(key)
+		hashed := hashCacheKey(key)
 		hashedKeys = append(hashedKeys, hashed)
 		hashedKeysIdx[hashed] = idx
 
@@ -459,8 +445,9 @@ func (s *splitAndCacheMiddleware) getCacheOptions(tenantIDs []string) (ttl, ttlI
 }
 
 // storeCacheExtents stores the extents for given key in the cache.
-func (s *splitAndCacheMiddleware) storeCacheExtents(key string, tenantIDs []string, extents []Extent) {
+func (s *splitAndCacheMiddleware) storeCacheExtents(spanLog *spanlogger.SpanLogger, key string, tenantIDs []string, extents []Extent) {
 	if len(extents) == 0 {
+		level.Debug(spanLog).Log("msg", "skipping storing response in cache as there are no extents", "key", key)
 		return
 	}
 
@@ -472,11 +459,12 @@ func (s *splitAndCacheMiddleware) storeCacheExtents(key string, tenantIDs []stri
 		Extents: extents,
 	})
 	if err != nil {
-		level.Error(s.logger).Log("msg", "error marshalling cached extent", "err", err)
+		level.Error(spanLog).Log("msg", "error marshalling cached extent", "err", err)
 		return
 	}
 
-	s.cache.SetMultiAsync(map[string][]byte{cacheHashKey(key): buf}, usedTTL)
+	level.Debug(spanLog).Log("msg", "asynchronously storing response in cache", "key", key, "size", len(buf), "ttl", usedTTL, "extents", len(extents))
+	s.cache.SetMultiAsync(map[string][]byte{hashCacheKey(key): buf}, usedTTL)
 }
 
 func getTTLForExtent(now time.Time, ttl, ttlInOOOWindow, oooWindow time.Duration, e Extent) time.Duration {
@@ -504,8 +492,6 @@ type splitRequest struct {
 	// response is stored at the same index.
 	downstreamRequests  []MetricsQueryRequest
 	downstreamResponses []Response
-	// Query statistics for each downstream request, stored at the same index too.
-	downstreamStatistics []*stats.SafeStats
 }
 
 // splitRequests holds a list of splitRequest.
@@ -572,7 +558,6 @@ func (s *splitRequests) prepareDownstreamRequests() ([]MetricsQueryRequest, erro
 
 		execReqs = append(execReqs, splitReq.downstreamRequests...)
 		splitReq.downstreamResponses = make([]Response, len(splitReq.downstreamRequests))
-		splitReq.downstreamStatistics = make([]*stats.SafeStats, len(splitReq.downstreamRequests))
 	}
 
 	return execReqs, nil
@@ -583,7 +568,6 @@ func (s *splitRequests) prepareDownstreamRequests() ([]MetricsQueryRequest, erro
 // that any downstream request got its response associated.
 func (s *splitRequests) storeDownstreamResponses(responses []requestResponse) error {
 	execRespsByID := make(map[int64]Response, len(responses))
-	execStatsByID := make(map[int64]*stats.SafeStats, len(responses))
 
 	// Map responses by (unique) request IDs.
 	for _, resp := range responses {
@@ -594,7 +578,6 @@ func (s *splitRequests) storeDownstreamResponses(responses []requestResponse) er
 		}
 
 		execRespsByID[resp.Request.GetID()] = resp.Response
-		execStatsByID[resp.Request.GetID()] = resp.Stats
 	}
 
 	mappedDownstreamRequests := 0
@@ -606,14 +589,8 @@ func (s *splitRequests) storeDownstreamResponses(responses []requestResponse) er
 				// Should never happen unless a bug.
 				return errors.New("consistency check failed: missing downstream response")
 			}
-			downstreamStats, ok := execStatsByID[downstreamReq.GetID()]
-			if !ok {
-				// Should never happen unless a bug.
-				return errors.New("consistency check failed: missing downstream stats")
-			}
 
 			splitReq.downstreamResponses[downstreamIdx] = downstreamRes
-			splitReq.downstreamStatistics[downstreamIdx] = downstreamStats
 			mappedDownstreamRequests++
 		}
 	}
@@ -670,7 +647,12 @@ func doRequests(ctx context.Context, downstream MetricsQueryHandler, reqs []Metr
 func splitQueryByInterval(req MetricsQueryRequest, interval time.Duration) ([]MetricsQueryRequest, error) {
 	// Replace @ modifier function to their respective constant values in the query.
 	// This way subqueries will be evaluated at the same time as the parent query.
-	query, err := evaluateAtModifierFunction(req.GetQuery(), req.GetStart(), req.GetEnd())
+	query, err := req.GetClonedParsedQuery()
+	if err != nil {
+		return nil, err
+	}
+	evaluateAtModifierFunction(query, req.GetStart(), req.GetEnd())
+	splitReq, err := req.WithExpr(query)
 	if err != nil {
 		return nil, err
 	}
@@ -687,10 +669,6 @@ func splitQueryByInterval(req MetricsQueryRequest, interval time.Duration) ([]Me
 			end = req.GetEnd()
 		}
 
-		splitReq, err := req.WithQuery(query)
-		if err != nil {
-			return nil, err
-		}
 		splitReq, err = splitReq.WithStartEnd(start, end)
 		if err != nil {
 			return nil, err
@@ -702,15 +680,11 @@ func splitQueryByInterval(req MetricsQueryRequest, interval time.Duration) ([]Me
 	return reqs, nil
 }
 
-// evaluateAtModifierFunction parse the query and evaluates the `start()` and `end()` at modifier functions into actual constant timestamps.
+// evaluateAtModifierFunction evaluates the `start()` and `end()` at modifier functions into actual constant timestamps.
 // For example given the start of the query is 10.00, `http_requests_total[1h] @ start()` query will be replaced with `http_requests_total[1h] @ 10.00`
-// If the modifier is already a constant, it will be returned as is.
-func evaluateAtModifierFunction(query string, start, end int64) (string, error) {
-	expr, err := parser.ParseExpr(query)
-	if err != nil {
-		return "", apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
-	}
-	parser.Inspect(expr, func(n parser.Node, _ []parser.Node) error {
+// If the modifier is already a constant, it will be left as is.
+func evaluateAtModifierFunction(expr parser.Expr, start, end int64) {
+	_ = inspect(expr, func(n parser.Node) error {
 		switch exprAt := n.(type) {
 		case *parser.VectorSelector:
 			switch exprAt.StartOrEnd {
@@ -731,7 +705,6 @@ func evaluateAtModifierFunction(query string, start, end int64) (string, error) 
 		}
 		return nil
 	})
-	return expr.String(), nil
 }
 
 // Round up to the step before the next interval boundary.
@@ -744,11 +717,4 @@ func nextIntervalBoundary(t, step int64, interval time.Duration) int64 {
 		target -= step
 	}
 	return target
-}
-
-func reportSamplesProcessed(ctx context.Context, s [][]stats.StepStat) {
-	if details := QueryDetailsFromContext(ctx); details != nil {
-		totalSamplesProcessed := sumSamplesProcessedPerStep(s...)
-		details.SamplesProcessedCacheAdjusted += uint64(totalSamplesProcessed)
-	}
 }

@@ -766,11 +766,10 @@ func TestBlocksCleaner_ShouldCleanUpFilesWhenNoMoreBlocksRemain(t *testing.T) {
 	require.NoError(t, bucketClient.Upload(context.Background(), debugMetaFile, strings.NewReader("random content")))
 
 	cfg := BlocksCleanerConfig{
-		DeletionDelay:              deletionDelay,
-		CleanupInterval:            time.Minute,
-		CleanupConcurrency:         1,
-		DeleteBlocksConcurrency:    1,
-		NoBlocksFileCleanupEnabled: true,
+		DeletionDelay:           deletionDelay,
+		CleanupInterval:         time.Minute,
+		CleanupConcurrency:      1,
+		DeleteBlocksConcurrency: 1,
 	}
 
 	logger := test.NewTestingLogger(t)
@@ -1278,7 +1277,7 @@ func TestComputeCompactionJobs(t *testing.T) {
 				// Compactor wouldn't produce a job for this pair as their external labels differ:
 				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 5 * dayMS, MaxTime: 6 * dayMS,
 					Labels: map[string]string{
-						tsdb.OutOfOrderExternalLabel: tsdb.OutOfOrderExternalLabelValue,
+						block.OutOfOrderExternalLabel: block.OutOfOrderExternalLabelValue,
 					},
 				},
 				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 5 * dayMS, MaxTime: 6 * dayMS,
@@ -1295,16 +1294,16 @@ func TestComputeCompactionJobs(t *testing.T) {
 				// Compactor will ignore deprecated labels when computing jobs. Estimation should do the same.
 				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 5 * dayMS, MaxTime: 6 * dayMS,
 					Labels: map[string]string{
-						"honored_label":                        "12345",
-						tsdb.DeprecatedTenantIDExternalLabel:   "tenant1",
-						tsdb.DeprecatedIngesterIDExternalLabel: "ingester1",
+						"honored_label":                         "12345",
+						block.DeprecatedTenantIDExternalLabel:   "tenant1",
+						block.DeprecatedIngesterIDExternalLabel: "ingester1",
 					},
 				},
 				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 5 * dayMS, MaxTime: 6 * dayMS,
 					Labels: map[string]string{
-						"honored_label":                        "12345",
-						tsdb.DeprecatedTenantIDExternalLabel:   "tenant2",
-						tsdb.DeprecatedIngesterIDExternalLabel: "ingester2",
+						"honored_label":                         "12345",
+						block.DeprecatedTenantIDExternalLabel:   "tenant2",
+						block.DeprecatedIngesterIDExternalLabel: "ingester2",
 					},
 				},
 			},
@@ -1372,29 +1371,29 @@ func TestConvertBucketIndexToMetasForCompactionJobPlanning(t *testing.T) {
 				},
 			},
 			expectedMetas: map[ulid.ULID]*block.Meta{
-				makeUlid(1): makeMeta(makeUlid(1), map[string]string{tsdb.CompactorShardIDExternalLabel: "78"}),
+				makeUlid(1): makeMeta(makeUlid(1), map[string]string{block.CompactorShardIDExternalLabel: "78"}),
 			},
 		},
 		"use labeled shard ID": {
 			index: &bucketindex.Index{
 				Blocks: bucketindex.Blocks{
 					&bucketindex.Block{ID: makeUlid(1), MinTime: 0, MaxTime: twoHoursMS,
-						Labels: map[string]string{tsdb.CompactorShardIDExternalLabel: "3"}},
+						Labels: map[string]string{block.CompactorShardIDExternalLabel: "3"}},
 				},
 			},
 			expectedMetas: map[ulid.ULID]*block.Meta{
-				makeUlid(1): makeMeta(makeUlid(1), map[string]string{tsdb.CompactorShardIDExternalLabel: "3"}),
+				makeUlid(1): makeMeta(makeUlid(1), map[string]string{block.CompactorShardIDExternalLabel: "3"}),
 			},
 		},
 		"don't overwrite labeled shard ID": {
 			index: &bucketindex.Index{
 				Blocks: bucketindex.Blocks{
 					&bucketindex.Block{ID: makeUlid(1), MinTime: 0, MaxTime: twoHoursMS, CompactorShardID: "78",
-						Labels: map[string]string{tsdb.CompactorShardIDExternalLabel: "3"}},
+						Labels: map[string]string{block.CompactorShardIDExternalLabel: "3"}},
 				},
 			},
 			expectedMetas: map[ulid.ULID]*block.Meta{
-				makeUlid(1): makeMeta(makeUlid(1), map[string]string{tsdb.CompactorShardIDExternalLabel: "3"}),
+				makeUlid(1): makeMeta(makeUlid(1), map[string]string{block.CompactorShardIDExternalLabel: "3"}),
 			},
 		},
 		"honor deletion marks": {
@@ -1454,7 +1453,6 @@ func TestBlocksCleaner_RaceCondition_CleanerUpdatesBucketIndexWhileAnotherCleane
 			CleanupConcurrency:            1,
 			DeleteBlocksConcurrency:       1,
 			GetDeletionMarkersConcurrency: 1,
-			NoBlocksFileCleanupEnabled:    true,
 		}
 	)
 
@@ -1738,7 +1736,6 @@ type mockConfigProvider struct {
 	userPartialBlockDelay        map[string]time.Duration
 	userPartialBlockDelayInvalid map[string]bool
 	verifyChunks                 map[string]bool
-	perTenantInMemoryCache       map[string]int
 	maxLookback                  map[string]time.Duration
 	maxPerBlockUploadConcurrency map[string]int
 }
@@ -1754,7 +1751,6 @@ func newMockConfigProvider() *mockConfigProvider {
 		userPartialBlockDelay:        make(map[string]time.Duration),
 		userPartialBlockDelayInvalid: make(map[string]bool),
 		verifyChunks:                 make(map[string]bool),
-		perTenantInMemoryCache:       make(map[string]int),
 		maxLookback:                  make(map[string]time.Duration),
 		maxPerBlockUploadConcurrency: make(map[string]int),
 	}
@@ -1806,10 +1802,6 @@ func (m *mockConfigProvider) CompactorBlockUploadVerifyChunks(tenantID string) b
 
 func (m *mockConfigProvider) CompactorBlockUploadMaxBlockSizeBytes(user string) int64 {
 	return m.blockUploadMaxBlockSizeBytes[user]
-}
-
-func (m *mockConfigProvider) CompactorInMemoryTenantMetaCacheSize(userID string) int {
-	return m.perTenantInMemoryCache[userID]
 }
 
 func (m *mockConfigProvider) S3SSEType(string) string {

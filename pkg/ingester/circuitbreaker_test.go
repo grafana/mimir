@@ -18,7 +18,7 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -26,6 +26,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -583,7 +584,7 @@ func TestIngester_IngestStorage_PushToStorageAndReleaseRequest_CircuitBreaker(t 
 	for initialDelayEnabled, initialDelayStatus := range map[bool]string{false: "disabled", true: "enabled"} {
 		for testName, testCase := range tests {
 			t.Run(fmt.Sprintf("%s with initial delay %s", testName, initialDelayStatus), func(t *testing.T) {
-				metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test"}}}
+				metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "test"}}}
 				metricNames := []string{
 					"cortex_ingester_circuit_breaker_results_total",
 					"cortex_ingester_circuit_breaker_transitions_total",
@@ -614,13 +615,13 @@ func TestIngester_IngestStorage_PushToStorageAndReleaseRequest_CircuitBreaker(t 
 				}
 
 				overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-				i, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, registry)
+				i, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, registry, util_test.NewTestingLogger(t))
 				require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 				defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
 				// Wait until the ingester is healthy
 				test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
-					return i.lifecycler.HealthyInstancesCount()
+					return healthyInstancesCount(i.instanceRing)
 				})
 
 				// the first request is successful
@@ -911,7 +912,7 @@ func TestIngester_Push_CircuitBreaker_DeadlineExceeded(t *testing.T) {
 	pushTimeout := 1 * time.Second
 	for initialDelayEnabled, initialDelayStatus := range map[bool]string{false: "disabled", true: "enabled"} {
 		t.Run(fmt.Sprintf("test slow push with initial delay %s", initialDelayStatus), func(t *testing.T) {
-			metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test"}}}
+			metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "test"}}}
 			metricNames := []string{
 				"cortex_ingester_circuit_breaker_results_total",
 				"cortex_ingester_circuit_breaker_transitions_total",

@@ -1,1 +1,1 @@
-docs/internal/contributing/README.md
+AGENTS.md

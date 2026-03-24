@@ -18,7 +18,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/require"
 
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/extprom"
 )
@@ -361,7 +360,7 @@ func TestShardAwareDeduplicateFilter_Filter(t *testing.T) {
 							Resolution: metaInfo.resolution,
 						},
 						Labels: map[string]string{
-							mimir_tsdb.CompactorShardIDExternalLabel: metaInfo.shardID,
+							block.CompactorShardIDExternalLabel: metaInfo.shardID,
 						},
 					},
 				}

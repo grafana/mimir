@@ -4,6 +4,7 @@ package alertmanager
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -11,7 +12,6 @@ import (
 	"github.com/go-kit/log"
 	alertingHttp "github.com/grafana/alerting/http"
 	alertingReceivers "github.com/grafana/alerting/receivers"
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 
 	util_net "github.com/grafana/mimir/pkg/util/net"

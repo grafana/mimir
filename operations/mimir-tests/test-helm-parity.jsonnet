@@ -33,6 +33,10 @@ mimir {
   // We unset them all here so the default values are used like in Helm.
   // At that point there will likely be less deviation between components.
   // See the tracking issue: https://github.com/grafana/mimir/issues/2749
+  overrides_exporter_args+:: {
+    'querier.max-partial-query-length': null,
+  },
+
   querier_args+:: {
     'querier.max-partial-query-length': null,
   },

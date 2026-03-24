@@ -72,6 +72,17 @@ func TestQueryRequest_CustomStringer(t *testing.T) {
 				},
 			},
 		},
+		"one matcher projection includes": {
+			request: &client.QueryRequest{
+				StartTimestampMs: rand.Int63(),
+				EndTimestampMs:   rand.Int63(),
+				Matchers: []*client.LabelMatcher{
+					{Type: client.EQUAL, Name: "n_1", Value: "v_1"},
+				},
+				ProjectionInclude: true,
+				ProjectionLabels:  []string{"env", "region"},
+			},
+		},
 	}
 	for tn, tc := range tcs {
 		t.Run(tn, func(t *testing.T) {

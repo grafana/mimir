@@ -11,17 +11,21 @@ import (
 	"strconv"
 
 	"github.com/alecthomas/kingpin/v2"
-	"github.com/prometheus/prometheus/promql/parser"
 )
 
-type AnalyzeCommand struct{}
+type AnalyzeCommand struct {
+	enableExperimentalFunctions bool
+}
 
-func (cmd *AnalyzeCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
+func (cmd *AnalyzeCommand) Register(app *kingpin.Application, envVars EnvVarNames, logConfig *LoggerConfig) {
 	analyzeCmd := app.Command("analyze", "Run analysis against your Prometheus, Grafana, and Grafana Mimir to see which metrics are being used and exported.")
-	analyzeCmd.Flag("enable-experimental-functions", "If set, enables parsing experimental PromQL functions.").BoolVar(&parser.EnableExperimentalFunctions)
+	analyzeCmd.Flag("enable-experimental-functions", "If set, enables parsing experimental PromQL functions.").BoolVar(&cmd.enableExperimentalFunctions)
 
 	paCmd := &PrometheusAnalyzeCommand{}
-	prometheusAnalyzeCmd := analyzeCmd.Command("prometheus", "Take the metrics being used in Grafana and get the cardinality from a Prometheus.").Action(paCmd.run)
+	prometheusAnalyzeCmd := analyzeCmd.Command("prometheus", "Take the metrics being used in Grafana and get the cardinality from a Prometheus.").PreAction(func(_ *kingpin.ParseContext) error {
+		paCmd.logger = logConfig.Logger()
+		return nil
+	}).Action(paCmd.run)
 	prometheusAnalyzeCmd.Flag("address", "Address of the Prometheus or Grafana Mimir instance; alternatively, set "+envVars.Address+".").
 		Envar(envVars.Address).
 		Required().
@@ -62,7 +66,11 @@ func (cmd *AnalyzeCommand) Register(app *kingpin.Application, envVars EnvVarName
 		StringVar(&paCmd.outputFile)
 
 	gaCmd := &GrafanaAnalyzeCommand{}
-	grafanaAnalyzeCmd := analyzeCmd.Command("grafana", "Analyze and output the metrics used in Grafana Dashboards.").Action(gaCmd.run)
+	grafanaAnalyzeCmd := analyzeCmd.Command("grafana", "Analyze and output the metrics used in Grafana Dashboards.").PreAction(func(_ *kingpin.ParseContext) error {
+		gaCmd.logger = logConfig.Logger()
+		gaCmd.enableExperimentalFunctions = cmd.enableExperimentalFunctions
+		return nil
+	}).Action(gaCmd.run)
 
 	grafanaAnalyzeCmd.Flag("address", "Address of the Grafana instance, alternatively set $GRAFANA_ADDRESS.").
 		Envar("GRAFANA_ADDRESS").
@@ -83,7 +91,11 @@ func (cmd *AnalyzeCommand) Register(app *kingpin.Application, envVars EnvVarName
 
 	raCmd := &RulerAnalyzeCommand{}
 	rulerAnalyzeCmd := analyzeCmd.Command("ruler", "Analyze and extract the metrics that are used in Grafana Mimir rules").
-		Action(raCmd.run)
+		PreAction(func(_ *kingpin.ParseContext) error {
+			raCmd.logger = logConfig.Logger()
+			raCmd.enableExperimentalFunctions = cmd.enableExperimentalFunctions
+			return nil
+		}).Action(raCmd.run)
 	rulerAnalyzeCmd.Flag("address", "Address of the Prometheus or Grafana Mimir instance; alternatively, set "+envVars.Address+".").
 		Envar(envVars.Address).
 		Required().
@@ -113,7 +125,11 @@ func (cmd *AnalyzeCommand) Register(app *kingpin.Application, envVars EnvVarName
 		StringMapVar(&raCmd.ClientConfig.ExtraHeaders)
 
 	daCmd := &DashboardAnalyzeCommand{}
-	dashboardAnalyzeCmd := analyzeCmd.Command("dashboard", "Analyze and output the metrics used in Grafana dashboard files").Action(daCmd.run)
+	dashboardAnalyzeCmd := analyzeCmd.Command("dashboard", "Analyze and output the metrics used in Grafana dashboard files").PreAction(func(_ *kingpin.ParseContext) error {
+		daCmd.logger = logConfig.Logger()
+		daCmd.enableExperimentalFunctions = cmd.enableExperimentalFunctions
+		return nil
+	}).Action(daCmd.run)
 	dashboardAnalyzeCmd.Arg("files", "Dashboard files").
 		Required().
 		ExistingFilesVar(&daCmd.DashFilesList)
@@ -122,7 +138,11 @@ func (cmd *AnalyzeCommand) Register(app *kingpin.Application, envVars EnvVarName
 		StringVar(&daCmd.outputFile)
 
 	rfCmd := &RuleFileAnalyzeCommand{}
-	ruleFileAnalyzeCmd := analyzeCmd.Command("rule-file", "Analyze and output the metrics used in Prometheus rules files").Action(rfCmd.run)
+	ruleFileAnalyzeCmd := analyzeCmd.Command("rule-file", "Analyze and output the metrics used in Prometheus rules files").PreAction(func(_ *kingpin.ParseContext) error {
+		rfCmd.logger = logConfig.Logger()
+		rfCmd.enableExperimentalFunctions = cmd.enableExperimentalFunctions
+		return nil
+	}).Action(rfCmd.run)
 	ruleFileAnalyzeCmd.Arg("files", "Rules files").
 		Required().
 		ExistingFilesVar(&rfCmd.RuleFilesList)

@@ -11,12 +11,13 @@ weight: 160
 
 # Configure Grafana Mimir hash rings
 
-[Hash rings](/docs/mimir/<MIMIR_VERSION>/references/architecture/hash-ring/) are a distributed consistent hashing scheme and are widely used by Grafana Mimir for sharding and replication.
+[Hash rings](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/hash-ring/) are a distributed consistent hashing scheme that Grafana Mimir uses for sharding, replication, and service discovery.
 
 Each of the following Grafana Mimir components builds an independent hash ring.
 The CLI flags used to configure the hash ring of each component have the following prefixes:
 
 - Ingesters: `-ingester.ring.*`
+- Ingest storage partitions: `-ingester.partition-ring.*`
 - Distributors: `-distributor.ring.*`
 - Compactors: `-compactor.ring.*`
 - Store-gateways: `-store-gateway.sharding-ring.*`
@@ -26,20 +27,20 @@ The CLI flags used to configure the hash ring of each component have the followi
 - (Optional) Overrides-exporters: `-overrides-exporter.ring.*`
 
 The rest of the documentation refers to these prefixes as `<prefix>`.
-You can configure each parameter either via the CLI flag or its respective YAML [config option](../configuration-parameters/).
+You can configure each parameter either via the CLI flag or its respective YAML [config option](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configuration-parameters/).
 
 ## Configuring the key-value store
 
 Hash ring data structures need to be shared between Grafana Mimir instances.
-To propagate changes to the hash ring, Grafana Mimir uses a [key-value store](/docs/mimir/<MIMIR_VERSION>/references/architecture/key-value-store/).
-The key-value store is required and can be configured independently for the hash rings of different components.
+To propagate changes to a given hash ring, Grafana Mimir uses a [key-value store](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/key-value-store/).
+You can configure the key-value store independently for the hash rings of different components.
 
 Grafana Mimir supports the following key-value (KV) store backends for hash rings:
 
-- `memberlist` (default)
-- `consul`
-- `etcd`
-- `multi`
+- [`memberlist`](#memberlist-default) (default)
+- [`consul`](#consul)
+- [`etcd`](#etcd)
+- [`multi`](#multi)
 
 You can configure the KV store backend setting the `<prefix>.store` CLI flag (for example, `-ingester.ring.store`).
 
@@ -55,7 +56,7 @@ The `-memberlist.join` can be set to:
 
 - An address in the `<ip>:<port>` format.
 - An address in the `<hostname>:<port>` format.
-- An address in the [DNS service discovery](../about-dns-service-discovery/) format.
+- An address in the [DNS service discovery](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/about-dns-service-discovery/) format.
 
 The default port is `7946`.
 
@@ -74,9 +75,9 @@ The `memberlist` backend is configured globally, unlike other supported backends
 {{< /admonition >}}
 
 Grafana Mimir supports TLS for memberlist connections between its components.
-For more information about TLS configuration, refer to [secure communications with TLS](/docs/mimir/<MIMIR_VERSION>/manage/secure/securing-communications-with-tls/).
+For more information about TLS configuration, refer to [secure communications with TLS](https://grafana.com/docs/mimir/<MIMIR_VERSION>/manage/secure/securing-communications-with-tls/).
 
-To see all supported configuration parameters, refer to [memberlist](../configuration-parameters/#memberlist).
+To see all supported configuration parameters, refer to [memberlist](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configuration-parameters/#memberlist).
 
 #### Configuring the memberlist address and port
 
@@ -113,12 +114,12 @@ Any traffic that does not match that prefix is discarded, to ensure that only th
 
 ### Fine tuning memberlist changes propagation latency
 
-The `cortex_ring_oldest_member_timestamp` metric can be used to measure the propagation of hash ring changes.
+The `cortex_ring_oldest_member_timestamp` metric can be used to measure the latency of hash ring changes propagation.
 This metric tracks the oldest heartbeat timestamp across all instances in the ring.
 You can execute the following query to measure the age of the oldest heartbeat timestamp in the ring:
 
 ```promql
-max(time() - cortex_ring_oldest_member_timestamp{state="ACTIVE"})
+max(time() - (cortex_ring_oldest_member_timestamp{state="ACTIVE"} > 0))
 ```
 
 The measured age shouldn't be higher than the configured `<prefix>.heartbeat-period` plus a reasonable delta (for example, 15 seconds).
@@ -126,7 +127,6 @@ If you experience a higher changes propagation latency, you can adjust the follo
 
 - Decrease `-memberlist.gossip-interval`
 - Increase `-memberlist.gossip-nodes`
-- Decrease `-memberlist.pullpush-interval`
 - Increase `-memberlist.retransmit-factor`
 
 ### Consul
@@ -136,7 +136,7 @@ To use [Consul](https://www.consul.io) as a backend KV store, set the following 
 - `<prefix>.consul.hostname`: Consul hostname and port separated by colon. For example, `consul:8500`.
 - `<prefix>.consul.acl-token`: [ACL token](https://www.consul.io/docs/security/acl/acl-system) used to authenticate to Consul. If Consul authentication is disabled, you can leave the token empty.
 
-To see all supported configuration parameters, refer [consul](../configuration-parameters/#consul).
+To see all supported configuration parameters, refer to [consul](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configuration-parameters/#consul).
 
 ### Etcd
 
@@ -147,23 +147,23 @@ To use [etcd](https://etcd.io) as a backend KV store, set the following paramete
 - `<prefix>.etcd.password`: Password used to authenticate to etcd. If etcd authentication is disabled, you can leave the password empty.
 
 Grafana Mimir supports TLS between its components and etcd.
-For more information about TLS configuration, refer to [secure communications with TLS](/docs/mimir/<MIMIR_VERSION>/manage/secure/securing-communications-with-tls/).
+For more information about TLS configuration, refer to [secure communications with TLS](https://grafana.com/docs/mimir/<MIMIR_VERSION>/manage/secure/securing-communications-with-tls/).
 
-To see all supported configuration parameters, refer to [etcd](../configuration-parameters/#etcd).
+To see all supported configuration parameters, refer to [etcd](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configuration-parameters/#etcd).
 
 ### Multi
 
 The `multi` backend is an implementation that you should use only for migrating between two other backends.
 
 The `multi` backend uses two different KV stores: the primary and the secondary.
-The primary backend receives all reads and writes.
+The primary backend receives both reads and writes.
 The secondary backend only receives writes.
 The primary and secondary backends can be swapped in real-time, which enables you to switch from one backend to another with no downtime.
 
 You can use the following parameters to configure the multi KV store settings:
 
-- `<prefix>.multi.primary`: The type of primary backend store.
-- `<prefix>.multi.secondary`: The type of the secondary backend store.
+- `<prefix>.multi.primary`: The type of primary backend store (e.g. `consul`).
+- `<prefix>.multi.secondary`: The type of the secondary backend store (e.g. `memberlist`).
 - `<prefix>.multi.mirror-enabled`: Whether mirroring of writes to the secondary backend store is enabled.
 - `<prefix>.multi.mirror-timeout`: The maximum time allowed to mirror a change to the secondary backend store.
 
@@ -172,7 +172,7 @@ Grafana Mimir doesn't log an error if it's unable to mirror writes to the second
 However, the total number of errors is tracked through the metric `cortex_multikv_mirror_write_errors_total`.
 {{< /admonition >}}
 
-The multi KV primary backend and mirroring can also be configured in the [runtime configuration file](../about-runtime-configuration/).
+You can also configure the multi KV primary backend and mirroring in the [runtime configuration file](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/about-runtime-configuration/).
 Changes to a multi KV Store in the runtime configuration apply to _all_ components using a multi KV store.
 
 The following example shows a runtime configuration file for the multi KV store:
@@ -194,9 +194,9 @@ The following steps show how to migrate ingesters from Consul to etcd:
 
 1. Configure `-ingester.ring.store=multi`, `-ingester.ring.multi.primary=consul`, `-ingester.ring.multi.secondary=etcd`, and `-ingester.ring.multi.mirror-enabled=true`. Configure both Consul settings `-ingester.ring.consul.*` and etcd settings `-ingester.ring.etcd.*`.
 1. Apply changes to your Grafana Mimir cluster. After changes have rolled out, Grafana Mimir uses Consul as primary KV store, and all writes are mirrored to etcd too.
-1. Configure `primary: etcd` in the `multi_kv_config` block of the [runtime configuration file](../about-runtime-configuration/). Changes in the runtime configuration file are reloaded live, without the need to restart the process.
+1. Configure `primary: etcd` in the `multi_kv_config` block of the [runtime configuration file](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/about-runtime-configuration/). Changes in the runtime configuration file are reloaded live, without the need to restart the process.
 1. Wait until all Mimir instances have reloaded the updated configuration.
-1. Configure `mirror_enabled: false` in the `multi_kv_config` block of the [runtime configuration file](../about-runtime-configuration/).
+1. Configure `mirror_enabled: false` in the `multi_kv_config` block of the [runtime configuration file](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/about-runtime-configuration/).
 1. Wait until all Mimir instances have reloaded the updated configuration.
 1. Configure `-ingester.ring.store=etcd` and remove both the multi and Consul configuration because they are no longer required.
 1. Apply changes to your Grafana Mimir cluster. After changes have rolled out, Grafana Mimir only uses etcd.

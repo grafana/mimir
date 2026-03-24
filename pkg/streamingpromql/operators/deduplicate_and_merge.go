@@ -18,7 +18,6 @@ var errVectorContainsMetricsWithSameLabels = errors.New("vector cannot contain m
 type DeduplicateAndMerge struct {
 	Inner                    types.InstantVectorOperator
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
-	RunDelayedNameRemoval    bool
 
 	// If true, there are definitely no duplicate series from the inner operator, so we can just
 	// return them as-is.
@@ -31,8 +30,8 @@ type DeduplicateAndMerge struct {
 
 var _ types.InstantVectorOperator = &DeduplicateAndMerge{}
 
-func NewDeduplicateAndMerge(inner types.InstantVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, runDelayedNameRemoval bool) *DeduplicateAndMerge {
-	return &DeduplicateAndMerge{Inner: inner, MemoryConsumptionTracker: memoryConsumptionTracker, RunDelayedNameRemoval: runDelayedNameRemoval}
+func NewDeduplicateAndMerge(inner types.InstantVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *DeduplicateAndMerge {
+	return &DeduplicateAndMerge{Inner: inner, MemoryConsumptionTracker: memoryConsumptionTracker}
 }
 
 func (d *DeduplicateAndMerge) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
@@ -40,21 +39,6 @@ func (d *DeduplicateAndMerge) SeriesMetadata(ctx context.Context, matchers types
 
 	if err != nil {
 		return nil, err
-	}
-
-	if d.RunDelayedNameRemoval {
-		for i := range innerMetadata {
-			if !innerMetadata[i].DropName {
-				continue
-			}
-			d.MemoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(innerMetadata[i].Labels)
-			innerMetadata[i].Labels = innerMetadata[i].Labels.DropMetricName()
-			err := d.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(innerMetadata[i].Labels)
-			if err != nil {
-				return nil, err
-			}
-			innerMetadata[i].DropName = false
-		}
 	}
 
 	if !types.HasDuplicateSeries(innerMetadata) {
@@ -163,15 +147,19 @@ func (d *DeduplicateAndMerge) Prepare(ctx context.Context, params *types.Prepare
 	return d.Inner.Prepare(ctx, params)
 }
 
+func (d *DeduplicateAndMerge) AfterPrepare(ctx context.Context) error {
+	return d.Inner.AfterPrepare(ctx)
+}
+
 func (d *DeduplicateAndMerge) Finalize(ctx context.Context) error {
+	if d.buffer != nil {
+		d.buffer.Finalize()
+		d.buffer = nil
+	}
+
 	return d.Inner.Finalize(ctx)
 }
 
 func (d *DeduplicateAndMerge) Close() {
 	d.Inner.Close()
-
-	if d.buffer != nil {
-		d.buffer.Close()
-		d.buffer = nil
-	}
 }

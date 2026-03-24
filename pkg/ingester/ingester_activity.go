@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/tracing"
@@ -38,6 +39,10 @@ func (i *ActivityTrackerWrapper) Push(ctx context.Context, request *mimirpb.Writ
 func (i *ActivityTrackerWrapper) PushToStorageAndReleaseRequest(ctx context.Context, request *mimirpb.WriteRequest) error {
 	// No tracking in PushToStorageAndReleaseRequest because it is called very frequently
 	return i.ing.PushToStorageAndReleaseRequest(ctx, request)
+}
+
+func (i *ActivityTrackerWrapper) NotifyPreCommit(ctx context.Context) error {
+	return i.ing.NotifyPreCommit(ctx)
 }
 
 func (i *ActivityTrackerWrapper) QueryStream(request *client.QueryRequest, server client.Ingester_QueryStreamServer) error {
@@ -279,6 +284,14 @@ func queryRequestToString(sb *bytes.Buffer, req *client.QueryRequest) {
 		sb.WriteString(",")
 	}
 	sb.WriteString("},")
+
+	sb.WriteString("ProjectionInclude:")
+	sb.WriteString(strconv.FormatBool(req.ProjectionInclude))
+	sb.WriteString(",")
+
+	sb.WriteString("ProjectionLabels:[")
+	sb.WriteString(strings.Join(req.ProjectionLabels, " "))
+	sb.WriteString("],")
 
 	b = b[:0]
 	sb.WriteString("StreamingChunksBatchSize:")

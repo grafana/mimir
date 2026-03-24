@@ -36,14 +36,14 @@ func newHTTPRoundTripper(cfg *HTTPConfig) http.RoundTripper {
 
 // dialQueryFrontendHTTP creates and initializes a new httpgrpc.HTTPClient taking a QueryFrontendConfig configuration.
 func dialQueryFrontendHTTP(cfg QueryFrontendConfig, _ prometheus.Registerer, _ log.Logger) (http.RoundTripper, *url.URL, error) {
-	url, err := url.Parse(cfg.Address)
+	u, err := url.Parse(cfg.Address)
 	if err != nil {
 		return nil, nil, err
 	}
 	// this makes .JoinPath("/absolute/path") work as we need
-	if url.Path == "" {
-		url.Path = "/"
+	if u.Path == "" {
+		u.Path = "/"
 	}
 
-	return newHTTPRoundTripper(&cfg.HTTPClientConfig), url, nil
+	return newHTTPRoundTripper(&cfg.HTTPClientConfig), u, nil
 }

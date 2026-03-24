@@ -4,11 +4,13 @@ package main
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
 
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/pkg/errors"
 	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
@@ -70,19 +72,21 @@ func (c *CreatePartitionsCommand) createPartitions(_ *kingpin.ParseContext) erro
 	return nil
 }
 
+var errTopicNotFound = errors.New("topic not found")
+
 func getTopicDetails(adm *kadm.Client, topic string) (kadm.TopicDetail, error) {
 	topics, err := adm.ListTopics(context.Background(), topic)
 	if err != nil {
 		return kadm.TopicDetail{}, errors.Wrap(err, "failed to list topics")
 	}
 
-	if topics.Error() != nil {
-		return kadm.TopicDetail{}, errors.Wrap(topics.Error(), "failed to list topics")
+	details, ok := topics[topic]
+	if !ok || stderrors.Is(details.Err, kerr.UnknownTopicOrPartition) {
+		return kadm.TopicDetail{}, errTopicNotFound
 	}
 
-	details, ok := topics[topic]
-	if !ok {
-		return kadm.TopicDetail{}, errors.New("unable to requested find topic")
+	if details.Err != nil {
+		return kadm.TopicDetail{}, errors.Wrap(details.Err, "failed to get topic details")
 	}
 
 	return details, nil

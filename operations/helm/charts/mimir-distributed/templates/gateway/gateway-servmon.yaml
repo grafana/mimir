@@ -1,3 +1,0 @@
-{{- if and (eq (include "mimir.gateway.isEnabled" .) "true") (not .Values.gateway.enabledNonEnterprise) -}}
-{{- include "mimir.lib.serviceMonitor" (dict "ctx" $ "component" "gateway") }}
-{{- end -}}

@@ -17,45 +17,50 @@ import (
 	"github.com/grafana/dskit/multierror"
 	dskittenant "github.com/grafana/dskit/tenant"
 	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/thanos-io/objstore"
+	"github.com/thanos-io/objstore/providers/filesystem"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	mimir_storage "github.com/grafana/mimir/pkg/storage"
+	"github.com/grafana/mimir/pkg/storage/indexheader"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 type TSDBBuilder struct {
-	dataDir string
-
-	logger                           log.Logger
-	limits                           *validation.Overrides
-	blocksStorageCfg                 mimir_tsdb.BlocksStorageConfig
-	metrics                          tsdbBuilderMetrics
-	applyMaxGlobalSeriesPerUserBelow int // inclusive
-
 	partitionID int32
 
 	// Map of a tenant in a partition to its TSDB.
 	tsdbsMu sync.RWMutex
 	tsdbs   map[tsdbTenant]*userTSDB
+
+	cfg    Config
+	limits *validation.Overrides
+
+	logger             log.Logger
+	tsdbBuilderMetrics tsdbBuilderMetrics
+	tsdbMetrics        *mimir_tsdb.TSDBMetrics
 }
 
 // We use this only to identify the soft errors.
 var softErrProcessor = mimir_storage.NewSoftAppendErrorProcessor(
 	func() {}, func(int64, []mimirpb.LabelAdapter) {}, func(int64, []mimirpb.LabelAdapter) {},
 	func(int64, []mimirpb.LabelAdapter) {}, func(int64, []mimirpb.LabelAdapter) {}, func(string, int64, []mimirpb.LabelAdapter) {},
-	func([]mimirpb.LabelAdapter) {}, func([]mimirpb.LabelAdapter) {}, func(error, int64, []mimirpb.LabelAdapter) {},
-	func(error, int64, []mimirpb.LabelAdapter) {}, func(error, int64, []mimirpb.LabelAdapter) {},
-	func(error, int64, []mimirpb.LabelAdapter) {}, func(error, int64, []mimirpb.LabelAdapter) {},
-	func(error, int64, []mimirpb.LabelAdapter) {}, func(error, int64, []mimirpb.LabelAdapter) {},
-	func(error, int64, []mimirpb.LabelAdapter) {},
+	func([]mimirpb.LabelAdapter) {}, func([]mimirpb.LabelAdapter) {},
+	func(err error, _ int64, _ []mimirpb.LabelAdapter) bool {
+		_, ok := globalerror.MapNativeHistogramErr(err)
+		return ok
+	},
+	func([]mimirpb.LabelAdapter) {},
 )
 
 type tsdbTenant struct {
@@ -63,22 +68,29 @@ type tsdbTenant struct {
 	tenantID    string
 }
 
-func NewTSDBBuilder(logger log.Logger, dataDir string, partitionID int32, blocksStorageCfg mimir_tsdb.BlocksStorageConfig, limits *validation.Overrides, metrics tsdbBuilderMetrics, applyMaxGlobalSeriesPerUserBelow int) *TSDBBuilder {
+func NewTSDBBuilder(
+	partitionID int32,
+	cfg Config,
+	limits *validation.Overrides,
+	logger log.Logger,
+	tsdbBuilderMetrics tsdbBuilderMetrics,
+	tsdbMetrics *mimir_tsdb.TSDBMetrics,
+) *TSDBBuilder {
 	return &TSDBBuilder{
-		dataDir:                          dataDir,
-		logger:                           logger,
-		limits:                           limits,
-		blocksStorageCfg:                 blocksStorageCfg,
-		metrics:                          metrics,
-		applyMaxGlobalSeriesPerUserBelow: applyMaxGlobalSeriesPerUserBelow,
-		partitionID:                      partitionID,
-		tsdbs:                            make(map[tsdbTenant]*userTSDB),
+		partitionID:        partitionID,
+		tsdbs:              make(map[tsdbTenant]*userTSDB),
+		cfg:                cfg,
+		limits:             limits,
+		logger:             logger,
+		tsdbBuilderMetrics: tsdbBuilderMetrics,
+		tsdbMetrics:        tsdbMetrics,
 	}
 }
 
 // PushToStorageAndReleaseRequest implements ingest.Pusher.
 // It puts the samples in the TSDB. Some parts taken from (*Ingester).pushSamplesToAppender.
 func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *mimirpb.WriteRequest) error {
+	defer req.FreeBuffer()
 	defer mimirpb.ReuseSlice(req.Timeseries)
 
 	tenantID, err := dskittenant.TenantID(ctx)
@@ -132,13 +144,13 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 				(!nativeHistogramsIngestionEnabled || len(ts.Histograms) == 0 || ts.Histograms[0].Timestamp >= s.TimestampMs) {
 				if ref != 0 {
 					// If the cached reference exists, we try to use it.
-					_, err = app.AppendCTZeroSample(ref, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
+					_, err = app.AppendSTZeroSample(ref, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
 				} else {
 					// Copy the label set because TSDB may retain it.
 					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
-					ref, err = app.AppendCTZeroSample(0, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
+					ref, err = app.AppendSTZeroSample(0, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
 				}
-				if err != nil && !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderCT) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+				if err != nil && !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderST) && !errors.Is(err, storage.ErrOutOfOrderSample) {
 					// According to OTEL spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
 					// if the start time is unknown, then it should equal to the timestamp of the first sample,
 					// which will mean a created timestamp equal to the timestamp of the first sample for later
@@ -192,13 +204,13 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 					ih = zeroHistogram
 				}
 				if ref != 0 {
-					_, err = app.AppendHistogramCTZeroSample(ref, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
+					_, err = app.AppendHistogramSTZeroSample(ref, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
 				} else {
 					// Copy the label set because both TSDB and the active series tracker may retain it.
 					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
-					ref, err = app.AppendHistogramCTZeroSample(0, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
+					ref, err = app.AppendHistogramSTZeroSample(0, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
 				}
-				if err != nil && !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderCT) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+				if err != nil && !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderST) && !errors.Is(err, storage.ErrOutOfOrderSample) {
 					// According to OTEL spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
 					// if the start time is unknown, then it should equal to the timestamp of the first sample,
 					// which will mean a created timestamp equal to the timestamp of the first sample for later
@@ -249,7 +261,7 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 
 	if discardedSamples > 0 {
 		partitionStr := fmt.Sprintf("%d", tenant.partitionID)
-		b.metrics.processSamplesDiscarded.WithLabelValues(partitionStr).Add(float64(discardedSamples))
+		b.tsdbBuilderMetrics.processSamplesDiscarded.WithLabelValues(partitionStr).Add(float64(discardedSamples))
 	}
 
 	return app.Commit()
@@ -289,7 +301,9 @@ func (b *TSDBBuilder) getOrCreateTSDB(tenant tsdbTenant) (*userTSDB, error) {
 }
 
 func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
-	udir := filepath.Join(b.dataDir, strconv.Itoa(int(tenant.partitionID)), tenant.tenantID)
+	tsdbPromReg := prometheus.NewRegistry()
+
+	udir := filepath.Join(b.cfg.DataDir, strconv.Itoa(int(tenant.partitionID)), tenant.tenantID)
 	// Remove any previous TSDB dir. We don't need it.
 	if err := os.RemoveAll(udir); err != nil {
 		return nil, err
@@ -311,40 +325,45 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 	// and the tenant is generally more careful. It is the smaller tenants that can create problem
 	// if they suddenly send millions of series when they are supposed to be limited to a few thousand.
 	userLimit := b.limits.MaxGlobalSeriesPerUser(userID)
-	if userLimit <= b.applyMaxGlobalSeriesPerUserBelow {
+	if userLimit <= b.cfg.ApplyMaxGlobalSeriesPerUserBelow {
 		udb.maxGlobalSeries = userLimit
 	}
 
-	db, err := tsdb.Open(udir, util_log.SlogFromGoKit(userLogger), nil, &tsdb.Options{
+	db, err := tsdb.Open(udir, util_log.SlogFromGoKit(userLogger), tsdbPromReg, &tsdb.Options{
 		RetentionDuration:                    0,
 		MinBlockDuration:                     2 * time.Hour.Milliseconds(),
 		MaxBlockDuration:                     2 * time.Hour.Milliseconds(),
 		NoLockfile:                           true,
-		StripeSize:                           b.blocksStorageCfg.TSDB.StripeSize,
-		HeadChunksWriteBufferSize:            b.blocksStorageCfg.TSDB.HeadChunksWriteBufferSize,
-		HeadChunksWriteQueueSize:             b.blocksStorageCfg.TSDB.HeadChunksWriteQueueSize,
+		StripeSize:                           b.cfg.BlocksStorage.TSDB.StripeSize,
+		HeadChunksWriteBufferSize:            b.cfg.BlocksStorage.TSDB.HeadChunksWriteBufferSize,
+		HeadChunksWriteQueueSize:             b.cfg.BlocksStorage.TSDB.HeadChunksWriteQueueSize,
 		WALSegmentSize:                       -1,                                                                             // No WAL
 		BlocksToDelete:                       func([]*tsdb.Block) map[ulid.ULID]struct{} { return map[ulid.ULID]struct{}{} }, // Always noop
 		IsolationDisabled:                    true,
 		EnableOverlappingCompaction:          false,                                                // Always false since Mimir only uploads lvl 1 compacted blocks
 		OutOfOrderTimeWindow:                 b.limits.OutOfOrderTimeWindow(userID).Milliseconds(), // The unit must be same as our timestamps.
-		OutOfOrderCapMax:                     int64(b.blocksStorageCfg.TSDB.OutOfOrderCapacityMax),
-		EnableNativeHistograms:               b.limits.NativeHistogramsIngestionEnabled(userID),
+		OutOfOrderCapMax:                     int64(b.cfg.BlocksStorage.TSDB.OutOfOrderCapacityMax),
 		SecondaryHashFunction:                nil, // TODO(codesome): May needed when applying limits. Used to determine the owned series by an ingesters
 		SeriesLifecycleCallback:              udb,
-		HeadPostingsForMatchersCacheMetrics:  tsdb.NewPostingsForMatchersCacheMetrics(nil),
-		BlockPostingsForMatchersCacheMetrics: tsdb.NewPostingsForMatchersCacheMetrics(nil),
+		HeadPostingsForMatchersCacheMetrics:  tsdb.NewPostingsForMatchersCacheMetrics(nil), // No need for these metrics; no one queries tsdb through block-builder
+		BlockPostingsForMatchersCacheMetrics: tsdb.NewPostingsForMatchersCacheMetrics(nil), // No need for these metrics; no one queries tsdb through block-builder
 		PostingsClonerFactory:                tsdb.DefaultPostingsClonerFactory{},
 	}, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	db.DisableCompactions()
+	db.DisableCompactions() // we compact on our own schedule
 
 	udb.DB = db
 
+	b.tsdbMetrics.SetRegistryForTenant(userID, tsdbPromReg)
+
 	return udb, nil
+}
+
+func (b *TSDBBuilder) NotifyPreCommit(_ context.Context) error {
+	return nil
 }
 
 // Function to upload the blocks.
@@ -365,12 +384,16 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 		var merr multierror.MultiError
 		merr.Add(err)
 		// If some TSDB was not compacted or uploaded, it will be re-tried in the next cycle, so we always remove it here.
-		for _, db := range b.tsdbs {
+		for tenant, db := range b.tsdbs {
 			if !closedDBs[db] {
 				merr.Add(db.Close())
 			}
 			merr.Add(os.RemoveAll(db.Dir()))
+
+			// Remove all registered per-tenant TSDB metrics. Their local DBs are wiped out from the block-builder no-matter what.
+			b.tsdbMetrics.ForceRemoveRegistryForTenant(tenant.tenantID)
 		}
+
 		// Clear the map so that it can be released from the memory. Not setting to nil in case we want to reuse the TSDBBuilder.
 		clear(b.tsdbs)
 		b.tsdbsMu.Unlock()
@@ -385,8 +408,8 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 	}
 
 	eg, ctx := errgroup.WithContext(ctx)
-	if b.blocksStorageCfg.TSDB.ShipConcurrency > 0 {
-		eg.SetLimit(b.blocksStorageCfg.TSDB.ShipConcurrency)
+	if b.cfg.BlocksStorage.TSDB.ShipConcurrency > 0 {
+		eg.SetLimit(b.cfg.BlocksStorage.TSDB.ShipConcurrency)
 	}
 	for tenant, db := range b.tsdbs {
 		eg.Go(func() (err error) {
@@ -397,14 +420,14 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 				}
 				partitionStr := strconv.Itoa(int(tenant.partitionID))
 				if err != nil {
-					b.metrics.compactAndUploadFailed.WithLabelValues(partitionStr).Inc()
+					b.tsdbBuilderMetrics.compactAndUploadFailed.WithLabelValues(partitionStr).Inc()
 					return
 				}
-				b.metrics.compactAndUploadDuration.WithLabelValues(partitionStr).Observe(time.Since(t).Seconds())
-				b.metrics.lastSuccessfulCompactAndUploadTime.WithLabelValues(partitionStr).SetToCurrentTime()
+				b.tsdbBuilderMetrics.compactAndUploadDuration.WithLabelValues(partitionStr).Observe(time.Since(t).Seconds())
+				b.tsdbBuilderMetrics.lastSuccessfulCompactAndUploadTime.WithLabelValues(partitionStr).SetToCurrentTime()
 			}(time.Now())
 
-			if err := db.compactEverything(ctx); err != nil {
+			if err := db.compactBlocks(ctx); err != nil {
 				return err
 			}
 
@@ -413,6 +436,13 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 			for _, b := range db.Blocks() {
 				localMetas = append(localMetas, b.Meta())
 			}
+
+			if b.cfg.GenerateSparseIndexHeaders {
+				if err := b.buildSparseIndexHeaders(ctx, dbDir, localMetas); err != nil {
+					return err
+				}
+			}
+
 			metasMu.Lock()
 			metas = append(metas, localMetas...)
 			metasMu.Unlock()
@@ -445,10 +475,12 @@ func (b *TSDBBuilder) Close() error {
 	defer b.tsdbsMu.Unlock()
 
 	var merr multierror.MultiError
-	for _, db := range b.tsdbs {
+	for tenant, db := range b.tsdbs {
 		dbDir := db.Dir()
 		merr.Add(db.Close())
 		merr.Add(os.RemoveAll(dbDir))
+
+		b.tsdbMetrics.ForceRemoveRegistryForTenant(tenant.tenantID)
 	}
 
 	// Clear the map so that it can be released from the memory. Not setting to nil in case
@@ -485,7 +517,7 @@ func (u *userTSDB) PostCreation(labels.Labels) {}
 
 func (u *userTSDB) PostDeletion(map[chunks.HeadSeriesRef]labels.Labels) {}
 
-func (u *userTSDB) compactEverything(ctx context.Context) error {
+func (u *userTSDB) compactBlocks(ctx context.Context) error {
 	blockRange := 2 * time.Hour.Milliseconds()
 
 	// Compact the in-order data.
@@ -505,4 +537,42 @@ func (u *userTSDB) compactEverything(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// buildSparseIndexHeaders builds sparse index-headers for all blocks in the metas list in the directory.
+func (b *TSDBBuilder) buildSparseIndexHeaders(ctx context.Context, dbDir string, metas []tsdb.BlockMeta) error {
+	for _, m := range metas {
+		if err := b.buildSparseIndexHeader(ctx, dbDir, m.ULID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// prepareSparseIndexHeader builds a sparse index-header for a single block.
+func (b *TSDBBuilder) buildSparseIndexHeader(ctx context.Context, dbDir string, id ulid.ULID) error {
+	// Indexheader code uses a bucket client to read;
+	// construct local-filesystem-backed bucket to read from disk.
+	fsBkt, err := filesystem.NewBucket(dbDir)
+	if err != nil {
+		return err
+	}
+	fsInstrBkt := objstore.WithNoopInstr(fsBkt)
+
+	// Calling NewStreamBinaryReader reads a block's index and writes a sparse-index-header to disk.
+	metrics := indexheader.NewStreamBinaryReaderMetrics(nil)
+	logger := log.With(b.logger, "id", id)
+	br, err := indexheader.NewStreamBinaryReader(
+		ctx,
+		logger,
+		fsInstrBkt,
+		dbDir,
+		id,
+		b.cfg.BlocksStorage.BucketStore.PostingOffsetsInMemSampling,
+		metrics,
+		b.cfg.BlocksStorage.BucketStore.IndexHeader)
+	if err != nil {
+		return err
+	}
+	return br.Close()
 }

@@ -4,8 +4,12 @@ package ingest
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -16,7 +20,10 @@ import (
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
+	"github.com/twmb/franz-go/pkg/sasl"
+	"github.com/twmb/franz-go/pkg/sasl/oauth"
 	"github.com/twmb/franz-go/pkg/sasl/plain"
+	"github.com/twmb/franz-go/pkg/sasl/scram"
 	"github.com/twmb/franz-go/plugin/kotel"
 	"github.com/twmb/franz-go/plugin/kprom"
 	"go.opentelemetry.io/otel"
@@ -62,7 +69,7 @@ func (o onlySampledTraces) Inject(ctx context.Context, carrier propagation.TextM
 func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger log.Logger) []kgo.Opt {
 	opts := []kgo.Opt{
 		kgo.ClientID(cfg.ClientID),
-		kgo.SeedBrokers(cfg.Address),
+		kgo.SeedBrokers(cfg.Address...),
 		kgo.DialTimeout(cfg.DialTimeout),
 
 		// A cluster metadata update is a request sent to a broker and getting back the map of partitions and
@@ -99,14 +106,18 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 		}),
 	}
 
-	// SASL plain auth.
-	if cfg.SASLUsername != "" && cfg.SASLPassword.String() != "" {
-		opts = append(opts, kgo.SASL(plain.Plain(func(_ context.Context) (plain.Auth, error) {
-			return plain.Auth{
-				User: cfg.SASLUsername,
-				Pass: cfg.SASLPassword.String(),
-			}, nil
-		})))
+	if cfg.ClientRack != "" {
+		opts = append(opts, kgo.Rack(cfg.ClientRack))
+	}
+
+	opts = append(opts, kafkaAuthOptions(cfg.SASL)...)
+
+	if cfg.TLSEnabled {
+		tlsConfig, err := cfg.TLS.GetTLSConfig()
+		if err != nil {
+			panic("must call Validate before trying to construct Kafka options")
+		}
+		opts = append(opts, kgo.DialTLSConfig(tlsConfig))
 	}
 
 	opts = append(opts, kgo.WithHooks(kotel.NewKotel(kotel.WithTracer(recordsTracer())).Hooks()...))
@@ -116,6 +127,97 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 	}
 
 	return opts
+}
+
+func kafkaAuthOptions(cfg KafkaAuthConfig) []kgo.Opt {
+	if (cfg.Mechanism == "" || cfg.Mechanism == SASLMechanismPlain) && cfg.Username == "" {
+		return nil
+	}
+
+	var m sasl.Mechanism
+	switch cfg.Mechanism {
+	case SASLMechanismScramSHA256:
+		m = scram.Auth{
+			User: cfg.Username,
+			Pass: cfg.Password.String(),
+		}.AsSha256Mechanism()
+	case SASLMechanismScramSHA512:
+		m = scram.Auth{
+			User: cfg.Username,
+			Pass: cfg.Password.String(),
+		}.AsSha512Mechanism()
+	case SASLMechanismPlain:
+		m = plain.Auth{
+			User: cfg.Username,
+			Pass: cfg.Password.String(),
+		}.AsMechanism()
+	case SASLMechanismOauthbearer:
+		switch {
+		case cfg.OauthbearerToken.String() != "":
+			m = oauth.Auth{
+				Token:      cfg.OauthbearerToken.String(),
+				Zid:        cfg.OauthbearerZid,
+				Extensions: cfg.OauthbearerExtensions.Read(),
+			}.AsMechanism()
+		case cfg.OauthbearerFilePath != "":
+			m = oauth.Oauth(func(context.Context) (oauth.Auth, error) {
+				f, err := os.ReadFile(cfg.OauthbearerFilePath)
+				if err != nil {
+					return oauth.Auth{}, err
+				}
+				var a oauth.Auth
+				err = json.Unmarshal(f, &a)
+				return a, err
+			})
+		case cfg.OauthbearerHTTPSocketPath != "":
+			m = oauth.Oauth(func(ctx context.Context) (oauth.Auth, error) {
+				return requestOAuthToken(ctx, cfg.OauthbearerHTTPSocketPath, cfg.OauthbearerHTTPSocketTimeout)
+			})
+		default:
+			panic(fmt.Errorf("SASL mechanism is %s but no way to get token defined", SASLMechanismOauthbearer))
+		}
+	default:
+		panic(fmt.Errorf("unknown SASL mechanism: %v", cfg.Mechanism))
+	}
+
+	return []kgo.Opt{kgo.SASL(m)}
+}
+
+func requestOAuthToken(ctx context.Context, socketPath string, timeout time.Duration) (oauth.Auth, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	transport := &http.Transport{
+		DisableKeepAlives: true,
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
+		},
+	}
+
+	client := &http.Client{
+		Transport: transport,
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://token/", nil)
+	if err != nil {
+		return oauth.Auth{}, fmt.Errorf("creating request for OAuth HTTP socket %s: %w", socketPath, err)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return oauth.Auth{}, fmt.Errorf("requesting token from OAuth HTTP socket %s: %w", socketPath, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return oauth.Auth{}, fmt.Errorf("requesting token from OAuth HTTP socket %s: unexpected status %s", socketPath, resp.Status)
+	}
+
+	var a oauth.Auth
+	if err := json.NewDecoder(resp.Body).Decode(&a); err != nil {
+		return oauth.Auth{}, fmt.Errorf("parsing OAuth token from socket %s: %w", socketPath, err)
+	}
+	return a, nil
 }
 
 func recordsTracer() *kotel.Tracer {

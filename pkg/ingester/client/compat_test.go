@@ -43,7 +43,7 @@ func TestQueryRequest(t *testing.T) {
 	}
 	matchers = append(matchers, matcher4)
 
-	req, err := ToQueryRequest(from, to, matchers)
+	req, err := ToQueryRequest(from, to, false, nil, matchers)
 	if err != nil {
 		t.Fatal(err)
 	}

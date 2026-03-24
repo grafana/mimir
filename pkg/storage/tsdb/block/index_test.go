@@ -20,6 +20,77 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestHealthStats_AnyErr(t *testing.T) {
+	testCases := []struct {
+		name          string
+		stats         HealthStats
+		expectSuccess bool
+	}{
+		{
+			name: "critical error",
+			stats: HealthStats{
+				IndexFormat:           index.FormatV2,
+				OutsideChunks:         1,
+				CompleteOutsideChunks: 1,
+			},
+			expectSuccess: false,
+		},
+		{
+			name: "invalid index version",
+			stats: HealthStats{
+				IndexFormat: index.FormatV1,
+			},
+			expectSuccess: false,
+		},
+		{
+			name: "issue 347 outside chunks",
+			stats: HealthStats{
+				IndexFormat:           index.FormatV2,
+				OutsideChunks:         1,
+				Issue347OutsideChunks: 1,
+			},
+			expectSuccess: false,
+		},
+		{
+			name: "out of order labels",
+			stats: HealthStats{
+				IndexFormat:      index.FormatV2,
+				OutOfOrderLabels: 1,
+			},
+			expectSuccess: false,
+		},
+
+		{
+			name: "out of order chunks",
+			stats: HealthStats{
+				IndexFormat:      index.FormatV2,
+				TotalSeries:      100,
+				OutOfOrderSeries: 50,
+				OutOfOrderChunks: 10,
+			},
+			expectSuccess: false,
+		},
+		{
+			name: "success",
+			stats: HealthStats{
+				IndexFormat: index.FormatV2,
+			},
+			expectSuccess: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.stats.AnyErr()
+			if tc.expectSuccess {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
+		})
+	}
+}
+
 func TestRewrite(t *testing.T) {
 	const excludeTime int64 = 600
 

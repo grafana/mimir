@@ -236,13 +236,3 @@ func (ps *partitionRingLimiterStrategy) convertGlobalToLocalLimit(userID string,
 func (ps *partitionRingLimiterStrategy) getShardSize(userID string) int {
 	return ps.getPartitionTenantShardSize(userID)
 }
-
-type flusherLimiterStrategy struct{}
-
-func (f flusherLimiterStrategy) convertGlobalToLocalLimit(_ string, _ int) int {
-	return 0
-}
-
-func (f flusherLimiterStrategy) getShardSize(_ string) int {
-	return 0
-}

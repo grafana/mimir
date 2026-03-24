@@ -759,7 +759,7 @@ func TestMergeSeries(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			result, conflict, err := MergeSeries(testCase.input, testCase.sourceSeriesIndices, limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
+			result, conflict, err := MergeSeries(testCase.input, testCase.sourceSeriesIndices, limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))
 
 			require.NoError(t, err)
 

@@ -84,7 +84,6 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             - -flag-bool=false
-            - -flag-empty=
             - -flag-float=1.23
             - -flag-json1={"foo":"bar"}
             - -flag-json2={"foo":"bar"}

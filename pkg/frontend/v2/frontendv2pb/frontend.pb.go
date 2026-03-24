@@ -10,6 +10,7 @@ import (
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
 	httpgrpc "github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	querierpb "github.com/grafana/mimir/pkg/querier/querierpb"
 	_ "github.com/grafana/mimir/pkg/querier/stats"
 	github_com_grafana_mimir_pkg_querier_stats "github.com/grafana/mimir/pkg/querier/stats"
@@ -87,6 +88,8 @@ func (m *QueryResultRequest) GetHttpResponse() *httpgrpc.HTTPResponse {
 }
 
 type QueryResultStreamRequest struct {
+	mimirpb.BufferHolder
+
 	QueryID uint64 `protobuf:"varint,1,opt,name=queryID,proto3" json:"queryID,omitempty"`
 	// Types that are valid to be assigned to Data:
 	//	*QueryResultStreamRequest_Metadata

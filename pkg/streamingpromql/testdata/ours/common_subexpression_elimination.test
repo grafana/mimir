@@ -133,3 +133,23 @@ eval range from 0 to 2m step 1m histogram_quantile(0.5, some_metric) * histogram
 
 eval range from 0 to 2m step 1m histogram_count(some_metric) * histogram_sum(some_metric)
   {} 15 24 42
+
+clear
+
+load 1m
+  metric 1 4 3 6 5 9
+
+eval range from 0 to 5m step 1m delta(metric[1m] smoothed)
+  {} 0 3 -1 3 -1 4
+
+eval range from 0 to 5m step 1m increase(metric[1m] smoothed)
+  {} 0 3 3 3 5 4
+
+eval range from 0 to 5m step 1m rate(metric[1m] smoothed)
+  {} 0 0.05 0.05 0.05 0.08333333333333333 0.06666666666666667
+
+eval range from 0 to 5m step 1m delta(metric[1m] smoothed) + increase(metric[1m] smoothed)
+  {} 0 6 2 6 4 8
+
+eval range from 0 to 5m step 1m delta(metric[1m] smoothed) + rate(metric[1m] smoothed)
+  {} 0 3.05 -0.95 3.05 -0.9166666666666666 4.066666666666666

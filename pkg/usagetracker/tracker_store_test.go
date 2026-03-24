@@ -4,6 +4,7 @@ package usagetracker
 
 import (
 	"context"
+	"fmt"
 	math_bits "math/bits"
 	"math/rand"
 	"os"
@@ -31,7 +32,7 @@ func TestTrackerStore_HappyCase(t *testing.T) {
 
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
 
-	tracker := newTrackerStore(idleTimeout, log.NewNopLogger(), limits, noopEvents{})
+	tracker := newTrackerStore(idleTimeout, 85, log.NewNopLogger(), limits, noopEvents{}, false)
 
 	{
 		// Push 2 series, both are accepted.
@@ -83,7 +84,7 @@ func TestTrackerStore_SeriesCreationRateLimit(t *testing.T) {
 	limits := limiterMock{testUser1: 10}
 
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
-	tracker := newTrackerStore(idleTimeout, log.NewNopLogger(), limits, noopEvents{})
+	tracker := newTrackerStore(idleTimeout, 85, log.NewNopLogger(), limits, noopEvents{}, false)
 
 	{
 		// Push 10 series, 5 of them are rejected because current limit is 5.
@@ -151,9 +152,9 @@ func TestTrackerStore_CreatedSeriesCommunication(t *testing.T) {
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
 
 	tracker1Events := eventsPipe{}
-	tracker1 := newTrackerStore(idleTimeout, log.NewNopLogger(), limits, &tracker1Events)
+	tracker1 := newTrackerStore(idleTimeout, 85, log.NewNopLogger(), limits, &tracker1Events, false)
 	tracker2Events := eventsPipe{}
-	tracker2 := newTrackerStore(idleTimeout, log.NewNopLogger(), limits, &tracker2Events)
+	tracker2 := newTrackerStore(idleTimeout, 85, log.NewNopLogger(), limits, &tracker2Events, false)
 	tracker1Events.listeners = []*trackerStore{tracker2}
 	tracker2Events.listeners = []*trackerStore{tracker1}
 
@@ -230,7 +231,7 @@ func TestTrackerStore_Snapshot_E2E(t *testing.T) {
 	const testUser2 = "user2"
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
 
-	tracker1 := newTrackerStore(idleTimeoutMinutes*time.Minute, log.NewNopLogger(), limiterMock{}, noopEvents{})
+	tracker1 := newTrackerStore(idleTimeoutMinutes*time.Minute, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false)
 
 	for i := 0; i < 60; i++ {
 		rejected, err := tracker1.trackSeries(context.Background(), testUser1, []uint64{uint64(i)}, now)
@@ -252,7 +253,7 @@ func TestTrackerStore_Snapshot_E2E(t *testing.T) {
 		testUser2: 2 * idleTimeoutMinutes,
 	}, tracker1.seriesCountsForTests())
 
-	tracker2 := newTrackerStore(idleTimeoutMinutes*time.Minute, log.NewNopLogger(), limiterMock{}, noopEvents{})
+	tracker2 := newTrackerStore(idleTimeoutMinutes*time.Minute, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false)
 
 	var data []byte
 	for shard := uint8(0); shard < shards; shard++ {
@@ -294,7 +295,7 @@ func TestTrackerStore_Snapshot_Size(t *testing.T) {
 	totalSeriesCountForAllUsers := 1_000_000
 	usersCount := 1_000
 	seriesPerUser := totalSeriesCountForAllUsers / usersCount
-	tr := newTrackerStore(idleTimeoutMinutes*time.Minute, log.NewNopLogger(), limiterMock{}, noopEvents{})
+	tr := newTrackerStore(idleTimeoutMinutes*time.Minute, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false)
 
 	for u := 0; u < usersCount; u++ {
 		userID := strconv.Itoa(int(r.Int63() % (1 << 16)))
@@ -323,7 +324,7 @@ func TestTrackerStore_Cleanup_OffByOneError(t *testing.T) {
 	const testUser1 = "user1"
 
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
-	tracker := newTrackerStore(time.Minute, log.NewNopLogger(), limiterMock{}, noopEvents{})
+	tracker := newTrackerStore(time.Minute, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false)
 
 	rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1}, now)
 	require.Empty(t, rejected)
@@ -349,7 +350,7 @@ func TestTrackerStore_Cleanup_Tenants(t *testing.T) {
 
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
 
-	tracker := newTrackerStore(defaultIdleTimeout, log.NewNopLogger(), limits, noopEvents{})
+	tracker := newTrackerStore(defaultIdleTimeout, 85, log.NewNopLogger(), limits, noopEvents{}, false)
 
 	// Push 2 series to testUser1, both are accepted.
 	rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2}, now)
@@ -403,11 +404,12 @@ func TestTrackerStore_Cleanup_Concurrency(t *testing.T) {
 	now := func() time.Time { return time.Unix(nowUnixMinutes.Load()*60, 0) }
 
 	createdSeries := createdSeriesCounter{count: atomic.NewUint64(0)}
-	tracker := newTrackerStore(idleTimeoutMinutes*time.Minute, log.NewNopLogger(), limiterMock{}, createdSeries)
+	tracker := newTrackerStore(idleTimeoutMinutes*time.Minute, 85, log.NewNopLogger(), limiterMock{}, createdSeries, false)
 
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 	done := make(chan struct{})
+	observed := make(chan struct{})
 	go func() {
 		defer wg.Done()
 		for {
@@ -415,6 +417,12 @@ func TestTrackerStore_Cleanup_Concurrency(t *testing.T) {
 			case <-done:
 				return
 			default:
+				select {
+				case observed <- struct{}{}:
+					// Notify that we've observed the new timestamp
+				default:
+					// Nobody is waiting there.
+				}
 				seriesID := uint64(rand.Int63n(maxSeriesRange))
 				_, _ = tracker.trackSeries(context.Background(), tenant, []uint64{seriesID}, now())
 			}
@@ -426,6 +434,9 @@ func TestTrackerStore_Cleanup_Concurrency(t *testing.T) {
 	for createdSeries.count.Load() < 100*maxSeriesRange {
 		// Keep increasing the timestamp every time.
 		nowUnixMinutes.Inc()
+		// Wait until the tracking goroutine has observed the new timestamp.
+		// This ensures that it won't be writing too-old series, making the test unrealistic and flaky.
+		<-observed
 		tracker.cleanup(now())
 		cleanups++
 	}
@@ -461,7 +472,7 @@ func TestTrackerStore_PrometheusCollector(t *testing.T) {
 
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
 
-	tracker := newTrackerStore(defaultIdleTimeout, log.NewNopLogger(), limiterMock{}, noopEvents{})
+	tracker := newTrackerStore(defaultIdleTimeout, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false)
 
 	reg := prometheus.NewRegistry()
 	require.NoError(t, reg.Register(tracker))
@@ -554,6 +565,153 @@ func requireTrackersSameData(t *testing.T, tracker1, tracker2 *trackerStore) {
 	}
 }
 
+func TestCurrentSeriesLimit(t *testing.T) {
+	tests := []struct {
+		name       string
+		series     uint64
+		limit      uint64
+		zonesCount uint64
+		expected   uint64
+	}{
+		{
+			name:       "normal case with room",
+			series:     100,
+			limit:      1000,
+			zonesCount: 2,
+			expected:   550, // 100 + (1000-100)/2 + (1000-100)%2 = 100 + 450 + 0 = 550
+		},
+		{
+			name:       "single zone",
+			series:     100,
+			limit:      1000,
+			zonesCount: 1,
+			expected:   1000, // 100 + (1000-100)/1 = 100 + 900 = 1000
+		},
+		{
+			name:       "at the limit",
+			series:     1000,
+			limit:      1000,
+			zonesCount: 2,
+			expected:   1000, // series >= limit, return limit
+		},
+		{
+			name:       "over the limit (underflow scenario)",
+			series:     1500,
+			limit:      1000,
+			zonesCount: 2,
+			expected:   1000, // series >= limit, return limit (prevents underflow)
+		},
+		{
+			name:       "far over the limit",
+			series:     10000,
+			limit:      100,
+			zonesCount: 3,
+			expected:   100, // series >= limit, return limit (prevents underflow)
+		},
+		{
+			name:       "zero limit",
+			series:     100,
+			limit:      0,
+			zonesCount: 2,
+			expected:   0, // series >= limit, return limit
+		},
+		{
+			name:       "with remainder",
+			series:     100,
+			limit:      1005,
+			zonesCount: 2,
+			expected:   553, // 100 + (1005-100)/2 + (1005-100)%2 = 100 + 452 + 1 = 553
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := currentSeriesLimit(tt.series, tt.limit, tt.zonesCount)
+			require.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestTrackerStore_VerboseSeriesMetrics_Enabled(t *testing.T) {
+	const defaultIdleTimeout = 20 * time.Minute
+	const testUser1 = "user1"
+	const testUser2 = "user2"
+
+	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
+
+	tracker := newTrackerStore(defaultIdleTimeout, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, true)
+
+	reg := prometheus.NewRegistry()
+	require.NoError(t, reg.Register(tracker))
+
+	rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2}, now)
+	require.NoError(t, err)
+	require.Empty(t, rejected)
+	rejected, err = tracker.trackSeries(context.Background(), testUser2, []uint64{1, 2, 3}, now)
+	require.NoError(t, err)
+	require.Empty(t, rejected)
+
+	require.NoError(t, testutil.CollectAndCompare(reg, strings.NewReader(`
+		# HELP cortex_usage_tracker_series_created_total Total number of series created per user.
+		# TYPE cortex_usage_tracker_series_created_total counter
+		cortex_usage_tracker_series_created_total{user="user1"} 2
+		cortex_usage_tracker_series_created_total{user="user2"} 3
+	`), "cortex_usage_tracker_series_created_total"))
+
+	require.NoError(t, testutil.CollectAndCompare(reg, strings.NewReader(`
+		# HELP cortex_usage_tracker_series_removed_total Total number of series removed per user.
+		# TYPE cortex_usage_tracker_series_removed_total counter
+		cortex_usage_tracker_series_removed_total{user="user1"} 0
+		cortex_usage_tracker_series_removed_total{user="user2"} 0
+	`), "cortex_usage_tracker_series_removed_total"))
+
+	now = now.Add(defaultIdleTimeout / 2)
+	// Update series 1, 2 for testUser2. Series 3 will expire.
+	rejected, err = tracker.trackSeries(context.Background(), testUser2, []uint64{1, 2}, now)
+	require.NoError(t, err)
+	require.Empty(t, rejected)
+
+	now = now.Add(defaultIdleTimeout / 2)
+	tracker.cleanup(now)
+
+	// user1 was fully cleaned up (tenant removed), user2 had series 3 removed.
+	require.NoError(t, testutil.CollectAndCompare(reg, strings.NewReader(`
+		# HELP cortex_usage_tracker_series_created_total Total number of series created per user.
+		# TYPE cortex_usage_tracker_series_created_total counter
+		cortex_usage_tracker_series_created_total{user="user2"} 3
+	`), "cortex_usage_tracker_series_created_total"))
+
+	require.NoError(t, testutil.CollectAndCompare(reg, strings.NewReader(`
+		# HELP cortex_usage_tracker_series_removed_total Total number of series removed per user.
+		# TYPE cortex_usage_tracker_series_removed_total counter
+		cortex_usage_tracker_series_removed_total{user="user2"} 1
+	`), "cortex_usage_tracker_series_removed_total"))
+}
+
+func TestTrackerStore_VerboseSeriesMetrics_Disabled(t *testing.T) {
+	const defaultIdleTimeout = 20 * time.Minute
+	const testUser1 = "user1"
+
+	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
+
+	tracker := newTrackerStore(defaultIdleTimeout, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false)
+
+	reg := prometheus.NewRegistry()
+	require.NoError(t, reg.Register(tracker))
+
+	rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2}, now)
+	require.NoError(t, err)
+	require.Empty(t, rejected)
+
+	now = now.Add(defaultIdleTimeout)
+	tracker.cleanup(now)
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_usage_tracker_active_series Number of active series tracker for each user.
+		# TYPE cortex_usage_tracker_active_series gauge
+	`)))
+}
+
 func decodeSnapshot(t *testing.T, data []byte) map[string]map[uint64]clock.Minutes {
 	snapshot := encoding.Decbuf{B: data}
 	version := snapshot.Byte()
@@ -589,4 +747,82 @@ func decodeSnapshot(t *testing.T, data []byte) map[string]map[uint64]clock.Minut
 		res[tenantID] = shard
 	}
 	return res
+}
+
+func BenchmarkGroupByModuloShards(b *testing.B) {
+	r := rand.New(rand.NewSource(0))
+	for _, elements := range []int{100, 1000, 10_000} {
+		b.Run(fmt.Sprintf("series=%d", elements), func(b *testing.B) {
+			inputs := make([][]uint64, b.N)
+			for i := range inputs {
+				inputs[i] = make([]uint64, elements)
+				for j := range inputs[i] {
+					inputs[i][j] = r.Uint64()
+				}
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				groupByModuloShards(inputs[i])
+			}
+		})
+	}
+}
+
+func TestGroupByModuloShards(t *testing.T) {
+	t.Run("empty", func(t *testing.T) {
+		var series []uint64
+		groupByModuloShards(series)
+		requireGroupedByModuloShards(t, series)
+		require.Empty(t, series)
+	})
+
+	t.Run("single element", func(t *testing.T) {
+		series := []uint64{42}
+		original := slices.Clone(series)
+		groupByModuloShards(series)
+		requireGroupedByModuloShards(t, series)
+		require.ElementsMatch(t, series, original)
+	})
+
+	t.Run("basic", func(t *testing.T) {
+		series := []uint64{30, 50, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+		original := slices.Clone(series)
+		groupByModuloShards(series)
+		requireGroupedByModuloShards(t, series)
+		require.ElementsMatch(t, series, original)
+	})
+
+	t.Run("random tests", func(t *testing.T) {
+		r := rand.New(rand.NewSource(0))
+		for i := 0; i < 1000; i++ {
+			series := make([]uint64, r.Int63n(1024))
+			for i := range series {
+				series[i] = r.Uint64()
+			}
+			original := slices.Clone(series)
+			groupByModuloShards(series)
+			requireGroupedByModuloShards(t, series)
+			require.ElementsMatch(t, series, original)
+		}
+	})
+}
+
+func requireGroupedByModuloShards(t *testing.T, series []uint64) {
+	t.Helper()
+	if len(series) == 0 {
+		return
+	}
+	current := series[0] % shards
+	seenModulos := make(map[uint64]bool)
+	seenModulos[current] = true
+	for _, s := range series[1:] {
+		mod := s % shards
+		if mod != current {
+			if seenModulos[mod] {
+				t.Fatalf("modulo %d from s=%d was seen already", mod, s)
+			}
+			current = mod
+			seenModulos[current] = true
+		}
+	}
 }

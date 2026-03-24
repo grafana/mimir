@@ -43,6 +43,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -51,6 +52,7 @@ var (
 	errEndBeforeStart = apierror.New(apierror.TypeBadData, `invalid parameter "end": end timestamp must not be before start time`)
 	errNegativeStep   = apierror.New(apierror.TypeBadData, `invalid parameter "step": zero or negative query resolution step widths are not accepted. Try a positive integer`)
 	errStepTooSmall   = apierror.New(apierror.TypeBadData, "exceeded maximum resolution of 11,000 points per timeseries. Try decreasing the query resolution (?step=XX)")
+	errRequestNoQuery = apierror.New(apierror.TypeBadData, "the request has no query")
 	allFormats        = []string{formatJSON, formatProtobuf}
 
 	// List of HTTP headers to propagate when a Prometheus request is encoded into a HTTP request.
@@ -83,7 +85,7 @@ type Merger interface {
 	MergeResponse(...Response) (Response, error)
 }
 
-// MetricsQueryRequest represents an instant or query range request that can be process by middlewares.
+// MetricsQueryRequest represents a remote read, instant query or range query request that can be processed by middlewares.
 type MetricsQueryRequest interface {
 	// GetID returns the ID of the request used to correlate downstream requests and responses.
 	GetID() int64
@@ -100,6 +102,14 @@ type MetricsQueryRequest interface {
 	GetStep() int64
 	// GetQuery returns the query of the request.
 	GetQuery() string
+	// GetClonedParsedQuery returns the query, parsed into an AST. The returned query is a clone, so
+	// it's safe to manipulate the returned expression without affecting the expression stored in the
+	// request itself.
+	//
+	// This function returns an error if the query is invalid or the request has no query.
+	GetClonedParsedQuery() (parser.Expr, error)
+	// GetParsedQuery returns the query, parsed into an AST. The returned expression must not be modified.
+	GetParsedQuery() parser.Expr
 	// GetMinT returns the minimum timestamp in milliseconds of data to be queried,
 	// as determined from the start timestamp and any range vector or offset in the query.
 	GetMinT() int64
@@ -116,6 +126,8 @@ type MetricsQueryRequest interface {
 	// GetStats returns the stats parameter for the request.
 	// See WithStats() comment for more details.
 	GetStats() string
+	// GetQueryOpts returns the query options for the request.
+	GetQueryOpts() (promql.QueryOpts, error)
 	// WithID clones the current request with the provided ID.
 	WithID(id int64) (MetricsQueryRequest, error)
 	// WithStartEnd clone the current request with different start and end timestamp.
@@ -237,7 +249,7 @@ var jsonFormatterInstance = jsonFormatter{}
 
 var knownFormats = []formatter{
 	jsonFormatterInstance,
-	protobufFormatter{},
+	ProtobufFormatter{},
 }
 
 func NewCodec(
@@ -260,7 +272,7 @@ func NewCodec(
 // MergeResponse merges responses from multiple requests into a single Response
 func (Codec) MergeResponse(responses ...Response) (Response, error) {
 	if len(responses) == 0 {
-		return newEmptyPrometheusResponse(), nil
+		return NewEmptyPrometheusResponse(), nil
 	}
 
 	promResponses := make([]*PrometheusResponse, 0, len(responses))
@@ -304,15 +316,7 @@ func (Codec) MergeResponse(responses ...Response) (Response, error) {
 
 	// Merge the responses.
 	slices.SortFunc(promResponses, func(a, b *PrometheusResponse) int {
-		aTime := int64(-1)
-		if len(a.Data.Result) > 0 && len(a.Data.Result[0].Samples) > 0 {
-			aTime = a.Data.Result[0].Samples[0].TimestampMs
-		}
-		bTime := int64(-1)
-		if len(b.Data.Result) > 0 && len(b.Data.Result[0].Samples) > 0 {
-			bTime = b.Data.Result[0].Samples[0].TimestampMs
-		}
-		return cmp.Compare(aTime, bTime)
+		return cmp.Compare(firstSeriesTimestamp(a), firstSeriesTimestamp(b))
 	})
 
 	return &PrometheusResponseWithFinalizer{
@@ -356,18 +360,24 @@ func (c Codec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryRequest, er
 		return nil, err
 	}
 
+	lookbackDelta, err := c.decodeLookbackDelta(&reqValues)
+	if err != nil {
+		return nil, err
+	}
+
 	query := reqValues.Get("query")
-	queryExpr, err := parser.ParseExpr(query)
+	queryExpr, err := promqlext.NewPromQLParser().ParseExpr(query)
 	if err != nil {
 		return nil, DecorateWithParamName(err, "query")
 	}
 
 	var options Options
-	decodeOptions(r, &options)
+	DecodeOptions(r, &options)
 
 	stats := reqValues.Get("stats")
+
 	req := NewPrometheusRangeQueryRequest(
-		r.URL.Path, httpHeadersToProm(r.Header), start, end, step, c.lookbackDelta, queryExpr, options, nil, stats,
+		r.URL.Path, httpHeadersToProm(r.Header), start, end, step, lookbackDelta, queryExpr, options, nil, stats,
 	)
 	return req, nil
 }
@@ -383,19 +393,24 @@ func (c Codec) decodeInstantQueryRequest(r *http.Request) (MetricsQueryRequest, 
 		return nil, DecorateWithParamName(err, "time")
 	}
 
+	lookbackDelta, err := c.decodeLookbackDelta(&reqValues)
+	if err != nil {
+		return nil, err
+	}
+
 	query := reqValues.Get("query")
-	queryExpr, err := parser.ParseExpr(query)
+	queryExpr, err := promqlext.NewPromQLParser().ParseExpr(query)
 	if err != nil {
 		return nil, DecorateWithParamName(err, "query")
 	}
 
 	var options Options
-	decodeOptions(r, &options)
+	DecodeOptions(r, &options)
 
 	stats := reqValues.Get("stats")
 
 	req := NewPrometheusInstantQueryRequest(
-		r.URL.Path, httpHeadersToProm(r.Header), time, c.lookbackDelta, queryExpr, options, nil, stats,
+		r.URL.Path, httpHeadersToProm(r.Header), time, lookbackDelta, queryExpr, options, nil, stats,
 	)
 	return req, nil
 }
@@ -412,6 +427,23 @@ func httpHeadersToProm(httpH http.Header) []*PrometheusHeader {
 		return strings.Compare(a.Name, b.Name)
 	})
 	return headers
+}
+
+func (c Codec) decodeLookbackDelta(reqValues *url.Values) (time.Duration, error) {
+	if !reqValues.Has(lookbackDeltaParamDecodable.paramName) {
+		return c.lookbackDelta, nil
+	}
+
+	lookbackDelta, err := lookbackDeltaParamDecodable.Decode(reqValues)
+	if err != nil {
+		return 0, err
+	}
+
+	if lookbackDelta <= 0 {
+		return 0, DecorateWithParamName(fmt.Errorf("must be greater than 0, got %s", reqValues.Get(lookbackDeltaParamDecodable.paramName)), lookbackDeltaParamDecodable.paramName)
+	}
+
+	return time.Duration(lookbackDelta) * time.Millisecond, nil
 }
 
 // DecodeLabelsSeriesQueryRequest decodes a LabelsSeriesQueryRequest from an http request.
@@ -526,7 +558,8 @@ func (p PromTimeParamDecoder) Decode(reqValues *url.Values) (int64, error) {
 
 var rangeStartParamDecodable = PromTimeParamDecoder{"start", RFC3339OrUnixMS, false, nil}
 var rangeEndParamDecodable = PromTimeParamDecoder{"end", RFC3339OrUnixMS, false, nil}
-var rangeStepEndParamDecodable = PromTimeParamDecoder{"step", DurationMSOrFloatMS, false, nil}
+var rangeStepParamDecodable = PromTimeParamDecoder{"step", DurationMSOrFloatMS, false, nil}
+var lookbackDeltaParamDecodable = PromTimeParamDecoder{"lookback_delta", DurationMSOrFloatMS, false, nil}
 
 // DecodeRangeQueryTimeParams encapsulates Prometheus instant query time param parsing,
 // emulating the logic in prometheus/prometheus/web/api/v1#API.query_range.
@@ -545,7 +578,7 @@ func DecodeRangeQueryTimeParams(reqValues *url.Values) (start, end, step int64, 
 		return 0, 0, 0, errEndBeforeStart
 	}
 
-	step, err = rangeStepEndParamDecodable.Decode(reqValues)
+	step, err = rangeStepParamDecodable.Decode(reqValues)
 	if err != nil {
 		return 0, 0, 0, err
 	}
@@ -656,7 +689,7 @@ func decodeQueryMinMaxTime(queryExpr parser.Expr, start, end, step int64, lookba
 	return minTime, maxTime
 }
 
-func decodeOptions(r *http.Request, opts *Options) {
+func DecodeOptions(r *http.Request, opts *Options) {
 	opts.CacheDisabled = decodeCacheDisabledOption(r)
 
 	for _, value := range r.Header.Values(totalShardsControlHeader) {
@@ -692,6 +725,11 @@ func (c Codec) EncodeMetricsQueryRequest(ctx context.Context, r MetricsQueryRequ
 			"step":  []string{encodeDurationMs(r.GetStep())},
 			"query": []string{r.GetQuery()},
 		}
+		// Check if lookback delta has a non-zero value before encoding
+		// the request since it's not valid to request a lookback of "0".
+		if l := r.GetLookbackDelta(); l != 0 {
+			values["lookback_delta"] = []string{encodeDuration(l)}
+		}
 		if s := r.GetStats(); s != "" {
 			values["stats"] = []string{s}
 		}
@@ -703,6 +741,11 @@ func (c Codec) EncodeMetricsQueryRequest(ctx context.Context, r MetricsQueryRequ
 		values := url.Values{
 			"time":  []string{encodeTime(r.GetTime())},
 			"query": []string{r.GetQuery()},
+		}
+		// Check if lookback delta has a non-zero value before encoding
+		// the request since it's not valid to request a lookback of "0".
+		if l := r.GetLookbackDelta(); l != 0 {
+			values["lookback_delta"] = []string{encodeDuration(l)}
 		}
 		if s := r.GetStats(); s != "" {
 			values["stats"] = []string{s}
@@ -1181,6 +1224,25 @@ func (Codec) negotiateContentType(acceptHeader string) (string, formatter) {
 	return "", nil
 }
 
+// firstSeriesTimestamp returns the earliest timestamp across the samples and histograms
+// of the first series in the response, or -1 if there are none.
+func firstSeriesTimestamp(r *PrometheusResponse) int64 {
+	if len(r.Data.Result) == 0 {
+		return -1
+	}
+	t := int64(-1)
+	s := r.Data.Result[0]
+	if len(s.Samples) > 0 {
+		t = s.Samples[0].TimestampMs
+	}
+	if len(s.Histograms) > 0 {
+		if ht := s.Histograms[0].TimestampMs; t == -1 || ht < t {
+			t = ht
+		}
+	}
+	return t
+}
+
 func matrixMerge(resps []*PrometheusResponse) []SampleStream {
 	output := map[string]*SampleStream{}
 	for _, resp := range resps {
@@ -1305,6 +1367,10 @@ func readResponseBody(res *http.Response) ([]byte, error) {
 func encodeTime(t int64) string {
 	f := float64(t) / 1.0e3
 	return strconv.FormatFloat(f, 'f', -1, 64)
+}
+
+func encodeDuration(d time.Duration) string {
+	return encodeDurationMs(d.Milliseconds())
 }
 
 func encodeDurationMs(d int64) string {

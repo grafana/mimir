@@ -9,6 +9,8 @@
 package storegateway
 
 import (
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
@@ -24,6 +26,7 @@ type BucketStoreMetrics struct {
 	blockLoadFailures     prometheus.Counter
 	blockDrops            prometheus.Counter
 	blockDropFailures     prometheus.Counter
+	blockDiscoveryLatency prometheus.Histogram
 	seriesDataTouched     *prometheus.SummaryVec
 	seriesDataFetched     *prometheus.SummaryVec
 	seriesDataSizeTouched *prometheus.SummaryVec
@@ -31,6 +34,7 @@ type BucketStoreMetrics struct {
 	seriesBlocksQueried   *prometheus.SummaryVec
 	resultSeriesCount     prometheus.Summary
 	chunkSizeBytes        prometheus.Histogram
+	chunkSizeEstimateType *prometheus.CounterVec
 	queriesDropped        *prometheus.CounterVec
 	seriesRefetches       prometheus.Counter
 
@@ -52,6 +56,11 @@ type BucketStoreMetrics struct {
 	postingsFetchDuration prometheus.Histogram
 
 	indexHeaderReaderMetrics *indexheader.ReaderPoolMetrics
+
+	// Quantify how much the projections optimization helps reduce labels sent to queriers.
+	originalLabelBytes  prometheus.Counter
+	reducedLabelBytes   prometheus.Counter
+	increasedLabelBytes prometheus.Counter
 }
 
 func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
@@ -73,6 +82,14 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 	m.blockDropFailures = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_bucket_store_block_drop_failures_total",
 		Help: "Total number of local blocks that failed to be dropped.",
+	})
+	m.blockDiscoveryLatency = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+		Name: "cortex_bucket_store_block_discovery_latency_seconds",
+		Help: "Time elapsed from when a block was created, based on its ULID timestamp, to when it was discovered.",
+
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: 1 * time.Hour,
 	})
 	m.seriesDataTouched = promauto.With(reg).NewSummaryVec(prometheus.SummaryOpts{
 		Name: "cortex_bucket_store_series_data_touched",
@@ -124,7 +141,7 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 	m.cachedPostingsCompressionErrors.WithLabelValues(labelDecode)
 
 	m.cachedPostingsCompressionTimeSeconds = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-		Name: "cortex_bucket_store_cached_postings_compression_time_seconds",
+		Name: "cortex_bucket_store_cached_postings_compression_time_seconds_total",
 		Help: "Time spent compressing and decompressing postings when storing to / reading from postings cache.",
 	}, []string{"op"})
 	m.cachedPostingsCompressionTimeSeconds.WithLabelValues(labelEncode)
@@ -166,6 +183,10 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 			32, 256, 512, 1024, 32 * 1024, 256 * 1024, 512 * 1024, 1024 * 1024, 32 * 1024 * 1024, 256 * 1024 * 1024, 512 * 1024 * 1024,
 		},
 	})
+	m.chunkSizeEstimateType = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_bucket_store_chunk_size_estimate_type_total",
+		Help: "Number of time we estimated the size of a chunk with a given type.",
+	}, []string{"type"})
 
 	m.indexHeaderReaderMetrics = indexheader.NewReaderPoolMetrics(prometheus.WrapRegistererWithPrefix("cortex_bucket_store_", reg))
 
@@ -183,6 +204,18 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 		Name:    "cortex_bucket_store_series_batch_preloading_wait_duration_seconds",
 		Help:    "Time spent by store-gateway waiting until the next batch is loaded, once the store-gateway is ready to send it. This metric is tracked only if the request is split into 2+ batches.",
 		Buckets: durationBuckets,
+	})
+	m.originalLabelBytes = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "cortex_bucket_store_projection_original_label_bytes_total",
+		Help: "Total number of bytes of labels transferred to queriers.",
+	})
+	m.reducedLabelBytes = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "cortex_bucket_store_projection_reduced_label_bytes_total",
+		Help: "Total number of bytes of labels saved using projections.",
+	})
+	m.increasedLabelBytes = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "cortex_bucket_store_projection_increased_label_bytes_total",
+		Help: "Total number of bytes of labels increased using projections.",
 	})
 
 	return &m

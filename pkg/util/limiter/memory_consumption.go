@@ -4,6 +4,7 @@ package limiter
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -20,16 +21,17 @@ const (
 	memoryConsumptionTracker contextKey = 0
 )
 
-// MemoryTrackerFromContextWithFallback returns a MemoryConsumptionTracker that has been added to this
-// context. If there is no MemoryConsumptionTracker in this context, a new no-op tracker that
-// does not enforce any limits is returned.
-func MemoryTrackerFromContextWithFallback(ctx context.Context) *MemoryConsumptionTracker {
+var errNoMemoryConsumptionTrackerInContext = errors.New("no memory consumption tracker in context")
+
+// MemoryConsumptionTrackerFromContext returns a MemoryConsumptionTracker that has been added to this
+// context. If there is no MemoryConsumptionTracker in this context, return errNoMemoryConsumptionTrackerInContext.
+func MemoryConsumptionTrackerFromContext(ctx context.Context) (*MemoryConsumptionTracker, error) {
 	tracker, ok := ctx.Value(memoryConsumptionTracker).(*MemoryConsumptionTracker)
 	if !ok {
-		return NewMemoryConsumptionTracker(ctx, 0, nil, "")
+		return nil, errNoMemoryConsumptionTrackerInContext
 	}
 
-	return tracker
+	return tracker, nil
 }
 
 // AddMemoryTrackerToContext adds a MemoryConsumptionTracker to this context. This is used to propagate
@@ -37,6 +39,13 @@ func MemoryTrackerFromContextWithFallback(ctx context.Context) *MemoryConsumptio
 // to accept extra parameters.
 func AddMemoryTrackerToContext(ctx context.Context, tracker *MemoryConsumptionTracker) context.Context {
 	return context.WithValue(ctx, interface{}(memoryConsumptionTracker), tracker)
+}
+
+// ContextWithNewUnlimitedMemoryConsumptionTracker creates an unlimited MemoryConsumptionTracker and add it to the context and return
+// the context. This can be used in places where we don't want to limit memory consumption, although tracking will still happen.
+func ContextWithNewUnlimitedMemoryConsumptionTracker(ctx context.Context) context.Context {
+	memoryTracker := NewUnlimitedMemoryConsumptionTracker(ctx)
+	return AddMemoryTrackerToContext(ctx, memoryTracker)
 }
 
 type MemoryConsumptionSource int
@@ -60,8 +69,13 @@ const (
 	TopKBottomKInstantQuerySeriesSlices
 	TopKBottomKRangeQuerySeriesSlices
 	Labels
-
-	memoryConsumptionSourceCount = Labels + 1
+	CounterResetHintSlices
+	SeriesGroupPairSlices
+	BucketGroupPointerSlices
+	GroupPointerSlices
+	AggregationGroup
+	BufferedQuerierResponses
+	memoryConsumptionSourceCount = BufferedQuerierResponses + 1
 )
 
 const (
@@ -88,6 +102,8 @@ func (s MemoryConsumptionSource) String() string {
 		return "[][]int"
 	case Int64Slices:
 		return "[]int64"
+	case CounterResetHintSlices:
+		return "[]CounterResetHint"
 	case BoolSlices:
 		return "[]bool"
 	case HistogramPointerSlices:
@@ -106,6 +122,16 @@ func (s MemoryConsumptionSource) String() string {
 		return "[]topkbottom.rangeQuerySeries"
 	case Labels:
 		return "labels.Labels"
+	case SeriesGroupPairSlices:
+		return "[]functions.seriesGroupPair"
+	case BucketGroupPointerSlices:
+		return "[]*functions.bucketGroup"
+	case GroupPointerSlices:
+		return "[]*aggregations.group"
+	case AggregationGroup:
+		return "aggregation.AggregationGroup"
+	case BufferedQuerierResponses:
+		return "buffered querier responses"
 	default:
 		return unknownMemorySource
 	}
@@ -131,6 +157,12 @@ type MemoryConsumptionTracker struct {
 	// rather than atomics because we only want to adjust the memory used after checking
 	// that it would not exceed the limit.
 	mtx sync.Mutex
+}
+
+// NewUnlimitedMemoryConsumptionTracker creates a new MemoryConsumptionTracker that track memory consumption but
+// will not enforce memory limit.
+func NewUnlimitedMemoryConsumptionTracker(ctx context.Context) *MemoryConsumptionTracker {
+	return NewMemoryConsumptionTracker(ctx, 0, nil, "")
 }
 
 func NewMemoryConsumptionTracker(ctx context.Context, maxEstimatedMemoryConsumptionBytes uint64, rejectionCount prometheus.Counter, queryDescription string) *MemoryConsumptionTracker {
@@ -179,7 +211,14 @@ func (l *MemoryConsumptionTracker) DecreaseMemoryConsumption(b uint64, source Me
 			traceDescription = fmt.Sprintf(" (trace ID: %v)", traceID)
 		}
 
-		panic(fmt.Sprintf("Estimated memory consumption of all instances of %s in this query is negative. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: %v%v", source, l.queryDescription, traceDescription))
+		panic(fmt.Sprintf(
+			"Estimated memory consumption of all instances of %s in this query is %d bytes when trying to return %d bytes. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: %v%v",
+			source,
+			l.currentEstimatedMemoryConsumptionBySource[source],
+			b,
+			l.queryDescription,
+			traceDescription,
+		))
 	}
 
 	l.currentEstimatedMemoryConsumptionBytes -= b
@@ -202,17 +241,22 @@ func (l *MemoryConsumptionTracker) CurrentEstimatedMemoryConsumptionBytes() uint
 	return l.currentEstimatedMemoryConsumptionBytes
 }
 
+// CurrentEstimatedMemoryConsumptionBytesBySource returns the current memory consumption for a source in bytes.
+func (l *MemoryConsumptionTracker) CurrentEstimatedMemoryConsumptionBytesBySource(s MemoryConsumptionSource) uint64 {
+	l.mtx.Lock()
+	defer l.mtx.Unlock()
+
+	return l.currentEstimatedMemoryConsumptionBySource[s]
+}
+
 // IncreaseMemoryConsumptionForLabels attempts to increase the current memory consumption based on labels.
 func (l *MemoryConsumptionTracker) IncreaseMemoryConsumptionForLabels(lbls labels.Labels) error {
-	if err := l.IncreaseMemoryConsumption(uint64(lbls.ByteSize()), Labels); err != nil {
-		return err
-	}
-	return nil
+	return l.IncreaseMemoryConsumption(lbls.ByteSize(), Labels)
 }
 
 // DecreaseMemoryConsumptionForLabels decreases the current memory consumption based on labels.
 func (l *MemoryConsumptionTracker) DecreaseMemoryConsumptionForLabels(lbls labels.Labels) {
-	l.DecreaseMemoryConsumption(uint64(lbls.ByteSize()), Labels)
+	l.DecreaseMemoryConsumption(lbls.ByteSize(), Labels)
 }
 
 func (l *MemoryConsumptionTracker) DescribeCurrentMemoryConsumption() string {

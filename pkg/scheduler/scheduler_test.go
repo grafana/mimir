@@ -7,7 +7,9 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -17,10 +19,14 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/types"
+	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
@@ -35,6 +41,8 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
+	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/querierpb" //lint:ignore faillint we can't avoid using this given that's where the Protobuf definition lives
 	"github.com/grafana/mimir/pkg/scheduler/queue"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util"
@@ -46,7 +54,8 @@ import (
 const testMaxOutstandingPerTenant = 5
 
 var (
-	spanExporter = tracetest.NewInMemoryExporter()
+	spanExporter              = tracetest.NewInMemoryExporter()
+	drainingCancellationError = cancellation.NewError(errors.New("draining"))
 )
 
 func init() {
@@ -85,7 +94,9 @@ func setupScheduler(t *testing.T, reg prometheus.Registerer) (*Scheduler, schedu
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), s))
 	t.Cleanup(func() {
-		_ = services.StopAndAwaitTerminated(context.Background(), s)
+		if s.State() != services.Terminated { // Check if we're not already terminated to allow tests to stop it themselves
+			_ = services.StopAndAwaitTerminated(context.Background(), s)
+		}
 	})
 
 	l, err := net.Listen("tcp", "localhost:0")
@@ -108,6 +119,63 @@ func setupScheduler(t *testing.T, reg prometheus.Registerer) (*Scheduler, schedu
 	})
 
 	return s, schedulerpb.NewSchedulerForFrontendClient(c), schedulerpb.NewSchedulerForQuerierClient(c)
+}
+
+// This function drains the schedulers inflight, and drains the requestQueue's tree.
+// It is only intended for use where you don't actually care about the requests and just need them emptied, and you
+// don't care about consistency or waiting for a proper cancellation return.
+func drainScheduler(t *testing.T, s *Scheduler) {
+	s.inflightRequestsMu.Lock()
+	defer s.inflightRequestsMu.Unlock()
+
+	for key := range s.schedulerInflightRequests {
+		req := s.schedulerInflightRequests[key]
+		if req != nil {
+			req.CancelFunc(drainingCancellationError)
+		}
+
+		delete(s.schedulerInflightRequests, key)
+		s.schedulerInflightRequestCount.Store(int64(len(s.schedulerInflightRequests)))
+	}
+
+	lastTenantIndex := queue.FirstTenant()
+	querierID := "emptying-consumer"
+
+	querierWorkerConn := queue.NewUnregisteredQuerierWorkerConn(context.Background(), querierID)
+	require.NoError(t, s.requestQueue.AwaitRegisterQuerierWorkerConn(querierWorkerConn))
+	defer s.requestQueue.SubmitUnregisterQuerierWorkerConn(querierWorkerConn)
+
+	consumer := func(request queue.QueryRequest) error {
+		return nil
+	}
+
+	for {
+		if s.requestQueue.IsEmpty() {
+			return
+		}
+
+		idx, err := queueConsume(s.requestQueue, querierWorkerConn, lastTenantIndex, consumer)
+		require.NoError(t, err)
+		lastTenantIndex = idx
+	}
+}
+
+type consumeRequest func(request queue.QueryRequest) error
+
+func queueConsume(
+	q *queue.RequestQueue, querierWorkerConn *queue.QuerierWorkerConn, lastTenantIdx queue.TenantIndex, consumeFunc consumeRequest,
+) (queue.TenantIndex, error) {
+	dequeueReq := queue.NewQuerierWorkerDequeueRequest(querierWorkerConn, lastTenantIdx)
+	request, idx, err := q.AwaitRequestForQuerier(dequeueReq)
+	if err != nil {
+		return lastTenantIdx, err
+	}
+	lastTenantIdx = idx
+
+	if consumeFunc != nil {
+		err = consumeFunc(request)
+	}
+	return lastTenantIdx, err
 }
 
 func TestSchedulerBasicEnqueue_HTTPPayload(t *testing.T) {
@@ -143,7 +211,7 @@ func TestSchedulerBasicEnqueue_HTTPPayload(t *testing.T) {
 	verifyQueryComponentUtilizationLeft(t, scheduler)
 }
 
-func TestSchedulerBasicEnqueue_GRPCPayload(t *testing.T) {
+func TestSchedulerBasicEnqueue_ProtobufPayload(t *testing.T) {
 	scheduler, frontendClient, querierClient := setupScheduler(t, nil)
 
 	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
@@ -309,6 +377,10 @@ func TestCancelRequestInProgress_QuerierFinishesBeforeObservingCancellation(t *t
 func TestCancelRequestInProgress_QuerierObservesCancellation(t *testing.T) {
 	scheduler, frontendClient, querierClient := setupScheduler(t, nil)
 
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
+	})
+
 	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
 	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
 		Type:    schedulerpb.ENQUEUE,
@@ -360,6 +432,12 @@ func TestTracingContext(t *testing.T) {
 
 	scheduler.inflightRequestsMu.Lock()
 	defer scheduler.inflightRequestsMu.Unlock()
+
+	t.Cleanup(func() {
+		drainScheduler(t, scheduler)
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
+	})
+
 	require.Equal(t, 1, len(scheduler.schedulerInflightRequests))
 
 	for _, r := range scheduler.schedulerInflightRequests {
@@ -412,19 +490,87 @@ func TestSchedulerShutdown_QuerierLoop(t *testing.T) {
 	_, err = querierLoop.Recv()
 	require.NoError(t, err)
 
+	drainScheduler(t, scheduler)
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
+
+	// Send a message to unblock the scheduler loop if it's still running, if it's already exited we'll get an io.EOF error
+	err = querierLoop.Send(&schedulerpb.QuerierToScheduler{})
+	if err != nil {
+		require.ErrorIs(t, err, io.EOF)
+	}
+
+	// This should return with error, since scheduler has cancelled any outstanding dequeue requests.
+	_, err = querierLoop.Recv()
+	status, valid := grpcutil.ErrorToStatus(err)
+	require.True(t, valid)
+	require.Equal(t, status.Message(), drainingCancellationError.Error())
+}
+
+func TestSchedulerShutdown_PendingRequests(t *testing.T) {
+	scheduler, frontendClient, querierClient := setupScheduler(t, nil)
+
+	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
+	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
+		Type:    schedulerpb.ENQUEUE,
+		QueryID: 1,
+		UserID:  "test",
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+	})
+	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
+		Type:    schedulerpb.ENQUEUE,
+		QueryID: 2,
+		UserID:  "test",
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+	})
+
+	// Scheduler now has 2 queries. Let's connect querier and fetch it.
+	querierLoop, err := querierClient.QuerierLoop(context.Background())
+	require.NoError(t, err)
+	require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{QuerierID: "querier-1"}))
+
+	// Dequeue first query.
+	req, err := querierLoop.Recv()
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), req.QueryID)
+
+	// Stop the scheduler which shouldn't exit immediately
+	scheduler.StopAsync()
 
 	// Unblock scheduler loop, to find next request.
 	err = querierLoop.Send(&schedulerpb.QuerierToScheduler{})
 	require.NoError(t, err)
 
-	// This should now return with error, since scheduler is going down.
+	// This should return the second query
+	req, err = querierLoop.Recv()
+	require.NoError(t, err)
+	require.Equal(t, uint64(2), req.QueryID)
+
+	// The queue is empty and there's no inflight requests
+	require.Equal(t, true, scheduler.requestQueue.IsEmpty())
+
+	// This should error because the queue is stopped (we can't check the error exactly because its wrapped by grpc)
+	err = querierLoop.Send(&schedulerpb.QuerierToScheduler{})
+	require.NoError(t, err)
 	_, err = querierLoop.Recv()
 	require.Error(t, err)
+
+	// Ensure the scheduler correctly terminates after the queue is empty and all inflight requests have been returned
+	require.NoError(t, scheduler.AwaitTerminated(context.Background()))
+}
+
+// Really silly short test to catch potential flakiness in the shutdown routines (such as deadlocks in channel select).
+func TestSchedulerShutdown_Empty(t *testing.T) {
+	scheduler, _, _ := setupScheduler(t, nil)
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
 }
 
 func TestSchedulerMaxOutstandingRequests(t *testing.T) {
-	_, frontendClient, _ := setupScheduler(t, nil)
+	scheduler, frontendClient, _ := setupScheduler(t, nil)
+
+	t.Cleanup(func() {
+		drainScheduler(t, scheduler)
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
+	})
 
 	for i := 0; i < testMaxOutstandingPerTenant; i++ {
 		// coming from different frontends
@@ -467,30 +613,9 @@ func TestSchedulerMaxOutstandingRequests(t *testing.T) {
 	require.Greater(t, len(spans), 0, "expected at least one span even if rejected by queue full")
 }
 
-func TestSchedulerForwardsErrorToFrontend(t *testing.T) {
+func TestSchedulerForwardsErrorToFrontend_HTTPPayload(t *testing.T) {
 	scheduler, frontendClient, querierClient := setupScheduler(t, nil)
-
-	fm := &frontendMock{resp: map[uint64]*httpgrpc.HTTPResponse{}}
-	frontendAddress := ""
-
-	// Setup frontend grpc server
-	{
-		frontendGrpcServer := grpc.NewServer()
-		frontendv2pb.RegisterFrontendForQuerierServer(frontendGrpcServer, fm)
-
-		l, err := net.Listen("tcp", "localhost:0")
-		require.NoError(t, err)
-
-		frontendAddress = l.Addr().String()
-
-		go func() {
-			_ = frontendGrpcServer.Serve(l)
-		}()
-
-		t.Cleanup(func() {
-			_ = l.Close()
-		})
-	}
+	fm, frontendAddress := newFrontendMock(t)
 
 	// After preparations, start frontend and querier.
 	frontendLoop := initFrontendLoop(t, frontendClient, frontendAddress)
@@ -502,7 +627,7 @@ func TestSchedulerForwardsErrorToFrontend(t *testing.T) {
 	})
 
 	// Scheduler now has 1 query. We now connect querier, fetch the request, and then close the connection.
-	// This will make scheduler to report error back to frontend.
+	// This will make scheduler report error back to frontend.
 
 	querierLoop, err := querierClient.QuerierLoop(context.Background())
 	require.NoError(t, err)
@@ -517,14 +642,70 @@ func TestSchedulerForwardsErrorToFrontend(t *testing.T) {
 
 	// Verify that frontend was notified about request.
 	test.Poll(t, 2*time.Second, true, func() interface{} {
-		resp := fm.getRequest(100)
-		if resp == nil {
+		httpResp, grpcResp := fm.getRequest(100)
+		require.Nil(t, grpcResp, "should not get a gRPC-style response for a HTTP payload")
+		if httpResp == nil {
 			return false
 		}
 
-		require.Equal(t, int32(http.StatusInternalServerError), resp.Code)
+		require.Equal(t, int32(http.StatusInternalServerError), httpResp.Code)
 		return true
 	})
+	verifyQueryComponentUtilizationLeft(t, scheduler)
+}
+
+func TestSchedulerForwardsErrorToFrontend_ProtobufPayload(t *testing.T) {
+	scheduler, frontendClient, querierClient := setupScheduler(t, nil)
+	fm, frontendAddress := newFrontendMock(t)
+
+	// After preparations, start frontend and querier.
+	frontendLoop := initFrontendLoop(t, frontendClient, frontendAddress)
+	request := &schedulerpb.ProtobufRequest{Payload: &types.Any{TypeUrl: "http://my.types/some_request", Value: []byte("hello world")}}
+	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
+		Type:    schedulerpb.ENQUEUE,
+		QueryID: 100,
+		UserID:  "test",
+		Payload: &schedulerpb.FrontendToScheduler_ProtobufRequest{ProtobufRequest: request},
+	})
+
+	// Scheduler now has 1 query. We now connect querier, fetch the request, and then close the connection.
+	// This will make scheduler report error back to frontend.
+
+	querierLoop, err := querierClient.QuerierLoop(context.Background())
+	require.NoError(t, err)
+	require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{QuerierID: "querier-1"}))
+
+	// Dequeue first query.
+	_, err = querierLoop.Recv()
+	require.NoError(t, err)
+
+	// Querier now disconnects, without sending empty message back.
+	require.NoError(t, util.CloseAndExhaust[*schedulerpb.SchedulerToQuerier](querierLoop))
+
+	// Verify that frontend was notified about request.
+	test.Poll(t, 2*time.Second, true, func() interface{} {
+		httpResp, grpcResp := fm.getRequest(100)
+		require.Nil(t, httpResp, "should not get a HTTP-style response for a gRPC payload")
+		if grpcResp == nil {
+			return false
+		}
+
+		expected := []*frontendv2pb.QueryResultStreamRequest{
+			{
+				QueryID: 100,
+				Data: &frontendv2pb.QueryResultStreamRequest_Error{
+					Error: &querierpb.Error{
+						Type:    mimirpb.QUERY_ERROR_TYPE_INTERNAL,
+						Message: "failed to receive response from querier 'querier-1': EOF",
+					},
+				},
+			},
+		}
+
+		require.Equal(t, expected, grpcResp)
+		return true
+	})
+
 	verifyQueryComponentUtilizationLeft(t, scheduler)
 }
 
@@ -532,6 +713,11 @@ func TestSchedulerQueueMetrics(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 
 	scheduler, frontendClient, _ := setupScheduler(t, reg)
+
+	t.Cleanup(func() {
+		drainScheduler(t, scheduler)
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
+	})
 
 	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
 	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
@@ -565,7 +751,11 @@ func TestSchedulerQueueMetrics(t *testing.T) {
 
 func TestSchedulerQuerierMetrics(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
-	_, frontendClient, querierClient := setupScheduler(t, reg)
+	scheduler, frontendClient, querierClient := setupScheduler(t, reg)
+
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
+	})
 
 	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
 	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
@@ -686,26 +876,90 @@ func (l limits) MaxQueriersPerUser(_ string) int {
 }
 
 type frontendMock struct {
-	mu   sync.Mutex
-	resp map[uint64]*httpgrpc.HTTPResponse
+	mu            sync.Mutex
+	httpResponses map[uint64]*httpgrpc.HTTPResponse
+	grpcResponses map[uint64][]*frontendv2pb.QueryResultStreamRequest
 }
 
-func (f *frontendMock) QueryResult(_ context.Context, request *frontendv2pb.QueryResultRequest) (*frontendv2pb.QueryResultResponse, error) {
+func newFrontendMock(t *testing.T) (*frontendMock, string) {
+	mock := &frontendMock{
+		httpResponses: map[uint64]*httpgrpc.HTTPResponse{},
+		grpcResponses: map[uint64][]*frontendv2pb.QueryResultStreamRequest{},
+	}
+
+	frontendGrpcServer := grpc.NewServer(
+		grpc.StreamInterceptor(middleware.StreamServerUserHeaderInterceptor),
+		grpc.UnaryInterceptor(middleware.ServerUserHeaderInterceptor),
+	)
+
+	frontendv2pb.RegisterFrontendForQuerierServer(frontendGrpcServer, mock)
+
+	l, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+
+	address := l.Addr().String()
+
+	go func() {
+		_ = frontendGrpcServer.Serve(l)
+	}()
+
+	t.Cleanup(func() {
+		_ = l.Close()
+	})
+
+	return mock, address
+}
+
+func (f *frontendMock) QueryResult(ctx context.Context, request *frontendv2pb.QueryResultRequest) (*frontendv2pb.QueryResultResponse, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	f.resp[request.QueryID] = request.HttpResponse
+	_, err := user.ExtractOrgID(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	f.httpResponses[request.QueryID] = request.HttpResponse
 	return &frontendv2pb.QueryResultResponse{}, nil
 }
 
-// satisfy frontendv2pb.FrontendForQuerierServer interface
-func (f *frontendMock) QueryResultStream(_ frontendv2pb.FrontendForQuerier_QueryResultStreamServer) error {
-	panic("unexpected call to QueryResultStream")
+func (f *frontendMock) QueryResultStream(stream frontendv2pb.FrontendForQuerier_QueryResultStreamServer) error {
+	defer stream.SendAndClose(&frontendv2pb.QueryResultResponse{})
+
+	_, err := user.ExtractOrgID(stream.Context())
+	if err != nil {
+		panic(err)
+	}
+
+	var msgs []*frontendv2pb.QueryResultStreamRequest
+	var queryID uint64
+
+	for {
+		msg, err := stream.Recv()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				if len(msgs) == 0 {
+					panic("expected at least one message")
+				}
+
+				f.mu.Lock()
+				f.grpcResponses[queryID] = msgs
+				f.mu.Unlock()
+				return nil
+			}
+
+			return err
+		}
+
+		queryID = msg.QueryID
+		msg.BufferHolder = mimirpb.BufferHolder{} // Clear the reference to the underlying buffer to make assertions easier.
+		msgs = append(msgs, msg)
+	}
 }
 
-func (f *frontendMock) getRequest(queryID uint64) *httpgrpc.HTTPResponse {
+func (f *frontendMock) getRequest(queryID uint64) (*httpgrpc.HTTPResponse, []*frontendv2pb.QueryResultStreamRequest) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	return f.resp[queryID]
+	return f.httpResponses[queryID], f.grpcResponses[queryID]
 }

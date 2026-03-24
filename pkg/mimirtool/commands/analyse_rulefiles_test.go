@@ -5,12 +5,15 @@ package commands
 import (
 	"testing"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/mimirtool/util"
 )
 
 func TestAnalyzeRuleFiles(t *testing.T) {
-	mir, err := AnalyzeRuleFiles([]string{"testdata/prometheus_rules.yaml"}, model.UTF8Validation)
+	mir, err := AnalyzeRuleFiles([]string{"testdata/prometheus_rules.yaml"}, model.UTF8Validation, util.CreatePromQLParser(false), log.NewNopLogger())
 	require.NoError(t, err)
 	require.Equal(t, 28, len(mir.MetricsUsed))
 	expectedMetrics := model.LabelValues{

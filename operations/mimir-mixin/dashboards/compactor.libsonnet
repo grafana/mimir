@@ -59,12 +59,9 @@ local fixTargetsForTransformations(panel, refIds) = panel {
 
   local lastRunQuery =
     |||
-      max by(%(instance)s)
-      (
-        (time() * (max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{%(job)s}[1h]) !=bool 0))
-        -
-        max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{%(job)s}[1h])
-      )
+      max by(%(instance)s) (time() - (max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{%(job)s}[1h]) > 0))
+      or
+      max by(%(instance)s) (time() - max_over_time(process_start_time_seconds{%(job)s}[1h]))
     ||| % {
       instance: $._config.per_instance_label,
       job: $.jobMatcher($._config.job_names.compactor),
@@ -91,6 +88,7 @@ local fixTargetsForTransformations(panel, refIds) = panel {
     assert std.md5(filename) == '1b3443aea86db629e6efdb7d05c53823' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Compactor') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
+    .addShowNativeLatencyVariable($.latencyVariableDefault())
     .addRow(
       $.row('Summary')
       .addPanel(
@@ -125,6 +123,7 @@ local fixTargetsForTransformations(panel, refIds) = panel {
           },
           '{{%s}}' % $._config.per_instance_label
         ) +
+        $.showAllTooltip +
         { fieldConfig: { defaults: { unit: 'percentunit', max: 1, noValue: 1 } } } +
         $.panelDescription(
           'Tenants compaction progress',
@@ -231,6 +230,10 @@ local fixTargetsForTransformations(panel, refIds) = panel {
               ]),
             ],
           },
+        } + {
+          options+: {
+            sortBy: [{ desc: true, displayName: 'Last run' }],
+          },
         },
       )
     )
@@ -257,7 +260,7 @@ local fixTargetsForTransformations(panel, refIds) = panel {
       )
       .addPanel(
         $.timeseriesPanel('Source blocks age') +
-        $.latencyPanel('cortex_compactor_block_max_time_delta_seconds', '{%s}' % $.jobMatcher($._config.job_names.compactor)) +
+        $.ncLatencyPanel('cortex_compactor_block_max_time_delta_seconds', $.jobMatcher($._config.job_names.compactor)) +
         $.panelDescription(
           'Source blocks age',
           |||
@@ -280,7 +283,7 @@ local fixTargetsForTransformations(panel, refIds) = panel {
       )
       .addPanel(
         $.timeseriesPanel('TSDB compaction duration') +
-        $.latencyPanel('prometheus_tsdb_compaction_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.compactor)) +
+        $.ncLatencyPanel('prometheus_tsdb_compaction_duration_seconds', $.jobMatcher($._config.job_names.compactor)) +
         $.panelDescription(
           'TSDB compaction duration',
           |||
@@ -303,7 +306,8 @@ local fixTargetsForTransformations(panel, refIds) = panel {
           |||
             The 10 tenants with the largest number of blocks.
           |||
-        ),
+        ) +
+        $.showAllTooltip,
       )
     )
     .addRow(
@@ -366,7 +370,7 @@ local fixTargetsForTransformations(panel, refIds) = panel {
       .addPanel(
         $.timeseriesPanel('Metadata sync duration') +
         // This metric tracks the duration of a per-tenant metadata sync.
-        $.latencyPanel('cortex_compactor_meta_sync_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.compactor)),
+        $.ncLatencyPanel('cortex_compactor_meta_sync_duration_seconds', $.jobMatcher($._config.job_names.compactor)),
       )
     )
     .addRows($.getObjectStoreRows('Object Store', 'compactor'))

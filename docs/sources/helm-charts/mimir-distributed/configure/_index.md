@@ -1,5 +1,5 @@
 ---
-description: Learn how to configure Grafana Mimir or GEM via the Helm chart.
+description: Learn how to configure Grafana Mimir via the Helm chart.
 keywords:
   - Mimir configuration
   - Helm chart

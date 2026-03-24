@@ -290,6 +290,11 @@ func (MetadataRW2_MetricType) EnumDescriptor() ([]byte, []int) {
 type WriteRequest struct {
 	// Keep reference to buffer for unsafe references.
 	BufferHolder
+	// sourceBufferHolders is populated when the WriteRequest is synthesized
+	// from other WriteRequests, e. g. when batching, and thus holds references
+	// to those source buffers. The WriteRequest must hold a strong reference to
+	// each of these buffers.
+	sourceBufferHolders map[uintptr]BufferHolder
 
 	Timeseries []PreallocTimeseries    `protobuf:"bytes,1,rep,name=timeseries,proto3,customtype=PreallocTimeseries" json:"timeseries"`
 	Source     WriteRequest_SourceEnum `protobuf:"varint,2,opt,name=Source,proto3,enum=cortexpb.WriteRequest_SourceEnum" json:"Source,omitempty"`
@@ -307,6 +312,8 @@ type WriteRequest struct {
 	skipUnmarshalingExemplars bool
 	// Skip normalization of metadata metric names when unmarshalling the request.
 	skipNormalizeMetadataMetricName bool
+	// Skip deduplication of metric metadata by family name.
+	skipDeduplicateMetadata bool
 	// Unmarshal from Remote Write 2.0. if rw2symbols is not nil.
 	unmarshalFromRW2 bool
 	rw2symbols       rw2PagedSymbols
@@ -7385,7 +7392,7 @@ func valueToStringMimir(v interface{}) string {
 	return fmt.Sprintf("*%v", pv)
 }
 func (m *WriteRequest) Unmarshal(dAtA []byte) error {
-	var metadata map[string]*orderAwareMetricMetadata
+	var metadata metadataSet
 	seenFirstSymbol := false
 
 	l := len(dAtA)
@@ -7584,7 +7591,7 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 			m.Timeseries = append(m.Timeseries, PreallocTimeseries{})
 			m.Timeseries[len(m.Timeseries)-1].skipUnmarshalingExemplars = m.skipUnmarshalingExemplars
 			if metadata == nil {
-				metadata = make(map[string]*orderAwareMetricMetadata)
+				metadata = metadataSetFromSettings(m.skipDeduplicateMetadata)
 			}
 			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], &m.rw2symbols, metadata, m.skipNormalizeMetadataMetricName); err != nil {
 				return err
@@ -7651,9 +7658,8 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 	}
 
 	if m.unmarshalFromRW2 {
-		m.Metadata = make([]*MetricMetadata, len(metadata))
-		for _, metadata := range metadata {
-			m.Metadata[metadata.order] = &metadata.MetricMetadata
+		if metadata != nil {
+			m.Metadata = metadata.slice()
 		}
 		m.rw2symbols.releasePages()
 	}
@@ -11240,7 +11246,7 @@ func (m *WriteRequestRW2) Unmarshal(dAtA []byte) error {
 func (m *TimeSeriesRW2) Unmarshal(dAtA []byte) error {
 	return errorInternalRW2
 }
-func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata map[string]*orderAwareMetricMetadata, skipNormalizeMetricName bool) error {
+func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata metadataSet, skipNormalizeMetricName bool) error {
 	var metricName string
 	l := len(dAtA)
 	iNdEx := 0
@@ -11698,7 +11704,7 @@ func (m *Exemplar) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols) error {
 func (m *MetadataRW2) Unmarshal(dAtA []byte) error {
 	return errorInternalRW2
 }
-func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata map[string]*orderAwareMetricMetadata, metricName string, skipNormalizeMetricName bool) error {
+func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata metadataSet, metricName string, skipNormalizeMetricName bool) error {
 	var (
 		err error
 		help string
@@ -11826,22 +11832,13 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata 
 	if len(normalizedMetricName) == 0 {
 		return nil
 	}
-	if _, ok := metadata[normalizedMetricName]; ok {
-		// Already have metadata for this metric familiy name.
-		// Since we cannot have multiple definitions of the same
-		// metric family name, we ignore this metadata.
-		return nil
-	}
 	if len(unit) > 0 || len(help) > 0 || metricType != 0 {
-		metadata[normalizedMetricName] = &orderAwareMetricMetadata{
-			MetricMetadata: MetricMetadata{
-				MetricFamilyName: normalizedMetricName,
-				Help:             help,
-				Unit:             unit,
-				Type:             MetricMetadata_MetricType(metricType),
-			},
-			order: len(metadata),
-		}
+		metadata.add(normalizedMetricName, MetricMetadata{
+			MetricFamilyName: strings.Clone(normalizedMetricName),
+			Help:             strings.Clone(help),
+			Unit:             strings.Clone(unit),
+			Type:             MetricMetadata_MetricType(metricType),
+		})
 	}
 
 	return nil

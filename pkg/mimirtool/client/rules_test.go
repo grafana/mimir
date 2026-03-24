@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
 )
 
@@ -91,7 +92,7 @@ func TestMimirClient_X(t *testing.T) {
 				},
 				UseLegacyRoutes: tc.useLegacyRoutes,
 				MimirHTTPPrefix: tc.mimirHTTPPrefix,
-			})
+			}, log.NewNopLogger())
 			require.NoError(t, err)
 			require.NoError(t, client.DeleteRuleGroup(ctx, tc.namespace, tc.name))
 

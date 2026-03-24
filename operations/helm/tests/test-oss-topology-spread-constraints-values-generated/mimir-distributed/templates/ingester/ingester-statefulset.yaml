@@ -47,6 +47,7 @@ spec:
   template:
     metadata:
       labels:
+        foo: bar
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
         app.kubernetes.io/managed-by: Helm
@@ -56,6 +57,7 @@ spec:
         rollout-group: ingester
         zone: zone-a
       annotations:
+        baz: qux
       namespace: "citestns"
     spec:
       serviceAccountName: test-oss-topology-spread-constraints-values-mimir
@@ -99,9 +101,6 @@ spec:
             items:
               - key: "mimir.yaml"
                 path: "mimir.yaml"
-        - name: license
-          secret:
-            secretName: test-oss-topology-spread-constraints-values-mimir-license
         - name: runtime-config
           configMap:
             name: test-oss-topology-spread-constraints-values-mimir-runtime
@@ -115,6 +114,7 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-ingester.ring.instance-availability-zone=zone-a"
+            - "-ingest-storage.kafka.client-rack=zone-a"
             - "-memberlist.abort-if-fast-join-fails=true"
           volumeMounts:
             - name: config
@@ -123,8 +123,6 @@ spec:
               mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
-            - name: license
-              mountPath: /license
             - name: active-queries
               mountPath: /active-query-tracker
           ports:
@@ -207,6 +205,7 @@ spec:
   template:
     metadata:
       labels:
+        foo: bar
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
         app.kubernetes.io/managed-by: Helm
@@ -216,6 +215,7 @@ spec:
         rollout-group: ingester
         zone: zone-b
       annotations:
+        baz: qux
       namespace: "citestns"
     spec:
       serviceAccountName: test-oss-topology-spread-constraints-values-mimir
@@ -259,9 +259,6 @@ spec:
             items:
               - key: "mimir.yaml"
                 path: "mimir.yaml"
-        - name: license
-          secret:
-            secretName: test-oss-topology-spread-constraints-values-mimir-license
         - name: runtime-config
           configMap:
             name: test-oss-topology-spread-constraints-values-mimir-runtime
@@ -275,6 +272,7 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-ingester.ring.instance-availability-zone=zone-b"
+            - "-ingest-storage.kafka.client-rack=zone-b"
             - "-memberlist.abort-if-fast-join-fails=true"
           volumeMounts:
             - name: config
@@ -283,8 +281,6 @@ spec:
               mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
-            - name: license
-              mountPath: /license
             - name: active-queries
               mountPath: /active-query-tracker
           ports:
@@ -367,6 +363,7 @@ spec:
   template:
     metadata:
       labels:
+        foo: bar
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
         app.kubernetes.io/managed-by: Helm
@@ -376,6 +373,7 @@ spec:
         rollout-group: ingester
         zone: zone-c
       annotations:
+        baz: qux
       namespace: "citestns"
     spec:
       serviceAccountName: test-oss-topology-spread-constraints-values-mimir
@@ -419,9 +417,6 @@ spec:
             items:
               - key: "mimir.yaml"
                 path: "mimir.yaml"
-        - name: license
-          secret:
-            secretName: test-oss-topology-spread-constraints-values-mimir-license
         - name: runtime-config
           configMap:
             name: test-oss-topology-spread-constraints-values-mimir-runtime
@@ -435,6 +430,7 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-ingester.ring.instance-availability-zone=zone-c"
+            - "-ingest-storage.kafka.client-rack=zone-c"
             - "-memberlist.abort-if-fast-join-fails=true"
           volumeMounts:
             - name: config
@@ -443,8 +439,6 @@ spec:
               mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
-            - name: license
-              mountPath: /license
             - name: active-queries
               mountPath: /active-query-tracker
           ports:

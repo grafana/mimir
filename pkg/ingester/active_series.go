@@ -5,10 +5,12 @@ package ingester
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -118,13 +120,17 @@ func getPostings(ctx context.Context, db *userTSDB, idx tsdb.IndexReader, matche
 		return nil, fmt.Errorf("error removing shard matcher: %w", err)
 	}
 
-	postings, err := tsdb.PostingsForMatchers(ctx, idx, matchers...)
-	if err != nil {
-		return nil, fmt.Errorf("error getting postings: %w", err)
-	}
-
-	if shard != nil {
-		postings = idx.ShardedPostings(postings, shard.ShardIndex, shard.ShardCount)
+	var postings index.Postings
+	if shard != nil && matchAllSeries(matchers) {
+		postings = getShardedAllPostings(ctx, db.Head(), shard.ShardIndex, shard.ShardCount)
+	} else {
+		postings, err = tsdb.PostingsForMatchers(ctx, idx, matchers...)
+		if err != nil {
+			return nil, fmt.Errorf("error getting postings: %w", err)
+		}
+		if shard != nil {
+			postings = idx.ShardedPostings(postings, shard.ShardIndex, shard.ShardCount)
+		}
 	}
 
 	if isNativeHistogram {
@@ -132,6 +138,38 @@ func getPostings(ctx context.Context, db *userTSDB, idx tsdb.IndexReader, matche
 	}
 
 	return &ZeroBucketCountPostings{*activeseries.NewPostings(db.activeSeries, postings)}, nil
+}
+
+// Check if matchers will match every series. Not an exhaustive check; just some common examples seen in the wild.
+func matchAllSeries(matchers []*labels.Matcher) bool {
+	if len(matchers) != 1 {
+		return false
+	}
+	if matchers[0].Type == labels.MatchRegexp && matchers[0].Value == ".*" {
+		return true
+	}
+	// Every metric in Mimir has a __name__
+	if matchers[0].Name == model.MetricNameLabel && matchers[0].Type == labels.MatchRegexp && matchers[0].Value == ".+" {
+		return true
+	}
+	if matchers[0].Name == model.MetricNameLabel && matchers[0].Type == labels.MatchNotEqual && matchers[0].Value == "" {
+		return true
+	}
+	return false
+}
+
+// Get postings for all series in one shard. idx must implement ForEachShardHash.
+func getShardedAllPostings(_ context.Context, head *tsdb.Head, shardIndex, shardCount uint64) index.Postings {
+	out := make([]storage.SeriesRef, 0, 128)
+	head.ForEachShardHash(func(ref []storage.SeriesRef, shardHash []uint64) {
+		for i := range ref {
+			if shardHash[i]%shardCount == shardIndex {
+				out = append(out, ref[i])
+			}
+		}
+	})
+	slices.Sort(out) // We don't really need this for usage inside this module, but it's safer to conform to Postings norms.
+	return index.NewListPostings(out)
 }
 
 type ZeroBucketCountPostings struct {

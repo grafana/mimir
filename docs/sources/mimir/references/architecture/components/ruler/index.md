@@ -7,12 +7,13 @@ title: (Optional) Grafana Mimir ruler
 weight: 130
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
-
 # (Optional) Grafana Mimir ruler
 
 The ruler is an optional component that evaluates PromQL expressions defined in recording and alerting rules.
 Each tenant has a set of recording and alerting rules and can group those rules into namespaces.
+
+Evaluating rules generates new samples. Those samples are then passed to an in-process [distributor](../distributor) to be ingested and made available for further queries.
+Configuration of the built-in distributor uses [its configuration parameters](../../../../configure/configuration-parameters/#distributor).
 
 ## Operational modes
 
@@ -20,13 +21,10 @@ The ruler supports two different rule evaluation modes:
 
 ### Internal
 
-This is the default mode. The ruler internally runs a querier and distributor, and evaluates recording and alerting rules in the ruler process itself.
+This is the default mode. The ruler internally runs a querier, and evaluates recording and alerting rules in the ruler process itself.
 To evaluate rules, the ruler connects directly to ingesters and store-gateways, and writes any resulting series to the ingesters.
 
-Configuration of the built-in querier and distributor uses their respective configuration parameters:
-
-- [Querier](../../../../configure/configuration-parameters/#querier)
-- [Distributor](../../../../configure/configuration-parameters/#distributor)
+Configuration of the built-in querier uses [its configuration parameters](../../../../configure/configuration-parameters/#querier).
 
 {{< admonition type="note" >}}
 When you use the internal mode, the ruler uses no query acceleration techniques and the evaluation of very high cardinality queries could take longer than the evaluation interval, which may lead to missing data points in the evaluated recording rules.
@@ -40,7 +38,7 @@ When you use the internal mode, the ruler uses no query acceleration techniques 
 
 In this mode the ruler delegates rules evaluation to the query-frontend. When enabled, the ruler leverages all the query acceleration techniques employed by the query-frontend, such as [query sharding](../../query-sharding/).
 To enable the remote operational mode, set the `-ruler.query-frontend.address` CLI flag or its respective YAML configuration parameter for the ruler.
-Communication between ruler and query-frontend is established over gRPC, so you can make use of client-side load balancing by prefixing the query-frontend address URL with `dns://`.
+Communication between ruler and query-frontend is established over gRPC, so you can make use of client-side load balancing by prefixing the query-frontend address URL with `dns:///`.
 
 ![Architecture of Grafana Mimir's ruler component in remote mode](ruler-remote.svg)
 

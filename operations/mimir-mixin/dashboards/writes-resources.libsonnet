@@ -11,12 +11,14 @@ local filename = 'mimir-writes-resources.json';
       .addPanel(
         $.timeseriesPanel('CPU') +
         $.queryPanel($.resourceUtilizationQuery('cpu', $._config.instance_names.write, $._config.container_names.write), '{{%s}}' % $._config.per_instance_label) +
+        $.showAllTooltip +
         $.stack,
       )
       .addPanel(
         $.timeseriesPanel('Memory (workingset)') +
         $.queryPanel($.resourceUtilizationQuery('memory_working', $._config.instance_names.write, $._config.container_names.write), '{{%s}}' % $._config.per_instance_label) +
         $.stack +
+        $.showAllTooltip +
         { fieldConfig+: { defaults+: { unit: 'bytes' } } },
       )
       .addPanel(
@@ -56,7 +58,7 @@ local filename = 'mimir-writes-resources.json';
         $.queryPanel(
           [
             'sum by(%s) (cortex_ingester_memory_series{%s})' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)],
-            'min by(%(label)s) (cortex_ingester_instance_limits{%(label)s="$namespace", limit="max_series"})' % { label: $._config.per_namespace_label },
+            'min by(%(label)s) (cortex_ingester_instance_limits{%(label)s="$namespace", limit="max_series"} > 0)' % { label: $._config.per_namespace_label },
           ],
           [
             '{{%s}}' % $._config.per_instance_label,
@@ -107,6 +109,19 @@ local filename = 'mimir-writes-resources.json';
       )
       .addPanel(
         $.containerDiskSpaceUtilizationPanelByComponent('ingester'),
+      )
+    )
+    .addRowIf(
+      $._config.usage_tracker_enabled,
+      $.row('Usage Tracker')
+      .addPanel(
+        $.containerCPUUsagePanelByComponent('usage_tracker'),
+      )
+      .addPanel(
+        $.containerMemoryWorkingSetPanelByComponent('usage_tracker'),
+      )
+      .addPanel(
+        $.containerGoHeapInUsePanelByComponent('usage_tracker'),
       )
     )
     + {

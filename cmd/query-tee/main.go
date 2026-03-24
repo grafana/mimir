@@ -27,17 +27,13 @@ import (
 
 type Config struct {
 	ServerMetricsPort int
-	LogLevel          log.Level
 	ProxyConfig       querytee.ProxyConfig
-	PathPrefix        string
 }
 
 func main() {
 	// Parse CLI flags.
 	cfg := Config{}
 	flag.IntVar(&cfg.ServerMetricsPort, "server.metrics-port", 9900, "The port where metrics are exposed.")
-	flag.StringVar(&cfg.PathPrefix, "server.path-prefix", "", "Path prefix for API paths (query-tee will accept Prometheus API calls at <prefix>/api/v1/...). Example: -server.path-prefix=/prometheus")
-	cfg.LogLevel.RegisterFlags(flag.CommandLine)
 	cfg.ProxyConfig.RegisterFlags(flag.CommandLine)
 
 	// Parse CLI arguments.
@@ -46,7 +42,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	util_log.InitLogger(log.LogfmtFormat, cfg.LogLevel, false, util_log.RateLimitedLoggerCfg{})
+	util_log.InitLogger(log.LogfmtFormat, cfg.ProxyConfig.Server.LogLevel, false, util_log.RateLimitedLoggerCfg{})
 
 	if closer := initTracing(); closer != nil {
 		defer closer.Close()
@@ -100,12 +96,6 @@ func initTracing() io.Closer {
 }
 
 func mimirReadRoutes(cfg Config) []querytee.Route {
-	prefix := cfg.PathPrefix
-
-	// Strip trailing slashes.
-	for len(prefix) > 0 && prefix[len(prefix)-1] == '/' {
-		prefix = prefix[:len(prefix)-1]
-	}
 
 	samplesComparator := querytee.NewSamplesComparator(querytee.SampleComparisonOptions{
 		Tolerance:              cfg.ProxyConfig.ValueComparisonTolerance,
@@ -122,14 +112,15 @@ func mimirReadRoutes(cfg Config) []querytee.Route {
 	}
 
 	return []querytee.Route{
-		{Path: prefix + "/api/v1/query", RouteName: "api_v1_query", Methods: []string{"GET", "POST"}, ResponseComparator: samplesComparator, RequestTransformers: instantQueryTransformers},
-		{Path: prefix + "/api/v1/query_range", RouteName: "api_v1_query_range", Methods: []string{"GET", "POST"}, ResponseComparator: samplesComparator},
-		{Path: prefix + "/api/v1/query_exemplars", RouteName: "api_v1_query_exemplars", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
-		{Path: prefix + "/api/v1/labels", RouteName: "api_v1_labels", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
-		{Path: prefix + "/api/v1/label/{name}/values", RouteName: "api_v1_label_name_values", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
-		{Path: prefix + "/api/v1/series", RouteName: "api_v1_series", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
-		{Path: prefix + "/api/v1/metadata", RouteName: "api_v1_metadata", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
-		{Path: prefix + "/prometheus/config/v1/rules", RouteName: "prometheus_config_v1_rules", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
-		{Path: prefix + "/api/v1/alerts", RouteName: "api_v1_alerts", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
+		{Path: "/api/v1/query", RouteName: "api_v1_query", Methods: []string{"GET", "POST"}, ResponseComparator: samplesComparator, RequestTransformers: instantQueryTransformers},
+		{Path: "/api/v1/query_range", RouteName: "api_v1_query_range", Methods: []string{"GET", "POST"}, ResponseComparator: samplesComparator},
+		{Path: "/api/v1/query_exemplars", RouteName: "api_v1_query_exemplars", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
+		{Path: "/api/v1/labels", RouteName: "api_v1_labels", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
+		{Path: "/api/v1/label/{name}/values", RouteName: "api_v1_label_name_values", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
+		{Path: "/api/v1/series", RouteName: "api_v1_series", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
+		{Path: "/api/v1/metadata", RouteName: "api_v1_metadata", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
+		{Path: "/prometheus/config/v1/rules", RouteName: "prometheus_config_v1_rules", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
+		{Path: "/api/v1/alerts", RouteName: "api_v1_alerts", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
+		{Path: "/api/v1/read", RouteName: "api_v1_read", Methods: []string{"POST"}, ResponseComparator: nil},
 	}
 }

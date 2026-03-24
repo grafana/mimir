@@ -91,7 +91,7 @@ func (am *GrafanaAlertmanager) GetAlerts(active, silenced, inhibited bool, filte
 	am.reloadConfigMtx.RUnlock()
 
 	if err != nil {
-		level.Error(am.logger).Log("failed to iterate through the alerts", "err", err)
+		level.Error(am.logger).Log("msg", "failed to iterate through the alerts", "err", err)
 		return nil, fmt.Errorf("%s: %w", err.Error(), ErrGetAlertsInternal)
 	}
 	sort.Slice(res, func(i, j int) bool {
@@ -197,7 +197,7 @@ func matchFilterLabels(matchers []*labels.Matcher, sms map[string]string) bool {
 			if !m.Matches(v) {
 				return false
 			}
-		default:
+		case labels.MatchEqual, labels.MatchRegexp:
 			if m.Value == "" && !prs {
 				continue
 			}

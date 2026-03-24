@@ -65,6 +65,8 @@ type OTLPHandlerLimits interface {
 	OTelNativeDeltaIngestion(id string) bool
 	OTelTranslationStrategy(id string) otlptranslator.TranslationStrategyOption
 	NameValidationScheme(id string) model.ValidationScheme
+	OTelLabelNameUnderscoreSanitization(string) bool
+	OTelLabelNamePreserveMultipleUnderscores(string) bool
 }
 
 type OTLPPushMiddleware func(ctx context.Context, req *pmetricotlp.ExportRequest) error
@@ -76,6 +78,7 @@ func OTLPHandler(
 	sourceIPs *middleware.SourceIPExtractor,
 	limits OTLPHandlerLimits,
 	resourceAttributePromotionConfig OTelResourceAttributePromotionConfig,
+	keepIdentifyingOTelResourceAttributesConfig KeepIdentifyingOTelResourceAttributesConfig,
 	retryCfg RetryConfig,
 	OTLPPushMiddlewares []OTLPPushMiddleware,
 	push PushFunc,
@@ -97,26 +100,31 @@ func OTLPHandler(
 
 		otlpConverter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
 
-		parser := newOTLPParser(limits, resourceAttributePromotionConfig, otlpConverter, pushMetrics, discardedDueToOtelParseError, OTLPPushMiddlewares)
+		parser := newOTLPParser(
+			limits, resourceAttributePromotionConfig, keepIdentifyingOTelResourceAttributesConfig,
+			otlpConverter, pushMetrics, discardedDueToOtelParseError,
+			OTLPPushMiddlewares,
+		)
 
-		supplier := func() (*mimirpb.WriteRequest, func(), error) {
+		supplier := func() (*mimirpb.WriteRequest, func(), int, error) {
 			rb := util.NewRequestBuffers(requestBufferPool)
 			var req mimirpb.PreallocWriteRequest
-			if err := parser(ctx, r, maxRecvMsgSize, rb, &req, logger); err != nil {
+			uncompressedSize, err := parser(ctx, r, maxRecvMsgSize, rb, &req, logger)
+			if err != nil {
 				// Check for httpgrpc error, default to client error if parsing failed
 				if _, ok := httpgrpc.HTTPResponseFromError(err); !ok {
 					err = httpgrpc.Error(http.StatusBadRequest, err.Error())
 				}
 
 				rb.CleanUp()
-				return nil, nil, err
+				return nil, nil, 0, err
 			}
 
 			cleanup := func() {
 				mimirpb.ReuseSlice(req.Timeseries)
 				rb.CleanUp()
 			}
-			return &req.WriteRequest, cleanup, nil
+			return &req.WriteRequest, cleanup, uncompressedSize, nil
 		}
 		req := newRequest(supplier)
 		req.contentLength = r.ContentLength
@@ -200,15 +208,37 @@ func handlePartialOTLPPush(pushErr error, w http.ResponseWriter, r *http.Request
 	writeOTLPResponse(r, w, http.StatusOK, &expResp, logger)
 }
 
+func observeOTLPFieldsCount(pushMetrics *PushMetrics, req pmetricotlp.ExportRequest) {
+	resourceMetricsSlice := req.Metrics().ResourceMetrics()
+	pushMetrics.ObserveOTLPArrayLengths("resource_metrics", resourceMetricsSlice.Len())
+	for i := 0; i < resourceMetricsSlice.Len(); i++ {
+		resourceMetrics := resourceMetricsSlice.At(i)
+		scopeMetricsSlice := resourceMetrics.ScopeMetrics()
+		pushMetrics.ObserveOTLPArrayLengths("scope_metrics", scopeMetricsSlice.Len())
+		for j := 0; j < scopeMetricsSlice.Len(); j++ {
+			scopeMetrics := scopeMetricsSlice.At(j)
+			metricSlice := scopeMetrics.Metrics()
+			pushMetrics.ObserveOTLPArrayLengths("metrics", metricSlice.Len())
+		}
+	}
+}
+
 func newOTLPParser(
 	limits OTLPHandlerLimits,
 	resourceAttributePromotionConfig OTelResourceAttributePromotionConfig,
+	keepIdentifyingOTelResourceAttributesConfig KeepIdentifyingOTelResourceAttributesConfig,
 	otlpConverter *otlpMimirConverter,
 	pushMetrics *PushMetrics,
 	discardedDueToOtelParseError *prometheus.CounterVec,
 	OTLPPushMiddlewares []OTLPPushMiddleware,
 ) parserFunc {
-	return func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error {
+	if resourceAttributePromotionConfig == nil {
+		resourceAttributePromotionConfig = limits
+	}
+	if keepIdentifyingOTelResourceAttributesConfig == nil {
+		keepIdentifyingOTelResourceAttributesConfig = limits
+	}
+	return func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) (int, error) {
 		contentType := r.Header.Get("Content-Type")
 		contentEncoding := r.Header.Get("Content-Encoding")
 		var compression util.CompressionType
@@ -222,7 +252,7 @@ func newOTLPParser(
 		case "":
 			compression = util.NoCompression
 		default:
-			return httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported compression: %s. Only \"gzip\", \"lz4\", \"zstd\", or no compression supported", contentEncoding)
+			return 0, httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported compression: %s. Only \"gzip\", \"lz4\", \"zstd\", or no compression supported", contentEncoding)
 		}
 
 		var decoderFunc func(io.Reader) (req pmetricotlp.ExportRequest, uncompressedBodySize int, err error)
@@ -237,8 +267,9 @@ func newOTLPParser(
 				var tooLargeErr util.MsgSizeTooLargeErr
 				if errors.As(err, &tooLargeErr) {
 					return exportReq, 0, httpgrpc.Error(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
-						actual: tooLargeErr.Actual,
-						limit:  tooLargeErr.Limit,
+						compressed: tooLargeErr.Compressed,
+						actual:     tooLargeErr.Actual,
+						limit:      tooLargeErr.Limit,
 					}.Error())
 				}
 				return exportReq, protoBodySize, err
@@ -286,13 +317,13 @@ func newOTLPParser(
 			}
 
 		default:
-			return httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported content type: %s, supported: [%s, %s]", contentType, jsonContentType, pbContentType)
+			return 0, httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported content type: %s, supported: [%s, %s]", contentType, jsonContentType, pbContentType)
 		}
 
 		// Check the request size against the message size limit, regardless of whether the request is compressed.
 		// If the request is compressed and its compressed length already exceeds the size limit, there's no need to decompress it.
 		if r.ContentLength > int64(maxRecvMsgSize) {
-			return httpgrpc.Error(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
+			return 0, httpgrpc.Error(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
 				actual: int(r.ContentLength),
 				limit:  maxRecvMsgSize,
 			}.Error())
@@ -307,7 +338,7 @@ func newOTLPParser(
 
 		otlpReq, uncompressedBodySize, err := decoderFunc(r.Body)
 		if err != nil {
-			return err
+			return 0, err
 		}
 
 		level.Debug(spanLogger).Log("msg", "decoding complete, starting conversion")
@@ -315,20 +346,17 @@ func newOTLPParser(
 		for _, middleware := range OTLPPushMiddlewares {
 			err := middleware(ctx, &otlpReq)
 			if err != nil {
-				return err
+				return 0, err
 			}
 		}
 
 		tenantID, err := tenant.TenantID(ctx)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		enableCTZeroIngestion := limits.OTelCreatedTimestampZeroIngestionEnabled(tenantID)
-		if resourceAttributePromotionConfig == nil {
-			resourceAttributePromotionConfig = limits
-		}
 		promoteResourceAttributes := resourceAttributePromotionConfig.PromoteOTelResourceAttributes(tenantID)
-		keepIdentifyingResourceAttributes := limits.OTelKeepIdentifyingResourceAttributes(tenantID)
+		keepIdentifyingResourceAttributes := keepIdentifyingOTelResourceAttributesConfig.OTelKeepIdentifyingResourceAttributes(tenantID)
 		convertHistogramsToNHCB := limits.OTelConvertHistogramsToNHCB(tenantID)
 		promoteScopeMetadata := limits.OTelPromoteScopeMetadata(tenantID)
 		allowDeltaTemporality := limits.OTelNativeDeltaIngestion(tenantID)
@@ -336,7 +364,9 @@ func newOTLPParser(
 		validateTranslationStrategy(translationStrategy, limits, tenantID)
 
 		pushMetrics.IncOTLPRequest(tenantID)
-		pushMetrics.ObserveUncompressedBodySize(tenantID, "otlp", float64(uncompressedBodySize))
+		pushMetrics.ObserveRequestBodySize(tenantID, "otlp", int64(uncompressedBodySize), r.ContentLength)
+		pushMetrics.IncOTLPContentType(contentType)
+		observeOTLPFieldsCount(pushMetrics, otlpReq)
 
 		convOpts := conversionOptions{
 			addSuffixes:                       translationStrategy.ShouldAddSuffixes(),
@@ -347,6 +377,8 @@ func newOTLPParser(
 			promoteResourceAttributes:         promoteResourceAttributes,
 			allowDeltaTemporality:             allowDeltaTemporality,
 			allowUTF8:                         !translationStrategy.ShouldEscape(),
+			underscoreSanitization:            limits.OTelLabelNameUnderscoreSanitization(tenantID),
+			preserveMultipleUnderscores:       limits.OTelLabelNamePreserveMultipleUnderscores(tenantID),
 		}
 		metrics, metadata, metricsDropped, err := otelMetricsToSeriesAndMetadata(
 			ctx,
@@ -359,7 +391,7 @@ func newOTLPParser(
 			discardedDueToOtelParseError.WithLabelValues(tenantID, "").Add(float64(metricsDropped)) // "group" label is empty here as metrics couldn't be parsed
 		}
 		if err != nil {
-			return err
+			return 0, err
 		}
 
 		metricCount := len(metrics)
@@ -386,7 +418,7 @@ func newOTLPParser(
 		req.Source = mimirpb.OTLP
 		req.Timeseries = metrics
 		req.Metadata = metadata
-		return nil
+		return uncompressedBodySize, nil
 	}
 }
 
@@ -428,8 +460,8 @@ func toOtlpGRPCHTTPStatus(pushErr error) (codes.Code, int, bool) {
 		return codes.Internal, http.StatusServiceUnavailable, false
 	}
 
-	grpcStatusCode := errorCauseToGRPCStatusCode(distributorErr.Cause(), false)
-	httpStatusCode := errorCauseToHTTPStatusCode(distributorErr.Cause(), false)
+	grpcStatusCode := errorCauseToGRPCStatusCode(distributorErr.Cause())
+	httpStatusCode := errorCauseToHTTPStatusCode(distributorErr.Cause())
 	return grpcStatusCode, httpRetryableToOTLPRetryable(httpStatusCode), distributorErr.IsSoft()
 }
 
@@ -463,11 +495,16 @@ func writeErrorToHTTPResponseBody(r *http.Request, w http.ResponseWriter, httpCo
 }
 
 func writeOTLPResponse(r *http.Request, w http.ResponseWriter, httpCode int, payload proto.Message, logger log.Logger) {
+	// Per OTLP spec (see: https://opentelemetry.io/docs/specs/otlp/#otlphttp-response), the server MUST mirror
+	// the request Content-Type in responses. The parser validates Content-Type and only accepts
+	// application/json or application/x-protobuf. For requests with unsupported Content-Type that are rejected by the parser,
+	// we default to application/x-protobuf.
 	contentType := r.Header.Get("Content-Type")
 	switch contentType {
 	case jsonContentType, pbContentType:
+		// Valid Content-Type, mirror it in the response.
 	default:
-		// Default to protobuf encoding.
+		// Unsupported Content-Type, default to protobuf.
 		contentType = pbContentType
 	}
 
@@ -477,12 +514,14 @@ func writeOTLPResponse(r *http.Request, w http.ResponseWriter, httpCode int, pay
 	if err != nil {
 		httpCode = http.StatusInternalServerError
 		level.Error(logger).Log("msg", "failed to marshal payload", "err", err, "payload", payload, "content_type", contentType)
+		// Retry with a minimal Status message. If this also fails, marshaling is fundamentally broken.
 		var format string
 		body, format, err = marshal(status.New(codes.Internal, "failed to marshal OTLP response").Proto(), contentType)
 		err = errors.Wrapf(err, "marshalling %T to %s", payload, format)
 	}
 	if err != nil {
 		level.Error(logger).Log("msg", "OTLP response marshal failed, responding without payload", "err", err, "content_type", contentType)
+		// If marshalling both the original and fallback message fails, return empty body with text/plain to signal the failure
 		contentType = "text/plain"
 		body = nil
 	}
@@ -534,6 +573,8 @@ type conversionOptions struct {
 	promoteResourceAttributes         []string
 	allowDeltaTemporality             bool
 	allowUTF8                         bool
+	underscoreSanitization            bool
+	preserveMultipleUnderscores       bool
 }
 
 func otelMetricsToSeriesAndMetadata(
@@ -544,13 +585,15 @@ func otelMetricsToSeriesAndMetadata(
 	logger log.Logger,
 ) ([]mimirpb.PreallocTimeseries, []*mimirpb.MetricMetadata, int, error) {
 	settings := prometheusremotewrite.Settings{
-		AddMetricSuffixes:                 opts.addSuffixes,
-		PromoteResourceAttributes:         prometheusremotewrite.NewPromoteResourceAttributes(config.OTLPConfig{PromoteResourceAttributes: opts.promoteResourceAttributes}),
-		KeepIdentifyingResourceAttributes: opts.keepIdentifyingResourceAttributes,
-		ConvertHistogramsToNHCB:           opts.convertHistogramsToNHCB,
-		PromoteScopeMetadata:              opts.promoteScopeMetadata,
-		AllowDeltaTemporality:             opts.allowDeltaTemporality,
-		AllowUTF8:                         opts.allowUTF8,
+		AddMetricSuffixes:                    opts.addSuffixes,
+		PromoteResourceAttributes:            prometheusremotewrite.NewPromoteResourceAttributes(config.OTLPConfig{PromoteResourceAttributes: opts.promoteResourceAttributes}),
+		KeepIdentifyingResourceAttributes:    opts.keepIdentifyingResourceAttributes,
+		ConvertHistogramsToNHCB:              opts.convertHistogramsToNHCB,
+		PromoteScopeMetadata:                 opts.promoteScopeMetadata,
+		AllowDeltaTemporality:                opts.allowDeltaTemporality,
+		AllowUTF8:                            opts.allowUTF8,
+		LabelNameUnderscoreSanitization:      opts.underscoreSanitization,
+		LabelNamePreserveMultipleUnderscores: opts.preserveMultipleUnderscores,
 	}
 	converter.appender.EnableCreatedTimestampZeroIngestion = opts.enableCTZeroIngestion
 	mimirTS, metadata := converter.ToSeriesAndMetadata(ctx, md, settings, logger)
@@ -611,7 +654,7 @@ func (c *otlpMimirConverter) Err() error {
 func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.MetricMetadata) pmetricotlp.ExportRequest {
 	d := pmetric.NewMetrics()
 
-	for i, ts := range timeseries {
+	for _, ts := range timeseries {
 		name := ""
 		attributes := pcommon.NewMap()
 
@@ -633,9 +676,11 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.
 			metric := sm.AppendEmpty().Metrics().AppendEmpty()
 			metric.SetName(name)
 			metric.SetEmptyGauge()
-			if metadata != nil {
-				metric.SetDescription(metadata[i].GetHelp())
-				metric.SetUnit(metadata[i].GetUnit())
+			for _, m := range metadata {
+				if m.MetricFamilyName == name {
+					metric.SetDescription(m.GetHelp())
+					metric.SetUnit(m.GetUnit())
+				}
 			}
 			for i, sample := range ts.Samples {
 				datapoint := metric.Gauge().DataPoints().AppendEmpty()
@@ -660,9 +705,11 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.
 			metric := sm.AppendEmpty().Metrics().AppendEmpty()
 			metric.SetName(name)
 			metric.SetEmptyExponentialHistogram()
-			if metadata != nil {
-				metric.SetDescription(metadata[i].GetHelp())
-				metric.SetUnit(metadata[i].GetUnit())
+			for _, m := range metadata {
+				if m.MetricFamilyName == name {
+					metric.SetDescription(m.GetHelp())
+					metric.SetUnit(m.GetUnit())
+				}
 			}
 			metric.ExponentialHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
 			for i, histogram := range ts.Histograms {

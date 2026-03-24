@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -70,14 +71,13 @@ var (
 
 func newSchedulerProcessor(cfg Config, httpHandler RequestHandler, protobufHandler ProtobufRequestHandler, log log.Logger, reg prometheus.Registerer) (*schedulerProcessor, []services.Service) {
 	p := &schedulerProcessor{
-		log:              log,
-		httpHandler:      httpHandler,
-		protobufHandler:  protobufHandler,
-		streamResponse:   streamResponse,
-		maxMessageSize:   cfg.QueryFrontendGRPCClientConfig.MaxSendMsgSize,
-		querierID:        cfg.QuerierID,
-		grpcConfig:       cfg.QueryFrontendGRPCClientConfig,
-		streamingEnabled: cfg.ResponseStreamingEnabled,
+		log:             log,
+		httpHandler:     httpHandler,
+		protobufHandler: protobufHandler,
+		streamResponse:  streamResponse,
+		maxMessageSize:  cfg.QueryFrontendGRPCClientConfig.MaxSendMsgSize,
+		querierID:       cfg.QuerierID,
+		grpcConfig:      cfg.QueryFrontendGRPCClientConfig.Config,
 
 		schedulerClientFactory: func(conn *grpc.ClientConn) schedulerpb.SchedulerForQuerierClient {
 			return schedulerpb.NewSchedulerForQuerierClient(conn)
@@ -98,9 +98,10 @@ func newSchedulerProcessor(cfg Config, httpHandler RequestHandler, protobufHandl
 	})
 
 	poolConfig := client.PoolConfig{
-		CheckInterval:      5 * time.Second,
-		HealthCheckEnabled: true,
-		HealthCheckTimeout: 1 * time.Second,
+		CheckInterval:          5 * time.Second,
+		HealthCheckEnabled:     true,
+		HealthCheckTimeout:     1 * time.Second,
+		HealthCheckGracePeriod: cfg.QueryFrontendGRPCClientConfig.HealthCheckGracePeriod,
 	}
 
 	p.frontendPool = client.NewPool("frontend", poolConfig, nil, client.PoolAddrFunc(p.createFrontendClient), frontendClientsGauge, log)
@@ -118,14 +119,13 @@ type frontendResponseStreamer func(
 
 // Handles incoming queries from query-scheduler.
 type schedulerProcessor struct {
-	log              log.Logger
-	httpHandler      RequestHandler
-	protobufHandler  ProtobufRequestHandler
-	streamResponse   frontendResponseStreamer
-	grpcConfig       grpcclient.Config
-	maxMessageSize   int
-	querierID        string
-	streamingEnabled bool
+	log             log.Logger
+	httpHandler     RequestHandler
+	protobufHandler ProtobufRequestHandler
+	streamResponse  frontendResponseStreamer
+	grpcConfig      grpcclient.Config
+	maxMessageSize  int
+	querierID       string
 
 	frontendPool                  *client.Pool
 	frontendClientRequestDuration *prometheus.HistogramVec
@@ -207,17 +207,19 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 		}
 	}
 
-	schedulerStreamError := atomic.NewError(nil)
+	var schedulerStreamError error
+	haveSchedulerStreamError := make(chan struct{})
 
 	for {
 		request, err := c.Recv()
 		if err != nil {
-			schedulerStreamError.Store(err)
+			schedulerStreamError = err
+			close(haveSchedulerStreamError)
 
 			if grpcutil.IsCanceled(err) {
 				cancel(cancellation.NewErrorf("query cancelled: %w", err))
 			} else {
-				// If we got another kind of error (eg. scheduler crashed), continue processing the query.
+				// If we got another kind of error (eg. scheduler crashed), continue processing the query before returning.
 				waitForQuery(err)
 			}
 
@@ -292,17 +294,33 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 
 			// Report back to scheduler that processing of the query has finished.
 			if err := c.Send(&schedulerpb.QuerierToScheduler{}); err != nil {
-				if previousErr := schedulerStreamError.Load(); previousErr != nil {
-					// If the stream has already been broken, it's expected that the Send() call will fail too.
-					// The error returned by Recv() is often more descriptive, so we include it in this log line as well.
+				// If the stream has been broken, as happens when the scheduler wants to notify the querier of a cancelled query,
+				// it's expected that Send() will return an EOF and the 'real' error will be returned by Recv(). So if we get an
+				// EOF, try to get the error received by Recv() above.
+				// This is racy (we might get an error from Send() above before Recv() returns), so we wait a short while for
+				// the error to be received.
+				useSchedulerStreamError := false
+
+				if errors.Is(err, io.EOF) {
+					select {
+					case <-haveSchedulerStreamError:
+						useSchedulerStreamError = true
+					case <-time.After(500 * time.Millisecond):
+						// Give up.
+					}
+				}
+
+				if !useSchedulerStreamError {
+					level.Error(logger).Log("msg", "error notifying scheduler about finished query", "err", err, "addr", address)
+				} else if grpcutil.IsCanceled(schedulerStreamError) {
+					level.Debug(logger).Log("msg", "could not notify scheduler about finished query because query execution was cancelled", "err", schedulerStreamError, "addr", address)
+				} else {
 					level.Error(logger).Log(
-						"msg", "error notifying scheduler about finished query after the scheduler stream previously failed and returned error",
+						"msg", "error notifying scheduler about finished query after the scheduler stream failed",
 						"err", err,
 						"addr", address,
-						"previousErr", previousErr,
+						"schedulerStreamError", schedulerStreamError,
 					)
-				} else {
-					level.Error(logger).Log("msg", "error notifying scheduler about finished query", "err", err, "addr", address)
 				}
 			}
 		}()
@@ -348,7 +366,7 @@ func (sp *schedulerProcessor) runHttpRequest(ctx context.Context, logger log.Log
 
 	var hasStreamHeader bool
 	response.Headers, hasStreamHeader = removeStreamingHeader(response.Headers)
-	shouldStream := hasStreamHeader && sp.streamingEnabled && len(response.Body) > responseStreamingBodyChunkSizeBytes
+	shouldStream := hasStreamHeader && len(response.Body) > responseStreamingBodyChunkSizeBytes
 
 	// Protect against not-yet-exited querier handler goroutines that could
 	// still be incrementing stats when sent for marshaling below.
@@ -385,7 +403,6 @@ func (sp *schedulerProcessor) sendHttpResponseToQueryFrontend(ctx context.Contex
 		}
 
 		level.Warn(logger).Log("msg", "retrying to notify frontend about finished query", "err", err, "frontend", frontendAddress, "retries", bof.NumRetries(), "query_id", queryID)
-		sp.frontendPool.RemoveClient(c, frontendAddress)
 		bof.Wait()
 	}
 
@@ -494,7 +511,6 @@ type grpcStreamWriter struct {
 
 type frontendClientPool interface {
 	GetClientFor(addr string) (client.PoolClient, error)
-	RemoveClient(c client.PoolClient, addr string)
 }
 
 func newGrpcStreamWriter(queryID uint64, frontendAddress string, clientPool frontendClientPool, logger log.Logger) *grpcStreamWriter {
@@ -507,7 +523,20 @@ func newGrpcStreamWriter(queryID uint64, frontendAddress string, clientPool fron
 }
 
 func (g *grpcStreamWriter) Write(ctx context.Context, msg *frontendv2pb.QueryResultStreamRequest) error {
-	if g.failed {
+	if g.failed && msg.GetError() == nil {
+		// If sending a previous message failed, don't try to send any further messages (as we might try to create a new stream, which
+		// may result in sending only part of the response to the query-frontend).
+		//
+		// However, if we're trying to send an error, it doesn't matter if previous attempts failed, we should always try to send
+		// the message to the query-frontend.
+		//
+		// Sending a message in this case is safe: if we're sending an error, we won't send part of a successful response that the query-frontend could
+		// misinterpret as the entire response.
+		//
+		// Sending a message in this case is also necessary: in the case where the initial attempt to send a message to the query-frontend fails, we want
+		// to try to send an error to the query-frontend so that it doesn't just wait for a response that won't arrive (which will eventually cause
+		// the query to time out). One specific example: if the initial message exceeds the gRPC max message size limit, we need to
+		// tell the query-frontend that no response is coming.
 		return errAlreadyFailed
 	}
 
@@ -516,9 +545,14 @@ func (g *grpcStreamWriter) Write(ctx context.Context, msg *frontendv2pb.QueryRes
 	if g.stream != nil {
 		// We already have a stream, use it.
 		// If this fails, don't retry, as we can't know if the message made it to the frontend or not, which could lead to incorrect query results.
-		if err := g.stream.Send(msg); err != nil {
-			g.clientPool.RemoveClient(g.client, g.frontendAddress)
+		if err := g.writeMessageToStream(g.stream, g.client, msg); err != nil {
 			g.failed = true
+			if grpcutil.IsCanceled(err) {
+				level.Debug(g.logger).Log("msg", "attempt to send subsequent message to query-frontend failed because the request was canceled", "err", err, "frontendAddress", g.frontendAddress, "queryID", msg.QueryID)
+			} else {
+				level.Warn(g.logger).Log("msg", "attempt to send subsequent message to query-frontend failed", "err", err, "frontendAddress", g.frontendAddress, "queryID", msg.QueryID)
+			}
+
 			return err
 		}
 
@@ -532,21 +566,21 @@ func (g *grpcStreamWriter) Write(ctx context.Context, msg *frontendv2pb.QueryRes
 	bof := createFrontendBackoff(ctx)
 	var err error
 	for bof.Ongoing() {
-		err = g.tryToStartStreamAndSendFirstMessage(ctx, msg)
+		err = g.tryToStartStreamAndWriteFirstMessage(ctx, msg)
 		if err == nil {
 			return nil
 		}
 
-		level.Warn(g.logger).Log("msg", "attempt to send message to query-frontend failed", "err", err, "frontendAddress", g.frontendAddress, "queryID", msg.QueryID, "attempt", bof.NumRetries()+1)
+		level.Warn(g.logger).Log("msg", "attempt to send initial message to query-frontend failed", "err", err, "frontendAddress", g.frontendAddress, "queryID", msg.QueryID, "attempt", bof.NumRetries()+1)
 		bof.Wait()
 	}
 
-	level.Error(g.logger).Log("msg", "abandoned attempt to send message to query-frontend", "lastErr", err, "frontendAddress", g.frontendAddress, "queryID", msg.QueryID)
+	level.Error(g.logger).Log("msg", "abandoned attempt to send initial message to query-frontend", "lastErr", err, "frontendAddress", g.frontendAddress, "queryID", msg.QueryID)
 	g.failed = true
 	return err
 }
 
-func (g *grpcStreamWriter) tryToStartStreamAndSendFirstMessage(ctx context.Context, msg *frontendv2pb.QueryResultStreamRequest) error {
+func (g *grpcStreamWriter) tryToStartStreamAndWriteFirstMessage(ctx context.Context, msg *frontendv2pb.QueryResultStreamRequest) error {
 	client, err := g.clientPool.GetClientFor(g.frontendAddress)
 	if err != nil {
 		return err
@@ -554,12 +588,10 @@ func (g *grpcStreamWriter) tryToStartStreamAndSendFirstMessage(ctx context.Conte
 
 	stream, err := client.(frontendv2pb.FrontendForQuerierClient).QueryResultStream(ctx)
 	if err != nil {
-		g.clientPool.RemoveClient(client, g.frontendAddress)
 		return err
 	}
 
-	if err := stream.Send(msg); err != nil {
-		g.clientPool.RemoveClient(client, g.frontendAddress)
+	if err := g.writeMessageToStream(stream, client, msg); err != nil {
 		return err
 	}
 
@@ -567,6 +599,27 @@ func (g *grpcStreamWriter) tryToStartStreamAndSendFirstMessage(ctx context.Conte
 	g.stream = stream
 
 	return nil
+}
+
+func (g *grpcStreamWriter) writeMessageToStream(stream frontendv2pb.FrontendForQuerier_QueryResultStreamClient, client client.PoolClient, msg *frontendv2pb.QueryResultStreamRequest) error {
+	err := stream.Send(msg)
+
+	if err == nil {
+		return nil
+	}
+
+	if errors.Is(err, io.EOF) {
+		// If Send returns EOF, then that means the error was not generated by the client (ie. the querier) and we need to call RecvMsg to get that error.
+		// See the docs for grpc.ClientStream for more details.
+		receivedErr := stream.RecvMsg(&frontendv2pb.QueryResultResponse{})
+		if receivedErr == nil {
+			return fmt.Errorf("writing message to stream failed with EOF error (ie. not generated by client), and RecvMsg returned no error")
+		} else {
+			return fmt.Errorf("writing message to stream failed due to error not generated by client: %w", receivedErr)
+		}
+	}
+
+	return err
 }
 
 func (g *grpcStreamWriter) Close(ctx context.Context) {
@@ -590,8 +643,13 @@ func (g *grpcStreamWriter) Close(ctx context.Context) {
 	}
 
 	if g.stream != nil {
-		// If this fails, there's not much we can do.
-		_, _ = g.stream.CloseAndRecv()
+		if _, err := g.stream.CloseAndRecv(); err != nil {
+			if grpcutil.IsCanceled(err) {
+				level.Debug(g.logger).Log("msg", "error closing query-frontend stream because the request was canceled", "err", err)
+			} else {
+				level.Warn(g.logger).Log("msg", "error closing query-frontend stream", "err", err)
+			}
+		}
 	}
 }
 

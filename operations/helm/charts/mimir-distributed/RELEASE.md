@@ -4,19 +4,16 @@ The release processes that follow apply to the Grafana Mimir Helm chart.
 
 ## Schedule
 
-The release schedule follows the Grafana Mimir and Grafana Enterprise Metrics (GEM) releases so that a new Helm chart release will include both. This usually happens within 2 weeks of the Mimir release. For the Mimir release schedule consult the Mimir [RELEASE.md](../../../../RELEASE.md).
+The release schedule follows the Grafana Mimir releases. This usually happens within 2 weeks of the Mimir release. For the Mimir release schedule consult the Mimir [RELEASE.md](../../../../RELEASE.md).
 
-Security updates of Mimir or GEM will also trigger a Helm chart release. The Helm chart can be released independently of Mimir and GEM, but this is only done if
+Security updates of Mimir will also trigger a Helm chart release. The Helm chart can be released independently of Mimir, but this is only done if
 there's some urgent update needed.
 
-There are weekly releases with the latest Mimir and GEM build, but they are intended for testing purposes only, not production. Weekly releases are marked with a development version and helm will ignore them unless the `--devel` flag is used on the command line.
+There are weekly releases with the latest Mimir build, but they are intended for testing purposes only, not production. Weekly releases are marked with a development version and helm will ignore them unless the `--devel` flag is used on the command line.
 
 ## Before you begin
 
-One of the following scenarios must apply:
-
-- Both Mimir and GEM have container images, whose image versions match. The image versions have the same weekly, RC, and final versions. These versions are released to Docker Hub.
-- The Mimir and GEM image versions do not match, but there are no breaking changes between them because all of the shared configuration parameters behave the same way. For example, because GEM contains a bugfix, the version of GEM is `2.5.1` and the version of Mimir is `2.5.0`.
+Mimir must have container images released to Docker Hub with the version (weekly, RC, or final) that will be included in the Helm chart.
 
 ## Release process for a weekly release
 
@@ -73,18 +70,13 @@ Weekly releases have the version `x.y.z-weekly.w`, for example `3.1.0-weekly.196
 
    - Once the branch is pushed, all changes to `mimir-distributed-release-x.y` branch must be done through PR.
 
-1. Create a branch from release branch if it hasn't been created yet, to update Mimir/GEM image and helm chart version .
+1. Create a branch from release branch if it hasn't been created yet, to update Mimir image and helm chart version.
 
    For example `user/update-mimir-distributed-release-x.y`.
 
 1. Update versions and links in the `user/update-mimir-distributed-release-x.y` branch.
 
-   - Set the image versions in [values.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/values.yaml), as needed:
-
-     - `image.tag` (Mimir)
-     - `enterprise.image.tag` (GEM)
-
-       > **Note:** Unlike the Mimir image tags, GEM image tags start with `v`. For example, `v2.6.0` instead of `2.6.0`.
+   - Set the `image.tag` version in [values.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/values.yaml):
 
    - Set the `version` field, in the [Chart.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/Chart.yaml) file, to the desired release candidate version.
 
@@ -96,17 +88,17 @@ Weekly releases have the version `x.y.z-weekly.w`, for example `3.1.0-weekly.196
 
      For example, `2.6.0`.
 
-   - Add a changelog entry in `mimir-distributed/CHANGELOG.md` about upgading the chart's versions of Mimir and GEM.
+   - Add a changelog entry in `mimir-distributed/CHANGELOG.md` about upgading the chart's version of Mimir.
 
    - Create or update the release notes in `docs/sources/helm-charts/mimir-distributed/release-notes` directory.
 
-     The release notes should refer to the correct Mimir and GEM versions and their specific documentation version.
+     The release notes should refer to the correct Mimir version and its specific documentation version.
 
      > **Note:** This step can be done in a separate PR and shouldn't block release candidate from getting published.
 
-   - Update the Mimir and GEM documentation version parameters in [\_index.md](https://github.com/grafana/mimir/blob/main/docs/sources/helm-charts/mimir-distributed/_index.md)
+   - Update the Mimir documentation version parameter in [\_index.md](https://github.com/grafana/mimir/blob/main/docs/sources/helm-charts/mimir-distributed/_index.md)
 
-     The two parameters are `MIMIR_VERSION` and `GEM_VERSION`. With the exception of the release notes, the Helm chart documentation should refer to the documentation or Mimir and GEM that is actually included in the Helm chart.
+     The parameter is `MIMIR_VERSION`. With the exception of the release notes, the Helm chart documentation should refer to the documentation of Mimir that is actually included in the Helm chart.
 
    - Update the Mimir version in the [deploy preview workflow](https://github.com/grafana/mimir/blob/main/.github/workflows/deploy-pr-preview.yml).
 
@@ -153,13 +145,15 @@ The [release process](https://github.com/grafana/mimir/blob/main/.github/workflo
    - The final version has the version `x.y.z`, for example `3.1.0`.
    - Normally we will proceed the same `x.y.z` version value from the release candidate step.
 
-1. Create a branch from release branch to update Mimir/GEM image and helm chart version.
+1. Create a branch from release branch to update Mimir image and helm chart version.
 
    For example `user/update-mimir-distributed-release-x.y-final`.
 
-1. Optionally finalize release note and update version in the `user/update-mimir-distributed-release-x.y-final` branch.
+1. Update versions and links in the `user/update-mimir-distributed-release-x.y-final` branch.
 
-   - Update and finalize the release notes in `docs/sources/helm-charts/mimir-distributed/release-notes` directory if there has been some changes after release candidate.
+   - Set the `image.tag` version in [values.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/values.yaml):
+
+   - Optionally finalize release note and update version in the `user/update-mimir-distributed-release-x.y-final` branch.
 
    - Finalize the chart's changelog. Update the title of the release section by setting it to the final release version number.
 
@@ -173,7 +167,7 @@ The [release process](https://github.com/grafana/mimir/blob/main/.github/workflo
 
    - There shouldn't be anymore update needed in documentation because that has been done in the release candidate step above.
 
-     > **Note:** Check that the final versions of Mimir and GEM defined in the chart match those mentioned in the changelog and the release notes.
+     > **Note:** Check that the final version of Mimir defined in the chart matches that mentioned in the changelog and the release notes.
 
    - From the root directory of the repository, run `make doc` to update [README.md](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/README.md) file.
 

@@ -33,7 +33,7 @@ func TestProm2RangeCompat_Do(t *testing.T) {
 		ctx := context.Background()
 		req := newRangeRequest("sum(rate(some_series[1m:1m]))")
 
-		innerRes := newEmptyPrometheusResponse()
+		innerRes := NewEmptyPrometheusResponse()
 		inner := &mockHandler{}
 		inner.On("Do", mock.Anything, req).Return(innerRes, nil)
 
@@ -48,7 +48,7 @@ func TestProm2RangeCompat_Do(t *testing.T) {
 		ctx := user.InjectOrgID(context.Background(), "1234")
 		req := newRangeRequest("sum(rate(some_series[1m:1m]))")
 
-		innerRes := newEmptyPrometheusResponse()
+		innerRes := NewEmptyPrometheusResponse()
 		inner := &mockHandler{}
 		inner.On("Do", mock.Anything, req).Return(innerRes, nil)
 
@@ -63,7 +63,7 @@ func TestProm2RangeCompat_Do(t *testing.T) {
 		ctx := user.InjectOrgID(context.Background(), "1234")
 		req := newRangeRequest("sum(rate(some_series[1m]))")
 
-		innerRes := newEmptyPrometheusResponse()
+		innerRes := NewEmptyPrometheusResponse()
 		inner := &mockHandler{}
 		inner.On("Do", mock.Anything, req).Return(innerRes, nil)
 
@@ -79,7 +79,7 @@ func TestProm2RangeCompat_Do(t *testing.T) {
 		orig := newRangeRequest("sum(rate(some_series[1m:1m]))")
 		rewritten := newRangeRequest("sum(rate(some_series[1m1ms:1m]))")
 
-		innerRes := newEmptyPrometheusResponse()
+		innerRes := NewEmptyPrometheusResponse()
 		inner := &mockHandler{}
 		inner.On("Do", mock.Anything, mock.MatchedBy(func(req MetricsQueryRequest) bool {
 			return req.GetQuery() == rewritten.GetQuery()

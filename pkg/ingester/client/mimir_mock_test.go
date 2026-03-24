@@ -22,11 +22,6 @@ func (m *IngesterServerMock) Push(ctx context.Context, r *mimirpb.WriteRequest) 
 	return args.Get(0).(*mimirpb.WriteResponse), args.Error(1)
 }
 
-func (m *IngesterServerMock) Query(ctx context.Context, r *QueryRequest) (*QueryResponse, error) {
-	args := m.Called(ctx, r)
-	return args.Get(0).(*QueryResponse), args.Error(1)
-}
-
 func (m *IngesterServerMock) QueryStream(r *QueryRequest, s Ingester_QueryStreamServer) error {
 	args := m.Called(r, s)
 	return args.Error(0)

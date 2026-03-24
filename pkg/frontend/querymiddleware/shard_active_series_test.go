@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/klauspost/compress/s2"
 	"github.com/pkg/errors"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -173,16 +174,16 @@ func runTestShardActiveSeriesMiddlewareRoundTrip(t *testing.T, useZeroAllocation
 			request: validReqWithShardHeader(3),
 
 			validResponses: [][]labels.Labels{
-				{labels.FromStrings(labels.MetricName, "metric", "shard", "1")},
-				{labels.FromStrings(labels.MetricName, "metric", "shard", "2")},
-				{labels.FromStrings(labels.MetricName, "metric", "shard", "3")},
+				{labels.FromStrings(model.MetricNameLabel, "metric", "shard", "1")},
+				{labels.FromStrings(model.MetricNameLabel, "metric", "shard", "2")},
+				{labels.FromStrings(model.MetricNameLabel, "metric", "shard", "3")},
 			},
 			checkResponseErr: noError,
 			expect: result{
 				Data: []labels.Labels{
-					labels.FromStrings(labels.MetricName, "metric", "shard", "1"),
-					labels.FromStrings(labels.MetricName, "metric", "shard", "2"),
-					labels.FromStrings(labels.MetricName, "metric", "shard", "3"),
+					labels.FromStrings(model.MetricNameLabel, "metric", "shard", "1"),
+					labels.FromStrings(model.MetricNameLabel, "metric", "shard", "2"),
+					labels.FromStrings(model.MetricNameLabel, "metric", "shard", "3"),
 				},
 			},
 		},
@@ -190,18 +191,18 @@ func runTestShardActiveSeriesMiddlewareRoundTrip(t *testing.T, useZeroAllocation
 			name:    "uses tenant's default shard count if none is specified in the request header",
 			request: validReq,
 			validResponses: [][]labels.Labels{
-				{labels.FromStrings(labels.MetricName, "metric", "shard", "1")},
-				{labels.FromStrings(labels.MetricName, "metric", "shard", "2")},
-				{labels.FromStrings(labels.MetricName, "metric", "shard", "3")},
-				{labels.FromStrings(labels.MetricName, "metric", "shard", "4")},
+				{labels.FromStrings(model.MetricNameLabel, "metric", "shard", "1")},
+				{labels.FromStrings(model.MetricNameLabel, "metric", "shard", "2")},
+				{labels.FromStrings(model.MetricNameLabel, "metric", "shard", "3")},
+				{labels.FromStrings(model.MetricNameLabel, "metric", "shard", "4")},
 			},
 			checkResponseErr: noError,
 			expect: result{
 				Data: []labels.Labels{
-					labels.FromStrings(labels.MetricName, "metric", "shard", "1"),
-					labels.FromStrings(labels.MetricName, "metric", "shard", "2"),
-					labels.FromStrings(labels.MetricName, "metric", "shard", "3"),
-					labels.FromStrings(labels.MetricName, "metric", "shard", "4"),
+					labels.FromStrings(model.MetricNameLabel, "metric", "shard", "1"),
+					labels.FromStrings(model.MetricNameLabel, "metric", "shard", "2"),
+					labels.FromStrings(model.MetricNameLabel, "metric", "shard", "3"),
+					labels.FromStrings(model.MetricNameLabel, "metric", "shard", "4"),
 				},
 			},
 			expectedShardCount: tenantShardCount,
@@ -210,15 +211,15 @@ func runTestShardActiveSeriesMiddlewareRoundTrip(t *testing.T, useZeroAllocation
 			name:    "no sharding, request passed through",
 			request: validReqWithShardHeader(1),
 
-			validResponses:   [][]labels.Labels{{labels.FromStrings(labels.MetricName, "metric")}},
+			validResponses:   [][]labels.Labels{{labels.FromStrings(model.MetricNameLabel, "metric")}},
 			checkResponseErr: noError,
-			expect:           result{Data: []labels.Labels{labels.FromStrings(labels.MetricName, "metric")}},
+			expect:           result{Data: []labels.Labels{labels.FromStrings(model.MetricNameLabel, "metric")}},
 		},
 		{
 			name:    "handles empty shards",
 			request: validReqWithShardHeader(6),
 			validResponses: [][]labels.Labels{
-				{labels.FromStrings(labels.MetricName, "metric", "shard", "1")},
+				{labels.FromStrings(model.MetricNameLabel, "metric", "shard", "1")},
 				{},
 				{},
 				{},
@@ -228,7 +229,7 @@ func runTestShardActiveSeriesMiddlewareRoundTrip(t *testing.T, useZeroAllocation
 			checkResponseErr: noError,
 			expect: result{
 				Data: []labels.Labels{
-					labels.FromStrings(labels.MetricName, "metric", "shard", "1"),
+					labels.FromStrings(model.MetricNameLabel, "metric", "shard", "1"),
 				},
 			},
 			expectedShardCount: 6,
@@ -242,14 +243,14 @@ func runTestShardActiveSeriesMiddlewareRoundTrip(t *testing.T, useZeroAllocation
 				return r
 			},
 			validResponses: [][]labels.Labels{
-				{labels.FromStrings(labels.MetricName, "metric", "shard", "1")},
-				{labels.FromStrings(labels.MetricName, "metric", "shard", "2")},
+				{labels.FromStrings(model.MetricNameLabel, "metric", "shard", "1")},
+				{labels.FromStrings(model.MetricNameLabel, "metric", "shard", "2")},
 			},
 			checkResponseErr: noError,
 			expect: result{
 				Data: []labels.Labels{
-					labels.FromStrings(labels.MetricName, "metric", "shard", "1"),
-					labels.FromStrings(labels.MetricName, "metric", "shard", "2"),
+					labels.FromStrings(model.MetricNameLabel, "metric", "shard", "1"),
+					labels.FromStrings(model.MetricNameLabel, "metric", "shard", "2"),
 				},
 			},
 			expectContentEncoding: encodingTypeSnappyFramed,
@@ -265,14 +266,14 @@ func runTestShardActiveSeriesMiddlewareRoundTrip(t *testing.T, useZeroAllocation
 				return req
 			},
 			validResponses: [][]labels.Labels{
-				{labels.FromStrings(labels.MetricName, "metric", "shard", "1")},
-				{labels.FromStrings(labels.MetricName, "metric", "shard", "2")},
+				{labels.FromStrings(model.MetricNameLabel, "metric", "shard", "1")},
+				{labels.FromStrings(model.MetricNameLabel, "metric", "shard", "2")},
 			},
 			checkResponseErr: noError,
 			expect: result{
 				Data: []labels.Labels{
-					labels.FromStrings(labels.MetricName, "metric", "shard", "1"),
-					labels.FromStrings(labels.MetricName, "metric", "shard", "2"),
+					labels.FromStrings(model.MetricNameLabel, "metric", "shard", "1"),
+					labels.FromStrings(model.MetricNameLabel, "metric", "shard", "2"),
 				},
 			},
 		},

@@ -11,11 +11,9 @@ import (
 	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
-)
 
-func init() {
-	parser.ExperimentalDurationExpr = true
-}
+	"github.com/grafana/mimir/pkg/util/promqlext"
+)
 
 func TestDurationMiddleware(t *testing.T) {
 	testCases := map[string]struct {
@@ -48,12 +46,18 @@ func TestDurationMiddleware(t *testing.T) {
 			expectInstant: "rate(http_requests_total[5m])",
 			expectRange:   "rate(http_requests_total[6m])",
 		},
+		"valid duration expression with range() should be rewritten": {
+			query:         "rate(http_requests_total[range() + 30s])",
+			expectInstant: "rate(http_requests_total[30s])",
+			expectRange:   "rate(http_requests_total[31s])",
+		},
 	}
+
 	for name, tc := range testCases {
 		for _, instant := range []bool{false, true} {
 			t.Run(fmt.Sprintf("name=%s instant=%v", name, instant), func(t *testing.T) {
 				var req MetricsQueryRequest
-				expr, err := parser.ParseExpr(tc.query)
+				expr, err := promqlext.NewPromQLParser().ParseExpr(tc.query)
 				require.NoError(t, err)
 				if instant {
 					req = NewPrometheusInstantQueryRequest(
@@ -72,7 +76,7 @@ func TestDurationMiddleware(t *testing.T) {
 						nil,
 						2000,
 						3000,
-						60,
+						60000,
 						0,
 						expr,
 						Options{},
@@ -129,8 +133,7 @@ func TestDurationVisitorRejectInvalid(t *testing.T) {
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			v := &durationVisitor{}
-			err := parser.Walk(v, tc.expr, nil)
+			err := inspect(tc.expr, durationVisitor)
 			require.Error(t, err)
 			require.EqualError(t, err, tc.expectError)
 		})
@@ -144,4 +147,21 @@ type captureMiddleware struct {
 func (c *captureMiddleware) Do(_ context.Context, req MetricsQueryRequest) (Response, error) {
 	c.query = req.GetQuery()
 	return &PrometheusResponse{}, nil
+}
+
+func TestDurationsMiddleware_ShouldNotPanicOnNilQueryExpression(t *testing.T) {
+	capture := &captureMiddleware{}
+	middleware := newDurationsMiddleware(log.NewNopLogger())
+	handler := middleware.Wrap(capture)
+
+	// Create a request with a nil queryExpr to simulate a failed parse.
+	req := NewPrometheusInstantQueryRequest("", nil, 1000, 0, nil, Options{}, nil, "")
+
+	// This should not panic, should pass through to the next handler.
+	require.NotPanics(t, func() {
+		resp, err := handler.Do(context.Background(), req)
+		// With nil expr, the middleware falls through to the next handler.
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+	})
 }

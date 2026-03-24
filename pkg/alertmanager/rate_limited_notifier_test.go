@@ -7,10 +7,10 @@ package alertmanager
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"

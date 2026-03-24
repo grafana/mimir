@@ -1,62 +1,154 @@
 {
-    "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-    "extends": [
-      "config:recommended"
-    ],
-    "baseBranches": ["main", "release-2.17", "release-2.16"],
-    "postUpdateOptions": [
-      "gomodTidy",
-      "gomodUpdateImportPaths"
-    ],
-    "schedule": ["before 9am on Monday"],
-    "packageRules": [
-      {
-        "matchBaseBranches": ["release-2.17", "release-2.16"],
-        "packagePatterns": ["*"],
-        "enabled": false
-      },
-      {
-        // Don't update replace directives.
-        "matchPackageNames": [
-          "github.com/grafana/mimir-prometheus",
-          "github.com/grafana/memberlist",
-          "github.com/grafana/regexp",
-          "github.com/colega/go-yaml-yaml",
-          "github.com/grafana/goautoneg",
-          "github.com/grafana/opentracing-contrib-go-stdlib",
-          "github.com/charleskorn/go-grpc",
-          "github.com/grafana/mimir-otlptranslator",
-        ],
-        "enabled": false
-      },
-      {
-        // Update Go version everywhere at once: build image, go.mod and GitHub Actions workflows.
-        "matchDatasources": ["docker", "golang-version", "github-releases"],
-        "matchPackageNames": ["go", "golang", "actions/go-versions"],
-        "groupName": "Go"
-      },
-      // Keep deps for the dashboard screenshotting tool up to date
-      {
-        "description": "Enable updating Node.js dependencies in operations/mimir-mixin-tools/screenshots",
-        "paths": ["operations/mimir-mixin-tools/screenshots"],
-        "managers": ["npm"],
-        "enabled": true
-      },
-      {
-        "description": "Pin jaegertracing/all-in-one Docker image, since newer versions lack the agent we depend on",
-        "matchPackageNames": ["jaegertracing/all-in-one"],
-        "matchDatasources": [
-          "docker",
-        ],
-        "enabled": false
-      }
-    ],
-    "branchPrefix": "deps-update/",
-    "labels": ["dependency-update"],
-    "vulnerabilityAlerts": {
-      "enabled": true,
-      "labels": ["security-update"]
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+  extends: [
+    'config:recommended',
+    'schedule:daily'
+  ],
+  customManagers: [
+    {
+      customType: 'regex',
+      description: 'Update Docker images in Jsonnet files',
+      managerFilePatterns: ['\\.jsonnet$'],
+      matchStrings: [
+        "image:\\s*'(?<depName>.+):(?<currentValue>[^'/@]+)'",
+      ],
+      datasourceTemplate: 'docker',
     },
-    "osvVulnerabilityAlerts": true,
-    "dependencyDashboard": false
+    {
+      customType: 'regex',
+      description: 'Update distroless image references in Makefile',
+      managerFilePatterns: ['Makefile'],
+      matchStrings: [
+        "(?<depName>gcr\\.io/distroless/[\\w-]+)@(?<currentDigest>sha256:[a-f0-9]+)",
+      ],
+      currentValueTemplate: 'latest',
+      datasourceTemplate: 'docker',
+    },
+    {
+      customType: 'regex',
+      description: 'Update "go install" commands in development Dockerfiles',
+      managerFilePatterns: [
+        'mimir-build-image/Dockerfile',
+        'development/**/dev.dockerfile',
+      ],
+      matchStrings: [
+        'go install\\s+(?<depName>[^@]+)@(?<currentValue>[^\\s]+)',
+      ],
+      datasourceTemplate: 'go',
+    },
+    {
+      customType: 'regex',
+      description: 'Update tools in build image installed from Git tags',
+      managerFilePatterns: [
+        'mimir-build-image/Dockerfile',
+      ],
+      matchStrings: [
+        '# renovate: depName=github.com/(?<depName>[^\\s]+)\\s+ENV [A-Z_]+=(?<currentValue>[^\\s]+)\\s+',
+      ],
+      datasourceTemplate: 'github-tags',
+    }
+  ],
+  baseBranchPatterns: [
+    'main',
+    'release-3.0',
+    'release-2.17',
+  ],
+  postUpdateOptions: [
+    'gomodTidy',
+    'gomodUpdateImportPaths',
+  ],
+  packageRules: [
+    {
+      matchBaseBranches: [
+        'release-3.0',
+        'release-2.17',
+      ],
+      enabled: false,
+      matchPackageNames: [
+        '*',
+      ],
+    },
+    {
+      // Don't update replace directives.
+      matchPackageNames: [
+        'github.com/grafana/mimir-prometheus',
+        // Don't attempt to upgrade the upstream Prometheus dependency, as it's replaced by our fork.
+        'github.com/prometheus/prometheus',
+        'github.com/grafana/memberlist',
+        'github.com/grafana/regexp',
+        'github.com/colega/go-yaml-yaml',
+        'github.com/grafana/goautoneg',
+        'github.com/grafana/opentracing-contrib-go-stdlib',
+        'github.com/charleskorn/go-grpc',
+        'github.com/grafana/mimir-otlptranslator',
+      ],
+      enabled: false,
+    },
+    {
+      // Update Go version everywhere at once: build image, go.mod and GitHub Actions workflows.
+      matchDatasources: [
+        'docker',
+        'golang-version',
+        'github-releases',
+      ],
+      matchPackageNames: [
+        'go',
+        'golang',
+        'actions/go-versions',
+      ],
+      groupName: 'Go',
+    },
+    {
+      description: 'Enable updating Node.js dependencies in operations/mimir-mixin-tools/screenshots',
+      matchFileNames: [
+        'operations/mimir-mixin-tools/screenshots/**',
+      ],
+      matchManagers: [
+        'npm',
+      ],
+      enabled: true,
+    },
+    {
+      description: 'Pin jaegertracing/all-in-one Docker image, since newer versions lack the agent we depend on',
+      matchPackageNames: [
+        'jaegertracing/all-in-one',
+      ],
+      matchDatasources: [
+        'docker',
+      ],
+      enabled: false,
+    },
+    {
+      description: 'Only update dependencies digests on Monday mornings to avoid PR spam from repos not using semver',
+      matchUpdateTypes: [
+        'digest',
+      ],
+      schedule: [
+        '* 0-4 * * 1'
+      ],
+    },
+    {
+      description: 'Automatically rebase all dependency update PRs touching mimir-build-image/Dockerfile, and ignore pushes from GitHub Actions with new image reference when considering if the PR is modified and can be rebased',
+      matchFileNames: [
+        'mimir-build-image/Dockerfile',
+        'Makefile',
+      ],
+      rebaseWhen: 'behind-base-branch',
+      gitIgnoredAuthors: ['199097951+mimir-github-bot[bot]@users.noreply.github.com'],
+    }
+  ],
+  branchPrefix: 'deps-update/',
+  labels: [
+    'dependency-update',
+  ],
+  vulnerabilityAlerts: {
+    enabled: true,
+    labels: [
+      'security-update',
+    ],
+  },
+  osvVulnerabilityAlerts: true,
+  dependencyDashboard: false,
+  prHourlyLimit: 10,
+  prConcurrentLimit: 20,
 }

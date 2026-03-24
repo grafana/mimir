@@ -75,12 +75,13 @@ type QueryFrontendConfig struct {
 }
 
 func (c *QueryFrontendConfig) RegisterFlags(f *flag.FlagSet) {
-	f.StringVar(&c.Address,
+	f.StringVar(
+		&c.Address,
 		"ruler.query-frontend.address",
 		"",
 		"Can be either the GRPC listen address of the query-frontend(s) or the HTTP/HTTPS address of a Prometheus-compatible server. Must be a DNS address (prefixed with dns:///) "+
-			"to enable GRPC client side load balancing.")
-
+			"to enable GRPC client side load balancing.",
+	)
 	c.GRPCClientConfig.CustomCompressors = []string{s2.Name}
 	c.GRPCClientConfig.RegisterFlagsWithPrefix("ruler.query-frontend.grpc-client-config", f)
 
@@ -93,6 +94,12 @@ func (c *QueryFrontendConfig) RegisterFlags(f *flag.FlagSet) {
 func (c *QueryFrontendConfig) Validate() error {
 	if !slices.Contains(allFormats, c.QueryResultResponseFormat) {
 		return fmt.Errorf("unknown query result response format '%s'. Supported values: %s", c.QueryResultResponseFormat, strings.Join(allFormats, ", "))
+	}
+
+	// Make sure the DNS prefix is correct (three slashes) if it is being used.
+	// This is a GRPC specific requirement/format when using service discovery.
+	if strings.HasPrefix(c.Address, "dns://") && !strings.HasPrefix(c.Address, "dns:///") {
+		return fmt.Errorf(`address must have "dns:///" prefix when using GRPC service discovery, got: %q`, c.Address)
 	}
 
 	return nil

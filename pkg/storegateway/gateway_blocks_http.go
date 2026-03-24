@@ -46,6 +46,7 @@ type formattedBlockData struct {
 	CompactionLevel  int
 	BlockSize        string
 	Labels           string
+	OutOfOrder       bool
 	NoCompactDetails []string
 	Sources          []string
 	Parents          []string
@@ -130,6 +131,7 @@ func (g *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 			CompactionLevel:  m.Compaction.Level,
 			BlockSize:        listblocks.GetFormattedBlockSize(m),
 			Labels:           lbls.String(),
+			OutOfOrder:       m.IsOutOfOrder(),
 			Sources:          sources,
 			Parents:          parents,
 			Stats:            m.Stats,

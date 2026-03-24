@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	webhookV1 "github.com/grafana/alerting/receivers/webhook/v1"
+	"github.com/grafana/alerting/receivers"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/client_golang/prometheus"
@@ -206,7 +206,7 @@ func TestNotifyHooksNotifier(t *testing.T) {
 		_, err := f.notifier.Notify(ctx, makeAlert("foo")...)
 		require.NoError(t, err)
 
-		extraDataRaw, ok := f.upstream.ctxForTesting.Value(webhookV1.ExtraDataKey).([]json.RawMessage)
+		extraDataRaw, ok := f.upstream.ctxForTesting.Value(receivers.ExtraDataKey).([]json.RawMessage)
 		require.True(t, ok)
 		require.Equal(t, 2, len(extraDataRaw))
 		require.Equal(t, `{"one": "two"}`, string(extraDataRaw[0]))

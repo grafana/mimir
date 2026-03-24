@@ -18,23 +18,26 @@ import (
 )
 
 type AvgAggregationGroup struct {
-	floats                 []float64
-	floatMeans             []float64
-	floatCompensatingMeans []float64 // Mean, or "compensating value" for Kahan summation.
-	incrementalMeans       []bool    // True after reverting to incremental calculation of the mean value.
-	floatPresent           []bool
-	histograms             []*histogram.FloatHistogram
-	histogramPointCount    int
+	floats                      []float64
+	floatMeans                  []float64
+	floatCompensatingMeans      []float64 // Mean, or "compensating value" for Kahan summation.
+	incrementalMeans            []bool    // True after reverting to incremental calculation of the mean value.
+	floatPresent                []bool
+	histograms                  []*histogram.FloatHistogram
+	histogramCompensatingValues []*histogram.FloatHistogram // Compensation histograms for Kahan summation.
+	histogramPointCount         int
 
 	// Keeps track of how many samples we have encountered thus far for the group at this point
 	// This is necessary to do per point (instead of just counting the input series) as a series may have
 	// stale or non-existent values that are not added towards the count.
 	// We use float64 instead of uint64 so that we can reuse the float pool and don't have to retype on each division.
-	groupSeriesCounts []float64
+	groupSeriesCounts            []float64
+	histogramCounterResetTracker *histogramCounterResetTracker
+
+	temporaryHistogram *histogram.FloatHistogram // Used to avoid unnecessary allocations when mutating the provided data is not allowed
 }
 
-func (g *AvgAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, _ uint) error {
-	defer types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
+func (g *AvgAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, _ uint, mutatingDataAllowed bool) error {
 	if len(data.Floats) == 0 && len(data.Histograms) == 0 {
 		// Nothing to do
 		return nil
@@ -54,7 +57,7 @@ func (g *AvgAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesDat
 	if err != nil {
 		return err
 	}
-	err = g.accumulateHistograms(data, timeRange, memoryConsumptionTracker, emitAnnotation)
+	err = g.accumulateHistograms(data, timeRange, memoryConsumptionTracker, emitAnnotation, mutatingDataAllowed)
 	if err != nil {
 		return err
 	}
@@ -154,7 +157,7 @@ func (g *AvgAggregationGroup) accumulateFloats(data types.InstantVectorSeriesDat
 	return nil
 }
 
-func (g *AvgAggregationGroup) accumulateHistograms(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc) error {
+func (g *AvgAggregationGroup) accumulateHistograms(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, mutatingDataAllowed bool) error {
 	var err error
 	if len(data.Histograms) > 0 && g.histograms == nil {
 		// First series with histogram values for this group, populate it.
@@ -163,6 +166,15 @@ func (g *AvgAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 			return err
 		}
 		g.histograms = g.histograms[:timeRange.StepCount]
+		g.histogramCompensatingValues, err = types.HistogramSlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
+		if err != nil {
+			return err
+		}
+		g.histogramCompensatingValues = g.histogramCompensatingValues[:timeRange.StepCount]
+		g.histogramCounterResetTracker, err = newHistogramCounterResetTracker(timeRange.StepCount, memoryConsumptionTracker)
+		if err != nil {
+			return err
+		}
 	}
 
 	for inputIdx, p := range data.Histograms {
@@ -175,34 +187,51 @@ func (g *AvgAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 		}
 
 		if g.histograms[outputIdx] == nil {
-			// First sample for this output point, retain the histogram as-is.
-			g.histograms[outputIdx] = p.H
-			g.histogramPointCount++
+			// First sample for this output point, retain the histogram as-is if we can.
+			if mutatingDataAllowed {
+				g.histograms[outputIdx] = p.H
 
-			// Ensure the FloatHistogram instance is not reused when the HPoint slice data.Histograms is reused.
-			data.Histograms[inputIdx].H = nil
-
-			continue
-		}
-
-		_, counterResetCollision, err := p.H.Sub(g.histograms[outputIdx])
-		if err != nil {
-			// Unable to subtract histograms (likely due to invalid combination of histograms). Make sure we don't emit a sample at this timestamp.
-			g.histograms[outputIdx] = invalidCombinationOfHistograms
-			g.histogramPointCount--
-
-			if err := functions.NativeHistogramErrorToAnnotation(err, emitAnnotation); err != nil {
-				// Unknown error: we couldn't convert the error to an annotation. Give up.
-				return err
+				// Ensure the FloatHistogram instance is not reused when the HPoint slice data.Histograms is reused.
+				data.Histograms[inputIdx].H = nil
+			} else {
+				g.histograms[outputIdx] = p.H.Copy()
 			}
+
+			g.histogramPointCount++
+			g.histogramCounterResetTracker.init(outputIdx, p.H.CounterResetHint)
+
 			continue
 		}
-		if counterResetCollision {
+
+		if g.histogramCounterResetTracker.checkCounterResetConflicts(outputIdx, p.H.CounterResetHint) {
 			emitAnnotation(newAggregationCounterResetCollisionWarning)
 		}
 
-		p.H.Div(g.groupSeriesCounts[outputIdx])
-		_, counterResetCollision, err = g.histograms[outputIdx].Add(p.H)
+		if mutatingDataAllowed {
+			g.temporaryHistogram = p.H
+		} else if g.temporaryHistogram == nil {
+			g.temporaryHistogram = p.H.Copy()
+		} else {
+			p.H.CopyTo(g.temporaryHistogram)
+		}
+
+		// For incremental mean calculation with Kahan summation:
+		// mean_new = mean * ((count-1)/count) + p.H/count
+		// Both mean and compensation must be scaled by (count-1)/count
+		q := (g.groupSeriesCounts[outputIdx] - 1) / g.groupSeriesCounts[outputIdx]
+
+		// Scale the compensation
+		if g.histogramCompensatingValues[outputIdx] != nil {
+			g.histogramCompensatingValues[outputIdx].Mul(q)
+		}
+
+		// Prepare the increment: p.H/count
+		g.temporaryHistogram.Div(g.groupSeriesCounts[outputIdx])
+
+		// Compute: mean * q + (p.H/count) with Kahan summation
+		// Note: Mul modifies in place and returns the result, so we can chain it with KahanAdd
+		var nhcbBoundsReconciled bool
+		g.histogramCompensatingValues[outputIdx], _, nhcbBoundsReconciled, err = g.histograms[outputIdx].Mul(q).KahanAdd(g.temporaryHistogram, g.histogramCompensatingValues[outputIdx])
 		if err != nil {
 			// Unable to add histograms together (likely due to invalid combination of histograms). Make sure we don't emit a sample at this timestamp.
 			g.histograms[outputIdx] = invalidCombinationOfHistograms
@@ -214,8 +243,9 @@ func (g *AvgAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 			}
 			continue
 		}
-		if counterResetCollision {
-			emitAnnotation(newAggregationCounterResetCollisionWarning)
+
+		if nhcbBoundsReconciled {
+			emitAnnotation(newAggregationMismatchedCustomBucketsHistogramInfo)
 		}
 	}
 	return nil
@@ -297,6 +327,16 @@ func (g *AvgAggregationGroup) ComputeOutputSeries(_ types.ScalarData, timeRange 
 		for i, h := range g.histograms {
 			if h != nil && h != invalidCombinationOfHistograms {
 				t := timeRange.StartT + int64(i)*timeRange.IntervalMilliseconds
+
+				// The histogram already contains the mean (computed incrementally), just apply compensation
+				if g.histogramCompensatingValues[i] != nil {
+					// Add the compensation to get the final accurate result
+					h, _, _, err = h.Add(g.histogramCompensatingValues[i])
+					if err != nil {
+						return types.InstantVectorSeriesData{}, hasMixedData, err
+					}
+				}
+
 				histogramPoints = append(histogramPoints, promql.HPoint{T: t, H: h.Compact(0)})
 
 				// Remove histogram from slice to ensure it's not mutated when the slice is reused.
@@ -315,5 +355,10 @@ func (g *AvgAggregationGroup) Close(memoryConsumptionTracker *limiter.MemoryCons
 	types.BoolSlicePool.Put(&g.incrementalMeans, memoryConsumptionTracker)
 	types.BoolSlicePool.Put(&g.floatPresent, memoryConsumptionTracker)
 	types.HistogramSlicePool.Put(&g.histograms, memoryConsumptionTracker)
+	types.HistogramSlicePool.Put(&g.histogramCompensatingValues, memoryConsumptionTracker)
 	types.Float64SlicePool.Put(&g.groupSeriesCounts, memoryConsumptionTracker)
+	if g.histogramCounterResetTracker != nil {
+		g.histogramCounterResetTracker.close()
+		g.histogramCounterResetTracker = nil
+	}
 }

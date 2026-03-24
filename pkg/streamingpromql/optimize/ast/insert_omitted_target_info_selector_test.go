@@ -1,0 +1,32 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package ast_test
+
+import (
+	"context"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
+)
+
+func TestInsertOmittedTargetInfoSelector(t *testing.T) {
+	testCases := map[string]string{
+		`info(metric)`:               `info(metric, target_info)`,
+		`info(metric @ 60)`:          `info(metric @ 60.000, target_info)`,
+		`1 + info(metric)`:           `1 + info(metric, target_info)`,
+		`info(metric + 1)`:           `info(metric + 1, target_info)`,
+		`info(metric, {env="prod"})`: `info(metric, {__name__="target_info",env="prod"})`,
+	}
+
+	ctx := context.Background()
+	insertOmittedTargetInfoSelector := &ast.InsertOmittedTargetInfoSelector{}
+
+	for input, expected := range testCases {
+		t.Run(input, func(t *testing.T) {
+			result := runASTOptimizationPassWithoutMetrics(t, ctx, input, insertOmittedTargetInfoSelector)
+			require.Equal(t, expected, result.String())
+		})
+	}
+}

@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
@@ -32,6 +33,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -42,10 +44,10 @@ func BenchmarkQuery(b *testing.B) {
 	cases := TestCases(MetricSizes)
 
 	opts := streamingpromql.NewTestEngineOpts()
-	prometheusEngine := promql.NewEngine(opts.CommonOpts)
-	planner, err := streamingpromql.NewQueryPlanner(opts)
+	prometheusEngine := limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts.CommonOpts))
+	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(b, err)
-	mimirEngine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
+	mimirEngine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(nil), planner)
 	require.NoError(b, err)
 
 	// Important: the names below must remain in sync with the names used in tools/benchmark-query-engine.
@@ -96,12 +98,11 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 	cases := TestCases(metricSizes)
 
 	opts := streamingpromql.NewTestEngineOpts()
-	prometheusEngine := promql.NewEngine(opts.CommonOpts)
-	limitsProvider := streamingpromql.NewStaticQueryLimitsProvider(0)
+	prometheusEngine := limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts.CommonOpts))
 	queryMetrics := stats.NewQueryMetrics(nil)
-	planner, err := streamingpromql.NewQueryPlanner(opts)
+	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
-	mimirEngine, err := streamingpromql.NewEngine(opts, limitsProvider, queryMetrics, planner)
+	mimirEngine, err := streamingpromql.NewEngine(opts, queryMetrics, planner)
 	require.NoError(t, err)
 
 	ctx := user.InjectOrgID(context.Background(), UserID)
@@ -114,7 +115,7 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 			prometheusResult, prometheusClose := c.Run(ctx, t, start, end, interval, prometheusEngine, q)
 			mimirResult, mimirClose := c.Run(ctx, t, start, end, interval, mimirEngine, q)
 
-			testutils.RequireEqualResults(t, c.Expr, prometheusResult, mimirResult, false)
+			testutils.RequireEqualResults(t, c.Expr, prometheusResult, mimirResult, c.IgnoreAnnotationDifferences)
 
 			prometheusClose()
 			mimirClose()
@@ -128,9 +129,9 @@ func TestBenchmarkSetup(t *testing.T) {
 	q := createBenchmarkQueryable(t, []int{1})
 
 	opts := streamingpromql.NewTestEngineOpts()
-	planner, err := streamingpromql.NewQueryPlanner(opts)
+	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
-	mimirEngine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
+	mimirEngine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(nil), planner)
 	require.NoError(t, err)
 
 	ctx := user.InjectOrgID(context.Background(), UserID)
@@ -193,7 +194,7 @@ func createBenchmarkQueryable(t testing.TB, metricSizes []int) storage.Queryable
 		t.Cleanup(cleanup)
 	}
 
-	return createIngesterQueryable(t, addr)
+	return querier.NewMemoryTrackingQueryable(createIngesterQueryable(t, addr), prometheus.NewPedanticRegistry())
 }
 
 func createIngesterQueryable(t testing.TB, address string) storage.Queryable {

@@ -1,4 +1,4 @@
-{{- if and .Values.store_gateway.enabled (not .Values.federation_frontend.disableOtherComponents) }}
+{{- if .Values.store_gateway.enabled }}
 apiVersion: v1
 kind: Service
 metadata:

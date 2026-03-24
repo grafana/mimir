@@ -5,9 +5,11 @@ package analyze
 import (
 	"testing"
 
+	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirtool/minisdk"
+	"github.com/grafana/mimir/pkg/mimirtool/util"
 )
 
 func TestMetricsFromTemplating(t *testing.T) {
@@ -26,7 +28,7 @@ func TestMetricsFromTemplating(t *testing.T) {
 			},
 		}
 
-		errs := metricsFromTemplating(in, metrics)
+		errs := metricsFromTemplating(in, metrics, util.CreatePromQLParser(false), log.NewNopLogger())
 		require.Empty(t, errs)
 		require.Len(t, metrics, 1)
 		require.Equal(t, map[string]struct{}{"foo": {}}, metrics)
@@ -45,7 +47,7 @@ func TestMetricsFromTemplating(t *testing.T) {
 			},
 		}
 
-		errs := metricsFromTemplating(in, metrics)
+		errs := metricsFromTemplating(in, metrics, util.CreatePromQLParser(false), log.NewNopLogger())
 		require.Empty(t, errs)
 		require.Len(t, metrics, 1)
 		require.Equal(t, map[string]struct{}{"foo_bar_query_result_total": {}}, metrics)
@@ -64,7 +66,7 @@ func TestMetricsFromTemplating(t *testing.T) {
 			},
 		}
 
-		errs := metricsFromTemplating(in, metrics)
+		errs := metricsFromTemplating(in, metrics, util.CreatePromQLParser(false), log.NewNopLogger())
 		require.Empty(t, errs)
 		require.Len(t, metrics, 1)
 		require.Equal(t, map[string]struct{}{"foo_bar_label_values_total": {}}, metrics)
@@ -83,7 +85,7 @@ func TestMetricsFromTemplating(t *testing.T) {
 			},
 		}
 
-		errs := metricsFromTemplating(in, metrics)
+		errs := metricsFromTemplating(in, metrics, util.CreatePromQLParser(false), log.NewNopLogger())
 		require.Empty(t, errs)
 		require.Empty(t, metrics)
 	})
@@ -101,7 +103,7 @@ func TestMetricsFromTemplating(t *testing.T) {
 			},
 		}
 
-		errs := metricsFromTemplating(in, metrics)
+		errs := metricsFromTemplating(in, metrics, util.CreatePromQLParser(false), log.NewNopLogger())
 		require.Empty(t, errs)
 		require.Len(t, metrics, 1)
 		require.Equal(t, map[string]struct{}{"metric": {}}, metrics)
@@ -123,7 +125,7 @@ func TestMetricsFromTemplating(t *testing.T) {
 			},
 		}
 
-		errs := metricsFromTemplating(in, metrics)
+		errs := metricsFromTemplating(in, metrics, util.CreatePromQLParser(false), log.NewNopLogger())
 		require.Empty(t, errs)
 		require.Len(t, metrics, 1)
 		require.Equal(t, map[string]struct{}{"metric": {}}, metrics)
@@ -142,7 +144,7 @@ func TestMetricsFromTemplating(t *testing.T) {
 			},
 		}
 
-		errs := metricsFromTemplating(in, metrics)
+		errs := metricsFromTemplating(in, metrics, util.CreatePromQLParser(false), log.NewNopLogger())
 		require.Empty(t, errs)
 		require.Empty(t, metrics)
 	})
@@ -162,7 +164,7 @@ func TestMetricsFromTemplating(t *testing.T) {
 			},
 		}
 
-		errs := metricsFromTemplating(in, metrics)
+		errs := metricsFromTemplating(in, metrics, util.CreatePromQLParser(false), log.NewNopLogger())
 		require.Empty(t, errs)
 		require.Empty(t, metrics)
 	})
@@ -180,7 +182,7 @@ func TestMetricsFromTemplating(t *testing.T) {
 			},
 		}
 
-		errs := metricsFromTemplating(in, metrics)
+		errs := metricsFromTemplating(in, metrics, util.CreatePromQLParser(false), log.NewNopLogger())
 		require.Empty(t, errs)
 		require.Len(t, metrics, 1)
 		require.Equal(t, map[string]struct{}{"varnish_main_threads_failed": {}}, metrics)
@@ -199,10 +201,29 @@ func TestMetricsFromTemplating(t *testing.T) {
 			},
 		}
 
-		errs := metricsFromTemplating(in, metrics)
+		errs := metricsFromTemplating(in, metrics, util.CreatePromQLParser(false), log.NewNopLogger())
 		require.Empty(t, errs)
 		require.Len(t, metrics, 1)
 		require.Equal(t, map[string]struct{}{"tomcat_session_processingtime_total": {}}, metrics)
+	})
+
+	t.Run(`query uses $latency_metrics variable`, func(t *testing.T) {
+		metrics := make(map[string]struct{})
+		in := minisdk.Templating{
+			List: []minisdk.TemplateVar{
+				{
+					Name:       "variable",
+					Type:       "query",
+					Datasource: nil,
+					Query:      `request_duration_second{} and on() (vector($latency_metrics) == -1)`,
+				},
+			},
+		}
+
+		errs := metricsFromTemplating(in, metrics, util.CreatePromQLParser(false), log.NewNopLogger())
+		require.Empty(t, errs)
+		require.Len(t, metrics, 1)
+		require.Equal(t, map[string]struct{}{"request_duration_second": {}}, metrics)
 	})
 
 	t.Run(`query contains range with other variables`, func(t *testing.T) {
@@ -218,7 +239,7 @@ func TestMetricsFromTemplating(t *testing.T) {
 			},
 		}
 
-		errs := metricsFromTemplating(in, metrics)
+		errs := metricsFromTemplating(in, metrics, util.CreatePromQLParser(false), log.NewNopLogger())
 		require.Empty(t, errs)
 		require.Len(t, metrics, 1)
 		require.Equal(t, map[string]struct{}{"myapp_metric_foo": {}}, metrics)

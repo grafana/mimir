@@ -8,8 +8,11 @@ package astmapper
 import (
 	"encoding/json"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
+
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 /*
@@ -68,7 +71,7 @@ func (e *EmbeddedQuery) UnmarshalJSON(b []byte) error {
 		return err
 	}
 
-	expr, err := parser.ParseExpr(v.Expr)
+	expr, err := promqlext.NewPromQLParser().ParseExpr(v.Expr)
 	if err != nil {
 		return err
 	}
@@ -120,17 +123,10 @@ func (s *embeddedQueriesSquasher) Squash(exprs ...EmbeddedQuery) (parser.Expr, e
 	}
 
 	return &parser.VectorSelector{
-		Name:          EmbeddedQueriesMetricName,
-		LabelMatchers: []*labels.Matcher{embeddedQuery},
+		Name: EmbeddedQueriesMetricName,
+		LabelMatchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, EmbeddedQueriesMetricName),
+			embeddedQuery,
+		},
 	}, nil
-}
-
-func (s *embeddedQueriesSquasher) ContainsSquashedExpression(node parser.Node) (bool, error) {
-	switch n := node.(type) {
-	case *parser.VectorSelector:
-		if n.Name == EmbeddedQueriesMetricName {
-			return true, nil
-		}
-	}
-	return false, nil
 }

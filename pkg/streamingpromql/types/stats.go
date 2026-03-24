@@ -6,6 +6,8 @@
 package types
 
 import (
+	"errors"
+	"fmt"
 	"unsafe"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -23,77 +25,142 @@ type QueryStats struct {
 	// For example, if a query is running with a step of 30s with a range vector selector with range 45s,
 	// then samples in the overlapping 15s are counted twice.
 	TotalSamples int64
-
-	// TotalSamplesPerStep represents the total number of samples scanned
-	// per step while evaluating a query. Each step should be identical to the
-	// TotalSamples when a step is run as an instant query, which means
-	// we intentionally do not account for optimizations that happen inside the
-	// range query engine that reduce the actual work that happens.
-	TotalSamplesPerStep []int64
-
-	EnablePerStepStats bool
-	timeRange          QueryTimeRange
-
-	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
 
-func NewQueryStats(timeRange QueryTimeRange, enablePerStepStats bool, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*QueryStats, error) {
-	qs := &QueryStats{
-		EnablePerStepStats:       enablePerStepStats,
-		timeRange:                timeRange,
-		memoryConsumptionTracker: memoryConsumptionTracker,
-	}
-	if enablePerStepStats {
-		s, err := Int64SlicePool.Get(qs.timeRange.StepCount, qs.memoryConsumptionTracker)
-		if err != nil {
-			return nil, err
-		}
-		qs.TotalSamplesPerStep = s[:qs.timeRange.StepCount]
-	}
-	return qs, nil
+func NewQueryStats() *QueryStats {
+	return &QueryStats{}
 }
 
-// IncrementSamplesAtStep increments the total samples count. Use this if you know the step index.
-func (qs *QueryStats) IncrementSamplesAtStep(i int, samples int64) {
+// IncrementSamples increments the total samples count.
+func (qs *QueryStats) IncrementSamples(samples int64) {
 	if qs == nil {
 		return
 	}
 	qs.TotalSamples += samples
-
-	if qs.TotalSamplesPerStep != nil {
-		qs.TotalSamplesPerStep[i] += samples
-	}
-}
-
-// IncrementSamplesAtTimestamp increments the total samples count. Use this if you only have the corresponding step
-// timestamp.
-func (qs *QueryStats) IncrementSamplesAtTimestamp(t, samples int64) {
-	if qs == nil {
-		return
-	}
-	qs.TotalSamples += samples
-
-	if qs.TotalSamplesPerStep != nil {
-		qs.TotalSamplesPerStep[qs.timeRange.PointIndex(t)] += samples
-	}
-}
-
-// Clear resets the TotalSamples counter to 0 and zeroes out all entries in the
-// TotalSamplesPerStep slice, preserving its length and capacity for reuse.
-func (qs *QueryStats) Clear() {
-	qs.TotalSamples = 0
-	clear(qs.TotalSamplesPerStep)
-}
-
-func (qs *QueryStats) Close() {
-	if qs.TotalSamplesPerStep != nil {
-		Int64SlicePool.Put(&qs.TotalSamplesPerStep, qs.memoryConsumptionTracker)
-		qs.TotalSamplesPerStep = nil
-	}
 }
 
 const timestampFieldSize = int64(unsafe.Sizeof(int64(0)))
 
 func EquivalentFloatSampleCount(h *histogram.FloatHistogram) int64 {
 	return (int64(h.Size()) + timestampFieldSize) / int64(FPointSize)
+}
+
+type OperatorEvaluationStats struct {
+	timeRange                QueryTimeRange
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
+
+	samplesProcessedPerStep []int64
+	newSamplesReadPerStep   []int64
+}
+
+func NewOperatorEvaluationStats(timeRange QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*OperatorEvaluationStats, error) {
+	samplesProcessedPerStep, err := Int64SlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	newSamplesReadPerStep, err := Int64SlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	return &OperatorEvaluationStats{
+		timeRange:                timeRange,
+		memoryConsumptionTracker: memoryConsumptionTracker,
+
+		samplesProcessedPerStep: samplesProcessedPerStep[:timeRange.StepCount],
+		newSamplesReadPerStep:   newSamplesReadPerStep[:timeRange.StepCount],
+	}, nil
+}
+
+// TrackSampleForInstantVectorSelector records a sample for an instant vector selector at output timestamp stepT.
+//
+// sampleCount should be 1 for float samples, or the result of EquivalentFloatSampleCount for histogram samples.
+//
+// TrackSampleForInstantVectorSelector should be called for each output step of an instant vector selector, even if
+// the same underlying sample is used for multiple output steps.
+func (s *OperatorEvaluationStats) TrackSampleForInstantVectorSelector(stepT int64, sampleCount int64) {
+	i := s.timeRange.PointIndex(stepT)
+
+	s.samplesProcessedPerStep[i] += sampleCount
+	s.newSamplesReadPerStep[i] += sampleCount
+}
+
+// TrackSamplesForRangeVectorSelector records samples for a range vector selector at output timestamp stepT.
+//
+// TrackSamplesForRangeVectorSelector should be called for each output step of an instant vector selector, even if
+// the same underlying sample is used for multiple output steps.
+//
+// floats and histograms may contain samples beyond rangeEnd, these will be ignored.
+// floats and histograms must not contain samples before rangeStart.
+func (s *OperatorEvaluationStats) TrackSamplesForRangeVectorSelector(stepT int64, floats *FPointRingBuffer, histograms *HPointRingBuffer, rangeStart int64, rangeEnd int64) {
+	i := s.timeRange.PointIndex(stepT)
+
+	s.samplesProcessedPerStep[i] += int64(floats.CountUntil(rangeEnd)) + histograms.EquivalentFloatSampleCountUntil(rangeEnd)
+
+	newSampleRangeStart := rangeEnd - s.timeRange.IntervalMilliseconds
+	if s.timeRange.IsInstant {
+		newSampleRangeStart = rangeStart
+	}
+
+	s.newSamplesReadPerStep[i] += int64(floats.CountBetween(newSampleRangeStart, rangeEnd)) + histograms.EquivalentFloatSampleCountBetween(newSampleRangeStart, rangeEnd)
+}
+
+// Add adds the statistics from other to this instance.
+//
+// This instance is modified in-place.
+//
+// Both instances must be for the same time range.
+func (s *OperatorEvaluationStats) Add(other *OperatorEvaluationStats) error {
+	if !s.timeRange.Equal(other.timeRange) {
+		return errors.New("cannot add OperatorEvaluationStats with different time ranges")
+	}
+
+	for i := range s.samplesProcessedPerStep {
+		s.samplesProcessedPerStep[i] += other.samplesProcessedPerStep[i]
+		s.newSamplesReadPerStep[i] += other.newSamplesReadPerStep[i]
+	}
+
+	return nil
+}
+
+// Clone returns a copy of this OperatorEvaluationStats instance.
+func (s *OperatorEvaluationStats) Clone() (*OperatorEvaluationStats, error) {
+	clone, err := NewOperatorEvaluationStats(s.timeRange, s.memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	copy(clone.samplesProcessedPerStep, s.samplesProcessedPerStep)
+	copy(clone.newSamplesReadPerStep, s.newSamplesReadPerStep)
+
+	return clone, nil
+}
+
+// ExtendStepInvariantToFullRange calculates the equivalent statistics for a step invariant
+// operation that is used for multiple steps in a range query.
+//
+// It is the caller's responsibility to call Close on the original OperatorEvaluationStats instance.
+func (s *OperatorEvaluationStats) ExtendStepInvariantToFullRange(timeRange QueryTimeRange) (*OperatorEvaluationStats, error) {
+	if !s.timeRange.IsInstant {
+		return nil, fmt.Errorf("cannot extend step invariant to full range for non-instant time range %v", s.timeRange)
+	}
+
+	expanded, err := NewOperatorEvaluationStats(timeRange, s.memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	expanded.newSamplesReadPerStep[0] = s.newSamplesReadPerStep[0]
+
+	for idx := range timeRange.StepCount {
+		expanded.samplesProcessedPerStep[idx] = s.samplesProcessedPerStep[0]
+	}
+
+	return expanded, nil
+}
+
+func (s *OperatorEvaluationStats) Close() {
+	Int64SlicePool.Put(&s.samplesProcessedPerStep, s.memoryConsumptionTracker)
+	Int64SlicePool.Put(&s.newSamplesReadPerStep, s.memoryConsumptionTracker)
 }

@@ -14,8 +14,20 @@ Name of the gateway Service resource
 
 
 {{/*
-Returns "true" or "false" strings if the gateway component (nginx or GEM gateway) should be deployed
+Returns "true" or "false" strings if the gateway component (nginx) should be deployed
 */}}
 {{- define "mimir.gateway.isEnabled" -}}
-{{- and .Values.gateway.enabled (not .Values.federation_frontend.disableOtherComponents) (or .Values.gateway.enabledNonEnterprise .Values.enterprise.enabled) -}}
+{{- .Values.gateway.enabled -}}
 {{- end }}
+
+
+{{/*
+Returns the HorizontalPodAutoscaler API version for this version of kubernetes.
+*/}}
+{{- define "mimir.hpa.version" -}}
+{{- if semverCompare ">= 1.23-0" (include "mimir.kubeVersion" .) -}}
+autoscaling/v2
+{{- else -}}
+autoscaling/v2beta1
+{{- end -}}
+{{- end -}}

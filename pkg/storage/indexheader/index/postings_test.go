@@ -204,7 +204,7 @@ func Test_NewPostingOffsetTableFromSparseHeader(t *testing.T) {
 
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			factory := streamencoding.DecbufFactory{}
+			factory := streamencoding.FilePoolDecbufFactory{}
 
 			postingsMap := make(map[string]*indexheaderpb.PostingValueOffsets)
 			postingsMap["__name__"] = &indexheaderpb.PostingValueOffsets{Offsets: createPostingOffset(testCase.existingOffsetsLen)}

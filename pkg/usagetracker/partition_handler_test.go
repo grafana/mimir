@@ -345,8 +345,8 @@ func TestPartitionHandler(t *testing.T) {
 		ph = h.newHandler(t)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, ph))
 		requirePerTenantSeries(t, ph, map[string]uint64{tenantID: 5})
-		// Since the limit is 5, by sending seris {1, 2, 3, 4, 5, 100, 200, 300, 400, 500} we should get rejections for the ones that are not in memory, i.e. 1, 2, 3, 4, 5.
-		requireTrackSeries(t, ph, tenantID, []uint64{1, 2, 3, 4, 5, 100, 200, 300, 400, 500}, []uint64{1, 2, 3, 4, 5})
+		// Since the limit is 10 and currentLimit is 8 (after loading 5 series), by sending series {1, 2, 3, 4, 5, 100, 200, 300, 400, 500} we can accept 3 more series (up to 8 total), so we accept {1, 2, 3} and reject {4, 5}.
+		requireTrackSeries(t, ph, tenantID, []uint64{1, 2, 3, 4, 5, 100, 200, 300, 400, 500}, []uint64{4, 5})
 
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, ph))
 	})

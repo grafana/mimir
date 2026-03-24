@@ -1,5 +1,63 @@
 ## Upcoming Release
 
+## 0.9.6
+
+### Bug Fixes
+
+- Fixed #134 - Avoid leaking child contexts when an executor context is configured.
+
+### Improvements
+
+- Added `WithMaxLimitStabilizationWindow` to provide support for stabilization windows that mitigate fluctuating limits when setting the max limit.
+- Added `WithMaxLimitFunc` to `AdaptiveLimiter`, allowing the max limit to be configured as desired based on current inflights.
+
+### API Changes
+
+- `adaptivelimiter.Builder.WithMaxLimitFactorDecay` now expects a second parameter: `minLimitFactor`, which allows you configure the min limit factor when decay is used.
+
+## 0.9.5
+
+- Added `MaxLimitFactorDecay` to `AdaptiveLimiter`, allowing the limit's headroom to vary relative to inflights.
+
+## 0.9.4
+
+### Improvements
+
+- Added `AdaptiveLimiter.MaxInflight` metric, to indicate the max executions that were inflight during the last sampling period.
+
+## 0.9.3
+
+### Bug Fixes
+
+- Fixed #123 - `failsafehttp` client should not cancel merged contexts until response Body is closed.
+
+## 0.9.2
+
+### Bug Fixes
+
+- Fixed #122 - better preserving context information when using a gRPC client interceptor.
+- Fixed `AdaptiveLimiter` not dropping permits when an execution is canceled and the `failsafe.With` API is used.
+
+## 0.9.1
+
+### Improvements
+
+- Changed the level tracker, which is used for execution prioritization, to use a windowed data structure rather than a TDigest, for tracking level distributions. This is more performant and accurate in most cases.
+
+## 0.9.0
+
+### API Changes
+
+- `failsafe.Get`, `Run`, and similar methods were removed. `failsafe.With` is now the standard way of using Failsafe. `failsafe.NewExecutor` was also removed in favor of `failsafe.With`.
+  - This consolidation was meant to provide a single way of using the API, and better matches how Failsafe-go composes policies around a function, ex: `failsafe.With(retryPolicy, circuitBreaker).Get(fn)` creates a composition that can be read from left to right: `retryPolicy(circuitBreaker(fn))`. The original purpose for the `failsafe.Get` function was to workaround a limitation in Go's generic type inference, which is no longer needed after Go 1.21.
+- `Executor.RunWithExecutionAsync` was renamed to `Executor.RunAsyncWithExecution`, and similar for get.
+
+## 0.8.5
+
+### Improvements
+
+- Add support for `failsafe.WithAny` and `ComposeAny` which allows shared policies with `any` as the result type, such as common circuit breakers, to be composed with policies that have specific result types.
+
 ## 0.8.4
 
 ### Improvements

@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"hash"
-	"hash/fnv"
 	"math"
 	"math/rand"
 )
@@ -86,7 +85,6 @@ func NewCuckooFilter(n uint, fpRate float64) *CuckooFilter {
 
 	return &CuckooFilter{
 		buckets: buckets,
-		hash:    fnv.New32(),
 		m:       m,
 		b:       b,
 		f:       f,
@@ -232,10 +230,7 @@ func (c *CuckooFilter) components(data []byte) (uint, uint, []byte) {
 
 // computeHash returns a 32-bit hash value for the given data.
 func (c *CuckooFilter) computeHash(data []byte) []byte {
-	c.hash.Write(data)
-	hash := c.hash.Sum(nil)
-	c.hash.Reset()
-	return hash
+	return hash32BytesDefaultFnv(data, c.hash)
 }
 
 // SetHash sets the hashing function used in the filter.

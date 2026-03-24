@@ -60,3 +60,11 @@ func (p *BufferedPrinter) PrintLine(line string) {
 	defer p.mtx.Unlock()
 	p.Lines = append(p.Lines, line)
 }
+
+// safeDiv returns a/b, or 0 if b is 0.
+func safeDiv(a, b float64) float64 {
+	if b == 0 {
+		return 0
+	}
+	return a / b
+}

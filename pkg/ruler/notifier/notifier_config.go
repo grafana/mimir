@@ -9,7 +9,7 @@ import (
 
 	"github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/flagext"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/grafana/mimir/pkg/util"
 )

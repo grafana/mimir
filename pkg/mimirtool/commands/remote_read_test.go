@@ -15,24 +15,27 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/mimirtool/util"
 )
 
 // parseSelectors converts string selectors to matchers for testing
 func parseSelectors(t *testing.T, selectors ...string) [][]*labels.Matcher {
 	var result [][]*labels.Matcher
 	for _, selector := range selectors {
-		matchers, err := parser.ParseMetricSelector(selector)
+		matchers, err := util.CreatePromQLParser(false).ParseMetricSelector(selector)
 		require.NoError(t, err)
 		result = append(result, matchers)
 	}
@@ -58,7 +61,7 @@ func TestExport(t *testing.T) {
 			series: []*prompb.TimeSeries{
 				{
 					Labels: []prompb.Label{
-						{Name: labels.MetricName, Value: metricName},
+						{Name: model.MetricNameLabel, Value: metricName},
 						{Name: "idx", Value: "0"},
 					},
 					Samples: []prompb.Sample{
@@ -68,7 +71,7 @@ func TestExport(t *testing.T) {
 				},
 				{
 					Labels: []prompb.Label{
-						{Name: labels.MetricName, Value: metricName},
+						{Name: model.MetricNameLabel, Value: metricName},
 						{Name: "idx", Value: "1"},
 					},
 					Samples: []prompb.Sample{
@@ -86,7 +89,7 @@ func TestExport(t *testing.T) {
 			series: []*prompb.TimeSeries{
 				{
 					Labels: []prompb.Label{
-						{Name: labels.MetricName, Value: metricName},
+						{Name: model.MetricNameLabel, Value: metricName},
 						{Name: "idx", Value: "0"},
 					},
 					Samples: []prompb.Sample{
@@ -96,7 +99,7 @@ func TestExport(t *testing.T) {
 				},
 				{
 					Labels: []prompb.Label{
-						{Name: labels.MetricName, Value: metricName},
+						{Name: model.MetricNameLabel, Value: metricName},
 						{Name: "idx", Value: "1"},
 					},
 					Samples: []prompb.Sample{
@@ -113,7 +116,7 @@ func TestExport(t *testing.T) {
 			series: []*prompb.TimeSeries{
 				{
 					Labels: []prompb.Label{
-						{Name: labels.MetricName, Value: metricName},
+						{Name: model.MetricNameLabel, Value: metricName},
 						{Name: "idx", Value: "0"},
 					},
 					Samples: []prompb.Sample{
@@ -130,7 +133,7 @@ func TestExport(t *testing.T) {
 			series: []*prompb.TimeSeries{
 				{
 					Labels: []prompb.Label{
-						{Name: labels.MetricName, Value: metricName},
+						{Name: model.MetricNameLabel, Value: metricName},
 						{Name: "idx", Value: "0"},
 					},
 					Samples: []prompb.Sample{
@@ -147,7 +150,7 @@ func TestExport(t *testing.T) {
 			series: []*prompb.TimeSeries{
 				{
 					Labels: []prompb.Label{
-						{Name: labels.MetricName, Value: metricName},
+						{Name: model.MetricNameLabel, Value: metricName},
 						{Name: "idx", Value: "0"},
 					},
 					Samples: []prompb.Sample{
@@ -164,7 +167,7 @@ func TestExport(t *testing.T) {
 			series: []*prompb.TimeSeries{
 				{
 					Labels: []prompb.Label{
-						{Name: labels.MetricName, Value: metricName},
+						{Name: model.MetricNameLabel, Value: metricName},
 						{Name: "idx", Value: "0"},
 					},
 					Samples: []prompb.Sample{
@@ -181,7 +184,7 @@ func TestExport(t *testing.T) {
 			series: []*prompb.TimeSeries{
 				{
 					Labels: []prompb.Label{
-						{Name: labels.MetricName, Value: metricName},
+						{Name: model.MetricNameLabel, Value: metricName},
 						{Name: "case", Value: "entirely in first block"},
 					},
 					Samples: []prompb.Sample{
@@ -191,7 +194,7 @@ func TestExport(t *testing.T) {
 				},
 				{
 					Labels: []prompb.Label{
-						{Name: labels.MetricName, Value: metricName},
+						{Name: model.MetricNameLabel, Value: metricName},
 						{Name: "case", Value: "entirely in second block"},
 					},
 					Samples: []prompb.Sample{
@@ -201,7 +204,7 @@ func TestExport(t *testing.T) {
 				},
 				{
 					Labels: []prompb.Label{
-						{Name: labels.MetricName, Value: metricName},
+						{Name: model.MetricNameLabel, Value: metricName},
 						{Name: "case", Value: "entirely in last block"},
 					},
 					Samples: []prompb.Sample{
@@ -211,7 +214,7 @@ func TestExport(t *testing.T) {
 				},
 				{
 					Labels: []prompb.Label{
-						{Name: labels.MetricName, Value: metricName},
+						{Name: model.MetricNameLabel, Value: metricName},
 						{Name: "case", Value: "across multiple blocks"},
 					},
 					Samples: []prompb.Sample{
@@ -221,7 +224,7 @@ func TestExport(t *testing.T) {
 				},
 				{
 					Labels: []prompb.Label{
-						{Name: labels.MetricName, Value: metricName},
+						{Name: model.MetricNameLabel, Value: metricName},
 						{Name: "case", Value: "across multiple blocks, with sample on block boundary"},
 					},
 					Samples: []prompb.Sample{
@@ -232,7 +235,7 @@ func TestExport(t *testing.T) {
 				},
 				{
 					Labels: []prompb.Label{
-						{Name: labels.MetricName, Value: metricName},
+						{Name: model.MetricNameLabel, Value: metricName},
 						{Name: "case", Value: "across multiple blocks, from first to last"},
 					},
 					Samples: []prompb.Sample{
@@ -276,6 +279,7 @@ func TestExport(t *testing.T) {
 						readTimeout:   30 * time.Second,
 						readSizeLimit: DefaultChunkedReadLimit,
 						blockDuration: time.Duration(tsdb.DefaultBlockDuration) * time.Millisecond,
+						logger:        log.NewNopLogger(),
 					}
 
 					require.NoError(t, c.export(nil), "expected export to complete without error")
@@ -316,7 +320,7 @@ func generateLargeDataset(from time.Time, metricName string) []*prompb.TimeSerie
 
 		series = append(series, &prompb.TimeSeries{
 			Labels: []prompb.Label{
-				{Name: labels.MetricName, Value: metricName},
+				{Name: model.MetricNameLabel, Value: metricName},
 				{Name: "idx", Value: strconv.Itoa(seriesIdx)},
 			},
 			Samples: samples,
@@ -419,7 +423,7 @@ func serveChunks(t *testing.T, testCase exportTestCase, startT, endT int64, w ht
 			minTime = min(minTime, sample.Timestamp)
 			maxTime = max(maxTime, sample.Timestamp)
 
-			a.Append(sample.Timestamp, sample.Value)
+			a.Append(0, sample.Timestamp, sample.Value)
 		}
 
 		if sampleCount == 0 {
@@ -454,7 +458,7 @@ func queryAllSamples(t *testing.T, db *tsdb.DB, metricName string) ([]*prompb.Ti
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, querier.Close()) })
 
-	ss := querier.Select(context.Background(), true, nil, labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, metricName))
+	ss := querier.Select(context.Background(), true, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, metricName))
 	var writtenSeries []*prompb.TimeSeries
 	totalSamples := 0
 
@@ -554,6 +558,7 @@ func TestRemoteReadCommand_prepare(t *testing.T) {
 				to:             tt.to,
 				readTimeout:    30 * time.Second,
 				useChunks:      true,
+				logger:         log.NewNopLogger(),
 			}
 
 			_, _, _, err := cmd.parseArgsAndPrepareClient()
@@ -636,7 +641,7 @@ func TestParseArgsAndPrepareClient(t *testing.T) {
 			expectedSeries: []*prompb.TimeSeries{
 				{
 					Labels: []prompb.Label{
-						{Name: labels.MetricName, Value: metricNames[0]},
+						{Name: model.MetricNameLabel, Value: metricNames[0]},
 						{Name: "job", Value: "test"},
 					},
 					Samples: []prompb.Sample{
@@ -651,7 +656,7 @@ func TestParseArgsAndPrepareClient(t *testing.T) {
 			expectedSeries: []*prompb.TimeSeries{
 				{
 					Labels: []prompb.Label{
-						{Name: labels.MetricName, Value: metricNames[0]},
+						{Name: model.MetricNameLabel, Value: metricNames[0]},
 						{Name: "job", Value: "test"},
 					},
 					Samples: []prompb.Sample{
@@ -661,7 +666,7 @@ func TestParseArgsAndPrepareClient(t *testing.T) {
 				},
 				{
 					Labels: []prompb.Label{
-						{Name: labels.MetricName, Value: metricNames[1]},
+						{Name: model.MetricNameLabel, Value: metricNames[1]},
 						{Name: "instance", Value: "localhost:8080"},
 					},
 					Samples: []prompb.Sample{
@@ -693,6 +698,7 @@ func TestParseArgsAndPrepareClient(t *testing.T) {
 				from:           alignedToBlockStart.Format(time.RFC3339Nano),
 				to:             alignedToBlockStart.Add(time.Hour).Format(time.RFC3339Nano),
 				readTimeout:    30 * time.Second,
+				logger:         log.NewNopLogger(),
 			}
 
 			// Test parseArgsAndPrepareClient
@@ -889,7 +895,7 @@ func serveMultiQueryChunks(t *testing.T, testCase exportTestCase, queries []*pro
 			for _, sample := range s.Samples {
 				minTime = min(minTime, sample.Timestamp)
 				maxTime = max(maxTime, sample.Timestamp)
-				a.Append(sample.Timestamp, sample.Value)
+				a.Append(0, sample.Timestamp, sample.Value)
 			}
 
 			resp := prompb.ChunkedReadResponse{

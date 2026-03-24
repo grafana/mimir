@@ -32,6 +32,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	mimirpb_testutil "github.com/grafana/mimir/pkg/mimirpb/testutil"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -44,6 +45,10 @@ func (p pusherFunc) Close() []error {
 
 func (p pusherFunc) PushToStorageAndReleaseRequest(ctx context.Context, request *mimirpb.WriteRequest) error {
 	return p(ctx, request)
+}
+
+func (p pusherFunc) NotifyPreCommit(_ context.Context) error {
+	return nil
 }
 
 func TestPusherConsumer(t *testing.T) {
@@ -272,6 +277,7 @@ func kafkaRecordsAll(t testing.TB, records []testRecord) iter.Seq[*kgo.Record] {
 			rec := createRecord("test-topic", 1, r.content, r.version)
 			rec.Context = t.Context()
 			rec.Key = []byte(r.tenantID)
+			rec.Timestamp = time.Now()
 
 			if !yield(rec) {
 				return
@@ -605,7 +611,39 @@ type mockPusher struct {
 }
 
 func (m *mockPusher) PushToStorageAndReleaseRequest(ctx context.Context, request *mimirpb.WriteRequest) error {
-	args := m.Called(ctx, request)
+	args := m.Called(ctx, comparableWriteRequest(request))
+	request.FreeBuffer()
+	return args.Error(0)
+}
+
+func comparableWriteRequest(wr *mimirpb.WriteRequest) *mimirpb.WriteRequest {
+	b, err := wr.Marshal()
+	if err != nil {
+		panic(err)
+	}
+	var clone mimirpb.WriteRequest
+	err = clone.Unmarshal(b)
+	if err != nil {
+		panic(err)
+	}
+	return &clone
+}
+
+func asDeserializedWriteRequest(wr *mimirpb.WriteRequest) *mimirpb.WriteRequest {
+	b, err := wr.Marshal()
+	if err != nil {
+		panic(err)
+	}
+	var preq mimirpb.PreallocWriteRequest
+	err = DeserializeRecordContent(b, &preq, 1)
+	if err != nil {
+		panic(err)
+	}
+	return &preq.WriteRequest
+}
+
+func (m *mockPusher) NotifyPreCommit(_ context.Context) error {
+	args := m.Called()
 	return args.Error(0)
 }
 
@@ -941,10 +979,21 @@ func TestParallelStorageShards_ShardWriteRequest(t *testing.T) {
 			errorHandler := newPushErrorHandler(metrics, nil, log.NewNopLogger())
 			shardingP := newParallelStorageShards(metrics, errorHandler, tc.shardCount, tc.batchSize, buffer, pusher)
 
+			for i, req := range tc.requests {
+				req = asDeserializedWriteRequest(req)
+				trackedBuf := mimirpb_testutil.TrackBuffer(req)
+				tc.requests[i] = req
+
+				// When everything's done, check that there are no buffer leaks.
+				defer func() {
+					require.Equal(t, 0, trackedBuf.RefCount())
+				}()
+			}
+
 			upstreamPushErrsCount := 0
 			for i, req := range tc.expectedUpstreamPushes {
 				err := tc.upstreamPushErrs[i]
-				pusher.On("PushToStorageAndReleaseRequest", mock.Anything, req).Return(err)
+				pusher.On("PushToStorageAndReleaseRequest", mock.Anything, comparableWriteRequest(req)).Return(err)
 				if err != nil {
 					upstreamPushErrsCount++
 				}
@@ -1362,7 +1411,7 @@ func TestBatchingQueue_NoDeadlock(t *testing.T) {
 
 	// Add items to the queue
 	for i := 0; i < batchSize*(capacity+1); i++ {
-		require.NoError(t, queue.AddToBatch(ctx, mimirpb.API, series))
+		require.NoError(t, queue.AddToBatch(ctx, mimirpb.API, series, &mimirpb.BufferHolder{}))
 	}
 
 	// Close the queue to signal no more items will be added
@@ -1409,7 +1458,7 @@ func TestBatchingQueue(t *testing.T) {
 		queue := setupQueue(t, capacity, batchSize, series)
 
 		series3 := mockPreallocTimeseries("series_3")
-		require.NoError(t, queue.AddToBatch(context.Background(), mimirpb.API, series3))
+		require.NoError(t, queue.AddToBatch(context.Background(), mimirpb.API, series3, &mimirpb.BufferHolder{}))
 
 		select {
 		case batch := <-queue.Channel():
@@ -1463,7 +1512,7 @@ func TestBatchingQueue(t *testing.T) {
 		// Add items to the queue until it's full.
 		for i := 0; i < capacity*batchSize; i++ {
 			s := mockPreallocTimeseries(fmt.Sprintf("series_%d", i))
-			require.NoError(t, queue.AddToBatch(context.Background(), mimirpb.API, s))
+			require.NoError(t, queue.AddToBatch(context.Background(), mimirpb.API, s, &mimirpb.BufferHolder{}))
 		}
 
 		// We should have 5 items in the queue channel and 0 items in the currentBatch.
@@ -1480,9 +1529,9 @@ func TestBatchingQueue(t *testing.T) {
 
 		// Add three more items to fill up the queue again, this shouldn't block.
 		s := mockPreallocTimeseries("series_100")
-		require.NoError(t, queue.AddToBatch(context.Background(), mimirpb.API, s))
-		require.NoError(t, queue.AddToBatch(context.Background(), mimirpb.API, s))
-		require.NoError(t, queue.AddToBatch(context.Background(), mimirpb.API, s))
+		require.NoError(t, queue.AddToBatch(context.Background(), mimirpb.API, s, &mimirpb.BufferHolder{}))
+		require.NoError(t, queue.AddToBatch(context.Background(), mimirpb.API, s, &mimirpb.BufferHolder{}))
+		require.NoError(t, queue.AddToBatch(context.Background(), mimirpb.API, s, &mimirpb.BufferHolder{}))
 
 		require.Len(t, queue.ch, 5)
 		require.Len(t, queue.currentBatch.Timeseries, 0)
@@ -1513,10 +1562,10 @@ func TestBatchingQueue(t *testing.T) {
 		}
 
 		// Add timeseries with exemplars to the queue
-		require.NoError(t, queue.AddToBatch(context.Background(), mimirpb.API, timeSeries))
+		require.NoError(t, queue.AddToBatch(context.Background(), mimirpb.API, timeSeries, &mimirpb.BufferHolder{}))
 
 		// Add metadata to the queue
-		require.NoError(t, queue.AddMetadataToBatch(context.Background(), mimirpb.API, md))
+		require.NoError(t, queue.AddMetadataToBatch(context.Background(), mimirpb.API, md, &mimirpb.BufferHolder{}))
 
 		// Read the batch from the queue
 		select {
@@ -1555,14 +1604,14 @@ func TestBatchingQueue_ErrorHandling(t *testing.T) {
 		ctx := context.Background()
 
 		// Push 1 series so that the next push will complete the batch.
-		require.NoError(t, queue.AddToBatch(ctx, mimirpb.API, series2))
+		require.NoError(t, queue.AddToBatch(ctx, mimirpb.API, series2, &mimirpb.BufferHolder{}))
 
 		// Push an error to fill the error channel.
 		queue.ReportError(fmt.Errorf("mock error 1"))
 		queue.ReportError(fmt.Errorf("mock error 2"))
 
 		// AddToBatch should return an error now.
-		err := queue.AddToBatch(ctx, mimirpb.API, series2)
+		err := queue.AddToBatch(ctx, mimirpb.API, series2, &mimirpb.BufferHolder{})
 		assert.Equal(t, "2 errors: mock error 1; mock error 2", err.Error())
 		// Also the batch was pushed.
 		select {
@@ -1574,8 +1623,8 @@ func TestBatchingQueue_ErrorHandling(t *testing.T) {
 		}
 
 		// AddToBatch should work again.
-		require.NoError(t, queue.AddToBatch(ctx, mimirpb.API, series2))
-		require.NoError(t, queue.AddToBatch(ctx, mimirpb.API, series2))
+		require.NoError(t, queue.AddToBatch(ctx, mimirpb.API, series2, &mimirpb.BufferHolder{}))
+		require.NoError(t, queue.AddToBatch(ctx, mimirpb.API, series2, &mimirpb.BufferHolder{}))
 	})
 
 	t.Run("Any errors pushed after last AddToBatch call are received on Close", func(t *testing.T) {
@@ -1583,7 +1632,7 @@ func TestBatchingQueue_ErrorHandling(t *testing.T) {
 		ctx := context.Background()
 
 		// Add a batch to a batch but make sure nothing is pushed.,
-		require.NoError(t, queue.AddToBatch(ctx, mimirpb.API, series1))
+		require.NoError(t, queue.AddToBatch(ctx, mimirpb.API, series1, &mimirpb.BufferHolder{}))
 
 		select {
 		case <-queue.Channel():
@@ -1619,7 +1668,7 @@ func setupQueue(t *testing.T, capacity, batchSize int, series []mimirpb.Prealloc
 	queue := newBatchingQueue(capacity, batchSize, m)
 
 	for _, s := range series {
-		require.NoError(t, queue.AddToBatch(context.Background(), mimirpb.API, s))
+		require.NoError(t, queue.AddToBatch(context.Background(), mimirpb.API, s, &mimirpb.BufferHolder{}))
 	}
 
 	return queue
@@ -1627,6 +1676,7 @@ func setupQueue(t *testing.T, capacity, batchSize int, series []mimirpb.Prealloc
 
 func BenchmarkPusherConsumer(b *testing.B) {
 	pusher := pusherFunc(func(ctx context.Context, request *mimirpb.WriteRequest) error {
+		request.FreeBuffer()
 		mimirpb.ReuseSlice(request.Timeseries)
 		return nil
 	})
@@ -1670,4 +1720,110 @@ func BenchmarkPusherConsumer(b *testing.B) {
 			require.NoError(b, err)
 		}
 	})
+}
+
+func BenchmarkPusherConsumer_ParallelPusher_MultiTenant(b *testing.B) {
+	const timeseriesPerRecord = 10
+
+	// Create a no-op pusher that just releases the request (shared across all runs).
+	pusher := pusherFunc(func(_ context.Context, request *mimirpb.WriteRequest) error {
+		request.FreeBuffer()
+		mimirpb.ReuseSlice(request.Timeseries)
+		return nil
+	})
+
+	// Configure the ingester with Kafka settings using the same settings used in Grafana Cloud.
+	kcfg := KafkaConfig{}
+	flagext.DefaultValues(&kcfg)
+	kcfg.IngestionConcurrencyMax = 8
+	kcfg.IngestionConcurrencyBatchSize = 150
+	kcfg.IngestionConcurrencyEstimatedBytesPerSample = 200
+	kcfg.IngestionConcurrencyQueueCapacity = 3
+	kcfg.IngestionConcurrencyTargetFlushesPerShard = 40
+
+	for _, numRecords := range []int{1, 10, 100, 1000} {
+		for _, numTenants := range []int{1, 10, 100, 1000} {
+			// Create records upfront, outside b.Run(), so record creation doesn't affect timing.
+			records := make([]*kgo.Record, numRecords)
+			for i := range records {
+				tenantID := fmt.Sprintf("tenant-%d", i%numTenants)
+				wr := &mimirpb.WriteRequest{Timeseries: make([]mimirpb.PreallocTimeseries, timeseriesPerRecord)}
+				for j := range wr.Timeseries {
+					wr.Timeseries[j] = mockPreallocTimeseries(fmt.Sprintf("series_%d_%d", i, j))
+				}
+				content, err := wr.Marshal()
+				require.NoError(b, err)
+
+				records[i] = createRecord("test-topic", 1, content, 1)
+				records[i].Key = []byte(tenantID)
+				records[i].Context = context.Background()
+			}
+
+			b.Run(fmt.Sprintf("records=%d,tenants=%d", numRecords, numTenants), func(b *testing.B) {
+				metrics := NewPusherConsumerMetrics(prometheus.NewPedanticRegistry())
+				c := NewPusherConsumer(pusher, kcfg, metrics, log.NewNopLogger())
+
+				b.ResetTimer()
+				for range b.N {
+					err := c.Consume(context.Background(), slices.Values(records))
+					require.NoError(b, err)
+				}
+			})
+		}
+	}
+}
+
+func TestRecordTimestampContext(t *testing.T) {
+	t.Run("returns false on plain context", func(t *testing.T) {
+		_, ok := RecordTimestampFromContext(context.Background())
+		assert.False(t, ok)
+	})
+
+	t.Run("round-trips through context", func(t *testing.T) {
+		ts := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+		ctx := ContextWithRecordTimestamp(context.Background(), ts)
+		got, ok := RecordTimestampFromContext(ctx)
+		assert.True(t, ok)
+		assert.Equal(t, ts, got)
+	})
+}
+
+func TestPusherConsumer_RecordTimestampPropagation(t *testing.T) {
+	const tenantID = "t1"
+	wr := &mimirpb.WriteRequest{
+		Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")},
+	}
+	wrBytes, err := wr.Marshal()
+	require.NoError(t, err)
+
+	recordTimestamp := time.Date(2025, 6, 15, 10, 30, 0, 0, time.UTC)
+
+	var capturedCtx context.Context
+	pusher := pusherFunc(func(ctx context.Context, _ *mimirpb.WriteRequest) error {
+		capturedCtx = ctx
+		return nil
+	})
+
+	kcfg := KafkaConfig{}
+	flagext.DefaultValues(&kcfg)
+	kcfg.IngestionConcurrencyMax = 0
+
+	metrics := NewPusherConsumerMetrics(prometheus.NewPedanticRegistry())
+	c := NewPusherConsumer(pusher, kcfg, metrics, log.NewNopLogger())
+
+	records := func(yield func(*kgo.Record) bool) {
+		rec := createRecord("test-topic", 1, wrBytes, 1)
+		rec.Context = t.Context()
+		rec.Key = []byte(tenantID)
+		rec.Timestamp = recordTimestamp
+		yield(rec)
+	}
+
+	err = c.Consume(t.Context(), records)
+	require.NoError(t, err)
+	require.NotNil(t, capturedCtx)
+
+	got, ok := RecordTimestampFromContext(capturedCtx)
+	assert.True(t, ok)
+	assert.Equal(t, recordTimestamp, got)
 }

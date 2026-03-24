@@ -9,11 +9,13 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/go-kit/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirtool/analyze"
 	"github.com/grafana/mimir/pkg/mimirtool/minisdk"
+	"github.com/grafana/mimir/pkg/mimirtool/util"
 )
 
 var dashboardMetrics = []string{
@@ -59,7 +61,7 @@ func TestParseMetricsInBoard(t *testing.T) {
 	err = json.Unmarshal(buf, &board)
 	require.NoError(t, err)
 
-	analyze.ParseMetricsInBoard(output, board)
+	analyze.ParseMetricsInBoard(output, board, util.CreatePromQLParser(false), log.NewNopLogger())
 	assert.Equal(t, dashboardMetrics, output.Dashboards[0].Metrics)
 	assert.Equal(t, expectedParseErrors, output.Dashboards[0].ParseErrors)
 }
@@ -82,6 +84,6 @@ func BenchmarkParseMetricsInBoard(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		analyze.ParseMetricsInBoard(output, board)
+		analyze.ParseMetricsInBoard(output, board, util.CreatePromQLParser(false), log.NewNopLogger())
 	}
 }

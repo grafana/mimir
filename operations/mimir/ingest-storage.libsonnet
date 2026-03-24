@@ -3,6 +3,10 @@
     ingest_storage_enabled: false,
     ingest_storage_kafka_backend: 'kafka',
 
+    // When false and ingest storage is enabled, ingesters will run without tokens in the ring.
+    // This is only valid when ingest_storage_enabled is true.
+    ingest_storage_ingester_ring_tokens_enabled: !$._config.ingest_storage_enabled,
+
     // Mimir ingesters migrated from classic architecture to partitions run their instances hash ring
     // on a dedicated prefix, which has been introduced as part of the migration process.
     ingest_storage_ingester_instance_ring_dedicated_prefix_enabled: false,
@@ -32,6 +36,7 @@
   //
 
   assert !$._config.ingest_storage_enabled || $._config.ruler_remote_evaluation_enabled : 'ingest storage requires ruler remote evaluation',
+  assert $._config.ingest_storage_enabled || $._config.ingest_storage_ingester_ring_tokens_enabled : 'do not disable ingester ring tokens in Mimir clusters running the classic architecture',
 
   // The generic ingest storage config that should be applied to every component.
   ingest_storage_args::
@@ -81,6 +86,19 @@
     'ingest-storage.kafka.client-id': $.mimirKafkaClientID($.ingest_storage_kafka_consumer_client_id_settings),
   },
 
+  // The configuration that should be applied to all Mimir components ingesting metrics from Kafka (e.g. ingesters).
+  ingest_storage_kafka_ingestion_args:: {
+    local estimated_bytes_per_sample = if $._config.ingest_storage_kafka_producer_record_version == 2 then 200 else 500,
+
+    'ingest-storage.kafka.fetch-concurrency-max': 12,
+    'ingest-storage.kafka.ingestion-concurrency-batch-size': 150,
+    'ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample': estimated_bytes_per_sample,
+    'ingest-storage.kafka.ingestion-concurrency-queue-capacity': 3,
+    'ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard': 40,
+    'ingest-storage.kafka.ingestion-concurrency-max': 8,
+    'ingest-storage.kafka.max-buffered-bytes': 1e9,  // 1GB
+  },
+
   //
   // Mimir components specific configuration.
   //
@@ -93,8 +111,22 @@
     $.ingest_storage_kafka_producer_args +
     $.ingest_storage_ruler_args,
 
-  ingester_args+:: if !$._config.ingest_storage_enabled then {} else
-    $.ingest_storage_ingester_args,
+  ingester_args+:: if !$._config.ingest_storage_enabled then {} else (
+    $.ingest_storage_kafka_ingestion_args +
+    $.ingest_storage_ingester_args +
+    {
+      // How long to wait before deleting an inactive partition, that doesn't have an owner.
+      'ingester.partition-ring.delete-inactive-partition-after': if 'querier.query-ingesters-within' in $.querier_args then
+        $.querier_args['querier.query-ingesters-within']
+      else
+        '13h',  // The default -querier.query-ingesters-within in Mimir is 13 hours.
+    } + (
+      if $._config.ingest_storage_ingester_ring_tokens_enabled then {} else {
+        'ingester.ring.num-tokens': 0,
+        'ingester.ring.tokens-file-path': null,
+      }
+    )
+  ),
 
   query_frontend_args+:: if !$._config.ingest_storage_enabled then {} else
     $.ingest_storage_query_frontend_args,
@@ -222,4 +254,23 @@
   local max_producer_record_version = if $._config.ingest_storage_allow_experimental_record_formats then 2 else 1,
   assert $._config.ingest_storage_kafka_producer_record_version >= 0 && $._config.ingest_storage_kafka_producer_record_version <= max_producer_record_version
          : 'the Kafka record version must be in the range [0, %s]' % max_producer_record_version,
+}
+
++ {
+  _config+:: {
+    // When true and ingest storage is enabled, automatically set -ingest-storage.kafka.client-rack
+    // on each ingester zone to its zone name. This enables Kafka rack-aware consumption so that
+    // ingesters prefer reading from Kafka replicas in the same availability zone, reducing cross-AZ traffic.
+    ingest_storage_set_client_rack: true,
+  },
+
+  ingester_zone_a_args+:: if !($._config.ingest_storage_enabled && $._config.ingest_storage_set_client_rack) then {} else {
+    'ingest-storage.kafka.client-rack': 'zone-a',
+  },
+  ingester_zone_b_args+:: if !($._config.ingest_storage_enabled && $._config.ingest_storage_set_client_rack) then {} else {
+    'ingest-storage.kafka.client-rack': 'zone-b',
+  },
+  ingester_zone_c_args+:: if !($._config.ingest_storage_enabled && $._config.ingest_storage_set_client_rack) then {} else {
+    'ingest-storage.kafka.client-rack': 'zone-c',
+  },
 }

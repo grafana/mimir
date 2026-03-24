@@ -9,7 +9,7 @@ local filename = 'mimir-alertmanager.json';
     assert std.md5(filename) == 'b0d38d318bbddd80476246d4930f9e55' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Alertmanager') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
-    .addShowNativeLatencyVariable()
+    .addShowNativeLatencyVariable($.latencyVariableDefault())
     .addRow(
       ($.row('Headlines') + {
          height: '100px',
@@ -105,7 +105,7 @@ local filename = 'mimir-alertmanager.json';
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
-        $.latencyPanel('cortex_alertmanager_notification_latency_seconds', '{%s}' % $.jobMatcher($._config.job_names.alertmanager))
+        $.ncLatencyPanel('cortex_alertmanager_notification_latency_seconds', '%s' % $.jobMatcher($._config.job_names.alertmanager))
       )
     )
     .addRowIf(
@@ -196,7 +196,7 @@ local filename = 'mimir-alertmanager.json';
       )
       .addPanel(
         $.timeseriesPanel('Initial sync duration') +
-        $.latencyPanel('cortex_alertmanager_state_initial_sync_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.alertmanager)) + {
+        $.ncLatencyPanel('cortex_alertmanager_state_initial_sync_duration_seconds', '%s' % $.jobMatcher($._config.job_names.alertmanager)) + {
           targets: [
             target {
               interval: '1m',

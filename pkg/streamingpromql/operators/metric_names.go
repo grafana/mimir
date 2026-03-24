@@ -3,7 +3,7 @@
 package operators
 
 import (
-	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/common/model"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
@@ -20,7 +20,7 @@ func (n *MetricNames) CaptureMetricNames(metadata []types.SeriesMetadata) {
 	n.names = make([]string, len(metadata))
 
 	for i, series := range metadata {
-		n.names[i] = series.Labels.Get(labels.MetricName)
+		n.names[i] = series.Labels.Get(model.MetricNameLabel)
 	}
 }
 

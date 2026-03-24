@@ -1,4 +1,4 @@
-// Copyright 2018 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -494,7 +494,7 @@ func (w *Watcher) garbageCollectSeries(segmentNum int) error {
 // Also used with readCheckpoint - implements segmentReadFn.
 func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 	var (
-		dec                   = record.NewDecoder(labels.NewSymbolTable()) // One table per WAL segment means it won't grow indefinitely.
+		dec                   = record.NewDecoder(labels.NewSymbolTable(), w.logger) // One table per WAL segment means it won't grow indefinitely.
 		series                []record.RefSeries
 		samples               []record.RefSample
 		samplesToSend         []record.RefSample
@@ -563,7 +563,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			w.writer.AppendExemplars(exemplars)
 
 		case record.HistogramSamples, record.CustomBucketsHistogramSamples:
-			// Skip if experimental "histograms over remote write" is not enabled.
+			// Skip if "native histograms over remote write" is not enabled.
 			if !w.sendHistograms {
 				break
 			}
@@ -591,7 +591,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			}
 
 		case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples:
-			// Skip if experimental "histograms over remote write" is not enabled.
+			// Skip if "native histograms over remote write" is not enabled.
 			if !w.sendHistograms {
 				break
 			}
@@ -647,7 +647,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 // Used with readCheckpoint - implements segmentReadFn.
 func (w *Watcher) readSegmentForGC(r *LiveReader, segmentNum int, _ bool) error {
 	var (
-		dec    = record.NewDecoder(labels.NewSymbolTable()) // Needed for decoding; labels do not outlive this function.
+		dec    = record.NewDecoder(labels.NewSymbolTable(), w.logger) // Needed for decoding; labels do not outlive this function.
 		series []record.RefSeries
 	)
 	for r.Next() && !isClosed(w.quit) {

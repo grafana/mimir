@@ -20,29 +20,29 @@ mimir {
     autoscaling_alertmanager_max_replicas: 30,
 
     autoscaling_querier_enabled: true,
-    autoscaling_querier_min_replicas: 3,
-    autoscaling_querier_max_replicas: 30,
+    autoscaling_querier_min_replicas_per_zone: 3,
+    autoscaling_querier_max_replicas_per_zone: 30,
     autoscaling_querier_predictive_scaling_enabled: true,
 
     autoscaling_ruler_querier_enabled: true,
-    autoscaling_ruler_querier_min_replicas: 3,
-    autoscaling_ruler_querier_max_replicas: 30,
+    autoscaling_ruler_querier_min_replicas_per_zone: 3,
+    autoscaling_ruler_querier_max_replicas_per_zone: 30,
 
     autoscaling_distributor_enabled: true,
     autoscaling_distributor_min_replicas_per_zone: 3,
     autoscaling_distributor_max_replicas_per_zone: 30,
 
     autoscaling_query_frontend_enabled: true,
-    autoscaling_query_frontend_min_replicas: 3,
-    autoscaling_query_frontend_max_replicas: 30,
+    autoscaling_query_frontend_min_replicas_per_zone: 3,
+    autoscaling_query_frontend_max_replicas_per_zone: 30,
 
     autoscaling_ruler_query_frontend_enabled: true,
-    autoscaling_ruler_query_frontend_min_replicas: 3,
-    autoscaling_ruler_query_frontend_max_replicas: 30,
+    autoscaling_ruler_query_frontend_min_replicas_per_zone: 3,
+    autoscaling_ruler_query_frontend_max_replicas_per_zone: 30,
 
     autoscaling_ruler_enabled: true,
-    autoscaling_ruler_min_replicas: 2,
-    autoscaling_ruler_max_replicas: 10,
+    autoscaling_ruler_min_replicas_per_zone: 2,
+    autoscaling_ruler_max_replicas_per_zone: 10,
   },
 
   local k = import 'ksonnet-util/kausal.libsonnet',

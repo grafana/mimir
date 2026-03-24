@@ -1,4 +1,4 @@
-{{- if and .Values.alertmanager.enabled (not .Values.federation_frontend.disableOtherComponents) -}}
+{{- if .Values.alertmanager.enabled -}}
 {{- if .Values.alertmanager.statefulSet.enabled -}}
 {{- $args := dict "ctx" . "component" "alertmanager" "memberlist" true -}}
 {{- $zonesMap := include "mimir.zoneAwareReplicationMap" $args | fromYaml -}}
@@ -50,7 +50,11 @@ spec:
         name: {{ .name }}
         {{- if .annotations }}
         annotations:
-          {{ toYaml .annotations | nindent 10 }}
+          {{- toYaml .annotations | nindent 10 }}
+        {{- end }}
+        {{- if .labels }}
+        labels:
+          {{- toYaml .labels | nindent 10 }}
         {{- end }}
       spec:
         {{- $storageClass := default .storageClass $rolloutZone.storageClass }}
@@ -119,11 +123,6 @@ spec:
       volumes:
         - name: config
           {{- include "mimir.configVolume" . | nindent 10 }}
-        {{- if .Values.enterprise.enabled }}
-        - name: license
-          secret:
-            secretName: {{ tpl .Values.license.secretName . }}
-        {{- end }}
         - name: runtime-config
           configMap:
             name: {{ template "mimir.fullname" . }}-runtime
@@ -180,10 +179,6 @@ spec:
             {{- end }}
             - name: config
               mountPath: /etc/mimir
-            {{- if .Values.enterprise.enabled }}
-            - name: license
-              mountPath: /license
-            {{- end }}
             - name: runtime-config
               mountPath: /var/{{ include "mimir.name" . }}
             - name: storage

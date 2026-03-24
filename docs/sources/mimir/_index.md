@@ -41,7 +41,7 @@ cards:
       height: 24
     - title: Send metric data
       href: ./send/
-      description: Configure your data sources to write data to Grafana Mimir. These include such sources as Prometheus, the OpenTelemetry Collector, and Grafana Agent.
+      description: Configure your data sources to write data to Grafana Mimir. These include such sources as Prometheus, the OpenTelemetry Collector, and Grafana Alloy.
       height: 24
     - title: Manage
       href: ./manage/

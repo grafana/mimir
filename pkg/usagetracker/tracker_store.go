@@ -4,13 +4,13 @@ package usagetracker
 
 import (
 	"context"
+	"fmt"
 	"maps"
 	"math"
 	"slices"
 	"sync"
 	"time"
 
-	"github.com/cespare/xxhash/v2"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/prometheus/util/zeropool"
@@ -22,22 +22,30 @@ import (
 
 var refsPool zeropool.Pool[[]uint64]
 
-const shards = 16
+const shards = tenantshard.NumShards
 const noLimit = math.MaxUint64
 
 // trackerStore holds the core business logic of the usage-tracker abstracted in a testable way.
 // trackerStore should not depend on wall clock: time.Now() should be always injected as a parameter,
 // and timer calls should be made from the outside.
 type trackerStore struct {
-	mtx     sync.RWMutex
-	tenants map[string]*trackedTenant
+	mtx           sync.RWMutex
+	sortedTenants []string
+	tenants       map[string]*trackedTenant
+
+	// sortedUsersCloseToLimit is an immutable list of user IDs that are close to their limits.
+	// This field is replaced atomically in updateLimits() and read without the lock.
+	// This list is sorted.
+	sortedUsersCloseToLimit []string
 
 	// dependencies
 	limiter limiter
 	events  events
 
 	// config
-	idleTimeout time.Duration
+	idleTimeout                         time.Duration
+	userCloseToLimitPercentageThreshold int
+	enableVerboseSeriesMetrics          bool
 
 	// misc
 	logger log.Logger
@@ -54,13 +62,16 @@ type events interface {
 	publishCreatedSeries(ctx context.Context, tenantID string, series []uint64, timestamp time.Time) error
 }
 
-func newTrackerStore(idleTimeout time.Duration, logger log.Logger, l limiter, ev events) *trackerStore {
+func newTrackerStore(idleTimeout time.Duration, userCloseToLimitPercentageThreshold int, logger log.Logger, l limiter, ev events, enableVerboseSeriesMetrics bool) *trackerStore {
 	t := &trackerStore{
-		tenants:     make(map[string]*trackedTenant),
-		limiter:     l,
-		events:      ev,
-		logger:      logger,
-		idleTimeout: idleTimeout,
+		tenants:                             make(map[string]*trackedTenant),
+		limiter:                             l,
+		events:                              ev,
+		logger:                              logger,
+		idleTimeout:                         idleTimeout,
+		userCloseToLimitPercentageThreshold: userCloseToLimitPercentageThreshold,
+		enableVerboseSeriesMetrics:          enableVerboseSeriesMetrics,
+		sortedUsersCloseToLimit:             nil, // will be populated by updateLimits
 	}
 	return t
 }
@@ -71,12 +82,7 @@ func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series 
 	tenant := t.getOrCreateTenant(tenantID)
 	defer tenant.RUnlock()
 
-	// Sort series by shard.
-	// Start each tenant on its own shard to avoid hotspots.
-	tenantStartingShard := xxhash.Sum64String(tenantID) % shards
-	slices.SortFunc(series, func(a, b uint64) int {
-		return int((a%shards+tenantStartingShard)%shards) - int((b%shards+tenantStartingShard)%shards)
-	})
+	groupByModuloShards(series)
 
 	now := clock.ToMinutes(timeNow)
 
@@ -100,7 +106,10 @@ func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series 
 		}
 	}
 
-	level.Debug(t.logger).Log("msg", "tracked series", "tenant", tenantID, "received_len", len(series), "created_len", len(createdRefs), "rejected_len", len(rejectedRefs), "now", timeNow.Unix(), "now_minutes", now)
+	if t.enableVerboseSeriesMetrics && len(createdRefs) > 0 {
+		tenant.seriesCreated.Add(uint64(len(createdRefs)))
+	}
+
 	if len(createdRefs) == 0 {
 		return rejectedRefs, nil
 	}
@@ -129,8 +138,8 @@ func (t *trackerStore) processCreatedSeriesEvent(tenantID string, series []uint6
 	tenant := t.getOrCreateTenant(tenantID)
 	defer tenant.RUnlock()
 
-	// Sort series by shard. We're going to accept all of them, so we can start on shard 0 here.
-	slices.SortFunc(series, func(a, b uint64) int { return int(a%shards) - int(b%shards) })
+	// Group series by shard. We're going to accept all of them, so we can start on shard 0 here.
+	groupByModuloShards(series)
 
 	timestamp := clock.ToMinutes(eventTimestamp)
 	i0 := 0
@@ -149,6 +158,11 @@ func (t *trackerStore) processCreatedSeriesEvent(tenantID string, series []uint6
 }
 
 func currentSeriesLimit(series uint64, limit uint64, zonesCount uint64) uint64 {
+	// If we're at or over the limit (can happen if limit was decreased or series exceeded limit),
+	// return the limit itself to avoid underflow in the subtraction below.
+	if series >= limit {
+		return limit
+	}
 	room := limit - series
 	allowance := room / zonesCount
 	if zonesCount > 1 {
@@ -180,8 +194,10 @@ func (t *trackerStore) getOrCreateTenant(tenantID string) *trackedTenant {
 
 	// Let's prepare a tenant with all shards instead of doing it while locked.
 	tenant := &trackedTenant{
-		series:       atomic.NewUint64(0),
-		currentLimit: atomic.NewUint64(currentSeriesLimit(0, limit, zonesCount)),
+		series:        atomic.NewUint64(0),
+		currentLimit:  atomic.NewUint64(currentSeriesLimit(0, limit, zonesCount)),
+		seriesCreated: atomic.NewUint64(0),
+		seriesRemoved: atomic.NewUint64(0),
 	}
 	capacity := int(limit / shards)
 	if limit == noLimit || limit == 0 {
@@ -192,7 +208,15 @@ func (t *trackerStore) getOrCreateTenant(tenantID string) *trackedTenant {
 	for i := range tenant.shards {
 		tenant.shards[i] = tenantshard.New(uint32(capacity))
 	}
+
 	t.tenants[tenantID] = tenant
+	i, found := slices.BinarySearch(t.sortedTenants, tenantID)
+	if found {
+		// This should never happen, let's panic instead of having an inconsistent list.
+		panic(fmt.Errorf("tenant %s already exists in the sorted list: %v", tenantID, t.sortedTenants))
+	}
+	t.sortedTenants = slices.Insert(t.sortedTenants, i, tenantID)
+
 	tenant.RLock()
 	t.mtx.Unlock()
 	return tenant
@@ -210,8 +234,15 @@ func (t *trackerStore) cleanup(now time.Time) {
 	for tenantID, tenant := range tenantsClone {
 		for _, shard := range tenant.shards {
 			shard.Lock()
-			shard.Cleanup(watermark, tenant.series)
+			removed := shard.Cleanup(watermark, tenant.currentLimit)
 			shard.Unlock()
+
+			if removed > 0 {
+				tenant.series.Add(-uint64(removed))
+				if t.enableVerboseSeriesMetrics {
+					tenant.seriesRemoved.Add(uint64(removed))
+				}
+			}
 		}
 
 		if tenant.series.Load() == 0 {
@@ -234,6 +265,11 @@ func (t *trackerStore) cleanup(now time.Time) {
 		tenant.Lock()
 		if tenant.series.Load() == 0 {
 			delete(t.tenants, tenantID)
+			index, found := slices.BinarySearch(t.sortedTenants, tenantID)
+			if !found {
+				panic(fmt.Errorf("tenant %s not found in the sorted list: %v", tenantID, t.sortedTenants))
+			}
+			t.sortedTenants = slices.Delete(t.sortedTenants, index, index+1)
 		}
 		tenant.Unlock()
 	}
@@ -243,13 +279,41 @@ func (t *trackerStore) cleanup(now time.Time) {
 func (t *trackerStore) updateLimits() {
 	t.mtx.RLock()
 	tenantsClone := maps.Clone(t.tenants)
+	sortedTenants := slices.Clone(t.sortedTenants)
 	t.mtx.RUnlock()
 
 	zonesCount := t.limiter.zonesCount()
-	for tenantID, tenant := range tenantsClone {
+	var sortedCloseToLimit []string
+
+	for _, tenantID := range sortedTenants {
+		tenant := tenantsClone[tenantID]
 		limit := zeroAsNoLimit(t.limiter.localSeriesLimit(tenantID))
-		tenant.currentLimit.Store(currentSeriesLimit(tenant.series.Load(), limit, zonesCount))
+		series := tenant.series.Load()
+		tenant.currentLimit.Store(currentSeriesLimit(series, limit, zonesCount))
+
+		// Determine if this user is close to their limit.
+		// A user is close if: series >= (limit * percentageThreshold / 100)
+		if limit != noLimit {
+			percentageThreshold := limit * uint64(t.userCloseToLimitPercentageThreshold) / 100
+
+			if series >= percentageThreshold {
+				sortedCloseToLimit = append(sortedCloseToLimit, tenantID)
+			}
+		}
 	}
+
+	t.mtx.Lock()
+	t.sortedUsersCloseToLimit = sortedCloseToLimit
+	t.mtx.Unlock()
+}
+
+// getSortedUsersCloseToLimit returns the list of user IDs that are close to their series limit.
+// The returned slice is safe to read concurrently as it's immutable and replaced atomically in updateLimits().
+// The returned slice is sorted.
+func (t *trackerStore) getSortedUsersCloseToLimit() []string {
+	t.mtx.RLock()
+	defer t.mtx.RUnlock()
+	return t.sortedUsersCloseToLimit
 }
 
 // seriesCountsForTests should only be used in tests because it holds the mutex while loading all atomic values.
@@ -269,6 +333,9 @@ type trackedTenant struct {
 	series       *atomic.Uint64
 	currentLimit *atomic.Uint64
 	shards       [shards]*tenantshard.Map
+
+	seriesCreated *atomic.Uint64
+	seriesRemoved *atomic.Uint64
 }
 
 func zeroAsNoLimit(v uint64) uint64 {
@@ -276,4 +343,33 @@ func zeroAsNoLimit(v uint64) uint64 {
 		return noLimit
 	}
 	return v
+}
+
+// groupByModuloShards sorts series by shard to minimize lock contention by taking mutex once for each shard.
+// It arranges the series hashes into contiguous groups of hashes of same modulo shards.
+// This is O(N), specifically it iterates all series twice, and makes the re-arrangement in place.
+func groupByModuloShards(series []uint64) {
+	var counts, pos [shards]int
+	// count how many series belong to each shard.
+	// This will be later "the number of series from each shard correctly placed"
+	// This is the first O(series)
+	for _, ref := range series {
+		counts[ref%shards]++
+	}
+	// pos is where each shard's next element should be
+	// We'll update this as we check the elements.
+	for i := 1; i < shards; i++ {
+		pos[i] = pos[i-1] + counts[i-1]
+	}
+
+	for i := 0; i < len(series); i++ {
+		for mod := series[i] % shards; counts[mod] > 0; mod = series[i] % shards {
+			// put this element where it should be, swap them
+			series[pos[mod]], series[i] = series[i], series[pos[mod]]
+			// if there's next element for this mod, it's on the next position
+			pos[mod]++
+			// count this element as moved
+			counts[mod]--
+		}
+	}
 }

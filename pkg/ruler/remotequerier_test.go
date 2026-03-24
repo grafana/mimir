@@ -15,6 +15,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/status"
 	"github.com/golang/snappy"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -30,6 +31,40 @@ import (
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 )
+
+func TestQueryFrontendConfig_Validate(t *testing.T) {
+	t.Run("invalid response format", func(t *testing.T) {
+		var cfg QueryFrontendConfig
+		flagext.DefaultValues(&cfg)
+		cfg.QueryResultResponseFormat = "invalid!"
+
+		require.Error(t, cfg.Validate())
+	})
+
+	t.Run("valid response format", func(t *testing.T) {
+		var cfg QueryFrontendConfig
+		flagext.DefaultValues(&cfg)
+		cfg.QueryResultResponseFormat = "json"
+
+		require.NoError(t, cfg.Validate())
+	})
+
+	t.Run("invalid query-frontend address", func(t *testing.T) {
+		var cfg QueryFrontendConfig
+		flagext.DefaultValues(&cfg)
+		cfg.Address = "dns://localhost:9095/"
+
+		require.Error(t, cfg.Validate())
+	})
+
+	t.Run("valid query-frontend address", func(t *testing.T) {
+		var cfg QueryFrontendConfig
+		flagext.DefaultValues(&cfg)
+		cfg.Address = "dns:///localhost:9095/"
+
+		require.NoError(t, cfg.Validate())
+	})
+}
 
 type mockHTTPGRPCClient func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error)
 

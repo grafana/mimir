@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/instrument"
 	"github.com/grafana/dskit/middleware"
@@ -26,7 +27,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
@@ -47,22 +47,25 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-var tracer = otel.Tracer("pkg/querier")
+var (
+	tracer                              = otel.Tracer("pkg/querier")
+	errConflictEnableDelayedNameRemoval = errors.New("conflicting settings for EnableDelayedNameRemoval")
+)
 
 // Config contains the configuration require to create a querier
 type Config struct {
 	// QueryStoreAfter the time after which queries should also be sent to the store and not just ingesters.
 	QueryStoreAfter time.Duration `yaml:"query_store_after" category:"advanced"`
 
-	StoreGatewayClient grpcclient.Config `yaml:"store_gateway_client"`
+	StoreGatewayClient StoreGatewayClientConfig `yaml:"store_gateway_client"`
 
 	ShuffleShardingIngestersEnabled bool `yaml:"shuffle_sharding_ingesters_enabled" category:"advanced"`
 
-	PreferAvailabilityZone                         string        `yaml:"prefer_availability_zone" category:"experimental" doc:"hidden"`
-	StreamingChunksPerIngesterSeriesBufferSize     uint64        `yaml:"streaming_chunks_per_ingester_series_buffer_size" category:"advanced"`
-	StreamingChunksPerStoreGatewaySeriesBufferSize uint64        `yaml:"streaming_chunks_per_store_gateway_series_buffer_size" category:"advanced"`
-	MinimizeIngesterRequests                       bool          `yaml:"minimize_ingester_requests" category:"advanced"`
-	MinimiseIngesterRequestsHedgingDelay           time.Duration `yaml:"minimize_ingester_requests_hedging_delay" category:"advanced"`
+	PreferAvailabilityZones                        flagext.StringSliceCSV `yaml:"prefer_availability_zones" category:"experimental"`
+	StreamingChunksPerIngesterSeriesBufferSize     uint64                 `yaml:"streaming_chunks_per_ingester_series_buffer_size" category:"advanced"`
+	StreamingChunksPerStoreGatewaySeriesBufferSize uint64                 `yaml:"streaming_chunks_per_store_gateway_series_buffer_size" category:"advanced"`
+	MinimizeIngesterRequests                       bool                   `yaml:"minimize_ingester_requests" category:"advanced"`
+	MinimiseIngesterRequestsHedgingDelay           time.Duration          `yaml:"minimize_ingester_requests_hedging_delay" category:"advanced"`
 
 	QueryEngine               string `yaml:"query_engine" category:"experimental"`
 	EnableQueryEngineFallback bool   `yaml:"enable_query_engine_fallback" category:"experimental"`
@@ -75,6 +78,8 @@ type Config struct {
 
 	// PromQL engine config.
 	EngineConfig engine.Config `yaml:",inline"`
+
+	Ring RingConfig `yaml:"ring"`
 }
 
 const (
@@ -88,12 +93,13 @@ const (
 )
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
-func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
+func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.StoreGatewayClient.RegisterFlagsWithPrefix("querier.store-gateway-client", f)
+	cfg.Ring.RegisterFlags(f, logger)
 
 	f.DurationVar(&cfg.QueryStoreAfter, queryStoreAfterFlag, 12*time.Hour, "The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. If this option is enabled, the time range of the query sent to the store-gateway will be manipulated to ensure the query end is not more recent than 'now - query-store-after'.")
 	f.BoolVar(&cfg.ShuffleShardingIngestersEnabled, "querier.shuffle-sharding-ingesters-enabled", true, fmt.Sprintf("Fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since -%s. If this setting is false or -%s is '0', queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).", validation.QueryIngestersWithinFlag, validation.QueryIngestersWithinFlag))
-	f.StringVar(&cfg.PreferAvailabilityZone, "querier.prefer-availability-zone", "", "Preferred availability zone to query ingesters from when using the ingest storage.")
+	f.Var(&cfg.PreferAvailabilityZones, "querier.prefer-availability-zones", "Comma-separated list of availability zones to prefer when querying ingesters and store-gateways. All zones in the list are given equal priority.")
 
 	f.BoolVar(&cfg.MinimizeIngesterRequests, minimiseIngesterRequestsFlag, true, "If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path.")
 	f.DurationVar(&cfg.MinimiseIngesterRequestsHedgingDelay, minimiseIngesterRequestsFlag+"-hedging-delay", 3*time.Second, "Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Ignored if -"+minimiseIngesterRequestsFlag+" is not enabled.")
@@ -126,6 +132,10 @@ func (cfg *Config) Validate() error {
 		return errStreamingStoreGatewayBufferSize
 	}
 
+	if err := cfg.EngineConfig.Validate(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -138,6 +148,16 @@ func (cfg *Config) ValidateLimits(limits validation.Limits) error {
 	}
 
 	return nil
+}
+
+type StoreGatewayClientConfig struct {
+	grpcclient.Config      `yaml:",inline"`
+	HealthCheckGracePeriod time.Duration `yaml:"health_check_grace_period" category:"experimental"`
+}
+
+func (cfg *StoreGatewayClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	cfg.Config.RegisterFlagsWithPrefix(prefix, f)
+	f.DurationVar(&cfg.HealthCheckGracePeriod, prefix+".health-check-grace-period", 0, "The grace period for health checks. If a store-gateway connection consistently fails health checks for this period, any open connections are closed. The querier will attempt to reconnect to the store-gateway if a subsequent request is made to the store-gateway. Set to 0 to immediately remove store-gateway connections on the first health check failure.")
 }
 
 // ShouldQueryIngesters provides a check for whether the ingesters will be used for a given query.
@@ -163,7 +183,17 @@ func ShouldQueryBlockStore(queryStoreAfter time.Duration, now time.Time, queryMi
 }
 
 // New builds a queryable and promql engine.
-func New(cfg Config, limits *validation.Overrides, distributor Distributor, queryables []TimeRangeQueryable, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker, planner *streamingpromql.QueryPlanner) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, promql.QueryEngine, *streamingpromql.Engine, error) {
+func New(
+	cfg Config,
+	limits *validation.Overrides,
+	distributor Distributor,
+	queryables []TimeRangeQueryable,
+	reg prometheus.Registerer,
+	logger log.Logger,
+	tracker *activitytracker.ActivityTracker,
+	planner *streamingpromql.QueryPlanner,
+	limitsProvider streamingpromql.QueryLimitsProvider,
+) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, promql.QueryEngine, *streamingpromql.Engine, error) {
 	queryMetrics := stats.NewQueryMetrics(reg)
 
 	queryables = append(queryables, TimeRangeQueryable{
@@ -177,39 +207,23 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 	queryable := newQueryable(queryables, cfg, limits, queryMetrics, logger)
 	exemplarQueryable := newDistributorExemplarQueryable(distributor, logger)
 
-	lazyQueryable := storage.QueryableFunc(func(minT int64, maxT int64) (storage.Querier, error) {
-		querier, err := queryable.Querier(minT, maxT)
-		if err != nil {
-			return nil, err
-		}
-		return lazyquery.NewLazyQuerier(querier), nil
-	})
-
-	opts, mqeOpts := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg)
-
-	// Experimental functions are always enabled globally for all engines. Access to them
-	// is controlled by an experimental functions middleware that reads per-tenant settings.
-	parser.EnableExperimentalFunctions = true
-
-	// This enables duration arithmetic https://github.com/prometheus/prometheus/pull/16249.
-	parser.ExperimentalDurationExpr = true
+	opts, mqeOpts := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg, limitsProvider)
 
 	var eng promql.QueryEngine
 	var streamingEngine *streamingpromql.Engine
 
 	switch cfg.QueryEngine {
 	case PrometheusEngine:
-		eng = promql.NewEngine(opts)
+		eng = limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts))
 	case MimirEngine:
-		limitsProvider := NewTenantQueryLimitsProvider(limits)
 		var err error
-		streamingEngine, err = streamingpromql.NewEngine(mqeOpts, limitsProvider, queryMetrics, planner)
+		streamingEngine, err = streamingpromql.NewEngine(mqeOpts, queryMetrics, planner)
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
 
 		if cfg.EnableQueryEngineFallback {
-			prometheusEngine := promql.NewEngine(opts)
+			prometheusEngine := limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts))
 			eng = compat.NewEngineWithFallback(streamingEngine, prometheusEngine, reg, logger)
 		} else {
 			eng = streamingEngine
@@ -217,6 +231,16 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 	default:
 		panic(fmt.Sprintf("invalid config not caught by validation: unknown PromQL engine '%s'", cfg.QueryEngine))
 	}
+
+	// Wrap queryable with memory tracking so that there will SeriesLabelsDeduplicator in the context.
+	queryable = NewMemoryTrackingQueryable(queryable, reg)
+	lazyQueryable := storage.QueryableFunc(func(minT int64, maxT int64) (storage.Querier, error) {
+		querier, err := queryable.Querier(minT, maxT)
+		if err != nil {
+			return nil, err
+		}
+		return lazyquery.NewLazyQuerier(querier), nil
+	})
 
 	return NewSampleAndChunkQueryable(lazyQueryable), exemplarQueryable, eng, streamingEngine, nil
 }
@@ -361,7 +385,7 @@ func (mq *multiQuerier) getQueriers(ctx context.Context, minT, maxT int64, match
 // Select implements storage.Querier interface.
 // The bool passed is ignored because the series are always sorted.
 func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) (set storage.SeriesSet) {
-	spanLog, ctx := spanlogger.New(ctx, mq.logger, tracer, "querier.Select")
+	spanLog, ctx := spanlogger.New(ctx, mq.logger, tracer, "multiQuerier.Select")
 	defer spanLog.Finish()
 
 	ctx, queriers, minT, maxT, err := mq.getQueriers(ctx, mq.minT, mq.maxT, matchers...)
@@ -412,7 +436,7 @@ func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHi
 		// Clamp max time range for series-only queries, before we check max length.
 		startMs = clampToMaxLabelQueryLength(spanLog, startMs, endMs, now.UnixMilli(), mq.limits.MaxLabelsQueryLength(userID).Milliseconds())
 		// Clamp the limit for series-only queries.
-		limit = clampToMaxSeriesQueryLimit(spanLog, limit, mq.limits.MaxSeriesQueryLimit(userID))
+		limit = clampToMaxLimit(spanLog, limit, mq.limits.MaxSeriesQueryLimit(userID), validation.MaxSeriesQueryLimitFlag)
 	}
 
 	// The query parameters may have been manipulated during the validation, so we make sure changes are reflected back to hints.
@@ -432,7 +456,7 @@ func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHi
 		origLimit := sp.Limit
 		defer func() {
 			var warning annotations.Annotations
-			warning.Add(NewMaxSeriesQueryLimitError(origLimit, limit))
+			warning.Add(NewMaxLimitError(origLimit, limit, validation.MaxSeriesQueryLimitFlag))
 			set = series.NewSeriesSetWithWarnings(set, warning)
 		}()
 	}
@@ -459,8 +483,7 @@ func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHi
 		}
 	}
 
-	// we have all the sets from different sources (chunk from store, chunks from ingesters,
-	// time series from store and time series from ingesters).
+	// we have all the sets from different sources (chunk from store, chunks from ingesters).
 	// mergeSeriesSets will return sorted set.
 	return mq.mergeSeriesSets(result)
 }
@@ -506,17 +529,17 @@ func clampToMaxLabelQueryLength(spanLog *spanlogger.SpanLogger, startMs, endMs, 
 	return startMs
 }
 
-func clampToMaxSeriesQueryLimit(spanLog *spanlogger.SpanLogger, limit, maxSeriesQueryLimit int) int {
-	if maxSeriesQueryLimit == 0 {
+func clampToMaxLimit(spanLog *spanlogger.SpanLogger, limit, maxLimit int, settingName string) int {
+	if maxLimit == 0 {
 		// No request limit is enforced.
 		return limit
 	}
 
 	// Request limit is enforced.
-	newLimit := min(cmp.Or(limit, maxSeriesQueryLimit), maxSeriesQueryLimit)
+	newLimit := min(cmp.Or(limit, maxLimit), maxLimit)
 	if newLimit != limit {
 		spanLog.DebugLog(
-			"msg", "the request limit of the query has been manipulated because of the 'max-series-query-limit' setting",
+			"msg", fmt.Sprintf("the request limit of the query has been manipulated because of the '%s' setting", settingName),
 			"original", limit,
 			"updated", newLimit,
 		)
@@ -526,6 +549,9 @@ func clampToMaxSeriesQueryLimit(spanLog *spanlogger.SpanLogger, limit, maxSeries
 
 // LabelValues implements storage.Querier.
 func (mq *multiQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	spanLog, ctx := spanlogger.New(ctx, mq.logger, tracer, "multiQuerier.LabelValues")
+	defer spanLog.Finish()
+
 	ctx, queriers, _, _, err := mq.getQueriers(ctx, mq.minT, mq.maxT, matchers...)
 	if errors.Is(err, errEmptyTimeRange) {
 		return nil, nil, nil
@@ -534,15 +560,34 @@ func (mq *multiQuerier) LabelValues(ctx context.Context, name string, hints *sto
 		return nil, nil, err
 	}
 
+	if hints == nil {
+		hints = &storage.LabelHints{}
+	} else {
+		hintsCopy := *hints
+		hints = &hintsCopy
+	}
+
+	userID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var warnings annotations.Annotations
+	limit := clampToMaxLimit(spanLog, hints.Limit, mq.limits.MaxLabelValuesLimit(userID), validation.MaxLabelValuesLimitFlag)
+	if limit > 0 && hints.Limit != limit {
+		warnings.Add(NewMaxLimitError(hints.Limit, limit, validation.MaxLabelValuesLimitFlag))
+	}
+	hints.Limit = limit
+
+	// If there's only a single querier, merge any warnings generated and return early.
 	if len(queriers) == 1 {
-		return queriers[0].LabelValues(ctx, name, hints, matchers...)
+		myValues, myWarnings, err := queriers[0].LabelValues(ctx, name, hints, matchers...)
+		return myValues, warnings.Merge(myWarnings), err
 	}
 
 	var (
-		g, _     = errgroup.WithContext(ctx)
-		sets     = [][]string{}
-		warnings annotations.Annotations
-
+		g, _   = errgroup.WithContext(ctx)
+		sets   = [][]string{}
 		resMtx sync.Mutex
 	)
 
@@ -571,6 +616,9 @@ func (mq *multiQuerier) LabelValues(ctx context.Context, name string, hints *sto
 }
 
 func (mq *multiQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	spanLog, ctx := spanlogger.New(ctx, mq.logger, tracer, "multiQuerier.LabelNames")
+	defer spanLog.Finish()
+
 	ctx, queriers, _, _, err := mq.getQueriers(ctx, mq.minT, mq.maxT, matchers...)
 	if errors.Is(err, errEmptyTimeRange) {
 		return nil, nil, nil
@@ -579,15 +627,34 @@ func (mq *multiQuerier) LabelNames(ctx context.Context, hints *storage.LabelHint
 		return nil, nil, err
 	}
 
+	if hints == nil {
+		hints = &storage.LabelHints{}
+	} else {
+		hintsCopy := *hints
+		hints = &hintsCopy
+	}
+
+	userID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var warnings annotations.Annotations
+	limit := clampToMaxLimit(spanLog, hints.Limit, mq.limits.MaxLabelNamesLimit(userID), validation.MaxLabelNamesLimitFlag)
+	if limit > 0 && hints.Limit != limit {
+		warnings.Add(NewMaxLimitError(hints.Limit, limit, validation.MaxLabelNamesLimitFlag))
+	}
+	hints.Limit = limit
+
+	// If there's only a single querier, merge any warnings generated and return early.
 	if len(queriers) == 1 {
-		return queriers[0].LabelNames(ctx, hints, matchers...)
+		myValues, myWarnings, err := queriers[0].LabelNames(ctx, hints, matchers...)
+		return myValues, warnings.Merge(myWarnings), err
 	}
 
 	var (
-		g, _     = errgroup.WithContext(ctx)
-		sets     = [][]string{}
-		warnings annotations.Annotations
-
+		g, _   = errgroup.WithContext(ctx)
+		sets   = [][]string{}
 		resMtx sync.Mutex
 	)
 
@@ -809,11 +876,60 @@ func (p *TenantQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(ctx
 	return totalLimit, nil
 }
 
+func (p *TenantQueryLimitsProvider) GetMaxOutOfOrderTimeWindow(ctx context.Context) (time.Duration, error) {
+	tenantIDs, err := tenant.TenantIDs(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	var maxWindow time.Duration
+	for _, tenantID := range tenantIDs {
+		if w := p.limits.OutOfOrderTimeWindow(tenantID); w > maxWindow {
+			maxWindow = w
+		}
+	}
+
+	return maxWindow, nil
+}
+
+func (p *TenantQueryLimitsProvider) GetEnableDelayedNameRemoval(ctx context.Context) (bool, error) {
+	tenantIDs, err := tenant.TenantIDs(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	hasEnabled := false
+	hasDisabled := false
+	for _, tenantID := range tenantIDs {
+		if p.limits.EnableDelayedNameRemoval(tenantID) {
+			hasEnabled = true
+		} else {
+			hasDisabled = true
+		}
+	}
+	if hasEnabled && hasDisabled {
+		return false, fmt.Errorf("%w for tenants: %v", errConflictEnableDelayedNameRemoval, tenantIDs)
+	}
+
+	return hasEnabled, nil
+}
+
+func (p *TenantQueryLimitsProvider) GetMinResultsCacheTTL(ctx context.Context) (time.Duration, error) {
+	tenantIDs, err := tenant.TenantIDs(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	return validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, p.limits.ResultsCacheTTL), nil
+}
+
 type RequestMetrics struct {
-	RequestDuration     *prometheus.HistogramVec
-	ReceivedMessageSize *prometheus.HistogramVec
-	SentMessageSize     *prometheus.HistogramVec
-	InflightRequests    *prometheus.GaugeVec
+	RequestDuration                *prometheus.HistogramVec
+	ReceivedMessageSize            *prometheus.HistogramVec
+	SentMessageSize                *prometheus.HistogramVec
+	InflightRequests               *prometheus.GaugeVec
+	PlansReceived                  *prometheus.CounterVec
+	NodesPerQueryEvaluationRequest prometheus.Histogram
 }
 
 func NewRequestMetrics(reg prometheus.Registerer) *RequestMetrics {
@@ -840,5 +956,16 @@ func NewRequestMetrics(reg prometheus.Registerer) *RequestMetrics {
 			Name: "cortex_querier_inflight_requests",
 			Help: "Current number of inflight requests to the querier.",
 		}, []string{"method", "route"}),
+
+		PlansReceived: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_querier_received_query_plans_total",
+			Help: "Total number of query plans received by the querier.",
+		}, []string{"version"}),
+
+		NodesPerQueryEvaluationRequest: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:                        "cortex_querier_nodes_per_query_evaluation_request",
+			Help:                        "Number of nodes requested to be evaluated per query evaluation request.",
+			NativeHistogramBucketFactor: 1.1,
+		}),
 	}
 }

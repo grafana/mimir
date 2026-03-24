@@ -14,6 +14,9 @@ linters:
       - linters:
           - errcheck
         path: _test.go
+      - linters:
+          - staticcheck
+        text: 'labels.MetricName is deprecated: .*'  
     paths:
       - third_party$
       - builtin$

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -28,7 +29,7 @@ func TestInstantVectorSeriesData_Clone(t *testing.T) {
 		},
 	}
 
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(context.Background())
 	cloned, err := original.Clone(memoryConsumptionTracker)
 
 	require.NoError(t, err)
@@ -193,60 +194,60 @@ func TestHasDuplicateSeries(t *testing.T) {
 		},
 		"one series": {
 			input: []SeriesMetadata{
-				{Labels: labels.FromStrings(labels.MetricName, "foo")},
+				{Labels: labels.FromStrings(model.MetricNameLabel, "foo")},
 			},
 			hasDuplicate: false,
 		},
 		"two series, both different": {
 			input: []SeriesMetadata{
-				{Labels: labels.FromStrings(labels.MetricName, "foo")},
-				{Labels: labels.FromStrings(labels.MetricName, "bar")},
+				{Labels: labels.FromStrings(model.MetricNameLabel, "foo")},
+				{Labels: labels.FromStrings(model.MetricNameLabel, "bar")},
 			},
 			hasDuplicate: false,
 		},
 		"two series, some common labels but not completely the same": {
 			input: []SeriesMetadata{
-				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "1")},
-				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "2")},
+				{Labels: labels.FromStrings(model.MetricNameLabel, "foo", "bar", "1")},
+				{Labels: labels.FromStrings(model.MetricNameLabel, "foo", "bar", "2")},
 			},
 			hasDuplicate: false,
 		},
 		"two series, both the same": {
 			input: []SeriesMetadata{
-				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "1")},
-				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "1")},
+				{Labels: labels.FromStrings(model.MetricNameLabel, "foo", "bar", "1")},
+				{Labels: labels.FromStrings(model.MetricNameLabel, "foo", "bar", "1")},
 			},
 			hasDuplicate: true,
 		},
 		"three series, all different": {
 			input: []SeriesMetadata{
-				{Labels: labels.FromStrings(labels.MetricName, "foo")},
-				{Labels: labels.FromStrings(labels.MetricName, "bar")},
-				{Labels: labels.FromStrings(labels.MetricName, "baz")},
+				{Labels: labels.FromStrings(model.MetricNameLabel, "foo")},
+				{Labels: labels.FromStrings(model.MetricNameLabel, "bar")},
+				{Labels: labels.FromStrings(model.MetricNameLabel, "baz")},
 			},
 			hasDuplicate: false,
 		},
 		"three series, some with common labels but none completely the same": {
 			input: []SeriesMetadata{
-				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "1")},
-				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "2")},
-				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "3")},
+				{Labels: labels.FromStrings(model.MetricNameLabel, "foo", "bar", "1")},
+				{Labels: labels.FromStrings(model.MetricNameLabel, "foo", "bar", "2")},
+				{Labels: labels.FromStrings(model.MetricNameLabel, "foo", "bar", "3")},
 			},
 			hasDuplicate: false,
 		},
 		"three series, some the same": {
 			input: []SeriesMetadata{
-				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "1")},
-				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "1")},
-				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "3")},
+				{Labels: labels.FromStrings(model.MetricNameLabel, "foo", "bar", "1")},
+				{Labels: labels.FromStrings(model.MetricNameLabel, "foo", "bar", "1")},
+				{Labels: labels.FromStrings(model.MetricNameLabel, "foo", "bar", "3")},
 			},
 			hasDuplicate: true,
 		},
 		"three series, all the same": {
 			input: []SeriesMetadata{
-				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "1")},
-				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "1")},
-				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "1")},
+				{Labels: labels.FromStrings(model.MetricNameLabel, "foo", "bar", "1")},
+				{Labels: labels.FromStrings(model.MetricNameLabel, "foo", "bar", "1")},
+				{Labels: labels.FromStrings(model.MetricNameLabel, "foo", "bar", "1")},
 			},
 			hasDuplicate: true,
 		},
@@ -329,6 +330,154 @@ func TestQueryTimeRange(t *testing.T) {
 				expectedIdx := tc.expectedIdxs[i]
 				require.Equal(t, expectedIdx, pointIdx, "PointIdx matches for time %v", tt)
 			}
+		})
+	}
+}
+
+func TestRangeVectorStepData_SubStep(t *testing.T) {
+	memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(context.Background())
+	floats := NewFPointRingBuffer(memoryTracker)
+	histograms := NewHPointRingBuffer(memoryTracker)
+
+	// Add float points at T=110, 120, 130, 140, 150, 160, 170, 180, 190
+	for i := int64(110); i <= 190; i += 10 {
+		require.NoError(t, floats.Append(promql.FPoint{T: i, F: float64(i)}))
+	}
+
+	// Add histogram points at T=115, 135, 155, 175
+	for i := int64(115); i <= 175; i += 20 {
+		require.NoError(t, histograms.Append(promql.HPoint{T: i, H: &histogram.FloatHistogram{Count: float64(i)}}))
+	}
+
+	step := &RangeVectorStepData{
+		StepT:      200,
+		RangeStart: 100,
+		RangeEnd:   200,
+		Floats:     floats.ViewUntilSearchingBackwards(200, nil),
+		Histograms: histograms.ViewUntilSearchingBackwards(200, nil),
+	}
+
+	t.Run("single substep", func(t *testing.T) {
+		substep, err := step.SubStep(120, 160, nil)
+		require.NoError(t, err)
+
+		require.Equal(t, int64(200), substep.StepT)
+		require.Equal(t, int64(120), substep.RangeStart)
+		require.Equal(t, int64(160), substep.RangeEnd)
+
+		// Verify floats: should have T=130, 140, 150, 160 (4 points)
+		require.Equal(t, 4, substep.Floats.Count())
+		require.Equal(t, int64(130), substep.Floats.First().T)
+		last, hasLast := substep.Floats.Last()
+		require.True(t, hasLast)
+		require.Equal(t, int64(160), last.T)
+
+		// Verify histograms: should have T=135, 155 (2 points)
+		require.Equal(t, 2, substep.Histograms.Count())
+		require.Equal(t, int64(135), substep.Histograms.First().T)
+		lastH, hasLastH := substep.Histograms.Last()
+		require.True(t, hasLastH)
+		require.Equal(t, int64(155), lastH.T)
+	})
+
+	t.Run("substep with no matching points", func(t *testing.T) {
+		substep, err := step.SubStep(195, 200, nil)
+		require.NoError(t, err)
+
+		require.Equal(t, int64(200), substep.StepT)
+		require.Equal(t, int64(195), substep.RangeStart)
+		require.Equal(t, int64(200), substep.RangeEnd)
+		require.Equal(t, 0, substep.Floats.Count())
+		require.Equal(t, 0, substep.Histograms.Count())
+	})
+
+	t.Run("substep spanning entire parent range", func(t *testing.T) {
+		// Create substep for entire parent range (100, 200]
+		substep, err := step.SubStep(100, 200, nil)
+		require.NoError(t, err)
+
+		// Should have all points
+		require.Equal(t, 9, substep.Floats.Count())
+		require.Equal(t, 4, substep.Histograms.Count())
+		require.Equal(t, int64(110), substep.Floats.First().T)
+		last, _ := substep.Floats.Last()
+		require.Equal(t, int64(190), last.T)
+	})
+}
+
+func TestRangeVectorStepData_SubStep_ErrorCases(t *testing.T) {
+	testCases := []struct {
+		name        string
+		rangeStart  int64
+		rangeEnd    int64
+		smoothed    bool
+		anchored    bool
+		expectedErr string
+	}{
+		{
+			name:        "start before parent start",
+			rangeStart:  50,
+			rangeEnd:    150,
+			expectedErr: "substep start (50) is before parent step's start (100)",
+		},
+		{
+			name:        "rangeEnd after parent end",
+			rangeStart:  150,
+			rangeEnd:    250,
+			expectedErr: "substep end (250) is after parent step's end (200)",
+		},
+		{
+			name:        "rangeStart equals end",
+			rangeStart:  150,
+			rangeEnd:    150,
+			expectedErr: "substep start (150) must be less than end (150)",
+		},
+		{
+			name:        "rangeStart greater than end",
+			rangeStart:  180,
+			rangeEnd:    170,
+			expectedErr: "substep start (180) must be less than end (170)",
+		},
+		{
+			name:        "start before parent and end after parent",
+			rangeStart:  50,
+			rangeEnd:    250,
+			expectedErr: "substep start (50) is before parent step's start (100)",
+		},
+		{
+			name:        "smoothed not supported",
+			rangeStart:  120,
+			rangeEnd:    150,
+			smoothed:    true,
+			expectedErr: "substep not supported for range vectors with anchored or smoothed modifiers",
+		},
+		{
+			name:        "anchored not supported",
+			rangeStart:  120,
+			rangeEnd:    150,
+			anchored:    true,
+			expectedErr: "substep not supported for range vectors with anchored or smoothed modifiers",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(context.Background())
+			floats := NewFPointRingBuffer(memoryTracker)
+			histograms := NewHPointRingBuffer(memoryTracker)
+
+			step := &RangeVectorStepData{
+				StepT:      150,
+				RangeStart: 100,
+				RangeEnd:   200,
+				Smoothed:   tc.smoothed,
+				Anchored:   tc.anchored,
+				Floats:     floats.ViewUntilSearchingBackwards(200, nil),
+				Histograms: histograms.ViewUntilSearchingBackwards(200, nil),
+			}
+
+			_, err := step.SubStep(tc.rangeStart, tc.rangeEnd, nil)
+			require.EqualError(t, err, tc.expectedErr)
 		})
 	}
 }

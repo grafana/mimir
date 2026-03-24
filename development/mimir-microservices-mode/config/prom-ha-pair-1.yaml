@@ -6,6 +6,7 @@ global:
 
 scrape_configs:
   - job_name: ancillary-services
+    scrape_native_histograms: true
     static_configs:
       - targets:
           - 'memcached-exporter:9150'

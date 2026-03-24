@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//go:build requires_docker
 
 package integration
 
@@ -33,11 +32,7 @@ func TestActiveSeriesWithQuerySharding(t *testing.T) {
 			shardActiveSeriesQueries:    tc.shardingEnabled,
 			querySchedulerDiscoveryMode: "ring",
 			setup: func(t *testing.T, s *e2e.Scenario) (string, map[string]string) {
-				flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(),
-					map[string]string{
-						"-querier.response-streaming-enabled": "true",
-					},
-				)
+				flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags())
 				minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 				require.NoError(t, s.StartAndWaitReady(minio))
 

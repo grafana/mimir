@@ -182,7 +182,7 @@ func (c *genericQueryCache) recordCacheStoreQueryDetails(ctx context.Context, to
 
 func generateGenericQueryRequestCacheKey(tenantIDs []string, req *GenericQueryCacheKey) (cacheKey, hashedCacheKey string) {
 	cacheKey = fmt.Sprintf("%s:%s", tenant.JoinTenantIDs(tenantIDs), req.CacheKey)
-	hashedCacheKey = fmt.Sprintf("%s%s", req.CacheKeyPrefix, cacheHashKey(cacheKey))
+	hashedCacheKey = fmt.Sprintf("%s%s", req.CacheKeyPrefix, hashCacheKey(cacheKey))
 	return
 }
 

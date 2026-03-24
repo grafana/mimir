@@ -10,13 +10,7 @@ title: Send OpenTelemetry exponential histograms to Mimir
 weight: 200
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
-
 # Send OpenTelemetry exponential histograms to Mimir
-
-{{% admonition type="note" %}}
-Sending OpenTelemetry exponential histograms is an experimental feature of Grafana Mimir.
-{{% /admonition %}}
 
 You can collect and send exponential histograms to Mimir with the OpenTelemetry Collector. OpenTelemetry [exponential histograms](https://opentelemetry.io/docs/specs/otel/metrics/data-model/#exponentialhistogram) are compatible with Prometheus native histograms. The key difference is that exponential histograms store the `min` and `max` observation values explicitly, whereas native histograms don't. This means that for exponential histograms, you don't need to estimate these values using the 0.0 and 1.0 quantiles.
 

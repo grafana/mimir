@@ -7,7 +7,7 @@ import (
 	"fmt"
 )
 
-// mockStatistics implements the index.Statistics interface with hardcoded data for testing
+// mockStatistics implements the Statistics interface with hardcoded data for testing
 type mockStatistics struct {
 	// seriesPerValue maps label name -> label value -> number of series
 	seriesPerValue map[string]map[string]uint64
@@ -220,8 +220,8 @@ func newHighCardinalityMockStatistics() *mockStatistics {
 	}
 
 	stats.seriesPerValue["namespace"] = map[string]uint64{
-		"monitoring":   1500000,
-		"default":      1200000,
+		"monitoring":   1_500_000,
+		"default":      1_200_000,
 		"kube-system":  800000,
 		"logging":      600000,
 		"ingress":      400000,

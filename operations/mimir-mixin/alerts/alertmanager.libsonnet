@@ -34,7 +34,7 @@
           },
         },
         {
-          alert: $.alertName('AlertmanagerPartialStateMergeFailing'),
+          alert: $.alertName('AlertmanagerStateMergeFailing'),
           expr: |||
             rate(cortex_alertmanager_partial_state_merges_failed_total[%s]) > 0
           ||| % $.alertRangeInterval(2),
@@ -103,7 +103,7 @@
             message: |||
               Alertmanager %(alert_instance_variable)s in %(alert_aggregation_variables)s is using too much memory.
             ||| % $._config,
-          },
+          } + $.dashboardURLAnnotation('mimir-scaling.json'),
         },
         {
           alert: $.alertName('AlertmanagerAllocatingTooMuchMemory'),
@@ -116,7 +116,7 @@
             message: |||
               Alertmanager %(alert_instance_variable)s in %(alert_aggregation_variables)s is using too much memory.
             ||| % $._config,
-          },
+          } + $.dashboardURLAnnotation('mimir-scaling.json'),
         },
         {
           alert: $.alertName('AlertmanagerInstanceHasNoTenants'),
@@ -143,5 +143,12 @@
     },
   ],
 
-  groups+: $.withRunbookURL('https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#%s', $.withExtraLabelsAnnotations(alertGroups)),
+  groups+:
+    $.withRunbookURL(
+      'https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#%s',
+      $.withDashboardURL(
+        'mimir-alertmanager.json',
+        $.withExtraLabelsAnnotations(alertGroups)
+      )
+    ),
 }

@@ -29,7 +29,7 @@ func topTemplates(tmpl *tmpltext.Template) ([]string, error) {
 	// "name" but keep all of its named templates
 	candidateTmpls := make([]*tmpltext.Template, 0, len(definedTmpls))
 	for _, next := range definedTmpls {
-		if !(next.Name() == tmpl.ParseName && parse.IsEmptyTree(next.Root)) {
+		if next.Name() != tmpl.ParseName || !parse.IsEmptyTree(next.Root) {
 			candidateTmpls = append(candidateTmpls, next)
 		}
 	}
@@ -85,6 +85,7 @@ func checkListNode(node *parse.ListNode, executedTmpls map[string]struct{}) {
 }
 
 func checkNode(node parse.Node, executedTmpls map[string]struct{}) {
+	//nolint:exhaustive
 	switch node.Type() {
 	// The node is an if statement (with optional else)
 	case parse.NodeIf:

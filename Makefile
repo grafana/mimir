@@ -10,7 +10,7 @@ help:
 # WARNING: do not commit to a repository!
 -include Makefile.local
 
-.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks check-mixin-mimirtool-rules build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-getting-started mixin-screenshots
+.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc check-reference-help push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks check-mixin-mimirtool-rules build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-getting-started mixin-screenshots warmup-build-cache-integration-tests warmup-build-cache-unit-tests warmup-build-cache-image-and-lint
 .DEFAULT_GOAL := all
 
 # Version number
@@ -96,12 +96,6 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 # in that case.
 %/$(UPTODATE): GOOS=linux
 %/$(UPTODATE): %/Dockerfile
-	if [ -f $(@D)/Dockerfile.continuous-test ]; then \
-		$(SUDO) docker build -f $(@D)/Dockerfile.continuous-test \
-			--build-arg=revision=$(GIT_REVISION) \
-			--build-arg=goproxyValue=$(GOPROXY_VALUE) \
-			-t $(IMAGE_PREFIX)$(shell basename $(@D))-continuous-test:$(IMAGE_TAG) $(@D)/; \
-	fi;
 	@echo
 	$(SUDO) docker build --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(IMAGE_PREFIX)$(shell basename $(@D)) -t $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG) $(@D)/
 	@echo
@@ -109,7 +103,6 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 	@echo
 	@echo Image name: $(IMAGE_PREFIX)$(shell basename $(@D))
 	@echo Image name: $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG)
-	@echo Image name: $(IMAGE_PREFIX)$(shell basename $(@D))-continuous-test:$(IMAGE_TAG)
 	@echo
 	@echo Please use '"make push-multiarch-build-image"' to build and push build image.
 	@echo Please use '"make push-multiarch-mimir"' to build and push Mimir image.
@@ -124,7 +117,7 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 		--build-arg=goproxyValue=$(GOPROXY_VALUE) \
 		--build-arg=USE_BINARY_SUFFIX=true \
 		--build-arg=BINARY_SUFFIX=_race \
-		--build-arg=BASEIMG="gcr.io/distroless/base-nossl-debian12" \
+		--build-arg=BASEIMG="gcr.io/distroless/base-nossl-debian12@sha256:c8430558b9a8688298c060ddc5e6f2993c8a092dee8a6b7058139ac8472e8ad0" \
 		-t $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG_RACE) $(@D)/
 	@echo
 	@echo Go binaries were built using GOOS=$(GOOS) and GOARCH=$(GOARCH)
@@ -137,7 +130,6 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 # Other options are documented in https://docs.docker.com/engine/reference/commandline/buildx_build/#output.
 # CI workflow uses PUSH_MULTIARCH_TARGET="type=oci,dest=file.oci" to store images locally for next steps in the pipeline.
 PUSH_MULTIARCH_TARGET ?= type=registry
-PUSH_MULTIARCH_TARGET_CONTINUOUS_TEST ?= type=registry
 
 # This target compiles mimir for linux/amd64 and linux/arm64 and then builds and pushes a multiarch image to the target repository.
 # We don't do separate building of single-platform and multiplatform images here (as we do for push-multiarch-build-image), as
@@ -156,17 +148,6 @@ push-multiarch-%/$(UPTODATE):
 		--build-arg=goproxyValue=$(GOPROXY_VALUE) \
 		--build-arg=USE_BINARY_SUFFIX=true \
 		-t $(IMAGE_PREFIX)$(shell basename $(DIR)):$(IMAGE_TAG) $(DIR)/
-
-	# Build Dockerfile.continuous-test
-	if [ -f $(DIR)/Dockerfile.continuous-test ]; then \
-		$(SUDO) docker buildx build -f $(DIR)/Dockerfile.continuous-test \
-			-o $(PUSH_MULTIARCH_TARGET_CONTINUOUS_TEST) \
-			--platform linux/amd64,linux/arm64 \
-			--build-arg=revision=$(GIT_REVISION) \
-			--build-arg=goproxyValue=$(GOPROXY_VALUE) \
-			--build-arg=USE_BINARY_SUFFIX=true \
-			-t $(IMAGE_PREFIX)$(shell basename $(DIR))-continuous-test:$(IMAGE_TAG) $(DIR)/; \
-	fi;
 
 push-multiarch-mimir: ## Push mimir docker image.
 push-multiarch-mimir: push-multiarch-cmd/mimir/.uptodate
@@ -243,7 +224,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr12712-28f11b4f26
+LATEST_BUILD_IMAGE_TAG ?= pr14660-ee3200fbdb
 
 # TTY is parameterized to allow CI and scripts to run builds,
 # as it currently disallows TTY devices.
@@ -253,11 +234,12 @@ MIMIR_VERSION := github.com/grafana/mimir/pkg/util/version
 
 REGO_POLICIES_PATH=operations/policies
 
+GO_TAGS := netgo,stringlabels
 GO_FLAGS := -ldflags "\
 		-X $(MIMIR_VERSION).Branch=$(GIT_BRANCH) \
 		-X $(MIMIR_VERSION).Revision=$(GIT_REVISION) \
 		-X $(MIMIR_VERSION).Version=$(VERSION) \
-		-extldflags \"-static\" -s -w" -tags netgo,stringlabels
+		-extldflags \"-static\" -s -w" -tags $(GO_TAGS)
 
 ifeq ($(BUILD_IN_CONTAINER),true)
 
@@ -308,66 +290,139 @@ lint-packaging-scripts: packaging/nfpm/mimir/postinstall.sh packaging/nfpm/mimir
 lint-gh-action: operations/mimir-rules-action/entrypoint.sh
 	shellcheck $?
 
+# CGO_ENABLED=0 and -tags matching GO_TAGS align with the image-and-lint Go build cache,
+# so golangci-lint and faillint can reuse cached compiled packages.
+LINT_GO_ENV := CGO_ENABLED=0 GOFLAGS="-tags=$(GO_TAGS)"
+
 lint: ## Run lints to check for style issues.
 lint: check-makefiles check-merge-conflicts
 	misspell -error $(DOC_SOURCES_PATH)
 
 	./tools/find-unpooled-slice-creation.sh
 
-	# Configured via .golangci.yml.
-	golangci-lint run
+	# Configured via .golangci.yml (which sets build-tags matching GO_TAGS).
+	$(LINT_GO_ENV) golangci-lint run
+
+	# Lint tools/trafficdump separately: it needs requires_libpcap and CGO_ENABLED=1 (for libpcap C bindings).
+	golangci-lint run --build-tags $(GO_TAGS),requires_libpcap ./tools/trafficdump/...
 
 	# Ensure no blocklisted package is imported.
-	GOFLAGS="-tags=requires_docker,stringlabels" faillint -paths "github.com/bmizerany/assert=github.com/stretchr/testify/assert,\
+	#
+	# github.com/pkg/errors.Cause:
+	# errors.Cause() only work on errors wrapped by github.com/pkg/errors, while it doesn't work
+	# on errors wrapped by golang standard errors package. In Mimir we currently use github.com/pkg/errors
+	# but other vendors we depend on (e.g. Prometheus) just uses the standard errors package.
+	# For this reason, we recommend to not use errors.Cause() anywhere, so that we don't have to
+	# question whether the usage is safe or not.
+	#
+	# github.com/gogo/status.FromError:
+	# gogo/status allows to easily customize error details while grpc/status doesn't:
+	# for this reason we use gogo/status in several places. However, gogo/status.FromError()
+	# doesn't support wrapped errors, while grpc/status.FromError() does.
+	#
+	# google.golang.org/grpc/status.FromError:
+	# Since we want support for errors wrapping everywhere, to avoid subtle bugs depending
+	# on which status package is imported, we don't allow .FromError() from both packages
+	# and we require to use grpcutil.ErrorToStatus() instead.
+	#
+	# github.com/NYTimes/gziphandler:
+	# We've copied github.com/NYTimes/gziphandler to pkg/util/gziphandler
+	# at least until https://github.com/nytimes/gziphandler/pull/112 is merged
+	#
+	# gopkg.in/yaml.v2:
+	# We don't want to use yaml.v2 anywhere, because we use yaml.v3 now,
+	# and UnamrshalYAML signature is not compatible between them.
+	#
+	# github.com/thanos-io/thanos/pkg:
+	# Ensure packages we imported from Thanos are no longer used.
+	#
+	# sort.SliceIsSorted:
+	# Use the faster slices.IsSortedFunc where we can.
+	#
+	# github.com/grafana/dskit/ring.Read:
+	# Don't use generic ring.Read operation.
+	# ring.Read usually isn't the right choice, and we prefer that each component define its operations explicitly.
+	#
+	# flag:
+	# Do not directly call flag.Parse() and argument getters, to try to reduce risk of misuse.
+	#
+	# github.com/grafana/mimir/pkg/storegateway/storegatewaypb.NewStoreGatewayClient:
+	# Ensure we use our custom gRPC clients.
+	#
+	# github.com/twmb/franz-go/pkg/kgo.AllowAutoTopicCreation:
+	# We don't use topic auto-creation because we don't control the num.partitions.
+	# As a result the topic can be created with the wrong number of partitions.
+	#
+	# github.com/opentracing/opentracing-go:
+	# We don't use opentracing anymore.
+	#
+	# google.golang.org/grpc/metadata.FromIncomingContext:
+	# Use the more performant metadata.ValueFromIncomingContext wherever possible (if not possible, we can always put
+	# a lint ignore directive to skip linting).
+	$(LINT_GO_ENV) faillint -paths "github.com/bmizerany/assert=github.com/stretchr/testify/assert,\
 		golang.org/x/net/context=context,\
 		sync/atomic=go.uber.org/atomic,\
 		regexp=github.com/grafana/regexp,\
 		github.com/go-kit/kit/log/...=github.com/go-kit/log,\
 		github.com/prometheus/client_golang/prometheus.{MultiError}=github.com/prometheus/prometheus/tsdb/errors.{NewMulti},\
 		github.com/weaveworks/common/user.{ExtractOrgID}=github.com/grafana/mimir/pkg/tenant.{TenantID,TenantIDs},\
-		github.com/weaveworks/common/user.{ExtractOrgIDFromHTTPRequest}=github.com/grafana/mimir/pkg/tenant.{ExtractTenantIDFromHTTPRequest}" ./pkg/... ./cmd/... ./tools/... ./integration/...
+		github.com/weaveworks/common/user.{ExtractOrgIDFromHTTPRequest}=github.com/grafana/mimir/pkg/tenant.{ExtractTenantIDFromHTTPRequest},\
+		github.com/pkg/errors.{Cause},\
+		google.golang.org/grpc/status.{FromError}=github.com/grafana/dskit/grpcutil.ErrorToStatus,\
+		github.com/gogo/status.{FromError}=github.com/grafana/dskit/grpcutil.ErrorToStatus,\
+		github.com/NYTimes/gziphandler,\
+		gopkg.in/yaml.v2,\
+		github.com/thanos-io/thanos/pkg/...,\
+		sort.{SliceIsSorted}=slices.IsSortedFunc,\
+		github.com/grafana/dskit/ring.{Read},\
+		flag.{Parse,NArg,Arg,Args}=github.com/grafana/dskit/flagext.{ParseFlagsAndArguments,ParseFlagsWithoutArguments},\
+		github.com/grafana/mimir/pkg/storegateway/storegatewaypb.{NewStoreGatewayClient}=github.com/grafana/mimir/pkg/storegateway/storegatewaypb.NewCustomStoreGatewayClient,\
+		github.com/twmb/franz-go/pkg/kgo.{AllowAutoTopicCreation},\
+		github.com/opentracing/opentracing-go,\
+		github.com/opentracing/opentracing-go/log,\
+		github.com/uber/jaeger-client-go,\
+		github.com/opentracing-contrib/go-stdlib/nethttp,\
+		google.golang.org/grpc/metadata.{FromIncomingContext}=google.golang.org/grpc/metadata.ValueFromIncomingContext" \
+		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# Ensure clean pkg structure.
-	faillint -paths "\
+	$(LINT_GO_ENV) faillint -paths "\
 		github.com/grafana/mimir/pkg/scheduler,\
 		github.com/grafana/mimir/pkg/frontend,\
 		github.com/grafana/mimir/pkg/frontend/transport,\
 		github.com/grafana/mimir/pkg/frontend/v1,\
 		github.com/grafana/mimir/pkg/frontend/v2" \
 		./pkg/querier/...
-	faillint -paths "github.com/grafana/mimir/pkg/querier/..." ./pkg/scheduler/...
-	faillint -paths "github.com/grafana/mimir/pkg/storage/tsdb/..." ./pkg/storage/bucket/...
-	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/alertmanager/alertspb/...
-	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/ruler/rulespb/...
-	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/storage/sharding/...
-	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/querier/engine/...
-	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/querier/api/...
-	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/util/math/...
+	$(LINT_GO_ENV) faillint -paths "github.com/grafana/mimir/pkg/querier/..." ./pkg/scheduler/...
+	$(LINT_GO_ENV) faillint -paths "github.com/grafana/mimir/pkg/storage/tsdb/..." ./pkg/storage/bucket/...
+	$(LINT_GO_ENV) faillint -paths "github.com/grafana/mimir/pkg/..." \
+		./pkg/alertmanager/alertspb/... \
+		./pkg/ruler/rulespb/... \
+		./pkg/storage/sharding/... \
+		./pkg/querier/engine/... \
+		./pkg/querier/api/... \
+		./pkg/util/math/...
 
 	# Ensure all errors are reported as APIError
-	faillint -paths "github.com/weaveworks/common/httpgrpc.{Errorf}=github.com/grafana/mimir/pkg/api/error.Newf" ./pkg/frontend/querymiddleware/...
+	$(LINT_GO_ENV) faillint -paths "github.com/weaveworks/common/httpgrpc.{Errorf}=github.com/grafana/mimir/pkg/api/error.Newf" ./pkg/frontend/querymiddleware/...
 
-	# errors.Cause() only work on errors wrapped by github.com/pkg/errors, while it doesn't work
-	# on errors wrapped by golang standard errors package. In Mimir we currently use github.com/pkg/errors
-	# but other vendors we depend on (e.g. Prometheus) just uses the standard errors package.
-	# For this reason, we recommend to not use errors.Cause() anywhere, so that we don't have to
-	# question whether the usage is safe or not.
-	faillint -paths "github.com/pkg/errors.{Cause}" ./pkg/... ./cmd/... ./tools/... ./integration/...
-
-	# gogo/status allows to easily customize error details while grpc/status doesn't:
-	# for this reason we use gogo/status in several places. However, gogo/status.FromError()
-	# doesn't support wrapped errors, while grpc/status.FromError() does.
-	#
-	# Since we want support for errors wrapping everywhere, to avoid subtle bugs depending
-	# on which status package is imported, we don't allow .FromError() from both packages
-	# and we require to use grpcutil.ErrorToStatus() instead.
-	faillint -paths "\
-		google.golang.org/grpc/status.{FromError}=github.com/grafana/dskit/grpcutil.ErrorToStatus,\
-		github.com/gogo/status.{FromError}=github.com/grafana/dskit/grpcutil.ErrorToStatus" \
-		./pkg/... ./cmd/... ./tools/... ./integration/...
+	# Gradually removing use of the github.com/pkg/errors package entirely. It's unmaintained and all functionality
+	# now exists in the standard library errors package. Prevent it from being used in packages that have already
+	# completely migrated.
+	$(LINT_GO_ENV) faillint -paths "github.com/pkg/errors=errors" \
+		./pkg/alertmanager/... \
+		./pkg/api/... \
+		./pkg/blockbuilder... \
+		./pkg/cardinality... \
+		./pkg/compactor... \
+		./pkg/continuoustest... \
+		./pkg/scheduler... \
+		./pkg/util/... \
+		./cmd/... \
+		./integration/...
 
 	# Ensure the query path is supporting multiple tenants
-	faillint -paths "\
+	$(LINT_GO_ENV) faillint -paths "\
 		github.com/grafana/mimir/pkg/tenant.{TenantID}=github.com/grafana/mimir/pkg/tenant.{TenantIDs}" \
 		./pkg/scheduler/... \
 		./pkg/frontend/... \
@@ -375,11 +430,10 @@ lint: check-makefiles check-merge-conflicts
 		./pkg/frontend/querymiddleware/...
 
 	# Ensure packages that no longer use a global logger don't reintroduce it
-	faillint -paths "github.com/grafana/mimir/pkg/util/log.{Logger}" \
+	$(LINT_GO_ENV) faillint -paths "github.com/grafana/mimir/pkg/util/log.{Logger}" \
 		./pkg/alertmanager/... \
 		./pkg/compactor/... \
 		./pkg/distributor/... \
-		./pkg/flusher/... \
 		./pkg/frontend/... \
 		./pkg/ingester/... \
 		./pkg/querier/... \
@@ -388,102 +442,49 @@ lint: check-makefiles check-merge-conflicts
 		./pkg/storage/... \
 		./pkg/storegateway/...
 
-	# We've copied github.com/NYTimes/gziphandler to pkg/util/gziphandler
-	# at least until https://github.com/nytimes/gziphandler/pull/112 is merged
-	faillint -paths "github.com/NYTimes/gziphandler" \
-		./pkg/... ./cmd/... ./tools/... ./integration/...
-
-	# We don't want to use yaml.v2 anywhere, because we use yaml.v3 now,
-	# and UnamrshalYAML signature is not compatible between them.
-	faillint -paths "gopkg.in/yaml.v2" \
-		./pkg/... ./cmd/... ./tools/... ./integration/...
-
-	# Ensure packages we imported from Thanos are no longer used.
-	GOFLAGS="-tags=requires_docker,stringlabels" faillint -paths \
-		"github.com/thanos-io/thanos/pkg/..." \
-		./pkg/... ./cmd/... ./tools/... ./integration/...
-
 	# Ensure we never use the default registerer and we allow to use a custom one (improves testability).
 	# Also, ensure we use promauto.With() to reduce the chances we forget to register metrics.
-	faillint -paths \
+	$(LINT_GO_ENV) faillint -paths \
 		"github.com/prometheus/client_golang/prometheus/promauto.{NewCounter,NewCounterVec,NewCounterFunc,NewGauge,NewGaugeVec,NewGaugeFunc,NewSummary,NewSummaryVec,NewHistogram,NewHistogramVec}=github.com/prometheus/client_golang/prometheus/promauto.With,\
 		github.com/prometheus/client_golang/prometheus.{MustRegister,Register,DefaultRegisterer}=github.com/prometheus/client_golang/prometheus/promauto.With,\
 		github.com/prometheus/client_golang/prometheus.{NewCounter,NewCounterVec,NewCounterFunc,NewGauge,NewGaugeVec,NewGaugeFunc,NewSummary,NewSummaryVec,NewHistogram,NewHistogramVec}=github.com/prometheus/client_golang/prometheus/promauto.With" \
 		./pkg/...
 
-	# Use the faster slices.IsSortedFunc where we can.
-	faillint -paths \
-		"sort.{SliceIsSorted}=slices.IsSortedFunc" \
-		./pkg/... ./cmd/... ./tools/... ./integration/...
-
-	# Don't use generic ring.Read operation.
-	# ring.Read usually isn't the right choice, and we prefer that each component define its operations explicitly.
-	faillint -paths \
-		"github.com/grafana/dskit/ring.{Read}" \
-		./pkg/... ./cmd/... ./tools/... ./integration/...
-
-	# Do not directly call flag.Parse() and argument getters, to try to reduce risk of misuse.
-	faillint -paths \
-		"flag.{Parse,NArg,Arg,Args}=github.com/grafana/dskit/flagext.{ParseFlagsAndArguments,ParseFlagsWithoutArguments}" \
-		./pkg/... ./cmd/... ./tools/... ./integration/...
-
-	# Ensure we use our custom gRPC clients.
-	faillint -paths \
-		"github.com/grafana/mimir/pkg/storegateway/storegatewaypb.{NewStoreGatewayClient}=github.com/grafana/mimir/pkg/storegateway/storegatewaypb.NewCustomStoreGatewayClient" \
-		./pkg/... ./cmd/... ./tools/... ./integration/...
-
 	# Prefer using WithCancelCause in production code, so that cancelled contexts have more information available from context.Cause(ctx).
-	faillint -ignore-tests -paths \
-		"context.{WithCancel}=context.WithCancelCause" \
-		./pkg/... ./cmd/... ./tools/... ./integration/...
+	$(LINT_GO_ENV) faillint -ignore-tests -paths "context.{WithCancel}=context.WithCancelCause" ./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# Do not use the object storage client intended only for tools within Mimir itself
-	faillint -paths \
-		"github.com/grafana/mimir/pkg/util/objtools" \
-		./pkg/... ./cmd/... ./integration/...
-
-	# Use the more performant metadata.ValueFromIncomingContext wherever possible (if not possible, we can always put
-	# a lint ignore directive to skip linting).
-	faillint -paths \
-		"google.golang.org/grpc/metadata.{FromIncomingContext}=google.golang.org/grpc/metadata.ValueFromIncomingContext" \
-		./pkg/... ./cmd/... ./integration/...
-
-	# We don't use topic auto-creation because we don't control the num.partitions.
-	# As a result the topic can be created with the wrong number of partitions.
-	faillint -paths \
-		"github.com/twmb/franz-go/pkg/kgo.{AllowAutoTopicCreation}" \
-		./pkg/... ./cmd/... ./tools/... ./integration/...
-
-	# We don't use opentracing anymore.
-	faillint -paths \
-		"github.com/opentracing/opentracing-go,github.com/opentracing/opentracing-go/log,github.com/uber/jaeger-client-go,github.com/opentracing-contrib/go-stdlib/nethttp" \
-		./pkg/... ./cmd/... ./tools/... ./integration/...
+	# Do not check ./tools/... because objtools is intended for use by tools.
+	$(LINT_GO_ENV) faillint -paths "github.com/grafana/mimir/pkg/util/objtools" ./pkg/... ./cmd/... ./integration/...
 
 	# Ensure lines are sorted after lint:sorted directives.
-	go run ./tools/lint-sorted/ \
+	$(LINT_GO_ENV) go run ./tools/lint-sorted/ \
 		-path ./pkg \
 		-path ./cmd \
 		-path ./tools \
 		-path ./integration \
 		-include '*.go'
 
+	# Ensure gRPC buffers aren't released too early
+	$(LINT_GO_ENV) go run ./tools/lint-buffer-holder
+
 format: ## Run gofmt and goimports.
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec gofmt -w -s {} \;
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec goimports -w -local github.com/grafana/mimir {} \;
 
 test: ## Run all unit tests.
-	go test -timeout 30m ./...
+	go test -timeout 30m $$(go list ./... | grep -v "^github.com/grafana/mimir/integration")
 
 print-go-version: ## Print the go version.
 	@go version | awk '{print $$3}' | sed 's/go//'
 
 test-with-race: ## Run all unit tests with data race detect.
-	go test -tags netgo,stringlabels -timeout 30m -race -count 1 ./...
+	go test -tags netgo,stringlabels -timeout 30m -race -count 1 $$(go list ./... | grep -v "^github.com/grafana/mimir/integration")
 
 cover: ## Run all unit tests with code coverage and generates reports.
 	$(eval COVERDIR := $(shell mktemp -d coverage.XXXXXXXXXX))
 	$(eval COVERFILE := $(shell mktemp $(COVERDIR)/unit.XXXXXXXXXX))
-	go test -tags netgo,stringlabels -timeout 30m -race -count 1 -coverprofile=$(COVERFILE) ./...
+	go test -tags netgo,stringlabels -timeout 30m -race -count 1 -coverprofile=$(COVERFILE) $$(go list ./... | grep -v "^github.com/grafana/mimir/integration")
 	go tool cover -html=$(COVERFILE) -o cover.html
 	go tool cover -func=cover.html | tail -n1
 
@@ -516,7 +517,8 @@ check-protobuf-format:
 	buf format --diff --exit-code $(addprefix --path=,$(PROTO_DEFS)) || (echo "Please format Protobuf files by running 'make format-protobuf'" && false)
 
 %.md : %.template
-	go run ./tools/doc-generator $< > $@
+	# Speed up check-doc in the lint CI job by aligning doc-generator's Go build flags (CGO_ENABLED=0, -tags netgo,stringlabels) with the rest of the lint pipeline, allowing it to reuse the build cache instead of recompiling the entire dependency tree from scratch.
+	CGO_ENABLED=0 go run -tags $(GO_TAGS) ./tools/doc-generator $< > $@
 
 .PHONY: %.md.embedmd
 %.md.embedmd : %.md
@@ -567,9 +569,6 @@ dist: ## Generates binaries for a Mimir release.
 			echo "Building metaconvert for $$os/$$arch"; \
 			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/metaconvert-$$os-$$arch$$suffix ./cmd/metaconvert; \
 			sha256sum ./dist/metaconvert-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/metaconvert-$$os-$$arch$$suffix-sha-256; \
-			echo "Building mimir-continuous-test for $$os/$$arch"; \
-			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimir-continuous-test-$$os-$$arch$$suffix ./cmd/mimir-continuous-test; \
-			sha256sum ./dist/mimir-continuous-test-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/mimir-continuous-test-$$os-$$arch$$suffix-sha-256; \
 			echo "Building mark-blocks for $$os/$$arch"; \
 			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mark-blocks-$$os-$$arch$$suffix ./tools/mark-blocks; \
 			sha256sum ./dist/mark-blocks-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/mark-blocks-$$os-$$arch$$suffix-sha-256; \
@@ -632,6 +631,18 @@ check-helm-tests: build-helm-tests helm-conftest-test
 
 endif
 
+%.pb.go.expdiff: ## Regenerates expected diff files from the current content of .pb.go files.
+%.pb.go.expdiff: %.pb.go
+	@echo "Regenerating $@"
+	$(eval PBGO_FILE := $(patsubst %.pb.go.expdiff,%.pb.go,$@))
+	$(eval PROTO_FILE := $(patsubst %.pb.go.expdiff,%.proto,$@))
+	@cp $(PBGO_FILE) $(PBGO_FILE).bak
+	@touch $(PROTO_FILE)
+	@$(MAKE) -B $(PBGO_FILE)
+	@git diff --no-index $(PBGO_FILE).bak $(PBGO_FILE) | sed 's/.pb.go.bak/.pb.go/g' > $@ || true
+	@rm $(PBGO_FILE).bak
+	@./tools/apply-expected-diffs.sh $(PBGO_FILE)
+
 .PHONY: check-makefiles
 check-makefiles: ## Check the makefiles format.
 check-makefiles: format-makefiles
@@ -664,6 +675,15 @@ check-doc: ## Check the documentation files are up to date.
 check-doc: doc
 	@find . -name "*.md" | xargs git diff --exit-code -- \
 	|| (echo "Please update generated documentation by running 'make doc' and committing the changes" && false)
+
+check-reference-help: ## Check the reference help documentation is up to date.
+check-reference-help: reference-help
+	@git diff --exit-code -- \
+		cmd/mimir/help.txt.tmpl \
+		cmd/mimir/help-all.txt.tmpl \
+		cmd/mimir/config-descriptor.json \
+		operations/mimir/mimir-flags-defaults.json \
+	|| (echo "Please update generated reference documentation by running 'make reference-help' and committing the changes" && false)
 
 # Tool is developed in the grafana/technical-documentation repository:
 # https://github.com/grafana/technical-documentation/tree/main/tools/doc-validator
@@ -748,6 +768,7 @@ check-helm-jsonnet-diff: operations/helm/charts/mimir-distributed/charts build-j
 	@./operations/compare-helm-with-jsonnet/compare-helm-with-jsonnet.sh
 
 build-jsonnet-tests: ## Build the jsonnet tests.
+	@rm -f ./operations/mimir-tests/*-generated.yaml
 	@./operations/mimir-tests/build.sh
 
 jsonnet-conftest-quick-test: ## Does not rebuild the yaml manifests, use the target jsonnet-conftest-test for that
@@ -765,12 +786,39 @@ check-mimir-microservices-mode-docker-compose-yaml: ## Check the jsonnet and doc
 
 integration-tests: ## Run all integration tests.
 integration-tests: cmd/mimir/$(UPTODATE)
-	go test -tags=requires_docker,stringlabels ./integration/...
+	go test -tags=stringlabels ./integration/...
 
 integration-tests-race: ## Run all integration tests with race-enabled distroless docker image.
 integration-tests-race: export MIMIR_IMAGE=$(IMAGE_PREFIX)mimir:$(IMAGE_TAG_RACE)
 integration-tests-race: cmd/mimir/$(UPTODATE_RACE)
-	go test -timeout 30m -tags=requires_docker,stringlabels ./integration/...
+	go test -timeout 30m -tags=stringlabels ./integration/...
+
+# The following targets compile test/build binaries without running them, populating the Go build
+# cache. They are used by the warmup-go-build-cache-* CI jobs so that the actual test and build
+# jobs can skip most compilation. The flags here MUST match the ones used by the real targets.
+
+warmup-build-cache-integration-tests: ## Warm the Go build cache for integration tests.
+	go test -run=^$ -count=1 -tags=stringlabels ./integration/ 2>&1 || true
+	go build ./tools/pre-pull-images/... 2>&1 || true
+
+warmup-build-cache-unit-tests: ## Warm the Go build cache for unit tests.
+	go test -run=^$ -count=1 -tags=$(GO_TAGS) -race ./... 2>&1 || true
+	go test -run=^$ -count=1 -tags=$(GO_TAGS),nopools -race ./... 2>&1 || true
+	# Some packages run without -race (see SKIP_RACE_DETECTOR_PATTERN in run-unit-tests-group.sh).
+	go test -run=^$ -count=1 -tags=$(GO_TAGS) ./pkg/streamingpromql/benchmarks/... ./pkg/streamingpromql/comparisons/... ./pkg/streamingpromql/fuzz/... 2>&1 || true
+
+IMAGE_EXES := $(foreach dir,$(DOCKER_IMAGE_DIRS),$(wildcard $(dir)/main.go))
+warmup-build-cache-image-and-lint: ## Warm the Go build cache for image builds and linting.
+	@for arch in amd64 arm64; do \
+		for main in $(IMAGE_EXES); do \
+			dir=$$(dirname $$main); \
+			echo "Warming cache: GOARCH=$$arch $$dir/..."; \
+			CGO_ENABLED=0 GOOS=linux GOARCH=$$arch go build $(GO_FLAGS) ./$$dir/... 2>&1 || true; \
+		done; \
+	done
+	# Warm remaining packages for lint tools (golangci-lint, faillint) which type-check
+	# all packages with CGO_ENABLED=0 -tags=netgo,stringlabels on linux/amd64.
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags $(GO_TAGS) ./pkg/... ./cmd/... ./tools/... ./integration/... 2>&1 || true
 
 # Those vars are needed for packages target
 export VERSION

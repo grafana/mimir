@@ -15,7 +15,6 @@ import (
 	"github.com/grafana/dskit/cache"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	promRules "github.com/prometheus/prometheus/rules"
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
@@ -26,9 +25,9 @@ import (
 )
 
 // NewRuleStore returns a rule store backend client based on the provided cfg.
-func NewRuleStore(ctx context.Context, cfg rulestore.Config, cfgProvider bucket.TenantConfigProvider, loader promRules.GroupLoader, cacheTTL time.Duration, logger log.Logger, reg prometheus.Registerer) (store rulestore.RuleStore, _ error) {
+func NewRuleStore(ctx context.Context, cfg rulestore.Config, cfgProvider bucket.TenantConfigProvider, cacheTTL time.Duration, logger log.Logger, reg prometheus.Registerer) (store rulestore.RuleStore, _ error) {
 	if cfg.Backend == rulestore.BackendLocal {
-		store, err := local.NewLocalRulesClient(cfg.Local, loader)
+		store, err := local.NewLocalRulesClient(cfg.Local)
 		if err != nil {
 			return nil, err
 		}

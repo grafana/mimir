@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"testing"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/stretchr/testify/require"
@@ -86,7 +87,7 @@ func TestSymbolsTable(t *testing.T) {
 	})
 
 	t.Run("common symbols", func(t *testing.T) {
-		commonSymbols := []string{"", "__name__", "__aggregation__"}
+		commonSymbols := NewCommonSymbols([]string{"", "__name__", "__aggregation__"})
 		s := NewFastSymbolsTable(minPreallocatedSymbolsPerRequest)
 		s.ConfigureCommonSymbols(8, commonSymbols)
 
@@ -157,7 +158,7 @@ func desymbolizeLabelsDirect(labelRefs []uint32, symbols []string) ([]LabelAdapt
 	for i := 0; i < len(labelRefs); i += 2 {
 		las[i/2].Name = symbols[labelRefs[i]]
 		las[i/2].Value = symbols[labelRefs[i+1]]
-		if las[i/2].Name == labels.MetricName {
+		if las[i/2].Name == model.MetricNameLabel {
 			name = las[i/2].Value
 		}
 	}
@@ -171,12 +172,13 @@ func BenchmarkSymbolizer(b *testing.B) {
 			lbls[i*2] = "__name__"
 			lbls[(i*2)+1] = fmt.Sprintf("series_%d", i)
 		}
+		commonSymbols := NewCommonSymbols(benchmarkCommonSymbols)
 
 		b.ResetTimer()
 
 		for n := 0; n < b.N; n++ {
 			st := symbolsTableFromPool()
-			st.ConfigureCommonSymbols(64, benchmarkCommonSymbols)
+			st.ConfigureCommonSymbols(64, commonSymbols)
 
 			for _, l := range lbls {
 				_ = st.Symbolize(l)
@@ -204,12 +206,13 @@ func BenchmarkSymbolizer(b *testing.B) {
 			}
 			series = append(series, s)
 		}
+		commonSymbols := NewCommonSymbols(benchmarkCommonSymbols)
 
 		b.ResetTimer()
 
 		for n := 0; n < b.N; n++ {
 			st := symbolsTableFromPool()
-			st.ConfigureCommonSymbols(64, benchmarkCommonSymbols)
+			st.ConfigureCommonSymbols(64, commonSymbols)
 
 			for _, s := range series {
 				for _, l := range s {

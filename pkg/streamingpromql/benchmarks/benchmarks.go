@@ -25,9 +25,10 @@ import (
 var MetricSizes = []int{1, 100, 2000}
 
 type BenchCase struct {
-	Expr             string
-	Steps            int
-	InstantQueryOnly bool
+	Expr                        string
+	Steps                       int
+	InstantQueryOnly            bool
+	IgnoreAnnotationDifferences bool
 }
 
 func (c BenchCase) Name() string {
@@ -100,6 +101,48 @@ func TestCases(metricSizes []int) []BenchCase {
 		},
 		{
 			Expr:  "rate(nh_X[1m])",
+			Steps: 10000,
+		},
+		{
+			Expr: "rate(a_X[1m] smoothed)",
+		},
+		{
+			Expr:  "rate(a_X[1m] smoothed)",
+			Steps: 10000,
+		},
+		{
+			Expr: "rate(a_X[2h] smoothed)",
+		},
+		{
+			Expr:  "rate(a_X[2h] smoothed)",
+			Steps: 10000,
+		},
+		{
+			Expr: "delta(a_X[1m] smoothed)",
+		},
+		{
+			Expr:  "delta(a_X[1m] smoothed)",
+			Steps: 10000,
+		},
+		{
+			Expr: "delta(a_X[2h] smoothed)",
+		},
+		{
+			Expr:  "delta(a_X[2h] smoothed)",
+			Steps: 10000,
+		},
+		{
+			Expr: "rate(a_X[1m] anchored)",
+		},
+		{
+			Expr:  "rate(a_X[1m] anchored)",
+			Steps: 10000,
+		},
+		{
+			Expr: "rate(a_X[2h] anchored)",
+		},
+		{
+			Expr:  "rate(a_X[2h] anchored)",
 			Steps: 10000,
 		},
 		//// Holt-Winters and long ranges.
@@ -289,6 +332,20 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "topk by (le) (5, h_X)",
 		},
+
+		{
+			Expr: "limitk(1, a_X)",
+		},
+		{
+			Expr: "limitk(5, a_X)",
+		},
+		{
+			Expr: "limit_ratio(0.2, a_X)",
+		},
+		{
+			Expr: "limit_ratio(-0.8, a_X)",
+		},
+
 		{
 			Expr: "quantile(0.9, a_X)",
 		},
@@ -362,6 +419,41 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "sum(sum_over_time(a_X[1d])) / sum(count_over_time(a_X[1d]))",
 		},
+		// Subset selector elimination cases
+		{
+			Expr: `a_X{l=~"[13579].*"} / a_X`,
+		},
+		{
+			Expr:                        `rate(a_X{l=~"[13579].*"}[1m]) / rate(a_X[1m])`,
+			IgnoreAnnotationDifferences: true, // The a_1 metric has no 'l' label, so this query selects no data, short-circuits and doesn't generate "metric might not be a counter" annotations.
+		},
+		{
+			Expr: `sum(a_X{l=~"[13579].*"}) / sum(a_X)`,
+		},
+		{
+			Expr:                        `sum(rate(a_X{l=~"[13579].*"}[1m])) / sum(rate(a_X[1m]))`,
+			IgnoreAnnotationDifferences: true, // The a_1 metric has no 'l' label, so this query selects no data, short-circuits and doesn't generate "metric might not be a counter" annotations.
+		},
+		{
+			Expr: `sum(a_X{l=~"[13].*"}) / sum(a_X)`,
+		},
+		{
+			Expr:                        `sum(rate(a_X{l=~"[13].*"}[1m])) / sum(rate(a_X[1m]))`,
+			IgnoreAnnotationDifferences: true, // The a_1 metric has no 'l' label, so this query selects no data, short-circuits and doesn't generate "metric might not be a counter" annotations.
+		},
+		// info()
+		{
+			Expr: `info(info_sparse_100, {__name__="target_info_X"})`,
+		},
+		{
+			Expr: `info(info_sparse_2000, {__name__="target_info_X"})`,
+		},
+		{
+			Expr: `info(info_dense_100, {__name__="target_info_X"})`,
+		},
+		{
+			Expr: `info(info_dense_2000, {__name__="target_info_X"})`,
+		},
 	}
 
 	// X in an expr will be replaced by different metric sizes.
@@ -371,7 +463,7 @@ func TestCases(metricSizes []int) []BenchCase {
 			tmp = append(tmp, c)
 		} else {
 			for _, count := range metricSizes {
-				tmp = append(tmp, BenchCase{Expr: strings.ReplaceAll(c.Expr, "X", strconv.Itoa(count)), Steps: c.Steps, InstantQueryOnly: c.InstantQueryOnly})
+				tmp = append(tmp, BenchCase{Expr: strings.ReplaceAll(c.Expr, "X", strconv.Itoa(count)), Steps: c.Steps, InstantQueryOnly: c.InstantQueryOnly, IgnoreAnnotationDifferences: c.IgnoreAnnotationDifferences})
 			}
 		}
 	}
@@ -392,9 +484,9 @@ func TestCases(metricSizes []int) []BenchCase {
 
 			tmp = append(tmp, c)
 		} else {
-			tmp = append(tmp, BenchCase{Expr: c.Expr, Steps: 0})
-			tmp = append(tmp, BenchCase{Expr: c.Expr, Steps: 100})
-			tmp = append(tmp, BenchCase{Expr: c.Expr, Steps: 1000})
+			tmp = append(tmp, BenchCase{Expr: c.Expr, Steps: 0, IgnoreAnnotationDifferences: c.IgnoreAnnotationDifferences})
+			tmp = append(tmp, BenchCase{Expr: c.Expr, Steps: 100, IgnoreAnnotationDifferences: c.IgnoreAnnotationDifferences})
+			tmp = append(tmp, BenchCase{Expr: c.Expr, Steps: 1000, IgnoreAnnotationDifferences: c.IgnoreAnnotationDifferences})
 			// Important: if adding test cases with larger numbers of steps, make sure to adjust NumIntervals as well.
 		}
 	}

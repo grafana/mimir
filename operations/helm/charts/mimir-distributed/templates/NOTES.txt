@@ -1,8 +1,4 @@
-{{ if .Values.enterprise.enabled }}
-Welcome to Grafana Enterprise Metrics!
-{{- else }}
 Welcome to Grafana Mimir!
-{{- end }}
 {{- $gateway := .Values.nginx }}
 {{- if eq (include "mimir.gateway.isEnabled" .) "true" }}
 {{- $gateway = .Values.gateway }}

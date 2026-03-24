@@ -12,7 +12,6 @@ import (
 	"slices"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
@@ -43,6 +42,9 @@ type blocksStoreReplicationSet struct {
 	dynamicReplication storegateway.DynamicReplication
 	limits             BlocksStoreLimits
 
+	// When non empty, the querier prioritises querying blocks from store-gateways in these zones with equal priority.
+	preferredZones []string
+
 	// Subservices manager.
 	subservices        *services.Manager
 	subservicesWatcher *services.FailureWatcher
@@ -52,8 +54,9 @@ func newBlocksStoreReplicationSet(
 	storesRing *ring.Ring,
 	balancingStrategy loadBalancingStrategy,
 	dynamicReplication storegateway.DynamicReplication,
+	preferredZones []string,
 	limits BlocksStoreLimits,
-	clientConfig grpcclient.Config,
+	clientConfig StoreGatewayClientConfig,
 	logger log.Logger,
 	reg prometheus.Registerer,
 ) (*blocksStoreReplicationSet, error) {
@@ -62,6 +65,7 @@ func newBlocksStoreReplicationSet(
 		clientsPool:        newStoreGatewayClientPool(client.NewRingServiceDiscovery(storesRing), clientConfig, logger, reg),
 		dynamicReplication: dynamicReplication,
 		balancingStrategy:  balancingStrategy,
+		preferredZones:     preferredZones,
 		limits:             limits,
 		subservicesWatcher: services.NewFailureWatcher(),
 	}
@@ -107,21 +111,26 @@ func (s *blocksStoreReplicationSet) GetClientsFor(userID string, blocks bucketin
 	instances := make(map[string]ring.InstanceDesc)
 	userRing := storegateway.GetShuffleShardingSubring(s.storesRing, userID, s.limits)
 
+	// It's safe to reuse buffers across iterations, as far as we don't retain the ReplicationSet.Instances slice
+	// (retaining individual instances from the slice is fine).
+	ringBuffersOpt := ring.WithBuffers(ring.MakeBuffersForGet())
+
 	// Find the replication set of each block we need to query.
 	for _, block := range blocks {
-		var ringOpts []ring.Option
+		ringOpts := []ring.Option{ringBuffersOpt}
 		if eligible, replicationFactor := s.dynamicReplication.EligibleForQuerying(block); eligible {
 			ringOpts = append(ringOpts, ring.WithReplicationFactor(replicationFactor))
 		}
 
-		// Note that we don't pass buffers since we retain instances from the returned replication set.
 		set, err := userRing.GetWithOptions(mimir_tsdb.HashBlockID(block.ID), storegateway.BlocksRead, ringOpts...)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to get store-gateway replication set owning the block %s", block.ID)
 		}
 
 		// Pick a non excluded store-gateway instance.
-		inst := getNonExcludedInstance(set, exclude[block.ID], s.balancingStrategy)
+		// We copy the instance descriptor, and we don't use the replication set's slice buffers any more beyond this point,
+		// so that it's safe to reuse ring buffers across iterations.
+		inst := getNonExcludedInstance(set, exclude[block.ID], s.balancingStrategy, s.preferredZones)
 		if inst == nil {
 			return nil, fmt.Errorf("no store-gateway instance left after checking exclude for block %s", block.ID)
 		}
@@ -145,12 +154,24 @@ func (s *blocksStoreReplicationSet) GetClientsFor(userID string, blocks bucketin
 	return clients, nil
 }
 
-func getNonExcludedInstance(set ring.ReplicationSet, exclude []string, balancingStrategy loadBalancingStrategy) *ring.InstanceDesc {
+func getNonExcludedInstance(set ring.ReplicationSet, exclude []string, balancingStrategy loadBalancingStrategy, preferredZones []string) *ring.InstanceDesc {
 	if balancingStrategy == randomLoadBalancing {
 		// Randomize the list of instances to not always query the same one.
 		rand.Shuffle(len(set.Instances), func(i, j int) {
 			set.Instances[i], set.Instances[j] = set.Instances[j], set.Instances[i]
 		})
+	}
+
+	if len(preferredZones) > 0 {
+		// Move all instances from preferred zones to the front.
+		// This gives equal priority to all preferred zones (since they were already shuffled).
+		nextPos := 0
+		for idx, instance := range set.Instances {
+			if slices.Contains(preferredZones, instance.Zone) {
+				set.Instances[nextPos], set.Instances[idx] = set.Instances[idx], set.Instances[nextPos]
+				nextPos++
+			}
+		}
 	}
 
 	for _, instance := range set.Instances {

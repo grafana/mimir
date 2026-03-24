@@ -119,6 +119,8 @@ func NewQuerier(name string, consulAddress string, flags map[string]string, opti
 			"-ingester.ring.consul.hostname":           consulAddress,
 			"-ingester.partition-ring.store":           "consul",
 			"-ingester.partition-ring.consul.hostname": consulAddress,
+			"-querier.ring.store":                      "consul",
+			"-querier.ring.consul.hostname":            consulAddress,
 			// Query-frontend worker.
 			"-querier.frontend-client.backoff-min-period": "100ms",
 			"-querier.frontend-client.backoff-max-period": "100ms",
@@ -191,6 +193,8 @@ func NewQueryFrontend(name string, consulAddress string, flags map[string]string
 			// Configure the partitions ring backend.
 			"-ingester.partition-ring.store":           "consul",
 			"-ingester.partition-ring.consul.hostname": consulAddress,
+			"-querier.ring.store":                      "consul",
+			"-querier.ring.consul.hostname":            consulAddress,
 		},
 		flags,
 		options...,

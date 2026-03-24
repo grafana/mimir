@@ -12,9 +12,10 @@ import (
 	"github.com/prometheus/alertmanager/matchers/parse"
 	amlabels "github.com/prometheus/alertmanager/pkg/labels"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 // csvTestData provides generic CSV parsing and writing functionality for test data.
@@ -145,6 +146,10 @@ func parseMatcher(t *testing.T, m string) *labels.Matcher {
 	return promMatcher
 }
 
+func formatFloat(f float64) string {
+	return strconv.FormatFloat(f, 'f', -1, 64)
+}
+
 func parseFloat(t *testing.T, str string) float64 {
 	f, err := strconv.ParseFloat(str, 64)
 	require.NoErrorf(t, err, "Failed to parse float: %s", str)
@@ -158,7 +163,7 @@ func parseUint(t *testing.T, str string) uint64 {
 }
 
 func parseVectorSelector(t testing.TB, str string) []*labels.Matcher {
-	matchers, err := parser.ParseMetricSelector(str)
+	matchers, err := promqlext.NewPromQLParser().ParseMetricSelector(str)
 	require.NoError(t, err)
 	return matchers
 }

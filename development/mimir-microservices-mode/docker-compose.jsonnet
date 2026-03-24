@@ -10,12 +10,6 @@ std.manifestYamlDoc({
     // Whether ruler should use the query-frontend and queriers to execute queries, rather than executing them in-process
     ruler_use_remote_execution: false,
 
-    // Three options are supported for ring in this jsonnet:
-    // - consul
-    // - memberlist (consul is not started at all)
-    // - multi (uses consul as primary and memberlist as secondary, but this can be switched in runtime via runtime.yaml)
-    ring: 'memberlist',
-
     enable_continuous_test: true,
 
     // If true, a load generator is started.
@@ -28,10 +22,16 @@ std.manifestYamlDoc({
     // Two additional Prometheus instances are started that scrape the same memcached-exporter and load-generator
     // targets and remote write to distributor-2.
     enable_prometheus: true,  // If Prometheus is disabled, recording rules will not be evaluated and so dashboards in Grafana that depend on these recorded series will display no data.
+    // Whether to use Prometheus Remote-Write 2.0 or not for the main Prometheus. This also turns on NHCB conversion.
+    enable_prometheus_rw2: false,
     enable_otel_collector: false,
 
     // If true, a query-tee instance with a single backend is started.
     enable_query_tee: false,
+
+    // If true, a secondary query path is started.
+    enable_secondary_query_path: false,
+    secondary_query_path_extra_args: [],
   },
 
   // We explicitely list all important services here, so that it's easy to disable them by commenting out.
@@ -39,6 +39,7 @@ std.manifestYamlDoc({
     self.distributor +
     self.ingesters +
     self.read_components +  // querier, query-frontend, and query-scheduler.
+    (if $._config.enable_secondary_query_path then self.secondary_read_components else {}) +
     self.store_gateways(3) +
     self.compactor +
     self.rulers(2) +
@@ -62,14 +63,14 @@ std.manifestYamlDoc({
       name: 'distributor-1',
       target: 'distributor',
       httpPort: 8000,
-      extraArguments: '-distributor.ha-tracker.consul.hostname=consul:8500',
+      extraArguments: ['-distributor.ha-tracker.consul.hostname=consul:8500'],
     }),
 
     'distributor-2': mimirService({
       name: 'distributor-2',
       target: 'distributor',
       httpPort: 8001,
-      extraArguments: '-distributor.ha-tracker.consul.hostname=consul:8500',
+      extraArguments: ['-distributor.ha-tracker.consul.hostname=consul:8500'],
     }),
   },
 
@@ -99,26 +100,39 @@ std.manifestYamlDoc({
     }),
   },
 
-  read_components:: {
-    querier: mimirService({
-      name: 'querier',
+  read_path(prefix='', portOffset=0, extraArgs=[]):: {
+    [prefix + 'querier']: mimirService({
+      name: prefix + 'querier',
       target: 'querier',
-      httpPort: 8005,
+      httpPort: 8005 + portOffset,
+      jaegerApp: prefix + 'querier',
+      extraArguments: extraArgs,
     }),
 
-    'query-frontend': mimirService({
-      name: 'query-frontend',
+    [prefix + 'query-frontend']: mimirService({
+      name: prefix + 'query-frontend',
       target: 'query-frontend',
-      httpPort: 8007,
-      jaegerApp: 'query-frontend',
+      httpPort: 8007 + portOffset,
+      jaegerApp: prefix + 'query-frontend',
+      extraArguments: extraArgs,
     }),
 
-    'query-scheduler': mimirService({
-      name: 'query-scheduler',
+    [prefix + 'query-scheduler']: mimirService({
+      name: prefix + 'query-scheduler',
       target: 'query-scheduler',
-      httpPort: 8008,
+      httpPort: 8008 + portOffset,
+      jaegerApp: prefix + 'query-scheduler',
+      extraArguments: extraArgs,
     }),
   },
+
+  read_components:: self.read_path(),
+
+  secondary_read_components:: self.read_path(
+    prefix='secondary-',
+    portOffset=100,
+    extraArgs=['-querier.ring.prefix=secondary-querier/', '-query-scheduler.ring.prefix=secondary-scheduler/'] + $._config.secondary_query_path_extra_args,
+  ),
 
   compactor:: {
     compactor: mimirService({
@@ -134,7 +148,7 @@ std.manifestYamlDoc({
       target: 'ruler',
       httpPort: 8021 + id,
       jaegerApp: 'ruler-%d' % id,
-      extraArguments: if $._config.ruler_use_remote_execution then '-ruler.query-frontend.address=dns:///query-frontend:9007' else '',
+      extraArguments: if $._config.ruler_use_remote_execution then ['-ruler.query-frontend.address=dns:///query-frontend:9007'] else [],
     })
     for id in std.range(1, count)
   },
@@ -144,8 +158,8 @@ std.manifestYamlDoc({
       name: 'alertmanager-' + id,
       target: 'alertmanager',
       httpPort: 8030 + id,
-      extraArguments: '-alertmanager.web.external-url=http://localhost:%d/alertmanager' % (8030 + id),
       jaegerApp: 'alertmanager-%d' % id,
+      extraArguments: ['-alertmanager.web.external-url=http://localhost:%d/alertmanager' % (8030 + id)],
     })
     for id in std.range(1, count)
   },
@@ -165,19 +179,18 @@ std.manifestYamlDoc({
       name: 'continuous-test',
       target: 'continuous-test',
       httpPort: 8090,
-      extraArguments:
-        ' -tests.run-interval=2m' +
-        ' -tests.read-endpoint=http://query-frontend:8007/prometheus' +
-        ' -tests.tenant-id=mimir-continuous-test' +
-        ' -tests.write-endpoint=http://distributor-1:8000' +
-        ' -tests.write-read-series-test.max-query-age=1h' +
-        ' -tests.write-read-series-test.num-series=100',
+      extraArguments: [
+        '-tests.run-interval=2m',
+        '-tests.read-endpoint=http://query-frontend:8007/prometheus',
+        '-tests.tenant-id=mimir-continuous-test',
+        '-tests.write-endpoint=http://distributor-1:8000',
+        '-tests.write-read-series-test.max-query-age=1h',
+        '-tests.write-read-series-test.num-series=100',
+      ],
     }),
   },
 
   local all_caches = ['-blocks-storage.bucket-store.index-cache', '-blocks-storage.bucket-store.chunks-cache', '-blocks-storage.bucket-store.metadata-cache', '-query-frontend.results-cache', '-ruler-storage.cache'],
-
-  local all_rings = ['-ingester.ring', '-distributor.ring', '-compactor.ring', '-store-gateway.sharding-ring', '-ruler.ring', '-alertmanager.sharding-ring'],
 
   local jaegerEnv(appName) = {
     JAEGER_AGENT_HOST: 'jaeger',
@@ -195,18 +208,19 @@ std.manifestYamlDoc({
 
   // This function builds docker-compose declaration for Mimir service.
   // Default grpcPort is (httpPort + 1000), and default debug port is (httpPort + 10000)
-  local mimirService(serviceOptions) = {
+  local mimirService(serviceOptions) = std.prune({
     local defaultOptions = {
       local s = self,
       name: error 'missing name',
       target: error 'missing target',
+      image: 'mimir',
       jaegerApp: self.target,
       httpPort: error 'missing httpPort',
       grpcPort: self.httpPort + 1000,
       debugPort: self.httpPort + 10000,
       // Extra arguments passed to Mimir command line.
-      extraArguments: '',
-      dependsOn: ['minio'] + (if $._config.ring == 'consul' || $._config.ring == 'multi' then ['consul'] else if s.target != 'distributor' then ['distributor-1'] else []),
+      extraArguments: [],
+      dependsOn: ['minio'] + (if s.target != 'distributor' then ['distributor-1'] else []),
       env: jaegerEnv(s.jaegerApp),
       extraVolumes: [],
       memberlistNodeName: self.jaegerApp,
@@ -215,24 +229,36 @@ std.manifestYamlDoc({
 
     local options = defaultOptions + serviceOptions,
 
-    build: {
+    // If the image we're using is "mimir", we're building from local source. If it's anything else,
+    // assume we're using a public Mimir image from dockerhub. This means that the image is distroless
+    // and has `/bin/mimir` set as an entrypoint. That requires passing CLI flags in 'command' instead
+    // of a string that will be passed to a shell.
+    local isLocalImage = options.image == 'mimir',
+    local flags = [
+      '-config.file=/etc/mimir/mimir.yaml',
+      '-target=%(target)s' % options,
+      '-server.http-listen-port=%(httpPort)d' % options,
+      '-server.grpc-listen-port=%(grpcPort)d' % options,
+      '-activity-tracker.filepath=/tmp/activity/%(target)s-%(httpPort)d' % options,
+      '-memberlist.nodename=%(memberlistNodeName)s' % options,
+      '-memberlist.bind-port=%(memberlistBindPort)d' % options,
+    ] + options.extraArguments,
+
+    // If we're using a local image, assemble a string of the binary to execute and CLI flags to pass to
+    // a shell. If this is a public Mimir image from dockerhub, pass an array of CLI flags as the command
+    // since the image is distroless (no shell) and the entrypoint is `/bin/mimir`.
+    local command = if isLocalImage then ['/bin/sh', '-c', std.join(' ', [
+      // some of the following expressions use "... else null", which std.join seem to ignore.
+      (if $._config.sleep_seconds > 0 then 'sleep %d &&' % [$._config.sleep_seconds] else null),
+      (if $._config.debug then 'exec /bin/dlv exec /bin/mimir --listen=:%(debugPort)d --headless=true --api-version=2 --accept-multiclient --continue -- ' % options else 'exec /bin/mimir'),
+    ] + flags)] else flags,
+
+    build: if isLocalImage then {
       context: '.',
       dockerfile: 'dev.dockerfile',
-    },
-    image: 'mimir',
-    command: [
-      'sh',
-      '-c',
-      std.join(' ', [
-        // some of the following expressions use "... else null", which std.join seem to ignore.
-        (if $._config.sleep_seconds > 0 then 'sleep %d &&' % [$._config.sleep_seconds] else null),
-        (if $._config.debug then 'exec ./dlv exec ./mimir --listen=:%(debugPort)d --headless=true --api-version=2 --accept-multiclient --continue -- ' % options else 'exec ./mimir'),
-        ('-config.file=./config/mimir.yaml -target=%(target)s -server.http-listen-port=%(httpPort)d -server.grpc-listen-port=%(grpcPort)d -activity-tracker.filepath=/activity/%(target)s-%(httpPort)d %(extraArguments)s' % options),
-        (if $._config.ring == 'memberlist' || $._config.ring == 'multi' then '-memberlist.nodename=%(memberlistNodeName)s -memberlist.bind-port=%(memberlistBindPort)d' % options else null),
-        (if $._config.ring == 'memberlist' then std.join(' ', [x + '.store=memberlist' for x in all_rings]) else null),
-        (if $._config.ring == 'multi' then std.join(' ', [x + '.store=multi' for x in all_rings] + [x + '.multi.primary=consul' for x in all_rings] + [x + '.multi.secondary=memberlist' for x in all_rings]) else null),
-      ]),
-    ],
+    } else null,
+    image: options.image,
+    command: command,
     environment: formatEnv(options.env),
     hostname: options.name,
     // Only publish HTTP and debug port, but not gRPC one.
@@ -242,8 +268,8 @@ std.manifestYamlDoc({
              '%d:%d' % [options.debugPort, options.debugPort],
            ] else [],
     depends_on: options.dependsOn,
-    volumes: ['./config:/mimir/config', './activity:/activity'] + options.extraVolumes,
-  },
+    volumes: ['./config:/etc/mimir', './activity:/tmp/activity'] + options.extraVolumes,
+  }),
 
   // Other services used by Mimir.
   consul:: {
@@ -311,11 +337,10 @@ std.manifestYamlDoc({
 
   prometheus:: {
     prometheus: {
-      image: 'prom/prometheus:v3.5.0',
+      image: 'prom/prometheus:v3.9.1',
       command: [
-        '--config.file=/etc/prometheus/prometheus.yaml',
+        if $._config.enable_prometheus_rw2 then '--config.file=/etc/prometheus/prometheusRW2.yaml' else '--config.file=/etc/prometheus/prometheus.yaml',
         '--enable-feature=exemplar-storage',
-        '--enable-feature=native-histograms',
       ],
       volumes: [
         './config:/etc/prometheus',
@@ -328,12 +353,11 @@ std.manifestYamlDoc({
 
   prompair1:: {
     prompair1: {
-      image: 'prom/prometheus:v3.5.0',
+      image: 'prom/prometheus:v3.9.1',
       hostname: 'prom-ha-pair-1',
       command: [
         '--config.file=/etc/prometheus/prom-ha-pair-1.yaml',
         '--enable-feature=exemplar-storage',
-        '--enable-feature=native-histograms',
       ],
       volumes: [
         './config:/etc/prometheus',
@@ -344,12 +368,11 @@ std.manifestYamlDoc({
 
   prompair2:: {
     prompair2: {
-      image: 'prom/prometheus:v3.5.0',
+      image: 'prom/prometheus:v3.9.1',
       hostname: 'prom-ha-pair-2',
       command: [
         '--config.file=/etc/prometheus/prom-ha-pair-2.yaml',
         '--enable-feature=exemplar-storage',
-        '--enable-feature=native-histograms',
       ],
       volumes: [
         './config:/etc/prometheus',

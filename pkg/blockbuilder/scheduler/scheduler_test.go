@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
@@ -40,7 +41,7 @@ func mustSchedulerWithKafkaAddr(t *testing.T, addr string) (*BlockBuilderSchedul
 	cli := mustKafkaClient(t, addr)
 	cfg := Config{
 		Kafka: ingest.KafkaConfig{
-			Address:      addr,
+			Address:      flagext.StringSliceCSV{addr},
 			Topic:        "ingest",
 			FetchMaxWait: 10 * time.Millisecond,
 		},
@@ -554,18 +555,19 @@ func TestOffsetMovement(t *testing.T) {
 
 	e := sched.jobs.add("ingest/1/5524", spec)
 	require.NoError(t, e)
+	ps.addPlannedJob("ingest/1/5524", spec)
 	key, _, err := sched.jobs.assign("w0")
 	require.NoError(t, err)
 
 	require.NoError(t, sched.updateJob(key, "w0", false, spec))
 	sched.requireOffset(t, "ingest", 1, 5000, "ingest/1 is in progress, so we should not move the offset")
 	require.NoError(t, sched.updateJob(key, "w0", true, spec))
-	sched.requireOffset(t, "ingest", 1, 6000, "ingest/1 is in progress, so we should be advanced")
+	sched.requireOffset(t, "ingest", 1, 6000, "ingest/1 is complete, so we should advance")
 	require.NoError(t, sched.updateJob(key, "w0", true, spec))
 	sched.requireOffset(t, "ingest", 1, 6000, "re-completing the same job shouldn't change the commit")
 
 	p1 := sched.getPartitionState("ingest", 1)
-	p1.committed.advance(jobKey{"ancient_job", 29}, schedulerpb.JobSpec{
+	p1.committed.advance("ancient_job", schedulerpb.JobSpec{
 		Topic:       "ingest",
 		Partition:   1,
 		StartOffset: 1000,
@@ -574,7 +576,7 @@ func TestOffsetMovement(t *testing.T) {
 	sched.requireOffset(t, "ingest", 1, 6000, "committed offsets cannot rewind")
 
 	p2 := sched.getPartitionState("ingest", 2)
-	p2.committed.advance(jobKey{"ancient_job2", 30}, schedulerpb.JobSpec{
+	p2.committed.advance("ancient_job2", schedulerpb.JobSpec{
 		Topic:       "ingest",
 		Partition:   2,
 		StartOffset: 6000,
@@ -688,7 +690,7 @@ func TestUpdateSchedule(t *testing.T) {
 	`), "cortex_blockbuilder_scheduler_partition_end_offset"))
 }
 
-func TestConsumptionRanges(t *testing.T) {
+func TestInitialOffsetProbing(t *testing.T) {
 	ctx := context.Background()
 
 	tests := map[string]struct {
@@ -714,7 +716,7 @@ func TestConsumptionRanges(t *testing.T) {
 			jobSize:        200 * time.Millisecond,
 			endTime:        time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
 			minScanTime:    time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
-			expectedRanges: []*offsetTime{},
+			expectedRanges: []*offsetTime{{offset: 2000, time: time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC)}},
 		},
 		"old data with single unconsumed record": {
 			offsets: []*offsetTime{
@@ -740,7 +742,7 @@ func TestConsumptionRanges(t *testing.T) {
 			jobSize:        200 * time.Millisecond,
 			endTime:        time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
 			minScanTime:    time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
-			expectedRanges: []*offsetTime{},
+			expectedRanges: []*offsetTime{{offset: 2000, time: time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC)}},
 		},
 		"empty partition: no data": {
 			offsets:        []*offsetTime{},
@@ -749,7 +751,7 @@ func TestConsumptionRanges(t *testing.T) {
 			jobSize:        200 * time.Millisecond,
 			endTime:        time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
 			minScanTime:    time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
-			expectedRanges: []*offsetTime{},
+			expectedRanges: []*offsetTime{{offset: 0, time: time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC)}},
 		},
 		"data gaps wider than job size": {
 			offsets: []*offsetTime{
@@ -851,7 +853,7 @@ func TestConsumptionRanges(t *testing.T) {
 			jobSize:        1 * time.Minute,
 			endTime:        time.Date(2025, 3, 1, 10, 3, 40, 0, time.UTC),
 			minScanTime:    time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC),
-			expectedRanges: []*offsetTime{},
+			expectedRanges: []*offsetTime{{offset: 1004, time: time.Date(2025, 3, 1, 10, 3, 40, 0, time.UTC)}},
 		},
 		"resume < start < end": {
 			offsets: []*offsetTime{
@@ -876,7 +878,7 @@ func TestConsumptionRanges(t *testing.T) {
 			jobSize:        1 * time.Minute,
 			endTime:        time.Date(2025, 3, 1, 10, 3, 40, 0, time.UTC),
 			minScanTime:    time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC),
-			expectedRanges: []*offsetTime{},
+			expectedRanges: []*offsetTime{{offset: 1003, time: time.Date(2025, 3, 1, 10, 3, 40, 0, time.UTC)}},
 		},
 		"hour-based ranges when resume < start": {
 			offsets: []*offsetTime{
@@ -964,7 +966,7 @@ func TestPopulateInitialJobs_ProbeTimesReused(t *testing.T) {
 		{topic: "topic", partition: 3, start: 100, resume: 100, end: 1000},
 	}
 
-	sched.populateInitialJobs(context.Background(), consumeOffs, finder)
+	sched.populateInitialJobs(context.Background(), consumeOffs, finder, time.Date(2025, 3, 1, 11, 0, 0, 0, time.UTC))
 	require.Len(t, finder.distinctTimes, 4, "four partitions will each be probed four times, but the probe times should be the same across each partition")
 }
 
@@ -1125,6 +1127,188 @@ func TestPartitionState_PartitionBecomesInactive(t *testing.T) {
 	j, err = pt.updateEndOffset(12, time.Date(2025, 3, 1, 12, 1, 0, 0, time.UTC), sz)
 	assert.Nil(t, j)
 	assert.NoError(t, err)
+}
+
+func TestPartitionState_ParallelJobs(t *testing.T) {
+
+	t.Run("planned job order required", func(t *testing.T) {
+		sched, _ := mustScheduler(t, 4)
+		ps := sched.getPartitionState("ingest", 1)
+		ps.initCommit(100)
+
+		// It is a logical error to add a job to the planned list out of order. The safe completion logic requires it.
+
+		ps.addPlannedJob("job1", schedulerpb.JobSpec{
+			Topic:       "ingest",
+			Partition:   1,
+			StartOffset: 100,
+			EndOffset:   200,
+		})
+		ps.addPlannedJob("job3", schedulerpb.JobSpec{
+			Topic:       "ingest",
+			Partition:   1,
+			StartOffset: 300,
+			EndOffset:   400,
+		})
+		require.Panics(t, func() {
+			ps.addPlannedJob("job2", schedulerpb.JobSpec{
+				Topic:       "ingest",
+				Partition:   1,
+				StartOffset: 200,
+				EndOffset:   300,
+			})
+		})
+	})
+
+	// Test 1: Complete a single job at the front of the queue
+	t.Run("complete_single_job_at_front", func(t *testing.T) {
+		sched, _ := mustScheduler(t, 4)
+		ps := sched.getPartitionState("ingest", 1)
+		ps.initCommit(100)
+
+		jobSpec := schedulerpb.JobSpec{
+			Topic:       "ingest",
+			Partition:   1,
+			StartOffset: 100,
+			EndOffset:   200,
+		}
+		ps.addPlannedJob("job1", jobSpec)
+		require.Equal(t, 1, ps.plannedJobs.Len())
+		require.Len(t, ps.plannedJobsMap, 1)
+		require.Equal(t, int64(100), ps.committed.offset())
+
+		err := ps.completeJob("job1")
+		require.NoError(t, err)
+
+		// Verify job was completed and garbage collected
+		require.Equal(t, 0, ps.plannedJobs.Len())
+		require.Len(t, ps.plannedJobsMap, 0)
+		require.Equal(t, int64(200), ps.committed.offset())
+	})
+
+	t.Run("complete_nonexistent_job", func(t *testing.T) {
+		sched, _ := mustScheduler(t, 4)
+		ps := sched.getPartitionState("ingest", 1)
+		ps.initCommit(100)
+		// Try to complete a job that doesn't exist
+		err := ps.completeJob("nonexistent_job")
+		require.Error(t, err)
+		require.ErrorIs(t, err, errJobNotFound)
+	})
+
+	// Test 3: Complete multiple jobs in order (garbage collection)
+	t.Run("complete_multiple_jobs_in_order", func(t *testing.T) {
+		sched, _ := mustScheduler(t, 4)
+		ps := sched.getPartitionState("ingest", 1)
+		ps.initCommit(100)
+
+		// Add multiple planned jobs
+		ps.addPlannedJob("job1", schedulerpb.JobSpec{
+			Topic:       "ingest",
+			Partition:   1,
+			StartOffset: 100,
+			EndOffset:   200,
+		})
+		ps.addPlannedJob("job2", schedulerpb.JobSpec{
+			Topic:       "ingest",
+			Partition:   1,
+			StartOffset: 200,
+			EndOffset:   300,
+		})
+		ps.addPlannedJob("job3", schedulerpb.JobSpec{
+			Topic:       "ingest",
+			Partition:   1,
+			StartOffset: 300,
+			EndOffset:   400,
+		})
+
+		// Verify initial state
+		require.Equal(t, 3, ps.plannedJobs.Len())
+		require.Len(t, ps.plannedJobsMap, 3)
+		require.Equal(t, int64(100), ps.committed.offset())
+
+		// Complete first job - should be garbage collected
+		err := ps.completeJob("job1")
+		require.NoError(t, err)
+		require.Equal(t, 2, ps.plannedJobs.Len())
+		require.Len(t, ps.plannedJobsMap, 2)
+		require.Equal(t, int64(200), ps.committed.offset())
+
+		// Complete second job - should be garbage collected
+		err = ps.completeJob("job2")
+		require.NoError(t, err)
+		require.Equal(t, 1, ps.plannedJobs.Len())
+		require.Len(t, ps.plannedJobsMap, 1)
+		require.Equal(t, int64(300), ps.committed.offset())
+
+		// Complete third job - should be garbage collected
+		err = ps.completeJob("job3")
+		require.NoError(t, err)
+		require.Equal(t, 0, ps.plannedJobs.Len())
+		require.Len(t, ps.plannedJobsMap, 0)
+		require.Equal(t, int64(400), ps.committed.offset())
+	})
+
+	// Test 4: Complete jobs out of order (only front jobs get garbage collected)
+	t.Run("complete_jobs_out_of_order", func(t *testing.T) {
+		sched, _ := mustScheduler(t, 4)
+		ps := sched.getPartitionState("ingest", 1)
+		ps.initCommit(100)
+
+		// Add multiple planned jobs
+		ps.addPlannedJob("job1", schedulerpb.JobSpec{
+			Topic:       "ingest",
+			Partition:   1,
+			StartOffset: 100,
+			EndOffset:   200,
+		})
+		ps.addPlannedJob("job2", schedulerpb.JobSpec{
+			Topic:       "ingest",
+			Partition:   1,
+			StartOffset: 200,
+			EndOffset:   300,
+		})
+		ps.addPlannedJob("job3", schedulerpb.JobSpec{
+			Topic:       "ingest",
+			Partition:   1,
+			StartOffset: 300,
+			EndOffset:   400,
+		})
+
+		// Complete job2 first (out of order)
+		err := ps.completeJob("job2")
+		require.NoError(t, err)
+
+		// Job2 should be marked complete but not garbage collected yet
+		require.Equal(t, 3, ps.plannedJobs.Len(), "expecting no garbage collection yet")
+		require.Len(t, ps.plannedJobsMap, 3, "expecting no garbage collection yet")
+		require.Equal(t, int64(100), ps.committed.offset(), "should be no advancement yet")
+
+		// Complete job1 - should garbage collect both job1 and job2
+		err = ps.completeJob("job1")
+		require.NoError(t, err)
+		require.Equal(t, 1, ps.plannedJobs.Len(), "expecting garbage collection of job1 and job2")
+		require.Len(t, ps.plannedJobsMap, 1, "expecting garbage collection of job1 and job2")
+		require.Equal(t, int64(300), ps.committed.offset(), "should be advanced commit to the end of job3")
+		require.Equal(t, "job3", ps.plannedJobs.Front().Value.(*jobState).jobID, "expecting job3 to be the remaining planned job")
+	})
+
+	// Test 5: Complete job with empty partition state
+	t.Run("complete_job_empty_partition", func(t *testing.T) {
+		sched, _ := mustScheduler(t, 4)
+		ps := sched.getPartitionState("ingest", 1)
+		ps.initCommit(100)
+
+		// Try to complete a job when no jobs exist
+		err := ps.completeJob("any_job")
+		require.Error(t, err)
+		require.ErrorIs(t, err, errJobNotFound)
+
+		// Verify state remains unchanged
+		require.Equal(t, 0, ps.plannedJobs.Len())
+		require.Len(t, ps.plannedJobsMap, 0)
+		require.Equal(t, int64(100), ps.committed.offset())
+	})
 }
 
 func TestBlockBuilderScheduler_EnqueuePendingJobs(t *testing.T) {
@@ -1357,10 +1541,10 @@ func TestBlockBuilderScheduler_NoCommit_NoGap(t *testing.T) {
 		EndOffset:   20,
 	}
 
-	pp.planned.advance(k, spec)
+	pp.planned.advance(k.id, spec)
 	requireGaps(t, reg, 0, 0, "advancing an empty planned offset should not register a gap")
 
-	pp.committed.advance(k, spec)
+	pp.committed.advance(k.id, spec)
 	requireGaps(t, reg, 0, 0, "advancing an empty committed offset should not register a gap")
 
 	// Now create a gap:
@@ -1372,9 +1556,170 @@ func TestBlockBuilderScheduler_NoCommit_NoGap(t *testing.T) {
 		EndOffset:   50,
 	}
 
-	pp.planned.advance(k2, spec2)
+	pp.planned.advance(k2.id, spec2)
 	requireGaps(t, reg, 1, 0, "a gap after a non-empty planned offset should register a gap")
 
-	pp.committed.advance(k2, spec2)
+	pp.committed.advance(k2.id, spec2)
 	requireGaps(t, reg, 1, 1, "a gap after a non-empty committed offset should register a gap")
+}
+
+// TestStartupToRegularModeJobProduction tests that the scheduler correctly
+// produces jobs when transitioning from startup mode to regular mode with a
+// variety of cases.
+func TestStartupToRegularModeJobProduction(t *testing.T) {
+	type endOffsetObservation struct {
+		offset    int64
+		timestamp time.Time
+	}
+
+	type testCase struct {
+		name               string
+		initialStart       int64
+		initialResume      int64
+		initialEnd         int64
+		initialTime        time.Time
+		offsets            []*offsetTime
+		futureObservations []endOffsetObservation
+		expectedFinalEnd   int64
+	}
+
+	tests := [...]testCase{
+		{
+			name: "dormant partition that receives data after startup",
+			// The scenario is this:
+			// * we learn the resume and end offsets at startup of a partition that is inactive. (resume == end)
+			// * this partition's end offset grows before we produce its first job.
+			// * the next time we produce a job it *should* start at the end offset we learned at startup.
+			initialStart:  50,
+			initialResume: 100,
+			initialEnd:    100,
+			initialTime:   time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC),
+			futureObservations: []endOffsetObservation{
+				{offset: 200, timestamp: time.Date(2025, 3, 1, 10, 45, 0, 0, time.UTC)},
+				{offset: 300, timestamp: time.Date(2025, 3, 1, 11, 15, 0, 0, time.UTC)},
+			},
+			expectedFinalEnd: 300,
+		},
+		{
+			name:          "multiple observations, same bucket",
+			initialStart:  100,
+			initialResume: 100,
+			initialEnd:    100,
+			initialTime:   time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC),
+			futureObservations: []endOffsetObservation{
+				{offset: 150, timestamp: time.Date(2025, 3, 1, 10, 30, 0, 0, time.UTC)},
+				{offset: 200, timestamp: time.Date(2025, 3, 1, 10, 45, 0, 0, time.UTC)},
+				{offset: 250, timestamp: time.Date(2025, 3, 1, 11, 0, 0, 0, time.UTC)},
+			},
+			expectedFinalEnd: 250,
+		},
+		{
+			name:          "multiple observations, different buckets",
+			initialStart:  100,
+			initialResume: 100,
+			initialEnd:    100,
+			initialTime:   time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC),
+			futureObservations: []endOffsetObservation{
+				{offset: 200, timestamp: time.Date(2025, 3, 1, 10, 30, 0, 0, time.UTC)},
+				{offset: 300, timestamp: time.Date(2025, 3, 1, 11, 15, 0, 0, time.UTC)},
+				{offset: 400, timestamp: time.Date(2025, 3, 1, 12, 30, 0, 0, time.UTC)},
+			},
+			expectedFinalEnd: 400,
+		},
+		{
+			name:          "no growth after initial",
+			initialStart:  100,
+			initialResume: 200,
+			initialEnd:    200,
+			initialTime:   time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC),
+			futureObservations: []endOffsetObservation{
+				{offset: 200, timestamp: time.Date(2025, 3, 1, 11, 0, 0, 0, time.UTC)},
+				{offset: 200, timestamp: time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC)},
+			},
+			expectedFinalEnd: 200,
+		},
+		{
+			name:          "end later than resume",
+			initialStart:  100,
+			initialResume: 200,
+			initialEnd:    500,
+			initialTime:   time.Date(2025, 3, 1, 9, 0, 0, 0, time.UTC),
+			offsets: []*offsetTime{
+				{offset: 200, time: time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC)},
+				{offset: 500, time: time.Date(2025, 3, 1, 10, 15, 0, 0, time.UTC)},
+			},
+			futureObservations: []endOffsetObservation{
+				{offset: 600, timestamp: time.Date(2025, 3, 1, 11, 0, 0, 0, time.UTC)},
+				{offset: 700, timestamp: time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC)},
+			},
+			expectedFinalEnd: 700,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sched, _ := mustScheduler(t, 1)
+			sched.cfg.MaxScanAge = 1 * time.Hour
+			sched.cfg.JobSize = 1 * time.Hour
+
+			// Create a mock offset finder that returns the initial end offset
+			finder := &mockOffsetFinder{
+				offsets:       tt.offsets,
+				end:           tt.initialEnd,
+				distinctTimes: make(map[time.Time]struct{}),
+			}
+
+			consumeOffs := []partitionOffsets{
+				{
+					topic:     "topic",
+					partition: 0,
+					start:     tt.initialStart,
+					resume:    tt.initialResume,
+					end:       tt.initialEnd,
+				},
+			}
+
+			// Call populateInitialJobs to set up initial state
+			sched.populateInitialJobs(context.Background(), consumeOffs, finder, tt.initialTime)
+
+			collectedJobs := []*schedulerpb.JobSpec{}
+
+			// Apply future end offset observations and collect jobs returned from updateEndOffset
+			ps := sched.getPartitionState("topic", 0)
+
+			for _, obs := range tt.futureObservations {
+				job, err := ps.updateEndOffset(obs.offset, obs.timestamp, sched.cfg.JobSize)
+				require.NoError(t, err)
+				if job != nil {
+					collectedJobs = append(collectedJobs, job)
+				}
+			}
+
+			// Verify that jobs cover [resume, final_end_offset) without gaps
+
+			if len(collectedJobs) == 0 {
+				require.GreaterOrEqual(t, tt.initialResume, tt.expectedFinalEnd,
+					"only data-less partitions should produce no jobs")
+				return
+			}
+
+			// Verify first job starts at or after resume offset
+			require.Equal(t, tt.initialResume, collectedJobs[0].StartOffset,
+				"first job should start at resume offset")
+
+			// Verify last job ends at expected final end
+			require.Equal(t, tt.expectedFinalEnd, collectedJobs[len(collectedJobs)-1].EndOffset,
+				"last job should end at expected final end offset")
+
+			// Verify no gaps and no overlaps between consecutive jobs
+			for i := 0; i < len(collectedJobs)-1; i++ {
+				current := collectedJobs[i]
+				next := collectedJobs[i+1]
+
+				require.Equal(t, current.EndOffset, next.StartOffset,
+					"jobs should have no gaps: job %d ends at %d but next job starts at %d",
+					i, current.EndOffset, next.StartOffset)
+			}
+		})
+	}
 }

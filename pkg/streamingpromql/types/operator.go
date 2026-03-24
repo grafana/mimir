@@ -11,7 +11,8 @@ import (
 )
 
 type PrepareParams struct {
-	QueryStats *QueryStats
+	// This struct used to contain values, but they are now passed by other means.
+	// We kept it here to avoid making a big disruptive change.
 }
 
 // Operator represents all operators.
@@ -20,26 +21,38 @@ type Operator interface {
 	ExpressionPosition() posrange.PositionRange
 
 	// Close frees all resources associated with this operator and any nested operators.
-	// Calling SeriesMetadata, NextSeries, NextStepSamples or Finalize after calling Close may result in unpredictable behaviour, corruption or crashes.
-	// It must be safe to call Close at any time, including if SeriesMetadata or NextSeries have returned an error.
+	// Calling any other method on an operator after calling Close may result in unpredictable behaviour, corruption or crashes.
+	// It must be safe to call Close at any time, including if any other method has returned an error.
 	// It must be safe to call Close multiple times.
-	// Calling Close must not modify query results, annotations or stats.
+	// Close must not modify query results, annotations or statistics.
 	Close()
 
 	// Prepare prepares the operator for execution. It must be called before calling SeriesMetadata, NextSeries, NextStepSamples or Finalize.
 	// Prepare must not call SeriesMetadata, NextSeries, NextStepSamples or Finalize on another operator, and is expected to call Prepare on
 	// any nested operators.
+	//
 	// Prepare must only be called once.
 	Prepare(ctx context.Context, params *PrepareParams) error
 
-	// Finalize performs any outstanding work required before the query result is considered complete.
-	// For example, any outstanding annotations should be emitted and query stats should be updated.
-	// It must be safe to call Finalize even if Prepare, SeriesMetadata, NextSeries, NextStepSamples or Finalize have not been called.
-	// It must be safe to call Finalize multiple times.
-	// Finalize must not call SeriesMetadata, NextSeries, NextStepSamples or Prepare on another operator, and is expected to call Finalize on
+	// AfterPrepare is called after Prepare has returned successfully for all operators in an evaluation.
+	//
+	// It must be called before calling SeriesMetadata, NextSeries, NextStepSamples or Finalize.
+	// AfterPrepare must not call SeriesMetadata, NextSeries, NextStepSamples or Finalize on another operator, and is expected to call AfterPrepare on
 	// any nested operators.
-	// Calling Finalize after Prepare, SeriesMetadata, NextSeries or NextStepSamples have returned an error may result in unpredictable
-	// behaviour, corruption or crashes.
+	//
+	// AfterPrepare must only be called once.
+	//
+	// Favour putting logic in Prepare over AfterPrepare where possible, AfterPrepare should generally only be used for logic that relies on
+	// Prepare having already been called on all operators (eg. operators that collect requests from other operators).
+	AfterPrepare(ctx context.Context) error
+
+	// Finalize signals that no further data will be requested from this operator.
+	// Implementations may use this to clean up any buffered or outstanding data in memory.
+	// It must be safe to call Finalize even if other methods on the operator have not been called or returned an error.
+	// It must be safe to call Finalize multiple times.
+	// Finalize must not call any method other than Finalize on another operator and is expected to call Finalize on
+	// any nested operators.
+	// Once Finalize has been called, calling methods other than Close may result in unpredictable behaviour, corruption or crashes.
 	Finalize(ctx context.Context) error
 }
 
@@ -107,6 +120,14 @@ type Matcher struct {
 	Value string
 }
 
+func NewMatcherFromPrometheusType(m *labels.Matcher) Matcher {
+	return Matcher{
+		Type:  m.Type,
+		Name:  m.Name,
+		Value: m.Value,
+	}
+}
+
 func (m Matcher) ToPrometheusType() (*labels.Matcher, error) {
 	return labels.NewMatcher(m.Type, m.Name, m.Value)
 }
@@ -129,21 +150,6 @@ func (s Matchers) ToPrometheusType() ([]*labels.Matcher, error) {
 	}
 
 	return out, nil
-}
-
-// Append appends other Matchers to this matcher if both are non-nil.
-// If this Matchers is nil, other is returned unchanged.
-// If other is nil, this Matchers is returned unchanged.
-func (s Matchers) Append(other Matchers) Matchers {
-	if s == nil {
-		return other
-	}
-
-	if other == nil {
-		return s
-	}
-
-	return append(s, other...)
 }
 
 // With returns a new Matchers that only contains matchers targeting labels

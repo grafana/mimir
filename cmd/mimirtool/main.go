@@ -11,7 +11,6 @@ import (
 
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/mimirtool/commands"
 	"github.com/grafana/mimir/pkg/mimirtool/version"
@@ -27,38 +26,43 @@ var (
 	configCommand         commands.ConfigCommand
 	loadgenCommand        commands.LoadgenCommand
 	logConfig             commands.LoggerConfig
+	partitionRingCommand  commands.PartitionRingCommand
 	promQLCommand         commands.PromQLCommand
 	pushGateway           commands.PushGatewayConfig
 	remoteReadCommand     commands.RemoteReadCommand
 	ruleCommand           commands.RuleCommand
 	backfillCommand       commands.BackfillCommand
 	runtimeConfigCommand  commands.RuntimeConfigCommand
+	validateCommand       commands.ValidateCommand
 )
 
 func main() {
-	parser.ExperimentalDurationExpr = true
-
 	app := kingpin.New("mimirtool", "A command-line tool to manage Mimir and GEM.")
 
 	envVars := commands.NewEnvVarsWithPrefix("MIMIR")
-	aclCommand.Register(app, envVars)
-	alertCommand.Register(app, envVars, prometheus.DefaultRegisterer)
-	alertmanagerCommand.Register(app, envVars)
-	analyzeCommand.Register(app, envVars)
-	backfillCommand.Register(app, envVars)
-	bucketValidateCommand.Register(app, envVars)
-	configCommand.Register(app, envVars)
-	loadgenCommand.Register(app, envVars, prometheus.DefaultRegisterer)
+
+	// Register logger first so its PreAction runs before others
 	logConfig.Register(app, envVars)
+
+	aclCommand.Register(app, envVars)
+	alertCommand.Register(app, envVars, &logConfig, prometheus.DefaultRegisterer)
+	alertmanagerCommand.Register(app, envVars, &logConfig)
+	analyzeCommand.Register(app, envVars, &logConfig)
+	backfillCommand.Register(app, envVars, &logConfig)
+	bucketValidateCommand.Register(app, envVars, &logConfig)
+	configCommand.Register(app, envVars)
+	loadgenCommand.Register(app, envVars, &logConfig, prometheus.DefaultRegisterer)
+	partitionRingCommand.Register(app, envVars, &logConfig)
 	promQLCommand.Register(app, envVars)
-	pushGateway.Register(app, envVars)
-	remoteReadCommand.Register(app, envVars)
-	ruleCommand.Register(app, envVars, prometheus.DefaultRegisterer)
+	pushGateway.Register(app, envVars, &logConfig)
+	remoteReadCommand.Register(app, envVars, &logConfig)
+	ruleCommand.Register(app, envVars, &logConfig, prometheus.DefaultRegisterer)
 	runtimeConfigCommand.Register(app)
+	validateCommand.Register(app, envVars, &logConfig)
 
 	app.Command("version", "Get the version of the mimirtool CLI").Action(func(*kingpin.ParseContext) error {
 		fmt.Fprintln(os.Stdout, mimirversion.Print("Mimirtool"))
-		version.CheckLatest(mimirversion.Version)
+		version.CheckLatest(mimirversion.Version, logConfig.Logger())
 		return nil
 	})
 

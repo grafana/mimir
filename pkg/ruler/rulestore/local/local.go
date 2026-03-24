@@ -13,10 +13,12 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
+	"github.com/prometheus/prometheus/promql/parser"
 	promRules "github.com/prometheus/prometheus/rules"
 
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 // Client expects to load already existing rules located at:
@@ -27,14 +29,14 @@ type Client struct {
 	loader promRules.GroupLoader
 }
 
-func NewLocalRulesClient(cfg rulestore.LocalStoreConfig, loader promRules.GroupLoader) (*Client, error) {
+func NewLocalRulesClient(cfg rulestore.LocalStoreConfig) (*Client, error) {
 	if cfg.Directory == "" {
 		return nil, errors.New("directory required for local rules config")
 	}
 
 	return &Client{
 		cfg:    cfg,
-		loader: loader,
+		loader: newFileLoader(),
 	}, nil
 }
 
@@ -179,4 +181,25 @@ func (l *Client) loadRawRulesGroupsForUserAndNamespace(_ context.Context, userID
 		return nil, errors.Wrapf(errs[0], "error parsing %s", filename)
 	}
 	return rulegroups, nil
+}
+
+// fileLoader implements promRules.GroupLoader interface.
+// It loads rule groups from files
+type fileLoader struct {
+	parser parser.Parser
+}
+
+// newFileLoader creates a new fileLoader.
+func newFileLoader() *fileLoader {
+	return &fileLoader{
+		parser: promqlext.NewPromQLParser(),
+	}
+}
+
+func (fl *fileLoader) Load(identifier string, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*rulefmt.RuleGroups, []error) {
+	return rulefmt.ParseFile(identifier, ignoreUnknownFields, nameValidationScheme, fl.parser)
+}
+
+func (fl *fileLoader) Parse(query string) (parser.Expr, error) {
+	return fl.parser.ParseExpr(query)
 }

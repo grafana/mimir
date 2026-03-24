@@ -11,6 +11,7 @@ type Config struct {
 	Manager                 ManagerConfig                 `yaml:"-"`
 	WriteReadSeriesTest     WriteReadSeriesTestConfig     `yaml:"-"`
 	IngestStorageRecordTest IngestStorageRecordTestConfig `yaml:"-"`
+	WriteReadOOOTest        WriteReadOOOTestConfig        `yaml:"-"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
@@ -18,4 +19,5 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.Manager.RegisterFlags(f)
 	cfg.WriteReadSeriesTest.RegisterFlags(f)
 	cfg.IngestStorageRecordTest.RegisterFlags(f)
+	cfg.WriteReadOOOTest.RegisterFlags(f)
 }

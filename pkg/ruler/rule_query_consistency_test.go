@@ -135,7 +135,7 @@ func TestWrapQueryableWithReadConsistency(t *testing.T) {
 
 	t.Run("should inject strong read consistency if querying ALERTS_FOR_STATE", func(t *testing.T) {
 		hasReadConsistency, readConsistencyLevel := runWrappedSelect(
-			labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "ALERTS_FOR_STATE"),
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "ALERTS_FOR_STATE"),
 			labels.MustNewMatcher(labels.MatchEqual, "alertname", "my_test_alert"),
 		)
 
@@ -158,10 +158,10 @@ func TestIsQueryingAlertsForStateMetric(t *testing.T) {
 	assert.False(t, isQueryingAlertsForStateMetric("ALERTS"))
 	assert.True(t, isQueryingAlertsForStateMetric("ALERTS_FOR_STATE"))
 
-	assert.False(t, isQueryingAlertsForStateMetric("", labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test")))
-	assert.False(t, isQueryingAlertsForStateMetric("", labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "ALERTS")))
-	assert.True(t, isQueryingAlertsForStateMetric("", labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "ALERTS_FOR_STATE")))
-	assert.True(t, isQueryingAlertsForStateMetric("", labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, "ALERTS_.*")))
+	assert.False(t, isQueryingAlertsForStateMetric("", labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test")))
+	assert.False(t, isQueryingAlertsForStateMetric("", labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "ALERTS")))
+	assert.True(t, isQueryingAlertsForStateMetric("", labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "ALERTS_FOR_STATE")))
+	assert.True(t, isQueryingAlertsForStateMetric("", labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, "ALERTS_.*")))
 }
 
 type querierMock struct {

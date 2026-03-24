@@ -12,25 +12,16 @@ import (
 )
 
 func finalize(ctx context.Context, resp RemoteExecutionResponse, annos *annotations.Annotations, queryStats *types.QueryStats) error {
-	newAnnos, remoteStats, err := resp.GetEvaluationInfo(ctx)
+	newAnnos, remoteStats, err := resp.Finalize(ctx)
 	if err != nil {
 		return err
 	}
 
-	annos.Merge(*newAnnos)
-
-	if queryStats != nil {
-		// FIXME: once we support evaluating multiple nodes at once, only do this once per request, not once per requested node
-		if len(remoteStats.SamplesProcessedPerStep) > 0 {
-			for _, step := range remoteStats.SamplesProcessedPerStep {
-				queryStats.IncrementSamplesAtTimestamp(step.Timestamp, step.Value)
-			}
-
-			// IncrementSamplesAtTimestamp updates TotalSamples, so there's nothing more to do.
-		} else {
-			queryStats.TotalSamples += int64(remoteStats.SamplesProcessed)
-		}
+	if newAnnos != nil {
+		annos.Merge(*newAnnos)
 	}
+
+	queryStats.IncrementSamples(int64(remoteStats.SamplesProcessed))
 
 	if localStats := stats.FromContext(ctx); localStats != nil {
 		// We need to remove the samples processed from the remote stats before merging them into the local stats, as we already added them to MQE's queryStats above.

@@ -2,7 +2,6 @@
 // Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/integration/query_frontend_test.go
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
-//go:build requires_docker
 
 package integration
 
@@ -25,6 +24,7 @@ import (
 	"github.com/grafana/e2e"
 	e2ecache "github.com/grafana/e2e/cache"
 	e2edb "github.com/grafana/e2e/db"
+	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
@@ -220,6 +220,28 @@ func TestQueryFrontendWithRemoteExecution(t *testing.T) {
 	}
 }
 
+func TestQueryFrontendWithMultiNodeRemoteExecution(t *testing.T) {
+	runQueryFrontendTest(t, queryFrontendTestConfig{
+		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
+			flags = mergeFlags(
+				CommonStorageBackendFlags(),
+				BlocksStorageFlags(),
+				map[string]string{
+					"-query-frontend.enable-multiple-node-remote-execution-requests": "true",
+				},
+			)
+
+			minio := e2edb.NewMinio(9000, mimirBucketName)
+			require.NoError(t, s.StartAndWaitReady(minio))
+
+			return "", flags
+		},
+		withHistograms:         true,
+		remoteExecutionEnabled: true,
+		queryStatsEnabled:      true,
+	})
+}
+
 func TestQueryFrontendWithIngestStorageViaFlagsAndQueryStatsEnabled(t *testing.T) {
 	runScenario := func(t *testing.T, enableRemoteExecution bool) {
 		runQueryFrontendTest(t, queryFrontendTestConfig{
@@ -230,7 +252,7 @@ func TestQueryFrontendWithIngestStorageViaFlagsAndQueryStatsEnabled(t *testing.T
 				flags = mergeFlags(
 					BlocksStorageFlags(),
 					BlocksStorageS3Flags(),
-					IngestStorageFlags(),
+					IngestStorageFlags(e2edb.KafkaAuthNone),
 				)
 
 				kafka := e2edb.NewKafka()
@@ -315,6 +337,11 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 
 	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
 		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
+	// Wait until the query-frontend has updated the querier ring.
+	require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "querier"),
 		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
 
 	// When using the ingest storage, wait until partitions are ACTIVE in the ring.
@@ -623,10 +650,11 @@ overrides:
 	require.NoError(t, s.StartAndWaitReady(distributor, querier, ingester))
 	require.NoError(t, s.WaitReady(queryFrontend))
 
-	// Wait until both the distributor and querier have updated the ring.
+	// Wait until both the distributor, querier and query-frontend have updated the ring.
 	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
 	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
 	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(1), "cortex_ring_tokens_total"))
 
 	now := time.Now()
 	nowTruncatedToLastSecond := now.Truncate(time.Second)
@@ -810,7 +838,7 @@ overrides:
 				return c.QueryRangeRaw(`sum_over_time(metric[31d:1s])`, nowTruncatedToLastSecond.Add(-time.Minute), nowTruncatedToLastSecond, time.Minute)
 			},
 			expStatusCode: http.StatusUnprocessableEntity,
-			expJSON:       fmt.Sprintf(`{"error":"%s", "errorType":"execution", "status":"error"}`, mimirquerier.NewMaxQueryLengthError((744*time.Hour)+(6*time.Minute)-time.Millisecond, 720*time.Hour)),
+			expJSON:       fmt.Sprintf(`{"error":"%s", "errorType":"execution", "status":"error"}`, mimirquerier.NewMaxQueryLengthError((744*time.Hour)+(6*time.Minute)-time.Millisecond-time.Second, 720*time.Hour)),
 		},
 		{
 			name: "query remote read time range exceeds the limit",
@@ -1029,4 +1057,137 @@ func waitQueryFrontendToSuccessfullyFetchLastProducedOffsets(t *testing.T, query
 		t.Logf("Waiting query-frontend to successfully fetch last produced offsets – requestsErr: %v requests: %v failuresErr: %v failures: %v", requestsErr, requests, failuresErr, failures)
 		return requestsErr == nil && failuresErr == nil && len(requests) == 1 && len(failures) == 1 && requests[0] > failures[0]
 	})
+}
+
+func TestQueryFrontendWithExplicitLookbackDelta(t *testing.T) {
+	testCases := map[string]struct {
+		flags map[string]string
+	}{
+		"Prometheus' engine": {
+			flags: map[string]string{
+				"-querier.query-engine":        "prometheus",
+				"-query-frontend.query-engine": "prometheus",
+			},
+		},
+		"MQE with remote execution and sharding disabled": {
+			flags: map[string]string{
+				"-querier.query-engine":                               "mimir",
+				"-query-frontend.query-engine":                        "mimir",
+				"-query-frontend.enable-remote-execution":             "false",
+				"-query-frontend.use-mimir-query-engine-for-sharding": "false",
+			},
+		},
+		"MQE with remote execution enabled, sharding disabled": {
+			flags: map[string]string{
+				"-querier.query-engine":                               "mimir",
+				"-query-frontend.query-engine":                        "mimir",
+				"-query-frontend.enable-remote-execution":             "true",
+				"-query-frontend.use-mimir-query-engine-for-sharding": "false",
+			},
+		},
+		"MQE with remote execution and sharding enabled": {
+			flags: map[string]string{
+				"-querier.query-engine":                               "mimir",
+				"-query-frontend.query-engine":                        "mimir",
+				"-query-frontend.enable-remote-execution":             "true",
+				"-query-frontend.use-mimir-query-engine-for-sharding": "true",
+			}},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			s, err := e2e.NewScenario(networkName)
+			require.NoError(t, err)
+			defer s.Close()
+
+			flags := mergeFlags(CommonStorageBackendFlags(), BlocksStorageFlags(), testCase.flags)
+			consul := e2edb.NewConsul()
+			minio := e2edb.NewMinio(9000, mimirBucketName)
+			queryScheduler := e2emimir.NewQueryScheduler("query-scheduler", flags)
+			require.NoError(t, s.StartAndWaitReady(consul, minio, queryScheduler))
+
+			flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+			flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+
+			queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags)
+			require.NoError(t, s.Start(queryFrontend))
+
+			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+			ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
+			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
+
+			require.NoError(t, s.StartAndWaitReady(distributor, querier, ingester))
+			require.NoError(t, s.WaitReady(queryFrontend))
+
+			// Wait until both the distributor, querier and query-frontend have updated the ring.
+			// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
+			require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
+			require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+			require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(1), "cortex_ring_tokens_total"))
+
+			now := time.Now()
+			nowTruncatedToLastSecond := now.Truncate(time.Second)
+
+			client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), queryFrontend.HTTPEndpoint(), "", "", userID)
+			require.NoError(t, err)
+
+			sampleT := nowTruncatedToLastSecond.Add(-20 * time.Minute)
+			metricName := "test_metric"
+			series, _, _ := generateFloatSeries(metricName, sampleT)
+			expectedValue := series[0].Samples[0].Value
+
+			res, err := client.Push(series)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusOK, res.StatusCode)
+
+			// Query without explicit lookback window: should use 5m default
+			queryLookbackDeltaTest(t, client, metricName, sampleT.Add(3*time.Minute), true, expectedValue) // Should have a result given the lookback window overlaps the sample timestamp.
+			queryLookbackDeltaTest(t, client, metricName, sampleT.Add(6*time.Minute), false, -1)           // Should not have a result given the lookback window does not overlap the sample timestamp.
+
+			// Query with explicit lookback window that includes sample: should return result
+			queryLookbackDeltaTest(t, client, metricName, sampleT.Add(6*time.Minute), true, expectedValue, promv1.WithLookbackDelta(10*time.Minute))
+
+			// Query with explicit lookback window that excludes sample: should return empty result
+			queryLookbackDeltaTest(t, client, metricName, sampleT.Add(6*time.Minute), false, -1, promv1.WithLookbackDelta(time.Minute))
+		})
+	}
+}
+
+func queryLookbackDeltaTest(t *testing.T, client *e2emimir.Client, seriesName string, ts time.Time, expectResult bool, expectedValue float64, opts ...promv1.Option) {
+	res, err := client.Query(seriesName, ts, opts...)
+	require.NoError(t, err)
+
+	v, ok := res.(model.Vector)
+	require.Truef(t, ok, "expected instant query result to be a vector, got %T", res)
+
+	if expectResult {
+		require.Len(t, v, 1)
+		sample := v[0]
+		require.Equal(t, expectedValue, float64(sample.Value))
+		require.Equal(t, ts, sample.Timestamp.Time())
+		require.Equal(t, seriesName, sample.Metric.String())
+	} else {
+		require.Empty(t, v)
+	}
+
+	step := 100 * time.Minute
+	res, err = client.QueryRange(seriesName, ts.Add(-step), ts.Add(step), step, opts...)
+	require.NoError(t, err)
+
+	m, ok := res.(model.Matrix)
+	require.Truef(t, ok, "expected range query result to be a matrix, got %T", res)
+
+	if expectResult {
+		require.Len(t, m, 1)
+		series := m[0]
+		require.Equal(t, seriesName, series.Metric.String())
+		require.Empty(t, series.Histograms)
+		require.Len(t, series.Values, 1)
+
+		sample := series.Values[0]
+		require.Equal(t, expectedValue, float64(sample.Value))
+		require.Equal(t, ts, sample.Timestamp.Time())
+	} else {
+		require.Empty(t, m)
+	}
 }

@@ -16,20 +16,25 @@ import (
 	"time"
 
 	"github.com/alecthomas/kingpin/v2"
+	"github.com/go-kit/log"
 	"github.com/grafana-tools/sdk"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/mimirtool/analyze"
 	"github.com/grafana/mimir/pkg/mimirtool/minisdk"
+	"github.com/grafana/mimir/pkg/mimirtool/util"
 )
 
 type GrafanaAnalyzeCommand struct {
-	address     string
-	apiKey      string
-	readTimeout time.Duration
-	folders     folderTitles
+	address                     string
+	apiKey                      string
+	readTimeout                 time.Duration
+	folders                     folderTitles
+	outputFile                  string
+	enableExperimentalFunctions bool
 
-	outputFile string
+	logger log.Logger
 }
 
 type folderTitles []string
@@ -53,7 +58,7 @@ func (cmd *GrafanaAnalyzeCommand) run(_ *kingpin.ParseContext) error {
 		return err
 	}
 
-	output, err := AnalyzeGrafana(context.Background(), c, cmd.folders, cmd.readTimeout)
+	output, err := AnalyzeGrafana(context.Background(), c, cmd.folders, cmd.readTimeout, util.CreatePromQLParser(cmd.enableExperimentalFunctions), cmd.logger)
 	if err != nil {
 		return err
 	}
@@ -66,7 +71,7 @@ func (cmd *GrafanaAnalyzeCommand) run(_ *kingpin.ParseContext) error {
 }
 
 // AnalyzeGrafana analyze grafana's dashboards and return the list metrics used in them.
-func AnalyzeGrafana(ctx context.Context, c *sdk.Client, folders []string, readTimeout time.Duration) (*analyze.MetricsInGrafana, error) {
+func AnalyzeGrafana(ctx context.Context, c *sdk.Client, folders []string, readTimeout time.Duration, promqlParser parser.Parser, logger log.Logger) (*analyze.MetricsInGrafana, error) {
 
 	output := &analyze.MetricsInGrafana{}
 	output.OverallMetrics = make(map[string]struct{})
@@ -83,7 +88,7 @@ func AnalyzeGrafana(ctx context.Context, c *sdk.Client, folders []string, readTi
 			continue
 		}
 
-		err := processDashboard(ctx, c, link, output, readTimeout)
+		err := processDashboard(ctx, c, link, output, readTimeout, promqlParser, logger)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s for %s %s\n", err, link.UID, link.Title)
 		}
@@ -100,7 +105,7 @@ func AnalyzeGrafana(ctx context.Context, c *sdk.Client, folders []string, readTi
 }
 
 // processDashboard fetches and processes a single Grafana dashboard.
-func processDashboard(ctx context.Context, c *sdk.Client, link sdk.FoundBoard, output *analyze.MetricsInGrafana, readTimeout time.Duration) error {
+func processDashboard(ctx context.Context, c *sdk.Client, link sdk.FoundBoard, output *analyze.MetricsInGrafana, readTimeout time.Duration, promqlParser parser.Parser, logger log.Logger) error {
 	fetchCtx, cancel := context.WithTimeout(ctx, readTimeout)
 	defer cancel()
 
@@ -114,7 +119,7 @@ func processDashboard(ctx context.Context, c *sdk.Client, link sdk.FoundBoard, o
 		return err
 	}
 
-	analyze.ParseMetricsInBoard(output, board)
+	analyze.ParseMetricsInBoard(output, board, promqlParser, logger)
 	return nil
 }
 

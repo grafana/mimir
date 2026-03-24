@@ -143,8 +143,8 @@ The following Grafana Mimir components support TLS for inter-communication, whic
 - Distributor gRPC client used to forward series matching a configured set to a dedicated remote endpoint: `-distributor.forwarding.grpc-client.*`
 - Alertmanager gRPC client used to connect to other Alertmanager instances: `-alertmanager.alertmanager-client.*`
 - gRPC client used by distributors, queriers, and rulers to connect to ingesters: `-ingester.client.*`
-- etcd client used by all Mimir components to connect to etcd, which is required only if you're running the hash ring or HA tracker on the etcd backend: `-<prefix>.etcd.*`
-- Memberlist client used by all Mimir components to gossip the hash ring, which is required only if you're running the hash ring on memberlist: `-memberlist.`
+- etcd client used by all Mimir components to connect to etcd (deprecated for HA tracker as of Mimir 3.0; use memberlist instead): `-<prefix>.etcd.*`
+- Memberlist client used by all Mimir components to gossip the hash ring and HA tracker: `-memberlist.`
 - Memcached client used by all Mimir components: `-blocks-storage.bucket-store.chunks-cache.memcached.*`, `-blocks-storage.bucket-store.index-cache.memcached.*`, `-blocks-storage.bucket-store.metadata-cache.memcached.*`, `-query-frontend.results-cache.memcached.*`, `-ruler-storage.cache.memcached.*`
 
 Each of the components listed above support the following TLS configuration options, which are shown with their corresponding flag suffixes:

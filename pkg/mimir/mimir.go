@@ -39,8 +39,8 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	prom_storage "github.com/prometheus/prometheus/storage"
 	"go.uber.org/atomic"
+	"go.yaml.in/yaml/v3"
 	"google.golang.org/grpc/health/grpc_health_v1"
-	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
@@ -50,10 +50,10 @@ import (
 	"github.com/grafana/mimir/pkg/blockbuilder"
 	blockbuilderscheduler "github.com/grafana/mimir/pkg/blockbuilder/scheduler"
 	"github.com/grafana/mimir/pkg/compactor"
+	compactorscheduler "github.com/grafana/mimir/pkg/compactor/scheduler"
 	"github.com/grafana/mimir/pkg/continuoustest"
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/distributor"
-	"github.com/grafana/mimir/pkg/flusher"
 	"github.com/grafana/mimir/pkg/frontend"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/ingester"
@@ -121,7 +121,6 @@ type Config struct {
 	Querier                        querier.Config                  `yaml:"querier"`
 	IngesterClient                 client.Config                   `yaml:"ingester_client"`
 	Ingester                       ingester.Config                 `yaml:"ingester"`
-	Flusher                        flusher.Config                  `yaml:"flusher"`
 	LimitsConfig                   validation.Limits               `yaml:"limits"`
 	Worker                         querier_worker.Config           `yaml:"frontend_worker"`
 	Frontend                       frontend.CombinedFrontendConfig `yaml:"frontend"`
@@ -130,6 +129,7 @@ type Config struct {
 	BlockBuilderScheduler          blockbuilderscheduler.Config    `yaml:"block_builder_scheduler" doc:"hidden"`
 	BlocksStorage                  tsdb.BlocksStorageConfig        `yaml:"blocks_storage"`
 	Compactor                      compactor.Config                `yaml:"compactor"`
+	CompactorScheduler             compactorscheduler.Config       `yaml:"compactor_scheduler" doc:"hidden"`
 	StoreGateway                   storegateway.Config             `yaml:"store_gateway"`
 	TenantFederation               tenantfederation.Config         `yaml:"tenant_federation"`
 	ActivityTracker                activitytracker.Config          `yaml:"activity_tracker"`
@@ -144,7 +144,7 @@ type Config struct {
 	MemberlistKV        memberlist.KVConfig                        `yaml:"memberlist"`
 	QueryScheduler      scheduler.Config                           `yaml:"query_scheduler"`
 	UsageStats          usagestats.Config                          `yaml:"usage_stats"`
-	UsageTracker        usagetracker.Config                        `yaml:"usage_tracker"`
+	UsageTracker        usagetracker.Config                        `yaml:"usage_tracker" doc:"hidden"`
 	ContinuousTest      continuoustest.Config                      `yaml:"-"`
 	OverridesExporter   exporter.Config                            `yaml:"overrides_exporter"`
 
@@ -183,16 +183,15 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&c.CostAttributionRegistryPath, "cost-attribution.registry-path", "", "Defines a custom path for the registry. When specified, Mimir exposes cost attribution metrics through this custom path. If not specified, cost attribution metrics aren't exposed.")
 	f.DurationVar(&c.CostAttributionEvictionInterval, "cost-attribution.eviction-interval", 20*time.Minute, "Specifies how often inactive cost attributions for received and discarded sample trackers are evicted from the counter, ensuring they do not contribute to the cost attribution cardinality per user limit. This setting does not apply to active series, which are managed separately.")
 	f.DurationVar(&c.CostAttributionCleanupInterval, "cost-attribution.cleanup-interval", 3*time.Minute, "Time interval at which the cost attribution cleanup process runs, ensuring inactive cost attribution entries are purged.")
-	f.BoolVar(&c.IncludeTenantIDInProfileLabels, "include-tenant-id-in-profile-labels", false, "Include tenant ID in pprof labels for profiling. Currently only supported by the ingester. This can help debug performance issues for specific tenants.")
+	f.BoolVar(&c.IncludeTenantIDInProfileLabels, "include-tenant-id-in-profile-labels", true, "Include tenant ID in pprof labels for profiling. Currently only supported by the ingester. This can help debug performance issues for specific tenants.")
 
 	c.API.RegisterFlags(f)
 	c.registerServerFlagsWithChangedDefaultValues(f)
 	c.registerMemberlistKVFlagsWithChangedDefaultValues(f)
 	c.Distributor.RegisterFlags(f, logger)
-	c.Querier.RegisterFlags(f)
+	c.Querier.RegisterFlags(f, logger)
 	c.IngesterClient.RegisterFlags(f)
 	c.Ingester.RegisterFlags(f, logger)
-	c.Flusher.RegisterFlags(f)
 	c.LimitsConfig.RegisterFlags(f)
 	c.Worker.RegisterFlags(f)
 	c.Frontend.RegisterFlags(f, logger)
@@ -201,6 +200,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.BlockBuilderScheduler.RegisterFlags(f)
 	c.BlocksStorage.RegisterFlags(f)
 	c.Compactor.RegisterFlags(f, logger)
+	c.CompactorScheduler.RegisterFlags(f)
 	c.StoreGateway.RegisterFlags(f, logger)
 	c.TenantFederation.RegisterFlags(f)
 	c.Ruler.RegisterFlags(f, logger)
@@ -231,6 +231,7 @@ func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
 			"ingester_client":                  &c.IngesterClient.GRPCClientConfig.ClusterValidation,
 			"frontend_worker_frontend_client":  &c.Worker.QueryFrontendGRPCClientConfig.ClusterValidation,
 			"frontend_worker_scheduler_client": &c.Worker.QuerySchedulerGRPCClientConfig.ClusterValidation,
+			"compactor_scheduler_client":       &c.Compactor.SchedulerClientConfig.GRPCClientConfig.ClusterValidation,
 			"block_builder_scheduler_client":   &c.BlockBuilder.SchedulerConfig.GRPCClientConfig.ClusterValidation,
 			"frontend_query_scheduler_client":  &c.Frontend.FrontendV2.GRPCClientConfig.ClusterValidation,
 			"querier_store_gateway_client":     &c.Querier.StoreGatewayClient.ClusterValidation,
@@ -282,6 +283,9 @@ func (c *Config) Validate(log log.Logger) error {
 			return errors.New("cannot disable Push gRPC method in ingester, while ingest storage (-ingest-storage.enabled) is not enabled")
 		}
 	}
+	if err := c.MemberlistKV.Validate(); err != nil {
+		return errors.Wrap(err, "invalid memberlist config")
+	}
 	if err := c.BlocksStorage.Validate(c.Ingester.ActiveSeriesMetrics); err != nil {
 		return errors.Wrap(err, "invalid TSDB config")
 	}
@@ -320,6 +324,9 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.Compactor.Validate(log); err != nil {
 		return errors.Wrap(err, "invalid compactor config")
 	}
+	if err := c.CompactorScheduler.Validate(); err != nil {
+		return errors.Wrap(err, "invalid compactor-scheduler config")
+	}
 	if err := c.AlertmanagerStorage.Validate(); err != nil {
 		return errors.Wrap(err, "invalid alertmanager storage config")
 	}
@@ -349,6 +356,12 @@ func (c *Config) Validate(log log.Logger) error {
 	}
 	if err := c.OverridesExporter.Validate(); err != nil {
 		return errors.Wrap(err, "invalid overrides-exporter config")
+	}
+	if err := c.Common.InstrumentRefLeaks.Validate(); err != nil {
+		return errors.Wrap(err, "invalid instrument-ref-leaks config")
+	}
+	if err := c.API.Validate(); err != nil {
+		return errors.Wrap(err, "invalid API config")
 	}
 
 	// validate the default limits
@@ -629,6 +642,11 @@ func (c *Config) validateFilesystemPaths(logger log.Logger) error {
 
 // isAbsPathOverlapping returns whether the two input absolute paths overlap.
 func isAbsPathOverlapping(firstAbsPath, secondAbsPath string) bool {
+	// The root "/" overlaps with every absolute path.
+	if firstAbsPath == "/" || secondAbsPath == "/" {
+		return true
+	}
+
 	firstBase, firstName := filepath.Split(firstAbsPath)
 	secondBase, secondName := filepath.Split(secondAbsPath)
 
@@ -639,7 +657,9 @@ func isAbsPathOverlapping(firstAbsPath, secondAbsPath string) bool {
 	}
 
 	// The base directories are different, but they could still overlap if one is the child of the other one.
-	return strings.HasPrefix(firstAbsPath, secondAbsPath) || strings.HasPrefix(secondAbsPath, firstAbsPath)
+	// We append "/" to ensure we match on path segment boundaries and avoid false positives
+	// like "/data/tsdb" matching "/data/tsdb-compactor/cache".
+	return strings.HasPrefix(firstAbsPath, secondAbsPath+"/") || strings.HasPrefix(secondAbsPath, firstAbsPath+"/")
 }
 
 func (c *Config) registerServerFlagsWithChangedDefaultValues(fs *flag.FlagSet) {
@@ -710,11 +730,16 @@ func UnmarshalCommonYAML(value *yaml.Node, inheriters ...CommonConfigInheriter) 
 		for name, loc := range inheritance.ClientClusterValidation {
 			specificClusterValidationLocations[name] = loc
 		}
+		specificInstrumentRefLeaksLocations := specificLocationsUnmarshaler{}
+		for name, loc := range inheritance.InstrumentRefLeaksConfig {
+			specificInstrumentRefLeaksLocations[name] = loc
+		}
 
 		common := configWithCustomCommonUnmarshaler{
 			Common: &commonConfigUnmarshaler{
 				Storage:                 &specificStorageLocations,
 				ClientClusterValidation: &specificClusterValidationLocations,
+				InstrumentRefLeaks:      &specificInstrumentRefLeaksLocations,
 			},
 		}
 
@@ -784,17 +809,20 @@ func inheritFlags(log log.Logger, orig flagext.RegisteredFlagsTracker, dest flag
 type CommonConfig struct {
 	Storage                 bucket.StorageBackendConfig         `yaml:"storage"`
 	ClientClusterValidation clusterutil.ClusterValidationConfig `yaml:"client_cluster_validation" category:"experimental"`
+	InstrumentRefLeaks      mimirpb.InstrumentRefLeaksConfig    `yaml:"instrument_ref_leaks" category:"experimental"`
 }
 
 type CommonConfigInheritance struct {
-	Storage                 map[string]*bucket.StorageBackendConfig
-	ClientClusterValidation map[string]*clusterutil.ClusterValidationConfig
+	Storage                  map[string]*bucket.StorageBackendConfig
+	ClientClusterValidation  map[string]*clusterutil.ClusterValidationConfig
+	InstrumentRefLeaksConfig map[string]*mimirpb.InstrumentRefLeaksConfig
 }
 
 // RegisterFlags registers flag.
 func (c *CommonConfig) RegisterFlags(f *flag.FlagSet) {
 	c.Storage.RegisterFlagsWithPrefix("common.storage.", f)
 	c.ClientClusterValidation.RegisterFlagsWithPrefix("common.client-cluster-validation.", f)
+	c.InstrumentRefLeaks.RegisterFlagsWithPrefix("common.instrument-reference-leaks.", f)
 }
 
 // configWithCustomCommonUnmarshaler unmarshals config with custom unmarshaler for the `common` field.
@@ -811,6 +839,7 @@ type configWithCustomCommonUnmarshaler struct {
 type commonConfigUnmarshaler struct {
 	Storage                 *specificLocationsUnmarshaler `yaml:"storage"`
 	ClientClusterValidation *specificLocationsUnmarshaler `yaml:"client_cluster_validation"`
+	InstrumentRefLeaks      *specificLocationsUnmarshaler `yaml:"instrument_ref_leaks"`
 }
 
 // specificLocationsUnmarshaler will unmarshal yaml into specific locations.
@@ -844,16 +873,18 @@ type Mimir struct {
 	IngesterPartitionInstanceRing    *ring.PartitionInstanceRing
 	TenantLimits                     validation.TenantLimits
 	Overrides                        *validation.Overrides
+	QueryLimitsProvider              streamingpromql.QueryLimitsProvider
 	ActiveGroupsCleanup              *util.ActiveGroupsCleanupService
 	Distributor                      *distributor.Distributor
 	Ingester                         *ingester.Ingester
-	Flusher                          *flusher.Flusher
 	RuntimeConfig                    *runtimeconfig.Manager
 	QuerierQueryable                 prom_storage.SampleAndChunkQueryable
 	ExemplarQueryable                prom_storage.ExemplarQueryable
 	AdditionalStorageQueryables      []querier.TimeRangeQueryable
 	MetadataSupplier                 querier.MetadataSupplier
 	QuerierEngine                    promql.QueryEngine
+	QuerierLifecycler                *ring.BasicLifecycler
+	QuerierRing                      *ring.Ring
 	QuerierStreamingEngine           *streamingpromql.Engine // The MQE instance in QuerierEngine (without fallback wrapper), or nil if MQE is disabled.
 	QueryFrontendStreamingEngine     *streamingpromql.Engine // The MQE instance used by the query-frontend (without fallback wrapper), or nil if MQE is disabled.
 	QueryFrontendTripperware         querymiddleware.Tripperware
@@ -863,6 +894,7 @@ type Mimir struct {
 	RulerStorage                     rulestore.RuleStore
 	Alertmanager                     *alertmanager.MultitenantAlertmanager
 	Compactor                        *compactor.MultitenantCompactor
+	CompactorScheduler               *compactorscheduler.Scheduler
 	StoreGateway                     *storegateway.StoreGateway
 	MemberlistKV                     *memberlist.KVInitService
 	ActivityTracker                  *activitytracker.ActivityTracker
@@ -895,6 +927,10 @@ type Mimir struct {
 
 // New makes a new Mimir.
 func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
+	if len(cfg.Target) == 0 {
+		return nil, fmt.Errorf("no target module specified, the -target flag must be set to a valid module (e.g. \"all\")")
+	}
+
 	if cfg.PrintConfig {
 		if err := yaml.NewEncoder(os.Stdout).Encode(&cfg); err != nil {
 			fmt.Println("Error encoding config:", err)
@@ -903,6 +939,14 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 	}
 
 	setUpGoRuntimeMetrics(cfg, reg)
+
+	mimirpb.CustomCodecConfig{
+		InstrumentRefLeaksConfig: mimirpb.InstrumentRefLeaksConfig{
+			Percentage:                   cfg.Common.InstrumentRefLeaks.Percentage,
+			BeforeReusePeriod:            cfg.Common.InstrumentRefLeaks.BeforeReusePeriod,
+			MaxInflightInstrumentedBytes: cfg.Common.InstrumentRefLeaks.MaxInflightInstrumentedBytes,
+		},
+	}.RegisterGlobally(reg)
 
 	if cfg.TenantFederation.Enabled && cfg.Ruler.TenantFederation.Enabled {
 		util_log.WarnExperimentalUse("ruler.tenant-federation")
@@ -930,6 +974,8 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 			"/schedulerpb.SchedulerForFrontend/FrontendLoop",
 			"/schedulerpb.SchedulerForQuerier/QuerierLoop",
 			"/schedulerpb.SchedulerForQuerier/NotifyQuerierShutdown",
+			"/usagetrackerpb.UsageTracker/GetUsersCloseToLimit",
+			"/usagetrackerpb.UsageTracker/TrackSeriesBatch",
 		})
 
 	// Do not allow to configure potentially unsafe options until we've properly tested them in Mimir.
@@ -1017,6 +1063,14 @@ func (t *Mimir) Run() error {
 		t.API.RegisterIngesterRing(t.IngesterRing)
 	} else if t.Ingester != nil {
 		t.API.RegisterIngesterRing(t.Ingester.RingHandler())
+	}
+
+	// Register the querier ring handler if it exists,
+	// preferring the one exposed by the ring instance over the BasicLifecycler.
+	if t.QuerierRing != nil {
+		t.API.RegisterQuerierRing(t.QuerierRing)
+	} else if t.QuerierLifecycler != nil {
+		t.API.RegisterQuerierRing(t.QuerierLifecycler)
 	}
 
 	// get all services, create service manager and tell it to start

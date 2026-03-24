@@ -135,6 +135,120 @@ func maxOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.
 	return maxSoFar, true, nil, nil
 }
 
+var TsOfMinOverTime = FunctionOverRangeVectorDefinition{
+	SeriesMetadataFunction:         DropSeriesName,
+	StepFunc:                       tsOfMinOverTime,
+	NeedsSeriesNamesForAnnotations: true,
+}
+
+func tsOfMinOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+	cmpFunc := func(existing, next promql.FPoint) bool {
+		return next.F <= existing.F || math.IsNaN(existing.F)
+	}
+
+	return tsOverTime(cmpFunc, step, emitAnnotation)
+}
+
+var TsOfMaxOverTime = FunctionOverRangeVectorDefinition{
+	SeriesMetadataFunction:         DropSeriesName,
+	StepFunc:                       tsOfMaxOverTime,
+	NeedsSeriesNamesForAnnotations: true,
+}
+
+func tsOfMaxOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+	cmpFunc := func(existing, next promql.FPoint) bool {
+		return next.F >= existing.F || math.IsNaN(existing.F)
+	}
+
+	return tsOverTime(cmpFunc, step, emitAnnotation)
+}
+
+func tsOverTime(compareFn func(promql.FPoint, promql.FPoint) bool, step *types.RangeVectorStepData, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+	head, tail := step.Floats.UnsafePoints()
+
+	if len(head) == 0 && len(tail) == 0 {
+		return 0, false, nil, nil
+	}
+
+	if step.Histograms.Any() {
+		emitAnnotation(annotations.NewHistogramIgnoredInMixedRangeInfo)
+	}
+
+	best := head[0]
+	head = head[1:]
+
+	for _, p := range head {
+		if compareFn(best, p) {
+			best = p
+		}
+	}
+
+	for _, p := range tail {
+		if compareFn(best, p) {
+			best = p
+		}
+	}
+
+	return float64(best.T) / 1000, true, nil, nil
+}
+
+var TsOfLastOverTime = FunctionOverRangeVectorDefinition{
+	SeriesMetadataFunction:         DropSeriesName,
+	StepFunc:                       tsOfLastOverTime,
+	NeedsSeriesNamesForAnnotations: true,
+}
+
+func tsOfLastOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.QueryTimeRange, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+	lastFloat, floatAvailable := step.Floats.Last()
+	lastHistogram, histogramAvailable := step.Histograms.Last()
+
+	if !floatAvailable && !histogramAvailable {
+		return 0, false, nil, nil
+	}
+
+	if floatAvailable && histogramAvailable {
+		if lastFloat.T > lastHistogram.T {
+			return float64(lastFloat.T) / 1000, true, nil, nil
+		}
+		return float64(lastHistogram.T) / 1000, true, nil, nil
+	}
+
+	if floatAvailable {
+		return float64(lastFloat.T) / 1000, true, nil, nil
+	}
+
+	return float64(lastHistogram.T) / 1000, true, nil, nil
+}
+
+var TsOfFirstOverTime = FunctionOverRangeVectorDefinition{
+	SeriesMetadataFunction:         DropSeriesName,
+	StepFunc:                       tsOfFirstOverTime,
+	NeedsSeriesNamesForAnnotations: true,
+}
+
+func tsOfFirstOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.QueryTimeRange, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+
+	floats := step.Floats.Count()
+	histograms := step.Histograms.Count()
+
+	if floats == 0 && histograms == 0 {
+		return 0, false, nil, nil
+	}
+
+	if floats > 0 && histograms > 0 {
+		if step.Floats.First().T <= step.Histograms.First().T {
+			return float64(step.Floats.First().T) / 1000, true, nil, nil
+		}
+		return float64(step.Histograms.First().T) / 1000, true, nil, nil
+	}
+
+	if floats > 0 {
+		return float64(step.Floats.First().T) / 1000, true, nil, nil
+	}
+
+	return float64(step.Histograms.First().T) / 1000, true, nil, nil
+}
+
 var MinOverTime = FunctionOverRangeVectorDefinition{
 	SeriesMetadataFunction:         DropSeriesName,
 	StepFunc:                       minOverTime,
@@ -196,7 +310,7 @@ func sumOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.
 		return sumFloats(fHead, fTail), true, nil, nil
 	}
 
-	h, err := sumHistograms(hHead, hTail, emitAnnotation)
+	h, err := SumHistograms(hHead, hTail, emitAnnotation)
 	return 0, false, h, err
 }
 
@@ -214,33 +328,80 @@ func sumFloats(head, tail []promql.FPoint) float64 {
 	return sum + c
 }
 
-func sumHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
+func SumHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
 	sum := head[0].H.Copy() // We must make a copy of the histogram, as the ring buffer may reuse the FloatHistogram instance on subsequent steps.
 	head = head[1:]
 
-	for _, p := range head {
-		if _, counterResetCollision, err := sum.Add(p.H); err != nil {
-			err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
-			return nil, err
-		} else if counterResetCollision {
-			emitAnnotation(newAdditionCounterResetCollisionWarning)
+	counterResetSeen := false
+	notCounterResetSeen := false
+	nhcbBoundsReconciledSeen := false
+
+	trackCounterReset := func(h *histogram.FloatHistogram) {
+		switch h.CounterResetHint {
+		case histogram.CounterReset:
+			counterResetSeen = true
+		case histogram.NotCounterReset:
+			notCounterResetSeen = true
 		}
 	}
 
-	for _, p := range tail {
-		if _, counterResetCollision, err := sum.Add(p.H); err != nil {
-			err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
-			return nil, err
-		} else if counterResetCollision {
-			emitAnnotation(newAdditionCounterResetCollisionWarning)
+	trackCounterReset(sum)
+
+	var compensation *histogram.FloatHistogram // Kahan compensation histogram
+
+	accumulate := func(points []promql.HPoint) (bool, error) {
+		for _, p := range points {
+			trackCounterReset(p.H)
+
+			var nhcbBoundsReconciled bool
+			var err error
+			compensation, _, nhcbBoundsReconciled, err = sum.KahanAdd(p.H, compensation)
+			if err != nil {
+				err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
+				return false, err
+			}
+			if nhcbBoundsReconciled {
+				nhcbBoundsReconciledSeen = true
+			}
 		}
+
+		return true, nil
+	}
+
+	if ok, err := accumulate(head); err != nil || !ok {
+		return nil, err
+	}
+
+	if ok, err := accumulate(tail); err != nil || !ok {
+		return nil, err
+	}
+
+	if counterResetSeen && notCounterResetSeen {
+		emitAnnotation(newAggregationCounterResetCollisionWarning)
+	}
+	if nhcbBoundsReconciledSeen {
+		emitAnnotation(NewAggregationMismatchedCustomBucketsHistogramInfo)
+	}
+
+	// Apply Kahan compensation to get the final accurate result
+	if compensation != nil {
+		// Use regular Add (not KahanAdd) to apply the final compensation
+		sum, _, _, err := sum.Add(compensation)
+		if err != nil {
+			return nil, err
+		}
+		return sum, nil
 	}
 
 	return sum, nil
 }
 
-func newAdditionCounterResetCollisionWarning(_ string, expressionPosition posrange.PositionRange) error {
-	return annotations.NewHistogramCounterResetCollisionWarning(expressionPosition, annotations.HistogramAdd)
+func newAggregationCounterResetCollisionWarning(_ string, expressionPosition posrange.PositionRange) error {
+	return annotations.NewHistogramCounterResetCollisionWarning(expressionPosition, annotations.HistogramAgg)
+}
+
+func NewAggregationMismatchedCustomBucketsHistogramInfo(_ string, expressionPosition posrange.PositionRange) error {
+	return annotations.NewMismatchedCustomBucketsHistogramsInfo(expressionPosition, annotations.HistogramAgg)
 }
 
 var AvgOverTime = FunctionOverRangeVectorDefinition{
@@ -269,7 +430,7 @@ func avgOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.
 		return avgFloats(fHead, fTail), true, nil, nil
 	}
 
-	h, err := avgHistograms(hHead, hTail)
+	h, err := AvgHistograms(hHead, hTail, emitAnnotation)
 
 	if err != nil {
 		err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
@@ -333,44 +494,45 @@ func avgFloats(head, tail []promql.FPoint) float64 {
 	return (sum + c) / count
 }
 
-func avgHistograms(head, tail []promql.HPoint) (*histogram.FloatHistogram, error) {
+func AvgHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
 	avgSoFar := head[0].H.Copy() // We must make a copy of the histogram, as the ring buffer may reuse the FloatHistogram instance on subsequent steps.
 	head = head[1:]
 	count := 1.0
 
-	// Reuse these instances if we need them, to avoid allocating two FloatHistograms for every remaining histogram in the range.
-	var contributionByP *histogram.FloatHistogram
-	var contributionByAvgSoFar *histogram.FloatHistogram
+	counterResetSeen := false
+	notCounterResetSeen := false
+	nhcbBoundsReconciledSeen := false
+
+	trackCounterReset := func(h *histogram.FloatHistogram) {
+		switch h.CounterResetHint {
+		case histogram.CounterReset:
+			counterResetSeen = true
+		case histogram.NotCounterReset:
+			notCounterResetSeen = true
+		}
+	}
+
+	trackCounterReset(avgSoFar)
+
+	var kahanC *histogram.FloatHistogram // Kahan compensation histogram
 
 	accumulate := func(points []promql.HPoint) error {
-		for _, p := range points {
+		for _, h := range points {
+			trackCounterReset(h.H)
 			count++
-
-			// Make a copy of p.H, as the ring buffer may reuse the FloatHistogram instance on subsequent steps.
-			if contributionByP == nil {
-				contributionByP = p.H.Copy()
-			} else {
-				p.H.CopyTo(contributionByP)
+			q := (count - 1) / count
+			if kahanC != nil {
+				kahanC.Mul(q)
 			}
-
-			// Make a copy of avgSoFar so we can divide it below without modifying the running total.
-			if contributionByAvgSoFar == nil {
-				contributionByAvgSoFar = avgSoFar.Copy()
-			} else {
-				avgSoFar.CopyTo(contributionByAvgSoFar)
-			}
-
-			contributionByP = contributionByP.Div(count)
-			contributionByAvgSoFar = contributionByAvgSoFar.Div(count)
-
-			change, _, err := contributionByP.Sub(contributionByAvgSoFar)
+			toAdd := h.H.Copy().Div(count)
+			var nhcbBoundsReconciled bool
+			var err error
+			kahanC, _, nhcbBoundsReconciled, err = avgSoFar.Mul(q).KahanAdd(toAdd, kahanC)
 			if err != nil {
 				return err
 			}
-
-			avgSoFar, _, err = avgSoFar.Add(change)
-			if err != nil {
-				return err
+			if nhcbBoundsReconciled {
+				nhcbBoundsReconciledSeen = true
 			}
 		}
 
@@ -383,6 +545,24 @@ func avgHistograms(head, tail []promql.HPoint) (*histogram.FloatHistogram, error
 
 	if err := accumulate(tail); err != nil {
 		return nil, err
+	}
+
+	if counterResetSeen && notCounterResetSeen {
+		emitAnnotation(newAggregationCounterResetCollisionWarning)
+	}
+
+	if nhcbBoundsReconciledSeen {
+		emitAnnotation(NewAggregationMismatchedCustomBucketsHistogramInfo)
+	}
+
+	// Apply Kahan compensation to get the final accurate result
+	if kahanC != nil {
+		// Use regular Add (not KahanAdd) to apply the final compensation
+		avgSoFar, _, _, err := avgSoFar.Add(kahanC)
+		if err != nil {
+			return nil, err
+		}
+		return avgSoFar, nil
 	}
 
 	return avgSoFar, nil
@@ -737,11 +917,14 @@ func histogramIrateIdelta(isRate bool, lastSample, secondLastSample promql.HPoin
 	}
 
 	if !isRate || !lastSample.H.DetectReset(secondLastSample.H) {
-		_, _, err := resultValue.Sub(secondLastSample.H)
+		_, _, nhcbBoundsReconciled, err := resultValue.Sub(secondLastSample.H)
 		if err != nil {
 			// Convert the error to an annotation, if we can.
 			err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
 			return nil, err
+		}
+		if nhcbBoundsReconciled {
+			emitAnnotation(NewSubMismatchedCustomBucketsHistogramInfo)
 		}
 	}
 
@@ -936,4 +1119,46 @@ func calculateDoubleExponentialSmoothing(fHead []promql.FPoint, fTail []promql.F
 	accumulate(fTail)
 
 	return smooth1, true, nil, nil
+}
+
+var MadOverTime = FunctionOverRangeVectorDefinition{
+	SeriesMetadataFunction:         DropSeriesName,
+	StepFunc:                       madOverTime,
+	NeedsSeriesNamesForAnnotations: true,
+}
+
+func madOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+	head, tail := step.Floats.UnsafePoints()
+
+	if len(head) == 0 && len(tail) == 0 {
+		return 0, false, nil, nil
+	}
+
+	if step.Histograms.Any() {
+		emitAnnotation(annotations.NewHistogramIgnoredInMixedRangeInfo)
+	}
+
+	values, err := types.Float64SlicePool.Get(len(head)+len(tail), memoryConsumptionTracker)
+	if err != nil {
+		return 0, false, nil, err
+	}
+	defer types.Float64SlicePool.Put(&values, memoryConsumptionTracker)
+
+	// MAD = median( | xᵢ - median(x) | )
+
+	for _, p := range head {
+		values = append(values, p.F)
+	}
+
+	for _, p := range tail {
+		values = append(values, p.F)
+	}
+
+	median := floats.Quantile(0.5, values)
+
+	for i, p := range values {
+		values[i] = math.Abs(p - median)
+	}
+
+	return floats.Quantile(0.5, values), true, nil, nil
 }

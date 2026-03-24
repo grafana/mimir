@@ -7,6 +7,7 @@ package selectors
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 
@@ -22,10 +23,11 @@ import (
 )
 
 type InstantVectorSelector struct {
-	Selector                 *Selector
-	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
-	Stats                    *types.QueryStats
-	ReturnSampleTimestamps   bool // true if this operator is wrapped directly in the timestamp() function and so should return the underlying sample timestamps
+	Selector                                 *Selector
+	MemoryConsumptionTracker                 *limiter.MemoryConsumptionTracker
+	Stats                                    *types.QueryStats
+	ReturnSampleTimestamps                   bool // true if this operator is wrapped directly in the timestamp() function and so should return the underlying sample timestamps.
+	ReturnSampleTimestampsPreserveHistograms bool // Used for info() function to preserve histograms in info metrics while making the floats reflect timestamps.
 
 	chunkIterator    chunkenc.Iterator
 	memoizedIterator *storage.MemoizedSeriesIterator
@@ -33,11 +35,13 @@ type InstantVectorSelector struct {
 
 var _ types.InstantVectorOperator = &InstantVectorSelector{}
 
-func NewInstantVectorSelector(selector *Selector, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, returnSampleTimestamps bool) *InstantVectorSelector {
+func NewInstantVectorSelector(selector *Selector, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, stats *types.QueryStats, returnSampleTimestamps, returnSampleTimestampsPreserveHistograms bool) *InstantVectorSelector {
 	return &InstantVectorSelector{
-		Selector:                 selector,
-		MemoryConsumptionTracker: memoryConsumptionTracker,
-		ReturnSampleTimestamps:   returnSampleTimestamps,
+		Selector:                                 selector,
+		Stats:                                    stats,
+		MemoryConsumptionTracker:                 memoryConsumptionTracker,
+		ReturnSampleTimestamps:                   returnSampleTimestamps,
+		ReturnSampleTimestampsPreserveHistograms: returnSampleTimestampsPreserveHistograms,
 	}
 }
 
@@ -114,16 +118,29 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 
 		if valueType == chunkenc.ValNone || t > ts {
 			var ok bool
+
+			// Keep this a copy of this point for use with smoothed case below.
+			right := promql.FPoint{T: t, F: f}
+
 			t, f, h, ok = v.memoizedIterator.PeekPrev()
 			if !ok || t <= ts-v.Selector.LookbackDelta.Milliseconds() {
 				continue
 			}
+
 			if h != nil {
 				if t == lastHistogramT && lastHistogram != nil {
 					// Reuse exactly the same FloatHistogram as last time, don't bother creating another FloatHistogram yet.
 					// PeekPrev can return a new FloatHistogram instance with the same underlying bucket slices as a previous call
 					// to AtFloatHistogram, so if we're going to return this histogram, we'll make a copy below.
 					h = lastHistogram
+				}
+			} else {
+				// If this query uses the 'smoothed' modifier, we look back within the look-back delta
+				// to find the most recent float value before the requested timestamp.
+				// If both a previous and a next point are found, the value at the requested time
+				// is computed as the linear interpolation between those two points.
+				if v.Selector.Smoothed && valueType == chunkenc.ValFloat && right.T <= ts+v.Selector.LookbackDelta.Milliseconds() {
+					f = f + (right.F-f)*float64(ts-t)/float64(right.T-t)
 				}
 			}
 		}
@@ -132,7 +149,7 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 			continue
 		}
 
-		if v.ReturnSampleTimestamps {
+		if v.ReturnSampleTimestamps || (v.ReturnSampleTimestampsPreserveHistograms && h == nil) {
 			f = float64(t) / 1000
 			h = nil
 		}
@@ -142,6 +159,11 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 		// PeekPrev will set the histogram to nil, or the value to 0 if the other type exists.
 		// So check if histograms is nil first. If we don't have a histogram, then we should have a value and vice-versa.
 		if h != nil {
+
+			if v.Selector.Smoothed {
+				return types.InstantVectorSeriesData{}, errors.New("smoothed and anchored modifiers do not work with native histograms")
+			}
+
 			// Only create the slice once we know the series is a histogram or not.
 			// (It is possible to over-allocate in the case where we have both floats and histograms, but that won't be common).
 			if len(data.Histograms) == 0 {
@@ -163,7 +185,7 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 			lastHistogram = h
 
 			// For consistency with Prometheus' engine, we convert each histogram point to an equivalent number of float points.
-			v.Stats.IncrementSamplesAtStep(stepIndex, types.EquivalentFloatSampleCount(h))
+			v.Stats.IncrementSamples(types.EquivalentFloatSampleCount(h))
 
 		} else {
 			// Only create the slice once we know the series is a histogram or not.
@@ -175,7 +197,7 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 					return types.InstantVectorSeriesData{}, err
 				}
 			}
-			v.Stats.IncrementSamplesAtStep(stepIndex, 1)
+			v.Stats.IncrementSamples(1)
 			data.Floats = append(data.Floats, promql.FPoint{T: stepT, F: f})
 		}
 	}
@@ -188,17 +210,22 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 }
 
 func (v *InstantVectorSelector) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	v.Stats = params.QueryStats
 	return v.Selector.Prepare(ctx, params)
 }
 
+func (v *InstantVectorSelector) AfterPrepare(ctx context.Context) error {
+	return nil
+}
+
 func (v *InstantVectorSelector) Finalize(ctx context.Context) error {
-	// Nothing to do.
+	v.memoizedIterator = nil
+	v.chunkIterator = nil
+
+	v.Selector.Close()
 	return nil
 }
 
 func (v *InstantVectorSelector) Close() {
+	// If the query fails, then Finalize above won't be called, so make sure to close the selector.
 	v.Selector.Close()
-	v.memoizedIterator = nil
-	v.chunkIterator = nil
 }

@@ -1,0 +1,64 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package continuoustest
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"time"
+
+	"github.com/gogo/protobuf/proto"
+	"github.com/golang/snappy"
+	"github.com/grafana/dskit/flagext"
+	"github.com/prometheus/prometheus/prompb"
+
+	"github.com/grafana/mimir/pkg/util/rw2util"
+)
+
+type prometheus2Writer struct {
+	httpClient        *http.Client
+	writeBaseEndpoint flagext.URLValue
+	writeBatchSize    int
+	writeTimeout      time.Duration
+}
+
+func (pw *prometheus2Writer) sendWriteRequest(ctx context.Context, req *prompb.WriteRequest) (int, error) {
+	data, err := proto.Marshal(rw2util.FromWriteRequest(req))
+	if err != nil {
+		return 0, err
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, pw.writeTimeout)
+	defer cancel()
+
+	compressed := snappy.Encode(nil, data)
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", pw.writeBaseEndpoint.String()+"/api/v1/push", bytes.NewReader(compressed))
+	if err != nil {
+		// Errors from NewRequest are from unparseable URLs, so are not
+		// recoverable.
+		return 0, err
+	}
+	httpReq.Header.Add("Content-Encoding", "snappy")
+	httpReq.Header.Set("Content-Type", "application/x-protobuf;proto=io.prometheus.write.v2.Request")
+	httpReq.Header.Set("X-Prometheus-Remote-Write-Version", "2.0.0")
+
+	httpResp, err := pw.httpClient.Do(httpReq)
+	if err != nil {
+		return 0, err
+	}
+	defer httpResp.Body.Close()
+
+	if httpResp.StatusCode/100 != 2 {
+		truncatedBody, err := io.ReadAll(io.LimitReader(httpResp.Body, maxErrMsgLen))
+		if err != nil {
+			return httpResp.StatusCode, fmt.Errorf("server returned HTTP status %s and client failed to read response body: %w", httpResp.Status, err)
+		}
+
+		return httpResp.StatusCode, fmt.Errorf("server returned HTTP status %s and body %q (truncated to %d bytes)", httpResp.Status, string(truncatedBody), maxErrMsgLen)
+	}
+
+	return httpResp.StatusCode, nil
+}

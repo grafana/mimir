@@ -126,7 +126,7 @@ func testVerifySamplesSumFloats(t *testing.T, generateValue generateValueFunc, t
 	for testName, testData := range tests {
 		t.Run(fmt.Sprintf("%s:%s", testLabel, testName), func(t *testing.T) {
 			matrix := model.Matrix{{Values: testData.samples}}
-			actualLastMatchingIdx, actualErr := verifySamplesSum(matrix, testData.expectedSeries, testData.expectedStep, generateValue, nil)
+			actualLastMatchingIdx, actualErr := verifySamplesSum(matrix, testData.expectedSeries, testData.expectedStep, generateValue, nil, nil)
 			if testData.expectedErr == "" {
 				assert.NoError(t, actualErr)
 			} else {
@@ -215,7 +215,7 @@ func testVerifySamplesSumHistograms(t *testing.T, generateValue generateValueFun
 	for testName, testData := range tests {
 		t.Run(fmt.Sprintf("%s:%s", testLabel, testName), func(t *testing.T) {
 			matrix := model.Matrix{{Histograms: testData.histograms}}
-			actualLastMatchingIdx, actualErr := verifySamplesSum(matrix, testData.expectedSeries, testData.expectedStep, generateValue, generateSampleHistogram)
+			actualLastMatchingIdx, actualErr := verifySamplesSum(matrix, testData.expectedSeries, testData.expectedStep, generateValue, generateSampleHistogram, nil)
 			if testData.expectedErr == "" {
 				assert.NoError(t, actualErr)
 			} else {

@@ -38,6 +38,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -166,7 +167,7 @@ func TestLimitsMiddleware_MaxQueryLookback_RangeQueryAndRemoteRead(t *testing.T)
 					limits := mockLimits{maxQueryLookback: testData.maxQueryLookback, compactorBlocksRetentionPeriod: testData.blocksRetentionPeriod}
 					middleware := newLimitsMiddleware(limits, log.NewNopLogger())
 
-					innerRes := newEmptyPrometheusResponse()
+					innerRes := NewEmptyPrometheusResponse()
 					inner := &mockHandler{}
 					inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
 
@@ -265,7 +266,7 @@ func TestLimitsMiddleware_MaxQueryLookback_InstantQuery(t *testing.T) {
 			limits := mockLimits{maxQueryLookback: testData.maxQueryLookback, compactorBlocksRetentionPeriod: testData.blocksRetentionPeriod}
 			middleware := newLimitsMiddleware(limits, log.NewNopLogger())
 
-			innerRes := newEmptyPrometheusResponse()
+			innerRes := NewEmptyPrometheusResponse()
 			inner := &mockHandler{}
 			inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
 
@@ -362,7 +363,7 @@ func TestLimitsMiddleware_MaxQueryLookback_TenantFederation(t *testing.T) {
 
 			middleware := newLimitsMiddleware(limits, log.NewNopLogger())
 
-			innerRes := newEmptyPrometheusResponse()
+			innerRes := NewEmptyPrometheusResponse()
 			inner := &mockHandler{}
 			inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
 
@@ -469,7 +470,7 @@ func TestLimitsMiddleware_MaxQueryExpressionSizeBytes(t *testing.T) {
 					}
 					middleware := newLimitsMiddleware(limits, log.NewNopLogger())
 
-					innerRes := newEmptyPrometheusResponse()
+					innerRes := NewEmptyPrometheusResponse()
 					inner := &mockHandler{}
 					inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
 
@@ -566,7 +567,7 @@ func TestLimitsMiddleware_MaxQueryLength(t *testing.T) {
 					limits := mockLimits{maxQueryLength: testData.maxQueryLength, maxTotalQueryLength: testData.maxTotalQueryLength}
 					middleware := newLimitsMiddleware(limits, log.NewNopLogger())
 
-					innerRes := newEmptyPrometheusResponse()
+					innerRes := NewEmptyPrometheusResponse()
 					inner := &mockHandler{}
 					inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
 
@@ -675,6 +676,10 @@ func (m multiTenantMockLimits) EnabledPromQLExperimentalFunctions(userID string)
 	return m.byTenant[userID].enabledPromQLExperimentalFunctions
 }
 
+func (m multiTenantMockLimits) EnabledPromQLExtendedRangeSelectors(userID string) []string {
+	return m.byTenant[userID].enabledPromQLExtendedRangeSelectors
+}
+
 func (m multiTenantMockLimits) Prom2RangeCompat(userID string) bool {
 	return m.byTenant[userID].prom2RangeCompat
 }
@@ -741,6 +746,7 @@ type mockLimits struct {
 	resultsCacheTTLForErrors             time.Duration
 	resultsCacheForUnalignedQueryEnabled bool
 	enabledPromQLExperimentalFunctions   []string
+	enabledPromQLExtendedRangeSelectors  []string
 	prom2RangeCompat                     bool
 	blockedQueries                       []validation.BlockedQuery
 	limitedQueries                       []validation.LimitedQuery
@@ -838,6 +844,10 @@ func (m mockLimits) EnabledPromQLExperimentalFunctions(string) []string {
 	return m.enabledPromQLExperimentalFunctions
 }
 
+func (m mockLimits) EnabledPromQLExtendedRangeSelectors(string) []string {
+	return m.enabledPromQLExtendedRangeSelectors
+}
+
 func (m mockLimits) Prom2RangeCompat(string) bool {
 	return m.prom2RangeCompat
 }
@@ -884,6 +894,9 @@ func (m *mockHandler) Do(ctx context.Context, req MetricsQueryRequest) (Response
 }
 
 func TestLimitedRoundTripper_MaxQueryParallelism(t *testing.T) {
+	// This test only applies to requests sent to queriers over HTTPGRPC.
+	// For the equivalent test for remote execution, see TestMaxQueryParallelismWithRemoteExecution in pkg/frontend/v2/remoteexec_test.go
+
 	var (
 		maxQueryParallelism = 2
 		count               atomic.Int32
@@ -905,16 +918,17 @@ func TestLimitedRoundTripper_MaxQueryParallelism(t *testing.T) {
 
 	codec := newTestCodec()
 	r, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusRangeQueryRequest{
-		path:      "/api/v1/query_range",
-		start:     time.Now().Add(time.Hour).Unix(),
-		end:       util.TimeToMillis(time.Now()),
-		step:      int64(1 * time.Second * time.Millisecond),
-		queryExpr: parseQuery(t, `foo`),
+		path:          "/api/v1/query_range",
+		start:         time.Now().Add(-time.Hour).Unix(),
+		end:           time.Now().Unix(),
+		step:          int64(1 * time.Second * time.Millisecond),
+		queryExpr:     parseQuery(t, `foo`),
+		lookbackDelta: streamingpromql.DefaultLookbackDelta,
 	})
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	handler := NewHTTPQueryRequestRoundTripperHandler(downstream, codec, log.NewNopLogger())
-	_, err = NewLimitedParallelismRoundTripper(handler, codec, mockLimits{maxQueryParallelism: maxQueryParallelism},
+	_, err = NewLimitedParallelismRoundTripper(handler, codec, mockLimits{maxQueryParallelism: maxQueryParallelism}, false,
 		MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 			return HandlerFunc(func(c context.Context, _ MetricsQueryRequest) (Response, error) {
 				var wg sync.WaitGroup
@@ -926,7 +940,7 @@ func TestLimitedRoundTripper_MaxQueryParallelism(t *testing.T) {
 					}()
 				}
 				wg.Wait()
-				return newEmptyPrometheusResponse(), nil
+				return NewEmptyPrometheusResponse(), nil
 			})
 		}),
 	).RoundTrip(r)
@@ -950,16 +964,17 @@ func TestLimitedRoundTripper_MaxQueryParallelismLateScheduling(t *testing.T) {
 
 	codec := newTestCodec()
 	r, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusRangeQueryRequest{
-		path:      "/api/v1/query_range",
-		start:     time.Now().Add(time.Hour).Unix(),
-		end:       util.TimeToMillis(time.Now()),
-		step:      int64(1 * time.Second * time.Millisecond),
-		queryExpr: parseQuery(t, `foo`),
+		path:          "/api/v1/query_range",
+		start:         time.Now().Add(time.Hour).Unix(),
+		end:           util.TimeToMillis(time.Now()),
+		step:          int64(1 * time.Second * time.Millisecond),
+		queryExpr:     parseQuery(t, `foo`),
+		lookbackDelta: streamingpromql.DefaultLookbackDelta,
 	})
 	require.Nil(t, err)
 
 	handler := NewHTTPQueryRequestRoundTripperHandler(downstream, codec, log.NewNopLogger())
-	_, err = NewLimitedParallelismRoundTripper(handler, codec, mockLimits{maxQueryParallelism: maxQueryParallelism},
+	_, err = NewLimitedParallelismRoundTripper(handler, codec, mockLimits{maxQueryParallelism: maxQueryParallelism}, false,
 		MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 			return HandlerFunc(func(c context.Context, _ MetricsQueryRequest) (Response, error) {
 				// fire up work and we don't wait.
@@ -968,7 +983,7 @@ func TestLimitedRoundTripper_MaxQueryParallelismLateScheduling(t *testing.T) {
 						_, _ = next.Do(c, &PrometheusRangeQueryRequest{})
 					}()
 				}
-				return newEmptyPrometheusResponse(), nil
+				return NewEmptyPrometheusResponse(), nil
 			})
 		}),
 	).RoundTrip(r)
@@ -992,16 +1007,17 @@ func TestLimitedRoundTripper_OriginalRequestContextCancellation(t *testing.T) {
 
 	codec := newTestCodec()
 	r, err := codec.EncodeMetricsQueryRequest(reqCtx, &PrometheusRangeQueryRequest{
-		path:      "/api/v1/query_range",
-		start:     time.Now().Add(time.Hour).Unix(),
-		end:       util.TimeToMillis(time.Now()),
-		step:      int64(1 * time.Second * time.Millisecond),
-		queryExpr: parseQuery(t, `foo`),
+		path:          "/api/v1/query_range",
+		start:         time.Now().Add(time.Hour).Unix(),
+		end:           util.TimeToMillis(time.Now()),
+		step:          int64(1 * time.Second * time.Millisecond),
+		queryExpr:     parseQuery(t, `foo`),
+		lookbackDelta: streamingpromql.DefaultLookbackDelta,
 	})
 	require.Nil(t, err)
 
 	handler := NewHTTPQueryRequestRoundTripperHandler(downstream, codec, log.NewNopLogger())
-	_, err = NewLimitedParallelismRoundTripper(handler, codec, mockLimits{maxQueryParallelism: maxQueryParallelism},
+	_, err = NewLimitedParallelismRoundTripper(handler, codec, mockLimits{maxQueryParallelism: maxQueryParallelism}, false,
 		MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 			return HandlerFunc(func(c context.Context, _ MetricsQueryRequest) (Response, error) {
 				var wg sync.WaitGroup
@@ -1028,7 +1044,7 @@ func TestLimitedRoundTripper_OriginalRequestContextCancellation(t *testing.T) {
 				wg.Wait()
 				assert.Less(t, time.Since(waitStart).Milliseconds(), int64(100))
 
-				return newEmptyPrometheusResponse(), nil
+				return NewEmptyPrometheusResponse(), nil
 			})
 		}),
 	).RoundTrip(r)
@@ -1061,7 +1077,7 @@ func BenchmarkLimitedParallelismRoundTripper(b *testing.B) {
 	for _, concurrentRequestCount := range []int{1, 10, 100} {
 		for _, subRequestCount := range []int{1, 2, 5, 10, 20, 50, 100} {
 			handler := NewHTTPQueryRequestRoundTripperHandler(downstream, codec, log.NewNopLogger())
-			tripper := NewLimitedParallelismRoundTripper(handler, codec, mockLimits{maxQueryParallelism: maxParallelism},
+			tripper := NewLimitedParallelismRoundTripper(handler, codec, mockLimits{maxQueryParallelism: maxParallelism}, false,
 				MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 					return HandlerFunc(func(c context.Context, _ MetricsQueryRequest) (Response, error) {
 						wg := sync.WaitGroup{}
@@ -1073,7 +1089,7 @@ func BenchmarkLimitedParallelismRoundTripper(b *testing.B) {
 							}()
 						}
 						wg.Wait()
-						return newEmptyPrometheusResponse(), nil
+						return NewEmptyPrometheusResponse(), nil
 					})
 				}),
 			)
@@ -1126,11 +1142,10 @@ func (v *findVectorSelectorsVisitor) Visit(node parser.Node, _ []parser.Node) (p
 
 func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 	opts := streamingpromql.NewTestEngineOpts()
-	opts.CommonOpts.EnablePerStepStats = true
-	planner, err := streamingpromql.NewQueryPlanner(opts)
+	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	logger := log.NewNopLogger()
-	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
+	engine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(nil), planner)
 	require.NoError(t, err)
 	codec := newTestCodec()
 	handler := NewEngineQueryRequestRoundTripperHandler(engine, codec, logger)
@@ -1146,7 +1161,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 	lookbackDelta := 5 * time.Minute
 
 	mustParseExpr := func(s string) parser.Expr {
-		expr, err := parser.ParseExpr(s)
+		expr, err := promqlext.NewPromQLParser().ParseExpr(s)
 		require.NoError(t, err)
 		return expr
 	}
@@ -1171,16 +1186,25 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 		api.ReadConsistencyMaxDelayHeader: {time.Minute.String()},
 	}
 
+	requestOptions := Options{
+		TotalShards: 123,
+	}
+
+	requestHints := &Hints{
+		TotalQueries: 456,
+		CardinalityEstimate: &EstimatedSeriesCount{
+			EstimatedSeriesCount: 789,
+		},
+	}
+
 	testCases := map[string]struct {
-		req                             MetricsQueryRequest
-		expectedResponse                Response
-		expectedErr                     error
-		expectedSamplesProcessed        uint64
-		expectedSamplesProcessedPerStep []stats.StepStat
-		expectedPropagatedHeaders       map[string][]string
+		req                      MetricsQueryRequest
+		expectedResponse         Response
+		expectedErr              error
+		expectedSamplesProcessed uint64
 	}{
 		"range query": {
-			req:                      NewPrometheusRangeQueryRequest("/", requestHeaders, 1000, 7000, 2000, lookbackDelta, mustParseExpr(`5*some_metric`), Options{}, nil, ""),
+			req:                      NewPrometheusRangeQueryRequest("/", requestHeaders, 1000, 7000, 2000, lookbackDelta, mustParseExpr(`5*some_metric`), requestOptions, requestHints, ""),
 			expectedSamplesProcessed: 4,
 			expectedResponse: &PrometheusResponse{
 				Status: statusSuccess,
@@ -1203,11 +1227,10 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 				Warnings: []string{},
 				Infos:    []string{},
 			},
-			expectedPropagatedHeaders: expectedHeaders,
 		},
 
 		"instant query": {
-			req:                      NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`5*some_metric`), Options{}, nil, ""),
+			req:                      NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`5*some_metric`), requestOptions, requestHints, ""),
 			expectedSamplesProcessed: 1,
 			expectedResponse: &PrometheusResponse{
 				Status: statusSuccess,
@@ -1227,11 +1250,10 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 				Warnings: []string{},
 				Infos:    []string{},
 			},
-			expectedPropagatedHeaders: expectedHeaders,
 		},
 
 		"scalar result": {
-			req: NewPrometheusInstantQueryRequest("/", nil, 3000, lookbackDelta, mustParseExpr(`5`), Options{}, nil, ""),
+			req: NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`scalar(some_metric)`), requestOptions, requestHints, ""),
 			expectedResponse: &PrometheusResponse{
 				Status: statusSuccess,
 				Data: &PrometheusData{
@@ -1239,7 +1261,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 					Result: []SampleStream{
 						{
 							Samples: []mimirpb.Sample{
-								{TimestampMs: 3000, Value: 5},
+								{TimestampMs: 3000, Value: 3},
 							},
 						},
 					},
@@ -1247,10 +1269,11 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 				Warnings: []string{},
 				Infos:    []string{},
 			},
+			expectedSamplesProcessed: 1,
 		},
 
 		"string result": {
-			req: NewPrometheusInstantQueryRequest("/", nil, 3000, lookbackDelta, mustParseExpr(`"foo"`), Options{}, nil, ""),
+			req: NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`"foo"`), requestOptions, requestHints, ""),
 			expectedResponse: &PrometheusResponse{
 				Status: statusSuccess,
 				Data: &PrometheusData{
@@ -1272,12 +1295,12 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 		},
 
 		"execution error": {
-			req:         NewPrometheusInstantQueryRequest("/", nil, 3000, lookbackDelta, mustParseExpr(`some_metric * on(foo) some_other_metric`), Options{}, nil, ""),
+			req:         NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`some_metric * on(foo) some_other_metric`), requestOptions, requestHints, ""),
 			expectedErr: apierror.New(apierror.TypeExec, `found duplicate series for the match group {foo="bar"} on the right side of the operation at timestamp 1970-01-01T00:00:03Z: {__name__="some_other_metric", foo="bar", idx="0"} and {__name__="some_other_metric", foo="bar", idx="1"}`),
 		},
 
 		"annotations": {
-			req:                      NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`histogram_quantile(0.1, rate(some_metric[2s]))`), Options{}, nil, ""),
+			req:                      NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`histogram_quantile(0.1, rate(some_metric[2s]))`), requestOptions, requestHints, ""),
 			expectedSamplesProcessed: 2,
 			expectedResponse: &PrometheusResponse{
 				Status: statusSuccess,
@@ -1292,40 +1315,6 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 					`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "some_metric" (1:30)`,
 				},
 			},
-			expectedPropagatedHeaders: expectedHeaders,
-		},
-
-		"query with per-step stats enabled": {
-			req:                      NewPrometheusRangeQueryRequest("/", requestHeaders, 1000, 7000, 2000, lookbackDelta, mustParseExpr(`5*some_metric`), Options{}, nil, "all"),
-			expectedSamplesProcessed: 4,
-			expectedSamplesProcessedPerStep: []stats.StepStat{
-				{Timestamp: 1000, Value: 1},
-				{Timestamp: 3000, Value: 1},
-				{Timestamp: 5000, Value: 1},
-				{Timestamp: 7000, Value: 1},
-			},
-			expectedResponse: &PrometheusResponse{
-				Status: statusSuccess,
-				Data: &PrometheusData{
-					ResultType: model.ValMatrix.String(),
-					Result: []SampleStream{
-						{
-							Labels: []mimirpb.LabelAdapter{
-								{Name: "foo", Value: "bar"},
-							},
-							Samples: []mimirpb.Sample{
-								{TimestampMs: 1000, Value: 5},
-								{TimestampMs: 3000, Value: 15},
-								{TimestampMs: 5000, Value: 25},
-								{TimestampMs: 7000, Value: 35},
-							},
-						},
-					},
-				},
-				Warnings: []string{},
-				Infos:    []string{},
-			},
-			expectedPropagatedHeaders: expectedHeaders,
 		},
 	}
 
@@ -1355,14 +1344,21 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 			responseWithFinalizer.Close()
 
 			require.Equal(t, testCase.expectedSamplesProcessed, stats.SamplesProcessed)
-			require.Equal(t, testCase.expectedSamplesProcessedPerStep, stats.SamplesProcessedPerStep)
 
-			var propagatedHeaders map[string][]string
-			if contextCapturingStorage.ctx != nil {
-				propagatedHeaders = HeadersToPropagateFromContext(contextCapturingStorage.ctx)
+			if responseWithFinalizer.Data.ResultType == model.ValString.String() {
+				// We can't perform the assertions below for string results because it doesn't select any data,
+				// so we have no way to capture the context used to evaluate the query.
+				return
 			}
 
-			require.Equal(t, testCase.expectedPropagatedHeaders, propagatedHeaders)
+			propagatedHeaders := HeadersToPropagateFromContext(contextCapturingStorage.ctx)
+			require.Equal(t, expectedHeaders, propagatedHeaders)
+
+			hints := RequestHintsFromContext(contextCapturingStorage.ctx)
+			require.Equal(t, testCase.req.GetHints(), hints)
+
+			options := RequestOptionsFromContext(contextCapturingStorage.ctx)
+			require.Equal(t, testCase.req.GetOptions(), options)
 		})
 	}
 }

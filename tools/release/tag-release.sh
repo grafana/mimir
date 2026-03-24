@@ -21,6 +21,10 @@ BRANCH_VERSION=${BASH_REMATCH[1]}
 
 # Load the version and ensure it matches.
 ACTUAL_VERSION=$(cat VERSION)
+if [[ ! $ACTUAL_VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
+  echo "The VERSION file contains an invalid version '${ACTUAL_VERSION}'. Expected format: MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-rc.N" > /dev/stderr
+  exit 1
+fi
 if [[ ! $ACTUAL_VERSION =~ ^$BRANCH_VERSION ]]; then
   echo "The current branch '${BRANCH}' doesn't match the content of the VERSION file '${ACTUAL_VERSION}'" > /dev/stderr
   exit 1

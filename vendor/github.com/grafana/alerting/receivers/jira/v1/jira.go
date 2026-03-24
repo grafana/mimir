@@ -134,7 +134,22 @@ func (n *Notifier) prepareIssueRequestBody(ctx context.Context, logger log.Logge
 	fields := &issueFields{
 		Summary: summary,
 		Labels:  make([]string, 0, len(n.conf.Labels)+1),
-		Fields:  n.conf.Fields,
+		Fields:  nil, // Will be processed below
+	}
+
+	// Process custom fields through templating
+	if n.conf.Fields != nil {
+		processedFields := make(map[string]any)
+		for key, value := range n.conf.Fields {
+			if strValue, ok := value.(string); ok {
+				// Apply templating to string values
+				processedFields[key] = renderOrDefault(fmt.Sprintf("fields.%s", key), strValue, strValue)
+			} else {
+				// Keep non-string values as-is
+				processedFields[key] = value
+			}
+		}
+		fields.Fields = processedFields
 	}
 
 	issueDescriptionString := renderOrDefault("description", n.conf.Description, DefaultDescription)
@@ -208,31 +223,52 @@ func (n *Notifier) prepareDescription(desc string, logger log.Logger) any {
 }
 
 func (n *Notifier) searchExistingIssue(ctx context.Context, logger log.Logger, groupID string, firing bool) (*issue, bool, error) {
+	issues, shouldRetry, err := n.searchIssues(ctx, logger, groupID, firing)
+	if err != nil {
+		return nil, shouldRetry, err
+	}
+	if len(issues) == 0 {
+		level.Debug(logger).Log("msg", "found no existing issue")
+		return nil, false, nil
+	}
+	if len(issues) > 1 {
+		level.Warn(logger).Log("msg", "more than one issue matched, selecting the most recently resolved", "selected_issue", issues[0].Key)
+	}
+	return &issues[0], false, nil
+}
+
+// searchIssues performs a version-aware search request against Jira and returns the list of matched issues.
+// It abstracts the differences between v2 (/search) and v3 (/search/jql) endpoints and response shapes.
+func (n *Notifier) searchIssues(ctx context.Context, logger log.Logger, groupID string, firing bool) ([]issue, bool, error) {
 	requestBody := getSearchJql(n.conf, groupID, firing)
 
 	level.Debug(logger).Log("msg", "search for recent issues", "jql", requestBody.JQL)
 
-	responseBody, shouldRetry, err := n.doAPIRequest(ctx, http.MethodPost, "search/jql", requestBody, logger)
+	// Determine API version by the configured base URL and choose the appropriate endpoint path.
+	isV3 := strings.HasSuffix(strings.TrimRight(n.conf.URL.Path, "/"), "/3")
+	path := "search"
+	if isV3 {
+		path = "search/jql"
+	}
+
+	responseBody, shouldRetry, err := n.doAPIRequest(ctx, http.MethodPost, path, requestBody, logger)
 	if err != nil {
 		return nil, shouldRetry, fmt.Errorf("HTTP request to JIRA API: %w", err)
 	}
 
-	var issueSearchResult issueSearchResult
-	err = json.Unmarshal(responseBody, &issueSearchResult)
-	if err != nil {
+	if isV3 {
+		var res issueSearchResultV3
+		if err := json.Unmarshal(responseBody, &res); err != nil {
+			return nil, false, err
+		}
+		return res.Issues, false, nil
+	}
+
+	var res issueSearchResultV2
+	if err := json.Unmarshal(responseBody, &res); err != nil {
 		return nil, false, err
 	}
-
-	if len(issueSearchResult.Issues) == 0 {
-		level.Debug(logger).Log("msg", "found no existing issue")
-		return nil, false, nil
-	}
-
-	if len(issueSearchResult.Issues) > 1 {
-		level.Warn(logger).Log("msg", "more than one issue matched, selecting the most recently resolved", "selected_issue", issueSearchResult.Issues[0].Key)
-	}
-
-	return &issueSearchResult.Issues[0], false, nil
+	return res.Issues, false, nil
 }
 
 func getSearchJql(conf Config, groupID string, firing bool) issueSearch {

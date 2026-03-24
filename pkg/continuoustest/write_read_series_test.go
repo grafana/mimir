@@ -6,14 +6,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
+	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -115,10 +118,11 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 	multiplier := len(testTuples)
 
 	t.Run("should write series with current timestamp if it's already aligned to write interval", func(t *testing.T) {
-		client := &ClientMock{}
-		client.On("WriteSeries", mock.Anything, mock.Anything).Return(200, nil)
+		client := newMockClient()
+		client.On("WriteSeries", mock.Anything, mock.Anything, mock.Anything).Return(200, nil)
 		client.On("QueryRange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
 		client.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{}, nil)
+		client.On("Metadata", mock.Anything, mock.Anything).Return(v1.Metadata{}, nil)
 
 		reg := prometheus.NewPedanticRegistry()
 		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
@@ -134,7 +138,8 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
 
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, now, 2))
+			expectedSeries := tt.generateSeries(tt.metricName, now, 2, prompb.Label{Name: "protocol", Value: "prometheus"})
+			client.AssertCalled(t, "WriteSeries", mock.Anything, expectedSeries, mock.Anything)
 			assert.Equal(t, int64(1000), records.lastWrittenTimestamp.Unix())
 
 			client.AssertCalled(t, "QueryRange", mock.Anything, tt.querySum(tt.metricName), time.Unix(1000, 0), time.Unix(1000, 0), writeInterval, mock.Anything)
@@ -144,15 +149,18 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 
 		em := util_test.ExpectedMetrics{Context: emCtx}
 		em.AddMultiple("mimir_continuous_test_writes_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 1))
-		em.AddMultiple("mimir_continuous_test_queries_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8))
+		queriesMap := makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8)
+		queriesMap[`test="write-read-series",type="metadata"`] = 1 * multiplier
+		em.AddMultiple("mimir_continuous_test_queries_total", queriesMap)
 		assert.NoError(t, testutil.GatherAndCompare(reg, em.GetOutput(), em.GetNames()...))
 	})
 
 	t.Run("should write series with timestamp aligned to write interval", func(t *testing.T) {
-		client := &ClientMock{}
-		client.On("WriteSeries", mock.Anything, mock.Anything).Return(200, nil)
+		client := newMockClient()
+		client.On("WriteSeries", mock.Anything, mock.Anything, mock.Anything).Return(200, nil)
 		client.On("QueryRange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
 		client.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{}, nil)
+		client.On("Metadata", mock.Anything, mock.Anything).Return(v1.Metadata{}, nil)
 
 		reg := prometheus.NewPedanticRegistry()
 		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
@@ -168,7 +176,8 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
 
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(980, 0), 2))
+			expectedSeries := tt.generateSeries(tt.metricName, time.Unix(980, 0), 2, prompb.Label{Name: "protocol", Value: "prometheus"})
+			client.AssertCalled(t, "WriteSeries", mock.Anything, expectedSeries, mock.Anything)
 			assert.Equal(t, int64(980), records.lastWrittenTimestamp.Unix())
 
 			client.AssertCalled(t, "QueryRange", mock.Anything, tt.querySum(tt.metricName), time.Unix(980, 0), time.Unix(980, 0), writeInterval, mock.Anything)
@@ -178,15 +187,18 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 
 		em := util_test.ExpectedMetrics{Context: emCtx}
 		em.AddMultiple("mimir_continuous_test_writes_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 1))
-		em.AddMultiple("mimir_continuous_test_queries_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8))
+		queriesMap := makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8)
+		queriesMap[`test="write-read-series",type="metadata"`] = 1 * multiplier
+		em.AddMultiple("mimir_continuous_test_queries_total", queriesMap)
 		assert.NoError(t, testutil.GatherAndCompare(reg, em.GetOutput(), em.GetNames()...))
 	})
 
 	t.Run("should write series from last written timestamp until now", func(t *testing.T) {
-		client := &ClientMock{}
-		client.On("WriteSeries", mock.Anything, mock.Anything).Return(200, nil)
+		client := newMockClient()
+		client.On("WriteSeries", mock.Anything, mock.Anything, mock.Anything).Return(200, nil)
 		client.On("QueryRange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
 		client.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{}, nil)
+		client.On("Metadata", mock.Anything, mock.Anything).Return(v1.Metadata{}, nil)
 
 		reg := prometheus.NewPedanticRegistry()
 		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
@@ -207,9 +219,12 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
 
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(960, 0), 2))
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(980, 0), 2))
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(1000, 0), 2))
+			expectedSeries960 := tt.generateSeries(tt.metricName, time.Unix(960, 0), 2, prompb.Label{Name: "protocol", Value: "prometheus"})
+			expectedSeries980 := tt.generateSeries(tt.metricName, time.Unix(980, 0), 2, prompb.Label{Name: "protocol", Value: "prometheus"})
+			expectedSeries1000 := tt.generateSeries(tt.metricName, time.Unix(1000, 0), 2, prompb.Label{Name: "protocol", Value: "prometheus"})
+			client.AssertCalled(t, "WriteSeries", mock.Anything, expectedSeries960, mock.Anything)
+			client.AssertCalled(t, "WriteSeries", mock.Anything, expectedSeries980, mock.Anything)
+			client.AssertCalled(t, "WriteSeries", mock.Anything, expectedSeries1000, mock.Anything)
 			assert.Equal(t, int64(1000), records.lastWrittenTimestamp.Unix())
 
 			client.AssertCalled(t, "QueryRange", mock.Anything, tt.querySum(tt.metricName), time.Unix(960, 0), time.Unix(1000, 0), writeInterval, mock.Anything)
@@ -219,13 +234,16 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 
 		em := util_test.ExpectedMetrics{Context: emCtx}
 		em.AddMultiple("mimir_continuous_test_writes_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 3))
-		em.AddMultiple("mimir_continuous_test_queries_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8))
+		queriesMap := makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8)
+		queriesMap[`test="write-read-series",type="metadata"`] = 1 * multiplier
+		em.AddMultiple("mimir_continuous_test_queries_total", queriesMap)
 		assert.NoError(t, testutil.GatherAndCompare(reg, em.GetOutput(), em.GetNames()...))
 	})
 
 	t.Run("should stop remote writing on network error", func(t *testing.T) {
-		client := &ClientMock{}
-		client.On("WriteSeries", mock.Anything, mock.Anything).Return(0, errors.New("network error"))
+		client := newMockClient()
+		client.On("WriteSeries", mock.Anything, mock.Anything, mock.Anything).Return(0, errors.New("network error"))
+		client.On("Metadata", mock.Anything, mock.Anything).Return(v1.Metadata{}, nil)
 
 		reg := prometheus.NewPedanticRegistry()
 		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
@@ -235,15 +253,15 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 			records.lastWrittenTimestamp = time.Unix(940, 0)
 		}
 		now := time.Unix(1000, 0)
-		err := test.Run(context.Background(), now)
-		assert.Error(t, err)
+		_ = test.Run(context.Background(), now)
 
 		client.AssertNumberOfCalls(t, "WriteSeries", 1*multiplier)
 
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
 
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(960, 0), 2))
+			expectedSeries := tt.generateSeries(tt.metricName, time.Unix(960, 0), 2, prompb.Label{Name: "protocol", Value: "prometheus"})
+			client.AssertCalled(t, "WriteSeries", mock.Anything, expectedSeries, mock.Anything)
 			assert.Equal(t, int64(940), records.lastWrittenTimestamp.Unix())
 		}
 
@@ -254,8 +272,9 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 	})
 
 	t.Run("should stop remote writing on 5xx error", func(t *testing.T) {
-		client := &ClientMock{}
-		client.On("WriteSeries", mock.Anything, mock.Anything).Return(500, errors.New("500 error"))
+		client := newMockClient()
+		client.On("WriteSeries", mock.Anything, mock.Anything, mock.Anything).Return(500, errors.New("500 error"))
+		client.On("Metadata", mock.Anything, mock.Anything).Return(v1.Metadata{}, nil)
 
 		reg := prometheus.NewPedanticRegistry()
 		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
@@ -265,15 +284,15 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 			records.lastWrittenTimestamp = time.Unix(940, 0)
 		}
 		now := time.Unix(1000, 0)
-		err := test.Run(context.Background(), now)
-		assert.Error(t, err)
+		_ = test.Run(context.Background(), now)
 
 		client.AssertNumberOfCalls(t, "WriteSeries", 1*multiplier)
 
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
 
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(960, 0), 2))
+			expectedSeries := tt.generateSeries(tt.metricName, time.Unix(960, 0), 2, prompb.Label{Name: "protocol", Value: "prometheus"})
+			client.AssertCalled(t, "WriteSeries", mock.Anything, expectedSeries, mock.Anything)
 			assert.Equal(t, int64(940), records.lastWrittenTimestamp.Unix())
 		}
 
@@ -284,8 +303,11 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 	})
 
 	t.Run("should keep remote writing next intervals on 4xx error", func(t *testing.T) {
-		client := &ClientMock{}
-		client.On("WriteSeries", mock.Anything, mock.Anything).Return(400, errors.New("400 error"))
+		client := newMockClient()
+		client.On("WriteSeries", mock.Anything, mock.Anything, mock.Anything).Return(400, errors.New("400 error"))
+		client.On("QueryRange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
+		client.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{}, nil)
+		client.On("Metadata", mock.Anything, mock.Anything).Return(v1.Metadata{}, nil)
 
 		reg := prometheus.NewPedanticRegistry()
 		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
@@ -295,32 +317,59 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 			records.lastWrittenTimestamp = time.Unix(940, 0)
 		}
 		now := time.Unix(1000, 0)
-		err := test.Run(context.Background(), now)
-		// An error is expected for smoke-test mode, but we don't want to stop the test.
-		assert.Error(t, err)
+		_ = test.Run(context.Background(), now)
 
 		client.AssertNumberOfCalls(t, "WriteSeries", 3*multiplier)
 
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
 
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(960, 0), 2))
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(980, 0), 2))
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(1000, 0), 2))
+			expectedSeries960 := tt.generateSeries(tt.metricName, time.Unix(960, 0), 2, prompb.Label{Name: "protocol", Value: "prometheus"})
+			expectedSeries980 := tt.generateSeries(tt.metricName, time.Unix(980, 0), 2, prompb.Label{Name: "protocol", Value: "prometheus"})
+			expectedSeries1000 := tt.generateSeries(tt.metricName, time.Unix(1000, 0), 2, prompb.Label{Name: "protocol", Value: "prometheus"})
+			client.AssertCalled(t, "WriteSeries", mock.Anything, expectedSeries960, mock.Anything)
+			client.AssertCalled(t, "WriteSeries", mock.Anything, expectedSeries980, mock.Anything)
+			client.AssertCalled(t, "WriteSeries", mock.Anything, expectedSeries1000, mock.Anything)
 			assert.Equal(t, int64(1000), records.lastWrittenTimestamp.Unix())
 		}
 
 		em := util_test.ExpectedMetrics{Context: emCtx}
 		em.AddMultiple("mimir_continuous_test_writes_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 3))
 		em.AddMultiple("mimir_continuous_test_writes_failed_total", makeExpectedMetricsMap(testTuples, `status_code="400",test="write-read-series",type="%s"`, 3))
+		// When all writes fail with 4xx, query times are reset to zero, so no queries are executed
+		// except metadata queries which are independent of query times
+		queriesMap := map[string]int{
+			`test="write-read-series",type="metadata"`: 1 * multiplier,
+		}
+		em.AddMultiple("mimir_continuous_test_queries_total", queriesMap)
 		assert.NoError(t, testutil.GatherAndCompare(reg, em.GetOutput(), em.GetNames()...))
 	})
 
 	t.Run("should query written series, compare results and track no failure if results match", func(t *testing.T) {
 		now := time.Unix(1000, 0)
 
-		client := &ClientMock{}
-		client.On("WriteSeries", mock.Anything, mock.Anything).Return(200, nil)
+		client := newMockClient()
+		client.On("WriteSeries", mock.Anything, mock.Anything, mock.Anything).Return(200, nil)
+
+		// Set up metadata mocks for each test tuple
+		if cfg.WithFloats {
+			md := floatMetricMetadata[0]
+			client.On("Metadata", mock.Anything, floatMetricName).Return(v1.Metadata{
+				Type: v1.MetricType(strings.ToLower(md.Type.String())),
+				Help: md.Help,
+				Unit: md.Unit,
+			}, nil)
+		}
+		if cfg.WithHistograms {
+			for _, histProfile := range histogramProfiles {
+				md := histProfile.metadata[0]
+				client.On("Metadata", mock.Anything, histProfile.metricName).Return(v1.Metadata{
+					Type: v1.MetricType(strings.ToLower(md.Type.String())),
+					Help: md.Help,
+					Unit: md.Unit,
+				}, nil)
+			}
+		}
 
 		for _, tt := range testTuples {
 			if tt.querySum("") == querySumFloat("") {
@@ -353,7 +402,8 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
 
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, now, 2))
+			expectedSeries := tt.generateSeries(tt.metricName, now, 2, prompb.Label{Name: "protocol", Value: "prometheus"})
+			client.AssertCalled(t, "WriteSeries", mock.Anything, expectedSeries, mock.Anything)
 			assert.Equal(t, int64(1000), records.lastWrittenTimestamp.Unix())
 
 			client.AssertCalled(t, "QueryRange", mock.Anything, tt.querySum(tt.metricName), time.Unix(1000, 0), time.Unix(1000, 0), writeInterval, mock.Anything)
@@ -363,16 +413,21 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 
 		em := util_test.ExpectedMetrics{Context: emCtx}
 		em.AddMultiple("mimir_continuous_test_writes_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 1))
-		em.AddMultiple("mimir_continuous_test_queries_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8))
-		em.AddMultiple("mimir_continuous_test_query_result_checks_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8))
+		queriesMap := makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8)
+		queriesMap[`test="write-read-series",type="metadata"`] = 1 * multiplier
+		em.AddMultiple("mimir_continuous_test_queries_total", queriesMap)
+		checksMap := makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8)
+		checksMap[`test="write-read-series",type="metadata"`] = 1 * multiplier
+		em.AddMultiple("mimir_continuous_test_query_result_checks_total", checksMap)
 		assert.NoError(t, testutil.GatherAndCompare(reg, em.GetOutput(), em.GetNames()...))
 	})
 
 	t.Run("should query written series, compare results and track failure if results don't match", func(t *testing.T) {
 		now := time.Unix(1000, 0)
 
-		client := &ClientMock{}
-		client.On("WriteSeries", mock.Anything, mock.Anything).Return(200, nil)
+		client := newMockClient()
+		client.On("WriteSeries", mock.Anything, mock.Anything, mock.Anything).Return(200, nil)
+		client.On("Metadata", mock.Anything, mock.Anything).Return(v1.Metadata{}, nil)
 		for _, tt := range testTuples {
 			if tt.querySum("") == querySumFloat("") {
 				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{
@@ -404,7 +459,8 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
 
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, now, 2))
+			expectedSeries := tt.generateSeries(tt.metricName, now, 2, prompb.Label{Name: "protocol", Value: "prometheus"})
+			client.AssertCalled(t, "WriteSeries", mock.Anything, expectedSeries, mock.Anything)
 			assert.Equal(t, int64(1000), records.lastWrittenTimestamp.Unix())
 
 			client.AssertCalled(t, "QueryRange", mock.Anything, tt.querySum(tt.metricName), time.Unix(1000, 0), time.Unix(1000, 0), writeInterval, mock.Anything)
@@ -414,9 +470,15 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 
 		em := util_test.ExpectedMetrics{Context: emCtx}
 		em.AddMultiple("mimir_continuous_test_writes_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 1))
-		em.AddMultiple("mimir_continuous_test_queries_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8))
-		em.AddMultiple("mimir_continuous_test_query_result_checks_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8))
-		em.AddMultiple("mimir_continuous_test_query_result_checks_failed_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8))
+		queriesMap := makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8)
+		queriesMap[`test="write-read-series",type="metadata"`] = 1 * multiplier
+		em.AddMultiple("mimir_continuous_test_queries_total", queriesMap)
+		checksMap := makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8)
+		checksMap[`test="write-read-series",type="metadata"`] = 1 * multiplier
+		em.AddMultiple("mimir_continuous_test_query_result_checks_total", checksMap)
+		checksFailedMap := makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8)
+		checksFailedMap[`test="write-read-series",type="metadata"`] = 1 * multiplier
+		em.AddMultiple("mimir_continuous_test_query_result_checks_failed_total", checksFailedMap)
 		assert.NoError(t, testutil.GatherAndCompare(reg, em.GetOutput(), em.GetNames()...))
 	})
 }
@@ -439,7 +501,7 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 	now := time.Unix(10*86400, 0)
 
 	t.Run("no previously written samples found", func(t *testing.T) {
-		client := &ClientMock{}
+		client := newMockClient()
 
 		for _, tt := range testTuples {
 			client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{}, nil)
@@ -469,7 +531,7 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 	})
 
 	t.Run("previously written data points are in the range [-2h, -1m]", func(t *testing.T) {
-		client := &ClientMock{}
+		client := newMockClient()
 		for _, tt := range testTuples {
 			if tt.querySum("") == querySumFloat("") {
 				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
@@ -497,7 +559,7 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 	})
 
 	t.Run("previously written data points are in the range [-36h, -1m]", func(t *testing.T) {
-		client := &ClientMock{}
+		client := newMockClient()
 		for _, tt := range testTuples {
 			if tt.querySum("") == querySumFloat("") {
 				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
@@ -531,7 +593,7 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 	})
 
 	t.Run("previously written data points are in the range [-36h, -1m] but last data point of previous 24h period is missing", func(t *testing.T) {
-		client := &ClientMock{}
+		client := newMockClient()
 		for _, tt := range testTuples {
 			if tt.querySum("") == querySumFloat("") {
 				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
@@ -567,7 +629,7 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 	})
 
 	t.Run("previously written data points are in the range [-24h, -1m]", func(t *testing.T) {
-		client := &ClientMock{}
+		client := newMockClient()
 		for _, tt := range testTuples {
 			if tt.querySum("") == querySumFloat("") {
 				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
@@ -596,7 +658,7 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 	})
 
 	t.Run("the configured query max age is > 24h", func(t *testing.T) {
-		client := &ClientMock{}
+		client := newMockClient()
 		for _, tt := range testTuples {
 			if tt.querySum("") == querySumFloat("") {
 				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
@@ -636,7 +698,7 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 	})
 
 	t.Run("the configured query max age is < 24h", func(t *testing.T) {
-		client := &ClientMock{}
+		client := newMockClient()
 		for _, tt := range testTuples {
 			if tt.querySum("") == querySumFloat("") {
 				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-2*time.Hour), now, writeInterval, mock.Anything).Return(model.Matrix{{
@@ -666,7 +728,7 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 	})
 
 	t.Run("the most recent previously written data point is older than 1h ago", func(t *testing.T) {
-		client := &ClientMock{}
+		client := newMockClient()
 		for _, tt := range testTuples {
 			if tt.querySum("") == querySumFloat("") {
 				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
@@ -694,7 +756,7 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 	})
 
 	t.Run("the first query fails", func(t *testing.T) {
-		client := &ClientMock{}
+		client := newMockClient()
 		for _, tt := range testTuples {
 			client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{}, errors.New("failed"))
 		}
@@ -714,7 +776,7 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 	})
 
 	t.Run("a subsequent query fails", func(t *testing.T) {
-		client := &ClientMock{}
+		client := newMockClient()
 		for _, tt := range testTuples {
 			if tt.querySum("") == querySumFloat("") {
 				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
@@ -743,7 +805,7 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 	})
 
 	t.Run("the testing tool has been restarted with a different number of series in the middle of the last 24h period", func(t *testing.T) {
-		client := &ClientMock{}
+		client := newMockClient()
 		for _, tt := range testTuples {
 			if tt.querySum("") == querySumFloat("") {
 				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
@@ -777,7 +839,7 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 	})
 
 	t.Run("the testing tool has been restarted with a different number of series in the middle of the previous 24h period", func(t *testing.T) {
-		client := &ClientMock{}
+		client := newMockClient()
 		for _, tt := range testTuples {
 			if tt.querySum("") == querySumFloat("") {
 				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
@@ -817,7 +879,7 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 	})
 
 	t.Run("the testing tool has been restarted with a different number of series exactly at the beginning of this 24h period", func(t *testing.T) {
-		client := &ClientMock{}
+		client := newMockClient()
 		for _, tt := range testTuples {
 			if tt.querySum("") == querySumFloat("") {
 				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{{
@@ -859,7 +921,7 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 	now := time.Unix(int64((10*24*time.Hour)+(2*time.Second)), 0)
 
 	t.Run("min/max query time has not been set yet", func(t *testing.T) {
-		test := NewWriteReadSeriesTest(cfg, &ClientMock{}, log.NewNopLogger(), nil)
+		test := NewWriteReadSeriesTest(cfg, newMockClient(), log.NewNopLogger(), nil)
 
 		actualRanges, actualInstants, err := test.getQueryTimeRanges(now, &test.floatMetric)
 		assert.Error(t, err)
@@ -868,7 +930,7 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 	})
 
 	t.Run("min/max query time is older than max age", func(t *testing.T) {
-		test := NewWriteReadSeriesTest(cfg, &ClientMock{}, log.NewNopLogger(), nil)
+		test := NewWriteReadSeriesTest(cfg, newMockClient(), log.NewNopLogger(), nil)
 		test.floatMetric.queryMinTime = now.Add(-cfg.MaxQueryAge).Add(-time.Minute)
 		test.floatMetric.queryMaxTime = now.Add(-cfg.MaxQueryAge).Add(-time.Minute)
 
@@ -879,7 +941,7 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 	})
 
 	t.Run("min query time = max query time", func(t *testing.T) {
-		test := NewWriteReadSeriesTest(cfg, &ClientMock{}, log.NewNopLogger(), nil)
+		test := NewWriteReadSeriesTest(cfg, newMockClient(), log.NewNopLogger(), nil)
 		test.floatMetric.queryMinTime = now.Add(-time.Minute)
 		test.floatMetric.queryMaxTime = now.Add(-time.Minute)
 
@@ -896,7 +958,7 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 	})
 
 	t.Run("min and max query time are within the last 1h", func(t *testing.T) {
-		test := NewWriteReadSeriesTest(cfg, &ClientMock{}, log.NewNopLogger(), nil)
+		test := NewWriteReadSeriesTest(cfg, newMockClient(), log.NewNopLogger(), nil)
 		test.floatMetric.queryMinTime = now.Add(-30 * time.Minute)
 		test.floatMetric.queryMaxTime = now.Add(-time.Minute)
 
@@ -917,7 +979,7 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 	})
 
 	t.Run("min and max query time are within the last 2h", func(t *testing.T) {
-		test := NewWriteReadSeriesTest(cfg, &ClientMock{}, log.NewNopLogger(), nil)
+		test := NewWriteReadSeriesTest(cfg, newMockClient(), log.NewNopLogger(), nil)
 		test.floatMetric.queryMinTime = now.Add(-90 * time.Minute)
 		test.floatMetric.queryMaxTime = now.Add(-80 * time.Minute)
 
@@ -938,7 +1000,7 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 	})
 
 	t.Run("min query time is older than 24h", func(t *testing.T) {
-		test := NewWriteReadSeriesTest(cfg, &ClientMock{}, log.NewNopLogger(), nil)
+		test := NewWriteReadSeriesTest(cfg, newMockClient(), log.NewNopLogger(), nil)
 		test.floatMetric.queryMinTime = now.Add(-30 * time.Hour)
 		test.floatMetric.queryMaxTime = now.Add(-time.Minute)
 
@@ -962,7 +1024,7 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 	})
 
 	t.Run("max query time is older than 24h but more recent than max query age", func(t *testing.T) {
-		test := NewWriteReadSeriesTest(cfg, &ClientMock{}, log.NewNopLogger(), nil)
+		test := NewWriteReadSeriesTest(cfg, newMockClient(), log.NewNopLogger(), nil)
 		test.floatMetric.queryMinTime = now.Add(-30 * time.Hour)
 		test.floatMetric.queryMaxTime = now.Add(-25 * time.Hour)
 
@@ -983,7 +1045,7 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 		cfg := cfg
 		cfg.MaxQueryAge = 10 * time.Minute
 
-		test := NewWriteReadSeriesTest(cfg, &ClientMock{}, log.NewNopLogger(), nil)
+		test := NewWriteReadSeriesTest(cfg, newMockClient(), log.NewNopLogger(), nil)
 		test.floatMetric.queryMinTime = now.Add(-30 * time.Hour)
 		test.floatMetric.queryMaxTime = now.Add(-time.Minute)
 
@@ -1002,4 +1064,10 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 		require.GreaterOrEqual(t, actualInstants[len(actualInstants)-1].Unix(), test.floatMetric.queryMinTime.Unix())
 		require.LessOrEqual(t, actualInstants[len(actualInstants)-1].Unix(), test.floatMetric.queryMaxTime.Unix())
 	})
+}
+
+func newMockClient() *ClientMock {
+	client := &ClientMock{}
+	client.On("Protocol").Return("prometheus")
+	return client
 }

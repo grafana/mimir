@@ -43,7 +43,7 @@ func TestConfig_Validate(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			config := &CombinedFrontendConfig{}
 			flagext.DefaultValues(config)
-			config.EnableRemoteExecution = testCase.enableRemoteExecution
+			config.QueryMiddleware.EnableRemoteExecution = testCase.enableRemoteExecution
 			config.QueryEngine = testCase.queryEngine
 			err := config.Validate()
 

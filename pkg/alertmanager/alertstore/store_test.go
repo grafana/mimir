@@ -314,64 +314,6 @@ func TestBucketAlertStore_GetSetDeleteFullState(t *testing.T) {
 	}
 }
 
-func TestBucketAlertStore_GetSetDeleteGrafanaState(t *testing.T) {
-	bucket := objstore.NewInMemBucket()
-	store := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, bucket, nil, log.NewNopLogger())
-
-	ctx := context.Background()
-	state1 := makeTestFullState("one")
-	state2 := makeTestFullState("two")
-
-	// The storage is empty.
-	{
-		_, err := store.GetFullGrafanaState(ctx, "user-1")
-		assert.Equal(t, alertspb.ErrNotFound, err)
-
-		_, err = store.GetFullGrafanaState(ctx, "user-2")
-		assert.Equal(t, alertspb.ErrNotFound, err)
-	}
-
-	// The storage contains users.
-	{
-		require.NoError(t, store.SetFullGrafanaState(ctx, "user-1", state1))
-		require.NoError(t, store.SetFullGrafanaState(ctx, "user-2", state2))
-
-		res, err := store.GetFullGrafanaState(ctx, "user-1")
-		require.NoError(t, err)
-		assert.Equal(t, state1, res)
-
-		res, err = store.GetFullGrafanaState(ctx, "user-2")
-		require.NoError(t, err)
-		assert.Equal(t, state2, res)
-
-		// Ensure the state is stored at the expected location. Without this check
-		// we have no guarantee that the objects are stored at the expected location.
-		exists, err := bucket.Exists(ctx, "grafana_alertmanager/user-1/grafana_fullstate")
-		require.NoError(t, err)
-		assert.True(t, exists)
-
-		exists, err = bucket.Exists(ctx, "grafana_alertmanager/user-2/grafana_fullstate")
-		require.NoError(t, err)
-		assert.True(t, exists)
-	}
-
-	// The storage has had user-1 deleted.
-	{
-		require.NoError(t, store.DeleteFullGrafanaState(ctx, "user-1"))
-
-		// Ensure the correct entry has been deleted.
-		_, err := store.GetFullGrafanaState(ctx, "user-1")
-		assert.Equal(t, alertspb.ErrNotFound, err)
-
-		res, err := store.GetFullGrafanaState(ctx, "user-2")
-		require.NoError(t, err)
-		assert.Equal(t, state2, res)
-
-		// Delete again (should be idempotent).
-		require.NoError(t, store.DeleteGrafanaAlertConfig(ctx, "user-1"))
-	}
-}
-
 func TestBucketAlertStore_GetSetDeleteGrafanaAlertConfig(t *testing.T) {
 	bucket := objstore.NewInMemBucket()
 	store := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, bucket, nil, log.NewNopLogger())

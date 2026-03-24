@@ -106,7 +106,7 @@ func (q *mockShardedQueryable) Querier(_, _ int64) (storage.Querier, error) {
 
 // Select implements storage.Querier interface.
 // The bool passed is ignored because the series is always sorted.
-func (q *mockShardedQueryable) Select(_ context.Context, _ bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+func (q *mockShardedQueryable) Select(ctx context.Context, _ bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	tStart := time.Now()
 
 	shard, _, err := sharding.ShardFromMatchers(matchers)
@@ -159,7 +159,10 @@ func (q *mockShardedQueryable) Select(_ context.Context, _ bool, _ *storage.Sele
 
 	remaining := time.Until(tStart.Add(duration))
 	if remaining > 0 {
-		time.Sleep(remaining)
+		select {
+		case <-ctx.Done():
+		case <-time.After(remaining):
+		}
 	}
 
 	// sorted
@@ -332,11 +335,10 @@ func newEngineForTesting(t *testing.T, engine string, opts ...engineOpt) (promql
 	case querier.PrometheusEngine:
 		return promOpts, promql.NewEngine(promOpts)
 	case querier.MimirEngine:
-		limits := streamingpromql.NewStaticQueryLimitsProvider(0)
 		metrics := stats.NewQueryMetrics(promOpts.Reg)
-		planner, err := streamingpromql.NewQueryPlanner(mqeOpts)
+		planner, err := streamingpromql.NewQueryPlanner(mqeOpts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 		require.NoError(t, err)
-		eng, err := streamingpromql.NewEngine(mqeOpts, limits, metrics, planner)
+		eng, err := streamingpromql.NewEngine(mqeOpts, metrics, planner)
 		if err != nil {
 			t.Fatalf("error creating MQE engine for testing: %s", err)
 		}

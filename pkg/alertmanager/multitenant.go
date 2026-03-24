@@ -8,6 +8,7 @@ package alertmanager
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"flag"
 	"fmt"
 	"hash/fnv"
@@ -35,15 +36,14 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
-	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	amconfig "github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/featurecontrol"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
+	"go.yaml.in/yaml/v3"
 	"golang.org/x/time/rate"
-	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
@@ -114,7 +114,7 @@ type MultitenantAlertmanagerConfig struct {
 	// of the old regular expression parser, referred to as classic mode.
 	// Enable this mode once confident that all tenant configurations are forwards
 	// compatible.
-	UTF8StrictMode bool `yaml:"utf8_strict_mode" category:"experimental"`
+	UTF8StrictMode bool `yaml:"utf8_strict_mode" category:"advanced"`
 	// Enables logging when parsing label matchers. If UTF-8 strict mode is enabled,
 	// then the UTF-8 parser will be logged. If it is disabled, then the old regular
 	// expression parser will be logged.
@@ -158,7 +158,7 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet, logger 
 
 	f.BoolVar(&cfg.StrictInitializationEnabled, "alertmanager.strict-initialization-enabled", false, "Skip initializing Alertmanagers for tenants without a non-default, non-empty configuration. For Grafana Alertmanager tenants, configurations not marked as 'promoted' will also be skipped.")
 
-	f.BoolVar(&cfg.UTF8StrictMode, "alertmanager.utf8-strict-mode-enabled", false, "Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers for routes and inhibition rules, in silences, and in the labels for alerts. It is recommended that all tenants run the `migrate-utf8` command in mimirtool before enabling this mode. Otherwise, some tenant configurations might fail to load. For more information, refer to [Enable UTF-8](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/alertmanager/#enable-utf-8). Enabling and then disabling UTF-8 strict mode can break existing Alertmanager configurations if tenants added UTF-8 characters to their Alertmanager configuration while it was enabled.")
+	f.BoolVar(&cfg.UTF8StrictMode, "alertmanager.utf8-strict-mode-enabled", false, "Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers for routes and inhibition rules, in silences, and in the labels for alerts. It is recommended that all tenants run the `migrate-utf8` command in mimirtool before enabling this mode. Otherwise, some tenant configurations might fail to load. For more information, refer to [Enable UTF-8](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/alertmanager/#enable-utf-8).")
 	f.BoolVar(&cfg.LogParsingLabelMatchers, "alertmanager.log-parsing-label-matchers", false, "Enable logging when parsing label matchers. This flag is intended to be used with -alertmanager.utf8-strict-mode-enabled to validate UTF-8 strict mode is working as intended.")
 	f.BoolVar(&cfg.UTF8MigrationLogging, "alertmanager.utf8-migration-logging-enabled", false, "Enable logging of tenant configurations that are incompatible with UTF-8 strict mode.")
 
@@ -207,7 +207,6 @@ func (cfg *MultitenantAlertmanagerConfig) CheckExternalURL(alertmanagerHTTPPrefi
 }
 
 type multitenantAlertmanagerMetrics struct {
-	grafanaStateSize              *prometheus.GaugeVec
 	lastReloadSuccessful          *prometheus.GaugeVec
 	lastReloadSuccessfulTimestamp *prometheus.GaugeVec
 	initializationsOnRequestTotal *prometheus.CounterVec
@@ -216,11 +215,6 @@ type multitenantAlertmanagerMetrics struct {
 
 func newMultitenantAlertmanagerMetrics(reg prometheus.Registerer) *multitenantAlertmanagerMetrics {
 	m := &multitenantAlertmanagerMetrics{}
-
-	m.grafanaStateSize = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-		Name: "cortex_alertmanager_grafana_state_size_bytes",
-		Help: "Size of the grafana alertmanager state.",
-	}, []string{"user"})
 
 	m.lastReloadSuccessful = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 		Name: "cortex_alertmanager_config_last_reload_successful",
@@ -384,7 +378,7 @@ func NewMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, store alerts
 		logger,
 	)
 	if err != nil {
-		return nil, errors.Wrap(err, "create KV store client")
+		return nil, fmt.Errorf("create KV store client: %w", err)
 	}
 
 	return createMultitenantAlertmanager(cfg, fallbackConfig, store, ringStore, limits, features, logger, registerer)
@@ -467,7 +461,7 @@ func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackC
 
 	lifecyclerCfg, err := am.cfg.ShardingRing.ToLifecyclerConfig(am.logger)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to initialize Alertmanager's lifecycler config")
+		return nil, fmt.Errorf("failed to initialize Alertmanager's lifecycler config: %w", err)
 	}
 
 	// Define lifecycler delegates in reverse order (last to be called defined first because they're
@@ -478,12 +472,12 @@ func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackC
 
 	am.ringLifecycler, err = ring.NewBasicLifecycler(lifecyclerCfg, RingNameForServer, RingKey, ringStore, delegate, am.logger, prometheus.WrapRegistererWithPrefix("cortex_", am.registry))
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to initialize Alertmanager's lifecycler")
+		return nil, fmt.Errorf("failed to initialize Alertmanager's lifecycler: %w", err)
 	}
 
 	am.ring, err = ring.NewWithStoreClientAndStrategy(am.cfg.ShardingRing.toRingConfig(), RingNameForServer, RingKey, ringStore, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), prometheus.WrapRegistererWithPrefix("cortex_", am.registry), am.logger)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to initialize Alertmanager's ring")
+		return nil, fmt.Errorf("failed to initialize Alertmanager's ring: %w", err)
 	}
 
 	am.grpcServer = server.NewServer(&handlerForGRPCServer{am: am}, server.WithReturn4XXErrors)
@@ -491,7 +485,7 @@ func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackC
 	am.alertmanagerClientsPool = newAlertmanagerClientsPool(client.NewRingServiceDiscovery(am.ring), cfg.AlertmanagerClient, logger, am.registry)
 	am.distributor, err = NewDistributor(cfg.AlertmanagerClient, cfg.MaxRecvMsgSize, am.ring, am.alertmanagerClientsPool, log.With(logger, "component", "AlertmanagerDistributor"), am.registry)
 	if err != nil {
-		return nil, errors.Wrap(err, "create distributor")
+		return nil, fmt.Errorf("create distributor: %w", err)
 	}
 
 	if registerer != nil {
@@ -525,11 +519,11 @@ func (am *MultitenantAlertmanager) starting(ctx context.Context) (err error) {
 	}()
 
 	if am.subservices, err = services.NewManager(am.ringLifecycler, am.ring, am.distributor); err != nil {
-		return errors.Wrap(err, "failed to start alertmanager's subservices")
+		return fmt.Errorf("failed to start alertmanager's subservices: %w", err)
 	}
 
 	if err = services.StartManagerAndAwaitHealthy(ctx, am.subservices); err != nil {
-		return errors.Wrap(err, "failed to start alertmanager's subservices")
+		return fmt.Errorf("failed to start alertmanager's subservices: %w", err)
 	}
 
 	am.subservicesWatcher = services.NewFailureWatcher()
@@ -557,13 +551,13 @@ func (am *MultitenantAlertmanager) starting(ctx context.Context) (err error) {
 	// reduce the possibility that we lose state when new instances join/leave.
 	level.Info(am.logger).Log("msg", "waiting until initial state sync is complete for all users")
 	if err := am.waitInitialStateSync(ctx); err != nil {
-		return errors.Wrap(err, "failed to wait for initial state sync")
+		return fmt.Errorf("failed to wait for initial state sync: %w", err)
 	}
 	level.Info(am.logger).Log("msg", "initial state sync is complete")
 
 	// With the initial sync now completed, we should have loaded all assigned alertmanager configurations to this instance. We can switch it to ACTIVE and start serving requests.
 	if err := am.ringLifecycler.ChangeState(ctx, ring.ACTIVE); err != nil {
-		return errors.Wrapf(err, "switch instance to %s in the ring", ring.ACTIVE)
+		return fmt.Errorf("switch instance to %s in the ring: %w", ring.ACTIVE, err)
 	}
 
 	// Wait until the ring client detected this instance in the ACTIVE state.
@@ -588,7 +582,7 @@ func (am *MultitenantAlertmanager) run(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case err := <-am.subservicesWatcher.Chan():
-			return errors.Wrap(err, "alertmanager subservices failed")
+			return fmt.Errorf("alertmanager subservices failed: %w", err)
 		case <-tick.C:
 			// We don't want to halt execution here but instead just log what happened.
 			if err := am.loadAndSyncConfigs(ctx, reasonPeriodic); err != nil {
@@ -670,7 +664,7 @@ func (am *MultitenantAlertmanager) loadAlertmanagerConfigs(ctx context.Context) 
 	// Find all users with an alertmanager config.
 	allUserIDs, err := am.store.ListAllUsers(ctx)
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "failed to list users with alertmanager configuration")
+		return nil, nil, fmt.Errorf("failed to list users with alertmanager configuration: %w", err)
 	}
 	numUsersDiscovered := len(allUserIDs)
 	ownedUserIDs := make([]string, 0, len(allUserIDs))
@@ -686,7 +680,7 @@ func (am *MultitenantAlertmanager) loadAlertmanagerConfigs(ctx context.Context) 
 	// Load the configs for the owned users.
 	configs, err := am.store.GetAlertConfigs(ctx, ownedUserIDs)
 	if err != nil {
-		return nil, nil, errors.Wrapf(err, "failed to load alertmanager configurations for owned users")
+		return nil, nil, fmt.Errorf("failed to load alertmanager configurations for owned users: %w", err)
 	}
 
 	am.tenantsDiscovered.Set(float64(numUsersDiscovered))
@@ -720,12 +714,6 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 			level.Debug(am.logger).Log("msg", "not initializing alertmanager for grafana tenant without a promoted, non-default configuration", "user", user)
 			amInitSkipped[user] = struct{}{}
 			continue
-		}
-
-		if am.cfg.GrafanaAlertmanagerCompatibilityEnabled {
-			if err := am.syncStates(ctx, cfg); err != nil {
-				level.Error(am.logger).Log("msg", "error syncing states", "err", err, "user", user)
-			}
 		}
 
 		if err := am.setConfig(cfg); err != nil {
@@ -841,79 +829,6 @@ func (am *MultitenantAlertmanager) isTenantActive(userID string) bool {
 	return true
 }
 
-// syncStates promotes/unpromotes the Grafana state and updates the 'promoted' flag if needed.
-func (am *MultitenantAlertmanager) syncStates(ctx context.Context, cfg amConfig) error {
-	// fetching grafana state first so we can register its size independently of it being promoted or not
-	s, err := am.store.GetFullGrafanaState(ctx, cfg.User)
-	if err != nil {
-		if errors.Is(err, alertspb.ErrNotFound) {
-			// This is expected if the state was already promoted.
-			level.Debug(am.logger).Log("msg", "grafana state not found, skipping promotion", "user", cfg.User)
-			am.multitenantMetrics.grafanaStateSize.DeleteLabelValues(cfg.User)
-			return nil
-		}
-		return err
-	}
-	am.multitenantMetrics.grafanaStateSize.WithLabelValues(cfg.User).Set(float64(s.State.Size()))
-
-	am.alertmanagersMtx.Lock()
-	userAM, ok := am.alertmanagers[cfg.User]
-	am.alertmanagersMtx.Unlock()
-
-	// If we're not using Grafana configuration, we shouldn't use Grafana state.
-	// Update the flag accordingly.
-	if !cfg.UsingGrafanaConfig {
-		if ok && userAM.usingGrafanaState.CompareAndSwap(true, false) {
-			level.Debug(am.logger).Log("msg", "Grafana state unpromoted", "user", cfg.User)
-		}
-		return nil
-	}
-
-	// If the Alertmanager is already using Grafana state, do nothing.
-	if ok && userAM.usingGrafanaState.Load() {
-		return nil
-	}
-
-	// Promote the Grafana Alertmanager state and update the usingGrafanaState flag.
-	level.Debug(am.logger).Log("msg", "promoting Grafana state", "user", cfg.User)
-	// Translate Grafana state keys to Mimir state keys.
-	for i, p := range s.State.Parts {
-		switch p.Key {
-		case "silences":
-			s.State.Parts[i].Key = silencesStateKeyPrefix + cfg.User
-		case "notifications":
-			s.State.Parts[i].Key = nflogStateKeyPrefix + cfg.User
-		default:
-			return fmt.Errorf("unknown part key %q", p.Key)
-		}
-	}
-
-	if !ok {
-		level.Debug(am.logger).Log("msg", "no Alertmanager found, creating new one before applying Grafana state", "user", cfg.User)
-		if err := am.setConfig(cfg); err != nil {
-			return fmt.Errorf("error creating new Alertmanager for user %s: %w", cfg.User, err)
-		}
-		am.alertmanagersMtx.Lock()
-		userAM, ok = am.alertmanagers[cfg.User]
-		am.alertmanagersMtx.Unlock()
-		if !ok {
-			return fmt.Errorf("Alertmanager for user %s not found after creation", cfg.User)
-		}
-	}
-
-	if err := userAM.mergeFullGrafanaState(s.State); err != nil {
-		return err
-	}
-	userAM.usingGrafanaState.Store(true)
-
-	// Delete state.
-	if err := am.store.DeleteFullGrafanaState(ctx, cfg.User); err != nil {
-		return fmt.Errorf("error deleting grafana state for user %s: %w", cfg.User, err)
-	}
-	level.Debug(am.logger).Log("msg", "Grafana state promoted", "user", cfg.User)
-	return nil
-}
-
 type amConfig struct {
 	User               string
 	RawConfig          string
@@ -967,6 +882,7 @@ func (f amConfig) fingerprint() model.Fingerprint {
 	writeBool(f.EmailConfig.SkipVerify)
 	writeString(f.EmailConfig.StartTLSPolicy)
 	writeString(f.EmailConfig.SentBy)
+	writeBool(f.EmailConfig.UseBCC)
 	result := sum.Sum64()
 
 	writeBytes(nil)
@@ -1101,7 +1017,7 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *defi
 	tenantDir := am.getTenantDirectory(userID)
 	err := os.MkdirAll(tenantDir, 0777)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to create per-tenant directory %v", tenantDir)
+		return nil, fmt.Errorf("failed to create per-tenant directory %v: %w", tenantDir, err)
 	}
 
 	newAM, err := New(&Config{
@@ -1244,7 +1160,7 @@ func (am *MultitenantAlertmanager) startAlertmanager(ctx context.Context, userID
 	// Avoid starting the Alertmanager for tenants not owned by this instance.
 	if !am.isUserOwned(userID) {
 		am.lastRequestTime.Delete(userID)
-		return nil, errors.Wrap(errNotUploadingFallback, "user not owned by this instance")
+		return nil, fmt.Errorf("user not owned by this instance: %w", errNotUploadingFallback)
 	}
 
 	cfgMap, err := am.store.GetAlertConfigs(ctx, []string{userID})
@@ -1276,7 +1192,7 @@ func (am *MultitenantAlertmanager) alertmanagerFromFallbackConfig(ctx context.Co
 	// any tenants which are not meant to be in an instance, but it is confusing and potentially
 	// wasteful to have them start-up when they are not needed.
 	if !am.isUserOwned(userID) {
-		return nil, errors.Wrap(errNotUploadingFallback, "user not owned by this instance")
+		return nil, fmt.Errorf("user not owned by this instance: %w", errNotUploadingFallback)
 	}
 
 	// We should be careful never to replace an existing configuration with the fallback.
@@ -1285,10 +1201,10 @@ func (am *MultitenantAlertmanager) alertmanagerFromFallbackConfig(ctx context.Co
 	_, err := am.store.GetAlertConfig(ctx, userID)
 	if err == nil {
 		// If there is a configuration, then the polling cycle should pick it up.
-		return nil, errors.Wrap(errNotUploadingFallback, "user has a configuration")
+		return nil, fmt.Errorf("user has a configuration: %w", errNotUploadingFallback)
 	}
 	if !errors.Is(err, alertspb.ErrNotFound) {
-		return nil, errors.Wrap(err, "failed to check for existing configuration")
+		return nil, fmt.Errorf("failed to check for existing configuration: %w", err)
 	}
 
 	level.Warn(am.logger).Log("msg", "no configuration exists for user; uploading fallback configuration", "user", userID)
