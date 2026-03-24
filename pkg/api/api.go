@@ -190,7 +190,9 @@ func (a *API) newRoute(path string, handler http.Handler, isPrefix, auth, gzip b
 		handler = gziphandler.GzipHandler(handler, a.cfg.GzipCompressionLevel)
 	}
 	// Activity tracking is placed outside gzip so that the tracker entry outlives gzip's deferred Close.
-	if a.activityTracker != nil {
+	// Only applied when gzip is enabled: for non-gzip routes there is no deferred Close to outlive, and
+	// applying it unconditionally would buffer large streaming request bodies (e.g. block uploads).
+	if gzip && a.activityTracker != nil {
 		handler = transport.NewActivityTrackingMiddleware(a.activityTracker, a.logger, handler)
 	}
 	if isPrefix {
