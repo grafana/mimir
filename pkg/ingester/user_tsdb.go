@@ -27,6 +27,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/ingester/lookupplan"
+	"github.com/grafana/mimir/pkg/storage/ingest/kmeta"
 	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -150,6 +151,11 @@ type userTSDB struct {
 	// offsetCatalogue tracks Kafka offset watermarks for compacted blocks.
 	// Only set when ingest storage is enabled.
 	offsetCatalogue *offsetCatalogue
+
+	// committedOffsets are the last committed offsets, per Kafka cluster, observed from the consumer group
+	// configured in offset catalogue. Updated by a background service on the ingester.
+	// nil means unknown (no offset fetched yet).
+	committedOffsets atomic.Pointer[kmeta.PartitionOffsets]
 
 	requiresOwnedSeriesUpdate atomic.String // Non-empty string means that we need to recompute "owned series" for the user. Value will be used in the log message.
 
