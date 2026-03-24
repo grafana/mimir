@@ -405,6 +405,7 @@ type Ingester struct {
 	ingestReader              ingest.PartitionReader
 	ingestPartitionID         int32
 	ingestPartitionLifecycler *ring.PartitionInstanceLifecycler
+	committedOffsetClients    []*ingest.CommittedOffsetClient // Indexed by Kafka cluster ID.
 
 	circuitBreaker  ingesterCircuitBreaker
 	reactiveLimiter *ingesterReactiveLimiter
@@ -696,6 +697,24 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		if !cfg.IngestStorageConfig.Enabled {
 			return nil, fmt.Errorf("kafka offset catalogue can only be enabled when ingest storage is enabled")
 		}
+
+		if consumerGroup := cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.ConsumerGroup; consumerGroup != "" {
+			// The consumer group commits offsets to every Kafka cluster the ingester consumes from.
+			kafkaCfgs := []ingest.KafkaConfig{cfg.IngestStorageConfig.KafkaConfig}
+			if cfg.Compartments.Enabled {
+				readCompartmentTopic := compartments.ReplaceReadCompartment(cfg.IngestStorageConfig.KafkaConfig.Topic, cfg.ReadCompartmentID)
+				kafkaCfgs = ingest.WriteCompartmentConfigs(cfg.IngestStorageConfig.KafkaConfig, cfg.Compartments.Write.NumCompartments, readCompartmentTopic)
+			}
+
+			i.committedOffsetClients = make([]*ingest.CommittedOffsetClient, len(kafkaCfgs))
+			for clusterID, kafkaCfg := range kafkaCfgs {
+				cl, err := ingest.NewKafkaReaderClient(kafkaCfg, nil, log.With(logger, "component", "committed-offset-client"))
+				if err != nil {
+					return nil, fmt.Errorf("creating kafka client for committed offset reader of kafka cluster %d: %w", clusterID, err)
+				}
+				i.committedOffsetClients[clusterID] = ingest.NewCommittedOffsetClient(cl, kafkaCfg.Topic)
+			}
+		}
 	}
 
 	i.computeWorkerPool, err = workerpool.New(workerpool.Config{Size: cfg.ComputeWorkers}, "ingester-compute", registerer, logger)
@@ -840,6 +859,12 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 
 	if i.ingestPartitionLifecycler != nil {
 		servs = append(servs, i.ingestPartitionLifecycler)
+	}
+
+	if len(i.committedOffsetClients) > 0 {
+		interval := i.cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.ConsumerGroupPollInterval
+		committedOffsetService := services.NewTimerService(interval, nil, i.updateCommittedOffset, nil)
+		servs = append(servs, committedOffsetService)
 	}
 
 	// Since subservices are conditional, We add an idle service if there are no subservices to
