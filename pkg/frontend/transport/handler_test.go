@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	api2 "github.com/grafana/mimir/pkg/api"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -38,6 +37,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
+	api2 "github.com/grafana/mimir/pkg/api"
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/querier/api"

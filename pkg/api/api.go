@@ -188,10 +188,9 @@ func (a *API) newRoute(path string, handler http.Handler, isPrefix, auth, gzip b
 	if gzip {
 		handler = gziphandler.GzipHandler(handler, a.cfg.GzipCompressionLevel)
 	}
-	// Activity tracking is placed outside gzip so that the tracker entry outlives gzip's deferred Close.
-	// Only applied when gzip is enabled: for non-gzip routes there is no deferred Close to outlive, and
-	// applying it unconditionally would buffer large streaming request bodies (e.g. block uploads).
-	if a.activityTracker != nil {
+
+	// Some paths do not play nicely with the activity tracker consuming and restoring the request body
+	if a.activityTracker != nil && !excludeFromActivityTrackingMiddleware(path) {
 		handler = NewActivityTrackingMiddleware(a.activityTracker, a.logger, handler)
 	}
 	if isPrefix {
@@ -205,6 +204,10 @@ func (a *API) newRoute(path string, handler http.Handler, isPrefix, auth, gzip b
 	route = route.Handler(handler)
 
 	return route
+}
+
+func excludeFromActivityTrackingMiddleware(path string) bool {
+	return strings.Contains(path, "/api/v1/upload/block")
 }
 
 // RegisterAlertmanager registers endpoints that are associated with the alertmanager.

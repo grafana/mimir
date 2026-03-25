@@ -4,13 +4,13 @@ package api
 
 import (
 	"fmt"
-	"github.com/grafana/dskit/tenant"
-	"github.com/grafana/dskit/user"
 	"net/http"
 	"net/url"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/user"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/util"
