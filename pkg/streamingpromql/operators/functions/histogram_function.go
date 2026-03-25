@@ -560,23 +560,7 @@ func (h *HistogramFunction) Finalize(ctx context.Context) error {
 }
 
 func (h *HistogramFunction) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	argStats, err := h.f.Stats(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	defer argStats.Close()
-
-	innerStats, err := h.inner.Stats(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := innerStats.Add(argStats); err != nil {
-		return nil, err
-	}
-
-	return innerStats, nil
+	return types.CombineStats[types.StatsProvider](ctx, h.f, h.inner)
 }
 
 func (h *HistogramFunction) Close() {
