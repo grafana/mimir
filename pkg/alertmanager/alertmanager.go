@@ -333,28 +333,6 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 	return am, nil
 }
 
-func (am *Alertmanager) GetReceiversHandler(w http.ResponseWriter, _ *http.Request) {
-	am.receiversMtx.Lock()
-	receivers := am.receivers
-	am.receiversMtx.Unlock()
-
-	response := alertingNotify.GetReceivers(receivers)
-
-	d, err := json.Marshal(response)
-	if err != nil {
-		http.Error(w,
-			fmt.Sprintf("error marshalling receivers: %s", err.Error()),
-			http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	if _, err := w.Write(d); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-}
-
 func (am *Alertmanager) WaitInitialStateSync(ctx context.Context) error {
 	if err := am.state.AwaitRunning(ctx); err != nil {
 		return fmt.Errorf("failed to wait for ring-based replication service: %w", err)
