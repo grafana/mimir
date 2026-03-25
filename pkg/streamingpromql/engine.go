@@ -322,7 +322,12 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 		nodeRequests[idx].operator = op
 	}
 
-	return NewEvaluator(nodeRequests, operatorParams, e, params.OriginalExpression)
+	evaluator, err := NewEvaluator(nodeRequests, operatorParams, e, params.OriginalExpression)
+	if err != nil {
+		e.inflightMemoryConsumptionTracker.Deregister(memoryConsumptionTracker)
+		return nil, err
+	}
+	return evaluator, nil
 }
 
 type QueryLimitsProvider interface {
