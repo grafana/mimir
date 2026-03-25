@@ -221,7 +221,7 @@ func (i *Ingester) updateCommittedOffset(ctx context.Context) error {
 		return nil
 	}
 
-	level.Info(i.logger).Log("msg", "updating commited offset", "consumer_group", consumerGroup, "partition", i.ingestPartitionID, "offset", offset)
+	level.Info(i.logger).Log("msg", "updating committed offset", "consumer_group", consumerGroup, "partition", i.ingestPartitionID, "offset", offset)
 
 	i.tsdbsMtx.RLock()
 	defer i.tsdbsMtx.RUnlock()
