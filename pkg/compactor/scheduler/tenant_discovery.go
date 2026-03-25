@@ -60,13 +60,13 @@ func NewTenantDiscoverer(
 }
 
 // RecoverFrom populates the tenant discoverer with known tenants from recovered state.
-// Must be called before the service is started.
 func (s *TenantDiscoverer) RecoverFrom(jobTrackers map[string]*JobTracker) {
 	for tenant := range jobTrackers {
 		s.knownTenants[tenant] = struct{}{}
 	}
 }
 
+// start starts the tenant discovery service. It is expected that RecoverFrom is called before starting the service.
 func (s *TenantDiscoverer) start(ctx context.Context) error {
 	b := backoff.New(ctx, s.userDiscoveryBackoff)
 	var err error
