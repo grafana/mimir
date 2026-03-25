@@ -2494,6 +2494,89 @@ func TestMultitenantAlertmanager_computeFallbackConfig(t *testing.T) {
 	require.Equal(t, simpleConfigOne, string(fallbackConfig))
 }
 
+func TestShouldStartAM(t *testing.T) {
+	store := prepareInMemoryAlertStore()
+	reg := prometheus.NewPedanticRegistry()
+	cfg := mockAlertmanagerConfig(t)
+	am := setupSingleMultitenantAlertmanager(t, cfg, store, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
+
+	reg2 := prometheus.NewPedanticRegistry()
+	cfg2 := mockAlertmanagerConfig(t)
+	cfg2.StrictInitializationEnabled = true
+	amWithStrictInit := setupSingleMultitenantAlertmanager(t, cfg2, store, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg2)
+
+	testTenant := "test-tenant"
+	tenantReceivingRequests := "test-tenant-receiving"
+	tenantReceivingRequestsExpired := "test-tenant-idle"
+
+	amWithStrictInit.lastRequestTime.Store(tenantReceivingRequests, time.Now().Unix())
+	amWithStrictInit.lastRequestTime.Store(tenantReceivingRequestsExpired, time.Now().Add(-time.Hour).Unix())
+
+	tests := []struct {
+		name       string
+		cfg        alertspb.AlertConfigDescs
+		expStartAM bool
+	}{
+		{
+			name: "custom mimir config",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      testTenant,
+					RawConfig: simpleConfigOne,
+				},
+			},
+			expStartAM: true,
+		},
+		{
+			name: "default mimir config",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      testTenant,
+					RawConfig: am.fallbackConfig,
+				},
+			},
+		},
+		{
+			name: "empty mimir config",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User: testTenant,
+				},
+			},
+		},
+		{
+			name: "default mimir config, receiving requests",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequests,
+					RawConfig: am.fallbackConfig,
+				},
+			},
+			expStartAM: true,
+		},
+		{
+			name: "empty mimir config, receiving requests",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User: tenantReceivingRequests,
+				},
+			},
+			expStartAM: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			require.True(t, am.shouldStartAM(test.cfg))
+		})
+
+		t.Run(fmt.Sprintf("%s with strict initialization", test.name), func(t *testing.T) {
+			require.Equal(t, test.expStartAM, amWithStrictInit.shouldStartAM(test.cfg))
+		})
+	}
+}
+
+>>>>>>> a2990f109a3a92dba86078381b41ec964636856f
 func Test_amConfigFingerprint(t *testing.T) {
 	const expectedTotalFields = 24 // Total fields: 3 (PostableApiTemplate) + 15 (EmailSenderConfig) + 6 (amConfig)
 	t.Run("ensure all fields in the fingerprint", func(t *testing.T) {

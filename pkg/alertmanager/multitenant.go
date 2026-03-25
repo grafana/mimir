@@ -697,15 +697,14 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 	level.Debug(am.logger).Log("msg", "adding configurations", "num_configs", len(cfgMap))
 	amInitSkipped := map[string]struct{}{}
 	for user, cfgs := range cfgMap {
-		cfg := amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL)
-
-		if cfgs.Mimir.RawConfig != am.fallbackConfig {
-			level.Debug(am.logger).Log("msg", "not initializing alertmanager for tenant with a default configuration", "user", user)
+		startAM := am.shouldStartAM(cfgs)
+		if !startAM {
+			level.Debug(am.logger).Log("msg", "not initializing alertmanager for grafana tenant without a promoted, non-default configuration", "user", user)
 			amInitSkipped[user] = struct{}{}
 			continue
 		}
 
-		if err := am.setConfig(cfg); err != nil {
+		if err := am.setConfig(amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL)); err != nil {
 			am.multitenantMetrics.lastReloadSuccessful.WithLabelValues(user).Set(float64(0))
 			level.Warn(am.logger).Log("msg", "error applying config", "err", err, "user", user)
 			continue
@@ -740,25 +739,23 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 	}
 }
 
-// removeFromSkippedList remove a tenant from the 'skipped' tenants list.
-func (am *MultitenantAlertmanager) removeFromSkippedList(userID string) {
-	if !am.cfg.StrictInitializationEnabled {
-		return
-	}
-
-	if _, ok := am.lastRequestTime.LoadAndDelete(userID); ok {
-		level.Debug(am.logger).Log("msg", "user now has a usable config, removing it from skipped list", "user", userID)
-	}
-}
-
-// isTenantActive checks the last request time for a tenant, returning 'true' if the grace period has not yet expired.
-// If strict initialization is not enabled, it always returns true, as we don't keep track of request times.
-func (am *MultitenantAlertmanager) isTenantActive(userID string) bool {
+// shouldStartAM checks a tenant's configuration and last request time to determine whether we should start an Alertmanager for them.
+func (am *MultitenantAlertmanager) shouldStartAM(cfgs alertspb.AlertConfigDescs) bool {
+	// Always start Alertmanagers when strict initialization is disabled.
 	if !am.cfg.StrictInitializationEnabled {
 		return true
 	}
 
-	lastRequestTime, loaded := am.lastRequestTime.LoadOrStore(userID, time.Time{}.Unix())
+	// If the tenant is using a non-default config, remove it from the 'skipped' list and start the AM.
+	if cfgs.Mimir.RawConfig != am.fallbackConfig && cfgs.Mimir.RawConfig != "" {
+		if _, ok := am.lastRequestTime.LoadAndDelete(cfgs.Mimir.User); ok {
+			level.Debug(am.logger).Log("msg", "user now has a usable config, removing it from skipped list", "user", cfgs.Mimir.User)
+		}
+		return true
+	}
+
+	// Default/empty config. Check the last request time.
+	lastRequestTime, loaded := am.lastRequestTime.LoadOrStore(cfgs.Mimir.User, time.Time{}.Unix())
 	if !loaded || time.Unix(lastRequestTime.(int64), 0).IsZero() {
 		return false
 	}
@@ -766,11 +763,11 @@ func (am *MultitenantAlertmanager) isTenantActive(userID string) bool {
 	// Use the zero value to signal that the tenant was skipped.
 	// If the value stored is not what we have in memory, the tenant received a request since the last read.
 	gracePeriodExpired := time.Since(time.Unix(lastRequestTime.(int64), 0)) >= am.cfg.GrafanaAlertmanagerIdleGracePeriod
-	if gracePeriodExpired && am.lastRequestTime.CompareAndSwap(userID, lastRequestTime, time.Time{}.Unix()) {
+	if gracePeriodExpired && am.lastRequestTime.CompareAndSwap(cfgs.Mimir.User, lastRequestTime, time.Time{}.Unix()) {
 		return false
 	}
 
-	level.Debug(am.logger).Log("msg", "user has no usable config but is receiving requests, keeping Alertmanager active", "user", userID)
+	level.Debug(am.logger).Log("msg", "user has no usable config but is receiving requests, keeping Alertmanager active", "user", cfgs.Mimir.User)
 	return true
 }
 
@@ -1111,13 +1108,12 @@ func (am *MultitenantAlertmanager) startAlertmanager(ctx context.Context, userID
 		return nil, fmt.Errorf("failed to check for existing configuration: %w", err)
 	}
 
-	cfg, ok := cfgMap[userID]
+	cfgs, ok := cfgMap[userID]
 	if !ok {
 		return nil, errConfigNotFound
 	}
 
-	amConfig := amConfigFromMimirConfig(cfg.Mimir, am.cfg.ExternalURL.URL)
-	if err := am.setConfig(amConfig); err != nil {
+	if err := am.setConfig(amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL)); err != nil {
 		return nil, err
 	}
 	am.alertmanagersMtx.Lock()
