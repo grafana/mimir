@@ -355,7 +355,7 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.OffsetCatalogue.Enabled, "blocks-storage.tsdb.offset-catalogue.enabled", false, "Controls the maintaining of kafka offset catalogue per block.")
 	f.IntVar(&cfg.OffsetCatalogue.SyncConcurrency, "blocks-storage.tsdb.offset-catalogue.sync-concurrency", 10, "Maximum number of tenants concurrently syncing offset catalogue to disk.")
 	f.StringVar(&cfg.OffsetCatalogue.ConsumerGroup, "blocks-storage.tsdb.offset-catalogue.consumer-group", "", "The Kafka consumer group whose committed offset is compared against block watermarks to determine when ingester blocks can be deleted.")
-	f.DurationVar(&cfg.OffsetCatalogue.ConsumerGroupPollInterval, "blocks-storage.tsdb.offset-catalogue.consumer-group-poll-interval", 1*time.Minute, "How frequently the ingester polls Kafka for the committed offset of the configured consumer group.")
+	f.DurationVar(&cfg.OffsetCatalogue.ConsumerGroupPollInterval, "blocks-storage.tsdb.offset-catalogue.consumer-group-poll-interval", 5*time.Minute, "How frequently the ingester polls Kafka for the committed offset of the configured consumer group.")
 
 	cfg.HeadCompactionIntervalJitterEnabled = true
 	cfg.HeadCompactionIntervalWhileStarting = 30 * time.Second
