@@ -2737,6 +2737,21 @@ func TestShouldStartAM(t *testing.T) {
 			require.Equal(t, test.expStartAM, amWithStrictInit.shouldStartAM(test.cfg))
 		})
 	}
+
+	t.Run("default mimir config, idle Alertmanager", func(t *testing.T) {
+		cfg := alertspb.AlertConfigDescs{
+			Mimir: alertspb.AlertConfigDesc{
+				User:      tenantReceivingRequestsExpired,
+				RawConfig: am.fallbackConfig,
+			},
+		}
+
+		require.False(t, amWithStrictInit.shouldStartAM(cfg))
+
+		lastRequestTime, ok := amWithStrictInit.lastRequestTime.Load(tenantReceivingRequestsExpired)
+		require.True(t, ok)
+		require.Equal(t, time.Time{}.Unix(), lastRequestTime.(int64))
+	})
 }
 
 func Test_amConfigFingerprint(t *testing.T) {
