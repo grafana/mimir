@@ -277,7 +277,7 @@ func (i *Ingester) updateCommittedOffset(ctx context.Context) error {
 	}
 	committed := kmeta.NewMultiClusterPartitionOffsets(offsets)
 
-	level.Info(i.logger).Log("msg", "updating commited offset", "consumer_group", consumerGroup, "partition", i.ingestPartitionID, "offsets", committed)
+	level.Info(i.logger).Log("msg", "updating committed offset", "consumer_group", consumerGroup, "partition", i.ingestPartitionID, "offsets", committed)
 
 	i.tsdbsMtx.RLock()
 	defer i.tsdbsMtx.RUnlock()
