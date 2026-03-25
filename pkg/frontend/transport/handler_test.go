@@ -440,7 +440,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 
 			logger := &testLogger{}
 			h := NewHandler(tt.cfg, roundTripper, logger, reg)
-			handler := mimirapi.NewActivityTrackingMiddleware(at, logger, h)
+			handler := mimirapi.NewActivityTrackingMiddleware(at, logger, h, 0)
 
 			req := tt.request()
 			req = req.WithContext(user.InjectOrgID(req.Context(), "12345"))
