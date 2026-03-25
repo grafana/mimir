@@ -9,7 +9,6 @@ import (
 	"context"
 	stderrors "errors"
 	"fmt"
-	"github.com/prometheus/client_golang/prometheus"
 	"testing"
 	"time"
 
@@ -17,6 +16,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/histogram"
