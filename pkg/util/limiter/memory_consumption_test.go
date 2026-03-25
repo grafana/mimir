@@ -260,7 +260,7 @@ func BenchmarkMemoryConsumptionTracker(b *testing.B) {
 
 func TestMemoryConsumptionTrackerTracker_Aggregation(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
-	tt := NewMemoryConsumptionTrackerTracker(reg)
+	tt := NewInflightMemoryConsumptionTracker(reg)
 
 	tracker1 := tt.NewMemoryConsumptionTracker(context.Background(), 100, nil, "query1")
 	tracker2 := tt.NewMemoryConsumptionTracker(context.Background(), 200, nil, "query2")
@@ -285,10 +285,13 @@ func TestMemoryConsumptionTrackerTracker_Aggregation(t *testing.T) {
 	// idempotent
 	tt.Deregister(tracker2)
 	assertTrackerTrackerMetrics(t, reg, 0, 0, 0, 0)
+}
 
-	// deregister a non tracked tracker
-	tt.Deregister(NewMemoryConsumptionTracker(context.Background(), 100, nil, "query3"))
-	assertTrackerTrackerMetrics(t, reg, 0, 0, 0, 0)
+func TestMemoryConsumptionTrackerTracker_DeregisterNonManagedATracker(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	tt := NewInflightMemoryConsumptionTracker(reg)
+	nonManagedTracker := NewMemoryConsumptionTracker(context.Background(), 100, nil, "query3")
+	require.Panics(t, func() { tt.Deregister(nonManagedTracker) })
 }
 
 func assertTrackerTrackerMetrics(t *testing.T, reg prometheus.Gatherer, maxBytes, currentBytes, peakBytes float64, sampled int) {
