@@ -62,6 +62,7 @@ func NewOperatorEvaluationStats(timeRange QueryTimeRange, memoryConsumptionTrack
 
 	newSamplesReadPerStep, err := Int64SlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
 	if err != nil {
+		Int64SlicePool.Put(&samplesProcessedPerStep, memoryConsumptionTracker)
 		return nil, err
 	}
 
@@ -174,6 +175,9 @@ func CombineStats(ctx context.Context, operators ...Operator) (*OperatorEvaluati
 	for _, op := range operators {
 		stats, err := op.Stats(ctx)
 		if err != nil {
+			if combined != nil {
+				combined.Close()
+			}
 			return nil, err
 		}
 
@@ -183,6 +187,8 @@ func CombineStats(ctx context.Context, operators ...Operator) (*OperatorEvaluati
 		}
 
 		if err := combined.Add(stats); err != nil {
+			combined.Close()
+			stats.Close()
 			return nil, err
 		}
 		stats.Close()

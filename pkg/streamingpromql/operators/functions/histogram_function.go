@@ -560,7 +560,16 @@ func (h *HistogramFunction) Finalize(ctx context.Context) error {
 }
 
 func (h *HistogramFunction) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return h.inner.Stats(ctx)
+	ops := []types.Operator{h.inner}
+
+	switch f := h.f.(type) {
+	case *histogramQuantile:
+		ops = append(ops, f.phArg)
+	case *histogramFraction:
+		ops = append(ops, f.lowerArg, f.upperArg)
+	}
+
+	return types.CombineStats(ctx, ops...)
 }
 
 func (h *HistogramFunction) Close() {
