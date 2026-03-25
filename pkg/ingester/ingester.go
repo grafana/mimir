@@ -863,7 +863,8 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 
 	if len(i.committedOffsetClients) > 0 {
 		interval := i.cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.ConsumerGroupPollInterval
-		committedOffsetService := services.NewTimerService(interval, nil, i.updateCommittedOffset, nil)
+		// Calling updateCommittedOffset on service's start: this expects all existing TSDBs were opened above.
+		committedOffsetService := services.NewTimerService(interval, i.updateCommittedOffset, i.updateCommittedOffset, nil)
 		servs = append(servs, committedOffsetService)
 	}
 
