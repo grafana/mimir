@@ -6946,16 +6946,6 @@
         },
         {
           "kind": "field",
-          "name": "alertmanager_max_grafana_state_size_bytes",
-          "required": false,
-          "desc": "Maximum size of the Grafana Alertmanager state for a tenant. 0 = no limit.",
-          "fieldValue": null,
-          "fieldDefaultValue": null,
-          "fieldFlag": "alertmanager.max-grafana-state-size-bytes",
-          "fieldType": "int"
-        },
-        {
-          "kind": "field",
           "name": "alertmanager_max_silences_count",
           "required": false,
           "desc": "Maximum number of silences, including expired silences, that a tenant can have at once. 0 = no limit.",

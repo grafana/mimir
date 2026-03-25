@@ -4993,10 +4993,6 @@ ruler_alertmanager_client_config:
 # CLI flag: -alertmanager.max-config-size-bytes
 [alertmanager_max_config_size_bytes: <int> | default = 0]
 
-# Maximum size of the Grafana Alertmanager state for a tenant. 0 = no limit.
-# CLI flag: -alertmanager.max-grafana-state-size-bytes
-[alertmanager_max_grafana_state_size_bytes: <int> | default = 0B]
-
 # Maximum number of silences, including expired silences, that a tenant can have
 # at once. 0 = no limit.
 # CLI flag: -alertmanager.max-silences-count

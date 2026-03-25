@@ -327,14 +327,6 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 		am.mux.Handle(a, http.NotFoundHandler())
 	}
 
-	// This route is an experimental Mimir extension to the receivers API, so we put
-	// it under an additional prefix to avoid any confusion with upstream Alertmanager.
-	if cfg.GrafanaAlertmanagerCompatibility {
-		am.mux.Handle("/api/v1/grafana/receivers", http.HandlerFunc(am.GetReceiversHandler))
-		am.mux.Handle("/api/v1/grafana/templates/test", http.HandlerFunc(am.TestTemplatesHandler))
-		am.mux.Handle("/api/v1/grafana/receivers/test", http.HandlerFunc(am.TestReceiversHandler))
-	}
-
 	am.dispatcherMetrics = dispatch.NewDispatcherMetrics(true, am.registry)
 
 	// TODO: From this point onward, the alertmanager _might_ receive requests - we need to make sure we've settled and are ready.
@@ -358,47 +350,6 @@ func (am *Alertmanager) GetReceiversHandler(w http.ResponseWriter, _ *http.Reque
 
 	w.Header().Set("Content-Type", "application/json")
 	if _, err := w.Write(d); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-}
-
-func (am *Alertmanager) TestTemplatesHandler(w http.ResponseWriter, r *http.Request) {
-	c := alertingNotify.TestTemplatesConfigBodyParams{}
-	if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
-		http.Error(w,
-			fmt.Sprintf("error unmarshalling test templates config JSON: %s", err.Error()),
-			http.StatusBadRequest)
-		return
-	}
-
-	am.templatesMtx.RLock()
-	tmplCfg, err := alertingTemplates.NewConfig(am.cfg.UserID, am.cfg.ExternalURL.String(), version.Version, alertingTemplates.Limits{})
-	if err != nil {
-		am.templatesMtx.RUnlock()
-		http.Error(w,
-			fmt.Sprintf("error creating template config: %s", err.Error()),
-			http.StatusInternalServerError)
-		return
-	}
-	factory, err := alertingTemplates.NewFactory(am.templates, tmplCfg, am.logger)
-	am.templatesMtx.RUnlock()
-	if err != nil {
-		http.Error(w,
-			fmt.Sprintf("error initializing configured templates: %s", err.Error()),
-			http.StatusInternalServerError)
-		return
-	}
-	response, err := alertingNotify.TestTemplate(r.Context(), c, factory, am.logger)
-	if err != nil {
-		http.Error(w,
-			fmt.Sprintf("error testing templates: %s", err.Error()),
-			http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(response); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
