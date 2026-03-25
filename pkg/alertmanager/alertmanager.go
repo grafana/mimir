@@ -9,7 +9,6 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -130,8 +129,6 @@ type Alertmanager struct {
 	wg              sync.WaitGroup
 	mux             *http.ServeMux
 	registry        *prometheus.Registry
-	receiversMtx    sync.Mutex
-	receivers       []*nfstatus.Receiver
 	templatesMtx    sync.RWMutex
 	templates       []alertingTemplates.TemplateDefinition
 	tmplExternalURL *url.URL
@@ -394,18 +391,10 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 
 	route := dispatch.NewRoute(cfg.Route, nil)
 
-	receivers := make([]*nfstatus.Receiver, 0, len(integrationsMap))
-	activeReceivers := alertingNotify.GetActiveReceiversMap(route)
-
 	baseIntegrationsMap := make(map[string][]*notify.Integration)
 	for name, v := range integrationsMap {
-		_, isActive := activeReceivers[name]
-		receivers = append(receivers, nfstatus.NewReceiver(name, isActive, v))
 		baseIntegrationsMap[name] = nfstatus.GetIntegrations(v)
 	}
-	am.receiversMtx.Lock()
-	am.receivers = receivers
-	am.receiversMtx.Unlock()
 
 	am.templatesMtx.Lock()
 	am.templates = tmpls
