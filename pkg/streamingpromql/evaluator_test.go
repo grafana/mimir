@@ -22,7 +22,6 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
-	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 func TestEvaluator(t *testing.T) {
@@ -33,7 +32,7 @@ func TestEvaluator(t *testing.T) {
 	engine, err := NewEngine(opts, stats.NewQueryMetrics(opts.CommonOpts.Reg), planner)
 	require.NoError(t, err)
 
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+	memoryConsumptionTracker := engine.inflightMemoryConsumptionTracker.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
 	timeRange := types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(0).Add(2*time.Minute), time.Minute)
 	stats := types.NewQueryStats()
 	lookbackDelta := 5 * time.Minute
