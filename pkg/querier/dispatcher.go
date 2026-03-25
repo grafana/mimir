@@ -172,7 +172,6 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *query
 
 	e, err := d.engine.NewEvaluator(ctx, d.queryable, req.Plan.DecodeParameters(), nodeRequests)
 	if err != nil {
-		e.Close()
 		resp.WriteError(ctx, apierror.TypeBadData, fmt.Errorf("could not materialize query: %w", err))
 		return
 	}
