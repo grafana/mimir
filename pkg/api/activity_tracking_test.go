@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
@@ -94,12 +95,13 @@ func TestActivityTrackingMiddleware_ParamParsing(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, at.Close()) })
 
 	for _, tc := range []struct {
-		name           string
-		method         string
-		url            string
-		body           string
-		contentType    string
-		expectedParams string
+		name               string
+		method             string
+		url                string
+		body               string
+		contentType        string
+		expectedParams     string
+		checkBodyPreserved bool
 	}{
 		{
 			name:           "GET with query params",
@@ -115,6 +117,18 @@ func TestActivityTrackingMiddleware_ParamParsing(t *testing.T) {
 			contentType:    "application/x-www-form-urlencoded",
 			expectedParams: "query=up&time=42",
 		},
+		{
+			// Remote write sends a snappy-compressed protobuf body with Content-Type application/x-protobuf.
+			// The middleware must not corrupt the binary body, and the handler must be able to read it as-is.
+			// Since the body is not form-encoded, no query params are captured from the body.
+			name:               "POST remote write (binary protobuf body is preserved for handler)",
+			method:             http.MethodPost,
+			url:                "/api/v1/push",
+			body:               "\x00\x01\x02\x03binary-remote-write-payload",
+			contentType:        "application/x-protobuf",
+			expectedParams:     "(no params)",
+			checkBodyPreserved: true,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var capturedActivity string
@@ -125,9 +139,15 @@ func TestActivityTrackingMiddleware_ParamParsing(t *testing.T) {
 					capturedActivity = activities[0].Activity
 				}
 				// Verify inner handler can still parse form independently.
-				if tc.method == http.MethodPost {
+				if tc.method == http.MethodPost && tc.contentType == "application/x-www-form-urlencoded" {
 					require.NoError(t, r.ParseForm())
 					require.Equal(t, "up", r.FormValue("query"))
+				}
+				// Verify binary body is preserved byte-for-byte after middleware buffering.
+				if tc.checkBodyPreserved {
+					got, err := io.ReadAll(r.Body)
+					require.NoError(t, err)
+					require.Equal(t, tc.body, string(got))
 				}
 				w.WriteHeader(http.StatusOK)
 			})
@@ -150,4 +170,143 @@ func TestActivityTrackingMiddleware_ParamParsing(t *testing.T) {
 			require.Contains(t, capturedActivity, tc.expectedParams)
 		})
 	}
+}
+
+// TestActivityTrackingMiddleware_LargeBodyNotBuffered verifies that the middleware does not
+// buffer the request body for non-form-encoded requests. Buffering would be harmful for
+// large or streaming uploads (e.g. block file uploads, remote write) because it forces
+// the entire body into memory before the handler can start.
+func TestActivityTrackingMiddleware_LargeBodyNotBuffered(t *testing.T) {
+	activityFile := filepath.Join(t.TempDir(), "activity-tracker")
+	reg := prometheus.NewPedanticRegistry()
+	at, err := activitytracker.NewActivityTracker(activitytracker.Config{Filepath: activityFile, MaxEntries: 1024}, reg)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, at.Close()) })
+
+	t.Run("slow upload: handler starts before full body arrives", func(t *testing.T) {
+		// Use an io.Pipe so the body is only available on demand.
+		// If the middleware calls io.ReadAll on the body it will block until the pipe is
+		// closed, and the handler will never start. We detect that by requiring the handler
+		// to signal it has started *before* we write anything to the pipe.
+		pr, pw := io.Pipe()
+		t.Cleanup(func() { _ = pw.Close() })
+
+		const bodyContent = "slow binary block file content"
+		handlerStarted := make(chan struct{})
+		var capturedActivity string
+
+		inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			activities, err := activitytracker.LoadUnfinishedEntries(activityFile)
+			require.NoError(t, err)
+			if assert.Len(t, activities, 1) {
+				capturedActivity = activities[0].Activity
+			}
+			close(handlerStarted)
+			got, err := io.ReadAll(r.Body)
+			require.NoError(t, err)
+			require.Equal(t, bodyContent, string(got))
+			w.WriteHeader(http.StatusOK)
+		})
+		handler := NewActivityTrackingMiddleware(at, log.NewNopLogger(), inner)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/upload/block/01ABC/files?path=chunks/000001", pr)
+		req.Header.Set("Content-Type", "application/octet-stream")
+		req.Header.Set("X-Scope-OrgID", "tenant1")
+		resp := httptest.NewRecorder()
+
+		serveHTTPDone := make(chan struct{})
+		go func() {
+			defer close(serveHTTPDone)
+			handler.ServeHTTP(resp, req)
+		}()
+
+		select {
+		case <-handlerStarted:
+			// Handler started before any body data was sent — middleware did not buffer.
+		case <-time.After(time.Second):
+			t.Fatal("handler did not start before body was sent: middleware is buffering the request body")
+		}
+
+		// Send the body only after confirming the handler has already started.
+		_, err = pw.Write([]byte(bodyContent))
+		require.NoError(t, err)
+		require.NoError(t, pw.Close())
+
+		select {
+		case <-serveHTTPDone:
+		case <-time.After(time.Second):
+			t.Fatal("handler did not complete after body was sent")
+		}
+
+		// URL query params are captured even though the body was not buffered.
+		require.Equal(t, toActivityTrackerString(req, "", map[string][]string{"path": {"chunks/000001"}}), capturedActivity)
+	})
+
+	t.Run("chunked transfer encoding: body is passed through intact", func(t *testing.T) {
+		// ContentLength=-1 with Transfer-Encoding: chunked means the body size is unknown
+		// upfront. The middleware must not attempt to buffer it.
+		const bodyContent = "chunked binary content"
+		var gotBody string
+		var capturedActivity string
+
+		inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			activities, err := activitytracker.LoadUnfinishedEntries(activityFile)
+			require.NoError(t, err)
+			if assert.Len(t, activities, 1) {
+				capturedActivity = activities[0].Activity
+			}
+			got, err := io.ReadAll(r.Body)
+			require.NoError(t, err)
+			gotBody = string(got)
+			w.WriteHeader(http.StatusOK)
+		})
+		handler := NewActivityTrackingMiddleware(at, log.NewNopLogger(), inner)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/upload/block/01ABC/files?path=chunks/000001",
+			strings.NewReader(bodyContent))
+		req.Header.Set("Content-Type", "application/octet-stream")
+		req.Header.Set("X-Scope-OrgID", "tenant1")
+		req.ContentLength = -1
+		req.TransferEncoding = []string{"chunked"}
+
+		resp := httptest.NewRecorder()
+		handler.ServeHTTP(resp, req)
+
+		require.Equal(t, http.StatusOK, resp.Code)
+		require.Equal(t, bodyContent, gotBody)
+		require.Equal(t, toActivityTrackerString(req, "", map[string][]string{"path": {"chunks/000001"}}), capturedActivity)
+	})
+
+	t.Run("non-standard content type: body is passed through intact", func(t *testing.T) {
+		// Any content type that is not application/x-www-form-urlencoded must not cause
+		// the middleware to buffer the body — the handler must receive the original bytes.
+		const bodyContent = "binary payload \x00\x01\x02\x03 with non-standard content type"
+		var gotBody string
+		var capturedActivity string
+
+		inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			activities, err := activitytracker.LoadUnfinishedEntries(activityFile)
+			require.NoError(t, err)
+			if assert.Len(t, activities, 1) {
+				capturedActivity = activities[0].Activity
+			}
+			got, err := io.ReadAll(r.Body)
+			require.NoError(t, err)
+			gotBody = string(got)
+			w.WriteHeader(http.StatusOK)
+		})
+		handler := NewActivityTrackingMiddleware(at, log.NewNopLogger(), inner)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/upload/block/01ABC/files?path=chunks/000001",
+			strings.NewReader(bodyContent))
+		req.Header.Set("Content-Type", "application/vnd.custom-binary")
+		req.Header.Set("X-Scope-OrgID", "tenant1")
+
+		resp := httptest.NewRecorder()
+		handler.ServeHTTP(resp, req)
+
+		require.Equal(t, http.StatusOK, resp.Code)
+		require.Equal(t, bodyContent, gotBody)
+		require.Equal(t, toActivityTrackerString(req, "", map[string][]string{"path": {"chunks/000001"}}), capturedActivity)
+	})
 }

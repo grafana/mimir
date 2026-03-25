@@ -189,8 +189,7 @@ func (a *API) newRoute(path string, handler http.Handler, isPrefix, auth, gzip b
 		handler = gziphandler.GzipHandler(handler, a.cfg.GzipCompressionLevel)
 	}
 
-	// Some paths do not play nicely with the activity tracker consuming and restoring the request body
-	if a.activityTracker != nil && !excludeFromActivityTrackingMiddleware(path) {
+	if a.activityTracker != nil {
 		handler = NewActivityTrackingMiddleware(a.activityTracker, a.logger, handler)
 	}
 	if isPrefix {
@@ -204,10 +203,6 @@ func (a *API) newRoute(path string, handler http.Handler, isPrefix, auth, gzip b
 	route = route.Handler(handler)
 
 	return route
-}
-
-func excludeFromActivityTrackingMiddleware(path string) bool {
-	return strings.Contains(path, "/api/v1/upload/block")
 }
 
 // RegisterAlertmanager registers endpoints that are associated with the alertmanager.

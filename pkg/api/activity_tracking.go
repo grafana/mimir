@@ -33,10 +33,23 @@ func NewActivityTrackingMiddleware(at *activitytracker.ActivityTracker, logger l
 func (m *activityTrackingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var params url.Values
 	var err error
+
+	// We attempt to read the query params or form bodies to get values which we can use to identify these requests.
+	// To do this safely and not impact the next handlers we must do this in a way as to not disturb the body for subsequent handlers.
+	// We er on the side of caution to make sure we do not risk consuming a body we can not safely restore into the request.
+
 	if r.Header.Get("Content-Type") == "application/x-protobuf" && querymiddleware.IsRemoteReadQuery(r.URL.Path) {
 		params, err = querymiddleware.ParseRemoteReadRequestValuesWithoutConsumingBody(r)
+
+	} else if r.Header.Get("Content-Type") == "application/x-www-form-urlencoded" {
+		// Check the ContentLength as -1 could mean a chunked encoding transfer which we do not want to await to read
+		if r.ContentLength >= 0 {
+			params, err = util.ParseRequestFormWithoutConsumingBody(r)
+		} else {
+			params = r.URL.Query()
+		}
 	} else {
-		params, err = util.ParseRequestFormWithoutConsumingBody(r)
+		params = r.URL.Query()
 	}
 
 	if err != nil {
