@@ -452,11 +452,11 @@ func (u *userTSDB) blocksToDelete(logger log.Logger, blocks []*tsdb.Block) map[u
 			for _, b := range blocks {
 				blockID := b.Meta().ULID
 				if wm, ok := catalogue.Data[blockID.String()]; ok && wm.Offset <= committedOffset {
-					level.Debug(logger).Log(
+					level.Info(logger).Log(
 						"msg", "delete block due to its offset catalogue watermark",
 						"ulid", blockID.String(),
 						"mint", b.Meta().MinTime,
-						"maxt", b.Meta().MinTime,
+						"maxt", b.Meta().MaxTime,
 						"out_of_order", b.Meta().OutOfOrder,
 						"watermark", wm.String(),
 						"committed_offset", committedOffset,
