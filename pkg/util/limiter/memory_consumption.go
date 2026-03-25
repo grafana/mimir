@@ -138,8 +138,8 @@ func (s MemoryConsumptionSource) String() string {
 	}
 }
 
-// MemoryConsumptionTrackerTracker exposes metrics related to the cumulative in-flight MemoryConsumptionTrackers.
-type MemoryConsumptionTrackerTracker struct {
+// InflightMemoryConsumptionTracker exposes metrics related to the cumulative in-flight MemoryConsumptionTrackers.
+type InflightMemoryConsumptionTracker struct {
 	inflight sync.Map // map[uint64]*MemoryConsumptionTracker
 	nextID   atomic.Uint64
 
@@ -149,29 +149,26 @@ type MemoryConsumptionTrackerTracker struct {
 	sampledDesc *prometheus.Desc
 }
 
-func NewMemoryConsumptionTrackerTracker(reg prometheus.Registerer) *MemoryConsumptionTrackerTracker {
-	if reg == nil {
-		reg = prometheus.NewRegistry()
-	}
-	t := &MemoryConsumptionTrackerTracker{
+func NewInflightMemoryConsumptionTracker(reg prometheus.Registerer) *InflightMemoryConsumptionTracker {
+	t := &InflightMemoryConsumptionTracker{
 		maxDesc: prometheus.NewDesc(
-			"cortex_querier_inflight_query_max_estimated_memory_consumption_bytes",
+			"cortex_querier_inflight_query_max_estimated_memory_consumption_limit_bytes",
 			"Total of the max estimated memory consumption limit across all in-flight queries.",
 			nil, nil,
 		),
 		currentDesc: prometheus.NewDesc(
-			"cortex_querier_inflight_query_current_estimated_memory_consumption_bytes",
+			"cortex_querier_inflight_query_current_estimated_memory_consumption_limit_bytes",
 			"Total current estimated memory consumption across all in-flight queries.",
 			nil, nil,
 		),
 		peakDesc: prometheus.NewDesc(
-			"cortex_querier_inflight_query_peak_estimated_memory_consumption_bytes",
+			"cortex_querier_inflight_query_peak_estimated_memory_consumption_limit_bytes",
 			"Total peak estimated memory consumption across all in-flight queries.",
 			nil, nil,
 		),
 		sampledDesc: prometheus.NewDesc(
-			"cortex_querier_inflight_query_sampled_total",
-			"Number of in-flight queries sampled during the last metrics collection.",
+			"cortex_querier_inflight_query_sampled_count",
+			"Number of in-flight memory consumption trackers accumulated during the last metrics collection.",
 			nil, nil,
 		),
 	}
@@ -182,7 +179,7 @@ func NewMemoryConsumptionTrackerTracker(reg prometheus.Registerer) *MemoryConsum
 // NewMemoryConsumptionTracker returns a new MemoryConsumptionTracker the same as if limiter.MemoryConsumptionTracker() was called.
 // However this new tracker will be included in the accumulated metrics managed by this MemoryConsumptionTrackerTracker.
 // Ensure that you invoke Deregister(tracker) once the tracker is no longer required.
-func (t *MemoryConsumptionTrackerTracker) NewMemoryConsumptionTracker(ctx context.Context, maxEstimatedMemoryConsumptionBytes uint64, rejectionCount prometheus.Counter, queryDescription string) *MemoryConsumptionTracker {
+func (t *InflightMemoryConsumptionTracker) NewMemoryConsumptionTracker(ctx context.Context, maxEstimatedMemoryConsumptionBytes uint64, rejectionCount prometheus.Counter, queryDescription string) *MemoryConsumptionTracker {
 	tracker := NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionBytes, rejectionCount, queryDescription)
 	id := t.nextID.Add(1)
 	tracker.trackingId = id
@@ -191,15 +188,15 @@ func (t *MemoryConsumptionTrackerTracker) NewMemoryConsumptionTracker(ctx contex
 }
 
 // Deregister removes the tracking of this tracker.
-func (t *MemoryConsumptionTrackerTracker) Deregister(tracker *MemoryConsumptionTracker) {
+func (t *InflightMemoryConsumptionTracker) Deregister(tracker *MemoryConsumptionTracker) {
 	if tracker.trackingId == 0 {
-		return
+		panic("cannot deregister a tracker not created via the InflightMemoryConsumptionTracker")
 	}
 	t.inflight.Delete(tracker.trackingId)
 }
 
 // Describe implements prometheus.Collector.
-func (t *MemoryConsumptionTrackerTracker) Describe(ch chan<- *prometheus.Desc) {
+func (t *InflightMemoryConsumptionTracker) Describe(ch chan<- *prometheus.Desc) {
 	ch <- t.maxDesc
 	ch <- t.currentDesc
 	ch <- t.peakDesc
@@ -208,7 +205,7 @@ func (t *MemoryConsumptionTrackerTracker) Describe(ch chan<- *prometheus.Desc) {
 
 // Collect implements prometheus.Collector. It aggregates memory consumption across all in-flight
 // queries and emits the gauge values.
-func (t *MemoryConsumptionTrackerTracker) Collect(ch chan<- prometheus.Metric) {
+func (t *InflightMemoryConsumptionTracker) Collect(ch chan<- prometheus.Metric) {
 	var maxBytes, currentBytes, peakBytes float64
 	sampled := 0
 	t.inflight.Range(func(key, value any) bool {

@@ -126,11 +126,11 @@ func NewEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *Q
 		}),
 		queriesRejectedDueToPeakMemoryConsumption: metrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxEstimatedQueryMemoryConsumption),
 
-		pedantic:                        opts.Pedantic,
-		eagerLoadSelectors:              opts.EagerLoadSelectors,
-		planner:                         planner,
-		nodeMaterializers:               nodeMaterializers,
-		memoryConsumptionTrackerTracker: limiter.NewMemoryConsumptionTrackerTracker(opts.CommonOpts.Reg),
+		pedantic:                         opts.Pedantic,
+		eagerLoadSelectors:               opts.EagerLoadSelectors,
+		planner:                          planner,
+		nodeMaterializers:                nodeMaterializers,
+		inflightMemoryConsumptionTracker: limiter.NewInflightMemoryConsumptionTracker(opts.CommonOpts.Reg),
 	}, nil
 }
 
@@ -171,9 +171,9 @@ type Engine struct {
 
 	eagerLoadSelectors bool
 
-	planner                         *QueryPlanner
-	nodeMaterializers               map[planning.NodeType]planning.NodeMaterializer
-	memoryConsumptionTrackerTracker *limiter.MemoryConsumptionTrackerTracker
+	planner                          *QueryPlanner
+	nodeMaterializers                map[planning.NodeType]planning.NodeMaterializer
+	inflightMemoryConsumptionTracker *limiter.InflightMemoryConsumptionTracker
 }
 
 func (e *Engine) RegisterNodeMaterializer(nodeType planning.NodeType, materializer planning.NodeMaterializer) error {
@@ -297,7 +297,7 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 		return nil, fmt.Errorf("could not get memory consumption limit for query: %w", err)
 	}
 
-	memoryConsumptionTracker := e.memoryConsumptionTrackerTracker.NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionPerQuery, e.queriesRejectedDueToPeakMemoryConsumption, params.OriginalExpression)
+	memoryConsumptionTracker := e.inflightMemoryConsumptionTracker.NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionPerQuery, e.queriesRejectedDueToPeakMemoryConsumption, params.OriginalExpression)
 
 	operatorParams := &planning.OperatorParameters{
 		Queryable:                queryable,
