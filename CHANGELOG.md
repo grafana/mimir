@@ -159,7 +159,7 @@
 * [ENHANCEMENT] MQE: Improve per-query memory consumption limit enforcement in histogram function evaluations. #14691
 * [ENHANCEMENT] MQE: Improve per-query memory consumption limit enforcement within aggregation operations. #14735
 * [ENHANCEMENT] Usage-tracker: Improve performance by using a special shard grouping algorithm. #14715
-* [ENHANCEMENT] Query frontend: activity tracker entries now cover the full request lifecycle. #14777
+* [ENHANCEMENT] Query frontend: activity tracker entries now cover the full request lifecycle and most of the registered routes. #14777
 * [BUGFIX] Distributor: Fix race condition where usage-tracker partition ring may not be initialized before the distributor service starts, causing `usage-tracker partition ring is required` error on startup. #14675
 * [BUGFIX] Mimir: Fix false positive in filesystem path overlap detection when one path is a string prefix of another but not an ancestor directory. #14426
 * [BUGFIX] Build: Fixed config descriptor generation to correctly handle custom field types without CLI flags. #14632
