@@ -26,28 +26,28 @@ func TestActivityTrackingMiddleware_DeleteAfterInnerHandler(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, at.Close()) })
 
-	// The inner handler checks that the activity is present while it runs and also defers a write after ServeHTTP
-	// returns, simulating what gzip's defer gw.Close() does in production.
-	var deferredWriteDone bool
-	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		activities, err := activitytracker.LoadUnfinishedEntries(activityFile)
-		assert.NoError(t, err)
-		assert.Len(t, activities, 1)
-
-		// Simulate work that happens after ServeHTTP returns (e.g. gzip Close).
-		w.WriteHeader(http.StatusOK)
-		deferredWriteDone = true
-	})
-
-	handler := NewActivityTrackingMiddleware(at, log.NewNopLogger(), inner)
-
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/query?query=up", nil)
 	req.Header.Set("X-Scope-OrgID", "tenant1")
+
+	var innerHandlerDone bool
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		activities, err := activitytracker.LoadUnfinishedEntries(activityFile)
+		require.NoError(t, err)
+		require.Len(t, activities, 1)
+		require.Equal(t, toActivityTrackerString(req, "", map[string][]string{"query": {"up"}}), activities[0].Activity)
+
+		w.WriteHeader(http.StatusOK)
+		innerHandlerDone = true
+	})
+
+	// Activity tracker wraps our pretend handler
+	handler := NewActivityTrackingMiddleware(at, log.NewNopLogger(), inner)
+
 	resp := httptest.NewRecorder()
 
 	handler.ServeHTTP(resp, req)
 
-	assert.True(t, deferredWriteDone)
+	require.True(t, innerHandlerDone)
 
 	// After ServeHTTP returns the activity must be deleted.
 	activities, err := activitytracker.LoadUnfinishedEntries(activityFile)
