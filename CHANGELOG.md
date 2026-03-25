@@ -284,6 +284,10 @@
 * [BUGFIX] Query-frontend: Fix bugs with matcher propagation for binary operations where it was not being properly applied within nested expressions and also wrongly propagating internal label matchers. #15110
 * [BUGFIX] Distributor: Cancel DoUntilQuorum in cardinality analysis API when active_series_results_max_size_bytes is breached. #15177
 * [BUGFIX] MQE: Fix issue where queries with step-invariant range vector expressions (eg. `quantile_over_time(scalar(arg), metric[5m] @ 1000)`) could return incorrect results. #15192
+* [BUGFIX] MQE: Fix `info()` function not enriching series when inner series are missing one identifying label (instance/job) but matching info series exist. #14832
+* [BUGFIX] MQE: Fix `info()` function only retaining one matcher when multiple data label matchers target the same label name. #14832
+* [BUGFIX] MQE: Fix `info()` function silently overwriting conflicting labels from different info metrics instead of returning an error. #14832
+* [BUGFIX] MQE: Fix `info()` function incorrectly grouping labels from replaced info series at the same evaluation timestamp due to lookback. #14832
 
 ### Mixin
 
