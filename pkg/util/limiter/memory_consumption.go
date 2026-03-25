@@ -177,7 +177,7 @@ func NewInflightMemoryConsumptionTracker(reg prometheus.Registerer) *InflightMem
 }
 
 // NewMemoryConsumptionTracker returns a new MemoryConsumptionTracker the same as if limiter.MemoryConsumptionTracker() was called.
-// However this new tracker will be included in the accumulated metrics managed by this MemoryConsumptionTrackerTracker.
+// However this new tracker will be included in the accumulated metrics managed by this InflightMemoryConsumptionTracker.
 // Ensure that you invoke Deregister(tracker) once the tracker is no longer required.
 func (t *InflightMemoryConsumptionTracker) NewMemoryConsumptionTracker(ctx context.Context, maxEstimatedMemoryConsumptionBytes uint64, rejectionCount prometheus.Counter, queryDescription string) *MemoryConsumptionTracker {
 	tracker := NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionBytes, rejectionCount, queryDescription)

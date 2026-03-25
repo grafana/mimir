@@ -262,22 +262,31 @@ func TestMemoryConsumptionTrackerTracker_Aggregation(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	tt := NewInflightMemoryConsumptionTracker(reg)
 
-	tracker1 := tt.NewMemoryConsumptionTracker(context.Background(), 100, nil, "query1")
-	tracker2 := tt.NewMemoryConsumptionTracker(context.Background(), 200, nil, "query2")
+	tracker1Limit := 100
+	tracker2Limit := 200
+	tracker1 := tt.NewMemoryConsumptionTracker(context.Background(), uint64(tracker1Limit), nil, "query1")
+	tracker2 := tt.NewMemoryConsumptionTracker(context.Background(), uint64(tracker2Limit), nil, "query2")
 
 	// tracker1: add 30 ingester + 20 store-gateway = 50, remove 10 ingester -> current=40, peak=50
-	require.NoError(t, tracker1.IncreaseMemoryConsumption(30, IngesterChunks))
-	require.NoError(t, tracker1.IncreaseMemoryConsumption(20, StoreGatewayChunks))
-	tracker1.DecreaseMemoryConsumption(10, IngesterChunks)
+	tracker1Ingester := 30
+	tracker1StoreGateway := 20
+	tracker1Decrease := 10
+	tracker1Current := tracker1Ingester + tracker1StoreGateway - tracker1Decrease // 40
+	tracker1Peak := tracker1Ingester + tracker1StoreGateway                       // 50
+	require.NoError(t, tracker1.IncreaseMemoryConsumption(uint64(tracker1Ingester), IngesterChunks))
+	require.NoError(t, tracker1.IncreaseMemoryConsumption(uint64(tracker1StoreGateway), StoreGatewayChunks))
+	tracker1.DecreaseMemoryConsumption(uint64(tracker1Decrease), IngesterChunks)
 
 	// tracker2: add 60 ingester -> current=60, peak=60
-	require.NoError(t, tracker2.IncreaseMemoryConsumption(60, IngesterChunks))
+	tracker2Ingester := 60
+	tracker2Current := tracker2Ingester // 60
+	tracker2Peak := tracker2Ingester    // 60
+	require.NoError(t, tracker2.IncreaseMemoryConsumption(uint64(tracker2Ingester), IngesterChunks))
 
-	// max=100+200=300, current=40+60=100, peak=50+60=110, sampled=2
-	assertTrackerTrackerMetrics(t, reg, 300, 100, 110, 2)
+	assertTrackerTrackerMetrics(t, reg, float64(tracker1Limit+tracker2Limit), float64(tracker1Current+tracker2Current), float64(tracker1Peak+tracker2Peak), 2)
 
 	tt.Deregister(tracker1)
-	assertTrackerTrackerMetrics(t, reg, 200, 60, 60, 1)
+	assertTrackerTrackerMetrics(t, reg, float64(tracker2Limit), float64(tracker2Current), float64(tracker2Peak), 1)
 
 	tt.Deregister(tracker2)
 	assertTrackerTrackerMetrics(t, reg, 0, 0, 0, 0)
@@ -287,7 +296,7 @@ func TestMemoryConsumptionTrackerTracker_Aggregation(t *testing.T) {
 	assertTrackerTrackerMetrics(t, reg, 0, 0, 0, 0)
 }
 
-func TestMemoryConsumptionTrackerTracker_DeregisterNonManagedATracker(t *testing.T) {
+func TestMemoryConsumptionTrackerTracker_DeregisterNonManagedTracker(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	tt := NewInflightMemoryConsumptionTracker(reg)
 	nonManagedTracker := NewMemoryConsumptionTracker(context.Background(), 100, nil, "query3")
