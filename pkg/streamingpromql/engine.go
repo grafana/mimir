@@ -251,6 +251,7 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 
 	topLevelValueType, err := plan.Root.ResultType()
 	if err != nil {
+		evaluator.Close()
 		return nil, err
 	}
 
@@ -297,6 +298,7 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 		return nil, fmt.Errorf("could not get memory consumption limit for query: %w", err)
 	}
 
+	// Obtain a new memory consumption tracker. Note that this needs to be deregistered from the e.inflightMemoryConsumptionTracker once the evaluator is no longer needed
 	memoryConsumptionTracker := e.inflightMemoryConsumptionTracker.NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionPerQuery, e.queriesRejectedDueToPeakMemoryConsumption, params.OriginalExpression)
 
 	operatorParams := &planning.OperatorParameters{

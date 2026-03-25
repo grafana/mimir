@@ -92,9 +92,6 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 
 		level.Info(logger).Log(msg...)
 		e.engine.estimatedPeakMemoryConsumption.Observe(float64(e.MemoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes()))
-
-		// Remove the memory consumption tracker used for this query from the overall cumulative tracker
-		e.engine.inflightMemoryConsumptionTracker.Deregister(e.MemoryConsumptionTracker)
 	}()
 
 	// Add the memory consumption tracker to the context of this query before executing it so
@@ -375,6 +372,8 @@ func (e *Evaluator) Close() {
 	if e.cancel != nil {
 		e.cancel(errQueryClosed)
 	}
+
+	e.engine.inflightMemoryConsumptionTracker.Deregister(e.MemoryConsumptionTracker)
 }
 
 type EvaluationObserver interface {
