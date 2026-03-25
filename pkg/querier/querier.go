@@ -207,6 +207,10 @@ func New(
 	queryable := newQueryable(queryables, cfg, limits, queryMetrics, logger)
 	exemplarQueryable := newDistributorExemplarQueryable(distributor, logger)
 
+	if reg == nil {
+		reg = prometheus.NewRegistry()
+	}
+
 	opts, mqeOpts := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg, limitsProvider)
 
 	var eng promql.QueryEngine

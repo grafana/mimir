@@ -16,7 +16,6 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -247,7 +246,7 @@ func TestQuerier(t *testing.T) {
 
 			planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
-			queryable, _, _, _, err := New(cfg, overrides, distributor, []TimeRangeQueryable{dbQueryable}, prometheus.NewRegistry(), log.NewNopLogger(), nil, planner, unlimitedQueryLimitsProvider())
+			queryable, _, _, _, err := New(cfg, overrides, distributor, []TimeRangeQueryable{dbQueryable}, nil, log.NewNopLogger(), nil, planner, unlimitedQueryLimitsProvider())
 			require.NoError(t, err)
 
 			testRangeQuery(t, queryable, through, q)
