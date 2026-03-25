@@ -564,6 +564,7 @@ func (h *HistogramFunction) Stats(ctx context.Context) (*types.OperatorEvaluatio
 	if err != nil {
 		return nil, err
 	}
+	defer argStats.Close()
 
 	innerStats, err := h.inner.Stats(ctx)
 	if err != nil {
