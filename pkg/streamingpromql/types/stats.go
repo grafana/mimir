@@ -168,7 +168,7 @@ func (s *OperatorEvaluationStats) Close() {
 
 // CombineStats retrieves and combines query stats from multiple operators.
 // The caller is responsible for calling Close() on the returned stats.
-func CombineStats(ctx context.Context, operators ...Operator) (*OperatorEvaluationStats, error) {
+func CombineStats[T Operator](ctx context.Context, operators ...T) (*OperatorEvaluationStats, error) {
 	var combined *OperatorEvaluationStats
 
 	for _, op := range operators {
