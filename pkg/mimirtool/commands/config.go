@@ -153,21 +153,21 @@ func (c *ConfigCommand) writeNotices(notices config.ConversionNotices, w io.Writ
 	}
 	noticesOut := bytes.Buffer{}
 	for _, p := range notices.RemovedParameters {
-		_, _ = fmt.Fprintf(&noticesOut, "field is no longer supported: %s\n", p)
+		_, _ = noticesOut.WriteString(fmt.Sprintf("field is no longer supported: %s\n", p))
 	}
 	for _, f := range notices.RemovedCLIFlags {
-		_, _ = fmt.Fprintf(&noticesOut, "flag is no longer supported: -%s \n", f)
+		_, _ = noticesOut.WriteString(fmt.Sprintf("flag is no longer supported: -%s \n", f))
 	}
 	for _, d := range notices.ChangedDefaults {
 		oldDefault, newDefault := placeholderIfEmpty(d.OldDefault), placeholderIfEmpty(d.NewDefault)
-		_, _ = fmt.Fprintf(&noticesOut, "using a new default for %s: %s (used to be %s)\n", d.Path, newDefault, oldDefault)
+		_, _ = noticesOut.WriteString(fmt.Sprintf("using a new default for %s: %s (used to be %s)\n", d.Path, newDefault, oldDefault))
 	}
 	for _, d := range notices.SkippedChangedDefaults {
 		oldDefault, newDefault := placeholderIfEmpty(d.OldDefault), placeholderIfEmpty(d.NewDefault)
-		_, _ = fmt.Fprintf(&noticesOut, "default value for %s changed: %s (used to be %s); not updating\n", d.Path, newDefault, oldDefault)
+		_, _ = noticesOut.WriteString(fmt.Sprintf("default value for %s changed: %s (used to be %s); not updating\n", d.Path, newDefault, oldDefault))
 	}
 	for _, d := range notices.PrunedDefaults {
-		_, _ = fmt.Fprintf(&noticesOut, "removed default value %s: %s\n", d.Path, placeholderIfEmpty(d.Value))
+		_, _ = noticesOut.WriteString(fmt.Sprintf("removed default value %s: %s\n", d.Path, placeholderIfEmpty(d.Value)))
 	}
 
 	_, err := noticesOut.WriteTo(w)
