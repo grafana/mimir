@@ -443,7 +443,7 @@ func (u *userTSDB) PostDeletion(metrics map[chunks.HeadSeriesRef]labels.Labels) 
 }
 
 // blocksToDelete filters the input blocks and returns the blocks which are safe to be deleted from the ingester.
-func (u *userTSDB) blocksToDelete(logger log.Logger, blocks []*tsdb.Block) map[ulid.ULID]struct{} {
+func (u *userTSDB) blocksToDelete(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
 	if u.db == nil {
 		return nil
 	}
@@ -453,27 +453,17 @@ func (u *userTSDB) blocksToDelete(logger log.Logger, blocks []*tsdb.Block) map[u
 
 	// Offset-catalogue path drops any block whose watermarks are at or below the block-builder's committed offsets in every Kafka cluster.
 	// Those series are guaranteed to be in object storage already.
-	// It runs over all blocks, not just the ones in deletable.
 	committedOffsets := u.committedOffsets.Load()
 	if u.offsetCatalogue != nil && committedOffsets != nil {
 		catalogue := u.offsetCatalogue.Data()
 		if len(catalogue.Data) > 0 {
-			for _, b := range blocks {
-				blockID := b.Meta().ULID
+			for blockID := range deletable {
 				if wms, ok := catalogue.Data[blockID.String()]; ok && offsetWatermarksCommitted(wms, *committedOffsets) {
-					level.Info(logger).Log(
-						"msg", "delete block due to its offset catalogue watermark",
-						"ulid", blockID.String(),
-						"mint", b.Meta().MinTime,
-						"maxt", b.Meta().MaxTime,
-						"out_of_order", b.Meta().OutOfOrder,
-						"watermarks", fmt.Sprint(wms),
-						"committed_offsets", committedOffsets.String(),
-					)
-					//result[blockID] = struct{}{}
+					result[blockID] = struct{}{}
 				}
 			}
 		}
+		return result
 	}
 
 	deadline := time.Now().Add(-u.blockMinRetention)
