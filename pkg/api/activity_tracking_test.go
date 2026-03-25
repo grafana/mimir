@@ -66,7 +66,7 @@ func TestActivityTrackingMiddleware_TenantIDFromHeader(t *testing.T) {
 	var capturedActivity string
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		activities, err := activitytracker.LoadUnfinishedEntries(activityFile)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		if assert.Len(t, activities, 1) {
 			capturedActivity = activities[0].Activity
 		}
@@ -82,7 +82,7 @@ func TestActivityTrackingMiddleware_TenantIDFromHeader(t *testing.T) {
 
 	handler.ServeHTTP(resp, req)
 
-	assert.Contains(t, capturedActivity, "user:my-tenant")
+	require.Contains(t, capturedActivity, "user:my-tenant")
 }
 
 func TestActivityTrackingMiddleware_ParamParsing(t *testing.T) {
@@ -120,14 +120,14 @@ func TestActivityTrackingMiddleware_ParamParsing(t *testing.T) {
 			var capturedActivity string
 			inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				activities, err := activitytracker.LoadUnfinishedEntries(activityFile)
-				assert.NoError(t, err)
+				require.NoError(t, err)
 				if assert.Len(t, activities, 1) {
 					capturedActivity = activities[0].Activity
 				}
 				// Verify inner handler can still parse form independently.
 				if tc.method == http.MethodPost {
-					assert.NoError(t, r.ParseForm())
-					assert.Equal(t, "up", r.FormValue("query"))
+					require.NoError(t, r.ParseForm())
+					require.Equal(t, "up", r.FormValue("query"))
 				}
 				w.WriteHeader(http.StatusOK)
 			})
@@ -147,7 +147,7 @@ func TestActivityTrackingMiddleware_ParamParsing(t *testing.T) {
 
 			handler.ServeHTTP(resp, req)
 
-			assert.Contains(t, capturedActivity, tc.expectedParams)
+			require.Contains(t, capturedActivity, tc.expectedParams)
 		})
 	}
 }
