@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package transport
+package api
 
 import (
+	"fmt"
+	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/user"
 	"net/http"
 	"net/url"
 
@@ -40,12 +43,13 @@ func (m *activityTrackingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Re
 		// This is not expected to happen but if there was an error here and the request body can not be restored then the request is no longer valid.
 		// Rather than fail it here we pass the request to the next handler so it can return its own specific bad request error.
 		level.Error(m.log).Log("msg", "failed to parse request params for activity tracking", "err", err)
+		http.Error(w, "failed to parse request params for activity tracking - path="+r.URL.Path+", Content-Type="+r.Header.Get("Content-Type"), http.StatusInternalServerError)
 		m.next.ServeHTTP(w, r)
 		return
 	}
 
 	ix := m.tracker.Insert(func() string {
-		return httpRequestActivity(r, r.Header.Get("User-Agent"), params)
+		return toActivityTrackerString(r, r.Header.Get("User-Agent"), params)
 	})
 	defer m.tracker.Delete(ix)
 	if ix < 0 {
@@ -54,4 +58,21 @@ func (m *activityTrackingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Re
 	}
 
 	m.next.ServeHTTP(w, r)
+}
+
+func toActivityTrackerString(request *http.Request, userAgent string, requestParams url.Values) string {
+	tenantID := "(unknown)"
+	if tenantIDs, err := tenant.TenantIDs(request.Context()); err == nil {
+		tenantID = tenant.JoinTenantIDs(tenantIDs)
+	} else if orgID, _, err := user.ExtractOrgIDFromHTTPRequest(request); err == nil {
+		tenantID = orgID
+	}
+
+	params := requestParams.Encode()
+	if params == "" {
+		params = "(no params)"
+	}
+
+	// This doesn't have to be pretty, just useful for debugging, so prioritize efficiency.
+	return fmt.Sprintf("user:%s UA:%s req:%s %s %s", tenantID, userAgent, request.Method, request.URL.Path, params)
 }

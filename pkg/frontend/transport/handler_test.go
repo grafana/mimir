@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	api2 "github.com/grafana/mimir/pkg/api"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -439,7 +440,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 
 			logger := &testLogger{}
 			h := NewHandler(tt.cfg, roundTripper, logger, reg)
-			handler := NewActivityTrackingMiddleware(at, logger, h)
+			handler := api2.NewActivityTrackingMiddleware(at, logger, h)
 
 			req := tt.request()
 			req = req.WithContext(user.InjectOrgID(req.Context(), "12345"))

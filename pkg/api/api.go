@@ -31,7 +31,6 @@ import (
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/distributor/distributorpb"
-	"github.com/grafana/mimir/pkg/frontend/transport"
 	frontendv2 "github.com/grafana/mimir/pkg/frontend/v2"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/ingester"
@@ -192,8 +191,8 @@ func (a *API) newRoute(path string, handler http.Handler, isPrefix, auth, gzip b
 	// Activity tracking is placed outside gzip so that the tracker entry outlives gzip's deferred Close.
 	// Only applied when gzip is enabled: for non-gzip routes there is no deferred Close to outlive, and
 	// applying it unconditionally would buffer large streaming request bodies (e.g. block uploads).
-	if gzip && a.activityTracker != nil {
-		handler = transport.NewActivityTrackingMiddleware(a.activityTracker, a.logger, handler)
+	if a.activityTracker != nil {
+		handler = NewActivityTrackingMiddleware(a.activityTracker, a.logger, handler)
 	}
 	if isPrefix {
 		route = a.server.HTTP.PathPrefix(path)

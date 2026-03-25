@@ -24,7 +24,6 @@ import (
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
-	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -570,23 +569,6 @@ func statsValue(name string, val interface{}) string {
 	default:
 		return fmt.Sprintf("%s;val=%v", name, val)
 	}
-}
-
-func httpRequestActivity(request *http.Request, userAgent string, requestParams url.Values) string {
-	tenantID := "(unknown)"
-	if tenantIDs, err := tenant.TenantIDs(request.Context()); err == nil {
-		tenantID = tenant.JoinTenantIDs(tenantIDs)
-	} else if orgID, _, err := user.ExtractOrgIDFromHTTPRequest(request); err == nil {
-		tenantID = orgID
-	}
-
-	params := requestParams.Encode()
-	if params == "" {
-		params = "(no params)"
-	}
-
-	// This doesn't have to be pretty, just useful for debugging, so prioritize efficiency.
-	return fmt.Sprintf("user:%s UA:%s req:%s %s %s", tenantID, userAgent, request.Method, request.URL.Path, params)
 }
 
 func isActiveSeriesEndpoint(r *http.Request) bool {
