@@ -21,6 +21,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"go.yaml.in/yaml/v3"
 
+	"github.com/oklog/ulid/v2"
+
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
@@ -101,6 +103,38 @@ func (m Meta) IsOutOfOrder() bool {
 		return m.Thanos.Labels[OutOfOrderExternalLabel] == OutOfOrderExternalLabelValue
 	}
 	return false
+}
+
+// Clone returns a deep copy of Meta.
+func (m *Meta) Clone() *Meta {
+	if m == nil {
+		return nil
+	}
+	clone := *m
+
+	if m.Compaction.Sources != nil {
+		clone.Compaction.Sources = make([]ulid.ULID, len(m.Compaction.Sources))
+		copy(clone.Compaction.Sources, m.Compaction.Sources)
+	}
+
+	if m.Thanos.Labels != nil {
+		clone.Thanos.Labels = make(map[string]string, len(m.Thanos.Labels))
+		for k, v := range m.Thanos.Labels {
+			clone.Thanos.Labels[k] = v
+		}
+	}
+
+	if m.Thanos.SegmentFiles != nil {
+		clone.Thanos.SegmentFiles = make([]string, len(m.Thanos.SegmentFiles))
+		copy(clone.Thanos.SegmentFiles, m.Thanos.SegmentFiles)
+	}
+
+	if m.Thanos.Files != nil {
+		clone.Thanos.Files = make([]File, len(m.Thanos.Files))
+		copy(clone.Thanos.Files, m.Thanos.Files)
+	}
+
+	return &clone
 }
 
 // ThanosMeta holds block meta information specific to Thanos.
