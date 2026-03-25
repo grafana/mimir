@@ -836,7 +836,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.offset-catalogue.consumer-group string
     	[experimental] The Kafka consumer group whose committed offset is compared against block watermarks to determine when ingester blocks can be deleted.
   -blocks-storage.tsdb.offset-catalogue.consumer-group-poll-interval duration
-    	[experimental] How frequently the ingester polls Kafka for the committed offset of the configured consumer group. (default 1m0s)
+    	[experimental] How frequently the ingester polls Kafka for the committed offset of the configured consumer group. (default 5m0s)
   -blocks-storage.tsdb.offset-catalogue.enabled
     	[experimental] Controls the maintaining of kafka offset catalogue per block.
   -blocks-storage.tsdb.offset-catalogue.sync-concurrency int

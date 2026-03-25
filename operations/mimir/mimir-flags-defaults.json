@@ -862,7 +862,7 @@
   "blocks-storage.tsdb.index-lookup-planning.statistics-collection-frequency": 3600000000000,
   "blocks-storage.tsdb.offset-catalogue.sync-concurrency": 10,
   "blocks-storage.tsdb.offset-catalogue.consumer-group": "",
-  "blocks-storage.tsdb.offset-catalogue.consumer-group-poll-interval": 60000000000,
+  "blocks-storage.tsdb.offset-catalogue.consumer-group-poll-interval": 300000000000,
   "compactor.block-ranges": [],
   "compactor.block-sync-concurrency": 8,
   "compactor.meta-sync-concurrency": 20,

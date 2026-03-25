@@ -6112,7 +6112,7 @@ tsdb:
     # (experimental) How frequently the ingester polls Kafka for the committed
     # offset of the configured consumer group.
     # CLI flag: -blocks-storage.tsdb.offset-catalogue.consumer-group-poll-interval
-    [consumer_group_poll_interval: <duration> | default = 1m]
+    [consumer_group_poll_interval: <duration> | default = 5m]
 ```
 
 ### compactor

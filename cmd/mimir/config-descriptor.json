@@ -12195,7 +12195,7 @@
                   "required": false,
                   "desc": "How frequently the ingester polls Kafka for the committed offset of the configured consumer group.",
                   "fieldValue": null,
-                  "fieldDefaultValue": 60000000000,
+                  "fieldDefaultValue": 300000000000,
                   "fieldFlag": "blocks-storage.tsdb.offset-catalogue.consumer-group-poll-interval",
                   "fieldType": "duration",
                   "fieldCategory": "experimental"
