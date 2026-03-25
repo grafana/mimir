@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -586,10 +585,7 @@ func TestGrafanaAlertmanager(t *testing.T) {
 		},
 		UpdatedAt: now,
 	}
-	expected := testTemplate
-	expected.Kind = alertingTemplates.GrafanaKind // should patch kind
 	require.NoError(t, am.alerts.Put(&alert))
-	require.Equal(t, am.templates[0], expected)
 	require.Eventually(t, func() bool {
 		select {
 		case got := <-c:

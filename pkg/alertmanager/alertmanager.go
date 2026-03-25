@@ -9,7 +9,6 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -130,13 +129,6 @@ type Alertmanager struct {
 	wg              sync.WaitGroup
 	mux             *http.ServeMux
 	registry        *prometheus.Registry
-	receiversMtx    sync.Mutex
-	receivers       []*nfstatus.Receiver
-	templatesMtx    sync.RWMutex
-	templates       []alertingTemplates.TemplateDefinition
-	tmplExternalURL *url.URL
-	emailCfgMtx     sync.RWMutex
-	emailCfg        alertingReceivers.EmailSenderConfig
 
 	// Pipeline created during last ApplyConfig call. Used for testing only.
 	lastPipeline notify.Stage
@@ -378,10 +370,6 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 		}
 		return d + waitFunc()
 	}
-	am.emailCfgMtx.Lock()
-	am.emailCfg = emailCfg
-	am.emailCfgMtx.Unlock()
-
 	timeIntervals := make(map[string][]timeinterval.TimeInterval, len(conf.MuteTimeIntervals)+len(conf.TimeIntervals))
 	for _, ti := range conf.MuteTimeIntervals {
 		timeIntervals[ti.Name] = ti.TimeIntervals
@@ -394,23 +382,10 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 
 	route := dispatch.NewRoute(cfg.Route, nil)
 
-	receivers := make([]*nfstatus.Receiver, 0, len(integrationsMap))
-	activeReceivers := alertingNotify.GetActiveReceiversMap(route)
-
 	baseIntegrationsMap := make(map[string][]*notify.Integration)
 	for name, v := range integrationsMap {
-		_, isActive := activeReceivers[name]
-		receivers = append(receivers, nfstatus.NewReceiver(name, isActive, v))
 		baseIntegrationsMap[name] = nfstatus.GetIntegrations(v)
 	}
-	am.receiversMtx.Lock()
-	am.receivers = receivers
-	am.receiversMtx.Unlock()
-
-	am.templatesMtx.Lock()
-	am.templates = tmpls
-	am.tmplExternalURL = tmplExternalURL
-	am.templatesMtx.Unlock()
 
 	pipeline := am.pipelineBuilder.New(
 		baseIntegrationsMap,
@@ -597,22 +572,6 @@ func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSen
 	}
 
 	return integrationsMap, nil
-}
-
-func (am *Alertmanager) buildGrafanaReceiverIntegrations(rcv *alertingNotify.APIReceiver, tmpl alertingNotify.TemplatesProvider) ([]*nfstatus.Integration, error) {
-	am.emailCfgMtx.RLock()
-	emailCfg := am.emailCfg
-	am.emailCfgMtx.RUnlock()
-
-	opts := []alertingHttp.ClientOption{
-		alertingHttp.WithUserAgent(version.UserAgent()),
-	}
-
-	if firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(am.cfg.UserID, am.cfg.Limits)).Dialer(); firewallDialer != nil {
-		opts = append(opts, alertingHttp.WithDialer(*firewallDialer))
-	}
-
-	return buildGrafanaReceiverIntegrations(emailCfg, rcv, tmpl, am.logger, am.wrapNfstatusNotifier, opts...)
 }
 
 func buildGrafanaReceiverIntegrations(emailCfg alertingReceivers.EmailSenderConfig, rcv *alertingNotify.APIReceiver, tmplProvider alertingNotify.TemplatesProvider, logger log.Logger, wrapper alertingNotify.WrapNotifierFunc, opts ...alertingHttp.ClientOption) ([]*nfstatus.Integration, error) {

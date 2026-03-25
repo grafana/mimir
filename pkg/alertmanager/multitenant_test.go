@@ -357,12 +357,6 @@ templates:
 	finalUserCfgFp, ok := am.cfgs["user3"]
 	require.True(t, ok)
 	require.Equal(t, amConfigFromMimirConfig(user3Cfg, cfg.ExternalURL.URL).fingerprint(), finalUserCfgFp)
-	user3Am, ok := am.alertmanagers["user3"]
-	require.True(t, ok)
-	require.Len(t, user3Am.templates, 2)
-	require.Equal(t, "first.tpl", user3Am.templates[0].Name)
-	require.Equal(t, "second.tpl", user3Am.templates[1].Name)
-
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 		# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
 		# TYPE cortex_alertmanager_config_last_reload_successful gauge
@@ -410,12 +404,6 @@ templates:
 	require.True(t, cfgExists)
 	expectedFp = amConfigFromMimirConfig(user1Cfg, cfg.ExternalURL.URL).fingerprint()
 	require.Equal(t, expectedFp, currentConfigFp)
-	user1Am, ok := am.alertmanagers["user1"]
-	require.True(t, ok)
-	require.Len(t, user1Am.templates, 1)
-	require.Equal(t, "some-template.tmpl", user1Am.templates[0].Name)
-	require.Contains(t, user1Am.templates[0].Template, "some.template")
-
 	// Ensure that when a Grafana config is added, it is synced correctly.
 	testSmtpFrom := "test@grafana.com"
 	smtpConfig := &alertspb.SmtpConfig{
@@ -1528,25 +1516,6 @@ func TestMultitenantAlertmanager_ServeHTTPWithStrictInitialization(t *testing.T)
 	am.ServeHTTP(w, req.WithContext(user.InjectOrgID(req.Context(), testGrafanaUser)))
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
 	require.Len(t, am.alertmanagers, 1)
-
-	// The configuration should have the custom SMTP settings.
-	exp := alertingReceivers.EmailSenderConfig{
-		EhloIdentity:   "test-identity",
-		FromAddress:    "test@test.com",
-		FromName:       "Test Name",
-		Host:           "test:8080",
-		AuthPassword:   "test password",
-		SkipVerify:     true,
-		StartTLSPolicy: "test",
-		StaticHeaders:  map[string]string{"test-key": "test-value"},
-		AuthUser:       "test-user",
-
-		ContentTypes: []string{"text/html"}, // Added by default
-		SentBy:       "Mimir vunknown",      // The version in tests is "unknown"
-	}
-	gAM, ok := am.alertmanagers[testGrafanaUser]
-	require.True(t, ok)
-	require.Equal(t, exp, gAM.emailCfg)
 
 	w = httptest.NewRecorder()
 	am.ServeHTTP(w, req.WithContext(user.InjectOrgID(req.Context(), testMimirUser)))
