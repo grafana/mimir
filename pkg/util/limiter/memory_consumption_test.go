@@ -297,23 +297,23 @@ func TestMemoryConsumptionTrackerTracker_DeregisterNonManagedATracker(t *testing
 func assertTrackerTrackerMetrics(t *testing.T, reg prometheus.Gatherer, maxBytes, currentBytes, peakBytes float64, sampled int) {
 	t.Helper()
 	expected := fmt.Sprintf(`
-		# HELP cortex_querier_inflight_query_current_estimated_memory_consumption_limit_bytes Total current estimated memory consumption across all in-flight queries.
-		# TYPE cortex_querier_inflight_query_current_estimated_memory_consumption_limit_bytes gauge
-		cortex_querier_inflight_query_current_estimated_memory_consumption_limit_bytes %v
+		# HELP cortex_querier_inflight_query_current_estimated_memory_consumption_bytes Total current estimated memory consumption across all in-flight queries.
+		# TYPE cortex_querier_inflight_query_current_estimated_memory_consumption_bytes gauge
+		cortex_querier_inflight_query_current_estimated_memory_consumption_bytes %v
 		# HELP cortex_querier_inflight_query_max_estimated_memory_consumption_limit_bytes Total of the max estimated memory consumption limit across all in-flight queries.
 		# TYPE cortex_querier_inflight_query_max_estimated_memory_consumption_limit_bytes gauge
 		cortex_querier_inflight_query_max_estimated_memory_consumption_limit_bytes %v
-		# HELP cortex_querier_inflight_query_peak_estimated_memory_consumption_limit_bytes Total peak estimated memory consumption across all in-flight queries.
-		# TYPE cortex_querier_inflight_query_peak_estimated_memory_consumption_limit_bytes gauge
-		cortex_querier_inflight_query_peak_estimated_memory_consumption_limit_bytes %v
+		# HELP cortex_querier_inflight_query_peak_estimated_memory_consumption_bytes Total peak estimated memory consumption across all in-flight queries.
+		# TYPE cortex_querier_inflight_query_peak_estimated_memory_consumption_bytes gauge
+		cortex_querier_inflight_query_peak_estimated_memory_consumption_bytes %v
 		# HELP cortex_querier_inflight_query_sampled_count Number of in-flight memory consumption trackers accumulated during the last metrics collection.
 		# TYPE cortex_querier_inflight_query_sampled_count gauge
 		cortex_querier_inflight_query_sampled_count %v
 	`, currentBytes, maxBytes, peakBytes, sampled)
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expected),
 		"cortex_querier_inflight_query_max_estimated_memory_consumption_limit_bytes",
-		"cortex_querier_inflight_query_current_estimated_memory_consumption_limit_bytes",
-		"cortex_querier_inflight_query_peak_estimated_memory_consumption_limit_bytes",
+		"cortex_querier_inflight_query_current_estimated_memory_consumption_bytes",
+		"cortex_querier_inflight_query_peak_estimated_memory_consumption_bytes",
 		"cortex_querier_inflight_query_sampled_count",
 	))
 }

@@ -157,12 +157,12 @@ func NewInflightMemoryConsumptionTracker(reg prometheus.Registerer) *InflightMem
 			nil, nil,
 		),
 		currentDesc: prometheus.NewDesc(
-			"cortex_querier_inflight_query_current_estimated_memory_consumption_limit_bytes",
+			"cortex_querier_inflight_query_current_estimated_memory_consumption_bytes",
 			"Total current estimated memory consumption across all in-flight queries.",
 			nil, nil,
 		),
 		peakDesc: prometheus.NewDesc(
-			"cortex_querier_inflight_query_peak_estimated_memory_consumption_limit_bytes",
+			"cortex_querier_inflight_query_peak_estimated_memory_consumption_bytes",
 			"Total peak estimated memory consumption across all in-flight queries.",
 			nil, nil,
 		),
