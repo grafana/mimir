@@ -9,6 +9,7 @@ import (
 	"context"
 	stderrors "errors"
 	"fmt"
+	"github.com/prometheus/client_golang/prometheus"
 	"testing"
 	"time"
 
