@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
@@ -24,27 +25,27 @@ func TestOperatorEvaluationStats_TrackSampleForInstantVectorSelector(t *testing.
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
-	stats, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker)
+	stats, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, nil)
 	require.NoError(t, err)
 
 	samplesProcessedPerStep := newPerStepTracker("samples processed", timeRange.StepCount)
 	newSamplesReadPerStep := newPerStepTracker("new samples read", timeRange.StepCount)
 
-	stats.TrackSampleForInstantVectorSelector(timestamp.FromTime(start), 1)
-	samplesProcessedPerStep.requireChange(t, stats.samplesProcessedPerStep, 1, 0, 0)
-	newSamplesReadPerStep.requireChange(t, stats.newSamplesReadPerStep, 1, 0, 0)
+	stats.TrackSampleForInstantVectorSelector(timestamp.FromTime(start), 1, labels.EmptyLabels())
+	samplesProcessedPerStep.requireChange(t, stats.allSeries.samplesProcessedPerStep, 1, 0, 0)
+	newSamplesReadPerStep.requireChange(t, stats.allSeries.newSamplesReadPerStep, 1, 0, 0)
 
-	stats.TrackSampleForInstantVectorSelector(timestamp.FromTime(start), 2)
-	samplesProcessedPerStep.requireChange(t, stats.samplesProcessedPerStep, 2, 0, 0)
-	newSamplesReadPerStep.requireChange(t, stats.newSamplesReadPerStep, 2, 0, 0)
+	stats.TrackSampleForInstantVectorSelector(timestamp.FromTime(start), 2, labels.EmptyLabels())
+	samplesProcessedPerStep.requireChange(t, stats.allSeries.samplesProcessedPerStep, 2, 0, 0)
+	newSamplesReadPerStep.requireChange(t, stats.allSeries.newSamplesReadPerStep, 2, 0, 0)
 
-	stats.TrackSampleForInstantVectorSelector(timestamp.FromTime(start.Add(step)), 1)
-	samplesProcessedPerStep.requireChange(t, stats.samplesProcessedPerStep, 0, 1, 0)
-	newSamplesReadPerStep.requireChange(t, stats.newSamplesReadPerStep, 0, 1, 0)
+	stats.TrackSampleForInstantVectorSelector(timestamp.FromTime(start.Add(step)), 1, labels.EmptyLabels())
+	samplesProcessedPerStep.requireChange(t, stats.allSeries.samplesProcessedPerStep, 0, 1, 0)
+	newSamplesReadPerStep.requireChange(t, stats.allSeries.newSamplesReadPerStep, 0, 1, 0)
 
-	stats.TrackSampleForInstantVectorSelector(timestamp.FromTime(start.Add(2*step)), 4)
-	samplesProcessedPerStep.requireChange(t, stats.samplesProcessedPerStep, 0, 0, 4)
-	newSamplesReadPerStep.requireChange(t, stats.newSamplesReadPerStep, 0, 0, 4)
+	stats.TrackSampleForInstantVectorSelector(timestamp.FromTime(start.Add(2*step)), 4, labels.EmptyLabels())
+	samplesProcessedPerStep.requireChange(t, stats.allSeries.samplesProcessedPerStep, 0, 0, 4)
+	newSamplesReadPerStep.requireChange(t, stats.allSeries.newSamplesReadPerStep, 0, 0, 4)
 
 	stats.Close()
 	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
@@ -79,7 +80,7 @@ func TestOperatorEvaluationStats_TrackSamplesForRangeVectorSelector(t *testing.T
 			ctx := context.Background()
 			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
-			stats, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker)
+			stats, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, nil)
 			require.NoError(t, err)
 
 			samplesProcessedPerStep := newPerStepTracker("samples processed", timeRange.StepCount)
@@ -101,19 +102,19 @@ func TestOperatorEvaluationStats_TrackSamplesForRangeVectorSelector(t *testing.T
 			appendPoint(start)
 
 			// Samples from rangeStart up to and including rangeEnd should be included.
-			stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start), floats, histograms, timestamp.FromTime(start.Add(-4*time.Second)), timestamp.FromTime(start))
-			samplesProcessedPerStep.requireChange(t, stats.samplesProcessedPerStep, 4*testCase.samplesPerPoint, 0, 0)
-			newSamplesReadPerStep.requireChange(t, stats.newSamplesReadPerStep, 4*testCase.samplesPerPoint, 0, 0)
+			stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start), floats, histograms, timestamp.FromTime(start.Add(-4*time.Second)), timestamp.FromTime(start), labels.EmptyLabels())
+			samplesProcessedPerStep.requireChange(t, stats.allSeries.samplesProcessedPerStep, 4*testCase.samplesPerPoint, 0, 0)
+			newSamplesReadPerStep.requireChange(t, stats.allSeries.newSamplesReadPerStep, 4*testCase.samplesPerPoint, 0, 0)
 
 			// Samples after rangeEnd should not be included.
-			stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start), floats, histograms, timestamp.FromTime(start.Add(-4*time.Second)), timestamp.FromTime(start.Add(-1*time.Second)))
-			samplesProcessedPerStep.requireChange(t, stats.samplesProcessedPerStep, 3*testCase.samplesPerPoint, 0, 0)
-			newSamplesReadPerStep.requireChange(t, stats.newSamplesReadPerStep, 3*testCase.samplesPerPoint, 0, 0)
+			stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start), floats, histograms, timestamp.FromTime(start.Add(-4*time.Second)), timestamp.FromTime(start.Add(-1*time.Second)), labels.EmptyLabels())
+			samplesProcessedPerStep.requireChange(t, stats.allSeries.samplesProcessedPerStep, 3*testCase.samplesPerPoint, 0, 0)
+			newSamplesReadPerStep.requireChange(t, stats.allSeries.newSamplesReadPerStep, 3*testCase.samplesPerPoint, 0, 0)
 
 			// Should behave the same way for subsequent steps as well.
-			stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start.Add(step)), floats, histograms, timestamp.FromTime(start.Add(-4*time.Second)), timestamp.FromTime(start))
-			samplesProcessedPerStep.requireChange(t, stats.samplesProcessedPerStep, 0, 4*testCase.samplesPerPoint, 0)
-			newSamplesReadPerStep.requireChange(t, stats.newSamplesReadPerStep, 0, 4*testCase.samplesPerPoint, 0)
+			stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start.Add(step)), floats, histograms, timestamp.FromTime(start.Add(-4*time.Second)), timestamp.FromTime(start), labels.EmptyLabels())
+			samplesProcessedPerStep.requireChange(t, stats.allSeries.samplesProcessedPerStep, 0, 4*testCase.samplesPerPoint, 0)
+			newSamplesReadPerStep.requireChange(t, stats.allSeries.newSamplesReadPerStep, 0, 4*testCase.samplesPerPoint, 0)
 
 			// If the range is greater than the step, then only samples since the previous step should be counted as new.
 			clearPoints()
@@ -123,19 +124,19 @@ func TestOperatorEvaluationStats_TrackSamplesForRangeVectorSelector(t *testing.T
 			appendPoint(start.Add(-2 * time.Second))
 			appendPoint(start.Add(-time.Second))
 			appendPoint(start)
-			stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start), floats, histograms, timestamp.FromTime(start.Add(-3*step)), timestamp.FromTime(start))
-			samplesProcessedPerStep.requireChange(t, stats.samplesProcessedPerStep, 6*testCase.samplesPerPoint, 0, 0)
-			newSamplesReadPerStep.requireChange(t, stats.newSamplesReadPerStep, 4*testCase.samplesPerPoint, 0, 0)
+			stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start), floats, histograms, timestamp.FromTime(start.Add(-3*step)), timestamp.FromTime(start), labels.EmptyLabels())
+			samplesProcessedPerStep.requireChange(t, stats.allSeries.samplesProcessedPerStep, 6*testCase.samplesPerPoint, 0, 0)
+			newSamplesReadPerStep.requireChange(t, stats.allSeries.newSamplesReadPerStep, 4*testCase.samplesPerPoint, 0, 0)
 
-			stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start.Add(step)), floats, histograms, timestamp.FromTime(start.Add(-3*step)), timestamp.FromTime(start))
-			samplesProcessedPerStep.requireChange(t, stats.samplesProcessedPerStep, 0, 6*testCase.samplesPerPoint, 0)
-			newSamplesReadPerStep.requireChange(t, stats.newSamplesReadPerStep, 0, 4*testCase.samplesPerPoint, 0)
+			stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start.Add(step)), floats, histograms, timestamp.FromTime(start.Add(-3*step)), timestamp.FromTime(start), labels.EmptyLabels())
+			samplesProcessedPerStep.requireChange(t, stats.allSeries.samplesProcessedPerStep, 0, 6*testCase.samplesPerPoint, 0)
+			newSamplesReadPerStep.requireChange(t, stats.allSeries.newSamplesReadPerStep, 0, 4*testCase.samplesPerPoint, 0)
 
 			// Using empty buffers should not change anything.
 			clearPoints()
-			stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start), floats, histograms, timestamp.FromTime(start.Add(-4*time.Second)), timestamp.FromTime(start))
-			samplesProcessedPerStep.requireNoChange(t, stats.samplesProcessedPerStep)
-			newSamplesReadPerStep.requireNoChange(t, stats.newSamplesReadPerStep)
+			stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start), floats, histograms, timestamp.FromTime(start.Add(-4*time.Second)), timestamp.FromTime(start), labels.EmptyLabels())
+			samplesProcessedPerStep.requireNoChange(t, stats.allSeries.samplesProcessedPerStep)
+			newSamplesReadPerStep.requireNoChange(t, stats.allSeries.newSamplesReadPerStep)
 
 			stats.Close()
 			floats.Close()
@@ -154,7 +155,7 @@ func TestOperatorEvaluationStats_TrackSamplesForRangeVectorSelector_FloatsAndHis
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
-	stats, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker)
+	stats, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, nil)
 	require.NoError(t, err)
 
 	samplesProcessedPerStep := newPerStepTracker("samples processed", timeRange.StepCount)
@@ -168,9 +169,9 @@ func TestOperatorEvaluationStats_TrackSamplesForRangeVectorSelector_FloatsAndHis
 	require.NoError(t, histograms.Append(promql.HPoint{T: timestamp.FromTime(start.Add(-2 * time.Second)), H: h}))
 	require.NoError(t, floats.Append(promql.FPoint{T: timestamp.FromTime(start.Add(-time.Second))}))
 
-	stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start), floats, histograms, timestamp.FromTime(start.Add(-4*time.Second)), timestamp.FromTime(start))
-	samplesProcessedPerStep.requireChange(t, stats.samplesProcessedPerStep, 2+EquivalentFloatSampleCount(h), 0, 0)
-	newSamplesReadPerStep.requireChange(t, stats.newSamplesReadPerStep, 2 + +EquivalentFloatSampleCount(h), 0, 0)
+	stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start), floats, histograms, timestamp.FromTime(start.Add(-4*time.Second)), timestamp.FromTime(start), labels.EmptyLabels())
+	samplesProcessedPerStep.requireChange(t, stats.allSeries.samplesProcessedPerStep, 2+EquivalentFloatSampleCount(h), 0, 0)
+	newSamplesReadPerStep.requireChange(t, stats.allSeries.newSamplesReadPerStep, 2 + +EquivalentFloatSampleCount(h), 0, 0)
 
 	stats.Close()
 	floats.Close()
@@ -185,7 +186,7 @@ func TestOperatorEvaluationStats_TrackSamplesForRangeVectorSelector_InstantQuery
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
-	stats, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker)
+	stats, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, nil)
 	require.NoError(t, err)
 
 	samplesProcessedPerStep := newPerStepTracker("samples processed", timeRange.StepCount)
@@ -199,9 +200,128 @@ func TestOperatorEvaluationStats_TrackSamplesForRangeVectorSelector_InstantQuery
 	require.NoError(t, histograms.Append(promql.HPoint{T: timestamp.FromTime(queryT.Add(-2 * time.Second)), H: h}))
 	require.NoError(t, floats.Append(promql.FPoint{T: timestamp.FromTime(queryT.Add(-time.Second))}))
 
-	stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(queryT), floats, histograms, timestamp.FromTime(queryT.Add(-4*time.Second)), timestamp.FromTime(queryT))
-	samplesProcessedPerStep.requireChange(t, stats.samplesProcessedPerStep, 2+EquivalentFloatSampleCount(h))
-	newSamplesReadPerStep.requireChange(t, stats.newSamplesReadPerStep, 2 + +EquivalentFloatSampleCount(h))
+	stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(queryT), floats, histograms, timestamp.FromTime(queryT.Add(-4*time.Second)), timestamp.FromTime(queryT), labels.EmptyLabels())
+	samplesProcessedPerStep.requireChange(t, stats.allSeries.samplesProcessedPerStep, 2+EquivalentFloatSampleCount(h))
+	newSamplesReadPerStep.requireChange(t, stats.allSeries.newSamplesReadPerStep, 2 + +EquivalentFloatSampleCount(h))
+
+	stats.Close()
+	floats.Close()
+	histograms.Close()
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+}
+
+func TestOperatorEvaluationStats_Subsets_TrackSampleForInstantVectorSelector(t *testing.T) {
+	start := timestamp.Time(0)
+	step := time.Minute
+	end := start.Add(2 * step)
+	timeRange := NewRangeQueryTimeRange(start, end, step)
+
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+	subsetMatchers := [][]*labels.Matcher{
+		{labels.MustNewMatcher(labels.MatchEqual, "env", "prod")},
+		{labels.MustNewMatcher(labels.MatchEqual, "env", "staging"), labels.MustNewMatcher(labels.MatchEqual, "region", "us-east")},
+	}
+	stats, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, subsetMatchers)
+	require.NoError(t, err)
+	require.Len(t, stats.subsets, 2)
+
+	prodLabels := labels.FromStrings("env", "prod", "region", "us-east")
+	stagingUsEastLabels := labels.FromStrings("env", "staging", "region", "us-east")
+	stagingEuLabels := labels.FromStrings("env", "staging", "region", "eu-west")
+	noMatchLabels := labels.FromStrings("env", "dev")
+
+	overallProcessed := newPerStepTracker("overall samples processed", timeRange.StepCount)
+	overallRead := newPerStepTracker("overall new samples read", timeRange.StepCount)
+	subset0Processed := newPerStepTracker("subset[0] samples processed", timeRange.StepCount)
+	subset0Read := newPerStepTracker("subset[0] new samples read", timeRange.StepCount)
+	subset1Processed := newPerStepTracker("subset[1] samples processed", timeRange.StepCount)
+	subset1Read := newPerStepTracker("subset[1] new samples read", timeRange.StepCount)
+
+	// prodLabels matches subset[0] (env=prod) only.
+	stats.TrackSampleForInstantVectorSelector(timestamp.FromTime(start), 3, prodLabels)
+	overallProcessed.requireChange(t, stats.allSeries.samplesProcessedPerStep, 3, 0, 0)
+	overallRead.requireChange(t, stats.allSeries.newSamplesReadPerStep, 3, 0, 0)
+	subset0Processed.requireChange(t, stats.subsets[0].samplesProcessedPerStep, 3, 0, 0)
+	subset0Read.requireChange(t, stats.subsets[0].newSamplesReadPerStep, 3, 0, 0)
+	subset1Processed.requireNoChange(t, stats.subsets[1].samplesProcessedPerStep)
+	subset1Read.requireNoChange(t, stats.subsets[1].newSamplesReadPerStep)
+
+	// stagingUsEastLabels matches subset[1] (env=staging AND region=us-east) only.
+	stats.TrackSampleForInstantVectorSelector(timestamp.FromTime(start.Add(step)), 2, stagingUsEastLabels)
+	overallProcessed.requireChange(t, stats.allSeries.samplesProcessedPerStep, 0, 2, 0)
+	overallRead.requireChange(t, stats.allSeries.newSamplesReadPerStep, 0, 2, 0)
+	subset0Processed.requireNoChange(t, stats.subsets[0].samplesProcessedPerStep)
+	subset0Read.requireNoChange(t, stats.subsets[0].newSamplesReadPerStep)
+	subset1Processed.requireChange(t, stats.subsets[1].samplesProcessedPerStep, 0, 2, 0)
+	subset1Read.requireChange(t, stats.subsets[1].newSamplesReadPerStep, 0, 2, 0)
+
+	// stagingEuLabels matches neither subset (env=staging but region=eu-west, not us-east).
+	stats.TrackSampleForInstantVectorSelector(timestamp.FromTime(start.Add(2*step)), 1, stagingEuLabels)
+	overallProcessed.requireChange(t, stats.allSeries.samplesProcessedPerStep, 0, 0, 1)
+	overallRead.requireChange(t, stats.allSeries.newSamplesReadPerStep, 0, 0, 1)
+	subset0Processed.requireNoChange(t, stats.subsets[0].samplesProcessedPerStep)
+	subset0Read.requireNoChange(t, stats.subsets[0].newSamplesReadPerStep)
+	subset1Processed.requireNoChange(t, stats.subsets[1].samplesProcessedPerStep)
+	subset1Read.requireNoChange(t, stats.subsets[1].newSamplesReadPerStep)
+
+	// noMatchLabels matches neither subset.
+	stats.TrackSampleForInstantVectorSelector(timestamp.FromTime(start), 5, noMatchLabels)
+	overallProcessed.requireChange(t, stats.allSeries.samplesProcessedPerStep, 5, 0, 0)
+	overallRead.requireChange(t, stats.allSeries.newSamplesReadPerStep, 5, 0, 0)
+	subset0Processed.requireNoChange(t, stats.subsets[0].samplesProcessedPerStep)
+	subset0Read.requireNoChange(t, stats.subsets[0].newSamplesReadPerStep)
+	subset1Processed.requireNoChange(t, stats.subsets[1].samplesProcessedPerStep)
+	subset1Read.requireNoChange(t, stats.subsets[1].newSamplesReadPerStep)
+
+	stats.Close()
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+}
+
+func TestOperatorEvaluationStats_Subsets_TrackSamplesForRangeVectorSelector(t *testing.T) {
+	start := timestamp.Time(0)
+	step := time.Minute
+	end := start.Add(2 * step)
+	timeRange := NewRangeQueryTimeRange(start, end, step)
+
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+	subsetMatchers := [][]*labels.Matcher{
+		{labels.MustNewMatcher(labels.MatchEqual, "env", "prod")},
+	}
+	stats, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, subsetMatchers)
+	require.NoError(t, err)
+
+	floats := NewFPointRingBuffer(memoryConsumptionTracker)
+	histograms := NewHPointRingBuffer(memoryConsumptionTracker)
+	require.NoError(t, floats.Append(promql.FPoint{T: timestamp.FromTime(start.Add(-3 * time.Second))}))
+	require.NoError(t, floats.Append(promql.FPoint{T: timestamp.FromTime(start.Add(-2 * time.Second))}))
+	require.NoError(t, floats.Append(promql.FPoint{T: timestamp.FromTime(start.Add(-time.Second))}))
+	require.NoError(t, floats.Append(promql.FPoint{T: timestamp.FromTime(start)}))
+
+	prodLabels := labels.FromStrings("env", "prod")
+	otherLabels := labels.FromStrings("env", "dev")
+
+	overallProcessed := newPerStepTracker("overall samples processed", timeRange.StepCount)
+	overallRead := newPerStepTracker("overall new samples read", timeRange.StepCount)
+	subsetProcessed := newPerStepTracker("subset samples processed", timeRange.StepCount)
+	subsetRead := newPerStepTracker("subset new samples read", timeRange.StepCount)
+
+	// Matching series: both overall and subset should be updated.
+	stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start), floats, histograms, timestamp.FromTime(start.Add(-4*time.Second)), timestamp.FromTime(start), prodLabels)
+	overallProcessed.requireChange(t, stats.allSeries.samplesProcessedPerStep, 4, 0, 0)
+	overallRead.requireChange(t, stats.allSeries.newSamplesReadPerStep, 4, 0, 0)
+	subsetProcessed.requireChange(t, stats.subsets[0].samplesProcessedPerStep, 4, 0, 0)
+	subsetRead.requireChange(t, stats.subsets[0].newSamplesReadPerStep, 4, 0, 0)
+
+	// Non-matching series: only overall should be updated.
+	stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start.Add(step)), floats, histograms, timestamp.FromTime(start.Add(-4*time.Second)), timestamp.FromTime(start), otherLabels)
+	overallProcessed.requireChange(t, stats.allSeries.samplesProcessedPerStep, 0, 4, 0)
+	overallRead.requireChange(t, stats.allSeries.newSamplesReadPerStep, 0, 4, 0)
+	subsetProcessed.requireNoChange(t, stats.subsets[0].samplesProcessedPerStep)
+	subsetRead.requireNoChange(t, stats.subsets[0].newSamplesReadPerStep)
 
 	stats.Close()
 	floats.Close()
@@ -243,32 +363,32 @@ func TestOperatorEvaluationStats_Add(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
-	s1, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker)
+	s1, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, nil)
 	require.NoError(t, err)
-	s2, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker)
+	s2, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, nil)
 	require.NoError(t, err)
 
-	s1.samplesProcessedPerStep[0] = 10
-	s1.samplesProcessedPerStep[1] = 20
-	s1.samplesProcessedPerStep[2] = 30
-	s1.newSamplesReadPerStep[0] = 1
-	s1.newSamplesReadPerStep[1] = 2
-	s1.newSamplesReadPerStep[2] = 3
+	s1.allSeries.samplesProcessedPerStep[0] = 10
+	s1.allSeries.samplesProcessedPerStep[1] = 20
+	s1.allSeries.samplesProcessedPerStep[2] = 30
+	s1.allSeries.newSamplesReadPerStep[0] = 1
+	s1.allSeries.newSamplesReadPerStep[1] = 2
+	s1.allSeries.newSamplesReadPerStep[2] = 3
 
-	s2.samplesProcessedPerStep[0] = 40
-	s2.samplesProcessedPerStep[1] = 50
-	s2.samplesProcessedPerStep[2] = 60
-	s2.newSamplesReadPerStep[0] = 4
-	s2.newSamplesReadPerStep[1] = 5
-	s2.newSamplesReadPerStep[2] = 6
+	s2.allSeries.samplesProcessedPerStep[0] = 40
+	s2.allSeries.samplesProcessedPerStep[1] = 50
+	s2.allSeries.samplesProcessedPerStep[2] = 60
+	s2.allSeries.newSamplesReadPerStep[0] = 4
+	s2.allSeries.newSamplesReadPerStep[1] = 5
+	s2.allSeries.newSamplesReadPerStep[2] = 6
 
 	require.NoError(t, s1.Add(s2))
-	require.Equal(t, []int64{50, 70, 90}, s1.samplesProcessedPerStep)
-	require.Equal(t, []int64{5, 7, 9}, s1.newSamplesReadPerStep)
+	require.Equal(t, []int64{50, 70, 90}, s1.allSeries.samplesProcessedPerStep)
+	require.Equal(t, []int64{5, 7, 9}, s1.allSeries.newSamplesReadPerStep)
 
 	// s2 should be unchanged.
-	require.Equal(t, []int64{40, 50, 60}, s2.samplesProcessedPerStep)
-	require.Equal(t, []int64{4, 5, 6}, s2.newSamplesReadPerStep)
+	require.Equal(t, []int64{40, 50, 60}, s2.allSeries.samplesProcessedPerStep)
+	require.Equal(t, []int64{4, 5, 6}, s2.allSeries.newSamplesReadPerStep)
 
 	s1.Close()
 	s2.Close()
@@ -285,12 +405,101 @@ func TestOperatorEvaluationStats_Add_DifferentTimeRanges(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
-	s1, err := NewOperatorEvaluationStats(timeRange1, memoryConsumptionTracker)
+	s1, err := NewOperatorEvaluationStats(timeRange1, memoryConsumptionTracker, nil)
 	require.NoError(t, err)
-	s2, err := NewOperatorEvaluationStats(timeRange2, memoryConsumptionTracker)
+	s2, err := NewOperatorEvaluationStats(timeRange2, memoryConsumptionTracker, nil)
 	require.NoError(t, err)
 
 	require.EqualError(t, s1.Add(s2), "cannot add OperatorEvaluationStats with different time ranges")
+
+	s1.Close()
+	s2.Close()
+}
+
+func TestOperatorEvaluationStats_Add_WithSubsets(t *testing.T) {
+	start := timestamp.Time(0)
+	step := time.Minute
+	end := start.Add(2 * step)
+	timeRange := NewRangeQueryTimeRange(start, end, step)
+
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+	subsetMatchers := [][]*labels.Matcher{
+		{labels.MustNewMatcher(labels.MatchEqual, "env", "prod")},
+	}
+
+	t.Run("receiver has subsets, other does not", func(t *testing.T) {
+		withSubsets, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, subsetMatchers)
+		require.NoError(t, err)
+		withoutSubsets, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, nil)
+		require.NoError(t, err)
+
+		withSubsets.allSeries.samplesProcessedPerStep[0] = 10
+		withSubsets.allSeries.samplesProcessedPerStep[1] = 20
+		withSubsets.allSeries.newSamplesReadPerStep[0] = 1
+		withSubsets.allSeries.newSamplesReadPerStep[1] = 2
+		withSubsets.subsets[0].samplesProcessedPerStep[0] = 5
+		withSubsets.subsets[0].newSamplesReadPerStep[0] = 3
+
+		withoutSubsets.allSeries.samplesProcessedPerStep[0] = 40
+		withoutSubsets.allSeries.samplesProcessedPerStep[1] = 50
+		withoutSubsets.allSeries.newSamplesReadPerStep[0] = 4
+		withoutSubsets.allSeries.newSamplesReadPerStep[1] = 5
+
+		require.NoError(t, withSubsets.Add(withoutSubsets))
+
+		// Overall stats should be summed.
+		require.Equal(t, []int64{50, 70, 0}, withSubsets.allSeries.samplesProcessedPerStep)
+		require.Equal(t, []int64{5, 7, 0}, withSubsets.allSeries.newSamplesReadPerStep)
+
+		// other's overall should be added to each subset.
+		require.Equal(t, []int64{45, 50, 0}, withSubsets.subsets[0].samplesProcessedPerStep)
+		require.Equal(t, []int64{7, 5, 0}, withSubsets.subsets[0].newSamplesReadPerStep)
+
+		withSubsets.Close()
+		withoutSubsets.Close()
+	})
+
+	t.Run("receiver has no subsets, other does", func(t *testing.T) {
+		withoutSubsets, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, nil)
+		require.NoError(t, err)
+		withSubsets, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, subsetMatchers)
+		require.NoError(t, err)
+
+		withoutSubsets.allSeries.samplesProcessedPerStep[0] = 10
+		withoutSubsets.allSeries.newSamplesReadPerStep[0] = 1
+
+		withSubsets.allSeries.samplesProcessedPerStep[0] = 40
+		withSubsets.allSeries.samplesProcessedPerStep[1] = 50
+		withSubsets.allSeries.newSamplesReadPerStep[0] = 4
+		withSubsets.allSeries.newSamplesReadPerStep[1] = 5
+		withSubsets.subsets[0].samplesProcessedPerStep[0] = 30
+		withSubsets.subsets[0].newSamplesReadPerStep[0] = 3
+
+		require.NoError(t, withoutSubsets.Add(withSubsets))
+
+		// Only overall stats are updated; withoutSubsets has no subsets to carry over.
+		require.Equal(t, []int64{50, 50, 0}, withoutSubsets.allSeries.samplesProcessedPerStep)
+		require.Equal(t, []int64{5, 5, 0}, withoutSubsets.allSeries.newSamplesReadPerStep)
+
+		withoutSubsets.Close()
+		withSubsets.Close()
+	})
+
+	t.Run("both have subsets returns error", func(t *testing.T) {
+		s1, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, subsetMatchers)
+		require.NoError(t, err)
+		s2, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, subsetMatchers)
+		require.NoError(t, err)
+
+		require.EqualError(t, s1.Add(s2), "cannot add two OperatorEvaluationStats instances that both have subsets")
+
+		s1.Close()
+		s2.Close()
+	})
+
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 }
 
 func TestOperatorEvaluationStats_Clone(t *testing.T) {
@@ -302,29 +511,71 @@ func TestOperatorEvaluationStats_Clone(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
-	original, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker)
+	original, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, nil)
 	require.NoError(t, err)
 
-	original.samplesProcessedPerStep[0] = 10
-	original.samplesProcessedPerStep[1] = 20
-	original.samplesProcessedPerStep[2] = 30
-	original.newSamplesReadPerStep[0] = 1
-	original.newSamplesReadPerStep[1] = 2
-	original.newSamplesReadPerStep[2] = 3
+	original.allSeries.samplesProcessedPerStep[0] = 10
+	original.allSeries.samplesProcessedPerStep[1] = 20
+	original.allSeries.samplesProcessedPerStep[2] = 30
+	original.allSeries.newSamplesReadPerStep[0] = 1
+	original.allSeries.newSamplesReadPerStep[1] = 2
+	original.allSeries.newSamplesReadPerStep[2] = 3
 
 	clone, err := original.Clone()
 	require.NoError(t, err)
 
 	// Clone should have the same values.
-	require.Equal(t, original.samplesProcessedPerStep, clone.samplesProcessedPerStep)
-	require.Equal(t, original.newSamplesReadPerStep, clone.newSamplesReadPerStep)
+	require.Equal(t, original.allSeries.samplesProcessedPerStep, clone.allSeries.samplesProcessedPerStep)
+	require.Equal(t, original.allSeries.newSamplesReadPerStep, clone.allSeries.newSamplesReadPerStep)
 	require.Equal(t, original.timeRange, clone.timeRange)
 
 	// Modifying the clone should not affect the original.
-	clone.samplesProcessedPerStep[0] = 99
-	clone.newSamplesReadPerStep[0] = 99
-	require.Equal(t, int64(10), original.samplesProcessedPerStep[0])
-	require.Equal(t, int64(1), original.newSamplesReadPerStep[0])
+	clone.allSeries.samplesProcessedPerStep[0] = 99
+	clone.allSeries.newSamplesReadPerStep[0] = 99
+	require.Equal(t, int64(10), original.allSeries.samplesProcessedPerStep[0])
+	require.Equal(t, int64(1), original.allSeries.newSamplesReadPerStep[0])
+
+	original.Close()
+	clone.Close()
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+}
+
+func TestOperatorEvaluationStats_Clone_WithSubsets(t *testing.T) {
+	start := timestamp.Time(0)
+	step := time.Minute
+	end := start.Add(2 * step)
+	timeRange := NewRangeQueryTimeRange(start, end, step)
+
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+	subsetMatchers := [][]*labels.Matcher{
+		{labels.MustNewMatcher(labels.MatchEqual, "env", "prod")},
+	}
+	original, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, subsetMatchers)
+	require.NoError(t, err)
+
+	original.allSeries.samplesProcessedPerStep[0] = 10
+	original.allSeries.newSamplesReadPerStep[0] = 1
+	original.subsets[0].samplesProcessedPerStep[0] = 7
+	original.subsets[0].newSamplesReadPerStep[0] = 4
+
+	clone, err := original.Clone()
+	require.NoError(t, err)
+
+	// Clone should have the same values including subsets.
+	require.Equal(t, original.allSeries.samplesProcessedPerStep, clone.allSeries.samplesProcessedPerStep)
+	require.Equal(t, original.allSeries.newSamplesReadPerStep, clone.allSeries.newSamplesReadPerStep)
+	require.Len(t, clone.subsets, 1)
+	require.Equal(t, original.subsets[0].matchers, clone.subsets[0].matchers)
+	require.Equal(t, original.subsets[0].samplesProcessedPerStep, clone.subsets[0].samplesProcessedPerStep)
+	require.Equal(t, original.subsets[0].newSamplesReadPerStep, clone.subsets[0].newSamplesReadPerStep)
+
+	// Modifying the clone's subset should not affect the original.
+	clone.subsets[0].samplesProcessedPerStep[0] = 99
+	clone.subsets[0].newSamplesReadPerStep[0] = 99
+	require.Equal(t, int64(7), original.subsets[0].samplesProcessedPerStep[0])
+	require.Equal(t, int64(4), original.subsets[0].newSamplesReadPerStep[0])
 
 	original.Close()
 	clone.Close()
@@ -592,11 +843,11 @@ func TestOperatorEvaluationStats_ExtendStepInvariant(t *testing.T) {
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
 	// Create a set of stats corresponding to the single evaluated step.
-	stepInvariant, err := NewOperatorEvaluationStats(NewInstantQueryTimeRange(timestamp.Time(10000)), memoryConsumptionTracker)
+	stepInvariant, err := NewOperatorEvaluationStats(NewInstantQueryTimeRange(timestamp.Time(10000)), memoryConsumptionTracker, nil)
 	require.NoError(t, err)
 
-	stepInvariant.samplesProcessedPerStep[0] = 100
-	stepInvariant.newSamplesReadPerStep[0] = 40
+	stepInvariant.allSeries.samplesProcessedPerStep[0] = 100
+	stepInvariant.allSeries.newSamplesReadPerStep[0] = 40
 
 	// Extend it to the full time range.
 	start := timestamp.Time(20000)
@@ -606,10 +857,47 @@ func TestOperatorEvaluationStats_ExtendStepInvariant(t *testing.T) {
 	extended, err := stepInvariant.ExtendStepInvariantToFullRange(timeRange)
 	require.NoError(t, err)
 
-	require.Equal(t, []int64{100, 100, 100}, extended.samplesProcessedPerStep)
-	require.Equal(t, []int64{40, 0, 0}, extended.newSamplesReadPerStep)
+	require.Equal(t, []int64{100, 100, 100}, extended.allSeries.samplesProcessedPerStep)
+	require.Equal(t, []int64{40, 0, 0}, extended.allSeries.newSamplesReadPerStep)
 
 	// Make sure everything was returned to the pool.
+	extended.Close()
+	stepInvariant.Close()
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+}
+
+func TestOperatorEvaluationStats_ExtendStepInvariant_WithSubsets(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+	subsetMatchers := [][]*labels.Matcher{
+		{labels.MustNewMatcher(labels.MatchEqual, "env", "prod")},
+	}
+	stepInvariant, err := NewOperatorEvaluationStats(NewInstantQueryTimeRange(timestamp.Time(10000)), memoryConsumptionTracker, subsetMatchers)
+	require.NoError(t, err)
+
+	stepInvariant.allSeries.samplesProcessedPerStep[0] = 100
+	stepInvariant.allSeries.newSamplesReadPerStep[0] = 40
+	stepInvariant.subsets[0].samplesProcessedPerStep[0] = 60
+	stepInvariant.subsets[0].newSamplesReadPerStep[0] = 25
+
+	start := timestamp.Time(20000)
+	step := time.Minute
+	end := start.Add(2 * step)
+	timeRange := NewRangeQueryTimeRange(start, end, step)
+	extended, err := stepInvariant.ExtendStepInvariantToFullRange(timeRange)
+	require.NoError(t, err)
+
+	// Overall stats should be expanded as normal.
+	require.Equal(t, []int64{100, 100, 100}, extended.allSeries.samplesProcessedPerStep)
+	require.Equal(t, []int64{40, 0, 0}, extended.allSeries.newSamplesReadPerStep)
+
+	// Subset stats should be expanded the same way.
+	require.Len(t, extended.subsets, 1)
+	require.Equal(t, subsetMatchers[0], extended.subsets[0].matchers)
+	require.Equal(t, []int64{60, 60, 60}, extended.subsets[0].samplesProcessedPerStep)
+	require.Equal(t, []int64{25, 0, 0}, extended.subsets[0].newSamplesReadPerStep)
+
 	extended.Close()
 	stepInvariant.Close()
 	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
