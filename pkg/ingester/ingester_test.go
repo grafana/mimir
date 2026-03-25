@@ -12496,7 +12496,7 @@ func TestActiveSeriesLoadingMetric(t *testing.T) {
 		registry := prometheus.NewRegistry()
 		cfg := defaultIngesterTestConfig(t)
 		cfg.ActiveSeriesMetrics.Enabled = true
-		cfg.ActiveSeriesMetrics.IdleTimeout = 200 * time.Millisecond
+		cfg.ActiveSeriesMetrics.IdleTimeout = 20 * time.Second
 
 		ing, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, registry)
 		require.NoError(t, err)
@@ -12517,7 +12517,8 @@ func TestActiveSeriesLoadingMetric(t *testing.T) {
 		`), "cortex_ingester_active_series_loading"))
 
 		// After idle timeout, metric should be 0.
-		ing.updateActiveSeries(time.Now().Add(cfg.ActiveSeriesMetrics.IdleTimeout))
+		// Add an extra second to avoid flakes if activeSeriesStartMs was recorded slightly after time.Now()
+		ing.updateActiveSeries(time.Now().Add(cfg.ActiveSeriesMetrics.IdleTimeout).Add(time.Second))
 		require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(`
 			# HELP cortex_ingester_active_series_loading 1 if active series counts are still warming up and may be underreported, 0 once they are accurate.
 			# TYPE cortex_ingester_active_series_loading gauge
