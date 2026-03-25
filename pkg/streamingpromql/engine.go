@@ -251,6 +251,9 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 
 	topLevelValueType, err := plan.Root.ResultType()
 	if err != nil {
+		// We have already created and registered the evaluator's memory tracker,
+		// but we haven't started evaluation yet. Ensure we deregister on setup error.
+		e.inflightMemoryConsumptionTracker.Deregister(evaluator.MemoryConsumptionTracker)
 		return nil, err
 	}
 
@@ -313,13 +316,20 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 	for idx, req := range nodeRequests {
 		op, err := materializer.ConvertNodeToOperator(req.Node, req.TimeRange)
 		if err != nil {
+			e.inflightMemoryConsumptionTracker.Deregister(memoryConsumptionTracker)
 			return nil, err
 		}
 
 		nodeRequests[idx].operator = op
 	}
 
-	return NewEvaluator(nodeRequests, operatorParams, e, params.OriginalExpression)
+	ev, err := NewEvaluator(nodeRequests, operatorParams, e, params.OriginalExpression)
+	if err != nil {
+		// Evaluator wasn't created successfully; deregister the in-flight tracker.
+		e.inflightMemoryConsumptionTracker.Deregister(memoryConsumptionTracker)
+		return nil, err
+	}
+	return ev, nil
 }
 
 type QueryLimitsProvider interface {
