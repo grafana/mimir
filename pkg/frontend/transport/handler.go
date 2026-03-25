@@ -204,12 +204,6 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r = r.WithContext(ctx)
 	}
 
-	// Ensure to close the request body reader.
-	defer func() { _ = r.Body.Close() }()
-
-	// Limit the read body size.
-	r.Body = http.MaxBytesReader(w, r.Body, f.cfg.MaxBodySize)
-
 	var params url.Values
 	var err error
 

@@ -18,16 +18,18 @@ import (
 )
 
 type activityTrackingMiddleware struct {
-	tracker *activitytracker.ActivityTracker
-	log     log.Logger
-	next    http.Handler
+	tracker          *activitytracker.ActivityTracker
+	log              log.Logger
+	next             http.Handler
+	maxBodySizeIfAny int64
 }
 
 // NewActivityTrackingMiddleware wraps next with a middleware that inserts and deletes an activity tracker entry
 // for each request. It must be placed outside the gzip middleware so that the tracker entry outlives gzip's
 // deferred Close and covers the full response flush.
-func NewActivityTrackingMiddleware(at *activitytracker.ActivityTracker, logger log.Logger, next http.Handler) http.Handler {
-	return &activityTrackingMiddleware{tracker: at, log: logger, next: next}
+// maxBodySizeIfAny can be set to enforce a maximum body size.
+func NewActivityTrackingMiddleware(at *activitytracker.ActivityTracker, logger log.Logger, next http.Handler, maxBodySizeIfAny int64) http.Handler {
+	return &activityTrackingMiddleware{tracker: at, log: logger, next: next, maxBodySizeIfAny: maxBodySizeIfAny}
 }
 
 func (m *activityTrackingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -37,6 +39,11 @@ func (m *activityTrackingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Re
 	// We attempt to read the query params or form bodies to get values which we can use to identify these requests.
 	// To do this safely and not impact the next handlers we must do this in a way as to not disturb the body for subsequent handlers.
 	// We er on the side of caution to make sure we do not risk consuming a body we can not safely restore into the request.
+
+	if m.maxBodySizeIfAny > 0 && r.Body != nil {
+		r.Body = http.MaxBytesReader(w, r.Body, m.maxBodySizeIfAny)
+		defer func() { _ = r.Body.Close() }()
+	}
 
 	if r.Header.Get("Content-Type") == "application/x-protobuf" && querymiddleware.IsRemoteReadQuery(r.URL.Path) {
 		params, err = querymiddleware.ParseRemoteReadRequestValuesWithoutConsumingBody(r)
