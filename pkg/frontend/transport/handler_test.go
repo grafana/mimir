@@ -37,7 +37,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
-	api2 "github.com/grafana/mimir/pkg/api"
+	mimirapi "github.com/grafana/mimir/pkg/api"
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/querier/api"
@@ -440,7 +440,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 
 			logger := &testLogger{}
 			h := NewHandler(tt.cfg, roundTripper, logger, reg)
-			handler := api2.NewActivityTrackingMiddleware(at, logger, h)
+			handler := mimirapi.NewActivityTrackingMiddleware(at, logger, h)
 
 			req := tt.request()
 			req = req.WithContext(user.InjectOrgID(req.Context(), "12345"))
