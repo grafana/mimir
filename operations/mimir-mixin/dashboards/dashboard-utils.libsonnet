@@ -58,16 +58,18 @@ local utils = import 'mixin-utils/utils.libsonnet';
       // allowing for multiple "sub-rows" within the same row, making them collapsible together.
       // panelsPerLine is an array with the number of panels on each line, e.g. [4, 2].
       splitIntoLines(panelsPerLine)::
+        // create an array of span sizes to fill each line (12) with the correct number of panels.
+        // span[i] is the span of the i-th panel, e.g. panelsPerLine=[3,2] -> spans=[4,4,4,6,6].
+        local spans = std.flattenArrays([
+          [std.floor(12 / lineCount) for _ in std.range(0, lineCount - 1)]
+          for lineCount in panelsPerLine
+        ]);
         local allPanels = self.panels;
-        local lineStart(i) = std.foldl(function(s, n) s + n, panelsPerLine[:i], 0);
+        assert std.length(allPanels) == std.length(spans) :
+               'splitIntoLines: panelsPerLine sums to %d but row has %d panels' % [std.length(spans), std.length(allPanels)];
+        // now assign the calculated span to each panel
         self + {
-          panels: std.flattenArrays([
-            [
-              p { span: std.floor(12 / panelsPerLine[i]) }
-              for p in allPanels[lineStart(i):lineStart(i) + panelsPerLine[i]]
-            ]
-            for i in std.range(0, std.length(panelsPerLine) - 1)
-          ]),
+          panels: [allPanels[i] { span: spans[i] } for i in std.range(0, std.length(allPanels) - 1)],
         },
     },
 
