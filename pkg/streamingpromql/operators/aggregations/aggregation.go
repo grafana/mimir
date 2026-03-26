@@ -182,6 +182,10 @@ func (a *Aggregation) SetParamData(data types.ScalarData) {
 	a.aggregator.ParamData = data
 }
 
+func (a *Aggregation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return a.Inner.Stats(ctx)
+}
+
 func (a *Aggregation) Close() {
 	a.Inner.Close()
 }

@@ -636,6 +636,10 @@ func (f *InfoFunction) Finalize(ctx context.Context) error {
 	return f.Info.Finalize(ctx)
 }
 
+func (f *InfoFunction) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return types.CombineStats[types.StatsProvider](ctx, f.Inner, f.Info)
+}
+
 func (f *InfoFunction) Close() {
 	if f.Inner != nil {
 		f.Inner.Close()

@@ -76,6 +76,31 @@ func TestShardActiveSeriesResponseDecoder(t *testing.T) {
 			input:         `{"unexpected":3.141516}`,
 			expectedError: "expected data field at top level",
 		},
+		{
+			name:           "label value with closing braces",
+			input:          `{"data":[{"request_context":"/refurl=}}};alert(document.domain)//"}]}`,
+			expectedOutput: `{"request_context":"/refurl=}}};alert(document.domain)//"}`,
+		},
+		{
+			name:           "label value with unmatched opening brace",
+			input:          `{"data":[{"request_context":"/?x=${jndi:ldap://127.0.0.1"}]}`,
+			expectedOutput: `{"request_context":"/?x=${jndi:ldap://127.0.0.1"}`,
+		},
+		{
+			name:           "label value with escaped quote",
+			input:          `{"data":[{"label":"val\"ue}"}]}`,
+			expectedOutput: `{"label":"val\"ue}"}`,
+		},
+		{
+			name:           "skip object with braces in string value",
+			input:          `{"unexpected":{"key":"}{"},"data":[{"a":"b"}]}`,
+			expectedOutput: `{"a":"b"}`,
+		},
+		{
+			name:           "skip array with brackets in string value",
+			input:          `{"unexpected":["]{["],"data":[{"a":"b"}]}`,
+			expectedOutput: `{"a":"b"}`,
+		},
 	}
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {

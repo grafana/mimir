@@ -53,6 +53,10 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Fix Kafka image reference to include the registry in the StatefulSet template. #14211.
 * [BUGFIX] Helm: Removed helm's empty selector for the smoke-test-job file that is throwing errors in ArgoCD #14684
 
+## 6.0.6
+
+* [CHANGE] Upgrade Mimir to [3.0.4](https://github.com/grafana/mimir/blob/release-3.0/CHANGELOG.md). #14749
+
 ## 6.0.5
 
 * [BUGFIX] Ensure Kafka can boostrap successfully by using parallel rollout and publishing not-ready addresses. #13650

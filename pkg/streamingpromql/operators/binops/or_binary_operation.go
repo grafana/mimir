@@ -401,6 +401,10 @@ func (o *OrBinaryOperation) Finalize(ctx context.Context) error {
 	return o.Right.Finalize(ctx)
 }
 
+func (o *OrBinaryOperation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return types.CombineStats(ctx, o.Left, o.Right)
+}
+
 func (o *OrBinaryOperation) Close() {
 	o.Left.Close()
 	o.Right.Close()
