@@ -2469,8 +2469,7 @@ func TestAlertmanager_StateReplication_InitialSyncFromPeers(t *testing.T) {
 
 // prepareInMemoryAlertStore builds and returns an in-memory alert store.
 func prepareInMemoryAlertStore() alertstore.AlertStore {
-	cfg := bucketclient.BucketAlertStoreConfig{FetchGrafanaConfig: true}
-	return bucketclient.NewBucketAlertStore(cfg, objstore.NewInMemBucket(), nil, log.NewNopLogger())
+	return bucketclient.NewBucketAlertStore(objstore.NewInMemBucket(), nil, log.NewNopLogger())
 }
 
 func TestSafeTemplateFilepath(t *testing.T) {
