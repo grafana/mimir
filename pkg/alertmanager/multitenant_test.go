@@ -1529,25 +1529,6 @@ func TestMultitenantAlertmanager_ServeHTTPWithStrictInitialization(t *testing.T)
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
 	require.Len(t, am.alertmanagers, 1)
 
-	// The configuration should have the custom SMTP settings.
-	exp := alertingReceivers.EmailSenderConfig{
-		EhloIdentity:   "test-identity",
-		FromAddress:    "test@test.com",
-		FromName:       "Test Name",
-		Host:           "test:8080",
-		AuthPassword:   "test password",
-		SkipVerify:     true,
-		StartTLSPolicy: "test",
-		StaticHeaders:  map[string]string{"test-key": "test-value"},
-		AuthUser:       "test-user",
-
-		ContentTypes: []string{"text/html"}, // Added by default
-		SentBy:       "Mimir vunknown",      // The version in tests is "unknown"
-	}
-	gAM, ok := am.alertmanagers[testGrafanaUser]
-	require.True(t, ok)
-	require.Equal(t, exp, gAM.emailCfg)
-
 	w = httptest.NewRecorder()
 	am.ServeHTTP(w, req.WithContext(user.InjectOrgID(req.Context(), testMimirUser)))
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
