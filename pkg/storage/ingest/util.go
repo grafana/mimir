@@ -55,13 +55,62 @@ func IngesterPartitionID(ingesterID string) (int32, error) {
 	return int32(ingesterSeq), nil
 }
 
-type onlySampledTraces struct {
+// Compile-time checks to ensure sampledOnlyTracer implements the same hook interfaces as kotel.Tracer.
+var (
+	_ kgo.HookProduceRecordBuffered   = new(sampledOnlyTracer)
+	_ kgo.HookProduceRecordUnbuffered = new(sampledOnlyTracer)
+	_ kgo.HookFetchRecordBuffered     = new(sampledOnlyTracer)
+	_ kgo.HookFetchRecordUnbuffered   = new(sampledOnlyTracer)
+)
+
+// sampledOnlyTracer wraps a kotel.Tracer and skips span creation and header
+// injection on the produce path for unsampled traces. Fetch hooks always
+// delegate to the parent tracer because the consume side needs to extract
+// trace context from record headers regardless of local sampling. Without
+// this wrapper, kotel creates spans for every produced Kafka record regardless
+// of sampling, which is expensive at high volume.
+type sampledOnlyTracer struct {
+	parent *kotel.Tracer
+}
+
+func newSampledOnlyTracer() *sampledOnlyTracer {
+	return &sampledOnlyTracer{parent: recordsTracer()}
+}
+
+func (t *sampledOnlyTracer) OnProduceRecordBuffered(r *kgo.Record) {
+	if !trace.SpanContextFromContext(r.Context).IsSampled() {
+		return
+	}
+	t.parent.OnProduceRecordBuffered(r)
+}
+
+// OnProduceRecordUnbuffered is safe to skip when OnProduceRecordBuffered was also skipped:
+// the record's context still has the original unsampled span, so the parent's
+// OnProduceRecordUnbuffered would only call End() on a no-op span.
+func (t *sampledOnlyTracer) OnProduceRecordUnbuffered(r *kgo.Record, err error) {
+	if !trace.SpanContextFromContext(r.Context).IsSampled() {
+		return
+	}
+	t.parent.OnProduceRecordUnbuffered(r, err)
+}
+
+func (t *sampledOnlyTracer) OnFetchRecordBuffered(r *kgo.Record) {
+	t.parent.OnFetchRecordBuffered(r)
+}
+
+func (t *sampledOnlyTracer) OnFetchRecordUnbuffered(r *kgo.Record, polled bool) {
+	t.parent.OnFetchRecordUnbuffered(r, polled)
+}
+
+// sampledOnlyPropagator is a propagation wrapper that only injects trace context
+// into Kafka record headers when the trace is sampled. This avoids adding
+// headers to every record when the trace won't be collected.
+type sampledOnlyPropagator struct {
 	propagation.TextMapPropagator
 }
 
-func (o onlySampledTraces) Inject(ctx context.Context, carrier propagation.TextMapCarrier) {
-	sc := trace.SpanContextFromContext(ctx)
-	if !sc.IsSampled() {
+func (o sampledOnlyPropagator) Inject(ctx context.Context, carrier propagation.TextMapCarrier) {
+	if !trace.SpanContextFromContext(ctx).IsSampled() {
 		return
 	}
 	o.TextMapPropagator.Inject(ctx, carrier)
@@ -121,7 +170,7 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 		opts = append(opts, kgo.DialTLSConfig(tlsConfig))
 	}
 
-	opts = append(opts, kgo.WithHooks(kotel.NewKotel(kotel.WithTracer(recordsTracer())).Hooks()...))
+	opts = append(opts, kgo.WithHooks(newSampledOnlyTracer()))
 
 	if metrics != nil {
 		opts = append(opts, kgo.WithHooks(metrics))
@@ -270,7 +319,7 @@ func requestJSONFromSocket[T any](ctx context.Context, socketPath string, timeou
 }
 
 func recordsTracer() *kotel.Tracer {
-	return kotel.NewTracer(kotel.TracerPropagator(propagation.NewCompositeTextMapPropagator(onlySampledTraces{propagation.TraceContext{}})))
+	return kotel.NewTracer(kotel.TracerPropagator(propagation.NewCompositeTextMapPropagator(sampledOnlyPropagator{propagation.TraceContext{}})))
 }
 
 // resultPromise is a simple utility to have multiple goroutines waiting for a result from another one.
