@@ -443,6 +443,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			handler := mimirapi.NewActivityTrackingMiddleware(at, logger, h)
 
 			req := tt.request()
+			req.Header.Add(user.OrgIDHeaderName, "12345")
 			req = req.WithContext(user.InjectOrgID(req.Context(), "12345"))
 			req = middleware.WithRouteName(req, testRouteName)
 			resp := httptest.NewRecorder()
