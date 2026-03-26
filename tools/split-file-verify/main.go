@@ -21,14 +21,13 @@ import (
 //
 //	split-verify <file1.go> [file2.go ...]
 //
-// Output is TSV: name, sha256 hash (first 16 hex chars), file path.
+// Output is TSV: name, sha256 hash (first 16 hex chars).
 // Compare the output of the original file against the split files to
 // verify nothing was lost or modified.
 
 type decl struct {
 	Name string
 	Hash string
-	File string
 }
 
 func main() {
@@ -47,12 +46,15 @@ func main() {
 		decls = append(decls, fileDecls...)
 	}
 
-	sort.Slice(decls, func(i, j int) bool {
-		return decls[i].Name < decls[j].Name
+	sort.SliceStable(decls, func(i, j int) bool {
+		if decls[i].Name != decls[j].Name {
+			return decls[i].Name < decls[j].Name
+		}
+		return decls[i].Hash < decls[j].Hash
 	})
 
 	for _, d := range decls {
-		fmt.Printf("%s\t%s\t%s\n", d.Name, d.Hash, d.File)
+		fmt.Printf("%s\t%s\n", d.Name, d.Hash)
 	}
 }
 
@@ -78,7 +80,6 @@ func extractDecls(path string) ([]decl, error) {
 			result = append(result, decl{
 				Name: name,
 				Hash: hash(body),
-				File: path,
 			})
 
 		case *ast.GenDecl:
@@ -86,21 +87,11 @@ func extractDecls(path string) ([]decl, error) {
 			case token.TYPE:
 				for _, spec := range dt.Specs {
 					ts := spec.(*ast.TypeSpec)
-					if len(dt.Specs) == 1 {
-						body := extractSource(src, fset, d)
-						result = append(result, decl{
-							Name: "type " + ts.Name.Name,
-							Hash: hash(body),
-							File: path,
-						})
-					} else {
-						body := extractSource(src, fset, spec)
-						result = append(result, decl{
-							Name: "type " + ts.Name.Name,
-							Hash: hash(body),
-							File: path,
-						})
-					}
+					body := extractSource(src, fset, spec)
+					result = append(result, decl{
+						Name: "type " + ts.Name.Name,
+						Hash: hash(body),
+					})
 				}
 
 			case token.VAR, token.CONST:
@@ -109,7 +100,6 @@ func extractDecls(path string) ([]decl, error) {
 				result = append(result, decl{
 					Name: dt.Tok.String() + " " + names,
 					Hash: hash(body),
-					File: path,
 				})
 			}
 		}

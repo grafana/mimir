@@ -93,7 +93,7 @@ Each new file should show the full commit history from before the split.
 
 ### Per-declaration content hash verification
 
-Use `tools/split-file-verify` to prove that every declaration was moved intact. The tool parses Go files using the AST, extracts every top-level declaration (functions, methods, types, var/const blocks), and outputs a sorted TSV of `name \t sha256_hash \t file`.
+Use `tools/split-file-verify` to prove that every declaration was moved intact. The tool parses Go files using the AST, extracts every top-level declaration (functions, methods, types, var/const blocks), and outputs a sorted TSV of `name \t sha256_hash`.
 
 ```bash
 # Build the tool
