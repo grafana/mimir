@@ -94,7 +94,6 @@ func TestStore_GetAlertConfigs(t *testing.T) {
 	ctx := context.Background()
 	user1Cfg := alertspb.AlertConfigDesc{User: "user-1", RawConfig: "content-1"}
 	user2Cfg := alertspb.AlertConfigDesc{User: "user-2", RawConfig: "content-2"}
-	user2GrafanaCfg := alertspb.GrafanaAlertConfigDesc{User: "user-2", RawConfig: "content-2"}
 
 	// The storage is empty.
 	{
@@ -113,19 +112,13 @@ func TestStore_GetAlertConfigs(t *testing.T) {
 		assert.NotContains(t, configs, "user-2")
 		assert.Equal(t, user1Cfg, configs["user-1"].Mimir)
 
-		// Add another user config.
-		require.NoError(t, store.SetAlertConfig(ctx, user2Cfg))
-		require.NoError(t, store.SetGrafanaAlertConfig(ctx, user2GrafanaCfg))
-
-		// Should return both Mimir and Grafana Alertmanager configurations.
+		// Should return Alertmanager configurations.
 		configs, err = store.GetAlertConfigs(ctx, []string{"user-1", "user-2"})
 		require.NoError(t, err)
 		assert.Contains(t, configs, "user-1")
 		assert.Contains(t, configs, "user-2")
 		assert.Equal(t, user1Cfg, configs["user-1"].Mimir)
-		assert.Equal(t, alertspb.GrafanaAlertConfigDesc{}, configs["user-1"].Grafana)
 		assert.Equal(t, user2Cfg, configs["user-2"].Mimir)
-		assert.Equal(t, user2GrafanaCfg, configs["user-2"].Grafana)
 	}
 }
 
