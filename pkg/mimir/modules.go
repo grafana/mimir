@@ -38,7 +38,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
-	"github.com/grafana/mimir/pkg/alertmanager/alertstore/bucketclient"
 	"github.com/grafana/mimir/pkg/api"
 	"github.com/grafana/mimir/pkg/blockbuilder"
 	blockbuilderscheduler "github.com/grafana/mimir/pkg/blockbuilder/scheduler"
