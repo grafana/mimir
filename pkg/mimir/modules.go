@@ -546,7 +546,7 @@ func (t *Mimir) initQueryable() (serv services.Service, err error) {
 		t.Cfg.Querier,
 		t.Overrides,
 		t.Distributor,
-		t.AdditionalStorageQueryables,
+		t.StoreQueryable,
 		registerer,
 		util_log.Logger,
 		t.ActivityTracker,
@@ -673,10 +673,6 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		&querierapi.ConsistencyExtractor{},
 	)
 
-	if t.Cfg.Querier.FilterQueryablesEnabled {
-		t.Extractors = append(t.Extractors, &querier.FilterQueryablesExtractor{})
-	}
-
 	extractor := &propagation.MultiExtractor{Extractors: t.Extractors}
 	metrics := querier.NewRequestMetrics(t.Registerer)
 	var dispatcher *querier.Dispatcher
@@ -746,7 +742,7 @@ func (t *Mimir) initStoreQueryable() (services.Service, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize block store queryable: %v", err)
 	}
-	t.AdditionalStorageQueryables = append(t.AdditionalStorageQueryables, querier.NewStoreGatewayTimeRangeQueryable(q, t.Cfg.Querier))
+	t.StoreQueryable = q
 	return q, nil
 }
 
@@ -1106,7 +1102,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 			t.Cfg.Querier,
 			t.Overrides,
 			t.Distributor,
-			t.AdditionalStorageQueryables,
+			t.StoreQueryable,
 			rulerRegisterer,
 			util_log.Logger,
 			t.ActivityTracker,

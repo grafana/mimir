@@ -2461,12 +2461,12 @@
           "kind": "field",
           "name": "filter_queryables_enabled",
           "required": false,
-          "desc": "If set to true, the header 'X-Filter-Queryables' can be used to filter down the list of queryables that shall be used. This is useful to test and monitor single queryables in isolation.",
+          "desc": "If set to true, the header 'X-Filter-Queryables' can be used to filter down the list of queryables that shall be used. This is useful to test and monitor single queryables in isolation. Deprecated: has no effect.",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "querier.filter-queryables-enabled",
           "fieldType": "boolean",
-          "fieldCategory": "advanced"
+          "fieldCategory": "deprecated"
         },
         {
           "kind": "field",

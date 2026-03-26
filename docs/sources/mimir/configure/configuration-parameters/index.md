@@ -1888,9 +1888,9 @@ store_gateway_client:
 # CLI flag: -querier.enable-query-engine-fallback
 [enable_query_engine_fallback: <boolean> | default = true]
 
-# (advanced) If set to true, the header 'X-Filter-Queryables' can be used to
+# (deprecated) If set to true, the header 'X-Filter-Queryables' can be used to
 # filter down the list of queryables that shall be used. This is useful to test
-# and monitor single queryables in isolation.
+# and monitor single queryables in isolation. Deprecated: has no effect.
 # CLI flag: -querier.filter-queryables-enabled
 [filter_queryables_enabled: <boolean> | default = false]
 
