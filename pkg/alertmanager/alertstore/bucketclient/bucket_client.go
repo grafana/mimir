@@ -55,9 +55,8 @@ type BucketAlertStore struct {
 	amBucket        objstore.Bucket
 	grafanaAMBucket objstore.Bucket
 
-	cfgProvider     bucket.TenantConfigProvider
-	fetchGrafanaCfg bool
-	logger          log.Logger
+	cfgProvider bucket.TenantConfigProvider
+	logger      log.Logger
 }
 
 type BucketAlertStoreConfig struct {
@@ -71,7 +70,6 @@ func NewBucketAlertStore(cfg BucketAlertStoreConfig, bkt objstore.Bucket, cfgPro
 		amBucket:        bucket.NewPrefixedBucketClient(bkt, AlertmanagerPrefix),
 		grafanaAMBucket: bucket.NewPrefixedBucketClient(bkt, GrafanaAlertmanagerPrefix),
 		cfgProvider:     cfgProvider,
-		fetchGrafanaCfg: cfg.FetchGrafanaConfig,
 		logger:          logger,
 	}
 }
@@ -84,14 +82,6 @@ func (s *BucketAlertStore) ListAllUsers(ctx context.Context) ([]string, error) {
 		userIDs[key] = struct{}{}
 		return nil
 	})
-
-	if s.fetchGrafanaCfg {
-		err = s.grafanaAMBucket.Iter(ctx, "", func(key string) error {
-			// Unlike standard configurations, for the Grafana bucket has a hierarchy per user.
-			userIDs[strings.TrimRight(key, "/")] = struct{}{}
-			return nil
-		})
-	}
 
 	result := make([]string, 0, len(userIDs))
 	for userID := range userIDs {
@@ -119,15 +109,6 @@ func (s *BucketAlertStore) GetAlertConfigs(ctx context.Context, userIDs []string
 			return fmt.Errorf("failed to fetch alertmanager config for user %s: %w", userID, err)
 		}
 		cfg.Mimir = mimirCfg
-
-		if s.fetchGrafanaCfg {
-			grafanaCfg, err := s.getGrafanaAlertConfig(ctx, userID)
-			// Users not having a Grafana alerting configuration is expected.
-			if err != nil && !s.alertsBucket.IsObjNotFoundErr(err) {
-				return fmt.Errorf("failed to fetch grafana alertmanager config for user %s: %w", userID, err)
-			}
-			cfg.Grafana = grafanaCfg
-		}
 
 		cfgsMx.Lock()
 		cfgs[userID] = cfg
