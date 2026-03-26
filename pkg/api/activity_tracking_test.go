@@ -42,7 +42,7 @@ func TestActivityTrackingMiddleware_DeleteAfterInnerHandler(t *testing.T) {
 	})
 
 	// Activity tracker wraps our pretend handler
-	handler := NewActivityTrackingMiddleware(at, log.NewNopLogger(), inner, 0)
+	handler := NewActivityTrackingMiddleware(at, log.NewNopLogger(), inner)
 
 	resp := httptest.NewRecorder()
 
@@ -68,13 +68,12 @@ func TestActivityTrackingMiddleware_TenantIDFromHeader(t *testing.T) {
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		activities, err := activitytracker.LoadUnfinishedEntries(activityFile)
 		require.NoError(t, err)
-		if assert.Len(t, activities, 1) {
-			capturedActivity = activities[0].Activity
-		}
+		require.Len(t, activities, 1)
+		capturedActivity = activities[0].Activity
 		w.WriteHeader(http.StatusOK)
 	})
 
-	handler := NewActivityTrackingMiddleware(at, log.NewNopLogger(), inner, 0)
+	handler := NewActivityTrackingMiddleware(at, log.NewNopLogger(), inner)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/query?query=up", nil)
 	// Set the org ID header directly — auth middleware has not run yet at this layer.
@@ -152,7 +151,7 @@ func TestActivityTrackingMiddleware_ParamParsing(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 			})
 
-			handler := NewActivityTrackingMiddleware(at, log.NewNopLogger(), inner, 0)
+			handler := NewActivityTrackingMiddleware(at, log.NewNopLogger(), inner)
 
 			var bodyReader io.Reader
 			if tc.body != "" {
@@ -233,7 +232,7 @@ func TestActivityTrackingMiddleware_LargeBodyNotBuffered(t *testing.T) {
 				gotBody = string(got)
 				w.WriteHeader(http.StatusOK)
 			})
-			handler := NewActivityTrackingMiddleware(at, log.NewNopLogger(), inner, 0)
+			handler := NewActivityTrackingMiddleware(at, log.NewNopLogger(), inner)
 
 			var bodyReader io.Reader
 			var pw *io.PipeWriter
@@ -291,93 +290,3 @@ func TestActivityTrackingMiddleware_LargeBodyNotBuffered(t *testing.T) {
 	}
 }
 
-func TestActivityTrackingMiddleware_MaxBodySize(t *testing.T) {
-	activityFile := filepath.Join(t.TempDir(), "activity-tracker")
-	reg := prometheus.NewPedanticRegistry()
-	at, err := activitytracker.NewActivityTracker(activitytracker.Config{Filepath: activityFile, MaxEntries: 1024}, reg)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, at.Close()) })
-
-	for _, tc := range []struct {
-		name        string
-		body        string
-		contentType string
-		// maxBytes is passed directly as maxBodySizeIfAny; 0 means no limit.
-		maxBytes               int64
-		expectedStatus         int
-		expectInnerHandlerRuns bool
-		// expectHandlerBodyErr is set for cases where the inner handler reads the body and expects a MaxBytesError.
-		expectHandlerBodyErr bool
-	}{
-		{
-			name:                   "no limit: handler always runs",
-			body:                   "query=up&time=42",
-			contentType:            "application/x-www-form-urlencoded",
-			maxBytes:               0,
-			expectedStatus:         http.StatusOK,
-			expectInnerHandlerRuns: true,
-		},
-		{
-			name:                   "form-encoded body within limit: handler runs and params captured",
-			body:                   "query=up&time=42",
-			contentType:            "application/x-www-form-urlencoded",
-			maxBytes:               1024,
-			expectedStatus:         http.StatusOK,
-			expectInnerHandlerRuns: true,
-		},
-		{
-			name:                   "form-encoded body exceeds limit: middleware rejects before calling handler",
-			body:                   "query=up&time=42",
-			contentType:            "application/x-www-form-urlencoded",
-			maxBytes:               5,
-			expectedStatus:         http.StatusInternalServerError,
-			expectInnerHandlerRuns: false,
-		},
-		{
-			// For non-form-encoded requests the middleware does not read the body, so the
-			// handler receives an r.Body wrapped with MaxBytesReader and must enforce the
-			// limit itself.
-			name:                   "non-form-encoded body exceeds limit: MaxBytesReader passed to handler",
-			body:                   "binary payload that is too large",
-			contentType:            "application/octet-stream",
-			maxBytes:               5,
-			expectedStatus:         http.StatusOK,
-			expectInnerHandlerRuns: true,
-			expectHandlerBodyErr:   true,
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			var innerHandlerRan bool
-			var handlerBodyErr error
-
-			inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				innerHandlerRan = true
-				if tc.contentType == "application/x-www-form-urlencoded" {
-					// Body must still be readable by the inner handler after middleware buffered it.
-					require.NoError(t, r.ParseForm())
-					require.Equal(t, "up", r.FormValue("query"))
-				} else {
-					_, handlerBodyErr = io.ReadAll(r.Body)
-				}
-				w.WriteHeader(http.StatusOK)
-			})
-			handler := NewActivityTrackingMiddleware(at, log.NewNopLogger(), inner, tc.maxBytes)
-
-			req := httptest.NewRequest(http.MethodPost, "/api/v1/query", strings.NewReader(tc.body))
-			req.Header.Set("Content-Type", tc.contentType)
-			req.Header.Set("X-Scope-OrgID", "tenant1")
-			resp := httptest.NewRecorder()
-
-			handler.ServeHTTP(resp, req)
-
-			require.Equal(t, tc.expectInnerHandlerRuns, innerHandlerRan)
-			require.Equal(t, tc.expectedStatus, resp.Code)
-
-			if tc.expectHandlerBodyErr {
-				require.Error(t, handlerBodyErr)
-				var maxBytesErr *http.MaxBytesError
-				require.ErrorAs(t, handlerBodyErr, &maxBytesErr)
-			}
-		})
-	}
-}

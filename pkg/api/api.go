@@ -194,8 +194,13 @@ func (a *API) newRoute(path string, handler http.Handler, isPrefix, auth, gzip b
 	}
 
 	if a.activityTracker != nil {
-		handler = NewActivityTrackingMiddleware(a.activityTracker, a.logger, handler, maxBodySizeIfAny)
+		handler = NewActivityTrackingMiddleware(a.activityTracker, a.logger, handler)
 	}
+
+	if maxBodySizeIfAny > 0 {
+		handler = newMaxBodySizeHandler(handler, maxBodySizeIfAny)
+	}
+
 	if isPrefix {
 		route = a.server.HTTP.PathPrefix(path)
 	} else {
@@ -207,6 +212,19 @@ func (a *API) newRoute(path string, handler http.Handler, isPrefix, auth, gzip b
 	route = route.Handler(handler)
 
 	return route
+}
+
+// newMaxBodySizeHandler returns a handler that limits the request body to limit bytes.
+// It must be placed outside the activity tracking middleware so the limit is applied before
+// the activity tracker attempts to read the body.
+func newMaxBodySizeHandler(next http.Handler, limit int64) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Body != nil {
+			r.Body = http.MaxBytesReader(w, r.Body, limit)
+			defer r.Body.Close()
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // RegisterAlertmanager registers endpoints that are associated with the alertmanager.
