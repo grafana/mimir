@@ -52,8 +52,8 @@ type trackerMetrics struct {
 
 func (s *schedulerMetrics) newTrackerMetricsForTenant(tenant string) *trackerMetrics {
 	return &trackerMetrics{
-		pendingJobs: s.pendingJobs.WithLabelValues(tenant),
-		activeJobs:  s.activeJobs.WithLabelValues(tenant),
+		pendingJobs:         s.pendingJobs.WithLabelValues(tenant),
+		activeJobs:          s.activeJobs.WithLabelValues(tenant),
 		repeatedJobFailures: s.repeatedJobFailures,
 	}
 }
