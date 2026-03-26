@@ -1554,6 +1554,101 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 	}
 }
 
+func TestDistributor_Push_SampleTooOldWithOOOEnabled(t *testing.T) {
+	ctx := user.InjectOrgID(context.Background(), "user")
+
+	now := time.Now()
+	mtime.NowForce(now)
+	t.Cleanup(mtime.NowReset)
+
+	tests := map[string]struct {
+		pastGracePeriod      time.Duration
+		outOfOrderTimeWindow time.Duration
+		sampleAgeMs          int64
+		expectedErr          *status.Status
+		description          string
+	}{
+		"sample within OOO window should be accepted": {
+			pastGracePeriod:      2 * time.Hour,
+			outOfOrderTimeWindow: 1 * time.Hour,
+			sampleAgeMs:          30 * 60 * 1000, // 30 minutes old
+			expectedErr:          nil,
+			description:          "Sample is 30m old, OOO window is 1h, should pass",
+		},
+		"sample exactly at OOO window boundary should be accepted": {
+			pastGracePeriod:      2 * time.Hour,
+			outOfOrderTimeWindow: 1 * time.Hour,
+			sampleAgeMs:          60 * 60 * 1000, // Exactly 1 hour old
+			expectedErr:          nil,
+			description:          "Sample is exactly at OOO window boundary",
+		},
+		"sample just outside OOO window should be rejected": {
+			pastGracePeriod:      2 * time.Hour,
+			outOfOrderTimeWindow: 1 * time.Hour,
+			sampleAgeMs:          61 * 60 * 1000, // 61 minutes old (just outside 1h window)
+			expectedErr:          status.New(codes.InvalidArgument, ""),
+			description:          "Sample is 61m old, OOO window is 1h, should be rejected by distributor",
+		},
+		"sample within pastGracePeriod but outside OOO window should be rejected when OOO enabled": {
+			pastGracePeriod:      2 * time.Hour,
+			outOfOrderTimeWindow: 1 * time.Hour,
+			sampleAgeMs:          90 * 60 * 1000, // 90 minutes old
+			expectedErr:          status.New(codes.InvalidArgument, ""),
+			description:          "Sample is 90m old, within pastGracePeriod (2h) but outside OOO window (1h), should be rejected",
+		},
+		"sample outside pastGracePeriod should be rejected": {
+			pastGracePeriod:      2 * time.Hour,
+			outOfOrderTimeWindow: 1 * time.Hour,
+			sampleAgeMs:          3 * 60 * 60 * 1000, // 3 hours old
+			expectedErr:          status.New(codes.InvalidArgument, ""),
+			description:          "Sample is 3h old, outside pastGracePeriod (2h), should be rejected",
+		},
+		"with OOO disabled, sample within pastGracePeriod should be accepted": {
+			pastGracePeriod:      2 * time.Hour,
+			outOfOrderTimeWindow: 0,              // OOO disabled
+			sampleAgeMs:          90 * 60 * 1000, // 90 minutes old
+			expectedErr:          nil,
+			description:          "OOO disabled, sample within pastGracePeriod should pass",
+		},
+	}
+
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			limits := prepareDefaultLimits()
+			limits.CreationGracePeriod = model.Duration(1 * time.Minute)
+			limits.PastGracePeriod = model.Duration(tc.pastGracePeriod)
+			limits.OutOfOrderTimeWindow = model.Duration(tc.outOfOrderTimeWindow)
+
+			ds, _, _, _ := prepare(t, prepConfig{
+				numIngesters:     2,
+				happyIngesters:   2,
+				numDistributors:  1,
+				shuffleShardSize: 0,
+				limits:           limits,
+			})
+
+			// Create a sample with the specified age
+			sampleTimestamp := now.UnixMilli() - tc.sampleAgeMs
+			req := makeWriteRequest(sampleTimestamp, 1, 0, false, false, "test_metric")
+
+			resp, err := ds[0].Push(ctx, req)
+
+			if tc.expectedErr == nil {
+				assert.NoError(t, err, "Test case: %s", tc.description)
+				assert.Equal(t, emptyResponse, resp)
+			} else {
+				assert.Error(t, err, "Test case: %s", tc.description)
+				assert.Nil(t, resp)
+				// Check that it's an InvalidArgument error (sample too old)
+				st, ok := grpcutil.ErrorToStatus(err)
+				require.True(t, ok, "Expected gRPC status error")
+				assert.Equal(t, codes.InvalidArgument, st.Code(), "Test case: %s", tc.description)
+				assert.Contains(t, st.Message(), "too far in the past", "Test case: %s", tc.description)
+			}
+		})
+	}
+}
+
 func TestDistributor_Push_CountDroppedNativeHistograms(t *testing.T) {
 	tests := map[string]struct {
 		ingestionEnabled    bool

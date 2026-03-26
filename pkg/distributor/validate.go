@@ -368,7 +368,21 @@ func validateSample(m *sampleValidationMetrics, now model.Time, cfg sampleValida
 		return fmt.Errorf(sampleTimestampTooNewMsgFormat, s.TimestampMs, unsafeMetricName)
 	}
 
-	if cfg.pastGracePeriod > 0 && model.Time(s.TimestampMs) < now.Add(-cfg.pastGracePeriod).Add(-cfg.outOfOrderTimeWindow) {
+	// The ingester's TSDB rejects samples when: timestamp < headMaxt - oooTimeWindow
+	// For actively written series, headMaxt ≈ now, so we should reject when: timestamp < now - oooTimeWindow
+	// The pastGracePeriod provides additional tolerance for samples that are old relative to wall clock time,
+	// but we must ensure we don't accept samples that the ingester will reject due to the OOO window.
+	// Therefore, we use the more restrictive of the two checks.
+	minValidTime := now.Add(-cfg.pastGracePeriod).Add(-cfg.outOfOrderTimeWindow)
+	if cfg.outOfOrderTimeWindow > 0 {
+		// When OOO is enabled, also enforce the stricter TSDB check: timestamp >= now - oooTimeWindow
+		tsdbMinValidTime := now.Add(-cfg.outOfOrderTimeWindow)
+		if tsdbMinValidTime > minValidTime {
+			minValidTime = tsdbMinValidTime
+		}
+	}
+
+	if cfg.pastGracePeriod > 0 && model.Time(s.TimestampMs) < minValidTime {
 		m.tooFarInPast.WithLabelValues(userID, group).Inc()
 		cat.IncrementDiscardedSamples(ls, 1, reasonTooFarInPast, now.Time())
 		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
@@ -389,7 +403,21 @@ func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sam
 		return false, fmt.Errorf(sampleTimestampTooNewMsgFormat, s.Timestamp, unsafeMetricName)
 	}
 
-	if cfg.pastGracePeriod > 0 && model.Time(s.Timestamp) < now.Add(-cfg.pastGracePeriod).Add(-cfg.outOfOrderTimeWindow) {
+	// The ingester's TSDB rejects samples when: timestamp < headMaxt - oooTimeWindow
+	// For actively written series, headMaxt ≈ now, so we should reject when: timestamp < now - oooTimeWindow
+	// The pastGracePeriod provides additional tolerance for samples that are old relative to wall clock time,
+	// but we must ensure we don't accept samples that the ingester will reject due to the OOO window.
+	// Therefore, we use the more restrictive of the two checks.
+	minValidTime := now.Add(-cfg.pastGracePeriod).Add(-cfg.outOfOrderTimeWindow)
+	if cfg.outOfOrderTimeWindow > 0 {
+		// When OOO is enabled, also enforce the stricter TSDB check: timestamp >= now - oooTimeWindow
+		tsdbMinValidTime := now.Add(-cfg.outOfOrderTimeWindow)
+		if tsdbMinValidTime > minValidTime {
+			minValidTime = tsdbMinValidTime
+		}
+	}
+
+	if cfg.pastGracePeriod > 0 && model.Time(s.Timestamp) < minValidTime {
 		cat.IncrementDiscardedSamples(ls, 1, reasonTooFarInPast, now.Time())
 		m.tooFarInPast.WithLabelValues(userID, group).Inc()
 		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)

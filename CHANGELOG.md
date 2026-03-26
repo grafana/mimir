@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [BUGFIX] Distributor: Fixed sample timestamp validation to prevent `sample-too-old` rejections at the ingester when out-of-order ingestion is enabled. The distributor now enforces the stricter of the two timestamp bounds: `now - pastGracePeriod - outOfOrderTimeWindow` or `now - outOfOrderTimeWindow`, ensuring samples that pass distributor validation will also be accepted by ingesters. #14853
 * [CHANGE] Ingester: Changed default value of `-include-tenant-id-in-profile-labels` from false to true. #13375
 * [CHANGE] Hash ring: removed experimental support for disabling heartbeats (setting `-*.ring.heartbeat-period=0`) and heartbeat timeouts (setting `-*.ring.heartbeat-timeout=0`). These configurations are now invalid. #13104
 * [CHANGE] Distributor: removed experimental flag `-distributor.metric-relabeling-enabled`. #13143
