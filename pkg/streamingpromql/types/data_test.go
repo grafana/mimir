@@ -528,8 +528,8 @@ func TestQueryTimeRange_StepIndexing_RangeQuery(t *testing.T) {
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			require.Equal(t, tc.expectedFirstIndexAfter, tr.FirstIdxAfter(tc.t))
-			require.Equal(t, tc.expectedLastIndexAtOrBefore, tr.LastIdxAtOrBefore(tc.t))
+			require.Equal(t, tc.expectedFirstIndexAfter, tr.FirstPointIndexAfter(tc.t))
+			require.Equal(t, tc.expectedLastIndexAtOrBefore, tr.LastPointIndexAtOrBefore(tc.t))
 		})
 	}
 }
@@ -562,8 +562,8 @@ func TestQueryTimeRange_StepIndexing_InstantQuery(t *testing.T) {
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			require.Equal(t, tc.expectedFirstIndexAfter, tr.FirstIdxAfter(tc.t))
-			require.Equal(t, tc.expectedLastIndexAtOrBefore, tr.LastIdxAtOrBefore(tc.t))
+			require.Equal(t, tc.expectedFirstIndexAfter, tr.FirstPointIndexAfter(tc.t))
+			require.Equal(t, tc.expectedLastIndexAtOrBefore, tr.LastPointIndexAtOrBefore(tc.t))
 		})
 	}
 }

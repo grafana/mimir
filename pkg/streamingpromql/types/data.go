@@ -296,9 +296,9 @@ func (q *QueryTimeRange) Equal(other QueryTimeRange) bool {
 		q.IsInstant == other.IsInstant
 }
 
-// FirstIdxAfter returns the index of the first step with a timestamp strictly greater than t.
+// FirstPointIndexAfter returns the index of the first step with a timestamp strictly greater than t.
 // Returns q.StepCount if no such step exists.
-func (q *QueryTimeRange) FirstIdxAfter(t int64) int {
+func (q *QueryTimeRange) FirstPointIndexAfter(t int64) int {
 	offset := t - q.StartT
 	if offset < 0 {
 		return 0
@@ -310,9 +310,9 @@ func (q *QueryTimeRange) FirstIdxAfter(t int64) int {
 	return idx
 }
 
-// LastIdxAtOrBefore returns the index of the last step with a timestamp at or before t.
+// LastPointIndexAtOrBefore returns the index of the last step with a timestamp at or before t.
 // Returns -1 if no such step exists.
-func (q *QueryTimeRange) LastIdxAtOrBefore(t int64) int {
+func (q *QueryTimeRange) LastPointIndexAtOrBefore(t int64) int {
 	if t < q.StartT {
 		return -1
 	}

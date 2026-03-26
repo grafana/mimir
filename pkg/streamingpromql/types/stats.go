@@ -197,8 +197,8 @@ func (s *OperatorEvaluationStats) ComputeForSubquery(
 		rangeStart := rangeEnd - subqueryRangeMilliseconds
 
 		// Find the range of inner steps in (rangeStart, rangeEnd].
-		firstIdx := s.timeRange.FirstIdxAfter(rangeStart)
-		lastIdx := s.timeRange.LastIdxAtOrBefore(rangeEnd)
+		firstIdx := s.timeRange.FirstPointIndexAfter(rangeStart)
+		lastIdx := s.timeRange.LastPointIndexAtOrBefore(rangeEnd)
 
 		for innerIdx := firstIdx; innerIdx <= lastIdx; innerIdx++ {
 			result.samplesProcessedPerStep[outerIdx] += s.samplesProcessedPerStep[innerIdx]
