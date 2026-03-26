@@ -197,8 +197,8 @@ func (s *OperatorEvaluationStats) ComputeForSubquery(
 		rangeStart := rangeEnd - subqueryRangeMilliseconds
 
 		// Find the range of inner steps in (rangeStart, rangeEnd].
-		firstIdx := firstIdxAfter(s.timeRange, rangeStart)
-		lastIdx := lastIdxAtOrBefore(s.timeRange, rangeEnd)
+		firstIdx := s.timeRange.FirstIdxAfter(rangeStart)
+		lastIdx := s.timeRange.LastIdxAtOrBefore(rangeEnd)
 
 		for innerIdx := firstIdx; innerIdx <= lastIdx; innerIdx++ {
 			result.samplesProcessedPerStep[outerIdx] += s.samplesProcessedPerStep[innerIdx]
@@ -213,34 +213,6 @@ func (s *OperatorEvaluationStats) ComputeForSubquery(
 	}
 
 	return result, nil
-}
-
-// firstIdxAfter returns the index of the first step in timeRange with a timestamp strictly greater than t.
-// Returns timeRange.StepCount if no such step exists.
-func firstIdxAfter(timeRange QueryTimeRange, t int64) int {
-	offset := t - timeRange.StartT
-	if offset < 0 {
-		return 0
-	}
-	idx := int(offset/timeRange.IntervalMilliseconds) + 1
-	if idx > timeRange.StepCount {
-		return timeRange.StepCount
-	}
-	return idx
-}
-
-// lastIdxAtOrBefore returns the index of the last step in timeRange with a timestamp at or before t.
-// Returns -1 if no such step exists.
-func lastIdxAtOrBefore(timeRange QueryTimeRange, t int64) int {
-	if t < timeRange.StartT {
-		return -1
-	}
-	offset := t - timeRange.StartT
-	idx := int(offset / timeRange.IntervalMilliseconds)
-	if idx >= timeRange.StepCount {
-		return timeRange.StepCount - 1
-	}
-	return idx
 }
 
 func (s *OperatorEvaluationStats) Close() {
