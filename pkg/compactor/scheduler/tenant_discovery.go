@@ -21,16 +21,17 @@ import (
 type TenantDiscoverer struct {
 	services.Service
 
-	logger               log.Logger
-	metrics              *schedulerMetrics
-	clock                clock.Clock
-	allowedTenants       *util.AllowList
-	bkt                  objstore.Bucket
-	jpm                  JobPersistenceManager
-	userDiscoveryBackoff backoff.Config
-	rotator              *Rotator
-	maxLeases            int
-	knownTenants         map[string]struct{}
+	logger                         log.Logger
+	metrics                        *schedulerMetrics
+	clock                          clock.Clock
+	allowedTenants                 *util.AllowList
+	bkt                            objstore.Bucket
+	jpm                            JobPersistenceManager
+	tenantDiscoveryBackoff         backoff.Config
+	rotator                        *Rotator
+	maxLeases                      int
+	repeatedFailureReportThreshold int
+	knownTenants                   map[string]struct{}
 }
 
 func NewTenantDiscoverer(
@@ -42,31 +43,32 @@ func NewTenantDiscoverer(
 	metrics *schedulerMetrics,
 	logger log.Logger) *TenantDiscoverer {
 	s := &TenantDiscoverer{
-		logger:               logger,
-		metrics:              metrics,
-		clock:                clock.New(),
-		allowedTenants:       allowList,
-		bkt:                  bkt,
-		jpm:                  jpm,
-		userDiscoveryBackoff: cfg.UserDiscoveryBackoff,
-		rotator:              rotator,
-		maxLeases:            cfg.MaxLeases,
-		knownTenants:         make(map[string]struct{}),
+		logger:                         logger,
+		metrics:                        metrics,
+		clock:                          clock.New(),
+		allowedTenants:                 allowList,
+		bkt:                            bkt,
+		jpm:                            jpm,
+		tenantDiscoveryBackoff:         cfg.TenantDiscoveryBackoff,
+		rotator:                        rotator,
+		maxLeases:                      cfg.MaxLeases,
+		repeatedFailureReportThreshold: cfg.RepeatedFailureReportThreshold,
+		knownTenants:                   make(map[string]struct{}),
 	}
 	s.Service = services.NewTimerService(cfg.TenantDiscoveryInterval, s.start, s.iter, nil)
 	return s
 }
 
 // RecoverFrom populates the tenant discoverer with known tenants from recovered state.
-// Must be called before the service is started.
 func (s *TenantDiscoverer) RecoverFrom(jobTrackers map[string]*JobTracker) {
 	for tenant := range jobTrackers {
 		s.knownTenants[tenant] = struct{}{}
 	}
 }
 
+// start starts the tenant discovery service. It is expected that RecoverFrom is called before starting the service.
 func (s *TenantDiscoverer) start(ctx context.Context) error {
-	b := backoff.New(ctx, s.userDiscoveryBackoff)
+	b := backoff.New(ctx, s.tenantDiscoveryBackoff)
 	var err error
 	for b.Ongoing() {
 		err = s.discoverTenants(ctx)
@@ -106,7 +108,7 @@ func (s *TenantDiscoverer) discoverTenants(ctx context.Context) error {
 				level.Warn(s.logger).Log("msg", "failed initializing tenant", "user", tenant, "err", err)
 				continue
 			}
-			tracker := NewJobTracker(persister, tenant, s.clock, s.maxLeases, s.metrics.newTrackerMetricsForTenant(tenant))
+			tracker := NewJobTracker(persister, tenant, s.clock, s.maxLeases, s.repeatedFailureReportThreshold, s.metrics.newTrackerMetricsForTenant(tenant), s.logger)
 			s.rotator.AddTenant(tenant, tracker)
 			s.knownTenants[tenant] = struct{}{}
 		}
@@ -119,14 +121,13 @@ func (s *TenantDiscoverer) discoverTenants(ctx context.Context) error {
 			tracker, ok := s.rotator.RemoveTenant(tenant)
 			if !ok {
 				level.Warn(logger).Log("msg", "attempted to remove tenant from rotator, but the tenant was unexpectedly missing")
+				continue
 			}
-			err = s.jpm.DeleteTenant(tenant)
+			err := tracker.persister.Drop()
 			if err != nil {
 				level.Warn(logger).Log("msg", "failed removing tenant bucket from compactor scheduler", "err", err)
-				if ok {
-					// Preserve 1:1 with rotator and knownTenants
-					s.rotator.AddTenant(tenant, tracker)
-				}
+				// Preserve 1:1 with rotator and knownTenants
+				s.rotator.AddTenant(tenant, tracker)
 				continue
 			}
 			delete(s.knownTenants, tenant)

@@ -4,6 +4,7 @@ package commonsubexpressionelimination
 
 import (
 	"context"
+	"errors"
 	"math"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -30,6 +31,8 @@ type InstantVectorDuplicationBuffer struct {
 	// Multiple InstantVectorDuplicationConsumers will call InstantVectorDuplicationBuffer.Prepare() and AfterPrepare(), so this ensures idempotency.
 	prepareCalled      bool
 	afterPrepareCalled bool
+
+	stats *types.OperatorEvaluationStats
 }
 
 func NewInstantVectorDuplicationBuffer(inner types.InstantVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *InstantVectorDuplicationBuffer {
@@ -163,15 +166,35 @@ func (b *InstantVectorDuplicationBuffer) CloseConsumer(consumer *InstantVectorDu
 		return
 	}
 
+	b.releaseBufferedData(consumer)
 	consumer.closed = true
+
+	if b.allConsumersClosed() {
+		b.Inner.Close()
+
+		if b.stats != nil {
+			b.stats.Close()
+			b.stats = nil
+		}
+	}
+}
+
+func (b *InstantVectorDuplicationBuffer) releaseBufferedData(consumer *InstantVectorDuplicationConsumer) {
+	if consumer.finalized {
+		return
+	}
+
+	consumer.finalized = true
+
+	defer types.BoolSlicePool.Put(&consumer.unfilteredSeriesBitmap, b.MemoryConsumptionTracker)
 
 	// Remove any buffered series that are no longer needed because they were only being retained for the consumer
 	// that was just closed.
 	earliestSeriesIndexStillToReturn := b.earliestSeriesIndexStillToReturn()
 
 	if earliestSeriesIndexStillToReturn == math.MaxInt {
-		// All other consumers are already closed. Close everything.
-		b.close()
+		// All other consumers are already finalized. Clean up everything.
+		b.releaseAllBufferedData()
 		return
 	}
 
@@ -218,10 +241,18 @@ func (b *InstantVectorDuplicationBuffer) CloseConsumer(consumer *InstantVectorDu
 	}
 }
 
+func (b *InstantVectorDuplicationBuffer) releaseAllBufferedData() {
+	types.SeriesMetadataSlicePool.Put(&b.seriesMetadata, b.MemoryConsumptionTracker)
+
+	for b.buffer.Size() > 0 {
+		types.PutInstantVectorSeriesData(b.buffer.RemoveFirst(), b.MemoryConsumptionTracker)
+	}
+}
+
 func (b *InstantVectorDuplicationBuffer) earliestSeriesIndexStillToReturn() int {
 	idx := math.MaxInt
 	for _, consumer := range b.consumers {
-		if consumer.closed {
+		if consumer.finalized {
 			continue
 		}
 
@@ -233,7 +264,7 @@ func (b *InstantVectorDuplicationBuffer) earliestSeriesIndexStillToReturn() int 
 
 func (b *InstantVectorDuplicationBuffer) allOpenConsumersHaveNoFilters() bool {
 	for _, consumer := range b.consumers {
-		if consumer.closed {
+		if consumer.finalized {
 			continue
 		}
 
@@ -268,7 +299,7 @@ func (b *InstantVectorDuplicationBuffer) Finalize(ctx context.Context, consumer 
 		return nil
 	}
 
-	consumer.finalized = true
+	b.releaseBufferedData(consumer)
 
 	if !b.allConsumersFinalized() {
 		return nil
@@ -287,16 +318,55 @@ func (b *InstantVectorDuplicationBuffer) allConsumersFinalized() bool {
 	return true
 }
 
-func (b *InstantVectorDuplicationBuffer) close() {
-	types.SeriesMetadataSlicePool.Put(&b.seriesMetadata, b.MemoryConsumptionTracker)
-
-	for b.buffer.Size() > 0 {
-		types.PutInstantVectorSeriesData(b.buffer.RemoveFirst(), b.MemoryConsumptionTracker)
+func (b *InstantVectorDuplicationBuffer) allConsumersClosed() bool {
+	for _, consumer := range b.consumers {
+		if !consumer.closed {
+			return false
+		}
 	}
 
-	b.buffer = nil
+	return true
+}
 
-	b.Inner.Close()
+func (b *InstantVectorDuplicationBuffer) QueryStats(ctx context.Context, consumer *InstantVectorDuplicationConsumer) (*types.OperatorEvaluationStats, error) {
+	if !b.allConsumersFinalized() {
+		return nil, errors.New("InstantVectorDuplicationBuffer: cannot get stats when one or more consumers are not finalized")
+	}
+
+	if consumer.hasReadStats {
+		return nil, errors.New("InstantVectorDuplicationBuffer: cannot get stats twice for the same consumer")
+	}
+
+	if b.stats == nil {
+		var err error
+		b.stats, err = b.Inner.Stats(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	consumer.hasReadStats = true
+
+	// TODO: handle subsets
+
+	if b.allConsumersHaveReadStats() {
+		// Last consumer, return stats without cloning.
+		stats := b.stats
+		b.stats = nil
+		return stats, nil
+	}
+
+	return b.stats.Clone()
+}
+
+func (b *InstantVectorDuplicationBuffer) allConsumersHaveReadStats() bool {
+	for _, consumer := range b.consumers {
+		if !consumer.hasReadStats {
+			return false
+		}
+	}
+
+	return true
 }
 
 type InstantVectorDuplicationConsumer struct {
@@ -329,6 +399,7 @@ type InstantVectorDuplicationConsumer struct {
 	nextUnfilteredSeriesIndex int
 	closed                    bool
 	finalized                 bool
+	hasReadStats              bool
 }
 
 var _ types.InstantVectorOperator = &InstantVectorDuplicationConsumer{}
@@ -342,7 +413,7 @@ func (d *InstantVectorDuplicationConsumer) SeriesMetadata(ctx context.Context, m
 }
 
 func (d *InstantVectorDuplicationConsumer) shouldReturnUnfilteredSeries(unfilteredSeriesIndex int) bool {
-	if d.closed {
+	if d.finalized {
 		return false
 	}
 
@@ -381,9 +452,12 @@ func (d *InstantVectorDuplicationConsumer) Finalize(ctx context.Context) error {
 	return d.Buffer.Finalize(ctx, d)
 }
 
+func (d *InstantVectorDuplicationConsumer) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return d.Buffer.QueryStats(ctx, d)
+}
+
 func (d *InstantVectorDuplicationConsumer) Close() {
 	d.Buffer.CloseConsumer(d)
-	types.BoolSlicePool.Put(&d.unfilteredSeriesBitmap, d.Buffer.MemoryConsumptionTracker)
 }
 
 func matchesSeries(filters []*labels.Matcher, series labels.Labels) bool {

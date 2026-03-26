@@ -263,8 +263,6 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of aggregation groups in Alertmanager's dispatcher that a tenant can have. Each active aggregation group uses single goroutine. When the limit is reached, dispatcher will not dispatch alerts that belong to additional aggregation groups, but existing groups will keep working properly. 0 = no limit.
   -alertmanager.max-grafana-config-size-bytes value
     	Maximum size of the Grafana Alertmanager configuration for a tenant. 0 = no limit.
-  -alertmanager.max-grafana-state-size-bytes value
-    	Maximum size of the Grafana Alertmanager state for a tenant. 0 = no limit.
   -alertmanager.max-recv-msg-size int
     	Maximum size (bytes) of an accepted HTTP request body. (default 104857600)
   -alertmanager.max-silence-size-bytes int
@@ -1459,6 +1457,8 @@ Usage of ./cmd/mimir/mimir:
     	True to enable the ingestion via object storage.
   -ingest-storage.ingestion-partition-tenant-shard-size int
     	[experimental] The number of partitions a tenant's data should be sharded to when using the ingest storage. Tenants are sharded across partitions using shuffle-sharding. 0 disables shuffle sharding and tenant is sharded across all partitions.
+  -ingest-storage.ingestion-partition-tenant-write-shard-size int
+    	[experimental] The maximum number of partitions a tenant's data should be written to when using the ingest storage. When set to a value > 0 and less than -ingest-storage.ingestion-partition-tenant-shard-size, writes use fewer partitions while reads continue using the full shard size. This allows safely reducing the shard size without losing query coverage during the migration. 0 means the write shard size equals the read shard size.
   -ingest-storage.kafka.address comma-separated-list-of-strings
     	The Kafka seed broker address, or a comma-separated list of seed broker addresses.
   -ingest-storage.kafka.auto-create-topic-default-partitions int
@@ -2140,7 +2140,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.enable-query-engine-fallback
     	[experimental] If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine. (default true)
   -querier.filter-queryables-enabled
-    	If set to true, the header 'X-Filter-Queryables' can be used to filter down the list of queryables that shall be used. This is useful to test and monitor single queryables in isolation.
+    	[deprecated] If set to true, the header 'X-Filter-Queryables' can be used to filter down the list of queryables that shall be used. This is useful to test and monitor single queryables in isolation. Deprecated: has no effect.
   -querier.frontend-client.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -querier.frontend-client.backoff-min-period duration

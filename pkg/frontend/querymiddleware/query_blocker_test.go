@@ -41,16 +41,21 @@ func parseBlockedQueriesYAML(t *testing.T, yamlStr string) []validation.BlockedQ
 }
 
 func TestQueryBlockerMiddleware_RangeAndInstantQuery(t *testing.T) {
+	now := time.Now()
 	tests := []struct {
-		name            string
-		query           string
-		limitsYAML      string
-		expectedBlocked bool
+		name                   string
+		query                  string
+		queryStart             time.Time
+		queryEnd               time.Time
+		limitsYAML             string
+		expectedBlockedRange   bool
+		expectedBlockedInstant bool
 	}{
 		{
-			name:            "empty limits",
-			query:           "rate(metric_counter[5m])",
-			expectedBlocked: false,
+			name:                   "empty limits",
+			query:                  "rate(metric_counter[5m])",
+			expectedBlockedRange:   false,
+			expectedBlockedInstant: false,
 		},
 		{
 			name: "single line non-regex pattern",
@@ -59,8 +64,9 @@ blocked_queries:
   - pattern: "rate(metric_counter[5m])"
     regex: false
 `,
-			query:           "rate(metric_counter[5m])",
-			expectedBlocked: true,
+			query:                  "rate(metric_counter[5m])",
+			expectedBlockedRange:   true,
+			expectedBlockedInstant: true,
 		},
 		{
 			name: "non-canonical pattern - label order differs",
@@ -69,8 +75,9 @@ blocked_queries:
   - pattern: 'up{pod="test", job="test"}'
     regex: false
 `,
-			query:           `up{job="test",pod="test"}`, // Query has labels in different order
-			expectedBlocked: true,
+			query:                  `up{job="test",pod="test"}`, // Query has labels in different order
+			expectedBlockedRange:   true,
+			expectedBlockedInstant: true,
 		},
 		{
 			name: "non-canonical pattern - extra whitespace and trailing comma",
@@ -79,8 +86,9 @@ blocked_queries:
   - pattern: 'up{ job="test" , pod="test" , }'
     regex: false
 `,
-			query:           `up{job="test",pod="test"}`, // Query is canonical (no extra whitespace/comma)
-			expectedBlocked: true,
+			query:                  `up{job="test",pod="test"}`, // Query is canonical (no extra whitespace/comma)
+			expectedBlockedRange:   true,
+			expectedBlockedInstant: true,
 		},
 		{
 			name: "non-canonical pattern - function with extra whitespace",
@@ -89,8 +97,9 @@ blocked_queries:
   - pattern: 'rate( metric_counter[ 5m ] )'
     regex: false
 `,
-			query:           `rate(metric_counter[5m])`, // Query is canonical (no extra whitespace)
-			expectedBlocked: true,
+			query:                  `rate(metric_counter[5m])`, // Query is canonical (no extra whitespace)
+			expectedBlockedRange:   true,
+			expectedBlockedInstant: true,
 		},
 		{
 			name: "non-canonical pattern - aggregation with extra whitespace",
@@ -99,8 +108,9 @@ blocked_queries:
   - pattern: 'sum( rate(metric_counter[5m]) )'
     regex: false
 `,
-			query:           `sum(rate(metric_counter[5m]))`, // Query is canonical (no extra whitespace)
-			expectedBlocked: true,
+			query:                  `sum(rate(metric_counter[5m]))`, // Query is canonical (no extra whitespace)
+			expectedBlockedRange:   true,
+			expectedBlockedInstant: true,
 		},
 		{
 			name: "non-canonical pattern - aggregation with by() and extra whitespace",
@@ -109,28 +119,31 @@ blocked_queries:
   - pattern: 'sum( rate(metric_counter[5m]) ) by ( job , pod )'
     regex: false
 `,
-			query:           `sum(rate(metric_counter[5m])) by(job,pod)`, // Query is canonical (no extra whitespace)
-			expectedBlocked: true,
+			query:                  `sum(rate(metric_counter[5m])) by(job,pod)`, // Query is canonical (no extra whitespace)
+			expectedBlockedRange:   true,
+			expectedBlockedInstant: true,
 		},
 		{
-			name: "by() labels not sorted - different order doesn't match",
+			name: "by() labels not sorted - different order",
 			limitsYAML: `
 blocked_queries:
   - pattern: 'sum(rate(metric_counter[5m])) by(job,pod)'
     regex: false
 `,
-			query:           `sum(rate(metric_counter[5m])) by(pod,job)`, // Different label order in by()
-			expectedBlocked: false,
+			query:                  `sum(rate(metric_counter[5m])) by(pod,job)`, // Different label order in by()
+			expectedBlockedRange:   false,
+			expectedBlockedInstant: false,
 		},
 		{
-			name: "different pattern - no match",
+			name: "different pattern",
 			limitsYAML: `
 blocked_queries:
   - pattern: "rate(metric_counter[5m])"
     regex: false
 `,
-			query:           "rate(metric_counter[15m])",
-			expectedBlocked: false,
+			query:                  "rate(metric_counter[15m])",
+			expectedBlockedRange:   false,
+			expectedBlockedInstant: false,
 		},
 		{
 			name: "multiple line non-regex pattern",
@@ -144,10 +157,11 @@ blocked_queries:
 				/
 				rate(other_counter[5m])
 			`,
-			expectedBlocked: true,
+			expectedBlockedRange:   true,
+			expectedBlockedInstant: true,
 		},
 		{
-			name: "multiple line different pattern - no match",
+			name: "multiple line different pattern",
 			limitsYAML: `
 blocked_queries:
   - pattern: "rate(metric_counter[5m])"
@@ -158,7 +172,8 @@ blocked_queries:
 				/
 				rate(other_counter[15m])
 			`,
-			expectedBlocked: false,
+			expectedBlockedRange:   false,
+			expectedBlockedInstant: false,
 		},
 		{
 			name: "single line regex pattern",
@@ -167,8 +182,21 @@ blocked_queries:
   - pattern: ".*metric_counter.*"
     regex: true
 `,
-			query:           "rate(metric_counter[5m])",
-			expectedBlocked: true,
+			query:                  "rate(metric_counter[5m])",
+			expectedBlockedRange:   true,
+			expectedBlockedInstant: true,
+		},
+		{
+			name: "block all queries with .* regex",
+			limitsYAML: `
+blocked_queries:
+  - pattern: ".*"
+    regex: true
+    reason: "all queries are blocked"
+`,
+			query:                  "up",
+			expectedBlockedRange:   true,
+			expectedBlockedInstant: true,
 		},
 		{
 			name: "multiple line regex pattern",
@@ -182,7 +210,8 @@ blocked_queries:
 				/
 				rate(metric_counter[15m])
 			`,
-			expectedBlocked: true,
+			expectedBlockedRange:   true,
+			expectedBlockedInstant: true,
 		},
 		{
 			name: "regex not canonicalized - out-of-order labels don't match",
@@ -191,28 +220,126 @@ blocked_queries:
   - pattern: 'up\{pod="test",job="test"\}'
     regex: true
 `,
-			query:           `up{job="test",pod="test"}`, // Canonical query has different label order
-			expectedBlocked: false,
+			query:                  `up{job="test",pod="test"}`, // Canonical query has different label order
+			expectedBlockedRange:   false,
+			expectedBlockedInstant: false,
 		},
 		{
-			name: "regex not canonicalized - extra whitespace doesn't match",
+			name: "regex not canonicalized - extra whitespace",
 			limitsYAML: `
 blocked_queries:
   - pattern: 'rate\( metric_counter\[ 5m \] \)'
     regex: true
 `,
-			query:           `rate(metric_counter[5m])`, // Canonical query has no extra whitespace
-			expectedBlocked: false,
+			query:                  `rate(metric_counter[5m])`, // Canonical query has no extra whitespace
+			expectedBlockedRange:   false,
+			expectedBlockedInstant: false,
 		},
 		{
-			name: "invalid regex pattern - no match",
+			name: "invalid regex pattern",
 			limitsYAML: `
 blocked_queries:
   - pattern: "[a-9}"
     regex: true
 `,
-			query:           "rate(metric_counter[5m])",
-			expectedBlocked: false,
+			query:                  "rate(metric_counter[5m])",
+			expectedBlockedRange:   false,
+			expectedBlockedInstant: false,
+		},
+		{
+			name: "invalid regex pattern with time_range_longer_than",
+			limitsYAML: `
+blocked_queries:
+  - pattern: "[a-9}"
+    regex: true
+    time_range_longer_than: "1h"
+    reason: "invalid regex - must bail out to avoid matching all queries"
+`,
+			query:                  "rate(metric_counter[5m])",
+			queryStart:             now.Add(-25 * time.Hour), // Over 1h threshold
+			queryEnd:               now,
+			expectedBlockedRange:   false, // Must bail out, invalid regex could match anything
+			expectedBlockedInstant: false,
+		},
+		{
+			name: "literal pattern with regex metacharacters and regex: true",
+			limitsYAML: `
+blocked_queries:
+  - pattern: "rate(metric_counter[5m])"
+    regex: true
+    reason: "literal pattern accidentally marked as regex"
+`,
+			query:                  "rate(metric_counter[5m])",
+			expectedBlockedRange:   true,
+			expectedBlockedInstant: true,
+		},
+		{
+			name: "time range longer than threshold",
+			limitsYAML: `
+blocked_queries:
+  - time_range_longer_than: "24h"
+    reason: "queries longer than 1 day are not allowed"
+`,
+			query:                  "up",
+			queryStart:             now.Add(-48 * time.Hour),
+			queryEnd:               now,
+			expectedBlockedRange:   true,
+			expectedBlockedInstant: false,
+		},
+		{
+			name: "time range under threshold",
+			limitsYAML: `
+blocked_queries:
+  - time_range_longer_than: "24h"
+`,
+			query:                  "up",
+			queryStart:             now.Add(-12 * time.Hour),
+			queryEnd:               now,
+			expectedBlockedRange:   false,
+			expectedBlockedInstant: false,
+		},
+		{
+			name: "pattern matches AND time range longer than threshold",
+			limitsYAML: `
+blocked_queries:
+  - pattern: ".*expensive.*"
+    regex: true
+    time_range_longer_than: "24h"
+    reason: "expensive queries over 1 day are blocked"
+`,
+			query:                  "rate(expensive_metric[5m])",
+			queryStart:             now.Add(-2 * 24 * time.Hour), // 2 days
+			queryEnd:               now,
+			expectedBlockedRange:   true,
+			expectedBlockedInstant: false,
+		},
+		{
+			name: "pattern matches but time range under threshold",
+			limitsYAML: `
+blocked_queries:
+  - pattern: ".*expensive.*"
+    regex: true
+    time_range_longer_than: "168h"
+`,
+			query:                  "rate(expensive_metric[5m])",
+			queryStart:             now.Add(-2 * 24 * time.Hour), // 2 days - under threshold
+			queryEnd:               now,
+			expectedBlockedRange:   false,
+			expectedBlockedInstant: false,
+		},
+		{
+			name: "different pattern but time range longer than threshold",
+			limitsYAML: `
+blocked_queries:
+  - pattern: ".*expensive.*"
+    regex: true
+    time_range_longer_than: "168h"
+`,
+			query:                  "rate(cheap_metric[5m])",
+			queryStart:             now.Add(-10 * 24 * time.Hour), // 10 days - over threshold
+			queryEnd:               now,
+			expectedBlockedRange:   false,
+			expectedBlockedInstant: false,
 		},
 	}
 
@@ -223,17 +350,36 @@ blocked_queries:
 				limits.blockedQueries = parseBlockedQueriesYAML(t, tt.limitsYAML)
 			}
 
+			// Set default times for range queries if not specified
+			start := tt.queryStart
+			end := tt.queryEnd
+			if start.IsZero() {
+				start = now.Add(-1 * time.Hour)
+			}
+			if end.IsZero() {
+				end = now
+			}
 			reqs := map[string]MetricsQueryRequest{
 				"range query": &PrometheusRangeQueryRequest{
 					queryExpr: parseQuery(t, tt.query),
+					start:     start.UnixMilli(),
+					end:       end.UnixMilli(),
 				},
 				"instant query": &PrometheusInstantQueryRequest{
 					queryExpr: parseQuery(t, tt.query),
+					time:      now.UnixMilli(),
 				},
 			}
 
 			for reqType, req := range reqs {
 				t.Run(reqType, func(t *testing.T) {
+					var expectBlocked bool
+					if reqType == "instant query" {
+						expectBlocked = tt.expectedBlockedInstant
+					} else {
+						expectBlocked = tt.expectedBlockedRange
+					}
+
 					reg := prometheus.NewPedanticRegistry()
 					blockedQueriesCounter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 						Name: "cortex_query_frontend_rejected_queries_total",
@@ -241,9 +387,9 @@ blocked_queries:
 					}, []string{"user", "reason"})
 					logger := log.NewNopLogger()
 					mw := newQueryBlockerMiddleware(limits, logger, blockedQueriesCounter)
-					_, err := mw.Wrap(&mockNextHandler{t: t, shouldContinue: !tt.expectedBlocked}).Do(user.InjectOrgID(context.Background(), "test"), req)
+					_, err := mw.Wrap(&mockNextHandler{t: t, shouldContinue: !expectBlocked}).Do(user.InjectOrgID(context.Background(), "test"), req)
 
-					if tt.expectedBlocked {
+					if expectBlocked {
 						require.Error(t, err)
 						require.Contains(t, err.Error(), globalerror.QueryBlocked)
 						require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
@@ -484,7 +630,7 @@ blocked_queries:
 			expectedBlocked: true,
 		},
 		{
-			name: "different non-regex pattern - no match",
+			name: "different non-regex pattern",
 			limitsYAML: `
 blocked_queries:
   - pattern: '{__name__="another_metric",pod=~"app-.*"}'
@@ -520,7 +666,7 @@ blocked_queries:
 			expectedBlocked: true,
 		},
 		{
-			name: "different regex pattern - no match",
+			name: "different regex pattern",
 			limitsYAML: `
 blocked_queries:
   - pattern: ".*another_metric.*"
@@ -529,7 +675,7 @@ blocked_queries:
 			expectedBlocked: false,
 		},
 		{
-			name: "invalid regex pattern - no match",
+			name: "invalid regex pattern",
 			limitsYAML: `
 blocked_queries:
   - pattern: "[a-9}"

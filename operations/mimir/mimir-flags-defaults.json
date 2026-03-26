@@ -497,6 +497,7 @@
   "distributor.otel-label-name-preserve-underscores": true,
   "ingest-storage.read-consistency": "eventual",
   "ingest-storage.ingestion-partition-tenant-shard-size": 0,
+  "ingest-storage.ingestion-partition-tenant-write-shard-size": 0,
   "querier.scheduler-address": "",
   "querier.dns-lookup-period": 10000000000,
   "querier.id": "",

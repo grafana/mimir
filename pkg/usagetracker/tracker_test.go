@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"math"
+	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -121,6 +122,7 @@ func TestUsageTracker_Tracking(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, resp.RejectedSeriesHashes, 2)
 	})
+
 }
 
 func TestUsageTracker_BatchTracking(t *testing.T) {
@@ -161,12 +163,52 @@ func TestUsageTracker_BatchTracking(t *testing.T) {
 		})
 
 		require.NoError(t, err)
-		require.EqualValues(t, resp.Rejections, []*usagetrackerpb.TrackSeriesBatchRejection{
-			{Partition: 0, Users: []*usagetrackerpb.TrackSeriesBatchRejectionUser{
-				{UserID: "tenant1", RejectedSeriesHashes: []uint64{1}},
-				{UserID: "tenant2", RejectedSeriesHashes: []uint64{3}},
-			}},
+		require.Len(t, resp.Rejections, 1)
+		require.Equal(t, int32(0), resp.Rejections[0].Partition)
+		require.ElementsMatch(t, resp.Rejections[0].Users, []*usagetrackerpb.TrackSeriesBatchRejectionUser{
+			{UserID: "tenant1", RejectedSeriesHashes: []uint64{1}},
+			{UserID: "tenant2", RejectedSeriesHashes: []uint64{3}},
 		})
+	})
+
+	t.Run("batch tracking cancelled context returns error", func(t *testing.T) {
+		t.Parallel()
+
+		tenantLimits := map[string]*validation.Limits{}
+		users := make([]*usagetrackerpb.TrackSeriesBatchUser, 2048)
+		for i := range users {
+			userID := fmt.Sprintf("tenant-%d", i)
+			tenantLimits[userID] = &validation.Limits{
+				MaxActiveSeriesPerUser: testPartitionsCount * 10000,
+				MaxGlobalSeriesPerUser: testPartitionsCount * 10000,
+			}
+			users[i] = &usagetrackerpb.TrackSeriesBatchUser{
+				UserID:       userID,
+				SeriesHashes: []uint64{uint64(i)},
+			}
+		}
+
+		tracker := newReadyTestUsageTracker(t, tenantLimits)
+
+		// Pre-track all series so subsequent calls won't create new series
+		// and won't race through publishCreatedSeries.
+		_, err := tracker.TrackSeriesBatch(t.Context(), &usagetrackerpb.TrackSeriesBatchRequest{
+			Partitions: []*usagetrackerpb.TrackSeriesBatchPartition{
+				{Partition: 0, Users: users},
+			},
+		})
+		require.NoError(t, err)
+
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+
+		_, err = tracker.TrackSeriesBatch(ctx, &usagetrackerpb.TrackSeriesBatchRequest{
+			Partitions: []*usagetrackerpb.TrackSeriesBatchPartition{
+				{Partition: 0, Users: users},
+			},
+		})
+		require.Error(t, err)
+		require.ErrorIs(t, err, context.Canceled)
 	})
 
 	t.Run("batch tracking redundant user", func(t *testing.T) {
@@ -186,13 +228,13 @@ func TestUsageTracker_BatchTracking(t *testing.T) {
 		})
 
 		require.NoError(t, err)
-		require.EqualValues(t, resp.Rejections, []*usagetrackerpb.TrackSeriesBatchRejection{
-			{Partition: 0, Users: []*usagetrackerpb.TrackSeriesBatchRejectionUser{
-				{UserID: "tenant1", RejectedSeriesHashes: []uint64{1}},
-				{UserID: "tenant1", RejectedSeriesHashes: []uint64{2}},
-				{UserID: "tenant1", RejectedSeriesHashes: []uint64{3}},
-			}},
-		})
+		// Duplicate user entries are merged before tracking, so all hashes
+		// are processed in a single trackSeries call producing one rejection.
+		require.Len(t, resp.Rejections, 1)
+		require.Equal(t, int32(0), resp.Rejections[0].Partition)
+		require.Len(t, resp.Rejections[0].Users, 1)
+		require.Equal(t, "tenant1", resp.Rejections[0].Users[0].UserID)
+		require.ElementsMatch(t, []uint64{1, 2, 3}, resp.Rejections[0].Users[0].RejectedSeriesHashes)
 	})
 }
 
@@ -1123,6 +1165,202 @@ func TestMetricsGatheringIsNotConcurrent(t *testing.T) {
 
 	_, err := reg.Gather()
 	require.NoError(t, err)
+}
+
+func TestIterMergedUsers(t *testing.T) {
+	t.Parallel()
+
+	type expected struct {
+		userID string
+		hashes []uint64
+	}
+
+	collect := func(users []*usagetrackerpb.TrackSeriesBatchUser) []expected {
+		var got []expected
+		for entry := range iterMergedUsers(users) {
+			got = append(got, expected{userID: entry.userID, hashes: slices.Clone(entry.seriesHashes)})
+		}
+		return got
+	}
+
+	t.Run("no users", func(t *testing.T) {
+		t.Parallel()
+		got := collect(nil)
+		require.Empty(t, got)
+	})
+
+	t.Run("single user single hash", func(t *testing.T) {
+		t.Parallel()
+		got := collect([]*usagetrackerpb.TrackSeriesBatchUser{
+			{UserID: "a", SeriesHashes: []uint64{10}},
+		})
+		require.Equal(t, []expected{{userID: "a", hashes: []uint64{10}}}, got)
+	})
+
+	t.Run("single user multiple hashes", func(t *testing.T) {
+		t.Parallel()
+		got := collect([]*usagetrackerpb.TrackSeriesBatchUser{
+			{UserID: "a", SeriesHashes: []uint64{10, 20, 30}},
+		})
+		require.Equal(t, []expected{{userID: "a", hashes: []uint64{10, 20, 30}}}, got)
+	})
+
+	t.Run("single user no hashes", func(t *testing.T) {
+		t.Parallel()
+		got := collect([]*usagetrackerpb.TrackSeriesBatchUser{
+			{UserID: "a", SeriesHashes: nil},
+		})
+		require.Equal(t, []expected{{userID: "a", hashes: nil}}, got)
+	})
+
+	t.Run("multiple distinct users", func(t *testing.T) {
+		t.Parallel()
+		got := collect([]*usagetrackerpb.TrackSeriesBatchUser{
+			{UserID: "c", SeriesHashes: []uint64{30}},
+			{UserID: "a", SeriesHashes: []uint64{10}},
+			{UserID: "b", SeriesHashes: []uint64{20}},
+		})
+		require.Equal(t, []expected{
+			{userID: "a", hashes: []uint64{10}},
+			{userID: "b", hashes: []uint64{20}},
+			{userID: "c", hashes: []uint64{30}},
+		}, got)
+	})
+
+	t.Run("duplicate users are merged", func(t *testing.T) {
+		t.Parallel()
+		got := collect([]*usagetrackerpb.TrackSeriesBatchUser{
+			{UserID: "a", SeriesHashes: []uint64{1, 2}},
+			{UserID: "b", SeriesHashes: []uint64{10}},
+			{UserID: "a", SeriesHashes: []uint64{3}},
+			{UserID: "b", SeriesHashes: []uint64{20, 30}},
+			{UserID: "a", SeriesHashes: []uint64{4, 5}},
+		})
+		require.Equal(t, []expected{
+			{userID: "a", hashes: []uint64{1, 2, 3, 4, 5}},
+			{userID: "b", hashes: []uint64{10, 20, 30}},
+		}, got)
+	})
+
+	t.Run("duplicate user with some empty hashes", func(t *testing.T) {
+		t.Parallel()
+		got := collect([]*usagetrackerpb.TrackSeriesBatchUser{
+			{UserID: "a", SeriesHashes: nil},
+			{UserID: "a", SeriesHashes: []uint64{1}},
+			{UserID: "a", SeriesHashes: nil},
+		})
+		require.Equal(t, []expected{
+			{userID: "a", hashes: []uint64{1}},
+		}, got)
+	})
+
+	t.Run("early break stops iteration", func(t *testing.T) {
+		t.Parallel()
+		users := []*usagetrackerpb.TrackSeriesBatchUser{
+			{UserID: "a", SeriesHashes: []uint64{1}},
+			{UserID: "b", SeriesHashes: []uint64{2}},
+			{UserID: "c", SeriesHashes: []uint64{3}},
+		}
+		var got []expected
+		for entry := range iterMergedUsers(users) {
+			got = append(got, expected{userID: entry.userID, hashes: slices.Clone(entry.seriesHashes)})
+			if entry.userID == "b" {
+				break
+			}
+		}
+		require.Equal(t, []expected{
+			{userID: "a", hashes: []uint64{1}},
+			{userID: "b", hashes: []uint64{2}},
+		}, got)
+	})
+}
+
+func BenchmarkTrackSeriesBatch(b *testing.B) {
+	type benchCase struct {
+		numUsers       int
+		totalHashes    int
+		entriesPerUser int
+	}
+
+	cases := []benchCase{
+		{numUsers: 1, totalHashes: 1500, entriesPerUser: 500},
+		{numUsers: 1, totalHashes: 100_000, entriesPerUser: 5},
+		{numUsers: 50, totalHashes: 100_000, entriesPerUser: 500},
+		{numUsers: 950, totalHashes: 100_000, entriesPerUser: 500},
+	}
+
+	for _, tc := range cases {
+		name := fmt.Sprintf("users=%d/hashes=%d/entries=%d", tc.numUsers, tc.totalHashes, tc.entriesPerUser)
+		b.Run(name, func(b *testing.B) {
+			tenantLimits := make(map[string]*validation.Limits, tc.numUsers)
+			for u := 0; u < tc.numUsers; u++ {
+				tenantLimits[strconv.Itoa(u)] = &validation.Limits{
+					MaxActiveSeriesPerUser: testPartitionsCount * 1_000_000,
+					MaxGlobalSeriesPerUser: testPartitionsCount * 1_000_000,
+				}
+			}
+
+			ikv, pkv, cluster := prepareKVStoreAndKafkaMocks(b)
+			tracker := newTestUsageTrackerWithDeps(b, 0, "zone-a", ikv, pkv, cluster, newUsageTrackerDeps{
+				logger:       log.NewNopLogger(),
+				tenantLimits: validation.NewMockTenantLimits(tenantLimits),
+			}, func(cfg *Config) {
+				cfg.MaxPartitionsToCreatePerReconcile = testPartitionsCount
+			})
+			waitUntilAllTrackersSeeAllInstancesInTheirZones(b, map[string]*UsageTracker{"a0": tracker})
+			require.NoError(b, tracker.reconcilePartitions(b.Context()))
+			require.EventuallyWithT(b, func(t *assert.CollectT) {
+				require.Equal(t, testPartitionsCount, tracker.partitionRing.PartitionRing().ActivePartitionsCount())
+			}, 5*time.Second, 100*time.Millisecond)
+
+			hashesPerUser := tc.totalHashes / tc.numUsers
+			users := make([]*usagetrackerpb.TrackSeriesBatchUser, 0, tc.numUsers*tc.entriesPerUser)
+			seq := uint64(0)
+			for u := 0; u < tc.numUsers; u++ {
+				userID := strconv.Itoa(u)
+				n := hashesPerUser
+				if u < tc.totalHashes%tc.numUsers {
+					n++
+				}
+				for e := 0; e < tc.entriesPerUser; e++ {
+					chunk := n / tc.entriesPerUser
+					if e < n%tc.entriesPerUser {
+						chunk++
+					}
+					hashes := make([]uint64, chunk)
+					for j := range hashes {
+						seq++
+						hashes[j] = seq * 0x9E3779B97F4A7C15
+					}
+					users = append(users, &usagetrackerpb.TrackSeriesBatchUser{
+						UserID:       userID,
+						SeriesHashes: hashes,
+					})
+				}
+			}
+
+			rng := rand.New(rand.NewPCG(42, 0))
+			rng.Shuffle(len(users), func(i, j int) { users[i], users[j] = users[j], users[i] })
+
+			req := &usagetrackerpb.TrackSeriesBatchRequest{
+				Partitions: []*usagetrackerpb.TrackSeriesBatchPartition{
+					{Partition: 0, Users: users},
+				},
+			}
+
+			_, err := tracker.TrackSeriesBatch(b.Context(), req)
+			require.NoError(b, err)
+
+			b.ResetTimer()
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				_, err := tracker.TrackSeriesBatch(b.Context(), req)
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
 }
 
 func BenchmarkMetricsGathering(b *testing.B) {

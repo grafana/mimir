@@ -1041,7 +1041,7 @@ func TestStoreGateway_SeriesQueryingShouldRemoveExternalLabels(t *testing.T) {
 			Source: block.TestSource,
 		}
 
-		_, err := block.InjectThanosMeta(logger, filepath.Join(storageDir, userID, blockID), meta, nil)
+		_, err := block.InjectThanosMeta(logger, filepath.Join(storageDir, userID, blockID), meta)
 		require.NoError(t, err)
 	}
 

@@ -290,6 +290,10 @@ func (r *remoteReadQueryRequest) GetQuery() string {
 	return r.promQuery
 }
 
+func (r *remoteReadQueryRequest) GetParsedQuery() parser.Expr {
+	panic("remoteReadQueryRequest.GetParsedQuery() should not be called")
+}
+
 func (r *remoteReadQueryRequest) GetClonedParsedQuery() (parser.Expr, error) {
 	if r.promQuery == "" {
 		return nil, errRequestNoQuery

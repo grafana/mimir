@@ -726,6 +726,12 @@ func (r *PartitionReader) getStartOffset(ctx context.Context) (startOffset, last
 		return startOffset, -1, nil
 	}
 
+	// Validate configuration before doing any work. This is a static check that won't change between retries.
+	// MaxReplayPeriod is only used when consuming from last offset with file-based offset enforcement.
+	if r.kafkaCfg.ConsumeFromPositionAtStartup != consumeFromTimestamp && r.kafkaCfg.ConsumerGroupOffsetCommitFileEnforced && r.kafkaCfg.MaxReplayPeriod <= 0 {
+		return 0, -1, fmt.Errorf("max replay period must be positive when file offset enforcement is enabled")
+	}
+
 	// We use an ephemeral client to fetch the offset and then create a new client with this offset.
 	// The reason for this is that changing the offset of an existing client requires to have used this client for fetching at least once.
 	// We don't want to do noop fetches just to warm up the client, so we create a new client instead.
@@ -748,9 +754,6 @@ func (r *PartitionReader) getStartOffset(ctx context.Context) (startOffset, last
 				return offset, lastConsumedOffset, nil
 			}
 		} else if r.kafkaCfg.ConsumerGroupOffsetCommitFileEnforced {
-			if r.kafkaCfg.MaxReplayPeriod <= 0 {
-				return 0, -1, fmt.Errorf("max replay period must be positive when file offset enforcement is enabled")
-			}
 			// File-based offset enforcement: use file offset only if it exists.
 			if fileOffset, exists := r.offsetFile.Read(); exists {
 				partitionStart, startExists, err := r.fetchPartitionStartOffset(ctx, cl)

@@ -92,7 +92,7 @@ func NewRemoteExecutionGroupEvaluator(frontend ProtobufFrontend, cfg Config, eag
 		eagerLoad:                eagerLoad,
 		queryParameters:          queryParameters,
 		memoryConsumptionTracker: memoryConsumptionTracker,
-		nodeStreams:              &remoteExecutionNodeStreamsCollection{},
+		nodeStreams:              newRemoteExecutionNodeStreamsCollection(memoryConsumptionTracker),
 	}
 }
 
@@ -191,7 +191,7 @@ func (g *RemoteExecutionGroupEvaluator) sendRequest(ctx context.Context) error {
 	}
 
 	if g.eagerLoad {
-		g.stream = newEagerLoadingResponseStream(ctx, g.stream)
+		g.stream = newEagerLoadingResponseStream(ctx, g.stream, g.memoryConsumptionTracker)
 	}
 
 	return nil
@@ -255,7 +255,10 @@ func (g *RemoteExecutionGroupEvaluator) getNextMessageForStream(ctx context.Cont
 			// until the end of the loop.
 			payload.FreeBuffer()
 		} else {
-			respNodeState.buffer.Push(bufferedMessage{payload: payload})
+			if err := respNodeState.buffer.Push(bufferedMessage{payload: payload}); err != nil {
+				payload.FreeBuffer()
+				return nil, nil, err
+			}
 		}
 	}
 }
@@ -389,6 +392,13 @@ func (g *RemoteExecutionGroupEvaluator) onAllStreamsFinished() {
 type remoteExecutionNodeStreamsCollection struct {
 	streams                       []*remoteExecutionNodeStreamState
 	requestNodeIndexToStreamState map[int64]*remoteExecutionNodeStreamState
+	memoryConsumptionTracker      *limiter.MemoryConsumptionTracker
+}
+
+func newRemoteExecutionNodeStreamsCollection(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *remoteExecutionNodeStreamsCollection {
+	return &remoteExecutionNodeStreamsCollection{
+		memoryConsumptionTracker: memoryConsumptionTracker,
+	}
 }
 
 func (s *remoteExecutionNodeStreamsCollection) addNodeStream(node planning.Node, timeRange types.QueryTimeRange) remoteExecutionNodeStreamIndex {
@@ -397,7 +407,7 @@ func (s *remoteExecutionNodeStreamsCollection) addNodeStream(node planning.Node,
 	s.streams = append(s.streams, &remoteExecutionNodeStreamState{
 		node:      node,
 		timeRange: timeRange,
-		buffer:    &responseStreamBuffer{},
+		buffer:    newResponseStreamBuffer(s.memoryConsumptionTracker),
 	})
 
 	return idx
@@ -820,11 +830,11 @@ type eagerLoadingResponseStream struct {
 	newDataAvailable chan struct{}
 }
 
-func newEagerLoadingResponseStream(ctx context.Context, inner ResponseStream) *eagerLoadingResponseStream {
+func newEagerLoadingResponseStream(ctx context.Context, inner ResponseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *eagerLoadingResponseStream {
 	stream := &eagerLoadingResponseStream{
 		inner:  inner,
 		mtx:    &sync.Mutex{},
-		buffer: &responseStreamBuffer{},
+		buffer: newResponseStreamBuffer(memoryConsumptionTracker),
 	}
 
 	go stream.startBuffering(ctx)
@@ -852,7 +862,14 @@ func (e *eagerLoadingResponseStream) bufferOne(ctx context.Context) bool {
 		return false
 	}
 
-	e.buffer.Push(bufferedMessage{msg, err})
+	if err := e.buffer.Push(bufferedMessage{msg, err}); err != nil {
+		if msg != nil {
+			msg.FreeBuffer()
+		}
+
+		_ = e.buffer.Push(bufferedMessage{nil, err}) // nolint:errcheck // Push will always return nil if the payload is nil.
+		return false
+	}
 
 	return err == nil
 }
@@ -941,6 +958,8 @@ type responseStreamBuffer struct {
 	msgs       []bufferedMessage
 	startIndex int
 	length     int
+
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
 
 type bufferedMessage struct {
@@ -948,7 +967,22 @@ type bufferedMessage struct {
 	err     error
 }
 
-func (b *responseStreamBuffer) Push(msg bufferedMessage) {
+func newResponseStreamBuffer(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *responseStreamBuffer {
+	return &responseStreamBuffer{
+		memoryConsumptionTracker: memoryConsumptionTracker,
+	}
+}
+
+// Push appends a message to this buffer.
+// Push will always return nil if msg.payload is nil.
+// Push will increase the memory consumption estimate for this query based on the size of msg.payload, if it is not nil.
+func (b *responseStreamBuffer) Push(msg bufferedMessage) error {
+	if msg.payload != nil {
+		if err := b.memoryConsumptionTracker.IncreaseMemoryConsumption(uint64(msg.payload.Size()), limiter.BufferedQuerierResponses); err != nil {
+			return err
+		}
+	}
+
 	if b.length == cap(b.msgs) {
 		newCap := max(cap(b.msgs)*2, 1)
 		newMsgs := responseMessageSlicePool.Get(newCap)
@@ -966,8 +1000,12 @@ func (b *responseStreamBuffer) Push(msg bufferedMessage) {
 	newIndex := (b.startIndex + b.length) % len(b.msgs)
 	b.msgs[newIndex] = msg
 	b.length++
+
+	return nil
 }
 
+// Pop removes the earliest message from this buffer.
+// Pop will decrease the memory consumption estimate for this query based on the size of msg.payload, if it is not nil.
 func (b *responseStreamBuffer) Pop() bufferedMessage {
 	msg := b.msgs[b.startIndex]
 	b.length--
@@ -976,6 +1014,10 @@ func (b *responseStreamBuffer) Pop() bufferedMessage {
 		b.startIndex = 0
 	} else {
 		b.startIndex = (b.startIndex + 1) % len(b.msgs)
+	}
+
+	if msg.payload != nil {
+		b.memoryConsumptionTracker.DecreaseMemoryConsumption(uint64(msg.payload.Size()), limiter.BufferedQuerierResponses)
 	}
 
 	return msg

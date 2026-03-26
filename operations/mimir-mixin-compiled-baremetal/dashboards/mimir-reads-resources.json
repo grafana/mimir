@@ -366,7 +366,7 @@
                         {
                            "matcher": {
                               "id": "byRegexp",
-                              "options": "/.+ - ommkilled/"
+                              "options": "/.+ - oomkilled/"
                            },
                            "properties": [
                               {
@@ -651,7 +651,7 @@
                         {
                            "matcher": {
                               "id": "byRegexp",
-                              "options": "/.+ - ommkilled/"
+                              "options": "/.+ - oomkilled/"
                            },
                            "properties": [
                               {
@@ -936,7 +936,7 @@
                         {
                            "matcher": {
                               "id": "byRegexp",
-                              "options": "/.+ - ommkilled/"
+                              "options": "/.+ - oomkilled/"
                            },
                            "properties": [
                               {
@@ -1380,7 +1380,7 @@
                         {
                            "matcher": {
                               "id": "byRegexp",
-                              "options": "/.+ - ommkilled/"
+                              "options": "/.+ - oomkilled/"
                            },
                            "properties": [
                               {
@@ -1677,7 +1677,7 @@
                         {
                            "matcher": {
                               "id": "byRegexp",
-                              "options": "/.+ - ommkilled/"
+                              "options": "/.+ - oomkilled/"
                            },
                            "properties": [
                               {
@@ -2121,7 +2121,7 @@
                         {
                            "matcher": {
                               "id": "byRegexp",
-                              "options": "/.+ - ommkilled/"
+                              "options": "/.+ - oomkilled/"
                            },
                            "properties": [
                               {

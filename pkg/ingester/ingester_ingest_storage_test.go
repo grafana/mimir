@@ -1235,6 +1235,88 @@ func TestIngester_ActiveSeriesPurgeWithKafkaTimestamps(t *testing.T) {
 	})
 }
 
+func TestIngester_ActiveSeriesLoadingWithKafkaTimestamps(t *testing.T) {
+	var (
+		ctx         = context.Background()
+		cfg         = defaultIngesterTestConfig(t)
+		reg         = prometheus.NewRegistry()
+		user1       = "user-1"
+		baseTime    = time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		idleTimeout = 20 * time.Minute
+	)
+
+	cfg.ActiveSeriesMetrics.Enabled = true
+	cfg.ActiveSeriesMetrics.IdleTimeout = idleTimeout
+	cfg.ActiveSeriesMetrics.UpdatePeriod = 10 * time.Minute
+
+	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+	ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, reg, util_test.NewTestingLogger(t))
+
+	partitionID, err := ingest.IngesterPartitionID(cfg.IngesterRing.InstanceID)
+	require.NoError(t, err)
+
+	kafkaClient, err := kgo.NewClient(
+		kgo.SeedBrokers(cfg.IngestStorageConfig.KafkaConfig.Address...),
+		kgo.RecordPartitioner(kgo.ManualPartitioner()),
+	)
+	require.NoError(t, err)
+	t.Cleanup(kafkaClient.Close)
+
+	produceRecord := func(tenantID string, seriesName string, kafkaTimestamp time.Time) {
+		wreq := &mimirpb.WriteRequest{
+			Timeseries: []mimirpb.PreallocTimeseries{{
+				TimeSeries: &mimirpb.TimeSeries{
+					Labels:  mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, seriesName)),
+					Samples: []mimirpb.Sample{{TimestampMs: kafkaTimestamp.UnixMilli(), Value: 1}},
+				},
+			}},
+			Source: mimirpb.API,
+		}
+		data, err := wreq.Marshal()
+		require.NoError(t, err)
+
+		results := kafkaClient.ProduceSync(ctx, &kgo.Record{
+			Topic:     cfg.IngestStorageConfig.KafkaConfig.Topic,
+			Key:       []byte(tenantID),
+			Value:     data,
+			Headers:   []kgo.RecordHeader{ingest.RecordVersionHeader(1)},
+			Partition: partitionID,
+			Timestamp: kafkaTimestamp,
+		})
+		require.NoError(t, results.FirstErr())
+	}
+
+	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
+	})
+
+	// Produce a record at baseTime. The loading metric should be 1 after the inline purge.
+	produceRecord(user1, "series_0", baseTime)
+
+	test.Poll(t, 10*time.Second, nil, func() interface{} {
+		return testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_ingester_active_series_loading 1 if active series counts are still warming up and may be underreported, 0 once they are accurate.
+			# TYPE cortex_ingester_active_series_loading gauge
+			cortex_ingester_active_series_loading 1
+		`), "cortex_ingester_active_series_loading")
+	})
+
+	// Produce a record at baseTime + idleTimeout + UpdatePeriod + 1min.
+	// This advances Kafka time past the idle timeout from the first record's timestamp,
+	// and also triggers an inline purge (> UpdatePeriod from last purge).
+	futureTime := baseTime.Add(idleTimeout + cfg.ActiveSeriesMetrics.UpdatePeriod + 1*time.Minute)
+	produceRecord(user1, "series_1", futureTime)
+
+	test.Poll(t, 10*time.Second, nil, func() interface{} {
+		return testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_ingester_active_series_loading 1 if active series counts are still warming up and may be underreported, 0 once they are accurate.
+			# TYPE cortex_ingester_active_series_loading gauge
+			cortex_ingester_active_series_loading 0
+		`), "cortex_ingester_active_series_loading")
+	})
+}
+
 // BenchmarkIngester_ReplayFromKafka tests the ingester replaying records from Kafka at startup.
 // Each scenario is derived from analysis of 1 partition in some production clusters in Grafana Cloud,
 // using "kafkatool dump analyse". The fixture generator simulates the WriteRequest patterns

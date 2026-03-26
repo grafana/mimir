@@ -23,7 +23,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.overrideProperty('custom.fillOpacity', 0),
     $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
   ]),
-  local ommKilledStyle = $.overrideField('byRegexp', '/.+ - ommkilled/', [
+  local oomKilledStyle = $.overrideField('byRegexp', '/.+ - oomkilled/', [
     $.overrideProperty('color', { mode: 'fixed', fixedColor: $._colors.failed }),
     $.overrideProperty('custom.axisPlacement', 'hidden'),
     $.overrideProperty('custom.drawStyle', 'points'),
@@ -444,7 +444,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     local legends =
       $.resourceUtilizationAndLimitLegend('{{%s}}' % $._config.per_instance_label)
       + if $._config.deployment_type == 'kubernetes'
-      then ['{{%s}} - ommkilled' % $._config.per_instance_label]
+      then ['{{%s}} - oomkilled' % $._config.per_instance_label]
       else [];
 
     $.timeseriesPanel('Memory (workingset)') +
@@ -455,7 +455,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         overrides+: [
           resourceRequestStyle,
           resourceLimitStyle,
-          ommKilledStyle,
+          oomKilledStyle,
         ],
         defaults+: {
           unit: 'bytes',

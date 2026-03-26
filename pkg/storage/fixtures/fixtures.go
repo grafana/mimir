@@ -168,7 +168,7 @@ func SetupTestBlock(tb testing.TB, appendFuncs ...AppendFunc) *BucketTestBlock {
 	meta, err := block.InjectThanosMeta(log.NewNopLogger(), compactedBlockDir, block.ThanosMeta{
 		Labels: labels.FromStrings("ext1", "1").Map(),
 		Source: block.TestSource,
-	}, nil)
+	})
 	assert.NoError(tb, err)
 	_, err = block.Upload(context.Background(), log.NewNopLogger(), instrBkt, compactedBlockDir, nil)
 	assert.NoError(tb, err)

@@ -70,6 +70,10 @@ func (s *ScalarConstant) Finalize(_ context.Context) error {
 	return nil
 }
 
+func (s *ScalarConstant) Stats(_ context.Context) (*types.OperatorEvaluationStats, error) {
+	return types.NewOperatorEvaluationStats(s.TimeRange, s.MemoryConsumptionTracker)
+}
+
 func (s *ScalarConstant) Close() {
 	// Nothing to do.
 }

@@ -1888,9 +1888,9 @@ store_gateway_client:
 # CLI flag: -querier.enable-query-engine-fallback
 [enable_query_engine_fallback: <boolean> | default = true]
 
-# (advanced) If set to true, the header 'X-Filter-Queryables' can be used to
+# (deprecated) If set to true, the header 'X-Filter-Queryables' can be used to
 # filter down the list of queryables that shall be used. This is useful to test
-# and monitor single queryables in isolation.
+# and monitor single queryables in isolation. Deprecated: has no effect.
 # CLI flag: -querier.filter-queryables-enabled
 [filter_queryables_enabled: <boolean> | default = false]
 
@@ -4512,13 +4512,25 @@ The `limits` block configures default and per-tenant limits imposed by component
 
 # List of queries to block.
 # Example:
-#   The following configuration blocks the query "rate(metric_counter[5m])".
-#   Setting the pattern to ".*" and regex to true blocks all queries.
+#   The following configuration shows various ways to block queries: by pattern,
+#   by time range, or by combining both. Setting the pattern to ".*" and regex
+#   to true blocks all queries. Time range filtering blocks queries with
+#   durations exceeding the specified threshold.
 #   blocked_queries:
 #       - pattern: rate(metric_counter[5m])
 #         regex: false
 #         reason: because the query is misconfigured
 #         unaligned_range_queries: false
+#       - pattern: .*expensive.*
+#         regex: true
+#         reason: expensive queries over 7 days are blocked
+#         unaligned_range_queries: false
+#         time_range_longer_than: 1w
+#       - pattern: ""
+#         regex: false
+#         reason: queries longer than 21 days are blocked
+#         unaligned_range_queries: false
+#         time_range_longer_than: 3w
 blocked_queries:
   - # PromQL expression pattern to match.
     [pattern: <string> | default = ""]
@@ -4535,6 +4547,10 @@ blocked_queries:
     # caching. If enabled, instant queries and remote read requests will not be
     # blocked.
     [unaligned_range_queries: <boolean> | default = ]
+
+    # Block queries with time range longer than this duration. Set to 0 to
+    # disable.
+    [time_range_longer_than: <duration> | default = ]
 
 # (experimental) List of queries to limit and duration to limit them for.
 # Example:
@@ -4977,10 +4993,6 @@ ruler_alertmanager_client_config:
 # CLI flag: -alertmanager.max-config-size-bytes
 [alertmanager_max_config_size_bytes: <int> | default = 0]
 
-# Maximum size of the Grafana Alertmanager state for a tenant. 0 = no limit.
-# CLI flag: -alertmanager.max-grafana-state-size-bytes
-[alertmanager_max_grafana_state_size_bytes: <int> | default = 0B]
-
 # Maximum number of silences, including expired silences, that a tenant can have
 # at once. 0 = no limit.
 # CLI flag: -alertmanager.max-silences-count
@@ -5100,6 +5112,15 @@ ruler_alertmanager_client_config:
 # partitions.
 # CLI flag: -ingest-storage.ingestion-partition-tenant-shard-size
 [ingestion_partitions_tenant_shard_size: <int> | default = 0]
+
+# (experimental) The maximum number of partitions a tenant's data should be
+# written to when using the ingest storage. When set to a value > 0 and less
+# than -ingest-storage.ingestion-partition-tenant-shard-size, writes use fewer
+# partitions while reads continue using the full shard size. This allows safely
+# reducing the shard size without losing query coverage during the migration. 0
+# means the write shard size equals the read shard size.
+# CLI flag: -ingest-storage.ingestion-partition-tenant-write-shard-size
+[ingestion_partitions_tenant_write_shard_size: <int> | default = 0]
 
 # (experimental) Validation scheme to use for metric and label names.
 # Distributors reject time series that do not adhere to this scheme. Rulers

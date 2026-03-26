@@ -87,14 +87,15 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 								types.PutInstantVectorSeriesData(seriesData, memoryConsumptionTracker)
 							}
 
-							// TestOperator does not release any unread data on Close(), so do that now.
+							// TestOperator does not release any unread data on Finalize(), so do that now.
 							for _, d := range inner.Data {
 								types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
 							}
 
-							// Close the operator and confirm all memory has been released.
-							o.Close()
+							// Finalize the operator and confirm all memory has been released.
+							require.NoError(t, o.Finalize(ctx))
 							require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+							o.Close()
 						})
 					}
 				})
