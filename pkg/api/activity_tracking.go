@@ -74,7 +74,7 @@ func (m *activityTrackingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Re
 func toActivityTrackerString(request *http.Request, userAgent string, requestParams url.Values) string {
 	tenantID := "(unknown)"
 
-	// Previously the tenantId was extracted from the context, however this handler now runs prior to the auth handler
+	// Usually we'd get the tenantId from the context, however this handler runs prior to the auth handler (which populates the context)
 	// so we pull this value directly from the HTTP header.
 	if orgID, _, err := user.ExtractOrgIDFromHTTPRequest(request); err == nil {
 		tenantID = orgID
