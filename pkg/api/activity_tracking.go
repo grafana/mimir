@@ -41,13 +41,9 @@ func (m *activityTrackingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Re
 	if r.Header.Get("Content-Type") == "application/x-protobuf" && querymiddleware.IsRemoteReadQuery(r.URL.Path) {
 		params, err = querymiddleware.ParseRemoteReadRequestValuesWithoutConsumingBody(r)
 
-	} else if r.Header.Get("Content-Type") == "application/x-www-form-urlencoded" {
+	} else if r.Header.Get("Content-Type") == "application/x-www-form-urlencoded"  && r.ContentLength >= 0 {
 		// Check the ContentLength as -1 could mean a chunked encoding transfer which we do not want to await to read
-		if r.ContentLength >= 0 {
-			params, err = util.ParseRequestFormWithoutConsumingBody(r)
-		} else {
-			params = r.URL.Query()
-		}
+		params, err = util.ParseRequestFormWithoutConsumingBody(r)
 	} else {
 		params = r.URL.Query()
 	}
