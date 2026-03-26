@@ -117,6 +117,16 @@ func (m *Meta) Clone() *Meta {
 		copy(clone.Compaction.Sources, m.Compaction.Sources)
 	}
 
+	if m.Compaction.Parents != nil {
+		clone.Compaction.Parents = make([]tsdb.BlockDesc, len(m.Compaction.Parents))
+		copy(clone.Compaction.Parents, m.Compaction.Parents)
+	}
+
+	if m.Compaction.Hints != nil {
+		clone.Compaction.Hints = make([]string, len(m.Compaction.Hints))
+		copy(clone.Compaction.Hints, m.Compaction.Hints)
+	}
+
 	if m.Thanos.Labels != nil {
 		clone.Thanos.Labels = make(map[string]string, len(m.Thanos.Labels))
 		for k, v := range m.Thanos.Labels {
