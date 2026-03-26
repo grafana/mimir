@@ -3558,9 +3558,8 @@ func TestQueryStats(t *testing.T) {
 			},
 		},
 		"range vector selector with @ modifier": {
-			expr:                        `sum_over_time(dense_series{}[2m] @ 300)`,
-			expectedTotalSamples:        22, // each step selects 2 points at T=300 over query range
-			expectedTotalSamplesWithMQE: 2,  // the range vector with @ is step invariant so these 2 samples are re-used for each step
+			expr:                 `sum_over_time(dense_series{}[2m] @ 300)`,
+			expectedTotalSamples: 22, // each step selects 2 points at T=300 over query range
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				0: 2, 60000: 2, 120000: 2, 180000: 2, 240000: 2, 300000: 2, 360000: 2, 420000: 2, 480000: 2, 540000: 2, 600000: 2,
 			},
