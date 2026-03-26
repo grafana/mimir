@@ -1457,6 +1457,8 @@ Usage of ./cmd/mimir/mimir:
     	True to enable the ingestion via object storage.
   -ingest-storage.ingestion-partition-tenant-shard-size int
     	[experimental] The number of partitions a tenant's data should be sharded to when using the ingest storage. Tenants are sharded across partitions using shuffle-sharding. 0 disables shuffle sharding and tenant is sharded across all partitions.
+  -ingest-storage.ingestion-partition-tenant-write-shard-size int
+    	[experimental] The maximum number of partitions a tenant's data should be written to when using the ingest storage. When set to a value > 0 and less than -ingest-storage.ingestion-partition-tenant-shard-size, writes use fewer partitions while reads continue using the full shard size. This allows safely reducing the shard size without losing query coverage during the migration. 0 means the write shard size equals the read shard size.
   -ingest-storage.kafka.address comma-separated-list-of-strings
     	The Kafka seed broker address, or a comma-separated list of seed broker addresses.
   -ingest-storage.kafka.auto-create-topic-default-partitions int

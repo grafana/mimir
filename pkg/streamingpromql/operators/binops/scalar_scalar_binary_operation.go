@@ -138,6 +138,10 @@ func (s *ScalarScalarBinaryOperation) Finalize(ctx context.Context) error {
 	return s.Right.Finalize(ctx)
 }
 
+func (s *ScalarScalarBinaryOperation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return types.CombineStats(ctx, s.Left, s.Right)
+}
+
 func (s *ScalarScalarBinaryOperation) Close() {
 	s.Left.Close()
 	s.Right.Close()

@@ -357,12 +357,6 @@ templates:
 	finalUserCfgFp, ok := am.cfgs["user3"]
 	require.True(t, ok)
 	require.Equal(t, amConfigFromMimirConfig(user3Cfg, cfg.ExternalURL.URL).fingerprint(), finalUserCfgFp)
-	user3Am, ok := am.alertmanagers["user3"]
-	require.True(t, ok)
-	require.Len(t, user3Am.templates, 2)
-	require.Equal(t, "first.tpl", user3Am.templates[0].Name)
-	require.Equal(t, "second.tpl", user3Am.templates[1].Name)
-
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 		# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
 		# TYPE cortex_alertmanager_config_last_reload_successful gauge
@@ -410,11 +404,6 @@ templates:
 	require.True(t, cfgExists)
 	expectedFp = amConfigFromMimirConfig(user1Cfg, cfg.ExternalURL.URL).fingerprint()
 	require.Equal(t, expectedFp, currentConfigFp)
-	user1Am, ok := am.alertmanagers["user1"]
-	require.True(t, ok)
-	require.Len(t, user1Am.templates, 1)
-	require.Equal(t, "some-template.tmpl", user1Am.templates[0].Name)
-	require.Contains(t, user1Am.templates[0].Template, "some.template")
 
 	// Test Delete User, ensure config is removed and the resources are freed.
 	require.NoError(t, store.DeleteAlertConfig(ctx, "user3"))

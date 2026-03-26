@@ -206,6 +206,10 @@ func (o *Operator) Finalize(ctx context.Context) error {
 	return o.Param.Finalize(ctx)
 }
 
+func (o *Operator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return types.CombineStats[types.StatsProvider](ctx, o.Inner, o.Param)
+}
+
 func (o *Operator) Close() {
 	o.Inner.Close()
 	o.Param.Close()

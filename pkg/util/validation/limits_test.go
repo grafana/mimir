@@ -2507,6 +2507,57 @@ func TestOverrides_OTelTranslationStrategy(t *testing.T) {
 	})
 }
 
+func TestEffectiveIngestionPartitionsTenantWriteShardSize(t *testing.T) {
+	tests := map[string]struct {
+		readShardSize  int
+		writeShardSize int
+		expected       int
+	}{
+		"both zero (default)": {
+			readShardSize:  0,
+			writeShardSize: 0,
+			expected:       0,
+		},
+		"write shard size not set, falls back to read shard size": {
+			readShardSize:  4,
+			writeShardSize: 0,
+			expected:       4,
+		},
+		"write shard size smaller than read shard size": {
+			readShardSize:  4,
+			writeShardSize: 2,
+			expected:       2,
+		},
+		"write shard size equal to read shard size": {
+			readShardSize:  4,
+			writeShardSize: 4,
+			expected:       4,
+		},
+		"write shard size larger than read shard size, clamped": {
+			readShardSize:  4,
+			writeShardSize: 6,
+			expected:       4,
+		},
+		"write shard size set, read shard size zero (no read limit)": {
+			readShardSize:  0,
+			writeShardSize: 2,
+			expected:       2,
+		},
+	}
+
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			limits := getDefaultLimits()
+			limits.IngestionPartitionsTenantShardSize = tc.readShardSize
+			limits.IngestionPartitionsTenantWriteShardSize = tc.writeShardSize
+
+			overrides := NewOverrides(limits, nil)
+
+			assert.Equal(t, tc.expected, overrides.EffectiveIngestionPartitionsTenantWriteShardSize("test"))
+		})
+	}
+}
+
 func getDefaultLimits() Limits {
 	limits := Limits{}
 	flagext.DefaultValues(&limits)

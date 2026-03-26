@@ -25,12 +25,13 @@ import (
 type InstantVectorSelector struct {
 	Selector                                 *Selector
 	MemoryConsumptionTracker                 *limiter.MemoryConsumptionTracker
-	Stats                                    *types.QueryStats
+	QueryStats                               *types.QueryStats
 	ReturnSampleTimestamps                   bool // true if this operator is wrapped directly in the timestamp() function and so should return the underlying sample timestamps.
 	ReturnSampleTimestampsPreserveHistograms bool // Used for info() function to preserve histograms in info metrics while making the floats reflect timestamps.
 
 	chunkIterator    chunkenc.Iterator
 	memoizedIterator *storage.MemoizedSeriesIterator
+	evaluationStats  *types.OperatorEvaluationStats
 }
 
 var _ types.InstantVectorOperator = &InstantVectorSelector{}
@@ -38,7 +39,7 @@ var _ types.InstantVectorOperator = &InstantVectorSelector{}
 func NewInstantVectorSelector(selector *Selector, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, stats *types.QueryStats, returnSampleTimestamps, returnSampleTimestampsPreserveHistograms bool) *InstantVectorSelector {
 	return &InstantVectorSelector{
 		Selector:                                 selector,
-		Stats:                                    stats,
+		QueryStats:                               stats,
 		MemoryConsumptionTracker:                 memoryConsumptionTracker,
 		ReturnSampleTimestamps:                   returnSampleTimestamps,
 		ReturnSampleTimestampsPreserveHistograms: returnSampleTimestampsPreserveHistograms,
@@ -185,7 +186,9 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 			lastHistogram = h
 
 			// For consistency with Prometheus' engine, we convert each histogram point to an equivalent number of float points.
-			v.Stats.IncrementSamples(types.EquivalentFloatSampleCount(h))
+			sampleCount := types.EquivalentFloatSampleCount(h)
+			v.QueryStats.IncrementSamples(sampleCount)
+			v.evaluationStats.TrackSampleForInstantVectorSelector(stepT, sampleCount)
 
 		} else {
 			// Only create the slice once we know the series is a histogram or not.
@@ -197,7 +200,8 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 					return types.InstantVectorSeriesData{}, err
 				}
 			}
-			v.Stats.IncrementSamples(1)
+			v.QueryStats.IncrementSamples(1)
+			v.evaluationStats.TrackSampleForInstantVectorSelector(stepT, 1)
 			data.Floats = append(data.Floats, promql.FPoint{T: stepT, F: f})
 		}
 	}
@@ -210,6 +214,11 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 }
 
 func (v *InstantVectorSelector) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	var err error
+	v.evaluationStats, err = types.NewOperatorEvaluationStats(v.Selector.TimeRange, v.MemoryConsumptionTracker)
+	if err != nil {
+		return err
+	}
 	return v.Selector.Prepare(ctx, params)
 }
 
@@ -225,7 +234,18 @@ func (v *InstantVectorSelector) Finalize(ctx context.Context) error {
 	return nil
 }
 
+func (v *InstantVectorSelector) Stats(_ context.Context) (*types.OperatorEvaluationStats, error) {
+	stats := v.evaluationStats
+	v.evaluationStats = nil
+	return stats, nil
+}
+
 func (v *InstantVectorSelector) Close() {
 	// If the query fails, then Finalize above won't be called, so make sure to close the selector.
 	v.Selector.Close()
+
+	if v.evaluationStats != nil {
+		v.evaluationStats.Close()
+		v.evaluationStats = nil
+	}
 }

@@ -127,16 +127,36 @@ If you’re running a Grafana Mimir cluster with shuffle sharding disabled, and 
 
 #### Limitation: Decreasing the tenant shard size
 
-The shuffle sharding implementation in Grafana Mimir has a limitation that prevents you from abruptly decreasing the tenant shard size when shuffle sharding is enabled for distributors on the read path. This is because when shuffle sharding is disabled, the queriers check all ingesters for blocks, whereas when it's enabled, they only check the ones that are assigned to that tenant through the shuffle-shard.
+The shuffle sharding implementation in Grafana Mimir has a limitation that prevents you from abruptly decreasing the tenant shard size when shuffle sharding is enabled for distributors on the read path. This is because when shuffle sharding is disabled, the queriers check all ingesters for blocks, whereas when it’s enabled, they only check the ones that are assigned to that tenant through the shuffle-shard.
 
-To safely decrease the tenant shard size, follow these steps.
+Use one of the following methods to safely decrease the tenant shard size:
+
+- (Recommended, ingest storage only) Use the write shard size override.
+- (Classic architecture) Temporarily disable shuffle sharding.
+
+##### Use the write shard size override
+
+You can use the `-ingest-storage.ingestion-partition-tenant-write-shard-size` configuration to decrease the tenant shard size without disabling shuffle sharding globally:
+
+1. Set the write shard size to the desired smaller value using the `-ingest-storage.ingestion-partition-tenant-write-shard-size=<new-smaller-size>` setting. You can also set this value per-tenant using the `ingestion_partitions_tenant_write_shard_size` setting in runtime configuration.
+1. Wait for at least the amount of time specified in the `-blocks-storage.tsdb.retention-period` setting.
+1. Update the main shard size to match the write shard size using the `-ingest-storage.ingestion-partition-tenant-shard-size=<new-smaller-size>` setting.
+1. Remove the write shard size override by setting `-ingest-storage.ingestion-partition-tenant-write-shard-size=0` or removing the runtime configuration override.
+
+This method is only available with ingest storage enabled. If you're using classic architecture, use the method described in the following section instead.
+
+This method allows queries to continue reading from the previous larger set of partitions while new writes go to the smaller set, without requiring you to disable shuffle sharding for all tenants during the migration.
+
+##### Temporarily disable shuffle sharding
+
+If you're using classic architecture, follow these steps:
 
 1. Disable shuffle sharding on the ingester read path via `-querier.shuffle-sharding-ingesters-enabled=false`.
 1. Decrease the configured tenant shard size.
-1. Wait for at least the amount of time specified via `-blocks-storage.tsdb.retention-period`.
+1. Wait for at least the amount of time specified in the `-blocks-storage.tsdb.retention-period` setting.
 1. Re-enable shuffle sharding on the ingester read path via `-querier.shuffle-sharding-ingesters-enabled=true`.
 
-Decreasing the tenant shard size without following this procedure could lead to inaccurate or incomplete query results. The queriers and rulers can’t determine the previous shard size and could miss an ingester with data for a given tenant. When you change a tenant’s shard size, the tenant’s series are assigned to a new set of partitions with only new samples distributed to it. Samples written before the shard size change remain in the previously-assigned partition set and the ingesters consuming those partitions. Because the queriers can't determine the previous set of ingesters through the sharding ring, they must check all ingesters for the series until the value set in `blocks-storage.tsdb.retention-period` has passed. At this point, you can query the series from object storage through the store-gateway.
+Decreasing the tenant shard size without following one of these procedures could lead to inaccurate or incomplete query results. The queriers and rulers can’t determine the previous shard size and could miss an ingester with data for a given tenant. When you change a tenant’s shard size, the tenant’s series are assigned to a new set of partitions with only new samples distributed to it. Samples written before the shard size change remain in the previously-assigned partition set and the ingesters consuming those partitions. Because the queriers can’t determine the previous set of ingesters through the sharding ring, they must check all ingesters for the series until the value set in `blocks-storage.tsdb.retention-period` has passed. At this point, you can query the series from object storage through the store-gateway.
 
 {{< admonition type="note" >}}
 The procedure for decreasing the tenant shard size is the same as for enabling shuffle sharding. Enabling shuffle sharding for ingesters effectively decreases the tenant shard size.
