@@ -46,7 +46,7 @@
 * [FEATURE] Ingester: Added experimental per-tenant early head compaction. New per-tenant limits `-ingester.early-head-compaction-owned-series-threshold` and `-ingester.early-head-compaction-min-estimated-series-reduction-percentage` trigger compaction based on owned series count. #13980
 * [FEATURE] Ingester: Added experimental support to run ingesters with no tokens in the ring when ingest storage is enabled. You can set `-ingester.ring.num-tokens=0` to enable this feature. #14024
 * [FEATURE] Store-gateway: Add `-store-gateway.sharding-ring.excluded-zones` flag to exclude specific zones from the store-gateway ring. #14120
-* [FEATURE] Ingest storage: Add `-ingest-storage.kafka.sasl-mechanism` flag supporting more ways to authenticate with Kafka. #14307 #14344 #14540
+* [FEATURE] Ingest storage: Add `-ingest-storage.kafka.sasl-mechanism` flag supporting more ways to authenticate with Kafka. #14307 #14344 #14540 #14674
 * [FEATURE] Ingest storage: Add `-ingest-storage.kafka.tls*` flags to connect to Kafka using TLS. #14550
 * [FEATURE] Ingest storage: Add `-ingest-storage.ingestion-partition-tenant-write-shard-size` to limit the number of partitions used for writes independently from reads, allowing safely reducing the shard size without losing query coverage during the migration. #14780
 * [FEATURE] MQE: Add experimental support for splitting and caching intermediate results for functions over range vectors in instant queries. #13472 #14479 #14506 #14499 #14517 #14536 #14614 #14645 #14677
