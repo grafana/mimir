@@ -2672,19 +2672,31 @@ func TestShouldStartAM(t *testing.T) {
 			expStartAM: true,
 		},
 		{
+			name: "custom mimir config, receiving requests",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequests,
+					RawConfig: simpleConfigOne,
+				},
+			},
+			expStartAM: true,
+		},
+		{
+			name: "custom mimir config, idle Alertmanager",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequestsExpired,
+					RawConfig: simpleConfigOne,
+				},
+			},
+			expStartAM: true,
+		},
+		{
 			name: "default mimir config",
 			cfg: alertspb.AlertConfigDescs{
 				Mimir: alertspb.AlertConfigDesc{
 					User:      testTenant,
 					RawConfig: am.fallbackConfig,
-				},
-			},
-		},
-		{
-			name: "empty mimir config",
-			cfg: alertspb.AlertConfigDescs{
-				Mimir: alertspb.AlertConfigDesc{
-					User: testTenant,
 				},
 			},
 		},
@@ -2699,6 +2711,24 @@ func TestShouldStartAM(t *testing.T) {
 			expStartAM: true,
 		},
 		{
+			name: "default mimir config, idle Alertmanager",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequestsExpired,
+					RawConfig: am.fallbackConfig,
+				},
+			},
+			expStartAM: false,
+		},
+		{
+			name: "empty mimir config",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User: testTenant,
+				},
+			},
+		},
+		{
 			name: "empty mimir config, receiving requests",
 			cfg: alertspb.AlertConfigDescs{
 				Mimir: alertspb.AlertConfigDesc{
@@ -2706,6 +2736,15 @@ func TestShouldStartAM(t *testing.T) {
 				},
 			},
 			expStartAM: true,
+		},
+		{
+			name: "empty mimir config, idle Alertmanager",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User: tenantReceivingRequestsExpired,
+				},
+			},
+			expStartAM: false,
 		},
 	}
 
@@ -2715,6 +2754,8 @@ func TestShouldStartAM(t *testing.T) {
 		})
 
 		t.Run(fmt.Sprintf("%s with strict initialization", test.name), func(t *testing.T) {
+			// Set a recent last request time for the tenant receiving requests.
+			amWithStrictInit.lastRequestTime.Store(tenantReceivingRequests, time.Now().Unix())
 			require.Equal(t, test.expStartAM, amWithStrictInit.shouldStartAM(test.cfg))
 		})
 	}
