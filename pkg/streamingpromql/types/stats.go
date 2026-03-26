@@ -161,6 +161,88 @@ func (s *OperatorEvaluationStats) ExtendStepInvariantToFullRange(timeRange Query
 	return expanded, nil
 }
 
+// ComputeForSubquery calculates the statistics for a subquery's contribution to the parent query,
+// based on the statistics for the inner operator of the subquery.
+//
+// s must be the OperatorEvaluationStats for the inner operator, evaluated over the subquery's time range.
+//
+// parentTimeRange is the time range of the parent query.
+// subqueryRangeMilliseconds is the duration of the subquery range in milliseconds.
+// subqueryTimestamp is the fixed evaluation timestamp from the @ modifier, in milliseconds since Unix epoch.
+// It should be nil if the @ modifier was not used.
+// subqueryOffsetMilliseconds is the subquery offset in milliseconds.
+//
+// s is not modified and is not closed when ComputeForSubquery returns.
+func (s *OperatorEvaluationStats) ComputeForSubquery(
+	parentTimeRange QueryTimeRange,
+	subqueryRangeMilliseconds int64,
+	subqueryTimestamp *int64,
+	subqueryOffsetMilliseconds int64,
+) (*OperatorEvaluationStats, error) {
+	result, err := NewOperatorEvaluationStats(parentTimeRange, s.memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	lastNewSamplesIdxUsed := -1
+
+	for outerIdx := range int64(parentTimeRange.StepCount) {
+		outerT := parentTimeRange.IndexTime(outerIdx)
+
+		rangeEnd := outerT
+		if subqueryTimestamp != nil {
+			rangeEnd = *subqueryTimestamp
+		}
+		rangeEnd -= subqueryOffsetMilliseconds
+		rangeStart := rangeEnd - subqueryRangeMilliseconds
+
+		// Find the range of inner steps in (rangeStart, rangeEnd].
+		firstIdx := firstIdxAfter(s.timeRange, rangeStart)
+		lastIdx := lastIdxAtOrBefore(s.timeRange, rangeEnd)
+
+		for innerIdx := firstIdx; innerIdx <= lastIdx; innerIdx++ {
+			result.samplesProcessedPerStep[outerIdx] += s.samplesProcessedPerStep[innerIdx]
+		}
+
+		firstNewIdx := max(lastNewSamplesIdxUsed, firstIdx)
+		for innerIdx := firstNewIdx; innerIdx <= lastIdx; innerIdx++ {
+			result.newSamplesReadPerStep[outerIdx] += s.newSamplesReadPerStep[innerIdx]
+		}
+
+		lastNewSamplesIdxUsed = lastIdx + 1
+	}
+
+	return result, nil
+}
+
+// firstIdxAfter returns the index of the first step in timeRange with a timestamp strictly greater than t.
+// Returns timeRange.StepCount if no such step exists.
+func firstIdxAfter(timeRange QueryTimeRange, t int64) int {
+	offset := t - timeRange.StartT
+	if offset < 0 {
+		return 0
+	}
+	idx := int(offset/timeRange.IntervalMilliseconds) + 1
+	if idx > timeRange.StepCount {
+		return timeRange.StepCount
+	}
+	return idx
+}
+
+// lastIdxAtOrBefore returns the index of the last step in timeRange with a timestamp at or before t.
+// Returns -1 if no such step exists.
+func lastIdxAtOrBefore(timeRange QueryTimeRange, t int64) int {
+	if t < timeRange.StartT {
+		return -1
+	}
+	offset := t - timeRange.StartT
+	idx := int(offset / timeRange.IntervalMilliseconds)
+	if idx >= timeRange.StepCount {
+		return timeRange.StepCount - 1
+	}
+	return idx
+}
+
 func (s *OperatorEvaluationStats) Close() {
 	Int64SlicePool.Put(&s.samplesProcessedPerStep, s.memoryConsumptionTracker)
 	Int64SlicePool.Put(&s.newSamplesReadPerStep, s.memoryConsumptionTracker)
