@@ -46,7 +46,7 @@
             range_interval: $.alertRangeInterval(5),
           },
           labels: {
-            severity: 'critical',
+            severity: 'warning',
           },
           annotations: {
             message: '%(product)s Compactor scheduler in %(alert_aggregation_variables)s has jobs failing repeatedly.' % $._config,
