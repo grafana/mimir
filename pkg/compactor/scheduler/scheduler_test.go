@@ -104,7 +104,7 @@ func TestScheduler_RepeatedJobFailures(t *testing.T) {
 		require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 			# HELP cortex_compactor_scheduler_repeated_job_failures_total Total number of failures for jobs that exceeded the repeated failure threshold.
 			# TYPE cortex_compactor_scheduler_repeated_job_failures_total counter
-			cortex_compactor_scheduler_repeated_job_failures_total{user="tenant1"} %d
+			cortex_compactor_scheduler_repeated_job_failures_total %d
 		`, expected)), "cortex_compactor_scheduler_repeated_job_failures_total"))
 	}
 
