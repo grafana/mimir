@@ -48,7 +48,7 @@ func TestAlertStore_ListAllUsers(t *testing.T) {
 
 func TestAlertStore_SetAndGetAlertConfig(t *testing.T) {
 	bucket := objstore.NewInMemBucket()
-	cfg := bucketclient.BucketAlertStoreConfig{FetchGrafanaConfig: true}
+	cfg := bucketclient.BucketAlertStoreConfig{}
 	store := bucketclient.NewBucketAlertStore(cfg, bucket, nil, log.NewNopLogger())
 
 	ctx := context.Background()
@@ -88,7 +88,7 @@ func TestAlertStore_SetAndGetAlertConfig(t *testing.T) {
 
 func TestStore_GetAlertConfigs(t *testing.T) {
 	bucket := objstore.NewInMemBucket()
-	cfg := bucketclient.BucketAlertStoreConfig{FetchGrafanaConfig: true}
+	cfg := bucketclient.BucketAlertStoreConfig{}
 	store := bucketclient.NewBucketAlertStore(cfg, bucket, nil, log.NewNopLogger())
 
 	ctx := context.Background()
@@ -111,6 +111,8 @@ func TestStore_GetAlertConfigs(t *testing.T) {
 		assert.Contains(t, configs, "user-1")
 		assert.NotContains(t, configs, "user-2")
 		assert.Equal(t, user1Cfg, configs["user-1"].Mimir)
+
+		require.NoError(t, store.SetAlertConfig(ctx, user2Cfg))
 
 		// Should return Alertmanager configurations.
 		configs, err = store.GetAlertConfigs(ctx, []string{"user-1", "user-2"})
