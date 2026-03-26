@@ -399,7 +399,8 @@ func (t *PostingOffsetTableV2) LabelValuesOffsets(ctx context.Context, name, pre
 	d := t.factory.NewDecbufAtUnchecked(t.tableOffset)
 	defer runutil.CloseWithErrCapture(&err, &d, "get label values")
 
-	d.ResetAt(e.offsets[offsetsStart].tableOff)
+	// Skip ahead to the offsets start. Do this instead of a ResetAt to save a GetRange op for the BucketDecbufFactory.
+	d.Skip(e.offsets[offsetsStart].tableOff - d.Offset())
 
 	// The last value of a label gets its own offset in e.offsets.
 	// If that value matches, then later we should use e.lastValOffset
