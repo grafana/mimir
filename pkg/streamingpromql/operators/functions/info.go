@@ -333,13 +333,12 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 		dataLabelMatchersMap[m.Name] = matcher
 	}
 
-	// Determine if we should emit the original (un-enriched) "inner" series for timestamps
-	// where no info series matches. We suppress it when any data label matcher doesn't match
-	// the empty string (e.g. {cluster=~".+"}).
-	emitInnerSeries := true
+	// Check if any data label matcher doesn't match the empty string (e.g. {cluster=~".+"}).
+	// If so, inner series without a matching info series should be suppressed.
+	hasNonEmptyDataLabelMatcher := false
 	for _, m := range dataLabelMatchersMap {
 		if !m.Matches("") {
-			emitInnerSeries = false
+			hasNonEmptyDataLabelMatcher = true
 			break
 		}
 	}
@@ -368,7 +367,7 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 		// the original series metadata along unchanged, unless a data label matcher doesn't
 		// match the empty string (e.g. {data=~".+"}), in which case we skip the series.
 		if !exists {
-			if !emitInnerSeries {
+			if hasNonEmptyDataLabelMatcher {
 				continue
 			}
 			f.labelSetsOrder[i] = map[string]int{"inner": 0}
