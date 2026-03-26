@@ -93,18 +93,18 @@ Each new file should show the full commit history from before the split.
 
 ### Per-declaration content hash verification
 
-Use `tools/split-verify` to prove that every declaration was moved intact. The tool parses Go files using the AST, extracts every top-level declaration (functions, methods, types, var/const blocks), and outputs a sorted TSV of `name \t sha256_hash \t file`.
+Use `tools/split-file-verify` to prove that every declaration was moved intact. The tool parses Go files using the AST, extracts every top-level declaration (functions, methods, types, var/const blocks), and outputs a sorted TSV of `name \t sha256_hash \t file`.
 
 ```bash
 # Build the tool
-go build -o /tmp/split-verify ./tools/split-verify
+go build -o /tmp/split-file-verify ./tools/split-file-verify
 
 # Hash every declaration in the original file (from the base commit)
 git show <base-commit>:path/to/original.go > /tmp/original.go
-/tmp/split-verify /tmp/original.go > /tmp/original_decls.tsv
+/tmp/split-file-verify /tmp/original.go > /tmp/original_decls.tsv
 
 # Hash every declaration across all split files
-/tmp/split-verify path/to/file1.go path/to/file2.go ... > /tmp/split_decls.tsv
+/tmp/split-file-verify path/to/file1.go path/to/file2.go ... > /tmp/split_decls.tsv
 
 # Compare — should produce no output if everything matches
 diff /tmp/original_decls.tsv /tmp/split_decls.tsv
