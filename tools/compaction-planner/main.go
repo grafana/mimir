@@ -98,7 +98,12 @@ func main() {
 
 	fmt.Fprintf(tabber, "Job No.\tStart Time\tEnd Time\tBlocks\tJob Key\n")
 
-	grouper := compactor.NewSplitAndMergeGrouper(cfg.userID, cfg.blockRanges.ToMilliseconds(), uint32(cfg.shardCount), uint32(cfg.oooShardCount), uint32(cfg.splitGroups), logger)
+	cfgProvider := &staticConfigProvider{
+		shardCount:       cfg.shardCount,
+		oooShardCount:    cfg.oooShardCount,
+		splitGroupsCount: cfg.splitGroups,
+	}
+	grouper := compactor.NewSplitAndMergeGrouper(cfg.userID, cfg.blockRanges.ToMilliseconds(), cfgProvider, logger)
 	jobs, err := grouper.Groups(metas)
 	if err != nil {
 		log.Fatalln("failed to plan compaction:", err)
@@ -122,3 +127,30 @@ func main() {
 		)
 	}
 }
+
+// staticConfigProvider implements compactor.ConfigProvider
+type staticConfigProvider struct {
+	shardCount       int
+	oooShardCount    int
+	splitGroupsCount int
+}
+
+func (c *staticConfigProvider) CompactorBlocksRetentionPeriod(_ string) time.Duration { return 0 }
+func (c *staticConfigProvider) CompactorSplitAndMergeShards(_ string) int             { return c.shardCount }
+func (c *staticConfigProvider) CompactorOOOSplitAndMergeShards(_ string) int          { return c.oooShardCount }
+func (c *staticConfigProvider) CompactorSplitGroups(_ string) int                     { return c.splitGroupsCount }
+func (c *staticConfigProvider) CompactorTenantShardSize(_ string) int                 { return 0 }
+func (c *staticConfigProvider) CompactorPartialBlockDeletionDelay(_ string) (time.Duration, bool) {
+	return 0, true
+}
+func (c *staticConfigProvider) CompactorBlockUploadEnabled(_ string) bool           { return false }
+func (c *staticConfigProvider) CompactorBlockUploadValidationEnabled(_ string) bool { return false }
+func (c *staticConfigProvider) CompactorBlockUploadVerifyChunks(_ string) bool      { return false }
+func (c *staticConfigProvider) CompactorBlockUploadMaxBlockSizeBytes(_ string) int64 {
+	return 0
+}
+func (c *staticConfigProvider) CompactorMaxLookback(_ string) time.Duration        { return 0 }
+func (c *staticConfigProvider) CompactorMaxPerBlockUploadConcurrency(_ string) int { return 0 }
+func (c *staticConfigProvider) S3SSEType(_ string) string                          { return "" }
+func (c *staticConfigProvider) S3SSEKMSKeyID(_ string) string                      { return "" }
+func (c *staticConfigProvider) S3SSEKMSEncryptionContext(_ string) string          { return "" }

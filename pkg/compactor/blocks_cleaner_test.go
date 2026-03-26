@@ -1336,7 +1336,9 @@ func TestComputeCompactionJobs(t *testing.T) {
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
 			index := &bucketindex.Index{Blocks: c.blocks}
-			jobs, err := estimateCompactionJobsFromBucketIndex(context.Background(), user, userBucket, index, cfg.CompactionBlockRanges, 3, 0, 0)
+			cfgProvider := newMockConfigProvider()
+			cfgProvider.splitAndMergeShards[user] = 3
+			jobs, err := estimateCompactionJobsFromBucketIndex(context.Background(), user, userBucket, index, cfg.CompactionBlockRanges, cfgProvider)
 			require.NoError(t, err)
 			split, merge := computeSplitAndMergeJobs(jobs)
 			require.Equal(t, c.expectedSplits, split)
@@ -1411,7 +1413,10 @@ func TestComputeCompactionJobsWithOOOShards(t *testing.T) {
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
 			index := &bucketindex.Index{Blocks: c.blocks}
-			jobs, err := estimateCompactionJobsFromBucketIndex(context.Background(), user, userBucket, index, cfg.CompactionBlockRanges, c.mergeShards, c.oooMergeShards, 0)
+			cfgProvider := newMockConfigProvider()
+			cfgProvider.splitAndMergeShards[user] = c.mergeShards
+			cfgProvider.oooSplitAndMergeShards[user] = c.oooMergeShards
+			jobs, err := estimateCompactionJobsFromBucketIndex(context.Background(), user, userBucket, index, cfg.CompactionBlockRanges, cfgProvider)
 			require.NoError(t, err)
 
 			var inOrderJob, oooJob *Job

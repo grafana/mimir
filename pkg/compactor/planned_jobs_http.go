@@ -126,7 +126,13 @@ func (c *MultitenantCompactor) PlannedJobsHandler(w http.ResponseWriter, req *ht
 		return
 	}
 
-	jobs, err := estimateCompactionJobsFromBucketIndex(req.Context(), tenantID, bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider), idx, c.compactorCfg.BlockRanges, mergeShards, oooMergeShards, splitGroups)
+	cfgOverride := &configProviderAdapter{
+		ConfigProvider: c.cfgProvider,
+		mergeShards:    mergeShards,
+		oooMergeShards: oooMergeShards,
+		splitGroups:    splitGroups,
+	}
+	jobs, err := estimateCompactionJobsFromBucketIndex(req.Context(), tenantID, bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider), idx, c.compactorCfg.BlockRanges, cfgOverride)
 	if err != nil {
 		level.Error(c.logger).Log("msg", "failed to compute compaction jobs from bucket index for tenant while listing compaction jobs", "user", tenantID, "err", err)
 		util.WriteTextResponse(w, "Failed to compute compaction jobs from bucket index")
@@ -187,3 +193,14 @@ func (c *MultitenantCompactor) PlannedJobsHandler(w http.ResponseWriter, req *ht
 func formatTime(t time.Time) string {
 	return t.UTC().Format(time.RFC3339)
 }
+
+type configProviderAdapter struct {
+	ConfigProvider
+	mergeShards    int
+	oooMergeShards int
+	splitGroups    int
+}
+
+func (c *configProviderAdapter) CompactorSplitAndMergeShards(string) int    { return c.mergeShards }
+func (c *configProviderAdapter) CompactorOOOSplitAndMergeShards(string) int { return c.oooMergeShards }
+func (c *configProviderAdapter) CompactorSplitGroups(string) int            { return c.splitGroups }

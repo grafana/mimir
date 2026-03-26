@@ -553,7 +553,11 @@ func TestPlanCompaction(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			actual := planCompaction(userID, testData.blocks, testData.ranges, testData.shardCount, testData.oooShardCount, testData.splitGroups)
+			cfg := newMockConfigProvider()
+			cfg.splitAndMergeShards[userID] = int(testData.shardCount)
+			cfg.oooSplitAndMergeShards[userID] = int(testData.oooShardCount)
+			cfg.splitGroups[userID] = int(testData.splitGroups)
+			actual := planCompaction(userID, testData.blocks, testData.ranges, cfg)
 
 			// Print the actual jobs (useful for debugging if tests fail).
 			t.Logf("got %d jobs:", len(actual))
@@ -835,12 +839,13 @@ func TestGroupBlocksByRange(t *testing.T) {
 }
 
 func TestEffectiveShardCount(t *testing.T) {
+	const userID = "user-1"
 	block1 := ulid.MustNew(1, nil)
 	block2 := ulid.MustNew(2, nil)
 
 	tests := map[string]struct {
-		shardCount    uint32
-		oooShardCount uint32
+		shardCount    int
+		oooShardCount int
 		blocks        []*block.Meta
 		expected      uint32
 	}{
@@ -881,7 +886,10 @@ func TestEffectiveShardCount(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			assert.Equal(t, testData.expected, effectiveShardCount(testData.blocks, testData.shardCount, testData.oooShardCount))
+			cfg := newMockConfigProvider()
+			cfg.splitAndMergeShards[userID] = testData.shardCount
+			cfg.oooSplitAndMergeShards[userID] = testData.oooShardCount
+			assert.Equal(t, testData.expected, effectiveShardCount(testData.blocks, userID, cfg))
 		})
 	}
 }
@@ -893,7 +901,9 @@ func TestSplitAndMergeGrouper_Groups_OOOShardCount(t *testing.T) {
 		block1 := ulid.MustNew(1, nil)
 		block2 := ulid.MustNew(2, nil)
 
-		g := NewSplitAndMergeGrouper(userID, []int64{20, 40}, 0, 0, 1, log.NewNopLogger())
+		cfg := newMockConfigProvider()
+		cfg.splitGroups[userID] = 1
+		g := NewSplitAndMergeGrouper(userID, []int64{20, 40}, cfg, log.NewNopLogger())
 		jobs, err := g.Groups(map[ulid.ULID]*block.Meta{
 			block1: {BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 20}},
 			block2: {BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 0, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{block.OutOfOrderExternalLabel: block.OutOfOrderExternalLabelValue}}},
@@ -911,7 +921,10 @@ func TestSplitAndMergeGrouper_Groups_OOOShardCount(t *testing.T) {
 		block3 := ulid.MustNew(3, nil)
 		block4 := ulid.MustNew(4, nil)
 
-		g := NewSplitAndMergeGrouper(userID, []int64{20, 40}, 8, 0, 1, log.NewNopLogger())
+		cfg := newMockConfigProvider()
+		cfg.splitAndMergeShards[userID] = 8
+		cfg.splitGroups[userID] = 1
+		g := NewSplitAndMergeGrouper(userID, []int64{20, 40}, cfg, log.NewNopLogger())
 		jobs, err := g.Groups(map[ulid.ULID]*block.Meta{
 			block1: {BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 20}},
 			block2: {BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 0, MaxTime: 20}},
@@ -933,7 +946,11 @@ func TestSplitAndMergeGrouper_Groups_OOOShardCount(t *testing.T) {
 		block3 := ulid.MustNew(3, nil)
 		block4 := ulid.MustNew(4, nil)
 
-		g := NewSplitAndMergeGrouper(userID, []int64{20, 40}, 8, 2, 1, log.NewNopLogger())
+		cfg := newMockConfigProvider()
+		cfg.splitAndMergeShards[userID] = 8
+		cfg.oooSplitAndMergeShards[userID] = 2
+		cfg.splitGroups[userID] = 1
+		g := NewSplitAndMergeGrouper(userID, []int64{20, 40}, cfg, log.NewNopLogger())
 		jobs, err := g.Groups(map[ulid.ULID]*block.Meta{
 			block1: {BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 20}},
 			block2: {BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 0, MaxTime: 20}},
