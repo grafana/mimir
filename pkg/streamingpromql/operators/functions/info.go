@@ -637,7 +637,7 @@ func (f *InfoFunction) Finalize(ctx context.Context) error {
 }
 
 func (f *InfoFunction) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return types.CombineStats(ctx, f.Inner, f.Info)
+	return types.CombineStats[types.StatsProvider](ctx, f.Inner, f.Info)
 }
 
 func (f *InfoFunction) Close() {

@@ -278,7 +278,7 @@ func (v *VectorScalarBinaryOperation) Finalize(ctx context.Context) error {
 }
 
 func (v *VectorScalarBinaryOperation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return types.CombineStats(ctx, v.Vector, v.Scalar)
+	return types.CombineStats[types.StatsProvider](ctx, v.Vector, v.Scalar)
 }
 
 func (v *VectorScalarBinaryOperation) Close() {

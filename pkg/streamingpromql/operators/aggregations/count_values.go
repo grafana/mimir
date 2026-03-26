@@ -277,7 +277,7 @@ func (c *CountValues) Finalize(ctx context.Context) error {
 }
 
 func (c *CountValues) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return types.CombineStats(ctx, c.Inner, c.LabelName)
+	return types.CombineStats[types.StatsProvider](ctx, c.Inner, c.LabelName)
 }
 
 func (c *CountValues) Close() {

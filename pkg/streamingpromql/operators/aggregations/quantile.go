@@ -111,7 +111,7 @@ func (q *QuantileAggregation) Finalize(ctx context.Context) error {
 }
 
 func (q *QuantileAggregation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return types.CombineStats(ctx, q.Aggregation, q.Param)
+	return types.CombineStats[types.StatsProvider](ctx, q.Aggregation, q.Param)
 }
 
 func (q *QuantileAggregation) Close() {

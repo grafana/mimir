@@ -319,7 +319,7 @@ func (t *InstantQuery) Finalize(ctx context.Context) error {
 }
 
 func (t *InstantQuery) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return types.CombineStats(ctx, t.Inner, t.Param)
+	return types.CombineStats[types.StatsProvider](ctx, t.Inner, t.Param)
 }
 
 func (t *InstantQuery) Close() {

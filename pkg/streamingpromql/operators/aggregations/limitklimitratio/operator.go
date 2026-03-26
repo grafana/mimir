@@ -207,7 +207,7 @@ func (o *Operator) Finalize(ctx context.Context) error {
 }
 
 func (o *Operator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return types.CombineStats(ctx, o.Inner, o.Param)
+	return types.CombineStats[types.StatsProvider](ctx, o.Inner, o.Param)
 }
 
 func (o *Operator) Close() {
