@@ -236,8 +236,11 @@ type Codec struct {
 
 type formatter interface {
 	EncodeQueryResponse(resp *PrometheusResponse) ([]byte, error)
+	EncodeQueryResponseTo(w io.Writer, resp *PrometheusResponse) error
 	EncodeLabelsResponse(resp *PrometheusLabelsResponse) ([]byte, error)
+	EncodeLabelsResponseTo(w io.Writer, resp *PrometheusLabelsResponse) error
 	EncodeSeriesResponse(resp *PrometheusSeriesResponse) ([]byte, error)
+	EncodeSeriesResponseTo(w io.Writer, resp *PrometheusSeriesResponse) error
 	DecodeQueryResponse([]byte) (*PrometheusResponse, error)
 	DecodeLabelsResponse([]byte) (*PrometheusLabelsResponse, error)
 	DecodeSeriesResponse([]byte) (*PrometheusSeriesResponse, error)
@@ -1091,10 +1094,10 @@ func findFormatter(contentType string) formatter {
 // EncodeMetricsQueryResponse encodes a Response from a MetricsQueryRequest into an http response.
 func (c Codec) EncodeMetricsQueryResponse(ctx context.Context, req *http.Request, res Response) (*http.Response, error) {
 	_, sp := tracer.Start(ctx, "APIResponse.ToHTTPResponse")
-	defer sp.End()
 
 	a, ok := res.GetPrometheusResponse()
 	if !ok {
+		sp.End()
 		return nil, apierror.Newf(apierror.TypeInternal, "invalid response format")
 	}
 	if a.Data != nil {
@@ -1103,33 +1106,32 @@ func (c Codec) EncodeMetricsQueryResponse(ctx context.Context, req *http.Request
 
 	selectedContentType, formatter := c.negotiateContentType(req.Header.Get("Accept"))
 	if formatter == nil {
+		sp.End()
 		return nil, apierror.New(apierror.TypeNotAcceptable, "none of the content types in the Accept header are supported")
 	}
 
-	start := time.Now()
-	b, err := formatter.EncodeQueryResponse(a)
-	if err != nil {
-		return nil, apierror.Newf(apierror.TypeInternal, "error encoding response: %v", err)
-	}
-
-	encodeDuration := time.Since(start)
-	c.metrics.duration.WithLabelValues(operationEncode, formatter.Name()).Observe(encodeDuration.Seconds())
-	c.metrics.size.WithLabelValues(operationEncode, formatter.Name()).Observe(float64(len(b)))
-	sp.SetAttributes(attribute.Int("bytes", len(b)))
-
 	queryStats := stats.FromContext(ctx)
-	queryStats.AddEncodeTime(encodeDuration)
+	pr, pw := io.Pipe()
+	go func() {
+		defer sp.End()
+		cw := &countingWriter{w: pw}
+		start := time.Now()
+		encErr := formatter.EncodeQueryResponseTo(cw, a)
+		encodeDuration := time.Since(start)
+		c.metrics.duration.WithLabelValues(operationEncode, formatter.Name()).Observe(encodeDuration.Seconds())
+		c.metrics.size.WithLabelValues(operationEncode, formatter.Name()).Observe(float64(cw.n))
+		sp.SetAttributes(attribute.Int("bytes", int(cw.n)))
+		queryStats.AddEncodeTime(encodeDuration)
+		res.Close()
+		pw.CloseWithError(encErr)
+	}()
 
 	resp := http.Response{
 		Header: http.Header{
 			"Content-Type": []string{selectedContentType},
 		},
-		Body: &prometheusReadCloser{
-			Reader:    bytes.NewBuffer(b),
-			finalizer: res.Close,
-		},
-		StatusCode:    http.StatusOK,
-		ContentLength: int64(len(b)),
+		Body:       pr,
+		StatusCode: http.StatusOK,
 	}
 	return &resp, nil
 }
@@ -1147,63 +1149,70 @@ func (prc *prometheusReadCloser) Close() error {
 	return nil
 }
 
+// countingWriter wraps an io.Writer and counts the bytes written.
+type countingWriter struct {
+	w io.Writer
+	n int64
+}
+
+func (cw *countingWriter) Write(p []byte) (int, error) {
+	n, err := cw.w.Write(p)
+	cw.n += int64(n)
+	return n, err
+}
+
 // EncodeLabelsSeriesQueryResponse encodes a Response from a LabelsSeriesQueryRequest into an http response.
 func (c Codec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Request, res Response, isSeriesResponse bool) (*http.Response, error) {
 	_, sp := tracer.Start(ctx, "APIResponse.ToHTTPResponse")
-	defer sp.End()
 
 	selectedContentType, formatter := c.negotiateContentType(req.Header.Get("Accept"))
 	if formatter == nil {
+		sp.End()
 		return nil, apierror.New(apierror.TypeNotAcceptable, "none of the content types in the Accept header are supported")
 	}
 
-	var start time.Time
-	var b []byte
+	var encodeFunc func(cw *countingWriter) error
 
-	switch isSeriesResponse {
-	case false:
+	if !isSeriesResponse {
 		a, ok := res.(*PrometheusLabelsResponse)
 		if !ok {
+			sp.End()
 			return nil, apierror.Newf(apierror.TypeInternal, "invalid response format")
 		}
 		if a.Data != nil {
 			sp.SetAttributes(attribute.Int("labels", len(a.Data)))
 		}
-
-		start = time.Now()
-		var err error
-		b, err = formatter.EncodeLabelsResponse(a)
-		if err != nil {
-			return nil, apierror.Newf(apierror.TypeInternal, "error encoding response: %v", err)
-		}
-	case true:
+		encodeFunc = func(cw *countingWriter) error { return formatter.EncodeLabelsResponseTo(cw, a) }
+	} else {
 		a, ok := res.(*PrometheusSeriesResponse)
 		if !ok {
+			sp.End()
 			return nil, apierror.Newf(apierror.TypeInternal, "invalid response format")
 		}
 		if a.Data != nil {
 			sp.SetAttributes(attribute.Int("labels", len(a.Data)))
 		}
-
-		start = time.Now()
-		var err error
-		b, err = formatter.EncodeSeriesResponse(a)
-		if err != nil {
-			return nil, apierror.Newf(apierror.TypeInternal, "error encoding response: %v", err)
-		}
+		encodeFunc = func(cw *countingWriter) error { return formatter.EncodeSeriesResponseTo(cw, a) }
 	}
 
-	c.metrics.duration.WithLabelValues(operationEncode, formatter.Name()).Observe(time.Since(start).Seconds())
-	c.metrics.size.WithLabelValues(operationEncode, formatter.Name()).Observe(float64(len(b)))
-	sp.SetAttributes(attribute.Int("bytes", len(b)))
+	pr, pw := io.Pipe()
+	go func() {
+		defer sp.End()
+		cw := &countingWriter{w: pw}
+		start := time.Now()
+		encErr := encodeFunc(cw)
+		c.metrics.duration.WithLabelValues(operationEncode, formatter.Name()).Observe(time.Since(start).Seconds())
+		c.metrics.size.WithLabelValues(operationEncode, formatter.Name()).Observe(float64(cw.n))
+		sp.SetAttributes(attribute.Int("bytes", int(cw.n)))
+		pw.CloseWithError(encErr)
+	}()
 
 	resp := http.Response{
 		Header: http.Header{
 			"Content-Type": []string{selectedContentType},
 		},
-		Body:          io.NopCloser(bytes.NewBuffer(b)),
-		StatusCode:    http.StatusOK,
-		ContentLength: int64(len(b)),
+		Body:       pr,
+		StatusCode: http.StatusOK,
 	}
 	return &resp, nil
 }

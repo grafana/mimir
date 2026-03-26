@@ -5,6 +5,7 @@ package querymiddleware
 import (
 	"errors"
 	"fmt"
+	"io"
 
 	"github.com/prometheus/common/model"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
@@ -326,8 +327,21 @@ func (f ProtobufFormatter) decodeMatrixData(data *mimirpb.MatrixData) (*Promethe
 	}, nil
 }
 
+func (f ProtobufFormatter) EncodeQueryResponseTo(w io.Writer, resp *PrometheusResponse) error {
+	b, err := f.EncodeQueryResponse(resp)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(b)
+	return err
+}
+
 func (f ProtobufFormatter) EncodeLabelsResponse(*PrometheusLabelsResponse) ([]byte, error) {
 	return nil, errors.New("protobuf labels encoding is not supported")
+}
+
+func (f ProtobufFormatter) EncodeLabelsResponseTo(_ io.Writer, _ *PrometheusLabelsResponse) error {
+	return errors.New("protobuf labels encoding is not supported")
 }
 
 func (f ProtobufFormatter) DecodeLabelsResponse([]byte) (*PrometheusLabelsResponse, error) {
@@ -336,6 +350,10 @@ func (f ProtobufFormatter) DecodeLabelsResponse([]byte) (*PrometheusLabelsRespon
 
 func (f ProtobufFormatter) EncodeSeriesResponse(*PrometheusSeriesResponse) ([]byte, error) {
 	return nil, errors.New("protobuf series encoding is not supported")
+}
+
+func (f ProtobufFormatter) EncodeSeriesResponseTo(_ io.Writer, _ *PrometheusSeriesResponse) error {
+	return errors.New("protobuf series encoding is not supported")
 }
 
 func (f ProtobufFormatter) DecodeSeriesResponse([]byte) (*PrometheusSeriesResponse, error) {

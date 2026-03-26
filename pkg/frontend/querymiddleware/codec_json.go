@@ -6,6 +6,8 @@
 package querymiddleware
 
 import (
+	"io"
+
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 )
 
@@ -15,6 +17,10 @@ type jsonFormatter struct{}
 
 func (j jsonFormatter) EncodeQueryResponse(resp *PrometheusResponse) ([]byte, error) {
 	return json.Marshal(resp)
+}
+
+func (j jsonFormatter) EncodeQueryResponseTo(w io.Writer, resp *PrometheusResponse) error {
+	return jsonStreamEncode(w, resp)
 }
 
 func (j jsonFormatter) DecodeQueryResponse(buf []byte) (*PrometheusResponse, error) {
@@ -31,6 +37,10 @@ func (j jsonFormatter) EncodeLabelsResponse(resp *PrometheusLabelsResponse) ([]b
 	return json.Marshal(resp)
 }
 
+func (j jsonFormatter) EncodeLabelsResponseTo(w io.Writer, resp *PrometheusLabelsResponse) error {
+	return jsonStreamEncode(w, resp)
+}
+
 func (j jsonFormatter) DecodeLabelsResponse(buf []byte) (*PrometheusLabelsResponse, error) {
 	var resp PrometheusLabelsResponse
 
@@ -43,6 +53,10 @@ func (j jsonFormatter) DecodeLabelsResponse(buf []byte) (*PrometheusLabelsRespon
 
 func (j jsonFormatter) EncodeSeriesResponse(resp *PrometheusSeriesResponse) ([]byte, error) {
 	return json.Marshal(resp)
+}
+
+func (j jsonFormatter) EncodeSeriesResponseTo(w io.Writer, resp *PrometheusSeriesResponse) error {
+	return jsonStreamEncode(w, resp)
 }
 
 func (j jsonFormatter) DecodeSeriesResponse(buf []byte) (*PrometheusSeriesResponse, error) {
@@ -61,4 +75,20 @@ func (j jsonFormatter) Name() string {
 
 func (j jsonFormatter) ContentType() v1.MIMEType {
 	return v1.MIMEType{Type: "application", SubType: "json"}
+}
+
+// jsonStreamEncode encodes v into w using a pooled jsoniter stream. This avoids
+// the repeated buffer-doubling allocations that occur when json.NewEncoder starts
+// with a small buffer and must grow to fit the full response.
+func jsonStreamEncode(w io.Writer, v interface{}) error {
+	stream := json.BorrowStream(w)
+	stream.WriteVal(v)
+	stream.WriteRaw("\n")
+	if stream.Error != nil {
+		json.ReturnStream(stream)
+		return stream.Error
+	}
+	err := stream.Flush()
+	json.ReturnStream(stream)
+	return err
 }
