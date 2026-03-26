@@ -1667,18 +1667,8 @@ func (o *Overrides) CardinalityAnalysisMaxResults(userID string) int {
 	return o.getOverridesForUser(userID).CardinalityAnalysisMaxResults
 }
 
-// trimMetadataSuffix removes metadata from a tenant ID.
-// TODO(juliusmh): temporary solution until grafana/dskit provides this functionality.
-func trimMetadataSuffix(userID string) string {
-	idx := strings.IndexByte(userID, ':')
-	if idx == -1 {
-		return userID
-	}
-	return userID[:idx]
-}
-
 func (o *Overrides) getOverridesForUser(userID string) *Limits {
-	userID = trimMetadataSuffix(userID)
+	userID = tenant.TrimMetadata(userID)
 	if o.tenantLimits != nil {
 		l := o.tenantLimits.ByUserID(userID)
 		if l != nil {

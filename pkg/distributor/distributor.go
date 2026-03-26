@@ -885,6 +885,7 @@ func (d *Distributor) running(ctx context.Context) error {
 }
 
 func (d *Distributor) cleanupInactiveUser(userID string) {
+	d.ingestionRateLimiter.RemoveStaleEntries(time.Now().Add(-24 * time.Hour))
 	d.ingestersRing.CleanupShuffleShardCache(userID)
 
 	d.HATracker.cleanupHATrackerMetricsForUser(userID)
