@@ -61,7 +61,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         // create an array of span sizes to fill each line (12) with the correct number of panels.
         // span[i] is the span of the i-th panel, e.g. panelsPerLine=[3,2] -> spans=[4,4,4,6,6].
         local spans = std.flattenArrays([
-          [std.floor(12 / lineCount) for _ in std.range(0, lineCount - 1)]
+          local span = std.floor(12 / lineCount);
+          [span + if i < (12 % lineCount) then 1 else 0 for i in std.range(0, lineCount - 1)]
           for lineCount in panelsPerLine
         ]);
         local allPanels = self.panels;
