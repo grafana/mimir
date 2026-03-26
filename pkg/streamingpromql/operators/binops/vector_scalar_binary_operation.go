@@ -277,6 +277,10 @@ func (v *VectorScalarBinaryOperation) Finalize(ctx context.Context) error {
 	return v.Vector.Finalize(ctx)
 }
 
+func (v *VectorScalarBinaryOperation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return types.CombineStats[types.StatsProvider](ctx, v.Vector, v.Scalar)
+}
+
 func (v *VectorScalarBinaryOperation) Close() {
 	v.Scalar.Close()
 	v.Vector.Close()

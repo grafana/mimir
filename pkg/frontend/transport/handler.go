@@ -33,7 +33,6 @@ import (
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/activitytracker"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -91,7 +90,6 @@ type Handler struct {
 	headersToLog []string
 	log          log.Logger
 	roundTripper http.RoundTripper
-	at           *activitytracker.ActivityTracker
 
 	// Metrics.
 	querySeconds          *prometheus.CounterVec
@@ -109,13 +107,12 @@ type Handler struct {
 }
 
 // NewHandler creates a new frontend handler.
-func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logger, reg prometheus.Registerer, at *activitytracker.ActivityTracker) *Handler {
+func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logger, reg prometheus.Registerer) *Handler {
 	h := &Handler{
 		cfg:          cfg,
 		headersToLog: filterHeadersToLog(cfg.LogQueryRequestHeaders),
 		log:          log,
 		roundTripper: roundTripper,
-		at:           at,
 	}
 	h.cond = sync.NewCond(&h.mtx)
 
@@ -207,12 +204,6 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r = r.WithContext(ctx)
 	}
 
-	// Ensure to close the request body reader.
-	defer func() { _ = r.Body.Close() }()
-
-	// Limit the read body size.
-	r.Body = http.MaxBytesReader(w, r.Body, f.cfg.MaxBodySize)
-
 	var params url.Values
 	var err error
 
@@ -226,9 +217,6 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, apierror.New(apierror.TypeBadData, err.Error()))
 		return
 	}
-
-	activityIndex := f.at.Insert(func() string { return httpRequestActivity(r, r.Header.Get("User-Agent"), params) })
-	defer f.at.Delete(activityIndex)
 
 	if isActiveSeriesEndpoint(r) && f.cfg.ActiveSeriesWriteTimeout > 0 {
 		deadline := time.Now().Add(f.cfg.ActiveSeriesWriteTimeout)
@@ -575,21 +563,6 @@ func statsValue(name string, val interface{}) string {
 	default:
 		return fmt.Sprintf("%s;val=%v", name, val)
 	}
-}
-
-func httpRequestActivity(request *http.Request, userAgent string, requestParams url.Values) string {
-	tenantID := "(unknown)"
-	if tenantIDs, err := tenant.TenantIDs(request.Context()); err == nil {
-		tenantID = tenant.JoinTenantIDs(tenantIDs)
-	}
-
-	params := requestParams.Encode()
-	if params == "" {
-		params = "(no params)"
-	}
-
-	// This doesn't have to be pretty, just useful for debugging, so prioritize efficiency.
-	return fmt.Sprintf("user:%s UA:%s req:%s %s %s", tenantID, userAgent, request.Method, request.URL.Path, params)
 }
 
 func isActiveSeriesEndpoint(r *http.Request) bool {

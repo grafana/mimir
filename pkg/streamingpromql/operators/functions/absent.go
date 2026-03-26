@@ -127,6 +127,10 @@ func (a *Absent) Finalize(ctx context.Context) error {
 	return a.Inner.Finalize(ctx)
 }
 
+func (a *Absent) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return a.Inner.Stats(ctx)
+}
+
 func (a *Absent) Close() {
 	a.Inner.Close()
 }

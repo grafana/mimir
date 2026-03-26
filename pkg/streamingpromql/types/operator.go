@@ -52,8 +52,15 @@ type Operator interface {
 	// It must be safe to call Finalize multiple times.
 	// Finalize must not call any method other than Finalize on another operator and is expected to call Finalize on
 	// any nested operators.
-	// Once Finalize has been called, calling methods other than Close may result in unpredictable behaviour, corruption or crashes.
+	// Once Finalize has been called, calling methods other than Stats or Close may result in unpredictable behaviour, corruption or crashes.
 	Finalize(ctx context.Context) error
+
+	// Stats returns the statistics for this operator, including any nested operators.
+	// Stats must only be called after Finalize has been called.
+	// Calling Stats multiple times may result in unpredictable behaviour, corruption or crashes.
+	// The caller may mutate the returned OperatorEvaluationStats instance.
+	// It is the caller's responsibility to call Close on the returned OperatorEvaluationStats instance.
+	Stats(ctx context.Context) (*OperatorEvaluationStats, error)
 }
 
 // SeriesOperator represents all operators that return one or more series.

@@ -2391,7 +2391,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 
 	// Get the tenant's subring to use to either write to ingesters or partitions.
 	if d.cfg.IngestStorageConfig.Enabled {
-		subring, err := d.partitionsRing.ShuffleShard(userID, d.limits.IngestionPartitionsTenantShardSize(userID))
+		subring, err := d.partitionsRing.ShuffleShard(userID, d.limits.EffectiveIngestionPartitionsTenantWriteShardSize(userID))
 		if err != nil {
 			return err
 		}

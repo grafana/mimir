@@ -760,29 +760,7 @@ func (c *MultitenantCompactor) compactUsers(ctx context.Context) {
 	// Delete local files for unowned tenants, if there are any. This cleans up
 	// leftover local files for tenants that belong to different compactors now,
 	// or have been deleted completely.
-	for userID := range c.listTenantsWithMetaSyncDirectories() {
-		if _, owned := ownedUsers[userID]; owned {
-			continue
-		}
-
-		dir := c.metaSyncDirForUser(userID)
-		s, err := os.Stat(dir)
-		if err != nil {
-			if !os.IsNotExist(err) {
-				level.Warn(c.logger).Log("msg", "failed to stat local directory with user data", "dir", dir, "err", err)
-			}
-			continue
-		}
-
-		if s.IsDir() {
-			err := os.RemoveAll(dir)
-			if err == nil {
-				level.Info(c.logger).Log("msg", "deleted directory for user not owned by this shard", "dir", dir)
-			} else {
-				level.Warn(c.logger).Log("msg", "failed to delete directory for user not owned by this shard", "dir", dir, "err", err)
-			}
-		}
-	}
+	c.deleteUnownedMetaSyncDirs(ownedUsers)
 
 	succeeded = true
 }
@@ -1056,4 +1034,31 @@ func (c *MultitenantCompactor) listTenantsWithMetaSyncDirectories() map[string]s
 	}
 
 	return result
+}
+
+// deleteUnownedMetaSyncDirs deletes meta sync directories for tenants not present in ownedUsers.
+func (c *MultitenantCompactor) deleteUnownedMetaSyncDirs(ownedUsers map[string]struct{}) {
+	for userID := range c.listTenantsWithMetaSyncDirectories() {
+		if _, owned := ownedUsers[userID]; owned {
+			continue
+		}
+
+		dir := c.metaSyncDirForUser(userID)
+		s, err := os.Stat(dir)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				level.Warn(c.logger).Log("msg", "failed to stat meta sync directory", "dir", dir, "err", err)
+			}
+			continue
+		}
+
+		if s.IsDir() {
+			err := os.RemoveAll(dir)
+			if err == nil {
+				level.Info(c.logger).Log("msg", "deleted meta sync directory", "dir", dir)
+			} else {
+				level.Warn(c.logger).Log("msg", "failed to delete meta sync directory", "dir", dir, "err", err)
+			}
+		}
+	}
 }

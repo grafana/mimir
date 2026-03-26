@@ -5113,6 +5113,15 @@ ruler_alertmanager_client_config:
 # CLI flag: -ingest-storage.ingestion-partition-tenant-shard-size
 [ingestion_partitions_tenant_shard_size: <int> | default = 0]
 
+# (experimental) The maximum number of partitions a tenant's data should be
+# written to when using the ingest storage. When set to a value > 0 and less
+# than -ingest-storage.ingestion-partition-tenant-shard-size, writes use fewer
+# partitions while reads continue using the full shard size. This allows safely
+# reducing the shard size without losing query coverage during the migration. 0
+# means the write shard size equals the read shard size.
+# CLI flag: -ingest-storage.ingestion-partition-tenant-write-shard-size
+[ingestion_partitions_tenant_write_shard_size: <int> | default = 0]
+
 # (experimental) Validation scheme to use for metric and label names.
 # Distributors reject time series that do not adhere to this scheme. Rulers
 # reject rules with unsupported metric or label names. Supported values: legacy,

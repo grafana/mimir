@@ -440,17 +440,23 @@ local filename = 'mimir-writes.json';
             The estimation is used to enforce the max-buffered-bytes limit and to reduce discarded bytes.
           |||
         ) +
+        local selector = $.jobMatcher($._config.job_names.ingester);
+        local recordsPerFetchSum = utils.ncHistogramSumBy(
+          utils.ncHistogramSumRate('cortex_ingest_storage_reader_records_per_fetch', selector)
+        );
+        local query = utils.ncHistogramApplyTemplate(
+          template='sum(rate(cortex_ingest_storage_reader_fetch_bytes_total{' + selector + '}[$__rate_interval])) / %s',
+          query=recordsPerFetchSum,
+        );
         $.queryPanel([
-          |||
-            sum(rate(cortex_ingest_storage_reader_fetch_bytes_total{%s}[$__rate_interval]))
-            /
-            sum(rate(cortex_ingest_storage_reader_records_per_fetch_sum{%s}[$__rate_interval]))
-          ||| % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
+          utils.showClassicHistogramQuery(query),
+          utils.showNativeHistogramQuery(query),
           |||
             histogram_avg(sum(rate(cortex_ingest_storage_reader_estimated_bytes_per_record{%s}[$__rate_interval])))
           |||
-          % [$.jobMatcher($._config.job_names.ingester)],
+          % [selector],
         ], [
+          'Actual bytes per record (avg)',
           'Actual bytes per record (avg)',
           'Estimated bytes per record (avg)',
         ]) +

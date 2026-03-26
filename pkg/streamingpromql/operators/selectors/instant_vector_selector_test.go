@@ -200,9 +200,10 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 					MemoryConsumptionTracker: memoryConsumptionTracker,
 				},
 				MemoryConsumptionTracker: memoryConsumptionTracker,
-				Stats:                    &types.QueryStats{},
+				QueryStats:               &types.QueryStats{},
 			}
 
+			require.NoError(t, selector.Prepare(ctx, &types.PrepareParams{}))
 			_, err := selector.SeriesMetadata(ctx, nil)
 			require.NoError(t, err)
 
@@ -248,9 +249,10 @@ func TestInstantVectorSelector_SliceSizing(t *testing.T) {
 					MemoryConsumptionTracker: memoryConsumptionTracker,
 				},
 				MemoryConsumptionTracker: memoryConsumptionTracker,
-				Stats:                    &types.QueryStats{},
+				QueryStats:               &types.QueryStats{},
 			}
 
+			require.NoError(t, selector.Prepare(ctx, &types.PrepareParams{}))
 			series, err := selector.SeriesMetadata(ctx, nil)
 			require.NoError(t, err)
 

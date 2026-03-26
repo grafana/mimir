@@ -149,7 +149,7 @@ func newDefaultConfig() *Config {
 func (t *Mimir) initAPI() (services.Service, error) {
 	t.Cfg.API.ServerPrefix = t.Cfg.Server.PathPrefix
 
-	a, err := api.New(t.Cfg.API, t.Cfg.TenantFederation, t.Cfg.Server, t.Server, util_log.Logger)
+	a, err := api.New(t.Cfg.API, t.Cfg.TenantFederation, t.Cfg.Server, t.Server, util_log.Logger, t.ActivityTracker)
 	if err != nil {
 		return nil, err
 	}
@@ -707,7 +707,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	// to ensure requests it processes use the default middleware instrumentation.
 	if !t.Cfg.isQuerySchedulerEnabled() && !t.Cfg.isQueryFrontendEnabled() {
 		// First, register the internal querier handler with the external HTTP server
-		t.API.RegisterQueryAPI(internalQuerierRouter, t.BuildInfoHandler)
+		t.API.RegisterQueryAPI(internalQuerierRouter, t.BuildInfoHandler, t.Cfg.Frontend.Handler.MaxBodySize)
 
 		// Second, set the http.Handler that the frontend worker will use to process requests to point to
 		// the external HTTP server. This will allow the querier to consolidate query metrics both external
@@ -952,10 +952,10 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	roundTripper = t.QueryFrontendTripperware(roundTripper)
 	roundTripper = querymiddleware.NewFrontendRunningRoundTripper(roundTripper, frontend, t.Cfg.Frontend.QueryMiddleware.NotRunningTimeout, util_log.Logger)
 
-	handler := transport.NewHandler(t.Cfg.Frontend.Handler, roundTripper, util_log.Logger, t.Registerer, t.ActivityTracker)
+	handler := transport.NewHandler(t.Cfg.Frontend.Handler, roundTripper, util_log.Logger, t.Registerer)
 	// Allow the Prometheus engine to be explicitly selected if MQE is in use and a fallback is configured.
 	fallbackInjector := propagation.Middleware(&streamingpromqlcompat.EngineFallbackExtractor{})
-	t.API.RegisterQueryFrontendHandler(fallbackInjector.Wrap(handler), t.BuildInfoHandler)
+	t.API.RegisterQueryFrontendHandler(fallbackInjector.Wrap(handler), t.BuildInfoHandler, t.Cfg.Frontend.Handler.MaxBodySize)
 
 	w := services.NewFailureWatcher()
 	return services.NewBasicService(func(_ context.Context) error {
@@ -1520,7 +1520,7 @@ func (t *Mimir) setupModuleManager() error {
 	// Add dependencies
 	deps := map[string][]string{
 		//lint:sorted
-		API:                              {Server},
+		API:                              {Server, ActivityTracker},
 		AlertManager:                     {API, MemberlistKV, Overrides, Vault},
 		BlockBuilder:                     {API, Overrides},
 		BlockBuilderScheduler:            {API},
@@ -1539,10 +1539,10 @@ func (t *Mimir) setupModuleManager() error {
 		OverridesExporter:                {Overrides, MemberlistKV, Vault},
 		Querier:                          {TenantFederation, Vault, QuerierLifecycler},
 		QuerierLifecycler:                {API, RuntimeConfig, MemberlistKV, Vault},
-		QuerierQueryPlanner:              {API, ActivityTracker, Overrides},
+		QuerierQueryPlanner:              {API, Overrides},
 		QuerierRing:                      {API, RuntimeConfig, MemberlistKV, Vault},
 		QueryFrontend:                    {QueryFrontendTripperware, MemberlistKV, Vault},
-		QueryFrontendQueryPlanner:        {API, ActivityTracker, Overrides, QuerierRing},
+		QueryFrontendQueryPlanner:        {API, Overrides, QuerierRing},
 		QueryFrontendTopicOffsetsReaders: {IngesterPartitionRing},
 		QueryFrontendTripperware:         {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReaders, QueryFrontendQueryPlanner},
 		QueryScheduler:                   {API, Overrides, MemberlistKV, Vault},
