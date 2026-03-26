@@ -318,7 +318,7 @@ func TestNewRouteMaxBodySize(t *testing.T) {
 			body:                   "query=up&time=42",
 			contentType:            "application/x-www-form-urlencoded",
 			maxBytes:               5,
-			expectedStatus:         http.StatusInternalServerError,
+			expectedStatus:         http.StatusRequestEntityTooLarge,
 			expectInnerHandlerRuns: false,
 		},
 		{

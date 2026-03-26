@@ -53,6 +53,11 @@ func (m *activityTrackingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Re
 	}
 
 	if err != nil {
+		// This can occur for routes with a max body size set and the activity tracker has attempted to read the body which exceeds this limit.
+		if util.IsRequestBodyTooLarge(err) {
+			http.Error(w, "http: request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		// This is not expected to happen but if there was an error here and the request body can not be restored then the request is no longer valid.
 		level.Error(m.log).Log("msg", "failed to parse request params for activity tracking", "path", r.URL.Path, "contentType", r.Header.Get("Content-Type"), "err", err)
 		http.Error(w, "failed to parse request params for activity tracking", http.StatusInternalServerError)
