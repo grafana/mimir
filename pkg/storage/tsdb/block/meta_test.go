@@ -59,6 +59,8 @@ func TestMeta_Clone(t *testing.T) {
 		},
 	}
 	meta.Compaction.Sources = []ulid.ULID{ULID(2), ULID(3)}
+	meta.Compaction.Parents = []tsdb.BlockDesc{{ULID: ULID(5), MinTime: 1, MaxTime: 2}}
+	meta.Compaction.Hints = []string{tsdb.CompactionHintFromOutOfOrder}
 
 	clone := meta.Clone()
 	require.Equal(t, meta, clone)
@@ -70,6 +72,12 @@ func TestMeta_Clone(t *testing.T) {
 
 	clone.Compaction.Sources[0] = ULID(4)
 	require.Equal(t, ULID(2), meta.Compaction.Sources[0])
+
+	clone.Compaction.Parents[0].ULID = ULID(6)
+	require.Equal(t, ULID(5), meta.Compaction.Parents[0].ULID)
+
+	clone.Compaction.Hints[0] = "mutated"
+	require.Equal(t, tsdb.CompactionHintFromOutOfOrder, meta.Compaction.Hints[0])
 
 	clone.Thanos.Files[0].SizeBytes = 2
 	require.Equal(t, int64(1), meta.Thanos.Files[0].SizeBytes)

@@ -159,7 +159,7 @@
 * [ENHANCEMENT] MQE: Improve per-query memory consumption limit enforcement in histogram function evaluations. #14691
 * [ENHANCEMENT] MQE: Improve per-query memory consumption limit enforcement within aggregation operations. #14735
 * [ENHANCEMENT] Usage-tracker: Improve performance by using a special shard grouping algorithm. #14715
-* [BUGFIX] Blocks Storage: Fix MetaFetcher caching returning shared references across goroutines and singleflight key collision when excludeMarkedForDeletion varies. #14829
+* [BUGFIX] Blocks Storage: Fix MetaFetcher caching returning shared references across goroutines and singleflight key collision when excludeMarkedForDeletion varies; ensure `Meta.Clone` deep-copies compaction `parents` and `hints` so concurrent callers cannot mutate cached metadata. #14829
 * [BUGFIX] Distributor: Fix race condition where usage-tracker partition ring may not be initialized before the distributor service starts, causing `usage-tracker partition ring is required` error on startup. #14675
 * [BUGFIX] Mimir: Fix false positive in filesystem path overlap detection when one path is a string prefix of another but not an ancestor directory. #14426
 * [BUGFIX] Build: Fixed config descriptor generation to correctly handle custom field types without CLI flags. #14632
