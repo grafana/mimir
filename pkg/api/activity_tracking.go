@@ -9,7 +9,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
@@ -41,7 +40,7 @@ func (m *activityTrackingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Re
 	if r.Header.Get("Content-Type") == "application/x-protobuf" && querymiddleware.IsRemoteReadQuery(r.URL.Path) {
 		params, err = querymiddleware.ParseRemoteReadRequestValuesWithoutConsumingBody(r)
 
-	} else if r.Header.Get("Content-Type") == "application/x-www-form-urlencoded"  && r.ContentLength >= 0 {
+	} else if r.Header.Get("Content-Type") == "application/x-www-form-urlencoded" && r.ContentLength >= 0 {
 		// Check the ContentLength as -1 could mean a chunked encoding transfer which we do not want to await to read
 		params, err = util.ParseRequestFormWithoutConsumingBody(r)
 	} else {
@@ -74,9 +73,10 @@ func (m *activityTrackingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Re
 
 func toActivityTrackerString(request *http.Request, userAgent string, requestParams url.Values) string {
 	tenantID := "(unknown)"
-	if tenantIDs, err := tenant.TenantIDs(request.Context()); err == nil {
-		tenantID = tenant.JoinTenantIDs(tenantIDs)
-	} else if orgID, _, err := user.ExtractOrgIDFromHTTPRequest(request); err == nil {
+
+	// Previously the tenantId was extracted from the context, however this handler now runs prior to the auth handler
+	// so we pull this value directly from the HTTP header
+	if orgID, _, err := user.ExtractOrgIDFromHTTPRequest(request); err == nil {
 		tenantID = orgID
 	}
 
