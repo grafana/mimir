@@ -953,8 +953,8 @@ How to **investigate**:
 
 The compactor scheduler uses bbolt databases on a persistent volume. If there are fatal errors that indicate database corruption, follow these steps to recover:
 
-- Scale down the compactor scheduler StatefulSet to 0. Due to its `persistentVolumeClaimRetentionPolicy` this will remove the persistent volume claim, which in turn will remove the persistent volume.
-- Scale the compactor scheduler StatefulSet back to 1. It should now start cleanly. Any previously in-progress jobs will be lost. Workers will stop processing them when they attempt to update the scheduler, then request new work.
+- Scale down the compactor scheduler StatefulSet to 0 replicas. Due to its `persistentVolumeClaimRetentionPolicy` this will remove the persistent volume claim, which in turn will remove the persistent volume.
+- Scale the compactor scheduler StatefulSet back to 1 replica. It should now start cleanly. Any previously in-progress jobs will be lost. Workers will stop processing them when they attempt to update the scheduler, then request new work.
 - When the scheduler starts from empty state, it delays planning new jobs for a configurable duration (`-compactor-scheduler.maintenance-intervals-before-cold-start-planning`) to prevent job duplication.
 
 ### MimirCompactorSchedulerRepeatedJobFailure
