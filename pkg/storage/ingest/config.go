@@ -464,9 +464,9 @@ type KafkaAuthOauthbearerConfig struct {
 
 func (cfg *KafkaAuthOauthbearerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	cfg.Secret.RegisterFlagsWithPrefix(prefix, f)
-	f.StringVar(&cfg.FilePath, prefix+"file-path", "", `Path to a file containing an OAuth token to authenticate to Kafka. The file is read anew on every reauthentication, so it can be updated with fresh tokens. The file must be in JSON format, adhering to this JSON schema: {"type": "object", "required": ["token"], "properties": {"token": {"type": "string"}, "zid": {"type": "string"}, "extensions": {"type": "object", "additionalProperties": {"type": "string"}}}}`)
-	f.StringVar(&cfg.HTTPSocketPath, prefix+"http-socket-path", "", `Path to a Unix domain socket to fetch an OAuth token from via HTTP. On every authentication or reauthentication, an HTTP GET / request is made to the socket and the response body is read as JSON. The JSON schema is the same as for `+prefix+`file-path.`)
-	f.DurationVar(&cfg.HTTPSocketTimeout, prefix+"http-socket-timeout", 10*time.Second, "Timeout for requesting the token from the HTTP socket.")
+	f.StringVar(&cfg.FilePath, prefix+"file-path", "", `Path to a file containing an OAuth token to authenticate to Kafka. Mutually exclusive with `+prefix+`http-socket-path. The file is read anew on every reauthentication, so it can be updated with fresh tokens. The file must be in JSON format, adhering to this JSON schema: {"type": "object", "required": ["token"], "properties": {"token": {"type": "string"}, "zid": {"type": "string"}, "extensions": {"type": "object", "additionalProperties": {"type": "string"}}}`)
+	f.StringVar(&cfg.HTTPSocketPath, prefix+"http-socket-path", "", `Path to a Unix domain socket to fetch an OAuth token from via HTTP. Mutually exclusive with `+prefix+`file-path. On every authentication or reauthentication, an HTTP GET / request is made to the socket and the response body is read as JSON. The JSON schema is the same as for `+prefix+`file-path.`)
+	f.DurationVar(&cfg.HTTPSocketTimeout, prefix+"http-socket-timeout", 10*time.Second, "Timeout for requesting the token from the HTTP socket. Effective when "+prefix+"http-socket-path is set.")
 }
 
 func (cfg KafkaAuthOauthbearerConfig) Validate() error {
@@ -507,9 +507,9 @@ type KafkaAuthMSKIAMConfig struct {
 
 func (cfg *KafkaAuthMSKIAMConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	cfg.Secret.RegisterFlagsWithPrefix(prefix, f)
-	f.StringVar(&cfg.FilePath, prefix+"file-path", "", `Path to a file containing AWS credentials to authenticate to Kafka using SASL AWS_MSK_IAM. The file is read anew on every reauthentication, so it can be updated with fresh credentials. The file must be in JSON format, adhering to this JSON schema: {"type": "object", "required": ["AccessKey", "SecretKey"], "properties": {"AccessKey": {"type": "string"}, "SecretKey": {"type": "string"}, "SessionToken": {"type": "string"}, "UserAgent": {"type": "string"}}}`)
-	f.StringVar(&cfg.HTTPSocketPath, prefix+"http-socket-path", "", `Path to a Unix domain socket to fetch AWS credentials from via HTTP. On every authentication or reauthentication, an HTTP GET / request is made to the socket and the response body is read as JSON. The JSON schema is the same as for `+prefix+`file-path.`)
-	f.DurationVar(&cfg.HTTPSocketTimeout, prefix+"http-socket-timeout", 10*time.Second, "Timeout for requesting AWS credentials from the HTTP socket.")
+	f.StringVar(&cfg.FilePath, prefix+"file-path", "", `Path to a file containing AWS credentials to authenticate to Kafka using SASL AWS_MSK_IAM. Mutually exclusive with `+prefix+`http-socket-path. The file is read anew on every reauthentication, so it can be updated with fresh credentials. The file must be in JSON format, adhering to this JSON schema: {"type": "object", "required": ["AccessKey", "SecretKey"], "properties": {"AccessKey": {"type": "string"}, "SecretKey": {"type": "string"}, "SessionToken": {"type": "string"}, "UserAgent": {"type": "string"}}}`)
+	f.StringVar(&cfg.HTTPSocketPath, prefix+"http-socket-path", "", `Path to a Unix domain socket to fetch AWS credentials from via HTTP. Mutually exclusive with `+prefix+`file-path. On every authentication or reauthentication, an HTTP GET / request is made to the socket and the response body is read as JSON. The JSON schema is the same as for `+prefix+`file-path.`)
+	f.DurationVar(&cfg.HTTPSocketTimeout, prefix+"http-socket-timeout", 10*time.Second, "Timeout for requesting AWS credentials from the HTTP socket. Effective when "+prefix+"http-socket-path is set.")
 }
 
 func (cfg KafkaAuthMSKIAMConfig) Validate() error {

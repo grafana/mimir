@@ -454,11 +454,11 @@ Usage of ./cmd/mimir/mimir:
   -ingest-storage.kafka.sasl-msk-iam-access-key string
     	The AWS access key ID to authenticate to Kafka using SASL AWS_MSK_IAM. Consider ingest-storage.kafka.sasl-msk-iam-file-path instead.
   -ingest-storage.kafka.sasl-msk-iam-file-path string
-    	Path to a file containing AWS credentials to authenticate to Kafka using SASL AWS_MSK_IAM. The file is read anew on every reauthentication, so it can be updated with fresh credentials. The file must be in JSON format, adhering to this JSON schema: {"type": "object", "required": ["AccessKey", "SecretKey"], "properties": {"AccessKey": {"type": "string"}, "SecretKey": {"type": "string"}, "SessionToken": {"type": "string"}, "UserAgent": {"type": "string"}}}
+    	Path to a file containing AWS credentials to authenticate to Kafka using SASL AWS_MSK_IAM. Mutually exclusive with ingest-storage.kafka.sasl-msk-iam-http-socket-path. The file is read anew on every reauthentication, so it can be updated with fresh credentials. The file must be in JSON format, adhering to this JSON schema: {"type": "object", "required": ["AccessKey", "SecretKey"], "properties": {"AccessKey": {"type": "string"}, "SecretKey": {"type": "string"}, "SessionToken": {"type": "string"}, "UserAgent": {"type": "string"}}}
   -ingest-storage.kafka.sasl-msk-iam-http-socket-path string
-    	Path to a Unix domain socket to fetch AWS credentials from via HTTP. On every authentication or reauthentication, an HTTP GET / request is made to the socket and the response body is read as JSON. The JSON schema is the same as for ingest-storage.kafka.sasl-msk-iam-file-path.
+    	Path to a Unix domain socket to fetch AWS credentials from via HTTP. Mutually exclusive with ingest-storage.kafka.sasl-msk-iam-file-path. On every authentication or reauthentication, an HTTP GET / request is made to the socket and the response body is read as JSON. The JSON schema is the same as for ingest-storage.kafka.sasl-msk-iam-file-path.
   -ingest-storage.kafka.sasl-msk-iam-http-socket-timeout duration
-    	Timeout for requesting AWS credentials from the HTTP socket. (default 10s)
+    	Timeout for requesting AWS credentials from the HTTP socket. Effective when ingest-storage.kafka.sasl-msk-iam-http-socket-path is set. (default 10s)
   -ingest-storage.kafka.sasl-msk-iam-secret-key string
     	The AWS secret access key to authenticate to Kafka using SASL AWS_MSK_IAM. Consider ingest-storage.kafka.sasl-msk-iam-file-path instead.
   -ingest-storage.kafka.sasl-msk-iam-session-token string
@@ -468,11 +468,11 @@ Usage of ./cmd/mimir/mimir:
   -ingest-storage.kafka.sasl-oauthbearer-extensions value
     	Optional additional OAuth extensions to include when authenticating to Kafka using SASL OAUTHBEARER as a JSON object. (default {})
   -ingest-storage.kafka.sasl-oauthbearer-file-path string
-    	Path to a file containing an OAuth token to authenticate to Kafka. The file is read anew on every reauthentication, so it can be updated with fresh tokens. The file must be in JSON format, adhering to this JSON schema: {"type": "object", "required": ["token"], "properties": {"token": {"type": "string"}, "zid": {"type": "string"}, "extensions": {"type": "object", "additionalProperties": {"type": "string"}}}}
+    	Path to a file containing an OAuth token to authenticate to Kafka. Mutually exclusive with ingest-storage.kafka.sasl-oauthbearer-http-socket-path. The file is read anew on every reauthentication, so it can be updated with fresh tokens. The file must be in JSON format, adhering to this JSON schema: {"type": "object", "required": ["token"], "properties": {"token": {"type": "string"}, "zid": {"type": "string"}, "extensions": {"type": "object", "additionalProperties": {"type": "string"}}}
   -ingest-storage.kafka.sasl-oauthbearer-http-socket-path string
-    	Path to a Unix domain socket to fetch an OAuth token from via HTTP. On every authentication or reauthentication, an HTTP GET / request is made to the socket and the response body is read as JSON. The JSON schema is the same as for ingest-storage.kafka.sasl-oauthbearer-file-path.
+    	Path to a Unix domain socket to fetch an OAuth token from via HTTP. Mutually exclusive with ingest-storage.kafka.sasl-oauthbearer-file-path. On every authentication or reauthentication, an HTTP GET / request is made to the socket and the response body is read as JSON. The JSON schema is the same as for ingest-storage.kafka.sasl-oauthbearer-file-path.
   -ingest-storage.kafka.sasl-oauthbearer-http-socket-timeout duration
-    	Timeout for requesting the token from the HTTP socket. (default 10s)
+    	Timeout for requesting the token from the HTTP socket. Effective when ingest-storage.kafka.sasl-oauthbearer-http-socket-path is set. (default 10s)
   -ingest-storage.kafka.sasl-oauthbearer-token string
     	The OAuth token to use to authenticate to Kafka. Consider ingest-storage.kafka.sasl-oauthbearer-file-path instead.
   -ingest-storage.kafka.sasl-oauthbearer-zid string
