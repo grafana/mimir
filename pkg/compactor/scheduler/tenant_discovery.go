@@ -27,7 +27,7 @@ type TenantDiscoverer struct {
 	allowedTenants                 *util.AllowList
 	bkt                            objstore.Bucket
 	jpm                            JobPersistenceManager
-	userDiscoveryBackoff           backoff.Config
+	tenantDiscoveryBackoff         backoff.Config
 	rotator                        *Rotator
 	maxLeases                      int
 	repeatedFailureReportThreshold int
@@ -49,7 +49,7 @@ func NewTenantDiscoverer(
 		allowedTenants:                 allowList,
 		bkt:                            bkt,
 		jpm:                            jpm,
-		userDiscoveryBackoff:           cfg.UserDiscoveryBackoff,
+		tenantDiscoveryBackoff:         cfg.TenantDiscoveryBackoff,
 		rotator:                        rotator,
 		maxLeases:                      cfg.MaxLeases,
 		repeatedFailureReportThreshold: cfg.RepeatedFailureReportThreshold,
@@ -68,7 +68,7 @@ func (s *TenantDiscoverer) RecoverFrom(jobTrackers map[string]*JobTracker) {
 }
 
 func (s *TenantDiscoverer) start(ctx context.Context) error {
-	b := backoff.New(ctx, s.userDiscoveryBackoff)
+	b := backoff.New(ctx, s.tenantDiscoveryBackoff)
 	var err error
 	for b.Ongoing() {
 		err = s.discoverTenants(ctx)
