@@ -955,7 +955,7 @@ This alert fires when the compactor scheduler has recorded repeated failures for
 
 How to **investigate**:
 
-- Check the compactor scheduler logs for jobs that are failing repeatedly.
+- Check the compactor scheduler logs for lines that include "job is repeatedly failing" to find the failing jobs.
 - Check the compactor (worker) logs for any errors related to the failing jobs.
 
 ### MimirCompactorSchedulerNotCompletingJobs
