@@ -90,8 +90,7 @@ func TestStore_GetAlertConfigs(t *testing.T) {
 	store := bucketclient.NewBucketAlertStore(bucket, nil, log.NewNopLogger())
 
 	ctx := context.Background()
-	user1Cfg := alertspb.AlertConfigDesc{User: "user-1", RawConfig: "content-1"}
-	user2Cfg := alertspb.AlertConfigDesc{User: "user-2", RawConfig: "content-2"}
+	userCfg := alertspb.AlertConfigDesc{User: "user-1", RawConfig: "content-1"}
 
 	// The storage is empty.
 	{
@@ -102,21 +101,13 @@ func TestStore_GetAlertConfigs(t *testing.T) {
 
 	// The storage contains some configs.
 	{
-		require.NoError(t, store.SetAlertConfig(ctx, user1Cfg))
+		require.NoError(t, store.SetAlertConfig(ctx, userCfg))
 
 		configs, err := store.GetAlertConfigs(ctx, []string{"user-1", "user-2"})
 		require.NoError(t, err)
 		assert.Contains(t, configs, "user-1")
 		assert.NotContains(t, configs, "user-2")
-		assert.Equal(t, user1Cfg, configs["user-1"].Mimir)
-
-		// Should return Alertmanager configurations.
-		configs, err = store.GetAlertConfigs(ctx, []string{"user-1", "user-2"})
-		require.NoError(t, err)
-		assert.Contains(t, configs, "user-1")
-		assert.Contains(t, configs, "user-2")
-		assert.Equal(t, user1Cfg, configs["user-1"].Mimir)
-		assert.Equal(t, user2Cfg, configs["user-2"].Mimir)
+		assert.Equal(t, userCfg, configs["user-1"].Mimir)
 	}
 }
 

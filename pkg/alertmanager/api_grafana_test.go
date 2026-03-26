@@ -109,7 +109,7 @@ const (
 
 func TestMultitenantAlertmanager_DeleteUserGrafanaConfig(t *testing.T) {
 	storage := objstore.NewInMemBucket()
-	alertstore := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, storage, nil, log.NewNopLogger())
+	alertstore := bucketclient.NewBucketAlertStore(storage, nil, log.NewNopLogger())
 	now := time.Now().UnixMilli()
 
 	am := &MultitenantAlertmanager{
@@ -168,7 +168,7 @@ func TestMultitenantAlertmanager_DeleteUserGrafanaConfig(t *testing.T) {
 
 func TestMultitenantAlertmanager_GetUserGrafanaConfig(t *testing.T) {
 	storage := objstore.NewInMemBucket()
-	alertstore := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, storage, nil, log.NewNopLogger())
+	alertstore := bucketclient.NewBucketAlertStore(storage, nil, log.NewNopLogger())
 	now := time.Now().UnixMilli()
 
 	am := &MultitenantAlertmanager{
@@ -465,7 +465,7 @@ func TestMultitenantAlertmanager_SetUserGrafanaConfig(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			storage := objstore.NewInMemBucket()
-			alertstore := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, storage, nil, log.NewNopLogger())
+			alertstore := bucketclient.NewBucketAlertStore(storage, nil, log.NewNopLogger())
 			am := &MultitenantAlertmanager{
 				store:  alertstore,
 				logger: test.NewTestingLogger(t),
