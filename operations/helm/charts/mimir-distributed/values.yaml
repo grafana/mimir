@@ -2912,7 +2912,7 @@ results-cache:
   allocatedMemory: 512
 
   # -- Maximum item results-cache for memcached (in MB).
-  maxItemMemory: 5
+  maxItemMemory: 25
 
   # -- Maximum number of connections allowed
   connectionLimit: 16384
