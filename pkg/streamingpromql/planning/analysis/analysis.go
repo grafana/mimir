@@ -21,16 +21,18 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-func NewHandler(planner *streamingpromql.QueryPlanner, limitsProvider streamingpromql.QueryLimitsProvider) http.Handler {
+func NewHandler(planner *streamingpromql.QueryPlanner, limitsProvider streamingpromql.QueryLimitsProvider, opts streamingpromql.EngineOpts) http.Handler {
 	return &handler{
 		planner:        planner,
 		limitsProvider: limitsProvider,
+		lookbackDelta:  streamingpromql.DetermineLookbackDelta(opts.CommonOpts),
 	}
 }
 
 type handler struct {
 	planner        *streamingpromql.QueryPlanner
 	limitsProvider streamingpromql.QueryLimitsProvider
+	lookbackDelta  time.Duration
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -108,7 +110,7 @@ func (h *handler) performAnalysis(w http.ResponseWriter, r *http.Request) ([]byt
 		return nil, http.StatusBadRequest, errors.New("missing 'time' parameter for instant query or 'start', 'end' and 'step' parameters for range query")
 	}
 
-	lookbackDelta := streamingpromql.DefaultLookbackDelta
+	lookbackDelta := h.lookbackDelta
 	if r.Form.Has("lookback_delta") {
 		lookbackDelta, err = parseDuration(r.Form.Get("lookback_delta"))
 		if err != nil {
