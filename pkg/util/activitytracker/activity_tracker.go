@@ -29,8 +29,9 @@ type ActivityTracker struct {
 	freeIndexQueue chan int // Used as a queue for indexes of free entries.
 	maxEntries     int
 
-	failedInserts       *prometheus.CounterVec
-	freeActivityEntries prometheus.GaugeFunc
+	failedInserts                *prometheus.CounterVec
+	freeActivityEntries          prometheus.GaugeFunc
+	loadedActivitiesOnStartup    prometheus.Gauge
 }
 
 const (
@@ -85,11 +86,25 @@ func NewActivityTracker(cfg Config, reg prometheus.Registerer) (*ActivityTracker
 		return float64(len(tracker.freeIndexQueue))
 	})
 
+	tracker.loadedActivitiesOnStartup = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+		Name: "activity_tracker_unfinished_activities_loaded_count",
+		Help: "Number of unfinished activities loaded from the activity file on startup.",
+	})
+
 	for i := 0; i < cfg.MaxEntries; i++ {
 		tracker.freeIndexQueue <- i
 	}
 
 	return tracker, nil
+}
+
+// SetLoadedActivitiesOnStartup sets the metric tracking how many unfinished activities
+// were found in the activity file when the process started.
+func (t *ActivityTracker) SetLoadedActivitiesOnStartup(count int) {
+	if t == nil {
+		return
+	}
+	t.loadedActivitiesOnStartup.Set(float64(count))
 }
 
 // Timestamp is encoded as uint64 value returned by time.UnixNano.

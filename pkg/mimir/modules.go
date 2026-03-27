@@ -192,6 +192,7 @@ func (t *Mimir) initActivityTracker() (services.Service, error) {
 		return nil, err
 	}
 
+	at.SetLoadedActivitiesOnStartup(len(entries))
 	t.ActivityTracker = at
 
 	return services.NewIdleService(nil, func(_ error) error {

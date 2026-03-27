@@ -5,9 +5,11 @@ package activitytracker
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -82,8 +84,29 @@ func TestNilActivityTracker(t *testing.T) {
 
 	ix := tr.InsertStatic("test")
 	tr.Delete(ix)
+	tr.SetLoadedActivitiesOnStartup(5)
 
 	require.NoError(t, tr.Close())
+}
+
+func TestSetLoadedActivitiesOnStartup(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "activity")
+
+	reg := prometheus.NewPedanticRegistry()
+	tr, err := NewActivityTracker(Config{Filepath: file, MaxEntries: 5}, reg)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, tr.Close()) }()
+
+	require.Equal(t, 0.0, testutil.ToFloat64(tr.loadedActivitiesOnStartup))
+
+	tr.SetLoadedActivitiesOnStartup(3)
+	require.Equal(t, 3.0, testutil.ToFloat64(tr.loadedActivitiesOnStartup))
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP activity_tracker_unfinished_activities_loaded_count Number of unfinished activities loaded from the activity file on startup.
+		# TYPE activity_tracker_unfinished_activities_loaded_count gauge
+		activity_tracker_unfinished_activities_loaded_count 3
+	`), "activity_tracker_unfinished_activities_loaded_count"))
 }
 
 func BenchmarkActivityTracker(b *testing.B) {
