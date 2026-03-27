@@ -98,12 +98,20 @@ func handleAnalysis(w http.ResponseWriter, r *http.Request, planner *streamingpr
 		return nil, http.StatusBadRequest, errors.New("missing 'time' parameter for instant query or 'start', 'end' and 'step' parameters for range query")
 	}
 
+	lookbackDelta := streamingpromql.DefaultLookbackDelta
+	if r.Form.Has("lookback_delta") {
+		lookbackDelta, err = parseDuration(r.Form.Get("lookback_delta"))
+		if err != nil {
+			return nil, http.StatusBadRequest, fmt.Errorf("could not parse 'lookback_delta' parameter: %w", err)
+		}
+	}
+
 	ctx := r.Context()
 	var options querymiddleware.Options
 	querymiddleware.DecodeOptions(r, &options)
 	ctx = querymiddleware.ContextWithRequestHintsAndOptions(ctx, nil, options) // FIXME: populate hints as well (need cardinality estimation middleware for this)
 
-	result, err := Analyze(ctx, planner, qs, timeRange, enableDelayedNameRemoval)
+	result, err := Analyze(ctx, planner, qs, timeRange, lookbackDelta, enableDelayedNameRemoval)
 	if err != nil {
 		var perr parser.ParseErrors
 		if errors.As(err, &perr) {
@@ -173,9 +181,9 @@ type PlanningStage struct {
 }
 
 // Analyze performs query planning and produces a report on the query planning process.
-func Analyze(ctx context.Context, planner *streamingpromql.QueryPlanner, qs string, timeRange types.QueryTimeRange, enableDelayedNameRemoval bool) (*Result, error) {
+func Analyze(ctx context.Context, planner *streamingpromql.QueryPlanner, qs string, timeRange types.QueryTimeRange, lookbackDelta time.Duration, enableDelayedNameRemoval bool) (*Result, error) {
 	observer := NewAnalysisPlanningObserver(qs, timeRange)
-	_, err := planner.NewQueryPlan(ctx, qs, timeRange, streamingpromql.DefaultLookbackDelta, enableDelayedNameRemoval, observer)
+	_, err := planner.NewQueryPlan(ctx, qs, timeRange, lookbackDelta, enableDelayedNameRemoval, observer)
 	if err != nil {
 		return nil, err
 	}
