@@ -332,7 +332,7 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 		},
 		"count_values": {
 			createOperator: func(inner types.InstantVectorOperator, queryTimeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (types.InstantVectorOperator, error) {
-				labelName := operators.NewStringLiteral("value", posrange.PositionRange{})
+				labelName := operators.NewStringLiteral("value", queryTimeRange, memoryConsumptionTracker, posrange.PositionRange{})
 				return NewCountValues(inner, labelName, queryTimeRange, []string{"group"}, false, memoryConsumptionTracker, posrange.PositionRange{}), nil
 			},
 			instant:                       true,
@@ -387,9 +387,10 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 
 			types.PutInstantVectorSeriesData(seriesData, memoryConsumptionTracker)
 
-			// Close the operator and confirm all memory has been released.
-			o.Close()
+			// Finalize the operator and confirm all memory has been released.
+			require.NoError(t, o.Finalize(ctx))
 			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+			o.Close()
 		})
 	}
 }

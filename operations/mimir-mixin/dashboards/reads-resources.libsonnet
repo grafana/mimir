@@ -100,7 +100,11 @@ local filename = 'mimir-reads-resources.json';
         $.queryPanel(
           'sum by(%s) (cortex_prometheus_rule_group_rules{%s})' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ruler)],
           '{{%s}}' % $._config.per_instance_label
-        ),
+        ) +
+        // Use a stack to quickly see all the rules loaded across all ruler pods,
+        // and don't get misled when the per-pod rules decrease due to a ruler scale out (more replicas added).
+        $.stack +
+        { fieldConfig+: { defaults+: { custom+: { fillOpacity: 20, lineWidth: 1 } } } },
       )
       .addPanel(
         $.containerCPUUsagePanelByComponent('ruler'),

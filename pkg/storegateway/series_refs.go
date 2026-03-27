@@ -885,6 +885,11 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 		} else {
 			if cachedSet, isCached := fetchCachedSeriesForPostings(s.ctx, s.tenantID, s.indexCache, s.blockID, s.shard, cachedSeriesID, s.logger); isCached {
 				s.currentSet = cachedSet
+				// Count cached series as processed so that seriesProcessed >= seriesOmitted
+				// holds when a downstream filteringSeriesChunkRefsSetIterator omits some of them.
+				s.stats.update(func(stats *queryStats) {
+					stats.seriesProcessed += cachedSet.len()
+				})
 				return true
 			}
 		}

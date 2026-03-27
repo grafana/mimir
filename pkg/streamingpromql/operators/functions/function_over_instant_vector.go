@@ -133,6 +133,12 @@ func (m *FunctionOverInstantVector) AfterPrepare(ctx context.Context) error {
 }
 
 func (m *FunctionOverInstantVector) Finalize(ctx context.Context) error {
+	for _, sd := range m.scalarArgsData {
+		types.FPointSlicePool.Put(&sd.Samples, m.MemoryConsumptionTracker)
+	}
+
+	m.scalarArgsData = nil
+
 	if err := m.Inner.Finalize(ctx); err != nil {
 		return err
 	}
@@ -146,16 +152,20 @@ func (m *FunctionOverInstantVector) Finalize(ctx context.Context) error {
 	return nil
 }
 
+func (m *FunctionOverInstantVector) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	ops := make([]types.Operator, 1+len(m.ScalarArgs))
+	ops[0] = m.Inner
+	for i, sa := range m.ScalarArgs {
+		ops[1+i] = sa
+	}
+
+	return types.CombineStats(ctx, ops...)
+}
+
 func (m *FunctionOverInstantVector) Close() {
 	m.Inner.Close()
 
 	for _, sa := range m.ScalarArgs {
 		sa.Close()
 	}
-
-	for _, sd := range m.scalarArgsData {
-		types.FPointSlicePool.Put(&sd.Samples, m.MemoryConsumptionTracker)
-	}
-
-	m.scalarArgsData = nil
 }

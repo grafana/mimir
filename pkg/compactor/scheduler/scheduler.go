@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/codes"
 
@@ -45,9 +46,10 @@ type Config struct {
 	MaintenanceIntervalsBeforeLeaseExpiration   int            `yaml:"maintenance_intervals_before_lease_expiration" category:"experimental"`
 	MaintenanceIntervalsBeforeColdStartPlanning int            `yaml:"maintenance_intervals_before_cold_start_planning" category:"experimental"`
 	TenantDiscoveryInterval                     time.Duration  `yaml:"tenant_discovery_interval" category:"experimental"`
-	UserDiscoveryBackoff                        backoff.Config `yaml:"user_discovery_backoff" category:"experimental"`
+	TenantDiscoveryBackoff                      backoff.Config `yaml:"tenant_discovery_backoff" category:"experimental"`
 	PersistenceType                             string         `yaml:"persistence_type" category:"experimental"`
-	BboltPath                                   string         `yaml:"bbolt_db_path" category:"experimental"`
+	RepeatedFailureReportThreshold              int            `yaml:"repeated_failure_report_threshold" category:"experimental"`
+	Bbolt                                       BboltConfig    `yaml:"bbolt" category:"experimental"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
@@ -56,11 +58,12 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.PlanningInterval, "compactor-scheduler.planning-interval", 1*time.Hour, "The duration of time between when plan jobs are submitted aligned by UTC. Note that -compactor.first-level-compaction-wait-period is accounted for during alignment of this interval.")
 	f.DurationVar(&cfg.MaintenanceInterval, "compactor-scheduler.maintenance-interval", 2*time.Minute, "The duration of time between when maintenance tasks are performed on job trackers. This includes lease expiration and plan job submission checks.")
 	f.IntVar(&cfg.MaintenanceIntervalsBeforeLeaseExpiration, "compactor-scheduler.maintenance-intervals-before-lease-expiration", 3, "The number of maintenance intervals before lease expiration is enforced. Nonpositive values are all treated as zero.")
-	f.IntVar(&cfg.MaintenanceIntervalsBeforeColdStartPlanning, "compactor-scheduler.maintenance-intervals-before-cold-start-planning", 4, "The number of maintenance intervals before planning occurs when starting from no recovered state. Nonpositive values are all treated as zero.")
+	f.IntVar(&cfg.MaintenanceIntervalsBeforeColdStartPlanning, "compactor-scheduler.maintenance-intervals-before-cold-start-planning", 5, "The number of maintenance intervals before planning occurs when starting from no recovered state. Nonpositive values are all treated as zero.")
 	f.DurationVar(&cfg.TenantDiscoveryInterval, "compactor-scheduler.tenant-discovery-interval", 10*time.Minute, "The duration of time between bucket listings to discover new tenants.")
+	cfg.TenantDiscoveryBackoff.RegisterFlagsWithPrefix("compactor-scheduler.tenant-discovery-backoff", f)
 	f.StringVar(&cfg.PersistenceType, "compactor-scheduler.persistence-type", "bbolt", "The type of persistence the compactor scheduler should use. Valid values: none, bbolt")
-	f.StringVar(&cfg.BboltPath, "compactor-scheduler.bbolt.db-path", "bbolt_1.db", "The path to the bbolt database file for the compactor scheduler.")
-	cfg.UserDiscoveryBackoff.RegisterFlagsWithPrefix("compactor-scheduler", f)
+	f.IntVar(&cfg.RepeatedFailureReportThreshold, "compactor-scheduler.repeated-failure-report-threshold", 2, "The number of times a job can fail before a repeated failure is recorded. 0 for no limit.")
+	cfg.Bbolt.RegisterFlagsWithPrefix("compactor-scheduler.bbolt", f)
 }
 
 func (cfg *Config) Validate() error {
@@ -79,9 +82,12 @@ func (cfg *Config) Validate() error {
 	if cfg.TenantDiscoveryInterval <= 0 {
 		return errors.New("compactor-scheduler.tenant-discovery-interval must be positive")
 	}
+	if cfg.RepeatedFailureReportThreshold < 0 {
+		return errors.New("compactor-scheduler.repeated-failure-report-threshold must be non-negative")
+	}
 	if cfg.PersistenceType == "bbolt" {
-		if cfg.BboltPath == "" {
-			return errors.New("compactor-scheduler.bbolt.db-path must be set")
+		if err := cfg.Bbolt.Validate("compactor-scheduler.bbolt"); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -117,11 +123,22 @@ func NewCompactorScheduler(
 		return nil, err
 	}
 
-	// TODO: This will need to be moved for testing
 	bkt, err := bucket.NewClient(context.Background(), storageCfg.Bucket, "compactor-scheduler", logger, registerer)
 	if err != nil {
 		return nil, err
 	}
+
+	return newCompactorScheduler(compactorCfg, cfg, allowList, bkt, jpm, metrics, logger)
+}
+
+func newCompactorScheduler(
+	compactorCfg compactor.Config,
+	cfg Config,
+	allowList *util.AllowList,
+	bkt objstore.Bucket,
+	jpm JobPersistenceManager,
+	metrics *schedulerMetrics,
+	logger log.Logger) (*Scheduler, error) {
 
 	rotator := NewRotator(
 		cfg.LeaseDuration,
@@ -156,11 +173,10 @@ func NewCompactorScheduler(
 	scheduler.Service = svc
 
 	return scheduler, nil
-
 }
 
 func (s *Scheduler) createJobTracker(tenant string, jp JobPersister) *JobTracker {
-	return NewJobTracker(jp, tenant, s.clock, s.cfg.MaxLeases, s.metrics.newTrackerMetricsForTenant(tenant))
+	return NewJobTracker(jp, tenant, s.clock, s.cfg.MaxLeases, s.cfg.RepeatedFailureReportThreshold, s.metrics.newTrackerMetricsForTenant(tenant), s.logger)
 }
 
 func (s *Scheduler) start(ctx context.Context) error {
@@ -281,6 +297,7 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 			return nil, errNotRunning
 		}
 	}
+	s.metrics.jobsCompleted.WithLabelValues(jobTypePlan).Inc()
 	return &compactorschedulerpb.PlannedJobsResponse{}, nil
 }
 
@@ -364,6 +381,7 @@ func (s *Scheduler) UpdateCompactionJob(ctx context.Context, req *compactorsched
 			return nil, errFailedCompletingJob
 		}
 		if removed {
+			s.metrics.jobsCompleted.WithLabelValues(jobTypeCompaction).Inc()
 			level.Info(logger).Log("msg", "compaction job completed")
 			return &compactorschedulerpb.UpdateJobResponse{}, nil
 		}

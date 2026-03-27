@@ -203,16 +203,6 @@ func TestDistributor_DistributeRequest(t *testing.T) {
 			expectedTotalCalls: 1,
 			route:              "/receivers",
 		}, {
-			name:               "Read /api/v1/grafana/receivers is sent to 3 AMs",
-			numAM:              5,
-			numHappyAM:         5,
-			replicationFactor:  3,
-			isRead:             true,
-			expStatusCode:      http.StatusOK,
-			expectedTotalCalls: 3,
-			route:              "/api/v1/grafana/receivers",
-			responseBody:       []byte(`[]`),
-		}, {
 			name:                "Write /receivers not supported",
 			numAM:               5,
 			numHappyAM:          5,
@@ -221,24 +211,6 @@ func TestDistributor_DistributeRequest(t *testing.T) {
 			expectedTotalCalls:  0,
 			headersNotPreserved: true,
 			route:               "/receivers",
-		}, {
-			name:               "Read /api/v1/grafana/full_state is sent to only 1 AM",
-			numAM:              5,
-			numHappyAM:         5,
-			replicationFactor:  3,
-			isRead:             true,
-			expStatusCode:      http.StatusOK,
-			expectedTotalCalls: 1,
-			route:              "/api/v1/grafana/full_state",
-		}, {
-			name:                "Write /api/v1/grafana/full_state not supported",
-			numAM:               5,
-			numHappyAM:          5,
-			replicationFactor:   3,
-			expStatusCode:       http.StatusNotFound,
-			expectedTotalCalls:  0,
-			headersNotPreserved: true,
-			route:               "/api/v1/grafana/full_state",
 		},
 	}
 

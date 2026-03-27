@@ -131,6 +131,7 @@
       description: 'Automatically rebase all dependency update PRs touching mimir-build-image/Dockerfile, and ignore pushes from GitHub Actions with new image reference when considering if the PR is modified and can be rebased',
       matchFileNames: [
         'mimir-build-image/Dockerfile',
+        'Makefile',
       ],
       rebaseWhen: 'behind-base-branch',
       gitIgnoredAuthors: ['199097951+mimir-github-bot[bot]@users.noreply.github.com'],

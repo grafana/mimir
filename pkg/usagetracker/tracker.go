@@ -3,9 +3,11 @@
 package usagetracker
 
 import (
+	"cmp"
 	"context"
 	"flag"
 	"fmt"
+	"iter"
 	"net/http"
 	"slices"
 	"strconv"
@@ -33,6 +35,7 @@ import (
 	"github.com/grafana/mimir/pkg/usagetracker/trackerop"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -673,22 +676,79 @@ func (t *UsageTracker) stop(_ error) error {
 }
 
 // TrackSeries implements usagetrackerpb.UsageTrackerServer.
-func (t *UsageTracker) TrackSeries(_ context.Context, req *usagetrackerpb.TrackSeriesRequest) (*usagetrackerpb.TrackSeriesResponse, error) {
+func (t *UsageTracker) TrackSeries(ctx context.Context, req *usagetrackerpb.TrackSeriesRequest) (*usagetrackerpb.TrackSeriesResponse, error) {
 	partition := req.Partition
 	p, err := t.runningPartition(partition)
 	if err != nil {
 		return nil, err
 	}
 
-	rejected, err := p.store.trackSeries(context.Background(), req.UserID, req.SeriesHashes, time.Now())
+	rejected, err := p.store.trackSeries(ctx, req.UserID, req.SeriesHashes, time.Now())
 	if err != nil {
 		return nil, err
 	}
 	return &usagetrackerpb.TrackSeriesResponse{RejectedSeriesHashes: rejected}, nil
 }
 
+var seriesHashesPool = pool.NewBucketedPool[[]uint64](1<<20, func(size int) []uint64 {
+	return make([]uint64, 0, size)
+})
+
+type mergedUser struct {
+	userID       string
+	seriesHashes []uint64
+}
+
+// iterMergedUsers sorts users by UserID and yields one mergedUser per distinct
+// user with all of their series hashes combined into a single pooled slice.
+// Each pooled slice is returned to the pool after the yield returns, so the
+// caller must not retain seriesHashes across iterations.
+func iterMergedUsers(users []*usagetrackerpb.TrackSeriesBatchUser) iter.Seq[mergedUser] {
+	return func(yield func(mergedUser) bool) {
+		slices.SortFunc(users, func(a, b *usagetrackerpb.TrackSeriesBatchUser) int {
+			return cmp.Compare(a.UserID, b.UserID)
+		})
+
+		for i := 0; i < len(users); {
+			userID := users[i].UserID
+			j := i + 1
+			for j < len(users) && users[j].UserID == userID {
+				j++
+			}
+
+			if j == i+1 {
+				// Single entry for this user; use its hashes directly.
+				if !yield(mergedUser{userID: userID, seriesHashes: users[i].SeriesHashes}) {
+					return
+				}
+				i = j
+				continue
+			}
+
+			total := 0
+			for k := i; k < j; k++ {
+				total += len(users[k].SeriesHashes)
+			}
+
+			s := seriesHashesPool.Get(total)[:total]
+			off := 0
+			for k := i; k < j; k++ {
+				copy(s[off:], users[k].SeriesHashes)
+				off += len(users[k].SeriesHashes)
+			}
+
+			if !yield(mergedUser{userID: userID, seriesHashes: s}) {
+				seriesHashesPool.Put(s)
+				return
+			}
+			seriesHashesPool.Put(s)
+			i = j
+		}
+	}
+}
+
 // TrackSeriesBatch implements usagetrackerpb.UsageTrackerServer.
-func (t *UsageTracker) TrackSeriesBatch(_ context.Context, req *usagetrackerpb.TrackSeriesBatchRequest) (*usagetrackerpb.TrackSeriesBatchResponse, error) {
+func (t *UsageTracker) TrackSeriesBatch(ctx context.Context, req *usagetrackerpb.TrackSeriesBatchRequest) (*usagetrackerpb.TrackSeriesBatchResponse, error) {
 	response := usagetrackerpb.TrackSeriesBatchResponse{}
 	now := time.Now()
 
@@ -700,14 +760,17 @@ func (t *UsageTracker) TrackSeriesBatch(_ context.Context, req *usagetrackerpb.T
 
 		userRejections := []*usagetrackerpb.TrackSeriesBatchRejectionUser{}
 
-		for _, r := range rp.Users {
-			rejected, err := p.store.trackSeries(context.Background(), r.UserID, r.SeriesHashes, now)
+		for entry := range iterMergedUsers(rp.Users) {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			rejected, err := p.store.trackSeries(ctx, entry.userID, entry.seriesHashes, now)
 			if err != nil {
-				return nil, errors.Wrapf(err, "unable to track series for partition %d, user %s", rp.Partition, r.UserID)
+				return nil, errors.Wrapf(err, "unable to track series for partition %d, user %s", rp.Partition, entry.userID)
 			}
 			if len(rejected) > 0 {
 				userRejections = append(userRejections, &usagetrackerpb.TrackSeriesBatchRejectionUser{
-					UserID:               r.UserID,
+					UserID:               entry.userID,
 					RejectedSeriesHashes: rejected,
 				})
 			}

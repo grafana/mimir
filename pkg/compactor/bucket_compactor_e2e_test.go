@@ -696,7 +696,7 @@ func createEmptyBlock(dir string, mint, maxt int64, extLset labels.Labels, resol
 		Labels:     extLset.Map(),
 		Downsample: block.ThanosDownsample{Resolution: resolution},
 		Source:     block.TestSource,
-	}, nil); err != nil {
+	}); err != nil {
 		return ulid.ULID{}, fmt.Errorf("finalize block: %w", err)
 	}
 
@@ -809,7 +809,7 @@ func createBlockWithOptions(
 		Downsample: block.ThanosDownsample{Resolution: resolution},
 		Source:     block.TestSource,
 		Files:      []block.File{},
-	}, nil); err != nil {
+	}); err != nil {
 		return id, fmt.Errorf("finalize block: %w", err)
 	}
 

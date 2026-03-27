@@ -430,7 +430,7 @@ func avgOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.
 		return avgFloats(fHead, fTail), true, nil, nil
 	}
 
-	h, err := avgHistograms(hHead, hTail, emitAnnotation)
+	h, err := AvgHistograms(hHead, hTail, emitAnnotation)
 
 	if err != nil {
 		err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
@@ -494,7 +494,7 @@ func avgFloats(head, tail []promql.FPoint) float64 {
 	return (sum + c) / count
 }
 
-func avgHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
+func AvgHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
 	avgSoFar := head[0].H.Copy() // We must make a copy of the histogram, as the ring buffer may reuse the FloatHistogram instance on subsequent steps.
 	head = head[1:]
 	count := 1.0

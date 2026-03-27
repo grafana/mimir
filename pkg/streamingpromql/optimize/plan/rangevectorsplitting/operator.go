@@ -8,6 +8,7 @@ package rangevectorsplitting
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -502,6 +503,10 @@ func (m *FunctionOverRangeVectorSplit[T]) Finalize(ctx context.Context) error {
 
 	m.finalized = true
 	return nil
+}
+
+func (m *FunctionOverRangeVectorSplit[T]) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return nil, errors.New("Stats not implemented for function over range vector split")
 }
 
 func (m *FunctionOverRangeVectorSplit[T]) Close() {

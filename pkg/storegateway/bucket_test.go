@@ -414,6 +414,46 @@ func TestBlockLabelNames(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, jNotFooLabelNames, names)
 	})
+
+	t.Run("series cache hit with pending matchers counts seriesProcessed", func(t *testing.T) {
+		// This test verifies that when series are loaded from the series-for-postings
+		// cache, seriesProcessed is still incremented. Without this, seriesProcessed can
+		// be less than seriesOmitted, causing the "series returned" metric to go negative.
+		b := newTestBucketBlock()
+		b.indexCache = &cacheNotStoringLabelNames{IndexCache: newInMemoryIndexCache(t)}
+
+		// Use a strategy that omits the j=foo matcher, making it a pending matcher.
+		// The pending matcher will filter out series with j!=foo, incrementing seriesOmitted.
+		strategy := &omitMatcherStrategy{omitMatcherString: `j="foo"`}
+
+		matchers := []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchRegexp, "i", ".+"),
+			labels.MustNewMatcher(labels.MatchEqual, "j", "foo"),
+		}
+
+		// First call: populates the series-for-postings cache.
+		stats1 := newSafeQueryStats()
+		_, err := blockLabelNames(context.Background(), b.indexReader(strategy), matchers, sl, 5000, log.NewNopLogger(), stats1)
+		require.NoError(t, err)
+
+		exportedStats1 := stats1.export()
+		require.Greater(t, exportedStats1.seriesProcessed, 0, "first call should process series")
+		require.Greater(t, exportedStats1.seriesOmitted, 0, "first call should omit series filtered by pending matcher j=foo")
+		require.GreaterOrEqual(t, exportedStats1.seriesProcessed, exportedStats1.seriesOmitted, "seriesProcessed must be >= seriesOmitted")
+
+		// Second call: hits the series-for-postings cache.
+		// The label names cache is disabled, so this goes through the series iterator.
+		stats2 := newSafeQueryStats()
+		_, err = blockLabelNames(context.Background(), b.indexReader(strategy), matchers, sl, 5000, log.NewNopLogger(), stats2)
+		require.NoError(t, err)
+
+		exportedStats2 := stats2.export()
+		require.Greater(t, exportedStats2.seriesProcessed, 0, "second call (cache hit) should still count series as processed")
+		require.Greater(t, exportedStats2.seriesOmitted, 0, "second call should omit series filtered by pending matcher j=foo")
+		require.GreaterOrEqual(t, exportedStats2.seriesProcessed, exportedStats2.seriesOmitted, "seriesProcessed must be >= seriesOmitted (cache hit path)")
+		require.Equal(t, exportedStats1.seriesProcessed, exportedStats2.seriesProcessed, "seriesProcessed should match between cache miss and cache hit")
+		require.Equal(t, exportedStats1.seriesOmitted, exportedStats2.seriesOmitted, "seriesOmitted should match between cache miss and cache hit")
+	})
 }
 
 type cacheNotExpectingToStoreLabelNames struct {
@@ -423,6 +463,41 @@ type cacheNotExpectingToStoreLabelNames struct {
 
 func (c cacheNotExpectingToStoreLabelNames) StoreLabelNames(string, ulid.ULID, indexcache.LabelMatchersKey, []byte) {
 	c.t.Fatalf("StoreLabelNames should not be called")
+}
+
+// cacheNotStoringLabelNames wraps an IndexCache but discards label name cache entries.
+// This forces blockLabelNames to go through the series iterator path on subsequent calls,
+// allowing the series-for-postings cache to be exercised.
+type cacheNotStoringLabelNames struct {
+	indexcache.IndexCache
+}
+
+func (c *cacheNotStoringLabelNames) StoreLabelNames(string, ulid.ULID, indexcache.LabelMatchersKey, []byte) {
+}
+func (c *cacheNotStoringLabelNames) FetchLabelNames(context.Context, string, ulid.ULID, indexcache.LabelMatchersKey) ([]byte, bool) {
+	return nil, false
+}
+
+// omitMatcherStrategy is a postings selection strategy that selects all posting groups
+// except those whose matcher string matches omitMatcherString. The omitted groups become
+// pending matchers that are applied after series loading.
+type omitMatcherStrategy struct {
+	omitMatcherString string
+}
+
+func (s *omitMatcherStrategy) name() string {
+	return "omit"
+}
+
+func (s *omitMatcherStrategy) selectPostings(groups []postingGroup) (selected, omitted []postingGroup) {
+	for _, g := range groups {
+		if g.matcher != nil && g.matcher.String() == s.omitMatcherString {
+			omitted = append(omitted, g)
+		} else {
+			selected = append(selected, g)
+		}
+	}
+	return selected, omitted
 }
 
 func TestBlockLabelValues(t *testing.T) {
@@ -1124,7 +1199,7 @@ func uploadTestBlock(t testing.TB, tmpDir string, bkt objstore.Bucket, dataSetup
 	_, err = block.InjectThanosMeta(log.NewNopLogger(), filepath.Join(tmpDir, "tmp", id.String()), block.ThanosMeta{
 		Labels: labels.FromStrings("ext1", "1").Map(),
 		Source: block.TestSource,
-	}, nil)
+	})
 	assert.NoError(t, err)
 	_, err = block.Upload(context.Background(), logger, bkt, filepath.Join(tmpDir, "tmp", id.String()), nil)
 	assert.NoError(t, err)
@@ -1190,17 +1265,21 @@ func benchmarkExpandedPostings(
 	ctx, cancel := context.WithCancel(context.Background())
 	tb.Cleanup(cancel)
 
+	// Reuse a single block across test cases to avoid repeatedly creating StreamBinaryReader
+	// instances (expensive, especially under the race detector).
+	sharedBlock := newTestBucketBlock()
+
+	var allSeries []labels.Labels
+	if !tb.IsBenchmark() {
+		indexr := newBucketIndexReader(sharedBlock, selectAllStrategy{})
+		allPostings, _, err := indexr.ExpandedPostings(ctx, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "my_made_up_label", "")}, newSafeQueryStats())
+		require.NoError(tb, err)
+		allSeries = loadSeries(ctx, tb, allPostings, indexr)
+	}
+
 	for _, testCase := range fixtures.SeriesSelectorTestCases(tb, series) {
 		tb.Run(testCase.Name, func(tb test.TB) {
-			indexr := newBucketIndexReader(newTestBucketBlock(), selectAllStrategy{})
-
-			var allSeries []labels.Labels
-			if !tb.IsBenchmark() {
-				allPostings, _, err := indexr.ExpandedPostings(ctx, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "my_made_up_label", "")}, newSafeQueryStats())
-				require.NoError(tb, err)
-				allSeries = loadSeries(ctx, tb, allPostings, indexr)
-			}
-
+			indexr := newBucketIndexReader(sharedBlock, selectAllStrategy{})
 			indexrStats := newSafeQueryStats()
 
 			tb.ResetTimer()
@@ -1218,10 +1297,10 @@ func benchmarkExpandedPostings(
 	}
 }
 
-// filterSeries modified series in place and returns a subslice of series.
+// filterSeries returns a new slice containing only the series that match all matchers.
 func filterSeries(series []labels.Labels, ms []*labels.Matcher) []labels.Labels {
-	writeIdx := 0
-	for i, s := range series {
+	result := make([]labels.Labels, 0)
+	for _, s := range series {
 		matches := true
 		for _, m := range ms {
 			if !m.Matches(s.Get(m.Name)) {
@@ -1230,11 +1309,10 @@ func filterSeries(series []labels.Labels, ms []*labels.Matcher) []labels.Labels 
 			}
 		}
 		if matches {
-			series[writeIdx], series[i] = series[i], series[writeIdx]
-			writeIdx++
+			result = append(result, s)
 		}
 	}
-	return series[:writeIdx]
+	return result
 }
 
 func loadSeries(ctx context.Context, tb test.TB, postings []storage.SeriesRef, indexr *bucketIndexReader) []labels.Labels {
@@ -1346,7 +1424,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 		series = append(series, bSeries...)
 		expectedQueriesBlocks = append(expectedQueriesBlocks, hintspb.Block{Id: id.String()})
 
-		meta, err := block.InjectThanosMeta(logger, filepath.Join(blockDir, id.String()), thanosMeta, nil)
+		meta, err := block.InjectThanosMeta(logger, filepath.Join(blockDir, id.String()), thanosMeta)
 		assert.NoError(t, err)
 
 		assert.NoError(t, meta.WriteToDir(logger, filepath.Join(blockDir, id.String())))
@@ -1561,7 +1639,7 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 	marshalledHints, err := types.MarshalAny(hints)
 	require.NoError(t, err)
 
-	runRequest := func(t *testing.T, store *BucketStore, streamBatchSize int) {
+	runRequest := func(t *testing.T, srv *storeTestServer, streamBatchSize int) {
 		req := &storepb.SeriesRequest{
 			MinTime: math.MinInt64,
 			MaxTime: math.MaxInt64,
@@ -1571,7 +1649,6 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 			Hints:                    marshalledHints,
 			StreamingChunksBatchSize: uint64(streamBatchSize),
 		}
-		srv := newStoreGatewayTestServer(t, store)
 		seriesSet, warnings, _, _, err := srv.Series(context.Background(), req)
 		require.NoError(t, err)
 		require.Equal(t, 0, len(warnings), "%v", warnings)
@@ -1627,6 +1704,9 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 						store.RemoveBlocksAndClose()
 					})
 
+					// Create a single gRPC test server shared across all workers.
+					srv := newStoreGatewayTestServer(t, store)
+
 					// Run workers.
 					wg := sync.WaitGroup{}
 					wg.Add(numWorkers)
@@ -1636,7 +1716,7 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 							defer wg.Done()
 
 							for r := 0; r < numRequestsPerWorker; r++ {
-								runRequest(t, store, streamBatchSize)
+								runRequest(t, srv, streamBatchSize)
 							}
 						}()
 					}
@@ -1711,7 +1791,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		blockDir := filepath.Join(tmpDir, "tmp")
 		id := createBlockFromHead(t, blockDir, h)
 
-		meta, err := block.InjectThanosMeta(log.NewNopLogger(), filepath.Join(blockDir, id.String()), thanosMeta, nil)
+		meta, err := block.InjectThanosMeta(log.NewNopLogger(), filepath.Join(blockDir, id.String()), thanosMeta)
 		assert.NoError(t, err)
 		_, err = block.Upload(context.Background(), logger, bkt, filepath.Join(blockDir, id.String()), nil)
 		assert.NoError(t, err)
@@ -1750,7 +1830,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		blockDir := filepath.Join(tmpDir, "tmp2")
 		id := createBlockFromHead(t, blockDir, h)
 
-		meta, err := block.InjectThanosMeta(log.NewNopLogger(), filepath.Join(blockDir, id.String()), thanosMeta, nil)
+		meta, err := block.InjectThanosMeta(log.NewNopLogger(), filepath.Join(blockDir, id.String()), thanosMeta)
 		assert.NoError(t, err)
 		_, err = block.Upload(context.Background(), logger, bkt, filepath.Join(blockDir, id.String()), nil)
 		assert.NoError(t, err)
@@ -2246,7 +2326,7 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 		Source: block.TestSource,
 	}
 
-	_, err = block.InjectThanosMeta(log.NewNopLogger(), filepath.Join(headOpts.ChunkDirRoot, blk.String()), thanosMeta, nil)
+	_, err = block.InjectThanosMeta(log.NewNopLogger(), filepath.Join(headOpts.ChunkDirRoot, blk.String()), thanosMeta)
 	assert.NoError(t, err)
 
 	// Create a bucket and upload the block there.
@@ -2537,7 +2617,7 @@ func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketS
 	assert.NoError(t, head2.Close())
 
 	for _, blockID := range []ulid.ULID{block1, block2} {
-		_, err := block.InjectThanosMeta(logger, filepath.Join(bktDir, blockID.String()), thanosMeta, nil)
+		_, err := block.InjectThanosMeta(logger, filepath.Join(bktDir, blockID.String()), thanosMeta)
 		assert.NoError(t, err)
 	}
 

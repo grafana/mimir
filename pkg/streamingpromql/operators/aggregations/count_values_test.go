@@ -5,6 +5,7 @@ package aggregations
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -222,7 +223,8 @@ func TestCountValues_GroupLabelling(t *testing.T) {
 				MemoryConsumptionTracker: memoryConsumptionTracker,
 			}
 
-			labelName := operators.NewStringLiteral("value", posrange.PositionRange{})
+			timeRange := types.NewInstantQueryTimeRange(time.Now())
+			labelName := operators.NewStringLiteral("value", timeRange, memoryConsumptionTracker, posrange.PositionRange{})
 			aggregator := NewCountValues(inner, labelName, types.NewInstantQueryTimeRange(timestamp.Time(0)), testCase.grouping, testCase.without, memoryConsumptionTracker, posrange.PositionRange{})
 
 			metadata, err := aggregator.SeriesMetadata(context.Background(), nil)
