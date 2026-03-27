@@ -258,7 +258,7 @@
     block_builder_enabled: false,
 
     // Whether mimir compactor scheduler is enabled (experimental)
-    compactor_scheduler_enabled: false,
+    compactor_scheduler_enabled: true,
 
     // Whether mimir gateway is enabled. The gateway is usually enabled in GEM deployments.
     gateway_enabled: $._config.gem_enabled,
@@ -588,8 +588,8 @@
             (kube_pod_container_status_last_terminated_reason{%(namespace)s,container=~"%(containerName)s",reason="OOMKilled"} offset $__interval == bool 0)
           ) != 0
         |||,
-        network_receive_bytes: 'sum by(%(instanceLabel)s) (rate(container_network_receive_bytes_total{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}[$__rate_interval]))',
-        network_transmit_bytes: 'sum by(%(instanceLabel)s) (rate(container_network_transmit_bytes_total{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}[$__rate_interval]))',
+        network_receive_bytes: 'sum by(%(instanceLabel)s) (rate(container_network_receive_bytes_total{%(namespaceMatcher)s,%(instanceMatcher)s}[$__rate_interval]))',
+        network_transmit_bytes: 'sum by(%(instanceLabel)s) (rate(container_network_transmit_bytes_total{%(namespaceMatcher)s,%(instanceMatcher)s}[$__rate_interval]))',
         disk_writes:
           |||
             sum by(%(nodeLabel)s, %(instanceLabel)s, device) (
@@ -638,8 +638,8 @@
             + node_memory_SwapCached_bytes{%(namespace)s,%(instanceLabel)s=~"%(instanceName)s"}
           |||,
         memory_go_heap_usage: 'sum by(%(instanceLabel)s) (go_memstats_heap_inuse_bytes{%(namespace)s,%(instanceLabel)s=~"%(instanceName)s"})',
-        network_receive_bytes: 'sum by(%(instanceLabel)s) (rate(node_network_receive_bytes_total{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}[$__rate_interval]))',
-        network_transmit_bytes: 'sum by(%(instanceLabel)s) (rate(node_network_transmit_bytes_total{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}[$__rate_interval]))',
+        network_receive_bytes: 'sum by(%(instanceLabel)s) (rate(node_network_receive_bytes_total{%(namespaceMatcher)s,%(instanceMatcher)s}[$__rate_interval]))',
+        network_transmit_bytes: 'sum by(%(instanceLabel)s) (rate(node_network_transmit_bytes_total{%(namespaceMatcher)s,%(instanceMatcher)s}[$__rate_interval]))',
         disk_writes:
           |||
             sum by(%(nodeLabel)s, %(instanceLabel)s, device) (

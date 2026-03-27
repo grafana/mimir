@@ -538,13 +538,15 @@ local utils = import 'mixin-utils/utils.libsonnet';
   containerGoHeapInUsePanelByComponent(componentName)::
     $.containerGoHeapInUsePanel($._config.instance_names[componentName], $._config.container_names[componentName]),
 
-  containerNetworkBytesPanel(title, metric, instanceName)::
+  containerNetworkBytesPanel(title, metric, instanceName, excludeInstanceName='')::
+    local instanceMatcher = '%s=~"%s"' % [$._config.per_instance_label, instanceName] +
+                            if excludeInstanceName == '' then '' else ',%s!~"%s"' % [$._config.per_instance_label, excludeInstanceName];
     $.timeseriesPanel(title) +
     $.queryPanel(
       $._config.resources_panel_queries[$._config.deployment_type][metric] % {
         namespaceMatcher: $.namespaceMatcher(),
         instanceLabel: $._config.per_instance_label,
-        instanceName: instanceName,
+        instanceMatcher: instanceMatcher,
       }, '{{%s}}' % $._config.per_instance_label
     ) +
     $.stack +
@@ -552,12 +554,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
     { fieldConfig+: { defaults+: { unit: 'Bps' } } },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
-  containerNetworkReceiveBytesPanelByComponent(componentName)::
-    $.containerNetworkBytesPanel('Receive bandwidth', 'network_receive_bytes', $._config.instance_names[componentName]),
+  // The optional excludeComponentName is useful to exclude components in case of prefix collisions (e.g. "compactor.*" and "compactor-scheduler").
+  containerNetworkReceiveBytesPanelByComponent(componentName, excludeComponentName='')::
+    local excludeInstanceName = if excludeComponentName == '' then '' else $._config.instance_names[excludeComponentName];
+    $.containerNetworkBytesPanel('Receive bandwidth', 'network_receive_bytes', $._config.instance_names[componentName], excludeInstanceName),
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
-  containerNetworkTransmitBytesPanelByComponent(componentName)::
-    $.containerNetworkBytesPanel('Transmit bandwidth', 'network_transmit_bytes', $._config.instance_names[componentName]),
+  // The optional excludeComponentName is useful to exclude components in case of prefix collisions (e.g. "compactor.*" and "compactor-scheduler").
+  containerNetworkTransmitBytesPanelByComponent(componentName, excludeComponentName='')::
+    local excludeInstanceName = if excludeComponentName == '' then '' else $._config.instance_names[excludeComponentName];
+    $.containerNetworkBytesPanel('Transmit bandwidth', 'network_transmit_bytes', $._config.instance_names[componentName], excludeInstanceName),
 
   // The provided instanceName should be a regexp from $._config.instance_names, while
   // the provided containerName should be a regexp from $._config.container_names.
@@ -605,13 +611,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   // The provided instanceName should be a regexp from $._config.instance_names, while
   // the provided containerName should be a regexp from $._config.container_names.
-  containerDiskSpaceUtilizationPanel(instanceName, containerName)::
+  // The optional excludeContainerName is useful to exclude components
+  // in case of prefix collisions (e.g. "compactor.*" and "compactor-scheduler").
+  containerDiskSpaceUtilizationPanel(instanceName, containerName, excludeContainerName='')::
     local label = if $._config.deployment_type == 'kubernetes' then '{{persistentvolumeclaim}}' else '{{instance}}';
+    local excludePvcMatcher = if excludeContainerName == '' then '' else ', ' + $.containerPersistentVolumeClaimExcludeMatcher(excludeContainerName);
     $.timeseriesPanel('Disk space utilization') +
     $.queryPanel(
       $._config.resources_panel_queries[$._config.deployment_type].disk_utilization % {
         namespaceMatcher: $.namespaceMatcher(),
-        persistentVolumeClaimMatcher: $.containerPersistentVolumeClaimMatcher(containerName),
+        persistentVolumeClaimMatcher: $.containerPersistentVolumeClaimMatcher(containerName) + excludePvcMatcher,
         instanceLabel: $._config.per_instance_label,
         instanceName: instanceName,
         instanceDataDir: $._config.instance_data_mountpoint,
@@ -628,12 +637,18 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
-  containerDiskSpaceUtilizationPanelByComponent(componentName)::
-    $.containerDiskSpaceUtilizationPanel($._config.instance_names[componentName], $._config.container_names[componentName]),
+  // The optional excludeComponentName is useful to exclude components in case of prefix collisions (e.g. "compactor.*" and "compactor-scheduler").
+  containerDiskSpaceUtilizationPanelByComponent(componentName, excludeComponentName='')::
+    local excludeContainerName = if excludeComponentName == '' then '' else $._config.container_names[excludeComponentName];
+    $.containerDiskSpaceUtilizationPanel($._config.instance_names[componentName], $._config.container_names[componentName], excludeContainerName),
 
   // The provided containerName should be a regexp from $._config.container_names.
   containerPersistentVolumeClaimMatcher(containerName)::
     'persistentvolumeclaim=~".*(%s).*"' % containerName,
+
+  // The provided containerName should be a regexp from $._config.container_names.
+  containerPersistentVolumeClaimExcludeMatcher(containerName)::
+    'persistentvolumeclaim!~".*(%s).*"' % containerName,
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
   containerNetworkingRowByComponent(title, componentName)::

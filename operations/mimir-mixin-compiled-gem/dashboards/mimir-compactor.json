@@ -583,7 +583,453 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Summary",
+            "title": "Summary (standalone mode)",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": true,
+            "height": "250px",
+            "panels": [
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 100,
+                           "lineWidth": 0,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "normal"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 5,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 3,
+                  "targets": [
+                     {
+                        "expr": "sum(cortex_compactor_scheduler_pending_jobs{cluster=~\"$cluster\", job=~\"($namespace)/((compactor-scheduler.*))\"})",
+                        "format": "time_series",
+                        "legendFormat": "pending",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "sum(cortex_compactor_scheduler_active_jobs{cluster=~\"$cluster\", job=~\"($namespace)/((compactor-scheduler.*))\"})",
+                        "format": "time_series",
+                        "legendFormat": "active",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Scheduler jobs",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "ops"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 6,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 3,
+                  "targets": [
+                     {
+                        "expr": "sum by(job_type) (rate(cortex_compactor_scheduler_jobs_completed_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor-scheduler.*))\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "legendFormat": "{{job_type}}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Jobs completed / sec",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "ops"
+                     },
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "failures"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#E24D42",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        }
+                     ]
+                  },
+                  "id": 7,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 3,
+                  "targets": [
+                     {
+                        "expr": "sum(rate(cortex_compactor_scheduler_repeated_job_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor-scheduler.*))\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "legendFormat": "failures",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Repeated job failures / sec",
+                  "type": "timeseries"
+               },
+               {
+                  "aliasColors": { },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Status"
+                           },
+                           "properties": [
+                              {
+                                 "id": "custom.displayMode",
+                                 "value": "color-background"
+                              },
+                              {
+                                 "id": "mappings",
+                                 "value": [
+                                    {
+                                       "options": {
+                                          "from": "-Infinity",
+                                          "result": {
+                                             "color": "transparent",
+                                             "text": "N/A"
+                                          },
+                                          "to": 0
+                                       },
+                                       "type": "range"
+                                    },
+                                    {
+                                       "options": {
+                                          "from": 0,
+                                          "result": {
+                                             "color": "green",
+                                             "text": "Ok"
+                                          },
+                                          "to": 180
+                                       },
+                                       "type": "range"
+                                    },
+                                    {
+                                       "options": {
+                                          "from": 180,
+                                          "result": {
+                                             "color": "yellow",
+                                             "text": "Delayed"
+                                          },
+                                          "to": 300
+                                       },
+                                       "type": "range"
+                                    },
+                                    {
+                                       "options": {
+                                          "from": 300,
+                                          "result": {
+                                             "color": "orange",
+                                             "text": "Late"
+                                          },
+                                          "to": 900
+                                       },
+                                       "type": "range"
+                                    },
+                                    {
+                                       "options": {
+                                          "from": 900,
+                                          "result": {
+                                             "color": "red",
+                                             "text": "Very late"
+                                          },
+                                          "to": "Infinity"
+                                       },
+                                       "type": "range"
+                                    },
+                                    {
+                                       "options": {
+                                          "match": "null+nan",
+                                          "result": {
+                                             "color": "transparent",
+                                             "text": "Unknown"
+                                          }
+                                       },
+                                       "type": "special"
+                                    }
+                                 ]
+                              },
+                              {
+                                 "id": "custom.width",
+                                 "value": 86
+                              },
+                              {
+                                 "id": "custom.align",
+                                 "value": "center"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Last contact"
+                           },
+                           "properties": [
+                              {
+                                 "id": "unit",
+                                 "value": "s"
+                              },
+                              {
+                                 "id": "custom.width",
+                                 "value": 74
+                              },
+                              {
+                                 "id": "mappings",
+                                 "value": [
+                                    {
+                                       "options": {
+                                          "from": "-Infinity",
+                                          "result": {
+                                             "text": "Never"
+                                          },
+                                          "to": 0
+                                       },
+                                       "type": "range"
+                                    }
+                                 ]
+                              }
+                           ]
+                        }
+                     ]
+                  },
+                  "fill": 1,
+                  "id": 8,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 1,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "options": {
+                     "sortBy": [
+                        {
+                           "desc": true,
+                           "displayName": "Last contact"
+                        }
+                     ]
+                  },
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [ ],
+                  "spaceLength": 10,
+                  "span": 3,
+                  "stack": false,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "max by(pod) (time() - (max_over_time(cortex_compactor_last_scheduler_contact_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[1h]) > 0))\nor\nmax by(pod) (time() - max_over_time(process_start_time_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[1h]))\nand max by(pod) (cortex_compactor_last_scheduler_contact_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"} == 0)\n",
+                        "format": "table",
+                        "instant": true,
+                        "legendFormat": "Last contact",
+                        "legendLink": null
+                     }
+                  ],
+                  "thresholds": [ ],
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Time since last scheduler contact per worker",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "transformations": [
+                     {
+                        "id": "organize",
+                        "options": {
+                           "renameByName": {
+                              "Value": "Last contact",
+                              "pod": "Worker"
+                           }
+                        }
+                     },
+                     {
+                        "id": "sortBy",
+                        "options": {
+                           "sort": [
+                              {
+                                 "desc": true,
+                                 "field": "Last contact"
+                              }
+                           ]
+                        }
+                     },
+                     {
+                        "id": "calculateField",
+                        "options": {
+                           "alias": "One",
+                           "binary": {
+                              "left": "Last contact",
+                              "operator": "/",
+                              "right": "Last contact"
+                           },
+                           "mode": "binary",
+                           "replaceFields": false
+                        }
+                     },
+                     {
+                        "id": "calculateField",
+                        "options": {
+                           "alias": "Status",
+                           "binary": {
+                              "left": "Last contact",
+                              "operator": "*",
+                              "right": "One"
+                           },
+                           "mode": "binary",
+                           "replaceFields": false
+                        }
+                     },
+                     {
+                        "id": "filterFieldsByName",
+                        "options": {
+                           "include": {
+                              "names": [
+                                 "Worker",
+                                 "Last contact",
+                                 "Status"
+                              ]
+                           }
+                        }
+                     }
+                  ],
+                  "type": "table",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Summary (scheduler mode)",
             "titleSize": "h6"
          },
          {
@@ -616,7 +1062,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 5,
+                  "id": 9,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -665,7 +1111,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 6,
+                  "id": 10,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -763,7 +1209,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 7,
+                  "id": 11,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -812,7 +1258,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 8,
+                  "id": 12,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -909,7 +1355,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 9,
+                  "id": 13,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -958,7 +1404,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 10,
+                  "id": 14,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1018,7 +1464,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 11,
+                  "id": 15,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1097,7 +1543,7 @@
                         }
                      ]
                   },
-                  "id": 12,
+                  "id": 16,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1194,7 +1640,7 @@
                         }
                      ]
                   },
-                  "id": 13,
+                  "id": 17,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1248,7 +1694,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 14,
+                  "id": 18,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -1357,7 +1803,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 15,
+                  "id": 19,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1390,7 +1836,7 @@
                         "unit": "percentunit"
                      }
                   },
-                  "id": 16,
+                  "id": 20,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1438,7 +1884,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 17,
+                  "id": 21,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -1535,7 +1981,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 18,
+                  "id": 22,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -1632,7 +2078,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 19,
+                  "id": 23,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -1729,7 +2175,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 20,
+                  "id": 24,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -1826,7 +2272,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 21,
+                  "id": 25,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -1923,7 +2369,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 22,
+                  "id": 26,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -2183,7 +2629,7 @@
                         }
                      ]
                   },
-                  "id": 23,
+                  "id": 27,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2237,7 +2683,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 24,
+                  "id": 28,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
