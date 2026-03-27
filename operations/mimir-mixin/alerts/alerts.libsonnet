@@ -1,11 +1,6 @@
 local utils = import 'mixin-utils/utils.libsonnet';
 
 (import 'alerts-utils.libsonnet') {
-  // simpleRegexpOpt produces a simple regexp that matches all strings in the input array.
-  local simpleRegexpOpt(strings) =
-    assert std.isArray(strings) : 'simpleRegexpOpt requires that `strings` is an array of strings`';
-    '(' + std.join('|', strings) + ')',
-
   local excludeWorkloads(labelName, values) =
     if std.length(values) == 0 then '' else '{%s!~"%s"}' % [labelName, std.join('|', values)],
 
