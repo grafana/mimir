@@ -366,6 +366,7 @@
 * [CHANGE] Memberlist: when the multi-zone memberlist bridge is enabled (`multi_zone_memberlist_bridge_enabled`), Mimir components now use memberlist-bridge pods as seed nodes by default, instead of the shared gossip ring service. This reduces inter-AZ data transfer. The new `memberlist_bridge_seed_nodes_enabled` configuration option can be used to disable this behavior. #14994
 * [CHANGE] Ruler remote evaluation: Split the ruler-query-frontend service into a ClusterIP service (for HTTP load balancing) and a headless service (for gRPC client-side load balancing by rulers). The ruler now connects to the headless service. #15001
 * [CHANGE] Memberlist bridge: Changed default value of `memberlist_bridge_replicas_per_zone` from 2 to 3. #14667
+* [CHANGE] Query-frontend: Increase default query-frontend cache size limit to 25MB. #14857
 * [FEATURE] Add multi-zone support for read path components (memcached, querier, query-frontend, query-scheduler, ruler, and ruler remote evaluation stack). Add multi-AZ support for ingester and store-gateway multi-zone deployments. Add memberlist-bridge support for zone-aware memberlist routing. #13559 #13628 #13636 #13915 #14260 #14301
 * [FEATURE] Add deletion protection support for ingesters and store-gateways StatefulSet. It can be enabled by setting `ingester_deletion_protection_enabled` and `store_gateway_deletion_protection_enabled` in the `_config` block. #13819
 * [FEATURE] Shuffle sharding: Add the following configuration options to enable the experimental per-zone store-gateway shard size: #13908 #13941
