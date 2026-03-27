@@ -354,6 +354,33 @@ func TestHandler(t *testing.T) {
 			expectedResponse:   `parsing expression failed: 1:2: parse error: unexpected end of input`,
 			expectedStatusCode: http.StatusBadRequest,
 		},
+		"invalid lookback_delta": {
+			params: url.Values{
+				"query":          []string{`up`},
+				"time":           []string{"2022-01-01T00:00:00Z"},
+				"lookback_delta": []string{"foo"},
+			},
+			expectedResponse:   `could not parse 'lookback_delta' parameter: cannot parse "foo" to a valid duration`,
+			expectedStatusCode: http.StatusBadRequest,
+		},
+		"zero lookback_delta": {
+			params: url.Values{
+				"query":          []string{`up`},
+				"time":           []string{"2022-01-01T00:00:00Z"},
+				"lookback_delta": []string{"0"},
+			},
+			expectedResponse:   `lookback_delta must be greater than 0`,
+			expectedStatusCode: http.StatusBadRequest,
+		},
+		"negative lookback_delta": {
+			params: url.Values{
+				"query":          []string{`up`},
+				"time":           []string{"2022-01-01T00:00:00Z"},
+				"lookback_delta": []string{"-300"},
+			},
+			expectedResponse:   `lookback_delta must be greater than 0`,
+			expectedStatusCode: http.StatusBadRequest,
+		},
 	}
 
 	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(streamingpromql.NewTestEngineOpts(), streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())

@@ -116,6 +116,10 @@ func (h *handler) performAnalysis(w http.ResponseWriter, r *http.Request) ([]byt
 		if err != nil {
 			return nil, http.StatusBadRequest, fmt.Errorf("could not parse 'lookback_delta' parameter: %w", err)
 		}
+
+		if lookbackDelta <= 0 {
+			return nil, http.StatusBadRequest, errors.New("lookback_delta must be greater than 0")
+		}
 	}
 
 	ctx := r.Context()
