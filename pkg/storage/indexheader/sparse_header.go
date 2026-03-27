@@ -18,6 +18,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/runutil"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/oklog/ulid/v2"
 	"github.com/thanos-io/objstore"
 
@@ -28,96 +29,111 @@ import (
 	"github.com/grafana/mimir/pkg/util/atomicfs"
 )
 
-// DownloadOrBuildSparseHeader loads the sparse header from disk, object store, or constructs it from the index-header.
-// It prioritizes:
-// 1) Confirming existing of sparse header on local disk from previous calls
-// 2) Downloading the sparse header from object store
-// 3) Generating the sparse header from the full index-header on local disk
-// It returns an error if the sparse header values cannot be loaded into memory from any of the sources.
-// It does not return an error if it fails to write the sparse in-memory values to local disk.
-func DownloadOrBuildSparseHeader(
+func LoadExistingSparseHeader(
 	ctx context.Context,
 	blockID ulid.ULID,
 	tenantBkt objstore.InstrumentedBucketReader,
 	localTenantDir string,
-	cfg Config,
 	sparseSampleFactor int,
-	doChecksum bool,
 	ll log.Logger,
-	metrics *StreamBinaryReaderMetrics,
 ) (
 	allSymbolsCount int,
 	sparseSymbolsOffsets []int,
 	sparsePostingsOffsets map[string]*streamindex.LabelSparsePostingsOffsets,
 	err error,
 ) {
+	spanLog, ctx := spanlogger.New(ctx, ll, tracer, "indexheader.NewStreamBinaryReader")
+	defer spanLog.Finish()
 
 	localBlockDir := filepath.Join(localTenantDir, blockID.String())
 	localSparseHeaderPath := filepath.Join(localBlockDir, block.SparseIndexHeaderFilename)
-	localIndexHeaderPath := filepath.Join(localBlockDir, block.IndexHeaderFilename)
 
-	// Check if sparse header is already on disk or download if it exists in the bucket block
-	err = downloadBucketSparseHeader(ctx, blockID, tenantBkt, localTenantDir, ll)
-	if err == nil {
-		// Sparse header was already on disk or downloaded successfully from bucket;
-		// TODO Load sparse header values from on-disk proto representation.
-	} else {
-		// Sparse header does not exist on disk or in bucket, or failed to download;
-		// build sparse header values from full index-header
-		filePoolDecbufFactory := streamencoding.NewFilePoolDecbufFactory(
-			localIndexHeaderPath, cfg.MaxIdleFileHandles, metrics.filePool,
+	// First, try to read sparse index-header gzipped proto from previous write to local disk
+	gzipSparseHeaderBytes, err := os.ReadFile(localSparseHeaderPath)
+	if err != nil {
+		// Not on disk, next try to read from bucket
+		level.Info(spanLog).Log(
+			"msg", "sparse index-header not found on local disk; will try bucket",
+			"path", localSparseHeaderPath, "err", err,
 		)
-		defer filePoolDecbufFactory.Close()
-
-		indexHeaderTOC, _, err := TOCFromIndexHeader(castagnoliTable, filePoolDecbufFactory, ll)
+		gzipSparseHeaderBytes, err = GetBucketSparseHeaderBytes(ctx, blockID, tenantBkt, ll)
 		if err != nil {
-			return -1, nil, nil, fmt.Errorf("cannot read table-of-contents: %w", err)
+			// Not present or not readable from bucket either
+			if tenantBkt.IsObjNotFoundErr(err) {
+				level.Info(spanLog).Log("msg", "sparse index-header not found in bucket")
+			} else {
+				// Any other error besides object does not exist should be logged at error level
+				level.Error(spanLog).Log(
+					"msg", "failed to read existing sparse index-header from bucket",
+					"err", err,
+				)
+			}
+			return 0, nil, nil, err
 		}
-		allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, err = buildSparseValuesFromIndexHeader(
-			indexHeaderTOC, filePoolDecbufFactory, sparseSampleFactor, doChecksum, ll,
-		)
-		if err != nil {
-			return -1, nil, nil, fmt.Errorf("cannot build sparse index-header values from full index-header: %w", err)
+		// Successfully read gzipped proto bytes from bucket; attempt to write to disk.
+		if err := atomicfs.CreateFile(localSparseHeaderPath, bytes.NewReader(gzipSparseHeaderBytes)); err != nil {
+			// Log an error in case there are disk issues, but we can still continue.
+			level.Error(spanLog).Log(
+				"msg", "failed to write bucket sparse index-header to disk",
+				"err", err,
+			)
 		}
-		level.Info(ll).Log("msg", "built sparse index-header values from full index-header")
 	}
 
-	sparseHeaders := &indexheaderpb.Sparse{}
-	sparseHeaders.Symbols = sparseSymbolsValuesToProto(allSymbolsCount, sparseSymbolsOffsets)
-	sparseHeaders.PostingsOffsetTable = sparsePostingsOffsetsTableValuesToProto(sparsePostingsOffsets, sparseSampleFactor)
-
-	tryWriteSparseHeadersToFile(ll, localSparseHeaderPath, sparseHeaders)
-
-	return allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, nil
-}
-
-// LoadSparseHeaderFromDisk load from sparse index-header on disk.
-func LoadSparseHeaderFromDisk(localSparseHeaderPath string, sparseSampleFactor int, ll log.Logger) (
-	allSymbolsCount int,
-	sparseSymbolsOffsets []int,
-	sparsePostingsOffsets map[string]*streamindex.LabelSparsePostingsOffsets,
-	err error,
-) {
-	sparseData, err := os.ReadFile(localSparseHeaderPath)
-	if err != nil {
+	// If we reach this point, we got the zipped sparse header from disk or bucket. Unmarshall the proto.
+	sparseHeaderProto := &indexheaderpb.Sparse{}
+	sparseHeaderBytes, _ := unzipSparseHeader(gzipSparseHeaderBytes, ll)
+	if err := sparseHeaderProto.Unmarshal(sparseHeaderBytes); err != nil {
+		level.Error(spanLog).Log(
+			"msg", "failed to unmarshall zipped sparse index-header to proto",
+			"err", err,
+		)
 		return 0, nil, nil, err
 	}
-	sparseHeaderProto, err := decodeGZipSparseHeader(sparseData, ll)
-	if err != nil {
-		return 0, nil, nil, err
-	}
-	allSymbolsCount, sparseSymbolsOffsets = sparseSymbolsValuesFromProto(sparseHeaderProto.Symbols)
-	sparsePostingsOffsets, err = sparsePostingsOffsetsTableValuesFromProto(
+
+	// Finally, convert from proto to the in-memory representation used by index-header readers.
+	allSymbolsCount, sparseSymbolsOffsets = sparseSymbolsFromProto(sparseHeaderProto.Symbols)
+	sparsePostingsOffsets, err = sparsePostingsOffsetsTableFromProto(
 		sparseHeaderProto.PostingsOffsetTable, sparseSampleFactor,
 	)
 	if err != nil {
+		level.Error(spanLog).Log(
+			"msg", "failed to initialize in-memory sparse index-header from proto",
+			"err", err,
+		)
 		return 0, nil, nil, err
 	}
-
 	return allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, nil
 }
 
-func buildSparseValuesFromIndexHeader(
+// GetBucketSparseHeaderBytes reads the raw sparse header bytes from object storage.
+// The bucket reader passed in must be prefixed with the tenant ID TSDB path in the object storage.
+// This does not write the header bytes to local disk.
+func GetBucketSparseHeaderBytes(
+	ctx context.Context,
+	id ulid.ULID,
+	tenantBkt objstore.InstrumentedBucketReader,
+	ll log.Logger,
+) ([]byte, error) {
+	if tenantBkt == nil {
+		return nil, fmt.Errorf("bucket is nil")
+	}
+	sparseHeaderObjPath := filepath.Join(id.String(), block.SparseIndexHeaderFilename)
+
+	reader, err := tenantBkt.ReaderWithExpectedErrs(tenantBkt.IsObjNotFoundErr).Get(ctx, sparseHeaderObjPath)
+	if err != nil {
+		return nil, err
+	}
+	defer runutil.CloseWithLogOnErr(ll, reader, "failed to close sparse index-header bucket read")
+
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func LoadSparseHeaderFromIndexHeader(
 	toc *TOCCompat,
 	decbufFactory streamencoding.DecbufFactory,
 	sparseSampleFactor int,
@@ -131,10 +147,10 @@ func buildSparseValuesFromIndexHeader(
 ) {
 	start := time.Now()
 	defer func() {
-		level.Info(ll).Log("msg", "loaded sparse index-header from full index-header", "elapsed", time.Since(start))
+		level.Info(ll).Log("msg", "created sparse index-header from full index-header", "elapsed", time.Since(start))
 	}()
 
-	level.Info(ll).Log("msg", "loading sparse index-header from full index-header")
+	level.Info(ll).Log("msg", "creating sparse index-header from full index-header")
 
 	allSymbolsCount, sparseSymbolsOffsets, err = streamindex.SparseValuesFromSymbolsTable(
 		decbufFactory, int(toc.Symbols), doChecksum,
@@ -153,20 +169,22 @@ func buildSparseValuesFromIndexHeader(
 	return allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, nil
 }
 
-// sparseSymbolsValuesFromProto loads the protobuf format to in-memory sparse symbols data
-func sparseSymbolsValuesFromProto(proto *indexheaderpb.Symbols) (allSymbolsCount int, sparseOffsets []int) {
-	allSymbolsCount = int(proto.SymbolsCount)
-	sparseOffsets = make([]int, len(proto.Offsets))
-
-	for i, offset := range proto.Offsets {
-		sparseOffsets[i] = int(offset)
+func InMemorySparseHeaderToProto(
+	allSymbolsCount int,
+	sparseSymbolsOffsets []int,
+	sparsePostingsOffsets map[string]*streamindex.LabelSparsePostingsOffsets,
+	sampleFactor int,
+) *indexheaderpb.Sparse {
+	symbolsProto := sparseSymbolsToProto(allSymbolsCount, sparseSymbolsOffsets)
+	postingsOffsetProto := sparsePostingsOffsetsTableValuesToProto(sparsePostingsOffsets, sampleFactor)
+	return &indexheaderpb.Sparse{
+		Symbols:             symbolsProto,
+		PostingsOffsetTable: postingsOffsetProto,
 	}
-
-	return allSymbolsCount, sparseOffsets
 }
 
-// sparseSymbolsValuesToProto loads the in-memory sparse symbols data into the protobuf format
-func sparseSymbolsValuesToProto(allSymbolsCount int, sparseOffsets []int) *indexheaderpb.Symbols {
+// sparseSymbolsToProto loads the in-memory sparse symbols data into the protobuf format
+func sparseSymbolsToProto(allSymbolsCount int, sparseOffsets []int) *indexheaderpb.Symbols {
 	proto := &indexheaderpb.Symbols{}
 
 	offsets := make([]int64, len(sparseOffsets))
@@ -180,8 +198,44 @@ func sparseSymbolsValuesToProto(allSymbolsCount int, sparseOffsets []int) *index
 	return proto
 }
 
+// sparseSymbolsFromProto loads the protobuf format to in-memory sparse symbols data
+func sparseSymbolsFromProto(proto *indexheaderpb.Symbols) (allSymbolsCount int, sparseOffsets []int) {
+	allSymbolsCount = int(proto.SymbolsCount)
+	sparseOffsets = make([]int, len(proto.Offsets))
+
+	for i, offset := range proto.Offsets {
+		sparseOffsets[i] = int(offset)
+	}
+
+	return allSymbolsCount, sparseOffsets
+}
+
+// sparsePostingsOffsetsTableValuesToProto loads in-memory sparse postings offset table data into the protobuf format
+func sparsePostingsOffsetsTableValuesToProto(
+	sparsePostingsOffsets map[string]*streamindex.LabelSparsePostingsOffsets,
+	sparseSampleFactor int,
+) *indexheaderpb.PostingOffsetTable {
+	proto := &indexheaderpb.PostingOffsetTable{
+		Postings:                      make(map[string]*indexheaderpb.PostingValueOffsets, len(sparsePostingsOffsets)),
+		PostingOffsetInMemorySampling: int64(sparseSampleFactor),
+	}
+
+	for labelName, offsets := range sparsePostingsOffsets {
+		proto.Postings[labelName] = &indexheaderpb.PostingValueOffsets{}
+		postingOffsets := make([]*indexheaderpb.PostingOffset, len(offsets.SparseTableOffsets))
+
+		for i, tableOffset := range offsets.SparseTableOffsets {
+			postingOffsets[i] = &indexheaderpb.PostingOffset{Value: tableOffset.Value, TableOff: int64(tableOffset.Offset)}
+		}
+		proto.Postings[labelName].Offsets = postingOffsets
+		proto.Postings[labelName].LastValOffset = offsets.LastValOffset
+	}
+
+	return proto
+}
+
 // sparsePostingsOffsetsTableValuesToProto loads the protobuf format to in-memory sparse postings offsets data
-func sparsePostingsOffsetsTableValuesFromProto(proto *indexheaderpb.PostingOffsetTable, sparseSampleFactor int) (
+func sparsePostingsOffsetsTableFromProto(proto *indexheaderpb.PostingOffsetTable, sparseSampleFactor int) (
 	sparsePostingsOffsets map[string]*streamindex.LabelSparsePostingsOffsets,
 	err error,
 ) {
@@ -238,52 +292,23 @@ func stepSize(cur, tgt int) (int, bool) {
 	return tgt / cur, true
 }
 
-// sparsePostingsOffsetsTableValuesToProto loads sparse postings offset table data into the protobuf format
-func sparsePostingsOffsetsTableValuesToProto(
-	sparsePostingsOffsets map[string]*streamindex.LabelSparsePostingsOffsets,
-	sparseSampleFactor int,
-) *indexheaderpb.PostingOffsetTable {
-	proto := &indexheaderpb.PostingOffsetTable{
-		Postings:                      make(map[string]*indexheaderpb.PostingValueOffsets, len(sparsePostingsOffsets)),
-		PostingOffsetInMemorySampling: int64(sparseSampleFactor),
-	}
-
-	for labelName, offsets := range sparsePostingsOffsets {
-		proto.Postings[labelName] = &indexheaderpb.PostingValueOffsets{}
-		postingOffsets := make([]*indexheaderpb.PostingOffset, len(offsets.SparseTableOffsets))
-
-		for i, tableOffset := range offsets.SparseTableOffsets {
-			postingOffsets[i] = &indexheaderpb.PostingOffset{Value: tableOffset.Value, TableOff: int64(tableOffset.Offset)}
-		}
-		proto.Postings[labelName].Offsets = postingOffsets
-		proto.Postings[labelName].LastValOffset = offsets.LastValOffset
-	}
-
-	return proto
-}
-
-func decodeGZipSparseHeader(sparseData []byte, ll log.Logger) (*indexheaderpb.Sparse, error) {
-	sparseHeaders := &indexheaderpb.Sparse{}
-
-	gzipped := bytes.NewReader(sparseData)
+func unzipSparseHeader(gZippedSparseData []byte, ll log.Logger) ([]byte, error) {
+	gzipped := bytes.NewReader(gZippedSparseData)
 	gzipReader, err := gzip.NewReader(gzipped)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create sparse index-header gzip reader: %w", err)
 	}
-	defer runutil.CloseWithLogOnErr(ll, gzipReader, "close sparse index-header gzip reader")
+	defer runutil.CloseWithLogOnErr(ll, gzipReader, "failed to close sparse index-header gzip reader")
 
-	sparseData, err = io.ReadAll(gzipReader)
+	sparseData, err := io.ReadAll(gzipReader)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read sparse index-header: %w", err)
+		return nil, fmt.Errorf("failed to unzip sparse index-header: %w", err)
 	}
 
-	if err := sparseHeaders.Unmarshal(sparseData); err != nil {
-		return nil, fmt.Errorf("failed to decode sparse index-header file: %w", err)
-	}
-	return sparseHeaders, err
+	return sparseData, err
 }
 
-func downloadBucketSparseHeader(
+func WriteSparseHeaderBucketBytesToDisk(
 	ctx context.Context,
 	id ulid.ULID,
 	tenantBkt objstore.InstrumentedBucketReader,
@@ -300,7 +325,7 @@ func downloadBucketSparseHeader(
 	}
 
 	level.Debug(ll).Log("msg", "sparse index-header does not exist on disk; will try bucket")
-	bucketSparseHeaderBytes, err := getSparseHeaderBytesFromBucket(ctx, id, tenantBkt, ll)
+	bucketSparseHeaderBytes, err := GetBucketSparseHeaderBytes(ctx, id, tenantBkt, ll)
 	if err != nil {
 		return err
 	}
@@ -308,64 +333,21 @@ func downloadBucketSparseHeader(
 	return atomicfs.CreateFile(localSparseHeaderPath, bytes.NewReader(bucketSparseHeaderBytes))
 }
 
-// getSparseHeaderBytesFromBucket reads the raw sparse header bytes from object storage with bucket.Get.
-// The bucket reader passed in must be prefixed with the tenant ID TSDB path in the object storage.
-// This does not write the header bytes to local disk.
-func getSparseHeaderBytesFromBucket(
-	ctx context.Context,
-	id ulid.ULID,
-	tenantBkt objstore.InstrumentedBucketReader,
-	ll log.Logger,
-) ([]byte, error) {
-	if tenantBkt == nil {
-		return nil, fmt.Errorf("bucket is nil")
-	}
-	sparseHeaderObjPath := filepath.Join(id.String(), block.SparseIndexHeaderFilename)
-
-	reader, err := tenantBkt.ReaderWithExpectedErrs(tenantBkt.IsObjNotFoundErr).Get(ctx, sparseHeaderObjPath)
-	if err != nil {
-		return nil, fmt.Errorf("getting sparse index-header from bucket: %w", err)
-	}
-	defer runutil.CloseWithLogOnErr(ll, reader, "close sparse index-header reader")
-
-	data, err := io.ReadAll(reader)
-	if err != nil {
-		return nil, fmt.Errorf("reading sparse index-header from bucket: %w", err)
-	}
-
-	// Check if we've been canceled after downloading
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-
-	level.Info(ll).Log("msg", "downloaded sparse index-header from bucket")
-
-	return data, nil
-}
-
-// writeSparseHeadersToFile uses protocol buffer to write sparseHeaders to disk at sparseHeadersPath.
-func writeSparseHeadersToFile(sparseHeadersPath string, sparseHeaders *indexheaderpb.Sparse) (retErr error) {
+func writeSparseHeaderProtoToDisk(path string, sparseHeaders *indexheaderpb.Sparse, ll log.Logger) (err error) {
 	out, err := sparseHeaders.Marshal()
 	if err != nil {
-		return fmt.Errorf("failed to encode sparse index-header: %w", err)
+		return fmt.Errorf("failed to marshall sparse index-header: %w", err)
 	}
 
 	gzipped := &bytes.Buffer{}
 	gzipWriter := gzip.NewWriter(gzipped)
+	defer runutil.CloseWithLogOnErr(ll, gzipWriter, "failed to close sparse index-header gzip writer")
 
 	if _, err := gzipWriter.Write(out); err != nil {
 		return fmt.Errorf("failed to gzip sparse index-header: %w", err)
 	}
 
-	if err := gzipWriter.Close(); err != nil {
-		return fmt.Errorf("failed to close gzip sparse index-header: %w", err)
-	}
-
-	if err := atomicfs.CreateFile(sparseHeadersPath, gzipped); err != nil {
-		return fmt.Errorf("failed to write sparse index-header file: %w", err)
-	}
-
-	return nil
+	return atomicfs.CreateFile(path, gzipped)
 }
 
 // tryWriteSparseHeadersToFile attempts to write the sparse header to disk.
@@ -374,7 +356,7 @@ func tryWriteSparseHeadersToFile(logger log.Logger, sparseHeadersPath string, sp
 	start := time.Now()
 	level.Debug(logger).Log("msg", "writing sparse index-header to disk")
 
-	err := writeSparseHeadersToFile(sparseHeadersPath, sparseHeaders)
+	err := writeSparseHeaderProtoToDisk(sparseHeadersPath, sparseHeaders, logger)
 
 	if err != nil {
 		logger = log.With(level.Warn(logger), "msg", "error writing sparse header to disk; will continue loading block", "err", err)
@@ -383,3 +365,66 @@ func tryWriteSparseHeadersToFile(logger log.Logger, sparseHeadersPath string, sp
 	}
 	logger.Log("elapsed", time.Since(start))
 }
+
+//// DownloadOrBuildSparseHeader loads the sparse header from disk, object store, or constructs it from the index-header.
+//// It prioritizes:
+//// 1) Confirming existing of sparse header on local disk from previous calls
+//// 2) Downloading the sparse header from object store
+//// 3) Generating the sparse header from the full index-header on local disk
+//// It returns an error if the sparse header values cannot be loaded into memory from any of the sources.
+//// It does not return an error if it fails to write the sparse in-memory values to local disk.
+//func DownloadOrBuildSparseHeader(
+//	ctx context.Context,
+//	blockID ulid.ULID,
+//	tenantBkt objstore.InstrumentedBucketReader,
+//	localTenantDir string,
+//	cfg Config,
+//	sparseSampleFactor int,
+//	doChecksum bool,
+//	ll log.Logger,
+//	metrics *StreamBinaryReaderMetrics,
+//) (
+//	allSymbolsCount int,
+//	sparseSymbolsOffsets []int,
+//	sparsePostingsOffsets map[string]*streamindex.LabelSparsePostingsOffsets,
+//	err error,
+//) {
+//
+//	localBlockDir := filepath.Join(localTenantDir, blockID.String())
+//	localSparseHeaderPath := filepath.Join(localBlockDir, block.SparseIndexHeaderFilename)
+//	localIndexHeaderPath := filepath.Join(localBlockDir, block.IndexHeaderFilename)
+//
+//	// Check if sparse header is already on disk or download if it exists in the bucket block
+//	err = WriteSparseHeaderBucketBytesToDisk(ctx, blockID, tenantBkt, localTenantDir, ll)
+//	if err == nil {
+//		// Sparse header was already on disk or downloaded successfully from bucket;
+//		// TODO Load sparse header values from on-disk proto representation.
+//	} else {
+//		// Sparse header does not exist on disk or in bucket, or failed to download;
+//		// build sparse header values from full index-header
+//		filePoolDecbufFactory := streamencoding.NewFilePoolDecbufFactory(
+//			localIndexHeaderPath, cfg.MaxIdleFileHandles, metrics.filePool,
+//		)
+//		defer filePoolDecbufFactory.Close()
+//
+//		indexHeaderTOC, _, err := TOCFromIndexHeader(castagnoliTable, filePoolDecbufFactory, ll)
+//		if err != nil {
+//			return -1, nil, nil, fmt.Errorf("cannot read table-of-contents: %w", err)
+//		}
+//		allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, err = LoadSparseHeaderFromIndexHeader(
+//			indexHeaderTOC, filePoolDecbufFactory, sparseSampleFactor, doChecksum, ll,
+//		)
+//		if err != nil {
+//			return -1, nil, nil, fmt.Errorf("cannot build sparse index-header values from full index-header: %w", err)
+//		}
+//		level.Info(ll).Log("msg", "built sparse index-header values from full index-header")
+//	}
+//
+//	sparseHeaders := &indexheaderpb.Sparse{}
+//	sparseHeaders.Symbols = sparseSymbolsToProto(allSymbolsCount, sparseSymbolsOffsets)
+//	sparseHeaders.PostingsOffsetTable = sparsePostingsOffsetsTableValuesToProto(sparsePostingsOffsets, sparseSampleFactor)
+//
+//	tryWriteSparseHeadersToFile(ll, localSparseHeaderPath, sparseHeaders)
+//
+//	return allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, nil
+//}

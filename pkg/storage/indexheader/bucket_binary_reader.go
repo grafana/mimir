@@ -155,7 +155,7 @@ func (r *BucketBinaryReader) loadSparseHeader(
 			Symbols:             r.symbols.ToSparseSymbols(),
 			PostingsOffsetTable: r.postingsOffsetTable.ToSparsePostingOffsetTable(),
 		}
-		err := writeSparseHeadersToFile(sparseHeadersPath, sparseHeaders)
+		err := writeSparseHeaderProtoToDisk(sparseHeadersPath, sparseHeaders)
 		if err != nil {
 			logger = log.With(level.Warn(logger), "msg", "error writing sparse header to disk; will continue loading block", "err", err)
 		} else {
@@ -165,7 +165,7 @@ func (r *BucketBinaryReader) loadSparseHeader(
 	}()
 
 	// 2. Fall back to the bucket
-	sparseData, err = getSparseHeaderBytesFromBucket(ctx, id, bkt, logger)
+	sparseData, err = GetBucketSparseHeaderBytes(ctx, id, bkt, logger)
 	if err == nil {
 		// Try to load the downloaded sparse header
 		err = r.loadFromSparseIndexHeader(logger, sparseData, postingOffsetsInMemSampling)
@@ -193,7 +193,7 @@ func (r *BucketBinaryReader) loadFromSparseIndexHeader(logger log.Logger, sparse
 	}()
 
 	level.Debug(logger).Log("msg", "loading sparse index-header from disk")
-	sparseHeaders, err := decodeGZipSparseHeader(sparseData, logger)
+	sparseHeaders, err := unzipSparseHeader(sparseData, logger)
 	if err != nil {
 		return err
 	}
