@@ -957,11 +957,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('GossipMembersTooHigh'),
           expr:
             |||
-              max by (%(agg_labels)s) (memberlist_client_cluster_members_count)
+              max by (%(alert_aggregation_labels)s) (memberlist_client_cluster_members_count)
               >
-              (sum by (%(agg_labels)s) (up{%(job_matcher)s%(job_not_matcher)s}) + 10)
+              (sum by (%(alert_aggregation_labels)s) (up{%(job_matcher)s%(job_not_matcher)s}) + 10)
             ||| % {
-              agg_labels: $._config.alert_aggregation_labels,
+              alert_aggregation_labels: $._config.alert_aggregation_labels,
               job_matcher: $.jobMatcher($._config.job_names.ring_members),
               job_not_matcher: if $._config.compactor_scheduler_enabled then ',' + $.jobNotMatcher($._config.job_names.compactor_scheduler) else '',
             },
@@ -980,11 +980,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('GossipMembersTooLow'),
           expr:
             |||
-              min by (%(agg_labels)s) (memberlist_client_cluster_members_count)
+              min by (%(alert_aggregation_labels)s) (memberlist_client_cluster_members_count)
               <
-              (sum by (%(agg_labels)s) (up{%(job_matcher)s%(job_not_matcher)s}) * 0.5)
+              (sum by (%(alert_aggregation_labels)s) (up{%(job_matcher)s%(job_not_matcher)s}) * 0.5)
             ||| % {
-              agg_labels: $._config.alert_aggregation_labels,
+              alert_aggregation_labels: $._config.alert_aggregation_labels,
               job_matcher: $.jobMatcher($._config.job_names.ring_members),
               job_not_matcher: if $._config.compactor_scheduler_enabled then ',' + $.jobNotMatcher($._config.job_names.compactor_scheduler) else '',
             },
