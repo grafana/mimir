@@ -73,13 +73,6 @@ local fixTargetsForTransformations(panel, refIds) = panel {
     local late = 5 * 60,  // 5 minutes
     local veryLate = 15 * 60,  // 15 minutes
 
-    steps: [
-      { value: 0, color: 'green' },
-      { value: ok, color: 'yellow' },
-      { value: late, color: 'orange' },
-      { value: veryLate, color: 'red' },
-    ],
-
     mappings: [
       $.mappingRange('-Infinity', 0, { color: 'transparent', text: 'N/A' }),
       $.mappingRange(0, ok, { color: 'green', text: 'Ok' }),
