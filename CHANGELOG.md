@@ -232,6 +232,7 @@
 
 * [BUGFIX] Dashboards: Fix compactor dashboard to exclude instances without the last successful run metric in the "Last successful run per-compactor replica" table. #14784
 * [ENHANCEMENT] Dashboards: Group compactor compaction-related panels into a single collapsible "Compaction" row. #14784
+* [ENHANCEMENT] Dashboards: Merge CPU and memory panels in the "Compactor resources" dashboard into a single collapsible row. #14866
 * [CHANGE] Dashboards: Add configuration option `dashboards_default_latency_mode` to control the default value of the native/classic latency variable (uses 'classic' if unset). #14424
 * [CHANGE] Alerts: Renamed the following alerts to fit within 40 characters: #13363
   * `MimirAlertmanagerPartialStateMergeFailing` → `MimirAlertmanagerStateMergeFailing`
