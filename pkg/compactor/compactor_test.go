@@ -521,7 +521,7 @@ func TestMultitenantCompactor_ShouldIncrementCompactionShutdownIfTheContextIsCan
 	bucketClient.MockGet(userID+"/bucket-index.json.gz", "", nil)
 	bucketClient.MockUpload(userID+"/bucket-index.json.gz", nil)
 
-	c, _, tsdbPlannerMock, logs, registry := prepare(t, prepareConfig(t), bucketClient)
+	c, _, tsdbPlannerMock, logs, _ := prepare(t, prepareConfig(t), bucketClient)
 	t.Cleanup(func() {
 		t.Log(logs.String())
 	})
@@ -529,31 +529,24 @@ func TestMultitenantCompactor_ShouldIncrementCompactionShutdownIfTheContextIsCan
 	tsdbPlannerMock.On("Plan", mock.Anything, mock.Anything).Return([]*block.Meta{}, context.Canceled)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 
-	// Wait until the error is recorded.
-	test.Poll(t, time.Second, 1.0, func() interface{} {
-		return prom_testutil.ToFloat64(c.compactionRunsShutdown)
-	})
+	// Wait until at least one compaction run has been counted as shutdown. The variable
+	// first-tick interval in the running() loop may cause a second run to
+	// start before we can stop the compactor, so we check for >= 1 rather than == 1.
+	require.Eventually(t, func() bool {
+		return prom_testutil.ToFloat64(c.compactionRunsShutdown) >= 1
+	}, time.Second, 10*time.Millisecond)
 
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c))
 
-	assert.NoError(t, prom_testutil.GatherAndCompare(registry, strings.NewReader(`
-		# TYPE cortex_compactor_runs_started_total counter
-		# HELP cortex_compactor_runs_started_total Total number of compaction runs started.
-		cortex_compactor_runs_started_total 1
-
-		# TYPE cortex_compactor_runs_completed_total counter
-		# HELP cortex_compactor_runs_completed_total Total number of compaction runs successfully completed.
-		cortex_compactor_runs_completed_total 0
-
-		# TYPE cortex_compactor_runs_failed_total counter
-		# HELP cortex_compactor_runs_failed_total Total number of compaction runs failed.
-		cortex_compactor_runs_failed_total{reason="error"} 0
-		cortex_compactor_runs_failed_total{reason="shutdown"} 1
-	`),
-		"cortex_compactor_runs_started_total",
-		"cortex_compactor_runs_completed_total",
-		"cortex_compactor_runs_failed_total",
-	))
+	// After stopping, verify that all compaction runs (one or more) were counted as
+	// shutdowns. The variable first-tick interval may have caused a second run to start
+	// before the compactor stopped; in that case runs_started and runs_failed{shutdown}
+	// will both be 2, which is still correct behaviour.
+	runsStarted := prom_testutil.ToFloat64(c.compactionRunsStarted)
+	assert.GreaterOrEqual(t, runsStarted, 1.0)
+	assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.compactionRunsCompleted))
+	assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.compactionRunsErred))
+	assert.Equal(t, runsStarted, prom_testutil.ToFloat64(c.compactionRunsShutdown))
 }
 
 func TestMultitenantCompactor_ShouldIterateOverUsersAndRunCompaction(t *testing.T) {

@@ -11,7 +11,6 @@ import (
 	"github.com/dennwc/varint"
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
-	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/pool"
@@ -159,19 +158,6 @@ func (b seriesChunksSet) len() int {
 	return len(b.series)
 }
 
-type seriesChunksSeriesSet struct {
-	from iterator[seriesChunksSet]
-
-	currSet    seriesChunksSet
-	currOffset int
-}
-
-func newSeriesChunksSeriesSet(from iterator[seriesChunksSet]) storepb.SeriesSet {
-	return &seriesChunksSeriesSet{
-		from: from,
-	}
-}
-
 func newChunksPreloadingIterator(
 	ctx context.Context,
 	logger log.Logger,
@@ -185,40 +171,6 @@ func newChunksPreloadingIterator(
 	it = newLoadingSeriesChunksSetIterator(ctx, logger, userID, chunkReaders, refsIterator, refsIteratorBatchSize, stats)
 	it = newPreloadingAndStatsTrackingSetIterator(ctx, 1, it, stats)
 	return it
-}
-
-// Next advances to the next item. Once the underlying seriesChunksSet has been fully consumed
-// (which means the call to Next moves to the next set), the seriesChunksSet is released. This
-// means that it's not safe to read from the values returned by At() after Next() is called again.
-func (b *seriesChunksSeriesSet) Next() bool {
-	b.currOffset++
-	if b.currOffset >= b.currSet.len() {
-		// The current set won't be accessed anymore because the iterator is moving to the next one,
-		// so we can release it.
-		b.currSet.release()
-
-		if !b.from.Next() {
-			b.currSet = seriesChunksSet{}
-			return false
-		}
-
-		b.currSet = b.from.At()
-		b.currOffset = 0
-	}
-	return true
-}
-
-// At returns the current series. The result from At() MUST not be retained after calling Next()
-func (b *seriesChunksSeriesSet) At() (labels.Labels, []storepb.AggrChunk) {
-	if b.currOffset >= b.currSet.len() {
-		return labels.EmptyLabels(), nil
-	}
-
-	return b.currSet.series[b.currOffset].lset, b.currSet.series[b.currOffset].chks
-}
-
-func (b *seriesChunksSeriesSet) Err() error {
-	return b.from.Err()
 }
 
 // preloadedSeriesChunksSet holds the result of preloading the next set. It can either contain

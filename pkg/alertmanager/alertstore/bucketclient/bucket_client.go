@@ -46,7 +46,6 @@ const (
 	fetchConcurrency = 16
 
 	grafanaConfigName = "grafana_config"
-	grafanaStateName  = "grafana_fullstate"
 )
 
 // BucketAlertStore is used to support the AlertStore interface against an object storage backend. It is implemented
@@ -244,40 +243,6 @@ func (s *BucketAlertStore) DeleteFullState(ctx context.Context, userID string) e
 	if userBkt.IsObjNotFoundErr(err) {
 		return nil
 	}
-	return err
-}
-
-func (s *BucketAlertStore) GetFullGrafanaState(ctx context.Context, userID string) (alertspb.FullStateDesc, error) {
-	bkt := s.getGrafanaAlertmanagerUserBucket(userID)
-	fs := alertspb.FullStateDesc{}
-
-	err := s.get(ctx, bkt, grafanaStateName, &fs)
-	if s.grafanaAMBucket.IsObjNotFoundErr(err) {
-		return fs, alertspb.ErrNotFound
-	}
-
-	return fs, err
-}
-
-func (s *BucketAlertStore) SetFullGrafanaState(ctx context.Context, userID string, fs alertspb.FullStateDesc) error {
-	bkt := s.getGrafanaAlertmanagerUserBucket(userID)
-
-	fsBytes, err := fs.Marshal()
-	if err != nil {
-		return err
-	}
-
-	return bkt.Upload(ctx, grafanaStateName, bytes.NewReader(fsBytes))
-}
-
-func (s *BucketAlertStore) DeleteFullGrafanaState(ctx context.Context, userID string) error {
-	bkt := s.getGrafanaAlertmanagerUserBucket(userID)
-
-	err := bkt.Delete(ctx, grafanaStateName)
-	if bkt.IsObjNotFoundErr(err) {
-		return nil
-	}
-
 	return err
 }
 

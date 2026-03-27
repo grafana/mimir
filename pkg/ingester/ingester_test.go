@@ -12508,8 +12508,12 @@ func TestActiveSeriesLoadingMetric(t *testing.T) {
 		req := mockWriteRequest(t, labels.FromStrings(model.MetricNameLabel, "test"), 1, time.Now().UnixMilli())
 		require.NoError(t, ing.PushWithCleanup(ctx, req, func() {}))
 
+		// Use a deterministic time relative to activeSeriesStartMs to avoid flakiness
+		// when wall-clock time between ingester startup and this point exceeds IdleTimeout.
+		startTime := time.UnixMilli(ing.activeSeriesStartMs.Load())
+
 		// Before idle timeout elapses, metric should be 1.
-		ing.updateActiveSeries(time.Now())
+		ing.updateActiveSeries(startTime.Add(cfg.ActiveSeriesMetrics.IdleTimeout - time.Millisecond))
 		require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(`
 			# HELP cortex_ingester_active_series_loading 1 if active series counts are still warming up and may be underreported, 0 once they are accurate.
 			# TYPE cortex_ingester_active_series_loading gauge
@@ -12517,7 +12521,7 @@ func TestActiveSeriesLoadingMetric(t *testing.T) {
 		`), "cortex_ingester_active_series_loading"))
 
 		// After idle timeout, metric should be 0.
-		ing.updateActiveSeries(time.Now().Add(cfg.ActiveSeriesMetrics.IdleTimeout))
+		ing.updateActiveSeries(startTime.Add(cfg.ActiveSeriesMetrics.IdleTimeout))
 		require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(`
 			# HELP cortex_ingester_active_series_loading 1 if active series counts are still warming up and may be underreported, 0 once they are accurate.
 			# TYPE cortex_ingester_active_series_loading gauge

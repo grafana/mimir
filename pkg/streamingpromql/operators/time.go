@@ -67,6 +67,10 @@ func (s *Time) Finalize(_ context.Context) error {
 	return nil
 }
 
+func (s *Time) Stats(_ context.Context) (*types.OperatorEvaluationStats, error) {
+	return types.NewOperatorEvaluationStats(s.TimeRange, s.MemoryConsumptionTracker)
+}
+
 func (s *Time) Close() {
 	// Nothing to do.
 }

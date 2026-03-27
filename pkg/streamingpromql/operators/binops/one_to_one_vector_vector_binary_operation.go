@@ -644,6 +644,10 @@ func (b *OneToOneVectorVectorBinaryOperation) Finalize(ctx context.Context) erro
 	return b.Right.Finalize(ctx)
 }
 
+func (b *OneToOneVectorVectorBinaryOperation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return types.CombineStats(ctx, b.Left, b.Right)
+}
+
 func (b *OneToOneVectorVectorBinaryOperation) Close() {
 	b.Left.Close()
 	b.Right.Close()

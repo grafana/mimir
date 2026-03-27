@@ -126,10 +126,11 @@ func NewEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *Q
 		}),
 		queriesRejectedDueToPeakMemoryConsumption: metrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxEstimatedQueryMemoryConsumption),
 
-		pedantic:           opts.Pedantic,
-		eagerLoadSelectors: opts.EagerLoadSelectors,
-		planner:            planner,
-		nodeMaterializers:  nodeMaterializers,
+		pedantic:                         opts.Pedantic,
+		eagerLoadSelectors:               opts.EagerLoadSelectors,
+		planner:                          planner,
+		nodeMaterializers:                nodeMaterializers,
+		inflightMemoryConsumptionTracker: limiter.NewInflightMemoryConsumptionTracker(opts.CommonOpts.Reg),
 	}, nil
 }
 
@@ -170,8 +171,9 @@ type Engine struct {
 
 	eagerLoadSelectors bool
 
-	planner           *QueryPlanner
-	nodeMaterializers map[planning.NodeType]planning.NodeMaterializer
+	planner                          *QueryPlanner
+	nodeMaterializers                map[planning.NodeType]planning.NodeMaterializer
+	inflightMemoryConsumptionTracker *limiter.InflightMemoryConsumptionTracker
 }
 
 func (e *Engine) RegisterNodeMaterializer(nodeType planning.NodeType, materializer planning.NodeMaterializer) error {
@@ -249,6 +251,7 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 
 	topLevelValueType, err := plan.Root.ResultType()
 	if err != nil {
+		evaluator.Close()
 		return nil, err
 	}
 
@@ -295,7 +298,8 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 		return nil, fmt.Errorf("could not get memory consumption limit for query: %w", err)
 	}
 
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionPerQuery, e.queriesRejectedDueToPeakMemoryConsumption, params.OriginalExpression)
+	// Obtain a new memory consumption tracker. Note that this needs to be deregistered from the e.inflightMemoryConsumptionTracker once the evaluator is no longer needed
+	memoryConsumptionTracker := e.inflightMemoryConsumptionTracker.NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionPerQuery, e.queriesRejectedDueToPeakMemoryConsumption, params.OriginalExpression)
 
 	operatorParams := &planning.OperatorParameters{
 		Queryable:                queryable,
@@ -311,13 +315,19 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 	for idx, req := range nodeRequests {
 		op, err := materializer.ConvertNodeToOperator(req.Node, req.TimeRange)
 		if err != nil {
+			e.inflightMemoryConsumptionTracker.Deregister(memoryConsumptionTracker)
 			return nil, err
 		}
 
 		nodeRequests[idx].operator = op
 	}
 
-	return NewEvaluator(nodeRequests, operatorParams, e, params.OriginalExpression)
+	evaluator, err := NewEvaluator(nodeRequests, operatorParams, e, params.OriginalExpression)
+	if err != nil {
+		e.inflightMemoryConsumptionTracker.Deregister(memoryConsumptionTracker)
+		return nil, err
+	}
+	return evaluator, nil
 }
 
 type QueryLimitsProvider interface {

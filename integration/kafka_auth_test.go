@@ -22,53 +22,53 @@ import (
 
 func TestIngestStorageKafkaAuth(t *testing.T) {
 	tests := map[string]struct {
-		setup     func(*testing.T, *e2e.Scenario) (e2edb.KafkaConfig, map[string]string)
+		setup     func(*testing.T, *e2e.Scenario) (*e2edb.KafkaConfig, map[string]string)
 		postStart func(*testing.T, *e2e.Scenario, *e2edb.KafkaService) map[string]string
 	}{
 		"no auth": {
-			setup: func(t *testing.T, s *e2e.Scenario) (e2edb.KafkaConfig, map[string]string) {
-				return e2edb.KafkaConfig{
+			setup: func(t *testing.T, s *e2e.Scenario) (*e2edb.KafkaConfig, map[string]string) {
+				return &e2edb.KafkaConfig{
 					AuthMode: e2edb.KafkaAuthNone,
 				}, nil
 			},
 		},
 		"SASL plaintext": {
-			setup: func(t *testing.T, s *e2e.Scenario) (e2edb.KafkaConfig, map[string]string) {
-				return e2edb.KafkaConfig{
+			setup: func(t *testing.T, s *e2e.Scenario) (*e2edb.KafkaConfig, map[string]string) {
+				return &e2edb.KafkaConfig{
 					AuthMode: e2edb.KafkaAuthSASLPlain,
 				}, nil
 			},
 		},
 		"SASL SCRAM-SHA-256": {
-			setup: func(t *testing.T, s *e2e.Scenario) (e2edb.KafkaConfig, map[string]string) {
-				return e2edb.KafkaConfig{
+			setup: func(t *testing.T, s *e2e.Scenario) (*e2edb.KafkaConfig, map[string]string) {
+				return &e2edb.KafkaConfig{
 					AuthMode: e2edb.KafkaAuthSASLScramSHA256,
 				}, nil
 			},
 		},
 		"SASL SCRAM-SHA-512": {
-			setup: func(t *testing.T, s *e2e.Scenario) (e2edb.KafkaConfig, map[string]string) {
-				return e2edb.KafkaConfig{
+			setup: func(t *testing.T, s *e2e.Scenario) (*e2edb.KafkaConfig, map[string]string) {
+				return &e2edb.KafkaConfig{
 					AuthMode: e2edb.KafkaAuthSASLScramSHA512,
 				}, nil
 			},
 		},
 		"SASL OAUTHBEARER token": {
-			setup: func(t *testing.T, s *e2e.Scenario) (e2edb.KafkaConfig, map[string]string) {
+			setup: func(t *testing.T, s *e2e.Scenario) (*e2edb.KafkaConfig, map[string]string) {
 				dex := e2edb.NewDex()
 				require.NoError(t, s.StartAndWaitReady(dex))
 
 				token, err := dex.FetchToken()
 				require.NoError(t, err)
 
-				return e2edb.KafkaConfig{
+				return &e2edb.KafkaConfig{
 					AuthMode:    e2edb.KafkaAuthSASLOAuthToken,
 					DexEndpoint: dex.NetworkHTTPEndpoint(),
 				}, map[string]string{"-ingest-storage.kafka.sasl-oauthbearer-token": token}
 			},
 		},
 		"SASL OAUTHBEARER file": {
-			setup: func(t *testing.T, s *e2e.Scenario) (e2edb.KafkaConfig, map[string]string) {
+			setup: func(t *testing.T, s *e2e.Scenario) (*e2edb.KafkaConfig, map[string]string) {
 				dex := e2edb.NewDex()
 				require.NoError(t, s.StartAndWaitReady(dex))
 
@@ -78,15 +78,15 @@ func TestIngestStorageKafkaAuth(t *testing.T) {
 				err = os.WriteFile(filepath.Join(s.SharedDir(), "oauth-token.json"), []byte(fmt.Sprintf(`{"token":"%s"}`, token)), 0644)
 				require.NoError(t, err)
 
-				return e2edb.KafkaConfig{
+				return &e2edb.KafkaConfig{
 					AuthMode:    e2edb.KafkaAuthSASLOAuthTokenFile,
 					DexEndpoint: dex.NetworkHTTPEndpoint(),
 				}, map[string]string{"-ingest-storage.kafka.sasl-oauthbearer-file-path": "/shared/oauth-token.json"}
 			},
 		},
 		"mTLS": {
-			setup: func(t *testing.T, s *e2e.Scenario) (e2edb.KafkaConfig, map[string]string) {
-				return e2edb.KafkaConfig{AuthMode: e2edb.KafkaAuthMTLS}, nil
+			setup: func(t *testing.T, s *e2e.Scenario) (*e2edb.KafkaConfig, map[string]string) {
+				return &e2edb.KafkaConfig{AuthMode: e2edb.KafkaAuthMTLS}, nil
 			},
 			postStart: func(t *testing.T, s *e2e.Scenario, kafka *e2edb.KafkaService) map[string]string {
 				clientCertPath := filepath.Join(s.SharedDir(), "kafka-client.crt")
@@ -109,7 +109,7 @@ func TestIngestStorageKafkaAuth(t *testing.T) {
 			},
 		},
 		"SASL OAUTHBEARER HTTP socket": {
-			setup: func(t *testing.T, s *e2e.Scenario) (e2edb.KafkaConfig, map[string]string) {
+			setup: func(t *testing.T, s *e2e.Scenario) (*e2edb.KafkaConfig, map[string]string) {
 				dex := e2edb.NewDex()
 				require.NoError(t, s.StartAndWaitReady(dex))
 
@@ -151,10 +151,27 @@ printf '%s' "$BODY"
 				)
 				require.NoError(t, s.StartAndWaitReady(socatSvc))
 
-				return e2edb.KafkaConfig{
+				return &e2edb.KafkaConfig{
 					AuthMode:    e2edb.KafkaAuthSASLOAuthTokenFile,
 					DexEndpoint: dex.NetworkHTTPEndpoint(),
 				}, map[string]string{"-ingest-storage.kafka.sasl-oauthbearer-http-socket-path": "/shared/oauth.sock"}
+			},
+		},
+		"MSK_IAM": {
+			setup: func(t *testing.T, s *e2e.Scenario) (*e2edb.KafkaConfig, map[string]string) {
+				if os.Getenv("MIMIR_TEST_MSK_IAM_ADDRESS") == "" {
+					t.Skip("skipping MSK_IAM test: set MIMIR_TEST_MSK_IAM_* env vars to run this test")
+				}
+
+				// Return zero KafkaConfig to signal that no local Kafka cluster should be started.
+				return nil, map[string]string{
+					"-ingest-storage.kafka.address":                    os.Getenv("MIMIR_TEST_MSK_IAM_ADDRESS"),
+					"-ingest-storage.kafka.sasl-mechanism":             "AWS_MSK_IAM",
+					"-ingest-storage.kafka.sasl-msk-iam-access-key":    os.Getenv("MIMIR_TEST_MSK_IAM_ACCESS_KEY"),
+					"-ingest-storage.kafka.sasl-msk-iam-secret-key":    os.Getenv("MIMIR_TEST_MSK_IAM_SECRET_KEY"),
+					"-ingest-storage.kafka.sasl-msk-iam-session-token": os.Getenv("MIMIR_TEST_MSK_IAM_SESSION_TOKEN"),
+					"-ingest-storage.kafka.tls-enabled":                "true",
+				}
 			},
 		},
 	}
@@ -165,18 +182,26 @@ printf '%s' "$BODY"
 			require.NoError(t, err)
 			defer s.Close()
 
-			kafkaConfig, flags := tc.setup(t, s)
 			consul := e2edb.NewConsul()
-			kafka := kafkaConfig.New()
-			require.NoError(t, s.StartAndWaitReady(consul, kafka))
 
-			if tc.postStart != nil {
-				extraFlags := tc.postStart(t, s, kafka)
-				flags = mergeFlags(flags, extraFlags)
+			kafkaConfig, flags := tc.setup(t, s)
+			authMode := e2edb.KafkaAuthNone
+			if kafkaConfig != nil {
+				authMode = kafkaConfig.AuthMode
+
+				kafka := kafkaConfig.New()
+				require.NoError(t, s.StartAndWaitReady(consul, kafka))
+
+				if tc.postStart != nil {
+					extraFlags := tc.postStart(t, s, kafka)
+					flags = mergeFlags(flags, extraFlags)
+				}
+			} else {
+				// External Kafka (e.g. MSK). No local Kafka cluster to start.
+				require.NoError(t, s.StartAndWaitReady(consul))
 			}
-
 			flags = mergeFlags(
-				IngestStorageFlags(kafkaConfig.AuthMode),
+				IngestStorageFlags(authMode),
 				map[string]string{
 					"-blocks-storage.tsdb.ship-interval": "0",
 					"-querier.query-store-after":         "12h",

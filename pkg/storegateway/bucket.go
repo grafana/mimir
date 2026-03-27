@@ -796,9 +796,9 @@ func (s *BucketStore) sendStreamingSeriesLabelsAndStats(
 		// We keep track of the number of bytes used for the original labels
 		// and the number of bytes saved if we applied the projection optimization.
 		// This allows us to quantify the value of the optimization.
-		originalLabelBytes  uint64
-		reducedLabelBytes   uint64
-		increasedLabelBytes uint64
+		originalLabelBytes uint64
+		reducedLabelBytes  uint64
+		skippedLabelBytes  uint64
 	)
 
 	if projectionInclude {
@@ -821,18 +821,13 @@ func (s *BucketStore) sendStreamingSeriesLabelsAndStats(
 		// it is safe to hold onto the labels because they are not released.
 		lset, _ = seriesSet.At()
 		if projectionInclude {
-			lblsSize := lset.ByteSize()
-			originalLabelBytes += lblsSize
-
+			originalLabelBytes += lset.ByteSize()
 			reduced := projections.Reduce(lset)
 			// Estimate the size of the series hash label and value since we aren't generating
 			// series hash on ingest currently.
-			reducedSize := reduced.ByteSize() + uint64(len(series.HashLabelName)) + 42 /* 256-bit hash as base64 */
-			if reducedSize < lblsSize {
-				reducedLabelBytes += lblsSize - reducedSize
-			} else {
-				increasedLabelBytes += reducedSize - lblsSize
-			}
+			reducedLabelBytes += reduced.ByteSize() + uint64(len(series.HashLabelName)) + 42 /* 256-bit hash as base64 */
+		} else {
+			skippedLabelBytes += lset.ByteSize()
 		}
 
 		// We are re-using the slice for every batch this way.
@@ -850,7 +845,7 @@ func (s *BucketStore) sendStreamingSeriesLabelsAndStats(
 
 	s.metrics.originalLabelBytes.Add(float64(originalLabelBytes))
 	s.metrics.reducedLabelBytes.Add(float64(reducedLabelBytes))
-	s.metrics.increasedLabelBytes.Add(float64(increasedLabelBytes))
+	s.metrics.skippedLabelBytes.Add(float64(skippedLabelBytes))
 
 	if seriesSet.Err() != nil {
 		return 0, errors.Wrap(seriesSet.Err(), "expand series set")

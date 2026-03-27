@@ -601,8 +601,8 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 			prometheus.WrapRegistererWithPrefix("cortex_", registerer))
 		i.ingestPartitionLifecycler.BasicService = i.ingestPartitionLifecycler.WithName("partition-instance-lifecycler")
 
-		limiterStrategy = newPartitionRingLimiterStrategy(partitionRingWatcher, i.limits.IngestionPartitionsTenantShardSize)
-		ownedSeriesStrategy = newOwnedSeriesPartitionRingStrategy(i.ingestPartitionID, partitionRingWatcher, i.limits.IngestionPartitionsTenantShardSize)
+		limiterStrategy = newPartitionRingLimiterStrategy(partitionRingWatcher, i.limits.EffectiveIngestionPartitionsTenantWriteShardSize)
+		ownedSeriesStrategy = newOwnedSeriesPartitionRingStrategy(i.ingestPartitionID, partitionRingWatcher, i.limits.EffectiveIngestionPartitionsTenantWriteShardSize)
 	} else {
 		limiterStrategy = newIngesterRingLimiterStrategy(ingestersRing, cfg.IngesterRing.ReplicationFactor, cfg.IngesterRing.ZoneAwarenessEnabled, cfg.IngesterRing.InstanceZone, i.limits.IngestionTenantShardSize)
 		ownedSeriesStrategy = newOwnedSeriesIngesterRingStrategy(ingesterID, ingestersRing, i.limits.IngestionTenantShardSize)
@@ -2590,9 +2590,9 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.Chunk
 		// We keep track of the number of bytes used for the original labels
 		// and the number of bytes saved if we applied the projection optimization.
 		// This allows us to quantify the value of the optimization.
-		originalLabelBytes  uint64
-		reducedLabelBytes   uint64
-		increasedLabelBytes uint64
+		originalLabelBytes uint64
+		reducedLabelBytes  uint64
+		skippedLabelBytes  uint64
 	)
 
 	if hints.ProjectionInclude {
@@ -2631,18 +2631,13 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.Chunk
 		lbls := cs.Labels()
 
 		if hints.ProjectionInclude {
-			lblsSize := lbls.ByteSize()
-			originalLabelBytes += lblsSize
-
+			originalLabelBytes += lbls.ByteSize()
 			reduced := projections.Reduce(lbls)
 			// Estimate the size of the series hash label and value since we aren't generating
 			// series hash on ingest currently.
-			reducedSize := reduced.ByteSize() + uint64(len(series.HashLabelName)) + 42 /* 256-bit hash as base64 */
-			if reducedSize < lblsSize {
-				reducedLabelBytes += lblsSize - reducedSize
-			} else {
-				increasedLabelBytes += reducedSize - lblsSize
-			}
+			reducedLabelBytes += reduced.ByteSize() + uint64(len(series.HashLabelName)) + 42 /* 256-bit hash as base64 */
+		} else {
+			skippedLabelBytes += lbls.ByteSize()
 		}
 
 		seriesInBatch = append(seriesInBatch, client.QueryStreamSeries{
@@ -2664,7 +2659,7 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.Chunk
 
 	i.metrics.originalLabelBytes.Add(float64(originalLabelBytes))
 	i.metrics.reducedLabelBytes.Add(float64(reducedLabelBytes))
-	i.metrics.increasedLabelBytes.Add(float64(increasedLabelBytes))
+	i.metrics.skippedLabelBytes.Add(float64(skippedLabelBytes))
 
 	// Send any remaining series, and signal that there are no more.
 	err := client.SendQueryStream(stream, &client.QueryStreamResponse{
