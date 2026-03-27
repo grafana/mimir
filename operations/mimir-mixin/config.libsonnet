@@ -258,7 +258,7 @@
     block_builder_enabled: false,
 
     // Whether mimir compactor scheduler is enabled (experimental)
-    compactor_scheduler_enabled: true,
+    compactor_scheduler_enabled: false,
 
     // Whether mimir gateway is enabled. The gateway is usually enabled in GEM deployments.
     gateway_enabled: $._config.gem_enabled,
