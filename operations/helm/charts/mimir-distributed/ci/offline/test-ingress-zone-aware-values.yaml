@@ -1,0 +1,15 @@
+# Pin kube version so results are the same for running in CI and locally where the installed kube version may be different.
+kubeVersionOverride: "1.32"
+
+# Test: ingress enabled + alertmanager zoneAwareReplication enabled (regression for #14334)
+alertmanager:
+  enabled: true
+  zoneAwareReplication:
+    enabled: true
+    migration:
+      enabled: false
+
+ingress:
+  enabled: true
+  hosts:
+    - mimir.example.com

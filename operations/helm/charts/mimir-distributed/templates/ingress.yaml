@@ -32,12 +32,16 @@ spec:
       http:
         paths:
           {{- range $svcName, $paths := $.Values.ingress.paths }}
+            {{- $resolvedSvcName := printf "%s-%s" (include "mimir.fullname" $) $svcName -}}
+            {{- if and (eq $svcName "alertmanager") $.Values.alertmanager.zoneAwareReplication.enabled (not $.Values.alertmanager.zoneAwareReplication.migration.enabled) }}
+            {{- $resolvedSvcName = printf "%s-%s-headless" (include "mimir.fullname" $) $svcName -}}
+            {{- end }}
             {{- range $paths }}
           - path: {{ .path }}
             pathType: {{ .pathType | default "Prefix" }}
             backend:
               service:
-                name: {{ include "mimir.fullname" $ }}-{{ $svcName }}
+                name: {{ $resolvedSvcName }}
                 port:
                   number: {{ include "mimir.serverHttpListenPort" $ }}
             {{- end }}

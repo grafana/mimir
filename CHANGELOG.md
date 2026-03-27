@@ -227,6 +227,7 @@
 * [BUGFIX] Query-frontend: Fixed partial cache hit returning incomplete data for native histogram series due to incorrect response ordering before merge. #14612
 * [BUGFIX] Distributor: Fix nil pointer panic in `WriteRequest.Unmarshal` when receiving a Remote Write 2.0 request with zero timeseries. #14698
 * [BUGFIX] MQE: Fix `info()` incorrectly dropping inner series with no matching info series when a data label matcher matches the empty string. #14819
+* [BUGFIX] Helm: Fix ingress backend service name for alertmanager when `alertmanager.zoneAwareReplication.enabled: true`. The ingress now routes to the headless service (`mimir-alertmanager-headless`) instead of the non-existent plain service. #14334
 
 ### Mixin
 
