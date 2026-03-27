@@ -170,23 +170,15 @@ func (e *LabelSparsePostingsOffsets) prefixOffsets(prefix string) (start, end in
 //	return &t, err
 //}
 
-func NewPostingOffsetTableReaderFromIndexHeader(
+func NewPostingsOffsetTableReader(
 	decbufFactory streamencoding.DecbufFactory,
 	tableOffset int,
 	indexVersion int,
-	indexLastPostingListEndBound uint64,
+	sparsePostingsOffsets map[string]*LabelSparsePostingsOffsets,
 	sparseSampleFactor int,
-	doChecksum bool,
 ) (PostingsOffsetsTableReader, error) {
 	switch indexVersion {
 	case index.FormatV2:
-		sparsePostingsOffsets, err := SparseValuesFromPostingsOffsetsTable(
-			decbufFactory, tableOffset, doChecksum, sparseSampleFactor, indexLastPostingListEndBound,
-		)
-		if err != nil {
-			return nil, err
-		}
-
 		return &PostingOffsetsTableV2{
 			factory:               decbufFactory,
 			tableOffset:           tableOffset,

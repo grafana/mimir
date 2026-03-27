@@ -109,7 +109,7 @@ func TestNewaLazyStreamBinaryReader_UsesSparseHeaderFromObjectStore(t *testing.T
 	require.NoError(t, err)
 
 	// First, create a StreamBinaryReader to generate the sparse header file
-	origReader, err := NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, samplingRate, NewStreamBinaryReaderMetrics(nil), Config{})
+	origReader, err := NewStreamBinaryReader(ctx, blockID, bkt, tmpDir, Config{}, samplingRate, logger, NewStreamBinaryReaderMetrics(nil))
 	require.NoError(t, err)
 	require.NoError(t, origReader.Close())
 
@@ -138,7 +138,7 @@ func TestNewaLazyStreamBinaryReader_UsesSparseHeaderFromObjectStore(t *testing.T
 	}
 
 	factory := func() (Reader, error) {
-		return NewStreamBinaryReader(ctx, logger, trackedBkt, tmpDir, blockID, samplingRate, NewStreamBinaryReaderMetrics(nil), Config{})
+		return NewStreamBinaryReader(ctx, blockID, trackedBkt, tmpDir, Config{}, samplingRate, logger, NewStreamBinaryReaderMetrics(nil))
 	}
 
 	// Create a new StreamBinaryReader - it should use the sparse header from the object store
@@ -296,7 +296,7 @@ func testLazyBinaryReader(t *testing.T, bkt objstore.InstrumentedBucketReader, d
 	ctx := context.Background()
 	logger := log.NewNopLogger()
 	factory := func() (Reader, error) {
-		return NewStreamBinaryReader(ctx, logger, bkt, dir, id, 3, NewStreamBinaryReaderMetrics(nil), Config{})
+		return NewStreamBinaryReader(ctx, id, bkt, dir, Config{}, 3, logger, NewStreamBinaryReaderMetrics(nil))
 	}
 
 	reader, err := NewLazyBinaryReader(ctx, Config{}, factory, logger, bkt, dir, id, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
@@ -702,8 +702,7 @@ func BenchmarkLazyBinaryReader_LoadReader(b *testing.B) {
 			) *LazyBinaryReader {
 				ll := log.NewNopLogger()
 				diskReaderFactory := func() (Reader, error) {
-					return NewStreamBinaryReader(
-						ctx, ll, cachingBucket, bucketDir, idIndexV2, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+					return NewStreamBinaryReader(ctx, idIndexV2, cachingBucket, bucketDir, Config{}, 32, ll, NewStreamBinaryReaderMetrics(nil))
 				}
 				lazyReader, err := NewLazyBinaryReader(
 					ctx, Config{},

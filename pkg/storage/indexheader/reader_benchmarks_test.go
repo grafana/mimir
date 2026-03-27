@@ -57,7 +57,7 @@ func BenchmarkLookupSymbol(b *testing.B) {
 }
 
 func benchmarkLookupSymbol(ctx context.Context, b *testing.B, bucketDir string, id ulid.ULID, parallelism int, percentageNameLookups int, nameSymbols []string, valueSymbols []string) {
-	br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, bucketDir, id, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+	br, err := NewStreamBinaryReader(ctx, id, nil, bucketDir, Config{}, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 	require.NoError(b, err)
 	b.Cleanup(func() {
 		require.NoError(b, br.Close())
@@ -167,7 +167,7 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 			indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
 			require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
 
-			diskReader, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), instrBkt, bucketDir, idIndexV2, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+			diskReader, err := NewStreamBinaryReader(ctx, idIndexV2, instrBkt, bucketDir, Config{}, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 			require.NoError(b, err)
 			b.Cleanup(func() { require.NoError(b, diskReader.Close()) })
 
@@ -235,7 +235,7 @@ func BenchmarkLabelValuesOffsetsIndexV2_WithPrefix(b *testing.B) {
 		require.NoError(b, bkt.Close())
 	})
 
-	diskReader, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), instrBkt, bucketDir, blockID, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+	diskReader, err := NewStreamBinaryReader(ctx, blockID, instrBkt, bucketDir, Config{}, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 	require.NoError(b, err)
 	b.Cleanup(func() { require.NoError(b, diskReader.Close()) })
 
@@ -309,7 +309,7 @@ func BenchmarkPostingsOffset(b *testing.B) {
 		require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
 
 		b.Run(fmt.Sprintf("%vNames%vValues", nameCount, valueCount), func(b *testing.B) {
-			br, err := NewStreamBinaryReader(context.Background(), log.NewNopLogger(), nil, bucketDir, idIndexV2, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+			br, err := NewStreamBinaryReader(context.Background(), idIndexV2, nil, bucketDir, Config{}, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 			require.NoError(b, err)
 			b.Cleanup(func() {
 				require.NoError(b, br.Close())
@@ -333,7 +333,7 @@ func BenchmarkPostingsOffset(b *testing.B) {
 }
 
 func benchmarkReader(b *testing.B, bucketDir string, id ulid.ULID, benchmark func(b *testing.B, br Reader)) {
-	br, err := NewStreamBinaryReader(context.Background(), log.NewNopLogger(), nil, bucketDir, id, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+	br, err := NewStreamBinaryReader(context.Background(), id, nil, bucketDir, Config{}, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 	require.NoError(b, err)
 	b.Cleanup(func() {
 		require.NoError(b, br.Close())
@@ -366,7 +366,7 @@ func BenchmarkNewStreamBinaryReader(b *testing.B) {
 
 			b.Run(fmt.Sprintf("%vNames%vValues", nameCount, valueCount), func(b *testing.B) {
 				for i := 0; i < b.N; i++ {
-					br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, bucketDir, idIndexV2, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+					br, err := NewStreamBinaryReader(ctx, idIndexV2, nil, bucketDir, Config{}, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 					require.NoError(b, err)
 					b.Cleanup(func() {
 						require.NoError(b, br.Close())
@@ -404,7 +404,7 @@ func reverseLookup(b *testing.B, reader *StreamBinaryReader, symbols []string) (
 	m := make(map[uint32]string, len(symbols))
 
 	for _, s := range symbols {
-		idx, err := reader.symbols.ReverseLookup(s)
+		idx, err := reader.symbolsTable.ReverseLookup(s)
 		require.NoError(b, err)
 		m[idx] = s
 		i = append(i, idx)

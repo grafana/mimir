@@ -99,7 +99,7 @@ func (p *ReaderPool) NewBinaryReader(
 		}
 	} else {
 		readerFactory = func() (Reader, error) {
-			return NewStreamBinaryReader(ctx, logger, bkt, dir, id, postingOffsetsInMemSampling, p.metrics.streamReader, cfg)
+			return NewStreamBinaryReader(ctx, id, bkt, dir, cfg, postingOffsetsInMemSampling, logger, p.metrics.streamReader)
 		}
 	}
 

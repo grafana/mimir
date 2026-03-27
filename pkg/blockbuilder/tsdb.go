@@ -562,15 +562,7 @@ func (b *TSDBBuilder) buildSparseIndexHeader(ctx context.Context, dbDir string, 
 	// Calling NewStreamBinaryReader reads a block's index and writes a sparse-index-header to disk.
 	metrics := indexheader.NewStreamBinaryReaderMetrics(nil)
 	logger := log.With(b.logger, "id", id)
-	br, err := indexheader.NewStreamBinaryReader(
-		ctx,
-		logger,
-		fsInstrBkt,
-		dbDir,
-		id,
-		b.cfg.BlocksStorage.BucketStore.PostingOffsetsInMemSampling,
-		metrics,
-		b.cfg.BlocksStorage.BucketStore.IndexHeader)
+	br, err := indexheader.NewStreamBinaryReader(ctx, id, fsInstrBkt, dbDir, b.cfg.BlocksStorage.BucketStore.IndexHeader, b.cfg.BlocksStorage.BucketStore.PostingOffsetsInMemSampling, logger, metrics)
 	if err != nil {
 		return err
 	}
