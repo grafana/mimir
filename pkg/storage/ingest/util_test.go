@@ -4,7 +4,13 @@ package ingest
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"flag"
+	"net"
+	"net/http"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -15,7 +21,126 @@ import (
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kfake"
 	"github.com/twmb/franz-go/pkg/kmsg"
+	"github.com/twmb/franz-go/pkg/sasl"
+	awssasl "github.com/twmb/franz-go/pkg/sasl/aws"
+	"github.com/twmb/franz-go/pkg/sasl/oauth"
 )
+
+func TestMSKIAMCredentials(t *testing.T) {
+	for how, setUp := range map[string]func(t *testing.T, secret awssasl.Auth) kafkaSASLConfig[KafkaMSKIAMStaticConfig]{
+		"file-based": func(t *testing.T, secret awssasl.Auth) kafkaSASLConfig[KafkaMSKIAMStaticConfig] {
+			filePath := writeSecretToFile(t, secret)
+
+			var cfg KafkaAuthMSKIAMConfig
+			cfg.RegisterFlagsWithPrefix("", flag.NewFlagSet("", flag.PanicOnError))
+			cfg.FilePath = filePath
+			return kafkaSASLConfig[KafkaMSKIAMStaticConfig](cfg)
+		},
+		"socket-based": func(t *testing.T, secret awssasl.Auth) kafkaSASLConfig[KafkaMSKIAMStaticConfig] {
+			socketPath := serveSecretFromSocket(t, secret)
+
+			var cfg KafkaAuthMSKIAMConfig
+			cfg.RegisterFlagsWithPrefix("", flag.NewFlagSet("", flag.PanicOnError))
+			cfg.HTTPSocketPath = socketPath
+			return kafkaSASLConfig[KafkaMSKIAMStaticConfig](cfg)
+		},
+	} {
+		t.Run(how, func(t *testing.T) {
+			t.Parallel()
+
+			secret := awssasl.Auth{
+				AccessKey:    "AKIDEXAMPLE",
+				SecretKey:    "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
+				SessionToken: "AQoDYXdzEJr//some/session/token",
+			}
+
+			cfg := setUp(t, secret)
+
+			var gotCallback func(context.Context) (awssasl.Auth, error)
+			gotMechanism := saslMechanism(cfg, func(callback func(context.Context) (awssasl.Auth, error)) sasl.Mechanism {
+				gotCallback = callback
+				return awssasl.ManagedStreamingIAM(callback)
+			})
+			require.NotNil(t, gotCallback)
+			require.NotNil(t, gotMechanism)
+
+			gotSecret, err := gotCallback(t.Context())
+			require.NoError(t, err)
+			require.Equal(t, secret, gotSecret)
+		})
+	}
+}
+
+func TestMSKIAMStaticCredentials(t *testing.T) {
+	var secret KafkaMSKIAMStaticConfig
+	require.NoError(t, secret.AccessKey.Set("AKIDEXAMPLE"))
+	require.NoError(t, secret.SecretKey.Set("wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY"))
+	require.NoError(t, secret.SessionToken.Set("AQoDYXdzEJr//some/session/token"))
+
+	cfg := kafkaSASLConfig[KafkaMSKIAMStaticConfig]{Secret: secret}
+
+	_ = saslMechanism(cfg, func(_ func(context.Context) (awssasl.Auth, error)) (_ sasl.Mechanism) {
+		require.Fail(t, "should have not been called")
+		return
+	})
+}
+
+func TestOauthbearerCredentials(t *testing.T) {
+	for how, setUp := range map[string]func(t *testing.T, secret oauth.Auth) kafkaSASLConfig[KafkaOauthbearerStaticConfig]{
+		"file-based": func(t *testing.T, secret oauth.Auth) kafkaSASLConfig[KafkaOauthbearerStaticConfig] {
+			filePath := writeSecretToFile(t, secret)
+
+			var cfg KafkaAuthOauthbearerConfig
+			cfg.RegisterFlagsWithPrefix("", flag.NewFlagSet("", flag.PanicOnError))
+			cfg.FilePath = filePath
+			return kafkaSASLConfig[KafkaOauthbearerStaticConfig](cfg)
+		},
+		"socket-based": func(t *testing.T, secret oauth.Auth) kafkaSASLConfig[KafkaOauthbearerStaticConfig] {
+			socketPath := serveSecretFromSocket(t, secret)
+
+			var cfg KafkaAuthOauthbearerConfig
+			cfg.RegisterFlagsWithPrefix("", flag.NewFlagSet("", flag.PanicOnError))
+			cfg.HTTPSocketPath = socketPath
+			return kafkaSASLConfig[KafkaOauthbearerStaticConfig](cfg)
+		},
+	} {
+		t.Run(how, func(t *testing.T) {
+			t.Parallel()
+
+			secret := oauth.Auth{
+				Token: "some-oauth-token",
+				Zid:   "some-zid",
+			}
+
+			cfg := setUp(t, secret)
+
+			var gotCallback func(context.Context) (oauth.Auth, error)
+			gotMechanism := saslMechanism(cfg, func(callback func(context.Context) (oauth.Auth, error)) sasl.Mechanism {
+				gotCallback = callback
+				return oauth.Oauth(callback)
+			})
+			require.NotNil(t, gotCallback)
+			require.NotNil(t, gotMechanism)
+
+			gotSecret, err := gotCallback(t.Context())
+			require.NoError(t, err)
+			require.Equal(t, secret, gotSecret)
+		})
+	}
+}
+
+func TestOauthbearerStaticCredentials(t *testing.T) {
+	var secret KafkaOauthbearerStaticConfig
+	require.NoError(t, secret.Token.Set("some-oauth-token"))
+	secret.Zid = "some-zid"
+
+	cfg := kafkaSASLConfig[KafkaOauthbearerStaticConfig]{Secret: secret}
+
+	_ = saslMechanism(cfg, func(_ func(context.Context) (oauth.Auth, error)) (_ sasl.Mechanism) {
+		require.Fail(t, "should have not been called")
+		return
+	})
+}
 
 func TestIngesterPartitionID(t *testing.T) {
 	t.Run("with zones", func(t *testing.T) {
@@ -258,4 +383,42 @@ func TestCreateTopic(t *testing.T) {
 		// Second call should succeed because topic already exists
 		assert.NoError(t, CreateTopic(cfg, logger))
 	})
+}
+
+func writeSecretToFile(t *testing.T, secret any) string {
+	t.Helper()
+
+	js, err := json.Marshal(secret)
+	require.NoError(t, err)
+	filePath := filepath.Join(t.TempDir(), "secret.json")
+	require.NoError(t, os.WriteFile(filePath, js, 0600))
+
+	return filePath
+}
+
+func serveSecretFromSocket(t *testing.T, secret any) string {
+	t.Helper()
+
+	js, err := json.Marshal(secret)
+	require.NoError(t, err)
+
+	sockDir, err := os.MkdirTemp("/tmp", "mimir")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(sockDir) })
+
+	socketPath := filepath.Join(sockDir, "secret.sock")
+	listener, err := net.Listen("unix", socketPath)
+	require.NoError(t, err)
+
+	server := &http.Server{
+		ReadHeaderTimeout: 10 * time.Second,
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(js)
+		}),
+	}
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() { _ = server.Close() })
+
+	return socketPath
 }

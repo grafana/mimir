@@ -240,6 +240,15 @@ func (m *FunctionOverRangeVector) Finalize(ctx context.Context) error {
 	return nil
 }
 
+func (m *FunctionOverRangeVector) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	ops := make([]types.Operator, 1+len(m.ScalarArgs))
+	ops[0] = m.Inner
+	for i, sa := range m.ScalarArgs {
+		ops[1+i] = sa
+	}
+	return types.CombineStats(ctx, ops...)
+}
+
 func (m *FunctionOverRangeVector) Close() {
 	m.Inner.Close()
 

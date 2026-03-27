@@ -71,8 +71,8 @@ func (s *StringLiteral) ChildrenLabels() []string {
 	return nil
 }
 
-func MaterializeStringLiteral(s *StringLiteral, _ *planning.Materializer, _ types.QueryTimeRange, _ *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	o := operators.NewStringLiteral(s.Value, s.GetExpressionPosition().ToPrometheusType())
+func MaterializeStringLiteral(s *StringLiteral, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	o := operators.NewStringLiteral(s.Value, timeRange, params.MemoryConsumptionTracker, s.GetExpressionPosition().ToPrometheusType())
 
 	return planning.NewSingleUseOperatorFactory(o), nil
 }

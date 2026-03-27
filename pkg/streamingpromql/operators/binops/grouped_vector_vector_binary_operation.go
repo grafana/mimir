@@ -811,6 +811,10 @@ func (g *GroupedVectorVectorBinaryOperation) Finalize(ctx context.Context) error
 	return g.Right.Finalize(ctx)
 }
 
+func (g *GroupedVectorVectorBinaryOperation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return types.CombineStats(ctx, g.Left, g.Right)
+}
+
 func (g *GroupedVectorVectorBinaryOperation) Close() {
 	g.Left.Close()
 	g.Right.Close()

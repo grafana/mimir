@@ -2907,19 +2907,7 @@
                         "show": false
                      }
                   ]
-               }
-            ],
-            "repeat": null,
-            "repeatIteration": null,
-            "repeatRowId": null,
-            "showTitle": true,
-            "title": "Ruler configuration object store (ruler accesses)",
-            "titleSize": "h6"
-         },
-         {
-            "collapse": false,
-            "height": "250px",
-            "panels": [
+               },
                {
                   "datasource": "$datasource",
                   "fieldConfig": {
@@ -3313,7 +3301,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "",
+            "title": "Ruler configuration object store (ruler accesses)",
             "titleSize": "h6"
          }
       ],

@@ -4,6 +4,7 @@ package commonsubexpressionelimination
 
 import (
 	"context"
+	"errors"
 	"math"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -30,6 +31,8 @@ type InstantVectorDuplicationBuffer struct {
 	// Multiple InstantVectorDuplicationConsumers will call InstantVectorDuplicationBuffer.Prepare() and AfterPrepare(), so this ensures idempotency.
 	prepareCalled      bool
 	afterPrepareCalled bool
+
+	stats *types.OperatorEvaluationStats
 }
 
 func NewInstantVectorDuplicationBuffer(inner types.InstantVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *InstantVectorDuplicationBuffer {
@@ -168,6 +171,11 @@ func (b *InstantVectorDuplicationBuffer) CloseConsumer(consumer *InstantVectorDu
 
 	if b.allConsumersClosed() {
 		b.Inner.Close()
+
+		if b.stats != nil {
+			b.stats.Close()
+			b.stats = nil
+		}
 	}
 }
 
@@ -320,6 +328,47 @@ func (b *InstantVectorDuplicationBuffer) allConsumersClosed() bool {
 	return true
 }
 
+func (b *InstantVectorDuplicationBuffer) QueryStats(ctx context.Context, consumer *InstantVectorDuplicationConsumer) (*types.OperatorEvaluationStats, error) {
+	if !b.allConsumersFinalized() {
+		return nil, errors.New("InstantVectorDuplicationBuffer: cannot get stats when one or more consumers are not finalized")
+	}
+
+	if consumer.hasReadStats {
+		return nil, errors.New("InstantVectorDuplicationBuffer: cannot get stats twice for the same consumer")
+	}
+
+	if b.stats == nil {
+		var err error
+		b.stats, err = b.Inner.Stats(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	consumer.hasReadStats = true
+
+	// TODO: handle subsets
+
+	if b.allConsumersHaveReadStats() {
+		// Last consumer, return stats without cloning.
+		stats := b.stats
+		b.stats = nil
+		return stats, nil
+	}
+
+	return b.stats.Clone()
+}
+
+func (b *InstantVectorDuplicationBuffer) allConsumersHaveReadStats() bool {
+	for _, consumer := range b.consumers {
+		if !consumer.hasReadStats {
+			return false
+		}
+	}
+
+	return true
+}
+
 type InstantVectorDuplicationConsumer struct {
 	Buffer *InstantVectorDuplicationBuffer
 
@@ -350,6 +399,7 @@ type InstantVectorDuplicationConsumer struct {
 	nextUnfilteredSeriesIndex int
 	closed                    bool
 	finalized                 bool
+	hasReadStats              bool
 }
 
 var _ types.InstantVectorOperator = &InstantVectorDuplicationConsumer{}
@@ -400,6 +450,10 @@ func (d *InstantVectorDuplicationConsumer) AfterPrepare(ctx context.Context) err
 
 func (d *InstantVectorDuplicationConsumer) Finalize(ctx context.Context) error {
 	return d.Buffer.Finalize(ctx, d)
+}
+
+func (d *InstantVectorDuplicationConsumer) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return d.Buffer.QueryStats(ctx, d)
 }
 
 func (d *InstantVectorDuplicationConsumer) Close() {

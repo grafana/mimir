@@ -356,12 +356,6 @@ templates:
 	finalUserCfgFp, ok := am.cfgs["user3"]
 	require.True(t, ok)
 	require.Equal(t, amConfigFromMimirConfig(user3Cfg, cfg.ExternalURL.URL).fingerprint(), finalUserCfgFp)
-	user3Am, ok := am.alertmanagers["user3"]
-	require.True(t, ok)
-	require.Len(t, user3Am.templates, 2)
-	require.Equal(t, "first.tpl", user3Am.templates[0].Name)
-	require.Equal(t, "second.tpl", user3Am.templates[1].Name)
-
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 		# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
 		# TYPE cortex_alertmanager_config_last_reload_successful gauge
@@ -409,11 +403,6 @@ templates:
 	require.True(t, cfgExists)
 	expectedFp = amConfigFromMimirConfig(user1Cfg, cfg.ExternalURL.URL).fingerprint()
 	require.Equal(t, expectedFp, currentConfigFp)
-	user1Am, ok := am.alertmanagers["user1"]
-	require.True(t, ok)
-	require.Len(t, user1Am.templates, 1)
-	require.Equal(t, "some-template.tmpl", user1Am.templates[0].Name)
-	require.Contains(t, user1Am.templates[0].Template, "some.template")
 
 	// Test Delete User, ensure config is removed and the resources are freed.
 	require.NoError(t, store.DeleteAlertConfig(ctx, "user3"))
@@ -435,7 +424,6 @@ templates:
 		# TYPE cortex_alertmanager_config_last_reload_successful gauge
 		cortex_alertmanager_config_last_reload_successful{user="user1"} 1
 		cortex_alertmanager_config_last_reload_successful{user="user2"} 1
-		cortex_alertmanager_config_last_reload_successful{user="user4"} 1
 	`), "cortex_alertmanager_config_last_reload_successful"))
 
 	// Ensure when a 3rd config is re-added, it is synced correctly
@@ -465,7 +453,6 @@ templates:
 		cortex_alertmanager_config_last_reload_successful{user="user1"} 1
 		cortex_alertmanager_config_last_reload_successful{user="user2"} 1
 		cortex_alertmanager_config_last_reload_successful{user="user3"} 1
-		cortex_alertmanager_config_last_reload_successful{user="user4"} 1
 	`), "cortex_alertmanager_config_last_reload_successful"))
 
 	// Removed template files should be cleaned up
@@ -485,7 +472,7 @@ templates:
 
 	t.Run("when bad config is loaded", func(t *testing.T) {
 		require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
-			User:      "user5",
+			User:      "user4",
 			RawConfig: badConfig,
 			Templates: []*alertspb.TemplateDesc{},
 		}))
@@ -499,17 +486,16 @@ templates:
 			cortex_alertmanager_config_last_reload_successful{user="user1"} 1
 			cortex_alertmanager_config_last_reload_successful{user="user2"} 1
 			cortex_alertmanager_config_last_reload_successful{user="user3"} 1
-			cortex_alertmanager_config_last_reload_successful{user="user4"} 1
-			cortex_alertmanager_config_last_reload_successful{user="user5"} 0
+			cortex_alertmanager_config_last_reload_successful{user="user4"} 0
 		`), "cortex_alertmanager_config_last_reload_successful"))
 
-		_, amExists := am.alertmanagers["user5"]
+		_, amExists := am.alertmanagers["user4"]
 		require.False(t, amExists)
 	})
 
 	t.Run("when bad templates are loaded", func(t *testing.T) {
 		require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
-			User:      "user6",
+			User:      "user5",
 			RawConfig: simpleConfigOne,
 			Templates: []*alertspb.TemplateDesc{
 				{Filename: "bad.tmpl", Body: "{{ invalid template }}"},
@@ -525,12 +511,11 @@ templates:
 			cortex_alertmanager_config_last_reload_successful{user="user1"} 1
 			cortex_alertmanager_config_last_reload_successful{user="user2"} 1
 			cortex_alertmanager_config_last_reload_successful{user="user3"} 1
-			cortex_alertmanager_config_last_reload_successful{user="user4"} 1
+			cortex_alertmanager_config_last_reload_successful{user="user4"} 0
 			cortex_alertmanager_config_last_reload_successful{user="user5"} 0
-			cortex_alertmanager_config_last_reload_successful{user="user6"} 0
 		`), "cortex_alertmanager_config_last_reload_successful"))
 
-		_, amExists := am.alertmanagers["user6"]
+		_, amExists := am.alertmanagers["user5"]
 		require.False(t, amExists)
 	})
 }
@@ -2509,19 +2494,31 @@ func TestShouldStartAM(t *testing.T) {
 			expStartAM: true,
 		},
 		{
+			name: "custom mimir config, receiving requests",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequests,
+					RawConfig: simpleConfigOne,
+				},
+			},
+			expStartAM: true,
+		},
+		{
+			name: "custom mimir config, idle Alertmanager",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequestsExpired,
+					RawConfig: simpleConfigOne,
+				},
+			},
+			expStartAM: true,
+		},
+		{
 			name: "default mimir config",
 			cfg: alertspb.AlertConfigDescs{
 				Mimir: alertspb.AlertConfigDesc{
 					User:      testTenant,
 					RawConfig: am.fallbackConfig,
-				},
-			},
-		},
-		{
-			name: "empty mimir config",
-			cfg: alertspb.AlertConfigDescs{
-				Mimir: alertspb.AlertConfigDesc{
-					User: testTenant,
 				},
 			},
 		},
@@ -2536,6 +2533,24 @@ func TestShouldStartAM(t *testing.T) {
 			expStartAM: true,
 		},
 		{
+			name: "default mimir config, idle Alertmanager",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequestsExpired,
+					RawConfig: am.fallbackConfig,
+				},
+			},
+			expStartAM: false,
+		},
+		{
+			name: "empty mimir config",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User: testTenant,
+				},
+			},
+		},
+		{
 			name: "empty mimir config, receiving requests",
 			cfg: alertspb.AlertConfigDescs{
 				Mimir: alertspb.AlertConfigDesc{
@@ -2543,6 +2558,15 @@ func TestShouldStartAM(t *testing.T) {
 				},
 			},
 			expStartAM: true,
+		},
+		{
+			name: "empty mimir config, idle Alertmanager",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User: tenantReceivingRequestsExpired,
+				},
+			},
+			expStartAM: false,
 		},
 	}
 
@@ -2552,12 +2576,13 @@ func TestShouldStartAM(t *testing.T) {
 		})
 
 		t.Run(fmt.Sprintf("%s with strict initialization", test.name), func(t *testing.T) {
+			// Set a recent last request time for the tenant receiving requests.
+			amWithStrictInit.lastRequestTime.Store(tenantReceivingRequests, time.Now().Unix())
 			require.Equal(t, test.expStartAM, amWithStrictInit.shouldStartAM(test.cfg))
 		})
 	}
 }
 
->>>>>>> a2990f109a3a92dba86078381b41ec964636856f
 func Test_amConfigFingerprint(t *testing.T) {
 	const expectedTotalFields = 24 // Total fields: 3 (PostableApiTemplate) + 15 (EmailSenderConfig) + 6 (amConfig)
 	t.Run("ensure all fields in the fingerprint", func(t *testing.T) {

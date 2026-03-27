@@ -52,7 +52,7 @@ func TestEvaluator(t *testing.T) {
 	scalarOperator := scalars.NewScalarConstant(scalarNode.Value, timeRange, memoryConsumptionTracker, scalarNode.GetExpressionPosition().ToPrometheusType())
 
 	stringNode := &core.StringLiteral{StringLiteralDetails: &core.StringLiteralDetails{Value: "foo"}}
-	stringOperator := operators.NewStringLiteral(stringNode.Value, stringNode.GetExpressionPosition().ToPrometheusType())
+	stringOperator := operators.NewStringLiteral(stringNode.Value, timeRange, memoryConsumptionTracker, stringNode.GetExpressionPosition().ToPrometheusType())
 
 	instantVectorNode := &core.VectorSelector{VectorSelectorDetails: &core.VectorSelectorDetails{
 		Matchers: []*core.LabelMatcher{

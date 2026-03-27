@@ -997,8 +997,8 @@ func parseInstanceID(instanceID string) (int32, error) {
 	return int32(seq), nil //nolint:gosec
 }
 
-func snapshotFilename(time time.Time, instanceID string, partitionID int32) string {
-	return fmt.Sprintf("snapshot-%d-p%d-%s.bin", time.UnixMilli(), partitionID, instanceID)
+func snapshotFilename(ts time.Time, instanceID string, partitionID int32) string {
+	return fmt.Sprintf("snapshot-%d-p%d-%s.bin", ts.UnixMilli(), partitionID, instanceID)
 }
 
 var snapshotRegexp = regexp.MustCompile(`^snapshot-(\d+)-p(\d+)-([a-zA-Z0-9_-]+)\.bin$`)

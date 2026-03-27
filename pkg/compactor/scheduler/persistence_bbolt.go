@@ -423,7 +423,7 @@ func prepare(dir string, targetCount int, logger log.Logger) ([]*bbolt.DB, error
 
 	// Cold start - no existing shard files
 	if existingCount == 0 {
-		level.Info(logger).Log("msg", "no existing shard files found, initializing fresh shards", "shard_count", targetCount)
+		level.Info(logger).Log("msg", "no existing bbolt shard files found")
 		dbs, err := appendOpenShards(nil, dir, targetCount, logger)
 		if err != nil {
 			return nil, err
@@ -438,6 +438,7 @@ func prepare(dir string, targetCount int, logger log.Logger) ([]*bbolt.DB, error
 			closeDbs(dbs, logger)
 			return nil, fmt.Errorf("failed to write metadata to shard 0: %w", err)
 		}
+		level.Info(logger).Log("msg", "initialized bbolt shard files successfully", "shard_count", targetCount)
 		return dbs, nil
 	}
 

@@ -21,6 +21,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/twmb/franz-go/pkg/sasl"
+	awssasl "github.com/twmb/franz-go/pkg/sasl/aws"
 	"github.com/twmb/franz-go/pkg/sasl/oauth"
 	"github.com/twmb/franz-go/pkg/sasl/plain"
 	"github.com/twmb/franz-go/pkg/sasl/scram"
@@ -152,30 +153,9 @@ func kafkaAuthOptions(cfg KafkaAuthConfig) []kgo.Opt {
 			Pass: cfg.Password.String(),
 		}.AsMechanism()
 	case SASLMechanismOauthbearer:
-		switch {
-		case cfg.OauthbearerToken.String() != "":
-			m = oauth.Auth{
-				Token:      cfg.OauthbearerToken.String(),
-				Zid:        cfg.OauthbearerZid,
-				Extensions: cfg.OauthbearerExtensions.Read(),
-			}.AsMechanism()
-		case cfg.OauthbearerFilePath != "":
-			m = oauth.Oauth(func(context.Context) (oauth.Auth, error) {
-				f, err := os.ReadFile(cfg.OauthbearerFilePath)
-				if err != nil {
-					return oauth.Auth{}, err
-				}
-				var a oauth.Auth
-				err = json.Unmarshal(f, &a)
-				return a, err
-			})
-		case cfg.OauthbearerHTTPSocketPath != "":
-			m = oauth.Oauth(func(ctx context.Context) (oauth.Auth, error) {
-				return requestOAuthToken(ctx, cfg.OauthbearerHTTPSocketPath, cfg.OauthbearerHTTPSocketTimeout)
-			})
-		default:
-			panic(fmt.Errorf("SASL mechanism is %s but no way to get token defined", SASLMechanismOauthbearer))
-		}
+		m = cfg.Oauthbearer.mechanism()
+	case SASLMechanismMSKIAM:
+		m = cfg.MSKIAM.mechanism()
 	default:
 		panic(fmt.Errorf("unknown SASL mechanism: %v", cfg.Mechanism))
 	}
@@ -183,7 +163,72 @@ func kafkaAuthOptions(cfg KafkaAuthConfig) []kgo.Opt {
 	return []kgo.Opt{kgo.SASL(m)}
 }
 
-func requestOAuthToken(ctx context.Context, socketPath string, timeout time.Duration) (oauth.Auth, error) {
+// saslSecretConfig configures a static secret. It may be empty.
+type saslSecretConfig interface {
+	// Validate returns errNoSecret when no static secret are set.
+	// It may return other validation errors.
+	Validate() error
+	// mechanism constructs a sasl.Mechanism from the static secret, if it exists.
+	mechanism() (sasl.Mechanism, bool)
+}
+
+func (cfg KafkaAuthOauthbearerConfig) mechanism() sasl.Mechanism {
+	return saslMechanism((kafkaSASLConfig[KafkaOauthbearerStaticConfig])(cfg), oauth.Oauth)
+}
+
+func (s KafkaOauthbearerStaticConfig) mechanism() (sasl.Mechanism, bool) {
+	if err := s.Validate(); err != nil {
+		return nil, false
+	}
+	return oauth.Auth{
+		Token:      s.Token.String(),
+		Zid:        s.Zid,
+		Extensions: s.Extensions.Read(),
+	}.AsMechanism(), true
+}
+
+func (cfg KafkaAuthMSKIAMConfig) mechanism() sasl.Mechanism {
+	return saslMechanism((kafkaSASLConfig[KafkaMSKIAMStaticConfig])(cfg), awssasl.ManagedStreamingIAM)
+}
+
+func (s KafkaMSKIAMStaticConfig) mechanism() (sasl.Mechanism, bool) {
+	if err := s.Validate(); err != nil {
+		return nil, false
+	}
+	return awssasl.Auth{
+		AccessKey:    s.AccessKey.String(),
+		SecretKey:    s.SecretKey.String(),
+		SessionToken: s.SessionToken.String(),
+		UserAgent:    s.UserAgent,
+	}.AsManagedStreamingIAMMechanism(), true
+}
+
+// saslMechanism returns the sasl.Mechanism to be passed to the Kafka client.
+func saslMechanism[T saslSecretConfig, A any](cfg kafkaSASLConfig[T], fromCallback func(func(context.Context) (A, error)) sasl.Mechanism) sasl.Mechanism {
+	if m, ok := cfg.Secret.mechanism(); ok {
+		return m
+	}
+	if cfg.FilePath != "" {
+		return fromCallback(func(ctx context.Context) (A, error) {
+			f, err := os.ReadFile(cfg.FilePath)
+			if err != nil {
+				var zero A
+				return zero, err
+			}
+			var a A
+			err = json.Unmarshal(f, &a)
+			return a, err
+		})
+	}
+	if cfg.HTTPSocketPath != "" {
+		return fromCallback(func(ctx context.Context) (A, error) {
+			return requestJSONFromSocket[A](ctx, cfg.HTTPSocketPath, cfg.HTTPSocketTimeout)
+		})
+	}
+	panic("invalid kafkaSecretConfig; Validate must have been called first")
+}
+
+func requestJSONFromSocket[T any](ctx context.Context, socketPath string, timeout time.Duration) (T, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -198,24 +243,28 @@ func requestOAuthToken(ctx context.Context, socketPath string, timeout time.Dura
 		Transport: transport,
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://token/", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://credentials/", nil)
 	if err != nil {
-		return oauth.Auth{}, fmt.Errorf("creating request for OAuth HTTP socket %s: %w", socketPath, err)
+		var zero T
+		return zero, fmt.Errorf("creating request for HTTP socket %s: %w", socketPath, err)
 	}
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return oauth.Auth{}, fmt.Errorf("requesting token from OAuth HTTP socket %s: %w", socketPath, err)
+		var zero T
+		return zero, fmt.Errorf("requesting credentials from HTTP socket %s: %w", socketPath, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return oauth.Auth{}, fmt.Errorf("requesting token from OAuth HTTP socket %s: unexpected status %s", socketPath, resp.Status)
+		var zero T
+		return zero, fmt.Errorf("requesting credentials from HTTP socket %s: unexpected status %s", socketPath, resp.Status)
 	}
 
-	var a oauth.Auth
+	var a T
 	if err := json.NewDecoder(resp.Body).Decode(&a); err != nil {
-		return oauth.Auth{}, fmt.Errorf("parsing OAuth token from socket %s: %w", socketPath, err)
+		var zero T
+		return zero, fmt.Errorf("parsing credentials from HTTP socket %s: %w", socketPath, err)
 	}
 	return a, nil
 }

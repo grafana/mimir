@@ -53,9 +53,8 @@ type BucketAlertStore struct {
 	amBucket        objstore.Bucket
 	grafanaAMBucket objstore.Bucket
 
-	cfgProvider     bucket.TenantConfigProvider
-	fetchGrafanaCfg bool
-	logger          log.Logger
+	cfgProvider bucket.TenantConfigProvider
+	logger      log.Logger
 }
 
 func NewBucketAlertStore(bkt objstore.Bucket, cfgProvider bucket.TenantConfigProvider, logger log.Logger) *BucketAlertStore {
@@ -76,14 +75,6 @@ func (s *BucketAlertStore) ListAllUsers(ctx context.Context) ([]string, error) {
 		userIDs[key] = struct{}{}
 		return nil
 	})
-
-	if s.fetchGrafanaCfg {
-		err = s.grafanaAMBucket.Iter(ctx, "", func(key string) error {
-			// Unlike standard configurations, for the Grafana bucket has a hierarchy per user.
-			userIDs[strings.TrimRight(key, "/")] = struct{}{}
-			return nil
-		})
-	}
 
 	result := make([]string, 0, len(userIDs))
 	for userID := range userIDs {

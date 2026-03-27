@@ -817,6 +817,10 @@ func (o *failingInstantVectorOperator) Finalize(_ context.Context) error {
 	return nil
 }
 
+func (o *failingInstantVectorOperator) Stats(_ context.Context) (*types.OperatorEvaluationStats, error) {
+	panic("not implemented")
+}
+
 func (o *failingInstantVectorOperator) Close() {
 	// Nothing to do.
 }

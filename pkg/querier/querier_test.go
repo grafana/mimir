@@ -232,12 +232,7 @@ func TestQuerier(t *testing.T) {
 		t.Run(qName, func(t *testing.T) {
 			// Generate TSDB head used to simulate querying the long-term storage.
 			db, through := mockTSDB(t, model.Time(0), int(chunks*samplesPerChunk), sampleRate, chunkOffset, int(samplesPerChunk), q.valueType)
-			dbQueryable := TimeRangeQueryable{
-				Queryable: &increaseMemoryConsumptionLabelsQueryable{db},
-				IsApplicable: func(_ context.Context, _ string, _ time.Time, _, _ int64, _ log.Logger, _ ...*labels.Matcher) bool {
-					return true
-				},
-			}
+			dbQueryable := &increaseMemoryConsumptionLabelsQueryable{db}
 
 			// No samples returned by ingesters.
 			distributor := &mockDistributor{}
@@ -247,7 +242,7 @@ func TestQuerier(t *testing.T) {
 
 			planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
-			queryable, _, _, _, err := New(cfg, overrides, distributor, []TimeRangeQueryable{dbQueryable}, prometheus.NewRegistry(), log.NewNopLogger(), nil, planner, unlimitedQueryLimitsProvider())
+			queryable, _, _, _, err := New(cfg, overrides, distributor, dbQueryable, prometheus.NewRegistry(), log.NewNopLogger(), nil, planner, unlimitedQueryLimitsProvider())
 			require.NoError(t, err)
 
 			testRangeQuery(t, queryable, through, q)
@@ -1566,14 +1561,11 @@ func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 			expectedMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "metric")}
 			querier := &mockBlocksStorageQuerier{}
 			querier.On("Select", mock.Anything, true, mock.Anything, expectedMatchers).Return(storage.EmptySeriesSet())
-
-			querierQueryables := []TimeRangeQueryable{
-				NewStoreGatewayTimeRangeQueryable(newMockBlocksStorageQueryable(querier), cfg),
-			}
+			blockStore := newMockBlocksStorageQueryable(querier)
 
 			planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
-			queryable, _, _, _, err := New(cfg, overrides, distributor, querierQueryables, prometheus.NewRegistry(), log.NewNopLogger(), nil, planner, unlimitedQueryLimitsProvider())
+			queryable, _, _, _, err := New(cfg, overrides, distributor, blockStore, prometheus.NewRegistry(), log.NewNopLogger(), nil, planner, unlimitedQueryLimitsProvider())
 			require.NoError(t, err)
 			ctx := user.InjectOrgID(context.Background(), "0")
 			ctx = limiter.AddMemoryTrackerToContext(ctx, limiter.NewUnlimitedMemoryConsumptionTracker(ctx))

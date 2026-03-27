@@ -152,6 +152,16 @@ func (m *FunctionOverInstantVector) Finalize(ctx context.Context) error {
 	return nil
 }
 
+func (m *FunctionOverInstantVector) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	ops := make([]types.Operator, 1+len(m.ScalarArgs))
+	ops[0] = m.Inner
+	for i, sa := range m.ScalarArgs {
+		ops[1+i] = sa
+	}
+
+	return types.CombineStats(ctx, ops...)
+}
+
 func (m *FunctionOverInstantVector) Close() {
 	m.Inner.Close()
 
