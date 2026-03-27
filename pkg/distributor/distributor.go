@@ -1640,13 +1640,13 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		if earliestSampleTimestampMs != math.MaxInt64 {
 			minExemplarTS = earliestSampleTimestampMs - 5*time.Minute.Milliseconds()
 
-			if d.limits.PastGracePeriod(userID) > 0 {
-				minExemplarTS = max(minExemplarTS, now.Add(-d.limits.PastGracePeriod(userID)).Add(-d.limits.OutOfOrderTimeWindow(userID)).UnixMilli())
+			if cfg.samples.pastGracePeriod > 0 {
+				minExemplarTS = max(minExemplarTS, now.Add(-cfg.samples.pastGracePeriod).Add(-cfg.samples.outOfOrderTimeWindow).UnixMilli())
 			}
 		}
 
 		// Enforce the creation grace period on exemplars too.
-		maxExemplarTS := now.Add(d.limits.CreationGracePeriod(userID)).UnixMilli()
+		maxExemplarTS := now.Add(cfg.samples.creationGracePeriod).UnixMilli()
 
 		// Are we going to drop native histograms? If yes, let's count and report them.
 		countDroppedNativeHistograms := !d.limits.NativeHistogramsIngestionEnabled(userID)
