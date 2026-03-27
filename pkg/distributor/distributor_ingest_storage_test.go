@@ -112,11 +112,11 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 				// Non-retryable error.
 				1: testkafka.CreateProduceResponseError(0, kafkaTopic, 1, kerr.InvalidTopicException),
 			},
-			expectedErr: fmt.Errorf("%s 1", failedPushingToPartitionMessage),
+			expectedErr: fmt.Errorf("%s", failedPushingToPartitionMessage),
 			expectedSeriesByPartition: map[int32][]string{
-				// Partition 1 is missing because it failed.
-				0: {"series_four", "series_one", "series_three"},
-				2: {"series_five"},
+				// With batched ProduceSync, all partition records are sent in a single request.
+				// The ControlKey handler intercepts the whole request, so no records are stored
+				// by kfake, even for partitions that succeed in the response.
 			},
 		},
 
@@ -131,9 +131,9 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 			},
 			expectedErr: context.DeadlineExceeded,
 			expectedSeriesByPartition: map[int32][]string{
-				// Partition 1 is missing because it failed.
-				0: {"series_four", "series_one", "series_three"},
-				2: {"series_five"},
+				// With batched ProduceSync, all partition records are sent in a single request.
+				// The retryable error causes the Kafka client to retry, eventually timing out
+				// the entire batch.
 			},
 		},
 	}
@@ -169,17 +169,36 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 
 				produceReq := request.(*kmsg.ProduceRequest)
 				for _, topic := range produceReq.Topics {
-					// For this test to work correctly we expect each request to write only to 1 partition,
-					// because we'll fail the entire request.
-					require.Len(t, topic.Partitions, 1)
-
-					if res := testData.kafkaPartitionCustomResponse[topic.Partitions[0].Partition]; res != nil {
-						res.SetVersion(request.GetVersion())
-						// Copy the TopicID from the request to the response (required for produce v13+)
-						if len(res.Topics) > 0 {
-							res.Topics[0].TopicID = topic.TopicID
+					// Check if any partition in this request has a custom error response.
+					hasCustomResponse := false
+					for _, p := range topic.Partitions {
+						if testData.kafkaPartitionCustomResponse[p.Partition] != nil {
+							hasCustomResponse = true
+							break
 						}
-						return res, nil, true
+					}
+
+					if hasCustomResponse {
+						// Build a response covering all partitions: errors for configured ones,
+						// success for the rest.
+						resp := &kmsg.ProduceResponse{Version: request.GetVersion()}
+						respTopic := kmsg.ProduceResponseTopic{Topic: topic.Topic, TopicID: topic.TopicID}
+
+						for _, p := range topic.Partitions {
+							if customResp := testData.kafkaPartitionCustomResponse[p.Partition]; customResp != nil {
+								respTopic.Partitions = append(respTopic.Partitions, kmsg.ProduceResponseTopicPartition{
+									Partition: p.Partition,
+									ErrorCode: customResp.Topics[0].Partitions[0].ErrorCode,
+								})
+							} else {
+								respTopic.Partitions = append(respTopic.Partitions, kmsg.ProduceResponseTopicPartition{
+									Partition: p.Partition,
+								})
+							}
+						}
+
+						resp.Topics = append(resp.Topics, respTopic)
+						return resp, nil, true
 					}
 				}
 
@@ -443,15 +462,21 @@ func TestDistributor_Push_ShouldSupportWriteBothToIngestersAndPartitions(t *test
 				kafkaCluster.ControlKey(int16(kmsg.Produce), func(req kmsg.Request) (kmsg.Response, error, bool) {
 					kafkaCluster.KeepControl()
 
+					// Fail all partitions in the produce request with InvalidTopicException.
 					produceReq := req.(*kmsg.ProduceRequest)
-					partitionID := produceReq.Topics[0].Partitions[0].Partition
-					res := testkafka.CreateProduceResponseError(req.GetVersion(), kafkaTopic, partitionID, kerr.InvalidTopicException)
-					// Copy the TopicID from the request to the response (required for produce v13+)
-					if len(res.Topics) > 0 {
-						res.Topics[0].TopicID = produceReq.Topics[0].TopicID
+					resp := &kmsg.ProduceResponse{Version: req.GetVersion()}
+					for _, topic := range produceReq.Topics {
+						respTopic := kmsg.ProduceResponseTopic{Topic: topic.Topic, TopicID: topic.TopicID}
+						for _, p := range topic.Partitions {
+							respTopic.Partitions = append(respTopic.Partitions, kmsg.ProduceResponseTopicPartition{
+								Partition: p.Partition,
+								ErrorCode: kerr.InvalidTopicException.Code,
+							})
+						}
+						resp.Topics = append(resp.Topics, respTopic)
 					}
 
-					return res, nil, true
+					return resp, nil, true
 				})
 			}
 

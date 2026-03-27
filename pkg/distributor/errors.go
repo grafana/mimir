@@ -453,6 +453,23 @@ func wrapPartitionPushError(err error, partitionID int32) error {
 	return newPartitionPushError(err, cause)
 }
 
+// wrapPartitionsPushError wraps an error from a batched multi-partition write,
+// classifying the error cause for proper gRPC status code mapping.
+func wrapPartitionsPushError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	err = errors.Wrap(err, failedPushingToPartitionMessage)
+
+	cause := mimirpb.ERROR_CAUSE_UNKNOWN
+	if errors.Is(err, ingest.ErrWriteRequestDataItemTooLarge) {
+		cause = mimirpb.ERROR_CAUSE_BAD_DATA
+	}
+
+	return newPartitionPushError(err, cause)
+}
+
 func wrapDeadlineExceededPushError(err error) error {
 	if err != nil && errors.Is(err, context.DeadlineExceeded) {
 		return errors.Wrap(err, deadlineExceededWrapMessage)

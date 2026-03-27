@@ -84,7 +84,7 @@ type Writer struct {
 func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registerer) *Writer {
 	writeLatency := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:                            "cortex_ingest_storage_writer_latency_seconds",
-		Help:                            "Latency to write an incoming request to the Kafka backend, after the request has been split to per-partition Kafka records. Latency is tracked individually for each partition.",
+		Help:                            "Latency to write an incoming request to the Kafka backend, after the request has been split to per-partition Kafka records.",
 		NativeHistogramBucketFactor:     1.1,
 		NativeHistogramMinResetDuration: 1 * time.Hour,
 		NativeHistogramMaxBucketNumber:  100,
@@ -148,31 +148,59 @@ func (w *Writer) stopping(_ error) error {
 // WriteSync the input data to the ingest storage. The function blocks until the data has been successfully committed,
 // or an error occurred.
 func (w *Writer) WriteSync(ctx context.Context, topic string, partitionID int32, userID string, req *mimirpb.WriteRequest) error {
+	return w.MultiWriteSync(ctx, topic, userID, []PartitionWriteRequest{{PartitionID: partitionID, WriteRequest: req}})
+}
+
+// PartitionWriteRequest pairs a partition ID with the write request data for that partition.
+type PartitionWriteRequest struct {
+	PartitionID  int32
+	WriteRequest *mimirpb.WriteRequest
+}
+
+// MultiWriteSync writes data for multiple partitions to the ingest storage in a single ProduceSync call.
+// The function blocks until all data has been successfully committed, or an error occurred.
+func (w *Writer) MultiWriteSync(ctx context.Context, topic string, userID string, partitionRequests []PartitionWriteRequest) error {
 	startTime := time.Now()
 
-	// Nothing to do if the input data is empty.
-	if req.IsEmpty() {
+	// Serialize all partition requests into a single records slice.
+	var (
+		allRecords      []*kgo.Record
+		requestsSizeBytes int
+	)
+	for _, pr := range partitionRequests {
+		// Nothing to do if the input data is empty.
+		if pr.WriteRequest.IsEmpty() {
+			continue
+		}
+
+		// Create records out of the write request.
+		records, reqSizeBytes, err := w.serializer.ToRecords(topic, pr.PartitionID, userID, pr.WriteRequest, w.kafkaCfg.ProducerMaxRecordSizeBytes)
+		if err != nil {
+			return err
+		}
+
+		// Track the number of records the given WriteRequest has been split into.
+		// Track this before sending records to Kafka so that we track it also for failures (e.g. we want to have
+		// visibility over this metric if records are rejected by Kafka because of MESSAGE_TOO_LARGE).
+		w.recordsPerRequest.Observe(float64(len(records)))
+
+		allRecords = append(allRecords, records...)
+		requestsSizeBytes += reqSizeBytes
+	}
+
+	// Nothing to do if all requests were empty.
+	if len(allRecords) == 0 {
 		return nil
 	}
 
-	// Create records out of the write request.
-	records, reqSizeBytes, err := w.serializer.ToRecords(topic, partitionID, userID, req, w.kafkaCfg.ProducerMaxRecordSizeBytes)
+	// Write to backend. The partition field is already set on each record by ToRecords,
+	// so the Kafka client routes records to the correct partition regardless of which writer is used.
+	writer, err := w.getKafkaWriterForPartition(partitionRequests[0].PartitionID)
 	if err != nil {
 		return err
 	}
 
-	// Write to backend.
-	writer, err := w.getKafkaWriterForPartition(partitionID)
-	if err != nil {
-		return err
-	}
-
-	// Track the number of records the given WriteRequest has been split into.
-	// Track this before sending records to Kafka so that we track it also for failures (e.g. we want to have
-	// visibility over this metric if records are rejected by Kafka because of MESSAGE_TOO_LARGE).
-	w.recordsPerRequest.Observe(float64(len(records)))
-
-	res := writer.ProduceSync(ctx, records)
+	res := writer.ProduceSync(ctx, allRecords)
 
 	// We track the latency both in case of success and failure (but with a different label), to avoid misunderstandings
 	// when we look at it in case Kafka Produce requests time out (if latency wasn't tracked on error, we would see low
@@ -180,7 +208,7 @@ func (w *Writer) WriteSync(ctx context.Context, topic string, partitionID int32,
 	if count, recordsSizeBytes := successfulProduceRecordsStats(res); count > 0 {
 		w.writeSuccessLatency.Observe(time.Since(startTime).Seconds())
 		w.writeBytesTotal.Add(float64(recordsSizeBytes))
-		w.inputBytesTotal.Add(float64(reqSizeBytes))
+		w.inputBytesTotal.Add(float64(requestsSizeBytes))
 	} else {
 		w.writeFailureLatency.Observe(time.Since(startTime).Seconds())
 	}

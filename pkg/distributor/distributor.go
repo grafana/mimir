@@ -2564,45 +2564,50 @@ func (d *Distributor) sendWriteRequestToIngesters(ctx context.Context, tenantRin
 }
 
 func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID string, tenantRing ring.DoBatchRing, req *mimirpb.WriteRequest, cts []compartmentTokens, initialMetadataIndex int, remoteRequestContext func() context.Context, batchOptions ring.DoBatchOptions) error {
-	// Wrap cleanup to fire once after ALL compartment DoBatch calls complete.
-	// If there are no compartments (empty request), call cleanup immediately and return.
-	originalCleanup := batchOptions.Cleanup
-	if originalCleanup == nil {
-		originalCleanup = func() {}
+	// Ensure cleanup is called exactly once after all work completes.
+	cleanup := batchOptions.Cleanup
+	if cleanup == nil {
+		cleanup = func() {}
 	}
 	if len(cts) == 0 {
-		originalCleanup()
+		cleanup()
 		return nil
 	}
-	remaining := atomic.NewInt64(int64(len(cts)))
-	batchOptions.Cleanup = func() {
-		if remaining.Dec() == 0 {
-			originalCleanup()
-		}
-	}
+	defer cleanup()
 
 	// Use an errgroup without context cancellation so that a failure in one compartment
-	// (e.g. a client error) does not cancel DoBatch calls for other compartments.
+	// does not cancel other compartments.
 	var g errgroup.Group
 	for _, ct := range cts {
 		g.Go(func() error {
-			return ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, tenantRing, ct.tokens,
-				func(partition ring.InstanceDesc, tokenIndexes []int) error {
-					subReq := req.ForIndexes(ct.writeRequestIndexes(tokenIndexes), initialMetadataIndex)
+			// Split keys by partition without spawning per-partition goroutines.
+			instanceKeys, err := SplitKeysByInstance(ctx, ring.WriteNoExtend, tenantRing, ct.tokens)
+			if err != nil {
+				return err
+			}
 
-					partitionID, err := strconv.ParseUint(partition.Id, 10, 31)
-					if err != nil {
-						return err
-					}
-
-					ctx := remoteRequestContext()
-					err = d.ingestStorageWriter.WriteSync(ctx, ct.topic, int32(partitionID), tenantID, subReq)
-					err = wrapPartitionPushError(err, int32(partitionID))
-					err = wrapDeadlineExceededPushError(err)
-
+			// Build per-partition write requests.
+			partitionRequests := make([]ingest.PartitionWriteRequest, 0, len(instanceKeys))
+			for _, ik := range instanceKeys {
+				partitionID, err := strconv.ParseUint(ik.Instance.Id, 10, 31)
+				if err != nil {
 					return err
-				}, batchOptions,
-			)
+				}
+
+				wrIndexes := ct.writeRequestIndexes(ik.Indexes)
+				subReq := req.ForIndexes(wrIndexes, initialMetadataIndex)
+
+				partitionRequests = append(partitionRequests, ingest.PartitionWriteRequest{
+					PartitionID:  int32(partitionID),
+					WriteRequest: subReq,
+				})
+			}
+
+			// Write all partitions for this compartment in a single ProduceSync call.
+			writeCtx := remoteRequestContext()
+			err = d.ingestStorageWriter.MultiWriteSync(writeCtx, ct.topic, tenantID, partitionRequests)
+			err = wrapPartitionsPushError(err)
+			return wrapDeadlineExceededPushError(err)
 		})
 	}
 
