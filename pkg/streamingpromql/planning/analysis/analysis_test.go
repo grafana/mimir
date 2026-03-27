@@ -165,6 +165,53 @@ func TestHandler(t *testing.T) {
 			expectedStatusCode: http.StatusOK,
 		},
 
+		"valid request with overridden lookback delta": {
+			params: url.Values{
+				"query":          []string{`up`},
+				"time":           []string{"2022-01-01T00:00:00Z"},
+				"lookback_delta": []string{`6m`},
+			},
+			expectedResponse: `{
+			  "originalExpression": "up",
+			  "timeRange": {"startT": 1640995200000, "endT": 1640995200000, "intervalMilliseconds": 1, "isInstant": true},
+			  "astStages": [
+				{"name": "Parsing", "duration": 1234000000, "outputExpression": "up"},
+				{"name": "Pre-processing", "duration": 1234000000, "outputExpression": "up"},
+				{"name": "Final expression", "duration": null, "outputExpression": "up"}
+			  ],
+			  "planningStages": [
+				{
+				  "name": "Original plan",
+				  "duration": 1234000000,
+				  "outputPlan": {
+					"timeRange": {"startT": 1640995200000, "endT": 1640995200000, "intervalMilliseconds": 1, "isInstant": true},
+					"lookbackDelta": 360000000000,
+					"nodes": [
+					  {"type": "VectorSelector", "description": "{__name__=\"up\"}"}
+					],
+					"originalExpression": "up",
+					"version": 0
+				  }
+				},
+				{
+				  "name": "Final plan",
+				  "duration": null,
+				  "outputPlan": {
+					"timeRange": {"startT": 1640995200000, "endT": 1640995200000, "intervalMilliseconds": 1, "isInstant": true},
+					"lookbackDelta": 360000000000,
+					"nodes": [
+					  {"type": "VectorSelector", "description": "{__name__=\"up\"}"}
+					],
+					"originalExpression": "up",
+					"version": 0
+				  }
+				}
+			  ],
+			  "planVersion": 0
+			}`,
+			expectedStatusCode: http.StatusOK,
+		},
+
 		"no params": {
 			expectedResponse:   `missing 'query' parameter`,
 			expectedStatusCode: http.StatusBadRequest,
