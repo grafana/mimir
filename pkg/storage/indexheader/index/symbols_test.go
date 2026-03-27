@@ -66,11 +66,16 @@ func TestSymbolsV2(t *testing.T) {
 	}
 
 	for factoryName, decbufFactory := range factories {
-		s, err := NewSymbolsTableReaderFromIndexHeader(decbufFactory, index.FormatV2, symbolsStart, true)
+		allSymbolsCount, sparseOffsets, err := SparseValuesFromSymbolsTable(decbufFactory, symbolsStart, true)
+		require.NoError(t, err)
+
+		s, err := NewSymbolsTableReader(
+			index.FormatV2, decbufFactory, symbolsStart, allSymbolsCount, sparseOffsets,
+		)
 		require.NoError(t, err)
 
 		// We store only 4 SparseTableOffsets to symbols.
-		require.Len(t, s.sparseOffsets, 4)
+		require.Len(t, s.sparseSymbolsOffsets, 4)
 
 		t.Run(fmt.Sprintf("Lookup/DecbufFactory=%s", factoryName), func(t *testing.T) {
 			for i := 99; i >= 0; i-- {

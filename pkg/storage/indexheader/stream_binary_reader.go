@@ -170,7 +170,7 @@ func NewStreamBinaryReader(
 	}
 
 	streamBinaryReader.postingsOffsetTable, err = streamindex.NewPostingsOffsetTableReader(
-		filePoolDecbufFactory, int(indexHeaderTOC.PostingsOffsetTable), indexHeaderTOC.IndexVersion,
+		indexHeaderTOC.IndexVersion, filePoolDecbufFactory, int(indexHeaderTOC.PostingsOffsetTable),
 		sparsePostingsOffsets, sparseSampleFactor,
 	)
 	if err != nil {

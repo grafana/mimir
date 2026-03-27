@@ -39,7 +39,7 @@ func LoadExistingSparseHeader(
 ) (
 	allSymbolsCount int,
 	sparseSymbolsOffsets []int,
-	sparsePostingsOffsets map[string]*streamindex.LabelSparsePostingsOffsets,
+	sparsePostingsOffsets map[string]*streamindex.SparseTableOffsetsForLabel,
 	err error,
 ) {
 	spanLog, ctx := spanlogger.New(ctx, ll, tracer, "indexheader.NewStreamBinaryReader")
@@ -92,8 +92,8 @@ func LoadExistingSparseHeader(
 	}
 
 	// Finally, convert from proto to the in-memory representation used by index-header readers.
-	allSymbolsCount, sparseSymbolsOffsets = sparseSymbolsFromProto(sparseHeaderProto.Symbols)
-	sparsePostingsOffsets, err = sparsePostingsOffsetsTableFromProto(
+	allSymbolsCount, sparseSymbolsOffsets = streamindex.SparseSymbolsFromProto(sparseHeaderProto.Symbols)
+	sparsePostingsOffsets, err = streamindex.SparsePostingsOffsetsTableFromProto(
 		sparseHeaderProto.PostingsOffsetTable, sparseSampleFactor,
 	)
 	if err != nil {
@@ -142,7 +142,7 @@ func LoadSparseHeaderFromIndexHeader(
 ) (
 	allSymbolsCount int,
 	sparseSymbolsOffsets []int,
-	sparsePostingsOffsets map[string]*streamindex.LabelSparsePostingsOffsets,
+	sparsePostingsOffsets map[string]*streamindex.SparseTableOffsetsForLabel,
 	err error,
 ) {
 	start := time.Now()
@@ -172,124 +172,15 @@ func LoadSparseHeaderFromIndexHeader(
 func InMemorySparseHeaderToProto(
 	allSymbolsCount int,
 	sparseSymbolsOffsets []int,
-	sparsePostingsOffsets map[string]*streamindex.LabelSparsePostingsOffsets,
+	sparsePostingsOffsets map[string]*streamindex.SparseTableOffsetsForLabel,
 	sampleFactor int,
 ) *indexheaderpb.Sparse {
-	symbolsProto := sparseSymbolsToProto(allSymbolsCount, sparseSymbolsOffsets)
-	postingsOffsetProto := sparsePostingsOffsetsTableValuesToProto(sparsePostingsOffsets, sampleFactor)
+	symbolsProto := streamindex.SparseSymbolsToProto(allSymbolsCount, sparseSymbolsOffsets)
+	postingsOffsetProto := streamindex.SparsePostingsOffsetsTableToProto(sparsePostingsOffsets, sampleFactor)
 	return &indexheaderpb.Sparse{
 		Symbols:             symbolsProto,
 		PostingsOffsetTable: postingsOffsetProto,
 	}
-}
-
-// sparseSymbolsToProto loads the in-memory sparse symbols data into the protobuf format
-func sparseSymbolsToProto(allSymbolsCount int, sparseOffsets []int) *indexheaderpb.Symbols {
-	proto := &indexheaderpb.Symbols{}
-
-	offsets := make([]int64, len(sparseOffsets))
-	for i, offset := range sparseOffsets {
-		offsets[i] = int64(offset)
-	}
-
-	proto.Offsets = offsets
-	proto.SymbolsCount = int64(allSymbolsCount)
-
-	return proto
-}
-
-// sparseSymbolsFromProto loads the protobuf format to in-memory sparse symbols data
-func sparseSymbolsFromProto(proto *indexheaderpb.Symbols) (allSymbolsCount int, sparseOffsets []int) {
-	allSymbolsCount = int(proto.SymbolsCount)
-	sparseOffsets = make([]int, len(proto.Offsets))
-
-	for i, offset := range proto.Offsets {
-		sparseOffsets[i] = int(offset)
-	}
-
-	return allSymbolsCount, sparseOffsets
-}
-
-// sparsePostingsOffsetsTableValuesToProto loads in-memory sparse postings offset table data into the protobuf format
-func sparsePostingsOffsetsTableValuesToProto(
-	sparsePostingsOffsets map[string]*streamindex.LabelSparsePostingsOffsets,
-	sparseSampleFactor int,
-) *indexheaderpb.PostingOffsetTable {
-	proto := &indexheaderpb.PostingOffsetTable{
-		Postings:                      make(map[string]*indexheaderpb.PostingValueOffsets, len(sparsePostingsOffsets)),
-		PostingOffsetInMemorySampling: int64(sparseSampleFactor),
-	}
-
-	for labelName, offsets := range sparsePostingsOffsets {
-		proto.Postings[labelName] = &indexheaderpb.PostingValueOffsets{}
-		postingOffsets := make([]*indexheaderpb.PostingOffset, len(offsets.SparseTableOffsets))
-
-		for i, tableOffset := range offsets.SparseTableOffsets {
-			postingOffsets[i] = &indexheaderpb.PostingOffset{Value: tableOffset.Value, TableOff: int64(tableOffset.Offset)}
-		}
-		proto.Postings[labelName].Offsets = postingOffsets
-		proto.Postings[labelName].LastValOffset = offsets.LastValOffset
-	}
-
-	return proto
-}
-
-// sparsePostingsOffsetsTableValuesToProto loads the protobuf format to in-memory sparse postings offsets data
-func sparsePostingsOffsetsTableFromProto(proto *indexheaderpb.PostingOffsetTable, sparseSampleFactor int) (
-	sparsePostingsOffsets map[string]*streamindex.LabelSparsePostingsOffsets,
-	err error,
-) {
-	protoSampleFactor := int(proto.GetPostingOffsetInMemorySampling())
-	if protoSampleFactor == 0 {
-		return nil, fmt.Errorf("sparse index-header sampling rate not set")
-	}
-
-	if protoSampleFactor > sparseSampleFactor {
-		return nil, fmt.Errorf("sparse index-header sampling rate exceeds in-mem-sampling rate")
-	}
-
-	// if the sampling rate in the sparse index-header is set lower (more frequent) than
-	// the configured sparseSampleFactor we downsample to the configured rate
-	step, ok := stepSize(protoSampleFactor, sparseSampleFactor)
-	if !ok {
-		return nil, fmt.Errorf("sparse index-header sampling rate not compatible with in-mem-sampling rate")
-	}
-
-	sparsePostingsOffsets = make(map[string]*streamindex.LabelSparsePostingsOffsets, len(proto.Postings))
-	for sName, sOffsets := range proto.Postings {
-
-		olen := len(sOffsets.Offsets)
-		downsampledLen := (olen + step - 1) / step
-		if (olen > 1) && (downsampledLen == 1) {
-			downsampledLen++
-		}
-
-		sparsePostingsOffsets[sName] = &streamindex.LabelSparsePostingsOffsets{
-			SparseTableOffsets: make([]streamindex.LabelValuePostingsOffset, downsampledLen),
-		}
-		for i, sPostingOff := range sOffsets.Offsets {
-			if i%step == 0 {
-				sparsePostingsOffsets[sName].SparseTableOffsets[i/step] = streamindex.LabelValuePostingsOffset{
-					Value: sPostingOff.Value, Offset: int(sPostingOff.TableOff),
-				}
-			}
-
-			if i == olen-1 {
-				sparsePostingsOffsets[sName].SparseTableOffsets[downsampledLen-1] = streamindex.LabelValuePostingsOffset{
-					Value: sPostingOff.Value, Offset: int(sPostingOff.TableOff),
-				}
-			}
-		}
-		sparsePostingsOffsets[sName].LastValOffset = sOffsets.LastValOffset
-	}
-	return sparsePostingsOffsets, err
-}
-
-func stepSize(cur, tgt int) (int, bool) {
-	if cur > tgt || cur <= 0 || tgt <= 0 || tgt%cur != 0 {
-		return 0, false
-	}
-	return tgt / cur, true
 }
 
 func unzipSparseHeader(gZippedSparseData []byte, ll log.Logger) ([]byte, error) {
@@ -386,7 +277,7 @@ func tryWriteSparseHeadersToFile(logger log.Logger, sparseHeadersPath string, sp
 //) (
 //	allSymbolsCount int,
 //	sparseSymbolsOffsets []int,
-//	sparsePostingsOffsets map[string]*streamindex.LabelSparsePostingsOffsets,
+//	sparsePostingsOffsets map[string]*streamindex.SparseTableOffsetsForLabel,
 //	err error,
 //) {
 //
