@@ -2480,91 +2480,73 @@ func TestShouldStartAM(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		cfg        alertspb.AlertConfigDescs
+		cfg        alertspb.AlertConfigDesc
 		expStartAM bool
 	}{
 		{
-			name: "custom mimir config",
-			cfg: alertspb.AlertConfigDescs{
-				Mimir: alertspb.AlertConfigDesc{
-					User:      testTenant,
-					RawConfig: simpleConfigOne,
-				},
+			name: "custom config",
+			cfg: alertspb.AlertConfigDesc{
+				User:      testTenant,
+				RawConfig: simpleConfigOne,
 			},
 			expStartAM: true,
 		},
 		{
-			name: "custom mimir config, receiving requests",
-			cfg: alertspb.AlertConfigDescs{
-				Mimir: alertspb.AlertConfigDesc{
-					User:      tenantReceivingRequests,
-					RawConfig: simpleConfigOne,
-				},
+			name: "custom config, receiving requests",
+			cfg: alertspb.AlertConfigDesc{
+				User:      tenantReceivingRequests,
+				RawConfig: simpleConfigOne,
 			},
 			expStartAM: true,
 		},
 		{
-			name: "custom mimir config, idle Alertmanager",
-			cfg: alertspb.AlertConfigDescs{
-				Mimir: alertspb.AlertConfigDesc{
-					User:      tenantReceivingRequestsExpired,
-					RawConfig: simpleConfigOne,
-				},
+			name: "custom config, idle Alertmanager",
+			cfg: alertspb.AlertConfigDesc{
+				User:      tenantReceivingRequestsExpired,
+				RawConfig: simpleConfigOne,
 			},
 			expStartAM: true,
 		},
 		{
-			name: "default mimir config",
-			cfg: alertspb.AlertConfigDescs{
-				Mimir: alertspb.AlertConfigDesc{
-					User:      testTenant,
-					RawConfig: am.fallbackConfig,
-				},
+			name: "default config",
+			cfg: alertspb.AlertConfigDesc{
+				User:      testTenant,
+				RawConfig: am.fallbackConfig,
 			},
 		},
 		{
-			name: "default mimir config, receiving requests",
-			cfg: alertspb.AlertConfigDescs{
-				Mimir: alertspb.AlertConfigDesc{
-					User:      tenantReceivingRequests,
-					RawConfig: am.fallbackConfig,
-				},
+			name: "default config, receiving requests",
+			cfg: alertspb.AlertConfigDesc{
+				User:      tenantReceivingRequests,
+				RawConfig: am.fallbackConfig,
 			},
 			expStartAM: true,
 		},
 		{
-			name: "default mimir config, idle Alertmanager",
-			cfg: alertspb.AlertConfigDescs{
-				Mimir: alertspb.AlertConfigDesc{
-					User:      tenantReceivingRequestsExpired,
-					RawConfig: am.fallbackConfig,
-				},
+			name: "default config, idle Alertmanager",
+			cfg: alertspb.AlertConfigDesc{
+				User:      tenantReceivingRequestsExpired,
+				RawConfig: am.fallbackConfig,
 			},
 			expStartAM: false,
 		},
 		{
-			name: "empty mimir config",
-			cfg: alertspb.AlertConfigDescs{
-				Mimir: alertspb.AlertConfigDesc{
-					User: testTenant,
-				},
+			name: "empty config",
+			cfg: alertspb.AlertConfigDesc{
+				User: testTenant,
 			},
 		},
 		{
-			name: "empty mimir config, receiving requests",
-			cfg: alertspb.AlertConfigDescs{
-				Mimir: alertspb.AlertConfigDesc{
-					User: tenantReceivingRequests,
-				},
+			name: "empty config, receiving requests",
+			cfg: alertspb.AlertConfigDesc{
+				User: tenantReceivingRequests,
 			},
 			expStartAM: true,
 		},
 		{
-			name: "empty mimir config, idle Alertmanager",
-			cfg: alertspb.AlertConfigDescs{
-				Mimir: alertspb.AlertConfigDesc{
-					User: tenantReceivingRequestsExpired,
-				},
+			name: "empty config, idle Alertmanager",
+			cfg: alertspb.AlertConfigDesc{
+				User: tenantReceivingRequestsExpired,
 			},
 			expStartAM: false,
 		},
