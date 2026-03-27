@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/mimir/pkg/storage/indexheader/indexheaderpb"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -140,21 +141,23 @@ func NewStreamBinaryReader(
 	// If we previously failed to load the sparse index-header, recreate from full header.
 	if !sparseHeaderLoaded {
 		start := time.Now()
-		allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, err = LoadSparseHeaderFromIndexHeader(
+		allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, err = BuildSparseHeaderFromIndexHeader(
 			indexHeaderTOC, filePoolDecbufFactory, sparseSampleFactor, cfg.VerifyOnLoad, ll,
 		)
 		if err != nil {
-			// Exhausted all options to load sparse index-header to memory.
+			// Exhausted all options to load sparse index-header to memory. Not recoverable.
 			return nil, fmt.Errorf("cannot build sparse index-header values from full index-header: %w", err)
 		}
+
 		level.Info(spanLog).Log("msg", "built sparse index-header values from full index-header",
 			"elapsed", time.Since(start),
 		)
 
 		// Try to write to disk so we do not have to repeat this all again.
-		sparseHeaderProto := InMemorySparseHeaderToProto(
-			allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, sparseSampleFactor,
-		)
+		sparseHeaderProto := &indexheaderpb.Sparse{
+			Symbols:             streamindex.SparseSymbolsToProto(allSymbolsCount, sparseSymbolsOffsets),
+			PostingsOffsetTable: streamindex.SparsePostingsOffsetsTableToProto(sparsePostingsOffsets, sparseSampleFactor),
+		}
 		if err := writeSparseHeaderProtoToDisk(localSparseHeaderPath, sparseHeaderProto, spanLog); err != nil {
 			// Log an error in case there are disk issues, but we can still continue.
 			level.Error(spanLog).Log(
@@ -181,6 +184,10 @@ func NewStreamBinaryReader(
 	if err != nil {
 		return nil, fmt.Errorf("load label names: %w", err)
 	}
+
+	streamBinaryReader.symbolsTable, err = streamindex.NewSymbolsTableReader(
+		index.FormatV2, filePoolDecbufFactory, int(indexHeaderTOC.Symbols), allSymbolsCount, sparseSymbolsOffsets,
+	)
 
 	streamBinaryReader.nameSymbols = make(map[uint32]string, len(labelNames))
 	if err = streamBinaryReader.symbolsTable.ForEachSymbol(labelNames, func(sym string, offset uint32) error {
