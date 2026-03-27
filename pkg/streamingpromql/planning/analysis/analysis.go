@@ -21,28 +21,38 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-func Handler(planner *streamingpromql.QueryPlanner, limitsProvider streamingpromql.QueryLimitsProvider) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, status, err := handleAnalysis(w, r, planner, limitsProvider)
-
-		if err != nil {
-			body = []byte(err.Error())
-			w.Header().Set("Content-Type", "text/plain")
-		}
-
-		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
-		w.WriteHeader(status)
-		_, _ = w.Write(body)
-	})
+func NewHandler(planner *streamingpromql.QueryPlanner, limitsProvider streamingpromql.QueryLimitsProvider) http.Handler {
+	return &handler{
+		planner:        planner,
+		limitsProvider: limitsProvider,
+	}
 }
 
-func handleAnalysis(w http.ResponseWriter, r *http.Request, planner *streamingpromql.QueryPlanner, limitsProvider streamingpromql.QueryLimitsProvider) ([]byte, int, error) {
-	if planner == nil {
+type handler struct {
+	planner        *streamingpromql.QueryPlanner
+	limitsProvider streamingpromql.QueryLimitsProvider
+}
+
+func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	body, status, err := h.performAnalysis(w, r)
+
+	if err != nil {
+		body = []byte(err.Error())
+		w.Header().Set("Content-Type", "text/plain")
+	}
+
+	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+	w.WriteHeader(status)
+	_, _ = w.Write(body)
+}
+
+func (h *handler) performAnalysis(w http.ResponseWriter, r *http.Request) ([]byte, int, error) {
+	if h.planner == nil {
 		// Handle the case where query planning is disabled.
 		return nil, http.StatusNotFound, errors.New("query planning is disabled, analysis is not available")
 	}
 
-	enableDelayedNameRemoval, err := limitsProvider.GetEnableDelayedNameRemoval(r.Context())
+	enableDelayedNameRemoval, err := h.limitsProvider.GetEnableDelayedNameRemoval(r.Context())
 	if err != nil {
 		return nil, http.StatusBadRequest, fmt.Errorf("could not get enable delayed name removal setting: %w", err)
 	}
@@ -111,7 +121,7 @@ func handleAnalysis(w http.ResponseWriter, r *http.Request, planner *streamingpr
 	querymiddleware.DecodeOptions(r, &options)
 	ctx = querymiddleware.ContextWithRequestHintsAndOptions(ctx, nil, options) // FIXME: populate hints as well (need cardinality estimation middleware for this)
 
-	result, err := Analyze(ctx, planner, qs, timeRange, lookbackDelta, enableDelayedNameRemoval)
+	result, err := Analyze(ctx, h.planner, qs, timeRange, lookbackDelta, enableDelayedNameRemoval)
 	if err != nil {
 		var perr parser.ParseErrors
 		if errors.As(err, &perr) {
