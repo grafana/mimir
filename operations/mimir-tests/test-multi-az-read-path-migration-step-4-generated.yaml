@@ -2610,7 +2610,7 @@ spec:
         - -query-frontend.query-sharding-target-series-per-shard=2500
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local.:11211
-        - -query-frontend.results-cache.memcached.max-item-size=5242880
+        - -query-frontend.results-cache.memcached.max-item-size=26214400
         - -query-frontend.results-cache.memcached.timeout=500ms
         - -query-scheduler.ring.prefix=
         - -query-scheduler.ring.store=memberlist
@@ -2710,7 +2710,7 @@ spec:
         - -query-frontend.query-sharding-target-series-per-shard=2500
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend-zone-a.default.svc.cluster.local.:11211
-        - -query-frontend.results-cache.memcached.max-item-size=5242880
+        - -query-frontend.results-cache.memcached.max-item-size=26214400
         - -query-frontend.results-cache.memcached.timeout=500ms
         - -query-scheduler.ring.prefix=query-scheduler-zone-a/
         - -query-scheduler.ring.store=memberlist
@@ -2815,7 +2815,7 @@ spec:
         - -query-frontend.query-sharding-target-series-per-shard=2500
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend-zone-b.default.svc.cluster.local.:11211
-        - -query-frontend.results-cache.memcached.max-item-size=5242880
+        - -query-frontend.results-cache.memcached.max-item-size=26214400
         - -query-frontend.results-cache.memcached.timeout=500ms
         - -query-scheduler.ring.prefix=query-scheduler-zone-b/
         - -query-scheduler.ring.store=memberlist
@@ -3696,7 +3696,7 @@ spec:
         - -query-frontend.query-sharding-target-series-per-shard=2500
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local.:11211
-        - -query-frontend.results-cache.memcached.max-item-size=5242880
+        - -query-frontend.results-cache.memcached.max-item-size=26214400
         - -query-frontend.results-cache.memcached.timeout=500ms
         - -query-scheduler.ring.prefix=ruler-query-scheduler/
         - -query-scheduler.ring.store=memberlist
@@ -3801,7 +3801,7 @@ spec:
         - -query-frontend.query-sharding-target-series-per-shard=2500
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend-zone-a.default.svc.cluster.local.:11211
-        - -query-frontend.results-cache.memcached.max-item-size=5242880
+        - -query-frontend.results-cache.memcached.max-item-size=26214400
         - -query-frontend.results-cache.memcached.timeout=500ms
         - -query-scheduler.ring.prefix=ruler-query-scheduler-zone-a/
         - -query-scheduler.ring.store=memberlist
@@ -3911,7 +3911,7 @@ spec:
         - -query-frontend.query-sharding-target-series-per-shard=2500
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend-zone-b.default.svc.cluster.local.:11211
-        - -query-frontend.results-cache.memcached.max-item-size=5242880
+        - -query-frontend.results-cache.memcached.max-item-size=26214400
         - -query-frontend.results-cache.memcached.timeout=500ms
         - -query-scheduler.ring.prefix=ruler-query-scheduler-zone-b/
         - -query-scheduler.ring.store=memberlist
@@ -4956,7 +4956,7 @@ spec:
       containers:
       - args:
         - -m 1024
-        - -I 5m
+        - -I 25m
         - -c 16384
         - -v
         image: memcached:1.6.34-alpine
@@ -5024,7 +5024,7 @@ spec:
       containers:
       - args:
         - -m 1024
-        - -I 5m
+        - -I 25m
         - -c 16384
         - -v
         image: memcached:1.6.34-alpine
@@ -5097,7 +5097,7 @@ spec:
       containers:
       - args:
         - -m 1024
-        - -I 5m
+        - -I 25m
         - -c 16384
         - -v
         image: memcached:1.6.34-alpine
