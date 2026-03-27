@@ -687,15 +687,6 @@ func (m *usageTrackerMock) Close() error {
 	return nil
 }
 
-// noopMockT is a mock.TestingT implementation that silently discards all failures.
-// Use it inside require.Eventually conditions to avoid permanently marking the outer
-// test as failed on intermediate polls.
-type noopMockT struct{}
-
-func (*noopMockT) Logf(_ string, _ ...interface{})   {}
-func (*noopMockT) Errorf(_ string, _ ...interface{}) {}
-func (*noopMockT) FailNow()                          {}
-
 func TestUsageTrackerClient_CanTrackAsync(t *testing.T) {
 	tests := []struct {
 		name                           string
