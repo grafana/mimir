@@ -513,8 +513,7 @@ func TestGrafanaAlertmanager(t *testing.T) {
 		Replicator:        &stubReplicator{},
 		ReplicationFactor: 1,
 		// We have to set this interval non-zero, though we don't need the persister to do anything.
-		PersisterConfig:                  PersisterConfig{Interval: time.Hour},
-		GrafanaAlertmanagerCompatibility: true,
+		PersisterConfig: PersisterConfig{Interval: time.Hour},
 	}, prometheus.NewPedanticRegistry())
 	require.NoError(t, err)
 	defer am.StopAndWait()

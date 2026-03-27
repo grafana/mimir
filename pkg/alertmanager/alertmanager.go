@@ -107,8 +107,7 @@ type Config struct {
 	Store             alertstore.AlertStore
 	PersisterConfig   PersisterConfig
 
-	GrafanaAlertmanagerCompatibility bool
-	EnableNotifyHooks                bool
+	EnableNotifyHooks bool
 }
 
 // An Alertmanager manages the alerts for one user.
