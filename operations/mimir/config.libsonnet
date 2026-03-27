@@ -116,7 +116,7 @@
     memcached_range_vector_splitting_replicas: 3,
 
     cache_frontend_enabled: true,
-    cache_frontend_max_item_size_mb: 5,
+    cache_frontend_max_item_size_mb: 25,
     cache_frontend_connection_limit: 16384,
     cache_frontend_min_ready_seconds: 60,
 
