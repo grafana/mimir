@@ -254,15 +254,6 @@ func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, api
 		a.RegisterRoute("/api/v1/alerts", http.HandlerFunc(am.GetUserConfig), true, true, "GET")
 		a.RegisterRoute("/api/v1/alerts", http.HandlerFunc(am.SetUserConfig), true, true, "POST")
 		a.RegisterRoute("/api/v1/alerts", http.HandlerFunc(am.DeleteUserConfig), true, true, "DELETE")
-
-		if grafanaCompatEnabled {
-			level.Info(a.logger).Log("msg", "enabled experimental grafana routes")
-
-			a.RegisterRoute("/api/v1/grafana/config", http.HandlerFunc(am.GetUserGrafanaConfig), true, true, http.MethodGet)
-			a.RegisterRoute("/api/v1/grafana/config", http.HandlerFunc(am.SetUserGrafanaConfig), true, true, http.MethodPost)
-			a.RegisterRoute("/api/v1/grafana/config", http.HandlerFunc(am.DeleteUserGrafanaConfig), true, true, http.MethodDelete)
-			a.RegisterRoute("/api/v1/grafana/config/status", http.HandlerFunc(am.GetGrafanaConfigStatus), true, true, http.MethodGet)
-		}
 	}
 }
 
