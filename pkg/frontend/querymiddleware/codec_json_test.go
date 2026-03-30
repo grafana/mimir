@@ -605,7 +605,7 @@ func benchmarkPrometheusResponse(seriesCount, samplesPerSeries int) *PrometheusR
 	for i := range result {
 		samples := make([]mimirpb.Sample, samplesPerSeries)
 		for j := range samples {
-			samples[j] = mimirpb.Sample{TimestampMs: int64((i*samplesPerSeries+j) * 15000), Value: float64(i*samplesPerSeries + j)}
+			samples[j] = mimirpb.Sample{TimestampMs: int64((i*samplesPerSeries + j) * 15000), Value: float64(i*samplesPerSeries + j)}
 		}
 		result[i] = SampleStream{
 			Labels:  []mimirpb.LabelAdapter{{Name: "series", Value: fmt.Sprintf("series_%d", i)}},

@@ -23,7 +23,6 @@ func (f ProtobufFormatter) ContentType() v1.MIMEType {
 	return v1.MIMEType{Type: mimirpb.QueryResponseMimeTypeType, SubType: mimirpb.QueryResponseMimeTypeSubType}
 }
 
-
 func (ProtobufFormatter) encodeStringData(data []SampleStream) (mimirpb.StringData, error) {
 	if len(data) != 1 {
 		return mimirpb.StringData{}, fmt.Errorf("expected string response to contain exactly one stream, but it has %d", len(data))
