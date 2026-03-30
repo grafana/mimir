@@ -782,8 +782,8 @@ func (o *Overrides) RequestBurstSize(userID string) int {
 }
 
 // IngestionRate returns the limit on ingester rate (samples per second).
-func (o *Overrides) IngestionRate(userID string) float64 {
-	return o.getOverridesForUserWithMetadata(userID).IngestionRate
+func (o *Overrides) IngestionRate(limitsKey string) float64 {
+	return o.getOverridesForLimitsKey(limitsKey).IngestionRate
 }
 
 // LabelNamesAndValuesResultsMaxSizeBytes returns the maximum size in bytes of distinct label names and values
@@ -805,12 +805,12 @@ func (o *Overrides) LabelValuesMaxCardinalityLabelNamesPerRequest(userID string)
 }
 
 // IngestionBurstSize returns the burst size for ingestion rate.
-func (o *Overrides) IngestionBurstSize(userID string) int {
-	return o.getOverridesForUserWithMetadata(userID).IngestionBurstSize
+func (o *Overrides) IngestionBurstSize(limitsKey string) int {
+	return o.getOverridesForLimitsKey(limitsKey).IngestionBurstSize
 }
 
-func (o *Overrides) IngestionBurstFactor(userID string) float64 {
-	burstFactor := o.getOverridesForUserWithMetadata(userID).IngestionBurstFactor
+func (o *Overrides) IngestionBurstFactor(limitsKey string) float64 {
+	burstFactor := o.getOverridesForLimitsKey(limitsKey).IngestionBurstFactor
 	if burstFactor < 1 {
 		return 0
 	}
@@ -903,8 +903,8 @@ func (o *Overrides) PastGracePeriod(userID string) time.Duration {
 // And for tenants without overrides it's just:
 // - Default MaxActiveSeriesPerUser
 // - Default MaxGlobalSeriesPerUser
-func (o *Overrides) MaxActiveOrGlobalSeriesPerUser(userID string) int {
-	overrides := o.getOverridesForUserWithMetadata(userID)
+func (o *Overrides) MaxActiveOrGlobalSeriesPerUser(limitsKey string) int {
+	overrides := o.getOverridesForLimitsKey(limitsKey)
 	if maxActive := overrides.MaxActiveSeriesPerUser; maxActive > 0 {
 		return maxActive
 	}
@@ -1536,8 +1536,8 @@ func (o *Overrides) Prom2RangeCompat(userID string) bool {
 	return o.getOverridesForUser(userID).Prom2RangeCompat
 }
 
-func (o *Overrides) OTelMetricSuffixesEnabled(tenantID string) bool {
-	v := o.getOverridesForUserWithMetadata(tenantID).OTelMetricSuffixesEnabled
+func (o *Overrides) OTelMetricSuffixesEnabled(limitsKey string) bool {
+	v := o.getOverridesForLimitsKey(limitsKey).OTelMetricSuffixesEnabled
 	if v != nil {
 		return *v
 	}
@@ -1569,15 +1569,15 @@ func (o *Overrides) OTelNativeDeltaIngestion(tenantID string) bool {
 	return o.getOverridesForUser(tenantID).OTelNativeDeltaIngestion
 }
 
-func (o *Overrides) OTelTranslationStrategy(tenantID string) otlptranslator.TranslationStrategyOption {
-	strategy := otlptranslator.TranslationStrategyOption(o.getOverridesForUserWithMetadata(tenantID).OTelTranslationStrategy)
+func (o *Overrides) OTelTranslationStrategy(limitsKey string) otlptranslator.TranslationStrategyOption {
+	strategy := otlptranslator.TranslationStrategyOption(o.getOverridesForLimitsKey(limitsKey).OTelTranslationStrategy)
 	if strategy != "" {
 		return strategy
 	}
 
 	// Generate translation strategy based on other settings.
-	suffixesEnabled := o.OTelMetricSuffixesEnabled(tenantID)
-	switch scheme := o.NameValidationScheme(tenantID); scheme {
+	suffixesEnabled := o.OTelMetricSuffixesEnabled(limitsKey)
+	switch scheme := o.NameValidationScheme(limitsKey); scheme {
 	case model.LegacyValidation:
 		if suffixesEnabled {
 			strategy = otlptranslator.UnderscoreEscapingWithSuffixes
@@ -1653,12 +1653,15 @@ func (o *Overrides) LabelsQueryOptimizerEnabled(userID string) bool {
 }
 
 // NameValidationScheme returns the name validation scheme to use for a particular tenant.
-func (o *Overrides) NameValidationScheme(userID string) model.ValidationScheme {
-	scheme := o.getOverridesForUserWithMetadata(userID).NameValidationScheme
-	if scheme == model.UnsetValidation {
-		return model.LegacyValidation
+func (o *Overrides) NameValidationScheme(limitsKey string) model.ValidationScheme {
+	scheme := o.getOverridesForLimitsKey(limitsKey).NameValidationScheme
+	if scheme != model.UnsetValidation {
+		return scheme
 	}
-	return scheme
+	if s := o.defaultLimits.NameValidationScheme; s != model.UnsetValidation {
+		return s
+	}
+	return model.LegacyValidation
 }
 
 // CardinalityAnalysisMaxResults returns the maximum number of results that
@@ -1678,31 +1681,31 @@ func (o *Overrides) getOverridesForUser(userID string) *Limits {
 	return o.defaultLimits
 }
 
-func (o *Overrides) getOverridesForUserWithMetadata(userID string) *Limits {
-	limits := o.getOverridesForUser(userID)
+func (o *Overrides) getOverridesForLimitsKey(limitsKey string) *Limits {
+	limits := o.getOverridesForUser(limitsKey)
 	if o.tenantLimits == nil {
 		return limits
 	}
-	tenantID, tenantMd, err := tenant.ParseWithMetadata(userID)
+	userID, tenantMd, err := tenant.ParseWithMetadata(limitsKey)
 	if err != nil {
 		return limits
 	}
-	if tenantID == userID {
+	if userID == limitsKey {
 		return limits
 	}
 
-	// The provided userID has metadata. Iterate KV pairs and merge limits.
-	dst := copyLimits(o.getOverridesForUser(tenantID))
+	// The limitsKey includes metadata. Iterate KV pairs and merge limits.
+	dst := copyLimits(o.getOverridesForUser(userID))
 	tmpMd := tenant.NewMetadata()
 	for key, val := range tenantMd.Iter() {
 		tmpMd.Set(key, val)
-		full := tmpMd.WithTenant(tenantID)
-		suffix := full[len(tenantID):]
+		full := tmpMd.WithTenant(userID)
+		suffix := full[len(userID):]
 		dst = mergeLimits(dst, o.tenantLimits.ByUserID(suffix))
 		dst = mergeLimits(dst, o.tenantLimits.ByUserID(full))
 		tmpMd.Remove(key)
 	}
-	dst = mergeLimits(dst, o.tenantLimits.ByUserID(userID))
+	dst = mergeLimits(dst, o.tenantLimits.ByUserID(limitsKey))
 	return dst
 }
 

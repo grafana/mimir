@@ -2776,7 +2776,7 @@ func TestGetOverridesForUserWithMetadata(t *testing.T) {
 			}
 			ov := NewOverrides(defaults, tl)
 
-			got := ov.getOverridesForUserWithMetadata(tc.userID)
+			got := ov.getOverridesForLimitsKey(tc.userID)
 			assert.Equal(t, tc.expectedRate, got.IngestionRate)
 			assert.Equal(t, tc.expectedSeries, got.MaxActiveSeriesPerUser)
 			assert.Equal(t, tc.expectedBurstSize, got.IngestionBurstSize)

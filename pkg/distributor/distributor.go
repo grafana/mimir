@@ -99,6 +99,11 @@ const (
 	// decompressing requests when the distributor is near the inflight bytes limit and the uncompressed request
 	// will likely exceed the limit.
 	decompressionEstMultiplier = 8
+
+	// interval at which stale entries should be removed from the ingestion rate limiter.
+	ingestionRateLimitCleanupInterval = time.Hour
+	// duration after which ingestion rate limiters are considered stale.
+	ingestionRateLimitStalenessDuration = 24 * time.Hour
 )
 
 type usageTrackerGenericClient interface {
@@ -752,6 +757,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	d.PushWithMiddlewares = d.wrapPushWithMiddlewares(d.push)
 
 	subservices = append(subservices, d.ingesterPool, d.activeUsers)
+	subservices = append(subservices, cleanupIngestionRateLimiter(d.ingestionRateLimiter))
 
 	if cfg.ReusableIngesterPushWorkers > 0 {
 		wp := concurrency.NewReusableGoroutinesPool(cfg.ReusableIngesterPushWorkers)
@@ -885,7 +891,6 @@ func (d *Distributor) running(ctx context.Context) error {
 }
 
 func (d *Distributor) cleanupInactiveUser(userID string) {
-	d.ingestionRateLimiter.RemoveStaleEntries(time.Now().Add(-24 * time.Hour))
 	d.ingestersRing.CleanupShuffleShardCache(userID)
 
 	d.HATracker.cleanupHATrackerMetricsForUser(userID)
@@ -1619,14 +1624,14 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			return err
 		}
 
-		fullTenantID := md.WithTenant(userID)
+		limitsKey := md.WithTenant(userID)
 
 		now := mtime.Now()
 		d.receivedRequests.WithLabelValues(userID).Add(1)
 		d.activeUsers.UpdateUserTimestamp(userID, now)
 
 		pushReq.group = d.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(d.limits, userID, req.Timeseries), now)
-		cfg := newValidationConfig(userID, fullTenantID, d.limits)
+		cfg := newValidationConfig(userID, limitsKey, d.limits)
 
 		// A WriteRequest can only contain series or metadata but not both. This might change in the future.
 		validatedMetadata := 0
@@ -1787,7 +1792,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		}
 
 		totalN := validatedSamples + validatedExemplars + validatedMetadata
-		if !d.ingestionRateLimiter.AllowN(now, fullTenantID, totalN) {
+		if !d.ingestionRateLimiter.AllowN(now, limitsKey, totalN) {
 			if len(req.Timeseries) > 0 {
 				d.costAttributionMgr.SampleTracker(userID).IncrementDiscardedSamples(req.Timeseries[0].Labels, float64(validatedSamples), reasonRateLimited, now)
 			}
@@ -1796,12 +1801,12 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(validatedMetadata))
 
 			// Determine whether limiter burst size was exceeded.
-			limiterBurst := d.ingestionRateLimiter.Burst(now, fullTenantID)
+			limiterBurst := d.ingestionRateLimiter.Burst(now, limitsKey)
 			if totalN > limiterBurst {
 				return newIngestionBurstSizeLimitedError(limiterBurst, totalN)
 			}
 
-			return newIngestionRateLimitedError(d.limits.IngestionRate(fullTenantID), limiterBurst)
+			return newIngestionRateLimitedError(d.limits.IngestionRate(limitsKey), limiterBurst)
 		}
 
 		// totalN included samples, exemplars and metadata. Ingester follows this pattern when computing its ingestion rate.
@@ -1872,12 +1877,12 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 			return next(ctx, pushReq)
 		}
 
-		tenantID, metadata, err := tenant.ExtractWithMetadata(ctx)
+		userID, metadata, err := tenant.ExtractWithMetadata(ctx)
 		if err != nil {
 			return err
 		}
 
-		fullTenantID := metadata.WithTenant(tenantID)
+		limitsKey := metadata.WithTenant(userID)
 
 		// Generate the stable hash of each series.
 		var (
@@ -1894,18 +1899,18 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 
 		// Track the series and check if anyone should be rejected because over the limit.
 		// For users that are far from their limits, we can do this asynchronously.
-		if d.usageTrackerClient.CanTrackAsync(fullTenantID) {
+		if d.usageTrackerClient.CanTrackAsync(limitsKey) {
 			// User is far from limit.
 			// We can perform the track call in parallel with the metrics ingestion hoping that no series would be rejected.
 
-			d.asyncUsageTrackerCalls.WithLabelValues(tenantID).Inc()
+			d.asyncUsageTrackerCalls.WithLabelValues(userID).Inc()
 
 			if d.cfg.UsageTrackerClient.UseBatchedTracking {
-				if err := d.usageTrackerClient.TrackSeriesAsync(ctx, fullTenantID, seriesHashes); err != nil {
-					level.Error(d.log).Log("msg", "failed to track series asynchronously", "err", err, "user", fullTenantID, "series", len(seriesHashes))
+				if err := d.usageTrackerClient.TrackSeriesAsync(ctx, limitsKey, seriesHashes); err != nil {
+					level.Error(d.log).Log("msg", "failed to track series asynchronously", "err", err, "user", limitsKey, "series", len(seriesHashes))
 				}
 			} else {
-				cleanup := d.parallelUsageTrackerClientTrackSeriesCall(ctx, fullTenantID, tenantID, seriesHashes)
+				cleanup := d.parallelUsageTrackerClientTrackSeriesCall(ctx, limitsKey, userID, seriesHashes)
 				pushReq.AddCleanup(cleanup)
 			}
 
@@ -1913,19 +1918,19 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 		}
 
 		// User is close to limit, track synchronously.
-		rejectedHashes, err := d.usageTrackerClient.TrackSeries(ctx, fullTenantID, seriesHashes)
+		rejectedHashes, err := d.usageTrackerClient.TrackSeries(ctx, limitsKey, seriesHashes)
 		if err != nil {
 			return errors.Wrap(err, "failed to enforce max series limit")
 		}
 
 		if len(rejectedHashes) > 0 {
 			discardedSamples := filterOutRejectedSeries(req, seriesHashes, rejectedHashes)
-			d.discardedSamplesPerUserSeriesLimit.WithLabelValues(tenantID, pushReq.group).Add(float64(discardedSamples))
+			d.discardedSamplesPerUserSeriesLimit.WithLabelValues(userID, pushReq.group).Add(float64(discardedSamples))
 		}
 
 		if len(req.Timeseries) == 0 {
 			// All series have been rejected, no need to talk to ingesters.
-			return newActiveSeriesLimitedError(totalTimeseries, len(rejectedHashes), d.limits.MaxActiveOrGlobalSeriesPerUser(fullTenantID))
+			return newActiveSeriesLimitedError(totalTimeseries, len(rejectedHashes), d.limits.MaxActiveOrGlobalSeriesPerUser(limitsKey))
 		}
 
 		// If there's an error coming from the ingesters, prioritize that one.
@@ -1934,26 +1939,26 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 		}
 
 		if len(rejectedHashes) > 0 {
-			return newActiveSeriesLimitedError(totalTimeseries, len(rejectedHashes), d.limits.MaxActiveOrGlobalSeriesPerUser(fullTenantID))
+			return newActiveSeriesLimitedError(totalTimeseries, len(rejectedHashes), d.limits.MaxActiveOrGlobalSeriesPerUser(limitsKey))
 		}
 
 		return nil
 	})
 }
 
-func (d *Distributor) parallelUsageTrackerClientTrackSeriesCall(ctx context.Context, userID, metricUserID string, seriesHashes []uint64) func() {
+func (d *Distributor) parallelUsageTrackerClientTrackSeriesCall(ctx context.Context, limitsKey, userID string, seriesHashes []uint64) func() {
 	done := make(chan struct{}, 1)
 	t0 := time.Now()
 	asyncTrackingCtx, cancelAsyncTracking := context.WithCancelCause(ctx)
 	go func() {
 		defer close(done)
-		rejected, err := d.usageTrackerClient.TrackSeries(asyncTrackingCtx, userID, seriesHashes)
+		rejected, err := d.usageTrackerClient.TrackSeries(asyncTrackingCtx, limitsKey, seriesHashes)
 		if err != nil {
-			level.Error(d.log).Log("msg", "failed to track series asynchronously", "err", err, "user", userID, "series", len(seriesHashes))
+			level.Error(d.log).Log("msg", "failed to track series asynchronously", "err", err, "user", limitsKey, "series", len(seriesHashes))
 		}
 		if len(rejected) > 0 {
-			level.Warn(d.log).Log("msg", "ingested some series that should have been rejected, because they were tracked asynchronously", "user", userID, "rejected", len(rejected))
-			d.asyncUsageTrackerCallsWithRejectedSeries.WithLabelValues(metricUserID).Inc()
+			level.Warn(d.log).Log("msg", "ingested some series that should have been rejected, because they were tracked asynchronously", "user", limitsKey, "rejected", len(rejected))
+			d.asyncUsageTrackerCallsWithRejectedSeries.WithLabelValues(userID).Inc()
 		}
 	}()
 
@@ -1971,18 +1976,16 @@ func (d *Distributor) parallelUsageTrackerClientTrackSeriesCall(ctx context.Cont
 
 		select {
 		case <-done:
-			level.Info(d.log).Log("msg", "async tracking call took longer than ingestion", "user", userID, "series", len(seriesHashes), "tracking_time", time.Since(t0), "time_since_cleanup", time.Since(tCleanup))
+			level.Info(d.log).Log("msg", "async tracking call took longer than ingestion", "user", limitsKey, "series", len(seriesHashes), "tracking_time", time.Since(t0), "time_since_cleanup", time.Since(tCleanup))
 		case <-time.After(d.cfg.UsageTrackerClient.MaxTimeToWaitForAsyncTrackingResponseAfterIngestion):
-			level.Warn(d.log).Log("msg", "async tracking call took too long, canceling", "user", userID, "series", len(seriesHashes), "tracking_time", time.Since(t0), "time_since_cleanup", time.Since(tCleanup))
+			level.Warn(d.log).Log("msg", "async tracking call took too long, canceling", "user", limitsKey, "series", len(seriesHashes), "tracking_time", time.Since(t0), "time_since_cleanup", time.Since(tCleanup))
 			cancelAsyncTracking(errors.New("async tracking call took too long"))
 		}
 	}
 }
 
 func (d *Distributor) ObserveAsyncUsageTrackerRejection(userID string) {
-	if tenantID, _, err := tenant.ParseWithMetadata(userID); err == nil {
-		userID = tenantID
-	}
+	userID = tenant.TrimMetadata(userID)
 	d.asyncUsageTrackerCallsWithRejectedSeries.WithLabelValues(userID).Inc()
 }
 
@@ -3896,4 +3899,14 @@ func (d *Distributor) HealthyInstancesInZoneCount() int {
 // ZonesCount implements the ReadLifecycler interface.
 func (d *Distributor) ZonesCount() int {
 	return int(d.ringZonesCount.Load())
+}
+
+func cleanupIngestionRateLimiter(l *limiter.RateLimiter) services.Service {
+	cleanup := func(serviceContext context.Context) error {
+		l.RemoveStaleEntries(time.Now().Add(-ingestionRateLimitStalenessDuration))
+		return nil
+	}
+	s := services.NewTimerService(ingestionRateLimitCleanupInterval, nil, cleanup, nil)
+	s = s.WithName("ingestion rate limit cleanup")
+	return s
 }

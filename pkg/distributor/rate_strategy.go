@@ -51,8 +51,8 @@ func newGlobalRateStrategyWithBurstFactor(limits *validation.Overrides, ring Rea
 	}
 }
 
-func (s *globalIngestionStrategyWithBurstFactor) Limit(tenantID string) float64 {
-	limit := s.limits.IngestionRate(tenantID)
+func (s *globalIngestionStrategyWithBurstFactor) Limit(limitsKey string) float64 {
+	limit := s.limits.IngestionRate(limitsKey)
 	var numDistributorsInZone, ringZones int
 	if s.zoneAware {
 		numDistributorsInZone = s.ring.HealthyInstancesInZoneCount()
@@ -67,10 +67,10 @@ func (s *globalIngestionStrategyWithBurstFactor) Limit(tenantID string) float64 
 	return limit / float64(numDistributorsInZone*ringZones)
 }
 
-func (s *globalIngestionStrategyWithBurstFactor) Burst(tenantID string) int {
-	burstFactor := s.limits.IngestionBurstFactor(tenantID)
+func (s *globalIngestionStrategyWithBurstFactor) Burst(limitsKey string) int {
+	burstFactor := s.limits.IngestionBurstFactor(limitsKey)
 	if burstFactor > 0 {
-		limit := s.Limit(tenantID)
+		limit := s.Limit(limitsKey)
 		burstByFactor := burstFactor * limit
 		// If the ingestion rate * burst factor is too large we want to set it to the max possible burst value
 		if burstByFactor >= math.MaxInt {
@@ -78,7 +78,7 @@ func (s *globalIngestionStrategyWithBurstFactor) Burst(tenantID string) int {
 		}
 		return int(math.Ceil(burstByFactor))
 	}
-	return s.limits.IngestionBurstSize(tenantID)
+	return s.limits.IngestionBurstSize(limitsKey)
 }
 
 type globalStrategy struct {
