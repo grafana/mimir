@@ -263,8 +263,6 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of aggregation groups in Alertmanager's dispatcher that a tenant can have. Each active aggregation group uses single goroutine. When the limit is reached, dispatcher will not dispatch alerts that belong to additional aggregation groups, but existing groups will keep working properly. 0 = no limit.
   -alertmanager.max-grafana-config-size-bytes value
     	Maximum size of the Grafana Alertmanager configuration for a tenant. 0 = no limit.
-  -alertmanager.max-grafana-state-size-bytes value
-    	Maximum size of the Grafana Alertmanager state for a tenant. 0 = no limit.
   -alertmanager.max-recv-msg-size int
     	Maximum size (bytes) of an accepted HTTP request body. (default 104857600)
   -alertmanager.max-silence-size-bytes int
@@ -1459,6 +1457,8 @@ Usage of ./cmd/mimir/mimir:
     	True to enable the ingestion via object storage.
   -ingest-storage.ingestion-partition-tenant-shard-size int
     	[experimental] The number of partitions a tenant's data should be sharded to when using the ingest storage. Tenants are sharded across partitions using shuffle-sharding. 0 disables shuffle sharding and tenant is sharded across all partitions.
+  -ingest-storage.ingestion-partition-tenant-write-shard-size int
+    	[experimental] The maximum number of partitions a tenant's data should be written to when using the ingest storage. When set to a value > 0 and less than -ingest-storage.ingestion-partition-tenant-shard-size, writes use fewer partitions while reads continue using the full shard size. This allows safely reducing the shard size without losing query coverage during the migration. 0 means the write shard size equals the read shard size.
   -ingest-storage.kafka.address comma-separated-list-of-strings
     	The Kafka seed broker address, or a comma-separated list of seed broker addresses.
   -ingest-storage.kafka.auto-create-topic-default-partitions int
@@ -1510,15 +1510,29 @@ Usage of ./cmd/mimir/mimir:
   -ingest-storage.kafka.producer-record-version int
     	[experimental] The record version that this producer sends.
   -ingest-storage.kafka.sasl-mechanism string
-    	The SASL mechanism used to authenticate to Kafka. Supported values: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER. For backwards-compatibility, PLAIN with no username nor password disables SASL. (default "PLAIN")
+    	The SASL mechanism used to authenticate to Kafka. Supported values: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER, AWS_MSK_IAM. For backwards-compatibility, PLAIN with no username nor password disables SASL. (default "PLAIN")
+  -ingest-storage.kafka.sasl-msk-iam-access-key string
+    	The AWS access key ID to authenticate to Kafka using SASL AWS_MSK_IAM. Consider ingest-storage.kafka.sasl-msk-iam-file-path instead.
+  -ingest-storage.kafka.sasl-msk-iam-file-path string
+    	Path to a file containing AWS credentials to authenticate to Kafka using SASL AWS_MSK_IAM. Mutually exclusive with ingest-storage.kafka.sasl-msk-iam-http-socket-path. The file is read anew on every reauthentication, so it can be updated with fresh credentials. The file must be in JSON format, adhering to this JSON schema: {"type": "object", "required": ["AccessKey", "SecretKey"], "properties": {"AccessKey": {"type": "string"}, "SecretKey": {"type": "string"}, "SessionToken": {"type": "string"}, "UserAgent": {"type": "string"}}}
+  -ingest-storage.kafka.sasl-msk-iam-http-socket-path string
+    	Path to a Unix domain socket to fetch AWS credentials from via HTTP. Mutually exclusive with ingest-storage.kafka.sasl-msk-iam-file-path. On every authentication or reauthentication, an HTTP GET / request is made to the socket and the response body is read as JSON. The JSON schema is the same as for ingest-storage.kafka.sasl-msk-iam-file-path.
+  -ingest-storage.kafka.sasl-msk-iam-http-socket-timeout duration
+    	Timeout for requesting AWS credentials from the HTTP socket. Effective when ingest-storage.kafka.sasl-msk-iam-http-socket-path is set. (default 10s)
+  -ingest-storage.kafka.sasl-msk-iam-secret-key string
+    	The AWS secret access key to authenticate to Kafka using SASL AWS_MSK_IAM. Consider ingest-storage.kafka.sasl-msk-iam-file-path instead.
+  -ingest-storage.kafka.sasl-msk-iam-session-token string
+    	Optional AWS session token to authenticate to Kafka using SASL AWS_MSK_IAM.
+  -ingest-storage.kafka.sasl-msk-iam-user-agent string
+    	Optional user agent to use when authenticating to Kafka using SASL AWS_MSK_IAM.
   -ingest-storage.kafka.sasl-oauthbearer-extensions value
     	Optional additional OAuth extensions to include when authenticating to Kafka using SASL OAUTHBEARER as a JSON object. (default {})
   -ingest-storage.kafka.sasl-oauthbearer-file-path string
-    	Path to a file containing an OAuth token to authenticate to Kafka. The file is read anew on every reauthentication, so it can be updated with fresh tokens. The file must be in JSON format, adhering to this JSON schema: {"type": "object", "required": ["token"], "properties": {"token": {"type": "string"}, "zid": {"type": "string"}, "extensions": {"type": "object", "additionalProperties": {"type": "string"}}}}
+    	Path to a file containing an OAuth token to authenticate to Kafka. Mutually exclusive with ingest-storage.kafka.sasl-oauthbearer-http-socket-path. The file is read anew on every reauthentication, so it can be updated with fresh tokens. The file must be in JSON format, adhering to this JSON schema: {"type": "object", "required": ["token"], "properties": {"token": {"type": "string"}, "zid": {"type": "string"}, "extensions": {"type": "object", "additionalProperties": {"type": "string"}}}
   -ingest-storage.kafka.sasl-oauthbearer-http-socket-path string
-    	Path to a Unix domain socket to fetch an OAuth token from via HTTP. On every authentication or reauthentication, an HTTP GET / request is made to the socket and the response body is read as JSON. The JSON schema is the same as for ingest-storage.kafka.sasl-oauthbearer-file-path.
+    	Path to a Unix domain socket to fetch an OAuth token from via HTTP. Mutually exclusive with ingest-storage.kafka.sasl-oauthbearer-file-path. On every authentication or reauthentication, an HTTP GET / request is made to the socket and the response body is read as JSON. The JSON schema is the same as for ingest-storage.kafka.sasl-oauthbearer-file-path.
   -ingest-storage.kafka.sasl-oauthbearer-http-socket-timeout duration
-    	Timeout for requesting the token from the HTTP socket. (default 10s)
+    	Timeout for requesting the token from the HTTP socket. Effective when ingest-storage.kafka.sasl-oauthbearer-http-socket-path is set. (default 10s)
   -ingest-storage.kafka.sasl-oauthbearer-token string
     	The OAuth token to use to authenticate to Kafka. Consider ingest-storage.kafka.sasl-oauthbearer-file-path instead.
   -ingest-storage.kafka.sasl-oauthbearer-zid string
@@ -2126,7 +2140,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.enable-query-engine-fallback
     	[experimental] If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine. (default true)
   -querier.filter-queryables-enabled
-    	If set to true, the header 'X-Filter-Queryables' can be used to filter down the list of queryables that shall be used. This is useful to test and monitor single queryables in isolation.
+    	[deprecated] If set to true, the header 'X-Filter-Queryables' can be used to filter down the list of queryables that shall be used. This is useful to test and monitor single queryables in isolation. Deprecated: has no effect.
   -querier.frontend-client.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -querier.frontend-client.backoff-min-period duration

@@ -27,7 +27,7 @@ type TenantDiscoverer struct {
 	allowedTenants                 *util.AllowList
 	bkt                            objstore.Bucket
 	jpm                            JobPersistenceManager
-	userDiscoveryBackoff           backoff.Config
+	tenantDiscoveryBackoff         backoff.Config
 	rotator                        *Rotator
 	maxLeases                      int
 	repeatedFailureReportThreshold int
@@ -49,7 +49,7 @@ func NewTenantDiscoverer(
 		allowedTenants:                 allowList,
 		bkt:                            bkt,
 		jpm:                            jpm,
-		userDiscoveryBackoff:           cfg.UserDiscoveryBackoff,
+		tenantDiscoveryBackoff:         cfg.TenantDiscoveryBackoff,
 		rotator:                        rotator,
 		maxLeases:                      cfg.MaxLeases,
 		repeatedFailureReportThreshold: cfg.RepeatedFailureReportThreshold,
@@ -60,15 +60,15 @@ func NewTenantDiscoverer(
 }
 
 // RecoverFrom populates the tenant discoverer with known tenants from recovered state.
-// Must be called before the service is started.
 func (s *TenantDiscoverer) RecoverFrom(jobTrackers map[string]*JobTracker) {
 	for tenant := range jobTrackers {
 		s.knownTenants[tenant] = struct{}{}
 	}
 }
 
+// start starts the tenant discovery service. It is expected that RecoverFrom is called before starting the service.
 func (s *TenantDiscoverer) start(ctx context.Context) error {
-	b := backoff.New(ctx, s.userDiscoveryBackoff)
+	b := backoff.New(ctx, s.tenantDiscoveryBackoff)
 	var err error
 	for b.Ongoing() {
 		err = s.discoverTenants(ctx)

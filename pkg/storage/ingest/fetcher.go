@@ -21,7 +21,6 @@ import (
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
-	"github.com/twmb/franz-go/plugin/kotel"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 
@@ -272,7 +271,7 @@ type ConcurrentFetchers struct {
 	topicID     [16]byte
 	topicName   string
 	metrics     *ReaderMetrics
-	tracer      *kotel.Tracer
+	tracer      *sampledOnlyTracer
 
 	minBytesWaitTime time.Duration
 
@@ -365,7 +364,7 @@ func NewConcurrentFetchers(
 		rangeErrorPolicy:        rangeErrorPolicy,
 		trackCompressedBytes:    trackCompressedBytes,
 		maxBufferedBytesLimit:   maxBufferedBytesLimit,
-		tracer:                  recordsTracer(),
+		tracer:                  newSampledOnlyTracer(),
 		orderedFetches:          make(chan fetchResult),
 		done:                    make(chan struct{}),
 		fetchBackoffConfig:      fetchBackoffConfig,

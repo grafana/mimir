@@ -74,7 +74,6 @@ const (
 	QueryIngestersWithinFlag                    = "querier.query-ingesters-within"
 	EnableDelayedNameRemovalFlag                = "querier.enable-delayed-name-removal"
 	AlertmanagerMaxGrafanaConfigSizeFlag        = "alertmanager.max-grafana-config-size-bytes"
-	AlertmanagerMaxGrafanaStateSizeFlag         = "alertmanager.max-grafana-state-size-bytes"
 
 	// MinCompactorPartialBlockDeletionDelay is the minimum partial blocks deletion delay that can be configured in Mimir.
 	MinCompactorPartialBlockDeletionDelay = 4 * time.Hour
@@ -296,7 +295,6 @@ type Limits struct {
 
 	AlertmanagerMaxGrafanaConfigSizeBytes      flagext.Bytes          `yaml:"alertmanager_max_grafana_config_size_bytes" json:"alertmanager_max_grafana_config_size_bytes"`
 	AlertmanagerMaxConfigSizeBytes             int                    `yaml:"alertmanager_max_config_size_bytes" json:"alertmanager_max_config_size_bytes"`
-	AlertmanagerMaxGrafanaStateSizeBytes       flagext.Bytes          `yaml:"alertmanager_max_grafana_state_size_bytes" json:"alertmanager_max_grafana_state_size_bytes"`
 	AlertmanagerMaxSilencesCount               int                    `yaml:"alertmanager_max_silences_count" json:"alertmanager_max_silences_count"`
 	AlertmanagerMaxSilenceSizeBytes            int                    `yaml:"alertmanager_max_silence_size_bytes" json:"alertmanager_max_silence_size_bytes"`
 	AlertmanagerMaxTemplatesCount              int                    `yaml:"alertmanager_max_templates_count" json:"alertmanager_max_templates_count"`
@@ -321,8 +319,9 @@ type Limits struct {
 	OTelLabelNamePreserveMultipleUnderscores bool                         `yaml:"otel_label_name_preserve_multiple_underscores" json:"otel_label_name_preserve_multiple_underscores" category:"advanced"`
 
 	// Ingest storage.
-	IngestStorageReadConsistency       string `yaml:"ingest_storage_read_consistency" json:"ingest_storage_read_consistency" category:"experimental"`
-	IngestionPartitionsTenantShardSize int    `yaml:"ingestion_partitions_tenant_shard_size" json:"ingestion_partitions_tenant_shard_size" category:"experimental"`
+	IngestStorageReadConsistency            string `yaml:"ingest_storage_read_consistency" json:"ingest_storage_read_consistency" category:"experimental"`
+	IngestionPartitionsTenantShardSize      int    `yaml:"ingestion_partitions_tenant_shard_size" json:"ingestion_partitions_tenant_shard_size" category:"experimental"`
+	IngestionPartitionsTenantWriteShardSize int    `yaml:"ingestion_partitions_tenant_write_shard_size" json:"ingestion_partitions_tenant_write_shard_size" category:"experimental"`
 
 	// NameValidationScheme is the validation scheme for metric and label names.
 	NameValidationScheme model.ValidationScheme `yaml:"name_validation_scheme" json:"name_validation_scheme" category:"experimental"`
@@ -513,8 +512,6 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	_ = l.AlertmanagerMaxGrafanaConfigSizeBytes.Set("0")
 	f.Var(&l.AlertmanagerMaxGrafanaConfigSizeBytes, AlertmanagerMaxGrafanaConfigSizeFlag, "Maximum size of the Grafana Alertmanager configuration for a tenant. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxConfigSizeBytes, "alertmanager.max-config-size-bytes", 0, "Maximum size of the Alertmanager configuration for a tenant. 0 = no limit.")
-	_ = l.AlertmanagerMaxGrafanaStateSizeBytes.Set("0")
-	f.Var(&l.AlertmanagerMaxGrafanaStateSizeBytes, AlertmanagerMaxGrafanaStateSizeFlag, "Maximum size of the Grafana Alertmanager state for a tenant. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxSilencesCount, "alertmanager.max-silences-count", 0, "Maximum number of silences, including expired silences, that a tenant can have at once. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxSilenceSizeBytes, "alertmanager.max-silence-size-bytes", 0, "Maximum silence size in bytes. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxTemplatesCount, "alertmanager.max-templates-count", 0, "Maximum number of templates in tenant's Alertmanager configuration uploaded via Alertmanager API. 0 = no limit.")
@@ -530,6 +527,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	// Ingest storage.
 	f.StringVar(&l.IngestStorageReadConsistency, "ingest-storage.read-consistency", api.ReadConsistencyEventual, fmt.Sprintf("The default consistency level to enforce for queries when using the ingest storage. Supports values: %s.", strings.Join(api.ReadConsistencies, ", ")))
 	f.IntVar(&l.IngestionPartitionsTenantShardSize, "ingest-storage.ingestion-partition-tenant-shard-size", 0, "The number of partitions a tenant's data should be sharded to when using the ingest storage. Tenants are sharded across partitions using shuffle-sharding. 0 disables shuffle sharding and tenant is sharded across all partitions.")
+	f.IntVar(&l.IngestionPartitionsTenantWriteShardSize, "ingest-storage.ingestion-partition-tenant-write-shard-size", 0, "The maximum number of partitions a tenant's data should be written to when using the ingest storage. When set to a value > 0 and less than -ingest-storage.ingestion-partition-tenant-shard-size, writes use fewer partitions while reads continue using the full shard size. This allows safely reducing the shard size without losing query coverage during the migration. 0 means the write shard size equals the read shard size.")
 
 	// Ensure the pointer holder is initialized.
 	l.activeSeriesMergedCustomTrackersConfig = atomic.NewPointer[asmodel.CustomTrackersConfig](nil)
@@ -1447,10 +1445,6 @@ func (o *Overrides) NotificationBurstSize(user string, integration string) int {
 	return int(l)
 }
 
-func (o *Overrides) AlertmanagerMaxGrafanaStateSize(userID string) int {
-	return int(o.getOverridesForUser(userID).AlertmanagerMaxGrafanaStateSizeBytes)
-}
-
 func (o *Overrides) AlertmanagerMaxGrafanaConfigSize(userID string) int {
 	return int(o.getOverridesForUser(userID).AlertmanagerMaxGrafanaConfigSizeBytes)
 }
@@ -1614,6 +1608,27 @@ func (o *Overrides) IngestStorageReadConsistency(userID string) string {
 
 func (o *Overrides) IngestionPartitionsTenantShardSize(userID string) int {
 	return o.getOverridesForUser(userID).IngestionPartitionsTenantShardSize
+}
+
+func (o *Overrides) IngestionPartitionsTenantWriteShardSize(userID string) int {
+	return o.getOverridesForUser(userID).IngestionPartitionsTenantWriteShardSize
+}
+
+// EffectiveIngestionPartitionsTenantWriteShardSize returns the effective shard size for writes.
+// When IngestionPartitionsTenantWriteShardSize is set (> 0), it is used for writes, clamped to the read shard size.
+// When unset (0), the regular IngestionPartitionsTenantShardSize is used.
+func (o *Overrides) EffectiveIngestionPartitionsTenantWriteShardSize(userID string) int {
+	uo := o.getOverridesForUser(userID)
+	readSize := uo.IngestionPartitionsTenantShardSize
+	writeSize := uo.IngestionPartitionsTenantWriteShardSize
+
+	if writeSize <= 0 {
+		return readSize
+	}
+	if readSize > 0 && writeSize > readSize {
+		return readSize
+	}
+	return writeSize
 }
 
 func (o *Overrides) SubquerySpinOffEnabled(userID string) bool {

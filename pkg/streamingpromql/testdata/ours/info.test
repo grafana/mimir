@@ -61,6 +61,19 @@ eval range from 0m to 2m step 1m info(metric, {data=~".+", yet_another_data=~".+
 
 clear
 
+# When a data label matcher matches the empty string and an inner series has no matching
+# target_info, the series should still be returned unchanged.
+load 1m
+  metric{instance="a", job="1", label="value"} 0 1 2
+  metric{instance="b", job="2", label="value"} 3 4 5
+  target_info{instance="a", job="1", data="info"} 1 1 1
+
+eval range from 0m to 2m step 1m info(metric, {data=~".*"})
+  metric{data="info", instance="a", job="1", label="value"} 0 1 2
+  metric{instance="b", job="2", label="value"} 3 4 5
+
+clear
+
 load 1m
   metric{instance="a", job="1", label="value"} 0 1 2
   target_info{instance="a", job="1", data="info", another_data="another info"} 1 1 _

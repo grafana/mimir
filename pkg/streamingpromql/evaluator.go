@@ -372,6 +372,8 @@ func (e *Evaluator) Close() {
 	if e.cancel != nil {
 		e.cancel(errQueryClosed)
 	}
+
+	e.engine.inflightMemoryConsumptionTracker.Deregister(e.MemoryConsumptionTracker)
 }
 
 type EvaluationObserver interface {

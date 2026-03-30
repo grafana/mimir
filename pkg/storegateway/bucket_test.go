@@ -414,6 +414,46 @@ func TestBlockLabelNames(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, jNotFooLabelNames, names)
 	})
+
+	t.Run("series cache hit with pending matchers counts seriesProcessed", func(t *testing.T) {
+		// This test verifies that when series are loaded from the series-for-postings
+		// cache, seriesProcessed is still incremented. Without this, seriesProcessed can
+		// be less than seriesOmitted, causing the "series returned" metric to go negative.
+		b := newTestBucketBlock()
+		b.indexCache = &cacheNotStoringLabelNames{IndexCache: newInMemoryIndexCache(t)}
+
+		// Use a strategy that omits the j=foo matcher, making it a pending matcher.
+		// The pending matcher will filter out series with j!=foo, incrementing seriesOmitted.
+		strategy := &omitMatcherStrategy{omitMatcherString: `j="foo"`}
+
+		matchers := []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchRegexp, "i", ".+"),
+			labels.MustNewMatcher(labels.MatchEqual, "j", "foo"),
+		}
+
+		// First call: populates the series-for-postings cache.
+		stats1 := newSafeQueryStats()
+		_, err := blockLabelNames(context.Background(), b.indexReader(strategy), matchers, sl, 5000, log.NewNopLogger(), stats1)
+		require.NoError(t, err)
+
+		exportedStats1 := stats1.export()
+		require.Greater(t, exportedStats1.seriesProcessed, 0, "first call should process series")
+		require.Greater(t, exportedStats1.seriesOmitted, 0, "first call should omit series filtered by pending matcher j=foo")
+		require.GreaterOrEqual(t, exportedStats1.seriesProcessed, exportedStats1.seriesOmitted, "seriesProcessed must be >= seriesOmitted")
+
+		// Second call: hits the series-for-postings cache.
+		// The label names cache is disabled, so this goes through the series iterator.
+		stats2 := newSafeQueryStats()
+		_, err = blockLabelNames(context.Background(), b.indexReader(strategy), matchers, sl, 5000, log.NewNopLogger(), stats2)
+		require.NoError(t, err)
+
+		exportedStats2 := stats2.export()
+		require.Greater(t, exportedStats2.seriesProcessed, 0, "second call (cache hit) should still count series as processed")
+		require.Greater(t, exportedStats2.seriesOmitted, 0, "second call should omit series filtered by pending matcher j=foo")
+		require.GreaterOrEqual(t, exportedStats2.seriesProcessed, exportedStats2.seriesOmitted, "seriesProcessed must be >= seriesOmitted (cache hit path)")
+		require.Equal(t, exportedStats1.seriesProcessed, exportedStats2.seriesProcessed, "seriesProcessed should match between cache miss and cache hit")
+		require.Equal(t, exportedStats1.seriesOmitted, exportedStats2.seriesOmitted, "seriesOmitted should match between cache miss and cache hit")
+	})
 }
 
 type cacheNotExpectingToStoreLabelNames struct {
@@ -423,6 +463,41 @@ type cacheNotExpectingToStoreLabelNames struct {
 
 func (c cacheNotExpectingToStoreLabelNames) StoreLabelNames(string, ulid.ULID, indexcache.LabelMatchersKey, []byte) {
 	c.t.Fatalf("StoreLabelNames should not be called")
+}
+
+// cacheNotStoringLabelNames wraps an IndexCache but discards label name cache entries.
+// This forces blockLabelNames to go through the series iterator path on subsequent calls,
+// allowing the series-for-postings cache to be exercised.
+type cacheNotStoringLabelNames struct {
+	indexcache.IndexCache
+}
+
+func (c *cacheNotStoringLabelNames) StoreLabelNames(string, ulid.ULID, indexcache.LabelMatchersKey, []byte) {
+}
+func (c *cacheNotStoringLabelNames) FetchLabelNames(context.Context, string, ulid.ULID, indexcache.LabelMatchersKey) ([]byte, bool) {
+	return nil, false
+}
+
+// omitMatcherStrategy is a postings selection strategy that selects all posting groups
+// except those whose matcher string matches omitMatcherString. The omitted groups become
+// pending matchers that are applied after series loading.
+type omitMatcherStrategy struct {
+	omitMatcherString string
+}
+
+func (s *omitMatcherStrategy) name() string {
+	return "omit"
+}
+
+func (s *omitMatcherStrategy) selectPostings(groups []postingGroup) (selected, omitted []postingGroup) {
+	for _, g := range groups {
+		if g.matcher != nil && g.matcher.String() == s.omitMatcherString {
+			omitted = append(omitted, g)
+		} else {
+			selected = append(selected, g)
+		}
+	}
+	return selected, omitted
 }
 
 func TestBlockLabelValues(t *testing.T) {

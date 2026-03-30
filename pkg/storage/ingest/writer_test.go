@@ -23,6 +23,9 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/twmb/franz-go/plugin/kprom"
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -1376,6 +1379,70 @@ func runAsyncAfter(wg *sync.WaitGroup, waitFor chan struct{}, fn func()) {
 		<-waitFor
 		fn()
 	}()
+}
+
+func BenchmarkWriter_WriteSync(b *testing.B) {
+	const (
+		topicName     = "bench"
+		numPartitions = 32
+		tenantID      = "user-1"
+	)
+
+	// Set up a real TracerProvider with a parent-based sampler.
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.TraceIDRatioBased(1.0))),
+	)
+	defer func() { _ = tp.Shutdown(context.Background()) }()
+	otel.SetTracerProvider(tp)
+
+	tr := tp.Tracer("bench")
+
+	// Build a sampled and an unsampled context.
+	sampledCtx, _ := tr.Start(context.Background(), "sampled-request")
+	unsampledCtx := trace.ContextWithSpanContext(context.Background(), trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    trace.TraceID{1},
+		SpanID:     trace.SpanID{1},
+		TraceFlags: 0, // not sampled
+		Remote:     true,
+	}))
+
+	// Create a fake Kafka cluster and a Writer.
+	_, clusterAddr := testkafka.CreateCluster(b, numPartitions, topicName)
+	cfg := createTestKafkaConfig(clusterAddr, topicName)
+	reg := prometheus.NewPedanticRegistry()
+
+	writer := NewWriter(cfg, test.NewTestingLogger(b), reg)
+	require.NoError(b, services.StartAndAwaitRunning(context.Background(), writer))
+	b.Cleanup(func() {
+		require.NoError(b, services.StopAndAwaitTerminated(context.Background(), writer))
+	})
+
+	req := &mimirpb.WriteRequest{
+		Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")},
+		Source:     mimirpb.API,
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	// Run from many concurrent goroutines to simulate the distributor's
+	// concurrent request handling, where each push runs in its own goroutine.
+	b.RunParallel(func(pb *testing.PB) {
+		n := 0
+		for pb.Next() {
+			// 1% sampled, 99% unsampled.
+			ctx := unsampledCtx
+			if n%100 == 0 {
+				ctx = sampledCtx
+			}
+			n++
+
+			partitionID := int32(n % numPartitions)
+			if err := writer.WriteSync(ctx, partitionID, tenantID, req); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 }
 
 func createTestKafkaConfig(clusterAddr, topicName string) KafkaConfig {

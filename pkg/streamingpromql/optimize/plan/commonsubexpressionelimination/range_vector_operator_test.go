@@ -1090,6 +1090,10 @@ func (t *testRangeVectorOperator) Finalize(_ context.Context) error {
 	return nil
 }
 
+func (t *testRangeVectorOperator) Stats(_ context.Context) (*types.OperatorEvaluationStats, error) {
+	panic("not implemented")
+}
+
 func (t *testRangeVectorOperator) Close() {
 	t.closed = true
 }
@@ -1188,6 +1192,10 @@ func (o *failingRangeVectorOperator) Close() {
 
 	o.histograms = nil
 	o.histogramsView = nil
+}
+
+func (o *failingRangeVectorOperator) Stats(_ context.Context) (*types.OperatorEvaluationStats, error) {
+	panic("not implemented")
 }
 
 func requireNoMemoryConsumption(t *testing.T, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {

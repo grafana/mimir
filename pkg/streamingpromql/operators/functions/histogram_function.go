@@ -559,6 +559,10 @@ func (h *HistogramFunction) Finalize(ctx context.Context) error {
 	return h.inner.Finalize(ctx)
 }
 
+func (h *HistogramFunction) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return types.CombineStats[types.StatsProvider](ctx, h.f, h.inner)
+}
+
 func (h *HistogramFunction) Close() {
 	h.inner.Close()
 	h.f.Close()
@@ -593,6 +597,7 @@ type histogramFunction interface {
 	Prepare(ctx context.Context, params *types.PrepareParams) error
 	AfterPrepare(ctx context.Context) error
 	Finalize(ctx context.Context) error
+	Stats(ctx context.Context) (*types.OperatorEvaluationStats, error)
 	Close()
 }
 
@@ -672,6 +677,10 @@ func (q *histogramQuantile) Finalize(ctx context.Context) error {
 	return q.phArg.Finalize(ctx)
 }
 
+func (q *histogramQuantile) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return q.phArg.Stats(ctx)
+}
+
 func (q *histogramQuantile) Close() {
 	q.phArg.Close()
 }
@@ -742,6 +751,10 @@ func (f *histogramFraction) Finalize(ctx context.Context) error {
 	}
 
 	return f.upperArg.Finalize(ctx)
+}
+
+func (f *histogramFraction) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return types.CombineStats(ctx, f.lowerArg, f.upperArg)
 }
 
 func (f *histogramFraction) Close() {

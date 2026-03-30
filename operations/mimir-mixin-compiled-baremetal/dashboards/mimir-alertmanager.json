@@ -1246,19 +1246,7 @@
                         "show": false
                      }
                   ]
-               }
-            ],
-            "repeat": null,
-            "repeatIteration": null,
-            "repeatRowId": null,
-            "showTitle": true,
-            "title": "Alertmanager Configuration Object Store (Alertmanager accesses)",
-            "titleSize": "h6"
-         },
-         {
-            "collapse": false,
-            "height": "250px",
-            "panels": [
+               },
                {
                   "datasource": "$datasource",
                   "fieldConfig": {
@@ -1652,7 +1640,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "",
+            "title": "Alertmanager Configuration Object Store (Alertmanager accesses)",
             "titleSize": "h6"
          },
          {

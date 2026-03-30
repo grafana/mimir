@@ -16,7 +16,7 @@ type schedulerMetrics struct {
 	pendingJobs         *prometheus.GaugeVec
 	activeJobs          *prometheus.GaugeVec
 	jobsCompleted       *prometheus.CounterVec
-	repeatedJobFailures *prometheus.CounterVec
+	repeatedJobFailures prometheus.Counter
 }
 
 func newSchedulerMetrics(reg prometheus.Registerer) *schedulerMetrics {
@@ -33,10 +33,10 @@ func newSchedulerMetrics(reg prometheus.Registerer) *schedulerMetrics {
 			Name: "cortex_compactor_scheduler_jobs_completed_total",
 			Help: "Total number of jobs successfully completed by workers.",
 		}, []string{"job_type"}),
-		repeatedJobFailures: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		repeatedJobFailures: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_compactor_scheduler_repeated_job_failures_total",
 			Help: "Total number of failures for jobs that exceeded the repeated failure threshold.",
-		}, []string{"user"}),
+		}),
 	}
 	// Pre-initialize job types labels so we get zeros instead of no data
 	m.jobsCompleted.WithLabelValues(jobTypePlan)
@@ -54,12 +54,11 @@ func (s *schedulerMetrics) newTrackerMetricsForTenant(tenant string) *trackerMet
 	return &trackerMetrics{
 		pendingJobs:         s.pendingJobs.WithLabelValues(tenant),
 		activeJobs:          s.activeJobs.WithLabelValues(tenant),
-		repeatedJobFailures: s.repeatedJobFailures.WithLabelValues(tenant),
+		repeatedJobFailures: s.repeatedJobFailures,
 	}
 }
 
 func (s *schedulerMetrics) deleteTenantMetrics(tenant string) {
 	s.pendingJobs.DeleteLabelValues(tenant)
 	s.activeJobs.DeleteLabelValues(tenant)
-	s.repeatedJobFailures.DeleteLabelValues(tenant)
 }

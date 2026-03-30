@@ -180,6 +180,10 @@ func (s *Sort) Finalize(ctx context.Context) error {
 	return s.inner.Finalize(ctx)
 }
 
+func (s *Sort) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return s.inner.Stats(ctx)
+}
+
 func (s *Sort) Close() {
 	s.inner.Close()
 }

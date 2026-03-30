@@ -99,9 +99,9 @@ type ingesterMetrics struct {
 	indexLookupComparisonOutcomes *prometheus.CounterVec
 
 	// Quantify how much the projections optimization helps reduce labels sent to queriers.
-	originalLabelBytes  prometheus.Counter
-	reducedLabelBytes   prometheus.Counter
-	increasedLabelBytes prometheus.Counter
+	originalLabelBytes prometheus.Counter
+	reducedLabelBytes  prometheus.Counter
+	skippedLabelBytes  prometheus.Counter
 }
 
 func newIngesterMetrics(
@@ -428,15 +428,15 @@ func newIngesterMetrics(
 
 		originalLabelBytes: promauto.With(r).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingester_projection_original_label_bytes_total",
-			Help: "Total number of bytes of labels transferred to queriers.",
+			Help: "Total number of bytes of original labels transferred to queriers when projections are used.",
 		}),
 		reducedLabelBytes: promauto.With(r).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingester_projection_reduced_label_bytes_total",
-			Help: "Total number of bytes of labels saved using projections.",
+			Help: "Total number of bytes of reduced labels transferred to queriers when projections are used.",
 		}),
-		increasedLabelBytes: promauto.With(r).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_ingester_projection_increased_label_bytes_total",
-			Help: "Total number of bytes of labels increased using projections.",
+		skippedLabelBytes: promauto.With(r).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingester_projection_skipped_label_bytes_total",
+			Help: "Total number of bytes of labels transferred to queriers when projections are not used.",
 		}),
 	}
 
