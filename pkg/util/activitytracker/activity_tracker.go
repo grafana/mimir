@@ -58,6 +58,9 @@ func NewActivityTracker(cfg Config, reg prometheus.Registerer) (*ActivityTracker
 		return nil, nil
 	}
 
+	// Load entries from the previous run before getMappedFile truncates the file.
+	prevEntries, _ := LoadUnfinishedEntries(cfg.Filepath)
+
 	filesize := cfg.MaxEntries * entrySize
 	file, fileAsBytes, err := getMappedFile(cfg.Filepath, filesize)
 	if err != nil {
@@ -87,24 +90,16 @@ func NewActivityTracker(cfg Config, reg prometheus.Registerer) (*ActivityTracker
 	})
 
 	tracker.loadedActivitiesOnStartup = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-		Name: "activity_tracker_unfinished_activities_loaded_count",
-		Help: "Number of unfinished activities loaded from the activity file on startup.",
+		Name: "activity_tracker_unfinished_activities_loaded",
+		Help: "Number of unfinished activities loaded from the activity tracker file on startup.",
 	})
+	tracker.loadedActivitiesOnStartup.Set(float64(len(prevEntries)))
 
 	for i := 0; i < cfg.MaxEntries; i++ {
 		tracker.freeIndexQueue <- i
 	}
 
 	return tracker, nil
-}
-
-// SetLoadedActivitiesOnStartup sets the metric tracking how many unfinished activities
-// were found in the activity file when the process started.
-func (t *ActivityTracker) SetLoadedActivitiesOnStartup(count int) {
-	if t == nil {
-		return
-	}
-	t.loadedActivitiesOnStartup.Set(float64(count))
 }
 
 // Timestamp is encoded as uint64 value returned by time.UnixNano.
