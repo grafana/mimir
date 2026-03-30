@@ -491,6 +491,7 @@ func (m *FunctionOverRangeVectorSplit[T]) Finalize(ctx context.Context) error {
 		"max_series_per_entry", m.cacheStats.MaxSeries,
 		"min_series_per_entry", m.cacheStats.MinSeries,
 		"total_series_across_entries", m.cacheStats.TotalSeries,
+		"filtered_out_series_across_entries", m.cacheStats.FilteredOutSeries,
 		"max_bytes_per_entry", m.cacheStats.MaxBytes,
 		"min_bytes_per_entry", m.cacheStats.MinBytes,
 		"total_cache_bytes", m.cacheStats.TotalBytes,
@@ -793,6 +794,7 @@ func (p *UncachedSplit[T]) Finalize(ctx context.Context, storeResultsInCache boo
 			seriesMetadata,
 			ann,
 			p.rangeResults[rangeIdx],
+			len(p.seriesMetadata),
 			p.parent.cacheStats,
 		); err != nil {
 			return err
