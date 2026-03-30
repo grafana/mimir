@@ -3038,11 +3038,6 @@ sharding_ring:
 # CLI flag: -alertmanager.enable-api
 [enable_api: <boolean> | default = true]
 
-# (experimental) Enable routes to support the migration and operation of the
-# Grafana Alertmanager.
-# CLI flag: -alertmanager.grafana-alertmanager-compatibility-enabled
-[grafana_alertmanager_compatibility_enabled: <boolean> | default = false]
-
 # (experimental) Duration to wait before shutting down an idle Alertmanager
 # using an unpromoted or default configuration when strict initialization is
 # enabled.
