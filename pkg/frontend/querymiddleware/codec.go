@@ -244,14 +244,6 @@ type formatter interface {
 	ContentType() v1.MIMEType
 }
 
-func encodeQueryResponse(f formatter, resp *PrometheusResponse) ([]byte, error) {
-	var buf bytes.Buffer
-	if err := f.EncodeQueryResponseTo(&buf, resp); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
-
 var jsonFormatterInstance = jsonFormatter{}
 
 var knownFormats = []formatter{
@@ -1142,8 +1134,9 @@ func (c Codec) EncodeMetricsQueryResponse(ctx context.Context, req *http.Request
 		Header: http.Header{
 			"Content-Type": []string{selectedContentType},
 		},
-		Body:       pr,
-		StatusCode: http.StatusOK,
+		Body:          pr,
+		StatusCode:    http.StatusOK,
+		ContentLength: -1, // unknown: body is streamed without buffering
 	}
 	return &resp, nil
 }
@@ -1216,6 +1209,7 @@ func (c Codec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Re
 		var encErr error
 		defer func() {
 			_ = pw.CloseWithError(encErr)
+			res.Close()
 			sp.End()
 		}()
 		cw := &countingWriter{w: pw}
@@ -1230,8 +1224,9 @@ func (c Codec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Re
 		Header: http.Header{
 			"Content-Type": []string{selectedContentType},
 		},
-		Body:       pr,
-		StatusCode: http.StatusOK,
+		Body:          pr,
+		StatusCode:    http.StatusOK,
+		ContentLength: -1, // unknown: body is streamed without buffering
 	}
 	return &resp, nil
 }

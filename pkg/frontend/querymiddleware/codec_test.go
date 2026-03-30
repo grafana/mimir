@@ -2258,3 +2258,11 @@ func TestContextHeaderPropagation(t *testing.T) {
 	headers = HeadersToPropagateFromContext(ctx)
 	require.Equal(t, map[string][]string{"Some-Header": {"Some-Value"}}, headers)
 }
+
+func encodeQueryResponse(f formatter, resp *PrometheusResponse) ([]byte, error) {
+	var buf bytes.Buffer
+	if err := f.EncodeQueryResponseTo(&buf, resp); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}

@@ -73,10 +73,8 @@ func jsonStreamEncode(w io.Writer, v interface{}) error {
 	defer json.ReturnStream(stream)
 	stream.WriteVal(v)
 
-	// Why add a newline?
-	// When the response body is streamed, many HTTP clients and intermediaries treat a newline as a "record separator"
-	// that signals the current chunk is complete and can be processed.
-	// Without it, some readers may buffer waiting for more data.
+	// Append a trailing newline to match the output of json.Encoder.Encode, which
+	// tests and callers rely on for byte-exact comparisons.
 	stream.WriteRaw("\n")
 	if stream.Error != nil {
 		return stream.Error

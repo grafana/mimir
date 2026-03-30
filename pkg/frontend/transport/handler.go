@@ -262,8 +262,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		parts = getQueryStats(queryResponseTime, queryDetails)
 	}
 	if queryStatsHeaderNameOk {
-		cl, _ := strconv.Atoi(resp.Header.Get("Content-Length"))
-		parts = append(parts, getResponseQueryStats(queryResponseTime, cl, queryDetails)...)
+		parts = append(parts, getResponseQueryStats(queryResponseTime, resp.ContentLength, queryDetails)...)
 	}
 
 	if len(parts) > 0 {
@@ -527,11 +526,17 @@ func getQueryStats(queryResponseTime time.Duration, details *querymiddleware.Que
 }
 
 // getResponseQueryStats returns the response query stats in the format of Server-Timing header.
-func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes int, details *querymiddleware.QueryDetails) []string {
+// contentLengthBytes must be the http.Response.ContentLength field value; -1 means unknown (streaming response).
+// For streaming responses the size is reported as 0 to preserve backward compatibility.
+func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes int64, details *querymiddleware.QueryDetails) []string {
 	if details == nil {
 		return nil
 	}
 	stats := details.QuerierStats
+	// Normalize -1 (unknown / streaming) to 0 so the field is always present in the header.
+	if contentLengthBytes < 0 {
+		contentLengthBytes = 0
+	}
 	return []string{
 		statsValue(encodeTimeSeconds, stats.LoadEncodeTime().Seconds()),
 		statsValue(estimatedSeriesCount, stats.LoadEstimatedSeriesCount()),

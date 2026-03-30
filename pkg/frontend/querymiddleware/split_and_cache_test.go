@@ -1817,7 +1817,7 @@ func protobufEncodePrometheusResponse(t *testing.T, res *mimirpb.QueryResponse) 
 func jsonEncodePrometheusResponse(t *testing.T, res *PrometheusResponse) string {
 	encoded, err := json.Marshal(res)
 	require.NoError(t, err)
-	// json.Encoder.Encode (used in the streaming response path) appends a trailing newline.
+	// jsonStreamEncode explicitly appends a trailing newline via stream.WriteRaw("\n").
 	return string(encoded) + "\n"
 }
 

@@ -325,11 +325,14 @@ func (f ProtobufFormatter) EncodeQueryResponseTo(w io.Writer, resp *PrometheusRe
 		}
 	}
 
-	b, err := payload.Marshal()
+	// Protobuf cannot stream directly to an io.Writer; MarshalTo with a pre-sized
+	// buffer avoids the internal growth logic that Marshal() uses.
+	b := make([]byte, payload.Size())
+	n, err := payload.MarshalTo(b)
 	if err != nil {
 		return err
 	}
-	_, err = w.Write(b)
+	_, err = w.Write(b[:n])
 	return err
 }
 
