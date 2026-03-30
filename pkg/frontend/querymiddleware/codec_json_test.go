@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"runtime"
 	"testing"
 	"time"
 
@@ -597,6 +598,46 @@ func BenchmarkEncodeMetricsQueryResponse(b *testing.B) {
 		}
 		_ = encoded.Body.Close()
 		b.SetBytes(n)
+	}
+}
+
+// BenchmarkEncodeMetricsQueryResponse_Sizes benchmarks EncodeMetricsQueryResponse across
+// a range of payload sizes. Run this on both main and this branch then compare with benchstat:
+//
+//	go test ./pkg/frontend/querymiddleware/ -run='^$' -bench=BenchmarkEncodeMetricsQueryResponse_Sizes -benchtime=20x -count=10 > bench.txt
+//	benchstat bench_main.txt bench_branch.txt
+func BenchmarkEncodeMetricsQueryResponse_Sizes(b *testing.B) {
+	sizes := []struct{ series, samples int }{
+		{1000, 100},
+		{3000, 500},
+		{10000, 1000},
+	}
+	for _, sz := range sizes {
+		resp := benchmarkPrometheusResponse(sz.series, sz.samples)
+		b.Run(fmt.Sprintf("%dx%d", sz.series, sz.samples), func(b *testing.B) {
+			codec := newTestCodec()
+			req := &http.Request{Header: http.Header{"Accept": []string{jsonMimeType}}}
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				encoded, err := codec.EncodeMetricsQueryResponse(context.Background(), req, resp)
+				if err != nil {
+					b.Fatal(err)
+				}
+				n, err := io.Copy(io.Discard, encoded.Body)
+				if err != nil {
+					b.Fatal(err)
+				}
+				// Measure live heap before releasing the response body.
+				// On main the encoded bytes.Buffer backing array is still referenced here;
+				// on this branch only a drained pipe reader remains.
+				runtime.GC()
+				var ms runtime.MemStats
+				runtime.ReadMemStats(&ms)
+				b.ReportMetric(float64(ms.HeapInuse), "heap-inuse/op")
+				_ = encoded.Body.Close()
+				b.SetBytes(n)
+			}
+		})
 	}
 }
 
