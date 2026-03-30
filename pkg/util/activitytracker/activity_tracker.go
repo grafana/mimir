@@ -29,9 +29,9 @@ type ActivityTracker struct {
 	freeIndexQueue chan int // Used as a queue for indexes of free entries.
 	maxEntries     int
 
-	failedInserts                *prometheus.CounterVec
-	freeActivityEntries          prometheus.GaugeFunc
-	loadedActivitiesOnStartup    prometheus.Gauge
+	failedInserts             *prometheus.CounterVec
+	freeActivityEntries       prometheus.GaugeFunc
+	loadedActivitiesOnStartup prometheus.Gauge
 }
 
 const (
