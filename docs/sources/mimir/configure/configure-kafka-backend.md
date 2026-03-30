@@ -45,11 +45,31 @@ Here are the Kafka flavors and additional configurations needed to set them up i
 
 ### Apache Kafka
 
-Use the default options with Apache Kafka. No additional configuration is needed.
+Configure the following Kafka broker setting to support the default Mimir record size:
+
+```
+message.max.bytes=16000000
+```
+
+Mimir's default `-ingest-storage.kafka.producer-max-record-size-bytes` is approximately 15.2 MB.
+Apache Kafka's default `message.max.bytes` is 1 MB, which is smaller than this limit.
+Without increasing this setting, Kafka rejects any records larger than 1 MB.
+
+You can configure `max.message.bytes` at the topic level instead of the broker level.
 
 ### Confluent Kafka
 
-Use the default options with Confluent Kafka. No additional configuration is needed.
+Configure the following Kafka broker setting to support the default Mimir record size:
+
+```
+message.max.bytes=16000000
+```
+
+Mimir's default `-ingest-storage.kafka.producer-max-record-size-bytes` is approximately 15.2 MB.
+Confluent Kafka's default `message.max.bytes` is 1 MB, which is smaller than this limit.
+Without increasing this setting, Kafka rejects any records larger than 1 MB.
+
+You can configure `max.message.bytes` at the topic level instead of the broker level.
 
 ### Warpstream
 
