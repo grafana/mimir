@@ -697,15 +697,15 @@ func (am *MultitenantAlertmanager) isUserOwned(userID string) bool {
 func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[string]alertspb.AlertConfigDesc) {
 	level.Debug(am.logger).Log("msg", "adding configurations", "num_configs", len(cfgMap))
 	amInitSkipped := map[string]struct{}{}
-	for user, cfgs := range cfgMap {
-		startAM := am.shouldStartAM(cfgs)
+	for user, cfg := range cfgMap {
+		startAM := am.shouldStartAM(cfg)
 		if !startAM {
 			level.Debug(am.logger).Log("msg", "not initializing alertmanager for tenant with a default/empty configuration", "user", user)
 			amInitSkipped[user] = struct{}{}
 			continue
 		}
 
-		if err := am.setConfig(amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL)); err != nil {
+		if err := am.setConfig(amConfigFromMimirConfig(cfg, am.cfg.ExternalURL.URL)); err != nil {
 			am.multitenantMetrics.lastReloadSuccessful.WithLabelValues(user).Set(float64(0))
 			level.Warn(am.logger).Log("msg", "error applying config", "err", err, "user", user)
 			continue
@@ -1110,12 +1110,12 @@ func (am *MultitenantAlertmanager) startAlertmanager(ctx context.Context, userID
 		return nil, fmt.Errorf("failed to check for existing configuration: %w", err)
 	}
 
-	cfgs, ok := cfgMap[userID]
+	cfg, ok := cfgMap[userID]
 	if !ok {
 		return nil, errConfigNotFound
 	}
 
-	if err := am.setConfig(amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL)); err != nil {
+	if err := am.setConfig(amConfigFromMimirConfig(cfg, am.cfg.ExternalURL.URL)); err != nil {
 		return nil, err
 	}
 	am.alertmanagersMtx.Lock()
