@@ -130,12 +130,6 @@ var (
 		}
 	}
 
-	AlertmanagerGrafanaCompatibilityFlags = func() map[string]string {
-		return map[string]string{
-			"-alertmanager.grafana-alertmanager-compatibility-enabled": "true",
-		}
-	}
-
 	RulerFlags = func() map[string]string {
 		return map[string]string{
 			"-ruler.poll-interval":             "2s",

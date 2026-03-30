@@ -228,7 +228,7 @@ func newMaxBodySizeHandler(next http.Handler, limit int64) http.Handler {
 }
 
 // RegisterAlertmanager registers endpoints that are associated with the alertmanager.
-func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, apiEnabled bool, grafanaCompatEnabled bool, buildInfoHandler http.Handler) {
+func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, apiEnabled bool, buildInfoHandler http.Handler) {
 	alertmanagerpb.RegisterAlertmanagerServer(a.server.GRPC, am)
 
 	a.indexPage.AddLinks(defaultWeight, "Alertmanager", []IndexPageLink{

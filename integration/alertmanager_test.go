@@ -465,9 +465,7 @@ func TestAlertmanagerSharding(t *testing.T) {
 			require.NoError(t, err)
 			defer s.Close()
 
-			flags := mergeFlags(AlertmanagerFlags(),
-				AlertmanagerS3Flags(),
-				AlertmanagerGrafanaCompatibilityFlags())
+			flags := mergeFlags(AlertmanagerFlags(), AlertmanagerS3Flags())
 
 			// Start dependencies.
 			consul := e2edb.NewConsul()
