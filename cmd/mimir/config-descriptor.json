@@ -17129,17 +17129,6 @@
         },
         {
           "kind": "field",
-          "name": "grafana_alertmanager_compatibility_enabled",
-          "required": false,
-          "desc": "Enable routes to support the migration and operation of the Grafana Alertmanager.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "alertmanager.grafana-alertmanager-compatibility-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "grafana_alertmanager_idle_grace_period",
           "required": false,
           "desc": "Duration to wait before shutting down an idle Alertmanager using an unpromoted or default configuration when strict initialization is enabled.",
