@@ -260,6 +260,8 @@ func (d *shardActiveSeriesResponseDecoder) readObject(buf *bytes.Buffer) {
 			buf.WriteByte(c)
 		}
 		switch c {
+		case '"':
+			d.readStringBytes(buf)
 		case '{':
 			inner++
 		case '}':
@@ -306,12 +308,32 @@ func (d *shardActiveSeriesResponseDecoder) skipArray() {
 	inner := 1
 	for d.err == nil {
 		switch d.readByte() {
+		case '"':
+			d.readStringBytes(nil)
 		case '[':
 			inner++
 		case ']':
 			inner--
 			if inner == 0 {
 				return
+			}
+		}
+	}
+}
+
+func (d *shardActiveSeriesResponseDecoder) readStringBytes(buf *bytes.Buffer) {
+	for d.err == nil {
+		c := d.readByte()
+		if buf != nil {
+			buf.WriteByte(c)
+		}
+		switch c {
+		case '"':
+			return
+		case '\\':
+			c = d.readByte()
+			if buf != nil {
+				buf.WriteByte(c)
 			}
 		}
 	}

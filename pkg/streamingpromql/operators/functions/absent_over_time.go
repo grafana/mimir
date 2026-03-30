@@ -128,11 +128,14 @@ func (a *AbsentOverTime) AfterPrepare(ctx context.Context) error {
 }
 
 func (a *AbsentOverTime) Finalize(ctx context.Context) error {
+	types.BoolSlicePool.Put(&a.presence, a.MemoryConsumptionTracker)
 	return a.Inner.Finalize(ctx)
+}
+
+func (a *AbsentOverTime) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return a.Inner.Stats(ctx)
 }
 
 func (a *AbsentOverTime) Close() {
 	a.Inner.Close()
-
-	types.BoolSlicePool.Put(&a.presence, a.MemoryConsumptionTracker)
 }

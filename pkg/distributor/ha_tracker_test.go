@@ -928,13 +928,9 @@ func TestHATrackerCheckReplicaUpdateTimeoutJitter(t *testing.T) {
 
 func TestHATrackerFindHALabels(t *testing.T) {
 	replicaLabel, clusterLabel := "replica", "cluster"
-	type expectedOutput struct {
-		cluster string
-		replica string
-	}
 	cases := []struct {
 		labelsIn []mimirpb.LabelAdapter
-		expected expectedOutput
+		expected haReplica
 	}{
 		{
 			[]mimirpb.LabelAdapter{
@@ -943,7 +939,7 @@ func TestHATrackerFindHALabels(t *testing.T) {
 				{Name: "sample", Value: "1"},
 				{Name: replicaLabel, Value: "1"},
 			},
-			expectedOutput{cluster: "", replica: "1"},
+			haReplica{cluster: "", replica: "1"},
 		},
 		{
 			[]mimirpb.LabelAdapter{
@@ -952,7 +948,7 @@ func TestHATrackerFindHALabels(t *testing.T) {
 				{Name: "sample", Value: "1"},
 				{Name: clusterLabel, Value: "cluster-2"},
 			},
-			expectedOutput{cluster: "cluster-2", replica: ""},
+			haReplica{cluster: "cluster-2", replica: ""},
 		},
 		{
 			[]mimirpb.LabelAdapter{
@@ -962,14 +958,22 @@ func TestHATrackerFindHALabels(t *testing.T) {
 				{Name: replicaLabel, Value: "3"},
 				{Name: clusterLabel, Value: "cluster-3"},
 			},
-			expectedOutput{cluster: "cluster-3", replica: "3"},
+			haReplica{cluster: "cluster-3", replica: "3"},
+		},
+		{
+			[]mimirpb.LabelAdapter{
+				{Name: replicaLabel, Value: "r1"},
+				{Name: clusterLabel, Value: "c1"},
+				{Name: replicaLabel, Value: "r2"}, // Should be ignored due to fast path
+				{Name: clusterLabel, Value: "c2"}, // Should be ignored due to fast path
+			},
+			haReplica{cluster: "c1", replica: "r1"},
 		},
 	}
 
 	for _, c := range cases {
-		cluster, replica := findHALabels(replicaLabel, clusterLabel, c.labelsIn)
-		assert.Equal(t, c.expected.cluster, cluster)
-		assert.Equal(t, c.expected.replica, replica)
+		r := findHALabels(replicaLabel, clusterLabel, c.labelsIn)
+		assert.Equal(t, c.expected, r)
 	}
 }
 

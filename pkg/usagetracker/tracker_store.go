@@ -82,8 +82,7 @@ func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series 
 	tenant := t.getOrCreateTenant(tenantID)
 	defer tenant.RUnlock()
 
-	// Sort series by shard to minimize lock contention by taking mutex once for each shard.
-	slices.SortFunc(series, func(a, b uint64) int { return int(a%shards) - int(b%shards) })
+	groupByModuloShards(series)
 
 	now := clock.ToMinutes(timeNow)
 
@@ -111,7 +110,6 @@ func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series 
 		tenant.seriesCreated.Add(uint64(len(createdRefs)))
 	}
 
-	level.Debug(t.logger).Log("msg", "tracked series", "tenant", tenantID, "received_len", len(series), "created_len", len(createdRefs), "rejected_len", len(rejectedRefs), "now", timeNow.Unix(), "now_minutes", now)
 	if len(createdRefs) == 0 {
 		return rejectedRefs, nil
 	}
@@ -140,8 +138,8 @@ func (t *trackerStore) processCreatedSeriesEvent(tenantID string, series []uint6
 	tenant := t.getOrCreateTenant(tenantID)
 	defer tenant.RUnlock()
 
-	// Sort series by shard. We're going to accept all of them, so we can start on shard 0 here.
-	slices.SortFunc(series, func(a, b uint64) int { return int(a%shards) - int(b%shards) })
+	// Group series by shard. We're going to accept all of them, so we can start on shard 0 here.
+	groupByModuloShards(series)
 
 	timestamp := clock.ToMinutes(eventTimestamp)
 	i0 := 0
@@ -345,4 +343,33 @@ func zeroAsNoLimit(v uint64) uint64 {
 		return noLimit
 	}
 	return v
+}
+
+// groupByModuloShards sorts series by shard to minimize lock contention by taking mutex once for each shard.
+// It arranges the series hashes into contiguous groups of hashes of same modulo shards.
+// This is O(N), specifically it iterates all series twice, and makes the re-arrangement in place.
+func groupByModuloShards(series []uint64) {
+	var counts, pos [shards]int
+	// count how many series belong to each shard.
+	// This will be later "the number of series from each shard correctly placed"
+	// This is the first O(series)
+	for _, ref := range series {
+		counts[ref%shards]++
+	}
+	// pos is where each shard's next element should be
+	// We'll update this as we check the elements.
+	for i := 1; i < shards; i++ {
+		pos[i] = pos[i-1] + counts[i-1]
+	}
+
+	for i := 0; i < len(series); i++ {
+		for mod := series[i] % shards; counts[mod] > 0; mod = series[i] % shards {
+			// put this element where it should be, swap them
+			series[pos[mod]], series[i] = series[i], series[pos[mod]]
+			// if there's next element for this mod, it's on the next position
+			pos[mod]++
+			// count this element as moved
+			counts[mod]--
+		}
+	}
 }

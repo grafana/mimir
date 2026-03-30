@@ -238,7 +238,7 @@ data:
                             {
                                "matcher": {
                                   "id": "byRegexp",
-                                  "options": "/.+ - ommkilled/"
+                                  "options": "/.+ - oomkilled/"
                                },
                                "properties": [
                                   {
@@ -298,7 +298,7 @@ data:
                          {
                             "expr": "group by (pod, reason) (\n  kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"alertmanager\",reason=\"OOMKilled\"}\n  unless\n  # Note, this leg offsets by the \"$__interval\" to find the first occurrence of OOMKilled in the gauge.\n  (kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"alertmanager\",reason=\"OOMKilled\"} offset $__interval == bool 0)\n) != 0\n",
                             "format": "time_series",
-                            "legendFormat": "{{pod}} - ommkilled",
+                            "legendFormat": "{{pod}} - oomkilled",
                             "legendLink": null
                          }
                       ],
@@ -2008,19 +2008,7 @@ data:
                             "show": false
                          }
                       ]
-                   }
-                ],
-                "repeat": null,
-                "repeatIteration": null,
-                "repeatRowId": null,
-                "showTitle": true,
-                "title": "Alertmanager Configuration Object Store (Alertmanager accesses)",
-                "titleSize": "h6"
-             },
-             {
-                "collapse": false,
-                "height": "250px",
-                "panels": [
+                   },
                    {
                       "datasource": "$datasource",
                       "fieldConfig": {
@@ -2414,7 +2402,7 @@ data:
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "",
+                "title": "Alertmanager Configuration Object Store (Alertmanager accesses)",
                 "titleSize": "h6"
              },
              {
@@ -3629,19 +3617,7 @@ data:
                       ],
                       "title": "Memory (go heap inuse)",
                       "type": "timeseries"
-                   }
-                ],
-                "repeat": null,
-                "repeatIteration": null,
-                "repeatRowId": null,
-                "showTitle": true,
-                "title": "CPU and memory",
-                "titleSize": "h6"
-             },
-             {
-                "collapse": false,
-                "height": "250px",
-                "panels": [
+                   },
                    {
                       "datasource": "$datasource",
                       "fieldConfig": {
@@ -3830,7 +3806,7 @@ data:
                             {
                                "matcher": {
                                   "id": "byRegexp",
-                                  "options": "/.+ - ommkilled/"
+                                  "options": "/.+ - oomkilled/"
                                },
                                "properties": [
                                   {
@@ -3890,7 +3866,7 @@ data:
                          {
                             "expr": "group by (pod, reason) (\n  kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"compactor\",reason=\"OOMKilled\"}\n  unless\n  # Note, this leg offsets by the \"$__interval\" to find the first occurrence of OOMKilled in the gauge.\n  (kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"compactor\",reason=\"OOMKilled\"} offset $__interval == bool 0)\n) != 0\n",
                             "format": "time_series",
-                            "legendFormat": "{{pod}} - ommkilled",
+                            "legendFormat": "{{pod}} - oomkilled",
                             "legendLink": null
                          }
                       ],
@@ -3902,7 +3878,7 @@ data:
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "",
+                "title": "CPU and memory",
                 "titleSize": "h6"
              },
              {
@@ -4587,7 +4563,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "max by(pod) (time() - (max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[1h]) > 0))\nor\nmax by(pod) (time() - max_over_time(process_start_time_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[1h]))\n",
+                            "expr": "max by(pod) (time() - (max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[1h]) > 0))\nor\nmax by(pod) (time() - max_over_time(process_start_time_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[1h]))\nand max by(pod) (cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"} == 0)\n",
                             "format": "table",
                             "instant": true,
                             "interval": "",
@@ -4803,7 +4779,7 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "max by(pod) (time() - (max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[1h]) > 0))\nor\nmax by(pod) (time() - max_over_time(process_start_time_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[1h]))\n",
+                            "expr": "max by(pod) (time() - (max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[1h]) > 0))\nor\nmax by(pod) (time() - max_over_time(process_start_time_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[1h]))\nand max by(pod) (cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"} == 0)\n",
                             "format": "table",
                             "instant": true,
                             "legendFormat": "Last run",
@@ -5178,19 +5154,7 @@ data:
                             "show": false
                          }
                       ]
-                   }
-                ],
-                "repeat": null,
-                "repeatIteration": null,
-                "repeatRowId": null,
-                "showTitle": true,
-                "title": "",
-                "titleSize": "h6"
-             },
-             {
-                "collapse": false,
-                "height": "250px",
-                "panels": [
+                   },
                    {
                       "datasource": "$datasource",
                       "fieldConfig": {
@@ -5293,7 +5257,7 @@ data:
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "",
+                "title": "Compaction",
                 "titleSize": "h6"
              },
              {
@@ -5913,19 +5877,7 @@ data:
                             "show": false
                          }
                       ]
-                   }
-                ],
-                "repeat": null,
-                "repeatIteration": null,
-                "repeatRowId": null,
-                "showTitle": true,
-                "title": "Object Store",
-                "titleSize": "h6"
-             },
-             {
-                "collapse": false,
-                "height": "250px",
-                "panels": [
+                   },
                    {
                       "datasource": "$datasource",
                       "fieldConfig": {
@@ -6319,7 +6271,7 @@ data:
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "",
+                "title": "Object Store",
                 "titleSize": "h6"
              },
              {
@@ -17806,7 +17758,7 @@ data:
                             {
                                "matcher": {
                                   "id": "byRegexp",
-                                  "options": "/.+ - ommkilled/"
+                                  "options": "/.+ - oomkilled/"
                                },
                                "properties": [
                                   {
@@ -17866,7 +17818,7 @@ data:
                          {
                             "expr": "group by (pod, reason) (\n  kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"query-frontend\",reason=\"OOMKilled\"}\n  unless\n  # Note, this leg offsets by the \"$__interval\" to find the first occurrence of OOMKilled in the gauge.\n  (kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"query-frontend\",reason=\"OOMKilled\"} offset $__interval == bool 0)\n) != 0\n",
                             "format": "time_series",
-                            "legendFormat": "{{pod}} - ommkilled",
+                            "legendFormat": "{{pod}} - oomkilled",
                             "legendLink": null
                          }
                       ],
@@ -18121,7 +18073,7 @@ data:
                             {
                                "matcher": {
                                   "id": "byRegexp",
-                                  "options": "/.+ - ommkilled/"
+                                  "options": "/.+ - oomkilled/"
                                },
                                "properties": [
                                   {
@@ -18181,7 +18133,7 @@ data:
                          {
                             "expr": "group by (pod, reason) (\n  kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"query-scheduler\",reason=\"OOMKilled\"}\n  unless\n  # Note, this leg offsets by the \"$__interval\" to find the first occurrence of OOMKilled in the gauge.\n  (kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"query-scheduler\",reason=\"OOMKilled\"} offset $__interval == bool 0)\n) != 0\n",
                             "format": "time_series",
-                            "legendFormat": "{{pod}} - ommkilled",
+                            "legendFormat": "{{pod}} - oomkilled",
                             "legendLink": null
                          }
                       ],
@@ -18436,7 +18388,7 @@ data:
                             {
                                "matcher": {
                                   "id": "byRegexp",
-                                  "options": "/.+ - ommkilled/"
+                                  "options": "/.+ - oomkilled/"
                                },
                                "properties": [
                                   {
@@ -18496,7 +18448,7 @@ data:
                          {
                             "expr": "group by (pod, reason) (\n  kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"querier\",reason=\"OOMKilled\"}\n  unless\n  # Note, this leg offsets by the \"$__interval\" to find the first occurrence of OOMKilled in the gauge.\n  (kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"querier\",reason=\"OOMKilled\"} offset $__interval == bool 0)\n) != 0\n",
                             "format": "time_series",
-                            "legendFormat": "{{pod}} - ommkilled",
+                            "legendFormat": "{{pod}} - oomkilled",
                             "legendLink": null
                          }
                       ],
@@ -18922,7 +18874,7 @@ data:
                             {
                                "matcher": {
                                   "id": "byRegexp",
-                                  "options": "/.+ - ommkilled/"
+                                  "options": "/.+ - oomkilled/"
                                },
                                "properties": [
                                   {
@@ -18982,7 +18934,7 @@ data:
                          {
                             "expr": "group by (pod, reason) (\n  kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ingester\",reason=\"OOMKilled\"}\n  unless\n  # Note, this leg offsets by the \"$__interval\" to find the first occurrence of OOMKilled in the gauge.\n  (kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ingester\",reason=\"OOMKilled\"} offset $__interval == bool 0)\n) != 0\n",
                             "format": "time_series",
-                            "legendFormat": "{{pod}} - ommkilled",
+                            "legendFormat": "{{pod}} - oomkilled",
                             "legendLink": null
                          }
                       ],
@@ -19249,7 +19201,7 @@ data:
                             {
                                "matcher": {
                                   "id": "byRegexp",
-                                  "options": "/.+ - ommkilled/"
+                                  "options": "/.+ - oomkilled/"
                                },
                                "properties": [
                                   {
@@ -19309,7 +19261,7 @@ data:
                          {
                             "expr": "group by (pod, reason) (\n  kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler\",reason=\"OOMKilled\"}\n  unless\n  # Note, this leg offsets by the \"$__interval\" to find the first occurrence of OOMKilled in the gauge.\n  (kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler\",reason=\"OOMKilled\"} offset $__interval == bool 0)\n) != 0\n",
                             "format": "time_series",
-                            "legendFormat": "{{pod}} - ommkilled",
+                            "legendFormat": "{{pod}} - oomkilled",
                             "legendLink": null
                          }
                       ],
@@ -19735,7 +19687,7 @@ data:
                             {
                                "matcher": {
                                   "id": "byRegexp",
-                                  "options": "/.+ - ommkilled/"
+                                  "options": "/.+ - oomkilled/"
                                },
                                "properties": [
                                   {
@@ -19795,7 +19747,7 @@ data:
                          {
                             "expr": "group by (pod, reason) (\n  kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"store-gateway\",reason=\"OOMKilled\"}\n  unless\n  # Note, this leg offsets by the \"$__interval\" to find the first occurrence of OOMKilled in the gauge.\n  (kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"store-gateway\",reason=\"OOMKilled\"} offset $__interval == bool 0)\n) != 0\n",
                             "format": "time_series",
-                            "legendFormat": "{{pod}} - ommkilled",
+                            "legendFormat": "{{pod}} - oomkilled",
                             "legendLink": null
                          }
                       ],
@@ -24985,19 +24937,7 @@ data:
                             "show": false
                          }
                       ]
-                   }
-                ],
-                "repeat": null,
-                "repeatIteration": null,
-                "repeatRowId": null,
-                "showTitle": true,
-                "title": "Blocks object store (store-gateway accesses)",
-                "titleSize": "h6"
-             },
-             {
-                "collapse": false,
-                "height": "250px",
-                "panels": [
+                   },
                    {
                       "datasource": "$datasource",
                       "fieldConfig": {
@@ -25391,7 +25331,7 @@ data:
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "",
+                "title": "Blocks object store (store-gateway accesses)",
                 "titleSize": "h6"
              },
              {
@@ -25672,19 +25612,7 @@ data:
                             "show": false
                          }
                       ]
-                   }
-                ],
-                "repeat": null,
-                "repeatIteration": null,
-                "repeatRowId": null,
-                "showTitle": true,
-                "title": "Blocks object store (querier accesses)",
-                "titleSize": "h6"
-             },
-             {
-                "collapse": false,
-                "height": "250px",
-                "panels": [
+                   },
                    {
                       "datasource": "$datasource",
                       "fieldConfig": {
@@ -26078,7 +26006,7 @@ data:
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "",
+                "title": "Blocks object store (querier accesses)",
                 "titleSize": "h6"
              }
           ],
@@ -27524,7 +27452,7 @@ data:
                             {
                                "matcher": {
                                   "id": "byRegexp",
-                                  "options": "/.+ - ommkilled/"
+                                  "options": "/.+ - oomkilled/"
                                },
                                "properties": [
                                   {
@@ -27584,7 +27512,7 @@ data:
                          {
                             "expr": "group by (pod, reason) (\n  kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler-query-frontend\",reason=\"OOMKilled\"}\n  unless\n  # Note, this leg offsets by the \"$__interval\" to find the first occurrence of OOMKilled in the gauge.\n  (kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler-query-frontend\",reason=\"OOMKilled\"} offset $__interval == bool 0)\n) != 0\n",
                             "format": "time_series",
-                            "legendFormat": "{{pod}} - ommkilled",
+                            "legendFormat": "{{pod}} - oomkilled",
                             "legendLink": null
                          }
                       ],
@@ -27839,7 +27767,7 @@ data:
                             {
                                "matcher": {
                                   "id": "byRegexp",
-                                  "options": "/.+ - ommkilled/"
+                                  "options": "/.+ - oomkilled/"
                                },
                                "properties": [
                                   {
@@ -27899,7 +27827,7 @@ data:
                          {
                             "expr": "group by (pod, reason) (\n  kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler-query-scheduler\",reason=\"OOMKilled\"}\n  unless\n  # Note, this leg offsets by the \"$__interval\" to find the first occurrence of OOMKilled in the gauge.\n  (kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler-query-scheduler\",reason=\"OOMKilled\"} offset $__interval == bool 0)\n) != 0\n",
                             "format": "time_series",
-                            "legendFormat": "{{pod}} - ommkilled",
+                            "legendFormat": "{{pod}} - oomkilled",
                             "legendLink": null
                          }
                       ],
@@ -28154,7 +28082,7 @@ data:
                             {
                                "matcher": {
                                   "id": "byRegexp",
-                                  "options": "/.+ - ommkilled/"
+                                  "options": "/.+ - oomkilled/"
                                },
                                "properties": [
                                   {
@@ -28214,7 +28142,7 @@ data:
                          {
                             "expr": "group by (pod, reason) (\n  kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler-querier\",reason=\"OOMKilled\"}\n  unless\n  # Note, this leg offsets by the \"$__interval\" to find the first occurrence of OOMKilled in the gauge.\n  (kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler-querier\",reason=\"OOMKilled\"} offset $__interval == bool 0)\n) != 0\n",
                             "format": "time_series",
-                            "legendFormat": "{{pod}} - ommkilled",
+                            "legendFormat": "{{pod}} - oomkilled",
                             "legendLink": null
                          }
                       ],
@@ -34725,7 +34653,7 @@ data:
                             {
                                "matcher": {
                                   "id": "byRegexp",
-                                  "options": "/.+ - ommkilled/"
+                                  "options": "/.+ - oomkilled/"
                                },
                                "properties": [
                                   {
@@ -34785,7 +34713,7 @@ data:
                          {
                             "expr": "group by (pod, reason) (\n  kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler\",reason=\"OOMKilled\"}\n  unless\n  # Note, this leg offsets by the \"$__interval\" to find the first occurrence of OOMKilled in the gauge.\n  (kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler\",reason=\"OOMKilled\"} offset $__interval == bool 0)\n) != 0\n",
                             "format": "time_series",
-                            "legendFormat": "{{pod}} - ommkilled",
+                            "legendFormat": "{{pod}} - oomkilled",
                             "legendLink": null
                          }
                       ],
@@ -36106,19 +36034,7 @@ data:
                             "show": false
                          }
                       ]
-                   }
-                ],
-                "repeat": null,
-                "repeatIteration": null,
-                "repeatRowId": null,
-                "showTitle": true,
-                "title": "Ruler configuration object store (ruler accesses)",
-                "titleSize": "h6"
-             },
-             {
-                "collapse": false,
-                "height": "250px",
-                "panels": [
+                   },
                    {
                       "datasource": "$datasource",
                       "fieldConfig": {
@@ -36512,7 +36428,7 @@ data:
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "",
+                "title": "Ruler configuration object store (ruler accesses)",
                 "titleSize": "h6"
              }
           ],
@@ -38733,7 +38649,7 @@ data:
                             "legendLink": null
                          },
                          {
-                            "expr": "max(cortex_limits_overrides{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter))\", limit_name=\"max_active_series_per_user\", user=\"$user\"})\nor\nmax(cortex_limits_defaults{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter))\", limit_name=\"max_active_series_per_user\"})\n",
+                            "expr": "max(cortex_limits_overrides{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter))\", limit_name=\"max_active_series_per_user\", user=\"$user\"})\nor\nmax(cortex_limits_defaults{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter))\", limit_name=\"max_active_series_per_user\"} != 0)\n",
                             "format": "time_series",
                             "legendFormat": "active series limit",
                             "legendLink": null
@@ -44818,7 +44734,7 @@ data:
                             {
                                "matcher": {
                                   "id": "byRegexp",
-                                  "options": "/.+ - ommkilled/"
+                                  "options": "/.+ - oomkilled/"
                                },
                                "properties": [
                                   {
@@ -44878,7 +44794,7 @@ data:
                          {
                             "expr": "group by (pod, reason) (\n  kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"distributor\",reason=\"OOMKilled\"}\n  unless\n  # Note, this leg offsets by the \"$__interval\" to find the first occurrence of OOMKilled in the gauge.\n  (kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"distributor\",reason=\"OOMKilled\"} offset $__interval == bool 0)\n) != 0\n",
                             "format": "time_series",
-                            "legendFormat": "{{pod}} - ommkilled",
+                            "legendFormat": "{{pod}} - oomkilled",
                             "legendLink": null
                          }
                       ],
@@ -45336,7 +45252,7 @@ data:
                             {
                                "matcher": {
                                   "id": "byRegexp",
-                                  "options": "/.+ - ommkilled/"
+                                  "options": "/.+ - oomkilled/"
                                },
                                "properties": [
                                   {
@@ -45396,7 +45312,7 @@ data:
                          {
                             "expr": "group by (pod, reason) (\n  kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ingester\",reason=\"OOMKilled\"}\n  unless\n  # Note, this leg offsets by the \"$__interval\" to find the first occurrence of OOMKilled in the gauge.\n  (kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ingester\",reason=\"OOMKilled\"} offset $__interval == bool 0)\n) != 0\n",
                             "format": "time_series",
-                            "legendFormat": "{{pod}} - ommkilled",
+                            "legendFormat": "{{pod}} - oomkilled",
                             "legendLink": null
                          }
                       ],
@@ -47402,7 +47318,13 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum(rate(cortex_ingest_storage_reader_fetch_bytes_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n/\nsum(rate(cortex_ingest_storage_reader_records_per_fetch_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n",
+                            "expr": "(sum(rate(cortex_ingest_storage_reader_fetch_bytes_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])) / sum (rate(cortex_ingest_storage_reader_records_per_fetch_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "Actual bytes per record (avg)",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(sum(rate(cortex_ingest_storage_reader_fetch_bytes_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])) / sum (histogram_sum(rate(cortex_ingest_storage_reader_records_per_fetch{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "Actual bytes per record (avg)",
                             "legendLink": null

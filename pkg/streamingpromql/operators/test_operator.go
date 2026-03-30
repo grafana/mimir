@@ -122,6 +122,10 @@ func (t *TestOperator) Finalize(_ context.Context) error {
 	return nil
 }
 
+func (t *TestOperator) Stats(_ context.Context) (*types.OperatorEvaluationStats, error) {
+	panic("not implemented")
+}
+
 func (t *TestOperator) Close() {
 	// Note that we do not return any unused series data here: it is the responsibility of the test to call ReleaseUnreadData, if needed.
 	t.Closed = true

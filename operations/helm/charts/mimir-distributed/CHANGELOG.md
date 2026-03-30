@@ -41,15 +41,21 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Default image tag to Chart.AppVersion. Use `image.tag` value to override the image tag. #13453
 * [ENHANCEMENT] Kafka: Made log retention period configurable via `kafka.logRetentionHours`. #13866
 * [ENHANCEMENT] Allow overwriting `grafana.com/min-time-between-zones-downscale` annotation value for ingester and store-gateway via `zoneAwareReplication.minTimeBetweenZonesDownscale`. #14411
-* [ENHANCEMENT] Upgrade rollout-operator chart to [0.43.0](https://github.com/grafana/helm-charts/blob/main/charts/rollout-operator). #14463
+* [ENHANCEMENT] Upgrade rollout-operator chart to [0.46.0](https://github.com/grafana/helm-charts/blob/main/charts/rollout-operator). #14463 #14854
 * [ENHANCEMENT] Add support for custom labels on PersistentVolumeClaim resources for alertmanager, compactor, ingester, and store-gateway. #14373
 * [ENHANCEMENT] Ingester: Add `ingester.zoneAwareReplication.autoIngestStorageClientRack` to pass `-ingest-storage.kafka.client-rack` when zone-aware replication is enabled. #14654
+* [ENHANCEMENT] Allow zone-aware replication for ingesters with 2 zones when ingest storage is enabled. #14449
 * [BUGFIX] Fix missing newline for custom pod labels. #13325
 * [BUGFIX] Upgrade rollout-operator chart to 0.37.1, which fixes server-tls.self-signed-cert.dns-name to use the full release name instead of always being set to `rollout-operator.NAMESPACE.svc`. If upgrading from 6.0.0 or 6.0.1, delete the `certificate` secret created by the rollout-operator pod and recreate the rollout-operator pod. #13357
 * [BUGFIX] Delete gateway's serviceMonitor #13481
 * [BUGFIX] Ensure Kafka can boostrap successfully by using parallel rollout and publishing not-ready addresses. #13650
 * [BUGFIX] Upgrade rollout-operator chart to 0.38.1, which fixes an issue with permissions preventing the rollout-operator from starting when webhooks are not enabled. #13754.
 * [BUGFIX] Fix Kafka image reference to include the registry in the StatefulSet template. #14211.
+* [BUGFIX] Helm: Removed helm's empty selector for the smoke-test-job file that is throwing errors in ArgoCD #14684
+
+## 6.0.6
+
+* [CHANGE] Upgrade Mimir to [3.0.4](https://github.com/grafana/mimir/blob/release-3.0/CHANGELOG.md). #14749
 
 ## 6.0.5
 

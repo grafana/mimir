@@ -103,3 +103,7 @@ message StoredCompactionJob {
   CompactionJob job = 2;
   uint32 order = 3;
 }
+
+message PersistenceMetadata {
+  uint32 shard_count = 1;
+}

@@ -104,6 +104,7 @@ func TestStepRange(t *testing.T) {
 
 			rv := NewRangeVectorSelector(selector, mc, types.NewQueryStats())
 
+			require.NoError(t, rv.Prepare(ctx, &types.PrepareParams{}))
 			metadata, err := rv.SeriesMetadata(ctx, nil)
 			require.NoError(t, err)
 			require.Len(t, metadata, 2)
@@ -286,6 +287,7 @@ func TestRangeVectorSelectorSyntheticPoints(t *testing.T) {
 
 			rv := NewRangeVectorSelector(selector, mc, types.NewQueryStats())
 
+			require.NoError(t, rv.Prepare(ctx, &types.PrepareParams{}))
 			_, err := rv.SeriesMetadata(ctx, nil)
 			require.NoError(t, err)
 

@@ -72,8 +72,13 @@ func NewRotator(leaseDuration, planningInterval, compactionWaitPeriod, maintenan
 		logger:                           logger,
 	}
 
-	r.Service = services.NewTimerService(maintenanceInterval, nil, r.iter, nil)
+	r.Service = services.NewTimerService(maintenanceInterval, r.start, r.iter, nil)
 	return r
+}
+
+// start starts the service that performs regular maintenance. It is expected that RecoverFrom is called before starting the service.
+func (r *Rotator) start(ctx context.Context) error {
+	return r.iter(ctx)
 }
 
 func (r *Rotator) iter(ctx context.Context) error {
@@ -82,11 +87,13 @@ func (r *Rotator) iter(ctx context.Context) error {
 	plan := true
 	if r.intervalsBeforeLeaseExpiration > 0 {
 		r.intervalsBeforeLeaseExpiration--
+		level.Info(r.logger).Log("msg", "lease expiration will not be enforced this maintenance interval to provide cushion between restarts", "intervals_remaining", r.intervalsBeforeLeaseExpiration, "interval_duration", r.maintenanceInterval)
 		expireLeases = false
 	}
 	// RecoverFrom sets intervalsBeforeColdStartPlanning before the service is started and is the only other use of this variable so accessing and mutating it is safe
 	if r.intervalsBeforeColdStartPlanning > 0 {
 		r.intervalsBeforeColdStartPlanning--
+		level.Info(r.logger).Log("msg", "planning will not be performed this maintenance interval to prevent possible job duplication", "intervals_remaining", r.intervalsBeforeColdStartPlanning, "interval_duration", r.maintenanceInterval)
 		plan = false
 	}
 

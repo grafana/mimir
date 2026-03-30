@@ -127,9 +127,7 @@ func TestInstantVectorExecutionResponse(t *testing.T) {
 		{Labels: labels.FromStrings("series", "2")},
 	}
 	require.Equal(t, expectedSeries, series)
-	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 	types.SeriesMetadataSlicePool.Put(&series, memoryConsumptionTracker)
-	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 
 	data, err := response.GetNextSeries(ctx)
 	require.NoError(t, err)
@@ -139,9 +137,7 @@ func TestInstantVectorExecutionResponse(t *testing.T) {
 		Histograms: generateHPoints(3000, 2, 0),
 	}
 	require.Equal(t, expectedData, data)
-	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
-	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 
 	data, err = response.GetNextSeries(ctx)
 	require.NoError(t, err)
@@ -151,12 +147,11 @@ func TestInstantVectorExecutionResponse(t *testing.T) {
 		Histograms: generateHPoints(3000, 2, 1),
 	}
 	require.Equal(t, expectedData, data)
-	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
-	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 
 	response.Close()
 	require.True(t, stream.closed.Load())
+	require.Zerof(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "buffers should be released when closing response, have: %v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
 }
 
 func TestInstantVectorExecutionResponse_Batching(t *testing.T) {
@@ -210,9 +205,7 @@ func TestInstantVectorExecutionResponse_Batching(t *testing.T) {
 		{Labels: labels.FromStrings("series", "2")},
 	}
 	require.Equal(t, expectedSeries, series)
-	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 	types.SeriesMetadataSlicePool.Put(&series, memoryConsumptionTracker)
-	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 
 	data, err := response.GetNextSeries(ctx)
 	require.NoError(t, err)
@@ -222,7 +215,6 @@ func TestInstantVectorExecutionResponse_Batching(t *testing.T) {
 		Histograms: generateHPoints(3000, 2, 0),
 	}
 	require.Equal(t, expectedData, data)
-	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
 
 	data, err = response.GetNextSeries(ctx)
@@ -233,9 +225,7 @@ func TestInstantVectorExecutionResponse_Batching(t *testing.T) {
 		Histograms: generateHPoints(3000, 2, 1),
 	}
 	require.Equal(t, expectedData, data)
-	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
-	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "should not be holding previous batch in memory consumption estimate")
 
 	data, err = response.GetNextSeries(ctx)
 	require.NoError(t, err)
@@ -245,12 +235,11 @@ func TestInstantVectorExecutionResponse_Batching(t *testing.T) {
 		Histograms: generateHPoints(3000, 2, 2),
 	}
 	require.Equal(t, expectedData, data)
-	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
-	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 
 	response.Close()
 	require.True(t, stream.closed.Load())
+	require.Zerof(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "buffers should be released when closing response, have: %v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
 }
 
 func TestInstantVectorExecutionResponse_DelayedNameRemoval(t *testing.T) {
@@ -317,9 +306,7 @@ func TestInstantVectorExecutionResponse_PointSliceLengthNotAPowerOfTwo(t *testin
 		{Labels: labels.FromStrings("series", "1")},
 	}
 	require.Equal(t, expectedSeries, series)
-	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 	types.SeriesMetadataSlicePool.Put(&series, memoryConsumptionTracker)
-	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 
 	data, err := response.GetNextSeries(ctx)
 	require.NoError(t, err)
@@ -331,12 +318,11 @@ func TestInstantVectorExecutionResponse_PointSliceLengthNotAPowerOfTwo(t *testin
 	require.Equal(t, expectedData, data)
 	require.Equal(t, 4, cap(data.Floats), "should expand slice capacity to nearest power of two")
 	require.Equal(t, 16, cap(data.Histograms), "should expand slice capacity to nearest power of two")
-	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
-	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 
 	response.Close()
 	require.True(t, stream.closed.Load())
+	require.Zerof(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "buffers should be released when closing response, have: %v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
 }
 
 func TestRangeVectorExecutionResponse(t *testing.T) {
@@ -410,9 +396,7 @@ func TestRangeVectorExecutionResponse(t *testing.T) {
 		{Labels: labels.FromStrings("series", "2")},
 	}
 	require.Equal(t, expectedSeries, series)
-	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 	types.SeriesMetadataSlicePool.Put(&series, memoryConsumptionTracker)
-	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 
 	require.NoError(t, response.AdvanceToNextSeries(ctx))
 	data, err := response.GetNextStepSamples(ctx)
@@ -422,7 +406,6 @@ func TestRangeVectorExecutionResponse(t *testing.T) {
 	require.Equal(t, int64(4000), data.RangeEnd)
 	requireEqualFPointRingBuffer(t, data.Floats, generateFPoints(1000, 2, 0))
 	requireEqualHPointRingBuffer(t, data.Histograms, generateHPoints(3000, 2, 0))
-	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 
 	data, err = response.GetNextStepSamples(ctx)
 	require.NoError(t, err)
@@ -431,7 +414,6 @@ func TestRangeVectorExecutionResponse(t *testing.T) {
 	require.Equal(t, int64(5000), data.RangeEnd)
 	requireEqualFPointRingBuffer(t, data.Floats, generateFPoints(1000, 2, 1))
 	requireEqualHPointRingBuffer(t, data.Histograms, generateHPoints(3000, 2, 1))
-	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 
 	require.NoError(t, response.AdvanceToNextSeries(ctx))
 	data, err = response.GetNextStepSamples(ctx)
@@ -441,7 +423,6 @@ func TestRangeVectorExecutionResponse(t *testing.T) {
 	require.Equal(t, int64(4000), data.RangeEnd)
 	requireEqualFPointRingBuffer(t, data.Floats, generateFPoints(1000, 2, 2))
 	requireEqualHPointRingBuffer(t, data.Histograms, generateHPoints(3000, 2, 2))
-	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 
 	data, err = response.GetNextStepSamples(ctx)
 	require.NoError(t, err)
@@ -450,7 +431,6 @@ func TestRangeVectorExecutionResponse(t *testing.T) {
 	require.Equal(t, int64(5000), data.RangeEnd)
 	requireEqualFPointRingBuffer(t, data.Floats, generateFPoints(1000, 2, 3))
 	requireEqualHPointRingBuffer(t, data.Histograms, generateHPoints(3000, 2, 3))
-	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 
 	response.Close()
 	require.True(t, stream.closed.Load())
@@ -544,9 +524,7 @@ func TestRangeVectorExecutionResponse_ExpectedSeriesMismatch(t *testing.T) {
 		{Labels: labels.FromStrings("series", "2")},
 	}
 	require.Equal(t, expectedSeries, series)
-	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 	types.SeriesMetadataSlicePool.Put(&series, memoryConsumptionTracker)
-	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 
 	require.NoError(t, response.AdvanceToNextSeries(ctx))
 	data, err := response.GetNextStepSamples(ctx)
@@ -556,7 +534,6 @@ func TestRangeVectorExecutionResponse_ExpectedSeriesMismatch(t *testing.T) {
 	require.Equal(t, int64(4000), data.RangeEnd)
 	requireEqualFPointRingBuffer(t, data.Floats, generateFPoints(1000, 2, 0))
 	requireEqualHPointRingBuffer(t, data.Histograms, generateHPoints(3000, 2, 0))
-	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 
 	// Advance to the next series early. We should get an error when reading the next step.
 	require.NoError(t, response.AdvanceToNextSeries(ctx))
@@ -604,9 +581,7 @@ func TestRangeVectorExecutionResponse_PointSliceLengthNotAPowerOfTwo(t *testing.
 		{Labels: labels.FromStrings("series", "1")},
 	}
 	require.Equal(t, expectedSeries, series)
-	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 	types.SeriesMetadataSlicePool.Put(&series, memoryConsumptionTracker)
-	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 
 	require.NoError(t, response.AdvanceToNextSeries(ctx))
 	data, err := response.GetNextStepSamples(ctx)
@@ -616,7 +591,6 @@ func TestRangeVectorExecutionResponse_PointSliceLengthNotAPowerOfTwo(t *testing.
 	require.Equal(t, int64(6000), data.RangeEnd)
 	requireEqualFPointRingBuffer(t, data.Floats, generateFPoints(1000, 3, 0))
 	requireEqualHPointRingBuffer(t, data.Histograms, generateHPoints(4000, 3, 0))
-	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 
 	response.Close()
 	require.True(t, stream.closed.Load())
@@ -1987,7 +1961,8 @@ func TestEagerLoadingResponseStream_ShouldBufferAllMessagesEvenIfNoNextCallWaiti
 		},
 	}
 
-	stream := newEagerLoadingResponseStream(context.Background(), inner)
+	ctx := context.Background()
+	stream := newEagerLoadingResponseStream(ctx, inner, limiter.NewUnlimitedMemoryConsumptionTracker(ctx))
 
 	require.Eventually(t, func() bool {
 		stream.mtx.Lock()
@@ -2023,7 +1998,8 @@ func TestEagerLoadingResponseStream_ShouldWaitForDataIfBufferEmpty(t *testing.T)
 		},
 	}
 
-	stream := newEagerLoadingResponseStream(context.Background(), inner)
+	ctx := context.Background()
+	stream := newEagerLoadingResponseStream(ctx, inner, limiter.NewUnlimitedMemoryConsumptionTracker(ctx))
 	go func() {
 		<-time.After(100 * time.Millisecond)
 		close(release)
@@ -2048,7 +2024,8 @@ func TestEagerLoadingResponseStream_ErrorReturnedByInnerStream(t *testing.T) {
 			{err: errors.New("something went wrong")},
 		},
 	}
-	stream := newEagerLoadingResponseStream(context.Background(), inner)
+	ctx := context.Background()
+	stream := newEagerLoadingResponseStream(ctx, inner, limiter.NewUnlimitedMemoryConsumptionTracker(ctx))
 
 	msg, err := stream.Next(context.Background())
 	require.EqualError(t, err, "something went wrong")
@@ -2061,7 +2038,8 @@ func TestEagerLoadingResponseStream_ErrorReturnedByInnerStream(t *testing.T) {
 
 func TestEagerLoadingResponseStream_AbortsNextCallOnContextCancellation(t *testing.T) {
 	inner := &mockResponseStreamThatNeverReturns{release: make(chan struct{})}
-	stream := newEagerLoadingResponseStream(context.Background(), inner)
+	ctx := context.Background()
+	stream := newEagerLoadingResponseStream(ctx, inner, limiter.NewUnlimitedMemoryConsumptionTracker(ctx))
 
 	ctx, cancel := context.WithTimeoutCause(context.Background(), 20*time.Millisecond, errors.New("something has timed out"))
 	defer cancel()
@@ -2093,7 +2071,8 @@ func (m *mockResponseStreamThatNeverReturns) Close() {
 
 func TestEagerLoadingResponseStream_ClosesInnerStreamWhenClosed(t *testing.T) {
 	inner := &mockResponseStream{}
-	stream := newEagerLoadingResponseStream(context.Background(), inner)
+	ctx := context.Background()
+	stream := newEagerLoadingResponseStream(ctx, inner, limiter.NewUnlimitedMemoryConsumptionTracker(ctx))
 	stream.Close()
 	require.True(t, inner.closed.Load())
 }
@@ -2104,7 +2083,8 @@ func TestEagerLoadingResponseStream_ClosedWhileBuffering(t *testing.T) {
 		nextCalled: make(chan struct{}),
 	}
 
-	stream := newEagerLoadingResponseStream(context.Background(), inner)
+	ctx := context.Background()
+	stream := newEagerLoadingResponseStream(ctx, inner, limiter.NewUnlimitedMemoryConsumptionTracker(ctx))
 
 	// Wait for the stream to start buffering.
 	<-inner.nextCalled
@@ -2122,14 +2102,19 @@ func TestEagerLoadingResponseStream_ClosedWhileBuffering(t *testing.T) {
 }
 
 func TestResponseStreamBuffer(t *testing.T) {
-	buf := &responseStreamBuffer{}
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(context.Background())
+	buf := newResponseStreamBuffer(memoryConsumptionTracker)
 	require.False(t, buf.Any())
 
 	msg1 := bufferedMessage{newStringMessage("first message"), nil}
-	buf.Push(msg1)
+	require.NoError(t, buf.Push(msg1))
 	require.True(t, buf.Any())
+	require.Equal(t, uint64(msg1.payload.Size()), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.BufferedQuerierResponses))
+
 	require.Equal(t, msg1, buf.Pop())
 	require.False(t, buf.Any())
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+
 	// Make sure the internal state has been reset correctly, so that the tests below exercise the expected behaviour.
 	require.Zero(t, buf.startIndex)
 	require.Zero(t, buf.length)
@@ -2137,14 +2122,18 @@ func TestResponseStreamBuffer(t *testing.T) {
 
 	msg2 := bufferedMessage{newStringMessage("second message"), nil}
 	msg3 := bufferedMessage{newStringMessage("third message"), nil}
-	buf.Push(msg1)
-	buf.Push(msg2)
-	buf.Push(msg3)
+	require.NoError(t, buf.Push(msg1))
+	require.NoError(t, buf.Push(msg2))
+	require.NoError(t, buf.Push(msg3))
 	require.True(t, buf.Any())
+	require.Equal(t, uint64(msg1.payload.Size()+msg2.payload.Size()+msg3.payload.Size()), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.BufferedQuerierResponses))
+
 	require.Equal(t, msg1, buf.Pop())
 	require.Equal(t, msg2, buf.Pop())
 	require.Equal(t, msg3, buf.Pop())
 	require.False(t, buf.Any())
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+
 	// Make sure the internal state has been reset correctly, so that the tests below exercise the expected behaviour.
 	require.Zero(t, buf.startIndex)
 	require.Zero(t, buf.length)
@@ -2152,29 +2141,34 @@ func TestResponseStreamBuffer(t *testing.T) {
 
 	// Test that appending to the buffer when the first item is not in the first index of the underlying slice behaves correctly.
 	msg4 := bufferedMessage{newStringMessage("fourth message"), nil}
-	buf.Push(msg1)
-	buf.Push(msg2)
-	buf.Push(msg3)
-	buf.Push(msg4)
+	require.NoError(t, buf.Push(msg1))
+	require.NoError(t, buf.Push(msg2))
+	require.NoError(t, buf.Push(msg3))
+	require.NoError(t, buf.Push(msg4))
 	require.Equal(t, 4, cap(buf.msgs))
+	require.Equal(t, uint64(msg1.payload.Size()+msg2.payload.Size()+msg3.payload.Size()+msg4.payload.Size()), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.BufferedQuerierResponses))
 
 	require.Equal(t, msg1, buf.Pop())
+	require.Equal(t, uint64(msg2.payload.Size()+msg3.payload.Size()+msg4.payload.Size()), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.BufferedQuerierResponses))
 
 	msg5 := bufferedMessage{newStringMessage("fifth message"), nil}
-	buf.Push(msg5)
+	require.NoError(t, buf.Push(msg5))
 	require.Equal(t, 4, cap(buf.msgs), "buffer should have wrapped around inside slice")
 	require.Equal(t, 1, buf.startIndex, "buffer should not have shifted elements in slice")
+	require.Equal(t, uint64(msg2.payload.Size()+msg3.payload.Size()+msg4.payload.Size()+msg5.payload.Size()), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.BufferedQuerierResponses))
 
 	msg6 := bufferedMessage{newStringMessage("sixth message"), nil}
-	buf.Push(msg6)
+	require.NoError(t, buf.Push(msg6))
 	require.Equal(t, 8, cap(buf.msgs), "slice should have been expanded")
 	require.Equal(t, 0, buf.startIndex, "buffer should have shifted elements in slice")
+	require.Equal(t, uint64(msg2.payload.Size()+msg3.payload.Size()+msg4.payload.Size()+msg5.payload.Size()+msg6.payload.Size()), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.BufferedQuerierResponses))
 
 	require.Equal(t, msg2, buf.Pop())
 	require.Equal(t, msg3, buf.Pop())
 	require.Equal(t, msg4, buf.Pop())
 	require.Equal(t, msg5, buf.Pop())
 	require.Equal(t, msg6, buf.Pop())
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 }
 
 func TestMaxQueryParallelismWithRemoteExecution(t *testing.T) {

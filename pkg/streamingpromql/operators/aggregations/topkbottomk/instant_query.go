@@ -309,6 +309,8 @@ func (t *InstantQuery) AfterPrepare(ctx context.Context) error {
 }
 
 func (t *InstantQuery) Finalize(ctx context.Context) error {
+	types.Float64SlicePool.Put(&t.values, t.MemoryConsumptionTracker)
+
 	if err := t.Inner.Finalize(ctx); err != nil {
 		return err
 	}
@@ -316,11 +318,13 @@ func (t *InstantQuery) Finalize(ctx context.Context) error {
 	return t.Param.Finalize(ctx)
 }
 
+func (t *InstantQuery) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return types.CombineStats[types.StatsProvider](ctx, t.Inner, t.Param)
+}
+
 func (t *InstantQuery) Close() {
 	t.Inner.Close()
 	t.Param.Close()
-
-	types.Float64SlicePool.Put(&t.values, t.MemoryConsumptionTracker)
 }
 
 type instantQueryGroup struct {

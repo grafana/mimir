@@ -23,7 +23,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.overrideProperty('custom.fillOpacity', 0),
     $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
   ]),
-  local ommKilledStyle = $.overrideField('byRegexp', '/.+ - ommkilled/', [
+  local oomKilledStyle = $.overrideField('byRegexp', '/.+ - oomkilled/', [
     $.overrideProperty('color', { mode: 'fixed', fixedColor: $._colors.failed }),
     $.overrideProperty('custom.axisPlacement', 'hidden'),
     $.overrideProperty('custom.drawStyle', 'points'),
@@ -52,6 +52,28 @@ local utils = import 'mixin-utils/utils.libsonnet';
             super.panels[i] { span: span + if i < (12 % n) then 1 else 0 }
             for i in std.range(0, n - 1)
           ],
+        },
+
+      // splitIntoLines distributes panels across multiple visual lines within the same row,
+      // allowing for multiple "sub-rows" within the same row, making them collapsible together.
+      // panelsPerLine is an array with the number of panels on each line, e.g. [4, 2].
+      splitIntoLines(panelsPerLine)::
+        // To keep things simple, require divisors of 12.
+        // This could be relaxed by doing something like what justifyPanels does.
+        assert std.all([12 % lineCount == 0 for lineCount in panelsPerLine]) :
+               'splitIntoLines: each line count must be a divisor of 12, got %s' % [std.toString(panelsPerLine)];
+        // Create an array of span sizes to fill each line (12) with the correct number of panels.
+        // span[i] is the span of the i-th panel, e.g. panelsPerLine=[3,2] -> spans=[4,4,4,6,6].
+        local spans = std.flattenArrays([
+          [std.floor(12 / lineCount) for _ in std.range(0, lineCount - 1)]
+          for lineCount in panelsPerLine
+        ]);
+        local allPanels = self.panels;
+        assert std.length(allPanels) == std.length(spans) :
+               'splitIntoLines: panelsPerLine sums to %d but row has %d panels' % [std.length(spans), std.length(allPanels)];
+        // Now assign the calculated span to each panel
+        self + {
+          panels: [allPanels[i] { span: spans[i] } for i in std.range(0, std.length(allPanels) - 1)],
         },
     },
 
@@ -444,7 +466,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     local legends =
       $.resourceUtilizationAndLimitLegend('{{%s}}' % $._config.per_instance_label)
       + if $._config.deployment_type == 'kubernetes'
-      then ['{{%s}} - ommkilled' % $._config.per_instance_label]
+      then ['{{%s}} - oomkilled' % $._config.per_instance_label]
       else [];
 
     $.timeseriesPanel('Memory (workingset)') +
@@ -455,7 +477,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         overrides+: [
           resourceRequestStyle,
           resourceLimitStyle,
-          ommKilledStyle,
+          oomKilledStyle,
         ],
         defaults+: {
           unit: 'bytes',
@@ -516,13 +538,15 @@ local utils = import 'mixin-utils/utils.libsonnet';
   containerGoHeapInUsePanelByComponent(componentName)::
     $.containerGoHeapInUsePanel($._config.instance_names[componentName], $._config.container_names[componentName]),
 
-  containerNetworkBytesPanel(title, metric, instanceName)::
+  containerNetworkBytesPanel(title, metric, instanceName, excludeInstanceName='')::
+    local instanceMatcher = '%s=~"%s"' % [$._config.per_instance_label, instanceName] +
+                            if excludeInstanceName == '' then '' else ',%s!~"%s"' % [$._config.per_instance_label, excludeInstanceName];
     $.timeseriesPanel(title) +
     $.queryPanel(
       $._config.resources_panel_queries[$._config.deployment_type][metric] % {
         namespaceMatcher: $.namespaceMatcher(),
         instanceLabel: $._config.per_instance_label,
-        instanceName: instanceName,
+        instanceMatcher: instanceMatcher,
       }, '{{%s}}' % $._config.per_instance_label
     ) +
     $.stack +
@@ -530,12 +554,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
     { fieldConfig+: { defaults+: { unit: 'Bps' } } },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
-  containerNetworkReceiveBytesPanelByComponent(componentName)::
-    $.containerNetworkBytesPanel('Receive bandwidth', 'network_receive_bytes', $._config.instance_names[componentName]),
+  // The optional excludeComponentName is useful to exclude components in case of prefix collisions (e.g. "compactor.*" and "compactor-scheduler").
+  containerNetworkReceiveBytesPanelByComponent(componentName, excludeComponentName='')::
+    local excludeInstanceName = if excludeComponentName == '' then '' else $._config.instance_names[excludeComponentName];
+    $.containerNetworkBytesPanel('Receive bandwidth', 'network_receive_bytes', $._config.instance_names[componentName], excludeInstanceName),
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
-  containerNetworkTransmitBytesPanelByComponent(componentName)::
-    $.containerNetworkBytesPanel('Transmit bandwidth', 'network_transmit_bytes', $._config.instance_names[componentName]),
+  // The optional excludeComponentName is useful to exclude components in case of prefix collisions (e.g. "compactor.*" and "compactor-scheduler").
+  containerNetworkTransmitBytesPanelByComponent(componentName, excludeComponentName='')::
+    local excludeInstanceName = if excludeComponentName == '' then '' else $._config.instance_names[excludeComponentName];
+    $.containerNetworkBytesPanel('Transmit bandwidth', 'network_transmit_bytes', $._config.instance_names[componentName], excludeInstanceName),
 
   // The provided instanceName should be a regexp from $._config.instance_names, while
   // the provided containerName should be a regexp from $._config.container_names.
@@ -583,13 +611,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   // The provided instanceName should be a regexp from $._config.instance_names, while
   // the provided containerName should be a regexp from $._config.container_names.
-  containerDiskSpaceUtilizationPanel(instanceName, containerName)::
+  // The optional excludeContainerName is useful to exclude components
+  // in case of prefix collisions (e.g. "compactor.*" and "compactor-scheduler").
+  containerDiskSpaceUtilizationPanel(instanceName, containerName, excludeContainerName='')::
     local label = if $._config.deployment_type == 'kubernetes' then '{{persistentvolumeclaim}}' else '{{instance}}';
+    local excludePvcMatcher = if excludeContainerName == '' then '' else ', ' + $.containerPersistentVolumeClaimExcludeMatcher(excludeContainerName);
     $.timeseriesPanel('Disk space utilization') +
     $.queryPanel(
       $._config.resources_panel_queries[$._config.deployment_type].disk_utilization % {
         namespaceMatcher: $.namespaceMatcher(),
-        persistentVolumeClaimMatcher: $.containerPersistentVolumeClaimMatcher(containerName),
+        persistentVolumeClaimMatcher: $.containerPersistentVolumeClaimMatcher(containerName) + excludePvcMatcher,
         instanceLabel: $._config.per_instance_label,
         instanceName: instanceName,
         instanceDataDir: $._config.instance_data_mountpoint,
@@ -606,12 +637,18 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
-  containerDiskSpaceUtilizationPanelByComponent(componentName)::
-    $.containerDiskSpaceUtilizationPanel($._config.instance_names[componentName], $._config.container_names[componentName]),
+  // The optional excludeComponentName is useful to exclude components in case of prefix collisions (e.g. "compactor.*" and "compactor-scheduler").
+  containerDiskSpaceUtilizationPanelByComponent(componentName, excludeComponentName='')::
+    local excludeContainerName = if excludeComponentName == '' then '' else $._config.container_names[excludeComponentName];
+    $.containerDiskSpaceUtilizationPanel($._config.instance_names[componentName], $._config.container_names[componentName], excludeContainerName),
 
   // The provided containerName should be a regexp from $._config.container_names.
   containerPersistentVolumeClaimMatcher(containerName)::
     'persistentvolumeclaim=~".*(%s).*"' % containerName,
+
+  // The provided containerName should be a regexp from $._config.container_names.
+  containerPersistentVolumeClaimExcludeMatcher(containerName)::
+    'persistentvolumeclaim!~".*(%s).*"' % containerName,
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
   containerNetworkingRowByComponent(title, componentName)::
@@ -1223,7 +1260,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   },
 
   getObjectStoreRows(title, component):: [
-    super.row(title)
+    $.row(title)
     .addPanel(
       $.timeseriesPanel('Operations / sec') +
       $.queryPanel('sum by(operation) (rate(thanos_objstore_bucket_operations_total{%s,component="%s"}[$__rate_interval]))' % [$.namespaceMatcher(), component], '{{operation}}') +
@@ -1242,8 +1279,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addPanel(
       $.timeseriesPanel('Latency of op: Exists') +
       $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="exists"' % [$.namespaceMatcher(), component]),
-    ),
-    $.row('')
+    )
     .addPanel(
       $.timeseriesPanel('Latency of op: Get') +
       $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="get"' % [$.namespaceMatcher(), component]),
@@ -1259,7 +1295,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addPanel(
       $.timeseriesPanel('Latency of op: Delete') +
       $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="delete"' % [$.namespaceMatcher(), component]),
-    ),
+    )
+    .splitIntoLines([4, 4]),
   ],
 
   thanosMemcachedCache(title, jobName, component, cacheName)::

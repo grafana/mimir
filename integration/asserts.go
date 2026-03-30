@@ -2,7 +2,6 @@
 // Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/integration/asserts.go
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
-//go:build requires_docker
 
 package integration
 
@@ -35,7 +34,7 @@ var (
 	serviceMetricsPrefixes = map[ServiceType][]string{
 		Distributor:    {},
 		Ingester:       {"!cortex_ingester_client", "cortex_ingester"},
-		Querier:        {"!cortex_querier_storegateway", "!cortex_querier_blocks", "!cortex_querier_queries", "!cortex_querier_query", "!cortex_querier_labels_deduplicator_processed_total", "!cortex_querier_labels_deduplicator_deduplicated_total", "cortex_querier"}, // The metrics prefix cortex_querier_storegateway, cortex_querier_blocks, cortex_querier_queries, cortex_querier_query, cortex_querier_labels_deduplicator_processed_total, and cortex_querier_labels_deduplicator_deduplicated_total are also exposed by Ruler in embedded querier mode so we ignore it.
+		Querier:        {"!cortex_querier_storegateway", "!cortex_querier_blocks", "!cortex_querier_queries", "!cortex_querier_query", "!cortex_querier_inflight_query", "!cortex_querier_labels_deduplicator_processed_total", "!cortex_querier_labels_deduplicator_deduplicated_total", "cortex_querier"}, // The metrics prefix cortex_querier_storegateway, cortex_querier_blocks, cortex_querier_queries, cortex_querier_query, cortex_querier_inflight_query, cortex_querier_labels_deduplicator_processed_total, and cortex_querier_labels_deduplicator_deduplicated_total are also exposed by Ruler in embedded querier mode so we ignore it.
 		QueryFrontend:  {"cortex_frontend", "cortex_query_frontend"},
 		QueryScheduler: {"cortex_query_scheduler"},
 		AlertManager:   {"cortex_alertmanager"},

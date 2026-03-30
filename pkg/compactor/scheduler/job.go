@@ -183,11 +183,6 @@ func NewTrackedPlanJob(creationTime time.Time) *TrackedPlanJob {
 	}
 }
 
-func (j *TrackedPlanJob) NumLeases() int {
-	// Trick to avoid imposing a maximum number of leases on plan jobs. Plan jobs will always represent the same task.
-	return 0
-}
-
 func (j *TrackedPlanJob) CopyBase() TrackedJob {
 	return &TrackedPlanJob{
 		baseTrackedJob: j.baseTrackedJob,
