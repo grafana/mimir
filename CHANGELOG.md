@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.0.5
+
+### Grafana Mimir
+
+* [BUGFIX] Update to google.golang.org/grpc to address [CVE-2026-33186](https://nvd.nist.gov/vuln/detail/CVE-2026-33186). #14761
+
 ## 3.0.4
 
 ### Grafana Mimir
