@@ -45,31 +45,43 @@ Here are the Kafka flavors and additional configurations needed to set them up i
 
 ### Apache Kafka
 
-Configure the following Kafka broker setting to support the default Mimir record size:
+In your Kafka broker configuration file (for example, `server.properties`), set the following property to support the default Mimir record size:
 
 ```
 message.max.bytes=16000000
 ```
 
 Mimir's default `-ingest-storage.kafka.producer-max-record-size-bytes` is approximately 15.2 MB.
-Apache Kafka's default `message.max.bytes` is 1 MB, which is smaller than this limit.
-Without increasing this setting, Kafka rejects any records larger than 1 MB.
+Apache Kafka's default `message.max.bytes` is 1 MB.
+Increase Kafka's `message.max.bytes` to at least `16000000` to match Mimir's maximum batch size; otherwise, Kafka rejects records larger than 1 MB.
 
-You can configure `max.message.bytes` at the topic level instead of the broker level.
+To configure the limit at the topic level instead of the broker level, run:
+
+```bash
+bin/kafka-configs.sh --bootstrap-server <host:port> \
+  --alter --entity-type topics --entity-name <topic-name> \
+  --add-config max.message.bytes=16000000
+```
 
 ### Confluent Kafka
 
-Configure the following Kafka broker setting to support the default Mimir record size:
+In your Kafka broker configuration file (for example, `server.properties`), set the following property to support the default Mimir record size:
 
 ```
 message.max.bytes=16000000
 ```
 
 Mimir's default `-ingest-storage.kafka.producer-max-record-size-bytes` is approximately 15.2 MB.
-Confluent Kafka's default `message.max.bytes` is 1 MB, which is smaller than this limit.
-Without increasing this setting, Kafka rejects any records larger than 1 MB.
+Confluent Kafka's default `message.max.bytes` is 1 MB.
+Increase Kafka's `message.max.bytes` to at least `16000000` to match Mimir's maximum batch size; otherwise, Kafka rejects records larger than 1 MB.
 
-You can configure `max.message.bytes` at the topic level instead of the broker level.
+To configure the limit at the topic level instead of the broker level, run:
+
+```bash
+bin/kafka-configs.sh --bootstrap-server <host:port> \
+  --alter --entity-type topics --entity-name <topic-name> \
+  --add-config max.message.bytes=16000000
+```
 
 ### Warpstream
 
