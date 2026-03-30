@@ -235,17 +235,22 @@ type Codec struct {
 }
 
 type formatter interface {
-	EncodeQueryResponse(resp *PrometheusResponse) ([]byte, error)
 	EncodeQueryResponseTo(w io.Writer, resp *PrometheusResponse) error
-	EncodeLabelsResponse(resp *PrometheusLabelsResponse) ([]byte, error)
 	EncodeLabelsResponseTo(w io.Writer, resp *PrometheusLabelsResponse) error
-	EncodeSeriesResponse(resp *PrometheusSeriesResponse) ([]byte, error)
 	EncodeSeriesResponseTo(w io.Writer, resp *PrometheusSeriesResponse) error
 	DecodeQueryResponse([]byte) (*PrometheusResponse, error)
 	DecodeLabelsResponse([]byte) (*PrometheusLabelsResponse, error)
 	DecodeSeriesResponse([]byte) (*PrometheusSeriesResponse, error)
 	Name() string
 	ContentType() v1.MIMEType
+}
+
+func encodeQueryResponse(f formatter, resp *PrometheusResponse) ([]byte, error) {
+	var buf bytes.Buffer
+	if err := f.EncodeQueryResponseTo(&buf, resp); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 var jsonFormatterInstance = jsonFormatter{}
@@ -1094,10 +1099,15 @@ func findFormatter(contentType string) formatter {
 // EncodeMetricsQueryResponse encodes a Response from a MetricsQueryRequest into an http response.
 func (c Codec) EncodeMetricsQueryResponse(ctx context.Context, req *http.Request, res Response) (*http.Response, error) {
 	_, sp := tracer.Start(ctx, "APIResponse.ToHTTPResponse")
+	endTraceSpan := true
+	defer func() {
+		if endTraceSpan {
+			sp.End()
+		}
+	}()
 
 	a, ok := res.GetPrometheusResponse()
 	if !ok {
-		sp.End()
 		return nil, apierror.Newf(apierror.TypeInternal, "invalid response format")
 	}
 	if a.Data != nil {
@@ -1106,24 +1116,27 @@ func (c Codec) EncodeMetricsQueryResponse(ctx context.Context, req *http.Request
 
 	selectedContentType, formatter := c.negotiateContentType(req.Header.Get("Accept"))
 	if formatter == nil {
-		sp.End()
 		return nil, apierror.New(apierror.TypeNotAcceptable, "none of the content types in the Accept header are supported")
 	}
 
 	queryStats := stats.FromContext(ctx)
 	pr, pw := io.Pipe()
+	endTraceSpan = false
 	go func() {
-		defer sp.End()
+		var encErr error
+		defer func() {
+			_ = pw.CloseWithError(encErr)
+			res.Close()
+			sp.End()
+		}()
 		cw := &countingWriter{w: pw}
 		start := time.Now()
-		encErr := formatter.EncodeQueryResponseTo(cw, a)
+		encErr = formatter.EncodeQueryResponseTo(cw, a)
 		encodeDuration := time.Since(start)
 		c.metrics.duration.WithLabelValues(operationEncode, formatter.Name()).Observe(encodeDuration.Seconds())
 		c.metrics.size.WithLabelValues(operationEncode, formatter.Name()).Observe(float64(cw.n))
 		sp.SetAttributes(attribute.Int("bytes", int(cw.n)))
 		queryStats.AddEncodeTime(encodeDuration)
-		res.Close()
-		pw.CloseWithError(encErr)
 	}()
 
 	resp := http.Response{
@@ -1164,10 +1177,15 @@ func (cw *countingWriter) Write(p []byte) (int, error) {
 // EncodeLabelsSeriesQueryResponse encodes a Response from a LabelsSeriesQueryRequest into an http response.
 func (c Codec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Request, res Response, isSeriesResponse bool) (*http.Response, error) {
 	_, sp := tracer.Start(ctx, "APIResponse.ToHTTPResponse")
+	endTraceSpan := true
+	defer func() {
+		if endTraceSpan {
+			sp.End()
+		}
+	}()
 
 	selectedContentType, formatter := c.negotiateContentType(req.Header.Get("Accept"))
 	if formatter == nil {
-		sp.End()
 		return nil, apierror.New(apierror.TypeNotAcceptable, "none of the content types in the Accept header are supported")
 	}
 
@@ -1176,7 +1194,6 @@ func (c Codec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Re
 	if !isSeriesResponse {
 		a, ok := res.(*PrometheusLabelsResponse)
 		if !ok {
-			sp.End()
 			return nil, apierror.Newf(apierror.TypeInternal, "invalid response format")
 		}
 		if a.Data != nil {
@@ -1186,7 +1203,6 @@ func (c Codec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Re
 	} else {
 		a, ok := res.(*PrometheusSeriesResponse)
 		if !ok {
-			sp.End()
 			return nil, apierror.Newf(apierror.TypeInternal, "invalid response format")
 		}
 		if a.Data != nil {
@@ -1196,15 +1212,19 @@ func (c Codec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Re
 	}
 
 	pr, pw := io.Pipe()
+	endTraceSpan = false
 	go func() {
-		defer sp.End()
+		var encErr error
+		defer func() {
+			_ = pw.CloseWithError(encErr)
+			sp.End()
+		}()
 		cw := &countingWriter{w: pw}
 		start := time.Now()
-		encErr := encodeFunc(cw)
+		encErr = encodeFunc(cw)
 		c.metrics.duration.WithLabelValues(operationEncode, formatter.Name()).Observe(time.Since(start).Seconds())
 		c.metrics.size.WithLabelValues(operationEncode, formatter.Name()).Observe(float64(cw.n))
 		sp.SetAttributes(attribute.Int("bytes", int(cw.n)))
-		pw.CloseWithError(encErr)
 	}()
 
 	resp := http.Response{

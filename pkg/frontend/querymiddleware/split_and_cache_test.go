@@ -1872,8 +1872,7 @@ func (q roundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	// EncodeMetricsQueryResponse returns an http.Response with a prometheusReadCloser body for the consumer to close the query.
-	// So we do not need to close the response ourselves here.
+	// EncodeMetricsQueryResponse owns cleanup of the response via its encoding goroutine, so we do not close it here.
 
 	return q.codec.EncodeMetricsQueryResponse(r.Context(), r, response)
 }

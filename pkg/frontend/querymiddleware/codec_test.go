@@ -985,12 +985,10 @@ func TestCodec_EncodeResponse_ContentNegotiation(t *testing.T) {
 		Error:     "something went wrong",
 	}
 
-	jsonBodyNoNewline, err := jsonFormatter{}.EncodeQueryResponse(testResponse)
+	jsonBody, err := encodeQueryResponse(jsonFormatterInstance, testResponse)
 	require.NoError(t, err)
-	// json.Encoder.Encode appends a trailing newline; marshal does not.
-	jsonBody := append(jsonBodyNoNewline, '\n')
 
-	protobufBody, err := ProtobufFormatter{}.EncodeQueryResponse(testResponse)
+	protobufBody, err := encodeQueryResponse(ProtobufFormatter{}, testResponse)
 	require.NoError(t, err)
 
 	scenarios := map[string]struct {

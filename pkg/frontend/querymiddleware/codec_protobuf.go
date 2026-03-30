@@ -23,62 +23,6 @@ func (f ProtobufFormatter) ContentType() v1.MIMEType {
 	return v1.MIMEType{Type: mimirpb.QueryResponseMimeTypeType, SubType: mimirpb.QueryResponseMimeTypeSubType}
 }
 
-func (f ProtobufFormatter) EncodeQueryResponse(resp *PrometheusResponse) ([]byte, error) {
-	status, err := mimirpb.StatusFromPrometheusString(resp.Status)
-	if err != nil {
-		return nil, err
-	}
-
-	errorType, err := mimirpb.ErrorTypeFromPrometheusString(resp.ErrorType)
-	if err != nil {
-		return nil, err
-	}
-
-	payload := mimirpb.QueryResponse{
-		Status:    status,
-		ErrorType: errorType,
-		Error:     resp.Error,
-		Warnings:  resp.Warnings,
-		Infos:     resp.Infos,
-	}
-
-	if resp.Data != nil {
-		switch resp.Data.ResultType {
-		case model.ValString.String():
-			data, err := f.encodeStringData(resp.Data.Result)
-			if err != nil {
-				return nil, err
-			}
-
-			payload.Data = &mimirpb.QueryResponse_String_{String_: &data}
-
-		case model.ValScalar.String():
-			data, err := f.encodeScalarData(resp.Data.Result)
-			if err != nil {
-				return nil, err
-			}
-
-			payload.Data = &mimirpb.QueryResponse_Scalar{Scalar: &data}
-
-		case model.ValVector.String():
-			data, err := f.encodeVectorData(resp.Data.Result)
-			if err != nil {
-				return nil, err
-			}
-
-			payload.Data = &mimirpb.QueryResponse_Vector{Vector: &data}
-
-		case model.ValMatrix.String():
-			data := f.encodeMatrixData(resp.Data.Result)
-			payload.Data = &mimirpb.QueryResponse_Matrix{Matrix: &data}
-
-		default:
-			return nil, fmt.Errorf("unknown result type '%s'", resp.Data.ResultType)
-		}
-	}
-
-	return payload.Marshal()
-}
 
 func (ProtobufFormatter) encodeStringData(data []SampleStream) (mimirpb.StringData, error) {
 	if len(data) != 1 {
@@ -328,16 +272,65 @@ func (f ProtobufFormatter) decodeMatrixData(data *mimirpb.MatrixData) (*Promethe
 }
 
 func (f ProtobufFormatter) EncodeQueryResponseTo(w io.Writer, resp *PrometheusResponse) error {
-	b, err := f.EncodeQueryResponse(resp)
+	status, err := mimirpb.StatusFromPrometheusString(resp.Status)
+	if err != nil {
+		return err
+	}
+
+	errorType, err := mimirpb.ErrorTypeFromPrometheusString(resp.ErrorType)
+	if err != nil {
+		return err
+	}
+
+	payload := mimirpb.QueryResponse{
+		Status:    status,
+		ErrorType: errorType,
+		Error:     resp.Error,
+		Warnings:  resp.Warnings,
+		Infos:     resp.Infos,
+	}
+
+	if resp.Data != nil {
+		switch resp.Data.ResultType {
+		case model.ValString.String():
+			data, err := f.encodeStringData(resp.Data.Result)
+			if err != nil {
+				return err
+			}
+
+			payload.Data = &mimirpb.QueryResponse_String_{String_: &data}
+
+		case model.ValScalar.String():
+			data, err := f.encodeScalarData(resp.Data.Result)
+			if err != nil {
+				return err
+			}
+
+			payload.Data = &mimirpb.QueryResponse_Scalar{Scalar: &data}
+
+		case model.ValVector.String():
+			data, err := f.encodeVectorData(resp.Data.Result)
+			if err != nil {
+				return err
+			}
+
+			payload.Data = &mimirpb.QueryResponse_Vector{Vector: &data}
+
+		case model.ValMatrix.String():
+			data := f.encodeMatrixData(resp.Data.Result)
+			payload.Data = &mimirpb.QueryResponse_Matrix{Matrix: &data}
+
+		default:
+			return fmt.Errorf("unknown result type '%s'", resp.Data.ResultType)
+		}
+	}
+
+	b, err := payload.Marshal()
 	if err != nil {
 		return err
 	}
 	_, err = w.Write(b)
 	return err
-}
-
-func (f ProtobufFormatter) EncodeLabelsResponse(*PrometheusLabelsResponse) ([]byte, error) {
-	return nil, errors.New("protobuf labels encoding is not supported")
 }
 
 func (f ProtobufFormatter) EncodeLabelsResponseTo(_ io.Writer, _ *PrometheusLabelsResponse) error {
@@ -346,10 +339,6 @@ func (f ProtobufFormatter) EncodeLabelsResponseTo(_ io.Writer, _ *PrometheusLabe
 
 func (f ProtobufFormatter) DecodeLabelsResponse([]byte) (*PrometheusLabelsResponse, error) {
 	return nil, errors.New("protobuf labels decoding is not supported")
-}
-
-func (f ProtobufFormatter) EncodeSeriesResponse(*PrometheusSeriesResponse) ([]byte, error) {
-	return nil, errors.New("protobuf series encoding is not supported")
 }
 
 func (f ProtobufFormatter) EncodeSeriesResponseTo(_ io.Writer, _ *PrometheusSeriesResponse) error {

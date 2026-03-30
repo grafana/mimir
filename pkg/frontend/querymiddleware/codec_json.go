@@ -15,10 +15,6 @@ const jsonMimeType = "application/json"
 
 type jsonFormatter struct{}
 
-func (j jsonFormatter) EncodeQueryResponse(resp *PrometheusResponse) ([]byte, error) {
-	return json.Marshal(resp)
-}
-
 func (j jsonFormatter) EncodeQueryResponseTo(w io.Writer, resp *PrometheusResponse) error {
 	return jsonStreamEncode(w, resp)
 }
@@ -33,10 +29,6 @@ func (j jsonFormatter) DecodeQueryResponse(buf []byte) (*PrometheusResponse, err
 	return &resp, nil
 }
 
-func (j jsonFormatter) EncodeLabelsResponse(resp *PrometheusLabelsResponse) ([]byte, error) {
-	return json.Marshal(resp)
-}
-
 func (j jsonFormatter) EncodeLabelsResponseTo(w io.Writer, resp *PrometheusLabelsResponse) error {
 	return jsonStreamEncode(w, resp)
 }
@@ -49,10 +41,6 @@ func (j jsonFormatter) DecodeLabelsResponse(buf []byte) (*PrometheusLabelsRespon
 	}
 
 	return &resp, nil
-}
-
-func (j jsonFormatter) EncodeSeriesResponse(resp *PrometheusSeriesResponse) ([]byte, error) {
-	return json.Marshal(resp)
 }
 
 func (j jsonFormatter) EncodeSeriesResponseTo(w io.Writer, resp *PrometheusSeriesResponse) error {
@@ -82,13 +70,17 @@ func (j jsonFormatter) ContentType() v1.MIMEType {
 // with a small buffer and must grow to fit the full response.
 func jsonStreamEncode(w io.Writer, v interface{}) error {
 	stream := json.BorrowStream(w)
+	defer json.ReturnStream(stream)
 	stream.WriteVal(v)
+
+	// Why add a newline?
+	// When the response body is streamed, many HTTP clients and intermediaries treat a newline as a "record separator"
+	// that signals the current chunk is complete and can be processed.
+	// Without it, some readers may buffer waiting for more data.
 	stream.WriteRaw("\n")
 	if stream.Error != nil {
-		json.ReturnStream(stream)
 		return stream.Error
 	}
 	err := stream.Flush()
-	json.ReturnStream(stream)
 	return err
 }
