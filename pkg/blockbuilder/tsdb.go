@@ -315,8 +315,11 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 	userID := tenant.tenantID
 	userLogger := util_log.WithUserID(userID, b.logger)
 
+	blockRanges := b.cfg.BlocksStorage.TSDB.BlockRanges.ToMilliseconds()
+
 	udb := &userTSDB{
-		userID: userID,
+		userID:     userID,
+		blockRange: blockRanges[0],
 	}
 
 	// Until we have a better way to enforce the same limits between ingesters and block builders,
@@ -331,8 +334,8 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 
 	db, err := tsdb.Open(udir, util_log.SlogFromGoKit(userLogger), tsdbPromReg, &tsdb.Options{
 		RetentionDuration:                    0,
-		MinBlockDuration:                     2 * time.Hour.Milliseconds(),
-		MaxBlockDuration:                     2 * time.Hour.Milliseconds(),
+		MinBlockDuration:                     blockRanges[0],
+		MaxBlockDuration:                     blockRanges[0],
 		NoLockfile:                           true,
 		StripeSize:                           b.cfg.BlocksStorage.TSDB.StripeSize,
 		HeadChunksWriteBufferSize:            b.cfg.BlocksStorage.TSDB.HeadChunksWriteBufferSize,
@@ -498,6 +501,7 @@ type userTSDB struct {
 	*tsdb.DB
 	userID          string
 	maxGlobalSeries int
+	blockRange      int64
 }
 
 var (
@@ -518,7 +522,7 @@ func (u *userTSDB) PostCreation(labels.Labels) {}
 func (u *userTSDB) PostDeletion(map[chunks.HeadSeriesRef]labels.Labels) {}
 
 func (u *userTSDB) compactBlocks(ctx context.Context) error {
-	blockRange := 2 * time.Hour.Milliseconds()
+	blockRange := u.blockRange
 
 	// Compact the in-order data.
 	mint, maxt := u.Head().MinTime(), u.Head().MaxTime()
