@@ -92,9 +92,9 @@ func (e *SparseTableOffsetsForLabel) labelValuePrefixOffsets(prefix string) (sta
 func SparseValuesFromPostingsOffsetsTable(
 	decbufFactory streamencoding.DecbufFactory,
 	tableOffset int,
-	doChecksum bool,
-	sparseSampleFactor int,
 	postingsListEnd uint64,
+	sparseSampleFactor int,
+	doChecksum bool,
 ) (sparsePostingsOffsets map[string]*SparseTableOffsetsForLabel, err error) {
 	var decbuf streamencoding.Decbuf
 	if doChecksum {

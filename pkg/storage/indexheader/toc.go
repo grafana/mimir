@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
+	"io"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -20,11 +21,13 @@ import (
 // TOCCompat unifies the Prometheus TSDB index TOC values available from different index types,
 // containing only the TOC offsets required for index-header reads of the Symbols and Postings Offsets.
 //
-// The StreamBinaryReader reads the index-header BinaryFormatV1 from disk.
+// The StreamBinaryReader uses either a file- or bucket-backed DecbufFactory to read the index.
+//
+// The FilePoolDecbufFactory reads the index-header BinaryFormatV1 from disk.
 // The section offsets for this format differ from a full Prometheus TSDB index
 // and the file metadata does not contain all TOC values available from the full TSDB index.
 //
-// The BucketBinaryReader loads the full Prometheus TSDB index TOC from the block in object storage.
+// The BucketDecbufFactory loads the full Prometheus TSDB index TOC from the block in object storage.
 type TOCCompat struct {
 	IndexVersion int
 
@@ -155,4 +158,23 @@ func TOCFromIndexHeader(
 		PostingsListEnd:     postingsListEnd,
 		PostingsOffsetTable: postingsOffsetTable,
 	}, indexHeaderVersion, nil
+}
+
+func fetchRange(ctx context.Context, bkt objstore.BucketReader, objectPath string, offset, length int64) (data []byte, err error) {
+	rc, err := bkt.GetRange(ctx, objectPath, offset, length)
+	if err != nil {
+		return nil, fmt.Errorf("get range [%d, %d): %w", offset, offset+length, err)
+	}
+	defer runutil.CloseWithErrCapture(&err, rc, "close range reader %s", objectPath)
+
+	data, err = io.ReadAll(rc)
+	if err != nil {
+		return nil, fmt.Errorf("read range data: %w", err)
+	}
+
+	if int64(len(data)) != length {
+		return nil, fmt.Errorf("expected %d bytes, got %d", length, len(data))
+	}
+
+	return data, err
 }

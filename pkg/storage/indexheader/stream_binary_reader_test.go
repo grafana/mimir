@@ -24,7 +24,6 @@ import (
 
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // TestStreamBinaryReader_ShouldBuildSparseHeadersFromFile tests if StreamBinaryReader constructs
@@ -54,16 +53,15 @@ func TestStreamBinaryReader_ShouldBuildSparseHeadersFromFileSimple(t *testing.T)
 	require.NoError(t, err)
 
 	// Write sparse index headers to disk on first build.
-	r, err := NewStreamBinaryReader(ctx, blockID, bkt, tmpDir, Config{}, 3, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+	_, err = NewStreamBinaryReader(ctx, blockID, bkt, tmpDir, Config{}, 3, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 	require.NoError(t, err)
 
-	// Read sparse index headers to disk on second build.
-	sparseHeadersPath := filepath.Join(tmpDir, blockID.String(), block.SparseIndexHeaderFilename)
-	sparseData, err := os.ReadFile(sparseHeadersPath)
+	// Confirm sparse index headers can be read from disk on subsequent builds.
+	_, _, _, err = LoadExistingSparseHeader(ctx, blockID, bkt, tmpDir, 3, log.NewNopLogger())
 	require.NoError(t, err)
 
-	logger := spanlogger.FromContext(context.Background(), log.NewNopLogger())
-	err = r.loadFromSparseIndexHeader(logger, sparseData, 3)
+	// Confirm end-to-end success of second build.
+	_, err = NewStreamBinaryReader(ctx, blockID, bkt, tmpDir, Config{}, 3, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 	require.NoError(t, err)
 }
 

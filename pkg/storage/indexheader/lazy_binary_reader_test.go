@@ -81,7 +81,7 @@ func TestNewLazyBinaryReader_ShouldBuildIndexHeaderFromBucket(t *testing.T) {
 
 // TestNewaLazyStreamBinaryReader_UsesSparseHeaderFromObjectStore tests if StreamBinaryReader uses
 // a sparse index header that's already present in the object store instead of recreating it.
-func TestNewaLazyStreamBinaryReader_UsesSparseHeaderFromObjectStore(t *testing.T) {
+func TestNewLazyStreamBinaryReader_UsesSparseHeaderFromObjectStore(t *testing.T) {
 	const samplingRate = 32
 	ctx := context.Background()
 	logger := log.NewLogfmtLogger(os.Stderr)
@@ -714,17 +714,23 @@ func BenchmarkLazyBinaryReader_LoadReader(b *testing.B) {
 				return lazyReader
 			}
 
-			bucketReaderBenchFactory := func(
+			splitReaderBenchFactory := func(
 				cachingBucket *bucketcache.CachingBucket,
 				bktReg *prometheus.Registry,
 			) *LazyBinaryReader {
 				ll := log.NewNopLogger()
-				bucketReaderFactory := func() (Reader, error) {
-					return NewBucketBinaryReader(ctx, ll, cachingBucket, bucketDir, idIndexV2, 32, Config{})
+				splitReaderCfg := Config{
+					BucketReader: BucketReaderConfig{
+						Enabled:             true,
+						BucketIndexSections: SectionPostingsOffsetsTable,
+					},
+				}
+				splitReaderFactory := func() (Reader, error) {
+					return NewStreamBinaryReader(ctx, idIndexV2, cachingBucket, bucketDir, splitReaderCfg, 32, ll, NewStreamBinaryReaderMetrics(nil))
 				}
 				lazyReader, err := NewLazyBinaryReader(
-					ctx, Config{BucketReader: BucketReaderConfig{Enabled: true}},
-					bucketReaderFactory, ll, cachingBucket, bucketDir, idIndexV2,
+					ctx, splitReaderCfg,
+					splitReaderFactory, ll, cachingBucket, bucketDir, idIndexV2,
 					NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop(),
 				)
 				require.NoError(b, err)
@@ -737,7 +743,7 @@ func BenchmarkLazyBinaryReader_LoadReader(b *testing.B) {
 				factory benchFactory
 			}{
 				{"disk", diskReaderBenchFactory},
-				{"bucket", bucketReaderBenchFactory},
+				{"split", splitReaderBenchFactory},
 			}
 			b.ResetTimer()
 			for _, benchFactory := range benchFactories {

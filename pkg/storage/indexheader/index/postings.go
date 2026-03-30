@@ -50,10 +50,8 @@ type PostingsOffsetsTableReader interface {
 	// LabelNames returns a sorted list of all label names in this table.
 	LabelNames() ([]string, error)
 
-	//ToSparsePostingOffsetTable() (table *indexheaderpb.PostingOffsetTable)
-
-	// PostingOffsetInMemSampling returns the inverse of the fraction of postings held in memory. A lower value indicates
-	// postings are sample more frequently.
+	// PostingOffsetInMemSampling returns the inverse of the fraction of postings held in memory.
+	// A lower value indicates postings are sample more frequently.
 	PostingOffsetInMemSampling() int
 }
 
@@ -69,8 +67,8 @@ func NewPostingsOffsetTableReader(
 		return &PostingOffsetsTableV2{
 			factory:               decbufFactory,
 			tableOffset:           tableOffset,
-			sparsePostingsOffsets: sparsePostingsOffsets,
-			sparseSampleFactor:    sparseSampleFactor,
+			SparsePostingsOffsets: sparsePostingsOffsets,
+			SparseSampleFactor:    sparseSampleFactor,
 		}, nil
 	}
 	return nil, fmt.Errorf("unknown or unsupported index version %v", indexVersion)
@@ -80,16 +78,16 @@ type PostingOffsetsTableV2 struct {
 	// Map of LabelName to a list of some LabelValues's position in the offset table.
 	// The first and last values for each name are always present,
 	// we keep only 1/sparseSampleFactor of the rest.
-	sparsePostingsOffsets map[string]*SparseTableOffsetsForLabel
+	SparsePostingsOffsets map[string]*SparseTableOffsetsForLabel
 
-	sparseSampleFactor int
+	SparseSampleFactor int
 
 	factory     streamencoding.DecbufFactory
 	tableOffset int
 }
 
 func (t *PostingOffsetsTableV2) PostingsOffset(name string, value string) (r index.Range, found bool, err error) {
-	e, ok := t.sparsePostingsOffsets[name]
+	e, ok := t.SparsePostingsOffsets[name]
 	if !ok {
 		return index.Range{}, false, nil
 	}
@@ -171,7 +169,7 @@ func (t *PostingOffsetsTableV2) PostingsOffset(name string, value string) (r ind
 }
 
 func (t *PostingOffsetsTableV2) LabelValuesOffsets(ctx context.Context, name, prefix string, filter func(string) bool) (_ []PostingListOffset, err error) {
-	e, ok := t.sparsePostingsOffsets[name]
+	e, ok := t.SparsePostingsOffsets[name]
 	if !ok {
 		return nil, nil
 	}
@@ -186,7 +184,7 @@ func (t *PostingOffsetsTableV2) LabelValuesOffsets(ctx context.Context, name, pr
 			return nil, nil
 		}
 	}
-	offsets := make([]PostingListOffset, 0, (offsetsEnd-offsetsStart)*t.sparseSampleFactor)
+	offsets := make([]PostingListOffset, 0, (offsetsEnd-offsetsStart)*t.SparseSampleFactor)
 
 	// Don't Crc32 the entire postings offset table, this is very slow
 	// so hope any issues were caught at startup.
@@ -284,10 +282,10 @@ func (t *PostingOffsetsTableV2) LabelValuesOffsets(ctx context.Context, name, pr
 }
 
 func (t *PostingOffsetsTableV2) LabelNames() ([]string, error) {
-	labelNames := make([]string, 0, len(t.sparsePostingsOffsets))
+	labelNames := make([]string, 0, len(t.SparsePostingsOffsets))
 	allPostingsKeyName, _ := index.AllPostingsKey()
 
-	for name := range t.sparsePostingsOffsets {
+	for name := range t.SparsePostingsOffsets {
 		if name == allPostingsKeyName {
 			continue
 		}
@@ -302,7 +300,7 @@ func (t *PostingOffsetsTableV2) LabelNames() ([]string, error) {
 
 func (t *PostingOffsetsTableV2) PostingOffsetInMemSampling() int {
 	if t != nil {
-		return t.sparseSampleFactor
+		return t.SparseSampleFactor
 	}
 	return 0
 }

@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/gate"
+	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -36,7 +37,10 @@ var implementations = []struct {
 	{
 		name: "stream binary reader",
 		factory: func(t *testing.T, ctx context.Context, dir string, id ulid.ULID) Reader {
-			br, err := NewStreamBinaryReader(ctx, id, nil, dir, Config{}, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+			bkt, err := filesystem.NewBucket(filepath.Join(dir, "bkt"))
+			require.NoError(t, err)
+			instrBkt := objstore.WithNoopInstr(bkt)
+			br, err := NewStreamBinaryReader(ctx, id, instrBkt, dir, Config{}, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 			require.NoError(t, err)
 			requireCleanup(t, br.Close)
 			return br
@@ -45,8 +49,11 @@ var implementations = []struct {
 	{
 		name: "lazy stream binary reader",
 		factory: func(t *testing.T, ctx context.Context, dir string, id ulid.ULID) Reader {
+			bkt, err := filesystem.NewBucket(filepath.Join(dir, "bkt"))
+			require.NoError(t, err)
+			instrBkt := objstore.WithNoopInstr(bkt)
 			readerFactory := func() (Reader, error) {
-				return NewStreamBinaryReader(ctx, id, nil, dir, Config{}, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+				return NewStreamBinaryReader(ctx, id, instrBkt, dir, Config{}, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 			}
 
 			br, err := NewLazyBinaryReader(ctx, Config{}, readerFactory, log.NewNopLogger(), nil, dir, id, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
@@ -227,8 +234,15 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 			// label names are equal between original and downsampled sparse index-headers
 			require.ElementsMatch(t, downsampleLabelNames, origLabelNames)
 
-			origIdxpbTbl := br1.postingsOffsetTable.ToSparsePostingOffsetTable()
-			downsampleIdxpbTbl := br2.postingsOffsetTable.ToSparsePostingOffsetTable()
+			origIdxTblReader := br1.postingsOffsetTable.(*streamindex.PostingOffsetsTableV2)
+			origIdxpbTbl := streamindex.SparsePostingsOffsetsTableToProto(
+				origIdxTblReader.SparsePostingsOffsets, origIdxTblReader.SparseSampleFactor,
+			)
+
+			downsampleIdxpbTblReader := br2.postingsOffsetTable.(*streamindex.PostingOffsetsTableV2)
+			downsampleIdxpbTbl := streamindex.SparsePostingsOffsetsTableToProto(
+				downsampleIdxpbTblReader.SparsePostingsOffsets, downsampleIdxpbTblReader.SparseSampleFactor,
+			)
 
 			for name, vals := range origIdxpbTbl.Postings {
 				downsampledOffsets := downsampleIdxpbTbl.Postings[name].Offsets
@@ -276,12 +290,19 @@ func compareIndexToHeaderPostings(t *testing.T, indexByteSlice index.ByteSlice, 
 	})
 	require.NoError(t, err)
 
-	tbl := sbr.postingsOffsetTable.ToSparsePostingOffsetTable()
+	sparseTable, err := streamindex.SparseValuesFromPostingsOffsetsTable(
+		sbr.postingsOffsetsDecbufFactory,
+		int(sbr.postingsOffsetsTOC.PostingsOffsetTable),
+		sbr.postingsOffsetsTOC.PostingsListEnd,
+		sbr.sparseSampleFactor,
+		true,
+	)
+	sparseTableProto := streamindex.SparsePostingsOffsetsTableToProto(sparseTable, sbr.sparseSampleFactor)
 
 	expLabelNames, err := ir.LabelNames(context.Background())
 	require.NoError(t, err)
 	for _, lname := range expLabelNames {
-		offsets := tbl.Postings[lname].Offsets
+		offsets := sparseTableProto.Postings[lname].Offsets
 		assert.Equal(t, offsets[0].TableOff, tblOffsetBounds[lname][0])
 		assert.Equal(t, offsets[len(offsets)-1].TableOff, tblOffsetBounds[lname][1])
 	}

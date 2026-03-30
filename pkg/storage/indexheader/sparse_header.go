@@ -106,6 +106,7 @@ func LoadExistingSparseHeader(
 			}
 			return 0, nil, nil, err
 		}
+
 		// Successfully read gzipped proto bytes from bucket; attempt to write to disk.
 		if err := atomicfs.CreateFile(localSparseHeaderPath, bytes.NewReader(gzipSparseHeaderBytes)); err != nil {
 			// Log an error in case there are disk issues, but we can still continue.
@@ -118,8 +119,13 @@ func LoadExistingSparseHeader(
 
 	// If we reach this point, we got the zipped sparse header from disk or bucket. Unmarshall the proto.
 	sparseHeaderProto := &indexheaderpb.Sparse{}
-	sparseHeaderBytes, _ := unzipSparseHeader(gzipSparseHeaderBytes, ll)
-	if err := sparseHeaderProto.Unmarshal(sparseHeaderBytes); err != nil {
+	if sparseHeaderBytes, err := unzipSparseHeader(gzipSparseHeaderBytes, ll); err != nil {
+		level.Error(spanLog).Log(
+			"msg", "failed to unzip sparse index-header file",
+			"err", err,
+		)
+		return 0, nil, nil, err
+	} else if err := sparseHeaderProto.Unmarshal(sparseHeaderBytes); err != nil {
 		level.Error(spanLog).Log(
 			"msg", "failed to unmarshall zipped sparse index-header to proto",
 			"err", err,
@@ -211,9 +217,7 @@ func BuildSparseHeaderFromIndexHeader(
 		return -1, nil, nil, err
 	}
 
-	sparsePostingsOffsets, err = streamindex.SparseValuesFromPostingsOffsetsTable(
-		decbufFactory, int(toc.PostingsOffsetTable), doChecksum, sparseSampleFactor, toc.PostingsOffsetTable,
-	)
+	sparsePostingsOffsets, err = streamindex.SparseValuesFromPostingsOffsetsTable(decbufFactory, int(toc.PostingsOffsetTable), toc.PostingsListEnd, sparseSampleFactor, doChecksum)
 	if err != nil {
 		return -1, nil, nil, err
 	}
@@ -221,7 +225,7 @@ func BuildSparseHeaderFromIndexHeader(
 	return allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, nil
 }
 
-func writeSparseHeaderProtoToDisk(path string, sparseHeaders *indexheaderpb.Sparse, ll log.Logger) (err error) {
+func writeSparseHeaderProtoToDisk(path string, sparseHeaders *indexheaderpb.Sparse) error {
 	out, err := sparseHeaders.Marshal()
 	if err != nil {
 		return fmt.Errorf("failed to marshall sparse index-header: %w", err)
@@ -229,10 +233,12 @@ func writeSparseHeaderProtoToDisk(path string, sparseHeaders *indexheaderpb.Spar
 
 	gzipped := &bytes.Buffer{}
 	gzipWriter := gzip.NewWriter(gzipped)
-	defer runutil.CloseWithLogOnErr(ll, gzipWriter, "failed to close sparse index-header gzip writer")
 
 	if _, err := gzipWriter.Write(out); err != nil {
 		return fmt.Errorf("failed to gzip sparse index-header: %w", err)
+	}
+	if err := gzipWriter.Close(); err != nil {
+		return fmt.Errorf("failed to close sparse index-header gzip writer: %w", err)
 	}
 
 	return atomicfs.CreateFile(path, gzipped)

@@ -94,7 +94,7 @@ func (p *ReaderPool) NewBinaryReader(
 	var err error
 
 	readerFactory = func() (Reader, error) {
-		return NewSplitStreamBinaryReader(ctx, id, bkt, dir, cfg, postingOffsetsInMemSampling, logger, p.metrics.streamReader)
+		return NewStreamBinaryReader(ctx, id, bkt, dir, cfg, postingOffsetsInMemSampling, logger, p.metrics.streamReader)
 	}
 
 	if p.lazyReaderEnabled {
