@@ -4552,6 +4552,10 @@ blocked_queries:
     # disable.
     [time_range_longer_than: <duration> | default = ]
 
+    # Block queries where the step is smaller than this duration. Instant
+    # queries and queries with no step are not blocked. Set to 0 to disable.
+    [minimum_step_size: <duration> | default = ]
+
 # (experimental) List of queries to limit and duration to limit them for.
 # Example:
 #   The following configuration limits the query "rate(metric_counter[5m])" to
