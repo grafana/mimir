@@ -532,9 +532,6 @@ func (Codec) DecodeSearchQueryRequest(_ context.Context, r *http.Request) (*Sear
 	if req.SortDir, err = p.SortDir(); err != nil {
 		return nil, err
 	}
-	if req.Operator, err = p.Operator(); err != nil {
-		return nil, err
-	}
 	if req.Limit, err = p.Limit(); err != nil {
 		return nil, err
 	}

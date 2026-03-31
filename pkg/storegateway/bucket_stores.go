@@ -398,39 +398,39 @@ func (u *BucketStores) LabelValues(ctx context.Context, req *storepb.LabelValues
 }
 
 // SearchLabelNames implements the storegatewaypb.StoreGatewayServer interface.
-func (u *BucketStores) SearchLabelNames(ctx context.Context, req *storepb.SearchLabelNamesRequest) (*storepb.LabelNamesResponse, error) {
-	spanLog, ctx := spanlogger.New(ctx, u.logger, tracer, "BucketStores.SearchLabelNames")
+func (u *BucketStores) SearchLabelNames(req *storepb.SearchLabelNamesRequest, stream storegatewaypb.StoreGateway_SearchLabelNamesServer) error {
+	spanLog, ctx := spanlogger.New(stream.Context(), u.logger, tracer, "BucketStores.SearchLabelNames")
 	defer spanLog.Finish()
 
 	userID := getUserIDFromGRPCContext(ctx)
 	if userID == "" {
-		return nil, fmt.Errorf("no userID")
+		return fmt.Errorf("no userID")
 	}
 
 	store := u.getStore(userID)
 	if store == nil {
-		return &storepb.LabelNamesResponse{}, nil
+		return nil
 	}
 
-	return store.SearchLabelNames(ctx, req)
+	return store.SearchLabelNames(req, stream)
 }
 
 // SearchLabelValues implements the storegatewaypb.StoreGatewayServer interface.
-func (u *BucketStores) SearchLabelValues(ctx context.Context, req *storepb.SearchLabelValuesRequest) (*storepb.LabelValuesResponse, error) {
-	spanLog, ctx := spanlogger.New(ctx, u.logger, tracer, "BucketStores.SearchLabelValues")
+func (u *BucketStores) SearchLabelValues(req *storepb.SearchLabelValuesRequest, stream storegatewaypb.StoreGateway_SearchLabelValuesServer) error {
+	spanLog, ctx := spanlogger.New(stream.Context(), u.logger, tracer, "BucketStores.SearchLabelValues")
 	defer spanLog.Finish()
 
 	userID := getUserIDFromGRPCContext(ctx)
 	if userID == "" {
-		return nil, fmt.Errorf("no userID")
+		return fmt.Errorf("no userID")
 	}
 
 	store := u.getStore(userID)
 	if store == nil {
-		return &storepb.LabelValuesResponse{}, nil
+		return nil
 	}
 
-	return store.SearchLabelValues(ctx, req)
+	return store.SearchLabelValues(req, stream)
 }
 
 // scanUsers in the bucket and return the list of found users, respecting any specifically
@@ -586,6 +586,7 @@ func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*Bu
 		NewSeriesLimiterFactory(func() uint64 {
 			return uint64(u.limits.MaxFetchedSeriesPerQuery(userID))
 		}),
+		func() int { return u.limits.StoreGatewaySearchLabelsValuesMaxSizeBytes(userID) },
 		u.partitioners,
 		u.seriesHashCache,
 		u.bucketStoreMetrics,

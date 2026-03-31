@@ -88,12 +88,12 @@ func (l LazyQuerier) Close() error {
 }
 
 // SearchLabelNames implements mimirstorage.MimirSearcher.
-func (l LazyQuerier) SearchLabelNames(ctx context.Context, hints *mimirstorage.MimirSearchHints, matchers ...*labels.Matcher) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
+func (l LazyQuerier) SearchLabelNames(ctx context.Context, hints *mimirstorage.MimirSearchHints, matchers ...*labels.Matcher) (mimirstorage.SearchResultSet, annotations.Annotations) {
 	return l.next.(mimirstorage.MimirSearcher).SearchLabelNames(ctx, hints, matchers...)
 }
 
 // SearchLabelValues implements mimirstorage.MimirSearcher.
-func (l LazyQuerier) SearchLabelValues(ctx context.Context, name string, hints *mimirstorage.MimirSearchHints, matchers ...*labels.Matcher) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
+func (l LazyQuerier) SearchLabelValues(ctx context.Context, name string, hints *mimirstorage.MimirSearchHints, matchers ...*labels.Matcher) (mimirstorage.SearchResultSet, annotations.Annotations) {
 	return l.next.(mimirstorage.MimirSearcher).SearchLabelValues(ctx, name, hints, matchers...)
 }
 

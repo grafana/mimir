@@ -214,7 +214,7 @@ func TestParseInfluxLineReader(t *testing.T) {
 			// Ensure we are getting the expected number of results
 			assert.Equal(t, len(timeSeries), len(tt.expectedResult))
 
-			// Compare them one by one
+			// CompareFunc them one by one
 			for i := 0; i < len(timeSeries); i++ {
 				assert.Equal(t, timeSeries[i].String(), tt.expectedResult[i].String())
 			}

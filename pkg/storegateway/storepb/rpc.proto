@@ -253,11 +253,6 @@ message LabelValuesResponseHints {
   repeated Block queried_blocks = 1 [(gogoproto.nullable) = false];
 }
 
-enum FilterOperator {
-  OR  = 0;  // accept if ANY term matches (default)
-  AND = 1;  // accept only if ALL terms match
-}
-
 enum SortBy {
   SORT_BY_NONE  = 0;
   SORT_BY_ALPHA = 1;
@@ -272,12 +267,15 @@ enum SortOrder {
 // SearchFilter carries filter and sort parameters so the store-gateway can apply
 // them server-side before transmitting values over the wire.
 message SearchFilter {
+  reserved 3;
+  reserved "operator";
+
   repeated string search_terms     = 1;
   bool            case_insensitive = 2;
-  FilterOperator  operator         = 3;
   double          fuzz_threshold   = 4;
   SortBy          sort_by          = 5;
   SortOrder       sort_order       = 6;
+  string          fuzz_alg         = 7;
 }
 
 message SearchLabelNamesRequest {
@@ -297,4 +295,23 @@ message SearchLabelValuesRequest {
   int64 limit = 8;
   LabelValuesRequestHints request_hints  = 9;
   SearchFilter            search_filter  = 10;
+}
+
+// StoreSearchResult is a single result (value + score) streamed from a store-gateway search RPC.
+message StoreSearchResult {
+  string value = 1;
+  double score = 2;
+}
+
+// StoreSearchResponseHints carries metadata about the blocks queried to serve a search request.
+message StoreSearchResponseHints {
+  repeated Block queried_blocks = 1 [(gogoproto.nullable) = false];
+}
+
+// StoreSearchResponse is a streaming batch from SearchLabelNames / SearchLabelValues.
+// The final message in the stream carries response_hints; all other messages carry results.
+message StoreSearchResponse {
+  repeated StoreSearchResult    results        = 1;
+  repeated string               warnings       = 2;
+  StoreSearchResponseHints      response_hints = 3;
 }

@@ -357,7 +357,7 @@ func sortMetasByMinTime(metas []*block.Meta) []*block.Meta {
 			return cmp.Compare(a.MinTime, b.MinTime)
 		}
 
-		// Compare labels in case of same MinTime to get stable results.
+		// CompareFunc labels in case of same MinTime to get stable results.
 		return labels.Compare(labels.FromMap(a.Thanos.Labels), labels.FromMap(b.Thanos.Labels))
 	})
 

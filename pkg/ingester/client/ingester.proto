@@ -158,11 +158,6 @@ message LabelNamesResponse {
   repeated string label_names = 1;
 }
 
-enum FilterOperator {
-  OR  = 0;  // accept if ANY term matches (default)
-  AND = 1;  // accept only if ALL terms match
-}
-
 enum SortBy {
   SORT_BY_NONE  = 0;
   SORT_BY_ALPHA = 1;
@@ -177,12 +172,15 @@ enum SortOrder {
 // SearchLabelValuesFilter carries filter and sort parameters so the ingester can apply
 // them server-side before transmitting values over the wire.
 message SearchLabelValuesFilter {
+  reserved 3;
+  reserved "operator";
+
   repeated string search_terms     = 1;
   bool            case_insensitive = 2;
-  FilterOperator  operator         = 3;
   double          fuzz_threshold   = 4;
   SortBy          sort_by          = 5;
   SortOrder       sort_order       = 6;
+  string          fuzz_alg         = 7;
 }
 
 // SearchLabelValuesRequest is the unified request for SearchLabelNames and SearchLabelValues.

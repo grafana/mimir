@@ -17,44 +17,44 @@ import (
 
 // SearchLabelNames implements mimirstorage.MimirSearcher.
 // It delegates directly to the Distributor which performs the streaming merge.
-func (q *distributorQuerier) SearchLabelNames(ctx context.Context, hints *mimirstorage.MimirSearchHints, matchers ...*labels.Matcher) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
+func (q *distributorQuerier) SearchLabelNames(ctx context.Context, hints *mimirstorage.MimirSearchHints, matchers ...*labels.Matcher) (mimirstorage.SearchResultSet, annotations.Annotations) {
 	tenantID, err := tenant.TenantID(ctx)
 	if err != nil {
-		return nil, nil, err
+		return mimirstorage.ErrorSearchResultSet(err), nil
 	}
 	queryIngestersWithin := q.cfgProvider.QueryIngestersWithin(tenantID)
 
 	if !ShouldQueryIngesters(queryIngestersWithin, time.Now(), q.maxt) {
-		return emptySearcherValueSet(ctx), nil, nil
+		return emptySearcherValueSet(ctx), nil
 	}
 
 	minT := clampMinTime(spanlogger.FromContext(ctx, q.logger), q.mint, time.Now().UnixMilli(), -queryIngestersWithin, "query ingesters within")
 
 	vs, err := q.distributor.SearchLabelNames(ctx, model.Time(minT), model.Time(q.maxt), hints, matchers...)
 	if err != nil {
-		return nil, nil, err
+		return mimirstorage.ErrorSearchResultSet(err), nil
 	}
-	return vs, nil, nil
+	return vs, nil
 }
 
 // SearchLabelValues implements mimirstorage.MimirSearcher.
 // It delegates directly to the Distributor which performs the streaming merge.
-func (q *distributorQuerier) SearchLabelValues(ctx context.Context, name string, hints *mimirstorage.MimirSearchHints, matchers ...*labels.Matcher) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
+func (q *distributorQuerier) SearchLabelValues(ctx context.Context, name string, hints *mimirstorage.MimirSearchHints, matchers ...*labels.Matcher) (mimirstorage.SearchResultSet, annotations.Annotations) {
 	tenantID, err := tenant.TenantID(ctx)
 	if err != nil {
-		return nil, nil, err
+		return mimirstorage.ErrorSearchResultSet(err), nil
 	}
 	queryIngestersWithin := q.cfgProvider.QueryIngestersWithin(tenantID)
 
 	if !ShouldQueryIngesters(queryIngestersWithin, time.Now(), q.maxt) {
-		return emptySearcherValueSet(ctx), nil, nil
+		return emptySearcherValueSet(ctx), nil
 	}
 
 	minT := clampMinTime(spanlogger.FromContext(ctx, q.logger), q.mint, time.Now().UnixMilli(), -queryIngestersWithin, "query ingesters within")
 
 	vs, err := q.distributor.SearchLabelValues(ctx, model.Time(minT), model.Time(q.maxt), model.LabelName(name), hints, matchers...)
 	if err != nil {
-		return nil, nil, err
+		return mimirstorage.ErrorSearchResultSet(err), nil
 	}
-	return vs, nil, nil
+	return vs, nil
 }

@@ -9,7 +9,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// KWayMergeValueSets performs a sorted k-way merge over pre-opened SearcherValueSet iterators.
+// KWayMergeValueSets performs a sorted k-way merge over pre-opened SearchResultSet iterators.
 // Each iterator must already return results in the order defined by cmp.
 // Deduplicates by xxhash. Emits merged results to outCh.
 // Sets *limitReached = true and cancels ctx when hints.Limit is reached.
@@ -17,10 +17,10 @@ import (
 func KWayMergeValueSets(
 	ctx context.Context,
 	cancel context.CancelFunc,
-	iters []SearcherValueSet,
+	iters []SearchResultSet,
 	hints *MimirSearchHints,
 	cmp Comparator,
-	outCh chan<- FilteredResult,
+	outCh chan<- SearchResult,
 	limitReached *bool,
 ) error {
 	if len(iters) == 0 {
@@ -28,9 +28,9 @@ func KWayMergeValueSets(
 	}
 
 	type mergeHead struct {
-		ch        <-chan FilteredResult
+		ch        <-chan SearchResult
 		errHolder *error
-		current   FilteredResult
+		current   SearchResult
 		exhausted bool
 	}
 
@@ -46,7 +46,7 @@ func KWayMergeValueSets(
 
 	// Start one goroutine per iterator.
 	for _, vs := range iters {
-		ch := make(chan FilteredResult, 1)
+		ch := make(chan SearchResult, 1)
 		e := new(error)
 		heads = append(heads, mergeHead{ch: ch, errHolder: e})
 		go func() {
@@ -136,9 +136,9 @@ func KWayMergeValueSets(
 func UnsortedDedupValueSets(
 	ctx context.Context,
 	cancel context.CancelFunc,
-	iters []SearcherValueSet,
+	iters []SearchResultSet,
 	hints *MimirSearchHints,
-	outCh chan<- FilteredResult,
+	outCh chan<- SearchResult,
 	limitReached *bool,
 ) error {
 	if len(iters) == 0 {
@@ -150,7 +150,7 @@ func UnsortedDedupValueSets(
 		limit = hints.Limit
 	}
 
-	rawCh := make(chan FilteredResult, 256)
+	rawCh := make(chan SearchResult, 256)
 
 	dedupDone := make(chan error, 1)
 	go func() {

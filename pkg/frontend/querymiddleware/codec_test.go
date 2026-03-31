@@ -36,7 +36,7 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
-	"github.com/grafana/mimir/pkg/streaminglabelvalues"
+	"github.com/grafana/mimir/pkg/storage"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 	"github.com/grafana/mimir/pkg/util/promqlext"
@@ -1022,7 +1022,7 @@ func TestCodec_DecodeSearchQueryRequest(t *testing.T) {
 				Path:      "/api/v1/search/metric_names",
 				FuzzAlg:   "jaro",
 				BatchSize: 1000,
-				SortBy:    streaminglabelvalues.Alpha,
+				SortBy:    storage.Alpha,
 			},
 		},
 		{
@@ -1033,7 +1033,7 @@ func TestCodec_DecodeSearchQueryRequest(t *testing.T) {
 				Path:      "/api/v1/search/metric_names",
 				FuzzAlg:   "jaro",
 				BatchSize: 1000,
-				SortBy:    streaminglabelvalues.Score,
+				SortBy:    storage.Score,
 			},
 		},
 		{
@@ -1058,7 +1058,7 @@ func TestCodec_DecodeSearchQueryRequest(t *testing.T) {
 				Path:      "/api/v1/search/metric_names",
 				FuzzAlg:   "jaro",
 				BatchSize: 1000,
-				SortDir:   streaminglabelvalues.Desc,
+				SortDir:   storage.Desc,
 			},
 		},
 		{
@@ -1069,7 +1069,7 @@ func TestCodec_DecodeSearchQueryRequest(t *testing.T) {
 				Path:      "/api/v1/search/metric_names",
 				FuzzAlg:   "jaro",
 				BatchSize: 1000,
-				SortDir:   streaminglabelvalues.Desc,
+				SortDir:   storage.Desc,
 			},
 		},
 		{

@@ -380,23 +380,23 @@ func (g *StoreGateway) LabelValues(ctx context.Context, req *storepb.LabelValues
 }
 
 // SearchLabelNames implements the storegatewaypb.StoreGatewayServer interface.
-func (g *StoreGateway) SearchLabelNames(ctx context.Context, req *storepb.SearchLabelNamesRequest) (*storepb.LabelNamesResponse, error) {
+func (g *StoreGateway) SearchLabelNames(req *storepb.SearchLabelNamesRequest, stream storegatewaypb.StoreGateway_SearchLabelNamesServer) error {
 	ix := g.tracker.Insert(func() string {
-		return requestActivity(ctx, "StoreGateway/SearchLabelNames", req)
+		return requestActivity(stream.Context(), "StoreGateway/SearchLabelNames", req)
 	})
 	defer g.tracker.Delete(ix)
 
-	return g.stores.SearchLabelNames(ctx, req)
+	return g.stores.SearchLabelNames(req, stream)
 }
 
 // SearchLabelValues implements the storegatewaypb.StoreGatewayServer interface.
-func (g *StoreGateway) SearchLabelValues(ctx context.Context, req *storepb.SearchLabelValuesRequest) (*storepb.LabelValuesResponse, error) {
+func (g *StoreGateway) SearchLabelValues(req *storepb.SearchLabelValuesRequest, stream storegatewaypb.StoreGateway_SearchLabelValuesServer) error {
 	ix := g.tracker.Insert(func() string {
-		return requestActivity(ctx, "StoreGateway/SearchLabelValues", req)
+		return requestActivity(stream.Context(), "StoreGateway/SearchLabelValues", req)
 	})
 	defer g.tracker.Delete(ix)
 
-	return g.stores.SearchLabelValues(ctx, req)
+	return g.stores.SearchLabelValues(req, stream)
 }
 
 func requestActivity(ctx context.Context, name string, req interface{}) string {

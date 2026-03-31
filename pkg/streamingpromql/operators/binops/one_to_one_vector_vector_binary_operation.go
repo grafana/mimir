@@ -407,7 +407,7 @@ func (b *OneToOneVectorVectorBinaryOperation) sortSeries(metadata []types.Series
 	// For one-to-one matching, we assume that each output series takes one series from each side of the operator.
 	// If this is true, then the best order is the one in which we read from the highest cardinality side in order.
 	// If we do this, then in the worst case, we'll have to buffer the whole of the lower cardinality side.
-	// (Compare this with sorting so that we read the lowest cardinality side in order: in the worst case, we'll have
+	// (CompareFunc this with sorting so that we read the lowest cardinality side in order: in the worst case, we'll have
 	// to buffer the whole of the higher cardinality side.)
 	var sortInterface sort.Interface
 

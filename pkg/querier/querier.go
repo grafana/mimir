@@ -687,7 +687,7 @@ func (mq *multiQuerier) LabelNames(ctx context.Context, hints *storage.LabelHint
 }
 
 // SearchLabelNames implements mimirstorage.MimirSearcher.
-func (mq *multiQuerier) SearchLabelNames(ctx context.Context, hints *mimirstorage.MimirSearchHints, matchers ...*labels.Matcher) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
+func (mq *multiQuerier) SearchLabelNames(ctx context.Context, hints *mimirstorage.MimirSearchHints, matchers ...*labels.Matcher) (mimirstorage.SearchResultSet, annotations.Annotations) {
 	spanLog, ctx := spanlogger.New(ctx, mq.logger, tracer, "multiQuerier.SearchLabelNames")
 	defer spanLog.Finish()
 
@@ -695,15 +695,15 @@ func (mq *multiQuerier) SearchLabelNames(ctx context.Context, hints *mimirstorag
 	savedCtx := ctx
 	ctx, queriers, _, _, err := mq.getQueriers(ctx, mq.minT, mq.maxT, matchers...)
 	if errors.Is(err, errEmptyTimeRange) {
-		return emptySearcherValueSet(savedCtx), nil, nil
+		return emptySearcherValueSet(savedCtx), nil
 	}
 	if err != nil {
-		return nil, nil, err
+		return mimirstorage.ErrorSearchResultSet(err), nil
 	}
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
-		return nil, nil, err
+		return mimirstorage.ErrorSearchResultSet(err), nil
 	}
 
 	// Clamp the requested limit to the per-tenant maximum, matching the LabelNames path.
@@ -726,14 +726,14 @@ func (mq *multiQuerier) SearchLabelNames(ctx context.Context, hints *mimirstorag
 		searchers[i] = q.(mimirstorage.MimirSearcher)
 	}
 
-	vs, subWarns, err := fanOutSearch(ctx, hints, searchers, func(ctx context.Context, s mimirstorage.MimirSearcher, h *mimirstorage.MimirSearchHints) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
+	vs, subWarns := fanOutSearch(ctx, hints, searchers, func(ctx context.Context, s mimirstorage.MimirSearcher, h *mimirstorage.MimirSearchHints) (mimirstorage.SearchResultSet, annotations.Annotations) {
 		return s.SearchLabelNames(ctx, h, matchers...)
 	})
-	return vs, warns.Merge(subWarns), err
+	return vs, warns.Merge(subWarns)
 }
 
 // SearchLabelValues implements mimirstorage.MimirSearcher.
-func (mq *multiQuerier) SearchLabelValues(ctx context.Context, name string, hints *mimirstorage.MimirSearchHints, matchers ...*labels.Matcher) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
+func (mq *multiQuerier) SearchLabelValues(ctx context.Context, name string, hints *mimirstorage.MimirSearchHints, matchers ...*labels.Matcher) (mimirstorage.SearchResultSet, annotations.Annotations) {
 	spanLog, ctx := spanlogger.New(ctx, mq.logger, tracer, "multiQuerier.SearchLabelValues")
 	defer spanLog.Finish()
 
@@ -741,15 +741,15 @@ func (mq *multiQuerier) SearchLabelValues(ctx context.Context, name string, hint
 	savedCtx := ctx
 	ctx, queriers, _, _, err := mq.getQueriers(ctx, mq.minT, mq.maxT, matchers...)
 	if errors.Is(err, errEmptyTimeRange) {
-		return emptySearcherValueSet(savedCtx), nil, nil
+		return emptySearcherValueSet(savedCtx), nil
 	}
 	if err != nil {
-		return nil, nil, err
+		return mimirstorage.ErrorSearchResultSet(err), nil
 	}
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
-		return nil, nil, err
+		return mimirstorage.ErrorSearchResultSet(err), nil
 	}
 
 	// Clamp the requested limit to the per-tenant maximum, matching the LabelValues path.
@@ -772,10 +772,10 @@ func (mq *multiQuerier) SearchLabelValues(ctx context.Context, name string, hint
 		searchers[i] = q.(mimirstorage.MimirSearcher)
 	}
 
-	vs, subWarns, err := fanOutSearch(ctx, hints, searchers, func(ctx context.Context, s mimirstorage.MimirSearcher, h *mimirstorage.MimirSearchHints) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
+	vs, subWarns := fanOutSearch(ctx, hints, searchers, func(ctx context.Context, s mimirstorage.MimirSearcher, h *mimirstorage.MimirSearchHints) (mimirstorage.SearchResultSet, annotations.Annotations) {
 		return s.SearchLabelValues(ctx, name, h, matchers...)
 	})
-	return vs, warns.Merge(subWarns), err
+	return vs, warns.Merge(subWarns)
 }
 
 // storeQueriers stores the created queriers so they can be cleaned up when this querier is eventually cleaned up.

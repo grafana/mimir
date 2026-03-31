@@ -46,15 +46,46 @@ func (c *customStoreGatewayClient) LabelValues(ctx context.Context, in *storepb.
 }
 
 // SearchLabelNames implements StoreGatewayClient.
-func (c *customStoreGatewayClient) SearchLabelNames(ctx context.Context, in *storepb.SearchLabelNamesRequest, opts ...grpc.CallOption) (*storepb.LabelNamesResponse, error) {
-	res, err := c.wrapped.SearchLabelNames(ctx, in, opts...)
-	return res, globalerror.WrapGRPCErrorWithContextError(ctx, err)
+func (c *customStoreGatewayClient) SearchLabelNames(ctx context.Context, in *storepb.SearchLabelNamesRequest, opts ...grpc.CallOption) (StoreGateway_SearchLabelNamesClient, error) {
+	client, err := c.wrapped.SearchLabelNames(ctx, in, opts...)
+	if err != nil {
+		return client, globalerror.WrapGRPCErrorWithContextError(ctx, err)
+	}
+	return newCustomSearchClient(client), nil
 }
 
 // SearchLabelValues implements StoreGatewayClient.
-func (c *customStoreGatewayClient) SearchLabelValues(ctx context.Context, in *storepb.SearchLabelValuesRequest, opts ...grpc.CallOption) (*storepb.LabelValuesResponse, error) {
-	res, err := c.wrapped.SearchLabelValues(ctx, in, opts...)
-	return res, globalerror.WrapGRPCErrorWithContextError(ctx, err)
+func (c *customStoreGatewayClient) SearchLabelValues(ctx context.Context, in *storepb.SearchLabelValuesRequest, opts ...grpc.CallOption) (StoreGateway_SearchLabelValuesClient, error) {
+	client, err := c.wrapped.SearchLabelValues(ctx, in, opts...)
+	if err != nil {
+		return client, globalerror.WrapGRPCErrorWithContextError(ctx, err)
+	}
+	return newCustomSearchClient(client), nil
+}
+
+// customSearchClient wraps a StoreGateway search streaming client to apply error wrapping.
+// It is used for both SearchLabelNames and SearchLabelValues since both stream StoreSearchResponse.
+type customSearchClient struct {
+	*customClientStream
+	wrapped interface {
+		Recv() (*storepb.StoreSearchResponse, error)
+		grpc.ClientStream
+	}
+}
+
+func newCustomSearchClient[T interface {
+	Recv() (*storepb.StoreSearchResponse, error)
+	grpc.ClientStream
+}](client T) *customSearchClient {
+	return &customSearchClient{
+		customClientStream: &customClientStream{client},
+		wrapped:            client,
+	}
+}
+
+func (c *customSearchClient) Recv() (*storepb.StoreSearchResponse, error) {
+	res, err := c.wrapped.Recv()
+	return res, globalerror.WrapGRPCErrorWithContextError(c.Context(), err)
 }
 
 // customStoreGatewayClient is a custom StoreGateway_SeriesClient which wraps well known gRPC errors into standard golang errors.

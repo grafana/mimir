@@ -144,30 +144,10 @@ func Test_Ingester_SearchLabelNames(t *testing.T) {
 		assert.Equal(t, []string{"status"}, names)
 	})
 
-	t.Run("filter matching AND - no match", func(t *testing.T) {
+	t.Run("filter matching", func(t *testing.T) {
 		req := &client.SearchLabelValuesRequest{
 			EndTimestampMs: math.MaxInt64,
-			Filter:         &client.SearchLabelValuesFilter{SearchTerms: []string{"status", "route"}, Operator: 1},
-		}
-		names, err := collectSearchLabelNames(i, ctx, req)
-		require.NoError(t, err)
-		assert.Empty(t, names)
-	})
-
-	t.Run("filter matching AND - match", func(t *testing.T) {
-		req := &client.SearchLabelValuesRequest{
-			EndTimestampMs: math.MaxInt64,
-			Filter:         &client.SearchLabelValuesFilter{SearchTerms: []string{"sta", "tus"}, Operator: 1},
-		}
-		names, err := collectSearchLabelNames(i, ctx, req)
-		require.NoError(t, err)
-		assert.Equal(t, []string{"status"}, names)
-	})
-
-	t.Run("filter matching OR - match", func(t *testing.T) {
-		req := &client.SearchLabelValuesRequest{
-			EndTimestampMs: math.MaxInt64,
-			Filter:         &client.SearchLabelValuesFilter{SearchTerms: []string{"status", "route"}, Operator: 0},
+			Filter:         &client.SearchLabelValuesFilter{SearchTerms: []string{"status", "route"}},
 		}
 		names, err := collectSearchLabelNames(i, ctx, req)
 		require.NoError(t, err)
@@ -560,7 +540,7 @@ func Test_Ingester_SearchLabelNames_MaxBytesLimit(t *testing.T) {
 
 	setup := func(t *testing.T, maxBytes int) *Ingester {
 		limits := defaultLimitsTestConfig()
-		limits.LabelNamesAndValuesResultsMaxSizeBytes = maxBytes
+		limits.IngesterSearchLabelsValuesMaxSizeBytes = maxBytes
 		i, r, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(t), limits, nil, "", nil)
 		require.NoError(t, err)
 		startAndWaitHealthy(t, i, r)
@@ -622,7 +602,7 @@ func Test_Ingester_SearchLabelValues_MaxBytesLimit(t *testing.T) {
 
 	setup := func(t *testing.T, maxBytes int) *Ingester {
 		limits := defaultLimitsTestConfig()
-		limits.LabelNamesAndValuesResultsMaxSizeBytes = maxBytes
+		limits.IngesterSearchLabelsValuesMaxSizeBytes = maxBytes
 		i, r, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(t), limits, nil, "", nil)
 		require.NoError(t, err)
 		startAndWaitHealthy(t, i, r)

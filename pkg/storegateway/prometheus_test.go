@@ -79,7 +79,7 @@ func compareToPromChunks(t testing.TB, chks []storepb.AggrChunk, lbls labels.Lab
 	promChunks = filterPromChunksByTime(promChunks, minT, maxT)
 	loadPromChunks(t, promChunks, promBlock)
 
-	// Compare the chunks that prometheus returns with the chunks the store-gateway returns.
+	// CompareFunc the chunks that prometheus returns with the chunks the store-gateway returns.
 	// NB: Order of chunks isn't guaranteed by the store-gateway.
 	actualChunkData := make([][]byte, 0, len(chks))
 	for _, c := range chks {

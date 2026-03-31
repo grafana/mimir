@@ -239,8 +239,12 @@ type Limits struct {
 	CardinalityAnalysisEnabled                    bool `yaml:"cardinality_analysis_enabled" json:"cardinality_analysis_enabled"`
 	LabelNamesAndValuesResultsMaxSizeBytes        int  `yaml:"label_names_and_values_results_max_size_bytes" json:"label_names_and_values_results_max_size_bytes"`
 	LabelValuesMaxCardinalityLabelNamesPerRequest int  `yaml:"label_values_max_cardinality_label_names_per_request" json:"label_values_max_cardinality_label_names_per_request"`
-	CardinalityAnalysisMaxResults                 int  `yaml:"cardinality_analysis_max_results" json:"cardinality_analysis_max_results" category:"experimental"`
-	ActiveSeriesResultsMaxSizeBytes               int  `yaml:"active_series_results_max_size_bytes" json:"active_series_results_max_size_bytes" category:"advanced"`
+
+	// Search API (experimental)
+	IngesterSearchLabelsValuesMaxSizeBytes     int `yaml:"ingester_search_labels_values_max_size_bytes" json:"ingester_search_labels_values_max_size_bytes" category:"experimental"`
+	StoreGatewaySearchLabelsValuesMaxSizeBytes int `yaml:"store_gateway_search_labels_values_max_size_bytes" json:"store_gateway_search_labels_values_max_size_bytes" category:"experimental"`
+	CardinalityAnalysisMaxResults              int `yaml:"cardinality_analysis_max_results" json:"cardinality_analysis_max_results" category:"experimental"`
+	ActiveSeriesResultsMaxSizeBytes            int `yaml:"active_series_results_max_size_bytes" json:"active_series_results_max_size_bytes" category:"advanced"`
 
 	// Cost attribution.
 	CostAttributionLabelsStructured costattributionmodel.Labels `yaml:"cost_attribution_labels_structured,omitempty" json:"cost_attribution_labels_structured,omitempty" category:"experimental"`
@@ -417,6 +421,8 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxLabelValuesLimit, MaxLabelValuesLimitFlag, 0, "Maximum number of values the label values endpoint returns. This limit is enforced in the querier. If the requested limit is outside of the allowed value, the request doesn't fail, but is manipulated to only query data up to the allowed limit. Set to 0 to disable.")
 
 	f.IntVar(&l.LabelNamesAndValuesResultsMaxSizeBytes, "querier.label-names-and-values-results-max-size-bytes", 400*1024*1024, "Maximum size in bytes of distinct label names and values. When querier receives response from ingester, it merges the response with responses from other ingesters. This maximum size limit is applied to the merged(distinct) results. If the limit is reached, an error is returned.")
+	f.IntVar(&l.IngesterSearchLabelsValuesMaxSizeBytes, "ingester.search-labels-values-max-size-bytes", 0, "Maximum size in bytes of search label names/values results per ingester. 0 to disable.")
+	f.IntVar(&l.StoreGatewaySearchLabelsValuesMaxSizeBytes, "store-gateway.search-labels-values-max-size-bytes", 0, "Maximum size in bytes of search label names/values results per store-gateway. 0 to disable.")
 	f.IntVar(&l.ActiveSeriesResultsMaxSizeBytes, "querier.active-series-results-max-size-bytes", 400*1024*1024, "Maximum size of an active series or active native histogram series request result shard in bytes. 0 to disable.")
 	f.BoolVar(&l.CardinalityAnalysisEnabled, "querier.cardinality-analysis-enabled", false, "Enables endpoints used for cardinality analysis.")
 	f.IntVar(&l.LabelValuesMaxCardinalityLabelNamesPerRequest, "querier.label-values-max-cardinality-label-names-per-request", 100, "Maximum number of label names allowed to be queried in a single /api/v1/cardinality/label_values API call.")
@@ -788,6 +794,16 @@ func (o *Overrides) LabelNamesAndValuesResultsMaxSizeBytes(userID string) int {
 
 func (o *Overrides) ActiveSeriesResultsMaxSizeBytes(userID string) int {
 	return o.getOverridesForUser(userID).ActiveSeriesResultsMaxSizeBytes
+}
+
+// IngesterSearchLabelsValuesMaxSizeBytes returns the maximum size in bytes of search label names/values results per ingester.
+func (o *Overrides) IngesterSearchLabelsValuesMaxSizeBytes(userID string) int {
+	return o.getOverridesForUser(userID).IngesterSearchLabelsValuesMaxSizeBytes
+}
+
+// StoreGatewaySearchLabelsValuesMaxSizeBytes returns the maximum size in bytes of search label names/values results per store-gateway.
+func (o *Overrides) StoreGatewaySearchLabelsValuesMaxSizeBytes(userID string) int {
+	return o.getOverridesForUser(userID).StoreGatewaySearchLabelsValuesMaxSizeBytes
 }
 
 func (o *Overrides) CardinalityAnalysisEnabled(userID string) bool {

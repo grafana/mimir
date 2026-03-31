@@ -16,18 +16,15 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
+	mimirstorage "github.com/grafana/mimir/pkg/storage"
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 const (
-	// the size of the internal channel where we pass labels/values from the producer to consumer side. We keep this small to avoid potentially needing to deal with memory growth in this buffer
-	internalChannelSize = 100
-	// the size of the batches that we stream back to the querier. // TODO - what is a good sane value here? Should these become set via config?
-	streamingBatchSize = 1024
-	searchLabelValues  = "Ingester.SearchLabelValues"
-	searchLabelNames   = "Ingester.SearchLabelNames"
+	searchLabelValues = "Ingester.SearchLabelValues"
+	searchLabelNames  = "Ingester.SearchLabelNames"
 )
 
 // streamingLabelValuesReader is satisfied by *headIndexReader and *index.Reader,
@@ -54,7 +51,6 @@ func initSpanLog(spanlog *spanlogger.SpanLogger, userId string, mint, maxt int64
 	if filter != nil {
 		if len(filter.SearchTerms) > 0 {
 			spanlog.SetSpanAndLogTag("searchTerms", strings.Join(filter.SearchTerms, ","))
-			spanlog.SetSpanAndLogTag("operator", filter.Operator)
 			spanlog.SetSpanAndLogTag("fuzz_threshold", filter.FuzzThreshold)
 		}
 		if filter.SortBy != 0 {
@@ -91,8 +87,7 @@ func (i *Ingester) doSearchLabelValues(req *client.SearchLabelValuesRequest, str
 	}
 
 	// The max bytes of labels/values which can be buffered during the search.
-	// TODO - note these are -querier.label-names-and-values-results-max-size-bytes - so we need to update something to allow this in the ingester
-	maxBytesLimit := i.limits.LabelNamesAndValuesResultsMaxSizeBytes(userID)
+	maxBytesLimit := i.limits.IngesterSearchLabelsValuesMaxSizeBytes(userID)
 
 	// extract the relevant params from the search request
 	labelName, mint, maxt, hints, matchers, err := client.FromSearchRequest(req)
@@ -122,16 +117,20 @@ func (i *Ingester) doSearchLabelValues(req *client.SearchLabelValuesRequest, str
 		return nil
 	}
 
-	searchFilter := buildSearchFilter(req.Filter)
+	searchFilter, err := buildSearchFilter(req.Filter)
+	if err != nil {
+		level.Error(spanlog).Log("msg", "unable to build search filter", "err", err)
+		return err
+	}
 
-	var produce func(ch chan<- string) (annotations.Annotations, error)
+	var produce func(ch chan<- mimirstorage.SearchResult) (annotations.Annotations, error)
 	switch method {
 	case searchLabelValues:
 		// Label values are obtained from the TSDB head and then any TSDB files
 		// We provide a channel so that we can enforce flow control between the reading of the TSDB files and
 		// the batching/streaming of results back to the querier.
 		// This avoids the need to accumulate all results in memory before streaming.
-		produce = func(ch chan<- string) (annotations.Annotations, error) {
+		produce = func(ch chan<- mimirstorage.SearchResult) (annotations.Annotations, error) {
 			return produceLabelValues(ctx, db.db, mint, maxt, labelName, matchers, searchFilter, ch)
 		}
 	case searchLabelNames:
@@ -141,17 +140,36 @@ func (i *Ingester) doSearchLabelValues(req *client.SearchLabelValuesRequest, str
 			return err
 		}
 		// TODO - once we have the prometheus side changes, this production of label names should become streaming compatible.
-		produce = func(ch chan<- string) (annotations.Annotations, error) {
+		produce = func(ch chan<- mimirstorage.SearchResult) (annotations.Annotations, error) {
 			return produceLabelNames(ctx, q, hints, matchers, searchFilter, ch)
 		}
 	default:
 		return nil
 	}
 
+	// Apply per-tenant count limits. If req.Limit is already set, take the minimum.
+	var limitExceededWarning error
+	var maxCountLimit int
+	switch method {
+	case searchLabelNames:
+		maxCountLimit = i.limits.MaxLabelNamesLimit(userID)
+		if maxCountLimit > 0 {
+			limitExceededWarning = fmt.Errorf("the label names search has exceeded the allowed number of records")
+		}
+	case searchLabelValues:
+		maxCountLimit = i.limits.MaxLabelValuesLimit(userID)
+		if maxCountLimit > 0 {
+			limitExceededWarning = fmt.Errorf("the label values search has exceeded the allowed number of records")
+		}
+	}
 	limit := int(req.Limit)
-	bufSize := streamingBatchSize
+	if maxCountLimit > 0 && (limit == 0 || limit > maxCountLimit) {
+		limit = maxCountLimit
+	}
+
+	bufSize := i.cfg.SearchLabelValuesStreamingBatchSize
 	if limit > 0 {
-		bufSize = min(limit, streamingBatchSize)
+		bufSize = min(limit, i.cfg.SearchLabelValuesStreamingBatchSize)
 	}
 
 	batch := make([]*client.SearchLabelValuesResult, bufSize)
@@ -159,12 +177,13 @@ func (i *Ingester) doSearchLabelValues(req *client.SearchLabelValuesRequest, str
 		batch[k] = &client.SearchLabelValuesResult{}
 	}
 
-	iter := newingesterSearcherValueSet(produce, req.Filter, limit, maxBytesLimit)
+	iter := newingesterSearcherValueSet(produce, req.Filter, limit, maxBytesLimit, limitExceededWarning)
 	defer iter.Close()
 
 	batchIdx := 0
 	for iter.Next() {
-		*batch[batchIdx] = iter.At()
+		r := iter.At()
+		*batch[batchIdx] = client.SearchLabelValuesResult{Value: r.Value, Score: r.Score}
 		batchIdx++
 		if batchIdx == len(batch) {
 			if err := stream.Send(&client.SearchLabelValuesResponse{Results: batch}); err != nil {
@@ -206,7 +225,7 @@ func produceLabelNames(
 	hints *storage.LabelHints,
 	matchers []*labels.Matcher,
 	searchFilter *streaminglabelvalues.FilterChains,
-	ch chan<- string,
+	ch chan<- mimirstorage.SearchResult,
 ) (annotations.Annotations, error) {
 	defer q.Close() //nolint:errcheck
 	// TODO: TSDB has no streaming LabelNames iterator (unlike LabelValuesFor).
@@ -216,11 +235,18 @@ func produceLabelNames(
 	if err != nil {
 		return warnings, err
 	}
-	vals = streaminglabelvalues.ApplyFilterChains(vals, searchFilter)
 
 	for _, v := range vals {
+		var score float64
+		if searchFilter != nil {
+			accepted, s := searchFilter.Accept(v)
+			if !accepted {
+				continue
+			}
+			score = s
+		}
 		select {
-		case ch <- v:
+		case ch <- mimirstorage.SearchResult{Value: v, Score: score}:
 		case <-ctx.Done():
 			return warnings, ctx.Err()
 		}
@@ -238,7 +264,7 @@ func produceLabelValues(
 	name string,
 	matchers []*labels.Matcher,
 	searchFilter *streaminglabelvalues.FilterChains,
-	ch chan<- string,
+	ch chan<- mimirstorage.SearchResult,
 ) (annotations.Annotations, error) {
 	// Head covers in-memory (recent) series; skip if its time range doesn't overlap [mint, maxt].
 	head := tsdbDB.Head()
@@ -276,7 +302,7 @@ func produceLabelValuesFromReader(
 	name string,
 	matchers []*labels.Matcher,
 	searchFilter *streaminglabelvalues.FilterChains,
-	ch chan<- string,
+	ch chan<- mimirstorage.SearchResult,
 ) error {
 	defer r.Close() //nolint:errcheck
 
@@ -296,9 +322,9 @@ func produceLabelValuesFromReader(
 		return err
 	}
 
-	send := func(v string) error {
+	send := func(r mimirstorage.SearchResult) error {
 		select {
-		case ch <- v:
+		case ch <- r:
 			return nil
 		case <-ctx.Done():
 			return ctx.Err()
@@ -310,12 +336,15 @@ func produceLabelValuesFromReader(
 		defer iter.Close() //nolint:errcheck
 		for iter.Next() {
 			v := iter.At()
+			var score float64
 			if searchFilter != nil {
-				if accepted, _ := searchFilter.Accept(v); !accepted {
+				accepted, s := searchFilter.Accept(v)
+				if !accepted {
 					continue
 				}
+				score = s
 			}
-			if err := send(v); err != nil {
+			if err := send(mimirstorage.SearchResult{Value: v, Score: score}); err != nil {
 				return err
 			}
 		}
@@ -331,7 +360,7 @@ func produceLabelValuesFromReader(
 	vals = streaminglabelvalues.ApplyFilterChains(vals, searchFilter)
 
 	for _, v := range vals {
-		if err := send(v); err != nil {
+		if err := send(mimirstorage.SearchResult{Value: v}); err != nil {
 			return err
 		}
 	}
@@ -340,13 +369,9 @@ func produceLabelValuesFromReader(
 
 // buildSearchFilter converts a proto SearchLabelValuesFilter into a FilterChains ready for use.
 // Returns nil if sf is nil or has no search terms.
-func buildSearchFilter(sf *client.SearchLabelValuesFilter) *streaminglabelvalues.FilterChains {
+func buildSearchFilter(sf *client.SearchLabelValuesFilter) (*streaminglabelvalues.FilterChains, error) {
 	if sf == nil || len(sf.SearchTerms) == 0 {
-		return nil
+		return nil, nil
 	}
-	op := streaminglabelvalues.Or
-	if sf.Operator == client.AND {
-		op = streaminglabelvalues.And
-	}
-	return streaminglabelvalues.BuildFilterChains(sf.SearchTerms, sf.CaseInsensitive, op, sf.FuzzThreshold)
+	return streaminglabelvalues.BuildFilterChains(sf.SearchTerms, sf.CaseInsensitive, sf.FuzzAlg, sf.FuzzThreshold)
 }

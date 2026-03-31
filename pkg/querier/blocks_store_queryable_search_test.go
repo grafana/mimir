@@ -5,7 +5,6 @@ package querier
 import (
 	"context"
 	"net/http"
-	"strings"
 	"testing"
 
 	"github.com/go-kit/log"
@@ -24,16 +23,8 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 )
 
-// reverseAlphaComparator sorts FilteredResults in reverse alphabetical order by Value.
-// Used in tests to verify that the comparator is applied before the limit.
-type reverseAlphaComparator struct{}
-
-func (reverseAlphaComparator) Compare(a, b mimirstorage.FilteredResult) int {
-	return strings.Compare(b.Value, a.Value)
-}
-
-// drainValueSet drains a SearcherValueSet and returns all values and any error.
-func drainValueSet(vs mimirstorage.SearcherValueSet) ([]string, error) {
+// drainValueSet drains a SearchResultSet and returns all values and any error.
+func drainValueSet(vs mimirstorage.SearchResultSet) ([]string, error) {
 	var values []string
 	for vs.Next() {
 		values = append(values, vs.At().Value)
@@ -103,12 +94,13 @@ func TestBlocksStoreQuerier_SearchLabelNames(t *testing.T) {
 			unordered:      true,
 		},
 		"filter is applied to results": {
+			// The gateway applies the SearchFilter and returns only matching names.
 			storeSetResponses: []any{
 				map[BlocksStoreClient][]ulid.ULID{
 					&storeGatewayClientMock{
 						remoteAddr: "1.1.1.1",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
-							Names:         []string{"__name__", "job", "namespace"},
+							Names:         []string{"job"},
 							ResponseHints: mockNamesResponseHints(block1),
 						},
 					}: {block1},
@@ -179,18 +171,20 @@ func TestBlocksStoreQuerier_SearchLabelNames(t *testing.T) {
 			expectedValues: []string{"namespace", "job"},
 		},
 		"comparator with filter and limit": {
+			// The gateway applies the SearchFilter; only matching names are returned.
 			storeSetResponses: []any{
 				map[BlocksStoreClient][]ulid.ULID{
 					&storeGatewayClientMock{
 						remoteAddr: "1.1.1.1",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
-							Names:         []string{"__name__", "job", "namespace"},
+							// Gateway already filtered: "e" matches "__name__" and "namespace" but not "job".
+							Names:         []string{"__name__", "namespace"},
 							ResponseHints: mockNamesResponseHints(block1),
 						},
 					}: {block1},
 				},
 			},
-			// Search "e" keeps "job" (has 'e') and "namespace" (has 'e'); alpha-desc: namespace, job; limit 1 → namespace.
+			// alpha-desc: namespace, __name__; limit 1 → namespace.
 			hints:          &mimirstorage.MimirSearchHints{Search: []string{"e"}, SortBy: 1, SortOrder: 1, Limit: 1},
 			expectedValues: []string{"namespace"},
 		},
@@ -220,8 +214,7 @@ func TestBlocksStoreQuerier_SearchLabelNames(t *testing.T) {
 				limits:             &blocksStoreLimitsMock{},
 			}
 
-			vs, _, err := q.SearchLabelNames(ctx, tc.hints)
-			require.NoError(t, err)
+			vs, _ := q.SearchLabelNames(ctx, tc.hints)
 			defer vs.Close()
 
 			got, iterErr := drainValueSet(vs)
@@ -298,12 +291,13 @@ func TestBlocksStoreQuerier_SearchLabelValues(t *testing.T) {
 			unordered:      true,
 		},
 		"filter is applied to results": {
+			// The gateway applies the SearchFilter and returns only matching values.
 			storeSetResponses: []any{
 				map[BlocksStoreClient][]ulid.ULID{
 					&storeGatewayClientMock{
 						remoteAddr: "1.1.1.1",
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
-							Values:        []string{"metric_a", "metric_b", "metric_c"},
+							Values:        []string{"metric_b"},
 							ResponseHints: mockValuesResponseHints(block1),
 						},
 					}: {block1},
@@ -399,8 +393,7 @@ func TestBlocksStoreQuerier_SearchLabelValues(t *testing.T) {
 				limits:             &blocksStoreLimitsMock{},
 			}
 
-			vs, _, err := q.SearchLabelValues(ctx, model.MetricNameLabel, tc.hints)
-			require.NoError(t, err)
+			vs, _ := q.SearchLabelValues(ctx, model.MetricNameLabel, tc.hints)
 			defer vs.Close()
 
 			got, iterErr := drainValueSet(vs)
@@ -419,46 +412,31 @@ func TestBlocksStoreQuerier_SearchLabelValues(t *testing.T) {
 	}
 }
 
-
 func TestLabelSearchStream(t *testing.T) {
-	newStream := func(hints *mimirstorage.MimirSearchHints, values ...string) (*labelSearchStream, context.CancelFunc) {
-		ch := make(chan mimirstorage.FilteredResult, len(values)+1)
+	newStream := func(values ...string) (*labelSearchStream, context.CancelFunc) {
+		ch := make(chan mimirstorage.SearchResult, len(values)+1)
 		ctx, cancel := context.WithCancel(context.Background())
-		s := &labelSearchStream{ch: ch, ctx: ctx, cancel: cancel, hints: hints, compare: comparatorFromHints(hints)}
+		s := &labelSearchStream{ch: ch, ctx: ctx, cancel: cancel}
 		for _, v := range values {
-			ch <- mimirstorage.FilteredResult{Value: v, Score: -1}
+			ch <- mimirstorage.SearchResult{Value: v, Score: -1}
 		}
 		close(ch)
 		return s, cancel
 	}
 
-	t.Run("streams values in arrival order when no comparator", func(t *testing.T) {
-		s, _ := newStream(nil, "b", "a", "c")
+	t.Run("streams values in arrival order", func(t *testing.T) {
+		s, _ := newStream("b", "a", "c")
 		got, err := drainValueSet(s)
 		require.NoError(t, err)
 		assert.Equal(t, []string{"b", "a", "c"}, got)
 	})
 
-	t.Run("sorted path buffers and sorts all values", func(t *testing.T) {
-		s, _ := newStream(&mimirstorage.MimirSearchHints{SortBy: 1, SortOrder: 1}, "b", "a", "c")
-		got, err := drainValueSet(s)
-		require.NoError(t, err)
-		assert.Equal(t, []string{"c", "b", "a"}, got)
-	})
-
-	t.Run("sorted path applies limit after sort", func(t *testing.T) {
-		s, _ := newStream(&mimirstorage.MimirSearchHints{SortBy: 1, SortOrder: 1, Limit: 2}, "b", "a", "c")
-		got, err := drainValueSet(s)
-		require.NoError(t, err)
-		assert.Equal(t, []string{"c", "b"}, got)
-	})
-
 	t.Run("Close while values are pending does not deadlock", func(t *testing.T) {
-		ch := make(chan mimirstorage.FilteredResult, 10)
+		ch := make(chan mimirstorage.SearchResult, 10)
 		ctx, cancel := context.WithCancel(context.Background())
 		s := &labelSearchStream{ch: ch, ctx: ctx, cancel: cancel}
 		for i := range 5 {
-			ch <- mimirstorage.FilteredResult{Value: string([]byte{'a' + byte(i)})}
+			ch <- mimirstorage.SearchResult{Value: string([]byte{'a' + byte(i)})}
 		}
 		// Do not close ch — simulate a producer that is still running.
 		// Close should cancel and drain without blocking.
@@ -474,11 +452,11 @@ func TestLabelSearchStream(t *testing.T) {
 	})
 
 	t.Run("context cancelled mid-stream stops Next and reports error", func(t *testing.T) {
-		ch := make(chan mimirstorage.FilteredResult, 2)
+		ch := make(chan mimirstorage.SearchResult, 2)
 		ctx, cancel := context.WithCancel(context.Background())
 		s := &labelSearchStream{ch: ch, ctx: ctx, cancel: cancel}
 
-		ch <- mimirstorage.FilteredResult{Value: "first"}
+		ch <- mimirstorage.SearchResult{Value: "first"}
 
 		require.True(t, s.Next())
 		assert.Equal(t, "first", s.At().Value)
@@ -490,28 +468,17 @@ func TestLabelSearchStream(t *testing.T) {
 		assert.ErrorIs(t, s.Err(), context.Canceled)
 	})
 
-	t.Run("context cancelled during sorted drain stops collecting and reports error", func(t *testing.T) {
-		ch := make(chan mimirstorage.FilteredResult) // unbuffered — no values will arrive
-		ctx, cancel := context.WithCancel(context.Background())
-		s := &labelSearchStream{ch: ch, ctx: ctx, cancel: cancel, compare: reverseAlphaComparator{}}
-
-		cancel() // cancel before Next() is ever called
-
-		assert.False(t, s.Next())
-		assert.ErrorIs(t, s.Err(), context.Canceled)
-	})
-
 	t.Run("Err returns nil after limit-triggered cancel", func(t *testing.T) {
-		ch := make(chan mimirstorage.FilteredResult)
+		ch := make(chan mimirstorage.SearchResult)
 		ctx, cancel := context.WithCancel(context.Background())
 		s := &labelSearchStream{ch: ch, ctx: ctx, cancel: cancel, limitReached: true}
-		cancel() // simulate the dedup goroutine cancelling after limit
+		cancel() // simulate the merge goroutine cancelling after limit
 		close(ch)
 		assert.NoError(t, s.Err())
 	})
 
 	t.Run("Err returns stored error when set", func(t *testing.T) {
-		ch := make(chan mimirstorage.FilteredResult)
+		ch := make(chan mimirstorage.SearchResult)
 		ctx, cancel := context.WithCancel(context.Background())
 		s := &labelSearchStream{ch: ch, ctx: ctx, cancel: cancel, err: errors.New("fetch failed")}
 		close(ch)

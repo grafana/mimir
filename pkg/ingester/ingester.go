@@ -221,6 +221,8 @@ type Config struct {
 	// This config is dynamically injected because defined outside the ingester config.
 	IngestStorageConfig ingest.Config `yaml:"-"`
 
+	SearchLabelValuesStreamingBatchSize int `yaml:"search_labels_values_streaming_batch_size" category:"advanced"`
+
 	// This config can be overridden in tests.
 	limitMetricsUpdatePeriod time.Duration `yaml:"-"`
 }
@@ -249,6 +251,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.OwnedSeriesUpdateInterval, "ingester.owned-series-update-interval", 15*time.Second, "How often to check for ring changes and possibly recompute owned series as a result of detected change.")
 	f.BoolVar(&cfg.PushGrpcMethodEnabled, "ingester.push-grpc-method-enabled", true, "Enables Push gRPC method on ingester. Can be only disabled when using ingest-storage to make sure ingesters only receive data from Kafka.")
 
+	f.IntVar(&cfg.SearchLabelValuesStreamingBatchSize, "ingester.search-labels-values-streaming-batch-size", 1024, "Number of label names/values to include in each streaming batch sent from the ingester. Must be greater than 0.")
+
 	// Hardcoded config (can only be overridden in tests).
 	cfg.limitMetricsUpdatePeriod = time.Second * 15
 }
@@ -256,6 +260,9 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 func (cfg *Config) Validate(log.Logger) error {
 	if cfg.ErrorSampleRate < 0 {
 		return fmt.Errorf("error sample rate cannot be a negative number")
+	}
+	if cfg.SearchLabelValuesStreamingBatchSize <= 0 {
+		return fmt.Errorf("invalid ingester search labels/values streaming batch size")
 	}
 
 	// Tokenless mode requires gRPC push to be disabled.

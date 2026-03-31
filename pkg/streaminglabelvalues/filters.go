@@ -3,6 +3,7 @@
 package streaminglabelvalues
 
 import (
+	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -15,20 +16,16 @@ const (
 	unscored = -1.0
 )
 
-// FilterChain evaluates a slice of filters with a single logical operator (AND/OR).
-//
-// For OR: accepts on the first matching filter (short-circuits).
-// For AND: rejects on the first non-matching filter (short-circuits).
-//
+// FilterChain evaluates a slice of filters with a single logical operator.
+// Filters are evaluated as OR conditions
 // The score returned is the maximum score seen across all evaluated filters.
 type FilterChain struct {
 	filters []storage.Filter
-	op      Operator
 }
 
 // NewFilterChain creates a FilterChain with the given logical operator.
-func NewFilterChain(op Operator, size int) *FilterChain {
-	return &FilterChain{op: op, filters: make([]storage.Filter, 0, size)}
+func NewFilterChain(size int) *FilterChain {
+	return &FilterChain{filters: make([]storage.Filter, 0, size)}
 }
 
 // AddFilter appends a filter to the chain.
@@ -42,28 +39,15 @@ func (c *FilterChain) Accept(value string) (accepted bool, score float64) {
 		return true, unscored
 	}
 	score = unscored
-	switch c.op {
-	case And:
-		for _, f := range c.filters {
-			ok, s := f.Accept(value)
-			if ok {
-				score = math.Max(score, s)
-			} else {
-				return false, noscore
-			}
+	accepted = false
+	for _, f := range c.filters {
+		ok, s := f.Accept(value)
+		accepted = accepted || ok
+		if ok {
+			score = math.Max(score, s)
 		}
-		return true, score
-	default: // Or
-		accepted := false
-		for _, f := range c.filters {
-			ok, s := f.Accept(value)
-			accepted = accepted || ok
-			if ok {
-				score = math.Max(score, s)
-			}
-		}
-		return accepted, score
 	}
+	return accepted, score
 }
 
 // FilterChains is an outer container for multiple FilterChain instances.
@@ -129,21 +113,41 @@ func (c FilterContains) Accept(value string) (accepted bool, score float64) {
 // FilterJaro accepts values whose Jaro similarity to the reference term meets the threshold.
 // Pass a lowercased term when using FilterChains with caseSensitive=false.
 type FilterJaro struct {
-	jaro      JaroMatcher
+	term      string
 	threshold float64
 }
 
 // NewFilterJaro creates a FilterJaro for the given reference term and acceptance threshold [0,1].
 func NewFilterJaro(term string, threshold float64) FilterJaro {
 	return FilterJaro{
-		jaro:      NewJaroMatcher(term),
+		term:      term,
 		threshold: threshold,
 	}
 }
 
 // Accept implements storage.Filter. Score is the Jaro similarity value.
 func (c FilterJaro) Accept(value string) (accepted bool, score float64) {
-	score = c.jaro.Similarity(value)
+	score = JaroWinkler(c.term, value)
+	if score >= c.threshold {
+		return true, score
+	}
+	return false, noscore
+}
+
+type FilterSubsequence struct {
+	term      string
+	threshold float64
+}
+
+func NewFilterSubsequence(term string, threshold float64) FilterSubsequence {
+	return FilterSubsequence{
+		term:      term,
+		threshold: threshold,
+	}
+}
+
+func (c FilterSubsequence) Accept(value string) (accepted bool, score float64) {
+	score = SubsequenceScore(c.term, value)
 	if score >= c.threshold {
 		return true, score
 	}
@@ -153,14 +157,24 @@ func (c FilterJaro) Accept(value string) (accepted bool, score float64) {
 // BuildFilterChains constructs a FilterChains from the given search parameters.
 // Returns nil if searchTerms is empty, indicating no filtering should be applied.
 // The returned FilterChains is safe to call concurrently from multiple goroutines.
-func BuildFilterChains(searchTerms []string, caseInsensitive bool, op Operator, fuzzThreshold float64) *FilterChains {
+func BuildFilterChains(searchTerms []string, caseInsensitive bool, fuzzAlg string, fuzzThreshold float64) (*FilterChains, error) {
 	if len(searchTerms) == 0 {
-		return nil
+		return nil, nil
+	}
+
+	// This default should already be set, but added for clarity
+	if fuzzAlg == "" && fuzzThreshold > 0 {
+		fuzzAlg = "jarowinkler"
+	}
+
+	// We should not be here if this is incorrect, but added for safety
+	if fuzzAlg != "" && fuzzAlg != "jarowinkler" && fuzzAlg != "subsequence" {
+		return nil, fmt.Errorf("fuzzAlg must be one of: jarowinkler, subsequence")
 	}
 
 	chain := NewFilterChains(!caseInsensitive)
 
-	sc := NewFilterChain(op, len(searchTerms))
+	sc := NewFilterChain(len(searchTerms))
 	for _, term := range searchTerms {
 		if caseInsensitive {
 			term = strings.ToLower(term)
@@ -169,18 +183,24 @@ func BuildFilterChains(searchTerms []string, caseInsensitive bool, op Operator, 
 	}
 	chain.AddFilterChain(sc)
 
-	if fuzzThreshold > 0 {
-		fc := NewFilterChain(op, len(searchTerms))
+	if fuzzThreshold > 0 && len(fuzzAlg) > 0 {
+		fc := NewFilterChain(len(searchTerms))
 		for _, term := range searchTerms {
 			if caseInsensitive {
 				term = strings.ToLower(term)
 			}
-			fc.AddFilter(NewFilterJaro(term, fuzzThreshold))
+			switch fuzzAlg {
+			case "jarowinkler":
+				fc.AddFilter(NewFilterJaro(term, fuzzThreshold))
+			case "subsequence":
+				fc.AddFilter(NewFilterSubsequence(term, fuzzThreshold))
+			}
+
 		}
 		chain.AddFilterChain(fc)
 	}
 
-	return chain
+	return chain, nil
 }
 
 // ScoreAndSort scores values using filter and sorts them by score in-place.

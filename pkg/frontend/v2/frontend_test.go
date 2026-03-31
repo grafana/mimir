@@ -1409,7 +1409,7 @@ func TestFrontend_Protobuf_MultipleConcurrentResponses(t *testing.T) {
 				msg, err := resp.Next(ctx)
 				require.NoErrorf(t, err, "request %d failed with error", idx)
 
-				// Compare the evaluation response, rather than the top-level message.
+				// CompareFunc the evaluation response, rather than the top-level message.
 				// The evaluation response is the part that contains the interesting fields for this test,
 				// and avoiding the top-level message means we don't get failures because the buffers each message
 				// holds a reference to is different.

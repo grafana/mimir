@@ -110,10 +110,10 @@ func (m *mockStoreGatewayServer) LabelValues(ctx context.Context, req *storepb.L
 	return nil, nil
 }
 
-func (m *mockStoreGatewayServer) SearchLabelNames(_ context.Context, _ *storepb.SearchLabelNamesRequest) (*storepb.LabelNamesResponse, error) {
-	return nil, nil
+func (m *mockStoreGatewayServer) SearchLabelNames(_ *storepb.SearchLabelNamesRequest, stream storegatewaypb.StoreGateway_SearchLabelNamesServer) error {
+	return stream.Send(&storepb.StoreSearchResponse{})
 }
 
-func (m *mockStoreGatewayServer) SearchLabelValues(_ context.Context, _ *storepb.SearchLabelValuesRequest) (*storepb.LabelValuesResponse, error) {
-	return nil, nil
+func (m *mockStoreGatewayServer) SearchLabelValues(_ *storepb.SearchLabelValuesRequest, stream storegatewaypb.StoreGateway_SearchLabelValuesServer) error {
+	return stream.Send(&storepb.StoreSearchResponse{})
 }

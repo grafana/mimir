@@ -235,7 +235,7 @@ func TestCodec_JSONResponse_Metrics(t *testing.T) {
 
 // requireEqualHttpResponse checks the responses are the same with special handling for the Body.
 func requireEqualHttpResponse(t *testing.T, expected, actual *http.Response) {
-	// Compare all HTTP response fields except the Body
+	// CompareFunc all HTTP response fields except the Body
 	require.Equal(t, expected.StatusCode, actual.StatusCode)
 	require.Equal(t, expected.Header, actual.Header)
 	require.Equal(t, expected.ContentLength, actual.ContentLength)

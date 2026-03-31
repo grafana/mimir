@@ -41,8 +41,11 @@ func (q *searchTestQuerier) LabelValues(_ context.Context, name string, _ *stora
 
 func (q *searchTestQuerier) Close() error { return nil }
 
-func (q *searchTestQuerier) SearchLabelNames(_ context.Context, hints *mimirstorage.MimirSearchHints, _ ...*labels.Matcher) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
-	filter := streaminglabelvalues.BuildFilterChains(hints.Search, hints.CaseInsensitive, streaminglabelvalues.Operator(hints.Operator), hints.FuzzThreshold)
+func (q *searchTestQuerier) SearchLabelNames(_ context.Context, hints *mimirstorage.MimirSearchHints, _ ...*labels.Matcher) (mimirstorage.SearchResultSet, annotations.Annotations) {
+	filter, err := streaminglabelvalues.BuildFilterChains(hints.Search, hints.CaseInsensitive, hints.FuzzAlg, hints.FuzzThreshold)
+	if err != nil {
+		return &sliceSearcherValueSet{err: err}, nil
+	}
 	var results []string
 	for _, n := range q.labelNames {
 		if filter == nil {
@@ -51,11 +54,14 @@ func (q *searchTestQuerier) SearchLabelNames(_ context.Context, hints *mimirstor
 			results = append(results, n)
 		}
 	}
-	return &sliceSearcherValueSet{values: results}, nil, nil
+	return &sliceSearcherValueSet{values: results}, nil
 }
 
-func (q *searchTestQuerier) SearchLabelValues(_ context.Context, name string, hints *mimirstorage.MimirSearchHints, _ ...*labels.Matcher) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
-	filter := streaminglabelvalues.BuildFilterChains(hints.Search, hints.CaseInsensitive, streaminglabelvalues.Operator(hints.Operator), hints.FuzzThreshold)
+func (q *searchTestQuerier) SearchLabelValues(_ context.Context, name string, hints *mimirstorage.MimirSearchHints, _ ...*labels.Matcher) (mimirstorage.SearchResultSet, annotations.Annotations) {
+	filter, err := streaminglabelvalues.BuildFilterChains(hints.Search, hints.CaseInsensitive, hints.FuzzAlg, hints.FuzzThreshold)
+	if err != nil {
+		return &sliceSearcherValueSet{err: err}, nil
+	}
 	var results []string
 	for _, v := range q.labelValues[name] {
 		if filter == nil {
@@ -64,7 +70,7 @@ func (q *searchTestQuerier) SearchLabelValues(_ context.Context, name string, hi
 			results = append(results, v)
 		}
 	}
-	return &sliceSearcherValueSet{values: results}, nil, nil
+	return &sliceSearcherValueSet{values: results}, nil
 }
 
 func newSearchTestQueryable(labelNames []string, labelValues map[string][]string) mockSampleAndChunkQueryable {
@@ -133,23 +139,6 @@ func TestFilterChain(t *testing.T) {
 		},
 
 		{
-			name:   "string conjunction",
-			params: searchParams{search: []string{"foo", "bar"}, operation: streaminglabelvalues.And},
-			input:  []string{"foo", "bar", "cat", "foobar", "foo_bar"},
-			expected: map[string]struct {
-				accepted bool
-				score    float64
-			}{
-				// inputs were filtered against foo AND bar - those accepted have no score recorded
-				"foo":     {false, 0},
-				"bar":     {false, 0},
-				"cat":     {false, 0},
-				"foobar":  {true, -1},
-				"foo_bar": {true, -1},
-			},
-		},
-
-		{
 			name:   "single string with fuzz",
 			params: searchParams{search: []string{"foo"}, fuzzThreshold: 70},
 			input:  []string{"foo", "bar", "boo", "some_metric_ending_with_foo", "bar_foo"},
@@ -213,7 +202,8 @@ func TestFilterChain(t *testing.T) {
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
 			mimirHints := buildMimirSearchHints(&tc.params)
-			filter := streaminglabelvalues.BuildFilterChains(mimirHints.Search, mimirHints.CaseInsensitive, streaminglabelvalues.Operator(mimirHints.Operator), mimirHints.FuzzThreshold)
+			filter, err := streaminglabelvalues.BuildFilterChains(mimirHints.Search, mimirHints.CaseInsensitive, mimirHints.FuzzAlg, mimirHints.FuzzThreshold)
+			require.NoError(t, err)
 			for _, input := range tc.input {
 				var accepted bool
 				var score float64
@@ -352,9 +342,13 @@ func TestSearchLabelValuesHandler(t *testing.T) {
 type sliceSearcherValueSet struct {
 	values []string
 	pos    int
+	err    error
 }
 
 func (s *sliceSearcherValueSet) Next() bool {
+	if s.err != nil {
+		return false
+	}
 	if s.pos < len(s.values) {
 		s.pos++
 		return true
@@ -362,12 +356,12 @@ func (s *sliceSearcherValueSet) Next() bool {
 	return false
 }
 
-func (s *sliceSearcherValueSet) At() mimirstorage.FilteredResult {
-	return mimirstorage.FilteredResult{Value: s.values[s.pos-1]}
+func (s *sliceSearcherValueSet) At() mimirstorage.SearchResult {
+	return mimirstorage.SearchResult{Value: s.values[s.pos-1]}
 }
 func (s *sliceSearcherValueSet) Warnings() annotations.Annotations { return nil }
-func (s *sliceSearcherValueSet) Err() error                        { return nil }
-func (s *sliceSearcherValueSet) Close()                            {}
+func (s *sliceSearcherValueSet) Err() error                        { return s.err }
+func (s *sliceSearcherValueSet) Close() error                      { return nil }
 
 // searchTestNativeSearcher embeds searchTestQuerier (for the LabelQuerier methods
 // required by storage.Querier) and adds native Searcher methods whose results are
@@ -378,12 +372,12 @@ type searchTestNativeSearcher struct {
 	searchLabelValues map[string][]string
 }
 
-func (q *searchTestNativeSearcher) SearchLabelNames(_ context.Context, _ *mimirstorage.MimirSearchHints, _ ...*labels.Matcher) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
-	return &sliceSearcherValueSet{values: q.searchLabelNames}, nil, nil
+func (q *searchTestNativeSearcher) SearchLabelNames(_ context.Context, _ *mimirstorage.MimirSearchHints, _ ...*labels.Matcher) (mimirstorage.SearchResultSet, annotations.Annotations) {
+	return &sliceSearcherValueSet{values: q.searchLabelNames}, nil
 }
 
-func (q *searchTestNativeSearcher) SearchLabelValues(_ context.Context, name string, _ *mimirstorage.MimirSearchHints, _ ...*labels.Matcher) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
-	return &sliceSearcherValueSet{values: q.searchLabelValues[name]}, nil, nil
+func (q *searchTestNativeSearcher) SearchLabelValues(_ context.Context, name string, _ *mimirstorage.MimirSearchHints, _ ...*labels.Matcher) (mimirstorage.SearchResultSet, annotations.Annotations) {
+	return &sliceSearcherValueSet{values: q.searchLabelValues[name]}, nil
 }
 
 // newSearchTestNativeSearchableQueryable returns a queryable whose querier
@@ -407,7 +401,7 @@ func newSearchTestNativeSearchableQueryable(searchLabelNames []string, searchLab
 }
 
 // collectNDJSONResults scans an NDJSON body and returns the Value field from
-// each FilteredResult in "results" chunks.
+// each SearchResult in "results" chunks.
 func collectNDJSONResults(t *testing.T, body *bytes.Buffer) []string {
 	t.Helper()
 	var values []string
@@ -498,7 +492,7 @@ func TestSearchLabelValuesHandler_WithNativeSearcher(t *testing.T) {
 	assert.NotContains(t, got, "via_label_querier")
 }
 
-// cancellingSearcherValueSet is a SearcherValueSet that returns up to blockAfter values
+// cancellingSearcherValueSet is a SearchResultSet that returns up to blockAfter values
 // and then blocks until its context is cancelled. It records whether Close was called.
 type cancellingSearcherValueSet struct {
 	values      []string
@@ -522,12 +516,12 @@ func (s *cancellingSearcherValueSet) Next() bool {
 	return false
 }
 
-func (s *cancellingSearcherValueSet) At() mimirstorage.FilteredResult {
-	return mimirstorage.FilteredResult{Value: s.values[s.pos-1]}
+func (s *cancellingSearcherValueSet) At() mimirstorage.SearchResult {
+	return mimirstorage.SearchResult{Value: s.values[s.pos-1]}
 }
 func (s *cancellingSearcherValueSet) Warnings() annotations.Annotations { return nil }
 func (s *cancellingSearcherValueSet) Err() error                        { return s.ctx.Err() }
-func (s *cancellingSearcherValueSet) Close()                            { s.closeCalled = true }
+func (s *cancellingSearcherValueSet) Close() error                      { s.closeCalled = true; return nil }
 
 // cancellingNativeSearcher is a storage.Querier + mimirstorage.Searcher that returns
 // a cancellingSearcherValueSet, capturing the request context when SearchLabelNames is called.
@@ -536,14 +530,14 @@ type cancellingNativeSearcher struct {
 	vs *cancellingSearcherValueSet
 }
 
-func (q *cancellingNativeSearcher) SearchLabelNames(ctx context.Context, _ *mimirstorage.MimirSearchHints, _ ...*labels.Matcher) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
+func (q *cancellingNativeSearcher) SearchLabelNames(ctx context.Context, _ *mimirstorage.MimirSearchHints, _ ...*labels.Matcher) (mimirstorage.SearchResultSet, annotations.Annotations) {
 	q.vs.ctx = ctx
-	return q.vs, nil, nil
+	return q.vs, nil
 }
 
-func (q *cancellingNativeSearcher) SearchLabelValues(ctx context.Context, _ string, _ *mimirstorage.MimirSearchHints, _ ...*labels.Matcher) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
+func (q *cancellingNativeSearcher) SearchLabelValues(ctx context.Context, _ string, _ *mimirstorage.MimirSearchHints, _ ...*labels.Matcher) (mimirstorage.SearchResultSet, annotations.Annotations) {
 	q.vs.ctx = ctx
-	return q.vs, nil, nil
+	return q.vs, nil
 }
 
 // TestSearchLabelNamesHandler_ContextCancellation verifies that when a request is cancelled

@@ -1035,7 +1035,7 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 					expectedProm, expectedOk := expectedRes[reqs[idx].GetID()].GetPrometheusResponse()
 					require.True(t, expectedOk)
 
-					// Compare the Prometheus responses instead of the wrapper types
+					// CompareFunc the Prometheus responses instead of the wrapper types
 					require.Equal(t, expectedProm, actualProm)
 
 					return nil

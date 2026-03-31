@@ -109,6 +109,9 @@ type BucketStore struct {
 	// This value must be greater than zero.
 	maxSeriesPerBatch int
 
+	// searchLabelValuesStreamingBatchSize controls the batch size for SearchLabelNames/Values streaming.
+	searchLabelValuesStreamingBatchSize int
+
 	// Query gate which limits the maximum amount of concurrent queries.
 	queryGate gate.Gate
 
@@ -120,7 +123,9 @@ type BucketStore struct {
 	// seriesLimiterFactory creates a new limiter used to limit the number of touched series by each Series() call,
 	// or LabelName and LabelValues calls when used with matchers.
 	seriesLimiterFactory SeriesLimiterFactory
-	partitioners         blockPartitioners
+	// searchMaxBytesLimitFn returns the per-tenant max bytes limit for Search label calls.
+	searchMaxBytesLimitFn func() int
+	partitioners          blockPartitioners
 
 	// Every how many posting offset entry we pool in heap memory. Default in Prometheus is 32.
 	postingOffsetsInMemSampling int
@@ -212,32 +217,35 @@ func NewBucketStore(
 	postingsStrategy postingsSelectionStrategy,
 	chunksLimiterFactory ChunksLimiterFactory,
 	seriesLimiterFactory SeriesLimiterFactory,
+	searchMaxBytesLimitFn func() int,
 	partitioners blockPartitioners,
 	seriesHashCache *hashcache.SeriesHashCache,
 	metrics *BucketStoreMetrics,
 	options ...BucketStoreOption,
 ) (*BucketStore, error) {
 	s := &BucketStore{
-		logger:                      log.NewNopLogger(),
-		bkt:                         bkt,
-		bucketIndexMeta:             bucketIndexMeta,
-		fetcher:                     fetcher,
-		dir:                         dir,
-		indexCache:                  noopCache{},
-		blockSet:                    newBucketBlockSet(),
-		blockSyncConcurrency:        bucketStoreConfig.BlockSyncConcurrency,
-		queryGate:                   gate.NewNoop(),
-		lazyLoadingGate:             gate.NewNoop(),
-		chunksLimiterFactory:        chunksLimiterFactory,
-		seriesLimiterFactory:        seriesLimiterFactory,
-		partitioners:                partitioners,
-		postingOffsetsInMemSampling: bucketStoreConfig.PostingOffsetsInMemSampling,
-		indexHeaderCfg:              bucketStoreConfig.IndexHeader,
-		seriesHashCache:             seriesHashCache,
-		metrics:                     metrics,
-		userID:                      userID,
-		maxSeriesPerBatch:           bucketStoreConfig.StreamingBatchSize,
-		postingsStrategy:            postingsStrategy,
+		logger:                              log.NewNopLogger(),
+		bkt:                                 bkt,
+		bucketIndexMeta:                     bucketIndexMeta,
+		fetcher:                             fetcher,
+		dir:                                 dir,
+		indexCache:                          noopCache{},
+		blockSet:                            newBucketBlockSet(),
+		blockSyncConcurrency:                bucketStoreConfig.BlockSyncConcurrency,
+		queryGate:                           gate.NewNoop(),
+		lazyLoadingGate:                     gate.NewNoop(),
+		chunksLimiterFactory:                chunksLimiterFactory,
+		seriesLimiterFactory:                seriesLimiterFactory,
+		searchMaxBytesLimitFn:               searchMaxBytesLimitFn,
+		partitioners:                        partitioners,
+		postingOffsetsInMemSampling:         bucketStoreConfig.PostingOffsetsInMemSampling,
+		indexHeaderCfg:                      bucketStoreConfig.IndexHeader,
+		seriesHashCache:                     seriesHashCache,
+		metrics:                             metrics,
+		userID:                              userID,
+		maxSeriesPerBatch:                   bucketStoreConfig.StreamingBatchSize,
+		searchLabelValuesStreamingBatchSize: bucketStoreConfig.SearchLabelValuesStreamingBatchSize,
+		postingsStrategy:                    postingsStrategy,
 	}
 
 	for _, option := range options {

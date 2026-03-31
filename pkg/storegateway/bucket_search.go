@@ -4,87 +4,124 @@ package storegateway
 
 import (
 	"context"
-	"slices"
 	"sync"
 	"time"
 
-	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/runutil"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/util/annotations"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/grafana/mimir/pkg/storegateway/hintspb"
+	mimirstorage "github.com/grafana/mimir/pkg/storage"
+	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 // SearchLabelNames implements the storegatewaypb.StoreGatewayServer interface.
-// It is identical to LabelNames but applies the SearchFilter before the limit.
-func (s *BucketStore) SearchLabelNames(ctx context.Context, req *storepb.SearchLabelNamesRequest) (*storepb.LabelNamesResponse, error) {
+// It filters and sorts label names using SearchFilter, streaming results back in batches.
+func (s *BucketStore) SearchLabelNames(req *storepb.SearchLabelNamesRequest, stream storegatewaypb.StoreGateway_SearchLabelNamesServer) error {
 	reqSeriesMatchers, err := storepb.MatchersToPromMatchers(req.Matchers...)
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request labels matchers").Error())
+		return status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request labels matchers").Error())
 	}
 
-	var (
-		stats          = newSafeQueryStats()
-		resHints       = &storepb.LabelNamesResponseHints{}
-		opaqueResHints = &hintspb.LabelNamesResponseHints{}
-	)
-
+	stats := newSafeQueryStats()
 	defer s.recordLabelNamesCallResult(stats)
 	defer s.recordRequestAmbientTime(stats, time.Now())
+	defer s.recordBucketIndexDiscoveryDiff(stream.Context())
 
 	var reqBlockMatchers []*labels.Matcher
 	if req.RequestHints != nil {
 		reqBlockMatchers, err = storepb.MatchersToPromMatchers(req.RequestHints.BlockMatchers...)
 		if err != nil {
-			return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
+			return status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
 		}
 	}
 
-	defer s.recordBucketIndexDiscoveryDiff(ctx)
+	searchFilter, err := buildSearchFilter(req.SearchFilter)
+	if err != nil {
+		return status.Error(codes.InvalidArgument, errors.Wrap(err, "build search filter").Error())
+	}
+	resHints := &storepb.StoreSearchResponseHints{}
 
-	g, gctx := errgroup.WithContext(ctx)
+	producer := func(ch chan<- mimirstorage.SearchResult) (annotations.Annotations, error) {
+		return s.produceSearchLabelNames(stream.Context(), req, searchFilter, reqSeriesMatchers, reqBlockMatchers, stats, resHints, ch)
+	}
 
-	searchFilter := buildSearchFilter(req.SearchFilter)
+	sortBy, sortOrder := 0, 0
+	if req.SearchFilter != nil {
+		sortBy = int(req.SearchFilter.SortBy)
+		sortOrder = int(req.SearchFilter.SortOrder)
+	}
 
-	var setsMtx sync.Mutex
-	var sets [][]string
-	var blocksQueriedByBlockMeta = make(map[blockQueriedMeta]int)
-	seriesLimiter := s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
+	iter := mimirstorage.NewSearchValueSet(producer, sortBy, sortOrder, int(req.Limit), s.searchMaxBytesLimitFn(), nil)
+	defer iter.Close()
+
+	return streamStoreSearchResults(iter, stream, resHints, int(req.Limit), s.searchLabelValuesStreamingBatchSize)
+}
+
+// produceSearchLabelNames fans out blockLabelNames calls concurrently, applies the search filter,
+// and sends each accepted name to ch with ctx-aware backpressure.
+func (s *BucketStore) produceSearchLabelNames(
+	ctx context.Context,
+	req *storepb.SearchLabelNamesRequest,
+	searchFilter *streaminglabelvalues.FilterChains,
+	reqSeriesMatchers, reqBlockMatchers []*labels.Matcher,
+	stats *safeQueryStats,
+	resHints *storepb.StoreSearchResponseHints,
+	ch chan<- mimirstorage.SearchResult,
+) (annotations.Annotations, error) {
+	var (
+		g, gctx                  = errgroup.WithContext(ctx)
+		hintsMtx                 sync.Mutex
+		blocksQueried            int
+		blocksQueriedByBlockMeta = make(map[blockQueriedMeta]int)
+		seriesLimiter            = s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
+	)
 
 	s.blockSet.filter(req.Start, req.End, reqBlockMatchers, func(b *bucketBlock) {
+		hintsMtx.Lock()
 		resHints.AddQueriedBlock(b.meta.ULID)
-		opaqueResHints.AddQueriedBlock(b.meta.ULID)
-
 		blocksQueriedByBlockMeta[newBlockQueriedMeta(b.meta)]++
+		hintsMtx.Unlock()
 
-		// This indexReader is here to make sure its block is held open inside the goroutine below.
 		indexr := b.indexReader(s.postingsStrategy)
 
 		g.Go(func() error {
 			defer runutil.CloseWithLogOnErr(s.logger, indexr, "label names")
-
 			b.ensureIndexHeaderLoaded(gctx, stats)
 
+			// TODO - can we get any lower to stream here
 			result, err := blockLabelNames(gctx, indexr, reqSeriesMatchers, seriesLimiter, s.maxSeriesPerBatch, s.logger, stats)
 			if err != nil {
 				return errors.Wrapf(err, "block %s", b.meta.ULID)
 			}
 
-			result = streaminglabelvalues.ApplyFilterChains(result, searchFilter)
-
 			if len(result) > 0 {
-				setsMtx.Lock()
-				sets = append(sets, result)
-				setsMtx.Unlock()
+				hintsMtx.Lock()
+				blocksQueried++
+				hintsMtx.Unlock()
 			}
 
+			for _, v := range result {
+				var score float64
+				if searchFilter != nil {
+					accepted, s := searchFilter.Accept(v)
+					if !accepted {
+						continue
+					}
+					score = s
+				}
+				select {
+				case ch <- mimirstorage.SearchResult{Value: v, Score: score}:
+				case <-gctx.Done():
+					return gctx.Err()
+				}
+			}
 			return nil
 		})
 	})
@@ -93,92 +130,110 @@ func (s *BucketStore) SearchLabelNames(ctx context.Context, req *storepb.SearchL
 		if errors.Is(err, context.Canceled) {
 			return nil, status.Error(codes.Canceled, err.Error())
 		}
-
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	stats.update(func(stats *queryStats) {
-		stats.blocksQueried = len(sets)
+	stats.update(func(st *queryStats) {
+		st.blocksQueried = blocksQueried
 		for sl, count := range blocksQueriedByBlockMeta {
-			stats.blocksQueriedByBlockMeta[sl] = count
+			st.blocksQueriedByBlockMeta[sl] = count
 		}
 	})
 
-	anyHints, err := types.MarshalAny(opaqueResHints)
-	if err != nil {
-		return nil, status.Error(codes.Unknown, errors.Wrap(err, "marshal label names response hints").Error())
-	}
-
-	names := util.MergeSlices(sets...)
-	names = applySearchSort(names, req.SearchFilter, searchFilter)
-	if req.Limit > 0 && len(names) > int(req.Limit) {
-		names = names[:req.Limit]
-	}
-
-	return &storepb.LabelNamesResponse{
-		Names:         names,
-		Hints:         anyHints,
-		ResponseHints: resHints,
-	}, nil
+	return nil, nil
 }
 
 // SearchLabelValues implements the storegatewaypb.StoreGatewayServer interface.
-// It is identical to LabelValues but applies the SearchFilter before the limit.
-func (s *BucketStore) SearchLabelValues(ctx context.Context, req *storepb.SearchLabelValuesRequest) (*storepb.LabelValuesResponse, error) {
+// It filters and sorts label values using SearchFilter, streaming results back in batches.
+func (s *BucketStore) SearchLabelValues(req *storepb.SearchLabelValuesRequest, stream storegatewaypb.StoreGateway_SearchLabelValuesServer) error {
 	reqSeriesMatchers, err := storepb.MatchersToPromMatchers(req.Matchers...)
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request labels matchers").Error())
+		return status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request labels matchers").Error())
 	}
 
 	stats := newSafeQueryStats()
 	defer s.recordLabelValuesCallResult(stats)
 	defer s.recordRequestAmbientTime(stats, time.Now())
-
-	resHints := &storepb.LabelValuesResponseHints{}
-	opaqueResHints := &hintspb.LabelValuesResponseHints{}
-
-	g, gctx := errgroup.WithContext(ctx)
+	defer s.recordBucketIndexDiscoveryDiff(stream.Context())
 
 	var reqBlockMatchers []*labels.Matcher
 	if req.RequestHints != nil {
 		reqBlockMatchers, err = storepb.MatchersToPromMatchers(req.RequestHints.BlockMatchers...)
 		if err != nil {
-			return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
+			return status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
 		}
 	}
 
-	defer s.recordBucketIndexDiscoveryDiff(ctx)
+	searchFilter, err := buildSearchFilter(req.SearchFilter)
+	if err != nil {
+		return status.Error(codes.InvalidArgument, errors.Wrap(err, "build search filter").Error())
+	}
+	resHints := &storepb.StoreSearchResponseHints{}
 
-	searchFilter := buildSearchFilter(req.SearchFilter)
+	produce := func(ch chan<- mimirstorage.SearchResult) (annotations.Annotations, error) {
+		return s.produceSearchLabelValues(stream.Context(), req, searchFilter, reqSeriesMatchers, reqBlockMatchers, stats, resHints, ch)
+	}
 
-	var setsMtx sync.Mutex
-	var sets [][]string
+	sortBy, sortOrder := 0, 0
+	if req.SearchFilter != nil {
+		sortBy = int(req.SearchFilter.SortBy)
+		sortOrder = int(req.SearchFilter.SortOrder)
+	}
+
+	iter := mimirstorage.NewSearchValueSet(produce, sortBy, sortOrder, int(req.Limit), s.searchMaxBytesLimitFn(), nil)
+	defer iter.Close()
+
+	return streamStoreSearchResults(iter, stream, resHints, int(req.Limit), s.searchLabelValuesStreamingBatchSize)
+}
+
+// produceSearchLabelValues fans out blockLabelValues calls concurrently, applies the search filter,
+// and sends each accepted value to ch with ctx-aware backpressure.
+func (s *BucketStore) produceSearchLabelValues(
+	ctx context.Context,
+	req *storepb.SearchLabelValuesRequest,
+	searchFilter *streaminglabelvalues.FilterChains,
+	reqSeriesMatchers, reqBlockMatchers []*labels.Matcher,
+	stats *safeQueryStats,
+	resHints *storepb.StoreSearchResponseHints,
+	ch chan<- mimirstorage.SearchResult,
+) (annotations.Annotations, error) {
+	var (
+		g, gctx  = errgroup.WithContext(ctx)
+		hintsMtx sync.Mutex
+	)
+
 	s.blockSet.filter(req.Start, req.End, reqBlockMatchers, func(b *bucketBlock) {
+		hintsMtx.Lock()
 		resHints.AddQueriedBlock(b.meta.ULID)
-		opaqueResHints.AddQueriedBlock(b.meta.ULID)
+		hintsMtx.Unlock()
 
-		// This index reader shouldn't be used for ExpandedPostings, since it doesn't have the correct strategy.
-		// It's here only to make sure the block is held open inside the goroutine below.
 		indexr := b.indexReader(nil)
 
 		g.Go(func() error {
 			defer runutil.CloseWithLogOnErr(b.logger, indexr, "close block index reader")
-
 			b.ensureIndexHeaderLoaded(gctx, stats)
 
+			// TODO - can we get lower here
 			result, err := blockLabelValues(gctx, b, s.postingsStrategy, s.maxSeriesPerBatch, req.Label, reqSeriesMatchers, s.logger, stats)
 			if err != nil {
 				return errors.Wrapf(err, "block %s", b.meta.ULID)
 			}
 
-			result = streaminglabelvalues.ApplyFilterChains(result, searchFilter)
-
-			if len(result) > 0 {
-				setsMtx.Lock()
-				sets = append(sets, result)
-				setsMtx.Unlock()
+			for _, v := range result {
+				var score float64
+				if searchFilter != nil {
+					accepted, s := searchFilter.Accept(v)
+					if !accepted {
+						continue
+					}
+					score = s
+				}
+				select {
+				case ch <- mimirstorage.SearchResult{Value: v, Score: score}:
+				case <-gctx.Done():
+					return gctx.Err()
+				}
 			}
-
 			return nil
 		})
 	})
@@ -187,57 +242,71 @@ func (s *BucketStore) SearchLabelValues(ctx context.Context, req *storepb.Search
 		if errors.Is(err, context.Canceled) {
 			return nil, status.Error(codes.Canceled, err.Error())
 		}
-
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	anyHints, err := types.MarshalAny(opaqueResHints)
-	if err != nil {
-		return nil, status.Error(codes.Unknown, errors.Wrap(err, "marshal label values response hints").Error())
+	return nil, nil
+}
+
+// streamStoreSearchResults batches iter results into StoreSearchResponse messages and sends them.
+// The final message always carries response_hints. Warnings (if any) are sent in a trailing message.
+// limit is used to cap the batch size: if a limit is set we'll never need more than that many results.
+func streamStoreSearchResults(
+	iter *mimirstorage.SearchValueSet,
+	stream interface {
+		Send(*storepb.StoreSearchResponse) error
+	},
+	resHints *storepb.StoreSearchResponseHints,
+	limit int,
+	batchSize int,
+) error {
+	if batchSize <= 0 {
+		batchSize = 1024
+	}
+	if limit > 0 {
+		batchSize = min(limit, batchSize)
+	}
+	batch := make([]*storepb.StoreSearchResult, batchSize)
+	for k := range batch {
+		batch[k] = &storepb.StoreSearchResult{}
 	}
 
-	values := util.MergeSlices(sets...)
-	values = applySearchSort(values, req.SearchFilter, searchFilter)
-	if req.Limit > 0 && len(values) > int(req.Limit) {
-		values = values[:req.Limit]
+	idx := 0
+	for iter.Next() {
+		r := iter.At()
+		*batch[idx] = storepb.StoreSearchResult{Value: r.Value, Score: r.Score}
+		idx++
+		if idx == len(batch) {
+			if err := stream.Send(&storepb.StoreSearchResponse{Results: batch}); err != nil {
+				return err
+			}
+			idx = 0
+		}
 	}
 
-	return &storepb.LabelValuesResponse{
-		Values:        values,
-		Hints:         anyHints,
-		ResponseHints: resHints,
-	}, nil
+	if err := iter.Err(); err != nil {
+		return err
+	}
+
+	// Final message: flush remaining results, attach hints and any warnings.
+	finalResp := &storepb.StoreSearchResponse{ResponseHints: resHints}
+	if idx > 0 {
+		finalResp.Results = batch[:idx]
+	}
+	if warns := iter.Warnings(); len(warns) > 0 {
+		finalResp.Warnings = make([]string, 0, len(warns))
+		for _, w := range warns {
+			finalResp.Warnings = append(finalResp.Warnings, w.Error())
+		}
+	}
+	return stream.Send(finalResp)
 }
 
 // buildSearchFilter converts a proto SearchFilter into a FilterChains ready for concurrent use.
 // Returns nil if sf is nil or has no search terms.
-func buildSearchFilter(sf *storepb.SearchFilter) *streaminglabelvalues.FilterChains {
+func buildSearchFilter(sf *storepb.SearchFilter) (*streaminglabelvalues.FilterChains, error) {
 	if sf == nil || len(sf.SearchTerms) == 0 {
-		return nil
+		return nil, nil
 	}
-	op := streaminglabelvalues.Or
-	if sf.Operator == storepb.AND {
-		op = streaminglabelvalues.And
-	}
-	return streaminglabelvalues.BuildFilterChains(sf.SearchTerms, sf.CaseInsensitive, op, sf.FuzzThreshold)
-}
-
-// applySearchSort sorts values according to the sort_by/sort_order fields in sf.
-// For alpha-asc (default from MergeSlices) no reordering is needed.
-// For alpha-desc the slice is reversed in-place.
-// For score sort, ScoreAndSort is called using the pre-built filter.
-// If sf is nil or sort_by is 0, values are returned unchanged.
-func applySearchSort(values []string, sf *storepb.SearchFilter, filter *streaminglabelvalues.FilterChains) []string {
-	if sf == nil || sf.SortBy == storepb.SORT_BY_NONE {
-		return values
-	}
-	switch sf.SortBy {
-	case storepb.SORT_BY_ALPHA:
-		if sf.SortOrder == storepb.SORT_ORDER_DESC {
-			slices.Reverse(values)
-		}
-	case storepb.SORT_BY_SCORE: // filter provides scoring; falls back to unchanged if no filter
-		values = streaminglabelvalues.ScoreAndSort(values, filter, sf.SortOrder != storepb.SORT_ORDER_ASC)
-	}
-	return values
+	return streaminglabelvalues.BuildFilterChains(sf.SearchTerms, sf.CaseInsensitive, sf.FuzzAlg, sf.FuzzThreshold)
 }

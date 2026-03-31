@@ -57,7 +57,6 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	mimirstorage "github.com/grafana/mimir/pkg/storage"
 	"github.com/grafana/mimir/pkg/storage/ingest"
-	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerclient"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/extract"
@@ -3245,20 +3244,20 @@ func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, hints
 	return values, nil
 }
 
-// ingesterSearchNamesValueSet wraps a server-streaming gRPC client as a SearcherValueSet.
+// ingesterSearchNamesValueSet wraps a server-streaming gRPC client as a SearchResultSet.
 // Each Recv() call fetches the next batch of SearchLabelValuesResult items from the ingester.
 type ingesterSearchNamesValueSet struct {
 	stream  ingester_client.Ingester_SearchLabelNamesClient
 	batch   []*ingester_client.SearchLabelValuesResult
 	pos     int
-	current mimirstorage.FilteredResult
+	current mimirstorage.SearchResult
 	err     error
 }
 
 func (s *ingesterSearchNamesValueSet) Next() bool {
 	for s.pos >= len(s.batch) {
 		resp, err := s.stream.Recv()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return false
 		}
 		if err != nil {
@@ -3270,21 +3269,21 @@ func (s *ingesterSearchNamesValueSet) Next() bool {
 	}
 	r := s.batch[s.pos]
 	s.pos++
-	s.current = mimirstorage.FilteredResult{Value: r.Value, Score: r.Score}
+	s.current = mimirstorage.SearchResult{Value: r.Value, Score: r.Score}
 	return true
 }
 
-func (s *ingesterSearchNamesValueSet) At() mimirstorage.FilteredResult { return s.current }
+func (s *ingesterSearchNamesValueSet) At() mimirstorage.SearchResult { return s.current }
 func (s *ingesterSearchNamesValueSet) Warnings() annotations.Annotations {
 	return nil
 }
 func (s *ingesterSearchNamesValueSet) Err() error { return s.err }
-func (s *ingesterSearchNamesValueSet) Close() {
+func (s *ingesterSearchNamesValueSet) Close() error {
 	// Drain any remaining items so the gRPC goroutine can finish.
 	for {
 		_, err := s.stream.Recv()
 		if err != nil {
-			return
+			return nil
 		}
 	}
 }
@@ -3294,14 +3293,14 @@ type ingesterSearchValuesValueSet struct {
 	stream  ingester_client.Ingester_SearchLabelValuesClient
 	batch   []*ingester_client.SearchLabelValuesResult
 	pos     int
-	current mimirstorage.FilteredResult
+	current mimirstorage.SearchResult
 	err     error
 }
 
 func (s *ingesterSearchValuesValueSet) Next() bool {
 	for s.pos >= len(s.batch) {
 		resp, err := s.stream.Recv()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return false
 		}
 		if err != nil {
@@ -3313,29 +3312,29 @@ func (s *ingesterSearchValuesValueSet) Next() bool {
 	}
 	r := s.batch[s.pos]
 	s.pos++
-	s.current = mimirstorage.FilteredResult{Value: r.Value, Score: r.Score}
+	s.current = mimirstorage.SearchResult{Value: r.Value, Score: r.Score}
 	return true
 }
 
-func (s *ingesterSearchValuesValueSet) At() mimirstorage.FilteredResult { return s.current }
+func (s *ingesterSearchValuesValueSet) At() mimirstorage.SearchResult { return s.current }
 func (s *ingesterSearchValuesValueSet) Warnings() annotations.Annotations {
 	return nil
 }
 func (s *ingesterSearchValuesValueSet) Err() error { return s.err }
-func (s *ingesterSearchValuesValueSet) Close() {
+func (s *ingesterSearchValuesValueSet) Close() error {
 	for {
 		_, err := s.stream.Recv()
 		if err != nil {
-			return
+			return nil
 		}
 	}
 }
 
-// distributorSearchValueSet is a channel-backed SearcherValueSet returned by the Distributor.
+// distributorSearchValueSet is a channel-backed SearchResultSet returned by the Distributor.
 // Results are merged by a background goroutine and pushed to ch.
 type distributorSearchValueSet struct {
-	ch           <-chan mimirstorage.FilteredResult
-	cur          mimirstorage.FilteredResult
+	ch           <-chan mimirstorage.SearchResult
+	cur          mimirstorage.SearchResult
 	ctx          context.Context
 	cancel       context.CancelFunc
 	err          error
@@ -3351,29 +3350,20 @@ func (s *distributorSearchValueSet) Next() bool {
 	return true
 }
 
-func (s *distributorSearchValueSet) At() mimirstorage.FilteredResult { return s.cur }
+func (s *distributorSearchValueSet) At() mimirstorage.SearchResult { return s.cur }
 func (s *distributorSearchValueSet) Warnings() annotations.Annotations {
 	return nil
 }
-func (s *distributorSearchValueSet) Err() error  { return s.err }
-func (s *distributorSearchValueSet) Close()      { s.cancel() }
+func (s *distributorSearchValueSet) Err() error   { return s.err }
+func (s *distributorSearchValueSet) Close() error { s.cancel(); return nil }
 
 // distributorComparatorFromHints builds a Comparator from MimirSearchHints.
 // Returns nil when no sorting is requested.
 func distributorComparatorFromHints(h *mimirstorage.MimirSearchHints) mimirstorage.Comparator {
-	if h == nil || h.SortBy == 0 {
+	if h == nil {
 		return nil
 	}
-	if h.SortBy == 1 { // Alpha
-		if h.SortOrder == 1 { // Desc
-			return &streaminglabelvalues.ComparerAlphaDesc{}
-		}
-		return &streaminglabelvalues.ComparerAlpha{}
-	}
-	if h.SortBy == 2 { // Score
-		return streaminglabelvalues.NewCompareScore(h.Search)
-	}
-	return nil
+	return h.Comparator()
 }
 
 // mimirHintsToIngesterSearchFilter converts MimirSearchHints to a SearchLabelValuesFilter proto.
@@ -3381,14 +3371,10 @@ func mimirHintsToIngesterSearchFilter(h *mimirstorage.MimirSearchHints) *ingeste
 	if h == nil || (len(h.Search) == 0 && h.SortBy == 0) {
 		return nil
 	}
-	op := ingester_client.OR
-	if h.Operator == 1 {
-		op = ingester_client.AND
-	}
 	return &ingester_client.SearchLabelValuesFilter{
 		SearchTerms:     h.Search,
 		CaseInsensitive: h.CaseInsensitive,
-		Operator:        op,
+		FuzzAlg:         h.FuzzAlg,
 		FuzzThreshold:   h.FuzzThreshold,
 		SortBy:          ingester_client.SortBy(h.SortBy),
 		SortOrder:       ingester_client.SortOrder(h.SortOrder),
@@ -3397,9 +3383,9 @@ func mimirHintsToIngesterSearchFilter(h *mimirstorage.MimirSearchHints) *ingeste
 
 // TODO: add unit tests for SearchLabelNames and SearchLabelValues covering fan-out, dedup, and limit enforcement.
 
-// SearchLabelNames returns a SearcherValueSet of label names matching the search criteria from ingesters.
+// SearchLabelNames returns a SearchResultSet of label names matching the search criteria from ingesters.
 // Each ingester streams sorted/filtered batches; the distributor merges them and returns a merged stream.
-func (d *Distributor) SearchLabelNames(ctx context.Context, from, to model.Time, hints *mimirstorage.MimirSearchHints, matchers ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
+func (d *Distributor) SearchLabelNames(ctx context.Context, from, to model.Time, hints *mimirstorage.MimirSearchHints, matchers ...*labels.Matcher) (mimirstorage.SearchResultSet, error) {
 	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -3433,13 +3419,13 @@ func (d *Distributor) SearchLabelNames(ctx context.Context, from, to model.Time,
 		return nil, err
 	}
 
-	iters := make([]mimirstorage.SearcherValueSet, len(streams))
+	iters := make([]mimirstorage.SearchResultSet, len(streams))
 	for i, s := range streams {
 		iters[i] = &ingesterSearchNamesValueSet{stream: s}
 	}
 
 	mergeCtx, cancel := context.WithCancel(ctx)
-	outCh := make(chan mimirstorage.FilteredResult, 256)
+	outCh := make(chan mimirstorage.SearchResult, 256)
 	result := &distributorSearchValueSet{ch: outCh, ctx: mergeCtx, cancel: cancel}
 
 	go func() {
@@ -3459,9 +3445,9 @@ func (d *Distributor) SearchLabelNames(ctx context.Context, from, to model.Time,
 	return result, nil
 }
 
-// SearchLabelValues returns a SearcherValueSet of label values matching the search criteria from ingesters.
+// SearchLabelValues returns a SearchResultSet of label values matching the search criteria from ingesters.
 // Each ingester streams sorted/filtered batches; the distributor merges them and returns a merged stream.
-func (d *Distributor) SearchLabelValues(ctx context.Context, from, to model.Time, label model.LabelName, hints *mimirstorage.MimirSearchHints, matchers ...*labels.Matcher) (mimirstorage.SearcherValueSet, error) {
+func (d *Distributor) SearchLabelValues(ctx context.Context, from, to model.Time, label model.LabelName, hints *mimirstorage.MimirSearchHints, matchers ...*labels.Matcher) (mimirstorage.SearchResultSet, error) {
 	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -3496,13 +3482,13 @@ func (d *Distributor) SearchLabelValues(ctx context.Context, from, to model.Time
 		return nil, err
 	}
 
-	iters := make([]mimirstorage.SearcherValueSet, len(streams))
+	iters := make([]mimirstorage.SearchResultSet, len(streams))
 	for i, s := range streams {
 		iters[i] = &ingesterSearchValuesValueSet{stream: s}
 	}
 
 	mergeCtx, cancel := context.WithCancel(ctx)
-	outCh := make(chan mimirstorage.FilteredResult, 256)
+	outCh := make(chan mimirstorage.SearchResult, 256)
 	result := &distributorSearchValueSet{ch: outCh, ctx: mergeCtx, cancel: cancel}
 
 	go func() {

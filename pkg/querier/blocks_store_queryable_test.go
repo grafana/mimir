@@ -3327,12 +3327,44 @@ func (m *storeGatewayClientMock) LabelValues(context.Context, *storepb.LabelValu
 	return m.mockedLabelValuesResponse, m.mockedLabelValuesErr
 }
 
-func (m *storeGatewayClientMock) SearchLabelNames(_ context.Context, _ *storepb.SearchLabelNamesRequest, _ ...grpc.CallOption) (*storepb.LabelNamesResponse, error) {
-	return m.mockedLabelNamesResponse, m.mockedLabelNamesErr
+func (m *storeGatewayClientMock) SearchLabelNames(_ context.Context, _ *storepb.SearchLabelNamesRequest, _ ...grpc.CallOption) (storegatewaypb.StoreGateway_SearchLabelNamesClient, error) {
+	if m.mockedLabelNamesErr != nil {
+		return nil, m.mockedLabelNamesErr
+	}
+	var results []*storepb.StoreSearchResult
+	var hints *storepb.StoreSearchResponseHints
+	if m.mockedLabelNamesResponse != nil {
+		for _, name := range m.mockedLabelNamesResponse.Names {
+			results = append(results, &storepb.StoreSearchResult{Value: name})
+		}
+		if m.mockedLabelNamesResponse.ResponseHints != nil {
+			hints = &storepb.StoreSearchResponseHints{}
+			for _, b := range m.mockedLabelNamesResponse.ResponseHints.QueriedBlocks {
+				hints.QueriedBlocks = append(hints.QueriedBlocks, storepb.Block{Id: b.Id})
+			}
+		}
+	}
+	return &mockStoreSearchStreamClient{responses: []*storepb.StoreSearchResponse{{Results: results, ResponseHints: hints}}}, nil
 }
 
-func (m *storeGatewayClientMock) SearchLabelValues(_ context.Context, _ *storepb.SearchLabelValuesRequest, _ ...grpc.CallOption) (*storepb.LabelValuesResponse, error) {
-	return m.mockedLabelValuesResponse, m.mockedLabelValuesErr
+func (m *storeGatewayClientMock) SearchLabelValues(_ context.Context, _ *storepb.SearchLabelValuesRequest, _ ...grpc.CallOption) (storegatewaypb.StoreGateway_SearchLabelValuesClient, error) {
+	if m.mockedLabelValuesErr != nil {
+		return nil, m.mockedLabelValuesErr
+	}
+	var results []*storepb.StoreSearchResult
+	var hints *storepb.StoreSearchResponseHints
+	if m.mockedLabelValuesResponse != nil {
+		for _, val := range m.mockedLabelValuesResponse.Values {
+			results = append(results, &storepb.StoreSearchResult{Value: val})
+		}
+		if m.mockedLabelValuesResponse.ResponseHints != nil {
+			hints = &storepb.StoreSearchResponseHints{}
+			for _, b := range m.mockedLabelValuesResponse.ResponseHints.QueriedBlocks {
+				hints.QueriedBlocks = append(hints.QueriedBlocks, storepb.Block{Id: b.Id})
+			}
+		}
+	}
+	return &mockStoreSearchStreamClient{responses: []*storepb.StoreSearchResponse{{Results: results, ResponseHints: hints}}}, nil
 }
 
 func (m *storeGatewayClientMock) RemoteAddress() string {
@@ -3341,6 +3373,22 @@ func (m *storeGatewayClientMock) RemoteAddress() string {
 
 func (m *storeGatewayClientMock) RemoteZone() string {
 	return m.remoteZone
+}
+
+// mockStoreSearchStreamClient is a mock streaming client for SearchLabelNames/SearchLabelValues.
+// It implements both StoreGateway_SearchLabelNamesClient and StoreGateway_SearchLabelValuesClient.
+type mockStoreSearchStreamClient struct {
+	grpc.ClientStream
+	responses []*storepb.StoreSearchResponse
+}
+
+func (m *mockStoreSearchStreamClient) Recv() (*storepb.StoreSearchResponse, error) {
+	if len(m.responses) == 0 {
+		return nil, io.EOF
+	}
+	resp := m.responses[0]
+	m.responses = m.responses[1:]
+	return resp, nil
 }
 
 type storeGatewaySeriesClientMock struct {
@@ -3416,12 +3464,12 @@ func (m *cancelerStoreGatewayClientMock) LabelValues(ctx context.Context, _ *sto
 	return nil, ctx.Err()
 }
 
-func (m *cancelerStoreGatewayClientMock) SearchLabelNames(ctx context.Context, _ *storepb.SearchLabelNamesRequest, _ ...grpc.CallOption) (*storepb.LabelNamesResponse, error) {
+func (m *cancelerStoreGatewayClientMock) SearchLabelNames(ctx context.Context, _ *storepb.SearchLabelNamesRequest, _ ...grpc.CallOption) (storegatewaypb.StoreGateway_SearchLabelNamesClient, error) {
 	m.cancel()
 	return nil, ctx.Err()
 }
 
-func (m *cancelerStoreGatewayClientMock) SearchLabelValues(ctx context.Context, _ *storepb.SearchLabelValuesRequest, _ ...grpc.CallOption) (*storepb.LabelValuesResponse, error) {
+func (m *cancelerStoreGatewayClientMock) SearchLabelValues(ctx context.Context, _ *storepb.SearchLabelValuesRequest, _ ...grpc.CallOption) (storegatewaypb.StoreGateway_SearchLabelValuesClient, error) {
 	m.cancel()
 	return nil, ctx.Err()
 }
@@ -3456,6 +3504,10 @@ func (m *blocksStoreLimitsMock) StoreGatewayTenantShardSize(_ string) int {
 
 func (m *blocksStoreLimitsMock) StoreGatewayTenantShardSizePerZone(_ string) int {
 	return m.storeGatewayTenantShardSizePerZone
+}
+
+func (m *blocksStoreLimitsMock) StoreGatewaySearchLabelsValuesMaxSizeBytes(_ string) int {
+	return 0
 }
 
 func (m *blocksStoreLimitsMock) StoreGatewayExpandedReplication(_ string) bool {

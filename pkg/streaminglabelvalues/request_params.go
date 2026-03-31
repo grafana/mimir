@@ -16,39 +16,18 @@ type SearchResult struct {
 	Score float64 `json:"score,omitempty"`
 }
 
-type SearchResultFactory func(result mimirstorage.FilteredResult) SearchResult
+type SearchResultFactory func(result mimirstorage.SearchResult) SearchResult
 
 func NewSearchResultFactory(includeScore bool) SearchResultFactory {
 	if includeScore {
-		return func(result mimirstorage.FilteredResult) SearchResult {
+		return func(result mimirstorage.SearchResult) SearchResult {
 			return SearchResult{Name: result.Value, Score: result.Score}
 		}
 	}
-	return func(result mimirstorage.FilteredResult) SearchResult {
+	return func(result mimirstorage.SearchResult) SearchResult {
 		return SearchResult{Name: result.Value}
 	}
 }
-
-type SortBy int
-type SortDirection int
-
-type Operator int
-
-const (
-	None SortBy = iota
-	Alpha
-	Score
-)
-
-const (
-	Asc SortDirection = iota
-	Desc
-)
-
-const (
-	Or Operator = iota
-	And
-)
 
 const (
 	MatcherParam                = "match[]"
@@ -90,18 +69,6 @@ func (p *RequestParser) asBool(param string, defaultIfNotSet bool) (bool, error)
 	return defaultIfNotSet, nil
 }
 
-func (p *RequestParser) Operator() (Operator, error) {
-	v := p.reqValues.Get("operator")
-	switch v {
-	case "", "or":
-		return Or, nil
-	case "and":
-		return And, nil
-	default:
-		return Or, apierror.New(apierror.TypeBadData, fmt.Sprintf("invalid operator - expected one of and, or but got %s", v))
-	}
-}
-
 // FuzzThreshold returns the fuzz_threshold query parameter as an integer in [0, 100].
 func (p *RequestParser) FuzzThreshold() (int, error) {
 	v, err := p.asInt("fuzz_threshold", 0, 100, 0) // default to disabled
@@ -137,11 +104,13 @@ func (p *RequestParser) FuzzAlgorithm() (string, error) {
 	v := p.reqValues.Get("fuzz_alg")
 	switch v {
 	case "":
-		return "jaro", nil
+		return "jarowinkler", nil
 	case "jaro", "jarowinkler":
-		return v, nil
+		return "jarowinkler", nil
+	case "subsequence":
+		return "subsequence", nil
 	default:
-		return "", apierror.New(apierror.TypeBadData, fmt.Sprintf("invalid fuzz_alg - expected jaro or jarowinkler but got %s", v))
+		return "", apierror.New(apierror.TypeBadData, fmt.Sprintf("invalid fuzz_alg - expected subsequence or jarowinkler but got %s", v))
 	}
 }
 
@@ -164,29 +133,29 @@ func (p *RequestParser) Limit() (int, error) {
 }
 
 // SortBy returns the sort_by query parameter as a SortBy enum value.
-func (p *RequestParser) SortBy() (SortBy, error) {
+func (p *RequestParser) SortBy() (mimirstorage.SortBy, error) {
 	v := p.reqValues.Get("sort_by")
 	switch v {
 	case "", "none":
-		return None, nil
+		return mimirstorage.None, nil
 	case "alpha":
-		return Alpha, nil
+		return mimirstorage.Alpha, nil
 	case "score":
-		return Score, nil
+		return mimirstorage.Score, nil
 	default:
-		return None, apierror.New(apierror.TypeBadData, fmt.Sprintf("invalid sort_by - expected one of alpha, score, none but got %s", v))
+		return mimirstorage.None, apierror.New(apierror.TypeBadData, fmt.Sprintf("invalid sort_by - expected one of alpha, score, none but got %s", v))
 	}
 }
 
 // SortDir returns the sort_dir query parameter as a SortDirection enum value.
-func (p *RequestParser) SortDir() (SortDirection, error) {
+func (p *RequestParser) SortDir() (mimirstorage.SortDirection, error) {
 	v := p.reqValues.Get("sort_dir")
 	switch v {
 	case "", "asc":
-		return Asc, nil
+		return mimirstorage.Asc, nil
 	case "desc", "dsc":
-		return Desc, nil
+		return mimirstorage.Desc, nil
 	default:
-		return Asc, apierror.New(apierror.TypeBadData, fmt.Sprintf("invalid sort_dir - expected one of asc, dsc but got %s", v))
+		return mimirstorage.Asc, apierror.New(apierror.TypeBadData, fmt.Sprintf("invalid sort_dir - expected one of asc, dsc but got %s", v))
 	}
 }

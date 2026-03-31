@@ -453,8 +453,9 @@ type BucketStoreConfig struct {
 	// Controls advanced options for index-header file reading.
 	IndexHeader indexheader.Config `yaml:"index_header" category:"advanced"`
 
-	StreamingBatchSize    int     `yaml:"streaming_series_batch_size" category:"advanced"`
-	SeriesFetchPreference float64 `yaml:"series_fetch_preference" category:"advanced"`
+	StreamingBatchSize                  int     `yaml:"streaming_series_batch_size" category:"advanced"`
+	SearchLabelValuesStreamingBatchSize int     `yaml:"search_labels_values_streaming_batch_size" category:"advanced"`
+	SeriesFetchPreference               float64 `yaml:"series_fetch_preference" category:"advanced"`
 }
 
 // RegisterFlags registers the BucketStore flags
@@ -481,6 +482,7 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.PostingOffsetsInMemSampling, "blocks-storage.bucket-store.posting-offsets-in-mem-sampling", DefaultPostingOffsetInMemorySampling, "Controls what is the ratio of postings offsets that the store will hold in memory.")
 	f.Uint64Var(&cfg.PartitionerMaxGapBytes, "blocks-storage.bucket-store.partitioner-max-gap-bytes", DefaultPartitionerMaxGapSize, "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests.")
 	f.IntVar(&cfg.StreamingBatchSize, "blocks-storage.bucket-store.batch-series-size", 5000, "This option controls how many series to fetch per batch. The batch size must be greater than 0.")
+	f.IntVar(&cfg.SearchLabelValuesStreamingBatchSize, "blocks-storage.bucket-store.search-labels-values-streaming-batch-size", 1024, "Number of label names/values to include in each streaming batch sent from the store-gateway. Must be greater than 0.")
 	f.Float64Var(&cfg.SeriesFetchPreference, "blocks-storage.bucket-store.series-fetch-preference", 0.75, "This parameter controls the trade-off in fetching series versus fetching postings to fulfill a series request. Increasing the series preference results in fetching more series and reducing the volume of postings fetched. Reducing the series preference results in the opposite. Increase this parameter to reduce the rate of fetched series bytes (see \"Mimir / Queries\" dashboard) or API calls to the object store. Must be a positive floating point number.")
 }
 
@@ -488,6 +490,9 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 func (cfg *BucketStoreConfig) Validate() error {
 	if cfg.StreamingBatchSize <= 0 {
 		return errInvalidStreamingBatchSize
+	}
+	if cfg.SearchLabelValuesStreamingBatchSize <= 0 {
+		return errors.New("invalid store-gateway search labels/values streaming batch size")
 	}
 	if cfg.IgnoreDeletionMarksWhileQueryingDelay >= cfg.IgnoreDeletionMarksInStoreGatewayDelay {
 		// If we ignore deletion marks for longer while querying, we'll try to query blocks that store-gateways have

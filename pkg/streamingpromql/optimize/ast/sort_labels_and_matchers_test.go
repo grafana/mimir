@@ -164,7 +164,7 @@ func TestSortLabelsAndMatchers_Selectors(t *testing.T) {
 			return sortLabelsAndMatchers
 		})
 
-		// Compare the expected and result expressions formatted as strings for clearer diffs.
+		// CompareFunc the expected and result expressions formatted as strings for clearer diffs.
 		// Note that we can't use the VectorSelector and MatrixSelector String() methods because these
 		// sort the matchers when printing.
 		require.Equal(t, formatSelector(expected), formatSelector(result))

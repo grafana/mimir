@@ -7,11 +7,16 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
-// FilteredResult is an intermediate result which is created when applying a Filter when searching for label/values.
-// A fuzzy match score (if any) is returned so that it can be used by any subsequent comparators.
-type FilteredResult struct {
-	Value string  // The metric name, label name or label value.
-	Score float64 // Relevance score in [0.0, 1.0]. 1.0 is returned if no fuzzy filter was applied in the filtering.
+// TODO This file will be removed once https://github.com/prometheus/prometheus/pull/18293/changes#diff-168e8306e8ccb157b33ea81d4c73f550c64539e3045eca3b06c59f3d9cbadd9d is merged and vendored
+
+// SearchResult represents a single search result with its relevance score.
+type SearchResult struct {
+	// Value is the label name or label value.
+	Value string
+
+	// Score represents relevance, with 1.0 being a perfect match.
+	// Score range is [0.0, 1.0].
+	Score float64
 }
 
 // Filter is used to reduce the set of labels/values.
@@ -26,7 +31,7 @@ type Filter interface {
 // For instance, a Filter may have applied a Jaro fuzzy filter and this is returned in the SearchResult.Score. The Comparator implementation may add a prefix boost score
 // to the Jaro score, there by applying a Jaro-Winkler sort ordering.
 type Comparator interface {
-	Compare(a, b FilteredResult) int
+	Compare(a, b SearchResult) int
 }
 
 // SearchHints is the input to the labels/values Searcher. It allows for a filter and comparator function to be passed into the Searcher.
@@ -40,43 +45,71 @@ type SearchHints struct {
 	// Use 0 to disable limiting.
 	Limit int
 
-	// Compare is used for ordering results.
+	// CompareFunc is used for ordering results.
 	// A nil value means NO sort ordering is applied.
-	Compare Comparator
+	CompareFunc Comparator
 }
 
-// SearcherValueSet is an iterator returned from the Searcher label/value search functions.
-type SearcherValueSet interface {
+// SearchResultSet is an iterator over search results.
+// Callers must call Close when done, regardless of whether all results were consumed.
+type SearchResultSet interface {
+	// Next advances the iterator. Returns false when exhausted or on error.
 	Next() bool
-	At() FilteredResult
+	// At returns the current search result. Must only be called after a successful Next.
+	At() SearchResult
+	// Warnings returns any warnings accumulated during iteration.
 	Warnings() annotations.Annotations
+	// Err returns any error that caused iteration to stop.
 	Err() error
-	// Close this iterator and releases its resources. This does not close the Searcher. The iterator should be closed before the Searcher is closed.
-	Close()
+	// Close releases resources associated with this result set.
+	Close() error
 }
 
-// Searcher allows for the searching, filtering and ordering of label names and values. The result set is accessible via an SearcherValueSet iterator.
+// Searcher provides search capabilities with relevance scoring.
+// This interface is designed for autocomplete and search UIs that need
+// to rank results by relevance rather than just filter them.
 type Searcher interface {
-	// SearchLabelNames returns label names matching the search criteria.
-	// The SearcherValueSet iterator is ordered by any given Comparator.
-	SearchLabelNames(ctx context.Context, hints *SearchHints, matchers ...*labels.Matcher) (SearcherValueSet, error)
+	// SearchLabelNames returns an iterator over label names matching the search criteria.
+	// Results include relevance scores based on the Filter.
+	// The caller must call Close on the returned SearchResultSet when done.
+	SearchLabelNames(ctx context.Context, hints *SearchHints, matchers ...*labels.Matcher) SearchResultSet
 
-	// SearchLabelValues returns label values for the given label name.
-	// The SearcherValueSet iterator is ordered by any given Comparator.
-	SearchLabelValues(ctx context.Context, name string, hints *SearchHints, matchers ...*labels.Matcher) (SearcherValueSet, error)
+	// SearchLabelValues returns an iterator over label values for the given label name.
+	// Results include relevance scores based on the Filter.
+	// The caller must call Close on the returned SearchResultSet when done.
+	SearchLabelValues(ctx context.Context, name string, hints *SearchHints, matchers ...*labels.Matcher) SearchResultSet
 }
 
 type MimirSearchHints struct {
 	Search          []string
 	CaseInsensitive bool
+	FuzzAlg         string
 	FuzzThreshold   float64
-	Operator        int // Or = 0, And = 1
-	SortBy          int // 0=none, 1=alpha, 2=score
-	SortOrder       int // 0=asc, 1=desc
-	Limit           int // 0=unlimited
+	SortBy          SortBy
+	SortOrder       SortDirection
+	Limit           int
+}
+
+func (h *MimirSearchHints) Comparator() Comparator {
+	return NewComparator(h.SortBy, h.SortOrder)
 }
 
 type MimirSearcher interface {
-	SearchLabelNames(ctx context.Context, hints *MimirSearchHints, matchers ...*labels.Matcher) (SearcherValueSet, annotations.Annotations, error)
-	SearchLabelValues(ctx context.Context, name string, hints *MimirSearchHints, matchers ...*labels.Matcher) (SearcherValueSet, annotations.Annotations, error)
+	SearchLabelNames(ctx context.Context, hints *MimirSearchHints, matchers ...*labels.Matcher) (SearchResultSet, annotations.Annotations)
+	SearchLabelValues(ctx context.Context, name string, hints *MimirSearchHints, matchers ...*labels.Matcher) (SearchResultSet, annotations.Annotations)
 }
+
+// ErrorSearchResultSet returns a SearchResultSet that immediately reports err via Err().
+func ErrorSearchResultSet(err error) SearchResultSet {
+	return &errorSearchResultSet{err: err}
+}
+
+type errorSearchResultSet struct {
+	err error
+}
+
+func (e *errorSearchResultSet) Next() bool                        { return false }
+func (e *errorSearchResultSet) At() SearchResult                  { return SearchResult{} }
+func (e *errorSearchResultSet) Warnings() annotations.Annotations { return nil }
+func (e *errorSearchResultSet) Err() error                        { return e.err }
+func (e *errorSearchResultSet) Close() error                      { return nil }

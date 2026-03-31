@@ -115,15 +115,16 @@ func prepareTestBlocks(t testing.TB, now time.Time, count int, dir string, bkt o
 }
 
 type prepareStoreConfig struct {
-	tempDir              string
-	manyParts            bool
-	chunksLimiterFactory ChunksLimiterFactory
-	seriesLimiterFactory SeriesLimiterFactory
-	series               []labels.Labels
-	indexCache           indexcache.IndexCache
-	metricsRegistry      *prometheus.Registry
-	logger               log.Logger
-	postingsStrategy     postingsSelectionStrategy
+	tempDir               string
+	manyParts             bool
+	chunksLimiterFactory  ChunksLimiterFactory
+	seriesLimiterFactory  SeriesLimiterFactory
+	searchMaxBytesLimitFn func() int
+	series                []labels.Labels
+	indexCache            indexcache.IndexCache
+	metricsRegistry       *prometheus.Registry
+	logger                log.Logger
+	postingsStrategy      postingsSelectionStrategy
 	// When nonOverlappingBlocks is false, prepare store creates 2 blocks per block range.
 	// When nonOverlappingBlocks is true, it shifts the 2nd block ahead by 2hrs for every block range.
 	// This way the first and the last blocks created have no overlapping blocks.
@@ -159,10 +160,11 @@ func defaultPrepareStoreConfig(t testing.TB) *prepareStoreConfig {
 				LazyLoadingIdleTimeout:      time.Minute,
 			},
 		},
-		seriesLimiterFactory: newStaticSeriesLimiterFactory(0),
-		chunksLimiterFactory: newStaticChunksLimiterFactory(0),
-		indexCache:           noopCache{},
-		postingsStrategy:     selectAllStrategy{},
+		seriesLimiterFactory:  newStaticSeriesLimiterFactory(0),
+		chunksLimiterFactory:  newStaticChunksLimiterFactory(0),
+		searchMaxBytesLimitFn: func() int { return 0 },
+		indexCache:            noopCache{},
+		postingsStrategy:      selectAllStrategy{},
 		series: []labels.Labels{
 			labels.FromStrings("a", "1", "b", "1"),
 			labels.FromStrings("a", "1", "b", "2"),
@@ -214,6 +216,7 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 		cfg.postingsStrategy,
 		cfg.chunksLimiterFactory,
 		cfg.seriesLimiterFactory,
+		cfg.searchMaxBytesLimitFn,
 		newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		hashcache.NewSeriesHashCache(1024*1024),
 		NewBucketStoreMetrics(s.metricsRegistry),

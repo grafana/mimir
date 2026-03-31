@@ -28,7 +28,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-type searchExecutor func(ctx context.Context, searcher mimirstorage.MimirSearcher, hints *mimirstorage.MimirSearchHints, params *searchParams) (mimirstorage.SearcherValueSet, annotations.Annotations, error)
+type searchExecutor func(ctx context.Context, searcher mimirstorage.MimirSearcher, hints *mimirstorage.MimirSearchHints, params *searchParams) (mimirstorage.SearchResultSet, annotations.Annotations)
 
 // searchParams holds parsed parameters common to all search endpoints.
 type searchParams struct {
@@ -40,9 +40,8 @@ type searchParams struct {
 	fuzzAlg       string
 	caseSensitive bool
 	includeScore  bool
-	sortBy        streaminglabelvalues.SortBy
-	sortDir       streaminglabelvalues.SortDirection
-	operation     streaminglabelvalues.Operator
+	sortBy        mimirstorage.SortBy
+	sortDir       mimirstorage.SortDirection
 	batchSize     int
 	limit         int
 	labelName     string
@@ -56,9 +55,9 @@ func buildMimirSearchHints(params *searchParams) *mimirstorage.MimirSearchHints 
 		Search:          params.search,
 		CaseInsensitive: !params.caseSensitive,
 		FuzzThreshold:   float64(params.fuzzThreshold) / 100.0,
-		Operator:        int(params.operation),
-		SortBy:          int(params.sortBy),
-		SortOrder:       int(params.sortDir),
+		FuzzAlg:         params.fuzzAlg,
+		SortBy:          params.sortBy,
+		SortOrder:       params.sortDir,
 		Limit:           params.limit,
 	}
 }
@@ -94,13 +93,7 @@ func doSearchHandler(queryable storage.SampleAndChunkQueryable, _ *validation.Ov
 		searcher := q.(mimirstorage.MimirSearcher)
 		hints := buildMimirSearchHints(params)
 
-		vs, callWarns, err := searchExec(ctx, searcher, hints, params)
-		if err != nil {
-			// we have not started the stream, so we can return with a 4xx error
-			level.Error(log).Log("msg", "unable to invoke search", "tenant", tenant, "err", err)
-			respondFromError(err, w)
-			return
-		}
+		vs, callWarns := searchExec(ctx, searcher, hints, params)
 		defer vs.Close()
 
 		writer := newStreamingWriter(w, streaminglabelvalues.NewSearchResultFactory(params.includeScore))
@@ -120,7 +113,7 @@ func doSearchHandler(queryable storage.SampleAndChunkQueryable, _ *validation.Ov
 
 // SearchMetricNamesHandler returns an HTTP handler for GET/POST /api/v1/search/metric_names.
 func SearchMetricNamesHandler(queryable storage.SampleAndChunkQueryable, overrides *validation.Overrides, logger log.Logger) http.Handler {
-	searchExec := func(ctx context.Context, searcher mimirstorage.MimirSearcher, hints *mimirstorage.MimirSearchHints, params *searchParams) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
+	searchExec := func(ctx context.Context, searcher mimirstorage.MimirSearcher, hints *mimirstorage.MimirSearchHints, params *searchParams) (mimirstorage.SearchResultSet, annotations.Annotations) {
 		return searcher.SearchLabelValues(ctx, model.MetricNameLabel, hints, params.matchers...)
 	}
 	return doSearchHandler(queryable, overrides, logger, "SearchMetricNamesHandler", searchExec, false)
@@ -128,7 +121,7 @@ func SearchMetricNamesHandler(queryable storage.SampleAndChunkQueryable, overrid
 
 // SearchLabelNamesHandler returns an HTTP handler for GET/POST /api/v1/search/label_names.
 func SearchLabelNamesHandler(queryable storage.SampleAndChunkQueryable, overrides *validation.Overrides, logger log.Logger) http.Handler {
-	searchExec := func(ctx context.Context, searcher mimirstorage.MimirSearcher, hints *mimirstorage.MimirSearchHints, params *searchParams) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
+	searchExec := func(ctx context.Context, searcher mimirstorage.MimirSearcher, hints *mimirstorage.MimirSearchHints, params *searchParams) (mimirstorage.SearchResultSet, annotations.Annotations) {
 		return searcher.SearchLabelNames(ctx, hints, params.matchers...)
 	}
 	return doSearchHandler(queryable, overrides, logger, "SearchLabelNamesHandler", searchExec, false)
@@ -136,7 +129,7 @@ func SearchLabelNamesHandler(queryable storage.SampleAndChunkQueryable, override
 
 // SearchLabelValuesHandler returns an HTTP handler for GET/POST /api/v1/search/label_values.
 func SearchLabelValuesHandler(queryable storage.SampleAndChunkQueryable, overrides *validation.Overrides, logger log.Logger) http.Handler {
-	searchExec := func(ctx context.Context, searcher mimirstorage.MimirSearcher, hints *mimirstorage.MimirSearchHints, params *searchParams) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
+	searchExec := func(ctx context.Context, searcher mimirstorage.MimirSearcher, hints *mimirstorage.MimirSearchHints, params *searchParams) (mimirstorage.SearchResultSet, annotations.Annotations) {
 		return searcher.SearchLabelValues(ctx, params.labelName, hints, params.matchers...)
 	}
 	return doSearchHandler(queryable, overrides, logger, "SearchLabelNamesHandler", searchExec, true)
@@ -150,7 +143,7 @@ func SearchLabelValuesHandler(queryable storage.SampleAndChunkQueryable, overrid
 //
 // TODO(warnings): also wire in per-result-stream annotations from intermediate nodes
 // (store-gateway, ingester) once those are plumbed through the streaming protocol.
-func streamResults(vs mimirstorage.SearcherValueSet, batchSize, limit int, writer *streamingWriter, callWarns annotations.Annotations) error {
+func streamResults(vs mimirstorage.SearchResultSet, batchSize, limit int, writer *streamingWriter, callWarns annotations.Annotations) error {
 	results := make([]streaminglabelvalues.SearchResult, 0, batchSize)
 	total := 0
 	for vs.Next() && (limit == 0 || total < limit) {
@@ -178,7 +171,8 @@ func streamResults(vs mimirstorage.SearcherValueSet, batchSize, limit int, write
 	// hasMore is true if the Searcher set limitReached (sorted or unsorted eager-limit),
 	// or if there is a next item in the stream that we haven't consumed.
 	hasMore := false
-	if stream, ok := vs.(*labelSearchStream); ok && stream.limitReached {
+	type limitReacher interface{ LimitReached() bool }
+	if lr, ok := vs.(limitReacher); ok && lr.LimitReached() {
 		hasMore = true
 	} else {
 		hasMore = vs.Next()
@@ -257,9 +251,6 @@ func parseSearchParams(r *http.Request, expectLabelName bool) (*searchParams, er
 		return nil, err
 	}
 	if params.limit, err = p.Limit(); err != nil {
-		return nil, err
-	}
-	if params.operation, err = p.Operator(); err != nil {
 		return nil, err
 	}
 	if params.labelName, err = p.LabelName(expectLabelName); err != nil {

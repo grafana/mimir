@@ -181,7 +181,7 @@ func TestCompareIngesterConfigs(t *testing.T) {
 				require.Equalf(t, result1.ChunksCount, result2.ChunksCount, "Chunks count mismatch for query: %s", q.Query)
 				require.Equalf(t, len(result1.Series), len(result2.Series), "Number of series mismatch for query: %s", q.Query)
 
-				// Compare each series - order must be the same between both ingesters
+				// CompareFunc each series - order must be the same between both ingesters
 				for i := 0; i < len(result1.Series); i++ {
 					s1 := result1.Series[i]
 					s2 := result2.Series[i]
@@ -190,7 +190,7 @@ func TestCompareIngesterConfigs(t *testing.T) {
 					require.Equalf(t, s1.ChunkCount, s2.ChunkCount, "Chunk count mismatch for series %s in query: %s", s1.Labels.String(), q.Query)
 					require.Equalf(t, len(s1.Chunks), len(s2.Chunks), "Number of chunks mismatch for series %s in query: %s", s1.Labels.String(), q.Query)
 
-					// Compare chunks
+					// CompareFunc chunks
 					for j := 0; j < len(s1.Chunks); j++ {
 						c1 := s1.Chunks[j]
 						c2 := s2.Chunks[j]

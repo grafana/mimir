@@ -66,10 +66,10 @@ func (q *memoryTrackingQuerier) Close() error {
 	return q.inner.Close()
 }
 
-func (q *memoryTrackingQuerier) SearchLabelNames(ctx context.Context, hints *mimirstorage.MimirSearchHints, matchers ...*labels.Matcher) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
+func (q *memoryTrackingQuerier) SearchLabelNames(ctx context.Context, hints *mimirstorage.MimirSearchHints, matchers ...*labels.Matcher) (mimirstorage.SearchResultSet, annotations.Annotations) {
 	return q.inner.(mimirstorage.MimirSearcher).SearchLabelNames(ctx, hints, matchers...)
 }
 
-func (q *memoryTrackingQuerier) SearchLabelValues(ctx context.Context, name string, hints *mimirstorage.MimirSearchHints, matchers ...*labels.Matcher) (mimirstorage.SearcherValueSet, annotations.Annotations, error) {
+func (q *memoryTrackingQuerier) SearchLabelValues(ctx context.Context, name string, hints *mimirstorage.MimirSearchHints, matchers ...*labels.Matcher) (mimirstorage.SearchResultSet, annotations.Annotations) {
 	return q.inner.(mimirstorage.MimirSearcher).SearchLabelValues(ctx, name, hints, matchers...)
 }

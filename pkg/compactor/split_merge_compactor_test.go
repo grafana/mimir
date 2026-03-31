@@ -668,7 +668,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 			// Sort blocks by MinTime and labels so that we get a stable comparison.
 			actual := sortMetasByMinTime(convertMetasMapToSlice(metas))
 
-			// Compare actual blocks with the expected ones.
+			// CompareFunc actual blocks with the expected ones.
 			require.Len(t, actual, len(expected))
 			for i, e := range expected {
 				assert.Equal(t, e.MinTime, actual[i].MinTime)
