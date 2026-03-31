@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -66,9 +67,11 @@ type Writer struct {
 
 	// We support multiple Kafka clients to better parallelize the workload. The number of
 	// clients is fixed during the Writer lifecycle, but they're initialised lazily.
-	writersMx  sync.RWMutex
-	writers    []*KafkaProducer
-	serializer recordSerializer
+	writersMx               sync.RWMutex
+	writers                 []*KafkaProducer
+	clientRegisterers       []prometheus.Registerer // per-client registerers that tolerate re-registration
+	lastClientRecreateTime  []time.Time             // per-client cooldown to avoid rapid close/recreate cycles
+	serializer              recordSerializer
 
 	// Metrics.
 	writeSuccessLatency prometheus.Observer
@@ -91,11 +94,23 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 		Buckets:                         prometheus.DefBuckets,
 	}, []string{"outcome"})
 
+	// Create per-client registerers that tolerate re-registration. This is needed because
+	// closeWriterForPartition may close a KafkaProducer (and its metrics become orphaned),
+	// and the subsequent getKafkaWriterForPartition re-registers the same metric names.
+	clientRegisterers := make([]prometheus.Registerer, kafkaCfg.WriteClients)
+	for i := range clientRegisterers {
+		clientRegisterers[i] = newSafeRegisterer(
+			prometheus.WrapRegistererWithPrefix(writerMetricsPrefix,
+				prometheus.WrapRegistererWith(prometheus.Labels{"client_id": strconv.Itoa(i)}, reg)))
+	}
+
 	w := &Writer{
 		kafkaCfg:                   kafkaCfg,
 		logger:                     logger,
 		registerer:                 reg,
 		writers:                    make([]*KafkaProducer, kafkaCfg.WriteClients),
+		clientRegisterers:          clientRegisterers,
+		lastClientRecreateTime:     make([]time.Time, kafkaCfg.WriteClients),
 		serializer:                 recordSerializerFromCfg(kafkaCfg),
 		maxInflightProduceRequests: defaultMaxInflightProduceRequests,
 
@@ -190,10 +205,67 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string
 			return ErrWriteRequestDataItemTooLarge
 		}
 
+		// When franz-go encounters an EOF on the first read of a new connection (before any
+		// successful response), it wraps the error as ErrFirstReadEOF and marks it non-retryable.
+		// This is intended to detect SASL misconfiguration, but it also triggers during transient
+		// network failures (e.g., packet drops, broker restarts, partition moves).
+		//
+		// Once triggered, the franz-go client enters a permanent zombie state because:
+		// 1. The broker's API version cache (broker.versions) is never cleared
+		// 2. New connections skip the ApiVersions handshake (using cached versions)
+		// 3. The broker expects ApiVersions first and closes the connection
+		// 4. This produces another ErrFirstReadEOF, creating an infinite loop
+		//
+		// The only recovery is to close and recreate the client, which clears the
+		// in-memory version cache. This is what we do here.
+		//
+		// See: https://github.com/twmb/franz-go/issues/1290
+		var firstReadEOF *kgo.ErrFirstReadEOF
+		if errors.As(err, &firstReadEOF) {
+			level.Warn(w.logger).Log(
+				"msg", "detected ErrFirstReadEOF from Kafka client, closing and recreating the client to recover from potential zombie state",
+				"partition", partitionID,
+				"err", err,
+			)
+			w.closeWriterIfSame(partitionID, writer)
+		}
+
 		return err
 	}
 
 	return nil
+}
+
+// closeWriterIfSame closes the Kafka writer for the given partition only if the current writer
+// in the slot is the same instance as the provided zombie. This prevents a race where multiple
+// goroutines detect ErrFirstReadEOF from the same zombie but a new healthy writer has already
+// been created in the slot by the time a later goroutine arrives.
+//
+// Both the Close and nil-out happen under the lock for two reasons:
+// 1. Prevent zombie.Close()'s kprom OnClientClosed hook from unregistering metrics that belong
+//    to a concurrently created new writer (kprom matches by descriptor hash, not object identity).
+// 2. A zombie client has no pending records, so kgo.Client.Close() returns quickly without blocking.
+func (w *Writer) closeWriterIfSame(partitionID int32, zombie *KafkaProducer) {
+	w.writersMx.Lock()
+	defer w.writersMx.Unlock()
+
+	clientID := int(partitionID) % len(w.writers)
+	current := w.writers[clientID]
+	if current == nil || current != zombie {
+		return
+	}
+
+	shouldLog := time.Since(w.lastClientRecreateTime[clientID]) >= 30*time.Second
+	w.lastClientRecreateTime[clientID] = time.Now()
+
+	if shouldLog {
+		level.Warn(w.logger).Log("msg", "closing zombie Kafka writer client for recreation", "client_id", clientID)
+	}
+
+	// Close and nil under the same lock to prevent kprom OnClientClosed from
+	// unregistering metrics that belong to a concurrently created new writer.
+	zombie.Close()
+	w.writers[clientID] = nil
 }
 
 func (w *Writer) getKafkaWriterForPartition(partitionID int32) (*KafkaProducer, error) {
@@ -222,10 +294,9 @@ func (w *Writer) getKafkaWriterForPartition(partitionID int32) (*KafkaProducer, 
 		return writer, nil
 	}
 
-	// Add the client ID to metrics so that they don't clash when the Writer is configured
-	// to run with multiple Kafka clients.
-	clientReg := prometheus.WrapRegistererWithPrefix(writerMetricsPrefix,
-		prometheus.WrapRegistererWith(prometheus.Labels{"client_id": strconv.Itoa(clientID)}, w.registerer))
+	// Use the pre-created per-client registerer that tolerates re-registration.
+	// This is safe even after closeWriterForPartition has been called.
+	clientReg := w.clientRegisterers[clientID]
 
 	// Add the client ID to logger so that we can easily distinguish Kafka clients in logs.
 	clientLogger := log.With(w.logger, "client_id", clientID)
@@ -238,6 +309,44 @@ func (w *Writer) getKafkaWriterForPartition(partitionID int32) (*KafkaProducer, 
 	newWriter := NewKafkaProducer(newClient, w.kafkaCfg.ProducerMaxBufferedBytes, clientReg)
 	w.writers[clientID] = newWriter
 	return newWriter, nil
+}
+
+// safeRegisterer wraps a prometheus.Registerer and silently returns the existing collector
+// on AlreadyRegisteredError instead of panicking. This allows re-registration after a
+// KafkaProducer is closed and recreated.
+type safeRegisterer struct {
+	inner prometheus.Registerer
+}
+
+func newSafeRegisterer(inner prometheus.Registerer) prometheus.Registerer {
+	return &safeRegisterer{inner: inner}
+}
+
+func (s *safeRegisterer) Register(c prometheus.Collector) error {
+	err := s.inner.Register(c)
+	if err != nil {
+		// If already registered, first unregister the old collector, then register the new one.
+		// This ensures the registry always holds the collector that the new KafkaProducer uses,
+		// so metrics are correctly scraped after recreation.
+		var are prometheus.AlreadyRegisteredError
+		if errors.As(err, &are) {
+			s.inner.Unregister(are.ExistingCollector)
+			return s.inner.Register(c)
+		}
+	}
+	return err
+}
+
+func (s *safeRegisterer) MustRegister(cs ...prometheus.Collector) {
+	for _, c := range cs {
+		if err := s.Register(c); err != nil {
+			panic(err)
+		}
+	}
+}
+
+func (s *safeRegisterer) Unregister(c prometheus.Collector) bool {
+	return s.inner.Unregister(c)
 }
 
 type requestSplitter func(req *mimirpb.WriteRequest, reqSize, maxSize int) []*mimirpb.WriteRequest
