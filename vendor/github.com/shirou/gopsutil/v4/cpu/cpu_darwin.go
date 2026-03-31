@@ -5,7 +5,6 @@ package cpu
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -38,10 +37,10 @@ const (
 
 // mach/processor_info.h
 const (
-	processorCpuLoadInfo = 2 //nolint:revive //FIXME
+	processorCpuLoadInfo = 2
 )
 
-type hostCpuLoadInfoData struct { //nolint:revive //FIXME
+type hostCpuLoadInfoData struct {
 	cpuTicks [cpuStateMax]uint32
 }
 
@@ -60,18 +59,18 @@ func Times(percpu bool) ([]TimesStat, error) {
 	return TimesWithContext(context.Background(), percpu)
 }
 
-func TimesWithContext(_ context.Context, percpu bool) ([]TimesStat, error) {
-	sys, err := common.NewSystemLib()
+func TimesWithContext(ctx context.Context, percpu bool) ([]TimesStat, error) {
+	lib, err := common.NewLibrary(common.System)
 	if err != nil {
 		return nil, err
 	}
-	defer sys.Close()
+	defer lib.Close()
 
 	if percpu {
-		return perCPUTimes(sys)
+		return perCPUTimes(lib)
 	}
 
-	return allCPUTimes(sys)
+	return allCPUTimes(lib)
 }
 
 // Returns only one CPUInfoStat on FreeBSD
@@ -79,7 +78,7 @@ func Info() ([]InfoStat, error) {
 	return InfoWithContext(context.Background())
 }
 
-func InfoWithContext(_ context.Context) ([]InfoStat, error) {
+func InfoWithContext(ctx context.Context) ([]InfoStat, error) {
 	var ret []InfoStat
 
 	c := InfoStat{}
@@ -122,7 +121,7 @@ func InfoWithContext(_ context.Context) ([]InfoStat, error) {
 	return append(ret, c), nil
 }
 
-func CountsWithContext(_ context.Context, logical bool) (int, error) {
+func CountsWithContext(ctx context.Context, logical bool) (int, error) {
 	var cpuArgument string
 	if logical {
 		cpuArgument = "hw.logicalcpu"
@@ -138,22 +137,22 @@ func CountsWithContext(_ context.Context, logical bool) (int, error) {
 	return int(count), nil
 }
 
-func perCPUTimes(sys *common.SystemLib) ([]TimesStat, error) {
+func perCPUTimes(machLib *common.Library) ([]TimesStat, error) {
+	machHostSelf := common.GetFunc[common.MachHostSelfFunc](machLib, common.MachHostSelfSym)
+	machTaskSelf := common.GetFunc[common.MachTaskSelfFunc](machLib, common.MachTaskSelfSym)
+	hostProcessorInfo := common.GetFunc[common.HostProcessorInfoFunc](machLib, common.HostProcessorInfoSym)
+	vmDeallocate := common.GetFunc[common.VMDeallocateFunc](machLib, common.VMDeallocateSym)
+
 	var count, ncpu uint32
 	var cpuload *hostCpuLoadInfoData
 
-	status := sys.HostProcessorInfo(sys.MachHostSelf(), processorCpuLoadInfo,
-		&ncpu, uintptr(unsafe.Pointer(&cpuload)), &count)
+	status := hostProcessorInfo(machHostSelf(), processorCpuLoadInfo, &ncpu, uintptr(unsafe.Pointer(&cpuload)), &count)
 
 	if status != common.KERN_SUCCESS {
 		return nil, fmt.Errorf("host_processor_info error=%d", status)
 	}
 
-	if cpuload == nil {
-		return nil, errors.New("host_processor_info returned nil cpuload")
-	}
-
-	defer sys.VMDeallocate(sys.MachTaskSelf(), uintptr(unsafe.Pointer(cpuload)), uintptr(ncpu))
+	defer vmDeallocate(machTaskSelf(), uintptr(unsafe.Pointer(cpuload)), uintptr(ncpu))
 
 	ret := []TimesStat{}
 	loads := unsafe.Slice(cpuload, ncpu)
@@ -166,17 +165,21 @@ func perCPUTimes(sys *common.SystemLib) ([]TimesStat, error) {
 			Nice:   float64(loads[i].cpuTicks[cpuStateNice]) / ClocksPerSec,
 			Idle:   float64(loads[i].cpuTicks[cpuStateIdle]) / ClocksPerSec,
 		}
+
 		ret = append(ret, c)
 	}
 
 	return ret, nil
 }
 
-func allCPUTimes(sys *common.SystemLib) ([]TimesStat, error) {
+func allCPUTimes(machLib *common.Library) ([]TimesStat, error) {
+	machHostSelf := common.GetFunc[common.MachHostSelfFunc](machLib, common.MachHostSelfSym)
+	hostStatistics := common.GetFunc[common.HostStatisticsFunc](machLib, common.HostStatisticsSym)
+
 	var cpuload hostCpuLoadInfoData
 	count := uint32(cpuStateMax)
 
-	status := sys.HostStatistics(sys.MachHostSelf(), common.HOST_CPU_LOAD_INFO,
+	status := hostStatistics(machHostSelf(), common.HOST_CPU_LOAD_INFO,
 		uintptr(unsafe.Pointer(&cpuload)), &count)
 
 	if status != common.KERN_SUCCESS {

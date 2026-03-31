@@ -19,12 +19,6 @@ import (
 	"github.com/twmb/franz-go/pkg/sasl"
 )
 
-////////////////////////////////////////////////////////
-// NOTE:                                              //
-// NOTE: Make sure new configs are added to OptValues //
-// NOTE:                                              //
-////////////////////////////////////////////////////////
-
 // Opt is an option to configure a client.
 type Opt interface {
 	apply(*cfg)
@@ -101,14 +95,15 @@ type cfg struct {
 	maxBrokerWriteBytes int32
 	maxBrokerReadBytes  int32
 
+	allowAutoTopicCreation bool
+
 	metadataMaxAge time.Duration
 	metadataMinAge time.Duration
 
 	sasls []sasl.Mechanism
 
-	allowAutoTopicCreation bool
-	disableClientMetrics   bool
-	userMetrics            func() iter.Seq[Metric]
+	disableClientMetrics bool
+	userMetrics          func() iter.Seq[Metric]
 
 	hooks hooks
 	pools pools
@@ -169,10 +164,9 @@ type cfg struct {
 
 	recheckPreferredReplicaInterval time.Duration
 
-	topics        map[string]*regexp.Regexp   // topics to consume; if regex is true, values are compiled regular expressions
-	excludeTopics map[string]*regexp.Regexp   // topics to exclude; only used if regex is true, values are compiled regular expressions
-	partitions    map[string]map[int32]Offset // partitions to directly consume from
-	regex         bool
+	topics     map[string]*regexp.Regexp   // topics to consume; if regex is true, values are compiled regular expressions
+	partitions map[string]map[int32]Offset // partitions to directly consume from
+	regex      bool
 
 	////////////////////////////
 	// CONSUMER GROUP SECTION //
@@ -191,12 +185,16 @@ type cfg struct {
 	onAssigned func(context.Context, *Client, map[string][]int32)
 	onRevoked  func(context.Context, *Client, map[string][]int32)
 	onLost     func(context.Context, *Client, map[string][]int32)
-	onBlocked  func(context.Context, *Client)
 	onFetched  func(context.Context, *Client, *kmsg.OffsetFetchResponse) error
 
 	adjustOffsetsBeforeAssign func(ctx context.Context, offsets map[string]map[int32]Offset) (map[string]map[int32]Offset, error)
 
 	blockRebalanceOnPoll bool
+
+	setAssigned       bool
+	setRevoked        bool
+	setLost           bool
+	setCommitCallback bool
 
 	autocommitDisable  bool // true if autocommit was disabled or we are transactional
 	autocommitGreedy   bool
@@ -283,9 +281,10 @@ func (cfg *cfg) validate() error {
 
 		// For batches, we want at least 512 (reasonable), and the
 		// upper limit is the max num when a uvarint transitions from 4
-		// to 5 bytes. The upper limit is also more than reasonable (1G).
+		// to 5 bytes. The upper limit is also more than reasonable
+		// (256MiB).
 		{name: "max record batch bytes", v: int64(cfg.maxRecordBatchBytes), allowed: 512, badcmp: i64lt},
-		{name: "max record batch bytes", v: int64(cfg.maxRecordBatchBytes), allowed: 1 << 30, badcmp: i64gt},
+		{name: "max record batch bytes", v: int64(cfg.maxRecordBatchBytes), allowed: 256 << 20, badcmp: i64gt},
 
 		// We do not want the broker write bytes to be less than the
 		// record batch bytes, nor the read bytes to be less than what
@@ -299,12 +298,12 @@ func (cfg *cfg) validate() error {
 		// 0 <= allowed concurrency
 		{name: "max concurrent fetches", v: int64(cfg.maxConcurrentFetches), allowed: 0, badcmp: i64lt},
 
-		// 100ms <= request timeout overhead <= 15m
+		// 1s <= request timeout overhead <= 15m
 		{name: "request timeout max overhead", v: int64(cfg.requestTimeoutOverhead), allowed: int64(15 * time.Minute), badcmp: i64gt, durs: true},
-		{name: "request timeout min overhead", v: int64(cfg.requestTimeoutOverhead), allowed: int64(100 * time.Millisecond), badcmp: i64lt, durs: true},
+		{name: "request timeout min overhead", v: int64(cfg.requestTimeoutOverhead), allowed: int64(time.Second), badcmp: i64lt, durs: true},
 
-		// 100ms <= conn idle <= 15m
-		{name: "conn min idle timeout", v: int64(cfg.connIdleTimeout), allowed: int64(100 * time.Millisecond), badcmp: i64lt, durs: true},
+		// 1s <= conn idle <= 15m
+		{name: "conn min idle timeout", v: int64(cfg.connIdleTimeout), allowed: int64(time.Second), badcmp: i64lt, durs: true},
 		{name: "conn max idle timeout", v: int64(cfg.connIdleTimeout), allowed: int64(15 * time.Minute), badcmp: i64gt, durs: true},
 
 		// 10ms <= metadata <= 1hr
@@ -385,15 +384,6 @@ func (cfg *cfg) validate() error {
 			}
 			cfg.topics[re] = compiled
 		}
-		for re := range cfg.excludeTopics {
-			compiled, err := regexp.Compile(re)
-			if err != nil {
-				return fmt.Errorf("invalid regular expression %q", re)
-			}
-			cfg.excludeTopics[re] = compiled
-		}
-	} else if len(cfg.excludeTopics) > 0 {
-		return errors.New("invalid use of ConsumeExcludeTopics when not using ConsumeRegex")
 	}
 
 	if cfg.topics != nil && cfg.partitions != nil {
@@ -413,10 +403,10 @@ func (cfg *cfg) validate() error {
 	if cfg.autocommitGreedy && cfg.autocommitMarks {
 		return errors.New("cannot enable both greedy autocommitting and marked autocommitting")
 	}
-	if (cfg.autocommitGreedy || cfg.autocommitDisable || cfg.autocommitMarks || cfg.commitCallback != nil) && len(cfg.group) == 0 {
+	if (cfg.autocommitGreedy || cfg.autocommitDisable || cfg.autocommitMarks || cfg.setCommitCallback) && len(cfg.group) == 0 {
 		return errors.New("invalid autocommit options specified when a group was not specified")
 	}
-	if (cfg.onLost != nil || cfg.onRevoked != nil || cfg.onAssigned != nil) && len(cfg.group) == 0 {
+	if (cfg.setLost || cfg.setRevoked || cfg.setAssigned) && len(cfg.group) == 0 {
 		return errors.New("invalid group partition assigned/revoked/lost functions set when a group was not specified")
 	}
 
@@ -501,7 +491,7 @@ func defaultCfg() cfg {
 
 		dialTimeout:            10 * time.Second,
 		requestTimeoutOverhead: 10 * time.Second,
-		connIdleTimeout:        30 * time.Second,
+		connIdleTimeout:        20 * time.Second,
 
 		softwareName:    "kgo",
 		softwareVersion: softwareVersion(),
@@ -562,7 +552,6 @@ func defaultCfg() cfg {
 		produceTimeout:      10 * time.Second,
 		recordRetries:       math.MaxInt64, // effectively unbounded
 		maxUnknownFailures:  4,
-		linger:              10 * time.Millisecond,
 		partitioner:         UniformBytesPartitioner(64<<10, true, true, nil),
 		txnBackoff:          20 * time.Millisecond,
 
@@ -662,12 +651,12 @@ func RequestTimeoutOverhead(overhead time.Duration) Opt {
 	return clientOpt{func(cfg *cfg) { cfg.requestTimeoutOverhead = overhead }}
 }
 
-// ConnIdleTimeout sets the amount of time after which an idle connection will
-// not be reused, overriding the default 30s. The connection may be closed after
-// this timeout.
+// ConnIdleTimeout is a rough amount of time to allow connections to idle
+// before they are closed, overriding the default 20.
 //
 // In the worst case, a connection can be allowed to idle for up to 2x this
-// time before being closed.
+// time, while the average is expected to be 1.5x (essentially, a uniform
+// distribution from this interval to 2x the interval).
 //
 // It is possible that a connection can be reaped just as it is about to be
 // written to, but the client internally retries in these cases.
@@ -773,7 +762,7 @@ func RetryBackoffFn(backoff func(int) time.Duration) Opt {
 }
 
 // RequestRetries sets the number of tries that retryable requests are allowed,
-// overriding the default of 20.
+// overriding the default of 20s.
 //
 // This option does not apply to produce requests; to limit produce request
 // retries / record retries, see RecordRetries.
@@ -818,7 +807,7 @@ func RetryTimeout(t time.Duration) Opt {
 //
 // The function is called with the request key that is being retried. While it
 // is not expected that the request key will be used, including it gives users
-// the opportunity to have different retry timeouts for different keys.
+// the opportinuty to have different retry timeouts for different keys.
 //
 // If the function returns zero, there is no retry timeout.
 //
@@ -838,7 +827,7 @@ func AllowAutoTopicCreation() Opt {
 // BrokerMaxWriteBytes upper bounds the number of bytes written to a broker
 // connection in a single write, overriding the default 100MiB.
 //
-// This number corresponds to the broker's socket.request.max.bytes, which
+// This number corresponds to the a broker's socket.request.max.bytes, which
 // defaults to 100MiB.
 //
 // The only Kafka request that could come reasonable close to hitting this
@@ -1213,8 +1202,17 @@ func ProducerOnDataLossDetected(fn func(string, int32)) ProducerOpt {
 // ProducerLinger sets how long individual topic partitions will linger waiting
 // for more records before triggering a request to be built.
 //
+// Note that this option should only be used in low volume producers. The only
+// benefit of lingering is to potentially build a larger batch to reduce cpu
+// usage on the brokers if you have many producers all producing small amounts.
+//
 // If a produce request is triggered by any topic partition, all partitions
 // with a possible batch to be sent are used and all lingers are reset.
+//
+// As mentioned, the linger is specific to topic partition. A high volume
+// producer will likely be producing to many partitions; it is both unnecessary
+// to linger in this case and inefficient because the client will have many
+// timers running (and stopping and restarting) unnecessarily.
 func ProducerLinger(linger time.Duration) ProducerOpt {
 	return producerOpt{func(cfg *cfg) { cfg.linger = linger }}
 }
@@ -1397,8 +1395,8 @@ func MaxConcurrentFetches(n int) ConsumerOpt {
 //
 //	at start?                         => start at the log start offset
 //	at end?                           => start at the log end offset
-//	at exact?                         => start at an exact offset (3 means offset 3)
-//	relative?                         => start at the above, + / - the relative amount
+//	at exact?                         => start at the an exact offset (3 means offset 3)
+//	relative?                         => start at the the above, + / - the relative amount
 //	exact/relative are out of bounds? => start at the nearest boundary (start or end)
 //	after millisec?                   => start at first offset after millisec if one exists, else log end offset
 //
@@ -1440,8 +1438,8 @@ func ConsumeStartOffset(offset Offset) ConsumerOpt {
 //
 //	at start?                         => reset to the log start offset
 //	at end?                           => reset to the log end offset
-//	at exact?                         => reset to an exact offset (3 means offset 3)
-//	relative?                         => reset to the above, + / - the relative amount
+//	at exact?                         => reset to the an exact offset (3 means offset 3)
+//	relative?                         => reset to the the above, + / - the relative amount
 //	exact/relative are out of bounds? => reset to the nearest boundary (start or end)
 //	after millisec?                   => reset to the first offset after millisec if one exists, else the log end offset
 //
@@ -1528,8 +1526,7 @@ func ConsumePartitions(partitions map[string]map[int32]Offset) ConsumerOpt {
 }
 
 // ConsumeRegex sets the client to parse all topics passed to ConsumeTopics as
-// regular expressions. You can further use ConsumeExcludeTopics to exclude
-// topics that would match any ConsumeTopics regex.
+// regular expressions.
 //
 // When consuming via regex, every metadata request loads *all* topics, so that
 // all topics can be passed to any regular expressions. Every topic is
@@ -1537,29 +1534,6 @@ func ConsumePartitions(partitions map[string]map[int32]Offset) ConsumerOpt {
 // permanently is known to match, or is permanently known to not match.
 func ConsumeRegex() ConsumerOpt {
 	return consumerOpt{func(cfg *cfg) { cfg.regex = true }}
-}
-
-// ConsumeExcludeTopics sets topics to exclude when using regex consumption.
-// This option only has effect when ConsumeRegex is enabled.
-//
-// Topics matching any of the provided regular expressions will be excluded from
-// consumption, even if they match patterns provided to ConsumeTopics.
-//
-// When using the next-gen consumer group protocol (not yet enabled by default),
-// the heartbeat's SubscribedTopicRegex field is include-only with no exclude
-// counterpart. If exclude topics are configured, the client resolves regex
-// matching locally and sends explicit topic names instead. This means new
-// topics matching the include regex are discovered on the next metadata
-// refresh rather than immediately by the broker.
-func ConsumeExcludeTopics(topics ...string) ConsumerOpt {
-	return consumerOpt{func(cfg *cfg) {
-		if cfg.excludeTopics == nil {
-			cfg.excludeTopics = make(map[string]*regexp.Regexp, len(topics))
-		}
-		for _, topic := range topics {
-			cfg.excludeTopics[topic] = nil
-		}
-	}}
 }
 
 // DisableFetchSessions sets the client to not use fetch sessions (Kafka 1.0+).
@@ -1751,11 +1725,10 @@ func RequireStableFetchOffsets() GroupOpt {
 }
 
 // BlockRebalanceOnPoll switches the client to block rebalances whenever you
-// receive a non-empty result from polling until you explicitly call
-// AllowRebalance. This option also ensures that any
-// OnPartitions{Assigned,Revoked,Lost} callbacks are only called when you allow
-// rebalances; they cannot be called if you have polled and are processing
-// records.
+// poll until you explicitly call AllowRebalance. This option also ensures that
+// any OnPartitions{Assigned,Revoked,Lost} callbacks are only called when you
+// allow rebalances; they cannot be called if you have polled and are
+// processing records.
 //
 // By default, a consumer group is managed completely independently of
 // consuming. A rebalance may occur at any moment. If you poll records, and
@@ -1775,17 +1748,22 @@ func RequireStableFetchOffsets() GroupOpt {
 //
 // If you use this option, you should ensure that you always process records
 // quickly, and that your OnPartitions{Assigned,Revoked,Lost} callbacks are
-// fast. If your record processing may be slow, it is recommended you also use
-// PollRecords rather than PollFetches so that you can bound how many records
-// you process at once. You must always AllowRebalances when you are done
-// processing the records you received. Only rebalances that lose partitions
-// are blocked; rebalances that are strictly net additions or non-modifications
-// do not block (the On callbacks are always blocked so that you can ensure
-// their serialization).
+// fast. It is recommended you also use PollRecords rather than PollFetches so
+// that you can bound how many records you process at once. You must always
+// AllowRebalances when you are done processing the records you received. Only
+// rebalances that lose partitions are blocked; rebalances that are strictly
+// net additions or non-modifications do not block (the On callbacks are always
+// blocked so that you can ensure their serialization).
 //
-// You can use [OnPartitionsCallbackBlocked] as a signal that a rebalance WANTS
-// to happen, but you are currently blocking it, and that you need to either
-// finish processing or abort processing to allow the rebalance to continue.
+// This function can largely replace any commit logic you may want to do in
+// OnPartitionsRevoked.
+//
+// Lastly, note that this actually blocks any rebalance from calling
+// OnPartitions{Assigned,Revoked,Lost}. If you are using a cooperative
+// rebalancer such as CooperativeSticky, a rebalance can begin right before you
+// poll, and you will still receive records because no partitions are lost yet.
+// The in-progress rebalance only blocks if you are assigned new partitions or
+// if any of your partitions are revoked.
 func BlockRebalanceOnPoll() GroupOpt {
 	return groupOpt{func(cfg *cfg) { cfg.blockRebalanceOnPoll = true }}
 }
@@ -1826,7 +1804,7 @@ func AdjustFetchOffsetsFn(adjustOffsetsBeforeAssign func(context.Context, map[st
 // records. If you want to ensure this function is called serially with
 // processing, consider the BlockRebalanceOnPoll option.
 func OnPartitionsAssigned(onAssigned func(context.Context, *Client, map[string][]int32)) GroupOpt {
-	return groupOpt{func(cfg *cfg) { cfg.onAssigned = onAssigned }}
+	return groupOpt{func(cfg *cfg) { cfg.onAssigned, cfg.setAssigned = onAssigned, true }}
 }
 
 // OnPartitionsRevoked sets the function to be called once this group member
@@ -1851,14 +1829,12 @@ func OnPartitionsAssigned(onAssigned func(context.Context, *Client, map[string][
 //
 // This function can be called at any time you are polling or processing
 // records. If you want to ensure this function is called serially with
-// processing, consider the BlockRebalanceOnPoll option. It is guaranteed
-// that once the callback has completed any subsequent polls will not return
-// records for the revoked partitions.
+// processing, consider the BlockRebalanceOnPoll option.
 //
 // This function is called if a "fatal" group error is encountered and you have
 // not set [OnPartitionsLost]. See OnPartitionsLost for more details.
 func OnPartitionsRevoked(onRevoked func(context.Context, *Client, map[string][]int32)) GroupOpt {
-	return groupOpt{func(cfg *cfg) { cfg.onRevoked = onRevoked }}
+	return groupOpt{func(cfg *cfg) { cfg.onRevoked, cfg.setRevoked = onRevoked, true }}
 }
 
 // OnPartitionsLost sets the function to be called on "fatal" group errors,
@@ -1877,19 +1853,7 @@ func OnPartitionsRevoked(onRevoked func(context.Context, *Client, map[string][]i
 // records. If you want to ensure this function is called serially with
 // processing, consider the BlockRebalanceOnPoll option.
 func OnPartitionsLost(onLost func(context.Context, *Client, map[string][]int32)) GroupOpt {
-	return groupOpt{func(cfg *cfg) { cfg.onLost = onLost }}
-}
-
-// OnPartitionsCallbackBlocked sets a function to be called just before any
-// [OnPartitionsAssigned], [OnPartitionsRevoked], or [OnPartitionsLost]
-// callbacks are blocked from [BlockRebalanceOnPoll]. You can use this as a
-// signal in your processing function to hurry up and unblock rebalancing
-// before your group member is kicked from the group at the session timeout.
-//
-// Since this is meant to be a signal to blocking operations, and to ensure
-// nothing can block this signal, this callback is called in a goroutine.
-func OnPartitionsCallbackBlocked(fn func(context.Context, *Client)) GroupOpt {
-	return groupOpt{func(cfg *cfg) { cfg.onBlocked = fn }}
+	return groupOpt{func(cfg *cfg) { cfg.onLost, cfg.setLost = onLost, true }}
 }
 
 // OnOffsetsFetched sets a function to be called after offsets have been
@@ -1977,7 +1941,7 @@ func AutoCommitMarks() GroupOpt {
 // when closing. This allows for the client to restart with the same instance
 // ID and rejoin the group to avoid a rebalance. It is strongly recommended to
 // increase the session timeout enough to allow time for the restart (remember
-// that the default session timeout is 45s).
+// that the default session timeout is 10s).
 //
 // To actually leave the group, you must use an external admin command that
 // issues a leave group request on behalf of this instance ID (see kcl), or you
@@ -2003,7 +1967,11 @@ func GroupProtocol(protocol string) GroupOpt {
 // AutoCommitCallback sets the callback to use if autocommitting is enabled.
 // This overrides the default callback that logs errors and continues.
 func AutoCommitCallback(fn func(*Client, *kmsg.OffsetCommitRequest, *kmsg.OffsetCommitResponse, error)) GroupOpt {
-	return groupOpt{func(cfg *cfg) { cfg.commitCallback = fn }}
+	return groupOpt{func(cfg *cfg) {
+		if fn != nil {
+			cfg.commitCallback, cfg.setCommitCallback = fn, true
+		}
+	}}
 }
 
 // !!! Only uncomment once we trust the broker implementation!

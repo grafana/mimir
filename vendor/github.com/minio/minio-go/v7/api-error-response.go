@@ -20,7 +20,6 @@ package minio
 import (
 	"bytes"
 	"encoding/xml"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -129,18 +128,9 @@ func httpRespToErrorResponse(resp *http.Response, bucketName, objectName string)
 		Server:     resp.Header.Get("Server"),
 	}
 
-	success := successStatus.Contains(resp.StatusCode)
-
 	errBody, err := xmlDecodeAndBody(resp.Body, &errResp)
 	// Xml decoding failed with no body, fall back to HTTP headers.
 	if err != nil {
-		var unmarshalErr xml.UnmarshalError
-		if success && errors.As(err, &unmarshalErr) {
-			// This is a successful message so not an error response
-			// return nil,
-			return nil
-		}
-
 		switch resp.StatusCode {
 		case http.StatusNotFound:
 			if objectName == "" {

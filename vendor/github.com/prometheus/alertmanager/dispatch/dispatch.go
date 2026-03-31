@@ -397,8 +397,10 @@ func (d *Dispatcher) processAlert(dispatchLink trace.Link, alert *types.Alert, r
 				// configuration reload or shutdown. In this case, the
 				// message should only be logged at the debug level.
 				lvl = level.Debug(l)
+			} else {
+				lvl = log.With(lvl, "aggrGroup", ag, "alerts", fmt.Sprintf("%v", alerts))
 			}
-			lvl.Log("msg", "Notify for alerts failed", "num_alerts", len(alerts), "err", err, "aggrGroup", ag, "alerts", fmt.Sprintf("%v", alerts))
+			lvl.Log("msg", "Notify for alerts failed", "num_alerts", len(alerts), "err", err)
 
 			span.RecordError(fmt.Errorf("notify for alerts failed: %w", err))
 			span.SetStatus(codes.Error, err.Error())
@@ -480,10 +482,8 @@ func (ag *aggrGroup) String() string {
 }
 
 func (ag *aggrGroup) run(nf notifyFunc) {
-	// aggrGroup ctx can be canceled if the dispatcher ctx is canceled (on reboots / cfg change)
-	// in this case we need to stop the timer but keep the state
-	defer ag.timer.Stop(false)
 	defer close(ag.done)
+	defer ag.timer.Stop()
 
 	for {
 		select {
@@ -527,9 +527,6 @@ func (ag *aggrGroup) stop() {
 	// and the run() loop.
 	ag.cancel()
 	<-ag.done
-
-	// stop the timer once `run` has exited to make sure timer state cleanup is safe
-	ag.timer.Stop(true)
 }
 
 // insert inserts the alert into the aggregation group.

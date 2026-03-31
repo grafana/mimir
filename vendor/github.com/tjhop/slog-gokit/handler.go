@@ -17,7 +17,7 @@ var defaultGoKitLogger = log.NewLogfmtLogger(os.Stderr)
 type GoKitHandler struct {
 	level        slog.Leveler
 	logger       log.Logger
-	preformatted []any // pre-flattened key-value pairs, ready to pass directly to logger.Log()
+	preformatted []slog.Attr
 	group        string
 }
 
@@ -62,27 +62,22 @@ func (h *GoKitHandler) Handle(_ context.Context, record slog.Record) error {
 
 	logger := goKitLevelFunc(h.logger, record.Level)
 
-	// Pre-compute slice capacity. h.preformatted is already flattened to []any
-	// key-value pairs at WithAttrs time, so len(h.preformatted) is the exact
-	// item count -- no expansion buffer needed for that portion. Record attrs
-	// may contain groups that expand beyond 2 items per attr, so include a 50%
-	// buffer for that portion's estimated capacity only.
+	// 1 slog.Attr == 1 key and 1 value, set capacity >= (2 * num attrs).
 	//
-	// We know we need:
-	// - 2 for timestamp (key + value)
-	// - 2 for message (key + value)
-	// - len(h.preformatted) exact items (pre-flattened, no expansion)
-	// - 2 * record.NumAttrs() for record attrs, +50% buffer for group expansion
-	capacity := 4 + len(h.preformatted) + (3 * record.NumAttrs())
-	pairs := make([]any, 0, capacity)
+	// Note: this could probably be (micro)-optimized further -- we know we
+	// need to also append on a timestamp from the record, the message, the
+	// preformatted vals, all things we more or less know the size of at
+	// creation time here.
+	pairs := make([]any, 0, (2 * record.NumAttrs()))
 	if !record.Time.IsZero() {
 		pairs = append(pairs, slog.TimeKey, record.Time)
 	}
 	pairs = append(pairs, slog.MessageKey, record.Message)
 
-	// Bulk-append pre-flattened attrs, group prefixes were resolved at
-	// WithAttrs() call.
-	pairs = append(pairs, h.preformatted...)
+	// preformatted attributes have already had their group prefix applied in WithAttr
+	for _, a := range h.preformatted {
+		pairs = appendPair(pairs, "", a)
+	}
 
 	record.Attrs(func(a slog.Attr) bool {
 		pairs = appendPair(pairs, h.group, a)
@@ -95,18 +90,17 @@ func (h *GoKitHandler) Handle(_ context.Context, record slog.Record) error {
 // WithAttrs formats the provided attributes and caches them in the handler to
 // attach to all future log calls. It implements slog.Handler.
 func (h *GoKitHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	// Make a defensive copy of preformatted attrs to avoid race conditions
-	// when multiple goroutines call WithAttrs concurrently on the same handler.
-	// Attrs are pre-flattened to []any key-value pairs here so that Handle()
-	// can bulk-copy them without per-attr processing on every log call.
-	//
-	// Capacity estimate: existing items + 2 per new attr (minimum, more if
-	// attrs contain groups that expand to multiple pairs).
-	pairs := make([]any, len(h.preformatted), len(h.preformatted)+(len(attrs)*2))
-	copy(pairs, h.preformatted)
-
+	pairs := make([]slog.Attr, 0, len(attrs)+len(h.preformatted))
 	for _, attr := range attrs {
-		pairs = appendPair(pairs, h.group, attr)
+		// preresolve the group to simplify attr tracking
+		if h.group != "" {
+			attr.Key = h.group + "." + attr.Key
+		}
+		pairs = append(pairs, attr)
+	}
+
+	if h.preformatted != nil {
+		pairs = append(h.preformatted, pairs...)
 	}
 
 	return &GoKitHandler{

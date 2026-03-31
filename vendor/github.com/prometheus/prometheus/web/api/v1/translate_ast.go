@@ -1,4 +1,4 @@
-// Copyright The Prometheus Authors
+// Copyright 2024 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -47,10 +47,6 @@ func translateAST(node parser.Expr) any {
 				"labels":  sanitizeList(m.MatchingLabels),
 				"on":      m.On,
 				"include": sanitizeList(m.Include),
-				"fillValues": map[string]*float64{
-					"lhs": m.FillValues.LHS,
-					"rhs": m.FillValues.RHS,
-				},
 			}
 		}
 
@@ -88,8 +84,6 @@ func translateAST(node parser.Expr) any {
 			"matchers":   translateMatchers(vs.LabelMatchers),
 			"timestamp":  vs.Timestamp,
 			"startOrEnd": getStartOrEnd(vs.StartOrEnd),
-			"anchored":   vs.Anchored,
-			"smoothed":   vs.Smoothed,
 		}
 	case *parser.SubqueryExpr:
 		return map[string]any{
@@ -130,8 +124,6 @@ func translateAST(node parser.Expr) any {
 			"matchers":   translateMatchers(n.LabelMatchers),
 			"timestamp":  n.Timestamp,
 			"startOrEnd": getStartOrEnd(n.StartOrEnd),
-			"anchored":   n.Anchored,
-			"smoothed":   n.Smoothed,
 		}
 	}
 	panic("unsupported node type")

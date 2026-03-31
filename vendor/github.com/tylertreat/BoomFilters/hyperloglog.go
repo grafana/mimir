@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"hash"
+	"hash/fnv"
 	"io"
 	"math"
 )
@@ -67,6 +68,7 @@ func NewHyperLogLog(m uint) (*HyperLogLog, error) {
 		m:         m,
 		b:         uint32(math.Ceil(math.Log2(float64(m)))),
 		alpha:     calculateAlpha(m),
+		hash:      fnv.New32(),
 	}, nil
 }
 
@@ -146,7 +148,10 @@ func (h *HyperLogLog) Reset() *HyperLogLog {
 
 // calculateHash calculates the 32-bit hash value for the provided data.
 func (h *HyperLogLog) calculateHash(data []byte) uint32 {
-	return hash32DefaultFnv(data, h.hash)
+	h.hash.Write(data)
+	sum := h.hash.Sum32()
+	h.hash.Reset()
+	return sum
 }
 
 // SetHash sets the hashing function used.

@@ -1,6 +1,3 @@
-// SPDX-FileCopyrightText: Copyright 2015-2025 go-swagger maintainers
-// SPDX-License-Identifier: Apache-2.0
-
 package strfmt
 
 import (
@@ -11,34 +8,32 @@ import (
 	"io"
 	"sync"
 
-	"github.com/oklog/ulid/v2"
+	"github.com/oklog/ulid"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
-// ULID represents a [ulid] string format.
-//
-// # Reference
+// ULID represents a ulid string format
+// ref:
 //
 //	https://github.com/ulid/spec
 //
-// # Implementation
+// impl:
 //
 //	https://github.com/oklog/ulid
 //
-// swagger:strfmt ulid.
+// swagger:strfmt ulid
 type ULID struct {
 	ulid.ULID
 }
 
-//nolint:gochecknoglobals // package-level ULID configuration and overridable scan/value functions
 var (
 	ulidEntropyPool = sync.Pool{
-		New: func() any {
+		New: func() interface{} {
 			return cryptorand.Reader
 		},
 	}
 
-	// ULIDScanDefaultFunc is the default implementation for scanning a [ULID] from a database driver value.
-	ULIDScanDefaultFunc = func(raw any) (ULID, error) {
+	ULIDScanDefaultFunc = func(raw interface{}) (ULID, error) {
 		u := NewULIDZero()
 		switch x := raw.(type) {
 		case nil:
@@ -57,44 +52,45 @@ var (
 		return u, fmt.Errorf("cannot sql.Scan() strfmt.ULID from: %#v: %w", raw, ulid.ErrScanValue)
 	}
 
-	// ULIDScanOverrideFunc allows you to override the Scan method of the [ULID] type.
+	// ULIDScanOverrideFunc allows you to override the Scan method of the ULID type
 	ULIDScanOverrideFunc = ULIDScanDefaultFunc
 
-	// ULIDValueDefaultFunc is the default implementation for converting a [ULID] to a database driver value.
 	ULIDValueDefaultFunc = func(u ULID) (driver.Value, error) {
 		return driver.Value(u.String()), nil
 	}
 
-	// ULIDValueOverrideFunc allows you to override the Value method of the [ULID] type.
+	// ULIDValueOverrideFunc allows you to override the Value method of the ULID type
 	ULIDValueOverrideFunc = ULIDValueDefaultFunc
 )
 
-func init() { //nolint:gochecknoinits // registers ulid format in the default registry
+func init() {
+	// register formats in the default registry:
+	//   - ulid
 	ulid := ULID{}
 	Default.Add("ulid", &ulid, IsULID)
 }
 
-// IsULID checks if provided string is [ULID] format
-// Be noticed that this function considers overflowed [ULID] as non-[ulid].
-// For more details see https://github.com/[ulid]/spec
+// IsULID checks if provided string is ULID format
+// Be noticed that this function considers overflowed ULID as non-ulid.
+// For more details see https://github.com/ulid/spec
 func IsULID(str string) bool {
 	_, err := ulid.ParseStrict(str)
 	return err == nil
 }
 
-// ParseULID parses a string that represents an valid [ULID].
+// ParseULID parses a string that represents an valid ULID
 func ParseULID(str string) (ULID, error) {
 	var u ULID
 
 	return u, u.UnmarshalText([]byte(str))
 }
 
-// NewULIDZero returns a zero valued [ULID] type.
+// NewULIDZero returns a zero valued ULID type
 func NewULIDZero() ULID {
 	return ULID{}
 }
 
-// NewULID generates new unique [ULID] value and a error if any.
+// NewULID generates new unique ULID value and a error if any
 func NewULID() (ULID, error) {
 	var u ULID
 
@@ -114,23 +110,23 @@ func NewULID() (ULID, error) {
 	return u, nil
 }
 
-// GetULID returns underlying instance of [ULID].
-func (u *ULID) GetULID() any {
+// GetULID returns underlying instance of ULID
+func (u *ULID) GetULID() interface{} {
 	return u.ULID
 }
 
-// MarshalText returns this instance into text.
+// MarshalText returns this instance into text
 func (u ULID) MarshalText() ([]byte, error) {
 	return u.ULID.MarshalText()
 }
 
-// UnmarshalText hydrates this instance from text.
+// UnmarshalText hydrates this instance from text
 func (u *ULID) UnmarshalText(data []byte) error { // validation is performed later on
 	return u.ULID.UnmarshalText(data)
 }
 
-// Scan reads a value from a database driver.
-func (u *ULID) Scan(raw any) error {
+// Scan reads a value from a database driver
+func (u *ULID) Scan(raw interface{}) error {
 	ul, err := ULIDScanOverrideFunc(raw)
 	if err == nil {
 		*u = ul
@@ -138,7 +134,7 @@ func (u *ULID) Scan(raw any) error {
 	return err
 }
 
-// Value converts a value to a database driver value.
+// Value converts a value to a database driver value
 func (u ULID) Value() (driver.Value, error) {
 	return ULIDValueOverrideFunc(u)
 }
@@ -147,12 +143,12 @@ func (u ULID) String() string {
 	return u.ULID.String()
 }
 
-// MarshalJSON returns the [ULID] as JSON.
+// MarshalJSON returns the ULID as JSON
 func (u ULID) MarshalJSON() ([]byte, error) {
 	return json.Marshal(u.String())
 }
 
-// UnmarshalJSON sets the [ULID] from JSON.
+// UnmarshalJSON sets the ULID from JSON
 func (u *ULID) UnmarshalJSON(data []byte) error {
 	if string(data) == jsonNull {
 		return nil
@@ -169,12 +165,35 @@ func (u *ULID) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// MarshalBSON document from this value
+func (u ULID) MarshalBSON() ([]byte, error) {
+	return bson.Marshal(bson.M{"data": u.String()})
+}
+
+// UnmarshalBSON document into this value
+func (u *ULID) UnmarshalBSON(data []byte) error {
+	var m bson.M
+	if err := bson.Unmarshal(data, &m); err != nil {
+		return err
+	}
+
+	if ud, ok := m["data"].(string); ok {
+		id, err := ulid.ParseStrict(ud)
+		if err != nil {
+			return fmt.Errorf("couldn't parse bson bytes as ULID: %w: %w", err, ErrFormat)
+		}
+		u.ULID = id
+		return nil
+	}
+	return fmt.Errorf("couldn't unmarshal bson bytes as ULID: %w", ErrFormat)
+}
+
 // DeepCopyInto copies the receiver and writes its value into out.
 func (u *ULID) DeepCopyInto(out *ULID) {
 	*out = *u
 }
 
-// DeepCopy copies the receiver into a new [ULID].
+// DeepCopy copies the receiver into a new ULID.
 func (u *ULID) DeepCopy() *ULID {
 	if u == nil {
 		return nil
@@ -194,17 +213,17 @@ func (u *ULID) GobDecode(data []byte) error {
 	return u.ULID.UnmarshalBinary(data)
 }
 
-// MarshalBinary implements the encoding.[encoding.BinaryMarshaler] interface.
+// MarshalBinary implements the encoding.BinaryMarshaler interface.
 func (u ULID) MarshalBinary() ([]byte, error) {
 	return u.ULID.MarshalBinary()
 }
 
-// UnmarshalBinary implements the encoding.[encoding.BinaryUnmarshaler] interface.
+// UnmarshalBinary implements the encoding.BinaryUnmarshaler interface.
 func (u *ULID) UnmarshalBinary(data []byte) error {
 	return u.ULID.UnmarshalBinary(data)
 }
 
-// Equal checks if two [ULID] instances are equal by their underlying type.
+// Equal checks if two ULID instances are equal by their underlying type
 func (u ULID) Equal(other ULID) bool {
 	return u.ULID == other.ULID
 }

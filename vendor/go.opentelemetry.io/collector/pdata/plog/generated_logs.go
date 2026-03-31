@@ -8,6 +8,7 @@ package plog
 
 import (
 	"go.opentelemetry.io/collector/pdata/internal"
+	otlpcollectorlogs "go.opentelemetry.io/collector/pdata/internal/data/protogen/collector/logs/v1"
 )
 
 // Logs is the top-level struct that is propagated through the logs pipeline.
@@ -18,10 +19,10 @@ import (
 //
 // Must use NewLogs function to create new instances.
 // Important: zero-initialized instance is not valid for use.
-type Logs internal.LogsWrapper
+type Logs internal.Logs
 
-func newLogs(orig *internal.ExportLogsServiceRequest, state *internal.State) Logs {
-	return Logs(internal.NewLogsWrapper(orig, state))
+func newLogs(orig *otlpcollectorlogs.ExportLogsServiceRequest, state *internal.State) Logs {
+	return Logs(internal.NewLogs(orig, state))
 }
 
 // NewLogs creates a new empty Logs.
@@ -29,7 +30,7 @@ func newLogs(orig *internal.ExportLogsServiceRequest, state *internal.State) Log
 // This must be used only in testing code. Users should use "AppendEmpty" when part of a Slice,
 // OR directly access the member if this is embedded in another struct.
 func NewLogs() Logs {
-	return newLogs(internal.NewExportLogsServiceRequest(), internal.NewState())
+	return newLogs(internal.NewOrigExportLogsServiceRequest(), internal.NewState())
 }
 
 // MoveTo moves all properties from the current struct overriding the destination and
@@ -41,7 +42,7 @@ func (ms Logs) MoveTo(dest Logs) {
 	if ms.getOrig() == dest.getOrig() {
 		return
 	}
-	internal.DeleteExportLogsServiceRequest(dest.getOrig(), false)
+	internal.DeleteOrigExportLogsServiceRequest(dest.getOrig(), false)
 	*dest.getOrig(), *ms.getOrig() = *ms.getOrig(), *dest.getOrig()
 }
 
@@ -53,13 +54,13 @@ func (ms Logs) ResourceLogs() ResourceLogsSlice {
 // CopyTo copies all properties from the current struct overriding the destination.
 func (ms Logs) CopyTo(dest Logs) {
 	dest.getState().AssertMutable()
-	internal.CopyExportLogsServiceRequest(dest.getOrig(), ms.getOrig())
+	internal.CopyOrigExportLogsServiceRequest(dest.getOrig(), ms.getOrig())
 }
 
-func (ms Logs) getOrig() *internal.ExportLogsServiceRequest {
-	return internal.GetLogsOrig(internal.LogsWrapper(ms))
+func (ms Logs) getOrig() *otlpcollectorlogs.ExportLogsServiceRequest {
+	return internal.GetOrigLogs(internal.Logs(ms))
 }
 
 func (ms Logs) getState() *internal.State {
-	return internal.GetLogsState(internal.LogsWrapper(ms))
+	return internal.GetLogsState(internal.Logs(ms))
 }

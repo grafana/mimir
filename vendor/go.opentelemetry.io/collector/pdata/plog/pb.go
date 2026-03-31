@@ -3,31 +3,50 @@
 
 package plog // import "go.opentelemetry.io/collector/pdata/plog"
 
+import (
+	"go.opentelemetry.io/collector/pdata/internal"
+)
+
 var _ MarshalSizer = (*ProtoMarshaler)(nil)
 
 type ProtoMarshaler struct{}
 
 func (e *ProtoMarshaler) MarshalLogs(ld Logs) ([]byte, error) {
-	size := ld.getOrig().SizeProto()
+	if !internal.UseCustomProtoEncoding.IsEnabled() {
+		return ld.getOrig().Marshal()
+	}
+	size := internal.SizeProtoOrigExportLogsServiceRequest(ld.getOrig())
 	buf := make([]byte, size)
-	_ = ld.getOrig().MarshalProto(buf)
+	_ = internal.MarshalProtoOrigExportLogsServiceRequest(ld.getOrig(), buf)
 	return buf, nil
 }
 
 func (e *ProtoMarshaler) LogsSize(ld Logs) int {
-	return ld.getOrig().SizeProto()
+	if !internal.UseCustomProtoEncoding.IsEnabled() {
+		return ld.getOrig().Size()
+	}
+	return internal.SizeProtoOrigExportLogsServiceRequest(ld.getOrig())
 }
 
 func (e *ProtoMarshaler) ResourceLogsSize(ld ResourceLogs) int {
-	return ld.orig.SizeProto()
+	if !internal.UseCustomProtoEncoding.IsEnabled() {
+		return ld.orig.Size()
+	}
+	return internal.SizeProtoOrigResourceLogs(ld.orig)
 }
 
 func (e *ProtoMarshaler) ScopeLogsSize(ld ScopeLogs) int {
-	return ld.orig.SizeProto()
+	if !internal.UseCustomProtoEncoding.IsEnabled() {
+		return ld.orig.Size()
+	}
+	return internal.SizeProtoOrigScopeLogs(ld.orig)
 }
 
 func (e *ProtoMarshaler) LogRecordSize(ld LogRecord) int {
-	return ld.orig.SizeProto()
+	if !internal.UseCustomProtoEncoding.IsEnabled() {
+		return ld.orig.Size()
+	}
+	return internal.SizeProtoOrigLogRecord(ld.orig)
 }
 
 var _ Unmarshaler = (*ProtoUnmarshaler)(nil)
@@ -36,7 +55,14 @@ type ProtoUnmarshaler struct{}
 
 func (d *ProtoUnmarshaler) UnmarshalLogs(buf []byte) (Logs, error) {
 	ld := NewLogs()
-	err := ld.getOrig().UnmarshalProto(buf)
+	if !internal.UseCustomProtoEncoding.IsEnabled() {
+		err := ld.getOrig().Unmarshal(buf)
+		if err != nil {
+			return Logs{}, err
+		}
+		return ld, nil
+	}
+	err := internal.UnmarshalProtoOrigExportLogsServiceRequest(ld.getOrig(), buf)
 	if err != nil {
 		return Logs{}, err
 	}

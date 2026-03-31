@@ -7,12 +7,11 @@ import (
 	"syscall"
 	"unsafe"
 
-	"golang.org/x/sys/windows"
-
 	"github.com/shirou/gopsutil/v4/internal/common"
+	"golang.org/x/sys/windows"
 )
 
-type PROCESS_MEMORY_COUNTERS struct { //nolint:revive //FIXME
+type PROCESS_MEMORY_COUNTERS struct {
 	CB                         uint32
 	PageFaultCount             uint32
 	PeakWorkingSetSize         uint64
@@ -39,23 +38,26 @@ func queryPebAddress(procHandle syscall.Handle, is32BitProcess bool) (uint64, er
 		)
 		if status := windows.NTStatus(ret); status == windows.STATUS_SUCCESS {
 			return uint64(wow64), nil
+		} else {
+			return 0, windows.NTStatus(ret)
 		}
-		return 0, windows.NTStatus(ret)
-	}
-	// we are on a 64-bit process reading an external 64-bit process
-	var info processBasicInformation64
+	} else {
+		// we are on a 64-bit process reading an external 64-bit process
+		var info processBasicInformation64
 
-	ret, _, _ := common.ProcNtQueryInformationProcess.Call(
-		uintptr(procHandle),
-		uintptr(common.ProcessBasicInformation),
-		uintptr(unsafe.Pointer(&info)),
-		uintptr(unsafe.Sizeof(info)),
-		uintptr(0),
-	)
-	if status := windows.NTStatus(ret); status == windows.STATUS_SUCCESS {
-		return info.PebBaseAddress, nil
+		ret, _, _ := common.ProcNtQueryInformationProcess.Call(
+			uintptr(procHandle),
+			uintptr(common.ProcessBasicInformation),
+			uintptr(unsafe.Pointer(&info)),
+			uintptr(unsafe.Sizeof(info)),
+			uintptr(0),
+		)
+		if status := windows.NTStatus(ret); status == windows.STATUS_SUCCESS {
+			return info.PebBaseAddress, nil
+		} else {
+			return 0, windows.NTStatus(ret)
+		}
 	}
-	return 0, windows.NTStatus(ret)
 }
 
 func readProcessMemory(procHandle syscall.Handle, _ bool, address uint64, size uint) []byte {

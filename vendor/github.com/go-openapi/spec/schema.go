@@ -1,5 +1,16 @@
-// SPDX-FileCopyrightText: Copyright 2015-2025 go-swagger maintainers
-// SPDX-License-Identifier: Apache-2.0
+// Copyright 2015 go-swagger maintainers
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package spec
 
@@ -9,8 +20,7 @@ import (
 	"strings"
 
 	"github.com/go-openapi/jsonpointer"
-	"github.com/go-openapi/swag/jsonname"
-	"github.com/go-openapi/swag/jsonutils"
+	"github.com/go-openapi/swag"
 )
 
 // BooleanProperty creates a boolean property
@@ -115,20 +125,20 @@ func (r SchemaURL) MarshalJSON() ([]byte, error) {
 	if r == "" {
 		return []byte("{}"), nil
 	}
-	v := map[string]any{"$schema": string(r)}
+	v := map[string]interface{}{"$schema": string(r)}
 	return json.Marshal(v)
 }
 
 // UnmarshalJSON unmarshal this from JSON
 func (r *SchemaURL) UnmarshalJSON(data []byte) error {
-	var v map[string]any
+	var v map[string]interface{}
 	if err := json.Unmarshal(data, &v); err != nil {
 		return err
 	}
 	return r.fromMap(v)
 }
 
-func (r *SchemaURL) fromMap(v map[string]any) error {
+func (r *SchemaURL) fromMap(v map[string]interface{}) error {
 	if v == nil {
 		return nil
 	}
@@ -155,7 +165,7 @@ type SchemaProps struct {
 	Nullable             bool             `json:"nullable,omitempty"`
 	Format               string           `json:"format,omitempty"`
 	Title                string           `json:"title,omitempty"`
-	Default              any              `json:"default,omitempty"`
+	Default              interface{}      `json:"default,omitempty"`
 	Maximum              *float64         `json:"maximum,omitempty"`
 	ExclusiveMaximum     bool             `json:"exclusiveMaximum,omitempty"`
 	Minimum              *float64         `json:"minimum,omitempty"`
@@ -167,7 +177,7 @@ type SchemaProps struct {
 	MinItems             *int64           `json:"minItems,omitempty"`
 	UniqueItems          bool             `json:"uniqueItems,omitempty"`
 	MultipleOf           *float64         `json:"multipleOf,omitempty"`
-	Enum                 []any            `json:"enum,omitempty"`
+	Enum                 []interface{}    `json:"enum,omitempty"`
 	MaxProperties        *int64           `json:"maxProperties,omitempty"`
 	MinProperties        *int64           `json:"minProperties,omitempty"`
 	Required             []string         `json:"required,omitempty"`
@@ -190,7 +200,7 @@ type SwaggerSchemaProps struct {
 	ReadOnly      bool                   `json:"readOnly,omitempty"`
 	XML           *XMLObject             `json:"xml,omitempty"`
 	ExternalDocs  *ExternalDocumentation `json:"externalDocs,omitempty"`
-	Example       any                    `json:"example,omitempty"`
+	Example       interface{}            `json:"example,omitempty"`
 }
 
 // Schema the schema object allows the definition of input and output data types.
@@ -204,12 +214,11 @@ type Schema struct {
 	VendorExtensible
 	SchemaProps
 	SwaggerSchemaProps
-
-	ExtraProps map[string]any `json:"-"`
+	ExtraProps map[string]interface{} `json:"-"`
 }
 
 // JSONLookup implements an interface to customize json pointer lookup
-func (s Schema) JSONLookup(token string) (any, error) {
+func (s Schema) JSONLookup(token string) (interface{}, error) {
 	if ex, ok := s.Extensions[token]; ok {
 		return &ex, nil
 	}
@@ -266,14 +275,14 @@ func (s *Schema) WithAllOf(schemas ...Schema) *Schema {
 }
 
 // WithMaxProperties sets the max number of properties an object can have
-func (s *Schema) WithMaxProperties(maximum int64) *Schema {
-	s.MaxProperties = &maximum
+func (s *Schema) WithMaxProperties(max int64) *Schema {
+	s.MaxProperties = &max
 	return s
 }
 
 // WithMinProperties sets the min number of properties an object must have
-func (s *Schema) WithMinProperties(minimum int64) *Schema {
-	s.MinProperties = &minimum
+func (s *Schema) WithMinProperties(min int64) *Schema {
+	s.MinProperties = &min
 	return s
 }
 
@@ -307,7 +316,7 @@ func (s *Schema) CollectionOf(items Schema) *Schema {
 }
 
 // WithDefault sets the default value on this parameter
-func (s *Schema) WithDefault(defaultValue any) *Schema {
+func (s *Schema) WithDefault(defaultValue interface{}) *Schema {
 	s.Default = defaultValue
 	return s
 }
@@ -325,14 +334,14 @@ func (s *Schema) AddRequired(items ...string) *Schema {
 }
 
 // WithMaxLength sets a max length value
-func (s *Schema) WithMaxLength(maximum int64) *Schema {
-	s.MaxLength = &maximum
+func (s *Schema) WithMaxLength(max int64) *Schema {
+	s.MaxLength = &max
 	return s
 }
 
 // WithMinLength sets a min length value
-func (s *Schema) WithMinLength(minimum int64) *Schema {
-	s.MinLength = &minimum
+func (s *Schema) WithMinLength(min int64) *Schema {
+	s.MinLength = &min
 	return s
 }
 
@@ -349,22 +358,22 @@ func (s *Schema) WithMultipleOf(number float64) *Schema {
 }
 
 // WithMaximum sets a maximum number value
-func (s *Schema) WithMaximum(maximum float64, exclusive bool) *Schema {
-	s.Maximum = &maximum
+func (s *Schema) WithMaximum(max float64, exclusive bool) *Schema {
+	s.Maximum = &max
 	s.ExclusiveMaximum = exclusive
 	return s
 }
 
 // WithMinimum sets a minimum number value
-func (s *Schema) WithMinimum(minimum float64, exclusive bool) *Schema {
-	s.Minimum = &minimum
+func (s *Schema) WithMinimum(min float64, exclusive bool) *Schema {
+	s.Minimum = &min
 	s.ExclusiveMinimum = exclusive
 	return s
 }
 
 // WithEnum sets a the enum values (replace)
-func (s *Schema) WithEnum(values ...any) *Schema {
-	s.Enum = append([]any{}, values...)
+func (s *Schema) WithEnum(values ...interface{}) *Schema {
+	s.Enum = append([]interface{}{}, values...)
 	return s
 }
 
@@ -417,7 +426,7 @@ func (s *Schema) AsWritable() *Schema {
 }
 
 // WithExample sets the example for this schema
-func (s *Schema) WithExample(example any) *Schema {
+func (s *Schema) WithExample(example interface{}) *Schema {
 	s.Example = example
 	return s
 }
@@ -557,33 +566,33 @@ func (s Schema) Validations() SchemaValidations {
 func (s Schema) MarshalJSON() ([]byte, error) {
 	b1, err := json.Marshal(s.SchemaProps)
 	if err != nil {
-		return nil, fmt.Errorf("schema props %v: %w", err, ErrSpec)
+		return nil, fmt.Errorf("schema props %v", err)
 	}
 	b2, err := json.Marshal(s.VendorExtensible)
 	if err != nil {
-		return nil, fmt.Errorf("vendor props %v: %w", err, ErrSpec)
+		return nil, fmt.Errorf("vendor props %v", err)
 	}
 	b3, err := s.Ref.MarshalJSON()
 	if err != nil {
-		return nil, fmt.Errorf("ref prop %v: %w", err, ErrSpec)
+		return nil, fmt.Errorf("ref prop %v", err)
 	}
 	b4, err := s.Schema.MarshalJSON()
 	if err != nil {
-		return nil, fmt.Errorf("schema prop %v: %w", err, ErrSpec)
+		return nil, fmt.Errorf("schema prop %v", err)
 	}
 	b5, err := json.Marshal(s.SwaggerSchemaProps)
 	if err != nil {
-		return nil, fmt.Errorf("common validations %v: %w", err, ErrSpec)
+		return nil, fmt.Errorf("common validations %v", err)
 	}
 	var b6 []byte
 	if s.ExtraProps != nil {
 		jj, err := json.Marshal(s.ExtraProps)
 		if err != nil {
-			return nil, fmt.Errorf("extra props %v: %w", err, ErrSpec)
+			return nil, fmt.Errorf("extra props %v", err)
 		}
 		b6 = jj
 	}
-	return jsonutils.ConcatJSON(b1, b2, b3, b4, b5, b6), nil
+	return swag.ConcatJSON(b1, b2, b3, b4, b5, b6), nil
 }
 
 // UnmarshalJSON marshal this from JSON
@@ -601,7 +610,7 @@ func (s *Schema) UnmarshalJSON(data []byte) error {
 		SwaggerSchemaProps: props.SwaggerSchemaProps,
 	}
 
-	var d map[string]any
+	var d map[string]interface{}
 	if err := json.Unmarshal(data, &d); err != nil {
 		return err
 	}
@@ -611,7 +620,7 @@ func (s *Schema) UnmarshalJSON(data []byte) error {
 
 	delete(d, "$ref")
 	delete(d, "$schema")
-	for _, pn := range jsonname.DefaultJSONNameProvider.GetJSONNames(s) {
+	for _, pn := range swag.DefaultJSONNameProvider.GetJSONNames(s) {
 		delete(d, pn)
 	}
 
@@ -619,13 +628,13 @@ func (s *Schema) UnmarshalJSON(data []byte) error {
 		lk := strings.ToLower(k)
 		if strings.HasPrefix(lk, "x-") {
 			if sch.Extensions == nil {
-				sch.Extensions = map[string]any{}
+				sch.Extensions = map[string]interface{}{}
 			}
 			sch.Extensions[k] = vv
 			continue
 		}
 		if sch.ExtraProps == nil {
-			sch.ExtraProps = map[string]any{}
+			sch.ExtraProps = map[string]interface{}{}
 		}
 		sch.ExtraProps[k] = vv
 	}

@@ -29,14 +29,8 @@ import (
 	"github.com/minio/minio-go/v7/pkg/tags"
 )
 
-// GetBucketTagging fetches the tagging configuration for a bucket.
-// It uses the provided context to control cancellations and timeouts.
-//
-// Parameters:
-//   - ctx: Context for request cancellation and timeout
-//   - bucketName: Name of the bucket
-//
-// Returns the bucket's tags or an error if the operation fails.
+// GetBucketTagging fetch tagging configuration for a bucket with a
+// context to control cancellations and timeouts.
 func (c *Client) GetBucketTagging(ctx context.Context, bucketName string) (*tags.Tags, error) {
 	// Input validation.
 	if err := s3utils.CheckValidBucketName(bucketName); err != nil {
@@ -67,15 +61,8 @@ func (c *Client) GetBucketTagging(ctx context.Context, bucketName string) (*tags
 	return tags.ParseBucketXML(resp.Body)
 }
 
-// SetBucketTagging sets the tagging configuration for a bucket.
-// It uses the provided context to control cancellations and timeouts.
-//
-// Parameters:
-//   - ctx: Context for request cancellation and timeout
-//   - bucketName: Name of the bucket
-//   - tags: Tag set to apply to the bucket
-//
-// Returns an error if the operation fails or if tags is nil.
+// SetBucketTagging sets tagging configuration for a bucket
+// with a context to control cancellations and timeouts.
 func (c *Client) SetBucketTagging(ctx context.Context, bucketName string, tags *tags.Tags) error {
 	// Input validation.
 	if err := s3utils.CheckValidBucketName(bucketName); err != nil {
@@ -117,14 +104,8 @@ func (c *Client) SetBucketTagging(ctx context.Context, bucketName string, tags *
 	return nil
 }
 
-// RemoveBucketTagging removes the tagging configuration from a bucket.
-// It uses the provided context to control cancellations and timeouts.
-//
-// Parameters:
-//   - ctx: Context for request cancellation and timeout
-//   - bucketName: Name of the bucket
-//
-// Returns an error if the operation fails.
+// RemoveBucketTagging removes tagging configuration for a
+// bucket with a context to control cancellations and timeouts.
 func (c *Client) RemoveBucketTagging(ctx context.Context, bucketName string) error {
 	// Input validation.
 	if err := s3utils.CheckValidBucketName(bucketName); err != nil {

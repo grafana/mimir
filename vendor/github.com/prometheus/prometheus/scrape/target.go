@@ -1,4 +1,4 @@
-// Copyright The Prometheus Authors
+// Copyright 2013 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -347,22 +347,6 @@ func (app *limitAppender) Append(ref storage.SeriesRef, lset labels.Labels, t in
 	return ref, nil
 }
 
-func (app *limitAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	// Bypass sample_limit checks only if we have a staleness marker for a known series (ref value is non-zero).
-	// This ensures that if a series is already in TSDB then we always write the marker.
-	if ref == 0 || (h != nil && !value.IsStaleNaN(h.Sum)) || (fh != nil && !value.IsStaleNaN(fh.Sum)) {
-		app.i++
-		if app.i > app.limit {
-			return 0, errSampleLimit
-		}
-	}
-	ref, err := app.Appender.AppendHistogram(ref, lset, t, h, fh)
-	if err != nil {
-		return 0, err
-	}
-	return ref, nil
-}
-
 type timeLimitAppender struct {
 	storage.Appender
 
@@ -389,7 +373,6 @@ type bucketLimitAppender struct {
 }
 
 func (app *bucketLimitAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	var err error
 	if h != nil {
 		// Return with an early error if the histogram has too many buckets and the
 		// schema is not exponential, in which case we can't reduce the resolution.
@@ -400,9 +383,7 @@ func (app *bucketLimitAppender) AppendHistogram(ref storage.SeriesRef, lset labe
 			if h.Schema <= histogram.ExponentialSchemaMin {
 				return 0, errBucketLimit
 			}
-			if err = h.ReduceResolution(h.Schema - 1); err != nil {
-				return 0, err
-			}
+			h = h.ReduceResolution(h.Schema - 1)
 		}
 	}
 	if fh != nil {
@@ -415,12 +396,11 @@ func (app *bucketLimitAppender) AppendHistogram(ref storage.SeriesRef, lset labe
 			if fh.Schema <= histogram.ExponentialSchemaMin {
 				return 0, errBucketLimit
 			}
-			if err = fh.ReduceResolution(fh.Schema - 1); err != nil {
-				return 0, err
-			}
+			fh = fh.ReduceResolution(fh.Schema - 1)
 		}
 	}
-	if ref, err = app.Appender.AppendHistogram(ref, lset, t, h, fh); err != nil {
+	ref, err := app.Appender.AppendHistogram(ref, lset, t, h, fh)
+	if err != nil {
 		return 0, err
 	}
 	return ref, nil
@@ -433,124 +413,21 @@ type maxSchemaAppender struct {
 }
 
 func (app *maxSchemaAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	var err error
 	if h != nil {
 		if histogram.IsExponentialSchemaReserved(h.Schema) && h.Schema > app.maxSchema {
-			if err = h.ReduceResolution(app.maxSchema); err != nil {
-				return 0, err
-			}
+			h = h.ReduceResolution(app.maxSchema)
 		}
 	}
 	if fh != nil {
 		if histogram.IsExponentialSchemaReserved(fh.Schema) && fh.Schema > app.maxSchema {
-			if err = fh.ReduceResolution(app.maxSchema); err != nil {
-				return 0, err
-			}
+			fh = fh.ReduceResolution(app.maxSchema)
 		}
 	}
-	if ref, err = app.Appender.AppendHistogram(ref, lset, t, h, fh); err != nil {
+	ref, err := app.Appender.AppendHistogram(ref, lset, t, h, fh)
+	if err != nil {
 		return 0, err
 	}
 	return ref, nil
-}
-
-// limitAppender limits the number of total appended samples in a batch.
-type limitAppenderV2 struct {
-	storage.AppenderV2
-
-	limit int
-	i     int
-}
-
-func (app *limitAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
-	// Bypass sample_limit checks only if we have a staleness marker for a known series (ref value is non-zero).
-	// This ensures that if a series is already in TSDB then we always write the marker.
-	if ref == 0 || !value.IsStaleNaN(v) {
-		app.i++
-		if app.i > app.limit {
-			return 0, errSampleLimit
-		}
-	}
-	return app.AppenderV2.Append(ref, ls, st, t, v, h, fh, opts)
-}
-
-type timeLimitAppenderV2 struct {
-	storage.AppenderV2
-
-	maxTime int64
-}
-
-func (app *timeLimitAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
-	if t > app.maxTime {
-		return 0, storage.ErrOutOfBounds
-	}
-
-	return app.AppenderV2.Append(ref, ls, st, t, v, h, fh, opts)
-}
-
-// bucketLimitAppender limits the number of total appended samples in a batch.
-type bucketLimitAppenderV2 struct {
-	storage.AppenderV2
-
-	limit int
-}
-
-func (app *bucketLimitAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (_ storage.SeriesRef, err error) {
-	if h != nil {
-		// Return with an early error if the histogram has too many buckets and the
-		// schema is not exponential, in which case we can't reduce the resolution.
-		if len(h.PositiveBuckets)+len(h.NegativeBuckets) > app.limit && !histogram.IsExponentialSchema(h.Schema) {
-			return 0, errBucketLimit
-		}
-		for len(h.PositiveBuckets)+len(h.NegativeBuckets) > app.limit {
-			if h.Schema <= histogram.ExponentialSchemaMin {
-				return 0, errBucketLimit
-			}
-			if err = h.ReduceResolution(h.Schema - 1); err != nil {
-				return 0, err
-			}
-		}
-	}
-	if fh != nil {
-		// Return with an early error if the histogram has too many buckets and the
-		// schema is not exponential, in which case we can't reduce the resolution.
-		if len(fh.PositiveBuckets)+len(fh.NegativeBuckets) > app.limit && !histogram.IsExponentialSchema(fh.Schema) {
-			return 0, errBucketLimit
-		}
-		for len(fh.PositiveBuckets)+len(fh.NegativeBuckets) > app.limit {
-			if fh.Schema <= histogram.ExponentialSchemaMin {
-				return 0, errBucketLimit
-			}
-			if err = fh.ReduceResolution(fh.Schema - 1); err != nil {
-				return 0, err
-			}
-		}
-	}
-	return app.AppenderV2.Append(ref, ls, st, t, v, h, fh, opts)
-}
-
-type maxSchemaAppenderV2 struct {
-	storage.AppenderV2
-
-	maxSchema int32
-}
-
-func (app *maxSchemaAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (_ storage.SeriesRef, err error) {
-	if h != nil {
-		if histogram.IsExponentialSchemaReserved(h.Schema) && h.Schema > app.maxSchema {
-			if err = h.ReduceResolution(app.maxSchema); err != nil {
-				return 0, err
-			}
-		}
-	}
-	if fh != nil {
-		if histogram.IsExponentialSchemaReserved(fh.Schema) && fh.Schema > app.maxSchema {
-			if err = fh.ReduceResolution(app.maxSchema); err != nil {
-				return 0, err
-			}
-		}
-	}
-	return app.AppenderV2.Append(ref, ls, st, t, v, h, fh, opts)
 }
 
 // PopulateDiscoveredLabels sets base labels on lb from target and group labels and scrape configuration, before relabeling.

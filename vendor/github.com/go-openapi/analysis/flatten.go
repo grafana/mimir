@@ -1,12 +1,23 @@
-// SPDX-FileCopyrightText: Copyright 2015-2025 go-swagger maintainers
-// SPDX-License-Identifier: Apache-2.0
+// Copyright 2015 go-swagger maintainers
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package analysis
 
 import (
+	"fmt"
 	"log"
 	"path"
-	"slices"
 	"sort"
 	"strings"
 
@@ -21,7 +32,7 @@ import (
 
 const definitionsPath = "#/definitions"
 
-// newRef stores information about refs created during the flattening process.
+// newRef stores information about refs created during the flattening process
 type newRef struct {
 	key      string
 	newName  string
@@ -32,7 +43,7 @@ type newRef struct {
 	parents  []string
 }
 
-// context stores intermediary results from flatten.
+// context stores intermediary results from flatten
 type context struct {
 	newRefs  map[string]*newRef
 	warnings []string
@@ -41,9 +52,9 @@ type context struct {
 
 func newContext() *context {
 	return &context{
-		newRefs:  make(map[string]*newRef, allocMediumMap),
+		newRefs:  make(map[string]*newRef, 150),
 		warnings: make([]string, 0),
-		resolved: make(map[string]string, allocMediumMap),
+		resolved: make(map[string]string, 50),
 	}
 }
 
@@ -169,7 +180,7 @@ func expand(opts *FlattenOpts) error {
 }
 
 // normalizeRef strips the current file from any absolute file $ref. This works around issue go-openapi/spec#76:
-// leading absolute file in $ref is stripped.
+// leading absolute file in $ref is stripped
 func normalizeRef(opts *FlattenOpts) error {
 	debugLog("normalizeRef")
 
@@ -240,7 +251,7 @@ func nameInlinedSchemas(opts *FlattenOpts) error {
 
 		asch, err := Schema(SchemaOpts{Schema: sch.Schema, Root: opts.Swagger(), BasePath: opts.BasePath})
 		if err != nil {
-			return ErrAtKey(key, err)
+			return fmt.Errorf("schema analysis [%s]: %w", key, err)
 		}
 
 		if asch.isAnalyzedAsComplex() { // move complex schemas to definitions
@@ -309,7 +320,7 @@ func importNewRef(entry sortref.RefRevIdx, refStr string, opts *FlattenOpts) err
 
 	sch, err := spec.ResolveRefWithBase(opts.Swagger(), &entry.Ref, opts.ExpandOpts(false))
 	if err != nil {
-		return ErrResolveSchema(err)
+		return fmt.Errorf("could not resolve schema: %w", err)
 	}
 
 	// at this stage only $ref analysis matters
@@ -324,7 +335,7 @@ func importNewRef(entry sortref.RefRevIdx, refStr string, opts *FlattenOpts) err
 	// now rewrite those refs with rebase
 	for key, ref := range partialAnalyzer.references.allRefs {
 		if err := replace.UpdateRef(sch, key, spec.MustCreateRef(normalize.RebaseRef(entry.Ref.String(), ref.String()))); err != nil {
-			return ErrRewriteRef(key, entry.Ref.String(), err)
+			return fmt.Errorf("failed to rewrite ref for key %q at %s: %w", key, entry.Ref.String(), err)
 		}
 	}
 
@@ -418,7 +429,7 @@ func importExternalReferences(opts *FlattenOpts) (bool, error) {
 			ref := spec.MustCreateRef(r.path)
 			sch, err := spec.ResolveRefWithBase(opts.Swagger(), &ref, opts.ExpandOpts(false))
 			if err != nil {
-				return false, ErrResolveSchema(err)
+				return false, fmt.Errorf("could not resolve schema: %w", err)
 			}
 
 			r.schema = sch
@@ -521,7 +532,7 @@ func stripOAIGen(opts *FlattenOpts) (bool, error) {
 	return replacedWithComplex, nil
 }
 
-// updateRefParents updates all parents of an updated $ref.
+// updateRefParents updates all parents of an updated $ref
 func updateRefParents(allRefs map[string]spec.Ref, r *newRef) {
 	if !r.isOAIGen || r.resolved { // bail on already resolved entries (avoid looping)
 		return
@@ -531,7 +542,14 @@ func updateRefParents(allRefs map[string]spec.Ref, r *newRef) {
 			continue
 		}
 
-		found := slices.Contains(r.parents, k)
+		found := false
+		for _, p := range r.parents {
+			if p == k {
+				found = true
+
+				break
+			}
+		}
 		if !found {
 			r.parents = append(r.parents, k)
 		}
@@ -625,7 +643,7 @@ func stripOAIGenForRef(opts *FlattenOpts, k string, r *newRef) (bool, error) {
 		}
 
 		debugLog("re-inlined schema: parent: %s, %t", pr[0], asch.isAnalyzedAsComplex())
-		replacedWithComplex = replacedWithComplex || path.Dir(pr[0]) != definitionsPath && asch.isAnalyzedAsComplex()
+		replacedWithComplex = replacedWithComplex || !(path.Dir(pr[0]) == definitionsPath) && asch.isAnalyzedAsComplex()
 	}
 
 	return replacedWithComplex, nil
@@ -648,7 +666,7 @@ func namePointers(opts *FlattenOpts) error {
 
 		result, err := replace.DeepestRef(opts.Swagger(), opts.ExpandOpts(false), ref)
 		if err != nil {
-			return ErrAtKey(k, err)
+			return fmt.Errorf("at %s, %w", k, err)
 		}
 
 		replacingRef := result.Ref
@@ -679,7 +697,7 @@ func namePointers(opts *FlattenOpts) error {
 		// update current replacement, which may have been updated by previous changes of deeper elements
 		result, erd := replace.DeepestRef(opts.Swagger(), opts.ExpandOpts(false), v.Ref)
 		if erd != nil {
-			return ErrAtKey(key, erd)
+			return fmt.Errorf("at %s, %w", key, erd)
 		}
 
 		if opts.flattenContext != nil {
@@ -725,9 +743,9 @@ func flattenAnonPointer(key string, v SchemaRef, refsToReplace map[string]Schema
 	// qualify the expanded schema
 	asch, ers := Schema(SchemaOpts{Schema: v.Schema, Root: opts.Swagger(), BasePath: opts.BasePath})
 	if ers != nil {
-		return ErrAtKey(key, ers)
+		return fmt.Errorf("schema analysis [%s]: %w", key, ers)
 	}
-	callers := make([]string, 0, allocMediumMap)
+	callers := make([]string, 0, 64)
 
 	debugLog("looking for callers")
 
@@ -735,7 +753,7 @@ func flattenAnonPointer(key string, v SchemaRef, refsToReplace map[string]Schema
 	for k, w := range an.references.allRefs {
 		r, err := replace.DeepestRef(opts.Swagger(), opts.ExpandOpts(false), w)
 		if err != nil {
-			return ErrAtKey(key, err)
+			return fmt.Errorf("at %s, %w", key, err)
 		}
 
 		if opts.flattenContext != nil {

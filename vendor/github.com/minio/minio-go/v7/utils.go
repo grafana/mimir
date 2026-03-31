@@ -80,7 +80,7 @@ func amzRestoreToStruct(restore string) (ongoing bool, expTime time.Time, err er
 			return false, time.Time{}, err
 		}
 	}
-	return ongoing, expTime, err
+	return
 }
 
 // xmlDecoder provide decoded value in xml.
@@ -438,7 +438,7 @@ var readFull = func(r io.Reader, buf []byte) (n int, err error) {
 	} else if n > 0 && err == io.EOF {
 		err = io.ErrUnexpectedEOF
 	}
-	return n, err
+	return
 }
 
 // regCred matches credential string in HTTP header

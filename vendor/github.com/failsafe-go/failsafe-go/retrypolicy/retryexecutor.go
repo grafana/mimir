@@ -14,7 +14,7 @@ import (
 
 // executor is a policy.Executor that handles failures according to a RetryPolicy.
 type executor[R any] struct {
-	policy.BaseExecutor[R]
+	*policy.BaseExecutor[R]
 	*retryPolicy[R]
 
 	// Mutable state

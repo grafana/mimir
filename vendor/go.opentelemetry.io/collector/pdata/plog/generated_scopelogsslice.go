@@ -11,6 +11,7 @@ import (
 	"sort"
 
 	"go.opentelemetry.io/collector/pdata/internal"
+	otlplogs "go.opentelemetry.io/collector/pdata/internal/data/protogen/logs/v1"
 )
 
 // ScopeLogsSlice logically represents a slice of ScopeLogs.
@@ -21,18 +22,18 @@ import (
 // Must use NewScopeLogsSlice function to create new instances.
 // Important: zero-initialized instance is not valid for use.
 type ScopeLogsSlice struct {
-	orig  *[]*internal.ScopeLogs
+	orig  *[]*otlplogs.ScopeLogs
 	state *internal.State
 }
 
-func newScopeLogsSlice(orig *[]*internal.ScopeLogs, state *internal.State) ScopeLogsSlice {
+func newScopeLogsSlice(orig *[]*otlplogs.ScopeLogs, state *internal.State) ScopeLogsSlice {
 	return ScopeLogsSlice{orig: orig, state: state}
 }
 
-// NewScopeLogsSlice creates a ScopeLogsSliceWrapper with 0 elements.
+// NewScopeLogsSlice creates a ScopeLogsSlice with 0 elements.
 // Can use "EnsureCapacity" to initialize with a given capacity.
 func NewScopeLogsSlice() ScopeLogsSlice {
-	orig := []*internal.ScopeLogs(nil)
+	orig := []*otlplogs.ScopeLogs(nil)
 	return newScopeLogsSlice(&orig, internal.NewState())
 }
 
@@ -89,7 +90,7 @@ func (es ScopeLogsSlice) EnsureCapacity(newCap int) {
 		return
 	}
 
-	newOrig := make([]*internal.ScopeLogs, len(*es.orig), newCap)
+	newOrig := make([]*otlplogs.ScopeLogs, len(*es.orig), newCap)
 	copy(newOrig, *es.orig)
 	*es.orig = newOrig
 }
@@ -98,7 +99,7 @@ func (es ScopeLogsSlice) EnsureCapacity(newCap int) {
 // It returns the newly added ScopeLogs.
 func (es ScopeLogsSlice) AppendEmpty() ScopeLogs {
 	es.state.AssertMutable()
-	*es.orig = append(*es.orig, internal.NewScopeLogs())
+	*es.orig = append(*es.orig, internal.NewOrigScopeLogs())
 	return es.At(es.Len() - 1)
 }
 
@@ -127,7 +128,7 @@ func (es ScopeLogsSlice) RemoveIf(f func(ScopeLogs) bool) {
 	newLen := 0
 	for i := 0; i < len(*es.orig); i++ {
 		if f(es.At(i)) {
-			internal.DeleteScopeLogs((*es.orig)[i], true)
+			internal.DeleteOrigScopeLogs((*es.orig)[i], true)
 			(*es.orig)[i] = nil
 
 			continue
@@ -151,7 +152,7 @@ func (es ScopeLogsSlice) CopyTo(dest ScopeLogsSlice) {
 	if es.orig == dest.orig {
 		return
 	}
-	*dest.orig = internal.CopyScopeLogsPtrSlice(*dest.orig, *es.orig)
+	*dest.orig = internal.CopyOrigScopeLogsSlice(*dest.orig, *es.orig)
 }
 
 // Sort sorts the ScopeLogs elements within ScopeLogsSlice given the

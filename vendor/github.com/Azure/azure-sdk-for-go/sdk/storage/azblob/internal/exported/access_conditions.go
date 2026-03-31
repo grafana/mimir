@@ -1,3 +1,6 @@
+//go:build go1.18
+// +build go1.18
+
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License. See License.txt in the project root for license information.
 
@@ -38,18 +41,3 @@ type LeaseAccessConditions = generated.LeaseAccessConditions
 
 // ModifiedAccessConditions contains a group of parameters for specifying access conditions.
 type ModifiedAccessConditions = generated.ModifiedAccessConditions
-
-type BlobModifiedAccessConditions = generated.BlobModifiedAccessConditions
-
-func FormatBlobModifiedAccessConditions(src *BlobModifiedAccessConditions) *BlobModifiedAccessConditions {
-	if src == nil {
-		return nil
-	}
-
-	return &BlobModifiedAccessConditions{
-		IfMatch:           src.IfMatch,
-		IfModifiedSince:   src.IfModifiedSince,
-		IfNoneMatch:       src.IfNoneMatch,
-		IfUnmodifiedSince: src.IfUnmodifiedSince,
-	}
-}

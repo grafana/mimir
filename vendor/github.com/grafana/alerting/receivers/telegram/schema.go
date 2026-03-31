@@ -8,14 +8,16 @@ import (
 
 const Type schema.IntegrationType = "telegram"
 
-var Schema = schema.InitSchema(schema.IntegrationTypeSchema{
-	Type:           Type,
-	Name:           "Telegram",
-	Description:    "Sends notifications to Telegram",
-	Heading:        "Telegram API settings",
-	CurrentVersion: v1.Version,
-	Versions: []schema.IntegrationSchemaVersion{
-		v1.Schema,
-		v0mimir1.Schema,
-	},
-})
+func Schema() schema.IntegrationTypeSchema {
+	return schema.IntegrationTypeSchema{
+		Type:           Type,
+		Name:           "Telegram",
+		Description:    "Sends notifications to Telegram",
+		Heading:        "Telegram API settings",
+		CurrentVersion: v1.Version,
+		Versions: []schema.IntegrationSchemaVersion{
+			v1.Schema(),
+			v0mimir1.Schema(),
+		},
+	}
+}

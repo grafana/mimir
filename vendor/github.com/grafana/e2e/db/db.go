@@ -1,4 +1,3 @@
-// Package e2edb provides pre-built database and storage service definitions for e2e tests.
 package e2edb
 
 import (

@@ -16,7 +16,7 @@ import (
 )
 
 var (
-	errNetstatHeader  = errors.New("can't parse header of netstat output")
+	errNetstatHeader  = errors.New("Can't parse header of netstat output")
 	netstatLinkRegexp = regexp.MustCompile(`^<Link#(\d+)>$`)
 )
 
@@ -29,14 +29,15 @@ func parseNetstatLine(line string) (stat *IOCountersStat, linkID *uint, err erro
 	)
 
 	if columns[0] == "Name" {
-		return nil, nil, errNetstatHeader
+		err = errNetstatHeader
+		return
 	}
 
 	// try to extract the numeric value from <Link#123>
 	if subMatch := netstatLinkRegexp.FindStringSubmatch(columns[2]); len(subMatch) == 2 {
 		numericValue, err = strconv.ParseUint(subMatch[1], 10, 64)
 		if err != nil {
-			return nil, nil, err
+			return
 		}
 		linkIDUint := uint(numericValue)
 		linkID = &linkIDUint
@@ -49,7 +50,8 @@ func parseNetstatLine(line string) (stat *IOCountersStat, linkID *uint, err erro
 		base = 0
 	}
 	if numberColumns < 11 || numberColumns > 13 {
-		return nil, nil, fmt.Errorf("line %q do have an invalid number of columns %d", line, numberColumns)
+		err = fmt.Errorf("Line %q do have an invalid number of columns %d", line, numberColumns)
+		return
 	}
 
 	parsed := make([]uint64, 0, 7)
@@ -72,7 +74,7 @@ func parseNetstatLine(line string) (stat *IOCountersStat, linkID *uint, err erro
 		}
 
 		if numericValue, err = strconv.ParseUint(target, 10, 64); err != nil {
-			return nil, nil, err
+			return
 		}
 		parsed = append(parsed, numericValue)
 	}
@@ -89,7 +91,7 @@ func parseNetstatLine(line string) (stat *IOCountersStat, linkID *uint, err erro
 	if len(parsed) == 7 {
 		stat.Dropout = parsed[6]
 	}
-	return stat, linkID, nil
+	return
 }
 
 type netstatInterface struct {
@@ -161,7 +163,7 @@ func (mapi mapInterfaceNameUsage) notTruncated() []string {
 }
 
 // Deprecated: use process.PidsWithContext instead
-func PidsWithContext(_ context.Context) ([]int32, error) {
+func PidsWithContext(ctx context.Context) ([]int32, error) {
 	return nil, common.ErrNotImplementedError
 }
 
@@ -247,23 +249,23 @@ func IOCountersWithContext(ctx context.Context, pernic bool) ([]IOCountersStat, 
 	}
 
 	if !pernic {
-		return getIOCountersAll(ret), nil
+		return getIOCountersAll(ret)
 	}
 	return ret, nil
 }
 
-func IOCountersByFileWithContext(ctx context.Context, pernic bool, _ string) ([]IOCountersStat, error) {
+func IOCountersByFileWithContext(ctx context.Context, pernic bool, filename string) ([]IOCountersStat, error) {
 	return IOCountersWithContext(ctx, pernic)
 }
 
-func FilterCountersWithContext(_ context.Context) ([]FilterStat, error) {
+func FilterCountersWithContext(ctx context.Context) ([]FilterStat, error) {
 	return nil, common.ErrNotImplementedError
 }
 
-func ConntrackStatsWithContext(_ context.Context, _ bool) ([]ConntrackStat, error) {
+func ConntrackStatsWithContext(ctx context.Context, percpu bool) ([]ConntrackStat, error) {
 	return nil, common.ErrNotImplementedError
 }
 
-func ProtoCountersWithContext(_ context.Context, _ []string) ([]ProtoCountersStat, error) {
+func ProtoCountersWithContext(ctx context.Context, protocols []string) ([]ProtoCountersStat, error) {
 	return nil, common.ErrNotImplementedError
 }

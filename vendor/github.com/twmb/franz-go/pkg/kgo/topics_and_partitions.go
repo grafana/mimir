@@ -1,10 +1,8 @@
 package kgo
 
 import (
-	"encoding/base64"
 	"encoding/hex"
 	"fmt"
-	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -19,13 +17,11 @@ import (
 // HELPERS // -- ugly types to eliminate the toil of nil maps and lookups
 /////////////
 
-func strtid(tid [16]byte) string {
-	return base64.RawURLEncoding.EncodeToString(tid[:])
-}
-
 func dupmsi32(m map[string]int32) map[string]int32 {
 	d := make(map[string]int32, len(m))
-	maps.Copy(d, m)
+	for t, ps := range m {
+		d[t] = ps
+	}
 	return d
 }
 
@@ -102,7 +98,7 @@ func (m mtps) String() string {
 	sort.Strings(ts)
 	for _, t := range ts {
 		ps = append(ps[:0], m[t]...)
-		slices.Sort(ps)
+		sort.Slice(ps, func(i, j int) bool { return ps[i] < ps[j] })
 		topicsWritten++
 		fmt.Fprintf(&sb, "%s%v", t, ps)
 		if topicsWritten < len(m) {
@@ -331,7 +327,9 @@ func (t *topicsPartitions) storeTopics(topics []string)      { t.v.Store(t.ensur
 func (t *topicsPartitions) clone() topicsPartitionsData {
 	current := t.load()
 	clone := make(map[string]*topicPartitions, len(current))
-	maps.Copy(clone, current)
+	for k, v := range current {
+		clone[k] = v
+	}
 	return clone
 }
 
@@ -441,7 +439,7 @@ func (cl *Client) storePartitionsUpdate(topic string, l *topicPartitions, lv *to
 		})
 	} else {
 		for _, pr := range unknown.buffered {
-			cl.doPartition(l, lv, pr)
+			cl.doPartitionRecord(l, lv, pr)
 		}
 	}
 }
@@ -458,7 +456,7 @@ func (cl *Client) storePartitionsUpdate(topic string, l *topicPartitions, lv *to
 //     and we need to bump errors on all stored topics and unknown topics.
 //
 //  2. if topics were missing, then the metadata request was successful but
-//     had missing data, and we need to bump errors on only what was missing.
+//     had missing data, and we need to bump errors on only what was mising.
 func (cl *Client) bumpMetadataFailForTopics(requested map[string]*topicPartitions, err error, missingTopics ...string) {
 	p := &cl.producer
 
@@ -806,8 +804,8 @@ func (k *kip951move) doMove(cl *Client) {
 			}
 			dup := *l.load()
 			r := &dup
-			r.writablePartitions = slices.Clone(r.writablePartitions)
-			r.partitions = slices.Clone(r.partitions)
+			r.writablePartitions = append([]*topicPartition{}, r.writablePartitions...)
+			r.partitions = append([]*topicPartition{}, r.partitions...)
 			lr = oldNew{l, r}
 			topics[topic] = lr
 		}

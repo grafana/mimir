@@ -1,4 +1,4 @@
-// Copyright The Prometheus Authors
+// Copyright 2015 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -137,16 +137,12 @@ var key = map[string]ItemType{
 	"ignoring":    IGNORING,
 	"group_left":  GROUP_LEFT,
 	"group_right": GROUP_RIGHT,
-	"fill":        FILL,
-	"fill_left":   FILL_LEFT,
-	"fill_right":  FILL_RIGHT,
 	"bool":        BOOL,
 
 	// Preprocessors.
 	"start": START,
 	"end":   END,
 	"step":  STEP,
-	"range": RANGE,
 }
 
 var histogramDesc = map[string]ItemType{
@@ -189,23 +185,20 @@ var ItemTypeStr = map[ItemType]string{
 	TIMES:         "x",
 	SPACE:         "<space>",
 
-	SUB:        "-",
-	ADD:        "+",
-	MUL:        "*",
-	MOD:        "%",
-	DIV:        "/",
-	EQLC:       "==",
-	NEQ:        "!=",
-	LTE:        "<=",
-	LSS:        "<",
-	GTE:        ">=",
-	GTR:        ">",
-	TRIM_UPPER: "</",
-	TRIM_LOWER: ">/",
-	EQL_REGEX:  "=~",
-	NEQ_REGEX:  "!~",
-	POW:        "^",
-	AT:         "@",
+	SUB:       "-",
+	ADD:       "+",
+	MUL:       "*",
+	MOD:       "%",
+	DIV:       "/",
+	EQLC:      "==",
+	NEQ:       "!=",
+	LTE:       "<=",
+	LSS:       "<",
+	GTE:       ">=",
+	GTR:       ">",
+	EQL_REGEX: "=~",
+	NEQ_REGEX: "!~",
+	POW:       "^",
 }
 
 func init() {
@@ -448,9 +441,6 @@ func lexStatements(l *Lexer) stateFn {
 		if t := l.peek(); t == '=' {
 			l.next()
 			l.emit(LTE)
-		} else if t := l.peek(); t == '/' {
-			l.next()
-			l.emit(TRIM_UPPER)
 		} else {
 			l.emit(LSS)
 		}
@@ -458,9 +448,6 @@ func lexStatements(l *Lexer) stateFn {
 		if t := l.peek(); t == '=' {
 			l.next()
 			l.emit(GTE)
-		} else if t := l.peek(); t == '/' {
-			l.next()
-			l.emit(TRIM_LOWER)
 		} else {
 			l.emit(GTR)
 		}
@@ -927,9 +914,6 @@ func (l *Lexer) scanDurationKeyword() bool {
 			case "step":
 				l.emit(STEP)
 				return true
-			case "range":
-				l.emit(RANGE)
-				return true
 			case "min":
 				l.emit(MIN)
 				return true
@@ -1094,17 +1078,6 @@ Loop:
 			word := l.input[l.start:l.pos]
 			switch kw, ok := key[strings.ToLower(word)]; {
 			case ok:
-				// For fill/fill_left/fill_right, only treat as keyword if followed by '('
-				// This allows using these as metric names (e.g., "fill + fill").
-				// This could be done for other keywords as well, but for the new fill
-				// modifiers this is especially important so we don't break any existing
-				// queries.
-				if kw == FILL || kw == FILL_LEFT || kw == FILL_RIGHT {
-					if !l.peekFollowedByLeftParen() {
-						l.emit(IDENTIFIER)
-						break Loop
-					}
-				}
 				l.emit(kw)
 			case !strings.Contains(word, ":"):
 				l.emit(IDENTIFIER)
@@ -1118,23 +1091,6 @@ Loop:
 		return lexValueSequence
 	}
 	return lexStatements
-}
-
-// peekFollowedByLeftParen checks if the next non-whitespace character is '('.
-// This is used for context-sensitive keywords like fill/fill_left/fill_right
-// that should only be treated as keywords when followed by '('.
-func (l *Lexer) peekFollowedByLeftParen() bool {
-	pos := l.pos
-	for {
-		if int(pos) >= len(l.input) {
-			return false
-		}
-		r, w := utf8.DecodeRuneInString(l.input[pos:])
-		if !isSpace(r) {
-			return r == '('
-		}
-		pos += posrange.Pos(w)
-	}
 }
 
 func isSpace(r rune) bool {
@@ -1218,7 +1174,7 @@ func lexDurationExpr(l *Lexer) stateFn {
 	case r == ',':
 		l.emit(COMMA)
 		return lexDurationExpr
-	case r == 's' || r == 'S' || r == 'm' || r == 'M' || r == 'r' || r == 'R':
+	case r == 's' || r == 'S' || r == 'm' || r == 'M':
 		if l.scanDurationKeyword() {
 			return lexDurationExpr
 		}

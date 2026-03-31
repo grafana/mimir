@@ -8,6 +8,7 @@ package pmetric
 
 import (
 	"go.opentelemetry.io/collector/pdata/internal"
+	otlpmetrics "go.opentelemetry.io/collector/pdata/internal/data/protogen/metrics/v1"
 )
 
 // Summary represents the type of a metric that is calculated by aggregating as a Summary of all reported double measurements over a time interval.
@@ -18,11 +19,11 @@ import (
 // Must use NewSummary function to create new instances.
 // Important: zero-initialized instance is not valid for use.
 type Summary struct {
-	orig  *internal.Summary
+	orig  *otlpmetrics.Summary
 	state *internal.State
 }
 
-func newSummary(orig *internal.Summary, state *internal.State) Summary {
+func newSummary(orig *otlpmetrics.Summary, state *internal.State) Summary {
 	return Summary{orig: orig, state: state}
 }
 
@@ -31,7 +32,7 @@ func newSummary(orig *internal.Summary, state *internal.State) Summary {
 // This must be used only in testing code. Users should use "AppendEmpty" when part of a Slice,
 // OR directly access the member if this is embedded in another struct.
 func NewSummary() Summary {
-	return newSummary(internal.NewSummary(), internal.NewState())
+	return newSummary(internal.NewOrigSummary(), internal.NewState())
 }
 
 // MoveTo moves all properties from the current struct overriding the destination and
@@ -43,7 +44,7 @@ func (ms Summary) MoveTo(dest Summary) {
 	if ms.orig == dest.orig {
 		return
 	}
-	internal.DeleteSummary(dest.orig, false)
+	internal.DeleteOrigSummary(dest.orig, false)
 	*dest.orig, *ms.orig = *ms.orig, *dest.orig
 }
 
@@ -55,5 +56,5 @@ func (ms Summary) DataPoints() SummaryDataPointSlice {
 // CopyTo copies all properties from the current struct overriding the destination.
 func (ms Summary) CopyTo(dest Summary) {
 	dest.state.AssertMutable()
-	internal.CopySummary(dest.orig, ms.orig)
+	internal.CopyOrigSummary(dest.orig, ms.orig)
 }

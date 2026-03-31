@@ -905,9 +905,7 @@ func (b *BitSet) DifferenceCardinality(compare *BitSet) uint {
 		l = b.wordCount()
 	}
 	cnt := uint64(0)
-	if l > 0 {
-		cnt += popcntMaskSlice(b.set[:l], compare.set[:l])
-	}
+	cnt += popcntMaskSlice(b.set[:l], compare.set[:l])
 	cnt += popcntSlice(b.set[l:])
 	return uint(cnt)
 }
@@ -962,9 +960,6 @@ func (b *BitSet) Intersection(compare *BitSet) (result *BitSet) {
 func (b *BitSet) IntersectionCardinality(compare *BitSet) uint {
 	panicIfNull(b)
 	panicIfNull(compare)
-	if b.length == 0 || compare.length == 0 {
-		return 0
-	}
 	b, compare = sortByLength(b, compare)
 	cnt := popcntAndSlice(b.set, compare.set)
 	return uint(cnt)
@@ -1021,10 +1016,7 @@ func (b *BitSet) UnionCardinality(compare *BitSet) uint {
 	panicIfNull(b)
 	panicIfNull(compare)
 	b, compare = sortByLength(b, compare)
-	cnt := uint64(0)
-	if len(b.set) > 0 {
-		cnt += popcntOrSlice(b.set, compare.set)
-	}
+	cnt := popcntOrSlice(b.set, compare.set)
 	if len(compare.set) > len(b.set) {
 		cnt += popcntSlice(compare.set[len(b.set):])
 	}
@@ -1079,10 +1071,7 @@ func (b *BitSet) SymmetricDifferenceCardinality(compare *BitSet) uint {
 	panicIfNull(b)
 	panicIfNull(compare)
 	b, compare = sortByLength(b, compare)
-	cnt := uint64(0)
-	if len(b.set) > 0 {
-		cnt += popcntXorSlice(b.set, compare.set)
-	}
+	cnt := popcntXorSlice(b.set, compare.set)
 	if len(compare.set) > len(b.set) {
 		cnt += popcntSlice(compare.set[len(b.set):])
 	}
@@ -1396,36 +1385,16 @@ func (b *BitSet) UnmarshalJSON(data []byte) error {
 // Rank returns the number of set bits up to and including the index
 // that are set in the bitset.
 // See https://en.wikipedia.org/wiki/Ranking#Ranking_in_statistics
-func (b *BitSet) Rank(index uint) (rank uint) {
-	index++ // Rank is up to and including
-
-	// needed more than once
-	length := len(b.set)
-
-	// TODO: built-in min requires go1.21 or later
-	// idx := min(int(index>>6), len(b.set))
-	idx := int(index >> 6)
-	if idx > length {
-		idx = length
+func (b *BitSet) Rank(index uint) uint {
+	if index >= b.length {
+		return b.Count()
 	}
-
-	// sum up the popcounts until idx ...
-	// TODO: cannot range over idx (...): requires go1.22 or later
-	// for j := range idx {
-	for j := 0; j < idx; j++ {
-		if w := b.set[j]; w != 0 {
-			rank += uint(bits.OnesCount64(w))
-		}
+	leftover := (index + 1) & 63
+	answer := uint(popcntSlice(b.set[:(index+1)>>6]))
+	if leftover != 0 {
+		answer += uint(bits.OnesCount64(b.set[(index+1)>>6] << (64 - leftover)))
 	}
-
-	// ... plus partial word at idx,
-	// make Rank inlineable and faster in the end
-	// don't test index&63 != 0, just add, less branching
-	if idx < length {
-		rank += uint(bits.OnesCount64(b.set[idx] << (64 - index&63)))
-	}
-
-	return
+	return answer
 }
 
 // Select returns the index of the jth set bit, where j is the argument.
@@ -1449,13 +1418,18 @@ func (b *BitSet) Select(index uint) uint {
 
 // top detects the top bit set
 func (b *BitSet) top() (uint, bool) {
-	for idx := len(b.set) - 1; idx >= 0; idx-- {
-		if word := b.set[idx]; word != 0 {
-			return uint(idx<<log2WordSize+bits.Len64(word)) - 1, true
-		}
+	panicIfNull(b)
+
+	idx := len(b.set) - 1
+	for ; idx >= 0 && b.set[idx] == 0; idx-- {
 	}
 
-	return 0, false
+	// no set bits
+	if idx < 0 {
+		return 0, false
+	}
+
+	return uint(idx*wordSize+bits.Len64(b.set[idx])) - 1, true
 }
 
 // ShiftLeft shifts the bitset like << operation would do.
@@ -1484,7 +1458,7 @@ func (b *BitSet) ShiftLeft(bits uint) {
 	dst := b.set
 
 	// not using extendSet() to avoid unneeded data copying
-	nsize := wordsNeeded(top + bits + 1)
+	nsize := wordsNeeded(top + bits)
 	if len(b.set) < nsize {
 		dst = make([]uint64, nsize)
 	}
@@ -1531,7 +1505,7 @@ func (b *BitSet) ShiftRight(bits uint) {
 		return
 	}
 
-	if bits > top {
+	if bits >= top {
 		b.set = make([]uint64, wordsNeeded(b.length))
 		return
 	}
@@ -1555,7 +1529,7 @@ func (b *BitSet) ShiftRight(bits uint) {
 		}
 	}
 
-	for i := int(idx-pages) + 1; i < len(b.set); i++ {
+	for i := int(idx-pages) + 1; i <= int(idx); i++ {
 		b.set[i] = 0
 	}
 }

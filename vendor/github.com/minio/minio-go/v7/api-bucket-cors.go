@@ -26,15 +26,7 @@ import (
 	"github.com/minio/minio-go/v7/pkg/s3utils"
 )
 
-// SetBucketCors sets the Cross-Origin Resource Sharing (CORS) configuration for the bucket.
-// If corsConfig is nil, the existing CORS configuration will be removed.
-//
-// Parameters:
-//   - ctx: Context for request cancellation and timeout
-//   - bucketName: Name of the bucket
-//   - corsConfig: CORS configuration to apply (nil to remove existing configuration)
-//
-// Returns an error if the operation fails.
+// SetBucketCors sets the cors configuration for the bucket
 func (c *Client) SetBucketCors(ctx context.Context, bucketName string, corsConfig *cors.Config) error {
 	if err := s3utils.CheckValidBucketName(bucketName); err != nil {
 		return err
@@ -98,14 +90,7 @@ func (c *Client) removeBucketCors(ctx context.Context, bucketName string) error 
 	return nil
 }
 
-// GetBucketCors retrieves the Cross-Origin Resource Sharing (CORS) configuration from the bucket.
-// If no CORS configuration exists, returns nil with no error.
-//
-// Parameters:
-//   - ctx: Context for request cancellation and timeout
-//   - bucketName: Name of the bucket
-//
-// Returns the CORS configuration or an error if the operation fails.
+// GetBucketCors returns the current cors
 func (c *Client) GetBucketCors(ctx context.Context, bucketName string) (*cors.Config, error) {
 	if err := s3utils.CheckValidBucketName(bucketName); err != nil {
 		return nil, err

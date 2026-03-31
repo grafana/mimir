@@ -11,6 +11,7 @@ import (
 	"strconv"
 
 	"go.opentelemetry.io/collector/pdata/internal"
+	otlpcommon "go.opentelemetry.io/collector/pdata/internal/data/protogen/common/v1"
 )
 
 // ValueType specifies the type of Value.
@@ -66,85 +67,85 @@ func (avt ValueType) String() string {
 //
 // Important: zero-initialized instance is not valid for use. All Value functions below must
 // be called only on instances that are created via NewValue+ functions.
-type Value internal.ValueWrapper
+type Value internal.Value
 
 // NewValueEmpty creates a new Value with an empty value.
 func NewValueEmpty() Value {
-	return newValue(&internal.AnyValue{}, internal.NewState())
+	return newValue(&otlpcommon.AnyValue{}, internal.NewState())
 }
 
 // NewValueStr creates a new Value with the given string value.
 func NewValueStr(v string) Value {
-	ov := internal.NewAnyValueStringValue()
+	ov := internal.NewOrigAnyValueStringValue()
 	ov.StringValue = v
-	orig := internal.NewAnyValue()
+	orig := internal.NewOrigAnyValue()
 	orig.Value = ov
 	return newValue(orig, internal.NewState())
 }
 
 // NewValueInt creates a new Value with the given int64 value.
 func NewValueInt(v int64) Value {
-	ov := internal.NewAnyValueIntValue()
+	ov := internal.NewOrigAnyValueIntValue()
 	ov.IntValue = v
-	orig := internal.NewAnyValue()
+	orig := internal.NewOrigAnyValue()
 	orig.Value = ov
 	return newValue(orig, internal.NewState())
 }
 
 // NewValueDouble creates a new Value with the given float64 value.
 func NewValueDouble(v float64) Value {
-	ov := internal.NewAnyValueDoubleValue()
+	ov := internal.NewOrigAnyValueDoubleValue()
 	ov.DoubleValue = v
-	orig := internal.NewAnyValue()
+	orig := internal.NewOrigAnyValue()
 	orig.Value = ov
 	return newValue(orig, internal.NewState())
 }
 
 // NewValueBool creates a new Value with the given bool value.
 func NewValueBool(v bool) Value {
-	ov := internal.NewAnyValueBoolValue()
+	ov := internal.NewOrigAnyValueBoolValue()
 	ov.BoolValue = v
-	orig := internal.NewAnyValue()
+	orig := internal.NewOrigAnyValue()
 	orig.Value = ov
 	return newValue(orig, internal.NewState())
 }
 
 // NewValueMap creates a new Value of map type.
 func NewValueMap() Value {
-	ov := internal.NewAnyValueKvlistValue()
-	ov.KvlistValue = internal.NewKeyValueList()
-	orig := internal.NewAnyValue()
+	ov := internal.NewOrigAnyValueKvlistValue()
+	ov.KvlistValue = internal.NewOrigKeyValueList()
+	orig := internal.NewOrigAnyValue()
 	orig.Value = ov
 	return newValue(orig, internal.NewState())
 }
 
 // NewValueSlice creates a new Value of array type.
 func NewValueSlice() Value {
-	ov := internal.NewAnyValueArrayValue()
-	ov.ArrayValue = internal.NewArrayValue()
-	orig := internal.NewAnyValue()
+	ov := internal.NewOrigAnyValueArrayValue()
+	ov.ArrayValue = internal.NewOrigArrayValue()
+	orig := internal.NewOrigAnyValue()
 	orig.Value = ov
 	return newValue(orig, internal.NewState())
 }
 
 // NewValueBytes creates a new empty Value of byte type.
 func NewValueBytes() Value {
-	ov := internal.NewAnyValueBytesValue()
-	orig := internal.NewAnyValue()
+	ov := internal.NewOrigAnyValueBytesValue()
+	orig := internal.NewOrigAnyValue()
 	orig.Value = ov
 	return newValue(orig, internal.NewState())
 }
 
-func newValue(orig *internal.AnyValue, state *internal.State) Value {
-	return Value(internal.NewValueWrapper(orig, state))
+func newValue(orig *otlpcommon.AnyValue, state *internal.State) Value {
+	return Value(internal.NewValue(orig, state))
 }
 
-func (v Value) getOrig() *internal.AnyValue {
-	return internal.GetValueOrig(internal.ValueWrapper(v))
+func (v Value) getOrig() *otlpcommon.AnyValue {
+	return internal.GetOrigValue(internal.Value(v))
 }
 
 func (v Value) getState() *internal.State {
-	return internal.GetValueState(internal.ValueWrapper(v))
+	return internal.GetValueState(internal.Value(v))
 }
 
 // FromRaw sets the value from the given raw value.
@@ -166,6 +167,7 @@ func (v Value) FromRaw(iv any) error {
 	case int64:
 		v.SetInt(tv)
 	case uint:
+		//nolint:gosec
 		v.SetInt(int64(tv))
 	case uint8:
 		v.SetInt(int64(tv))
@@ -174,6 +176,7 @@ func (v Value) FromRaw(iv any) error {
 	case uint32:
 		v.SetInt(int64(tv))
 	case uint64:
+		//nolint:gosec
 		v.SetInt(int64(tv))
 	case float32:
 		v.SetDouble(float64(tv))
@@ -197,19 +200,19 @@ func (v Value) FromRaw(iv any) error {
 // Calling this function on zero-initialized Value will cause a panic.
 func (v Value) Type() ValueType {
 	switch v.getOrig().Value.(type) {
-	case *internal.AnyValue_StringValue:
+	case *otlpcommon.AnyValue_StringValue:
 		return ValueTypeStr
-	case *internal.AnyValue_BoolValue:
+	case *otlpcommon.AnyValue_BoolValue:
 		return ValueTypeBool
-	case *internal.AnyValue_IntValue:
+	case *otlpcommon.AnyValue_IntValue:
 		return ValueTypeInt
-	case *internal.AnyValue_DoubleValue:
+	case *otlpcommon.AnyValue_DoubleValue:
 		return ValueTypeDouble
-	case *internal.AnyValue_KvlistValue:
+	case *otlpcommon.AnyValue_KvlistValue:
 		return ValueTypeMap
-	case *internal.AnyValue_ArrayValue:
+	case *otlpcommon.AnyValue_ArrayValue:
 		return ValueTypeSlice
-	case *internal.AnyValue_BytesValue:
+	case *otlpcommon.AnyValue_BytesValue:
 		return ValueTypeBytes
 	}
 	return ValueTypeEmpty
@@ -248,7 +251,7 @@ func (v Value) Map() Map {
 	if kvlist == nil {
 		return Map{}
 	}
-	return newMap(&kvlist.Values, internal.GetValueState(internal.ValueWrapper(v)))
+	return newMap(&kvlist.Values, internal.GetValueState(internal.Value(v)))
 }
 
 // Slice returns the slice value associated with this Value.
@@ -259,18 +262,18 @@ func (v Value) Slice() Slice {
 	if arr == nil {
 		return Slice{}
 	}
-	return newSlice(&arr.Values, internal.GetValueState(internal.ValueWrapper(v)))
+	return newSlice(&arr.Values, internal.GetValueState(internal.Value(v)))
 }
 
 // Bytes returns the ByteSlice value associated with this Value.
 // If the function is called on zero-initialized Value or if the Type() is not ValueTypeBytes
 // then returns an invalid ByteSlice object. Note that using such slice can cause panic.
 func (v Value) Bytes() ByteSlice {
-	bv, ok := v.getOrig().GetValue().(*internal.AnyValue_BytesValue)
+	bv, ok := v.getOrig().GetValue().(*otlpcommon.AnyValue_BytesValue)
 	if !ok {
 		return ByteSlice{}
 	}
-	return ByteSlice(internal.NewByteSliceWrapper(&bv.BytesValue, internal.GetValueState(internal.ValueWrapper(v))))
+	return ByteSlice(internal.NewByteSlice(&bv.BytesValue, internal.GetValueState(internal.Value(v))))
 }
 
 // SetStr replaces the string value associated with this Value,
@@ -281,8 +284,8 @@ func (v Value) Bytes() ByteSlice {
 func (v Value) SetStr(sv string) {
 	v.getState().AssertMutable()
 	// Delete everything but the AnyValue object itself.
-	internal.DeleteAnyValue(v.getOrig(), false)
-	ov := internal.NewAnyValueStringValue()
+	internal.DeleteOrigAnyValue(v.getOrig(), false)
+	ov := internal.NewOrigAnyValueStringValue()
 	ov.StringValue = sv
 	v.getOrig().Value = ov
 }
@@ -293,8 +296,8 @@ func (v Value) SetStr(sv string) {
 func (v Value) SetInt(iv int64) {
 	v.getState().AssertMutable()
 	// Delete everything but the AnyValue object itself.
-	internal.DeleteAnyValue(v.getOrig(), false)
-	ov := internal.NewAnyValueIntValue()
+	internal.DeleteOrigAnyValue(v.getOrig(), false)
+	ov := internal.NewOrigAnyValueIntValue()
 	ov.IntValue = iv
 	v.getOrig().Value = ov
 }
@@ -305,8 +308,8 @@ func (v Value) SetInt(iv int64) {
 func (v Value) SetDouble(dv float64) {
 	v.getState().AssertMutable()
 	// Delete everything but the AnyValue object itself.
-	internal.DeleteAnyValue(v.getOrig(), false)
-	ov := internal.NewAnyValueDoubleValue()
+	internal.DeleteOrigAnyValue(v.getOrig(), false)
+	ov := internal.NewOrigAnyValueDoubleValue()
 	ov.DoubleValue = dv
 	v.getOrig().Value = ov
 }
@@ -317,8 +320,8 @@ func (v Value) SetDouble(dv float64) {
 func (v Value) SetBool(bv bool) {
 	v.getState().AssertMutable()
 	// Delete everything but the AnyValue object itself.
-	internal.DeleteAnyValue(v.getOrig(), false)
-	ov := internal.NewAnyValueBoolValue()
+	internal.DeleteOrigAnyValue(v.getOrig(), false)
+	ov := internal.NewOrigAnyValueBoolValue()
 	ov.BoolValue = bv
 	v.getOrig().Value = ov
 }
@@ -328,10 +331,10 @@ func (v Value) SetBool(bv bool) {
 func (v Value) SetEmptyBytes() ByteSlice {
 	v.getState().AssertMutable()
 	// Delete everything but the AnyValue object itself.
-	internal.DeleteAnyValue(v.getOrig(), false)
-	bv := internal.NewAnyValueBytesValue()
+	internal.DeleteOrigAnyValue(v.getOrig(), false)
+	bv := internal.NewOrigAnyValueBytesValue()
 	v.getOrig().Value = bv
-	return ByteSlice(internal.NewByteSliceWrapper(&bv.BytesValue, v.getState()))
+	return ByteSlice(internal.NewByteSlice(&bv.BytesValue, v.getState()))
 }
 
 // SetEmptyMap sets value to an empty map and returns it.
@@ -339,9 +342,9 @@ func (v Value) SetEmptyBytes() ByteSlice {
 func (v Value) SetEmptyMap() Map {
 	v.getState().AssertMutable()
 	// Delete everything but the AnyValue object itself.
-	internal.DeleteAnyValue(v.getOrig(), false)
-	ov := internal.NewAnyValueKvlistValue()
-	ov.KvlistValue = internal.NewKeyValueList()
+	internal.DeleteOrigAnyValue(v.getOrig(), false)
+	ov := internal.NewOrigAnyValueKvlistValue()
+	ov.KvlistValue = internal.NewOrigKeyValueList()
 	v.getOrig().Value = ov
 	return newMap(&ov.KvlistValue.Values, v.getState())
 }
@@ -351,9 +354,9 @@ func (v Value) SetEmptyMap() Map {
 func (v Value) SetEmptySlice() Slice {
 	v.getState().AssertMutable()
 	// Delete everything but the AnyValue object itself.
-	internal.DeleteAnyValue(v.getOrig(), false)
-	ov := internal.NewAnyValueArrayValue()
-	ov.ArrayValue = internal.NewArrayValue()
+	internal.DeleteOrigAnyValue(v.getOrig(), false)
+	ov := internal.NewOrigAnyValueArrayValue()
+	ov.ArrayValue = internal.NewOrigArrayValue()
 	v.getOrig().Value = ov
 	return newSlice(&ov.ArrayValue.Values, v.getState())
 }
@@ -376,7 +379,7 @@ func (v Value) MoveTo(dest Value) {
 // Calling this function on zero-initialized Value will cause a panic.
 func (v Value) CopyTo(dest Value) {
 	dest.getState().AssertMutable()
-	internal.CopyAnyValue(dest.getOrig(), v.getOrig())
+	internal.CopyOrigAnyValue(dest.getOrig(), v.getOrig())
 }
 
 // AsString converts an OTLP Value object of any type to its equivalent string

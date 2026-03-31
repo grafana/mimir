@@ -1,4 +1,4 @@
-// Copyright The Prometheus Authors
+// Copyright 2025 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -19,10 +19,20 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
+const (
+	// Special label names and selectors for schema.Metadata fields.
+	// They are currently private to ensure __name__, __type__ and __unit__ are used
+	// together and remain extensible in Prometheus. See NewMetadataFromLabels and Metadata
+	// methods for the interactions with the labels package structs.
+	metricName = "__name__"
+	metricType = "__type__"
+	metricUnit = "__unit__"
+)
+
 // IsMetadataLabel returns true if the given label name is a special
 // schema Metadata label.
 func IsMetadataLabel(name string) bool {
-	return name == model.MetricNameLabel || name == model.MetricTypeLabel || name == model.MetricUnitLabel
+	return name == metricName || name == metricType || name == metricUnit
 }
 
 // Metadata represents the core metric schema/metadata elements that:
@@ -69,13 +79,13 @@ type Metadata struct {
 // NewMetadataFromLabels returns the schema metadata from the labels.
 func NewMetadataFromLabels(ls labels.Labels) Metadata {
 	typ := model.MetricTypeUnknown
-	if got := ls.Get(model.MetricTypeLabel); got != "" {
+	if got := ls.Get(metricType); got != "" {
 		typ = model.MetricType(got)
 	}
 	return Metadata{
-		Name: ls.Get(model.MetricNameLabel),
+		Name: ls.Get(metricName),
 		Type: typ,
-		Unit: ls.Get(model.MetricUnitLabel),
+		Unit: ls.Get(metricUnit),
 	}
 }
 
@@ -89,11 +99,11 @@ func (m Metadata) IsTypeEmpty() bool {
 // IsEmptyFor returns true.
 func (m Metadata) IsEmptyFor(labelName string) bool {
 	switch labelName {
-	case model.MetricNameLabel:
+	case metricName:
 		return m.Name == ""
-	case model.MetricTypeLabel:
+	case metricType:
 		return m.IsTypeEmpty()
-	case model.MetricUnitLabel:
+	case metricUnit:
 		return m.Unit == ""
 	default:
 		return true
@@ -104,13 +114,13 @@ func (m Metadata) IsEmptyFor(labelName string) bool {
 // Empty Metadata fields will be ignored (not added).
 func (m Metadata) AddToLabels(b *labels.ScratchBuilder) {
 	if m.Name != "" {
-		b.Add(model.MetricNameLabel, m.Name)
+		b.Add(metricName, m.Name)
 	}
 	if !m.IsTypeEmpty() {
-		b.Add(model.MetricTypeLabel, string(m.Type))
+		b.Add(metricType, string(m.Type))
 	}
 	if m.Unit != "" {
-		b.Add(model.MetricUnitLabel, m.Unit)
+		b.Add(metricUnit, m.Unit)
 	}
 }
 
@@ -118,15 +128,15 @@ func (m Metadata) AddToLabels(b *labels.ScratchBuilder) {
 // It follows the labels.Builder.Set semantics, so empty Metadata fields will
 // remove the corresponding existing labels if they were previously set.
 func (m Metadata) SetToLabels(b *labels.Builder) {
-	b.Set(model.MetricNameLabel, m.Name)
+	b.Set(metricName, m.Name)
 	if m.Type == model.MetricTypeUnknown {
 		// Unknown equals empty semantically, so remove the label on unknown too as per
 		// method signature comment.
-		b.Set(model.MetricTypeLabel, "")
+		b.Set(metricType, "")
 	} else {
-		b.Set(model.MetricTypeLabel, string(m.Type))
+		b.Set(metricType, string(m.Type))
 	}
-	b.Set(model.MetricUnitLabel, m.Unit)
+	b.Set(metricUnit, m.Unit)
 }
 
 // NewIgnoreOverriddenMetadataLabelScratchBuilder creates IgnoreOverriddenMetadataLabelScratchBuilder.

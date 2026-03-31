@@ -19,11 +19,12 @@ package z
 import (
 	"encoding/binary"
 	"fmt"
-	"log"
+	"io/ioutil"
 	"os"
 	"sort"
 	"sync/atomic"
 
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
 
@@ -91,7 +92,7 @@ func NewBufferTmp(dir string, capacity int) (*Buffer, error) {
 	if dir == "" {
 		dir = tmpDir
 	}
-	file, err := os.CreateTemp(dir, "buffer")
+	file, err := ioutil.TempFile(dir, "buffer")
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +200,7 @@ func (b *Buffer) Grow(n int) {
 		// If autoMmap gets triggered, copy the slice over to an mmaped file.
 		if b.autoMmapAfter > 0 && b.curSz > b.autoMmapAfter {
 			b.bufType = UseMmap
-			file, err := os.CreateTemp(b.autoMmapDir, "")
+			file, err := ioutil.TempFile(b.autoMmapDir, "")
 			if err != nil {
 				panic(err)
 			}
@@ -253,8 +254,8 @@ func (b *Buffer) AllocateOffset(n int) int {
 }
 
 func (b *Buffer) writeLen(sz int) {
-	buf := b.Allocate(8)
-	binary.BigEndian.PutUint64(buf, uint64(sz))
+	buf := b.Allocate(4)
+	binary.BigEndian.PutUint32(buf, uint32(sz))
 }
 
 // SliceAllocate would encode the size provided into the buffer, followed by a call to Allocate,
@@ -262,7 +263,7 @@ func (b *Buffer) writeLen(sz int) {
 // this big buffer.
 // Note that SliceAllocate should NOT be mixed with normal calls to Write.
 func (b *Buffer) SliceAllocate(sz int) []byte {
-	b.Grow(8 + sz)
+	b.Grow(4 + sz)
 	b.writeLen(sz)
 	return b.Allocate(sz)
 }
@@ -280,9 +281,7 @@ func (b *Buffer) SliceIterate(f func(slice []byte) error) error {
 	if b.IsEmpty() {
 		return nil
 	}
-
-	next := b.StartOffset()
-	var slice []byte
+	slice, next := []byte{}, b.StartOffset()
 	for next >= 0 {
 		slice, next = b.Slice(next)
 		if len(slice) == 0 {
@@ -292,7 +291,6 @@ func (b *Buffer) SliceIterate(f func(slice []byte) error) error {
 			return err
 		}
 	}
-
 	return nil
 }
 
@@ -341,19 +339,19 @@ func (s *sortHelper) sortSmall(start, end int) {
 	})
 	// Now we iterate over the s.small offsets and copy over the slices. The result is now in order.
 	for _, off := range s.small {
-		_, _ = s.tmp.Write(rawSlice(s.b.buf[off:]))
+		s.tmp.Write(rawSlice(s.b.buf[off:]))
 	}
 	assert(end-start == copy(s.b.buf[start:end], s.tmp.Bytes()))
 }
 
 func assert(b bool) {
 	if !b {
-		log.Fatalf("%+v", errors.Errorf("Assertion failure"))
+		glog.Fatalf("%+v", errors.Errorf("Assertion failure"))
 	}
 }
 func check(err error) {
 	if err != nil {
-		log.Fatalf("%+v", err)
+		glog.Fatalf("%+v", err)
 	}
 }
 func check2(_ interface{}, err error) {
@@ -394,7 +392,7 @@ func (s *sortHelper) merge(left, right []byte, start, end int) {
 		rs = rawSlice(right)
 
 		// We skip the first 4 bytes in the rawSlice, because that stores the length.
-		if s.less(ls[8:], rs[8:]) {
+		if s.less(ls[4:], rs[4:]) {
 			copyLeft()
 		} else {
 			copyRight()
@@ -456,7 +454,7 @@ func (b *Buffer) SortSliceBetween(start, end int, less LessFunc) {
 		small:   make([]int, 0, 1024),
 		tmp:     NewBuffer(szTmp, b.tag),
 	}
-	defer func() { _ = s.tmp.Release() }()
+	defer s.tmp.Release()
 
 	left := offsets[0]
 	for _, off := range offsets[1:] {
@@ -467,8 +465,8 @@ func (b *Buffer) SortSliceBetween(start, end int, less LessFunc) {
 }
 
 func rawSlice(buf []byte) []byte {
-	sz := binary.BigEndian.Uint64(buf)
-	return buf[:8+int(sz)]
+	sz := binary.BigEndian.Uint32(buf)
+	return buf[:4+int(sz)]
 }
 
 // Slice would return the slice written at offset.
@@ -477,8 +475,8 @@ func (b *Buffer) Slice(offset int) ([]byte, int) {
 		return nil, -1
 	}
 
-	sz := binary.BigEndian.Uint64(b.buf[offset:])
-	start := offset + 8
+	sz := binary.BigEndian.Uint32(b.buf[offset:])
+	start := offset + 4
 	next := start + int(sz)
 	res := b.buf[start:next]
 	if next >= int(b.offset) {

@@ -210,13 +210,9 @@ func (c *Client) putObjectMultipartStreamFromReadAt(ctx context.Context, bucketN
 				}
 				objPart, err := c.uploadPart(ctx, p)
 				if err != nil {
-					select {
-					case <-ctx.Done():
-					case uploadedPartsCh <- uploadedPartRes{
+					uploadedPartsCh <- uploadedPartRes{
 						Error: err,
-					}:
 					}
-
 					// Exit the goroutine.
 					return
 				}
@@ -225,13 +221,10 @@ func (c *Client) putObjectMultipartStreamFromReadAt(ctx context.Context, bucketN
 				uploadReq.Part = objPart
 
 				// Send successful part info through the channel.
-				select {
-				case <-ctx.Done():
-				case uploadedPartsCh <- uploadedPartRes{
+				uploadedPartsCh <- uploadedPartRes{
 					Size:    objPart.Size,
 					PartNum: uploadReq.PartNum,
 					Part:    uploadReq.Part,
-				}:
 				}
 			}
 		}(partSize)
@@ -525,7 +518,7 @@ func (c *Client) putObjectMultipartStreamParallel(ctx context.Context, bucketNam
 			break
 		}
 
-		if rerr != nil && rerr != io.ErrUnexpectedEOF && rerr != io.EOF {
+		if rerr != nil && rerr != io.ErrUnexpectedEOF && err != io.EOF {
 			cancel()
 			wg.Wait()
 			return UploadInfo{}, rerr

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"hash"
+	"hash/fnv"
 	"io"
 )
 
@@ -43,6 +44,7 @@ func NewCountingBloomFilter(n uint, b uint8, fpRate float64) *CountingBloomFilte
 	)
 	return &CountingBloomFilter{
 		buckets:     NewBuckets(m, b),
+		hash:        fnv.New64(),
 		m:           m,
 		k:           k,
 		indexBuffer: make([]uint, k),
@@ -245,6 +247,9 @@ func (b *CountingBloomFilter) GobEncode() ([]byte, error) {
 func (b *CountingBloomFilter) GobDecode(data []byte) error {
 	buf := bytes.NewBuffer(data)
 	_, err := b.ReadFrom(buf)
+	if b.hash == nil {
+		b.hash = fnv.New64()
+	}
 
 	return err
 }

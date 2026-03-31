@@ -1,4 +1,4 @@
-// Copyright The Prometheus Authors
+// Copyright 2024 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -20,7 +20,7 @@ import (
 	"os"
 )
 
-func NewBufioWriterWithSize(f *os.File, size int) (BufWriter, error) {
+func NewBufioWriterWithSeek(f *os.File, size int) (BufWriter, error) {
 	return &writer{bufio.NewWriterSize(f, size)}, nil
 }
 

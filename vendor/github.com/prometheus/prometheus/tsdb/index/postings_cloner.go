@@ -41,7 +41,7 @@ func (c *PostingsCloner) Clone(context.Context) Postings {
 	if c.err != nil {
 		return ErrPostings(c.err)
 	}
-	return NewListPostings(c.ids)
+	return newListPostings(c.ids...)
 }
 
 func (c *PostingsCloner) NumPostings() int {

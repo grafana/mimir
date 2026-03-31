@@ -1,4 +1,4 @@
-// Copyright The Prometheus Authors
+// Copyright 2017 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -62,7 +62,8 @@ func ReadLabels(fn string, n int) ([]Labels, error) {
 		r := strings.NewReplacer("\"", "", "{", "", "}", "")
 		s := r.Replace(scanner.Text())
 
-		for labelChunk := range strings.SplitSeq(s, ",") {
+		labelChunks := strings.Split(s, ",")
+		for _, labelChunk := range labelChunks {
 			split := strings.Split(labelChunk, ":")
 			b.Add(split[0], split[1])
 		}

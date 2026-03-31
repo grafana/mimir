@@ -1,4 +1,5 @@
 //go:build !tinygo
+// +build !tinygo
 
 package msgp
 
@@ -8,7 +9,7 @@ import (
 )
 
 // ctxString converts the incoming interface{} slice into a single string.
-func ctxString(ctx []any) string {
+func ctxString(ctx []interface{}) string {
 	out := ""
 	for idx, cv := range ctx {
 		if idx > 0 {

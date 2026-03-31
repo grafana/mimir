@@ -9,7 +9,6 @@ import (
 	"runtime"
 
 	stats "github.com/lufia/plan9stats"
-
 	"github.com/shirou/gopsutil/v4/internal/common"
 )
 
@@ -17,7 +16,7 @@ func Times(percpu bool) ([]TimesStat, error) {
 	return TimesWithContext(context.Background(), percpu)
 }
 
-func TimesWithContext(ctx context.Context, _ bool) ([]TimesStat, error) {
+func TimesWithContext(ctx context.Context, percpu bool) ([]TimesStat, error) {
 	// BUG: percpu flag is not supported yet.
 	root := os.Getenv("HOST_ROOT")
 	c, err := stats.ReadCPUType(ctx, stats.WithRootDir(root))
@@ -42,10 +41,10 @@ func Info() ([]InfoStat, error) {
 	return InfoWithContext(context.Background())
 }
 
-func InfoWithContext(_ context.Context) ([]InfoStat, error) {
+func InfoWithContext(ctx context.Context) ([]InfoStat, error) {
 	return []InfoStat{}, common.ErrNotImplementedError
 }
 
-func CountsWithContext(_ context.Context, _ bool) (int, error) {
+func CountsWithContext(ctx context.Context, logical bool) (int, error) {
 	return runtime.NumCPU(), nil
 }

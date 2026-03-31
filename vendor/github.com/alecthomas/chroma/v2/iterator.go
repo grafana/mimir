@@ -58,7 +58,6 @@ func Literator(tokens ...Token) Iterator {
 // SplitTokensIntoLines splits tokens containing newlines in two.
 func SplitTokensIntoLines(tokens []Token) (out [][]Token) {
 	var line []Token // nolint: prealloc
-tokenLoop:
 	for _, token := range tokens {
 		for strings.Contains(token.Value, "\n") {
 			parts := strings.SplitAfterN(token.Value, "\n", 2)
@@ -71,11 +70,6 @@ tokenLoop:
 			line = append(line, clone)
 			out = append(out, line)
 			line = nil
-
-			// If the tail token is empty, don't emit it.
-			if len(token.Value) == 0 {
-				continue tokenLoop
-			}
 		}
 		line = append(line, token)
 	}
@@ -89,5 +83,5 @@ tokenLoop:
 			out = out[:len(out)-1]
 		}
 	}
-	return out
+	return
 }

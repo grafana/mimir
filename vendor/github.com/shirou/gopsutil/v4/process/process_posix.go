@@ -26,9 +26,7 @@ func getTerminalMap() (map[uint64]string, error) {
 	ret := make(map[uint64]string)
 	var termfiles []string
 
-	devPath := common.HostDev()
-
-	d, err := os.Open(devPath)
+	d, err := os.Open("/dev")
 	if err != nil {
 		return nil, err
 	}
@@ -39,39 +37,41 @@ func getTerminalMap() (map[uint64]string, error) {
 		return nil, err
 	}
 	for _, devname := range devnames {
-		if strings.HasPrefix(devname, "tty") {
-			termfiles = append(termfiles, filepath.Join(devPath, devname))
+		if strings.HasPrefix(devname, "/dev/tty") {
+			termfiles = append(termfiles, "/dev/tty/"+devname)
 		}
 	}
 
 	var ptsnames []string
-	ptsPath := filepath.Join(devPath, "pts")
-	ptsd, err := os.Open(ptsPath)
+	ptsd, err := os.Open("/dev/pts")
 	if err != nil {
-		ptsnames, _ = filepath.Glob(filepath.Join(devPath, "ttyp*"))
+		ptsnames, _ = filepath.Glob("/dev/ttyp*")
 		if ptsnames == nil {
 			return nil, err
 		}
-		termfiles = append(termfiles, ptsnames...)
-	} else {
+	}
+	defer ptsd.Close()
+
+	if ptsnames == nil {
 		defer ptsd.Close()
 		ptsnames, err = ptsd.Readdirnames(-1)
 		if err != nil {
 			return nil, err
 		}
 		for _, ptsname := range ptsnames {
-			termfiles = append(termfiles, filepath.Join(ptsPath, ptsname))
+			termfiles = append(termfiles, "/dev/pts/"+ptsname)
 		}
+	} else {
+		termfiles = ptsnames
 	}
 
 	for _, name := range termfiles {
 		stat := unix.Stat_t{}
-		err = unix.Stat(name, &stat)
-		if err != nil {
+		if err = unix.Stat(name, &stat); err != nil {
 			return nil, err
 		}
 		rdev := uint64(stat.Rdev)
-		ret[rdev] = strings.TrimPrefix(name, devPath+string(os.PathSeparator))
+		ret[rdev] = strings.Replace(name, "/dev", "", -1)
 	}
 	return ret, nil
 }
@@ -111,7 +111,7 @@ func PidExistsWithContext(ctx context.Context, pid int32) (bool, error) {
 	defer proc.Release()
 
 	if isMount(common.HostProcWithContext(ctx)) { // if /<HOST_PROC>/proc exists and is mounted, check if /<HOST_PROC>/proc/<PID> folder exists
-		_, err := os.Stat(common.HostProcWithContext(ctx, strconv.Itoa(int(pid)))) //nolint:gosec // pid is int32, path traversal is not possible
+		_, err := os.Stat(common.HostProcWithContext(ctx, strconv.Itoa(int(pid))))
 		if os.IsNotExist(err) {
 			return false, nil
 		}
@@ -140,7 +140,7 @@ func PidExistsWithContext(ctx context.Context, pid int32) (bool, error) {
 	return false, err
 }
 
-func (p *Process) SendSignalWithContext(_ context.Context, sig syscall.Signal) error {
+func (p *Process) SendSignalWithContext(ctx context.Context, sig syscall.Signal) error {
 	process, err := os.FindProcess(int(p.Pid))
 	if err != nil {
 		return err

@@ -12,8 +12,7 @@
 // limitations under the License.
 
 //go:build dev
-
-//nolint:govet
+// +build dev
 
 package asset
 

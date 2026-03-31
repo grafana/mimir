@@ -8,19 +8,6 @@ import (
 
 	"github.com/prometheus/alertmanager/config"
 	commoncfg "github.com/prometheus/common/config"
-
-	httpcfg "github.com/grafana/alerting/http/v0mimir1"
-	discord_v0mimir1 "github.com/grafana/alerting/receivers/discord/v0mimir1"
-	email_v0mimir1 "github.com/grafana/alerting/receivers/email/v0mimir1"
-	opsgenie_v0mimir1 "github.com/grafana/alerting/receivers/opsgenie/v0mimir1"
-	pagerduty_v0mimir1 "github.com/grafana/alerting/receivers/pagerduty/v0mimir1"
-	pushover_v0mimir1 "github.com/grafana/alerting/receivers/pushover/v0mimir1"
-	slack_v0mimir1 "github.com/grafana/alerting/receivers/slack/v0mimir1"
-	teams_v0mimir1 "github.com/grafana/alerting/receivers/teams/v0mimir1"
-	teams_v0mimir2 "github.com/grafana/alerting/receivers/teams/v0mimir2"
-	telegram_v0mimir1 "github.com/grafana/alerting/receivers/telegram/v0mimir1"
-	victorops_v0mimir1 "github.com/grafana/alerting/receivers/victorops/v0mimir1"
-	webhook_v0mimir1 "github.com/grafana/alerting/receivers/webhook/v0mimir1"
 )
 
 var (
@@ -67,81 +54,68 @@ func ValidateAlertmanagerConfig(cfg any) error {
 			return err
 		}
 
-	// v0mimir1 receiver configs
-	case reflect.TypeOf(discord_v0mimir1.Config{}):
-		if err := validateDiscordConfig(v.Interface().(discord_v0mimir1.Config)); err != nil {
+	case reflect.TypeOf(config.DiscordConfig{}):
+		if err := validateDiscordConfig(v.Interface().(config.DiscordConfig)); err != nil {
 			return err
 		}
 
-	case reflect.TypeOf(email_v0mimir1.Config{}):
-		if err := validateEmailConfig(v.Interface().(email_v0mimir1.Config)); err != nil {
+	case reflect.TypeOf(config.EmailConfig{}):
+		if err := validateEmailConfig(v.Interface().(config.EmailConfig)); err != nil {
 			return err
 		}
 
-	case reflect.TypeOf(slack_v0mimir1.Config{}):
-		if err := validateSlackConfig(v.Interface().(slack_v0mimir1.Config)); err != nil {
-			return err
-		}
-
-	case reflect.TypeOf(opsgenie_v0mimir1.Config{}):
-		if err := validateOpsGenieConfig(v.Interface().(opsgenie_v0mimir1.Config)); err != nil {
-			return err
-		}
-
-	case reflect.TypeOf(victorops_v0mimir1.Config{}):
-		if err := validateVictorOpsConfig(v.Interface().(victorops_v0mimir1.Config)); err != nil {
-			return err
-		}
-
-	case reflect.TypeOf(pagerduty_v0mimir1.Config{}):
-		if err := validatePagerDutyConfig(v.Interface().(pagerduty_v0mimir1.Config)); err != nil {
-			return err
-		}
-
-	case reflect.TypeOf(pushover_v0mimir1.Config{}):
-		if err := validatePushoverConfig(v.Interface().(pushover_v0mimir1.Config)); err != nil {
-			return err
-		}
-
-	case reflect.TypeOf(teams_v0mimir1.Config{}):
-		if err := validateMSTeamsConfig(v.Interface().(teams_v0mimir1.Config)); err != nil {
-			return err
-		}
-
-	case reflect.TypeOf(teams_v0mimir2.Config{}):
-		if err := validateMSTeamsV2Config(v.Interface().(teams_v0mimir2.Config)); err != nil {
-			return err
-		}
-
-	case reflect.TypeOf(telegram_v0mimir1.Config{}):
-		if err := validateTelegramConfig(v.Interface().(telegram_v0mimir1.Config)); err != nil {
-			return err
-		}
-
-	case reflect.TypeOf(webhook_v0mimir1.Config{}):
-		if err := validateWebhookConfig(v.Interface().(webhook_v0mimir1.Config)); err != nil {
-			return err
-		}
-
-	// v0mimir1 HTTP client config (used by all v0mimir1 receiver configs)
-	case reflect.TypeOf(httpcfg.HTTPClientConfig{}):
-		if err := validateReceiverHTTPConfig(v.Interface().(httpcfg.HTTPClientConfig)); err != nil {
-			return err
-		}
-
-	case reflect.TypeOf(httpcfg.TLSConfig{}):
-		if err := validateReceiverTLSConfig(v.Interface().(httpcfg.TLSConfig)); err != nil {
-			return err
-		}
-
-	// prometheus common HTTP client config (used by GlobalConfig)
 	case reflect.TypeOf(commoncfg.HTTPClientConfig{}):
-		if err := validateCommonHTTPConfig(v.Interface().(commoncfg.HTTPClientConfig)); err != nil {
+		if err := validateReceiverHTTPConfig(v.Interface().(commoncfg.HTTPClientConfig)); err != nil {
 			return err
 		}
 
 	case reflect.TypeOf(commoncfg.TLSConfig{}):
-		if err := validateCommonTLSConfig(v.Interface().(commoncfg.TLSConfig)); err != nil {
+		if err := validateReceiverTLSConfig(v.Interface().(commoncfg.TLSConfig)); err != nil {
+			return err
+		}
+
+	case reflect.TypeOf(config.SlackConfig{}):
+		if err := validateSlackConfig(v.Interface().(config.SlackConfig)); err != nil {
+			return err
+		}
+
+	case reflect.TypeOf(config.OpsGenieConfig{}):
+		if err := validateOpsGenieConfig(v.Interface().(config.OpsGenieConfig)); err != nil {
+			return err
+		}
+
+	case reflect.TypeOf(config.VictorOpsConfig{}):
+		if err := validateVictorOpsConfig(v.Interface().(config.VictorOpsConfig)); err != nil {
+			return err
+		}
+
+	case reflect.TypeOf(config.PagerdutyConfig{}):
+		if err := validatePagerDutyConfig(v.Interface().(config.PagerdutyConfig)); err != nil {
+			return err
+		}
+
+	case reflect.TypeOf(config.PushoverConfig{}):
+		if err := validatePushoverConfig(v.Interface().(config.PushoverConfig)); err != nil {
+			return err
+		}
+
+	case reflect.TypeOf(config.MSTeamsConfig{}):
+		if err := validateMSTeamsConfig(v.Interface().(config.MSTeamsConfig)); err != nil {
+			return err
+		}
+
+	case reflect.TypeOf(config.MSTeamsV2Config{}):
+		if err := validateMSTeamsV2Config(v.Interface().(config.MSTeamsV2Config)); err != nil {
+			return err
+		}
+
+	case reflect.TypeOf(config.TelegramConfig{}):
+		if err := validateTelegramConfig(v.Interface().(config.TelegramConfig)); err != nil {
+			return err
+		}
+
+	case reflect.TypeOf(config.WebhookConfig{}):
+		if err := validateWebhookConfig(v.Interface().(config.WebhookConfig)); err != nil {
 			return err
 		}
 	}
@@ -190,9 +164,9 @@ func ValidateAlertmanagerConfig(cfg any) error {
 	return nil
 }
 
-// validateReceiverHTTPConfig validates the v0mimir1 HTTP config and returns an error if it contains
+// validateReceiverHTTPConfig validates the HTTP config and returns an error if it contains
 // settings not allowed by Mimir.
-func validateReceiverHTTPConfig(cfg httpcfg.HTTPClientConfig) error {
+func validateReceiverHTTPConfig(cfg commoncfg.HTTPClientConfig) error {
 	if cfg.BasicAuth != nil && cfg.BasicAuth.PasswordFile != "" {
 		return errPasswordFileNotAllowed
 	}
@@ -218,46 +192,9 @@ func validateReceiverHTTPConfig(cfg httpcfg.HTTPClientConfig) error {
 	return validateReceiverTLSConfig(cfg.TLSConfig)
 }
 
-// validateReceiverTLSConfig validates the v0mimir1 TLS config and returns an error if it contains
+// validateReceiverTLSConfig validates the TLS config and returns an error if it contains
 // settings not allowed by Mimir.
-func validateReceiverTLSConfig(cfg httpcfg.TLSConfig) error {
-	if cfg.CAFile != "" || cfg.CertFile != "" || cfg.KeyFile != "" || cfg.CA != "" || cfg.Cert != "" || cfg.Key != "" {
-		return errTLSConfigNotAllowed
-	}
-	return nil
-}
-
-// validateCommonHTTPConfig validates the prometheus common HTTP config and returns an error if it
-// contains settings not allowed by Mimir. Used for GlobalConfig.
-func validateCommonHTTPConfig(cfg commoncfg.HTTPClientConfig) error {
-	if cfg.BasicAuth != nil && cfg.BasicAuth.PasswordFile != "" {
-		return errPasswordFileNotAllowed
-	}
-	if cfg.Authorization != nil && cfg.Authorization.CredentialsFile != "" {
-		return errPasswordFileNotAllowed
-	}
-	if cfg.BearerTokenFile != "" {
-		return errPasswordFileNotAllowed
-	}
-	if cfg.OAuth2 != nil {
-		if cfg.OAuth2.ClientSecretFile != "" {
-			return errOAuth2SecretFileNotAllowed
-		}
-		// Mimir's "firewall" doesn't protect OAuth2 client, so we disallow Proxy settings here.
-		if cfg.OAuth2.ProxyURL.URL != nil && cfg.OAuth2.ProxyURL.String() != "" {
-			return errProxyURLNotAllowed
-		}
-		if cfg.OAuth2.ProxyFromEnvironment {
-			return errProxyFromEnvironmentURLNotAllowed
-		}
-	}
-	// We allow setting proxy config (cfg.ProxyConfig), because Mimir's "firewall" protects those calls.
-	return validateCommonTLSConfig(cfg.TLSConfig)
-}
-
-// validateCommonTLSConfig validates the prometheus common TLS config and returns an error if it
-// contains settings not allowed by Mimir. Used for GlobalConfig.
-func validateCommonTLSConfig(cfg commoncfg.TLSConfig) error {
+func validateReceiverTLSConfig(cfg commoncfg.TLSConfig) error {
 	if cfg.CAFile != "" || cfg.CertFile != "" || cfg.KeyFile != "" || cfg.CA != "" || cfg.Cert != "" || cfg.Key != "" {
 		return errTLSConfigNotAllowed
 	}
@@ -284,7 +221,7 @@ func validateGlobalConfig(cfg config.GlobalConfig) error {
 
 // validateDiscordConfig validates the Discord config and returns an error if it
 // contains settings not allowed by Mimir.
-func validateDiscordConfig(cfg discord_v0mimir1.Config) error {
+func validateDiscordConfig(cfg config.DiscordConfig) error {
 	if cfg.WebhookURLFile != "" {
 		return errWebhookURLFileNotAllowed
 	}
@@ -292,7 +229,7 @@ func validateDiscordConfig(cfg discord_v0mimir1.Config) error {
 }
 
 // validateEmailConfig validates the Email config and returns an error if it contains settings not allowed by Mimir.
-func validateEmailConfig(cfg email_v0mimir1.Config) error {
+func validateEmailConfig(cfg config.EmailConfig) error {
 	if cfg.AuthPasswordFile != "" {
 		return errPasswordFileNotAllowed
 	}
@@ -302,7 +239,7 @@ func validateEmailConfig(cfg email_v0mimir1.Config) error {
 
 // validateSlackConfig validates the Slack config and returns an error if it contains
 // settings not allowed by Mimir.
-func validateSlackConfig(cfg slack_v0mimir1.Config) error {
+func validateSlackConfig(cfg config.SlackConfig) error {
 	if cfg.APIURLFile != "" {
 		return errSlackAPIURLFileNotAllowed
 	}
@@ -311,7 +248,7 @@ func validateSlackConfig(cfg slack_v0mimir1.Config) error {
 
 // validateVictorOpsConfig validates the VictorOps config and returns an error if it contains
 // settings not allowed by Mimir.
-func validateVictorOpsConfig(cfg victorops_v0mimir1.Config) error {
+func validateVictorOpsConfig(cfg config.VictorOpsConfig) error {
 	if cfg.APIKeyFile != "" {
 		return errVictorOpsAPIKeyFileNotAllowed
 	}
@@ -320,7 +257,7 @@ func validateVictorOpsConfig(cfg victorops_v0mimir1.Config) error {
 
 // validateOpsGenieConfig validates the OpsGenie config and returns an error if it contains
 // settings not allowed by Mimir.
-func validateOpsGenieConfig(cfg opsgenie_v0mimir1.Config) error {
+func validateOpsGenieConfig(cfg config.OpsGenieConfig) error {
 	if cfg.APIKeyFile != "" {
 		return errOpsGenieAPIKeyFileFileNotAllowed
 	}
@@ -329,7 +266,7 @@ func validateOpsGenieConfig(cfg opsgenie_v0mimir1.Config) error {
 
 // validatePagerDutyConfig validates the PagerDuty config and returns an error if it contains
 // settings not allowed by Mimir.
-func validatePagerDutyConfig(cfg pagerduty_v0mimir1.Config) error {
+func validatePagerDutyConfig(cfg config.PagerdutyConfig) error {
 	if cfg.ServiceKeyFile != "" {
 		return errPagerDutyServiceKeyFileNotAllowed
 	}
@@ -342,7 +279,7 @@ func validatePagerDutyConfig(cfg pagerduty_v0mimir1.Config) error {
 
 // validatePushoverConfig validates the Pushover config and returns an error if it contains
 // settings not allowed by Mimir.
-func validatePushoverConfig(cfg pushover_v0mimir1.Config) error {
+func validatePushoverConfig(cfg config.PushoverConfig) error {
 	if cfg.UserKeyFile != "" {
 		return errPushoverUserKeyFileNotAllowed
 	}
@@ -355,7 +292,7 @@ func validatePushoverConfig(cfg pushover_v0mimir1.Config) error {
 
 // validateMSTeamsConfig validates the Microsoft Teams config and returns an error if it
 // contains settings not allowed by Mimir.
-func validateMSTeamsConfig(cfg teams_v0mimir1.Config) error {
+func validateMSTeamsConfig(cfg config.MSTeamsConfig) error {
 	if cfg.WebhookURLFile != "" {
 		return errWebhookURLFileNotAllowed
 	}
@@ -364,7 +301,7 @@ func validateMSTeamsConfig(cfg teams_v0mimir1.Config) error {
 
 // validateMSTeamsV2Config validates the Microsoft Teams V2 config and returns an error if it
 // contains settings not allowed by Mimir.
-func validateMSTeamsV2Config(cfg teams_v0mimir2.Config) error {
+func validateMSTeamsV2Config(cfg config.MSTeamsV2Config) error {
 	if cfg.WebhookURLFile != "" {
 		return errWebhookURLFileNotAllowed
 	}
@@ -373,7 +310,7 @@ func validateMSTeamsV2Config(cfg teams_v0mimir2.Config) error {
 
 // validateTelegramConfig validates the Telegram config and returns an error if it contains
 // settings not allowed by Mimir.
-func validateTelegramConfig(cfg telegram_v0mimir1.Config) error {
+func validateTelegramConfig(cfg config.TelegramConfig) error {
 	if cfg.BotTokenFile != "" {
 		return errTelegramBotTokenFileNotAllowed
 	}
@@ -382,7 +319,7 @@ func validateTelegramConfig(cfg telegram_v0mimir1.Config) error {
 
 // validateWebhookConfig validates the Webhook config and returns an error if it contains
 // settings not allowed by Mimir.
-func validateWebhookConfig(cfg webhook_v0mimir1.Config) error {
+func validateWebhookConfig(cfg config.WebhookConfig) error {
 	if cfg.URLFile != "" {
 		return errWebhookURLFileNotAllowed
 	}

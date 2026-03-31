@@ -31,8 +31,6 @@ const (
 
 	discordMaxEmbeds     = 10
 	discordMaxMessageLen = 2000
-	// https://discord.com/developers/docs/resources/message#embed-object-embed-limits
-	discordMaxTitleLen = 256
 )
 
 type discordMessage struct {
@@ -103,11 +101,6 @@ func (d Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error) 
 	l := d.GetLogger(ctx)
 	alerts := types.Alerts(as...)
 
-	key, err := notify.ExtractGroupKey(ctx)
-	if err != nil {
-		return false, err
-	}
-
 	var msg discordMessage
 
 	if !d.settings.UseDiscordUsername {
@@ -125,6 +118,10 @@ func (d Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error) 
 	}
 	truncatedMsg, truncated := receivers.TruncateInRunes(msg.Content, discordMaxMessageLen)
 	if truncated {
+		key, err := notify.ExtractGroupKey(ctx)
+		if err != nil {
+			return false, err
+		}
 		level.Warn(l).Log("msg", "Truncated content", "key", key, "max_runes", discordMaxMessageLen)
 		msg.Content = truncatedMsg
 	}
@@ -145,17 +142,12 @@ func (d Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error) 
 
 	var linkEmbed discordLinkEmbed
 
-	title := tmpl(d.settings.Title)
+	linkEmbed.Title = tmpl(d.settings.Title)
 	if tmplErr != nil {
 		level.Warn(l).Log("msg", "failed to template Discord notification title", "err", tmplErr.Error())
 		// Reset tmplErr for templating other fields.
 		tmplErr = nil
 	}
-	linkEmbed.Title, truncated = receivers.TruncateInRunes(title, discordMaxTitleLen)
-	if truncated {
-		level.Warn(l).Log("msg", "Truncated title", "key", key, "max_runes", discordMaxTitleLen)
-	}
-
 	linkEmbed.Footer = footer
 	linkEmbed.Type = discordRichEmbed
 
@@ -169,17 +161,13 @@ func (d Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error) 
 
 	attachments := d.constructAttachments(ctx, as, discordMaxEmbeds-1, l)
 	for _, a := range attachments {
-		embedTitle, truncated := receivers.TruncateInRunes(a.alertName, discordMaxTitleLen)
-		if truncated {
-			level.Warn(l).Log("msg", "Truncated image embed title", "key", key, "alert", a.alertName, "max_runes", discordMaxTitleLen)
-		}
-
+		color, _ := strconv.ParseInt(strings.TrimLeft(receivers.GetAlertStatusColor(alerts.Status()), "#"), 16, 0)
 		embed := discordLinkEmbed{
 			Image: &discordImage{
 				URL: a.url,
 			},
 			Color: color,
-			Title: embedTitle,
+			Title: a.alertName,
 		}
 		embeds = append(embeds, embed)
 	}

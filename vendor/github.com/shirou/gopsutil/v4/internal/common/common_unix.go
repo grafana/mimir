@@ -33,7 +33,7 @@ func CallLsofWithContext(ctx context.Context, invoke Invoker, pid int32, args ..
 
 	var ret []string
 	for _, l := range lines[1:] {
-		if l == "" {
+		if len(l) == 0 {
 			continue
 		}
 		ret = append(ret, l)

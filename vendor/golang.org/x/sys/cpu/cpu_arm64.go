@@ -44,11 +44,14 @@ func initOptions() {
 }
 
 func archInit() {
-	if runtime.GOOS == "freebsd" {
+	switch runtime.GOOS {
+	case "freebsd":
 		readARM64Registers()
-	} else {
-		// Most platforms don't seem to allow directly reading these registers.
+	case "linux", "netbsd", "openbsd", "windows":
 		doinit()
+	default:
+		// Many platforms don't seem to allow reading these registers.
+		setMinimalFeatures()
 	}
 }
 

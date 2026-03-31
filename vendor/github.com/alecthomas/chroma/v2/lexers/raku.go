@@ -2,7 +2,6 @@ package lexers
 
 import (
 	"regexp"
-	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -1319,6 +1318,16 @@ func indexAt(str []rune, substr []rune, pos int) int {
 	return idx
 }
 
+// Tells if an array of string contains a string
+func contains(s []string, e string) bool {
+	for _, value := range s {
+		if value == e {
+			return true
+		}
+	}
+	return false
+}
+
 type rulePosition int
 
 const (
@@ -1616,15 +1625,15 @@ func quote(groups []string, state *LexerState) Iterator {
 	var tokenState string
 
 	switch {
-	case keyword == "qq" || slices.Contains(tokenStates, "qq"):
+	case keyword == "qq" || contains(tokenStates, "qq"):
 		tokenState = "qq"
-	case adverbsStr == "ww" || slices.Contains(tokenStates, "ww"):
+	case adverbsStr == "ww" || contains(tokenStates, "ww"):
 		tokenState = "ww"
-	case slices.Contains(tokenStates, "Q-closure") && slices.Contains(tokenStates, "Q-variable"):
+	case contains(tokenStates, "Q-closure") && contains(tokenStates, "Q-variable"):
 		tokenState = "qq"
-	case slices.Contains(tokenStates, "Q-closure"):
+	case contains(tokenStates, "Q-closure"):
 		tokenState = "Q-closure"
-	case slices.Contains(tokenStates, "Q-variable"):
+	case contains(tokenStates, "Q-variable"):
 		tokenState = "Q-variable"
 	default:
 		tokenState = "Q"

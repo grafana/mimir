@@ -1,5 +1,16 @@
-// SPDX-FileCopyrightText: Copyright 2015-2025 go-swagger maintainers
-// SPDX-License-Identifier: Apache-2.0
+// Copyright 2015 go-swagger maintainers
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package spec
 
@@ -11,9 +22,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/go-openapi/swag/jsonutils"
-	"github.com/go-openapi/swag/loading"
-	"github.com/go-openapi/swag/stringutils"
+	"github.com/go-openapi/swag"
 )
 
 // PathLoader is a function to use when loading remote refs.
@@ -25,7 +34,7 @@ import (
 // this value with its own default (a loader to retrieve YAML documents as
 // well as JSON ones).
 var PathLoader = func(pth string) (json.RawMessage, error) {
-	data, err := loading.LoadFromFileOrHTTP(pth)
+	data, err := swag.LoadFromFileOrHTTP(pth)
 	if err != nil {
 		return nil, err
 	}
@@ -64,21 +73,10 @@ func newResolverContext(options *ExpandOptions) *resolverContext {
 }
 
 type schemaLoader struct {
-	root    any
+	root    interface{}
 	options *ExpandOptions
 	cache   ResolutionCache
 	context *resolverContext
-}
-
-// Resolve resolves a reference against basePath and stores the result in target.
-//
-// Resolve is not in charge of following references: it only resolves ref by following its URL.
-//
-// If the schema the ref is referring to holds nested refs, Resolve doesn't resolve them.
-//
-// If basePath is an empty string, ref is resolved against the root schema stored in the schemaLoader struct
-func (r *schemaLoader) Resolve(ref *Ref, target any, basePath string) error {
-	return r.resolveRef(ref, target, basePath)
 }
 
 func (r *schemaLoader) transitiveResolver(basePath string, ref Ref) *schemaLoader {
@@ -115,7 +113,7 @@ func (r *schemaLoader) updateBasePath(transitive *schemaLoader, basePath string)
 	return basePath
 }
 
-func (r *schemaLoader) resolveRef(ref *Ref, target any, basePath string) error {
+func (r *schemaLoader) resolveRef(ref *Ref, target interface{}, basePath string) error {
 	tgt := reflect.ValueOf(target)
 	if tgt.Kind() != reflect.Ptr {
 		return ErrResolveRefNeedsAPointer
@@ -126,8 +124,8 @@ func (r *schemaLoader) resolveRef(ref *Ref, target any, basePath string) error {
 	}
 
 	var (
-		res  any
-		data any
+		res  interface{}
+		data interface{}
 		err  error
 	)
 
@@ -157,10 +155,10 @@ func (r *schemaLoader) resolveRef(ref *Ref, target any, basePath string) error {
 			return err
 		}
 	}
-	return jsonutils.FromDynamicJSON(res, target)
+	return swag.DynamicJSONToStruct(res, target)
 }
 
-func (r *schemaLoader) load(refURL *url.URL) (any, url.URL, bool, error) {
+func (r *schemaLoader) load(refURL *url.URL) (interface{}, url.URL, bool, error) {
 	debugLog("loading schema from url: %s", refURL)
 	toFetch := *refURL
 	toFetch.Fragment = ""
@@ -180,7 +178,7 @@ func (r *schemaLoader) load(refURL *url.URL) (any, url.URL, bool, error) {
 		return nil, url.URL{}, false, err
 	}
 
-	var doc any
+	var doc interface{}
 	if err := json.Unmarshal(b, &doc); err != nil {
 		return nil, url.URL{}, false, err
 	}
@@ -199,14 +197,25 @@ func (r *schemaLoader) isCircular(ref *Ref, basePath string, parentRefs ...strin
 		foundCycle = true
 		return
 	}
-	foundCycle = stringutils.ContainsStrings(parentRefs, normalizedRef) // normalized windows url's are lower cased
+	foundCycle = swag.ContainsStrings(parentRefs, normalizedRef) // normalized windows url's are lower cased
 	if foundCycle {
 		r.context.circulars[normalizedRef] = true
 	}
 	return
 }
 
-func (r *schemaLoader) deref(input any, parentRefs []string, basePath string) error {
+// Resolve resolves a reference against basePath and stores the result in target.
+//
+// Resolve is not in charge of following references: it only resolves ref by following its URL.
+//
+// If the schema the ref is referring to holds nested refs, Resolve doesn't resolve them.
+//
+// If basePath is an empty string, ref is resolved against the root schema stored in the schemaLoader struct
+func (r *schemaLoader) Resolve(ref *Ref, target interface{}, basePath string) error {
+	return r.resolveRef(ref, target, basePath)
+}
+
+func (r *schemaLoader) deref(input interface{}, parentRefs []string, basePath string) error {
 	var ref *Ref
 	switch refable := input.(type) {
 	case *Schema:
@@ -258,7 +267,7 @@ func (r *schemaLoader) shouldStopOnError(err error) bool {
 	return false
 }
 
-func (r *schemaLoader) setSchemaID(target any, id, basePath string) (string, string) {
+func (r *schemaLoader) setSchemaID(target interface{}, id, basePath string) (string, string) {
 	debugLog("schema has ID: %s", id)
 
 	// handling the case when id is a folder
@@ -290,7 +299,7 @@ func (r *schemaLoader) setSchemaID(target any, id, basePath string) (string, str
 }
 
 func defaultSchemaLoader(
-	root any,
+	root interface{},
 	expandOptions *ExpandOptions,
 	cache ResolutionCache,
 	context *resolverContext) *schemaLoader {

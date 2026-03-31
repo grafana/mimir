@@ -1,4 +1,4 @@
-// Copyright The Prometheus Authors
+// Copyright 2017 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -91,13 +92,13 @@ func (q *blockBaseQuerier) Close() error {
 		return errors.New("block querier already closed")
 	}
 
-	errs := []error{
+	errs := tsdb_errors.NewMulti(
 		q.index.Close(),
 		q.chunks.Close(),
 		q.tombstones.Close(),
-	}
+	)
 	q.closed = true
-	return errors.Join(errs...)
+	return errs.Err()
 }
 
 type blockQuerier struct {
@@ -134,7 +135,7 @@ func selectSeriesSet(ctx context.Context, sortSeries bool, hints *storage.Select
 		indexMatchers = ms
 		scanMatchers  []*labels.Matcher
 	)
-	plan, err := ix.IndexLookupPlanner().PlanIndexLookup(ctx, index.NewIndexOnlyLookupPlan(ms), hints)
+	plan, err := ix.IndexLookupPlanner().PlanIndexLookup(ctx, index.NewIndexOnlyLookupPlan(ms), mint, maxt)
 	// We ignore errors from the planner because we prefer returning a result even if it's not optimally executed.
 	if err == nil {
 		indexMatchers = plan.IndexMatchers()
@@ -195,7 +196,7 @@ func selectChunkSeriesSet(ctx context.Context, sortSeries bool, hints *storage.S
 		indexMatchers = ms
 		scanMatchers  []*labels.Matcher
 	)
-	plan, err := ix.IndexLookupPlanner().PlanIndexLookup(ctx, index.NewIndexOnlyLookupPlan(ms), hints)
+	plan, err := ix.IndexLookupPlanner().PlanIndexLookup(ctx, index.NewIndexOnlyLookupPlan(ms), mint, maxt)
 	// We ignore errors from the planner because we prefer returning a result even if it's not optimally executed.
 	if err == nil {
 		indexMatchers = plan.IndexMatchers()
@@ -855,37 +856,16 @@ type chunkSeriesEntry struct {
 }
 
 func (s *chunkSeriesEntry) Iterator(it chunks.Iterator) chunks.Iterator {
-	return s.IteratorFactory().Iterator(it)
-}
-
-func (s *chunkSeriesEntry) ChunkCount() (int, error) {
-	return len(s.chks), nil
-}
-
-func (s *chunkSeriesEntry) IteratorFactory() storage.ChunkIterable {
-	return &blockChunkIterable{
-		chunks:    s.chunks,
-		blockID:   s.blockID,
-		chks:      s.chks,
-		intervals: s.intervals,
-	}
-}
-
-// blockChunkIterable implements ChunkIterable for block storage.
-type blockChunkIterable struct {
-	chunks    ChunkReader
-	blockID   ulid.ULID
-	chks      []chunks.Meta
-	intervals tombstones.Intervals
-}
-
-func (b *blockChunkIterable) Iterator(it chunks.Iterator) chunks.Iterator {
 	pi, ok := it.(*populateWithDelChunkSeriesIterator)
 	if !ok {
 		pi = &populateWithDelChunkSeriesIterator{}
 	}
-	pi.reset(b.blockID, b.chunks, b.chks, b.intervals)
+	pi.reset(s.blockID, s.chunks, s.chks, s.intervals)
 	return pi
+}
+
+func (s *chunkSeriesEntry) ChunkCount() (int, error) {
+	return len(s.chks), nil
 }
 
 // populateWithDelSeriesIterator allows to iterate over samples for the single series.
@@ -948,11 +928,6 @@ func (p *populateWithDelSeriesIterator) AtFloatHistogram(fh *histogram.FloatHist
 
 func (p *populateWithDelSeriesIterator) AtT() int64 {
 	return p.curr.AtT()
-}
-
-// AtST TODO(krajorama): test AtST() when chunks support it.
-func (p *populateWithDelSeriesIterator) AtST() int64 {
-	return p.curr.AtST()
 }
 
 func (p *populateWithDelSeriesIterator) Err() error {
@@ -1029,7 +1004,6 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 
 // populateCurrForSingleChunk sets the fields within p.currMetaWithChunk. This
 // should be called if the samples in p.currDelIter only form one chunk.
-// TODO(krajorama): test ST when chunks support it.
 func (p *populateWithDelChunkSeriesIterator) populateCurrForSingleChunk() bool {
 	valueType := p.currDelIter.Next()
 	if valueType == chunkenc.ValNone {
@@ -1045,7 +1019,7 @@ func (p *populateWithDelChunkSeriesIterator) populateCurrForSingleChunk() bool {
 	var (
 		newChunk chunkenc.Chunk
 		app      chunkenc.Appender
-		st, t    int64
+		t        int64
 		err      error
 	)
 	switch valueType {
@@ -1061,8 +1035,7 @@ func (p *populateWithDelChunkSeriesIterator) populateCurrForSingleChunk() bool {
 			}
 			var h *histogram.Histogram
 			t, h = p.currDelIter.AtHistogram(nil)
-			st = p.currDelIter.AtST()
-			_, _, app, err = app.AppendHistogram(nil, st, t, h, true)
+			_, _, app, err = app.AppendHistogram(nil, t, h, true)
 			if err != nil {
 				break
 			}
@@ -1079,8 +1052,7 @@ func (p *populateWithDelChunkSeriesIterator) populateCurrForSingleChunk() bool {
 			}
 			var v float64
 			t, v = p.currDelIter.At()
-			st = p.currDelIter.AtST()
-			app.Append(st, t, v)
+			app.Append(t, v)
 		}
 	case chunkenc.ValFloatHistogram:
 		newChunk = chunkenc.NewFloatHistogramChunk()
@@ -1094,8 +1066,7 @@ func (p *populateWithDelChunkSeriesIterator) populateCurrForSingleChunk() bool {
 			}
 			var h *histogram.FloatHistogram
 			t, h = p.currDelIter.AtFloatHistogram(nil)
-			st = p.currDelIter.AtST()
-			_, _, app, err = app.AppendFloatHistogram(nil, st, t, h, true)
+			_, _, app, err = app.AppendFloatHistogram(nil, t, h, true)
 			if err != nil {
 				break
 			}
@@ -1121,7 +1092,6 @@ func (p *populateWithDelChunkSeriesIterator) populateCurrForSingleChunk() bool {
 // populateChunksFromIterable reads the samples from currDelIter to create
 // chunks for chunksFromIterable. It also sets p.currMetaWithChunk to the first
 // chunk.
-// TODO(krajorama): test ST when chunks support it.
 func (p *populateWithDelChunkSeriesIterator) populateChunksFromIterable() bool {
 	p.chunksFromIterable = p.chunksFromIterable[:0]
 	p.chunksFromIterableIdx = -1
@@ -1137,7 +1107,7 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromIterable() bool {
 
 	var (
 		// t is the timestamp for the current sample.
-		st, t int64
+		t     int64
 		cmint int64
 		cmaxt int64
 
@@ -1176,26 +1146,23 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromIterable() bool {
 			{
 				var v float64
 				t, v = p.currDelIter.At()
-				st = p.currDelIter.AtST()
-				app.Append(st, t, v)
+				app.Append(t, v)
 			}
 		case chunkenc.ValHistogram:
 			{
 				var v *histogram.Histogram
 				t, v = p.currDelIter.AtHistogram(nil)
-				st = p.currDelIter.AtST()
 				// No need to set prevApp as AppendHistogram will set the
 				// counter reset header for the appender that's returned.
-				newChunk, recoded, app, err = app.AppendHistogram(nil, st, t, v, false)
+				newChunk, recoded, app, err = app.AppendHistogram(nil, t, v, false)
 			}
 		case chunkenc.ValFloatHistogram:
 			{
 				var v *histogram.FloatHistogram
 				t, v = p.currDelIter.AtFloatHistogram(nil)
-				st = p.currDelIter.AtST()
 				// No need to set prevApp as AppendHistogram will set the
 				// counter reset header for the appender that's returned.
-				newChunk, recoded, app, err = app.AppendFloatHistogram(nil, st, t, v, false)
+				newChunk, recoded, app, err = app.AppendFloatHistogram(nil, t, v, false)
 			}
 		}
 
@@ -1444,11 +1411,6 @@ func (it *DeletedIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64
 
 func (it *DeletedIterator) AtT() int64 {
 	return it.Iter.AtT()
-}
-
-// AtST TODO(krajorama): test AtST() when chunks support it.
-func (it *DeletedIterator) AtST() int64 {
-	return it.Iter.AtST()
 }
 
 func (it *DeletedIterator) Seek(t int64) chunkenc.ValueType {

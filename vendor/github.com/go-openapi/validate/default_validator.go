@@ -1,5 +1,16 @@
-// SPDX-FileCopyrightText: Copyright 2015-2025 go-swagger maintainers
-// SPDX-License-Identifier: Apache-2.0
+// Copyright 2015 go-swagger maintainers
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package validate
 
@@ -16,18 +27,6 @@ type defaultValidator struct {
 	SpecValidator  *SpecValidator
 	visitedSchemas map[string]struct{}
 	schemaOptions  *SchemaValidatorOptions
-}
-
-// Validate validates the default values declared in the swagger spec
-func (d *defaultValidator) Validate() *Result {
-	errs := pools.poolOfResults.BorrowResult() // will redeem when merged
-
-	if d == nil || d.SpecValidator == nil {
-		return errs
-	}
-	d.resetVisited()
-	errs.Merge(d.validateDefaultValueValidAgainstSchema()) // error -
-	return errs
 }
 
 // resetVisited resets the internal state of visited schemas
@@ -55,8 +54,7 @@ func isVisited(path string, visitedSchemas map[string]struct{}) bool {
 		parent string
 		suffix string
 	)
-	const backtrackFromEnd = 2
-	for i := len(path) - backtrackFromEnd; i >= 0; i-- {
+	for i := len(path) - 2; i >= 0; i-- {
 		r := path[i]
 		if r != '.' {
 			continue
@@ -81,6 +79,18 @@ func (d *defaultValidator) beingVisited(path string) {
 // isVisited tells if a path has already been visited
 func (d *defaultValidator) isVisited(path string) bool {
 	return isVisited(path, d.visitedSchemas)
+}
+
+// Validate validates the default values declared in the swagger spec
+func (d *defaultValidator) Validate() *Result {
+	errs := pools.poolOfResults.BorrowResult() // will redeem when merged
+
+	if d == nil || d.SpecValidator == nil {
+		return errs
+	}
+	d.resetVisited()
+	errs.Merge(d.validateDefaultValueValidAgainstSchema()) // error -
+	return errs
 }
 
 func (d *defaultValidator) validateDefaultValueValidAgainstSchema() *Result {
@@ -274,7 +284,7 @@ func (d *defaultValidator) validateDefaultValueSchemaAgainstSchema(path, in stri
 
 // TODO: Temporary duplicated code. Need to refactor with examples
 
-func (d *defaultValidator) validateDefaultValueItemsAgainstSchema(path, in string, root any, items *spec.Items) *Result {
+func (d *defaultValidator) validateDefaultValueItemsAgainstSchema(path, in string, root interface{}, items *spec.Items) *Result {
 	res := pools.poolOfResults.BorrowResult()
 	s := d.SpecValidator
 	if items != nil {

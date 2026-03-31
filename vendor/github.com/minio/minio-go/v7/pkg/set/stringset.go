@@ -1,6 +1,6 @@
 /*
  * MinIO Go Library for Amazon S3 Compatible Cloud Storage
- * Copyright 2015-2026 MinIO, Inc.
+ * Copyright 2015-2017 MinIO, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,18 +18,23 @@
 package set
 
 import (
-	"encoding/json"
 	"fmt"
 	"sort"
+
+	"github.com/minio/minio-go/v7/internal/json"
 )
 
 // StringSet - uses map as set of strings.
-// This is now implemented using the generic Set[string] type.
-type StringSet Set[string]
+type StringSet map[string]struct{}
 
 // ToSlice - returns StringSet as string slice.
 func (set StringSet) ToSlice() []string {
-	return ToSliceOrdered(Set[string](set))
+	keys := make([]string, 0, len(set))
+	for k := range set {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // ToByteSlices - returns StringSet as a sorted
@@ -58,22 +63,23 @@ func (set StringSet) ToByteSlices() [][]byte {
 
 // IsEmpty - returns whether the set is empty or not.
 func (set StringSet) IsEmpty() bool {
-	return Set[string](set).IsEmpty()
+	return len(set) == 0
 }
 
 // Add - adds string to the set.
 func (set StringSet) Add(s string) {
-	Set[string](set).Add(s)
+	set[s] = struct{}{}
 }
 
 // Remove - removes string in the set.  It does nothing if string does not exist in the set.
 func (set StringSet) Remove(s string) {
-	Set[string](set).Remove(s)
+	delete(set, s)
 }
 
 // Contains - checks if string is in the set.
 func (set StringSet) Contains(s string) bool {
-	return Set[string](set).Contains(s)
+	_, ok := set[s]
+	return ok
 }
 
 // FuncMatch - returns new set containing each value who passes match function.
@@ -82,7 +88,13 @@ func (set StringSet) Contains(s string) bool {
 // compare both the arguments and should return true to accept element in
 // a set to include in output set else the element is ignored.
 func (set StringSet) FuncMatch(matchFn func(string, string) bool, matchString string) StringSet {
-	return StringSet(Set[string](set).FuncMatch(matchFn, matchString))
+	nset := NewStringSet()
+	for k := range set {
+		if matchFn(k, matchString) {
+			nset.Add(k)
+		}
+	}
+	return nset
 }
 
 // ApplyFunc - returns new set containing each value processed by 'applyFn'.
@@ -90,27 +102,67 @@ func (set StringSet) FuncMatch(matchFn func(string, string) bool, matchString st
 // a processed string.  The function can do any logic to return a processed
 // string.
 func (set StringSet) ApplyFunc(applyFn func(string) string) StringSet {
-	return StringSet(Set[string](set).ApplyFunc(applyFn))
+	nset := NewStringSet()
+	for k := range set {
+		nset.Add(applyFn(k))
+	}
+	return nset
 }
 
 // Equals - checks whether given set is equal to current set or not.
 func (set StringSet) Equals(sset StringSet) bool {
-	return Set[string](set).Equals(Set[string](sset))
+	// If length of set is not equal to length of given set, the
+	// set is not equal to given set.
+	if len(set) != len(sset) {
+		return false
+	}
+
+	// As both sets are equal in length, check each elements are equal.
+	for k := range set {
+		if _, ok := sset[k]; !ok {
+			return false
+		}
+	}
+
+	return true
 }
 
 // Intersection - returns the intersection with given set as new set.
 func (set StringSet) Intersection(sset StringSet) StringSet {
-	return StringSet(Set[string](set).Intersection(Set[string](sset)))
+	nset := NewStringSet()
+	for k := range set {
+		if _, ok := sset[k]; ok {
+			nset.Add(k)
+		}
+	}
+
+	return nset
 }
 
 // Difference - returns the difference with given set as new set.
 func (set StringSet) Difference(sset StringSet) StringSet {
-	return StringSet(Set[string](set).Difference(Set[string](sset)))
+	nset := NewStringSet()
+	for k := range set {
+		if _, ok := sset[k]; !ok {
+			nset.Add(k)
+		}
+	}
+
+	return nset
 }
 
 // Union - returns the union with given set as new set.
 func (set StringSet) Union(sset StringSet) StringSet {
-	return StringSet(Set[string](set).Union(Set[string](sset)))
+	nset := NewStringSet()
+	for k := range set {
+		nset.Add(k)
+	}
+
+	for k := range sset {
+		nset.Add(k)
+	}
+
+	return nset
 }
 
 // MarshalJSON - converts to JSON data.
@@ -145,15 +197,23 @@ func (set StringSet) String() string {
 
 // NewStringSet - creates new string set.
 func NewStringSet() StringSet {
-	return StringSet(New[string]())
+	return make(StringSet)
 }
 
 // CreateStringSet - creates new string set with given string values.
 func CreateStringSet(sl ...string) StringSet {
-	return StringSet(Create(sl...))
+	set := make(StringSet, len(sl))
+	for _, k := range sl {
+		set.Add(k)
+	}
+	return set
 }
 
 // CopyStringSet - returns copy of given set.
 func CopyStringSet(set StringSet) StringSet {
-	return StringSet(Copy(Set[string](set)))
+	nset := make(StringSet, len(set))
+	for k, v := range set {
+		nset[k] = v
+	}
+	return nset
 }

@@ -9,8 +9,6 @@ import (
 	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
-var includeAuthOps = "include_auth_ops"
-
 // ListTopics issues a metadata request and returns TopicDetails. Specific
 // topics to describe can be passed as additional arguments. If no topics are
 // specified, all topics are requested. Internal topics are not returned unless
@@ -54,7 +52,7 @@ type CreateTopicResponse struct {
 	Configs           map[string]Config // Configs contains the topic configuration (minus config synonyms), if talking to Kafka 2.4+.
 }
 
-// CreateTopicResponses contains per-topic responses for created topics.
+// CreateTopicRepsonses contains per-topic responses for created topics.
 type CreateTopicResponses map[string]CreateTopicResponse
 
 // Sorted returns all create topic responses sorted first by topic ID, then by
@@ -384,9 +382,9 @@ func (ds DeleteRecordsResponses) Each(fn func(DeleteRecordsResponse)) {
 
 // Sorted returns all delete records responses sorted first by topic, then by
 // partition.
-func (ds DeleteRecordsResponses) Sorted() []DeleteRecordsResponse {
+func (rs DeleteRecordsResponses) Sorted() []DeleteRecordsResponse {
 	var s []DeleteRecordsResponse
-	for _, ps := range ds {
+	for _, ps := range rs {
 		for _, d := range ps {
 			s = append(s, d)
 		}
@@ -413,9 +411,9 @@ func (ds DeleteRecordsResponses) Sorted() []DeleteRecordsResponse {
 //
 // If the topic or partition does not exist, this returns
 // kerr.UnknownTopicOrPartition.
-func (ds DeleteRecordsResponses) On(topic string, partition int32, fn func(*DeleteRecordsResponse) error) (DeleteRecordsResponse, error) {
-	if len(ds) > 0 {
-		t, ok := ds[topic]
+func (rs DeleteRecordsResponses) On(topic string, partition int32, fn func(*DeleteRecordsResponse) error) (DeleteRecordsResponse, error) {
+	if len(rs) > 0 {
+		t, ok := rs[topic]
 		if ok {
 			p, ok := t[partition]
 			if ok {
@@ -431,8 +429,8 @@ func (ds DeleteRecordsResponses) On(topic string, partition int32, fn func(*Dele
 
 // Error iterates over all responses and returns the first error
 // encountered, if any.
-func (ds DeleteRecordsResponses) Error() error {
-	for _, ps := range ds {
+func (rs DeleteRecordsResponses) Error() error {
+	for _, ps := range rs {
 		for _, r := range ps {
 			if r.Err != nil {
 				return r.Err
@@ -644,11 +642,4 @@ func (cl *Client) createPartitions(ctx context.Context, dry bool, add, set int, 
 		}
 	}
 	return rs, nil
-}
-
-// WithAuthorizedOps attaches an internal key/value to the context through WithValue.
-// Using this context will cause all Metadata requests (assuming Kafka version 2.3.0
-// or higher) to fetch the list of authorized operations. See KIP-430 for details.
-func WithAuthorizedOps(ctx context.Context) context.Context {
-	return context.WithValue(ctx, &includeAuthOps, struct{}{})
 }

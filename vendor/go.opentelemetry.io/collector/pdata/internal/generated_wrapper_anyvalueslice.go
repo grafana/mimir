@@ -6,24 +6,53 @@
 
 package internal
 
-type SliceWrapper struct {
-	orig  *[]AnyValue
+import (
+	otlpcommon "go.opentelemetry.io/collector/pdata/internal/data/protogen/common/v1"
+)
+
+type Slice struct {
+	orig  *[]otlpcommon.AnyValue
 	state *State
 }
 
-func GetSliceOrig(ms SliceWrapper) *[]AnyValue {
+func GetOrigSlice(ms Slice) *[]otlpcommon.AnyValue {
 	return ms.orig
 }
 
-func GetSliceState(ms SliceWrapper) *State {
+func GetSliceState(ms Slice) *State {
 	return ms.state
 }
 
-func NewSliceWrapper(orig *[]AnyValue, state *State) SliceWrapper {
-	return SliceWrapper{orig: orig, state: state}
+func NewSlice(orig *[]otlpcommon.AnyValue, state *State) Slice {
+	return Slice{orig: orig, state: state}
 }
 
-func GenTestSliceWrapper() SliceWrapper {
-	orig := GenTestAnyValueSlice()
-	return NewSliceWrapper(&orig, NewState())
+func GenerateTestSlice() Slice {
+	orig := GenerateOrigTestAnyValueSlice()
+	return NewSlice(&orig, NewState())
+}
+
+func CopyOrigAnyValueSlice(dest, src []otlpcommon.AnyValue) []otlpcommon.AnyValue {
+	var newDest []otlpcommon.AnyValue
+	if cap(dest) < len(src) {
+		newDest = make([]otlpcommon.AnyValue, len(src))
+	} else {
+		newDest = dest[:len(src)]
+		// Cleanup the rest of the elements so GC can free the memory.
+		// This can happen when len(src) < len(dest) < cap(dest).
+		for i := len(src); i < len(dest); i++ {
+			DeleteOrigAnyValue(&dest[i], false)
+		}
+	}
+	for i := range src {
+		CopyOrigAnyValue(&newDest[i], &src[i])
+	}
+	return newDest
+}
+
+func GenerateOrigTestAnyValueSlice() []otlpcommon.AnyValue {
+	orig := make([]otlpcommon.AnyValue, 5)
+	orig[1] = *GenTestOrigAnyValue()
+	orig[3] = *GenTestOrigAnyValue()
+	return orig
 }

@@ -1,4 +1,4 @@
-// Copyright IBM Corp. 2014, 2025
+// Copyright (c) HashiCorp, Inc.
 // SPDX-License-Identifier: MPL-2.0
 
 package version
@@ -8,25 +8,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"sync"
 )
-
-var (
-	constraintRegexp     *regexp.Regexp
-	constraintRegexpOnce sync.Once
-)
-
-func getConstraintRegexp() *regexp.Regexp {
-	constraintRegexpOnce.Do(func() {
-		// This heavy lifting only happens the first time this function is called
-		constraintRegexp = regexp.MustCompile(fmt.Sprintf(
-			`^\s*(%s)\s*(%s)\s*$`,
-			`<=|>=|!=|~>|<|>|=|`,
-			VersionRegexpRaw,
-		))
-	})
-	return constraintRegexp
-}
 
 // Constraint represents a single constraint for a version, such as
 // ">= 1.0".
@@ -47,9 +29,36 @@ type Constraints []*Constraint
 
 type constraintFunc func(v, c *Version) bool
 
+var constraintOperators map[string]constraintOperation
+
 type constraintOperation struct {
 	op operator
 	f  constraintFunc
+}
+
+var constraintRegexp *regexp.Regexp
+
+func init() {
+	constraintOperators = map[string]constraintOperation{
+		"":   {op: equal, f: constraintEqual},
+		"=":  {op: equal, f: constraintEqual},
+		"!=": {op: notEqual, f: constraintNotEqual},
+		">":  {op: greaterThan, f: constraintGreaterThan},
+		"<":  {op: lessThan, f: constraintLessThan},
+		">=": {op: greaterThanEqual, f: constraintGreaterThanEqual},
+		"<=": {op: lessThanEqual, f: constraintLessThanEqual},
+		"~>": {op: pessimistic, f: constraintPessimistic},
+	}
+
+	ops := make([]string, 0, len(constraintOperators))
+	for k := range constraintOperators {
+		ops = append(ops, regexp.QuoteMeta(k))
+	}
+
+	constraintRegexp = regexp.MustCompile(fmt.Sprintf(
+		`^\s*(%s)\s*(%s)\s*$`,
+		strings.Join(ops, "|"),
+		VersionRegexpRaw))
 }
 
 // NewConstraint will parse one or more constraints from the given
@@ -98,7 +107,7 @@ func (cs Constraints) Check(v *Version) bool {
 // to '>0.2' it is *NOT* treated as equal.
 //
 // Missing operator is treated as equal to '=', whitespaces
-// are ignored and constraints are sorted before comparison.
+// are ignored and constraints are sorted before comaparison.
 func (cs Constraints) Equals(c Constraints) bool {
 	if len(cs) != len(c) {
 		return false
@@ -167,9 +176,9 @@ func (c *Constraint) String() string {
 }
 
 func parseSingle(v string) (*Constraint, error) {
-	matches := getConstraintRegexp().FindStringSubmatch(v)
+	matches := constraintRegexp.FindStringSubmatch(v)
 	if matches == nil {
-		return nil, fmt.Errorf("malformed constraint: %s", v)
+		return nil, fmt.Errorf("Malformed constraint: %s", v)
 	}
 
 	check, err := NewVersion(matches[2])
@@ -177,25 +186,7 @@ func parseSingle(v string) (*Constraint, error) {
 		return nil, err
 	}
 
-	var cop constraintOperation
-	switch matches[1] {
-	case "=":
-		cop = constraintOperation{op: equal, f: constraintEqual}
-	case "!=":
-		cop = constraintOperation{op: notEqual, f: constraintNotEqual}
-	case ">":
-		cop = constraintOperation{op: greaterThan, f: constraintGreaterThan}
-	case "<":
-		cop = constraintOperation{op: lessThan, f: constraintLessThan}
-	case ">=":
-		cop = constraintOperation{op: greaterThanEqual, f: constraintGreaterThanEqual}
-	case "<=":
-		cop = constraintOperation{op: lessThanEqual, f: constraintLessThanEqual}
-	case "~>":
-		cop = constraintOperation{op: pessimistic, f: constraintPessimistic}
-	default:
-		cop = constraintOperation{op: equal, f: constraintEqual}
-	}
+	cop := constraintOperators[matches[1]]
 
 	return &Constraint{
 		f:        cop.f,

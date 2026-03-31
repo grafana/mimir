@@ -18,7 +18,7 @@ func ConnectionsWithContext(ctx context.Context, kind string) ([]ConnectionStat,
 	return ConnectionsPidWithContext(ctx, kind, 0)
 }
 
-func ConnectionsMaxWithContext(_ context.Context, _ string, _ int) ([]ConnectionStat, error) {
+func ConnectionsMaxWithContext(ctx context.Context, kind string, maxConn int) ([]ConnectionStat, error) {
 	return []ConnectionStat{}, common.ErrNotImplementedError
 }
 
@@ -29,7 +29,11 @@ func ConnectionsPidWithContext(ctx context.Context, kind string, pid int32) ([]C
 	switch strings.ToLower(kind) {
 	default:
 		fallthrough
-	case "", "all", "inet":
+	case "":
+		fallthrough
+	case "all":
+		fallthrough
+	case "inet":
 		args = append(args, "tcp", "-i", "udp")
 	case "inet4":
 		args = append(args, "4")
@@ -131,26 +135,26 @@ func parseNetLine(line string) (ConnectionStat, error) {
 	return n, nil
 }
 
-func parseAddr(l string) (Addr, error) {
-	host, port, err := net.SplitHostPort(l)
-	if err != nil {
-		return Addr{}, fmt.Errorf("wrong addr, %s", l)
+func parseNetAddr(line string) (laddr Addr, raddr Addr, err error) {
+	parse := func(l string) (Addr, error) {
+		host, port, err := net.SplitHostPort(l)
+		if err != nil {
+			return Addr{}, fmt.Errorf("wrong addr, %s", l)
+		}
+		lport, err := strconv.ParseInt(port, 10, 32)
+		if err != nil {
+			return Addr{}, err
+		}
+		return Addr{IP: host, Port: uint32(lport)}, nil
 	}
-	lport, err := strconv.ParseInt(port, 10, 32)
-	if err != nil {
-		return Addr{}, err
-	}
-	return Addr{IP: host, Port: uint32(lport)}, nil
-}
 
-func parseNetAddr(line string) (laddr, raddr Addr, err error) {
 	addrs := strings.Split(line, "->")
 	if len(addrs) == 0 {
 		return laddr, raddr, fmt.Errorf("wrong netaddr, %s", line)
 	}
-	laddr, err = parseAddr(addrs[0])
+	laddr, err = parse(addrs[0])
 	if len(addrs) == 2 { // remote addr exists
-		raddr, err = parseAddr(addrs[1])
+		raddr, err = parse(addrs[1])
 		if err != nil {
 			return laddr, raddr, err
 		}
@@ -159,7 +163,7 @@ func parseNetAddr(line string) (laddr, raddr Addr, err error) {
 	return laddr, raddr, err
 }
 
-func ConnectionsPidMaxWithContext(_ context.Context, _ string, _ int32, _ int) ([]ConnectionStat, error) {
+func ConnectionsPidMaxWithContext(ctx context.Context, kind string, pid int32, maxConn int) ([]ConnectionStat, error) {
 	return []ConnectionStat{}, common.ErrNotImplementedError
 }
 
@@ -179,6 +183,6 @@ func ConnectionsPidMaxWithoutUidsWithContext(ctx context.Context, kind string, p
 	return connectionsPidMaxWithoutUidsWithContext(ctx, kind, pid, maxConn)
 }
 
-func connectionsPidMaxWithoutUidsWithContext(_ context.Context, _ string, _ int32, _ int) ([]ConnectionStat, error) {
+func connectionsPidMaxWithoutUidsWithContext(ctx context.Context, kind string, pid int32, maxConn int) ([]ConnectionStat, error) {
 	return []ConnectionStat{}, common.ErrNotImplementedError
 }

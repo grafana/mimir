@@ -17,7 +17,7 @@ func VirtualMemory() (*VirtualMemoryStat, error) {
 	return VirtualMemoryWithContext(context.Background())
 }
 
-func VirtualMemoryWithContext(_ context.Context) (*VirtualMemoryStat, error) {
+func VirtualMemoryWithContext(ctx context.Context) (*VirtualMemoryStat, error) {
 	pageSize, err := common.SysctlUint("vm.stats.vm.v_page_size")
 	if err != nil {
 		return nil, err
@@ -110,7 +110,7 @@ type xswdev11 struct {
 	Used    int32  // Used is the number of blocks used
 }
 
-func SwapMemoryWithContext(_ context.Context) (*SwapMemoryStat, error) {
+func SwapMemoryWithContext(ctx context.Context) (*SwapMemoryStat, error) {
 	// FreeBSD can have multiple swap devices so we total them up
 	i, err := common.SysctlUint("vm.nswapdev")
 	if err != nil {
@@ -139,8 +139,7 @@ func SwapMemoryWithContext(_ context.Context) (*SwapMemoryStat, error) {
 
 		// first, try to parse with version 2
 		xsw := (*xswdev)(unsafe.Pointer(&buf[0]))
-		switch {
-		case xsw.Version == XSWDEV_VERSION11:
+		if xsw.Version == XSWDEV_VERSION11 {
 			// this is version 1, so try to parse again
 			xsw := (*xswdev11)(unsafe.Pointer(&buf[0]))
 			if xsw.Version != XSWDEV_VERSION11 {
@@ -148,9 +147,9 @@ func SwapMemoryWithContext(_ context.Context) (*SwapMemoryStat, error) {
 			}
 			s.Total += uint64(xsw.NBlks)
 			s.Used += uint64(xsw.Used)
-		case xsw.Version != XSWDEV_VERSION:
+		} else if xsw.Version != XSWDEV_VERSION {
 			return nil, errors.New("xswdev version mismatch")
-		default:
+		} else {
 			s.Total += uint64(xsw.NBlks)
 			s.Used += uint64(xsw.Used)
 		}

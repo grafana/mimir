@@ -48,20 +48,8 @@ type issueSearch struct {
 }
 
 // see https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-search/#api-rest-api-3-search-jql-post-response
-// v2 search results (legacy /search endpoints)
-type issueSearchResultV2 struct {
-	Expand     string  `json:"expand,omitempty"`
-	StartAt    int     `json:"startAt,omitempty"`
-	MaxResults int     `json:"maxResults,omitempty"`
-	Total      int     `json:"total,omitempty"`
-	Issues     []issue `json:"issues"`
-}
-
-// v3 search results (enhanced /search/jql endpoints)
-type issueSearchResultV3 struct {
-	IsLast        bool    `json:"isLast"`
-	NextPageToken string  `json:"nextPageToken,omitempty"`
-	Issues        []issue `json:"issues"`
+type issueSearchResult struct {
+	Issues []issue `json:"issues"`
 }
 
 type issueTransitions struct {

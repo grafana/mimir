@@ -3,7 +3,6 @@ package kgo
 import (
 	"bytes"
 	"fmt"
-	"slices"
 	"sort"
 	"strings"
 
@@ -174,8 +173,9 @@ type ConsumerBalancerBalance interface {
 	Balance(*ConsumerBalancer, map[string]int32) IntoSyncAssignment
 }
 
-// ParseConsumerSyncAssignment parses `assignment` as kmsg.ConsumerMemberAssignment
-// and returns the mapped topic => partitions assignment.
+// ParseConsumerSyncAssignment returns an assignment as specified a
+// kmsg.ConsumerMemberAssignment, that is, the type encoded in metadata for the
+// consumer protocol.
 func ParseConsumerSyncAssignment(assignment []byte) (map[string][]int32, error) {
 	var kassignment kmsg.ConsumerMemberAssignment
 	if err := kassignment.ReadFrom(assignment); err != nil {
@@ -295,7 +295,7 @@ func (p *BalancePlan) IntoSyncAssignment() []kmsg.SyncGroupRequestGroupAssignmen
 	for member, assignment := range p.plan {
 		var kassignment kmsg.ConsumerMemberAssignment
 		for topic, partitions := range assignment {
-			slices.Sort(partitions)
+			sort.Slice(partitions, func(i, j int) bool { return partitions[i] < partitions[j] })
 			assnTopic := kmsg.NewConsumerMemberAssignmentTopic()
 			assnTopic.Topic = topic
 			assnTopic.Partitions = partitions
@@ -432,7 +432,7 @@ func (g *groupConsumer) balanceGroup(proto string, members []kmsg.JoinGroupRespo
 			interests.Reset()
 			fmt.Fprintf(interests, "interested topics: %v, previously owned: ", meta.Topics)
 			for _, owned := range meta.OwnedPartitions {
-				slices.Sort(owned.Partitions)
+				sort.Slice(owned.Partitions, func(i, j int) bool { return owned.Partitions[i] < owned.Partitions[j] })
 				fmt.Fprintf(interests, "%s%v, ", owned.Topic, owned.Partitions)
 			}
 			strInterests := interests.String()

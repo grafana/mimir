@@ -1,6 +1,3 @@
-// SPDX-FileCopyrightText: Copyright 2015-2025 go-swagger maintainers
-// SPDX-License-Identifier: Apache-2.0
-
 package validate
 
 import (
@@ -30,7 +27,7 @@ func WithOperationRequest(ctx context.Context) context.Context {
 	return withOperation(ctx, request)
 }
 
-// WithOperationResponse returns a new context with operationType response
+// WithOperationRequest returns a new context with operationType response
 // in context value
 func WithOperationResponse(ctx context.Context) context.Context {
 	return withOperation(ctx, response)

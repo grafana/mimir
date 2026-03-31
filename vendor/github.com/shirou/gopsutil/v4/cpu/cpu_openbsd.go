@@ -9,10 +9,9 @@ import (
 	"runtime"
 	"unsafe"
 
+	"github.com/shirou/gopsutil/v4/internal/common"
 	"github.com/tklauser/go-sysconf"
 	"golang.org/x/sys/unix"
-
-	"github.com/shirou/gopsutil/v4/internal/common"
 )
 
 const (
@@ -54,8 +53,7 @@ func Times(percpu bool) ([]TimesStat, error) {
 	return TimesWithContext(context.Background(), percpu)
 }
 
-func TimesWithContext(_ context.Context, percpu bool) ([]TimesStat, error) {
-	ret := make([]TimesStat, 0)
+func TimesWithContext(ctx context.Context, percpu bool) (ret []TimesStat, err error) {
 	if !percpu {
 		mib := []int32{ctlKern, kernCpTime}
 		buf, _, err := common.CallSyscall(mib)
@@ -63,20 +61,20 @@ func TimesWithContext(_ context.Context, percpu bool) ([]TimesStat, error) {
 			return ret, err
 		}
 		times := (*cpuTimes)(unsafe.Pointer(&buf[0]))
-		ret = append(ret, TimesStat{
+		stat := TimesStat{
 			CPU:    "cpu-total",
 			User:   float64(times.User) / ClocksPerSec,
 			Nice:   float64(times.Nice) / ClocksPerSec,
 			System: float64(times.Sys) / ClocksPerSec,
 			Idle:   float64(times.Idle) / ClocksPerSec,
 			Irq:    float64(times.Intr) / ClocksPerSec,
-		})
-		return ret, nil
+		}
+		return []TimesStat{stat}, nil
 	}
 
 	ncpu, err := unix.SysctlUint32("hw.ncpu")
 	if err != nil {
-		return ret, err
+		return
 	}
 
 	var i uint32
@@ -109,7 +107,7 @@ func Info() ([]InfoStat, error) {
 	return InfoWithContext(context.Background())
 }
 
-func InfoWithContext(_ context.Context) ([]InfoStat, error) {
+func InfoWithContext(ctx context.Context) ([]InfoStat, error) {
 	var ret []InfoStat
 	var err error
 
@@ -134,6 +132,6 @@ func InfoWithContext(_ context.Context) ([]InfoStat, error) {
 	return append(ret, c), nil
 }
 
-func CountsWithContext(_ context.Context, _ bool) (int, error) {
+func CountsWithContext(ctx context.Context, logical bool) (int, error) {
 	return runtime.NumCPU(), nil
 }

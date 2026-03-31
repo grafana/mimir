@@ -58,7 +58,7 @@ func HasKey(key string, raw []byte) bool {
 		return false
 	}
 	var field []byte
-	for range sz {
+	for i := uint32(0); i < sz; i++ {
 		field, bts, err = ReadStringZC(bts)
 		if err != nil {
 			return false

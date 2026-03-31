@@ -1,4 +1,4 @@
-// Copyright The Prometheus Authors
+// Copyright 2020 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"hash"
 	"io"
-	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -32,6 +31,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 )
 
@@ -303,7 +303,7 @@ func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 	cdm.closers = map[int]io.Closer{}
 	defer func() {
 		if returnErr != nil {
-			returnErr = errors.Join(returnErr, closeAllFromMap(cdm.closers))
+			returnErr = tsdb_errors.NewMulti(returnErr, closeAllFromMap(cdm.closers)).Err()
 
 			cdm.mmappedChunkFiles = nil
 			cdm.closers = nil
@@ -614,7 +614,7 @@ func (cdm *ChunkDiskMapper) cut() (seq, offset int, returnErr error) {
 		// The file should not be closed if there is no error,
 		// its kept open in the ChunkDiskMapper.
 		if returnErr != nil {
-			returnErr = errors.Join(returnErr, newFile.Close())
+			returnErr = tsdb_errors.NewMulti(returnErr, newFile.Close()).Err()
 		}
 	}()
 
@@ -769,25 +769,8 @@ func (cdm *ChunkDiskMapper) Chunk(ref ChunkDiskMapperRef) (chunkenc.Chunk, error
 		}
 	}
 
-	if chkDataLen > uint64(math.MaxInt) {
-		return nil, &CorruptionErr{
-			Dir:       cdm.dir.Name(),
-			FileIndex: sgmIndex,
-			Err:       fmt.Errorf("chunk length %d exceeds supported size", chkDataLen),
-		}
-	}
-
-	chkDataLenInt := int(chkDataLen)
-	if chkDataLenStart > math.MaxInt-n-chkDataLenInt {
-		return nil, &CorruptionErr{
-			Dir:       cdm.dir.Name(),
-			FileIndex: sgmIndex,
-			Err:       fmt.Errorf("chunk data end overflows supported size (start=%d, len=%d, n=%d)", chkDataLenStart, chkDataLenInt, n),
-		}
-	}
-
 	// Verify the chunk data end.
-	chkDataEnd := chkDataLenStart + n + chkDataLenInt
+	chkDataEnd := chkDataLenStart + n + int(chkDataLen)
 	if chkDataEnd > mmapFile.byteSlice.Len() {
 		return nil, &CorruptionErr{
 			Dir:       cdm.dir.Name(),
@@ -970,16 +953,16 @@ func (cdm *ChunkDiskMapper) Truncate(fileNo uint32) error {
 	}
 	cdm.readPathMtx.RUnlock()
 
-	var errs []error
+	errs := tsdb_errors.NewMulti()
 	// Cut a new file only if the current file has some chunks.
 	if cdm.curFileSize() > HeadChunkFileHeaderSize {
 		// There is a known race condition here because between the check of curFileSize() and the call to CutNewFile()
 		// a new file could already be cut, this is acceptable because it will simply result in an empty file which
 		// won't do any harm.
-		errs = append(errs, cdm.CutNewFile())
+		errs.Add(cdm.CutNewFile())
 	}
 	pendingDeletes, err := cdm.deleteFiles(removedFiles)
-	errs = append(errs, err)
+	errs.Add(err)
 
 	if len(chkFileIndices) == len(removedFiles) {
 		// All files were deleted. Reset the current sequence.
@@ -1003,7 +986,7 @@ func (cdm *ChunkDiskMapper) Truncate(fileNo uint32) error {
 		cdm.evtlPosMtx.Unlock()
 	}
 
-	return errors.Join(errs...)
+	return errs.Err()
 }
 
 // deleteFiles deletes the given file sequences in order of the sequence.
@@ -1098,23 +1081,23 @@ func (cdm *ChunkDiskMapper) Close() error {
 	}
 	cdm.closed = true
 
-	errs := []error{
+	errs := tsdb_errors.NewMulti(
 		closeAllFromMap(cdm.closers),
 		cdm.finalizeCurFile(),
 		cdm.dir.Close(),
-	}
+	)
 	cdm.mmappedChunkFiles = map[int]*mmappedChunkFile{}
 	cdm.closers = map[int]io.Closer{}
 
-	return errors.Join(errs...)
+	return errs.Err()
 }
 
 func closeAllFromMap(cs map[int]io.Closer) error {
-	var errs []error
+	errs := tsdb_errors.NewMulti()
 	for _, c := range cs {
-		errs = append(errs, c.Close())
+		errs.Add(c.Close())
 	}
-	return errors.Join(errs...)
+	return errs.Err()
 }
 
 const inBufferShards = 128 // 128 is a randomly chosen number.

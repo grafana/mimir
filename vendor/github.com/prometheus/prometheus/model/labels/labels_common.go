@@ -1,4 +1,4 @@
-// Copyright The Prometheus Authors
+// Copyright 2017 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -25,10 +25,7 @@ import (
 
 const (
 	// MetricName is a special label name that represent a metric name.
-	//
-	// Deprecated: Instead, consider using schema.Metadata structure and its methods for consistent metadata behaviour with the newly added __type__ and __unit__ labels. Alternatively use github.com/prometheus/common/model.MetricNameLabel for the direct replacement.
-	//
-	// labels package is providing label transport, agnostic to semantic meaning of each label.
+	// Deprecated: Use schema.Metadata structure and its methods.
 	MetricName = "__name__"
 
 	AlertName   = "alertname"

@@ -1,4 +1,4 @@
-// Copyright The Prometheus Authors
+// Copyright 2021 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -14,7 +14,6 @@
 package histogram
 
 import (
-	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -247,7 +246,7 @@ func (h *Histogram) CumulativeBucketIterator() BucketIterator[uint64] {
 // supposed to be used according to the schema.
 func (h *Histogram) Equals(h2 *Histogram) bool {
 	if h2 == nil {
-		return h == nil
+		return false
 	}
 
 	if h.Schema != h2.Schema || h.Count != h2.Count ||
@@ -349,11 +348,11 @@ func allEmptySpans(s []Span) bool {
 // Compact works like FloatHistogram.Compact. See there for detailed
 // explanations.
 func (h *Histogram) Compact(maxEmptyBuckets int) *Histogram {
-	h.PositiveBuckets, _, h.PositiveSpans = compactBuckets(
-		h.PositiveBuckets, nil, h.PositiveSpans, maxEmptyBuckets, true,
+	h.PositiveBuckets, h.PositiveSpans = compactBuckets(
+		h.PositiveBuckets, h.PositiveSpans, maxEmptyBuckets, true,
 	)
-	h.NegativeBuckets, _, h.NegativeSpans = compactBuckets(
-		h.NegativeBuckets, nil, h.NegativeSpans, maxEmptyBuckets, true,
+	h.NegativeBuckets, h.NegativeSpans = compactBuckets(
+		h.NegativeBuckets, h.NegativeSpans, maxEmptyBuckets, true,
 	)
 	return h
 }
@@ -516,11 +515,6 @@ func (r *regularBucketIterator) Next() bool {
 		r.currIdx += span.Offset
 	}
 
-	// This protects against index out of range panic, which
-	// can only happen with an invalid histogram.
-	if r.bucketsIdx >= len(r.buckets) {
-		return false
-	}
 	r.currCount += r.buckets[r.bucketsIdx]
 	r.idxInSpan++
 	r.bucketsIdx++
@@ -582,11 +576,6 @@ func (c *cumulativeBucketIterator) Next() bool {
 		c.initialized = true
 	}
 
-	// This protects against index out of range panic, which
-	// can only happen with an invalid histogram.
-	if c.posBucketsIdx >= len(c.h.PositiveBuckets) {
-		return false
-	}
 	c.currCount += c.h.PositiveBuckets[c.posBucketsIdx]
 	c.currCumulativeCount += uint64(c.currCount)
 	c.currUpper = getBound(c.currIdx, c.h.Schema, c.h.CustomValues)
@@ -618,37 +607,26 @@ func (c *cumulativeBucketIterator) At() Bucket[uint64] {
 }
 
 // ReduceResolution reduces the histogram's spans, buckets into target schema.
-// An error is returned in the following cases:
-//   - The target schema is not smaller than the current histogram's schema.
-//   - The histogram has custom buckets.
-//   - The target schema is a custom buckets schema.
-//   - Any spans have an invalid offset.
-//   - The spans are inconsistent with the number of buckets.
-func (h *Histogram) ReduceResolution(targetSchema int32) error {
-	// Note that the follow three returns are not returning a
-	// histogram.Error because they are programming errors.
+// The target schema must be smaller than the current histogram's schema.
+// This will panic if the histogram has custom buckets or if the target schema is
+// a custom buckets schema.
+func (h *Histogram) ReduceResolution(targetSchema int32) *Histogram {
 	if h.UsesCustomBuckets() {
-		return errors.New("cannot reduce resolution when there are custom buckets")
+		panic("cannot reduce resolution when there are custom buckets")
 	}
 	if IsCustomBucketsSchema(targetSchema) {
-		return errors.New("cannot reduce resolution to custom buckets schema")
+		panic("cannot reduce resolution to custom buckets schema")
 	}
 	if targetSchema >= h.Schema {
-		return fmt.Errorf("cannot reduce resolution from schema %d to %d", h.Schema, targetSchema)
+		panic(fmt.Errorf("cannot reduce resolution from schema %d to %d", h.Schema, targetSchema))
 	}
 
-	var err error
-
-	if h.PositiveSpans, h.PositiveBuckets, err = reduceResolution(
+	h.PositiveSpans, h.PositiveBuckets = reduceResolution(
 		h.PositiveSpans, h.PositiveBuckets, h.Schema, targetSchema, true, true,
-	); err != nil {
-		return err
-	}
-	if h.NegativeSpans, h.NegativeBuckets, err = reduceResolution(
+	)
+	h.NegativeSpans, h.NegativeBuckets = reduceResolution(
 		h.NegativeSpans, h.NegativeBuckets, h.Schema, targetSchema, true, true,
-	); err != nil {
-		return err
-	}
+	)
 	h.Schema = targetSchema
-	return nil
+	return h
 }

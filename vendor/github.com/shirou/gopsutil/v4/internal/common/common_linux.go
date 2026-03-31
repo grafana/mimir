@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -18,6 +19,20 @@ import (
 
 // cachedBootTime must be accessed via atomic.Load/StoreUint64
 var cachedBootTime uint64
+
+func DoSysctrl(mib string) ([]string, error) {
+	cmd := exec.Command("sysctl", "-n", mib)
+	cmd.Env = getSysctrlEnv(os.Environ())
+	out, err := cmd.Output()
+	if err != nil {
+		return []string{}, err
+	}
+	v := strings.Replace(string(out), "{ ", "", 1)
+	v = strings.Replace(string(v), " }", "", 1)
+	values := strings.Fields(string(v))
+
+	return values, nil
+}
 
 func NumProcs() (uint64, error) {
 	return NumProcsWithContext(context.Background())
@@ -104,18 +119,18 @@ func BootTimeWithContext(ctx context.Context, enableCache bool) (uint64, error) 
 }
 
 func handleBootTimeFileReadErr(err error) (uint64, error) {
-	if !os.IsPermission(err) {
-		return 0, err
-	}
-	var info syscall.Sysinfo_t
-	err = syscall.Sysinfo(&info)
-	if err != nil {
-		return 0, err
-	}
+	if os.IsPermission(err) {
+		var info syscall.Sysinfo_t
+		err := syscall.Sysinfo(&info)
+		if err != nil {
+			return 0, err
+		}
 
-	currentTime := time.Now().UnixNano() / int64(time.Second)
-	t := currentTime - int64(info.Uptime)
-	return uint64(t), nil
+		currentTime := time.Now().UnixNano() / int64(time.Second)
+		t := currentTime - int64(info.Uptime)
+		return uint64(t), nil
+	}
+	return 0, err
 }
 
 func readBootTimeStat(ctx context.Context) (uint64, error) {
@@ -181,20 +196,19 @@ func VirtualizationWithContext(ctx context.Context) (string, string, error) {
 	if PathExists(filename) {
 		contents, err := ReadLines(filename)
 		if err == nil {
-			switch {
-			case StringsContains(contents, "kvm"):
+			if StringsContains(contents, "kvm") {
 				system = "kvm"
 				role = "host"
-			case StringsContains(contents, "hv_util"):
+			} else if StringsContains(contents, "hv_util") {
 				system = "hyperv"
 				role = "guest"
-			case StringsContains(contents, "vboxdrv"):
+			} else if StringsContains(contents, "vboxdrv") {
 				system = "vbox"
 				role = "host"
-			case StringsContains(contents, "vboxguest"):
+			} else if StringsContains(contents, "vboxguest") {
 				system = "vbox"
 				role = "guest"
-			case StringsContains(contents, "vmware"):
+			} else if StringsContains(contents, "vmware") {
 				system = "vmware"
 				role = "guest"
 			}
@@ -259,17 +273,16 @@ func VirtualizationWithContext(ctx context.Context) (string, string, error) {
 	if PathExists(filepath.Join(filename, "self", "cgroup")) {
 		contents, err := ReadLines(filepath.Join(filename, "self", "cgroup"))
 		if err == nil {
-			switch {
-			case StringsContains(contents, "lxc"):
+			if StringsContains(contents, "lxc") {
 				system = "lxc"
 				role = "guest"
-			case StringsContains(contents, "docker"):
+			} else if StringsContains(contents, "docker") {
 				system = "docker"
 				role = "guest"
-			case StringsContains(contents, "machine-rkt"):
+			} else if StringsContains(contents, "machine-rkt") {
 				system = "rkt"
 				role = "guest"
-			case PathExists("/usr/bin/lxc-version"):
+			} else if PathExists("/usr/bin/lxc-version") {
 				system = "lxc"
 				role = "host"
 			}
@@ -302,11 +315,11 @@ func VirtualizationWithContext(ctx context.Context) (string, string, error) {
 	return system, role, nil
 }
 
-func GetOSRelease() (platform, version string, err error) {
+func GetOSRelease() (platform string, version string, err error) {
 	return GetOSReleaseWithContext(context.Background())
 }
 
-func GetOSReleaseWithContext(ctx context.Context) (platform, version string, err error) {
+func GetOSReleaseWithContext(ctx context.Context) (platform string, version string, err error) {
 	contents, err := ReadLines(HostEtcWithContext(ctx, "os-release"))
 	if err != nil {
 		return "", "", nil // return empty

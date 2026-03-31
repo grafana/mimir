@@ -8,6 +8,7 @@ package ptrace
 
 import (
 	"go.opentelemetry.io/collector/pdata/internal"
+	otlptrace "go.opentelemetry.io/collector/pdata/internal/data/protogen/trace/v1"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 )
 
@@ -20,11 +21,11 @@ import (
 // Must use NewSpanEvent function to create new instances.
 // Important: zero-initialized instance is not valid for use.
 type SpanEvent struct {
-	orig  *internal.SpanEvent
+	orig  *otlptrace.Span_Event
 	state *internal.State
 }
 
-func newSpanEvent(orig *internal.SpanEvent, state *internal.State) SpanEvent {
+func newSpanEvent(orig *otlptrace.Span_Event, state *internal.State) SpanEvent {
 	return SpanEvent{orig: orig, state: state}
 }
 
@@ -33,7 +34,7 @@ func newSpanEvent(orig *internal.SpanEvent, state *internal.State) SpanEvent {
 // This must be used only in testing code. Users should use "AppendEmpty" when part of a Slice,
 // OR directly access the member if this is embedded in another struct.
 func NewSpanEvent() SpanEvent {
-	return newSpanEvent(internal.NewSpanEvent(), internal.NewState())
+	return newSpanEvent(internal.NewOrigSpan_Event(), internal.NewState())
 }
 
 // MoveTo moves all properties from the current struct overriding the destination and
@@ -45,7 +46,7 @@ func (ms SpanEvent) MoveTo(dest SpanEvent) {
 	if ms.orig == dest.orig {
 		return
 	}
-	internal.DeleteSpanEvent(dest.orig, false)
+	internal.DeleteOrigSpan_Event(dest.orig, false)
 	*dest.orig, *ms.orig = *ms.orig, *dest.orig
 }
 
@@ -73,7 +74,7 @@ func (ms SpanEvent) SetName(v string) {
 
 // Attributes returns the Attributes associated with this SpanEvent.
 func (ms SpanEvent) Attributes() pcommon.Map {
-	return pcommon.Map(internal.NewMapWrapper(&ms.orig.Attributes, ms.state))
+	return pcommon.Map(internal.NewMap(&ms.orig.Attributes, ms.state))
 }
 
 // DroppedAttributesCount returns the droppedattributescount associated with this SpanEvent.
@@ -90,5 +91,5 @@ func (ms SpanEvent) SetDroppedAttributesCount(v uint32) {
 // CopyTo copies all properties from the current struct overriding the destination.
 func (ms SpanEvent) CopyTo(dest SpanEvent) {
 	dest.state.AssertMutable()
-	internal.CopySpanEvent(dest.orig, ms.orig)
+	internal.CopyOrigSpan_Event(dest.orig, ms.orig)
 }

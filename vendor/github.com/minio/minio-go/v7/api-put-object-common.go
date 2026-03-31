@@ -31,7 +31,7 @@ const nullVersionID = "null"
 // Verify if reader is *minio.Object
 func isObject(reader io.Reader) (ok bool) {
 	_, ok = reader.(*Object)
-	return ok
+	return
 }
 
 // Verify if reader is a generic ReaderAt
@@ -56,7 +56,7 @@ func isReadAt(reader io.Reader) (ok bool) {
 	} else {
 		_, ok = reader.(io.ReaderAt)
 	}
-	return ok
+	return
 }
 
 // OptimalPartInfo - calculate the optimal part info for a given
@@ -67,11 +67,9 @@ func isReadAt(reader io.Reader) (ok bool) {
 //
 //	maxPartsCount - 10000
 //	minPartSize - 16MiB
-//	maxObjectSize - ~48.83TiB (maxPartSize * maxPartsCount)
+//	maxMultipartPutObjectSize - 5TiB
 func OptimalPartInfo(objectSize int64, configuredPartSize uint64) (totalPartsCount int, partSize, lastPartSize int64, err error) {
-	// When object size is unknown (-1), default to 5TiB to limit memory usage.
-	// This results in ~537MiB part sizes. For larger objects (up to ~48.83TiB),
-	// callers should set configuredPartSize explicitly to control memory usage.
+	// object size is '-1' set it to 5TiB.
 	var unknownSize bool
 	if objectSize == -1 {
 		unknownSize = true
@@ -79,33 +77,33 @@ func OptimalPartInfo(objectSize int64, configuredPartSize uint64) (totalPartsCou
 	}
 
 	// object size is larger than supported maximum.
-	if objectSize > maxObjectSize {
-		err = errEntityTooLarge(objectSize, maxObjectSize, "", "")
-		return totalPartsCount, partSize, lastPartSize, err
+	if objectSize > maxMultipartPutObjectSize {
+		err = errEntityTooLarge(objectSize, maxMultipartPutObjectSize, "", "")
+		return
 	}
 
 	var partSizeFlt float64
 	if configuredPartSize > 0 {
 		if int64(configuredPartSize) > objectSize {
 			err = errEntityTooLarge(int64(configuredPartSize), objectSize, "", "")
-			return totalPartsCount, partSize, lastPartSize, err
+			return
 		}
 
 		if !unknownSize {
 			if objectSize > (int64(configuredPartSize) * maxPartsCount) {
 				err = errInvalidArgument("Part size * max_parts(10000) is lesser than input objectSize.")
-				return totalPartsCount, partSize, lastPartSize, err
+				return
 			}
 		}
 
 		if configuredPartSize < absMinPartSize {
 			err = errInvalidArgument("Input part size is smaller than allowed minimum of 5MiB.")
-			return totalPartsCount, partSize, lastPartSize, err
+			return
 		}
 
 		if configuredPartSize > maxPartSize {
 			err = errInvalidArgument("Input part size is bigger than allowed maximum of 5GiB.")
-			return totalPartsCount, partSize, lastPartSize, err
+			return
 		}
 
 		partSizeFlt = float64(configuredPartSize)

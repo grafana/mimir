@@ -33,6 +33,7 @@ import (
 	"cloud.google.com/go/auth"
 	"cloud.google.com/go/iam/apiv1/iampb"
 	"cloud.google.com/go/internal/optional"
+	"cloud.google.com/go/internal/trace"
 	"github.com/google/uuid"
 	"github.com/googleapis/gax-go/v2/callctx"
 	"google.golang.org/api/googleapi"
@@ -224,7 +225,6 @@ func (c *httpStorageClient) ListBuckets(ctx context.Context, project string, opt
 		req.Projection("full")
 		req.Prefix(it.Prefix)
 		req.PageToken(pageToken)
-		req.ReturnPartialSuccess(it.ReturnPartialSuccess)
 		if pageSize > 0 {
 			req.MaxResults(int64(pageSize))
 		}
@@ -243,7 +243,6 @@ func (c *httpStorageClient) ListBuckets(ctx context.Context, project string, opt
 			}
 			it.buckets = append(it.buckets, b)
 		}
-		it.unreachable = resp.Unreachable
 		return resp.NextPageToken, nil
 	}
 
@@ -365,12 +364,6 @@ func (c *httpStorageClient) ListObjects(ctx context.Context, bucket string, q *Q
 		req.IncludeTrailingDelimiter(it.query.IncludeTrailingDelimiter)
 		req.MatchGlob(it.query.MatchGlob)
 		req.IncludeFoldersAsPrefixes(it.query.IncludeFoldersAsPrefixes)
-
-		// Cannot pass empty filter
-		if it.query.Filter != "" {
-			req.Filter(it.query.Filter)
-		}
-
 		if selection := it.query.toFieldSelection(); selection != "" {
 			req.Fields("nextPageToken", googleapi.Field(selection))
 		}
@@ -524,19 +517,6 @@ func (c *httpStorageClient) UpdateObject(ctx context.Context, params *updateObje
 			forceSendFields = append(forceSendFields, "Retention")
 		}
 	}
-
-	if uattrs.Contexts != nil && uattrs.Contexts.Custom != nil {
-		if len(uattrs.Contexts.Custom) == 0 {
-			// To delete all contexts, "Contexts" must be added to nullFields.
-			// Sending empty Custom map in the request body is a no-op without this.
-			nullFields = append(nullFields, "Contexts")
-		} else {
-			attrs.Contexts = uattrs.Contexts
-			// This is to ensure any new values or deletions are updated
-			forceSendFields = append(forceSendFields, "Contexts")
-		}
-	}
-
 	rawObj := attrs.toRawObject(params.bucket)
 	rawObj.ForceSendFields = forceSendFields
 	rawObj.NullFields = nullFields
@@ -867,8 +847,8 @@ func (c *httpStorageClient) NewMultiRangeDownloader(ctx context.Context, params 
 }
 
 func (c *httpStorageClient) NewRangeReader(ctx context.Context, params *newRangeReaderParams, opts ...storageOption) (r *Reader, err error) {
-	ctx, _ = startSpan(ctx, "httpStorageClient.NewRangeReader")
-	defer func() { endSpan(ctx, err) }()
+	ctx = trace.StartSpan(ctx, "cloud.google.com/go/storage.httpStorageClient.NewRangeReader")
+	defer func() { trace.EndSpan(ctx, err) }()
 
 	s := callSettings(c.settings, opts...)
 
@@ -983,52 +963,7 @@ func (c *httpStorageClient) newRangeReaderJSON(ctx context.Context, params *newR
 	return parseReadResponse(res, params, reopen)
 }
 
-// httpInternalWriter writes data for an HTTP upload. For single-shot uploads,
-// it also calculates the CRC32C checksum of the data and validates it against
-// the checksum returned by the server.
-type httpInternalWriter struct {
-	*io.PipeWriter
-	chunkSize          int
-	checksumDisabled   bool
-	fullObjectChecksum uint32
-	// In single-shot mode, the server-provided checksum is received on this
-	// channel for validation after the upload is complete.
-	serverChecksumChan chan uint32
-}
-
-// validateChecksum validates the computed checksum against the server-provided checksum.
-func (hiw *httpInternalWriter) validateChecksumFromServer() error {
-	serverChecksum, ok := <-hiw.serverChecksumChan
-	// Do not check for channel closure as error is already set on the writer
-	// if serverChecksumChan is closed without checksum
-	if ok && hiw.fullObjectChecksum != serverChecksum {
-		return fmt.Errorf("storage: object checksum mismatch: computed %q, server %q; the bucket may contain corrupted object", encodeUint32(hiw.fullObjectChecksum), encodeUint32(serverChecksum))
-	}
-	return nil
-}
-
-func (hiw *httpInternalWriter) Write(data []byte) (n int, err error) {
-	if !hiw.checksumDisabled && hiw.chunkSize == 0 {
-		hiw.fullObjectChecksum = crc32.Update(hiw.fullObjectChecksum, crc32cTable, data)
-	}
-	return hiw.PipeWriter.Write(data)
-}
-
-func (hiw *httpInternalWriter) Close() error {
-	if err := hiw.PipeWriter.Close(); err != nil {
-		return err
-	}
-	if !hiw.checksumDisabled && hiw.chunkSize == 0 {
-		return hiw.validateChecksumFromServer()
-	}
-	return nil
-}
-
-func (hiw *httpInternalWriter) Flush() (int64, error) {
-	return 0, errors.New("Writer.Flush is only supported for gRPC-based clients")
-}
-
-func (c *httpStorageClient) OpenWriter(params *openWriterParams, opts ...storageOption) (internalWriter, error) {
+func (c *httpStorageClient) OpenWriter(params *openWriterParams, opts ...storageOption) (*io.PipeWriter, error) {
 	if params.append {
 		return nil, errors.New("storage: append not supported on HTTP Client; use gRPC")
 	}
@@ -1038,6 +973,9 @@ func (c *httpStorageClient) OpenWriter(params *openWriterParams, opts ...storage
 	setObj := params.setObj
 	progress := params.progress
 	attrs := params.attrs
+	params.setFlush(func() (int64, error) {
+		return 0, errors.New("Writer.Flush is only supported for gRPC-based clients")
+	})
 
 	mediaOpts := []googleapi.MediaOption{
 		googleapi.ChunkSize(params.chunkSize),
@@ -1053,18 +991,10 @@ func (c *httpStorageClient) OpenWriter(params *openWriterParams, opts ...storage
 	}
 
 	pr, pw := io.Pipe()
-	var (
-		serverChecksumChan = make(chan uint32, 1)
-		checksumDisabled   = params.disableAutoChecksum || params.sendCRC32C
-	)
-	if !checksumDisabled {
-		mediaOpts = append(mediaOpts, googleapi.EnableAutoChecksum())
-	}
+
 	go func() {
-		defer func() {
-			close(params.donec)
-			close(serverChecksumChan)
-		}()
+		defer close(params.donec)
+
 		rawObj := attrs.toRawObject(params.bucket)
 		if params.sendCRC32C {
 			rawObj.Crc32c = encodeUint32(attrs.CRC32C)
@@ -1126,18 +1056,10 @@ func (c *httpStorageClient) OpenWriter(params *openWriterParams, opts ...storage
 			pr.CloseWithError(err)
 			return
 		}
-		newObj := newObject(resp)
-		if !checksumDisabled && params.chunkSize == 0 {
-			serverChecksumChan <- newObj.CRC32C
-		}
-		setObj(newObj)
+		setObj(newObject(resp))
 	}()
-	return &httpInternalWriter{
-		PipeWriter:         pw,
-		chunkSize:          params.chunkSize,
-		serverChecksumChan: serverChecksumChan,
-		checksumDisabled:   checksumDisabled,
-	}, nil
+
+	return pw, nil
 }
 
 // IAM methods.

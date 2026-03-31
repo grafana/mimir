@@ -1,4 +1,4 @@
-// Copyright The Prometheus Authors
+// Copyright 2013 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -87,18 +87,32 @@ type Group struct {
 // DefaultEvalIterationFunc is the default implementation.
 type GroupEvalIterationFunc func(ctx context.Context, g *Group, evalTimestamp time.Time)
 
+// OperatorControllableErrorClassifier classifies whether rule evaluation errors are operator-controllable.
+type OperatorControllableErrorClassifier interface {
+	IsOperatorControllable(error) bool
+}
+
 type GroupOptions struct {
-	Name, File                    string
-	Interval                      time.Duration
-	Limit                         int
-	Rules                         []Rule
-	SourceTenants                 []string
-	ShouldRestore                 bool
-	Opts                          *ManagerOptions
-	QueryOffset                   *time.Duration
-	done                          chan struct{}
-	EvalIterationFunc             GroupEvalIterationFunc
-	AlignEvaluationTimeOnInterval bool
+	Name, File                          string
+	Interval                            time.Duration
+	Limit                               int
+	Rules                               []Rule
+	SourceTenants                       []string
+	ShouldRestore                       bool
+	Opts                                *ManagerOptions
+	QueryOffset                         *time.Duration
+	done                                chan struct{}
+	EvalIterationFunc                   GroupEvalIterationFunc
+	AlignEvaluationTimeOnInterval       bool
+	OperatorControllableErrorClassifier OperatorControllableErrorClassifier
+}
+
+// DefaultOperatorControllableErrorClassifier is the default implementation of
+// OperatorControllableErrorClassifier that classifies no errors as operator-controllable.
+type DefaultOperatorControllableErrorClassifier struct{}
+
+func (*DefaultOperatorControllableErrorClassifier) IsOperatorControllable(_ error) bool {
+	return false
 }
 
 // NewGroup makes a new Group with the given name, options, and rules.
@@ -130,6 +144,11 @@ func NewGroup(o GroupOptions) *Group {
 		evalIterationFunc = DefaultEvalIterationFunc
 	}
 
+	operatorControllableErrorClassifier := o.OperatorControllableErrorClassifier
+	if operatorControllableErrorClassifier == nil {
+		operatorControllableErrorClassifier = &DefaultOperatorControllableErrorClassifier{}
+	}
+
 	if opts.Logger == nil {
 		opts.Logger = promslog.NewNopLogger()
 	}
@@ -153,7 +172,7 @@ func NewGroup(o GroupOptions) *Group {
 		evalIterationFunc:                   evalIterationFunc,
 		appOpts:                             &storage.AppendOptions{DiscardOutOfOrder: true},
 		alignEvaluationTimeOnInterval:       o.AlignEvaluationTimeOnInterval,
-		operatorControllableErrorClassifier: opts.OperatorControllableErrorClassifier,
+		operatorControllableErrorClassifier: operatorControllableErrorClassifier,
 	}
 }
 
@@ -535,7 +554,6 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 			since := time.Since(t)
 			g.metrics.EvalDuration.Observe(since.Seconds())
-			g.metrics.EvalDurationHistogram.Observe(since.Seconds())
 			rule.SetEvaluationDuration(since)
 			rule.SetEvaluationTimestamp(t)
 		}(time.Now())
@@ -814,7 +832,7 @@ func (g *Group) RestoreForState(ts time.Time) {
 		// While not technically the same number of series we expect, it's as good of an approximation as any.
 		seriesByLabels := make(map[string]storage.Series, alertRule.ActiveAlertsCount())
 		for sset.Next() {
-			seriesByLabels[sset.At().Labels().DropReserved(func(n string) bool { return n == labels.MetricName }).String()] = sset.At()
+			seriesByLabels[sset.At().Labels().DropMetricName().String()] = sset.At()
 		}
 
 		// No results for this alert rule.
@@ -961,21 +979,19 @@ const namespace = "prometheus"
 
 // Metrics for rule evaluation.
 type Metrics struct {
-	EvalDuration               prometheus.Summary
-	EvalDurationHistogram      prometheus.Histogram
-	IterationDuration          prometheus.Summary
-	IterationDurationHistogram prometheus.Histogram
-	IterationsMissed           *prometheus.CounterVec
-	IterationsScheduled        *prometheus.CounterVec
-	EvalTotal                  *prometheus.CounterVec
-	EvalFailures               *prometheus.CounterVec
-	GroupInterval              *prometheus.GaugeVec
-	GroupLastEvalTime          *prometheus.GaugeVec
-	GroupLastDuration          *prometheus.GaugeVec
-	GroupLastRuleDurationSum   *prometheus.GaugeVec
-	GroupLastRestoreDuration   *prometheus.GaugeVec
-	GroupRules                 *prometheus.GaugeVec
-	GroupSamples               *prometheus.GaugeVec
+	EvalDuration             prometheus.Summary
+	IterationDuration        prometheus.Summary
+	IterationsMissed         *prometheus.CounterVec
+	IterationsScheduled      *prometheus.CounterVec
+	EvalTotal                *prometheus.CounterVec
+	EvalFailures             *prometheus.CounterVec
+	GroupInterval            *prometheus.GaugeVec
+	GroupLastEvalTime        *prometheus.GaugeVec
+	GroupLastDuration        *prometheus.GaugeVec
+	GroupLastRuleDurationSum *prometheus.GaugeVec
+	GroupLastRestoreDuration *prometheus.GaugeVec
+	GroupRules               *prometheus.GaugeVec
+	GroupSamples             *prometheus.GaugeVec
 }
 
 // NewGroupMetrics creates a new instance of Metrics and registers it with the provided registerer,
@@ -989,29 +1005,11 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 				Help:       "The duration for a rule to execute.",
 				Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
 			}),
-		EvalDurationHistogram: prometheus.NewHistogram(prometheus.HistogramOpts{
-			Namespace:                       namespace,
-			Name:                            "rule_evaluation_duration_histogram_seconds",
-			Help:                            "The duration for a rule to execute.",
-			Buckets:                         []float64{.01, .1, 1, 10},
-			NativeHistogramBucketFactor:     1.1,
-			NativeHistogramMaxBucketNumber:  100,
-			NativeHistogramMinResetDuration: 1 * time.Hour,
-		}),
 		IterationDuration: prometheus.NewSummary(prometheus.SummaryOpts{
 			Namespace:  namespace,
 			Name:       "rule_group_duration_seconds",
 			Help:       "The duration of rule group evaluations.",
 			Objectives: map[float64]float64{0.01: 0.001, 0.05: 0.005, 0.5: 0.05, 0.90: 0.01, 0.99: 0.001},
-		}),
-		IterationDurationHistogram: prometheus.NewHistogram(prometheus.HistogramOpts{
-			Namespace:                       namespace,
-			Name:                            "rule_group_duration_histogram_seconds",
-			Help:                            "The duration of rule group evaluations.",
-			Buckets:                         []float64{.01, .1, 1, 10},
-			NativeHistogramBucketFactor:     1.1,
-			NativeHistogramMaxBucketNumber:  100,
-			NativeHistogramMinResetDuration: 1 * time.Hour,
 		}),
 		IterationsMissed: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
@@ -1106,9 +1104,7 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 	if reg != nil {
 		reg.MustRegister(
 			m.EvalDuration,
-			m.EvalDurationHistogram,
 			m.IterationDuration,
-			m.IterationDurationHistogram,
 			m.IterationsMissed,
 			m.IterationsScheduled,
 			m.EvalTotal,

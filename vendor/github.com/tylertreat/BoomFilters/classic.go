@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"hash"
+	"hash/fnv"
 	"io"
 	"math"
 )
@@ -24,6 +25,7 @@ func NewBloomFilter(n uint, fpRate float64) *BloomFilter {
 	m := OptimalM(n, fpRate)
 	return &BloomFilter{
 		buckets: NewBuckets(m, 1),
+		hash:    fnv.New64(),
 		m:       m,
 		k:       OptimalK(fpRate),
 	}
@@ -174,7 +176,10 @@ func (b *BloomFilter) ReadFrom(stream io.Reader) (int64, error) {
 	b.m = uint(m)
 	b.k = uint(k)
 	b.buckets = &buckets
-
+	// Initialize hash function if not set (same fix as in GobDecode)
+	if b.hash == nil {
+		b.hash = fnv.New64()
+	}
 	return readSize + int64(3*binary.Size(uint64(0))), nil
 }
 
@@ -193,6 +198,9 @@ func (b *BloomFilter) GobEncode() ([]byte, error) {
 func (b *BloomFilter) GobDecode(data []byte) error {
 	buf := bytes.NewBuffer(data)
 	_, err := b.ReadFrom(buf)
+	if b.hash == nil {
+		b.hash = fnv.New64()
+	}
 
 	return err
 }

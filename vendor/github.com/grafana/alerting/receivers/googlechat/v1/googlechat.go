@@ -65,37 +65,33 @@ func (gcn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, erro
 		tmplErr = nil
 	}
 
-	if !gcn.settings.HideOpenButton {
-		ruleURL := receivers.JoinURLPath(gcn.tmpl.ExternalURL.String(), "/alerting/list", l)
-		if gcn.isURLAbsolute(ruleURL, l) {
-			// Add a button widget (link to Grafana).
-			widgets = append(widgets, buttonWidget{
-				Buttons: []button{
-					{
-						TextButton: textButton{
-							Text: "OPEN IN GRAFANA",
-							OnClick: onClick{
-								OpenLink: openLink{
-									URL: ruleURL,
-								},
+	ruleURL := receivers.JoinURLPath(gcn.tmpl.ExternalURL.String(), "/alerting/list", l)
+	if gcn.isURLAbsolute(ruleURL, l) {
+		// Add a button widget (link to Grafana).
+		widgets = append(widgets, buttonWidget{
+			Buttons: []button{
+				{
+					TextButton: textButton{
+						Text: "OPEN IN GRAFANA",
+						OnClick: onClick{
+							OpenLink: openLink{
+								URL: ruleURL,
 							},
 						},
 					},
 				},
-			})
-		} else {
-			level.Warn(l).Log("msg", "Grafana external URL setting is missing or invalid. Skipping 'open in grafana' button to prevent Google from displaying empty alerts.", "ruleURL", ruleURL)
-		}
+			},
+		})
+	} else {
+		level.Warn(l).Log("msg", "Grafana external URL setting is missing or invalid. Skipping 'open in grafana' button to prevent Google from displaying empty alerts.", "ruleURL", ruleURL)
 	}
 
 	// Add text paragraph widget for the build version and timestamp.
-	if !gcn.settings.HideVersionInfo {
-		widgets = append(widgets, textParagraphWidget{
-			Text: text{
-				Text: "Grafana v" + gcn.appVersion + " | " + (timeNow()).Format(time.RFC822),
-			},
-		})
-	}
+	widgets = append(widgets, textParagraphWidget{
+		Text: text{
+			Text: "Grafana v" + gcn.appVersion + " | " + (timeNow()).Format(time.RFC822),
+		},
+	})
 
 	title := tmpl(gcn.settings.Title)
 	// Nest the required structs.

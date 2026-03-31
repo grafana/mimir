@@ -11,6 +11,7 @@ import (
 	"sort"
 
 	"go.opentelemetry.io/collector/pdata/internal"
+	otlpmetrics "go.opentelemetry.io/collector/pdata/internal/data/protogen/metrics/v1"
 )
 
 // MetricSlice logically represents a slice of Metric.
@@ -21,18 +22,18 @@ import (
 // Must use NewMetricSlice function to create new instances.
 // Important: zero-initialized instance is not valid for use.
 type MetricSlice struct {
-	orig  *[]*internal.Metric
+	orig  *[]*otlpmetrics.Metric
 	state *internal.State
 }
 
-func newMetricSlice(orig *[]*internal.Metric, state *internal.State) MetricSlice {
+func newMetricSlice(orig *[]*otlpmetrics.Metric, state *internal.State) MetricSlice {
 	return MetricSlice{orig: orig, state: state}
 }
 
-// NewMetricSlice creates a MetricSliceWrapper with 0 elements.
+// NewMetricSlice creates a MetricSlice with 0 elements.
 // Can use "EnsureCapacity" to initialize with a given capacity.
 func NewMetricSlice() MetricSlice {
-	orig := []*internal.Metric(nil)
+	orig := []*otlpmetrics.Metric(nil)
 	return newMetricSlice(&orig, internal.NewState())
 }
 
@@ -89,7 +90,7 @@ func (es MetricSlice) EnsureCapacity(newCap int) {
 		return
 	}
 
-	newOrig := make([]*internal.Metric, len(*es.orig), newCap)
+	newOrig := make([]*otlpmetrics.Metric, len(*es.orig), newCap)
 	copy(newOrig, *es.orig)
 	*es.orig = newOrig
 }
@@ -98,7 +99,7 @@ func (es MetricSlice) EnsureCapacity(newCap int) {
 // It returns the newly added Metric.
 func (es MetricSlice) AppendEmpty() Metric {
 	es.state.AssertMutable()
-	*es.orig = append(*es.orig, internal.NewMetric())
+	*es.orig = append(*es.orig, internal.NewOrigMetric())
 	return es.At(es.Len() - 1)
 }
 
@@ -127,7 +128,7 @@ func (es MetricSlice) RemoveIf(f func(Metric) bool) {
 	newLen := 0
 	for i := 0; i < len(*es.orig); i++ {
 		if f(es.At(i)) {
-			internal.DeleteMetric((*es.orig)[i], true)
+			internal.DeleteOrigMetric((*es.orig)[i], true)
 			(*es.orig)[i] = nil
 
 			continue
@@ -151,7 +152,7 @@ func (es MetricSlice) CopyTo(dest MetricSlice) {
 	if es.orig == dest.orig {
 		return
 	}
-	*dest.orig = internal.CopyMetricPtrSlice(*dest.orig, *es.orig)
+	*dest.orig = internal.CopyOrigMetricSlice(*dest.orig, *es.orig)
 }
 
 // Sort sorts the Metric elements within MetricSlice given the

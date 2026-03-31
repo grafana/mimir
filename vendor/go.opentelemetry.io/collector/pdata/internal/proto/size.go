@@ -12,5 +12,6 @@ func Sov(x uint64) (n int) {
 }
 
 func Soz(x uint64) (n int) {
+	//nolint:gosec
 	return Sov((x << 1) ^ uint64((int64(x) >> 63)))
 }

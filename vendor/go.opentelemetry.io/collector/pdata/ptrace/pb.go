@@ -3,38 +3,64 @@
 
 package ptrace // import "go.opentelemetry.io/collector/pdata/ptrace"
 
+import (
+	"go.opentelemetry.io/collector/pdata/internal"
+)
+
 var _ MarshalSizer = (*ProtoMarshaler)(nil)
 
 type ProtoMarshaler struct{}
 
 func (e *ProtoMarshaler) MarshalTraces(td Traces) ([]byte, error) {
-	size := td.getOrig().SizeProto()
+	if !internal.UseCustomProtoEncoding.IsEnabled() {
+		return td.getOrig().Marshal()
+	}
+	size := internal.SizeProtoOrigExportTraceServiceRequest(td.getOrig())
 	buf := make([]byte, size)
-	_ = td.getOrig().MarshalProto(buf)
+	_ = internal.MarshalProtoOrigExportTraceServiceRequest(td.getOrig(), buf)
 	return buf, nil
 }
 
 func (e *ProtoMarshaler) TracesSize(td Traces) int {
-	return td.getOrig().SizeProto()
+	if !internal.UseCustomProtoEncoding.IsEnabled() {
+		return td.getOrig().Size()
+	}
+	return internal.SizeProtoOrigExportTraceServiceRequest(td.getOrig())
 }
 
 func (e *ProtoMarshaler) ResourceSpansSize(td ResourceSpans) int {
-	return td.orig.SizeProto()
+	if !internal.UseCustomProtoEncoding.IsEnabled() {
+		return td.orig.Size()
+	}
+	return internal.SizeProtoOrigResourceSpans(td.orig)
 }
 
 func (e *ProtoMarshaler) ScopeSpansSize(td ScopeSpans) int {
-	return td.orig.SizeProto()
+	if !internal.UseCustomProtoEncoding.IsEnabled() {
+		return td.orig.Size()
+	}
+	return internal.SizeProtoOrigScopeSpans(td.orig)
 }
 
 func (e *ProtoMarshaler) SpanSize(td Span) int {
-	return td.orig.SizeProto()
+	if !internal.UseCustomProtoEncoding.IsEnabled() {
+		return td.orig.Size()
+	}
+	return internal.SizeProtoOrigSpan(td.orig)
 }
 
 type ProtoUnmarshaler struct{}
 
 func (d *ProtoUnmarshaler) UnmarshalTraces(buf []byte) (Traces, error) {
 	td := NewTraces()
-	err := td.getOrig().UnmarshalProto(buf)
+	if !internal.UseCustomProtoEncoding.IsEnabled() {
+		err := td.getOrig().Unmarshal(buf)
+		if err != nil {
+			return Traces{}, err
+		}
+		return td, nil
+	}
+	err := internal.UnmarshalProtoOrigExportTraceServiceRequest(td.getOrig(), buf)
 	if err != nil {
 		return Traces{}, err
 	}

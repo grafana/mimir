@@ -3,73 +3,72 @@
 
 package internal // import "go.opentelemetry.io/collector/pdata/internal"
 
-type ValueWrapper struct {
-	orig  *AnyValue
+import (
+	otlpcommon "go.opentelemetry.io/collector/pdata/internal/data/protogen/common/v1"
+)
+
+type Value struct {
+	orig  *otlpcommon.AnyValue
 	state *State
 }
 
-func GetValueOrig(ms ValueWrapper) *AnyValue {
+func GetOrigValue(ms Value) *otlpcommon.AnyValue {
 	return ms.orig
 }
 
-func GetValueState(ms ValueWrapper) *State {
+func GetValueState(ms Value) *State {
 	return ms.state
 }
 
-func NewValueWrapper(orig *AnyValue, state *State) ValueWrapper {
-	return ValueWrapper{orig: orig, state: state}
+func NewValue(orig *otlpcommon.AnyValue, state *State) Value {
+	return Value{orig: orig, state: state}
 }
 
-func GenTestValueWrapper() ValueWrapper {
-	orig := GenTestAnyValue()
-	return NewValueWrapper(orig, NewState())
-}
-
-func NewAnyValueStringValue() *AnyValue_StringValue {
+func NewOrigAnyValueStringValue() *otlpcommon.AnyValue_StringValue {
 	if !UseProtoPooling.IsEnabled() {
-		return &AnyValue_StringValue{}
+		return &otlpcommon.AnyValue_StringValue{}
 	}
-	return ProtoPoolAnyValue_StringValue.Get().(*AnyValue_StringValue)
+	return ProtoPoolAnyValue_StringValue.Get().(*otlpcommon.AnyValue_StringValue)
 }
 
-func NewAnyValueIntValue() *AnyValue_IntValue {
+func NewOrigAnyValueIntValue() *otlpcommon.AnyValue_IntValue {
 	if !UseProtoPooling.IsEnabled() {
-		return &AnyValue_IntValue{}
+		return &otlpcommon.AnyValue_IntValue{}
 	}
-	return ProtoPoolAnyValue_IntValue.Get().(*AnyValue_IntValue)
+	return ProtoPoolAnyValue_IntValue.Get().(*otlpcommon.AnyValue_IntValue)
 }
 
-func NewAnyValueBoolValue() *AnyValue_BoolValue {
+func NewOrigAnyValueBoolValue() *otlpcommon.AnyValue_BoolValue {
 	if !UseProtoPooling.IsEnabled() {
-		return &AnyValue_BoolValue{}
+		return &otlpcommon.AnyValue_BoolValue{}
 	}
-	return ProtoPoolAnyValue_BoolValue.Get().(*AnyValue_BoolValue)
+	return ProtoPoolAnyValue_BoolValue.Get().(*otlpcommon.AnyValue_BoolValue)
 }
 
-func NewAnyValueDoubleValue() *AnyValue_DoubleValue {
+func NewOrigAnyValueDoubleValue() *otlpcommon.AnyValue_DoubleValue {
 	if !UseProtoPooling.IsEnabled() {
-		return &AnyValue_DoubleValue{}
+		return &otlpcommon.AnyValue_DoubleValue{}
 	}
-	return ProtoPoolAnyValue_DoubleValue.Get().(*AnyValue_DoubleValue)
+	return ProtoPoolAnyValue_DoubleValue.Get().(*otlpcommon.AnyValue_DoubleValue)
 }
 
-func NewAnyValueBytesValue() *AnyValue_BytesValue {
+func NewOrigAnyValueBytesValue() *otlpcommon.AnyValue_BytesValue {
 	if !UseProtoPooling.IsEnabled() {
-		return &AnyValue_BytesValue{}
+		return &otlpcommon.AnyValue_BytesValue{}
 	}
-	return ProtoPoolAnyValue_BytesValue.Get().(*AnyValue_BytesValue)
+	return ProtoPoolAnyValue_BytesValue.Get().(*otlpcommon.AnyValue_BytesValue)
 }
 
-func NewAnyValueArrayValue() *AnyValue_ArrayValue {
+func NewOrigAnyValueArrayValue() *otlpcommon.AnyValue_ArrayValue {
 	if !UseProtoPooling.IsEnabled() {
-		return &AnyValue_ArrayValue{}
+		return &otlpcommon.AnyValue_ArrayValue{}
 	}
-	return ProtoPoolAnyValue_ArrayValue.Get().(*AnyValue_ArrayValue)
+	return ProtoPoolAnyValue_ArrayValue.Get().(*otlpcommon.AnyValue_ArrayValue)
 }
 
-func NewAnyValueKvlistValue() *AnyValue_KvlistValue {
+func NewOrigAnyValueKvlistValue() *otlpcommon.AnyValue_KvlistValue {
 	if !UseProtoPooling.IsEnabled() {
-		return &AnyValue_KvlistValue{}
+		return &otlpcommon.AnyValue_KvlistValue{}
 	}
-	return ProtoPoolAnyValue_KvlistValue.Get().(*AnyValue_KvlistValue)
+	return ProtoPoolAnyValue_KvlistValue.Get().(*otlpcommon.AnyValue_KvlistValue)
 }

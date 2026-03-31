@@ -7,7 +7,6 @@ package common
 //  - linux (amd64, arm)
 //  - freebsd (amd64)
 //  - windows (amd64)
-//  - aix (ppc64)
 
 import (
 	"bufio"
@@ -24,7 +23,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -33,9 +31,8 @@ import (
 )
 
 var (
-	Timeout                = 3 * time.Second
-	ErrNotImplementedError = errors.New("not implemented yet")
-	ErrTimeout             = errors.New("command timed out")
+	Timeout    = 3 * time.Second
+	ErrTimeout = errors.New("command timed out")
 )
 
 type Invoker interface {
@@ -51,7 +48,7 @@ func (i Invoke) Command(name string, arg ...string) ([]byte, error) {
 	return i.CommandWithContext(ctx, name, arg...)
 }
 
-func (Invoke) CommandWithContext(ctx context.Context, name string, arg ...string) ([]byte, error) {
+func (i Invoke) CommandWithContext(ctx context.Context, name string, arg ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, name, arg...)
 
 	var buf bytes.Buffer
@@ -96,9 +93,11 @@ func (i FakeInvoke) Command(name string, arg ...string) ([]byte, error) {
 	return []byte{}, fmt.Errorf("could not find testdata: %s", fpath)
 }
 
-func (i FakeInvoke) CommandWithContext(_ context.Context, name string, arg ...string) ([]byte, error) {
+func (i FakeInvoke) CommandWithContext(ctx context.Context, name string, arg ...string) ([]byte, error) {
 	return i.Command(name, arg...)
 }
+
+var ErrNotImplementedError = errors.New("not implemented yet")
 
 // ReadFile reads contents from a file
 func ReadFile(filename string) (string, error) {
@@ -117,7 +116,7 @@ func ReadLines(filename string) ([]string, error) {
 }
 
 // ReadLine reads a file and returns the first occurrence of a line that is prefixed with prefix.
-func ReadLine(filename, prefix string) (string, error) {
+func ReadLine(filename string, prefix string) (string, error) {
 	f, err := os.Open(filename)
 	if err != nil {
 		return "", err
@@ -158,7 +157,7 @@ func ReadLinesOffsetN(filename string, offset uint, n int) ([]string, error) {
 	for i := uint(0); i < uint(n)+offset || n < 0; i++ {
 		line, err := r.ReadString('\n')
 		if err != nil {
-			if err == io.EOF && line != "" {
+			if err == io.EOF && len(line) > 0 {
 				ret = append(ret, strings.Trim(line, "\n"))
 			}
 			break
@@ -292,19 +291,27 @@ func StringsHas(target []string, src string) bool {
 
 // StringsContains checks the src in any string of the target string slice
 func StringsContains(target []string, src string) bool {
-	return slices.ContainsFunc(target, func(s string) bool {
-		return strings.Contains(s, src)
-	})
+	for _, t := range target {
+		if strings.Contains(t, src) {
+			return true
+		}
+	}
+	return false
 }
 
 // IntContains checks the src in any int of the target int slice.
 func IntContains(target []int, src int) bool {
-	return slices.Contains(target, src)
+	for _, t := range target {
+		if src == t {
+			return true
+		}
+	}
+	return false
 }
 
 // get struct attributes.
 // This method is used only for debugging platform dependent code.
-func attributes(m any) map[string]reflect.Type {
+func attributes(m interface{}) map[string]reflect.Type {
 	typ := reflect.TypeOf(m)
 	if typ.Kind() == reflect.Ptr {
 		typ = typ.Elem()
@@ -334,7 +341,7 @@ func PathExists(filename string) bool {
 
 // PathExistsWithContents returns the filename exists and it is not empty
 func PathExistsWithContents(filename string) bool {
-	info, err := os.Stat(filename) //nolint:gosec // filename is constructed from system paths, not user input
+	info, err := os.Stat(filename)
 	if err != nil {
 		return false
 	}
@@ -343,7 +350,7 @@ func PathExistsWithContents(filename string) bool {
 
 // GetEnvWithContext retrieves the environment variable key. If it does not exist it returns the default.
 // The context may optionally contain a map superseding os.EnvKey.
-func GetEnvWithContext(ctx context.Context, key, dfault string, combineWith ...string) string {
+func GetEnvWithContext(ctx context.Context, key string, dfault string, combineWith ...string) string {
 	var value string
 	if env, ok := ctx.Value(common.EnvKey).(common.EnvMap); ok {
 		value = env[common.EnvKeyType(key)]
@@ -359,7 +366,7 @@ func GetEnvWithContext(ctx context.Context, key, dfault string, combineWith ...s
 }
 
 // GetEnv retrieves the environment variable key. If it does not exist it returns the default.
-func GetEnv(key, dfault string, combineWith ...string) string {
+func GetEnv(key string, dfault string, combineWith ...string) string {
 	value := os.Getenv(key)
 	if value == "" {
 		value = dfault
@@ -443,7 +450,7 @@ func HostRootWithContext(ctx context.Context, combineWith ...string) string {
 }
 
 // getSysctrlEnv sets LC_ALL=C in a list of env vars for use when running
-// sysctl commands.
+// sysctl commands (see DoSysctrl).
 func getSysctrlEnv(env []string) []string {
 	foundLC := false
 	for i, line := range env {
@@ -464,12 +471,4 @@ func Round(val float64, n int) float64 {
 	pow10 := math.Pow(10, float64(n))
 	// Multiply the value by pow10, round it, then divide it by pow10
 	return math.Round(val*pow10) / pow10
-}
-
-func TimeSince(ts uint64) uint64 {
-	return uint64(time.Now().Unix()) - ts
-}
-
-func TimeSinceMillis(ts uint64) uint64 {
-	return uint64(time.Now().UnixMilli()) - ts
 }

@@ -1,4 +1,4 @@
-// Copyright The Prometheus Authors
+// Copyright 2017 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -36,6 +36,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
@@ -94,7 +95,6 @@ type LeveledCompactor struct {
 	maxBlockChunkSegmentSize    int64
 	useUncachedIO               bool
 	mergeFunc                   storage.VerticalChunkSeriesMergeFunc
-	blockExcludeFunc            BlockExcludeFilterFunc
 	postingsEncoder             index.PostingsEncoder
 	postingsDecoderFactory      PostingsDecoderFactory
 	enableOverlappingCompaction bool
@@ -169,24 +169,16 @@ type LeveledCompactorOptions struct {
 	// PE specifies the postings encoder. It is called when compactor is writing out the postings for a label name/value pair during compaction.
 	// If it is nil then the default encoder is used. At the moment that is the "raw" encoder. See index.EncodePostingsRaw for more.
 	PE index.PostingsEncoder
-
 	// PD specifies the postings decoder factory to return different postings decoder based on BlockMeta. It is called when opening a block or opening the index file.
 	// If it is nil then a default decoder is used, compatible with Prometheus v2.
 	PD PostingsDecoderFactory
-
 	// MaxBlockChunkSegmentSize is the max block chunk segment size. If it is 0 then the default chunks.DefaultChunkSegmentSize is used.
 	MaxBlockChunkSegmentSize int64
-
 	// MergeFunc is used for merging series together in vertical compaction. By default storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge) is used.
 	MergeFunc storage.VerticalChunkSeriesMergeFunc
-
-	// BlockExcludeFilter is used to decide which blocks are exluded from compactions.
-	BlockExcludeFilter BlockExcludeFilterFunc
-
 	// EnableOverlappingCompaction enables compaction of overlapping blocks. In Prometheus it is always enabled.
 	// It is useful for downstream projects like Mimir, Cortex, Thanos where they have a separate component that does compaction.
 	EnableOverlappingCompaction bool
-
 	// Metrics is set of metrics for Compactor. By default, NewCompactorMetrics would be called to initialize metrics unless it is provided.
 	Metrics *CompactorMetrics
 	// UseUncachedIO allows bypassing the page cache when appropriate.
@@ -195,9 +187,7 @@ type LeveledCompactorOptions struct {
 
 type PostingsDecoderFactory func(meta *BlockMeta) index.PostingsDecoder
 
-type BlockExcludeFilterFunc func(meta *BlockMeta) bool
-
-func DefaultPostingsDecoderFactory(_ *BlockMeta) index.PostingsDecoder {
+func DefaultPostingsDecoderFactory(*BlockMeta) index.PostingsDecoder {
 	return index.DecodePostingsRaw
 }
 
@@ -246,7 +236,6 @@ func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer
 		postingsDecoderFactory:      opts.PD,
 		enableOverlappingCompaction: opts.EnableOverlappingCompaction,
 		concurrencyOpts:             DefaultLeveledCompactorConcurrencyOptions(),
-		blockExcludeFunc:            opts.BlockExcludeFilter,
 	}, nil
 }
 
@@ -290,26 +279,12 @@ func (c *LeveledCompactor) Plan(dir string) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		if c.blockExcludeFunc != nil && c.blockExcludeFunc(meta) {
-			// Compactions work from oldest to newest, uploads do the same (usually).
-			// If you continue here you'll skip compactions on this one block, but:
-			// * all further blocks are NOT yet uploaded
-			// * some or all further blocks are uploaded
-			//
-			// If we continue and there are newer blocks to pick from,
-			// then you will compact in a non-continuous way, leaving gaps of individual un-compacted blocks.
-			break
-		}
 		dms = append(dms, dirMeta{dir, meta})
 	}
 	return c.plan(dms)
 }
 
 func (c *LeveledCompactor) plan(dms []dirMeta) ([]string, error) {
-	if len(dms) == 0 {
-		return nil, nil
-	}
-
 	slices.SortFunc(dms, func(a, b dirMeta) int {
 		switch {
 		case a.meta.MinTime < b.meta.MinTime:
@@ -629,16 +604,16 @@ func (c *LeveledCompactor) CompactWithBlockPopulator(dest string, dirs []string,
 		return ulids, nil
 	}
 
-	errs := []error{err}
+	errs := tsdb_errors.NewMulti(err)
 	if !errors.Is(err, context.Canceled) {
 		for _, b := range bs {
 			if err := b.setCompactionFailed(); err != nil {
-				errs = append(errs, fmt.Errorf("setting compaction failed for block: %s: %w", b.Dir(), err))
+				errs.Add(fmt.Errorf("setting compaction failed for block: %s: %w", b.Dir(), err))
 			}
 		}
 	}
 
-	return nil, errors.Join(errs...)
+	return nil, errs.Err()
 }
 
 // CompactOOOWithSplitting splits the input OOO Head into shardCount number of output blocks
@@ -784,9 +759,6 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, b
 		if base.Compaction.FromOutOfOrder() {
 			meta.Compaction.SetOutOfOrder()
 		}
-		if base.Compaction.FromStaleSeries() {
-			meta.Compaction.SetStaleSeries()
-		}
 	}
 
 	err := c.write(dest, []shardedBlock{{meta: meta}}, DefaultBlockPopulator{}, b)
@@ -839,7 +811,7 @@ func (c *LeveledCompactor) write(dest string, outBlocks []shardedBlock, blockPop
 	var closers []io.Closer
 
 	defer func(t time.Time) {
-		err = errors.Join(err, closeAll(closers))
+		err = tsdb_errors.NewMulti(err, tsdb_errors.CloseAll(closers)).Err()
 
 		for _, ob := range outBlocks {
 			if ob.tmpDir != "" {
@@ -927,13 +899,13 @@ func (c *LeveledCompactor) write(dest string, outBlocks []shardedBlock, blockPop
 	// though these are covered under defer. This is because in Windows,
 	// you cannot delete these unless they are closed and the defer is to
 	// make sure they are closed if the function exits due to an error above.
-	var errs []error
+	errs := tsdb_errors.NewMulti()
 	for _, w := range closers {
-		errs = append(errs, w.Close())
+		errs.Add(w.Close())
 	}
 	closers = closers[:0] // Avoid closing the writers twice in the defer.
-	if err := errors.Join(errs...); err != nil {
-		return err
+	if errs.Err() != nil {
+		return errs.Err()
 	}
 
 	for _, ob := range outBlocks {
@@ -1068,9 +1040,11 @@ func (DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compact
 		overlapping bool
 	)
 	defer func() {
-		if cerr := closeAll(closers); cerr != nil {
-			err = errors.Join(err, fmt.Errorf("close: %w", cerr))
+		errs := tsdb_errors.NewMulti(err)
+		if cerr := tsdb_errors.CloseAll(closers); cerr != nil {
+			errs.Add(fmt.Errorf("close: %w", cerr))
 		}
+		err = errs.Err()
 		metrics.PopulatingBlocks.Set(0)
 	}()
 	metrics.PopulatingBlocks.Set(1)
@@ -1403,12 +1377,15 @@ func openBlocksForCompaction(ctx context.Context, dirs []string, open []*Block, 
 	// If openingError is true, at least one error is sent to openResultCh.
 	openingError := atomic.NewBool(false)
 
-	var wg sync.WaitGroup
+	wg := sync.WaitGroup{}
 	if len(dirs) < concurrency {
 		concurrency = len(dirs)
 	}
 	for i := 0; i < concurrency; i++ {
-		wg.Go(func() {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
 			for d := range toOpenCh {
 				if openingError.Load() {
 					return
@@ -1422,7 +1399,7 @@ func openBlocksForCompaction(ctx context.Context, dirs []string, open []*Block, 
 					return
 				}
 			}
-		})
+		}()
 	}
 	wg.Wait()
 

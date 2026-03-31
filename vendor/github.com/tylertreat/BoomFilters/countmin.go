@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"hash"
+	"hash/fnv"
 	"io"
 	"math"
 )
@@ -59,6 +60,7 @@ func NewCountMinSketch(epsilon, delta float64) *CountMinSketch {
 		depth:   depth,
 		epsilon: epsilon,
 		delta:   delta,
+		hash:    fnv.New64(),
 	}
 }
 

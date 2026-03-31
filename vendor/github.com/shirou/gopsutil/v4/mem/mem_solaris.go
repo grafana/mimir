@@ -11,9 +11,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/tklauser/go-sysconf"
-
 	"github.com/shirou/gopsutil/v4/internal/common"
+	"github.com/tklauser/go-sysconf"
 )
 
 // VirtualMemory for Solaris is a minimal implementation which only returns
@@ -25,17 +24,17 @@ func VirtualMemory() (*VirtualMemoryStat, error) {
 func VirtualMemoryWithContext(ctx context.Context) (*VirtualMemoryStat, error) {
 	result := &VirtualMemoryStat{}
 
-	zoneName, err := zoneName(ctx)
+	zoneName, err := zoneName()
 	if err != nil {
 		return nil, err
 	}
 
 	if zoneName == "global" {
-		capacity, err := globalZoneMemoryCapacity(ctx)
+		cap, err := globalZoneMemoryCapacity()
 		if err != nil {
 			return nil, err
 		}
-		result.Total = capacity
+		result.Total = cap
 		freemem, err := globalZoneFreeMemory(ctx)
 		if err != nil {
 			return nil, err
@@ -44,11 +43,11 @@ func VirtualMemoryWithContext(ctx context.Context) (*VirtualMemoryStat, error) {
 		result.Free = freemem
 		result.Used = result.Total - result.Free
 	} else {
-		capacity, err := nonGlobalZoneMemoryCapacity(ctx)
+		cap, err := nonGlobalZoneMemoryCapacity()
 		if err != nil {
 			return nil, err
 		}
-		result.Total = capacity
+		result.Total = cap
 	}
 
 	return result, nil
@@ -58,11 +57,12 @@ func SwapMemory() (*SwapMemoryStat, error) {
 	return SwapMemoryWithContext(context.Background())
 }
 
-func SwapMemoryWithContext(_ context.Context) (*SwapMemoryStat, error) {
+func SwapMemoryWithContext(ctx context.Context) (*SwapMemoryStat, error) {
 	return nil, common.ErrNotImplementedError
 }
 
-func zoneName(ctx context.Context) (string, error) {
+func zoneName() (string, error) {
+	ctx := context.Background()
 	out, err := invoke.CommandWithContext(ctx, "zonename")
 	if err != nil {
 		return "", err
@@ -73,7 +73,8 @@ func zoneName(ctx context.Context) (string, error) {
 
 var globalZoneMemoryCapacityMatch = regexp.MustCompile(`[Mm]emory size: (\d+) Megabytes`)
 
-func globalZoneMemoryCapacity(ctx context.Context) (uint64, error) {
+func globalZoneMemoryCapacity() (uint64, error) {
+	ctx := context.Background()
 	out, err := invoke.CommandWithContext(ctx, "prtconf")
 	if err != nil {
 		return 0, err
@@ -113,7 +114,8 @@ func globalZoneFreeMemory(ctx context.Context) (uint64, error) {
 
 var kstatMatch = regexp.MustCompile(`(\S+)\s+(\S*)`)
 
-func nonGlobalZoneMemoryCapacity(ctx context.Context) (uint64, error) {
+func nonGlobalZoneMemoryCapacity() (uint64, error) {
+	ctx := context.Background()
 	out, err := invoke.CommandWithContext(ctx, "kstat", "-p", "-c", "zone_memory_cap", "memory_cap:*:*:physcap")
 	if err != nil {
 		return 0, err

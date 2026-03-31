@@ -1,4 +1,4 @@
-// Copyright The Prometheus Authors
+// Copyright 2013 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -13,44 +13,26 @@
 
 package notifier
 
-import (
-	"time"
-
-	"github.com/prometheus/client_golang/prometheus"
-)
+import "github.com/prometheus/client_golang/prometheus"
 
 type alertMetrics struct {
-	latencySummary          *prometheus.SummaryVec
-	latencyHistogram        *prometheus.HistogramVec
+	latency                 *prometheus.SummaryVec
 	errors                  *prometheus.CounterVec
 	sent                    *prometheus.CounterVec
-	dropped                 *prometheus.CounterVec
-	queueLength             *prometheus.GaugeVec
+	dropped                 prometheus.Counter
+	queueLength             prometheus.GaugeFunc
 	queueCapacity           prometheus.Gauge
 	alertmanagersDiscovered prometheus.GaugeFunc
 }
 
-func newAlertMetrics(r prometheus.Registerer, alertmanagersDiscovered func() float64) *alertMetrics {
+func newAlertMetrics(r prometheus.Registerer, queueCap int, queueLen, alertmanagersDiscovered func() float64) *alertMetrics {
 	m := &alertMetrics{
-		latencySummary: prometheus.NewSummaryVec(prometheus.SummaryOpts{
+		latency: prometheus.NewSummaryVec(prometheus.SummaryOpts{
 			Namespace:  namespace,
 			Subsystem:  subsystem,
 			Name:       "latency_seconds",
 			Help:       "Latency quantiles for sending alert notifications.",
 			Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
-		},
-			[]string{alertmanagerLabel},
-		),
-		latencyHistogram: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "latency_histogram_seconds",
-			Help:      "Latency histogram for sending alert notifications.",
-
-			Buckets:                         []float64{.01, .1, 1, 10},
-			NativeHistogramBucketFactor:     1.1,
-			NativeHistogramMaxBucketNumber:  100,
-			NativeHistogramMinResetDuration: 1 * time.Hour,
 		},
 			[]string{alertmanagerLabel},
 		),
@@ -70,18 +52,18 @@ func newAlertMetrics(r prometheus.Registerer, alertmanagersDiscovered func() flo
 		},
 			[]string{alertmanagerLabel},
 		),
-		dropped: prometheus.NewCounterVec(prometheus.CounterOpts{
+		dropped: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
 			Name:      "dropped_total",
 			Help:      "Total number of alerts dropped due to errors when sending to Alertmanager.",
-		}, []string{alertmanagerLabel}),
-		queueLength: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		}),
+		queueLength: prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
 			Name:      "queue_length",
 			Help:      "The number of alert notifications in the queue.",
-		}, []string{alertmanagerLabel}),
+		}, queueLen),
 		queueCapacity: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
@@ -94,10 +76,11 @@ func newAlertMetrics(r prometheus.Registerer, alertmanagersDiscovered func() flo
 		}, alertmanagersDiscovered),
 	}
 
+	m.queueCapacity.Set(float64(queueCap))
+
 	if r != nil {
 		r.MustRegister(
-			m.latencySummary,
-			m.latencyHistogram,
+			m.latency,
 			m.errors,
 			m.sent,
 			m.dropped,

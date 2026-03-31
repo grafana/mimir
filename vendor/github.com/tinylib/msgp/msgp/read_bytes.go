@@ -1130,7 +1130,7 @@ func ReadTimeBytes(b []byte) (t time.Time, o []byte, err error) {
 			return
 		}
 	default:
-		err = errExt(typ, TimeExtension)
+		err = errExt(int8(b[2]), TimeExtension)
 		return
 	}
 }
@@ -1138,11 +1138,11 @@ func ReadTimeBytes(b []byte) (t time.Time, o []byte, err error) {
 // ReadMapStrIntfBytes reads a map[string]interface{}
 // out of 'b' and returns the map and remaining bytes.
 // If 'old' is non-nil, the values will be read into that map.
-func ReadMapStrIntfBytes(b []byte, old map[string]any) (v map[string]any, o []byte, err error) {
+func ReadMapStrIntfBytes(b []byte, old map[string]interface{}) (v map[string]interface{}, o []byte, err error) {
 	return readMapStrIntfBytesDepth(b, old, 0)
 }
 
-func readMapStrIntfBytesDepth(b []byte, old map[string]any, depth int) (v map[string]any, o []byte, err error) {
+func readMapStrIntfBytesDepth(b []byte, old map[string]interface{}, depth int) (v map[string]interface{}, o []byte, err error) {
 	if depth >= recursionLimit {
 		err = ErrRecursion
 		return
@@ -1155,18 +1155,14 @@ func readMapStrIntfBytesDepth(b []byte, old map[string]any, depth int) (v map[st
 	if err != nil {
 		return
 	}
-	// Map key, min size is 2 bytes. Value min 1 byte.
-	if int64(len(b)) < int64(sz)*3 {
-		err = ErrShortBytes
-		return
-	}
+
 	if old != nil {
 		for key := range old {
 			delete(old, key)
 		}
 		v = old
 	} else {
-		v = make(map[string]any, int(sz))
+		v = make(map[string]interface{}, int(sz))
 	}
 
 	for z := uint32(0); z < sz; z++ {
@@ -1179,7 +1175,7 @@ func readMapStrIntfBytesDepth(b []byte, old map[string]any, depth int) (v map[st
 		if err != nil {
 			return
 		}
-		var val any
+		var val interface{}
 		val, o, err = readIntfBytesDepth(o, depth)
 		if err != nil {
 			return
@@ -1192,11 +1188,11 @@ func readMapStrIntfBytesDepth(b []byte, old map[string]any, depth int) (v map[st
 // ReadIntfBytes attempts to read
 // the next object out of 'b' as a raw interface{} and
 // return the remaining bytes.
-func ReadIntfBytes(b []byte) (i any, o []byte, err error) {
+func ReadIntfBytes(b []byte) (i interface{}, o []byte, err error) {
 	return readIntfBytesDepth(b, 0)
 }
 
-func readIntfBytesDepth(b []byte, depth int) (i any, o []byte, err error) {
+func readIntfBytesDepth(b []byte, depth int) (i interface{}, o []byte, err error) {
 	if depth >= recursionLimit {
 		err = ErrRecursion
 		return
@@ -1219,12 +1215,7 @@ func readIntfBytesDepth(b []byte, depth int) (i any, o []byte, err error) {
 		if err != nil {
 			return
 		}
-		// Each element will at least be 1 byte.
-		if uint32(len(o)) < sz {
-			err = ErrShortBytes
-			return
-		}
-		j := make([]any, int(sz))
+		j := make([]interface{}, int(sz))
 		i = j
 		for d := range j {
 			j[d], o, err = readIntfBytesDepth(o, depth+1)
@@ -1283,7 +1274,7 @@ func readIntfBytesDepth(b []byte, depth int) (i any, o []byte, err error) {
 		}
 		// last resort is a raw extension
 		e := RawExtension{}
-		e.Type = t
+		e.Type = int8(t)
 		o, err = ReadExtensionBytes(b, &e)
 		i = &e
 		return

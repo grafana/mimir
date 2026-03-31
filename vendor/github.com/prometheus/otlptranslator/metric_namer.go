@@ -24,6 +24,8 @@ import (
 	"slices"
 	"strings"
 	"unicode"
+
+	"github.com/grafana/regexp"
 )
 
 // The map to translate OTLP units to Prometheus units
@@ -204,6 +206,8 @@ func (mn *MetricNamer) buildCompliantMetricName(name, unit string, metricType Me
 	normalizedName = metricName
 	return
 }
+
+var multipleUnderscoresRE = regexp.MustCompile(`__+`)
 
 // isValidCompliantMetricChar checks if a rune is a valid metric name character (a-z, A-Z, 0-9, :).
 func isValidCompliantMetricChar(r rune) bool {

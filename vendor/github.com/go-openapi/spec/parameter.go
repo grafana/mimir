@@ -1,5 +1,16 @@
-// SPDX-FileCopyrightText: Copyright 2015-2025 go-swagger maintainers
-// SPDX-License-Identifier: Apache-2.0
+// Copyright 2015 go-swagger maintainers
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package spec
 
@@ -8,7 +19,7 @@ import (
 	"strings"
 
 	"github.com/go-openapi/jsonpointer"
-	"github.com/go-openapi/swag/jsonutils"
+	"github.com/go-openapi/swag"
 )
 
 // QueryParam creates a query parameter
@@ -105,7 +116,7 @@ type Parameter struct {
 }
 
 // JSONLookup look up a value by the json property name
-func (p Parameter) JSONLookup(token string) (any, error) {
+func (p Parameter) JSONLookup(token string) (interface{}, error) {
 	if ex, ok := p.Extensions[token]; ok {
 		return &ex, nil
 	}
@@ -165,7 +176,7 @@ func (p *Parameter) CollectionOf(items *Items, format string) *Parameter {
 }
 
 // WithDefault sets the default value on this parameter
-func (p *Parameter) WithDefault(defaultValue any) *Parameter {
+func (p *Parameter) WithDefault(defaultValue interface{}) *Parameter {
 	p.AsOptional() // with default implies optional
 	p.Default = defaultValue
 	return p
@@ -199,14 +210,14 @@ func (p *Parameter) AsRequired() *Parameter {
 }
 
 // WithMaxLength sets a max length value
-func (p *Parameter) WithMaxLength(maximum int64) *Parameter {
-	p.MaxLength = &maximum
+func (p *Parameter) WithMaxLength(max int64) *Parameter {
+	p.MaxLength = &max
 	return p
 }
 
 // WithMinLength sets a min length value
-func (p *Parameter) WithMinLength(minimum int64) *Parameter {
-	p.MinLength = &minimum
+func (p *Parameter) WithMinLength(min int64) *Parameter {
+	p.MinLength = &min
 	return p
 }
 
@@ -223,22 +234,22 @@ func (p *Parameter) WithMultipleOf(number float64) *Parameter {
 }
 
 // WithMaximum sets a maximum number value
-func (p *Parameter) WithMaximum(maximum float64, exclusive bool) *Parameter {
-	p.Maximum = &maximum
+func (p *Parameter) WithMaximum(max float64, exclusive bool) *Parameter {
+	p.Maximum = &max
 	p.ExclusiveMaximum = exclusive
 	return p
 }
 
 // WithMinimum sets a minimum number value
-func (p *Parameter) WithMinimum(minimum float64, exclusive bool) *Parameter {
-	p.Minimum = &minimum
+func (p *Parameter) WithMinimum(min float64, exclusive bool) *Parameter {
+	p.Minimum = &min
 	p.ExclusiveMinimum = exclusive
 	return p
 }
 
 // WithEnum sets a the enum values (replace)
-func (p *Parameter) WithEnum(values ...any) *Parameter {
-	p.Enum = append([]any{}, values...)
+func (p *Parameter) WithEnum(values ...interface{}) *Parameter {
+	p.Enum = append([]interface{}{}, values...)
 	return p
 }
 
@@ -311,5 +322,5 @@ func (p Parameter) MarshalJSON() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return jsonutils.ConcatJSON(b3, b1, b2, b4, b5), nil
+	return swag.ConcatJSON(b3, b1, b2, b4, b5), nil
 }

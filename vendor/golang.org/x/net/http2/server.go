@@ -164,8 +164,6 @@ type Server struct {
 
 	// NewWriteScheduler constructs a write scheduler for a connection.
 	// If nil, a default scheduler is chosen.
-	//
-	// Deprecated: User-provided write schedulers are deprecated.
 	NewWriteScheduler func() WriteScheduler
 
 	// CountError, if non-nil, is called on HTTP/2 server errors.

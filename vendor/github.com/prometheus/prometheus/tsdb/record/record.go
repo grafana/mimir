@@ -1,4 +1,4 @@
-// Copyright The Prometheus Authors
+// Copyright 2018 The Prometheus Authors
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -475,9 +475,7 @@ func (d *Decoder) HistogramSamples(rec []byte, histograms []RefHistogramSample) 
 			// This is a very slow path, but it should only happen if the
 			// record is from a newer Prometheus version that supports higher
 			// resolution.
-			if err := rh.H.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {
-				return nil, fmt.Errorf("error reducing resolution of histogram #%d: %w", len(histograms)+1, err)
-			}
+			rh.H.ReduceResolution(histogram.ExponentialSchemaMax)
 		}
 
 		histograms = append(histograms, rh)
@@ -581,9 +579,7 @@ func (d *Decoder) FloatHistogramSamples(rec []byte, histograms []RefFloatHistogr
 			// This is a very slow path, but it should only happen if the
 			// record is from a newer Prometheus version that supports higher
 			// resolution.
-			if err := rh.FH.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {
-				return nil, fmt.Errorf("error reducing resolution of histogram #%d: %w", len(histograms)+1, err)
-			}
+			rh.FH.ReduceResolution(histogram.ExponentialSchemaMax)
 		}
 
 		histograms = append(histograms, rh)

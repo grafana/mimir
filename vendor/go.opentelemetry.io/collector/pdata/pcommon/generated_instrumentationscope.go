@@ -8,6 +8,7 @@ package pcommon
 
 import (
 	"go.opentelemetry.io/collector/pdata/internal"
+	otlpcommon "go.opentelemetry.io/collector/pdata/internal/data/protogen/common/v1"
 )
 
 // InstrumentationScope is a message representing the instrumentation scope information.
@@ -17,10 +18,10 @@ import (
 //
 // Must use NewInstrumentationScope function to create new instances.
 // Important: zero-initialized instance is not valid for use.
-type InstrumentationScope internal.InstrumentationScopeWrapper
+type InstrumentationScope internal.InstrumentationScope
 
-func newInstrumentationScope(orig *internal.InstrumentationScope, state *internal.State) InstrumentationScope {
-	return InstrumentationScope(internal.NewInstrumentationScopeWrapper(orig, state))
+func newInstrumentationScope(orig *otlpcommon.InstrumentationScope, state *internal.State) InstrumentationScope {
+	return InstrumentationScope(internal.NewInstrumentationScope(orig, state))
 }
 
 // NewInstrumentationScope creates a new empty InstrumentationScope.
@@ -28,7 +29,7 @@ func newInstrumentationScope(orig *internal.InstrumentationScope, state *interna
 // This must be used only in testing code. Users should use "AppendEmpty" when part of a Slice,
 // OR directly access the member if this is embedded in another struct.
 func NewInstrumentationScope() InstrumentationScope {
-	return newInstrumentationScope(internal.NewInstrumentationScope(), internal.NewState())
+	return newInstrumentationScope(internal.NewOrigInstrumentationScope(), internal.NewState())
 }
 
 // MoveTo moves all properties from the current struct overriding the destination and
@@ -40,7 +41,7 @@ func (ms InstrumentationScope) MoveTo(dest InstrumentationScope) {
 	if ms.getOrig() == dest.getOrig() {
 		return
 	}
-	internal.DeleteInstrumentationScope(dest.getOrig(), false)
+	internal.DeleteOrigInstrumentationScope(dest.getOrig(), false)
 	*dest.getOrig(), *ms.getOrig() = *ms.getOrig(), *dest.getOrig()
 }
 
@@ -68,7 +69,7 @@ func (ms InstrumentationScope) SetVersion(v string) {
 
 // Attributes returns the Attributes associated with this InstrumentationScope.
 func (ms InstrumentationScope) Attributes() Map {
-	return Map(internal.NewMapWrapper(&ms.getOrig().Attributes, ms.getState()))
+	return Map(internal.NewMap(&ms.getOrig().Attributes, ms.getState()))
 }
 
 // DroppedAttributesCount returns the droppedattributescount associated with this InstrumentationScope.
@@ -85,13 +86,13 @@ func (ms InstrumentationScope) SetDroppedAttributesCount(v uint32) {
 // CopyTo copies all properties from the current struct overriding the destination.
 func (ms InstrumentationScope) CopyTo(dest InstrumentationScope) {
 	dest.getState().AssertMutable()
-	internal.CopyInstrumentationScope(dest.getOrig(), ms.getOrig())
+	internal.CopyOrigInstrumentationScope(dest.getOrig(), ms.getOrig())
 }
 
-func (ms InstrumentationScope) getOrig() *internal.InstrumentationScope {
-	return internal.GetInstrumentationScopeOrig(internal.InstrumentationScopeWrapper(ms))
+func (ms InstrumentationScope) getOrig() *otlpcommon.InstrumentationScope {
+	return internal.GetOrigInstrumentationScope(internal.InstrumentationScope(ms))
 }
 
 func (ms InstrumentationScope) getState() *internal.State {
-	return internal.GetInstrumentationScopeState(internal.InstrumentationScopeWrapper(ms))
+	return internal.GetInstrumentationScopeState(internal.InstrumentationScope(ms))
 }

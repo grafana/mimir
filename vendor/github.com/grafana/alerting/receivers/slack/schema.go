@@ -8,14 +8,16 @@ import (
 
 const Type schema.IntegrationType = "slack"
 
-var Schema = schema.InitSchema(schema.IntegrationTypeSchema{
-	Type:           Type,
-	Name:           "Slack",
-	Description:    "Sends notifications to Slack",
-	Heading:        "Slack settings",
-	CurrentVersion: v1.Version,
-	Versions: []schema.IntegrationSchemaVersion{
-		v1.Schema,
-		v0mimir1.Schema,
-	},
-})
+func Schema() schema.IntegrationTypeSchema {
+	return schema.IntegrationTypeSchema{
+		Type:           Type,
+		Name:           "Slack",
+		Description:    "Sends notifications to Slack",
+		Heading:        "Slack settings",
+		CurrentVersion: v1.Version,
+		Versions: []schema.IntegrationSchemaVersion{
+			v1.Schema(),
+			v0mimir1.Schema(),
+		},
+	}
+}

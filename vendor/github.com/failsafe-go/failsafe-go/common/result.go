@@ -14,8 +14,8 @@ type PolicyResult[R any] struct {
 }
 
 // WithDone returns a new Result for the done and success values.
-func (pr *PolicyResult[R]) WithDone(done bool, success bool) *PolicyResult[R] {
-	c := *pr
+func (er *PolicyResult[R]) WithDone(done bool, success bool) *PolicyResult[R] {
+	c := *er
 	c.Done = done
 	c.Success = success
 	c.SuccessAll = success && c.SuccessAll
@@ -23,8 +23,8 @@ func (pr *PolicyResult[R]) WithDone(done bool, success bool) *PolicyResult[R] {
 }
 
 // WithFailure returns a new Result that is marked as not successful.
-func (pr *PolicyResult[R]) WithFailure() *PolicyResult[R] {
-	c := *pr
+func (er *PolicyResult[R]) WithFailure() *PolicyResult[R] {
+	c := *er
 	c.Success = false
 	c.SuccessAll = false
 	return &c

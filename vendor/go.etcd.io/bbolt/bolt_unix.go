@@ -1,4 +1,4 @@
-//go:build !windows && !plan9 && !solaris && !aix && !android
+// +build !windows,!plan9,!solaris,!aix
 
 package bbolt
 
@@ -9,9 +9,6 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/unix"
-
-	"go.etcd.io/bbolt/errors"
-	"go.etcd.io/bbolt/internal/common"
 )
 
 // flock acquires an advisory lock on a file descriptor.
@@ -38,7 +35,7 @@ func flock(db *DB, exclusive bool, timeout time.Duration) error {
 
 		// If we timed out then return an error.
 		if timeout != 0 && time.Since(t) > timeout-flockRetryTimeout {
-			return errors.ErrTimeout
+			return ErrTimeout
 		}
 
 		// Wait for a bit and try again.
@@ -68,7 +65,7 @@ func mmap(db *DB, sz int) error {
 
 	// Save the original byte slice and convert to a byte array pointer.
 	db.dataref = b
-	db.data = (*[common.MaxMapSize]byte)(unsafe.Pointer(&b[0]))
+	db.data = (*[maxMapSize]byte)(unsafe.Pointer(&b[0]))
 	db.datasz = sz
 	return nil
 }

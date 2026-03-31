@@ -8,6 +8,7 @@ package pmetricotlp
 
 import (
 	"go.opentelemetry.io/collector/pdata/internal"
+	otlpcollectormetrics "go.opentelemetry.io/collector/pdata/internal/data/protogen/collector/metrics/v1"
 )
 
 // ExportResponse represents the response for gRPC/HTTP client/server.
@@ -18,11 +19,11 @@ import (
 // Must use NewExportResponse function to create new instances.
 // Important: zero-initialized instance is not valid for use.
 type ExportResponse struct {
-	orig  *internal.ExportMetricsServiceResponse
+	orig  *otlpcollectormetrics.ExportMetricsServiceResponse
 	state *internal.State
 }
 
-func newExportResponse(orig *internal.ExportMetricsServiceResponse, state *internal.State) ExportResponse {
+func newExportResponse(orig *otlpcollectormetrics.ExportMetricsServiceResponse, state *internal.State) ExportResponse {
 	return ExportResponse{orig: orig, state: state}
 }
 
@@ -31,7 +32,7 @@ func newExportResponse(orig *internal.ExportMetricsServiceResponse, state *inter
 // This must be used only in testing code. Users should use "AppendEmpty" when part of a Slice,
 // OR directly access the member if this is embedded in another struct.
 func NewExportResponse() ExportResponse {
-	return newExportResponse(internal.NewExportMetricsServiceResponse(), internal.NewState())
+	return newExportResponse(internal.NewOrigExportMetricsServiceResponse(), internal.NewState())
 }
 
 // MoveTo moves all properties from the current struct overriding the destination and
@@ -43,7 +44,7 @@ func (ms ExportResponse) MoveTo(dest ExportResponse) {
 	if ms.orig == dest.orig {
 		return
 	}
-	internal.DeleteExportMetricsServiceResponse(dest.orig, false)
+	internal.DeleteOrigExportMetricsServiceResponse(dest.orig, false)
 	*dest.orig, *ms.orig = *ms.orig, *dest.orig
 }
 
@@ -55,5 +56,5 @@ func (ms ExportResponse) PartialSuccess() ExportPartialSuccess {
 // CopyTo copies all properties from the current struct overriding the destination.
 func (ms ExportResponse) CopyTo(dest ExportResponse) {
 	dest.state.AssertMutable()
-	internal.CopyExportMetricsServiceResponse(dest.orig, ms.orig)
+	internal.CopyOrigExportMetricsServiceResponse(dest.orig, ms.orig)
 }

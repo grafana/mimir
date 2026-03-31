@@ -8,6 +8,7 @@ package pmetric
 
 import (
 	"go.opentelemetry.io/collector/pdata/internal"
+	otlpmetrics "go.opentelemetry.io/collector/pdata/internal/data/protogen/metrics/v1"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 )
 
@@ -20,11 +21,11 @@ import (
 // Must use NewMetric function to create new instances.
 // Important: zero-initialized instance is not valid for use.
 type Metric struct {
-	orig  *internal.Metric
+	orig  *otlpmetrics.Metric
 	state *internal.State
 }
 
-func newMetric(orig *internal.Metric, state *internal.State) Metric {
+func newMetric(orig *otlpmetrics.Metric, state *internal.State) Metric {
 	return Metric{orig: orig, state: state}
 }
 
@@ -33,7 +34,7 @@ func newMetric(orig *internal.Metric, state *internal.State) Metric {
 // This must be used only in testing code. Users should use "AppendEmpty" when part of a Slice,
 // OR directly access the member if this is embedded in another struct.
 func NewMetric() Metric {
-	return newMetric(internal.NewMetric(), internal.NewState())
+	return newMetric(internal.NewOrigMetric(), internal.NewState())
 }
 
 // MoveTo moves all properties from the current struct overriding the destination and
@@ -45,7 +46,7 @@ func (ms Metric) MoveTo(dest Metric) {
 	if ms.orig == dest.orig {
 		return
 	}
-	internal.DeleteMetric(dest.orig, false)
+	internal.DeleteOrigMetric(dest.orig, false)
 	*dest.orig, *ms.orig = *ms.orig, *dest.orig
 }
 
@@ -86,15 +87,15 @@ func (ms Metric) SetUnit(v string) {
 // Calling this function on zero-initialized Metric will cause a panic.
 func (ms Metric) Type() MetricType {
 	switch ms.orig.Data.(type) {
-	case *internal.Metric_Gauge:
+	case *otlpmetrics.Metric_Gauge:
 		return MetricTypeGauge
-	case *internal.Metric_Sum:
+	case *otlpmetrics.Metric_Sum:
 		return MetricTypeSum
-	case *internal.Metric_Histogram:
+	case *otlpmetrics.Metric_Histogram:
 		return MetricTypeHistogram
-	case *internal.Metric_ExponentialHistogram:
+	case *otlpmetrics.Metric_ExponentialHistogram:
 		return MetricTypeExponentialHistogram
-	case *internal.Metric_Summary:
+	case *otlpmetrics.Metric_Summary:
 		return MetricTypeSummary
 	}
 	return MetricTypeEmpty
@@ -107,7 +108,7 @@ func (ms Metric) Type() MetricType {
 //
 // Calling this function on zero-initialized Metric will cause a panic.
 func (ms Metric) Gauge() Gauge {
-	v, ok := ms.orig.GetData().(*internal.Metric_Gauge)
+	v, ok := ms.orig.GetData().(*otlpmetrics.Metric_Gauge)
 	if !ok {
 		return Gauge{}
 	}
@@ -121,22 +122,25 @@ func (ms Metric) Gauge() Gauge {
 // Calling this function on zero-initialized Metric will cause a panic.
 func (ms Metric) SetEmptyGauge() Gauge {
 	ms.state.AssertMutable()
-	var ov *internal.Metric_Gauge
+	var ov *otlpmetrics.Metric_Gauge
 	if !internal.UseProtoPooling.IsEnabled() {
-		ov = &internal.Metric_Gauge{}
+		ov = &otlpmetrics.Metric_Gauge{}
 	} else {
-		ov = internal.ProtoPoolMetric_Gauge.Get().(*internal.Metric_Gauge)
+		ov = internal.ProtoPoolMetric_Gauge.Get().(*otlpmetrics.Metric_Gauge)
 	}
-	ov.Gauge = internal.NewGauge()
+	ov.Gauge = internal.NewOrigGauge()
 	ms.orig.Data = ov
 	return newGauge(ov.Gauge, ms.state)
-} // Sum returns the sum associated with this Metric.
+}
+
+// Sum returns the sum associated with this Metric.
+//
 // Calling this function when Type() != MetricTypeSum returns an invalid
 // zero-initialized instance of Sum. Note that using such Sum instance can cause panic.
 //
 // Calling this function on zero-initialized Metric will cause a panic.
 func (ms Metric) Sum() Sum {
-	v, ok := ms.orig.GetData().(*internal.Metric_Sum)
+	v, ok := ms.orig.GetData().(*otlpmetrics.Metric_Sum)
 	if !ok {
 		return Sum{}
 	}
@@ -150,22 +154,25 @@ func (ms Metric) Sum() Sum {
 // Calling this function on zero-initialized Metric will cause a panic.
 func (ms Metric) SetEmptySum() Sum {
 	ms.state.AssertMutable()
-	var ov *internal.Metric_Sum
+	var ov *otlpmetrics.Metric_Sum
 	if !internal.UseProtoPooling.IsEnabled() {
-		ov = &internal.Metric_Sum{}
+		ov = &otlpmetrics.Metric_Sum{}
 	} else {
-		ov = internal.ProtoPoolMetric_Sum.Get().(*internal.Metric_Sum)
+		ov = internal.ProtoPoolMetric_Sum.Get().(*otlpmetrics.Metric_Sum)
 	}
-	ov.Sum = internal.NewSum()
+	ov.Sum = internal.NewOrigSum()
 	ms.orig.Data = ov
 	return newSum(ov.Sum, ms.state)
-} // Histogram returns the histogram associated with this Metric.
+}
+
+// Histogram returns the histogram associated with this Metric.
+//
 // Calling this function when Type() != MetricTypeHistogram returns an invalid
 // zero-initialized instance of Histogram. Note that using such Histogram instance can cause panic.
 //
 // Calling this function on zero-initialized Metric will cause a panic.
 func (ms Metric) Histogram() Histogram {
-	v, ok := ms.orig.GetData().(*internal.Metric_Histogram)
+	v, ok := ms.orig.GetData().(*otlpmetrics.Metric_Histogram)
 	if !ok {
 		return Histogram{}
 	}
@@ -179,22 +186,25 @@ func (ms Metric) Histogram() Histogram {
 // Calling this function on zero-initialized Metric will cause a panic.
 func (ms Metric) SetEmptyHistogram() Histogram {
 	ms.state.AssertMutable()
-	var ov *internal.Metric_Histogram
+	var ov *otlpmetrics.Metric_Histogram
 	if !internal.UseProtoPooling.IsEnabled() {
-		ov = &internal.Metric_Histogram{}
+		ov = &otlpmetrics.Metric_Histogram{}
 	} else {
-		ov = internal.ProtoPoolMetric_Histogram.Get().(*internal.Metric_Histogram)
+		ov = internal.ProtoPoolMetric_Histogram.Get().(*otlpmetrics.Metric_Histogram)
 	}
-	ov.Histogram = internal.NewHistogram()
+	ov.Histogram = internal.NewOrigHistogram()
 	ms.orig.Data = ov
 	return newHistogram(ov.Histogram, ms.state)
-} // ExponentialHistogram returns the exponentialhistogram associated with this Metric.
+}
+
+// ExponentialHistogram returns the exponentialhistogram associated with this Metric.
+//
 // Calling this function when Type() != MetricTypeExponentialHistogram returns an invalid
 // zero-initialized instance of ExponentialHistogram. Note that using such ExponentialHistogram instance can cause panic.
 //
 // Calling this function on zero-initialized Metric will cause a panic.
 func (ms Metric) ExponentialHistogram() ExponentialHistogram {
-	v, ok := ms.orig.GetData().(*internal.Metric_ExponentialHistogram)
+	v, ok := ms.orig.GetData().(*otlpmetrics.Metric_ExponentialHistogram)
 	if !ok {
 		return ExponentialHistogram{}
 	}
@@ -208,22 +218,25 @@ func (ms Metric) ExponentialHistogram() ExponentialHistogram {
 // Calling this function on zero-initialized Metric will cause a panic.
 func (ms Metric) SetEmptyExponentialHistogram() ExponentialHistogram {
 	ms.state.AssertMutable()
-	var ov *internal.Metric_ExponentialHistogram
+	var ov *otlpmetrics.Metric_ExponentialHistogram
 	if !internal.UseProtoPooling.IsEnabled() {
-		ov = &internal.Metric_ExponentialHistogram{}
+		ov = &otlpmetrics.Metric_ExponentialHistogram{}
 	} else {
-		ov = internal.ProtoPoolMetric_ExponentialHistogram.Get().(*internal.Metric_ExponentialHistogram)
+		ov = internal.ProtoPoolMetric_ExponentialHistogram.Get().(*otlpmetrics.Metric_ExponentialHistogram)
 	}
-	ov.ExponentialHistogram = internal.NewExponentialHistogram()
+	ov.ExponentialHistogram = internal.NewOrigExponentialHistogram()
 	ms.orig.Data = ov
 	return newExponentialHistogram(ov.ExponentialHistogram, ms.state)
-} // Summary returns the summary associated with this Metric.
+}
+
+// Summary returns the summary associated with this Metric.
+//
 // Calling this function when Type() != MetricTypeSummary returns an invalid
 // zero-initialized instance of Summary. Note that using such Summary instance can cause panic.
 //
 // Calling this function on zero-initialized Metric will cause a panic.
 func (ms Metric) Summary() Summary {
-	v, ok := ms.orig.GetData().(*internal.Metric_Summary)
+	v, ok := ms.orig.GetData().(*otlpmetrics.Metric_Summary)
 	if !ok {
 		return Summary{}
 	}
@@ -237,24 +250,24 @@ func (ms Metric) Summary() Summary {
 // Calling this function on zero-initialized Metric will cause a panic.
 func (ms Metric) SetEmptySummary() Summary {
 	ms.state.AssertMutable()
-	var ov *internal.Metric_Summary
+	var ov *otlpmetrics.Metric_Summary
 	if !internal.UseProtoPooling.IsEnabled() {
-		ov = &internal.Metric_Summary{}
+		ov = &otlpmetrics.Metric_Summary{}
 	} else {
-		ov = internal.ProtoPoolMetric_Summary.Get().(*internal.Metric_Summary)
+		ov = internal.ProtoPoolMetric_Summary.Get().(*otlpmetrics.Metric_Summary)
 	}
-	ov.Summary = internal.NewSummary()
+	ov.Summary = internal.NewOrigSummary()
 	ms.orig.Data = ov
 	return newSummary(ov.Summary, ms.state)
 }
 
 // Metadata returns the Metadata associated with this Metric.
 func (ms Metric) Metadata() pcommon.Map {
-	return pcommon.Map(internal.NewMapWrapper(&ms.orig.Metadata, ms.state))
+	return pcommon.Map(internal.NewMap(&ms.orig.Metadata, ms.state))
 }
 
 // CopyTo copies all properties from the current struct overriding the destination.
 func (ms Metric) CopyTo(dest Metric) {
 	dest.state.AssertMutable()
-	internal.CopyMetric(dest.orig, ms.orig)
+	internal.CopyOrigMetric(dest.orig, ms.orig)
 }

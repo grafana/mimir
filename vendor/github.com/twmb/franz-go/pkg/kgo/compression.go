@@ -7,7 +7,6 @@ import (
 	"errors"
 	"io"
 	"runtime"
-	"slices"
 	"sync"
 
 	"github.com/klauspost/compress/s2"
@@ -183,7 +182,10 @@ out:
 			c.gzPool = sync.Pool{New: func() any { c, _ := gzip.NewWriterLevel(nil, level); return c }}
 		case CodecSnappy: // (no pool needed for snappy)
 		case CodecLz4:
-			level := max(codec.level, 0)
+			level := codec.level
+			if level < 0 {
+				level = 0 // 0 == lz4.Fast
+			}
 			fn := func() any { return lz4.NewWriter(new(bytes.Buffer)) }
 			w := lz4.NewWriter(new(bytes.Buffer))
 			if err := w.Apply(lz4.CompressionLevelOption(lz4.CompressionLevel(level))); err == nil {
@@ -372,7 +374,7 @@ func (d *decompressor) Decompress(src []byte, codecType CompressionCodecType) ([
 		// reference to the slice. Thus, we can return the original
 		// slice from the user-provided pool: it is only recycled
 		// at the end when the user says they are done.
-		rfn = func() []byte { return slices.Clone(out.Bytes()) }
+		rfn = func() []byte { return append([]byte(nil), out.Bytes()...) }
 	}
 
 	switch codecType {
@@ -397,7 +399,7 @@ func (d *decompressor) Decompress(src []byte, codecType CompressionCodecType) ([
 		if userPooled {
 			return decoded, nil
 		}
-		return slices.Clone(decoded), nil
+		return append([]byte(nil), decoded...), nil
 	case CodecLz4:
 		unlz4 := d.unlz4Pool.Get().(*lz4.Reader)
 		defer d.unlz4Pool.Put(unlz4)
@@ -416,7 +418,7 @@ func (d *decompressor) Decompress(src []byte, codecType CompressionCodecType) ([
 		if userPooled {
 			return decoded, nil
 		}
-		return slices.Clone(decoded), nil
+		return append([]byte(nil), decoded...), nil
 	default:
 		return nil, errors.New("unknown compression codec")
 	}

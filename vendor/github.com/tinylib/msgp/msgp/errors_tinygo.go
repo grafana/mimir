@@ -1,4 +1,5 @@
 //go:build tinygo
+// +build tinygo
 
 package msgp
 

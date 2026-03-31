@@ -1,5 +1,16 @@
-// SPDX-FileCopyrightText: Copyright 2015-2025 go-swagger maintainers
-// SPDX-License-Identifier: Apache-2.0
+// Copyright 2015 go-swagger maintainers
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package validate
 
@@ -22,7 +33,7 @@ type objectValidator struct {
 	Properties           map[string]spec.Schema
 	AdditionalProperties *spec.SchemaOrBool
 	PatternProperties    map[string]spec.Schema
-	Root                 any
+	Root                 interface{}
 	KnownFormats         strfmt.Registry
 	Options              *SchemaValidatorOptions
 	splitPath            []string
@@ -31,7 +42,7 @@ type objectValidator struct {
 func newObjectValidator(path, in string,
 	maxProperties, minProperties *int64, required []string, properties spec.SchemaProperties,
 	additionalProperties *spec.SchemaOrBool, patternProperties spec.SchemaProperties,
-	root any, formats strfmt.Registry, opts *SchemaValidatorOptions) *objectValidator {
+	root interface{}, formats strfmt.Registry, opts *SchemaValidatorOptions) *objectValidator {
 	if opts == nil {
 		opts = new(SchemaValidatorOptions)
 	}
@@ -59,17 +70,104 @@ func newObjectValidator(path, in string,
 	return v
 }
 
-func (o *objectValidator) Validate(data any) *Result {
+func (o *objectValidator) SetPath(path string) {
+	o.Path = path
+	o.splitPath = strings.Split(path, ".")
+}
+
+func (o *objectValidator) Applies(source interface{}, kind reflect.Kind) bool {
+	// TODO: this should also work for structs
+	// there is a problem in the type validator where it will be unhappy about null values
+	// so that requires more testing
+	_, isSchema := source.(*spec.Schema)
+	return isSchema && (kind == reflect.Map || kind == reflect.Struct)
+}
+
+func (o *objectValidator) isProperties() bool {
+	p := o.splitPath
+	return len(p) > 1 && p[len(p)-1] == jsonProperties && p[len(p)-2] != jsonProperties
+}
+
+func (o *objectValidator) isDefault() bool {
+	p := o.splitPath
+	return len(p) > 1 && p[len(p)-1] == jsonDefault && p[len(p)-2] != jsonDefault
+}
+
+func (o *objectValidator) isExample() bool {
+	p := o.splitPath
+	return len(p) > 1 && (p[len(p)-1] == swaggerExample || p[len(p)-1] == swaggerExamples) && p[len(p)-2] != swaggerExample
+}
+
+func (o *objectValidator) checkArrayMustHaveItems(res *Result, val map[string]interface{}) {
+	// for swagger 2.0 schemas, there is an additional constraint to have array items defined explicitly.
+	// with pure jsonschema draft 4, one may have arrays with undefined items (i.e. any type).
+	if val == nil {
+		return
+	}
+
+	t, typeFound := val[jsonType]
+	if !typeFound {
+		return
+	}
+
+	tpe, isString := t.(string)
+	if !isString || tpe != arrayType {
+		return
+	}
+
+	item, itemsKeyFound := val[jsonItems]
+	if itemsKeyFound {
+		return
+	}
+
+	res.AddErrors(errors.Required(jsonItems, o.Path, item))
+}
+
+func (o *objectValidator) checkItemsMustBeTypeArray(res *Result, val map[string]interface{}) {
+	if val == nil {
+		return
+	}
+
+	if o.isProperties() || o.isDefault() || o.isExample() {
+		return
+	}
+
+	_, itemsKeyFound := val[jsonItems]
+	if !itemsKeyFound {
+		return
+	}
+
+	t, typeFound := val[jsonType]
+	if !typeFound {
+		// there is no type
+		res.AddErrors(errors.Required(jsonType, o.Path, t))
+	}
+
+	if tpe, isString := t.(string); !isString || tpe != arrayType {
+		res.AddErrors(errors.InvalidType(o.Path, o.In, arrayType, nil))
+	}
+}
+
+func (o *objectValidator) precheck(res *Result, val map[string]interface{}) {
+	if o.Options.EnableArrayMustHaveItemsCheck {
+		o.checkArrayMustHaveItems(res, val)
+	}
+	if o.Options.EnableObjectArrayTypeCheck {
+		o.checkItemsMustBeTypeArray(res, val)
+	}
+}
+
+func (o *objectValidator) Validate(data interface{}) *Result {
 	if o.Options.recycleValidators {
 		defer func() {
 			o.redeem()
 		}()
 	}
 
-	var val map[string]any
+	var val map[string]interface{}
 	if data != nil {
 		var ok bool
-		val, ok = data.(map[string]any)
+		val, ok = data.(map[string]interface{})
 		if !ok {
 			return errorHelp.sErr(invalidObjectMsg(o.Path, o.In), o.Options.recycleResult)
 		}
@@ -115,7 +213,7 @@ func (o *objectValidator) Validate(data any) *Result {
 		for _, pName := range patterns {
 			if v, ok := o.PatternProperties[pName]; ok {
 				r := newSchemaValidator(&v, o.Root, o.Path+"."+key, o.KnownFormats, o.Options).Validate(value)
-				res.mergeForField(data.(map[string]any), key, r)
+				res.mergeForField(data.(map[string]interface{}), key, r)
 			}
 		}
 	}
@@ -123,94 +221,7 @@ func (o *objectValidator) Validate(data any) *Result {
 	return res
 }
 
-func (o *objectValidator) SetPath(path string) {
-	o.Path = path
-	o.splitPath = strings.Split(path, ".")
-}
-
-func (o *objectValidator) Applies(source any, kind reflect.Kind) bool {
-	// TODO: this should also work for structs
-	// there is a problem in the type validator where it will be unhappy about null values
-	// so that requires more testing
-	_, isSchema := source.(*spec.Schema)
-	return isSchema && (kind == reflect.Map || kind == reflect.Struct)
-}
-
-func (o *objectValidator) isProperties() bool {
-	p := o.splitPath
-	return len(p) > 1 && p[len(p)-1] == jsonProperties && p[len(p)-2] != jsonProperties
-}
-
-func (o *objectValidator) isDefault() bool {
-	p := o.splitPath
-	return len(p) > 1 && p[len(p)-1] == jsonDefault && p[len(p)-2] != jsonDefault
-}
-
-func (o *objectValidator) isExample() bool {
-	p := o.splitPath
-	return len(p) > 1 && (p[len(p)-1] == swaggerExample || p[len(p)-1] == swaggerExamples) && p[len(p)-2] != swaggerExample
-}
-
-func (o *objectValidator) checkArrayMustHaveItems(res *Result, val map[string]any) {
-	// for swagger 2.0 schemas, there is an additional constraint to have array items defined explicitly.
-	// with pure jsonschema draft 4, one may have arrays with undefined items (i.e. any type).
-	if val == nil {
-		return
-	}
-
-	t, typeFound := val[jsonType]
-	if !typeFound {
-		return
-	}
-
-	tpe, isString := t.(string)
-	if !isString || tpe != arrayType {
-		return
-	}
-
-	item, itemsKeyFound := val[jsonItems]
-	if itemsKeyFound {
-		return
-	}
-
-	res.AddErrors(errors.Required(jsonItems, o.Path, item))
-}
-
-func (o *objectValidator) checkItemsMustBeTypeArray(res *Result, val map[string]any) {
-	if val == nil {
-		return
-	}
-
-	if o.isProperties() || o.isDefault() || o.isExample() {
-		return
-	}
-
-	_, itemsKeyFound := val[jsonItems]
-	if !itemsKeyFound {
-		return
-	}
-
-	t, typeFound := val[jsonType]
-	if !typeFound {
-		// there is no type
-		res.AddErrors(errors.Required(jsonType, o.Path, t))
-	}
-
-	if tpe, isString := t.(string); !isString || tpe != arrayType {
-		res.AddErrors(errors.InvalidType(o.Path, o.In, arrayType, nil))
-	}
-}
-
-func (o *objectValidator) precheck(res *Result, val map[string]any) {
-	if o.Options.EnableArrayMustHaveItemsCheck {
-		o.checkArrayMustHaveItems(res, val)
-	}
-	if o.Options.EnableObjectArrayTypeCheck {
-		o.checkItemsMustBeTypeArray(res, val)
-	}
-}
-
-func (o *objectValidator) validateNoAdditionalProperties(val map[string]any, res *Result) {
+func (o *objectValidator) validateNoAdditionalProperties(val map[string]interface{}, res *Result) {
 	for k := range val {
 		if k == "$schema" || k == "id" {
 			// special properties "$schema" and "id" are ignored
@@ -255,7 +266,7 @@ func (o *objectValidator) validateNoAdditionalProperties(val map[string]any, res
 		}
 
 		// $ref is forbidden in header
-		headers, mapOk := val[k].(map[string]any)
+		headers, mapOk := val[k].(map[string]interface{})
 		if !mapOk {
 			continue
 		}
@@ -265,7 +276,7 @@ func (o *objectValidator) validateNoAdditionalProperties(val map[string]any, res
 				continue
 			}
 
-			headerSchema, mapOfMapOk := headerBody.(map[string]any)
+			headerSchema, mapOfMapOk := headerBody.(map[string]interface{})
 			if !mapOfMapOk {
 				continue
 			}
@@ -292,7 +303,7 @@ func (o *objectValidator) validateNoAdditionalProperties(val map[string]any, res
 	}
 }
 
-func (o *objectValidator) validateAdditionalProperties(val map[string]any, res *Result) {
+func (o *objectValidator) validateAdditionalProperties(val map[string]interface{}, res *Result) {
 	for key, value := range val {
 		_, regularProperty := o.Properties[key]
 		if regularProperty {
@@ -320,7 +331,7 @@ func (o *objectValidator) validateAdditionalProperties(val map[string]any, res *
 	// Valid cases: additionalProperties: true or undefined
 }
 
-func (o *objectValidator) validatePropertiesSchema(val map[string]any, res *Result) {
+func (o *objectValidator) validatePropertiesSchema(val map[string]interface{}, res *Result) {
 	createdFromDefaults := map[string]struct{}{}
 
 	// Property types:
@@ -378,7 +389,7 @@ func (o *objectValidator) validatePropertiesSchema(val map[string]any, res *Resu
 }
 
 // TODO: succeededOnce is not used anywhere
-func (o *objectValidator) validatePatternProperty(key string, value any, result *Result) (bool, bool, []string) {
+func (o *objectValidator) validatePatternProperty(key string, value interface{}, result *Result) (bool, bool, []string) {
 	if len(o.PatternProperties) == 0 {
 		return false, false, nil
 	}

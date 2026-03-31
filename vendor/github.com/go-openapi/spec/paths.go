@@ -1,5 +1,16 @@
-// SPDX-FileCopyrightText: Copyright 2015-2025 go-swagger maintainers
-// SPDX-License-Identifier: Apache-2.0
+// Copyright 2015 go-swagger maintainers
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package spec
 
@@ -8,7 +19,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/go-openapi/swag/jsonutils"
+	"github.com/go-openapi/swag"
 )
 
 // Paths holds the relative paths to the individual endpoints.
@@ -19,19 +30,18 @@ import (
 // For more information: http://goo.gl/8us55a#pathsObject
 type Paths struct {
 	VendorExtensible
-
 	Paths map[string]PathItem `json:"-"` // custom serializer to flatten this, each entry must start with "/"
 }
 
 // JSONLookup look up a value by the json property name
-func (p Paths) JSONLookup(token string) (any, error) {
+func (p Paths) JSONLookup(token string) (interface{}, error) {
 	if pi, ok := p.Paths[token]; ok {
 		return &pi, nil
 	}
 	if ex, ok := p.Extensions[token]; ok {
 		return &ex, nil
 	}
-	return nil, fmt.Errorf("object has no field %q: %w", token, ErrSpec)
+	return nil, fmt.Errorf("object has no field %q", token)
 }
 
 // UnmarshalJSON hydrates this items instance with the data from JSON
@@ -43,9 +53,9 @@ func (p *Paths) UnmarshalJSON(data []byte) error {
 	for k, v := range res {
 		if strings.HasPrefix(strings.ToLower(k), "x-") {
 			if p.Extensions == nil {
-				p.Extensions = make(map[string]any)
+				p.Extensions = make(map[string]interface{})
 			}
-			var d any
+			var d interface{}
 			if err := json.Unmarshal(v, &d); err != nil {
 				return err
 			}
@@ -82,6 +92,6 @@ func (p Paths) MarshalJSON() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	concated := jsonutils.ConcatJSON(b1, b2)
+	concated := swag.ConcatJSON(b1, b2)
 	return concated, nil
 }

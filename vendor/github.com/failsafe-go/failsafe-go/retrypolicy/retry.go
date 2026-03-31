@@ -366,7 +366,7 @@ func (c *config[R]) Build() RetryPolicy[R] {
 
 func (rp *retryPolicy[R]) ToExecutor(_ R) any {
 	rpe := &executor[R]{
-		BaseExecutor: policy.BaseExecutor[R]{
+		BaseExecutor: &policy.BaseExecutor[R]{
 			BaseFailurePolicy: &rp.BaseFailurePolicy,
 		},
 		retryPolicy: rp,

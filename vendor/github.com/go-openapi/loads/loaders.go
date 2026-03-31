@@ -1,16 +1,12 @@
-// SPDX-FileCopyrightText: Copyright 2015-2025 go-swagger maintainers
-// SPDX-License-Identifier: Apache-2.0
-
 package loads
 
 import (
 	"encoding/json"
 	"errors"
 	"net/url"
-	"slices"
 
 	"github.com/go-openapi/spec"
-	"github.com/go-openapi/swag/loading"
+	"github.com/go-openapi/swag"
 )
 
 var (
@@ -34,8 +30,8 @@ func init() {
 
 	loaders = jsonLoader.WithHead(&loader{
 		DocLoaderWithMatch: DocLoaderWithMatch{
-			Match: loading.YAMLMatcher,
-			Fn:    loading.YAMLDoc,
+			Match: swag.YAMLMatcher,
+			Fn:    swag.YAMLDoc,
 		},
 	})
 
@@ -44,7 +40,7 @@ func init() {
 }
 
 // DocLoader represents a doc loader type
-type DocLoader func(string, ...loading.Option) (json.RawMessage, error)
+type DocLoader func(string) (json.RawMessage, error)
 
 // DocMatcher represents a predicate to check if a loader matches
 type DocMatcher func(string) bool
@@ -65,9 +61,6 @@ func NewDocLoaderWithMatch(fn DocLoader, matcher DocMatcher) DocLoaderWithMatch 
 
 type loader struct {
 	DocLoaderWithMatch
-
-	loadingOptions []loading.Option
-
 	Next *loader
 }
 
@@ -90,17 +83,17 @@ func (l *loader) WithNext(next *loader) *loader {
 func (l *loader) Load(path string) (json.RawMessage, error) {
 	_, erp := url.Parse(path)
 	if erp != nil {
-		return nil, errors.Join(erp, ErrLoads)
+		return nil, erp
 	}
 
-	var lastErr error = ErrNoLoader // default error if no match was found
+	lastErr := errors.New("no loader matched") // default error if no match was found
 	for ldr := l; ldr != nil; ldr = ldr.Next {
 		if ldr.Match != nil && !ldr.Match(path) {
 			continue
 		}
 
 		// try then move to next one if there is an error
-		b, err := ldr.Fn(path, l.loadingOptions...)
+		b, err := ldr.Fn(path)
 		if err == nil {
 			return b, nil
 		}
@@ -108,29 +101,14 @@ func (l *loader) Load(path string) (json.RawMessage, error) {
 		lastErr = err
 	}
 
-	return nil, errors.Join(lastErr, ErrLoads)
+	return nil, lastErr
 }
 
-func (l *loader) clone() *loader {
-	if l == nil {
-		return nil
-	}
-
-	return &loader{
-		DocLoaderWithMatch: l.DocLoaderWithMatch,
-		loadingOptions:     slices.Clone(l.loadingOptions),
-		Next:               l.Next.clone(),
-	}
-}
-
-// JSONDoc loads a json document from either a file or a remote url.
-//
-// See [loading.Option] for available options (e.g. configuring authentifaction,
-// headers or using embedded file system resources).
-func JSONDoc(path string, opts ...loading.Option) (json.RawMessage, error) {
-	data, err := loading.LoadFromFileOrHTTP(path, opts...)
+// JSONDoc loads a json document from either a file or a remote url
+func JSONDoc(path string) (json.RawMessage, error) {
+	data, err := swag.LoadFromFileOrHTTP(path)
 	if err != nil {
-		return nil, errors.Join(err, ErrLoads)
+		return nil, err
 	}
 	return json.RawMessage(data), nil
 }

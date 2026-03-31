@@ -9,32 +9,32 @@ import (
 	"github.com/shirou/gopsutil/v4/internal/common"
 )
 
-func IOCountersWithContext(_ context.Context, _ bool) ([]IOCountersStat, error) {
+func IOCountersWithContext(ctx context.Context, pernic bool) ([]IOCountersStat, error) {
 	return []IOCountersStat{}, common.ErrNotImplementedError
 }
 
-func IOCountersByFileWithContext(ctx context.Context, pernic bool, _ string) ([]IOCountersStat, error) {
+func IOCountersByFileWithContext(ctx context.Context, pernic bool, filename string) ([]IOCountersStat, error) {
 	return IOCountersWithContext(ctx, pernic)
 }
 
-func FilterCountersWithContext(_ context.Context) ([]FilterStat, error) {
+func FilterCountersWithContext(ctx context.Context) ([]FilterStat, error) {
 	return nil, common.ErrNotImplementedError
 }
 
-func ConntrackStatsWithContext(_ context.Context, _ bool) ([]ConntrackStat, error) {
+func ConntrackStatsWithContext(ctx context.Context, percpu bool) ([]ConntrackStat, error) {
 	return nil, common.ErrNotImplementedError
 }
 
-func ProtoCountersWithContext(_ context.Context, _ []string) ([]ProtoCountersStat, error) {
+func ProtoCountersWithContext(ctx context.Context, protocols []string) ([]ProtoCountersStat, error) {
 	return nil, common.ErrNotImplementedError
 }
 
 // Deprecated: use process.PidsWithContext instead
-func PidsWithContext(_ context.Context) ([]int32, error) {
+func PidsWithContext(ctx context.Context) ([]int32, error) {
 	return nil, common.ErrNotImplementedError
 }
 
-func ConnectionsWithContext(_ context.Context, _ string) ([]ConnectionStat, error) {
+func ConnectionsWithContext(ctx context.Context, kind string) ([]ConnectionStat, error) {
 	return []ConnectionStat{}, common.ErrNotImplementedError
 }
 

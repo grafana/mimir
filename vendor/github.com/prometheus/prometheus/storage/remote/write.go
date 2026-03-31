@@ -1,4 +1,4 @@
-// Copyright The Prometheus Authors
+// Copyright 2017 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -34,6 +34,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
+// TODO: Remove along with timestampTracker logic once we can be sure no user
+// will encounter a gap that these metrics cover but other metrics don't.
 var (
 	samplesIn = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: namespace,
@@ -66,11 +68,9 @@ type WriteStorage struct {
 	externalLabels    labels.Labels
 	dir               string
 	queues            map[string]*QueueManager
-	samplesIn         *ewmaRate
 	flushDeadline     time.Duration
 	interner          *pool
 	scraper           ReadyScrapeManager
-	quit              chan struct{}
 
 	// For timestampTracker.
 	highestTimestamp        *maxTimestamp
@@ -89,11 +89,11 @@ func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string,
 		logger:            logger,
 		reg:               reg,
 		flushDeadline:     flushDeadline,
-		samplesIn:         newEWMARate(ewmaWeight, shardUpdateDuration),
 		dir:               dir,
 		interner:          newPool(),
 		scraper:           sm,
-		quit:              make(chan struct{}),
+		// TODO: Remove along with timestampTracker logic once we can be sure no user
+		// will encounter a gap that this metric covers but other metrics don't.
 		highestTimestamp: &maxTimestamp{
 			Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
 				Namespace: namespace,
@@ -107,21 +107,7 @@ func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string,
 	if reg != nil {
 		reg.MustRegister(rws.highestTimestamp)
 	}
-	go rws.run()
 	return rws
-}
-
-func (rws *WriteStorage) run() {
-	ticker := time.NewTicker(shardUpdateDuration)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			rws.samplesIn.tick()
-		case <-rws.quit:
-			return
-		}
-	}
 }
 
 func (rws *WriteStorage) Notify() {
@@ -201,7 +187,6 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rws.liveReaderMetrics,
 			rws.logger,
 			rws.dir,
-			rws.samplesIn,
 			rwConf.QueueConfig,
 			rwConf.MetadataConfig,
 			conf.GlobalConfig.ExternalLabels,
@@ -209,7 +194,6 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			c,
 			rws.flushDeadline,
 			rws.interner,
-			rws.highestTimestamp,
 			rws.scraper,
 			rwConf.SendExemplars,
 			rwConf.SendNativeHistograms,
@@ -238,20 +222,8 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 // Appender implements storage.Storage.
 func (rws *WriteStorage) Appender(context.Context) storage.Appender {
 	return &timestampTracker{
-		baseTimestampTracker: baseTimestampTracker{
-			writeStorage:         rws,
-			highestRecvTimestamp: rws.highestTimestamp,
-		},
-	}
-}
-
-// AppenderV2 implements storage.Storage.
-func (rws *WriteStorage) AppenderV2(context.Context) storage.AppenderV2 {
-	return &timestampTrackerV2{
-		baseTimestampTracker: baseTimestampTracker{
-			writeStorage:         rws,
-			highestRecvTimestamp: rws.highestTimestamp,
-		},
+		writeStorage:         rws,
+		highestRecvTimestamp: rws.highestTimestamp,
 	}
 }
 
@@ -282,7 +254,6 @@ func (rws *WriteStorage) Close() error {
 	for _, q := range rws.queues {
 		q.Stop()
 	}
-	close(rws.quit)
 
 	rws.watcherMetrics.Unregister()
 	rws.liveReaderMetrics.Unregister()
@@ -294,20 +265,14 @@ func (rws *WriteStorage) Close() error {
 	return nil
 }
 
-type baseTimestampTracker struct {
-	writeStorage *WriteStorage
-
+type timestampTracker struct {
+	writeStorage         *WriteStorage
+	appendOptions        *storage.AppendOptions
 	samples              int64
 	exemplars            int64
 	histograms           int64
 	highestTimestamp     int64
 	highestRecvTimestamp *maxTimestamp
-}
-
-type timestampTracker struct {
-	baseTimestampTracker
-
-	appendOptions *storage.AppendOptions
 }
 
 func (t *timestampTracker) SetOptions(opts *storage.AppendOptions) {
@@ -336,22 +301,22 @@ func (t *timestampTracker) AppendHistogram(_ storage.SeriesRef, _ labels.Labels,
 	return 0, nil
 }
 
-func (t *timestampTracker) AppendSTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, st int64) (storage.SeriesRef, error) {
+func (t *timestampTracker) AppendCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, ct int64) (storage.SeriesRef, error) {
 	t.samples++
-	if st > t.highestTimestamp {
-		// Theoretically, we should never see a ST zero sample with a timestamp higher than the highest timestamp we've seen so far.
+	if ct > t.highestTimestamp {
+		// Theoretically, we should never see a CT zero sample with a timestamp higher than the highest timestamp we've seen so far.
 		// However, we're not going to enforce that here, as it is not the responsibility of the tracker to enforce this.
-		t.highestTimestamp = st
+		t.highestTimestamp = ct
 	}
 	return 0, nil
 }
 
-func (t *timestampTracker) AppendHistogramSTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, st int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (t *timestampTracker) AppendHistogramCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, ct int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	t.histograms++
-	if st > t.highestTimestamp {
-		// Theoretically, we should never see a ST zero sample with a timestamp higher than the highest timestamp we've seen so far.
+	if ct > t.highestTimestamp {
+		// Theoretically, we should never see a CT zero sample with a timestamp higher than the highest timestamp we've seen so far.
 		// However, we're not going to enforce that here, as it is not the responsibility of the tracker to enforce this.
-		t.highestTimestamp = st
+		t.highestTimestamp = ct
 	}
 	return 0, nil
 }
@@ -363,9 +328,7 @@ func (*timestampTracker) UpdateMetadata(storage.SeriesRef, labels.Labels, metada
 }
 
 // Commit implements storage.Appender.
-func (t *baseTimestampTracker) Commit() error {
-	t.writeStorage.samplesIn.incr(t.samples + t.exemplars + t.histograms)
-
+func (t *timestampTracker) Commit() error {
 	samplesIn.Add(float64(t.samples))
 	exemplarsIn.Add(float64(t.exemplars))
 	histogramsIn.Add(float64(t.histograms))
@@ -374,25 +337,6 @@ func (t *baseTimestampTracker) Commit() error {
 }
 
 // Rollback implements storage.Appender.
-func (*baseTimestampTracker) Rollback() error {
+func (*timestampTracker) Rollback() error {
 	return nil
-}
-
-type timestampTrackerV2 struct {
-	baseTimestampTracker
-}
-
-// Append implements storage.AppenderV2.
-func (t *timestampTrackerV2) Append(ref storage.SeriesRef, _ labels.Labels, _, ts int64, _ float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
-	switch {
-	case fh != nil, h != nil:
-		t.histograms++
-	default:
-		t.samples++
-	}
-	if ts > t.highestTimestamp {
-		t.highestTimestamp = ts
-	}
-	t.exemplars += int64(len(opts.Exemplars))
-	return ref, nil
 }

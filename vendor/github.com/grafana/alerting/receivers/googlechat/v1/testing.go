@@ -4,9 +4,7 @@ package v1
 const FullValidConfigForTesting = `{
 	"url": "http://localhost", 
 	"title": "test-title", 
-	"message": "test-message",
-	"hide_open_button": true,
-	"hide_version_info": true
+	"message": "test-message"
 }`
 
 // FullValidSecretsForTesting is a string representation of JSON object that contains all fields that can be overridden from secrets.

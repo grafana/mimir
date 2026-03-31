@@ -1,4 +1,4 @@
-// Copyright The Prometheus Authors
+// Copyright 2016 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -15,7 +15,6 @@ package scrape
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -37,7 +36,6 @@ type scrapeMetrics struct {
 	targetScrapePoolTargetsAdded        *prometheus.GaugeVec
 	targetScrapePoolSymbolTableItems    *prometheus.GaugeVec
 	targetSyncIntervalLength            *prometheus.SummaryVec
-	targetSyncIntervalLengthHistogram   *prometheus.HistogramVec
 	targetSyncFailed                    *prometheus.CounterVec
 
 	// Used by targetScraper.
@@ -48,7 +46,6 @@ type scrapeMetrics struct {
 
 	// Used by scrapeLoop.
 	targetIntervalLength                   *prometheus.SummaryVec
-	targetIntervalLengthHistogram          *prometheus.HistogramVec
 	targetScrapeSampleLimit                prometheus.Counter
 	targetScrapeSampleDuplicate            prometheus.Counter
 	targetScrapeSampleOutOfOrder           prometheus.Counter
@@ -56,7 +53,6 @@ type scrapeMetrics struct {
 	targetScrapeExemplarOutOfOrder         prometheus.Counter
 	targetScrapePoolExceededLabelLimits    prometheus.Counter
 	targetScrapeNativeHistogramBucketLimit prometheus.Counter
-	targetScrapeDuration                   prometheus.Histogram
 }
 
 func newScrapeMetrics(reg prometheus.Registerer) (*scrapeMetrics, error) {
@@ -156,17 +152,6 @@ func newScrapeMetrics(reg prometheus.Registerer) (*scrapeMetrics, error) {
 		},
 		[]string{"scrape_job"},
 	)
-	sm.targetSyncIntervalLengthHistogram = prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:                            "prometheus_target_sync_length_histogram_seconds",
-			Help:                            "Actual interval to sync the scrape pool.",
-			Buckets:                         []float64{.01, .1, 1, 10},
-			NativeHistogramBucketFactor:     1.1,
-			NativeHistogramMaxBucketNumber:  100,
-			NativeHistogramMinResetDuration: 1 * time.Hour,
-		},
-		[]string{"scrape_job"},
-	)
 	sm.targetSyncFailed = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "prometheus_target_sync_failed_total",
@@ -197,17 +182,6 @@ func newScrapeMetrics(reg prometheus.Registerer) (*scrapeMetrics, error) {
 			Name:       "prometheus_target_interval_length_seconds",
 			Help:       "Actual intervals between scrapes.",
 			Objectives: map[float64]float64{0.01: 0.001, 0.05: 0.005, 0.5: 0.05, 0.90: 0.01, 0.99: 0.001},
-		},
-		[]string{"interval"},
-	)
-	sm.targetIntervalLengthHistogram = prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:                            "prometheus_target_interval_length_histogram_seconds",
-			Help:                            "Actual intervals between scrapes.",
-			Buckets:                         []float64{.01, .1, 1, 10},
-			NativeHistogramBucketFactor:     1.1,
-			NativeHistogramMaxBucketNumber:  100,
-			NativeHistogramMinResetDuration: 1 * time.Hour,
 		},
 		[]string{"interval"},
 	)
@@ -253,15 +227,6 @@ func newScrapeMetrics(reg prometheus.Registerer) (*scrapeMetrics, error) {
 			Help: "Total number of exemplar rejected due to not being out of the expected order.",
 		},
 	)
-	sm.targetScrapeDuration = prometheus.NewHistogram(
-		prometheus.HistogramOpts{
-			Name:                            "prometheus_target_scrape_duration_seconds",
-			Help:                            "Total duration of the scrape from start to commit completion in seconds.",
-			NativeHistogramBucketFactor:     1.1,
-			NativeHistogramMaxBucketNumber:  100,
-			NativeHistogramMinResetDuration: 1 * time.Hour,
-		},
-	)
 
 	for _, collector := range []prometheus.Collector{
 		// Used by Manager.
@@ -273,7 +238,6 @@ func newScrapeMetrics(reg prometheus.Registerer) (*scrapeMetrics, error) {
 		sm.targetScrapePoolReloads,
 		sm.targetScrapePoolReloadsFailed,
 		sm.targetSyncIntervalLength,
-		sm.targetSyncIntervalLengthHistogram,
 		sm.targetScrapePoolSyncsCounter,
 		sm.targetScrapePoolExceededTargetLimit,
 		sm.targetScrapePoolTargetLimit,
@@ -286,7 +250,6 @@ func newScrapeMetrics(reg prometheus.Registerer) (*scrapeMetrics, error) {
 		sm.targetScrapeCacheFlushForced,
 		// Used by scrapeLoop.
 		sm.targetIntervalLength,
-		sm.targetIntervalLengthHistogram,
 		sm.targetScrapeSampleLimit,
 		sm.targetScrapeSampleDuplicate,
 		sm.targetScrapeSampleOutOfOrder,
@@ -294,7 +257,6 @@ func newScrapeMetrics(reg prometheus.Registerer) (*scrapeMetrics, error) {
 		sm.targetScrapeExemplarOutOfOrder,
 		sm.targetScrapePoolExceededLabelLimits,
 		sm.targetScrapeNativeHistogramBucketLimit,
-		sm.targetScrapeDuration,
 	} {
 		err := reg.Register(collector)
 		if err != nil {
@@ -317,7 +279,6 @@ func (sm *scrapeMetrics) Unregister() {
 	sm.reg.Unregister(sm.targetScrapePoolReloads)
 	sm.reg.Unregister(sm.targetScrapePoolReloadsFailed)
 	sm.reg.Unregister(sm.targetSyncIntervalLength)
-	sm.reg.Unregister(sm.targetSyncIntervalLengthHistogram)
 	sm.reg.Unregister(sm.targetScrapePoolSyncsCounter)
 	sm.reg.Unregister(sm.targetScrapePoolExceededTargetLimit)
 	sm.reg.Unregister(sm.targetScrapePoolTargetLimit)
@@ -327,7 +288,6 @@ func (sm *scrapeMetrics) Unregister() {
 	sm.reg.Unregister(sm.targetScrapeExceededBodySizeLimit)
 	sm.reg.Unregister(sm.targetScrapeCacheFlushForced)
 	sm.reg.Unregister(sm.targetIntervalLength)
-	sm.reg.Unregister(sm.targetIntervalLengthHistogram)
 	sm.reg.Unregister(sm.targetScrapeSampleLimit)
 	sm.reg.Unregister(sm.targetScrapeSampleDuplicate)
 	sm.reg.Unregister(sm.targetScrapeSampleOutOfOrder)
@@ -335,7 +295,6 @@ func (sm *scrapeMetrics) Unregister() {
 	sm.reg.Unregister(sm.targetScrapeExemplarOutOfOrder)
 	sm.reg.Unregister(sm.targetScrapePoolExceededLabelLimits)
 	sm.reg.Unregister(sm.targetScrapeNativeHistogramBucketLimit)
-	sm.reg.Unregister(sm.targetScrapeDuration)
 }
 
 type TargetsGatherer interface {

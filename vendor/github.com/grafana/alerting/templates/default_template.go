@@ -44,7 +44,6 @@ Labels:
 {{ end }}{{ end }}{{ if gt (len .Alerts.Resolved) 0 }}**Resolved**
 {{ template "__text_alert_list" .Alerts.Resolved }}{{ end }}{{ end }}
 
-{{ define "slack.default.footer" }}Grafana{{ if .AppVersion }} v{{ .AppVersion }}{{ end }}{{ end }}
 
 {{ define "__teams_text_alert_list" }}{{ range . }}
 Value: {{ template "__text_values_list" . }}
@@ -111,7 +110,6 @@ Annotations:
 {{- $priority -}}
 {{- end -}}
 
-{{- define "webhook.default.payload.state" -}}{{ if eq .Status "resolved" }}ok{{ else }}alerting{{ end }}{{ end }}
 {{ define "webhook.default.payload" -}}
   {{ coll.Dict 
   "receiver" .Receiver
@@ -125,7 +123,7 @@ Annotations:
   "orgId"  (index .Alerts 0).OrgID
   "truncatedAlerts"  .TruncatedAlerts
   "groupKey" .GroupKey
-  "state"  (tmpl.Exec "webhook.default.payload.state" . )
+  "state"  (tmpl.Inline "{{ if eq .Status \"resolved\" }}ok{{ else }}alerting{{ end }}" . )
   "title" (tmpl.Exec "default.title" . )
   "message" (tmpl.Exec "default.message" . )
   | data.ToJSONPretty " "}}
@@ -161,8 +159,6 @@ Labels:
 
 {{ end }}{{ end }}{{ if gt (len .Alerts.Resolved) 0 }}**Resolved**
 {{ template "__text_alert_list" .Alerts.Resolved }}{{ end }}{{ end }}
-
-{{ define "slack.default.footer" }}Grafana{{ if .AppVersion }} v{{ .AppVersion }}{{ end }}{{ end }}
 
 {{ define "teams.default.message" }}{{ template "default.message" . }}{{ end }}
 
@@ -213,10 +209,7 @@ func ForTests(t *testing.T) *Template {
 	externalURL, err := url.Parse("http://test.com")
 	require.NoError(t, err)
 	tmpl.ExternalURL = externalURL
-	return &Template{
-		Template: tmpl,
-		limits:   DefaultLimits,
-	}
+	return tmpl
 }
 
 var DefaultTemplateName = "__default__"

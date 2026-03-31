@@ -1,5 +1,4 @@
-
-![cobra logo](https://github.com/user-attachments/assets/cbc3adf8-0dff-46e9-a88d-5e2d971c169e)
+![cobra logo](assets/CobraMain.png)
 
 Cobra is a library for creating powerful modern CLI applications.
 
@@ -106,7 +105,7 @@ go install github.com/spf13/cobra-cli@latest
 
 For complete details on using the Cobra-CLI generator, please read [The Cobra Generator README](https://github.com/spf13/cobra-cli/blob/main/README.md)
 
-For complete details on using the Cobra library, please read [The Cobra User Guide](site/content/user_guide.md).
+For complete details on using the Cobra library, please read the [The Cobra User Guide](site/content/user_guide.md).
 
 # License
 

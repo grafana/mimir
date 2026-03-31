@@ -8,6 +8,7 @@ package pmetric
 
 import (
 	"go.opentelemetry.io/collector/pdata/internal"
+	otlpmetrics "go.opentelemetry.io/collector/pdata/internal/data/protogen/metrics/v1"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 )
 
@@ -19,11 +20,11 @@ import (
 // Must use NewScopeMetrics function to create new instances.
 // Important: zero-initialized instance is not valid for use.
 type ScopeMetrics struct {
-	orig  *internal.ScopeMetrics
+	orig  *otlpmetrics.ScopeMetrics
 	state *internal.State
 }
 
-func newScopeMetrics(orig *internal.ScopeMetrics, state *internal.State) ScopeMetrics {
+func newScopeMetrics(orig *otlpmetrics.ScopeMetrics, state *internal.State) ScopeMetrics {
 	return ScopeMetrics{orig: orig, state: state}
 }
 
@@ -32,7 +33,7 @@ func newScopeMetrics(orig *internal.ScopeMetrics, state *internal.State) ScopeMe
 // This must be used only in testing code. Users should use "AppendEmpty" when part of a Slice,
 // OR directly access the member if this is embedded in another struct.
 func NewScopeMetrics() ScopeMetrics {
-	return newScopeMetrics(internal.NewScopeMetrics(), internal.NewState())
+	return newScopeMetrics(internal.NewOrigScopeMetrics(), internal.NewState())
 }
 
 // MoveTo moves all properties from the current struct overriding the destination and
@@ -44,13 +45,13 @@ func (ms ScopeMetrics) MoveTo(dest ScopeMetrics) {
 	if ms.orig == dest.orig {
 		return
 	}
-	internal.DeleteScopeMetrics(dest.orig, false)
+	internal.DeleteOrigScopeMetrics(dest.orig, false)
 	*dest.orig, *ms.orig = *ms.orig, *dest.orig
 }
 
 // Scope returns the scope associated with this ScopeMetrics.
 func (ms ScopeMetrics) Scope() pcommon.InstrumentationScope {
-	return pcommon.InstrumentationScope(internal.NewInstrumentationScopeWrapper(&ms.orig.Scope, ms.state))
+	return pcommon.InstrumentationScope(internal.NewInstrumentationScope(&ms.orig.Scope, ms.state))
 }
 
 // Metrics returns the Metrics associated with this ScopeMetrics.
@@ -72,5 +73,5 @@ func (ms ScopeMetrics) SetSchemaUrl(v string) {
 // CopyTo copies all properties from the current struct overriding the destination.
 func (ms ScopeMetrics) CopyTo(dest ScopeMetrics) {
 	dest.state.AssertMutable()
-	internal.CopyScopeMetrics(dest.orig, ms.orig)
+	internal.CopyOrigScopeMetrics(dest.orig, ms.orig)
 }

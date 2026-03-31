@@ -54,31 +54,32 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 	}, nil
 }
 
-var Schema = schema.IntegrationSchemaVersion{
-	Version:   Version,
-	CanCreate: true,
-	Options: []schema.Field{
-		{
-			Label:        "URL",
-			Element:      schema.ElementTypeInput,
-			InputType:    schema.InputTypeText,
-			Placeholder:  "http://localhost:9093",
-			PropertyName: "url",
-			Required:     true,
-			Protected:    true,
+func Schema() schema.IntegrationSchemaVersion {
+	return schema.IntegrationSchemaVersion{
+		Version:   Version,
+		CanCreate: true,
+		Options: []schema.Field{
+			{
+				Label:        "URL",
+				Element:      schema.ElementTypeInput,
+				InputType:    schema.InputTypeText,
+				Placeholder:  "http://localhost:9093",
+				PropertyName: "url",
+				Required:     true,
+			},
+			{
+				Label:        "Basic Auth User",
+				Element:      schema.ElementTypeInput,
+				InputType:    schema.InputTypeText,
+				PropertyName: "basicAuthUser",
+			},
+			{
+				Label:        "Basic Auth Password",
+				Element:      schema.ElementTypeInput,
+				InputType:    schema.InputTypePassword,
+				PropertyName: "basicAuthPassword",
+				Secure:       true,
+			},
 		},
-		{
-			Label:        "Basic Auth User",
-			Element:      schema.ElementTypeInput,
-			InputType:    schema.InputTypeText,
-			PropertyName: "basicAuthUser",
-		},
-		{
-			Label:        "Basic Auth Password",
-			Element:      schema.ElementTypeInput,
-			InputType:    schema.InputTypePassword,
-			PropertyName: "basicAuthPassword",
-			Secure:       true,
-		},
-	},
+	}
 }

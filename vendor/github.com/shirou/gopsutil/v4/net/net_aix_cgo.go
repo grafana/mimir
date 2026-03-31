@@ -29,8 +29,8 @@ func IOCountersWithContext(ctx context.Context, pernic bool) ([]IOCountersStat, 
 		}
 		iocounters = append(iocounters, n)
 	}
-	if !pernic {
-		return getIOCountersAll(iocounters), nil
+	if pernic == false {
+		return getIOCountersAll(iocounters)
 	}
 	return iocounters, nil
 }

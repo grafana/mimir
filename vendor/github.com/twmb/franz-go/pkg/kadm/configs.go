@@ -2,7 +2,6 @@ package kadm
 
 import (
 	"context"
-	"sort"
 	"strconv"
 
 	"github.com/twmb/franz-go/pkg/kerr"
@@ -184,7 +183,7 @@ type AlterConfig struct {
 	Value *string       // Value is the value to use when altering, if any.
 }
 
-// AlterConfigsResponse contains the response for an individual alteration.
+// AlteredConfigsResponse contains the response for an individual alteration.
 type AlterConfigsResponse struct {
 	Name       string // Name is the name of this resource (topic name or broker number).
 	Err        error  // Err is non-nil if the config could not be altered.
@@ -331,12 +330,12 @@ func (cl *Client) alterConfigs(
 // All prior configuration is lost.
 //
 // This may return *ShardErrors. You may consider checking
-// ValidateAlterTopicConfigsState before using this method.
+// ValidateAlterTopicConfigs before using this method.
 func (cl *Client) AlterTopicConfigsState(ctx context.Context, configs []AlterConfig, topics ...string) (AlterConfigsResponses, error) {
 	return cl.alterConfigsState(ctx, false, configs, kmsg.ConfigResourceTypeTopic, topics)
 }
 
-// ValidateAlterTopicConfigsState validates an AlterTopicConfigsState for the given
+// ValidateAlterTopicConfigs validates an AlterTopicConfigsState for the given
 // topics.
 //
 // This returns exactly what AlterTopicConfigsState returns, but does not
@@ -345,7 +344,7 @@ func (cl *Client) ValidateAlterTopicConfigsState(ctx context.Context, configs []
 	return cl.alterConfigsState(ctx, true, configs, kmsg.ConfigResourceTypeTopic, topics)
 }
 
-// AlterBrokerConfigsState alters the full state of broker configurations. If
+// AlterBrokerConfigs alters the full state of broker configurations. If
 // broker are specified, this updates each specific broker. If no brokers are
 // specified, this updates whole-cluster broker configuration values.
 // All prior configuration is lost.
@@ -363,10 +362,10 @@ func (cl *Client) AlterBrokerConfigsState(ctx context.Context, configs []AlterCo
 	return cl.alterConfigsState(ctx, false, configs, kmsg.ConfigResourceTypeBroker, names)
 }
 
-// ValidateAlterBrokerConfigsState validates an AlterBrokerconfigsState for the
+// ValidateAlterBrokerConfigs validates an AlterBrokerconfigsState for the
 // given brokers.
 //
-// This returns exactly what AlterBrokerConfigsState returns, but does not actually
+// This returns exactly what AlterBrokerConfigs returns, but does not actually
 // alter configurations.
 func (cl *Client) ValidateAlterBrokerConfigsState(ctx context.Context, configs []AlterConfig, brokers ...int32) (AlterConfigsResponses, error) {
 	var names []string
@@ -415,101 +414,4 @@ func (cl *Client) alterConfigsState(
 		}
 		return nil
 	})
-}
-
-//////////////////////
-// CONFIG RESOURCES //
-//////////////////////
-
-type ConfigResourceType = kmsg.ConfigResourceType
-
-const (
-	ConfigResourceUnknown       ConfigResourceType = kmsg.ConfigResourceTypeUnknown
-	ConfigResourceTopic         ConfigResourceType = kmsg.ConfigResourceTypeTopic
-	ConfigResourceBroker        ConfigResourceType = kmsg.ConfigResourceTypeBroker
-	ConfigResourceBrokerLogger  ConfigResourceType = kmsg.ConfigResourceTypeBrokerLogger
-	ConfigResourceClientMetrics ConfigResourceType = kmsg.ConfigResourceTypeClientMetrics
-	ConfigResourceGroupConfig   ConfigResourceType = kmsg.ConfigResourceTypeGroupConfig
-)
-
-// ConfigResource represents a single config resource.
-type ConfigResource struct {
-	Name string             // Name is the resource name.
-	Type ConfigResourceType // Type is the resource type.
-}
-
-// ListedConfigResources contains the results of listing config resources.
-type ListedConfigResources struct {
-	Resources []ConfigResource // Resources contains all listed config resources.
-	Err       error            // Err is non-nil if the request failed.
-}
-
-// Sorted returns all resources sorted by type, then by name.
-func (l ListedConfigResources) Sorted() []ConfigResource {
-	s := make([]ConfigResource, len(l.Resources))
-	copy(s, l.Resources)
-	sort.Slice(s, func(i, j int) bool {
-		return s[i].Type < s[j].Type ||
-			s[i].Type == s[j].Type && s[i].Name < s[j].Name
-	})
-	return s
-}
-
-// FilterTypes returns all resources of the given types.
-func (l ListedConfigResources) FilterTypes(resourceType ...ConfigResourceType) []ConfigResource {
-	var filtered []ConfigResource
-	for _, r := range l.Resources {
-		for _, typ := range resourceType {
-			if r.Type == typ {
-				filtered = append(filtered, r)
-				continue
-			}
-		}
-	}
-	return filtered
-}
-
-// Names returns all resource names in sorted order.
-func (l ListedConfigResources) Names() []string {
-	names := make([]string, 0, len(l.Resources))
-	for _, r := range l.Resources {
-		names = append(names, r.Name)
-	}
-	sort.Strings(names)
-	return names
-}
-
-// ListConfigResources lists config resources (requires Kafka 4.1+).
-//
-// If no resource types are specified, Kafka uses its default supported config
-// resource types.
-//
-// This may return *AuthError.
-func (cl *Client) ListConfigResources(ctx context.Context, resourceTypes ...ConfigResourceType) (ListedConfigResources, error) {
-	req := kmsg.NewPtrListConfigResourcesRequest()
-	for _, t := range resourceTypes {
-		req.ResourceTypes = append(req.ResourceTypes, int8(t))
-	}
-
-	resp, err := req.RequestWith(ctx, cl.cl)
-	if err != nil {
-		return ListedConfigResources{}, err
-	}
-
-	if err := maybeAuthErr(resp.ErrorCode); err != nil {
-		return ListedConfigResources{}, err
-	}
-
-	result := ListedConfigResources{
-		Err: kerr.ErrorForCode(resp.ErrorCode),
-	}
-
-	for _, r := range resp.ConfigResources {
-		result.Resources = append(result.Resources, ConfigResource{
-			Name: r.Name,
-			Type: ConfigResourceType(r.Type),
-		})
-	}
-
-	return result, nil
 }

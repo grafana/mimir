@@ -27,16 +27,16 @@ const ( // Conntrack Column numbers
 	ctINVALID
 	ctIGNORE
 	ctDELETE
-	ctDELETE_LIST //nolint:revive //FIXME
+	ctDELETE_LIST
 	ctINSERT
-	ctINSERT_FAILED //nolint:revive //FIXME
+	ctINSERT_FAILED
 	ctDROP
-	ctEARLY_DROP     //nolint:revive //FIXME
-	ctICMP_ERROR     //nolint:revive //FIXME
-	CT_EXPEctNEW     //nolint:revive //FIXME
-	ctEXPECT_CREATE  //nolint:revive //FIXME
-	CT_EXPEctDELETE  //nolint:revive //FIXME
-	ctSEARCH_RESTART //nolint:revive //FIXME
+	ctEARLY_DROP
+	ctICMP_ERROR
+	CT_EXPEctNEW
+	ctEXPECT_CREATE
+	CT_EXPEctDELETE
+	ctSEARCH_RESTART
 )
 
 func IOCountersWithContext(ctx context.Context, pernic bool) ([]IOCountersStat, error) {
@@ -44,31 +44,32 @@ func IOCountersWithContext(ctx context.Context, pernic bool) ([]IOCountersStat, 
 	return IOCountersByFileWithContext(ctx, pernic, filename)
 }
 
-func IOCountersByFileWithContext(_ context.Context, pernic bool, filename string) ([]IOCountersStat, error) {
+func IOCountersByFileWithContext(ctx context.Context, pernic bool, filename string) ([]IOCountersStat, error) {
 	lines, err := common.ReadLines(filename)
 	if err != nil {
 		return nil, err
 	}
+
+	parts := make([]string, 2)
 
 	statlen := len(lines) - 1
 
 	ret := make([]IOCountersStat, 0, statlen)
 
 	for _, line := range lines[2:] {
-		// Split interface name and stats data at the last ":"
 		separatorPos := strings.LastIndex(line, ":")
 		if separatorPos == -1 {
 			continue
 		}
-		interfacePart := line[0:separatorPos]
-		statsPart := line[separatorPos+1:]
+		parts[0] = line[0:separatorPos]
+		parts[1] = line[separatorPos+1:]
 
-		interfaceName := strings.TrimSpace(interfacePart)
+		interfaceName := strings.TrimSpace(parts[0])
 		if interfaceName == "" {
 			continue
 		}
 
-		fields := strings.Fields(strings.TrimSpace(statsPart))
+		fields := strings.Fields(strings.TrimSpace(parts[1]))
 		bytesRecv, err := strconv.ParseUint(fields[0], 10, 64)
 		if err != nil {
 			return ret, err
@@ -127,7 +128,7 @@ func IOCountersByFileWithContext(_ context.Context, pernic bool, filename string
 	}
 
 	if !pernic {
-		return getIOCountersAll(ret), nil
+		return getIOCountersAll(ret)
 	}
 
 	return ret, nil
@@ -539,7 +540,7 @@ func PidsWithContext(ctx context.Context) ([]int32, error) {
 
 // Note: the following is based off process_linux structs and methods
 // we need these to fetch the owner of a process ID
-// FIXME: Import process occurs import cycle.
+// FIXME: Import process occures import cycle.
 // see remarks on pids()
 type process struct {
 	Pid  int32 `json:"pid"`
@@ -570,7 +571,8 @@ func (p *process) fillFromStatus(ctx context.Context) error {
 			continue
 		}
 		value := tabParts[1]
-		if strings.TrimRight(tabParts[0], ":") == "Uid" {
+		switch strings.TrimRight(tabParts[0], ":") {
+		case "Uid":
 			p.uids = make([]int32, 0, 4)
 			for _, i := range strings.Split(value, "\t") {
 				v, err := strconv.ParseInt(i, 10, 32)
@@ -609,7 +611,7 @@ func getProcInodesAllWithContext(ctx context.Context, root string, maxConn int) 
 	return ret, nil
 }
 
-// decodeAddress decode address represents addr in proc/net/*
+// decodeAddress decode addresse represents addr in proc/net/*
 // ex:
 // "0500000A:0016" -> "10.0.0.5", 22
 // "0085002452100113070057A13F025401:0035" -> "2400:8500:1301:1052:a157:7:154:23f", 53
@@ -792,7 +794,7 @@ func processUnix(file string, kind netConnectionKindType, inodes map[string][]in
 	return ret, nil
 }
 
-func updateMap(src, add map[string][]inodeMap) map[string][]inodeMap {
+func updateMap(src map[string][]inodeMap, add map[string][]inodeMap) map[string][]inodeMap {
 	for key, value := range add {
 		a, exists := src[key]
 		if !exists {

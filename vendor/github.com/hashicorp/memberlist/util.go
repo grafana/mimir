@@ -33,7 +33,7 @@ const (
 )
 
 func init() {
-	_, _ = seed.Init()
+	seed.Init()
 }
 
 // Decode reverses the encode operation on a byte slice input
@@ -48,9 +48,11 @@ func decode(buf []byte, out interface{}) error {
 func encode(msgType messageType, in interface{}, msgpackUseNewTimeFormat bool) (*bytes.Buffer, error) {
 	buf := bytes.NewBuffer(nil)
 	buf.WriteByte(uint8(msgType))
-	hd := codec.MsgpackHandle{}
-	hd.TimeNotBuiltin = !msgpackUseNewTimeFormat
-
+	hd := codec.MsgpackHandle{
+		BasicHandle: codec.BasicHandle{
+			TimeNotBuiltin: !msgpackUseNewTimeFormat,
+		},
+	}
 	enc := codec.NewEncoder(buf, &hd)
 	err := enc.Encode(in)
 	return buf, err
@@ -81,7 +83,7 @@ func retransmitLimit(retransmitMult, n int) int {
 }
 
 // shuffleNodes randomly shuffles the input nodes using the Fisher-Yates shuffle
-func shuffleNodes(nodes []*NodeState) {
+func shuffleNodes(nodes []*nodeState) {
 	n := len(nodes)
 	rand.Shuffle(n, func(i, j int) {
 		nodes[i], nodes[j] = nodes[j], nodes[i]
@@ -103,7 +105,7 @@ func pushPullScale(interval time.Duration, n int) time.Duration {
 
 // moveDeadNodes moves dead and left nodes that that have not changed during the gossipToTheDeadTime interval
 // to the end of the slice and returns the index of the first moved node.
-func moveDeadNodes(nodes []*NodeState, gossipToTheDeadTime time.Duration) int {
+func moveDeadNodes(nodes []*nodeState, gossipToTheDeadTime time.Duration) int {
 	numDead := 0
 	n := len(nodes)
 	for i := 0; i < n-numDead; i++ {
@@ -127,26 +129,9 @@ func moveDeadNodes(nodes []*NodeState, gossipToTheDeadTime time.Duration) int {
 // kRandomNodes is used to select up to k random Nodes, excluding any nodes where
 // the exclude function returns true. It is possible that less than k nodes are
 // returned.
-func kRandomNodes(k int, nodes []*NodeState, delegate NodeSelectionDelegate, exclude func(*NodeState) bool) []Node {
-	kNodes := make([]Node, 0, k)
-
-	// Filter the nodes using the delegate. This allows downstream projects
-	// to implement custom routing logics (e.g. zone-aware gossiping).
-	if delegate != nil {
-		selected, preferred := delegate.SelectNodes(nodes)
-		nodes = selected
-
-		// Add the preferred node first to guarantee it's in the result set.
-		if preferred != nil && k > 0 {
-			// Ensure it's not excluded by the filter.
-			if exclude == nil || !exclude(preferred) {
-				kNodes = append(kNodes, preferred.Node)
-			}
-		}
-	}
-
+func kRandomNodes(k int, nodes []*nodeState, exclude func(*nodeState) bool) []Node {
 	n := len(nodes)
-
+	kNodes := make([]Node, 0, k)
 OUTER:
 	// Probe up to 3*n times, with large n this is not necessary
 	// since k << n, but with small n we want search to be
@@ -163,7 +148,7 @@ OUTER:
 
 		// Check if we have this node already
 		for j := 0; j < len(kNodes); j++ {
-			if state.Name == kNodes[j].Name {
+			if state.Node.Name == kNodes[j].Name {
 				continue OUTER
 			}
 		}
@@ -231,7 +216,7 @@ func makeCompoundMessage(msgs [][]byte) *bytes.Buffer {
 
 	// Add the message lengths
 	for _, m := range msgs {
-		_ = binary.Write(buf, binary.BigEndian, uint16(len(m)))
+		binary.Write(buf, binary.BigEndian, uint16(len(m)))
 	}
 
 	// Append the messages
@@ -321,14 +306,12 @@ func decompressPayload(msg []byte) ([]byte, error) {
 func decompressBuffer(c *compress) ([]byte, error) {
 	// Verify the algorithm
 	if c.Algo != lzwAlgo {
-		return nil, fmt.Errorf("cannot decompress unknown algorithm %d", c.Algo)
+		return nil, fmt.Errorf("Cannot decompress unknown algorithm %d", c.Algo)
 	}
 
 	// Create a uncompressor
 	uncomp := lzw.NewReader(bytes.NewReader(c.Buf), lzw.LSB, lzwLitWidth)
-	defer func() {
-		_ = uncomp.Close()
-	}()
+	defer uncomp.Close()
 
 	// Read all the data
 	var b bytes.Buffer

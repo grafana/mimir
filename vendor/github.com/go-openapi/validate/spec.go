@@ -1,5 +1,16 @@
-// SPDX-FileCopyrightText: Copyright 2015-2025 go-swagger maintainers
-// SPDX-License-Identifier: Apache-2.0
+// Copyright 2015 go-swagger maintainers
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package validate
 
@@ -8,7 +19,6 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
-	"slices"
 	"sort"
 	"strings"
 
@@ -18,7 +28,7 @@ import (
 	"github.com/go-openapi/loads"
 	"github.com/go-openapi/spec"
 	"github.com/go-openapi/strfmt"
-	"github.com/go-openapi/swag/jsonutils"
+	"github.com/go-openapi/swag"
 )
 
 // Spec validates an OpenAPI 2.0 specification document.
@@ -75,7 +85,7 @@ func NewSpecValidator(schema *spec.Schema, formats strfmt.Registry) *SpecValidat
 }
 
 // Validate validates the swagger spec
-func (s *SpecValidator) Validate(data any) (*Result, *Result) {
+func (s *SpecValidator) Validate(data interface{}) (*Result, *Result) {
 	s.schemaOptions.skipSchemataResult = s.Options.SkipSchemataResult
 	var sd *loads.Document
 	errs, warnings := new(Result), new(Result)
@@ -91,7 +101,7 @@ func (s *SpecValidator) Validate(data any) (*Result, *Result) {
 	s.analyzer = analysis.New(sd.Spec())
 
 	// Raw spec unmarshalling errors
-	var obj any
+	var obj interface{}
 	if err := json.Unmarshal(sd.Raw(), &obj); err != nil {
 		// NOTE: under normal conditions, the *load.Document has been already unmarshalled
 		// So this one is just a paranoid check on the behavior of the spec package
@@ -149,11 +159,6 @@ func (s *SpecValidator) Validate(data any) (*Result, *Result) {
 	errs.Merge(s.validateReferenced()) // warning only
 
 	return errs, warnings
-}
-
-// SetContinueOnErrors sets the ContinueOnErrors option for this validator.
-func (s *SpecValidator) SetContinueOnErrors(c bool) {
-	s.Options.ContinueOnErrors = c
 }
 
 func (s *SpecValidator) validateNonEmptyPathParamNames() *Result {
@@ -448,8 +453,11 @@ func (s *SpecValidator) validatePathParamPresence(path string, fromPath, fromOpe
 
 	for _, p := range fromOperation {
 		var matched bool
-		if slices.Contains(fromPath, "{"+p+"}") {
-			matched = true
+		for _, r := range fromPath {
+			if "{"+p+"}" == r {
+				matched = true
+				break
+			}
 		}
 		if !matched {
 			res.AddErrors(pathParamNotInPathMsg(path, p))
@@ -590,7 +598,7 @@ func (s *SpecValidator) validateRequiredProperties(path, in string, v *spec.Sche
 		}
 	}
 
-	if !propertyMatch && !patternMatch {
+	if !(propertyMatch || patternMatch) {
 		if v.AdditionalProperties != nil {
 			if v.AdditionalProperties.Allows && v.AdditionalProperties.Schema == nil {
 				additionalPropertiesMatch = true
@@ -610,7 +618,7 @@ func (s *SpecValidator) validateRequiredProperties(path, in string, v *spec.Sche
 		}
 	}
 
-	if !propertyMatch && !patternMatch && !additionalPropertiesMatch {
+	if !(propertyMatch || patternMatch || additionalPropertiesMatch) {
 		res.AddErrors(requiredButNotDefinedMsg(path, in))
 	}
 
@@ -677,19 +685,13 @@ func (s *SpecValidator) validateParameters() *Result {
 			// clone it once to avoid expanding a global schema (e.g. swagger spec)
 			paramSchema, err := deepCloneSchema(origSchema)
 			if err != nil {
-				panic(fmt.Errorf("can't clone schema: %w", err))
+				panic(fmt.Errorf("can't clone schema: %v", err))
 			}
 
 			for _, pr := range paramHelp.safeExpandedParamsFor(path, method, op.ID, res, s) {
 				// An expanded parameter must validate the Parameter schema (an unexpanded $ref always passes high-level schema validation)
 				schv := newSchemaValidator(&paramSchema, s.schema, fmt.Sprintf("%s.%s.parameters.%s", path, method, pr.Name), s.KnownFormats, s.schemaOptions)
-				var obj any
-				if err := jsonutils.FromDynamicJSON(pr, &obj); err != nil {
-					res.AddErrors(err)
-
-					return res
-				}
-
+				obj := swag.ToDynamicJSON(pr)
 				res.Merge(schv.Validate(obj))
 
 				// Validate pattern regexp for parameters with a Pattern property
@@ -715,19 +717,19 @@ func (s *SpecValidator) validateParameters() *Result {
 					hasForm = true
 				}
 
-				if pr.Type != numberType && pr.Type != integerType &&
+				if !(pr.Type == numberType || pr.Type == integerType) &&
 					(pr.Maximum != nil || pr.Minimum != nil || pr.MultipleOf != nil) {
 					// A non-numeric parameter has validation keywords for numeric instances (number and integer)
 					res.AddWarnings(parameterValidationTypeMismatchMsg(pr.Name, path, pr.Type))
 				}
 
-				if pr.Type != stringType &&
+				if !(pr.Type == stringType) &&
 					// A non-string parameter has validation keywords for strings
 					(pr.MaxLength != nil || pr.MinLength != nil || pr.Pattern != "") {
 					res.AddWarnings(parameterValidationTypeMismatchMsg(pr.Name, path, pr.Type))
 				}
 
-				if pr.Type != arrayType &&
+				if !(pr.Type == arrayType) &&
 					// A non-array parameter has validation keywords for arrays
 					(pr.MaxItems != nil || pr.MinItems != nil || pr.UniqueItems) {
 					res.AddWarnings(parameterValidationTypeMismatchMsg(pr.Name, path, pr.Type))
@@ -819,6 +821,11 @@ func (s *SpecValidator) checkUniqueParams(path, method string, op *spec.Operatio
 		}
 	}
 	return res
+}
+
+// SetContinueOnErrors sets the ContinueOnErrors option for this validator.
+func (s *SpecValidator) SetContinueOnErrors(c bool) {
+	s.Options.ContinueOnErrors = c
 }
 
 // expandedAnalyzer returns expanded.Analyzer when it is available.

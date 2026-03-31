@@ -26,7 +26,7 @@ var (
 )
 
 func (mr *Resolver) expandValueRecursively(ctx context.Context, value any) (any, error) {
-	for range 1000 {
+	for i := 0; i < 1000; i++ {
 		val, changed, err := mr.expandValue(ctx, value)
 		if err != nil {
 			return nil, err

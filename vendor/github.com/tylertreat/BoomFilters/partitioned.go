@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"hash"
+	"hash/fnv"
 	"io"
 	"math"
 )
@@ -58,6 +59,7 @@ func NewPartitionedBloomFilter(n uint, fpRate float64) *PartitionedBloomFilter {
 
 	return &PartitionedBloomFilter{
 		partitions: partitions,
+		hash:       fnv.New64(),
 		m:          m,
 		k:          k,
 		s:          s,

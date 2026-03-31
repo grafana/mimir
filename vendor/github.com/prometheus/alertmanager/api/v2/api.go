@@ -197,9 +197,8 @@ func (api *API) getStatusHandler(params general_ops.GetStatusParams) middleware.
 	if api.peer != nil {
 		status := api.peer.Status()
 
-		p := api.peer.Peers()
-		peers := make([]*open_api_models.PeerStatus, 0, len(p))
-		for _, n := range p {
+		peers := []*open_api_models.PeerStatus{}
+		for _, n := range api.peer.Peers() {
 			address := n.Address()
 			name := n.Name()
 			peers = append(peers, &open_api_models.PeerStatus{
@@ -476,25 +475,29 @@ func receiversMatchFilter(receivers []string, filter *regexp.Regexp) bool {
 }
 
 func alertMatchesFilterLabels(a *prometheus_model.Alert, matchers []*labels.Matcher) bool {
-	return matchFilterLabels(matchers, a.Labels)
+	sms := make(map[string]string)
+	for name, value := range a.Labels {
+		sms[string(name)] = string(value)
+	}
+	return matchFilterLabels(matchers, sms)
 }
 
-func matchFilterLabels(matchers []*labels.Matcher, sms prometheus_model.LabelSet) bool {
+func matchFilterLabels(matchers []*labels.Matcher, sms map[string]string) bool {
 	for _, m := range matchers {
-		v, prs := sms[prometheus_model.LabelName(m.Name)]
+		v, prs := sms[m.Name]
 		switch m.Type {
 		case labels.MatchNotRegexp, labels.MatchNotEqual:
 			if m.Value == "" && prs {
 				continue
 			}
-			if !m.Matches(string(v)) {
+			if !m.Matches(v) {
 				return false
 			}
 		default:
 			if m.Value == "" && !prs {
 				continue
 			}
-			if !m.Matches(string(v)) {
+			if !m.Matches(v) {
 				return false
 			}
 		}
@@ -556,16 +559,16 @@ func SortSilences(sils open_api_models.GettableSilences) {
 		}
 		switch state1 {
 		case types.SilenceStateActive:
-			endsAt1 := time.Time(*sils[i].EndsAt)
-			endsAt2 := time.Time(*sils[j].EndsAt)
+			endsAt1 := time.Time(*sils[i].Silence.EndsAt)
+			endsAt2 := time.Time(*sils[j].Silence.EndsAt)
 			return endsAt1.Before(endsAt2)
 		case types.SilenceStatePending:
-			startsAt1 := time.Time(*sils[i].StartsAt)
-			startsAt2 := time.Time(*sils[j].StartsAt)
+			startsAt1 := time.Time(*sils[i].Silence.StartsAt)
+			startsAt2 := time.Time(*sils[j].Silence.StartsAt)
 			return startsAt1.Before(startsAt2)
 		case types.SilenceStateExpired:
-			endsAt1 := time.Time(*sils[i].EndsAt)
-			endsAt2 := time.Time(*sils[j].EndsAt)
+			endsAt1 := time.Time(*sils[i].Silence.EndsAt)
+			endsAt2 := time.Time(*sils[j].Silence.EndsAt)
 			return endsAt1.After(endsAt2)
 		}
 		return false

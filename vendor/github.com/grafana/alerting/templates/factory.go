@@ -2,59 +2,18 @@ package templates
 
 import (
 	"fmt"
-	"maps"
 	"net/url"
-	"slices"
 	"sync"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 )
 
-type Config struct {
-	OrgID       string
-	ExternalURL *url.URL
-	AppVersion  string
-	Limits      Limits
-}
-
-func (c Config) Validate() error {
-	if c.ExternalURL == nil {
-		return fmt.Errorf("externalURL must be set")
-	}
-	return c.Limits.Validate()
-}
-
-type Limits struct {
-	// MaxTemplateOutputSize limits the size of the rendered template output. 0 means no limit.
-	MaxTemplateOutputSize int64
-}
-
-func (l Limits) Validate() error {
-	if l.MaxTemplateOutputSize < 0 {
-		return fmt.Errorf("maxTemplateOutputSize must be greater than or equal to 0")
-	}
-	return nil
-}
-
-func NewConfig(orgID string, externalURL string, appVersion string, limits Limits) (Config, error) {
-	u, err := url.Parse(externalURL)
-	if err != nil {
-		return Config{}, err
-	}
-	cfg := Config{
-		OrgID:       orgID,
-		ExternalURL: u,
-		AppVersion:  appVersion,
-		Limits:      limits,
-	}
-	return cfg, cfg.Validate()
-}
-
 // Factory is a factory that can be used to create templates of specific kind.
 type Factory struct {
-	templates map[Kind][]TemplateDefinition
-	cfg       Config
+	templates   map[Kind][]TemplateDefinition
+	externalURL *url.URL
+	orgID       string
 }
 
 // GetTemplate creates a new template of the given kind. If Kind is not known, GrafanaKind automatically assumed
@@ -67,25 +26,15 @@ func (tp *Factory) GetTemplate(kind Kind) (*Template, error) {
 	for _, def := range definitions { // TODO sort the list by name?
 		content = append(content, def.Template)
 	}
-	t, err := fromContent(content, defaultOptionsPerKind(kind, tp.cfg.OrgID)...)
+	t, err := fromContent(content, defaultOptionsPerKind(kind, tp.orgID)...)
 	if err != nil {
 		return nil, err
 	}
-	result := &Template{
-		Template:   t,
-		limits:     tp.cfg.Limits,
-		AppVersion: tp.cfg.AppVersion,
-	}
-	if tp.cfg.ExternalURL != nil {
+	if tp.externalURL != nil {
 		t.ExternalURL = new(url.URL)
-		*t.ExternalURL = *tp.cfg.ExternalURL
+		*t.ExternalURL = *tp.externalURL
 	}
-	return result, nil
-}
-
-// Kinds returns kinds that have user-defined templates
-func (tp *Factory) Kinds() []Kind {
-	return slices.Collect(maps.Keys(tp.templates))
+	return t, nil
 }
 
 // WithTemplate creates a new factory that has the provided TemplateDefinition. If definition with the same name already exists for this kind, it is replaced.
@@ -117,14 +66,18 @@ func (tp *Factory) WithTemplate(def TemplateDefinition) (*Factory, error) {
 	}
 
 	return &Factory{
-		templates: templates,
-		cfg:       tp.cfg,
+		templates:   templates,
+		externalURL: tp.externalURL,
 	}, nil
 }
 
 // NewFactory creates a new template provider. Accepts list of user-defined templates that are added to the kind's default templates.
 // Returns error if externalURL is not a valid URL or if TemplateDefinition.Kind is not known.
-func NewFactory(t []TemplateDefinition, cfg Config, logger log.Logger) (*Factory, error) {
+func NewFactory(t []TemplateDefinition, logger log.Logger, externalURL string, orgID string) (*Factory, error) {
+	extURL, err := url.Parse(externalURL)
+	if err != nil {
+		return nil, err
+	}
 	type seenKey struct {
 		Name string
 		Type Kind
@@ -143,11 +96,10 @@ func NewFactory(t []TemplateDefinition, cfg Config, logger log.Logger) (*Factory
 		byType[def.Kind] = append(byType[def.Kind], def)
 		seen[seenKey{Name: def.Name, Type: def.Kind}] = struct{}{}
 	}
-	level.Info(logger).Log("msg", "template definitions loaded", "mimir", len(byType[MimirKind]), "grafana", len(byType[GrafanaKind]), "total", len(t), "maxTemplateOutput", cfg.Limits.MaxTemplateOutputSize)
-
 	provider := &Factory{
-		templates: byType,
-		cfg:       cfg,
+		templates:   byType,
+		externalURL: extURL,
+		orgID:       orgID,
 	}
 	return provider, nil
 }
@@ -177,12 +129,12 @@ func (cf *CachedFactory) GetTemplate(kind Kind) (*Template, error) {
 	cf.mtx.Lock()
 	defer cf.mtx.Unlock()
 	if t, ok := cf.m[kind]; ok {
-		return t, nil
+		return t.Clone()
 	}
 	t, err := cf.factory.GetTemplate(kind)
 	if err != nil {
 		return nil, err
 	}
 	cf.m[kind] = t
-	return t, nil
+	return t.Clone()
 }

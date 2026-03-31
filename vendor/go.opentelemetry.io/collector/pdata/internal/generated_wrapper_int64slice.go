@@ -6,28 +6,32 @@
 
 package internal
 
-type Int64SliceWrapper struct {
+type Int64Slice struct {
 	orig  *[]int64
 	state *State
 }
 
-func GetInt64SliceOrig(ms Int64SliceWrapper) *[]int64 {
+func GetOrigInt64Slice(ms Int64Slice) *[]int64 {
 	return ms.orig
 }
 
-func GetInt64SliceState(ms Int64SliceWrapper) *State {
+func GetInt64SliceState(ms Int64Slice) *State {
 	return ms.state
 }
 
-func NewInt64SliceWrapper(orig *[]int64, state *State) Int64SliceWrapper {
-	return Int64SliceWrapper{orig: orig, state: state}
+func NewInt64Slice(orig *[]int64, state *State) Int64Slice {
+	return Int64Slice{orig: orig, state: state}
 }
 
-func GenTestInt64SliceWrapper() Int64SliceWrapper {
-	orig := []int64{1, 2, 3}
-	return NewInt64SliceWrapper(&orig, NewState())
+func GenerateTestInt64Slice() Int64Slice {
+	orig := GenerateOrigTestInt64Slice()
+	return NewInt64Slice(&orig, NewState())
 }
 
-func GenTestInt64Slice() []int64 {
+func CopyOrigInt64Slice(dst, src []int64) []int64 {
+	return append(dst[:0], src...)
+}
+
+func GenerateOrigTestInt64Slice() []int64 {
 	return []int64{1, 2, 3}
 }

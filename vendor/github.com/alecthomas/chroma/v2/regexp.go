@@ -1,7 +1,6 @@
 package chroma
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -136,18 +135,9 @@ func NewLexer(config *Config, rulesFunc func() Rules) (*RegexLexer, error) {
 }
 
 // Trace enables debug tracing.
-//
-// Deprecated: Use SetTracing instead.
 func (r *RegexLexer) Trace(trace bool) *RegexLexer {
 	r.trace = trace
 	return r
-}
-
-// SetTracing enables debug tracing.
-//
-// This complies with the [TracingLexer] interface.
-func (r *RegexLexer) SetTracing(trace bool) {
-	r.trace = trace
 }
 
 // A CompiledRule is a Rule with a pre-compiled regex.
@@ -195,7 +185,6 @@ func (l *LexerState) Get(key interface{}) interface{} {
 
 // Iterator returns the next Token from the lexer.
 func (l *LexerState) Iterator() Token { // nolint: gocognit
-	trace := json.NewEncoder(os.Stderr)
 	end := len(l.Text)
 	if l.newlineAdded {
 		end--
@@ -216,33 +205,14 @@ func (l *LexerState) Iterator() Token { // nolint: gocognit
 		}
 
 		l.State = l.Stack[len(l.Stack)-1]
+		if l.Lexer.trace {
+			fmt.Fprintf(os.Stderr, "%s: pos=%d, text=%q\n", l.State, l.Pos, string(l.Text[l.Pos:]))
+		}
 		selectedRule, ok := l.Rules[l.State]
 		if !ok {
 			panic("unknown state " + l.State)
 		}
-		var start time.Time
-		if l.Lexer.trace {
-			start = time.Now()
-		}
 		ruleIndex, rule, groups, namedGroups := matchRules(l.Text, l.Pos, selectedRule)
-		if l.Lexer.trace {
-			var length int
-			if groups != nil {
-				length = len(groups[0])
-			} else {
-				length = -1
-			}
-			_ = trace.Encode(Trace{ //nolint
-				Lexer:   l.Lexer.config.Name,
-				State:   l.State,
-				Rule:    ruleIndex,
-				Pattern: rule.Pattern,
-				Pos:     l.Pos,
-				Length:  length,
-				Elapsed: float64(time.Since(start)) / float64(time.Millisecond),
-			})
-			// fmt.Fprintf(os.Stderr, "%s: pos=%d, text=%q, elapsed=%s\n", l.State, l.Pos, string(l.Text[l.Pos:]), time.Since(start))
-		}
 		// No match.
 		if groups == nil {
 			// From Pygments :\

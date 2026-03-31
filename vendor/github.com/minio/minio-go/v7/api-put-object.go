@@ -150,7 +150,7 @@ func (opts PutObjectOptions) getNumThreads() (numThreads int) {
 	} else {
 		numThreads = totalWorkers
 	}
-	return numThreads
+	return
 }
 
 // Header - constructs the headers from metadata entered by user in
@@ -249,7 +249,7 @@ func (opts PutObjectOptions) Header() (header http.Header) {
 		header[k] = v
 	}
 
-	return header
+	return
 }
 
 // validate() checks if the UserMetadata map has standard headers or and raises an error if so.
@@ -311,9 +311,7 @@ func (a completedParts) Less(i, j int) bool { return a[i].PartNumber < a[j].Part
 //
 //   - For size input as -1 PutObject does a multipart Put operation
 //     until input stream reaches EOF. Maximum object size that can
-//     be uploaded through this operation will be 5TiB by default.
-//     For larger objects (up to ~48.83TiB), set PutObjectOptions.PartSize
-//     to control memory usage and enable uploads beyond 5TiB.
+//     be uploaded through this operation will be 5TiB.
 //
 //     WARNING: Passing down '-1' will use memory and these cannot
 //     be reused for best outcomes for PutObject(), pass the size always.
@@ -332,8 +330,8 @@ func (c *Client) PutObject(ctx context.Context, bucketName, objectName string, r
 	}
 
 	// Check for largest object size allowed.
-	if size > int64(maxObjectSize) {
-		return UploadInfo{}, errEntityTooLarge(size, maxObjectSize, bucketName, objectName)
+	if size > int64(maxMultipartPutObjectSize) {
+		return UploadInfo{}, errEntityTooLarge(size, maxMultipartPutObjectSize, bucketName, objectName)
 	}
 
 	if opts.Checksum.IsSet() {

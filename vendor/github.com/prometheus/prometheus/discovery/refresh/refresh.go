@@ -1,4 +1,4 @@
-// Copyright The Prometheus Authors
+// Copyright 2019 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -28,7 +28,6 @@ import (
 type Options struct {
 	Logger              *slog.Logger
 	Mech                string
-	SetName             string
 	Interval            time.Duration
 	RefreshF            func(ctx context.Context) ([]*targetgroup.Group, error)
 	MetricsInstantiator discovery.RefreshMetricsInstantiator
@@ -44,7 +43,7 @@ type Discovery struct {
 
 // NewDiscovery returns a Discoverer function that calls a refresh() function at every interval.
 func NewDiscovery(opts Options) *Discovery {
-	m := opts.MetricsInstantiator.Instantiate(opts.Mech, opts.SetName)
+	m := opts.MetricsInstantiator.Instantiate(opts.Mech)
 
 	var logger *slog.Logger
 	if opts.Logger == nil {
@@ -108,7 +107,6 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	now := time.Now()
 	defer func() {
 		d.metrics.Duration.Observe(time.Since(now).Seconds())
-		d.metrics.DurationHistogram.Observe(time.Since(now).Seconds())
 	}()
 
 	tgs, err := d.refreshf(ctx)

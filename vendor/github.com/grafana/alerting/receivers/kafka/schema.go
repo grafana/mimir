@@ -7,13 +7,15 @@ import (
 
 const Type schema.IntegrationType = "kafka"
 
-var Schema = schema.InitSchema(schema.IntegrationTypeSchema{
-	Type:           Type,
-	Name:           "Kafka REST Proxy",
-	Description:    "Sends notifications to Kafka Rest Proxy",
-	Heading:        "Kafka settings",
-	CurrentVersion: v1.Version,
-	Versions: []schema.IntegrationSchemaVersion{
-		v1.Schema,
-	},
-})
+func Schema() schema.IntegrationTypeSchema {
+	return schema.IntegrationTypeSchema{
+		Type:           Type,
+		Name:           "Kafka REST Proxy",
+		Description:    "Sends notifications to Kafka Rest Proxy",
+		Heading:        "Kafka settings",
+		CurrentVersion: v1.Version,
+		Versions: []schema.IntegrationSchemaVersion{
+			v1.Schema(),
+		},
+	}
+}

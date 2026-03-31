@@ -10,6 +10,7 @@ import (
 	"iter"
 
 	"go.opentelemetry.io/collector/pdata/internal"
+	otlpcommon "go.opentelemetry.io/collector/pdata/internal/data/protogen/common/v1"
 )
 
 // Slice logically represents a slice of Value.
@@ -19,16 +20,16 @@ import (
 //
 // Must use NewSlice function to create new instances.
 // Important: zero-initialized instance is not valid for use.
-type Slice internal.SliceWrapper
+type Slice internal.Slice
 
-func newSlice(orig *[]internal.AnyValue, state *internal.State) Slice {
-	return Slice(internal.NewSliceWrapper(orig, state))
+func newSlice(orig *[]otlpcommon.AnyValue, state *internal.State) Slice {
+	return Slice(internal.NewSlice(orig, state))
 }
 
-// NewSlice creates a SliceWrapper with 0 elements.
+// NewSlice creates a Slice with 0 elements.
 // Can use "EnsureCapacity" to initialize with a given capacity.
 func NewSlice() Slice {
-	orig := []internal.AnyValue(nil)
+	orig := []otlpcommon.AnyValue(nil)
 	return newSlice(&orig, internal.NewState())
 }
 
@@ -85,7 +86,7 @@ func (es Slice) EnsureCapacity(newCap int) {
 		return
 	}
 
-	newOrig := make([]internal.AnyValue, len(*es.getOrig()), newCap)
+	newOrig := make([]otlpcommon.AnyValue, len(*es.getOrig()), newCap)
 	copy(newOrig, *es.getOrig())
 	*es.getOrig() = newOrig
 }
@@ -94,7 +95,7 @@ func (es Slice) EnsureCapacity(newCap int) {
 // It returns the newly added Value.
 func (es Slice) AppendEmpty() Value {
 	es.getState().AssertMutable()
-	*es.getOrig() = append(*es.getOrig(), internal.AnyValue{})
+	*es.getOrig() = append(*es.getOrig(), otlpcommon.AnyValue{})
 	return es.At(es.Len() - 1)
 }
 
@@ -123,7 +124,7 @@ func (es Slice) RemoveIf(f func(Value) bool) {
 	newLen := 0
 	for i := 0; i < len(*es.getOrig()); i++ {
 		if f(es.At(i)) {
-			internal.DeleteAnyValue(&(*es.getOrig())[i], false)
+			internal.DeleteOrigAnyValue(&(*es.getOrig())[i], false)
 			continue
 		}
 		if newLen == i {
@@ -144,13 +145,13 @@ func (es Slice) CopyTo(dest Slice) {
 	if es.getOrig() == dest.getOrig() {
 		return
 	}
-	*dest.getOrig() = internal.CopyAnyValueSlice(*dest.getOrig(), *es.getOrig())
+	*dest.getOrig() = internal.CopyOrigAnyValueSlice(*dest.getOrig(), *es.getOrig())
 }
 
-func (ms Slice) getOrig() *[]internal.AnyValue {
-	return internal.GetSliceOrig(internal.SliceWrapper(ms))
+func (ms Slice) getOrig() *[]otlpcommon.AnyValue {
+	return internal.GetOrigSlice(internal.Slice(ms))
 }
 
 func (ms Slice) getState() *internal.State {
-	return internal.GetSliceState(internal.SliceWrapper(ms))
+	return internal.GetSliceState(internal.Slice(ms))
 }

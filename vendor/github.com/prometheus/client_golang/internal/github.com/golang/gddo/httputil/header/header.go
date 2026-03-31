@@ -90,7 +90,7 @@ loop:
 			s = skipSpace(s[1:])
 		}
 	}
-	return specs
+	return
 }
 
 func skipSpace(s string) (rest string) {

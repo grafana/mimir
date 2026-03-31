@@ -1,4 +1,5 @@
 //go:build (!purego && !appengine) || (!appengine && purego && unsafe)
+// +build !purego,!appengine !appengine,purego,unsafe
 
 package msgp
 

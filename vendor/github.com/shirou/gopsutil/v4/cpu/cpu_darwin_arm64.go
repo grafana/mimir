@@ -13,43 +13,55 @@ import (
 
 // https://github.com/shoenig/go-m1cpu/blob/v0.1.6/cpu.go
 func getFrequency() (float64, error) {
-	iokit, err := common.NewIOKitLib()
+	ioKit, err := common.NewLibrary(common.IOKit)
 	if err != nil {
 		return 0, err
 	}
-	defer iokit.Close()
+	defer ioKit.Close()
 
-	corefoundation, err := common.NewCoreFoundationLib()
+	coreFoundation, err := common.NewLibrary(common.CoreFoundation)
 	if err != nil {
 		return 0, err
 	}
-	defer corefoundation.Close()
+	defer coreFoundation.Close()
 
-	matching := iokit.IOServiceMatching("AppleARMIODevice")
+	ioServiceMatching := common.GetFunc[common.IOServiceMatchingFunc](ioKit, common.IOServiceMatchingSym)
+	ioServiceGetMatchingServices := common.GetFunc[common.IOServiceGetMatchingServicesFunc](ioKit, common.IOServiceGetMatchingServicesSym)
+	ioIteratorNext := common.GetFunc[common.IOIteratorNextFunc](ioKit, common.IOIteratorNextSym)
+	ioRegistryEntryGetName := common.GetFunc[common.IORegistryEntryGetNameFunc](ioKit, common.IORegistryEntryGetNameSym)
+	ioRegistryEntryCreateCFProperty := common.GetFunc[common.IORegistryEntryCreateCFPropertyFunc](ioKit, common.IORegistryEntryCreateCFPropertySym)
+	ioObjectRelease := common.GetFunc[common.IOObjectReleaseFunc](ioKit, common.IOObjectReleaseSym)
+
+	cfStringCreateWithCString := common.GetFunc[common.CFStringCreateWithCStringFunc](coreFoundation, common.CFStringCreateWithCStringSym)
+	cfDataGetLength := common.GetFunc[common.CFDataGetLengthFunc](coreFoundation, common.CFDataGetLengthSym)
+	cfDataGetBytePtr := common.GetFunc[common.CFDataGetBytePtrFunc](coreFoundation, common.CFDataGetBytePtrSym)
+	cfRelease := common.GetFunc[common.CFReleaseFunc](coreFoundation, common.CFReleaseSym)
+
+	matching := ioServiceMatching("AppleARMIODevice")
 
 	var iterator uint32
-	if status := iokit.IOServiceGetMatchingServices(common.KIOMainPortDefault, uintptr(matching), &iterator); status != common.KERN_SUCCESS {
+	if status := ioServiceGetMatchingServices(common.KIOMainPortDefault, uintptr(matching), &iterator); status != common.KERN_SUCCESS {
 		return 0.0, fmt.Errorf("IOServiceGetMatchingServices error=%d", status)
 	}
-	defer iokit.IOObjectRelease(iterator)
+	defer ioObjectRelease(iterator)
 
-	pCorekey := corefoundation.CFStringCreateWithCString(common.KCFAllocatorDefault, "voltage-states5-sram", common.KCFStringEncodingUTF8)
-	defer corefoundation.CFRelease(uintptr(pCorekey))
+	pCorekey := cfStringCreateWithCString(common.KCFAllocatorDefault, "voltage-states5-sram", common.KCFStringEncodingUTF8)
+	defer cfRelease(uintptr(pCorekey))
 
 	var pCoreHz uint32
 	for {
-		service := iokit.IOIteratorNext(iterator)
-		if service <= 0 {
+		service := ioIteratorNext(iterator)
+		if !(service > 0) {
 			break
 		}
 
 		buf := common.NewCStr(512)
-		iokit.IORegistryEntryGetName(service, buf)
+		ioRegistryEntryGetName(service, buf)
 
 		if buf.GoString() == "pmgr" {
-			pCoreRef := iokit.IORegistryEntryCreateCFProperty(service, uintptr(pCorekey), common.KCFAllocatorDefault, common.KNilOptions)
-			length := corefoundation.CFDataGetLength(uintptr(pCoreRef))
-			data := corefoundation.CFDataGetBytePtr(uintptr(pCoreRef))
+			pCoreRef := ioRegistryEntryCreateCFProperty(service, uintptr(pCorekey), common.KCFAllocatorDefault, common.KNilOptions)
+			length := cfDataGetLength(uintptr(pCoreRef))
+			data := cfDataGetBytePtr(uintptr(pCoreRef))
 
 			// composite uint32 from the byte array
 			buf := unsafe.Slice((*byte)(data), length)
@@ -57,12 +69,11 @@ func getFrequency() (float64, error) {
 			// combine the bytes into a uint32 value
 			b := buf[length-8 : length-4]
 			pCoreHz = binary.LittleEndian.Uint32(b)
-			corefoundation.CFRelease(uintptr(pCoreRef))
-			iokit.IOObjectRelease(service)
+			ioObjectRelease(service)
 			break
 		}
 
-		iokit.IOObjectRelease(service)
+		ioObjectRelease(service)
 	}
 
 	return float64(pCoreHz / 1_000_000), nil

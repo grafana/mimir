@@ -244,7 +244,6 @@ func V1ProxyOption() Field {
 				Placeholder:  "https://proxy.example.com",
 				Required:     false,
 				Secure:       false,
-				Protected:    true,
 			},
 			{
 				Label:        "Proxy from environment",
@@ -298,7 +297,6 @@ func V1HttpClientOption() Field {
 						InputType:    InputTypeText,
 						Required:     true,
 						Secure:       false,
-						Protected:    true,
 					},
 					{
 						Label:        "Client ID",

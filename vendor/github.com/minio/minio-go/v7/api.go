@@ -21,6 +21,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -42,8 +43,8 @@ import (
 	md5simd "github.com/minio/md5-simd"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/minio/minio-go/v7/pkg/kvcache"
+	"github.com/minio/minio-go/v7/pkg/peeker"
 	"github.com/minio/minio-go/v7/pkg/s3utils"
-	"github.com/minio/minio-go/v7/pkg/set"
 	"github.com/minio/minio-go/v7/pkg/signer"
 	"github.com/minio/minio-go/v7/pkg/singleflight"
 	"golang.org/x/net/publicsuffix"
@@ -161,7 +162,7 @@ type Options struct {
 // Global constants.
 const (
 	libraryName    = "minio-go"
-	libraryVersion = "v7.0.98"
+	libraryVersion = "v7.0.95"
 )
 
 // User Agent should always following the below style.
@@ -203,9 +204,7 @@ func New(endpoint string, opts *Options) (*Client, error) {
 	return clnt, nil
 }
 
-// EndpointURL returns the URL of the S3-compatible endpoint that this client connects to.
-//
-// Returns a copy of the endpoint URL to prevent modification of internal state.
+// EndpointURL returns the URL of the S3 endpoint.
 func (c *Client) EndpointURL() *url.URL {
 	endpoint := *c.endpointURL // copy to prevent callers from modifying internal state
 	return &endpoint
@@ -222,7 +221,7 @@ func (r *lockedRandSource) Int63() (n int64) {
 	r.lk.Lock()
 	n = r.src.Int63()
 	r.lk.Unlock()
-	return n
+	return
 }
 
 // Seed uses the provided seed value to initialize the generator to a
@@ -326,14 +325,7 @@ func privateNew(endpoint string, opts *Options) (*Client, error) {
 	return clnt, nil
 }
 
-// SetAppInfo adds custom application name and version to the User-Agent header for all requests.
-// This helps identify your application in server logs and metrics.
-//
-// Parameters:
-//   - appName: Name of the application
-//   - appVersion: Version of the application
-//
-// Both parameters must be non-empty for the custom User-Agent to be set.
+// SetAppInfo - add application details to user agent.
 func (c *Client) SetAppInfo(appName, appVersion string) {
 	// if app name and version not set, we do not set a new user agent.
 	if appName != "" && appVersion != "" {
@@ -342,11 +334,7 @@ func (c *Client) SetAppInfo(appName, appVersion string) {
 	}
 }
 
-// TraceOn enables HTTP request and response tracing for debugging purposes.
-// All HTTP traffic will be written to the provided output stream.
-//
-// Parameters:
-//   - outputStream: Writer where trace output will be written (defaults to os.Stdout if nil)
+// TraceOn - enable HTTP tracing.
 func (c *Client) TraceOn(outputStream io.Writer) {
 	// if outputStream is nil then default to os.Stdout.
 	if outputStream == nil {
@@ -359,23 +347,19 @@ func (c *Client) TraceOn(outputStream io.Writer) {
 	c.isTraceEnabled = true
 }
 
-// TraceErrorsOnlyOn enables HTTP tracing but only for requests that result in errors.
-// This is useful for debugging without the overhead of tracing all requests.
-//
-// Parameters:
-//   - outputStream: Writer where trace output will be written (defaults to os.Stdout if nil)
+// TraceErrorsOnlyOn - same as TraceOn, but only errors will be traced.
 func (c *Client) TraceErrorsOnlyOn(outputStream io.Writer) {
 	c.TraceOn(outputStream)
 	c.traceErrorsOnly = true
 }
 
-// TraceErrorsOnlyOff disables errors-only mode and traces all requests.
-// To disable all tracing, call TraceOff() instead.
+// TraceErrorsOnlyOff - Turns off the errors only tracing and everything will be traced after this call.
+// If all tracing needs to be turned off, call TraceOff().
 func (c *Client) TraceErrorsOnlyOff() {
 	c.traceErrorsOnly = false
 }
 
-// TraceOff disables all HTTP tracing (both normal and errors-only modes).
+// TraceOff - disable HTTP tracing.
 func (c *Client) TraceOff() {
 	// Disable tracing.
 	c.isTraceEnabled = false
@@ -636,12 +620,34 @@ func (c *Client) do(req *http.Request) (resp *http.Response, err error) {
 	return resp, nil
 }
 
+// Peek resp.Body looking for S3 XMl error response:
+//   - Return the error XML bytes if an error is found
+//   - Make sure to always restablish the whole http response stream before returning
+func tryParseErrRespFromBody(resp *http.Response) ([]byte, error) {
+	peeker := peeker.NewPeekReadCloser(resp.Body, 5*humanize.MiByte)
+	defer func() {
+		peeker.ReplayFromStart()
+		resp.Body = peeker
+	}()
+
+	errResp := ErrorResponse{}
+	errBytes, err := xmlDecodeAndBody(peeker, &errResp)
+	if err != nil {
+		var unmarshalErr xml.UnmarshalError
+		if errors.As(err, &unmarshalErr) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return errBytes, nil
+}
+
 // List of success status.
-var successStatus = set.CreateIntSet(
+var successStatus = []int{
 	http.StatusOK,
 	http.StatusNoContent,
 	http.StatusPartialContent,
-)
+}
 
 // executeMethod - instantiates a given method, and retries the
 // request upon any error up to maxRetries attempts in a binomially
@@ -723,15 +729,29 @@ func (c *Client) executeMethod(ctx context.Context, method string, metadata requ
 			return nil, err
 		}
 
-		success := successStatus.Contains(res.StatusCode)
-		if success && !metadata.expect200OKWithError {
-			// We do not expect 2xx to return an error return.
-			return res, nil
-		} // in all other situations we must first parse the body as ErrorResponse
+		var success bool
+		var errBodyBytes []byte
 
-		// 5MiB is sufficiently large enough to hold any error or regular XML response.
-		var bodyBytes []byte
-		bodyBytes, err = io.ReadAll(io.LimitReader(res.Body, 5*humanize.MiByte))
+		for _, httpStatus := range successStatus {
+			if httpStatus == res.StatusCode {
+				success = true
+				break
+			}
+		}
+
+		if success {
+			if !metadata.expect200OKWithError {
+				return res, nil
+			}
+			errBodyBytes, err = tryParseErrRespFromBody(res)
+			if err == nil && len(errBodyBytes) == 0 {
+				// No S3 XML error is found
+				return res, nil
+			}
+		} else {
+			errBodyBytes, err = io.ReadAll(res.Body)
+		}
+
 		// By now, res.Body should be closed
 		closeResponse(res)
 		if err != nil {
@@ -739,22 +759,16 @@ func (c *Client) executeMethod(ctx context.Context, method string, metadata requ
 		}
 
 		// Save the body.
-		bodySeeker := bytes.NewReader(bodyBytes)
-		res.Body = io.NopCloser(bodySeeker)
-
-		apiErr := httpRespToErrorResponse(res, metadata.bucketName, metadata.objectName)
-
-		// Save the body back again.
-		bodySeeker.Seek(0, 0) // Seek back to starting point.
-		res.Body = io.NopCloser(bodySeeker)
-
-		if apiErr == nil {
-			return res, nil
-		}
+		errBodySeeker := bytes.NewReader(errBodyBytes)
+		res.Body = io.NopCloser(errBodySeeker)
 
 		// For errors verify if its retryable otherwise fail quickly.
-		errResponse := ToErrorResponse(apiErr)
+		errResponse := ToErrorResponse(httpRespToErrorResponse(res, metadata.bucketName, metadata.objectName))
 		err = errResponse
+
+		// Save the body back again.
+		errBodySeeker.Seek(0, 0) // Seek back to starting point.
+		res.Body = io.NopCloser(errBodySeeker)
 
 		// Bucket region if set in error response and the error
 		// code dictates invalid region, we can retry the request

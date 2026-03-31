@@ -23,7 +23,7 @@ type blockingLimiter[R any] interface {
 
 // executor is a policy.Executor that handles failures according to an AdaptiveLimiter or PriorityLimiter.
 type executor[R any] struct {
-	policy.BaseExecutor[R]
+	*policy.BaseExecutor[R]
 	blockingLimiter[R]
 }
 
@@ -62,15 +62,10 @@ func (e *executor[R]) Apply(innerFn func(failsafe.Execution[R]) *common.PolicyRe
 		}
 
 		result := innerFn(exec)
+		result = e.PostExecute(execInternal, result)
 		if permit != nil {
-			// Check for cancellation during execution
-			if canceled, _ := execInternal.IsCanceledWithResult(); canceled {
-				permit.Drop()
-			} else {
-				permit.Record()
-			}
+			permit.Record()
 		}
-
-		return e.PostExecute(execInternal, result)
+		return result
 	}
 }

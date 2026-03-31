@@ -48,11 +48,11 @@ func encodeURL2Path(req *http.Request, virtualHost bool) (path string) {
 			path = "/" + bucketName
 			path += req.URL.Path
 			path = s3utils.EncodePath(path)
-			return path
+			return
 		}
 	}
 	path = s3utils.EncodePath(req.URL.Path)
-	return path
+	return
 }
 
 // PreSignV2 - presign the request in following style.

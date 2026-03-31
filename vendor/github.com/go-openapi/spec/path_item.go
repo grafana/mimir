@@ -1,5 +1,16 @@
-// SPDX-FileCopyrightText: Copyright 2015-2025 go-swagger maintainers
-// SPDX-License-Identifier: Apache-2.0
+// Copyright 2015 go-swagger maintainers
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package spec
 
@@ -7,7 +18,7 @@ import (
 	"encoding/json"
 
 	"github.com/go-openapi/jsonpointer"
-	"github.com/go-openapi/swag/jsonutils"
+	"github.com/go-openapi/swag"
 )
 
 // PathItemProps the path item specific properties
@@ -35,7 +46,7 @@ type PathItem struct {
 }
 
 // JSONLookup look up a value by the json property name
-func (p PathItem) JSONLookup(token string) (any, error) {
+func (p PathItem) JSONLookup(token string) (interface{}, error) {
 	if ex, ok := p.Extensions[token]; ok {
 		return &ex, nil
 	}
@@ -71,6 +82,6 @@ func (p PathItem) MarshalJSON() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	concated := jsonutils.ConcatJSON(b3, b4, b5)
+	concated := swag.ConcatJSON(b3, b4, b5)
 	return concated, nil
 }

@@ -4,8 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"sort"
-
-	"go.etcd.io/bbolt/internal/common"
+	"unsafe"
 )
 
 // node represents an in-memory, deserialized page.
@@ -15,10 +14,10 @@ type node struct {
 	unbalanced bool
 	spilled    bool
 	key        []byte
-	pgid       common.Pgid
+	pgid       pgid
 	parent     *node
 	children   nodes
-	inodes     common.Inodes
+	inodes     inodes
 }
 
 // root returns the top-level node this node is attached to.
@@ -39,10 +38,10 @@ func (n *node) minKeys() int {
 
 // size returns the size of the node after serialization.
 func (n *node) size() int {
-	sz, elsz := common.PageHeaderSize, n.pageElementSize()
+	sz, elsz := pageHeaderSize, n.pageElementSize()
 	for i := 0; i < len(n.inodes); i++ {
 		item := &n.inodes[i]
-		sz += elsz + uintptr(len(item.Key())) + uintptr(len(item.Value()))
+		sz += elsz + uintptr(len(item.key)) + uintptr(len(item.value))
 	}
 	return int(sz)
 }
@@ -51,10 +50,10 @@ func (n *node) size() int {
 // This is an optimization to avoid calculating a large node when we only need
 // to know if it fits inside a certain page size.
 func (n *node) sizeLessThan(v uintptr) bool {
-	sz, elsz := common.PageHeaderSize, n.pageElementSize()
+	sz, elsz := pageHeaderSize, n.pageElementSize()
 	for i := 0; i < len(n.inodes); i++ {
 		item := &n.inodes[i]
-		sz += elsz + uintptr(len(item.Key())) + uintptr(len(item.Value()))
+		sz += elsz + uintptr(len(item.key)) + uintptr(len(item.value))
 		if sz >= v {
 			return false
 		}
@@ -65,9 +64,9 @@ func (n *node) sizeLessThan(v uintptr) bool {
 // pageElementSize returns the size of each page element based on the type of node.
 func (n *node) pageElementSize() uintptr {
 	if n.isLeaf {
-		return common.LeafPageElementSize
+		return leafPageElementSize
 	}
-	return common.BranchPageElementSize
+	return branchPageElementSize
 }
 
 // childAt returns the child node at a given index.
@@ -75,12 +74,12 @@ func (n *node) childAt(index int) *node {
 	if n.isLeaf {
 		panic(fmt.Sprintf("invalid childAt(%d) on a leaf node", index))
 	}
-	return n.bucket.node(n.inodes[index].Pgid(), n)
+	return n.bucket.node(n.inodes[index].pgid, n)
 }
 
 // childIndex returns the index of a given child node.
 func (n *node) childIndex(child *node) int {
-	index := sort.Search(len(n.inodes), func(i int) bool { return bytes.Compare(n.inodes[i].Key(), child.key) != -1 })
+	index := sort.Search(len(n.inodes), func(i int) bool { return bytes.Compare(n.inodes[i].key, child.key) != -1 })
 	return index
 }
 
@@ -114,9 +113,9 @@ func (n *node) prevSibling() *node {
 }
 
 // put inserts a key/value.
-func (n *node) put(oldKey, newKey, value []byte, pgId common.Pgid, flags uint32) {
-	if pgId >= n.bucket.tx.meta.Pgid() {
-		panic(fmt.Sprintf("pgId (%d) above high water mark (%d)", pgId, n.bucket.tx.meta.Pgid()))
+func (n *node) put(oldKey, newKey, value []byte, pgid pgid, flags uint32) {
+	if pgid >= n.bucket.tx.meta.pgid {
+		panic(fmt.Sprintf("pgid (%d) above high water mark (%d)", pgid, n.bucket.tx.meta.pgid))
 	} else if len(oldKey) <= 0 {
 		panic("put: zero-length old key")
 	} else if len(newKey) <= 0 {
@@ -124,30 +123,30 @@ func (n *node) put(oldKey, newKey, value []byte, pgId common.Pgid, flags uint32)
 	}
 
 	// Find insertion index.
-	index := sort.Search(len(n.inodes), func(i int) bool { return bytes.Compare(n.inodes[i].Key(), oldKey) != -1 })
+	index := sort.Search(len(n.inodes), func(i int) bool { return bytes.Compare(n.inodes[i].key, oldKey) != -1 })
 
 	// Add capacity and shift nodes if we don't have an exact match and need to insert.
-	exact := len(n.inodes) > 0 && index < len(n.inodes) && bytes.Equal(n.inodes[index].Key(), oldKey)
+	exact := (len(n.inodes) > 0 && index < len(n.inodes) && bytes.Equal(n.inodes[index].key, oldKey))
 	if !exact {
-		n.inodes = append(n.inodes, common.Inode{})
+		n.inodes = append(n.inodes, inode{})
 		copy(n.inodes[index+1:], n.inodes[index:])
 	}
 
 	inode := &n.inodes[index]
-	inode.SetFlags(flags)
-	inode.SetKey(newKey)
-	inode.SetValue(value)
-	inode.SetPgid(pgId)
-	common.Assert(len(inode.Key()) > 0, "put: zero-length inode key")
+	inode.flags = flags
+	inode.key = newKey
+	inode.value = value
+	inode.pgid = pgid
+	_assert(len(inode.key) > 0, "put: zero-length inode key")
 }
 
 // del removes a key from the node.
 func (n *node) del(key []byte) {
 	// Find index of key.
-	index := sort.Search(len(n.inodes), func(i int) bool { return bytes.Compare(n.inodes[i].Key(), key) != -1 })
+	index := sort.Search(len(n.inodes), func(i int) bool { return bytes.Compare(n.inodes[i].key, key) != -1 })
 
 	// Exit if the key isn't found.
-	if index >= len(n.inodes) || !bytes.Equal(n.inodes[index].Key(), key) {
+	if index >= len(n.inodes) || !bytes.Equal(n.inodes[index].key, key) {
 		return
 	}
 
@@ -159,44 +158,85 @@ func (n *node) del(key []byte) {
 }
 
 // read initializes the node from a page.
-func (n *node) read(p *common.Page) {
-	n.pgid = p.Id()
-	n.isLeaf = p.IsLeafPage()
-	n.inodes = common.ReadInodeFromPage(p)
+func (n *node) read(p *page) {
+	n.pgid = p.id
+	n.isLeaf = ((p.flags & leafPageFlag) != 0)
+	n.inodes = make(inodes, int(p.count))
 
-	// Save first key, so we can find the node in the parent when we spill.
+	for i := 0; i < int(p.count); i++ {
+		inode := &n.inodes[i]
+		if n.isLeaf {
+			elem := p.leafPageElement(uint16(i))
+			inode.flags = elem.flags
+			inode.key = elem.key()
+			inode.value = elem.value()
+		} else {
+			elem := p.branchPageElement(uint16(i))
+			inode.pgid = elem.pgid
+			inode.key = elem.key()
+		}
+		_assert(len(inode.key) > 0, "read: zero-length inode key")
+	}
+
+	// Save first key so we can find the node in the parent when we spill.
 	if len(n.inodes) > 0 {
-		n.key = n.inodes[0].Key()
-		common.Assert(len(n.key) > 0, "read: zero-length node key")
+		n.key = n.inodes[0].key
+		_assert(len(n.key) > 0, "read: zero-length node key")
 	} else {
 		n.key = nil
 	}
 }
 
 // write writes the items onto one or more pages.
-// The page should have p.id (might be 0 for meta or bucket-inline page) and p.overflow set
-// and the rest should be zeroed.
-func (n *node) write(p *common.Page) {
-	common.Assert(p.Count() == 0 && p.Flags() == 0, "node cannot be written into a not empty page")
-
+func (n *node) write(p *page) {
 	// Initialize page.
 	if n.isLeaf {
-		p.SetFlags(common.LeafPageFlag)
+		p.flags |= leafPageFlag
 	} else {
-		p.SetFlags(common.BranchPageFlag)
+		p.flags |= branchPageFlag
 	}
 
 	if len(n.inodes) >= 0xFFFF {
-		panic(fmt.Sprintf("inode overflow: %d (pgid=%d)", len(n.inodes), p.Id()))
+		panic(fmt.Sprintf("inode overflow: %d (pgid=%d)", len(n.inodes), p.id))
 	}
-	p.SetCount(uint16(len(n.inodes)))
+	p.count = uint16(len(n.inodes))
 
 	// Stop here if there are no items to write.
-	if p.Count() == 0 {
+	if p.count == 0 {
 		return
 	}
 
-	common.WriteInodeToPage(n.inodes, p)
+	// Loop over each item and write it to the page.
+	// off tracks the offset into p of the start of the next data.
+	off := unsafe.Sizeof(*p) + n.pageElementSize()*uintptr(len(n.inodes))
+	for i, item := range n.inodes {
+		_assert(len(item.key) > 0, "write: zero-length inode key")
+
+		// Create a slice to write into of needed size and advance
+		// byte pointer for next iteration.
+		sz := len(item.key) + len(item.value)
+		b := unsafeByteSlice(unsafe.Pointer(p), off, 0, sz)
+		off += uintptr(sz)
+
+		// Write the page element.
+		if n.isLeaf {
+			elem := p.leafPageElement(uint16(i))
+			elem.pos = uint32(uintptr(unsafe.Pointer(&b[0])) - uintptr(unsafe.Pointer(elem)))
+			elem.flags = item.flags
+			elem.ksize = uint32(len(item.key))
+			elem.vsize = uint32(len(item.value))
+		} else {
+			elem := p.branchPageElement(uint16(i))
+			elem.pos = uint32(uintptr(unsafe.Pointer(&b[0])) - uintptr(unsafe.Pointer(elem)))
+			elem.ksize = uint32(len(item.key))
+			elem.pgid = item.pgid
+			_assert(elem.pgid != p.id, "write: circular dependency occurred")
+		}
+
+		// Write data for the element to the end of the page.
+		l := copy(b, item.key)
+		copy(b[l:], item.value)
+	}
 
 	// DEBUG ONLY: n.dump()
 }
@@ -229,7 +269,7 @@ func (n *node) split(pageSize uintptr) []*node {
 func (n *node) splitTwo(pageSize uintptr) (*node, *node) {
 	// Ignore the split if the page doesn't have at least enough nodes for
 	// two pages or if the nodes can fit in a single page.
-	if len(n.inodes) <= (common.MinKeysPerPage*2) || n.sizeLessThan(pageSize) {
+	if len(n.inodes) <= (minKeysPerPage*2) || n.sizeLessThan(pageSize) {
 		return n, nil
 	}
 
@@ -260,7 +300,7 @@ func (n *node) splitTwo(pageSize uintptr) (*node, *node) {
 	n.inodes = n.inodes[:splitIndex]
 
 	// Update the statistics.
-	n.bucket.tx.stats.IncSplit(1)
+	n.bucket.tx.stats.Split++
 
 	return n, next
 }
@@ -269,17 +309,17 @@ func (n *node) splitTwo(pageSize uintptr) (*node, *node) {
 // It returns the index as well as the size of the first page.
 // This is only be called from split().
 func (n *node) splitIndex(threshold int) (index, sz uintptr) {
-	sz = common.PageHeaderSize
+	sz = pageHeaderSize
 
 	// Loop until we only have the minimum number of keys required for the second page.
-	for i := 0; i < len(n.inodes)-common.MinKeysPerPage; i++ {
+	for i := 0; i < len(n.inodes)-minKeysPerPage; i++ {
 		index = uintptr(i)
 		inode := n.inodes[i]
-		elsize := n.pageElementSize() + uintptr(len(inode.Key())) + uintptr(len(inode.Value()))
+		elsize := n.pageElementSize() + uintptr(len(inode.key)) + uintptr(len(inode.value))
 
 		// If we have at least the minimum number of keys and adding another
 		// node would put us over the threshold then exit and return.
-		if index >= common.MinKeysPerPage && sz+elsize > uintptr(threshold) {
+		if index >= minKeysPerPage && sz+elsize > uintptr(threshold) {
 			break
 		}
 
@@ -316,7 +356,7 @@ func (n *node) spill() error {
 	for _, node := range nodes {
 		// Add node's page to the freelist if it's not new.
 		if node.pgid > 0 {
-			tx.db.freelist.Free(tx.meta.Txid(), tx.page(node.pgid))
+			tx.db.freelist.free(tx.meta.txid, tx.page(node.pgid))
 			node.pgid = 0
 		}
 
@@ -327,10 +367,10 @@ func (n *node) spill() error {
 		}
 
 		// Write the node.
-		if p.Id() >= tx.meta.Pgid() {
-			panic(fmt.Sprintf("pgid (%d) above high water mark (%d)", p.Id(), tx.meta.Pgid()))
+		if p.id >= tx.meta.pgid {
+			panic(fmt.Sprintf("pgid (%d) above high water mark (%d)", p.id, tx.meta.pgid))
 		}
-		node.pgid = p.Id()
+		node.pgid = p.id
 		node.write(p)
 		node.spilled = true
 
@@ -338,16 +378,16 @@ func (n *node) spill() error {
 		if node.parent != nil {
 			var key = node.key
 			if key == nil {
-				key = node.inodes[0].Key()
+				key = node.inodes[0].key
 			}
 
-			node.parent.put(key, node.inodes[0].Key(), nil, node.pgid, 0)
-			node.key = node.inodes[0].Key()
-			common.Assert(len(node.key) > 0, "spill: zero-length node key")
+			node.parent.put(key, node.inodes[0].key, nil, node.pgid, 0)
+			node.key = node.inodes[0].key
+			_assert(len(node.key) > 0, "spill: zero-length node key")
 		}
 
 		// Update the statistics.
-		tx.stats.IncSpill(1)
+		tx.stats.Spill++
 	}
 
 	// If the root node split and created a new root then we need to spill that
@@ -369,10 +409,10 @@ func (n *node) rebalance() {
 	n.unbalanced = false
 
 	// Update statistics.
-	n.bucket.tx.stats.IncRebalance(1)
+	n.bucket.tx.stats.Rebalance++
 
-	// Ignore if node is above threshold (25% when FillPercent is set to DefaultFillPercent) and has enough keys.
-	var threshold = int(float64(n.bucket.tx.db.pageSize)*n.bucket.FillPercent) / 2
+	// Ignore if node is above threshold (25%) and has enough keys.
+	var threshold = n.bucket.tx.db.pageSize / 4
 	if n.size() > threshold && len(n.inodes) > n.minKeys() {
 		return
 	}
@@ -382,14 +422,14 @@ func (n *node) rebalance() {
 		// If root node is a branch and only has one node then collapse it.
 		if !n.isLeaf && len(n.inodes) == 1 {
 			// Move root's child up.
-			child := n.bucket.node(n.inodes[0].Pgid(), n)
+			child := n.bucket.node(n.inodes[0].pgid, n)
 			n.isLeaf = child.isLeaf
 			n.inodes = child.inodes[:]
 			n.children = child.children
 
 			// Reparent all child nodes being moved.
 			for _, inode := range n.inodes {
-				if child, ok := n.bucket.nodes[inode.Pgid()]; ok {
+				if child, ok := n.bucket.nodes[inode.pgid]; ok {
 					child.parent = n
 				}
 			}
@@ -413,37 +453,53 @@ func (n *node) rebalance() {
 		return
 	}
 
-	common.Assert(n.parent.numChildren() > 1, "parent must have at least 2 children")
+	_assert(n.parent.numChildren() > 1, "parent must have at least 2 children")
 
-	// Merge with right sibling if idx == 0, otherwise left sibling.
-	var leftNode, rightNode *node
-	var useNextSibling = n.parent.childIndex(n) == 0
+	// Destination node is right sibling if idx == 0, otherwise left sibling.
+	var target *node
+	var useNextSibling = (n.parent.childIndex(n) == 0)
 	if useNextSibling {
-		leftNode = n
-		rightNode = n.nextSibling()
+		target = n.nextSibling()
 	} else {
-		leftNode = n.prevSibling()
-		rightNode = n
+		target = n.prevSibling()
 	}
 
-	// If both nodes are too small then merge them.
-	// Reparent all child nodes being moved.
-	for _, inode := range rightNode.inodes {
-		if child, ok := n.bucket.nodes[inode.Pgid()]; ok {
-			child.parent.removeChild(child)
-			child.parent = leftNode
-			child.parent.children = append(child.parent.children, child)
+	// If both this node and the target node are too small then merge them.
+	if useNextSibling {
+		// Reparent all child nodes being moved.
+		for _, inode := range target.inodes {
+			if child, ok := n.bucket.nodes[inode.pgid]; ok {
+				child.parent.removeChild(child)
+				child.parent = n
+				child.parent.children = append(child.parent.children, child)
+			}
 		}
+
+		// Copy over inodes from target and remove target.
+		n.inodes = append(n.inodes, target.inodes...)
+		n.parent.del(target.key)
+		n.parent.removeChild(target)
+		delete(n.bucket.nodes, target.pgid)
+		target.free()
+	} else {
+		// Reparent all child nodes being moved.
+		for _, inode := range n.inodes {
+			if child, ok := n.bucket.nodes[inode.pgid]; ok {
+				child.parent.removeChild(child)
+				child.parent = target
+				child.parent.children = append(child.parent.children, child)
+			}
+		}
+
+		// Copy over inodes to target and remove node.
+		target.inodes = append(target.inodes, n.inodes...)
+		n.parent.del(n.key)
+		n.parent.removeChild(n)
+		delete(n.bucket.nodes, n.pgid)
+		n.free()
 	}
 
-	// Copy over inodes from right node to left node and remove right node.
-	leftNode.inodes = append(leftNode.inodes, rightNode.inodes...)
-	n.parent.del(rightNode.key)
-	n.parent.removeChild(rightNode)
-	delete(n.bucket.nodes, rightNode.pgid)
-	rightNode.free()
-
-	// Either this node or the sibling node was deleted from the parent so rebalance it.
+	// Either this node or the target node was deleted from the parent so rebalance it.
 	n.parent.rebalance()
 }
 
@@ -465,20 +521,20 @@ func (n *node) dereference() {
 		key := make([]byte, len(n.key))
 		copy(key, n.key)
 		n.key = key
-		common.Assert(n.pgid == 0 || len(n.key) > 0, "dereference: zero-length node key on existing node")
+		_assert(n.pgid == 0 || len(n.key) > 0, "dereference: zero-length node key on existing node")
 	}
 
 	for i := range n.inodes {
 		inode := &n.inodes[i]
 
-		key := make([]byte, len(inode.Key()))
-		copy(key, inode.Key())
-		inode.SetKey(key)
-		common.Assert(len(inode.Key()) > 0, "dereference: zero-length inode key")
+		key := make([]byte, len(inode.key))
+		copy(key, inode.key)
+		inode.key = key
+		_assert(len(inode.key) > 0, "dereference: zero-length inode key")
 
-		value := make([]byte, len(inode.Value()))
-		copy(value, inode.Value())
-		inode.SetValue(value)
+		value := make([]byte, len(inode.value))
+		copy(value, inode.value)
+		inode.value = value
 	}
 
 	// Recursively dereference children.
@@ -487,13 +543,13 @@ func (n *node) dereference() {
 	}
 
 	// Update statistics.
-	n.bucket.tx.stats.IncNodeDeref(1)
+	n.bucket.tx.stats.NodeDeref++
 }
 
 // free adds the node's underlying page to the freelist.
 func (n *node) free() {
 	if n.pgid != 0 {
-		n.bucket.tx.db.freelist.Free(n.bucket.tx.meta.Txid(), n.bucket.tx.page(n.pgid))
+		n.bucket.tx.db.freelist.free(n.bucket.tx.meta.txid, n.bucket.tx.page(n.pgid))
 		n.pgid = 0
 	}
 }
@@ -525,14 +581,22 @@ func (n *node) dump() {
 }
 */
 
-func compareKeys(left, right []byte) int {
-	return bytes.Compare(left, right)
-}
-
 type nodes []*node
 
 func (s nodes) Len() int      { return len(s) }
 func (s nodes) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
 func (s nodes) Less(i, j int) bool {
-	return bytes.Compare(s[i].inodes[0].Key(), s[j].inodes[0].Key()) == -1
+	return bytes.Compare(s[i].inodes[0].key, s[j].inodes[0].key) == -1
 }
+
+// inode represents an internal node inside of a node.
+// It can be used to point to elements in a page or point
+// to an element which hasn't been added to a page yet.
+type inode struct {
+	flags uint32
+	pgid  pgid
+	key   []byte
+	value []byte
+}
+
+type inodes []inode

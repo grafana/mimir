@@ -16,8 +16,6 @@ func defaultTemplatesPerKind(kind Kind) []string {
 		return []string{
 			DefaultTemplateString,
 		}
-	case MimirKind:
-		return nil
 	default:
 		return nil
 	}

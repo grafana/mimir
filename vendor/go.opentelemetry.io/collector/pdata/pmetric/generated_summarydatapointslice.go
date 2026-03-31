@@ -11,6 +11,7 @@ import (
 	"sort"
 
 	"go.opentelemetry.io/collector/pdata/internal"
+	otlpmetrics "go.opentelemetry.io/collector/pdata/internal/data/protogen/metrics/v1"
 )
 
 // SummaryDataPointSlice logically represents a slice of SummaryDataPoint.
@@ -21,18 +22,18 @@ import (
 // Must use NewSummaryDataPointSlice function to create new instances.
 // Important: zero-initialized instance is not valid for use.
 type SummaryDataPointSlice struct {
-	orig  *[]*internal.SummaryDataPoint
+	orig  *[]*otlpmetrics.SummaryDataPoint
 	state *internal.State
 }
 
-func newSummaryDataPointSlice(orig *[]*internal.SummaryDataPoint, state *internal.State) SummaryDataPointSlice {
+func newSummaryDataPointSlice(orig *[]*otlpmetrics.SummaryDataPoint, state *internal.State) SummaryDataPointSlice {
 	return SummaryDataPointSlice{orig: orig, state: state}
 }
 
-// NewSummaryDataPointSlice creates a SummaryDataPointSliceWrapper with 0 elements.
+// NewSummaryDataPointSlice creates a SummaryDataPointSlice with 0 elements.
 // Can use "EnsureCapacity" to initialize with a given capacity.
 func NewSummaryDataPointSlice() SummaryDataPointSlice {
-	orig := []*internal.SummaryDataPoint(nil)
+	orig := []*otlpmetrics.SummaryDataPoint(nil)
 	return newSummaryDataPointSlice(&orig, internal.NewState())
 }
 
@@ -89,7 +90,7 @@ func (es SummaryDataPointSlice) EnsureCapacity(newCap int) {
 		return
 	}
 
-	newOrig := make([]*internal.SummaryDataPoint, len(*es.orig), newCap)
+	newOrig := make([]*otlpmetrics.SummaryDataPoint, len(*es.orig), newCap)
 	copy(newOrig, *es.orig)
 	*es.orig = newOrig
 }
@@ -98,7 +99,7 @@ func (es SummaryDataPointSlice) EnsureCapacity(newCap int) {
 // It returns the newly added SummaryDataPoint.
 func (es SummaryDataPointSlice) AppendEmpty() SummaryDataPoint {
 	es.state.AssertMutable()
-	*es.orig = append(*es.orig, internal.NewSummaryDataPoint())
+	*es.orig = append(*es.orig, internal.NewOrigSummaryDataPoint())
 	return es.At(es.Len() - 1)
 }
 
@@ -127,7 +128,7 @@ func (es SummaryDataPointSlice) RemoveIf(f func(SummaryDataPoint) bool) {
 	newLen := 0
 	for i := 0; i < len(*es.orig); i++ {
 		if f(es.At(i)) {
-			internal.DeleteSummaryDataPoint((*es.orig)[i], true)
+			internal.DeleteOrigSummaryDataPoint((*es.orig)[i], true)
 			(*es.orig)[i] = nil
 
 			continue
@@ -151,7 +152,7 @@ func (es SummaryDataPointSlice) CopyTo(dest SummaryDataPointSlice) {
 	if es.orig == dest.orig {
 		return
 	}
-	*dest.orig = internal.CopySummaryDataPointPtrSlice(*dest.orig, *es.orig)
+	*dest.orig = internal.CopyOrigSummaryDataPointSlice(*dest.orig, *es.orig)
 }
 
 // Sort sorts the SummaryDataPoint elements within SummaryDataPointSlice given the
