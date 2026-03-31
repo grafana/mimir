@@ -27,8 +27,10 @@ Entries should be ordered as follows:
 
 Entries should include a reference to the Pull Request that introduced the change.
 
+
 ## main / unreleased
 
+* [ENHANCEMENT] Kafka: Add `kafka.env` option to fully override the default environment variables in the Kafka StatefulSet. If set, the default env list is discarded and replaced with the provided list. #14892
 * [CHANGE] Update minimum supported Kubernetes version to 1.32. This reflects the fact that Grafana does not test with older versions of Kubernetes. #14335
 * [CHANGE] Set default memory ballast for ruler to 1GiB to reduce GC pressure during startup. #13376
 * [CHANGE] Set docker.io as the default registry for mimir image. #13267

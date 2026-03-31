@@ -65,6 +65,10 @@ spec:
             - containerPort: 9093
               name: controller
               protocol: TCP
+          {{- if .env }}
+          env:
+            {{- toYaml .env | nindent 12 }}
+          {{- else }}
           env:
             # Kubernetes expands env variables in lexical order. So "_POD_NAME" (sic) here is so the name was expanded before KAFKA_ADVERTISED_LISTENERS is.
             - name: _POD_NAME
@@ -104,6 +108,7 @@ spec:
             {{- with .extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- end }}
           {{- with .extraEnvFrom }}
           envFrom:
             {{- toYaml . | nindent 12 }}

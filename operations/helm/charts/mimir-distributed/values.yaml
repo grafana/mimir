@@ -3121,10 +3121,12 @@ kafka:
   terminationGracePeriodSeconds: 30
   # -- Kafka log retention period in hours
   logRetentionHours: 24
-  # -- Additional environment variables for Kafka
+  # -- Additional environment variables for Kafka (appended to default list unless 'env' is set)
   extraEnv: []
   # -- Additional environment variables from secrets or configmaps
   extraEnvFrom: []
+  # -- If specified, replaces the default env list for Kafka container (advanced)
+  env: []
 
 # -- Use either this ingress or the gateway, but not both at once.
 # If you enable this, make sure to disable the gateway's ingress.
