@@ -205,15 +205,20 @@ func TestCodec_JSONResponse_Metrics(t *testing.T) {
 				Header: http.Header{"Accept": []string{jsonMimeType}},
 			}
 
+			// Reset response, as the above call will have consumed the body reader.
+			httpResponse = &http.Response{
+				StatusCode: 200,
+				Header:     headers,
+				Body: &prometheusReadCloser{
+					Reader:    bytes.NewBuffer(body),
+					finalizer: func() {},
+				},
+				ContentLength: int64(len(body)),
+			}
+
 			encoded, err := codec.EncodeMetricsQueryResponse(context.Background(), httpRequest, decoded)
 			require.NoError(t, err)
-			require.Equal(t, http.StatusOK, encoded.StatusCode)
-			require.Equal(t, http.Header{"Content-Type": []string{jsonMimeType}}, encoded.Header)
-
-			// Drain the body to trigger metric recording in the encoding goroutine.
-			encodedBody, err := readResponseBody(encoded)
-			require.NoError(t, err)
-			require.JSONEq(t, string(body), string(encodedBody))
+			encodedBody := requireEqualHttpResponse(t, httpResponse, encoded)
 
 			metrics, err = dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
 			require.NoError(t, err)
@@ -230,7 +235,8 @@ func TestCodec_JSONResponse_Metrics(t *testing.T) {
 }
 
 // requireEqualHttpResponse checks the responses are the same with special handling for the Body.
-func requireEqualHttpResponse(t *testing.T, expected, actual *http.Response) {
+// Returns the actual json encoded body.
+func requireEqualHttpResponse(t *testing.T, expected, actual *http.Response) string {
 	require.Equal(t, expected.StatusCode, actual.StatusCode)
 	require.Equal(t, expected.Header, actual.Header)
 
@@ -240,6 +246,8 @@ func requireEqualHttpResponse(t *testing.T, expected, actual *http.Response) {
 	actualJSON, err := readResponseBody(actual)
 	require.NoError(t, err)
 	require.JSONEq(t, string(expectedJSON), string(actualJSON))
+
+	return string(actualJSON)
 
 	// No need to reset the bodies since they're typically not used after this comparison
 }
@@ -343,7 +351,7 @@ func TestCodec_JSONResponse_Labels(t *testing.T) {
 			encoded, err := codec.EncodeLabelsSeriesQueryResponse(context.Background(), httpRequest, decoded, tc.isSeriesResponse)
 			require.NoError(t, err)
 
-			requireEqualHttpResponse(t, httpResponse, encoded)
+			_ = requireEqualHttpResponse(t, httpResponse, encoded)
 		})
 	}
 }
