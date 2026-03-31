@@ -16,11 +16,12 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/multierror"
-	"github.com/grafana/mimir/pkg/storage/indexheader/indexheaderpb"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
+
+	"github.com/grafana/mimir/pkg/storage/indexheader/indexheaderpb"
 
 	streamencoding "github.com/grafana/mimir/pkg/storage/indexheader/encoding"
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
@@ -189,7 +190,7 @@ func NewStreamBinaryReader(
 			Symbols:             streamindex.SparseSymbolsToProto(allSymbolsCount, sparseSymbolsOffsets),
 			PostingsOffsetTable: streamindex.SparsePostingsOffsetsTableToProto(sparsePostingsOffsets, sparseSampleFactor),
 		}
-		if err := writeSparseHeaderProtoToDisk(localSparseHeaderPath, sparseHeaderProto); err != nil {
+		if err := WriteSparseHeaderProtoToDisk(localSparseHeaderPath, sparseHeaderProto); err != nil {
 			// Log an error in case there are disk issues, but we can still continue.
 			level.Error(spanLog).Log(
 				"msg", "failed to write bucket sparse index-header to disk", "err", err,

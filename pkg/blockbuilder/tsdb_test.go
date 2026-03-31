@@ -28,9 +28,13 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
+	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/indexheader"
+	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
+	"github.com/grafana/mimir/pkg/storage/indexheader/indexheaderpb"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -294,7 +298,7 @@ func TestTSDBBuilder(t *testing.T) {
 				tc.verifyBlocksAfterCompaction(blocks)
 
 				if builder.cfg.GenerateSparseIndexHeaders {
-					blockIDsWithSparseHeader := validateSparseIndexHeadersInDir(t, ctx, shipperDir)
+					blockIDsWithSparseHeader := validateSparseIndexHeadersInDir(t, ctx, shipperDir, config)
 					require.Equal(t, len(blocks), len(blockIDsWithSparseHeader))
 					for _, b := range blocks {
 						require.Contains(t, blockIDsWithSparseHeader, b.Meta().ULID)
@@ -349,21 +353,44 @@ func TestTSDBBuilder_CompactAndUpload_fail(t *testing.T) {
 	require.ErrorIs(t, err, errUploadFailed)
 }
 
-func validateSparseIndexHeadersInDir(t *testing.T, ctx context.Context, dbDir string) []ulid.ULID {
+func validateSparseIndexHeadersInDir(t *testing.T, ctx context.Context, dbDir string, cfg Config) []ulid.ULID {
 	fsBkt, err := filesystem.NewBucket(dbDir)
 	if err != nil {
 		require.NoError(t, err)
 	}
+	instrBkt := objstore.WithNoopInstr(fsBkt)
+	ll := log.NewNopLogger()
+
 	var ids []ulid.ULID
-	require.NoError(t, fsBkt.Iter(ctx, "", func(n string) error {
+	require.NoError(t, instrBkt.Iter(ctx, "", func(n string) error {
 		if id, ok := block.IsBlockDir(n); !ok {
 			return nil
 		} else {
 			ids = append(ids, id)
 			sparseHeadersPath := path.Join(id.String(), block.SparseIndexHeaderFilename)
-			if exists, _ := fsBkt.Exists(ctx, sparseHeadersPath); !exists {
+			if exists, _ := instrBkt.Exists(ctx, sparseHeadersPath); !exists {
 				return fmt.Errorf("expected sparse index headers not found %s", sparseHeadersPath)
 			}
+			gzipSparseHeaderBytes, err := indexheader.GetBucketSparseHeaderBytes(ctx, id, instrBkt, ll)
+			require.NoError(t, err)
+			sparseHeaderBytes, err := indexheader.UnzipSparseHeader(gzipSparseHeaderBytes, ll)
+			require.NoError(t, err)
+
+			sparseHeaderProto := &indexheaderpb.Sparse{}
+			require.NoError(t, sparseHeaderProto.Unmarshal(sparseHeaderBytes))
+
+			allSymbolsCount, sparseSymbolsOffsets := streamindex.SparseSymbolsFromProto(sparseHeaderProto.Symbols)
+			// Different tests will have different number of symbols, but we can check some basic correctness:
+			// 1. At least one symbol is sampled
+			// 2. The total symbol count recorded for the block is greater than the sampled symbols;
+			//   this is always true even with only one symbol written because the block includes the empty string symbol.
+			require.NotEmpty(t, len(sparseSymbolsOffsets))
+			require.Greater(t, allSymbolsCount, len(sparseSymbolsOffsets))
+
+			sparsePostingsOffsets, err := streamindex.SparsePostingsOffsetsTableFromProto(
+				sparseHeaderProto.PostingsOffsetTable, cfg.BlocksStorage.BucketStore.PostingOffsetsInMemSampling,
+			)
+			require.NotZero(t, len(sparsePostingsOffsets))
 		}
 		return nil
 	}))

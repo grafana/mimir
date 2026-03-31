@@ -153,7 +153,7 @@ func NewLazyBinaryReader(
 	}
 
 	g.Go(func() error {
-		err := ensureSparseHeaderOnDisk(ctx, id, bkt, localTenantDir, logger)
+		err := DownloadSparseHeaderToDisk(ctx, id, bkt, localTenantDir, logger)
 		if err != nil {
 			level.Info(logger).Log("msg", "could not download sparse index-header from bucket; will reconstruct when the block is queried", "err", err)
 		}

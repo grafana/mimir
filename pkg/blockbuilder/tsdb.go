@@ -15,6 +15,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/multierror"
+	"github.com/grafana/dskit/runutil"
 	dskittenant "github.com/grafana/dskit/tenant"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
@@ -23,14 +24,17 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/thanos-io/objstore"
-	"github.com/thanos-io/objstore/providers/filesystem"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	mimir_storage "github.com/grafana/mimir/pkg/storage"
 	"github.com/grafana/mimir/pkg/storage/indexheader"
+	"github.com/grafana/mimir/pkg/storage/indexheader/encoding"
+	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
+	"github.com/grafana/mimir/pkg/storage/indexheader/indexheaderpb"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/util/filepool"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -542,7 +546,7 @@ func (u *userTSDB) compactBlocks(ctx context.Context) error {
 // buildSparseIndexHeaders builds sparse index-headers for all blocks in the metas list in the directory.
 func (b *TSDBBuilder) buildSparseIndexHeaders(ctx context.Context, dbDir string, metas []tsdb.BlockMeta) error {
 	for _, m := range metas {
-		if err := b.buildSparseIndexHeader(ctx, dbDir, m.ULID); err != nil {
+		if err := b.buildSparseIndexHeader(dbDir, m.ULID); err != nil {
 			return err
 		}
 	}
@@ -550,21 +554,51 @@ func (b *TSDBBuilder) buildSparseIndexHeaders(ctx context.Context, dbDir string,
 }
 
 // prepareSparseIndexHeader builds a sparse index-header for a single block.
-func (b *TSDBBuilder) buildSparseIndexHeader(ctx context.Context, dbDir string, id ulid.ULID) error {
-	// Indexheader code uses a bucket client to read;
-	// construct local-filesystem-backed bucket to read from disk.
-	fsBkt, err := filesystem.NewBucket(dbDir)
-	if err != nil {
-		return err
-	}
-	fsInstrBkt := objstore.WithNoopInstr(fsBkt)
+func (b *TSDBBuilder) buildSparseIndexHeader(dbDir string, blockID ulid.ULID) (err error) {
+	ll := log.With(b.logger, "id", blockID)
+	metrics := filepool.NewFilePoolMetrics(nil)
 
-	// Calling NewStreamBinaryReader reads a block's index and writes a sparse-index-header to disk.
-	metrics := indexheader.NewStreamBinaryReaderMetrics(nil)
-	logger := log.With(b.logger, "id", id)
-	br, err := indexheader.NewStreamBinaryReader(ctx, id, fsInstrBkt, dbDir, b.cfg.BlocksStorage.BucketStore.IndexHeader, b.cfg.BlocksStorage.BucketStore.PostingOffsetsInMemSampling, logger, metrics)
+	blockDir := filepath.Join(dbDir, blockID.String())
+	indexPath := filepath.Join(blockDir, block.IndexFilename)
+	sparseHeaderPath := filepath.Join(blockDir, block.SparseIndexHeaderFilename)
+
+	filePoolDecbufFactory := encoding.NewFilePoolDecbufFactory(indexPath, 0, metrics)
+	defer runutil.CloseWithErrCapture(&err, filePoolDecbufFactory, "build sparse index header")
+
+	indexTOC, err := indexheader.TOCFromDiskTSDBIndex(blockID, dbDir)
 	if err != nil {
 		return err
 	}
-	return br.Close()
+
+	start := time.Now()
+
+	allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, err := indexheader.BuildSparseHeaderFromIndexHeader(
+		indexTOC,
+		filePoolDecbufFactory,
+		b.cfg.BlocksStorage.BucketStore.PostingOffsetsInMemSampling,
+		false, ll,
+	)
+	if err != nil {
+		return fmt.Errorf("cannot build sparse index-header values from full index: %w", err)
+	}
+
+	level.Info(ll).Log("msg", "built sparse index-header values from full index-header",
+		"elapsed", time.Since(start),
+	)
+
+	start = time.Now()
+
+	sparseHeaderProto := &indexheaderpb.Sparse{
+		Symbols:             streamindex.SparseSymbolsToProto(allSymbolsCount, sparseSymbolsOffsets),
+		PostingsOffsetTable: streamindex.SparsePostingsOffsetsTableToProto(sparsePostingsOffsets, b.cfg.BlocksStorage.BucketStore.PostingOffsetsInMemSampling),
+	}
+
+	if err := indexheader.WriteSparseHeaderProtoToDisk(sparseHeaderPath, sparseHeaderProto); err != nil {
+		return fmt.Errorf("failed to write sparse index-header to disk in protobuf format: %w", err)
+	}
+
+	level.Info(ll).Log("msg", "wrote sparse index-header to disk in protobuf format",
+		"elapsed", time.Since(start),
+	)
+	return nil
 }

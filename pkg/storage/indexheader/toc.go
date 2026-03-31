@@ -8,14 +8,18 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
+	"os"
+	"path/filepath"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/runutil"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
 
 	streamencoding "github.com/grafana/mimir/pkg/storage/indexheader/encoding"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
 // TOCCompat unifies the Prometheus TSDB index TOC values available from different index types,
@@ -45,6 +49,73 @@ type TOCCompat struct {
 	PostingsOffsetTable uint64
 }
 
+// TOCFromDiskTSDBIndex builds the TOCCompat from the full Prometheus block index TOC on disk.
+func TOCFromDiskTSDBIndex(blockID ulid.ULID, localTenantDir string) (toc *TOCCompat, err error) {
+	localBlockDir := filepath.Join(localTenantDir, blockID.String())
+	localIndexPath := filepath.Join(localBlockDir, block.IndexFilename)
+
+	f, err := os.Open(localIndexPath) // file will be closed by streamencoding.FileReader wrapper
+	if err != nil {
+		return nil, fmt.Errorf("cannot open index file: %w", err)
+	}
+
+	stat, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("cannot stat index file: %w", err)
+	}
+	indexSize := stat.Size()
+
+	indexReader, _ := streamencoding.NewFileReader(f, 0, int(indexSize), streamencoding.SingleFilePoolCloser{})
+	defer runutil.CloseWithErrCapture(&err, indexReader, "index TOC from block index file")
+
+	magicBytes, err := indexReader.Read(4)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read magic number bytes: %w", err)
+	}
+
+	if magic := binary.BigEndian.Uint32(magicBytes); int(magic) != index.MagicIndex {
+		return nil, fmt.Errorf("invalid magic number %x", magic)
+	}
+
+	indexVersionByte, err := indexReader.Read(1)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read index version byte: %w", err)
+	}
+
+	indexVersion := int(indexVersionByte[0])
+	if indexVersion != index.FormatV2 {
+		return nil, fmt.Errorf("unknown or unsupported index format version %d", indexVersion)
+	}
+
+	tocStartOffset := indexSize - indexTOCLen - crc32.Size
+	tocLen := indexTOCLen + crc32.Size
+
+	if err := indexReader.ResetAt(int(tocStartOffset)); err != nil {
+		return nil, fmt.Errorf("cannot reset reader to index TOC offset: %w", err)
+	}
+
+	tocBytes, err := indexReader.Read(tocLen)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read toc bytes: %w", err)
+	}
+
+	tsdbTOC, err := index.NewTOCFromByteSlice(realByteSlice(tocBytes))
+	if err != nil {
+		return nil, fmt.Errorf("parse index TOC: %w", err)
+	}
+
+	postingsListEnd := tsdbTOC.LabelIndicesTable
+
+	return &TOCCompat{
+		IndexVersion: indexVersion,
+		Symbols:      tsdbTOC.Symbols,
+
+		PostingsListEnd:     postingsListEnd,
+		PostingsOffsetTable: tsdbTOC.PostingsTable,
+	}, nil
+
+}
+
 // TOCFromBucketTSDBIndex builds the TOCCompat from the full Prometheus block index TOC in the bucket.
 // A plain bucket reader is used rather than a bucket-based Decbuf to reduce object storage operations,
 // as the Decbuf interface and implementations are designed for forward scanning.
@@ -57,10 +128,6 @@ func TOCFromBucketTSDBIndex(
 	headerBytes, err := fetchRange(ctx, bkt, indexPath, 0, index.HeaderLen)
 	if err != nil {
 		return nil, fmt.Errorf("read index file header: %w", err)
-	}
-
-	if len(headerBytes) != index.HeaderLen {
-		return nil, fmt.Errorf("unexpected index file header length: %d", len(headerBytes))
 	}
 
 	if magic := binary.BigEndian.Uint32(headerBytes[0:4]); magic != index.MagicIndex {
@@ -91,10 +158,10 @@ func TOCFromBucketTSDBIndex(
 		PostingsListEnd:     postingsListEnd,
 		PostingsOffsetTable: tsdbTOC.PostingsTable,
 	}, nil
-
 }
 
-// TOCFromIndexHeader builds a TOCCompat from the on-disk Mimir index-header BinaryFormatV1.
+// TOCFromIndexHeader builds a TOCCompat from the on-disk Mimir BinaryFormatV1.
+// This format currently only exists on-disk in the store-gateways.
 // The BinaryFormatV1 only has two main sections, which are copies of the Symbols and PostingsOffsets tables,
 // and it has a different layout for the header/metadata and TOC.
 // This results in different offsets for the relevant sections than a full Prometheus block index in the bucket.

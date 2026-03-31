@@ -309,7 +309,7 @@ func TestDecbuf_SkipHappyPath(t *testing.T) {
 func TestDecbuf_SkipMultipleBufferReads(t *testing.T) {
 	tb := test.NewTB(t)
 
-	// The underlying fileReader buffers the file 4k bytes at a time. Ensure
+	// The underlying FileReader buffers the file 4k bytes at a time. Ensure
 	// that we can skip multiple 4k chunks without ending up with a short read.
 	bytes := make([]byte, 4096*5)
 	for i := 0; i < len(bytes); i++ {

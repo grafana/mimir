@@ -18,9 +18,10 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/runutil"
-	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/oklog/ulid/v2"
 	"github.com/thanos-io/objstore"
+
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 
 	streamencoding "github.com/grafana/mimir/pkg/storage/indexheader/encoding"
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
@@ -29,13 +30,13 @@ import (
 	"github.com/grafana/mimir/pkg/util/atomicfs"
 )
 
-// ensureSparseHeaderOnDisk writes the sparse index-header to disk from the bucket if not already on disk.
+// DownloadSparseHeaderToDisk writes the sparse index-header to disk from the bucket if not already on disk.
 // It does not load the sparse header values into memory - to do so, use LoadExistingSparseHeader.
 //
 // It intended for only a best-effort attempt to get the file downloaded during initial lazy reader creation.
 // The lazy reader can ignore the failure to find the sparse header on disk or in the bucket
 // and later trigger a full rebuild of the sparse header with BuildSparseHeaderFromIndexHeader.
-func ensureSparseHeaderOnDisk(
+func DownloadSparseHeaderToDisk(
 	ctx context.Context,
 	blockID ulid.ULID,
 	tenantBkt objstore.InstrumentedBucketReader,
@@ -52,7 +53,7 @@ func ensureSparseHeaderOnDisk(
 	}
 
 	level.Debug(ll).Log("msg", "sparse index-header does not exist on disk; will try bucket")
-	bucketSparseHeaderBytes, err := getBucketSparseHeaderBytes(ctx, blockID, tenantBkt, ll)
+	bucketSparseHeaderBytes, err := GetBucketSparseHeaderBytes(ctx, blockID, tenantBkt, ll)
 	if err != nil {
 		return err
 	}
@@ -92,7 +93,7 @@ func LoadExistingSparseHeader(
 			"msg", "sparse index-header not found on local disk; will try bucket",
 			"path", localSparseHeaderPath, "err", err,
 		)
-		gzipSparseHeaderBytes, err = getBucketSparseHeaderBytes(ctx, blockID, tenantBkt, ll)
+		gzipSparseHeaderBytes, err = GetBucketSparseHeaderBytes(ctx, blockID, tenantBkt, ll)
 		if err != nil {
 			// Not present or not readable from bucket either
 			if tenantBkt.IsObjNotFoundErr(err) {
@@ -119,7 +120,7 @@ func LoadExistingSparseHeader(
 
 	// If we reach this point, we got the zipped sparse header from disk or bucket. Unmarshall the proto.
 	sparseHeaderProto := &indexheaderpb.Sparse{}
-	if sparseHeaderBytes, err := unzipSparseHeader(gzipSparseHeaderBytes, ll); err != nil {
+	if sparseHeaderBytes, err := UnzipSparseHeader(gzipSparseHeaderBytes, ll); err != nil {
 		level.Error(spanLog).Log(
 			"msg", "failed to unzip sparse index-header file",
 			"err", err,
@@ -148,10 +149,10 @@ func LoadExistingSparseHeader(
 	return allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, nil
 }
 
-// getBucketSparseHeaderBytes reads the raw sparse header bytes from object storage.
+// GetBucketSparseHeaderBytes reads the raw sparse header bytes from object storage.
 // The bucket reader passed in must be prefixed with the tenant ID TSDB path in the object storage.
 // This does not write the header bytes to local disk.
-func getBucketSparseHeaderBytes(
+func GetBucketSparseHeaderBytes(
 	ctx context.Context,
 	id ulid.ULID,
 	tenantBkt objstore.InstrumentedBucketReader,
@@ -175,7 +176,7 @@ func getBucketSparseHeaderBytes(
 	return data, nil
 }
 
-func unzipSparseHeader(gZippedSparseData []byte, ll log.Logger) ([]byte, error) {
+func UnzipSparseHeader(gZippedSparseData []byte, ll log.Logger) ([]byte, error) {
 	gzipped := bytes.NewReader(gZippedSparseData)
 	gzipReader, err := gzip.NewReader(gzipped)
 	if err != nil {
@@ -225,7 +226,7 @@ func BuildSparseHeaderFromIndexHeader(
 	return allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, nil
 }
 
-func writeSparseHeaderProtoToDisk(path string, sparseHeaders *indexheaderpb.Sparse) error {
+func WriteSparseHeaderProtoToDisk(path string, sparseHeaders *indexheaderpb.Sparse) error {
 	out, err := sparseHeaders.Marshal()
 	if err != nil {
 		return fmt.Errorf("failed to marshall sparse index-header: %w", err)

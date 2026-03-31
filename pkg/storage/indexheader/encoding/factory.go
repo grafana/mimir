@@ -85,7 +85,7 @@ func (df *FilePoolDecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Tab
 
 	contentLength := int(binary.BigEndian.Uint32(lengthBytes))
 	bufferLength := len(lengthBytes) + contentLength + crc32.Size
-	r, err := newFileReader(f, offset, bufferLength, df.files)
+	r, err := NewFileReader(f, offset, bufferLength, df.files)
 	if err != nil {
 		return Decbuf{E: errors.Wrap(err, "create file reader")}
 	}
@@ -134,7 +134,7 @@ func (df *FilePoolDecbufFactory) NewRawDecbuf() Decbuf {
 	}
 
 	fileSize := stat.Size()
-	reader, err := newFileReader(f, 0, int(fileSize), df.files)
+	reader, err := NewFileReader(f, 0, int(fileSize), df.files)
 	if err != nil {
 		return Decbuf{E: errors.Wrap(err, "file reader for decbuf")}
 	}

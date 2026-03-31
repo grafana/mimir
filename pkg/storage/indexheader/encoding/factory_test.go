@@ -110,15 +110,15 @@ func TestDecbufFactory_NewDecbufAtChecked_MultipleInstances(t *testing.T) {
 
 	d1 := factory.NewDecbufAtChecked(0, table)
 	require.NoError(t, d1.Err())
-	fr1, ok := d1.r.(*fileReader)
-	require.True(t, ok, "expected fileReader")
+	fr1, ok := d1.r.(*FileReader)
+	require.True(t, ok, "expected FileReader")
 	fd1 := fr1.file.Fd()
 	require.NoError(t, d1.Close())
 
 	d2 := factory.NewDecbufAtChecked(0, table)
 	require.NoError(t, d2.Err())
-	fr2, ok := d2.r.(*fileReader)
-	require.True(t, ok, "expected fileReader")
+	fr2, ok := d2.r.(*FileReader)
+	require.True(t, ok, "expected FileReader")
 	fd2 := fr2.file.Fd()
 	require.NoError(t, d2.Close())
 
