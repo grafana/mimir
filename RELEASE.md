@@ -195,6 +195,7 @@ the new release branch (prepare-release-X.Y -> release-X.Y):
      error: gpg failed to sign the data
      error: unable to sign the tag
      ```
+
      - Follow the steps [here](https://docs.github.com/en/authentication/managing-commit-signature-verification/telling-git-about-your-signing-key#telling-git-about-your-gpg-key) to tell Git about your GPG key.
 1. Update the version number in the `VERSION` file to say `X.Y-rc.0`
 1. Update `CHANGELOG.md`

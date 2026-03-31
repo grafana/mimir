@@ -131,7 +131,6 @@ How to **fix** it:
 
 4. **Ensure that per-tenant maximum series limits are close to actual utilization levels**<br />
    When investigating this alert, ensure that each per-tenant maximum series limit is not significantly higher than the actual utilization level. If the per-tenant `max_global_series_per_user` limit is close to the actual utilization level and ingesters are autoscaled based on owned active series, the `max_series` per ingester instance limit should rarely be reached.
-
    1. Run the following instant query to identify tenants with a maximum series limit that is significantly above the utilization level and can put the Mimir cluster at risk:
 
       ```
@@ -789,7 +788,6 @@ When this alert fires, the compactor may still have successfully compacted some 
 How to **investigate**:
 
 - Look for any error in the compactor logs
-
   - Corruption: [`not healthy index found`](#compactor-is-failing-because-of-not-healthy-index-found)
   - Invalid result block:
     - **How to detect**: Search compactor logs for `invalid result block`.
@@ -808,7 +806,6 @@ How to **investigate**:
           ```
           For examples using AWS S3 or Azure, see [How to use the mark-blocks tool](#how-to-use-the-mark-blocks-tool).
   - Result block exceeds symbol table maximum size:
-
     - **How to detect**: Search compactor logs for `symbol table size exceeds`.
     - **What it means**: The compactor successfully validated the source blocks. But the resulting block is impossible to write due to the error above.
     - This is caused by too many series being stored in the blocks, which indicates that `-compactor.split-and-merge-shards` is too low for the tenant. Could be also an indication of very high churn in labels causing label cardinality explosion.
@@ -827,7 +824,6 @@ How to **investigate**:
     - Further reading: [Compaction algorithm](../../references/architecture/components/compactor/#compaction-algorithm).
 
   - Ring failures:
-
     - **How to detect**:
       - Search compactor logs for `unhealthy instances`.
       - Check the [compactor ring web page](../../references/http-api/#compactor-ring-status) for unhealthy instances.
@@ -840,7 +836,6 @@ How to **investigate**:
     - **How to mitigate**: Unknown. This typically self-resolves after ten to twenty minutes.
 
 - Check the [Compactor Dashboard](../monitor-grafana-mimir/dashboards/compactor/) and set it to view the last 7 days.
-
   - Compactor has fallen behind:
     - **How to detect**:
       - Check the `Last successful run per-compactor replica` panel - are there recent runs in the last 6-12 hours?
@@ -1288,7 +1283,6 @@ How to **investigate**:
   matched by the `gossip-ring` service and then getting endpoints truncated to 1000 is not an issue per-se, but it's
   an issue if you're running a version of Kubernetes affected by the mentioned bug.
 - If you've been affected by the Kubernetes bug:
-
   1. Stop the bleed re-creating the service endpoints list
 
      ```sh
@@ -1521,6 +1515,7 @@ How to **investigate**:
     ```
     topk(10, sum by(user) (rate(cortex_distributor_samples_in_total{namespace="<namespace>"}[$__rate_interval])))
     ```
+
     - In case you need to quickly reject write path traffic from a single tenant, you can override its `ingestion_rate` and `ingestion_rate_burst` setting lower values (so that some/most of their traffic will be rejected)
 
 ### MimirAutoscalerNotActive
@@ -1768,7 +1763,6 @@ How it **works**:
 How to **investigate** and **fix** it:
 
 - Check the `Mimir / Compactor` dashboard
-
   - Ensure the compactor is healthy and running successfully.
     - The "Last successful run per-compactor replica" panel should show all compactors are running Ok and none of them having Delayed, Late or Very Late status.
     - "Tenants with largest number of blocks" must not be trending upwards
@@ -1777,13 +1771,11 @@ How to **investigate** and **fix** it:
     - If the compactor is lagging behind or there are many blocks to compactor, temporarily increase increase the compactor replicas to let the compactor catching up quickly.
 
 - Check the `Mimir / Reads resources` dashboard
-
   - Check if disk utilization is nearly balanced between store-gateway replicas (e.g. a 20-30% variance between replicas is expected)
     - If disk utilization is nearly balanced you can scale out store-gateway replicas to lower disk utilization on average
     - If disk utilization is unbalanced you may consider the other options before scaling out store-gateways
 
 - Check if disk utilization unbalance is caused by shuffle sharding
-
   - Investigate which tenants use most of the store-gateway disk in the replicas with highest disk utilization. You can query the `cortex_bucket_store_blocks_loaded_size_bytes` metric to see per-tenant disk utilization across all store-gateway replicas. For example, to find the top 10 tenants by disk utilization on a specific store-gateway pod:
 
     ```
@@ -1799,7 +1791,6 @@ How to **investigate** and **fix** it:
   - Check the configured `-store-gateway.tenant-shard-size` (`store_gateway_tenant_shard_size`) of each tenant that mostly contributes to disk utilization. Consider increase the tenant's the shard size if it's smaller than the number of available store-gateway replicas (a value of `0` disables shuffle sharding for the tenant, effectively sharding their blocks across all replicas).
 
 - Check if disk utilization unbalance is caused by a tenant with uneven block sizes
-
   - Even if a tenant has no shuffle sharding and their blocks are sharded across all replicas, it may still cause unbalance in store-gateway disk utilization if the size of their blocks dramatically changed over time (e.g. because the number of series per block significantly changed over time). As a proxy metric, the number of series per block is roughly the total number of series across all blocks for the largest `-compactor.block-ranges` (default is 24h) divided by the number of `-compactor.split-and-merge-shards` (`compactor_split_and_merge_shards`).
   - If you suspect this may be an issue:
     - Check the number of series in each block in the store-gateway blocks list for the affected tenant, through the web page exposed by the store-gateway at `/store-gateway/tenant/<tenant ID>/blocks`
@@ -1807,7 +1798,6 @@ How to **investigate** and **fix** it:
     - Check the configured `compactor_split_and_merge_shards` for the tenant. A reasonable rule of thumb is 8-10 million series per compactor shard - if the number of series per shard is above this range, increase `compactor_split_and_merge_shards` for the affected tenant(s) accordingly.
 
 - Check if the persistent volume is nearing its limit and determine if it needs to be increased.
-
   - If persistent volume resizing is required for store-gateways and automatic downscaling is enabled, you must disable it before proceeding with the resizing process. This step is necessary to prevent any unexpected downscaling by the rollout operator while updating the stateful set for each zone. To disable automatic downscaling for store-gateways,
     set `$._config.store_gateway_automated_downscale_enabled = false`.
 
@@ -2117,7 +2107,6 @@ How to **fix**:
   - Add more CPU/memory/disk to ingesters, depending on the saturated resources.
   - Increase the ingester max series instance limit (see [`MimirIngesterReachingSeriesLimit`](#MimirIngesterReachingSeriesLimit) runbook).
 - **Skip replaying overloading backlog from partition** (data loss)
-
   1. Ensure ingesters have been scaled out, and the new partitions are ACTIVE in the partitions ring. If autoscaler didn't scaled out ingesters yet, manually add more ingester replicas (e.g. increasing HPA min replicas or manually setting the desired number of ingester replicas if ingester autoscaling is disabled).
   1. Find out the timestamp at which new partitions were created and became ACTIVE in the ring (e.g. looking at new ingesters logs).
   1. Temporarily restart ingesters with the following configuration:
@@ -2205,7 +2194,6 @@ If you just need to "rewind" the commit for a number of partitions so block-buil
    `kafka-consumer-groups.sh --group $BLOCK_BUILDER_GROUP --topic $TOPIC:$PARTITION --reset-offsets --to-offset $OFFSET --dry-run`
 
    where:
-
    - `BLOCK_BUILDER_GROUP` is the consumer group specified in the `block-builder-scheduler` configuration. ("block-builder" by default.)
    - `TOPIC` is the Kafka topic specified in the `block-builder-scheduler` configuration.
    - `PARTITION` and `OFFSET` are the first pair of items located in step 1
