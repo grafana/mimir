@@ -40,33 +40,84 @@ func parseBlockedQueriesYAML(t *testing.T, yamlStr string) []validation.BlockedQ
 	return limits.BlockedQueries
 }
 
-func TestQueryBlockerMiddleware_RangeAndInstantQuery(t *testing.T) {
+func TestQueryBlockerMiddleware(t *testing.T) {
 	now := time.Now()
+
+	var (
+		step           = time.Minute
+		alignedStart   = timestamp.Time(0).Add(100 * step)
+		alignedEnd     = alignedStart.Add(time.Hour)
+		unalignedStart = alignedStart.Add(2 * time.Second)
+		unalignedEnd   = unalignedStart.Add(time.Hour)
+	)
+
+	step30s := (30 * time.Second).Milliseconds()
+	step1m := time.Minute.Milliseconds()
+	step5m := (5 * time.Minute).Milliseconds()
+
+	rangeReq := func(query string, start, end time.Time, stepMs int64) func(t *testing.T) MetricsQueryRequest {
+		return func(t *testing.T) MetricsQueryRequest {
+			return &PrometheusRangeQueryRequest{
+				queryExpr: parseQuery(t, query),
+				start:     start.UnixMilli(),
+				end:       end.UnixMilli(),
+				step:      stepMs,
+			}
+		}
+	}
+	rangeReqAligned := func(query string, stepMs int64) func(t *testing.T) MetricsQueryRequest {
+		return rangeReq(query, alignedStart, alignedEnd, stepMs)
+	}
+	rangeReqUnaligned := func(query string, stepMs int64) func(t *testing.T) MetricsQueryRequest {
+		return rangeReq(query, unalignedStart, unalignedEnd, stepMs)
+	}
+	defaultRangeReq := func(t *testing.T) MetricsQueryRequest {
+		return rangeReq("rate(metric_counter[5m])", now.Add(-time.Hour), now, 0)(t)
+	}
+	instantReq := func(query string) func(t *testing.T) MetricsQueryRequest {
+		return func(t *testing.T) MetricsQueryRequest {
+			return &PrometheusInstantQueryRequest{
+				queryExpr: parseQuery(t, query),
+				time:      now.UnixMilli(),
+			}
+		}
+	}
+	remoteReadReq := func(matchers ...*prompb.LabelMatcher) func(t *testing.T) MetricsQueryRequest {
+		req := mustSucceed(remoteReadToMetricsQueryRequest(remoteReadPathSuffix, &prompb.Query{Matchers: matchers}))
+		return func(_ *testing.T) MetricsQueryRequest { return req }
+	}
+
 	tests := []struct {
-		name                   string
-		query                  string
-		queryStart             time.Time
-		queryEnd               time.Time
-		limitsYAML             string
-		expectedBlockedRange   bool
-		expectedBlockedInstant bool
+		name            string
+		limitsYAML      string
+		makeReq         func(t *testing.T) MetricsQueryRequest
+		expectedBlocked bool
 	}{
+		// ── pattern matching (range) ──────────────────────────────────────────
 		{
-			name:                   "empty limits",
-			query:                  "rate(metric_counter[5m])",
-			expectedBlockedRange:   false,
-			expectedBlockedInstant: false,
+			name:            "empty limits (range)",
+			makeReq:         defaultRangeReq,
+			expectedBlocked: false,
 		},
 		{
-			name: "single line non-regex pattern",
+			name: "single line non-regex pattern (range)",
 			limitsYAML: `
 blocked_queries:
   - pattern: "rate(metric_counter[5m])"
     regex: false
 `,
-			query:                  "rate(metric_counter[5m])",
-			expectedBlockedRange:   true,
-			expectedBlockedInstant: true,
+			makeReq:         rangeReq("rate(metric_counter[5m])", now.Add(-time.Hour), now, 0),
+			expectedBlocked: true,
+		},
+		{
+			name: "single line non-regex pattern (instant)",
+			limitsYAML: `
+blocked_queries:
+  - pattern: "rate(metric_counter[5m])"
+    regex: false
+`,
+			makeReq:         instantReq("rate(metric_counter[5m])"),
+			expectedBlocked: true,
 		},
 		{
 			name: "non-canonical pattern - label order differs",
@@ -75,9 +126,8 @@ blocked_queries:
   - pattern: 'up{pod="test", job="test"}'
     regex: false
 `,
-			query:                  `up{job="test",pod="test"}`, // Query has labels in different order
-			expectedBlockedRange:   true,
-			expectedBlockedInstant: true,
+			makeReq:         rangeReq(`up{job="test",pod="test"}`, now.Add(-time.Hour), now, 0),
+			expectedBlocked: true,
 		},
 		{
 			name: "non-canonical pattern - extra whitespace and trailing comma",
@@ -86,9 +136,8 @@ blocked_queries:
   - pattern: 'up{ job="test" , pod="test" , }'
     regex: false
 `,
-			query:                  `up{job="test",pod="test"}`, // Query is canonical (no extra whitespace/comma)
-			expectedBlockedRange:   true,
-			expectedBlockedInstant: true,
+			makeReq:         rangeReq(`up{job="test",pod="test"}`, now.Add(-time.Hour), now, 0),
+			expectedBlocked: true,
 		},
 		{
 			name: "non-canonical pattern - function with extra whitespace",
@@ -97,9 +146,8 @@ blocked_queries:
   - pattern: 'rate( metric_counter[ 5m ] )'
     regex: false
 `,
-			query:                  `rate(metric_counter[5m])`, // Query is canonical (no extra whitespace)
-			expectedBlockedRange:   true,
-			expectedBlockedInstant: true,
+			makeReq:         rangeReq(`rate(metric_counter[5m])`, now.Add(-time.Hour), now, 0),
+			expectedBlocked: true,
 		},
 		{
 			name: "non-canonical pattern - aggregation with extra whitespace",
@@ -108,9 +156,8 @@ blocked_queries:
   - pattern: 'sum( rate(metric_counter[5m]) )'
     regex: false
 `,
-			query:                  `sum(rate(metric_counter[5m]))`, // Query is canonical (no extra whitespace)
-			expectedBlockedRange:   true,
-			expectedBlockedInstant: true,
+			makeReq:         rangeReq(`sum(rate(metric_counter[5m]))`, now.Add(-time.Hour), now, 0),
+			expectedBlocked: true,
 		},
 		{
 			name: "non-canonical pattern - aggregation with by() and extra whitespace",
@@ -119,9 +166,8 @@ blocked_queries:
   - pattern: 'sum( rate(metric_counter[5m]) ) by ( job , pod )'
     regex: false
 `,
-			query:                  `sum(rate(metric_counter[5m])) by(job,pod)`, // Query is canonical (no extra whitespace)
-			expectedBlockedRange:   true,
-			expectedBlockedInstant: true,
+			makeReq:         rangeReq(`sum(rate(metric_counter[5m])) by(job,pod)`, now.Add(-time.Hour), now, 0),
+			expectedBlocked: true,
 		},
 		{
 			name: "by() labels not sorted - different order",
@@ -130,9 +176,8 @@ blocked_queries:
   - pattern: 'sum(rate(metric_counter[5m])) by(job,pod)'
     regex: false
 `,
-			query:                  `sum(rate(metric_counter[5m])) by(pod,job)`, // Different label order in by()
-			expectedBlockedRange:   false,
-			expectedBlockedInstant: false,
+			makeReq:         rangeReq(`sum(rate(metric_counter[5m])) by(pod,job)`, now.Add(-time.Hour), now, 0),
+			expectedBlocked: false,
 		},
 		{
 			name: "different pattern",
@@ -141,9 +186,8 @@ blocked_queries:
   - pattern: "rate(metric_counter[5m])"
     regex: false
 `,
-			query:                  "rate(metric_counter[15m])",
-			expectedBlockedRange:   false,
-			expectedBlockedInstant: false,
+			makeReq:         rangeReq("rate(metric_counter[15m])", now.Add(-time.Hour), now, 0),
+			expectedBlocked: false,
 		},
 		{
 			name: "multiple line non-regex pattern",
@@ -152,13 +196,12 @@ blocked_queries:
   - pattern: "rate(metric_counter[5m]) / rate(other_counter[5m])"
     regex: false
 `,
-			query: `
+			makeReq: rangeReq(`
 				rate(metric_counter[5m])
 				/
 				rate(other_counter[5m])
-			`,
-			expectedBlockedRange:   true,
-			expectedBlockedInstant: true,
+			`, now.Add(-time.Hour), now, 0),
+			expectedBlocked: true,
 		},
 		{
 			name: "multiple line different pattern",
@@ -167,13 +210,12 @@ blocked_queries:
   - pattern: "rate(metric_counter[5m])"
     regex: false
 `,
-			query: `
+			makeReq: rangeReq(`
 				rate(metric_counter[15m])
 				/
 				rate(other_counter[15m])
-			`,
-			expectedBlockedRange:   false,
-			expectedBlockedInstant: false,
+			`, now.Add(-time.Hour), now, 0),
+			expectedBlocked: false,
 		},
 		{
 			name: "single line regex pattern",
@@ -182,9 +224,8 @@ blocked_queries:
   - pattern: ".*metric_counter.*"
     regex: true
 `,
-			query:                  "rate(metric_counter[5m])",
-			expectedBlockedRange:   true,
-			expectedBlockedInstant: true,
+			makeReq:         rangeReq("rate(metric_counter[5m])", now.Add(-time.Hour), now, 0),
+			expectedBlocked: true,
 		},
 		{
 			name: "block all queries with .* regex",
@@ -194,9 +235,8 @@ blocked_queries:
     regex: true
     reason: "all queries are blocked"
 `,
-			query:                  "up",
-			expectedBlockedRange:   true,
-			expectedBlockedInstant: true,
+			makeReq:         rangeReq("up", now.Add(-time.Hour), now, 0),
+			expectedBlocked: true,
 		},
 		{
 			name: "multiple line regex pattern",
@@ -205,13 +245,12 @@ blocked_queries:
   - pattern: "(?s).*metric_counter.*"
     regex: true
 `,
-			query: `
+			makeReq: rangeReq(`
 				rate(other_counter[15m])
 				/
 				rate(metric_counter[15m])
-			`,
-			expectedBlockedRange:   true,
-			expectedBlockedInstant: true,
+			`, now.Add(-time.Hour), now, 0),
+			expectedBlocked: true,
 		},
 		{
 			name: "regex not canonicalized - out-of-order labels don't match",
@@ -220,9 +259,8 @@ blocked_queries:
   - pattern: 'up\{pod="test",job="test"\}'
     regex: true
 `,
-			query:                  `up{job="test",pod="test"}`, // Canonical query has different label order
-			expectedBlockedRange:   false,
-			expectedBlockedInstant: false,
+			makeReq:         rangeReq(`up{job="test",pod="test"}`, now.Add(-time.Hour), now, 0),
+			expectedBlocked: false,
 		},
 		{
 			name: "regex not canonicalized - extra whitespace",
@@ -231,9 +269,8 @@ blocked_queries:
   - pattern: 'rate\( metric_counter\[ 5m \] \)'
     regex: true
 `,
-			query:                  `rate(metric_counter[5m])`, // Canonical query has no extra whitespace
-			expectedBlockedRange:   false,
-			expectedBlockedInstant: false,
+			makeReq:         rangeReq(`rate(metric_counter[5m])`, now.Add(-time.Hour), now, 0),
+			expectedBlocked: false,
 		},
 		{
 			name: "invalid regex pattern",
@@ -242,9 +279,8 @@ blocked_queries:
   - pattern: "[a-9}"
     regex: true
 `,
-			query:                  "rate(metric_counter[5m])",
-			expectedBlockedRange:   false,
-			expectedBlockedInstant: false,
+			makeReq:         rangeReq("rate(metric_counter[5m])", now.Add(-time.Hour), now, 0),
+			expectedBlocked: false,
 		},
 		{
 			name: "invalid regex pattern with time_range_longer_than",
@@ -255,11 +291,8 @@ blocked_queries:
     time_range_longer_than: "1h"
     reason: "invalid regex - must bail out to avoid matching all queries"
 `,
-			query:                  "rate(metric_counter[5m])",
-			queryStart:             now.Add(-25 * time.Hour), // Over 1h threshold
-			queryEnd:               now,
-			expectedBlockedRange:   false, // Must bail out, invalid regex could match anything
-			expectedBlockedInstant: false,
+			makeReq:         rangeReq("rate(metric_counter[5m])", now.Add(-25*time.Hour), now, 0),
+			expectedBlocked: false,
 		},
 		{
 			name: "literal pattern with regex metacharacters and regex: true",
@@ -269,22 +302,29 @@ blocked_queries:
     regex: true
     reason: "literal pattern accidentally marked as regex"
 `,
-			query:                  "rate(metric_counter[5m])",
-			expectedBlockedRange:   true,
-			expectedBlockedInstant: true,
+			makeReq:         rangeReq("rate(metric_counter[5m])", now.Add(-time.Hour), now, 0),
+			expectedBlocked: true,
 		},
+		// ── time_range_longer_than ────────────────────────────────────────────
 		{
-			name: "time range longer than threshold",
+			name: "time range longer than threshold (range - blocked)",
 			limitsYAML: `
 blocked_queries:
   - time_range_longer_than: "24h"
     reason: "queries longer than 1 day are not allowed"
 `,
-			query:                  "up",
-			queryStart:             now.Add(-48 * time.Hour),
-			queryEnd:               now,
-			expectedBlockedRange:   true,
-			expectedBlockedInstant: false,
+			makeReq:         rangeReq("up", now.Add(-48*time.Hour), now, 0),
+			expectedBlocked: true,
+		},
+		{
+			name: "time range longer than threshold (instant - not blocked)",
+			limitsYAML: `
+blocked_queries:
+  - time_range_longer_than: "24h"
+    reason: "queries longer than 1 day are not allowed"
+`,
+			makeReq:         instantReq("up"),
+			expectedBlocked: false,
 		},
 		{
 			name: "time range under threshold",
@@ -292,14 +332,11 @@ blocked_queries:
 blocked_queries:
   - time_range_longer_than: "24h"
 `,
-			query:                  "up",
-			queryStart:             now.Add(-12 * time.Hour),
-			queryEnd:               now,
-			expectedBlockedRange:   false,
-			expectedBlockedInstant: false,
+			makeReq:         rangeReq("up", now.Add(-12*time.Hour), now, 0),
+			expectedBlocked: false,
 		},
 		{
-			name: "pattern matches AND time range longer than threshold",
+			name: "pattern matches AND time range longer than threshold (range - blocked)",
 			limitsYAML: `
 blocked_queries:
   - pattern: ".*expensive.*"
@@ -307,11 +344,20 @@ blocked_queries:
     time_range_longer_than: "24h"
     reason: "expensive queries over 1 day are blocked"
 `,
-			query:                  "rate(expensive_metric[5m])",
-			queryStart:             now.Add(-2 * 24 * time.Hour), // 2 days
-			queryEnd:               now,
-			expectedBlockedRange:   true,
-			expectedBlockedInstant: false,
+			makeReq:         rangeReq("rate(expensive_metric[5m])", now.Add(-2*24*time.Hour), now, 0),
+			expectedBlocked: true,
+		},
+		{
+			name: "pattern matches AND time range longer than threshold (instant - not blocked)",
+			limitsYAML: `
+blocked_queries:
+  - pattern: ".*expensive.*"
+    regex: true
+    time_range_longer_than: "24h"
+    reason: "expensive queries over 1 day are blocked"
+`,
+			makeReq:         instantReq("rate(expensive_metric[5m])"),
+			expectedBlocked: false,
 		},
 		{
 			name: "pattern matches but time range under threshold",
@@ -321,11 +367,8 @@ blocked_queries:
     regex: true
     time_range_longer_than: "168h"
 `,
-			query:                  "rate(expensive_metric[5m])",
-			queryStart:             now.Add(-2 * 24 * time.Hour), // 2 days - under threshold
-			queryEnd:               now,
-			expectedBlockedRange:   false,
-			expectedBlockedInstant: false,
+			makeReq:         rangeReq("rate(expensive_metric[5m])", now.Add(-2*24*time.Hour), now, 0),
+			expectedBlocked: false,
 		},
 		{
 			name: "different pattern but time range longer than threshold",
@@ -335,94 +378,10 @@ blocked_queries:
     regex: true
     time_range_longer_than: "168h"
 `,
-			query:                  "rate(cheap_metric[5m])",
-			queryStart:             now.Add(-10 * 24 * time.Hour), // 10 days - over threshold
-			queryEnd:               now,
-			expectedBlockedRange:   false,
-			expectedBlockedInstant: false,
+			makeReq:         rangeReq("rate(cheap_metric[5m])", now.Add(-10*24*time.Hour), now, 0),
+			expectedBlocked: false,
 		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var limits mockLimits
-			if tt.limitsYAML != "" {
-				limits.blockedQueries = parseBlockedQueriesYAML(t, tt.limitsYAML)
-			}
-
-			// Set default times for range queries if not specified
-			start := tt.queryStart
-			end := tt.queryEnd
-			if start.IsZero() {
-				start = now.Add(-1 * time.Hour)
-			}
-			if end.IsZero() {
-				end = now
-			}
-			reqs := map[string]MetricsQueryRequest{
-				"range query": &PrometheusRangeQueryRequest{
-					queryExpr: parseQuery(t, tt.query),
-					start:     start.UnixMilli(),
-					end:       end.UnixMilli(),
-				},
-				"instant query": &PrometheusInstantQueryRequest{
-					queryExpr: parseQuery(t, tt.query),
-					time:      now.UnixMilli(),
-				},
-			}
-
-			for reqType, req := range reqs {
-				t.Run(reqType, func(t *testing.T) {
-					var expectBlocked bool
-					if reqType == "instant query" {
-						expectBlocked = tt.expectedBlockedInstant
-					} else {
-						expectBlocked = tt.expectedBlockedRange
-					}
-
-					reg := prometheus.NewPedanticRegistry()
-					blockedQueriesCounter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-						Name: "cortex_query_frontend_rejected_queries_total",
-						Help: "Number of queries that were rejected by the cluster administrator.",
-					}, []string{"user", "reason"})
-					logger := log.NewNopLogger()
-					mw := newQueryBlockerMiddleware(limits, logger, blockedQueriesCounter)
-					_, err := mw.Wrap(&mockNextHandler{t: t, shouldContinue: !expectBlocked}).Do(user.InjectOrgID(context.Background(), "test"), req)
-
-					if expectBlocked {
-						require.Error(t, err)
-						require.Contains(t, err.Error(), globalerror.QueryBlocked)
-						require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
-							# HELP cortex_query_frontend_rejected_queries_total Number of queries that were rejected by the cluster administrator.
-							# TYPE cortex_query_frontend_rejected_queries_total counter
-							cortex_query_frontend_rejected_queries_total{reason="blocked", user="test"} 1
-						`)))
-					} else {
-						require.NoError(t, err)
-						require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(``)))
-					}
-				})
-			}
-		})
-	}
-}
-
-func TestQueryBlockerMiddleware_UnalignedRangeQueries(t *testing.T) {
-	var (
-		step           = time.Minute
-		alignedStart   = timestamp.Time(0).Add(100 * step)
-		alignedEnd     = alignedStart.Add(time.Hour)
-		unalignedStart = alignedStart.Add(2 * time.Second) // not a multiple of step
-		unalignedEnd   = unalignedStart.Add(time.Hour)
-	)
-
-	tests := []struct {
-		name            string
-		query           string
-		limitsYAML      string
-		start, end      time.Time
-		expectedBlocked bool
-	}{
+		// ── unaligned_range_queries ───────────────────────────────────────────
 		{
 			name: "unaligned range query is blocked when unaligned_range_queries is true",
 			limitsYAML: `
@@ -430,9 +389,7 @@ blocked_queries:
   - pattern: "rate(metric_counter[5m])"
     unaligned_range_queries: true
 `,
-			query:           "rate(metric_counter[5m])",
-			start:           unalignedStart,
-			end:             unalignedEnd,
+			makeReq:         rangeReqUnaligned("rate(metric_counter[5m])", step.Milliseconds()),
 			expectedBlocked: true,
 		},
 		{
@@ -442,9 +399,7 @@ blocked_queries:
   - pattern: "rate(metric_counter[5m])"
     unaligned_range_queries: true
 `,
-			query:           "rate(metric_counter[5m])",
-			start:           alignedStart,
-			end:             alignedEnd,
+			makeReq:         rangeReqAligned("rate(metric_counter[5m])", step.Milliseconds()),
 			expectedBlocked: false,
 		},
 		{
@@ -454,9 +409,7 @@ blocked_queries:
   - pattern: "rate(metric_counter[5m])"
     unaligned_range_queries: false
 `,
-			query:           "rate(metric_counter[5m])",
-			start:           unalignedStart,
-			end:             unalignedEnd,
+			makeReq:         rangeReqUnaligned("rate(metric_counter[5m])", step.Milliseconds()),
 			expectedBlocked: true,
 		},
 		{
@@ -466,9 +419,7 @@ blocked_queries:
   - pattern: "rate(metric_counter[5m])"
     unaligned_range_queries: false
 `,
-			query:           "rate(metric_counter[5m])",
-			start:           alignedStart,
-			end:             alignedEnd,
+			makeReq:         rangeReqAligned("rate(metric_counter[5m])", step.Milliseconds()),
 			expectedBlocked: true,
 		},
 		{
@@ -479,9 +430,7 @@ blocked_queries:
     regex: true
     unaligned_range_queries: true
 `,
-			query:           "rate(metric_counter[5m])",
-			start:           unalignedStart,
-			end:             unalignedEnd,
+			makeReq:         rangeReqUnaligned("rate(metric_counter[5m])", step.Milliseconds()),
 			expectedBlocked: true,
 		},
 		{
@@ -492,9 +441,7 @@ blocked_queries:
     regex: true
     unaligned_range_queries: true
 `,
-			query:           "rate(metric_counter[5m])",
-			start:           alignedStart,
-			end:             alignedEnd,
+			makeReq:         rangeReqAligned("rate(metric_counter[5m])", step.Milliseconds()),
 			expectedBlocked: false,
 		},
 		{
@@ -506,181 +453,257 @@ blocked_queries:
   - pattern: "rate(metric_counter[5m])"
     reason: "blocked by second rule"
 `,
-			query:           "rate(metric_counter[5m])",
-			start:           alignedStart,
-			end:             alignedEnd,
+			makeReq:         rangeReqAligned("rate(metric_counter[5m])", step.Milliseconds()),
 			expectedBlocked: true,
 		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			limits := mockLimits{blockedQueries: parseBlockedQueriesYAML(t, tt.limitsYAML)}
-
-			req := &PrometheusRangeQueryRequest{
-				queryExpr: parseQuery(t, tt.query),
-				start:     timestamp.FromTime(tt.start),
-				end:       timestamp.FromTime(tt.end),
-				step:      step.Milliseconds(),
-			}
-
-			reg := prometheus.NewPedanticRegistry()
-			blockedQueriesCounter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-				Name: "cortex_query_frontend_rejected_queries_total",
-				Help: "Number of queries that were rejected by the cluster administrator.",
-			}, []string{"user", "reason"})
-			logger := log.NewNopLogger()
-			mw := newQueryBlockerMiddleware(limits, logger, blockedQueriesCounter)
-			_, err := mw.Wrap(&mockNextHandler{t: t, shouldContinue: !tt.expectedBlocked}).Do(user.InjectOrgID(context.Background(), "test"), req)
-
-			if tt.expectedBlocked {
-				require.Error(t, err)
-				require.Contains(t, err.Error(), globalerror.QueryBlocked)
-				require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
-					# HELP cortex_query_frontend_rejected_queries_total Number of queries that were rejected by the cluster administrator.
-					# TYPE cortex_query_frontend_rejected_queries_total counter
-					cortex_query_frontend_rejected_queries_total{reason="blocked", user="test"} 1
-				`)))
-			} else {
-				require.NoError(t, err)
-				require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(``)))
-			}
-		})
-	}
-}
-
-func TestQueryBlockerMiddleware_UnalignedRangeQueries_InstantAndRemoteRead(t *testing.T) {
-	tests := []struct {
-		name       string
-		limitsYAML string
-		makeReq    func(t *testing.T) MetricsQueryRequest
-	}{
 		{
-			name: "instant query",
+			name: "instant query is not blocked by unaligned_range_queries rule",
 			limitsYAML: `
 blocked_queries:
   - pattern: "rate(metric_counter[5m])"
     unaligned_range_queries: true
 `,
-			makeReq: func(t *testing.T) MetricsQueryRequest {
-				return &PrometheusInstantQueryRequest{queryExpr: parseQuery(t, "rate(metric_counter[5m])")}
-			},
+			makeReq:         instantReq("rate(metric_counter[5m])"),
+			expectedBlocked: false,
 		},
 		{
-			name: "remote read",
+			name: "remote read is not blocked by unaligned_range_queries rule",
 			limitsYAML: `
 blocked_queries:
   - pattern: '{__name__="metric_counter"}'
     unaligned_range_queries: true
 `,
-			makeReq: func(t *testing.T) MetricsQueryRequest {
-				req, err := remoteReadToMetricsQueryRequest(remoteReadPathSuffix, &prompb.Query{
-					Matchers: []*prompb.LabelMatcher{
-						{Type: prompb.LabelMatcher_EQ, Name: model.MetricNameLabel, Value: "metric_counter"},
-					},
-				})
-				require.NoError(t, err)
-				return req
-			},
+			makeReq: remoteReadReq(
+				&prompb.LabelMatcher{Type: prompb.LabelMatcher_EQ, Name: model.MetricNameLabel, Value: "metric_counter"},
+			),
+			expectedBlocked: false,
 		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			limits := mockLimits{blockedQueries: parseBlockedQueriesYAML(t, tt.limitsYAML)}
-			reg := prometheus.NewPedanticRegistry()
-			blockedQueriesCounter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-				Name: "cortex_query_frontend_rejected_queries_total",
-				Help: "Number of queries that were rejected by the cluster administrator.",
-			}, []string{"user", "reason"})
-			mw := newQueryBlockerMiddleware(limits, log.NewNopLogger(), blockedQueriesCounter)
-			_, err := mw.Wrap(&mockNextHandler{t: t, shouldContinue: true}).Do(user.InjectOrgID(context.Background(), "test"), tt.makeReq(t))
-
-			require.NoError(t, err)
-			require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader("")))
-		})
-	}
-}
-
-func TestQueryBlockerMiddleware_RemoteRead(t *testing.T) {
-	// All tests run on the same query.
-	query := &prompb.Query{
-		Matchers: []*prompb.LabelMatcher{
-			{Type: prompb.LabelMatcher_EQ, Name: model.MetricNameLabel, Value: "metric_counter"},
-			{Type: prompb.LabelMatcher_RE, Name: "pod", Value: "app-.*"},
-		},
-	}
-
-	tests := []struct {
-		name            string
-		limitsYAML      string
-		expectedBlocked bool
-	}{
+		// ── remote read ────────────────────────────────────────────────────────
 		{
-			name:            "empty limits",
+			name: "remote read: empty limits",
+			makeReq: remoteReadReq(
+				&prompb.LabelMatcher{Type: prompb.LabelMatcher_EQ, Name: model.MetricNameLabel, Value: "metric_counter"},
+				&prompb.LabelMatcher{Type: prompb.LabelMatcher_RE, Name: "pod", Value: "app-.*"},
+			),
 			expectedBlocked: false,
 		},
 		{
-			name: "non-regex pattern",
+			name: "remote read: non-regex pattern",
 			limitsYAML: `
 blocked_queries:
   - pattern: '{__name__="metric_counter",pod=~"app-.*"}'
     regex: false
 `,
+			makeReq: remoteReadReq(
+				&prompb.LabelMatcher{Type: prompb.LabelMatcher_EQ, Name: model.MetricNameLabel, Value: "metric_counter"},
+				&prompb.LabelMatcher{Type: prompb.LabelMatcher_RE, Name: "pod", Value: "app-.*"},
+			),
 			expectedBlocked: true,
 		},
 		{
-			name: "different non-regex pattern",
+			name: "remote read: different non-regex pattern",
 			limitsYAML: `
 blocked_queries:
   - pattern: '{__name__="another_metric",pod=~"app-.*"}'
     regex: false
 `,
+			makeReq: remoteReadReq(
+				&prompb.LabelMatcher{Type: prompb.LabelMatcher_EQ, Name: model.MetricNameLabel, Value: "metric_counter"},
+				&prompb.LabelMatcher{Type: prompb.LabelMatcher_RE, Name: "pod", Value: "app-.*"},
+			),
 			expectedBlocked: false,
 		},
 		{
-			name: "regex pattern",
+			name: "remote read: regex pattern",
 			limitsYAML: `
 blocked_queries:
   - pattern: ".*metric_counter.*"
     regex: true
 `,
+			makeReq: remoteReadReq(
+				&prompb.LabelMatcher{Type: prompb.LabelMatcher_EQ, Name: model.MetricNameLabel, Value: "metric_counter"},
+				&prompb.LabelMatcher{Type: prompb.LabelMatcher_RE, Name: "pod", Value: "app-.*"},
+			),
 			expectedBlocked: true,
 		},
 		{
-			name: "regex with escaped braces for remote read",
+			name: "remote read: regex with escaped braces",
 			limitsYAML: `
 blocked_queries:
   - pattern: '\{.*metric_counter.*\}'
     regex: true
 `,
+			makeReq: remoteReadReq(
+				&prompb.LabelMatcher{Type: prompb.LabelMatcher_EQ, Name: model.MetricNameLabel, Value: "metric_counter"},
+				&prompb.LabelMatcher{Type: prompb.LabelMatcher_RE, Name: "pod", Value: "app-.*"},
+			),
 			expectedBlocked: true,
 		},
 		{
-			name: "regex with double-quote escaping",
+			name: "remote read: regex with double-quote escaping",
 			limitsYAML: `
 blocked_queries:
   - pattern: "\\{.*metric_counter.*\\}"
     regex: true
 `,
+			makeReq: remoteReadReq(
+				&prompb.LabelMatcher{Type: prompb.LabelMatcher_EQ, Name: model.MetricNameLabel, Value: "metric_counter"},
+				&prompb.LabelMatcher{Type: prompb.LabelMatcher_RE, Name: "pod", Value: "app-.*"},
+			),
 			expectedBlocked: true,
 		},
 		{
-			name: "different regex pattern",
+			name: "remote read: different regex pattern",
 			limitsYAML: `
 blocked_queries:
   - pattern: ".*another_metric.*"
     regex: true
 `,
+			makeReq: remoteReadReq(
+				&prompb.LabelMatcher{Type: prompb.LabelMatcher_EQ, Name: model.MetricNameLabel, Value: "metric_counter"},
+				&prompb.LabelMatcher{Type: prompb.LabelMatcher_RE, Name: "pod", Value: "app-.*"},
+			),
 			expectedBlocked: false,
 		},
 		{
-			name: "invalid regex pattern",
+			name: "remote read: invalid regex pattern",
 			limitsYAML: `
 blocked_queries:
   - pattern: "[a-9}"
     regex: true
 `,
+			makeReq: remoteReadReq(
+				&prompb.LabelMatcher{Type: prompb.LabelMatcher_EQ, Name: model.MetricNameLabel, Value: "metric_counter"},
+				&prompb.LabelMatcher{Type: prompb.LabelMatcher_RE, Name: "pod", Value: "app-.*"},
+			),
+			expectedBlocked: false,
+		},
+		// ── minimum_step_size ─────────────────────────────────────────────────
+		{
+			name: "step below threshold is blocked",
+			limitsYAML: `
+blocked_queries:
+  - minimum_step_size: "1m"
+    reason: "step too small"
+`,
+			makeReq:         rangeReq("rate(expensive_metric[5m])", now.Add(-time.Hour), now, step30s),
+			expectedBlocked: true,
+		},
+		{
+			name: "step equal to threshold is not blocked",
+			limitsYAML: `
+blocked_queries:
+  - minimum_step_size: "1m"
+`,
+			makeReq:         rangeReq("rate(expensive_metric[5m])", now.Add(-time.Hour), now, step1m),
+			expectedBlocked: false,
+		},
+		{
+			name: "step above threshold is not blocked",
+			limitsYAML: `
+blocked_queries:
+  - minimum_step_size: "1m"
+`,
+			makeReq:         rangeReq("rate(expensive_metric[5m])", now.Add(-time.Hour), now, step5m),
+			expectedBlocked: false,
+		},
+		{
+			name: "instant query (step=0) is not blocked",
+			limitsYAML: `
+blocked_queries:
+  - minimum_step_size: "1m"
+`,
+			makeReq:         instantReq("rate(expensive_metric[5m])"),
+			expectedBlocked: false,
+		},
+		{
+			name: "pattern matches and step below threshold is blocked",
+			limitsYAML: `
+blocked_queries:
+  - pattern: ".*expensive.*"
+    regex: true
+    minimum_step_size: "1m"
+    reason: "expensive query with small step"
+`,
+			makeReq:         rangeReq("rate(expensive_metric[5m])", now.Add(-time.Hour), now, step30s),
+			expectedBlocked: true,
+		},
+		{
+			name: "pattern does not match - not blocked despite step below threshold",
+			limitsYAML: `
+blocked_queries:
+  - pattern: ".*expensive.*"
+    regex: true
+    minimum_step_size: "1m"
+`,
+			makeReq:         rangeReq("rate(cheap_metric[5m])", now.Add(-time.Hour), now, step30s),
+			expectedBlocked: false,
+		},
+		{
+			name: "pattern matches but step at threshold - not blocked",
+			limitsYAML: `
+blocked_queries:
+  - pattern: ".*expensive.*"
+    regex: true
+    minimum_step_size: "1m"
+`,
+			makeReq:         rangeReq("rate(expensive_metric[5m])", now.Add(-time.Hour), now, step1m),
+			expectedBlocked: false,
+		},
+		{
+			name: "time_range and step both violated is blocked",
+			limitsYAML: `
+blocked_queries:
+  - time_range_longer_than: "24h"
+    minimum_step_size: "1m"
+    reason: "long range with small step"
+`,
+			makeReq:         rangeReq("rate(expensive_metric[5m])", now.Add(-48*time.Hour), now, step30s),
+			expectedBlocked: true,
+		},
+		{
+			name: "time_range violated but step ok - not blocked",
+			limitsYAML: `
+blocked_queries:
+  - time_range_longer_than: "24h"
+    minimum_step_size: "1m"
+`,
+			makeReq:         rangeReq("rate(expensive_metric[5m])", now.Add(-48*time.Hour), now, step5m),
+			expectedBlocked: false,
+		},
+		{
+			name: "time_range ok but step violated - not blocked",
+			limitsYAML: `
+blocked_queries:
+  - time_range_longer_than: "24h"
+    minimum_step_size: "1m"
+`,
+			makeReq:         rangeReq("rate(expensive_metric[5m])", now.Add(-12*time.Hour), now, step30s),
+			expectedBlocked: false,
+		},
+		{
+			name: "pattern + time_range + step all violated is blocked",
+			limitsYAML: `
+blocked_queries:
+  - pattern: ".*expensive.*"
+    regex: true
+    time_range_longer_than: "24h"
+    minimum_step_size: "1m"
+    reason: "all three conditions met"
+`,
+			makeReq:         rangeReq("rate(expensive_metric[5m])", now.Add(-48*time.Hour), now, step30s),
+			expectedBlocked: true,
+		},
+		{
+			name: "pattern + time_range + step: pattern not matched - not blocked",
+			limitsYAML: `
+blocked_queries:
+  - pattern: ".*expensive.*"
+    regex: true
+    time_range_longer_than: "24h"
+    minimum_step_size: "1m"
+`,
+			makeReq:         rangeReq("rate(cheap_metric[5m])", now.Add(-48*time.Hour), now, step30s),
 			expectedBlocked: false,
 		},
 	}
@@ -692,240 +715,13 @@ blocked_queries:
 				limits.blockedQueries = parseBlockedQueriesYAML(t, tt.limitsYAML)
 			}
 
-			req, err := remoteReadToMetricsQueryRequest(remoteReadPathSuffix, query)
-			require.NoError(t, err)
-
-			reg := prometheus.NewPedanticRegistry()
-			blockedQueriesCounter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-				Name: "cortex_query_frontend_rejected_queries_total",
-				Help: "Number of queries that were rejected by the cluster administrator.",
-			}, []string{"user", "reason"})
-			logger := log.NewNopLogger()
-			mw := newQueryBlockerMiddleware(limits, logger, blockedQueriesCounter)
-			_, err = mw.Wrap(&mockNextHandler{t: t, shouldContinue: !tt.expectedBlocked}).Do(user.InjectOrgID(context.Background(), "test"), req)
-
-			if tt.expectedBlocked {
-				require.Error(t, err)
-				require.Contains(t, err.Error(), globalerror.QueryBlocked)
-				require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
-							# HELP cortex_query_frontend_rejected_queries_total Number of queries that were rejected by the cluster administrator.
-							# TYPE cortex_query_frontend_rejected_queries_total counter
-							cortex_query_frontend_rejected_queries_total{reason="blocked", user="test"} 1
-						`)))
-			} else {
-				require.NoError(t, err)
-				require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(``)))
-			}
-		})
-	}
-}
-
-func TestQueryBlockerMiddleware_MinimumStepSize(t *testing.T) {
-	now := time.Now()
-	step30s := (30 * time.Second).Milliseconds()
-	step1m := time.Minute.Milliseconds()
-	step5m := (5 * time.Minute).Milliseconds()
-
-	tests := []struct {
-		name            string
-		query           string
-		limitsYAML      string
-		stepMs          int64
-		queryStart      time.Time
-		queryEnd        time.Time
-		expectedBlocked bool
-	}{
-		// pattern + time_range_longer_than + minimum_step_size
-		{
-			name:  "pattern + time_range + step all violated is blocked",
-			query: "rate(expensive_metric[5m])",
-			limitsYAML: `
-blocked_queries:
-  - pattern: ".*expensive.*"
-    regex: true
-    time_range_longer_than: "24h"
-    minimum_step_size: "1m"
-    reason: "all three conditions met"
-`,
-			stepMs:          step30s,
-			queryStart:      now.Add(-48 * time.Hour),
-			queryEnd:        now,
-			expectedBlocked: true,
-		},
-		{
-			name:  "pattern + time_range + step: pattern not matched - not blocked",
-			query: "rate(cheap_metric[5m])",
-			limitsYAML: `
-blocked_queries:
-  - pattern: ".*expensive.*"
-    regex: true
-    time_range_longer_than: "24h"
-    minimum_step_size: "1m"
-`,
-			stepMs:          step30s,
-			queryStart:      now.Add(-48 * time.Hour),
-			queryEnd:        now,
-			expectedBlocked: false,
-		},
-		// pattern + minimum_step_size
-		{
-			name:  "pattern matches and step below threshold is blocked",
-			query: "rate(expensive_metric[5m])",
-			limitsYAML: `
-blocked_queries:
-  - pattern: ".*expensive.*"
-    regex: true
-    minimum_step_size: "1m"
-    reason: "expensive query with small step"
-`,
-			stepMs:          step30s,
-			expectedBlocked: true,
-		},
-		{
-			name:  "pattern does not match - not blocked despite step below threshold",
-			query: "rate(cheap_metric[5m])",
-			limitsYAML: `
-blocked_queries:
-  - pattern: ".*expensive.*"
-    regex: true
-    minimum_step_size: "1m"
-`,
-			stepMs:          step30s,
-			expectedBlocked: false,
-		},
-		{
-			name:  "pattern matches but step at threshold - not blocked",
-			query: "rate(expensive_metric[5m])",
-			limitsYAML: `
-blocked_queries:
-  - pattern: ".*expensive.*"
-    regex: true
-    minimum_step_size: "1m"
-`,
-			stepMs:          step1m,
-			expectedBlocked: false,
-		},
-		// time_range_longer_than + minimum_step_size
-		{
-			name:  "time_range and step both violated is blocked",
-			query: "rate(expensive_metric[5m])",
-			limitsYAML: `
-blocked_queries:
-  - time_range_longer_than: "24h"
-    minimum_step_size: "1m"
-    reason: "long range with small step"
-`,
-			stepMs:          step30s,
-			queryStart:      now.Add(-48 * time.Hour),
-			queryEnd:        now,
-			expectedBlocked: true,
-		},
-		{
-			name:  "time_range violated but step ok - not blocked",
-			query: "rate(expensive_metric[5m])",
-			limitsYAML: `
-blocked_queries:
-  - time_range_longer_than: "24h"
-    minimum_step_size: "1m"
-`,
-			stepMs:          step5m,
-			queryStart:      now.Add(-48 * time.Hour),
-			queryEnd:        now,
-			expectedBlocked: false,
-		},
-		{
-			name:  "time_range ok but step violated - not blocked",
-			query: "rate(expensive_metric[5m])",
-			limitsYAML: `
-blocked_queries:
-  - time_range_longer_than: "24h"
-    minimum_step_size: "1m"
-`,
-			stepMs:          step30s,
-			queryStart:      now.Add(-12 * time.Hour),
-			queryEnd:        now,
-			expectedBlocked: false,
-		},
-		// minimum_step_size only
-		{
-			name:  "step below threshold is blocked",
-			query: "rate(expensive_metric[5m])",
-			limitsYAML: `
-blocked_queries:
-  - minimum_step_size: "1m"
-    reason: "step too small"
-`,
-			stepMs:          step30s,
-			expectedBlocked: true,
-		},
-		{
-			name:  "step equal to threshold is not blocked",
-			query: "rate(expensive_metric[5m])",
-			limitsYAML: `
-blocked_queries:
-  - minimum_step_size: "1m"
-`,
-			stepMs:          step1m,
-			expectedBlocked: false,
-		},
-		{
-			name:  "step above threshold is not blocked",
-			query: "rate(expensive_metric[5m])",
-			limitsYAML: `
-blocked_queries:
-  - minimum_step_size: "1m"
-`,
-			stepMs:          step5m,
-			expectedBlocked: false,
-		},
-		{
-			name:  "instant query (step=0) is not blocked",
-			query: "rate(expensive_metric[5m])",
-			limitsYAML: `
-blocked_queries:
-  - minimum_step_size: "1m"
-`,
-			stepMs:          0,
-			expectedBlocked: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			limits := mockLimits{blockedQueries: parseBlockedQueriesYAML(t, tt.limitsYAML)}
-
-			start := tt.queryStart
-			end := tt.queryEnd
-			if start.IsZero() {
-				start = now.Add(-1 * time.Hour)
-			}
-			if end.IsZero() {
-				end = now
-			}
-
-			// Use instant query when step is 0, range query otherwise.
-			var req MetricsQueryRequest
-			if tt.stepMs == 0 {
-				req = &PrometheusInstantQueryRequest{
-					queryExpr: parseQuery(t, tt.query),
-					time:      now.UnixMilli(),
-				}
-			} else {
-				req = &PrometheusRangeQueryRequest{
-					queryExpr: parseQuery(t, tt.query),
-					start:     start.UnixMilli(),
-					end:       end.UnixMilli(),
-					step:      tt.stepMs,
-				}
-			}
-
 			reg := prometheus.NewPedanticRegistry()
 			blockedQueriesCounter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 				Name: "cortex_query_frontend_rejected_queries_total",
 				Help: "Number of queries that were rejected by the cluster administrator.",
 			}, []string{"user", "reason"})
 			mw := newQueryBlockerMiddleware(limits, log.NewNopLogger(), blockedQueriesCounter)
-			_, err := mw.Wrap(&mockNextHandler{t: t, shouldContinue: !tt.expectedBlocked}).Do(user.InjectOrgID(context.Background(), "test"), req)
+			_, err := mw.Wrap(&mockNextHandler{t: t, shouldContinue: !tt.expectedBlocked}).Do(user.InjectOrgID(context.Background(), "test"), tt.makeReq(t))
 
 			if tt.expectedBlocked {
 				require.Error(t, err)
