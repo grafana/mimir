@@ -387,6 +387,12 @@
 * [ENHANCEMENT] Add `/ready` endpoint that returns HTTP 200 when the proxy is running. #14478
 * [BUGFIX] Fix bug where query-tee can panic if forwarding a request fails. #14015
 
+## 3.0.5
+
+### Grafana Mimir
+
+* [BUGFIX] Update to google.golang.org/grpc to address [CVE-2026-33186](https://nvd.nist.gov/vuln/detail/CVE-2026-33186). #14761
+
 ## 3.0.4
 
 ### Grafana Mimir
