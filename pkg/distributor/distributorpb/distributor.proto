@@ -16,4 +16,10 @@ option (gogoproto.unmarshaler_all) = true;
 
 service Distributor {
   rpc Push(cortexpb.WriteRequest) returns (cortexpb.WriteResponse) {}
+  rpc PushToPartition(PushToPartitionRequest) returns (cortexpb.WriteResponse) {}
+}
+
+message PushToPartitionRequest {
+  int32 partition_id = 1;
+  cortexpb.WriteRequest request = 2;
 }

@@ -129,18 +129,26 @@ func (t *FastSymbolsTable) CapLowerBound() int {
 }
 
 func (t *FastSymbolsTable) Symbols() []string {
-	syms := make([]string, 0, t.CountSymbols())
-	return t.SymbolsPrealloc(syms)
+	return t.SymbolsPrealloc(nil)
 }
 
 func (t *FastSymbolsTable) SymbolsPrealloc(prealloc []string) []string {
-	if cap(prealloc) < t.CountSymbols() {
-		prealloc = make([]string, 0, t.CountSymbols())
+	// Compute the required length from the actual maximum ref value, not just
+	// len(symbolsMap). Under normal sequential use these are equivalent, but
+	// sizing from the real max ref prevents an out-of-bounds panic if they
+	// ever diverge.
+	needed := 1 // minimum: slot 0 for the empty-string sentinel
+	for _, v := range t.symbolsMap {
+		if idx := int(v-t.offset) + 1; idx > needed {
+			needed = idx
+		}
 	}
-	for range len(t.symbolsMap) + 1 {
+	if cap(prealloc) < needed {
+		prealloc = make([]string, 0, needed)
+	}
+	for i := 0; i < needed; i++ {
 		prealloc = append(prealloc, "")
 	}
-
 	for k, v := range t.symbolsMap {
 		prealloc[v-t.offset] = k
 	}

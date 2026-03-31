@@ -165,6 +165,31 @@ func desymbolizeLabelsDirect(labelRefs []uint32, symbols []string) ([]LabelAdapt
 	return las, name
 }
 
+// TestSymbolsPrealloc_GapInRefs tests that SymbolsPrealloc does not panic when
+// the symbolsMap contains refs that are not densely packed starting at offset+1.
+// The panic "index out of range [N] with length N" was observed in production when
+// len(symbolsMap)+1 was smaller than the maximum ref index in the map.
+// This test creates that exact condition directly via the private map field.
+func TestSymbolsPrealloc_GapInRefs(t *testing.T) {
+	const offset = uint32(64)
+	tbl := NewFastSymbolsTable(10)
+	tbl.ConfigureCommonSymbols(offset, nil)
+
+	// Manually inject a gap: refs 65 and 67 exist, but 66 is absent.
+	// len(symbolsMap) == 2, but max ref index == 3 (67-64).
+	// The old code allocated len(symbolsMap)+1 == 3 slots and then
+	// accessed index 3, causing the panic.
+	tbl.symbolsMap["a"] = offset + 1 // index 1
+	tbl.symbolsMap["b"] = offset + 3 // index 3 — gap at index 2
+
+	syms := tbl.Symbols()
+	require.Equal(t, 4, len(syms), "expected 4 slots: indices 0..3")
+	require.Equal(t, "", syms[0])
+	require.Equal(t, "a", syms[1])
+	require.Equal(t, "", syms[2]) // gap
+	require.Equal(t, "b", syms[3])
+}
+
 func BenchmarkSymbolizer(b *testing.B) {
 	b.Run("2k labels unique values, common symbols", func(b *testing.B) {
 		lbls := make([]string, 2*2000)
