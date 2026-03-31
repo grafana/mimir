@@ -1127,6 +1127,10 @@ func (c Codec) EncodeMetricsQueryResponse(ctx context.Context, req *http.Request
 		c.metrics.duration.WithLabelValues(operationEncode, formatter.Name()).Observe(encodeDuration.Seconds())
 		c.metrics.size.WithLabelValues(operationEncode, formatter.Name()).Observe(float64(cw.n))
 		sp.SetAttributes(attribute.Int("bytes", int(cw.n)))
+		// AddEncodeTime is called here, after encoding completes, but the handler has already
+		// read the stats to build the Server-Timing header before io.Copy drained this pipe.
+		// As a result, encode_time_seconds in Server-Timing is always 0 for streaming responses;
+		// the Prometheus histogram metric (codec_duration_seconds) is unaffected.
 		queryStats.AddEncodeTime(encodeDuration)
 	}()
 

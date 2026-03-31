@@ -528,6 +528,8 @@ func getQueryStats(queryResponseTime time.Duration, details *querymiddleware.Que
 // getResponseQueryStats returns the response query stats in the format of Server-Timing header.
 // contentLengthBytes must be the http.Response.ContentLength field value; -1 means unknown (streaming response).
 // For streaming responses the size is reported as 0 to preserve backward compatibility.
+// encode_time_seconds is always 0 for streaming responses: encoding runs concurrently with body
+// streaming, so the encode time is not available until after the headers have been sent.
 func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes int64, details *querymiddleware.QueryDetails) []string {
 	if details == nil {
 		return nil
