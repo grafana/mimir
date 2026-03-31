@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.17.8
+
+### Grafana Mimir
+
+* [BUGFIX] Update module google.golang.org/grpc to v1.79.3 to address [CVE-2026-33186](https://nvd.nist.gov/vuln/detail/CVE-2026-33186) #14762
+
 ## 2.17.7
 
 ### Grafana Mimir
