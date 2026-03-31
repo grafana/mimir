@@ -943,7 +943,13 @@ blocked_queries:
 	}
 }
 
-// TestQueryBlockerMiddleware_RemoteRead exercises all switch arms with remote-read request type.
+// TestQueryBlockerMiddleware_RemoteRead exercises pattern matching for remote-read requests.
+//
+// Remote read query strings are always in selector form ({label=value,...}) produced by
+// LabelMatchersToString — never PromQL syntax. Non-regex matching is a raw string compare
+// with no canonicalization on the query side, so matcher order is significant (unlike range/instant
+// queries where both sides are canonicalized via the PromQL parser).
+// minimum_step_size never applies because GetStep always returns 0 for remote reads.
 func TestQueryBlockerMiddleware_RemoteRead(t *testing.T) {
 	remoteReadReq := func(matchers ...*prompb.LabelMatcher) func(t *testing.T) MetricsQueryRequest {
 		req := mustSucceed(remoteReadToMetricsQueryRequest(remoteReadPathSuffix, &prompb.Query{Matchers: matchers}))
@@ -960,12 +966,8 @@ func TestQueryBlockerMiddleware_RemoteRead(t *testing.T) {
 		expectedBlocked bool
 	}{
 		{
-			name:            "empty limits",
-			makeReq:         remoteReadReq(counterMatcher, podMatcher),
-			expectedBlocked: false,
-		},
-		{
-			name: "non-regex pattern",
+			// Query string matches pattern exactly: {__name__="metric_counter",pod=~"app-.*"}
+			name: "non-regex pattern matches when matcher order matches",
 			limitsYAML: `
 blocked_queries:
   - pattern: '{__name__="metric_counter",pod=~"app-.*"}'
@@ -975,17 +977,30 @@ blocked_queries:
 			expectedBlocked: true,
 		},
 		{
-			name: "different non-regex pattern",
+			// LabelMatchersToString preserves caller order; no canonicalization normalises it.
+			// Contrast with range queries where both pattern and query go through the PromQL parser.
+			name: "non-regex pattern does not match when matcher order differs",
 			limitsYAML: `
 blocked_queries:
-  - pattern: '{__name__="another_metric",pod=~"app-.*"}'
+  - pattern: '{__name__="metric_counter",pod=~"app-.*"}'
     regex: false
 `,
-			makeReq:         remoteReadReq(counterMatcher, podMatcher),
+			makeReq:         remoteReadReq(podMatcher, counterMatcher),
 			expectedBlocked: false,
 		},
 		{
-			name: "regex pattern",
+			// Query string is always selector form; PromQL expressions can never match.
+			name: "promql-style non-regex pattern never matches remote read",
+			limitsYAML: `
+blocked_queries:
+  - pattern: "rate(metric_counter[5m])"
+    regex: false
+`,
+			makeReq:         remoteReadReq(counterMatcher),
+			expectedBlocked: false,
+		},
+		{
+			name: "regex pattern matches",
 			limitsYAML: `
 blocked_queries:
   - pattern: ".*metric_counter.*"
@@ -995,7 +1010,8 @@ blocked_queries:
 			expectedBlocked: true,
 		},
 		{
-			name: "regex with escaped braces",
+			// Query string always starts with '{'; anchoring on braces is meaningful here.
+			name: "regex anchored on braces matches selector form",
 			limitsYAML: `
 blocked_queries:
   - pattern: '\{.*metric_counter.*\}'
@@ -1005,17 +1021,7 @@ blocked_queries:
 			expectedBlocked: true,
 		},
 		{
-			name: "regex with double-quote escaping",
-			limitsYAML: `
-blocked_queries:
-  - pattern: "\\{.*metric_counter.*\\}"
-    regex: true
-`,
-			makeReq:         remoteReadReq(counterMatcher, podMatcher),
-			expectedBlocked: true,
-		},
-		{
-			name: "different regex pattern",
+			name: "regex pattern does not match",
 			limitsYAML: `
 blocked_queries:
   - pattern: ".*another_metric.*"
