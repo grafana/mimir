@@ -101,23 +101,11 @@ func (qb *queryBlockerMiddleware) isBlocked(tenant string, req MetricsQueryReque
 			stepMs > 0 &&
 			stepDuration < time.Duration(block.MinimumStepSize)
 
-		shouldBlock := false
-		switch {
-		case pattern != "" && block.TimeRangeLongerThan > 0 && block.MinimumStepSize > 0:
-			shouldBlock = patternMatches && timeRangeViolation && stepViolation
-		case pattern != "" && block.TimeRangeLongerThan > 0:
-			shouldBlock = patternMatches && timeRangeViolation
-		case pattern != "" && block.MinimumStepSize > 0:
-			shouldBlock = patternMatches && stepViolation
-		case block.TimeRangeLongerThan > 0 && block.MinimumStepSize > 0:
-			shouldBlock = timeRangeViolation && stepViolation
-		case pattern != "":
-			shouldBlock = patternMatches
-		case block.TimeRangeLongerThan > 0:
-			shouldBlock = timeRangeViolation
-		case block.MinimumStepSize > 0:
-			shouldBlock = stepViolation
-		}
+		hasCondition := pattern != "" || block.TimeRangeLongerThan > 0 || block.MinimumStepSize > 0
+		shouldBlock := hasCondition &&
+			(pattern == "" || patternMatches) &&
+			(block.TimeRangeLongerThan == 0 || timeRangeViolation) &&
+			(block.MinimumStepSize == 0 || stepViolation)
 
 		if shouldBlock {
 			level.Info(logger).Log(
