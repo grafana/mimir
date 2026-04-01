@@ -164,12 +164,12 @@ func BuildFilterChains(searchTerms []string, caseInsensitive bool, fuzzAlg strin
 
 	// This default should already be set, but added for clarity
 	if fuzzAlg == "" && fuzzThreshold > 0 {
-		fuzzAlg = "jarowinkler"
+		fuzzAlg = SearchAlgJaroWinkler
 	}
 
 	// We should not be here if this is incorrect, but added for safety
-	if fuzzAlg != "" && fuzzAlg != "jarowinkler" && fuzzAlg != "subsequence" {
-		return nil, fmt.Errorf("fuzzAlg must be one of: jarowinkler, subsequence")
+	if fuzzAlg != "" && fuzzAlg != SearchAlgJaroWinkler && fuzzAlg != SearchAlgSubsequence {
+		return nil, fmt.Errorf("fuzzAlg must be one of: %s, %s", SearchAlgJaroWinkler, SearchAlgSubsequence)
 	}
 
 	chain := NewFilterChains(!caseInsensitive)
@@ -190,9 +190,9 @@ func BuildFilterChains(searchTerms []string, caseInsensitive bool, fuzzAlg strin
 				term = strings.ToLower(term)
 			}
 			switch fuzzAlg {
-			case "jarowinkler":
+			case SearchAlgJaroWinkler:
 				fc.AddFilter(NewFilterJaro(term, fuzzThreshold))
-			case "subsequence":
+			case SearchAlgSubsequence:
 				fc.AddFilter(NewFilterSubsequence(term, fuzzThreshold))
 			}
 

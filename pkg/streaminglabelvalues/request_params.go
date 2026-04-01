@@ -11,6 +11,11 @@ import (
 	mimirstorage "github.com/grafana/mimir/pkg/storage"
 )
 
+const (
+	SearchAlgJaroWinkler = "jarowinkler"
+	SearchAlgSubsequence = "subsequence"
+)
+
 type SearchResult struct {
 	Name  string  `json:"name"`
 	Score float64 `json:"score,omitempty"`
@@ -103,12 +108,10 @@ func (p *RequestParser) LabelName(isExpected bool) (string, error) {
 func (p *RequestParser) FuzzAlgorithm() (string, error) {
 	v := p.reqValues.Get("fuzz_alg")
 	switch v {
-	case "":
-		return "jarowinkler", nil
-	case "jaro", "jarowinkler":
-		return "jarowinkler", nil
-	case "subsequence":
-		return "subsequence", nil
+	case "", "jaro":
+		return SearchAlgJaroWinkler, nil
+	case SearchAlgSubsequence, SearchAlgJaroWinkler:
+		return v, nil
 	default:
 		return "", apierror.New(apierror.TypeBadData, fmt.Sprintf("invalid fuzz_alg - expected subsequence or jarowinkler but got %s", v))
 	}

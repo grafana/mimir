@@ -53,7 +53,7 @@ func TestIngesterSearcherValueSet_ProducerError(t *testing.T) {
 	t.Run("unsorted", func(t *testing.T) {
 		vs := newingesterSearcherValueSet(produce, nil, 0, 0, nil)
 		// The one value sent before the error is still returned.
-		results, err, _ := collectAll(t, vs)
+		results, _, err := collectAll(t, vs)
 		assert.Equal(t, producerErr, err)
 		assert.Equal(t, []mimirstorage.SearchResult{{Value: "aaa"}}, results)
 	})
@@ -62,7 +62,7 @@ func TestIngesterSearcherValueSet_ProducerError(t *testing.T) {
 		sf := &client.SearchLabelValuesFilter{SortBy: client.SORT_BY_ALPHA, SortOrder: client.SORT_ORDER_ASC}
 		vs := newingesterSearcherValueSet(produce, sf, 0, 0, nil)
 		// Producer error means Next() must return false immediately (no partial results).
-		results, err, _ := collectAll(t, vs)
+		results, _, err := collectAll(t, vs)
 		assert.Equal(t, producerErr, err)
 		assert.Empty(t, results)
 	})
