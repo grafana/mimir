@@ -812,6 +812,299 @@ func TestWriter_WriteSync(t *testing.T) {
 	})
 }
 
+func TestWriter_closeWriterIfSame(t *testing.T) {
+	const (
+		topicName     = "test"
+		numPartitions = 10
+		partitionID   = int32(0)
+		tenantID      = "user-1"
+	)
+
+	t.Run("should close and nil the writer when zombie matches current writer", func(t *testing.T) {
+		t.Parallel()
+
+		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+
+		// Get the writer (triggers lazy initialization).
+		producer, err := writer.getKafkaWriterForPartition(partitionID)
+		require.NoError(t, err)
+		require.NotNil(t, producer)
+
+		// Close it as if it were a zombie.
+		writer.closeWriterIfSame(partitionID, producer)
+
+		// The writer slot should now be nil.
+		writer.writersMx.RLock()
+		clientID := int(partitionID) % len(writer.writers)
+		assert.Nil(t, writer.writers[clientID])
+		writer.writersMx.RUnlock()
+	})
+
+	t.Run("should not close writer when a different instance occupies the slot", func(t *testing.T) {
+		t.Parallel()
+
+		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+
+		// Get the first writer (the future zombie).
+		zombie, err := writer.getKafkaWriterForPartition(partitionID)
+		require.NoError(t, err)
+
+		// Close the zombie so the slot becomes nil.
+		writer.closeWriterIfSame(partitionID, zombie)
+
+		// Get a new writer (lazy recreation).
+		newProducer, err := writer.getKafkaWriterForPartition(partitionID)
+		require.NoError(t, err)
+		require.NotNil(t, newProducer)
+		assert.NotSame(t, zombie, newProducer)
+
+		// Now try to close with the old zombie reference — should be a no-op
+		// because the slot holds a different instance.
+		writer.closeWriterIfSame(partitionID, zombie)
+
+		// The new writer should still be in the slot.
+		writer.writersMx.RLock()
+		clientID := int(partitionID) % len(writer.writers)
+		assert.Same(t, newProducer, writer.writers[clientID])
+		writer.writersMx.RUnlock()
+	})
+
+	t.Run("should not close writer when slot is already nil", func(t *testing.T) {
+		t.Parallel()
+
+		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+
+		// Get and close the writer.
+		zombie, err := writer.getKafkaWriterForPartition(partitionID)
+		require.NoError(t, err)
+
+		writer.closeWriterIfSame(partitionID, zombie)
+
+		// Calling again with the same zombie should be a safe no-op (slot is nil).
+		assert.NotPanics(t, func() {
+			writer.closeWriterIfSame(partitionID, zombie)
+		})
+	})
+
+	t.Run("should recover with a working writer after zombie is closed", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+
+		series := []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")}
+
+		// First write succeeds and lazily creates the writer.
+		err := writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series, Source: mimirpb.API})
+		require.NoError(t, err)
+
+		// Get the current writer instance.
+		oldProducer, err := writer.getKafkaWriterForPartition(partitionID)
+		require.NoError(t, err)
+
+		// Simulate zombie detection by closing the writer.
+		writer.closeWriterIfSame(partitionID, oldProducer)
+
+		// Next write should lazily create a new writer and succeed.
+		err = writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series, Source: mimirpb.API})
+		require.NoError(t, err)
+
+		// Verify a new writer was created (different instance).
+		newProducer, err := writer.getKafkaWriterForPartition(partitionID)
+		require.NoError(t, err)
+		assert.NotSame(t, oldProducer, newProducer)
+	})
+
+	t.Run("should be safe with many concurrent callers closing the same zombie", func(t *testing.T) {
+		t.Parallel()
+
+		const numGoroutines = 50
+
+		ctx := context.Background()
+		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+
+		series := []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")}
+
+		// First write creates the writer.
+		err := writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series, Source: mimirpb.API})
+		require.NoError(t, err)
+
+		// Get the zombie reference.
+		zombie, err := writer.getKafkaWriterForPartition(partitionID)
+		require.NoError(t, err)
+
+		// Launch many goroutines that all try to close the same zombie concurrently.
+		var wg sync.WaitGroup
+		for i := 0; i < numGoroutines; i++ {
+			runAsync(&wg, func() {
+				writer.closeWriterIfSame(partitionID, zombie)
+			})
+		}
+		wg.Wait()
+
+		// After all close attempts, the slot should be nil.
+		writer.writersMx.RLock()
+		clientID := int(partitionID) % len(writer.writers)
+		assert.Nil(t, writer.writers[clientID])
+		writer.writersMx.RUnlock()
+
+		// Writing again should succeed (new writer created).
+		err = writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series, Source: mimirpb.API})
+		require.NoError(t, err)
+
+		// The new writer should be a different instance.
+		newProducer, err := writer.getKafkaWriterForPartition(partitionID)
+		require.NoError(t, err)
+		assert.NotSame(t, zombie, newProducer)
+	})
+
+	t.Run("should handle concurrent writes and zombie close without panicking", func(t *testing.T) {
+		t.Parallel()
+
+		const numGoroutines = 20
+
+		ctx := context.Background()
+		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+
+		series := []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")}
+
+		// Create initial writer.
+		err := writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series, Source: mimirpb.API})
+		require.NoError(t, err)
+
+		zombie, err := writer.getKafkaWriterForPartition(partitionID)
+		require.NoError(t, err)
+
+		// Launch closers and writers concurrently. This exercises the race between
+		// closeWriterIfSame (nil-out) and getKafkaWriterForPartition (lazy recreate).
+		var wg sync.WaitGroup
+		for i := 0; i < numGoroutines; i++ {
+			if i%2 == 0 {
+				runAsync(&wg, func() {
+					writer.closeWriterIfSame(partitionID, zombie)
+				})
+			} else {
+				runAsync(&wg, func() {
+					// WriteSync may fail transiently (e.g., produce on a closing client),
+					// but it should never panic.
+					_ = writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series, Source: mimirpb.API})
+				})
+			}
+		}
+		wg.Wait()
+
+		// After everything settles, a new write should always succeed.
+		err = writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series, Source: mimirpb.API})
+		require.NoError(t, err)
+	})
+}
+
+func TestSafeRegisterer(t *testing.T) {
+	t.Run("should allow re-registration of metrics with the same name", func(t *testing.T) {
+		t.Parallel()
+
+		inner := prometheus.NewPedanticRegistry()
+		reg := newSafeRegisterer(inner)
+
+		// Register a counter.
+		counter1 := prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "test_counter",
+			Help: "A test counter.",
+		})
+		require.NoError(t, reg.Register(counter1))
+
+		// Register a new counter with the same name. This should succeed
+		// because safeRegisterer unregisters the old one first.
+		counter2 := prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "test_counter",
+			Help: "A test counter.",
+		})
+		require.NoError(t, reg.Register(counter2))
+
+		// The registry should hold the new counter. Incrementing counter2
+		// should be reflected in gathered metrics.
+		counter2.Inc()
+
+		metrics, err := inner.Gather()
+		require.NoError(t, err)
+		require.Len(t, metrics, 1)
+		assert.Equal(t, "test_counter", *metrics[0].Name)
+		assert.InDelta(t, float64(1), *metrics[0].Metric[0].Counter.Value, 0)
+	})
+
+	t.Run("should not panic on MustRegister with duplicate names", func(t *testing.T) {
+		t.Parallel()
+
+		inner := prometheus.NewPedanticRegistry()
+		reg := newSafeRegisterer(inner)
+
+		counter1 := prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "test_must_register",
+			Help: "A test counter.",
+		})
+		reg.MustRegister(counter1)
+
+		counter2 := prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "test_must_register",
+			Help: "A test counter.",
+		})
+		// This would panic with a normal prometheus.Registry.
+		assert.NotPanics(t, func() {
+			reg.MustRegister(counter2)
+		})
+	})
+
+	t.Run("should pass through errors that are not AlreadyRegisteredError", func(t *testing.T) {
+		t.Parallel()
+
+		// Use a nil registerer wrapper to force a non-AlreadyRegisteredError.
+		// We wrap a real registry but register an invalid collector.
+		inner := prometheus.NewPedanticRegistry()
+		reg := newSafeRegisterer(inner)
+
+		// Register a valid counter first.
+		counter := prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "valid_counter",
+			Help: "A valid counter.",
+		})
+		require.NoError(t, reg.Register(counter))
+
+		// Registering a counter with an empty name should fail with a non-AlreadyRegisteredError.
+		invalid := prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "",
+			Help: "Invalid counter with no name.",
+		})
+		err := reg.Register(invalid)
+		assert.Error(t, err)
+	})
+
+	t.Run("should unregister correctly", func(t *testing.T) {
+		t.Parallel()
+
+		inner := prometheus.NewPedanticRegistry()
+		reg := newSafeRegisterer(inner)
+
+		counter := prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "test_unregister",
+			Help: "A test counter.",
+		})
+		require.NoError(t, reg.Register(counter))
+
+		assert.True(t, reg.Unregister(counter))
+
+		// After unregistering, the registry should be empty.
+		metrics, err := inner.Gather()
+		require.NoError(t, err)
+		assert.Empty(t, metrics)
+	})
+}
+
 func TestWriter_WriteSync_HighConcurrencyOnKafkaClientBufferFull(t *testing.T) {
 	const (
 		topicName     = "test"
