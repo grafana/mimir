@@ -812,6 +812,78 @@ func TestWriter_WriteSync(t *testing.T) {
 	})
 }
 
+func TestWriter_WriteSync_RecreatesClientAfterConsecutiveFailures(t *testing.T) {
+	const (
+		topicName     = "test"
+		numPartitions = 10
+		partitionID   = 0
+		tenantID      = "user-1"
+	)
+
+	t.Run("should recreate client when consecutive failure counter exceeds threshold", func(t *testing.T) {
+		t.Parallel()
+
+		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+
+		ctx := context.Background()
+		series := []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")}
+
+		// Write successfully to create the client.
+		err := writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series, Source: mimirpb.API})
+		require.NoError(t, err)
+
+		oldProducer, err := writer.getKafkaWriterForPartition(partitionID)
+		require.NoError(t, err)
+
+		// Directly set the failure counter just below threshold.
+		clientID := int(int32(partitionID)) % len(writer.writers)
+		writer.consecutiveFailures[clientID].Store(writerConsecutiveFailuresThreshold - 2)
+
+		// Now trigger a produce failure by writing to a non-existing partition.
+		// This will push the counter over the threshold.
+		_ = writer.WriteSync(ctx, 9999, tenantID, &mimirpb.WriteRequest{Timeseries: series, Source: mimirpb.API})
+		// The above goes to a different clientID. Let's use the same clientID.
+		// Actually, we need to trigger a failure on the SAME clientID.
+
+		// Instead, simulate by setting counter to threshold-1 and calling closeWriterIfSame manually
+		// to verify the mechanism. The unit test for the threshold logic itself:
+		writer.consecutiveFailures[clientID].Store(writerConsecutiveFailuresThreshold - 1)
+
+		// One more failure should trigger recreation. Use a non-existent partition that maps to the same clientID.
+		// Partition 0 maps to clientID 0 (0 % 1 = 0 since WriteClients defaults to 1).
+		_ = writer.WriteSync(ctx, 100, tenantID, &mimirpb.WriteRequest{Timeseries: series, Source: mimirpb.API})
+
+		// The failure counter should have been reset (client was recreated).
+		assert.Equal(t, int64(0), writer.consecutiveFailures[clientID].Load())
+
+		// Verify the client was recreated.
+		newProducer, err := writer.getKafkaWriterForPartition(partitionID)
+		require.NoError(t, err)
+		assert.NotSame(t, oldProducer, newProducer)
+	})
+
+	t.Run("should reset failure counter on successful produce", func(t *testing.T) {
+		t.Parallel()
+
+		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+
+		ctx := context.Background()
+		series := []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")}
+
+		// Set a non-zero failure counter.
+		clientID := int(int32(partitionID)) % len(writer.writers)
+		writer.consecutiveFailures[clientID].Store(50)
+
+		// A successful write should reset it.
+		err := writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series, Source: mimirpb.API})
+		require.NoError(t, err)
+
+		assert.Equal(t, int64(0), writer.consecutiveFailures[clientID].Load())
+	})
+}
+
 func TestWriter_closeWriterIfSame(t *testing.T) {
 	const (
 		topicName     = "test"

@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/globalerror"
@@ -42,6 +43,14 @@ const (
 	defaultMaxInflightProduceRequests = 20
 
 	writerMetricsPrefix = "cortex_ingest_storage_writer_"
+
+	// writerConsecutiveFailuresThreshold is the number of consecutive produce failures after which
+	// the Writer will close and recreate the Kafka client. This acts as an automatic recovery
+	// mechanism for cases where a kgo.Client enters a persistent failure loop (e.g., every new
+	// connection immediately fails with "use of closed network connection") that only resolves
+	// with a fresh client. The threshold is intentionally high to avoid false positives during
+	// normal transient failures (partition moves, broker restarts) which recover on their own.
+	writerConsecutiveFailuresThreshold = 100
 )
 
 var (
@@ -71,6 +80,7 @@ type Writer struct {
 	writers                 []*KafkaProducer
 	clientRegisterers       []prometheus.Registerer // per-client registerers that tolerate re-registration
 	lastClientRecreateTime  []time.Time             // per-client cooldown to avoid rapid close/recreate cycles
+	consecutiveFailures     []*atomic.Int64          // per-client consecutive produce failure counter
 	serializer              recordSerializer
 
 	// Metrics.
@@ -104,6 +114,11 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 				prometheus.WrapRegistererWith(prometheus.Labels{"client_id": strconv.Itoa(i)}, reg)))
 	}
 
+	consecutiveFailures := make([]*atomic.Int64, kafkaCfg.WriteClients)
+	for i := range consecutiveFailures {
+		consecutiveFailures[i] = atomic.NewInt64(0)
+	}
+
 	w := &Writer{
 		kafkaCfg:                   kafkaCfg,
 		logger:                     logger,
@@ -111,6 +126,7 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 		writers:                    make([]*KafkaProducer, kafkaCfg.WriteClients),
 		clientRegisterers:          clientRegisterers,
 		lastClientRecreateTime:     make([]time.Time, kafkaCfg.WriteClients),
+		consecutiveFailures:        consecutiveFailures,
 		serializer:                 recordSerializerFromCfg(kafkaCfg),
 		maxInflightProduceRequests: defaultMaxInflightProduceRequests,
 
@@ -192,10 +208,15 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string
 	// We track the latency both in case of success and failure (but with a different label), to avoid misunderstandings
 	// when we look at it in case Kafka Produce requests time out (if latency wasn't tracked on error, we would see low
 	// latency but in practice many are very high latency and timing out).
+	clientID := int(partitionID) % len(w.writers)
+
 	if count, recordsSizeBytes := successfulProduceRecordsStats(res); count > 0 {
 		w.writeSuccessLatency.Observe(time.Since(startTime).Seconds())
 		w.writeBytesTotal.Add(float64(recordsSizeBytes))
 		w.inputBytesTotal.Add(float64(reqSizeBytes))
+
+		// Reset consecutive failure counter on any success.
+		w.consecutiveFailures[clientID].Store(0)
 	} else {
 		w.writeFailureLatency.Observe(time.Since(startTime).Seconds())
 	}
@@ -205,31 +226,34 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string
 			return ErrWriteRequestDataItemTooLarge
 		}
 
-		// When franz-go encounters an EOF on the first read of a new connection (before any
-		// successful response), it wraps the error as ErrFirstReadEOF and marks it non-retryable
-		// at the broker level. This is intended to detect SASL misconfiguration, but it also
-		// triggers during transient network failures (e.g., broker restarts, partition moves).
+		// Track consecutive produce failures per client. When a kgo.Client enters a persistent
+		// failure loop — where every new connection immediately fails (e.g., "use of closed
+		// network connection") and the client cannot recover on its own — the only known fix in
+		// production is to delete the pod. We automate that by closing and recreating the client
+		// after a sustained streak of failures.
 		//
-		// Although franz-go does retry the batch at the sink level (handleReqClientErr default
-		// fallthrough), each retry incurs exponential backoff (250ms → 5s cap) and metadata
-		// refresh is throttled by MetadataMinAge (10s). Under sustained failures — such as
-		// multiple partition moves in quick succession — this backoff state accumulates and the
-		// client can remain effectively stuck for minutes: the buffer fills to maxBufferedBytes,
-		// new produce calls fail immediately with ErrMaxBuffered, and the backoff/metadata
-		// refresh cycle is too slow to recover before the next disruption.
+		// The threshold is intentionally high (100) to avoid false positives during normal
+		// transient disruptions (partition moves, broker restarts) which resolve within a few
+		// retries. A legitimate stuck state produces hundreds of failures per second per client,
+		// so 100 consecutive failures is reached in seconds when truly stuck but is virtually
+		// unreachable during normal operation.
 		//
-		// Recreating the client resets all accumulated backoff state (consecutiveFailures=0),
-		// clears any stale buffered records, and establishes fresh connections with up-to-date
-		// metadata. This is equivalent to the manual pod restart that resolves the issue in
-		// production, but targeted at the specific client rather than the entire process.
-		var firstReadEOF *kgo.ErrFirstReadEOF
-		if errors.As(err, &firstReadEOF) {
-			level.Warn(w.logger).Log(
-				"msg", "detected ErrFirstReadEOF from Kafka client, recreating client to reset backoff state and recover faster",
-				"partition", partitionID,
-				"err", err,
-			)
-			w.closeWriterIfSame(partitionID, writer)
+		// We exclude ErrMaxBuffered from the counter because it indicates the buffer is full
+		// from previous failures, not a new connection-level problem. Counting it would
+		// artificially inflate the streak even if the underlying connections are recovering.
+		if !errors.Is(err, kgo.ErrMaxBuffered) {
+			failures := w.consecutiveFailures[clientID].Inc()
+			if failures >= writerConsecutiveFailuresThreshold {
+				level.Warn(w.logger).Log(
+					"msg", "closing Kafka writer client after too many consecutive produce failures",
+					"client_id", clientID,
+					"partition", partitionID,
+					"consecutive_failures", failures,
+					"err", err,
+				)
+				w.consecutiveFailures[clientID].Store(0)
+				w.closeWriterIfSame(partitionID, writer)
+			}
 		}
 
 		return err
@@ -240,8 +264,8 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string
 
 // closeWriterIfSame closes the Kafka writer for the given partition only if the current writer
 // in the slot is the same instance as the provided stale client. This prevents a race where
-// multiple goroutines detect ErrFirstReadEOF from the same failing client but a new healthy
-// writer has already been created in the slot by the time a later goroutine arrives.
+// multiple goroutines detect the failure threshold on the same client but a new healthy writer
+// has already been created in the slot by the time a later goroutine arrives.
 //
 // Both the Close and nil-out happen under the lock for two reasons:
 // 1. Prevent the old client's kprom OnClientClosed hook from unregistering metrics that belong
