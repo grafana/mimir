@@ -19,10 +19,14 @@ const (
 	Desc
 )
 
-var comparerAlphaAscFunc = func(a SearchResult, b SearchResult) int { return strings.Compare(b.Value, a.Value) }
-var comparerAlphaDscFunc = func(a SearchResult, b SearchResult) int { return strings.Compare(a.Value, b.Value) }
+var comparerAlphaAscFunc = func(a SearchResult, b SearchResult) int { return strings.Compare(a.Value, b.Value) }
+var comparerAlphaDscFunc = func(a SearchResult, b SearchResult) int { return strings.Compare(b.Value, a.Value) }
 var comparerScoreAscFunc = func(a SearchResult, b SearchResult) int { return cmp.Compare(a.Score, b.Score) }
 var comparerScoreDscFunc = func(a SearchResult, b SearchResult) int { return cmp.Compare(b.Score, a.Score) }
+
+func SearchCompareFuncByInts(by int, order int) func(a SearchResult, b SearchResult) int {
+	return NewComparator(SortBy(by), SortDirection(order)).Compare
+}
 
 func NewComparator(by SortBy, order SortDirection) Comparator {
 	var cmpFunc func(a, b SearchResult) int

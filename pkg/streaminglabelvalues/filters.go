@@ -5,7 +5,6 @@ package streaminglabelvalues
 import (
 	"fmt"
 	"math"
-	"sort"
 	"strings"
 
 	"github.com/grafana/mimir/pkg/storage"
@@ -42,8 +41,8 @@ func (c *FilterChain) Accept(value string) (accepted bool, score float64) {
 	accepted = false
 	for _, f := range c.filters {
 		ok, s := f.Accept(value)
-		accepted = accepted || ok
 		if ok {
+			accepted = true
 			score = math.Max(score, s)
 		}
 	}
@@ -61,8 +60,8 @@ type FilterChains struct {
 }
 
 // NewFilterChains creates a FilterChains container with the given case sensitivity.
-func NewFilterChains(caseSensitive bool) *FilterChains {
-	return &FilterChains{caseSensitive: caseSensitive}
+func NewFilterChains(caseSensitive bool, numChains int) *FilterChains {
+	return &FilterChains{caseSensitive: caseSensitive, chains: make([]*FilterChain, 0, numChains)}
 }
 
 // AddFilterChain appends a chain to the container.
@@ -81,14 +80,19 @@ func (c *FilterChains) Accept(value string) (accepted bool, score float64) {
 	if !c.caseSensitive {
 		v = strings.ToLower(value)
 	}
-	score = -1
+	score = unscored
+	accepted = false
 	for _, chain := range c.chains {
 		ok, s := chain.Accept(v)
 		if ok {
-			return true, math.Max(score, s)
+			accepted = true
+			score = math.Max(score, s)
+			if score >= 1 {
+				break
+			}
 		}
 	}
-	return false, noscore
+	return accepted, score
 }
 
 // FilterContains accepts values that contain the given term as a substring.
@@ -172,101 +176,38 @@ func BuildFilterChains(searchTerms []string, caseInsensitive bool, fuzzAlg strin
 		return nil, fmt.Errorf("fuzzAlg must be one of: %s, %s", SearchAlgJaroWinkler, SearchAlgSubsequence)
 	}
 
-	chain := NewFilterChains(!caseInsensitive)
+	// For each search term we have a chain. Each chain then has 1 or more scoring filters
+	chain := NewFilterChains(!caseInsensitive, len(searchTerms))
 
-	sc := NewFilterChain(len(searchTerms))
+	filtersPerChain := 1
+	if fuzzThreshold > 0 && len(fuzzAlg) > 0 {
+		filtersPerChain++
+	}
+
 	for _, term := range searchTerms {
+		sc := NewFilterChain(filtersPerChain)
+
 		if caseInsensitive {
 			term = strings.ToLower(term)
 		}
+
 		sc.AddFilter(NewFilterContains(term))
-	}
-	chain.AddFilterChain(sc)
 
-	if fuzzThreshold > 0 && len(fuzzAlg) > 0 {
-		fc := NewFilterChain(len(searchTerms))
-		for _, term := range searchTerms {
-			if caseInsensitive {
-				term = strings.ToLower(term)
+		if fuzzThreshold > 0 && len(fuzzAlg) > 0 {
+			for _, term := range searchTerms {
+				if caseInsensitive {
+					term = strings.ToLower(term)
+				}
+				switch fuzzAlg {
+				case SearchAlgJaroWinkler:
+					sc.AddFilter(NewFilterJaro(term, fuzzThreshold))
+				case SearchAlgSubsequence:
+					sc.AddFilter(NewFilterSubsequence(term, fuzzThreshold))
+				}
 			}
-			switch fuzzAlg {
-			case SearchAlgJaroWinkler:
-				fc.AddFilter(NewFilterJaro(term, fuzzThreshold))
-			case SearchAlgSubsequence:
-				fc.AddFilter(NewFilterSubsequence(term, fuzzThreshold))
-			}
-
 		}
-		chain.AddFilterChain(fc)
+		chain.AddFilterChain(sc)
 	}
 
 	return chain, nil
-}
-
-// ScoreAndSort scores values using filter and sorts them by score in-place.
-// If ascending is false, highest score first; if true, lowest score first.
-// If filter is nil, values are returned unchanged.
-func ScoreAndSort(values []string, filter *FilterChains, ascending bool) []string {
-	if filter == nil || len(values) == 0 {
-		return values
-	}
-	scores := make([]float64, len(values))
-	for i, v := range values {
-		_, scores[i] = filter.Accept(v)
-	}
-	sort.Sort(scoreSort{values: values, scores: scores, ascending: ascending})
-	return values
-}
-
-// scoreSort implements sort.Interface to sort values and scores in parallel.
-type scoreSort struct {
-	values    []string
-	scores    []float64
-	ascending bool
-}
-
-func (s scoreSort) Len() int { return len(s.values) }
-func (s scoreSort) Less(i, j int) bool {
-	if s.ascending {
-		return s.scores[i] < s.scores[j]
-	}
-	return s.scores[i] > s.scores[j]
-}
-func (s scoreSort) Swap(i, j int) {
-	s.values[i], s.values[j] = s.values[j], s.values[i]
-	s.scores[i], s.scores[j] = s.scores[j], s.scores[i]
-}
-
-// MergeSlicesAndSortByScore deduplicates values from multiple slices, scores each
-// unique value using filter, and returns them sorted by score. If filter is nil,
-// values are deduplicated in insertion order without scoring.
-func MergeSlicesAndSortByScore(ss [][]string, filter *FilterChains, ascending bool) []string {
-	seen := make(map[string]struct{})
-	var unique []string
-	for _, slice := range ss {
-		for _, v := range slice {
-			if _, ok := seen[v]; !ok {
-				seen[v] = struct{}{}
-				unique = append(unique, v)
-			}
-		}
-	}
-	return ScoreAndSort(unique, filter, ascending)
-}
-
-// ApplyFilterChains filters values in-place using a pre-built FilterChains.
-// The returned slice shares the same backing array as the input.
-// If chain is nil all values are retained unchanged.
-func ApplyFilterChains(values []string, chain *FilterChains) []string {
-	if chain == nil {
-		return values
-	}
-	n := 0
-	for _, v := range values {
-		if accepted, _ := chain.Accept(v); accepted {
-			values[n] = v
-			n++
-		}
-	}
-	return values[:n]
 }

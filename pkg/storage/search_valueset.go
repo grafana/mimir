@@ -4,7 +4,7 @@ package storage
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/prometheus/prometheus/util/annotations"
@@ -213,54 +213,8 @@ func (s *SearchValueSet) LimitReached() bool {
 }
 
 func sortFilteredResultsInline(values []SearchResult, sortBy, sortOrder int) {
-	if len(values) == 0 {
+	if sortBy == 0 {
 		return
 	}
-
-	var sorter sort.Interface
-	switch sortBy {
-	case 0: // none
-		return
-	case 1: // alpha
-		sorter = filteredResultAlphaSort{values: values, ascending: sortOrder == 0}
-	case 2: // score
-		// SortOrder=0 means "best match first" (highest score first); SortOrder=1 means "worst first".
-		sorter = filteredResultScoreSort{values: values, ascending: sortOrder != 0}
-	}
-
-	sort.Sort(sorter)
-}
-
-// filteredResultScoreSort implements sort.Interface to sort by numeric score.
-type filteredResultScoreSort struct {
-	values    []SearchResult
-	ascending bool
-}
-
-func (s filteredResultScoreSort) Len() int { return len(s.values) }
-func (s filteredResultScoreSort) Less(i, j int) bool {
-	if s.ascending {
-		return s.values[i].Score < s.values[j].Score
-	}
-	return s.values[i].Score > s.values[j].Score
-}
-func (s filteredResultScoreSort) Swap(i, j int) {
-	s.values[i], s.values[j] = s.values[j], s.values[i]
-}
-
-// filteredResultAlphaSort implements sort.Interface to sort alphabetically.
-type filteredResultAlphaSort struct {
-	values    []SearchResult
-	ascending bool
-}
-
-func (s filteredResultAlphaSort) Len() int { return len(s.values) }
-func (s filteredResultAlphaSort) Less(i, j int) bool {
-	if s.ascending {
-		return strings.Compare(s.values[i].Value, s.values[j].Value) < 0
-	}
-	return strings.Compare(s.values[j].Value, s.values[i].Value) < 0
-}
-func (s filteredResultAlphaSort) Swap(i, j int) {
-	s.values[i], s.values[j] = s.values[j], s.values[i]
+	slices.SortFunc(values, SearchCompareFuncByInts(sortBy, sortOrder))
 }

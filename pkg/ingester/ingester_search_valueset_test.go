@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/prometheus/prometheus/util/annotations"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
@@ -39,8 +38,8 @@ func TestIngesterSearcherValueSet_NoResults(t *testing.T) {
 	vs := newingesterSearcherValueSet(producerOf(), nil, 0, 0, nil)
 	results, warns, err := collectAll(t, vs)
 	require.NoError(t, err)
-	assert.Empty(t, warns)
-	assert.Empty(t, results)
+	require.Empty(t, warns)
+	require.Empty(t, results)
 }
 
 func TestIngesterSearcherValueSet_ProducerError(t *testing.T) {
@@ -54,8 +53,8 @@ func TestIngesterSearcherValueSet_ProducerError(t *testing.T) {
 		vs := newingesterSearcherValueSet(produce, nil, 0, 0, nil)
 		// The one value sent before the error is still returned.
 		results, _, err := collectAll(t, vs)
-		assert.Equal(t, producerErr, err)
-		assert.Equal(t, []mimirstorage.SearchResult{{Value: "aaa"}}, results)
+		require.Equal(t, producerErr, err)
+		require.Equal(t, []mimirstorage.SearchResult{{Value: "aaa"}}, results)
 	})
 
 	t.Run("sorted", func(t *testing.T) {
@@ -63,8 +62,8 @@ func TestIngesterSearcherValueSet_ProducerError(t *testing.T) {
 		vs := newingesterSearcherValueSet(produce, sf, 0, 0, nil)
 		// Producer error means Next() must return false immediately (no partial results).
 		results, _, err := collectAll(t, vs)
-		assert.Equal(t, producerErr, err)
-		assert.Empty(t, results)
+		require.Equal(t, producerErr, err)
+		require.Empty(t, results)
 	})
 }
 
@@ -89,9 +88,9 @@ func TestIngesterSearcherValueSet_ProducerWarning(t *testing.T) {
 			vs := newingesterSearcherValueSet(produce, sf, 0, 0, nil)
 			results, warns, err := collectAll(t, vs)
 			require.NoError(t, err)
-			assert.Len(t, results, 2)
+			require.Len(t, results, 2)
 			_, hasWarn := warns[warn.Error()]
-			assert.True(t, hasWarn, "expected warning to be propagated")
+			require.True(t, hasWarn, "expected warning to be propagated")
 		})
 	}
 }
@@ -100,7 +99,7 @@ func TestIngesterSearcherValueSet_Deduplication(t *testing.T) {
 	vs := newingesterSearcherValueSet(producerOf("aaa", "bbb", "aaa", "ccc", "bbb"), nil, 0, 0, nil)
 	results, _, err := collectAll(t, vs)
 	require.NoError(t, err)
-	assert.Equal(t, []mimirstorage.SearchResult{
+	require.Equal(t, []mimirstorage.SearchResult{
 		{Value: "aaa"},
 		{Value: "bbb"},
 		{Value: "ccc"},
@@ -111,7 +110,7 @@ func TestIngesterSearcherValueSet_LimitUnsorted(t *testing.T) {
 	vs := newingesterSearcherValueSet(producerOf("aaa", "bbb", "ccc", "ddd"), nil, 2, 0, nil)
 	results, _, err := collectAll(t, vs)
 	require.NoError(t, err)
-	assert.Equal(t, []mimirstorage.SearchResult{
+	require.Equal(t, []mimirstorage.SearchResult{
 		{Value: "aaa"},
 		{Value: "bbb"},
 	}, results)
@@ -123,7 +122,7 @@ func TestIngesterSearcherValueSet_LimitSortedAlphaAsc(t *testing.T) {
 	vs := newingesterSearcherValueSet(producerOf("ddd", "aaa", "ccc", "bbb"), sf, 2, 0, nil)
 	results, _, err := collectAll(t, vs)
 	require.NoError(t, err)
-	assert.Equal(t, []mimirstorage.SearchResult{
+	require.Equal(t, []mimirstorage.SearchResult{
 		{Value: "aaa"},
 		{Value: "bbb"},
 	}, results)
@@ -134,7 +133,7 @@ func TestIngesterSearcherValueSet_LimitSortedAlphaDesc(t *testing.T) {
 	vs := newingesterSearcherValueSet(producerOf("aaa", "bbb", "ccc", "ddd"), sf, 2, 0, nil)
 	results, _, err := collectAll(t, vs)
 	require.NoError(t, err)
-	assert.Equal(t, []mimirstorage.SearchResult{
+	require.Equal(t, []mimirstorage.SearchResult{
 		{Value: "ddd"},
 		{Value: "ccc"},
 	}, results)
@@ -145,8 +144,8 @@ func TestIngesterSearcherValueSet_MaxBytesSorted(t *testing.T) {
 	sf := &client.SearchLabelValuesFilter{SortBy: client.SORT_BY_ALPHA, SortOrder: client.SORT_ORDER_ASC}
 	vs := newingesterSearcherValueSet(producerOf("aaa", "bbb"), sf, 0, 5, nil)
 	results, _, err := collectAll(t, vs)
-	assert.ErrorContains(t, err, "buffer exceeded max size")
-	assert.Empty(t, results)
+	require.ErrorContains(t, err, "buffer exceeded max size")
+	require.Empty(t, results)
 }
 
 func TestIngesterSearcherValueSet_MaxBytesNotExceeded(t *testing.T) {
@@ -155,7 +154,7 @@ func TestIngesterSearcherValueSet_MaxBytesNotExceeded(t *testing.T) {
 	vs := newingesterSearcherValueSet(producerOf("aaa", "bbb"), sf, 0, 6, nil)
 	results, _, err := collectAll(t, vs)
 	require.NoError(t, err)
-	assert.Len(t, results, 2)
+	require.Len(t, results, 2)
 }
 
 func TestIngesterSearcherValueSet_SortedDeduplication(t *testing.T) {
@@ -164,7 +163,7 @@ func TestIngesterSearcherValueSet_SortedDeduplication(t *testing.T) {
 	vs := newingesterSearcherValueSet(producerOf("bbb", "aaa", "bbb", "ccc", "aaa"), sf, 0, 0, nil)
 	results, _, err := collectAll(t, vs)
 	require.NoError(t, err)
-	assert.Equal(t, []mimirstorage.SearchResult{
+	require.Equal(t, []mimirstorage.SearchResult{
 		{Value: "aaa"},
 		{Value: "bbb"},
 		{Value: "ccc"},
@@ -176,7 +175,7 @@ func TestIngesterSearcherValueSet_SortedDeduplicationDesc(t *testing.T) {
 	vs := newingesterSearcherValueSet(producerOf("bbb", "aaa", "bbb", "ccc", "aaa"), sf, 0, 0, nil)
 	results, _, err := collectAll(t, vs)
 	require.NoError(t, err)
-	assert.Equal(t, []mimirstorage.SearchResult{
+	require.Equal(t, []mimirstorage.SearchResult{
 		{Value: "ccc"},
 		{Value: "bbb"},
 		{Value: "aaa"},
@@ -192,9 +191,9 @@ func TestIngesterSearcherValueSet_ContextCancelledUnsorted(t *testing.T) {
 	}
 	vs := newingesterSearcherValueSet(produce, nil, 0, 0, nil)
 	results, _, err := collectAll(t, vs)
-	assert.ErrorIs(t, err, context.Canceled)
+	require.ErrorIs(t, err, context.Canceled)
 	// Partial results sent before cancellation are still returned.
-	assert.Equal(t, []mimirstorage.SearchResult{{Value: "aaa"}, {Value: "bbb"}}, results)
+	require.Equal(t, []mimirstorage.SearchResult{{Value: "aaa"}, {Value: "bbb"}}, results)
 }
 
 func TestIngesterSearcherValueSet_ContextCancelledSorted(t *testing.T) {
@@ -208,8 +207,8 @@ func TestIngesterSearcherValueSet_ContextCancelledSorted(t *testing.T) {
 	vs := newingesterSearcherValueSet(produce, sf, 0, 0, nil)
 	// Producer error must suppress all results on the sorted path.
 	results, _, err := collectAll(t, vs)
-	assert.ErrorIs(t, err, context.Canceled)
-	assert.Empty(t, results)
+	require.ErrorIs(t, err, context.Canceled)
+	require.Empty(t, results)
 }
 
 func TestIngesterSearcherValueSet_CloseUnblocksProducer(t *testing.T) {
@@ -225,5 +224,5 @@ func TestIngesterSearcherValueSet_CloseUnblocksProducer(t *testing.T) {
 	require.True(t, vs.Next())
 	vs.Close()
 	// Err/Warnings must not deadlock.
-	assert.NoError(t, vs.Err())
+	require.NoError(t, vs.Err())
 }

@@ -221,11 +221,11 @@ func Test_Ingester_SearchLabelNames(t *testing.T) {
 			ordered:   true,
 		},
 		{
-			// "__name__" contains "ame" as a substring → FilterContains match, score = -1.
+			// "__name__" contains "ame" - jaro score of 0.7
 			// "status" does not contain "ame" but Jaro("ame","status") ≈ 0.5 > threshold → score = 0.5.
 			// "route" does not match either filter.
-			// Score DESC (SortOrder=ASC): status(0.5) before __name__(-1).
-			name: "sort score best match first",
+			// Order by score ascending means 0.5, 0.7
+			name: "sort score ascending",
 			req: &client.SearchLabelValuesRequest{
 				EndTimestampMs: math.MaxInt64,
 				Filter: &client.SearchLabelValuesFilter{
@@ -239,8 +239,25 @@ func Test_Ingester_SearchLabelNames(t *testing.T) {
 			ordered:   true,
 		},
 		{
-			// Same filter; SortOrder=DESC reverses: __name__(-1) before status(0.5).
-			name: "sort score worst match first",
+			// "__name__" contains "ame" - jaro score of 0.7
+			// "status" does not contain "ame" but Jaro("ame","status") ≈ 0.5 > threshold → score = 0.5.
+			// "route" gets a perfect score of 1
+			// Order by score ascending means 0.5, 0.7, 1.0
+			name: "sort score ascending multiple terms",
+			req: &client.SearchLabelValuesRequest{
+				EndTimestampMs: math.MaxInt64,
+				Filter: &client.SearchLabelValuesFilter{
+					SearchTerms:   []string{"ame", "route"},
+					FuzzThreshold: 0.4,
+					SortBy:        client.SORT_BY_SCORE,
+					SortOrder:     client.SORT_ORDER_ASC,
+				},
+			},
+			wantNames: []string{"status", "__name__", "route"},
+			ordered:   true,
+		},
+		{
+			name: "sort score descending",
 			req: &client.SearchLabelValuesRequest{
 				EndTimestampMs: math.MaxInt64,
 				Filter: &client.SearchLabelValuesFilter{
@@ -251,6 +268,20 @@ func Test_Ingester_SearchLabelNames(t *testing.T) {
 				},
 			},
 			wantNames: []string{"__name__", "status"},
+			ordered:   true,
+		},
+		{
+			name: "sort score descending multiple terms",
+			req: &client.SearchLabelValuesRequest{
+				EndTimestampMs: math.MaxInt64,
+				Filter: &client.SearchLabelValuesFilter{
+					SearchTerms:   []string{"ame", "route"},
+					FuzzThreshold: 0.4,
+					SortBy:        client.SORT_BY_SCORE,
+					SortOrder:     client.SORT_ORDER_DESC,
+				},
+			},
+			wantNames: []string{"route", "__name__", "status"},
 			ordered:   true,
 		},
 	}

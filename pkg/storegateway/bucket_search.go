@@ -52,12 +52,7 @@ func (s *BucketStore) SearchLabelNames(req *storepb.SearchLabelNamesRequest, str
 		return s.produceSearchLabelNames(stream.Context(), req, searchFilter, reqSeriesMatchers, reqBlockMatchers, stats, resHints, ch)
 	}
 
-	sortBy, sortOrder := 0, 0
-	if req.SearchFilter != nil {
-		sortBy = int(req.SearchFilter.SortBy)
-		sortOrder = int(req.SearchFilter.SortOrder)
-	}
-
+	sortBy, sortOrder := sortParamsFromFilter(req.SearchFilter)
 	iter := mimirstorage.NewSearchValueSet(producer, sortBy, sortOrder, int(req.Limit), s.searchMaxBytesLimitFn(), nil)
 	defer iter.Close()
 
@@ -95,7 +90,6 @@ func (s *BucketStore) produceSearchLabelNames(
 			defer runutil.CloseWithLogOnErr(s.logger, indexr, "label names")
 			b.ensureIndexHeaderLoaded(gctx, stats)
 
-			// TODO - can we get any lower to stream here
 			result, err := blockLabelNames(gctx, indexr, reqSeriesMatchers, seriesLimiter, s.maxSeriesPerBatch, s.logger, stats)
 			if err != nil {
 				return errors.Wrapf(err, "block %s", b.meta.ULID)
@@ -107,14 +101,15 @@ func (s *BucketStore) produceSearchLabelNames(
 				hintsMtx.Unlock()
 			}
 
+			var score float64
+			var accepted bool
 			for _, v := range result {
-				var score float64
+
 				if searchFilter != nil {
-					accepted, s := searchFilter.Accept(v)
+					accepted, score = searchFilter.Accept(v)
 					if !accepted {
 						continue
 					}
-					score = s
 				}
 				select {
 				case ch <- mimirstorage.SearchResult{Value: v, Score: score}:
@@ -156,6 +151,10 @@ func (s *BucketStore) SearchLabelValues(req *storepb.SearchLabelValuesRequest, s
 	defer s.recordRequestAmbientTime(stats, time.Now())
 	defer s.recordBucketIndexDiscoveryDiff(stream.Context())
 
+	if req.Label == "" {
+		return status.Error(codes.InvalidArgument, "missing label name")
+	}
+
 	var reqBlockMatchers []*labels.Matcher
 	if req.RequestHints != nil {
 		reqBlockMatchers, err = storepb.MatchersToPromMatchers(req.RequestHints.BlockMatchers...)
@@ -174,12 +173,7 @@ func (s *BucketStore) SearchLabelValues(req *storepb.SearchLabelValuesRequest, s
 		return s.produceSearchLabelValues(stream.Context(), req, searchFilter, reqSeriesMatchers, reqBlockMatchers, stats, resHints, ch)
 	}
 
-	sortBy, sortOrder := 0, 0
-	if req.SearchFilter != nil {
-		sortBy = int(req.SearchFilter.SortBy)
-		sortOrder = int(req.SearchFilter.SortOrder)
-	}
-
+	sortBy, sortOrder := sortParamsFromFilter(req.SearchFilter)
 	iter := mimirstorage.NewSearchValueSet(produce, sortBy, sortOrder, int(req.Limit), s.searchMaxBytesLimitFn(), nil)
 	defer iter.Close()
 
@@ -207,26 +201,28 @@ func (s *BucketStore) produceSearchLabelValues(
 		resHints.AddQueriedBlock(b.meta.ULID)
 		hintsMtx.Unlock()
 
+		// This index reader is here only to keep the block open inside the goroutine;
+		// blockLabelValues creates its own reader with the correct labelValuesPostingsStrategy.
 		indexr := b.indexReader(nil)
 
 		g.Go(func() error {
 			defer runutil.CloseWithLogOnErr(b.logger, indexr, "close block index reader")
 			b.ensureIndexHeaderLoaded(gctx, stats)
 
-			// TODO - can we get lower here
 			result, err := blockLabelValues(gctx, b, s.postingsStrategy, s.maxSeriesPerBatch, req.Label, reqSeriesMatchers, s.logger, stats)
 			if err != nil {
 				return errors.Wrapf(err, "block %s", b.meta.ULID)
 			}
 
+			var score float64
+			var accepted bool
 			for _, v := range result {
-				var score float64
+
 				if searchFilter != nil {
-					accepted, s := searchFilter.Accept(v)
+					accepted, score = searchFilter.Accept(v)
 					if !accepted {
 						continue
 					}
-					score = s
 				}
 				select {
 				case ch <- mimirstorage.SearchResult{Value: v, Score: score}:
@@ -300,6 +296,15 @@ func streamStoreSearchResults(
 		}
 	}
 	return stream.Send(finalResp)
+}
+
+// sortParamsFromFilter extracts sort parameters from a SearchFilter.
+// Returns (0, 0) if sf is nil (no sorting).
+func sortParamsFromFilter(sf *storepb.SearchFilter) (sortBy, sortOrder int) {
+	if sf != nil {
+		return int(sf.SortBy), int(sf.SortOrder)
+	}
+	return 0, 0
 }
 
 // buildSearchFilter converts a proto SearchFilter into a FilterChains ready for concurrent use.

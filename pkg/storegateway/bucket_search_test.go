@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"google.golang.org/grpc"
@@ -103,7 +102,7 @@ func TestBucketStore_SearchLabelNames(t *testing.T) {
 				req: &storepb.SearchLabelNamesRequest{
 					Start:        timestamp.FromTime(minTime),
 					End:          timestamp.FromTime(maxTime),
-					SearchFilter: &storepb.SearchFilter{SortBy: 1, SortOrder: 0},
+					SearchFilter: &storepb.SearchFilter{SortBy: storepb.SORT_BY_ALPHA, SortOrder: storepb.SORT_ORDER_ASC},
 					Limit:        1,
 				},
 				expected: []string{"a"},
@@ -113,7 +112,7 @@ func TestBucketStore_SearchLabelNames(t *testing.T) {
 				req: &storepb.SearchLabelNamesRequest{
 					Start:        timestamp.FromTime(minTime),
 					End:          timestamp.FromTime(maxTime),
-					SearchFilter: &storepb.SearchFilter{SearchTerms: []string{"b", "c"}, SortBy: 1, SortOrder: 0},
+					SearchFilter: &storepb.SearchFilter{SearchTerms: []string{"b", "c"}, SortBy: storepb.SORT_BY_ALPHA, SortOrder: storepb.SORT_ORDER_ASC},
 					Limit:        1,
 				},
 				expected: []string{"b"},
@@ -149,7 +148,7 @@ func TestBucketStore_SearchLabelNames(t *testing.T) {
 				req: &storepb.SearchLabelNamesRequest{
 					Start:        timestamp.FromTime(minTime),
 					End:          timestamp.FromTime(maxTime),
-					SearchFilter: &storepb.SearchFilter{SortBy: 1, SortOrder: 1},
+					SearchFilter: &storepb.SearchFilter{SortBy: storepb.SORT_BY_ALPHA, SortOrder: storepb.SORT_ORDER_DESC},
 				},
 				expected: []string{"c", "b", "a"},
 				ordered:  true,
@@ -157,12 +156,11 @@ func TestBucketStore_SearchLabelNames(t *testing.T) {
 		} {
 			t.Run(name, func(t *testing.T) {
 				srv := newTestSearchServer(ctx)
-				err := s.store.SearchLabelNames(tc.req, srv)
-				require.NoError(t, err)
+				require.NoError(t, s.store.SearchLabelNames(tc.req, srv))
 				if tc.ordered {
-					assert.Equal(t, tc.expected, srv.results)
+					require.Equal(t, tc.expected, srv.results)
 				} else {
-					assert.ElementsMatch(t, tc.expected, srv.results)
+					require.ElementsMatch(t, tc.expected, srv.results)
 				}
 			})
 		}
@@ -181,6 +179,7 @@ func TestBucketStore_SearchLabelValues(t *testing.T) {
 		for name, tc := range map[string]struct {
 			req      *storepb.SearchLabelValuesRequest
 			expected []string
+			ordered  bool // whether to assert exact order
 		}{
 			"no filter returns all values": {
 				req: &storepb.SearchLabelValuesRequest{
@@ -189,6 +188,7 @@ func TestBucketStore_SearchLabelValues(t *testing.T) {
 					End:   timestamp.FromTime(maxTime),
 				},
 				expected: []string{"1", "2"},
+				ordered:  false,
 			},
 			"filter matching one value": {
 				req: &storepb.SearchLabelValuesRequest{
@@ -198,6 +198,7 @@ func TestBucketStore_SearchLabelValues(t *testing.T) {
 					SearchFilter: &storepb.SearchFilter{SearchTerms: []string{"1"}},
 				},
 				expected: []string{"1"},
+				ordered:  true,
 			},
 			"filter matching nothing": {
 				req: &storepb.SearchLabelValuesRequest{
@@ -207,6 +208,7 @@ func TestBucketStore_SearchLabelValues(t *testing.T) {
 					SearchFilter: &storepb.SearchFilter{SearchTerms: []string{"zzz"}},
 				},
 				expected: nil,
+				ordered:  true,
 			},
 			"limit applied after filter": {
 				req: &storepb.SearchLabelValuesRequest{
@@ -216,6 +218,7 @@ func TestBucketStore_SearchLabelValues(t *testing.T) {
 					Limit: 1,
 				},
 				expected: []string{"1"},
+				ordered:  false,
 			},
 			"filter then limit": {
 				req: &storepb.SearchLabelValuesRequest{
@@ -226,6 +229,7 @@ func TestBucketStore_SearchLabelValues(t *testing.T) {
 					Limit:        1,
 				},
 				expected: []string{"1"},
+				ordered:  false,
 			},
 			"unknown label returns empty": {
 				req: &storepb.SearchLabelValuesRequest{
@@ -234,6 +238,7 @@ func TestBucketStore_SearchLabelValues(t *testing.T) {
 					End:   timestamp.FromTime(maxTime),
 				},
 				expected: nil,
+				ordered:  true,
 			},
 			"outside time range": {
 				req: &storepb.SearchLabelValuesRequest{
@@ -242,25 +247,64 @@ func TestBucketStore_SearchLabelValues(t *testing.T) {
 					End:   timestamp.FromTime(time.Now().Add(-23 * time.Hour)),
 				},
 				expected: nil,
+				ordered:  true,
+			},
+			"sort alpha asc": {
+				req: &storepb.SearchLabelValuesRequest{
+					Label:        "a",
+					Start:        timestamp.FromTime(minTime),
+					End:          timestamp.FromTime(maxTime),
+					SearchFilter: &storepb.SearchFilter{SortBy: storepb.SORT_BY_ALPHA, SortOrder: storepb.SORT_ORDER_ASC},
+				},
+				expected: []string{"1", "2"},
+				ordered:  true,
 			},
 			"sort alpha desc": {
 				req: &storepb.SearchLabelValuesRequest{
 					Label:        "a",
 					Start:        timestamp.FromTime(minTime),
 					End:          timestamp.FromTime(maxTime),
-					SearchFilter: &storepb.SearchFilter{SortBy: 1, SortOrder: 1},
+					SearchFilter: &storepb.SearchFilter{SortBy: storepb.SORT_BY_ALPHA, SortOrder: storepb.SORT_ORDER_DESC},
 				},
 				expected: []string{"2", "1"},
+				ordered:  true,
+			},
+			"case insensitive filter": {
+				req: &storepb.SearchLabelValuesRequest{
+					Label:        "a",
+					Start:        timestamp.FromTime(minTime),
+					End:          timestamp.FromTime(maxTime),
+					SearchFilter: &storepb.SearchFilter{SearchTerms: []string{"1"}, CaseInsensitive: true},
+				},
+				expected: []string{"1"},
+				ordered:  true,
 			},
 		} {
 			t.Run(name, func(t *testing.T) {
 				srv := newTestSearchServer(ctx)
-				err := s.store.SearchLabelValues(tc.req, srv)
-				require.NoError(t, err)
-				assert.Equal(t, tc.expected, srv.results)
+				require.NoError(t, s.store.SearchLabelValues(tc.req, srv))
+				if tc.ordered {
+					require.Equal(t, tc.expected, srv.results)
+				} else {
+					require.ElementsMatch(t, tc.expected, srv.results)
+				}
 			})
 		}
 	})
+}
+
+func TestBucketStore_SearchLabelValues_MissingLabel(t *testing.T) {
+	bkt := objstore.NewInMemBucket()
+	s := prepareStoreWithTestBlocks(t, bkt, defaultPrepareStoreConfig(t))
+
+	ctx := context.Background()
+	srv := newTestSearchServer(ctx)
+	err := s.store.SearchLabelValues(&storepb.SearchLabelValuesRequest{
+		Start: timestamp.FromTime(minTime),
+		End:   timestamp.FromTime(maxTime),
+	}, srv)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "missing label name")
 }
 
 func TestBucketStore_SearchLabelNames_MultipleBlocks(t *testing.T) {
@@ -273,20 +317,18 @@ func TestBucketStore_SearchLabelNames_MultipleBlocks(t *testing.T) {
 	// All blocks are queried and results are merged/deduplicated.
 	// Results arrive in goroutine completion order, so use ElementsMatch.
 	srv := newTestSearchServer(ctx)
-	err := s.store.SearchLabelNames(&storepb.SearchLabelNamesRequest{
+	require.NoError(t, s.store.SearchLabelNames(&storepb.SearchLabelNamesRequest{
 		Start: timestamp.FromTime(minTime),
 		End:   timestamp.FromTime(maxTime),
-	}, srv)
-	require.NoError(t, err)
-	assert.ElementsMatch(t, []string{"a", "b", "c"}, srv.results)
+	}, srv))
+	require.ElementsMatch(t, []string{"a", "b", "c"}, srv.results)
 
 	// Filter applied across all blocks.
 	srv = newTestSearchServer(ctx)
-	err = s.store.SearchLabelNames(&storepb.SearchLabelNamesRequest{
+	require.NoError(t, s.store.SearchLabelNames(&storepb.SearchLabelNamesRequest{
 		Start:        timestamp.FromTime(minTime),
 		End:          timestamp.FromTime(maxTime),
 		SearchFilter: &storepb.SearchFilter{SearchTerms: []string{"a"}},
-	}, srv)
-	require.NoError(t, err)
-	assert.Equal(t, []string{"a"}, srv.results)
+	}, srv))
+	require.Equal(t, []string{"a"}, srv.results)
 }
