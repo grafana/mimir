@@ -145,55 +145,78 @@ func (w *Writer) stopping(_ error) error {
 	return nil
 }
 
+// PartitionWriteRequest holds a write request targeted to a specific partition.
+type PartitionWriteRequest struct {
+	PartitionID  int32
+	WriteRequest *mimirpb.WriteRequest
+}
+
 // WriteSync the input data to the ingest storage. The function blocks until the data has been successfully committed,
 // or an error occurred.
 func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string, req *mimirpb.WriteRequest) error {
+	return w.MultiWriteSync(ctx, userID, []PartitionWriteRequest{{PartitionID: partitionID, WriteRequest: req}})
+}
+
+// MultiWriteSync writes data for multiple partitions to the ingest storage in a single ProduceSync call.
+// The function blocks until all data has been successfully committed, or an error occurred.
+func (w *Writer) MultiWriteSync(ctx context.Context, userID string, partitionRequests []PartitionWriteRequest) error {
 	startTime := time.Now()
 
-	// Nothing to do if the input data is empty.
-	if req.IsEmpty() {
+	// Serialize all partition requests into a single records slice.
+	var (
+		allRecords       []*kgo.Record
+		requestSizeBytes int
+	)
+	for _, pr := range partitionRequests {
+		// Nothing to do if the input data is empty.
+		if pr.WriteRequest.IsEmpty() {
+			continue
+		}
+
+		records, reqSizeBytes, err := w.serializer.ToRecords(pr.PartitionID, userID, pr.WriteRequest, w.kafkaCfg.ProducerMaxRecordSizeBytes)
+		if err != nil {
+			return err
+		}
+
+		// Track the number of records the given WriteRequest has been split into.
+		// Track this before sending records to Kafka so that we track it also for failures (e.g. we want to have
+		// visibility over this metric if records are rejected by Kafka because of MESSAGE_TOO_LARGE).
+		w.recordsPerRequest.Observe(float64(len(records)))
+
+		allRecords = append(allRecords, records...)
+		requestSizeBytes += reqSizeBytes
+	}
+
+	// Nothing to do if all requests were empty.
+	if len(allRecords) == 0 {
 		return nil
 	}
 
-	// Create records out of the write request.
-	records, reqSizeBytes, err := w.serializer.ToRecords(partitionID, userID, req, w.kafkaCfg.ProducerMaxRecordSizeBytes)
+	// Write to backend. The partition field is already set on each record by ToRecords,
+	// so the Kafka client routes records to the correct partition regardless of which writer is used.
+	writer, err := w.getKafkaWriterForPartition(partitionRequests[0].PartitionID)
 	if err != nil {
 		return err
 	}
 
-	// Write to backend.
-	writer, err := w.getKafkaWriterForPartition(partitionID)
-	if err != nil {
-		return err
-	}
-
-	// Track the number of records the given WriteRequest has been split into.
-	// Track this before sending records to Kafka so that we track it also for failures (e.g. we want to have
-	// visibility over this metric if records are rejected by Kafka because of MESSAGE_TOO_LARGE).
-	w.recordsPerRequest.Observe(float64(len(records)))
-
-	res := writer.ProduceSync(ctx, records)
+	res := writer.ProduceSync(ctx, allRecords)
 
 	// We track the latency both in case of success and failure (but with a different label), to avoid misunderstandings
 	// when we look at it in case Kafka Produce requests time out (if latency wasn't tracked on error, we would see low
 	// latency but in practice many are very high latency and timing out).
-	if count, recordsSizeBytes := successfulProduceRecordsStats(res); count > 0 {
+	//
+	// Since MultiWriteSync batches records for multiple partitions into a single ProduceSync call,
+	// we only track success metrics when all records succeeded. This keeps cortex_ingest_storage_writer_sent_bytes_total
+	// and cortex_ingest_storage_writer_input_bytes_total consistent with each other, avoiding inflation on partial failures.
+	if count, recordsSizeBytes := successfulProduceRecordsStats(res); count == len(allRecords) {
 		w.writeSuccessLatency.Observe(time.Since(startTime).Seconds())
 		w.writeBytesTotal.Add(float64(recordsSizeBytes))
-		w.inputBytesTotal.Add(float64(reqSizeBytes))
+		w.inputBytesTotal.Add(float64(requestSizeBytes))
 	} else {
 		w.writeFailureLatency.Observe(time.Since(startTime).Seconds())
 	}
 
-	if err := res.FirstErr(); err != nil {
-		if errors.Is(err, kerr.MessageTooLarge) {
-			return ErrWriteRequestDataItemTooLarge
-		}
-
-		return err
-	}
-
-	return nil
+	return produceResultsErr(res)
 }
 
 func (w *Writer) getKafkaWriterForPartition(partitionID int32) (*KafkaProducer, error) {
@@ -304,4 +327,43 @@ func successfulProduceRecordsStats(results kgo.ProduceResults) (count, sizeBytes
 	}
 
 	return
+}
+
+// produceResultsErr inspects the produce results and returns an appropriate error.
+// If any record failed with MessageTooLarge, ErrWriteRequestDataItemTooLarge is returned (higher priority).
+// Otherwise, the first error is decorated with the list of partitions that failed.
+func produceResultsErr(results kgo.ProduceResults) error {
+	var (
+		firstErr            error
+		failedPartitions    []int32
+		failedPartitionsMap map[int32]struct{}
+	)
+
+	for _, res := range results {
+		if res.Err == nil {
+			continue
+		}
+
+		if errors.Is(res.Err, kerr.MessageTooLarge) {
+			return ErrWriteRequestDataItemTooLarge
+		}
+
+		if firstErr == nil {
+			firstErr = res.Err
+			failedPartitionsMap = map[int32]struct{}{}
+		}
+
+		if res.Record != nil {
+			if _, seen := failedPartitionsMap[res.Record.Partition]; !seen {
+				failedPartitionsMap[res.Record.Partition] = struct{}{}
+				failedPartitions = append(failedPartitions, res.Record.Partition)
+			}
+		}
+	}
+
+	if firstErr == nil {
+		return nil
+	}
+
+	return fmt.Errorf("failed to write to partitions %v: %w", failedPartitions, firstErr)
 }

@@ -2411,7 +2411,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 
 	var (
 		ingestersSubring  ring.DoBatchRing
-		partitionsSubring ring.DoBatchRing
+		partitionsSubring *ring.ActivePartitionBatchRing
 	)
 
 	// Get the tenant's subring to use to either write to ingesters or partitions.
@@ -2441,7 +2441,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 // - Ingest storage partitions, when partitionsSubring is not nil
 //
 // The input cleanup function is guaranteed to be called after all requests to all backends have completed.
-func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, ingestersSubring, partitionsSubring ring.DoBatchRing, cleanup func()) error {
+func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, ingestersSubring ring.DoBatchRing, partitionsSubring *ring.ActivePartitionBatchRing, cleanup func()) error {
 	var (
 		wg            = sync.WaitGroup{}
 		partitionsErr error
@@ -2509,7 +2509,7 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 		return d.sendWriteRequestToIngesters(ctx, ingestersSubring, req, keys, initialMetadataIndex, remoteRequestContext, batchOptions)
 	}
 	if ingestersSubring == nil {
-		return d.sendWriteRequestToPartitions(ctx, tenantID, partitionsSubring, req, keys, initialMetadataIndex, partitionsRequestContext, batchOptions)
+		return d.sendWriteRequestToPartitions(ctx, tenantID, partitionsSubring, req, keys, initialMetadataIndex, partitionsRequestContext, batchOptions.Cleanup)
 	}
 
 	// Prepare a callback function that will call the input cleanup callback function only after
@@ -2533,7 +2533,7 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 	go func() {
 		defer wg.Done()
 
-		partitionsErr = d.sendWriteRequestToPartitions(ctx, tenantID, partitionsSubring, req, keys, initialMetadataIndex, partitionsRequestContext, batchOptions)
+		partitionsErr = d.sendWriteRequestToPartitions(ctx, tenantID, partitionsSubring, req, keys, initialMetadataIndex, partitionsRequestContext, batchOptions.Cleanup)
 	}()
 
 	// Wait until all backends have done.
@@ -2577,25 +2577,29 @@ func (d *Distributor) sendWriteRequestToIngesters(ctx context.Context, tenantRin
 	return errors.Wrap(err, "send data to ingesters")
 }
 
-func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID string, tenantRing ring.DoBatchRing, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, remoteRequestContext func() context.Context, batchOptions ring.DoBatchOptions) error {
-	err := ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, tenantRing, keys,
-		func(partition ring.InstanceDesc, indexes []int) error {
-			req := req.ForIndexes(indexes, initialMetadataIndex)
+func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID string, tenantRing *ring.ActivePartitionBatchRing, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, remoteRequestContext func() context.Context, cleanup func()) error {
+	defer cleanup()
 
-			// The partition ID is stored in the ring.InstanceDesc Id.
-			partitionID, err := strconv.ParseUint(partition.Id, 10, 31)
-			if err != nil {
-				return err
-			}
+	// Group keys by partition.
+	partitionKeys, err := tenantRing.GetKeysByPartition(ctx, keys)
+	if err != nil {
+		return errors.Wrap(err, "send data to partitions")
+	}
 
-			ctx := remoteRequestContext()
-			err = d.ingestStorageWriter.WriteSync(ctx, int32(partitionID), tenantID, req)
-			err = wrapPartitionPushError(err, int32(partitionID))
-			err = wrapDeadlineExceededPushError(err)
+	// Build per-partition write requests.
+	partitionRequests := make([]ingest.PartitionWriteRequest, 0, len(partitionKeys))
+	for _, pk := range partitionKeys {
+		partitionRequests = append(partitionRequests, ingest.PartitionWriteRequest{
+			PartitionID:  pk.PartitionID,
+			WriteRequest: req.ForIndexes(pk.Indexes, initialMetadataIndex),
+		})
+	}
 
-			return err
-		}, batchOptions,
-	)
+	// Write all partitions in a single ProduceSync call.
+	writeCtx := remoteRequestContext()
+	err = d.ingestStorageWriter.MultiWriteSync(writeCtx, tenantID, partitionRequests)
+	err = wrapPartitionsPushError(err)
+	err = wrapDeadlineExceededPushError(err)
 
 	// Since data may be written to different backends it may be helpful to clearly identify which backend failed.
 	return errors.Wrap(err, "send data to partitions")
