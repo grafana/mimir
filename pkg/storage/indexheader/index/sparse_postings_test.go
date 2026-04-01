@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/grafana/mimir/pkg/storage/indexheader/indexheaderpb"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/grafana/mimir/pkg/storage/indexheader/indexheaderpb"
 )
 
 func TestSparsePostingsOffsetsTableFromProto(t *testing.T) {

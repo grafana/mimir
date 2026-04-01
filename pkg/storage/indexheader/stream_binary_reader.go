@@ -21,10 +21,9 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
 
-	"github.com/grafana/mimir/pkg/storage/indexheader/indexheaderpb"
-
 	streamencoding "github.com/grafana/mimir/pkg/storage/indexheader/encoding"
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
+	"github.com/grafana/mimir/pkg/storage/indexheader/indexheaderpb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/filepool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -236,7 +235,7 @@ func NewStreamBinaryReader(
 		sparsePostingsOffsets, sparseSampleFactor,
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to initialize postings offset table reader: %w", err)
 	}
 
 	labelNames, err := streamBinaryReader.postingsOffsetTable.LabelNames()
@@ -244,19 +243,21 @@ func NewStreamBinaryReader(
 		return nil, fmt.Errorf("load label names: %w", err)
 	}
 
-	streamBinaryReader.symbolsTable, err = streamindex.NewSymbolsTableReader(
+	if streamBinaryReader.symbolsTable, err = streamindex.NewSymbolsTableReader(
 		streamBinaryReader.symbolsTOC.IndexVersion,
 		streamBinaryReader.symbolsDecbufFactory,
 		int(streamBinaryReader.symbolsTOC.Symbols),
 		allSymbolsCount, sparseSymbolsOffsets,
-	)
+	); err != nil {
+		return nil, fmt.Errorf("failed to initialize symbols table reader: %w", err)
+	}
 
 	streamBinaryReader.nameSymbols = make(map[uint32]string, len(labelNames))
 	if err = streamBinaryReader.symbolsTable.ForEachSymbol(labelNames, func(sym string, offset uint32) error {
 		streamBinaryReader.nameSymbols[offset] = sym
 		return nil
 	}); err != nil {
-		return nil, fmt.Errorf("cache label names: %w", err)
+		return nil, fmt.Errorf("failed to build symbols cache for label names: %w", err)
 	}
 
 	return streamBinaryReader, nil

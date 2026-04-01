@@ -390,6 +390,7 @@ func validateSparseIndexHeadersInDir(t *testing.T, ctx context.Context, dbDir st
 			sparsePostingsOffsets, err := streamindex.SparsePostingsOffsetsTableFromProto(
 				sparseHeaderProto.PostingsOffsetTable, cfg.BlocksStorage.BucketStore.PostingOffsetsInMemSampling,
 			)
+			require.NoError(t, err)
 			require.NotZero(t, len(sparsePostingsOffsets))
 		}
 		return nil

@@ -21,13 +21,12 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/thanos-io/objstore"
 
-	"github.com/grafana/mimir/pkg/util/spanlogger"
-
 	streamencoding "github.com/grafana/mimir/pkg/storage/indexheader/encoding"
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/indexheader/indexheaderpb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/atomicfs"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // DownloadSparseHeaderToDisk writes the sparse index-header to disk from the bucket if not already on disk.

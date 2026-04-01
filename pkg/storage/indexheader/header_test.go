@@ -14,7 +14,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/gate"
-	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -26,6 +25,7 @@ import (
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 
+	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -118,10 +118,8 @@ func TestReadersComparedToIndexHeader(t *testing.T) {
 					compareIndexToHeader(t, b, r)
 				})
 			}
-
 		})
 	}
-
 }
 
 func Test_DownsampleSparseIndexHeader(t *testing.T) {
@@ -263,7 +261,6 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 }
 
 func compareIndexToHeaderPostings(t *testing.T, indexByteSlice index.ByteSlice, sbr *StreamBinaryReader) {
-
 	ir, err := index.NewReader(indexByteSlice, index.DecodePostingsRaw)
 	require.NoError(t, err)
 	defer func() {
@@ -297,6 +294,7 @@ func compareIndexToHeaderPostings(t *testing.T, indexByteSlice index.ByteSlice, 
 		sbr.sparseSampleFactor,
 		true,
 	)
+	require.NoError(t, err)
 	sparseTableProto := streamindex.SparsePostingsOffsetsTableToProto(sparseTable, sbr.sparseSampleFactor)
 
 	expLabelNames, err := ir.LabelNames(context.Background())

@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/grafana/dskit/runutil"
+
 	streamencoding "github.com/grafana/mimir/pkg/storage/indexheader/encoding"
 	"github.com/grafana/mimir/pkg/storage/indexheader/indexheaderpb"
 )

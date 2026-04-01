@@ -3,10 +3,10 @@
 package filepool
 
 import (
+	"errors"
 	"os"
 	"sync"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )

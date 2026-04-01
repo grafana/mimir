@@ -12,9 +12,10 @@ import (
 	"strings"
 
 	"github.com/grafana/dskit/runutil"
+	"github.com/pkg/errors"
+
 	streamencoding "github.com/grafana/mimir/pkg/storage/indexheader/encoding"
 	"github.com/grafana/mimir/pkg/storage/indexheader/indexheaderpb"
-	"github.com/pkg/errors"
 )
 
 // SparseTableOffsetsForLabel contains offsets within the Postings Offsets table
