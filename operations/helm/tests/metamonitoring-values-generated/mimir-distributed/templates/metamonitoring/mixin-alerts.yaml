@@ -290,9 +290,9 @@ spec:
                 )
                 unless on(cluster, namespace)
                 (
-                  sum by(cluster, namespace) (kube_statefulset_replicas{statefulset=~"ingester.*"})
+                  sum by(cluster, namespace) (kube_statefulset_replicas{statefulset=~".*ingester.*"})
                     !=
-                  sum by(cluster, namespace) (kube_statefulset_status_replicas_updated{statefulset=~"ingester.*"})
+                  sum by(cluster, namespace) (kube_statefulset_status_replicas_updated{statefulset=~".*ingester.*"})
                 )
               )
               and

@@ -455,9 +455,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
               )
               unless on(%(alert_aggregation_labels)s)
               (
-                sum by(%(alert_aggregation_labels)s) (kube_statefulset_replicas{statefulset=~"ingester.*"})
+                sum by(%(alert_aggregation_labels)s) (kube_statefulset_replicas{statefulset=~".*ingester.*"})
                   !=
-                sum by(%(alert_aggregation_labels)s) (kube_statefulset_status_replicas_updated{statefulset=~"ingester.*"})
+                sum by(%(alert_aggregation_labels)s) (kube_statefulset_status_replicas_updated{statefulset=~".*ingester.*"})
               )
             )
             and
