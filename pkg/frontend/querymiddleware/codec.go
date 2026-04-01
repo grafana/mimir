@@ -1124,14 +1124,16 @@ func (c Codec) EncodeMetricsQueryResponse(ctx context.Context, req *http.Request
 		start := time.Now()
 		encErr = formatter.EncodeQueryResponseTo(cw, a)
 		encodeDuration := time.Since(start)
-		c.metrics.duration.WithLabelValues(operationEncode, formatter.Name()).Observe(encodeDuration.Seconds())
-		c.metrics.size.WithLabelValues(operationEncode, formatter.Name()).Observe(float64(cw.n))
-		sp.SetAttributes(attribute.Int("bytes", int(cw.n)))
-		// AddEncodeTime is called here, after encoding completes, but the handler has already
-		// read the stats to build the Server-Timing header before io.Copy drained this pipe.
-		// As a result, encode_time_seconds in Server-Timing is always 0 for streaming responses;
-		// the Prometheus histogram metric (codec_duration_seconds) is unaffected.
-		queryStats.AddEncodeTime(encodeDuration)
+		if encErr == nil {
+			c.metrics.duration.WithLabelValues(operationEncode, formatter.Name()).Observe(encodeDuration.Seconds())
+			c.metrics.size.WithLabelValues(operationEncode, formatter.Name()).Observe(float64(cw.n))
+			sp.SetAttributes(attribute.Int("bytes", int(cw.n)))
+			// AddEncodeTime is called here, after encoding completes, but the handler has already
+			// read the stats to build the Server-Timing header before io.Copy drained this pipe.
+			// As a result, encode_time_seconds in Server-Timing is always 0 for streaming responses;
+			// the Prometheus histogram metric (codec_duration_seconds) is unaffected.
+			queryStats.AddEncodeTime(encodeDuration)
+		}
 	}()
 
 	resp := http.Response{
@@ -1219,9 +1221,11 @@ func (c Codec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Re
 		cw := &countingWriter{w: pw}
 		start := time.Now()
 		encErr = encodeFunc(cw)
-		c.metrics.duration.WithLabelValues(operationEncode, formatter.Name()).Observe(time.Since(start).Seconds())
-		c.metrics.size.WithLabelValues(operationEncode, formatter.Name()).Observe(float64(cw.n))
-		sp.SetAttributes(attribute.Int("bytes", int(cw.n)))
+		if encErr == nil {
+			c.metrics.duration.WithLabelValues(operationEncode, formatter.Name()).Observe(time.Since(start).Seconds())
+			c.metrics.size.WithLabelValues(operationEncode, formatter.Name()).Observe(float64(cw.n))
+			sp.SetAttributes(attribute.Int("bytes", int(cw.n)))
+		}
 	}()
 
 	resp := http.Response{
