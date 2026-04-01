@@ -276,19 +276,16 @@ groups:
                 avg by(cluster, namespace) (sum by(cluster, namespace, pod) (cortex_ring_members{name="ingester",job=~".*/(ingester.*|cortex|mimir)",job!~".*/(ingester.*-partition)"}))
                 != sum by(cluster, namespace) (up{job=~".*/(ingester.*|cortex|mimir)",job!~".*/(ingester.*-partition)"})
               )
-              and
-              (
-                count by(cluster, namespace) (cortex_build_info) > 0
-              )
-            )
-            unless on(cluster, namespace)
-            (
+              unless on(cluster, namespace)
               (
                 sum by(cluster, namespace) (kube_statefulset_replicas{statefulset=~"ingester.*"})
                   !=
                 sum by(cluster, namespace) (kube_statefulset_status_replicas_updated{statefulset=~"ingester.*"})
               )
-              * on(cluster, namespace) group_left max by(cluster, namespace) (cortex_build_info)
+            )
+            and
+            (
+              count by(cluster, namespace) (cortex_build_info) > 0
             )
           for: 15m
           labels:

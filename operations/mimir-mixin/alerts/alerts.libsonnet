@@ -453,19 +453,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
                 avg by(%(alert_aggregation_labels)s) (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ring_members{name="ingester",%(job_regex)s,%(job_not_regex)s}))
                 != sum by(%(alert_aggregation_labels)s) (up{%(job_regex)s,%(job_not_regex)s})
               )
-              and
-              (
-                count by(%(alert_aggregation_labels)s) (cortex_build_info) > 0
-              )
-            )
-            unless on(%(alert_aggregation_labels)s)
-            (
+              unless on(%(alert_aggregation_labels)s)
               (
                 sum by(%(alert_aggregation_labels)s) (kube_statefulset_replicas{statefulset=~"ingester.*"})
                   !=
                 sum by(%(alert_aggregation_labels)s) (kube_statefulset_status_replicas_updated{statefulset=~"ingester.*"})
               )
-              * on(%(alert_aggregation_labels)s) group_left max by(%(alert_aggregation_labels)s) (cortex_build_info)
+            )
+            and
+            (
+              count by(%(alert_aggregation_labels)s) (cortex_build_info) > 0
             )
           ||| % {
             alert_aggregation_labels: $._config.alert_aggregation_labels,
