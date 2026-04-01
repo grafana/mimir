@@ -206,24 +206,26 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string
 		}
 
 		// When franz-go encounters an EOF on the first read of a new connection (before any
-		// successful response), it wraps the error as ErrFirstReadEOF and marks it non-retryable.
-		// This is intended to detect SASL misconfiguration, but it also triggers during transient
-		// network failures (e.g., packet drops, broker restarts, partition moves).
+		// successful response), it wraps the error as ErrFirstReadEOF and marks it non-retryable
+		// at the broker level. This is intended to detect SASL misconfiguration, but it also
+		// triggers during transient network failures (e.g., broker restarts, partition moves).
 		//
-		// Once triggered, the franz-go client enters a permanent zombie state because:
-		// 1. The broker's API version cache (broker.versions) is never cleared
-		// 2. New connections skip the ApiVersions handshake (using cached versions)
-		// 3. The broker expects ApiVersions first and closes the connection
-		// 4. This produces another ErrFirstReadEOF, creating an infinite loop
+		// Although franz-go does retry the batch at the sink level (handleReqClientErr default
+		// fallthrough), each retry incurs exponential backoff (250ms → 5s cap) and metadata
+		// refresh is throttled by MetadataMinAge (10s). Under sustained failures — such as
+		// multiple partition moves in quick succession — this backoff state accumulates and the
+		// client can remain effectively stuck for minutes: the buffer fills to maxBufferedBytes,
+		// new produce calls fail immediately with ErrMaxBuffered, and the backoff/metadata
+		// refresh cycle is too slow to recover before the next disruption.
 		//
-		// The only recovery is to close and recreate the client, which clears the
-		// in-memory version cache. This is what we do here.
-		//
-		// See: https://github.com/twmb/franz-go/issues/1290
+		// Recreating the client resets all accumulated backoff state (consecutiveFailures=0),
+		// clears any stale buffered records, and establishes fresh connections with up-to-date
+		// metadata. This is equivalent to the manual pod restart that resolves the issue in
+		// production, but targeted at the specific client rather than the entire process.
 		var firstReadEOF *kgo.ErrFirstReadEOF
 		if errors.As(err, &firstReadEOF) {
 			level.Warn(w.logger).Log(
-				"msg", "detected ErrFirstReadEOF from Kafka client, closing and recreating the client to recover from potential zombie state",
+				"msg", "detected ErrFirstReadEOF from Kafka client, recreating client to reset backoff state and recover faster",
 				"partition", partitionID,
 				"err", err,
 			)
@@ -237,21 +239,22 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string
 }
 
 // closeWriterIfSame closes the Kafka writer for the given partition only if the current writer
-// in the slot is the same instance as the provided zombie. This prevents a race where multiple
-// goroutines detect ErrFirstReadEOF from the same zombie but a new healthy writer has already
-// been created in the slot by the time a later goroutine arrives.
+// in the slot is the same instance as the provided stale client. This prevents a race where
+// multiple goroutines detect ErrFirstReadEOF from the same failing client but a new healthy
+// writer has already been created in the slot by the time a later goroutine arrives.
 //
 // Both the Close and nil-out happen under the lock for two reasons:
-// 1. Prevent zombie.Close()'s kprom OnClientClosed hook from unregistering metrics that belong
+// 1. Prevent the old client's kprom OnClientClosed hook from unregistering metrics that belong
 //    to a concurrently created new writer (kprom matches by descriptor hash, not object identity).
-// 2. A zombie client has no pending records, so kgo.Client.Close() returns quickly without blocking.
-func (w *Writer) closeWriterIfSame(partitionID int32, zombie *KafkaProducer) {
+// 2. A failing client that has already had its records timed out has no pending work, so
+//    kgo.Client.Close() returns quickly without blocking.
+func (w *Writer) closeWriterIfSame(partitionID int32, staleClient *KafkaProducer) {
 	w.writersMx.Lock()
 	defer w.writersMx.Unlock()
 
 	clientID := int(partitionID) % len(w.writers)
 	current := w.writers[clientID]
-	if current == nil || current != zombie {
+	if current == nil || current != staleClient {
 		return
 	}
 
@@ -259,12 +262,12 @@ func (w *Writer) closeWriterIfSame(partitionID int32, zombie *KafkaProducer) {
 	w.lastClientRecreateTime[clientID] = time.Now()
 
 	if shouldLog {
-		level.Warn(w.logger).Log("msg", "closing zombie Kafka writer client for recreation", "client_id", clientID)
+		level.Warn(w.logger).Log("msg", "closing stale Kafka writer client for recreation", "client_id", clientID)
 	}
 
 	// Close and nil under the same lock to prevent kprom OnClientClosed from
 	// unregistering metrics that belong to a concurrently created new writer.
-	zombie.Close()
+	staleClient.Close()
 	w.writers[clientID] = nil
 }
 
