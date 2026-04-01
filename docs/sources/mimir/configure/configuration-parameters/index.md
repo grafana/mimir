@@ -5760,9 +5760,9 @@ bucket_store:
       [enabled: <boolean> | default = false]
 
       # (experimental) Index sections to read from object storage instead of
-      # local disk. Valid sections: all
+      # local disk. Valid sections: postings-offsets-table
       # CLI flag: -blocks-storage.bucket-store.index-header.bucket-reader.index-sections
-      [index_sections: <string> | default = "all"]
+      [index_sections: <string> | default = "postings-offsets-table"]
 
   # (advanced) This option controls how many series to fetch per batch. The
   # batch size must be greater than 0.

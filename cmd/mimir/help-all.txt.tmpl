@@ -532,7 +532,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.index-header.bucket-reader.enabled
     	[experimental] Enable reading TSDB index-header sections from object storage. When enabled, the configured -blocks-storage.bucket-store.index-header.bucket-reader.index-sections are not downloaded to local disk.
   -blocks-storage.bucket-store.index-header.bucket-reader.index-sections string
-    	[experimental] Index sections to read from object storage instead of local disk. Valid sections: all (default "all")
+    	[experimental] Index sections to read from object storage instead of local disk. Valid sections: postings-offsets-table (default "postings-offsets-table")
   -blocks-storage.bucket-store.index-header.lazy-loading-concurrency int
     	Maximum number of concurrent index header loads across all tenants. If set to 0, concurrency is unlimited. (default 4)
   -blocks-storage.bucket-store.index-header.lazy-loading-concurrency-queue-timeout duration
