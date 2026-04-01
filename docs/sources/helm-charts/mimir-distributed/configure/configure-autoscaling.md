@@ -163,6 +163,7 @@ If pods scale down to 1 replica after removing `preserveReplicas`:
    ```
 
 2. Verify KEDA setup:
+
    - Check HPA status
    - Verify metrics are being received
    - Check for conflicts with other tools

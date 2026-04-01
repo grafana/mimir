@@ -57,6 +57,7 @@ For the full list of changes, refer to Mimir’s [CHANGELOG](https://github.com/
   Cortex uses `fake` as the default tenant ID when `-auth.enabled=false`.
   Use `-auth.no-auth-tenant=fake` when `-auth.multitenancy=false` to match the Cortex default tenant ID.
 - Grafana Mimir removes the legacy HTTP prefixes deprecated in Cortex.
+
   - Query endpoints
 
     | Legacy                                                  | Current                                                    |

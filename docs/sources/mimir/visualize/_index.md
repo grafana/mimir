@@ -23,6 +23,7 @@ keywords:
 1. From within Grafana, go to `Connections` > `Add new connection`.
 1. Search for Prometheus, and select **Create a Prometheus data source**.
 1. In the **HTTP** > **Prometheus server URL** field, enter a server URL:
+
    - If you deployed Mimir via the `mimir-distributed` Helm chart,
      the default URL inside the Kubernetes cluster is `http://<HELM-RELEASE>-nginx.<MIMIR-NAMESPACE>.svc/prometheus`,
      and `http://<INGRESS-HOST>/prometheus` from the outside, provided that you set up an ingress.

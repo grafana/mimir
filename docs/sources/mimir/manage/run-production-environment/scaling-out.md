@@ -95,11 +95,13 @@ Complete the following steps to scale down ingesters in any zone.
 
 1. Send a POST request to the `/ingester/prepare-instance-ring-downscale` API endpoint on each ingester to place it into read-only mode.
 1. Wait until the blocks uploaded by read-only ingesters are available for querying before proceeding. The required amount of time to wait depends on your configuration and is the maximum value for the following settings:
+
    - The configured `-querier.query-store-after` setting
    - Two times the configured `-blocks-storage.bucket-store.sync-interval` setting
    - Two times the configured `-compactor.cleanup-interval` setting
 
 1. Scale down each ingester:
+
    1. Send a POST request to the `/ingester/shutdown` API endpoint on the ingester to terminate it.
 
    1. Wait until the API endpoint call has successfully returned and the ingester has logged "finished flushing and shipping TSDB blocks".
