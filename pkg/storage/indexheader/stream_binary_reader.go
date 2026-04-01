@@ -94,17 +94,6 @@ func NewStreamBinaryReader(
 	defer spanLog.Finish()
 
 	localBlockDir := filepath.Join(localTenantDir, blockID.String())
-	if df, err := os.Open(localBlockDir); err != nil && os.IsNotExist(err) {
-		if err := os.MkdirAll(localBlockDir, os.ModePerm); err != nil {
-			return nil, fmt.Errorf("cannot create index-header dir: %w", err)
-		}
-	} else {
-		_ = df.Close()
-	}
-
-	localIndexHeaderPath := filepath.Join(localBlockDir, block.IndexHeaderFilename)
-	localSparseHeaderPath := filepath.Join(localBlockDir, block.SparseIndexHeaderFilename)
-
 	// Ensure local block directory exists on disk to hold the sparse index-header
 	// and any sections of the full index-header which are not read from the bucket.
 	if f, err := os.Open(localBlockDir); err != nil && os.IsNotExist(err) {
@@ -114,6 +103,9 @@ func NewStreamBinaryReader(
 	} else {
 		_ = f.Close()
 	}
+
+	localIndexHeaderPath := filepath.Join(localBlockDir, block.IndexHeaderFilename)
+	localSparseHeaderPath := filepath.Join(localBlockDir, block.SparseIndexHeaderFilename)
 
 	// Attempt to load existing sparse index-header from previous write to local disk or from bucket
 	sparseHeaderLoaded := false
@@ -272,6 +264,10 @@ func NewStreamBinaryReader(
 
 func (r *StreamBinaryReader) IndexVersion(context.Context) (int, error) {
 	return r.symbolsTOC.IndexVersion, nil
+}
+
+func (r *StreamBinaryReader) IndexHeaderVersion() int {
+	return BinaryFormatV1
 }
 
 func (r *StreamBinaryReader) PostingsOffset(_ context.Context, name string, value string) (index.Range, error) {
