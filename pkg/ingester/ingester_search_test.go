@@ -11,7 +11,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -110,7 +109,7 @@ func Test_Ingester_SearchLabelNames(t *testing.T) {
 		req         *client.SearchLabelValuesRequest
 		useEmptyCtx bool
 		// wantNames is the expected set of names. When ordered=false, ElementsMatch is used
-		// (any order); when ordered=true, assert.Equal is used (exact order).
+		// (any order); when ordered=true, require.Equal is used (exact order).
 		// When nil, wantLen is checked instead (0 means assert empty).
 		wantNames []string
 		ordered   bool
@@ -266,13 +265,13 @@ func Test_Ingester_SearchLabelNames(t *testing.T) {
 			require.NoError(t, err)
 			switch {
 			case tc.wantNames != nil && tc.ordered:
-				assert.Equal(t, tc.wantNames, names)
+				require.Equal(t, tc.wantNames, names)
 			case tc.wantNames != nil:
-				assert.ElementsMatch(t, tc.wantNames, names)
+				require.ElementsMatch(t, tc.wantNames, names)
 			case tc.wantLen > 0:
-				assert.Len(t, names, tc.wantLen)
+				require.Len(t, names, tc.wantLen)
 			default:
-				assert.Empty(t, names)
+				require.Empty(t, names)
 			}
 		})
 	}
@@ -313,7 +312,7 @@ func Test_Ingester_Search_PersistBlocks(t *testing.T) {
 		req := &client.SearchLabelValuesRequest{EndTimestampMs: math.MaxInt64}
 		names, err := collectSearchLabelNames(i, ctx, req)
 		require.NoError(t, err)
-		assert.ElementsMatch(t, []string{"__name__", "env", "region"}, names)
+		require.ElementsMatch(t, []string{"__name__", "env", "region"}, names)
 	})
 
 	t.Run("SearchLabelValues returns values from persisted block", func(t *testing.T) {
@@ -323,7 +322,7 @@ func Test_Ingester_Search_PersistBlocks(t *testing.T) {
 		}
 		values, err := collectSearchLabelValues(i, ctx, req)
 		require.NoError(t, err)
-		assert.ElementsMatch(t, []string{"prod", "staging"}, values)
+		require.ElementsMatch(t, []string{"prod", "staging"}, values)
 	})
 
 	t.Run("filter works against persisted block", func(t *testing.T) {
@@ -334,7 +333,7 @@ func Test_Ingester_Search_PersistBlocks(t *testing.T) {
 		}
 		values, err := collectSearchLabelValues(i, ctx, req)
 		require.NoError(t, err)
-		assert.Equal(t, []string{"metric_a"}, values)
+		require.Equal(t, []string{"metric_a"}, values)
 	})
 
 	t.Run("limit works against persisted block", func(t *testing.T) {
@@ -345,7 +344,7 @@ func Test_Ingester_Search_PersistBlocks(t *testing.T) {
 		}
 		values, err := collectSearchLabelValues(i, ctx, req)
 		require.NoError(t, err)
-		assert.Len(t, values, 1)
+		require.Len(t, values, 1)
 	})
 }
 
@@ -451,13 +450,13 @@ func Test_Ingester_SearchLabelValues(t *testing.T) {
 			require.NoError(t, err)
 			switch {
 			case tc.wantValues != nil && tc.ordered:
-				assert.Equal(t, tc.wantValues, values)
+				require.Equal(t, tc.wantValues, values)
 			case tc.wantValues != nil:
-				assert.ElementsMatch(t, tc.wantValues, values)
+				require.ElementsMatch(t, tc.wantValues, values)
 			case tc.wantLen > 0:
-				assert.Len(t, values, tc.wantLen)
+				require.Len(t, values, tc.wantLen)
 			default:
-				assert.Empty(t, values)
+				require.Empty(t, values)
 			}
 		})
 	}
@@ -490,11 +489,11 @@ func Test_Ingester_SearchLabelNames_MaxBytesLimit(t *testing.T) {
 	}
 
 	tests := []struct {
-		name       string
-		maxBytes   int
-		req        *client.SearchLabelValuesRequest
-		wantErr    string
-		wantNames  []string
+		name      string
+		maxBytes  int
+		req       *client.SearchLabelValuesRequest
+		wantErr   string
+		wantNames []string
 	}{
 		{
 			name:      "unlimited",
@@ -534,10 +533,10 @@ func Test_Ingester_SearchLabelNames_MaxBytesLimit(t *testing.T) {
 			names, err := collectSearchLabelNames(i, ctx, tc.req)
 			if tc.wantErr != "" {
 				require.Error(t, err)
-				assert.ErrorContains(t, err, tc.wantErr)
+				require.ErrorContains(t, err, tc.wantErr)
 			} else {
 				require.NoError(t, err)
-				assert.ElementsMatch(t, tc.wantNames, names)
+				require.ElementsMatch(t, tc.wantNames, names)
 			}
 		})
 	}
@@ -610,10 +609,10 @@ func Test_Ingester_SearchLabelValues_MaxBytesLimit(t *testing.T) {
 			values, err := collectSearchLabelValues(i, ctx, req)
 			if tc.wantErr != "" {
 				require.Error(t, err)
-				assert.ErrorContains(t, err, tc.wantErr)
+				require.ErrorContains(t, err, tc.wantErr)
 			} else {
 				require.NoError(t, err)
-				assert.ElementsMatch(t, tc.wantValues, values)
+				require.ElementsMatch(t, tc.wantValues, values)
 			}
 		})
 	}
