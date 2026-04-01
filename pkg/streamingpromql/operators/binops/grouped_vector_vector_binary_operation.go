@@ -244,8 +244,13 @@ func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Cont
 	// We retain the series labels for later so we can use them to generate error messages.
 	// We'll return them to the pool in Close().
 
+	// Only pass matchers for labels that are part of this operation's matching to child
+	// operators. See the equivalent comment in OneToOneVectorVectorBinaryOperation.SeriesMetadata
+	// for the full rationale.
+	filteredMatchers := filterMatchersForVectorMatching(matchers, g.VectorMatching)
+
 	var err error
-	g.oneSideMetadata, err = g.oneSide.SeriesMetadata(ctx, matchers)
+	g.oneSideMetadata, err = g.oneSide.SeriesMetadata(ctx, filteredMatchers)
 	if err != nil {
 		return false, err
 	}
@@ -255,7 +260,7 @@ func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Cont
 		return false, nil
 	}
 
-	g.manySideMetadata, err = g.manySide.SeriesMetadata(ctx, matchers)
+	g.manySideMetadata, err = g.manySide.SeriesMetadata(ctx, filteredMatchers)
 	if err != nil {
 		return false, err
 	}

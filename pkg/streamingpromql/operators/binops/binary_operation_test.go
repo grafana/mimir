@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -106,6 +108,56 @@ func generateSeriesMetadata(name string, num int) []types.SeriesMetadata {
 	}
 
 	return out
+}
+
+func TestFilterMatchersForVectorMatching(t *testing.T) {
+	regionMatcher := types.Matcher{Type: labels.MatchEqual, Name: "region", Value: "us"}
+	zoneMatcher := types.Matcher{Type: labels.MatchEqual, Name: "zone", Value: "1"}
+	nameMatcher := types.Matcher{Type: labels.MatchEqual, Name: model.MetricNameLabel, Value: "foo"}
+
+	testCases := map[string]struct {
+		matchers       types.Matchers
+		vectorMatching parser.VectorMatching
+		expected       types.Matchers
+	}{
+		"nil matchers returns nil unchanged": {
+			matchers:       nil,
+			vectorMatching: parser.VectorMatching{On: true, MatchingLabels: []string{"zone"}},
+			expected:       nil,
+		},
+		"on() with matchers returns nil (no labels match)": {
+			matchers:       types.Matchers{regionMatcher, zoneMatcher},
+			vectorMatching: parser.VectorMatching{On: true, MatchingLabels: []string{}},
+			expected:       nil,
+		},
+		"on(zone) keeps only zone matchers": {
+			matchers:       types.Matchers{regionMatcher, zoneMatcher},
+			vectorMatching: parser.VectorMatching{On: true, MatchingLabels: []string{"zone"}},
+			expected:       types.Matchers{zoneMatcher},
+		},
+		"on(zone) with no matching matchers in input returns empty": {
+			matchers:       types.Matchers{regionMatcher},
+			vectorMatching: parser.VectorMatching{On: true, MatchingLabels: []string{"zone"}},
+			expected:       types.Matchers{},
+		},
+		"without(zone) drops zone and __name__ matchers, keeps others": {
+			matchers:       types.Matchers{regionMatcher, zoneMatcher, nameMatcher},
+			vectorMatching: parser.VectorMatching{On: false, MatchingLabels: []string{"zone"}},
+			expected:       types.Matchers{regionMatcher},
+		},
+		"without() default matching passes all matchers through unchanged": {
+			matchers:       types.Matchers{regionMatcher, zoneMatcher},
+			vectorMatching: parser.VectorMatching{On: false, MatchingLabels: []string{}},
+			expected:       types.Matchers{regionMatcher, zoneMatcher},
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			result := filterMatchersForVectorMatching(tc.matchers, tc.vectorMatching)
+			require.Equal(t, tc.expected, result)
+		})
+	}
 }
 
 func BenchmarkBuildMatchers(b *testing.B) {
