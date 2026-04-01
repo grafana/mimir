@@ -1727,6 +1727,17 @@ func TestSelectorsAreDuplicateOrSubset(t *testing.T) {
 				{Name: "a", Type: labels.MatchEqual, Value: "a"},
 			},
 		},
+		"second selector is not a subset of the first, narrower is not in intersection": {
+			// {c="a"} matches c=a, which is not in the intersection {c=b}, so not a subset.
+			firstSelector:  `{c=~"a|b", c=~"b|c"}`,
+			secondSelector: `{c="a"}`,
+			expectedResult: commonsubexpressionelimination.NotDuplicateOrSubset,
+		},
+		"second selector is a subset of the first, narrower is in intersection, not currently optimized for": {
+			firstSelector:  `{c=~"a|b", c=~"b|c"}`,
+			secondSelector: `{c="b"}`,
+			expectedResult: commonsubexpressionelimination.NotDuplicateOrSubset, // TODO: Optimize for this case
+		},
 		"regex: second is subset of first with c=a": {
 			firstSelector:  `{c=~"(a|b)"}`,
 			secondSelector: `{a="x", c="a"}`,
