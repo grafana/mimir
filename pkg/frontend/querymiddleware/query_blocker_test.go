@@ -728,7 +728,7 @@ func TestQueryBlockerMiddleware_MinimumStepSize(t *testing.T) {
 
 	tests := []struct {
 		name            string
-		query           string // defaults to "rate(expensive_metric[5m])" if empty
+		query           string
 		limitsYAML      string
 		stepMs          int64
 		queryStart      time.Time
@@ -737,7 +737,8 @@ func TestQueryBlockerMiddleware_MinimumStepSize(t *testing.T) {
 	}{
 		// pattern + time_range_longer_than + minimum_step_size
 		{
-			name: "pattern + time_range + step all violated is blocked",
+			name:  "pattern + time_range + step all violated is blocked",
+			query: "rate(expensive_metric[5m])",
 			limitsYAML: `
 blocked_queries:
   - pattern: ".*expensive.*"
@@ -768,7 +769,8 @@ blocked_queries:
 		},
 		// pattern + minimum_step_size
 		{
-			name: "pattern matches and step below threshold is blocked",
+			name:  "pattern matches and step below threshold is blocked",
+			query: "rate(expensive_metric[5m])",
 			limitsYAML: `
 blocked_queries:
   - pattern: ".*expensive.*"
@@ -792,7 +794,8 @@ blocked_queries:
 			expectedBlocked: false,
 		},
 		{
-			name: "pattern matches but step at threshold - not blocked",
+			name:  "pattern matches but step at threshold - not blocked",
+			query: "rate(expensive_metric[5m])",
 			limitsYAML: `
 blocked_queries:
   - pattern: ".*expensive.*"
@@ -804,7 +807,8 @@ blocked_queries:
 		},
 		// time_range_longer_than + minimum_step_size
 		{
-			name: "time_range and step both violated is blocked",
+			name:  "time_range and step both violated is blocked",
+			query: "rate(expensive_metric[5m])",
 			limitsYAML: `
 blocked_queries:
   - time_range_longer_than: "24h"
@@ -817,7 +821,8 @@ blocked_queries:
 			expectedBlocked: true,
 		},
 		{
-			name: "time_range violated but step ok - not blocked",
+			name:  "time_range violated but step ok - not blocked",
+			query: "rate(expensive_metric[5m])",
 			limitsYAML: `
 blocked_queries:
   - time_range_longer_than: "24h"
@@ -829,7 +834,8 @@ blocked_queries:
 			expectedBlocked: false,
 		},
 		{
-			name: "time_range ok but step violated - not blocked",
+			name:  "time_range ok but step violated - not blocked",
+			query: "rate(expensive_metric[5m])",
 			limitsYAML: `
 blocked_queries:
   - time_range_longer_than: "24h"
@@ -842,7 +848,8 @@ blocked_queries:
 		},
 		// minimum_step_size only
 		{
-			name: "step below threshold is blocked",
+			name:  "step below threshold is blocked",
+			query: "rate(expensive_metric[5m])",
 			limitsYAML: `
 blocked_queries:
   - minimum_step_size: "1m"
@@ -852,7 +859,8 @@ blocked_queries:
 			expectedBlocked: true,
 		},
 		{
-			name: "step equal to threshold is not blocked",
+			name:  "step equal to threshold is not blocked",
+			query: "rate(expensive_metric[5m])",
 			limitsYAML: `
 blocked_queries:
   - minimum_step_size: "1m"
@@ -861,7 +869,8 @@ blocked_queries:
 			expectedBlocked: false,
 		},
 		{
-			name: "step above threshold is not blocked",
+			name:  "step above threshold is not blocked",
+			query: "rate(expensive_metric[5m])",
 			limitsYAML: `
 blocked_queries:
   - minimum_step_size: "1m"
@@ -870,7 +879,8 @@ blocked_queries:
 			expectedBlocked: false,
 		},
 		{
-			name: "instant query (step=0) is not blocked",
+			name:  "instant query (step=0) is not blocked",
+			query: "rate(expensive_metric[5m])",
 			limitsYAML: `
 blocked_queries:
   - minimum_step_size: "1m"
@@ -893,21 +903,16 @@ blocked_queries:
 				end = now
 			}
 
-			query := tt.query
-			if query == "" {
-				query = "rate(expensive_metric[5m])"
-			}
-
 			// Use instant query when step is 0, range query otherwise.
 			var req MetricsQueryRequest
 			if tt.stepMs == 0 {
 				req = &PrometheusInstantQueryRequest{
-					queryExpr: parseQuery(t, query),
+					queryExpr: parseQuery(t, tt.query),
 					time:      now.UnixMilli(),
 				}
 			} else {
 				req = &PrometheusRangeQueryRequest{
-					queryExpr: parseQuery(t, query),
+					queryExpr: parseQuery(t, tt.query),
 					start:     start.UnixMilli(),
 					end:       end.UnixMilli(),
 					step:      tt.stepMs,
