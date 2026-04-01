@@ -60,6 +60,10 @@ global:
   #       name: mysecret
   extraEnvFrom: []
 
+  # -- Common labels to add to all resources excluding pods directly managed by this chart.
+  # scope: alertmanager, compactor, continuous-test, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test
+  extraLabels: {}
+  
   # -- Common volumes to add to all pods directly managed by this chart.
   # scope: alertmanager, compactor, continuous-test, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test
   extraVolumes: []
