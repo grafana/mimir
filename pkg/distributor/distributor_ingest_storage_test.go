@@ -420,6 +420,12 @@ func TestDistributor_Push_ShouldSupportWriteBothToIngestersAndPartitions(t *test
 			limits.IngestionPartitionsTenantShardSize = testData.shardSize
 			limits.IngestionTenantShardSize = testData.shardSize
 
+			const numPartitions = 3
+
+			// Create a cluster with a number of brokers equal to the number of partitions,
+			// so that each partition is on a different broker.
+			kafkaCluster, _ := testkafka.CreateCluster(t, numPartitions, kafkaTopic, testkafka.WithNumBrokers(numPartitions))
+
 			testConfig := prepConfig{
 				numDistributors:         1,
 				numIngesters:            3,
@@ -427,14 +433,15 @@ func TestDistributor_Push_ShouldSupportWriteBothToIngestersAndPartitions(t *test
 				replicationFactor:       1,
 				ingesterIngestionType:   ingesterIngestionTypeGRPC, // Do not consume from Kafka. Partitions are asserted directly checking Kafka.
 				ingestStorageEnabled:    true,
-				ingestStoragePartitions: 3,
+				ingestStoragePartitions: numPartitions,
+				ingestStorageKafka:      kafkaCluster,
 				limits:                  limits,
 				configure: func(cfg *Config) {
 					cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled = true
 				},
 			}
 
-			distributors, ingesters, regs, kafkaCluster := prepare(t, testConfig)
+			distributors, ingesters, regs, _ := prepare(t, testConfig)
 			require.Len(t, distributors, 1)
 			require.Len(t, ingesters, 3)
 			require.Len(t, regs, 1)
