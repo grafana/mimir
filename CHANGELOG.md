@@ -31,6 +31,7 @@
 * [CHANGE] Querier and query-frontend: The experimental `-querier.mimir-query-engine.enable-common-subexpression-elimination-for-range-vector-expressions-in-instant-queries` and `-querier.mimir-query-engine.enable-skipping-histogram-decoding` flags have been removed. Both were previously enabled by default and now cannot be disabled. #14237
 * [CHANGE] Query-frontend: The per-query memory consumption limit now considers the estimated memory consumed by buffered messages received from queriers but not yet consumed. #14775
 * [CHANGE] Querier: The flag `-querier.filter-queryables-enabled` is deprecated and will be removed in Mimir 3.3. #14843
+* [CHANGE] Ingest storage: The `cortex_ingest_storage_writer_latency_seconds` metric now tracks the latency to write an incoming request to all Kafka partitions in a single call, instead of tracking latency individually for each partition. #14898
 * [FEATURE] Distributor: Derive limits based on tenant metadata. Supported limits are `max_active_series_per_user`, `ingestion_rate`, `ingestion_burst_size`, `ingestion_burst_factor`, `otel_metric_suffixes_enabled`, `name_validation_scheme` and `otel_translation_strategy`. #14289
 * [FEATURE] Distributor: add `cortex_distributor_request_body_compression_ratio` histogram that tracks the compression of write requests. #14232
 * [FEATURE] Distributor: add `-distributor.otel-label-name-underscore-sanitization` and `-distributor.otel-label-name-preserve-underscores` that control sanitization of underscores during OTLP translation. #13133
@@ -149,6 +150,7 @@
 * [ENHANCEMENT] Ingester: Use Kafka record timestamps instead of wall-clock time for active series tracking, grace period validation, and purging when ingest storage is enabled. This prevents premature purging or stale series caused by lag between record production and consumption. #14611 #14744
 * [ENHANCEMENT] Ingester: Export `cortex_ingester_active_series_loading` gauge metric that is `1` while active series counts are still warming up after ingester startup, and `0` once they are accurate (after IdleTimeout has elapsed). #14783
 * [ENHANCEMENT] Ingest storage: Skip kotel tracing hooks for unsampled traces in the franz-go Kafka client, significantly reducing CPU and memory overhead. #14852
+* [ENHANCEMENT] Distributor: Reduced CPU utilization when writing to ingest storage with a large number of partitions by batching all partitions into a single Kafka produce call instead of one per partition. #14898
 * [ENHANCEMENT] Ingest storage: Allow configuring multiple Kafka seed brokers via `-ingest-storage.kafka.address` (comma-separated). #14328
 * [ENHANCEMENT] MQE: Add experimental support for eliminating selectors that are a subset of another selector. Enable with `-querier.mimir-query-engine.enable-subset-selector-elimination=true`. #14456 #14457 #14546 #14559 #14561 #14621
 * [ENHANCEMENT] Ingest storage: Add `-ingest-storage.kafka.client-rack` flag to enable rack awareness. #14434

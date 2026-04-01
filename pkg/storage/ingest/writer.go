@@ -84,7 +84,7 @@ type Writer struct {
 func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registerer) *Writer {
 	writeLatency := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:                            "cortex_ingest_storage_writer_latency_seconds",
-		Help:                            "Latency to write an incoming request to the Kafka backend, after the request has been split to per-partition Kafka records. Latency is tracked individually for each partition.",
+		Help:                            "Latency to write an incoming request to Kafka partitions.",
 		NativeHistogramBucketFactor:     1.1,
 		NativeHistogramMinResetDuration: 1 * time.Hour,
 		NativeHistogramMaxBucketNumber:  100,
