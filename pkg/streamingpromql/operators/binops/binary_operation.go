@@ -777,6 +777,63 @@ type Hints struct {
 	Include []string
 }
 
+// filterMatchersForVectorMatching returns the subset of matchers that are relevant to the
+// matching labels of a binary operation, dropping any matchers for labels that are not part
+// of the match. This prevents a parent binary operation from incorrectly narrowing the series
+// returned by a child binary operation via matchers that don't apply to its matching labels.
+//
+// For an 'on' binary operation, only matchers for labels in the 'on' list are kept.
+// For a 'without' binary operation, matchers for the excluded labels are dropped.
+// For default (implied 'without ()') matching, all matchers are returned unchanged.
+func filterMatchersForVectorMatching(matchers types.Matchers, vm parser.VectorMatching) types.Matchers {
+	if len(matchers) == 0 {
+		return matchers
+	}
+
+	if vm.On {
+		if len(vm.MatchingLabels) == 0 {
+			// on () — nothing is a matching label, so no matchers are relevant.
+			return nil
+		}
+
+		matchingSet := make(map[string]struct{}, len(vm.MatchingLabels))
+		for _, l := range vm.MatchingLabels {
+			matchingSet[l] = struct{}{}
+		}
+
+		filtered := make(types.Matchers, 0, len(matchers))
+		for _, m := range matchers {
+			if _, ok := matchingSet[m.Name]; ok {
+				filtered = append(filtered, m)
+			}
+		}
+
+		return filtered
+	}
+
+	if len(vm.MatchingLabels) > 0 {
+		// 'without' case: all labels except those listed (and __name__) are matching labels.
+		excludeSet := make(map[string]struct{}, len(vm.MatchingLabels)+1)
+		excludeSet[model.MetricNameLabel] = struct{}{}
+		for _, l := range vm.MatchingLabels {
+			excludeSet[l] = struct{}{}
+		}
+
+		filtered := make(types.Matchers, 0, len(matchers))
+		for _, m := range matchers {
+			if _, ok := excludeSet[m.Name]; !ok {
+				filtered = append(filtered, m)
+			}
+		}
+
+		return filtered
+	}
+
+	// Default matching (implied 'without ()'): all non-__name__ labels are matching labels.
+	// Pass matchers through unchanged.
+	return matchers
+}
+
 const (
 	maxHintMatcherValues = 64
 )
