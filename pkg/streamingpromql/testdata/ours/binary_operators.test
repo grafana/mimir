@@ -1840,3 +1840,33 @@ eval range from 0 to 24m step 6m (metric_a + on(env, pod) metric_b) + on(env, po
   {env="prod", pod="a"} 777 888 999
   {env="test", pod="a"} 111 222 333
   {env="test", pod="b"} 444 555 666
+
+clear
+
+# Test that 'and' correctly matches when a parent binary op narrows its RHS via matchers.
+# The outer 'c / on(region)' uses the narrow-selectors optimization to build region=us
+# matchers from the LHS and pass them to the inner 'a and on(zone) b'. The inner 'and'
+# must NOT forward region=us to b, because b only acts as a presence filter: b{region=eu}
+# should still match a{region=us} on zone, since 'and on(zone)' matches by zone only.
+load 1m
+  a{region="us", zone="1"}  2
+  b{region="eu", zone="1"}  1
+  c{region="us"}            10
+
+eval instant at 0m c / on(region) (a and on(zone) b)
+  {region="us"} 5
+
+clear
+
+# Test that 'unless' correctly filters when a parent binary op narrows its RHS via matchers.
+# The outer 'c * on(region)' uses the narrow-selectors optimization to build region=us
+# matchers and pass them to the inner 'a unless on(zone) b'. The inner 'unless' must NOT
+# forward region=us to b: b{region=eu,zone=1} should still match a{region=us,zone=1} on zone
+# and suppress it.
+load 1m
+  a{region="us", zone="1"}  2
+  b{region="eu", zone="1"}  1
+  c{region="us"}            10
+
+eval instant at 0m c * on(region) (a unless on(zone) b)
+  # a{region=us,zone=1} is suppressed by b{region=eu,zone=1} matching on zone=1 → inner returns empty → no result
