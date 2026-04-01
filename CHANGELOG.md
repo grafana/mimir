@@ -230,6 +230,7 @@
 * [BUGFIX] Querier: Fix issue where queries can time out if remote execution is enabled and sending the initial message from queriers to query-frontends fails. #14557
 * [BUGFIX] Querier: Fix issue where different sharded legs of a query could be evaluated with different lookback deltas if different queriers were configured with different default lookback deltas. #14575
 * [BUGFIX] Query-frontend: Fixed partial cache hit returning incomplete data for native histogram series due to incorrect response ordering before merge. #14612
+* [BUGFIX] Update to Go v1.25.8 to address [CVE-2026-27142](https://pkg.go.dev/vuln/GO-2026-4603), [CVE-2026-27139](https://pkg.go.dev/vuln/GO-2026-4602), [CVE-2026-25679](https://pkg.go.dev/vuln/GO-2026-4601), [CVE-2026-27138](https://pkg.go.dev/vuln/GO-2026-4600), [CVE-2026-27137](https://pkg.go.dev/vuln/GO-2026-4599). #14623
 * [BUGFIX] Distributor: Fix nil pointer panic in `WriteRequest.Unmarshal` when receiving a Remote Write 2.0 request with zero timeseries. #14698
 * [BUGFIX] MQE: Fix `info()` incorrectly dropping inner series with no matching info series when a data label matcher matches the empty string. #14819
 * [BUGFIX] MQE: Fix `info()` emitting un-enriched series when a data label matcher doesn't match the empty string and the info series is unavailable at some timestamps. #14812
@@ -294,12 +295,12 @@
 * [ENHANCEMENT] Dashboards: Unify object store rows into a single collapsible row across Alertmanager, Compactor, Reads, and Ruler dashboards. #14850
 * [ENHANCEMENT] Alerts: Make `MimirInconsistentRuntimeConfig` alert less flaky when performing multiple configuration changes in a row in a large Kubernetes cluster. #14743
 * [ENHANCEMENT] Alerts: Suppress `MimirRingMembersMismatch` alert during ingester rollouts. The alert now uses an `unless` clause to avoid false positives when ingester statefulsets are being updated. #14895
+* [ENHANCEMENT] Recording rules: add a low-cardinality recorded version of usage_tracker_active_series. #14901
 * [BUGFIX] Dashboards: Fix compactor dashboard to exclude instances without the last successful run metric in the "Last successful run per-compactor replica" table. #14784
 * [BUGFIX] Dashboards: Fix issue where throughput dashboard panels would group all gRPC requests that resulted in a status containing an underscore into one series with no name. #13184
 * [BUGFIX] Dashboards: Filter out 0s from `max_series` limit on Writes Resources > Ingester > In-memory series panel. #13419
 * [BUGFIX] Dashboards: Fix issue where the "Tenant gateway requests" panels on Tenants dashboard would show data from all components. #13940
 * [BUGFIX] Dashboards: Fix issue where the MQE-related dashboard panels on the Queries dashboard would show data from both queriers and query-frontends, instead of just queriers. #14029
-* [BUGFIX] Update to Go v1.25.8 to address [CVE-2026-27142](https://pkg.go.dev/vuln/GO-2026-4603), [CVE-2026-27139](https://pkg.go.dev/vuln/GO-2026-4602), [CVE-2026-25679](https://pkg.go.dev/vuln/GO-2026-4601), [CVE-2026-27138](https://pkg.go.dev/vuln/GO-2026-4600), [CVE-2026-27137](https://pkg.go.dev/vuln/GO-2026-4599). #14623
 
 ### Jsonnet
 
