@@ -291,6 +291,7 @@
 * [ENHANCEMENT] Dashboards: Add "In memory series" panel to experimental "Mimir / Block-builder" dashboard. #14700
 * [ENHANCEMENT] Dashboards: Unify object store rows into a single collapsible row across Alertmanager, Compactor, Reads, and Ruler dashboards. #14850
 * [ENHANCEMENT] Alerts: Make `MimirInconsistentRuntimeConfig` alert less flaky when performing multiple configuration changes in a row in a large Kubernetes cluster. #14743
+* [ENHANCEMENT] Alerts: Suppress `MimirRingMembersMismatch` alert during ingester rollouts. The alert now uses an `unless` clause to avoid false positives when ingester statefulsets are being updated. #14895
 * [BUGFIX] Dashboards: Fix compactor dashboard to exclude instances without the last successful run metric in the "Last successful run per-compactor replica" table. #14784
 * [BUGFIX] Dashboards: Fix issue where throughput dashboard panels would group all gRPC requests that resulted in a status containing an underscore into one series with no name. #13184
 * [BUGFIX] Dashboards: Filter out 0s from `max_series` limit on Writes Resources > Ingester > In-memory series panel. #13419
