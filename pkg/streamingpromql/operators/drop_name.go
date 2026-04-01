@@ -67,6 +67,10 @@ func (n *DropName) Finalize(ctx context.Context) error {
 	return n.Inner.Finalize(ctx)
 }
 
+func (n *DropName) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return n.Inner.Stats(ctx)
+}
+
 func (n *DropName) Close() {
 	n.Inner.Close()
 }

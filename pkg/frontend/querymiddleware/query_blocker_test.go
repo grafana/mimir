@@ -720,6 +720,229 @@ blocked_queries:
 	}
 }
 
+func TestQueryBlockerMiddleware_MinimumStepSize(t *testing.T) {
+	now := time.Now()
+	step30s := (30 * time.Second).Milliseconds()
+	step1m := time.Minute.Milliseconds()
+	step5m := (5 * time.Minute).Milliseconds()
+
+	tests := []struct {
+		name            string
+		query           string
+		limitsYAML      string
+		stepMs          int64
+		queryStart      time.Time
+		queryEnd        time.Time
+		expectedBlocked bool
+	}{
+		// pattern + time_range_longer_than + minimum_step_size
+		{
+			name:  "pattern + time_range + step all violated is blocked",
+			query: "rate(expensive_metric[5m])",
+			limitsYAML: `
+blocked_queries:
+  - pattern: ".*expensive.*"
+    regex: true
+    time_range_longer_than: "24h"
+    minimum_step_size: "1m"
+    reason: "all three conditions met"
+`,
+			stepMs:          step30s,
+			queryStart:      now.Add(-48 * time.Hour),
+			queryEnd:        now,
+			expectedBlocked: true,
+		},
+		{
+			name:  "pattern + time_range + step: pattern not matched - not blocked",
+			query: "rate(cheap_metric[5m])",
+			limitsYAML: `
+blocked_queries:
+  - pattern: ".*expensive.*"
+    regex: true
+    time_range_longer_than: "24h"
+    minimum_step_size: "1m"
+`,
+			stepMs:          step30s,
+			queryStart:      now.Add(-48 * time.Hour),
+			queryEnd:        now,
+			expectedBlocked: false,
+		},
+		// pattern + minimum_step_size
+		{
+			name:  "pattern matches and step below threshold is blocked",
+			query: "rate(expensive_metric[5m])",
+			limitsYAML: `
+blocked_queries:
+  - pattern: ".*expensive.*"
+    regex: true
+    minimum_step_size: "1m"
+    reason: "expensive query with small step"
+`,
+			stepMs:          step30s,
+			expectedBlocked: true,
+		},
+		{
+			name:  "pattern does not match - not blocked despite step below threshold",
+			query: "rate(cheap_metric[5m])",
+			limitsYAML: `
+blocked_queries:
+  - pattern: ".*expensive.*"
+    regex: true
+    minimum_step_size: "1m"
+`,
+			stepMs:          step30s,
+			expectedBlocked: false,
+		},
+		{
+			name:  "pattern matches but step at threshold - not blocked",
+			query: "rate(expensive_metric[5m])",
+			limitsYAML: `
+blocked_queries:
+  - pattern: ".*expensive.*"
+    regex: true
+    minimum_step_size: "1m"
+`,
+			stepMs:          step1m,
+			expectedBlocked: false,
+		},
+		// time_range_longer_than + minimum_step_size
+		{
+			name:  "time_range and step both violated is blocked",
+			query: "rate(expensive_metric[5m])",
+			limitsYAML: `
+blocked_queries:
+  - time_range_longer_than: "24h"
+    minimum_step_size: "1m"
+    reason: "long range with small step"
+`,
+			stepMs:          step30s,
+			queryStart:      now.Add(-48 * time.Hour),
+			queryEnd:        now,
+			expectedBlocked: true,
+		},
+		{
+			name:  "time_range violated but step ok - not blocked",
+			query: "rate(expensive_metric[5m])",
+			limitsYAML: `
+blocked_queries:
+  - time_range_longer_than: "24h"
+    minimum_step_size: "1m"
+`,
+			stepMs:          step5m,
+			queryStart:      now.Add(-48 * time.Hour),
+			queryEnd:        now,
+			expectedBlocked: false,
+		},
+		{
+			name:  "time_range ok but step violated - not blocked",
+			query: "rate(expensive_metric[5m])",
+			limitsYAML: `
+blocked_queries:
+  - time_range_longer_than: "24h"
+    minimum_step_size: "1m"
+`,
+			stepMs:          step30s,
+			queryStart:      now.Add(-12 * time.Hour),
+			queryEnd:        now,
+			expectedBlocked: false,
+		},
+		// minimum_step_size only
+		{
+			name:  "step below threshold is blocked",
+			query: "rate(expensive_metric[5m])",
+			limitsYAML: `
+blocked_queries:
+  - minimum_step_size: "1m"
+    reason: "step too small"
+`,
+			stepMs:          step30s,
+			expectedBlocked: true,
+		},
+		{
+			name:  "step equal to threshold is not blocked",
+			query: "rate(expensive_metric[5m])",
+			limitsYAML: `
+blocked_queries:
+  - minimum_step_size: "1m"
+`,
+			stepMs:          step1m,
+			expectedBlocked: false,
+		},
+		{
+			name:  "step above threshold is not blocked",
+			query: "rate(expensive_metric[5m])",
+			limitsYAML: `
+blocked_queries:
+  - minimum_step_size: "1m"
+`,
+			stepMs:          step5m,
+			expectedBlocked: false,
+		},
+		{
+			name:  "instant query (step=0) is not blocked",
+			query: "rate(expensive_metric[5m])",
+			limitsYAML: `
+blocked_queries:
+  - minimum_step_size: "1m"
+`,
+			stepMs:          0,
+			expectedBlocked: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			limits := mockLimits{blockedQueries: parseBlockedQueriesYAML(t, tt.limitsYAML)}
+
+			start := tt.queryStart
+			end := tt.queryEnd
+			if start.IsZero() {
+				start = now.Add(-1 * time.Hour)
+			}
+			if end.IsZero() {
+				end = now
+			}
+
+			// Use instant query when step is 0, range query otherwise.
+			var req MetricsQueryRequest
+			if tt.stepMs == 0 {
+				req = &PrometheusInstantQueryRequest{
+					queryExpr: parseQuery(t, tt.query),
+					time:      now.UnixMilli(),
+				}
+			} else {
+				req = &PrometheusRangeQueryRequest{
+					queryExpr: parseQuery(t, tt.query),
+					start:     start.UnixMilli(),
+					end:       end.UnixMilli(),
+					step:      tt.stepMs,
+				}
+			}
+
+			reg := prometheus.NewPedanticRegistry()
+			blockedQueriesCounter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+				Name: "cortex_query_frontend_rejected_queries_total",
+				Help: "Number of queries that were rejected by the cluster administrator.",
+			}, []string{"user", "reason"})
+			mw := newQueryBlockerMiddleware(limits, log.NewNopLogger(), blockedQueriesCounter)
+			_, err := mw.Wrap(&mockNextHandler{t: t, shouldContinue: !tt.expectedBlocked}).Do(user.InjectOrgID(context.Background(), "test"), req)
+
+			if tt.expectedBlocked {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), globalerror.QueryBlocked)
+				require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+					# HELP cortex_query_frontend_rejected_queries_total Number of queries that were rejected by the cluster administrator.
+					# TYPE cortex_query_frontend_rejected_queries_total counter
+					cortex_query_frontend_rejected_queries_total{reason="blocked", user="test"} 1
+				`)))
+			} else {
+				require.NoError(t, err)
+				require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(``)))
+			}
+		})
+	}
+}
+
 type mockNextHandler struct {
 	t              *testing.T
 	shouldContinue bool

@@ -1801,6 +1801,17 @@
             },
             {
               "kind": "field",
+              "name": "instance_availability_zone",
+              "required": false,
+              "desc": "The availability zone where this instance is running. Used for zone-aware rate limiting.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "distributor.ring.instance-availability-zone",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
               "name": "auto_forget_unhealthy_periods",
               "required": false,
               "desc": "Number of consecutive timeout periods after which Mimir automatically removes an unhealthy instance in the ring. Set to 0 to disable auto-forget.",
@@ -2461,12 +2472,12 @@
           "kind": "field",
           "name": "filter_queryables_enabled",
           "required": false,
-          "desc": "If set to true, the header 'X-Filter-Queryables' can be used to filter down the list of queryables that shall be used. This is useful to test and monitor single queryables in isolation.",
+          "desc": "If set to true, the header 'X-Filter-Queryables' can be used to filter down the list of queryables that shall be used. This is useful to test and monitor single queryables in isolation. Deprecated: has no effect.",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "querier.filter-queryables-enabled",
           "fieldType": "boolean",
-          "fieldCategory": "advanced"
+          "fieldCategory": "deprecated"
         },
         {
           "kind": "field",
@@ -6084,6 +6095,15 @@
                 "fieldValue": null,
                 "fieldDefaultValue": null,
                 "fieldType": "duration"
+              },
+              {
+                "kind": "field",
+                "name": "minimum_step_size",
+                "required": false,
+                "desc": "Block queries where the step is smaller than this duration. Instant queries and queries with no step are not blocked. Set to 0 to disable.",
+                "fieldValue": null,
+                "fieldDefaultValue": null,
+                "fieldType": "duration"
               }
             ],
             "fieldValue": null,
@@ -6946,16 +6966,6 @@
         },
         {
           "kind": "field",
-          "name": "alertmanager_max_grafana_state_size_bytes",
-          "required": false,
-          "desc": "Maximum size of the Grafana Alertmanager state for a tenant. 0 = no limit.",
-          "fieldValue": null,
-          "fieldDefaultValue": null,
-          "fieldFlag": "alertmanager.max-grafana-state-size-bytes",
-          "fieldType": "int"
-        },
-        {
-          "kind": "field",
           "name": "alertmanager_max_silences_count",
           "required": false,
           "desc": "Maximum number of silences, including expired silences, that a tenant can have at once. 0 = no limit.",
@@ -7183,6 +7193,17 @@
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "ingest-storage.ingestion-partition-tenant-shard-size",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "ingestion_partitions_tenant_write_shard_size",
+          "required": false,
+          "desc": "The maximum number of partitions a tenant's data should be written to when using the ingest storage. When set to a value \u003e 0 and less than -ingest-storage.ingestion-partition-tenant-shard-size, writes use fewer partitions while reads continue using the full shard size. This allows safely reducing the shard size without losing query coverage during the migration. 0 means the write shard size equals the read shard size.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ingest-storage.ingestion-partition-tenant-write-shard-size",
           "fieldType": "int",
           "fieldCategory": "experimental"
         },
@@ -8811,7 +8832,7 @@
               "kind": "field",
               "name": "sasl_mechanism",
               "required": false,
-              "desc": "The SASL mechanism used to authenticate to Kafka. Supported values: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER. For backwards-compatibility, PLAIN with no username nor password disables SASL.",
+              "desc": "The SASL mechanism used to authenticate to Kafka. Supported values: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER, AWS_MSK_IAM. For backwards-compatibility, PLAIN with no username nor password disables SASL.",
               "fieldValue": null,
               "fieldDefaultValue": "PLAIN",
               "fieldFlag": "ingest-storage.kafka.sasl-mechanism",
@@ -8871,7 +8892,7 @@
               "kind": "field",
               "name": "sasl_oauthbearer_file_path",
               "required": false,
-              "desc": "Path to a file containing an OAuth token to authenticate to Kafka. The file is read anew on every reauthentication, so it can be updated with fresh tokens. The file must be in JSON format, adhering to this JSON schema: {\"type\": \"object\", \"required\": [\"token\"], \"properties\": {\"token\": {\"type\": \"string\"}, \"zid\": {\"type\": \"string\"}, \"extensions\": {\"type\": \"object\", \"additionalProperties\": {\"type\": \"string\"}}}}",
+              "desc": "Path to a file containing an OAuth token to authenticate to Kafka. Mutually exclusive with ingest-storage.kafka.sasl-oauthbearer-http-socket-path. The file is read anew on every reauthentication, so it can be updated with fresh tokens. The file must be in JSON format, adhering to this JSON schema: {\"type\": \"object\", \"required\": [\"token\"], \"properties\": {\"token\": {\"type\": \"string\"}, \"zid\": {\"type\": \"string\"}, \"extensions\": {\"type\": \"object\", \"additionalProperties\": {\"type\": \"string\"}}}",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "ingest-storage.kafka.sasl-oauthbearer-file-path",
@@ -8881,7 +8902,7 @@
               "kind": "field",
               "name": "sasl_oauthbearer_http_socket_path",
               "required": false,
-              "desc": "Path to a Unix domain socket to fetch an OAuth token from via HTTP. On every authentication or reauthentication, an HTTP GET / request is made to the socket and the response body is read as JSON. The JSON schema is the same as for ingest-storage.kafka.sasl-oauthbearer-file-path.",
+              "desc": "Path to a Unix domain socket to fetch an OAuth token from via HTTP. Mutually exclusive with ingest-storage.kafka.sasl-oauthbearer-file-path. On every authentication or reauthentication, an HTTP GET / request is made to the socket and the response body is read as JSON. The JSON schema is the same as for ingest-storage.kafka.sasl-oauthbearer-file-path.",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "ingest-storage.kafka.sasl-oauthbearer-http-socket-path",
@@ -8891,10 +8912,80 @@
               "kind": "field",
               "name": "sasl_oauthbearer_http_socket_timeout",
               "required": false,
-              "desc": "Timeout for requesting the token from the HTTP socket.",
+              "desc": "Timeout for requesting the token from the HTTP socket. Effective when ingest-storage.kafka.sasl-oauthbearer-http-socket-path is set.",
               "fieldValue": null,
               "fieldDefaultValue": 10000000000,
               "fieldFlag": "ingest-storage.kafka.sasl-oauthbearer-http-socket-timeout",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "sasl_msk_iam_access_key",
+              "required": false,
+              "desc": "The AWS access key ID to authenticate to Kafka using SASL AWS_MSK_IAM. Consider ingest-storage.kafka.sasl-msk-iam-file-path instead.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingest-storage.kafka.sasl-msk-iam-access-key",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "sasl_msk_iam_secret_key",
+              "required": false,
+              "desc": "The AWS secret access key to authenticate to Kafka using SASL AWS_MSK_IAM. Consider ingest-storage.kafka.sasl-msk-iam-file-path instead.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingest-storage.kafka.sasl-msk-iam-secret-key",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "sasl_msk_iam_session_token",
+              "required": false,
+              "desc": "Optional AWS session token to authenticate to Kafka using SASL AWS_MSK_IAM.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingest-storage.kafka.sasl-msk-iam-session-token",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "sasl_msk_iam_user_agent",
+              "required": false,
+              "desc": "Optional user agent to use when authenticating to Kafka using SASL AWS_MSK_IAM.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingest-storage.kafka.sasl-msk-iam-user-agent",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "sasl_msk_iam_file_path",
+              "required": false,
+              "desc": "Path to a file containing AWS credentials to authenticate to Kafka using SASL AWS_MSK_IAM. Mutually exclusive with ingest-storage.kafka.sasl-msk-iam-http-socket-path. The file is read anew on every reauthentication, so it can be updated with fresh credentials. The file must be in JSON format, adhering to this JSON schema: {\"type\": \"object\", \"required\": [\"AccessKey\", \"SecretKey\"], \"properties\": {\"AccessKey\": {\"type\": \"string\"}, \"SecretKey\": {\"type\": \"string\"}, \"SessionToken\": {\"type\": \"string\"}, \"UserAgent\": {\"type\": \"string\"}}}",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingest-storage.kafka.sasl-msk-iam-file-path",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "sasl_msk_iam_http_socket_path",
+              "required": false,
+              "desc": "Path to a Unix domain socket to fetch AWS credentials from via HTTP. Mutually exclusive with ingest-storage.kafka.sasl-msk-iam-file-path. On every authentication or reauthentication, an HTTP GET / request is made to the socket and the response body is read as JSON. The JSON schema is the same as for ingest-storage.kafka.sasl-msk-iam-file-path.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingest-storage.kafka.sasl-msk-iam-http-socket-path",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "sasl_msk_iam_http_socket_timeout",
+              "required": false,
+              "desc": "Timeout for requesting AWS credentials from the HTTP socket. Effective when ingest-storage.kafka.sasl-msk-iam-http-socket-path is set.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "ingest-storage.kafka.sasl-msk-iam-http-socket-timeout",
               "fieldType": "duration"
             },
             {
@@ -17055,17 +17146,6 @@
           "fieldFlag": "alertmanager.enable-api",
           "fieldType": "boolean",
           "fieldCategory": "advanced"
-        },
-        {
-          "kind": "field",
-          "name": "grafana_alertmanager_compatibility_enabled",
-          "required": false,
-          "desc": "Enable routes to support the migration and operation of the Grafana Alertmanager.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "alertmanager.grafana-alertmanager-compatibility-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
         },
         {
           "kind": "field",

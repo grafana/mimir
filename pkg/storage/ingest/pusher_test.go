@@ -277,6 +277,7 @@ func kafkaRecordsAll(t testing.TB, records []testRecord) iter.Seq[*kgo.Record] {
 			rec := createRecord("test-topic", 1, r.content, r.version)
 			rec.Context = t.Context()
 			rec.Key = []byte(r.tenantID)
+			rec.Timestamp = time.Now()
 
 			if !yield(rec) {
 				return

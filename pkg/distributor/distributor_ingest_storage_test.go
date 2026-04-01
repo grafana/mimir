@@ -77,6 +77,7 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 
 	tests := map[string]struct {
 		shardSize                    int
+		writeShardSize               int
 		kafkaPartitionCustomResponse map[int32]*kmsg.ProduceResponse
 		expectedErr                  error
 		expectedSeriesByPartition    map[int32][]string
@@ -94,6 +95,14 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 			expectedSeriesByPartition: map[int32][]string{
 				1: {"series_one", "series_three", "series_two"},
 				2: {"series_five", "series_four"},
+			},
+		},
+		"should shard writes to fewer partitions when write shard size is smaller than read shard size": {
+			shardSize:      0,
+			writeShardSize: 1,
+			expectedSeriesByPartition: map[int32][]string{
+				// With writeShardSize=1, all series go to the single partition in the write shard.
+				2: {"series_five", "series_four", "series_one", "series_three", "series_two"},
 			},
 		},
 		"should return gRPC error if writing to 1 out of N partitions fail with a non-retryable error": {
@@ -134,6 +143,7 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 
 			limits := prepareDefaultLimits()
 			limits.IngestionPartitionsTenantShardSize = testData.shardSize
+			limits.IngestionPartitionsTenantWriteShardSize = testData.writeShardSize
 			limits.MaxGlobalExemplarsPerUser = 1000
 
 			testConfig := prepConfig{

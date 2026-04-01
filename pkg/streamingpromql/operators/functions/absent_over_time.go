@@ -132,6 +132,10 @@ func (a *AbsentOverTime) Finalize(ctx context.Context) error {
 	return a.Inner.Finalize(ctx)
 }
 
+func (a *AbsentOverTime) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return a.Inner.Stats(ctx)
+}
+
 func (a *AbsentOverTime) Close() {
 	a.Inner.Close()
 }

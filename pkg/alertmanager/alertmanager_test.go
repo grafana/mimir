@@ -7,14 +7,11 @@ package alertmanager
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -498,137 +495,6 @@ func TestSilenceLimits(t *testing.T) {
 	require.Len(t, sils, 0)
 }
 
-func TestExperimentalReceiversAPI(t *testing.T) {
-	var buf concurrency.SyncBuffer
-	logger := log.NewLogfmtLogger(&buf)
-
-	user := "test"
-	reg := prometheus.NewPedanticRegistry()
-	am, err := New(&Config{
-		UserID:            user,
-		Logger:            logger,
-		Limits:            &mockAlertManagerLimits{maxDispatcherAggregationGroups: 10},
-		Features:          featurecontrol.NoopFlags{},
-		TenantDataDir:     t.TempDir(),
-		ExternalURL:       &url.URL{Path: "/am"},
-		ShardingEnabled:   true,
-		Store:             prepareInMemoryAlertStore(),
-		Replicator:        &stubReplicator{},
-		ReplicationFactor: 1,
-		PersisterConfig:   PersisterConfig{Interval: time.Hour},
-	}, reg)
-	require.NoError(t, err)
-	defer am.StopAndWait()
-
-	cfgRaw := `receivers:
-- name: 'recv-1'
-  webhook_configs:
-  - url: http://example.com/
-    send_resolved: true
-
-- name: 'recv-2'
-  webhook_configs:
-  - url: http://example.com/
-    send_resolved: false
-
-route:
-  group_by: ['alertname']
-  group_wait: 10ms
-  group_interval: 10ms
-  receiver: 'recv-1'`
-
-	cfg, err := definition.LoadCompat([]byte(cfgRaw))
-	require.NoError(t, err)
-	tmpls := make([]alertingTemplates.TemplateDefinition, 0)
-	var emailCfg alertingReceivers.EmailSenderConfig
-	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}, emailCfg, false))
-
-	doGetReceivers := func() []alertingmodels.ReceiverStatus {
-		rr := httptest.NewRecorder()
-		am.GetReceiversHandler(rr, nil)
-		require.Equal(t, http.StatusOK, rr.Code)
-		result := []alertingmodels.ReceiverStatus{}
-		err = json.Unmarshal(rr.Body.Bytes(), &result)
-		assert.NoError(t, err)
-		slices.SortFunc(result, func(a, b alertingmodels.ReceiverStatus) int {
-			return strings.Compare(a.Name, b.Name)
-		})
-		return result
-	}
-
-	// Check the API returns all receivers but without any notification status.
-
-	result := doGetReceivers()
-	assert.Equal(t, []alertingmodels.ReceiverStatus{
-		{
-			Name:   "recv-1",
-			Active: true,
-			Integrations: []alertingmodels.IntegrationStatus{
-				{
-					Name:                      "webhook",
-					LastNotifyAttemptDuration: "0s",
-					SendResolved:              true,
-				},
-			},
-		},
-		{
-			Name: "recv-2",
-			// Receiver not used in a route.
-			Active: false,
-			Integrations: []alertingmodels.IntegrationStatus{
-				{
-					Name:                      "webhook",
-					LastNotifyAttemptDuration: "0s",
-					// We configure send_resolved to false.
-					SendResolved: false,
-				},
-			},
-		},
-	}, result)
-
-	// Send an alert to cause a notification attempt.
-
-	now := time.Now()
-	inputAlerts := []*types.Alert{
-		{
-			Alert: model.Alert{
-				Labels: model.LabelSet{
-					"alertname": model.LabelValue("Alert-1"),
-					"a":         "b",
-				},
-				Annotations:  model.LabelSet{"templates": `{{ template "test" . }}`},
-				StartsAt:     now,
-				EndsAt:       now.Add(5 * time.Minute),
-				GeneratorURL: "http://example.com/prometheus",
-			},
-			UpdatedAt: now,
-			Timeout:   false,
-		},
-	}
-	require.NoError(t, am.alerts.Put(inputAlerts...))
-
-	// Wait for the API to tell us there was a notification attempt.
-
-	result = []alertingmodels.ReceiverStatus{}
-	require.Eventually(t, func() bool {
-		result = doGetReceivers()
-		return len(result) == 2 &&
-			len(result[0].Integrations) == 1 &&
-			len(result[1].Integrations) == 1 &&
-			!result[0].Integrations[0].LastNotifyAttempt.IsZero()
-	}, 5*time.Second, 100*time.Millisecond)
-
-	assert.Equal(t, "webhook", result[0].Integrations[0].Name)
-	assert.NotZero(t, result[0].Integrations[0].LastNotifyAttempt)
-	assert.Equal(t, errRateLimited.Error(), result[0].Integrations[0].LastNotifyAttemptError)
-
-	// Check the status of the other integration is not changed.
-
-	assert.Equal(t, "webhook", result[1].Integrations[0].Name)
-	assert.Zero(t, result[1].Integrations[0].LastNotifyAttempt)
-	assert.Equal(t, "", result[1].Integrations[0].LastNotifyAttemptError)
-}
-
 func TestGrafanaAlertmanager(t *testing.T) {
 	limits := mockAlertManagerLimits{
 		emailNotificationRateLimit: rate.Inf,
@@ -647,8 +513,7 @@ func TestGrafanaAlertmanager(t *testing.T) {
 		Replicator:        &stubReplicator{},
 		ReplicationFactor: 1,
 		// We have to set this interval non-zero, though we don't need the persister to do anything.
-		PersisterConfig:                  PersisterConfig{Interval: time.Hour},
-		GrafanaAlertmanagerCompatibility: true,
+		PersisterConfig: PersisterConfig{Interval: time.Hour},
 	}, prometheus.NewPedanticRegistry())
 	require.NoError(t, err)
 	defer am.StopAndWait()
@@ -719,10 +584,7 @@ func TestGrafanaAlertmanager(t *testing.T) {
 		},
 		UpdatedAt: now,
 	}
-	expected := testTemplate
-	expected.Kind = alertingTemplates.GrafanaKind // should patch kind
 	require.NoError(t, am.alerts.Put(&alert))
-	require.Equal(t, am.templates[0], expected)
 	require.Eventually(t, func() bool {
 		select {
 		case got := <-c:
@@ -755,64 +617,4 @@ func TestGrafanaAlertmanager(t *testing.T) {
 		Kind:     alertingTemplates.GrafanaKind,
 	}
 	require.Error(t, am.ApplyConfig(cfg, []alertingTemplates.TemplateDefinition{testTemplate}, cfgRaw, &url.URL{}, emailCfg, true))
-}
-
-func TestGetFullStateHandler(t *testing.T) {
-	am, err := New(&Config{
-		UserID:            "test",
-		Logger:            log.NewNopLogger(),
-		Limits:            &mockAlertManagerLimits{},
-		Features:          featurecontrol.NoopFlags{},
-		TenantDataDir:     t.TempDir(),
-		ExternalURL:       &url.URL{Path: "/am"},
-		ShardingEnabled:   true,
-		Store:             prepareInMemoryAlertStore(),
-		Replicator:        &stubReplicator{},
-		ReplicationFactor: 1,
-		PersisterConfig:   PersisterConfig{Interval: time.Hour},
-	}, prometheus.NewPedanticRegistry())
-	require.NoError(t, err)
-	defer am.StopAndWait()
-
-	// Get the state from the Alertmanager.
-	{
-		rec := httptest.NewRecorder()
-		am.GetFullStateHandler(rec, nil)
-		require.Equal(t, http.StatusOK, rec.Code)
-		require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
-
-		body, err := io.ReadAll(rec.Body)
-		require.NoError(t, err)
-
-		var parsedBody struct {
-			Status string `json:"status"`
-			Data   struct {
-				State string `json:"state"`
-			} `json:"data"`
-		}
-		require.NoError(t, json.Unmarshal(body, &parsedBody))
-		require.Equal(t, "success", parsedBody.Status)
-
-		decodedState, err := base64.StdEncoding.DecodeString(parsedBody.Data.State)
-		require.NoError(t, err)
-
-		var parsedState clusterpb.FullState
-		require.NoError(t, parsedState.Unmarshal([]byte(decodedState)))
-		require.Len(t, parsedState.Parts, 2)
-
-		var nflC, silC int
-		for _, p := range parsedState.Parts {
-			switch p.Key {
-			case "nfl:test":
-				nflC++
-			case "sil:test":
-				silC++
-			default:
-				t.Errorf("unexpected part key in full state: %s", p.Key)
-			}
-		}
-
-		require.Equal(t, 1, nflC, "Expected exactly one notification")
-		require.Equal(t, 1, silC, "Expected exactly one silence")
-	}
 }

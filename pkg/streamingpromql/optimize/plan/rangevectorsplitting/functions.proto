@@ -82,3 +82,22 @@ message FirstLastOverTimeIntermediate {
 message FirstLastOverTimeIntermediateList {
   repeated FirstLastOverTimeIntermediate results = 1 [(gogoproto.nullable) = false];
 }
+
+message AvgOverTimeIntermediate {
+  double sumF = 1;
+  double incrementalAvg = 2;
+  double countF = 3;
+  bool useIncrementalCalc = 4;
+  // If the incremental path was used to calculate the average for this piece (useIncrementalCalc is true),
+  // this variable carries the compensation for that incremental average.
+  // Otherwise, it’s carrying the compensation for the sum.
+  double compF = 5;
+
+  cortexpb.Histogram avgH = 6;
+  int64 countH = 7;
+  bool forceEmptyResult = 8;
+}
+
+message AvgOverTimeIntermediateList {
+  repeated AvgOverTimeIntermediate results = 1 [(gogoproto.nullable) = false];
+}

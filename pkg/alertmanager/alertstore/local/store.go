@@ -44,18 +44,6 @@ type Store struct {
 	cfg StoreConfig
 }
 
-func (f *Store) GetFullGrafanaState(_ context.Context, _ string) (alertspb.FullStateDesc, error) {
-	return alertspb.FullStateDesc{}, errGrafanaStateAndConfig
-}
-
-func (f *Store) SetFullGrafanaState(_ context.Context, _ string, _ alertspb.FullStateDesc) error {
-	return errGrafanaStateAndConfig
-}
-
-func (f *Store) DeleteFullGrafanaState(_ context.Context, _ string) error {
-	return errGrafanaStateAndConfig
-}
-
 // NewStore returns a new file alert store.
 func NewStore(cfg StoreConfig) (*Store, error) {
 	return &Store{cfg}, nil

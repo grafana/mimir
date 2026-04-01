@@ -189,6 +189,8 @@ func (c PusherConsumer) Consume(ctx context.Context, records iter.Seq[*kgo.Recor
 		rCtx := r.ctx
 		if !r.timestamp.IsZero() {
 			rCtx = ContextWithRecordTimestamp(rCtx, r.timestamp)
+		} else {
+			level.Warn(c.logger).Log("msg", "kafka record has no timestamp, falling back to wall-clock time", "offset", r.offset, "tenant", r.tenantID)
 		}
 
 		// If we get an error at any point, we need to stop processing the records. They will be retried at some point.

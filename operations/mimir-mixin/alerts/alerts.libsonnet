@@ -1,11 +1,6 @@
 local utils = import 'mixin-utils/utils.libsonnet';
 
 (import 'alerts-utils.libsonnet') {
-  // simpleRegexpOpt produces a simple regexp that matches all strings in the input array.
-  local simpleRegexpOpt(strings) =
-    assert std.isArray(strings) : 'simpleRegexpOpt requires that `strings` is an array of strings`';
-    '(' + std.join('|', strings) + ')',
-
   local excludeWorkloads(labelName, values) =
     if std.length(values) == 0 then '' else '{%s!~"%s"}' % [labelName, std.join('|', values)],
 
@@ -962,10 +957,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('GossipMembersTooHigh'),
           expr:
             |||
-              max by (%s) (memberlist_client_cluster_members_count)
+              max by (%(alert_aggregation_labels)s) (memberlist_client_cluster_members_count)
               >
-              (sum by (%s) (up{%s}) + 10)
-            ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels, $.jobMatcher($._config.job_names.ring_members)],
+              (sum by (%(alert_aggregation_labels)s) (up{%(job_matcher)s%(job_not_matcher)s}) + 10)
+            ||| % {
+              alert_aggregation_labels: $._config.alert_aggregation_labels,
+              job_matcher: $.jobMatcher($._config.job_names.ring_members),
+              job_not_matcher: if $._config.compactor_scheduler_enabled then ',' + $.jobNotMatcher($._config.job_names.compactor_scheduler) else '',
+            },
           'for': '20m',
           labels: {
             severity: 'warning',
@@ -981,10 +980,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('GossipMembersTooLow'),
           expr:
             |||
-              min by (%s) (memberlist_client_cluster_members_count)
+              min by (%(alert_aggregation_labels)s) (memberlist_client_cluster_members_count)
               <
-              (sum by (%s) (up{%s=~".+/%s"}) * 0.5)
-            ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels, $._config.per_job_label, simpleRegexpOpt($._config.job_names.ring_members)],
+              (sum by (%(alert_aggregation_labels)s) (up{%(job_matcher)s%(job_not_matcher)s}) * 0.5)
+            ||| % {
+              alert_aggregation_labels: $._config.alert_aggregation_labels,
+              job_matcher: $.jobMatcher($._config.job_names.ring_members),
+              job_not_matcher: if $._config.compactor_scheduler_enabled then ',' + $.jobNotMatcher($._config.job_names.compactor_scheduler) else '',
+            },
           'for': '20m',
           labels: {
             severity: 'warning',

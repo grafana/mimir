@@ -16,31 +16,55 @@ import (
 
 // ReadLifecycler represents the read interface to the lifecycler.
 type ReadLifecycler interface {
+	// HealthyInstancesCount returns the total number of healthy instances in the
+	// ring.
 	HealthyInstancesCount() int
+	// HealthyInstancesInZoneCount returns the number of healthy instances in the
+	// zone this distributor is running in or the total number of healthy instances
+	// if distributors are not zone-aware.
+	HealthyInstancesInZoneCount() int
+	// ZonesCount returns the number of zones in the ring or 1 if not zone-aware.
+	ZonesCount() int
 }
 
 type globalIngestionStrategyWithBurstFactor struct {
-	limits *validation.Overrides
-	ring   ReadLifecycler
+	limits    *validation.Overrides
+	ring      ReadLifecycler
+	zoneAware bool
 }
 
 // We want a rate limiter that can use the burst factor if it's set for ingest rate limiting.
-func newGlobalRateStrategyWithBurstFactor(limits *validation.Overrides, ring ReadLifecycler) limiter.RateLimiterStrategy {
+//
+// The effective per-instance limit is calculated according to:
+// limit = maxRate / healthyInstances
+//
+// If we run in multiple zones (zoneAware), we can assume requests of a tenant
+// are evenly distributed between zones. However, the number of distributors per
+// zone might differ. Therefore, the effective limit is first divided by zones
+// and then by number of healthy instances, i.e.:
+// limit = maxRate / healthyInstancesInZone / ringZones
+func newGlobalRateStrategyWithBurstFactor(limits *validation.Overrides, ring ReadLifecycler, zoneAware bool) limiter.RateLimiterStrategy {
 	return &globalIngestionStrategyWithBurstFactor{
-		limits: limits,
-		ring:   ring,
+		limits:    limits,
+		ring:      ring,
+		zoneAware: zoneAware,
 	}
 }
 
 func (s *globalIngestionStrategyWithBurstFactor) Limit(tenantID string) float64 {
-	numDistributors := s.ring.HealthyInstancesCount()
-
 	limit := s.limits.IngestionRate(tenantID)
-
-	if numDistributors == 0 || limit == float64(rate.Inf) {
+	var numDistributorsInZone, ringZones int
+	if s.zoneAware {
+		numDistributorsInZone = s.ring.HealthyInstancesInZoneCount()
+		ringZones = s.ring.ZonesCount()
+	} else {
+		numDistributorsInZone = s.ring.HealthyInstancesCount()
+		ringZones = 1
+	}
+	if numDistributorsInZone == 0 || ringZones == 0 || limit == float64(rate.Inf) {
 		return limit
 	}
-	return limit / float64(numDistributors)
+	return limit / float64(numDistributorsInZone*ringZones)
 }
 
 func (s *globalIngestionStrategyWithBurstFactor) Burst(tenantID string) int {
@@ -62,6 +86,9 @@ type globalStrategy struct {
 	ring         ReadLifecycler
 }
 
+// newGlobalRateStrategy constructs a new limiter.RateLimiterStrategy, where the
+// effective per-instance limit is calculated according to:
+// limit = maxRate / healthyInstances
 func newGlobalRateStrategy(baseStrategy limiter.RateLimiterStrategy, ring ReadLifecycler) limiter.RateLimiterStrategy {
 	return &globalStrategy{
 		baseStrategy: baseStrategy,

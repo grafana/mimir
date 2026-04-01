@@ -144,6 +144,18 @@ func skipUnsupportedTests(t *testing.T, testContent string, testFile string) str
 			`eval instant at 5m histogram_count(sum_over_time(reset{timing="late"}[5m]))
     expect warn msg: PromQL warning: conflicting counter resets during histogram aggregation
     {timing="late"} 7`,
+
+			// The split avg_over_time has the same limitation in detection of conflicting counter reset warnings as sum_over_time.
+			// See comments for rangevectorsplitting.SplitAvgOverTime
+			`eval instant at 14m histogram_count(avg_over_time(mixed[10m]))
+  expect warn msg:PromQL warning: conflicting counter resets during histogram aggregation
+  expect no_info
+  {} 9.3`,
+
+			`eval instant at 11m histogram_count(avg_over_time(mixed[2m]))
+  expect warn msg:PromQL warning: conflicting counter resets during histogram aggregation
+  expect no_info
+  {} 10.5`,
 		}
 
 	default:

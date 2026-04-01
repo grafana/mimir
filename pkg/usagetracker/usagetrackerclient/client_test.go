@@ -687,15 +687,6 @@ func (m *usageTrackerMock) Close() error {
 	return nil
 }
 
-// noopMockT is a mock.TestingT implementation that silently discards all failures.
-// Use it inside require.Eventually conditions to avoid permanently marking the outer
-// test as failed on intermediate polls.
-type noopMockT struct{}
-
-func (*noopMockT) Logf(_ string, _ ...interface{})   {}
-func (*noopMockT) Errorf(_ string, _ ...interface{}) {}
-func (*noopMockT) FailNow()                          {}
-
 func TestUsageTrackerClient_CanTrackAsync(t *testing.T) {
 	tests := []struct {
 		name                           string
@@ -1072,7 +1063,10 @@ func TestUsageTrackerClient_TrackSeriesBatch(t *testing.T) {
 			rejections: make(map[string]int),
 		}
 
+		flushed := make(chan struct{}, 1)
+
 		c := NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer, r)
+		c.batcher.onFlushDone = func() { flushed <- struct{}{} }
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -1093,28 +1087,34 @@ func TestUsageTrackerClient_TrackSeriesBatch(t *testing.T) {
 		series5Partition1 := uint64(partitions[0].Tokens[1] - 2)
 		series6Partition1 := uint64(partitions[0].Tokens[2] - 2) // This will exceed the threshold
 
-		// Add series that will exceed the max batch series threshold (5)
-		// First 3 series should not trigger flush
-		err := c.TrackSeriesAsync(t.Context(), "user-1", []uint64{series1Partition1, series2Partition1, series3Partition1})
+		err := c.TrackSeriesAsync(t.Context(), "user-0", []uint64{series1Partition1})
 		require.NoError(t, err)
 
-		// Verify no flush yet
-		instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
+		pb := c.batcher.batchers[partitions[0].Id]
+		require.NotNil(t, pb)
+		require.Equal(t, int64(0), pb.sizeThresholdExceeded.Load())
 
-		// Add 3 more series (total 6, exceeding threshold of 5)
+		// Now, two more- still not exceeding the threshold of 5.
+		err = c.TrackSeriesAsync(t.Context(), "user-1", []uint64{series2Partition1, series3Partition1})
+		require.NoError(t, err)
+		require.Equal(t, int64(0), pb.sizeThresholdExceeded.Load())
+
+		// Add 3 more series (total 6, exceeding threshold of 5).
 		err = c.TrackSeriesAsync(t.Context(), "user-2", []uint64{series4Partition1, series5Partition1, series6Partition1})
 		require.NoError(t, err)
+		require.Equal(t, int64(1), pb.sizeThresholdExceeded.Load())
 
-		// Wait for the async flush to complete. We use a noopT inside the condition to
-		// avoid calling t.Errorf from inside the require.Eventually goroutine, which would
-		// permanently mark the test as failed even when subsequent polls would succeed.
-		noop := &noopMockT{}
-		require.Eventually(t, func() bool {
-			return instances["usage-tracker-zone-a-1"].AssertNumberOfCalls(noop, "TrackSeriesBatch", 0) &&
-				instances["usage-tracker-zone-a-2"].AssertNumberOfCalls(noop, "TrackSeriesBatch", 0) &&
-				instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(noop, "TrackSeriesBatch", 1) &&
-				instances["usage-tracker-zone-b-2"].AssertNumberOfCalls(noop, "TrackSeriesBatch", 0)
-		}, 5*time.Second, 10*time.Millisecond)
+		// Wait for the flush triggered by exceeding the threshold.
+		select {
+		case <-flushed:
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for flush")
+		}
+
+		instances["usage-tracker-zone-a-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
+		instances["usage-tracker-zone-a-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
+		instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 1)
+		instances["usage-tracker-zone-b-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
 
 		require.Equal(t, 0, r.rejections["user-1"])
 		require.Equal(t, 0, r.rejections["user-2"])
@@ -1124,12 +1124,16 @@ func TestUsageTrackerClient_TrackSeriesBatch(t *testing.T) {
 		batchReq := req.(*usagetrackerpb.TrackSeriesBatchRequest)
 		require.Len(t, batchReq.Partitions, 1)
 		require.Equal(t, int32(1), batchReq.Partitions[0].Partition)
-		require.Len(t, batchReq.Partitions[0].Users, 2)
+		require.Len(t, batchReq.Partitions[0].Users, 3)
 		require.EqualValues(t, batchReq.Partitions[0].Users,
 			[]*usagetrackerpb.TrackSeriesBatchUser{
 				{
+					UserID:       "user-0",
+					SeriesHashes: []uint64{series1Partition1},
+				},
+				{
 					UserID:       "user-1",
-					SeriesHashes: []uint64{series1Partition1, series2Partition1, series3Partition1},
+					SeriesHashes: []uint64{series2Partition1, series3Partition1},
 				},
 				{
 					UserID:       "user-2",
@@ -1278,8 +1282,8 @@ func TestUsageTrackerBatcherPartitionsGrowth(t *testing.T) {
 	initialData := unsafe.SliceData(batcher.batchers)
 
 	// Add some slice elements to verify copy behavior.
-	batcher.batchers[0] = newPartitionBatcher(0, 1000, log.NewNopLogger(), nil, batcher.stoppingChan)
-	batcher.batchers[1] = newPartitionBatcher(1, 1000, log.NewNopLogger(), nil, batcher.stoppingChan)
+	batcher.batchers[0] = newPartitionBatcher(0, 1000, log.NewNopLogger(), nil, batcher.stoppingChan, nil)
+	batcher.batchers[1] = newPartitionBatcher(1, 1000, log.NewNopLogger(), nil, batcher.stoppingChan, nil)
 
 	require.Equal(t, initialLength, len(batcher.batchers))
 	require.Same(t, initialData, unsafe.SliceData(batcher.batchers), "slice should not have been reallocated")
@@ -1328,6 +1332,7 @@ func BenchmarkPartitionBatcher_TrackSeries(b *testing.B) {
 		logger,
 		nil, // trackerClient (not needed if no flushes)
 		stopping,
+		nil,
 	)
 
 	// Generate 100 series hashes

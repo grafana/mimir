@@ -406,7 +406,7 @@ func prepareIndexV2Block(t testing.TB, tmpDir string, bkt objstore.Bucket) *bloc
 	_, err = block.InjectThanosMeta(log.NewNopLogger(), filepath.Join(tmpDir, m.ULID.String()), block.ThanosMeta{
 		Labels: labels.FromStrings("ext1", "1").Map(),
 		Source: block.TestSource,
-	}, &m.BlockMeta)
+	})
 	require.NoError(t, err)
 	_, err = block.Upload(context.Background(), log.NewNopLogger(), bkt, filepath.Join(tmpDir, m.ULID.String()), nil)
 	require.NoError(t, err)

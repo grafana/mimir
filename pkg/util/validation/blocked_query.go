@@ -14,6 +14,7 @@ type BlockedQuery struct {
 	Reason                string         `yaml:"reason" doc:"description=Reason returned to clients when rejecting matching queries."`
 	UnalignedRangeQueries bool           `yaml:"unaligned_range_queries" doc:"description=If true, only block the query if the query time range is not aligned to the step, meaning the query is not eligible for range query result caching. If enabled, instant queries and remote read requests will not be blocked."`
 	TimeRangeLongerThan   model.Duration `yaml:"time_range_longer_than,omitempty" doc:"description=Block queries with time range longer than this duration. Set to 0 to disable."`
+	MinimumStepSize       model.Duration `yaml:"minimum_step_size,omitempty" doc:"description=Block queries where the step is smaller than this duration. Instant queries and queries with no step are not blocked. Set to 0 to disable."`
 }
 
 type BlockedQueriesConfig []BlockedQuery

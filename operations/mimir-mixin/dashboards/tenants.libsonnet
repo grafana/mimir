@@ -3,13 +3,14 @@ local filename = 'mimir-tenants.json';
 
 (import 'dashboard-utils.libsonnet') +
 (import 'dashboard-queries.libsonnet') {
-  local user_limits_overrides_query(limit_name) = |||
+  local user_limits_overrides_query(limit_name, non_zero=false) = |||
     max(cortex_limits_overrides{%(overrides_exporter)s, limit_name="%(limit_name)s", user="$user"})
     or
-    max(cortex_limits_defaults{%(overrides_exporter)s, limit_name="%(limit_name)s"})
+    max(cortex_limits_defaults{%(overrides_exporter)s, limit_name="%(limit_name)s"}%(non_zero_selector)s)
   ||| % {
     overrides_exporter: $.jobMatcher($._config.job_names.overrides_exporter),
     limit_name: limit_name,
+    non_zero_selector: if non_zero then ' != 0' else '',
   },
 
   local limitStyle = $.overrideFieldByName('limit', [
@@ -62,7 +63,7 @@ local filename = 'mimir-tenants.json';
         $.queryPanel(
           [
             $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_active_series{%s, user="$user"}' % [$.jobMatcher($._config.job_names.ingester)]),
-            user_limits_overrides_query('max_active_series_per_user'),
+            user_limits_overrides_query('max_active_series_per_user', non_zero=true),  // Only render non-zero limit. Zero means no-limit.
             $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_active_series_custom_tracker{%s, user="$user"}' % [$.jobMatcher($._config.job_names.ingester)], groupByLabels='name'),
           ],
           [
