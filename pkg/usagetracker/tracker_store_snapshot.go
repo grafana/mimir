@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"runtime"
+	"sync"
 	"time"
 
 	"github.com/prometheus/prometheus/tsdb/encoding"
@@ -13,6 +14,13 @@ import (
 
 	"github.com/grafana/mimir/pkg/usagetracker/clock"
 )
+
+type refTimestamp struct {
+	Ref       uint64
+	Timestamp clock.Minutes
+}
+
+var refTimestampPool = &sync.Pool{New: func() any { return &[]refTimestamp{} }}
 
 const snapshotEncodingVersion = 1
 
@@ -130,20 +138,28 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 			return fmt.Errorf("failed to read series len: %w", err)
 		}
 
-		type refTimestamp struct {
-			Ref       uint64
-			Timestamp clock.Minutes
+		refsPtr := refTimestampPool.Get().(*[]refTimestamp)
+		refs := *refsPtr
+		if cap(refs) < seriesLen {
+			refs = make([]refTimestamp, 0, seriesLen)
+		}
+		refs = refs[:0]
+
+		returnRefs := func() {
+			*refsPtr = refs
+			refTimestampPool.Put(refsPtr)
 		}
 
-		refs := make([]refTimestamp, 0, seriesLen)
 		for i := 0; i < seriesLen; i++ {
 			s := snapshot.Be64()
 			if err := snapshot.Err(); err != nil {
+				returnRefs()
 				return fmt.Errorf("failed to read series ref %d: %w", i, err)
 			}
 
 			snapshotTs := clock.Minutes(snapshot.Byte())
 			if err := snapshot.Err(); err != nil {
+				returnRefs()
 				return fmt.Errorf("failed to read series timestamp %d: %w", i, err)
 			}
 			if expirationWatermark.GreaterThan(snapshotTs) {
@@ -157,7 +173,7 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 		m := tenant.shards[shard]
 		m.Lock()
 		// Ensure the shard has enough capacity for this snapshot to minimize the number of rehashes.
-		m.EnsureCapacity(uint32(len(refs)))
+		m.EnsureCapacity(uint32(m.Count()) + uint32(len(refs)))
 
 		// Check if the shard is empty. If it is, we can use the faster Load() method
 		// which doesn't check for duplicates. Otherwise, use Put() which handles
@@ -174,6 +190,8 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 		}
 		m.Unlock()
 		tenant.RUnlock()
+
+		returnRefs()
 	}
 	return nil
 }
