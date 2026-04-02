@@ -132,13 +132,17 @@ func SearchLabelValuesHandler(queryable storage.SampleAndChunkQueryable, overrid
 	searchExec := func(ctx context.Context, searcher mimirstorage.MimirSearcher, hints *mimirstorage.MimirSearchHints, params *searchParams) (mimirstorage.SearchResultSet, annotations.Annotations) {
 		return searcher.SearchLabelValues(ctx, params.labelName, hints, params.matchers...)
 	}
-	return doSearchHandler(queryable, overrides, logger, "SearchLabelNamesHandler", searchExec, true)
+	return doSearchHandler(queryable, overrides, logger, "SearchLabelValuesHandler", searchExec, true)
 }
 
 // streamResults writes results from vs to writer in batches of batchSize.
 // When limit > 0, iteration stops after limit values have been consumed.
-// Sorting is the Searcher's responsibility (via labelSearchStream.drainAndSort);
-// hasMore is read from the stream's limitReached flag, or detected by peeking.
+// The loop enforces the limit as a secondary guard; the primary enforcement is in
+// KWayMergeValueSets / UnsortedDedupValueSets (which set LimitReached and stop the
+// producer goroutine before this loop sees the channel close).
+// Sorting is delegated to the downstream Searcher: KWayMergeValueSets performs an
+// O(k)-per-step heap merge across pre-sorted sub-Searcher streams.
+// hasMore is read from the stream's LimitReached flag, or detected by peeking.
 // callWarns contains annotations returned at search-invocation time (e.g. limit clamped).
 //
 // TODO(warnings): also wire in per-result-stream annotations from intermediate nodes
@@ -157,6 +161,9 @@ func streamResults(vs mimirstorage.SearchResultSet, batchSize, limit int, writer
 		}
 	}
 	if err := vs.Err(); err != nil {
+		// Best-effort: flush any buffered results before writing the error frame.
+		// Write errors are ignored here because we are already in the error path
+		// and the response has been partially written; the error frame takes priority.
 		if len(results) > 0 {
 			_ = writer.writeBatch(results)
 		}

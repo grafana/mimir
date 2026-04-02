@@ -178,6 +178,22 @@ func TestFilterChain(t *testing.T) {
 		},
 
 		{
+			name:   "fuzz algorithm subsequence - rejects non-subsequences that JaroWinkler would accept",
+			params: searchParams{search: []string{"foo"}, fuzzThreshold: 70, fuzzAlg: "subsequence"},
+			input:  []string{"foo", "bar_foo", "boo"},
+			expected: map[string]struct {
+				accepted bool
+				score    float64
+			}{
+				"foo":     {true, -1}, // exact substring match
+				"bar_foo": {true, -1}, // substring match
+				// "boo" scores ~0.77 with JaroWinkler (would pass the jarowinkler test above),
+				// but scores 0.0 with subsequence because 'f' is not present in "boo".
+				"boo": {false, 0},
+			},
+		},
+
+		{
 			name:   "multiple strings with fuzz - lower threshold",
 			params: searchParams{search: []string{"foo", "bar"}, fuzzThreshold: 1},
 			input:  []string{"foo", "bar", "boo", "some_metric_ending_with_foo", "bar_foo", "tar", "foobar", "barfoo", "tarloo", "loo_tar"},
@@ -538,6 +554,42 @@ func (q *cancellingNativeSearcher) SearchLabelNames(ctx context.Context, _ *mimi
 func (q *cancellingNativeSearcher) SearchLabelValues(ctx context.Context, _ string, _ *mimirstorage.MimirSearchHints, _ ...*labels.Matcher) (mimirstorage.SearchResultSet, annotations.Annotations) {
 	q.vs.ctx = ctx
 	return q.vs, nil
+}
+
+// TestSearchLabelNamesHandler_HasMore verifies that when a limit is applied and the underlying
+// result set has more items, the final status chunk carries has_more: true.
+func TestSearchLabelNamesHandler_HasMore(t *testing.T) {
+	// 5 label names available, limit=2 → has_more must be true.
+	queryable := newSearchTestQueryable(
+		[]string{"__name__", "job", "instance", "pod", "namespace"},
+		nil,
+	)
+
+	handler := SearchLabelNamesHandler(queryable, nil, log.NewNopLogger())
+
+	ctx := user.InjectOrgID(context.Background(), "test-tenant")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/search/label_names?limit=2", nil)
+	require.NoError(t, err)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	scanner := bufio.NewScanner(rec.Body)
+	var resultCount int
+	var lastMsg map[string]any
+	for scanner.Scan() {
+		var obj map[string]any
+		require.NoError(t, json.Unmarshal(scanner.Bytes(), &obj))
+		if results, ok := obj["results"].([]any); ok {
+			resultCount += len(results)
+		}
+		lastMsg = obj
+	}
+	assert.Equal(t, 2, resultCount, "expected exactly 2 results with limit=2")
+	require.NotNil(t, lastMsg)
+	assert.Equal(t, "success", lastMsg["status"])
+	assert.Equal(t, true, lastMsg["has_more"], "expected has_more=true when limit cuts the stream short")
 }
 
 // TestSearchLabelNamesHandler_ContextCancellation verifies that when a request is cancelled

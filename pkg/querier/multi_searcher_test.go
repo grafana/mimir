@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -32,6 +33,8 @@ func (s *fixedValueSet) Next() bool {
 }
 
 func (s *fixedValueSet) At() mimirstorage.SearchResult {
+	// Score is always -1 (no score computed). fixedValueSet is unsuitable for
+	// score-sort tests; use a custom SearchResultSet that sets meaningful scores.
 	return mimirstorage.SearchResult{Value: s.items[s.pos-1], Score: -1}
 }
 
@@ -106,7 +109,11 @@ func TestFanOutSearch_FilterPassedToSubSearchers(t *testing.T) {
 }
 
 func TestFanOutSearch_ComparatorSortsAcrossSearchers(t *testing.T) {
-	// Sub-searchers return values pre-sorted in alpha-desc order (as they would after receiving hints).
+	// Sub-searchers return values pre-sorted in alpha-desc order, mirroring the
+	// contract that fanOutSearch enforces: full hints (including SortBy/SortOrder)
+	// are forwarded to every sub-Searcher so their streams arrive pre-sorted for
+	// KWayMergeValueSets. The test data is hand-crafted to already satisfy this
+	// invariant (s1: c→a, s2: d→b, both descending alpha).
 	s1 := &fanOutSearcher{names: []string{"c", "a"}}
 	s2 := &fanOutSearcher{names: []string{"d", "b"}}
 
@@ -162,6 +169,11 @@ func TestFanOutSearch_LimitWithoutSort(t *testing.T) {
 	require.NoError(t, err)
 	// Exactly 3 values returned (which 3 depends on goroutine scheduling, but count is enforced).
 	assert.Len(t, got, 3)
+
+	type limitReacher interface{ LimitReached() bool }
+	lr, ok := vs.(limitReacher)
+	require.True(t, ok, "expected SearchResultSet to implement LimitReached()")
+	assert.True(t, lr.LimitReached(), "expected LimitReached() to be true when limit was hit")
 }
 
 func TestFanOutSearch_ErrorPropagates(t *testing.T) {
@@ -190,4 +202,121 @@ func TestFanOutSearch_EmptySearchers(t *testing.T) {
 	got, err := drainValueSet(vs)
 	require.NoError(t, err)
 	assert.Empty(t, got)
+}
+
+func TestFanOutSearch_DedupSorted(t *testing.T) {
+	// Both sub-searchers return results pre-sorted alpha-desc (as required by KWayMerge).
+	// "b" appears in both; the merge must deduplicate it to a single occurrence.
+	s1 := &fanOutSearcher{names: []string{"c", "b"}}
+	s2 := &fanOutSearcher{names: []string{"d", "b"}}
+
+	hints := &mimirstorage.MimirSearchHints{SortBy: mimirstorage.Alpha, SortOrder: mimirstorage.Desc}
+
+	vs, _ := fanOutSearch(context.Background(), hints, []mimirstorage.MimirSearcher{s1, s2},
+		func(ctx context.Context, s mimirstorage.MimirSearcher, h *mimirstorage.MimirSearchHints) (mimirstorage.SearchResultSet, annotations.Annotations) {
+			return s.SearchLabelNames(ctx, h)
+		},
+	)
+	defer vs.Close()
+
+	got, err := drainValueSet(vs)
+	require.NoError(t, err)
+	// alpha-desc: d→c→b (deduped)
+	assert.Equal(t, []string{"d", "c", "b"}, got)
+}
+
+func TestFanOutSearch_ErrorPropagatesSorted(t *testing.T) {
+	// Error from a sub-searcher must propagate through the sorted merge path.
+	s1 := &fanOutSearcher{names: []string{"a", "b"}}
+	s2 := &fanOutSearcher{err: errors.New("searcher failed")}
+
+	hints := &mimirstorage.MimirSearchHints{SortBy: mimirstorage.Alpha, SortOrder: mimirstorage.Asc}
+
+	vs, _ := fanOutSearch(context.Background(), hints, []mimirstorage.MimirSearcher{s1, s2},
+		func(ctx context.Context, s mimirstorage.MimirSearcher, h *mimirstorage.MimirSearchHints) (mimirstorage.SearchResultSet, annotations.Annotations) {
+			return s.SearchLabelNames(ctx, h)
+		},
+	)
+	defer vs.Close()
+
+	_, err := drainValueSet(vs)
+	assert.ErrorContains(t, err, "searcher failed")
+}
+
+// channelValueSet is a SearchResultSet backed by a channel. Items can be pushed
+// via send() and the set can be closed via close(). Used to test that Close()
+// on the outer stream unblocks a merge goroutine that is waiting for items.
+type channelValueSet struct {
+	ch  chan mimirstorage.SearchResult
+	cur mimirstorage.SearchResult
+	ctx context.Context
+}
+
+func newChannelValueSet(ctx context.Context) *channelValueSet {
+	return &channelValueSet{ch: make(chan mimirstorage.SearchResult), ctx: ctx}
+}
+
+func (s *channelValueSet) send(v string) { s.ch <- mimirstorage.SearchResult{Value: v} }
+func (s *channelValueSet) close()        { close(s.ch) }
+
+func (s *channelValueSet) Next() bool {
+	select {
+	case v, ok := <-s.ch:
+		if !ok {
+			return false
+		}
+		s.cur = v
+		return true
+	case <-s.ctx.Done():
+		return false
+	}
+}
+func (s *channelValueSet) At() mimirstorage.SearchResult     { return s.cur }
+func (s *channelValueSet) Warnings() annotations.Annotations { return nil }
+func (s *channelValueSet) Err() error                        { return s.ctx.Err() }
+func (s *channelValueSet) Close() error                      { return nil }
+
+type channelBackedSearcher struct {
+	vs *channelValueSet
+}
+
+func (s *channelBackedSearcher) SearchLabelNames(ctx context.Context, _ *mimirstorage.MimirSearchHints, _ ...*labels.Matcher) (mimirstorage.SearchResultSet, annotations.Annotations) {
+	s.vs.ctx = ctx // capture the derived context so Next() unblocks when the outer stream is closed
+	return s.vs, nil
+}
+func (s *channelBackedSearcher) SearchLabelValues(ctx context.Context, _ string, _ *mimirstorage.MimirSearchHints, _ ...*labels.Matcher) (mimirstorage.SearchResultSet, annotations.Annotations) {
+	s.vs.ctx = ctx
+	return s.vs, nil
+}
+
+func TestFanOutSearch_CloseUnblocksSortedMerge(t *testing.T) {
+	// Verify that calling Close() on the outer stream unblocks and terminates
+	// a merge goroutine that is blocked waiting for the next item from a sub-Searcher.
+	ctx := context.Background()
+	inner := newChannelValueSet(ctx)
+	searcher := &channelBackedSearcher{vs: inner}
+
+	hints := &mimirstorage.MimirSearchHints{SortBy: mimirstorage.Alpha, SortOrder: mimirstorage.Asc}
+	vs, _ := fanOutSearch(ctx, hints, []mimirstorage.MimirSearcher{searcher},
+		func(ctx context.Context, s mimirstorage.MimirSearcher, h *mimirstorage.MimirSearchHints) (mimirstorage.SearchResultSet, annotations.Annotations) {
+			return s.SearchLabelNames(ctx, h)
+		},
+	)
+
+	// Send one item and read it so the merge goroutine is running.
+	inner.send("a")
+
+	// Close the outer stream; this should cancel the merge goroutine's context.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		vs.Close()
+	}()
+
+	select {
+	case <-done:
+		// Close returned — goroutine unblocked as expected.
+	case <-time.After(3 * time.Second):
+		t.Fatal("Close() did not return within 3s; merge goroutine appears to be stuck")
+	}
 }

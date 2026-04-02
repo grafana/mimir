@@ -721,9 +721,13 @@ func (mq *multiQuerier) SearchLabelNames(ctx context.Context, hints *mimirstorag
 	}
 	hints.Limit = limit
 
-	searchers := make([]mimirstorage.MimirSearcher, len(queriers))
-	for i, q := range queriers {
-		searchers[i] = q.(mimirstorage.MimirSearcher)
+	searchers := make([]mimirstorage.MimirSearcher, 0, len(queriers))
+	for _, q := range queriers {
+		s, ok := q.(mimirstorage.MimirSearcher)
+		if !ok {
+			return mimirstorage.ErrorSearchResultSet(fmt.Errorf("querier %T does not implement MimirSearcher", q)), nil
+		}
+		searchers = append(searchers, s)
 	}
 
 	vs, subWarns := fanOutSearch(ctx, hints, searchers, func(ctx context.Context, s mimirstorage.MimirSearcher, h *mimirstorage.MimirSearchHints) (mimirstorage.SearchResultSet, annotations.Annotations) {
@@ -767,9 +771,13 @@ func (mq *multiQuerier) SearchLabelValues(ctx context.Context, name string, hint
 	}
 	hints.Limit = limit
 
-	searchers := make([]mimirstorage.MimirSearcher, len(queriers))
-	for i, q := range queriers {
-		searchers[i] = q.(mimirstorage.MimirSearcher)
+	searchers := make([]mimirstorage.MimirSearcher, 0, len(queriers))
+	for _, q := range queriers {
+		s, ok := q.(mimirstorage.MimirSearcher)
+		if !ok {
+			return mimirstorage.ErrorSearchResultSet(fmt.Errorf("querier %T does not implement MimirSearcher", q)), nil
+		}
+		searchers = append(searchers, s)
 	}
 
 	vs, subWarns := fanOutSearch(ctx, hints, searchers, func(ctx context.Context, s mimirstorage.MimirSearcher, h *mimirstorage.MimirSearchHints) (mimirstorage.SearchResultSet, annotations.Annotations) {

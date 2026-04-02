@@ -44,9 +44,17 @@ func (c *FilterChain) Accept(value string) (accepted bool, score float64) {
 		if ok {
 			accepted = true
 			score = math.Max(score, s)
+			// Short-circuit on an exact/substring match (score == unscored = -1):
+			// the contains filter already matched, no need to compute a fuzz score.
+			if s == unscored {
+				break
+			}
 		}
 	}
-	return accepted, score
+	if !accepted {
+		return false, noscore
+	}
+	return true, score
 }
 
 // FilterChains is an outer container for multiple FilterChain instances.
@@ -71,7 +79,7 @@ func (c *FilterChains) AddFilterChain(chain *FilterChain) {
 
 // Accept implements storage.Filter.
 // Returns true if any chain accepts the value. If there are no chains all values are accepted.
-// Score is the maximum score seen across all chains regardless of whether any accepted.
+// Score is the maximum score seen across accepting chains; noscore (0) is returned for rejected values.
 func (c *FilterChains) Accept(value string) (accepted bool, score float64) {
 	if len(c.chains) == 0 {
 		return true, unscored
@@ -81,18 +89,21 @@ func (c *FilterChains) Accept(value string) (accepted bool, score float64) {
 		v = strings.ToLower(value)
 	}
 	score = unscored
-	accepted = false
 	for _, chain := range c.chains {
 		ok, s := chain.Accept(v)
 		if ok {
 			accepted = true
 			score = math.Max(score, s)
-			if score >= 1 {
+			if s == unscored {
+				// Exact/substring match in this chain: no fuzz score needed.
 				break
 			}
 		}
 	}
-	return accepted, score
+	if !accepted {
+		return false, noscore
+	}
+	return true, score
 }
 
 // FilterContains accepts values that contain the given term as a substring.
@@ -194,16 +205,11 @@ func BuildFilterChains(searchTerms []string, caseInsensitive bool, fuzzAlg strin
 		sc.AddFilter(NewFilterContains(term))
 
 		if fuzzThreshold > 0 && len(fuzzAlg) > 0 {
-			for _, term := range searchTerms {
-				if caseInsensitive {
-					term = strings.ToLower(term)
-				}
-				switch fuzzAlg {
-				case SearchAlgJaroWinkler:
-					sc.AddFilter(NewFilterJaro(term, fuzzThreshold))
-				case SearchAlgSubsequence:
-					sc.AddFilter(NewFilterSubsequence(term, fuzzThreshold))
-				}
+			switch fuzzAlg {
+			case SearchAlgJaroWinkler:
+				sc.AddFilter(NewFilterJaro(term, fuzzThreshold))
+			case SearchAlgSubsequence:
+				sc.AddFilter(NewFilterSubsequence(term, fuzzThreshold))
 			}
 		}
 		chain.AddFilterChain(sc)
