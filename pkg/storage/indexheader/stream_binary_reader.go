@@ -224,7 +224,8 @@ func NewStreamBinaryReader(
 			streamBinaryReader.postingsOffsetsDecbufFactory = bucketBlockIndexDecbufFactory
 			streamBinaryReader.postingsOffsetsTOC = bucketBlockTOC
 		default:
-			// Invalid BucketIndexSections are already rejected by config validation
+			// Invalid BucketIndexSections should already be rejected by config validation; protect anyway.
+			return nil, errInvalidIndexHeaderSection
 		}
 	} else {
 		// We will read everything from full index-header on disk
