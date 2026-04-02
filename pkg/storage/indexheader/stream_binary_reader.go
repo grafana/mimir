@@ -170,7 +170,7 @@ func NewStreamBinaryReader(
 	// If we previously failed to load the sparse index-header, build it now from full header.
 	if !sparseHeaderLoaded {
 		start := time.Now()
-		allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, err = BuildInMemorySparseHeaderFromIndexHeader(
+		allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, err = buildInMemorySparseHeaderFromIndexHeader(
 			indexHeaderTOC, filePoolDecbufFactory, sparseSampleFactor, cfg.VerifyOnLoad, ll,
 		)
 		if err != nil {
@@ -187,7 +187,7 @@ func NewStreamBinaryReader(
 			Symbols:             streamindex.SparseSymbolsToProto(allSymbolsCount, sparseSymbolsOffsets),
 			PostingsOffsetTable: streamindex.SparsePostingsOffsetsTableToProto(sparsePostingsOffsets, sparseSampleFactor),
 		}
-		if err := WriteSparseHeaderProtoToDisk(localSparseHeaderPath, sparseHeaderProto); err != nil {
+		if err := writeSparseHeaderProtoToDisk(localSparseHeaderPath, sparseHeaderProto, ll); err != nil {
 			// Log an error in case there are disk issues, but we can still continue.
 			level.Error(spanLog).Log(
 				"msg", "failed to write bucket sparse index-header to disk", "err", err,

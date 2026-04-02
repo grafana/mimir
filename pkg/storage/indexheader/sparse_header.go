@@ -26,6 +26,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/indexheader/indexheaderpb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/atomicfs"
+	"github.com/grafana/mimir/pkg/util/filepool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -34,7 +35,7 @@ import (
 //
 // It intended for only a best-effort attempt to get the file downloaded during initial lazy reader creation.
 // The lazy reader can ignore the failure to find the sparse header on disk or in the bucket
-// and later trigger a full rebuild of the sparse header with BuildInMemorySparseHeaderFromIndexHeader.
+// and later trigger a full rebuild of the sparse header with buildInMemorySparseHeaderFromIndexHeader.
 func DownloadSparseHeaderToDisk(
 	ctx context.Context,
 	blockID ulid.ULID,
@@ -125,7 +126,7 @@ func LoadSparseIndexHeaderFromDisk(
 // after loading from the existing file on disk or downloading the file from the bucket.
 //
 // The in-memory representation is required to initialize a StreamBinaryReader for querying.
-// If this fails, the caller must trigger a full rebuild of the sparse header with BuildInMemorySparseHeaderFromIndexHeader.
+// If this fails, the caller must trigger a full rebuild of the sparse header with buildInMemorySparseHeaderFromIndexHeader.
 //
 // This method is more efficient than calling DownloadSparseHeaderToDisk followed by LoadSparseIndexHeaderFromDisk,
 // as it returns the in-memory representation from the bucket directly, rather than writing to disk then reading from disk.
@@ -254,7 +255,53 @@ func unzipSparseHeader(gZippedSparseData []byte, ll log.Logger) ([]byte, error) 
 	return sparseData, err
 }
 
-func BuildInMemorySparseHeaderFromIndexHeader(
+// BuildAndWriteSparseHeaderFromTSDBIndex builds the sparse index-header from the full Prometheus block index on disk
+// and writes it to disk in the same directory.
+// This can be used to generate sparse headers in components with a full block index on disk:
+// classic ingesters, block-builders, and compactors.
+func BuildAndWriteSparseHeaderFromTSDBIndex(
+	blockID ulid.ULID,
+	localTenantDir string,
+	sparseSampleFactor int,
+	ll log.Logger,
+) (err error) {
+	metrics := filepool.NewFilePoolMetrics(nil)
+
+	blockDir := filepath.Join(localTenantDir, blockID.String())
+	indexPath := filepath.Join(blockDir, block.IndexFilename)
+	sparseHeaderPath := filepath.Join(blockDir, block.SparseIndexHeaderFilename)
+
+	filePoolDecbufFactory := streamencoding.NewFilePoolDecbufFactory(indexPath, 0, metrics)
+	defer runutil.CloseWithErrCapture(&err, filePoolDecbufFactory, "build sparse index header")
+
+	indexTOC, err := tocFromDiskTSDBIndex(blockID, localTenantDir)
+	if err != nil {
+		return err
+	}
+
+	allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, err := buildInMemorySparseHeaderFromIndexHeader(
+		indexTOC,
+		filePoolDecbufFactory,
+		sparseSampleFactor,
+		false, ll,
+	)
+	if err != nil {
+		return fmt.Errorf("cannot build sparse index-header values from full index: %w", err)
+	}
+
+	sparseHeaderProto := &indexheaderpb.Sparse{
+		Symbols:             streamindex.SparseSymbolsToProto(allSymbolsCount, sparseSymbolsOffsets),
+		PostingsOffsetTable: streamindex.SparsePostingsOffsetsTableToProto(sparsePostingsOffsets, sparseSampleFactor),
+	}
+
+	if err := writeSparseHeaderProtoToDisk(sparseHeaderPath, sparseHeaderProto, ll); err != nil {
+		return fmt.Errorf("failed to write sparse index-header to disk in protobuf format: %w", err)
+	}
+
+	return nil
+}
+
+func buildInMemorySparseHeaderFromIndexHeader(
 	toc *TOCCompat,
 	decbufFactory streamencoding.DecbufFactory,
 	sparseSampleFactor int,
@@ -270,7 +317,6 @@ func BuildInMemorySparseHeaderFromIndexHeader(
 	defer func() {
 		level.Info(ll).Log("msg", "created sparse index-header from full index-header", "elapsed", time.Since(start))
 	}()
-
 	level.Info(ll).Log("msg", "creating sparse index-header from full index-header")
 
 	allSymbolsCount, sparseSymbolsOffsets, err = streamindex.SparseValuesFromSymbolsTable(
@@ -288,7 +334,13 @@ func BuildInMemorySparseHeaderFromIndexHeader(
 	return allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, nil
 }
 
-func WriteSparseHeaderProtoToDisk(path string, sparseHeaders *indexheaderpb.Sparse) error {
+func writeSparseHeaderProtoToDisk(path string, sparseHeaders *indexheaderpb.Sparse, ll log.Logger) error {
+	start := time.Now()
+	defer func() {
+		level.Info(ll).Log("msg", "wrote sparse index-header to disk in protobuf format", "elapsed", time.Since(start))
+	}()
+	level.Info(ll).Log("msg", "writing sparse index-header to disk in protobuf format")
+
 	out, err := sparseHeaders.Marshal()
 	if err != nil {
 		return fmt.Errorf("failed to marshall sparse index-header: %w", err)
