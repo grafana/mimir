@@ -113,6 +113,22 @@ func (n *NarrowSelectorsOptimizationPass) includeFromNode(ctx context.Context, n
 		// use as a hint. We pass along any labels created from label_replace or label_join on the
 		// left or right side of this binary expression when trying to find labels for hints to make
 		// sure we don't use them.
+		//
+		// For 'without' matching, the excluded labels are not part of the match key, so they must
+		// not appear in the hints — otherwise the RHS could be incorrectly narrowed by a label that
+		// is irrelevant to the join. Add excluded labels to the "created" set so filterLabels strips
+		// them from any hints found from child nodes.
+		if e.VectorMatching != nil && !e.VectorMatching.On && len(e.VectorMatching.MatchingLabels) > 0 {
+			withoutCreated := make(map[string]struct{}, len(created)+len(e.VectorMatching.MatchingLabels))
+			for k := range created {
+				withoutCreated[k] = struct{}{}
+			}
+			for _, l := range e.VectorMatching.MatchingLabels {
+				withoutCreated[l] = struct{}{}
+			}
+			return n.includeFromNode(ctx, e.LHS, withoutCreated)
+		}
+
 		return n.includeFromNode(ctx, e.LHS, created)
 	case *core.AggregateExpression:
 		if !e.Without && len(e.Grouping) > 0 {

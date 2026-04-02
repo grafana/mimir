@@ -441,6 +441,44 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			expectedAttempts: 1,
 			expectedModified: 1,
 		},
+		"without binary expression aggregation LHS: excluded label is not included in hints": {
+			// region is in both the aggregation grouping and the without exclusion list.
+			// The hint should only include zone, not region, because region is not a match key.
+			expr: `sum by (zone, region) (some_metric) / ignoring (region) some_other_metric`,
+			expectedPlan: `
+				- BinaryExpression: LHS / ignoring (region) RHS, hints (zone)
+					- LHS: AggregateExpression: sum by (zone, region)
+						- VectorSelector: {__name__="some_metric"}
+					- RHS: VectorSelector: {__name__="some_other_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
+		"without binary expression aggregation LHS: all grouping labels excluded yields no hints": {
+			// All labels from the aggregation are also in the without exclusion list.
+			// No useful hint labels remain, so no hints are set.
+			expr: `sum by (region) (some_metric) / ignoring (region) some_other_metric`,
+			expectedPlan: `
+				- BinaryExpression: LHS / ignoring (region) RHS
+					- LHS: AggregateExpression: sum by (region)
+						- VectorSelector: {__name__="some_metric"}
+					- RHS: VectorSelector: {__name__="some_other_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 0,
+		},
+		"without binary expression aggregation LHS: non-overlapping labels pass through": {
+			// zone is NOT in the without exclusion list, so it is a valid hint label.
+			expr: `sum by (zone) (some_metric) / ignoring (region) some_other_metric`,
+			expectedPlan: `
+				- BinaryExpression: LHS / ignoring (region) RHS, hints (zone)
+					- LHS: AggregateExpression: sum by (zone)
+						- VectorSelector: {__name__="some_metric"}
+					- RHS: VectorSelector: {__name__="some_other_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
 	}
 
 	for name, testCase := range testCases {
