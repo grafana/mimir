@@ -163,6 +163,10 @@ type KafkaConfig struct {
 
 	// DisableLinger disables producer linger. This setting is just used in tests.
 	DisableLinger bool `yaml:"-"`
+
+	// MaxInflightProduceRequests is the max number of in-flight Produce requests per broker.
+	// This setting is just used in tests. 0 uses the default.
+	MaxInflightProduceRequests int `yaml:"-"`
 }
 
 func (cfg *KafkaConfig) RegisterFlags(f *flag.FlagSet) {

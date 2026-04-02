@@ -362,10 +362,11 @@ func TestWriter_WriteSync(t *testing.T) {
 		)
 
 		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
 
 		// Allow only 1 in-flight Produce request in this test, to easily reproduce the scenario.
-		writer.maxInflightProduceRequests = 1
+		cfg := createTestKafkaConfig(clusterAddr, topicName)
+		cfg.MaxInflightProduceRequests = 1
+		writer, _ := createTestWriter(t, cfg)
 
 		cluster.ControlKey(int16(kmsg.Produce), func(request kmsg.Request) (kmsg.Response, error, bool) {
 			if firstRequest.CompareAndSwap(true, false) {

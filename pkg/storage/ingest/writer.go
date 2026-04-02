@@ -72,9 +72,6 @@ type Writer struct {
 	writeBytesTotal     prometheus.Counter
 	inputBytesTotal     prometheus.Counter
 	recordsPerRequest   prometheus.Histogram
-
-	// The following settings can only be overridden in tests.
-	maxInflightProduceRequests int
 }
 
 func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registerer) *Writer {
@@ -88,11 +85,10 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 	}, []string{"outcome"})
 
 	w := &Writer{
-		kafkaCfg:                   kafkaCfg,
-		logger:                     logger,
-		registerer:                 reg,
-		serializer:                 recordSerializerFromCfg(kafkaCfg),
-		maxInflightProduceRequests: defaultMaxInflightProduceRequests,
+		kafkaCfg:   kafkaCfg,
+		logger:     logger,
+		registerer: reg,
+		serializer: recordSerializerFromCfg(kafkaCfg),
 
 		// Metrics.
 		writeSuccessLatency: writeLatency.WithLabelValues("success"),
@@ -126,7 +122,12 @@ func (w *Writer) starting(_ context.Context) error {
 
 	clientReg := prometheus.WrapRegistererWithPrefix(writerMetricsPrefix, w.registerer)
 
-	client, err := NewKafkaWriterClient(w.kafkaCfg, w.maxInflightProduceRequests, w.logger, clientReg)
+	maxInflightProduceRequests := w.kafkaCfg.MaxInflightProduceRequests
+	if maxInflightProduceRequests == 0 {
+		maxInflightProduceRequests = defaultMaxInflightProduceRequests
+	}
+
+	client, err := NewKafkaWriterClient(w.kafkaCfg, maxInflightProduceRequests, w.logger, clientReg)
 	if err != nil {
 		return err
 	}
