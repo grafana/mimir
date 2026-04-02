@@ -66,6 +66,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
+	mimirstorage "github.com/grafana/mimir/pkg/storage"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/ingest"
@@ -3744,6 +3745,216 @@ func TestDistributor_LabelNames(t *testing.T) {
 	}
 }
 
+func TestDistributor_SearchLabelNames(t *testing.T) {
+	now := model.Now()
+	const numIngesters = 5
+
+	fixtures := []struct {
+		lbls      []mimirpb.LabelAdapter
+		value     float64
+		timestamp int64
+	}{
+		{labelAdapters(model.MetricNameLabel, "test_1", "status", "200"), 1, 100000},
+		{labelAdapters(model.MetricNameLabel, "test_1", "status", "500", "reason", "broken"), 1, 110000},
+		{labelAdapters(model.MetricNameLabel, "test_2"), 2, 200000},
+	}
+
+	tests := map[string]struct {
+		shuffleShardSize  int
+		hints             *mimirstorage.MimirSearchHints
+		matchers          []*labels.Matcher
+		expectedResult    []string
+		expectedIngesters int
+	}{
+		"should return an empty response if no metric match": {
+			matchers: []*labels.Matcher{
+				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "unknown"),
+			},
+			expectedResult:    []string{},
+			expectedIngesters: numIngesters,
+		},
+		"should return label names filtered by matcher": {
+			matchers: []*labels.Matcher{
+				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
+			},
+			expectedResult:    []string{model.MetricNameLabel, "reason", "status"},
+			expectedIngesters: numIngesters,
+		},
+		"should apply limit": {
+			hints: &mimirstorage.MimirSearchHints{Limit: 2},
+			matchers: []*labels.Matcher{
+				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
+			},
+			expectedResult:    []string{model.MetricNameLabel, "reason"},
+			expectedIngesters: numIngesters,
+		},
+		"should query only ingesters belonging to tenant subring when shuffle sharding is enabled": {
+			shuffleShardSize: 3,
+			matchers: []*labels.Matcher{
+				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
+			},
+			expectedResult:    []string{model.MetricNameLabel, "reason", "status"},
+			expectedIngesters: 3,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			for _, ingestStorageEnabled := range []bool{false, true} {
+				t.Run(fmt.Sprintf("ingest storage enabled: %v", ingestStorageEnabled), func(t *testing.T) {
+					testConfig := prepConfig{
+						numIngesters:    numIngesters,
+						happyIngesters:  numIngesters,
+						numDistributors: 1,
+					}
+					if ingestStorageEnabled {
+						testConfig.ingestStorageEnabled = true
+						testConfig.limits = prepareDefaultLimits()
+						testConfig.limits.IngestionPartitionsTenantShardSize = testData.shuffleShardSize
+					} else {
+						testConfig.shuffleShardSize = testData.shuffleShardSize
+					}
+
+					ds, ingesters, _, _ := prepare(t, testConfig)
+					ctx := user.InjectOrgID(context.Background(), "test")
+					ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
+
+					for _, series := range fixtures {
+						req := mockWriteRequest(series.lbls, series.value, series.timestamp)
+						_, err := ds[0].Push(ctx, req)
+						require.NoError(t, err)
+					}
+
+					vs, err := ds[0].SearchLabelNames(ctx, now, now, testData.hints, testData.matchers...)
+					require.NoError(t, err)
+					defer vs.Close()
+
+					var got []string
+					for vs.Next() {
+						got = append(got, vs.At().Value)
+					}
+					require.NoError(t, vs.Err())
+					if len(testData.expectedResult) == 0 {
+						assert.Empty(t, got)
+					} else {
+						assert.ElementsMatch(t, testData.expectedResult, got)
+					}
+
+					if ingestStorageEnabled {
+						assert.Equal(t, testData.expectedIngesters, countMockIngestersCalled(ingesters, "SearchLabelNames"))
+					} else {
+						assert.Contains(t, []int{testData.expectedIngesters, testData.expectedIngesters - 1}, countMockIngestersCalled(ingesters, "SearchLabelNames"))
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestDistributor_SearchLabelValues(t *testing.T) {
+	now := model.Now()
+	const numIngesters = 5
+
+	fixtures := []struct {
+		lbls      []mimirpb.LabelAdapter
+		value     float64
+		timestamp int64
+	}{
+		{labelAdapters(model.MetricNameLabel, "test_1", "status", "200"), 1, 100000},
+		{labelAdapters(model.MetricNameLabel, "test_1", "status", "500"), 1, 110000},
+		{labelAdapters(model.MetricNameLabel, "test_2"), 2, 200000},
+	}
+
+	tests := map[string]struct {
+		shuffleShardSize  int
+		hints             *mimirstorage.MimirSearchHints
+		matchers          []*labels.Matcher
+		expectedResult    []string
+		expectedIngesters int
+	}{
+		"should return an empty response if no metric match": {
+			matchers: []*labels.Matcher{
+				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "unknown"),
+			},
+			expectedResult:    []string{},
+			expectedIngesters: numIngesters,
+		},
+		"should return label values for the label name": {
+			expectedResult:    []string{"test_1", "test_2"},
+			expectedIngesters: numIngesters,
+		},
+		"should filter by matcher": {
+			matchers: []*labels.Matcher{
+				mustNewMatcher(labels.MatchEqual, "status", "200"),
+			},
+			expectedResult:    []string{"test_1"},
+			expectedIngesters: numIngesters,
+		},
+		"should apply limit": {
+			hints:             &mimirstorage.MimirSearchHints{Limit: 1},
+			expectedResult:    []string{"test_1"},
+			expectedIngesters: numIngesters,
+		},
+		"should query only ingesters belonging to tenant subring when shuffle sharding is enabled": {
+			shuffleShardSize:  3,
+			expectedResult:    []string{"test_1", "test_2"},
+			expectedIngesters: 3,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			for _, ingestStorageEnabled := range []bool{false, true} {
+				t.Run(fmt.Sprintf("ingest storage enabled: %v", ingestStorageEnabled), func(t *testing.T) {
+					testConfig := prepConfig{
+						numIngesters:    numIngesters,
+						happyIngesters:  numIngesters,
+						numDistributors: 1,
+					}
+					if ingestStorageEnabled {
+						testConfig.ingestStorageEnabled = true
+						testConfig.limits = prepareDefaultLimits()
+						testConfig.limits.IngestionPartitionsTenantShardSize = testData.shuffleShardSize
+					} else {
+						testConfig.shuffleShardSize = testData.shuffleShardSize
+					}
+
+					ds, ingesters, _, _ := prepare(t, testConfig)
+					ctx := user.InjectOrgID(context.Background(), "test")
+					ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
+
+					for _, series := range fixtures {
+						req := mockWriteRequest(series.lbls, series.value, series.timestamp)
+						_, err := ds[0].Push(ctx, req)
+						require.NoError(t, err)
+					}
+
+					vs, err := ds[0].SearchLabelValues(ctx, now, now, model.MetricNameLabel, testData.hints, testData.matchers...)
+					require.NoError(t, err)
+					defer vs.Close()
+
+					var got []string
+					for vs.Next() {
+						got = append(got, vs.At().Value)
+					}
+					require.NoError(t, vs.Err())
+					if len(testData.expectedResult) == 0 {
+						assert.Empty(t, got)
+					} else {
+						assert.ElementsMatch(t, testData.expectedResult, got)
+					}
+
+					if ingestStorageEnabled {
+						assert.Equal(t, testData.expectedIngesters, countMockIngestersCalled(ingesters, "SearchLabelValues"))
+					} else {
+						assert.Contains(t, []int{testData.expectedIngesters, testData.expectedIngesters - 1}, countMockIngestersCalled(ingesters, "SearchLabelValues"))
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestDistributor_MetricsMetadata(t *testing.T) {
 	const numIngesters = 5
 
@@ -6990,6 +7201,115 @@ func (s *labelNamesAndValuesMockStream) Recv() (*client.LabelNamesAndValuesRespo
 	result := s.responses[s.i]
 	s.i++
 	return result, nil
+}
+
+func (i *mockIngester) SearchLabelNames(ctx context.Context, req *client.SearchLabelValuesRequest, _ ...grpc.CallOption) (client.Ingester_SearchLabelNamesClient, error) {
+	i.trackCall("SearchLabelNames", ctx, req)
+
+	if err := i.enforceReadConsistency(ctx); err != nil {
+		return nil, err
+	}
+
+	i.Lock()
+	defer i.Unlock()
+
+	if !i.happy {
+		return nil, errFail
+	}
+
+	_, mint, maxt, _, matchers, err := client.FromSearchRequest(req)
+	if err != nil {
+		return nil, err
+	}
+
+	namesSet := map[string]struct{}{}
+	for _, ts := range i.timeseries {
+		if !match(ts.Labels, matchers) {
+			continue
+		}
+		for _, lbl := range ts.Labels {
+			namesSet[lbl.Name] = struct{}{}
+		}
+	}
+	_ = mint
+	_ = maxt
+
+	names := make([]string, 0, len(namesSet))
+	for n := range namesSet {
+		names = append(names, n)
+	}
+	slices.Sort(names)
+
+	results := make([]*client.SearchLabelValuesResult, len(names))
+	for i, n := range names {
+		results[i] = &client.SearchLabelValuesResult{Value: n}
+	}
+	resp := &client.SearchLabelValuesResponse{Results: results}
+	return &searchLabelValuesMockStream{responses: []*client.SearchLabelValuesResponse{resp}}, nil
+}
+
+func (i *mockIngester) SearchLabelValues(ctx context.Context, req *client.SearchLabelValuesRequest, _ ...grpc.CallOption) (client.Ingester_SearchLabelValuesClient, error) {
+	i.trackCall("SearchLabelValues", ctx, req)
+
+	if err := i.enforceReadConsistency(ctx); err != nil {
+		return nil, err
+	}
+
+	i.Lock()
+	defer i.Unlock()
+
+	if !i.happy {
+		return nil, errFail
+	}
+
+	labelName, mint, maxt, _, matchers, err := client.FromSearchRequest(req)
+	if err != nil {
+		return nil, err
+	}
+
+	valuesSet := map[string]struct{}{}
+	for _, ts := range i.timeseries {
+		if !match(ts.Labels, matchers) {
+			continue
+		}
+		for _, lbl := range ts.Labels {
+			if lbl.Name == labelName {
+				valuesSet[lbl.Value] = struct{}{}
+			}
+		}
+	}
+	_ = mint
+	_ = maxt
+
+	values := make([]string, 0, len(valuesSet))
+	for v := range valuesSet {
+		values = append(values, v)
+	}
+	slices.Sort(values)
+
+	results := make([]*client.SearchLabelValuesResult, len(values))
+	for i, v := range values {
+		results[i] = &client.SearchLabelValuesResult{Value: v}
+	}
+	resp := &client.SearchLabelValuesResponse{Results: results}
+	return &searchLabelValuesMockStream{responses: []*client.SearchLabelValuesResponse{resp}}, nil
+}
+
+// searchLabelValuesMockStream implements both Ingester_SearchLabelNamesClient and
+// Ingester_SearchLabelValuesClient, which share the same Recv signature.
+type searchLabelValuesMockStream struct {
+	grpc.ClientStream
+	responses []*client.SearchLabelValuesResponse
+	i         int
+}
+
+func (s *searchLabelValuesMockStream) Recv() (*client.SearchLabelValuesResponse, error) {
+	if s.i >= len(s.responses) {
+		return nil, io.EOF
+	}
+	resp := s.responses[s.i]
+	s.i++
+	return resp, nil
 }
 
 func (i *mockIngester) LabelValuesCardinality(ctx context.Context, req *client.LabelValuesCardinalityRequest, _ ...grpc.CallOption) (client.Ingester_LabelValuesCardinalityClient, error) {

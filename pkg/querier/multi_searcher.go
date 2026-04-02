@@ -75,15 +75,6 @@ func (s *labelSearchStream) Close() error {
 	return nil
 }
 
-// comparatorFromHints builds a Comparator from the sort fields of a MimirSearchHints.
-// Returns nil when no sorting is requested (SortBy == 0).
-func comparatorFromHints(h *mimirstorage.MimirSearchHints) mimirstorage.Comparator {
-	if h == nil {
-		return nil
-	}
-	return h.Comparator()
-}
-
 // emptySearcherValueSet returns a SearchResultSet that immediately ends with no results.
 func emptySearcherValueSet(ctx context.Context) mimirstorage.SearchResultSet {
 	ctx, cancel := context.WithCancel(ctx)
@@ -111,7 +102,7 @@ func fanOutSearch(
 	outCh := make(chan mimirstorage.SearchResult, 256)
 	stream := &labelSearchStream{ch: outCh, ctx: ctx, cancel: cancel}
 
-	cmp := comparatorFromHints(hints)
+	cmp := hints.Comparator()
 
 	go func() {
 		defer close(outCh)

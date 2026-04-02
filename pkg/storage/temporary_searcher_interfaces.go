@@ -91,6 +91,9 @@ type MimirSearchHints struct {
 }
 
 func (h *MimirSearchHints) Comparator() Comparator {
+	if h == nil {
+		return nil
+	}
 	return NewComparator(h.SortBy, h.SortOrder)
 }
 

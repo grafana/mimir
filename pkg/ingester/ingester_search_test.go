@@ -19,6 +19,7 @@ import (
 )
 
 // collectSearchLabelNames calls SearchLabelNames and collects all results into a flat slice.
+// SearchLabelValuesRequest is the unified proto type used for both SearchLabelNames and SearchLabelValues RPCs.
 func collectSearchLabelNames(i *Ingester, ctx context.Context, req *client.SearchLabelValuesRequest) ([]string, error) {
 	srv := &testSearchLabelNamesServer{ctx: ctx}
 	if err := i.SearchLabelNames(req, srv); err != nil {
@@ -104,6 +105,11 @@ func Test_Ingester_SearchLabelNames(t *testing.T) {
 		require.NoError(t, err)
 	}
 
+	// Note: TSDB head LabelNames and LabelValues do not reliably time-bound results at the
+	// per-series level. A query with StartTimestampMs past all sample timestamps still returns
+	// labels from the head because the head's time range overlaps the query window. Time-range
+	// filtering for the ingester path is better exercised by TestBucketStore_SearchLabelNames
+	// (bucket store, explicit block time ranges) and Test_Ingester_Search_PersistBlocks (flush).
 	tests := []struct {
 		name        string
 		req         *client.SearchLabelValuesRequest
@@ -221,10 +227,10 @@ func Test_Ingester_SearchLabelNames(t *testing.T) {
 			ordered:   true,
 		},
 		{
-			// "__name__" contains "ame" - jaro score of 0.7
-			// "status" does not contain "ame" but Jaro("ame","status") ≈ 0.5 > threshold → score = 0.5.
+			// "__name__" contains "ame" - JaroWinkler score of ~0.792
+			// "status" does not contain "ame" but JaroWinkler("ame","status") ≈ 0.5 > threshold → score = 0.5.
 			// "route" does not match either filter.
-			// Order by score ascending means 0.5, 0.7
+			// Order by score ascending means ~0.5, ~0.792
 			name: "sort score ascending",
 			req: &client.SearchLabelValuesRequest{
 				EndTimestampMs: math.MaxInt64,
@@ -239,10 +245,10 @@ func Test_Ingester_SearchLabelNames(t *testing.T) {
 			ordered:   true,
 		},
 		{
-			// "__name__" contains "ame" - jaro score of 0.7
-			// "status" does not contain "ame" but Jaro("ame","status") ≈ 0.5 > threshold → score = 0.5.
+			// "__name__" contains "ame" - JaroWinkler score of ~0.792
+			// "status" does not contain "ame" but JaroWinkler("ame","status") ≈ 0.5 > threshold → score = 0.5.
 			// "route" gets a perfect score of 1
-			// Order by score ascending means 0.5, 0.7, 1.0
+			// Order by score ascending means ~0.5, ~0.792, 1.0
 			name: "sort score ascending multiple terms",
 			req: &client.SearchLabelValuesRequest{
 				EndTimestampMs: math.MaxInt64,
@@ -284,6 +290,20 @@ func Test_Ingester_SearchLabelNames(t *testing.T) {
 			wantNames: []string{"route", "__name__", "status"},
 			ordered:   true,
 		},
+		{
+			// Matcher restricts to the single series {__name__="test_2"}, which has no other labels.
+			name: "matchers restrict label names to matching series",
+			req: &client.SearchLabelValuesRequest{
+				EndTimestampMs: math.MaxInt64,
+				Matchers: &client.LabelMatchers{
+					Matchers: []*client.LabelMatcher{
+						{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "test_2"},
+					},
+				},
+			},
+			wantNames: []string{"__name__"},
+			ordered:   true,
+		},
 	}
 
 	for _, tc := range tests {
@@ -302,6 +322,7 @@ func Test_Ingester_SearchLabelNames(t *testing.T) {
 			case tc.wantLen > 0:
 				require.Len(t, names, tc.wantLen)
 			default:
+				// wantLen==0 and wantNames==nil: assert the result is empty.
 				require.Empty(t, names)
 			}
 		})
@@ -469,6 +490,21 @@ func Test_Ingester_SearchLabelValues(t *testing.T) {
 			wantValues: []string{"200"},
 			ordered:    true,
 		},
+		{
+			// Matcher {status="200"} matches only the first series; status has one value in that series.
+			name: "matchers restrict label values to matching series",
+			req: &client.SearchLabelValuesRequest{
+				LabelName:      "status",
+				EndTimestampMs: math.MaxInt64,
+				Matchers: &client.LabelMatchers{
+					Matchers: []*client.LabelMatcher{
+						{Type: client.EQUAL, Name: "status", Value: "200"},
+					},
+				},
+			},
+			wantValues: []string{"200"},
+			ordered:    true,
+		},
 	}
 
 	for _, tc := range tests {
@@ -487,6 +523,7 @@ func Test_Ingester_SearchLabelValues(t *testing.T) {
 			case tc.wantLen > 0:
 				require.Len(t, values, tc.wantLen)
 			default:
+				// wantLen==0 and wantValues==nil: assert the result is empty.
 				require.Empty(t, values)
 			}
 		})
@@ -541,7 +578,7 @@ func Test_Ingester_SearchLabelNames_MaxBytesLimit(t *testing.T) {
 		},
 		{
 			// With sort, all values are buffered. Total bytes = 8+6+5 = 19;
-			// a limit of 10 is exceeded when buffering the third name.
+			// a limit of 10 is exceeded when buffering the second name (route, 5 bytes: 8+5=13 > 10).
 			name:     "sort path: cumulative bytes limit exceeded during buffering",
 			maxBytes: 10,
 			req: &client.SearchLabelValuesRequest{

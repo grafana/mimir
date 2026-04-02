@@ -101,7 +101,7 @@ func TestFanOutSearch_FilterPassedToSubSearchers(t *testing.T) {
 	require.NotNil(t, subHints)
 	// Full hints are pushed to sub-Searchers so they can return pre-sorted results for k-way merge.
 	assert.NotEmpty(t, subHints.Search)
-	assert.Equal(t, 1, subHints.SortBy)
+	assert.Equal(t, mimirstorage.Alpha, subHints.SortBy)
 	assert.Equal(t, 5, subHints.Limit)
 }
 

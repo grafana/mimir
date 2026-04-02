@@ -141,11 +141,11 @@ func (s *SearchValueSet) nextSorted() bool {
 	return true
 }
 
-// drainAndSort drains ch, deduplicates, checks the byte limit cumulatively,
-// sorts, and limits into s.sorted. If the byte limit is exceeded s.vsetErr is
-// set and s.sorted is left empty.
+// drainAndSort drains ch, deduplicates using s.seen, checks the byte limit
+// cumulatively, sorts, and applies the count limit into s.sorted.
+// If the byte limit is exceeded s.vsetErr is set and s.sorted is left empty.
 func (s *SearchValueSet) drainAndSort() {
-	all := make([]SearchResult, 0)
+	var all []SearchResult
 	totalBytes := 0
 	for r := range s.ch {
 		if _, dup := s.seen[r.Value]; dup {
