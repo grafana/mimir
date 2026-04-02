@@ -260,7 +260,7 @@ func (b *BinaryExpression) createVectorVectorOperator(lhs, rhs types.InstantVect
 	default:
 		switch b.VectorMatching.Card {
 		case parser.CardOneToMany, parser.CardManyToOne:
-			return binops.NewGroupedVectorVectorBinaryOperation(lhs, rhs, *b.VectorMatching.ToPrometheusType(), op, b.ReturnBool, params.MemoryConsumptionTracker, params.Annotations, b.GetExpressionPosition().ToPrometheusType(), timeRange)
+			return binops.NewGroupedVectorVectorBinaryOperation(lhs, rhs, *b.VectorMatching.ToPrometheusType(), op, b.ReturnBool, params.MemoryConsumptionTracker, params.Annotations, b.GetExpressionPosition().ToPrometheusType(), timeRange, b.Hints.ToOperatorType(), params.Logger)
 		case parser.CardOneToOne:
 			return binops.NewOneToOneVectorVectorBinaryOperation(lhs, rhs, *b.VectorMatching.ToPrometheusType(), op, b.ReturnBool, params.MemoryConsumptionTracker, params.Annotations, b.GetExpressionPosition().ToPrometheusType(), timeRange, b.Hints.ToOperatorType(), params.Logger)
 		default:

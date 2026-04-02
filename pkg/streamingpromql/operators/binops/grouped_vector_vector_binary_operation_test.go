@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -312,6 +313,8 @@ func TestGroupedVectorVectorBinaryOperation_OutputSeriesSorting(t *testing.T) {
 				nil,
 				posrange.PositionRange{},
 				types.QueryTimeRange{},
+				nil,
+				log.NewNopLogger(),
 			)
 
 			require.NoError(t, err)
@@ -473,7 +476,7 @@ func TestGroupedVectorVectorBinaryOperation_FinalizesInnerOperatorsAsSoonAsPossi
 			left := &operators.TestOperator{Series: testCase.leftSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 			right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}, Card: parser.CardOneToMany}
-			o, err := NewGroupedVectorVectorBinaryOperation(left, right, vectorMatching, parser.ADD, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{}, timeRange)
+			o, err := NewGroupedVectorVectorBinaryOperation(left, right, vectorMatching, parser.ADD, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{}, timeRange, nil, log.NewNopLogger())
 			require.NoError(t, err)
 
 			outputSeries, err := o.SeriesMetadata(ctx, nil)
@@ -659,7 +662,7 @@ func TestGroupedVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEar
 			left := &operators.TestOperator{Series: testCase.leftSeries, Data: leftData, MemoryConsumptionTracker: memoryConsumptionTracker}
 			right := &operators.TestOperator{Series: testCase.rightSeries, Data: rightData, MemoryConsumptionTracker: memoryConsumptionTracker}
 			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}, Include: []string{"env"}, Card: parser.CardManyToOne}
-			o, err := NewGroupedVectorVectorBinaryOperation(left, right, vectorMatching, parser.LTE, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{}, timeRange)
+			o, err := NewGroupedVectorVectorBinaryOperation(left, right, vectorMatching, parser.LTE, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{}, timeRange, nil, log.NewNopLogger())
 			require.NoError(t, err)
 
 			outputSeries, err := o.SeriesMetadata(ctx, nil)

@@ -12,6 +12,7 @@ import (
 	"slices"
 	"sort"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -21,6 +22,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 var errMultipleMatchesOnManySide = errors.New("multiple matches for labels: grouping labels must ensure unique matches")
@@ -39,6 +41,8 @@ type GroupedVectorVectorBinaryOperation struct {
 	expressionPosition posrange.PositionRange
 	annotations        *annotations.Annotations
 	timeRange          types.QueryTimeRange
+	hints              *Hints
+	logger             log.Logger
 
 	evaluator       vectorVectorBinaryOperationEvaluator
 	remainingSeries []*groupedBinaryOperationOutputSeries
@@ -151,6 +155,8 @@ func NewGroupedVectorVectorBinaryOperation(
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
+	hints *Hints,
+	logger log.Logger,
 ) (*GroupedVectorVectorBinaryOperation, error) {
 	e, err := newVectorVectorBinaryOperationEvaluator(op, returnBool, memoryConsumptionTracker, annotations, expressionPosition)
 	if err != nil {
@@ -169,6 +175,8 @@ func NewGroupedVectorVectorBinaryOperation(
 		expressionPosition: expressionPosition,
 		annotations:        annotations,
 		timeRange:          timeRange,
+		hints:              hints,
+		logger:             logger,
 	}
 
 	switch g.VectorMatching.Card {
@@ -244,6 +252,8 @@ func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Cont
 	// We retain the series labels for later so we can use them to generate error messages.
 	// We'll return them to the pool in Close().
 
+	// Load the "one" side first: it is the smaller side, and once we have its metadata
+	// we can use it to build hint-based matchers for the "many" side.
 	var err error
 	g.oneSideMetadata, err = g.oneSide.SeriesMetadata(ctx, matchers)
 	if err != nil {
@@ -251,17 +261,32 @@ func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Cont
 	}
 
 	if len(g.oneSideMetadata) == 0 {
-		// No series on left-hand side, we'll never have any output series.
 		return false, nil
 	}
 
-	g.manySideMetadata, err = g.manySide.SeriesMetadata(ctx, matchers)
+	// Use the "one" side series to narrow the data we need to fetch on the "many" side.
+	// When hints have been set by the optimization pass, build matchers from the "one" side
+	// metadata. Otherwise fall back to the same matchers used for the "one" side.
+	manySideMatchers := matchers
+	if g.hints != nil {
+		ignored := matchers
+		manySideMatchers = BuildMatchers(g.oneSideMetadata, g.hints)
+
+		sl := spanlogger.FromContext(ctx, g.logger)
+		sl.DebugLog(
+			"msg", "binary operator passing additional matchers to many side",
+			"fields", g.hints.Include,
+			"hint_matchers", len(manySideMatchers),
+			"ignored_matchers", len(ignored),
+		)
+	}
+
+	g.manySideMetadata, err = g.manySide.SeriesMetadata(ctx, manySideMatchers)
 	if err != nil {
 		return false, err
 	}
 
 	if len(g.manySideMetadata) == 0 {
-		// No series on right-hand side, we'll never have any output series.
 		return false, nil
 	}
 
