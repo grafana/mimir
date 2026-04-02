@@ -197,7 +197,7 @@ func TestGroupedVectorVectorBinaryOperation_MatcherPropagation(t *testing.T) {
 
 			op, err := NewGroupedVectorVectorBinaryOperation(
 				left, right, tc.vectorMatching, parser.ADD, false,
-				memTracker, annotations.New(), posrange.PositionRange{}, timeRange,
+				memTracker, annotations.New(), posrange.PositionRange{}, timeRange, nil, log.NewNopLogger(),
 			)
 			require.NoError(t, err)
 
