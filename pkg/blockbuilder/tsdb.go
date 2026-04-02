@@ -572,7 +572,7 @@ func (b *TSDBBuilder) buildSparseIndexHeader(dbDir string, blockID ulid.ULID) (e
 
 	start := time.Now()
 
-	allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, err := indexheader.BuildSparseHeaderFromIndexHeader(
+	allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, err := indexheader.BuildInMemorySparseHeaderFromIndexHeader(
 		indexTOC,
 		filePoolDecbufFactory,
 		b.cfg.BlocksStorage.BucketStore.PostingOffsetsInMemSampling,

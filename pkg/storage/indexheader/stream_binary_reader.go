@@ -111,7 +111,7 @@ func NewStreamBinaryReader(
 	// we cannot necessarily rely on err != nil or the sparse values == nil,
 	// depending on what the failure mode of loading the existing sparse header was.
 	sparseHeaderLoaded := false
-	allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, err := LoadExistingSparseHeader(
+	allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, err := DownloadAndLoadSparseHeader(
 		ctx, blockID, tenantBkt, localTenantDir, sparseSampleFactor, ll,
 	)
 	if err != nil {
@@ -170,7 +170,7 @@ func NewStreamBinaryReader(
 	// If we previously failed to load the sparse index-header, build it now from full header.
 	if !sparseHeaderLoaded {
 		start := time.Now()
-		allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, err = BuildSparseHeaderFromIndexHeader(
+		allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, err = BuildInMemorySparseHeaderFromIndexHeader(
 			indexHeaderTOC, filePoolDecbufFactory, sparseSampleFactor, cfg.VerifyOnLoad, ll,
 		)
 		if err != nil {

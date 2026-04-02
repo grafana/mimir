@@ -119,7 +119,7 @@ func TestNewLazyStreamBinaryReader_UsesSparseHeaderFromObjectStore(t *testing.T)
 	// Read the sparse header file content and save its size
 	originalSparseData, err := os.ReadFile(sparseHeadersPath)
 	require.NoError(t, err)
-	originalSparseHeader, err := UnzipSparseHeader(originalSparseData, logger)
+	originalSparseHeader, err := unzipSparseHeader(originalSparseData, logger)
 	require.NoError(t, err)
 
 	// Delete the local sparse header file to ensure we'll need to get it from the object store
@@ -153,7 +153,7 @@ func TestNewLazyStreamBinaryReader_UsesSparseHeaderFromObjectStore(t *testing.T)
 	// Verify that the sparse header file exists locally
 	newSparseData, err := os.ReadFile(sparseHeadersPath)
 	require.NoError(t, err)
-	newSparseHeader, err := UnzipSparseHeader(newSparseData, logger)
+	newSparseHeader, err := unzipSparseHeader(newSparseData, logger)
 	require.NoError(t, err)
 	require.Equal(t, originalSparseHeader, newSparseHeader, "Downloaded file should have the same size as the original")
 

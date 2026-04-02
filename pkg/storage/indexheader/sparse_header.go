@@ -30,11 +30,11 @@ import (
 )
 
 // DownloadSparseHeaderToDisk writes the sparse index-header to disk from the bucket if not already on disk.
-// It does not load the sparse header values into memory - to do so, use LoadExistingSparseHeader.
+// It does not load the sparse header values into memory - to do so, use DownloadAndLoadSparseHeader.
 //
 // It intended for only a best-effort attempt to get the file downloaded during initial lazy reader creation.
 // The lazy reader can ignore the failure to find the sparse header on disk or in the bucket
-// and later trigger a full rebuild of the sparse header with BuildSparseHeaderFromIndexHeader.
+// and later trigger a full rebuild of the sparse header with BuildInMemorySparseHeaderFromIndexHeader.
 func DownloadSparseHeaderToDisk(
 	ctx context.Context,
 	blockID ulid.ULID,
@@ -42,6 +42,9 @@ func DownloadSparseHeaderToDisk(
 	localTenantDir string,
 	ll log.Logger,
 ) error {
+	spanLog, ctx := spanlogger.New(ctx, ll, tracer, "indexheader.DownloadSparseHeaderToDisk")
+	defer spanLog.Finish()
+
 	localBlockDir := filepath.Join(localTenantDir, blockID.String())
 	localSparseHeaderPath := filepath.Join(localBlockDir, block.SparseIndexHeaderFilename)
 
@@ -52,7 +55,7 @@ func DownloadSparseHeaderToDisk(
 	}
 
 	level.Debug(ll).Log("msg", "sparse index-header does not exist on disk; will try bucket")
-	bucketSparseHeaderBytes, err := GetBucketSparseHeaderBytes(ctx, blockID, tenantBkt, ll)
+	bucketSparseHeaderBytes, err := getBucketSparseHeaderBytes(ctx, blockID, tenantBkt, ll)
 	if err != nil {
 		return err
 	}
@@ -60,12 +63,73 @@ func DownloadSparseHeaderToDisk(
 	return atomicfs.CreateFile(localSparseHeaderPath, bytes.NewReader(bucketSparseHeaderBytes))
 }
 
-// LoadExistingSparseHeader unmarshalls the gzipped proto sparse index-header to the in-memory representation
-// after writing the sparse index-header to disk from the bucket if not already on disk.
+// LoadSparseIndexHeaderFromDisk unmarshalls gzipped proto sparse index-header to the in-memory representation,
+// only if the sparse header already exists on disk; otherwise it returns error.
+func LoadSparseIndexHeaderFromDisk(
+	ctx context.Context,
+	blockID ulid.ULID,
+	localTenantDir string,
+	sparseSampleFactor int,
+	ll log.Logger,
+) (
+	allSymbolsCount int,
+	sparseSymbolsOffsets []int,
+	sparsePostingsOffsets map[string]*streamindex.SparseTableOffsetsForLabel,
+	err error,
+) {
+	spanLog, _ := spanlogger.New(ctx, ll, tracer, "indexheader.DownloadAndLoadSparseHeader")
+	defer spanLog.Finish()
+
+	localBlockDir := filepath.Join(localTenantDir, blockID.String())
+	localSparseHeaderPath := filepath.Join(localBlockDir, block.SparseIndexHeaderFilename)
+
+	gzipSparseHeaderBytes, err := os.ReadFile(localSparseHeaderPath)
+	if err != nil {
+		level.Error(spanLog).Log(
+			"msg", "sparse index-header does not exist on disk",
+			"err", err,
+		)
+		return 0, nil, nil, err
+	}
+
+	sparseHeaderProto := &indexheaderpb.Sparse{}
+	if sparseHeaderBytes, err := unzipSparseHeader(gzipSparseHeaderBytes, ll); err != nil {
+		level.Error(spanLog).Log(
+			"msg", "failed to unzip sparse index-header file",
+			"err", err,
+		)
+		return 0, nil, nil, err
+	} else if err := sparseHeaderProto.Unmarshal(sparseHeaderBytes); err != nil {
+		level.Error(spanLog).Log(
+			"msg", "failed to unmarshall zipped sparse index-header to proto",
+			"err", err,
+		)
+		return 0, nil, nil, err
+	}
+
+	allSymbolsCount, sparseSymbolsOffsets = streamindex.SparseSymbolsFromProto(sparseHeaderProto.Symbols)
+	sparsePostingsOffsets, err = streamindex.SparsePostingsOffsetsTableFromProto(
+		sparseHeaderProto.PostingsOffsetTable, sparseSampleFactor,
+	)
+	if err != nil {
+		level.Error(spanLog).Log(
+			"msg", "failed to initialize in-memory sparse index-header from proto",
+			"err", err,
+		)
+		return 0, nil, nil, err
+	}
+	return allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, nil
+}
+
+// DownloadAndLoadSparseHeader unmarshalls gzipped proto sparse index-header to the in-memory representation,
+// after loading from the existing file on disk or downloading the file from the bucket.
 //
 // The in-memory representation is required to initialize a StreamBinaryReader for querying.
-// If this fails, the caller must trigger a full rebuild of the sparse header with BuildSparseHeaderFromIndexHeader.
-func LoadExistingSparseHeader(
+// If this fails, the caller must trigger a full rebuild of the sparse header with BuildInMemorySparseHeaderFromIndexHeader.
+//
+// This method is more efficient than calling DownloadSparseHeaderToDisk followed by LoadSparseIndexHeaderFromDisk,
+// as it returns the in-memory representation from the bucket directly, rather than writing to disk then reading from disk.
+func DownloadAndLoadSparseHeader(
 	ctx context.Context,
 	blockID ulid.ULID,
 	tenantBkt objstore.InstrumentedBucketReader,
@@ -78,7 +142,7 @@ func LoadExistingSparseHeader(
 	sparsePostingsOffsets map[string]*streamindex.SparseTableOffsetsForLabel,
 	err error,
 ) {
-	spanLog, ctx := spanlogger.New(ctx, ll, tracer, "indexheader.LoadExistingSparseHeader")
+	spanLog, ctx := spanlogger.New(ctx, ll, tracer, "indexheader.DownloadAndLoadSparseHeader")
 	defer spanLog.Finish()
 
 	localBlockDir := filepath.Join(localTenantDir, blockID.String())
@@ -92,7 +156,7 @@ func LoadExistingSparseHeader(
 			"msg", "sparse index-header not found on local disk; will try bucket",
 			"path", localSparseHeaderPath, "err", err,
 		)
-		gzipSparseHeaderBytes, err = GetBucketSparseHeaderBytes(ctx, blockID, tenantBkt, ll)
+		gzipSparseHeaderBytes, err = getBucketSparseHeaderBytes(ctx, blockID, tenantBkt, ll)
 		if err != nil {
 			// Not present or not readable from bucket either
 			if tenantBkt.IsObjNotFoundErr(err) {
@@ -119,7 +183,7 @@ func LoadExistingSparseHeader(
 
 	// If we reach this point, we got the zipped sparse header from disk or bucket. Unmarshall the proto.
 	sparseHeaderProto := &indexheaderpb.Sparse{}
-	if sparseHeaderBytes, err := UnzipSparseHeader(gzipSparseHeaderBytes, ll); err != nil {
+	if sparseHeaderBytes, err := unzipSparseHeader(gzipSparseHeaderBytes, ll); err != nil {
 		level.Error(spanLog).Log(
 			"msg", "failed to unzip sparse index-header file",
 			"err", err,
@@ -148,10 +212,10 @@ func LoadExistingSparseHeader(
 	return allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, nil
 }
 
-// GetBucketSparseHeaderBytes reads the raw sparse header bytes from object storage.
+// getBucketSparseHeaderBytes reads the raw sparse header bytes from object storage.
 // The bucket reader passed in must be prefixed with the tenant ID TSDB path in the object storage.
 // This does not write the header bytes to local disk.
-func GetBucketSparseHeaderBytes(
+func getBucketSparseHeaderBytes(
 	ctx context.Context,
 	id ulid.ULID,
 	tenantBkt objstore.InstrumentedBucketReader,
@@ -175,9 +239,8 @@ func GetBucketSparseHeaderBytes(
 	return data, nil
 }
 
-func UnzipSparseHeader(gZippedSparseData []byte, ll log.Logger) ([]byte, error) {
-	gzipped := bytes.NewReader(gZippedSparseData)
-	gzipReader, err := gzip.NewReader(gzipped)
+func unzipSparseHeader(gZippedSparseData []byte, ll log.Logger) ([]byte, error) {
+	gzipReader, err := gzip.NewReader(bytes.NewReader(gZippedSparseData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create sparse index-header gzip reader: %w", err)
 	}
@@ -191,7 +254,7 @@ func UnzipSparseHeader(gZippedSparseData []byte, ll log.Logger) ([]byte, error) 
 	return sparseData, err
 }
 
-func BuildSparseHeaderFromIndexHeader(
+func BuildInMemorySparseHeaderFromIndexHeader(
 	toc *TOCCompat,
 	decbufFactory streamencoding.DecbufFactory,
 	sparseSampleFactor int,
