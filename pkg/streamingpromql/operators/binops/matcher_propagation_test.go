@@ -311,7 +311,7 @@ func TestAndUnlessBinaryOperation_MatcherPropagation(t *testing.T) {
 			}
 
 			op := NewAndUnlessBinaryOperation(
-				left, right, tc.vectorMatching, memTracker, tc.isUnless, timeRange, posrange.PositionRange{},
+				left, right, tc.vectorMatching, memTracker, tc.isUnless, timeRange, posrange.PositionRange{}, nil, log.NewNopLogger(),
 			)
 
 			outputSeries, err := op.SeriesMetadata(ctx, tc.parentMatchers)
