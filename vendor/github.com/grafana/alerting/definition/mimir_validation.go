@@ -9,7 +9,7 @@ import (
 	"github.com/prometheus/alertmanager/config"
 	commoncfg "github.com/prometheus/common/config"
 
-	httpcfg "github.com/grafana/alerting/http/v0mimir1"
+	httpcfg "github.com/grafana/alerting/http/v0mimir"
 	discord_v0mimir1 "github.com/grafana/alerting/receivers/discord/v0mimir1"
 	email_v0mimir1 "github.com/grafana/alerting/receivers/email/v0mimir1"
 	opsgenie_v0mimir1 "github.com/grafana/alerting/receivers/opsgenie/v0mimir1"

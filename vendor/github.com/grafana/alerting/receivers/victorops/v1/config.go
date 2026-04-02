@@ -29,7 +29,7 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 	if err != nil {
 		return settings, fmt.Errorf("failed to unmarshal settings: %w", err)
 	}
-	settings.URL = decryptFn("url", settings.URL)
+	settings.URL = decryptFn.Get("url", settings.URL)
 	if settings.URL == "" {
 		return settings, errors.New("could not find victorops url property in settings")
 	}
@@ -45,7 +45,7 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 	return settings, nil
 }
 
-var Schema = schema.IntegrationSchemaVersion{
+var Schema = schema.NewIntegrationSchemaVersion(schema.IntegrationSchemaVersion{
 	Version:   Version,
 	CanCreate: true,
 	Options: []schema.Field{
@@ -90,4 +90,4 @@ var Schema = schema.IntegrationSchemaVersion{
 			Placeholder:  templates.DefaultMessageEmbed,
 		},
 	},
-}
+})

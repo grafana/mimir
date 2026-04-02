@@ -15,11 +15,13 @@
 package v0mimir1
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/grafana/alerting/receivers"
 
-	httpcfg "github.com/grafana/alerting/http/v0mimir1"
+	httpcfg "github.com/grafana/alerting/http/v0mimir"
 	"github.com/grafana/alerting/receivers/schema"
 )
 
@@ -52,11 +54,59 @@ type Config struct {
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*c = DefaultConfig
 	type plain Config
-	if err := unmarshal((*plain)(c)); err != nil {
+	type withFallback struct {
+		plain        `yaml:",inline" json:",inline"`
+		BotTokenJson receivers.Secret `yaml:"token"`
+		ChatIDJson   int64            `yaml:"chat"`
+	}
+	pl := withFallback{plain: plain(DefaultConfig)}
+	if err := unmarshal(&pl); err != nil {
 		return err
 	}
+	*c = Config(pl.plain)
+	if c.BotToken == "" && pl.BotTokenJson != "" {
+		c.BotToken = pl.BotTokenJson
+	}
+	if c.ChatID == 0 && pl.ChatIDJson != 0 {
+		c.ChatID = pl.ChatIDJson
+	}
+	return c.validate()
+}
+
+// NewConfig creates a Config from raw JSON and a decrypt function for secure fields.
+func NewConfig(jsonData json.RawMessage, decrypt receivers.DecryptFunc) (Config, error) {
+	settings := DefaultConfig
+	var err error
+	if err := json.Unmarshal(jsonData, &settings); err != nil {
+		return Config{}, fmt.Errorf("failed to unmarshal settings: %w", err)
+	}
+	if decrypted, ok := decrypt.DecryptSecret("token"); ok {
+		settings.BotToken = decrypted
+	}
+	settings.HTTPConfig, err = httpcfg.DecryptHTTPConfig("http_config", settings.HTTPConfig, decrypt)
+	if err != nil {
+		return Config{}, fmt.Errorf("failed to decrypt http_config: %w", err)
+	}
+	if err := settings.Validate(); err != nil {
+		return Config{}, err
+	}
+	return settings, nil
+}
+
+func (c *Config) Validate() error {
+	if err := c.validate(); err != nil {
+		return err
+	}
+	if c.HTTPConfig != nil {
+		if err := c.HTTPConfig.Validate(); err != nil {
+			return fmt.Errorf("invalid http_config: %w", err)
+		}
+	}
+	return nil
+}
+
+func (c *Config) validate() error {
 	if c.BotToken == "" && c.BotTokenFile == "" {
 		return errors.New("missing bot_token or bot_token_file on telegram_config")
 	}
@@ -75,7 +125,7 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
-var Schema = schema.IntegrationSchemaVersion{
+var Schema = schema.NewIntegrationSchemaVersion(schema.IntegrationSchemaVersion{
 	Version:   Version,
 	CanCreate: false,
 	Options: []schema.Field{
@@ -130,6 +180,6 @@ var Schema = schema.IntegrationSchemaVersion{
 				{Value: "HTML", Label: "HTML"},
 			},
 		},
-		schema.V0HttpConfigOption(),
+		httpcfg.V0HttpConfigOption(),
 	},
-}
+})

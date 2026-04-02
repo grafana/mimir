@@ -32,7 +32,7 @@ import (
 
 	"github.com/grafana/alerting/receivers"
 
-	httpcfg "github.com/grafana/alerting/http/v0mimir1"
+	httpcfg "github.com/grafana/alerting/http/v0mimir"
 )
 
 const (
@@ -85,6 +85,8 @@ type webhookEmbed struct {
 	Description string `json:"description"`
 	Color       int    `json:"color"`
 }
+
+func (n *Notifier) SendResolved() bool { return n.conf.SendResolved() }
 
 // Notify implements the Notifier interface.
 func (n *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error) {

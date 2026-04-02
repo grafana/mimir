@@ -61,6 +61,7 @@ func TestIntegration(ctx context.Context,
 }
 
 func TestNotifier(ctx context.Context, notifier *nfstatus.Integration, testAlert types.Alert, now time.Time) error {
+	ctx = context.WithValue(ctx, nfstatus.TestNotificationKey, true)
 	ctx = notify.WithGroupKey(ctx, fmt.Sprintf("%s-%s-%d", notifier.Name(), testAlert.Labels.Fingerprint(), now.Unix()))
 	ctx = notify.WithGroupLabels(ctx, testAlert.Labels)
 	ctx = notify.WithReceiverName(ctx, notifier.Name())

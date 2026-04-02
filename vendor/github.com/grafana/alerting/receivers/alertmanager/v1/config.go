@@ -46,7 +46,7 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 	if len(settings.URL) == 0 || len(urls) == 0 {
 		return Config{}, errors.New("could not find url property in settings")
 	}
-	settings.Password = decryptFn("basicAuthPassword", settings.Password)
+	settings.Password = decryptFn.Get("basicAuthPassword", settings.Password)
 	return Config{
 		URLs:     urls,
 		User:     settings.User,
@@ -54,7 +54,7 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 	}, nil
 }
 
-var Schema = schema.IntegrationSchemaVersion{
+var Schema = schema.NewIntegrationSchemaVersion(schema.IntegrationSchemaVersion{
 	Version:   Version,
 	CanCreate: true,
 	Options: []schema.Field{
@@ -81,4 +81,4 @@ var Schema = schema.IntegrationSchemaVersion{
 			Secure:       true,
 		},
 	},
-}
+})

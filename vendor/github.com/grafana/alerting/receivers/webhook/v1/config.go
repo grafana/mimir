@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 
+	http2 "github.com/grafana/alerting/http"
 	"github.com/grafana/alerting/receivers"
 	"github.com/grafana/alerting/receivers/schema"
 	"github.com/grafana/alerting/templates"
@@ -84,9 +85,9 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 		settings.MaxAlerts, _ = strconv.Atoi(rawSettings.MaxAlerts.String())
 	}
 
-	settings.User = decryptFn("username", rawSettings.User)
-	settings.Password = decryptFn("password", rawSettings.Password)
-	settings.AuthorizationCredentials = decryptFn("authorization_credentials", rawSettings.AuthorizationCredentials)
+	settings.User = decryptFn.Get("username", rawSettings.User)
+	settings.Password = decryptFn.Get("password", rawSettings.Password)
+	settings.AuthorizationCredentials = decryptFn.Get("authorization_credentials", rawSettings.AuthorizationCredentials)
 
 	if settings.AuthorizationCredentials != "" && settings.AuthorizationScheme == "" {
 		settings.AuthorizationScheme = "Bearer"
@@ -109,17 +110,21 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 	}
 
 	if tlsConfig := rawSettings.TLSConfig; tlsConfig != nil {
+		caCert := decryptFn.Get("tlsConfig.caCertificate", tlsConfig.CACertificate)
+		clientCert := decryptFn.Get("tlsConfig.clientCertificate", tlsConfig.ClientCertificate)
+		clientKey := decryptFn.Get("tlsConfig.clientKey", tlsConfig.ClientKey)
 		settings.TLSConfig = &receivers.TLSConfig{
 			InsecureSkipVerify: tlsConfig.InsecureSkipVerify,
-			CACertificate:      decryptFn("tlsConfig.caCertificate", tlsConfig.CACertificate),
-			ClientCertificate:  decryptFn("tlsConfig.clientCertificate", tlsConfig.ClientCertificate),
-			ClientKey:          decryptFn("tlsConfig.clientKey", tlsConfig.ClientKey),
+			CACertificate:      caCert,
+			ClientCertificate:  clientCert,
+			ClientKey:          clientKey,
 		}
 	}
 
 	if hmacConfig := rawSettings.HMACConfig; hmacConfig != nil {
+		hmacSecret := decryptFn.Get("hmacConfig.secret", hmacConfig.Secret)
 		settings.HMACConfig = &receivers.HMACConfig{
-			Secret:          decryptFn("hmacConfig.secret", hmacConfig.Secret),
+			Secret:          hmacSecret,
 			Header:          hmacConfig.Header,
 			TimestampHeader: hmacConfig.TimestampHeader,
 		}
@@ -184,7 +189,7 @@ func OmitRestrictedHeaders(headers map[string]string) (map[string]string, []stri
 	return safeHeaders, omitted
 }
 
-var Schema = schema.IntegrationSchemaVersion{
+var Schema = schema.NewIntegrationSchemaVersion(schema.IntegrationSchemaVersion{
 	Version:   Version,
 	CanCreate: true,
 	Options: []schema.Field{
@@ -298,7 +303,7 @@ var Schema = schema.IntegrationSchemaVersion{
 			PropertyName:   "tlsConfig",
 			Description:    "TLS configuration options",
 			Element:        schema.ElementTypeSubform,
-			SubformOptions: schema.V1TLSSubformOptions(),
+			SubformOptions: http2.V1TLSSubformOptions(),
 		},
 		{
 			Label:        "HMAC Signature",
@@ -336,6 +341,6 @@ var Schema = schema.IntegrationSchemaVersion{
 				},
 			},
 		},
-		schema.V1HttpClientOption(), // New in 12.1.
+		http2.V1HttpClientOption(), // New in 12.1.
 	},
-}
+})

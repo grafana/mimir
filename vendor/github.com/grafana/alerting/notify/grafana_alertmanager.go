@@ -2,8 +2,10 @@ package notify
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"net/http"
 	"sort"
 	"strings"
@@ -15,6 +17,7 @@ import (
 	"github.com/go-openapi/strfmt"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/grafana/alerting/utils/hash"
 	amv2 "github.com/prometheus/alertmanager/api/v2/models"
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/dispatch"
@@ -100,8 +103,8 @@ type GrafanaAlertmanager struct {
 	dispatcherMetrics *dispatch.DispatcherMetrics
 
 	reloadConfigMtx sync.RWMutex
-	configHash      [16]byte
-	config          []byte
+	configHash      ConfigFingerprint
+	config          *NotificationsConfiguration
 	receivers       []*nfstatus.Receiver
 
 	// templates contains the current templates
@@ -133,7 +136,7 @@ type (
 	InhibitRule      = config.InhibitRule
 	MuteTimeInterval = config.MuteTimeInterval
 	TimeInterval     = config.TimeInterval
-	Route            = config.Route
+	Route            = definition.Route
 	Integration      = nfstatus.Integration
 	DispatcherLimits = dispatch.Limits
 	Notifier         = notify.Notifier
@@ -156,9 +159,64 @@ type NotificationsConfiguration struct {
 	Receivers         []*APIReceiver
 
 	Limits DynamicLimits
+}
 
-	Raw  []byte
-	Hash [16]byte
+// ConfigFingerprint is a fingerprint of the configuration. It is used to detect changes.
+type ConfigFingerprint struct {
+	Overall uint64
+
+	RoutingTree       uint64
+	InhibitRules      uint64
+	MuteTimeIntervals uint64
+	TimeIntervals     uint64
+	Templates         uint64
+	Receivers         uint64
+	Limits            uint64
+}
+
+func (f ConfigFingerprint) String() string {
+	return fmt.Sprintf("%d", f.Overall)
+}
+
+// CalculateConfigFingerprint calculates the fingerprint of the overall configuration and each of its fields.
+func CalculateConfigFingerprint(cfg NotificationsConfiguration) ConfigFingerprint {
+	fieldHash := func(v any) uint64 {
+		h := fnv.New64a()
+		hash.DeepHashObject(h, &v)
+		return h.Sum64()
+	}
+	fp := ConfigFingerprint{
+		RoutingTree:       fieldHash(cfg.RoutingTree),
+		InhibitRules:      fieldHash(cfg.InhibitRules),
+		MuteTimeIntervals: fieldHash(cfg.MuteTimeIntervals),
+		TimeIntervals:     fieldHash(cfg.TimeIntervals),
+		Templates:         fieldHash(cfg.Templates),
+		Receivers:         fieldHash(cfg.Receivers),
+		Limits:            fieldHash(cfg.Limits),
+	}
+
+	// Incorporate all field hashes together into an overall hash.
+	overallHash := func(values ...uint64) uint64 {
+		h := fnv.New64a()
+		var buf [8]byte
+		for _, v := range values {
+			binary.LittleEndian.PutUint64(buf[:], v)
+			_, _ = h.Write(buf[:])
+		}
+		return h.Sum64()
+	}
+
+	fp.Overall = overallHash(
+		fp.RoutingTree,
+		fp.InhibitRules,
+		fp.MuteTimeIntervals,
+		fp.TimeIntervals,
+		fp.Templates,
+		fp.Receivers,
+		fp.Limits,
+	)
+
+	return fp
 }
 
 type Limits struct {
@@ -712,8 +770,14 @@ func (am *GrafanaAlertmanager) ExternalURL() string {
 
 // ConfigHash returns the hash of the current running configuration.
 // It is not safe to call without a lock.
-func (am *GrafanaAlertmanager) ConfigHash() [16]byte {
+func (am *GrafanaAlertmanager) ConfigHash() ConfigFingerprint {
 	return am.configHash
+}
+
+// AppliedConfig returns the current running configuration.
+// It is not safe to call without a lock.
+func (am *GrafanaAlertmanager) AppliedConfig() *NotificationsConfiguration {
+	return am.config
 }
 
 func (am *GrafanaAlertmanager) WithReadLock(fn func()) {
@@ -793,7 +857,7 @@ func (am *GrafanaAlertmanager) ApplyConfig(cfg NotificationsConfiguration) (err 
 	timeMuteStage := notify.NewTimeMuteStage(ti, am.stageMetrics)
 	silencingStage := notify.NewMuteStage(am.silencer, am.stageMetrics)
 
-	am.route = dispatch.NewRoute(cfg.RoutingTree, nil)
+	am.route = dispatch.NewRoute(cfg.RoutingTree.AsAMRoute(), nil)
 
 	var dispatchTimer dispatch.TimerFactory
 	if am.opts.DispatchTimer == DispatchTimerSync {
@@ -819,19 +883,19 @@ func (am *GrafanaAlertmanager) ApplyConfig(cfg NotificationsConfiguration) (err 
 	am.receivers = receivers
 
 	am.wg.Add(1)
-	go func() {
+	go func(d *dispatch.Dispatcher) {
 		defer am.wg.Done()
-		am.dispatcher.Run()
-	}()
+		d.Run()
+	}(am.dispatcher)
 
 	am.wg.Add(1)
-	go func() {
+	go func(i *inhibit.Inhibitor) {
 		defer am.wg.Done()
-		am.inhibitor.Run()
-	}()
+		i.Run()
+	}(am.inhibitor)
 
-	am.configHash = cfg.Hash
-	am.config = cfg.Raw
+	am.config = &cfg
+	am.configHash = CalculateConfigFingerprint(cfg)
 
 	return nil
 }

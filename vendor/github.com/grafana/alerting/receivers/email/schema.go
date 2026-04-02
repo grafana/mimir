@@ -6,16 +6,16 @@ import (
 	"github.com/grafana/alerting/receivers/schema"
 )
 
-const Type schema.IntegrationType = "email"
+const Type = schema.EmailType
 
-var Schema = schema.InitSchema(schema.IntegrationTypeSchema{
-	Type:           Type,
-	Name:           "Email",
-	Heading:        "Email settings",
-	Description:    "Sends notifications using Grafana server configured SMTP settings",
-	CurrentVersion: v1.Version,
-	Versions: []schema.IntegrationSchemaVersion{
-		v1.Schema,
-		v0mimir1.Schema,
+var Schema = schema.InitSchema(
+	schema.IntegrationTypeSchema{
+		Type:           Type,
+		Name:           "Email",
+		Heading:        "Email settings",
+		Description:    "Sends notifications using Grafana server configured SMTP settings",
+		CurrentVersion: v1.Version,
 	},
-})
+	v1.Schema,
+	v0mimir1.Schema,
+)

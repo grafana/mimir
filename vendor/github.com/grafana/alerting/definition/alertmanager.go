@@ -393,6 +393,7 @@ type PostableGrafanaReceiver struct {
 	UID                   string            `json:"uid" yaml:"uid"`
 	Name                  string            `json:"name" yaml:"name"`
 	Type                  string            `json:"type" yaml:"type"`
+	Version               string            `json:"version,omitempty" yaml:"version,omitempty"`
 	DisableResolveMessage bool              `json:"disableResolveMessage" yaml:"disableResolveMessage"`
 	Settings              RawMessage        `json:"settings,omitempty" yaml:"settings,omitempty"`
 	SecureSettings        map[string]string `json:"secureSettings,omitempty" yaml:"secureSettings,omitempty"`
@@ -517,6 +518,15 @@ func (m ObjectMatchers) MarshalJSON() ([]byte, error) {
 type PostableApiReceiver struct {
 	Receiver                 `yaml:",inline"`
 	PostableGrafanaReceivers `yaml:",inline"`
+}
+
+func (r *PostableApiReceiver) Validate() error {
+	var errs []error
+	err := r.Receiver.Validate()
+	if err != nil {
+		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
 }
 
 func (r *PostableApiReceiver) UnmarshalJSON(b []byte) error {
@@ -672,4 +682,91 @@ func (c *Receiver) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return fmt.Errorf("missing name in receiver")
 	}
 	return nil
+}
+
+// Validate calls Validate on all integration configs and accumulates errors.
+// Each error is annotated with the integration type (JSON tag) and index.
+func (c *Receiver) Validate() error {
+	var errs []error
+
+	if c.Name == "" {
+		errs = append(errs, errors.New("missing name in receiver"))
+	}
+
+	for i, cfg := range c.DiscordConfigs {
+		if err := cfg.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("discord [%d]: %w", i, err))
+		}
+	}
+	for i, cfg := range c.EmailConfigs {
+		if err := cfg.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("email [%d]: %w", i, err))
+		}
+	}
+	for i, cfg := range c.PagerdutyConfigs {
+		if err := cfg.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("pagerduty [%d]: %w", i, err))
+		}
+	}
+	for i, cfg := range c.SlackConfigs {
+		if err := cfg.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("slack [%d]: %w", i, err))
+		}
+	}
+	for i, cfg := range c.WebhookConfigs {
+		if err := cfg.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("webhook [%d]: %w", i, err))
+		}
+	}
+	for i, cfg := range c.OpsGenieConfigs {
+		if err := cfg.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("opsgenie [%d]: %w", i, err))
+		}
+	}
+	for i, cfg := range c.WechatConfigs {
+		if err := cfg.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("wechat [%d]: %w", i, err))
+		}
+	}
+	for i, cfg := range c.PushoverConfigs {
+		if err := cfg.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("pushover [%d]: %w", i, err))
+		}
+	}
+	for i, cfg := range c.VictorOpsConfigs {
+		if err := cfg.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("victorops [%d]: %w", i, err))
+		}
+	}
+	for i, cfg := range c.SNSConfigs {
+		if err := cfg.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("sns [%d]: %w", i, err))
+		}
+	}
+	for i, cfg := range c.TelegramConfigs {
+		if err := cfg.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("telegram [%d]: %w", i, err))
+		}
+	}
+	for i, cfg := range c.WebexConfigs {
+		if err := cfg.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("webex [%d]: %w", i, err))
+		}
+	}
+	for i, cfg := range c.MSTeamsConfigs {
+		if err := cfg.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("msteams [%d]: %w", i, err))
+		}
+	}
+	for i, cfg := range c.MSTeamsV2Configs {
+		if err := cfg.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("msteamsv2 [%d]: %w", i, err))
+		}
+	}
+	for i, cfg := range c.JiraConfigs {
+		if err := cfg.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("jira [%d]: %w", i, err))
+		}
+	}
+	return errors.Join(errs...)
 }

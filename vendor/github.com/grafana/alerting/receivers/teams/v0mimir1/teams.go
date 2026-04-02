@@ -33,7 +33,7 @@ import (
 
 	"github.com/grafana/alerting/receivers"
 
-	httpcfg "github.com/grafana/alerting/http/v0mimir1"
+	httpcfg "github.com/grafana/alerting/http/v0mimir"
 )
 
 const (
@@ -74,6 +74,8 @@ func New(c *Config, t *template.Template, l log.Logger, httpOpts ...commoncfg.HT
 
 	return n, nil
 }
+
+func (n *Notifier) SendResolved() bool { return n.conf.SendResolved() }
 
 func (n *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error) {
 	key, err := notify.ExtractGroupKey(ctx)

@@ -109,7 +109,7 @@ func NewOAuth2TokenSource(config OAuth2Config, clientConfig clientConfiguration)
 		MaxIdleConns:          20,
 		MaxIdleConnsPerHost:   1, // see https://github.com/golang/go/issues/13801
 		IdleConnTimeout:       10 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
+		TLSHandshakeTimeout:   receivers.TLSHandshakeTimeout,
 		ExpectContinueTimeout: 1 * time.Second,
 
 		// The following differs from upstream, allowing proxy settings to be configured.

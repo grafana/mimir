@@ -25,7 +25,7 @@ import (
 	commoncfg "github.com/prometheus/common/config"
 	"gopkg.in/telebot.v3"
 
-	httpcfg "github.com/grafana/alerting/http/v0mimir1"
+	httpcfg "github.com/grafana/alerting/http/v0mimir"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/template"
 	"github.com/prometheus/alertmanager/types"
@@ -63,6 +63,8 @@ func New(conf *Config, t *template.Template, l log.Logger, httpOpts ...commoncfg
 		retrier: &notify.Retrier{},
 	}, nil
 }
+
+func (n *Notifier) SendResolved() bool { return n.conf.SendResolved() }
 
 func (n *Notifier) Notify(ctx context.Context, alert ...*types.Alert) (bool, error) {
 	var (

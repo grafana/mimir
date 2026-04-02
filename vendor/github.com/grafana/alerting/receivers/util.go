@@ -30,6 +30,9 @@ const (
 
 	AlertStateAlerting AlertStateType = "alerting"
 	AlertStateOK       AlertStateType = "ok"
+
+	// TLSHandshakeTimeout is the maximum time to wait for a TLS handshake.
+	TLSHandshakeTimeout = 15 * time.Second
 )
 
 func GetAlertStatusColor(status model.AlertStatus) string {
@@ -192,7 +195,7 @@ func (s *defaultSender) SendHTTPRequest(ctx context.Context, url *url.URL, cfg H
 		DialContext: (&net.Dialer{
 			Timeout: 30 * time.Second,
 		}).DialContext,
-		TLSHandshakeTimeout: 5 * time.Second,
+		TLSHandshakeTimeout: TLSHandshakeTimeout,
 		// Disable keep alive since this is a short lived client
 		DisableKeepAlives: true,
 	}
@@ -234,4 +237,24 @@ const (
 func GetExtraDataFromContext(ctx context.Context) ([]json.RawMessage, bool) {
 	v, ok := ctx.Value(ExtraDataKey).([]json.RawMessage)
 	return v, ok
+}
+
+// ApplyExtraData augments the extended Alert data with any extra data if provided in the context.
+// If there is no extra data in the context or the length of extra data doesn't match the number
+// of alerts, the function does nothing. This allows callers to safely use this helper without
+// needing to handle errors.
+func ApplyExtraData(ctx context.Context, alerts ExtraDataAlerts) {
+	extraData, ok := GetExtraDataFromContext(ctx)
+	if ok && alerts.Len() == len(extraData) {
+		for i, ed := range extraData {
+			alerts.SetExtraData(i, ed)
+		}
+	}
+}
+
+// ExtraDataAlerts is an interface that allows setting extra data on a slice of alerts.
+// This is implemented by templates.ExtendedAlerts.
+type ExtraDataAlerts interface {
+	Len() int
+	SetExtraData(index int, data json.RawMessage)
 }

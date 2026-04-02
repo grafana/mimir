@@ -85,6 +85,9 @@ func (en *Notifier) Notify(ctx context.Context, alerts ...*types.Alert) (bool, e
 		level.Warn(l).Log("msg", "failed to get all images for email", "err", err)
 	}
 
+	// Augment extended Alert data with any extra data if provided.
+	receivers.ApplyExtraData(ctx, data.Alerts)
+
 	cmd := &receivers.SendEmailSettings{
 		Subject: subject,
 		Data: map[string]interface{}{

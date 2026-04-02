@@ -26,7 +26,7 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 	if err != nil {
 		return Config{}, fmt.Errorf("failed to unmarshal settings: %w", err)
 	}
-	settings.WebhookURL = decryptFn("url", settings.WebhookURL)
+	settings.WebhookURL = decryptFn.Get("url", settings.WebhookURL)
 	if settings.WebhookURL == "" {
 		return Config{}, errors.New("could not find webhook url property in settings")
 	}
@@ -39,7 +39,7 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 	return settings, nil
 }
 
-var Schema = schema.IntegrationSchemaVersion{
+var Schema = schema.NewIntegrationSchemaVersion(schema.IntegrationSchemaVersion{
 	Version:   Version,
 	CanCreate: true,
 	Options: []schema.Field{
@@ -82,4 +82,4 @@ var Schema = schema.IntegrationSchemaVersion{
 			PropertyName: "use_discord_username",
 		},
 	},
-}
+})

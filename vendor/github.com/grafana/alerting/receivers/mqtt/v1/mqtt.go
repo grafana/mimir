@@ -124,6 +124,10 @@ func (n *Notifier) buildMessage(ctx context.Context, l log.Logger, as ...*types.
 
 	var tmplErr error
 	tmpl, data := templates.TmplText(ctx, n.tmpl, as, l, &tmplErr)
+
+	// Augment extended Alert data with any extra data if provided.
+	receivers.ApplyExtraData(ctx, data.Alerts)
+
 	messageText := tmpl(n.settings.Message)
 	if tmplErr != nil {
 		level.Warn(l).Log("msg", "Failed to template MQTT message", "err", tmplErr.Error())

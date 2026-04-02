@@ -7,3 +7,8 @@ const FullValidConfigForTesting = `{
     "title": "Alerts firing: {{ len .Alerts.Firing }}",
 	"msgType": "actionCard"
 }`
+
+// FullValidSecretsForTesting is a string representation of JSON object that contains all fields that can be overridden from secrets
+const FullValidSecretsForTesting = `{
+	"url": "http://localhostsecret"
+}`

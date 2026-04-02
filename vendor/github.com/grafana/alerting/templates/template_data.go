@@ -414,6 +414,16 @@ func executeTextString(tmpl *Template, text string, data *ExtendedData) (string,
 	return buf.String(), err
 }
 
+// Len returns the number of alerts.
+func (as ExtendedAlerts) Len() int {
+	return len(as)
+}
+
+// SetExtraData sets the extra data for the alert at the given index.
+func (as ExtendedAlerts) SetExtraData(index int, data json.RawMessage) {
+	as[index].ExtraData = data
+}
+
 // Firing returns the subset of alerts that are firing.
 func (as ExtendedAlerts) Firing() []ExtendedAlert {
 	res := []ExtendedAlert{}

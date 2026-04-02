@@ -195,8 +195,19 @@ func (n *statusCaptureNotifier) Notify(ctx context.Context, alerts ...*types.Ale
 	return retry, err
 }
 
+type testNotificationKeyType struct{}
+
+// TestNotificationKey is a context key that, when set, causes the notification
+// historian to skip recording the entry. This is used by TestNotifier to avoid
+// writing incomplete history entries for test notifications.
+var TestNotificationKey = testNotificationKeyType{}
+
 func (n *statusCaptureNotifier) recordNotificationHistory(ctx context.Context, alerts []*types.Alert, retry bool, err error, duration time.Duration, info NotifyInfo) {
 	if n.notificationHistorian == nil {
+		return
+	}
+
+	if ctx.Value(TestNotificationKey) != nil {
 		return
 	}
 

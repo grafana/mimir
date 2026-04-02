@@ -1,4 +1,4 @@
-package v0mimir1
+package v0mimir
 
 import (
 	commoncfg "github.com/prometheus/common/config"
@@ -182,18 +182,18 @@ func fromCommonProxyConfig(c commoncfg.ProxyConfig) ProxyConfig {
 	}
 }
 
-func toCommonHeaders(h *Headers) *commoncfg.Headers {
+func toCommonHeaders(h Headers) *commoncfg.Headers {
 	if h == nil {
 		return nil
 	}
-	headers := make(map[string]commoncfg.Header, len(h.Headers))
-	for k, v := range h.Headers {
+	headers := make(map[string]commoncfg.Header, len(h))
+	for k, v := range h {
 		headers[k] = toCommonHeader(v)
 	}
 	return &commoncfg.Headers{Headers: headers}
 }
 
-func fromCommonHeaders(h *commoncfg.Headers) *Headers {
+func fromCommonHeaders(h *commoncfg.Headers) Headers {
 	if h == nil {
 		return nil
 	}
@@ -201,7 +201,7 @@ func fromCommonHeaders(h *commoncfg.Headers) *Headers {
 	for k, v := range h.Headers {
 		headers[k] = fromCommonHeader(v)
 	}
-	return &Headers{Headers: headers}
+	return headers
 }
 
 func toCommonHeader(h Header) commoncfg.Header {

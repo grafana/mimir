@@ -122,6 +122,17 @@ type IntegrationSchemaVersion struct {
 	typeSchema *IntegrationTypeSchema
 }
 
+// NewIntegrationSchemaVersion creates an IntegrationSchemaVersion and returns a factory function
+// for use with NewIntegrationTypeSchema.
+func NewIntegrationSchemaVersion(
+	v IntegrationSchemaVersion,
+) func(*IntegrationTypeSchema) IntegrationSchemaVersion {
+	return func(s *IntegrationTypeSchema) IntegrationSchemaVersion {
+		v.typeSchema = s
+		return v
+	}
+}
+
 // GetTypeSchema returns the IntegrationTypeSchema that this version belongs to.
 func (v IntegrationSchemaVersion) GetTypeSchema() IntegrationTypeSchema {
 	if v.typeSchema == nil {
@@ -231,14 +242,19 @@ type ShowWhen struct {
 	Is    string `json:"is"`
 }
 
-func InitSchema(s IntegrationTypeSchema) IntegrationTypeSchema {
-	for i := range s.Versions {
-		s.Versions[i].typeSchema = &s
+func InitSchema(s IntegrationTypeSchema, versions ...func(schema *IntegrationTypeSchema) IntegrationSchemaVersion) IntegrationTypeSchema {
+	result := s
+	for _, v := range versions {
+		result.Versions = append(result.Versions, v(&result))
 	}
-	return s
+	return result
 }
 
 type IntegrationFieldPath []string
+
+func NewIntegrationFieldPath(segments ...string) IntegrationFieldPath {
+	return segments
+}
 
 func ParseIntegrationPath(path string) IntegrationFieldPath {
 	return strings.Split(path, ".")

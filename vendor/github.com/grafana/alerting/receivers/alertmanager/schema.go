@@ -5,15 +5,15 @@ import (
 	"github.com/grafana/alerting/receivers/schema"
 )
 
-const Type schema.IntegrationType = "prometheus-alertmanager"
+const Type = schema.AlertManagerType
 
-var Schema = schema.InitSchema(schema.IntegrationTypeSchema{
-	Type:           Type,
-	Name:           "Alertmanager",
-	Description:    "Sends notifications to Alertmanager",
-	Heading:        "Alertmanager Settings",
-	CurrentVersion: v1.Version,
-	Versions: []schema.IntegrationSchemaVersion{
-		v1.Schema,
+var Schema = schema.InitSchema(
+	schema.IntegrationTypeSchema{
+		Type:           Type,
+		Name:           "Alertmanager",
+		Description:    "Sends notifications to Alertmanager",
+		Heading:        "Alertmanager Settings",
+		CurrentVersion: v1.Version,
 	},
-})
+	v1.Schema,
+)

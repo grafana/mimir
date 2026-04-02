@@ -60,7 +60,7 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 		return Config{}, fmt.Errorf("failed to unmarshal settings: %w", err)
 	}
 
-	raw.APIKey = decryptFn("apiKey", raw.APIKey)
+	raw.APIKey = decryptFn.Get("apiKey", raw.APIKey)
 	if raw.APIKey == "" {
 		return Config{}, errors.New("could not find api key property in settings")
 	}
@@ -128,7 +128,7 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 	}, nil
 }
 
-var Schema = schema.IntegrationSchemaVersion{
+var Schema = schema.NewIntegrationSchemaVersion(schema.IntegrationSchemaVersion{
 	Version:    Version,
 	CanCreate:  true,
 	Deprecated: false,
@@ -231,4 +231,4 @@ var Schema = schema.IntegrationSchemaVersion{
 			},
 		},
 	},
-}
+})

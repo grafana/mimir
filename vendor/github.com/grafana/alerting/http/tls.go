@@ -6,6 +6,8 @@ import (
 	"net"
 	"net/http"
 	"time"
+
+	"github.com/grafana/alerting/receivers"
 )
 
 // NewTLSClient creates a new HTTP client with the provided TLS configuration or with default settings.
@@ -28,7 +30,7 @@ func NewTLSClient(tlsConfig *tls.Config, dialContextfunc func(context.Context, s
 			TLSClientConfig:     tlsConfig,
 			Proxy:               http.ProxyFromEnvironment,
 			DialContext:         dialContextfunc,
-			TLSHandshakeTimeout: 5 * time.Second,
+			TLSHandshakeTimeout: receivers.TLSHandshakeTimeout,
 			// Disable keep alive since this is always used as a short lived client
 			DisableKeepAlives: true,
 		},

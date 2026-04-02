@@ -49,11 +49,11 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 		return settings, fmt.Errorf("failed to unmarshal settings: %w", err)
 	}
 
-	settings.UserKey = decryptFn("userKey", rawSettings.UserKey)
+	settings.UserKey = decryptFn.Get("userKey", rawSettings.UserKey)
 	if settings.UserKey == "" {
 		return settings, errors.New("user key not found")
 	}
-	settings.APIToken = decryptFn("apiToken", rawSettings.APIToken)
+	settings.APIToken = decryptFn.Get("apiToken", rawSettings.APIToken)
 	if settings.APIToken == "" {
 		return settings, errors.New("API token not found")
 	}
@@ -95,7 +95,7 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 	return settings, nil
 }
 
-var Schema = schema.IntegrationSchemaVersion{
+var Schema = schema.NewIntegrationSchemaVersion(schema.IntegrationSchemaVersion{
 	Version:   Version,
 	CanCreate: true,
 	Options: []schema.Field{
@@ -178,4 +178,4 @@ var Schema = schema.IntegrationSchemaVersion{
 			PropertyName: "message",
 		},
 	},
-}
+})

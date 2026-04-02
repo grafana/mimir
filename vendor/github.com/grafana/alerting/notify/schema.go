@@ -279,7 +279,7 @@ var v0integrationTypeToIntegrationType = map[reflect.Type]schema.IntegrationType
 	reflect.TypeOf(snsV0.Config{}):       sns.Type,
 	reflect.TypeOf(telegramV0.Config{}):  telegram.Type,
 	reflect.TypeOf(webexV0.Config{}):     webex.Type,
-	reflect.TypeOf(msteamsV01.Config{}):  msteamsV01.Schema.TypeAlias,
-	reflect.TypeOf(msteamsV02.Config{}):  msteamsV02.Schema.TypeAlias,
+	reflect.TypeOf(msteamsV01.Config{}):  msteamsV01.TypeAlias,
+	reflect.TypeOf(msteamsV02.Config{}):  msteamsV02.TypeAlias,
 	reflect.TypeOf(jiraV0.Config{}):      jira.Type,
 }

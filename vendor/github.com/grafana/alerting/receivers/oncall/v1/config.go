@@ -62,9 +62,9 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 		settings.MaxAlerts, _ = strconv.Atoi(rawSettings.MaxAlerts.String())
 	}
 
-	settings.User = decryptFn("username", rawSettings.User)
-	settings.Password = decryptFn("password", rawSettings.Password)
-	settings.AuthorizationCredentials = decryptFn("authorization_credentials", rawSettings.AuthorizationCredentials)
+	settings.User = decryptFn.Get("username", rawSettings.User)
+	settings.Password = decryptFn.Get("password", rawSettings.Password)
+	settings.AuthorizationCredentials = decryptFn.Get("authorization_credentials", rawSettings.AuthorizationCredentials)
 
 	if settings.AuthorizationCredentials != "" && settings.AuthorizationScheme == "" {
 		settings.AuthorizationScheme = "Bearer"
@@ -83,7 +83,7 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 	return settings, err
 }
 
-var Schema = schema.IntegrationSchemaVersion{
+var Schema = schema.NewIntegrationSchemaVersion(schema.IntegrationSchemaVersion{
 	Version:   Version,
 	CanCreate: true,
 	Options: []schema.Field{
@@ -162,4 +162,4 @@ var Schema = schema.IntegrationSchemaVersion{
 			Placeholder:  templates.DefaultMessageEmbed,
 		},
 	},
-}
+})

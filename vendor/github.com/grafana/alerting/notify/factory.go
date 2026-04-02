@@ -95,7 +95,7 @@ func BuildGrafanaReceiverIntegrations(
 			}
 			n := newInt(client)
 			notify := wrapNotifier(cfg.Name, nfstatus.NewNotifierAdapter(n))
-			i := NewIntegration(notify, n, cfg.Type, idx, cfg.Name, notificationHistorian, logger)
+			i := NewIntegration(notify, n, string(cfg.Type), idx, cfg.Name, notificationHistorian, logger)
 			integrations = append(integrations, i)
 		}
 	)
@@ -333,7 +333,7 @@ func BuildReceiversIntegrations(
 		if existing, ok := nameToReceiver[receiver.Name]; ok {
 			itypes := make([]string, 0, len(existing.Integrations))
 			for _, i := range existing.Integrations {
-				itypes = append(itypes, i.Type)
+				itypes = append(itypes, string(i.Type))
 			}
 			level.Warn(logger).Log("msg", "receiver with same name is defined multiple times. Only the last one will be used", "receiver_name", receiver.Name, "overwritten_integrations", itypes)
 		}

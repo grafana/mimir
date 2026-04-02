@@ -6,16 +6,16 @@ import (
 	"github.com/grafana/alerting/receivers/schema"
 )
 
-const Type schema.IntegrationType = "pushover"
+const Type = schema.PushoverType
 
-var Schema = schema.InitSchema(schema.IntegrationTypeSchema{
-	Type:           Type,
-	Name:           "Pushover",
-	Description:    "Sends HTTP POST request to the Pushover API",
-	Heading:        "Pushover settings",
-	CurrentVersion: v1.Version,
-	Versions: []schema.IntegrationSchemaVersion{
-		v1.Schema,
-		v0mimir1.Schema,
+var Schema = schema.InitSchema(
+	schema.IntegrationTypeSchema{
+		Type:           Type,
+		Name:           "Pushover",
+		Description:    "Sends HTTP POST request to the Pushover API",
+		Heading:        "Pushover settings",
+		CurrentVersion: v1.Version,
 	},
-})
+	v1.Schema,
+	v0mimir1.Schema,
+)

@@ -107,9 +107,9 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 		settings.Priority = DefaultPriority
 	}
 
-	settings.User = decryptFn("user", settings.User)
-	settings.Password = decryptFn("password", settings.Password)
-	settings.Token = decryptFn("api_token", settings.Token)
+	settings.User = decryptFn.Get("user", settings.User)
+	settings.Password = decryptFn.Get("password", settings.Password)
+	settings.Token = decryptFn.Get("api_token", settings.Token)
 	if settings.Token == "" && (settings.User == "" || settings.Password == "") {
 		return Config{}, errors.New("either token or both user and password must be set")
 	}
@@ -168,7 +168,7 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 	}, nil
 }
 
-var Schema = schema.IntegrationSchemaVersion{
+var Schema = schema.NewIntegrationSchemaVersion(schema.IntegrationSchemaVersion{
 	Version:   Version,
 	CanCreate: true,
 	Options: []schema.Field{
@@ -314,4 +314,4 @@ var Schema = schema.IntegrationSchemaVersion{
 			PropertyName: "fields",
 		},
 	},
-}
+})

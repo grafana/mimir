@@ -95,7 +95,8 @@ func (f *fakeNotifier) SendResolved() bool {
 }
 
 func GetDecryptedValueFnForTesting(_ context.Context, sjd map[string][]byte, key string, fallback string) string {
-	return receiversTesting.DecryptForTesting(sjd)(key, fallback)
+	v, _ := receiversTesting.DecryptForTesting(sjd)(key, fallback)
+	return v
 }
 
 func MergeSettings(a []byte, b []byte) ([]byte, error) {

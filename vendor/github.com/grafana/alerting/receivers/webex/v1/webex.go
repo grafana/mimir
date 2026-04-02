@@ -50,6 +50,9 @@ func (wn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 	var tmplErr error
 	tmpl, data := templates.TmplText(ctx, wn.tmpl, as, l, &tmplErr)
 
+	// Augment extended Alert data with any extra data if provided.
+	receivers.ApplyExtraData(ctx, data.Alerts)
+
 	message, truncated := receivers.TruncateInBytes(tmpl(wn.settings.Message), 4096)
 	if truncated {
 		level.Warn(l).Log("msg", "Webex message too long, truncating message", "originalMessage", wn.settings.Message)

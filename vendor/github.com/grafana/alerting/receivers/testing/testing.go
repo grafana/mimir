@@ -16,12 +16,12 @@ func ParseURLUnsafe(s string) *url.URL {
 }
 
 func DecryptForTesting(sjd map[string][]byte) receivers.DecryptFunc {
-	return func(key string, fallback string) string {
+	return func(key string, fallback string) (string, bool) {
 		v, ok := sjd[key]
 		if !ok {
-			return fallback
+			return fallback, false
 		}
-		return string(v)
+		return string(v), true
 	}
 }
 

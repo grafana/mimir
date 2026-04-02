@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/grafana/alerting/receivers"
 	"github.com/grafana/alerting/receivers/schema"
 	"github.com/grafana/alerting/templates"
 )
@@ -19,7 +20,7 @@ type Config struct {
 	Subject     string
 }
 
-func NewConfig(jsonData json.RawMessage) (Config, error) {
+func NewConfig(jsonData json.RawMessage, _ receivers.DecryptFunc) (Config, error) {
 	type emailSettingsRaw struct {
 		SingleEmail bool   `json:"singleEmail,omitempty" yaml:"singleEmail,omitempty"`
 		Addresses   string `json:"addresses,omitempty" yaml:"addresses,omitempty"`
@@ -60,7 +61,7 @@ func splitEmails(emails string) []string {
 	})
 }
 
-var Schema = schema.IntegrationSchemaVersion{
+var Schema = schema.NewIntegrationSchemaVersion(schema.IntegrationSchemaVersion{
 	Version:   Version,
 	CanCreate: true,
 	Options: []schema.Field{
@@ -93,4 +94,4 @@ var Schema = schema.IntegrationSchemaVersion{
 			Placeholder:  templates.DefaultMessageTitleEmbed,
 		},
 	},
-}
+})

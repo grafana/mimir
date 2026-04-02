@@ -15,9 +15,11 @@
 package v0mimir1
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 
-	httpcfg "github.com/grafana/alerting/http/v0mimir1"
+	httpcfg "github.com/grafana/alerting/http/v0mimir"
 	"github.com/grafana/alerting/receivers"
 	"github.com/grafana/alerting/receivers/schema"
 )
@@ -73,14 +75,8 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
-	if c.RoutingKey == "" && c.ServiceKey == "" && c.RoutingKeyFile == "" && c.ServiceKeyFile == "" {
-		return errors.New("missing service or routing key in PagerDuty config")
-	}
-	if len(c.RoutingKey) > 0 && len(c.RoutingKeyFile) > 0 {
-		return errors.New("at most one of routing_key & routing_key_file must be configured")
-	}
-	if len(c.ServiceKey) > 0 && len(c.ServiceKeyFile) > 0 {
-		return errors.New("at most one of service_key & service_key_file must be configured")
+	if err := c.validate(); err != nil {
+		return err
 	}
 	if c.Details == nil {
 		c.Details = make(map[string]string)
@@ -96,7 +92,70 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
-var Schema = schema.IntegrationSchemaVersion{
+// NewConfig creates a Config from raw JSON and a decrypt function for secure fields.
+func NewConfig(jsonData json.RawMessage, decrypt receivers.DecryptFunc) (Config, error) {
+	settings := DefaultConfig
+	var err error
+	if err := json.Unmarshal(jsonData, &settings); err != nil {
+		return Config{}, fmt.Errorf("failed to unmarshal settings: %w", err)
+	}
+	if decrypted, ok := decrypt.DecryptSecret("routing_key"); ok {
+		settings.RoutingKey = decrypted
+	}
+	if decrypted, ok := decrypt.DecryptSecret("service_key"); ok {
+		settings.ServiceKey = decrypted
+	}
+	settings.HTTPConfig, err = httpcfg.DecryptHTTPConfig("http_config", settings.HTTPConfig, decrypt)
+	if err != nil {
+		return Config{}, fmt.Errorf("failed to decrypt http_config: %w", err)
+	}
+	// Apply the same normalization as UnmarshalYAML.
+	if settings.Details == nil {
+		settings.Details = make(map[string]string)
+	}
+	if settings.Source == "" {
+		settings.Source = settings.Client
+	}
+	for k, v := range DefaultPagerdutyDetails {
+		if _, ok := settings.Details[k]; !ok {
+			settings.Details[k] = v
+		}
+	}
+	if err := settings.Validate(); err != nil {
+		return Config{}, err
+	}
+	return settings, nil
+}
+
+func (c *Config) Validate() error {
+	if err := c.validate(); err != nil {
+		return err
+	}
+	if c.URL == nil {
+		return errors.New("missing url in PagerDuty config")
+	}
+	if c.HTTPConfig != nil {
+		if err := c.HTTPConfig.Validate(); err != nil {
+			return fmt.Errorf("invalid http_config: %w", err)
+		}
+	}
+	return nil
+}
+
+func (c *Config) validate() error {
+	if c.RoutingKey == "" && c.ServiceKey == "" && c.RoutingKeyFile == "" && c.ServiceKeyFile == "" {
+		return errors.New("missing service or routing key in PagerDuty config")
+	}
+	if len(c.RoutingKey) > 0 && len(c.RoutingKeyFile) > 0 {
+		return errors.New("at most one of routing_key & routing_key_file must be configured")
+	}
+	if len(c.ServiceKey) > 0 && len(c.ServiceKeyFile) > 0 {
+		return errors.New("at most one of service_key & service_key_file must be configured")
+	}
+	return nil
+}
+
+var Schema = schema.NewIntegrationSchemaVersion(schema.IntegrationSchemaVersion{
 	Version:   Version,
 	CanCreate: false,
 	Options: []schema.Field{
@@ -238,9 +297,9 @@ var Schema = schema.IntegrationSchemaVersion{
 			InputType:    schema.InputTypeText,
 			PropertyName: "group",
 		},
-		schema.V0HttpConfigOption(),
+		httpcfg.V0HttpConfigOption(),
 	},
-}
+})
 
 // PagerdutyLink is used to add link to an incident.
 type PagerdutyLink struct {

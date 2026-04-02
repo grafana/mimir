@@ -31,7 +31,7 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 	if settings.URL == "" {
 		return settings, errors.New("could not find URL property in settings")
 	}
-	settings.APIKey = decryptFn("apikey", settings.APIKey)
+	settings.APIKey = decryptFn.Get("apikey", settings.APIKey)
 	if settings.APIKey == "" {
 		return settings, errors.New("could not find the API key property in settings")
 	}
@@ -41,7 +41,7 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 	return settings, nil
 }
 
-var Schema = schema.IntegrationSchemaVersion{
+var Schema = schema.NewIntegrationSchemaVersion(schema.IntegrationSchemaVersion{
 	Version:   Version,
 	CanCreate: true,
 	Options: []schema.Field{
@@ -97,4 +97,4 @@ var Schema = schema.IntegrationSchemaVersion{
 			PropertyName: "message",
 		},
 	},
-}
+})

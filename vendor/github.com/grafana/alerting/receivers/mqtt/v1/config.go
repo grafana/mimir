@@ -70,15 +70,15 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 		return Config{}, fmt.Errorf("invalid QoS level: %d. Must be 0, 1 or 2", qos)
 	}
 
-	settings.Password = decryptFn("password", settings.Password)
+	settings.Password = decryptFn.Get("password", settings.Password)
 
 	if settings.TLSConfig == nil {
 		settings.TLSConfig = &receivers.TLSConfig{}
 	}
 
-	settings.TLSConfig.CACertificate = decryptFn("tlsConfig.caCertificate", settings.TLSConfig.CACertificate)
-	settings.TLSConfig.ClientCertificate = decryptFn("tlsConfig.clientCertificate", settings.TLSConfig.ClientCertificate)
-	settings.TLSConfig.ClientKey = decryptFn("tlsConfig.clientKey", settings.TLSConfig.ClientKey)
+	settings.TLSConfig.CACertificate = decryptFn.Get("tlsConfig.caCertificate", settings.TLSConfig.CACertificate)
+	settings.TLSConfig.ClientCertificate = decryptFn.Get("tlsConfig.clientCertificate", settings.TLSConfig.ClientCertificate)
+	settings.TLSConfig.ClientKey = decryptFn.Get("tlsConfig.clientKey", settings.TLSConfig.ClientKey)
 
 	parsedURL, err := url.Parse(settings.BrokerURL)
 	if err != nil {
@@ -89,7 +89,7 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 	return settings, nil
 }
 
-var Schema = schema.IntegrationSchemaVersion{
+var Schema = schema.NewIntegrationSchemaVersion(schema.IntegrationSchemaVersion{
 	Version:   Version,
 	CanCreate: true,
 	Options: []schema.Field{
@@ -237,4 +237,4 @@ var Schema = schema.IntegrationSchemaVersion{
 			},
 		},
 	},
-}
+})

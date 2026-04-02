@@ -35,10 +35,15 @@ func PostableAPIReceiverToAPIReceiver(r *definition.PostableApiReceiver) *APIRec
 }
 
 func PostableGrafanaReceiverToIntegrationConfig(r *definition.PostableGrafanaReceiver) *models.IntegrationConfig {
+	version := schema.V1
+	if r.Version != "" {
+		version = schema.Version(r.Version)
+	}
 	return &models.IntegrationConfig{
 		UID:                   r.UID,
 		Name:                  r.Name,
-		Type:                  r.Type,
+		Type:                  schema.IntegrationType(r.Type), // TODO validate type/version here
+		Version:               version,
 		DisableResolveMessage: r.DisableResolveMessage,
 		Settings:              json.RawMessage(r.Settings),
 		SecureSettings:        r.SecureSettings,

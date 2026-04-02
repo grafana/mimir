@@ -157,6 +157,11 @@ func MustParseURL(s string) *URL {
 	return u
 }
 
+func MustParseSecretURL(s string) *SecretURL {
+	u := MustParseURL(s)
+	return &SecretURL{URL: u.URL}
+}
+
 func parseURL(s string) (*URL, error) {
 	u, err := url.Parse(s)
 	if err != nil {

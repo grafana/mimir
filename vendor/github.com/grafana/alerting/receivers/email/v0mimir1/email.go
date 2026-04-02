@@ -39,7 +39,7 @@ import (
 	"github.com/prometheus/alertmanager/template"
 	"github.com/prometheus/alertmanager/types"
 
-	httpcfg "github.com/grafana/alerting/http/v0mimir1"
+	httpcfg "github.com/grafana/alerting/http/v0mimir"
 )
 
 // Email implements a Notifier for email notifications.
@@ -125,6 +125,8 @@ func (n *Email) auth(mechs string) (smtp.Auth, error) {
 	}
 	return nil, err
 }
+
+func (n *Email) SendResolved() bool { return n.conf.SendResolved() }
 
 // Notify implements the Notifier interface.
 func (n *Email) Notify(ctx context.Context, as ...*types.Alert) (bool, error) {

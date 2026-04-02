@@ -41,7 +41,7 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 	if settings.EndpointURL == "" {
 		settings.EndpointURL = APIURL
 	}
-	slackURL := decryptFn("url", settings.URL)
+	slackURL := decryptFn.Get("url", settings.URL)
 	if slackURL == "" {
 		slackURL = settings.EndpointURL
 	}
@@ -59,7 +59,7 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 	if settings.MentionChannel != "" && settings.MentionChannel != "here" && settings.MentionChannel != "channel" {
 		return Config{}, fmt.Errorf("invalid value for mentionChannel: %q", settings.MentionChannel)
 	}
-	settings.Token = decryptFn("token", settings.Token)
+	settings.Token = decryptFn.Get("token", settings.Token)
 	if settings.Token == "" && settings.URL == APIURL {
 		return Config{}, errors.New("token must be specified when using the Slack chat API")
 	}
@@ -78,7 +78,7 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 	return settings, nil
 }
 
-var Schema = schema.IntegrationSchemaVersion{
+var Schema = schema.NewIntegrationSchemaVersion(schema.IntegrationSchemaVersion{
 	Version:   Version,
 	CanCreate: true,
 	Options: []schema.Field{
@@ -213,4 +213,4 @@ var Schema = schema.IntegrationSchemaVersion{
 			Placeholder:  `{{ template "slack.default.footer" . }}`,
 		},
 	},
-}
+})

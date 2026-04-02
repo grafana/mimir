@@ -24,7 +24,7 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 	if err != nil {
 		return Config{}, fmt.Errorf("failed to unmarshal settings: %w", err)
 	}
-	settings.Token = decryptFn("token", settings.Token)
+	settings.Token = decryptFn.Get("token", settings.Token)
 	if settings.Token == "" {
 		return Config{}, errors.New("could not find token in settings")
 	}
@@ -37,7 +37,7 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 	return settings, nil
 }
 
-var Schema = schema.IntegrationSchemaVersion{
+var Schema = schema.NewIntegrationSchemaVersion(schema.IntegrationSchemaVersion{
 	TypeAlias: "line",
 	Version:   Version,
 	CanCreate: false,
@@ -68,4 +68,4 @@ var Schema = schema.IntegrationSchemaVersion{
 			Placeholder:  templates.DefaultMessageEmbed,
 		},
 	},
-}
+})

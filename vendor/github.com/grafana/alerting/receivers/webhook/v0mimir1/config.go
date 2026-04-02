@@ -15,13 +15,15 @@
 package v0mimir1
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/prometheus/common/model"
 
 	"github.com/grafana/alerting/receivers"
 
-	httpcfg "github.com/grafana/alerting/http/v0mimir1"
+	httpcfg "github.com/grafana/alerting/http/v0mimir"
 	"github.com/grafana/alerting/receivers/schema"
 )
 
@@ -61,6 +63,45 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
+	return c.validate()
+}
+
+// NewConfig creates a Config from raw JSON and a decrypt function for secure fields.
+func NewConfig(jsonData json.RawMessage, decrypt receivers.DecryptFunc) (Config, error) {
+	settings := DefaultConfig
+	var err error
+	if err := json.Unmarshal(jsonData, &settings); err != nil {
+		return Config{}, fmt.Errorf("failed to unmarshal settings: %w", err)
+	}
+	if webhookURL, ok, err := decrypt.DecryptSecretURL("url"); ok {
+		if err != nil {
+			return Config{}, fmt.Errorf("failed to decrypt url: %w", err)
+		}
+		settings.URL = &webhookURL
+	}
+	settings.HTTPConfig, err = httpcfg.DecryptHTTPConfig("http_config", settings.HTTPConfig, decrypt)
+	if err != nil {
+		return Config{}, fmt.Errorf("failed to decrypt http_config: %w", err)
+	}
+	if err := settings.Validate(); err != nil {
+		return Config{}, err
+	}
+	return settings, nil
+}
+
+func (c *Config) Validate() error {
+	if err := c.validate(); err != nil {
+		return err
+	}
+	if c.HTTPConfig != nil {
+		if err := c.HTTPConfig.Validate(); err != nil {
+			return fmt.Errorf("invalid http_config: %w", err)
+		}
+	}
+	return nil
+}
+
+func (c *Config) validate() error {
 	if c.URL == nil && c.URLFile == "" {
 		return errors.New("one of url or url_file must be configured")
 	}
@@ -70,7 +111,7 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
-var Schema = schema.IntegrationSchemaVersion{
+var Schema = schema.NewIntegrationSchemaVersion(schema.IntegrationSchemaVersion{
 	Version:   Version,
 	CanCreate: false,
 	Options: []schema.Field{
@@ -99,6 +140,6 @@ var Schema = schema.IntegrationSchemaVersion{
 			InputType:    schema.InputTypeText,
 			PropertyName: "timeout",
 		},
-		schema.V0HttpConfigOption(),
+		httpcfg.V0HttpConfigOption(),
 	},
-}
+})
