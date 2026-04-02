@@ -127,6 +127,7 @@ func (jp *BboltJobPersister) WriteAndDeleteJobs(writes, deletes []TrackedJob) er
 
 type BboltJobPersistenceManager struct {
 	dbs    []*bbolt.DB
+	meta   *compactorschedulerpb.PersistenceMetadata
 	logger log.Logger
 }
 
@@ -140,19 +141,24 @@ func openBboltJobPersistenceManager(dir string, shardCount int, logger log.Logge
 		return nil, fmt.Errorf("failed to sync parent directory: %w", err)
 	}
 
-	dbs, err := prepare(dir, shardCount, logger)
+	dbs, meta, err := prepare(dir, shardCount, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to prepare bbolt shards: %w", err)
 	}
 
 	return &BboltJobPersistenceManager{
 		dbs:    dbs,
+		meta:   meta,
 		logger: logger,
 	}, nil
 }
 
 func (m *BboltJobPersistenceManager) shardDB(tenant string) *bbolt.DB {
 	return m.dbs[shardForTenant(tenant, len(m.dbs))]
+}
+
+func (m *BboltJobPersistenceManager) CreationTime() time.Time {
+	return time.Unix(m.meta.CreationTime, 0)
 }
 
 func (m *BboltJobPersistenceManager) InitializeTenant(tenant string) (JobPersister, error) {
@@ -415,10 +421,10 @@ func countShardFiles(dir string) (int, error) {
 	return len(seen), nil
 }
 
-func prepare(dir string, targetCount int, logger log.Logger) ([]*bbolt.DB, error) {
+func prepare(dir string, targetCount int, logger log.Logger) ([]*bbolt.DB, *compactorschedulerpb.PersistenceMetadata, error) {
 	existingCount, err := countShardFiles(dir)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Cold start - no existing shard files
@@ -426,31 +432,34 @@ func prepare(dir string, targetCount int, logger log.Logger) ([]*bbolt.DB, error
 		level.Info(logger).Log("msg", "no existing bbolt shard files found")
 		dbs, err := appendOpenShards(nil, dir, targetCount, logger)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if err := syncDir(dir); err != nil {
 			closeDbs(dbs, logger)
-			return nil, fmt.Errorf("failed to sync shard directory: %w", err)
+			return nil, nil, fmt.Errorf("failed to sync shard directory: %w", err)
 		}
 
-		meta := &compactorschedulerpb.PersistenceMetadata{ShardCount: uint32(targetCount)}
+		meta := &compactorschedulerpb.PersistenceMetadata{
+			ShardCount:   uint32(targetCount),
+			CreationTime: time.Now().Unix(),
+		}
 		if err := writeShardMetadata(dbs[0], meta); err != nil {
 			closeDbs(dbs, logger)
-			return nil, fmt.Errorf("failed to write metadata to shard 0: %w", err)
+			return nil, nil, fmt.Errorf("failed to write metadata to shard 0: %w", err)
 		}
 		level.Info(logger).Log("msg", "initialized bbolt shard files successfully", "shard_count", targetCount)
-		return dbs, nil
+		return dbs, meta, nil
 	}
 
 	dbs, err := appendOpenShards(nil, dir, existingCount, logger)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	meta, err := readPersistenceMetadata(dbs[0])
 	if err != nil {
 		closeDbs(dbs, logger)
-		return nil, fmt.Errorf("failed to read shard metadata: %w", err)
+		return nil, nil, fmt.Errorf("failed to read shard metadata: %w", err)
 	}
 
 	// Verify that no shard files have gone missing. countShardFiles checks that files are
@@ -461,27 +470,27 @@ func prepare(dir string, targetCount int, logger log.Logger) ([]*bbolt.DB, error
 	metaCount := int(meta.ShardCount)
 	if existingCount < metaCount {
 		closeDbs(dbs, logger)
-		return nil, fmt.Errorf("expected at least %d shard files based on metadata but only found %d", meta.ShardCount, existingCount)
+		return nil, nil, fmt.Errorf("expected at least %d shard files based on metadata but only found %d", meta.ShardCount, existingCount)
 	}
 
 	if metaCount == targetCount && existingCount == targetCount {
 		level.Info(logger).Log("msg", "bbolt shard count matches target, no migration needed", "shard_count", targetCount)
-		return dbs, nil
+		return dbs, meta, nil
 	}
 
 	level.Info(logger).Log("msg", "migrating bbolt shards", "stored_shard_count", meta.ShardCount, "target_shard_count", targetCount, "existing_count", existingCount)
 	start := time.Now()
-	migratedDbs, err := runMigration(dbs, dir, targetCount, logger)
+	migratedDbs, err := runMigration(dbs, dir, targetCount, meta, logger)
 	if err != nil {
 		// runMigration handles closing databases itself since it potentially created more
-		return nil, err
+		return nil, nil, err
 	}
 	level.Info(logger).Log("msg", "bbolt shard migration completed", "duration_ms", time.Since(start).Milliseconds())
-	return migratedDbs, nil
+	return migratedDbs, meta, nil
 }
 
 // runMigration ensures there are targetCount shards and reshards tenants if necessary
-func runMigration(existingDBs []*bbolt.DB, dir string, targetCount int, logger log.Logger) (dbs []*bbolt.DB, err error) {
+func runMigration(existingDBs []*bbolt.DB, dir string, targetCount int, meta *compactorschedulerpb.PersistenceMetadata, logger log.Logger) (dbs []*bbolt.DB, err error) {
 	defer func() {
 		if err != nil {
 			closeDbs(dbs, logger)
@@ -510,8 +519,10 @@ func runMigration(existingDBs []*bbolt.DB, dir string, targetCount int, logger l
 
 	// Write metadata before deleting extra shard files. This ensures that if a crash occurs
 	// between metadata write and file deletion that the extra files can be cleaned up.
-	meta := &compactorschedulerpb.PersistenceMetadata{ShardCount: uint32(targetCount)}
+	previousCount := meta.ShardCount
+	meta.ShardCount = uint32(targetCount)
 	if err = writeShardMetadata(dbs[0], meta); err != nil {
+		meta.ShardCount = previousCount // defensively undo modification
 		return dbs, fmt.Errorf("failed to write metadata to %q: %w", dbs[0].Path(), err)
 	}
 
