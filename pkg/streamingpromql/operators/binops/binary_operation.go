@@ -812,6 +812,57 @@ func BuildMatchers(metadata []types.SeriesMetadata, hints *Hints) types.Matchers
 	return matchers
 }
 
+// buildMatchersForWithout builds matchers to limit the data selected on one side of a binary
+// operation when using without or default (no on/without) matching, based on the series returned
+// by the other side. For each label name present in the metadata that is not excluded (i.e. not
+// in excludeLabels and not __name__), it calls getUniqueLabelValues and, if within the hard-coded
+// cap, builds a regexp matcher for that label.
+func buildMatchersForWithout(metadata []types.SeriesMetadata, excludeLabels []string) types.Matchers {
+	// Collect all label names present in the metadata.
+	labelNames := make(map[string]struct{})
+	for _, s := range metadata {
+		s.Labels.Range(func(l labels.Label) {
+			labelNames[l.Name] = struct{}{}
+		})
+	}
+
+	var matchers []types.Matcher
+	// Iterate label names in sorted order for deterministic output.
+	sortedNames := make([]string, 0, len(labelNames))
+	for name := range labelNames {
+		sortedNames = append(sortedNames, name)
+	}
+	slices.Sort(sortedNames)
+
+	for _, name := range sortedNames {
+		if name == model.MetricNameLabel {
+			continue
+		}
+		if slices.Contains(excludeLabels, name) {
+			continue
+		}
+
+		values := getUniqueLabelValues(metadata, name, maxHintMatcherValues)
+		if len(values) == 0 {
+			continue
+		}
+
+		ordered := make([]string, 0, len(values))
+		for k := range values {
+			ordered = append(ordered, regexp.QuoteMeta(k))
+		}
+		slices.Sort(ordered)
+
+		matchers = append(matchers, types.Matcher{
+			Type:  labels.MatchRegexp,
+			Name:  name,
+			Value: strings.Join(ordered, "|"),
+		})
+	}
+
+	return matchers
+}
+
 func getUniqueLabelValues(metadata []types.SeriesMetadata, label string, maxValues int) map[string]struct{} {
 	values := make(map[string]struct{})
 

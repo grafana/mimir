@@ -98,9 +98,12 @@ func (a *AndUnlessBinaryOperation) computeSeriesMetadata(ctx context.Context, ma
 		return nil, nil
 	}
 
-	// Build RHS matchers: when hints are set, build matchers from LHS metadata to narrow
-	// the RHS series fetch. When no hints are available, pass nil (do not apply parent matchers
-	// to the RHS — see SeriesMetadata for why).
+	// Build RHS matchers to narrow the series fetched on the right-hand side.
+	// - When hints are set (from the optimization pass, covering on/aggregation-by cases),
+	//   build matchers from the hint's Include labels.
+	// - When hints are not set but the operator uses without or default (no on/without)
+	//   matching, we can still build matchers from every non-excluded LHS label.
+	// - Otherwise (on matching without hints) we pass nil.
 	var rhsMatchers types.Matchers
 	if a.hints != nil {
 		rhsMatchers = BuildMatchers(leftMetadata, a.hints)
@@ -108,6 +111,14 @@ func (a *AndUnlessBinaryOperation) computeSeriesMetadata(ctx context.Context, ma
 		sl.DebugLog(
 			"msg", "binary operator passing additional matchers to RHS",
 			"fields", a.hints.Include,
+			"hint_matchers", len(rhsMatchers),
+		)
+	} else if !a.VectorMatching.On {
+		rhsMatchers = buildMatchersForWithout(leftMetadata, a.VectorMatching.MatchingLabels)
+		sl := spanlogger.FromContext(ctx, a.logger)
+		sl.DebugLog(
+			"msg", "binary operator passing without-derived matchers to RHS",
+			"excluded_labels", a.VectorMatching.MatchingLabels,
 			"hint_matchers", len(rhsMatchers),
 		)
 	}
