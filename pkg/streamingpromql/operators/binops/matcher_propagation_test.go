@@ -62,7 +62,7 @@ func TestOneToOneVectorVectorBinaryOperation_MatcherPropagation(t *testing.T) {
 			expectedRHS:    nil,
 			expectedSeries: 1, // on() matches everything to everything
 		},
-		"without(region): region matcher is filtered out, zone passes through": {
+		"without(region): region matcher is filtered out on LHS; RHS receives regexp matcher built from LHS series": {
 			vectorMatching: parser.VectorMatching{On: false, MatchingLabels: []string{"region"}},
 			parentMatchers: types.Matchers{
 				{Type: labels.MatchEqual, Name: "region", Value: "us"},
@@ -70,9 +70,11 @@ func TestOneToOneVectorVectorBinaryOperation_MatcherPropagation(t *testing.T) {
 			},
 			leftSeries:  []labels.Labels{labels.FromStrings("region", "us", "zone", "1")},
 			rightSeries: []labels.Labels{labels.FromStrings("region", "eu", "zone", "1")},
-			// region is excluded label in without, so region matcher is dropped.
-			expectedLHS:    types.Matchers{{Type: labels.MatchEqual, Name: "zone", Value: "1"}},
-			expectedRHS:    types.Matchers{{Type: labels.MatchEqual, Name: "zone", Value: "1"}},
+			// LHS receives the filtered parent matchers (region excluded, zone kept).
+			expectedLHS: types.Matchers{{Type: labels.MatchEqual, Name: "zone", Value: "1"}},
+			// RHS receives regexp matchers built from LHS series for all non-excluded labels.
+			// The LHS has zone=1, so RHS gets zone=~"1".
+			expectedRHS:    types.Matchers{{Type: labels.MatchRegexp, Name: "zone", Value: "1"}},
 			expectedSeries: 1,
 		},
 		"no parent matchers: both sides receive nil": {

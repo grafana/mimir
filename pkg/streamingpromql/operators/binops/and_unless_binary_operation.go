@@ -99,8 +99,9 @@ func (a *AndUnlessBinaryOperation) computeSeriesMetadata(ctx context.Context, ma
 	}
 
 	// Build RHS matchers: when hints are set, build matchers from LHS metadata to narrow
-	// the RHS series fetch. When no hints are available, pass nil (do not apply parent matchers
-	// to the RHS — see SeriesMetadata for why).
+	// the RHS series fetch. For 'without' matching, build matchers from LHS for all
+	// non-excluded labels at runtime. When neither applies, pass nil (do not apply parent
+	// matchers to the RHS — see SeriesMetadata for why).
 	var rhsMatchers types.Matchers
 	if a.hints != nil {
 		rhsMatchers = BuildMatchers(leftMetadata, a.hints)
@@ -110,6 +111,9 @@ func (a *AndUnlessBinaryOperation) computeSeriesMetadata(ctx context.Context, ma
 			"fields", a.hints.Include,
 			"hint_matchers", len(rhsMatchers),
 		)
+	} else if !a.VectorMatching.On && len(a.VectorMatching.MatchingLabels) > 0 {
+		// 'without' matching: build matchers from LHS for all non-excluded labels at runtime.
+		rhsMatchers = buildMatchersForWithout(leftMetadata, a.VectorMatching.MatchingLabels)
 	}
 	rightMetadata, err := a.Right.SeriesMetadata(ctx, rhsMatchers)
 	if err != nil {

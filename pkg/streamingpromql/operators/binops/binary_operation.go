@@ -869,6 +869,39 @@ func BuildMatchers(metadata []types.SeriesMetadata, hints *Hints) types.Matchers
 	return matchers
 }
 
+// buildMatchersForWithout builds matchers from LHS series for all label names that appear
+// in the LHS but are NOT in excludedLabels (and not __name__). This allows 'without' binary
+// operations to narrow the RHS at runtime in the same way 'on' operations do via plan-time
+// hints.
+func buildMatchersForWithout(series []types.SeriesMetadata, excludedLabels []string) types.Matchers {
+	excludeSet := make(map[string]struct{}, len(excludedLabels)+1)
+	excludeSet[model.MetricNameLabel] = struct{}{}
+	for _, l := range excludedLabels {
+		excludeSet[l] = struct{}{}
+	}
+
+	includedNames := make(map[string]struct{})
+	for _, m := range series {
+		m.Labels.Range(func(l labels.Label) {
+			if _, excluded := excludeSet[l.Name]; !excluded {
+				includedNames[l.Name] = struct{}{}
+			}
+		})
+	}
+
+	if len(includedNames) == 0 {
+		return nil
+	}
+
+	include := make([]string, 0, len(includedNames))
+	for name := range includedNames {
+		include = append(include, name)
+	}
+	slices.Sort(include)
+
+	return BuildMatchers(series, &Hints{Include: include})
+}
+
 func getUniqueLabelValues(metadata []types.SeriesMetadata, label string, maxValues int) map[string]struct{} {
 	values := make(map[string]struct{})
 

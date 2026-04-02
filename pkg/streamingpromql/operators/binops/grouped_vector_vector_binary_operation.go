@@ -295,6 +295,9 @@ func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Cont
 			"hint_matchers", len(rhsMatchers),
 			"ignored_matchers", len(matchers),
 		)
+	} else if !g.VectorMatching.On && len(g.VectorMatching.MatchingLabels) > 0 {
+		// 'without' matching: build matchers from LHS for all non-excluded labels at runtime.
+		rhsMatchers = buildMatchersForWithout(leftMetadata, g.VectorMatching.MatchingLabels)
 	} else {
 		rhsMatchers = filteredMatchers
 	}

@@ -215,6 +215,9 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 			"hint_matchers", len(rhsMatchers),
 			"ignored_matchers", len(matchers),
 		)
+	} else if !b.VectorMatching.On && len(b.VectorMatching.MatchingLabels) > 0 {
+		// 'without' matching: build matchers from LHS for all non-excluded labels at runtime.
+		rhsMatchers = buildMatchersForWithout(b.leftMetadata, b.VectorMatching.MatchingLabels)
 	} else {
 		rhsMatchers = lhsMatchers
 	}
