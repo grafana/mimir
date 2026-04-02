@@ -18,11 +18,26 @@ import (
 	"go.uber.org/atomic"
 )
 
-// NewKafkaWriterClient returns the kgo.Client that should be used by the Writer.
+// KafkaWriterClientOption is a functional option for NewKafkaWriterClient.
+type KafkaWriterClientOption func(*kafkaWriterClientOptions)
+
+type kafkaWriterClientOptions struct {
+	disableDefaultTopic bool
+}
+
+// WithDisableDefaultTopic disables setting the default produce topic on the Kafka client.
+// When this option is used, the caller is expected to set the Topic field on each produced record individually.
+func WithDisableDefaultTopic() KafkaWriterClientOption {
+	return func(o *kafkaWriterClientOptions) {
+		o.disableDefaultTopic = true
+	}
+}
+
+// NewKafkaWriterClient returns a kgo.Client configured for producing Kafka records.
 //
 // The input prometheus.Registerer must be wrapped with a prefix (the names of metrics
 // registered don't have a prefix).
-func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, logger log.Logger, reg prometheus.Registerer) (*kgo.Client, error) {
+func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, logger log.Logger, reg prometheus.Registerer, opts ...KafkaWriterClientOption) (*kgo.Client, error) {
 	// Do not export the client ID, because we use it to specify options to the backend.
 	metrics := kprom.NewMetrics(
 		"", // No prefix. We expect the input prometheus.Registered to be wrapped with a prefix.
@@ -35,7 +50,7 @@ func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, 
 		linger = 0
 	}
 
-	opts := append(
+	kgoOpts := append(
 		commonKafkaClientOptions(kafkaCfg, metrics, logger),
 
 		// Hook our custom Kafka client metrics for the writer client, in order to have a deeper observability
@@ -43,7 +58,6 @@ func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, 
 		kgo.WithHooks(NewKafkaClientExtendedMetrics(reg)),
 
 		kgo.RequiredAcks(kgo.AllISRAcks()),
-		kgo.DefaultProduceTopic(kafkaCfg.Topic),
 
 		// We set the partition field in each record.
 		kgo.RecordPartitioner(kgo.ManualPartitioner()),
@@ -89,7 +103,16 @@ func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, 
 		kgo.MaxBufferedBytes(0),
 	)
 
-	return kgo.NewClient(opts...)
+	var options kafkaWriterClientOptions
+	for _, o := range opts {
+		o(&options)
+	}
+
+	if !options.disableDefaultTopic {
+		kgoOpts = append(kgoOpts, kgo.DefaultProduceTopic(kafkaCfg.Topic))
+	}
+
+	return kgo.NewClient(kgoOpts...)
 }
 
 // KafkaProducer is a kgo.Client wrapper exposing some higher level features and metrics useful for producers.

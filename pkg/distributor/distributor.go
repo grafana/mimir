@@ -2598,7 +2598,7 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 
 	// Write all partitions in a single ProduceSync call.
 	writeCtx := remoteRequestContext()
-	err = d.ingestStorageWriter.MultiWriteSync(writeCtx, tenantID, partitionRequests)
+	err = d.ingestStorageWriter.MultiWriteSync(writeCtx, d.cfg.IngestStorageConfig.KafkaConfig.Topic, tenantID, partitionRequests)
 	err = wrapPartitionsPushError(err)
 	err = wrapDeadlineExceededPushError(err)
 
