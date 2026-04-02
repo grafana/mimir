@@ -39,7 +39,7 @@ type JobPersister interface {
 type NopJobPersistenceManager struct{}
 
 func (n *NopJobPersistenceManager) CreationTime() time.Time {
-	return time.Time{}
+	return time.Now()
 }
 
 func (n *NopJobPersistenceManager) InitializeTenant(tenant string) (JobPersister, error) {
