@@ -106,7 +106,10 @@ func NewStreamBinaryReader(
 	localIndexHeaderPath := filepath.Join(localBlockDir, block.IndexHeaderFilename)
 	localSparseHeaderPath := filepath.Join(localBlockDir, block.SparseIndexHeaderFilename)
 
-	// Attempt to load existing sparse index-header from previous write to local disk or from bucket
+	// Attempt to load existing sparse index-header from previous write to local disk or from bucket.
+	// Track whether we loaded it with a boolean -
+	// we cannot necessarily rely on err != nil or the sparse values == nil,
+	// depending on what the failure mode of loading the existing sparse header was.
 	sparseHeaderLoaded := false
 	allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, err := LoadExistingSparseHeader(
 		ctx, blockID, tenantBkt, localTenantDir, sparseSampleFactor, ll,
@@ -118,7 +121,9 @@ func NewStreamBinaryReader(
 		sparseHeaderLoaded = true
 	}
 
-	// Ensure full index-header is downloaded to local block directory
+	// Ensure full index-header is downloaded to local block directory.
+	// If we did not get an existing sparse index-header from disk or bucket,
+	// we have to consume the full index-header to build the sparse header.
 	if _, err := os.Stat(localIndexHeaderPath); err != nil {
 		level.Info(spanLog).Log(
 			"msg", "index-header not found on local disk; will create from bucket block index",
@@ -134,7 +139,8 @@ func NewStreamBinaryReader(
 		)
 	}
 
-	// With full index-header now on disk, initialize the local-disk-backed decbuf factory and read the TOC
+	// With full index-header now on disk, initialize the local-disk-backed decbuf factory and read the TOC.
+	// The index-header's TOC is also required to build the sparse index-header if one does not already exist.
 	filePoolDecbufFactory := streamencoding.NewFilePoolDecbufFactory(
 		localIndexHeaderPath, cfg.MaxIdleFileHandles, metrics.filePool,
 	)
@@ -161,7 +167,7 @@ func NewStreamBinaryReader(
 	}
 
 	// Full index-header is now on disk.
-	// If we previously failed to load the sparse index-header, recreate from full header.
+	// If we previously failed to load the sparse index-header, build it now from full header.
 	if !sparseHeaderLoaded {
 		start := time.Now()
 		allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, err = BuildSparseHeaderFromIndexHeader(
@@ -197,7 +203,7 @@ func NewStreamBinaryReader(
 	// Set up each of the Symbols table and Postings Offsets table readers
 	// and their respective table of contents and DecbufFactory implementation.
 	// Currently, the only supported index-header section to read from the bucket is SectionPostingsOffsetTable.
-	// Symbols are always read from disk.
+	// Symbols are always read from disk, so we can assign the TOC and DecbufFactory here already.
 	streamBinaryReader.symbolsDecbufFactory = filePoolDecbufFactory
 	streamBinaryReader.symbolsTOC = indexHeaderTOC
 
@@ -226,7 +232,7 @@ func NewStreamBinaryReader(
 		streamBinaryReader.postingsOffsetsTOC = indexHeaderTOC
 	}
 
-	// Both decbuf factories and respective TOCs are assigned according to the configured sources
+	// DecbufFactory and TOC for each section are now assigned according to their configured sources.
 	// Finally, initialize the readers for each index-header section.
 	streamBinaryReader.postingsOffsetTable, err = streamindex.NewPostingsOffsetTableReader(
 		streamBinaryReader.postingsOffsetsTOC.IndexVersion,
@@ -238,11 +244,11 @@ func NewStreamBinaryReader(
 		return nil, fmt.Errorf("failed to initialize postings offset table reader: %w", err)
 	}
 
+	// Preload the symbols cache for all label names in the block.
 	labelNames, err := streamBinaryReader.postingsOffsetTable.LabelNames()
 	if err != nil {
 		return nil, fmt.Errorf("load label names: %w", err)
 	}
-
 	if streamBinaryReader.symbolsTable, err = streamindex.NewSymbolsTableReader(
 		streamBinaryReader.symbolsTOC.IndexVersion,
 		streamBinaryReader.symbolsDecbufFactory,
@@ -342,8 +348,14 @@ func (r *StreamBinaryReader) LabelNames(context.Context) ([]string, error) {
 
 func (r *StreamBinaryReader) Close() error {
 	merr := multierror.New()
-	merr.Add(r.symbolsDecbufFactory.Close())
-	merr.Add(r.postingsOffsetsDecbufFactory.Close())
+	if r.symbolsDecbufFactory != nil {
+		merr.Add(r.symbolsDecbufFactory.Close())
+	}
+	if r.postingsOffsetsDecbufFactory != nil && r.postingsOffsetsDecbufFactory != r.symbolsDecbufFactory {
+		// When both Symbols and Postings offset are read from disk,
+		// they use the same DecbufFactory object; avoid double-close.
+		merr.Add(r.postingsOffsetsDecbufFactory.Close())
+	}
 	return merr.Err()
 }
 

@@ -9,25 +9,17 @@ import (
 	"io"
 	"os"
 	"sync"
+
+	"github.com/grafana/mimir/pkg/util/filepool"
 )
 
 // readerBufferSize is the size of the buffer used for reading index-header files. This
 // value is arbitrary and will likely change in the future based on profiling results.
 const readerBufferSize = 4096
 
-type FilePoolCloser interface {
-	Put(*os.File) error
-}
-
-type SingleFilePoolCloser struct{}
-
-func (c SingleFilePoolCloser) Put(file *os.File) error {
-	return file.Close()
-}
-
 type FileReader struct {
 	file   *os.File
-	closer FilePoolCloser
+	closer filepool.FilePoolCloser
 	buf    *bufio.Reader
 	base   int
 	length int
@@ -42,7 +34,7 @@ var bufferPool = sync.Pool{
 
 // NewFileReader creates a new FileReader for the segment of file beginning at base bytes,
 // extending length bytes, and closing the handle with closer.
-func NewFileReader(file *os.File, base, length int, closer FilePoolCloser) (*FileReader, error) {
+func NewFileReader(file *os.File, base, length int, closer filepool.FilePoolCloser) (*FileReader, error) {
 	f := &FileReader{
 		file:   file,
 		closer: closer,

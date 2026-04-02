@@ -41,6 +41,21 @@ func NewFilePoolMetrics(reg prometheus.Registerer) *FilePoolMetrics {
 	}
 }
 
+type FilePoolCloser interface {
+	Put(*os.File) error
+}
+
+// SingleFilePoolNoopCloser implements FilePoolCloser without closing the file.
+// Some operations may call the pool closer on a file handle upon completion,
+// as they assume the file handle was originally retrieved from a FilePool.
+// This type allows calling those operations an unpooled file handle,
+// which can be closed manually according to its own lifecycle.
+type SingleFilePoolNoopCloser struct{}
+
+func (c SingleFilePoolNoopCloser) Put(_ *os.File) error {
+	return nil
+}
+
 // FilePool maintains a pool of file handles up to a maximum number, creating
 // new handles and closing them when required. Get and Put operations on this
 // pool never block. If there are no available file handles, one will be created

@@ -65,7 +65,7 @@ func NewPostingsOffsetTableReader(
 	switch indexVersion {
 	case index.FormatV2:
 		return &PostingOffsetsTableV2{
-			factory:               decbufFactory,
+			decbufFactory:         decbufFactory,
 			tableOffset:           tableOffset,
 			SparsePostingsOffsets: sparsePostingsOffsets,
 			SparseSampleFactor:    sparseSampleFactor,
@@ -82,8 +82,8 @@ type PostingOffsetsTableV2 struct {
 
 	SparseSampleFactor int
 
-	factory     streamencoding.DecbufFactory
-	tableOffset int
+	decbufFactory streamencoding.DecbufFactory
+	tableOffset   int
 }
 
 func (t *PostingOffsetsTableV2) PostingsOffset(name string, value string) (r index.Range, found bool, err error) {
@@ -97,7 +97,7 @@ func (t *PostingOffsetsTableV2) PostingsOffset(name string, value string) (r ind
 		return index.Range{}, false, nil
 	}
 
-	d := t.factory.NewDecbufAtUnchecked(t.tableOffset)
+	d := t.decbufFactory.NewDecbufAtUnchecked(t.tableOffset)
 	defer runutil.CloseWithErrCapture(&err, &d, "get sparsePostingsOffsets SparseTableOffsets")
 	if err := d.Err(); err != nil {
 		return index.Range{}, false, err
@@ -188,7 +188,7 @@ func (t *PostingOffsetsTableV2) LabelValuesOffsets(ctx context.Context, name, pr
 
 	// Don't Crc32 the entire postings offset table, this is very slow
 	// so hope any issues were caught at startup.
-	d := t.factory.NewDecbufAtUnchecked(t.tableOffset)
+	d := t.decbufFactory.NewDecbufAtUnchecked(t.tableOffset)
 	defer runutil.CloseWithErrCapture(&err, &d, "get label values")
 
 	d.ResetAt(e.SparseTableOffsets[offsetsStart].Offset)
