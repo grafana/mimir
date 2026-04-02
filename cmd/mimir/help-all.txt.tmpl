@@ -1568,7 +1568,7 @@ Usage of ./cmd/mimir/mimir:
   -ingest-storage.kafka.wait-strong-read-consistency-timeout duration
     	The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout. (default 20s)
   -ingest-storage.kafka.write-clients int
-    	The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka. (default 1)
+    	[deprecated] The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka. Deprecated: has no effect (Mimir always uses a single Kafka write client). (default 1)
   -ingest-storage.kafka.write-timeout duration
     	How long to wait for an incoming write request to be successfully committed to the Kafka backend. (default 10s)
   -ingest-storage.migration.distributor-send-to-ingesters-enabled

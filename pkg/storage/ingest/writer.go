@@ -5,8 +5,7 @@ package ingest
 import (
 	"context"
 	"fmt"
-	"strconv"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-kit/log"
@@ -64,10 +63,7 @@ type Writer struct {
 	logger     log.Logger
 	registerer prometheus.Registerer
 
-	// We support multiple Kafka clients to better parallelize the workload. The number of
-	// clients is fixed during the Writer lifecycle, but they're initialised lazily.
-	writersMx  sync.RWMutex
-	writers    []*KafkaProducer
+	client     atomic.Pointer[KafkaProducer]
 	serializer recordSerializer
 
 	// Metrics.
@@ -95,7 +91,6 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 		kafkaCfg:                   kafkaCfg,
 		logger:                     logger,
 		registerer:                 reg,
-		writers:                    make([]*KafkaProducer, kafkaCfg.WriteClients),
 		serializer:                 recordSerializerFromCfg(kafkaCfg),
 		maxInflightProduceRequests: defaultMaxInflightProduceRequests,
 
@@ -124,22 +119,25 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 
 func (w *Writer) starting(_ context.Context) error {
 	if w.kafkaCfg.AutoCreateTopicEnabled {
-		return CreateTopic(w.kafkaCfg, w.logger)
+		if err := CreateTopic(w.kafkaCfg, w.logger); err != nil {
+			return err
+		}
 	}
+
+	clientReg := prometheus.WrapRegistererWithPrefix(writerMetricsPrefix, w.registerer)
+
+	client, err := NewKafkaWriterClient(w.kafkaCfg, w.maxInflightProduceRequests, w.logger, clientReg)
+	if err != nil {
+		return err
+	}
+
+	w.client.Store(NewKafkaProducer(client, w.kafkaCfg.ProducerMaxBufferedBytes, clientReg))
 	return nil
 }
 
 func (w *Writer) stopping(_ error) error {
-	w.writersMx.Lock()
-	defer w.writersMx.Unlock()
-
-	for idx, client := range w.writers {
-		if client == nil {
-			continue
-		}
-
+	if client := w.client.Swap(nil); client != nil {
 		client.Close()
-		w.writers[idx] = nil
 	}
 
 	return nil
@@ -160,6 +158,11 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string
 // MultiWriteSync writes data for multiple partitions to the ingest storage in a single ProduceSync call.
 // The function blocks until all data has been successfully committed, or an error occurred.
 func (w *Writer) MultiWriteSync(ctx context.Context, userID string, partitionRequests []PartitionWriteRequest) error {
+	client := w.client.Load()
+	if client == nil {
+		return ErrWriterNotRunning
+	}
+
 	startTime := time.Now()
 
 	// Serialize all partition requests into a single records slice.
@@ -193,13 +196,8 @@ func (w *Writer) MultiWriteSync(ctx context.Context, userID string, partitionReq
 	}
 
 	// Write to backend. The partition field is already set on each record by ToRecords,
-	// so the Kafka client routes records to the correct partition regardless of which writer is used.
-	writer, err := w.getKafkaWriterForPartition(partitionRequests[0].PartitionID)
-	if err != nil {
-		return err
-	}
-
-	res := writer.ProduceSync(ctx, allRecords)
+	// so the Kafka client routes records to the correct partition.
+	res := client.ProduceSync(ctx, allRecords)
 
 	// We track the latency both in case of success and failure (but with a different label), to avoid misunderstandings
 	// when we look at it in case Kafka Produce requests time out (if latency wasn't tracked on error, we would see low
@@ -217,50 +215,6 @@ func (w *Writer) MultiWriteSync(ctx context.Context, userID string, partitionReq
 	}
 
 	return produceResultsErr(res)
-}
-
-func (w *Writer) getKafkaWriterForPartition(partitionID int32) (*KafkaProducer, error) {
-	// Check if the writer has already been created.
-	w.writersMx.RLock()
-	clientID := int(partitionID) % len(w.writers)
-	writer := w.writers[clientID]
-	w.writersMx.RUnlock()
-
-	if writer != nil {
-		return writer, nil
-	}
-
-	w.writersMx.Lock()
-	defer w.writersMx.Unlock()
-
-	// Ensure the service is in the Running state. We want to avoid the case where someone tries to
-	// re-create a client after the service has been stopped.
-	if w.State() != services.Running {
-		return nil, ErrWriterNotRunning
-	}
-
-	// Ensure a new writer wasn't created in the meanwhile. If so, use it.
-	writer = w.writers[clientID]
-	if writer != nil {
-		return writer, nil
-	}
-
-	// Add the client ID to metrics so that they don't clash when the Writer is configured
-	// to run with multiple Kafka clients.
-	clientReg := prometheus.WrapRegistererWithPrefix(writerMetricsPrefix,
-		prometheus.WrapRegistererWith(prometheus.Labels{"client_id": strconv.Itoa(clientID)}, w.registerer))
-
-	// Add the client ID to logger so that we can easily distinguish Kafka clients in logs.
-	clientLogger := log.With(w.logger, "client_id", clientID)
-
-	newClient, err := NewKafkaWriterClient(w.kafkaCfg, w.maxInflightProduceRequests, clientLogger, clientReg)
-	if err != nil {
-		return nil, err
-	}
-
-	newWriter := NewKafkaProducer(newClient, w.kafkaCfg.ProducerMaxBufferedBytes, clientReg)
-	w.writers[clientID] = newWriter
-	return newWriter, nil
 }
 
 type requestSplitter func(req *mimirpb.WriteRequest, reqSize, maxSize int) []*mimirpb.WriteRequest

@@ -146,11 +146,6 @@ func TestDistributor_Push_ShouldEnforceMaxSeriesLimits(t *testing.T) {
 				ingestStorageEnabled:    true,
 				ingestStoragePartitions: 1,
 				limits:                  prepareDefaultLimits(),
-				configure: func(cfg *Config) {
-					// Run a number of clients equal to the number of partitions, so that each partition
-					// has its own client, as requested by some test cases.
-					cfg.IngestStorageConfig.KafkaConfig.WriteClients = 3
-				},
 			}
 
 			distributors, _, regs, kafkaCluster := prepare(t, testConfig)
@@ -279,11 +274,6 @@ func BenchmarkDistributor_prePushMaxSeriesLimitMiddleware(b *testing.B) {
 			ingestStorageEnabled:    true,
 			ingestStoragePartitions: 1,
 			limits:                  prepareDefaultLimits(),
-			configure: func(cfg *Config) {
-				// Run a number of clients equal to the number of partitions, so that each partition
-				// has its own client, as requested by some test cases.
-				cfg.IngestStorageConfig.KafkaConfig.WriteClients = 3
-			},
 		}
 	)
 
