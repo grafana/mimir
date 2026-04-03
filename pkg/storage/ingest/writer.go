@@ -196,6 +196,15 @@ func (w *Writer) MultiWriteSync(ctx context.Context, userID string, partitionReq
 		return nil
 	}
 
+	// If the caller provided an explicit record timestamp (e.g. the distributor's validation
+	// reference time), set it on every record so that consumers see the same timestamp that
+	// was used for grace-period checks.
+	if ts, ok := RecordTimestampFromContext(ctx); ok {
+		for _, r := range allRecords {
+			r.Timestamp = ts
+		}
+	}
+
 	// Write to backend. The partition field is already set on each record by ToRecords,
 	// so the Kafka client routes records to the correct partition.
 	res := client.ProduceSync(ctx, allRecords)

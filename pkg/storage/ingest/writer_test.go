@@ -1685,6 +1685,45 @@ func createTestWriter(t *testing.T, cfg KafkaConfig) (*Writer, prometheus.Gather
 	return writer, reg
 }
 
+func TestWriter_WriteSync_SetsRecordTimestampFromContext(t *testing.T) {
+	t.Parallel()
+
+	const (
+		topicName     = "test"
+		numPartitions = 1
+		partitionID   = 0
+		tenantID      = "user-1"
+	)
+
+	_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+	writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+
+	// Use a timestamp close to now so it doesn't trip franz-go's RecordDeliveryTimeout.
+	ts := time.Now().Add(-time.Second).Truncate(time.Millisecond)
+	ctx := ContextWithRecordTimestamp(context.Background(), ts)
+
+	err := writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{
+		Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")},
+		Source:     mimirpb.API,
+	})
+	require.NoError(t, err)
+
+	consumer, err := kgo.NewClient(kgo.SeedBrokers(clusterAddr), kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{
+		topicName: {partitionID: kgo.NewOffset().AtStart()},
+	}))
+	require.NoError(t, err)
+	t.Cleanup(consumer.Close)
+
+	fetchCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	t.Cleanup(cancel)
+
+	fetches := consumer.PollFetches(fetchCtx)
+	require.NoError(t, fetches.Err())
+	records := fetches.Records()
+	require.Len(t, records, 1)
+	assert.Equal(t, ts, records[0].Timestamp)
+}
+
 func createTestKafkaClient(t *testing.T, cfg KafkaConfig) *kgo.Client {
 	metrics := kprom.NewMetrics("", kprom.Registerer(prometheus.NewPedanticRegistry()))
 	opts := commonKafkaClientOptions(cfg, metrics, test.NewTestingLogger(t))
