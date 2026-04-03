@@ -829,7 +829,7 @@ func runAllBufReaderTypes(tb test.TB, caseName string, bytes []byte, testFn func
 	filePath := path.Join(dir, fileName)
 	require.NoError(tb, os.WriteFile(filePath, bytes, 0700))
 
-	reg := prometheus.NewPedanticRegistry()
+	reg := prometheus.WrapRegistererWithPrefix("indexheader_", prometheus.NewPedanticRegistry())
 	diskFactory := NewFilePoolDecbufFactory(filePath, 0, filepool.NewFilePoolMetrics(reg))
 	tb.Cleanup(func() {
 		_ = diskFactory.Close()

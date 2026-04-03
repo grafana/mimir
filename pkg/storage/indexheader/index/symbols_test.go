@@ -56,7 +56,7 @@ func TestSymbolsV2(t *testing.T) {
 		require.NoError(t, bkt.Close())
 	})
 
-	reg := prometheus.NewPedanticRegistry()
+	reg := prometheus.WrapRegistererWithPrefix("indexheader_", prometheus.NewPedanticRegistry())
 	diskDecbufFactory := streamencoding.NewFilePoolDecbufFactory(filePath, 0, filepool.NewFilePoolMetrics(reg))
 	bucketDecbufFactory := streamencoding.NewBucketDecbufFactory(context.Background(), instBkt, "index")
 

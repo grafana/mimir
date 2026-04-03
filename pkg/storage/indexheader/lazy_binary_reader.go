@@ -188,7 +188,7 @@ func ensureIndexHeaderOnDisk(
 	blockID ulid.ULID,
 	bkt objstore.InstrumentedBucketReader,
 	dir string,
-	l log.Logger,
+	logger log.Logger,
 ) error {
 	localBlockDir := filepath.Join(dir, blockID.String())
 	indexHeaderPath := filepath.Join(localBlockDir, block.IndexHeaderFilename)
@@ -199,19 +199,19 @@ func ensureIndexHeaderOnDisk(
 		return nil
 	}
 	if !os.IsNotExist(err) {
-		level.Error(l).Log("msg", "failed to stat existing index-header on disk", "err", err)
+		level.Error(logger).Log("msg", "failed to stat existing index-header on disk", "err", err)
 		return err
 	}
 
-	level.Debug(l).Log("msg", "index-header does not exist on disk; will build from bucket", "path", indexHeaderPath)
+	level.Debug(logger).Log("msg", "index-header does not exist on disk; will build from bucket", "path", indexHeaderPath)
 
 	start := time.Now()
 	if err := WriteBinary(ctx, bkt, blockID, indexHeaderPath); err != nil {
-		level.Error(l).Log("msg", "failed to create index-header", "err", err)
+		level.Error(logger).Log("msg", "failed to create index-header", "err", err)
 		return err
 	}
 
-	level.Debug(l).Log("msg", "built index-header file", "path", indexHeaderPath, "elapsed", time.Since(start))
+	level.Debug(logger).Log("msg", "built index-header file", "path", indexHeaderPath, "elapsed", time.Since(start))
 	return nil
 }
 

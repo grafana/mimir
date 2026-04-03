@@ -34,6 +34,7 @@ type StreamBinaryReaderMetrics struct {
 }
 
 func NewStreamBinaryReaderMetrics(reg prometheus.Registerer) *StreamBinaryReaderMetrics {
+	reg = prometheus.WrapRegistererWithPrefix("indexheader_", reg)
 	return &StreamBinaryReaderMetrics{
 		filePool: filepool.NewFilePoolMetrics(reg),
 	}
