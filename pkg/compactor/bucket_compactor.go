@@ -135,14 +135,18 @@ func (s *metaSyncer) GarbageCollect(ctx context.Context) error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
+	duplicateIDs := s.deduplicateBlocksFilter.DuplicateIDs()
+	return garbageCollectBlocks(ctx, s.logger, s.bkt, duplicateIDs, s.metrics, s.blocks)
+}
+
+// garbageCollectBlocks marks duplicate blocks for deletion and removes them from the provided meta map.
+func garbageCollectBlocks(ctx context.Context, logger log.Logger, bkt objstore.Bucket, duplicateIDs []ulid.ULID, metrics *syncerMetrics, metas map[ulid.ULID]*block.Meta) error {
 	begin := time.Now()
 
 	// The deduplication filter is applied after all blocks marked for deletion have been excluded
 	// (with no deletion delay), so we expect that all duplicated blocks have not been marked for
 	// deletion yet. Even in the remote case these blocks have already been marked for deletion,
 	// the block.MarkForDeletion() call will correctly handle it.
-	duplicateIDs := s.deduplicateBlocksFilter.DuplicateIDs()
-
 	for _, id := range duplicateIDs {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -151,20 +155,20 @@ func (s *metaSyncer) GarbageCollect(ctx context.Context) error {
 		// Spawn a new context so we always mark a block for deletion in full on shutdown.
 		delCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 
-		level.Info(s.logger).Log("msg", "marking outdated block for deletion", "block", id)
-		err := block.MarkForDeletion(delCtx, s.logger, s.bkt, id, "outdated block", s.metrics.blocksMarkedForDeletion)
+		level.Info(logger).Log("msg", "marking outdated block for deletion", "block", id)
+		err := block.MarkForDeletion(delCtx, logger, bkt, id, "outdated block", metrics.blocksMarkedForDeletion)
 		cancel()
 		if err != nil {
-			s.metrics.garbageCollectionFailures.Inc()
+			metrics.garbageCollectionFailures.Inc()
 			return fmt.Errorf("mark block %s for deletion: %w", id, err)
 		}
 
 		// Immediately update our in-memory state so no further call to SyncMetas is needed
 		// after running garbage collection.
-		delete(s.blocks, id)
+		delete(metas, id)
 	}
-	s.metrics.garbageCollections.Inc()
-	s.metrics.garbageCollectionDuration.Observe(time.Since(begin).Seconds())
+	metrics.garbageCollections.Inc()
+	metrics.garbageCollectionDuration.Observe(time.Since(begin).Seconds())
 	return nil
 }
 

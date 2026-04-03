@@ -150,7 +150,7 @@ func (m *mockCompactorSchedulerClient) GetLeaseJobCallCount() int {
 
 func newTestSchedulerExecutor(t *testing.T, cfg Config, client compactorschedulerpb.CompactorSchedulerClient) *schedulerExecutor {
 	t.Helper()
-	exec, err := newSchedulerExecutor(cfg.SchedulerClientConfig, log.NewNopLogger(), nil)
+	exec, err := newSchedulerExecutor(cfg.SchedulerClientConfig, log.NewNopLogger(), nil, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { exec.schedulerConn.Close() })
 	exec.schedulerClient = client
