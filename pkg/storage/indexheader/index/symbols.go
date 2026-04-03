@@ -28,7 +28,7 @@ func init() {
 	castagnoliTable = crc32.MakeTable(crc32.Castagnoli)
 }
 
-type SymbolsTableReader struct {
+type SymbolsTable struct {
 	tableOffset   int
 	decbufFactory streamencoding.DecbufFactory
 
@@ -44,10 +44,10 @@ func NewSymbolsTableReader(
 	tableOffset int,
 	allSymbolsCount int,
 	sparseSymbolsOffsets []int,
-) (s *SymbolsTableReader, err error) {
+) (s *SymbolsTable, err error) {
 	switch indexVersion {
 	case index.FormatV2:
-		return &SymbolsTableReader{
+		return &SymbolsTable{
 			tableOffset:          tableOffset,
 			decbufFactory:        decbufFactory,
 			allSymbolsCount:      allSymbolsCount,
@@ -62,7 +62,7 @@ var ErrSymbolNotFound = errors.New("symbol not found")
 // Lookup takes a symbol reference and returns the symbol string.
 // For TSDB index v2, the reference is expected to be the sequence number of the symbol (starting at 0).
 // If the symbol reference is beyond the last symbol in the symbols table, the return error's cause will be ErrSymbolNotFound.
-func (s *SymbolsTableReader) Lookup(o uint32) (sym string, err error) {
+func (s *SymbolsTable) Lookup(o uint32) (sym string, err error) {
 	d := s.decbufFactory.NewDecbufAtUnchecked(s.tableOffset)
 	defer runutil.CloseWithErrCapture(&err, &d, "lookup symbol")
 	if err := d.Err(); err != nil {
@@ -86,7 +86,7 @@ func (s *SymbolsTableReader) Lookup(o uint32) (sym string, err error) {
 }
 
 // ReverseLookup returns an error with cause ErrSymbolNotFound if the symbol cannot be found.
-func (s *SymbolsTableReader) ReverseLookup(sym string) (o uint32, err error) {
+func (s *SymbolsTable) ReverseLookup(sym string) (o uint32, err error) {
 	if len(s.sparseSymbolsOffsets) == 0 {
 		return 0, fmt.Errorf("unknown symbol %q - no symbols", sym)
 	}
@@ -107,7 +107,7 @@ func (s *SymbolsTableReader) ReverseLookup(sym string) (o uint32, err error) {
 // If the reference of a symbol cannot be looked up, iteration stops immediately and the error is
 // returned. If f returns an error, iteration stops immediately and the error is returned.
 // ForEachSymbol returns an error with cause ErrSymbolNotFound if any symbol cannot be found.
-func (s *SymbolsTableReader) ForEachSymbol(syms []string, f func(sym string, offset uint32) error) (err error) {
+func (s *SymbolsTable) ForEachSymbol(syms []string, f func(sym string, offset uint32) error) (err error) {
 	if len(s.sparseSymbolsOffsets) == 0 {
 		return errors.New("no symbols")
 	}
@@ -133,7 +133,7 @@ func (s *SymbolsTableReader) ForEachSymbol(syms []string, f func(sym string, off
 	return nil
 }
 
-func (s *SymbolsTableReader) reverseLookup(sym string, d streamencoding.Decbuf) (uint32, error) {
+func (s *SymbolsTable) reverseLookup(sym string, d streamencoding.Decbuf) (uint32, error) {
 	i := sort.Search(len(s.sparseSymbolsOffsets), func(i int) bool {
 		d.ResetAt(s.sparseSymbolsOffsets[i])
 		return string(d.UnsafeUvarintBytes()) > sym
@@ -176,7 +176,7 @@ type SymbolsReader interface {
 	Read(uint32) (string, error)
 }
 
-func (s *SymbolsTableReader) Reader() SymbolsReader {
+func (s *SymbolsTable) Reader() SymbolsReader {
 	d := s.decbufFactory.NewDecbufAtUnchecked(s.tableOffset)
 	d.ResetAt(s.sparseSymbolsOffsets[0])
 

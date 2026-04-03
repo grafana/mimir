@@ -215,7 +215,7 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 			// write a sparse index-header file to disk
 			br1, err := NewStreamBinaryReader(ctx, m.ULID, bkt, tmpDir, Config{}, tt.protoRate, log.NewNopLogger(), noopMetrics)
 			require.NoError(t, err)
-			require.Equal(t, tt.protoRate, br1.postingsOffsetTable.PostingOffsetInMemSampling())
+			require.Equal(t, tt.protoRate, br1.postingsOffsetTable.PostingsOffsetInMemSampling())
 
 			origLabelNames, err := br1.postingsOffsetTable.LabelNames()
 			require.NoError(t, err)
@@ -224,7 +224,7 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 			// the header from tt.protoRate to tt.inMemSamplingRate entries for each posting
 			br2, err := NewStreamBinaryReader(ctx, m.ULID, bkt, tmpDir, Config{}, tt.inMemSamplingRate, log.NewNopLogger(), noopMetrics)
 			require.NoError(t, err)
-			require.Equal(t, tt.inMemSamplingRate, br2.postingsOffsetTable.PostingOffsetInMemSampling())
+			require.Equal(t, tt.inMemSamplingRate, br2.postingsOffsetTable.PostingsOffsetInMemSampling())
 
 			downsampleLabelNames, err := br2.postingsOffsetTable.LabelNames()
 			require.NoError(t, err)
@@ -232,18 +232,18 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 			// label names are equal between original and downsampled sparse index-headers
 			require.ElementsMatch(t, downsampleLabelNames, origLabelNames)
 
-			origIdxTblReader := br1.postingsOffsetTable.(*streamindex.PostingOffsetsTableV2)
-			origIdxpbTbl := streamindex.SparsePostingsOffsetsTableToProto(
-				origIdxTblReader.SparsePostingsOffsets, origIdxTblReader.SparseSampleFactor,
+			origIdxTbl := br1.postingsOffsetTable.(*streamindex.PostingsOffsetsTableV2)
+			origIdxTblProto := streamindex.SparsePostingsOffsetsTableToProto(
+				origIdxTbl.SparsePostingsOffsets, origIdxTbl.SparseSampleFactor,
 			)
 
-			downsampleIdxpbTblReader := br2.postingsOffsetTable.(*streamindex.PostingOffsetsTableV2)
-			downsampleIdxpbTbl := streamindex.SparsePostingsOffsetsTableToProto(
-				downsampleIdxpbTblReader.SparsePostingsOffsets, downsampleIdxpbTblReader.SparseSampleFactor,
+			downsampleIdxTbl := br2.postingsOffsetTable.(*streamindex.PostingsOffsetsTableV2)
+			downsampleIdxTblProto := streamindex.SparsePostingsOffsetsTableToProto(
+				downsampleIdxTbl.SparsePostingsOffsets, downsampleIdxTbl.SparseSampleFactor,
 			)
 
-			for name, vals := range origIdxpbTbl.Postings {
-				downsampledOffsets := downsampleIdxpbTbl.Postings[name].Offsets
+			for name, vals := range origIdxTblProto.Postings {
+				downsampledOffsets := downsampleIdxTblProto.Postings[name].Offsets
 				// downsampled postings are a subset of the original sparse index-header postings
 				if (tt.inMemSamplingRate > tt.protoRate) && (tt.inMemSamplingRate%tt.protoRate == 0) {
 					require.Equal(t, tt.expected[name], len(downsampledOffsets))
@@ -254,7 +254,7 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 				}
 
 				// check first and last entry from the original postings in downsampled set
-				require.NotZero(t, downsampleIdxpbTbl.Postings[name].LastValOffset)
+				require.NotZero(t, downsampleIdxTblProto.Postings[name].LastValOffset)
 			}
 		})
 	}

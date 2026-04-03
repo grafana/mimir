@@ -436,7 +436,7 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 			}
 
 			if b.cfg.GenerateSparseIndexHeaders {
-				if err := b.buildSparseIndexHeaders(ctx, dbDir, localMetas); err != nil {
+				if err := b.buildSparseIndexHeaders(dbDir, localMetas); err != nil {
 					return err
 				}
 			}
@@ -538,7 +538,7 @@ func (u *userTSDB) compactBlocks(ctx context.Context) error {
 }
 
 // buildSparseIndexHeaders builds sparse index-headers for all blocks in the metas list in the directory.
-func (b *TSDBBuilder) buildSparseIndexHeaders(_ context.Context, dbDir string, metas []tsdb.BlockMeta) error {
+func (b *TSDBBuilder) buildSparseIndexHeaders(dbDir string, metas []tsdb.BlockMeta) error {
 	for _, m := range metas {
 		if err := b.buildSparseIndexHeader(dbDir, m.ULID); err != nil {
 			return err

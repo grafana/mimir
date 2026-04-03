@@ -128,13 +128,13 @@ func NewLazyBinaryReader(
 	readerFactory func() (Reader, error),
 	logger log.Logger,
 	bkt objstore.InstrumentedBucketReader,
-	localTenantDir string,
+	localDir string,
 	id ulid.ULID,
 	metrics *LazyBinaryReaderMetrics,
 	onClosed func(*LazyBinaryReader),
 	lazyLoadingGate gate.Gate,
 ) (*LazyBinaryReader, error) {
-	localBlockDir := filepath.Join(localTenantDir, id.String())
+	localBlockDir := filepath.Join(localDir, id.String())
 	indexHeaderPath := filepath.Join(localBlockDir, block.IndexHeaderFilename)
 
 	if df, err := os.Open(localBlockDir); err != nil && os.IsNotExist(err) {
@@ -148,12 +148,12 @@ func NewLazyBinaryReader(
 	g := errgroup.Group{}
 	if !cfg.BucketReader.Enabled {
 		g.Go(func() error {
-			return ensureIndexHeaderOnDisk(ctx, id, bkt, localTenantDir, logger)
+			return ensureIndexHeaderOnDisk(ctx, id, bkt, localDir, logger)
 		})
 	}
 
 	g.Go(func() error {
-		err := DownloadSparseHeaderToDisk(ctx, id, bkt, localTenantDir, logger)
+		err := downloadSparseHeaderToDisk(ctx, id, bkt, localDir, logger)
 		if err != nil {
 			level.Info(logger).Log("msg", "could not download sparse index-header from bucket; will reconstruct when the block is queried", "err", err)
 		}
@@ -186,11 +186,11 @@ func NewLazyBinaryReader(
 func ensureIndexHeaderOnDisk(
 	ctx context.Context,
 	blockID ulid.ULID,
-	tenantBkt objstore.InstrumentedBucketReader,
-	localTenantDir string,
-	ll log.Logger,
+	bkt objstore.InstrumentedBucketReader,
+	dir string,
+	l log.Logger,
 ) error {
-	localBlockDir := filepath.Join(localTenantDir, blockID.String())
+	localBlockDir := filepath.Join(dir, blockID.String())
 	indexHeaderPath := filepath.Join(localBlockDir, block.IndexHeaderFilename)
 
 	_, err := os.Stat(indexHeaderPath)
@@ -199,19 +199,19 @@ func ensureIndexHeaderOnDisk(
 		return nil
 	}
 	if !os.IsNotExist(err) {
-		level.Error(ll).Log("msg", "failed to stat existing index-header on disk", "err", err)
+		level.Error(l).Log("msg", "failed to stat existing index-header on disk", "err", err)
 		return err
 	}
 
-	level.Debug(ll).Log("msg", "index-header does not exist on disk; will build from bucket", "path", indexHeaderPath)
+	level.Debug(l).Log("msg", "index-header does not exist on disk; will build from bucket", "path", indexHeaderPath)
 
 	start := time.Now()
-	if err := WriteBinary(ctx, tenantBkt, blockID, indexHeaderPath); err != nil {
-		level.Error(ll).Log("msg", "failed to create index-header", "err", err)
+	if err := WriteBinary(ctx, bkt, blockID, indexHeaderPath); err != nil {
+		level.Error(l).Log("msg", "failed to create index-header", "err", err)
 		return err
 	}
 
-	level.Debug(ll).Log("msg", "built index-header file", "path", indexHeaderPath, "elapsed", time.Since(start))
+	level.Debug(l).Log("msg", "built index-header file", "path", indexHeaderPath, "elapsed", time.Since(start))
 	return nil
 }
 

@@ -104,7 +104,7 @@ func TOCFromBucketTSDBIndex(
 func TOCFromIndexHeader(
 	castagnoliTable *crc32.Table,
 	decbufFactory streamencoding.DecbufFactory,
-	ll log.Logger,
+	l log.Logger,
 ) (toc *TOCCompat, indexHeaderVersion int, err error) {
 	// Create a new raw decoding buffer with access to the entire index-header file to
 	// read initial version information and the table of contents.
@@ -121,7 +121,7 @@ func TOCFromIndexHeader(
 		return nil, 0, fmt.Errorf("invalid magic number %x", magic)
 	}
 
-	level.Debug(ll).Log("msg", "index header file size", "bytes", indexHeaderSize)
+	level.Debug(l).Log("msg", "index header file size", "bytes", indexHeaderSize)
 
 	indexHeaderVersion = int(decbuf.Byte())
 	if indexHeaderVersion != BinaryFormatV1 {
@@ -185,8 +185,8 @@ func fetchRange(ctx context.Context, bkt objstore.BucketReader, objectPath strin
 // tocFromDiskTSDBIndex builds a TOCCompat from the full Prometheus block index TOC on disk.
 // This can be used to generate sparse headers in components with a full block index on disk:
 // classic ingesters, block-builders, and compactors.
-func tocFromDiskTSDBIndex(blockID ulid.ULID, localTenantDir string) (toc *TOCCompat, err error) {
-	localBlockDir := filepath.Join(localTenantDir, blockID.String())
+func tocFromDiskTSDBIndex(blockID ulid.ULID, dir string) (toc *TOCCompat, err error) {
+	localBlockDir := filepath.Join(dir, blockID.String())
 	localIndexPath := filepath.Join(localBlockDir, block.IndexFilename)
 
 	f, err := os.Open(localIndexPath) // file will be closed by streamencoding.FileReader wrapper
