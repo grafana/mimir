@@ -50,9 +50,10 @@ type readStateResult struct {
 }
 
 type fakeReplicator struct {
-	mtx     sync.Mutex
-	results map[string]*clusterpb.Part
-	read    readStateResult
+	mtx              sync.Mutex
+	results          map[string]*clusterpb.Part
+	read             readStateResult
+	blockReplication bool
 }
 
 func newFakeReplicator() *fakeReplicator {
@@ -61,10 +62,16 @@ func newFakeReplicator() *fakeReplicator {
 	}
 }
 
-func (f *fakeReplicator) ReplicateStateForUser(_ context.Context, userID string, p *clusterpb.Part) error {
+func (f *fakeReplicator) ReplicateStateForUser(ctx context.Context, userID string, p *clusterpb.Part) error {
 	f.mtx.Lock()
 	f.results[userID] = p
 	f.mtx.Unlock()
+
+	if f.blockReplication {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+
 	return nil
 }
 
@@ -474,16 +481,32 @@ func TestStateReplication_BroadcastDoesNotBlockAfterShutdown(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	replicator := newFakeReplicator()
 	replicator.read = readStateResult{res: nil, err: nil}
+	replicator.blockReplication = true
 
 	s := newReplicatedStates(testUserID, 3, replicator, newFakeAlertStore(), 0, log.NewNopLogger(), reg)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), s))
-	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), s))
 
+	blocked := make(chan struct{})
 	done := make(chan struct{})
 	go func() {
-		s.broadcast("nflog", []byte("after-shutdown"))
+		start := time.Now()
+		s.broadcast("nflog", []byte("slow-message"))
+		t.Logf("initial message broadcast took %v", time.Since(start))
+		close(blocked)
+
+		s.broadcast("nflog", []byte("blocked-until-shutdown"))
+		t.Logf("broadcast blocked after %v", time.Since(start))
 		close(done)
 	}()
+
+	select {
+	case <-blocked:
+		time.Sleep(100 * time.Millisecond)
+	case <-time.After(time.Second):
+		t.Fatal("queued messages never sent/blocked")
+	}
+
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), s))
 
 	select {
 	case <-done:
