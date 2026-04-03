@@ -441,3 +441,53 @@ func TestStateReplication_GetFullState(t *testing.T) {
 		})
 	}
 }
+
+func TestStateReplication_KeepsRunningAfterBroadcastWithRF1(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	replicator := newFakeReplicator()
+	replicator.read = readStateResult{res: nil, err: nil}
+
+	s := newReplicatedStates(testUserID, 1, replicator, newFakeAlertStore(), 0, log.NewNopLogger(), reg)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), s))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), s))
+	})
+
+	// Send directly to msgc because broadcast() returns early when RF<=1.
+	s.msgc <- &clusterpb.Part{Key: "nflog", Data: []byte("OK")}
+
+	require.Eventually(t, func() bool {
+		select {
+		case s.msgc <- &clusterpb.Part{Key: "nflog", Data: []byte("OK")}:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, time.Millisecond)
+
+	require.Eventually(t, func() bool {
+		return s.State() == services.Running
+	}, time.Second, time.Millisecond)
+}
+
+func TestStateReplication_BroadcastDoesNotBlockAfterShutdown(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	replicator := newFakeReplicator()
+	replicator.read = readStateResult{res: nil, err: nil}
+
+	s := newReplicatedStates(testUserID, 3, replicator, newFakeAlertStore(), 0, log.NewNopLogger(), reg)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), s))
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), s))
+
+	done := make(chan struct{})
+	go func() {
+		s.broadcast("nflog", []byte("after-shutdown"))
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("broadcast blocked after state shutdown")
+	}
+}
