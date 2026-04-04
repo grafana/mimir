@@ -215,7 +215,7 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 			// write a sparse index-header file to disk
 			br1, err := NewStreamBinaryReader(ctx, m.ULID, bkt, tmpDir, Config{}, tt.protoRate, log.NewNopLogger(), noopMetrics)
 			require.NoError(t, err)
-			require.Equal(t, tt.protoRate, br1.postingsOffsetTable.PostingsOffsetInMemSampling())
+			require.Equal(t, tt.protoRate, br1.postingsOffsetTable.PostingsOffsetsInMemSampling())
 
 			origLabelNames, err := br1.postingsOffsetTable.LabelNames()
 			require.NoError(t, err)
@@ -224,7 +224,7 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 			// the header from tt.protoRate to tt.inMemSamplingRate entries for each posting
 			br2, err := NewStreamBinaryReader(ctx, m.ULID, bkt, tmpDir, Config{}, tt.inMemSamplingRate, log.NewNopLogger(), noopMetrics)
 			require.NoError(t, err)
-			require.Equal(t, tt.inMemSamplingRate, br2.postingsOffsetTable.PostingsOffsetInMemSampling())
+			require.Equal(t, tt.inMemSamplingRate, br2.postingsOffsetTable.PostingsOffsetsInMemSampling())
 
 			downsampleLabelNames, err := br2.postingsOffsetTable.LabelNames()
 			require.NoError(t, err)

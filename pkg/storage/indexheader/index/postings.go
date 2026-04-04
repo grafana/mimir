@@ -50,9 +50,9 @@ type PostingsOffsetsTable interface {
 	// LabelNames returns a sorted list of all label names in this table.
 	LabelNames() ([]string, error)
 
-	// PostingOffsetInMemSampling returns the inverse of the fraction of postings held in memory.
+	// PostingsOffsetsInMemSampling returns the inverse of the fraction of postings held in memory.
 	// A lower value indicates postings are sampled more frequently.
-	PostingsOffsetInMemSampling() int
+	PostingsOffsetsInMemSampling() int
 }
 
 func NewPostingsOffsetsTableReader(
@@ -298,7 +298,7 @@ func (t *PostingsOffsetsTableV2) LabelNames() ([]string, error) {
 	return labelNames, nil
 }
 
-func (t *PostingsOffsetsTableV2) PostingsOffsetInMemSampling() int {
+func (t *PostingsOffsetsTableV2) PostingsOffsetsInMemSampling() int {
 	if t != nil {
 		return t.SparseSampleFactor
 	}
