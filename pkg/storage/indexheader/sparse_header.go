@@ -315,7 +315,9 @@ func buildInMemorySparseHeaderFromIndexHeader(
 ) {
 	start := time.Now()
 	defer func() {
-		level.Info(l).Log("msg", "created sparse index-header from full index-header", "elapsed", time.Since(start))
+		if err != nil {
+			level.Info(l).Log("msg", "created sparse index-header from full index-header", "elapsed", time.Since(start))
+		}
 	}()
 	level.Info(l).Log("msg", "creating sparse index-header from full index-header")
 
@@ -334,10 +336,12 @@ func buildInMemorySparseHeaderFromIndexHeader(
 	return allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, nil
 }
 
-func writeSparseHeaderProtoToDisk(path string, sparseHeaders *indexheaderpb.Sparse, l log.Logger) error {
+func writeSparseHeaderProtoToDisk(path string, sparseHeaders *indexheaderpb.Sparse, l log.Logger) (err error) {
 	start := time.Now()
 	defer func() {
-		level.Info(l).Log("msg", "wrote sparse index-header to disk in protobuf format", "elapsed", time.Since(start))
+		if err != nil {
+			level.Info(l).Log("msg", "wrote sparse index-header to disk in protobuf format", "elapsed", time.Since(start))
+		}
 	}()
 	level.Info(l).Log("msg", "writing sparse index-header to disk in protobuf format")
 
