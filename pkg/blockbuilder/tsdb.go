@@ -3,6 +3,7 @@
 package blockbuilder
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -416,13 +417,7 @@ func (b *TSDBBuilder) CompactToReduceInMemorySeries(ctx context.Context) error {
 		})
 	}
 	slices.SortFunc(ests, func(a, b seriesReductionEstimation) int {
-		if a.estimation > b.estimation {
-			return -1
-		}
-		if a.estimation < b.estimation {
-			return 1
-		}
-		return 0
+		return cmp.Compare(b.estimation, a.estimation)
 	})
 
 	for _, est := range ests {
