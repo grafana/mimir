@@ -799,6 +799,10 @@ func (i *Ingester) stopping(_ error) error {
 		}
 	}
 
+	if i.committedOffsetClient != nil {
+		i.committedOffsetClient.Close()
+	}
+
 	if i.ownedSeriesService != nil {
 		err := services.StopAndAwaitTerminated(context.Background(), i.ownedSeriesService)
 		if err != nil {

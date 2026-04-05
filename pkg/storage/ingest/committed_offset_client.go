@@ -46,3 +46,8 @@ func (c *CommittedOffsetClient) FetchLastCommittedOffset(ctx context.Context, co
 
 	return offsetRes.At, true, nil
 }
+
+// Close closes the underlying Kafka client.
+func (c *CommittedOffsetClient) Close() {
+	c.admin.Close()
+}
