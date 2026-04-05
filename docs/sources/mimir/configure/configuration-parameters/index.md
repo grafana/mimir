@@ -1043,6 +1043,11 @@ ring:
   # CLI flag: -distributor.ring.instance-enable-ipv6
   [instance_enable_ipv6: <boolean> | default = false]
 
+  # (advanced) The availability zone where this instance is running. Used for
+  # zone-aware rate limiting.
+  # CLI flag: -distributor.ring.instance-availability-zone
+  [instance_availability_zone: <string> | default = ""]
+
   # (advanced) Number of consecutive timeout periods after which Mimir
   # automatically removes an unhealthy instance in the ring. Set to 0 to disable
   # auto-forget.
@@ -3038,11 +3043,6 @@ sharding_ring:
 # CLI flag: -alertmanager.enable-api
 [enable_api: <boolean> | default = true]
 
-# (experimental) Enable routes to support the migration and operation of the
-# Grafana Alertmanager.
-# CLI flag: -alertmanager.grafana-alertmanager-compatibility-enabled
-[grafana_alertmanager_compatibility_enabled: <boolean> | default = false]
-
 # (experimental) Duration to wait before shutting down an idle Alertmanager
 # using an unpromoted or default configuration when strict initialization is
 # enabled.
@@ -4552,6 +4552,10 @@ blocked_queries:
     # disable.
     [time_range_longer_than: <duration> | default = ]
 
+    # Block queries where the step is smaller than this duration. Instant
+    # queries and queries with no step are not blocked. Set to 0 to disable.
+    [minimum_step_size: <duration> | default = ]
+
 # (experimental) List of queries to limit and duration to limit them for.
 # Example:
 #   The following configuration limits the query "rate(metric_counter[5m])" to
@@ -4895,6 +4899,13 @@ ruler_alertmanager_client_config:
 # CLI flag: -compactor.split-and-merge-shards
 [compactor_split_and_merge_shards: <int> | default = 0]
 
+# The number of shards to use when splitting out-of-order blocks. 0 to use the
+# value of -compactor.split-and-merge-shards. Only applies to blocks with the
+# out-of-order external label, see
+# -ingester.out-of-order-blocks-external-label-enabled.
+# CLI flag: -compactor.ooo-split-and-merge-shards
+[compactor_ooo_split_and_merge_shards: <int> | default = 0]
+
 # Number of groups that blocks for splitting should be grouped into. Each group
 # of blocks is then split separately. Number of output split shards is
 # controlled by -compactor.split-and-merge-shards.
@@ -5167,10 +5178,11 @@ kafka:
   # CLI flag: -ingest-storage.kafka.write-timeout
   [write_timeout: <duration> | default = 10s]
 
-  # The number of Kafka clients used by producers. When the configured number of
-  # clients is greater than 1, partitions are sharded among Kafka clients. A
-  # higher number of clients may provide higher write throughput at the cost of
-  # additional Metadata requests pressure to Kafka.
+  # (deprecated) The number of Kafka clients used by producers. When the
+  # configured number of clients is greater than 1, partitions are sharded among
+  # Kafka clients. A higher number of clients may provide higher write
+  # throughput at the cost of additional Metadata requests pressure to Kafka.
+  # Deprecated: has no effect (Mimir always uses a single Kafka write client).
   # CLI flag: -ingest-storage.kafka.write-clients
   [write_clients: <int> | default = 1]
 
@@ -5806,9 +5818,9 @@ bucket_store:
       [enabled: <boolean> | default = false]
 
       # (experimental) Index sections to read from object storage instead of
-      # local disk. Valid sections: all
+      # local disk. Valid sections: postings-offsets-table
       # CLI flag: -blocks-storage.bucket-store.index-header.bucket-reader.index-sections
-      [index_sections: <string> | default = "all"]
+      [index_sections: <string> | default = "postings-offsets-table"]
 
   # (advanced) This option controls how many series to fetch per batch. The
   # batch size must be greater than 0.

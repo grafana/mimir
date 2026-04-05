@@ -28,9 +28,9 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
-	"github.com/thanos-io/objstore/providers/filesystem"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/indexheader"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -294,7 +294,7 @@ func TestTSDBBuilder(t *testing.T) {
 				tc.verifyBlocksAfterCompaction(blocks)
 
 				if builder.cfg.GenerateSparseIndexHeaders {
-					blockIDsWithSparseHeader := validateSparseIndexHeadersInDir(t, ctx, shipperDir)
+					blockIDsWithSparseHeader := validateSparseIndexHeadersInDir(t, ctx, shipperDir, config)
 					require.Equal(t, len(blocks), len(blockIDsWithSparseHeader))
 					for _, b := range blocks {
 						require.Contains(t, blockIDsWithSparseHeader, b.Meta().ULID)
@@ -403,25 +403,37 @@ func TestTSDBBuilder_CompactAndUpload_fail(t *testing.T) {
 	require.ErrorIs(t, err, errUploadFailed)
 }
 
-func validateSparseIndexHeadersInDir(t *testing.T, ctx context.Context, dbDir string) []ulid.ULID {
-	fsBkt, err := filesystem.NewBucket(dbDir)
-	if err != nil {
-		require.NoError(t, err)
-	}
-	var ids []ulid.ULID
-	require.NoError(t, fsBkt.Iter(ctx, "", func(n string) error {
-		if id, ok := block.IsBlockDir(n); !ok {
-			return nil
+func validateSparseIndexHeadersInDir(t *testing.T, ctx context.Context, dbDir string, cfg Config) []ulid.ULID {
+	ll := log.NewNopLogger()
+
+	var blockIDs []ulid.ULID
+	dbDirItems, _ := os.ReadDir(dbDir)
+	for _, dbDirItem := range dbDirItems {
+		if blockID, ok := block.IsBlockDir(dbDirItem.Name()); !ok {
+			continue
 		} else {
-			ids = append(ids, id)
-			sparseHeadersPath := path.Join(id.String(), block.SparseIndexHeaderFilename)
-			if exists, _ := fsBkt.Exists(ctx, sparseHeadersPath); !exists {
-				return fmt.Errorf("expected sparse index headers not found %s", sparseHeadersPath)
-			}
+			blockIDs = append(blockIDs, blockID)
+			sparseHeadersPath := path.Join(blockID.String(), block.SparseIndexHeaderFilename)
+
+			allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, err := indexheader.LoadSparseIndexHeaderFromDisk(
+				ctx, blockID, dbDir, cfg.BlocksStorage.BucketStore.PostingOffsetsInMemSampling, ll,
+			)
+
+			require.NoErrorf(t, err, "expected sparse index headers not found %s", sparseHeadersPath)
+
+			// Different tests will have different number of symbols, but we can check some basic correctness:
+			// 1. At least one symbol is sampled
+			// 2. The total symbol count recorded for the block is greater than the sampled symbols;
+			//   this is always true even with only one symbol written because the block includes the empty string symbol.
+			require.NotEmpty(t, len(sparseSymbolsOffsets))
+			require.Greater(t, allSymbolsCount, len(sparseSymbolsOffsets))
+
+			require.NoError(t, err)
+			require.NotZero(t, len(sparsePostingsOffsets))
 		}
-		return nil
-	}))
-	return ids
+	}
+
+	return blockIDs
 }
 
 func compareQueryWithDir(t *testing.T, bucketDir string, expSamples []mimirpb.Sample, expHistograms []mimirpb.Histogram, matchers ...*labels.Matcher) *tsdb.DB {

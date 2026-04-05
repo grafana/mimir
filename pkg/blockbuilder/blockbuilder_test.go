@@ -125,7 +125,7 @@ func TestBlockBuilder(t *testing.T) {
 			for _, tenant := range tenants {
 				tenantBucketDir := path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, tenant)
 				if bb.cfg.GenerateSparseIndexHeaders {
-					validateSparseIndexHeadersInDir(t, ctx, tenantBucketDir)
+					validateSparseIndexHeadersInDir(t, ctx, tenantBucketDir, cfg)
 				}
 
 				expSamples := producedSamples[tenant][c.expSampleRangeStart:c.expSampleRangeEnd]

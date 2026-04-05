@@ -449,8 +449,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('RingMembersMismatch'),
           expr: |||
             (
-              avg by(%(alert_aggregation_labels)s) (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ring_members{name="ingester",%(job_regex)s,%(job_not_regex)s}))
-              != sum by(%(alert_aggregation_labels)s) (up{%(job_regex)s,%(job_not_regex)s})
+              (
+                avg by(%(alert_aggregation_labels)s) (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ring_members{name="ingester",%(job_regex)s,%(job_not_regex)s}))
+                != sum by(%(alert_aggregation_labels)s) (up{%(job_regex)s,%(job_not_regex)s})
+              )
+              unless on(%(alert_aggregation_labels)s)
+              (
+                sum by(%(alert_aggregation_labels)s) (kube_statefulset_replicas{statefulset=~".*ingester.*"})
+                  !=
+                sum by(%(alert_aggregation_labels)s) (kube_statefulset_status_replicas_updated{statefulset=~".*ingester.*"})
+              )
             )
             and
             (

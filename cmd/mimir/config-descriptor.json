@@ -1801,6 +1801,17 @@
             },
             {
               "kind": "field",
+              "name": "instance_availability_zone",
+              "required": false,
+              "desc": "The availability zone where this instance is running. Used for zone-aware rate limiting.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "distributor.ring.instance-availability-zone",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
               "name": "auto_forget_unhealthy_periods",
               "required": false,
               "desc": "Number of consecutive timeout periods after which Mimir automatically removes an unhealthy instance in the ring. Set to 0 to disable auto-forget.",
@@ -6084,6 +6095,15 @@
                 "fieldValue": null,
                 "fieldDefaultValue": null,
                 "fieldType": "duration"
+              },
+              {
+                "kind": "field",
+                "name": "minimum_step_size",
+                "required": false,
+                "desc": "Block queries where the step is smaller than this duration. Instant queries and queries with no step are not blocked. Set to 0 to disable.",
+                "fieldValue": null,
+                "fieldDefaultValue": null,
+                "fieldType": "duration"
               }
             ],
             "fieldValue": null,
@@ -6762,6 +6782,16 @@
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "compactor.split-and-merge-shards",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
+          "name": "compactor_ooo_split_and_merge_shards",
+          "required": false,
+          "desc": "The number of shards to use when splitting out-of-order blocks. 0 to use the value of -compactor.split-and-merge-shards. Only applies to blocks with the out-of-order external label, see -ingester.out-of-order-blocks-external-label-enabled.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "compactor.ooo-split-and-merge-shards",
           "fieldType": "int"
         },
         {
@@ -8802,11 +8832,12 @@
               "kind": "field",
               "name": "write_clients",
               "required": false,
-              "desc": "The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka.",
+              "desc": "The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka. Deprecated: has no effect (Mimir always uses a single Kafka write client).",
               "fieldValue": null,
               "fieldDefaultValue": 1,
               "fieldFlag": "ingest-storage.kafka.write-clients",
-              "fieldType": "int"
+              "fieldType": "int",
+              "fieldCategory": "deprecated"
             },
             {
               "kind": "field",
@@ -11580,9 +11611,9 @@
                       "kind": "field",
                       "name": "index_sections",
                       "required": false,
-                      "desc": "Index sections to read from object storage instead of local disk. Valid sections: all",
+                      "desc": "Index sections to read from object storage instead of local disk. Valid sections: postings-offsets-table",
                       "fieldValue": null,
-                      "fieldDefaultValue": "all",
+                      "fieldDefaultValue": "postings-offsets-table",
                       "fieldFlag": "blocks-storage.bucket-store.index-header.bucket-reader.index-sections",
                       "fieldType": "string",
                       "fieldCategory": "experimental"
@@ -17126,17 +17157,6 @@
           "fieldFlag": "alertmanager.enable-api",
           "fieldType": "boolean",
           "fieldCategory": "advanced"
-        },
-        {
-          "kind": "field",
-          "name": "grafana_alertmanager_compatibility_enabled",
-          "required": false,
-          "desc": "Enable routes to support the migration and operation of the Grafana Alertmanager.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "alertmanager.grafana-alertmanager-compatibility-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
         },
         {
           "kind": "field",

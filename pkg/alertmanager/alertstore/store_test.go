@@ -107,7 +107,7 @@ func TestStore_GetAlertConfigs(t *testing.T) {
 		require.NoError(t, err)
 		assert.Contains(t, configs, "user-1")
 		assert.NotContains(t, configs, "user-2")
-		assert.Equal(t, userCfg, configs["user-1"].Mimir)
+		assert.Equal(t, userCfg, configs["user-1"])
 	}
 }
 

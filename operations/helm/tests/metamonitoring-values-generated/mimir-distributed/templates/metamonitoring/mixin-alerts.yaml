@@ -284,8 +284,16 @@ spec:
               runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirringmembersmismatch
             expr: |
               (
-                avg by(cluster, namespace) (sum by(cluster, namespace, pod) (cortex_ring_members{name="ingester",job=~".*/(ingester.*|cortex|mimir)",job!~".*/(ingester.*-partition)"}))
-                != sum by(cluster, namespace) (up{job=~".*/(ingester.*|cortex|mimir)",job!~".*/(ingester.*-partition)"})
+                (
+                  avg by(cluster, namespace) (sum by(cluster, namespace, pod) (cortex_ring_members{name="ingester",job=~".*/(ingester.*|cortex|mimir)",job!~".*/(ingester.*-partition)"}))
+                  != sum by(cluster, namespace) (up{job=~".*/(ingester.*|cortex|mimir)",job!~".*/(ingester.*-partition)"})
+                )
+                unless on(cluster, namespace)
+                (
+                  sum by(cluster, namespace) (kube_statefulset_replicas{statefulset=~".*ingester.*"})
+                    !=
+                  sum by(cluster, namespace) (kube_statefulset_status_replicas_updated{statefulset=~".*ingester.*"})
+                )
               )
               and
               (

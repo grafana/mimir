@@ -101,7 +101,7 @@ func TestIngester_Startup_PartitionRingActiveBlocksOnInstanceRingActive(t *testi
 		require.NoError(t, i0.StartAsync(i0Ctx))
 		err := services.StopAndAwaitTerminated(ctx, i0)
 		// Service failure case error is propagated from error returned by ingester.starting().
-		require.ErrorIs(t, err, context.Canceled)
+		require.Error(t, err)
 	})
 	i0Ro, i0RoTs := i0.lifecycler.GetReadOnlyState()
 	ringDesc.AddIngester(

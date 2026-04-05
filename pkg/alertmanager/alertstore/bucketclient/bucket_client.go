@@ -87,23 +87,23 @@ func (s *BucketAlertStore) ListAllUsers(ctx context.Context) ([]string, error) {
 }
 
 // GetAlertConfigs implements alertstore.AlertStore.
-func (s *BucketAlertStore) GetAlertConfigs(ctx context.Context, userIDs []string) (map[string]alertspb.AlertConfigDescs, error) {
+func (s *BucketAlertStore) GetAlertConfigs(ctx context.Context, userIDs []string) (map[string]alertspb.AlertConfigDesc, error) {
 	var (
 		cfgsMx = sync.Mutex{}
-		cfgs   = make(map[string]alertspb.AlertConfigDescs, len(userIDs))
+		cfgs   = make(map[string]alertspb.AlertConfigDesc, len(userIDs))
 	)
 
 	err := concurrency.ForEachJob(ctx, len(userIDs), fetchConcurrency, func(ctx context.Context, idx int) error {
 		userID := userIDs[idx]
-		var cfg alertspb.AlertConfigDescs
+		var err error
+		var cfg alertspb.AlertConfigDesc
 
-		mimirCfg, err := s.getAlertConfig(ctx, userID)
+		cfg, err = s.getAlertConfig(ctx, userID)
 		if s.alertsBucket.IsObjNotFoundErr(err) {
 			return nil
 		} else if err != nil {
 			return fmt.Errorf("failed to fetch alertmanager config for user %s: %w", userID, err)
 		}
-		cfg.Mimir = mimirCfg
 
 		cfgsMx.Lock()
 		cfgs[userID] = cfg
