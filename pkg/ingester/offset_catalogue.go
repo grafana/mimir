@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/runutil"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -107,11 +108,13 @@ func (c *offsetCatalogue) Sync(ctx context.Context, offsetHWs kmeta.PartitionOff
 	}()
 
 	oldData, err := readOffsetCatalogueFromFile(c.dir)
-	if errors.Is(err, os.ErrNotExist) || errors.Is(err, errOffsetCatalogueSyncVersionTooOld) {
+	if err != nil {
 		// Missing or outdated catalogues are rebuilt from the blocks on disk.
+		// Corrupted catalogues are always overwritten with a fresh copy.
+		if !errors.Is(err, os.ErrNotExist) && !errors.Is(err, errOffsetCatalogueSyncVersionTooOld) {
+			level.Warn(spanLogger).Log("msg", "reading offset catalogue failed, will override", "err", err)
+		}
 		oldData.Data = map[string]map[int]offsetWatermark{}
-	} else if err != nil {
-		return fmt.Errorf("read offset catalogue: %w", err)
 	}
 
 	blocks := make(map[string]struct{})
