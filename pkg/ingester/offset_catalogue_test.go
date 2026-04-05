@@ -98,12 +98,20 @@ func TestOffsetCatalogue(t *testing.T) {
 		require.Equal(t, map[int]offsetWatermark{0: {Partition: 1, Offset: 100}, 1: {Partition: 1, Offset: 250}}, data.Data[id.String()])
 	})
 
-	t.Run("rejects version mismatch", func(t *testing.T) {
+	t.Run("overwrites version mismatch", func(t *testing.T) {
 		dir := t.TempDir()
 		content := `{"version":99,"updated_at":0,"data":{}}`
 		require.NoError(t, os.WriteFile(filepath.Join(dir, offsetCatalogueFilename), []byte(content), 0o644))
 
 		_, err := readOffsetCatalogueFromFile(dir)
-		require.Error(t, err)
+		require.Error(t, err, "catalogue file version mismatch")
+
+		// Next sync overwrites corrupted version.
+		c := newOffsetCatalogue(log.NewNopLogger(), newOffsetCatalogueMetrics(prometheus.NewRegistry()), dir, userID, 1)
+		require.NoError(t, c.Sync(t.Context(), kmeta.NewSingleClusterPartitionOffsets(42)))
+
+		data, err := readOffsetCatalogueFromFile(dir)
+		require.NoError(t, err)
+		require.Empty(t, data.Data)
 	})
 }
