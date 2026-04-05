@@ -339,11 +339,12 @@ func TestTSDBBuilder_CompactToReduceInMemorySeries(t *testing.T) {
 	builder := NewTSDBBuilder(partitionID, config, overrides, logger, tsdbBuilderMetrics, tsdbMetrics)
 	t.Cleanup(func() { require.NoError(t, builder.Close()) })
 
-	// Push 5 distinct series for each test tenants (15 total, above the threshold).
+	// Push testSeriesPerTenant distinct series for each test tenants (15 total, above the threshold).
+	const testSeriesPerTenant = 5
 	processingRange := time.Hour.Milliseconds()
 	lastEnd := 2 * processingRange
 	ts := lastEnd + (processingRange / 2)
-	for seriesID := range 5 {
+	for seriesID := range testSeriesPerTenant {
 		for _, userID := range []string{user1, user2, user3} {
 			ctx := user.InjectOrgID(t.Context(), userID)
 			req := createWriteRequest(strconv.Itoa(seriesID), floatSample(ts, float64(seriesID)), nil)
@@ -354,7 +355,7 @@ func TestTSDBBuilder_CompactToReduceInMemorySeries(t *testing.T) {
 	for _, userID := range []string{user1, user2, user3} {
 		db, err := builder.getOrCreateTSDB(tsdbTenant{partitionID: partitionID, tenantID: userID})
 		require.NoError(t, err)
-		require.Equal(t, uint64(5), db.Head().NumSeries())
+		require.Equal(t, uint64(testSeriesPerTenant), db.Head().NumSeries())
 		require.Empty(t, db.Blocks())
 	}
 
