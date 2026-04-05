@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/runutil"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -98,11 +99,13 @@ func (c *offsetCatalogue) Sync(ctx context.Context, offsetHW int64) (err error) 
 	}()
 
 	oldData, err := readOffsetCatalogueFromFile(c.dir)
-	if errors.Is(err, os.ErrNotExist) {
+	if err != nil {
+		// If catalogue file is corrupted, we always overwrite it with a fresh copy.
 		// The catalogue file may not exist if that's the first sync of this new tenant.
+		if !errors.Is(err, os.ErrNotExist) {
+			level.Warn(spanLogger).Log("msg", "reading offset catalogue failed, will override", "err", err)
+		}
 		oldData.Data = map[string]offsetWatermark{}
-	} else if err != nil {
-		return fmt.Errorf("read offset catalogue: %w", err)
 	}
 
 	blocks := make(map[string]struct{})
