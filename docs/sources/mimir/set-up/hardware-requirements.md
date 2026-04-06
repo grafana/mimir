@@ -15,7 +15,7 @@ For component-level CPU, memory, and disk sizing, refer to [Planning Grafana Mim
 The actual CPU and memory requirements depend on the number of active series, the rate of samples ingested per second, and query load.
 Refer to [Planning Grafana Mimir capacity]({{< relref "../manage/run-production-environment/planning-capacity" >}}) for per-component sizing guidance.
 
-As a general guideline, provision nodes with a CPU-to-memory ratio of at least 1:4.
+As a general guideline, provision nodes with a CPU-to-memory ratio of at least 1:4, meaning that for every CPU core, there should be 4GB of memory.
 For example, a node with 8 CPU cores should have at least 32 GB of memory.
 Ingesters and store-gateways are the most memory-intensive components.
 
@@ -23,7 +23,7 @@ Grafana Mimir can run on physical servers, virtual machines, or containers, as l
 
 ## Disk storage
 
-Components such as ingesters, store-gateways, and compactors require local disk storage for the write-ahead log (WAL), TSDB blocks, and temporary data during compaction.
+Components such as ingesters, store-gateways, and compactors require fast and persistent, local disk resources to be available to the host machine storage for the write-ahead log (WAL), TSDB blocks, and temporary data during compaction.
 
 ### Disk requirements
 
@@ -81,7 +81,7 @@ The following object storage services are supported:
 | AWS            | Amazon S3                            |
 | GCP            | Google Cloud Storage (GCS)           |
 | Azure          | Azure Blob Storage                   |
-| Self-hosted    | Any S3-compatible API (e.g., MinIO)  |
+| Self-hosted    | Any S3-compatible API                |
 
 For configuration details, refer to [Configure object storage]({{< relref "../configure/configure-object-storage-backend" >}}).
 
