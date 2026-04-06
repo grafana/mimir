@@ -46,8 +46,8 @@ func NewAbsentOverTime(
 	}
 }
 
-func (a *AbsentOverTime) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
-	innerMetadata, err := a.Inner.SeriesMetadata(ctx, matchers)
+func (a *AbsentOverTime) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+	innerMetadata, err := a.Inner.SeriesMetadata(ctx)
 	if err != nil {
 		return nil, err
 	}

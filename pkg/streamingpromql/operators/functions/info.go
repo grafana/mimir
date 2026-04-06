@@ -74,19 +74,25 @@ func NewInfoFunction(
 	}
 }
 
-func (f *InfoFunction) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
-	innerMetadata, err := f.Inner.SeriesMetadata(ctx, matchers)
+func (f *InfoFunction) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+	innerMetadata, err := f.Inner.SeriesMetadata(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer types.SeriesMetadataSlicePool.Put(&innerMetadata, f.MemoryConsumptionTracker)
 
-	infoMatchers, skipQueryingInfo := f.generateInfoMatchers(innerMetadata)
+	extraInfoMatchers, skipQueryingInfo := generateInfoMatchers(innerMetadata)
+	// We add extra matchers to the info selector based on results of the inner series
+	// to avoid selecting all info series. However, we need to retain the original matchers
+	// used to identify info series that should be ignored.
+	originalInfoMatchers := f.Info.Selector.Matchers
+
 	var infoMetadata []types.SeriesMetadata
 	if skipQueryingInfo {
 		infoMetadata = []types.SeriesMetadata{}
 	} else {
-		infoMetadata, err = f.Info.SeriesMetadata(ctx, infoMatchers)
+		f.Info.Selector.Matchers = mergeMatchers(f.Info.Selector.Matchers, extraInfoMatchers)
+		infoMetadata, err = f.Info.SeriesMetadata(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -96,16 +102,16 @@ func (f *InfoFunction) SeriesMetadata(ctx context.Context, matchers types.Matche
 	if err := f.processSamplesFromInfoSeries(ctx, infoMetadata); err != nil {
 		return nil, err
 	}
-	ignoreSeries, err := f.identifyIgnoreSeries(innerMetadata, f.Info.Selector.Matchers)
+	ignoreSeries, err := f.identifyIgnoreSeries(innerMetadata, originalInfoMatchers)
 	if err != nil {
 		return nil, err
 	}
-	return f.combineSeriesMetadata(innerMetadata, ignoreSeries, f.Info.Selector.Matchers)
+	return f.combineSeriesMetadata(innerMetadata, ignoreSeries, originalInfoMatchers)
 }
 
 // generateInfoMatchers creates matchers based on job and instance labels from inner series
 // to avoid selecting all info series unnecessarily.
-func (f *InfoFunction) generateInfoMatchers(innerMetadata []types.SeriesMetadata) (types.Matchers, bool) {
+func generateInfoMatchers(innerMetadata []types.SeriesMetadata) (types.Matchers, bool) {
 	if len(innerMetadata) == 0 {
 		return nil, true
 	}
@@ -154,6 +160,31 @@ func (f *InfoFunction) generateInfoMatchers(innerMetadata []types.SeriesMetadata
 	}
 
 	return matchers, false
+}
+
+func mergeMatchers(m1, m2 types.Matchers) types.Matchers {
+	if m1 == nil {
+		return m2
+	}
+
+	if m2 == nil {
+		return m1
+	}
+
+	unique := make(map[types.Matcher]struct{})
+	for _, m := range m1 {
+		unique[m] = struct{}{}
+	}
+	for _, m := range m2 {
+		unique[m] = struct{}{}
+	}
+
+	out := make([]types.Matcher, 0, len(unique))
+	for m := range unique {
+		out = append(out, m)
+	}
+
+	return out
 }
 
 // signature generates signature from labels without metric name

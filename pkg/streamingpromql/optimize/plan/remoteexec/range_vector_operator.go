@@ -42,7 +42,7 @@ func (r *RangeVectorRemoteExec) AfterPrepare(ctx context.Context) error {
 	return r.resp.Start(ctx)
 }
 
-func (r *RangeVectorRemoteExec) SeriesMetadata(ctx context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {
+func (r *RangeVectorRemoteExec) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	return r.resp.GetSeriesMetadata(ctx)
 }
 

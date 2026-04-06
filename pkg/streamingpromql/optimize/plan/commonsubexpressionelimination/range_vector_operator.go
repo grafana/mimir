@@ -58,24 +58,11 @@ func (b *RangeVectorDuplicationBuffer) AddConsumer() *RangeVectorDuplicationCons
 	return consumer
 }
 
-func (b *RangeVectorDuplicationBuffer) SeriesMetadata(ctx context.Context, matchers types.Matchers, consumer *RangeVectorDuplicationConsumer) ([]types.SeriesMetadata, error) {
+func (b *RangeVectorDuplicationBuffer) SeriesMetadata(ctx context.Context, consumer *RangeVectorDuplicationConsumer) ([]types.SeriesMetadata, error) {
 	if b.seriesMetadataCount == 0 {
 		// Haven't loaded series metadata yet, load it now.
-
-		if len(b.consumers) == 1 {
-			// If we have any filters for this consumer, we might as well pass them down to the selector.
-			for _, filter := range consumer.filters {
-				matchers = append(matchers, types.NewMatcherFromPrometheusType(filter))
-			}
-		} else {
-			// Ignore the matchers passed at runtime if we have multiple consumers:
-			// this operator is being used for multiple parts of the query and
-			// the matchers may filter out results needed for other consumers.
-			matchers = nil
-		}
-
 		var err error
-		b.seriesMetadata, err = b.Inner.SeriesMetadata(ctx, matchers)
+		b.seriesMetadata, err = b.Inner.SeriesMetadata(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -532,8 +519,8 @@ func (d *RangeVectorDuplicationConsumer) SetFilters(filters []*labels.Matcher) {
 	d.filters = filters
 }
 
-func (d *RangeVectorDuplicationConsumer) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
-	return d.Buffer.SeriesMetadata(ctx, matchers, d)
+func (d *RangeVectorDuplicationConsumer) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+	return d.Buffer.SeriesMetadata(ctx, d)
 }
 
 func (d *RangeVectorDuplicationConsumer) shouldReturnUnfilteredSeries(unfilteredSeriesIndex int) bool {

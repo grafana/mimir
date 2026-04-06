@@ -90,7 +90,7 @@ func (c *Concat) AfterPrepare(ctx context.Context) error {
 	return nil
 }
 
-func (c *Concat) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+func (c *Concat) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	var err error
 	c.seriesCounts, err = types.IntSlicePool.Get(len(c.Inner), c.MemoryConsumptionTracker)
 	if err != nil {
@@ -101,7 +101,7 @@ func (c *Concat) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([
 	seriesCount := 0
 
 	for _, o := range c.Inner {
-		result, err := o.SeriesMetadata(ctx, matchers)
+		result, err := o.SeriesMetadata(ctx)
 		if err != nil {
 			return nil, err
 		}

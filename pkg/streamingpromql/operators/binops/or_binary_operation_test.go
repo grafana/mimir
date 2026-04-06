@@ -307,7 +307,7 @@ func TestOrBinaryOperationSorting(t *testing.T) {
 
 			// Wrap OrBinaryOperation in a DeduplicateAndMerge as would happen at the planning level
 			op = operators.NewDeduplicateAndMerge(op, memoryConsumptionTracker)
-			actualSeriesMetadata, err := op.SeriesMetadata(ctx, nil)
+			actualSeriesMetadata, err := op.SeriesMetadata(ctx)
 			require.NoError(t, err)
 
 			expectedSeriesMetadata := testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeriesOrder)
@@ -540,7 +540,7 @@ func TestOrBinaryOperation_FinalizesInnerOperatorsAsSoonAsPossible(t *testing.T)
 			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}}
 			o := NewOrBinaryOperation(left, right, vectorMatching, memoryConsumptionTracker, timeRange, posrange.PositionRange{})
 
-			outputSeries, err := o.SeriesMetadata(ctx, nil)
+			outputSeries, err := o.SeriesMetadata(ctx)
 			require.NoError(t, err)
 
 			if len(testCase.expectedOutputSeries) == 0 {
@@ -698,7 +698,7 @@ func TestOrBinaryOperation_ReleasesIntermediateStateIfClosedEarly(t *testing.T) 
 			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}}
 			o := NewOrBinaryOperation(left, right, vectorMatching, memoryConsumptionTracker, timeRange, posrange.PositionRange{})
 
-			outputSeries, err := o.SeriesMetadata(ctx, nil)
+			outputSeries, err := o.SeriesMetadata(ctx)
 			require.NoError(t, err)
 			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
 			types.SeriesMetadataSlicePool.Put(&outputSeries, memoryConsumptionTracker)

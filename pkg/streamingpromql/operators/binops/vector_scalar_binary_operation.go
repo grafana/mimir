@@ -38,6 +38,8 @@ type VectorScalarBinaryOperation struct {
 	vectorIterator     types.InstantVectorSeriesDataIterator
 }
 
+var _ types.InstantVectorOperator = &VectorScalarBinaryOperation{}
+
 type vectorScalarBinaryOperationFunc func(scalar float64, vectorF float64, vectorH *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, bool, error)
 
 func NewVectorScalarBinaryOperation(
@@ -96,7 +98,7 @@ func NewVectorScalarBinaryOperation(
 	return b, nil
 }
 
-func (v *VectorScalarBinaryOperation) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+func (v *VectorScalarBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	// Get the scalar values once, now, rather than having to do this later in NextSeries.
 	var err error
 	v.scalarData, err = v.Scalar.GetValues(ctx)
@@ -104,7 +106,7 @@ func (v *VectorScalarBinaryOperation) SeriesMetadata(ctx context.Context, matche
 		return nil, err
 	}
 
-	metadata, err := v.Vector.SeriesMetadata(ctx, matchers)
+	metadata, err := v.Vector.SeriesMetadata(ctx)
 	if err != nil {
 		return nil, err
 	}

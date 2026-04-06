@@ -3,7 +3,6 @@
 package core
 
 import (
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -18,8 +17,6 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
-
-var errCannotMergeBinaryExpressionHints = errors.New("cannot merge hints for binary expressions with different included labels")
 
 type BinaryExpression struct {
 	*BinaryExpressionDetails
@@ -76,19 +73,6 @@ func (b *BinaryExpression) Describe() string {
 	}
 
 	builder.WriteString(" RHS")
-
-	if b.Hints != nil {
-		builder.WriteString(", hints (")
-		for i, l := range b.Hints.Include {
-			if i > 0 {
-				builder.WriteString(", ")
-			}
-
-			builder.WriteString(l)
-		}
-
-		builder.WriteByte(')')
-	}
 
 	return builder.String()
 }
@@ -152,28 +136,9 @@ func (b *BinaryExpression) EquivalentToIgnoringHintsAndChildren(other planning.N
 		b.ReturnBool == otherBinaryExpression.ReturnBool
 }
 
-func (b *BinaryExpression) MergeHints(other planning.Node) error {
-	otherBinaryExpression, ok := other.(*BinaryExpression)
-	if !ok {
-		return fmt.Errorf("cannot merge hints from %T into %T", other, b)
-	}
-
-	var thisLabels []string
-	var otherLabels []string
-
-	if b.Hints != nil {
-		thisLabels = b.Hints.Include
-	}
-
-	if otherBinaryExpression.Hints != nil {
-		otherLabels = otherBinaryExpression.Hints.Include
-	}
-
-	if slices.Equal(thisLabels, otherLabels) {
-		return nil
-	}
-
-	return errCannotMergeBinaryExpressionHints
+func (b *BinaryExpression) MergeHints(_ planning.Node) error {
+	// Nothing to merge.
+	return nil
 }
 
 func (b *BinaryExpression) ChildrenLabels() []string {
@@ -262,7 +227,7 @@ func (b *BinaryExpression) createVectorVectorOperator(lhs, rhs types.InstantVect
 		case parser.CardOneToMany, parser.CardManyToOne:
 			return binops.NewGroupedVectorVectorBinaryOperation(lhs, rhs, *b.VectorMatching.ToPrometheusType(), op, b.ReturnBool, params.MemoryConsumptionTracker, params.Annotations, b.GetExpressionPosition().ToPrometheusType(), timeRange)
 		case parser.CardOneToOne:
-			return binops.NewOneToOneVectorVectorBinaryOperation(lhs, rhs, *b.VectorMatching.ToPrometheusType(), op, b.ReturnBool, params.MemoryConsumptionTracker, params.Annotations, b.GetExpressionPosition().ToPrometheusType(), timeRange, b.Hints.ToOperatorType(), params.Logger)
+			return binops.NewOneToOneVectorVectorBinaryOperation(lhs, rhs, *b.VectorMatching.ToPrometheusType(), op, b.ReturnBool, params.MemoryConsumptionTracker, params.Annotations, b.GetExpressionPosition().ToPrometheusType(), timeRange)
 		default:
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with %v matching for '%v'", b.VectorMatching.Card, b.Op.String()))
 		}

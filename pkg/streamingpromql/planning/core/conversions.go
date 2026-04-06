@@ -4,7 +4,6 @@ package core
 
 import (
 	"fmt"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -15,18 +14,8 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
-	"github.com/grafana/mimir/pkg/streamingpromql/operators/binops"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
-
-func (h *BinaryExpressionHints) ToOperatorType() *binops.Hints {
-	if h == nil {
-		return nil
-	}
-	return &binops.Hints{
-		Include: slices.Clone(h.Include),
-	}
-}
 
 func (f *VectorMatchFillValues) ToPrometheusType() parser.VectorMatchFillValues {
 	// Why are we doing this?

@@ -227,7 +227,7 @@ func TestCountValues_GroupLabelling(t *testing.T) {
 			labelName := operators.NewStringLiteral("value", timeRange, memoryConsumptionTracker, posrange.PositionRange{})
 			aggregator := NewCountValues(inner, labelName, types.NewInstantQueryTimeRange(timestamp.Time(0)), testCase.grouping, testCase.without, memoryConsumptionTracker, posrange.PositionRange{})
 
-			metadata, err := aggregator.SeriesMetadata(context.Background(), nil)
+			metadata, err := aggregator.SeriesMetadata(context.Background())
 			require.NoError(t, err)
 
 			require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{testCase.expectedOutputSeries}), metadata)

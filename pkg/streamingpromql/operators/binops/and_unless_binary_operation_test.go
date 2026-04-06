@@ -317,7 +317,7 @@ func TestAndUnlessBinaryOperation_FinalizesInnerOperatorsAsSoonAsPossible(t *tes
 			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}}
 			o := NewAndUnlessBinaryOperation(left, right, vectorMatching, memoryConsumptionTracker, testCase.isUnless, timeRange, posrange.PositionRange{})
 
-			outputSeries, err := o.SeriesMetadata(ctx, nil)
+			outputSeries, err := o.SeriesMetadata(ctx)
 			require.NoError(t, err)
 
 			if len(testCase.expectedOutputSeries) == 0 {
@@ -452,7 +452,7 @@ func TestAndUnlessBinaryOperation_ReleasesIntermediateStateIfClosedEarly(t *test
 					vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}}
 					o := NewAndUnlessBinaryOperation(left, right, vectorMatching, memoryConsumptionTracker, isUnless, timeRange, posrange.PositionRange{})
 
-					outputSeries, err := o.SeriesMetadata(ctx, nil)
+					outputSeries, err := o.SeriesMetadata(ctx)
 					require.NoError(t, err)
 
 					if isUnless {

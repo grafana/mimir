@@ -1954,11 +1954,6 @@ mimir_query_engine:
   # CLI flag: -querier.mimir-query-engine.enable-subset-selector-elimination
   [enable_subset_selector_elimination: <boolean> | default = false]
 
-  # (experimental) Enable generating selectors for one side of a binary
-  # expression based on results from the other side.
-  # CLI flag: -querier.mimir-query-engine.enable-narrow-binary-selectors
-  [enable_narrow_binary_selectors: <boolean> | default = false]
-
   # (experimental) Enable eliminating redundant DeduplicateAndMerge nodes from
   # the query plan when it can be proven that each input series produces a
   # unique output series.

@@ -55,8 +55,8 @@ func NewAndUnlessBinaryOperation(
 	}
 }
 
-func (a *AndUnlessBinaryOperation) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
-	series, err := a.computeSeriesMetadata(ctx, matchers)
+func (a *AndUnlessBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+	series, err := a.computeSeriesMetadata(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -78,8 +78,8 @@ func (a *AndUnlessBinaryOperation) SeriesMetadata(ctx context.Context, matchers 
 	return series, nil
 }
 
-func (a *AndUnlessBinaryOperation) computeSeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
-	leftMetadata, err := a.Left.SeriesMetadata(ctx, matchers)
+func (a *AndUnlessBinaryOperation) computeSeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+	leftMetadata, err := a.Left.SeriesMetadata(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +90,7 @@ func (a *AndUnlessBinaryOperation) computeSeriesMetadata(ctx context.Context, ma
 		return nil, nil
 	}
 
-	rightMetadata, err := a.Right.SeriesMetadata(ctx, matchers)
+	rightMetadata, err := a.Right.SeriesMetadata(ctx)
 	if err != nil {
 		return nil, err
 	}

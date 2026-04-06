@@ -316,7 +316,7 @@ func TestGroupedVectorVectorBinaryOperation_OutputSeriesSorting(t *testing.T) {
 
 			require.NoError(t, err)
 
-			outputSeries, err := o.SeriesMetadata(ctx, nil)
+			outputSeries, err := o.SeriesMetadata(ctx)
 			require.NoError(t, err)
 
 			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
@@ -476,7 +476,7 @@ func TestGroupedVectorVectorBinaryOperation_FinalizesInnerOperatorsAsSoonAsPossi
 			o, err := NewGroupedVectorVectorBinaryOperation(left, right, vectorMatching, parser.ADD, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{}, timeRange)
 			require.NoError(t, err)
 
-			outputSeries, err := o.SeriesMetadata(ctx, nil)
+			outputSeries, err := o.SeriesMetadata(ctx)
 			require.NoError(t, err)
 
 			if len(testCase.expectedOutputSeries) == 0 {
@@ -662,7 +662,7 @@ func TestGroupedVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEar
 			o, err := NewGroupedVectorVectorBinaryOperation(left, right, vectorMatching, parser.LTE, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{}, timeRange)
 			require.NoError(t, err)
 
-			outputSeries, err := o.SeriesMetadata(ctx, nil)
+			outputSeries, err := o.SeriesMetadata(ctx)
 			require.NoError(t, err)
 			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
 			types.SeriesMetadataSlicePool.Put(&outputSeries, memoryConsumptionTracker)

@@ -85,7 +85,7 @@ func (o *Operator) initParam(ctx context.Context) (canReturnAnyResults bool, err
 	return zeros < o.TimeRange.StepCount, nil
 }
 
-func (o *Operator) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+func (o *Operator) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 
 	// parse and validate the given input argument for this aggregate (ie k or ratio)
 	// also initialises the factory method for creating new groupLimiters
@@ -97,7 +97,7 @@ func (o *Operator) SeriesMetadata(ctx context.Context, matchers types.Matchers) 
 		return nil, nil
 	}
 
-	innerSeries, err := o.Inner.SeriesMetadata(ctx, matchers)
+	innerSeries, err := o.Inner.SeriesMetadata(ctx)
 	if err != nil {
 		return nil, err
 	}

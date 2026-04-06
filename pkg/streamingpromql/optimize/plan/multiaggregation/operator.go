@@ -65,8 +65,7 @@ func (m *MultiAggregatorGroupEvaluator) AfterPrepare(ctx context.Context) error 
 }
 
 func (m *MultiAggregatorGroupEvaluator) ComputeOutputSeriesForAllInstances(ctx context.Context) error {
-	// We can't pass any matchers to the inner operator because different consumers may provide different matchers.
-	innerSeries, err := m.inner.SeriesMetadata(ctx, types.Matchers{})
+	innerSeries, err := m.inner.SeriesMetadata(ctx)
 	if err != nil {
 		return err
 	}
@@ -222,10 +221,7 @@ func (m *MultiAggregatorInstanceOperator) AfterPrepare(ctx context.Context) erro
 	return m.group.AfterPrepare(ctx)
 }
 
-func (m *MultiAggregatorInstanceOperator) SeriesMetadata(ctx context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {
-	// Note that we deliberately ignore the matchers passed here as we can't use them: there's no
-	// guarantee that they apply to other instances in the same group.
-
+func (m *MultiAggregatorInstanceOperator) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	if !m.group.haveComputedSeriesMetadata {
 		if err := m.group.ComputeOutputSeriesForAllInstances(ctx); err != nil {
 			return nil, err

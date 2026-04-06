@@ -22,9 +22,8 @@ func NewDropName(inner types.InstantVectorOperator, memoryConsumptionTracker *li
 	return &DropName{Inner: inner, MemoryConsumptionTracker: memoryConsumptionTracker}
 }
 
-func (n *DropName) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
-	innerMetadata, err := n.Inner.SeriesMetadata(ctx, matchers)
-
+func (n *DropName) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+	innerMetadata, err := n.Inner.SeriesMetadata(ctx)
 	if err != nil {
 		return nil, err
 	}

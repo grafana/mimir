@@ -9,7 +9,6 @@ import (
 	"context"
 	"sort"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -18,7 +17,6 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
-	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // OneToOneVectorVectorBinaryOperation represents a one-to-one binary operation between instant vectors such as "<expr> + <expr>" or "<expr> - <expr>".
@@ -46,8 +44,6 @@ type OneToOneVectorVectorBinaryOperation struct {
 	expressionPosition posrange.PositionRange
 	annotations        *annotations.Annotations
 	timeRange          types.QueryTimeRange
-	hints              *Hints
-	logger             log.Logger
 }
 
 var _ types.InstantVectorOperator = &OneToOneVectorVectorBinaryOperation{}
@@ -131,8 +127,6 @@ func NewOneToOneVectorVectorBinaryOperation(
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
-	hints *Hints,
-	logger log.Logger,
 ) (*OneToOneVectorVectorBinaryOperation, error) {
 	e, err := newVectorVectorBinaryOperationEvaluator(op, returnBool, memoryConsumptionTracker, annotations, expressionPosition)
 	if err != nil {
@@ -151,8 +145,6 @@ func NewOneToOneVectorVectorBinaryOperation(
 		expressionPosition: expressionPosition,
 		annotations:        annotations,
 		timeRange:          timeRange,
-		hints:              hints,
-		logger:             logger,
 	}
 
 	return b, nil
@@ -177,9 +169,9 @@ func (b *OneToOneVectorVectorBinaryOperation) ExpressionPosition() posrange.Posi
 // (The alternative would be to compute the entire result here in SeriesMetadata and only return the series that
 // contain points, but that would mean we'd need to hold the entire result in memory at once, which we want to
 // avoid.)
-func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	var err error
-	b.leftMetadata, err = b.Left.SeriesMetadata(ctx, matchers)
+	b.leftMetadata, err = b.Left.SeriesMetadata(ctx)
 	if err != nil {
 		return nil, err
 	} else if len(b.leftMetadata) == 0 {
@@ -191,28 +183,7 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 		return nil, nil
 	}
 
-	// If there are labels that this binary operation selects on or aggregations being done
-	// on the LHS, we can use the series and their values for those labels to reduce the amount
-	// of data fetched on the RHS.
-	if b.hints != nil {
-		// Note we are reassigning `matchers` here before passing to the RHS and dropping any
-		// other extra matchers passed to this binary operation. Hints from the optimization
-		// pass are set specifically for each binary operation and include only fields that are
-		// valid to be passed to its RHS. We drop existing extra matchers since they may refer
-		// to labels that don't exist on the RHS of this binary operation.
-		ignored := matchers
-		matchers = BuildMatchers(b.leftMetadata, b.hints)
-
-		sl := spanlogger.FromContext(ctx, b.logger)
-		sl.DebugLog(
-			"msg", "binary operator passing additional matchers to RHS",
-			"fields", b.hints.Include,
-			"hint_matchers", len(matchers),
-			"ignored_matchers", len(ignored),
-		)
-	}
-
-	b.rightMetadata, err = b.Right.SeriesMetadata(ctx, matchers)
+	b.rightMetadata, err = b.Right.SeriesMetadata(ctx)
 	if err != nil {
 		return nil, err
 	} else if len(b.rightMetadata) == 0 {

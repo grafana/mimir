@@ -33,9 +33,9 @@ func TestRangeVectorOperator_Buffering_NoFiltering(t *testing.T) {
 	consumer2 := buffer.AddConsumer()
 
 	// Both consumers should get the same series metadata.
-	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
+	metadata1, err := consumer1.SeriesMetadata(ctx)
 	require.NoError(t, err)
-	metadata2, err := consumer2.SeriesMetadata(ctx, nil)
+	metadata2, err := consumer2.SeriesMetadata(ctx)
 	require.NoError(t, err)
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.series), metadata1, "first consumer should get expected series metadata")
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.series), metadata2, "second consumer should get expected series metadata")
@@ -155,9 +155,9 @@ func TestRangeVectorOperator_Buffering_Filtering_AllConsumersOpen(t *testing.T) 
 	consumer2 := buffer.AddConsumer()
 	consumer2.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "1|2|5")})
 
-	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
+	metadata1, err := consumer1.SeriesMetadata(ctx)
 	require.NoError(t, err)
-	metadata2, err := consumer2.SeriesMetadata(ctx, nil)
+	metadata2, err := consumer2.SeriesMetadata(ctx)
 	require.NoError(t, err)
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.series), metadata1, "first consumer should get expected series metadata")
 	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{inner.series[1], inner.series[2], inner.series[5]}), metadata2, "second consumer should get expected series metadata")
@@ -247,7 +247,7 @@ func TestRangeVectorOperator_Buffering_Filtering_IteratingBeforeCallingSeriesMet
 	consumer2 := buffer.AddConsumer()
 	consumer2.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "1|2|5")})
 
-	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
+	metadata1, err := consumer1.SeriesMetadata(ctx)
 	require.NoError(t, err)
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.series), metadata1, "first consumer should get expected series metadata")
 	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
@@ -269,7 +269,7 @@ func TestRangeVectorOperator_Buffering_Filtering_IteratingBeforeCallingSeriesMet
 	require.Equal(t, 1, buffer.buffer.Size())
 
 	// Read the same data from the second consumer, and then keep reading data beyond what has already been buffered.
-	metadata2, err := consumer2.SeriesMetadata(ctx, nil)
+	metadata2, err := consumer2.SeriesMetadata(ctx)
 	require.NoError(t, err)
 	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{inner.series[1], inner.series[2], inner.series[5]}), metadata2, "second consumer should get expected series metadata")
 	types.SeriesMetadataSlicePool.Put(&metadata2, memoryConsumptionTracker)
@@ -341,9 +341,9 @@ func TestRangeVectorOperator_Buffering_Filtering_DoesNotBufferForFinalizedConsum
 	consumer2.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "1|2|5")})
 
 	// Both consumers should get the same series metadata.
-	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
+	metadata1, err := consumer1.SeriesMetadata(ctx)
 	require.NoError(t, err)
-	metadata2, err := consumer2.SeriesMetadata(ctx, nil)
+	metadata2, err := consumer2.SeriesMetadata(ctx)
 	require.NoError(t, err)
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.series), metadata1, "first consumer should get expected series metadata")
 	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{inner.series[1], inner.series[2], inner.series[5]}), metadata2, "second consumer should get expected series metadata")
@@ -410,9 +410,9 @@ func TestRangeVectorOperator_Buffering_Filtering_DoesNotBufferUnnecessarilyForLa
 	consumer2 := buffer.AddConsumer()
 	consumer2.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "1|2")})
 
-	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
+	metadata1, err := consumer1.SeriesMetadata(ctx)
 	require.NoError(t, err)
-	metadata2, err := consumer2.SeriesMetadata(ctx, nil)
+	metadata2, err := consumer2.SeriesMetadata(ctx)
 	require.NoError(t, err)
 	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{inner.series[0]}), metadata1, "first consumer should get expected series metadata")
 	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{inner.series[1], inner.series[2]}), metadata2, "second consumer should get expected series metadata")
@@ -464,11 +464,11 @@ func TestRangeVectorOperator_Buffering_NonContiguousSeries(t *testing.T) {
 	consumer3 := buffer.AddConsumer()
 	consumer3.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "1|3")})
 
-	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
+	metadata1, err := consumer1.SeriesMetadata(ctx)
 	require.NoError(t, err)
-	metadata2, err := consumer2.SeriesMetadata(ctx, nil)
+	metadata2, err := consumer2.SeriesMetadata(ctx)
 	require.NoError(t, err)
-	metadata3, err := consumer3.SeriesMetadata(ctx, nil)
+	metadata3, err := consumer3.SeriesMetadata(ctx)
 	require.NoError(t, err)
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.series), metadata1, "first consumer should get expected series metadata")
 	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{inner.series[0]}), metadata2, "second consumer should get expected series metadata")
@@ -563,11 +563,10 @@ func TestRangeVectorOperator_Filtering_SingleConsumer(t *testing.T) {
 	expectedSeries := []labels.Labels{inner.series[1], inner.series[2], inner.series[5]}
 	filteredData := []types.InstantVectorSeriesData{expectedData[1], expectedData[2], expectedData[5]}
 
-	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
+	metadata1, err := consumer1.SeriesMetadata(ctx)
 	require.NoError(t, err)
 	require.Equal(t, testutils.LabelsToSeriesMetadata(expectedSeries), metadata1, "consumer should get expected series metadata")
 	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
-	require.Equal(t, types.Matchers{types.Matcher{Type: labels.MatchRegexp, Name: "idx", Value: "1|2|5"}}, inner.matchersProvided, "filters for sole consumer should be passed to inner operator")
 
 	for idx := range 3 {
 		err := consumer1.NextSeries(ctx)
@@ -588,9 +587,9 @@ func TestRangeVectorOperator_FinalizedWithBufferedData_NoFiltering(t *testing.T)
 	consumer1 := buffer.AddConsumer()
 	consumer2 := buffer.AddConsumer()
 
-	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
+	metadata1, err := consumer1.SeriesMetadata(ctx)
 	require.NoError(t, err)
-	metadata2, err := consumer2.SeriesMetadata(ctx, nil)
+	metadata2, err := consumer2.SeriesMetadata(ctx)
 	require.NoError(t, err)
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.series), metadata1, "first consumer should get expected series metadata")
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.series), metadata2, "second consumer should get expected series metadata")
@@ -657,11 +656,11 @@ func TestRangeVectorOperator_FinalizedWithBufferedData_Filtering(t *testing.T) {
 	consumer3 := buffer.AddConsumer()
 	consumer3.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "1")})
 
-	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
+	metadata1, err := consumer1.SeriesMetadata(ctx)
 	require.NoError(t, err)
-	metadata2, err := consumer2.SeriesMetadata(ctx, nil)
+	metadata2, err := consumer2.SeriesMetadata(ctx)
 	require.NoError(t, err)
-	metadata3, err := consumer3.SeriesMetadata(ctx, nil)
+	metadata3, err := consumer3.SeriesMetadata(ctx)
 	require.NoError(t, err)
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.series), metadata1, "first consumer should get expected series metadata")
 	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{inner.series[0], inner.series[2]}), metadata2, "second consumer should get expected series metadata")
@@ -810,9 +809,9 @@ func TestRangeVectorOperator_Cloning(t *testing.T) {
 	consumer2 := buffer.AddConsumer()
 
 	// Both consumers should get the same series metadata, but not the same slice.
-	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
+	metadata1, err := consumer1.SeriesMetadata(ctx)
 	require.NoError(t, err)
-	metadata2, err := consumer2.SeriesMetadata(ctx, nil)
+	metadata2, err := consumer2.SeriesMetadata(ctx)
 	require.NoError(t, err)
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.series), metadata1, "first consumer should get expected series metadata")
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.series), metadata2, "second consumer should get expected series metadata")
@@ -887,7 +886,7 @@ func TestRangeVectorOperator_ClosingAfterFirstReadFails(t *testing.T) {
 	consumer1 := buffer.AddConsumer()
 	consumer2 := buffer.AddConsumer()
 
-	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
+	metadata1, err := consumer1.SeriesMetadata(ctx)
 	require.NoError(t, err)
 	require.Equal(t, series, metadata1, "first consumer should get expected series metadata")
 	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
@@ -919,7 +918,7 @@ func TestRangeVectorOperator_ClosingAfterSubsequentReadFails(t *testing.T) {
 	consumer1 := buffer.AddConsumer()
 	consumer2 := buffer.AddConsumer()
 
-	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
+	metadata1, err := consumer1.SeriesMetadata(ctx)
 	require.NoError(t, err)
 	require.Equal(t, series, metadata1, "first consumer should get expected series metadata")
 	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
@@ -966,7 +965,6 @@ type testRangeVectorOperator struct {
 	finalized                bool
 	closed                   bool
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
-	matchersProvided         types.Matchers
 }
 
 func newTestRangeVectorOperator(series []labels.Labels, data []types.InstantVectorSeriesData, stepRange time.Duration, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *testRangeVectorOperator {
@@ -979,8 +977,7 @@ func newTestRangeVectorOperator(series []labels.Labels, data []types.InstantVect
 	}
 }
 
-func (t *testRangeVectorOperator) SeriesMetadata(_ context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
-	t.matchersProvided = matchers
+func (t *testRangeVectorOperator) SeriesMetadata(_ context.Context) ([]types.SeriesMetadata, error) {
 
 	if len(t.series) == 0 {
 		return nil, nil
@@ -1116,7 +1113,7 @@ func (o *failingRangeVectorOperator) AfterPrepare(ctx context.Context) error {
 	return nil
 }
 
-func (o *failingRangeVectorOperator) SeriesMetadata(_ context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {
+func (o *failingRangeVectorOperator) SeriesMetadata(_ context.Context) ([]types.SeriesMetadata, error) {
 	return o.series, nil
 }
 

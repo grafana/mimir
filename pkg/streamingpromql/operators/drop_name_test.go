@@ -72,7 +72,7 @@ func TestDropName(t *testing.T) {
 			}
 			o := NewDropName(inner, memoryConsumptionTracker)
 
-			outputSeriesMetadata, err := o.SeriesMetadata(ctx, nil)
+			outputSeriesMetadata, err := o.SeriesMetadata(ctx)
 			require.NoError(t, err)
 			require.Equal(t, testutils.LabelsToSeriesMetadataWithDropName(testCase.expectedOutputSeries, testCase.expectedOutputDropName), outputSeriesMetadata)
 

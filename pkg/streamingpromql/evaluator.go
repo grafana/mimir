@@ -223,7 +223,7 @@ func (e *instantVectorEvaluator) performWork(ctx context.Context, evaluator *Eva
 		// First call: get series metadata.
 		// If the operator returns no series, performWork won't be called a second time.
 
-		series, err := e.operator.SeriesMetadata(ctx, nil)
+		series, err := e.operator.SeriesMetadata(ctx)
 		if err != nil {
 			return false, err
 		}
@@ -274,7 +274,7 @@ func (e *rangeVectorEvaluator) performWork(ctx context.Context, evaluator *Evalu
 		// First call: get series metadata.
 		// If the operator returns no series, performWork won't be called a second time.
 
-		series, err := e.operator.SeriesMetadata(ctx, nil)
+		series, err := e.operator.SeriesMetadata(ctx)
 		if err != nil {
 			return false, err
 		}

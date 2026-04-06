@@ -31,9 +31,9 @@ func TestInstantVectorOperator_Buffering_NoFiltering(t *testing.T) {
 	consumer2 := buffer.AddConsumer()
 
 	// Both consumers should get the same series metadata.
-	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
+	metadata1, err := consumer1.SeriesMetadata(ctx)
 	require.NoError(t, err)
-	metadata2, err := consumer2.SeriesMetadata(ctx, nil)
+	metadata2, err := consumer2.SeriesMetadata(ctx)
 	require.NoError(t, err)
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.Series), metadata1, "first consumer should get expected series metadata")
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.Series), metadata2, "second consumer should get expected series metadata")
@@ -135,9 +135,9 @@ func TestInstantVectorOperator_Buffering_Filtering_AllConsumersOpen(t *testing.T
 	consumer2 := buffer.AddConsumer()
 	consumer2.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "1|2|5")})
 
-	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
+	metadata1, err := consumer1.SeriesMetadata(ctx)
 	require.NoError(t, err)
-	metadata2, err := consumer2.SeriesMetadata(ctx, nil)
+	metadata2, err := consumer2.SeriesMetadata(ctx)
 	require.NoError(t, err)
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.Series), metadata1, "first consumer should get expected series metadata")
 	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{inner.Series[1], inner.Series[2], inner.Series[5]}), metadata2, "second consumer should get expected series metadata")
@@ -221,7 +221,7 @@ func TestInstantVectorOperator_Buffering_Filtering_IteratingBeforeCallingSeriesM
 	consumer2 := buffer.AddConsumer()
 	consumer2.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "1|2|5")})
 
-	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
+	metadata1, err := consumer1.SeriesMetadata(ctx)
 	require.NoError(t, err)
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.Series), metadata1, "first consumer should get expected series metadata")
 	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
@@ -241,7 +241,7 @@ func TestInstantVectorOperator_Buffering_Filtering_IteratingBeforeCallingSeriesM
 	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
 
 	// Read the same data from the second consumer, and then keep reading data beyond what has already been buffered.
-	metadata2, err := consumer2.SeriesMetadata(ctx, nil)
+	metadata2, err := consumer2.SeriesMetadata(ctx)
 	require.NoError(t, err)
 	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{inner.Series[1], inner.Series[2], inner.Series[5]}), metadata2, "second consumer should get expected series metadata")
 	types.SeriesMetadataSlicePool.Put(&metadata2, memoryConsumptionTracker)
@@ -301,9 +301,9 @@ func TestInstantVectorOperator_Buffering_Filtering_DoesNotBufferForFinalizedCons
 	consumer2 := buffer.AddConsumer()
 	consumer2.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "1|2|5")})
 
-	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
+	metadata1, err := consumer1.SeriesMetadata(ctx)
 	require.NoError(t, err)
-	metadata2, err := consumer2.SeriesMetadata(ctx, nil)
+	metadata2, err := consumer2.SeriesMetadata(ctx)
 	require.NoError(t, err)
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.Series), metadata1, "first consumer should get expected series metadata")
 	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{inner.Series[1], inner.Series[2], inner.Series[5]}), metadata2, "second consumer should get expected series metadata")
@@ -367,9 +367,9 @@ func TestInstantVectorOperator_Buffering_Filtering_DoesNotBufferUnnecessarilyFor
 	consumer2 := buffer.AddConsumer()
 	consumer2.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "1|2")})
 
-	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
+	metadata1, err := consumer1.SeriesMetadata(ctx)
 	require.NoError(t, err)
-	metadata2, err := consumer2.SeriesMetadata(ctx, nil)
+	metadata2, err := consumer2.SeriesMetadata(ctx)
 	require.NoError(t, err)
 	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{inner.Series[0]}), metadata1, "first consumer should get expected series metadata")
 	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{inner.Series[1], inner.Series[2]}), metadata2, "second consumer should get expected series metadata")
@@ -419,11 +419,11 @@ func TestInstantVectorOperator_Buffering_NonContiguousSeries(t *testing.T) {
 	consumer3 := buffer.AddConsumer()
 	consumer3.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "1|3")})
 
-	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
+	metadata1, err := consumer1.SeriesMetadata(ctx)
 	require.NoError(t, err)
-	metadata2, err := consumer2.SeriesMetadata(ctx, nil)
+	metadata2, err := consumer2.SeriesMetadata(ctx)
 	require.NoError(t, err)
-	metadata3, err := consumer3.SeriesMetadata(ctx, nil)
+	metadata3, err := consumer3.SeriesMetadata(ctx)
 	require.NoError(t, err)
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.Series), metadata1, "first consumer should get expected series metadata")
 	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{inner.Series[0]}), metadata2, "second consumer should get expected series metadata")
@@ -510,11 +510,10 @@ func TestInstantVectorOperator_Filtering_SingleConsumer(t *testing.T) {
 	expectedSeries := []labels.Labels{inner.Series[1], inner.Series[2], inner.Series[5]}
 	filteredData := []types.InstantVectorSeriesData{expectedData[1], expectedData[2], expectedData[5]}
 
-	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
+	metadata1, err := consumer1.SeriesMetadata(ctx)
 	require.NoError(t, err)
 	require.Equal(t, testutils.LabelsToSeriesMetadata(expectedSeries), metadata1, "consumer should get expected series metadata")
 	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
-	require.Equal(t, types.Matchers{types.Matcher{Type: labels.MatchRegexp, Name: "idx", Value: "1|2|5"}}, inner.MatchersProvided, "filters for sole consumer should be passed to inner operator")
 
 	for idx := range 3 {
 		d, err := consumer1.NextSeries(ctx)
@@ -534,9 +533,9 @@ func TestInstantVectorOperator_FinalizedWithBufferedData_NoFiltering(t *testing.
 	consumer1 := buffer.AddConsumer()
 	consumer2 := buffer.AddConsumer()
 
-	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
+	metadata1, err := consumer1.SeriesMetadata(ctx)
 	require.NoError(t, err)
-	metadata2, err := consumer2.SeriesMetadata(ctx, nil)
+	metadata2, err := consumer2.SeriesMetadata(ctx)
 	require.NoError(t, err)
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.Series), metadata1, "first consumer should get expected series metadata")
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.Series), metadata2, "second consumer should get expected series metadata")
@@ -596,11 +595,11 @@ func TestInstantVectorOperator_FinalizedWithBufferedData_Filtering(t *testing.T)
 	consumer3 := buffer.AddConsumer()
 	consumer3.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "1")})
 
-	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
+	metadata1, err := consumer1.SeriesMetadata(ctx)
 	require.NoError(t, err)
-	metadata2, err := consumer2.SeriesMetadata(ctx, nil)
+	metadata2, err := consumer2.SeriesMetadata(ctx)
 	require.NoError(t, err)
-	metadata3, err := consumer3.SeriesMetadata(ctx, nil)
+	metadata3, err := consumer3.SeriesMetadata(ctx)
 	require.NoError(t, err)
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.Series), metadata1, "first consumer should get expected series metadata")
 	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{inner.Series[0], inner.Series[2]}), metadata2, "second consumer should get expected series metadata")
@@ -658,9 +657,9 @@ func TestInstantVectorOperator_Cloning(t *testing.T) {
 	consumer2 := buffer.AddConsumer()
 
 	// Both consumers should get the same series metadata, but not the same slice.
-	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
+	metadata1, err := consumer1.SeriesMetadata(ctx)
 	require.NoError(t, err)
-	metadata2, err := consumer2.SeriesMetadata(ctx, nil)
+	metadata2, err := consumer2.SeriesMetadata(ctx)
 	require.NoError(t, err)
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.Series), metadata1, "first consumer should get expected series metadata")
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.Series), metadata2, "second consumer should get expected series metadata")
@@ -729,7 +728,7 @@ func TestInstantVectorOperator_ClosingAfterFirstReadFails(t *testing.T) {
 	consumer1 := buffer.AddConsumer()
 	consumer2 := buffer.AddConsumer()
 
-	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
+	metadata1, err := consumer1.SeriesMetadata(ctx)
 	require.NoError(t, err)
 	require.Equal(t, series, metadata1, "first consumer should get expected series metadata")
 	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
@@ -758,7 +757,7 @@ func TestInstantVectorOperator_ClosingAfterSubsequentReadFails(t *testing.T) {
 	consumer1 := buffer.AddConsumer()
 	consumer2 := buffer.AddConsumer()
 
-	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
+	metadata1, err := consumer1.SeriesMetadata(ctx)
 	require.NoError(t, err)
 	require.Equal(t, series, metadata1, "first consumer should get expected series metadata")
 	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
@@ -787,7 +786,7 @@ type failingInstantVectorOperator struct {
 	seriesRead int
 }
 
-func (o *failingInstantVectorOperator) SeriesMetadata(_ context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {
+func (o *failingInstantVectorOperator) SeriesMetadata(_ context.Context) ([]types.SeriesMetadata, error) {
 	return o.series, nil
 }
 

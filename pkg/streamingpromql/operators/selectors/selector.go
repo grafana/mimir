@@ -68,7 +68,7 @@ func (s *Selector) Prepare(ctx context.Context, _ *types.PrepareParams) error {
 	return nil
 }
 
-func (s *Selector) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+func (s *Selector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	defer func() {
 		// Release our reference to the series set so it can be garbage collected as soon as possible.
 		s.seriesSet = nil
@@ -79,7 +79,7 @@ func (s *Selector) SeriesMetadata(ctx context.Context, matchers types.Matchers) 
 	}
 
 	if !s.EagerLoad {
-		if err := s.loadSeriesSet(ctx, s.mergeMatchers(s.Matchers, matchers)); err != nil {
+		if err := s.loadSeriesSet(ctx, s.Matchers); err != nil {
 			return nil, err
 		}
 	}
@@ -102,31 +102,6 @@ func (s *Selector) SeriesMetadata(ctx context.Context, matchers types.Matchers) 
 	}
 
 	return metadata, s.seriesSet.Err()
-}
-
-func (s *Selector) mergeMatchers(m1, m2 types.Matchers) types.Matchers {
-	if m1 == nil {
-		return m2
-	}
-
-	if m2 == nil {
-		return m1
-	}
-
-	unique := make(map[types.Matcher]struct{})
-	for _, m := range m1 {
-		unique[m] = struct{}{}
-	}
-	for _, m := range m2 {
-		unique[m] = struct{}{}
-	}
-
-	out := make([]types.Matcher, 0, len(unique))
-	for m := range unique {
-		out = append(out, m)
-	}
-
-	return out
 }
 
 func (s *Selector) loadSeriesSet(ctx context.Context, matchers types.Matchers) error {

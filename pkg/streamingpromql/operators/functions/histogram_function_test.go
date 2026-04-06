@@ -124,7 +124,7 @@ func TestHistogramFunction_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
 				memoryConsumptionTracker: memoryConsumptionTracker,
 			}
 
-			outputSeries, err := hOp.SeriesMetadata(ctx, nil)
+			outputSeries, err := hOp.SeriesMetadata(ctx)
 			require.NoError(t, err)
 
 			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeriesOrder), outputSeries)
@@ -156,7 +156,7 @@ func TestHistogramFunction_MemoryTracking(t *testing.T) {
 		memoryConsumptionTracker: tracker,
 	}
 
-	_, err := hOp.SeriesMetadata(ctx, nil)
+	_, err := hOp.SeriesMetadata(ctx)
 	require.NoError(t, err)
 
 	// seriesGroupPairs: pool rounds 4 up to 4 (already a power of two).

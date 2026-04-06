@@ -253,7 +253,7 @@ func (m *FunctionOverRangeVectorSplit[T]) materializeOperatorForTimeRange(start 
 	return innerOperator, nil
 }
 
-func (m *FunctionOverRangeVectorSplit[T]) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+func (m *FunctionOverRangeVectorSplit[T]) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	if m.metadataConsumed {
 		return nil, fmt.Errorf("SeriesMetadata() called multiple times on FunctionOverRangeVectorSplit")
 	}
@@ -265,7 +265,7 @@ func (m *FunctionOverRangeVectorSplit[T]) SeriesMetadata(ctx context.Context, ma
 
 	var err error
 	var metadata []types.SeriesMetadata
-	metadata, m.seriesToSplits, err = m.mergeSplitsMetadata(ctx, matchers)
+	metadata, m.seriesToSplits, err = m.mergeSplitsMetadata(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -282,7 +282,7 @@ func (m *FunctionOverRangeVectorSplit[T]) SeriesMetadata(ctx context.Context, ma
 	return metadata, nil
 }
 
-func (m *FunctionOverRangeVectorSplit[T]) mergeSplitsMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, [][]SplitSeries, error) {
+func (m *FunctionOverRangeVectorSplit[T]) mergeSplitsMetadata(ctx context.Context) ([]types.SeriesMetadata, [][]SplitSeries, error) {
 	if len(m.splits) == 0 {
 		return nil, nil, nil
 	}
@@ -293,7 +293,7 @@ func (m *FunctionOverRangeVectorSplit[T]) mergeSplitsMetadata(ctx context.Contex
 	labelBytes := make([]byte, 0, 1024)
 
 	// Reuse split 0's metadata as base instead of copying.
-	mergedMetadata, err := m.splits[0].SeriesMetadata(ctx, matchers)
+	mergedMetadata, err := m.splits[0].SeriesMetadata(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -310,7 +310,7 @@ func (m *FunctionOverRangeVectorSplit[T]) mergeSplitsMetadata(ctx context.Contex
 
 	for splitIdx := 1; splitIdx < len(m.splits); splitIdx++ {
 		split := m.splits[splitIdx]
-		splitMetadata, err := split.SeriesMetadata(ctx, matchers)
+		splitMetadata, err := split.SeriesMetadata(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -521,7 +521,7 @@ type Split[T any] interface {
 	AfterPrepare(ctx context.Context) error
 	// SeriesMetadata returns the metadata for the split. It is expected to only be called once. The caller is expected
 	// to put the metadata slice and metadata back in the pool.
-	SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error)
+	SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error)
 	GetResultsAt(ctx context.Context, idx int) ([]T, error)
 	// AppendMergedSeriesIndex records the mapping from a split-local series index to the parent's merged series index.
 	// This is used to make sure annotations emitted when generating the result for an uncached split reference the
@@ -586,7 +586,7 @@ func (p *CachedSplit[T]) AfterPrepare(ctx context.Context) error {
 	return nil
 }
 
-func (c *CachedSplit[T]) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+func (c *CachedSplit[T]) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	metadata := c.seriesMetadata
 	// Set metadata to nil as a defense against double reads (which shouldn't happen)
 	c.seriesMetadata = nil
@@ -679,11 +679,8 @@ func (p *UncachedSplit[T]) AfterPrepare(ctx context.Context) error {
 	return p.operator.AfterPrepare(ctx)
 }
 
-func (p *UncachedSplit[T]) SeriesMetadata(ctx context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {
-	// Ignore optional matchers for now, to ensure we get the same data no matter if narrow selectors is enabled or not.
-	// Otherwise we could have cache key collisions between different queries which have different additional matchers.
-	// TODO: add additional matchers to cache key so this isn't a problem anymore
-	seriesMetadata, err := p.operator.SeriesMetadata(ctx, nil)
+func (p *UncachedSplit[T]) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+	seriesMetadata, err := p.operator.SeriesMetadata(ctx)
 	if err != nil {
 		return nil, err
 	}

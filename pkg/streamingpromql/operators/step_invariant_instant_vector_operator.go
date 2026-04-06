@@ -47,8 +47,8 @@ func (s *StepInvariantInstantVectorOperator) Finalize(ctx context.Context) error
 	return s.inner.Finalize(ctx)
 }
 
-func (s *StepInvariantInstantVectorOperator) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
-	return s.inner.SeriesMetadata(ctx, matchers)
+func (s *StepInvariantInstantVectorOperator) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+	return s.inner.SeriesMetadata(ctx)
 }
 
 func (s *StepInvariantInstantVectorOperator) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {

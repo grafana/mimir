@@ -58,7 +58,7 @@ func TestFunctionOverInstantVector(t *testing.T) {
 		},
 	}
 
-	_, err := operator.SeriesMetadata(ctx, nil)
+	_, err := operator.SeriesMetadata(ctx)
 	require.NoError(t, err)
 
 	_, err = operator.NextSeries(ctx)
@@ -114,7 +114,7 @@ func TestFunctionOverInstantVectorWithScalarArgs(t *testing.T) {
 	}
 
 	// SeriesMetadata should process scalar args
-	m, err := operator.SeriesMetadata(ctx, nil)
+	m, err := operator.SeriesMetadata(ctx)
 	require.NoError(t, err)
 	types.SeriesMetadataSlicePool.Put(&m, tracker)
 

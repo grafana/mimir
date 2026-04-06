@@ -59,7 +59,7 @@ func TestConcat(t *testing.T) {
 	require.True(t, inner1.Prepared)
 	require.True(t, inner2.Prepared)
 
-	actualSeries, err := o.SeriesMetadata(ctx, nil)
+	actualSeries, err := o.SeriesMetadata(ctx)
 	require.NoError(t, err)
 	expectedSeries := testutils.LabelsToSeriesMetadata([]labels.Labels{
 		labels.FromStrings("operator", "1", "series", "1"),
@@ -127,7 +127,7 @@ func TestConcat_InnerOperatorsWithNoSeries(t *testing.T) {
 	err = o.Prepare(ctx, nil)
 	require.NoError(t, err)
 
-	actualSeries, err := o.SeriesMetadata(ctx, nil)
+	actualSeries, err := o.SeriesMetadata(ctx)
 	require.NoError(t, err)
 	expectedSeries := testutils.LabelsToSeriesMetadata([]labels.Labels{
 		labels.FromStrings("operator", "3", "series", "1"),
