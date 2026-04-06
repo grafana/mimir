@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -375,6 +376,68 @@ func TestNewRouteMaxBodySize(t *testing.T) {
 				var maxBytesErr *http.MaxBytesError
 				require.ErrorAs(t, handlerBodyErr, &maxBytesErr)
 			}
+		})
+	}
+}
+
+// TestAlertmanagerConfigRoutePriority verifies that Mimir's alertmanager config API routes
+// registered at {alertmanagerHTTPPrefix}/api/v1/alerts take priority over the broader
+// alertmanager prefix handler. This ensures users who include the alertmanager path prefix
+// in their mimirtool --address (e.g. http://host:port/alertmanager) are served by Mimir's
+// config API rather than the embedded Prometheus Alertmanager, whose /api/v1/alerts
+// endpoint was removed in upstream 0.28.0 and returns 410 Gone.
+func TestAlertmanagerConfigRoutePriority(t *testing.T) {
+	const alertmanagerPrefix = "/alertmanager"
+
+	cfg := Config{AlertmanagerHTTPPrefix: alertmanagerPrefix}
+	federationCfg := tenantfederation.Config{}
+	serverCfg := getServerConfig(t)
+	serverCfg.MetricsNamespace = "alertmanager_route_priority"
+	srv, err := server.New(serverCfg)
+	require.NoError(t, err)
+
+	api, err := New(cfg, federationCfg, serverCfg, srv, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+
+	const (
+		responseConfig = "config-handler"
+		responsePrefix = "prefix-handler"
+	)
+
+	configHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(responseConfig))
+	})
+	prefixHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(responsePrefix))
+	})
+
+	// Mirrors RegisterAlertmanager: specific routes registered before the prefix handler.
+	api.RegisterRoute(path.Join(alertmanagerPrefix, "/api/v1/alerts"), configHandler, false, false, "GET")
+	api.RegisterRoutesWithPrefix(alertmanagerPrefix, prefixHandler, false, false, 0)
+	api.RegisterRoute("/api/v1/alerts", configHandler, false, false, "GET")
+
+	for _, tc := range []struct {
+		requestPath      string
+		expectedResponse string
+	}{
+		{
+			requestPath:      "/api/v1/alerts",
+			expectedResponse: responseConfig,
+		},
+		{
+			requestPath:      "/alertmanager/api/v1/alerts",
+			expectedResponse: responseConfig,
+		},
+		{
+			requestPath:      "/alertmanager/api/v2/alerts",
+			expectedResponse: responsePrefix,
+		},
+	} {
+		t.Run(tc.requestPath, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tc.requestPath, nil)
+			w := httptest.NewRecorder()
+			api.server.HTTP.ServeHTTP(w, req)
+			require.Equal(t, tc.expectedResponse, w.Body.String())
 		})
 	}
 }
