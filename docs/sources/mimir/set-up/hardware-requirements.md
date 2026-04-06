@@ -35,11 +35,11 @@ Grafana Mimir requires block storage devices that provide:
 
 **Cloud provider examples:**
 
-| Cloud provider | Recommended disk types                                                      |
-| -------------- | --------------------------------------------------------------------------- |
-| AWS            | EBS `io1` or `gp3` SSD volumes                                             |
-| GCP            | `pd-ssd` persistent disks                                                   |
-| Azure          | Premium SSD managed disks (`managed-csi-premium` storage class)             |
+| Cloud provider | Recommended disk types                                          |
+| -------------- | --------------------------------------------------------------- |
+| AWS            | EBS `io1` or `gp3` SSD volumes                                  |
+| GCP            | `pd-ssd` persistent disks                                       |
+| Azure          | Premium SSD managed disks (`managed-csi-premium` storage class) |
 
 For on-premises or self-hosted deployments, locally attached SSDs or SAN volumes with block-device semantics are recommended.
 
@@ -76,12 +76,12 @@ For smaller or development deployments, lower bandwidth is acceptable, but netwo
 Grafana Mimir requires object storage for long-term block storage, ruler configuration, and alertmanager state.
 The following object storage services are supported:
 
-| Provider       | Supported service                    |
-| -------------- | ------------------------------------ |
-| AWS            | Amazon S3                            |
-| GCP            | Google Cloud Storage (GCS)           |
-| Azure          | Azure Blob Storage                   |
-| Self-hosted    | Any S3-compatible API                |
+| Provider    | Supported service          |
+| ----------- | -------------------------- |
+| AWS         | Amazon S3                  |
+| GCP         | Google Cloud Storage (GCS) |
+| Azure       | Azure Blob Storage         |
+| Self-hosted | Any S3-compatible API      |
 
 For configuration details, refer to [Configure object storage]({{< relref "../configure/configure-object-storage-backend" >}}).
 
