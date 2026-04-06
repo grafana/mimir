@@ -29,6 +29,7 @@ type ingesterMetrics struct {
 	queriedSamples       prometheus.Histogram
 	queriedExemplars     prometheus.Histogram
 	queriedSeries        *prometheus.HistogramVec
+	queriedBlocks        *prometheus.CounterVec
 	discardedSeriesRatio prometheus.Histogram
 
 	memMetadata             prometheus.Gauge
@@ -43,6 +44,7 @@ type ingesterMetrics struct {
 	activeSeriesCustomTrackersPerUserNativeHistograms *prometheus.GaugeVec
 	activeNativeHistogramBucketsPerUser               *prometheus.GaugeVec
 	activeNativeHistogramBucketsCustomTrackersPerUser *prometheus.GaugeVec
+	activeSeriesLoading                               prometheus.Gauge
 
 	attributedActiveSeriesFailuresPerUser *prometheus.CounterVec
 
@@ -95,6 +97,11 @@ type ingesterMetrics struct {
 
 	// Index lookup planning comparison outcomes.
 	indexLookupComparisonOutcomes *prometheus.CounterVec
+
+	// Quantify how much the projections optimization helps reduce labels sent to queriers.
+	originalLabelBytes prometheus.Counter
+	reducedLabelBytes  prometheus.Counter
+	skippedLabelBytes  prometheus.Counter
 }
 
 func newIngesterMetrics(
@@ -181,6 +188,10 @@ func newIngesterMetrics(
 			Buckets:                     prometheus.ExponentialBuckets(10, 8, 6),
 			NativeHistogramBucketFactor: 1.1,
 		}, []string{"stage"}),
+		queriedBlocks: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ingester_queried_blocks_total",
+			Help: "Number of times blocks were queried by generation. Generation 0 is the head block; higher generations count persisted blocks back from the head (1 = most recent).",
+		}, []string{"generation"}),
 		discardedSeriesRatio: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
 			Name:                        "cortex_ingester_discarded_series_ratio",
 			Help:                        `Ratio of discarded series during query processing. These are series fetched from the index, but then discarded because they don't match the vector selector. This is the ratio of cortex_ingester_queried_series{stage="index"} over {stage="send"}.`,
@@ -356,6 +367,11 @@ func newIngesterMetrics(
 			Help: "Number of currently active native histogram buckets matching a pre-configured label matchers per user.",
 		}, []string{"user", "name"}),
 
+		activeSeriesLoading: promauto.With(activeSeriesReg).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_ingester_active_series_loading",
+			Help: "1 if active series counts are still warming up and may be underreported, 0 once they are accurate.",
+		}),
+
 		compactionsTriggered: promauto.With(r).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingester_tsdb_compactions_triggered_total",
 			Help: "Total number of triggered compactions.",
@@ -409,6 +425,19 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_index_lookup_planning_comparison_outcomes_total",
 			Help: "Total number of index lookup planning comparison outcomes when using mirrored chunk querier.",
 		}, []string{"outcome", "user"}),
+
+		originalLabelBytes: promauto.With(r).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingester_projection_original_label_bytes_total",
+			Help: "Total number of bytes of original labels transferred to queriers when projections are used.",
+		}),
+		reducedLabelBytes: promauto.With(r).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingester_projection_reduced_label_bytes_total",
+			Help: "Total number of bytes of reduced labels transferred to queriers when projections are used.",
+		}),
+		skippedLabelBytes: promauto.With(r).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingester_projection_skipped_label_bytes_total",
+			Help: "Total number of bytes of labels transferred to queriers when projections are not used.",
+		}),
 	}
 
 	// Initialize expected rejected request labels
@@ -418,6 +447,10 @@ func newIngesterMetrics(
 	m.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests)
 	m.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequestsBytes)
 	m.rejected.WithLabelValues(reasonIngesterMaxInflightReadRequests)
+
+	if activeSeriesEnabled {
+		m.activeSeriesLoading.Set(1)
+	}
 
 	return m
 }

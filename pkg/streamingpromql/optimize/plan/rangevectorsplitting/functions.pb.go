@@ -336,6 +336,162 @@ func (m *RateIntermediateList) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_RateIntermediateList proto.InternalMessageInfo
 
+type FirstLastOverTimeIntermediate struct {
+	F        float64            `protobuf:"fixed64,1,opt,name=f,proto3" json:"f,omitempty"`
+	HasFloat bool               `protobuf:"varint,2,opt,name=hasFloat,proto3" json:"hasFloat,omitempty"`
+	H        *mimirpb.Histogram `protobuf:"bytes,3,opt,name=h,proto3" json:"h,omitempty"`
+}
+
+func (m *FirstLastOverTimeIntermediate) Reset()      { *m = FirstLastOverTimeIntermediate{} }
+func (*FirstLastOverTimeIntermediate) ProtoMessage() {}
+func (*FirstLastOverTimeIntermediate) Descriptor() ([]byte, []int) {
+	return fileDescriptor_83a6426a31b44db4, []int{8}
+}
+func (m *FirstLastOverTimeIntermediate) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *FirstLastOverTimeIntermediate) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_FirstLastOverTimeIntermediate.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *FirstLastOverTimeIntermediate) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_FirstLastOverTimeIntermediate.Merge(m, src)
+}
+func (m *FirstLastOverTimeIntermediate) XXX_Size() int {
+	return m.Size()
+}
+func (m *FirstLastOverTimeIntermediate) XXX_DiscardUnknown() {
+	xxx_messageInfo_FirstLastOverTimeIntermediate.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_FirstLastOverTimeIntermediate proto.InternalMessageInfo
+
+type FirstLastOverTimeIntermediateList struct {
+	Results []FirstLastOverTimeIntermediate `protobuf:"bytes,1,rep,name=results,proto3" json:"results"`
+}
+
+func (m *FirstLastOverTimeIntermediateList) Reset()      { *m = FirstLastOverTimeIntermediateList{} }
+func (*FirstLastOverTimeIntermediateList) ProtoMessage() {}
+func (*FirstLastOverTimeIntermediateList) Descriptor() ([]byte, []int) {
+	return fileDescriptor_83a6426a31b44db4, []int{9}
+}
+func (m *FirstLastOverTimeIntermediateList) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *FirstLastOverTimeIntermediateList) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_FirstLastOverTimeIntermediateList.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *FirstLastOverTimeIntermediateList) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_FirstLastOverTimeIntermediateList.Merge(m, src)
+}
+func (m *FirstLastOverTimeIntermediateList) XXX_Size() int {
+	return m.Size()
+}
+func (m *FirstLastOverTimeIntermediateList) XXX_DiscardUnknown() {
+	xxx_messageInfo_FirstLastOverTimeIntermediateList.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_FirstLastOverTimeIntermediateList proto.InternalMessageInfo
+
+type AvgOverTimeIntermediate struct {
+	SumF               float64 `protobuf:"fixed64,1,opt,name=sumF,proto3" json:"sumF,omitempty"`
+	IncrementalAvg     float64 `protobuf:"fixed64,2,opt,name=incrementalAvg,proto3" json:"incrementalAvg,omitempty"`
+	CountF             float64 `protobuf:"fixed64,3,opt,name=countF,proto3" json:"countF,omitempty"`
+	UseIncrementalCalc bool    `protobuf:"varint,4,opt,name=useIncrementalCalc,proto3" json:"useIncrementalCalc,omitempty"`
+	// If the incremental path was used to calculate the average for this piece (useIncrementalCalc is true),
+	// this variable carries the compensation for that incremental average.
+	// Otherwise, it’s carrying the compensation for the sum.
+	CompF            float64            `protobuf:"fixed64,5,opt,name=compF,proto3" json:"compF,omitempty"`
+	AvgH             *mimirpb.Histogram `protobuf:"bytes,6,opt,name=avgH,proto3" json:"avgH,omitempty"`
+	CountH           int64              `protobuf:"varint,7,opt,name=countH,proto3" json:"countH,omitempty"`
+	ForceEmptyResult bool               `protobuf:"varint,8,opt,name=forceEmptyResult,proto3" json:"forceEmptyResult,omitempty"`
+}
+
+func (m *AvgOverTimeIntermediate) Reset()      { *m = AvgOverTimeIntermediate{} }
+func (*AvgOverTimeIntermediate) ProtoMessage() {}
+func (*AvgOverTimeIntermediate) Descriptor() ([]byte, []int) {
+	return fileDescriptor_83a6426a31b44db4, []int{10}
+}
+func (m *AvgOverTimeIntermediate) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *AvgOverTimeIntermediate) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_AvgOverTimeIntermediate.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *AvgOverTimeIntermediate) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_AvgOverTimeIntermediate.Merge(m, src)
+}
+func (m *AvgOverTimeIntermediate) XXX_Size() int {
+	return m.Size()
+}
+func (m *AvgOverTimeIntermediate) XXX_DiscardUnknown() {
+	xxx_messageInfo_AvgOverTimeIntermediate.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_AvgOverTimeIntermediate proto.InternalMessageInfo
+
+type AvgOverTimeIntermediateList struct {
+	Results []AvgOverTimeIntermediate `protobuf:"bytes,1,rep,name=results,proto3" json:"results"`
+}
+
+func (m *AvgOverTimeIntermediateList) Reset()      { *m = AvgOverTimeIntermediateList{} }
+func (*AvgOverTimeIntermediateList) ProtoMessage() {}
+func (*AvgOverTimeIntermediateList) Descriptor() ([]byte, []int) {
+	return fileDescriptor_83a6426a31b44db4, []int{11}
+}
+func (m *AvgOverTimeIntermediateList) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *AvgOverTimeIntermediateList) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_AvgOverTimeIntermediateList.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *AvgOverTimeIntermediateList) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_AvgOverTimeIntermediateList.Merge(m, src)
+}
+func (m *AvgOverTimeIntermediateList) XXX_Size() int {
+	return m.Size()
+}
+func (m *AvgOverTimeIntermediateList) XXX_DiscardUnknown() {
+	xxx_messageInfo_AvgOverTimeIntermediateList.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_AvgOverTimeIntermediateList proto.InternalMessageInfo
+
 func init() {
 	proto.RegisterType((*SumOverTimeIntermediate)(nil), "rangevectorsplitting.SumOverTimeIntermediate")
 	proto.RegisterType((*SumOverTimeIntermediateList)(nil), "rangevectorsplitting.SumOverTimeIntermediateList")
@@ -345,52 +501,66 @@ func init() {
 	proto.RegisterType((*MinMaxOverTimeIntermediateList)(nil), "rangevectorsplitting.MinMaxOverTimeIntermediateList")
 	proto.RegisterType((*RateIntermediate)(nil), "rangevectorsplitting.RateIntermediate")
 	proto.RegisterType((*RateIntermediateList)(nil), "rangevectorsplitting.RateIntermediateList")
+	proto.RegisterType((*FirstLastOverTimeIntermediate)(nil), "rangevectorsplitting.FirstLastOverTimeIntermediate")
+	proto.RegisterType((*FirstLastOverTimeIntermediateList)(nil), "rangevectorsplitting.FirstLastOverTimeIntermediateList")
+	proto.RegisterType((*AvgOverTimeIntermediate)(nil), "rangevectorsplitting.AvgOverTimeIntermediate")
+	proto.RegisterType((*AvgOverTimeIntermediateList)(nil), "rangevectorsplitting.AvgOverTimeIntermediateList")
 }
 
 func init() { proto.RegisterFile("functions.proto", fileDescriptor_83a6426a31b44db4) }
 
 var fileDescriptor_83a6426a31b44db4 = []byte{
-	// 631 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xa4, 0x54, 0x3d, 0x6f, 0x13, 0x41,
-	0x10, 0xbd, 0x25, 0x0e, 0x44, 0x73, 0x26, 0xb6, 0x0e, 0x8b, 0x5c, 0x8c, 0x58, 0xcc, 0x15, 0xe0,
-	0x02, 0xec, 0x90, 0x34, 0x08, 0xa5, 0x4a, 0x94, 0x28, 0x48, 0x84, 0xa0, 0x4b, 0x2a, 0x0a, 0xac,
-	0xb5, 0xb3, 0x3e, 0x2f, 0xdc, 0x97, 0x76, 0xd7, 0x51, 0xe8, 0xa8, 0xa8, 0xf9, 0x19, 0xd4, 0xfc,
-	0x8a, 0x94, 0x29, 0x53, 0x21, 0x7c, 0x69, 0x28, 0xf3, 0x13, 0x90, 0xe7, 0x12, 0x9f, 0x7d, 0xf2,
-	0xa5, 0xa1, 0xf2, 0xec, 0xec, 0x7b, 0x33, 0xef, 0xed, 0x8c, 0x0f, 0x2a, 0xfd, 0x61, 0xd8, 0xd3,
-	0x22, 0x0a, 0x55, 0x2b, 0x96, 0x91, 0x8e, 0xac, 0x9a, 0x64, 0xa1, 0xc7, 0x4f, 0x78, 0x4f, 0x47,
-	0x52, 0xc5, 0xbe, 0xd0, 0x5a, 0x84, 0x5e, 0x7d, 0xcd, 0x13, 0x7a, 0x30, 0xec, 0xb6, 0x7a, 0x51,
-	0xd0, 0xf6, 0x24, 0xeb, 0xb3, 0x90, 0xb5, 0x03, 0x11, 0x08, 0xd9, 0x8e, 0xbf, 0x78, 0x69, 0x14,
-	0x77, 0xd3, 0xdf, 0xb4, 0x4e, 0xbd, 0xe6, 0x45, 0x5e, 0x84, 0x61, 0x7b, 0x1c, 0xa5, 0x59, 0xe7,
-	0x3b, 0x81, 0x95, 0xc3, 0x61, 0x70, 0x70, 0xc2, 0xe5, 0x91, 0x08, 0xf8, 0xdb, 0x50, 0x73, 0x19,
-	0xf0, 0x63, 0xc1, 0x34, 0xb7, 0x2c, 0x28, 0xa9, 0x61, 0xb0, 0x6b, 0x93, 0x06, 0x69, 0x12, 0x17,
-	0x63, 0xab, 0x0e, 0x4b, 0x03, 0xa6, 0x76, 0xfd, 0x88, 0x69, 0xfb, 0x4e, 0x83, 0x34, 0x97, 0xdc,
-	0xc9, 0xf9, 0x1a, 0xbf, 0x6d, 0x2f, 0x4c, 0xf0, 0xdb, 0xd6, 0x73, 0xcc, 0xed, 0xd9, 0xa5, 0x06,
-	0x69, 0x9a, 0xeb, 0x0f, 0x5a, 0xbd, 0x48, 0x6a, 0x7e, 0x1a, 0x77, 0x5b, 0x7b, 0x42, 0xe9, 0xc8,
-	0x93, 0x2c, 0x40, 0xe0, 0x9e, 0xe3, 0xc3, 0xa3, 0x02, 0x1d, 0xef, 0x84, 0xd2, 0xd6, 0x3e, 0xdc,
-	0x93, 0x5c, 0x0d, 0x7d, 0xad, 0x6c, 0xd2, 0x58, 0x68, 0x9a, 0xeb, 0x2f, 0x5b, 0xf3, 0xde, 0xa5,
-	0x55, 0x50, 0x63, 0xab, 0x74, 0xf6, 0xfb, 0x89, 0xe1, 0xde, 0xd4, 0x70, 0x76, 0x60, 0x75, 0x3b,
-	0x1a, 0x86, 0x7a, 0xae, 0xef, 0x32, 0x90, 0xfe, 0xb5, 0x69, 0xd2, 0xbf, 0xcd, 0xb1, 0x13, 0xc3,
-	0xe3, 0xc2, 0x32, 0x28, 0xfb, 0x20, 0x2f, 0xbb, 0x3d, 0x5f, 0x76, 0x61, 0x95, 0xbc, 0xf0, 0xcf,
-	0x50, 0xdf, 0x17, 0xe1, 0x3e, 0x3b, 0xfd, 0x3f, 0xe5, 0x96, 0x03, 0xe5, 0x01, 0x53, 0x93, 0x21,
-	0xe0, 0xcc, 0x96, 0xdc, 0x99, 0x9c, 0x23, 0x81, 0x16, 0xf7, 0x42, 0x7b, 0x1f, 0xf2, 0xf6, 0xd6,
-	0xe6, 0xdb, 0x2b, 0x2e, 0x93, 0xf7, 0xf7, 0xab, 0x04, 0x55, 0x97, 0xe9, 0x59, 0x5b, 0x4f, 0xa1,
-	0xac, 0x58, 0x10, 0xfb, 0xbc, 0xd3, 0x1b, 0xbf, 0x13, 0x3a, 0x5c, 0x70, 0xcd, 0x34, 0x87, 0x4f,
-	0x37, 0x86, 0x08, 0xd5, 0x19, 0x4c, 0xfc, 0xa4, 0x7e, 0x4d, 0x91, 0xd9, 0xb1, 0x36, 0xa0, 0xdc,
-	0x17, 0x52, 0xe9, 0x4e, 0xca, 0x43, 0xcb, 0xe6, 0x7a, 0x35, 0x5b, 0xc9, 0x43, 0xcc, 0xbb, 0x26,
-	0xa2, 0xd2, 0x83, 0xf5, 0x0a, 0x4c, 0x9f, 0x65, 0x9c, 0x52, 0x01, 0x07, 0xc6, 0xa0, 0x6b, 0x4a,
-	0x0d, 0x16, 0x8f, 0xb9, 0xaf, 0x99, 0xbd, 0x88, 0x83, 0x48, 0x0f, 0xd6, 0x26, 0x54, 0xd2, 0xee,
-	0x99, 0x46, 0x28, 0xfe, 0x4f, 0x2c, 0x23, 0x36, 0xd3, 0xfe, 0x06, 0x96, 0x51, 0x46, 0x46, 0x36,
-	0x8b, 0xc9, 0xf7, 0xc7, 0xd0, 0x8c, 0xbb, 0x09, 0x15, 0x94, 0x30, 0x45, 0x2e, 0xdf, 0xd2, 0x19,
-	0xb1, 0xd3, 0x9d, 0x57, 0x73, 0xba, 0x3b, 0x5a, 0x04, 0x5c, 0x69, 0x16, 0xc4, 0xf6, 0x32, 0x0e,
-	0x62, 0x65, 0x56, 0xec, 0xd1, 0xcd, 0xb5, 0xf5, 0x1a, 0xec, 0x59, 0xd5, 0x53, 0xd4, 0x0a, 0x52,
-	0x1f, 0xce, 0x48, 0xcd, 0x98, 0x2f, 0xc0, 0xea, 0x47, 0xb2, 0xc7, 0x3b, 0x3c, 0x88, 0xf5, 0xd7,
-	0x4e, 0xba, 0x1d, 0x76, 0x15, 0x87, 0x5a, 0xc5, 0x9b, 0x9d, 0xf1, 0x85, 0x8b, 0x79, 0xe7, 0x13,
-	0xd4, 0xf2, 0x3b, 0x83, 0xeb, 0xb9, 0x9b, 0x5f, 0xcf, 0x67, 0xf3, 0xd7, 0x33, 0x4f, 0xce, 0x2d,
-	0xe5, 0xd6, 0xfb, 0xb3, 0x11, 0x35, 0xce, 0x47, 0xd4, 0xb8, 0x18, 0x51, 0xe3, 0x6a, 0x44, 0xc9,
-	0xb7, 0x84, 0x92, 0x9f, 0x09, 0x25, 0x67, 0x09, 0x25, 0xe7, 0x09, 0x25, 0x7f, 0x12, 0x4a, 0xfe,
-	0x26, 0xd4, 0xb8, 0x4a, 0x28, 0xf9, 0x71, 0x49, 0x8d, 0xf3, 0x4b, 0x6a, 0x5c, 0x5c, 0x52, 0xe3,
-	0xe3, 0xdc, 0x8f, 0x77, 0xf7, 0x2e, 0x7e, 0x7b, 0x37, 0xfe, 0x05, 0x00, 0x00, 0xff, 0xff, 0xf3,
-	0xcc, 0xaa, 0x12, 0xec, 0x05, 0x00, 0x00,
+	// 787 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xa4, 0x56, 0x3f, 0x4f, 0xe3, 0x48,
+	0x14, 0xf7, 0x40, 0x80, 0xe8, 0x39, 0x97, 0x44, 0x73, 0x11, 0x98, 0x20, 0x7c, 0xc1, 0x05, 0x17,
+	0x9d, 0xee, 0x12, 0x0e, 0x9a, 0xd3, 0x89, 0x06, 0x22, 0xa2, 0x20, 0xc1, 0x71, 0x32, 0x54, 0x57,
+	0x5c, 0x34, 0x31, 0x13, 0x67, 0xee, 0xfc, 0x4f, 0xf6, 0x24, 0x62, 0xbb, 0xad, 0xb6, 0xde, 0x8f,
+	0xb0, 0xe5, 0xd6, 0xfb, 0x29, 0x28, 0x29, 0xa9, 0x56, 0x9b, 0xd0, 0x6c, 0xc9, 0x47, 0x58, 0x79,
+	0x1c, 0x62, 0xe2, 0xb5, 0xa3, 0x5d, 0x51, 0x65, 0xde, 0x9b, 0xf7, 0x7b, 0xf3, 0xfb, 0xcd, 0x7b,
+	0x93, 0x67, 0x28, 0xf5, 0x87, 0x8e, 0xc1, 0x99, 0xeb, 0x04, 0x0d, 0xcf, 0x77, 0xb9, 0x8b, 0x2b,
+	0x3e, 0x71, 0x4c, 0x3a, 0xa2, 0x06, 0x77, 0xfd, 0xc0, 0xb3, 0x18, 0xe7, 0xcc, 0x31, 0xab, 0x7b,
+	0x26, 0xe3, 0x83, 0x61, 0xaf, 0x61, 0xb8, 0x76, 0xd3, 0xf4, 0x49, 0x9f, 0x38, 0xa4, 0x69, 0x33,
+	0x9b, 0xf9, 0x4d, 0xef, 0x7f, 0x33, 0x5a, 0x79, 0xbd, 0xe8, 0x37, 0xca, 0x53, 0xad, 0x98, 0xae,
+	0xe9, 0x8a, 0x65, 0x33, 0x5c, 0x45, 0x5e, 0xed, 0x0d, 0x82, 0x8d, 0xcb, 0xa1, 0x7d, 0x31, 0xa2,
+	0xfe, 0x15, 0xb3, 0xe9, 0xa9, 0xc3, 0xa9, 0x6f, 0xd3, 0x6b, 0x46, 0x38, 0xc5, 0x18, 0x72, 0xc1,
+	0xd0, 0x6e, 0x2b, 0xa8, 0x86, 0xea, 0x48, 0x17, 0x6b, 0x5c, 0x85, 0xfc, 0x80, 0x04, 0x6d, 0xcb,
+	0x25, 0x5c, 0x59, 0xaa, 0xa1, 0x7a, 0x5e, 0x9f, 0xd9, 0xd3, 0xf8, 0x96, 0xb2, 0x3c, 0x8b, 0x6f,
+	0xe1, 0x9f, 0x85, 0xaf, 0xa3, 0xe4, 0x6a, 0xa8, 0x2e, 0xef, 0xff, 0xd8, 0x30, 0x5c, 0x9f, 0xd3,
+	0x1b, 0xaf, 0xd7, 0xe8, 0xb0, 0x80, 0xbb, 0xa6, 0x4f, 0x6c, 0x11, 0xd8, 0xd1, 0x2c, 0xd8, 0xca,
+	0xe0, 0x71, 0xc6, 0x02, 0x8e, 0xcf, 0x61, 0xcd, 0xa7, 0xc1, 0xd0, 0xe2, 0x81, 0x82, 0x6a, 0xcb,
+	0x75, 0x79, 0xff, 0xb7, 0x46, 0xda, 0xbd, 0x34, 0x32, 0x72, 0x1c, 0xe7, 0x6e, 0x3f, 0xfe, 0x24,
+	0xe9, 0x4f, 0x39, 0xb4, 0x13, 0xd8, 0x6c, 0xb9, 0x43, 0x87, 0xa7, 0xea, 0x2e, 0x00, 0xea, 0x4f,
+	0x45, 0xa3, 0xfe, 0x22, 0xc5, 0x9a, 0x07, 0xdb, 0x99, 0x69, 0x04, 0xed, 0x8b, 0x24, 0xed, 0x66,
+	0x3a, 0xed, 0xcc, 0x2c, 0x49, 0xe2, 0xff, 0x41, 0xf5, 0x9c, 0x39, 0xe7, 0xe4, 0xe6, 0x65, 0xcc,
+	0xb1, 0x06, 0x85, 0x01, 0x09, 0x66, 0x45, 0x10, 0x35, 0xcb, 0xeb, 0x73, 0x3e, 0xcd, 0x07, 0x35,
+	0xfb, 0x2c, 0x21, 0xef, 0xef, 0xa4, 0xbc, 0xbd, 0x74, 0x79, 0xd9, 0x69, 0x92, 0xfa, 0x3e, 0xe4,
+	0xa0, 0xac, 0x13, 0x3e, 0x2f, 0x6b, 0x07, 0x0a, 0x01, 0xb1, 0x3d, 0x8b, 0x76, 0x8d, 0xf0, 0x9e,
+	0x84, 0xc2, 0x65, 0x5d, 0x8e, 0x7c, 0xe2, 0xea, 0xc2, 0x10, 0x16, 0x74, 0x07, 0x33, 0x3d, 0x91,
+	0x5e, 0x99, 0xc5, 0x72, 0xf0, 0x01, 0x14, 0xfa, 0xcc, 0x0f, 0x78, 0x37, 0xc2, 0x09, 0xc9, 0xf2,
+	0x7e, 0x39, 0x6e, 0xc9, 0x4b, 0xe1, 0xd7, 0x65, 0x11, 0x15, 0x19, 0xf8, 0x77, 0x90, 0x2d, 0x12,
+	0x63, 0x72, 0x19, 0x18, 0x08, 0x83, 0xa6, 0x90, 0x0a, 0xac, 0x5c, 0x53, 0x8b, 0x13, 0x65, 0x45,
+	0x14, 0x22, 0x32, 0xf0, 0x21, 0x94, 0xa2, 0xd3, 0x63, 0x8e, 0x90, 0xfd, 0x26, 0x8a, 0x22, 0x36,
+	0xe6, 0xfe, 0x27, 0x14, 0x05, 0x8d, 0x18, 0x2c, 0x67, 0x83, 0x7f, 0x08, 0x43, 0x63, 0xec, 0x21,
+	0x94, 0x04, 0x85, 0x67, 0xe0, 0xc2, 0x82, 0x93, 0x45, 0xec, 0xf3, 0x93, 0x37, 0x13, 0xbc, 0xbb,
+	0x9c, 0xd9, 0x34, 0xe0, 0xc4, 0xf6, 0x94, 0xa2, 0x28, 0xc4, 0xc6, 0x3c, 0xd9, 0xab, 0xa7, 0x6d,
+	0xfc, 0x07, 0x28, 0xf3, 0xac, 0x9f, 0x41, 0x4b, 0x02, 0xba, 0x3e, 0x47, 0x35, 0x46, 0xfe, 0x0a,
+	0xb8, 0xef, 0xfa, 0x06, 0xed, 0x52, 0xdb, 0xe3, 0xaf, 0xba, 0x51, 0x77, 0x28, 0x65, 0x51, 0xd4,
+	0xb2, 0xd8, 0x39, 0x09, 0x37, 0x74, 0xe1, 0xd7, 0xfe, 0x85, 0x4a, 0xb2, 0x67, 0x44, 0x7b, 0xb6,
+	0x93, 0xed, 0xb9, 0x9b, 0xde, 0x9e, 0x49, 0x70, 0xb2, 0x29, 0x2d, 0xd8, 0x6e, 0x87, 0x12, 0xcf,
+	0x48, 0xf0, 0xc2, 0x7f, 0x0c, 0xbc, 0x03, 0x68, 0x30, 0xed, 0xbc, 0xd4, 0xeb, 0x47, 0x03, 0xed,
+	0x06, 0x76, 0x16, 0x9e, 0x26, 0xa4, 0x5d, 0x26, 0xa5, 0x1d, 0xa4, 0x4b, 0x5b, 0x98, 0x29, 0xa9,
+	0xf3, 0xdd, 0x12, 0x6c, 0x1c, 0x8d, 0xcc, 0x6f, 0x1e, 0x06, 0xbb, 0x50, 0x64, 0x8e, 0xe1, 0x53,
+	0x9b, 0x3a, 0x9c, 0x58, 0x47, 0x23, 0x53, 0xc8, 0x45, 0x7a, 0xc2, 0x8b, 0xd7, 0x61, 0x55, 0x3c,
+	0xdc, 0xf6, 0x74, 0x34, 0x4c, 0x2d, 0xdc, 0x00, 0x3c, 0x0c, 0xe8, 0x69, 0x1c, 0xdc, 0x22, 0x96,
+	0x21, 0xde, 0x58, 0x5e, 0x4f, 0xd9, 0x09, 0x5f, 0x96, 0xe1, 0xda, 0x5e, 0xfb, 0xe9, 0x65, 0x09,
+	0x23, 0x1c, 0x31, 0x64, 0x64, 0x76, 0x94, 0xd5, 0x05, 0x23, 0x26, 0x0c, 0x98, 0xd1, 0xe8, 0x28,
+	0x6b, 0xa2, 0xf9, 0xa6, 0x16, 0xfe, 0x05, 0xbe, 0x6a, 0x29, 0x25, 0x9f, 0xd1, 0x6a, 0x16, 0x6c,
+	0x65, 0xdc, 0xd0, 0x77, 0x8d, 0xa9, 0x8c, 0x1c, 0x89, 0x82, 0x1c, 0xff, 0x75, 0x3b, 0x56, 0xa5,
+	0xbb, 0xb1, 0x2a, 0xdd, 0x8f, 0x55, 0xe9, 0x71, 0xac, 0xa2, 0xd7, 0x13, 0x15, 0xbd, 0x9f, 0xa8,
+	0xe8, 0x76, 0xa2, 0xa2, 0xbb, 0x89, 0x8a, 0x3e, 0x4d, 0x54, 0xf4, 0x79, 0xa2, 0x4a, 0x8f, 0x13,
+	0x15, 0xbd, 0x7d, 0x50, 0xa5, 0xbb, 0x07, 0x55, 0xba, 0x7f, 0x50, 0xa5, 0x7f, 0x52, 0xbf, 0x1a,
+	0x7a, 0xab, 0x62, 0xe8, 0x1f, 0x7c, 0x09, 0x00, 0x00, 0xff, 0xff, 0x9a, 0xaa, 0xf1, 0x63, 0x65,
+	0x08, 0x00, 0x00,
 }
 
 func (this *SumOverTimeIntermediate) Equal(that interface{}) bool {
@@ -653,6 +823,139 @@ func (this *RateIntermediateList) Equal(that interface{}) bool {
 	}
 	return true
 }
+func (this *FirstLastOverTimeIntermediate) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*FirstLastOverTimeIntermediate)
+	if !ok {
+		that2, ok := that.(FirstLastOverTimeIntermediate)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.F != that1.F {
+		return false
+	}
+	if this.HasFloat != that1.HasFloat {
+		return false
+	}
+	if !this.H.Equal(that1.H) {
+		return false
+	}
+	return true
+}
+func (this *FirstLastOverTimeIntermediateList) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*FirstLastOverTimeIntermediateList)
+	if !ok {
+		that2, ok := that.(FirstLastOverTimeIntermediateList)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Results) != len(that1.Results) {
+		return false
+	}
+	for i := range this.Results {
+		if !this.Results[i].Equal(&that1.Results[i]) {
+			return false
+		}
+	}
+	return true
+}
+func (this *AvgOverTimeIntermediate) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*AvgOverTimeIntermediate)
+	if !ok {
+		that2, ok := that.(AvgOverTimeIntermediate)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.SumF != that1.SumF {
+		return false
+	}
+	if this.IncrementalAvg != that1.IncrementalAvg {
+		return false
+	}
+	if this.CountF != that1.CountF {
+		return false
+	}
+	if this.UseIncrementalCalc != that1.UseIncrementalCalc {
+		return false
+	}
+	if this.CompF != that1.CompF {
+		return false
+	}
+	if !this.AvgH.Equal(that1.AvgH) {
+		return false
+	}
+	if this.CountH != that1.CountH {
+		return false
+	}
+	if this.ForceEmptyResult != that1.ForceEmptyResult {
+		return false
+	}
+	return true
+}
+func (this *AvgOverTimeIntermediateList) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*AvgOverTimeIntermediateList)
+	if !ok {
+		that2, ok := that.(AvgOverTimeIntermediateList)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Results) != len(that1.Results) {
+		return false
+	}
+	for i := range this.Results {
+		if !this.Results[i].Equal(&that1.Results[i]) {
+			return false
+		}
+	}
+	return true
+}
 func (this *SumOverTimeIntermediate) GoString() string {
 	if this == nil {
 		return "nil"
@@ -777,6 +1080,71 @@ func (this *RateIntermediateList) GoString() string {
 	s = append(s, "&rangevectorsplitting.RateIntermediateList{")
 	if this.Results != nil {
 		vs := make([]RateIntermediate, len(this.Results))
+		for i := range vs {
+			vs[i] = this.Results[i]
+		}
+		s = append(s, "Results: "+fmt.Sprintf("%#v", vs)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *FirstLastOverTimeIntermediate) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 7)
+	s = append(s, "&rangevectorsplitting.FirstLastOverTimeIntermediate{")
+	s = append(s, "F: "+fmt.Sprintf("%#v", this.F)+",\n")
+	s = append(s, "HasFloat: "+fmt.Sprintf("%#v", this.HasFloat)+",\n")
+	if this.H != nil {
+		s = append(s, "H: "+fmt.Sprintf("%#v", this.H)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *FirstLastOverTimeIntermediateList) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&rangevectorsplitting.FirstLastOverTimeIntermediateList{")
+	if this.Results != nil {
+		vs := make([]FirstLastOverTimeIntermediate, len(this.Results))
+		for i := range vs {
+			vs[i] = this.Results[i]
+		}
+		s = append(s, "Results: "+fmt.Sprintf("%#v", vs)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *AvgOverTimeIntermediate) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 12)
+	s = append(s, "&rangevectorsplitting.AvgOverTimeIntermediate{")
+	s = append(s, "SumF: "+fmt.Sprintf("%#v", this.SumF)+",\n")
+	s = append(s, "IncrementalAvg: "+fmt.Sprintf("%#v", this.IncrementalAvg)+",\n")
+	s = append(s, "CountF: "+fmt.Sprintf("%#v", this.CountF)+",\n")
+	s = append(s, "UseIncrementalCalc: "+fmt.Sprintf("%#v", this.UseIncrementalCalc)+",\n")
+	s = append(s, "CompF: "+fmt.Sprintf("%#v", this.CompF)+",\n")
+	if this.AvgH != nil {
+		s = append(s, "AvgH: "+fmt.Sprintf("%#v", this.AvgH)+",\n")
+	}
+	s = append(s, "CountH: "+fmt.Sprintf("%#v", this.CountH)+",\n")
+	s = append(s, "ForceEmptyResult: "+fmt.Sprintf("%#v", this.ForceEmptyResult)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *AvgOverTimeIntermediateList) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&rangevectorsplitting.AvgOverTimeIntermediateList{")
+	if this.Results != nil {
+		vs := make([]AvgOverTimeIntermediate, len(this.Results))
 		for i := range vs {
 			vs[i] = this.Results[i]
 		}
@@ -1212,6 +1580,215 @@ func (m *RateIntermediateList) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *FirstLastOverTimeIntermediate) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *FirstLastOverTimeIntermediate) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *FirstLastOverTimeIntermediate) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.H != nil {
+		{
+			size, err := m.H.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintFunctions(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x1a
+	}
+	if m.HasFloat {
+		i--
+		if m.HasFloat {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x10
+	}
+	if m.F != 0 {
+		i -= 8
+		encoding_binary.LittleEndian.PutUint64(dAtA[i:], uint64(math.Float64bits(float64(m.F))))
+		i--
+		dAtA[i] = 0x9
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *FirstLastOverTimeIntermediateList) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *FirstLastOverTimeIntermediateList) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *FirstLastOverTimeIntermediateList) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Results) > 0 {
+		for iNdEx := len(m.Results) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Results[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintFunctions(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *AvgOverTimeIntermediate) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *AvgOverTimeIntermediate) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *AvgOverTimeIntermediate) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.ForceEmptyResult {
+		i--
+		if m.ForceEmptyResult {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x40
+	}
+	if m.CountH != 0 {
+		i = encodeVarintFunctions(dAtA, i, uint64(m.CountH))
+		i--
+		dAtA[i] = 0x38
+	}
+	if m.AvgH != nil {
+		{
+			size, err := m.AvgH.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintFunctions(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x32
+	}
+	if m.CompF != 0 {
+		i -= 8
+		encoding_binary.LittleEndian.PutUint64(dAtA[i:], uint64(math.Float64bits(float64(m.CompF))))
+		i--
+		dAtA[i] = 0x29
+	}
+	if m.UseIncrementalCalc {
+		i--
+		if m.UseIncrementalCalc {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x20
+	}
+	if m.CountF != 0 {
+		i -= 8
+		encoding_binary.LittleEndian.PutUint64(dAtA[i:], uint64(math.Float64bits(float64(m.CountF))))
+		i--
+		dAtA[i] = 0x19
+	}
+	if m.IncrementalAvg != 0 {
+		i -= 8
+		encoding_binary.LittleEndian.PutUint64(dAtA[i:], uint64(math.Float64bits(float64(m.IncrementalAvg))))
+		i--
+		dAtA[i] = 0x11
+	}
+	if m.SumF != 0 {
+		i -= 8
+		encoding_binary.LittleEndian.PutUint64(dAtA[i:], uint64(math.Float64bits(float64(m.SumF))))
+		i--
+		dAtA[i] = 0x9
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *AvgOverTimeIntermediateList) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *AvgOverTimeIntermediateList) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *AvgOverTimeIntermediateList) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Results) > 0 {
+		for iNdEx := len(m.Results) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Results[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintFunctions(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
 func encodeVarintFunctions(dAtA []byte, offset int, v uint64) int {
 	offset -= sovFunctions(v)
 	base := offset
@@ -1385,6 +1962,89 @@ func (m *RateIntermediateList) Size() (n int) {
 	return n
 }
 
+func (m *FirstLastOverTimeIntermediate) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.F != 0 {
+		n += 9
+	}
+	if m.HasFloat {
+		n += 2
+	}
+	if m.H != nil {
+		l = m.H.Size()
+		n += 1 + l + sovFunctions(uint64(l))
+	}
+	return n
+}
+
+func (m *FirstLastOverTimeIntermediateList) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.Results) > 0 {
+		for _, e := range m.Results {
+			l = e.Size()
+			n += 1 + l + sovFunctions(uint64(l))
+		}
+	}
+	return n
+}
+
+func (m *AvgOverTimeIntermediate) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.SumF != 0 {
+		n += 9
+	}
+	if m.IncrementalAvg != 0 {
+		n += 9
+	}
+	if m.CountF != 0 {
+		n += 9
+	}
+	if m.UseIncrementalCalc {
+		n += 2
+	}
+	if m.CompF != 0 {
+		n += 9
+	}
+	if m.AvgH != nil {
+		l = m.AvgH.Size()
+		n += 1 + l + sovFunctions(uint64(l))
+	}
+	if m.CountH != 0 {
+		n += 1 + sovFunctions(uint64(m.CountH))
+	}
+	if m.ForceEmptyResult {
+		n += 2
+	}
+	return n
+}
+
+func (m *AvgOverTimeIntermediateList) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.Results) > 0 {
+		for _, e := range m.Results {
+			l = e.Size()
+			n += 1 + l + sovFunctions(uint64(l))
+		}
+	}
+	return n
+}
+
 func sovFunctions(x uint64) (n int) {
 	return (math_bits.Len64(x|1) + 6) / 7
 }
@@ -1502,6 +2162,65 @@ func (this *RateIntermediateList) String() string {
 	}
 	repeatedStringForResults += "}"
 	s := strings.Join([]string{`&RateIntermediateList{`,
+		`Results:` + repeatedStringForResults + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *FirstLastOverTimeIntermediate) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&FirstLastOverTimeIntermediate{`,
+		`F:` + fmt.Sprintf("%v", this.F) + `,`,
+		`HasFloat:` + fmt.Sprintf("%v", this.HasFloat) + `,`,
+		`H:` + strings.Replace(fmt.Sprintf("%v", this.H), "Histogram", "mimirpb.Histogram", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *FirstLastOverTimeIntermediateList) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForResults := "[]FirstLastOverTimeIntermediate{"
+	for _, f := range this.Results {
+		repeatedStringForResults += strings.Replace(strings.Replace(f.String(), "FirstLastOverTimeIntermediate", "FirstLastOverTimeIntermediate", 1), `&`, ``, 1) + ","
+	}
+	repeatedStringForResults += "}"
+	s := strings.Join([]string{`&FirstLastOverTimeIntermediateList{`,
+		`Results:` + repeatedStringForResults + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *AvgOverTimeIntermediate) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&AvgOverTimeIntermediate{`,
+		`SumF:` + fmt.Sprintf("%v", this.SumF) + `,`,
+		`IncrementalAvg:` + fmt.Sprintf("%v", this.IncrementalAvg) + `,`,
+		`CountF:` + fmt.Sprintf("%v", this.CountF) + `,`,
+		`UseIncrementalCalc:` + fmt.Sprintf("%v", this.UseIncrementalCalc) + `,`,
+		`CompF:` + fmt.Sprintf("%v", this.CompF) + `,`,
+		`AvgH:` + strings.Replace(fmt.Sprintf("%v", this.AvgH), "Histogram", "mimirpb.Histogram", 1) + `,`,
+		`CountH:` + fmt.Sprintf("%v", this.CountH) + `,`,
+		`ForceEmptyResult:` + fmt.Sprintf("%v", this.ForceEmptyResult) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *AvgOverTimeIntermediateList) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForResults := "[]AvgOverTimeIntermediate{"
+	for _, f := range this.Results {
+		repeatedStringForResults += strings.Replace(strings.Replace(f.String(), "AvgOverTimeIntermediate", "AvgOverTimeIntermediate", 1), `&`, ``, 1) + ","
+	}
+	repeatedStringForResults += "}"
+	s := strings.Join([]string{`&AvgOverTimeIntermediateList{`,
 		`Results:` + repeatedStringForResults + `,`,
 		`}`,
 	}, "")
@@ -2474,6 +3193,480 @@ func (m *RateIntermediateList) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			m.Results = append(m.Results, RateIntermediate{})
+			if err := m.Results[len(m.Results)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipFunctions(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthFunctions
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *FirstLastOverTimeIntermediate) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowFunctions
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: FirstLastOverTimeIntermediate: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: FirstLastOverTimeIntermediate: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 1 {
+				return fmt.Errorf("proto: wrong wireType = %d for field F", wireType)
+			}
+			var v uint64
+			if (iNdEx + 8) > l {
+				return io.ErrUnexpectedEOF
+			}
+			v = uint64(encoding_binary.LittleEndian.Uint64(dAtA[iNdEx:]))
+			iNdEx += 8
+			m.F = float64(math.Float64frombits(v))
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field HasFloat", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowFunctions
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.HasFloat = bool(v != 0)
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field H", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowFunctions
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthFunctions
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthFunctions
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.H == nil {
+				m.H = &mimirpb.Histogram{}
+			}
+			if err := m.H.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipFunctions(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthFunctions
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *FirstLastOverTimeIntermediateList) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowFunctions
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: FirstLastOverTimeIntermediateList: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: FirstLastOverTimeIntermediateList: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Results", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowFunctions
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthFunctions
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthFunctions
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Results = append(m.Results, FirstLastOverTimeIntermediate{})
+			if err := m.Results[len(m.Results)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipFunctions(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthFunctions
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *AvgOverTimeIntermediate) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowFunctions
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: AvgOverTimeIntermediate: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: AvgOverTimeIntermediate: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 1 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SumF", wireType)
+			}
+			var v uint64
+			if (iNdEx + 8) > l {
+				return io.ErrUnexpectedEOF
+			}
+			v = uint64(encoding_binary.LittleEndian.Uint64(dAtA[iNdEx:]))
+			iNdEx += 8
+			m.SumF = float64(math.Float64frombits(v))
+		case 2:
+			if wireType != 1 {
+				return fmt.Errorf("proto: wrong wireType = %d for field IncrementalAvg", wireType)
+			}
+			var v uint64
+			if (iNdEx + 8) > l {
+				return io.ErrUnexpectedEOF
+			}
+			v = uint64(encoding_binary.LittleEndian.Uint64(dAtA[iNdEx:]))
+			iNdEx += 8
+			m.IncrementalAvg = float64(math.Float64frombits(v))
+		case 3:
+			if wireType != 1 {
+				return fmt.Errorf("proto: wrong wireType = %d for field CountF", wireType)
+			}
+			var v uint64
+			if (iNdEx + 8) > l {
+				return io.ErrUnexpectedEOF
+			}
+			v = uint64(encoding_binary.LittleEndian.Uint64(dAtA[iNdEx:]))
+			iNdEx += 8
+			m.CountF = float64(math.Float64frombits(v))
+		case 4:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field UseIncrementalCalc", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowFunctions
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.UseIncrementalCalc = bool(v != 0)
+		case 5:
+			if wireType != 1 {
+				return fmt.Errorf("proto: wrong wireType = %d for field CompF", wireType)
+			}
+			var v uint64
+			if (iNdEx + 8) > l {
+				return io.ErrUnexpectedEOF
+			}
+			v = uint64(encoding_binary.LittleEndian.Uint64(dAtA[iNdEx:]))
+			iNdEx += 8
+			m.CompF = float64(math.Float64frombits(v))
+		case 6:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field AvgH", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowFunctions
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthFunctions
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthFunctions
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.AvgH == nil {
+				m.AvgH = &mimirpb.Histogram{}
+			}
+			if err := m.AvgH.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 7:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field CountH", wireType)
+			}
+			m.CountH = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowFunctions
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.CountH |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 8:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ForceEmptyResult", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowFunctions
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.ForceEmptyResult = bool(v != 0)
+		default:
+			iNdEx = preIndex
+			skippy, err := skipFunctions(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthFunctions
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *AvgOverTimeIntermediateList) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowFunctions
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: AvgOverTimeIntermediateList: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: AvgOverTimeIntermediateList: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Results", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowFunctions
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthFunctions
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthFunctions
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Results = append(m.Results, AvgOverTimeIntermediate{})
 			if err := m.Results[len(m.Results)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}

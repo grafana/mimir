@@ -133,6 +133,7 @@ func openFullIndex(indexPath string, size int64) (IndexAnalyzer, *IndexInfo, err
 func openIndexHeader(blockDir, indexHeaderPath string, size int64) (IndexAnalyzer, *IndexInfo, error) {
 	// The index-header file is expected to be at <dir>/<block-id>/index-header
 	// We need to extract the block ID from the path.
+
 	blockIDStr := filepath.Base(blockDir)
 	blockID, err := ulid.Parse(blockIDStr)
 	if err != nil {
@@ -155,17 +156,16 @@ func openIndexHeader(blockDir, indexHeaderPath string, size int64) (IndexAnalyze
 
 	// Parse the index-header.
 	ctx := context.Background()
-	sparseHeadersPath := filepath.Join(blockDir, block.SparseIndexHeaderFilename)
-	reader, err := indexheader.NewFileStreamBinaryReader(
+	indexHeaderCfg := indexheader.Config{} // Default config creates a file-based reader.
+	reader, err := indexheader.NewStreamBinaryReader(
 		ctx,
-		indexHeaderPath,
 		blockID,
-		sparseHeadersPath,
+		bkt,
+		filepath.Dir(blockDir),
+		indexHeaderCfg,
 		32, // postingOffsetsInMemSampling - default value
 		logger,
-		bkt,
 		metrics,
-		indexheader.Config{},
 	)
 	if err != nil {
 		ubkt.Close()

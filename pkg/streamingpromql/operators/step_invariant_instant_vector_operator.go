@@ -110,3 +110,13 @@ func (s *StepInvariantInstantVectorOperator) NextSeries(ctx context.Context) (ty
 
 	return data, err
 }
+
+func (s *StepInvariantInstantVectorOperator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	inner, err := s.inner.Stats(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	defer inner.Close()
+	return inner.ExtendStepInvariantToFullRange(s.originalTimeRange)
+}

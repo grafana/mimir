@@ -16,7 +16,7 @@
     autoscaling_querier_min_replicas_per_zone: error 'you must set autoscaling_querier_min_replicas_per_zone in the _config',
     autoscaling_querier_max_replicas_per_zone: error 'you must set autoscaling_querier_max_replicas_per_zone in the _config',
     autoscaling_querier_target_utilization: 0.75,  // Target to utilize 75% querier workers on peak traffic, so we have 25% room for higher peaks.
-    autoscaling_querier_ignore_null_values: true,  // Sets ignoreNullValues for KEDA; if false, no data will result in a scaler error.
+    autoscaling_querier_ignore_null_values: false,  // Sets ignoreNullValues for KEDA; if false, no data will result in a scaler error.
     autoscaling_querier_predictive_scaling_enabled: false,  // Use inflight queries from the past to predict the number of queriers needed.
     autoscaling_querier_predictive_scaling_period: '6d23h30m',  // The period to consider when considering scheduler metrics for predictive scaling. This is usually slightly lower than the period of the repeating query events to give scaling up lead time.
     autoscaling_querier_predictive_scaling_lookback: '30m',  // The time range to consider when considering scheduler metrics for predictive scaling. For example: if lookback is 30m and period is 6d23h30m, the querier will scale based on the maximum inflight queries between 6d23h30m and 7d0h0m ago.
@@ -181,7 +181,7 @@
   // `weight` param can be used to control just a portion of the expected queriers with the generated scaled object.
   // For example, if you run multiple querier deployments on different node types, you can use the weight to control which portion of them runs on which nodes.
   // The weight is a number between 0 and 1, where 1 means 100% of the expected queriers.
-  newQuerierScaledObject(name, query_scheduler_container_name, querier_container_name, querier_max_concurrent, min_replicas, max_replicas, target_utilization, weight=1, extra_matchers='', ignore_null_values=true)::
+  newQuerierScaledObject(name, query_scheduler_container_name, querier_container_name, querier_max_concurrent, min_replicas, max_replicas, target_utilization, weight=1, extra_matchers='', ignore_null_values=false)::
     local queryParams = {
       namespace: $._config.namespace,
       query_scheduler_container_name: query_scheduler_container_name,

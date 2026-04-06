@@ -128,6 +128,24 @@ func TestRW2Unmarshal(t *testing.T) {
 		require.Equal(t, expected, &received)
 	})
 
+	t.Run("zero timeseries does not panic", func(t *testing.T) {
+		syms := rw2util.NewSymbolTableBuilder(nil)
+		syms.GetSymbol("unused_symbol")
+		req := &WriteRequest{
+			SymbolsRW2: syms.GetSymbols(),
+		}
+
+		data, err := req.Marshal()
+		require.NoError(t, err)
+
+		received := PreallocWriteRequest{
+			UnmarshalFromRW2: true,
+		}
+		require.NoError(t, received.Unmarshal(data))
+		require.Empty(t, received.Timeseries)
+		require.Empty(t, received.Metadata)
+	})
+
 	t.Run("metadata for all metric types map to expected values", func(t *testing.T) {
 		tc := []struct {
 			name    string

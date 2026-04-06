@@ -13,19 +13,19 @@ This will locally build the `grafana/mimir:latest` image used by integration tes
 Once the Docker image is built, you can run integration tests:
 
 ```
-go test -v -tags=requires_docker ./integration/...
+go test -v ./integration/...
 ```
 
 If you want to run a single test you can use a filter. For example, to only run `TestChunksStorageAllIndexBackends`:
 
 ```
-go test -v -tags=requires_docker ./integration -run "^TestChunksStorageAllIndexBackends$"
+go test -v ./integration -run "^TestChunksStorageAllIndexBackends$"
 ```
 
 When running all integration tests, the test process may time out before the tests complete. If this happens, you can increase `go test`'s default 10 minute timeout to something longer with the `-timeout` flag, for example:
 
 ```
-go test -v -tags=requires_docker -timeout=20m ./integration/...
+go test -v -timeout=20m ./integration/...
 ```
 
 ### Supported environment variables
@@ -40,10 +40,6 @@ go test -v -tags=requires_docker -timeout=20m ./integration/...
   The absolute path to a directory where the integration test will create an additional temporary directory to store files generated during the test.
 - **`E2E_NETWORK_NAME`**<br />
   Name of the docker network to create and use for integration tests. If no variable is set, defaults to `e2e-mimir-test`.
-
-### The `requires_docker` tag
-
-Integration tests have `requires_docker` tag (`// +build requires_docker` line followed by empty line on top of Go files), to avoid running them unintentionally as they require Docker, e.g. by running `go test ./...` in main Mimir package.
 
 ## Isolation
 

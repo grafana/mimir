@@ -8,6 +8,7 @@ package rangevectorsplitting
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -438,13 +439,14 @@ func (m *FunctionOverRangeVectorSplit[T]) Finalize(ctx context.Context) error {
 	// if a binary operation short-circuits evaluation early. A cached partial intermediate result might result in an
 	// incorrect calculation for a query spanning a different time range.
 	// TODO: It might be worth processing any remaining series so we can cache the result.
+	shouldCache := true
 	if !m.metadataConsumed {
 		level.Debug(logger).Log("msg", "skipping caching as SeriesMetadata() was not called")
-		return nil
+		shouldCache = false
 	}
 	if m.currentSeriesIdx < len(m.seriesToSplits) {
 		level.Debug(logger).Log("msg", "skipping caching as not all series processed by NextSeries()")
-		return nil
+		shouldCache = false
 	}
 
 	m.finalizeStart = time.Now()
@@ -461,7 +463,7 @@ func (m *FunctionOverRangeVectorSplit[T]) Finalize(ctx context.Context) error {
 	}
 
 	for _, split := range m.splits {
-		if err := split.Finalize(ctx); err != nil {
+		if err := split.Finalize(ctx, shouldCache); err != nil {
 			return err
 		}
 	}
@@ -483,11 +485,13 @@ func (m *FunctionOverRangeVectorSplit[T]) Finalize(ctx context.Context) error {
 		"ranges_total", uncachedRangeCount+cachedRangeCount,
 		"ranges_cached", cachedRangeCount,
 		"ranges_uncached", uncachedRangeCount,
+		"eligible_to_store_results_in_cache", shouldCache,
 		"cache_entries_read", m.cacheStats.ReadEntries,
 		"cache_entries_written", m.cacheStats.WrittenEntries,
 		"max_series_per_entry", m.cacheStats.MaxSeries,
 		"min_series_per_entry", m.cacheStats.MinSeries,
 		"total_series_across_entries", m.cacheStats.TotalSeries,
+		"filtered_out_series_across_entries", m.cacheStats.FilteredOutSeries,
 		"max_bytes_per_entry", m.cacheStats.MaxBytes,
 		"min_bytes_per_entry", m.cacheStats.MinBytes,
 		"total_cache_bytes", m.cacheStats.TotalBytes,
@@ -500,6 +504,10 @@ func (m *FunctionOverRangeVectorSplit[T]) Finalize(ctx context.Context) error {
 
 	m.finalized = true
 	return nil
+}
+
+func (m *FunctionOverRangeVectorSplit[T]) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return nil, errors.New("Stats not implemented for function over range vector split")
 }
 
 func (m *FunctionOverRangeVectorSplit[T]) Close() {
@@ -519,7 +527,7 @@ type Split[T any] interface {
 	// This is used to make sure annotations emitted when generating the result for an uncached split reference the
 	// correct metric name.
 	AppendMergedSeriesIndex(splitLocalIdx int, mergedIdx int)
-	Finalize(ctx context.Context) error
+	Finalize(ctx context.Context, storeResultsInCache bool) error
 	Close()
 	IsCached() bool
 	RangeCount() int
@@ -592,7 +600,7 @@ func (c *CachedSplit[T]) GetResultsAt(_ context.Context, idx int) ([]T, error) {
 	return []T{c.results[idx]}, nil
 }
 
-func (c *CachedSplit[T]) Finalize(ctx context.Context) error {
+func (c *CachedSplit[T]) Finalize(ctx context.Context, storeResultsInCache bool) error {
 	for _, w := range c.annotations.Warnings {
 		c.parent.Annotations.Add(querierpb.NewWarningAnnotation(w))
 	}
@@ -618,11 +626,10 @@ type UncachedSplit[T any] struct {
 	parent *FunctionOverRangeVectorSplit[T]
 
 	// Data to cache
-	rangeResults     [][]T
-	rangeAnnotations []*annotations.Annotations
-	// TODO: consider building a separate seriesMetadata for each range to reduce cache entry size.
-	// https://github.com/grafana/mimir/pull/13472#discussion_r2796712175
-	seriesMetadata []querierpb.SeriesMetadata
+	rangeResults        [][]T
+	rangeAnnotations    []*annotations.Annotations
+	seriesMetadata      []querierpb.SeriesMetadata
+	rangeSeriesMetadata [][]int // metadata idx per range idx
 
 	// localToMergedIdx maps split-local series index to the parent's merged series index.
 	// Used by emitAndCaptureAnnotation to look up the correct metric name when generating results.
@@ -646,6 +653,7 @@ func NewUncachedSplit[T any](
 		return nil, err
 	}
 
+	rangeSeriesMetadata := make([][]int, len(ranges))
 	rangeResults := make([][]T, len(ranges))
 	rangeAnnotations := make([]*annotations.Annotations, len(ranges))
 	for i := range ranges {
@@ -653,12 +661,13 @@ func NewUncachedSplit[T any](
 	}
 
 	return &UncachedSplit[T]{
-		ranges:           ranges,
-		operator:         operator,
-		parent:           parent,
-		rangeResults:     rangeResults,
-		rangeAnnotations: rangeAnnotations,
-		finalized:        false,
+		ranges:              ranges,
+		operator:            operator,
+		parent:              parent,
+		rangeResults:        rangeResults,
+		rangeAnnotations:    rangeAnnotations,
+		rangeSeriesMetadata: rangeSeriesMetadata,
+		finalized:           false,
 	}, nil
 }
 
@@ -698,7 +707,7 @@ func (p *UncachedSplit[T]) GetResultsAt(ctx context.Context, idx int) ([]T, erro
 }
 
 func (p *UncachedSplit[T]) NextSeries(ctx context.Context) ([]T, error) {
-	localIdx := p.currentLocalSeriesIdx
+	localSeriesIdx := p.currentLocalSeriesIdx
 	p.currentLocalSeriesIdx++
 
 	if err := p.operator.NextSeries(ctx); err != nil {
@@ -719,16 +728,19 @@ func (p *UncachedSplit[T]) NextSeries(ctx context.Context) ([]T, error) {
 		previousSubStep = rangeStep
 
 		capturingEmitAnnotation := func(generator types.AnnotationGenerator) {
-			p.emitAndCaptureAnnotation(rangeIdx, localIdx, generator)
+			p.emitAndCaptureAnnotation(rangeIdx, localSeriesIdx, generator)
 		}
 
-		result, err := p.parent.generateFunc(rangeStep, capturingEmitAnnotation, p.parent.MemoryConsumptionTracker)
+		result, hasValue, err := p.parent.generateFunc(rangeStep, capturingEmitAnnotation, p.parent.MemoryConsumptionTracker)
 		if err != nil {
 			return nil, err
 		}
 		results[rangeIdx] = result
 
-		p.rangeResults[rangeIdx] = append(p.rangeResults[rangeIdx], result)
+		if hasValue {
+			p.rangeResults[rangeIdx] = append(p.rangeResults[rangeIdx], result)
+			p.rangeSeriesMetadata[rangeIdx] = append(p.rangeSeriesMetadata[rangeIdx], localSeriesIdx)
+		}
 	}
 	return results, nil
 }
@@ -744,13 +756,19 @@ func (p *UncachedSplit[T]) emitAndCaptureAnnotation(rangeIdx int, localSeriesIdx
 	p.rangeAnnotations[rangeIdx].Add(annotationErr)
 }
 
-func (p *UncachedSplit[T]) Finalize(ctx context.Context) error {
+func (p *UncachedSplit[T]) Finalize(ctx context.Context, storeResultsInCache bool) error {
 	if p.finalized {
 		return nil
 	}
 
 	if err := p.operator.Finalize(ctx); err != nil {
 		return err
+	}
+
+	p.finalized = true
+
+	if !storeResultsInCache {
+		return nil
 	}
 
 	for rangeIdx, splitRange := range p.ranges {
@@ -761,6 +779,11 @@ func (p *UncachedSplit[T]) Finalize(ctx context.Context) error {
 		var ann querierpb.Annotations
 		ann.Warnings, ann.Infos = p.rangeAnnotations[rangeIdx].AsStrings("", 0, 0)
 
+		seriesMetadata := make([]querierpb.SeriesMetadata, 0, len(p.rangeSeriesMetadata[rangeIdx]))
+		for _, seriesMetadataIdx := range p.rangeSeriesMetadata[rangeIdx] {
+			seriesMetadata = append(seriesMetadata, p.seriesMetadata[seriesMetadataIdx])
+		}
+
 		if err := p.parent.cache.Set(
 			ctx,
 			p.parent.FuncId,
@@ -768,16 +791,16 @@ func (p *UncachedSplit[T]) Finalize(ctx context.Context) error {
 			splitRange.Start,
 			splitRange.End,
 			p.parent.enableDelayedNameRemoval,
-			p.seriesMetadata,
+			seriesMetadata,
 			ann,
 			p.rangeResults[rangeIdx],
+			len(p.seriesMetadata),
 			p.parent.cacheStats,
 		); err != nil {
 			return err
 		}
 	}
 
-	p.finalized = true
 	return nil
 }
 

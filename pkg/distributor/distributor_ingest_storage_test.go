@@ -77,6 +77,7 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 
 	tests := map[string]struct {
 		shardSize                    int
+		writeShardSize               int
 		kafkaPartitionCustomResponse map[int32]*kmsg.ProduceResponse
 		expectedErr                  error
 		expectedSeriesByPartition    map[int32][]string
@@ -96,13 +97,21 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 				2: {"series_five", "series_four"},
 			},
 		},
+		"should shard writes to fewer partitions when write shard size is smaller than read shard size": {
+			shardSize:      0,
+			writeShardSize: 1,
+			expectedSeriesByPartition: map[int32][]string{
+				// With writeShardSize=1, all series go to the single partition in the write shard.
+				2: {"series_five", "series_four", "series_one", "series_three", "series_two"},
+			},
+		},
 		"should return gRPC error if writing to 1 out of N partitions fail with a non-retryable error": {
 			shardSize: 0,
 			kafkaPartitionCustomResponse: map[int32]*kmsg.ProduceResponse{
 				// Non-retryable error.
 				1: testkafka.CreateProduceResponseError(0, kafkaTopic, 1, kerr.InvalidTopicException),
 			},
-			expectedErr: fmt.Errorf("%s 1", failedPushingToPartitionMessage),
+			expectedErr: errors.New(failedPushingToPartitionMessage),
 			expectedSeriesByPartition: map[int32][]string{
 				// Partition 1 is missing because it failed.
 				0: {"series_four", "series_one", "series_three"},
@@ -134,21 +143,24 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 
 			limits := prepareDefaultLimits()
 			limits.IngestionPartitionsTenantShardSize = testData.shardSize
+			limits.IngestionPartitionsTenantWriteShardSize = testData.writeShardSize
 			limits.MaxGlobalExemplarsPerUser = 1000
+
+			const numPartitions = 3
+
+			// Create a cluster with a number of brokers equal to the number of partitions,
+			// so that each partition is on a different broker.
+			kafkaCluster, _ := testkafka.CreateCluster(t, numPartitions, kafkaTopic, testkafka.WithNumBrokers(numPartitions))
 
 			testConfig := prepConfig{
 				numDistributors:         1,
 				ingestStorageEnabled:    true,
-				ingestStoragePartitions: 3,
+				ingestStoragePartitions: numPartitions,
+				ingestStorageKafka:      kafkaCluster,
 				limits:                  limits,
-				configure: func(cfg *Config) {
-					// Run a number of clients equal to the number of partitions, so that each partition
-					// has its own client, as requested by some test cases.
-					cfg.IngestStorageConfig.KafkaConfig.WriteClients = 3
-				},
 			}
 
-			distributors, _, regs, kafkaCluster := prepare(t, testConfig)
+			distributors, _, regs, _ := prepare(t, testConfig)
 			require.Len(t, distributors, 1)
 			require.Len(t, regs, 1)
 
@@ -177,7 +189,6 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 
 			// Send write request.
 			res, err := distributors[0].Push(ctx, createRequest())
-
 			if testData.expectedErr != nil {
 				require.Error(t, err)
 				assert.Nil(t, res)
@@ -409,6 +420,12 @@ func TestDistributor_Push_ShouldSupportWriteBothToIngestersAndPartitions(t *test
 			limits.IngestionPartitionsTenantShardSize = testData.shardSize
 			limits.IngestionTenantShardSize = testData.shardSize
 
+			const numPartitions = 3
+
+			// Create a cluster with a number of brokers equal to the number of partitions,
+			// so that each partition is on a different broker.
+			kafkaCluster, _ := testkafka.CreateCluster(t, numPartitions, kafkaTopic, testkafka.WithNumBrokers(numPartitions))
+
 			testConfig := prepConfig{
 				numDistributors:         1,
 				numIngesters:            3,
@@ -416,14 +433,15 @@ func TestDistributor_Push_ShouldSupportWriteBothToIngestersAndPartitions(t *test
 				replicationFactor:       1,
 				ingesterIngestionType:   ingesterIngestionTypeGRPC, // Do not consume from Kafka. Partitions are asserted directly checking Kafka.
 				ingestStorageEnabled:    true,
-				ingestStoragePartitions: 3,
+				ingestStoragePartitions: numPartitions,
+				ingestStorageKafka:      kafkaCluster,
 				limits:                  limits,
 				configure: func(cfg *Config) {
 					cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled = true
 				},
 			}
 
-			distributors, ingesters, regs, kafkaCluster := prepare(t, testConfig)
+			distributors, ingesters, regs, _ := prepare(t, testConfig)
 			require.Len(t, distributors, 1)
 			require.Len(t, ingesters, 3)
 			require.Len(t, regs, 1)

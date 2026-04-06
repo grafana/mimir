@@ -96,6 +96,7 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-ingester.ring.instance-availability-zone=zone-a"
+            - "-ingest-storage.kafka.client-rack=zone-a"
             - "-memberlist.abort-if-fast-join-fails=true"
           volumeMounts:
             - name: config
@@ -235,6 +236,7 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-ingester.ring.instance-availability-zone=zone-b"
+            - "-ingest-storage.kafka.client-rack=zone-b"
             - "-memberlist.abort-if-fast-join-fails=true"
           volumeMounts:
             - name: config
@@ -374,6 +376,7 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-ingester.ring.instance-availability-zone=zone-c"
+            - "-ingest-storage.kafka.client-rack=zone-c"
             - "-memberlist.abort-if-fast-join-fails=true"
           volumeMounts:
             - name: config

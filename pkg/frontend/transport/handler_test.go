@@ -37,6 +37,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
+	mimirapi "github.com/grafana/mimir/pkg/api"
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/querier/api"
@@ -438,9 +439,11 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			t.Cleanup(func() { require.NoError(t, at.Close()) })
 
 			logger := &testLogger{}
-			handler := NewHandler(tt.cfg, roundTripper, logger, reg, at)
+			h := NewHandler(tt.cfg, roundTripper, logger, reg)
+			handler := mimirapi.NewActivityTrackingMiddleware(at, logger, h)
 
 			req := tt.request()
+			req.Header.Add(user.OrgIDHeaderName, "12345")
 			req = req.WithContext(user.InjectOrgID(req.Context(), "12345"))
 			req = middleware.WithRouteName(req, testRouteName)
 			resp := httptest.NewRecorder()
@@ -592,7 +595,7 @@ func TestHandler_FailedRoundTrip(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
 			logs := &concurrency.SyncBuffer{}
 			logger := log.NewLogfmtLogger(logs)
-			handler := NewHandler(test.cfg, test.queryResponseFunc, logger, reg, nil)
+			handler := NewHandler(test.cfg, test.queryResponseFunc, logger, reg)
 
 			ctx := user.InjectOrgID(context.Background(), "12345")
 			req := httptest.NewRequest("GET", test.path, nil)
@@ -644,7 +647,7 @@ func TestHandler_Stop(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	cfg := HandlerConfig{MaxBodySize: 1024}
 	logger := &testLogger{}
-	handler := NewHandler(cfg, roundTripper, logger, reg, nil)
+	handler := NewHandler(cfg, roundTripper, logger, reg)
 
 	makeRequest := func() (body []byte, statusCode int) {
 		form := url.Values{
@@ -850,7 +853,6 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			activityFile := filepath.Join(t.TempDir(), "activity-tracker")
 			roundTripper := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 				tt.setQueryDetails(querymiddleware.QueryDetailsFromContext(req.Context()))
 				return &http.Response{
@@ -861,12 +863,8 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 
 			reg := prometheus.NewPedanticRegistry()
 
-			at, err := activitytracker.NewActivityTracker(activitytracker.Config{Filepath: activityFile, MaxEntries: 1024}, reg)
-			require.NoError(t, err)
-			t.Cleanup(func() { require.NoError(t, at.Close()) })
-
 			logger := &testLogger{}
-			handler := NewHandler(HandlerConfig{QueryStatsEnabled: true, MaxBodySize: 1024, LogQueryRequestHeaders: tt.logQueryRequestHeaders}, roundTripper, logger, reg, at)
+			handler := NewHandler(HandlerConfig{QueryStatsEnabled: true, MaxBodySize: 1024, LogQueryRequestHeaders: tt.logQueryRequestHeaders}, roundTripper, logger, reg)
 
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/query", nil)
 			for header, value := range tt.requestAdditionalHeaders {
@@ -953,7 +951,7 @@ func TestHandler_ActiveSeriesWriteTimeout(t *testing.T) {
 
 			handler := NewHandler(
 				HandlerConfig{ActiveSeriesWriteTimeout: activeSeriesWriteTimeout},
-				roundTripper, log.NewNopLogger(), nil, nil,
+				roundTripper, log.NewNopLogger(), nil,
 			)
 
 			server := httptest.NewUnstartedServer(handler)

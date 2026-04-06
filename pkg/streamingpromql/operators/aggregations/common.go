@@ -3,6 +3,8 @@
 package aggregations
 
 import (
+	"reflect"
+
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -28,18 +30,40 @@ type AggregationGroup interface {
 	Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker)
 }
 
-type AggregationGroupFactory func() AggregationGroup
+type AggregationGroupFactory struct {
+	producer   func() AggregationGroup
+	structSize uint64
+}
 
-var AggregationGroupFactories = map[parser.ItemType]AggregationGroupFactory{
-	parser.AVG:      func() AggregationGroup { return &AvgAggregationGroup{} },
-	parser.COUNT:    func() AggregationGroup { return NewCountGroupAggregationGroup(true) },
-	parser.GROUP:    func() AggregationGroup { return NewCountGroupAggregationGroup(false) },
-	parser.MAX:      func() AggregationGroup { return NewMinMaxAggregationGroup(true) },
-	parser.MIN:      func() AggregationGroup { return NewMinMaxAggregationGroup(false) },
-	parser.QUANTILE: func() AggregationGroup { return &QuantileAggregationGroup{} },
-	parser.STDDEV:   func() AggregationGroup { return NewStddevStdvarAggregationGroup(true) },
-	parser.STDVAR:   func() AggregationGroup { return NewStddevStdvarAggregationGroup(false) },
-	parser.SUM:      func() AggregationGroup { return &SumAggregationGroup{} },
+func NewAggregationGroupFactory(producer func() AggregationGroup) *AggregationGroupFactory {
+	instance := producer()
+	return &AggregationGroupFactory{
+		producer:   producer,
+		structSize: uint64(reflect.TypeOf(instance).Elem().Size()),
+	}
+}
+
+func (g AggregationGroupFactory) Create() AggregationGroup {
+	return g.producer()
+}
+
+// StructSize returns the size in bytes of the concrete struct, not including pool-backed backing arrays
+// (which are tracked separately via the memory consumption tracker).
+// This is used to track the fixed per-group allocation cost.
+func (g AggregationGroupFactory) StructSize() uint64 {
+	return g.structSize
+}
+
+var AggregationGroupFactories = map[parser.ItemType]*AggregationGroupFactory{
+	parser.AVG:      NewAggregationGroupFactory(func() AggregationGroup { return &AvgAggregationGroup{} }),
+	parser.COUNT:    NewAggregationGroupFactory(func() AggregationGroup { return NewCountGroupAggregationGroup(true) }),
+	parser.GROUP:    NewAggregationGroupFactory(func() AggregationGroup { return NewCountGroupAggregationGroup(false) }),
+	parser.MAX:      NewAggregationGroupFactory(func() AggregationGroup { return NewMinMaxAggregationGroup(true) }),
+	parser.MIN:      NewAggregationGroupFactory(func() AggregationGroup { return NewMinMaxAggregationGroup(false) }),
+	parser.QUANTILE: NewAggregationGroupFactory(func() AggregationGroup { return &QuantileAggregationGroup{} }),
+	parser.STDDEV:   NewAggregationGroupFactory(func() AggregationGroup { return NewStddevStdvarAggregationGroup(true) }),
+	parser.STDVAR:   NewAggregationGroupFactory(func() AggregationGroup { return NewStddevStdvarAggregationGroup(false) }),
+	parser.SUM:      NewAggregationGroupFactory(func() AggregationGroup { return &SumAggregationGroup{} }),
 }
 
 // Sentinel value used to indicate a sample has seen an invalid combination of histograms and should be ignored.

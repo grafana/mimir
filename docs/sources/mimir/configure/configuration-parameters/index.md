@@ -1043,6 +1043,11 @@ ring:
   # CLI flag: -distributor.ring.instance-enable-ipv6
   [instance_enable_ipv6: <boolean> | default = false]
 
+  # (advanced) The availability zone where this instance is running. Used for
+  # zone-aware rate limiting.
+  # CLI flag: -distributor.ring.instance-availability-zone
+  [instance_availability_zone: <string> | default = ""]
+
   # (advanced) Number of consecutive timeout periods after which Mimir
   # automatically removes an unhealthy instance in the ring. Set to 0 to disable
   # auto-forget.
@@ -1888,9 +1893,9 @@ store_gateway_client:
 # CLI flag: -querier.enable-query-engine-fallback
 [enable_query_engine_fallback: <boolean> | default = true]
 
-# (advanced) If set to true, the header 'X-Filter-Queryables' can be used to
+# (deprecated) If set to true, the header 'X-Filter-Queryables' can be used to
 # filter down the list of queryables that shall be used. This is useful to test
-# and monitor single queryables in isolation.
+# and monitor single queryables in isolation. Deprecated: has no effect.
 # CLI flag: -querier.filter-queryables-enabled
 [filter_queryables_enabled: <boolean> | default = false]
 
@@ -2644,12 +2649,12 @@ alertmanager_client:
 
   [basic_auth_username: <string> | default = ""]
 
-  basic_auth_password:
+  [basic_auth_password: <string> | default = ""]
 
   oauth2:
     [client_id: <string> | default = ""]
 
-    client_secret:
+    [client_secret: <string> | default = ""]
 
     [token_url: <string> | default = ""]
 
@@ -3037,11 +3042,6 @@ sharding_ring:
 # (advanced) Enable the alertmanager config API.
 # CLI flag: -alertmanager.enable-api
 [enable_api: <boolean> | default = true]
-
-# (experimental) Enable routes to support the migration and operation of the
-# Grafana Alertmanager.
-# CLI flag: -alertmanager.grafana-alertmanager-compatibility-enabled
-[grafana_alertmanager_compatibility_enabled: <boolean> | default = false]
 
 # (experimental) Duration to wait before shutting down an idle Alertmanager
 # using an unpromoted or default configuration when strict initialization is
@@ -4512,12 +4512,25 @@ The `limits` block configures default and per-tenant limits imposed by component
 
 # List of queries to block.
 # Example:
-#   The following configuration blocks the query "rate(metric_counter[5m])".
-#   Setting the pattern to ".*" and regex to true blocks all queries.
+#   The following configuration shows various ways to block queries: by pattern,
+#   by time range, or by combining both. Setting the pattern to ".*" and regex
+#   to true blocks all queries. Time range filtering blocks queries with
+#   durations exceeding the specified threshold.
 #   blocked_queries:
 #       - pattern: rate(metric_counter[5m])
 #         regex: false
 #         reason: because the query is misconfigured
+#         unaligned_range_queries: false
+#       - pattern: .*expensive.*
+#         regex: true
+#         reason: expensive queries over 7 days are blocked
+#         unaligned_range_queries: false
+#         time_range_longer_than: 1w
+#       - pattern: ""
+#         regex: false
+#         reason: queries longer than 21 days are blocked
+#         unaligned_range_queries: false
+#         time_range_longer_than: 3w
 blocked_queries:
   - # PromQL expression pattern to match.
     [pattern: <string> | default = ""]
@@ -4528,6 +4541,20 @@ blocked_queries:
 
     # Reason returned to clients when rejecting matching queries.
     [reason: <string> | default = ""]
+
+    # If true, only block the query if the query time range is not aligned to
+    # the step, meaning the query is not eligible for range query result
+    # caching. If enabled, instant queries and remote read requests will not be
+    # blocked.
+    [unaligned_range_queries: <boolean> | default = ]
+
+    # Block queries with time range longer than this duration. Set to 0 to
+    # disable.
+    [time_range_longer_than: <duration> | default = ]
+
+    # Block queries where the step is smaller than this duration. Instant
+    # queries and queries with no step are not blocked. Set to 0 to disable.
+    [minimum_step_size: <duration> | default = ]
 
 # (experimental) List of queries to limit and duration to limit them for.
 # Example:
@@ -4872,6 +4899,13 @@ ruler_alertmanager_client_config:
 # CLI flag: -compactor.split-and-merge-shards
 [compactor_split_and_merge_shards: <int> | default = 0]
 
+# The number of shards to use when splitting out-of-order blocks. 0 to use the
+# value of -compactor.split-and-merge-shards. Only applies to blocks with the
+# out-of-order external label, see
+# -ingester.out-of-order-blocks-external-label-enabled.
+# CLI flag: -compactor.ooo-split-and-merge-shards
+[compactor_ooo_split_and_merge_shards: <int> | default = 0]
+
 # Number of groups that blocks for splitting should be grouped into. Each group
 # of blocks is then split separately. Number of output split shards is
 # controlled by -compactor.split-and-merge-shards.
@@ -4969,10 +5003,6 @@ ruler_alertmanager_client_config:
 # Maximum size of the Alertmanager configuration for a tenant. 0 = no limit.
 # CLI flag: -alertmanager.max-config-size-bytes
 [alertmanager_max_config_size_bytes: <int> | default = 0]
-
-# Maximum size of the Grafana Alertmanager state for a tenant. 0 = no limit.
-# CLI flag: -alertmanager.max-grafana-state-size-bytes
-[alertmanager_max_grafana_state_size_bytes: <int> | default = 0B]
 
 # Maximum number of silences, including expired silences, that a tenant can have
 # at once. 0 = no limit.
@@ -5094,6 +5124,15 @@ ruler_alertmanager_client_config:
 # CLI flag: -ingest-storage.ingestion-partition-tenant-shard-size
 [ingestion_partitions_tenant_shard_size: <int> | default = 0]
 
+# (experimental) The maximum number of partitions a tenant's data should be
+# written to when using the ingest storage. When set to a value > 0 and less
+# than -ingest-storage.ingestion-partition-tenant-shard-size, writes use fewer
+# partitions while reads continue using the full shard size. This allows safely
+# reducing the shard size without losing query coverage during the migration. 0
+# means the write shard size equals the read shard size.
+# CLI flag: -ingest-storage.ingestion-partition-tenant-write-shard-size
+[ingestion_partitions_tenant_write_shard_size: <int> | default = 0]
+
 # (experimental) Validation scheme to use for metric and label names.
 # Distributors reject time series that do not adhere to this scheme. Rulers
 # reject rules with unsupported metric or label names. Supported values: legacy,
@@ -5139,16 +5178,17 @@ kafka:
   # CLI flag: -ingest-storage.kafka.write-timeout
   [write_timeout: <duration> | default = 10s]
 
-  # The number of Kafka clients used by producers. When the configured number of
-  # clients is greater than 1, partitions are sharded among Kafka clients. A
-  # higher number of clients may provide higher write throughput at the cost of
-  # additional Metadata requests pressure to Kafka.
+  # (deprecated) The number of Kafka clients used by producers. When the
+  # configured number of clients is greater than 1, partitions are sharded among
+  # Kafka clients. A higher number of clients may provide higher write
+  # throughput at the cost of additional Metadata requests pressure to Kafka.
+  # Deprecated: has no effect (Mimir always uses a single Kafka write client).
   # CLI flag: -ingest-storage.kafka.write-clients
   [write_clients: <int> | default = 1]
 
   # The SASL mechanism used to authenticate to Kafka. Supported values: PLAIN,
-  # SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER. For backwards-compatibility,
-  # PLAIN with no username nor password disables SASL.
+  # SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER, AWS_MSK_IAM. For
+  # backwards-compatibility, PLAIN with no username nor password disables SASL.
   # CLI flag: -ingest-storage.kafka.sasl-mechanism
   [sasl_mechanism: <string> | default = "PLAIN"]
 
@@ -5177,25 +5217,71 @@ kafka:
   # CLI flag: -ingest-storage.kafka.sasl-oauthbearer-extensions
   [sasl_oauthbearer_extensions: <map of string to string> | default = {}]
 
-  # Path to a file containing an OAuth token to authenticate to Kafka. The file
-  # is read anew on every reauthentication, so it can be updated with fresh
+  # Path to a file containing an OAuth token to authenticate to Kafka. Mutually
+  # exclusive with ingest-storage.kafka.sasl-oauthbearer-http-socket-path. The
+  # file is read anew on every reauthentication, so it can be updated with fresh
   # tokens. The file must be in JSON format, adhering to this JSON schema:
   # {"type": "object", "required": ["token"], "properties": {"token": {"type":
   # "string"}, "zid": {"type": "string"}, "extensions": {"type": "object",
-  # "additionalProperties": {"type": "string"}}}}
+  # "additionalProperties": {"type": "string"}}}
   # CLI flag: -ingest-storage.kafka.sasl-oauthbearer-file-path
   [sasl_oauthbearer_file_path: <string> | default = ""]
 
-  # Path to a Unix domain socket to fetch an OAuth token from via HTTP. On every
+  # Path to a Unix domain socket to fetch an OAuth token from via HTTP. Mutually
+  # exclusive with ingest-storage.kafka.sasl-oauthbearer-file-path. On every
   # authentication or reauthentication, an HTTP GET / request is made to the
   # socket and the response body is read as JSON. The JSON schema is the same as
   # for ingest-storage.kafka.sasl-oauthbearer-file-path.
   # CLI flag: -ingest-storage.kafka.sasl-oauthbearer-http-socket-path
   [sasl_oauthbearer_http_socket_path: <string> | default = ""]
 
-  # Timeout for requesting the token from the HTTP socket.
+  # Timeout for requesting the token from the HTTP socket. Effective when
+  # ingest-storage.kafka.sasl-oauthbearer-http-socket-path is set.
   # CLI flag: -ingest-storage.kafka.sasl-oauthbearer-http-socket-timeout
   [sasl_oauthbearer_http_socket_timeout: <duration> | default = 10s]
+
+  # The AWS access key ID to authenticate to Kafka using SASL AWS_MSK_IAM.
+  # Consider ingest-storage.kafka.sasl-msk-iam-file-path instead.
+  # CLI flag: -ingest-storage.kafka.sasl-msk-iam-access-key
+  [sasl_msk_iam_access_key: <string> | default = ""]
+
+  # The AWS secret access key to authenticate to Kafka using SASL AWS_MSK_IAM.
+  # Consider ingest-storage.kafka.sasl-msk-iam-file-path instead.
+  # CLI flag: -ingest-storage.kafka.sasl-msk-iam-secret-key
+  [sasl_msk_iam_secret_key: <string> | default = ""]
+
+  # Optional AWS session token to authenticate to Kafka using SASL AWS_MSK_IAM.
+  # CLI flag: -ingest-storage.kafka.sasl-msk-iam-session-token
+  [sasl_msk_iam_session_token: <string> | default = ""]
+
+  # Optional user agent to use when authenticating to Kafka using SASL
+  # AWS_MSK_IAM.
+  # CLI flag: -ingest-storage.kafka.sasl-msk-iam-user-agent
+  [sasl_msk_iam_user_agent: <string> | default = ""]
+
+  # Path to a file containing AWS credentials to authenticate to Kafka using
+  # SASL AWS_MSK_IAM. Mutually exclusive with
+  # ingest-storage.kafka.sasl-msk-iam-http-socket-path. The file is read anew on
+  # every reauthentication, so it can be updated with fresh credentials. The
+  # file must be in JSON format, adhering to this JSON schema: {"type":
+  # "object", "required": ["AccessKey", "SecretKey"], "properties":
+  # {"AccessKey": {"type": "string"}, "SecretKey": {"type": "string"},
+  # "SessionToken": {"type": "string"}, "UserAgent": {"type": "string"}}}
+  # CLI flag: -ingest-storage.kafka.sasl-msk-iam-file-path
+  [sasl_msk_iam_file_path: <string> | default = ""]
+
+  # Path to a Unix domain socket to fetch AWS credentials from via HTTP.
+  # Mutually exclusive with ingest-storage.kafka.sasl-msk-iam-file-path. On
+  # every authentication or reauthentication, an HTTP GET / request is made to
+  # the socket and the response body is read as JSON. The JSON schema is the
+  # same as for ingest-storage.kafka.sasl-msk-iam-file-path.
+  # CLI flag: -ingest-storage.kafka.sasl-msk-iam-http-socket-path
+  [sasl_msk_iam_http_socket_path: <string> | default = ""]
+
+  # Timeout for requesting AWS credentials from the HTTP socket. Effective when
+  # ingest-storage.kafka.sasl-msk-iam-http-socket-path is set.
+  # CLI flag: -ingest-storage.kafka.sasl-msk-iam-http-socket-timeout
+  [sasl_msk_iam_http_socket_timeout: <duration> | default = 10s]
 
   # Enable TLS for the Kafka client connection.
   # CLI flag: -ingest-storage.kafka.tls-enabled
@@ -5677,6 +5763,12 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.partitioner-max-gap-bytes
   [partitioner_max_gap_bytes: <int> | default = 524288]
 
+  # (experimental) Max size - in bytes - of a gap for which the partitioner
+  # aggregates together two bucket GET object requests. Overrides the
+  # 'bucket-store.partitioner-max-gap-bytes' when requesting chunks
+  # CLI flag: -blocks-storage.bucket-store.partitioner-max-gap-bytes-chunks
+  [partitioner_max_gap_bytes_chunks: <int> | default = 0]
+
   # (advanced) Controls what is the ratio of postings offsets that the store
   # will hold in memory.
   # CLI flag: -blocks-storage.bucket-store.posting-offsets-in-mem-sampling
@@ -5726,9 +5818,9 @@ bucket_store:
       [enabled: <boolean> | default = false]
 
       # (experimental) Index sections to read from object storage instead of
-      # local disk. Valid sections: all
+      # local disk. Valid sections: postings-offsets-table
       # CLI flag: -blocks-storage.bucket-store.index-header.bucket-reader.index-sections
-      [index_sections: <string> | default = "all"]
+      [index_sections: <string> | default = "postings-offsets-table"]
 
   # (advanced) This option controls how many series to fetch per batch. The
   # batch size must be greater than 0.
@@ -6000,6 +6092,17 @@ tsdb:
     # in query execution optimization. 0 to disable.
     # CLI flag: -blocks-storage.tsdb.index-lookup-planning.statistics-collection-frequency
     [statistics_collection_frequency: <duration> | default = 1h]
+
+  offset_catalogue:
+    # (experimental) Controls the maintaining of kafka offset catalogue per
+    # block.
+    # CLI flag: -blocks-storage.tsdb.offset-catalogue.enabled
+    [enabled: <boolean> | default = false]
+
+    # (experimental) Maximum number of tenants concurrently syncing offset
+    # catalogue to disk.
+    # CLI flag: -blocks-storage.tsdb.offset-catalogue.sync-concurrency
+    [sync_concurrency: <int> | default = 10]
 ```
 
 ### compactor
@@ -6040,11 +6143,18 @@ The `compactor` block configures the compactor component.
 [compaction_concurrency: <int> | default = 1]
 
 # How long the compactor waits before compacting first-level blocks that are
-# uploaded by the ingesters. This configuration option allows for the reduction
-# of cases where the compactor begins to compact blocks before all ingesters
-# have uploaded their blocks to the storage.
+# uploaded by the ingesters or block-builders. This configuration option allows
+# for the reduction of cases where the compactor begins to compact blocks before
+# all ingesters have uploaded their blocks to the storage. Does not apply to
+# out-of-order blocks.
 # CLI flag: -compactor.first-level-compaction-wait-period
 [first_level_compaction_wait_period: <duration> | default = 25m]
+
+# (experimental) How long the compactor waits before compacting first-level
+# blocks containing out-of-order samples. When set to 0 (default), out-of-order
+# blocks do not delay compaction.
+# CLI flag: -compactor.first-level-compaction-ooo-wait-period
+[first_level_compaction_ooo_wait_period: <duration> | default = 0s]
 
 # (experimental) When enabled, the compactor skips first-level compaction jobs
 # if any source block has a MaxTime more recent than the wait period threshold.

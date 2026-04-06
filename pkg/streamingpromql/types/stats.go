@@ -6,7 +6,9 @@
 package types
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"unsafe"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -136,7 +138,59 @@ func (s *OperatorEvaluationStats) Clone() (*OperatorEvaluationStats, error) {
 	return clone, nil
 }
 
+// ExtendStepInvariantToFullRange calculates the equivalent statistics for a step invariant
+// operation that is used for multiple steps in a range query.
+//
+// It is the caller's responsibility to call Close on the original OperatorEvaluationStats instance.
+func (s *OperatorEvaluationStats) ExtendStepInvariantToFullRange(timeRange QueryTimeRange) (*OperatorEvaluationStats, error) {
+	if !s.timeRange.IsInstant {
+		return nil, fmt.Errorf("cannot extend step invariant to full range for non-instant time range %v", s.timeRange)
+	}
+
+	expanded, err := NewOperatorEvaluationStats(timeRange, s.memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	expanded.newSamplesReadPerStep[0] = s.newSamplesReadPerStep[0]
+
+	for idx := range timeRange.StepCount {
+		expanded.samplesProcessedPerStep[idx] = s.samplesProcessedPerStep[0]
+	}
+
+	return expanded, nil
+}
+
 func (s *OperatorEvaluationStats) Close() {
 	Int64SlicePool.Put(&s.samplesProcessedPerStep, s.memoryConsumptionTracker)
 	Int64SlicePool.Put(&s.newSamplesReadPerStep, s.memoryConsumptionTracker)
+}
+
+// CombineStats retrieves and combines query stats from multiple operators.
+// The caller is responsible for calling Close() on the returned stats.
+func CombineStats[T StatsProvider](ctx context.Context, operators ...T) (*OperatorEvaluationStats, error) {
+	var combined *OperatorEvaluationStats
+
+	for _, op := range operators {
+		stats, err := op.Stats(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		if combined == nil {
+			combined = stats
+			continue
+		}
+
+		if err := combined.Add(stats); err != nil {
+			return nil, err
+		}
+		stats.Close()
+	}
+
+	return combined, nil
+}
+
+type StatsProvider interface {
+	Stats(context.Context) (*OperatorEvaluationStats, error)
 }

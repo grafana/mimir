@@ -56,6 +56,11 @@ type BucketStoreMetrics struct {
 	postingsFetchDuration prometheus.Histogram
 
 	indexHeaderReaderMetrics *indexheader.ReaderPoolMetrics
+
+	// Quantify how much the projections optimization helps reduce labels sent to queriers.
+	originalLabelBytes prometheus.Counter
+	reducedLabelBytes  prometheus.Counter
+	skippedLabelBytes  prometheus.Counter
 }
 
 func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
@@ -123,7 +128,7 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 
 	m.cachedPostingsCompressions = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_bucket_store_cached_postings_compressions_total",
-		Help: "Number of postings compressions and decompressions when storing to index cache.", // TODO also decompressions?
+		Help: "Number of postings compressions (op=encode) and decompressions (op=decode) when interacting with the index cache.",
 	}, []string{"op"})
 	m.cachedPostingsCompressions.WithLabelValues(labelEncode)
 	m.cachedPostingsCompressions.WithLabelValues(labelDecode)
@@ -199,6 +204,18 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 		Name:    "cortex_bucket_store_series_batch_preloading_wait_duration_seconds",
 		Help:    "Time spent by store-gateway waiting until the next batch is loaded, once the store-gateway is ready to send it. This metric is tracked only if the request is split into 2+ batches.",
 		Buckets: durationBuckets,
+	})
+	m.originalLabelBytes = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "cortex_bucket_store_projection_original_label_bytes_total",
+		Help: "Total number of bytes of original labels transferred to queriers when projections are used.",
+	})
+	m.reducedLabelBytes = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "cortex_bucket_store_projection_reduced_label_bytes_total",
+		Help: "Total number of bytes of reduced labels transferred to queriers when projections are used.",
+	})
+	m.skippedLabelBytes = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "cortex_bucket_store_projection_skipped_label_bytes_total",
+		Help: "Total number of bytes of labels transferred to queriers when projections are not used.",
 	})
 
 	return &m

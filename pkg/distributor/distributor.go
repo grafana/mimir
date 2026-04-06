@@ -29,6 +29,7 @@ import (
 	"github.com/grafana/dskit/limiter"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/mtime"
+	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/ring"
 	ring_client "github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
@@ -98,6 +99,11 @@ const (
 	// decompressing requests when the distributor is near the inflight bytes limit and the uncompressed request
 	// will likely exceed the limit.
 	decompressionEstMultiplier = 8
+
+	// interval at which stale entries should be removed from the ingestion rate limiter.
+	ingestionRateLimitCleanupInterval = time.Hour
+	// duration after which ingestion rate limiters are considered stale.
+	ingestionRateLimitStalenessDuration = 24 * time.Hour
 )
 
 type usageTrackerGenericClient interface {
@@ -121,7 +127,18 @@ type Distributor struct {
 	// the number of healthy instances
 	distributorsLifecycler *ring.BasicLifecycler
 	distributorsRing       *ring.Ring
-	healthyInstancesCount  *atomic.Uint32
+
+	// healthyInstancesCount stores the number of healthy instances in the
+	// distributors ring.
+	healthyInstancesCount *atomic.Uint32
+
+	// healthyInstancesInZoneCount stores the number of healthy instances in the
+	// distributors ring that are also in the same zone as this instance.
+	healthyInstancesInZoneCount *atomic.Uint32
+
+	// ringZonesCount stores the number of non-empty ring zones. If the distributor
+	// is not zone-aware, ringZonesCount is 1.
+	ringZonesCount *atomic.Uint32
 
 	costAttributionMgr *costattribution.Manager
 	// For handling HA replicas.
@@ -497,16 +514,18 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	requestBufferPool := util.NewBufferPool(cfg.MaxRequestPoolBufferSize)
 
 	d := &Distributor{
-		cfg:                   cfg,
-		log:                   log,
-		ingestersRing:         ingestersRing,
-		RequestBufferPool:     requestBufferPool,
-		partitionsRing:        partitionsRing,
-		ingesterPool:          NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
-		healthyInstancesCount: atomic.NewUint32(0),
-		limits:                limits,
-		costAttributionMgr:    costAttributionMgr,
-		ingestionRate:         util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
+		cfg:                         cfg,
+		log:                         log,
+		ingestersRing:               ingestersRing,
+		RequestBufferPool:           requestBufferPool,
+		partitionsRing:              partitionsRing,
+		ingesterPool:                NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
+		healthyInstancesCount:       atomic.NewUint32(0),
+		healthyInstancesInZoneCount: atomic.NewUint32(0),
+		ringZonesCount:              atomic.NewUint32(1),
+		limits:                      limits,
+		costAttributionMgr:          costAttributionMgr,
+		ingestionRate:               util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
 
 		queryDuration: instrument.NewHistogramCollector(promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "cortex_distributor_query_duration_seconds",
@@ -697,14 +716,15 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		requestRateStrategy = newInfiniteRateStrategy()
 		ingestionRateStrategy = newInfiniteRateStrategy()
 	} else {
-		distributorsRing, distributorsLifecycler, err = newRingAndLifecycler(cfg.DistributorRing, d.healthyInstancesCount, log, reg)
+		distributorsRing, distributorsLifecycler, err = newRingAndLifecycler(cfg.DistributorRing, d.healthyInstancesCount, d.healthyInstancesInZoneCount, d.ringZonesCount, log, reg)
 		if err != nil {
 			return nil, err
 		}
 
 		subservices = append(subservices, distributorsLifecycler, distributorsRing)
 		requestRateStrategy = newGlobalRateStrategy(newRequestRateStrategy(limits), d)
-		ingestionRateStrategy = newGlobalRateStrategyWithBurstFactor(limits, d)
+		zoneAware := cfg.DistributorRing.InstanceZone != ""
+		ingestionRateStrategy = newGlobalRateStrategyWithBurstFactor(limits, d, zoneAware)
 	}
 
 	// If this isn't a real distributor that will be accepting writes or if the HA tracker is
@@ -737,6 +757,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	d.PushWithMiddlewares = d.wrapPushWithMiddlewares(d.push)
 
 	subservices = append(subservices, d.ingesterPool, d.activeUsers)
+	subservices = append(subservices, cleanupIngestionRateLimiter(d.ingestionRateLimiter))
 
 	if cfg.ReusableIngesterPushWorkers > 0 {
 		wp := concurrency.NewReusableGoroutinesPool(cfg.ReusableIngesterPushWorkers)
@@ -801,7 +822,7 @@ func exportStorageModeMetrics(reg prometheus.Registerer, classicStorageEnabled, 
 }
 
 // newRingAndLifecycler creates a new distributor ring and lifecycler with all required lifecycler delegates
-func newRingAndLifecycler(cfg RingConfig, instanceCount *atomic.Uint32, logger log.Logger, reg prometheus.Registerer) (*ring.Ring, *ring.BasicLifecycler, error) {
+func newRingAndLifecycler(cfg RingConfig, instanceCount, instanceInZoneCount, ringZonesCount *atomic.Uint32, logger log.Logger, reg prometheus.Registerer) (*ring.Ring, *ring.BasicLifecycler, error) {
 	reg = prometheus.WrapRegistererWithPrefix("cortex_", reg)
 	kvStore, err := kv.NewClient(cfg.Common.KVStore, ring.GetCodec(), kv.RegistererWithKVName(reg, "distributor-lifecycler"), logger)
 	if err != nil {
@@ -815,7 +836,7 @@ func newRingAndLifecycler(cfg RingConfig, instanceCount *atomic.Uint32, logger l
 
 	var delegate ring.BasicLifecyclerDelegate
 	delegate = ring.NewInstanceRegisterDelegate(ring.ACTIVE, lifecyclerCfg.NumTokens)
-	delegate = newHealthyInstanceDelegate(instanceCount, cfg.Common.HeartbeatTimeout, delegate)
+	delegate = newHealthyInstanceDelegate(instanceCount, instanceInZoneCount, ringZonesCount, cfg.Common.HeartbeatTimeout, delegate)
 	delegate = ring.NewLeaveOnStoppingDelegate(delegate, logger)
 	if cfg.AutoForgetUnhealthyPeriods > 0 {
 		delegate = ring.NewAutoForgetDelegate(time.Duration(cfg.AutoForgetUnhealthyPeriods)*cfg.Common.HeartbeatTimeout, delegate, logger)
@@ -1155,6 +1176,162 @@ func (d *Distributor) wrapPushWithMiddlewares(next PushFunc) PushFunc {
 
 }
 
+type replicaState int
+
+const (
+	// replicaRejectedUnknown sample is rejected due to an unknown error.
+	replicaRejectedUnknown replicaState = 0
+	// replicaIsPrimary sample is from the elected primary replica and should be accepted.
+	replicaIsPrimary replicaState = 1 << iota
+	// replicaNotHA sample doesn't have both HA labels and should be accepted.
+	replicaNotHA
+	// replicaDeduped sample is from a non-primary replica and should be deduplicated.
+	replicaDeduped
+	// replicaRejectedTooManyClusters sample is rejected because the tenant has too many HA clusters.
+	replicaRejectedTooManyClusters
+
+	replicaAccepted = replicaIsPrimary | replicaNotHA
+)
+
+func (r replicaState) equals(other replicaState) bool {
+	if other == replicaRejectedUnknown {
+		return r == replicaRejectedUnknown
+	}
+	return r&other != 0
+}
+
+type haReplica struct {
+	cluster, replica string
+}
+
+type replicaInfo struct {
+	state       replicaState
+	sampleCount int
+}
+
+// replicaObserved checks if a sample from a given replica should be accepted for ingestion based on HA deduplication rules.
+func (d *Distributor) replicaObserved(ctx context.Context, userID string, replica haReplica, ts int64) (replicaState, error) {
+	isAccepted, err := d.checkSample(ctx, userID, replica.cluster, replica.replica, ts)
+	if err != nil {
+		var replicasDidNotMatch *replicasDidNotMatchError
+		var tooManyClusters *tooManyClustersError
+		switch {
+		case errors.As(err, &replicasDidNotMatch):
+			// These samples have been deduped.
+			return replicaDeduped, err
+		case errors.As(err, &tooManyClusters):
+			return replicaRejectedTooManyClusters, err
+		default:
+			return replicaRejectedUnknown, err
+		}
+	}
+
+	if isAccepted {
+		return replicaIsPrimary, nil
+	}
+	// If there wasn't an error but isAccepted is false that means we didn't find both HA labels.
+	return replicaNotHA, nil
+}
+
+func getEarliestSampleTimestamp(req *mimirpb.WriteRequest, defaultTimestamp int64) int64 {
+	earliestSampleTimestamp := defaultTimestamp
+	for _, ts := range req.Timeseries {
+		if len(ts.Samples) > 0 {
+			tsms := ts.Samples[0].TimestampMs
+			if tsms < earliestSampleTimestamp {
+				earliestSampleTimestamp = tsms
+			}
+		}
+		if len(ts.Histograms) > 0 {
+			tsms := ts.Histograms[0].Timestamp
+			if tsms < earliestSampleTimestamp {
+				earliestSampleTimestamp = tsms
+			}
+		}
+	}
+	return earliestSampleTimestamp
+}
+
+func (d *Distributor) processHaReplicas(ctx context.Context, userID string, sampleTimestamp int64, replicaInfos map[haReplica]*replicaInfo) (map[replicaState]int, error) {
+	var rejectionErrs, dedupErrs multierror.MultiError
+	samplesPerState := make(map[replicaState]int)
+	for replicaKey, info := range replicaInfos {
+		if info.state.equals(replicaRejectedUnknown) {
+			state, replicaErr := d.replicaObserved(ctx, userID, replicaKey, sampleTimestamp)
+			if replicaErr != nil {
+				// Collect rejection errors before dedup errors so that toErrorWithGRPCStatus
+				// deterministically picks the higher-severity gRPC status code.
+				if state == replicaDeduped {
+					dedupErrs.Add(replicaErr)
+				} else {
+					rejectionErrs.Add(replicaErr)
+				}
+			}
+			info.state = state
+		}
+		samplesPerState[info.state] += info.sampleCount
+	}
+
+	var errs multierror.MultiError
+	for _, err := range rejectionErrs {
+		errs.Add(err)
+	}
+	for _, err := range dedupErrs {
+		errs.Add(err)
+	}
+	return samplesPerState, errs.Err()
+}
+
+var haReplicaSlicePool = sync.Pool{
+	New: func() interface{} {
+		s := make([]haReplica, 0, 2500)
+		return &s
+	},
+}
+
+func getReplicasAndInfos(req *mimirpb.WriteRequest, haReplicaLabel, haClusterLabel string) (*[]haReplica, map[haReplica]*replicaInfo) {
+	count := len(req.Timeseries)
+	replicasPtr := haReplicaSlicePool.Get().(*[]haReplica)
+	if cap(*replicasPtr) < count {
+		*replicasPtr = make([]haReplica, count)
+	} else {
+		*replicasPtr = (*replicasPtr)[:count]
+	}
+
+	replicas := *replicasPtr
+	replicaInfos := make(map[haReplica]*replicaInfo)
+
+	var previousReplica haReplica
+	var previousInfo *replicaInfo
+
+	for i, ts := range req.Timeseries {
+		currentReplica := findHALabels(haReplicaLabel, haClusterLabel, ts.Labels)
+		replicas[i] = currentReplica
+
+		// If the current replica is the same as the previous one
+		// we skip the map lookup and update the count directly.
+		if i > 0 && currentReplica == previousReplica {
+			previousInfo.sampleCount += len(ts.Samples) + len(ts.Histograms)
+			continue
+		}
+
+		info, found := replicaInfos[currentReplica]
+		if !found {
+			// The replica info is stored in a map where the key is the replica itself.
+			// The replica labels are references to the request buffer, which will be reused.
+			// To safely use the replica as map key, we need to clone its labels.
+			currentReplica.cluster = strings.Clone(currentReplica.cluster)
+			currentReplica.replica = strings.Clone(currentReplica.replica)
+			info = &replicaInfo{}
+			replicaInfos[currentReplica] = info
+		}
+		info.sampleCount += len(ts.Samples) + len(ts.Histograms)
+		previousReplica = currentReplica
+		previousInfo = info
+	}
+	return replicasPtr, replicaInfos
+}
+
 func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 	return WithCleanup(next, func(next PushFunc, ctx context.Context, pushReq *Request) error {
 		req, err := pushReq.WriteRequest()
@@ -1172,75 +1349,176 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		}
 
 		haReplicaLabel := d.limits.HAReplicaLabel(userID)
-		cluster, replica := findHALabels(haReplicaLabel, d.limits.HAClusterLabel(userID), req.Timeseries[0].Labels)
-		// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
-		cluster, replica = strings.Clone(cluster), strings.Clone(replica)
+		haClusterLabel := d.limits.HAClusterLabel(userID)
+
+		replicasPtr, replicaInfos := getReplicasAndInfos(req, haReplicaLabel, haClusterLabel)
+		replicas := *replicasPtr
+		defer func() {
+			var zero haReplica
+			for i := range replicas {
+				replicas[i] = zero
+			}
+			haReplicaSlicePool.Put(replicasPtr)
+		}()
 
 		span := trace.SpanFromContext(ctx)
-		span.SetAttributes(
-			attribute.String("cluster", cluster),
-			attribute.String("replica", replica),
-		)
 
-		numSamples := 0
 		now := time.Now()
+
 		group := d.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(d.limits, userID, req.Timeseries), now)
 		sampleTimestamp := timestamp.FromTime(now)
 		if d.limits.HATrackerUseSampleTimeForFailover(userID) {
-			earliestSampleTimestamp := sampleTimestamp
-			for _, ts := range req.Timeseries {
-				if len(ts.Samples) > 0 {
-					tsms := ts.Samples[0].TimestampMs
-					if tsms < earliestSampleTimestamp {
-						earliestSampleTimestamp = tsms
-					}
+			sampleTimestamp = getEarliestSampleTimestamp(req, sampleTimestamp)
+		}
+
+		var errs multierror.MultiError
+
+		if span.IsRecording() {
+			var clustersAsStrings, replicasAsStrings strings.Builder
+			isFirst := true
+			for replicaKey := range replicaInfos {
+				if !isFirst {
+					clustersAsStrings.WriteString(", ")
+					replicasAsStrings.WriteString(", ")
 				}
-				if len(ts.Histograms) > 0 {
-					tsms := ts.Histograms[0].Timestamp
-					if tsms < earliestSampleTimestamp {
-						earliestSampleTimestamp = tsms
-					}
-				}
+				clustersAsStrings.WriteString(replicaKey.cluster)
+				replicasAsStrings.WriteString(replicaKey.replica)
+				isFirst = false
 			}
-			sampleTimestamp = earliestSampleTimestamp
-		}
-		for _, ts := range req.Timeseries {
-			numSamples += len(ts.Samples) + len(ts.Histograms)
+			span.SetAttributes(
+				attribute.String("clusters", clustersAsStrings.String()),
+				attribute.String("replicas", replicasAsStrings.String()),
+			)
 		}
 
-		removeReplica, err := d.checkSample(ctx, userID, cluster, replica, sampleTimestamp)
-		if err != nil {
-			if errors.As(err, &replicasDidNotMatchError{}) {
-				// These samples have been deduped.
-				d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples))
-			}
-
-			if errors.As(err, &tooManyClustersError{}) {
-				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(numSamples))
-				d.costAttributionMgr.SampleTracker(userID).IncrementDiscardedSamples(req.Timeseries[0].Labels, float64(numSamples), reasonTooManyHAClusters, now)
-			}
-
-			return err
+		samplesPerState, processErr := d.processHaReplicas(ctx, userID, sampleTimestamp, replicaInfos)
+		if processErr != nil {
+			errs.Add(processErr)
 		}
 
-		if removeReplica {
-			// If we found both the cluster and replica labels, we only want to include the cluster label when
-			// storing series in Mimir. If we kept the replica label we would end up with another series for the same
-			// series we're trying to dedupe when HA tracking moves over to a different replica.
-			for ix := range req.Timeseries {
-				req.Timeseries[ix].RemoveLabel(haReplicaLabel)
-			}
-		} else {
-			// If there wasn't an error but removeReplica is false that means we didn't find both HA labels.
-			d.nonHASamples.WithLabelValues(userID).Add(float64(numSamples))
+		// Capture labels before sortByAccepted reorders timeseries and mixes rejection types.
+		var tooManyClustersLabels []mimirpb.LabelAdapter
+		if samplesPerState[replicaRejectedTooManyClusters] > 0 {
+			tooManyClustersLabels = findLabelsForRejectedTooManyClusters(replicaInfos, replicas, req)
 		}
 
-		return next(ctx, pushReq)
+		lastAccepted := sortByAccepted(req, replicaInfos, replicas)
+		removeHAReplicaLabels(req, lastAccepted, replicas, replicaInfos, haReplicaLabel)
+
+		// We don't want to send samples beyond the last accepted sample - that was deduplicated
+		d.updateHADedupeMetrics(userID, group, replicaInfos, samplesPerState, tooManyClustersLabels)
+
+		// Free the unaccepted (deduplicated/rejected) timeseries immediately and truncate
+		// the slice so downstream middleware only sees accepted timeseries. We must NOT
+		// defer restoration of the original slice header because downstream middleware
+		// (e.g., validation, relabeling) may compact req.Timeseries via RemoveSliceIndexes,
+		// which shifts elements in the backing array. Restoring the original header would
+		// then expose duplicate references, causing double-frees when ReuseSlice runs.
+		for i := lastAccepted + 1; i < len(req.Timeseries); i++ {
+			mimirpb.ReusePreallocTimeseries(&req.Timeseries[i])
+		}
+		req.Timeseries = req.Timeseries[:lastAccepted+1]
+
+		if len(req.Timeseries) > 0 {
+			if pushErr := next(ctx, pushReq); pushErr != nil {
+				// Return only the push error: combining it with dedup errors in a multierror
+				// would let errors.As find replicasDidNotMatchError first, masking 5xx with 202.
+				return pushErr
+			}
+		}
+
+		return errs.Err()
 	})
+}
+
+func removeHAReplicaLabels(req *mimirpb.WriteRequest, lastAccepted int, replicas []haReplica, replicaInfos map[haReplica]*replicaInfo, haReplicaLabel string) {
+	for i := 0; i <= lastAccepted; i++ {
+		r := replicas[i]
+		if !replicaInfos[r].state.equals(replicaIsPrimary) {
+			continue
+		}
+		// If we found both the cluster and replica labels, we only want to include the cluster label when
+		// storing series in Mimir. If we kept the replica label we would end up with another series for the same
+		// series we're trying to dedupe when HA tracking moves over to a different replica.
+		req.Timeseries[i].RemoveLabel(haReplicaLabel)
+	}
+}
+
+// updateHADedupeMetrics updates metrics related to HA deduplication.
+func (d *Distributor) updateHADedupeMetrics(userID, group string, replicaInfos map[haReplica]*replicaInfo, samplesPerState map[replicaState]int, tooManyClustersLabels []mimirpb.LabelAdapter) {
+	for replica, info := range replicaInfos {
+		if info.state.equals(replicaDeduped) && info.sampleCount > 0 {
+			cluster := strings.Clone(replica.cluster) // Make a copy of this, since it may be retained as labels on our metrics
+			d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(info.sampleCount))
+		}
+	}
+	if samplesPerState[replicaNotHA] > 0 {
+		d.nonHASamples.WithLabelValues(userID).Add(float64(samplesPerState[replicaNotHA]))
+	}
+	if samplesPerState[replicaRejectedTooManyClusters] > 0 {
+		d.costAttributionMgr.SampleTracker(userID).IncrementDiscardedSamples(tooManyClustersLabels, float64(samplesPerState[replicaRejectedTooManyClusters]), reasonTooManyHAClusters, time.Now())
+		d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(samplesPerState[replicaRejectedTooManyClusters]))
+	}
+}
+
+// findLabelsForRejectedTooManyClusters finds labels from a timeseries whose replica was rejected for too many clusters.
+func findLabelsForRejectedTooManyClusters(replicaInfos map[haReplica]*replicaInfo, replicas []haReplica, req *mimirpb.WriteRequest) []mimirpb.LabelAdapter {
+	var rejectedReplica haReplica
+	for replica, info := range replicaInfos {
+		if info.state.equals(replicaRejectedTooManyClusters) {
+			rejectedReplica = replica
+			break
+		}
+	}
+	for i, r := range replicas {
+		if r == rejectedReplica {
+			return req.Timeseries[i].Labels
+		}
+	}
+	return nil
+}
+
+// sortByAccepted returns the index of the last accepted timeseries in the write request based on the ha dedup states of the replicas
+func sortByAccepted(req *mimirpb.WriteRequest, replicaInfos map[haReplica]*replicaInfo, replicas []haReplica) int {
+	left := 0
+	right := len(replicas) - 1
+	for left < right {
+		for left < right && replicaInfos[replicas[left]].state.equals(replicaAccepted) {
+			left++
+		}
+		for right > left && !replicaInfos[replicas[right]].state.equals(replicaAccepted) {
+			right--
+		}
+		if left == right {
+			break
+		}
+		req.Timeseries[left], req.Timeseries[right] = req.Timeseries[right], req.Timeseries[left]
+		replicas[left], replicas[right] = replicas[right], replicas[left]
+		left++
+		right--
+	}
+
+	// At this point:
+	// - All elements before left are accepted
+	// - All elements after right are rejected
+	// - If left == right, we need to check that element
+	// - If left > right, partition is complete and right is the last accepted index
+
+	if left == right {
+		// Check the element at the meeting point
+		if replicaInfos[replicas[left]].state.equals(replicaAccepted) {
+			return left
+		}
+		return left - 1
+	}
+
+	// left > right, so right is the index of the last accepted element
+	return right
 }
 
 func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 	return WithCleanup(next, func(next PushFunc, ctx context.Context, pushReq *Request) error {
+
 		req, err := pushReq.WriteRequest()
 		if err != nil {
 			return err
@@ -1341,17 +1619,19 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			return err
 		}
 
-		userID, err := tenant.TenantID(ctx)
+		userID, md, err := tenant.ExtractWithMetadata(ctx)
 		if err != nil {
 			return err
 		}
+
+		limitsKey := md.WithTenant(userID)
 
 		now := mtime.Now()
 		d.receivedRequests.WithLabelValues(userID).Add(1)
 		d.activeUsers.UpdateUserTimestamp(userID, now)
 
 		pushReq.group = d.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(d.limits, userID, req.Timeseries), now)
-		cfg := newValidationConfig(userID, d.limits)
+		cfg := newValidationConfig(userID, limitsKey, d.limits)
 
 		// A WriteRequest can only contain series or metadata but not both. This might change in the future.
 		validatedMetadata := 0
@@ -1382,13 +1662,13 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		if earliestSampleTimestampMs != math.MaxInt64 {
 			minExemplarTS = earliestSampleTimestampMs - 5*time.Minute.Milliseconds()
 
-			if d.limits.PastGracePeriod(userID) > 0 {
-				minExemplarTS = max(minExemplarTS, now.Add(-d.limits.PastGracePeriod(userID)).Add(-d.limits.OutOfOrderTimeWindow(userID)).UnixMilli())
+			if cfg.samples.pastGracePeriod > 0 {
+				minExemplarTS = max(minExemplarTS, now.Add(-cfg.samples.pastGracePeriod).Add(-cfg.samples.outOfOrderTimeWindow).UnixMilli())
 			}
 		}
 
 		// Enforce the creation grace period on exemplars too.
-		maxExemplarTS := now.Add(d.limits.CreationGracePeriod(userID)).UnixMilli()
+		maxExemplarTS := now.Add(cfg.samples.creationGracePeriod).UnixMilli()
 
 		// Are we going to drop native histograms? If yes, let's count and report them.
 		countDroppedNativeHistograms := !d.limits.NativeHistogramsIngestionEnabled(userID)
@@ -1512,7 +1792,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		}
 
 		totalN := validatedSamples + validatedExemplars + validatedMetadata
-		if !d.ingestionRateLimiter.AllowN(now, userID, totalN) {
+		if !d.ingestionRateLimiter.AllowN(now, limitsKey, totalN) {
 			if len(req.Timeseries) > 0 {
 				d.costAttributionMgr.SampleTracker(userID).IncrementDiscardedSamples(req.Timeseries[0].Labels, float64(validatedSamples), reasonRateLimited, now)
 			}
@@ -1521,12 +1801,12 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(validatedMetadata))
 
 			// Determine whether limiter burst size was exceeded.
-			limiterBurst := d.ingestionRateLimiter.Burst(now, userID)
+			limiterBurst := d.ingestionRateLimiter.Burst(now, limitsKey)
 			if totalN > limiterBurst {
 				return newIngestionBurstSizeLimitedError(limiterBurst, totalN)
 			}
 
-			return newIngestionRateLimitedError(d.limits.IngestionRate(userID), limiterBurst)
+			return newIngestionRateLimitedError(d.limits.IngestionRate(limitsKey), limiterBurst)
 		}
 
 		// totalN included samples, exemplars and metadata. Ingester follows this pattern when computing its ingestion rate.
@@ -1597,10 +1877,12 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 			return next(ctx, pushReq)
 		}
 
-		userID, err := tenant.TenantID(ctx)
+		userID, metadata, err := tenant.ExtractWithMetadata(ctx)
 		if err != nil {
 			return err
 		}
+
+		limitsKey := metadata.WithTenant(userID)
 
 		// Generate the stable hash of each series.
 		var (
@@ -1617,18 +1899,18 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 
 		// Track the series and check if anyone should be rejected because over the limit.
 		// For users that are far from their limits, we can do this asynchronously.
-		if d.usageTrackerClient.CanTrackAsync(userID) {
+		if d.usageTrackerClient.CanTrackAsync(limitsKey) {
 			// User is far from limit.
 			// We can perform the track call in parallel with the metrics ingestion hoping that no series would be rejected.
 
 			d.asyncUsageTrackerCalls.WithLabelValues(userID).Inc()
 
 			if d.cfg.UsageTrackerClient.UseBatchedTracking {
-				if err := d.usageTrackerClient.TrackSeriesAsync(ctx, userID, seriesHashes); err != nil {
-					level.Error(d.log).Log("msg", "failed to track series asynchronously", "err", err, "user", userID, "series", len(seriesHashes))
+				if err := d.usageTrackerClient.TrackSeriesAsync(ctx, limitsKey, seriesHashes); err != nil {
+					level.Error(d.log).Log("msg", "failed to track series asynchronously", "err", err, "user", limitsKey, "series", len(seriesHashes))
 				}
 			} else {
-				cleanup := d.parallelUsageTrackerClientTrackSeriesCall(ctx, userID, seriesHashes)
+				cleanup := d.parallelUsageTrackerClientTrackSeriesCall(ctx, limitsKey, userID, seriesHashes)
 				pushReq.AddCleanup(cleanup)
 			}
 
@@ -1636,7 +1918,7 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 		}
 
 		// User is close to limit, track synchronously.
-		rejectedHashes, err := d.usageTrackerClient.TrackSeries(ctx, userID, seriesHashes)
+		rejectedHashes, err := d.usageTrackerClient.TrackSeries(ctx, limitsKey, seriesHashes)
 		if err != nil {
 			return errors.Wrap(err, "failed to enforce max series limit")
 		}
@@ -1648,7 +1930,7 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 
 		if len(req.Timeseries) == 0 {
 			// All series have been rejected, no need to talk to ingesters.
-			return newActiveSeriesLimitedError(totalTimeseries, len(rejectedHashes), d.limits.MaxActiveOrGlobalSeriesPerUser(userID))
+			return newActiveSeriesLimitedError(totalTimeseries, len(rejectedHashes), d.limits.MaxActiveOrGlobalSeriesPerUser(limitsKey))
 		}
 
 		// If there's an error coming from the ingesters, prioritize that one.
@@ -1657,25 +1939,25 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 		}
 
 		if len(rejectedHashes) > 0 {
-			return newActiveSeriesLimitedError(totalTimeseries, len(rejectedHashes), d.limits.MaxActiveOrGlobalSeriesPerUser(userID))
+			return newActiveSeriesLimitedError(totalTimeseries, len(rejectedHashes), d.limits.MaxActiveOrGlobalSeriesPerUser(limitsKey))
 		}
 
 		return nil
 	})
 }
 
-func (d *Distributor) parallelUsageTrackerClientTrackSeriesCall(ctx context.Context, userID string, seriesHashes []uint64) func() {
+func (d *Distributor) parallelUsageTrackerClientTrackSeriesCall(ctx context.Context, limitsKey, userID string, seriesHashes []uint64) func() {
 	done := make(chan struct{}, 1)
 	t0 := time.Now()
 	asyncTrackingCtx, cancelAsyncTracking := context.WithCancelCause(ctx)
 	go func() {
 		defer close(done)
-		rejected, err := d.usageTrackerClient.TrackSeries(asyncTrackingCtx, userID, seriesHashes)
+		rejected, err := d.usageTrackerClient.TrackSeries(asyncTrackingCtx, limitsKey, seriesHashes)
 		if err != nil {
-			level.Error(d.log).Log("msg", "failed to track series asynchronously", "err", err, "user", userID, "series", len(seriesHashes))
+			level.Error(d.log).Log("msg", "failed to track series asynchronously", "err", err, "user", limitsKey, "series", len(seriesHashes))
 		}
 		if len(rejected) > 0 {
-			level.Warn(d.log).Log("msg", "ingested some series that should have been rejected, because they were tracked asynchronously", "user", userID, "rejected", len(rejected))
+			level.Warn(d.log).Log("msg", "ingested some series that should have been rejected, because they were tracked asynchronously", "user", limitsKey, "rejected", len(rejected))
 			d.asyncUsageTrackerCallsWithRejectedSeries.WithLabelValues(userID).Inc()
 		}
 	}()
@@ -1694,15 +1976,16 @@ func (d *Distributor) parallelUsageTrackerClientTrackSeriesCall(ctx context.Cont
 
 		select {
 		case <-done:
-			level.Info(d.log).Log("msg", "async tracking call took longer than ingestion", "user", userID, "series", len(seriesHashes), "tracking_time", time.Since(t0), "time_since_cleanup", time.Since(tCleanup))
+			level.Info(d.log).Log("msg", "async tracking call took longer than ingestion", "user", limitsKey, "series", len(seriesHashes), "tracking_time", time.Since(t0), "time_since_cleanup", time.Since(tCleanup))
 		case <-time.After(d.cfg.UsageTrackerClient.MaxTimeToWaitForAsyncTrackingResponseAfterIngestion):
-			level.Warn(d.log).Log("msg", "async tracking call took too long, canceling", "user", userID, "series", len(seriesHashes), "tracking_time", time.Since(t0), "time_since_cleanup", time.Since(tCleanup))
+			level.Warn(d.log).Log("msg", "async tracking call took too long, canceling", "user", limitsKey, "series", len(seriesHashes), "tracking_time", time.Since(t0), "time_since_cleanup", time.Since(tCleanup))
 			cancelAsyncTracking(errors.New("async tracking call took too long"))
 		}
 	}
 }
 
 func (d *Distributor) ObserveAsyncUsageTrackerRejection(userID string) {
+	userID = tenant.TrimMetadata(userID)
 	d.asyncUsageTrackerCallsWithRejectedSeries.WithLabelValues(userID).Inc()
 }
 
@@ -2128,12 +2411,12 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 
 	var (
 		ingestersSubring  ring.DoBatchRing
-		partitionsSubring ring.DoBatchRing
+		partitionsSubring *ring.ActivePartitionBatchRing
 	)
 
 	// Get the tenant's subring to use to either write to ingesters or partitions.
 	if d.cfg.IngestStorageConfig.Enabled {
-		subring, err := d.partitionsRing.ShuffleShard(userID, d.limits.IngestionPartitionsTenantShardSize(userID))
+		subring, err := d.partitionsRing.ShuffleShard(userID, d.limits.EffectiveIngestionPartitionsTenantWriteShardSize(userID))
 		if err != nil {
 			return err
 		}
@@ -2158,7 +2441,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 // - Ingest storage partitions, when partitionsSubring is not nil
 //
 // The input cleanup function is guaranteed to be called after all requests to all backends have completed.
-func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, ingestersSubring, partitionsSubring ring.DoBatchRing, cleanup func()) error {
+func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, ingestersSubring ring.DoBatchRing, partitionsSubring *ring.ActivePartitionBatchRing, cleanup func()) error {
 	var (
 		wg            = sync.WaitGroup{}
 		partitionsErr error
@@ -2226,7 +2509,7 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 		return d.sendWriteRequestToIngesters(ctx, ingestersSubring, req, keys, initialMetadataIndex, remoteRequestContext, batchOptions)
 	}
 	if ingestersSubring == nil {
-		return d.sendWriteRequestToPartitions(ctx, tenantID, partitionsSubring, req, keys, initialMetadataIndex, partitionsRequestContext, batchOptions)
+		return d.sendWriteRequestToPartitions(ctx, tenantID, partitionsSubring, req, keys, initialMetadataIndex, partitionsRequestContext, batchOptions.Cleanup)
 	}
 
 	// Prepare a callback function that will call the input cleanup callback function only after
@@ -2250,7 +2533,7 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 	go func() {
 		defer wg.Done()
 
-		partitionsErr = d.sendWriteRequestToPartitions(ctx, tenantID, partitionsSubring, req, keys, initialMetadataIndex, partitionsRequestContext, batchOptions)
+		partitionsErr = d.sendWriteRequestToPartitions(ctx, tenantID, partitionsSubring, req, keys, initialMetadataIndex, partitionsRequestContext, batchOptions.Cleanup)
 	}()
 
 	// Wait until all backends have done.
@@ -2294,25 +2577,29 @@ func (d *Distributor) sendWriteRequestToIngesters(ctx context.Context, tenantRin
 	return errors.Wrap(err, "send data to ingesters")
 }
 
-func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID string, tenantRing ring.DoBatchRing, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, remoteRequestContext func() context.Context, batchOptions ring.DoBatchOptions) error {
-	err := ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, tenantRing, keys,
-		func(partition ring.InstanceDesc, indexes []int) error {
-			req := req.ForIndexes(indexes, initialMetadataIndex)
+func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID string, tenantRing *ring.ActivePartitionBatchRing, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, remoteRequestContext func() context.Context, cleanup func()) error {
+	defer cleanup()
 
-			// The partition ID is stored in the ring.InstanceDesc Id.
-			partitionID, err := strconv.ParseUint(partition.Id, 10, 31)
-			if err != nil {
-				return err
-			}
+	// Group keys by partition.
+	partitionKeys, err := tenantRing.GetKeysByPartition(ctx, keys)
+	if err != nil {
+		return errors.Wrap(err, "send data to partitions")
+	}
 
-			ctx := remoteRequestContext()
-			err = d.ingestStorageWriter.WriteSync(ctx, int32(partitionID), tenantID, req)
-			err = wrapPartitionPushError(err, int32(partitionID))
-			err = wrapDeadlineExceededPushError(err)
+	// Build per-partition write requests.
+	partitionRequests := make([]ingest.PartitionWriteRequest, 0, len(partitionKeys))
+	for _, pk := range partitionKeys {
+		partitionRequests = append(partitionRequests, ingest.PartitionWriteRequest{
+			PartitionID:  pk.PartitionID,
+			WriteRequest: req.ForIndexes(pk.Indexes, initialMetadataIndex),
+		})
+	}
 
-			return err
-		}, batchOptions,
-	)
+	// Write all partitions in a single ProduceSync call.
+	writeCtx := remoteRequestContext()
+	err = d.ingestStorageWriter.MultiWriteSync(writeCtx, tenantID, partitionRequests)
+	err = wrapPartitionsPushError(err)
+	err = wrapDeadlineExceededPushError(err)
 
 	// Since data may be written to different backends it may be helpful to clearly identify which backend failed.
 	return errors.Wrap(err, "send data to partitions")
@@ -3604,10 +3891,26 @@ func (d *Distributor) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 }
 
 // HealthyInstancesCount implements the ReadLifecycler interface
-//
-// We use a ring lifecycler delegate to count the number of members of the
-// ring. The count is then used to enforce rate limiting correctly for each
-// distributor. $EFFECTIVE_RATE_LIMIT = $GLOBAL_RATE_LIMIT / $NUM_INSTANCES
 func (d *Distributor) HealthyInstancesCount() int {
 	return int(d.healthyInstancesCount.Load())
+}
+
+// HealthyInstancesInZoneCount implements the ReadLifecycler interface.
+func (d *Distributor) HealthyInstancesInZoneCount() int {
+	return int(d.healthyInstancesInZoneCount.Load())
+}
+
+// ZonesCount implements the ReadLifecycler interface.
+func (d *Distributor) ZonesCount() int {
+	return int(d.ringZonesCount.Load())
+}
+
+func cleanupIngestionRateLimiter(l *limiter.RateLimiter) services.Service {
+	cleanup := func(serviceContext context.Context) error {
+		l.RemoveStaleEntries(time.Now().Add(-ingestionRateLimitStalenessDuration))
+		return nil
+	}
+	s := services.NewTimerService(ingestionRateLimitCleanupInterval, nil, cleanup, nil)
+	s = s.WithName("ingestion rate limit cleanup")
+	return s
 }

@@ -5,9 +5,11 @@ package activitytracker
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -84,6 +86,44 @@ func TestNilActivityTracker(t *testing.T) {
 	tr.Delete(ix)
 
 	require.NoError(t, tr.Close())
+}
+
+func TestLoadedActivitiesOnStartupMetric(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "activity")
+
+	// First tracker: insert 3 activities without deleting, simulating a crash.
+	tr1, err := NewActivityTracker(Config{Filepath: file, MaxEntries: 5}, nil)
+	require.NoError(t, err)
+	tr1.InsertStatic("activity-1")
+	tr1.InsertStatic("activity-2")
+	tr1.InsertStatic("activity-3")
+	require.NoError(t, tr1.Close())
+
+	// Second tracker on the same file: should report 3 loaded activities.
+	reg := prometheus.NewPedanticRegistry()
+	tr2, err := NewActivityTracker(Config{Filepath: file, MaxEntries: 5}, reg)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, tr2.Close()) }()
+
+	require.Equal(t, 3.0, testutil.ToFloat64(tr2.loadedActivitiesOnStartup))
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP activity_tracker_unfinished_activities_loaded Number of unfinished activities loaded from the activity tracker file on startup.
+		# TYPE activity_tracker_unfinished_activities_loaded gauge
+		activity_tracker_unfinished_activities_loaded 3
+	`), "activity_tracker_unfinished_activities_loaded"))
+}
+
+func TestLoadedActivitiesOnStartupMetricFirstRun(t *testing.T) {
+	// On first run (no pre-existing file), the metric should be 0.
+	file := filepath.Join(t.TempDir(), "activity")
+
+	reg := prometheus.NewPedanticRegistry()
+	tr, err := NewActivityTracker(Config{Filepath: file, MaxEntries: 5}, reg)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, tr.Close()) }()
+
+	require.Equal(t, 0.0, testutil.ToFloat64(tr.loadedActivitiesOnStartup))
 }
 
 func BenchmarkActivityTracker(b *testing.B) {

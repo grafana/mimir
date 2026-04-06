@@ -110,6 +110,10 @@ func (q *QuantileAggregation) Finalize(ctx context.Context) error {
 	return q.Param.Finalize(ctx)
 }
 
+func (q *QuantileAggregation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return types.CombineStats[types.StatsProvider](ctx, q.Aggregation, q.Param)
+}
+
 func (q *QuantileAggregation) Close() {
 	if q.Param != nil {
 		q.Param.Close()

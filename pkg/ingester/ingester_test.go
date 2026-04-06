@@ -56,6 +56,7 @@ import (
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 	"go.uber.org/atomic"
+	"go.uber.org/goleak"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
@@ -65,6 +66,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/chunk"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -76,6 +78,21 @@ import (
 	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+func TestMain(m *testing.M) {
+	util_test.VerifyNoLeakTestMain(m,
+		// TestIngester_Startup_PartitionRingActiveBlocksOnInstanceRingActive
+		// tests ingester failure on startup, which does not clean up all goroutines.
+		// This goroutine will be detected by other tests running in parallel with VerifyNoLeak.
+		goleak.IgnoreAnyFunction("github.com/grafana/dskit/services.funcBasedListener.Failed"),
+
+		// TestIngester_OpenExistingTSDBOnStartup rollback subtests create corrupt chunks_head
+		// files to trigger a tsdb.Open() failure. Prometheus TSDB internally starts WAL and
+		// chunkWriteQueue goroutines before encountering the error and doesn't clean them up.
+		goleak.IgnoreAnyFunction("github.com/prometheus/prometheus/tsdb/wlog.(*WL).run"),
+		goleak.IgnoreAnyFunction("github.com/prometheus/prometheus/tsdb/chunks.(*chunkWriteQueue).start.func1"),
+	)
+}
 
 func mustNewActiveSeriesCustomTrackersConfigFromMap(t *testing.T, source map[string]string) asmodel.CustomTrackersConfig {
 	m, err := asmodel.NewCustomTrackersConfig(source)
@@ -7160,7 +7177,11 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 				assert.Contains(t, startErr.Error(), testData.expectedErr)
 			}
 
-			defer services.StopAndAwaitTerminated(context.Background(), ingester) //nolint:errcheck
+			t.Cleanup(func() {
+				_ = services.StopAndAwaitTerminated(context.Background(), ingester)
+				ingester.closeAllTSDB()
+				ingester.subservicesWatcher.Close()
+			})
 			testData.check(t, ingester)
 		})
 	}
@@ -7309,7 +7330,11 @@ func TestIngester_closeAndDeleteUserTSDBIfIdle_shouldNotCloseTSDBIfShippingIsInP
 	}))
 
 	// Run blocks shipping in a separate go routine.
-	go i.shipBlocks(ctx, nil)
+	shipDone := make(chan struct{})
+	go func() {
+		defer close(shipDone)
+		i.shipBlocks(ctx, nil)
+	}()
 
 	// Wait until shipping starts.
 	test.Poll(t, 1*time.Second, activeShipping, func() interface{} {
@@ -7319,6 +7344,9 @@ func TestIngester_closeAndDeleteUserTSDBIfIdle_shouldNotCloseTSDBIfShippingIsInP
 	})
 
 	assert.Equal(t, tsdbNotActive, i.closeAndDeleteUserTSDBIfIdle(userID))
+
+	// Wait for shipBlocks goroutine to finish to avoid goroutine leak.
+	<-shipDone
 }
 
 func TestIngester_closingAndOpeningTsdbConcurrently(t *testing.T) {
@@ -7770,6 +7798,9 @@ func TestIngester_flushing(t *testing.T) {
 			i, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
 			require.NoError(t, err)
 			startAndWaitHealthy(t, i, r)
+			t.Cleanup(func() {
+				i.closeAllTSDB()
+			})
 
 			// mock user's shipper
 			tc.action(t, i, reg)
@@ -8791,8 +8822,11 @@ func TestIngester_instanceLimitsMetrics(t *testing.T) {
 		return &l
 	}
 
-	_, _, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
+	ing, _, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		ing.subservicesWatcher.Close()
+	})
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_ingester_instance_limits Instance limits used by this ingester.
@@ -11951,6 +11985,10 @@ func TestIngester_PrepareUnregisterHandler(t *testing.T) {
 			test.Poll(t, 1*time.Second, 1, func() interface{} {
 				return healthyInstancesCount(ingester.instanceRing)
 			})
+		} else {
+			t.Cleanup(func() {
+				ingester.subservicesWatcher.Close()
+			})
 		}
 
 		return ingester
@@ -12240,6 +12278,113 @@ func TestIngester_NotifyPreCommit(t *testing.T) {
 	assert.GreaterOrEqual(t, fsyncCountAfter-fsyncCountBefore, uint64(3))
 }
 
+// testMinTimeBlockReader implements tsdb.BlockReader with a fixed MinTime.
+type testMinTimeBlockReader struct {
+	tsdb.BlockReader
+	minTime int64
+}
+
+func (s *testMinTimeBlockReader) Meta() tsdb.BlockMeta {
+	return tsdb.BlockMeta{MinTime: s.minTime}
+}
+
+func TestBlockGenerationCalculator(t *testing.T) {
+	const blockRange = int64((2 * time.Hour) / time.Millisecond)
+
+	db, err := tsdb.Open(t.TempDir(), nil, nil, tsdb.DefaultOptions(), nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+	headMinTime := int64((10 * time.Hour) / time.Millisecond)
+	app := db.Appender(t.Context())
+	_, err = app.Append(0, labels.FromStrings("foo", "bar"), headMinTime, 1)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	userDB := &userTSDB{db: db}
+	blockGen := blockGenerationCalculator(userDB, blockRange)
+
+	testCases := []struct {
+		name        string
+		blockReader tsdb.BlockReader
+		wantGen     string
+	}{
+		{
+			"head block",
+			tsdb.NewRangeHead(db.Head(), 0, headMinTime+blockRange),
+			"0",
+		},
+		{
+			"persisted block generation 1",
+			&testMinTimeBlockReader{minTime: headMinTime - blockRange},
+			"1",
+		},
+		{
+			"persisted block generation 3",
+			&testMinTimeBlockReader{minTime: headMinTime - 3*blockRange - time.Minute.Milliseconds()},
+			"3",
+		},
+		{
+			"persisted block with minTime equal to head",
+			&testMinTimeBlockReader{minTime: headMinTime},
+			"1",
+		},
+		{
+			"persisted block with minTime after head",
+			&testMinTimeBlockReader{minTime: headMinTime + blockRange},
+			"1",
+		},
+		{
+			"persisted block with capped generation label",
+			&testMinTimeBlockReader{minTime: headMinTime - 110*blockRange},
+			"100+",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.wantGen, blockGen(tc.blockReader))
+		})
+	}
+}
+
+func TestBlockGenerationCalculator_EmptyHead(t *testing.T) {
+	const blockRange = int64((2 * time.Hour) / time.Millisecond)
+
+	db, err := tsdb.Open(t.TempDir(), nil, nil, tsdb.DefaultOptions(), nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+	require.Equal(t, int64(math.MaxInt64), db.Head().MinTime())
+
+	userDB := &userTSDB{db: db}
+	blockGen := blockGenerationCalculator(userDB, blockRange)
+
+	testCases := []struct {
+		name        string
+		blockReader tsdb.BlockReader
+		wantGen     string
+	}{
+		{
+			"querying head block",
+			tsdb.NewRangeHead(db.Head(), 0, 1000),
+			"0",
+		},
+		{
+			"querying persisted block",
+			&testMinTimeBlockReader{minTime: 1000},
+			// This is an edge case: we can't figure how old persisted block is comparing to DB's head, when the head was truncated.
+			"unknown",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.wantGen, blockGen(tc.blockReader))
+		})
+	}
+}
+
 func makeTestRW2WriteRequest(syms *rw2util.SymbolTableBuilder) *mimirpb.WriteRequest {
 	req := &mimirpb.WriteRequest{
 		TimeseriesRW2: []mimirpb.TimeSeriesRW2{
@@ -12269,4 +12414,131 @@ func makeTestRW2WriteRequest(syms *rw2util.SymbolTableBuilder) *mimirpb.WriteReq
 	req.SymbolsRW2 = syms.GetSymbols()
 
 	return req
+}
+
+func TestActiveSeriesNow(t *testing.T) {
+	t.Run("returns wall clock when ingest storage disabled", func(t *testing.T) {
+		i := &Ingester{}
+		i.cfg.IngestStorageConfig.Enabled = false
+
+		before := time.Now()
+		got := i.activeSeriesNow()
+		after := time.Now()
+
+		assert.False(t, got.Before(before))
+		assert.False(t, got.After(after))
+	})
+
+	t.Run("returns wall clock when ingest storage enabled but no timestamp set", func(t *testing.T) {
+		i := &Ingester{}
+		i.cfg.IngestStorageConfig.Enabled = true
+
+		before := time.Now()
+		got := i.activeSeriesNow()
+		after := time.Now()
+
+		assert.False(t, got.Before(before))
+		assert.False(t, got.After(after))
+	})
+
+	t.Run("returns Kafka timestamp when ingest storage enabled and timestamp set", func(t *testing.T) {
+		i := &Ingester{}
+		i.cfg.IngestStorageConfig.Enabled = true
+
+		kafkaTs := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+		i.latestKafkaRecordTimestamp.Store(kafkaTs.UnixMilli())
+
+		got := i.activeSeriesNow()
+		assert.Equal(t, kafkaTs.UnixMilli(), got.UnixMilli())
+	})
+}
+
+func TestKafkaTimestampPropagation(t *testing.T) {
+	cfg := defaultIngesterTestConfig(t)
+	cfg.ActiveSeriesMetrics.Enabled = true
+
+	i, _, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
+
+	kafkaTs := time.Now().Add(-5 * time.Minute)
+	ctx := user.InjectOrgID(context.Background(), userID)
+	ctx = ingest.ContextWithRecordTimestamp(ctx, kafkaTs)
+
+	req := mockWriteRequest(t, labels.FromStrings(model.MetricNameLabel, "test_metric"), 1, time.Now().UnixMilli())
+
+	err = i.PushWithCleanup(ctx, req, func() {})
+	require.NoError(t, err)
+
+	// Verify latestKafkaRecordTimestamp was updated.
+	assert.Equal(t, kafkaTs.UnixMilli(), i.latestKafkaRecordTimestamp.Load())
+
+	// Verify activeSeriesNow falls back to wall clock since ingest storage is disabled.
+	before := time.Now()
+	got := i.activeSeriesNow()
+	after := time.Now()
+	assert.False(t, got.Before(before))
+	assert.False(t, got.After(after))
+
+	// Stop the ingester before mutating config to avoid data races with the
+	// metricsUpdaterServiceRunning goroutine that reads IngestStorageConfig.
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), i))
+
+	// Enable ingest storage config to test activeSeriesNow uses the stored Kafka timestamp.
+	i.cfg.IngestStorageConfig.Enabled = true
+	got = i.activeSeriesNow()
+	assert.Equal(t, kafkaTs.UnixMilli(), got.UnixMilli())
+}
+
+func TestActiveSeriesLoadingMetric(t *testing.T) {
+	t.Run("classic mode: transitions from 1 to 0 after idle timeout", func(t *testing.T) {
+		registry := prometheus.NewRegistry()
+		cfg := defaultIngesterTestConfig(t)
+		cfg.ActiveSeriesMetrics.Enabled = true
+		cfg.ActiveSeriesMetrics.IdleTimeout = 200 * time.Millisecond
+
+		ing, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, registry)
+		require.NoError(t, err)
+		startAndWaitHealthy(t, ing, r)
+		defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
+
+		// Push a sample so the ingester has a TSDB.
+		ctx := user.InjectOrgID(context.Background(), userID)
+		req := mockWriteRequest(t, labels.FromStrings(model.MetricNameLabel, "test"), 1, time.Now().UnixMilli())
+		require.NoError(t, ing.PushWithCleanup(ctx, req, func() {}))
+
+		// Use a deterministic time relative to activeSeriesStartMs to avoid flakiness
+		// when wall-clock time between ingester startup and this point exceeds IdleTimeout.
+		startTime := time.UnixMilli(ing.activeSeriesStartMs.Load())
+
+		// Before idle timeout elapses, metric should be 1.
+		ing.updateActiveSeries(startTime.Add(cfg.ActiveSeriesMetrics.IdleTimeout - time.Millisecond))
+		require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(`
+			# HELP cortex_ingester_active_series_loading 1 if active series counts are still warming up and may be underreported, 0 once they are accurate.
+			# TYPE cortex_ingester_active_series_loading gauge
+			cortex_ingester_active_series_loading 1
+		`), "cortex_ingester_active_series_loading"))
+
+		// After idle timeout, metric should be 0.
+		ing.updateActiveSeries(startTime.Add(cfg.ActiveSeriesMetrics.IdleTimeout))
+		require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(`
+			# HELP cortex_ingester_active_series_loading 1 if active series counts are still warming up and may be underreported, 0 once they are accurate.
+			# TYPE cortex_ingester_active_series_loading gauge
+			cortex_ingester_active_series_loading 0
+		`), "cortex_ingester_active_series_loading"))
+	})
+
+	t.Run("disabled: metric is absent", func(t *testing.T) {
+		registry := prometheus.NewRegistry()
+		cfg := defaultIngesterTestConfig(t)
+		cfg.ActiveSeriesMetrics.Enabled = false
+
+		ing, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, registry)
+		require.NoError(t, err)
+		startAndWaitHealthy(t, ing, r)
+		defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
+
+		require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(""), "cortex_ingester_active_series_loading"))
+	})
 }

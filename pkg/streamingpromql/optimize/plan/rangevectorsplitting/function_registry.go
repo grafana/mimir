@@ -14,4 +14,7 @@ var SplitFunctionRegistry = map[functions.Function]SplitOperatorFactory{
 	functions.FUNCTION_MAX_OVER_TIME:   SplitMaxOverTime,
 	functions.FUNCTION_RATE:            SplitRate,
 	functions.FUNCTION_INCREASE:        SplitIncrease,
+	functions.FUNCTION_FIRST_OVER_TIME: SplitFirstOverTime,
+	functions.FUNCTION_LAST_OVER_TIME:  SplitLastOverTime,
+	functions.FUNCTION_AVG_OVER_TIME:   SplitAvgOverTime,
 }

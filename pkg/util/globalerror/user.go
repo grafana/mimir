@@ -100,7 +100,6 @@ const (
 
 	// Alertmanager errors
 	AlertmanagerMaxGrafanaConfigSize ID = "alertmanager-max-grafana-config-size"
-	AlertmanagerMaxGrafanaStateSize  ID = "alertmanager-max-grafana-state-size"
 )
 
 // Message returns the provided msg, appending the error id.

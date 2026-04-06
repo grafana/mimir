@@ -18,7 +18,7 @@ var SplitRate = NewSplitOperatorFactory[RateIntermediate](rateGenerate, rateComb
 
 var SplitIncrease = NewSplitOperatorFactory[RateIntermediate](rateGenerate, rateCombine(false), RateCodec, functions.Increase, functions.FUNCTION_INCREASE)
 
-func rateGenerate(step *types.RangeVectorStepData, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (RateIntermediate, error) {
+func rateGenerate(step *types.RangeVectorStepData, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (RateIntermediate, bool, error) {
 	fHead, fTail := step.Floats.UnsafePoints()
 	fCount := len(fHead) + len(fTail)
 
@@ -30,20 +30,22 @@ func rateGenerate(step *types.RangeVectorStepData, emitAnnotation types.EmitAnno
 		return RateIntermediate{
 			SampleCount:      0,
 			ForceEmptyResult: true,
-		}, nil
+		}, true, nil
 	}
 
 	if fCount > 0 {
-		return rateGenerateFloat(fHead, fTail, fCount)
+		result, err := rateGenerateFloat(fHead, fTail, fCount)
+		return result, true, err
 	}
 
 	if hCount > 0 {
-		return rateGenerateHistogram(hHead, hTail, hCount, emitAnnotation)
+		result, err := rateGenerateHistogram(hHead, hTail, hCount, emitAnnotation)
+		return result, true, err
 	}
 
 	return RateIntermediate{
 		SampleCount: 0,
-	}, nil
+	}, false, nil
 }
 
 func rateGenerateFloat(fHead, fTail []promql.FPoint, fCount int) (RateIntermediate, error) {

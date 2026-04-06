@@ -62,10 +62,26 @@ local fixTargetsForTransformations(panel, refIds) = panel {
       max by(%(instance)s) (time() - (max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{%(job)s}[1h]) > 0))
       or
       max by(%(instance)s) (time() - max_over_time(process_start_time_seconds{%(job)s}[1h]))
+      and max by(%(instance)s) (cortex_compactor_last_successful_run_timestamp_seconds{%(job)s} == 0)
     ||| % {
       instance: $._config.per_instance_label,
       job: $.jobMatcher($._config.job_names.compactor),
     },
+
+  local lastContactThresholds = {
+    local ok = 3 * 60,  // 3 minutes
+    local late = 5 * 60,  // 5 minutes
+    local veryLate = 15 * 60,  // 15 minutes
+
+    mappings: [
+      $.mappingRange('-Infinity', 0, { color: 'transparent', text: 'N/A' }),
+      $.mappingRange(0, ok, { color: 'green', text: 'Ok' }),
+      $.mappingRange(ok, late, { color: 'yellow', text: 'Delayed' }),
+      $.mappingRange(late, veryLate, { color: 'orange', text: 'Late' }),
+      $.mappingRange(veryLate, 'Infinity', { color: 'red', text: 'Very late' }),
+      $.mappingSpecial('null+nan', { color: 'transparent', text: 'Unknown' }),
+    ],
+  },
 
   local lastRunCommonTransformations = [
     $.transformation('organize', {
@@ -90,7 +106,7 @@ local fixTargetsForTransformations(panel, refIds) = panel {
     .addClusterSelectorTemplates()
     .addShowNativeLatencyVariable($.latencyVariableDefault())
     .addRow(
-      $.row('Summary')
+      $.row(if $._config.compactor_scheduler_enabled then 'Summary (standalone mode)' else 'Summary')
       .addPanel(
         $.startedCompletedFailedPanel(
           'Per-instance runs / sec',
@@ -237,8 +253,97 @@ local fixTargetsForTransformations(panel, refIds) = panel {
         },
       )
     )
+    .addRowIf(
+      $._config.compactor_scheduler_enabled,
+      ($.row('Summary (scheduler mode)') + { collapse: true })
+      .addPanel(
+        $.timeseriesPanel('Scheduler jobs') +
+        $.queryPanel(
+          [
+            'sum(cortex_compactor_scheduler_pending_jobs{%s})' % $.jobMatcher($._config.job_names.compactor_scheduler),
+            'sum(cortex_compactor_scheduler_active_jobs{%s})' % $.jobMatcher($._config.job_names.compactor_scheduler),
+          ],
+          ['pending', 'active'],
+        ) +
+        $.stack,
+      )
+      .addPanel(
+        $.timeseriesPanel('Jobs completed / sec') +
+        $.queryPanel(
+          'sum by(job_type) (rate(cortex_compactor_scheduler_jobs_completed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor_scheduler),
+          '{{job_type}}',
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'ops' } } },
+      )
+      .addPanel(
+        $.timeseriesPanel('Repeated job failures / sec') +
+        $.queryPanel(
+          'sum(rate(cortex_compactor_scheduler_repeated_job_failures_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor_scheduler),
+          'failures',
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'ops' } } } +
+        $.aliasColors({ failures: $._colors.failed }),
+      )
+      .addPanel(
+        $.panel('Time since last scheduler contact per worker') +
+        $.queryPanel(
+          |||
+            max by(%(instance)s) (time() - (max_over_time(cortex_compactor_last_scheduler_contact_timestamp_seconds{%(job)s}[1h]) > 0))
+            or
+            max by(%(instance)s) (time() - max_over_time(process_start_time_seconds{%(job)s}[1h]))
+            and max by(%(instance)s) (cortex_compactor_last_scheduler_contact_timestamp_seconds{%(job)s} == 0)
+          ||| % {
+            instance: $._config.per_instance_label,
+            job: $.jobMatcher($._config.job_names.compactor),
+          },
+          'Last contact',
+        ) {
+          type: 'table',
+          targets: [target { format: 'table', instant: true } for target in super.targets],
+          transformations: [
+            $.transformation('organize', {
+              renameByName: {
+                Value: 'Last contact',
+                ['%s' % $._config.per_instance_label]: 'Worker',
+              },
+            }),
+            $.transformation('sortBy', {
+              sort: [{ desc: true, field: 'Last contact' }],
+            }),
+            $.transformationCalculateField('One', 'Last contact', '/', 'Last contact'),
+            $.transformationCalculateField('Status', 'Last contact', '*', 'One'),
+            $.transformation('filterFieldsByName', {
+              include: {
+                names: ['Worker', 'Last contact', 'Status'],
+              },
+            }),
+          ],
+          fieldConfig: {
+            overrides: [
+              $.overrideFieldByName('Status', [
+                $.overrideProperty('custom.displayMode', 'color-background'),
+                $.overrideProperty('mappings', lastContactThresholds.mappings),
+                $.overrideProperty('custom.width', 86),
+                $.overrideProperty('custom.align', 'center'),
+              ]),
+              $.overrideFieldByName('Last contact', [
+                $.overrideProperty('unit', 's'),
+                $.overrideProperty('custom.width', 74),
+                $.overrideProperty('mappings', [
+                  $.mappingRange('-Infinity', 0, { text: 'Never' }),
+                ]),
+              ]),
+            ],
+          },
+        } + {
+          options+: {
+            sortBy: [{ desc: true, displayName: 'Last contact' }],
+          },
+        },
+      )
+    )
     .addRow(
-      $.row('')
+      $.row('Compaction')
       .addPanel(
         $.timeseriesPanel('Estimated Compaction Jobs') +
         $.queryPanel('sum(cortex_bucket_index_estimated_compaction_jobs{%s}) and (sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{%s}[$__rate_interval])) == 0)' %
@@ -291,9 +396,6 @@ local fixTargetsForTransformations(panel, refIds) = panel {
           |||
         ),
       )
-    )
-    .addRow(
-      $.row('')
       .addPanel(
         $.timeseriesPanel('Average blocks / tenant') +
         $.queryPanel('avg(max by(user) (cortex_bucket_blocks_count{%s}))' % $.jobMatcher($._config.job_names.compactor), 'avg'),
@@ -309,6 +411,7 @@ local fixTargetsForTransformations(panel, refIds) = panel {
         ) +
         $.showAllTooltip,
       )
+      .splitIntoLines([4, 2])
     )
     .addRow(
       $.row('Garbage collector')

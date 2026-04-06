@@ -3,16 +3,27 @@ local filename = 'mimir-tenants.json';
 
 (import 'dashboard-utils.libsonnet') +
 (import 'dashboard-queries.libsonnet') {
-  local user_limits_overrides_query(limit_name) = |||
+  local user_limits_overrides_query(limit_name, non_zero=false) = |||
     max(cortex_limits_overrides{%(overrides_exporter)s, limit_name="%(limit_name)s", user="$user"})
     or
-    max(cortex_limits_defaults{%(overrides_exporter)s, limit_name="%(limit_name)s"})
+    max(cortex_limits_defaults{%(overrides_exporter)s, limit_name="%(limit_name)s"}%(non_zero_selector)s)
   ||| % {
     overrides_exporter: $.jobMatcher($._config.job_names.overrides_exporter),
     limit_name: limit_name,
+    non_zero_selector: if non_zero then ' != 0' else '',
   },
 
   local limitStyle = $.overrideFieldByName('limit', [
+    $.overrideProperty('custom.fillOpacity', 0),
+    $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
+  ]),
+
+  local activeSeriesLimitStyle = $.overrideFieldByName('active series limit', [
+    $.overrideProperty('custom.fillOpacity', 0),
+    $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
+  ]),
+
+  local ingesterLimitStyle = $.overrideFieldByName('ingester limit', [
     $.overrideProperty('custom.fillOpacity', 0),
     $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
   ]),
@@ -47,7 +58,32 @@ local filename = 'mimir-tenants.json';
     .addRow(
       $.row('Tenant series counts')
       .addPanel(
-        local title = 'All series';
+        local title = 'Active series';
+        $.timeseriesPanel(title) +
+        $.queryPanel(
+          [
+            $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_active_series{%s, user="$user"}' % [$.jobMatcher($._config.job_names.ingester)]),
+            user_limits_overrides_query('max_active_series_per_user', non_zero=true),  // Only render non-zero limit. Zero means no-limit.
+            $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_active_series_custom_tracker{%s, user="$user"}' % [$.jobMatcher($._config.job_names.ingester)], groupByLabels='name'),
+          ],
+          [
+            'active',
+            'active series limit',
+            'active ({{ name }})',
+          ],
+        ) +
+        { fieldConfig+: { overrides+: [activeSeriesLimitStyle] } } +
+        $.panelDescription(
+          title,
+          |||
+            Number of active series per user, and active series matching custom trackers (in parenthesis).
+            Note that these counts include all series regardless of the type of data (counter, gauge, native histogram, etc.).
+            Note that active series matching custom trackers are included in the total active series count.
+          |||
+        ),
+      )
+      .addPanel(
+        local title = 'Owned & in-memory series';
         $.timeseriesPanel(title) +
         $.queryPanel(
           [
@@ -60,26 +96,21 @@ local filename = 'mimir-tenants.json';
               ingester: $.jobMatcher($._config.job_names.ingester),
             };
             $.queries.ingester.ingestOrClassicDeduplicatedQuery(perIngesterInMemorySeries),
-            user_limits_overrides_query('max_global_series_per_user'),
-            $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_active_series{%s, user="$user"}' % [$.jobMatcher($._config.job_names.ingester)]),
             $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_owned_series{%s, user="$user"}' % [$.jobMatcher($._config.job_names.ingester)]),
-            $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_active_series_custom_tracker{%s, user="$user"}' % [$.jobMatcher($._config.job_names.ingester)], groupByLabels='name'),
+            user_limits_overrides_query('max_global_series_per_user'),
           ],
           [
             'in-memory',
-            'limit',
-            'active',
             'owned',
-            'active ({{ name }})',
+            'ingester limit',
           ],
         ) +
-        { fieldConfig+: { overrides+: [limitStyle] } } +
+        { fieldConfig+: { overrides+: [ingesterLimitStyle] } } +
         $.panelDescription(
           title,
           |||
-            Number of active, in-memory, and owned series per user, and active series matching custom trackers (in parenthesis).
+            Number of in-memory and owned series per user.
             Note that these counts include all series regardless of the type of data (counter, gauge, native histogram, etc.).
-            Note that active series matching custom trackers are included in the total active series count.
           |||
         ),
       )

@@ -4,6 +4,7 @@ package remoteexec
 
 import (
 	"context"
+	"errors"
 
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -72,6 +73,10 @@ func (r *RangeVectorRemoteExec) Finalize(ctx context.Context) error {
 
 func (r *RangeVectorRemoteExec) ExpressionPosition() posrange.PositionRange {
 	return r.expressionPosition
+}
+
+func (r *RangeVectorRemoteExec) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return nil, errors.New("Stats not implemented for range vector remote execution")
 }
 
 func (r *RangeVectorRemoteExec) Close() {

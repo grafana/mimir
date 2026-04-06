@@ -57,6 +57,36 @@ func TestMain(m *testing.M) {
 	test.VerifyNoLeakTestMain(m)
 }
 
+func TestNewBucketStores_PartitionerConfig(t *testing.T) {
+	tests := []struct {
+		cfgValue uint64
+		expected uint64
+	}{
+		{200, 200},
+		{0, 100},
+	}
+
+	for _, tt := range tests {
+		cfg := prepareStorageConfig(t)
+		cfg.BucketStore.PartitionerMaxGapBytes = 100
+		cfg.BucketStore.PartitionerMaxGapBytesChunks = tt.cfgValue
+
+		storageDir := t.TempDir()
+		bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
+		require.NoError(t, err)
+
+		stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, nil, defaultLimitsOverrides(t), log.NewNopLogger(), nil)
+		require.NoError(t, err)
+
+		require.IsType(t, &gapBasedPartitioner{}, stores.partitioners.chunks)
+		require.IsType(t, &gapBasedPartitioner{}, stores.partitioners.series)
+		require.IsType(t, &gapBasedPartitioner{}, stores.partitioners.postings)
+		assert.Equal(t, tt.expected, stores.partitioners.chunks.(*gapBasedPartitioner).maxGapBytes)
+		assert.Equal(t, uint64(100), stores.partitioners.series.(*gapBasedPartitioner).maxGapBytes)
+		assert.Equal(t, uint64(100), stores.partitioners.postings.(*gapBasedPartitioner).maxGapBytes)
+	}
+}
+
 func TestBucketStores_InitialSync(t *testing.T) {
 
 	userToMetric := map[string]string{

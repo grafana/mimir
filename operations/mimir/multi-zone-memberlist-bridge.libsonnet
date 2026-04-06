@@ -11,9 +11,9 @@
 
     // Number of memberlist-bridge replicas per zone. Memberlist zone-aware routing has an
     // auto-failover mechanism to temporarily disable zone-aware routing if it detects that
-    // a zone has no healthy bridges; for this reason, 2 replicas are enough for high-availability
-    // without a significant risk of network partitioning if both bridges in a zone are unhealthy.
-    memberlist_bridge_replicas_per_zone: 2,
+    // a zone has no healthy bridges; 3 replicas provide high-availability without a significant
+    // risk of network partitioning if some bridges in a zone are unhealthy.
+    memberlist_bridge_replicas_per_zone: 3,
   },
 
   _images+:: if $._config.multi_zone_memberlist_bridge_enabled then {

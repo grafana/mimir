@@ -4,6 +4,7 @@ package commonsubexpressionelimination
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 
@@ -32,6 +33,8 @@ type RangeVectorDuplicationBuffer struct {
 	// Multiple RangeVectorDuplicationConsumers will call RangeVectorDuplicationBuffer.Prepare() and AfterPrepare(), so this ensures idempotency.
 	prepareCalled      bool
 	afterPrepareCalled bool
+
+	stats *types.OperatorEvaluationStats
 }
 
 func NewRangeVectorDuplicationBuffer(inner types.RangeVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *RangeVectorDuplicationBuffer {
@@ -108,8 +111,8 @@ func (b *RangeVectorDuplicationBuffer) SeriesMetadata(ctx context.Context, match
 }
 
 func (b *RangeVectorDuplicationBuffer) NextSeries(consumer *RangeVectorDuplicationConsumer) error {
-	if consumer.closed {
-		return fmt.Errorf("consumer %p is already closed, can't advance to next series", consumer)
+	if consumer.finalized {
+		return fmt.Errorf("consumer %p is already finalized, can't advance to next series", consumer)
 	}
 
 	thisSeriesIndex := consumer.nextUnfilteredSeriesIndex
@@ -249,10 +252,30 @@ func (b *RangeVectorDuplicationBuffer) CloseConsumer(consumer *RangeVectorDuplic
 		return
 	}
 
+	b.releaseBufferedData(consumer)
 	consumer.closed = true
 
 	if b.allConsumersClosed() {
-		b.close()
+		b.Inner.Close()
+
+		if b.stats != nil {
+			b.stats.Close()
+			b.stats = nil
+		}
+	}
+}
+
+func (b *RangeVectorDuplicationBuffer) releaseBufferedData(consumer *RangeVectorDuplicationConsumer) {
+	if consumer.finalized {
+		return
+	}
+
+	consumer.finalized = true
+
+	defer types.BoolSlicePool.Put(&consumer.unfilteredSeriesBitmap, b.MemoryConsumptionTracker)
+
+	if b.allConsumersFinalized() {
+		b.releaseAllBufferedData()
 		return
 	}
 
@@ -307,11 +330,20 @@ func (b *RangeVectorDuplicationBuffer) CloseConsumer(consumer *RangeVectorDuplic
 	}
 }
 
+func (b *RangeVectorDuplicationBuffer) releaseAllBufferedData() {
+	types.SeriesMetadataSlicePool.Put(&b.seriesMetadata, b.MemoryConsumptionTracker)
+
+	for b.buffer.Size() > 0 {
+		d := b.buffer.RemoveFirst()
+		d.Close()
+	}
+}
+
 func (b *RangeVectorDuplicationBuffer) earliestSeriesIndexStillToReturn() int {
 	idx := math.MaxInt
 
 	for _, consumer := range b.consumers {
-		if consumer.closed {
+		if consumer.finalized {
 			continue
 		}
 
@@ -329,7 +361,7 @@ func (b *RangeVectorDuplicationBuffer) earliestSeriesIndexStillToReturn() int {
 
 func (b *RangeVectorDuplicationBuffer) allOpenConsumersHaveNoFilters() bool {
 	for _, consumer := range b.consumers {
-		if consumer.closed {
+		if consumer.finalized {
 			continue
 		}
 
@@ -339,19 +371,6 @@ func (b *RangeVectorDuplicationBuffer) allOpenConsumersHaveNoFilters() bool {
 	}
 
 	return true
-}
-
-func (b *RangeVectorDuplicationBuffer) close() {
-	types.SeriesMetadataSlicePool.Put(&b.seriesMetadata, b.MemoryConsumptionTracker)
-
-	for b.buffer.Size() > 0 {
-		d := b.buffer.RemoveFirst()
-		d.Close()
-	}
-
-	b.buffer = nil
-
-	b.Inner.Close()
 }
 
 func (b *RangeVectorDuplicationBuffer) allConsumersClosed() bool {
@@ -387,7 +406,7 @@ func (b *RangeVectorDuplicationBuffer) Finalize(ctx context.Context, consumer *R
 		return nil
 	}
 
-	consumer.finalized = true
+	b.releaseBufferedData(consumer)
 
 	if !b.allConsumersFinalized() {
 		return nil
@@ -399,6 +418,47 @@ func (b *RangeVectorDuplicationBuffer) Finalize(ctx context.Context, consumer *R
 func (b *RangeVectorDuplicationBuffer) allConsumersFinalized() bool {
 	for _, consumer := range b.consumers {
 		if !consumer.finalized {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (b *RangeVectorDuplicationBuffer) QueryStats(ctx context.Context, consumer *RangeVectorDuplicationConsumer) (*types.OperatorEvaluationStats, error) {
+	if !b.allConsumersFinalized() {
+		return nil, errors.New("RangeVectorDuplicationBuffer: cannot get stats when one or more consumers are not finalized")
+	}
+
+	if consumer.hasReadStats {
+		return nil, errors.New("RangeVectorDuplicationBuffer: cannot get stats twice for the same consumer")
+	}
+
+	if b.stats == nil {
+		var err error
+		b.stats, err = b.Inner.Stats(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	consumer.hasReadStats = true
+
+	// TODO: handle subsets
+
+	if b.allConsumersHaveReadStats() {
+		// Last consumer, return stats without cloning.
+		stats := b.stats
+		b.stats = nil
+		return stats, nil
+	}
+
+	return b.stats.Clone()
+}
+
+func (b *RangeVectorDuplicationBuffer) allConsumersHaveReadStats() bool {
+	for _, consumer := range b.consumers {
+		if !consumer.hasReadStats {
 			return false
 		}
 	}
@@ -458,6 +518,7 @@ type RangeVectorDuplicationConsumer struct {
 	hasReadCurrentSeriesSamples  bool
 	finalized                    bool
 	closed                       bool
+	hasReadStats                 bool
 
 	// unfilteredSeriesBitmap contains one entry per unfiltered input series, where true indicates that it passes this consumer's filters.
 	// If this consumer has no filters, this is nil.
@@ -476,7 +537,7 @@ func (d *RangeVectorDuplicationConsumer) SeriesMetadata(ctx context.Context, mat
 }
 
 func (d *RangeVectorDuplicationConsumer) shouldReturnUnfilteredSeries(unfilteredSeriesIndex int) bool {
-	if d.closed {
+	if d.finalized {
 		return false
 	}
 
@@ -519,7 +580,10 @@ func (d *RangeVectorDuplicationConsumer) Finalize(ctx context.Context) error {
 	return d.Buffer.Finalize(ctx, d)
 }
 
+func (d *RangeVectorDuplicationConsumer) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return d.Buffer.QueryStats(ctx, d)
+}
+
 func (d *RangeVectorDuplicationConsumer) Close() {
 	d.Buffer.CloseConsumer(d)
-	types.BoolSlicePool.Put(&d.unfilteredSeriesBitmap, d.Buffer.MemoryConsumptionTracker)
 }

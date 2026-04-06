@@ -316,14 +316,14 @@ func TestOrBinaryOperationSorting(t *testing.T) {
 	}
 }
 
-func TestOrBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testing.T) {
+func TestOrBinaryOperation_FinalizesInnerOperatorsAsSoonAsPossible(t *testing.T) {
 	testCases := map[string]struct {
 		leftSeries  []labels.Labels
 		rightSeries []labels.Labels
 
-		expectedOutputSeries                        []labels.Labels
-		expectLeftSideClosedAfterOutputSeriesIndex  int
-		expectRightSideClosedAfterOutputSeriesIndex int
+		expectedOutputSeries                           []labels.Labels
+		expectLeftSideFinalizedAfterOutputSeriesIndex  int
+		expectRightSideFinalizedAfterOutputSeriesIndex int
 	}{
 		"reach end of both sides at the same time": {
 			leftSeries: []labels.Labels{
@@ -345,8 +345,8 @@ func TestOrBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testing.T) {
 				labels.FromStrings("group", "2", "series", "left-3"),
 				labels.FromStrings("group", "2", "series", "right-3"),
 			},
-			expectLeftSideClosedAfterOutputSeriesIndex:  4,
-			expectRightSideClosedAfterOutputSeriesIndex: 5,
+			expectLeftSideFinalizedAfterOutputSeriesIndex:  4,
+			expectRightSideFinalizedAfterOutputSeriesIndex: 5,
 		},
 		"no more matches with unmatched series still to read on both sides": {
 			leftSeries: []labels.Labels{
@@ -368,8 +368,8 @@ func TestOrBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testing.T) {
 				labels.FromStrings("group", "3", "series", "right-3"),
 				labels.FromStrings("group", "2", "series", "left-3"),
 			},
-			expectLeftSideClosedAfterOutputSeriesIndex:  5,
-			expectRightSideClosedAfterOutputSeriesIndex: 4,
+			expectLeftSideFinalizedAfterOutputSeriesIndex:  5,
+			expectRightSideFinalizedAfterOutputSeriesIndex: 4,
 		},
 		"no more matches with unmatched series still to read on left side": {
 			leftSeries: []labels.Labels{
@@ -389,8 +389,8 @@ func TestOrBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testing.T) {
 				labels.FromStrings("group", "1", "series", "right-2"),
 				labels.FromStrings("group", "2", "series", "left-3"),
 			},
-			expectLeftSideClosedAfterOutputSeriesIndex:  4,
-			expectRightSideClosedAfterOutputSeriesIndex: 3,
+			expectLeftSideFinalizedAfterOutputSeriesIndex:  4,
+			expectRightSideFinalizedAfterOutputSeriesIndex: 3,
 		},
 		"no more matches with unmatched series still to read on right side": {
 			leftSeries: []labels.Labels{
@@ -410,8 +410,8 @@ func TestOrBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testing.T) {
 				labels.FromStrings("group", "1", "series", "right-2"),
 				labels.FromStrings("group", "3", "series", "right-3"),
 			},
-			expectLeftSideClosedAfterOutputSeriesIndex:  1,
-			expectRightSideClosedAfterOutputSeriesIndex: 4,
+			expectLeftSideFinalizedAfterOutputSeriesIndex:  1,
+			expectRightSideFinalizedAfterOutputSeriesIndex: 4,
 		},
 		"some series do not match anything on the right": {
 			leftSeries: []labels.Labels{
@@ -435,8 +435,8 @@ func TestOrBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testing.T) {
 				labels.FromStrings("group", "3", "series", "left-4"),
 				labels.FromStrings("group", "3", "series", "right-3"),
 			},
-			expectLeftSideClosedAfterOutputSeriesIndex:  5,
-			expectRightSideClosedAfterOutputSeriesIndex: 6,
+			expectLeftSideFinalizedAfterOutputSeriesIndex:  5,
+			expectRightSideFinalizedAfterOutputSeriesIndex: 6,
 		},
 		"some series do not match anything on the left": {
 			leftSeries: []labels.Labels{
@@ -460,8 +460,8 @@ func TestOrBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testing.T) {
 				labels.FromStrings("group", "3", "series", "left-3"),
 				labels.FromStrings("group", "3", "series", "right-4"),
 			},
-			expectLeftSideClosedAfterOutputSeriesIndex:  5,
-			expectRightSideClosedAfterOutputSeriesIndex: 6,
+			expectLeftSideFinalizedAfterOutputSeriesIndex:  5,
+			expectRightSideFinalizedAfterOutputSeriesIndex: 6,
 		},
 		"no series match": {
 			leftSeries: []labels.Labels{
@@ -477,8 +477,8 @@ func TestOrBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testing.T) {
 				labels.FromStrings("group", "1", "series", "left-1"),
 				labels.FromStrings("group", "2", "series", "left-2"),
 			},
-			expectLeftSideClosedAfterOutputSeriesIndex:  2,
-			expectRightSideClosedAfterOutputSeriesIndex: 0,
+			expectLeftSideFinalizedAfterOutputSeriesIndex:  2,
+			expectRightSideFinalizedAfterOutputSeriesIndex: 0,
 		},
 		"no series on left": {
 			leftSeries: []labels.Labels{},
@@ -493,8 +493,8 @@ func TestOrBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testing.T) {
 				labels.FromStrings("group", "2", "series", "right-2"),
 				labels.FromStrings("group", "3", "series", "right-3"),
 			},
-			expectLeftSideClosedAfterOutputSeriesIndex:  -1,
-			expectRightSideClosedAfterOutputSeriesIndex: 2,
+			expectLeftSideFinalizedAfterOutputSeriesIndex:  -1,
+			expectRightSideFinalizedAfterOutputSeriesIndex: 2,
 		},
 		"no series on right": {
 			leftSeries: []labels.Labels{
@@ -509,27 +509,27 @@ func TestOrBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testing.T) {
 				labels.FromStrings("group", "2", "series", "left-2"),
 				labels.FromStrings("group", "3", "series", "left-3"),
 			},
-			expectLeftSideClosedAfterOutputSeriesIndex:  2,
-			expectRightSideClosedAfterOutputSeriesIndex: -1,
+			expectLeftSideFinalizedAfterOutputSeriesIndex:  2,
+			expectRightSideFinalizedAfterOutputSeriesIndex: -1,
 		},
 		"no series on either side": {
 			leftSeries:  []labels.Labels{},
 			rightSeries: []labels.Labels{},
 
-			expectedOutputSeries:                        []labels.Labels{},
-			expectLeftSideClosedAfterOutputSeriesIndex:  -1,
-			expectRightSideClosedAfterOutputSeriesIndex: -1,
+			expectedOutputSeries:                           []labels.Labels{},
+			expectLeftSideFinalizedAfterOutputSeriesIndex:  -1,
+			expectRightSideFinalizedAfterOutputSeriesIndex: -1,
 		},
 	}
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			if testCase.expectLeftSideClosedAfterOutputSeriesIndex >= len(testCase.expectedOutputSeries) {
-				require.Failf(t, "invalid test case", "expectLeftSideClosedAfterOutputSeriesIndex %v is beyond end of expected output series %v", testCase.expectLeftSideClosedAfterOutputSeriesIndex, testCase.expectedOutputSeries)
+			if testCase.expectLeftSideFinalizedAfterOutputSeriesIndex >= len(testCase.expectedOutputSeries) {
+				require.Failf(t, "invalid test case", "expectLeftSideFinalizedAfterOutputSeriesIndex %v is beyond end of expected output series %v", testCase.expectLeftSideFinalizedAfterOutputSeriesIndex, testCase.expectedOutputSeries)
 			}
 
-			if testCase.expectRightSideClosedAfterOutputSeriesIndex >= len(testCase.expectedOutputSeries) {
-				require.Failf(t, "invalid test case", "expectRightSideClosedAfterOutputSeriesIndex %v is beyond end of expected output series %v", testCase.expectRightSideClosedAfterOutputSeriesIndex, testCase.expectedOutputSeries)
+			if testCase.expectRightSideFinalizedAfterOutputSeriesIndex >= len(testCase.expectedOutputSeries) {
+				require.Failf(t, "invalid test case", "expectRightSideFinalizedAfterOutputSeriesIndex %v is beyond end of expected output series %v", testCase.expectRightSideFinalizedAfterOutputSeriesIndex, testCase.expectedOutputSeries)
 			}
 
 			ctx := context.Background()
@@ -549,51 +549,55 @@ func TestOrBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testing.T) {
 				require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
 			}
 
-			if testCase.expectLeftSideClosedAfterOutputSeriesIndex == -1 {
+			if testCase.expectLeftSideFinalizedAfterOutputSeriesIndex == -1 {
 				require.True(t, left.Finalized, "left side should be finalized after SeriesMetadata, but it is not")
-				require.True(t, left.Closed, "left side should be closed after SeriesMetadata, but it is not")
 			} else {
 				require.False(t, left.Finalized, "left side should not be finalized after SeriesMetadata, but it is")
-				require.False(t, left.Closed, "left side should not be closed after SeriesMetadata, but it is")
 			}
 
-			if testCase.expectRightSideClosedAfterOutputSeriesIndex == -1 {
+			if testCase.expectRightSideFinalizedAfterOutputSeriesIndex == -1 {
 				require.True(t, right.Finalized, "right side should be finalized after SeriesMetadata, but it is not")
-				require.True(t, right.Closed, "right side should be closed after SeriesMetadata, but it is not")
 			} else {
 				require.False(t, right.Finalized, "right side should not be finalized after SeriesMetadata, but it is")
-				require.False(t, right.Closed, "right side should not be closed after SeriesMetadata, but it is")
 			}
+
+			require.False(t, left.Closed, "left side should not be closed after SeriesMetadata, but it is")
+			require.False(t, right.Closed, "right side should not be closed after SeriesMetadata, but it is")
 
 			for outputSeriesIdx := range outputSeries {
 				_, err := o.NextSeries(ctx)
 				require.NoErrorf(t, err, "got error while reading series at index %v", outputSeriesIdx)
 
-				if outputSeriesIdx >= testCase.expectLeftSideClosedAfterOutputSeriesIndex {
+				if outputSeriesIdx >= testCase.expectLeftSideFinalizedAfterOutputSeriesIndex {
 					require.Truef(t, left.Finalized, "left side should be finalized after output series at index %v, but it is not", outputSeriesIdx)
-					require.Truef(t, left.Closed, "left side should be closed after output series at index %v, but it is not", outputSeriesIdx)
 				} else {
 					require.Falsef(t, left.Finalized, "left side should not be finalized after output series at index %v, but it is", outputSeriesIdx)
-					require.Falsef(t, left.Closed, "left side should not be closed after output series at index %v, but it is", outputSeriesIdx)
 				}
 
-				if outputSeriesIdx >= testCase.expectRightSideClosedAfterOutputSeriesIndex {
+				if outputSeriesIdx >= testCase.expectRightSideFinalizedAfterOutputSeriesIndex {
 					require.Truef(t, right.Finalized, "right side should be finalized after output series at index %v, but it is not", outputSeriesIdx)
-					require.Truef(t, right.Closed, "right side should be closed after output series at index %v, but it is not", outputSeriesIdx)
 				} else {
 					require.Falsef(t, right.Finalized, "right side should not be finalized after output series at index %v, but it is", outputSeriesIdx)
-					require.Falsef(t, right.Closed, "right side should not be closed after output series at index %v, but it is", outputSeriesIdx)
 				}
 			}
+
+			require.False(t, left.Closed, "left side should not be closed after reading all output series, but it is")
+			require.False(t, right.Closed, "right side should not be closed after reading all output series, but it is")
 
 			types.SeriesMetadataSlicePool.Put(&outputSeries, memoryConsumptionTracker)
 
 			_, err = o.NextSeries(ctx)
 			require.Equal(t, types.EOS, err)
 
-			o.Close()
+			require.NoError(t, o.Finalize(ctx))
+			require.True(t, left.Finalized, "left side should be finalized after calling Finalize, but it is not")
+			require.True(t, right.Finalized, "right side should be finalized after calling Finalize, but it is not")
 			// Make sure we've returned everything to their pools.
 			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+
+			o.Close()
+			require.True(t, left.Closed, "left side should be closed after closing operator, but it isn't")
+			require.True(t, right.Closed, "right side should be closed after closing operator, but it isn't")
 		})
 	}
 }
@@ -704,9 +708,10 @@ func TestOrBinaryOperation_ReleasesIntermediateStateIfClosedEarly(t *testing.T) 
 				require.NoError(t, err)
 			}
 
-			// Close the operator and confirm that we've returned everything to their pools.
-			o.Close()
+			// Finalize the operator and confirm that we've returned everything to their pools.
+			require.NoError(t, o.Finalize(ctx))
 			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+			o.Close()
 		})
 	}
 }

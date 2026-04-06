@@ -122,6 +122,7 @@ func RecordSerializerFromVersion(version int) recordSerializer {
 // recordSerializer converts a WriteRequest to one or more kafka records.
 type recordSerializer interface {
 	// ToRecords returns the Kafka records and the input request size (before any format conversion).
+	// Each returned record MUST have the Partition field set to the input partitionID.
 	ToRecords(partitionID int32, tenantID string, req *mimirpb.WriteRequest, maxSize int) ([]*kgo.Record, int, error)
 }
 

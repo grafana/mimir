@@ -204,6 +204,7 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 
 	const userID = "tenant"
 
+	const maxGapBytes = mimir_tsdb.DefaultPartitionerMaxGapSize
 	store, err := NewBucketStore(
 		userID,
 		objstore.WithNoopInstr(bkt),
@@ -214,7 +215,7 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 		cfg.postingsStrategy,
 		cfg.chunksLimiterFactory,
 		cfg.seriesLimiterFactory,
-		newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+		newGapBasedPartitioners(maxGapBytes, maxGapBytes, maxGapBytes, nil),
 		hashcache.NewSeriesHashCache(1024*1024),
 		NewBucketStoreMetrics(s.metricsRegistry),
 		storeOpts...,
@@ -471,6 +472,8 @@ func assertQueryStatsMetricsRecorded(t *testing.T, numSeries int, numChunksPerSe
 		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_fetched", metrics, "data_type", "postings"))
 		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_fetched", metrics, "data_type", "series"))
 
+		assertSeriesTouchedProcessedGreaterOrEqualReturned(t, metrics)
+
 		assert.NotZero(t, numObservationsForHistogram(t, "cortex_bucket_store_series_request_stage_duration_seconds", metrics))
 		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_blocks_queried", metrics, "source", "test", "level", "1"))
 	}
@@ -620,6 +623,12 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 	// The query will fetch 4 series from 3 blocks each, so we do expect to hit a total of 12 chunks.
 	expectedChunks := uint64(4 * 3)
 
+	// Create blocks once into a shared bucket to avoid repeating expensive block creation I/O.
+	bkt := objstore.NewInMemBucket()
+	sharedCfg := defaultPrepareStoreConfig(t)
+	prepareTestBlocks(t, time.Now(), sharedCfg.numBlocks/2, sharedCfg.tempDir, bkt,
+		sharedCfg.series, labels.FromStrings("ext1", "value1"), sharedCfg.nonOverlappingBlocks)
+
 	cases := map[string]struct {
 		maxChunksLimit uint64
 		maxSeriesLimit uint64
@@ -648,16 +657,17 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 
 	for testName, testData := range cases {
 		t.Run(testName, func(t *testing.T) {
+			// Create one store per case (different limiters), reuse across streaming batch sizes.
+			prepConfig := defaultPrepareStoreConfig(t)
+			prepConfig.numBlocks = 0 // blocks already in shared bucket
+			prepConfig.chunksLimiterFactory = newStaticChunksLimiterFactory(testData.maxChunksLimit)
+			prepConfig.seriesLimiterFactory = newStaticSeriesLimiterFactory(testData.maxSeriesLimit)
+
+			s := prepareStoreWithTestBlocks(t, bkt, prepConfig)
+			srv := newStoreGatewayTestServer(t, s.store)
+
 			for _, streamingBatchSize := range []int{0, 1, 5} {
 				t.Run(fmt.Sprintf("streamingBatchSize=%d", streamingBatchSize), func(t *testing.T) {
-					bkt := objstore.NewInMemBucket()
-
-					prepConfig := defaultPrepareStoreConfig(t)
-					prepConfig.chunksLimiterFactory = newStaticChunksLimiterFactory(testData.maxChunksLimit)
-					prepConfig.seriesLimiterFactory = newStaticSeriesLimiterFactory(testData.maxSeriesLimit)
-
-					s := prepareStoreWithTestBlocks(t, bkt, prepConfig)
-
 					req := &storepb.SeriesRequest{
 						Matchers: []storepb.LabelMatcher{
 							{Type: storepb.LabelMatcher_EQ, Name: "a", Value: "1"},
@@ -667,7 +677,6 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 						StreamingChunksBatchSize: uint64(streamingBatchSize),
 					}
 
-					srv := newStoreGatewayTestServer(t, s.store)
 					_, _, _, _, err := srv.Series(context.Background(), req)
 
 					if testData.expectedErr == "" {
@@ -827,6 +836,8 @@ func assertQueryStatsLabelNamesMetricsRecorded(t *testing.T, numLabelNames int, 
 		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_fetched", metrics, "data_type", "postings"))
 		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_fetched", metrics, "data_type", "series"))
 
+		assertSeriesTouchedProcessedGreaterOrEqualReturned(t, metrics)
+
 		assert.NotZero(t, numObservationsForHistogram(t, "cortex_bucket_store_series_request_stage_duration_seconds", metrics))
 	}
 }
@@ -841,6 +852,8 @@ func assertQueryStatsLabelValuesMetricsRecorded(t *testing.T, registry *promethe
 	assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_touched", metrics, "data_type", "series"))
 	assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_fetched", metrics, "data_type", "postings"))
 	assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_fetched", metrics, "data_type", "series"))
+
+	assertSeriesTouchedProcessedGreaterOrEqualReturned(t, metrics)
 }
 
 func TestBucketStore_LabelNames_e2e(t *testing.T) {
@@ -1134,6 +1147,27 @@ func numObservationsForSummaries(t *testing.T, summaryName string, metrics dskit
 	m := &dto.Metric{}
 	require.NoError(t, summaryData.Metric(prometheus.NewDesc("test", "", nil, nil)).Write(m))
 	return m.GetSummary().GetSampleCount()
+}
+
+func sumOfSummaryValues(t *testing.T, summaryName string, metrics dskit_metrics.MetricFamilyMap, labelValuePairs ...string) float64 {
+	t.Helper()
+
+	var sum float64
+	for _, m := range dskit_metrics.FindMetricsInFamilyMatchingLabels(metrics[summaryName], labelValuePairs...) {
+		sum += m.GetSummary().GetSampleSum()
+	}
+	return sum
+}
+
+func assertSeriesTouchedProcessedGreaterOrEqualReturned(t *testing.T, metrics dskit_metrics.MetricFamilyMap) {
+	t.Helper()
+
+	processedSum := sumOfSummaryValues(t, "cortex_bucket_store_series_data_touched", metrics, "data_type", "series", "stage", "processed")
+	returnedSum := sumOfSummaryValues(t, "cortex_bucket_store_series_data_touched", metrics, "data_type", "series", "stage", "returned")
+	assert.GreaterOrEqual(t, returnedSum, float64(0),
+		"cortex_bucket_store_series_data_touched{data_type=series, stage=returned} sum must be non-negative")
+	assert.GreaterOrEqual(t, processedSum, returnedSum,
+		"cortex_bucket_store_series_data_touched{data_type=series, stage=processed} sum must be >= returned sum")
 }
 
 func numObservationsForHistogram(t *testing.T, histogramName string, metrics dskit_metrics.MetricFamilyMap, labelValuePairs ...string) uint64 {

@@ -46,7 +46,6 @@ const (
 	fetchConcurrency = 16
 
 	grafanaConfigName = "grafana_config"
-	grafanaStateName  = "grafana_fullstate"
 )
 
 // BucketAlertStore is used to support the AlertStore interface against an object storage backend. It is implemented
@@ -56,23 +55,16 @@ type BucketAlertStore struct {
 	amBucket        objstore.Bucket
 	grafanaAMBucket objstore.Bucket
 
-	cfgProvider     bucket.TenantConfigProvider
-	fetchGrafanaCfg bool
-	logger          log.Logger
+	cfgProvider bucket.TenantConfigProvider
+	logger      log.Logger
 }
 
-type BucketAlertStoreConfig struct {
-	// Retrieve Grafana AM configs alongside Mimir AM configs.
-	FetchGrafanaConfig bool
-}
-
-func NewBucketAlertStore(cfg BucketAlertStoreConfig, bkt objstore.Bucket, cfgProvider bucket.TenantConfigProvider, logger log.Logger) *BucketAlertStore {
+func NewBucketAlertStore(bkt objstore.Bucket, cfgProvider bucket.TenantConfigProvider, logger log.Logger) *BucketAlertStore {
 	return &BucketAlertStore{
 		alertsBucket:    bucket.NewPrefixedBucketClient(bkt, AlertsPrefix),
 		amBucket:        bucket.NewPrefixedBucketClient(bkt, AlertmanagerPrefix),
 		grafanaAMBucket: bucket.NewPrefixedBucketClient(bkt, GrafanaAlertmanagerPrefix),
 		cfgProvider:     cfgProvider,
-		fetchGrafanaCfg: cfg.FetchGrafanaConfig,
 		logger:          logger,
 	}
 }
@@ -86,14 +78,6 @@ func (s *BucketAlertStore) ListAllUsers(ctx context.Context) ([]string, error) {
 		return nil
 	})
 
-	if s.fetchGrafanaCfg {
-		err = s.grafanaAMBucket.Iter(ctx, "", func(key string) error {
-			// Unlike standard configurations, for the Grafana bucket has a hierarchy per user.
-			userIDs[strings.TrimRight(key, "/")] = struct{}{}
-			return nil
-		})
-	}
-
 	result := make([]string, 0, len(userIDs))
 	for userID := range userIDs {
 		result = append(result, userID)
@@ -103,31 +87,22 @@ func (s *BucketAlertStore) ListAllUsers(ctx context.Context) ([]string, error) {
 }
 
 // GetAlertConfigs implements alertstore.AlertStore.
-func (s *BucketAlertStore) GetAlertConfigs(ctx context.Context, userIDs []string) (map[string]alertspb.AlertConfigDescs, error) {
+func (s *BucketAlertStore) GetAlertConfigs(ctx context.Context, userIDs []string) (map[string]alertspb.AlertConfigDesc, error) {
 	var (
 		cfgsMx = sync.Mutex{}
-		cfgs   = make(map[string]alertspb.AlertConfigDescs, len(userIDs))
+		cfgs   = make(map[string]alertspb.AlertConfigDesc, len(userIDs))
 	)
 
 	err := concurrency.ForEachJob(ctx, len(userIDs), fetchConcurrency, func(ctx context.Context, idx int) error {
 		userID := userIDs[idx]
-		var cfg alertspb.AlertConfigDescs
+		var err error
+		var cfg alertspb.AlertConfigDesc
 
-		mimirCfg, err := s.getAlertConfig(ctx, userID)
+		cfg, err = s.getAlertConfig(ctx, userID)
 		if s.alertsBucket.IsObjNotFoundErr(err) {
 			return nil
 		} else if err != nil {
 			return fmt.Errorf("failed to fetch alertmanager config for user %s: %w", userID, err)
-		}
-		cfg.Mimir = mimirCfg
-
-		if s.fetchGrafanaCfg {
-			grafanaCfg, err := s.getGrafanaAlertConfig(ctx, userID)
-			// Users not having a Grafana alerting configuration is expected.
-			if err != nil && !s.alertsBucket.IsObjNotFoundErr(err) {
-				return fmt.Errorf("failed to fetch grafana alertmanager config for user %s: %w", userID, err)
-			}
-			cfg.Grafana = grafanaCfg
 		}
 
 		cfgsMx.Lock()
@@ -244,40 +219,6 @@ func (s *BucketAlertStore) DeleteFullState(ctx context.Context, userID string) e
 	if userBkt.IsObjNotFoundErr(err) {
 		return nil
 	}
-	return err
-}
-
-func (s *BucketAlertStore) GetFullGrafanaState(ctx context.Context, userID string) (alertspb.FullStateDesc, error) {
-	bkt := s.getGrafanaAlertmanagerUserBucket(userID)
-	fs := alertspb.FullStateDesc{}
-
-	err := s.get(ctx, bkt, grafanaStateName, &fs)
-	if s.grafanaAMBucket.IsObjNotFoundErr(err) {
-		return fs, alertspb.ErrNotFound
-	}
-
-	return fs, err
-}
-
-func (s *BucketAlertStore) SetFullGrafanaState(ctx context.Context, userID string, fs alertspb.FullStateDesc) error {
-	bkt := s.getGrafanaAlertmanagerUserBucket(userID)
-
-	fsBytes, err := fs.Marshal()
-	if err != nil {
-		return err
-	}
-
-	return bkt.Upload(ctx, grafanaStateName, bytes.NewReader(fsBytes))
-}
-
-func (s *BucketAlertStore) DeleteFullGrafanaState(ctx context.Context, userID string) error {
-	bkt := s.getGrafanaAlertmanagerUserBucket(userID)
-
-	err := bkt.Delete(ctx, grafanaStateName)
-	if bkt.IsObjNotFoundErr(err) {
-		return nil
-	}
-
 	return err
 }
 

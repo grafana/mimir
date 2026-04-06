@@ -87,7 +87,17 @@
   },
 
   // The configuration that should be applied to all Mimir components ingesting metrics from Kafka (e.g. ingesters).
-  ingest_storage_kafka_ingestion_args:: {},
+  ingest_storage_kafka_ingestion_args:: {
+    local estimated_bytes_per_sample = if $._config.ingest_storage_kafka_producer_record_version == 2 then 200 else 500,
+
+    'ingest-storage.kafka.fetch-concurrency-max': 12,
+    'ingest-storage.kafka.ingestion-concurrency-batch-size': 150,
+    'ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample': estimated_bytes_per_sample,
+    'ingest-storage.kafka.ingestion-concurrency-queue-capacity': 3,
+    'ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard': 40,
+    'ingest-storage.kafka.ingestion-concurrency-max': 8,
+    'ingest-storage.kafka.max-buffered-bytes': 1e9,  // 1GB
+  },
 
   //
   // Mimir components specific configuration.
@@ -244,4 +254,23 @@
   local max_producer_record_version = if $._config.ingest_storage_allow_experimental_record_formats then 2 else 1,
   assert $._config.ingest_storage_kafka_producer_record_version >= 0 && $._config.ingest_storage_kafka_producer_record_version <= max_producer_record_version
          : 'the Kafka record version must be in the range [0, %s]' % max_producer_record_version,
+}
+
++ {
+  _config+:: {
+    // When true and ingest storage is enabled, automatically set -ingest-storage.kafka.client-rack
+    // on each ingester zone to its zone name. This enables Kafka rack-aware consumption so that
+    // ingesters prefer reading from Kafka replicas in the same availability zone, reducing cross-AZ traffic.
+    ingest_storage_set_client_rack: true,
+  },
+
+  ingester_zone_a_args+:: if !($._config.ingest_storage_enabled && $._config.ingest_storage_set_client_rack) then {} else {
+    'ingest-storage.kafka.client-rack': 'zone-a',
+  },
+  ingester_zone_b_args+:: if !($._config.ingest_storage_enabled && $._config.ingest_storage_set_client_rack) then {} else {
+    'ingest-storage.kafka.client-rack': 'zone-b',
+  },
+  ingester_zone_c_args+:: if !($._config.ingest_storage_enabled && $._config.ingest_storage_set_client_rack) then {} else {
+    'ingest-storage.kafka.client-rack': 'zone-c',
+  },
 }
