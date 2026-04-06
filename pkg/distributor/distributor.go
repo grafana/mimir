@@ -1940,6 +1940,16 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 
 		// If there's an error coming from the ingesters, prioritize that one.
 		if err := next(ctx, pushReq); err != nil {
+			if len(rejectedHashes) > 0 {
+				// The ingester also returned an error. If it's a soft ingesterPushError,
+				// combine the pre-filtered discardedSamples with the ingester's rejected count.
+				var ingErr ingesterPushError
+				if errors.As(err, &ingErr) && ingErr.IsSoft() {
+					ingErr.rejectedSamples += int64(discardedSamples)
+					return ingErr
+				}
+			}
+
 			return err
 		}
 
