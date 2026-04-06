@@ -903,10 +903,13 @@ func BenchmarkBucketStoreLabelValues(tb *testing.B) {
 	assert.Equal(tb, s.minTime, mint)
 	assert.Equal(tb, s.maxTime, maxt)
 
-	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(indexcache.InMemoryIndexCacheConfig{
-		MaxItemSizeBytes:  1e5,
-		MaxCacheSizeBytes: 2e5,
-	}, nil, s.logger)
+	cfg := indexcache.IndexCacheConfig{
+		InMemory: indexcache.InMemoryIndexCacheConfig{
+			MaxItemSizeBytes:  1e5,
+			MaxCacheSizeBytes: 2e5,
+		},
+	}
+	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(cfg, nil, s.logger)
 	assert.NoError(tb, err)
 
 	benchmarks := func(tb *testing.B) {

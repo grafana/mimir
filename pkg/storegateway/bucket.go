@@ -134,6 +134,26 @@ type BucketStore struct {
 
 type noopCache struct{}
 
+func (c noopCache) StorePostingsOffset(userID string, blockID ulid.ULID, lbl labels.Label, rng index.Range, ttl time.Duration) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c noopCache) FetchPostingsOffset(ctx context.Context, userID string, blockID ulid.ULID, lbl labels.Label) (index.Range, bool) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c noopCache) StorePostingsOffsetsForMatcher(userID string, blockID ulid.ULID, m *labels.Matcher, isSubtract bool, offsets []streamindex.PostingListOffset, ttl time.Duration) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c noopCache) FetchPostingsOffsetsForMatcher(ctx context.Context, userID string, blockID ulid.ULID, m *labels.Matcher, isSubtract bool) ([]streamindex.PostingListOffset, bool) {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (noopCache) StorePostings(string, ulid.ULID, labels.Label, []byte, time.Duration) {}
 func (noopCache) FetchMultiPostings(_ context.Context, _ string, _ ulid.ULID, keys []labels.Label) indexcache.BytesResult {
 	return &indexcache.MapIterator[labels.Label]{Keys: keys}

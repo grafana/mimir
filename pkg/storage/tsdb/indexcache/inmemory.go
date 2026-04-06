@@ -19,7 +19,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/index"
 
+	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 )
 
@@ -35,10 +37,11 @@ var ulidSize = uint64(len(ulid.ULID{}))
 type InMemoryIndexCache struct {
 	mtx sync.Mutex
 
-	logger            log.Logger
-	lru               *lru.LRU[cacheKey, []byte]
-	maxCacheSizeBytes uint64
-	maxItemSizeBytes  uint64
+	logger               log.Logger
+	lru                  *lru.LRU[cacheKey, []byte]
+	maxCacheSizeBytes    uint64
+	maxItemSizeBytes     uint64
+	cachePostingsOffsets bool
 
 	curSize uint64
 
@@ -54,15 +57,16 @@ type InMemoryIndexCache struct {
 
 // NewInMemoryIndexCacheWithConfig creates a new thread-safe LRU cache for index entries and ensures the total cache
 // size approximately does not exceed maxBytes.
-func NewInMemoryIndexCacheWithConfig(config InMemoryIndexCacheConfig, reg prometheus.Registerer, logger log.Logger) (*InMemoryIndexCache, error) {
-	if config.MaxItemSizeBytes > config.MaxCacheSizeBytes {
-		return nil, errors.Errorf("max item size (%v) cannot be bigger than overall cache size (%v)", config.MaxItemSizeBytes, config.MaxCacheSizeBytes)
+func NewInMemoryIndexCacheWithConfig(config IndexCacheConfig, reg prometheus.Registerer, logger log.Logger) (*InMemoryIndexCache, error) {
+	if config.InMemory.MaxItemSizeBytes > config.InMemory.MaxCacheSizeBytes {
+		return nil, errors.Errorf("max item size (%v) cannot be bigger than overall cache size (%v)", config.InMemory.MaxItemSizeBytes, config.InMemory.MaxCacheSizeBytes)
 	}
 
 	c := &InMemoryIndexCache{
-		logger:            logger,
-		maxCacheSizeBytes: config.MaxCacheSizeBytes,
-		maxItemSizeBytes:  config.MaxItemSizeBytes,
+		logger:               logger,
+		maxCacheSizeBytes:    config.InMemory.MaxCacheSizeBytes,
+		maxItemSizeBytes:     config.InMemory.MaxItemSizeBytes,
+		cachePostingsOffsets: config.CachePostingsOffsets,
 	}
 
 	c.evicted = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
@@ -241,6 +245,26 @@ func (c *InMemoryIndexCache) reset() {
 // copyLabel is required as underlying strings might be mmaped.
 func copyLabel(l labels.Label) labels.Label {
 	return labels.Label{Value: strings.Clone(l.Value), Name: strings.Clone(l.Name)}
+}
+
+func (c *InMemoryIndexCache) StorePostingsOffset(userID string, blockID ulid.ULID, lbl labels.Label, rng index.Range, ttl time.Duration) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *InMemoryIndexCache) FetchPostingsOffset(ctx context.Context, userID string, blockID ulid.ULID, lbl labels.Label) (index.Range, bool) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *InMemoryIndexCache) StorePostingsOffsetsForMatcher(userID string, blockID ulid.ULID, m *labels.Matcher, isSubtract bool, offsets []streamindex.PostingListOffset, ttl time.Duration) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *InMemoryIndexCache) FetchPostingsOffsetsForMatcher(ctx context.Context, userID string, blockID ulid.ULID, m *labels.Matcher, isSubtract bool) ([]streamindex.PostingListOffset, bool) {
+	//TODO implement me
+	panic("implement me")
 }
 
 // StorePostings sets the postings identified by the ulid and label to the value v,

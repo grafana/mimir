@@ -10,7 +10,9 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/index"
 
+	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -25,6 +27,22 @@ func NewTracingIndexCache(cache IndexCache, logger log.Logger) IndexCache {
 		c:      cache,
 		logger: logger,
 	}
+}
+
+func (t *TracingIndexCache) StorePostingsOffset(userID string, blockID ulid.ULID, lbl labels.Label, rng index.Range, ttl time.Duration) {
+	t.c.StorePostingsOffset(userID, blockID, lbl, rng, ttl)
+}
+
+func (t *TracingIndexCache) FetchPostingsOffset(ctx context.Context, userID string, blockID ulid.ULID, lbl labels.Label) (index.Range, bool) {
+	return t.c.FetchPostingsOffset(ctx, userID, blockID, lbl)
+}
+
+func (t *TracingIndexCache) StorePostingsOffsetsForMatcher(userID string, blockID ulid.ULID, m *labels.Matcher, isSubtract bool, offsets []streamindex.PostingListOffset, ttl time.Duration) {
+	t.c.StorePostingsOffsetsForMatcher(userID, blockID, m, isSubtract, offsets, ttl)
+}
+
+func (t *TracingIndexCache) FetchPostingsOffsetsForMatcher(ctx context.Context, userID string, blockID ulid.ULID, m *labels.Matcher, isSubtract bool) ([]streamindex.PostingListOffset, bool) {
+	return t.c.FetchPostingsOffsetsForMatcher(ctx, userID, blockID, m, isSubtract)
 }
 
 func (t *TracingIndexCache) StorePostings(userID string, blockID ulid.ULID, l labels.Label, v []byte, ttl time.Duration) {

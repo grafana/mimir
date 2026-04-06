@@ -20,8 +20,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"golang.org/x/crypto/blake2b"
 
+	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
@@ -85,6 +87,12 @@ func (l *MapIterator[T]) Size() int {
 
 // IndexCache is the interface exported by index cache backends.
 type IndexCache interface {
+	StorePostingsOffset(userID string, blockID ulid.ULID, lbl labels.Label, rng index.Range, ttl time.Duration)
+	FetchPostingsOffset(ctx context.Context, userID string, blockID ulid.ULID, lbl labels.Label) (index.Range, bool)
+
+	StorePostingsOffsetsForMatcher(userID string, blockID ulid.ULID, m *labels.Matcher, isSubtract bool, offsets []streamindex.PostingListOffset, ttl time.Duration)
+	FetchPostingsOffsetsForMatcher(ctx context.Context, userID string, blockID ulid.ULID, m *labels.Matcher, isSubtract bool) ([]streamindex.PostingListOffset, bool)
+
 	// StorePostings stores postings for a single series.
 	StorePostings(userID string, blockID ulid.ULID, l labels.Label, v []byte, ttl time.Duration)
 
@@ -126,21 +134,21 @@ type IndexCache interface {
 func NewIndexCache(cfg IndexCacheConfig, logger log.Logger, registerer prometheus.Registerer) (IndexCache, error) {
 	switch cfg.Backend {
 	case BackendInMemory:
-		return NewInMemoryIndexCacheWithConfig(cfg.InMemory, registerer, logger)
+		return NewInMemoryIndexCacheWithConfig(cfg, registerer, logger)
 	case BackendMemcached:
-		return newMemcachedIndexCache(cfg.Memcached, logger, registerer)
+		return newMemcachedIndexCache(cfg, logger, registerer)
 	default:
 		return nil, errUnsupportedIndexCacheBackend
 	}
 }
 
-func newMemcachedIndexCache(cfg cache.MemcachedClientConfig, logger log.Logger, registerer prometheus.Registerer) (IndexCache, error) {
-	client, err := cache.NewMemcachedClientWithConfig(logger, "index-cache", cfg, prometheus.WrapRegistererWithPrefix("thanos_", registerer))
+func newMemcachedIndexCache(cfg IndexCacheConfig, logger log.Logger, registerer prometheus.Registerer) (IndexCache, error) {
+	client, err := cache.NewMemcachedClientWithConfig(logger, "index-cache", cfg.Memcached, prometheus.WrapRegistererWithPrefix("thanos_", registerer))
 	if err != nil {
 		return nil, errors.Wrap(err, "create index cache memcached client")
 	}
 
-	c, err := NewRemoteIndexCache(logger, client, registerer)
+	c, err := NewRemoteIndexCache(cfg, logger, client, registerer)
 	if err != nil {
 		return nil, errors.Wrap(err, "create memcached-based index cache")
 	}

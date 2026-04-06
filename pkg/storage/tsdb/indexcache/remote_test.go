@@ -107,7 +107,7 @@ func TestRemoteIndexCache_FetchMultiPostings(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			client := newMockedRemoteCacheClient(testData.mockedErr)
-			c, err := NewRemoteIndexCache(log.NewNopLogger(), client, nil)
+			c, err := NewRemoteIndexCache(IndexCacheConfig{}, log.NewNopLogger(), client, nil)
 			assert.NoError(t, err)
 
 			// Store the postings expected before running the test.
@@ -171,7 +171,7 @@ func BenchmarkRemoteIndexCache_FetchMultiPostings(b *testing.B) {
 		fetchLabels := benchCase.fetchLabels
 		b.Run(name, func(b *testing.B) {
 			client := newMockedRemoteCacheClient(nil)
-			c, err := NewRemoteIndexCache(log.NewNopLogger(), client, nil)
+			c, err := NewRemoteIndexCache(IndexCacheConfig{}, log.NewNopLogger(), client, nil)
 			assert.NoError(b, err)
 
 			// Store the postings expected before running the benchmark.
@@ -274,7 +274,7 @@ func TestRemoteIndexCache_FetchMultiSeriesForRef(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			client := newMockedRemoteCacheClient(testData.mockedErr)
-			c, err := NewRemoteIndexCache(log.NewNopLogger(), client, nil)
+			c, err := NewRemoteIndexCache(IndexCacheConfig{}, log.NewNopLogger(), client, nil)
 			assert.NoError(t, err)
 
 			// Store the series expected before running the test.
@@ -366,7 +366,7 @@ func TestRemoteIndexCache_FetchExpandedPostings(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			client := newMockedRemoteCacheClient(testData.mockedErr)
-			c, err := NewRemoteIndexCache(log.NewNopLogger(), client, nil)
+			c, err := NewRemoteIndexCache(IndexCacheConfig{}, log.NewNopLogger(), client, nil)
 			assert.NoError(t, err)
 
 			// Store the postings expected before running the test.
@@ -470,7 +470,7 @@ func TestRemoteIndexCache_FetchSeriesForPostings(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			client := newMockedRemoteCacheClient(testData.mockedErr)
-			c, err := NewRemoteIndexCache(log.NewNopLogger(), client, nil)
+			c, err := NewRemoteIndexCache(IndexCacheConfig{}, log.NewNopLogger(), client, nil)
 			assert.NoError(t, err)
 
 			// Store the postings expected before running the test.
@@ -561,7 +561,7 @@ func TestRemoteIndexCache_FetchLabelNames(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			client := newMockedRemoteCacheClient(testData.mockedErr)
-			c, err := NewRemoteIndexCache(log.NewNopLogger(), client, nil)
+			c, err := NewRemoteIndexCache(IndexCacheConfig{}, log.NewNopLogger(), client, nil)
 			assert.NoError(t, err)
 
 			// Store the postings expected before running the test.
@@ -660,7 +660,7 @@ func TestRemoteIndexCache_FetchLabelValues(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			client := newMockedRemoteCacheClient(testData.mockedErr)
-			c, err := NewRemoteIndexCache(log.NewNopLogger(), client, nil)
+			c, err := NewRemoteIndexCache(IndexCacheConfig{}, log.NewNopLogger(), client, nil)
 			assert.NoError(t, err)
 
 			// Store the postings expected before running the test.
