@@ -131,7 +131,7 @@ func (s *TenantDiscoverer) discoverTenants(ctx context.Context) error {
 				continue
 			}
 			delete(s.knownTenants, tenant)
-			tracker.metrics.queue.clear()
+			tracker.metrics.Clear()
 			level.Info(logger).Log("msg", "removed empty tenant from compactor scheduler")
 		}
 	}

@@ -100,7 +100,6 @@ func (jt *JobTracker) recoverFrom(compactionJobs []*TrackedCompactionJob, planJo
 	})
 	for _, job := range pending {
 		jt.incompleteJobs[job.ID()] = jt.pending.PushBack(job)
-		jt.metrics.queue.enqueue(job)
 	}
 
 	slices.SortFunc(leased, func(a TrackedJob, b TrackedJob) int {
@@ -108,8 +107,9 @@ func (jt *JobTracker) recoverFrom(compactionJobs []*TrackedCompactionJob, planJo
 	})
 	for _, job := range leased {
 		jt.incompleteJobs[job.ID()] = jt.active.PushBack(job)
-		jt.metrics.queue.recover(job)
 	}
+
+	jt.metrics.queue.Recover(pending, leased)
 }
 
 // Lease tries to find a pending job, returning a non-nil response if one was found.
@@ -139,7 +139,7 @@ func (jt *JobTracker) Lease() (response *compactorschedulerpb.LeaseJobResponse, 
 		jt.isPlanJobLeased = true
 	}
 	jt.incompleteJobs[id] = jt.active.PushBack(jj)
-	jt.metrics.queue.dequeue(jj)
+	jt.metrics.queue.Leased(jj)
 
 	return jj.ToLeaseResponse(jt.tenant), jt.isPendingEmpty(), nil
 }
@@ -191,13 +191,13 @@ func (jt *JobTracker) Remove(id string, epoch int64, complete bool) (removed boo
 
 	delete(jt.incompleteJobs, id)
 	if j.IsLeased() {
-		jt.metrics.queue.complete(j)
 		jt.active.Remove(e)
+		jt.metrics.queue.Complete(j)
 		return true, false, nil
 	}
 
-	jt.metrics.queue.drop(j)
 	jt.pending.Remove(e)
+	jt.metrics.queue.DropPending(j)
 	return true, jt.isPendingEmpty(), nil
 }
 
@@ -252,13 +252,13 @@ func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpir
 
 		jt.active.Remove(jt.incompleteJobs[id])
 		jt.incompleteJobs[id] = jt.pending.PushFront(j)
-		jt.metrics.queue.revive(j)
+		jt.metrics.queue.Revive(j)
 	}
 
 	for _, j := range deleteJobs {
 		if j.IsLeased() {
 			jt.trackFailure(j)
-			jt.metrics.queue.complete(j)
+			jt.metrics.queue.Complete(j)
 			jt.active.Remove(jt.incompleteJobs[j.ID()])
 			delete(jt.incompleteJobs, j.ID())
 		}
@@ -266,7 +266,7 @@ func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpir
 
 	if planJob != nil {
 		jt.incompleteJobs[planJobId] = jt.pending.PushBack(planJob)
-		jt.metrics.queue.enqueue(planJob)
+		jt.metrics.queue.Pending(planJob)
 		// Drop the previous completion time since there is now a pending job that overwrote it
 		jt.completePlanTime = time.Time{}
 	}
@@ -386,14 +386,14 @@ func (jt *JobTracker) CancelLease(id string, epoch int64) (canceled bool, became
 		}
 		jt.active.Remove(jt.incompleteJobs[jj.ID()])
 		jt.incompleteJobs[jj.ID()] = jt.pending.PushFront(jj)
-		jt.metrics.queue.revive(jj)
+		jt.metrics.queue.Revive(jj)
 
 	} else {
 		err := jt.persister.DeleteJob(j)
 		if err != nil {
 			return false, false, err
 		}
-		jt.metrics.queue.complete(j)
+		jt.metrics.queue.Complete(j)
 		jt.active.Remove(jt.incompleteJobs[j.ID()])
 		delete(jt.incompleteJobs, j.ID())
 	}
@@ -507,14 +507,14 @@ func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, planJobE
 	for e := jt.pending.Front(); e != nil; e = e.Next() {
 		j := e.Value.(TrackedJob)
 		delete(jt.incompleteJobs, j.ID())
-		jt.metrics.queue.drop(j)
+		jt.metrics.queue.DropPending(j)
 	}
 
 	// Recreate the pending list in order
 	jt.pending = list.New()
 	for _, j := range acceptedJobs {
 		jt.incompleteJobs[j.ID()] = jt.pending.PushBack(j)
-		jt.metrics.queue.enqueue(j)
+		jt.metrics.queue.Pending(j)
 	}
 
 	jt.stopTrackingCompleteCompactionJobs()
@@ -523,7 +523,7 @@ func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, planJobE
 	e := jt.incompleteJobs[planJobId]
 	jt.active.Remove(e)
 	delete(jt.incompleteJobs, planJobId)
-	jt.metrics.queue.complete(planJob)
+	jt.metrics.queue.Complete(planJob)
 	accepted = len(acceptedJobs)
 
 	// Determine rotation transition

@@ -60,50 +60,49 @@ type trackerMetrics struct {
 	repeatedJobFailures prometheus.Counter
 }
 
-// queueMetrics is the single point of truth for all queue-level metric updates for one tenant.
-// Every job state transition goes through one of its methods; no metric is updated outside this struct.
+// Clear deletes all per-tenant label values. Must be called when a tenant is removed.
+func (m *trackerMetrics) Clear() {
+	m.queue.pendingJobs.DeleteLabelValues(m.queue.tenant)
+	m.queue.activeJobs.DeleteLabelValues(m.queue.tenant)
+}
+
+// queueMetrics encapsulates queue-level metrics for one tenant, allowing the caller to ignore
+// the details of which metrics to update and how, focusing only on job state transitions.
+// Callers are responsible for making valid transitions. Invalid calls (e.g. DropPending on an
+// empty queue) will produce incorrect gauge values.
 type queueMetrics struct {
 	pendingJobs *prometheus.GaugeVec // {user}
 	activeJobs  *prometheus.GaugeVec // {user}
 	tenant      string
 }
 
-// enqueue records a job entering the pending queue.
-func (q *queueMetrics) enqueue(_ TrackedJob) {
+func (q *queueMetrics) Pending(_ TrackedJob) {
 	q.pendingJobs.WithLabelValues(q.tenant).Inc()
 }
 
-// dequeue records a job moving from pending to active (leased by a worker).
-func (q *queueMetrics) dequeue(_ TrackedJob) {
+func (q *queueMetrics) Leased(_ TrackedJob) {
 	q.pendingJobs.WithLabelValues(q.tenant).Dec()
 	q.activeJobs.WithLabelValues(q.tenant).Inc()
 }
 
-// recover records a job being restored directly into the active queue from persisted state.
-// Unlike enqueue+dequeue, it does not touch the pending counter.
-func (q *queueMetrics) recover(_ TrackedJob) {
-	q.activeJobs.WithLabelValues(q.tenant).Inc()
+// Recover records jobs restored from persisted state on startup.
+func (q *queueMetrics) Recover(pending, leased []TrackedJob) {
+	q.pendingJobs.WithLabelValues(q.tenant).Add(float64(len(pending)))
+	q.activeJobs.WithLabelValues(q.tenant).Add(float64(len(leased)))
 }
 
-// revive records a job moving from active back to pending (lease expired or cancelled, will retry).
-func (q *queueMetrics) revive(_ TrackedJob) {
+// Revive records a job moving from active back to pending (lease expired or cancelled).
+func (q *queueMetrics) Revive(_ TrackedJob) {
 	q.activeJobs.WithLabelValues(q.tenant).Dec()
 	q.pendingJobs.WithLabelValues(q.tenant).Inc()
 }
 
-// complete records a job leaving the system from the active queue (finished or permanently failed).
-func (q *queueMetrics) complete(_ TrackedJob) {
+// Complete records a job leaving the system from the active queue (success or failure).
+func (q *queueMetrics) Complete(_ TrackedJob) {
 	q.activeJobs.WithLabelValues(q.tenant).Dec()
 }
 
-// drop records a job leaving the system from the pending queue.
-func (q *queueMetrics) drop(_ TrackedJob) {
+// DropPending records a job leaving the system from the pending queue.
+func (q *queueMetrics) DropPending(_ TrackedJob) {
 	q.pendingJobs.WithLabelValues(q.tenant).Dec()
-}
-
-// clear removes all per-tenant label values from the metric vecs.
-// Must be called when a tenant is removed.
-func (q *queueMetrics) clear() {
-	q.pendingJobs.DeleteLabelValues(q.tenant)
-	q.activeJobs.DeleteLabelValues(q.tenant)
 }
