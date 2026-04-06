@@ -36,8 +36,9 @@ var (
 )
 
 type IndexCacheConfig struct {
-	cache.BackendConfig `yaml:",inline"`
-	InMemory            InMemoryIndexCacheConfig `yaml:"inmemory"`
+	cache.BackendConfig  `yaml:",inline"`
+	InMemory             InMemoryIndexCacheConfig `yaml:"inmemory"`
+	CachePostingsOffsets bool                     `yaml:"cache_postings_offsets" category:"experimental"`
 }
 
 func (cfg *IndexCacheConfig) RegisterFlags(f *flag.FlagSet) {
@@ -49,6 +50,8 @@ func (cfg *IndexCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix str
 
 	cfg.InMemory.RegisterFlagsWithPrefix(prefix+"inmemory.", f)
 	cfg.Memcached.RegisterFlagsWithPrefix(prefix+"memcached.", f)
+
+	f.BoolVar(&cfg.CachePostingsOffsets, prefix+"cache-postings-offsets", false, "Cache resolved postings offsets for label matchers")
 }
 
 // Validate the config.

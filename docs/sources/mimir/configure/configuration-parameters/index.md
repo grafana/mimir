@@ -5651,6 +5651,10 @@ bucket_store:
       # CLI flag: -blocks-storage.bucket-store.index-cache.inmemory.max-size-bytes
       [max_size_bytes: <int> | default = 1073741824]
 
+    # (experimental) Cache resolved postings offsets for label matchers
+    # CLI flag: -blocks-storage.bucket-store.index-cache.cache-postings-offsets
+    [cache_postings_offsets: <boolean> | default = false]
+
   index_header_cache:
     # Backend for index-header cache, if not empty. Intended for use with
     # -blocks-storage.bucket-store.index-header.bucket-reader. Supported values:

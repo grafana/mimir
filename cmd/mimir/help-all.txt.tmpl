@@ -481,6 +481,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Duration after which blocks marked for deletion will still be queried. This ensures queriers still query blocks that are meant to be deleted but do not have a replacement yet. (default 50m0s)
   -blocks-storage.bucket-store.index-cache.backend string
     	The index cache backend type. Supported values: inmemory, memcached. (default "inmemory")
+  -blocks-storage.bucket-store.index-cache.cache-postings-offsets
+    	[experimental] Cache resolved postings offsets for label matchers
   -blocks-storage.bucket-store.index-cache.inmemory.max-size-bytes uint
     	Maximum size in bytes of in-memory index cache used to speed up blocks index lookups (shared between all tenants). (default 1073741824)
   -blocks-storage.bucket-store.index-cache.memcached.addresses comma-separated-list-of-strings
