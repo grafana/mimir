@@ -22,8 +22,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"golang.org/x/crypto/blake2b"
 
+	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 )
 
@@ -40,16 +42,19 @@ type RemoteIndexCache struct {
 	logger log.Logger
 	remote cache.Cache
 
+	cachePostingsOffsets bool
+
 	// Metrics.
 	requests *prometheus.CounterVec
 	hits     *prometheus.CounterVec
 }
 
 // NewRemoteIndexCache makes a new RemoteIndexCache.
-func NewRemoteIndexCache(logger log.Logger, remote cache.Cache, reg prometheus.Registerer) (*RemoteIndexCache, error) {
+func NewRemoteIndexCache(cfg IndexCacheConfig, logger log.Logger, remote cache.Cache, reg prometheus.Registerer) (*RemoteIndexCache, error) {
 	c := &RemoteIndexCache{
-		logger: logger,
-		remote: remote,
+		logger:               logger,
+		remote:               remote,
+		cachePostingsOffsets: cfg.CachePostingsOffsets,
 	}
 
 	c.requests = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
@@ -78,6 +83,26 @@ func (c *RemoteIndexCache) get(ctx context.Context, typ string, key string) ([]b
 		c.hits.WithLabelValues(typ).Inc()
 	}
 	return data, ok
+}
+
+func (c *RemoteIndexCache) StorePostingsOffset(userID string, blockID ulid.ULID, lbl labels.Label, rng index.Range, ttl time.Duration) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *RemoteIndexCache) FetchPostingsOffset(ctx context.Context, userID string, blockID ulid.ULID, lbl labels.Label) (index.Range, bool) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *RemoteIndexCache) StorePostingsOffsetsForMatcher(userID string, blockID ulid.ULID, m *labels.Matcher, isSubtract bool, offsets []streamindex.PostingListOffset, ttl time.Duration) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *RemoteIndexCache) FetchPostingsOffsetsForMatcher(ctx context.Context, userID string, blockID ulid.ULID, m *labels.Matcher, isSubtract bool) ([]streamindex.PostingListOffset, bool) {
+	//TODO implement me
+	panic("implement me")
 }
 
 // StorePostings sets the postings identified by the ulid and label to the value v.

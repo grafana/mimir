@@ -499,10 +499,13 @@ func TestBucketStore_e2e(t *testing.T) {
 		}
 
 		if ok := t.Run("with large, sufficient index cache", func(t *testing.T) {
-			indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(indexcache.InMemoryIndexCacheConfig{
-				MaxItemSizeBytes:  1e5,
-				MaxCacheSizeBytes: 2e5,
-			}, nil, s.logger)
+			cfg := indexcache.IndexCacheConfig{
+				InMemory: indexcache.InMemoryIndexCacheConfig{
+					MaxItemSizeBytes:  1e5,
+					MaxCacheSizeBytes: 2e5,
+				},
+			}
+			indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(cfg, nil, s.logger)
 			assert.NoError(t, err)
 			s.cache.SwapIndexCacheWith(indexCache)
 			testBucketStore_e2e(t, ctx, s)
@@ -511,10 +514,13 @@ func TestBucketStore_e2e(t *testing.T) {
 		}
 
 		t.Run("with small index cache", func(t *testing.T) {
-			indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(indexcache.InMemoryIndexCacheConfig{
-				MaxItemSizeBytes:  50,
-				MaxCacheSizeBytes: 100,
-			}, nil, s.logger)
+			cfg := indexcache.IndexCacheConfig{
+				InMemory: indexcache.InMemoryIndexCacheConfig{
+					MaxItemSizeBytes:  50,
+					MaxCacheSizeBytes: 100,
+				},
+			}
+			indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(cfg, nil, s.logger)
 			assert.NoError(t, err)
 			s.cache.SwapIndexCacheWith(indexCache)
 			testBucketStore_e2e(t, ctx, s)
@@ -562,10 +568,13 @@ func TestBucketStore_e2e_StreamingEdgeCases(t *testing.T) {
 		}
 
 		if ok := t.Run("with large, sufficient index cache", func(t *testing.T) {
-			indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(indexcache.InMemoryIndexCacheConfig{
-				MaxItemSizeBytes:  1e5,
-				MaxCacheSizeBytes: 2e5,
-			}, nil, s.logger)
+			cfg := indexcache.IndexCacheConfig{
+				InMemory: indexcache.InMemoryIndexCacheConfig{
+					MaxItemSizeBytes:  1e5,
+					MaxCacheSizeBytes: 2e5,
+				},
+			}
+			indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(cfg, nil, s.logger)
 			assert.NoError(t, err)
 			s.cache.SwapIndexCacheWith(indexCache)
 			testBucketStore_e2e(t, ctx, s, additionalCases...)
@@ -574,10 +583,13 @@ func TestBucketStore_e2e_StreamingEdgeCases(t *testing.T) {
 		}
 
 		t.Run("with small index cache", func(t *testing.T) {
-			indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(indexcache.InMemoryIndexCacheConfig{
-				MaxItemSizeBytes:  50,
-				MaxCacheSizeBytes: 100,
-			}, nil, s.logger)
+			cfg := indexcache.IndexCacheConfig{
+				InMemory: indexcache.InMemoryIndexCacheConfig{
+					MaxItemSizeBytes:  50,
+					MaxCacheSizeBytes: 100,
+				},
+			}
+			indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(cfg, nil, s.logger)
 			assert.NoError(t, err)
 			s.cache.SwapIndexCacheWith(indexCache)
 			testBucketStore_e2e(t, ctx, s)
@@ -608,10 +620,13 @@ func TestBucketStore_ManyParts_e2e(t *testing.T) {
 
 		s := newSuite(withManyParts())
 
-		indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(indexcache.InMemoryIndexCacheConfig{
-			MaxItemSizeBytes:  1e5,
-			MaxCacheSizeBytes: 2e5,
-		}, nil, s.logger)
+		cfg := indexcache.IndexCacheConfig{
+			InMemory: indexcache.InMemoryIndexCacheConfig{
+				MaxItemSizeBytes:  1e5,
+				MaxCacheSizeBytes: 2e5,
+			},
+		}
+		indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(cfg, nil, s.logger)
 		assert.NoError(t, err)
 		s.cache.SwapIndexCacheWith(indexCache)
 

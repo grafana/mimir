@@ -1041,13 +1041,13 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 }
 
 func newInMemoryIndexCache(t testing.TB) indexcache.IndexCache {
-	cache, err := indexcache.NewInMemoryIndexCacheWithConfig(
-		indexcache.InMemoryIndexCacheConfig{
+	cfg := indexcache.IndexCacheConfig{
+		InMemory: indexcache.InMemoryIndexCacheConfig{
 			MaxCacheSizeBytes: 250 * 1024 * 1024,
 			MaxItemSizeBytes:  125 * 1024 * 1024,
 		},
-		nil, log.NewNopLogger(),
-	)
+	}
+	cache, err := indexcache.NewInMemoryIndexCacheWithConfig(cfg, nil, log.NewNopLogger())
 	require.NoError(t, err)
 	return cache
 }
@@ -1785,12 +1785,15 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		Source: block.TestSource,
 	}
 
-	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(indexcache.InMemoryIndexCacheConfig{
-		MaxItemSizeBytes: 3000,
-		// This is the exact size of cache needed for our *single request*.
-		// This is limited in order to make sure we test evictions.
-		MaxCacheSizeBytes: 8889,
-	}, nil, logger)
+	cfg := indexcache.IndexCacheConfig{
+		InMemory: indexcache.InMemoryIndexCacheConfig{
+			MaxItemSizeBytes: 3000,
+			// This is the exact size of cache needed for our *single request*.
+			// This is limited in order to make sure we test evictions.
+			MaxCacheSizeBytes: 8889,
+		},
+	}
+	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(cfg, nil, logger)
 	assert.NoError(t, err)
 
 	var b1 *bucketBlock
@@ -2039,7 +2042,7 @@ func TestBucketStore_Series_ErrorUnmarshallingRequestHints(t *testing.T) {
 	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, 0)
 	assert.NoError(t, err)
 
-	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(indexcache.InMemoryIndexCacheConfig{}, nil, logger)
+	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(indexcache.IndexCacheConfig{}, nil, logger)
 	assert.NoError(t, err)
 
 	store, err := NewBucketStore(
@@ -2376,7 +2379,7 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, 0)
 	assert.NoError(t, err)
 
-	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(indexcache.InMemoryIndexCacheConfig{}, nil, logger)
+	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(indexcache.IndexCacheConfig{}, nil, logger)
 	assert.NoError(t, err)
 
 	store, err := NewBucketStore(
@@ -2657,7 +2660,7 @@ func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketS
 	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, 0)
 	assert.NoError(tb, err)
 
-	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(indexcache.InMemoryIndexCacheConfig{}, nil, logger)
+	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(indexcache.IndexCacheConfig{}, nil, logger)
 	assert.NoError(tb, err)
 
 	opts = append([]BucketStoreOption{WithLogger(logger), WithIndexCache(indexCache)}, opts...)

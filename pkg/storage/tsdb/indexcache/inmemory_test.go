@@ -29,10 +29,13 @@ import (
 func TestInMemoryIndexCache_AvoidsDeadlock(t *testing.T) {
 	user := "tenant"
 	metrics := prometheus.NewRegistry()
-	cache, err := NewInMemoryIndexCacheWithConfig(InMemoryIndexCacheConfig{
-		MaxItemSizeBytes:  sliceHeaderSize + 5,
-		MaxCacheSizeBytes: sliceHeaderSize + 5,
-	}, metrics, log.NewNopLogger())
+	cfg := IndexCacheConfig{
+		InMemory: InMemoryIndexCacheConfig{
+			MaxItemSizeBytes:  sliceHeaderSize + 5,
+			MaxCacheSizeBytes: sliceHeaderSize + 5,
+		},
+	}
+	cache, err := NewInMemoryIndexCacheWithConfig(cfg, metrics, log.NewNopLogger())
 	assert.NoError(t, err)
 
 	l, err := simplelru.NewLRU(math.MaxInt64, func(key cacheKey, val []byte) {
@@ -79,10 +82,13 @@ func TestInMemoryIndexCache_UpdateItem(t *testing.T) {
 	})
 
 	metrics := prometheus.NewRegistry()
-	cache, err := NewInMemoryIndexCacheWithConfig(InMemoryIndexCacheConfig{
-		MaxItemSizeBytes:  maxSize,
-		MaxCacheSizeBytes: maxSize,
-	}, metrics, log.NewSyncLogger(errorLogger))
+	cfg := IndexCacheConfig{
+		InMemory: InMemoryIndexCacheConfig{
+			MaxItemSizeBytes:  maxSize,
+			MaxCacheSizeBytes: maxSize,
+		},
+	}
+	cache, err := NewInMemoryIndexCacheWithConfig(cfg, metrics, log.NewSyncLogger(errorLogger))
 	assert.NoError(t, err)
 
 	user := "tenant"
@@ -205,10 +211,13 @@ func TestInMemoryIndexCache_UpdateItem(t *testing.T) {
 func TestInMemoryIndexCache_MaxNumberOfItemsHit(t *testing.T) {
 	user := "tenant"
 	metrics := prometheus.NewRegistry()
-	cache, err := NewInMemoryIndexCacheWithConfig(InMemoryIndexCacheConfig{
-		MaxItemSizeBytes:  2*sliceHeaderSize + 10,
-		MaxCacheSizeBytes: 2*sliceHeaderSize + 10,
-	}, metrics, log.NewNopLogger())
+	cfg := IndexCacheConfig{
+		InMemory: InMemoryIndexCacheConfig{
+			MaxItemSizeBytes:  2*sliceHeaderSize + 10,
+			MaxCacheSizeBytes: 2*sliceHeaderSize + 10,
+		},
+	}
+	cache, err := NewInMemoryIndexCacheWithConfig(cfg, metrics, log.NewNopLogger())
 	assert.NoError(t, err)
 
 	l, err := simplelru.NewLRU(2, cache.onEvict)
@@ -239,10 +248,13 @@ func TestInMemoryIndexCache_MaxNumberOfItemsHit(t *testing.T) {
 func TestInMemoryIndexCache_Eviction_WithMetrics(t *testing.T) {
 	user := "tenant"
 	metrics := prometheus.NewRegistry()
-	cache, err := NewInMemoryIndexCacheWithConfig(InMemoryIndexCacheConfig{
-		MaxItemSizeBytes:  2*sliceHeaderSize + 5,
-		MaxCacheSizeBytes: 2*sliceHeaderSize + 5,
-	}, metrics, log.NewNopLogger())
+	cfg := IndexCacheConfig{
+		InMemory: InMemoryIndexCacheConfig{
+			MaxItemSizeBytes:  2*sliceHeaderSize + 5,
+			MaxCacheSizeBytes: 2*sliceHeaderSize + 5,
+		},
+	}
+	cache, err := NewInMemoryIndexCacheWithConfig(cfg, metrics, log.NewNopLogger())
 	assert.NoError(t, err)
 
 	id := ulid.MustNew(0, nil)
