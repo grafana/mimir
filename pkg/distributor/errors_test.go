@@ -430,13 +430,13 @@ func TestWrapPartitionPushError(t *testing.T) {
 		expectedCause mimirpb.ErrorCause
 	}{
 		"should wrap ingest.ErrWriteRequestDataItemTooLarge": {
-			err:           wrapPartitionPushError(ingest.ErrWriteRequestDataItemTooLarge, 1),
-			expectedMsg:   "failed pushing to partition 1: " + ingest.ErrWriteRequestDataItemTooLarge.Error(),
+			err:           wrapPartitionsPushError(ingest.ErrWriteRequestDataItemTooLarge),
+			expectedMsg:   "failed pushing to partitions: " + ingest.ErrWriteRequestDataItemTooLarge.Error(),
 			expectedCause: mimirpb.ERROR_CAUSE_BAD_DATA,
 		},
 		"should wrap context.Canceled": {
-			err:           wrapPartitionPushError(context.Canceled, 1),
-			expectedMsg:   "failed pushing to partition 1: context canceled",
+			err:           wrapPartitionsPushError(context.Canceled),
+			expectedMsg:   "failed pushing to partitions: context canceled",
 			expectedCause: mimirpb.ERROR_CAUSE_UNKNOWN,
 		},
 	}

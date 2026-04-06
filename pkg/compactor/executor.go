@@ -187,6 +187,11 @@ func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) er
 	workerID := fmt.Sprintf("compactor-%s", c.ringLifecycler.GetInstanceID())
 	level.Info(e.logger).Log("msg", "compactor running in scheduler mode", "scheduler_endpoint", e.cfg.SchedulerEndpoint, "worker_id", workerID)
 
+	// Scheduler mode compactors work on jobs for arbitrary tenants, so unlike standalone mode they
+	// do not cache metadata on disk. Pass nil for ownedUsers to delete any meta sync directories
+	// that may have been left over from standalone mode.
+	c.deleteUnownedMetaSyncDirs(nil)
+
 	compactDir := filepath.Join(c.compactorCfg.DataDir, "compact")
 
 	b := backoff.New(ctx, backoff.Config{

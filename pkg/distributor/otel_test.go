@@ -1741,7 +1741,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			testLimits := &validation.Limits{
 				PromoteOTelResourceAttributes: tt.promoteResourceAttributes,
 				NameValidationScheme:          model.LegacyValidation,
-				OTelMetricSuffixesEnabled:     false,
+				OTelMetricSuffixesEnabled:     boolPtr(false),
 			}
 			limits := validation.NewOverrides(
 				validation.Limits{},
@@ -2272,7 +2272,7 @@ func TestOTLPResponseContentType(t *testing.T) {
 			limits := validation.NewOverrides(
 				validation.Limits{},
 				validation.NewMockTenantLimits(map[string]*validation.Limits{
-					"test": {NameValidationScheme: model.LegacyValidation, OTelMetricSuffixesEnabled: false},
+					"test": {NameValidationScheme: model.LegacyValidation, OTelMetricSuffixesEnabled: boolPtr(false)},
 				}),
 			)
 			handler := OTLPHandler(100000, nil, nil, limits, nil, nil, RetryConfig{}, nil, func(_ context.Context, req *Request) error {
@@ -2302,4 +2302,8 @@ type fakeResourceAttributePromotionConfig struct {
 
 func (c fakeResourceAttributePromotionConfig) PromoteOTelResourceAttributes(string) []string {
 	return c.promote
+}
+
+func boolPtr(b bool) *bool {
+	return &b
 }

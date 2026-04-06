@@ -343,7 +343,15 @@ local utils = import 'mixin-utils/utils.libsonnet';
       {
         name: 'mimir_usage_tracker_rules',
         rules:
-          utils.histogramRules('cortex_usage_tracker_client_track_series_duration_seconds', [$._config.per_cluster_label, 'job'], $._config.recording_rules_range_interval, record_native=true),
+          utils.histogramRules('cortex_usage_tracker_client_track_series_duration_seconds', [$._config.per_cluster_label, 'job'], $._config.recording_rules_range_interval, record_native=true) +
+          [
+            {
+              record: '%(group_prefix_jobs)s:cortex_usage_tracker_active_series:sum' % _config,
+              expr: |||
+                sum by (%(group_by_job)s) (cortex_usage_tracker_active_series)
+              ||| % _config,
+            },
+          ],
       },
     ],
   },

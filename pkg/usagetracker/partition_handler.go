@@ -803,6 +803,10 @@ func (p *partitionHandler) publishSnapshot(ctx context.Context) error {
 			return nil
 		}
 
+		// Filenames are based on the current millisecond timestamp. Sleep to
+		// ensure unique timestamps across snapshot files.
+		time.Sleep(time.Millisecond)
+
 		fileData, err := file.Marshal()
 		if err != nil {
 			level.Error(p.logger).Log("msg", "failed to marshal snapshot file", "err", err)

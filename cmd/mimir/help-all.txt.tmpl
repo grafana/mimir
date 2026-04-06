@@ -245,8 +245,6 @@ Usage of ./cmd/mimir/mimir:
     	Enable the alertmanager config API. (default true)
   -alertmanager.enable-state-cleanup
     	Enables periodic cleanup of alertmanager stateful data (notification logs and silences) from object storage. When enabled, data is removed for any tenant that does not have a configuration. (default true)
-  -alertmanager.grafana-alertmanager-compatibility-enabled
-    	[experimental] Enable routes to support the migration and operation of the Grafana Alertmanager.
   -alertmanager.grafana-alertmanager-grace-period duration
     	[experimental] Duration to wait before shutting down an idle Alertmanager using an unpromoted or default configuration when strict initialization is enabled. (default 5m0s)
   -alertmanager.log-parsing-label-matchers
@@ -263,8 +261,6 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of aggregation groups in Alertmanager's dispatcher that a tenant can have. Each active aggregation group uses single goroutine. When the limit is reached, dispatcher will not dispatch alerts that belong to additional aggregation groups, but existing groups will keep working properly. 0 = no limit.
   -alertmanager.max-grafana-config-size-bytes value
     	Maximum size of the Grafana Alertmanager configuration for a tenant. 0 = no limit.
-  -alertmanager.max-grafana-state-size-bytes value
-    	Maximum size of the Grafana Alertmanager state for a tenant. 0 = no limit.
   -alertmanager.max-recv-msg-size int
     	Maximum size (bytes) of an accepted HTTP request body. (default 104857600)
   -alertmanager.max-silence-size-bytes int
@@ -534,7 +530,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.index-header.bucket-reader.enabled
     	[experimental] Enable reading TSDB index-header sections from object storage. When enabled, the configured -blocks-storage.bucket-store.index-header.bucket-reader.index-sections are not downloaded to local disk.
   -blocks-storage.bucket-store.index-header.bucket-reader.index-sections string
-    	[experimental] Index sections to read from object storage instead of local disk. Valid sections: all (default "all")
+    	[experimental] Index sections to read from object storage instead of local disk. Valid sections: postings-offsets-table (default "postings-offsets-table")
   -blocks-storage.bucket-store.index-header.lazy-loading-concurrency int
     	Maximum number of concurrent index header loads across all tenants. If set to 0, concurrency is unlimited. (default 4)
   -blocks-storage.bucket-store.index-header.lazy-loading-concurrency-queue-timeout duration
@@ -837,6 +833,10 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] How frequently to collect block statistics, which are used in query execution optimization. 0 to disable. (default 1h0m0s)
   -blocks-storage.tsdb.memory-snapshot-on-shutdown
     	[experimental] True to enable snapshotting of in-memory TSDB data on disk when shutting down.
+  -blocks-storage.tsdb.offset-catalogue.enabled
+    	[experimental] Controls the maintaining of kafka offset catalogue per block.
+  -blocks-storage.tsdb.offset-catalogue.sync-concurrency int
+    	[experimental] Maximum number of tenants concurrently syncing offset catalogue to disk. (default 10)
   -blocks-storage.tsdb.out-of-order-capacity-max int
     	[experimental] Maximum capacity for out of order chunks, in samples between 1 and 255. (default 32)
   -blocks-storage.tsdb.retention-period duration
@@ -1103,6 +1103,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of TSDB segment files that the compactor can upload concurrently per block. (default 8)
   -compactor.meta-sync-concurrency int
     	Number of goroutines to use when syncing block meta files from the long term storage. (default 20)
+  -compactor.ooo-split-and-merge-shards int
+    	The number of shards to use when splitting out-of-order blocks. 0 to use the value of -compactor.split-and-merge-shards. Only applies to blocks with the out-of-order external label, see -ingester.out-of-order-blocks-external-label-enabled.
   -compactor.partial-block-deletion-delay duration
     	If a partial block (unfinished block without meta.json file) hasn't been modified for this time, it will be marked for deletion. The minimum accepted value is 4h0m0s: a lower value will be ignored and the feature disabled. 0 to disable. (default 1d)
   -compactor.ring.auto-forget-unhealthy-periods int
@@ -1417,6 +1419,8 @@ Usage of ./cmd/mimir/mimir:
     	Heartbeat timeout after which Mimir marks distributors as unhealthy in the ring. (default 1m0s)
   -distributor.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
+  -distributor.ring.instance-availability-zone string
+    	The availability zone where this instance is running. Used for zone-aware rate limiting.
   -distributor.ring.instance-enable-ipv6
     	Enable using an IPv6 instance address.
   -distributor.ring.instance-id string
@@ -1459,6 +1463,8 @@ Usage of ./cmd/mimir/mimir:
     	True to enable the ingestion via object storage.
   -ingest-storage.ingestion-partition-tenant-shard-size int
     	[experimental] The number of partitions a tenant's data should be sharded to when using the ingest storage. Tenants are sharded across partitions using shuffle-sharding. 0 disables shuffle sharding and tenant is sharded across all partitions.
+  -ingest-storage.ingestion-partition-tenant-write-shard-size int
+    	[experimental] The maximum number of partitions a tenant's data should be written to when using the ingest storage. When set to a value > 0 and less than -ingest-storage.ingestion-partition-tenant-shard-size, writes use fewer partitions while reads continue using the full shard size. This allows safely reducing the shard size without losing query coverage during the migration. 0 means the write shard size equals the read shard size.
   -ingest-storage.kafka.address comma-separated-list-of-strings
     	The Kafka seed broker address, or a comma-separated list of seed broker addresses.
   -ingest-storage.kafka.auto-create-topic-default-partitions int
@@ -1510,15 +1516,29 @@ Usage of ./cmd/mimir/mimir:
   -ingest-storage.kafka.producer-record-version int
     	[experimental] The record version that this producer sends.
   -ingest-storage.kafka.sasl-mechanism string
-    	The SASL mechanism used to authenticate to Kafka. Supported values: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER. For backwards-compatibility, PLAIN with no username nor password disables SASL. (default "PLAIN")
+    	The SASL mechanism used to authenticate to Kafka. Supported values: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER, AWS_MSK_IAM. For backwards-compatibility, PLAIN with no username nor password disables SASL. (default "PLAIN")
+  -ingest-storage.kafka.sasl-msk-iam-access-key string
+    	The AWS access key ID to authenticate to Kafka using SASL AWS_MSK_IAM. Consider ingest-storage.kafka.sasl-msk-iam-file-path instead.
+  -ingest-storage.kafka.sasl-msk-iam-file-path string
+    	Path to a file containing AWS credentials to authenticate to Kafka using SASL AWS_MSK_IAM. Mutually exclusive with ingest-storage.kafka.sasl-msk-iam-http-socket-path. The file is read anew on every reauthentication, so it can be updated with fresh credentials. The file must be in JSON format, adhering to this JSON schema: {"type": "object", "required": ["AccessKey", "SecretKey"], "properties": {"AccessKey": {"type": "string"}, "SecretKey": {"type": "string"}, "SessionToken": {"type": "string"}, "UserAgent": {"type": "string"}}}
+  -ingest-storage.kafka.sasl-msk-iam-http-socket-path string
+    	Path to a Unix domain socket to fetch AWS credentials from via HTTP. Mutually exclusive with ingest-storage.kafka.sasl-msk-iam-file-path. On every authentication or reauthentication, an HTTP GET / request is made to the socket and the response body is read as JSON. The JSON schema is the same as for ingest-storage.kafka.sasl-msk-iam-file-path.
+  -ingest-storage.kafka.sasl-msk-iam-http-socket-timeout duration
+    	Timeout for requesting AWS credentials from the HTTP socket. Effective when ingest-storage.kafka.sasl-msk-iam-http-socket-path is set. (default 10s)
+  -ingest-storage.kafka.sasl-msk-iam-secret-key string
+    	The AWS secret access key to authenticate to Kafka using SASL AWS_MSK_IAM. Consider ingest-storage.kafka.sasl-msk-iam-file-path instead.
+  -ingest-storage.kafka.sasl-msk-iam-session-token string
+    	Optional AWS session token to authenticate to Kafka using SASL AWS_MSK_IAM.
+  -ingest-storage.kafka.sasl-msk-iam-user-agent string
+    	Optional user agent to use when authenticating to Kafka using SASL AWS_MSK_IAM.
   -ingest-storage.kafka.sasl-oauthbearer-extensions value
     	Optional additional OAuth extensions to include when authenticating to Kafka using SASL OAUTHBEARER as a JSON object. (default {})
   -ingest-storage.kafka.sasl-oauthbearer-file-path string
-    	Path to a file containing an OAuth token to authenticate to Kafka. The file is read anew on every reauthentication, so it can be updated with fresh tokens. The file must be in JSON format, adhering to this JSON schema: {"type": "object", "required": ["token"], "properties": {"token": {"type": "string"}, "zid": {"type": "string"}, "extensions": {"type": "object", "additionalProperties": {"type": "string"}}}}
+    	Path to a file containing an OAuth token to authenticate to Kafka. Mutually exclusive with ingest-storage.kafka.sasl-oauthbearer-http-socket-path. The file is read anew on every reauthentication, so it can be updated with fresh tokens. The file must be in JSON format, adhering to this JSON schema: {"type": "object", "required": ["token"], "properties": {"token": {"type": "string"}, "zid": {"type": "string"}, "extensions": {"type": "object", "additionalProperties": {"type": "string"}}}
   -ingest-storage.kafka.sasl-oauthbearer-http-socket-path string
-    	Path to a Unix domain socket to fetch an OAuth token from via HTTP. On every authentication or reauthentication, an HTTP GET / request is made to the socket and the response body is read as JSON. The JSON schema is the same as for ingest-storage.kafka.sasl-oauthbearer-file-path.
+    	Path to a Unix domain socket to fetch an OAuth token from via HTTP. Mutually exclusive with ingest-storage.kafka.sasl-oauthbearer-file-path. On every authentication or reauthentication, an HTTP GET / request is made to the socket and the response body is read as JSON. The JSON schema is the same as for ingest-storage.kafka.sasl-oauthbearer-file-path.
   -ingest-storage.kafka.sasl-oauthbearer-http-socket-timeout duration
-    	Timeout for requesting the token from the HTTP socket. (default 10s)
+    	Timeout for requesting the token from the HTTP socket. Effective when ingest-storage.kafka.sasl-oauthbearer-http-socket-path is set. (default 10s)
   -ingest-storage.kafka.sasl-oauthbearer-token string
     	The OAuth token to use to authenticate to Kafka. Consider ingest-storage.kafka.sasl-oauthbearer-file-path instead.
   -ingest-storage.kafka.sasl-oauthbearer-zid string
@@ -1552,7 +1572,7 @@ Usage of ./cmd/mimir/mimir:
   -ingest-storage.kafka.wait-strong-read-consistency-timeout duration
     	The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout. (default 20s)
   -ingest-storage.kafka.write-clients int
-    	The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka. (default 1)
+    	[deprecated] The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka. Deprecated: has no effect (Mimir always uses a single Kafka write client). (default 1)
   -ingest-storage.kafka.write-timeout duration
     	How long to wait for an incoming write request to be successfully committed to the Kafka backend. (default 10s)
   -ingest-storage.migration.distributor-send-to-ingesters-enabled
@@ -2126,7 +2146,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.enable-query-engine-fallback
     	[experimental] If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine. (default true)
   -querier.filter-queryables-enabled
-    	If set to true, the header 'X-Filter-Queryables' can be used to filter down the list of queryables that shall be used. This is useful to test and monitor single queryables in isolation.
+    	[deprecated] If set to true, the header 'X-Filter-Queryables' can be used to filter down the list of queryables that shall be used. This is useful to test and monitor single queryables in isolation. Deprecated: has no effect.
   -querier.frontend-client.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -querier.frontend-client.backoff-min-period duration

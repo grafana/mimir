@@ -83,3 +83,13 @@ func (s *StepInvariantScalarOperator) GetValues(ctx context.Context) (types.Scal
 
 	return data, nil
 }
+
+func (s *StepInvariantScalarOperator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	inner, err := s.inner.Stats(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	defer inner.Close()
+	return inner.ExtendStepInvariantToFullRange(s.originalTimeRange)
+}

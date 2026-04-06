@@ -119,6 +119,10 @@ func (i *InstantVectorToScalar) Finalize(ctx context.Context) error {
 	return i.Inner.Finalize(ctx)
 }
 
+func (i *InstantVectorToScalar) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return i.Inner.Stats(ctx)
+}
+
 func (i *InstantVectorToScalar) Close() {
 	i.Inner.Close()
 }

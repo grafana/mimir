@@ -1483,7 +1483,7 @@ func TestNewValidationConfigFieldCompleteness(t *testing.T) {
 	overrides := validation.NewOverrides(*limits, nil)
 
 	// 4. Call newValidationConfig
-	cfg := newValidationConfig("test-user", overrides)
+	cfg := newValidationConfig("test-user", "test-user", overrides)
 
 	// 5. Use reflection to verify all fields are non-zero
 	assertNoZeroFields(t, reflect.ValueOf(cfg), "validationConfig")

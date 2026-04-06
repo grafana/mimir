@@ -24,7 +24,7 @@ import (
 const (
 	deadlineExceededWrapMessage     = "exceeded configured distributor remote timeout"
 	failedPushingToIngesterMessage  = "failed pushing to ingester"
-	failedPushingToPartitionMessage = "failed pushing to partition"
+	failedPushingToPartitionMessage = "failed pushing to partitions"
 )
 
 var (
@@ -436,15 +436,13 @@ func wrapIngesterPushError(err error, ingesterID string) error {
 	return newIngesterPushError(stat, ingesterID)
 }
 
-func wrapPartitionPushError(err error, partitionID int32) error {
+func wrapPartitionsPushError(err error) error {
 	if err == nil {
 		return nil
 	}
 
-	// Add the partition ID to the error message.
-	err = errors.Wrap(err, fmt.Sprintf("%s %d", failedPushingToPartitionMessage, partitionID))
+	err = errors.Wrap(err, failedPushingToPartitionMessage)
 
-	// Detect the cause.
 	cause := mimirpb.ERROR_CAUSE_UNKNOWN
 	if errors.Is(err, ingest.ErrWriteRequestDataItemTooLarge) {
 		cause = mimirpb.ERROR_CAUSE_BAD_DATA

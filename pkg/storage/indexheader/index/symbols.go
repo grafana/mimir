@@ -14,9 +14,9 @@ import (
 	"unsafe"
 
 	"github.com/grafana/dskit/runutil"
+	"github.com/prometheus/prometheus/tsdb/index"
 
 	streamencoding "github.com/grafana/mimir/pkg/storage/indexheader/encoding"
-	"github.com/grafana/mimir/pkg/storage/indexheader/indexheaderpb"
 )
 
 // The table gets initialized with sync.Once but may still cause a race
@@ -28,86 +28,33 @@ func init() {
 	castagnoliTable = crc32.MakeTable(crc32.Castagnoli)
 }
 
-type Symbols struct {
-	factory streamencoding.DecbufFactory
+type SymbolsTable struct {
+	tableOffset   int
+	decbufFactory streamencoding.DecbufFactory
 
-	version     int
-	tableOffset int
-
-	offsets []int
-	seen    int
+	allSymbolsCount      int
+	sparseSymbolsOffsets []int
 }
 
 const symbolFactor = 32
 
-// NewSymbolsFromSparseHeader reads from sparse index header and returns a Symbols object for symbol lookups.
-func NewSymbolsFromSparseHeader(factory streamencoding.DecbufFactory, symbols *indexheaderpb.Symbols, offset int) (s *Symbols, err error) {
-	s = &Symbols{
-		factory:     factory,
-		tableOffset: offset,
+func NewSymbolsTableReader(
+	indexVersion int,
+	decbufFactory streamencoding.DecbufFactory,
+	tableOffset int,
+	allSymbolsCount int,
+	sparseSymbolsOffsets []int,
+) (s *SymbolsTable, err error) {
+	switch indexVersion {
+	case index.FormatV2:
+		return &SymbolsTable{
+			tableOffset:          tableOffset,
+			decbufFactory:        decbufFactory,
+			allSymbolsCount:      allSymbolsCount,
+			sparseSymbolsOffsets: sparseSymbolsOffsets,
+		}, nil
 	}
-
-	s.offsets = make([]int, len(symbols.Offsets))
-
-	for i, offset := range symbols.Offsets {
-		s.offsets[i] = int(offset)
-	}
-
-	s.seen = int(symbols.SymbolsCount)
-
-	return s, nil
-}
-
-// NewSymbols returns a Symbols object for symbol lookups.
-func NewSymbols(factory streamencoding.DecbufFactory, version, offset int, doChecksum bool) (s *Symbols, err error) {
-	var d streamencoding.Decbuf
-	if doChecksum {
-		d = factory.NewDecbufAtChecked(offset, castagnoliTable)
-	} else {
-		d = factory.NewDecbufAtUnchecked(offset)
-	}
-
-	defer runutil.CloseWithErrCapture(&err, &d, "read symbols")
-	if err := d.Err(); err != nil {
-		return nil, fmt.Errorf("decode symbol table: %w", d.Err())
-	}
-
-	s = &Symbols{
-		factory:     factory,
-		version:     version,
-		tableOffset: offset,
-	}
-
-	cnt := d.Be32int()
-	s.offsets = make([]int, 0, 1+cnt/symbolFactor)
-	for d.Err() == nil && s.seen < cnt {
-		if s.seen%symbolFactor == 0 {
-			s.offsets = append(s.offsets, d.Offset())
-		}
-		d.SkipUvarintBytes() // The symbol.
-		s.seen++
-	}
-
-	if d.Err() != nil {
-		return nil, d.Err()
-	}
-
-	return s, nil
-}
-
-// ToSparseSymbols loads all symbols data into a sparse protobuf format to be persisted to disk
-func (s *Symbols) ToSparseSymbols() (sparse *indexheaderpb.Symbols) {
-	sparseSymbols := &indexheaderpb.Symbols{}
-
-	offsets := make([]int64, len(s.offsets))
-	for i, offset := range s.offsets {
-		offsets[i] = int64(offset)
-	}
-
-	sparseSymbols.Offsets = offsets
-	sparseSymbols.SymbolsCount = int64(s.seen)
-
-	return sparseSymbols
+	return nil, fmt.Errorf("unknown or unsupported index version %v", indexVersion)
 }
 
 var ErrSymbolNotFound = errors.New("symbol not found")
@@ -115,17 +62,17 @@ var ErrSymbolNotFound = errors.New("symbol not found")
 // Lookup takes a symbol reference and returns the symbol string.
 // For TSDB index v2, the reference is expected to be the sequence number of the symbol (starting at 0).
 // If the symbol reference is beyond the last symbol in the symbols table, the return error's cause will be ErrSymbolNotFound.
-func (s *Symbols) Lookup(o uint32) (sym string, err error) {
-	d := s.factory.NewDecbufAtUnchecked(s.tableOffset)
+func (s *SymbolsTable) Lookup(o uint32) (sym string, err error) {
+	d := s.decbufFactory.NewDecbufAtUnchecked(s.tableOffset)
 	defer runutil.CloseWithErrCapture(&err, &d, "lookup symbol")
 	if err := d.Err(); err != nil {
 		return "", err
 	}
 
-	if int(o) >= s.seen {
+	if int(o) >= s.allSymbolsCount {
 		return "", fmt.Errorf("%w: symbol offset %d", ErrSymbolNotFound, o)
 	}
-	d.ResetAt(s.offsets[int(o/symbolFactor)])
+	d.ResetAt(s.sparseSymbolsOffsets[int(o/symbolFactor)])
 	// Walk until we find the one we want.
 	for i := o - (o / symbolFactor * symbolFactor); i > 0; i-- {
 		d.SkipUvarintBytes()
@@ -139,12 +86,12 @@ func (s *Symbols) Lookup(o uint32) (sym string, err error) {
 }
 
 // ReverseLookup returns an error with cause ErrSymbolNotFound if the symbol cannot be found.
-func (s *Symbols) ReverseLookup(sym string) (o uint32, err error) {
-	if len(s.offsets) == 0 {
+func (s *SymbolsTable) ReverseLookup(sym string) (o uint32, err error) {
+	if len(s.sparseSymbolsOffsets) == 0 {
 		return 0, fmt.Errorf("unknown symbol %q - no symbols", sym)
 	}
 
-	d := s.factory.NewDecbufAtUnchecked(s.tableOffset)
+	d := s.decbufFactory.NewDecbufAtUnchecked(s.tableOffset)
 	defer runutil.CloseWithErrCapture(&err, &d, "reverse lookup symbol")
 	if err := d.Err(); err != nil {
 		return 0, err
@@ -160,12 +107,12 @@ func (s *Symbols) ReverseLookup(sym string) (o uint32, err error) {
 // If the reference of a symbol cannot be looked up, iteration stops immediately and the error is
 // returned. If f returns an error, iteration stops immediately and the error is returned.
 // ForEachSymbol returns an error with cause ErrSymbolNotFound if any symbol cannot be found.
-func (s *Symbols) ForEachSymbol(syms []string, f func(sym string, offset uint32) error) (err error) {
-	if len(s.offsets) == 0 {
+func (s *SymbolsTable) ForEachSymbol(syms []string, f func(sym string, offset uint32) error) (err error) {
+	if len(s.sparseSymbolsOffsets) == 0 {
 		return errors.New("no symbols")
 	}
 
-	d := s.factory.NewDecbufAtUnchecked(s.tableOffset)
+	d := s.decbufFactory.NewDecbufAtUnchecked(s.tableOffset)
 	defer runutil.CloseWithErrCapture(&err, &d, "iterate over symbols")
 	if err := d.Err(); err != nil {
 		return err
@@ -186,9 +133,9 @@ func (s *Symbols) ForEachSymbol(syms []string, f func(sym string, offset uint32)
 	return nil
 }
 
-func (s *Symbols) reverseLookup(sym string, d streamencoding.Decbuf) (uint32, error) {
-	i := sort.Search(len(s.offsets), func(i int) bool {
-		d.ResetAt(s.offsets[i])
+func (s *SymbolsTable) reverseLookup(sym string, d streamencoding.Decbuf) (uint32, error) {
+	i := sort.Search(len(s.sparseSymbolsOffsets), func(i int) bool {
+		d.ResetAt(s.sparseSymbolsOffsets[i])
 		return string(d.UnsafeUvarintBytes()) > sym
 	})
 
@@ -196,10 +143,10 @@ func (s *Symbols) reverseLookup(sym string, d streamencoding.Decbuf) (uint32, er
 		i--
 	}
 
-	d.ResetAt(s.offsets[i])
+	d.ResetAt(s.sparseSymbolsOffsets[i])
 	res := i * symbolFactor
 	var lastSymbol string
-	for d.Err() == nil && res <= s.seen {
+	for d.Err() == nil && res <= s.allSymbolsCount {
 		lastSymbol = yoloString(d.UnsafeUvarintBytes())
 		if lastSymbol >= sym {
 			break
@@ -229,14 +176,14 @@ type SymbolsReader interface {
 	Read(uint32) (string, error)
 }
 
-func (s *Symbols) Reader() SymbolsReader {
-	d := s.factory.NewDecbufAtUnchecked(s.tableOffset)
-	d.ResetAt(s.offsets[0])
+func (s *SymbolsTable) Reader() SymbolsReader {
+	d := s.decbufFactory.NewDecbufAtUnchecked(s.tableOffset)
+	d.ResetAt(s.sparseSymbolsOffsets[0])
 
 	return &SymbolsTableReaderV2{
 		d:             &d,
-		offsets:       s.offsets,
-		lastSymbolRef: uint32(s.seen - 1),
+		offsets:       s.sparseSymbolsOffsets,
+		lastSymbolRef: uint32(s.allSymbolsCount - 1),
 	}
 }
 

@@ -203,7 +203,7 @@ type validationConfig struct {
 // newValidationConfig builds a validationConfig based on the passed overrides.
 // TODO: This could still be more efficient, as each overrides call performs an atomic pointer retrieval and a lookup in a map,
 // TODO: but it's already better than the previous implementation, which was doing this per-sample and per-series.
-func newValidationConfig(userID string, overrides *validation.Overrides) validationConfig {
+func newValidationConfig(userID, limitsKey string, overrides *validation.Overrides) validationConfig {
 	return validationConfig{
 		samples: sampleValidationConfig{
 			creationGracePeriod:                 overrides.CreationGracePeriod(userID),
@@ -218,7 +218,7 @@ func newValidationConfig(userID string, overrides *validation.Overrides) validat
 			maxLabelNameLength:                overrides.MaxLabelNameLength(userID),
 			maxLabelValueLength:               overrides.MaxLabelValueLength(userID),
 			labelValueLengthOverLimitStrategy: overrides.LabelValueLengthOverLimitStrategy(userID),
-			nameValidationScheme:              overrides.NameValidationScheme(userID),
+			nameValidationScheme:              overrides.NameValidationScheme(limitsKey),
 		},
 		metadata: metadataValidationConfig{
 			enforceMetadataMetricName: overrides.EnforceMetadataMetricName(userID),

@@ -9,14 +9,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"io/fs"
-	"os"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -43,6 +41,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	mqetest "github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -193,102 +192,6 @@ func TestNewInstantQuery_Strings(t *testing.T) {
 	defer q.Close()
 
 	mqetest.RequireEqualResults(t, expr, prometheus, mimir, false)
-}
-
-// This test runs the test cases defined upstream in https://github.com/prometheus/prometheus/tree/main/promql/testdata and copied to testdata/upstream.
-// Test cases that are not supported by the streaming engine are commented out (or, if the entire file is not supported, .disabled is appended to the file name).
-// Once the streaming engine supports all PromQL features exercised by Prometheus' test cases, we can remove these files and instead call promql.RunBuiltinTests here instead.
-func TestUpstreamTestCases(t *testing.T) {
-	opts := NewTestEngineOpts()
-	limits := NewStaticQueryLimitsProvider()
-	limits.EnableDelayedNameRemoval = true
-	opts.Limits = limits
-	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
-	require.NoError(t, err)
-	engine, err := NewEngine(opts, stats.NewQueryMetrics(nil), planner)
-	require.NoError(t, err)
-
-	testdataFS := os.DirFS("./testdata")
-	testFiles, err := fs.Glob(testdataFS, "upstream/*.test")
-	require.NoError(t, err)
-
-	for _, testFile := range testFiles {
-		t.Run(testFile, func(t *testing.T) {
-			f, err := testdataFS.Open(testFile)
-			require.NoError(t, err)
-			defer f.Close()
-
-			b, err := io.ReadAll(f)
-			require.NoError(t, err)
-
-			testScript := string(b)
-			promqltest.RunTest(t, testScript, engine)
-		})
-	}
-}
-
-func TestOurTestCases(t *testing.T) {
-	makeEngines := func(t *testing.T, opts EngineOpts, enableDelayedNameRemoval bool) (promql.QueryEngine, promql.QueryEngine) {
-		limits := NewStaticQueryLimitsProvider()
-		limits.EnableDelayedNameRemoval = enableDelayedNameRemoval
-		opts.Limits = limits
-		if enableDelayedNameRemoval {
-			// This line only affects Prometheus engine, as MQE's is in opts.Limits
-			opts.CommonOpts.EnableDelayedNameRemoval = true
-		}
-		planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
-		require.NoError(t, err)
-		mimirEngine, err := NewEngine(opts, stats.NewQueryMetrics(nil), planner)
-		require.NoError(t, err)
-
-		prometheusEngine := promql.NewEngine(opts.CommonOpts)
-
-		return mimirEngine, prometheusEngine
-	}
-	opts := NewTestEngineOpts()
-	mimirEngine, prometheusEngine := makeEngines(t, opts, false)
-
-	optsWithDelayedNameRemoval := NewTestEngineOpts()
-	mimirEngineWithDelayedNameRemoval, prometheusEngineWithDelayedNameRemoval := makeEngines(t, optsWithDelayedNameRemoval, true)
-
-	testdataFS := os.DirFS("./testdata")
-	testFiles, err := fs.Glob(testdataFS, "ours*/*.test")
-	require.NoError(t, err)
-
-	for _, testFile := range testFiles {
-		t.Run(testFile, func(t *testing.T) {
-			f, err := testdataFS.Open(testFile)
-			require.NoError(t, err)
-			defer f.Close()
-
-			b, err := io.ReadAll(f)
-			require.NoError(t, err)
-
-			testScript := string(b)
-
-			mimirEngineToTest := mimirEngine
-			prometheusEngineToTest := prometheusEngine
-
-			// switch to the alternate engines if we need delayed name removal
-			if strings.Contains(testFile, "name_label_dropping") || strings.Contains(testFile, "delayed_name_removal_enabled") {
-				mimirEngineToTest = mimirEngineWithDelayedNameRemoval
-				prometheusEngineToTest = prometheusEngineWithDelayedNameRemoval
-			}
-
-			t.Run(mimirEngineName, func(t *testing.T) {
-				promqltest.RunTest(t, testScript, mimirEngineToTest)
-			})
-
-			// Run the tests against Prometheus' engine to ensure our test cases are valid.
-			t.Run(prometheusEngineName, func(t *testing.T) {
-				if strings.HasPrefix(testFile, "ours-only") {
-					t.Skip("disabled for Prometheus' engine due to bug in Prometheus' engine")
-				}
-
-				promqltest.RunTest(t, testScript, prometheusEngineToTest)
-			})
-		})
-	}
 }
 
 // Testing instant queries that return a range vector is not supported by Prometheus' PromQL testing framework,
@@ -831,6 +734,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 				defer q.Close()
 
 				res := q.Exec(context.Background())
+				require.NoError(t, res.Err)
 
 				// Because Histograms are pointers, it is hard to use Equal for the whole result
 				// Instead, compare each point individually.
@@ -1556,6 +1460,20 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 	`)
 	t.Cleanup(func() { require.NoError(t, storage.Close()) })
 
+	// sumGroupOverhead is the per-group struct overhead for sum() queries: SumAggregationGroup (136 bytes).
+	// The group container struct comes from a zeropool and is not charged to the query.
+	// This is charged to limiter.AggregationGroupStructs when each group is first created in ComputeGroups.
+	sumGroupOverhead := uint64(unsafe.Sizeof(aggregations.SumAggregationGroup{}))
+
+	// sumGroupPointerSlicesOverhead is the combined memory of the two pool-allocated []*group slices
+	// used during sum() aggregation over 5 input series:
+	//   - groupPointerSlicePool: 1 output group → cap=1 → 1 pointer (8 bytes)
+	//   - groupPointerSlicePool (for inner groups): 5 input series → cap=8 after bucketed pool rounding → 8 pointers (64 bytes)
+	sumGroupPointerSlicesOverhead := uint64(9 * unsafe.Sizeof(uintptr(0)))
+
+	rangeQueryStatsMemoryConsumption := 2 * (8 * types.Int64Size) // Two sample counter slices (one for floats, one for histograms), each with capacity 8 (5 steps, rounded up to nearest power of two)
+	instantQueryStatsMemoryConsumption := 2 * types.Int64Size     // Two sample counter slices (one for floats, one for histograms), each with capacity 1
+
 	testCases := map[string]struct {
 		expr                     string
 		rangeQueryExpectedPeak   uint64
@@ -1570,13 +1488,13 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 
 			// Each series has five samples, which will be rounded up to eight (the nearest power of two) by the bucketed pool,
 			// and we have five series and each of the series has labels of the same size.
-			rangeQueryExpectedPeak: 5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()),
+			rangeQueryExpectedPeak: 5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()) + rangeQueryStatsMemoryConsumption,
 			rangeQueryLimit:        0,
 
 			// At peak, we'll hold all the output samples plus one series, which has one sample.
 			// The output contains five samples with SeriesMetadata, which will be rounded up to eight (the nearest power of two).
 			// Five out of SeriesMetadata has labels.Labels with each of them having the same ByteSize.
-			instantQueryExpectedPeak: types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize) + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()),
+			instantQueryExpectedPeak: types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize) + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()) + instantQueryStatsMemoryConsumption,
 			instantQueryLimit:        0,
 		},
 		"limit enabled, but query does not exceed limit": {
@@ -1585,26 +1503,26 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 
 			// Each series has five samples with SeriesMetadata, which will be rounded up to 8 (the nearest power of two) by the bucketed pool, and we have five series.
 			// Five out of SeriesMetadata has labels.Labels with each of them having the same ByteSize.
-			rangeQueryExpectedPeak: 5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()),
-			rangeQueryLimit:        5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()),
+			rangeQueryExpectedPeak: 5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()) + rangeQueryStatsMemoryConsumption,
+			rangeQueryLimit:        5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()) + rangeQueryStatsMemoryConsumption,
 
 			// At peak, we'll hold all the output samples plus one series, which has one sample.
 			// The output contains five samples with SeriesMetadata, which will be rounded up to 8 (the nearest power of two).
 			// Five out of SeriesMetadata has labels.Labels with each of them having the same ByteSize.
-			instantQueryExpectedPeak: types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize) + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()),
-			instantQueryLimit:        types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize) + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()),
+			instantQueryExpectedPeak: types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize) + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()) + instantQueryStatsMemoryConsumption,
+			instantQueryLimit:        types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize) + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()) + instantQueryStatsMemoryConsumption,
 		},
 		"limit enabled, and query exceeds limit": {
 			expr:          "some_metric",
 			shouldSucceed: false,
 
 			// Allow only a single sample.
-			rangeQueryLimit:   types.FPointSize,
-			instantQueryLimit: types.FPointSize,
+			rangeQueryLimit:   rangeQueryStatsMemoryConsumption + types.FPointSize,
+			instantQueryLimit: instantQueryStatsMemoryConsumption + types.FPointSize,
 
-			// The query never successfully allocates anything.
-			rangeQueryExpectedPeak:   0,
-			instantQueryExpectedPeak: 0,
+			// The query never successfully allocates anything except the stats tracker.
+			rangeQueryExpectedPeak:   rangeQueryStatsMemoryConsumption,
+			instantQueryExpectedPeak: instantQueryStatsMemoryConsumption,
 		},
 		"limit enabled, query selects more samples than limit but should not load all of them into memory at once, and peak consumption is under limit": {
 			expr:          "sum(some_metric)",
@@ -1612,28 +1530,33 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 
 			// There are two stages to processing the query. They take different memory depending on whether we're running with stringlabels or not.
 			// At peak we'll hold in memory either A) or B)
+			// Both phases also hold the two []*group slices tracked by sumGroupPointerSlicesOverhead.
 			rangeQueryExpectedPeak: max(
 				// A)
 				//   - 5 input series labels (8 series metadata because of bucketed pool rounding to a power of 2)
 				//   - 1 output series metadata (no labels)
-				8*types.SeriesMetadataSize+5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize())+types.SeriesMetadataSize,
+				//   - groupPointerSlicePool (inner) (cap=8) + groupPointerSlicePool (cap=1)
+				//   - 1 sum group struct overhead
+				8*types.SeriesMetadataSize+5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize())+types.SeriesMetadataSize+sumGroupPointerSlicesOverhead+sumGroupOverhead+rangeQueryStatsMemoryConsumption,
 				// B)
 				//   - the running total for the sum() (two floats (due to kahan) and a bool at each step, with the number of steps rounded to the nearest power of 2),
 				//   - the next series from the selector
 				//   - the series metadata for the output series (no labels)
-				8*(2*types.Float64Size+types.BoolSize)+8*types.FPointSize+types.SeriesMetadataSize,
+				//   - groupPointerSlicePool (inner) (cap=8) + groupPointerSlicePool (cap=1)
+				//   - 1 sum group struct overhead
+				8*(2*types.Float64Size+types.BoolSize)+8*types.FPointSize+types.SeriesMetadataSize+sumGroupPointerSlicesOverhead+sumGroupOverhead+rangeQueryStatsMemoryConsumption,
 			),
 			rangeQueryLimit: max(
 				// A)
-				8*types.SeriesMetadataSize+5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize())+types.SeriesMetadataSize,
+				8*types.SeriesMetadataSize+5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize())+types.SeriesMetadataSize+sumGroupPointerSlicesOverhead+sumGroupOverhead+rangeQueryStatsMemoryConsumption,
 				// B)
-				8*(2*types.Float64Size+types.BoolSize)+8*types.FPointSize+types.SeriesMetadataSize,
+				8*(2*types.Float64Size+types.BoolSize)+8*types.FPointSize+types.SeriesMetadataSize+sumGroupPointerSlicesOverhead+sumGroupOverhead+rangeQueryStatsMemoryConsumption,
 			),
 
 			// Each series has one sample, which is already a power of two.
-			// At peak we'll hold in memory 9 SeriesMetadata.
-			instantQueryExpectedPeak: 9*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()),
-			instantQueryLimit:        9*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()),
+			// At peak we'll hold in memory 9 SeriesMetadata, plus sumGroupPointerSlicesOverhead and sumGroupOverhead.
+			instantQueryExpectedPeak: 9*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()) + sumGroupPointerSlicesOverhead + sumGroupOverhead + instantQueryStatsMemoryConsumption,
+			instantQueryLimit:        9*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()) + sumGroupPointerSlicesOverhead + sumGroupOverhead + instantQueryStatsMemoryConsumption,
 		},
 		"limit enabled, query selects more samples than limit but should not load all of them into memory at once, and peak consumption is over limit": {
 			expr:          "sum(some_metric)",
@@ -1642,42 +1565,39 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			// At peak we'll hold in memory
 			//   - 5 input series labels (8 series metadata because of bucketed pool rounding to a power of 2)
 			//   - 1 output series metadata (no labels). This will tip over the limit and we won't allocate it, so the peak calculations don't include it.
-			rangeQueryExpectedPeak: 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()),
-			rangeQueryLimit:        9*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()) - 1,
+			rangeQueryExpectedPeak: 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()) + rangeQueryStatsMemoryConsumption,
+			rangeQueryLimit:        9*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()) + rangeQueryStatsMemoryConsumption - 1,
 
-			instantQueryExpectedPeak: 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()),
-			instantQueryLimit:        9*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()) - 1,
+			instantQueryExpectedPeak: 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()) + instantQueryStatsMemoryConsumption,
+			instantQueryLimit:        9*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()) + instantQueryStatsMemoryConsumption - 1,
 		},
 		"histogram: limit enabled, but query does not exceed limit": {
 			expr:          "sum(some_histogram)",
 			shouldSucceed: true,
 
-			rangeQueryExpectedPeak: 2*8*types.HistogramPointerSize + 8*types.HPointSize + types.SeriesMetadataSize + 8*types.CounterResetHintSize,
-			rangeQueryLimit:        2*8*types.HistogramPointerSize + 8*types.HPointSize + types.SeriesMetadataSize + 8*types.CounterResetHintSize,
+			// The sum() aggregator allocates:
+			//  - two []*group slices via groupPointerSlicePool (cap=1, 8 bytes) and groupPointerSlicePool (inner) (cap=2, 16 bytes) = 24 bytes total.
+			//  - 1 sum group struct overhead.
+			// types.HistogramPointerSize is used as a proxy for pointer size (8 bytes on 64-bit platforms).
+			rangeQueryExpectedPeak: 2*8*types.HistogramPointerSize + 8*types.HPointSize + types.SeriesMetadataSize + 8*types.CounterResetHintSize + 3*types.HistogramPointerSize + sumGroupOverhead + rangeQueryStatsMemoryConsumption,
+			rangeQueryLimit:        2*8*types.HistogramPointerSize + 8*types.HPointSize + types.SeriesMetadataSize + 8*types.CounterResetHintSize + 3*types.HistogramPointerSize + sumGroupOverhead + rangeQueryStatsMemoryConsumption,
 
-			instantQueryExpectedPeak: types.HPointSize + types.VectorSampleSize + types.SeriesMetadataSize,
-			instantQueryLimit:        types.HPointSize + types.VectorSampleSize + types.SeriesMetadataSize,
+			// Instant peak is during accumulation: input HPoint + histogramSums/compensatingValues (2 pointers) + counterResets
+			// + pool slices (3 pointers) + output SeriesMetadata + group struct overhead.
+			instantQueryExpectedPeak: types.HPointSize + 5*types.HistogramPointerSize + types.CounterResetHintSize + types.SeriesMetadataSize + sumGroupOverhead + instantQueryStatsMemoryConsumption,
+			instantQueryLimit:        types.HPointSize + 5*types.HistogramPointerSize + types.CounterResetHintSize + types.SeriesMetadataSize + sumGroupOverhead + instantQueryStatsMemoryConsumption,
 		},
 		"histogram: limit enabled, and query exceeds limit": {
 			expr:          "sum(some_histogram)",
 			shouldSucceed: false,
 
-			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool.
-			// At peak we'll hold in memory:
-			//  - the running total for the sum() (a histogram pointer at each step, with the number of steps rounded to the nearest power of 2),
-			//  - and the next series from the selector.
-			// The last thing to be allocated is the HistogramPointerSize slice for the running total, so that won't contribute to the peak before the query is aborted.
-			rangeQueryExpectedPeak: 8*types.HPointSize + types.SeriesMetadataSize,
-			rangeQueryLimit:        8*types.HPointSize + types.SeriesMetadataSize + 8*types.HistogramPointerSize - 1,
-			// Each series has one sample, which is already a power of two.
-			// At peak we'll hold in memory:
-			//  - the running total for the sum() + compensating value for kahan summation
-			//    (2 histogram pointers),
-			//  - the next series from the selector,
-			//  - and the output sample.
-			// The last thing to be allocated is the vector slice for the final result (after the sum()'s running total has been returned), so those won't contribute to the peak before the query is aborted.
-			instantQueryExpectedPeak: types.HPointSize + types.SeriesMetadataSize + 2*types.HistogramPointerSize + types.CounterResetHintSize,
-			instantQueryLimit:        types.HPointSize + types.SeriesMetadataSize + types.VectorSampleSize - 1,
+			// The query fails after ComputeGroups charges pool slices (3*HP = 24 bytes) and sumGroupOverhead (168 bytes).
+			// Loading the first input series would then exceed the limit.
+			// The peak observed is the SeriesMetadata phase: 2 inner + 1 output SeriesMetadata + pool slices + sumGroupOverhead.
+			rangeQueryExpectedPeak:   3*types.SeriesMetadataSize + 2*uint64(labels.FromStrings(model.MetricNameLabel, "some_histogram", "idx", "1").ByteSize()) + 3*types.HistogramPointerSize + sumGroupOverhead + rangeQueryStatsMemoryConsumption,
+			rangeQueryLimit:          8*types.HPointSize + types.SeriesMetadataSize + 8*types.HistogramPointerSize + rangeQueryStatsMemoryConsumption - 1,
+			instantQueryExpectedPeak: 3*types.SeriesMetadataSize + 2*uint64(labels.FromStrings(model.MetricNameLabel, "some_histogram", "idx", "1").ByteSize()) + 3*types.HistogramPointerSize + sumGroupOverhead + instantQueryStatsMemoryConsumption,
+			instantQueryLimit:        types.HPointSize + types.SeriesMetadataSize + types.VectorSampleSize + instantQueryStatsMemoryConsumption - 1,
 		},
 	}
 
@@ -1918,7 +1838,7 @@ func TestEvaluator_ReportsMemoryConsumptionLimit(t *testing.T) {
 		reg,
 		spanStubs[0],
 		0,
-		61,
+		77,
 		"instant",
 		expr,
 		timestamp.Time(0),
@@ -3567,12 +3487,12 @@ func TestQueryStats(t *testing.T) {
 				require.Equal(t, testCase.expectedTotalSamples, prometheusSamplesStats.TotalSamples, "invalid test case: expected total samples does not match value from Prometheus' engine")
 			}
 
-			mimirSamplesStatsWithPlanning := runQueryAndGetSamplesStats(t, mimirEngine, testCase.expr, testCase.isInstantQuery)
-			if testCase.expectedTotalSamplesWithMQE != 0 {
-				require.Equal(t, testCase.expectedTotalSamplesWithMQE, mimirSamplesStatsWithPlanning.TotalSamples)
-			} else {
-				require.Equal(t, testCase.expectedTotalSamples, mimirSamplesStatsWithPlanning.TotalSamples)
+			if testCase.expectedTotalSamplesWithMQE == 0 {
+				testCase.expectedTotalSamplesWithMQE = testCase.expectedTotalSamples
 			}
+
+			mimirSamplesStats := runQueryAndGetSamplesStats(t, mimirEngine, testCase.expr, testCase.isInstantQuery)
+			require.Equal(t, testCase.expectedTotalSamplesWithMQE, mimirSamplesStats.TotalSamples)
 		})
 	}
 }
@@ -3906,12 +3826,12 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			prometheusSamplesStats := runQueryAndGetSamplesStats(t, prometheusEngine, tc.query, tc.start, tc.end, tc.interval)
 			require.Equal(t, tc.expectedTotalSamples, prometheusSamplesStats.TotalSamples, "invalid test case: expected total samples does not match value from Prometheus' engine")
 
-			mimirSamplesStatsWithPlanning := runQueryAndGetSamplesStats(t, mimirEngine, tc.query, tc.start, tc.end, tc.interval)
-			if tc.expectedTotalSamplesWithMQE != 0 {
-				require.Equal(t, tc.expectedTotalSamplesWithMQE, mimirSamplesStatsWithPlanning.TotalSamples)
-			} else {
-				require.Equal(t, tc.expectedTotalSamples, mimirSamplesStatsWithPlanning.TotalSamples)
+			if tc.expectedTotalSamplesWithMQE == 0 {
+				tc.expectedTotalSamplesWithMQE = tc.expectedTotalSamples
 			}
+
+			mimirSamplesStats := runQueryAndGetSamplesStats(t, mimirEngine, tc.query, tc.start, tc.end, tc.interval)
+			require.Equal(t, tc.expectedTotalSamplesWithMQE, mimirSamplesStats.TotalSamples)
 		})
 	}
 }

@@ -9,19 +9,17 @@ import (
 	"io"
 	"os"
 	"sync"
+
+	"github.com/grafana/mimir/pkg/util/filepool"
 )
 
 // readerBufferSize is the size of the buffer used for reading index-header files. This
 // value is arbitrary and will likely change in the future based on profiling results.
 const readerBufferSize = 4096
 
-type poolCloser interface {
-	put(*os.File) error
-}
-
-type fileReader struct {
+type FileReader struct {
 	file   *os.File
-	closer poolCloser
+	closer filepool.FilePoolCloser
 	buf    *bufio.Reader
 	base   int
 	length int
@@ -34,10 +32,10 @@ var bufferPool = sync.Pool{
 	},
 }
 
-// newFileReader creates a new fileReader for the segment of file beginning at base bytes,
+// NewFileReader creates a new FileReader for the segment of file beginning at base bytes,
 // extending length bytes, and closing the handle with closer.
-func newFileReader(file *os.File, base, length int, closer poolCloser) (*fileReader, error) {
-	f := &fileReader{
+func NewFileReader(file *os.File, base, length int, closer filepool.FilePoolCloser) (*FileReader, error) {
+	f := &FileReader{
 		file:   file,
 		closer: closer,
 		buf:    bufferPool.Get().(*bufio.Reader),
@@ -53,11 +51,11 @@ func newFileReader(file *os.File, base, length int, closer poolCloser) (*fileRea
 	return f, nil
 }
 
-func (f *fileReader) Reset() error {
+func (f *FileReader) Reset() error {
 	return f.ResetAt(0)
 }
 
-func (f *fileReader) ResetAt(off int) error {
+func (f *FileReader) ResetAt(off int) error {
 	if off > f.length {
 		return ErrInvalidSize
 	}
@@ -73,7 +71,7 @@ func (f *fileReader) ResetAt(off int) error {
 	return nil
 }
 
-func (f *fileReader) Skip(l int) error {
+func (f *FileReader) Skip(l int) error {
 	if l > f.Len() {
 		return ErrInvalidSize
 	}
@@ -86,7 +84,7 @@ func (f *fileReader) Skip(l int) error {
 	return err
 }
 
-func (f *fileReader) Peek(n int) ([]byte, error) {
+func (f *FileReader) Peek(n int) ([]byte, error) {
 	b, err := f.buf.Peek(n)
 	// bufio.Reader still returns what it Read when it hits EOF and callers
 	// expect to be able to peek past the end of a file.
@@ -101,7 +99,7 @@ func (f *fileReader) Peek(n int) ([]byte, error) {
 	return nil, nil
 }
 
-func (f *fileReader) Read(n int) ([]byte, error) {
+func (f *FileReader) Read(n int) ([]byte, error) {
 	b := make([]byte, n)
 
 	err := f.ReadInto(b)
@@ -112,7 +110,7 @@ func (f *fileReader) Read(n int) ([]byte, error) {
 	return b, nil
 }
 
-func (f *fileReader) ReadInto(b []byte) error {
+func (f *FileReader) ReadInto(b []byte) error {
 	r, err := io.ReadFull(f.buf, b)
 	if r > 0 {
 		f.off += r
@@ -127,27 +125,27 @@ func (f *fileReader) ReadInto(b []byte) error {
 	return nil
 }
 
-func (f *fileReader) Offset() int {
+func (f *FileReader) Offset() int {
 	return f.off
 }
 
-func (f *fileReader) Len() int {
+func (f *FileReader) Len() int {
 	return f.length - f.off
 }
 
-func (f *fileReader) Size() int {
+func (f *FileReader) Size() int {
 	return f.buf.Size()
 }
 
-func (f *fileReader) Buffered() int {
+func (f *FileReader) Buffered() int {
 	return f.buf.Buffered()
 }
 
-// Close cleans up the underlying resources used by this fileReader.
-func (f *fileReader) Close() error {
+// Close cleans up the underlying resources used by this FileReader.
+func (f *FileReader) Close() error {
 	// Note that we don't do anything to clean up the buffer before returning it to the pool here:
 	// we reset the buffer when we retrieve it from the pool instead.
 	bufferPool.Put(f.buf)
 	// File handles are pooled, so we don't actually close the handle here, just return it.
-	return f.closer.put(f.file)
+	return f.closer.Put(f.file)
 }

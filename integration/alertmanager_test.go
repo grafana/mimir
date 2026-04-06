@@ -2,7 +2,6 @@
 // Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/integration/alertmanager_test.go
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
-//go:build requires_docker
 
 package integration
 
@@ -466,9 +465,7 @@ func TestAlertmanagerSharding(t *testing.T) {
 			require.NoError(t, err)
 			defer s.Close()
 
-			flags := mergeFlags(AlertmanagerFlags(),
-				AlertmanagerS3Flags(),
-				AlertmanagerGrafanaCompatibilityFlags())
+			flags := mergeFlags(AlertmanagerFlags(), AlertmanagerS3Flags())
 
 			// Start dependencies.
 			consul := e2edb.NewConsul()

@@ -55,6 +55,10 @@ type Concat struct {
 	nextOperatorIndex int
 }
 
+func (c *Concat) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return types.CombineStats(ctx, c.Inner...)
+}
+
 func NewConcat(inner []types.InstantVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*Concat, error) {
 	if len(inner) == 0 {
 		return nil, errors.New("no inner operators passed to NewConcat")
