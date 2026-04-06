@@ -277,7 +277,10 @@ local filename = 'mimir-writes.json';
               expr: |||
                 sum(rate(cortex_distributor_async_usage_tracker_calls_total{%s}[$__rate_interval]))
                 -
-                sum(rate(cortex_distributor_async_usage_tracker_calls_with_rejected_series_total{%s}[$__rate_interval]))
+                (
+                  sum(rate(cortex_distributor_async_usage_tracker_calls_with_rejected_series_total{%s}[$__rate_interval]))
+                  or vector(0)
+                )
               ||| % [asyncJobMatcher, asyncJobMatcher],
               format: 'time_series',
               legendFormat: 'Async',
@@ -293,6 +296,13 @@ local filename = 'mimir-writes.json';
             },
           ],
         } +
+        $.aliasColors({
+          ['Sync ' + name]: $.qpsPanelColors[name]
+          for name in std.objectFields($.qpsPanelColors)
+        } + {
+          Async: '#2A66CF',
+          'Async (rejected but ingested)': '#9E44C1',
+        }) +
         $.panelDescription(
           title,
           |||
