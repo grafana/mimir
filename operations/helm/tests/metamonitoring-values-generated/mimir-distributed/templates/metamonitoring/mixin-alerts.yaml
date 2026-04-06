@@ -78,11 +78,11 @@ spec:
             expr: |
               count without(sha256) (
                   count by (cluster, namespace, job, sha256) (cortex_runtime_config_hash)
-                  unless
+                  unless on (cluster, namespace, sha256)
                   # Don't include config hashes that are still being rolled out.
                   # Kubernetes configmap propagation can be slow,
                   # and in large cells we may deploy a new configmap when the previous one isn't still propagated everywhere.
-                  (changes((count by (cluster, namespace, job, sha256) (cortex_runtime_config_hash))[10m:]) > 0)
+                  (changes((count by (cluster, namespace, sha256) (cortex_runtime_config_hash))[10m:]) > 0)
               )  > 1
             for: 1h
             labels:
