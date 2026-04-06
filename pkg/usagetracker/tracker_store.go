@@ -201,7 +201,7 @@ func (t *trackerStore) getOrCreateTenant(tenantID string) *trackedTenant {
 	}
 	capacity := int(limit / shards)
 	if limit == noLimit || limit == 0 {
-		capacity = 512 // let's be modest.
+		capacity = 8192
 	} else if capacity > math.MaxUint32 {
 		capacity = math.MaxUint32
 	}

@@ -246,21 +246,94 @@ func (m *Map) nextSize(limit uint64) uint32 {
 	return numGroups(uint32(target))
 }
 
+// rehashEntry holds a key-value pair extracted during compaction rehash.
+type rehashEntry struct {
+	key  uint64
+	data xorData
+}
+
+var rehashBufPool = &sync.Pool{New: func() any { return &[]rehashEntry{} }}
+
 func (m *Map) rehash(n uint32) {
-	indices, ks, datas := m.index, m.keys, m.data
-	m.index = make([]index, n)
-	m.keys = make([]keys, n)
-	m.data = make([]data, n)
-	m.limit = n * maxAvgGroupLoad
-	m.resident, m.dead = 0, 0
-	for g := range indices {
-		for s := range indices[g] {
-			c := indices[g][s]
-			if c != empty && c != tombstone {
-				m.load(ks[g][s], datas[g][s])
+	// Use the compaction path (reuses existing backing arrays) when the new size fits
+	// within the current allocation AND has enough capacity for all alive entries.
+	alive := m.resident - m.dead
+	if n <= uint32(len(m.index)) && n >= numGroups(alive) {
+		m.rehashCompact(n)
+	} else {
+		m.rehashGrow(n)
+	}
+}
+
+// rehashCompact handles the case where the new size is <= the old size (compaction after cleanup).
+// It collects alive entries into a temporary buffer, clears and reslices the existing backing arrays,
+// then re-inserts. This avoids allocating new arrays entirely, eliminating the 2x peak memory.
+func (m *Map) rehashCompact(n uint32) {
+	alive := int(m.resident - m.dead)
+
+	// Collect alive entries into a pooled temporary buffer.
+	// At 9 bytes/entry this is much smaller than the group arrays (80 bytes/group at load factor 4 = 20 bytes/entry).
+	bufPtr := rehashBufPool.Get().(*[]rehashEntry)
+	buf := *bufPtr
+	if cap(buf) < alive {
+		buf = make([]rehashEntry, 0, alive)
+	}
+	buf = buf[:0]
+	for g := range m.index {
+		for s := range m.index[g] {
+			if c := m.index[g][s]; c != empty && c != tombstone {
+				buf = append(buf, rehashEntry{key: m.keys[g][s], data: m.data[g][s]})
 			}
 		}
 	}
+
+	// Clear and reslice existing arrays to new size.
+	clear(m.index[:n])
+	clear(m.keys[:n])
+	clear(m.data[:n])
+	m.index = m.index[:n]
+	m.keys = m.keys[:n]
+	m.data = m.data[:n]
+	m.limit = n * maxAvgGroupLoad
+	m.resident, m.dead = 0, 0
+
+	// Re-insert from the temporary buffer.
+	for _, e := range buf {
+		m.load(e.key, e.data)
+	}
+
+	// Return buffer to pool.
+	*bufPtr = buf
+	rehashBufPool.Put(bufPtr)
+}
+
+// rehashGrow handles the case where the new size is larger than the old size.
+// It allocates new arrays (trying the pool first), copies entries, then returns old arrays to the pool.
+func (m *Map) rehashGrow(n uint32) {
+	oldIndex, oldKeys, oldData := m.index, m.keys, m.data
+
+	var indexPtr *[]index
+	var keysPtr *[]keys
+	var dataPtr *[]data
+	indexPtr, m.index = getRehashSlice[index](&rehashIndexPool, n)
+	keysPtr, m.keys = getRehashSlice[keys](&rehashKeysPool, n)
+	dataPtr, m.data = getRehashSlice[data](&rehashDataPool, n)
+	m.limit = n * maxAvgGroupLoad
+	m.resident, m.dead = 0, 0
+	for g := range oldIndex {
+		for s := range oldIndex[g] {
+			c := oldIndex[g][s]
+			if c != empty && c != tombstone {
+				m.load(oldKeys[g][s], oldData[g][s])
+			}
+		}
+	}
+
+	// Swap new slices into the pool handles so the old arrays can be reused by other shards.
+	// The new arrays stay live via m.index/m.keys/m.data.
+	putRehashSlice(&rehashIndexPool, indexPtr, oldIndex)
+	putRehashSlice(&rehashKeysPool, keysPtr, oldKeys)
+	putRehashSlice(&rehashDataPool, dataPtr, oldData)
 }
 
 // numGroups returns the minimum number of groups needed to store |n| elems.
@@ -293,7 +366,36 @@ func fastModN(x, n uint32) uint32 {
 var (
 	keysPool = &sync.Pool{New: func() any { return new([]keys) }}
 	dataPool = &sync.Pool{New: func() any { return new([]data) }}
+
+	// Pools for rehash array reuse across shards.
+	rehashIndexPool sync.Pool
+	rehashKeysPool  sync.Pool
+	rehashDataPool  sync.Pool
 )
+
+// getRehashSlice gets a *[]T handle from the pool (or allocates one) and ensures the slice has capacity for n elements.
+// The caller must pass the returned *[]T back to putRehashSlice.
+func getRehashSlice[T index | keys | data](pool *sync.Pool, n uint32) (*[]T, []T) {
+	var sp *[]T
+	if v := pool.Get(); v != nil {
+		sp = v.(*[]T)
+		if s := *sp; uint32(cap(s)) >= n {
+			s = s[:n]
+			clear(s)
+			return sp, s
+		}
+	} else {
+		sp = new([]T)
+	}
+	s := make([]T, n)
+	return sp, s
+}
+
+// putRehashSlice writes the slice back into the pool handle and returns it to the pool.
+func putRehashSlice[T index | keys | data](pool *sync.Pool, sp *[]T, s []T) {
+	*sp = s
+	pool.Put(sp)
+}
 
 func pooledClone[T any](input []T, pool *sync.Pool) *[]T {
 	pooled := pool.Get().(*[]T)

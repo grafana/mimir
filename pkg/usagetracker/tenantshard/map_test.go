@@ -172,6 +172,112 @@ func TestLimitAwareGrowth(t *testing.T) {
 	require.Equal(t, expected, got)
 }
 
+func TestRehash(t *testing.T) {
+	t.Run("compaction", func(t *testing.T) {
+		// Build a map, add entries, kill some via Cleanup, then verify compaction produces identical contents.
+		m := New(1000)
+		r := rand.New(rand.NewSource(42))
+		total := atomic.NewUint64(0)
+
+		for i := range 1000 {
+			key := r.Uint64()
+			val := clock.Minutes(i%200 + 1) // avoid 0xff
+			if val == 0xff {
+				val = 1
+			}
+			m.Put(key, val, total, nil, false)
+		}
+
+		// Kill entries with timestamp <= 100 (about half).
+		removed := m.Cleanup(100, nil)
+		require.True(t, removed > 0, "expected some entries to be removed")
+		require.True(t, m.dead > 0, "expected dead entries after cleanup")
+
+		// Snapshot contents before explicit compaction rehash.
+		beforeItems := map[uint64]clock.Minutes{}
+		l, items := m.Items()
+		for key, val := range items {
+			beforeItems[key] = val
+		}
+		require.Len(t, beforeItems, l)
+
+		// Force a compaction rehash to a smaller size.
+		alive := m.resident - m.dead
+		m.rehash(numGroups(alive))
+
+		// Verify contents are identical.
+		require.Zero(t, m.dead, "compaction should remove all dead entries")
+		afterItems := map[uint64]clock.Minutes{}
+		l2, items2 := m.Items()
+		for key, val := range items2 {
+			afterItems[key] = val
+		}
+		require.Len(t, afterItems, l2)
+		require.Equal(t, beforeItems, afterItems)
+	})
+
+	t.Run("growth pool reuse", func(t *testing.T) {
+		// Verify that growing rehash still produces correct results when pool is active.
+		m := New(100)
+		total := atomic.NewUint64(0)
+		stored := map[uint64]clock.Minutes{}
+
+		for i := range uint64(500) {
+			val := clock.Minutes(i%200 + 1)
+			if val == 0xff {
+				val = 1
+			}
+			m.Put(i, val, total, nil, false)
+			stored[i] = val
+		}
+
+		// Force multiple grow rehashes to exercise pool paths.
+		for _, newSize := range []uint32{600, 800, 1200} {
+			m.rehash(numGroups(newSize))
+		}
+
+		got := map[uint64]clock.Minutes{}
+		_, items := m.Items()
+		for key, val := range items {
+			got[key] = val
+		}
+		require.Equal(t, stored, got)
+	})
+}
+
+func BenchmarkMapRehashAllocs(b *testing.B) {
+	const size = 1e6
+
+	b.Run("compaction", func(b *testing.B) {
+		// Kill ~half the entries, then benchmark compaction rehash.
+		for range b.N {
+			b.StopTimer()
+			mc := New(uint32(size))
+			r := rand.New(rand.NewSource(1))
+			for i := range int(size) {
+				mc.Put(r.Uint64(), clock.Minutes(i%128), nil, nil, false)
+			}
+			mc.Cleanup(64, nil)
+			alive := mc.resident - mc.dead
+			b.StartTimer()
+			mc.rehash(numGroups(alive))
+		}
+	})
+
+	b.Run("growth", func(b *testing.B) {
+		for range b.N {
+			b.StopTimer()
+			mg := New(uint32(size))
+			r := rand.New(rand.NewSource(1))
+			for i := range int(size) {
+				mg.Put(r.Uint64(), clock.Minutes(i%128), nil, nil, false)
+			}
+			b.StartTimer()
+			mg.rehash(numGroups(uint32(size) * 5 / 4))
+		}
+	})
+}
+
 func BenchmarkMapRehash(b *testing.B) {
 	for _, size := range []uint32{1e6, 10e6} {
 		b.Run(fmt.Sprintf("size=%d", size), func(b *testing.B) {
