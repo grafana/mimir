@@ -150,6 +150,7 @@ func generateInfoMatchers(innerMetadata []types.SeriesMetadata) (types.Matchers,
 			for value := range values {
 				valueSlice = append(valueSlice, regexp.QuoteMeta(value))
 			}
+			slices.Sort(valueSlice)
 			regexPattern := "(" + strings.Join(valueSlice, "|") + ")"
 			matchers = append(matchers, types.Matcher{
 				Type:  labels.MatchRegexp,
