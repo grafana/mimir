@@ -30,8 +30,9 @@ func BenchmarkLookupSymbol(b *testing.B) {
 	bucketDir := b.TempDir()
 	bkt, err := filesystem.NewBucket(filepath.Join(bucketDir, "bkt"))
 	require.NoError(b, err)
+	instrBkt := objstore.WithNoopInstr(bkt)
 	b.Cleanup(func() {
-		require.NoError(b, bkt.Close())
+		require.NoError(b, instrBkt.Close())
 	})
 
 	// TODO: are the number of name and value symbols representative?
@@ -50,14 +51,14 @@ func BenchmarkLookupSymbol(b *testing.B) {
 		// TODO: are these sensible value for name lookup percentage?
 		for _, percentageNameLookups := range []int{20, 40, 50, 60, 80} {
 			b.Run(fmt.Sprintf("NameLookups%v%%-Parallelism%v", percentageNameLookups, parallelism), func(b *testing.B) {
-				benchmarkLookupSymbol(ctx, b, bucketDir, idIndexV2, parallelism, percentageNameLookups, nameSymbols, valueSymbols)
+				benchmarkLookupSymbol(ctx, b, instrBkt, bucketDir, idIndexV2, parallelism, percentageNameLookups, nameSymbols, valueSymbols)
 			})
 		}
 	}
 }
 
-func benchmarkLookupSymbol(ctx context.Context, b *testing.B, bucketDir string, id ulid.ULID, parallelism int, percentageNameLookups int, nameSymbols []string, valueSymbols []string) {
-	binaryReader, err := NewStreamBinaryReader(ctx, id, nil, bucketDir, Config{}, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+func benchmarkLookupSymbol(ctx context.Context, b *testing.B, bkt objstore.InstrumentedBucketReader, bucketDir string, id ulid.ULID, parallelism int, percentageNameLookups int, nameSymbols []string, valueSymbols []string) {
+	binaryReader, err := NewStreamBinaryReader(ctx, id, bkt, bucketDir, Config{}, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 	require.NoError(b, err)
 	b.Cleanup(func() { require.NoError(b, binaryReader.Close()) })
 
