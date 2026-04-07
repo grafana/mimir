@@ -178,7 +178,6 @@ func (j *TrackedCompactionJob) Order() uint32 {
 	return j.order
 }
 
-
 type TrackedPlanJob struct {
 	baseTrackedJob
 }
