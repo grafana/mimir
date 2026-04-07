@@ -40,8 +40,8 @@ type JobTracker struct {
 	metrics                        *trackerMetrics
 
 	mtx                    sync.Mutex
-	pending                *list.List
-	active                 *list.List               // ordered by oldest lease first
+	pending                *jobList
+	active                 *jobList                 // ordered by oldest lease first
 	isPlanJobLeased        bool                     // used to decide whether to retain completed compaction jobs
 	incompleteJobs         map[string]*list.Element // all incomplete jobs will be in this map, element is in one and only one of pending or active
 	completePlanTime       time.Time                // time of the last completed plan job. Zero time if planning has never completed or a plan job is currently incomplete (pending or active).
@@ -58,8 +58,8 @@ func NewJobTracker(jobPersister JobPersister, tenant string, clock clock.Clock, 
 		repeatedFailureReportThreshold: repeatedFailureReportThreshold,
 		metrics:                        metrics,
 		mtx:                            sync.Mutex{},
-		pending:                        list.New(),
-		active:                         list.New(),
+		pending:                        newJobList(metrics.pendingJobs),
+		active:                         newJobList(metrics.activeJobs),
 		isPlanJobLeased:                false,
 		incompleteJobs:                 make(map[string]*list.Element),
 		completeCompactionJobs:         make([]*TrackedCompactionJob, 0),
@@ -70,6 +70,8 @@ func NewJobTracker(jobPersister JobPersister, tenant string, clock clock.Clock, 
 func (jt *JobTracker) recoverFrom(compactionJobs []*TrackedCompactionJob, planJob *TrackedPlanJob) {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
+	defer jt.pending.UpdateMetrics()
+	defer jt.active.UpdateMetrics()
 
 	leased := make([]TrackedJob, 0, len(compactionJobs)+1)
 	pending := make([]TrackedJob, 0, len(compactionJobs)+1)
@@ -109,14 +111,14 @@ func (jt *JobTracker) recoverFrom(compactionJobs []*TrackedCompactionJob, planJo
 		jt.incompleteJobs[job.ID()] = jt.active.PushBack(job)
 	}
 
-	jt.metrics.pendingJobs.Set(float64(jt.pending.Len()))
-	jt.metrics.activeJobs.Set(float64(jt.active.Len()))
 }
 
 // Lease tries to find a pending job, returning a non-nil response if one was found.
 func (jt *JobTracker) Lease() (response *compactorschedulerpb.LeaseJobResponse, becameEmpty bool, err error) {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
+	defer jt.pending.UpdateMetrics()
+	defer jt.active.UpdateMetrics()
 
 	e := jt.pending.Front()
 	if e == nil {
@@ -141,9 +143,6 @@ func (jt *JobTracker) Lease() (response *compactorschedulerpb.LeaseJobResponse, 
 	}
 	jt.incompleteJobs[id] = jt.active.PushBack(jj)
 
-	jt.metrics.pendingJobs.Set(float64(jt.pending.Len()))
-	jt.metrics.activeJobs.Set(float64(jt.active.Len()))
-
 	return jj.ToLeaseResponse(jt.tenant), jt.isPendingEmpty(), nil
 }
 
@@ -155,6 +154,8 @@ func (jt *JobTracker) isPendingEmpty() bool {
 func (jt *JobTracker) Remove(id string, epoch int64, complete bool) (removed bool, becameEmpty bool, err error) {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
+	defer jt.pending.UpdateMetrics()
+	defer jt.active.UpdateMetrics()
 
 	e, ok := jt.incompleteJobs[id]
 	if !ok {
@@ -195,12 +196,10 @@ func (jt *JobTracker) Remove(id string, epoch int64, complete bool) (removed boo
 	delete(jt.incompleteJobs, id)
 	if j.IsLeased() {
 		jt.active.Remove(e)
-		jt.metrics.activeJobs.Set(float64(jt.active.Len()))
 		return true, false, nil
 	}
 
 	jt.pending.Remove(e)
-	jt.metrics.pendingJobs.Set(float64(jt.pending.Len()))
 	return true, jt.isPendingEmpty(), nil
 }
 
@@ -216,6 +215,8 @@ func (jt *JobTracker) Remove(id string, epoch int64, complete bool) (removed boo
 func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpiration, plan bool, planningInterval, compactionWaitPeriod time.Duration) (bool, error) {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
+	defer jt.pending.UpdateMetrics()
+	defer jt.active.UpdateMetrics()
 
 	now := jt.clock.Now()
 
@@ -270,9 +271,6 @@ func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpir
 		// Drop the previous completion time since there is now a pending job that overwrote it
 		jt.completePlanTime = time.Time{}
 	}
-
-	jt.metrics.activeJobs.Set(float64(jt.active.Len()))
-	jt.metrics.pendingJobs.Set(float64(jt.pending.Len()))
 
 	return wasEmpty && !jt.isPendingEmpty(), nil
 }
@@ -358,6 +356,8 @@ func (jt *JobTracker) RenewLease(id string, epoch int64) bool {
 func (jt *JobTracker) CancelLease(id string, epoch int64) (canceled bool, becamePending bool, err error) {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
+	defer jt.pending.UpdateMetrics()
+	defer jt.active.UpdateMetrics()
 
 	e, ok := jt.incompleteJobs[id]
 	if !ok {
@@ -389,7 +389,6 @@ func (jt *JobTracker) CancelLease(id string, epoch int64) (canceled bool, became
 		}
 		jt.active.Remove(jt.incompleteJobs[jj.ID()])
 		jt.incompleteJobs[jj.ID()] = jt.pending.PushFront(jj)
-		jt.metrics.pendingJobs.Set(float64(jt.pending.Len()))
 
 	} else {
 		err := jt.persister.DeleteJob(j)
@@ -400,8 +399,6 @@ func (jt *JobTracker) CancelLease(id string, epoch int64) (canceled bool, became
 		delete(jt.incompleteJobs, j.ID())
 	}
 	jt.trackFailure(j)
-
-	jt.metrics.activeJobs.Set(float64(jt.active.Len()))
 
 	if id == planJobId {
 		jt.stopTrackingCompleteCompactionJobs()
@@ -429,6 +426,8 @@ func (jt *JobTracker) canRetry(j TrackedJob) bool {
 func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, planJobEpoch int64) (accepted int, found bool, transition rotationTransition, err error) {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
+	defer jt.pending.UpdateMetrics()
+	defer jt.active.UpdateMetrics()
 
 	planJob, match := jt.checkPlanJobEpoch(planJobEpoch)
 	if !match {
@@ -514,7 +513,7 @@ func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, planJobE
 	}
 
 	// Recreate the pending list in order
-	jt.pending = list.New()
+	jt.pending.Reset()
 	for _, j := range acceptedJobs {
 		jt.incompleteJobs[j.ID()] = jt.pending.PushBack(j)
 	}
@@ -525,9 +524,6 @@ func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, planJobE
 	e := jt.incompleteJobs[planJobId]
 	jt.active.Remove(e)
 	delete(jt.incompleteJobs, planJobId)
-	jt.metrics.activeJobs.Set(float64(jt.active.Len()))
-
-	jt.metrics.pendingJobs.Set(float64(jt.pending.Len()))
 	accepted = len(acceptedJobs)
 
 	// Determine rotation transition

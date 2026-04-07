@@ -3,7 +3,6 @@
 package scheduler
 
 import (
-	"container/list"
 	"errors"
 	"testing"
 	"time"
@@ -14,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func jobIDs(l *list.List) []string {
+func jobIDs(l *jobList) []string {
 	var ids []string
 	for e := l.Front(); e != nil; e = e.Next() {
 		ids = append(ids, e.Value.(TrackedJob).ID())
