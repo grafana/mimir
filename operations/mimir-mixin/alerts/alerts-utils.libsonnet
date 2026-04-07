@@ -52,7 +52,9 @@
     ],
 
   alertRangeInterval(multiple)::
-    ($._config.base_alerts_range_interval_minutes * multiple) + 'm',
+    local minutes = $._config.base_alerts_range_interval_minutes * multiple;
+    if minutes < 1 then std.ceil(minutes * 60) + 's'
+    else minutes + 'm',
 
   histogramLabels(labels, histogram_type, nhcb=false)::
     assert histogram_type == 'native' || histogram_type == 'classic';
