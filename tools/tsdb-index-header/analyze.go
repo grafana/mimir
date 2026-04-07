@@ -75,12 +75,12 @@ type MetricCount struct {
 
 // ChunkStats holds statistics about chunk distribution across series.
 type ChunkStats struct {
-	TotalSeries    int64
-	TotalChunks    int64
-	MinChunks      int
-	MaxChunks      int
-	ChunkHistogram map[string]int     // bucket -> count of series
-	TopSeries      []SeriesChunkCount // series with the most chunks
+	TotalSeries              int64
+	TotalChunks              int64
+	MinChunks                int
+	MaxChunks                int
+	ChunksPerSeriesHistogram map[string]int     // chunks-per-series bucket -> number of series in that bucket
+	TopSeries                []SeriesChunkCount // series with the most chunks
 }
 
 // SeriesChunkCount holds a series and its chunk count.
@@ -99,15 +99,9 @@ func analyzeChunks(ctx context.Context, analyzer IndexAnalyzer) *ChunkStats {
 	}
 
 	stats := &ChunkStats{
-		MinChunks:      math.MaxInt,
-		ChunkHistogram: make(map[string]int),
+		MinChunks:                math.MaxInt,
+		ChunksPerSeriesHistogram: make(map[string]int),
 	}
-
-	type seriesWithCount struct {
-		labels     string
-		chunkCount int
-	}
-	var topSeries []seriesWithCount
 
 	for iter.Next() {
 		count := iter.ChunkCount()
@@ -122,16 +116,16 @@ func analyzeChunks(ctx context.Context, analyzer IndexAnalyzer) *ChunkStats {
 		}
 
 		bucket := getChunkCountBucketName(count)
-		stats.ChunkHistogram[bucket]++
+		stats.ChunksPerSeriesHistogram[bucket]++
 
 		// Track top N series by chunk count.
-		if len(topSeries) < topNItems || count > topSeries[len(topSeries)-1].chunkCount {
-			topSeries = append(topSeries, seriesWithCount{labels: iter.Labels().String(), chunkCount: count})
-			sort.Slice(topSeries, func(i, j int) bool {
-				return topSeries[i].chunkCount > topSeries[j].chunkCount
+		if len(stats.TopSeries) < topNItems || count > stats.TopSeries[len(stats.TopSeries)-1].ChunkCount {
+			stats.TopSeries = append(stats.TopSeries, SeriesChunkCount{Labels: iter.Labels().String(), ChunkCount: count})
+			sort.Slice(stats.TopSeries, func(i, j int) bool {
+				return stats.TopSeries[i].ChunkCount > stats.TopSeries[j].ChunkCount
 			})
-			if len(topSeries) > topNItems {
-				topSeries = topSeries[:topNItems]
+			if len(stats.TopSeries) > topNItems {
+				stats.TopSeries = stats.TopSeries[:topNItems]
 			}
 		}
 	}
@@ -142,10 +136,6 @@ func analyzeChunks(ctx context.Context, analyzer IndexAnalyzer) *ChunkStats {
 
 	if stats.TotalSeries == 0 {
 		stats.MinChunks = 0
-	}
-
-	for _, s := range topSeries {
-		stats.TopSeries = append(stats.TopSeries, SeriesChunkCount{Labels: s.labels, ChunkCount: s.chunkCount})
 	}
 
 	return stats

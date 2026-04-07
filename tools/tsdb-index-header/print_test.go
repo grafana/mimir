@@ -178,7 +178,7 @@ func TestPrintChunkStats(t *testing.T) {
 		TotalChunks: 5000,
 		MinChunks:   1,
 		MaxChunks:   120,
-		ChunkHistogram: map[string]int{
+		ChunksPerSeriesHistogram: map[string]int{
 			"1":       200,
 			"2-10":    500,
 			"11-50":   250,

@@ -165,7 +165,7 @@ func printChunkStats(_ context.Context, w io.Writer, stats *ChunkStats) {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Chunks per series distribution:")
 	for _, bucket := range chunkCountBucketNames() {
-		count := stats.ChunkHistogram[bucket]
+		count := stats.ChunksPerSeriesHistogram[bucket]
 		if count > 0 {
 			pct := float64(count) / float64(stats.TotalSeries) * 100
 			fmt.Fprintf(w, "  %9s: %10d series (%5.2f%%)\n", bucket, count, pct)
