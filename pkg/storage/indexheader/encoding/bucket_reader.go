@@ -3,28 +3,28 @@
 package encoding
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"sync"
 
 	"github.com/thanos-io/objstore"
 )
 
-// BucketReader implements BufReader backed by an objstore.InstrumentedBucketReader.
-// The in-memory buffer must be explicitly extended using BufferTo before reading.
 type BucketReader struct {
 	ctx    context.Context
 	bkt    objstore.InstrumentedBucketReader
 	name   string
-	base   int64
+	base   int
 	length int
 	off    int
-	buf    []byte
 }
 
-// NewBucketReader creates a new BucketReader for the segment of the named object
-// beginning at base bytes and extending length bytes.
-func NewBucketReader(ctx context.Context, bkt objstore.InstrumentedBucketReader, name string, base int64, length int) *BucketReader {
+func NewBucketReader(
+	ctx context.Context, bkt objstore.InstrumentedBucketReader, name string, base int, length int,
+) *BucketReader {
 	return &BucketReader{
 		ctx:    ctx,
 		bkt:    bkt,
@@ -34,108 +34,174 @@ func NewBucketReader(ctx context.Context, bkt objstore.InstrumentedBucketReader,
 	}
 }
 
-// BufferTo extends the in-memory buffer to cover bytes [base, base+offset) by issuing
-// a GetRange call for any bytes not yet buffered. It returns an error if offset is
-// before the current cursor position.
-func (r *BucketReader) BufferTo(offset int) error {
-	if offset < r.off {
-		return fmt.Errorf("cannot buffer to offset %d before current offset %d", offset, r.off)
+func (r *BucketReader) Read(p []byte) (n int, err error) {
+	if len(p) == 0 {
+		return 0, nil
 	}
-	bufferedEnd := len(r.buf)
-	if offset <= bufferedEnd {
-		return nil
+	if r.off >= r.length {
+		return 0, io.EOF
 	}
-	fetchLen := offset - bufferedEnd
-	rc, err := r.bkt.GetRange(r.ctx, r.name, r.base+int64(bufferedEnd), int64(fetchLen))
+	toRead := len(p)
+	remaining := r.length - r.off
+	if toRead > remaining {
+		toRead = remaining
+	}
+	rc, err := r.bkt.GetRange(r.ctx, r.name, int64(r.base+r.off), int64(toRead))
+	if err != nil {
+		return 0, err
+	}
+	defer rc.Close()
+	n, err = io.ReadFull(rc, p[:toRead])
+	r.off += n
+	if errors.Is(err, io.ErrUnexpectedEOF) {
+		err = io.EOF
+	}
+	return n, err
+}
+
+func (r *BucketReader) Seek(offset int64, whence int) (int64, error) {
+	if whence != io.SeekStart {
+		return 0, fmt.Errorf("invalid Seek whence: %d", whence)
+	}
+	if offset < 0 {
+		return 0, fmt.Errorf("seek to negative offset %d", offset)
+	}
+	r.off = int(offset)
+	return offset, nil
+}
+
+var bucketBufPool = sync.Pool{
+	New: func() any {
+		// 1MiB buffer chosen as starting point;
+		// we could make this configurable and benchmark.
+		return bufio.NewReaderSize(nil, 1<<20)
+	},
+}
+
+type BucketBufReader struct {
+	ctx    context.Context
+	bkt    objstore.InstrumentedBucketReader
+	name   string
+	base   int
+	length int
+	off    int
+	r      *BucketReader
+	buf    *bufio.Reader
+}
+
+func NewBucketBufReader(
+	ctx context.Context, bkt objstore.InstrumentedBucketReader, name string, base int, length int,
+) *BucketBufReader {
+	reader := NewBucketReader(ctx, bkt, name, base, length)
+	bufioReader := bucketBufPool.Get().(*bufio.Reader)
+	bufioReader.Reset(reader)
+
+	return &BucketBufReader{
+		ctx:    ctx,
+		bkt:    bkt,
+		name:   name,
+		base:   base,
+		length: length,
+		r:      reader,
+		buf:    bufioReader,
+	}
+}
+
+func (bbr *BucketBufReader) Reset() error {
+	return bbr.ResetAt(0)
+}
+
+func (bbr *BucketBufReader) ResetAt(off int) error {
+	if off > bbr.length {
+		return ErrInvalidSize
+	}
+
+	_, err := bbr.r.Seek(int64(bbr.base+off), io.SeekStart)
 	if err != nil {
 		return err
 	}
-	defer rc.Close()
-	newData := make([]byte, fetchLen)
-	if _, err = io.ReadFull(rc, newData); err != nil {
-		return err
-	}
-	r.buf = append(r.buf, newData...)
+
+	bbr.buf.Reset(bbr.r)
+	bbr.off = off
+
 	return nil
 }
 
-func (r *BucketReader) Reset() error {
-	return r.ResetAt(0)
-}
-
-func (r *BucketReader) ResetAt(off int) error {
-	if off > r.length {
+func (bbr *BucketBufReader) Skip(l int) error {
+	if l > bbr.Len() {
 		return ErrInvalidSize
 	}
-	r.off = off
-	return nil
+
+	n, err := bbr.buf.Discard(l)
+	if n > 0 {
+		bbr.off += n
+	}
+
+	return err
 }
 
-func (r *BucketReader) Skip(l int) error {
-	if l > r.Len() {
-		return ErrInvalidSize
-	}
-	r.off += l
-	return nil
-}
-
-func (r *BucketReader) Peek(n int) ([]byte, error) {
-	end := r.off + n
-	bufferedEnd := len(r.buf)
-	if end > bufferedEnd {
-		end = bufferedEnd
-	}
-	if end <= r.off {
-		return nil, nil
-	}
-	return r.buf[r.off:end], nil
-}
-
-func (r *BucketReader) Read(n int) ([]byte, error) {
-	b := make([]byte, n)
-	if err := r.ReadInto(b); err != nil {
+func (bbr *BucketBufReader) Peek(n int) ([]byte, error) {
+	b, err := bbr.buf.Peek(n)
+	// bufio.Reader still returns what it Read when it hits EOF and callers
+	// expect to be able to peek past the end of a file.
+	if err != nil && !errors.Is(err, io.EOF) {
 		return nil, err
 	}
+
+	if len(b) > 0 {
+		return b, nil
+	}
+
+	return nil, nil
+}
+
+func (bbr *BucketBufReader) Read(n int) ([]byte, error) {
+	b := make([]byte, n)
+
+	err := bbr.ReadInto(b)
+	if err != nil {
+		return nil, err
+	}
+
 	return b, nil
 }
 
-func (r *BucketReader) ReadInto(b []byte) error {
-	n := len(b)
-	end := r.off + n
-	if end > r.length {
-		r.off = r.length
-		return fmt.Errorf("%w reading %d bytes", ErrInvalidSize, n)
+func (bbr *BucketBufReader) ReadInto(b []byte) error {
+	n, err := io.ReadFull(bbr.buf, b)
+	if n > 0 {
+		bbr.off += n
 	}
-	if end > len(r.buf) {
-		r.off = r.length
-		return fmt.Errorf("%w reading %d bytes: data not buffered", ErrInvalidSize, n)
+
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return fmt.Errorf("%w reading %d bytes: %s", ErrInvalidSize, len(b), err)
+	} else if err != nil {
+		return err
 	}
-	copy(b, r.buf[r.off:end])
-	r.off = end
+
 	return nil
 }
 
-// Size returns the number of bytes currently held in the in-memory buffer.
-func (r *BucketReader) Size() int {
-	return len(r.buf)
+func (bbr *BucketBufReader) Size() int {
+	return bbr.buf.Size()
 }
 
-func (r *BucketReader) Len() int {
-	return r.length - r.off
+func (bbr *BucketBufReader) Len() int {
+	return bbr.length - bbr.off
 }
 
-func (r *BucketReader) Offset() int {
-	return r.off
+func (bbr *BucketBufReader) Offset() int {
+	return bbr.off
 }
 
-func (r *BucketReader) Buffered() int {
-	buffered := len(r.buf) - r.off
-	if buffered < 0 {
-		return 0
-	}
-	return buffered
+func (bbr *BucketBufReader) Buffered() int {
+	return bbr.buf.Buffered()
 }
 
-func (r *BucketReader) Close() error {
+func (bbr *BucketBufReader) Close() error {
+	// Note that we don't do anything to clean up the buffer before returning it to the pool here:
+	// we reset the buffer when we retrieve it from the pool instead.
+	bucketBufPool.Put(bbr.buf)
+	// The BucketReader does not need closed -
+	// it closes the reader generated from bkt.GetRange on each Read call.
 	return nil
 }

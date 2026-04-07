@@ -3,18 +3,21 @@
 package encoding
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
 	"io"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 )
 
-// testBucketContents is the 20-byte payload used throughout bucket reader tests.
-var testBucketContents = []byte("abcdefghij1234567890")
+// testBucketContents is the 36-byte payload used throughout bucket reader tests.
+// 36 bytes selected to allow two full buffer fills of size 16 and one partial buffer fill to complete.
+var testBucketContents = []byte("abcdefghijklmnopqrstuvwxyz1234567890")
 
 const testBucketObjectName = "test-object"
 
@@ -43,610 +46,40 @@ func newTrackingBucket(t *testing.T, objectData []byte) *trackingBucket {
 	return &trackingBucket{InstrumentedBucketReader: objstore.WithNoopInstr(inmem)}
 }
 
-// newTestReader returns a BucketReader whose data segment is testBucketContents,
+const testBufPoolSize = 16 // Equal to minReadBufferSize for bufio.Reader; cannot init with smaller size
+
+var testBucketBufPool = sync.Pool{
+	New: func() any {
+		// 1MiB buffer chosen as starting point;
+		// we could make this configurable and benchmark.
+		return bufio.NewReaderSize(nil, testBufPoolSize)
+	},
+}
+
+// newTestReader returns a BucketBufReader whose data segment is testBucketContents,
 // starting at base bytes into the object.
-func newTestReader(t *testing.T, base int64) (*BucketReader, *trackingBucket) {
+func newTestReader(t *testing.T, base, length int) (*BucketBufReader, *trackingBucket) {
 	t.Helper()
-	padding := make([]byte, base)
-	objectData := append(padding, testBucketContents...)
+	ctx := context.Background()
+
+	objectData := make([]byte, 0, length)
+	objectData = append(objectData, testBucketContents...)
 	bkt := newTrackingBucket(t, objectData)
-	r := NewBucketReader(context.Background(), bkt, testBucketObjectName, base, len(testBucketContents))
-	return r, bkt
+
+	reader := NewBucketReader(ctx, bkt, testBucketObjectName, base, length)
+	bufioReader := testBucketBufPool.Get().(*bufio.Reader)
+	bufioReader.Reset(reader)
+
+	return &BucketBufReader{
+		ctx:    ctx,
+		bkt:    bkt,
+		name:   testBucketObjectName,
+		base:   base,
+		length: length,
+		r:      reader,
+		buf:    bufioReader,
+	}, bkt
 }
-
-// newFullyBufferedReader returns a BucketReader with all of testBucketContents
-// already loaded into the buffer, starting at base bytes into the object.
-func newFullyBufferedReader(t *testing.T, base int64) (*BucketReader, *trackingBucket) {
-	t.Helper()
-	r, bkt := newTestReader(t, base)
-	require.NoError(t, r.BufferTo(len(testBucketContents)))
-	return r, bkt
-}
-
-// ---- BufferTo ---------------------------------------------------------------
-
-func TestBucketReader_BufferTo_ExtendsBuffer(t *testing.T) {
-	r, bkt := newTestReader(t, 0)
-
-	require.NoError(t, r.BufferTo(10))
-	require.Len(t, bkt.calls, 1)
-	require.Equal(t, rangeCall{off: 0, length: 10}, bkt.calls[0])
-	require.Equal(t, 10, r.Size())
-}
-
-func TestBucketReader_BufferTo_IdempotentWhenAlreadyBuffered(t *testing.T) {
-	r, bkt := newTestReader(t, 0)
-
-	require.NoError(t, r.BufferTo(10))
-	require.NoError(t, r.BufferTo(10)) // same offset again
-	require.NoError(t, r.BufferTo(5))  // smaller offset
-	require.Len(t, bkt.calls, 1, "only the first call should issue a GetRange")
-	require.Equal(t, 10, r.Size())
-}
-
-func TestBucketReader_BufferTo_IncrementalFetches(t *testing.T) {
-	r, bkt := newTestReader(t, 0)
-
-	require.NoError(t, r.BufferTo(5))
-	require.NoError(t, r.BufferTo(10))
-	require.NoError(t, r.BufferTo(20))
-
-	require.Len(t, bkt.calls, 3)
-	require.Equal(t, rangeCall{off: 0, length: 5}, bkt.calls[0], "first fetch: bytes 0–4")
-	require.Equal(t, rangeCall{off: 5, length: 5}, bkt.calls[1], "second fetch: bytes 5–9")
-	require.Equal(t, rangeCall{off: 10, length: 10}, bkt.calls[2], "third fetch: bytes 10–19")
-	require.Equal(t, 20, r.Size())
-}
-
-func TestBucketReader_BufferTo_ErrorWhenOffsetBeforeCurrentCursor(t *testing.T) {
-	r, _ := newTestReader(t, 0)
-
-	require.NoError(t, r.BufferTo(15))
-	require.NoError(t, r.Skip(10))
-
-	err := r.BufferTo(5)
-	require.Error(t, err, "buffering to an offset before the cursor must fail")
-}
-
-func TestBucketReader_BufferTo_ErrorOnCursorPositionEvenWhenBuffered(t *testing.T) {
-	// Bytes 0–14 are already in the buffer, cursor is at 10.
-	// BufferTo(8) < cursor(10) must error even though offset 8 is already buffered.
-	r, _ := newTestReader(t, 0)
-
-	require.NoError(t, r.BufferTo(15))
-	require.NoError(t, r.Skip(10))
-
-	require.Error(t, r.BufferTo(8))
-}
-
-func TestBucketReader_BufferTo_AbsoluteOffsetsWithNonZeroBase(t *testing.T) {
-	const base = 7
-	r, bkt := newTestReader(t, base)
-
-	require.NoError(t, r.BufferTo(8))
-	require.NoError(t, r.BufferTo(15))
-
-	require.Len(t, bkt.calls, 2)
-	require.Equal(t, rangeCall{off: base + 0, length: 8}, bkt.calls[0], "first fetch absolute offset")
-	require.Equal(t, rangeCall{off: base + 8, length: 7}, bkt.calls[1], "second fetch absolute offset")
-}
-
-func TestBucketReader_BufferTo_PropagatesBucketError(t *testing.T) {
-	sentinel := errors.New("bucket unavailable")
-	failing := &failingBucket{err: sentinel}
-	r := NewBucketReader(context.Background(), failing, testBucketObjectName, 0, 20)
-
-	require.ErrorIs(t, r.BufferTo(10), sentinel)
-}
-
-// ---- Read -------------------------------------------------------------------
-
-func TestBucketReader_Read_SequentialReads(t *testing.T) {
-	r, _ := newFullyBufferedReader(t, 0)
-
-	b, err := r.Read(5)
-	require.NoError(t, err)
-	require.Equal(t, []byte("abcde"), b, "first read")
-
-	b, err = r.Read(5)
-	require.NoError(t, err)
-	require.Equal(t, []byte("fghij"), b, "second read")
-
-	b, err = r.Read(10)
-	require.NoError(t, err)
-	require.Equal(t, []byte("1234567890"), b, "third read")
-}
-
-func TestBucketReader_Read_BeyondSegmentEnd(t *testing.T) {
-	r, _ := newFullyBufferedReader(t, 0)
-	require.NoError(t, r.Skip(12))
-
-	b, err := r.Read(10) // only 8 remain in segment
-	require.ErrorIs(t, err, ErrInvalidSize)
-	require.Empty(t, b)
-	require.Equal(t, 20, r.Offset(), "cursor consumed to end after read beyond segment")
-
-	b, err = r.Read(1) // cursor already at end
-	require.ErrorIs(t, err, ErrInvalidSize)
-	require.Empty(t, b)
-}
-
-func TestBucketReader_Read_DataNotBuffered(t *testing.T) {
-	r, _ := newTestReader(t, 0) // buffer is empty
-
-	b, err := r.Read(5)
-	require.ErrorIs(t, err, ErrInvalidSize, "read from empty buffer must fail")
-	require.Empty(t, b)
-	require.Equal(t, 20, r.Offset(), "cursor consumed to end after failed read")
-}
-
-func TestBucketReader_Read_PartiallyBuffered(t *testing.T) {
-	r, _ := newTestReader(t, 0)
-	require.NoError(t, r.BufferTo(5)) // only first 5 bytes buffered
-
-	b, err := r.Read(5)
-	require.NoError(t, err)
-	require.Equal(t, []byte("abcde"), b, "read within buffered range")
-
-	b, err = r.Read(1) // byte 5 is not buffered
-	require.ErrorIs(t, err, ErrInvalidSize)
-	require.Empty(t, b)
-}
-
-func TestBucketReader_Read_ExactSegmentLength(t *testing.T) {
-	r, _ := newFullyBufferedReader(t, 0)
-
-	b, err := r.Read(len(testBucketContents))
-	require.NoError(t, err)
-	require.Equal(t, testBucketContents, b)
-	require.Equal(t, 0, r.Len())
-}
-
-func TestBucketReader_Read_ReturnedSliceIsIndependentCopy(t *testing.T) {
-	r, _ := newFullyBufferedReader(t, 0)
-
-	b, err := r.Read(5)
-	require.NoError(t, err)
-
-	// Mutating the returned slice must not affect subsequent reads.
-	b[0] = 'Z'
-
-	r2, _ := newFullyBufferedReader(t, 0)
-	b2, err := r2.Read(5)
-	require.NoError(t, err)
-	require.Equal(t, []byte("abcde"), b2, "buffer must not be affected by mutation of returned slice")
-}
-
-// ---- ReadInto ---------------------------------------------------------------
-
-func TestBucketReader_ReadInto_SequentialReads(t *testing.T) {
-	r, _ := newFullyBufferedReader(t, 0)
-
-	buf := make([]byte, 5)
-	require.NoError(t, r.ReadInto(buf))
-	require.Equal(t, []byte("abcde"), buf)
-
-	require.NoError(t, r.ReadInto(buf))
-	require.Equal(t, []byte("fghij"), buf)
-}
-
-func TestBucketReader_ReadInto_BeyondSegmentEnd(t *testing.T) {
-	r, _ := newFullyBufferedReader(t, 0)
-	require.NoError(t, r.Skip(15))
-
-	buf := make([]byte, 10) // only 5 remain
-	require.ErrorIs(t, r.ReadInto(buf), ErrInvalidSize)
-	require.Equal(t, 20, r.Offset())
-
-	require.ErrorIs(t, r.ReadInto(make([]byte, 1)), ErrInvalidSize, "subsequent read after cursor at end")
-}
-
-func TestBucketReader_ReadInto_DataNotBuffered(t *testing.T) {
-	r, _ := newTestReader(t, 0)
-
-	buf := make([]byte, 5)
-	require.ErrorIs(t, r.ReadInto(buf), ErrInvalidSize)
-	require.Equal(t, 20, r.Offset())
-}
-
-// ---- Peek -------------------------------------------------------------------
-
-func TestBucketReader_Peek_DoesNotAdvanceCursor(t *testing.T) {
-	r, _ := newFullyBufferedReader(t, 0)
-
-	p1, err := r.Peek(5)
-	require.NoError(t, err)
-	require.Equal(t, []byte("abcde"), p1)
-
-	p2, err := r.Peek(5)
-	require.NoError(t, err)
-	require.Equal(t, []byte("abcde"), p2, "second peek must return same bytes")
-
-	require.Equal(t, 0, r.Offset(), "cursor must not move")
-}
-
-func TestBucketReader_Peek_AfterRead(t *testing.T) {
-	r, _ := newFullyBufferedReader(t, 0)
-
-	_, err := r.Read(5)
-	require.NoError(t, err)
-
-	p, err := r.Peek(5)
-	require.NoError(t, err)
-	require.Equal(t, []byte("fghij"), p, "peek after read must start from new cursor position")
-}
-
-func TestBucketReader_Peek_BeyondBufferedEndReturnsAvailable(t *testing.T) {
-	r, _ := newTestReader(t, 0)
-	require.NoError(t, r.BufferTo(8)) // only 8 bytes buffered
-
-	p, err := r.Peek(20) // request more than buffered
-	require.NoError(t, err)
-	require.Equal(t, testBucketContents[:8], p, "peek must return only buffered bytes")
-}
-
-func TestBucketReader_Peek_NothingBuffered(t *testing.T) {
-	r, _ := newTestReader(t, 0)
-
-	p, err := r.Peek(5)
-	require.NoError(t, err)
-	require.Empty(t, p)
-}
-
-func TestBucketReader_Peek_AtEndOfSegment(t *testing.T) {
-	r, _ := newFullyBufferedReader(t, 0)
-	require.NoError(t, r.Skip(len(testBucketContents)))
-
-	p, err := r.Peek(1)
-	require.NoError(t, err)
-	require.Empty(t, p)
-}
-
-func TestBucketReader_Peek_BeyondSegmentEndReturnsAvailable(t *testing.T) {
-	r, _ := newFullyBufferedReader(t, 0)
-
-	p, err := r.Peek(len(testBucketContents) + 100)
-	require.NoError(t, err)
-	require.Equal(t, testBucketContents, p, "peek beyond segment end must return all remaining bytes")
-}
-
-// ---- Reset ------------------------------------------------------------------
-
-func TestBucketReader_Reset_MovesCursorToBeginning(t *testing.T) {
-	r, bkt := newFullyBufferedReader(t, 0)
-	callsBefore := len(bkt.calls)
-
-	_, err := r.Read(10)
-	require.NoError(t, err)
-	require.Equal(t, 10, r.Offset())
-
-	require.NoError(t, r.Reset())
-	require.Equal(t, 0, r.Offset())
-	require.Len(t, bkt.calls, callsBefore, "Reset must not issue additional GetRange calls")
-}
-
-func TestBucketReader_Reset_BufferRetained(t *testing.T) {
-	r, _ := newFullyBufferedReader(t, 0)
-
-	_, err := r.Read(10)
-	require.NoError(t, err)
-
-	require.NoError(t, r.Reset())
-
-	// Re-reading after Reset should work without calling BufferTo again.
-	b, err := r.Read(10)
-	require.NoError(t, err)
-	require.Equal(t, testBucketContents[:10], b)
-}
-
-// ---- ResetAt ----------------------------------------------------------------
-
-func TestBucketReader_ResetAt_MovesToArbitraryOffset(t *testing.T) {
-	r, bkt := newFullyBufferedReader(t, 0)
-	callsBefore := len(bkt.calls)
-
-	require.NoError(t, r.ResetAt(5))
-	require.Equal(t, 5, r.Offset())
-
-	b, err := r.Read(5)
-	require.NoError(t, err)
-	require.Equal(t, []byte("fghij"), b)
-	require.Len(t, bkt.calls, callsBefore, "ResetAt must not issue GetRange calls")
-}
-
-func TestBucketReader_ResetAt_ToZero(t *testing.T) {
-	r, _ := newFullyBufferedReader(t, 0)
-
-	require.NoError(t, r.Skip(10))
-	require.NoError(t, r.ResetAt(0))
-	require.Equal(t, 0, r.Offset())
-}
-
-func TestBucketReader_ResetAt_ToEndOfSegment(t *testing.T) {
-	r, _ := newFullyBufferedReader(t, 0)
-
-	require.NoError(t, r.ResetAt(len(testBucketContents)))
-	require.Equal(t, len(testBucketContents), r.Offset())
-	require.Equal(t, 0, r.Len())
-}
-
-func TestBucketReader_ResetAt_BeyondSegmentLength(t *testing.T) {
-	r, _ := newFullyBufferedReader(t, 0)
-
-	require.ErrorIs(t, r.ResetAt(len(testBucketContents)+1), ErrInvalidSize)
-}
-
-func TestBucketReader_ResetAt_BackwardThenReadBufferedData(t *testing.T) {
-	r, _ := newFullyBufferedReader(t, 0)
-
-	_, err := r.Read(15)
-	require.NoError(t, err)
-
-	// Move cursor backward: data is still in buffer.
-	require.NoError(t, r.ResetAt(5))
-
-	b, err := r.Read(5)
-	require.NoError(t, err)
-	require.Equal(t, []byte("fghij"), b, "previously buffered data must be readable after backward ResetAt")
-}
-
-// ---- Skip -------------------------------------------------------------------
-
-func TestBucketReader_Skip_AdvancesCursor(t *testing.T) {
-	r, _ := newTestReader(t, 0) // no buffering needed for Skip
-
-	require.Equal(t, 20, r.Len())
-	require.NoError(t, r.Skip(5))
-	require.Equal(t, 5, r.Offset())
-	require.Equal(t, 15, r.Len())
-}
-
-func TestBucketReader_Skip_DoesNotRequireBuffering(t *testing.T) {
-	r, bkt := newTestReader(t, 0) // buffer is empty
-
-	require.NoError(t, r.Skip(10))
-	require.Empty(t, bkt.calls, "Skip must not trigger any GetRange calls")
-	require.Equal(t, 10, r.Offset())
-}
-
-func TestBucketReader_Skip_ToExactEnd(t *testing.T) {
-	r, _ := newTestReader(t, 0)
-
-	require.NoError(t, r.Skip(len(testBucketContents)))
-	require.Equal(t, 0, r.Len())
-}
-
-func TestBucketReader_Skip_BeyondEnd(t *testing.T) {
-	r, _ := newTestReader(t, 0)
-
-	require.ErrorIs(t, r.Skip(len(testBucketContents)+1), ErrInvalidSize)
-}
-
-func TestBucketReader_Skip_InterleaveWithBufferTo(t *testing.T) {
-	r, _ := newTestReader(t, 0)
-	require.NoError(t, r.BufferTo(10))
-
-	require.NoError(t, r.Skip(5))
-	require.Equal(t, 5, r.Offset())
-
-	// Read the next 5 buffered bytes.
-	b, err := r.Read(5)
-	require.NoError(t, err)
-	require.Equal(t, []byte("fghij"), b)
-
-	// Skip beyond the buffered range: cursor advances, but no GetRange.
-	require.NoError(t, r.Skip(5))
-	require.Equal(t, 15, r.Offset())
-}
-
-// ---- Len --------------------------------------------------------------------
-
-func TestBucketReader_Len_TracksRemainingSegment(t *testing.T) {
-	r, _ := newFullyBufferedReader(t, 0)
-
-	require.Equal(t, 20, r.Len(), "initial")
-
-	_, err := r.Read(5)
-	require.NoError(t, err)
-	require.Equal(t, 15, r.Len(), "after first read")
-
-	_, err = r.Peek(3)
-	require.NoError(t, err)
-	require.Equal(t, 15, r.Len(), "peek must not change Len")
-
-	_, err = r.Read(100)
-	require.ErrorIs(t, err, ErrInvalidSize)
-	require.Equal(t, 0, r.Len(), "after read beyond end")
-
-	require.NoError(t, r.Reset())
-	require.Equal(t, 20, r.Len(), "after Reset")
-
-	require.NoError(t, r.ResetAt(7))
-	require.Equal(t, 13, r.Len(), "after ResetAt")
-}
-
-// ---- Offset -----------------------------------------------------------------
-
-func TestBucketReader_Offset_TracksPosition(t *testing.T) {
-	r, _ := newFullyBufferedReader(t, 0)
-
-	require.Equal(t, 0, r.Offset(), "initial")
-
-	_, err := r.Read(5)
-	require.NoError(t, err)
-	require.Equal(t, 5, r.Offset(), "after first read")
-
-	_, err = r.Read(2)
-	require.NoError(t, err)
-	require.Equal(t, 7, r.Offset(), "after second read")
-
-	_, err = r.Peek(3)
-	require.NoError(t, err)
-	require.Equal(t, 7, r.Offset(), "peek must not change Offset")
-
-	_, err = r.Read(100)
-	require.ErrorIs(t, err, ErrInvalidSize)
-	require.Equal(t, 20, r.Offset(), "after read beyond end")
-
-	require.NoError(t, r.Reset())
-	require.Equal(t, 0, r.Offset(), "after Reset")
-
-	require.NoError(t, r.ResetAt(3))
-	require.Equal(t, 3, r.Offset(), "after ResetAt")
-}
-
-// ---- Buffered ---------------------------------------------------------------
-
-func TestBucketReader_Buffered_ReflectsInMemoryAvailability(t *testing.T) {
-	r, _ := newTestReader(t, 0)
-
-	require.Equal(t, 0, r.Buffered(), "initially nothing is buffered")
-
-	require.NoError(t, r.BufferTo(10))
-	require.Equal(t, 10, r.Buffered(), "after BufferTo(10)")
-
-	_, err := r.Read(4)
-	require.NoError(t, err)
-	require.Equal(t, 6, r.Buffered(), "after reading 4 bytes, 6 buffered bytes remain ahead")
-
-	require.NoError(t, r.BufferTo(20))
-	require.Equal(t, 16, r.Buffered(), "after extending buffer to 20, 16 remain ahead of cursor")
-}
-
-func TestBucketReader_Buffered_AfterResetBufferIsRetained(t *testing.T) {
-	r, _ := newTestReader(t, 0)
-	require.NoError(t, r.BufferTo(15))
-	_, err := r.Read(10)
-	require.NoError(t, err)
-	require.Equal(t, 5, r.Buffered())
-
-	require.NoError(t, r.Reset())
-	require.Equal(t, 15, r.Buffered(), "reset to 0: all 15 buffered bytes are ahead of cursor again")
-}
-
-func TestBucketReader_Buffered_CursorBeyondBufferIsZero(t *testing.T) {
-	r, _ := newTestReader(t, 0)
-	require.NoError(t, r.BufferTo(5))
-
-	// Skip past the buffered region without buffering more.
-	require.NoError(t, r.Skip(5))
-	require.Equal(t, 0, r.Buffered())
-
-	require.NoError(t, r.Skip(5))
-	require.Equal(t, 0, r.Buffered(), "cursor beyond buffer must clamp to zero")
-}
-
-// ---- Size -------------------------------------------------------------------
-
-func TestBucketReader_Size_GrowsWithBuffer(t *testing.T) {
-	r, _ := newTestReader(t, 0)
-
-	require.Equal(t, 0, r.Size(), "initially no bytes buffered")
-
-	require.NoError(t, r.BufferTo(8))
-	require.Equal(t, 8, r.Size())
-
-	require.NoError(t, r.BufferTo(20))
-	require.Equal(t, 20, r.Size())
-}
-
-func TestBucketReader_Size_NotAffectedByCursorMovement(t *testing.T) {
-	r, _ := newFullyBufferedReader(t, 0)
-	size := r.Size()
-
-	_, err := r.Read(10)
-	require.NoError(t, err)
-	require.Equal(t, size, r.Size(), "reading must not shrink the buffer size")
-
-	require.NoError(t, r.Reset())
-	require.Equal(t, size, r.Size(), "reset must not shrink the buffer size")
-}
-
-// ---- Non-zero base ----------------------------------------------------------
-
-func TestBucketReader_NonZeroBase_ReturnsCorrectBytes(t *testing.T) {
-	const base = 5
-	r, _ := newFullyBufferedReader(t, base)
-
-	b, err := r.Read(len(testBucketContents))
-	require.NoError(t, err)
-	require.Equal(t, testBucketContents, b, "BucketReader must expose the segment bytes, not the prefix padding")
-}
-
-func TestBucketReader_NonZeroBase_GetRangeUsesAbsoluteOffsets(t *testing.T) {
-	const base = 13
-	r, bkt := newTestReader(t, base)
-
-	require.NoError(t, r.BufferTo(7))
-	require.NoError(t, r.BufferTo(20))
-
-	require.Len(t, bkt.calls, 2)
-	require.Equal(t, rangeCall{off: base, length: 7}, bkt.calls[0])
-	require.Equal(t, rangeCall{off: base + 7, length: 13}, bkt.calls[1])
-}
-
-// ---- Empty segment ----------------------------------------------------------
-
-func TestBucketReader_EmptySegment(t *testing.T) {
-	bkt := newTrackingBucket(t, []byte{})
-	r := NewBucketReader(context.Background(), bkt, testBucketObjectName, 0, 0)
-
-	require.Equal(t, 0, r.Len())
-	require.Equal(t, 0, r.Offset())
-	require.Equal(t, 0, r.Buffered())
-	require.Equal(t, 0, r.Size())
-
-	require.ErrorIs(t, r.Skip(1), ErrInvalidSize)
-	require.ErrorIs(t, r.ResetAt(1), ErrInvalidSize)
-	require.NoError(t, r.ResetAt(0))
-	require.NoError(t, r.BufferTo(0), "BufferTo(0) on empty segment must be a no-op")
-	require.Empty(t, bkt.calls)
-}
-
-// ---- Close ------------------------------------------------------------------
-
-func TestBucketReader_Close_ReturnsNil(t *testing.T) {
-	r, _ := newFullyBufferedReader(t, 0)
-	require.NoError(t, r.Close())
-}
-
-// ---- Combined workflow ------------------------------------------------------
-
-// TestBucketReader_WorkflowIncrementalBuffering simulates a realistic caller
-// that progressively extends the buffer as it learns how much data it needs,
-// interspersed with resets and re-reads.
-func TestBucketReader_WorkflowIncrementalBuffering(t *testing.T) {
-	r, bkt := newTestReader(t, 0)
-
-	// Buffer first 5 bytes and read them.
-	require.NoError(t, r.BufferTo(5))
-	b, err := r.Read(5)
-	require.NoError(t, err)
-	require.Equal(t, []byte("abcde"), b)
-
-	// Discover we need more; extend the buffer.
-	require.NoError(t, r.BufferTo(15))
-	b, err = r.Read(10)
-	require.NoError(t, err)
-	require.Equal(t, []byte("fghij12345"), b)
-
-	// Reset and re-read from the start without issuing new GetRange calls.
-	callsBefore := len(bkt.calls)
-	require.NoError(t, r.Reset())
-	b, err = r.Read(15)
-	require.NoError(t, err)
-	require.Equal(t, testBucketContents[:15], b)
-	require.Len(t, bkt.calls, callsBefore, "re-reading from buffer must not issue new GetRange calls")
-
-	// Extend to fill the remaining segment, then read the rest.
-	require.NoError(t, r.BufferTo(20))
-	b, err = r.Read(5)
-	require.NoError(t, err)
-	require.Equal(t, []byte("67890"), b)
-	require.Equal(t, 0, r.Len())
-}
-
-// ---- failingBucket ----------------------------------------------------------
 
 // failingBucket is an InstrumentedBucketReader whose GetRange always returns an error.
 type failingBucket struct {
@@ -677,11 +110,289 @@ func (b *failingBucket) Attributes(_ context.Context, _ string) (objstore.Object
 	return objstore.ObjectAttributes{}, b.err
 }
 
-func (b *failingBucket) IsObjNotFoundErr(_ error) bool   { return false }
-func (b *failingBucket) IsAccessDeniedErr(_ error) bool  { return false }
-func (b *failingBucket) Name() string                    { return "failing" }
-func (b *failingBucket) Close() error                    { return nil }
+func (b *failingBucket) IsObjNotFoundErr(_ error) bool  { return false }
+func (b *failingBucket) IsAccessDeniedErr(_ error) bool { return false }
+func (b *failingBucket) Name() string                   { return "failing" }
+func (b *failingBucket) Close() error                   { return nil }
 
 func (b *failingBucket) ReaderWithExpectedErrs(_ objstore.IsOpFailureExpectedFunc) objstore.BucketReader {
 	return b
+}
+
+// newFailingBufReader returns a BucketBufReader backed by a failingBucket.
+func newFailingBufReader(t *testing.T, sentinel error) *BucketBufReader {
+	t.Helper()
+	bkt := &failingBucket{err: sentinel}
+	ctx := context.Background()
+	reader := NewBucketReader(ctx, bkt, "obj", 0, 10)
+	bufioReader := testBucketBufPool.Get().(*bufio.Reader)
+	bufioReader.Reset(reader)
+	return &BucketBufReader{
+		ctx:    ctx,
+		bkt:    bkt,
+		name:   "obj",
+		base:   0,
+		length: 10,
+		r:      reader,
+		buf:    bufioReader,
+	}
+}
+
+// ---- BucketBufReader --------------------------------------------------------
+
+func TestBucketBufReader_Read_Sequential(t *testing.T) {
+	r, _ := newTestReader(t, 0, len(testBucketContents))
+
+	b, err := r.Read(5)
+	require.NoError(t, err)
+	require.Equal(t, testBucketContents[:5], b)
+	require.Equal(t, 5, r.Offset())
+
+	b, err = r.Read(5)
+	require.NoError(t, err)
+	require.Equal(t, testBucketContents[5:10], b)
+	require.Equal(t, 10, r.Offset())
+}
+
+func TestBucketBufReader_Read_ExactLength(t *testing.T) {
+	r, _ := newTestReader(t, 0, len(testBucketContents))
+
+	b, err := r.Read(len(testBucketContents))
+	require.NoError(t, err)
+	require.Equal(t, testBucketContents, b)
+	require.Equal(t, len(testBucketContents), r.Offset())
+	require.Equal(t, 0, r.Len())
+}
+
+func TestBucketBufReader_Read_BeyondEnd(t *testing.T) {
+	const segmentLen = 10
+	r, _ := newTestReader(t, 0, segmentLen)
+
+	b, err := r.Read(segmentLen + 1)
+	require.ErrorIs(t, err, ErrInvalidSize)
+	require.Nil(t, b)
+	require.Equal(t, segmentLen, r.Offset(), "cursor advanced to end")
+}
+
+func TestBucketBufReader_Read_BeyondEndAfterPartialConsumption(t *testing.T) {
+	const segmentLen = 10
+	r, _ := newTestReader(t, 0, segmentLen)
+
+	_, err := r.Read(3)
+	require.NoError(t, err)
+
+	// 7 remain; attempt to read 8
+	b, err := r.Read(8)
+	require.ErrorIs(t, err, ErrInvalidSize)
+	require.Nil(t, b)
+	require.Equal(t, segmentLen, r.Offset(), "cursor advanced to end")
+}
+
+func TestBucketBufReader_ReadInto_Basic(t *testing.T) {
+	r, _ := newTestReader(t, 0, len(testBucketContents))
+
+	buf := make([]byte, 5)
+	require.NoError(t, r.ReadInto(buf))
+	require.Equal(t, testBucketContents[:5], buf)
+	require.Equal(t, 5, r.Offset())
+}
+
+func TestBucketBufReader_ReadInto_BeyondEnd(t *testing.T) {
+	const segmentLen = 5
+	r, _ := newTestReader(t, 0, segmentLen)
+
+	buf := make([]byte, segmentLen+1)
+	err := r.ReadInto(buf)
+	require.ErrorIs(t, err, ErrInvalidSize)
+	require.Equal(t, segmentLen, r.Offset(), "cursor advanced to end")
+}
+
+func TestBucketBufReader_Skip_Basic(t *testing.T) {
+	r, _ := newTestReader(t, 0, len(testBucketContents))
+
+	require.NoError(t, r.Skip(10))
+	require.Equal(t, 10, r.Offset())
+	require.Equal(t, len(testBucketContents)-10, r.Len())
+
+	b, err := r.Read(3)
+	require.NoError(t, err)
+	require.Equal(t, testBucketContents[10:13], b)
+}
+
+func TestBucketBufReader_Skip_ToEnd(t *testing.T) {
+	const segmentLen = 10
+	r, _ := newTestReader(t, 0, segmentLen)
+
+	require.NoError(t, r.Skip(segmentLen))
+	require.Equal(t, segmentLen, r.Offset())
+	require.Equal(t, 0, r.Len())
+}
+
+func TestBucketBufReader_Skip_BeyondEnd(t *testing.T) {
+	const segmentLen = 10
+	r, _ := newTestReader(t, 0, segmentLen)
+
+	err := r.Skip(segmentLen + 1)
+	require.ErrorIs(t, err, ErrInvalidSize)
+}
+
+func TestBucketBufReader_Peek_Basic(t *testing.T) {
+	r, _ := newTestReader(t, 0, len(testBucketContents))
+
+	b, err := r.Peek(5)
+	require.NoError(t, err)
+	require.Equal(t, testBucketContents[:5], b)
+	require.Equal(t, 0, r.Offset(), "cursor must not advance after Peek")
+
+	// Read should return the same bytes.
+	got, err := r.Read(5)
+	require.NoError(t, err)
+	require.Equal(t, testBucketContents[:5], got)
+}
+
+func TestBucketBufReader_Peek_PastSegmentEnd(t *testing.T) {
+	// segmentLen must be smaller than testBufPoolSize so bufio can attempt to fill
+	// but hits EOF before reaching n; this exercises the EOF-suppression in Peek.
+	const segmentLen = 5
+	r, _ := newTestReader(t, 0, segmentLen)
+
+	b, err := r.Peek(segmentLen + 5)
+	require.NoError(t, err)
+	require.Equal(t, testBucketContents[:segmentLen], b)
+	require.Equal(t, 0, r.Offset(), "cursor must not advance after Peek")
+}
+
+func TestBucketBufReader_Peek_AtEnd(t *testing.T) {
+	const segmentLen = 5
+	r, _ := newTestReader(t, 0, segmentLen)
+	require.NoError(t, r.Skip(segmentLen))
+
+	b, err := r.Peek(1)
+	require.NoError(t, err)
+	require.Nil(t, b)
+}
+
+func TestBucketBufReader_Reset(t *testing.T) {
+	r, _ := newTestReader(t, 0, len(testBucketContents))
+
+	first, err := r.Read(10)
+	require.NoError(t, err)
+	require.Equal(t, testBucketContents[:10], first)
+
+	require.NoError(t, r.Reset())
+	require.Equal(t, 0, r.Offset())
+	require.Equal(t, len(testBucketContents), r.Len())
+
+	second, err := r.Read(10)
+	require.NoError(t, err)
+	require.Equal(t, testBucketContents[:10], second)
+}
+
+func TestBucketBufReader_ResetAt_Middle(t *testing.T) {
+	r, _ := newTestReader(t, 0, len(testBucketContents))
+
+	require.NoError(t, r.ResetAt(10))
+	require.Equal(t, 10, r.Offset())
+	require.Equal(t, len(testBucketContents)-10, r.Len())
+
+	b, err := r.Read(5)
+	require.NoError(t, err)
+	require.Equal(t, testBucketContents[10:15], b)
+}
+
+func TestBucketBufReader_ResetAt_End(t *testing.T) {
+	const segmentLen = 10
+	r, _ := newTestReader(t, 0, segmentLen)
+
+	require.NoError(t, r.ResetAt(segmentLen))
+	require.Equal(t, segmentLen, r.Offset())
+	require.Equal(t, 0, r.Len())
+}
+
+func TestBucketBufReader_ResetAt_BeyondEnd(t *testing.T) {
+	const segmentLen = 10
+	r, _ := newTestReader(t, 0, segmentLen)
+
+	err := r.ResetAt(segmentLen + 1)
+	require.ErrorIs(t, err, ErrInvalidSize)
+}
+
+func TestBucketBufReader_Len(t *testing.T) {
+	r, _ := newTestReader(t, 0, len(testBucketContents))
+
+	require.Equal(t, len(testBucketContents), r.Len())
+	require.NoError(t, r.Skip(10))
+	require.Equal(t, len(testBucketContents)-10, r.Len())
+	_, err := r.Read(5)
+	require.NoError(t, err)
+	require.Equal(t, len(testBucketContents)-15, r.Len())
+}
+
+func TestBucketBufReader_Size(t *testing.T) {
+	r, _ := newTestReader(t, 0, len(testBucketContents))
+	require.Equal(t, testBufPoolSize, r.Size())
+}
+
+func TestBucketBufReader_Buffered(t *testing.T) {
+	r, _ := newTestReader(t, 0, len(testBucketContents))
+	require.Equal(t, 0, r.Buffered())
+
+	// Reading 1 byte causes bufio to fill its full buffer; the remaining
+	// testBufPoolSize-1 bytes stay in memory.
+	_, err := r.Read(1)
+	require.NoError(t, err)
+	require.Equal(t, testBufPoolSize-1, r.Buffered())
+}
+
+func TestBucketBufReader_Close(t *testing.T) {
+	r, _ := newTestReader(t, 0, len(testBucketContents))
+	require.NoError(t, r.Close())
+}
+
+func TestBucketBufReader_GetRangeCalls_Buffering(t *testing.T) {
+	r, bkt := newTestReader(t, 0, len(testBucketContents))
+
+	// Reading one byte at a time: bufio fills its entire buffer (testBufPoolSize bytes)
+	// on the first underlying Read, so all testBufPoolSize single-byte reads cost one
+	// GetRange call.
+	for i := 0; i < testBufPoolSize; i++ {
+		_, err := r.Read(1)
+		require.NoError(t, err)
+	}
+	require.Len(t, bkt.calls, 1, "all reads within first buffer window should share one GetRange call")
+
+	// One more byte crosses into the next buffer window.
+	_, err := r.Read(1)
+	require.NoError(t, err)
+	require.Len(t, bkt.calls, 2, "crossing buffer boundary triggers a second GetRange call")
+}
+
+func TestBucketBufReader_GetRangeCalls_ResetRefetches(t *testing.T) {
+	r, bkt := newTestReader(t, 0, len(testBucketContents))
+
+	_, err := r.Read(1)
+	require.NoError(t, err)
+	require.Len(t, bkt.calls, 1)
+
+	// After Reset the buffer is discarded; the next read must refetch from the bucket.
+	require.NoError(t, r.Reset())
+	_, err = r.Read(1)
+	require.NoError(t, err)
+	require.Len(t, bkt.calls, 2)
+}
+
+func TestBucketBufReader_Read_GetRangeError(t *testing.T) {
+	sentinel := errors.New("storage error")
+	r := newFailingBufReader(t, sentinel)
+
+	_, err := r.Read(5)
+	require.ErrorIs(t, err, sentinel)
+}
+
+func TestBucketBufReader_ReadInto_GetRangeError(t *testing.T) {
+	sentinel := errors.New("storage error")
+	r := newFailingBufReader(t, sentinel)
+
+	err := r.ReadInto(make([]byte, 5))
+	require.ErrorIs(t, err, sentinel)
 }
