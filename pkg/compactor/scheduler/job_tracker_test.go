@@ -75,7 +75,7 @@ func TestJobTracker_Maintenance_Planning(t *testing.T) {
 		},
 		"no transition upon creation when previously non-empty": {
 			setup: func(jt *JobTracker) {
-				jt.pending.PushBack(NewTrackedCompactionJob("compactionId", &CompactionJob{}, 1, time.Now()))
+				jt.pending.PushBack(NewTrackedCompactionJob("compactionId", &CompactionJob{}, 1, 0, time.Now()))
 			},
 			now:                at(3, 0),
 			expectedPlan:       true,
@@ -127,17 +127,17 @@ func TestJobTracker_Maintenance_Planning(t *testing.T) {
 
 func TestJobTracker_recoverFrom(t *testing.T) {
 	newAvailableCompaction := func(id string, order uint32) *TrackedCompactionJob {
-		return NewTrackedCompactionJob(id, &CompactionJob{}, order, at(1, 0))
+		return NewTrackedCompactionJob(id, &CompactionJob{}, order, 0, at(1, 0))
 	}
 
 	newLeasedCompaction := func(id string, order uint32, statusTime time.Time) *TrackedCompactionJob {
-		j := NewTrackedCompactionJob(id, &CompactionJob{}, order, at(1, 0))
+		j := NewTrackedCompactionJob(id, &CompactionJob{}, order, 0, at(1, 0))
 		j.MarkLeased(statusTime)
 		return j
 	}
 
 	newCompleteCompaction := func(id string) *TrackedCompactionJob {
-		j := NewTrackedCompactionJob(id, &CompactionJob{}, 0, at(1, 0))
+		j := NewTrackedCompactionJob(id, &CompactionJob{}, 0, 0, at(1, 0))
 		j.MarkComplete(at(2, 0))
 		return j
 	}
