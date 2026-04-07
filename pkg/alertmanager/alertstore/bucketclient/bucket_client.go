@@ -34,11 +34,6 @@ const (
 	//     alertmanager/<user-id>/<object>
 	AlertmanagerPrefix = "alertmanager"
 
-	// GrafanaAlertmanagerPrefix is the bucket prefix under which Grafana's alertmanager configuration and state are stored.
-	// Note that objects stored under this prefix follow the pattern:
-	//		grafana_alertmanager/<user-id>/<object>
-	GrafanaAlertmanagerPrefix = "grafana_alertmanager"
-
 	// The name of alertmanager full state objects (notification log + silences).
 	fullStateName = "fullstate"
 
@@ -49,9 +44,8 @@ const (
 // BucketAlertStore is used to support the AlertStore interface against an object storage backend. It is implemented
 // using the Thanos objstore.Bucket interface
 type BucketAlertStore struct {
-	alertsBucket    objstore.Bucket
-	amBucket        objstore.Bucket
-	grafanaAMBucket objstore.Bucket
+	alertsBucket objstore.Bucket
+	amBucket     objstore.Bucket
 
 	cfgProvider bucket.TenantConfigProvider
 	logger      log.Logger
@@ -59,11 +53,10 @@ type BucketAlertStore struct {
 
 func NewBucketAlertStore(bkt objstore.Bucket, cfgProvider bucket.TenantConfigProvider, logger log.Logger) *BucketAlertStore {
 	return &BucketAlertStore{
-		alertsBucket:    bucket.NewPrefixedBucketClient(bkt, AlertsPrefix),
-		amBucket:        bucket.NewPrefixedBucketClient(bkt, AlertmanagerPrefix),
-		grafanaAMBucket: bucket.NewPrefixedBucketClient(bkt, GrafanaAlertmanagerPrefix),
-		cfgProvider:     cfgProvider,
-		logger:          logger,
+		alertsBucket: bucket.NewPrefixedBucketClient(bkt, AlertsPrefix),
+		amBucket:     bucket.NewPrefixedBucketClient(bkt, AlertmanagerPrefix),
+		cfgProvider:  cfgProvider,
+		logger:       logger,
 	}
 }
 
@@ -226,8 +219,4 @@ func (s *BucketAlertStore) getUserBucket(userID string) objstore.Bucket {
 
 func (s *BucketAlertStore) getAlertmanagerUserBucket(userID string) objstore.Bucket {
 	return bucket.NewUserBucketClient(userID, s.amBucket, s.cfgProvider).WithExpectedErrs(s.amBucket.IsObjNotFoundErr)
-}
-
-func (s *BucketAlertStore) getGrafanaAlertmanagerUserBucket(userID string) objstore.Bucket {
-	return bucket.NewUserBucketClient(userID, s.grafanaAMBucket, s.cfgProvider).WithExpectedErrs(s.amBucket.IsObjNotFoundErr)
 }
