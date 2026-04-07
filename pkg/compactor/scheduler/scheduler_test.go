@@ -85,6 +85,7 @@ func TestScheduler_JobLifecycleMetrics(t *testing.T) {
 	leaseResp, err = scheduler.LeaseJob(ctx, &compactorschedulerpb.LeaseJobRequest{WorkerId: "worker1"})
 	require.NoError(t, err)
 	require.NotNil(t, leaseResp.Key)
+	assertIncompleteBytes("first compaction job leased (still incomplete)", 100, 200)
 	_, err = scheduler.UpdateCompactionJob(ctx, &compactorschedulerpb.UpdateCompactionJobRequest{
 		Tenant: leaseResp.Spec.Tenant,
 		Key:    leaseResp.Key,
@@ -92,6 +93,7 @@ func TestScheduler_JobLifecycleMetrics(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assertCompleted("compaction job abandoned", 1, 0)
+	assertIncompleteBytes("first compaction job abandoned (bytes removed)", 0, 200)
 
 	leaseResp, err = scheduler.LeaseJob(ctx, &compactorschedulerpb.LeaseJobRequest{WorkerId: "worker1"})
 	require.NoError(t, err)

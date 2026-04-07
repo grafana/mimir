@@ -346,8 +346,9 @@ func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 					numLeases:    1,
 					epoch:        234,
 				},
-				value: &CompactionJob{blocks: testBlockIDs, isSplit: true},
-				order: 1,
+				value:           &CompactionJob{blocks: testBlockIDs, isSplit: true},
+				order:           1,
+				totalBlockBytes: 12345,
 			},
 			verifySpecificFields: func(t *testing.T, written, read TrackedJob) {
 				writtenJob := written.(*TrackedCompactionJob)
@@ -356,6 +357,7 @@ func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 				require.Equal(t, writtenJob.value.blocks, readJob.value.blocks)
 				require.Equal(t, writtenJob.value.isSplit, readJob.value.isSplit)
 				require.Equal(t, writtenJob.order, readJob.order)
+				require.Equal(t, writtenJob.totalBlockBytes, readJob.totalBlockBytes)
 			},
 		},
 		"plan job": {
