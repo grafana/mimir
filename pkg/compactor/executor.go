@@ -659,10 +659,10 @@ func serializeBlockIds(metas []*block.Meta) [][]byte {
 	return ids
 }
 
-func sumBlockBytes(metas []*block.Meta) int64 {
-	var total int64
+func sumBlockBytes(metas []*block.Meta) uint64 {
+	var total uint64
 	for _, meta := range metas {
-		total += meta.BlockBytes()
+		total += uint64(meta.BlockBytes())
 	}
 	return total
 }

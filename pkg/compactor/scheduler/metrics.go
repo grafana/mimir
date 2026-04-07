@@ -96,8 +96,8 @@ type queueMetrics struct {
 
 	// splitBytes and mergeBytes track this tenant's contribution to the shared incompleteBytes
 	// so we can subtract exactly the right amount on tenant removal.
-	splitBytes int64
-	mergeBytes int64
+	splitBytes uint64
+	mergeBytes uint64
 	clear      func()
 }
 

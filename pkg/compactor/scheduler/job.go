@@ -116,10 +116,10 @@ type TrackedCompactionJob struct {
 	baseTrackedJob
 	value           *CompactionJob
 	order           uint32
-	totalBlockBytes int64
+	totalBlockBytes uint64
 }
 
-func NewTrackedCompactionJob(id string, value *CompactionJob, order uint32, totalBlockBytes int64, creationTime time.Time) *TrackedCompactionJob {
+func NewTrackedCompactionJob(id string, value *CompactionJob, order uint32, totalBlockBytes uint64, creationTime time.Time) *TrackedCompactionJob {
 	return &TrackedCompactionJob{
 		baseTrackedJob:  newBaseTrackedJob(id, creationTime),
 		value:           value,
