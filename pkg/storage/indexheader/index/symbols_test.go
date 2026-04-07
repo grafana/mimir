@@ -21,6 +21,7 @@ import (
 	"github.com/thanos-io/objstore/providers/filesystem"
 
 	streamencoding "github.com/grafana/mimir/pkg/storage/indexheader/encoding"
+	"github.com/grafana/mimir/pkg/util/filepool"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -55,8 +56,8 @@ func TestSymbolsV2(t *testing.T) {
 		require.NoError(t, bkt.Close())
 	})
 
-	reg := prometheus.NewPedanticRegistry()
-	diskDecbufFactory := streamencoding.NewFilePoolDecbufFactory(filePath, 0, streamencoding.NewDecbufFactoryMetrics(reg))
+	reg := prometheus.WrapRegistererWithPrefix("indexheader_", prometheus.NewPedanticRegistry())
+	diskDecbufFactory := streamencoding.NewFilePoolDecbufFactory(filePath, 0, filepool.NewFilePoolMetrics(reg))
 	bucketDecbufFactory := streamencoding.NewBucketDecbufFactory(context.Background(), instBkt, "index")
 
 	factories := map[string]streamencoding.DecbufFactory{
@@ -65,11 +66,16 @@ func TestSymbolsV2(t *testing.T) {
 	}
 
 	for factoryName, decbufFactory := range factories {
-		s, err := NewSymbols(decbufFactory, index.FormatV2, symbolsStart, true)
+		allSymbolsCount, sparseOffsets, err := SparseValuesFromSymbolsTable(decbufFactory, symbolsStart, true)
 		require.NoError(t, err)
 
-		// We store only 4 offsets to symbols.
-		require.Len(t, s.offsets, 4)
+		s, err := NewSymbolsTableReader(
+			index.FormatV2, decbufFactory, symbolsStart, allSymbolsCount, sparseOffsets,
+		)
+		require.NoError(t, err)
+
+		// We store only 4 SparseTableOffsets to symbols.
+		require.Len(t, s.sparseSymbolsOffsets, 4)
 
 		t.Run(fmt.Sprintf("Lookup/DecbufFactory=%s", factoryName), func(t *testing.T) {
 			for i := 99; i >= 0; i-- {
@@ -93,7 +99,7 @@ func TestSymbolsV2(t *testing.T) {
 
 		t.Run(fmt.Sprintf("ForEachSymbol/DecbufFactory=%s", factoryName), func(t *testing.T) {
 			// Use ForEachSymbol to build an offset -> symbol mapping and ensure
-			// that it matches the expected offsets and symbols.
+			// that it matches the expected SparseTableOffsets and symbols.
 			var symbols []string
 			expected := make(map[uint32]string)
 			for i := 99; i >= 0; i-- {

@@ -1148,16 +1148,7 @@ func testBlockToBucketBlock(tb testing.TB, testBlock *fixtures.BucketTestBlock) 
 			})
 		require.NoError(tb, err)
 
-		indexReader, err := indexheader.NewStreamBinaryReader(
-			context.Background(),
-			log.NewNopLogger(),
-			testBlock.InstrBkt,
-			tb.TempDir(),
-			testBlock.Meta.ULID,
-			mimir_tsdb.DefaultPostingOffsetInMemorySampling,
-			indexheader.NewStreamBinaryReaderMetrics(nil),
-			indexheader.Config{},
-		)
+		indexReader, err := indexheader.NewStreamBinaryReader(context.Background(), testBlock.Meta.ULID, testBlock.InstrBkt, tb.TempDir(), indexheader.Config{}, mimir_tsdb.DefaultPostingOffsetInMemorySampling, log.NewNopLogger(), indexheader.NewStreamBinaryReaderMetrics(nil))
 		require.NoError(tb, err)
 
 		return &bucketBlock{
@@ -1805,7 +1796,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			partitioners: newGapBasedPartitionersHelper(mimir_tsdb.DefaultPartitionerMaxGapSize),
 			chunkObjs:    []string{filepath.Join(id.String(), "chunks", "000001")},
 		}
-		b1.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b1.meta.ULID, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.NewStreamBinaryReaderMetrics(nil), indexheader.Config{})
+		b1.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), b1.meta.ULID, bkt, tmpDir, indexheader.Config{}, mimir_tsdb.DefaultPostingOffsetInMemorySampling, log.NewNopLogger(), indexheader.NewStreamBinaryReaderMetrics(nil))
 		assert.NoError(t, err)
 	}
 
@@ -1844,7 +1835,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			partitioners: newGapBasedPartitionersHelper(mimir_tsdb.DefaultPartitionerMaxGapSize),
 			chunkObjs:    []string{filepath.Join(id.String(), "chunks", "000001")},
 		}
-		b2.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b2.meta.ULID, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.NewStreamBinaryReaderMetrics(nil), indexheader.Config{})
+		b2.indexHeaderReader, err = indexheader.NewStreamBinaryReader(context.Background(), b2.meta.ULID, bkt, tmpDir, indexheader.Config{}, mimir_tsdb.DefaultPostingOffsetInMemorySampling, log.NewNopLogger(), indexheader.NewStreamBinaryReaderMetrics(nil))
 		assert.NoError(t, err)
 	}
 

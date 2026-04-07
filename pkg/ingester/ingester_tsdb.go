@@ -182,6 +182,10 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 	blockGeneration := blockGenerationCalculator(userDB, blockRanges[0])
 
+	if i.cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.Enabled {
+		userDB.offsetCatalogue = newOffsetCatalogue(userLogger, i.offsetCatalogueMetrics, udir, userID, i.ingestPartitionID)
+	}
+
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
 	// Create a new user database
 	db, err := tsdb.Open(udir, util_log.SlogFromGoKit(userLogger), tsdbPromReg, &tsdb.Options{

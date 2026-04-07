@@ -93,12 +93,21 @@ func (c *MultitenantCompactor) PlannedJobsHandler(w http.ResponseWriter, req *ht
 	tenantSplitGroups := c.cfgProvider.CompactorSplitGroups(tenantID)
 
 	tenantMergeShards := c.cfgProvider.CompactorSplitAndMergeShards(tenantID)
+	tenantOOOMergeShards := c.cfgProvider.CompactorOOOSplitAndMergeShards(tenantID)
 
 	mergeShards := tenantMergeShards
 	if sc := req.Form.Get("merge_shards"); sc != "" {
 		mergeShards, _ = strconv.Atoi(sc)
 		if mergeShards < 0 {
 			mergeShards = 0
+		}
+	}
+
+	oooMergeShards := tenantOOOMergeShards
+	if sc := req.Form.Get("ooo_merge_shards"); sc != "" {
+		oooMergeShards, _ = strconv.Atoi(sc)
+		if oooMergeShards < 0 {
+			oooMergeShards = 0
 		}
 	}
 
@@ -117,7 +126,13 @@ func (c *MultitenantCompactor) PlannedJobsHandler(w http.ResponseWriter, req *ht
 		return
 	}
 
-	jobs, err := estimateCompactionJobsFromBucketIndex(req.Context(), tenantID, bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider), idx, c.compactorCfg.BlockRanges, mergeShards, splitGroups)
+	cfgOverride := &configProviderAdapter{
+		ConfigProvider: c.cfgProvider,
+		mergeShards:    mergeShards,
+		oooMergeShards: oooMergeShards,
+		splitGroups:    splitGroups,
+	}
+	jobs, err := estimateCompactionJobsFromBucketIndex(req.Context(), tenantID, bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider), idx, c.compactorCfg.BlockRanges, cfgOverride)
 	if err != nil {
 		level.Error(c.logger).Log("msg", "failed to compute compaction jobs from bucket index for tenant while listing compaction jobs", "user", tenantID, "err", err)
 		util.WriteTextResponse(w, "Failed to compute compaction jobs from bucket index")
@@ -178,3 +193,14 @@ func (c *MultitenantCompactor) PlannedJobsHandler(w http.ResponseWriter, req *ht
 func formatTime(t time.Time) string {
 	return t.UTC().Format(time.RFC3339)
 }
+
+type configProviderAdapter struct {
+	ConfigProvider
+	mergeShards    int
+	oooMergeShards int
+	splitGroups    int
+}
+
+func (c *configProviderAdapter) CompactorSplitAndMergeShards(string) int    { return c.mergeShards }
+func (c *configProviderAdapter) CompactorOOOSplitAndMergeShards(string) int { return c.oooMergeShards }
+func (c *configProviderAdapter) CompactorSplitGroups(string) int            { return c.splitGroups }

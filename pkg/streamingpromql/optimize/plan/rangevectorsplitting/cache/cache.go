@@ -182,6 +182,7 @@ func (c *Cache[T]) Set(
 	seriesMetadata []querierpb.SeriesMetadata,
 	annotations querierpb.Annotations,
 	results []T,
+	totalSeriesCount int,
 	stats *CacheStats,
 ) error {
 	tenant, err := user.ExtractOrgID(ctx)
@@ -221,7 +222,7 @@ func (c *Cache[T]) Set(
 	seriesCount := len(seriesMetadata)
 	level.Debug(c.logger).Log("msg", "cache entry written", "cache_key", cacheKey, "series_count", seriesCount, "entry_size", len(data))
 
-	stats.AddWriteEntryStat(seriesCount, len(data))
+	stats.AddWriteEntryStat(seriesCount, totalSeriesCount, len(data))
 
 	return nil
 }

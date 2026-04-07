@@ -30,7 +30,7 @@ RUN GOARCH=$(go env GOARCH) && \
 	mv shfmt /usr/bin
 
 # renovate: depName=github.com/grafana/tanka
-ENV TANKA_VERSION=0.36.3
+ENV TANKA_VERSION=0.36.4
 RUN GOARCH=$(go env GOARCH) && \
     curl -fSL -o "/usr/bin/tk" "https://github.com/grafana/tanka/releases/download/v${TANKA_VERSION}/tk-linux-${GOARCH}" && \
     chmod a+x /usr/bin/tk
@@ -52,7 +52,7 @@ RUN GO111MODULE=on \
 	go install github.com/campoy/embedmd/v2@v2.0.0 && \
 	go install github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb@v0.6.0 && \
 	go install github.com/monitoring-mixins/mixtool/cmd/mixtool@b97ae11 && \
-	go install github.com/mikefarah/yq/v4@v4.52.4 && \
+	go install github.com/mikefarah/yq/v4@v4.52.5 && \
 	go install github.com/google/go-jsonnet/cmd/jsonnet@v0.21.0 && \
 	go install github.com/google/go-jsonnet/cmd/jsonnetfmt@v0.21.0 && \
 	go install github.com/norwoodj/helm-docs/cmd/helm-docs@v1.14.2 && \

@@ -214,12 +214,30 @@ func TestMetadataBucketNameIsInvalidTenantID(t *testing.T) {
 	require.Error(t, tenant.ValidTenantID(metadataBucketName))
 }
 
+func TestBboltJobPersistenceManager_CreationTimePersists(t *testing.T) {
+	dir := t.TempDir()
+
+	mgr, err := openBboltJobPersistenceManager(dir, 1, log.NewNopLogger())
+	require.NoError(t, err)
+	originalCreationTime := mgr.CreationTime()
+	require.False(t, originalCreationTime.IsZero())
+	require.NoError(t, mgr.Close())
+
+	// Reopen with the same shard count
+	mgr, err = openBboltJobPersistenceManager(dir, 1, log.NewNopLogger())
+	require.NoError(t, err)
+	require.True(t, mgr.CreationTime().Equal(originalCreationTime), "creation time should be preserved on reopen")
+	require.NoError(t, mgr.Close())
+}
+
 func TestRunMigration_ScaleUp(t *testing.T) {
 	dir := t.TempDir()
 
 	// Open with 1 shard and write some data
 	mgr, err := openBboltJobPersistenceManager(dir, 1, log.NewNopLogger())
 	require.NoError(t, err)
+	originalCreationTime := mgr.CreationTime()
+	require.False(t, originalCreationTime.IsZero())
 
 	tenants := []string{"foo", "bar", "baz"}
 	for _, tenant := range tenants {
@@ -233,6 +251,7 @@ func TestRunMigration_ScaleUp(t *testing.T) {
 	mgr, err = openBboltJobPersistenceManager(dir, 2, log.NewNopLogger())
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, mgr.Close()) })
+	require.True(t, mgr.CreationTime().Equal(originalCreationTime), "creation time should be preserved after scale-up migration")
 	require.Len(t, mgr.dbs, 2)
 
 	allowedTenants := util.NewAllowList(nil, nil)
@@ -272,6 +291,8 @@ func TestRunMigration_ScaleDown(t *testing.T) {
 	// Open with 2 shards, place a tenant on each shard directly.
 	mgr, err := openBboltJobPersistenceManager(dir, 2, log.NewNopLogger())
 	require.NoError(t, err)
+	originalCreationTime := mgr.CreationTime()
+	require.False(t, originalCreationTime.IsZero())
 
 	p0, err := mgr.initializeTenantOnDB(mgr.dbs[0], "tenant1")
 	require.NoError(t, err)
@@ -283,10 +304,11 @@ func TestRunMigration_ScaleDown(t *testing.T) {
 
 	require.NoError(t, mgr.Close())
 
-	// Ropen with 1 shard.
+	// Reopen with 1 shard.
 	mgr, err = openBboltJobPersistenceManager(dir, 1, log.NewNopLogger())
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, mgr.Close()) })
+	require.True(t, mgr.CreationTime().Equal(originalCreationTime), "creation time should be preserved after scale-down migration")
 
 	require.Len(t, mgr.dbs, 1)
 

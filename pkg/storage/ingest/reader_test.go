@@ -3166,6 +3166,69 @@ func TestPartitionCommitter_commit(t *testing.T) {
 	})
 }
 
+func TestPartitionCommitter_LastCommittedOffset(t *testing.T) {
+	t.Parallel()
+
+	const (
+		topicName     = "test-topic"
+		consumerGroup = "test-group"
+		partitionID   = 1
+	)
+
+	t.Run("should return -1 before any commit", func(t *testing.T) {
+		t.Parallel()
+
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+		cfg := createTestKafkaConfig(clusterAddr, topicName)
+		offsetFile := newOffsetFile(filepath.Join(t.TempDir(), "offset.json"), partitionID, log.NewNopLogger())
+		committer := newPartitionCommitter(cfg, &mockAdminClient{}, partitionID, consumerGroup, &NoOpPreCommitNotifier{}, offsetFile, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+
+		assert.Equal(t, int64(-1), committer.LastCommittedOffset())
+	})
+
+	t.Run("should return committed offset after successful commit", func(t *testing.T) {
+		t.Parallel()
+
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+		cfg := createTestKafkaConfig(clusterAddr, topicName)
+		client, err := kgo.NewClient(commonKafkaClientOptions(cfg, nil, log.NewNopLogger())...)
+		require.NoError(t, err)
+		t.Cleanup(client.Close)
+
+		adm := kadm.NewClient(client)
+		offsetFile := newOffsetFile(filepath.Join(t.TempDir(), "offset.json"), partitionID, log.NewNopLogger())
+		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, &NoOpPreCommitNotifier{}, offsetFile, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+
+		require.NoError(t, committer.commit(context.Background(), 123))
+		assert.Equal(t, int64(123), committer.LastCommittedOffset())
+
+		require.NoError(t, committer.commit(context.Background(), 456))
+		assert.Equal(t, int64(456), committer.LastCommittedOffset())
+	})
+
+	t.Run("should not update on failed commit", func(t *testing.T) {
+		t.Parallel()
+
+		cluster, clusterAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitionID+1, topicName)
+		cluster.ControlKey(kmsg.OffsetCommit.Int16(), func(kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
+			return nil, errors.New("mocked error"), true
+		})
+
+		cfg := createTestKafkaConfig(clusterAddr, topicName)
+		client, err := kgo.NewClient(commonKafkaClientOptions(cfg, nil, log.NewNopLogger())...)
+		require.NoError(t, err)
+		t.Cleanup(client.Close)
+
+		adm := kadm.NewClient(client)
+		offsetFile := newOffsetFile(filepath.Join(t.TempDir(), "offset.json"), partitionID, log.NewNopLogger())
+		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, &NoOpPreCommitNotifier{}, offsetFile, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+
+		require.Error(t, committer.commit(context.Background(), 123))
+		assert.Equal(t, int64(-1), committer.LastCommittedOffset())
+	})
+}
+
 type writerTestCfgOpt func(cfg *KafkaConfig)
 
 func withWriteTimeout(timeout time.Duration) writerTestCfgOpt {
@@ -3524,6 +3587,53 @@ func TestPartitionReader_Commit(t *testing.T) {
 		// No new records since the last commit (2 shutdowns ago).
 		_, err = consumer.waitRecords(0, time.Second, 0)
 		assert.NoError(t, err)
+	})
+}
+
+func TestPartitionReader_LastCommittedOffset(t *testing.T) {
+	const (
+		topicName   = "test"
+		partitionID = 1
+	)
+
+	t.Run("should return -1 before any commit", func(t *testing.T) {
+		t.Parallel()
+
+		const commitInterval = time.Second * 15 // long interval to prevent automatic commits
+		ctx, cancel := context.WithCancelCause(context.Background())
+		t.Cleanup(func() { cancel(errors.New("test done")) })
+
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+
+		consumer := newTestConsumer(1)
+		reader := createAndStartReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
+
+		assert.Equal(t, int64(-1), reader.LastCommittedOffset())
+	})
+
+	t.Run("should return last committed offset after commit", func(t *testing.T) {
+		t.Parallel()
+
+		const commitInterval = 100 * time.Millisecond
+		ctx, cancel := context.WithCancelCause(context.Background())
+		t.Cleanup(func() { cancel(errors.New("test done")) })
+
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+
+		consumer := newTestConsumer(3)
+		reader := createAndStartReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
+
+		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("1"))
+		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("2"))
+		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("3"))
+
+		_, err := consumer.waitRecords(3, time.Second, 2*commitInterval)
+		require.NoError(t, err)
+
+		// After consuming and waiting for commit interval, the offset should be committed.
+		require.Eventually(t, func() bool {
+			return reader.LastCommittedOffset() >= 2 // offset of the third record (0-indexed)
+		}, 5*time.Second, 10*time.Millisecond)
 	})
 }
 

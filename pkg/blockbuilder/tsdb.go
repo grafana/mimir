@@ -3,11 +3,14 @@
 package blockbuilder
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -23,8 +26,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/thanos-io/objstore"
-	"github.com/thanos-io/objstore/providers/filesystem"
+	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -38,7 +40,6 @@ import (
 
 type TSDBBuilder struct {
 	partitionID int32
-
 	// Map of a tenant in a partition to its TSDB.
 	tsdbsMu sync.RWMutex
 	tsdbs   map[tsdbTenant]*userTSDB
@@ -49,6 +50,9 @@ type TSDBBuilder struct {
 	logger             log.Logger
 	tsdbBuilderMetrics tsdbBuilderMetrics
 	tsdbMetrics        *mimir_tsdb.TSDBMetrics
+
+	// Number of series in memory across all tenants.
+	seriesCount atomic.Int64
 }
 
 // We use this only to identify the soft errors.
@@ -315,8 +319,14 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 	userID := tenant.tenantID
 	userLogger := util_log.WithUserID(userID, b.logger)
 
+	blockRanges := b.cfg.BlocksStorage.TSDB.BlockRanges.ToMilliseconds()
+
 	udb := &userTSDB{
+		cfg:    &b.cfg,
 		userID: userID,
+
+		// Passed by reference because it counts across all tenants.
+		instanceSeriesCount: &b.seriesCount,
 	}
 
 	// Until we have a better way to enforce the same limits between ingesters and block builders,
@@ -326,13 +336,13 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 	// if they suddenly send millions of series when they are supposed to be limited to a few thousand.
 	userLimit := b.limits.MaxGlobalSeriesPerUser(userID)
 	if userLimit <= b.cfg.ApplyMaxGlobalSeriesPerUserBelow {
-		udb.maxGlobalSeries = userLimit
+		udb.maxGlobalSeriesLimit = userLimit
 	}
 
 	db, err := tsdb.Open(udir, util_log.SlogFromGoKit(userLogger), tsdbPromReg, &tsdb.Options{
 		RetentionDuration:                    0,
-		MinBlockDuration:                     2 * time.Hour.Milliseconds(),
-		MaxBlockDuration:                     2 * time.Hour.Milliseconds(),
+		MinBlockDuration:                     blockRanges[0],
+		MaxBlockDuration:                     blockRanges[0],
 		NoLockfile:                           true,
 		StripeSize:                           b.cfg.BlocksStorage.TSDB.StripeSize,
 		HeadChunksWriteBufferSize:            b.cfg.BlocksStorage.TSDB.HeadChunksWriteBufferSize,
@@ -364,6 +374,90 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 
 func (b *TSDBBuilder) NotifyPreCommit(_ context.Context) error {
 	return nil
+}
+
+func (b *TSDBBuilder) CompactToReduceInMemorySeries(ctx context.Context) error {
+	if b.cfg.BlocksStorage.TSDB.EarlyHeadCompactionMinInMemorySeries <= 0 {
+		return nil
+	}
+
+	// No need to prematurely compact TSDB heads if total number of in-memory series is below a critical threshold.
+	totalSeries := b.seriesCount.Load()
+	earlyCompactionThreshold := b.cfg.BlocksStorage.TSDB.EarlyHeadCompactionMinInMemorySeries
+	if totalSeries < earlyCompactionThreshold {
+		return nil
+	}
+
+	b.tsdbsMu.Lock()
+	defer b.tsdbsMu.Unlock()
+
+	level.Warn(b.logger).Log(
+		"msg", "number of in-memory series is higher than configured early head compaction threshold",
+		"num_tsdb", len(b.tsdbs),
+		"total_in_memory_series", totalSeries,
+		"early_compaction_threshold", earlyCompactionThreshold,
+	)
+
+	if len(b.tsdbs) == 0 {
+		return nil
+	}
+
+	// Sort tenants by series count descending to compact the largest ones first.
+	ests := make([]seriesReductionEstimation, 0, len(b.tsdbs))
+	for tenant, db := range b.tsdbs {
+		numSeries := db.Head().NumSeries()
+		if numSeries == 0 {
+			continue
+		}
+		ests = append(ests, seriesReductionEstimation{
+			tenant:     tenant,
+			estimation: numSeries,
+		})
+	}
+	slices.SortFunc(ests, func(a, b seriesReductionEstimation) int {
+		return cmp.Compare(b.estimation, a.estimation)
+	})
+
+	blockRange := b.cfg.BlocksStorage.TSDB.BlockRanges[0].Milliseconds()
+	for _, est := range ests {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		totalSeries := b.seriesCount.Load()
+		if totalSeries < earlyCompactionThreshold {
+			break
+		}
+
+		db := b.tsdbs[est.tenant]
+
+		maxTime := max(db.Head().MaxTime(), db.Head().MaxOOOTime())
+		if maxTime == math.MinInt64 {
+			continue
+		}
+
+		b.tsdbBuilderMetrics.earlyCompactionsTriggered.WithLabelValues(strconv.Itoa(int(est.tenant.partitionID))).Inc()
+
+		// Compact up to maxTime; memory truncation will force GC.
+		if err := db.compactBlocks(ctx, blockRange, maxTime, true); err != nil {
+			return fmt.Errorf("early head compaction: partition %d, user %s: %w", est.tenant.partitionID, est.tenant.tenantID, err)
+		}
+
+		level.Info(b.logger).Log(
+			"msg", "early head compaction completed",
+			"partition", est.tenant.partitionID,
+			"user", est.tenant.tenantID,
+			"before_in_memory_series", est.estimation,
+			"after_in_memory_series", db.Head().NumSeries(),
+		)
+	}
+
+	return nil
+}
+
+type seriesReductionEstimation struct {
+	tenant     tsdbTenant
+	estimation uint64
 }
 
 // Function to upload the blocks.
@@ -407,6 +501,8 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 		return nil, nil
 	}
 
+	blockRange := b.cfg.BlocksStorage.TSDB.BlockRanges[0].Milliseconds()
+
 	eg, ctx := errgroup.WithContext(ctx)
 	if b.cfg.BlocksStorage.TSDB.ShipConcurrency > 0 {
 		eg.SetLimit(b.cfg.BlocksStorage.TSDB.ShipConcurrency)
@@ -427,7 +523,8 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 				b.tsdbBuilderMetrics.lastSuccessfulCompactAndUploadTime.WithLabelValues(partitionStr).SetToCurrentTime()
 			}(time.Now())
 
-			if err := db.compactBlocks(ctx); err != nil {
+			// Compact everything but skip truncating memory and the WAL because the whole DB is closed immediately after anyway (see below).
+			if err := db.compactBlocks(ctx, blockRange, math.MaxInt64, false); err != nil {
 				return err
 			}
 
@@ -438,7 +535,7 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 			}
 
 			if b.cfg.GenerateSparseIndexHeaders {
-				if err := b.buildSparseIndexHeaders(ctx, dbDir, localMetas); err != nil {
+				if err := b.buildSparseIndexHeaders(dbDir, localMetas); err != nil {
 					return err
 				}
 			}
@@ -496,8 +593,17 @@ type extendedAppender interface {
 
 type userTSDB struct {
 	*tsdb.DB
-	userID          string
-	maxGlobalSeries int
+
+	cfg    *Config
+	userID string
+
+	// Shared across all userTSDB instances created by block-builder.
+	instanceSeriesCount *atomic.Int64
+
+	// Used as a protective mechanism, to make sure block-builder respects per-tenant max global series limit.
+	// The value is inclusive.
+	// Note, we may remove it after usage-tracker (pre-kafka limiting) goes stable.
+	maxGlobalSeriesLimit int
 }
 
 var (
@@ -505,28 +611,35 @@ var (
 )
 
 func (u *userTSDB) PreCreation(labels.Labels) error {
-	// Global series limit.
-	if u.maxGlobalSeries > 0 && u.Head().NumSeries() >= uint64(u.maxGlobalSeries) {
-		return fmt.Errorf("limit of %d reached for user %s: %w", u.maxGlobalSeries, u.userID, errMaxInMemorySeriesReached)
+	if u.maxGlobalSeriesLimit > 0 && u.Head().NumSeries() >= uint64(u.maxGlobalSeriesLimit) {
+		return fmt.Errorf("limit of %d reached for user %s: %w", u.maxGlobalSeriesLimit, u.userID, errMaxInMemorySeriesReached)
 	}
 
 	return nil
 }
 
-func (u *userTSDB) PostCreation(labels.Labels) {}
+func (u *userTSDB) PostCreation(labels.Labels) {
+	u.instanceSeriesCount.Inc()
+}
 
-func (u *userTSDB) PostDeletion(map[chunks.HeadSeriesRef]labels.Labels) {}
+func (u *userTSDB) PostDeletion(metrics map[chunks.HeadSeriesRef]labels.Labels) {
+	u.instanceSeriesCount.Sub(int64(len(metrics)))
+}
 
-func (u *userTSDB) compactBlocks(ctx context.Context) error {
-	blockRange := 2 * time.Hour.Milliseconds()
-
-	// Compact the in-order data.
+func (u *userTSDB) compactBlocks(ctx context.Context, blockRange, maxTime int64, truncateMemory bool) error {
+	// Compact all in-order data.
 	mint, maxt := u.Head().MinTime(), u.Head().MaxTime()
 	mint = (mint / blockRange) * blockRange
 	for blockMint := mint; blockMint <= maxt; blockMint += blockRange {
-		blockMaxt := blockMint + blockRange - 1
+		blockMaxt := min(blockMint+blockRange-1, maxTime)
 		rh := tsdb.NewRangeHead(u.Head(), blockMint, blockMaxt)
-		if err := u.CompactHeadWithoutTruncation(rh); err != nil {
+		var err error
+		if truncateMemory {
+			err = u.CompactHead(rh)
+		} else {
+			err = u.CompactHeadWithoutTruncation(rh)
+		}
+		if err != nil {
 			return err
 		}
 	}
@@ -540,9 +653,9 @@ func (u *userTSDB) compactBlocks(ctx context.Context) error {
 }
 
 // buildSparseIndexHeaders builds sparse index-headers for all blocks in the metas list in the directory.
-func (b *TSDBBuilder) buildSparseIndexHeaders(ctx context.Context, dbDir string, metas []tsdb.BlockMeta) error {
+func (b *TSDBBuilder) buildSparseIndexHeaders(dbDir string, metas []tsdb.BlockMeta) error {
 	for _, m := range metas {
-		if err := b.buildSparseIndexHeader(ctx, dbDir, m.ULID); err != nil {
+		if err := b.buildSparseIndexHeader(dbDir, m.ULID); err != nil {
 			return err
 		}
 	}
@@ -550,29 +663,17 @@ func (b *TSDBBuilder) buildSparseIndexHeaders(ctx context.Context, dbDir string,
 }
 
 // prepareSparseIndexHeader builds a sparse index-header for a single block.
-func (b *TSDBBuilder) buildSparseIndexHeader(ctx context.Context, dbDir string, id ulid.ULID) error {
-	// Indexheader code uses a bucket client to read;
-	// construct local-filesystem-backed bucket to read from disk.
-	fsBkt, err := filesystem.NewBucket(dbDir)
-	if err != nil {
-		return err
-	}
-	fsInstrBkt := objstore.WithNoopInstr(fsBkt)
+func (b *TSDBBuilder) buildSparseIndexHeader(dbDir string, blockID ulid.ULID) (err error) {
+	ll := log.With(b.logger, "id", blockID)
+	start := time.Now()
 
-	// Calling NewStreamBinaryReader reads a block's index and writes a sparse-index-header to disk.
-	metrics := indexheader.NewStreamBinaryReaderMetrics(nil)
-	logger := log.With(b.logger, "id", id)
-	br, err := indexheader.NewStreamBinaryReader(
-		ctx,
-		logger,
-		fsInstrBkt,
-		dbDir,
-		id,
-		b.cfg.BlocksStorage.BucketStore.PostingOffsetsInMemSampling,
-		metrics,
-		b.cfg.BlocksStorage.BucketStore.IndexHeader)
-	if err != nil {
-		return err
+	if err := indexheader.BuildAndWriteSparseHeaderFromTSDBIndex(
+		blockID, dbDir, b.cfg.BlocksStorage.BucketStore.PostingOffsetsInMemSampling, ll); err != nil {
+		return fmt.Errorf("failed to build and write to disk in protobuf format: %w", err)
 	}
-	return br.Close()
+
+	level.Info(ll).Log("msg", "built and wrote sparse index-header to disk in protobuf format",
+		"elapsed", time.Since(start),
+	)
+	return nil
 }

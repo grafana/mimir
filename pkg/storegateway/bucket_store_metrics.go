@@ -128,7 +128,7 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 
 	m.cachedPostingsCompressions = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_bucket_store_cached_postings_compressions_total",
-		Help: "Number of postings compressions and decompressions when storing to index cache.", // TODO also decompressions?
+		Help: "Number of postings compressions (op=encode) and decompressions (op=decode) when interacting with the index cache.",
 	}, []string{"op"})
 	m.cachedPostingsCompressions.WithLabelValues(labelEncode)
 	m.cachedPostingsCompressions.WithLabelValues(labelDecode)
