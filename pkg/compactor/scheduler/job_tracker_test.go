@@ -278,6 +278,53 @@ func TestJobTracker_IncompleteCompactionJobBytes(t *testing.T) {
 	require.Equal(t, float64(0), bytesGauge(), "total bytes zero after all jobs removed")
 }
 
+func TestJobTracker_MaxIncompleteCompactionJobBytes(t *testing.T) {
+	clk := clock.NewMock()
+	reg := prometheus.NewPedanticRegistry()
+	m := newSchedulerMetrics(reg)
+	jt := NewJobTracker(&NopJobPersister{}, "test", clk, infiniteLeases, infiniteLeases, m.newTrackerMetricsForTenant("test"), log.NewNopLogger())
+
+	maxGauge := func() float64 {
+		return testutil.ToFloat64(m.maxIncompleteCompactionJobBytes)
+	}
+
+	newJob := func(id string, bytes int64) *TrackedCompactionJob {
+		return NewTrackedCompactionJob(id, &CompactionJob{}, 1, bytes, clk.Now())
+	}
+
+	_, err := jt.Maintenance(time.Minute, false, true, time.Hour, 0)
+	require.NoError(t, err)
+	planLease, _, err := jt.Lease()
+	require.NoError(t, err)
+
+	// Offer jobs with "largest" first in queue so it is leased first.
+	_, _, _, err = jt.OfferCompactionJobs([]*TrackedCompactionJob{newJob("largest", 300), newJob("mid", 200), newJob("small", 100)}, planLease.Key.Epoch)
+	require.NoError(t, err)
+	require.Equal(t, float64(300), maxGauge(), "max after offering")
+
+	// Lease "largest" (300) — still in the heap (active), max unchanged.
+	leaseLargest, _, err := jt.Lease()
+	require.NoError(t, err)
+	require.Equal(t, float64(300), maxGauge(), "max unchanged after leasing largest job")
+
+	// Complete "largest" — max should drop to next largest (200).
+	_, _, err = jt.Remove(leaseLargest.Key.Id, leaseLargest.Key.Epoch, true)
+	require.NoError(t, err)
+	require.Equal(t, float64(200), maxGauge(), "max drops after completing largest job")
+
+	// Complete all remaining jobs — max should reach 0.
+	for {
+		lease, _, err := jt.Lease()
+		require.NoError(t, err)
+		if lease == nil {
+			break
+		}
+		_, _, err = jt.Remove(lease.Key.Id, lease.Key.Epoch, true)
+		require.NoError(t, err)
+	}
+	require.Equal(t, float64(0), maxGauge(), "max is 0 when queue is empty")
+}
+
 func TestJobTracker_CancelLease_PlanJobAlwaysRevives(t *testing.T) {
 	const maxLeases = 2
 

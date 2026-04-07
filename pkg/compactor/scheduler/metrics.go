@@ -13,15 +13,23 @@ const (
 )
 
 type schedulerMetrics struct {
-	pendingJobs                  *prometheus.GaugeVec
-	activeJobs                   *prometheus.GaugeVec
-	jobsCompleted                *prometheus.CounterVec
-	repeatedJobFailures          prometheus.Counter
-	incompleteCompactionJobBytes prometheus.Gauge
+	pendingJobs                     *prometheus.GaugeVec
+	activeJobs                      *prometheus.GaugeVec
+	jobsCompleted                   *prometheus.CounterVec
+	repeatedJobFailures             prometheus.Counter
+	incompleteCompactionJobBytes    prometheus.Gauge
+	maxIncompleteCompactionJobBytes prometheus.Gauge
+	sizeHeap                        *jobSizeHeap
 }
 
 func newSchedulerMetrics(reg prometheus.Registerer) *schedulerMetrics {
+	maxGauge := promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+		Name: "cortex_compactor_scheduler_max_incomplete_compaction_job_bytes",
+		Help: "Largest block bytes among all incomplete (pending and active) compaction jobs.",
+	})
 	m := &schedulerMetrics{
+		maxIncompleteCompactionJobBytes: maxGauge,
+		sizeHeap:                        newJobSizeHeap(maxGauge),
 		pendingJobs: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_compactor_scheduler_pending_jobs",
 			Help: "The number of queued pending jobs.",
@@ -54,6 +62,7 @@ type trackerMetrics struct {
 	activeJobs                   prometheus.Gauge
 	repeatedJobFailures          prometheus.Counter
 	incompleteCompactionJobBytes prometheus.Gauge
+	sizeHeap                     *jobSizeHeap
 }
 
 func (s *schedulerMetrics) newTrackerMetricsForTenant(tenant string) *trackerMetrics {
@@ -62,6 +71,7 @@ func (s *schedulerMetrics) newTrackerMetricsForTenant(tenant string) *trackerMet
 		activeJobs:                   s.activeJobs.WithLabelValues(tenant),
 		repeatedJobFailures:          s.repeatedJobFailures,
 		incompleteCompactionJobBytes: s.incompleteCompactionJobBytes,
+		sizeHeap:                     s.sizeHeap,
 	}
 }
 

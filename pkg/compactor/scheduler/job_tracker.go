@@ -58,8 +58,8 @@ func NewJobTracker(jobPersister JobPersister, tenant string, clock clock.Clock, 
 		repeatedFailureReportThreshold: repeatedFailureReportThreshold,
 		metrics:                        metrics,
 		mtx:                            sync.Mutex{},
-		pending:                        newJobList(metrics.pendingJobs, metrics.incompleteCompactionJobBytes),
-		active:                         newJobList(metrics.activeJobs, metrics.incompleteCompactionJobBytes),
+		pending:                        newJobList(metrics.pendingJobs, metrics.incompleteCompactionJobBytes, metrics.sizeHeap),
+		active:                         newJobList(metrics.activeJobs, metrics.incompleteCompactionJobBytes, metrics.sizeHeap),
 		isPlanJobLeased:                false,
 		incompleteJobs:                 make(map[string]*list.Element),
 		completeCompactionJobs:         make([]*TrackedCompactionJob, 0),
@@ -575,6 +575,8 @@ func (jt *JobTracker) checkPlanJobEpoch(epoch int64) (*TrackedPlanJob, bool) {
 func (jt *JobTracker) cleanup() {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
+	defer jt.pending.UpdateMetrics()
+	defer jt.active.UpdateMetrics()
 	jt.pending.Reset()
 	jt.active.Reset()
 }
