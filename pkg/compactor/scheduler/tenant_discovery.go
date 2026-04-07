@@ -130,6 +130,7 @@ func (s *TenantDiscoverer) discoverTenants(ctx context.Context) error {
 				s.rotator.AddTenant(tenant, tracker)
 				continue
 			}
+			tracker.cleanup()
 			delete(s.knownTenants, tenant)
 			s.metrics.deleteTenantMetrics(tenant)
 			level.Info(logger).Log("msg", "removed empty tenant from compactor scheduler")

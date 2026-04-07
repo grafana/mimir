@@ -13,10 +13,11 @@ const (
 )
 
 type schedulerMetrics struct {
-	pendingJobs         *prometheus.GaugeVec
-	activeJobs          *prometheus.GaugeVec
-	jobsCompleted       *prometheus.CounterVec
-	repeatedJobFailures prometheus.Counter
+	pendingJobs                  *prometheus.GaugeVec
+	activeJobs                   *prometheus.GaugeVec
+	jobsCompleted                *prometheus.CounterVec
+	repeatedJobFailures          prometheus.Counter
+	incompleteCompactionJobBytes prometheus.Gauge
 }
 
 func newSchedulerMetrics(reg prometheus.Registerer) *schedulerMetrics {
@@ -37,6 +38,10 @@ func newSchedulerMetrics(reg prometheus.Registerer) *schedulerMetrics {
 			Name: "cortex_compactor_scheduler_repeated_job_failures_total",
 			Help: "Total number of failures for jobs that exceeded the repeated failure threshold.",
 		}),
+		incompleteCompactionJobBytes: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_compactor_scheduler_incomplete_compaction_job_bytes",
+			Help: "Total number of bytes across all incomplete (pending and active) compaction jobs.",
+		}),
 	}
 	// Pre-initialize job types labels so we get zeros instead of no data
 	m.jobsCompleted.WithLabelValues(jobTypePlan)
@@ -45,16 +50,18 @@ func newSchedulerMetrics(reg prometheus.Registerer) *schedulerMetrics {
 }
 
 type trackerMetrics struct {
-	pendingJobs         prometheus.Gauge
-	activeJobs          prometheus.Gauge
-	repeatedJobFailures prometheus.Counter
+	pendingJobs                  prometheus.Gauge
+	activeJobs                   prometheus.Gauge
+	repeatedJobFailures          prometheus.Counter
+	incompleteCompactionJobBytes prometheus.Gauge
 }
 
 func (s *schedulerMetrics) newTrackerMetricsForTenant(tenant string) *trackerMetrics {
 	return &trackerMetrics{
-		pendingJobs:         s.pendingJobs.WithLabelValues(tenant),
-		activeJobs:          s.activeJobs.WithLabelValues(tenant),
-		repeatedJobFailures: s.repeatedJobFailures,
+		pendingJobs:                  s.pendingJobs.WithLabelValues(tenant),
+		activeJobs:                   s.activeJobs.WithLabelValues(tenant),
+		repeatedJobFailures:          s.repeatedJobFailures,
+		incompleteCompactionJobBytes: s.incompleteCompactionJobBytes,
 	}
 }
 

@@ -58,8 +58,8 @@ func NewJobTracker(jobPersister JobPersister, tenant string, clock clock.Clock, 
 		repeatedFailureReportThreshold: repeatedFailureReportThreshold,
 		metrics:                        metrics,
 		mtx:                            sync.Mutex{},
-		pending:                        newJobList(metrics.pendingJobs),
-		active:                         newJobList(metrics.activeJobs),
+		pending:                        newJobList(metrics.pendingJobs, metrics.incompleteCompactionJobBytes),
+		active:                         newJobList(metrics.activeJobs, metrics.incompleteCompactionJobBytes),
 		isPlanJobLeased:                false,
 		incompleteJobs:                 make(map[string]*list.Element),
 		completeCompactionJobs:         make([]*TrackedCompactionJob, 0),
@@ -568,6 +568,15 @@ func (jt *JobTracker) checkPlanJobEpoch(epoch int64) (*TrackedPlanJob, bool) {
 	}
 
 	return planJob, true
+}
+
+// cleanup subtracts this tracker's incomplete job bytes from the shared gauge.
+// Must be called before the tracker is discarded to avoid stale bytes in the global metric.
+func (jt *JobTracker) cleanup() {
+	jt.mtx.Lock()
+	defer jt.mtx.Unlock()
+	jt.pending.Reset()
+	jt.active.Reset()
 }
 
 func (jt *JobTracker) stopTrackingCompleteCompactionJobs() {

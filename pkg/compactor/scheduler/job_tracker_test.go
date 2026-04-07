@@ -10,6 +10,7 @@ import (
 	"github.com/benbjohnson/clock"
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -223,6 +224,58 @@ func TestJobTracker_recoverFrom(t *testing.T) {
 			require.Len(t, jt.incompleteJobs, len(tc.expectedPending)+len(tc.expectedActive))
 		})
 	}
+}
+
+func TestJobTracker_IncompleteCompactionJobBytes(t *testing.T) {
+	clk := clock.NewMock()
+	reg := prometheus.NewPedanticRegistry()
+	m := newSchedulerMetrics(reg)
+	jt := NewJobTracker(&NopJobPersister{}, "test", clk, infiniteLeases, infiniteLeases, m.newTrackerMetricsForTenant("test"), log.NewNopLogger())
+
+	bytesGauge := func() float64 {
+		return testutil.ToFloat64(m.incompleteCompactionJobBytes)
+	}
+
+	newJob := func(id string, bytes int64) *TrackedCompactionJob {
+		return NewTrackedCompactionJob(id, &CompactionJob{}, 1, bytes, clk.Now())
+	}
+
+	// Plan job leased so that offered compaction jobs are accepted.
+	_, err := jt.Maintenance(time.Minute, false, true, time.Hour, 0)
+	require.NoError(t, err)
+	planLease, _, err := jt.Lease()
+	require.NoError(t, err)
+
+	// Offer two compaction jobs with known sizes.
+	_, _, _, err = jt.OfferCompactionJobs([]*TrackedCompactionJob{newJob("a", 100), newJob("b", 200)}, planLease.Key.Epoch)
+	require.NoError(t, err)
+	require.Equal(t, float64(300), bytesGauge(), "total bytes after offering")
+
+	// Lease job "a" — moves to active, bytes stay the same.
+	leaseA, _, err := jt.Lease()
+	require.NoError(t, err)
+	require.Equal(t, float64(300), bytesGauge(), "total bytes unchanged after lease")
+
+	// Complete job "a" — bytes decrease.
+	_, _, err = jt.Remove(leaseA.Key.Id, leaseA.Key.Epoch, true)
+	require.NoError(t, err)
+	require.Equal(t, float64(200), bytesGauge(), "total bytes after completing job a")
+
+	// Lease and expire job "b" back to pending — bytes stay the same.
+	leaseB, _, err := jt.Lease()
+	require.NoError(t, err)
+	clk.Add(2 * time.Minute)
+	_, err = jt.Maintenance(time.Minute, true, false, time.Hour, 0)
+	require.NoError(t, err)
+	require.Equal(t, float64(200), bytesGauge(), "total bytes unchanged after lease expiry revival")
+	_ = leaseB
+
+	// Remove job "b" while still pending.
+	pendingLease, _, err := jt.Lease()
+	require.NoError(t, err)
+	_, _, err = jt.Remove(pendingLease.Key.Id, pendingLease.Key.Epoch, false)
+	require.NoError(t, err)
+	require.Equal(t, float64(0), bytesGauge(), "total bytes zero after all jobs removed")
 }
 
 func TestJobTracker_CancelLease_PlanJobAlwaysRevives(t *testing.T) {
