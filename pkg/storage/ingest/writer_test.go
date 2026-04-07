@@ -1707,7 +1707,7 @@ func TestWriter_WriteSync_SetsRecordTimestampFromContext(t *testing.T) {
 	ts := time.Now().Add(-time.Second).Truncate(time.Millisecond)
 	ctx := ContextWithRecordTimestamp(context.Background(), ts)
 
-	err := writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{
+	err := writer.WriteSync(ctx, topicName, partitionID, tenantID, &mimirpb.WriteRequest{
 		Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")},
 		Source:     mimirpb.API,
 	})
