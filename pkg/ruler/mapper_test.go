@@ -531,6 +531,26 @@ func Test_mapper_ExprWithLeadingNewlines(t *testing.T) {
 	require.Equal(t, "# comment\nup > 0", rgs.Groups[0].Rules[0].Expr)
 }
 
+func Test_cleanRuleGroupExprs(t *testing.T) {
+	groups := []rulefmt.RuleGroup{
+		{
+			Name: "group1",
+			Rules: []rulefmt.Rule{
+				{Record: "r1", Expr: "\n\n  up > 0\n"},
+				{Record: "r2", Expr: "rate(foo[5m])"},
+			},
+		},
+	}
+
+	cleaned := cleanRuleGroupExprs(groups)
+
+	// Cleaned expressions should have whitespace trimmed.
+	require.Equal(t, "up > 0", cleaned[0].Rules[0].Expr)
+	require.Equal(t, "rate(foo[5m])", cleaned[0].Rules[1].Expr)
+	// Original should be unmodified.
+	require.Equal(t, "\n\n  up > 0\n", groups[0].Rules[0].Expr)
+}
+
 func Test_FSLoader_LoadRules(t *testing.T) {
 	l := util_log.MakeLeveledLogger(os.Stdout, "info")
 	setupRuleSets()
