@@ -138,7 +138,6 @@ func (cfg *SchedulerClientConfig) Validate() error {
 	return nil
 }
 
-// jobType and compactionType label values — must match the scheduler package.
 const (
 	jobTypePlan         = "plan"
 	jobTypeCompaction   = "compaction"
