@@ -34,7 +34,7 @@ func printIndexInfo(_ context.Context, w io.Writer, info *IndexInfo, _ IndexAnal
 		fmt.Fprintf(w, "Series size:               %s\n", formatBytes(int64(info.FullIndexSeriesSize)))
 		fmt.Fprintf(w, "Label indices size:        %s\n", formatBytes(int64(info.FullIndexLabelIndicesSize)))
 		fmt.Fprintf(w, "Postings size:             %s\n", formatBytes(int64(info.FullIndexPostingsSize)))
-		fmt.Fprintf(w, "Label indices table size:  %s\n", formatBytes(int64(info.FullIndexLabelIndicesTable)))
+		fmt.Fprintf(w, "Label indices table size:  %s\n", formatBytes(int64(info.FullIndexLabelIndicesTableSize)))
 		fmt.Fprintf(w, "Postings offset table:     %s\n", formatBytes(int64(info.FullIndexPostingsTableSize)))
 		fmt.Fprintf(w, "TOC + CRC32:               %d\n", info.FullIndexTOCSize)
 	}

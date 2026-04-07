@@ -79,7 +79,7 @@ type ChunkStats struct {
 	TotalChunks    int64
 	MinChunks      int
 	MaxChunks      int
-	ChunkHistogram map[string]int   // bucket -> count of series
+	ChunkHistogram map[string]int     // bucket -> count of series
 	TopSeries      []SeriesChunkCount // series with the most chunks
 }
 
@@ -90,7 +90,8 @@ type SeriesChunkCount struct {
 }
 
 // analyzeChunks iterates all series and collects chunk count statistics.
-// Returns nil if the analyzer doesn't support chunk series iteration.
+// Returns nil if the analyzer returns a nil iterator (e.g., index-header format).
+// Calls log.Fatalf if the iterator encounters an error.
 func analyzeChunks(ctx context.Context, analyzer IndexAnalyzer) *ChunkStats {
 	iter := analyzer.AllChunkSeries(ctx)
 	if iter == nil {

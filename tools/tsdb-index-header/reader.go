@@ -59,11 +59,11 @@ type IndexInfo struct {
 	PostingsTableSize  uint64 // Only for index-header
 
 	// Full index section sizes (only for full index).
-	FullIndexSymbolsSize        uint64
-	FullIndexSeriesSize         uint64
-	FullIndexLabelIndicesSize   uint64
-	FullIndexPostingsSize       uint64
-	FullIndexLabelIndicesTable  uint64
-	FullIndexPostingsTableSize  uint64
-	FullIndexTOCSize            uint64
+	FullIndexSymbolsSize           uint64
+	FullIndexSeriesSize            uint64
+	FullIndexLabelIndicesSize      uint64
+	FullIndexPostingsSize          uint64
+	FullIndexLabelIndicesTableSize uint64
+	FullIndexPostingsTableSize     uint64
+	FullIndexTOCSize               uint64
 }

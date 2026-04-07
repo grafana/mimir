@@ -96,12 +96,13 @@ func main() {
 		if info.IsIndexHeader {
 			log.Fatalln("Chunk analysis requires a full index, but an index-header was loaded")
 		}
+		chunkStats := analyzeChunks(ctx, analyzer)
+		if chunkStats == nil {
+			log.Fatalln("Chunk analysis returned no results; this is unexpected for a full index")
+		}
 		fmt.Println()
 		fmt.Println("=== Chunk Distribution Analysis ===")
-		chunkStats := analyzeChunks(ctx, analyzer)
-		if chunkStats != nil {
-			printChunkStats(ctx, os.Stdout, chunkStats)
-		}
+		printChunkStats(ctx, os.Stdout, chunkStats)
 	}
 
 	// Analyze specific labels if requested.
@@ -153,9 +154,9 @@ func openFullIndex(indexPath string, size int64) (IndexAnalyzer, *IndexInfo, err
 
 	info.FullIndexSymbolsSize = toc.Series - toc.Symbols
 	info.FullIndexSeriesSize = toc.LabelIndices - toc.Series
-	info.FullIndexLabelIndicesSize = toc.LabelIndicesTable - toc.LabelIndices
+	info.FullIndexLabelIndicesSize = toc.Postings - toc.LabelIndices
 	info.FullIndexPostingsSize = toc.LabelIndicesTable - toc.Postings
-	info.FullIndexLabelIndicesTable = toc.PostingsTable - toc.LabelIndicesTable
+	info.FullIndexLabelIndicesTableSize = toc.PostingsTable - toc.LabelIndicesTable
 	info.FullIndexPostingsTableSize = uint64(size) - uint64(tsdbIndexTOCLen) - toc.PostingsTable
 	info.FullIndexTOCSize = uint64(tsdbIndexTOCLen)
 
@@ -164,6 +165,10 @@ func openFullIndex(indexPath string, size int64) (IndexAnalyzer, *IndexInfo, err
 
 // readFullIndexTOC reads the TOC from a full TSDB index file on disk.
 func readFullIndexTOC(indexPath string, size int64) (*index.TOC, error) {
+	if size < int64(tsdbIndexTOCLen) {
+		return nil, fmt.Errorf("file too small to contain a valid TSDB index TOC (size: %d, minimum: %d)", size, tsdbIndexTOCLen)
+	}
+
 	f, err := os.Open(indexPath)
 	if err != nil {
 		return nil, err
@@ -180,10 +185,11 @@ func readFullIndexTOC(indexPath string, size int64) (*index.TOC, error) {
 }
 
 // realByteSlice implements index.ByteSlice over a plain byte slice.
+// Mirrors the realByteSlice type in github.com/prometheus/prometheus/tsdb/index.
 type realByteSlice []byte
 
-func (b realByteSlice) Len() int            { return len(b) }
-func (b realByteSlice) Range(s, e int) []byte { return b[s:e] }
+func (b realByteSlice) Len() int                     { return len(b) }
+func (b realByteSlice) Range(s, e int) []byte        { return b[s:e] }
 func (b realByteSlice) Sub(s, e int) index.ByteSlice { return b[s:e] }
 
 // openIndexHeader opens an index-header file and returns an analyzer.

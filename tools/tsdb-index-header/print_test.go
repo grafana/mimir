@@ -45,13 +45,13 @@ func TestPrintIndexInfo_FullIndex(t *testing.T) {
 		IsIndexHeader: false,
 		IndexVersion:  2,
 
-		FullIndexSymbolsSize:       1048576,  // 1 MB
-		FullIndexSeriesSize:        5242880,  // 5 MB
-		FullIndexLabelIndicesSize:  0,
-		FullIndexPostingsSize:      3145728,  // 3 MB
-		FullIndexLabelIndicesTable: 524288,   // 0.5 MB
-		FullIndexPostingsTableSize: 524236,   // ~0.5 MB
-		FullIndexTOCSize:           52,
+		FullIndexSymbolsSize:           1048576, // 1 MB
+		FullIndexSeriesSize:            5242880, // 5 MB
+		FullIndexLabelIndicesSize:      0,
+		FullIndexPostingsSize:          3145728, // 3 MB
+		FullIndexLabelIndicesTableSize: 524288,  // 0.5 MB
+		FullIndexPostingsTableSize:     524236,  // ~0.5 MB
+		FullIndexTOCSize:               52,
 	}
 
 	var buf bytes.Buffer
@@ -179,10 +179,10 @@ func TestPrintChunkStats(t *testing.T) {
 		MinChunks:   1,
 		MaxChunks:   120,
 		ChunkHistogram: map[string]int{
-			"1":      200,
-			"2-10":   500,
-			"11-50":  250,
-			"51-100": 40,
+			"1":       200,
+			"2-10":    500,
+			"11-50":   250,
+			"51-100":  40,
 			"101-500": 10,
 		},
 		TopSeries: []SeriesChunkCount{

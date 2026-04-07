@@ -158,7 +158,7 @@ func (it *fullChunkSeriesIterator) Err() error            { return it.err }
 // errChunkSeriesIterator is a ChunkSeriesIterator that immediately returns an error.
 type errChunkSeriesIterator struct{ err error }
 
-func (it *errChunkSeriesIterator) Next() bool          { return false }
+func (it *errChunkSeriesIterator) Next() bool            { return false }
 func (it *errChunkSeriesIterator) Labels() labels.Labels { return labels.EmptyLabels() }
-func (it *errChunkSeriesIterator) ChunkCount() int     { return 0 }
-func (it *errChunkSeriesIterator) Err() error          { return it.err }
+func (it *errChunkSeriesIterator) ChunkCount() int       { return 0 }
+func (it *errChunkSeriesIterator) Err() error            { return it.err }
