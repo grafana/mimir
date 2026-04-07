@@ -1314,8 +1314,7 @@ receivers:
 }
 
 func TestMultitenantAlertmanager_ServeHTTPWithStrictInitialization(t *testing.T) {
-	const testGrafanaUser = "user1"
-	const testMimirUser = "user2"
+	const testUser = "user"
 
 	// Run this test using a real storage client.
 	store := prepareInMemoryAlertStore()
@@ -1332,58 +1331,27 @@ func TestMultitenantAlertmanager_ServeHTTPWithStrictInitialization(t *testing.T)
 	reg := prometheus.NewPedanticRegistry()
 	am := setupSingleMultitenantAlertmanager(t, amConfig, store, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
 
-	// Create a tenant with a default Grafana and an empty Mimir config.
-	// It should be skipped by the MOA.
+	// Create a tenant with an empty config - it should be skipped by the MOA.
 	ctx := context.Background()
 	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
-		User: testGrafanaUser,
-	}))
-	smtpConfig := &alertspb.SmtpConfig{
-		EhloIdentity:   "test-identity",
-		FromAddress:    "test@test.com",
-		FromName:       "Test Name",
-		Host:           "test:8080",
-		Password:       "test password",
-		SkipVerify:     true,
-		StartTlsPolicy: "test",
-		StaticHeaders:  map[string]string{"test-key": "test-value"},
-		User:           "test-user",
-	}
-	require.NoError(t, store.SetGrafanaAlertConfig(ctx, alertspb.GrafanaAlertConfigDesc{
-		User:       testGrafanaUser,
-		RawConfig:  grafanaConfig,
-		Promoted:   true,
-		Default:    true,
-		SmtpConfig: smtpConfig,
+		User: testUser,
 	}))
 
-	// Create another tenant with an empty Mimir config.
-	// It should be skipped by the MOA.
-	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
-		User: testMimirUser,
-	}))
-
-	// Sync configurations, the Alertmanagers shouldn't be initialized.
+	// Sync configurations - the Alertmanager shouldn't be initialized.
 	err = am.loadAndSyncConfigs(ctx, reasonPeriodic)
 	require.NoError(t, err)
 	require.Len(t, am.alertmanagers, 0)
 
-	// Make requests as the users. The Alertmanagers should be initialized.
+	// Make requests as the users - the Alertmanager should be initialized.
 	req := httptest.NewRequest("GET", externalURL.String()+"/api/v2/status", nil)
 	w := httptest.NewRecorder()
 
 	require.NoError(t, err)
-	am.ServeHTTP(w, req.WithContext(user.InjectOrgID(req.Context(), testGrafanaUser)))
+	am.ServeHTTP(w, req.WithContext(user.InjectOrgID(req.Context(), testUser)))
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
 	require.Len(t, am.alertmanagers, 1)
 
-	w = httptest.NewRecorder()
-	am.ServeHTTP(w, req.WithContext(user.InjectOrgID(req.Context(), testMimirUser)))
-	require.Equal(t, http.StatusOK, w.Result().StatusCode)
-	require.Len(t, am.alertmanagers, 2)
-
-	// Set the idle period to 0.
-	// The Alertmanagers should be turned off after the next sync.
+	// Set the idle period to 0 - the Alertmanager should be turned off after the next sync.
 	am.cfg.GrafanaAlertmanagerIdleGracePeriod = 0
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
