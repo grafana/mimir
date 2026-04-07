@@ -159,8 +159,6 @@ type schedulerExecutor struct {
 }
 
 func newSchedulerExecutor(cfg SchedulerClientConfig, logger log.Logger, reg prometheus.Registerer, invalidClusterValidation *prometheus.CounterVec) (*schedulerExecutor, error) {
-	// Register metrics before any call that can fail to avoid duplicate registration
-	// panics if the constructor is retried with the same registry.
 	executor := &schedulerExecutor{
 		cfg:                      cfg,
 		logger:                   logger,
