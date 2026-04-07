@@ -25,6 +25,7 @@ import (
 	"github.com/grafana/dskit/timeutil"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
@@ -137,6 +138,12 @@ func (cfg *SchedulerClientConfig) Validate() error {
 	return nil
 }
 
+// compactionType label values — must match compactionTypeSplit/Merge in the scheduler package.
+const (
+	compactionTypeSplit = "split"
+	compactionTypeMerge = "merge"
+)
+
 // schedulerExecutor requests compaction jobs from an external scheduler.
 type schedulerExecutor struct {
 	cfg                      SchedulerClientConfig
@@ -144,15 +151,41 @@ type schedulerExecutor struct {
 	schedulerClient          compactorschedulerpb.CompactorSchedulerClient
 	schedulerConn            *grpc.ClientConn
 	invalidClusterValidation *prometheus.CounterVec
+	jobBytes                 *prometheus.HistogramVec
+	jobDuration              *prometheus.HistogramVec
+	planJobDuration          prometheus.Histogram
 	retryable                failsafe.Executor[any]
 	lastCleanupTime          time.Time
 }
 
-func newSchedulerExecutor(cfg SchedulerClientConfig, logger log.Logger, invalidClusterValidation *prometheus.CounterVec) (*schedulerExecutor, error) {
+func newSchedulerExecutor(cfg SchedulerClientConfig, logger log.Logger, reg prometheus.Registerer, invalidClusterValidation *prometheus.CounterVec) (*schedulerExecutor, error) {
+	// Register metrics before any call that can fail to avoid duplicate registration
+	// panics if the constructor is retried with the same registry.
 	executor := &schedulerExecutor{
 		cfg:                      cfg,
 		logger:                   logger,
 		invalidClusterValidation: invalidClusterValidation,
+		jobBytes: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                            "cortex_compactor_job_bytes",
+			Help:                            "Total bytes of blocks processed by completed compaction jobs.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: time.Hour,
+		}, []string{"compaction_type"}),
+		jobDuration: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                            "cortex_compactor_job_duration_seconds",
+			Help:                            "Duration of completed compaction jobs.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: time.Hour,
+		}, []string{"compaction_type"}),
+		planJobDuration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:                            "cortex_compactor_plan_job_duration_seconds",
+			Help:                            "Duration of successfully completed plan jobs.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: time.Hour,
+		}),
 	}
 
 	executor.retryable = failsafe.With(retrypolicy.NewBuilder[any]().
@@ -397,6 +430,7 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 		e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, status)
 		return true, nil
 	case compactorschedulerpb.JOB_TYPE_PLANNING:
+		planStartTime := time.Now()
 		plannedJobs, planErr := e.executePlanningJob(jobCtx, c, jobTenant)
 		cancelJob(planErr)
 		wg.Wait()
@@ -412,6 +446,7 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 			level.Warn(e.logger).Log("msg", "failed to send planned jobs", "job_id", jobID, "tenant", jobTenant, "num_jobs", len(plannedJobs), "err", err)
 			return true, err
 		}
+		e.planJobDuration.Observe(time.Since(planStartTime).Seconds())
 		return true, nil
 	default:
 		// Should not happen because this case is caught above.
@@ -477,6 +512,7 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		}
 	}
 
+	startTime := time.Now()
 	metaMap, err := fetcher.FetchRequestedMetas(ctx, blockIDs)
 	if err != nil {
 		// If a block was not found, ABANDON the job, it will never succeed.
@@ -517,6 +553,15 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		compactor.metrics.groupCompactionRunsCompleted.Inc()
 		if hasNonZeroULIDs(compactedBlockIDs) {
 			compactor.metrics.groupCompactions.Inc()
+		}
+		jobType := compactionTypeMerge
+		if spec.Job.Split {
+			jobType = compactionTypeSplit
+		}
+		elapsed := time.Since(startTime).Seconds()
+		e.jobDuration.WithLabelValues(jobType).Observe(elapsed)
+		if totalBytes := spec.Job.TotalBlocksBytes; totalBytes > 0 {
+			e.jobBytes.WithLabelValues(jobType).Observe(float64(totalBytes))
 		}
 		level.Info(userLogger).Log("msg", "compaction job completed", "tenant", userID, "compacted_blocks", len(compactedBlockIDs))
 		return compactorschedulerpb.UPDATE_TYPE_COMPLETE, nil
@@ -600,8 +645,9 @@ func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *Multitena
 		plannedJob := &compactorschedulerpb.PlannedCompactionJob{
 			Id: job.key,
 			Job: &compactorschedulerpb.CompactionJob{
-				Split:    job.useSplitting,
-				BlockIds: serializeBlockIds(toCompact),
+				Split:            job.useSplitting,
+				BlockIds:         serializeBlockIds(toCompact),
+				TotalBlocksBytes: sumBlockBytes(toCompact),
 			},
 		}
 		plannedJobs = append(plannedJobs, plannedJob)
@@ -617,6 +663,14 @@ func serializeBlockIds(metas []*block.Meta) [][]byte {
 		ids = append(ids, meta.ULID.Bytes())
 	}
 	return ids
+}
+
+func sumBlockBytes(metas []*block.Meta) int64 {
+	var total int64
+	for _, meta := range metas {
+		total += meta.BlockBytes()
+	}
+	return total
 }
 
 // sendPlannedJobs sends the planned compaction jobs back to the scheduler with retries.
