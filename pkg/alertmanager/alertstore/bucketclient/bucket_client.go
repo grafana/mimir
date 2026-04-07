@@ -146,34 +146,6 @@ func (s *BucketAlertStore) DeleteAlertConfig(ctx context.Context, userID string)
 	return err
 }
 
-func (s *BucketAlertStore) GetGrafanaAlertConfig(ctx context.Context, userID string) (alertspb.GrafanaAlertConfigDesc, error) {
-	config, err := s.getGrafanaAlertConfig(ctx, userID)
-	if s.grafanaAMBucket.IsObjNotFoundErr(err) {
-		return config, alertspb.ErrNotFound
-	}
-	return config, err
-}
-
-func (s *BucketAlertStore) SetGrafanaAlertConfig(ctx context.Context, cfg alertspb.GrafanaAlertConfigDesc) error {
-	cfgBytes, err := cfg.Marshal()
-	if err != nil {
-		return err
-	}
-
-	return s.getGrafanaAlertmanagerUserBucket(cfg.User).Upload(ctx, grafanaConfigName, bytes.NewReader(cfgBytes))
-}
-
-func (s *BucketAlertStore) DeleteGrafanaAlertConfig(ctx context.Context, userID string) error {
-	userBkt := s.getGrafanaAlertmanagerUserBucket(userID)
-
-	err := userBkt.Delete(ctx, grafanaConfigName)
-	if userBkt.IsObjNotFoundErr(err) {
-		return nil
-	}
-
-	return err
-}
-
 // ListUsersWithFullState implements alertstore.AlertStore.
 func (s *BucketAlertStore) ListUsersWithFullState(ctx context.Context) ([]string, error) {
 	var userIDs []string
