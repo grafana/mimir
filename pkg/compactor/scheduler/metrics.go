@@ -92,9 +92,10 @@ type queueMetrics struct {
 	pendingPlanJobs       prometheus.Gauge
 	pendingCompactionJobs prometheus.Gauge
 	activeJobs            prometheus.Gauge
-	incompleteBytes       *prometheus.GaugeVec // shared across tenants, {compaction_type}
+	incompleteBytes       *prometheus.GaugeVec // {compaction_type} shared across tenants
+
 	// splitBytes and mergeBytes track this tenant's contribution to the shared incompleteBytes
-	// gauge so that Clear() can subtract exactly the right amount on tenant removal.
+	// so we can subtract exactly the right amount on tenant removal.
 	splitBytes int64
 	mergeBytes int64
 	clear      func()
