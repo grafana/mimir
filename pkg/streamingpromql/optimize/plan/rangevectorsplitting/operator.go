@@ -491,6 +491,7 @@ func (m *FunctionOverRangeVectorSplit[T]) Finalize(ctx context.Context) error {
 		"max_series_per_entry", m.cacheStats.MaxSeries,
 		"min_series_per_entry", m.cacheStats.MinSeries,
 		"total_series_across_entries", m.cacheStats.TotalSeries,
+		"filtered_out_series_across_entries", m.cacheStats.FilteredOutSeries,
 		"max_bytes_per_entry", m.cacheStats.MaxBytes,
 		"min_bytes_per_entry", m.cacheStats.MinBytes,
 		"total_cache_bytes", m.cacheStats.TotalBytes,
@@ -625,11 +626,10 @@ type UncachedSplit[T any] struct {
 	parent *FunctionOverRangeVectorSplit[T]
 
 	// Data to cache
-	rangeResults     [][]T
-	rangeAnnotations []*annotations.Annotations
-	// TODO: consider building a separate seriesMetadata for each range to reduce cache entry size.
-	// https://github.com/grafana/mimir/pull/13472#discussion_r2796712175
-	seriesMetadata []querierpb.SeriesMetadata
+	rangeResults        [][]T
+	rangeAnnotations    []*annotations.Annotations
+	seriesMetadata      []querierpb.SeriesMetadata
+	rangeSeriesMetadata [][]int // metadata idx per range idx
 
 	// localToMergedIdx maps split-local series index to the parent's merged series index.
 	// Used by emitAndCaptureAnnotation to look up the correct metric name when generating results.
@@ -653,6 +653,7 @@ func NewUncachedSplit[T any](
 		return nil, err
 	}
 
+	rangeSeriesMetadata := make([][]int, len(ranges))
 	rangeResults := make([][]T, len(ranges))
 	rangeAnnotations := make([]*annotations.Annotations, len(ranges))
 	for i := range ranges {
@@ -660,12 +661,13 @@ func NewUncachedSplit[T any](
 	}
 
 	return &UncachedSplit[T]{
-		ranges:           ranges,
-		operator:         operator,
-		parent:           parent,
-		rangeResults:     rangeResults,
-		rangeAnnotations: rangeAnnotations,
-		finalized:        false,
+		ranges:              ranges,
+		operator:            operator,
+		parent:              parent,
+		rangeResults:        rangeResults,
+		rangeAnnotations:    rangeAnnotations,
+		rangeSeriesMetadata: rangeSeriesMetadata,
+		finalized:           false,
 	}, nil
 }
 
@@ -705,7 +707,7 @@ func (p *UncachedSplit[T]) GetResultsAt(ctx context.Context, idx int) ([]T, erro
 }
 
 func (p *UncachedSplit[T]) NextSeries(ctx context.Context) ([]T, error) {
-	localIdx := p.currentLocalSeriesIdx
+	localSeriesIdx := p.currentLocalSeriesIdx
 	p.currentLocalSeriesIdx++
 
 	if err := p.operator.NextSeries(ctx); err != nil {
@@ -726,16 +728,19 @@ func (p *UncachedSplit[T]) NextSeries(ctx context.Context) ([]T, error) {
 		previousSubStep = rangeStep
 
 		capturingEmitAnnotation := func(generator types.AnnotationGenerator) {
-			p.emitAndCaptureAnnotation(rangeIdx, localIdx, generator)
+			p.emitAndCaptureAnnotation(rangeIdx, localSeriesIdx, generator)
 		}
 
-		result, err := p.parent.generateFunc(rangeStep, capturingEmitAnnotation, p.parent.MemoryConsumptionTracker)
+		result, hasValue, err := p.parent.generateFunc(rangeStep, capturingEmitAnnotation, p.parent.MemoryConsumptionTracker)
 		if err != nil {
 			return nil, err
 		}
 		results[rangeIdx] = result
 
-		p.rangeResults[rangeIdx] = append(p.rangeResults[rangeIdx], result)
+		if hasValue {
+			p.rangeResults[rangeIdx] = append(p.rangeResults[rangeIdx], result)
+			p.rangeSeriesMetadata[rangeIdx] = append(p.rangeSeriesMetadata[rangeIdx], localSeriesIdx)
+		}
 	}
 	return results, nil
 }
@@ -774,6 +779,11 @@ func (p *UncachedSplit[T]) Finalize(ctx context.Context, storeResultsInCache boo
 		var ann querierpb.Annotations
 		ann.Warnings, ann.Infos = p.rangeAnnotations[rangeIdx].AsStrings("", 0, 0)
 
+		seriesMetadata := make([]querierpb.SeriesMetadata, 0, len(p.rangeSeriesMetadata[rangeIdx]))
+		for _, seriesMetadataIdx := range p.rangeSeriesMetadata[rangeIdx] {
+			seriesMetadata = append(seriesMetadata, p.seriesMetadata[seriesMetadataIdx])
+		}
+
 		if err := p.parent.cache.Set(
 			ctx,
 			p.parent.FuncId,
@@ -781,9 +791,10 @@ func (p *UncachedSplit[T]) Finalize(ctx context.Context, storeResultsInCache boo
 			splitRange.Start,
 			splitRange.End,
 			p.parent.enableDelayedNameRemoval,
-			p.seriesMetadata,
+			seriesMetadata,
 			ann,
 			p.rangeResults[rangeIdx],
+			len(p.seriesMetadata),
 			p.parent.cacheStats,
 		); err != nil {
 			return err

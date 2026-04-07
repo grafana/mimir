@@ -30,7 +30,7 @@ var SplitAvgOverTime = NewSplitOperatorFactory[AvgOverTimeIntermediate](
 	functions.FUNCTION_AVG_OVER_TIME,
 )
 
-func avgOverTimeGenerate(step *types.RangeVectorStepData, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (AvgOverTimeIntermediate, error) {
+func avgOverTimeGenerate(step *types.RangeVectorStepData, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (AvgOverTimeIntermediate, bool, error) {
 	fHead, fTail := step.Floats.UnsafePoints()
 	hHead, hTail := step.Histograms.UnsafePoints()
 
@@ -38,7 +38,7 @@ func avgOverTimeGenerate(step *types.RangeVectorStepData, emitAnnotation types.E
 	haveHistograms := len(hHead) > 0 || len(hTail) > 0
 
 	if !haveFloats && !haveHistograms {
-		return AvgOverTimeIntermediate{}, nil
+		return AvgOverTimeIntermediate{}, false, nil
 	}
 
 	result := AvgOverTimeIntermediate{}
@@ -64,7 +64,7 @@ func avgOverTimeGenerate(step *types.RangeVectorStepData, emitAnnotation types.E
 			if err == nil {
 				result.ForceEmptyResult = true
 			} else {
-				return AvgOverTimeIntermediate{}, err
+				return AvgOverTimeIntermediate{}, false, err
 			}
 		}
 
@@ -75,7 +75,7 @@ func avgOverTimeGenerate(step *types.RangeVectorStepData, emitAnnotation types.E
 		}
 	}
 
-	return result, nil
+	return result, true, nil
 }
 
 func avgFloats(head, tail []promql.FPoint) (float64, float64, float64, float64, bool) {

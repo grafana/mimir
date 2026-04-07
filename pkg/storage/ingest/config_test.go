@@ -72,15 +72,6 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expectedErr: ErrInvalidConsumePosition,
 		},
-		"should fail if ingest storage is enabled and the configured number of Kafka write clients is 0": {
-			setup: func(cfg *Config) {
-				cfg.Enabled = true
-				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
-				cfg.KafkaConfig.Topic = "test"
-				cfg.KafkaConfig.WriteClients = 0
-			},
-			expectedErr: ErrInvalidWriteClients,
-		},
 		"should fail if ingest storage is enabled and producer max record size bytes is set too low": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true

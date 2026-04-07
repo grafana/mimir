@@ -106,4 +106,5 @@ message StoredCompactionJob {
 
 message PersistenceMetadata {
   uint32 shard_count = 1;
+  int64 creation_time = 2;
 }

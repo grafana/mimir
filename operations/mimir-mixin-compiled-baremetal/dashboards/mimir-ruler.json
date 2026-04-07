@@ -786,7 +786,7 @@
                            "mode": "absolute",
                            "steps": [ ]
                         },
-                        "unit": "ms"
+                        "unit": "s"
                      },
                      "overrides": [ ]
                   },
@@ -805,37 +805,37 @@
                   "span": 6,
                   "targets": [
                      {
-                        "expr": "(histogram_quantile(0.99, sum (rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", operation=\"/cortex.Ingester/Push\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(histogram_quantile(0.99, sum (rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", operation=\"/cortex.Ingester/Push\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "refId": "A"
                      },
                      {
-                        "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_ingester_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", operation=\"/cortex.Ingester/Push\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_ingester_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", operation=\"/cortex.Ingester/Push\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "refId": "A_classic"
                      },
                      {
-                        "expr": "(histogram_quantile(0.50, sum (rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", operation=\"/cortex.Ingester/Push\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(histogram_quantile(0.50, sum (rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", operation=\"/cortex.Ingester/Push\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
                         "refId": "B"
                      },
                      {
-                        "expr": "(histogram_quantile(0.50, sum by (le) (rate(cortex_ingester_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", operation=\"/cortex.Ingester/Push\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(histogram_quantile(0.50, sum by (le) (rate(cortex_ingester_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", operation=\"/cortex.Ingester/Push\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
                         "refId": "B_classic"
                      },
                      {
-                        "expr": "(1e3 * sum(histogram_sum(rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", operation=\"/cortex.Ingester/Push\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", operation=\"/cortex.Ingester/Push\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(sum(histogram_sum(rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", operation=\"/cortex.Ingester/Push\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", operation=\"/cortex.Ingester/Push\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C"
                      },
                      {
-                        "expr": "(1e3 * sum(rate(cortex_ingester_client_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", operation=\"/cortex.Ingester/Push\"}[$__rate_interval])) /\nsum(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", operation=\"/cortex.Ingester/Push\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(sum(rate(cortex_ingester_client_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", operation=\"/cortex.Ingester/Push\"}[$__rate_interval])) /\nsum(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", operation=\"/cortex.Ingester/Push\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C_classic"
@@ -1250,7 +1250,7 @@
                            "mode": "absolute",
                            "steps": [ ]
                         },
-                        "unit": "ms"
+                        "unit": "s"
                      },
                      "overrides": [ ]
                   },
@@ -1269,37 +1269,37 @@
                   "span": 6,
                   "targets": [
                      {
-                        "expr": "(histogram_quantile(0.99, sum (rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir|ruler-querier.*))\", operation=\"/cortex.Ingester/QueryStream\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(histogram_quantile(0.99, sum (rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir|ruler-querier.*))\", operation=\"/cortex.Ingester/QueryStream\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "refId": "A"
                      },
                      {
-                        "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_ingester_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir|ruler-querier.*))\", operation=\"/cortex.Ingester/QueryStream\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_ingester_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir|ruler-querier.*))\", operation=\"/cortex.Ingester/QueryStream\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "refId": "A_classic"
                      },
                      {
-                        "expr": "(histogram_quantile(0.50, sum (rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir|ruler-querier.*))\", operation=\"/cortex.Ingester/QueryStream\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(histogram_quantile(0.50, sum (rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir|ruler-querier.*))\", operation=\"/cortex.Ingester/QueryStream\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
                         "refId": "B"
                      },
                      {
-                        "expr": "(histogram_quantile(0.50, sum by (le) (rate(cortex_ingester_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir|ruler-querier.*))\", operation=\"/cortex.Ingester/QueryStream\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(histogram_quantile(0.50, sum by (le) (rate(cortex_ingester_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir|ruler-querier.*))\", operation=\"/cortex.Ingester/QueryStream\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
                         "refId": "B_classic"
                      },
                      {
-                        "expr": "(1e3 * sum(histogram_sum(rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir|ruler-querier.*))\", operation=\"/cortex.Ingester/QueryStream\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir|ruler-querier.*))\", operation=\"/cortex.Ingester/QueryStream\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(sum(histogram_sum(rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir|ruler-querier.*))\", operation=\"/cortex.Ingester/QueryStream\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir|ruler-querier.*))\", operation=\"/cortex.Ingester/QueryStream\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C"
                      },
                      {
-                        "expr": "(1e3 * sum(rate(cortex_ingester_client_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir|ruler-querier.*))\", operation=\"/cortex.Ingester/QueryStream\"}[$__rate_interval])) /\nsum(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir|ruler-querier.*))\", operation=\"/cortex.Ingester/QueryStream\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(sum(rate(cortex_ingester_client_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir|ruler-querier.*))\", operation=\"/cortex.Ingester/QueryStream\"}[$__rate_interval])) /\nsum(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir|ruler-querier.*))\", operation=\"/cortex.Ingester/QueryStream\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C_classic"
@@ -1849,7 +1849,7 @@
                            "mode": "absolute",
                            "steps": [ ]
                         },
-                        "unit": "ms"
+                        "unit": "s"
                      },
                      "overrides": [ ]
                   },
@@ -1868,37 +1868,37 @@
                   "span": 6,
                   "targets": [
                      {
-                        "expr": "(histogram_quantile(0.99, sum (rate(cortex_kv_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", kv_name=~\"ruler\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(histogram_quantile(0.99, sum (rate(cortex_kv_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", kv_name=~\"ruler\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "refId": "A"
                      },
                      {
-                        "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_kv_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", kv_name=~\"ruler\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_kv_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", kv_name=~\"ruler\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "refId": "A_classic"
                      },
                      {
-                        "expr": "(histogram_quantile(0.50, sum (rate(cortex_kv_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", kv_name=~\"ruler\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(histogram_quantile(0.50, sum (rate(cortex_kv_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", kv_name=~\"ruler\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
                         "refId": "B"
                      },
                      {
-                        "expr": "(histogram_quantile(0.50, sum by (le) (rate(cortex_kv_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", kv_name=~\"ruler\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(histogram_quantile(0.50, sum by (le) (rate(cortex_kv_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", kv_name=~\"ruler\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
                         "refId": "B_classic"
                      },
                      {
-                        "expr": "(1e3 * sum(histogram_sum(rate(cortex_kv_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", kv_name=~\"ruler\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_kv_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", kv_name=~\"ruler\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(sum(histogram_sum(rate(cortex_kv_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", kv_name=~\"ruler\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_kv_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", kv_name=~\"ruler\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C"
                      },
                      {
-                        "expr": "(1e3 * sum(rate(cortex_kv_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", kv_name=~\"ruler\"}[$__rate_interval])) /\nsum(rate(cortex_kv_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", kv_name=~\"ruler\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(sum(rate(cortex_kv_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", kv_name=~\"ruler\"}[$__rate_interval])) /\nsum(rate(cortex_kv_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", kv_name=~\"ruler\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C_classic"
@@ -2705,7 +2705,7 @@
                            "mode": "absolute",
                            "steps": [ ]
                         },
-                        "unit": "ms"
+                        "unit": "s"
                      },
                      "overrides": [ ]
                   },
@@ -2724,37 +2724,37 @@
                   "span": 3,
                   "targets": [
                      {
-                        "expr": "(histogram_quantile(0.99, sum (rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"attributes\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(histogram_quantile(0.99, sum (rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"attributes\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "refId": "A"
                      },
                      {
-                        "expr": "(histogram_quantile(0.99, sum by (le) (rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"attributes\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(histogram_quantile(0.99, sum by (le) (rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"attributes\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "refId": "A_classic"
                      },
                      {
-                        "expr": "(histogram_quantile(0.50, sum (rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"attributes\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(histogram_quantile(0.50, sum (rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"attributes\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
                         "refId": "B"
                      },
                      {
-                        "expr": "(histogram_quantile(0.50, sum by (le) (rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"attributes\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(histogram_quantile(0.50, sum by (le) (rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"attributes\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
                         "refId": "B_classic"
                      },
                      {
-                        "expr": "(1e3 * sum(histogram_sum(rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"attributes\"}[$__rate_interval]))) /\nsum(histogram_count(rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"attributes\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(sum(histogram_sum(rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"attributes\"}[$__rate_interval]))) /\nsum(histogram_count(rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"attributes\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C"
                      },
                      {
-                        "expr": "(1e3 * sum(rate(thanos_objstore_bucket_operation_duration_seconds_sum{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"attributes\"}[$__rate_interval])) /\nsum(rate(thanos_objstore_bucket_operation_duration_seconds_count{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"attributes\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(sum(rate(thanos_objstore_bucket_operation_duration_seconds_sum{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"attributes\"}[$__rate_interval])) /\nsum(rate(thanos_objstore_bucket_operation_duration_seconds_count{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"attributes\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C_classic"
@@ -2802,7 +2802,7 @@
                            "mode": "absolute",
                            "steps": [ ]
                         },
-                        "unit": "ms"
+                        "unit": "s"
                      },
                      "overrides": [ ]
                   },
@@ -2821,37 +2821,37 @@
                   "span": 3,
                   "targets": [
                      {
-                        "expr": "(histogram_quantile(0.99, sum (rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"exists\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(histogram_quantile(0.99, sum (rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"exists\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "refId": "A"
                      },
                      {
-                        "expr": "(histogram_quantile(0.99, sum by (le) (rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"exists\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(histogram_quantile(0.99, sum by (le) (rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"exists\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "refId": "A_classic"
                      },
                      {
-                        "expr": "(histogram_quantile(0.50, sum (rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"exists\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(histogram_quantile(0.50, sum (rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"exists\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
                         "refId": "B"
                      },
                      {
-                        "expr": "(histogram_quantile(0.50, sum by (le) (rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"exists\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(histogram_quantile(0.50, sum by (le) (rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"exists\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
                         "refId": "B_classic"
                      },
                      {
-                        "expr": "(1e3 * sum(histogram_sum(rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"exists\"}[$__rate_interval]))) /\nsum(histogram_count(rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"exists\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(sum(histogram_sum(rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"exists\"}[$__rate_interval]))) /\nsum(histogram_count(rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"exists\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C"
                      },
                      {
-                        "expr": "(1e3 * sum(rate(thanos_objstore_bucket_operation_duration_seconds_sum{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"exists\"}[$__rate_interval])) /\nsum(rate(thanos_objstore_bucket_operation_duration_seconds_count{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"exists\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(sum(rate(thanos_objstore_bucket_operation_duration_seconds_sum{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"exists\"}[$__rate_interval])) /\nsum(rate(thanos_objstore_bucket_operation_duration_seconds_count{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"exists\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C_classic"
@@ -2899,7 +2899,7 @@
                            "mode": "absolute",
                            "steps": [ ]
                         },
-                        "unit": "ms"
+                        "unit": "s"
                      },
                      "overrides": [ ]
                   },
@@ -2918,37 +2918,37 @@
                   "span": 3,
                   "targets": [
                      {
-                        "expr": "(histogram_quantile(0.99, sum (rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(histogram_quantile(0.99, sum (rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "refId": "A"
                      },
                      {
-                        "expr": "(histogram_quantile(0.99, sum by (le) (rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(histogram_quantile(0.99, sum by (le) (rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "refId": "A_classic"
                      },
                      {
-                        "expr": "(histogram_quantile(0.50, sum (rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(histogram_quantile(0.50, sum (rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
                         "refId": "B"
                      },
                      {
-                        "expr": "(histogram_quantile(0.50, sum by (le) (rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(histogram_quantile(0.50, sum by (le) (rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
                         "refId": "B_classic"
                      },
                      {
-                        "expr": "(1e3 * sum(histogram_sum(rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get\"}[$__rate_interval]))) /\nsum(histogram_count(rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(sum(histogram_sum(rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get\"}[$__rate_interval]))) /\nsum(histogram_count(rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C"
                      },
                      {
-                        "expr": "(1e3 * sum(rate(thanos_objstore_bucket_operation_duration_seconds_sum{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get\"}[$__rate_interval])) /\nsum(rate(thanos_objstore_bucket_operation_duration_seconds_count{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(sum(rate(thanos_objstore_bucket_operation_duration_seconds_sum{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get\"}[$__rate_interval])) /\nsum(rate(thanos_objstore_bucket_operation_duration_seconds_count{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C_classic"
@@ -2996,7 +2996,7 @@
                            "mode": "absolute",
                            "steps": [ ]
                         },
-                        "unit": "ms"
+                        "unit": "s"
                      },
                      "overrides": [ ]
                   },
@@ -3015,37 +3015,37 @@
                   "span": 3,
                   "targets": [
                      {
-                        "expr": "(histogram_quantile(0.99, sum (rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get_range\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(histogram_quantile(0.99, sum (rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get_range\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "refId": "A"
                      },
                      {
-                        "expr": "(histogram_quantile(0.99, sum by (le) (rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get_range\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(histogram_quantile(0.99, sum by (le) (rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get_range\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "refId": "A_classic"
                      },
                      {
-                        "expr": "(histogram_quantile(0.50, sum (rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get_range\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(histogram_quantile(0.50, sum (rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get_range\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
                         "refId": "B"
                      },
                      {
-                        "expr": "(histogram_quantile(0.50, sum by (le) (rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get_range\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(histogram_quantile(0.50, sum by (le) (rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get_range\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
                         "refId": "B_classic"
                      },
                      {
-                        "expr": "(1e3 * sum(histogram_sum(rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get_range\"}[$__rate_interval]))) /\nsum(histogram_count(rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get_range\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(sum(histogram_sum(rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get_range\"}[$__rate_interval]))) /\nsum(histogram_count(rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get_range\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C"
                      },
                      {
-                        "expr": "(1e3 * sum(rate(thanos_objstore_bucket_operation_duration_seconds_sum{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get_range\"}[$__rate_interval])) /\nsum(rate(thanos_objstore_bucket_operation_duration_seconds_count{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get_range\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(sum(rate(thanos_objstore_bucket_operation_duration_seconds_sum{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get_range\"}[$__rate_interval])) /\nsum(rate(thanos_objstore_bucket_operation_duration_seconds_count{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get_range\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C_classic"
@@ -3093,7 +3093,7 @@
                            "mode": "absolute",
                            "steps": [ ]
                         },
-                        "unit": "ms"
+                        "unit": "s"
                      },
                      "overrides": [ ]
                   },
@@ -3112,37 +3112,37 @@
                   "span": 3,
                   "targets": [
                      {
-                        "expr": "(histogram_quantile(0.99, sum (rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"upload\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(histogram_quantile(0.99, sum (rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"upload\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "refId": "A"
                      },
                      {
-                        "expr": "(histogram_quantile(0.99, sum by (le) (rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"upload\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(histogram_quantile(0.99, sum by (le) (rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"upload\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "refId": "A_classic"
                      },
                      {
-                        "expr": "(histogram_quantile(0.50, sum (rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"upload\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(histogram_quantile(0.50, sum (rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"upload\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
                         "refId": "B"
                      },
                      {
-                        "expr": "(histogram_quantile(0.50, sum by (le) (rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"upload\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(histogram_quantile(0.50, sum by (le) (rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"upload\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
                         "refId": "B_classic"
                      },
                      {
-                        "expr": "(1e3 * sum(histogram_sum(rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"upload\"}[$__rate_interval]))) /\nsum(histogram_count(rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"upload\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(sum(histogram_sum(rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"upload\"}[$__rate_interval]))) /\nsum(histogram_count(rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"upload\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C"
                      },
                      {
-                        "expr": "(1e3 * sum(rate(thanos_objstore_bucket_operation_duration_seconds_sum{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"upload\"}[$__rate_interval])) /\nsum(rate(thanos_objstore_bucket_operation_duration_seconds_count{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"upload\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(sum(rate(thanos_objstore_bucket_operation_duration_seconds_sum{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"upload\"}[$__rate_interval])) /\nsum(rate(thanos_objstore_bucket_operation_duration_seconds_count{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"upload\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C_classic"
@@ -3190,7 +3190,7 @@
                            "mode": "absolute",
                            "steps": [ ]
                         },
-                        "unit": "ms"
+                        "unit": "s"
                      },
                      "overrides": [ ]
                   },
@@ -3209,37 +3209,37 @@
                   "span": 3,
                   "targets": [
                      {
-                        "expr": "(histogram_quantile(0.99, sum (rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"delete\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(histogram_quantile(0.99, sum (rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"delete\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "refId": "A"
                      },
                      {
-                        "expr": "(histogram_quantile(0.99, sum by (le) (rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"delete\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(histogram_quantile(0.99, sum by (le) (rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"delete\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "refId": "A_classic"
                      },
                      {
-                        "expr": "(histogram_quantile(0.50, sum (rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"delete\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(histogram_quantile(0.50, sum (rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"delete\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
                         "refId": "B"
                      },
                      {
-                        "expr": "(histogram_quantile(0.50, sum by (le) (rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"delete\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(histogram_quantile(0.50, sum by (le) (rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"delete\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
                         "refId": "B_classic"
                      },
                      {
-                        "expr": "(1e3 * sum(histogram_sum(rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"delete\"}[$__rate_interval]))) /\nsum(histogram_count(rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"delete\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(sum(histogram_sum(rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"delete\"}[$__rate_interval]))) /\nsum(histogram_count(rate(thanos_objstore_bucket_operation_duration_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"delete\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C"
                      },
                      {
-                        "expr": "(1e3 * sum(rate(thanos_objstore_bucket_operation_duration_seconds_sum{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"delete\"}[$__rate_interval])) /\nsum(rate(thanos_objstore_bucket_operation_duration_seconds_count{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"delete\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(sum(rate(thanos_objstore_bucket_operation_duration_seconds_sum{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"delete\"}[$__rate_interval])) /\nsum(rate(thanos_objstore_bucket_operation_duration_seconds_count{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"delete\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C_classic"

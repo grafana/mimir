@@ -64,6 +64,8 @@ func (qb *queryBlockerMiddleware) isBlocked(tenant string, req MetricsQueryReque
 		queryDurationMs = req.GetEnd() - req.GetStart()
 		queryDuration   = time.Duration(queryDurationMs) * time.Millisecond
 		isInstantQuery  = queryDurationMs == 0
+		stepMs          = req.GetStep()
+		stepDuration    = time.Duration(stepMs) * time.Millisecond
 	)
 
 	for ruleIndex, block := range blocks {
@@ -95,23 +97,25 @@ func (qb *queryBlockerMiddleware) isBlocked(tenant string, req MetricsQueryReque
 			block.TimeRangeLongerThan > 0 &&
 			queryDuration > time.Duration(block.TimeRangeLongerThan)
 
-		shouldBlock := false
-		switch {
-		case pattern != "" && block.TimeRangeLongerThan > 0:
-			shouldBlock = patternMatches && timeRangeViolation
-		case pattern != "":
-			shouldBlock = patternMatches
-		case block.TimeRangeLongerThan > 0:
-			shouldBlock = timeRangeViolation
-		}
+		stepViolation := block.MinimumStepSize > 0 &&
+			stepMs > 0 &&
+			stepDuration < time.Duration(block.MinimumStepSize)
+
+		hasCondition := pattern != "" || block.TimeRangeLongerThan > 0 || block.MinimumStepSize > 0
+		shouldBlock := hasCondition &&
+			(pattern == "" || patternMatches) &&
+			(block.TimeRangeLongerThan == 0 || timeRangeViolation) &&
+			(block.MinimumStepSize == 0 || stepViolation)
 
 		if shouldBlock {
 			level.Info(logger).Log(
 				"msg", "query blocked",
 				"query", query,
 				"query_duration_ms", queryDurationMs,
+				"step_ms", stepMs,
 				"pattern_matched", patternMatches,
 				"time_range_violation", timeRangeViolation,
+				"step_violation", stepViolation,
 				"index", ruleIndex,
 				"reason", block.Reason,
 			)

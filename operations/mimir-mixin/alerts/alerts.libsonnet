@@ -177,11 +177,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
           expr: |||
             count without(sha256) (
                 count by (%(alert_aggregation_labels)s, %(per_job_label)s, sha256) (cortex_runtime_config_hash)
-                unless
+                unless on (%(alert_aggregation_labels)s, sha256)
                 # Don't include config hashes that are still being rolled out.
                 # Kubernetes configmap propagation can be slow,
                 # and in large cells we may deploy a new configmap when the previous one isn't still propagated everywhere.
-                (changes((count by (%(alert_aggregation_labels)s, %(per_job_label)s, sha256) (cortex_runtime_config_hash))[10m:]) > 0)
+                (changes((count by (%(alert_aggregation_labels)s, sha256) (cortex_runtime_config_hash))[10m:]) > 0)
             )  > 1
           ||| % $._config,
           'for': '1h',
@@ -449,8 +449,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('RingMembersMismatch'),
           expr: |||
             (
-              avg by(%(alert_aggregation_labels)s) (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ring_members{name="ingester",%(job_regex)s,%(job_not_regex)s}))
-              != sum by(%(alert_aggregation_labels)s) (up{%(job_regex)s,%(job_not_regex)s})
+              (
+                avg by(%(alert_aggregation_labels)s) (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ring_members{name="ingester",%(job_regex)s,%(job_not_regex)s}))
+                != sum by(%(alert_aggregation_labels)s) (up{%(job_regex)s,%(job_not_regex)s})
+              )
+              unless on(%(alert_aggregation_labels)s)
+              (
+                sum by(%(alert_aggregation_labels)s) (kube_statefulset_replicas{statefulset=~".*ingester.*"})
+                  !=
+                sum by(%(alert_aggregation_labels)s) (kube_statefulset_status_replicas_updated{statefulset=~".*ingester.*"})
+              )
             )
             and
             (

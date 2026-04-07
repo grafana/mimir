@@ -147,6 +147,10 @@ type userTSDB struct {
 	// Only accessed by ownedSeries service, no need to synchronization.
 	ownedTokenRanges ring.TokenRanges
 
+	// offsetCatalogue tracks Kafka offset watermarks for compacted blocks.
+	// Only set when ingest storage is enabled.
+	offsetCatalogue *offsetCatalogue
+
 	requiresOwnedSeriesUpdate atomic.String // Non-empty string means that we need to recompute "owned series" for the user. Value will be used in the log message.
 
 	postingsCache *tsdb.PostingsForMatchersCache

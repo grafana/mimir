@@ -300,6 +300,9 @@ type Ingester struct {
 	// Metrics shared across all per-tenant shippers.
 	shipperMetrics *shipperMetrics
 
+	// Metrics shared across all per-tenant offset catalogues.
+	offsetCatalogueMetrics *offsetCatalogueMetrics
+
 	subservicesForPartitionReplay          *services.Manager
 	subservicesAfterIngesterRingLifecycler *services.Manager
 
@@ -389,14 +392,15 @@ func newIngester(cfg Config, limits *validation.Overrides, ingestersRing ring.Re
 
 		instanceRing: ingestersRing,
 
-		tsdbs:               make(map[string]*userTSDB),
-		usersMetadata:       make(map[string]*userMetricsMetadata),
-		bucket:              bucketClient,
-		tsdbMetrics:         metrics,
-		shipperMetrics:      newShipperMetrics(registerer),
-		forceCompactTrigger: make(chan requestWithUsersAndCallback),
-		shipTrigger:         make(chan requestWithUsersAndCallback),
-		seriesHashCache:     hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
+		tsdbs:                  make(map[string]*userTSDB),
+		usersMetadata:          make(map[string]*userMetricsMetadata),
+		bucket:                 bucketClient,
+		tsdbMetrics:            metrics,
+		shipperMetrics:         newShipperMetrics(registerer),
+		offsetCatalogueMetrics: newOffsetCatalogueMetrics(registerer),
+		forceCompactTrigger:    make(chan requestWithUsersAndCallback),
+		shipTrigger:            make(chan requestWithUsersAndCallback),
+		seriesHashCache:        hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
 		headPostingsForMatchersCacheFactory: tsdb.NewPostingsForMatchersCacheFactory(
 			tsdb.PostingsForMatchersCacheConfig{
 				Shared:                cfg.BlocksStorageConfig.TSDB.SharedPostingsForMatchersCache,
@@ -604,6 +608,14 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	if cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.Enabled {
 		i.statisticsService = services.NewTimerService(cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.StatisticsCollectionFrequency, nil, i.generateHeadStatisticsForAllUsers, nil)
 		i.subservicesWatcher.WatchService(i.statisticsService)
+	}
+
+	// Verify and init kafka offset catalogue.
+	if cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.Enabled {
+		// This check is here instead of Config.Validate() because Config.IngestStorageConfig is injected after validation.
+		if !cfg.IngestStorageConfig.Enabled {
+			return nil, fmt.Errorf("kafka offset catalogue can only be enabled when ingest storage is enabled")
+		}
 	}
 
 	i.BasicService = services.NewBasicService(i.starting, i.ingesterRunning, i.stopping).WithName("ingester")

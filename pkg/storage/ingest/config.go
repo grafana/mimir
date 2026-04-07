@@ -30,7 +30,6 @@ const (
 var (
 	ErrMissingKafkaAddress               = errors.New("the Kafka address has not been configured")
 	ErrMissingKafkaTopic                 = errors.New("the Kafka topic has not been configured")
-	ErrInvalidWriteClients               = errors.New("the configured number of write clients is invalid (must be greater than 0)")
 	ErrInvalidConsumePosition            = errors.New("the configured consume position is invalid")
 	ErrInvalidProducerMaxRecordSizeBytes = fmt.Errorf("the configured producer max record size bytes must be a value between %d and %d", minProducerRecordDataBytesLimit, maxProducerRecordDataBytesLimit)
 	ErrInconsistentConsumerLagAtStartup  = fmt.Errorf("the target and max consumer lag at startup must be either both set to 0 or to a value greater than 0")
@@ -99,7 +98,7 @@ type KafkaConfig struct {
 	ClientRack   string                 `yaml:"client_rack"`
 	DialTimeout  time.Duration          `yaml:"dial_timeout"`
 	WriteTimeout time.Duration          `yaml:"write_timeout"`
-	WriteClients int                    `yaml:"write_clients"`
+	WriteClients int                    `yaml:"write_clients" category:"deprecated"` // TODO Remove in Mimir 3.3.
 
 	SASL       KafkaAuthConfig `yaml:",inline"`
 	TLSEnabled bool            `yaml:"tls_enabled"`
@@ -164,6 +163,10 @@ type KafkaConfig struct {
 
 	// DisableLinger disables producer linger. This setting is just used in tests.
 	DisableLinger bool `yaml:"-"`
+
+	// MaxInflightProduceRequests is the max number of in-flight Produce requests per broker.
+	// This setting is just used in tests. 0 uses the default.
+	MaxInflightProduceRequests int `yaml:"-"`
 }
 
 func (cfg *KafkaConfig) RegisterFlags(f *flag.FlagSet) {
@@ -179,7 +182,7 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 	f.StringVar(&cfg.ClientRack, prefix+"client-rack", "", "The rack identifier for this Kafka client. Corresponds to the Kafka client.rack setting.")
 	f.DurationVar(&cfg.DialTimeout, prefix+"dial-timeout", 2*time.Second, "The maximum time allowed to open a connection to a Kafka broker.")
 	f.DurationVar(&cfg.WriteTimeout, prefix+"write-timeout", 10*time.Second, "How long to wait for an incoming write request to be successfully committed to the Kafka backend.")
-	f.IntVar(&cfg.WriteClients, prefix+"write-clients", 1, "The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka.")
+	f.IntVar(&cfg.WriteClients, prefix+"write-clients", 1, "The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka. Deprecated: has no effect (Mimir always uses a single Kafka write client).")
 
 	f.StringVar(&cfg.ConsumerGroup, prefix+"consumer-group", "", "The consumer group used by the consumer to track the last consumed offset. The consumer group must be different for each ingester. If the configured consumer group contains the '<partition>' placeholder, it is replaced with the actual partition ID owned by the ingester. When empty (recommended), Mimir uses the ingester instance ID to guarantee uniqueness.")
 	f.DurationVar(&cfg.ConsumerGroupOffsetCommitInterval, prefix+"consumer-group-offset-commit-interval", time.Second, "How frequently a consumer should commit the consumed offset to Kafka. The last committed offset is used at startup to continue the consumption from where it was left.")
@@ -229,9 +232,6 @@ func (cfg *KafkaConfig) Validate() error {
 	}
 	if cfg.Topic == "" {
 		return ErrMissingKafkaTopic
-	}
-	if cfg.WriteClients < 1 {
-		return ErrInvalidWriteClients
 	}
 	if !slices.Contains(consumeFromPositionOptions, cfg.ConsumeFromPositionAtStartup) {
 		return ErrInvalidConsumePosition

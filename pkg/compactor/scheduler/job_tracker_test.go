@@ -26,8 +26,7 @@ func at(hour, minute int) time.Time {
 	return time.Date(2026, 1, 2, hour, minute, 0, 0, time.UTC)
 }
 
-func newTestJobTracker(t *testing.T, clk clock.Clock) *JobTracker {
-	t.Helper()
+func newTestJobTracker(clk clock.Clock) *JobTracker {
 	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
 	return NewJobTracker(&NopJobPersister{}, "test", clk, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("test"), log.NewNopLogger())
 }
@@ -89,7 +88,7 @@ func TestJobTracker_Maintenance_Planning(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			clk := clock.NewMock()
 			clk.Set(tc.now)
-			jt := newTestJobTracker(t, clk)
+			jt := newTestJobTracker(clk)
 			if tc.setup != nil {
 				tc.setup(jt)
 			}
@@ -209,7 +208,7 @@ func TestJobTracker_recoverFrom(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			jt := newTestJobTracker(t, clock.NewMock())
+			jt := newTestJobTracker(clock.NewMock())
 
 			jt.recoverFrom(tc.compactionJobs, tc.planJob)
 

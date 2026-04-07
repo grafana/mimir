@@ -107,31 +107,30 @@ func (cfg *Config) Validate() error {
 	return cfg.BucketReader.Validate()
 }
 
-type Section string
-
 const (
 	//SectionSymbolsTable        Section = "symbols-table"
-	//SectionPostingsOffsetTable Section = "postings-offset-table"
 
-	SectionAll Section = "all"
+	SectionPostingsOffsetsTable string = "postings-offsets-table"
+
+	//SectionAll Section = "all"
 )
 
 var (
-	errInvalidIndexHeaderSection = errors.New(fmt.Sprintf("invalid index-header section; must be one of: %s", SectionAll))
+	errInvalidIndexHeaderSection = errors.New(fmt.Sprintf("invalid index-header section; must be one of: %s", SectionPostingsOffsetsTable))
 )
 
 type BucketReaderConfig struct {
-	Enabled             bool    `yaml:"enabled" category:"experimental"`
-	BucketIndexSections Section `yaml:"index_sections"  category:"experimental"`
+	Enabled             bool   `yaml:"enabled" category:"experimental"`
+	BucketIndexSections string `yaml:"index_sections"  category:"experimental"`
 }
 
 func (cfg *BucketReaderConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, "Enable reading TSDB index-header sections from object storage. When enabled, the configured -blocks-storage.bucket-store.index-header.bucket-reader.index-sections are not downloaded to local disk.")
-	f.StringVar((*string)(&cfg.BucketIndexSections), prefix+"index-sections", string(SectionAll), fmt.Sprintf("Index sections to read from object storage instead of local disk. Valid sections: %s", SectionAll))
+	f.StringVar(&cfg.BucketIndexSections, prefix+"index-sections", SectionPostingsOffsetsTable, fmt.Sprintf("Index sections to read from object storage instead of local disk. Valid sections: %s", SectionPostingsOffsetsTable))
 }
 
 func (cfg *BucketReaderConfig) Validate() error {
-	if !slices.Contains([]Section{SectionAll}, cfg.BucketIndexSections) {
+	if !slices.Contains([]string{SectionPostingsOffsetsTable}, cfg.BucketIndexSections) {
 		return errInvalidIndexHeaderSection
 	}
 	return nil

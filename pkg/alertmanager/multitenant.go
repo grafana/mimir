@@ -655,7 +655,7 @@ func (am *MultitenantAlertmanager) stopping(_ error) error {
 // loadAlertmanagerConfigs Loads (and filters) the alertmanagers configuration from object storage, taking into consideration the sharding strategy. Returns:
 // - The list of discovered users (all users with a configuration in storage)
 // - The configurations of users owned by this instance.
-func (am *MultitenantAlertmanager) loadAlertmanagerConfigs(ctx context.Context) ([]string, map[string]alertspb.AlertConfigDescs, error) {
+func (am *MultitenantAlertmanager) loadAlertmanagerConfigs(ctx context.Context) ([]string, map[string]alertspb.AlertConfigDesc, error) {
 	// Find all users with an alertmanager config.
 	allUserIDs, err := am.store.ListAllUsers(ctx)
 	if err != nil {
@@ -694,18 +694,18 @@ func (am *MultitenantAlertmanager) isUserOwned(userID string) bool {
 	return alertmanagers.Includes(am.ringLifecycler.GetInstanceAddr())
 }
 
-func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[string]alertspb.AlertConfigDescs) {
+func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[string]alertspb.AlertConfigDesc) {
 	level.Debug(am.logger).Log("msg", "adding configurations", "num_configs", len(cfgMap))
 	amInitSkipped := map[string]struct{}{}
-	for user, cfgs := range cfgMap {
-		startAM := am.shouldStartAM(cfgs)
+	for user, cfg := range cfgMap {
+		startAM := am.shouldStartAM(cfg)
 		if !startAM {
 			level.Debug(am.logger).Log("msg", "not initializing alertmanager for tenant with a default/empty configuration", "user", user)
 			amInitSkipped[user] = struct{}{}
 			continue
 		}
 
-		if err := am.setConfig(amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL)); err != nil {
+		if err := am.setConfig(amConfigFromMimirConfig(cfg, am.cfg.ExternalURL.URL)); err != nil {
 			am.multitenantMetrics.lastReloadSuccessful.WithLabelValues(user).Set(float64(0))
 			level.Warn(am.logger).Log("msg", "error applying config", "err", err, "user", user)
 			continue
@@ -741,22 +741,22 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 }
 
 // shouldStartAM checks a tenant's configuration and last request time to determine whether we should start an Alertmanager for them.
-func (am *MultitenantAlertmanager) shouldStartAM(cfgs alertspb.AlertConfigDescs) bool {
+func (am *MultitenantAlertmanager) shouldStartAM(cfg alertspb.AlertConfigDesc) bool {
 	// Always start Alertmanagers when strict initialization is disabled.
 	if !am.cfg.StrictInitializationEnabled {
 		return true
 	}
 
 	// If the tenant is using a non-default config, remove it from the 'skipped' list and start the AM.
-	if cfgs.Mimir.RawConfig != am.fallbackConfig && cfgs.Mimir.RawConfig != "" {
-		if _, ok := am.lastRequestTime.LoadAndDelete(cfgs.Mimir.User); ok {
-			level.Debug(am.logger).Log("msg", "user now has a usable config, removing it from skipped list", "user", cfgs.Mimir.User)
+	if cfg.RawConfig != am.fallbackConfig && cfg.RawConfig != "" {
+		if _, ok := am.lastRequestTime.LoadAndDelete(cfg.User); ok {
+			level.Debug(am.logger).Log("msg", "user now has a usable config, removing it from skipped list", "user", cfg.User)
 		}
 		return true
 	}
 
 	// Default/empty config. Check the last request time.
-	lastRequestTime, loaded := am.lastRequestTime.LoadOrStore(cfgs.Mimir.User, time.Time{}.Unix())
+	lastRequestTime, loaded := am.lastRequestTime.LoadOrStore(cfg.User, time.Time{}.Unix())
 	if !loaded || time.Unix(lastRequestTime.(int64), 0).IsZero() {
 		return false
 	}
@@ -764,11 +764,11 @@ func (am *MultitenantAlertmanager) shouldStartAM(cfgs alertspb.AlertConfigDescs)
 	// Use the zero value to signal that the tenant was skipped.
 	// If the value stored is not what we have in memory, the tenant received a request since the last read.
 	gracePeriodExpired := time.Since(time.Unix(lastRequestTime.(int64), 0)) >= am.cfg.GrafanaAlertmanagerIdleGracePeriod
-	if gracePeriodExpired && am.lastRequestTime.CompareAndSwap(cfgs.Mimir.User, lastRequestTime, time.Time{}.Unix()) {
+	if gracePeriodExpired && am.lastRequestTime.CompareAndSwap(cfg.User, lastRequestTime, time.Time{}.Unix()) {
 		return false
 	}
 
-	level.Debug(am.logger).Log("msg", "user has no usable config but is receiving requests, keeping Alertmanager active", "user", cfgs.Mimir.User)
+	level.Debug(am.logger).Log("msg", "user has no usable config but is receiving requests, keeping Alertmanager active", "user", cfg.User)
 	return true
 }
 
@@ -1110,12 +1110,12 @@ func (am *MultitenantAlertmanager) startAlertmanager(ctx context.Context, userID
 		return nil, fmt.Errorf("failed to check for existing configuration: %w", err)
 	}
 
-	cfgs, ok := cfgMap[userID]
+	cfg, ok := cfgMap[userID]
 	if !ok {
 		return nil, errConfigNotFound
 	}
 
-	if err := am.setConfig(amConfigFromMimirConfig(cfgs.Mimir, am.cfg.ExternalURL.URL)); err != nil {
+	if err := am.setConfig(amConfigFromMimirConfig(cfg, am.cfg.ExternalURL.URL)); err != nil {
 		return nil, err
 	}
 	am.alertmanagersMtx.Lock()
