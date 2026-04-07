@@ -70,7 +70,7 @@ func TestDropName(t *testing.T) {
 				DropName:                 testCase.inputDropName,
 				MemoryConsumptionTracker: memoryConsumptionTracker,
 			}
-			o := NewDropName(inner, memoryConsumptionTracker)
+			o := NewDropNameInstant(inner, memoryConsumptionTracker)
 
 			outputSeriesMetadata, err := o.SeriesMetadata(ctx, nil)
 			require.NoError(t, err)
