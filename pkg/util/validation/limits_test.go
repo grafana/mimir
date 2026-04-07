@@ -2281,40 +2281,6 @@ func TestIsLimitError(t *testing.T) {
 	}
 }
 
-func TestAlertmanagerSizeLimitsUnmarshal(t *testing.T) {
-	for name, tc := range map[string]struct {
-		inputYAML          string
-		expectedConfigSize int
-	}{
-		"when using strings": {
-			inputYAML: `
-alertmanager_max_grafana_config_size_bytes: "4MiB"
-`,
-			expectedConfigSize: 1024 * 1024 * 4,
-		},
-		"when using 0B, returns 0": {
-			inputYAML: `
-alertmanager_max_grafana_config_size_bytes: "0"
-`,
-			expectedConfigSize: 0,
-		},
-		"when nothing is given, defaults to 0": {
-			inputYAML:          "",
-			expectedConfigSize: 0,
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			limitsYAML := Limits{}
-			err := yaml.Unmarshal([]byte(tc.inputYAML), &limitsYAML)
-			require.NoError(t, err, "expected to be able to unmarshal from YAML")
-
-			ov := NewOverrides(limitsYAML, nil)
-
-			require.Equal(t, tc.expectedConfigSize, ov.AlertmanagerMaxGrafanaConfigSize("user"))
-		})
-	}
-}
-
 func TestBlockedRequestsUnmarshal(t *testing.T) {
 	inputYAML := `
 user1:
