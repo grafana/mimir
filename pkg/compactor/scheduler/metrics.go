@@ -87,7 +87,7 @@ func (m *trackerMetrics) Clear() {
 // queueMetrics encapsulates queue-level metrics for one tenant, allowing the caller to ignore
 // the details of which metrics to update and how, focusing only on job state transitions.
 // Callers are responsible for making valid transitions. Invalid calls (e.g. DropPending on an
-// empty queue) will produce incorrect gauge values.
+// empty queue) will produce incorrect gauge values. Methods are not thread-safe.
 type queueMetrics struct {
 	pendingPlanJobs       prometheus.Gauge
 	pendingCompactionJobs prometheus.Gauge
