@@ -30,7 +30,7 @@ func newSchedulerMetrics(reg prometheus.Registerer) *schedulerMetrics {
 			Help: "The number of queued pending jobs.",
 		}, []string{"user", "job_type"}),
 		incompleteJobsBytes: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-			Name: "cortex_compactor_scheduler_incomplete_jobs_bytes",
+			Name: "cortex_compactor_scheduler_incomplete_compaction_jobs_bytes",
 			Help: "The total bytes of blocks in compaction jobs that have not yet completed (pending or active).",
 		}, []string{"compaction_type"}),
 		activeJobs: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{

@@ -42,11 +42,11 @@ func TestScheduler_JobLifecycleMetrics(t *testing.T) {
 	assertIncompleteBytes := func(msg string, splitBytes, mergeBytes float64) {
 		t.Helper()
 		require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
-			# HELP cortex_compactor_scheduler_incomplete_jobs_bytes The total bytes of blocks in compaction jobs that have not yet completed (pending or active).
-			# TYPE cortex_compactor_scheduler_incomplete_jobs_bytes gauge
-			cortex_compactor_scheduler_incomplete_jobs_bytes{compaction_type="merge"} %g
-			cortex_compactor_scheduler_incomplete_jobs_bytes{compaction_type="split"} %g
-		`, mergeBytes, splitBytes)), "cortex_compactor_scheduler_incomplete_jobs_bytes"), msg)
+			# HELP cortex_compactor_scheduler_incomplete_compaction_jobs_bytes The total bytes of blocks in compaction jobs that have not yet completed (pending or active).
+			# TYPE cortex_compactor_scheduler_incomplete_compaction_jobs_bytes gauge
+			cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type="merge"} %g
+			cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type="split"} %g
+		`, mergeBytes, splitBytes)), "cortex_compactor_scheduler_incomplete_compaction_jobs_bytes"), msg)
 	}
 
 	// Trigger maintenance so tenant's plan job is enqueued.

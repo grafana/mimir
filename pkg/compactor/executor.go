@@ -138,8 +138,10 @@ func (cfg *SchedulerClientConfig) Validate() error {
 	return nil
 }
 
-// compactionType label values — must match compactionTypeSplit/Merge in the scheduler package.
+// jobType and compactionType label values — must match the scheduler package.
 const (
+	jobTypePlan         = "plan"
+	jobTypeCompaction   = "compaction"
 	compactionTypeSplit = "split"
 	compactionTypeMerge = "merge"
 )
@@ -151,9 +153,8 @@ type schedulerExecutor struct {
 	schedulerClient          compactorschedulerpb.CompactorSchedulerClient
 	schedulerConn            *grpc.ClientConn
 	invalidClusterValidation *prometheus.CounterVec
-	jobBytes                 *prometheus.HistogramVec
+	compactionJobBytes       *prometheus.HistogramVec
 	jobDuration              *prometheus.HistogramVec
-	planJobDuration          prometheus.Histogram
 	retryable                failsafe.Executor[any]
 	lastCleanupTime          time.Time
 }
@@ -165,8 +166,8 @@ func newSchedulerExecutor(cfg SchedulerClientConfig, logger log.Logger, reg prom
 		cfg:                      cfg,
 		logger:                   logger,
 		invalidClusterValidation: invalidClusterValidation,
-		jobBytes: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-			Name:                            "cortex_compactor_job_bytes",
+		compactionJobBytes: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                            "cortex_compactor_compaction_job_bytes",
 			Help:                            "Total bytes of blocks processed by completed compaction jobs.",
 			NativeHistogramBucketFactor:     1.1,
 			NativeHistogramMaxBucketNumber:  100,
@@ -174,18 +175,11 @@ func newSchedulerExecutor(cfg SchedulerClientConfig, logger log.Logger, reg prom
 		}, []string{"compaction_type"}),
 		jobDuration: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                            "cortex_compactor_job_duration_seconds",
-			Help:                            "Duration of completed compaction jobs.",
+			Help:                            "Duration of successfully completed jobs.",
 			NativeHistogramBucketFactor:     1.1,
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: time.Hour,
-		}, []string{"compaction_type"}),
-		planJobDuration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Name:                            "cortex_compactor_plan_job_duration_seconds",
-			Help:                            "Duration of successfully completed plan jobs.",
-			NativeHistogramBucketFactor:     1.1,
-			NativeHistogramMaxBucketNumber:  100,
-			NativeHistogramMinResetDuration: time.Hour,
-		}),
+		}, []string{"job_type", "compaction_type"}),
 	}
 
 	executor.retryable = failsafe.With(retrypolicy.NewBuilder[any]().
@@ -446,7 +440,7 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 			level.Warn(e.logger).Log("msg", "failed to send planned jobs", "job_id", jobID, "tenant", jobTenant, "num_jobs", len(plannedJobs), "err", err)
 			return true, err
 		}
-		e.planJobDuration.Observe(time.Since(planStartTime).Seconds())
+		e.jobDuration.WithLabelValues(jobTypePlan, "").Observe(time.Since(planStartTime).Seconds())
 		return true, nil
 	default:
 		// Should not happen because this case is caught above.
@@ -554,14 +548,14 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		if hasNonZeroULIDs(compactedBlockIDs) {
 			compactor.metrics.groupCompactions.Inc()
 		}
-		jobType := compactionTypeMerge
+		compactionType := compactionTypeMerge
 		if spec.Job.Split {
-			jobType = compactionTypeSplit
+			compactionType = compactionTypeSplit
 		}
 		elapsed := time.Since(startTime).Seconds()
-		e.jobDuration.WithLabelValues(jobType).Observe(elapsed)
+		e.jobDuration.WithLabelValues(jobTypeCompaction, compactionType).Observe(elapsed)
 		if totalBytes := spec.Job.TotalBlocksBytes; totalBytes > 0 {
-			e.jobBytes.WithLabelValues(jobType).Observe(float64(totalBytes))
+			e.compactionJobBytes.WithLabelValues(compactionType).Observe(float64(totalBytes))
 		}
 		level.Info(userLogger).Log("msg", "compaction job completed", "tenant", userID, "compacted_blocks", len(compactedBlockIDs))
 		return compactorschedulerpb.UPDATE_TYPE_COMPLETE, nil
