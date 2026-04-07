@@ -6956,16 +6956,6 @@
         },
         {
           "kind": "field",
-          "name": "alertmanager_max_grafana_config_size_bytes",
-          "required": false,
-          "desc": "Maximum size of the Grafana Alertmanager configuration for a tenant. 0 = no limit.",
-          "fieldValue": null,
-          "fieldDefaultValue": null,
-          "fieldFlag": "alertmanager.max-grafana-config-size-bytes",
-          "fieldType": "int"
-        },
-        {
-          "kind": "field",
           "name": "alertmanager_max_config_size_bytes",
           "required": false,
           "desc": "Maximum size of the Alertmanager configuration for a tenant. 0 = no limit.",

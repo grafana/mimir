@@ -32,4 +32,3 @@ message FullStateDesc {
 
   clusterpb.FullState state = 1;
 }
-
