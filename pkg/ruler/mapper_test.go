@@ -15,7 +15,7 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
