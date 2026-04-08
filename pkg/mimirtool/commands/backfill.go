@@ -72,6 +72,8 @@ func (c *BackfillCommand) Register(app *kingpin.Application, envVars EnvVarNames
 		Envar(envVars.APIKey).
 		StringVar(&c.clientConfig.Key)
 
+	registerSigV4Flags(cmd, envVars, &c.clientConfig.SigV4)
+
 	c.clientConfig.ExtraHeaders = map[string]string{}
 	cmd.Flag("extra-headers", "Extra headers to add to the requests in header=value format, alternatively set newline separated "+envVars.ExtraHeaders+".").
 		Envar(envVars.ExtraHeaders).
