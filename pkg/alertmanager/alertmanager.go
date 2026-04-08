@@ -496,14 +496,6 @@ func (am *Alertmanager) buildIntegrationsMap(nc []*definition.PostableApiReceive
 	// Create a firewall binded to the per-tenant config.
 	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(am.cfg.UserID, am.cfg.Limits))
 
-	grafanaOpts := []alertingHttp.ClientOption{
-		alertingHttp.WithUserAgent(version.UserAgent()),
-	}
-
-	if dialer := firewallDialer.Dialer(); dialer != nil {
-		grafanaOpts = append(grafanaOpts, alertingHttp.WithDialer(*dialer))
-	}
-
 	tmpl, err := loadTemplates(tmpls, WithCustomFunctions(am.cfg.UserID))
 	if err != nil {
 		return nil, err
