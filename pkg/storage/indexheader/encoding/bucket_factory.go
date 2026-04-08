@@ -18,9 +18,10 @@ import (
 // BucketDecbufFactory creates new bucket-reader-backed Decbuf instances
 // for a specific index-header file in object storage
 type BucketDecbufFactory struct {
-	ctx        context.Context
-	bkt        objstore.BucketReader
-	objectPath string // Path to index file in bucket
+	ctx             context.Context
+	bkt             objstore.BucketReader
+	objectPath      string // Path to index file in bucket
+	sectionLenCache map[int]int
 }
 
 // NewBucketDecbufFactory creates a new BucketDecbufFactory for the given object path.
@@ -29,6 +30,8 @@ func NewBucketDecbufFactory(ctx context.Context, bkt objstore.BucketReader, obje
 		ctx:        ctx,
 		bkt:        bkt,
 		objectPath: objectPath,
+		// Allocate cache to hold the start offsets of Symbols and Postings Offsets tables.
+		sectionLenCache: make(map[int]int, 2),
 	}
 }
 
@@ -50,16 +53,24 @@ func (bf *BucketDecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table
 	// TODO: A particular index-header only has symbols and posting offsets. We should only need to read
 	//  the length of each of those a single time per index-header (DecbufFactory). Should the factory
 	//  cache the length? Should the table of contents be passed to the factory?
-	lengthBytes := make([]byte, 4)
-	n, err := metaReader.Read(lengthBytes)
-	if err != nil {
-		return Decbuf{E: err}
+
+	var contentLength int
+	if cachedContentLength, ok := bf.sectionLenCache[offset]; ok {
+		contentLength = cachedContentLength
+	} else {
+		lengthBytes := make([]byte, 4)
+		n, err := metaReader.Read(lengthBytes)
+		if err != nil {
+			return Decbuf{E: err}
+		}
+		if n != 4 {
+			return Decbuf{E: fmt.Errorf("insufficient bytes read for size (got %d, wanted %d): %w", n, 4, ErrInvalidSize)}
+		}
+		contentLength = int(binary.BigEndian.Uint32(lengthBytes))
+		bf.sectionLenCache[offset] = contentLength
 	}
-	if n != 4 {
-		return Decbuf{E: fmt.Errorf("insufficient bytes read for size (got %d, wanted %d): %w", n, 4, ErrInvalidSize)}
-	}
-	contentLength := int(binary.BigEndian.Uint32(lengthBytes))
-	bufferLength := len(lengthBytes) + contentLength + crc32.Size
+
+	bufferLength := 4 + contentLength + crc32.Size
 
 	bufReader := NewBucketBufReader(bf.ctx, bf.bkt, bf.objectPath, offset, bufferLength)
 	// bufReader is expected start at base offset + 4 after consuming length bytes
