@@ -19,7 +19,6 @@ As a general guideline, provision nodes with a CPU-to-memory ratio of at least 1
 For example, a node with 8 CPU cores should have at least 32 GB of memory.
 Ingesters and store-gateways are the most memory-intensive components.
 
-Grafana Mimir can run on physical servers, virtual machines, or containers, as long as the underlying compute meets the resource requirements for your workload.
 
 ## Disk storage
 
