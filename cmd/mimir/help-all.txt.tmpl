@@ -245,8 +245,6 @@ Usage of ./cmd/mimir/mimir:
     	Enable the alertmanager config API. (default true)
   -alertmanager.enable-state-cleanup
     	Enables periodic cleanup of alertmanager stateful data (notification logs and silences) from object storage. When enabled, data is removed for any tenant that does not have a configuration. (default true)
-  -alertmanager.grafana-alertmanager-grace-period duration
-    	[experimental] Duration to wait before shutting down an idle Alertmanager using an unpromoted or default configuration when strict initialization is enabled. (default 5m0s)
   -alertmanager.log-parsing-label-matchers
     	[experimental] Enable logging when parsing label matchers. This flag is intended to be used with -alertmanager.utf8-strict-mode-enabled to validate UTF-8 strict mode is working as intended.
   -alertmanager.max-alerts-count int
@@ -369,6 +367,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Timeout for reading the state from object storage during the initial sync. Set to `0` for no timeout. (default 15s)
   -alertmanager.strict-initialization-enabled
     	[experimental] Skip initializing Alertmanagers for tenants without a non-default, non-empty configuration. For Grafana Alertmanager tenants, configurations not marked as 'promoted' will also be skipped.
+  -alertmanager.strict-initialization-idle-grace-period duration
+    	[experimental] Duration to wait before shutting down an idle Alertmanager using a default/empty configuration when strict initialization is enabled. (default 5m0s)
   -alertmanager.utf8-migration-logging-enabled
     	[experimental] Enable logging of tenant configurations that are incompatible with UTF-8 strict mode.
   -alertmanager.utf8-strict-mode-enabled

@@ -89,7 +89,7 @@ type MultitenantAlertmanagerConfig struct {
 
 	EnableAPI bool `yaml:"enable_api" category:"advanced"`
 
-	GrafanaAlertmanagerIdleGracePeriod time.Duration `yaml:"grafana_alertmanager_idle_grace_period" category:"experimental"`
+	StrictInitializationIdleGracePeriod time.Duration `yaml:"strict_initialization_idle_grace_period" category:"experimental"`
 
 	MaxConcurrentGetRequestsPerTenant int `yaml:"max_concurrent_get_requests_per_tenant" category:"advanced"`
 
@@ -124,8 +124,8 @@ type MultitenantAlertmanagerConfig struct {
 }
 
 const (
-	defaultGrafanaAlertmanagerGracePeriod = 5 * time.Minute
-	defaultPeerTimeout                    = 15 * time.Second
+	defaultStrictInitializationIdleGracePeriod = 5 * time.Minute
+	defaultPeerTimeout                         = 15 * time.Second
 )
 
 // RegisterFlags adds the features required to config this to the given FlagSet.
@@ -142,7 +142,7 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet, logger 
 	f.DurationVar(&cfg.PollInterval, "alertmanager.configs.poll-interval", 15*time.Second, "How frequently to poll Alertmanager configs.")
 
 	f.BoolVar(&cfg.EnableAPI, "alertmanager.enable-api", true, "Enable the alertmanager config API.")
-	f.DurationVar(&cfg.GrafanaAlertmanagerIdleGracePeriod, "alertmanager.grafana-alertmanager-grace-period", defaultGrafanaAlertmanagerGracePeriod, "Duration to wait before shutting down an idle Alertmanager using an unpromoted or default configuration when strict initialization is enabled.")
+	f.DurationVar(&cfg.StrictInitializationIdleGracePeriod, "alertmanager.strict-initialization-idle-grace-period", defaultStrictInitializationIdleGracePeriod, "Duration to wait before shutting down an idle Alertmanager using a default/empty configuration when strict initialization is enabled.")
 	f.IntVar(&cfg.MaxConcurrentGetRequestsPerTenant, "alertmanager.max-concurrent-get-requests-per-tenant", 0, "Maximum number of concurrent GET requests allowed per tenant. The zero value (and negative values) result in a limit of GOMAXPROCS or 8, whichever is larger. Status code 503 is served for GET requests that would exceed the concurrency limit.")
 
 	f.BoolVar(&cfg.EnableStateCleanup, "alertmanager.enable-state-cleanup", true, "Enables periodic cleanup of alertmanager stateful data (notification logs and silences) from object storage. When enabled, data is removed for any tenant that does not have a configuration.")
@@ -759,7 +759,7 @@ func (am *MultitenantAlertmanager) shouldStartAM(cfg alertspb.AlertConfigDesc) b
 
 	// Use the zero value to signal that the tenant was skipped.
 	// If the value stored is not what we have in memory, the tenant received a request since the last read.
-	gracePeriodExpired := time.Since(time.Unix(lastRequestTime.(int64), 0)) >= am.cfg.GrafanaAlertmanagerIdleGracePeriod
+	gracePeriodExpired := time.Since(time.Unix(lastRequestTime.(int64), 0)) >= am.cfg.StrictInitializationIdleGracePeriod
 	if gracePeriodExpired && am.lastRequestTime.CompareAndSwap(cfg.User, lastRequestTime, time.Time{}.Unix()) {
 		return false
 	}
