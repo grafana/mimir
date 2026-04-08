@@ -959,6 +959,11 @@ func SelectorsAreDuplicateOrSubset(first, second []*core.LabelMatcher) (Selector
 
 	nextSecondIdx := 0
 	var subsetMatchers []*core.LabelMatcher // We deliberately don't pre-allocate this to avoid allocating if second isn't a subset of first, which is expected to be common.
+	var checkAndAllocateSubsetMatchers = func() {
+		if subsetMatchers == nil {
+			subsetMatchers = make([]*core.LabelMatcher, 0, 1)
+		}
+	}
 
 	for _, firstMatcher := range first {
 		foundMatch := false
@@ -978,13 +983,12 @@ func SelectorsAreDuplicateOrSubset(first, second []*core.LabelMatcher) (Selector
 				return NotDuplicateOrSubset, nil
 			}
 
+			// we'll check if subset matchers array has been allocated and create it if not as both of the below cases will append to it.
+			checkAndAllocateSubsetMatchers()
+
 			// Second matcher sorts before first matcher, and might be a subset
-			if secondMatcher.Name == firstMatcher.Name && innerMatcherIsSubsetOfOuterMatcher(firstMatcher, secondMatcher) {
+			if secondMatcher.Name == firstMatcher.Name && secondMatcherIsSubsetOfFirstMatcher(firstMatcher, secondMatcher) {
 				// If they have the same label and the inner (first) is a subset of the outer (second) matcher, we treat the outer (second) as a match
-				if subsetMatchers == nil {
-					// First time we've seen a possible subset matcher, allocate the slice now.
-					subsetMatchers = make([]*core.LabelMatcher, 0, 1)
-				}
 				subsetMatchers = append(subsetMatchers, secondMatcher)
 				nextSecondIdx++
 				foundMatch = true
@@ -993,10 +997,6 @@ func SelectorsAreDuplicateOrSubset(first, second []*core.LabelMatcher) (Selector
 
 			// Different label, or same label with an extra constraint in a different-length selector:
 			// it's an extra matcher in second that narrows the selection further.
-			if subsetMatchers == nil {
-				subsetMatchers = make([]*core.LabelMatcher, 0, len(second)-len(first))
-			}
-
 			subsetMatchers = append(subsetMatchers, secondMatcher)
 			nextSecondIdx++
 		}
@@ -1014,9 +1014,9 @@ func SelectorsAreDuplicateOrSubset(first, second []*core.LabelMatcher) (Selector
 	return SubsetSelectors, subsetMatchers
 }
 
-// innerMatcherIsSubsetOfOuterMatcher returns true if all label values matching inner also match outer.
+// secondMatcherIsSubsetOfFirstMatcher returns true if all label values matching inner also match outer.
 // Handles the cases where outer is MatchRegexp or MatchNotRegexp and inner is MatchEqual.
-func innerMatcherIsSubsetOfOuterMatcher(outer, inner *core.LabelMatcher) bool {
+func secondMatcherIsSubsetOfFirstMatcher(outer, inner *core.LabelMatcher) bool {
 	if inner.Type != labels.MatchEqual {
 		return false
 	}

@@ -165,7 +165,7 @@
 * [ENHANCEMENT] MQE: Improve per-query memory consumption limit enforcement in histogram function evaluations. #14691
 * [ENHANCEMENT] MQE: Improve per-query memory consumption limit enforcement within aggregation operations. #14735
 * [ENHANCEMENT] Usage-tracker: Improve performance by using a special shard grouping algorithm. #14715
-* [ENHANCEMENT] MQE: Adds subset selector elimination for expressions with regex selectors. #14732
+* [ENHANCEMENT] MQE: Support subset selector elimination for expressions where the subset is given by regex selectors. #14732
 * [ENHANCEMENT] API: activity tracker (if enabled) covers the full request lifecycle and used on all routes. #14777
 * [ENHANCEMENT] MQE: Add metrics for tracking in-flight memory consumption tracking. `cortex_querier_inflight_query_max_estimated_memory_consumption_limit_bytes`, `cortex_querier_inflight_query_current_estimated_memory_consumption_bytes`, `cortex_querier_inflight_query_peak_estimated_memory_consumption_bytes` and `cortex_querier_inflight_query_sampled_count`. #14807
 * [ENHANCEMENT] Activity tracker: Added `activity_tracker_unfinished_activities_loaded` metric to report the number of unfinished activities detected on startup. #14860
