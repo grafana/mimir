@@ -1219,7 +1219,7 @@
   "alertmanager.configs.fallback": "",
   "alertmanager.peer-timeout": 15000000000,
   "alertmanager.enable-api": true,
-  "alertmanager.grafana-alertmanager-grace-period": 300000000000,
+  "alertmanager.strict-initialization-idle-grace-period": 300000000000,
   "alertmanager.max-concurrent-get-requests-per-tenant": 0,
   "alertmanager.alertmanager-client.remote-timeout": 2000000000,
   "alertmanager.alertmanager-client.grpc-max-recv-msg-size": 104857600,

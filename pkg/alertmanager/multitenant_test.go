@@ -1348,7 +1348,7 @@ func TestMultitenantAlertmanager_ServeHTTPWithStrictInitialization(t *testing.T)
 	require.Len(t, am.alertmanagers, 1)
 
 	// Set the idle period to 0 - the Alertmanager should be turned off after the next sync.
-	am.cfg.GrafanaAlertmanagerIdleGracePeriod = 0
+	am.cfg.StrictInitializationIdleGracePeriod = 0
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
 	require.Len(t, am.alertmanagers, 0)

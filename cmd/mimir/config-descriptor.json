@@ -17182,12 +17182,12 @@
         },
         {
           "kind": "field",
-          "name": "grafana_alertmanager_idle_grace_period",
+          "name": "strict_initialization_idle_grace_period",
           "required": false,
-          "desc": "Duration to wait before shutting down an idle Alertmanager using an unpromoted or default configuration when strict initialization is enabled.",
+          "desc": "Duration to wait before shutting down an idle Alertmanager using a default/empty configuration when strict initialization is enabled.",
           "fieldValue": null,
           "fieldDefaultValue": 300000000000,
-          "fieldFlag": "alertmanager.grafana-alertmanager-grace-period",
+          "fieldFlag": "alertmanager.strict-initialization-idle-grace-period",
           "fieldType": "duration",
           "fieldCategory": "experimental"
         },

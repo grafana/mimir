@@ -3044,10 +3044,9 @@ sharding_ring:
 [enable_api: <boolean> | default = true]
 
 # (experimental) Duration to wait before shutting down an idle Alertmanager
-# using an unpromoted or default configuration when strict initialization is
-# enabled.
-# CLI flag: -alertmanager.grafana-alertmanager-grace-period
-[grafana_alertmanager_idle_grace_period: <duration> | default = 5m]
+# using a default/empty configuration when strict initialization is enabled.
+# CLI flag: -alertmanager.strict-initialization-idle-grace-period
+[strict_initialization_idle_grace_period: <duration> | default = 5m]
 
 # (advanced) Maximum number of concurrent GET requests allowed per tenant. The
 # zero value (and negative values) result in a limit of GOMAXPROCS or 8,
