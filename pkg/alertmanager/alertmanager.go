@@ -511,7 +511,7 @@ func (am *Alertmanager) buildIntegrationsMap(nc []*definition.PostableApiReceive
 		if err != nil {
 			return nil, err
 		}
-		integrationsMap[rcv.Name] = append(integrations)
+		integrationsMap[rcv.Name] = integrations
 	}
 
 	// Template validation shouldn't be dependent on whether receivers exist. So, in case we didn't hot-load any
