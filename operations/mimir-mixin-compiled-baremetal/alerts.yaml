@@ -92,7 +92,20 @@ groups:
                 There are {{ $value }} queued up queries in {{ $labels.cluster }}/{{ $labels.namespace }} {{ $labels.job }}.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirschedulerqueriesstuck
           expr: |
-            sum by (cluster, namespace, job) (min_over_time(cortex_query_scheduler_queue_length[1m])) > 0
+            # There are some queries in the queue.
+            (sum by (cluster, namespace, job) (cortex_query_scheduler_queue_length) > 0)
+
+            # And the queue size doesn't decrease. We compute the delta with an higher frequency (so a lower step
+            # in the subquery) to increase chances of detecting even short-term downward variations.
+            and (
+              min_over_time(
+                delta(
+                  sum by (cluster, namespace, job) (cortex_query_scheduler_queue_length)
+                  [1m:15s]
+                )
+                [1m:15s]
+              ) >= 0
+            )
           for: 7m
           labels:
             severity: critical

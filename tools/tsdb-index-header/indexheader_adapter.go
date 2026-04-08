@@ -66,6 +66,11 @@ func (a *indexHeaderAnalyzer) SeriesWithLabel(_ context.Context, _ string) Serie
 	return nil
 }
 
+func (a *indexHeaderAnalyzer) AllChunkSeries(_ context.Context) ChunkSeriesIterator {
+	// Not supported for index-headers because they don't contain series or chunk data.
+	return nil
+}
+
 // TOC returns the table of contents for index-header specific analysis.
 func (a *indexHeaderAnalyzer) TOC() *indexheader.TOCCompat {
 	return a.reader.TOC()

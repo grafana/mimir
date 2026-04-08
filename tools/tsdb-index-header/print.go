@@ -30,6 +30,13 @@ func printIndexInfo(_ context.Context, w io.Writer, info *IndexInfo, _ IndexAnal
 		fmt.Fprintf(w, "Index type:                Full Index\n")
 		fmt.Fprintf(w, "Index size:                %s\n", formatBytes(info.Size))
 		fmt.Fprintln(w, "TSDB index version:       ", info.IndexVersion)
+		fmt.Fprintf(w, "Symbols size:              %s\n", formatBytes(int64(info.FullIndexSymbolsSize)))
+		fmt.Fprintf(w, "Series size:               %s\n", formatBytes(int64(info.FullIndexSeriesSize)))
+		fmt.Fprintf(w, "Label indices size:        %s\n", formatBytes(int64(info.FullIndexLabelIndicesSize)))
+		fmt.Fprintf(w, "Postings size:             %s\n", formatBytes(int64(info.FullIndexPostingsSize)))
+		fmt.Fprintf(w, "Label indices table size:  %s\n", formatBytes(int64(info.FullIndexLabelIndicesTableSize)))
+		fmt.Fprintf(w, "Postings offset table:     %s\n", formatBytes(int64(info.FullIndexPostingsTableSize)))
+		fmt.Fprintf(w, "TOC + CRC32:               %d\n", info.FullIndexTOCSize)
 	}
 }
 
@@ -140,6 +147,36 @@ func printLabelValueStats(_ context.Context, w io.Writer, stats *LabelValueStats
 			for i, sample := range b.Samples {
 				fmt.Fprintf(w, "      %d. [%d bytes] %q\n", i+1, len(sample), truncateString(sample, displayTruncateLen))
 			}
+		}
+	}
+}
+
+// printChunkStats prints chunk distribution statistics.
+func printChunkStats(_ context.Context, w io.Writer, stats *ChunkStats) {
+	fmt.Fprintf(w, "Total series:              %d\n", stats.TotalSeries)
+	fmt.Fprintf(w, "Total chunks:              %d\n", stats.TotalChunks)
+	if stats.TotalSeries > 0 {
+		avg := float64(stats.TotalChunks) / float64(stats.TotalSeries)
+		fmt.Fprintf(w, "Average chunks per series: %.2f\n", avg)
+		fmt.Fprintf(w, "Min chunks per series:     %d\n", stats.MinChunks)
+		fmt.Fprintf(w, "Max chunks per series:     %d\n", stats.MaxChunks)
+	}
+
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Chunks per series distribution:")
+	for _, bucket := range chunkCountBucketNames() {
+		count := stats.ChunksPerSeriesHistogram[bucket]
+		if count > 0 {
+			pct := float64(count) / float64(stats.TotalSeries) * 100
+			fmt.Fprintf(w, "  %9s: %10d series (%5.2f%%)\n", bucket, count, pct)
+		}
+	}
+
+	if len(stats.TopSeries) > 0 {
+		fmt.Fprintln(w)
+		fmt.Fprintf(w, "Top %d series by chunk count:\n", topNItems)
+		for i, s := range stats.TopSeries {
+			fmt.Fprintf(w, "  %2d. [%6d chunks] %s\n", i+1, s.ChunkCount, truncateString(s.Labels, 120))
 		}
 	}
 }

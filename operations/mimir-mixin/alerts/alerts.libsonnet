@@ -214,26 +214,43 @@ local utils = import 'mixin-utils/utils.libsonnet';
         {
           alert: $.alertName('SchedulerQueriesStuck'),
           expr: |||
-            sum by (%(group_by)s, %(job_label)s) (min_over_time(cortex_query_scheduler_queue_length[%(range_interval)s])) > 0
+            # There are some queries in the queue.
+            (sum by (%(group_by)s, %(job_label)s) (cortex_query_scheduler_queue_length) > 0)
+
+            # And the queue size doesn't decrease. We compute the delta with an higher frequency (so a lower step
+            # in the subquery) to increase chances of detecting even short-term downward variations.
+            and (
+              min_over_time(
+                delta(
+                  sum by (%(group_by)s, %(job_label)s) (cortex_query_scheduler_queue_length)
+                  [%(range_interval)s:%(range_subinterval)s]
+                )
+                [%(range_interval)s:%(range_subinterval)s]
+              ) >= 0
+            )
           ||| % {
             group_by: $._config.alert_aggregation_labels,
             job_label: $._config.per_job_label,
             range_interval: $.alertRangeInterval(1),
+            range_subinterval: $.alertRangeInterval(0.25),
           },
           'for': '7m',  // We don't want to block for longer.
           labels: {
             severity: 'critical',
           },
-          annotations: {
-                         message: |||
-                           There are {{ $value }} queued up queries in %(alert_aggregation_variables)s {{ $labels.%(per_job_label)s }}.
-                         ||| % $._config,
-                       }
-                       // Alternative dashboards for investigation:
-                       //   - Mimir / Remote ruler reads (mimir-remote-ruler-reads.json)
-                       //   - Mimir / Reads Resources (mimir-reads-resources.json)
-                       //   - Mimir / Slow Queries (mimir-slow-queries.json)
-                       + $.dashboardURLAnnotation('mimir-reads.json'),
+          annotations: (
+            {
+              message: |||
+                There are {{ $value }} queued up queries in %(alert_aggregation_variables)s {{ $labels.%(per_job_label)s }}.
+              ||| % $._config,
+            }
+          ) + (
+            // Alternative dashboards for investigation:
+            //   - Mimir / Remote ruler reads (mimir-remote-ruler-reads.json)
+            //   - Mimir / Reads Resources (mimir-reads-resources.json)
+            //   - Mimir / Slow Queries (mimir-slow-queries.json)
+            $.dashboardURLAnnotation('mimir-reads.json')
+          ),
         },
         {
           alert: $.alertName('CacheRequestErrors'),

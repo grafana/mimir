@@ -161,6 +161,60 @@ func (s *OperatorEvaluationStats) ExtendStepInvariantToFullRange(timeRange Query
 	return expanded, nil
 }
 
+// ComputeForSubquery calculates the statistics for a subquery's contribution to the parent query,
+// based on the statistics for the inner operator of the subquery.
+//
+// s must be the OperatorEvaluationStats for the inner operator, evaluated over the subquery's time range.
+//
+// parentTimeRange is the time range of the parent query.
+// subqueryRangeMilliseconds is the duration of the subquery range in milliseconds.
+// subqueryTimestamp is the fixed evaluation timestamp from the @ modifier, in milliseconds since Unix epoch.
+// It should be nil if the @ modifier was not used.
+// subqueryOffsetMilliseconds is the subquery offset in milliseconds.
+//
+// s is not modified and is not closed when ComputeForSubquery returns.
+func (s *OperatorEvaluationStats) ComputeForSubquery(
+	parentTimeRange QueryTimeRange,
+	subqueryRangeMilliseconds int64,
+	subqueryTimestamp *int64,
+	subqueryOffsetMilliseconds int64,
+) (*OperatorEvaluationStats, error) {
+	result, err := NewOperatorEvaluationStats(parentTimeRange, s.memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	lastNewSamplesIdxUsed := -1
+
+	for outerIdx := range int64(parentTimeRange.StepCount) {
+		outerT := parentTimeRange.IndexTime(outerIdx)
+
+		rangeEnd := outerT
+		if subqueryTimestamp != nil {
+			rangeEnd = *subqueryTimestamp
+		}
+		rangeEnd -= subqueryOffsetMilliseconds
+		rangeStart := rangeEnd - subqueryRangeMilliseconds
+
+		// Find the range of inner steps in (rangeStart, rangeEnd].
+		firstIdx := s.timeRange.FirstPointIndexAfter(rangeStart)
+		lastIdx := s.timeRange.LastPointIndexAtOrBefore(rangeEnd)
+
+		for innerIdx := firstIdx; innerIdx <= lastIdx; innerIdx++ {
+			result.samplesProcessedPerStep[outerIdx] += s.samplesProcessedPerStep[innerIdx]
+		}
+
+		firstNewIdx := max(lastNewSamplesIdxUsed, firstIdx)
+		for innerIdx := firstNewIdx; innerIdx <= lastIdx; innerIdx++ {
+			result.newSamplesReadPerStep[outerIdx] += s.newSamplesReadPerStep[innerIdx]
+		}
+
+		lastNewSamplesIdxUsed = lastIdx + 1
+	}
+
+	return result, nil
+}
+
 func (s *OperatorEvaluationStats) Close() {
 	Int64SlicePool.Put(&s.samplesProcessedPerStep, s.memoryConsumptionTracker)
 	Int64SlicePool.Put(&s.newSamplesReadPerStep, s.memoryConsumptionTracker)

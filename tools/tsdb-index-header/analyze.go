@@ -73,6 +73,74 @@ type MetricCount struct {
 	SeriesCount int64
 }
 
+// ChunkStats holds statistics about chunk distribution across series.
+type ChunkStats struct {
+	TotalSeries              int64
+	TotalChunks              int64
+	MinChunks                int
+	MaxChunks                int
+	ChunksPerSeriesHistogram map[string]int     // chunks-per-series bucket -> number of series in that bucket
+	TopSeries                []SeriesChunkCount // series with the most chunks
+}
+
+// SeriesChunkCount holds a series and its chunk count.
+type SeriesChunkCount struct {
+	Labels     string
+	ChunkCount int
+}
+
+// analyzeChunks iterates all series and collects chunk count statistics.
+// Returns nil if the analyzer returns a nil iterator (e.g., index-header format).
+// Calls log.Fatalf if the iterator encounters an error.
+func analyzeChunks(ctx context.Context, analyzer IndexAnalyzer) *ChunkStats {
+	iter := analyzer.AllChunkSeries(ctx)
+	if iter == nil {
+		return nil
+	}
+
+	stats := &ChunkStats{
+		MinChunks:                math.MaxInt,
+		ChunksPerSeriesHistogram: make(map[string]int),
+	}
+
+	for iter.Next() {
+		count := iter.ChunkCount()
+		stats.TotalSeries++
+		stats.TotalChunks += int64(count)
+
+		if count < stats.MinChunks {
+			stats.MinChunks = count
+		}
+		if count > stats.MaxChunks {
+			stats.MaxChunks = count
+		}
+
+		bucket := getChunkCountBucketName(count)
+		stats.ChunksPerSeriesHistogram[bucket]++
+
+		// Track top N series by chunk count.
+		if len(stats.TopSeries) < topNItems || count > stats.TopSeries[len(stats.TopSeries)-1].ChunkCount {
+			stats.TopSeries = append(stats.TopSeries, SeriesChunkCount{Labels: iter.Labels().String(), ChunkCount: count})
+			sort.Slice(stats.TopSeries, func(i, j int) bool {
+				return stats.TopSeries[i].ChunkCount > stats.TopSeries[j].ChunkCount
+			})
+			if len(stats.TopSeries) > topNItems {
+				stats.TopSeries = stats.TopSeries[:topNItems]
+			}
+		}
+	}
+
+	if err := iter.Err(); err != nil {
+		log.Fatalf("Error iterating chunk series: %v\n", err)
+	}
+
+	if stats.TotalSeries == 0 {
+		stats.MinChunks = 0
+	}
+
+	return stats
+}
+
 // analyzeSymbols iterates through all symbols and collects statistics.
 func analyzeSymbols(ctx context.Context, analyzer IndexAnalyzer) *SymbolStats {
 	iter, err := analyzer.SymbolsIterator(ctx)
