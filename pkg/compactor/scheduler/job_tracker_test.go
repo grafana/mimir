@@ -290,7 +290,7 @@ func TestJobTracker_Cleanup(t *testing.T) {
 	assertTrackerBytes(t, reg, "both tenants contributing before cleanup", 100, 200)
 
 	// Cleaning up tenant1 should only subtract its bytes, not zero the shared gauge
-	jt1.Cleanup()
+	jt1.CleanupMetrics()
 	assertTrackerBytes(t, reg, "only tenant1 bytes removed", 0, 200)
 	require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_compactor_scheduler_pending_jobs The number of queued pending jobs.
