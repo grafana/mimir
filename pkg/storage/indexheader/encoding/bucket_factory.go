@@ -22,6 +22,7 @@ type BucketDecbufFactory struct {
 	bkt             objstore.BucketReader
 	objectPath      string // Path to index file in bucket
 	sectionLenCache map[int]int
+	mu              sync.Mutex
 }
 
 // NewBucketDecbufFactory creates a new BucketDecbufFactory for the given object path.
@@ -55,6 +56,7 @@ func (bf *BucketDecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table
 	//  cache the length? Should the table of contents be passed to the factory?
 
 	var contentLength int
+	bf.mu.Lock()
 	if cachedContentLength, ok := bf.sectionLenCache[offset]; ok {
 		contentLength = cachedContentLength
 	} else {
@@ -69,6 +71,7 @@ func (bf *BucketDecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table
 		contentLength = int(binary.BigEndian.Uint32(lengthBytes))
 		bf.sectionLenCache[offset] = contentLength
 	}
+	bf.mu.Unlock()
 
 	bufferLength := 4 + contentLength + crc32.Size
 
