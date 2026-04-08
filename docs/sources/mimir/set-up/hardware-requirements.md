@@ -62,7 +62,7 @@ Network filesystems do not provide the consistency guarantees that Grafana Mimir
 - Silent data corruption.
 - Unpredictable component restarts that cause query unavailability.
 
-This is a limitation inherited from the Prometheus TSDB engine. For more background, refer to the [Prometheus storage documentation](https://prometheus.io/docs/prometheus/latest/storage/#operational-aspects).
+For more background, refer to the [Prometheus storage documentation](https://prometheus.io/docs/prometheus/latest/storage/#operational-aspects).
 
 ## Network
 
