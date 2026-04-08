@@ -794,8 +794,6 @@ func (f amConfig) fingerprint() model.Fingerprint {
 	writeString(f.RawConfig)
 	result := sum.Sum64()
 
-	writeBytes(nil)
-
 	// Ignore order in templates because they're usually built from the map
 	var templatesFp uint64
 	for _, template := range f.Templates {
