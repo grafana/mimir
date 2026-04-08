@@ -23,7 +23,7 @@ func computeFilterBitmap(unfilteredSeries []types.SeriesMetadata, filters []*lab
 	unfilteredSeriesBitmap = unfilteredSeriesBitmap[:len(unfilteredSeries)]
 
 	for unfilteredSeriesIndex, series := range unfilteredSeries {
-		if !matchesSeries(filters, series.Labels) {
+		if !types.MatchersMatch(filters, series.Labels) {
 			continue
 		}
 
