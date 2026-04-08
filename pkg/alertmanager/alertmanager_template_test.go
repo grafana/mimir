@@ -7,12 +7,13 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/prometheus/alertmanager/template"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/util/strutil"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 )
 
 func Test_withCustomFunctions(t *testing.T) {

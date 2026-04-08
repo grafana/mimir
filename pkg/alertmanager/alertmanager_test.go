@@ -17,7 +17,6 @@ import (
 	"github.com/grafana/alerting/definition"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/test"
-	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	"github.com/prometheus/alertmanager/featurecontrol"
 	"github.com/prometheus/alertmanager/silence"
@@ -28,6 +27,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 )
 
 func TestDispatcherGroupLimits(t *testing.T) {
