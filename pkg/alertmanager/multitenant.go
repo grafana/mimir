@@ -23,7 +23,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/alerting/definition"
-	alertingNotify "github.com/grafana/alerting/notify"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
@@ -700,7 +699,7 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 			continue
 		}
 
-		if err := am.setConfig(amConfigFromMimirConfig(cfg)); err != nil {
+		if err := am.setConfig(cfg); err != nil {
 			am.multitenantMetrics.lastReloadSuccessful.WithLabelValues(user).Set(float64(0))
 			level.Warn(am.logger).Log("msg", "error applying config", "err", err, "user", user)
 			continue
@@ -767,13 +766,7 @@ func (am *MultitenantAlertmanager) shouldStartAM(cfg alertspb.AlertConfigDesc) b
 	return true
 }
 
-type amConfig struct {
-	User      string
-	RawConfig string
-	Templates []definition.PostableApiTemplate
-}
-
-func (f amConfig) fingerprint() model.Fingerprint {
+func fingerprint(desc alertspb.AlertConfigDesc) model.Fingerprint {
 	sum := fnv.New64a()
 
 	writeBytes := func(b []byte) {
@@ -790,17 +783,16 @@ func (f amConfig) fingerprint() model.Fingerprint {
 		writeBytes(unsafe.Slice(unsafe.StringData(s), len(s)))
 	}
 
-	writeString(f.User)
-	writeString(f.RawConfig)
+	writeString(desc.User)
+	writeString(desc.RawConfig)
 	result := sum.Sum64()
 
 	// Ignore order in templates because they're usually built from the map
 	var templatesFp uint64
-	for _, template := range f.Templates {
+	for _, template := range desc.Templates {
 		sum.Reset()
-		writeString(template.Name)
-		writeString(template.Content)
-		writeString(string(template.Kind))
+		writeString(template.Filename)
+		writeString(template.Body)
 		templatesFp ^= sum.Sum64()
 	}
 
@@ -816,7 +808,7 @@ func (f amConfig) fingerprint() model.Fingerprint {
 
 // setConfig applies the given configuration to the alertmanager for `userID`,
 // creating an alertmanager if it doesn't already exist.
-func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
+func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error {
 	if am.cfg.UTF8MigrationLogging {
 		// Instead of using "config" as the origin, as in Prometheus Alertmanager, we use "tenant".
 		// The reason for this that the config.Load function uses the origin "config",
@@ -867,7 +859,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
 		return fmt.Errorf("no usable Alertmanager configuration for %v", cfg.User)
 	}
 
-	cfgFp := cfg.fingerprint()
+	cfgFp := fingerprint(cfg)
 	// If no Alertmanager instance exists for this user yet, start one.
 	if !hasExisting {
 		level.Debug(am.logger).Log("msg", "initializing new per-tenant alertmanager", "user", cfg.User)
@@ -882,7 +874,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
 			level.Info(am.logger).Log("msg", "updating per-tenant alertmanager", "user", cfg.User, "old_fingerprint", curFp, "new_fingerprint", cfgFp)
 			am.cfgs[cfg.User] = cfgFp
 			// If the config changed, apply the new one.
-			err := existing.ApplyConfig(userAmConfig, alertingNotify.PostableAPITemplatesToTemplateDefinitions(cfg.Templates), rawCfg)
+			err := existing.ApplyConfig(userAmConfig, cfg.Templates, rawCfg)
 			if err != nil {
 				return fmt.Errorf("unable to apply Alertmanager config for user %v: %v", cfg.User, err)
 			}
@@ -897,7 +889,7 @@ func (am *MultitenantAlertmanager) getTenantDirectory(userID string) string {
 	return filepath.Join(am.cfg.DataDir, userID)
 }
 
-func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *definition.PostableApiAlertingConfig, templates []definition.PostableApiTemplate, rawCfg string) (*Alertmanager, error) {
+func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *definition.PostableApiAlertingConfig, templates []*alertspb.TemplateDesc, rawCfg string) (*Alertmanager, error) {
 	reg := prometheus.NewRegistry()
 
 	tenantDir := am.getTenantDirectory(userID)
@@ -927,7 +919,7 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *defi
 		return nil, fmt.Errorf("unable to start Alertmanager for user %v: %v", userID, err)
 	}
 
-	if err := newAM.ApplyConfig(amConfig, alertingNotify.PostableAPITemplatesToTemplateDefinitions(templates), rawCfg); err != nil {
+	if err := newAM.ApplyConfig(amConfig, templates, rawCfg); err != nil {
 		newAM.Stop()
 		return nil, fmt.Errorf("unable to apply initial config for user %v: %v", userID, err)
 	}
@@ -1058,7 +1050,7 @@ func (am *MultitenantAlertmanager) startAlertmanager(ctx context.Context, userID
 		return nil, errConfigNotFound
 	}
 
-	if err := am.setConfig(amConfigFromMimirConfig(cfg)); err != nil {
+	if err := am.setConfig(cfg); err != nil {
 		return nil, err
 	}
 	am.alertmanagersMtx.Lock()
@@ -1097,8 +1089,7 @@ func (am *MultitenantAlertmanager) alertmanagerFromFallbackConfig(ctx context.Co
 	}
 
 	// Calling setConfig with an empty configuration will use the fallback config.
-	amConfig := amConfigFromMimirConfig(cfgDesc)
-	err = am.setConfig(amConfig)
+	err = am.setConfig(cfgDesc)
 	if err != nil {
 		return nil, err
 	}

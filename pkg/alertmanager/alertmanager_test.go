@@ -15,9 +15,9 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/alerting/definition"
-	alertingTemplates "github.com/grafana/alerting/templates"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/test"
+	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	"github.com/prometheus/alertmanager/featurecontrol"
 	"github.com/prometheus/alertmanager/silence"
@@ -92,7 +92,7 @@ route:
 
 	cfg, err := definition.LoadCompat([]byte(cfgRaw))
 	require.NoError(t, err)
-	tmpls := make([]alertingTemplates.TemplateDefinition, 0)
+	tmpls := make([]*alertspb.TemplateDesc, 0)
 	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw))
 
 	now := time.Now()
@@ -177,7 +177,7 @@ route:
 
 	cfg, err := definition.LoadCompat([]byte(cfgRaw))
 	require.NoError(t, err)
-	tmpls := make([]alertingTemplates.TemplateDefinition, 0)
+	tmpls := make([]*alertspb.TemplateDesc, 0)
 	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw))
 
 	now := time.Now()
