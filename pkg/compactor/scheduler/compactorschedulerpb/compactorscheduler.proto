@@ -27,10 +27,14 @@ message JobSpec {
   JobType job_type = 3;
 }
 
+message CompactionJobStats {
+  uint64 total_blocks_bytes = 1;
+}
+
 message CompactionJob {
   repeated bytes block_ids = 1;
   bool split = 2;
-  uint64 total_blocks_bytes = 3;
+  CompactionJobStats stats = 3;
 }
 
 service CompactorScheduler {

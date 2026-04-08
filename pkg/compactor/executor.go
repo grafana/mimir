@@ -551,7 +551,7 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		}
 		elapsed := time.Since(startTime).Seconds()
 		e.jobDuration.WithLabelValues(jobTypeCompaction, compactionType).Observe(elapsed)
-		if totalBytes := spec.Job.TotalBlocksBytes; totalBytes > 0 {
+		if totalBytes := spec.Job.GetStats().GetTotalBlocksBytes(); totalBytes > 0 {
 			e.compactionJobBytes.WithLabelValues(compactionType).Observe(float64(totalBytes))
 		}
 		level.Info(userLogger).Log("msg", "compaction job completed", "tenant", userID, "compacted_blocks", len(compactedBlockIDs))
@@ -636,9 +636,9 @@ func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *Multitena
 		plannedJob := &compactorschedulerpb.PlannedCompactionJob{
 			Id: job.key,
 			Job: &compactorschedulerpb.CompactionJob{
-				Split:            job.useSplitting,
-				BlockIds:         serializeBlockIds(toCompact),
-				TotalBlocksBytes: sumBlockBytes(toCompact),
+				Split:    job.useSplitting,
+				BlockIds: serializeBlockIds(toCompact),
+				Stats:    &compactorschedulerpb.CompactionJobStats{TotalBlocksBytes: sumBlockBytes(toCompact)},
 			},
 		}
 		plannedJobs = append(plannedJobs, plannedJob)
