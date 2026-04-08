@@ -323,8 +323,10 @@ type MultitenantCompactor struct {
 	// so alerts need to be able to treat it with higher priority than other compaction errors.
 	outOfSpace prometheus.Counter
 
-	// schedulerLastContact tracks the last time a compactor successfully contacted the scheduler
+	// scheduler-mode specific metrics
 	schedulerLastContact prometheus.Gauge
+	compactionJobBytes   *prometheus.HistogramVec
+	jobDuration          *prometheus.HistogramVec
 
 	// invalidClusterValidation tracks the number of cluster validation errors during communication with the scheduler
 	invalidClusterValidation *prometheus.CounterVec
@@ -503,6 +505,20 @@ func newMultitenantCompactor(
 		Name: "cortex_compactor_last_scheduler_contact_timestamp_seconds",
 		Help: "Unix timestamp of the last successful contact with the scheduler. Only updated in scheduler mode.",
 	})
+	c.compactionJobBytes = promauto.With(schedulerReg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:                            "cortex_compactor_compaction_job_bytes",
+		Help:                            "Total bytes of blocks processed by completed compaction jobs.",
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: time.Hour,
+	}, []string{"compaction_type"})
+	c.jobDuration = promauto.With(schedulerReg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:                            "cortex_compactor_job_duration_seconds",
+		Help:                            "Duration of successfully completed jobs.",
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: time.Hour,
+	}, []string{"job_type", "compaction_type"})
 	c.invalidClusterValidation = util.NewRequestInvalidClusterValidationLabelsTotalCounter(schedulerReg, "compactor", util.GRPCProtocol)
 
 	return c, nil
@@ -535,7 +551,7 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 
 	if c.compactorCfg.SchedulerClientConfig.Enabled {
 		// Leases planning and compaction jobs from the compaction scheduler
-		c.executor, err = newSchedulerExecutor(c.compactorCfg.SchedulerClientConfig, c.logger, c.registerer, c.invalidClusterValidation)
+		c.executor, err = newSchedulerExecutor(c.compactorCfg.SchedulerClientConfig, c.logger, c.invalidClusterValidation)
 		if err != nil {
 			return fmt.Errorf("failed to create scheduler executor: %w", err)
 		}
