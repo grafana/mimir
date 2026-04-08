@@ -80,12 +80,13 @@ type Head struct {
 	// This should be typecasted to chunks.ChunkDiskMapperRef after loading.
 	minOOOMmapRef atomic.Uint64
 
-	metrics             *headMetrics
-	opts                *HeadOptions
-	wal, wbl            *wlog.WL
-	exemplarMetrics     *ExemplarMetrics
-	exemplars           ExemplarStorage
-	logger              *slog.Logger
+	metrics         *headMetrics
+	opts            *HeadOptions
+	wal, wbl        *wlog.WL
+	exemplarMetrics *ExemplarMetrics
+	exemplars       ExemplarStorage
+	logger          *slog.Logger
+	// TODO(bwplotka): Consider using record.Pools that's reused with WAL watchers.
 	refSeriesPool       zeropool.Pool[[]record.RefSeries]
 	floatsPool          zeropool.Pool[[]record.RefSample]
 	exemplarsPool       zeropool.Pool[[]exemplarWithSeriesRef]
@@ -163,6 +164,15 @@ type HeadOptions struct {
 
 	OutOfOrderTimeWindow atomic.Int64
 	OutOfOrderCapMax     atomic.Int64
+
+	// EnableSTStorage determines whether databases (WAL/WBL, tsdb,
+	// agent) should set a Start Time value per sample.
+	// Represents 'st-storage' feature flag.
+	EnableSTStorage atomic.Bool
+
+	// EnableXOR2Encoding enables XOR2 chunk encoding for float samples.
+	// Represents 'xor2-encoding' feature flag.
+	EnableXOR2Encoding atomic.Bool
 
 	ChunkRange int64
 	// ChunkDirRoot is the parent directory of the chunks directory.
@@ -310,7 +320,8 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 		opts:   opts,
 		memChunkPool: sync.Pool{
 			New: func() any {
-				return &memChunk{}
+				mc := newMemChunk(nil, nil)
+				return &mc
 			},
 		},
 		stats:             stats,
@@ -1418,7 +1429,7 @@ func (h *Head) truncateWAL(mint int64) error {
 	}
 
 	h.metrics.checkpointCreationTotal.Inc()
-	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, h.keepSeriesInWALCheckpointFn(mint), mint); err != nil {
+	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, h.keepSeriesInWALCheckpointFn(mint), mint, h.opts.EnableSTStorage.Load()); err != nil {
 		h.metrics.checkpointCreationFail.Inc()
 		var cerr *chunks.CorruptionErr
 		if errors.As(err, &cerr) {
@@ -1712,7 +1723,7 @@ func (h *Head) Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Match
 	}
 
 	if h.wal != nil {
-		var enc record.Encoder
+		enc := record.Encoder{EnableSTStorage: h.opts.EnableSTStorage.Load()}
 		if err := h.wal.Log(enc.Tombstones(stones, nil)); err != nil {
 			return err
 		}
@@ -2218,24 +2229,30 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 	)
 
 	for _, ref := range refs {
+		// Delete the reference from the series map.
+		// Copying getByID here to avoid locking and unlocking twice.
 		refShard := int(ref) & (h.series.size - 1)
 		h.series.locks[refShard].Lock()
-
-		// Copying getByID here to avoid locking and unlocking twice.
 		series := h.series.series[refShard][ref]
 		if series == nil {
 			h.series.locks[refShard].Unlock()
 			continue
 		}
+		delete(h.series.series[refShard], series.ref)
+		h.series.locks[refShard].Unlock()
+
+		// Delete the reference from the hash.
+		hash := series.lset.Hash()
+		hashShard := int(hash) & (h.series.size - 1)
+		h.series.locks[hashShard].Lock()
+		h.series.hashes[hashShard].del(hash, series.ref)
+		h.series.locks[hashShard].Unlock()
 
 		if value.IsStaleNaN(series.lastValue) ||
 			(series.lastHistogramValue != nil && value.IsStaleNaN(series.lastHistogramValue.Sum)) ||
 			(series.lastFloatHistogramValue != nil && value.IsStaleNaN(series.lastFloatHistogramValue.Sum)) {
 			staleSeriesDeleted++
 		}
-
-		hash := series.lset.Hash()
-		hashShard := int(hash) & (h.series.size - 1)
 
 		chunksRemoved += len(series.mmappedChunks)
 		if series.headChunks != nil {
@@ -2244,18 +2261,6 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
 		series.lset.Range(func(l labels.Label) { affected[l] = struct{}{} })
-
-		// Acquire hashShard lock if it differs from refShard to safely access hashes[hashShard].
-		if hashShard != refShard {
-			h.series.locks[hashShard].Lock()
-		}
-		h.series.hashes[hashShard].del(hash, series.ref)
-		delete(h.series.series[refShard], series.ref)
-		if hashShard != refShard {
-			h.series.locks[hashShard].Unlock()
-		}
-
-		h.series.locks[refShard].Unlock()
 	}
 
 	h.metrics.seriesRemoved.Add(float64(len(deleted)))
@@ -2576,6 +2581,7 @@ func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkD
 				} else {
 					// This is NOT the first chunk, unlink it from parent.
 					nextChk.prev = nil
+					s.headChunks.listLen = i
 				}
 				s.mmappedChunks = nil
 				break
@@ -2623,24 +2629,31 @@ func (s *memSeries) cleanupAppendIDsBelow(bound uint64) {
 	}
 }
 
+// memChunk is a node in a linked list of chunks in memory.
+//
+// Prefer building through [newMemChunk] over literals to ensure the length is
+// memoized correctly.
 type memChunk struct {
 	chunk            chunkenc.Chunk
 	minTime, maxTime int64
 	prev             *memChunk // Link to the previous element on the list.
+	listLen          int       // Cached length of the linked list starting from this element.
 }
 
-// len returns the length of memChunk list, including the element it was called on.
-func (mc *memChunk) len() (count int) {
-	if mc.prev == nil {
-		return 1
+func newMemChunk(chunk chunkenc.Chunk, prev *memChunk) memChunk {
+	listLen := 1
+	if prev != nil {
+		listLen = prev.listLen + 1
 	}
+	return memChunk{
+		chunk:   chunk,
+		prev:    prev,
+		listLen: listLen,
+	}
+}
 
-	elem := mc
-	for elem != nil {
-		count++
-		elem = elem.prev
-	}
-	return count
+func (mc *memChunk) len() int {
+	return mc.listLen
 }
 
 // oldest returns the oldest element on the list.
