@@ -165,14 +165,18 @@ func (s *OperatorEvaluationStats) Add(other *OperatorEvaluationStats) error {
 	return nil
 }
 
-// Clone returns a copy of this OperatorEvaluationStats instance, including any subset definitions and their data.
-func (s *OperatorEvaluationStats) Clone() (*OperatorEvaluationStats, error) {
+func (s *OperatorEvaluationStats) newEmptyInstanceWithSameMatchers(timeRange QueryTimeRange) (*OperatorEvaluationStats, error) {
 	subsetMatchers := make([][]*labels.Matcher, len(s.subsets))
 	for i, subset := range s.subsets {
 		subsetMatchers[i] = subset.matchers
 	}
 
-	clone, err := NewOperatorEvaluationStats(s.timeRange, s.memoryConsumptionTracker, subsetMatchers)
+	return NewOperatorEvaluationStats(timeRange, s.memoryConsumptionTracker, subsetMatchers)
+}
+
+// Clone returns a copy of this OperatorEvaluationStats instance, including any subset definitions and their data.
+func (s *OperatorEvaluationStats) Clone() (*OperatorEvaluationStats, error) {
+	clone, err := s.newEmptyInstanceWithSameMatchers(s.timeRange)
 	if err != nil {
 		return nil, err
 	}
@@ -197,12 +201,7 @@ func (s *OperatorEvaluationStats) ExtendStepInvariantToFullRange(timeRange Query
 		return nil, fmt.Errorf("cannot extend step invariant to full range for non-instant time range %v", s.timeRange)
 	}
 
-	subsetMatchers := make([][]*labels.Matcher, len(s.subsets))
-	for i, subset := range s.subsets {
-		subsetMatchers[i] = subset.matchers
-	}
-
-	expanded, err := NewOperatorEvaluationStats(timeRange, s.memoryConsumptionTracker, subsetMatchers)
+	expanded, err := s.newEmptyInstanceWithSameMatchers(timeRange)
 	if err != nil {
 		return nil, err
 	}
@@ -234,7 +233,7 @@ func (s *OperatorEvaluationStats) ComputeForSubquery(
 	subqueryTimestamp *int64,
 	subqueryOffsetMilliseconds int64,
 ) (*OperatorEvaluationStats, error) {
-	result, err := NewOperatorEvaluationStats(parentTimeRange, s.memoryConsumptionTracker)
+	result, err := s.newEmptyInstanceWithSameMatchers(parentTimeRange)
 	if err != nil {
 		return nil, err
 	}
@@ -256,12 +255,12 @@ func (s *OperatorEvaluationStats) ComputeForSubquery(
 		lastIdx := s.timeRange.LastPointIndexAtOrBefore(rangeEnd)
 
 		for innerIdx := firstIdx; innerIdx <= lastIdx; innerIdx++ {
-			result.samplesProcessedPerStep[outerIdx] += s.samplesProcessedPerStep[innerIdx]
+			result.allSeries.samplesProcessedPerStep[outerIdx] += s.allSeries.samplesProcessedPerStep[innerIdx]
 		}
 
 		firstNewIdx := max(lastNewSamplesIdxUsed, firstIdx)
 		for innerIdx := firstNewIdx; innerIdx <= lastIdx; innerIdx++ {
-			result.newSamplesReadPerStep[outerIdx] += s.newSamplesReadPerStep[innerIdx]
+			result.allSeries.newSamplesReadPerStep[outerIdx] += s.allSeries.newSamplesReadPerStep[innerIdx]
 		}
 
 		lastNewSamplesIdxUsed = lastIdx + 1

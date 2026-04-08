@@ -596,12 +596,12 @@ func TestOperatorEvaluationStats_ComputeForSubquery(t *testing.T) {
 	newSamplesReadAt := func(t int) int64 { return int64(5 + t*10) }
 
 	createInnerStats := func(t *testing.T) *OperatorEvaluationStats {
-		inner, err := NewOperatorEvaluationStats(innerTimeRange, memoryConsumptionTracker)
+		inner, err := NewOperatorEvaluationStats(innerTimeRange, memoryConsumptionTracker, nil)
 		require.NoError(t, err)
 
 		for i := range innerTimeRange.StepCount {
-			inner.samplesProcessedPerStep[i] = samplesProcessedAt(i)
-			inner.newSamplesReadPerStep[i] = newSamplesReadAt(i)
+			inner.allSeries.samplesProcessedPerStep[i] = samplesProcessedAt(i)
+			inner.allSeries.newSamplesReadPerStep[i] = newSamplesReadAt(i)
 		}
 
 		return inner
@@ -623,8 +623,8 @@ func TestOperatorEvaluationStats_ComputeForSubquery(t *testing.T) {
 		//
 		// At t=10min: inner steps in (4m, 10m] = {6m, 8m, 10m} (idx 3, 4, 5)
 		// new samples start after 6m, inner steps in (6m, 10m] = {8m, 10m} (idx 4, 5)
-		require.Equal(t, []int64{samplesProcessedAt(1) + samplesProcessedAt(2) + samplesProcessedAt(3), samplesProcessedAt(3) + samplesProcessedAt(4) + samplesProcessedAt(5)}, result.samplesProcessedPerStep)
-		require.Equal(t, []int64{newSamplesReadAt(1) + newSamplesReadAt(2) + newSamplesReadAt(3), newSamplesReadAt(4) + newSamplesReadAt(5)}, result.newSamplesReadPerStep)
+		require.Equal(t, []int64{samplesProcessedAt(1) + samplesProcessedAt(2) + samplesProcessedAt(3), samplesProcessedAt(3) + samplesProcessedAt(4) + samplesProcessedAt(5)}, result.allSeries.samplesProcessedPerStep)
+		require.Equal(t, []int64{newSamplesReadAt(1) + newSamplesReadAt(2) + newSamplesReadAt(3), newSamplesReadAt(4) + newSamplesReadAt(5)}, result.allSeries.newSamplesReadPerStep)
 
 		inner.Close()
 		result.Close()
@@ -647,8 +647,8 @@ func TestOperatorEvaluationStats_ComputeForSubquery(t *testing.T) {
 		//
 		// At t=8min: inner steps in (6m, 8m] = {8m} (idx 4)
 		// new samples start after 6m, inner steps in (6m, 8m] = {8m} (same)
-		require.Equal(t, []int64{samplesProcessedAt(3), samplesProcessedAt(4)}, result.samplesProcessedPerStep)
-		require.Equal(t, []int64{newSamplesReadAt(3), newSamplesReadAt(4)}, result.newSamplesReadPerStep)
+		require.Equal(t, []int64{samplesProcessedAt(3), samplesProcessedAt(4)}, result.allSeries.samplesProcessedPerStep)
+		require.Equal(t, []int64{newSamplesReadAt(3), newSamplesReadAt(4)}, result.allSeries.newSamplesReadPerStep)
 
 		inner.Close()
 		result.Close()
@@ -671,8 +671,8 @@ func TestOperatorEvaluationStats_ComputeForSubquery(t *testing.T) {
 		//
 		// At t=10min: inner steps in (7m, 10m] = {8m, 10m} (idx 4, 5)
 		// new samples start after 7m, inner steps in (7m, 10m] = {8m, 10m} (same)
-		require.Equal(t, []int64{samplesProcessedAt(1) + samplesProcessedAt(2), samplesProcessedAt(4) + samplesProcessedAt(5)}, result.samplesProcessedPerStep)
-		require.Equal(t, []int64{newSamplesReadAt(1) + newSamplesReadAt(2), newSamplesReadAt(4) + newSamplesReadAt(5)}, result.newSamplesReadPerStep)
+		require.Equal(t, []int64{samplesProcessedAt(1) + samplesProcessedAt(2), samplesProcessedAt(4) + samplesProcessedAt(5)}, result.allSeries.samplesProcessedPerStep)
+		require.Equal(t, []int64{newSamplesReadAt(1) + newSamplesReadAt(2), newSamplesReadAt(4) + newSamplesReadAt(5)}, result.allSeries.newSamplesReadPerStep)
 
 		inner.Close()
 		result.Close()
@@ -693,8 +693,8 @@ func TestOperatorEvaluationStats_ComputeForSubquery(t *testing.T) {
 
 		// For all steps, the inner steps are (2m, 8m] = {4m, 6m, 8m} (idx 2, 3, 4)
 		samplesProcessed := samplesProcessedAt(2) + samplesProcessedAt(3) + samplesProcessedAt(4)
-		require.Equal(t, []int64{samplesProcessed, samplesProcessed}, result.samplesProcessedPerStep)
-		require.Equal(t, []int64{newSamplesReadAt(2) + newSamplesReadAt(3) + newSamplesReadAt(4), 0}, result.newSamplesReadPerStep) // No new samples are read for subsequent steps.
+		require.Equal(t, []int64{samplesProcessed, samplesProcessed}, result.allSeries.samplesProcessedPerStep)
+		require.Equal(t, []int64{newSamplesReadAt(2) + newSamplesReadAt(3) + newSamplesReadAt(4), 0}, result.allSeries.newSamplesReadPerStep) // No new samples are read for subsequent steps.
 
 		inner.Close()
 		result.Close()
@@ -715,8 +715,8 @@ func TestOperatorEvaluationStats_ComputeForSubquery(t *testing.T) {
 
 		// At t=10min: inner steps in (0m, 6m] = {2m, 4m, 6m} (idx 1, 2, 3)
 		// At t=14min: inner steps in (4m, 10m] = {6m, 8m, 10m} (idx 3, 4, 5)
-		require.Equal(t, []int64{samplesProcessedAt(1) + samplesProcessedAt(2) + samplesProcessedAt(3), samplesProcessedAt(3) + samplesProcessedAt(4) + samplesProcessedAt(5)}, result.samplesProcessedPerStep)
-		require.Equal(t, []int64{newSamplesReadAt(1) + newSamplesReadAt(2) + newSamplesReadAt(3), newSamplesReadAt(4) + newSamplesReadAt(5)}, result.newSamplesReadPerStep)
+		require.Equal(t, []int64{samplesProcessedAt(1) + samplesProcessedAt(2) + samplesProcessedAt(3), samplesProcessedAt(3) + samplesProcessedAt(4) + samplesProcessedAt(5)}, result.allSeries.samplesProcessedPerStep)
+		require.Equal(t, []int64{newSamplesReadAt(1) + newSamplesReadAt(2) + newSamplesReadAt(3), newSamplesReadAt(4) + newSamplesReadAt(5)}, result.allSeries.newSamplesReadPerStep)
 
 		inner.Close()
 		result.Close()
@@ -738,8 +738,8 @@ func TestOperatorEvaluationStats_ComputeForSubquery(t *testing.T) {
 
 		// For all steps, the inner steps are (0m, 6m] = {2m, 4m, 6m} (idx 1, 2, 3)
 		samplesProcessed := samplesProcessedAt(1) + samplesProcessedAt(2) + samplesProcessedAt(3)
-		require.Equal(t, []int64{samplesProcessed, samplesProcessed}, result.samplesProcessedPerStep)
-		require.Equal(t, []int64{newSamplesReadAt(1) + newSamplesReadAt(2) + newSamplesReadAt(3), 0}, result.newSamplesReadPerStep)
+		require.Equal(t, []int64{samplesProcessed, samplesProcessed}, result.allSeries.samplesProcessedPerStep)
+		require.Equal(t, []int64{newSamplesReadAt(1) + newSamplesReadAt(2) + newSamplesReadAt(3), 0}, result.allSeries.newSamplesReadPerStep)
 
 		inner.Close()
 		result.Close()
@@ -757,8 +757,8 @@ func TestOperatorEvaluationStats_ComputeForSubquery(t *testing.T) {
 		result, err := inner.ComputeForSubquery(parentTimeRange, subqueryRange.Milliseconds(), nil, 0)
 		require.NoError(t, err)
 
-		require.Equal(t, []int64{0, 0}, result.samplesProcessedPerStep)
-		require.Equal(t, []int64{0, 0}, result.newSamplesReadPerStep)
+		require.Equal(t, []int64{0, 0}, result.allSeries.samplesProcessedPerStep)
+		require.Equal(t, []int64{0, 0}, result.allSeries.newSamplesReadPerStep)
 
 		inner.Close()
 		result.Close()
@@ -774,8 +774,8 @@ func TestOperatorEvaluationStats_ComputeForSubquery(t *testing.T) {
 		require.NoError(t, err)
 
 		// At t=10m: inner steps in (4m, 10m] = {6m, 8m, 10m} (idx 3, 4, 5)
-		require.Equal(t, []int64{samplesProcessedAt(3) + samplesProcessedAt(4) + samplesProcessedAt(5)}, result.samplesProcessedPerStep)
-		require.Equal(t, []int64{newSamplesReadAt(3) + newSamplesReadAt(4) + newSamplesReadAt(5)}, result.newSamplesReadPerStep)
+		require.Equal(t, []int64{samplesProcessedAt(3) + samplesProcessedAt(4) + samplesProcessedAt(5)}, result.allSeries.samplesProcessedPerStep)
+		require.Equal(t, []int64{newSamplesReadAt(3) + newSamplesReadAt(4) + newSamplesReadAt(5)}, result.allSeries.newSamplesReadPerStep)
 
 		inner.Close()
 		result.Close()
@@ -792,8 +792,8 @@ func TestOperatorEvaluationStats_ComputeForSubquery(t *testing.T) {
 		require.NoError(t, err)
 
 		// At t=10m, subquery timestamp is 8m: inner steps in (2m, 8m] = {4m, 6m, 8m} (idx 2, 3, 4)
-		require.Equal(t, []int64{samplesProcessedAt(2) + samplesProcessedAt(3) + samplesProcessedAt(4)}, result.samplesProcessedPerStep)
-		require.Equal(t, []int64{newSamplesReadAt(2) + newSamplesReadAt(3) + newSamplesReadAt(4)}, result.newSamplesReadPerStep)
+		require.Equal(t, []int64{samplesProcessedAt(2) + samplesProcessedAt(3) + samplesProcessedAt(4)}, result.allSeries.samplesProcessedPerStep)
+		require.Equal(t, []int64{newSamplesReadAt(2) + newSamplesReadAt(3) + newSamplesReadAt(4)}, result.allSeries.newSamplesReadPerStep)
 
 		inner.Close()
 		result.Close()
@@ -810,8 +810,8 @@ func TestOperatorEvaluationStats_ComputeForSubquery(t *testing.T) {
 		require.NoError(t, err)
 
 		// At t=12m: inner steps in (4m, 10m] = {6m, 8m, 10m} (idx 3, 4, 5)
-		require.Equal(t, []int64{samplesProcessedAt(3) + samplesProcessedAt(4) + samplesProcessedAt(5)}, result.samplesProcessedPerStep)
-		require.Equal(t, []int64{newSamplesReadAt(3) + newSamplesReadAt(4) + newSamplesReadAt(5)}, result.newSamplesReadPerStep)
+		require.Equal(t, []int64{samplesProcessedAt(3) + samplesProcessedAt(4) + samplesProcessedAt(5)}, result.allSeries.samplesProcessedPerStep)
+		require.Equal(t, []int64{newSamplesReadAt(3) + newSamplesReadAt(4) + newSamplesReadAt(5)}, result.allSeries.newSamplesReadPerStep)
 
 		inner.Close()
 		result.Close()
@@ -829,8 +829,8 @@ func TestOperatorEvaluationStats_ComputeForSubquery(t *testing.T) {
 		require.NoError(t, err)
 
 		// At t=12m, subquery timestamp is 10m-2m=8m: inner steps in (2m, 8m] = {4m, 6m, 8m} (idx 2, 3, 4)
-		require.Equal(t, []int64{samplesProcessedAt(2) + samplesProcessedAt(3) + samplesProcessedAt(4)}, result.samplesProcessedPerStep)
-		require.Equal(t, []int64{newSamplesReadAt(2) + newSamplesReadAt(3) + newSamplesReadAt(4)}, result.newSamplesReadPerStep)
+		require.Equal(t, []int64{samplesProcessedAt(2) + samplesProcessedAt(3) + samplesProcessedAt(4)}, result.allSeries.samplesProcessedPerStep)
+		require.Equal(t, []int64{newSamplesReadAt(2) + newSamplesReadAt(3) + newSamplesReadAt(4)}, result.allSeries.newSamplesReadPerStep)
 
 		inner.Close()
 		result.Close()
