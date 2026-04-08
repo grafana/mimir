@@ -490,7 +490,7 @@ func (am *Alertmanager) buildIntegrationsMap(nc []*definition.PostableApiReceive
 		if err != nil {
 			return nil, err
 		}
-		integrationsMap[rcv.Name] = append(integrations)
+		integrationsMap[rcv.Name] = integrations
 	}
 
 	return integrationsMap, nil
