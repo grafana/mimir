@@ -14,11 +14,11 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/alerting/definition"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
+	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/featurecontrol"
 	"github.com/prometheus/alertmanager/silence"
 	"github.com/prometheus/alertmanager/silence/silencepb"
@@ -90,7 +90,7 @@ route:
   group_interval: 10ms
   receiver: 'prod'`
 
-	cfg, err := definition.LoadCompat([]byte(cfgRaw))
+	cfg, err := config.Load(cfgRaw)
 	require.NoError(t, err)
 	tmpls := make([]*alertspb.TemplateDesc, 0)
 	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw))
@@ -175,7 +175,7 @@ route:
   group_interval: 10ms
   receiver: 'prod'`
 
-	cfg, err := definition.LoadCompat([]byte(cfgRaw))
+	cfg, err := config.Load(cfgRaw)
 	require.NoError(t, err)
 	tmpls := make([]*alertspb.TemplateDesc, 0)
 	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw))

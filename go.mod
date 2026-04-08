@@ -116,7 +116,6 @@ require (
 	github.com/Masterminds/goutils v1.1.1 // indirect
 	github.com/Masterminds/semver/v3 v3.4.0 // indirect
 	github.com/Masterminds/sprig/v3 v3.2.1 // indirect
-	github.com/at-wat/mqtt-go v0.19.6 // indirect
 	github.com/aws/aws-sdk-go v1.55.7 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.7 // indirect
 	github.com/aws/aws-sdk-go-v2/service/signin v1.0.5 // indirect
@@ -383,9 +382,6 @@ replace github.com/opentracing-contrib/go-stdlib => github.com/grafana/opentraci
 
 // Replace opentracing-contrib/go-grpc with a fork until https://github.com/opentracing-contrib/go-grpc/pull/16 is merged.
 replace github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc v0.0.0-20231024023642-e9298576254f
-
-// Replacing prometheus/alertmanager with our fork.
-replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20260225120258-18275ca76b0c
 
 // Use Mimir fork of prometheus/otlptranslator to allow for higher velocity of upstream development,
 // while allowing Mimir to move at a more conservative pace.
