@@ -495,7 +495,6 @@ func (am *Alertmanager) buildIntegrationsMap(nc []*definition.PostableApiReceive
 	// Create a firewall binded to the per-tenant config.
 	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(am.cfg.UserID, am.cfg.Limits))
 
-	// Cached templates.
 	var tmpl *template.Template
 	integrationsMap := make(map[string][]*nfstatus.Integration, len(nc))
 	for _, rcv := range nc {
