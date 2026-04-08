@@ -70,7 +70,7 @@ func newTestReader(t *testing.T, base, length int) (*BucketBufReader, *trackingB
 	bufioReader := testBucketBufPool.Get().(*bufio.Reader)
 	bufioReader.Reset(reader)
 
-	return &BucketBufReader{
+	bufReader := &BucketBufReader{
 		ctx:    ctx,
 		bkt:    bkt,
 		name:   testBucketObjectName,
@@ -78,7 +78,15 @@ func newTestReader(t *testing.T, base, length int) (*BucketBufReader, *trackingB
 		length: length,
 		r:      reader,
 		buf:    bufioReader,
-	}, bkt
+	}
+
+	resetReader := func(off int) error {
+		r := NewBucketReader(ctx, bkt, testBucketObjectName, base+off, length)
+		bufReader.r = r
+		return nil
+	}
+	bufReader.resetReader = resetReader
+	return bufReader, bkt
 }
 
 // failingBucket is an InstrumentedBucketReader whose GetRange always returns an error.

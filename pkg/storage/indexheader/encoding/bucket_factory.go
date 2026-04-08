@@ -33,6 +33,74 @@ func NewBucketDecbufFactory(ctx context.Context, bkt objstore.BucketReader, obje
 }
 
 func (bf *BucketDecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table) Decbuf {
+	attrs, err := bf.bkt.Attributes(bf.ctx, bf.objectPath)
+	if err != nil {
+		return Decbuf{E: fmt.Errorf("get size from %s: %w", bf.objectPath, err)}
+	}
+	if offset > int(attrs.Size) {
+		return Decbuf{E: fmt.Errorf("offset greater than object size of %s: %w", bf.objectPath, err)}
+	}
+
+	// We do not know section length yet;
+	// use the lower-level BucketReader to scan the length data
+	metaReader := NewBucketReader(
+		bf.ctx, bf.bkt, bf.objectPath, offset, int(attrs.Size),
+	)
+
+	// TODO: A particular index-header only has symbols and posting offsets. We should only need to read
+	//  the length of each of those a single time per index-header (DecbufFactory). Should the factory
+	//  cache the length? Should the table of contents be passed to the factory?
+	lengthBytes := make([]byte, 4)
+	n, err := metaReader.Read(lengthBytes)
+	if err != nil {
+		return Decbuf{E: err}
+	}
+	if n != 4 {
+		return Decbuf{E: fmt.Errorf("insufficient bytes read for size (got %d, wanted %d): %w", n, 4, ErrInvalidSize)}
+	}
+	contentLength := int(binary.BigEndian.Uint32(lengthBytes))
+	bufferLength := len(lengthBytes) + contentLength + crc32.Size
+
+	bufReader := NewBucketBufReader(bf.ctx, bf.bkt, bf.objectPath, offset, bufferLength)
+	// bufReader is expected start at base offset + 4 after consuming length bytes
+	err = bufReader.Skip(4)
+	if err != nil {
+		return Decbuf{E: err}
+	}
+	d := Decbuf{r: bufReader}
+
+	if table != nil {
+		if d.CheckCrc32(table); d.Err() != nil {
+			return d
+		}
+
+		// reset to the beginning of the content after reading it all for the CRC.
+		d.ResetAt(4)
+	}
+
+	return d
+}
+
+func (bf *BucketDecbufFactory) NewDecbufAtUnchecked(offset int) Decbuf {
+	return bf.NewDecbufAtChecked(offset, nil)
+}
+
+func (bf *BucketDecbufFactory) NewRawDecbuf() Decbuf {
+	const offset = 0
+
+	attrs, err := bf.bkt.Attributes(bf.ctx, bf.objectPath)
+	if err != nil {
+		return Decbuf{E: fmt.Errorf("get size from %s: %w", bf.objectPath, err)}
+	}
+	// Create reader from full file range
+	r := NewBucketBufReader(
+		bf.ctx, bf.bkt, bf.objectPath, offset, int(attrs.Size),
+	)
+	d := Decbuf{r: r}
+	return d
+}
+
+func (bf *BucketDecbufFactory) xNewDecbufAtChecked(offset int, table *crc32.Table) Decbuf {
 	// At this point we don't know the length of the section (length is -1).
 	rc, err := bf.bkt.GetRange(bf.ctx, bf.objectPath, int64(offset), -1)
 	if err != nil {
@@ -88,11 +156,11 @@ func (bf *BucketDecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table
 	return d
 }
 
-func (bf *BucketDecbufFactory) NewDecbufAtUnchecked(offset int) Decbuf {
-	return bf.NewDecbufAtChecked(offset, nil)
+func (bf *BucketDecbufFactory) xNewDecbufAtUnchecked(offset int) Decbuf {
+	return bf.xNewDecbufAtChecked(offset, nil)
 }
 
-func (bf *BucketDecbufFactory) NewRawDecbuf() Decbuf {
+func (bf *BucketDecbufFactory) xNewRawDecbuf() Decbuf {
 	const offset = 0
 
 	rc, err := bf.bkt.GetRange(bf.ctx, bf.objectPath, offset, -1)

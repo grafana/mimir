@@ -15,7 +15,7 @@ import (
 
 type BucketReader struct {
 	ctx    context.Context
-	bkt    objstore.InstrumentedBucketReader
+	bkt    objstore.BucketReader
 	name   string
 	base   int
 	length int
@@ -23,7 +23,7 @@ type BucketReader struct {
 }
 
 func NewBucketReader(
-	ctx context.Context, bkt objstore.InstrumentedBucketReader, name string, base int, length int,
+	ctx context.Context, bkt objstore.BucketReader, name string, base int, length int,
 ) *BucketReader {
 	return &BucketReader{
 		ctx:    ctx,
@@ -79,24 +79,25 @@ var bucketBufPool = sync.Pool{
 }
 
 type BucketBufReader struct {
-	ctx    context.Context
-	bkt    objstore.InstrumentedBucketReader
-	name   string
-	base   int
-	length int
-	off    int
-	r      *BucketReader
-	buf    *bufio.Reader
+	ctx         context.Context
+	bkt         objstore.BucketReader
+	name        string
+	base        int
+	length      int
+	off         int
+	r           *BucketReader
+	resetReader func(off int) error
+	buf         *bufio.Reader
 }
 
 func NewBucketBufReader(
-	ctx context.Context, bkt objstore.InstrumentedBucketReader, name string, base int, length int,
+	ctx context.Context, bkt objstore.BucketReader, name string, base int, length int,
 ) *BucketBufReader {
 	reader := NewBucketReader(ctx, bkt, name, base, length)
 	bufioReader := bucketBufPool.Get().(*bufio.Reader)
 	bufioReader.Reset(reader)
 
-	return &BucketBufReader{
+	bufReader := &BucketBufReader{
 		ctx:    ctx,
 		bkt:    bkt,
 		name:   name,
@@ -105,6 +106,14 @@ func NewBucketBufReader(
 		r:      reader,
 		buf:    bufioReader,
 	}
+
+	resetReader := func(off int) error {
+		r := NewBucketReader(ctx, bkt, name, base+off, length)
+		bufReader.r = r
+		return nil
+	}
+	bufReader.resetReader = resetReader
+	return bufReader
 }
 
 func (bbr *BucketBufReader) Reset() error {
@@ -116,8 +125,13 @@ func (bbr *BucketBufReader) ResetAt(off int) error {
 		return ErrInvalidSize
 	}
 
-	_, err := bbr.r.Seek(int64(bbr.base+off), io.SeekStart)
-	if err != nil {
+	// Objstore hides the io.ReadSeekCloser, that the underlying bucket clients implement.
+	// So we reimplement it ourselves:
+	// 1. Close the r.rc
+	// 2. Re-read the object from new offset
+	// 3. Reset the r.buf and the rest of the state.
+	// TODO: evaluate if we need a more efficient approach
+	if err := bbr.resetReader(off); err != nil {
 		return err
 	}
 
