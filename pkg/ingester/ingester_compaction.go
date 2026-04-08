@@ -172,8 +172,42 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		}
+
+		// Sync user DB's offset catalogue in the end of this compaction cycle.
+		i.offsetCataloguesSync(ctx)
 	}
 	return nil
+}
+
+func (i *Ingester) offsetCataloguesSync(ctx context.Context) {
+	if !i.cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.Enabled {
+		return
+	}
+
+	// If any block was cut from the head and discovered in this sync tick,
+	// all series in the block are guaranteed to come from below this lastSeenOffset.
+	// Note: for normal compaction cycle, that cuts head at "chunkRange * 3/2",
+	// this offset overshoots by ~1h. This is technically correct, but very conservative.
+	offsetHW := i.ingestReader.LastSeenOffset()
+
+	level.Info(i.logger).Log("msg", "syncing offset catalogues for tenants", "last_seen_offset", offsetHW)
+
+	_ = concurrency.ForEachUser(ctx, i.getTSDBUsers(), i.cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.SyncConcurrency, func(ctx context.Context, userID string) error {
+		// Get the user's DB. If the user doesn't exist, we skip it.
+		db := i.getTSDB(userID)
+		if db == nil || db.offsetCatalogue == nil {
+			return nil
+		}
+
+		err := db.offsetCatalogue.Sync(ctx, offsetHW)
+		if err != nil {
+			level.Warn(i.logger).Log("msg", "offset catalogue sync failed", "user", userID, "offset", offsetHW, "err", err)
+		} else {
+			level.Debug(i.logger).Log("msg", "successfully sync offset catalogue", "user", userID, "offset", offsetHW)
+		}
+
+		return nil
+	})
 }
 
 // compactionServiceInterval returns how frequently the TSDB Head should be checked for compaction.

@@ -165,6 +165,53 @@ func TestHandler(t *testing.T) {
 			expectedStatusCode: http.StatusOK,
 		},
 
+		"valid request with overridden lookback delta": {
+			params: url.Values{
+				"query":          []string{`up`},
+				"time":           []string{"2022-01-01T00:00:00Z"},
+				"lookback_delta": []string{`6m`},
+			},
+			expectedResponse: `{
+			  "originalExpression": "up",
+			  "timeRange": {"startT": 1640995200000, "endT": 1640995200000, "intervalMilliseconds": 1, "isInstant": true},
+			  "astStages": [
+				{"name": "Parsing", "duration": 1234000000, "outputExpression": "up"},
+				{"name": "Pre-processing", "duration": 1234000000, "outputExpression": "up"},
+				{"name": "Final expression", "duration": null, "outputExpression": "up"}
+			  ],
+			  "planningStages": [
+				{
+				  "name": "Original plan",
+				  "duration": 1234000000,
+				  "outputPlan": {
+					"timeRange": {"startT": 1640995200000, "endT": 1640995200000, "intervalMilliseconds": 1, "isInstant": true},
+					"lookbackDelta": 360000000000,
+					"nodes": [
+					  {"type": "VectorSelector", "description": "{__name__=\"up\"}"}
+					],
+					"originalExpression": "up",
+					"version": 0
+				  }
+				},
+				{
+				  "name": "Final plan",
+				  "duration": null,
+				  "outputPlan": {
+					"timeRange": {"startT": 1640995200000, "endT": 1640995200000, "intervalMilliseconds": 1, "isInstant": true},
+					"lookbackDelta": 360000000000,
+					"nodes": [
+					  {"type": "VectorSelector", "description": "{__name__=\"up\"}"}
+					],
+					"originalExpression": "up",
+					"version": 0
+				  }
+				}
+			  ],
+			  "planVersion": 0
+			}`,
+			expectedStatusCode: http.StatusOK,
+		},
+
 		"no params": {
 			expectedResponse:   `missing 'query' parameter`,
 			expectedStatusCode: http.StatusBadRequest,
@@ -307,12 +354,39 @@ func TestHandler(t *testing.T) {
 			expectedResponse:   `parsing expression failed: 1:2: parse error: unexpected end of input`,
 			expectedStatusCode: http.StatusBadRequest,
 		},
+		"invalid lookback_delta": {
+			params: url.Values{
+				"query":          []string{`up`},
+				"time":           []string{"2022-01-01T00:00:00Z"},
+				"lookback_delta": []string{"foo"},
+			},
+			expectedResponse:   `could not parse 'lookback_delta' parameter: cannot parse "foo" to a valid duration`,
+			expectedStatusCode: http.StatusBadRequest,
+		},
+		"zero lookback_delta": {
+			params: url.Values{
+				"query":          []string{`up`},
+				"time":           []string{"2022-01-01T00:00:00Z"},
+				"lookback_delta": []string{"0"},
+			},
+			expectedResponse:   `lookback_delta must be greater than 0`,
+			expectedStatusCode: http.StatusBadRequest,
+		},
+		"negative lookback_delta": {
+			params: url.Values{
+				"query":          []string{`up`},
+				"time":           []string{"2022-01-01T00:00:00Z"},
+				"lookback_delta": []string{"-300"},
+			},
+			expectedResponse:   `lookback_delta must be greater than 0`,
+			expectedStatusCode: http.StatusBadRequest,
+		},
 	}
 
 	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(streamingpromql.NewTestEngineOpts(), streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	planner.TimeSince = func(_ time.Time) time.Duration { return 1234 * time.Millisecond }
-	handler := Handler(planner, streamingpromql.NewStaticQueryLimitsProvider())
+	handler := NewHandler(planner, streamingpromql.NewStaticQueryLimitsProvider(), streamingpromql.NewTestEngineOpts())
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
@@ -338,7 +412,7 @@ func TestHandler(t *testing.T) {
 }
 
 func TestHandler_PlanningDisabled(t *testing.T) {
-	handler := Handler(nil, nil)
+	handler := NewHandler(nil, nil, streamingpromql.NewTestEngineOpts())
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	resp := httptest.NewRecorder()
@@ -489,7 +563,7 @@ func TestHandler_Sharding(t *testing.T) {
 	planner.TimeSince = func(_ time.Time) time.Duration { return 1234 * time.Millisecond }
 	planner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(&mockLimits{}, 0, nil, log.NewNopLogger()))
 
-	handler := middleware.AuthenticateUser(Handler(planner, streamingpromql.NewStaticQueryLimitsProvider()))
+	handler := middleware.AuthenticateUser(NewHandler(planner, streamingpromql.NewStaticQueryLimitsProvider(), streamingpromql.NewTestEngineOpts()))
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {

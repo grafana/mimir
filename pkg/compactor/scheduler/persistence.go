@@ -4,6 +4,7 @@ package scheduler
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/go-kit/log"
 
@@ -22,6 +23,7 @@ func jobPersistenceManagerFactory(cfg Config, logger log.Logger) (JobPersistence
 }
 
 type JobPersistenceManager interface {
+	CreationTime() time.Time
 	InitializeTenant(tenant string) (JobPersister, error)
 	RecoverAll(allowedTenants *util.AllowList, jobTrackerFactory func(tenant string, persister JobPersister) *JobTracker) (map[string]*JobTracker, error)
 	Close() error
@@ -35,6 +37,10 @@ type JobPersister interface {
 }
 
 type NopJobPersistenceManager struct{}
+
+func (n *NopJobPersistenceManager) CreationTime() time.Time {
+	return time.Now()
+}
 
 func (n *NopJobPersistenceManager) InitializeTenant(tenant string) (JobPersister, error) {
 	return &NopJobPersister{}, nil

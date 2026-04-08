@@ -7,24 +7,33 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
+	"io"
+	"os"
+	"path/filepath"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/runutil"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
 
 	streamencoding "github.com/grafana/mimir/pkg/storage/indexheader/encoding"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/util/filepool"
 )
 
 // TOCCompat unifies the Prometheus TSDB index TOC values available from different index types,
 // containing only the TOC offsets required for index-header reads of the Symbols and Postings Offsets.
 //
-// The StreamBinaryReader reads the index-header BinaryFormatV1 from disk.
-// The section offsets for this format differ from a full Prometheus TSDB index
-// and the file metadata does not contain all TOC values available from the full TSDB index.
+// The StreamBinaryReader can use either file-backed or bucket-backed DecbufFactory to read the index-header.
 //
-// The BucketBinaryReader loads the full Prometheus TSDB index TOC from the block in object storage.
+// The FilePoolDecbufFactory reads the index-header BinaryFormatV1 from disk.
+// This index-header format differs from the full block index, as it only contains the Symbols and Postings Offsets:
+//   - The section offsets differ from a full Prometheus TSDB index file
+//   - The file metadata does not contain a full Prometheus block TOC, since not all index sections are present.
+//
+// The BucketDecbufFactory loads the full Prometheus TSDB index TOC from the block in object storage.
 type TOCCompat struct {
 	IndexVersion int
 
@@ -43,6 +52,7 @@ type TOCCompat struct {
 }
 
 // TOCFromBucketTSDBIndex builds the TOCCompat from the full Prometheus block index TOC in the bucket.
+// This can be used to generate sparse headers in components without a full block index on disk, e.g. store-gateways.
 // A plain bucket reader is used rather than a bucket-based Decbuf to reduce object storage operations,
 // as the Decbuf interface and implementations are designed for forward scanning.
 func TOCFromBucketTSDBIndex(
@@ -54,10 +64,6 @@ func TOCFromBucketTSDBIndex(
 	headerBytes, err := fetchRange(ctx, bkt, indexPath, 0, index.HeaderLen)
 	if err != nil {
 		return nil, fmt.Errorf("read index file header: %w", err)
-	}
-
-	if len(headerBytes) != index.HeaderLen {
-		return nil, fmt.Errorf("unexpected index file header length: %d", len(headerBytes))
 	}
 
 	if magic := binary.BigEndian.Uint32(headerBytes[0:4]); magic != index.MagicIndex {
@@ -88,17 +94,17 @@ func TOCFromBucketTSDBIndex(
 		PostingsListEnd:     postingsListEnd,
 		PostingsOffsetTable: tsdbTOC.PostingsTable,
 	}, nil
-
 }
 
-// TOCFromIndexHeader builds a TOCCompat from the on-disk Mimir index-header BinaryFormatV1.
+// TOCFromIndexHeader builds a TOCCompat from the on-disk Mimir BinaryFormatV1.
+// This format currently only exists on-disk in the store-gateways.
 // The BinaryFormatV1 only has two main sections, which are copies of the Symbols and PostingsOffsets tables,
 // and it has a different layout for the header/metadata and TOC.
 // This results in different offsets for the relevant sections than a full Prometheus block index in the bucket.
 func TOCFromIndexHeader(
 	castagnoliTable *crc32.Table,
 	decbufFactory streamencoding.DecbufFactory,
-	ll log.Logger,
+	l log.Logger,
 ) (toc *TOCCompat, indexHeaderVersion int, err error) {
 	// Create a new raw decoding buffer with access to the entire index-header file to
 	// read initial version information and the table of contents.
@@ -115,7 +121,7 @@ func TOCFromIndexHeader(
 		return nil, 0, fmt.Errorf("invalid magic number %x", magic)
 	}
 
-	level.Debug(ll).Log("msg", "index header file size", "bytes", indexHeaderSize)
+	level.Debug(l).Log("msg", "index header file size", "bytes", indexHeaderSize)
 
 	indexHeaderVersion = int(decbuf.Byte())
 	if indexHeaderVersion != BinaryFormatV1 {
@@ -155,4 +161,96 @@ func TOCFromIndexHeader(
 		PostingsListEnd:     postingsListEnd,
 		PostingsOffsetTable: postingsOffsetTable,
 	}, indexHeaderVersion, nil
+}
+
+func fetchRange(ctx context.Context, bkt objstore.BucketReader, objectPath string, offset, length int64) (data []byte, err error) {
+	rc, err := bkt.GetRange(ctx, objectPath, offset, length)
+	if err != nil {
+		return nil, fmt.Errorf("get range [%d, %d): %w", offset, offset+length, err)
+	}
+	defer runutil.CloseWithErrCapture(&err, rc, "close range reader %s", objectPath)
+
+	data, err = io.ReadAll(rc)
+	if err != nil {
+		return nil, fmt.Errorf("read range data: %w", err)
+	}
+
+	if int64(len(data)) != length {
+		return nil, fmt.Errorf("expected %d bytes, got %d", length, len(data))
+	}
+
+	return data, err
+}
+
+// tocFromDiskTSDBIndex builds a TOCCompat from the full Prometheus block index TOC on disk.
+// This can be used to generate sparse headers in components with a full block index on disk:
+// classic ingesters, block-builders, and compactors.
+func tocFromDiskTSDBIndex(blockID ulid.ULID, dir string) (toc *TOCCompat, err error) {
+	localBlockDir := filepath.Join(dir, blockID.String())
+	localIndexPath := filepath.Join(localBlockDir, block.IndexFilename)
+
+	f, err := os.Open(localIndexPath) // file will be closed by streamencoding.FileReader wrapper
+	if err != nil {
+		return nil, fmt.Errorf("cannot open index file: %w", err)
+	}
+	defer runutil.CloseWithErrCapture(&err, f, "index TOC from block index file")
+
+	stat, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("cannot stat index file: %w", err)
+	}
+	indexSize := stat.Size()
+
+	indexReader, err := streamencoding.NewFileReader(f, 0, int(indexSize), filepool.SingleFilePoolNoopCloser{})
+	if err != nil {
+		return nil, fmt.Errorf("cannot create reader at offset 0 from index file: %w", err)
+	}
+	defer runutil.CloseWithErrCapture(&err, indexReader, "index TOC from block index file")
+
+	magicBytes, err := indexReader.Read(4)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read magic number bytes: %w", err)
+	}
+
+	if magic := binary.BigEndian.Uint32(magicBytes); int(magic) != index.MagicIndex {
+		return nil, fmt.Errorf("invalid magic number %x", magic)
+	}
+
+	indexVersionByte, err := indexReader.Read(1)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read index version byte: %w", err)
+	}
+
+	indexVersion := int(indexVersionByte[0])
+	if indexVersion != index.FormatV2 {
+		return nil, fmt.Errorf("unknown or unsupported index format version %d", indexVersion)
+	}
+
+	tocStartOffset := indexSize - indexTOCLen - crc32.Size
+	tocLen := indexTOCLen + crc32.Size
+
+	if err := indexReader.ResetAt(int(tocStartOffset)); err != nil {
+		return nil, fmt.Errorf("cannot reset reader to index TOC offset: %w", err)
+	}
+
+	tocBytes, err := indexReader.Read(tocLen)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read toc bytes: %w", err)
+	}
+
+	tsdbTOC, err := index.NewTOCFromByteSlice(realByteSlice(tocBytes))
+	if err != nil {
+		return nil, fmt.Errorf("parse index TOC: %w", err)
+	}
+
+	postingsListEnd := tsdbTOC.LabelIndicesTable
+
+	return &TOCCompat{
+		IndexVersion: indexVersion,
+		Symbols:      tsdbTOC.Symbols,
+
+		PostingsListEnd:     postingsListEnd,
+		PostingsOffsetTable: tsdbTOC.PostingsTable,
+	}, nil
+
 }

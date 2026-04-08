@@ -25,6 +25,7 @@ import (
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 
+	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -36,7 +37,10 @@ var implementations = []struct {
 	{
 		name: "stream binary reader",
 		factory: func(t *testing.T, ctx context.Context, dir string, id ulid.ULID) Reader {
-			br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, dir, id, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+			bkt, err := filesystem.NewBucket(filepath.Join(dir, "bkt"))
+			require.NoError(t, err)
+			instrBkt := objstore.WithNoopInstr(bkt)
+			br, err := NewStreamBinaryReader(ctx, id, instrBkt, dir, Config{}, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 			require.NoError(t, err)
 			requireCleanup(t, br.Close)
 			return br
@@ -45,8 +49,11 @@ var implementations = []struct {
 	{
 		name: "lazy stream binary reader",
 		factory: func(t *testing.T, ctx context.Context, dir string, id ulid.ULID) Reader {
+			bkt, err := filesystem.NewBucket(filepath.Join(dir, "bkt"))
+			require.NoError(t, err)
+			instrBkt := objstore.WithNoopInstr(bkt)
 			readerFactory := func() (Reader, error) {
-				return NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, dir, id, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+				return NewStreamBinaryReader(ctx, id, instrBkt, dir, Config{}, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 			}
 
 			br, err := NewLazyBinaryReader(ctx, Config{}, readerFactory, log.NewNopLogger(), nil, dir, id, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
@@ -111,10 +118,8 @@ func TestReadersComparedToIndexHeader(t *testing.T) {
 					compareIndexToHeader(t, b, r)
 				})
 			}
-
 		})
 	}
-
 }
 
 func Test_DownsampleSparseIndexHeader(t *testing.T) {
@@ -208,18 +213,18 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 			noopMetrics := NewStreamBinaryReaderMetrics(nil)
 
 			// write a sparse index-header file to disk
-			br1, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, m.ULID, tt.protoRate, noopMetrics, Config{})
+			br1, err := NewStreamBinaryReader(ctx, m.ULID, bkt, tmpDir, Config{}, tt.protoRate, log.NewNopLogger(), noopMetrics)
 			require.NoError(t, err)
-			require.Equal(t, tt.protoRate, br1.postingsOffsetTable.PostingOffsetInMemSampling())
+			require.Equal(t, tt.protoRate, br1.postingsOffsetTable.PostingsOffsetsInMemSampling())
 
 			origLabelNames, err := br1.postingsOffsetTable.LabelNames()
 			require.NoError(t, err)
 
 			// a second call to NewStreamBinaryReader loads the previously written sparse index-header and downsamples
 			// the header from tt.protoRate to tt.inMemSamplingRate entries for each posting
-			br2, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, m.ULID, tt.inMemSamplingRate, noopMetrics, Config{})
+			br2, err := NewStreamBinaryReader(ctx, m.ULID, bkt, tmpDir, Config{}, tt.inMemSamplingRate, log.NewNopLogger(), noopMetrics)
 			require.NoError(t, err)
-			require.Equal(t, tt.inMemSamplingRate, br2.postingsOffsetTable.PostingOffsetInMemSampling())
+			require.Equal(t, tt.inMemSamplingRate, br2.postingsOffsetTable.PostingsOffsetsInMemSampling())
 
 			downsampleLabelNames, err := br2.postingsOffsetTable.LabelNames()
 			require.NoError(t, err)
@@ -227,11 +232,18 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 			// label names are equal between original and downsampled sparse index-headers
 			require.ElementsMatch(t, downsampleLabelNames, origLabelNames)
 
-			origIdxpbTbl := br1.postingsOffsetTable.ToSparsePostingOffsetTable()
-			downsampleIdxpbTbl := br2.postingsOffsetTable.ToSparsePostingOffsetTable()
+			origIdxTbl := br1.postingsOffsetTable.(*streamindex.PostingsOffsetsTableV2)
+			origIdxTblProto := streamindex.SparsePostingsOffsetsTableToProto(
+				origIdxTbl.SparsePostingsOffsets, origIdxTbl.SparseSampleFactor,
+			)
 
-			for name, vals := range origIdxpbTbl.Postings {
-				downsampledOffsets := downsampleIdxpbTbl.Postings[name].Offsets
+			downsampleIdxTbl := br2.postingsOffsetTable.(*streamindex.PostingsOffsetsTableV2)
+			downsampleIdxTblProto := streamindex.SparsePostingsOffsetsTableToProto(
+				downsampleIdxTbl.SparsePostingsOffsets, downsampleIdxTbl.SparseSampleFactor,
+			)
+
+			for name, vals := range origIdxTblProto.Postings {
+				downsampledOffsets := downsampleIdxTblProto.Postings[name].Offsets
 				// downsampled postings are a subset of the original sparse index-header postings
 				if (tt.inMemSamplingRate > tt.protoRate) && (tt.inMemSamplingRate%tt.protoRate == 0) {
 					require.Equal(t, tt.expected[name], len(downsampledOffsets))
@@ -242,14 +254,13 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 				}
 
 				// check first and last entry from the original postings in downsampled set
-				require.NotZero(t, downsampleIdxpbTbl.Postings[name].LastValOffset)
+				require.NotZero(t, downsampleIdxTblProto.Postings[name].LastValOffset)
 			}
 		})
 	}
 }
 
 func compareIndexToHeaderPostings(t *testing.T, indexByteSlice index.ByteSlice, sbr *StreamBinaryReader) {
-
 	ir, err := index.NewReader(indexByteSlice, index.DecodePostingsRaw)
 	require.NoError(t, err)
 	defer func() {
@@ -276,12 +287,20 @@ func compareIndexToHeaderPostings(t *testing.T, indexByteSlice index.ByteSlice, 
 	})
 	require.NoError(t, err)
 
-	tbl := sbr.postingsOffsetTable.ToSparsePostingOffsetTable()
+	sparseTable, err := streamindex.SparseValuesFromPostingsOffsetsTable(
+		sbr.postingsOffsetsDecbufFactory,
+		int(sbr.postingsOffsetsTOC.PostingsOffsetTable),
+		sbr.postingsOffsetsTOC.PostingsListEnd,
+		sbr.sparseSampleFactor,
+		true,
+	)
+	require.NoError(t, err)
+	sparseTableProto := streamindex.SparsePostingsOffsetsTableToProto(sparseTable, sbr.sparseSampleFactor)
 
 	expLabelNames, err := ir.LabelNames(context.Background())
 	require.NoError(t, err)
 	for _, lname := range expLabelNames {
-		offsets := tbl.Postings[lname].Offsets
+		offsets := sparseTableProto.Postings[lname].Offsets
 		assert.Equal(t, offsets[0].TableOff, tblOffsetBounds[lname][0])
 		assert.Equal(t, offsets[len(offsets)-1].TableOff, tblOffsetBounds[lname][1])
 	}

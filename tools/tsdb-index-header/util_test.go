@@ -130,3 +130,37 @@ func TestCardinalityBucketNames(t *testing.T) {
 	assert.Equal(t, "1", names[0])
 	assert.Equal(t, "1M+", names[len(names)-1])
 }
+
+func TestGetChunkCountBucketName(t *testing.T) {
+	tests := []struct {
+		name     string
+		count    int
+		expected string
+	}{
+		{"one", 1, "1"},
+		{"boundary 2", 2, "2-10"},
+		{"boundary 10", 10, "2-10"},
+		{"boundary 11", 11, "11-50"},
+		{"medium", 100, "51-100"},
+		{"large", 500, "101-500"},
+		{"boundary 1000", 1000, "501-1K"},
+		{"boundary 5000", 5000, "1K-5K"},
+		{"boundary 10000", 10000, "5K-10K"},
+		{"very large", 50000, "10K+"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := getChunkCountBucketName(tc.count)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+func TestChunkCountBucketNames(t *testing.T) {
+	names := chunkCountBucketNames()
+
+	assert.Len(t, names, len(chunkCountBuckets))
+	assert.Equal(t, "1", names[0])
+	assert.Equal(t, "10K+", names[len(names)-1])
+}

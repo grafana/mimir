@@ -99,12 +99,20 @@ func (n *DropName) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
 }
 
 func MaterializeDropName(n *DropName, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	inner, err := materializer.ConvertNodeToInstantVectorOperator(n.Inner, timeRange)
+	inner, err := materializer.ConvertNodeToOperator(n.Inner, timeRange)
 	if err != nil {
 		return nil, err
 	}
 
-	o := operators.NewDropName(inner, params.MemoryConsumptionTracker)
+	var o types.Operator
+	switch i := inner.(type) {
+	case types.InstantVectorOperator:
+		o = operators.NewDropNameInstant(i, params.MemoryConsumptionTracker)
+	case types.RangeVectorOperator:
+		o = operators.NewDropNameRange(i, params.MemoryConsumptionTracker)
+	default:
+		return nil, fmt.Errorf("unexpected inner operator type for %+v DropName node, this is a bug: %T", n, i)
+	}
 
 	return planning.NewSingleUseOperatorFactory(o), nil
 }

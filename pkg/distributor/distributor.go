@@ -1812,6 +1812,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		// totalN included samples, exemplars and metadata. Ingester follows this pattern when computing its ingestion rate.
 		d.ingestionRate.Add(int64(totalN))
 
+		ctx = ingest.ContextWithRecordTimestamp(ctx, now)
 		err = next(ctx, pushReq)
 		if err != nil {
 			// Errors resulting from the pushing to the ingesters have priority over validation errors.
@@ -2597,7 +2598,7 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 
 	// Write all partitions in a single ProduceSync call.
 	writeCtx := remoteRequestContext()
-	err = d.ingestStorageWriter.MultiWriteSync(writeCtx, tenantID, partitionRequests)
+	err = d.ingestStorageWriter.MultiWriteSync(writeCtx, d.cfg.IngestStorageConfig.KafkaConfig.Topic, tenantID, partitionRequests)
 	err = wrapPartitionsPushError(err)
 	err = wrapDeadlineExceededPushError(err)
 

@@ -28,9 +28,9 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
-	"github.com/thanos-io/objstore/providers/filesystem"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/indexheader"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -294,7 +294,7 @@ func TestTSDBBuilder(t *testing.T) {
 				tc.verifyBlocksAfterCompaction(blocks)
 
 				if builder.cfg.GenerateSparseIndexHeaders {
-					blockIDsWithSparseHeader := validateSparseIndexHeadersInDir(t, ctx, shipperDir)
+					blockIDsWithSparseHeader := validateSparseIndexHeadersInDir(t, ctx, shipperDir, config)
 					require.Equal(t, len(blocks), len(blockIDsWithSparseHeader))
 					for _, b := range blocks {
 						require.Contains(t, blockIDsWithSparseHeader, b.Meta().ULID)
@@ -319,6 +319,60 @@ type testSample struct {
 type testHistogram struct {
 	ts            int64
 	shouldDiscard bool
+}
+
+func TestTSDBBuilder_CompactToReduceInMemorySeries(t *testing.T) {
+	const (
+		user1       = "user1"
+		user2       = "user2"
+		user3       = "user3"
+		partitionID = int32(0)
+	)
+
+	config, overrides := blockBuilderConfig(t, "kafka:9092", nil)
+	config.BlocksStorage.TSDB.EarlyHeadCompactionMinInMemorySeries = 8
+
+	logger := log.NewNopLogger()
+	registry := prometheus.NewPedanticRegistry()
+	tsdbBuilderMetrics := newTSDBBuilderMetrics(prometheus.NewPedanticRegistry())
+	tsdbMetrics := mimir_tsdb.NewTSDBMetrics(registry, logger)
+	builder := NewTSDBBuilder(partitionID, config, overrides, logger, tsdbBuilderMetrics, tsdbMetrics)
+	t.Cleanup(func() { require.NoError(t, builder.Close()) })
+
+	// Push testSeriesPerTenant distinct series for each test tenants (15 total, above the threshold).
+	const testSeriesPerTenant = 5
+	processingRange := time.Hour.Milliseconds()
+	lastEnd := 2 * processingRange
+	ts := lastEnd + (processingRange / 2)
+	for seriesID := range testSeriesPerTenant {
+		for _, userID := range []string{user1, user2, user3} {
+			ctx := user.InjectOrgID(t.Context(), userID)
+			req := createWriteRequest(strconv.Itoa(seriesID), floatSample(ts, float64(seriesID)), nil)
+			require.NoError(t, builder.PushToStorageAndReleaseRequest(ctx, &req))
+		}
+	}
+
+	for _, userID := range []string{user1, user2, user3} {
+		db, err := builder.getOrCreateTSDB(tsdbTenant{partitionID: partitionID, tenantID: userID})
+		require.NoError(t, err)
+		require.Equal(t, uint64(testSeriesPerTenant), db.Head().NumSeries())
+		require.Empty(t, db.Blocks())
+	}
+
+	require.NoError(t, builder.CompactToReduceInMemorySeries(t.Context()))
+
+	// Early compaction compacts tenants with the most series first and stops once series count drops below the threshold.
+	// At least two tenant must have been compacted.
+	var compacted int
+	for _, userID := range []string{user1, user2, user3} {
+		db, err := builder.getOrCreateTSDB(tsdbTenant{partitionID: partitionID, tenantID: userID})
+		require.NoError(t, err)
+		if db.Head().NumSeries() == 0 {
+			require.NotEmpty(t, db.Blocks())
+			compacted++
+		}
+	}
+	require.Equal(t, 2, compacted)
 }
 
 func TestTSDBBuilder_CompactAndUpload_fail(t *testing.T) {
@@ -349,25 +403,37 @@ func TestTSDBBuilder_CompactAndUpload_fail(t *testing.T) {
 	require.ErrorIs(t, err, errUploadFailed)
 }
 
-func validateSparseIndexHeadersInDir(t *testing.T, ctx context.Context, dbDir string) []ulid.ULID {
-	fsBkt, err := filesystem.NewBucket(dbDir)
-	if err != nil {
-		require.NoError(t, err)
-	}
-	var ids []ulid.ULID
-	require.NoError(t, fsBkt.Iter(ctx, "", func(n string) error {
-		if id, ok := block.IsBlockDir(n); !ok {
-			return nil
+func validateSparseIndexHeadersInDir(t *testing.T, ctx context.Context, dbDir string, cfg Config) []ulid.ULID {
+	ll := log.NewNopLogger()
+
+	var blockIDs []ulid.ULID
+	dbDirItems, _ := os.ReadDir(dbDir)
+	for _, dbDirItem := range dbDirItems {
+		if blockID, ok := block.IsBlockDir(dbDirItem.Name()); !ok {
+			continue
 		} else {
-			ids = append(ids, id)
-			sparseHeadersPath := path.Join(id.String(), block.SparseIndexHeaderFilename)
-			if exists, _ := fsBkt.Exists(ctx, sparseHeadersPath); !exists {
-				return fmt.Errorf("expected sparse index headers not found %s", sparseHeadersPath)
-			}
+			blockIDs = append(blockIDs, blockID)
+			sparseHeadersPath := path.Join(blockID.String(), block.SparseIndexHeaderFilename)
+
+			allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, err := indexheader.LoadSparseIndexHeaderFromDisk(
+				ctx, blockID, dbDir, cfg.BlocksStorage.BucketStore.PostingOffsetsInMemSampling, ll,
+			)
+
+			require.NoErrorf(t, err, "expected sparse index headers not found %s", sparseHeadersPath)
+
+			// Different tests will have different number of symbols, but we can check some basic correctness:
+			// 1. At least one symbol is sampled
+			// 2. The total symbol count recorded for the block is greater than the sampled symbols;
+			//   this is always true even with only one symbol written because the block includes the empty string symbol.
+			require.NotEmpty(t, len(sparseSymbolsOffsets))
+			require.Greater(t, allSymbolsCount, len(sparseSymbolsOffsets))
+
+			require.NoError(t, err)
+			require.NotZero(t, len(sparsePostingsOffsets))
 		}
-		return nil
-	}))
-	return ids
+	}
+
+	return blockIDs
 }
 
 func compareQueryWithDir(t *testing.T, bucketDir string, expSamples []mimirpb.Sample, expHistograms []mimirpb.Histogram, matchers ...*labels.Matcher) *tsdb.DB {

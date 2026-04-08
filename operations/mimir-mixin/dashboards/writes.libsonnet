@@ -264,43 +264,56 @@ local filename = 'mimir-writes.json';
       $.row('Usage Tracker (client)')
       .addPanel(
         local title = 'Client req / sec';
+        local asyncJobMatcher = $.jobMatcher(std.set($._config.job_names.distributor + $._config.job_names.ruler));
         $.timeseriesPanel(title) +
         $.qpsPanelNativeHistogram($.queries.usage_tracker.clientRequestsPerSecondMetric, $.namespaceMatcher()) +
+        {
+          // Prefix sync target legends with "Sync " and append async targets.
+          targets: [
+            t { legendFormat: 'Sync ' + t.legendFormat }
+            for t in super.targets
+          ] + [
+            {
+              expr: |||
+                sum(rate(cortex_distributor_async_usage_tracker_calls_total{%s}[$__rate_interval]))
+                -
+                (
+                  sum(rate(cortex_distributor_async_usage_tracker_calls_with_rejected_series_total{%s}[$__rate_interval]))
+                  or vector(0)
+                )
+              ||| % [asyncJobMatcher, asyncJobMatcher],
+              format: 'time_series',
+              legendFormat: 'Async',
+              refId: 'async',
+            },
+            {
+              expr: |||
+                sum(rate(cortex_distributor_async_usage_tracker_calls_with_rejected_series_total{%s}[$__rate_interval]))
+              ||| % [asyncJobMatcher],
+              format: 'time_series',
+              legendFormat: 'Async (rejected but ingested)',
+              refId: 'async_rejected',
+            },
+          ],
+        } +
+        $.aliasColors({
+          ['Sync ' + name]: $.qpsPanelColors[name]
+          for name in std.objectFields($.qpsPanelColors)
+        } + {
+          Async: '#2A66CF',
+          'Async (rejected but ingested)': '#9E44C1',
+        }) +
         $.panelDescription(
           title,
           |||
             The number of tracking requests sent through the Usage Tracker client, which are later multiplexed into individual requests to the Usage Tracker service instances.
+            Async requests proceed with the write request without waiting for tracking to complete.
+            Some async requests may have rejected the series that were actually ingested.
           |||
         ),
       )
       .addPanel(
-        local title = 'Async req / sec';
-        $.timeseriesPanel(title) +
-        $.queryPanel([
-          |||
-            sum(rate(cortex_distributor_async_usage_tracker_calls_total{%s}[$__rate_interval]))
-          ||| % [$.jobMatcher(std.set($._config.job_names.distributor + $._config.job_names.ruler))],
-          |||
-            sum(rate(cortex_distributor_async_usage_tracker_calls_with_rejected_series_total{%s}[$__rate_interval]))
-          ||| % [$.jobMatcher(std.set($._config.job_names.distributor + $._config.job_names.ruler))],
-        ], [
-          'Asynchronous requests / sec',
-          'Asynchronous requests / sec that rejected series that were ingested',
-        ]) + {
-          fieldConfig+: {
-            defaults+: { unit: 'reqps' },
-          },
-        } +
-        $.panelDescription(
-          title,
-          |||
-            The number of tracking requests sent asynchronously to the Usage Tracker client, while proceeding with the write request.
-            Some of those requests may have rejected the series that were actually ingested.
-          |||
-        ),
-      )
-      .addPanel(
-        local title = 'Client latency';
+        local title = 'Client sync requests latency';
         $.timeseriesPanel(title) +
         $.latencyRecordingRulePanelNativeHistogram($.queries.usage_tracker.clientRequestsPerSecondMetric, $.jobSelector(std.set($._config.job_names.distributor + $._config.job_names.ruler))) +
         $.panelDescription(
@@ -311,7 +324,7 @@ local filename = 'mimir-writes.json';
         )
       )
       .addPanel(
-        $.timeseriesPanel('Client per %s p99 latency' % $._config.per_instance_label) +
+        $.timeseriesPanel('Client per %s p99 sync requests latency' % $._config.per_instance_label) +
         $.perInstanceLatencyPanelNativeHistogram('0.99', $.queries.usage_tracker.clientRequestsPerSecondMetric, $.jobSelector(std.set($._config.job_names.distributor + $._config.job_names.ruler)))
       )
     )

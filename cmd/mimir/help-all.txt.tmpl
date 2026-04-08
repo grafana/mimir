@@ -245,8 +245,6 @@ Usage of ./cmd/mimir/mimir:
     	Enable the alertmanager config API. (default true)
   -alertmanager.enable-state-cleanup
     	Enables periodic cleanup of alertmanager stateful data (notification logs and silences) from object storage. When enabled, data is removed for any tenant that does not have a configuration. (default true)
-  -alertmanager.grafana-alertmanager-grace-period duration
-    	[experimental] Duration to wait before shutting down an idle Alertmanager using an unpromoted or default configuration when strict initialization is enabled. (default 5m0s)
   -alertmanager.log-parsing-label-matchers
     	[experimental] Enable logging when parsing label matchers. This flag is intended to be used with -alertmanager.utf8-strict-mode-enabled to validate UTF-8 strict mode is working as intended.
   -alertmanager.max-alerts-count int
@@ -259,8 +257,6 @@ Usage of ./cmd/mimir/mimir:
     	Maximum size of the Alertmanager configuration for a tenant. 0 = no limit.
   -alertmanager.max-dispatcher-aggregation-groups int
     	Maximum number of aggregation groups in Alertmanager's dispatcher that a tenant can have. Each active aggregation group uses single goroutine. When the limit is reached, dispatcher will not dispatch alerts that belong to additional aggregation groups, but existing groups will keep working properly. 0 = no limit.
-  -alertmanager.max-grafana-config-size-bytes value
-    	Maximum size of the Grafana Alertmanager configuration for a tenant. 0 = no limit.
   -alertmanager.max-recv-msg-size int
     	Maximum size (bytes) of an accepted HTTP request body. (default 104857600)
   -alertmanager.max-silence-size-bytes int
@@ -371,6 +367,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Timeout for reading the state from object storage during the initial sync. Set to `0` for no timeout. (default 15s)
   -alertmanager.strict-initialization-enabled
     	[experimental] Skip initializing Alertmanagers for tenants without a non-default, non-empty configuration. For Grafana Alertmanager tenants, configurations not marked as 'promoted' will also be skipped.
+  -alertmanager.strict-initialization-idle-grace-period duration
+    	[experimental] Duration to wait before shutting down an idle Alertmanager using a default/empty configuration when strict initialization is enabled. (default 5m0s)
   -alertmanager.utf8-migration-logging-enabled
     	[experimental] Enable logging of tenant configurations that are incompatible with UTF-8 strict mode.
   -alertmanager.utf8-strict-mode-enabled
@@ -530,7 +528,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.index-header.bucket-reader.enabled
     	[experimental] Enable reading TSDB index-header sections from object storage. When enabled, the configured -blocks-storage.bucket-store.index-header.bucket-reader.index-sections are not downloaded to local disk.
   -blocks-storage.bucket-store.index-header.bucket-reader.index-sections string
-    	[experimental] Index sections to read from object storage instead of local disk. Valid sections: all (default "all")
+    	[experimental] Index sections to read from object storage instead of local disk. Valid sections: postings-offsets-table (default "postings-offsets-table")
   -blocks-storage.bucket-store.index-header.lazy-loading-concurrency int
     	Maximum number of concurrent index header loads across all tenants. If set to 0, concurrency is unlimited. (default 4)
   -blocks-storage.bucket-store.index-header.lazy-loading-concurrency-queue-timeout duration
@@ -833,6 +831,10 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] How frequently to collect block statistics, which are used in query execution optimization. 0 to disable. (default 1h0m0s)
   -blocks-storage.tsdb.memory-snapshot-on-shutdown
     	[experimental] True to enable snapshotting of in-memory TSDB data on disk when shutting down.
+  -blocks-storage.tsdb.offset-catalogue.enabled
+    	[experimental] Controls the maintaining of kafka offset catalogue per block.
+  -blocks-storage.tsdb.offset-catalogue.sync-concurrency int
+    	[experimental] Maximum number of tenants concurrently syncing offset catalogue to disk. (default 10)
   -blocks-storage.tsdb.out-of-order-capacity-max int
     	[experimental] Maximum capacity for out of order chunks, in samples between 1 and 255. (default 32)
   -blocks-storage.tsdb.retention-period duration

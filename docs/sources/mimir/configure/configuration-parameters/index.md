@@ -3044,10 +3044,9 @@ sharding_ring:
 [enable_api: <boolean> | default = true]
 
 # (experimental) Duration to wait before shutting down an idle Alertmanager
-# using an unpromoted or default configuration when strict initialization is
-# enabled.
-# CLI flag: -alertmanager.grafana-alertmanager-grace-period
-[grafana_alertmanager_idle_grace_period: <duration> | default = 5m]
+# using a default/empty configuration when strict initialization is enabled.
+# CLI flag: -alertmanager.strict-initialization-idle-grace-period
+[strict_initialization_idle_grace_period: <duration> | default = 5m]
 
 # (advanced) Maximum number of concurrent GET requests allowed per tenant. The
 # zero value (and negative values) result in a limit of GOMAXPROCS or 8,
@@ -4995,11 +4994,6 @@ ruler_alertmanager_client_config:
 # CLI flag: -alertmanager.notification-rate-limit-per-integration
 [alertmanager_notification_rate_limit_per_integration: <map of string to float64> | default = {}]
 
-# Maximum size of the Grafana Alertmanager configuration for a tenant. 0 = no
-# limit.
-# CLI flag: -alertmanager.max-grafana-config-size-bytes
-[alertmanager_max_grafana_config_size_bytes: <int> | default = 0B]
-
 # Maximum size of the Alertmanager configuration for a tenant. 0 = no limit.
 # CLI flag: -alertmanager.max-config-size-bytes
 [alertmanager_max_config_size_bytes: <int> | default = 0]
@@ -5818,9 +5812,9 @@ bucket_store:
       [enabled: <boolean> | default = false]
 
       # (experimental) Index sections to read from object storage instead of
-      # local disk. Valid sections: all
+      # local disk. Valid sections: postings-offsets-table
       # CLI flag: -blocks-storage.bucket-store.index-header.bucket-reader.index-sections
-      [index_sections: <string> | default = "all"]
+      [index_sections: <string> | default = "postings-offsets-table"]
 
   # (advanced) This option controls how many series to fetch per batch. The
   # batch size must be greater than 0.
@@ -6092,6 +6086,17 @@ tsdb:
     # in query execution optimization. 0 to disable.
     # CLI flag: -blocks-storage.tsdb.index-lookup-planning.statistics-collection-frequency
     [statistics_collection_frequency: <duration> | default = 1h]
+
+  offset_catalogue:
+    # (experimental) Controls the maintaining of kafka offset catalogue per
+    # block.
+    # CLI flag: -blocks-storage.tsdb.offset-catalogue.enabled
+    [enabled: <boolean> | default = false]
+
+    # (experimental) Maximum number of tenants concurrently syncing offset
+    # catalogue to disk.
+    # CLI flag: -blocks-storage.tsdb.offset-catalogue.sync-concurrency
+    [sync_concurrency: <int> | default = 10]
 ```
 
 ### compactor

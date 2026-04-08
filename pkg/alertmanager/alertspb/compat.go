@@ -11,12 +11,6 @@ var (
 	ErrNotFound = errors.New("alertmanager storage object not found")
 )
 
-// AlertConfigDescs is a wrapper for a Mimir and a Grafana Alertmanager configurations.
-type AlertConfigDescs struct {
-	Mimir   AlertConfigDesc
-	Grafana GrafanaAlertConfigDesc
-}
-
 // ToProto transforms a yaml Alertmanager config and map of template files to an AlertConfigDesc.
 func ToProto(cfg string, templates map[string]string, user string) AlertConfigDesc {
 	tmpls := make([]*TemplateDesc, 0, len(templates))
@@ -30,24 +24,6 @@ func ToProto(cfg string, templates map[string]string, user string) AlertConfigDe
 		User:      user,
 		RawConfig: cfg,
 		Templates: tmpls,
-	}
-}
-
-// ToGrafanaProto transforms a Grafana Alertmanager config to a GrafanaAlertConfigDesc.
-func ToGrafanaProto(cfg, user, hash string, createdAtTimestamp int64, isDefault, isPromoted bool, externalURL string, smtpFrom string, staticHeaders map[string]string, smtpConfig *SmtpConfig) GrafanaAlertConfigDesc {
-	return GrafanaAlertConfigDesc{
-		User:               user,
-		RawConfig:          cfg,
-		Hash:               hash,
-		CreatedAtTimestamp: createdAtTimestamp,
-		Default:            isDefault,
-		Promoted:           isPromoted,
-		ExternalUrl:        externalURL,
-		SmtpConfig:         smtpConfig,
-
-		// TODO: Remove once everything is sent in SmtpConfig.
-		SmtpFrom:      smtpFrom,
-		StaticHeaders: staticHeaders,
 	}
 }
 

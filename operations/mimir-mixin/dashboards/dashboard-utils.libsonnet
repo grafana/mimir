@@ -261,7 +261,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
   },
 
-  local qpsPanelColors = {
+  qpsPanelColors:: {
     '1xx': $._colors.warning,
     '2xx': $._colors.success,
     '3xx': '#6ED0E0',
@@ -276,7 +276,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   qpsPanel(selector, statusLabelName='status_code')::
     super.qpsPanel(selector, statusLabelName) +
-    $.aliasColors(qpsPanelColors) + {
+    $.aliasColors($.qpsPanelColors) + {
       fieldConfig+: {
         defaults+: { unit: 'reqps' },
       },
@@ -284,7 +284,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   qpsPanelNativeHistogram(metricName, selector, statusLabelName='status_code', nativeOnly=false)::
     super.qpsPanelNativeHistogram(metricName, selector, statusLabelName, nativeOnly) +
-    $.aliasColors(qpsPanelColors) + {
+    $.aliasColors($.qpsPanelColors) + {
       fieldConfig+: {
         defaults+: {
           unit: 'reqps',
