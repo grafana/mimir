@@ -58,7 +58,8 @@ func (s *schedulerMetrics) newTrackerMetricsForTenant(tenant string) *trackerMet
 			pendingPlanJobs:       s.pendingJobs.WithLabelValues(tenant, jobTypePlan),
 			pendingCompactionJobs: s.pendingJobs.WithLabelValues(tenant, jobTypeCompaction),
 			activeJobs:            s.activeJobs.WithLabelValues(tenant),
-			incompleteBytes:       s.incompleteJobsBytes,
+			incompleteSplitBytes:  s.incompleteJobsBytes.WithLabelValues(compactionTypeSplit),
+			incompleteMergeBytes:  s.incompleteJobsBytes.WithLabelValues(compactionTypeMerge),
 			clear: func() {
 				s.pendingJobs.DeleteLabelValues(tenant, jobTypePlan)
 				s.pendingJobs.DeleteLabelValues(tenant, jobTypeCompaction)
@@ -77,8 +78,8 @@ type trackerMetrics struct {
 // Clear deletes all per-tenant label values and subtracts this tenant's byte contribution from the
 // shared gauge. Must be called when a tenant is removed.
 func (m *trackerMetrics) Clear() {
-	m.queue.incompleteBytes.WithLabelValues(compactionTypeSplit).Sub(float64(m.queue.splitBytes))
-	m.queue.incompleteBytes.WithLabelValues(compactionTypeMerge).Sub(float64(m.queue.mergeBytes))
+	m.queue.incompleteSplitBytes.Sub(float64(m.queue.splitBytes))
+	m.queue.incompleteMergeBytes.Sub(float64(m.queue.mergeBytes))
 	m.queue.splitBytes = 0
 	m.queue.mergeBytes = 0
 	m.queue.clear()
@@ -92,9 +93,12 @@ type queueMetrics struct {
 	pendingPlanJobs       prometheus.Gauge
 	pendingCompactionJobs prometheus.Gauge
 	activeJobs            prometheus.Gauge
-	incompleteBytes       *prometheus.GaugeVec // {compaction_type} shared across tenants
 
-	// splitBytes and mergeBytes track this tenant's contribution to the shared incompleteBytes
+	// shared across tenants
+	incompleteSplitBytes prometheus.Gauge
+	incompleteMergeBytes prometheus.Gauge
+
+	// splitBytes and mergeBytes track this tenant's contribution to the shared incomplete bytes
 	// so we can subtract exactly the right amount on tenant removal.
 	splitBytes uint64
 	mergeBytes uint64
@@ -168,19 +172,19 @@ func (q *queueMetrics) DropPending(j TrackedJob) {
 func (q *queueMetrics) addBytes(cj *TrackedCompactionJob) {
 	if cj.value.isSplit {
 		q.splitBytes += cj.totalBlockBytes
-		q.incompleteBytes.WithLabelValues(compactionTypeSplit).Add(float64(cj.totalBlockBytes))
+		q.incompleteSplitBytes.Add(float64(cj.totalBlockBytes))
 	} else {
 		q.mergeBytes += cj.totalBlockBytes
-		q.incompleteBytes.WithLabelValues(compactionTypeMerge).Add(float64(cj.totalBlockBytes))
+		q.incompleteMergeBytes.Add(float64(cj.totalBlockBytes))
 	}
 }
 
 func (q *queueMetrics) subBytes(cj *TrackedCompactionJob) {
 	if cj.value.isSplit {
 		q.splitBytes -= cj.totalBlockBytes
-		q.incompleteBytes.WithLabelValues(compactionTypeSplit).Sub(float64(cj.totalBlockBytes))
+		q.incompleteSplitBytes.Sub(float64(cj.totalBlockBytes))
 	} else {
 		q.mergeBytes -= cj.totalBlockBytes
-		q.incompleteBytes.WithLabelValues(compactionTypeMerge).Sub(float64(cj.totalBlockBytes))
+		q.incompleteMergeBytes.Sub(float64(cj.totalBlockBytes))
 	}
 }
