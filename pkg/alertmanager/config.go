@@ -6,20 +6,16 @@
 package alertmanager
 
 import (
-	"net/url"
-
 	"github.com/grafana/alerting/definition"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 )
 
-func amConfigFromMimirConfig(dec alertspb.AlertConfigDesc, url *url.URL) amConfig {
+func amConfigFromMimirConfig(dec alertspb.AlertConfigDesc) amConfig {
 	return amConfig{
-		User:               dec.User,
-		RawConfig:          dec.RawConfig,
-		Templates:          templateDescToPostableApiTemplate(dec.Templates, definition.MimirTemplateKind),
-		TmplExternalURL:    url,
-		UsingGrafanaConfig: false,
+		User:      dec.User,
+		RawConfig: dec.RawConfig,
+		Templates: templateDescToPostableApiTemplate(dec.Templates, definition.MimirTemplateKind),
 	}
 }
 

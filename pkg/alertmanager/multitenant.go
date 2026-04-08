@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"hash/fnv"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -701,7 +700,7 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 			continue
 		}
 
-		if err := am.setConfig(amConfigFromMimirConfig(cfg, am.cfg.ExternalURL.URL)); err != nil {
+		if err := am.setConfig(amConfigFromMimirConfig(cfg)); err != nil {
 			am.multitenantMetrics.lastReloadSuccessful.WithLabelValues(user).Set(float64(0))
 			level.Warn(am.logger).Log("msg", "error applying config", "err", err, "user", user)
 			continue
@@ -769,11 +768,9 @@ func (am *MultitenantAlertmanager) shouldStartAM(cfg alertspb.AlertConfigDesc) b
 }
 
 type amConfig struct {
-	User               string
-	RawConfig          string
-	Templates          []definition.PostableApiTemplate
-	TmplExternalURL    *url.URL
-	UsingGrafanaConfig bool
+	User      string
+	RawConfig string
+	Templates []definition.PostableApiTemplate
 }
 
 func (f amConfig) fingerprint() model.Fingerprint {
@@ -792,22 +789,9 @@ func (f amConfig) fingerprint() model.Fingerprint {
 		// avoid allocation when converting string to byte slice
 		writeBytes(unsafe.Slice(unsafe.StringData(s), len(s)))
 	}
-	writeBool := func(b bool) {
-		if b {
-			writeBytes([]byte{1})
-		} else {
-			writeBytes([]byte{0})
-		}
-	}
 
 	writeString(f.User)
 	writeString(f.RawConfig)
-	writeBool(f.UsingGrafanaConfig)
-	if f.TmplExternalURL != nil {
-		writeString(f.TmplExternalURL.String())
-	} else {
-		writeBytes(nil)
-	}
 	result := sum.Sum64()
 
 	writeBytes(nil)
@@ -1076,7 +1060,7 @@ func (am *MultitenantAlertmanager) startAlertmanager(ctx context.Context, userID
 		return nil, errConfigNotFound
 	}
 
-	if err := am.setConfig(amConfigFromMimirConfig(cfg, am.cfg.ExternalURL.URL)); err != nil {
+	if err := am.setConfig(amConfigFromMimirConfig(cfg)); err != nil {
 		return nil, err
 	}
 	am.alertmanagersMtx.Lock()
@@ -1115,7 +1099,7 @@ func (am *MultitenantAlertmanager) alertmanagerFromFallbackConfig(ctx context.Co
 	}
 
 	// Calling setConfig with an empty configuration will use the fallback config.
-	amConfig := amConfigFromMimirConfig(cfgDesc, am.cfg.ExternalURL.URL)
+	amConfig := amConfigFromMimirConfig(cfgDesc)
 	err = am.setConfig(amConfig)
 	if err != nil {
 		return nil, err
