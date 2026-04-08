@@ -111,7 +111,7 @@ func MaterializeDropName(n *DropName, materializer *planning.Materializer, timeR
 	case types.RangeVectorOperator:
 		o = operators.NewDropNameRange(i, params.MemoryConsumptionTracker)
 	default:
-		panic(fmt.Sprintf("unexpected inner operator type for DropName: %T", i))
+		return nil, fmt.Errorf("unexpected inner operator type for %+v DropName node, this is a bug: %T", n, i)
 	}
 
 	return planning.NewSingleUseOperatorFactory(o), nil
