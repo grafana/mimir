@@ -473,16 +473,6 @@ func (am *Alertmanager) wrapNotifier(integrationName string, notifier notify.Not
 	return notifier
 }
 
-// nfstatusNotifierToNotify adapts an nfstatus.Notifier to the notify.Notifier interface.
-type nfstatusNotifierToNotify struct {
-	n nfstatus.Notifier
-}
-
-func (a nfstatusNotifierToNotify) Notify(ctx context.Context, alerts ...*types.Alert) (bool, error) {
-	_, retry, err := a.n.Notify(ctx, alerts...)
-	return retry, err
-}
-
 // buildIntegrationsMap builds a map of name to the list of integration notifiers off of a list of receiver config.
 func (am *Alertmanager) buildIntegrationsMap(nc []*definition.PostableApiReceiver, tmpls []alertingTemplates.TemplateDefinition) (map[string][]*nfstatus.Integration, error) {
 	// Create a firewall binded to the per-tenant config.
