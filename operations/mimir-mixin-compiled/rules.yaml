@@ -503,3 +503,6 @@ groups:
           record: cluster_job:cortex_usage_tracker_client_track_series_duration_seconds_count:sum_rate
         - expr: sum(rate(cortex_usage_tracker_client_track_series_duration_seconds[1m])) by (cluster, job)
           record: cluster_job:cortex_usage_tracker_client_track_series_duration_seconds:sum_rate
+        - expr: |
+            sum by (cluster, namespace, job) (cortex_usage_tracker_active_series)
+          record: cluster_namespace_job:cortex_usage_tracker_active_series:sum

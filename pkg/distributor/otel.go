@@ -350,18 +350,21 @@ func newOTLPParser(
 			}
 		}
 
-		tenantID, err := tenant.TenantID(ctx)
+		tenantID, tenantMd, err := tenant.ExtractWithMetadata(ctx)
 		if err != nil {
 			return 0, err
 		}
+
 		enableCTZeroIngestion := limits.OTelCreatedTimestampZeroIngestionEnabled(tenantID)
 		promoteResourceAttributes := resourceAttributePromotionConfig.PromoteOTelResourceAttributes(tenantID)
 		keepIdentifyingResourceAttributes := keepIdentifyingOTelResourceAttributesConfig.OTelKeepIdentifyingResourceAttributes(tenantID)
 		convertHistogramsToNHCB := limits.OTelConvertHistogramsToNHCB(tenantID)
 		promoteScopeMetadata := limits.OTelPromoteScopeMetadata(tenantID)
 		allowDeltaTemporality := limits.OTelNativeDeltaIngestion(tenantID)
-		translationStrategy := limits.OTelTranslationStrategy(tenantID)
-		validateTranslationStrategy(translationStrategy, limits, tenantID)
+
+		limitsKey := tenantMd.WithTenant(tenantID)
+		translationStrategy := limits.OTelTranslationStrategy(limitsKey)
+		validateTranslationStrategy(translationStrategy, limits, limitsKey)
 
 		pushMetrics.IncOTLPRequest(tenantID)
 		pushMetrics.ObserveRequestBodySize(tenantID, "otlp", int64(uncompressedBodySize), r.ContentLength)
@@ -424,8 +427,8 @@ func newOTLPParser(
 
 // validateTranslationStrategy ensures consistency between name translation strategy and name validation scheme and metric name suffix enablement.
 // Any inconsistency at this point indicates a programming error, so we panic on errors.
-func validateTranslationStrategy(translationStrategy otlptranslator.TranslationStrategyOption, limits OTLPHandlerLimits, tenantID string) {
-	validationScheme := limits.NameValidationScheme(tenantID)
+func validateTranslationStrategy(translationStrategy otlptranslator.TranslationStrategyOption, limits OTLPHandlerLimits, limitsKey string) {
+	validationScheme := limits.NameValidationScheme(limitsKey)
 	switch validationScheme {
 	case model.LegacyValidation:
 		if !translationStrategy.ShouldEscape() {
@@ -445,7 +448,7 @@ func validateTranslationStrategy(translationStrategy otlptranslator.TranslationS
 		panic(fmt.Errorf("unhandled name validation scheme: %s", validationScheme))
 	}
 
-	addSuffixes := limits.OTelMetricSuffixesEnabled(tenantID)
+	addSuffixes := limits.OTelMetricSuffixesEnabled(limitsKey)
 	if addSuffixes && !translationStrategy.ShouldAddSuffixes() {
 		panic(fmt.Errorf("OTel metric suffixes are enabled, but incompatible OTel translation strategy: %s", translationStrategy))
 	} else if !addSuffixes && translationStrategy.ShouldAddSuffixes() {

@@ -124,7 +124,8 @@ func TenantIDsFromOrgID(orgID string) ([]string, error) {
 	return TenantIDs(user.InjectOrgID(context.TODO(), orgID))
 }
 
-func trimMetadata(orgID string) string {
+// TrimMetadata removes metadata from a orgID without validating the input.
+func TrimMetadata(orgID string) string {
 	idx := strings.IndexByte(orgID, metadataSeparator)
 	if idx == -1 {
 		return orgID

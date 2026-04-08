@@ -193,19 +193,7 @@
                   ],
                   "title": "Memory (go heap inuse)",
                   "type": "timeseries"
-               }
-            ],
-            "repeat": null,
-            "repeatIteration": null,
-            "repeatRowId": null,
-            "showTitle": true,
-            "title": "CPU and memory",
-            "titleSize": "h6"
-         },
-         {
-            "collapse": false,
-            "height": "250px",
-            "panels": [
+               },
                {
                   "datasource": "$datasource",
                   "fieldConfig": {
@@ -466,7 +454,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "",
+            "title": "CPU and memory",
             "titleSize": "h6"
          },
          {

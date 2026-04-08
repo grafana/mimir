@@ -18,6 +18,7 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -59,6 +60,8 @@ overrides:
 	expected.MaxGlobalSeriesPerMetric = 7000
 	expected.RulerMaxRulesPerRuleGroup = 20
 	expected.RulerMaxRuleGroupsPerTenant = 20
+	expected.OTelMetricSuffixesEnabled = nil
+	expected.NameValidationScheme = model.UnsetValidation
 
 	loadedLimits := runtimeCfg.(*runtimeConfigValues).TenantLimits
 	require.Equal(t, 3, len(loadedLimits))
@@ -71,6 +74,69 @@ overrides:
 	require.Empty(t, cmp.Diff(expected, *loadedLimits["1234"], compareOptions...))
 	require.Empty(t, cmp.Diff(expected, *loadedLimits["1235"], compareOptions...))
 	require.Empty(t, cmp.Diff(expected, *loadedLimits["1236"], compareOptions...))
+}
+
+func TestRuntimeConfigLoader_LoadsMetadataTenantOverrides(t *testing.T) {
+	tests := map[string]struct {
+		input    string
+		expected map[string]validation.Limits
+	}{
+		"omitted bool stays nil for metadata override": {
+			input: `
+overrides:
+  'tenant-a:source=test-run':
+    ingestion_rate: 200
+`,
+			expected: map[string]validation.Limits{
+				"tenant-a:source=test-run": func() validation.Limits {
+					limits := getDefaultLimits()
+					limits.IngestionRate = 200
+					limits.OTelMetricSuffixesEnabled = nil
+					limits.NameValidationScheme = model.UnsetValidation
+					return limits
+				}(),
+			},
+		},
+		"explicit bool values are preserved for tenant and global metadata overrides": {
+			input: `
+overrides:
+  ':source=test-run':
+    otel_metric_suffixes_enabled: false
+  'tenant-a:source=load-test':
+    otel_metric_suffixes_enabled: true
+`,
+			expected: map[string]validation.Limits{
+				":source=test-run": func() validation.Limits {
+					limits := getDefaultLimits()
+					limits.OTelMetricSuffixesEnabled = boolPtr(false)
+					limits.NameValidationScheme = model.UnsetValidation
+					return limits
+				}(),
+				"tenant-a:source=load-test": func() validation.Limits {
+					limits := getDefaultLimits()
+					limits.OTelMetricSuffixesEnabled = boolPtr(true)
+					limits.NameValidationScheme = model.UnsetValidation
+					return limits
+				}(),
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			loader := &runtimeConfigLoader{}
+			runtimeCfg, err := loader.load(strings.NewReader(tc.input))
+			require.NoError(t, err)
+
+			loadedLimits := runtimeCfg.(*runtimeConfigValues).TenantLimits
+			require.Len(t, loadedLimits, len(tc.expected))
+
+			for userID, expected := range tc.expected {
+				require.Contains(t, loadedLimits, userID)
+				require.Empty(t, cmp.Diff(expected, *loadedLimits[userID], runtimeConfigCompareOptions()...))
+			}
+		})
+	}
 }
 
 func TestRuntimeConfigLoader_ShouldLoadEmptyFile(t *testing.T) {
@@ -253,4 +319,15 @@ func getDefaultLimits() validation.Limits {
 	limits := validation.Limits{}
 	flagext.DefaultValues(&limits)
 	return limits
+}
+
+func runtimeConfigCompareOptions() []cmp.Option {
+	return []cmp.Option{
+		cmp.AllowUnexported(validation.Limits{}),
+		cmpopts.IgnoreFields(validation.Limits{}, "activeSeriesMergedCustomTrackersConfig"),
+	}
+}
+
+func boolPtr(v bool) *bool {
+	return &v
 }

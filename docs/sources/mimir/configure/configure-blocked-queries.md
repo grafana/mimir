@@ -36,6 +36,16 @@ overrides:
         regex: true
         time_range_longer_than: 24h
         reason: "expensive queries over 1 day are blocked"
+
+      # block queries with a step smaller than 1 minute
+      - minimum_step_size: 1m
+        reason: "step resolution too fine-grained"
+
+      # combine pattern matching with minimum step size
+      - pattern: ".*expensive.*"
+        regex: true
+        minimum_step_size: 5m
+        reason: "expensive queries must use a step of at least 5 minutes"
 ```
 
 The blocking is enforced on instant and range queries as well as remote read queries.
@@ -45,6 +55,10 @@ For instant and range queries the pattern is evaluated against the query, for re
 Setting `time_range_longer_than` on a rule blocks queries where the time range duration (calculated as `end - start`) exceeds the specified threshold.
 Time range filtering is automatically skipped for instant queries since they query a single point in time.
 When combined with pattern matching, both the pattern must match AND the time range must exceed the threshold for the query to be blocked.
+
+Setting `minimum_step_size` on a rule blocks queries where the step is smaller than the configured duration.
+Instant queries and queries with no step are never blocked by this filter.
+When combined with pattern matching or `time_range_longer_than`, all specified conditions must be satisfied for the query to be blocked.
 
 Setting `unaligned_range_queries: true` on a rule causes the rule to only block range queries where the time range is not aligned to the step.
 Such queries are not eligible for [range query result caching](https://grafana.com/docs/mimir/latest/references/architecture/components/query-frontend/#caching) by default.

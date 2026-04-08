@@ -164,7 +164,7 @@ func TestSyncer_GarbageCollect_e2e(t *testing.T) {
 		require.NoError(t, sy.GarbageCollect(ctx))
 
 		// Only the level 3 block, the last source block in both resolutions should be left.
-		grouper := NewSplitAndMergeGrouper("user-1", []int64{2 * time.Hour.Milliseconds()}, 0, 0, log.NewNopLogger())
+		grouper := NewSplitAndMergeGrouper("user-1", []int64{2 * time.Hour.Milliseconds()}, newMockConfigProvider(), log.NewNopLogger())
 		groups, err := grouper.Groups(sy.Metas())
 		require.NoError(t, err)
 
@@ -240,7 +240,7 @@ func TestGroupCompactE2E(t *testing.T) {
 		require.NoError(t, err)
 
 		planner := NewSplitAndMergePlanner([]int64{1000, 3000})
-		grouper := NewSplitAndMergeGrouper("user-1", []int64{1000, 3000}, 0, 0, logger)
+		grouper := NewSplitAndMergeGrouper("user-1", []int64{1000, 3000}, newMockConfigProvider(), logger)
 		metrics := NewBucketCompactorMetrics(blocksMarkedForDeletion, prometheus.NewPedanticRegistry())
 		cfg := indexheader.Config{VerifyOnLoad: true}
 		bComp, err := NewBucketCompactor(

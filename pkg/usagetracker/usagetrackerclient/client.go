@@ -22,6 +22,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/usagetracker/trackerop"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
@@ -655,6 +656,7 @@ type batcher struct {
 	trackerClient *UsageTrackerClient
 	stoppingChan  chan struct{}
 	logger        log.Logger
+	onFlushDone   func() // if set, called after each partition flush completes
 }
 
 func newBatcher(maxSeriesPerBatch int, batchDelay time.Duration, logger log.Logger, trackerClient *UsageTrackerClient) *batcher {
@@ -705,7 +707,7 @@ func (c *batcher) trackSeries(partition int32, userID string, series []uint64) {
 			if grow {
 				c.growBatchers(partition)
 			}
-			b = newPartitionBatcher(partition, c.maxSeriesPerBatch, c.logger, c.trackerClient, c.stoppingChan)
+			b = newPartitionBatcher(partition, c.maxSeriesPerBatch, c.logger, c.trackerClient, c.stoppingChan, c.onFlushDone)
 			c.batchers[partition] = b
 			go b.flushWorker()
 		}
@@ -793,11 +795,13 @@ type partitionBatcher struct {
 	trackerClient *UsageTrackerClient
 	workersPool   *concurrency.ReusableGoroutinesPool
 
-	maxSeriesPerBatch int
-	logger            log.Logger
+	maxSeriesPerBatch     int
+	logger                log.Logger
+	onFlushDone           func()       // if set, called after each flush completes. For testing.
+	sizeThresholdExceeded atomic.Int64 // how many times we've exceeded the size threshold. Also for testing.
 }
 
-func newPartitionBatcher(partition int32, maxSeriesPerBatch int, logger log.Logger, trackerClient *UsageTrackerClient, stopping <-chan struct{}) *partitionBatcher {
+func newPartitionBatcher(partition int32, maxSeriesPerBatch int, logger log.Logger, trackerClient *UsageTrackerClient, stopping <-chan struct{}, onFlushDone func()) *partitionBatcher {
 	return &partitionBatcher{
 		partition: partition,
 
@@ -812,6 +816,7 @@ func newPartitionBatcher(partition int32, maxSeriesPerBatch int, logger log.Logg
 
 		maxSeriesPerBatch: maxSeriesPerBatch,
 		logger:            log.With(logger, "partition", partition),
+		onFlushDone:       onFlushDone,
 	}
 }
 
@@ -834,6 +839,7 @@ func (b *partitionBatcher) trackSeries(userID string, series []uint64) {
 	b.usersMtx.Unlock()
 
 	if needsFlush {
+		b.sizeThresholdExceeded.Add(1)
 		b.signalFlush()
 		b.trackerClient.batchTrackingFlushedOnSizeThreshold.Inc()
 	}
@@ -884,6 +890,12 @@ func (b *partitionBatcher) flushBatch(synchronous bool) {
 }
 
 func (b *partitionBatcher) flush(users []*usagetrackerpb.TrackSeriesBatchUser) {
+	defer func() {
+		if b.onFlushDone != nil {
+			b.onFlushDone()
+		}
+	}()
+
 	rejections, err := b.trackerClient.trackSeriesPerPartitionBatch(context.Background(), b.partition, users)
 	if err != nil {
 		level.Error(b.logger).Log("msg", "failed to track series in partition batch", "err", err)
