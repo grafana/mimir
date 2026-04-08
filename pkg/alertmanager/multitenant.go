@@ -700,7 +700,7 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 			continue
 		}
 
-		if err := am.setConfig(amConfigFromMimirConfig(cfg, am.cfg.ExternalURL.URL)); err != nil {
+		if err := am.setConfig(amConfigFromMimirConfig(cfg)); err != nil {
 			am.multitenantMetrics.lastReloadSuccessful.WithLabelValues(user).Set(float64(0))
 			level.Warn(am.logger).Log("msg", "error applying config", "err", err, "user", user)
 			continue
@@ -1060,7 +1060,7 @@ func (am *MultitenantAlertmanager) startAlertmanager(ctx context.Context, userID
 		return nil, errConfigNotFound
 	}
 
-	if err := am.setConfig(amConfigFromMimirConfig(cfg, am.cfg.ExternalURL.URL)); err != nil {
+	if err := am.setConfig(amConfigFromMimirConfig(cfg)); err != nil {
 		return nil, err
 	}
 	am.alertmanagersMtx.Lock()
@@ -1099,7 +1099,7 @@ func (am *MultitenantAlertmanager) alertmanagerFromFallbackConfig(ctx context.Co
 	}
 
 	// Calling setConfig with an empty configuration will use the fallback config.
-	amConfig := amConfigFromMimirConfig(cfgDesc, am.cfg.ExternalURL.URL)
+	amConfig := amConfigFromMimirConfig(cfgDesc)
 	err = am.setConfig(amConfig)
 	if err != nil {
 		return nil, err
