@@ -17,7 +17,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/http/pprof"
-	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -313,7 +312,7 @@ func TestMultitenantAlertmanager_loadAndSyncConfigs(t *testing.T) {
 
 	currentConfigFp, cfgExists := am.cfgs["user1"]
 	require.True(t, cfgExists)
-	require.Equal(t, amConfigFromMimirConfig(user1Cfg, cfg.ExternalURL.URL).fingerprint(), currentConfigFp)
+	require.Equal(t, amConfigFromMimirConfig(user1Cfg).fingerprint(), currentConfigFp)
 
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 		# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
@@ -353,7 +352,7 @@ templates:
 	require.True(t, dirExists(t, user3Dir))
 	finalUserCfgFp, ok := am.cfgs["user3"]
 	require.True(t, ok)
-	require.Equal(t, amConfigFromMimirConfig(user3Cfg, cfg.ExternalURL.URL).fingerprint(), finalUserCfgFp)
+	require.Equal(t, amConfigFromMimirConfig(user3Cfg).fingerprint(), finalUserCfgFp)
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 		# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
 		# TYPE cortex_alertmanager_config_last_reload_successful gauge
@@ -375,7 +374,7 @@ templates:
 
 	currentConfigFp, cfgExists = am.cfgs["user1"]
 	require.True(t, cfgExists)
-	expectedFp := amConfigFromMimirConfig(user1Cfg, cfg.ExternalURL.URL).fingerprint()
+	expectedFp := amConfigFromMimirConfig(user1Cfg).fingerprint()
 	require.Equal(t, expectedFp, currentConfigFp)
 
 	// Ensure the config is reloaded if only templates changed
@@ -399,7 +398,7 @@ templates:
 
 	currentConfigFp, cfgExists = am.cfgs["user1"]
 	require.True(t, cfgExists)
-	expectedFp = amConfigFromMimirConfig(user1Cfg, cfg.ExternalURL.URL).fingerprint()
+	expectedFp = amConfigFromMimirConfig(user1Cfg).fingerprint()
 	require.Equal(t, expectedFp, currentConfigFp)
 
 	// Test Delete User, ensure config is removed and the resources are freed.
@@ -432,7 +431,7 @@ templates:
 
 	currentConfigFp, cfgExists = am.cfgs["user3"]
 	require.True(t, cfgExists)
-	expectedFp = amConfigFromMimirConfig(user3Cfg, cfg.ExternalURL.URL).fingerprint()
+	expectedFp = amConfigFromMimirConfig(user3Cfg).fingerprint()
 	require.Equal(t, expectedFp, currentConfigFp)
 
 	_, cfgExists = am.alertmanagers["user3"]
@@ -2556,7 +2555,7 @@ func TestShouldStartAM(t *testing.T) {
 }
 
 func Test_amConfigFingerprint(t *testing.T) {
-	const expectedTotalFields = 8 // Total fields: 3 (PostableApiTemplate) + 5 (amConfig)
+	const expectedTotalFields = 6 // Total fields: 3 (PostableApiTemplate) + 3 (amConfig)
 	t.Run("ensure all fields in the fingerprint", func(t *testing.T) {
 		// Helper function to get field count of a struct
 		getFieldCount := func(v interface{}) int {
@@ -2574,9 +2573,6 @@ func Test_amConfigFingerprint(t *testing.T) {
 
 		require.Equalf(t, expectedTotalFields, totalFields, "Total fields across structs is %d, expected %d; new fields may require updating fingerprint method", totalFields, expectedTotalFields)
 	})
-
-	url, err := url.Parse("http://localhost")
-	require.NoError(t, err)
 
 	fullConfig := amConfig{
 		User:      "user",
@@ -2598,7 +2594,6 @@ func Test_amConfigFingerprint(t *testing.T) {
 				Kind:    definition.GrafanaTemplateKind,
 			},
 		},
-		TmplExternalURL: url,
 	}
 
 	jsonCfg, err := json.Marshal(fullConfig)
@@ -2661,13 +2656,6 @@ func Test_amConfigFingerprint(t *testing.T) {
 			Kind:    definition.GrafanaTemplateKind,
 		})
 		assertField("")("Templates")
-		notChecked--
-
-		cfg.TmplExternalURL = nil
-		assertField("")("TmplExternalURL")
-		cfg.TmplExternalURL, err = url.Parse("http://new-url")
-		require.NoError(t, err)
-		assertField("")("TmplExternalURL")
 		notChecked--
 
 		require.Equal(t, 0, notChecked)
