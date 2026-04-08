@@ -431,7 +431,11 @@ templates:
 
 	currentConfigFp, cfgExists = am.cfgs["user3"]
 	require.True(t, cfgExists)
+<<<<<<< HEAD
 	expectedFp = fingerprint(user3Cfg)
+=======
+	expectedFp = amConfigFromMimirConfig(user3Cfg).fingerprint()
+>>>>>>> f3b450b28e83e824aa0f579cad0f5e6f17b1ffab
 	require.Equal(t, expectedFp, currentConfigFp)
 
 	_, cfgExists = am.alertmanagers["user3"]
@@ -2554,7 +2558,11 @@ func TestShouldStartAM(t *testing.T) {
 	}
 }
 
+<<<<<<< HEAD
 func Test_fingerprint(t *testing.T) {
+=======
+func Test_amConfigFingerprint(t *testing.T) {
+>>>>>>> f3b450b28e83e824aa0f579cad0f5e6f17b1ffab
 	const expectedTotalFields = 6 // Total fields: 3 (PostableApiTemplate) + 3 (amConfig)
 	t.Run("ensure all fields in the fingerprint", func(t *testing.T) {
 		// Helper function to get field count of a struct
@@ -2574,7 +2582,11 @@ func Test_fingerprint(t *testing.T) {
 		require.Equalf(t, expectedTotalFields, totalFields, "Total fields across structs is %d, expected %d; new fields may require updating fingerprint method", totalFields, expectedTotalFields)
 	})
 
+<<<<<<< HEAD
 	fullConfig := alertspb.AlertConfigDesc{
+=======
+	fullConfig := amConfig{
+>>>>>>> f3b450b28e83e824aa0f579cad0f5e6f17b1ffab
 		User:      "user",
 		RawConfig: simpleConfigOne,
 		Templates: []*alertspb.TemplateDesc{
