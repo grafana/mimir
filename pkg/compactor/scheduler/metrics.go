@@ -49,6 +49,8 @@ func newSchedulerMetrics(reg prometheus.Registerer) *schedulerMetrics {
 	// Pre-initialize job type labels so we get zeros instead of no data.
 	m.jobsCompleted.WithLabelValues(jobTypePlan)
 	m.jobsCompleted.WithLabelValues(jobTypeCompaction)
+	m.incompleteJobsBytes.WithLabelValues(compactionTypeSplit)
+	m.incompleteJobsBytes.WithLabelValues(compactionTypeMerge)
 	return m
 }
 
