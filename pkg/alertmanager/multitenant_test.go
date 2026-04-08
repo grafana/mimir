@@ -89,7 +89,6 @@ receivers:
 receivers:
   - name: dummy2`
 
-	grafanaConfig     = `{"template_files":{},"alertmanager_config":{"route":{"receiver":"grafana-default-email","group_by":["grafana_folder","alertname"]},"templates":null,"receivers":[{"name":"grafana-default-email","grafana_managed_receiver_configs":[{"uid":"dde6ntuob69dtf","name":"WH","type":"webhook","disableResolveMessage":false,"settings":{"url":"http://localhost:8080","username":"test"},"secureSettings":{"password":"test"}}]}]}}`
 	simpleTemplateOne = `{{ define "some.template.one" }}{{ end }}`
 	simpleTemplateTwo = `{{ define "some.template.two" }}{{ end }}`
 	badConfig         = `
@@ -2477,7 +2476,7 @@ func TestShouldStartAM(t *testing.T) {
 		expStartAM bool
 	}{
 		{
-			name: "custom mimir config",
+			name: "custom config",
 			cfg: alertspb.AlertConfigDesc{
 				User:      testTenant,
 				RawConfig: simpleConfigOne,
@@ -2485,7 +2484,7 @@ func TestShouldStartAM(t *testing.T) {
 			expStartAM: true,
 		},
 		{
-			name: "custom mimir config, receiving requests",
+			name: "custom config, receiving requests",
 			cfg: alertspb.AlertConfigDesc{
 				User:      tenantReceivingRequests,
 				RawConfig: simpleConfigOne,
@@ -2493,7 +2492,7 @@ func TestShouldStartAM(t *testing.T) {
 			expStartAM: true,
 		},
 		{
-			name: "custom mimir config, idle Alertmanager",
+			name: "custom config, idle Alertmanager",
 			cfg: alertspb.AlertConfigDesc{
 				User:      tenantReceivingRequestsExpired,
 				RawConfig: simpleConfigOne,
@@ -2501,14 +2500,14 @@ func TestShouldStartAM(t *testing.T) {
 			expStartAM: true,
 		},
 		{
-			name: "default mimir config",
+			name: "default config",
 			cfg: alertspb.AlertConfigDesc{
 				User:      testTenant,
 				RawConfig: am.fallbackConfig,
 			},
 		},
 		{
-			name: "default mimir config, receiving requests",
+			name: "default config, receiving requests",
 			cfg: alertspb.AlertConfigDesc{
 				User:      tenantReceivingRequests,
 				RawConfig: am.fallbackConfig,
@@ -2516,7 +2515,7 @@ func TestShouldStartAM(t *testing.T) {
 			expStartAM: true,
 		},
 		{
-			name: "default mimir config, idle Alertmanager",
+			name: "default config, idle Alertmanager",
 			cfg: alertspb.AlertConfigDesc{
 				User:      tenantReceivingRequestsExpired,
 				RawConfig: am.fallbackConfig,
@@ -2524,20 +2523,20 @@ func TestShouldStartAM(t *testing.T) {
 			expStartAM: false,
 		},
 		{
-			name: "empty mimir config",
+			name: "empty config",
 			cfg: alertspb.AlertConfigDesc{
 				User: testTenant,
 			},
 		},
 		{
-			name: "empty mimir config, receiving requests",
+			name: "empty config, receiving requests",
 			cfg: alertspb.AlertConfigDesc{
 				User: tenantReceivingRequests,
 			},
 			expStartAM: true,
 		},
 		{
-			name: "empty mimir config, idle Alertmanager",
+			name: "empty config, idle Alertmanager",
 			cfg: alertspb.AlertConfigDesc{
 				User: tenantReceivingRequestsExpired,
 			},
@@ -2583,7 +2582,7 @@ func Test_amConfigFingerprint(t *testing.T) {
 	require.NoError(t, err)
 
 	fullConfig := amConfig{
-		User:      "user-grafana",
+		User:      "user",
 		RawConfig: simpleConfigOne,
 		Templates: []definition.PostableApiTemplate{
 			{
