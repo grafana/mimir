@@ -147,9 +147,9 @@ func (j *TrackedCompactionJob) Serialize() ([]byte, error) {
 			Epoch:        j.epoch,
 		},
 		Job: &compactorschedulerpb.CompactionJob{
-			BlockIds: j.value.blocks,
-			Split:    j.value.isSplit,
-			Stats:    &compactorschedulerpb.CompactionJobStats{TotalBlocksBytes: j.totalBlockBytes},
+			BlockIds:         j.value.blocks,
+			Split:            j.value.isSplit,
+			TotalBlocksBytes: j.totalBlockBytes,
 		},
 		Order: j.order,
 	}
@@ -166,9 +166,9 @@ func (j *TrackedCompactionJob) ToLeaseResponse(tenant string) *compactorschedule
 			JobType: compactorschedulerpb.JOB_TYPE_COMPACTION,
 			Tenant:  tenant,
 			Job: &compactorschedulerpb.CompactionJob{
-				BlockIds: j.value.blocks,
-				Split:    j.value.isSplit,
-				Stats:    &compactorschedulerpb.CompactionJobStats{TotalBlocksBytes: j.totalBlockBytes},
+				BlockIds:         j.value.blocks,
+				Split:            j.value.isSplit,
+				TotalBlocksBytes: j.totalBlockBytes,
 			},
 		},
 	}
@@ -262,6 +262,6 @@ func deserializeCompactionJob(k []byte, v []byte) (*TrackedCompactionJob, error)
 			isSplit: stored.Job.Split,
 		},
 		order:           stored.Order,
-		totalBlockBytes: stored.Job.GetStats().GetTotalBlocksBytes(),
+		totalBlockBytes: stored.Job.TotalBlocksBytes,
 	}, nil
 }
