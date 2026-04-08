@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"hash/fnv"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -769,10 +768,9 @@ func (am *MultitenantAlertmanager) shouldStartAM(cfg alertspb.AlertConfigDesc) b
 }
 
 type amConfig struct {
-	User            string
-	RawConfig       string
-	Templates       []definition.PostableApiTemplate
-	TmplExternalURL *url.URL
+	User      string
+	RawConfig string
+	Templates []definition.PostableApiTemplate
 }
 
 func (f amConfig) fingerprint() model.Fingerprint {
@@ -794,11 +792,6 @@ func (f amConfig) fingerprint() model.Fingerprint {
 
 	writeString(f.User)
 	writeString(f.RawConfig)
-	if f.TmplExternalURL != nil {
-		writeString(f.TmplExternalURL.String())
-	} else {
-		writeBytes(nil)
-	}
 	result := sum.Sum64()
 
 	writeBytes(nil)
@@ -880,7 +873,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
 	// If no Alertmanager instance exists for this user yet, start one.
 	if !hasExisting {
 		level.Debug(am.logger).Log("msg", "initializing new per-tenant alertmanager", "user", cfg.User)
-		newAM, err := am.newAlertmanager(cfg.User, userAmConfig, cfg.Templates, rawCfg, cfg.TmplExternalURL)
+		newAM, err := am.newAlertmanager(cfg.User, userAmConfig, cfg.Templates, rawCfg)
 		if err != nil {
 			return err
 		}
@@ -891,7 +884,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
 			level.Info(am.logger).Log("msg", "updating per-tenant alertmanager", "user", cfg.User, "old_fingerprint", curFp, "new_fingerprint", cfgFp)
 			am.cfgs[cfg.User] = cfgFp
 			// If the config changed, apply the new one.
-			err := existing.ApplyConfig(userAmConfig, alertingNotify.PostableAPITemplatesToTemplateDefinitions(cfg.Templates), rawCfg, cfg.TmplExternalURL)
+			err := existing.ApplyConfig(userAmConfig, alertingNotify.PostableAPITemplatesToTemplateDefinitions(cfg.Templates), rawCfg)
 			if err != nil {
 				return fmt.Errorf("unable to apply Alertmanager config for user %v: %v", cfg.User, err)
 			}
@@ -906,7 +899,7 @@ func (am *MultitenantAlertmanager) getTenantDirectory(userID string) string {
 	return filepath.Join(am.cfg.DataDir, userID)
 }
 
-func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *definition.PostableApiAlertingConfig, templates []definition.PostableApiTemplate, rawCfg string, tmplExternalURL *url.URL) (*Alertmanager, error) {
+func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *definition.PostableApiAlertingConfig, templates []definition.PostableApiTemplate, rawCfg string) (*Alertmanager, error) {
 	reg := prometheus.NewRegistry()
 
 	tenantDir := am.getTenantDirectory(userID)
@@ -936,7 +929,7 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *defi
 		return nil, fmt.Errorf("unable to start Alertmanager for user %v: %v", userID, err)
 	}
 
-	if err := newAM.ApplyConfig(amConfig, alertingNotify.PostableAPITemplatesToTemplateDefinitions(templates), rawCfg, tmplExternalURL); err != nil {
+	if err := newAM.ApplyConfig(amConfig, alertingNotify.PostableAPITemplatesToTemplateDefinitions(templates), rawCfg); err != nil {
 		newAM.Stop()
 		return nil, fmt.Errorf("unable to apply initial config for user %v: %v", userID, err)
 	}

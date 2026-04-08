@@ -335,10 +335,10 @@ func clusterWait(position func() int, timeout time.Duration) func() time.Duratio
 }
 
 // ApplyConfig applies a new configuration to an Alertmanager.
-func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, tmpls []alertingTemplates.TemplateDefinition, rawCfg string, tmplExternalURL *url.URL) error {
+func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, tmpls []alertingTemplates.TemplateDefinition, rawCfg string) error {
 	// TODO: Remove.
 	cfg := grafanaToUpstreamConfig(conf)
-	integrationsMap, err := am.buildIntegrationsMap(conf.Receivers, tmpls, tmplExternalURL)
+	integrationsMap, err := am.buildIntegrationsMap(conf.Receivers, tmpls)
 	if err != nil {
 		return err
 	}
@@ -491,7 +491,7 @@ func (a nfstatusNotifierToNotify) Notify(ctx context.Context, alerts ...*types.A
 }
 
 // buildIntegrationsMap builds a map of name to the list of integration notifiers off of a list of receiver config.
-func (am *Alertmanager) buildIntegrationsMap(nc []*definition.PostableApiReceiver, tmpls []alertingTemplates.TemplateDefinition, tmplExternalURL *url.URL) (map[string][]*nfstatus.Integration, error) {
+func (am *Alertmanager) buildIntegrationsMap(nc []*definition.PostableApiReceiver, tmpls []alertingTemplates.TemplateDefinition) (map[string][]*nfstatus.Integration, error) {
 	// Create a firewall binded to the per-tenant config.
 	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(am.cfg.UserID, am.cfg.Limits))
 
@@ -505,7 +505,7 @@ func (am *Alertmanager) buildIntegrationsMap(nc []*definition.PostableApiReceive
 			if err != nil {
 				return nil, err
 			}
-			tmpl.ExternalURL = tmplExternalURL
+			tmpl.ExternalURL = am.cfg.ExternalURL
 		}
 		integrations, err := buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, am.logger, am.wrapNotifier)
 		if err != nil {

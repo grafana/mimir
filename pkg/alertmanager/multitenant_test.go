@@ -2556,7 +2556,7 @@ func TestShouldStartAM(t *testing.T) {
 }
 
 func Test_amConfigFingerprint(t *testing.T) {
-	const expectedTotalFields = 7 // Total fields: 3 (PostableApiTemplate) + 4 (amConfig)
+	const expectedTotalFields = 6 // Total fields: 3 (PostableApiTemplate) + 3 (amConfig)
 	t.Run("ensure all fields in the fingerprint", func(t *testing.T) {
 		// Helper function to get field count of a struct
 		getFieldCount := func(v interface{}) int {
@@ -2574,9 +2574,6 @@ func Test_amConfigFingerprint(t *testing.T) {
 
 		require.Equalf(t, expectedTotalFields, totalFields, "Total fields across structs is %d, expected %d; new fields may require updating fingerprint method", totalFields, expectedTotalFields)
 	})
-
-	url, err := url.Parse("http://localhost")
-	require.NoError(t, err)
 
 	fullConfig := amConfig{
 		User:      "user",
@@ -2598,7 +2595,6 @@ func Test_amConfigFingerprint(t *testing.T) {
 				Kind:    definition.GrafanaTemplateKind,
 			},
 		},
-		TmplExternalURL: url,
 	}
 
 	jsonCfg, err := json.Marshal(fullConfig)
@@ -2661,13 +2657,6 @@ func Test_amConfigFingerprint(t *testing.T) {
 			Kind:    definition.GrafanaTemplateKind,
 		})
 		assertField("")("Templates")
-		notChecked--
-
-		cfg.TmplExternalURL = nil
-		assertField("")("TmplExternalURL")
-		cfg.TmplExternalURL, err = url.Parse("http://new-url")
-		require.NoError(t, err)
-		assertField("")("TmplExternalURL")
 		notChecked--
 
 		require.Equal(t, 0, notChecked)
