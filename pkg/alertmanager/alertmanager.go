@@ -495,32 +495,19 @@ func (am *Alertmanager) buildIntegrationsMap(nc []*definition.PostableApiReceive
 	// Create a firewall binded to the per-tenant config.
 	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(am.cfg.UserID, am.cfg.Limits))
 
-	var tmpl *template.Template
+	tmpl, err := loadTemplates(tmpls, WithCustomFunctions(am.cfg.UserID))
+	if err != nil {
+		return nil, err
+	}
+	tmpl.ExternalURL = am.cfg.ExternalURL
+
 	integrationsMap := make(map[string][]*nfstatus.Integration, len(nc))
 	for _, rcv := range nc {
-		if tmpl == nil {
-			var err error
-			tmpl, err = loadTemplates(tmpls, WithCustomFunctions(am.cfg.UserID))
-			if err != nil {
-				return nil, err
-			}
-			tmpl.ExternalURL = am.cfg.ExternalURL
-		}
 		integrations, err := buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, am.logger, am.wrapNotifier)
 		if err != nil {
 			return nil, err
 		}
 		integrationsMap[rcv.Name] = integrations
-	}
-
-	// Template validation shouldn't be dependent on whether receivers exist. So, in case we didn't hot-load any
-	// templates, we load them here to ensure the definitions are valid.
-	var err error
-	if tmpl == nil {
-		_, err = loadTemplates(tmpls, WithCustomFunctions(am.cfg.UserID))
-	}
-	if err != nil {
-		return nil, err
 	}
 
 	return integrationsMap, nil
