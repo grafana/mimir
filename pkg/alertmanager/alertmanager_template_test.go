@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"testing"
 
-	alertingTemplates "github.com/grafana/alerting/templates"
+	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/prometheus/alertmanager/template"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/common/model"
@@ -139,12 +139,11 @@ func Test_loadTemplates(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			def := []alertingTemplates.TemplateDefinition{}
+			def := []*alertspb.TemplateDesc{}
 			for idx, s := range c.loaded {
-				def = append(def, alertingTemplates.TemplateDefinition{
-					Name:     fmt.Sprintf("test_%d", idx),
-					Template: s,
-					Kind:     alertingTemplates.MimirKind,
+				def = append(def, &alertspb.TemplateDesc{
+					Filename: fmt.Sprintf("test_%d", idx),
+					Body:     s,
 				})
 			}
 			tmpl, err := loadTemplates(def, WithCustomFunctions("test"))
