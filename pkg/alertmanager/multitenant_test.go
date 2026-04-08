@@ -17,7 +17,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/http/pprof"
-	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -313,7 +312,7 @@ func TestMultitenantAlertmanager_loadAndSyncConfigs(t *testing.T) {
 
 	currentConfigFp, cfgExists := am.cfgs["user1"]
 	require.True(t, cfgExists)
-	require.Equal(t, amConfigFromMimirConfig(user1Cfg, cfg.ExternalURL.URL).fingerprint(), currentConfigFp)
+	require.Equal(t, fingerprint(user1Cfg), currentConfigFp)
 
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 		# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
@@ -353,7 +352,7 @@ templates:
 	require.True(t, dirExists(t, user3Dir))
 	finalUserCfgFp, ok := am.cfgs["user3"]
 	require.True(t, ok)
-	require.Equal(t, amConfigFromMimirConfig(user3Cfg, cfg.ExternalURL.URL).fingerprint(), finalUserCfgFp)
+	require.Equal(t, fingerprint(user3Cfg), finalUserCfgFp)
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 		# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
 		# TYPE cortex_alertmanager_config_last_reload_successful gauge
@@ -375,7 +374,7 @@ templates:
 
 	currentConfigFp, cfgExists = am.cfgs["user1"]
 	require.True(t, cfgExists)
-	expectedFp := amConfigFromMimirConfig(user1Cfg, cfg.ExternalURL.URL).fingerprint()
+	expectedFp := fingerprint(user1Cfg)
 	require.Equal(t, expectedFp, currentConfigFp)
 
 	// Ensure the config is reloaded if only templates changed
@@ -399,7 +398,7 @@ templates:
 
 	currentConfigFp, cfgExists = am.cfgs["user1"]
 	require.True(t, cfgExists)
-	expectedFp = amConfigFromMimirConfig(user1Cfg, cfg.ExternalURL.URL).fingerprint()
+	expectedFp = fingerprint(user1Cfg)
 	require.Equal(t, expectedFp, currentConfigFp)
 
 	// Test Delete User, ensure config is removed and the resources are freed.
@@ -432,7 +431,7 @@ templates:
 
 	currentConfigFp, cfgExists = am.cfgs["user3"]
 	require.True(t, cfgExists)
-	expectedFp = amConfigFromMimirConfig(user3Cfg, cfg.ExternalURL.URL).fingerprint()
+	expectedFp = fingerprint(user3Cfg)
 	require.Equal(t, expectedFp, currentConfigFp)
 
 	_, cfgExists = am.alertmanagers["user3"]
@@ -2555,7 +2554,7 @@ func TestShouldStartAM(t *testing.T) {
 	}
 }
 
-func Test_amConfigFingerprint(t *testing.T) {
+func Test_fingerprint(t *testing.T) {
 	const expectedTotalFields = 6 // Total fields: 3 (PostableApiTemplate) + 3 (amConfig)
 	t.Run("ensure all fields in the fingerprint", func(t *testing.T) {
 		// Helper function to get field count of a struct
@@ -2570,29 +2569,26 @@ func Test_amConfigFingerprint(t *testing.T) {
 		// Calculate total fields across all structs
 		totalFields := 0
 		totalFields += getFieldCount(definition.PostableApiTemplate{})
-		totalFields += getFieldCount(amConfig{})
+		totalFields += getFieldCount(alertspb.AlertConfigDesc{})
 
 		require.Equalf(t, expectedTotalFields, totalFields, "Total fields across structs is %d, expected %d; new fields may require updating fingerprint method", totalFields, expectedTotalFields)
 	})
 
-	fullConfig := amConfig{
+	fullConfig := alertspb.AlertConfigDesc{
 		User:      "user",
 		RawConfig: simpleConfigOne,
-		Templates: []definition.PostableApiTemplate{
+		Templates: []*alertspb.TemplateDesc{
 			{
-				Name:    "test",
-				Content: "test",
-				Kind:    definition.MimirTemplateKind,
+				Filename: "test",
+				Body:     "test",
 			},
 			{
-				Name:    "test2",
-				Content: "test2",
-				Kind:    definition.GrafanaTemplateKind,
+				Filename: "test2",
+				Body:     "test2",
 			},
 			{
-				Name:    "test3",
-				Content: "test3",
-				Kind:    definition.GrafanaTemplateKind,
+				Filename: "test3",
+				Body:     "test3",
 			},
 		},
 	}
@@ -2601,22 +2597,22 @@ func Test_amConfigFingerprint(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("fingerprint should be stable", func(t *testing.T) {
-		expected := fullConfig.fingerprint()
+		expected := fingerprint(fullConfig)
 
 		// Do it many times to make sure order of elements in the map does not affect fingerprint
 		for i := 0; i < 100; i++ {
-			cfg2 := amConfig{}
+			cfg2 := alertspb.AlertConfigDesc{}
 			require.NoError(t, json.Unmarshal(jsonCfg, &cfg2)) // copy structure
-			assert.Empty(t, cmp.Diff(fullConfig, cfg2, cmp.AllowUnexported(amConfig{})))
+			assert.Empty(t, cmp.Diff(fullConfig, cfg2, cmp.AllowUnexported(alertspb.AlertConfigDesc{})))
 			rand.Shuffle(len(cfg2.Templates), func(i, j int) {
 				cfg2.Templates[i], cfg2.Templates[j] = cfg2.Templates[j], cfg2.Templates[i]
 			})
-			require.Equal(t, expected, cfg2.fingerprint())
+			require.Equal(t, expected, fingerprint(fullConfig))
 		}
 	})
 
 	t.Run("fingerprint should change", func(t *testing.T) {
-		cfg := amConfig{}
+		cfg := alertspb.AlertConfigDesc{}
 		require.NoError(t, json.Unmarshal(jsonCfg, &cfg)) // copy structure
 		notChecked := expectedTotalFields
 		setStringFieldsWithRandomValue := func(val reflect.Value, callback func(fieldName string)) {
@@ -2640,10 +2636,10 @@ func Test_amConfigFingerprint(t *testing.T) {
 			}
 		}
 
-		lastFingerprint := cfg.fingerprint()
+		lastFingerprint := fingerprint(cfg)
 		assertField := func(prefix string) func(fieldName string) {
 			return func(fieldName string) {
-				newFP := cfg.fingerprint()
+				newFP := fingerprint(cfg)
 				assert.NotEqualf(t, lastFingerprint, newFP, "Changes in fields [%s%s] did not cause fingerprint to change", prefix, fieldName)
 				lastFingerprint = newFP
 			}
@@ -2651,10 +2647,9 @@ func Test_amConfigFingerprint(t *testing.T) {
 
 		setStringFieldsWithRandomValue(reflect.ValueOf(&cfg).Elem(), assertField(""))
 		setStringFieldsWithRandomValue(reflect.ValueOf(&cfg.Templates[1]).Elem(), assertField("Templates[1]."))
-		cfg.Templates = append(cfg.Templates, definition.PostableApiTemplate{
-			Name:    "test3",
-			Content: "test3",
-			Kind:    definition.GrafanaTemplateKind,
+		cfg.Templates = append(cfg.Templates, &alertspb.TemplateDesc{
+			Filename: "test3",
+			Body:     "test3",
 		})
 		assertField("")("Templates")
 		notChecked--
