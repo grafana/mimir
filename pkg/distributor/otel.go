@@ -54,6 +54,12 @@ const (
 	otelParseError = "otlp_parse_error"
 	maxErrMsgLen   = 1024
 
+	// OTLP translation headers allow per-request control of metric name translation.
+	// When both headers are set, otlpTranslationStrategyHeader takes full precedence
+	// and otlpAddSuffixesHeader is ignored.
+	// When only otlpAddSuffixesHeader is set, it toggles the suffix behavior of the
+	// tenant's configured translation strategy (e.g. UnderscoreEscapingWithSuffixes
+	// becomes UnderscoreEscapingWithoutSuffixes when set to "false").
 	otlpAddSuffixesHeader         = "X-Mimir-OTLP-AddSuffixes"
 	otlpTranslationStrategyHeader = "X-Mimir-OTLP-TranslationStrategy"
 )
@@ -472,7 +478,10 @@ func applyTranslationHeaders(strategyHeader, suffixesHeader string, limits OTLPH
 		}
 	}
 
-	// Only suffixes header is set.
+	// Only the suffixes header is set. Start from the tenant's configured strategy
+	// and toggle the suffix aspect: e.g. if the tenant uses UnderscoreEscapingWithSuffixes
+	// and the header says "false", the effective strategy becomes
+	// UnderscoreEscapingWithoutSuffixes. The escaping mode is preserved.
 	addSuffixes, err := strconv.ParseBool(suffixesHeader)
 	if err != nil {
 		return "", fmt.Errorf(`invalid value for %s header: %q, expected "true" or "false"`, otlpAddSuffixesHeader, suffixesHeader)
