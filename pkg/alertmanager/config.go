@@ -11,22 +11,19 @@ import (
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 )
 
-func amConfigFromMimirConfig(dec alertspb.AlertConfigDesc) amConfig {
-	return amConfig{
-		User:      dec.User,
-		RawConfig: dec.RawConfig,
-		Templates: templateDescToPostableApiTemplate(dec.Templates, definition.MimirTemplateKind),
-	}
-}
-
-func templateDescToPostableApiTemplate(t []*alertspb.TemplateDesc, kind definition.TemplateKind) []definition.PostableApiTemplate {
-	result := make([]definition.PostableApiTemplate, 0, len(t))
-	for _, desc := range t {
-		result = append(result, definition.PostableApiTemplate{
+func amConfigFromMimirConfig(desc alertspb.AlertConfigDesc) amConfig {
+	tmpls := make([]definition.PostableApiTemplate, 0, len(desc.Templates))
+	for _, desc := range desc.Templates {
+		tmpls = append(tmpls, definition.PostableApiTemplate{
 			Name:    desc.Filename,
 			Content: desc.Body,
-			Kind:    kind,
+			Kind:    definition.MimirTemplateKind,
 		})
 	}
-	return result
+
+	return amConfig{
+		User:      desc.User,
+		RawConfig: desc.RawConfig,
+		Templates: tmpls,
+	}
 }
