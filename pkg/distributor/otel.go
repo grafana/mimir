@@ -388,16 +388,15 @@ func newOTLPParser(
 				}
 
 				translationHeadersApplied = true
+				// Auto-upgrade the name validation scheme if the effective
+				// translation strategy determined by the headers entails utf8.
+				if !translationStrategy.ShouldEscape() {
+					s := model.UTF8Validation
+					*schemeOverride = &s
+				}
 			}
 		}
-		if translationHeadersApplied {
-			// Auto-upgrade the name validation scheme if the effective
-			// translation strategy determined by the headers entails utf8.
-			if !translationStrategy.ShouldEscape() {
-				s := model.UTF8Validation
-				*schemeOverride = &s
-			}
-		} else {
+		if !translationHeadersApplied {
 			validateTranslationStrategy(translationStrategy, limits, limitsKey)
 		}
 
