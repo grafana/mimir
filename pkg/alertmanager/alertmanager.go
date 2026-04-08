@@ -22,7 +22,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/alerting/definition"
-	alertingHttp "github.com/grafana/alerting/http"
 	"github.com/grafana/alerting/notify/nfstatus"
 	discord_v0mimir1 "github.com/grafana/alerting/receivers/discord/v0mimir1"
 	email_v0mimir1 "github.com/grafana/alerting/receivers/email/v0mimir1"
@@ -65,7 +64,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
 	util_net "github.com/grafana/mimir/pkg/util/net"
-	"github.com/grafana/mimir/pkg/util/version"
 )
 
 const (
