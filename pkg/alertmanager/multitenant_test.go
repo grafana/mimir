@@ -12,7 +12,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"math/rand"
 	"net"
 	"net/http"
@@ -32,7 +31,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 	"github.com/grafana/alerting/definition"
-	alertingReceivers "github.com/grafana/alerting/receivers"
 	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
@@ -2558,7 +2556,7 @@ func TestShouldStartAM(t *testing.T) {
 }
 
 func Test_amConfigFingerprint(t *testing.T) {
-	const expectedTotalFields = 24 // Total fields: 3 (PostableApiTemplate) + 15 (EmailSenderConfig) + 6 (amConfig)
+	const expectedTotalFields = 8 // Total fields: 3 (PostableApiTemplate) + 5 (amConfig)
 	t.Run("ensure all fields in the fingerprint", func(t *testing.T) {
 		// Helper function to get field count of a struct
 		getFieldCount := func(v interface{}) int {
@@ -2572,7 +2570,6 @@ func Test_amConfigFingerprint(t *testing.T) {
 		// Calculate total fields across all structs
 		totalFields := 0
 		totalFields += getFieldCount(definition.PostableApiTemplate{})
-		totalFields += getFieldCount(alertingReceivers.EmailSenderConfig{})
 		totalFields += getFieldCount(amConfig{})
 
 		require.Equalf(t, expectedTotalFields, totalFields, "Total fields across structs is %d, expected %d; new fields may require updating fingerprint method", totalFields, expectedTotalFields)
@@ -2602,20 +2599,6 @@ func Test_amConfigFingerprint(t *testing.T) {
 			},
 		},
 		TmplExternalURL: url,
-		EmailConfig: alertingReceivers.EmailSenderConfig{
-			AuthPassword:   "custom-password",
-			AuthUser:       "custom-user",
-			ContentTypes:   []string{"text/html", "text/plain"},
-			EhloIdentity:   "custom-identity",
-			ExternalURL:    "http://custom-url",
-			FromAddress:    "custom@address.com",
-			FromName:       "Custom From Name",
-			Host:           "custom-host",
-			SentBy:         "Mimir vunknown",
-			SkipVerify:     true,
-			StartTLSPolicy: "custom-policy",
-			StaticHeaders:  map[string]string{"test": "test", "test2": "test2", "test3": "test3"},
-		},
 	}
 
 	jsonCfg, err := json.Marshal(fullConfig)
@@ -2624,7 +2607,7 @@ func Test_amConfigFingerprint(t *testing.T) {
 	t.Run("fingerprint should be stable", func(t *testing.T) {
 		expected := fullConfig.fingerprint()
 
-		// do it many times to make sure order of elements in the map does not affect fingerprint
+		// Do it many times to make sure order of elements in the map does not affect fingerprint
 		for i := 0; i < 100; i++ {
 			cfg2 := amConfig{}
 			require.NoError(t, json.Unmarshal(jsonCfg, &cfg2)) // copy structure
@@ -2632,15 +2615,6 @@ func Test_amConfigFingerprint(t *testing.T) {
 			rand.Shuffle(len(cfg2.Templates), func(i, j int) {
 				cfg2.Templates[i], cfg2.Templates[j] = cfg2.Templates[j], cfg2.Templates[i]
 			})
-			// copy map to shuffle elements
-			cp := map[string]string{}
-			maps.Copy(cp, cfg2.EmailConfig.StaticHeaders)
-			cfg2.EmailConfig.StaticHeaders = cp
-
-			rand.Shuffle(len(cfg2.EmailConfig.ContentTypes), func(i, j int) {
-				cfg2.EmailConfig.ContentTypes[i], cfg2.EmailConfig.ContentTypes[j] = cfg2.EmailConfig.ContentTypes[j], cfg2.EmailConfig.ContentTypes[i]
-			})
-
 			require.Equal(t, expected, cfg2.fingerprint())
 		}
 	})
@@ -2680,7 +2654,6 @@ func Test_amConfigFingerprint(t *testing.T) {
 		}
 
 		setStringFieldsWithRandomValue(reflect.ValueOf(&cfg).Elem(), assertField(""))
-		setStringFieldsWithRandomValue(reflect.ValueOf(&cfg.EmailConfig).Elem(), assertField("EmailConfig."))
 		setStringFieldsWithRandomValue(reflect.ValueOf(&cfg.Templates[1]).Elem(), assertField("Templates[1]."))
 		cfg.Templates = append(cfg.Templates, definition.PostableApiTemplate{
 			Name:    "test3",
@@ -2695,18 +2668,6 @@ func Test_amConfigFingerprint(t *testing.T) {
 		cfg.TmplExternalURL, err = url.Parse("http://new-url")
 		require.NoError(t, err)
 		assertField("")("TmplExternalURL")
-		notChecked--
-
-		cfg.EmailConfig.ContentTypes = []string{"text/plain"}
-		assertField("EmailConfig.")("ContentTypes")
-		notChecked--
-
-		cfg.EmailConfig.StaticHeaders = map[string]string{"test2": "test", "test": "test2", "test3": "test3"}
-		assertField("EmailConfig.")("StaticHeaders")
-		notChecked--
-
-		cfg.EmailConfig = alertingReceivers.EmailSenderConfig{}
-		assertField("")("EmailConfig")
 		notChecked--
 
 		require.Equal(t, 0, notChecked)
