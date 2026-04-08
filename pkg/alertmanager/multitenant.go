@@ -25,7 +25,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/alerting/definition"
 	alertingNotify "github.com/grafana/alerting/notify"
-	alertingReceivers "github.com/grafana/alerting/receivers"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
@@ -774,7 +773,6 @@ type amConfig struct {
 	RawConfig       string
 	Templates       []definition.PostableApiTemplate
 	TmplExternalURL *url.URL
-	EmailConfig     alertingReceivers.EmailSenderConfig
 }
 
 func (f amConfig) fingerprint() model.Fingerprint {
@@ -793,13 +791,6 @@ func (f amConfig) fingerprint() model.Fingerprint {
 		// avoid allocation when converting string to byte slice
 		writeBytes(unsafe.Slice(unsafe.StringData(s), len(s)))
 	}
-	writeBool := func(b bool) {
-		if b {
-			writeBytes([]byte{1})
-		} else {
-			writeBytes([]byte{0})
-		}
-	}
 
 	writeString(f.User)
 	writeString(f.RawConfig)
@@ -808,31 +799,9 @@ func (f amConfig) fingerprint() model.Fingerprint {
 	} else {
 		writeBytes(nil)
 	}
-	writeString(f.EmailConfig.AuthPassword)
-	writeString(f.EmailConfig.AuthUser)
-	writeString(f.EmailConfig.CertFile)
-	writeString(f.EmailConfig.EhloIdentity)
-	writeString(f.EmailConfig.ExternalURL)
-	writeString(f.EmailConfig.FromName)
-	writeString(f.EmailConfig.FromAddress)
-	writeString(f.EmailConfig.Host)
-	writeString(f.EmailConfig.KeyFile)
-	writeBool(f.EmailConfig.SkipVerify)
-	writeString(f.EmailConfig.StartTLSPolicy)
-	writeString(f.EmailConfig.SentBy)
-	writeBool(f.EmailConfig.UseBCC)
 	result := sum.Sum64()
 
 	writeBytes(nil)
-	// Calculate hash for each key-value pair independently and combine it using XOR
-	// so we do not need to care about the random order of the pairs in the map.
-	var mapFp uint64
-	for k, v := range f.EmailConfig.StaticHeaders {
-		sum.Reset()
-		writeString(k)
-		writeString(v)
-		mapFp ^= sum.Sum64()
-	}
 
 	// Ignore order in templates because they're usually built from the map
 	var templatesFp uint64
@@ -844,24 +813,12 @@ func (f amConfig) fingerprint() model.Fingerprint {
 		templatesFp ^= sum.Sum64()
 	}
 
-	// Ignore order in content types because it does not matter
-	var contentTypesFp uint64
-	for _, ct := range f.EmailConfig.ContentTypes {
-		sum.Reset()
-		writeString(ct)
-		contentTypesFp ^= sum.Sum64()
-	}
-
 	// combine all hashes, including ones for empty slices\map
 	sum.Reset()
 	tmp := make([]byte, 8)
 	binary.LittleEndian.PutUint64(tmp, result)
 	writeBytes(tmp)
-	binary.LittleEndian.PutUint64(tmp, mapFp)
-	writeBytes(tmp)
 	binary.LittleEndian.PutUint64(tmp, templatesFp)
-	writeBytes(tmp)
-	binary.LittleEndian.PutUint64(tmp, contentTypesFp)
 	writeBytes(tmp)
 	return model.Fingerprint(sum.Sum64())
 }
@@ -923,7 +880,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
 	// If no Alertmanager instance exists for this user yet, start one.
 	if !hasExisting {
 		level.Debug(am.logger).Log("msg", "initializing new per-tenant alertmanager", "user", cfg.User)
-		newAM, err := am.newAlertmanager(cfg.User, userAmConfig, cfg.Templates, rawCfg, cfg.TmplExternalURL, cfg.EmailConfig)
+		newAM, err := am.newAlertmanager(cfg.User, userAmConfig, cfg.Templates, rawCfg, cfg.TmplExternalURL)
 		if err != nil {
 			return err
 		}
@@ -949,7 +906,7 @@ func (am *MultitenantAlertmanager) getTenantDirectory(userID string) string {
 	return filepath.Join(am.cfg.DataDir, userID)
 }
 
-func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *definition.PostableApiAlertingConfig, templates []definition.PostableApiTemplate, rawCfg string, tmplExternalURL *url.URL, emailCfg alertingReceivers.EmailSenderConfig) (*Alertmanager, error) {
+func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *definition.PostableApiAlertingConfig, templates []definition.PostableApiTemplate, rawCfg string, tmplExternalURL *url.URL) (*Alertmanager, error) {
 	reg := prometheus.NewRegistry()
 
 	tenantDir := am.getTenantDirectory(userID)
