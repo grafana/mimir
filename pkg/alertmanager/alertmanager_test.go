@@ -7,10 +7,7 @@ package alertmanager
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -18,7 +15,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/alerting/definition"
-	alertingmodels "github.com/grafana/alerting/models"
 	alertingReceivers "github.com/grafana/alerting/receivers"
 	alertingTemplates "github.com/grafana/alerting/templates"
 	"github.com/grafana/dskit/concurrency"
@@ -33,7 +29,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/time/rate"
 )
 
 func TestDispatcherGroupLimits(t *testing.T) {
