@@ -336,7 +336,6 @@ func clusterWait(position func() int, timeout time.Duration) func() time.Duratio
 
 // ApplyConfig applies a new configuration to an Alertmanager.
 func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, tmpls []alertingTemplates.TemplateDefinition, rawCfg string) error {
-	// TODO: Remove.
 	cfg := grafanaToUpstreamConfig(conf)
 	integrationsMap, err := am.buildIntegrationsMap(conf.Receivers, tmpls)
 	if err != nil {
@@ -472,22 +471,6 @@ func (am *Alertmanager) wrapNotifier(integrationName string, notifier notify.Not
 	}
 
 	return notifier
-}
-
-// wrapNfstatusNotifier adapts wrapNotifier to the alertingNotify.WrapNotifierFunc signature,
-// which uses nfstatus.Notifier instead of notify.Notifier.
-func (am *Alertmanager) wrapNfstatusNotifier(integrationName string, n nfstatus.Notifier) nfstatus.Notifier {
-	return nfstatus.NewNotifierAdapter(am.wrapNotifier(integrationName, nfstatusNotifierToNotify{n: n}))
-}
-
-// nfstatusNotifierToNotify adapts an nfstatus.Notifier to the notify.Notifier interface.
-type nfstatusNotifierToNotify struct {
-	n nfstatus.Notifier
-}
-
-func (a nfstatusNotifierToNotify) Notify(ctx context.Context, alerts ...*types.Alert) (bool, error) {
-	_, retry, err := a.n.Notify(ctx, alerts...)
-	return retry, err
 }
 
 // buildIntegrationsMap builds a map of name to the list of integration notifiers off of a list of receiver config.

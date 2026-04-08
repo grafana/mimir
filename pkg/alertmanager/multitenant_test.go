@@ -2603,7 +2603,7 @@ func Test_amConfigFingerprint(t *testing.T) {
 	t.Run("fingerprint should be stable", func(t *testing.T) {
 		expected := fullConfig.fingerprint()
 
-		// do it many times to make sure order of elements in the map does not affect fingerprint
+		// Do it many times to make sure order of elements in the map does not affect fingerprint
 		for i := 0; i < 100; i++ {
 			cfg2 := amConfig{}
 			require.NoError(t, json.Unmarshal(jsonCfg, &cfg2)) // copy structure
