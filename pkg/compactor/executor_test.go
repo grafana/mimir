@@ -150,7 +150,7 @@ func (m *mockCompactorSchedulerClient) GetLeaseJobCallCount() int {
 
 func newTestSchedulerExecutor(t *testing.T, cfg Config, client compactorschedulerpb.CompactorSchedulerClient) *schedulerExecutor {
 	t.Helper()
-	exec, err := newSchedulerExecutor(cfg.SchedulerClientConfig, log.NewNopLogger(), prometheus.NewRegistry(), nil)
+	exec, err := newSchedulerExecutor(cfg.SchedulerClientConfig, log.NewNopLogger(), prometheus.NewPedanticRegistry(), nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { exec.schedulerConn.Close() })
 	exec.schedulerClient = client
