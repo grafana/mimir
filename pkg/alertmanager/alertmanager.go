@@ -475,12 +475,6 @@ func (am *Alertmanager) wrapNotifier(integrationName string, notifier notify.Not
 	return notifier
 }
 
-// wrapNfstatusNotifier adapts wrapNotifier to the alertingNotify.WrapNotifierFunc signature,
-// which uses nfstatus.Notifier instead of notify.Notifier.
-func (am *Alertmanager) wrapNfstatusNotifier(integrationName string, n nfstatus.Notifier) nfstatus.Notifier {
-	return nfstatus.NewNotifierAdapter(am.wrapNotifier(integrationName, nfstatusNotifierToNotify{n: n}))
-}
-
 // nfstatusNotifierToNotify adapts an nfstatus.Notifier to the notify.Notifier interface.
 type nfstatusNotifierToNotify struct {
 	n nfstatus.Notifier
