@@ -2582,7 +2582,7 @@ func Test_amConfigFingerprint(t *testing.T) {
 	require.NoError(t, err)
 
 	fullConfig := amConfig{
-		User:      "user-grafana",
+		User:      "user",
 		RawConfig: simpleConfigOne,
 		Templates: []definition.PostableApiTemplate{
 			{
