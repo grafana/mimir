@@ -56,9 +56,8 @@ The following types of filesystems are **not supported**:
 
 Network filesystems do not provide the consistency guarantees that Grafana Mimir requires for memory-mapped I/O. Using them can result in:
 
-- `SIGBUS` (bus error) crashes in ingesters during head chunk operations.
+- Component crashes.
 - Silent data corruption.
-- Unpredictable component restarts that cause query unavailability.
 
 For more background, refer to the [Prometheus storage documentation](https://prometheus.io/docs/prometheus/latest/storage/#operational-aspects).
 
@@ -80,8 +79,6 @@ The following object storage services are supported:
 | GCP         | Google Cloud Storage (GCS) |
 | Azure       | Azure Blob Storage         |
 | Self-hosted | Any S3-compatible API      |
-
-For configuration details, refer to [Configure object storage]({{< relref "../configure/configure-object-storage-backend" >}}).
 
 ## Deployment platforms
 
