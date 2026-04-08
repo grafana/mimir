@@ -29,7 +29,6 @@ import (
 	"github.com/gogo/status"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
-	"github.com/grafana/alerting/definition"
 	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
@@ -2555,7 +2554,7 @@ func TestShouldStartAM(t *testing.T) {
 }
 
 func Test_fingerprint(t *testing.T) {
-	const expectedTotalFields = 6 // Total fields: 3 (PostableApiTemplate) + 3 (amConfig)
+	const expectedTotalFields = 5 // Total fields: 2 (TemplateDesc) + 3 (AlertConfigDesc)
 	t.Run("ensure all fields in the fingerprint", func(t *testing.T) {
 		// Helper function to get field count of a struct
 		getFieldCount := func(v interface{}) int {
@@ -2568,7 +2567,7 @@ func Test_fingerprint(t *testing.T) {
 
 		// Calculate total fields across all structs
 		totalFields := 0
-		totalFields += getFieldCount(definition.PostableApiTemplate{})
+		totalFields += getFieldCount(alertspb.TemplateDesc{})
 		totalFields += getFieldCount(alertspb.AlertConfigDesc{})
 
 		require.Equalf(t, expectedTotalFields, totalFields, "Total fields across structs is %d, expected %d; new fields may require updating fingerprint method", totalFields, expectedTotalFields)
@@ -2607,7 +2606,7 @@ func Test_fingerprint(t *testing.T) {
 			rand.Shuffle(len(cfg2.Templates), func(i, j int) {
 				cfg2.Templates[i], cfg2.Templates[j] = cfg2.Templates[j], cfg2.Templates[i]
 			})
-			require.Equal(t, expected, fingerprint(fullConfig))
+			require.Equal(t, expected, fingerprint(cfg2))
 		}
 	})
 
@@ -2646,7 +2645,7 @@ func Test_fingerprint(t *testing.T) {
 		}
 
 		setStringFieldsWithRandomValue(reflect.ValueOf(&cfg).Elem(), assertField(""))
-		setStringFieldsWithRandomValue(reflect.ValueOf(&cfg.Templates[1]).Elem(), assertField("Templates[1]."))
+		setStringFieldsWithRandomValue(reflect.ValueOf(cfg.Templates[1]).Elem(), assertField("Templates[1]."))
 		cfg.Templates = append(cfg.Templates, &alertspb.TemplateDesc{
 			Filename: "test3",
 			Body:     "test3",
