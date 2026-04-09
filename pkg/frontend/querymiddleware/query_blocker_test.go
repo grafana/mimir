@@ -71,151 +71,6 @@ func runBlockerTest(t *testing.T, limitsYAML string, makeReq func(*testing.T) Me
 	}
 }
 
-// TestQueryBlockerMiddleware_UnalignedRangeQueries verifies unaligned_range_queries: when true, a rule
-// only blocks range queries where the time range is not aligned to the step; aligned queries, instant
-// queries, and remote read requests are not blocked.
-func TestQueryBlockerMiddleware_UnalignedRangeQueries(t *testing.T) {
-	step := time.Minute
-	alignedStart := timestamp.Time(0).Add(100 * step)
-	alignedEnd := alignedStart.Add(time.Hour)
-	unalignedStart := alignedStart.Add(2 * time.Second)
-	unalignedEnd := unalignedStart.Add(time.Hour)
-
-	rangeReq := func(query string, start, end time.Time, stepMs int64) func(t *testing.T) MetricsQueryRequest {
-		return func(t *testing.T) MetricsQueryRequest {
-			return &PrometheusRangeQueryRequest{
-				queryExpr: parseQuery(t, query),
-				start:     start.UnixMilli(),
-				end:       end.UnixMilli(),
-				step:      stepMs,
-			}
-		}
-	}
-	instantReq := func(query string) func(t *testing.T) MetricsQueryRequest {
-		now := time.Now()
-		return func(t *testing.T) MetricsQueryRequest {
-			return &PrometheusInstantQueryRequest{
-				queryExpr: parseQuery(t, query),
-				time:      now.UnixMilli(),
-			}
-		}
-	}
-	remoteReadReq := func(matchers ...*prompb.LabelMatcher) func(t *testing.T) MetricsQueryRequest {
-		req := mustSucceed(remoteReadToMetricsQueryRequest(remoteReadPathSuffix, &prompb.Query{Matchers: matchers}))
-		return func(_ *testing.T) MetricsQueryRequest { return req }
-	}
-
-	tests := []struct {
-		name            string
-		limitsYAML      string
-		makeReq         func(t *testing.T) MetricsQueryRequest
-		expectedBlocked bool
-	}{
-		{
-			name: "unaligned range query is blocked when unaligned_range_queries is true",
-			limitsYAML: `
-blocked_queries:
-  - pattern: "rate(metric_counter[5m])"
-    unaligned_range_queries: true
-`,
-			makeReq:         rangeReq("rate(metric_counter[5m])", unalignedStart, unalignedEnd, step.Milliseconds()),
-			expectedBlocked: true,
-		},
-		{
-			name: "aligned range query is not blocked when unaligned_range_queries is true",
-			limitsYAML: `
-blocked_queries:
-  - pattern: "rate(metric_counter[5m])"
-    unaligned_range_queries: true
-`,
-			makeReq:         rangeReq("rate(metric_counter[5m])", alignedStart, alignedEnd, step.Milliseconds()),
-			expectedBlocked: false,
-		},
-		{
-			name: "unaligned range query is blocked regardless of unaligned_range_queries when it is false",
-			limitsYAML: `
-blocked_queries:
-  - pattern: "rate(metric_counter[5m])"
-    unaligned_range_queries: false
-`,
-			makeReq:         rangeReq("rate(metric_counter[5m])", unalignedStart, unalignedEnd, step.Milliseconds()),
-			expectedBlocked: true,
-		},
-		{
-			name: "aligned range query is blocked when unaligned_range_queries is false",
-			limitsYAML: `
-blocked_queries:
-  - pattern: "rate(metric_counter[5m])"
-    unaligned_range_queries: false
-`,
-			makeReq:         rangeReq("rate(metric_counter[5m])", alignedStart, alignedEnd, step.Milliseconds()),
-			expectedBlocked: true,
-		},
-		{
-			name: "regex pattern: unaligned range query is blocked when unaligned_range_queries is true",
-			limitsYAML: `
-blocked_queries:
-  - pattern: ".*metric_counter.*"
-    regex: true
-    unaligned_range_queries: true
-`,
-			makeReq:         rangeReq("rate(metric_counter[5m])", unalignedStart, unalignedEnd, step.Milliseconds()),
-			expectedBlocked: true,
-		},
-		{
-			name: "regex pattern: aligned range query is not blocked when unaligned_range_queries is true",
-			limitsYAML: `
-blocked_queries:
-  - pattern: ".*metric_counter.*"
-    regex: true
-    unaligned_range_queries: true
-`,
-			makeReq:         rangeReq("rate(metric_counter[5m])", alignedStart, alignedEnd, step.Milliseconds()),
-			expectedBlocked: false,
-		},
-		{
-			name: "second rule blocks after first rule skipped due to alignment",
-			limitsYAML: `
-blocked_queries:
-  - pattern: "rate(metric_counter[5m])"
-    unaligned_range_queries: true
-  - pattern: "rate(metric_counter[5m])"
-    reason: "blocked by second rule"
-`,
-			makeReq:         rangeReq("rate(metric_counter[5m])", alignedStart, alignedEnd, step.Milliseconds()),
-			expectedBlocked: true,
-		},
-		{
-			name: "instant query is not blocked by unaligned_range_queries rule",
-			limitsYAML: `
-blocked_queries:
-  - pattern: "rate(metric_counter[5m])"
-    unaligned_range_queries: true
-`,
-			makeReq:         instantReq("rate(metric_counter[5m])"),
-			expectedBlocked: false,
-		},
-		{
-			name: "remote read is not blocked by unaligned_range_queries rule",
-			limitsYAML: `
-blocked_queries:
-  - pattern: '{__name__="metric_counter"}'
-    unaligned_range_queries: true
-`,
-			makeReq: remoteReadReq(
-				&prompb.LabelMatcher{Type: prompb.LabelMatcher_EQ, Name: model.MetricNameLabel, Value: "metric_counter"},
-			),
-			expectedBlocked: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			runBlockerTest(t, tt.limitsYAML, tt.makeReq, tt.expectedBlocked)
-		})
-	}
-}
-
 // TestQueryBlockerMiddleware_Pattern verifies pattern matching: exact match, canonicalisation,
 // regex, and that rules without a pattern are skipped.
 func TestQueryBlockerMiddleware_Pattern(t *testing.T) {
@@ -248,6 +103,15 @@ func TestQueryBlockerMiddleware_Pattern(t *testing.T) {
 		{
 			name:            "empty limits",
 			makeReq:         rangeReq("rate(metric_counter[5m])"),
+			expectedBlocked: false,
+		},
+		{
+			name: "no pattern",
+			limitsYAML: `
+blocked_queries:
+  - reason: "should not block without pattern"
+`,
+			makeReq:         rangeReq("up"),
 			expectedBlocked: false,
 		},
 		{
@@ -462,15 +326,137 @@ blocked_queries:
 			makeReq:         rangeReq("rate(metric_counter[5m])"),
 			expectedBlocked: true,
 		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runBlockerTest(t, tt.limitsYAML, tt.makeReq, tt.expectedBlocked)
+		})
+	}
+}
+
+// TestQueryBlockerMiddleware_UnalignedRangeQueries verifies unaligned_range_queries: when true, a rule
+// only blocks range queries where the time range is not aligned to the step; aligned queries, instant
+// queries, and remote read requests are not blocked.
+func TestQueryBlockerMiddleware_UnalignedRangeQueries(t *testing.T) {
+	step := time.Minute
+	alignedStart := timestamp.Time(0).Add(100 * step)
+	alignedEnd := alignedStart.Add(time.Hour)
+	unalignedStart := alignedStart.Add(2 * time.Second)
+	unalignedEnd := unalignedStart.Add(time.Hour)
+
+	rangeReq := func(query string, start, end time.Time, stepMs int64) func(t *testing.T) MetricsQueryRequest {
+		return func(t *testing.T) MetricsQueryRequest {
+			return &PrometheusRangeQueryRequest{
+				queryExpr: parseQuery(t, query),
+				start:     start.UnixMilli(),
+				end:       end.UnixMilli(),
+				step:      stepMs,
+			}
+		}
+	}
+	instantReq := func(query string) func(t *testing.T) MetricsQueryRequest {
+		now := time.Now()
+		return func(t *testing.T) MetricsQueryRequest {
+			return &PrometheusInstantQueryRequest{
+				queryExpr: parseQuery(t, query),
+				time:      now.UnixMilli(),
+			}
+		}
+	}
+	remoteReadReq := func(matchers ...*prompb.LabelMatcher) func(t *testing.T) MetricsQueryRequest {
+		req := mustSucceed(remoteReadToMetricsQueryRequest(remoteReadPathSuffix, &prompb.Query{Matchers: matchers}))
+		return func(_ *testing.T) MetricsQueryRequest { return req }
+	}
+
+	tests := []struct {
+		name            string
+		limitsYAML      string
+		makeReq         func(t *testing.T) MetricsQueryRequest
+		expectedBlocked bool
+	}{
 		{
-			// no pattern → rule must be skipped regardless of any filter
-			name: "no pattern with time_range filter - not blocked",
+			name: "no pattern",
 			limitsYAML: `
 blocked_queries:
-  - time_range_longer_than: "30m"
-    reason: "should not block without pattern"
+  - unaligned_range_queries: true
+    reason: "unaligned range query"
 `,
-			makeReq:         rangeReq("up"),
+			makeReq:         rangeReq("rate(metric_counter[5m])", unalignedStart, unalignedEnd, step.Milliseconds()),
+			expectedBlocked: false,
+		},
+		{
+			name: "unaligned range query",
+			limitsYAML: `
+blocked_queries:
+  - pattern: "rate(metric_counter[5m])"
+    unaligned_range_queries: true
+`,
+			makeReq:         rangeReq("rate(metric_counter[5m])", unalignedStart, unalignedEnd, step.Milliseconds()),
+			expectedBlocked: true,
+		},
+		{
+			name: "aligned range query",
+			limitsYAML: `
+blocked_queries:
+  - pattern: "rate(metric_counter[5m])"
+    unaligned_range_queries: true
+`,
+			makeReq:         rangeReq("rate(metric_counter[5m])", alignedStart, alignedEnd, step.Milliseconds()),
+			expectedBlocked: false,
+		},
+		{
+			name: "unaligned range query when filter set to false",
+			limitsYAML: `
+blocked_queries:
+  - pattern: "rate(metric_counter[5m])"
+    unaligned_range_queries: false
+`,
+			makeReq:         rangeReq("rate(metric_counter[5m])", unalignedStart, unalignedEnd, step.Milliseconds()),
+			expectedBlocked: true,
+		},
+		{
+			name: "aligned range query when filter set to false",
+			limitsYAML: `
+blocked_queries:
+  - pattern: "rate(metric_counter[5m])"
+    unaligned_range_queries: false
+`,
+			makeReq:         rangeReq("rate(metric_counter[5m])", alignedStart, alignedEnd, step.Milliseconds()),
+			expectedBlocked: true,
+		},
+		{
+			name: "second rule blocks after first rule skipped due to alignment",
+			limitsYAML: `
+blocked_queries:
+  - pattern: "rate(metric_counter[5m])"
+    unaligned_range_queries: true
+  - pattern: "rate(metric_counter[5m])"
+    reason: "blocked by second rule"
+`,
+			makeReq:         rangeReq("rate(metric_counter[5m])", alignedStart, alignedEnd, step.Milliseconds()),
+			expectedBlocked: true,
+		},
+		{
+			name: "instant query",
+			limitsYAML: `
+blocked_queries:
+  - pattern: "rate(metric_counter[5m])"
+    unaligned_range_queries: true
+`,
+			makeReq:         instantReq("rate(metric_counter[5m])"),
+			expectedBlocked: false,
+		},
+		{
+			name: "remote read",
+			limitsYAML: `
+blocked_queries:
+  - pattern: '{__name__="metric_counter"}'
+    unaligned_range_queries: true
+`,
+			makeReq: remoteReadReq(
+				&prompb.LabelMatcher{Type: prompb.LabelMatcher_EQ, Name: model.MetricNameLabel, Value: "metric_counter"},
+			),
 			expectedBlocked: false,
 		},
 	}
@@ -512,7 +498,17 @@ func TestQueryBlockerMiddleware_TimeRange(t *testing.T) {
 		expectedBlocked bool
 	}{
 		{
-			name: "time range longer than threshold (range - blocked)",
+			name: "no pattern",
+			limitsYAML: `
+blocked_queries:
+  - time_range_longer_than: "30m"
+    reason: "should not block without pattern"
+`,
+			makeReq:         rangeReq("up", now.Add(-48*time.Hour), now),
+			expectedBlocked: false,
+		},
+		{
+			name: "time range longer than threshold (range)",
 			limitsYAML: `
 blocked_queries:
   - pattern: ".*"
@@ -524,7 +520,7 @@ blocked_queries:
 			expectedBlocked: true,
 		},
 		{
-			name: "time range longer than threshold (instant - not blocked)",
+			name: "time range longer than threshold (instant)",
 			limitsYAML: `
 blocked_queries:
   - pattern: ".*"
@@ -590,7 +586,17 @@ func TestQueryBlockerMiddleware_StepSize(t *testing.T) {
 		expectedBlocked bool
 	}{
 		{
-			name: "step below threshold is blocked",
+			name: "no pattern",
+			limitsYAML: `
+blocked_queries:
+  - minimum_step_size: "1m"
+    reason: "step too small"
+`,
+			makeReq:         rangeReq("rate(expensive_metric[5m])", step30s),
+			expectedBlocked: false,
+		},
+		{
+			name: "step below threshold",
 			limitsYAML: `
 blocked_queries:
   - pattern: ".*"
@@ -602,7 +608,7 @@ blocked_queries:
 			expectedBlocked: true,
 		},
 		{
-			name: "step equal to threshold is not blocked",
+			name: "step equal to threshold",
 			limitsYAML: `
 blocked_queries:
   - pattern: ".*"
@@ -613,7 +619,7 @@ blocked_queries:
 			expectedBlocked: false,
 		},
 		{
-			name: "step above threshold is not blocked",
+			name: "step above threshold",
 			limitsYAML: `
 blocked_queries:
   - pattern: ".*"
@@ -624,7 +630,7 @@ blocked_queries:
 			expectedBlocked: false,
 		},
 		{
-			name: "instant query (step=0) is not blocked",
+			name: "instant query (step=0)",
 			limitsYAML: `
 blocked_queries:
   - pattern: ".*"
@@ -642,8 +648,6 @@ blocked_queries:
 		})
 	}
 }
-
-
 
 // TestQueryBlockerMiddleware_AllConditions verifies conjunction: all configured conditions must
 // be satisfied to block; any single condition not met prevents blocking.
@@ -671,8 +675,7 @@ func TestQueryBlockerMiddleware_AllConditions(t *testing.T) {
 		expectedBlocked bool
 	}{
 		{
-			// pattern=match, time_range=over, step=below → blocked
-			name: "pattern + time_range + step all violated is blocked",
+			name: "all conditions met",
 			limitsYAML: `
 blocked_queries:
   - pattern: ".*expensive.*"
@@ -685,8 +688,7 @@ blocked_queries:
 			expectedBlocked: true,
 		},
 		{
-			// pattern=no-match, time_range=over, step=below → not blocked
-			name: "pattern not matched - not blocked",
+			name: "all but pattern",
 			limitsYAML: `
 blocked_queries:
   - pattern: ".*expensive.*"
@@ -698,8 +700,7 @@ blocked_queries:
 			expectedBlocked: false,
 		},
 		{
-			// pattern=match, time_range=under, step=below → not blocked
-			name: "time_range not violated - not blocked",
+			name: "all but time range",
 			limitsYAML: `
 blocked_queries:
   - pattern: ".*expensive.*"
@@ -711,8 +712,7 @@ blocked_queries:
 			expectedBlocked: false,
 		},
 		{
-			// pattern=match, time_range=over, step=ok → not blocked
-			name: "step not violated - not blocked",
+			name: "all but step",
 			limitsYAML: `
 blocked_queries:
   - pattern: ".*expensive.*"
