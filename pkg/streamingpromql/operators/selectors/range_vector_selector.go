@@ -162,7 +162,7 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 	}
 
 	// Update query stats before we perform any mutations for the anchored or smoothed modifier.
-	m.evaluationStats.TrackSamplesForRangeVectorSelector(m.stepData.StepT, m.floats, m.histograms, originalRangeStart, originalRangeEnd)
+	m.evaluationStats.TrackSamplesForRangeVectorSelector(m.stepData.StepT, m.floats, m.histograms, originalRangeStart, originalRangeEnd, nil)
 
 	if m.Selector.Anchored || m.Selector.Smoothed {
 		// Histograms are not supported for these modified range queries
@@ -259,7 +259,7 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 
 func (m *RangeVectorSelector) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	var err error
-	m.evaluationStats, err = types.NewOperatorEvaluationStats(m.Selector.TimeRange, m.MemoryConsumptionTracker)
+	m.evaluationStats, err = types.NewOperatorEvaluationStats(m.Selector.TimeRange, m.MemoryConsumptionTracker, 0)
 	if err != nil {
 		return err
 	}

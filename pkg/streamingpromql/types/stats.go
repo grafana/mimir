@@ -12,7 +12,6 @@ import (
 	"unsafe"
 
 	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
@@ -52,28 +51,27 @@ type OperatorEvaluationStats struct {
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	allSeries *statsTracker
-	subsets   []*subsetStats
+	subsets   []*statsTracker
 }
 
 // NewOperatorEvaluationStats creates a new OperatorEvaluationStats for the given time range.
 //
-// subsetMatchers defines zero or more subsets of series to track independently.
-// Each subset is defined by a set of label matchers (AND semantics): a series belongs to a subset
-// if it matches all matchers in that subset's set.
-func NewOperatorEvaluationStats(timeRange QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, subsetMatchers [][]*labels.Matcher) (*OperatorEvaluationStats, error) {
+// subsetCount is the number of subsets to track. It is the caller's responsibility to track
+// which subset is which.
+func NewOperatorEvaluationStats(timeRange QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, subsetCount int) (*OperatorEvaluationStats, error) {
 	allSeries, err := newStatsTracker(timeRange, memoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
 
-	subsets := make([]*subsetStats, len(subsetMatchers))
-	for i, matchers := range subsetMatchers {
-		stats, err := newSubsetsStats(matchers, timeRange, memoryConsumptionTracker)
+	subsets := make([]*statsTracker, 0, subsetCount)
+	for range subsetCount {
+		stats, err := newStatsTracker(timeRange, memoryConsumptionTracker)
 		if err != nil {
 			return nil, err
 		}
 
-		subsets[i] = stats
+		subsets = append(subsets, stats)
 	}
 
 	return &OperatorEvaluationStats{
@@ -93,14 +91,18 @@ func NewOperatorEvaluationStats(timeRange QueryTimeRange, memoryConsumptionTrack
 // the same underlying sample is used for multiple output steps.
 //
 // lbls is the label set of the series the sample belongs to, used to determine which subsets (if any) it belongs to.
-func (s *OperatorEvaluationStats) TrackSampleForInstantVectorSelector(stepT int64, sampleCount int64, lbls labels.Labels) {
-	i := s.timeRange.PointIndex(stepT)
+func (s *OperatorEvaluationStats) TrackSampleForInstantVectorSelector(stepT int64, sampleCount int64, matchesSubsets []bool) {
+	if len(matchesSubsets) != len(s.subsets) {
+		panic(fmt.Errorf("expected %d subsets, got %d", len(s.subsets), len(matchesSubsets)))
+	}
 
-	s.allSeries.Add(i, sampleCount, sampleCount)
+	pointIdx := s.timeRange.PointIndex(stepT)
 
-	for _, subset := range s.subsets {
-		if subset.matches(lbls) {
-			subset.Add(i, sampleCount, sampleCount)
+	s.allSeries.Add(pointIdx, sampleCount, sampleCount)
+
+	for subsetIdx, subset := range s.subsets {
+		if matchesSubsets[subsetIdx] {
+			subset.Add(pointIdx, sampleCount, sampleCount)
 		}
 	}
 }
@@ -114,8 +116,12 @@ func (s *OperatorEvaluationStats) TrackSampleForInstantVectorSelector(stepT int6
 // floats and histograms must not contain samples before rangeStart.
 //
 // lbls is the label set of the series the samples belong to, used to determine which subsets (if any) they belong to.
-func (s *OperatorEvaluationStats) TrackSamplesForRangeVectorSelector(stepT int64, floats *FPointRingBuffer, histograms *HPointRingBuffer, rangeStart int64, rangeEnd int64, lbls labels.Labels) {
-	i := s.timeRange.PointIndex(stepT)
+func (s *OperatorEvaluationStats) TrackSamplesForRangeVectorSelector(stepT int64, floats *FPointRingBuffer, histograms *HPointRingBuffer, rangeStart int64, rangeEnd int64, matchesSubsets []bool) {
+	if len(matchesSubsets) != len(s.subsets) {
+		panic(fmt.Errorf("expected %d subsets, got %d", len(s.subsets), len(matchesSubsets)))
+	}
+
+	pointIdx := s.timeRange.PointIndex(stepT)
 
 	samplesProcessed := int64(floats.CountUntil(rangeEnd)) + histograms.EquivalentFloatSampleCountUntil(rangeEnd)
 
@@ -125,11 +131,11 @@ func (s *OperatorEvaluationStats) TrackSamplesForRangeVectorSelector(stepT int64
 	}
 	newSamplesRead := int64(floats.CountBetween(newSampleRangeStart, rangeEnd)) + histograms.EquivalentFloatSampleCountBetween(newSampleRangeStart, rangeEnd)
 
-	s.allSeries.Add(i, samplesProcessed, newSamplesRead)
+	s.allSeries.Add(pointIdx, samplesProcessed, newSamplesRead)
 
-	for _, subset := range s.subsets {
-		if subset.matches(lbls) {
-			subset.Add(i, samplesProcessed, newSamplesRead)
+	for subsetIdx, subset := range s.subsets {
+		if matchesSubsets[subsetIdx] {
+			subset.Add(pointIdx, samplesProcessed, newSamplesRead)
 		}
 	}
 }
@@ -165,18 +171,13 @@ func (s *OperatorEvaluationStats) Add(other *OperatorEvaluationStats) error {
 	return nil
 }
 
-func (s *OperatorEvaluationStats) newEmptyInstanceWithSameMatchers(timeRange QueryTimeRange) (*OperatorEvaluationStats, error) {
-	subsetMatchers := make([][]*labels.Matcher, len(s.subsets))
-	for i, subset := range s.subsets {
-		subsetMatchers[i] = subset.matchers
-	}
-
-	return NewOperatorEvaluationStats(timeRange, s.memoryConsumptionTracker, subsetMatchers)
+func (s *OperatorEvaluationStats) newEmptyInstanceWithSameSubsets(timeRange QueryTimeRange) (*OperatorEvaluationStats, error) {
+	return NewOperatorEvaluationStats(timeRange, s.memoryConsumptionTracker, len(s.subsets))
 }
 
 // Clone returns a copy of this OperatorEvaluationStats instance, including any subset definitions and their data.
 func (s *OperatorEvaluationStats) Clone() (*OperatorEvaluationStats, error) {
-	clone, err := s.newEmptyInstanceWithSameMatchers(s.timeRange)
+	clone, err := s.newEmptyInstanceWithSameSubsets(s.timeRange)
 	if err != nil {
 		return nil, err
 	}
@@ -184,7 +185,7 @@ func (s *OperatorEvaluationStats) Clone() (*OperatorEvaluationStats, error) {
 	clone.allSeries.CopyFrom(s.allSeries)
 
 	for i, subset := range s.subsets {
-		clone.subsets[i].CopyFrom(subset.statsTracker)
+		clone.subsets[i].CopyFrom(subset)
 	}
 
 	return clone, nil
@@ -201,7 +202,7 @@ func (s *OperatorEvaluationStats) ExtendStepInvariantToFullRange(timeRange Query
 		return nil, fmt.Errorf("cannot extend step invariant to full range for non-instant time range %v", s.timeRange)
 	}
 
-	expanded, err := s.newEmptyInstanceWithSameMatchers(timeRange)
+	expanded, err := s.newEmptyInstanceWithSameSubsets(timeRange)
 	if err != nil {
 		return nil, err
 	}
@@ -233,7 +234,7 @@ func (s *OperatorEvaluationStats) ComputeForSubquery(
 	subqueryTimestamp *int64,
 	subqueryOffsetMilliseconds int64,
 ) (*OperatorEvaluationStats, error) {
-	result, err := s.newEmptyInstanceWithSameMatchers(parentTimeRange)
+	result, err := s.newEmptyInstanceWithSameSubsets(parentTimeRange)
 	if err != nil {
 		return nil, err
 	}
@@ -258,7 +259,7 @@ func (s *OperatorEvaluationStats) ComputeForSubquery(
 		result.allSeries.SetFromSubquery(s.allSeries, parentIdx, firstInnerIdx, firstNewSamplesInnerIdx, lastInnerIdx)
 
 		for i, subset := range result.subsets {
-			subset.SetFromSubquery(s.subsets[i].statsTracker, parentIdx, firstInnerIdx, firstNewSamplesInnerIdx, lastInnerIdx)
+			subset.SetFromSubquery(s.subsets[i], parentIdx, firstInnerIdx, firstNewSamplesInnerIdx, lastInnerIdx)
 		}
 
 		lastNewSamplesIdxUsed = lastInnerIdx + 1
@@ -273,26 +274,6 @@ func (s *OperatorEvaluationStats) Close() {
 	for _, subset := range s.subsets {
 		subset.Close()
 	}
-}
-
-// subsetStats holds per-step tracking data for a single subset of series defined by a set of label matchers.
-type subsetStats struct {
-	*statsTracker
-	matchers []*labels.Matcher
-}
-
-func newSubsetsStats(matchers []*labels.Matcher, timeRange QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*subsetStats, error) {
-	tracker, err := newStatsTracker(timeRange, memoryConsumptionTracker)
-	if err != nil {
-		return nil, err
-	}
-
-	return &subsetStats{statsTracker: tracker, matchers: matchers}, nil
-}
-
-// matches returns true if lbls satisfies all matchers in the subset (AND semantics).
-func (s *subsetStats) matches(lbls labels.Labels) bool {
-	return MatchersMatch(s.matchers, lbls)
 }
 
 type statsTracker struct {
