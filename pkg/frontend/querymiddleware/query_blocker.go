@@ -71,7 +71,7 @@ func (qb *queryBlockerMiddleware) isBlocked(tenant string, req MetricsQueryReque
 	for ruleIndex, block := range blocks {
 		pattern := strings.TrimSpace(block.Pattern)
 		if pattern == "" {
-			continue
+			continue // pattern is required. Logging a warning could generate extreme log volumes.
 		}
 
 		// Check literal match regardless of regex setting (backwards compatibility).
