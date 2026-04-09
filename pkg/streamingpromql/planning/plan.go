@@ -234,13 +234,14 @@ func (t QueriedTimeRange) Union(other QueriedTimeRange) QueriedTimeRange {
 }
 
 type OperatorParameters struct {
-	Queryable                storage.Queryable
-	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
-	Annotations              *annotations.Annotations
-	QueryStats               *types.QueryStats
-	EagerLoadSelectors       bool
-	QueryParameters          *QueryParameters
-	Logger                   log.Logger
+	Queryable                                 storage.Queryable
+	MemoryConsumptionTracker                  *limiter.MemoryConsumptionTracker
+	DeregisterMemoryConsumptionTrackerOnClose bool
+	Annotations                               *annotations.Annotations
+	QueryStats                                *types.QueryStats
+	EagerLoadSelectors                        bool
+	QueryParameters                           *QueryParameters
+	Logger                                    log.Logger
 }
 
 // RangeParams describes the time range parameters for range vector selectors and subqueries.

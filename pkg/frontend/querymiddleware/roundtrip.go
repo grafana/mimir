@@ -28,6 +28,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 const (
@@ -235,8 +236,9 @@ func NewTripperware(
 	useRemoteExecution bool,
 	streamingEngine *streamingpromql.Engine,
 	registerer prometheus.Registerer,
+	memoryConsumptionTrackerFactory *limiter.InflightMemoryConsumptionTracker,
 ) (Tripperware, error) {
-	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, codec, cacheExtractor, engine, engineOpts, ingestStorageTopicOffsetsReaders, useRemoteExecution, streamingEngine, registerer)
+	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, codec, cacheExtractor, engine, engineOpts, ingestStorageTopicOffsetsReaders, useRemoteExecution, streamingEngine, registerer, memoryConsumptionTrackerFactory)
 	if err != nil {
 		return nil, err
 	}
@@ -258,6 +260,7 @@ func newQueryTripperware(
 	useRemoteExecution bool,
 	streamingEngine *streamingpromql.Engine,
 	registerer prometheus.Registerer,
+	memoryConsumptionTrackerFactory *limiter.InflightMemoryConsumptionTracker,
 ) (Tripperware, error) {
 	var c cache.Cache
 	if cfg.CacheResults || cfg.cardinalityBasedShardingEnabled() {
@@ -289,6 +292,7 @@ func newQueryTripperware(
 		engineOpts,
 		registerer,
 		retryMetrics,
+		memoryConsumptionTrackerFactory,
 	)
 	requestBlocker := newRequestBlocker(limits, log, registerer)
 
@@ -404,6 +408,7 @@ func newQueryMiddlewares(
 	engineOpts promql.EngineOpts,
 	registerer prometheus.Registerer,
 	retryMetrics prometheus.Observer,
+	memoryConsumptionTrackerFactory *limiter.InflightMemoryConsumptionTracker,
 ) (queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware []MetricsQueryMiddleware) {
 	// Metric used to keep track of each middleware execution duration.
 	metrics := newInstrumentMiddlewareMetrics(registerer)
@@ -520,6 +525,7 @@ func newQueryMiddlewares(
 			resultsCacheEnabledByOption,
 			log,
 			registerer,
+			memoryConsumptionTrackerFactory,
 		)
 
 		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("split_by_interval_and_results_cache", metrics), splitAndCacheMiddleware)

@@ -76,7 +76,8 @@ const (
 	GroupPointerSlices
 	AggregationGroup
 	BufferedQuerierResponses
-	memoryConsumptionSourceCount = BufferedQuerierResponses + 1
+	SplitMiddlewareCachedResponses
+	memoryConsumptionSourceCount = SplitMiddlewareCachedResponses + 1
 )
 
 const (
@@ -133,6 +134,8 @@ func (s MemoryConsumptionSource) String() string {
 		return "aggregation.AggregationGroup"
 	case BufferedQuerierResponses:
 		return "buffered querier responses"
+	case SplitMiddlewareCachedResponses:
+		return "split middleware cached responses"
 	default:
 		return unknownMemorySource
 	}
@@ -147,9 +150,20 @@ type InflightMemoryConsumptionTracker struct {
 	currentDesc *prometheus.Desc
 	peakDesc    *prometheus.Desc
 	sampledDesc *prometheus.Desc
+
+	// This is an optional counter which is passed to each MemoryConsumptionTracker instance.
+	// This metric is not registered by this tracker. MemoryConsumptionTrackers may increment this.
+	queriesRejectedDueToPeakMemoryConsumption prometheus.Counter
 }
 
-func NewInflightMemoryConsumptionTracker(reg prometheus.Registerer) *InflightMemoryConsumptionTracker {
+// NewInflightMemoryConsumptionTracker returns a new InflightMemoryConsumptionTracker. There should only be one instance of this per container.
+// The InflightMemoryConsumptionTracker provides metrics related to the cumulative in-flight MemoryConsumptionTracker statistics.
+// It is also a factory for producing MemoryConsumptionTracker instances.
+//
+// Note that both reg and queriesRejectedDueToPeakMemoryConsumption params are optional, but are expected when used for production code paths.
+// reg is required to register our Prometheus metrics
+// queriesRejectedDueToPeakMemoryConsumption is shared with the query engine and will be incremented when queries are canceled due to the memory tracker being exceeded.
+func NewInflightMemoryConsumptionTracker(reg prometheus.Registerer, queriesRejectedDueToPeakMemoryConsumption prometheus.Counter) *InflightMemoryConsumptionTracker {
 	t := &InflightMemoryConsumptionTracker{
 		maxDesc: prometheus.NewDesc(
 			"cortex_querier_inflight_query_max_estimated_memory_consumption_limit_bytes",
@@ -171,16 +185,23 @@ func NewInflightMemoryConsumptionTracker(reg prometheus.Registerer) *InflightMem
 			"Number of in-flight memory consumption trackers accumulated during the last metrics collection.",
 			nil, nil,
 		),
+		// Note that we do not register this counter. We just keep a reference to this counter so the memory consumption trackers can update it.
+		queriesRejectedDueToPeakMemoryConsumption: queriesRejectedDueToPeakMemoryConsumption,
 	}
-	reg.MustRegister(t)
+
+	// reg may be nil when used in unit tests, and we do not wish to register these metrics
+	if reg != nil {
+		reg.MustRegister(t)
+	}
+
 	return t
 }
 
 // NewMemoryConsumptionTracker returns a new MemoryConsumptionTracker the same as if limiter.MemoryConsumptionTracker() was called.
 // However this new tracker will be included in the accumulated metrics managed by this InflightMemoryConsumptionTracker.
 // Ensure that you invoke Deregister(tracker) once the tracker is no longer required.
-func (t *InflightMemoryConsumptionTracker) NewMemoryConsumptionTracker(ctx context.Context, maxEstimatedMemoryConsumptionBytes uint64, rejectionCount prometheus.Counter, queryDescription string) *MemoryConsumptionTracker {
-	tracker := NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionBytes, rejectionCount, queryDescription)
+func (t *InflightMemoryConsumptionTracker) NewMemoryConsumptionTracker(ctx context.Context, maxEstimatedMemoryConsumptionBytes uint64, queryDescription string) *MemoryConsumptionTracker {
+	tracker := NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionBytes, t.queriesRejectedDueToPeakMemoryConsumption, queryDescription)
 	id := t.nextID.Add(1)
 	tracker.trackingId = id
 	t.inflight.Store(id, tracker)
@@ -273,7 +294,10 @@ func (l *MemoryConsumptionTracker) IncreaseMemoryConsumption(b uint64, source Me
 	if l.maxEstimatedMemoryConsumptionBytes > 0 && l.currentEstimatedMemoryConsumptionBytes+b > l.maxEstimatedMemoryConsumptionBytes {
 		if !l.haveRecordedRejection {
 			l.haveRecordedRejection = true
-			l.rejectionCount.Inc()
+			// This may be nil in unit tests
+			if l.rejectionCount != nil {
+				l.rejectionCount.Inc()
+			}
 		}
 
 		return NewMaxEstimatedMemoryConsumptionPerQueryLimitError(l.maxEstimatedMemoryConsumptionBytes)

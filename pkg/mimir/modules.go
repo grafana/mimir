@@ -858,6 +858,8 @@ func (t *Mimir) initQueryFrontendTopicOffsetsReaders() (services.Service, error)
 // to optimize Prometheus query requests.
 func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error) {
 	promqlEngineRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "query-frontend"}, t.Registerer)
+
+	queryStats := stats.NewQueryMetrics(promqlEngineRegisterer)
 	promOpts, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer, t.QueryLimitsProvider)
 	// Disable concurrency limits for sharded queries spawned by the query-frontend.
 	promOpts.ActiveQueryTracker = nil
@@ -869,12 +871,16 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	// Use either the Prometheus engine or Mimir Query Engine (with optional fallback to Prometheus
 	// if it has been configured) for middlewares that require executing queries using a PromQL engine.
 	var eng promql.QueryEngine
+	var memoryConsumptionTrackerFactory *limiter.InflightMemoryConsumptionTracker
+
 	switch t.Cfg.Frontend.QueryEngine {
 	case querier.PrometheusEngine:
 		eng = limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(promOpts))
 	case querier.MimirEngine:
 		var err error
-		t.QueryFrontendStreamingEngine, err = streamingpromql.NewEngine(mqeOpts, stats.NewQueryMetrics(mqeOpts.CommonOpts.Reg), t.QueryFrontendQueryPlanner)
+		t.QueryFrontendStreamingEngine, err = streamingpromql.NewEngine(mqeOpts, queryStats, t.QueryFrontendQueryPlanner)
+		memoryConsumptionTrackerFactory = t.QueryFrontendStreamingEngine.MemoryConsumptionTrackerFactory
+
 		if err != nil {
 			return nil, fmt.Errorf("unable to create Mimir Query Engine: %w", err)
 		}
@@ -900,6 +906,12 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution,
 		t.QueryFrontendStreamingEngine,
 		t.Registerer,
+
+		// The memoryConsumptionTrackerFactory is shared between the engine and the middleware.
+		// The tracker will be used in the query time split middleware to ensure that all split queries
+		// are tracked under a common memory consumption tracker.
+		// This is only set when using the streamingpromql engine.
+		memoryConsumptionTrackerFactory,
 	)
 	if err != nil {
 		return nil, err

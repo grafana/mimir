@@ -26,6 +26,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -98,6 +99,9 @@ type splitAndCacheMiddleware struct {
 	extractor      Extractor
 	shouldCacheReq shouldCacheFn
 
+	// Tracker is a producer for MemoryConsumptionTracker and provides cumulative metrics of in-flight trackers
+	memoryConsumptionTrackerFactory *limiter.InflightMemoryConsumptionTracker
+
 	// Can be set from tests
 	currentTime func() time.Time
 }
@@ -114,26 +118,43 @@ func newSplitAndCacheMiddleware(
 	extractor Extractor,
 	shouldCacheReq shouldCacheFn,
 	logger log.Logger,
-	reg prometheus.Registerer) MetricsQueryMiddleware {
+	reg prometheus.Registerer,
+	memoryConsumptionTrackerFactory *limiter.InflightMemoryConsumptionTracker) MetricsQueryMiddleware {
 	metrics := newSplitAndCacheMiddlewareMetrics(reg)
 
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &splitAndCacheMiddleware{
-			splitEnabled:   splitEnabled,
-			cacheEnabled:   cacheEnabled,
-			next:           next,
-			limits:         limits,
-			merger:         merger,
-			splitInterval:  splitInterval,
-			metrics:        metrics,
-			cache:          cache,
-			splitter:       splitter,
-			extractor:      extractor,
-			shouldCacheReq: shouldCacheReq,
-			logger:         logger,
-			currentTime:    time.Now,
+			splitEnabled:                    splitEnabled,
+			cacheEnabled:                    cacheEnabled,
+			next:                            next,
+			limits:                          limits,
+			merger:                          merger,
+			splitInterval:                   splitInterval,
+			metrics:                         metrics,
+			cache:                           cache,
+			splitter:                        splitter,
+			extractor:                       extractor,
+			shouldCacheReq:                  shouldCacheReq,
+			logger:                          logger,
+			currentTime:                     time.Now,
+			memoryConsumptionTrackerFactory: memoryConsumptionTrackerFactory,
 		}
 	})
+}
+
+// maxEstimatedMemoryConsumptionPerQuery computes the aggregate memory limit across tenants.
+// Note that this is the same logic as in TenantQueryLimitsProvider and QueryLimitsProvider.
+func (s *splitAndCacheMiddleware) maxEstimatedMemoryConsumptionPerQuery(tenantIDs []string) uint64 {
+	var maxEstimatedMemoryConsumptionPerQuery uint64
+	for _, tenantID := range tenantIDs {
+		tenantLimit := s.limits.MaxEstimatedMemoryConsumptionPerQuery(tenantID)
+		if tenantLimit == 0 {
+			maxEstimatedMemoryConsumptionPerQuery = 0
+			break
+		}
+		maxEstimatedMemoryConsumptionPerQuery += tenantLimit
+	}
+	return maxEstimatedMemoryConsumptionPerQuery
 }
 
 func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
@@ -141,6 +162,14 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
+	}
+
+	var memoryTracker *limiter.MemoryConsumptionTracker
+	// Create a shared parent memory tracker across all time-split sub-queries.
+	if s.memoryConsumptionTrackerFactory != nil {
+		maxEstimatedMemoryConsumptionPerQuery := s.maxEstimatedMemoryConsumptionPerQuery(tenantIDs)
+		memoryTracker = s.memoryConsumptionTrackerFactory.NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionPerQuery, req.GetQuery())
+		defer s.memoryConsumptionTrackerFactory.Deregister(memoryTracker)
 	}
 
 	isCacheEnabled := s.cacheEnabled && (s.shouldCacheReq == nil || s.shouldCacheReq(req))
@@ -193,6 +222,17 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 				return nil, err
 			}
 
+			// Count the cached response against the queries memory consumption tracker
+			if memoryTracker != nil {
+				for _, resp := range responses {
+					bytes := uint64(proto.Size(resp))
+					if err := memoryTracker.IncreaseMemoryConsumption(bytes, limiter.SplitMiddlewareCachedResponses); err != nil {
+						return nil, err
+					}
+					defer memoryTracker.DecreaseMemoryConsumption(bytes, limiter.SplitMiddlewareCachedResponses)
+				}
+			}
+
 			if len(requests) == 0 {
 				// The full response has been picked up from the cache so we can merge it and store it.
 				response, err := s.merger.MergeResponse(responses...)
@@ -229,7 +269,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 	queryTime := s.currentTime()
 
 	if len(execReqs) > 0 {
-		execResps, err := doRequests(ctx, s.next, execReqs)
+		execResps, err := doRequests(ctx, s.next, memoryTracker, execReqs)
 		if err != nil {
 			return nil, err
 		}
@@ -611,7 +651,7 @@ type requestResponse struct {
 }
 
 // doRequests executes a list of requests in parallel.
-func doRequests(ctx context.Context, downstream MetricsQueryHandler, reqs []MetricsQueryRequest) ([]requestResponse, error) {
+func doRequests(ctx context.Context, downstream MetricsQueryHandler, memoryTracker *limiter.MemoryConsumptionTracker, reqs []MetricsQueryRequest) ([]requestResponse, error) {
 	g, ctx := errgroup.WithContext(ctx)
 	mtx := sync.Mutex{}
 	resps := make([]requestResponse, 0, len(reqs))
@@ -626,6 +666,10 @@ func doRequests(ctx context.Context, downstream MetricsQueryHandler, reqs []Metr
 			childCtx, span = tracer.Start(childCtx, "doRequests")
 			req.AddSpanTags(span)
 			defer span.End()
+
+			if memoryTracker != nil {
+				childCtx = limiter.AddMemoryTrackerToContext(childCtx, memoryTracker)
+			}
 
 			resp, err := downstream.Do(childCtx, req)
 			queryStatistics.Merge(partialStats)

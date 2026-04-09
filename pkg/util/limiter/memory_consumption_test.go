@@ -260,12 +260,12 @@ func BenchmarkMemoryConsumptionTracker(b *testing.B) {
 
 func TestMemoryConsumptionTrackerTracker_Aggregation(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
-	tt := NewInflightMemoryConsumptionTracker(reg)
+	tt := NewInflightMemoryConsumptionTracker(reg, nil)
 
 	tracker1Limit := 100
 	tracker2Limit := 200
-	tracker1 := tt.NewMemoryConsumptionTracker(context.Background(), uint64(tracker1Limit), nil, "query1")
-	tracker2 := tt.NewMemoryConsumptionTracker(context.Background(), uint64(tracker2Limit), nil, "query2")
+	tracker1 := tt.NewMemoryConsumptionTracker(context.Background(), uint64(tracker1Limit), "query1")
+	tracker2 := tt.NewMemoryConsumptionTracker(context.Background(), uint64(tracker2Limit), "query2")
 
 	// tracker1: add 30 ingester + 20 store-gateway = 50, remove 10 ingester -> current=40, peak=50
 	tracker1Ingester := 30
@@ -298,7 +298,7 @@ func TestMemoryConsumptionTrackerTracker_Aggregation(t *testing.T) {
 
 func TestMemoryConsumptionTrackerTracker_DeregisterNonManagedTracker(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
-	tt := NewInflightMemoryConsumptionTracker(reg)
+	tt := NewInflightMemoryConsumptionTracker(reg, nil)
 	nonManagedTracker := NewMemoryConsumptionTracker(context.Background(), 100, nil, "query3")
 	require.Panics(t, func() { tt.Deregister(nonManagedTracker) })
 }
@@ -325,6 +325,45 @@ func assertTrackerTrackerMetrics(t *testing.T, reg prometheus.Gatherer, maxBytes
 		"cortex_querier_inflight_query_peak_estimated_memory_consumption_bytes",
 		"cortex_querier_inflight_query_sampled_count",
 	))
+}
+
+func TestMemoryConsumptionTracker_NilRejectionCount(t *testing.T) {
+	tracker := NewMemoryConsumptionTracker(context.Background(), 10, nil, "foo + bar")
+
+	// Should work fine without a rejection counter.
+	require.NoError(t, tracker.IncreaseMemoryConsumption(8, IngesterChunks))
+	require.Equal(t, uint64(8), tracker.CurrentEstimatedMemoryConsumptionBytes())
+
+	// Exceeding the limit should return an error but not panic despite nil rejectionCount.
+	require.Error(t, tracker.IncreaseMemoryConsumption(3, IngesterChunks))
+	require.Equal(t, uint64(8), tracker.CurrentEstimatedMemoryConsumptionBytes())
+
+	// A second rejection should also not panic.
+	require.Error(t, tracker.IncreaseMemoryConsumption(3, IngesterChunks))
+	require.Equal(t, uint64(8), tracker.CurrentEstimatedMemoryConsumptionBytes())
+}
+
+func TestMemoryConsumptionTracker_RejectionCountIncremented(t *testing.T) {
+	reg, metric := createRejectedMetric()
+	tracker := NewMemoryConsumptionTracker(context.Background(), 10, metric, "foo + bar")
+
+	// Consume up to the limit.
+	require.NoError(t, tracker.IncreaseMemoryConsumption(10, IngesterChunks))
+	assertRejectedQueriesCount(t, reg, 0)
+
+	// First rejection should increment the counter.
+	require.Error(t, tracker.IncreaseMemoryConsumption(1, IngesterChunks))
+	assertRejectedQueriesCount(t, reg, 1)
+
+	// Subsequent rejections for the same tracker should not increment again.
+	require.Error(t, tracker.IncreaseMemoryConsumption(1, StoreGatewayChunks))
+	assertRejectedQueriesCount(t, reg, 1)
+
+	// Free some memory and exceed the limit again — still should not increment.
+	tracker.DecreaseMemoryConsumption(5, IngesterChunks)
+	require.NoError(t, tracker.IncreaseMemoryConsumption(4, IngesterChunks))
+	require.Error(t, tracker.IncreaseMemoryConsumption(2, IngesterChunks))
+	assertRejectedQueriesCount(t, reg, 1)
 }
 
 func TestMemoryConsumptionSourceNames(t *testing.T) {

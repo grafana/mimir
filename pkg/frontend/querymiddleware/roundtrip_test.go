@@ -40,6 +40,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/testkafka"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -91,6 +92,7 @@ func TestTripperware_RangeQuery(t *testing.T) {
 		false,
 		nil,
 		nil,
+		limiter.NewInflightMemoryConsumptionTracker(nil, nil),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -142,6 +144,7 @@ func TestTripperware_InstantQuery(t *testing.T) {
 		false,
 		nil,
 		nil,
+		limiter.NewInflightMemoryConsumptionTracker(nil, nil),
 	)
 	require.NoError(t, err)
 
@@ -470,6 +473,7 @@ func TestTripperware_Metrics(t *testing.T) {
 				false,
 				nil,
 				reg,
+				nil,
 			)
 			require.NoError(t, err)
 
@@ -532,6 +536,7 @@ func TestTripperware_BlockedRequests(t *testing.T) {
 		engineOpts,
 		nil,
 		false,
+		nil,
 		nil,
 		nil,
 	)
@@ -607,6 +612,7 @@ func TestMiddlewaresConsistency(t *testing.T) {
 		engineOpts,
 		nil,
 		nil,
+		limiter.NewInflightMemoryConsumptionTracker(nil, nil),
 	)
 
 	middlewaresByRequestType := map[string]struct {
@@ -840,6 +846,7 @@ func TestTripperware_RemoteRead(t *testing.T) {
 				false,
 				nil,
 				reg,
+				limiter.NewInflightMemoryConsumptionTracker(reg, nil),
 			)
 
 			require.NoError(t, err)
@@ -974,6 +981,7 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 		false,
 		nil,
 		nil,
+		limiter.NewInflightMemoryConsumptionTracker(nil, nil),
 	)
 	require.NoError(t, err)
 

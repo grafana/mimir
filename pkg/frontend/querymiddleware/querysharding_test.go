@@ -41,6 +41,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
@@ -1189,6 +1190,7 @@ func TestQuerySharding_Annotations(t *testing.T) {
 					nil,
 					log.NewNopLogger(),
 					reg,
+					limiter.NewInflightMemoryConsumptionTracker(reg, nil),
 				)
 				downstream := &downstreamHandler{
 					engine:                                  eng,
