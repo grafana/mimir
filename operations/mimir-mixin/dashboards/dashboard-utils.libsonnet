@@ -557,6 +557,27 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.showAllTooltip +
     { fieldConfig+: { defaults+: { unit: 'Bps' } } },
 
+  // The provided instanceName should be a regexp from $._config.instance_names, while
+  // the provided containerName should be a regexp from $._config.container_names.
+  containerEphemeralStoragePanel(instanceName, containerName)::
+    $.timeseriesPanel('Ephemeral Storage') +
+    $.queryPanel($.resourceUtilizationAndLimitQueries('ephemeral_storage', instanceName, containerName), $.resourceUtilizationAndLimitLegend('{{%s}}' % $._config.per_instance_label)) +
+    $.showAllTooltip +
+    {
+      fieldConfig+: {
+        overrides+: [
+          resourceRequestStyle,
+          resourceLimitStyle,
+        ],
+        defaults+: {
+          unit: 'bytes',
+          custom+: {
+            fillOpacity: 0,
+          },
+        },
+      },
+    },
+
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
   // The optional excludeComponentName is useful to exclude components in case of prefix collisions (e.g. "compactor.*" and "compactor-scheduler").
   containerNetworkReceiveBytesPanelByComponent(componentName, excludeComponentName='')::
