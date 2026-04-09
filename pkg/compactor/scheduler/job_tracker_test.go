@@ -307,8 +307,7 @@ func TestJobTracker_Cleanup(t *testing.T) {
 	require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_compactor_scheduler_pending_jobs The number of queued pending jobs.
 		# TYPE cortex_compactor_scheduler_pending_jobs gauge
-		cortex_compactor_scheduler_pending_jobs{job_type="compaction",user="tenant2"} 1
-		cortex_compactor_scheduler_pending_jobs{job_type="plan",user="tenant2"} 1
+		cortex_compactor_scheduler_pending_jobs{user="tenant2"} 2
 	`), "cortex_compactor_scheduler_pending_jobs"), "only tenant2 pending jobs remain")
 	require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_compactor_incomplete_plan_jobs The total number of plan jobs that have not yet completed (pending or active).
