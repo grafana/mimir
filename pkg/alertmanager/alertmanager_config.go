@@ -9,7 +9,7 @@ package alertmanager
 import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/prometheus/alertmanager/matchers/compat"
+	"github.com/prometheus/alertmanager/matcher/compat"
 	"go.yaml.in/yaml/v3"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
