@@ -25,15 +25,17 @@ type spinOffSubqueriesQueryable struct {
 	responseHeaders       *responseHeadersTracker
 	handler               MetricsQueryHandler
 	rangeHandler          MetricsQueryHandler
+	maxTotalQueryLength   time.Duration
 }
 
-func newSpinOffSubqueriesQueryable(req MetricsQueryRequest, annotationAccumulator *AnnotationAccumulator, next MetricsQueryHandler, rangeHandler MetricsQueryHandler) *spinOffSubqueriesQueryable {
+func newSpinOffSubqueriesQueryable(req MetricsQueryRequest, annotationAccumulator *AnnotationAccumulator, next MetricsQueryHandler, rangeHandler MetricsQueryHandler, maxTotalQueryLength time.Duration) *spinOffSubqueriesQueryable {
 	return &spinOffSubqueriesQueryable{
 		req:                   req,
 		annotationAccumulator: annotationAccumulator,
 		handler:               next,
 		rangeHandler:          rangeHandler,
 		responseHeaders:       newResponseHeadersTracker(),
+		maxTotalQueryLength:   maxTotalQueryLength,
 	}
 }
 
@@ -44,6 +46,7 @@ func (q *spinOffSubqueriesQueryable) Querier(_, _ int64) (storage.Querier, error
 		handler:               q.handler,
 		rangeHandler:          q.rangeHandler,
 		responseHeaders:       q.responseHeaders,
+		maxTotalQueryLength:   q.maxTotalQueryLength,
 	}, nil
 }
 
@@ -58,6 +61,7 @@ type spinOffSubqueriesQuerier struct {
 	annotationAccumulator *AnnotationAccumulator
 	handler               MetricsQueryHandler
 	rangeHandler          MetricsQueryHandler
+	maxTotalQueryLength   time.Duration
 
 	// Keep track of response headers received when running embedded queries.
 	responseHeaders *responseHeadersTracker
@@ -125,6 +129,9 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 		queryRange, err := time.ParseDuration(rangeStr)
 		if err != nil {
 			return storage.ErrSeriesSet(errors.Wrap(err, "failed to parse subquery range"))
+		}
+		if q.maxTotalQueryLength > 0 && queryRange > q.maxTotalQueryLength {
+			return storage.ErrSeriesSet(newMaxTotalQueryLengthError(queryRange, q.maxTotalQueryLength))
 		}
 		queryStep, err := time.ParseDuration(stepStr)
 		if err != nil {

@@ -200,6 +200,72 @@ func TestSubquerySpinOff_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.
 	})
 }
 
+func TestSubquerySpinOff_ShouldReturnErrorIfSubqueryRangeExceedsMaxTotalQueryLength(t *testing.T) {
+	// The subquery has a 2h range, so setting the limit to 1h should cause an error.
+	req := &PrometheusInstantQueryRequest{
+		path:      "/query",
+		time:      util.TimeToMillis(end),
+		queryExpr: parseQuery(t, `max_over_time(rate(metric_counter[1m])[2h:1m])`),
+	}
+
+	queryable := setupSubquerySpinOffTestSeries(t, 2*time.Hour)
+
+	runForEngines(t, func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine) {
+		downstream := &downstreamHandler{engine: eng, queryable: queryable}
+
+		spinoffMiddleware := newSpinOffSubqueriesMiddleware(
+			mockLimits{
+				subquerySpinOffEnabled: true,
+				maxTotalQueryLength:    1 * time.Hour,
+			},
+			log.NewNopLogger(),
+			eng,
+			nil,
+			nil,
+			defaultStepFunc,
+		)
+
+		ctx := user.InjectOrgID(context.Background(), "test")
+		_, err := spinoffMiddleware.Wrap(downstream).Do(ctx, req)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "the total query time range exceeds the limit")
+	})
+}
+
+func TestSubquerySpinOff_ShouldSucceedIfSubqueryRangeWithinMaxTotalQueryLength(t *testing.T) {
+	// The subquery has a 2h range, and the limit is 3h, so this should succeed.
+	req := &PrometheusInstantQueryRequest{
+		path:      "/query",
+		time:      util.TimeToMillis(end),
+		queryExpr: parseQuery(t, `max_over_time(rate(metric_counter[1m])[2h:1m])`),
+	}
+
+	queryable := setupSubquerySpinOffTestSeries(t, 2*time.Hour)
+
+	runForEngines(t, func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine) {
+		downstream := &downstreamHandler{engine: eng, queryable: queryable}
+
+		spinoffMiddleware := newSpinOffSubqueriesMiddleware(
+			mockLimits{
+				subquerySpinOffEnabled: true,
+				maxTotalQueryLength:    3 * time.Hour,
+			},
+			log.NewNopLogger(),
+			eng,
+			nil,
+			nil,
+			defaultStepFunc,
+		)
+
+		ctx := user.InjectOrgID(context.Background(), "test")
+		res, err := spinoffMiddleware.Wrap(downstream).Do(ctx, req)
+		require.NoError(t, err)
+		promRes, ok := res.GetPrometheusResponse()
+		require.True(t, ok)
+		require.NotEmpty(t, promRes.Data.Result)
+	})
+}
+
 var defaultStepFunc = func(int64) int64 {
 	return (1 * time.Minute).Milliseconds()
 }

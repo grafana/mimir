@@ -192,7 +192,8 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 
 	annotationAccumulator := NewAnnotationAccumulator()
 
-	queryable := newSpinOffSubqueriesQueryable(req, annotationAccumulator, s.next, s.rangeNext)
+	maxTotalQueryLength := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, s.limits.MaxTotalQueryLength)
+	queryable := newSpinOffSubqueriesQueryable(req, annotationAccumulator, s.next, s.rangeNext, maxTotalQueryLength)
 
 	qry, err := newQuery(ctx, req, s.engine, lazyquery.NewLazyQueryable(queryable))
 	if err != nil {

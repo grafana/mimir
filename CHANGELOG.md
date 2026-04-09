@@ -244,6 +244,7 @@
 * [BUGFIX] MQE: Fix and/unless functions to not pass matchers to RHS as it can result in incorrect filtering. #14902
 * [BUGFIX] MQE: Fix internal error when executing a subquery with delayed name removal enabled. #14946
 * [BUGFIX] Alertmanager: Fix deadlock when trying to broadcast after stopping a tenant #14922
+* [BUGFIX] Query-frontend: Fix subquery spin-off not enforcing the max total query length limit (`-query-frontend.max-total-query-length`) on spun-off range queries. #14983
 
 ### Mixin
 
