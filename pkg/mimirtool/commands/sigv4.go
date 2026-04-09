@@ -29,7 +29,7 @@ func registerSigV4Flags(cmd *kingpin.CmdClause, envVars EnvVarNames, cfg *client
 		Envar(envVars.SigV4Profile).
 		StringVar(&cfg.Profile)
 
-	cmd.Flag("sigv4-assume-role-arn", "AWS role ARN to assume for SigV4 request signing; alternatively, set "+envVars.SigV4AssumeRoleARN+".").
+	cmd.Flag("sigv4-assume-role-arn", "AWS role Amazon Resource Name (ARN) to assume for SigV4 request signing; alternatively, set "+envVars.SigV4AssumeRoleARN+".").
 		Default("").
 		Envar(envVars.SigV4AssumeRoleARN).
 		StringVar(&cfg.RoleARN)
@@ -39,7 +39,7 @@ func registerSigV4Flags(cmd *kingpin.CmdClause, envVars EnvVarNames, cfg *client
 		Envar(envVars.SigV4ExternalID).
 		StringVar(&cfg.ExternalID)
 
-	cmd.Flag("sigv4-use-fips-sts-endpoint", "Use the FIPS STS endpoint when assuming a SigV4 role; alternatively, set "+envVars.SigV4UseFIPSSTSEndpoint+".").
+	cmd.Flag("sigv4-use-fips-sts-endpoint", "Use the Federal Information Processing Standards (FIPS) AWS Security Token Service (STS) endpoint when assuming a SigV4 role; alternatively, set "+envVars.SigV4UseFIPSSTSEndpoint+".").
 		Default("false").
 		Envar(envVars.SigV4UseFIPSSTSEndpoint).
 		BoolVar(&cfg.UseFIPSSTSEndpoint)
