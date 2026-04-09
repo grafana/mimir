@@ -4538,16 +4538,13 @@ The `limits` block configures default and per-tenant limits imposed by component
 #       - pattern: rate(metric_counter[5m])
 #         regex: false
 #         reason: because the query is misconfigured
-#         unaligned_range_queries: false
 #       - pattern: .*expensive.*
 #         regex: true
 #         reason: expensive queries over 7 days are blocked
-#         unaligned_range_queries: false
 #         time_range_longer_than: 1w
 #       - pattern: .*
 #         regex: true
 #         reason: queries longer than 21 days are blocked
-#         unaligned_range_queries: false
 #         time_range_longer_than: 3w
 blocked_queries:
   - # PromQL expression pattern to match. Required; rules without a pattern are

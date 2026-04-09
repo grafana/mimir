@@ -97,11 +97,13 @@ func (qb *queryBlockerMiddleware) isBlocked(tenant string, req MetricsQueryReque
 			}
 		}
 
-		if block.TimeRangeLongerThan > 0 && (isInstantQuery || queryDuration <= time.Duration(block.TimeRangeLongerThan)) {
+		if block.TimeRangeLongerThan > 0 &&
+			(isInstantQuery || queryDuration <= time.Duration(block.TimeRangeLongerThan)) {
 			continue
 		}
 
-		if block.MinimumStepSize > 0 && (stepMs == 0 || stepDuration >= time.Duration(block.MinimumStepSize)) {
+		if block.MinimumStepSize > 0 &&
+			(stepMs == 0 || stepDuration >= time.Duration(block.MinimumStepSize)) {
 			continue
 		}
 
