@@ -40,7 +40,6 @@ Grafana Mimir requires block storage devices that provide:
 | GCP            | `pd-ssd` persistent disks                                       |
 | Azure          | Premium SSD managed disks (`managed-csi-premium` storage class) |
 
-
 ### Unsupported filesystems
 
 {{< admonition type="warning" >}}
