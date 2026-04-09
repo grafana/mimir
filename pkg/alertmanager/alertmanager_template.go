@@ -14,6 +14,8 @@ import (
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/prometheus/alertmanager/asset"
 	"github.com/prometheus/alertmanager/template"
+
+	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 )
 
 type grafanaDatasource struct {

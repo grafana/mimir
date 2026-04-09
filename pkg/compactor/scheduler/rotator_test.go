@@ -48,9 +48,10 @@ func TestRotator_RecoverFrom_ColdStartDelay(t *testing.T) {
 		{
 			name:         "existing trackers do not bypass delay",
 			creationTime: now,
-			jobTrackers: map[string]*JobTracker{
-				"test": newTestJobTracker(clock),
-			},
+			jobTrackers: func() map[string]*JobTracker {
+				jt, _ := newTestJobTracker(clock)
+				return map[string]*JobTracker{"test": jt}
+			}(),
 			expectedIntervals: intervalsBeforeColdStartPlanning,
 		},
 		{

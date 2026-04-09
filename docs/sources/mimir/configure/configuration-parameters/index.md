@@ -6065,7 +6065,7 @@ tsdb:
     # CLI flag: -blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-larger-sketch
     [label_cardinality_for_larger_sketch: <int> | default = 1000000]
 
-    # (advanced) Number of series for a label name above which smaller count-min
+    # (advanced) Number of series for a label name below which smaller count-min
     # sketches are used for that label.
     # CLI flag: -blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-smaller-sketch
     [label_cardinality_for_smaller_sketch: <int> | default = 1000]

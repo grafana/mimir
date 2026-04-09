@@ -575,6 +575,13 @@ func (jt *JobTracker) stopTrackingCompleteCompactionJobs() {
 	jt.completeCompactionJobs = make([]*TrackedCompactionJob, 0)
 }
 
+// CleanupMetrics clears metrics associated with this tenant. Must be called when a tenant is removed.
+func (jt *JobTracker) CleanupMetrics() {
+	jt.mtx.Lock()
+	defer jt.mtx.Unlock()
+	jt.metrics.Clear()
+}
+
 // completedJobsWith transforms []*TrackedCompactionJob to []TrackedJob while appending any additional provided values
 func (jt *JobTracker) completedJobsWith(additional ...TrackedJob) []TrackedJob {
 	jobs := make([]TrackedJob, 0, len(jt.completeCompactionJobs)+len(additional))
