@@ -961,7 +961,7 @@ func SelectorsAreDuplicateOrSubset(first, second []*core.LabelMatcher) (Selector
 	var subsetMatchers []*core.LabelMatcher // We deliberately don't pre-allocate this to avoid allocating if second isn't a subset of first, which is expected to be common.
 	var checkAndAllocateSubsetMatchers = func() {
 		if subsetMatchers == nil {
-			subsetMatchers = make([]*core.LabelMatcher, 0, 1)
+			subsetMatchers = make([]*core.LabelMatcher, 0, max(1, len(second)-len(first)))
 		}
 	}
 
@@ -1014,30 +1014,30 @@ func SelectorsAreDuplicateOrSubset(first, second []*core.LabelMatcher) (Selector
 	return SubsetSelectors, subsetMatchers
 }
 
-// secondMatcherIsSubsetOfFirstMatcher returns true if all label values matching inner also match outer.
+// secondMatcherIsSubsetOfFirstMatcher returns true if all label values matching second also match first.
 // Handles the cases where outer is MatchRegexp or MatchNotRegexp and inner is MatchEqual.
-func secondMatcherIsSubsetOfFirstMatcher(outer, inner *core.LabelMatcher) bool {
-	if inner.Type != labels.MatchEqual {
+func secondMatcherIsSubsetOfFirstMatcher(first, second *core.LabelMatcher) bool {
+	if second.Type != labels.MatchEqual {
 		return false
 	}
 
-	switch outer.Type {
+	switch first.Type {
 	case labels.MatchRegexp, labels.MatchNotRegexp:
 	default:
 		return false
 	}
 
-	m, err := labels.NewMatcher(labels.MatchRegexp, outer.Name, outer.Value)
+	m, err := labels.NewMatcher(labels.MatchRegexp, first.Name, first.Value)
 	if err != nil {
 		// We shouldn't have an invalid regex this far into parsing the query
 		return false
 	}
 
-	if outer.Type == labels.MatchNotRegexp {
-		return !m.Matches(inner.Value)
+	if first.Type == labels.MatchNotRegexp {
+		return !m.Matches(second.Value)
 	}
 
-	return m.Matches(inner.Value)
+	return m.Matches(second.Value)
 }
 
 type selector interface {
