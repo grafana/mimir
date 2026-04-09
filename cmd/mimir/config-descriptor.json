@@ -6956,16 +6956,6 @@
         },
         {
           "kind": "field",
-          "name": "alertmanager_max_grafana_config_size_bytes",
-          "required": false,
-          "desc": "Maximum size of the Grafana Alertmanager configuration for a tenant. 0 = no limit.",
-          "fieldValue": null,
-          "fieldDefaultValue": null,
-          "fieldFlag": "alertmanager.max-grafana-config-size-bytes",
-          "fieldType": "int"
-        },
-        {
-          "kind": "field",
           "name": "alertmanager_max_config_size_bytes",
           "required": false,
           "desc": "Maximum size of the Alertmanager configuration for a tenant. 0 = no limit.",
@@ -8832,11 +8822,12 @@
               "kind": "field",
               "name": "write_clients",
               "required": false,
-              "desc": "The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka.",
+              "desc": "The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka. Deprecated: has no effect (Mimir always uses a single Kafka write client).",
               "fieldValue": null,
               "fieldDefaultValue": 1,
               "fieldFlag": "ingest-storage.kafka.write-clients",
-              "fieldType": "int"
+              "fieldType": "int",
+              "fieldCategory": "deprecated"
             },
             {
               "kind": "field",
@@ -11610,9 +11601,9 @@
                       "kind": "field",
                       "name": "index_sections",
                       "required": false,
-                      "desc": "Index sections to read from object storage instead of local disk. Valid sections: all",
+                      "desc": "Index sections to read from object storage instead of local disk. Valid sections: postings-offsets-table",
                       "fieldValue": null,
-                      "fieldDefaultValue": "all",
+                      "fieldDefaultValue": "postings-offsets-table",
                       "fieldFlag": "blocks-storage.bucket-store.index-header.bucket-reader.index-sections",
                       "fieldType": "string",
                       "fieldCategory": "experimental"
@@ -12105,7 +12096,7 @@
                   "kind": "field",
                   "name": "label_cardinality_for_smaller_sketch",
                   "required": false,
-                  "desc": "Number of series for a label name above which smaller count-min sketches are used for that label.",
+                  "desc": "Number of series for a label name below which smaller count-min sketches are used for that label.",
                   "fieldValue": null,
                   "fieldDefaultValue": 1000,
                   "fieldFlag": "blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-smaller-sketch",
@@ -12143,6 +12134,38 @@
                   "fieldDefaultValue": 3600000000000,
                   "fieldFlag": "blocks-storage.tsdb.index-lookup-planning.statistics-collection-frequency",
                   "fieldType": "duration",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
+              "kind": "block",
+              "name": "offset_catalogue",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "enabled",
+                  "required": false,
+                  "desc": "Controls the maintaining of kafka offset catalogue per block.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "blocks-storage.tsdb.offset-catalogue.enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "sync_concurrency",
+                  "required": false,
+                  "desc": "Maximum number of tenants concurrently syncing offset catalogue to disk.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 10,
+                  "fieldFlag": "blocks-storage.tsdb.offset-catalogue.sync-concurrency",
+                  "fieldType": "int",
                   "fieldCategory": "experimental"
                 }
               ],
@@ -17159,12 +17182,12 @@
         },
         {
           "kind": "field",
-          "name": "grafana_alertmanager_idle_grace_period",
+          "name": "strict_initialization_idle_grace_period",
           "required": false,
-          "desc": "Duration to wait before shutting down an idle Alertmanager using an unpromoted or default configuration when strict initialization is enabled.",
+          "desc": "Duration to wait before shutting down an idle Alertmanager using a default/empty configuration when strict initialization is enabled.",
           "fieldValue": null,
           "fieldDefaultValue": 300000000000,
-          "fieldFlag": "alertmanager.grafana-alertmanager-grace-period",
+          "fieldFlag": "alertmanager.strict-initialization-idle-grace-period",
           "fieldType": "duration",
           "fieldCategory": "experimental"
         },

@@ -300,3 +300,4 @@ The following features or configuration parameters are currently deprecated and 
 The following features or configuration parameters were deprecated in Mimir 3.1 and will be removed in Mimir 3.3:
 
 - Considering cached results when calculating the number of processed samples reported in query stats (`-query-frontend.cache-samples-processed-stats=true`).
+- The `-ingest-storage.kafka.write-clients` CLI flag is deprecated and has no effect. Mimir always uses a single Kafka write client.

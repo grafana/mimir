@@ -23,7 +23,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-func TestScheduler_JobsCompletedMetric(t *testing.T) {
+func TestScheduler_JobLifecycleMetrics(t *testing.T) {
 	bkt := objstore.NewInMemBucket()
 	require.NoError(t, bkt.Upload(context.Background(), "tenant1/placeholder", strings.NewReader("")))
 
@@ -38,6 +38,15 @@ func TestScheduler_JobsCompletedMetric(t *testing.T) {
 			cortex_compactor_scheduler_jobs_completed_total{job_type="compaction"} %d
 			cortex_compactor_scheduler_jobs_completed_total{job_type="plan"} %d
 		`, compactionCount, planCount)), "cortex_compactor_scheduler_jobs_completed_total"), msg)
+	}
+	assertIncompleteBytes := func(msg string, splitBytes, mergeBytes float64) {
+		t.Helper()
+		require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+			# HELP cortex_compactor_scheduler_incomplete_compaction_jobs_bytes The total bytes of blocks in compaction jobs that have not yet completed (pending or active).
+			# TYPE cortex_compactor_scheduler_incomplete_compaction_jobs_bytes gauge
+			cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type="merge"} %g
+			cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type="split"} %g
+		`, mergeBytes, splitBytes)), "cortex_compactor_scheduler_incomplete_compaction_jobs_bytes"), msg)
 	}
 
 	// Trigger maintenance so tenant's plan job is enqueued.
@@ -65,16 +74,18 @@ func TestScheduler_JobsCompletedMetric(t *testing.T) {
 		Tenant: leaseResp.Spec.Tenant,
 		Jobs: []*compactorschedulerpb.PlannedCompactionJob{
 			// Two compaction jobs offered: one to be abandoned, one to be completed below.
-			{Id: "compaction-job-1", Job: &compactorschedulerpb.CompactionJob{BlockIds: [][]byte{[]byte("block-a")}}},
-			{Id: "compaction-job-2", Job: &compactorschedulerpb.CompactionJob{BlockIds: [][]byte{[]byte("block-b")}}},
+			{Id: "compaction-job-1", Job: &compactorschedulerpb.CompactionJob{BlockIds: [][]byte{[]byte("block-a")}, Split: true, TotalBlocksBytes: 100}},
+			{Id: "compaction-job-2", Job: &compactorschedulerpb.CompactionJob{BlockIds: [][]byte{[]byte("block-b")}, TotalBlocksBytes: 200}},
 		},
 	})
 	require.NoError(t, err)
 	assertCompleted("plan job completed", 1, 0)
+	assertIncompleteBytes("two compaction jobs pending", 100, 200)
 
 	leaseResp, err = scheduler.LeaseJob(ctx, &compactorschedulerpb.LeaseJobRequest{WorkerId: "worker1"})
 	require.NoError(t, err)
 	require.NotNil(t, leaseResp.Key)
+	assertIncompleteBytes("first compaction job leased (still incomplete)", 100, 200)
 	_, err = scheduler.UpdateCompactionJob(ctx, &compactorschedulerpb.UpdateCompactionJobRequest{
 		Tenant: leaseResp.Spec.Tenant,
 		Key:    leaseResp.Key,
@@ -82,6 +93,7 @@ func TestScheduler_JobsCompletedMetric(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assertCompleted("compaction job abandoned", 1, 0)
+	assertIncompleteBytes("first compaction job abandoned (bytes removed)", 0, 200)
 
 	leaseResp, err = scheduler.LeaseJob(ctx, &compactorschedulerpb.LeaseJobRequest{WorkerId: "worker1"})
 	require.NoError(t, err)
@@ -93,6 +105,7 @@ func TestScheduler_JobsCompletedMetric(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assertCompleted("compaction job completed", 1, 1)
+	assertIncompleteBytes("all compaction jobs complete", 0, 0)
 }
 
 func TestScheduler_RepeatedJobFailures(t *testing.T) {

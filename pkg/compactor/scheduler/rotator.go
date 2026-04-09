@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/benbjohnson/clock"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
@@ -42,7 +43,7 @@ type Rotator struct {
 	maintenanceInterval              time.Duration
 	intervalsBeforeLeaseExpiration   int
 	intervalsBeforeColdStartPlanning int
-	metrics                          *schedulerMetrics
+	clock                            clock.Clock
 	rotationIndexCounter             *atomic.Int32 // only increments, overflow is okay
 	logger                           log.Logger
 
@@ -56,7 +57,7 @@ type TenantRotationState struct {
 	rotationIndex int
 }
 
-func NewRotator(leaseDuration, planningInterval, compactionWaitPeriod, maintenanceInterval time.Duration, intervalsBeforeLeaseExpiration, intervalsBeforeColdStartPlanning int, metrics *schedulerMetrics, logger log.Logger) *Rotator {
+func NewRotator(leaseDuration, planningInterval, compactionWaitPeriod, maintenanceInterval time.Duration, intervalsBeforeLeaseExpiration, intervalsBeforeColdStartPlanning int, logger log.Logger) *Rotator {
 	r := &Rotator{
 		leaseDuration:                    leaseDuration,
 		planningInterval:                 planningInterval,
@@ -64,7 +65,7 @@ func NewRotator(leaseDuration, planningInterval, compactionWaitPeriod, maintenan
 		maintenanceInterval:              maintenanceInterval,
 		intervalsBeforeLeaseExpiration:   intervalsBeforeLeaseExpiration,
 		intervalsBeforeColdStartPlanning: intervalsBeforeColdStartPlanning,
-		metrics:                          metrics,
+		clock:                            clock.New(),
 		rotationIndexCounter:             atomic.NewInt32(0),
 		mtx:                              sync.RWMutex{},
 		tenantStateMap:                   make(map[string]*TenantRotationState),
@@ -113,13 +114,23 @@ func (r *Rotator) PrepareForShutdown() {
 	r.rotation = []string{}
 }
 
-func (r *Rotator) RecoverFrom(jobTrackers map[string]*JobTracker) {
+func (r *Rotator) RecoverFrom(jobTrackers map[string]*JobTracker, creationTime time.Time) {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 
-	if len(jobTrackers) > 0 {
-		// This is not a cold start
-		r.intervalsBeforeColdStartPlanning = 0
+	if r.intervalsBeforeColdStartPlanning > 0 {
+		elapsed := r.clock.Since(creationTime)
+		fullDelay := time.Duration(r.intervalsBeforeColdStartPlanning) * r.maintenanceInterval
+		if elapsed >= fullDelay {
+			// Enough time has passed
+			r.intervalsBeforeColdStartPlanning = 0
+		} else {
+			remaining := fullDelay - elapsed
+			// Ceiling integer division. The -1 prevents rounding up exact multiples.
+			intervals := int((remaining + r.maintenanceInterval - 1) / r.maintenanceInterval)
+			// Defensively ensure we at most set the configured value
+			r.intervalsBeforeColdStartPlanning = min(r.intervalsBeforeColdStartPlanning, intervals)
+		}
 	}
 
 	// Place recovered tenants that have pending work in the rotation

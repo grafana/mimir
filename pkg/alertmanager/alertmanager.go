@@ -22,11 +22,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/alerting/definition"
-	alertingHttp "github.com/grafana/alerting/http"
-	"github.com/grafana/alerting/images"
-	alertingNotify "github.com/grafana/alerting/notify"
 	"github.com/grafana/alerting/notify/nfstatus"
-	alertingReceivers "github.com/grafana/alerting/receivers"
 	discord_v0mimir1 "github.com/grafana/alerting/receivers/discord/v0mimir1"
 	email_v0mimir1 "github.com/grafana/alerting/receivers/email/v0mimir1"
 	opsgenie_v0mimir1 "github.com/grafana/alerting/receivers/opsgenie/v0mimir1"
@@ -68,7 +64,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
 	util_net "github.com/grafana/mimir/pkg/util/net"
-	"github.com/grafana/mimir/pkg/util/version"
 )
 
 const (
@@ -340,9 +335,9 @@ func clusterWait(position func() int, timeout time.Duration) func() time.Duratio
 }
 
 // ApplyConfig applies a new configuration to an Alertmanager.
-func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, tmpls []alertingTemplates.TemplateDefinition, rawCfg string, tmplExternalURL *url.URL, emailCfg alertingReceivers.EmailSenderConfig, usingGrafanaConfig bool) error {
+func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, tmpls []alertingTemplates.TemplateDefinition, rawCfg string) error {
 	cfg := grafanaToUpstreamConfig(conf)
-	integrationsMap, err := am.buildIntegrationsMap(emailCfg, conf.Receivers, tmpls, tmplExternalURL, usingGrafanaConfig)
+	integrationsMap, err := am.buildIntegrationsMap(conf.Receivers, tmpls)
 	if err != nil {
 		return err
 	}
@@ -478,132 +473,27 @@ func (am *Alertmanager) wrapNotifier(integrationName string, notifier notify.Not
 	return notifier
 }
 
-// wrapNfstatusNotifier adapts wrapNotifier to the alertingNotify.WrapNotifierFunc signature,
-// which uses nfstatus.Notifier instead of notify.Notifier.
-func (am *Alertmanager) wrapNfstatusNotifier(integrationName string, n nfstatus.Notifier) nfstatus.Notifier {
-	return nfstatus.NewNotifierAdapter(am.wrapNotifier(integrationName, nfstatusNotifierToNotify{n: n}))
-}
-
-// nfstatusNotifierToNotify adapts an nfstatus.Notifier to the notify.Notifier interface.
-type nfstatusNotifierToNotify struct {
-	n nfstatus.Notifier
-}
-
-func (a nfstatusNotifierToNotify) Notify(ctx context.Context, alerts ...*types.Alert) (bool, error) {
-	_, retry, err := a.n.Notify(ctx, alerts...)
-	return retry, err
-}
-
 // buildIntegrationsMap builds a map of name to the list of integration notifiers off of a list of receiver config.
-func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSenderConfig, nc []*definition.PostableApiReceiver, tmpls []alertingTemplates.TemplateDefinition, tmplExternalURL *url.URL, usingGrafanaConfig bool) (map[string][]*nfstatus.Integration, error) {
+func (am *Alertmanager) buildIntegrationsMap(nc []*definition.PostableApiReceiver, tmpls []alertingTemplates.TemplateDefinition) (map[string][]*nfstatus.Integration, error) {
 	// Create a firewall binded to the per-tenant config.
 	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(am.cfg.UserID, am.cfg.Limits))
 
-	grafanaOpts := []alertingHttp.ClientOption{
-		alertingHttp.WithUserAgent(version.UserAgent()),
-	}
-
-	if dialer := firewallDialer.Dialer(); dialer != nil {
-		grafanaOpts = append(grafanaOpts, alertingHttp.WithDialer(*dialer))
-	}
-
-	// Cached templates.
-	var tmpl *template.Template
-	var cached *alertingTemplates.CachedFactory
-	integrationsMap := make(map[string][]*nfstatus.Integration, len(nc))
-	for _, rcv := range nc {
-		var grafana, mimir []*nfstatus.Integration
-		var err error
-		if rcv.HasGrafanaIntegrations() {
-			if cached == nil {
-				tmplCfg, err := alertingTemplates.NewConfig(am.cfg.UserID, tmplExternalURL.String(), version.Version, alertingTemplates.Limits{})
-				if err != nil {
-					return nil, err
-				}
-				factory, err := alertingTemplates.NewFactory(tmpls, tmplCfg, am.logger)
-				if err != nil {
-					return nil, err
-				}
-				cached = alertingTemplates.NewCachedFactory(factory)
-			}
-			grafana, err = buildGrafanaReceiverIntegrations(emailCfg, alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), cached, am.logger, am.wrapNfstatusNotifier, grafanaOpts...)
-			if err != nil {
-				return nil, err
-			}
-		}
-		if rcv.HasMimirIntegrations() {
-			if tmpl == nil {
-				tmpl, err = loadTemplates(tmpls, WithCustomFunctions(am.cfg.UserID))
-				if err != nil {
-					return nil, err
-				}
-				tmpl.ExternalURL = tmplExternalURL
-			}
-			mimir, err = buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, am.logger, am.wrapNotifier)
-			if err != nil {
-				return nil, err
-			}
-		}
-		integrationsMap[rcv.Name] = append(grafana, mimir...)
-	}
-
-	// Template validation shouldn't be dependent on whether receivers exist. So, in case we didn't hot-load any
-	// templates, we load our best guess as to the appropriate one (Grafana vs Cloud) here to ensure the definitions
-	// are valid.
-	// This might appear different from the above dynamic approach that depends on receiver types, and it is, but
-	// currently AMs should not have mixed receiver types. So, this is a safe (and necessary) workaround.
-	var err error
-	if usingGrafanaConfig {
-		var f *alertingTemplates.Factory
-		tmplCfg, cfgErr := alertingTemplates.NewConfig(am.cfg.UserID, tmplExternalURL.String(), version.Version, alertingTemplates.Limits{})
-		if cfgErr != nil {
-			return nil, cfgErr
-		}
-		f, err = alertingTemplates.NewFactory(tmpls, tmplCfg, am.logger)
-		if err == nil {
-			_, err = f.GetTemplate(alertingTemplates.GrafanaKind)
-		}
-	} else if tmpl == nil {
-		_, err = loadTemplates(tmpls, WithCustomFunctions(am.cfg.UserID))
-	}
+	tmpl, err := loadTemplates(tmpls, WithCustomFunctions(am.cfg.UserID))
 	if err != nil {
 		return nil, err
+	}
+	tmpl.ExternalURL = am.cfg.ExternalURL
+
+	integrationsMap := make(map[string][]*nfstatus.Integration, len(nc))
+	for _, rcv := range nc {
+		integrations, err := buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, am.logger, am.wrapNotifier)
+		if err != nil {
+			return nil, err
+		}
+		integrationsMap[rcv.Name] = integrations
 	}
 
 	return integrationsMap, nil
-}
-
-func buildGrafanaReceiverIntegrations(emailCfg alertingReceivers.EmailSenderConfig, rcv *alertingNotify.APIReceiver, tmplProvider alertingNotify.TemplatesProvider, logger log.Logger, wrapper alertingNotify.WrapNotifierFunc, opts ...alertingHttp.ClientOption) ([]*nfstatus.Integration, error) {
-	// The decrypt functions and the context are used to decrypt the configuration.
-	// We don't need to decrypt anything, so we can pass a no-op decrypt func and a context.Background().
-	rCfg, err := alertingNotify.BuildReceiverConfiguration(context.Background(), rcv, alertingNotify.NoopDecode, alertingNotify.NoopDecrypt)
-	if err != nil {
-		return nil, err
-	}
-
-	tmpl, err := tmplProvider.GetTemplate(alertingTemplates.GrafanaKind)
-	if err != nil {
-		return nil, err
-	}
-
-	emailSender := alertingReceivers.NewEmailSender(emailCfg)
-
-	integrations, err := alertingNotify.BuildGrafanaReceiverIntegrations(
-		rCfg,
-		tmpl,
-		&images.URLProvider{},
-		logger,
-		emailSender,
-		wrapper,
-		1, // orgID is always 1.
-		version.Version,
-		nil,
-		opts...,
-	)
-	if err != nil {
-		return nil, err
-	}
-	return integrations, nil
 }
 
 // buildReceiverIntegrations builds a list of integration notifiers off of a

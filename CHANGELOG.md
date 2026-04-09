@@ -31,6 +31,9 @@
 * [CHANGE] Querier and query-frontend: The experimental `-querier.mimir-query-engine.enable-common-subexpression-elimination-for-range-vector-expressions-in-instant-queries` and `-querier.mimir-query-engine.enable-skipping-histogram-decoding` flags have been removed. Both were previously enabled by default and now cannot be disabled. #14237
 * [CHANGE] Query-frontend: The per-query memory consumption limit now considers the estimated memory consumed by buffered messages received from queriers but not yet consumed. #14775
 * [CHANGE] Querier: The flag `-querier.filter-queryables-enabled` is deprecated and will be removed in Mimir 3.3. #14843
+* [CHANGE] Ingest storage: The `cortex_ingest_storage_writer_latency_seconds` metric now tracks the latency to write an incoming request to all Kafka partitions in a single call, instead of tracking latency individually for each partition. #14898
+* [CHANGE] Ingest storage: deprecated `-ingest-storage.kafka.write-clients` CLI flag. The flag is now ignored and Mimir always uses a single Kafka write client. The flag will be removed in Mimir 3.3. #14903
+* [CHANGE] Alertmanager: `-alertmanager.grafana-alertmanager-idle-grace-period` renamed to `-alertmanager.strict-initialization-idle-grace-period`. #14960
 * [FEATURE] Distributor: Derive limits based on tenant metadata. Supported limits are `max_active_series_per_user`, `ingestion_rate`, `ingestion_burst_size`, `ingestion_burst_factor`, `otel_metric_suffixes_enabled`, `name_validation_scheme` and `otel_translation_strategy`. #14289
 * [FEATURE] Distributor: add `cortex_distributor_request_body_compression_ratio` histogram that tracks the compression of write requests. #14232
 * [FEATURE] Distributor: add `-distributor.otel-label-name-underscore-sanitization` and `-distributor.otel-label-name-preserve-underscores` that control sanitization of underscores during OTLP translation. #13133
@@ -51,7 +54,7 @@
 * [FEATURE] Ingest storage: Add `-ingest-storage.kafka.tls*` flags to connect to Kafka using TLS. #14550
 * [FEATURE] Ingest storage: Add `-ingest-storage.ingestion-partition-tenant-write-shard-size` to limit the number of partitions used for writes independently from reads, allowing safely reducing the shard size without losing query coverage during the migration. #14780
 * [FEATURE] MQE: Add experimental support for splitting and caching intermediate results for functions over range vectors in instant queries. #13472 #14479 #14506 #14499 #14517 #14536 #14614 #14645 #14677 #14788
-* [FEATURE] MQE: Add experimental support for reporting the number of samples read per query. #14828
+* [FEATURE] MQE: Add experimental support for reporting the number of samples read per query. #14828 #14839
 * [FEATURE] Compactor: Add `-compactor.ooo-split-and-merge-shards` per-tenant limit to allow a separate shard count for blocks with the out-of-order external label. #14704
 * [ENHANCEMENT] Query-frontend: Add `minimum_step_size` filter to blocked queries config to reject range queries with a step smaller than the configured threshold. #14885
 * [ENHANCEMENT] Query-frontend: Add support for blocking queries exceeding a time range duration with `time_range_longer_than`. #14609
@@ -149,6 +152,7 @@
 * [ENHANCEMENT] Ingester: Use Kafka record timestamps instead of wall-clock time for active series tracking, grace period validation, and purging when ingest storage is enabled. This prevents premature purging or stale series caused by lag between record production and consumption. #14611 #14744
 * [ENHANCEMENT] Ingester: Export `cortex_ingester_active_series_loading` gauge metric that is `1` while active series counts are still warming up after ingester startup, and `0` once they are accurate (after IdleTimeout has elapsed). #14783
 * [ENHANCEMENT] Ingest storage: Skip kotel tracing hooks for unsampled traces in the franz-go Kafka client, significantly reducing CPU and memory overhead. #14852
+* [ENHANCEMENT] Distributor: Reduced CPU utilization when writing to ingest storage with a large number of partitions by batching all partitions into a single Kafka produce call instead of one per partition. #14898
 * [ENHANCEMENT] Ingest storage: Allow configuring multiple Kafka seed brokers via `-ingest-storage.kafka.address` (comma-separated). #14328
 * [ENHANCEMENT] MQE: Add experimental support for eliminating selectors that are a subset of another selector. Enable with `-querier.mimir-query-engine.enable-subset-selector-elimination=true`. #14456 #14457 #14546 #14559 #14561 #14621
 * [ENHANCEMENT] Ingest storage: Add `-ingest-storage.kafka.client-rack` flag to enable rack awareness. #14434
@@ -162,14 +166,17 @@
 * [ENHANCEMENT] Query-frontend: Extend query blocking to optionally only apply a blocking rule if the query is an unaligned range query. Set `unaligned_range_queries: true` to enable. #14643
 * [ENHANCEMENT] Store-gateway: Add experimental flag `blocks-storage.bucket-store.partitioner-max-gap-bytes-chunks` to specify the gap size for the chunks partitioner. #14649
 * [ENHANCEMENT] Compactor: Add expermental `-compactor.first-level-compaction-ooo-wait-period` to configure a separate compaction wait period for out-of-order blocks. It's an analogue of `-compactor.first-level-compaction-wait-period`, which currently ignores out-of-order blocks. #14627
+* [ENHANCEMENT] Block-builder: Support for experimental `-blocks-storage.tsdb.early-head-compaction-min-in-memory-series` to enforce early head compaction, if in-memory series reach threshold. #14678
 * [ENHANCEMENT] HA: Deduplicate per sample instead of per batch. #13665
 * [ENHANCEMENT] Usage-tracker: Improve performance of TrackSeriesBatch by preprocessing input data. #14702 #14734
 * [ENHANCEMENT] MQE: Improve per-query memory consumption limit enforcement in histogram function evaluations. #14691
 * [ENHANCEMENT] MQE: Improve per-query memory consumption limit enforcement within aggregation operations. #14735
 * [ENHANCEMENT] Usage-tracker: Improve performance by using a special shard grouping algorithm. #14715
+* [ENHANCEMENT] MQE: Support subset selector elimination for expressions where the subset is given by regex selectors. #14732
 * [ENHANCEMENT] API: activity tracker (if enabled) covers the full request lifecycle and used on all routes. #14777
 * [ENHANCEMENT] MQE: Add metrics for tracking in-flight memory consumption tracking. `cortex_querier_inflight_query_max_estimated_memory_consumption_limit_bytes`, `cortex_querier_inflight_query_current_estimated_memory_consumption_bytes`, `cortex_querier_inflight_query_peak_estimated_memory_consumption_bytes` and `cortex_querier_inflight_query_sampled_count`. #14807
 * [ENHANCEMENT] Activity tracker: Added `activity_tracker_unfinished_activities_loaded` metric to report the number of unfinished activities detected on startup. #14860
+* [ENHANCEMENT] Distributor now uses record validation time as Kafka record timestamp to reduce rejections among consumers. #14921
 * [BUGFIX] Distributor: Fix race condition where usage-tracker partition ring may not be initialized before the distributor service starts, causing `usage-tracker partition ring is required` error on startup. #14675
 * [BUGFIX] Store-gateway: Fix `cortex_bucket_store_series_data_touched{data_type="series", stage="returned"}` metric observing negative values when series-for-postings cache is hit and pending matchers filter out some series. #14655
 * [BUGFIX] Mimir: Fix false positive in filesystem path overlap detection when one path is a string prefix of another but not an ancestor directory. #14426
@@ -230,10 +237,13 @@
 * [BUGFIX] Querier: Fix issue where queries can time out if remote execution is enabled and sending the initial message from queriers to query-frontends fails. #14557
 * [BUGFIX] Querier: Fix issue where different sharded legs of a query could be evaluated with different lookback deltas if different queriers were configured with different default lookback deltas. #14575
 * [BUGFIX] Query-frontend: Fixed partial cache hit returning incomplete data for native histogram series due to incorrect response ordering before merge. #14612
+* [BUGFIX] Update to Go v1.25.8 to address [CVE-2026-27142](https://pkg.go.dev/vuln/GO-2026-4603), [CVE-2026-27139](https://pkg.go.dev/vuln/GO-2026-4602), [CVE-2026-25679](https://pkg.go.dev/vuln/GO-2026-4601), [CVE-2026-27138](https://pkg.go.dev/vuln/GO-2026-4600), [CVE-2026-27137](https://pkg.go.dev/vuln/GO-2026-4599). #14623
 * [BUGFIX] Distributor: Fix nil pointer panic in `WriteRequest.Unmarshal` when receiving a Remote Write 2.0 request with zero timeseries. #14698
 * [BUGFIX] MQE: Fix `info()` incorrectly dropping inner series with no matching info series when a data label matcher matches the empty string. #14819
 * [BUGFIX] MQE: Fix `info()` emitting un-enriched series when a data label matcher doesn't match the empty string and the info series is unavailable at some timestamps. #14812
 * [BUGFIX] MQE: Fix and/unless functions to not pass matchers to RHS as it can result in incorrect filtering. #14902
+* [BUGFIX] MQE: Fix internal error when executing a subquery with delayed name removal enabled. #14946
+* [BUGFIX] Alertmanager: Fix deadlock when trying to broadcast after stopping a tenant #14922
 
 ### Mixin
 
@@ -277,7 +287,7 @@
 * [ENHANCEMENT] Recording rules: Add native histogram version of histogram recording rules. #13553
 * [ENHANCEMENT] Alerts: Add `MimirMemberlistBridgeZoneUnavailable` alert. #13647
 * [ENHANCEMENT] Alerts: Add `MimirMemberlistZoneAwareRoutingAutoFailover` alert that fires when memberlist zone-aware routing auto-failover triggers due to missing memberlist bridges. #13726
-* [ENHANCEMENT] Dashboards and recording rules: Add usage-tracker rows to writes, writes-networking, writes-resources dashboards if the config.usage_tracker_enabled var is set. Add usage-tracker client latency recording rules. #13639 #13652
+* [ENHANCEMENT] Dashboards and recording rules: Add usage-tracker rows to writes, writes-networking, writes-resources dashboards if the config.usage_tracker_enabled var is set. Add usage-tracker client latency recording rules. #13639 #13652 #14865
 * [ENHANCEMENT] Recording rules and dashboards: Add `stage` label to `cortex_ingester_queried_series` recording rules and filter Queries dashboard "Series per query" panel to show only `stage=merged_blocks`. #13666
 * [ENHANCEMENT] Dashboards: Add "Owned series" and "Active series" panels to the writes dashboard Headlines row. #13895
 * [ENHANCEMENT] Alerts: Add `IncorrectWebhookConfigurationFailurePolicy`, `BadZoneAwarePodDisruptionBudgetConfiguration` and `HighNumberInflightZpdbRequests` rollout-operator alerts. #13840
@@ -293,14 +303,15 @@
 * [ENHANCEMENT] Dashboards: Split the "All series" panel in the Tenants dashboard into "Active series" and "Owned & in-memory series" panels, and added the active series limit. #14648 #14771
 * [ENHANCEMENT] Dashboards: Add "In memory series" panel to experimental "Mimir / Block-builder" dashboard. #14700
 * [ENHANCEMENT] Dashboards: Unify object store rows into a single collapsible row across Alertmanager, Compactor, Reads, and Ruler dashboards. #14850
-* [ENHANCEMENT] Alerts: Make `MimirInconsistentRuntimeConfig` alert less flaky when performing multiple configuration changes in a row in a large Kubernetes cluster. #14743
+* [ENHANCEMENT] Alerts: Make `MimirInconsistentRuntimeConfig` alert less flaky when performing multiple configuration changes in a row in a large Kubernetes cluster. #14743 #14933
 * [ENHANCEMENT] Alerts: Suppress `MimirRingMembersMismatch` alert during ingester rollouts. The alert now uses an `unless` clause to avoid false positives when ingester statefulsets are being updated. #14895
+* [ENHANCEMENT] Recording rules: add a low-cardinality recorded version of usage_tracker_active_series. #14901
+* [ENHANCEMENT] Alerts: Fix `MimirSchedulerQueriesStuck` false positives by only looking for cases where the number of enqueued queries doesn't decrease. #14943
 * [BUGFIX] Dashboards: Fix compactor dashboard to exclude instances without the last successful run metric in the "Last successful run per-compactor replica" table. #14784
 * [BUGFIX] Dashboards: Fix issue where throughput dashboard panels would group all gRPC requests that resulted in a status containing an underscore into one series with no name. #13184
 * [BUGFIX] Dashboards: Filter out 0s from `max_series` limit on Writes Resources > Ingester > In-memory series panel. #13419
 * [BUGFIX] Dashboards: Fix issue where the "Tenant gateway requests" panels on Tenants dashboard would show data from all components. #13940
 * [BUGFIX] Dashboards: Fix issue where the MQE-related dashboard panels on the Queries dashboard would show data from both queriers and query-frontends, instead of just queriers. #14029
-* [BUGFIX] Update to Go v1.25.8 to address [CVE-2026-27142](https://pkg.go.dev/vuln/GO-2026-4603), [CVE-2026-27139](https://pkg.go.dev/vuln/GO-2026-4602), [CVE-2026-25679](https://pkg.go.dev/vuln/GO-2026-4601), [CVE-2026-27138](https://pkg.go.dev/vuln/GO-2026-4600), [CVE-2026-27137](https://pkg.go.dev/vuln/GO-2026-4599). #14623
 
 ### Jsonnet
 
@@ -370,13 +381,14 @@
 * [BUGFIX] Distributor: Fix type error in multi-zone distributor container constructor's env map. #14403
 * [BUGFIX] Native histograms: Fix PromQL query example for `histogram_fraction` to filter NaN results when there are no observations. #14433
 * [BUGFIX] OTLP: Exponential histograms over OTLP are not experimental. #14437
+* [ENHANCEMENT] Kafka: Document that Apache Kafka and Confluent Kafka require `message.max.bytes=16000000` to support Mimir's default producer record size. #14875
 
 ### Tools
 
 * [FEATURE] mimir-tool: Add `validate alerts-file` command that performs checks on alert files defined as YAML. #14043
 * [FEATURE] mimir-tool: Add `partition-ring add-partition` and `partition-ring remove-partition` commands. #14265
 * [FEATURE] mimir-tool: Add `partition-ring add-owner` and `partition-ring remove-owner` commands. #14462
-* [FEATURE] tsdb-index-header: Add tool to inspect the content of a block's index or index-header. #13738 #14279
+* [FEATURE] tsdb-index-header: Add tool to inspect the content of a block's index or index-header. #13738 #14279 #14944
 * [FEATURE] tsdb-chunks, tsdb-print-chunk: When printing samples, include the start time (ST) in the output. #14337
 * [FEATURE] kafkatool: Add `create-topic` command to create a Kafka topic with a specified number of partitions. #14639
 * [FEATURE] kafkatool: Add `list-topics` command to list all Kafka topics and their partition counts. #14639

@@ -4,6 +4,7 @@ package operators
 
 import (
 	"context"
+	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -128,5 +129,160 @@ func (t *TestOperator) Stats(_ context.Context) (*types.OperatorEvaluationStats,
 
 func (t *TestOperator) Close() {
 	// Note that we do not return any unused series data here: it is the responsibility of the test to call ReleaseUnreadData, if needed.
+	t.Closed = true
+}
+
+type TestRangeOperator struct {
+	Series                     []labels.Labels
+	DropName                   []bool
+	CurrentSeriesIndex         int
+	Data                       []types.InstantVectorSeriesData
+	StepRange                  time.Duration
+	HaveReadCurrentStepSamples bool
+	Floats                     *types.FPointRingBuffer
+	FloatsView                 *types.FPointRingBufferView
+	Histograms                 *types.HPointRingBuffer
+	HistogramsView             *types.HPointRingBufferView
+
+	Finalized        bool
+	Closed           bool
+	MatchersProvided types.Matchers
+
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
+}
+
+var _ types.RangeVectorOperator = &TestRangeOperator{}
+
+func NewTestRangeOperator(series []labels.Labels, dropName []bool, data []types.InstantVectorSeriesData, stepRange time.Duration, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *TestRangeOperator {
+	return &TestRangeOperator{
+		Series:                   series,
+		DropName:                 dropName,
+		CurrentSeriesIndex:       -1,
+		Data:                     data,
+		StepRange:                stepRange,
+		memoryConsumptionTracker: memoryConsumptionTracker,
+	}
+}
+
+func (t *TestRangeOperator) SeriesMetadata(_ context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	t.MatchersProvided = matchers
+
+	if len(t.Series) == 0 {
+		return nil, nil
+	}
+
+	metadata, err := types.SeriesMetadataSlicePool.Get(len(t.Series), t.memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	metadata = metadata[:len(t.Series)]
+
+	for i, l := range t.Series {
+		metadata[i].Labels = l
+		err := t.memoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(l)
+		if err != nil {
+			return nil, err
+		}
+
+		if t.DropName != nil && t.DropName[i] {
+			metadata[i].DropName = true
+		}
+	}
+
+	return metadata, nil
+}
+
+func (t *TestRangeOperator) NextSeries(_ context.Context) error {
+	if t.CurrentSeriesIndex+1 >= len(t.Series) {
+		return types.EOS
+	}
+
+	t.HaveReadCurrentStepSamples = false
+	t.CurrentSeriesIndex++
+
+	return nil
+}
+
+func (t *TestRangeOperator) NextStepSamples(_ context.Context) (*types.RangeVectorStepData, error) {
+	if t.HaveReadCurrentStepSamples {
+		return nil, types.EOS
+	}
+
+	t.HaveReadCurrentStepSamples = true
+
+	if t.Floats == nil {
+		t.Floats = types.NewFPointRingBuffer(t.memoryConsumptionTracker)
+	}
+
+	if t.Histograms == nil {
+		t.Histograms = types.NewHPointRingBuffer(t.memoryConsumptionTracker)
+	}
+
+	d := t.Data[t.CurrentSeriesIndex]
+	endT := t.StepRange.Milliseconds()
+
+	t.Floats.Reset()
+	for _, p := range d.Floats {
+		if err := t.Floats.Append(p); err != nil {
+			return nil, err
+		}
+	}
+	t.FloatsView = t.Floats.ViewUntilSearchingBackwards(endT, t.FloatsView)
+
+	t.Histograms.Reset()
+	for _, p := range d.Histograms {
+		if err := t.Histograms.Append(p); err != nil {
+			return nil, err
+		}
+	}
+	t.HistogramsView = t.Histograms.ViewUntilSearchingBackwards(endT, t.HistogramsView)
+
+	return &types.RangeVectorStepData{
+		Floats:     t.FloatsView,
+		Histograms: t.HistogramsView,
+		StepT:      endT,
+		RangeStart: 0,
+		RangeEnd:   endT,
+	}, nil
+}
+
+func (t *TestRangeOperator) ExpressionPosition() posrange.PositionRange {
+	return posrange.PositionRange{}
+}
+
+func (t *TestRangeOperator) Prepare(_ context.Context, _ *types.PrepareParams) error {
+	// Nothing to do.
+	return nil
+}
+
+func (t *TestRangeOperator) AfterPrepare(_ context.Context) error {
+	return nil
+}
+
+func (t *TestRangeOperator) Finalize(_ context.Context) error {
+	t.Finalized = true
+
+	if t.Floats != nil {
+		t.Floats.Close()
+	}
+
+	if t.Histograms != nil {
+		t.Histograms.Close()
+	}
+
+	t.Floats = nil
+	t.FloatsView = nil
+	t.Histograms = nil
+	t.HistogramsView = nil
+
+	return nil
+}
+
+func (t *TestRangeOperator) Stats(_ context.Context) (*types.OperatorEvaluationStats, error) {
+	panic("not implemented")
+}
+
+func (t *TestRangeOperator) Close() {
 	t.Closed = true
 }

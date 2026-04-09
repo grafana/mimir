@@ -147,7 +147,6 @@ func newCompactorScheduler(
 		cfg.MaintenanceInterval,
 		cfg.MaintenanceIntervalsBeforeLeaseExpiration,
 		cfg.MaintenanceIntervalsBeforeColdStartPlanning,
-		metrics,
 		logger,
 	)
 
@@ -184,7 +183,7 @@ func (s *Scheduler) start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed recovering state: %w", err)
 	}
-	s.rotator.RecoverFrom(jobTrackers)
+	s.rotator.RecoverFrom(jobTrackers, s.jpm.CreationTime())
 	s.tenantDiscoverer.RecoverFrom(jobTrackers)
 
 	if err := s.subservicesManager.StartAsync(ctx); err != nil {
@@ -280,6 +279,7 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 				isSplit: job.Job.Split,
 			},
 			uint32(i), // technically this casting could truncate, but that's an unrealistic case
+			job.Job.TotalBlocksBytes,
 			now,
 		))
 	}
