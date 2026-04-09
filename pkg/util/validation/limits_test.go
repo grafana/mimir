@@ -2202,11 +2202,12 @@ func TestExtensionMarshalling(t *testing.T) {
         foo: 0
     test_extension_string: ""
     max_active_series_per_user: 0
+    active_series_limit_response_code: 0
     request_rate: 0`)
 
 		val, err = json.Marshal(overrides)
 		require.NoError(t, err)
-		require.Contains(t, string(val), `{"test":{"test_extension_struct":{"foo":0},"test_extension_string":"","max_active_series_per_user":0,`)
+		require.Contains(t, string(val), `{"test":{"test_extension_struct":{"foo":0},"test_extension_string":"","max_active_series_per_user":0,"active_series_limit_response_code":0,`)
 	})
 
 	t.Run("marshal limits with partial extension values", func(t *testing.T) {
@@ -2226,12 +2227,13 @@ func TestExtensionMarshalling(t *testing.T) {
         foo: 421237
     test_extension_string: ""
     max_active_series_per_user: 0
+    active_series_limit_response_code: 0
     request_rate: 0
     request_burst_size: 0`)
 
 		val, err = json.Marshal(overrides)
 		require.NoError(t, err)
-		require.Contains(t, string(val), `{"test":{"test_extension_struct":{"foo":421237},"test_extension_string":"","max_active_series_per_user":0,"request_rate":0,`)
+		require.Contains(t, string(val), `{"test":{"test_extension_struct":{"foo":421237},"test_extension_string":"","max_active_series_per_user":0,"active_series_limit_response_code":0,"request_rate":0,`)
 	})
 
 	t.Run("marshal limits with default extension values", func(t *testing.T) {
@@ -2246,12 +2248,13 @@ func TestExtensionMarshalling(t *testing.T) {
         foo: 42
     test_extension_string: default string extension value
     max_active_series_per_user: 0
+    active_series_limit_response_code: 429
     request_rate: 0
     request_burst_size: 0`)
 
 		val, err = json.Marshal(overrides)
 		require.NoError(t, err)
-		require.Contains(t, string(val), `{"user":{"test_extension_struct":{"foo":42},"test_extension_string":"default string extension value","max_active_series_per_user":0,"request_rate":0,`)
+		require.Contains(t, string(val), `{"user":{"test_extension_struct":{"foo":42},"test_extension_string":"default string extension value","max_active_series_per_user":0,"active_series_limit_response_code":429,"request_rate":0,`)
 	})
 }
 
