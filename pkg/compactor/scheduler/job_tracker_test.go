@@ -274,7 +274,6 @@ func TestJobTracker_ByteTracking(t *testing.T) {
 
 func TestJobTracker_Cleanup(t *testing.T) {
 	clk := clock.NewMock()
-	clk.Set(at(3, 0))
 	reg := prometheus.NewPedanticRegistry()
 	sm := newSchedulerMetrics(reg)
 
@@ -290,6 +289,8 @@ func TestJobTracker_Cleanup(t *testing.T) {
 	}, nil)
 	assertTrackerBytes(t, reg, "both tenants contributing before cleanup", 100, 200)
 
+	// Set time past the first planning window to force planning on Maintenance()
+	clk.Set(at(3, 0))
 	_, err := jt1.Maintenance(time.Minute, false, true, time.Hour, 0)
 	require.NoError(t, err)
 	_, err = jt2.Maintenance(time.Minute, false, true, time.Hour, 0)
