@@ -53,6 +53,14 @@ message RuleGroupDesc {
 
   // The limit is enforced in Mimir per-user.
   int32 limit = 15;
+
+  // Optional list of remote write endpoint URLs for this rule group.
+  // When set, only the tenant-level ruler_remote_write_configs whose URL matches
+  // one of these values are used to forward evaluated samples.
+  // Custom URLs (not in the tenant's config list) require
+  // ruler_remote_write_allow_custom_urls=true.
+  // When empty, all tenant-level configs are used.
+  repeated string remote_write_urls = 16;
 }
 
 // RuleDesc is a proto representation of a Prometheus Rule

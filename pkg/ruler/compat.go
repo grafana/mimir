@@ -33,6 +33,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	notifierCfg "github.com/grafana/mimir/pkg/ruler/notifier"
+	"github.com/grafana/mimir/pkg/ruler/remotewrite"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -228,6 +229,12 @@ type RulesLimits interface {
 	RulerMinRuleEvaluationInterval(userID string) time.Duration
 	RulerMaxRuleEvaluationResults(userID string) int
 	NameValidationScheme(userID string) model.ValidationScheme
+
+	// Remote write.
+	RulerRemoteWriteEnabled(userID string) bool
+	RulerRemoteWriteTarget(userID string) string
+	RulerRemoteWriteConfigs(userID string) []remotewrite.Config
+	RulerRemoteWriteAllowCustomURLs(userID string) bool
 }
 
 func MetricsQueryFunc(qf rules.QueryFunc, userID string, queries, failedQueries *prometheus.CounterVec, remoteQuerier bool) rules.QueryFunc {
@@ -355,6 +362,144 @@ type RulesManager interface {
 	RuleGroups() []*rules.Group
 }
 
+// adHocAppendable creates on-demand Storages for rule groups that specify custom
+// remote write URLs not present in the tenant's ruler_remote_write_configs list.
+// It is a noop unless ruler_remote_write_allow_custom_urls is true and the
+// per-group evaluation context carries at least one unconfigured URL.
+type adHocAppendable struct {
+	userID    string
+	rwManager *remotewrite.Manager
+	overrides RulesLimits
+	logger    log.Logger
+	// knownURLs are URLs already served by the static remote write Storages so
+	// we don't double-write when a group URL also appears in the tenant config.
+	knownURLs map[string]struct{}
+}
+
+// Appender returns an appender for any group-specified URLs that are not already
+// covered by the tenant's configured remote write Storages.
+func (a *adHocAppendable) Appender(ctx context.Context) storage.Appender {
+	if !a.overrides.RulerRemoteWriteAllowCustomURLs(a.userID) {
+		return NewNoopAppendable().Appender(ctx)
+	}
+	groupURLs := remotewrite.RemoteWriteURLsFromContext(ctx)
+	if len(groupURLs) == 0 {
+		return NewNoopAppendable().Appender(ctx)
+	}
+	var appenders []storage.Appender
+	for _, u := range groupURLs {
+		if _, ok := a.knownURLs[u]; ok {
+			continue // already handled by a static remote write Storage
+		}
+		s, err := a.rwManager.AdHocAppendable(a.userID, u)
+		if err != nil {
+			level.Error(a.logger).Log("msg", "failed to get ad-hoc remote write storage",
+				"user", a.userID, "url", u, "err", err)
+			continue
+		}
+		appenders = append(appenders, s.Appender(ctx))
+	}
+	if len(appenders) == 0 {
+		return NewNoopAppendable().Appender(ctx)
+	}
+	return &multiAppender{appenders: appenders}
+}
+
+// MultiAppendable fans a single Appender call out to multiple storage.Appendable implementations.
+// Local (pusher) errors are returned to the caller; remote write errors are only logged and metered.
+type MultiAppendable struct {
+	appendables []storage.Appendable
+}
+
+// newMultiOrNoop returns a MultiAppendable if appendables is non-empty, else a NoopAppendable.
+func newMultiOrNoop(appendables []storage.Appendable) storage.Appendable {
+	switch len(appendables) {
+	case 0:
+		return NewNoopAppendable()
+	case 1:
+		return appendables[0]
+	default:
+		return &MultiAppendable{appendables: appendables}
+	}
+}
+
+// Appender returns a multiAppender that wraps one appender per underlying Appendable.
+func (m *MultiAppendable) Appender(ctx context.Context) storage.Appender {
+	appenders := make([]storage.Appender, len(m.appendables))
+	for i, a := range m.appendables {
+		appenders[i] = a.Appender(ctx)
+	}
+	return &multiAppender{appenders: appenders}
+}
+
+// multiAppender is a storage.Appender that writes to multiple backing appenders.
+type multiAppender struct {
+	appenders []storage.Appender
+}
+
+func (a *multiAppender) SetOptions(opts *storage.AppendOptions) {
+	for _, app := range a.appenders {
+		app.SetOptions(opts)
+	}
+}
+
+func (a *multiAppender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+	for _, app := range a.appenders {
+		if _, err := app.Append(ref, l, t, v); err != nil {
+			return 0, err
+		}
+	}
+	return ref, nil
+}
+
+func (a *multiAppender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	for _, app := range a.appenders {
+		if _, err := app.AppendHistogram(ref, l, t, h, fh); err != nil {
+			return 0, err
+		}
+	}
+	return ref, nil
+}
+
+func (a *multiAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
+	return 0, errors.New("exemplars are unsupported")
+}
+
+func (a *multiAppender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m metadata.Metadata) (storage.SeriesRef, error) {
+	return 0, errors.New("metadata updates are unsupported")
+}
+
+func (a *multiAppender) AppendSTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ts int64) (storage.SeriesRef, error) {
+	return 0, errors.New("ST zero samples are unsupported")
+}
+
+func (a *multiAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ts int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	return 0, errors.New("ST zero samples are unsupported")
+}
+
+// Commit commits each appender. The first non-nil error is returned; remaining appenders
+// are still committed (best-effort). Remote write commit errors are never returned — they
+// are expected to be logged/metered inside the remote write appender itself.
+func (a *multiAppender) Commit() error {
+	var firstErr error
+	for _, app := range a.appenders {
+		if err := app.Commit(); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
+	return firstErr
+}
+
+// Rollback rolls back all appenders.
+func (a *multiAppender) Rollback() error {
+	for _, app := range a.appenders {
+		_ = app.Rollback()
+	}
+	return nil
+}
+
 // ManagerFactory is a function that creates new RulesManager for given user and notifier.Manager.
 type ManagerFactory func(ctx context.Context, userID string, notifier *notifier.Manager, logger log.Logger, reg prometheus.Registerer) RulesManager
 
@@ -366,6 +511,8 @@ func DefaultTenantManagerFactory(
 	rulesFS afero.Fs,
 	concurrencyController MultiTenantRuleConcurrencyController,
 	overrides RulesLimits,
+	rwManager *remotewrite.Manager,
+	groupURLRegistry *GroupURLRegistry,
 	reg prometheus.Registerer,
 ) ManagerFactory {
 	totalWrites := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
@@ -413,22 +560,72 @@ func DefaultTenantManagerFactory(
 		// Wrap the queryable with our custom logic.
 		wrappedQueryable := WrapQueryableWithReadConsistency(queryable, logger)
 
-		var appendeable storage.Appendable
-		if cfg.RuleEvaluationWriteEnabled {
-			appendeable = NewPusherAppendable(pusher, userID, totalWrites, failedWrites)
-		} else {
-			appendeable = NewNoopAppendable()
+		target := overrides.RulerRemoteWriteTarget(userID) // "local", "remote", or "both"
+
+		var appendables []storage.Appendable
+
+		// Local ingest: enabled unless write target is "remote" only.
+		if cfg.RuleEvaluationWriteEnabled && target != "remote" {
+			appendables = append(appendables, NewPusherAppendable(pusher, userID, totalWrites, failedWrites))
 		}
+
+		// Remote write: enabled when write target is "remote" or "both".
+		// NOTE: the remote write Storages (and thus their WAL goroutines) are created
+		// once at manager creation time and capture the tenant's ruler_remote_write_configs
+		// at that point. Changes to ruler_remote_write_configs in the runtime config only
+		// take effect when the tenant's RulesManager is recreated (ruler restart, or the
+		// tenant goes from having no rules to having rules again).
+		if rwManager != nil && overrides.RulerRemoteWriteEnabled(userID) && (target == "remote" || target == "both") {
+			rwAppendables, err := rwManager.AppendablesForTenant(userID, overrides.RulerRemoteWriteConfigs(userID))
+			if err != nil {
+				// Log the error but continue with any appendables that were successfully started.
+				// A partial remote write config failure must not block rule evaluation.
+				level.Error(logger).Log("msg", "failed to create some remote write appendables for tenant", "user", userID, "err", err)
+			}
+			appendables = append(appendables, rwAppendables...)
+
+			// Ad-hoc remote write: for rule groups whose remote_write_urls list contains
+			// URLs not present in ruler_remote_write_configs. Requires
+			// ruler_remote_write_allow_custom_urls=true (checked at eval time).
+			knownURLs := make(map[string]struct{}, len(rwAppendables))
+			for _, a := range rwAppendables {
+				if s, ok := a.(*remotewrite.Storage); ok {
+					knownURLs[s.URL()] = struct{}{}
+				}
+			}
+			appendables = append(appendables, &adHocAppendable{
+				userID:    userID,
+				rwManager: rwManager,
+				overrides: overrides,
+				logger:    logger,
+				knownURLs: knownURLs,
+			})
+		}
+
+		appendeable := newMultiOrNoop(appendables)
 
 		ctx = user.InjectOrgID(ctx, userID)
 		ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
+
+		// Build a GroupEvaluationContextFunc that injects both federation tenant context
+		// and per-group remote write URLs (if any are configured for this group).
+		groupEvalCtxFunc := func(evalCtx context.Context, g *rules.Group) context.Context {
+			evalCtx = FederatedGroupContextFunc(evalCtx, g)
+			if groupURLRegistry != nil {
+				namespace := namespaceFromGroupFile(g.File())
+				if urls := groupURLRegistry.Lookup(userID, namespace, g.Name()); len(urls) > 0 {
+					evalCtx = remotewrite.ContextWithRemoteWriteURLs(evalCtx, urls)
+				}
+			}
+			return evalCtx
+		}
 
 		return rules.NewManager(&rules.ManagerOptions{
 			Appendable:                 appendeable,
 			Queryable:                  wrappedQueryable,
 			QueryFunc:                  wrappedQueryFunc,
 			Context:                    ctx,
-			GroupEvaluationContextFunc: FederatedGroupContextFunc,
+			GroupEvaluationContextFunc: groupEvalCtxFunc,
 			ExternalURL:                cfg.ExternalURL.URL,
 			NotifyFunc:                 rules.SendAlerts(notifier, cfg.ExternalURL.String()),
 			Logger:                     util_log.SlogFromGoKit(log.With(logger, "component", "ruler", "insight", true, "user", userID)),

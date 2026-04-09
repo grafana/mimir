@@ -58,6 +58,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/ruler"
+	"github.com/grafana/mimir/pkg/ruler/remotewrite"
 	"github.com/grafana/mimir/pkg/scheduler"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/ingest"
@@ -1149,6 +1150,18 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		)
 	}
 	rulesFS := afero.NewMemMapFs()
+	groupURLRegistry := ruler.NewGroupURLRegistry()
+
+	var rwManager *remotewrite.Manager
+	if t.Cfg.Ruler.RemoteWrite.WALDir != "" {
+		rwManager = remotewrite.NewManager(
+			t.Cfg.Ruler.RemoteWrite.WALDir,
+			t.Cfg.Ruler.RemoteWrite.FlushDeadline,
+			util_log.Logger,
+			prometheus.WrapRegistererWith(prometheus.Labels{"component": "ruler"}, t.Registerer),
+		)
+	}
+
 	managerFactory := ruler.DefaultTenantManagerFactory(
 		t.Cfg.Ruler,
 		t.Distributor,
@@ -1157,6 +1170,8 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		rulesFS,
 		concurrencyController,
 		t.Overrides,
+		rwManager,
+		groupURLRegistry,
 		t.Registerer,
 	)
 
@@ -1171,7 +1186,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	)
 
 	dnsResolver := dns.NewProvider(util_log.Logger, dnsProviderReg, dns.GolangResolverType)
-	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, t.Registerer, util_log.Logger, dnsResolver, t.Overrides, rulesFS)
+	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, t.Registerer, util_log.Logger, dnsResolver, t.Overrides, rulesFS, groupURLRegistry, rwManager)
 	if err != nil {
 		return nil, err
 	}
@@ -1186,6 +1201,11 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	)
 	if err != nil {
 		return
+	}
+
+	// Stop the remote write manager when the ruler stops, so WAL flushes complete before exit.
+	if rwManager != nil {
+		t.Ruler.AddListener(services.NewListener(nil, nil, func(_ services.State) { rwManager.Stop() }, nil, nil))
 	}
 
 	// Expose HTTP/GRPC admin endpoints for the Ruler service

@@ -6745,6 +6745,256 @@
         },
         {
           "kind": "field",
+          "name": "ruler_remote_write_enabled",
+          "required": false,
+          "desc": "Enable remote write of recording rule outputs to the configured endpoints. Requires ruler.remote-write.wal-dir to be set.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "ruler_remote_write_target",
+          "required": false,
+          "desc": "Controls where recording rule outputs are written. Options: 'local' (default, existing behaviour), 'remote' (skip local ingest, forward only), 'both' (local and remote).",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "ruler_remote_write_configs",
+          "required": false,
+          "desc": "List of remote write endpoints to forward recording rule outputs to. Only used when ruler_remote_write_enabled is true.",
+          "fieldValue": null,
+          "fieldDefaultValue": null,
+          "fieldType": "slice",
+          "fieldElement": {
+            "kind": "block",
+            "name": "ruler_remote_write_configs",
+            "required": false,
+            "desc": "",
+            "blockEntries": [
+              {
+                "kind": "field",
+                "name": "name",
+                "required": false,
+                "desc": "",
+                "fieldValue": null,
+                "fieldDefaultValue": "",
+                "fieldType": "string"
+              },
+              {
+                "kind": "field",
+                "name": "url",
+                "required": false,
+                "desc": "",
+                "fieldValue": null,
+                "fieldDefaultValue": {},
+                "fieldType": "url"
+              },
+              {
+                "kind": "field",
+                "name": "remote_timeout",
+                "required": false,
+                "desc": "",
+                "fieldValue": null,
+                "fieldDefaultValue": null,
+                "fieldType": "duration"
+              },
+              {
+                "kind": "field",
+                "name": "headers",
+                "required": false,
+                "desc": "",
+                "fieldValue": null,
+                "fieldDefaultValue": {},
+                "fieldType": "map of string to string"
+              },
+              {
+                "kind": "block",
+                "name": "basic_auth",
+                "required": false,
+                "desc": "",
+                "blockEntries": [
+                  {
+                    "kind": "field",
+                    "name": "username",
+                    "required": false,
+                    "desc": "",
+                    "fieldValue": null,
+                    "fieldDefaultValue": "",
+                    "fieldType": "string"
+                  },
+                  {
+                    "kind": "field",
+                    "name": "password",
+                    "required": false,
+                    "desc": "",
+                    "fieldValue": null,
+                    "fieldDefaultValue": "",
+                    "fieldType": "string"
+                  }
+                ],
+                "fieldValue": null,
+                "fieldDefaultValue": null
+              },
+              {
+                "kind": "field",
+                "name": "bearer_token",
+                "required": false,
+                "desc": "",
+                "fieldValue": null,
+                "fieldDefaultValue": "",
+                "fieldType": "string"
+              },
+              {
+                "kind": "block",
+                "name": "tls_config",
+                "required": false,
+                "desc": "",
+                "blockEntries": [
+                  {
+                    "kind": "field",
+                    "name": "insecure_skip_verify",
+                    "required": false,
+                    "desc": "",
+                    "fieldValue": null,
+                    "fieldDefaultValue": false,
+                    "fieldType": "boolean"
+                  },
+                  {
+                    "kind": "field",
+                    "name": "ca_file",
+                    "required": false,
+                    "desc": "",
+                    "fieldValue": null,
+                    "fieldDefaultValue": "",
+                    "fieldType": "string"
+                  },
+                  {
+                    "kind": "field",
+                    "name": "cert_file",
+                    "required": false,
+                    "desc": "",
+                    "fieldValue": null,
+                    "fieldDefaultValue": "",
+                    "fieldType": "string"
+                  },
+                  {
+                    "kind": "field",
+                    "name": "key_file",
+                    "required": false,
+                    "desc": "",
+                    "fieldValue": null,
+                    "fieldDefaultValue": "",
+                    "fieldType": "string"
+                  },
+                  {
+                    "kind": "field",
+                    "name": "server_name",
+                    "required": false,
+                    "desc": "",
+                    "fieldValue": null,
+                    "fieldDefaultValue": "",
+                    "fieldType": "string"
+                  }
+                ],
+                "fieldValue": null,
+                "fieldDefaultValue": null
+              },
+              {
+                "kind": "block",
+                "name": "queue_config",
+                "required": false,
+                "desc": "",
+                "blockEntries": [
+                  {
+                    "kind": "field",
+                    "name": "capacity",
+                    "required": false,
+                    "desc": "",
+                    "fieldValue": null,
+                    "fieldDefaultValue": 0,
+                    "fieldType": "int"
+                  },
+                  {
+                    "kind": "field",
+                    "name": "max_shards",
+                    "required": false,
+                    "desc": "",
+                    "fieldValue": null,
+                    "fieldDefaultValue": 0,
+                    "fieldType": "int"
+                  },
+                  {
+                    "kind": "field",
+                    "name": "min_shards",
+                    "required": false,
+                    "desc": "",
+                    "fieldValue": null,
+                    "fieldDefaultValue": 0,
+                    "fieldType": "int"
+                  },
+                  {
+                    "kind": "field",
+                    "name": "max_samples_per_send",
+                    "required": false,
+                    "desc": "",
+                    "fieldValue": null,
+                    "fieldDefaultValue": 0,
+                    "fieldType": "int"
+                  },
+                  {
+                    "kind": "field",
+                    "name": "batch_send_deadline",
+                    "required": false,
+                    "desc": "",
+                    "fieldValue": null,
+                    "fieldDefaultValue": null,
+                    "fieldType": "duration"
+                  },
+                  {
+                    "kind": "field",
+                    "name": "min_backoff",
+                    "required": false,
+                    "desc": "",
+                    "fieldValue": null,
+                    "fieldDefaultValue": null,
+                    "fieldType": "duration"
+                  },
+                  {
+                    "kind": "field",
+                    "name": "max_backoff",
+                    "required": false,
+                    "desc": "",
+                    "fieldValue": null,
+                    "fieldDefaultValue": null,
+                    "fieldType": "duration"
+                  }
+                ],
+                "fieldValue": null,
+                "fieldDefaultValue": null
+              }
+            ],
+            "fieldValue": null,
+            "fieldDefaultValue": null
+          }
+        },
+        {
+          "kind": "field",
+          "name": "ruler_remote_write_allow_custom_urls",
+          "required": false,
+          "desc": "Allow rule groups to specify remote write URLs not present in ruler_remote_write_configs. Disabled by default to prevent unintended data exfiltration.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "store_gateway_tenant_shard_size",
           "required": false,
           "desc": "The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.",
@@ -15303,6 +15553,37 @@
           "fieldFlag": "ruler.rule-evaluation-write-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "block",
+          "name": "remote_write",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "wal_dir",
+              "required": false,
+              "desc": "Directory for the WAL used by the ruler remote write feature. Required when ruler_remote_write_enabled is true for any tenant.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.remote-write.wal-dir",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "flush_deadline",
+              "required": false,
+              "desc": "Maximum time to wait for pending remote write requests to complete during shutdown.",
+              "fieldValue": null,
+              "fieldDefaultValue": 60000000000,
+              "fieldFlag": "ruler.remote-write.flush-deadline",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,

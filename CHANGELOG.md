@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [FEATURE] Ruler: Add WAL-backed remote write for recording rule outputs. Operators can configure per-tenant remote write destinations via the `ruler_remote_write_configs` limit. The `ruler_remote_write_target` limit controls whether evaluation results are written locally, remotely, or both. Rule groups can specify `remote_write_urls` to route their output to a subset of configured endpoints. Custom URLs per rule group can be allowed via `ruler_remote_write_allow_custom_urls`. #14977
 * [CHANGE] Ingester: Changed default value of `-include-tenant-id-in-profile-labels` from false to true. #13375
 * [CHANGE] Hash ring: removed experimental support for disabling heartbeats (setting `-*.ring.heartbeat-period=0`) and heartbeat timeouts (setting `-*.ring.heartbeat-timeout=0`). These configurations are now invalid. #13104
 * [CHANGE] Distributor: removed experimental flag `-distributor.metric-relabeling-enabled`. #13143

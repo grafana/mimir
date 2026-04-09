@@ -31,6 +31,7 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/net/context/ctxhttp"
 
+	"github.com/grafana/mimir/pkg/ruler/remotewrite"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
@@ -62,10 +63,18 @@ type DefaultMultiTenantManager struct {
 	registry                      prometheus.Registerer
 	logger                        log.Logger
 
+	// groupURLRegistry tracks per-rule-group remote write URLs for all tenants.
+	// May be nil when ruler remote write is not configured.
+	groupURLRegistry *GroupURLRegistry
+
+	// rwManager manages WAL-backed remote write Storages per tenant.
+	// May be nil when ruler remote write is not configured.
+	rwManager *remotewrite.Manager
+
 	rulerIsRunning atomic.Bool
 }
 
-func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg prometheus.Registerer, logger log.Logger, dnsResolver AddressProvider, limits RulesLimits, rulesFS afero.Fs) (*DefaultMultiTenantManager, error) {
+func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg prometheus.Registerer, logger log.Logger, dnsResolver AddressProvider, limits RulesLimits, rulesFS afero.Fs, groupURLRegistry *GroupURLRegistry, rwManager *remotewrite.Manager) (*DefaultMultiTenantManager, error) {
 	refreshMetrics := discovery.NewRefreshMetrics(reg)
 
 	userManagerMetrics := NewManagerMetrics(logger)
@@ -83,6 +92,8 @@ func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg
 		mapper:             newMapper(cfg.RulePath, rulesFS, logger),
 		userManagers:       map[string]RulesManager{},
 		userManagerMetrics: userManagerMetrics,
+		groupURLRegistry:   groupURLRegistry,
+		rwManager:          rwManager,
 		managersTotal: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_ruler_managers_total",
 			Help: "Total number of managers registered and running in the ruler",
@@ -214,6 +225,18 @@ func (r *DefaultMultiTenantManager) syncRulesToManager(user string, groups rules
 
 	level.Debug(r.logger).Log("msg", "updating rules", "user", user)
 	r.configUpdatesTotal.WithLabelValues(user).Inc()
+
+	// Populate per-group remote write URL registry before loading rules into the manager,
+	// so that the GroupEvaluationContextFunc can look them up during evaluation.
+	if r.groupURLRegistry != nil {
+		urlMap := make(map[string][]string, len(groups))
+		for _, g := range groups {
+			if len(g.RemoteWriteUrls) > 0 {
+				urlMap[g.Namespace+"/"+g.Name] = g.RemoteWriteUrls
+			}
+		}
+		r.groupURLRegistry.Set(user, urlMap)
+	}
 
 	err = manager.Update(r.cfg.EvaluationInterval, files, labels.EmptyLabels(), r.cfg.ExternalURL.String(), nil)
 	if err != nil {
@@ -359,6 +382,15 @@ func (r *DefaultMultiTenantManager) removeUsersIf(shouldRemove func(userID strin
 		r.lastReloadSuccessfulTimestamp.DeleteLabelValues(userID)
 		r.configUpdatesTotal.DeleteLabelValues(userID)
 		r.userManagerMetrics.RemoveUserRegistry(userID)
+		if r.groupURLRegistry != nil {
+			r.groupURLRegistry.Remove(userID)
+		}
+		if r.rwManager != nil {
+			// Stop all remote write storages for this tenant (empty config list triggers cleanup).
+			if _, err := r.rwManager.AppendablesForTenant(userID, nil); err != nil {
+				level.Warn(r.logger).Log("msg", "error stopping remote write storages for deleted tenant", "user", userID, "err", err)
+			}
+		}
 		level.Info(r.logger).Log("msg", "deleted rule manager and local rule files", "user", userID)
 	}
 

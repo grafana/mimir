@@ -40,11 +40,13 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/ruler/remotewrite"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/storage/series"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/test"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 type fakePusher struct {
@@ -564,7 +566,7 @@ func TestDefaultManagerFactory_CorrectQueryableUsed(t *testing.T) {
 			// create and use manager factory
 			pusher := newPusherMock()
 			pusher.MockPush(&mimirpb.WriteResponse{}, nil)
-			managerFactory := DefaultTenantManagerFactory(cfg, pusher, federatedQueryable, queryFunc, fs, &NoopMultiTenantConcurrencyController{}, options.limits, nil)
+			managerFactory := DefaultTenantManagerFactory(cfg, pusher, federatedQueryable, queryFunc, fs, &NoopMultiTenantConcurrencyController{}, options.limits, nil, nil, nil)
 
 			manager := managerFactory(context.Background(), userID, notifierManager, options.logger, nil)
 
@@ -632,7 +634,7 @@ func TestDefaultManagerFactory_ShouldNotWriteRecordingRuleResultsWhenDisabled(t 
 			pusher := newPusherMock()
 			pusher.MockPush(&mimirpb.WriteResponse{}, nil)
 
-			factory := DefaultTenantManagerFactory(cfg, pusher, queryable, queryFunc, fs, &NoopMultiTenantConcurrencyController{}, options.limits, nil)
+			factory := DefaultTenantManagerFactory(cfg, pusher, queryable, queryFunc, fs, &NoopMultiTenantConcurrencyController{}, options.limits, nil, nil, nil)
 			manager := factory(context.Background(), userID, notifierManager, options.logger, nil)
 
 			// Load rules into manager and start it.
@@ -752,7 +754,7 @@ func TestDefaultManagerFactory_ShouldInjectReadConsistencyToContextBasedOnRuleDe
 			// Create the manager from the factory.
 			queryable := &storage.MockQueryable{MockQuerier: querier}
 			fs := afero.NewMemMapFs()
-			managerFactory := DefaultTenantManagerFactory(cfg, pusher, queryable, rules.EngineQueryFunc(eng, queryable), fs, &NoopMultiTenantConcurrencyController{}, options.limits, nil)
+			managerFactory := DefaultTenantManagerFactory(cfg, pusher, queryable, rules.EngineQueryFunc(eng, queryable), fs, &NoopMultiTenantConcurrencyController{}, options.limits, nil, nil, nil)
 			manager := managerFactory(context.Background(), userID, notifierManager, options.logger, nil)
 
 			// Load rules into manager.
@@ -851,7 +853,7 @@ func TestDefaultManagerFactory_ShouldInjectStrongReadConsistencyToContextWhenQue
 	// Create the manager from the factory.
 	queryable := &storage.MockQueryable{MockQuerier: querier}
 	fs := afero.NewMemMapFs()
-	managerFactory := DefaultTenantManagerFactory(cfg, pusher, queryable, rules.EngineQueryFunc(eng, queryable), fs, &NoopMultiTenantConcurrencyController{}, options.limits, nil)
+	managerFactory := DefaultTenantManagerFactory(cfg, pusher, queryable, rules.EngineQueryFunc(eng, queryable), fs, &NoopMultiTenantConcurrencyController{}, options.limits, nil, nil, nil)
 	manager := managerFactory(context.Background(), userID, notifierManager, options.logger, nil)
 
 	// Load rules into manager.
@@ -1232,7 +1234,7 @@ func TestRulerErrorClassifier_ErrorClassificationDuringRuleEvaluation(t *testing
 			queryable := &storage.MockQueryable{MockQuerier: querier}
 			queryFunc := rules.EngineQueryFunc(eng, queryable)
 
-			factory := DefaultTenantManagerFactory(cfg, pusher, queryable, queryFunc, fs, &NoopMultiTenantConcurrencyController{}, options.limits, nil)
+			factory := DefaultTenantManagerFactory(cfg, pusher, queryable, queryFunc, fs, &NoopMultiTenantConcurrencyController{}, options.limits, nil, nil, nil)
 			manager := factory(context.Background(), userID, notifierManager, options.logger, prometheusReg)
 
 			// Load rules into manager and start
@@ -1317,4 +1319,90 @@ func TestPrometheusErrorStringsForDuplicateLabelsets(t *testing.T) {
 				"Prometheus sentinel error changed! Update the inline check in IsOperatorControllable() in compat.go")
 		})
 	}
+}
+
+func TestAdHocAppendable_NoopWhenCustomURLsDisabled(t *testing.T) {
+	const userID = "tenant-1"
+	limits := validation.MockOverrides(func(d *validation.Limits, _ map[string]*validation.Limits) {
+		d.RulerRemoteWriteEnabled = true
+		d.RulerRemoteWriteAllowCustomURLs = false
+	})
+	m := remotewrite.NewManager(t.TempDir(), 5*time.Second, log.NewNopLogger(), prometheus.NewRegistry())
+	t.Cleanup(m.Stop)
+
+	a := &adHocAppendable{
+		userID:    userID,
+		rwManager: m,
+		overrides: limits,
+		logger:    log.NewNopLogger(),
+		knownURLs: map[string]struct{}{},
+	}
+	ctx := remotewrite.ContextWithRemoteWriteURLs(context.Background(), []string{"http://custom/push"})
+	assert.IsType(t, &NoopAppender{}, a.Appender(ctx))
+}
+
+func TestAdHocAppendable_NoopWhenNoGroupURLs(t *testing.T) {
+	const userID = "tenant-1"
+	limits := validation.MockOverrides(func(d *validation.Limits, _ map[string]*validation.Limits) {
+		d.RulerRemoteWriteEnabled = true
+		d.RulerRemoteWriteAllowCustomURLs = true
+	})
+	m := remotewrite.NewManager(t.TempDir(), 5*time.Second, log.NewNopLogger(), prometheus.NewRegistry())
+	t.Cleanup(m.Stop)
+
+	a := &adHocAppendable{
+		userID:    userID,
+		rwManager: m,
+		overrides: limits,
+		logger:    log.NewNopLogger(),
+		knownURLs: map[string]struct{}{},
+	}
+	// No group URLs injected into context.
+	assert.IsType(t, &NoopAppender{}, a.Appender(context.Background()))
+}
+
+func TestAdHocAppendable_NoopWhenURLAlreadyKnown(t *testing.T) {
+	const userID = "tenant-1"
+	limits := validation.MockOverrides(func(d *validation.Limits, _ map[string]*validation.Limits) {
+		d.RulerRemoteWriteEnabled = true
+		d.RulerRemoteWriteAllowCustomURLs = true
+	})
+	m := remotewrite.NewManager(t.TempDir(), 5*time.Second, log.NewNopLogger(), prometheus.NewRegistry())
+	t.Cleanup(m.Stop)
+
+	const knownURL = "http://already-configured/push"
+	a := &adHocAppendable{
+		userID:    userID,
+		rwManager: m,
+		overrides: limits,
+		logger:    log.NewNopLogger(),
+		knownURLs: map[string]struct{}{knownURL: {}},
+	}
+	// Group targets a URL that's already covered by a static Storage.
+	ctx := remotewrite.ContextWithRemoteWriteURLs(context.Background(), []string{knownURL})
+	assert.IsType(t, &NoopAppender{}, a.Appender(ctx))
+}
+
+func TestAdHocAppendable_CreatesAppenderForUnknownURL(t *testing.T) {
+	const userID = "tenant-1"
+	limits := validation.MockOverrides(func(d *validation.Limits, _ map[string]*validation.Limits) {
+		d.RulerRemoteWriteEnabled = true
+		d.RulerRemoteWriteAllowCustomURLs = true
+	})
+	m := remotewrite.NewManager(t.TempDir(), 5*time.Second, log.NewNopLogger(), prometheus.NewRegistry())
+	t.Cleanup(m.Stop)
+
+	a := &adHocAppendable{
+		userID:    userID,
+		rwManager: m,
+		overrides: limits,
+		logger:    log.NewNopLogger(),
+		knownURLs: map[string]struct{}{},
+	}
+	ctx := remotewrite.ContextWithRemoteWriteURLs(context.Background(), []string{"http://custom/push"})
+	appender := a.Appender(ctx)
+	// Should return a real appender, not a noop.
+	assert.NotNil(t, appender)
+	assert.IsType(t, &multiAppender{}, appender)
+	require.NoError(t, appender.Rollback())
 }

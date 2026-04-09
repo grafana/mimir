@@ -2849,6 +2849,17 @@ tenant_federation:
 # false.
 # CLI flag: -ruler.rule-evaluation-write-enabled
 [rule_evaluation_write_enabled: <boolean> | default = true]
+
+remote_write:
+  # Directory for the WAL used by the ruler remote write feature. Required when
+  # ruler_remote_write_enabled is true for any tenant.
+  # CLI flag: -ruler.remote-write.wal-dir
+  [wal_dir: <string> | default = ""]
+
+  # (advanced) Maximum time to wait for pending remote write requests to
+  # complete during shutdown.
+  # CLI flag: -ruler.remote-write.flush-deadline
+  [flush_deadline: <duration> | default = 1m]
 ```
 
 ### ruler_storage
@@ -4874,6 +4885,64 @@ ruler_alertmanager_client_config:
 # recording rule respectively can produce. 0 is no limit.
 # CLI flag: -ruler.max-rule-evaluation-results
 [ruler_max_rule_evaluation_results: <int> | default = 0]
+
+# (experimental) Enable remote write of recording rule outputs to the configured
+# endpoints. Requires ruler.remote-write.wal-dir to be set.
+[ruler_remote_write_enabled: <boolean> | default = ]
+
+# (experimental) Controls where recording rule outputs are written. Options:
+# 'local' (default, existing behaviour), 'remote' (skip local ingest, forward
+# only), 'both' (local and remote).
+[ruler_remote_write_target: <string> | default = ""]
+
+# (experimental) List of remote write endpoints to forward recording rule
+# outputs to. Only used when ruler_remote_write_enabled is true.
+ruler_remote_write_configs:
+  -     [name: <string> | default = ""]
+
+    [url: <url> | default = ]
+
+    [remote_timeout: <duration> | default = ]
+
+    [headers: <map of string to string> | default = ]
+
+    basic_auth:
+      [username: <string> | default = ""]
+
+      [password: <string> | default = ""]
+
+    [bearer_token: <string> | default = ""]
+
+    tls_config:
+      [insecure_skip_verify: <boolean> | default = ]
+
+      [ca_file: <string> | default = ""]
+
+      [cert_file: <string> | default = ""]
+
+      [key_file: <string> | default = ""]
+
+      [server_name: <string> | default = ""]
+
+    queue_config:
+      [capacity: <int> | default = ]
+
+      [max_shards: <int> | default = ]
+
+      [min_shards: <int> | default = ]
+
+      [max_samples_per_send: <int> | default = ]
+
+      [batch_send_deadline: <duration> | default = ]
+
+      [min_backoff: <duration> | default = ]
+
+      [max_backoff: <duration> | default = ]
+
+# (experimental) Allow rule groups to specify remote write URLs not present in
+# ruler_remote_write_configs. Disabled by default to prevent unintended data
+# exfiltration.
+[ruler_remote_write_allow_custom_urls: <boolean> | default = ]
 
 # The tenant's shard size, used when store-gateway sharding is enabled. Value of
 # 0 disables shuffle sharding for the tenant, that is all tenant blocks are

@@ -31,6 +31,7 @@ import (
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/ruler/notifier"
+	"github.com/grafana/mimir/pkg/ruler/remotewrite"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
@@ -262,6 +263,12 @@ type Limits struct {
 	RulerAlertmanagerClientConfig                         notifier.AlertmanagerClientConfig `yaml:"ruler_alertmanager_client_config" json:"ruler_alertmanager_client_config" category:"experimental" doc:"description=Per-tenant Alertmanager client configuration. If not supplied, the tenant's notifications are sent to the ruler-wide default."`
 	RulerMinRuleEvaluationInterval                        model.Duration                    `yaml:"ruler_min_rule_evaluation_interval" json:"ruler_min_rule_evaluation_interval" category:"experimental"`
 	RulerMaxRuleEvaluationResults                         int                               `yaml:"ruler_max_rule_evaluation_results" json:"ruler_max_rule_evaluation_results" category:"experimental"`
+
+	// Ruler remote write.
+	RulerRemoteWriteEnabled         bool                 `yaml:"ruler_remote_write_enabled" json:"ruler_remote_write_enabled" category:"experimental" doc:"description=Enable remote write of recording rule outputs to the configured endpoints. Requires ruler.remote-write.wal-dir to be set."`
+	RulerRemoteWriteTarget          string               `yaml:"ruler_remote_write_target" json:"ruler_remote_write_target" category:"experimental" doc:"description=Controls where recording rule outputs are written. Options: 'local' (default, existing behaviour), 'remote' (skip local ingest, forward only), 'both' (local and remote)."`
+	RulerRemoteWriteConfigs         []remotewrite.Config `yaml:"ruler_remote_write_configs,omitempty" json:"ruler_remote_write_configs,omitempty" category:"experimental" doc:"description=List of remote write endpoints to forward recording rule outputs to. Only used when ruler_remote_write_enabled is true."`
+	RulerRemoteWriteAllowCustomURLs bool                 `yaml:"ruler_remote_write_allow_custom_urls" json:"ruler_remote_write_allow_custom_urls" category:"experimental" doc:"description=Allow rule groups to specify remote write URLs not present in ruler_remote_write_configs. Disabled by default to prevent unintended data exfiltration."`
 
 	// Store-gateway.
 	StoreGatewayTenantShardSize        int `yaml:"store_gateway_tenant_shard_size" json:"store_gateway_tenant_shard_size"`
@@ -1335,6 +1342,30 @@ func (o *Overrides) RulerMinRuleEvaluationInterval(userID string) time.Duration 
 // RulerMaxRuleEvaluationResults returns the maximum number of results (alert instances) produced by a single alerting rule evaluation.
 func (o *Overrides) RulerMaxRuleEvaluationResults(userID string) int {
 	return o.getOverridesForUser(userID).RulerMaxRuleEvaluationResults
+}
+
+// RulerRemoteWriteEnabled returns whether ruler remote write is enabled for the tenant.
+func (o *Overrides) RulerRemoteWriteEnabled(userID string) bool {
+	return o.getOverridesForUser(userID).RulerRemoteWriteEnabled
+}
+
+// RulerRemoteWriteTarget returns where recording rule outputs are written ("local", "remote", or "both").
+func (o *Overrides) RulerRemoteWriteTarget(userID string) string {
+	t := o.getOverridesForUser(userID).RulerRemoteWriteTarget
+	if t == "" {
+		return "local"
+	}
+	return t
+}
+
+// RulerRemoteWriteConfigs returns the remote write endpoint configs for the tenant.
+func (o *Overrides) RulerRemoteWriteConfigs(userID string) []remotewrite.Config {
+	return o.getOverridesForUser(userID).RulerRemoteWriteConfigs
+}
+
+// RulerRemoteWriteAllowCustomURLs returns whether rule groups may specify custom remote write URLs.
+func (o *Overrides) RulerRemoteWriteAllowCustomURLs(userID string) bool {
+	return o.getOverridesForUser(userID).RulerRemoteWriteAllowCustomURLs
 }
 
 // StoreGatewayTenantShardSize returns the store-gateway shard size for a given user.
