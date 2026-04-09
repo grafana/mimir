@@ -4531,9 +4531,9 @@ The `limits` block configures default and per-tenant limits imposed by component
 # List of queries to block.
 # Example:
 #   The following configuration shows various ways to block queries: by pattern,
-#   by time range, or by combining both. Setting the pattern to ".*" and regex
-#   to true blocks all queries. Time range filtering blocks queries with
-#   durations exceeding the specified threshold.
+#   by time range, or by combining both. Pattern is required for a rule to fire;
+#   use pattern: ".*" with regex: true to match all queries. Time range
+#   filtering blocks queries with durations exceeding the specified threshold.
 #   blocked_queries:
 #       - pattern: rate(metric_counter[5m])
 #         regex: false
@@ -4544,13 +4544,14 @@ The `limits` block configures default and per-tenant limits imposed by component
 #         reason: expensive queries over 7 days are blocked
 #         unaligned_range_queries: false
 #         time_range_longer_than: 1w
-#       - pattern: ""
-#         regex: false
+#       - pattern: .*
+#         regex: true
 #         reason: queries longer than 21 days are blocked
 #         unaligned_range_queries: false
 #         time_range_longer_than: 3w
 blocked_queries:
-  - # PromQL expression pattern to match.
+  - # PromQL expression pattern to match. Required; rules without a pattern are
+# skipped.
     [pattern: <string> | default = ""]
 
     # If true, the pattern is treated as a regular expression. If false, the

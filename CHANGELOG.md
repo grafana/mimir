@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Query-frontend: `blocked_queries` rules without a `pattern` are now silently skipped. Previously, rules with only `time_range_longer_than` or `minimum_step_size` (and no `pattern`) acted as catch-all filters. To preserve this behaviour, set `pattern: ".*"` and `regex: true`. #14978
 * [CHANGE] Ingester: Changed default value of `-include-tenant-id-in-profile-labels` from false to true. #13375
 * [CHANGE] Hash ring: removed experimental support for disabling heartbeats (setting `-*.ring.heartbeat-period=0`) and heartbeat timeouts (setting `-*.ring.heartbeat-timeout=0`). These configurations are now invalid. #13104
 * [CHANGE] Distributor: removed experimental flag `-distributor.metric-relabeling-enabled`. #13143
