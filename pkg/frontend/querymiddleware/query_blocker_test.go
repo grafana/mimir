@@ -482,8 +482,8 @@ blocked_queries:
 	}
 }
 
-// TestQueryBlockerMiddleware_TimeRange verifies conjunction: when only time_range_longer_than is
-// configured, the time range must exceed the threshold to block.
+// TestQueryBlockerMiddleware_TimeRange verifies conjunction: when time_range_longer_than is
+// configured (with the required pattern), the time range must exceed the threshold to block.
 func TestQueryBlockerMiddleware_TimeRange(t *testing.T) {
 	now := time.Now()
 
@@ -515,7 +515,9 @@ func TestQueryBlockerMiddleware_TimeRange(t *testing.T) {
 			name: "time range longer than threshold (range - blocked)",
 			limitsYAML: `
 blocked_queries:
-  - time_range_longer_than: "24h"
+  - pattern: ".*"
+    regex: true
+    time_range_longer_than: "24h"
     reason: "queries longer than 1 day are not allowed"
 `,
 			makeReq:         rangeReq("up", now.Add(-48*time.Hour), now),
@@ -525,7 +527,9 @@ blocked_queries:
 			name: "time range longer than threshold (instant - not blocked)",
 			limitsYAML: `
 blocked_queries:
-  - time_range_longer_than: "24h"
+  - pattern: ".*"
+    regex: true
+    time_range_longer_than: "24h"
     reason: "queries longer than 1 day are not allowed"
 `,
 			makeReq:         instantReq("up"),
@@ -535,7 +539,9 @@ blocked_queries:
 			name: "time range under threshold",
 			limitsYAML: `
 blocked_queries:
-  - time_range_longer_than: "24h"
+  - pattern: ".*"
+    regex: true
+    time_range_longer_than: "24h"
 `,
 			makeReq:         rangeReq("up", now.Add(-12*time.Hour), now),
 			expectedBlocked: false,
@@ -560,8 +566,8 @@ blocked_queries:
 	}
 }
 
-// TestQueryBlockerMiddleware_StepSize verifies conjunction: when only minimum_step_size is
-// configured, the step must be below the threshold to block.
+// TestQueryBlockerMiddleware_StepSize verifies conjunction: when minimum_step_size is
+// configured (with the required pattern), the step must be below the threshold to block.
 func TestQueryBlockerMiddleware_StepSize(t *testing.T) {
 	now := time.Now()
 
@@ -598,7 +604,9 @@ func TestQueryBlockerMiddleware_StepSize(t *testing.T) {
 			name: "step below threshold is blocked",
 			limitsYAML: `
 blocked_queries:
-  - minimum_step_size: "1m"
+  - pattern: ".*"
+    regex: true
+    minimum_step_size: "1m"
     reason: "step too small"
 `,
 			makeReq:         rangeReq("rate(expensive_metric[5m])", step30s),
@@ -608,7 +616,9 @@ blocked_queries:
 			name: "step equal to threshold is not blocked",
 			limitsYAML: `
 blocked_queries:
-  - minimum_step_size: "1m"
+  - pattern: ".*"
+    regex: true
+    minimum_step_size: "1m"
 `,
 			makeReq:         rangeReq("rate(expensive_metric[5m])", step1m),
 			expectedBlocked: false,
@@ -617,7 +627,9 @@ blocked_queries:
 			name: "step above threshold is not blocked",
 			limitsYAML: `
 blocked_queries:
-  - minimum_step_size: "1m"
+  - pattern: ".*"
+    regex: true
+    minimum_step_size: "1m"
 `,
 			makeReq:         rangeReq("rate(expensive_metric[5m])", step5m),
 			expectedBlocked: false,
@@ -626,7 +638,9 @@ blocked_queries:
 			name: "instant query (step=0) is not blocked",
 			limitsYAML: `
 blocked_queries:
-  - minimum_step_size: "1m"
+  - pattern: ".*"
+    regex: true
+    minimum_step_size: "1m"
 `,
 			makeReq:         instantReq("rate(expensive_metric[5m])"),
 			expectedBlocked: false,
@@ -824,7 +838,8 @@ blocked_queries:
 }
 
 // TestQueryBlockerMiddleware_TimeRangeAndStepSize verifies conjunction: when time_range_longer_than
-// and minimum_step_size are both configured, both conditions must be violated to block.
+// and minimum_step_size are both configured (with the required pattern), both conditions must be
+// violated to block.
 func TestQueryBlockerMiddleware_TimeRangeAndStepSize(t *testing.T) {
 	now := time.Now()
 
@@ -853,7 +868,9 @@ func TestQueryBlockerMiddleware_TimeRangeAndStepSize(t *testing.T) {
 			name: "time_range and step both violated is blocked",
 			limitsYAML: `
 blocked_queries:
-  - time_range_longer_than: "24h"
+  - pattern: ".*"
+    regex: true
+    time_range_longer_than: "24h"
     minimum_step_size: "1m"
     reason: "long range with small step"
 `,
@@ -865,7 +882,9 @@ blocked_queries:
 			name: "time_range violated but step ok - not blocked",
 			limitsYAML: `
 blocked_queries:
-  - time_range_longer_than: "24h"
+  - pattern: ".*"
+    regex: true
+    time_range_longer_than: "24h"
     minimum_step_size: "1m"
 `,
 			makeReq:         rangeReq("rate(expensive_metric[5m])", now.Add(-48*time.Hour), step5m),
@@ -876,7 +895,9 @@ blocked_queries:
 			name: "time_range ok but step violated - not blocked",
 			limitsYAML: `
 blocked_queries:
-  - time_range_longer_than: "24h"
+  - pattern: ".*"
+    regex: true
+    time_range_longer_than: "24h"
     minimum_step_size: "1m"
 `,
 			makeReq:         rangeReq("rate(expensive_metric[5m])", now.Add(-12*time.Hour), step30s),
