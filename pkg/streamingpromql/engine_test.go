@@ -206,6 +206,18 @@ func TestRangeVectorSelectors(t *testing.T) {
 	mimirEngine, err := NewEngine(opts, stats.NewQueryMetrics(nil), planner)
 	require.NoError(t, err)
 
+	delayedLimits := NewStaticQueryLimitsProvider()
+	delayedLimits.EnableDelayedNameRemoval = true
+	delayedOpts := NewTestEngineOpts()
+	delayedOpts.Limits = delayedLimits
+	delayedOpts.CommonOpts.EnableDelayedNameRemoval = true
+
+	delayedPrometheusEngine := promql.NewEngine(delayedOpts.CommonOpts)
+	delayedPlanner, err := NewQueryPlanner(delayedOpts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+	delayedMimirEngine, err := NewEngine(delayedOpts, stats.NewQueryMetrics(nil), delayedPlanner)
+	require.NoError(t, err)
+
 	baseT := timestamp.Time(0)
 	storage := promqltest.LoadedStorage(t, `
 		load 1m
@@ -771,9 +783,17 @@ func TestRangeVectorSelectors(t *testing.T) {
 				runTest(t, mimirEngine, testCase.expr, testCase.ts, testCase.expected)
 			})
 
+			t.Run(fmt.Sprintf("%s - delayed name removal", mimirEngineName), func(t *testing.T) {
+				runTest(t, delayedMimirEngine, testCase.expr, testCase.ts, testCase.expected)
+			})
+
 			// Run the tests against Prometheus' engine to ensure our test cases are valid.
 			t.Run(prometheusEngineName, func(t *testing.T) {
 				runTest(t, prometheusEngine, testCase.expr, testCase.ts, testCase.expected)
+			})
+
+			t.Run(fmt.Sprintf("%s - delayed name removal", prometheusEngineName), func(t *testing.T) {
+				runTest(t, delayedPrometheusEngine, testCase.expr, testCase.ts, testCase.expected)
 			})
 		})
 	}

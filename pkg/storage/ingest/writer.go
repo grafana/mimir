@@ -127,7 +127,9 @@ func (w *Writer) starting(_ context.Context) error {
 		maxInflightProduceRequests = defaultMaxInflightProduceRequests
 	}
 
-	client, err := NewKafkaWriterClient(w.kafkaCfg, maxInflightProduceRequests, w.logger, clientReg)
+	// The Writer does not use a default topic because the topic is set on each record individually,
+	// allowing writes to different topics (compartments).
+	client, err := NewKafkaWriterClient(w.kafkaCfg, maxInflightProduceRequests, w.logger, clientReg, WithDisableDefaultTopic())
 	if err != nil {
 		return err
 	}
@@ -152,13 +154,13 @@ type PartitionWriteRequest struct {
 
 // WriteSync the input data to the ingest storage. The function blocks until the data has been successfully committed,
 // or an error occurred.
-func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string, req *mimirpb.WriteRequest) error {
-	return w.MultiWriteSync(ctx, userID, []PartitionWriteRequest{{PartitionID: partitionID, WriteRequest: req}})
+func (w *Writer) WriteSync(ctx context.Context, topic string, partitionID int32, userID string, req *mimirpb.WriteRequest) error {
+	return w.MultiWriteSync(ctx, topic, userID, []PartitionWriteRequest{{PartitionID: partitionID, WriteRequest: req}})
 }
 
 // MultiWriteSync writes data for multiple partitions to the ingest storage in a single ProduceSync call.
 // The function blocks until all data has been successfully committed, or an error occurred.
-func (w *Writer) MultiWriteSync(ctx context.Context, userID string, partitionRequests []PartitionWriteRequest) error {
+func (w *Writer) MultiWriteSync(ctx context.Context, topic string, userID string, partitionRequests []PartitionWriteRequest) error {
 	client := w.client.Load()
 	if client == nil {
 		return ErrWriterNotRunning
@@ -177,7 +179,7 @@ func (w *Writer) MultiWriteSync(ctx context.Context, userID string, partitionReq
 			continue
 		}
 
-		records, reqSizeBytes, err := w.serializer.ToRecords(pr.PartitionID, userID, pr.WriteRequest, w.kafkaCfg.ProducerMaxRecordSizeBytes)
+		records, reqSizeBytes, err := w.serializer.ToRecords(topic, pr.PartitionID, userID, pr.WriteRequest, w.kafkaCfg.ProducerMaxRecordSizeBytes)
 		if err != nil {
 			return err
 		}
@@ -205,8 +207,8 @@ func (w *Writer) MultiWriteSync(ctx context.Context, userID string, partitionReq
 		}
 	}
 
-	// Write to backend. The partition field is already set on each record by ToRecords,
-	// so the Kafka client routes records to the correct partition.
+	// Write to backend. The topic and partition fields are already set on each record by ToRecords,
+	// so the Kafka client routes records to the correct topic and partition.
 	res := client.ProduceSync(ctx, allRecords)
 
 	// We track the latency both in case of success and failure (but with a different label), to avoid misunderstandings
@@ -237,10 +239,10 @@ type requestSplitter func(req *mimirpb.WriteRequest, reqSize, maxSize int) []*mi
 // have their data size limited to maxSize. The reason is that the WriteRequest is split
 // by each individual Timeseries and Metadata: if a single Timeseries or Metadata is bigger than
 // maxSize, than the resulting record will be bigger than the limit as well.
-func marshalWriteRequestToRecords(partitionID int32, tenantID string, req *mimirpb.WriteRequest, reqSize, maxSize int, split requestSplitter) ([]*kgo.Record, error) {
+func marshalWriteRequestToRecords(topic string, partitionID int32, tenantID string, req *mimirpb.WriteRequest, reqSize, maxSize int, split requestSplitter) ([]*kgo.Record, error) {
 	if reqSize <= maxSize {
 		// No need to split the request. We can take a fast path.
-		rec, err := marshalWriteRequestToRecord(partitionID, tenantID, req, reqSize)
+		rec, err := marshalWriteRequestToRecord(topic, partitionID, tenantID, req, reqSize)
 		if err != nil {
 			return nil, err
 		}
@@ -248,14 +250,14 @@ func marshalWriteRequestToRecords(partitionID int32, tenantID string, req *mimir
 		return []*kgo.Record{rec}, nil
 	}
 
-	return marshalWriteRequestsToRecords(partitionID, tenantID, split(req, reqSize, maxSize))
+	return marshalWriteRequestsToRecords(topic, partitionID, tenantID, split(req, reqSize, maxSize))
 }
 
-func marshalWriteRequestsToRecords(partitionID int32, tenantID string, reqs []*mimirpb.WriteRequest) ([]*kgo.Record, error) {
+func marshalWriteRequestsToRecords(topic string, partitionID int32, tenantID string, reqs []*mimirpb.WriteRequest) ([]*kgo.Record, error) {
 	records := make([]*kgo.Record, 0, len(reqs))
 
 	for _, req := range reqs {
-		rec, err := marshalWriteRequestToRecord(partitionID, tenantID, req, req.Size())
+		rec, err := marshalWriteRequestToRecord(topic, partitionID, tenantID, req, req.Size())
 		if err != nil {
 			return nil, err
 		}
@@ -266,7 +268,7 @@ func marshalWriteRequestsToRecords(partitionID int32, tenantID string, reqs []*m
 	return records, nil
 }
 
-func marshalWriteRequestToRecord(partitionID int32, tenantID string, req *mimirpb.WriteRequest, reqSize int) (*kgo.Record, error) {
+func marshalWriteRequestToRecord(topic string, partitionID int32, tenantID string, req *mimirpb.WriteRequest, reqSize int) (*kgo.Record, error) {
 	// Marshal the request.
 	data := make([]byte, reqSize)
 	n, err := req.MarshalToSizedBuffer(data[:reqSize])
@@ -276,6 +278,7 @@ func marshalWriteRequestToRecord(partitionID int32, tenantID string, req *mimirp
 	data = data[:n]
 
 	return &kgo.Record{
+		Topic:     topic,
 		Key:       []byte(tenantID), // We don't partition based on the key, so the value here doesn't make any difference.
 		Value:     data,
 		Partition: partitionID,

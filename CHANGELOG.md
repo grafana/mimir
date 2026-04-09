@@ -33,6 +33,7 @@
 * [CHANGE] Querier: The flag `-querier.filter-queryables-enabled` is deprecated and will be removed in Mimir 3.3. #14843
 * [CHANGE] Ingest storage: The `cortex_ingest_storage_writer_latency_seconds` metric now tracks the latency to write an incoming request to all Kafka partitions in a single call, instead of tracking latency individually for each partition. #14898
 * [CHANGE] Ingest storage: deprecated `-ingest-storage.kafka.write-clients` CLI flag. The flag is now ignored and Mimir always uses a single Kafka write client. The flag will be removed in Mimir 3.3. #14903
+* [CHANGE] Alertmanager: `-alertmanager.grafana-alertmanager-idle-grace-period` renamed to `-alertmanager.strict-initialization-idle-grace-period`. #14960
 * [FEATURE] Distributor: Derive limits based on tenant metadata. Supported limits are `max_active_series_per_user`, `ingestion_rate`, `ingestion_burst_size`, `ingestion_burst_factor`, `otel_metric_suffixes_enabled`, `name_validation_scheme` and `otel_translation_strategy`. #14289
 * [FEATURE] Distributor: add `cortex_distributor_request_body_compression_ratio` histogram that tracks the compression of write requests. #14232
 * [FEATURE] Distributor: add `-distributor.otel-label-name-underscore-sanitization` and `-distributor.otel-label-name-preserve-underscores` that control sanitization of underscores during OTLP translation. #13133
@@ -53,7 +54,7 @@
 * [FEATURE] Ingest storage: Add `-ingest-storage.kafka.tls*` flags to connect to Kafka using TLS. #14550
 * [FEATURE] Ingest storage: Add `-ingest-storage.ingestion-partition-tenant-write-shard-size` to limit the number of partitions used for writes independently from reads, allowing safely reducing the shard size without losing query coverage during the migration. #14780
 * [FEATURE] MQE: Add experimental support for splitting and caching intermediate results for functions over range vectors in instant queries. #13472 #14479 #14506 #14499 #14517 #14536 #14614 #14645 #14677 #14788
-* [FEATURE] MQE: Add experimental support for reporting the number of samples read per query. #14828
+* [FEATURE] MQE: Add experimental support for reporting the number of samples read per query. #14828 #14839
 * [FEATURE] Compactor: Add `-compactor.ooo-split-and-merge-shards` per-tenant limit to allow a separate shard count for blocks with the out-of-order external label. #14704
 * [ENHANCEMENT] Query-frontend: Add `minimum_step_size` filter to blocked queries config to reject range queries with a step smaller than the configured threshold. #14885
 * [ENHANCEMENT] Query-frontend: Add support for blocking queries exceeding a time range duration with `time_range_longer_than`. #14609
@@ -171,6 +172,7 @@
 * [ENHANCEMENT] MQE: Improve per-query memory consumption limit enforcement in histogram function evaluations. #14691
 * [ENHANCEMENT] MQE: Improve per-query memory consumption limit enforcement within aggregation operations. #14735
 * [ENHANCEMENT] Usage-tracker: Improve performance by using a special shard grouping algorithm. #14715
+* [ENHANCEMENT] MQE: Support subset selector elimination for expressions where the subset is given by regex selectors. #14732
 * [ENHANCEMENT] API: activity tracker (if enabled) covers the full request lifecycle and used on all routes. #14777
 * [ENHANCEMENT] MQE: Add metrics for tracking in-flight memory consumption tracking. `cortex_querier_inflight_query_max_estimated_memory_consumption_limit_bytes`, `cortex_querier_inflight_query_current_estimated_memory_consumption_bytes`, `cortex_querier_inflight_query_peak_estimated_memory_consumption_bytes` and `cortex_querier_inflight_query_sampled_count`. #14807
 * [ENHANCEMENT] Activity tracker: Added `activity_tracker_unfinished_activities_loaded` metric to report the number of unfinished activities detected on startup. #14860
@@ -239,6 +241,9 @@
 * [BUGFIX] Distributor: Fix nil pointer panic in `WriteRequest.Unmarshal` when receiving a Remote Write 2.0 request with zero timeseries. #14698
 * [BUGFIX] MQE: Fix `info()` incorrectly dropping inner series with no matching info series when a data label matcher matches the empty string. #14819
 * [BUGFIX] MQE: Fix `info()` emitting un-enriched series when a data label matcher doesn't match the empty string and the info series is unavailable at some timestamps. #14812
+* [BUGFIX] MQE: Fix and/unless functions to not pass matchers to RHS as it can result in incorrect filtering. #14902
+* [BUGFIX] MQE: Fix internal error when executing a subquery with delayed name removal enabled. #14946
+* [BUGFIX] Alertmanager: Fix deadlock when trying to broadcast after stopping a tenant #14922
 
 ### Mixin
 
@@ -301,6 +306,7 @@
 * [ENHANCEMENT] Alerts: Make `MimirInconsistentRuntimeConfig` alert less flaky when performing multiple configuration changes in a row in a large Kubernetes cluster. #14743 #14933
 * [ENHANCEMENT] Alerts: Suppress `MimirRingMembersMismatch` alert during ingester rollouts. The alert now uses an `unless` clause to avoid false positives when ingester statefulsets are being updated. #14895
 * [ENHANCEMENT] Recording rules: add a low-cardinality recorded version of usage_tracker_active_series. #14901
+* [ENHANCEMENT] Alerts: Fix `MimirSchedulerQueriesStuck` false positives by only looking for cases where the number of enqueued queries doesn't decrease. #14943
 * [BUGFIX] Dashboards: Fix compactor dashboard to exclude instances without the last successful run metric in the "Last successful run per-compactor replica" table. #14784
 * [BUGFIX] Dashboards: Fix issue where throughput dashboard panels would group all gRPC requests that resulted in a status containing an underscore into one series with no name. #13184
 * [BUGFIX] Dashboards: Filter out 0s from `max_series` limit on Writes Resources > Ingester > In-memory series panel. #13419
@@ -382,7 +388,7 @@
 * [FEATURE] mimir-tool: Add `validate alerts-file` command that performs checks on alert files defined as YAML. #14043
 * [FEATURE] mimir-tool: Add `partition-ring add-partition` and `partition-ring remove-partition` commands. #14265
 * [FEATURE] mimir-tool: Add `partition-ring add-owner` and `partition-ring remove-owner` commands. #14462
-* [FEATURE] tsdb-index-header: Add tool to inspect the content of a block's index or index-header. #13738 #14279
+* [FEATURE] tsdb-index-header: Add tool to inspect the content of a block's index or index-header. #13738 #14279 #14944
 * [FEATURE] tsdb-chunks, tsdb-print-chunk: When printing samples, include the start time (ST) in the output. #14337
 * [FEATURE] kafkatool: Add `create-topic` command to create a Kafka topic with a specified number of partitions. #14639
 * [FEATURE] kafkatool: Add `list-topics` command to list all Kafka topics and their partition counts. #14639

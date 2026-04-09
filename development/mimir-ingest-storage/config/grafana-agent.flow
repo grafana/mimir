@@ -50,21 +50,14 @@ prometheus.scrape "metrics_local_mimir_ingest_storage" {
                         namespace   = "mimir-ingest-storage",
                 }],
                 [{
-                        __address__ = "store-gateway-1:8080",
+                        __address__ = "store-gateway-zone-a-1:8080",
                         cluster     = "docker-compose",
                         container   = "store-gateway",
                         job         = "mimir-ingest-storage/store-gateway",
                         namespace   = "mimir-ingest-storage",
                 }],
                 [{
-                        __address__ = "store-gateway-2:8080",
-                        cluster     = "docker-compose",
-                        container   = "store-gateway",
-                        job         = "mimir-ingest-storage/store-gateway",
-                        namespace   = "mimir-ingest-storage",
-                }],
-                [{
-                        __address__ = "store-gateway-3:8080",
+                        __address__ = "store-gateway-zone-b-1:8080",
                         cluster     = "docker-compose",
                         container   = "store-gateway",
                         job         = "mimir-ingest-storage/store-gateway",

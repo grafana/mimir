@@ -331,6 +331,262 @@ func TestOperatorEvaluationStats_Clone(t *testing.T) {
 	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 }
 
+func TestOperatorEvaluationStats_ComputeForSubquery(t *testing.T) {
+	// Inner time range: steps at 0, 2, 4, 6, 8, 10 minutes (6 steps with 2 minute interval).
+	innerStep := 2 * time.Minute
+	innerStart := timestamp.Time(0)
+	innerEnd := innerStart.Add(5 * innerStep)
+	innerTimeRange := NewRangeQueryTimeRange(innerStart, innerEnd, innerStep)
+
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+	samplesProcessedAt := func(t int) int64 { return int64(10 + t*10) }
+	newSamplesReadAt := func(t int) int64 { return int64(5 + t*10) }
+
+	createInnerStats := func(t *testing.T) *OperatorEvaluationStats {
+		inner, err := NewOperatorEvaluationStats(innerTimeRange, memoryConsumptionTracker)
+		require.NoError(t, err)
+
+		for i := range innerTimeRange.StepCount {
+			inner.samplesProcessedPerStep[i] = samplesProcessedAt(i)
+			inner.newSamplesReadPerStep[i] = newSamplesReadAt(i)
+		}
+
+		return inner
+	}
+
+	t.Run("range query, outer ranges overlap", func(t *testing.T) {
+		parentStep := 4 * time.Minute
+		parentStart := innerStart.Add(6 * time.Minute)
+		parentEnd := parentStart.Add(parentStep)
+		parentTimeRange := NewRangeQueryTimeRange(parentStart, parentEnd, parentStep)
+
+		inner := createInnerStats(t)
+		subqueryRange := 6 * time.Minute
+		result, err := inner.ComputeForSubquery(parentTimeRange, subqueryRange.Milliseconds(), nil, 0)
+		require.NoError(t, err)
+
+		// At t=6min: inner steps in (0m, 6m] = {2m, 4m, 6m} (idx 1, 2, 3)
+		// new samples start after 0m, inner steps in (0m, 6m] = {2m, 4m, 6m} (idx 1, 2, 3)
+		//
+		// At t=10min: inner steps in (4m, 10m] = {6m, 8m, 10m} (idx 3, 4, 5)
+		// new samples start after 6m, inner steps in (6m, 10m] = {8m, 10m} (idx 4, 5)
+		require.Equal(t, []int64{samplesProcessedAt(1) + samplesProcessedAt(2) + samplesProcessedAt(3), samplesProcessedAt(3) + samplesProcessedAt(4) + samplesProcessedAt(5)}, result.samplesProcessedPerStep)
+		require.Equal(t, []int64{newSamplesReadAt(1) + newSamplesReadAt(2) + newSamplesReadAt(3), newSamplesReadAt(4) + newSamplesReadAt(5)}, result.newSamplesReadPerStep)
+
+		inner.Close()
+		result.Close()
+		require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	})
+
+	t.Run("range query, outer ranges correspond 1:1 with inner steps", func(t *testing.T) {
+		parentStep := 2 * time.Minute
+		parentStart := innerStart.Add(6 * time.Minute)
+		parentEnd := parentStart.Add(parentStep)
+		parentTimeRange := NewRangeQueryTimeRange(parentStart, parentEnd, parentStep)
+
+		inner := createInnerStats(t)
+		subqueryRange := parentStep
+		result, err := inner.ComputeForSubquery(parentTimeRange, subqueryRange.Milliseconds(), nil, 0)
+		require.NoError(t, err)
+
+		// At t=6min: inner steps in (4m, 6m] = {6m} (idx 3)
+		// new samples start after 4m, inner steps in (4m, 6m] = {6m} (same)
+		//
+		// At t=8min: inner steps in (6m, 8m] = {8m} (idx 4)
+		// new samples start after 6m, inner steps in (6m, 8m] = {8m} (same)
+		require.Equal(t, []int64{samplesProcessedAt(3), samplesProcessedAt(4)}, result.samplesProcessedPerStep)
+		require.Equal(t, []int64{newSamplesReadAt(3), newSamplesReadAt(4)}, result.newSamplesReadPerStep)
+
+		inner.Close()
+		result.Close()
+		require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	})
+
+	t.Run("range query, outer ranges don't use all inner steps", func(t *testing.T) {
+		parentStep := 6 * time.Minute
+		parentStart := innerStart.Add(4 * time.Minute)
+		parentEnd := parentStart.Add(parentStep)
+		parentTimeRange := NewRangeQueryTimeRange(parentStart, parentEnd, parentStep)
+
+		inner := createInnerStats(t)
+		subqueryRange := 3 * time.Minute
+		result, err := inner.ComputeForSubquery(parentTimeRange, subqueryRange.Milliseconds(), nil, 0)
+		require.NoError(t, err)
+
+		// At t=4min: inner steps in (1m, 4m] = {2m, 4m} (idx 1, 2)
+		// new samples start after 1m, inner steps in (1m, 4m] = {2m, 4m} (same)
+		//
+		// At t=10min: inner steps in (7m, 10m] = {8m, 10m} (idx 4, 5)
+		// new samples start after 7m, inner steps in (7m, 10m] = {8m, 10m} (same)
+		require.Equal(t, []int64{samplesProcessedAt(1) + samplesProcessedAt(2), samplesProcessedAt(4) + samplesProcessedAt(5)}, result.samplesProcessedPerStep)
+		require.Equal(t, []int64{newSamplesReadAt(1) + newSamplesReadAt(2), newSamplesReadAt(4) + newSamplesReadAt(5)}, result.newSamplesReadPerStep)
+
+		inner.Close()
+		result.Close()
+		require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	})
+
+	t.Run("range query with @", func(t *testing.T) {
+		parentStep := 4 * time.Minute
+		parentStart := innerStart.Add(6 * time.Minute)
+		parentEnd := parentStart.Add(parentStep)
+		parentTimeRange := NewRangeQueryTimeRange(parentStart, parentEnd, parentStep)
+
+		inner := createInnerStats(t)
+		subqueryRange := 6 * time.Minute
+		fixedTimestampMs := (8 * time.Minute).Milliseconds()
+		result, err := inner.ComputeForSubquery(parentTimeRange, subqueryRange.Milliseconds(), &fixedTimestampMs, 0)
+		require.NoError(t, err)
+
+		// For all steps, the inner steps are (2m, 8m] = {4m, 6m, 8m} (idx 2, 3, 4)
+		samplesProcessed := samplesProcessedAt(2) + samplesProcessedAt(3) + samplesProcessedAt(4)
+		require.Equal(t, []int64{samplesProcessed, samplesProcessed}, result.samplesProcessedPerStep)
+		require.Equal(t, []int64{newSamplesReadAt(2) + newSamplesReadAt(3) + newSamplesReadAt(4), 0}, result.newSamplesReadPerStep) // No new samples are read for subsequent steps.
+
+		inner.Close()
+		result.Close()
+		require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	})
+
+	t.Run("range query with offset", func(t *testing.T) {
+		parentStep := 4 * time.Minute
+		parentStart := innerStart.Add(10 * time.Minute)
+		parentEnd := parentStart.Add(parentStep)
+		parentTimeRange := NewRangeQueryTimeRange(parentStart, parentEnd, parentStep)
+
+		inner := createInnerStats(t)
+		subqueryRange := 6 * time.Minute
+		offset := 4 * time.Minute
+		result, err := inner.ComputeForSubquery(parentTimeRange, subqueryRange.Milliseconds(), nil, offset.Milliseconds())
+		require.NoError(t, err)
+
+		// At t=10min: inner steps in (0m, 6m] = {2m, 4m, 6m} (idx 1, 2, 3)
+		// At t=14min: inner steps in (4m, 10m] = {6m, 8m, 10m} (idx 3, 4, 5)
+		require.Equal(t, []int64{samplesProcessedAt(1) + samplesProcessedAt(2) + samplesProcessedAt(3), samplesProcessedAt(3) + samplesProcessedAt(4) + samplesProcessedAt(5)}, result.samplesProcessedPerStep)
+		require.Equal(t, []int64{newSamplesReadAt(1) + newSamplesReadAt(2) + newSamplesReadAt(3), newSamplesReadAt(4) + newSamplesReadAt(5)}, result.newSamplesReadPerStep)
+
+		inner.Close()
+		result.Close()
+		require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	})
+
+	t.Run("range query with @ and offset", func(t *testing.T) {
+		parentStep := 4 * time.Minute
+		parentStart := innerStart.Add(10 * time.Minute)
+		parentEnd := parentStart.Add(parentStep)
+		parentTimeRange := NewRangeQueryTimeRange(parentStart, parentEnd, parentStep)
+
+		inner := createInnerStats(t)
+		subqueryRange := 6 * time.Minute
+		offset := 2 * time.Minute
+		fixedTimestampMs := (8 * time.Minute).Milliseconds()
+		result, err := inner.ComputeForSubquery(parentTimeRange, subqueryRange.Milliseconds(), &fixedTimestampMs, offset.Milliseconds())
+		require.NoError(t, err)
+
+		// For all steps, the inner steps are (0m, 6m] = {2m, 4m, 6m} (idx 1, 2, 3)
+		samplesProcessed := samplesProcessedAt(1) + samplesProcessedAt(2) + samplesProcessedAt(3)
+		require.Equal(t, []int64{samplesProcessed, samplesProcessed}, result.samplesProcessedPerStep)
+		require.Equal(t, []int64{newSamplesReadAt(1) + newSamplesReadAt(2) + newSamplesReadAt(3), 0}, result.newSamplesReadPerStep)
+
+		inner.Close()
+		result.Close()
+		require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	})
+
+	t.Run("no inner steps in range", func(t *testing.T) {
+		parentStep := 4 * time.Minute
+		parentStart := innerStart.Add(20 * time.Minute)
+		parentEnd := parentStart.Add(parentStep)
+		parentTimeRange := NewRangeQueryTimeRange(parentStart, parentEnd, parentStep)
+
+		inner := createInnerStats(t)
+		subqueryRange := 2 * time.Minute
+		result, err := inner.ComputeForSubquery(parentTimeRange, subqueryRange.Milliseconds(), nil, 0)
+		require.NoError(t, err)
+
+		require.Equal(t, []int64{0, 0}, result.samplesProcessedPerStep)
+		require.Equal(t, []int64{0, 0}, result.newSamplesReadPerStep)
+
+		inner.Close()
+		result.Close()
+		require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	})
+
+	t.Run("instant query", func(t *testing.T) {
+		parentTimeRange := NewInstantQueryTimeRange(innerStart.Add(10 * time.Minute))
+
+		inner := createInnerStats(t)
+		subqueryRange := 6 * time.Minute
+		result, err := inner.ComputeForSubquery(parentTimeRange, subqueryRange.Milliseconds(), nil, 0)
+		require.NoError(t, err)
+
+		// At t=10m: inner steps in (4m, 10m] = {6m, 8m, 10m} (idx 3, 4, 5)
+		require.Equal(t, []int64{samplesProcessedAt(3) + samplesProcessedAt(4) + samplesProcessedAt(5)}, result.samplesProcessedPerStep)
+		require.Equal(t, []int64{newSamplesReadAt(3) + newSamplesReadAt(4) + newSamplesReadAt(5)}, result.newSamplesReadPerStep)
+
+		inner.Close()
+		result.Close()
+		require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	})
+
+	t.Run("instant query with @", func(t *testing.T) {
+		parentTimeRange := NewInstantQueryTimeRange(innerStart.Add(10 * time.Minute))
+
+		inner := createInnerStats(t)
+		subqueryRange := 6 * time.Minute
+		fixedTimestampMs := (8 * time.Minute).Milliseconds()
+		result, err := inner.ComputeForSubquery(parentTimeRange, subqueryRange.Milliseconds(), &fixedTimestampMs, 0)
+		require.NoError(t, err)
+
+		// At t=10m, subquery timestamp is 8m: inner steps in (2m, 8m] = {4m, 6m, 8m} (idx 2, 3, 4)
+		require.Equal(t, []int64{samplesProcessedAt(2) + samplesProcessedAt(3) + samplesProcessedAt(4)}, result.samplesProcessedPerStep)
+		require.Equal(t, []int64{newSamplesReadAt(2) + newSamplesReadAt(3) + newSamplesReadAt(4)}, result.newSamplesReadPerStep)
+
+		inner.Close()
+		result.Close()
+		require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	})
+
+	t.Run("instant query with offset", func(t *testing.T) {
+		parentTimeRange := NewInstantQueryTimeRange(innerStart.Add(12 * time.Minute))
+
+		inner := createInnerStats(t)
+		subqueryRange := 6 * time.Minute
+		offset := 2 * time.Minute
+		result, err := inner.ComputeForSubquery(parentTimeRange, subqueryRange.Milliseconds(), nil, offset.Milliseconds())
+		require.NoError(t, err)
+
+		// At t=12m: inner steps in (4m, 10m] = {6m, 8m, 10m} (idx 3, 4, 5)
+		require.Equal(t, []int64{samplesProcessedAt(3) + samplesProcessedAt(4) + samplesProcessedAt(5)}, result.samplesProcessedPerStep)
+		require.Equal(t, []int64{newSamplesReadAt(3) + newSamplesReadAt(4) + newSamplesReadAt(5)}, result.newSamplesReadPerStep)
+
+		inner.Close()
+		result.Close()
+		require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	})
+
+	t.Run("instant query with @ and offset", func(t *testing.T) {
+		parentTimeRange := NewInstantQueryTimeRange(innerStart.Add(20 * time.Minute))
+
+		inner := createInnerStats(t)
+		subqueryRange := 6 * time.Minute
+		fixedTimestampMs := (10 * time.Minute).Milliseconds()
+		offset := 2 * time.Minute
+		result, err := inner.ComputeForSubquery(parentTimeRange, subqueryRange.Milliseconds(), &fixedTimestampMs, offset.Milliseconds())
+		require.NoError(t, err)
+
+		// At t=12m, subquery timestamp is 10m-2m=8m: inner steps in (2m, 8m] = {4m, 6m, 8m} (idx 2, 3, 4)
+		require.Equal(t, []int64{samplesProcessedAt(2) + samplesProcessedAt(3) + samplesProcessedAt(4)}, result.samplesProcessedPerStep)
+		require.Equal(t, []int64{newSamplesReadAt(2) + newSamplesReadAt(3) + newSamplesReadAt(4)}, result.newSamplesReadPerStep)
+
+		inner.Close()
+		result.Close()
+		require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	})
+}
+
 func TestOperatorEvaluationStats_ExtendStepInvariant(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)

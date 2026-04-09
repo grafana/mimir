@@ -3044,10 +3044,9 @@ sharding_ring:
 [enable_api: <boolean> | default = true]
 
 # (experimental) Duration to wait before shutting down an idle Alertmanager
-# using an unpromoted or default configuration when strict initialization is
-# enabled.
-# CLI flag: -alertmanager.grafana-alertmanager-grace-period
-[grafana_alertmanager_idle_grace_period: <duration> | default = 5m]
+# using a default/empty configuration when strict initialization is enabled.
+# CLI flag: -alertmanager.strict-initialization-idle-grace-period
+[strict_initialization_idle_grace_period: <duration> | default = 5m]
 
 # (advanced) Maximum number of concurrent GET requests allowed per tenant. The
 # zero value (and negative values) result in a limit of GOMAXPROCS or 8,
@@ -4995,11 +4994,6 @@ ruler_alertmanager_client_config:
 # CLI flag: -alertmanager.notification-rate-limit-per-integration
 [alertmanager_notification_rate_limit_per_integration: <map of string to float64> | default = {}]
 
-# Maximum size of the Grafana Alertmanager configuration for a tenant. 0 = no
-# limit.
-# CLI flag: -alertmanager.max-grafana-config-size-bytes
-[alertmanager_max_grafana_config_size_bytes: <int> | default = 0B]
-
 # Maximum size of the Alertmanager configuration for a tenant. 0 = no limit.
 # CLI flag: -alertmanager.max-config-size-bytes
 [alertmanager_max_config_size_bytes: <int> | default = 0]
@@ -6071,7 +6065,7 @@ tsdb:
     # CLI flag: -blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-larger-sketch
     [label_cardinality_for_larger_sketch: <int> | default = 1000000]
 
-    # (advanced) Number of series for a label name above which smaller count-min
+    # (advanced) Number of series for a label name below which smaller count-min
     # sketches are used for that label.
     # CLI flag: -blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-smaller-sketch
     [label_cardinality_for_smaller_sketch: <int> | default = 1000]

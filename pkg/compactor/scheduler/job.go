@@ -114,23 +114,26 @@ type CompactionJob struct {
 
 type TrackedCompactionJob struct {
 	baseTrackedJob
-	value *CompactionJob
-	order uint32
+	value           *CompactionJob
+	order           uint32
+	totalBlockBytes uint64
 }
 
-func NewTrackedCompactionJob(id string, value *CompactionJob, order uint32, creationTime time.Time) *TrackedCompactionJob {
+func NewTrackedCompactionJob(id string, value *CompactionJob, order uint32, totalBlockBytes uint64, creationTime time.Time) *TrackedCompactionJob {
 	return &TrackedCompactionJob{
-		baseTrackedJob: newBaseTrackedJob(id, creationTime),
-		value:          value,
-		order:          order,
+		baseTrackedJob:  newBaseTrackedJob(id, creationTime),
+		value:           value,
+		order:           order,
+		totalBlockBytes: totalBlockBytes,
 	}
 }
 
 func (j *TrackedCompactionJob) CopyBase() TrackedJob {
 	return &TrackedCompactionJob{
-		baseTrackedJob: j.baseTrackedJob,
-		value:          j.value,
-		order:          j.order,
+		baseTrackedJob:  j.baseTrackedJob,
+		value:           j.value,
+		order:           j.order,
+		totalBlockBytes: j.totalBlockBytes,
 	}
 }
 
@@ -144,8 +147,9 @@ func (j *TrackedCompactionJob) Serialize() ([]byte, error) {
 			Epoch:        j.epoch,
 		},
 		Job: &compactorschedulerpb.CompactionJob{
-			BlockIds: j.value.blocks,
-			Split:    j.value.isSplit,
+			BlockIds:         j.value.blocks,
+			Split:            j.value.isSplit,
+			TotalBlocksBytes: j.totalBlockBytes,
 		},
 		Order: j.order,
 	}
@@ -162,8 +166,9 @@ func (j *TrackedCompactionJob) ToLeaseResponse(tenant string) *compactorschedule
 			JobType: compactorschedulerpb.JOB_TYPE_COMPACTION,
 			Tenant:  tenant,
 			Job: &compactorschedulerpb.CompactionJob{
-				BlockIds: j.value.blocks,
-				Split:    j.value.isSplit,
+				BlockIds:         j.value.blocks,
+				Split:            j.value.isSplit,
+				TotalBlocksBytes: j.totalBlockBytes,
 			},
 		},
 	}
@@ -256,6 +261,7 @@ func deserializeCompactionJob(k []byte, v []byte) (*TrackedCompactionJob, error)
 			blocks:  stored.Job.BlockIds,
 			isSplit: stored.Job.Split,
 		},
-		order: stored.Order,
+		order:           stored.Order,
+		totalBlockBytes: stored.Job.TotalBlocksBytes,
 	}, nil
 }

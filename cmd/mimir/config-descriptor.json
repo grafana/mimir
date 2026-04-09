@@ -6956,16 +6956,6 @@
         },
         {
           "kind": "field",
-          "name": "alertmanager_max_grafana_config_size_bytes",
-          "required": false,
-          "desc": "Maximum size of the Grafana Alertmanager configuration for a tenant. 0 = no limit.",
-          "fieldValue": null,
-          "fieldDefaultValue": null,
-          "fieldFlag": "alertmanager.max-grafana-config-size-bytes",
-          "fieldType": "int"
-        },
-        {
-          "kind": "field",
           "name": "alertmanager_max_config_size_bytes",
           "required": false,
           "desc": "Maximum size of the Alertmanager configuration for a tenant. 0 = no limit.",
@@ -12106,7 +12096,7 @@
                   "kind": "field",
                   "name": "label_cardinality_for_smaller_sketch",
                   "required": false,
-                  "desc": "Number of series for a label name above which smaller count-min sketches are used for that label.",
+                  "desc": "Number of series for a label name below which smaller count-min sketches are used for that label.",
                   "fieldValue": null,
                   "fieldDefaultValue": 1000,
                   "fieldFlag": "blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-smaller-sketch",
@@ -17192,12 +17182,12 @@
         },
         {
           "kind": "field",
-          "name": "grafana_alertmanager_idle_grace_period",
+          "name": "strict_initialization_idle_grace_period",
           "required": false,
-          "desc": "Duration to wait before shutting down an idle Alertmanager using an unpromoted or default configuration when strict initialization is enabled.",
+          "desc": "Duration to wait before shutting down an idle Alertmanager using a default/empty configuration when strict initialization is enabled.",
           "fieldValue": null,
           "fieldDefaultValue": 300000000000,
-          "fieldFlag": "alertmanager.grafana-alertmanager-grace-period",
+          "fieldFlag": "alertmanager.strict-initialization-idle-grace-period",
           "fieldType": "duration",
           "fieldCategory": "experimental"
         },

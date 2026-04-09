@@ -4,7 +4,6 @@ package operators
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -148,7 +147,14 @@ func (s *Subquery) Finalize(ctx context.Context) error {
 }
 
 func (s *Subquery) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return nil, errors.New("Stats not implemented for subqueries")
+	inner, err := s.Inner.Stats(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	defer inner.Close()
+
+	return inner.ComputeForSubquery(s.ParentQueryTimeRange, s.rangeMilliseconds, s.SubqueryTimestamp, s.SubqueryOffset)
 }
 
 func (s *Subquery) Close() {

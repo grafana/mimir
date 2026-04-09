@@ -279,6 +279,7 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 				isSplit: job.Job.Split,
 			},
 			uint32(i), // technically this casting could truncate, but that's an unrealistic case
+			job.Job.TotalBlocksBytes,
 			now,
 		))
 	}

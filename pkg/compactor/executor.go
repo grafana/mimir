@@ -137,6 +137,13 @@ func (cfg *SchedulerClientConfig) Validate() error {
 	return nil
 }
 
+const (
+	jobTypePlan         = "plan"
+	jobTypeCompaction   = "compaction"
+	compactionTypeSplit = "split"
+	compactionTypeMerge = "merge"
+)
+
 // schedulerExecutor requests compaction jobs from an external scheduler.
 type schedulerExecutor struct {
 	cfg                      SchedulerClientConfig
@@ -397,6 +404,7 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 		e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, status)
 		return true, nil
 	case compactorschedulerpb.JOB_TYPE_PLANNING:
+		planStartTime := time.Now()
 		plannedJobs, planErr := e.executePlanningJob(jobCtx, c, jobTenant)
 		cancelJob(planErr)
 		wg.Wait()
@@ -412,6 +420,7 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 			level.Warn(e.logger).Log("msg", "failed to send planned jobs", "job_id", jobID, "tenant", jobTenant, "num_jobs", len(plannedJobs), "err", err)
 			return true, err
 		}
+		c.jobDuration.WithLabelValues(jobTypePlan, "").Observe(time.Since(planStartTime).Seconds())
 		return true, nil
 	default:
 		// Should not happen because this case is caught above.
@@ -477,6 +486,7 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		}
 	}
 
+	startTime := time.Now()
 	metaMap, err := fetcher.FetchRequestedMetas(ctx, blockIDs)
 	if err != nil {
 		// If a block was not found, ABANDON the job, it will never succeed.
@@ -517,6 +527,15 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		compactor.metrics.groupCompactionRunsCompleted.Inc()
 		if hasNonZeroULIDs(compactedBlockIDs) {
 			compactor.metrics.groupCompactions.Inc()
+		}
+		compactionType := compactionTypeMerge
+		if spec.Job.Split {
+			compactionType = compactionTypeSplit
+		}
+		elapsed := time.Since(startTime).Seconds()
+		c.jobDuration.WithLabelValues(jobTypeCompaction, compactionType).Observe(elapsed)
+		if totalBytes := spec.Job.TotalBlocksBytes; totalBytes > 0 {
+			c.compactionJobBytes.WithLabelValues(compactionType).Observe(float64(totalBytes))
 		}
 		level.Info(userLogger).Log("msg", "compaction job completed", "tenant", userID, "compacted_blocks", len(compactedBlockIDs))
 		return compactorschedulerpb.UPDATE_TYPE_COMPLETE, nil
@@ -600,8 +619,9 @@ func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *Multitena
 		plannedJob := &compactorschedulerpb.PlannedCompactionJob{
 			Id: job.key,
 			Job: &compactorschedulerpb.CompactionJob{
-				Split:    job.useSplitting,
-				BlockIds: serializeBlockIds(toCompact),
+				Split:            job.useSplitting,
+				BlockIds:         serializeBlockIds(toCompact),
+				TotalBlocksBytes: sumBlockBytes(toCompact),
 			},
 		}
 		plannedJobs = append(plannedJobs, plannedJob)
@@ -617,6 +637,14 @@ func serializeBlockIds(metas []*block.Meta) [][]byte {
 		ids = append(ids, meta.ULID.Bytes())
 	}
 	return ids
+}
+
+func sumBlockBytes(metas []*block.Meta) uint64 {
+	var total uint64
+	for _, meta := range metas {
+		total += uint64(meta.BlockBytes())
+	}
+	return total
 }
 
 // sendPlannedJobs sends the planned compaction jobs back to the scheduler with retries.
