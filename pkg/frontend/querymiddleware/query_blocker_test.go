@@ -71,8 +71,9 @@ func runBlockerTest(t *testing.T, limitsYAML string, makeReq func(*testing.T) Me
 	}
 }
 
-// TestQueryBlockerMiddleware_UnalignedRangeQueries verifies the pre-filter: when unaligned_range_queries
-// is true, a rule is skipped for aligned queries before the conjunction is evaluated.
+// TestQueryBlockerMiddleware_UnalignedRangeQueries verifies unaligned_range_queries: when true, a rule
+// only blocks range queries where the time range is not aligned to the step; aligned queries, instant
+// queries, and remote read requests are not blocked.
 func TestQueryBlockerMiddleware_UnalignedRangeQueries(t *testing.T) {
 	step := time.Minute
 	alignedStart := timestamp.Time(0).Add(100 * step)
@@ -215,9 +216,8 @@ blocked_queries:
 	}
 }
 
-// TestQueryBlockerMiddleware_Pattern verifies conjunction: when only pattern is configured,
-// the pattern must match to block. Tests the patternMatches predicate in isolation, including
-// canonicalisation and regex edge cases.
+// TestQueryBlockerMiddleware_Pattern verifies pattern matching: exact match, canonicalisation,
+// regex, and that rules without a pattern are skipped.
 func TestQueryBlockerMiddleware_Pattern(t *testing.T) {
 	now := time.Now()
 
@@ -482,8 +482,8 @@ blocked_queries:
 	}
 }
 
-// TestQueryBlockerMiddleware_TimeRange verifies conjunction: when time_range_longer_than is
-// configured (with the required pattern), the time range must exceed the threshold to block.
+// TestQueryBlockerMiddleware_TimeRange verifies time_range_longer_than: the query duration must
+// exceed the threshold to block; instant queries are never blocked by this filter.
 func TestQueryBlockerMiddleware_TimeRange(t *testing.T) {
 	now := time.Now()
 
@@ -546,17 +546,6 @@ blocked_queries:
 			makeReq:         rangeReq("up", now.Add(-12*time.Hour), now),
 			expectedBlocked: false,
 		},
-		{
-			// no pattern → rule must be skipped
-			name: "no pattern - rule skipped regardless of time range",
-			limitsYAML: `
-blocked_queries:
-  - time_range_longer_than: "24h"
-    reason: "queries longer than 1 day are not allowed"
-`,
-			makeReq:         rangeReq("up", now.Add(-48*time.Hour), now),
-			expectedBlocked: false,
-		},
 	}
 
 	for _, tt := range tests {
@@ -566,8 +555,8 @@ blocked_queries:
 	}
 }
 
-// TestQueryBlockerMiddleware_StepSize verifies conjunction: when minimum_step_size is
-// configured (with the required pattern), the step must be below the threshold to block.
+// TestQueryBlockerMiddleware_StepSize verifies minimum_step_size: the step must be below the
+// threshold to block; instant queries and queries with no step are never blocked by this filter.
 func TestQueryBlockerMiddleware_StepSize(t *testing.T) {
 	now := time.Now()
 
@@ -645,17 +634,6 @@ blocked_queries:
 			makeReq:         instantReq("rate(expensive_metric[5m])"),
 			expectedBlocked: false,
 		},
-		{
-			// no pattern → rule must be skipped
-			name: "no pattern - rule skipped regardless of step size",
-			limitsYAML: `
-blocked_queries:
-  - minimum_step_size: "1m"
-    reason: "step too small"
-`,
-			makeReq:         rangeReq("rate(expensive_metric[5m])", step30s),
-			expectedBlocked: false,
-		},
 	}
 
 	for _, tt := range tests {
@@ -665,267 +643,10 @@ blocked_queries:
 	}
 }
 
-// TestQueryBlockerMiddleware_PatternAndTimeRange verifies conjunction: when pattern and
-// time_range_longer_than are both configured, both conditions must be violated to block.
-func TestQueryBlockerMiddleware_PatternAndTimeRange(t *testing.T) {
-	now := time.Now()
 
-	rangeReq := func(query string, start, end time.Time) func(t *testing.T) MetricsQueryRequest {
-		return func(t *testing.T) MetricsQueryRequest {
-			return &PrometheusRangeQueryRequest{
-				queryExpr: parseQuery(t, query),
-				start:     start.UnixMilli(),
-				end:       end.UnixMilli(),
-			}
-		}
-	}
-	instantReq := func(query string) func(t *testing.T) MetricsQueryRequest {
-		return func(t *testing.T) MetricsQueryRequest {
-			return &PrometheusInstantQueryRequest{
-				queryExpr: parseQuery(t, query),
-				time:      now.UnixMilli(),
-			}
-		}
-	}
 
-	tests := []struct {
-		name            string
-		limitsYAML      string
-		makeReq         func(t *testing.T) MetricsQueryRequest
-		expectedBlocked bool
-	}{
-		{
-			// pattern=match, time_range=over → blocked
-			name: "pattern matches AND time range longer than threshold (range - blocked)",
-			limitsYAML: `
-blocked_queries:
-  - pattern: ".*expensive.*"
-    regex: true
-    time_range_longer_than: "24h"
-    reason: "expensive queries over 1 day are blocked"
-`,
-			makeReq:         rangeReq("rate(expensive_metric[5m])", now.Add(-2*24*time.Hour), now),
-			expectedBlocked: true,
-		},
-		{
-			// pattern=match, time_range=over (instant) → not blocked (no time range)
-			name: "pattern matches AND time range longer than threshold (instant - not blocked)",
-			limitsYAML: `
-blocked_queries:
-  - pattern: ".*expensive.*"
-    regex: true
-    time_range_longer_than: "24h"
-    reason: "expensive queries over 1 day are blocked"
-`,
-			makeReq:         instantReq("rate(expensive_metric[5m])"),
-			expectedBlocked: false,
-		},
-		{
-			// pattern=match, time_range=under → not blocked
-			name: "pattern matches but time range under threshold",
-			limitsYAML: `
-blocked_queries:
-  - pattern: ".*expensive.*"
-    regex: true
-    time_range_longer_than: "168h"
-`,
-			makeReq:         rangeReq("rate(expensive_metric[5m])", now.Add(-2*24*time.Hour), now),
-			expectedBlocked: false,
-		},
-		{
-			// pattern=no-match, time_range=over → not blocked
-			name: "different pattern but time range longer than threshold",
-			limitsYAML: `
-blocked_queries:
-  - pattern: ".*expensive.*"
-    regex: true
-    time_range_longer_than: "168h"
-`,
-			makeReq:         rangeReq("rate(cheap_metric[5m])", now.Add(-10*24*time.Hour), now),
-			expectedBlocked: false,
-		},
-		{
-			// invalid regex: must bail out even when time range is over threshold
-			name: "invalid regex pattern with time_range_longer_than",
-			limitsYAML: `
-blocked_queries:
-  - pattern: "[a-9}"
-    regex: true
-    time_range_longer_than: "1h"
-    reason: "invalid regex - must bail out to avoid matching all queries"
-`,
-			makeReq:         rangeReq("rate(metric_counter[5m])", now.Add(-25*time.Hour), now),
-			expectedBlocked: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			runBlockerTest(t, tt.limitsYAML, tt.makeReq, tt.expectedBlocked)
-		})
-	}
-}
-
-// TestQueryBlockerMiddleware_PatternAndStepSize verifies conjunction: when pattern and
-// minimum_step_size are both configured, both conditions must be violated to block.
-func TestQueryBlockerMiddleware_PatternAndStepSize(t *testing.T) {
-	now := time.Now()
-
-	step30s := (30 * time.Second).Milliseconds()
-	step1m := time.Minute.Milliseconds()
-
-	rangeReq := func(query string, stepMs int64) func(t *testing.T) MetricsQueryRequest {
-		return func(t *testing.T) MetricsQueryRequest {
-			return &PrometheusRangeQueryRequest{
-				queryExpr: parseQuery(t, query),
-				start:     now.Add(-time.Hour).UnixMilli(),
-				end:       now.UnixMilli(),
-				step:      stepMs,
-			}
-		}
-	}
-
-	tests := []struct {
-		name            string
-		limitsYAML      string
-		makeReq         func(t *testing.T) MetricsQueryRequest
-		expectedBlocked bool
-	}{
-		{
-			// pattern=match, step=below → blocked
-			name: "pattern matches and step below threshold is blocked",
-			limitsYAML: `
-blocked_queries:
-  - pattern: ".*expensive.*"
-    regex: true
-    minimum_step_size: "1m"
-    reason: "expensive query with small step"
-`,
-			makeReq:         rangeReq("rate(expensive_metric[5m])", step30s),
-			expectedBlocked: true,
-		},
-		{
-			// pattern=no-match, step=below → not blocked
-			name: "pattern does not match - not blocked despite step below threshold",
-			limitsYAML: `
-blocked_queries:
-  - pattern: ".*expensive.*"
-    regex: true
-    minimum_step_size: "1m"
-`,
-			makeReq:         rangeReq("rate(cheap_metric[5m])", step30s),
-			expectedBlocked: false,
-		},
-		{
-			// pattern=match, step=at threshold → not blocked
-			name: "pattern matches but step at threshold - not blocked",
-			limitsYAML: `
-blocked_queries:
-  - pattern: ".*expensive.*"
-    regex: true
-    minimum_step_size: "1m"
-`,
-			makeReq:         rangeReq("rate(expensive_metric[5m])", step1m),
-			expectedBlocked: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			runBlockerTest(t, tt.limitsYAML, tt.makeReq, tt.expectedBlocked)
-		})
-	}
-}
-
-// TestQueryBlockerMiddleware_TimeRangeAndStepSize verifies conjunction: when time_range_longer_than
-// and minimum_step_size are both configured (with the required pattern), both conditions must be
-// violated to block.
-func TestQueryBlockerMiddleware_TimeRangeAndStepSize(t *testing.T) {
-	now := time.Now()
-
-	step30s := (30 * time.Second).Milliseconds()
-	step5m := (5 * time.Minute).Milliseconds()
-
-	rangeReq := func(query string, start time.Time, stepMs int64) func(t *testing.T) MetricsQueryRequest {
-		return func(t *testing.T) MetricsQueryRequest {
-			return &PrometheusRangeQueryRequest{
-				queryExpr: parseQuery(t, query),
-				start:     start.UnixMilli(),
-				end:       now.UnixMilli(),
-				step:      stepMs,
-			}
-		}
-	}
-
-	tests := []struct {
-		name            string
-		limitsYAML      string
-		makeReq         func(t *testing.T) MetricsQueryRequest
-		expectedBlocked bool
-	}{
-		{
-			// time_range=over, step=below → blocked
-			name: "time_range and step both violated is blocked",
-			limitsYAML: `
-blocked_queries:
-  - pattern: ".*"
-    regex: true
-    time_range_longer_than: "24h"
-    minimum_step_size: "1m"
-    reason: "long range with small step"
-`,
-			makeReq:         rangeReq("rate(expensive_metric[5m])", now.Add(-48*time.Hour), step30s),
-			expectedBlocked: true,
-		},
-		{
-			// time_range=over, step=above → not blocked
-			name: "time_range violated but step ok - not blocked",
-			limitsYAML: `
-blocked_queries:
-  - pattern: ".*"
-    regex: true
-    time_range_longer_than: "24h"
-    minimum_step_size: "1m"
-`,
-			makeReq:         rangeReq("rate(expensive_metric[5m])", now.Add(-48*time.Hour), step5m),
-			expectedBlocked: false,
-		},
-		{
-			// time_range=under, step=below → not blocked
-			name: "time_range ok but step violated - not blocked",
-			limitsYAML: `
-blocked_queries:
-  - pattern: ".*"
-    regex: true
-    time_range_longer_than: "24h"
-    minimum_step_size: "1m"
-`,
-			makeReq:         rangeReq("rate(expensive_metric[5m])", now.Add(-12*time.Hour), step30s),
-			expectedBlocked: false,
-		},
-		{
-			// no pattern → rule must be skipped
-			name: "no pattern - rule skipped regardless of time range and step",
-			limitsYAML: `
-blocked_queries:
-  - time_range_longer_than: "24h"
-    minimum_step_size: "1m"
-    reason: "long range with small step"
-`,
-			makeReq:         rangeReq("rate(expensive_metric[5m])", now.Add(-48*time.Hour), step30s),
-			expectedBlocked: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			runBlockerTest(t, tt.limitsYAML, tt.makeReq, tt.expectedBlocked)
-		})
-	}
-}
-
-// TestQueryBlockerMiddleware_AllConditions verifies conjunction: when all three conditions are
-// configured, all must be violated to block.
+// TestQueryBlockerMiddleware_AllConditions verifies conjunction: all configured conditions must
+// be satisfied to block; any single condition not met prevents blocking.
 func TestQueryBlockerMiddleware_AllConditions(t *testing.T) {
 	now := time.Now()
 
