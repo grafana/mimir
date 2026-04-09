@@ -19,7 +19,6 @@ As a general guideline, provision nodes with a CPU-to-memory ratio of at least 1
 For example, a node with 8 CPU cores should have at least 32 GB of memory.
 Ingesters and store-gateways are the most memory-intensive components.
 
-
 ## Disk storage
 
 Components such as ingesters, store-gateways, and compactors require fast and persistent, local disk resources to be available to the host machine storage for the write-ahead log (WAL), TSDB blocks, and temporary data during compaction.
