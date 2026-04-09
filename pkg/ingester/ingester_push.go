@@ -24,6 +24,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	mimir_storage "github.com/grafana/mimir/pkg/storage"
+	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -778,6 +779,12 @@ func (i *Ingester) pushSamplesToAppender(
 
 		if activeSeries != nil && stats.succeededSamplesCount > oldSucceededSamplesCount {
 			activeSeries.UpdateSeries(nonCopiedLabels, ref, startAppend, numNativeHistogramBuckets, isOTLP, idx)
+		}
+
+		if newSamples := stats.succeededSamplesCount - oldSucceededSamplesCount; newSamples > 0 && i.hashBucketRates != nil {
+			metricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ts.Labels)
+			hash := mimirpb.ShardByMetricNameLocality(userID, string(metricName), ts.Labels)
+			i.hashBucketRates.RecordSamples(hash, int(newSamples))
 		}
 
 		if len(ts.Exemplars) > 0 && i.limits.MaxGlobalExemplarsPerUser(userID) > 0 {

@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	syncatomic "sync/atomic"
 	"time"
 
 	"github.com/go-kit/log"
@@ -51,6 +52,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/nautilus/assignment"
 	"github.com/grafana/mimir/pkg/costattribution"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -231,6 +233,11 @@ type Distributor struct {
 
 	reactiveLimiter reactivelimiter.ReactiveLimiter
 
+	// nautilusAssignment holds the current hash-range-to-partition assignment
+	// produced by the nautilus rebalancer. When non-nil, it is used to route
+	// series to partitions instead of the partition ring's default hashing.
+	nautilusAssignment syncatomic.Pointer[assignment.Assignment]
+
 	// For testing functionality that relies on timing without having to sleep in unit tests.
 	sleep func(time.Duration)
 	now   func() time.Time
@@ -238,6 +245,24 @@ type Distributor struct {
 
 func defaultSleep(d time.Duration) { time.Sleep(d) }
 func defaultNow() time.Time        { return time.Now() }
+
+// SetNautilusAssignment sets the current nautilus hash-range-to-partition
+// assignment. Called by the nautilus rebalancer after each rebalance round.
+func (d *Distributor) SetNautilusAssignment(a *assignment.Assignment) {
+	d.nautilusAssignment.Store(a)
+}
+
+// GetNautilusAssignment returns the current nautilus assignment, or nil if
+// none is loaded.
+func (d *Distributor) GetNautilusAssignment() *assignment.Assignment {
+	return d.nautilusAssignment.Load()
+}
+
+// GetIngesterPool returns the ingester client pool, allowing other modules
+// (such as the nautilus rebalancer) to communicate with ingesters via gRPC.
+func (d *Distributor) GetIngesterPool() *ring_client.Pool {
+	return d.ingesterPool
+}
 
 // OTelResourceAttributePromotionConfig contains methods for configuring OTel resource attribute promotion.
 type OTelResourceAttributePromotionConfig interface {
@@ -2581,8 +2606,14 @@ func (d *Distributor) sendWriteRequestToIngesters(ctx context.Context, tenantRin
 func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID string, tenantRing *ring.ActivePartitionBatchRing, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, remoteRequestContext func() context.Context, cleanup func()) error {
 	defer cleanup()
 
-	// Group keys by partition.
-	partitionKeys, err := tenantRing.GetKeysByPartition(ctx, keys)
+	var partitionKeys []ring.PartitionKeys
+	var err error
+
+	if a := d.nautilusAssignment.Load(); a != nil {
+		partitionKeys, err = d.getKeysByAssignment(ctx, a, keys)
+	} else {
+		partitionKeys, err = tenantRing.GetKeysByPartition(ctx, keys)
+	}
 	if err != nil {
 		return errors.Wrap(err, "send data to partitions")
 	}
@@ -2618,6 +2649,41 @@ func getSeriesAndMetadataTokens(userID string, req *mimirpb.WriteRequest) (keys 
 	copy(keys, seriesKeys)
 	copy(keys[initialMetadataIndex:], metadataKeys)
 	return keys, initialMetadataIndex
+}
+
+// getKeysByAssignment groups keys by partition using the nautilus assignment,
+// falling back to the partition ring's ActivePartitionForKey for keys that
+// don't have a valid assignment (e.g. assigned partition is inactive).
+func (d *Distributor) getKeysByAssignment(ctx context.Context, a *assignment.Assignment, keys []uint32) ([]ring.PartitionKeys, error) {
+	pRing := d.partitionsRing.PartitionRing()
+
+	partitionIndexes := make(map[int32][]int)
+	for i, key := range keys {
+		if i%10e3 == 0 {
+			if err := context.Cause(ctx); err != nil {
+				return nil, err
+			}
+		}
+
+		pid, ok := a.Lookup(key)
+		if !ok {
+			var err error
+			pid, err = pRing.ActivePartitionForKey(key)
+			if err != nil {
+				return nil, err
+			}
+		}
+		partitionIndexes[pid] = append(partitionIndexes[pid], i)
+	}
+
+	result := make([]ring.PartitionKeys, 0, len(partitionIndexes))
+	for pid, indexes := range partitionIndexes {
+		result = append(result, ring.PartitionKeys{
+			PartitionID: pid,
+			Indexes:     indexes,
+		})
+	}
+	return result, nil
 }
 
 func getTokensForSeries(userID string, series []mimirpb.PreallocTimeseries) []uint32 {

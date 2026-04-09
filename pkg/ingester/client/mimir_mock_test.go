@@ -76,3 +76,8 @@ func (m *IngesterServerMock) ActiveSeries(req *ActiveSeriesRequest, srv Ingester
 	args := m.Called(req, srv)
 	return args.Error(0)
 }
+
+func (m *IngesterServerMock) HashRangeStats(ctx context.Context, req *HashRangeStatsRequest) (*HashRangeStatsResponse, error) {
+	args := m.Called(ctx, req)
+	return args.Get(0).(*HashRangeStatsResponse), args.Error(1)
+}

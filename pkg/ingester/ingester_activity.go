@@ -144,6 +144,10 @@ func (i *ActivityTrackerWrapper) ActiveSeries(request *client.ActiveSeriesReques
 	return i.ing.ActiveSeries(request, server)
 }
 
+func (i *ActivityTrackerWrapper) HashRangeStats(ctx context.Context, request *client.HashRangeStatsRequest) (*client.HashRangeStatsResponse, error) {
+	return i.ing.HashRangeStats(ctx, request)
+}
+
 func (i *ActivityTrackerWrapper) FlushHandler(w http.ResponseWriter, r *http.Request) {
 	ix := i.tracker.Insert(func() string {
 		return requestActivity(r.Context(), "Ingester/FlushHandler", nil)

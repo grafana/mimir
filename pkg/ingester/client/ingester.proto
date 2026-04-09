@@ -38,7 +38,19 @@ service Ingester {
 
   rpc ActiveSeries(ActiveSeriesRequest) returns (stream ActiveSeriesResponse) {}
 
+  rpc HashRangeStats(HashRangeStatsRequest) returns (HashRangeStatsResponse) {}
+
   // When adding more read-path methods here, please update ingester_read_path_routes_regex in operations/mimir-mixin/config.libsonnet as well.
+}
+
+message HashRangeStatsRequest {}
+
+message HashRangeStatsResponse {
+  // Fixed-resolution histogram of ingestion rate across the 32-bit hash space.
+  // Bucket i covers hash range [i * (2^32/num_buckets), (i+1) * (2^32/num_buckets)).
+  uint32 num_buckets = 1;
+  // Samples per second for each bucket. Length equals num_buckets.
+  repeated double samples_per_second = 2;
 }
 
 message LabelNamesAndValuesRequest {

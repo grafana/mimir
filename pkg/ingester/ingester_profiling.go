@@ -234,6 +234,10 @@ func (i *ProfilingWrapper) ActiveSeries(request *client.ActiveSeriesRequest, ser
 	return i.ing.ActiveSeries(request, server)
 }
 
+func (i *ProfilingWrapper) HashRangeStats(ctx context.Context, request *client.HashRangeStatsRequest) (*client.HashRangeStatsResponse, error) {
+	return i.ing.HashRangeStats(ctx, request)
+}
+
 func (i *ProfilingWrapper) FlushHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if isTraceSampled(ctx) {
