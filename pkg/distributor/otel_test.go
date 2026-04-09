@@ -2174,6 +2174,18 @@ func TestHandler_toOtlpGRPCHTTPStatus(t *testing.T) {
 			expectedGRPCStatus: codes.InvalidArgument,
 			expectedSoft:       true,
 		},
+		"an activeSeriesLimitedError with default 429 gets translated into gRPC codes.ResourceExhausted and HTTP 429 statuses": {
+			err:                newActiveSeriesLimitedError(100, 25, 50, http.StatusTooManyRequests),
+			expectedHTTPStatus: http.StatusTooManyRequests,
+			expectedGRPCStatus: codes.ResourceExhausted,
+			expectedSoft:       false,
+		},
+		"an activeSeriesLimitedError with overridden 400 gets translated into gRPC codes.ResourceExhausted and HTTP 400 statuses": {
+			err:                newActiveSeriesLimitedError(100, 25, 50, http.StatusBadRequest),
+			expectedHTTPStatus: http.StatusBadRequest,
+			expectedGRPCStatus: codes.ResourceExhausted,
+			expectedSoft:       false,
+		},
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {

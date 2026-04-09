@@ -1107,6 +1107,14 @@ func TestHandler_toHTTPStatus(t *testing.T) {
 			err:                errors.Wrap(newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.ERROR_CAUSE_CIRCUIT_BREAKER_OPEN), ingesterID), "wrapped"),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 		},
+		"an activeSeriesLimitedError with default 429 gets translated into an HTTP 429": {
+			err:                newActiveSeriesLimitedError(100, 25, 50, http.StatusTooManyRequests),
+			expectedHTTPStatus: http.StatusTooManyRequests,
+		},
+		"an activeSeriesLimitedError with overridden 400 gets translated into an HTTP 400": {
+			err:                newActiveSeriesLimitedError(100, 25, 50, http.StatusBadRequest),
+			expectedHTTPStatus: http.StatusBadRequest,
+		},
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {

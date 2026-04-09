@@ -65,6 +65,7 @@ func TestDistributor_Push_ShouldEnforceMaxSeriesLimits(t *testing.T) {
 		expectedResourceExhaustedErrorCode    bool
 		expectedFailedToEnforceSeriesLimitErr bool
 		canTrackAsync                         bool
+		activeSeriesLimitResponseCode         int
 	}{
 		"no series rejected": {
 			expectedAcceptedSeries:             []string{"series_1", "series_2", "series_3", "series_4", "series_5"},
@@ -82,6 +83,20 @@ func TestDistributor_Push_ShouldEnforceMaxSeriesLimits(t *testing.T) {
 			expectedAcceptedSeries:             []string{},
 			expectedResourceExhaustedErrorCode: true,
 			canTrackAsync:                      false,
+		},
+		"some series rejected with 400 response code": {
+			trackSeriesRejectedHashes:          []uint64{series4Hash, series2Hash},
+			expectedAcceptedSeries:             []string{"series_1", "series_3", "series_5"},
+			expectedResourceExhaustedErrorCode: true,
+			canTrackAsync:                      false,
+			activeSeriesLimitResponseCode:      400,
+		},
+		"all series rejected with 400 response code": {
+			trackSeriesRejectedHashes:          []uint64{series1Hash, series2Hash, series3Hash, series4Hash, series5Hash},
+			expectedAcceptedSeries:             []string{},
+			expectedResourceExhaustedErrorCode: true,
+			canTrackAsync:                      false,
+			activeSeriesLimitResponseCode:      400,
 		},
 		"failed to track series via usage-tracker": {
 			trackSeriesErr:                        errors.New("usage-tracker service is unavailable"),
@@ -141,11 +156,16 @@ func TestDistributor_Push_ShouldEnforceMaxSeriesLimits(t *testing.T) {
 				metricUserID = userID
 			}
 
+			limits := prepareDefaultLimits()
+			if testData.activeSeriesLimitResponseCode > 0 {
+				limits.ActiveSeriesLimitResponseCode = testData.activeSeriesLimitResponseCode
+			}
+
 			testConfig := prepConfig{
 				numDistributors:         1,
 				ingestStorageEnabled:    true,
 				ingestStoragePartitions: 1,
-				limits:                  prepareDefaultLimits(),
+				limits:                  limits,
 			}
 
 			distributors, _, regs, kafkaCluster := prepare(t, testConfig)

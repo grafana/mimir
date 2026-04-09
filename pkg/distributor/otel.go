@@ -464,7 +464,15 @@ func toOtlpGRPCHTTPStatus(pushErr error) (codes.Code, int, bool) {
 	}
 
 	grpcStatusCode := errorCauseToGRPCStatusCode(distributorErr.Cause())
-	httpStatusCode := errorCauseToHTTPStatusCode(distributorErr.Cause())
+
+	var httpStatusCode int
+	var httpStatusErr ErrorWithHTTPStatusCode
+	if errors.As(pushErr, &httpStatusErr) {
+		httpStatusCode = httpStatusErr.HTTPStatusCode()
+	} else {
+		httpStatusCode = errorCauseToHTTPStatusCode(distributorErr.Cause())
+	}
+
 	return grpcStatusCode, httpRetryableToOTLPRetryable(httpStatusCode), distributorErr.IsSoft()
 }
 
