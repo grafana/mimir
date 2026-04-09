@@ -462,6 +462,17 @@ blocked_queries:
 			makeReq:         rangeReq("rate(metric_counter[5m])"),
 			expectedBlocked: true,
 		},
+		{
+			// no pattern → rule must be skipped regardless of any filter
+			name: "no pattern with time_range filter - not blocked",
+			limitsYAML: `
+blocked_queries:
+  - time_range_longer_than: "30m"
+    reason: "should not block without pattern"
+`,
+			makeReq:         rangeReq("up"),
+			expectedBlocked: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -527,6 +538,17 @@ blocked_queries:
   - time_range_longer_than: "24h"
 `,
 			makeReq:         rangeReq("up", now.Add(-12*time.Hour), now),
+			expectedBlocked: false,
+		},
+		{
+			// no pattern → rule must be skipped
+			name: "no pattern - rule skipped regardless of time range",
+			limitsYAML: `
+blocked_queries:
+  - time_range_longer_than: "24h"
+    reason: "queries longer than 1 day are not allowed"
+`,
+			makeReq:         rangeReq("up", now.Add(-48*time.Hour), now),
 			expectedBlocked: false,
 		},
 	}
@@ -607,6 +629,17 @@ blocked_queries:
   - minimum_step_size: "1m"
 `,
 			makeReq:         instantReq("rate(expensive_metric[5m])"),
+			expectedBlocked: false,
+		},
+		{
+			// no pattern → rule must be skipped
+			name: "no pattern - rule skipped regardless of step size",
+			limitsYAML: `
+blocked_queries:
+  - minimum_step_size: "1m"
+    reason: "step too small"
+`,
+			makeReq:         rangeReq("rate(expensive_metric[5m])", step30s),
 			expectedBlocked: false,
 		},
 	}
@@ -847,6 +880,18 @@ blocked_queries:
     minimum_step_size: "1m"
 `,
 			makeReq:         rangeReq("rate(expensive_metric[5m])", now.Add(-12*time.Hour), step30s),
+			expectedBlocked: false,
+		},
+		{
+			// no pattern → rule must be skipped
+			name: "no pattern - rule skipped regardless of time range and step",
+			limitsYAML: `
+blocked_queries:
+  - time_range_longer_than: "24h"
+    minimum_step_size: "1m"
+    reason: "long range with small step"
+`,
+			makeReq:         rangeReq("rate(expensive_metric[5m])", now.Add(-48*time.Hour), step30s),
 			expectedBlocked: false,
 		},
 	}
