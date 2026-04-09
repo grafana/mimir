@@ -6,18 +6,34 @@ import (
 	"context"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/nautilus/assignment"
 )
 
-// HashRangeStats returns a fixed-resolution histogram of ingestion rates
-// across the 32-bit hash space. Each bucket covers an equal portion of the
-// hash space, and the ingester reports samples-per-second per bucket since
-// the last snapshot.
+// HashRangeStats returns per-range ingestion rates for the hash ranges
+// this ingester has been told it owns (via SetHashRanges).
 func (i *Ingester) HashRangeStats(_ context.Context, _ *client.HashRangeStatsRequest) (*client.HashRangeStatsResponse, error) {
-	snap := i.hashBucketRates.Snapshot()
+	snap := i.hashRangeRates.Snapshot()
 
 	resp := &client.HashRangeStatsResponse{
-		NumBuckets:       uint32(snap.NumBuckets),
-		SamplesPerSecond: snap.SamplesPerSecond[:],
+		Rates: make([]client.HashRangeRate, len(snap.Ranges)),
+	}
+	for j, r := range snap.Ranges {
+		resp.Rates[j] = client.HashRangeRate{
+			Lo:               r.Lo,
+			Hi:               r.Hi,
+			SamplesPerSecond: snap.SamplesPerSecond[j],
+		}
 	}
 	return resp, nil
+}
+
+// SetHashRanges tells this ingester which hash ranges it owns.
+// Called by the nautilus rebalancer after each rebalance round.
+func (i *Ingester) SetHashRanges(_ context.Context, req *client.SetHashRangesRequest) (*client.SetHashRangesResponse, error) {
+	ranges := make([]assignment.HashRange, len(req.Ranges))
+	for j, r := range req.Ranges {
+		ranges[j] = assignment.HashRange{Lo: r.Lo, Hi: r.Hi}
+	}
+	i.hashRangeRates.SetRanges(ranges)
+	return &client.SetHashRangesResponse{}, nil
 }

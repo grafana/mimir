@@ -15,12 +15,9 @@ import (
 	ring_client "github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
 
-	"github.com/grafana/mimir/pkg/distributor"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
 )
-
-const hashBucketCount = 256
 
 // Config holds the configuration for the nautilus ingestion rebalancer.
 type Config struct {
@@ -34,36 +31,40 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 }
 
 // Rebalancer is a Mimir module that periodically queries ingesters for
-// per-hash-bucket ingestion rates and rebalances hash-range-to-partition
-// assignments to distribute ingestion load evenly.
+// per-hash-range ingestion rates, rebalances hash-range-to-partition
+// assignments, pushes ownership to ingesters, and serves the
+// assignment history to distributors.
 type Rebalancer struct {
 	services.Service
 
 	cfg    Config
 	logger log.Logger
 
-	ingesterRing ring.ReadRing
-	pool         *ring_client.Pool
-	distributor  *distributor.Distributor
-
+	ingesterRing  ring.ReadRing
+	pool          *ring_client.Pool
 	partitionRing *ring.PartitionInstanceRing
 
-	currentAssignment *assignment.Assignment
+	store assignmentStore
 }
 
 // New creates and returns a new Rebalancer.
-func New(cfg Config, ingesterRing ring.ReadRing, pool *ring_client.Pool, dist *distributor.Distributor, partitionRing *ring.PartitionInstanceRing, logger log.Logger) *Rebalancer {
+func New(cfg Config, ingesterRing ring.ReadRing, pool *ring_client.Pool, partitionRing *ring.PartitionInstanceRing, logger log.Logger) *Rebalancer {
 	r := &Rebalancer{
 		cfg:           cfg,
 		logger:        logger,
 		ingesterRing:  ingesterRing,
 		pool:          pool,
-		distributor:   dist,
 		partitionRing: partitionRing,
 	}
 
 	r.Service = services.NewTimerService(cfg.RebalanceInterval, r.starting, r.rebalance, nil)
 	return r
+}
+
+// GetAssignments implements NautilusRebalancerServer.
+func (r *Rebalancer) GetAssignments(_ context.Context, _ *GetAssignmentsRequest) (*GetAssignmentsResponse, error) {
+	snap := r.store.snapshot()
+	return TimedAssignmentSetToProto(&snap), nil
 }
 
 func (r *Rebalancer) starting(_ context.Context) error {
@@ -72,12 +73,6 @@ func (r *Rebalancer) starting(_ context.Context) error {
 }
 
 func (r *Rebalancer) rebalance(ctx context.Context) error {
-	globalRates, err := r.collectRates(ctx)
-	if err != nil {
-		level.Warn(r.logger).Log("msg", "failed to collect ingester rates", "err", err)
-		return nil // don't stop the service
-	}
-
 	pRing := r.partitionRing.PartitionRing()
 	activePartitions := pRing.ActivePartitionIDs()
 	if len(activePartitions) == 0 {
@@ -85,33 +80,45 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		return nil
 	}
 
-	if r.currentAssignment == nil {
-		r.currentAssignment = assignment.EvenSplit(activePartitions)
+	current := r.store.latest()
+	if current == nil {
+		current = assignment.EvenSplit(activePartitions)
 		level.Info(r.logger).Log("msg", "initialized assignment with even split", "partitions", len(activePartitions))
+		r.store.add(time.Now(), current)
+		r.pushRangesToIngesters(ctx, current)
+		return nil
 	}
 
-	newAssignment := r.runSlicer(r.currentAssignment, globalRates, activePartitions)
+	rates, err := r.collectRates(ctx)
+	if err != nil {
+		level.Warn(r.logger).Log("msg", "failed to collect ingester rates", "err", err)
+		return nil
+	}
+
+	newAssignment := r.runSlicer(current, rates, activePartitions)
 	if err := newAssignment.Validate(); err != nil {
 		level.Error(r.logger).Log("msg", "generated invalid assignment", "err", err)
 		return nil
 	}
 
-	r.currentAssignment = newAssignment
-	r.distributor.SetNautilusAssignment(newAssignment)
+	r.store.add(time.Now(), newAssignment)
+	r.pushRangesToIngesters(ctx, newAssignment)
 
-	level.Info(r.logger).Log("msg", "rebalance complete", "entries", len(newAssignment.Entries))
+	level.Info(r.logger).Log("msg", "rebalance complete", "entries", len(newAssignment.Entries), "total_assignments", len(r.store.snapshot().Assignments))
 	return nil
 }
 
-// collectRates queries all ingesters and aggregates per-hash-bucket rates.
-func (r *Rebalancer) collectRates(ctx context.Context) ([hashBucketCount]float64, error) {
-	var globalRates [hashBucketCount]float64
-
+// collectRates queries all ingesters for per-range ingestion rates and
+// returns a global view: one rate per reported hash range. Since
+// ingesters only report rates for ranges they own, the results are
+// already partitioned; we aggregate into a single map keyed by range.
+func (r *Rebalancer) collectRates(ctx context.Context) ([]rangeRate, error) {
 	instances, err := r.ingesterRing.GetAllHealthy(ring.Read)
 	if err != nil {
-		return globalRates, err
+		return nil, err
 	}
 
+	var all []rangeRate
 	for _, inst := range instances.Instances {
 		c, err := r.pool.GetClientForInstance(inst)
 		if err != nil {
@@ -125,12 +132,72 @@ func (r *Rebalancer) collectRates(ctx context.Context) ([hashBucketCount]float64
 			continue
 		}
 
-		for i := 0; i < hashBucketCount && i < len(resp.SamplesPerSecond); i++ {
-			globalRates[i] += resp.SamplesPerSecond[i]
+		for _, rate := range resp.Rates {
+			all = append(all, rangeRate{
+				hr:   assignment.HashRange{Lo: rate.Lo, Hi: rate.Hi},
+				rate: rate.SamplesPerSecond,
+			})
 		}
 	}
 
-	return globalRates, nil
+	return all, nil
+}
+
+// pushRangesToIngesters calls SetHashRanges on each ingester with
+// only the hash ranges belonging to the partitions that ingester owns.
+func (r *Rebalancer) pushRangesToIngesters(ctx context.Context, a *assignment.Assignment) {
+	instances, err := r.ingesterRing.GetAllHealthy(ring.Read)
+	if err != nil {
+		level.Warn(r.logger).Log("msg", "failed to get healthy ingesters for push", "err", err)
+		return
+	}
+
+	pRing := r.partitionRing.PartitionRing()
+
+	// Build instance ID → address lookup from the ingester ring.
+	idToInst := make(map[string]ring.InstanceDesc, len(instances.Instances))
+	for _, inst := range instances.Instances {
+		idToInst[inst.GetId()] = inst
+	}
+
+	// Build partition → hash ranges from the assignment.
+	partitionRanges := make(map[int32][]ingester_client.HashRangeEntry)
+	for _, e := range a.Entries {
+		partitionRanges[e.PartitionID] = append(partitionRanges[e.PartitionID],
+			ingester_client.HashRangeEntry{Lo: e.Range.Lo, Hi: e.Range.Hi})
+	}
+
+	// For each active partition, find its owner ingester(s) and collect
+	// the hash ranges that should be sent to each.
+	instanceRanges := make(map[string][]ingester_client.HashRangeEntry)
+	for _, pid := range pRing.ActivePartitionIDs() {
+		owners := pRing.PartitionOwnerIDs(pid)
+		ranges := partitionRanges[pid]
+		for _, ownerID := range owners {
+			instanceRanges[ownerID] = append(instanceRanges[ownerID], ranges...)
+		}
+	}
+
+	for instanceID, ranges := range instanceRanges {
+		inst, ok := idToInst[instanceID]
+		if !ok {
+			continue
+		}
+		c, err := r.pool.GetClientForInstance(inst)
+		if err != nil {
+			level.Warn(r.logger).Log("msg", "failed to get client for ingester", "ingester", inst.Addr, "err", err)
+			continue
+		}
+		req := &ingester_client.SetHashRangesRequest{Ranges: ranges}
+		if _, err := c.(ingester_client.IngesterClient).SetHashRanges(ctx, req); err != nil {
+			level.Warn(r.logger).Log("msg", "SetHashRanges RPC failed", "ingester", inst.Addr, "err", err)
+		}
+	}
+}
+
+type rangeRate struct {
+	hr   assignment.HashRange
+	rate float64
 }
 
 type rangeLoad struct {
@@ -139,8 +206,11 @@ type rangeLoad struct {
 }
 
 // runSlicer runs a simplified slicer algorithm: split, merge, and move to
-// converge toward equal per-partition load.
-func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates [hashBucketCount]float64, activePartitions []int32) *assignment.Assignment {
+// converge toward equal per-partition load. It uses the per-range rates
+// collected from ingesters.
+func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate, activePartitions []int32) *assignment.Assignment {
+	rateMap := buildRateMap(rates)
+
 	activeSet := make(map[int32]bool, len(activePartitions))
 	for _, pid := range activePartitions {
 		activeSet[pid] = true
@@ -150,7 +220,7 @@ func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates [hashBucket
 	for i, e := range current.Entries {
 		entries[i] = rangeLoad{
 			entry: e,
-			load:  loadForRange(e.Range, rates),
+			load:  lookupRate(e.Range, rateMap),
 		}
 		if !activeSet[e.PartitionID] {
 			entries[i].entry.PartitionID = activePartitions[0]
@@ -171,7 +241,6 @@ func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates [hashBucket
 	movementBudget := r.cfg.MovementBudget * float64(uint64(math.MaxUint32)+1)
 	var moved float64
 
-	// Split: bisect any range whose load exceeds 2x the mean range load.
 	meanRangeLoad := totalLoad / float64(len(entries))
 	splitThreshold := 2.0 * meanRangeLoad
 	var newEntries []rangeLoad
@@ -180,8 +249,13 @@ func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates [hashBucket
 			mid := rl.entry.Range.Lo + uint32((uint64(rl.entry.Range.Hi)-uint64(rl.entry.Range.Lo))/2)
 			left := assignment.HashRange{Lo: rl.entry.Range.Lo, Hi: mid}
 			right := assignment.HashRange{Lo: mid + 1, Hi: rl.entry.Range.Hi}
-			leftLoad := loadForRange(left, rates)
-			rightLoad := loadForRange(right, rates)
+			leftLoad := lookupRate(left, rateMap)
+			rightLoad := lookupRate(right, rateMap)
+			if leftLoad == 0 && rightLoad == 0 && rl.load > 0 {
+				leftFraction := float64(left.Size()) / float64(rl.entry.Range.Size())
+				leftLoad = rl.load * leftFraction
+				rightLoad = rl.load * (1 - leftFraction)
+			}
 			newEntries = append(newEntries,
 				rangeLoad{entry: assignment.Entry{Range: left, PartitionID: rl.entry.PartitionID}, load: leftLoad},
 				rangeLoad{entry: assignment.Entry{Range: right, PartitionID: rl.entry.PartitionID}, load: rightLoad},
@@ -192,12 +266,9 @@ func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates [hashBucket
 	}
 	entries = newEntries
 
-	// Merge: combine adjacent ranges on the same partition if both are underloaded.
-	entries = mergeAdjacentUnderloaded(entries, meanRangeLoad*0.5, rates)
+	entries = mergeAdjacentUnderloaded(entries, meanRangeLoad*0.5, rateMap)
 
-	// Move: greedily move ranges from the most loaded partition to the least.
 	for i := 0; i < len(entries) && moved < movementBudget; i++ {
-		// Recalculate partition loads.
 		partitionLoads = make(map[int32]float64)
 		for _, rl := range entries {
 			partitionLoads[rl.entry.PartitionID] += rl.load
@@ -222,7 +293,6 @@ func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates [hashBucket
 			break
 		}
 
-		// Find the best range to move from hottest to coldest.
 		bestIdx := -1
 		bestScore := 0.0
 		for j, rl := range entries {
@@ -256,7 +326,6 @@ func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates [hashBucket
 		entries[bestIdx].entry.PartitionID = coldestPID
 	}
 
-	// Sort by Lo to produce a valid assignment.
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].entry.Range.Lo < entries[j].entry.Range.Lo
 	})
@@ -271,45 +340,26 @@ func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates [hashBucket
 	return result
 }
 
-func loadForRange(hr assignment.HashRange, rates [hashBucketCount]float64) float64 {
-	bucketSize := (uint64(math.MaxUint32) + 1) / hashBucketCount
-	var total float64
-
-	startBucket := int(uint64(hr.Lo) / bucketSize)
-	endBucket := int(uint64(hr.Hi) / bucketSize)
-
-	if startBucket >= hashBucketCount {
-		startBucket = hashBucketCount - 1
+// buildRateMap builds a lookup from hash range to rate.
+func buildRateMap(rates []rangeRate) map[assignment.HashRange]float64 {
+	m := make(map[assignment.HashRange]float64, len(rates))
+	for _, rr := range rates {
+		m[rr.hr] += rr.rate
 	}
-	if endBucket >= hashBucketCount {
-		endBucket = hashBucketCount - 1
-	}
-
-	for b := startBucket; b <= endBucket; b++ {
-		bLo := uint64(b) * bucketSize
-		bHi := bLo + bucketSize - 1
-
-		overlapLo := uint64(hr.Lo)
-		if bLo > overlapLo {
-			overlapLo = bLo
-		}
-		overlapHi := uint64(hr.Hi)
-		if bHi < overlapHi {
-			overlapHi = bHi
-		}
-
-		if overlapLo > overlapHi {
-			continue
-		}
-
-		fraction := float64(overlapHi-overlapLo+1) / float64(bucketSize)
-		total += rates[b] * fraction
-	}
-
-	return total
+	return m
 }
 
-func mergeAdjacentUnderloaded(entries []rangeLoad, threshold float64, rates [hashBucketCount]float64) []rangeLoad {
+// lookupRate returns the rate for the given hash range. If an exact
+// match exists, it's returned directly. Otherwise returns 0 (new
+// ranges from splits won't have data until the next cycle).
+func lookupRate(hr assignment.HashRange, rateMap map[assignment.HashRange]float64) float64 {
+	if rate, ok := rateMap[hr]; ok {
+		return rate
+	}
+	return 0
+}
+
+func mergeAdjacentUnderloaded(entries []rangeLoad, threshold float64, rateMap map[assignment.HashRange]float64) []rangeLoad {
 	if len(entries) <= 1 {
 		return entries
 	}
@@ -324,7 +374,7 @@ func mergeAdjacentUnderloaded(entries []rangeLoad, threshold float64, rates [has
 			prev.load < threshold && curr.load < threshold {
 			merged := assignment.HashRange{Lo: prev.entry.Range.Lo, Hi: curr.entry.Range.Hi}
 			prev.entry.Range = merged
-			prev.load = loadForRange(merged, rates)
+			prev.load = lookupRate(merged, rateMap)
 		} else {
 			result = append(result, curr)
 		}

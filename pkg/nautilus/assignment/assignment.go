@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"sort"
+	"time"
 )
 
 // HashRange represents a contiguous range [Lo, Hi] in the 32-bit hash space.
@@ -146,4 +147,70 @@ func (a *Assignment) WriteJSON(w io.Writer) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(a)
+}
+
+// TimedAssignment pairs an Assignment with the wall-clock time from
+// which it takes effect. The distributor routes samples whose
+// timestamps fall on or after From using this assignment.
+type TimedAssignment struct {
+	From       time.Time   `json:"from"`
+	Assignment *Assignment `json:"assignment"`
+}
+
+// TimedAssignmentSet is an append-only list of assignments ordered
+// by From. The distributor uses this to pick the right assignment
+// for a given sample timestamp.
+type TimedAssignmentSet struct {
+	Assignments []TimedAssignment `json:"assignments"`
+}
+
+// Add appends a new timed assignment. Callers must ensure From is
+// monotonically increasing.
+func (s *TimedAssignmentSet) Add(from time.Time, a *Assignment) {
+	s.Assignments = append(s.Assignments, TimedAssignment{
+		From:       from,
+		Assignment: a,
+	})
+}
+
+// ForTimestamp returns the assignment that covers the given timestamp.
+// It picks the latest assignment whose From <= ts. Returns nil if
+// the set is empty or ts precedes all assignments.
+func (s *TimedAssignmentSet) ForTimestamp(ts time.Time) *Assignment {
+	if len(s.Assignments) == 0 {
+		return nil
+	}
+
+	idx := sort.Search(len(s.Assignments), func(i int) bool {
+		return s.Assignments[i].From.After(ts)
+	}) - 1
+
+	if idx < 0 {
+		return nil
+	}
+	return s.Assignments[idx].Assignment
+}
+
+// Latest returns the most recent assignment, or nil if the set is empty.
+func (s *TimedAssignmentSet) Latest() *Assignment {
+	if len(s.Assignments) == 0 {
+		return nil
+	}
+	return s.Assignments[len(s.Assignments)-1].Assignment
+}
+
+// RangesForPartition returns the hash ranges assigned to the given
+// partition in the most recent assignment.
+func (s *TimedAssignmentSet) RangesForPartition(pid int32) []HashRange {
+	a := s.Latest()
+	if a == nil {
+		return nil
+	}
+	var ranges []HashRange
+	for _, e := range a.Entries {
+		if e.PartitionID == pid {
+			ranges = append(ranges, e.Range)
+		}
+	}
+	return ranges
 }

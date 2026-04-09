@@ -1464,10 +1464,10 @@ func (t *Mimir) initNautilusRebalancer() (services.Service, error) {
 		t.Cfg.NautilusRebalancer,
 		t.IngesterRing,
 		t.Distributor.GetIngesterPool(),
-		t.Distributor,
 		t.IngesterPartitionInstanceRing,
 		util_log.Logger,
 	)
+	t.Server.GRPC.RegisterService(&rebalancer.NautilusRebalancerServiceDesc, t.NautilusRebalancer)
 	return t.NautilusRebalancer, nil
 }
 

@@ -781,10 +781,10 @@ func (i *Ingester) pushSamplesToAppender(
 			activeSeries.UpdateSeries(nonCopiedLabels, ref, startAppend, numNativeHistogramBuckets, isOTLP, idx)
 		}
 
-		if newSamples := stats.succeededSamplesCount - oldSucceededSamplesCount; newSamples > 0 && i.hashBucketRates != nil {
+		if newSamples := stats.succeededSamplesCount - oldSucceededSamplesCount; newSamples > 0 && i.hashRangeRates != nil && i.hashRangeRates.HasRanges() {
 			metricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ts.Labels)
 			hash := mimirpb.ShardByMetricNameLocality(userID, string(metricName), ts.Labels)
-			i.hashBucketRates.RecordSamples(hash, int(newSamples))
+			i.hashRangeRates.RecordSamples(hash, int(newSamples))
 		}
 
 		if len(ts.Exemplars) > 0 && i.limits.MaxGlobalExemplarsPerUser(userID) > 0 {

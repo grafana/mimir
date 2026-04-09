@@ -3216,6 +3216,7 @@ type IngesterClient interface {
 	LabelValuesCardinality(ctx context.Context, in *LabelValuesCardinalityRequest, opts ...grpc.CallOption) (Ingester_LabelValuesCardinalityClient, error)
 	ActiveSeries(ctx context.Context, in *ActiveSeriesRequest, opts ...grpc.CallOption) (Ingester_ActiveSeriesClient, error)
 	HashRangeStats(ctx context.Context, in *HashRangeStatsRequest, opts ...grpc.CallOption) (*HashRangeStatsResponse, error)
+	SetHashRanges(ctx context.Context, in *SetHashRangesRequest, opts ...grpc.CallOption) (*SetHashRangesResponse, error)
 }
 
 type ingesterClient struct {
@@ -3446,6 +3447,7 @@ type IngesterServer interface {
 	LabelValuesCardinality(*LabelValuesCardinalityRequest, Ingester_LabelValuesCardinalityServer) error
 	ActiveSeries(*ActiveSeriesRequest, Ingester_ActiveSeriesServer) error
 	HashRangeStats(context.Context, *HashRangeStatsRequest) (*HashRangeStatsResponse, error)
+	SetHashRanges(context.Context, *SetHashRangesRequest) (*SetHashRangesResponse, error)
 }
 
 // UnimplementedIngesterServer can be embedded to have forward compatible implementations.
@@ -3490,6 +3492,9 @@ func (*UnimplementedIngesterServer) ActiveSeries(req *ActiveSeriesRequest, srv I
 }
 func (*UnimplementedIngesterServer) HashRangeStats(ctx context.Context, req *HashRangeStatsRequest) (*HashRangeStatsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method HashRangeStats not implemented")
+}
+func (*UnimplementedIngesterServer) SetHashRanges(ctx context.Context, req *SetHashRangesRequest) (*SetHashRangesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetHashRanges not implemented")
 }
 
 func RegisterIngesterServer(s *grpc.Server, srv IngesterServer) {
@@ -3724,6 +3729,24 @@ func (x *ingesterActiveSeriesServer) Send(m *ActiveSeriesResponse) error {
 	return x.ServerStream.SendMsg(m)
 }
 
+func _Ingester_SetHashRanges_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetHashRangesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IngesterServer).SetHashRanges(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/cortex.Ingester/SetHashRanges",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IngesterServer).SetHashRanges(ctx, req.(*SetHashRangesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Ingester_HashRangeStats_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(HashRangeStatsRequest)
 	if err := dec(in); err != nil {
@@ -3781,6 +3804,10 @@ var _Ingester_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "HashRangeStats",
 			Handler:    _Ingester_HashRangeStats_Handler,
+		},
+		{
+			MethodName: "SetHashRanges",
+			Handler:    _Ingester_SetHashRanges_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

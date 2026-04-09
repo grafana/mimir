@@ -9,48 +9,53 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/nautilus/assignment"
 )
 
-func TestBucketForHash(t *testing.T) {
-	assert.Equal(t, 0, BucketForHash(0))
-	assert.Equal(t, 0, BucketForHash(1<<24-1))
-	assert.Equal(t, 1, BucketForHash(1<<24))
-	assert.Equal(t, 255, BucketForHash(math.MaxUint32))
+func TestHashRangeRates_NoRangesDropsSilently(t *testing.T) {
+	h := newHashRangeRates()
+
+	h.RecordSamples(0, 100)
+	h.RecordSamples(math.MaxUint32, 200)
+
+	time.Sleep(10 * time.Millisecond)
+	snap := h.Snapshot()
+	assert.Empty(t, snap.Ranges)
+	assert.Empty(t, snap.SamplesPerSecond)
 }
 
-func TestHashBucketRates_RecordAndSnapshot(t *testing.T) {
-	h := newHashBucketRates()
+func TestHashRangeRates_SetRangesAndRecord(t *testing.T) {
+	h := newHashRangeRates()
+	h.SetRanges([]assignment.HashRange{
+		{Lo: 0, Hi: 999},
+		{Lo: 1000, Hi: 1999},
+		{Lo: 2000, Hi: math.MaxUint32},
+	})
 
-	// Record some samples in different buckets.
-	h.RecordSamples(0, 100)                    // bucket 0
-	h.RecordSamples(1<<24, 50)                 // bucket 1
-	h.RecordSamples(math.MaxUint32, 200)       // bucket 255
-	h.RecordSamples(math.MaxUint32-1000, 300)  // bucket 255
+	h.RecordSamples(500, 100)  // -> range 0
+	h.RecordSamples(1500, 50)  // -> range 1
+	h.RecordSamples(3000, 200) // -> range 2
 
-	// Give it a moment so the elapsed time is non-zero.
 	time.Sleep(10 * time.Millisecond)
-
 	snap := h.Snapshot()
 
-	require.Equal(t, hashBucketCount, snap.NumBuckets)
+	require.Len(t, snap.Ranges, 3)
+	require.Len(t, snap.SamplesPerSecond, 3)
 
-	// Bucket 0 should have rate > 0 based on 100 samples.
 	assert.Greater(t, snap.SamplesPerSecond[0], 0.0)
-
-	// Bucket 1 should have rate > 0 based on 50 samples.
 	assert.Greater(t, snap.SamplesPerSecond[1], 0.0)
+	assert.Greater(t, snap.SamplesPerSecond[2], 0.0)
 
-	// Bucket 255 should have the highest rate based on 500 samples.
-	assert.Greater(t, snap.SamplesPerSecond[255], snap.SamplesPerSecond[0])
-
-	// Buckets 2-254 should be zero.
-	for i := 2; i < 255; i++ {
-		assert.Equal(t, 0.0, snap.SamplesPerSecond[i], "bucket %d should be zero", i)
-	}
+	assert.Greater(t, snap.SamplesPerSecond[2], snap.SamplesPerSecond[0],
+		"range 2 (200 samples) should have higher rate than range 0 (100 samples)")
 }
 
-func TestHashBucketRates_SnapshotResetsCounters(t *testing.T) {
-	h := newHashBucketRates()
+func TestHashRangeRates_SnapshotResetsCounters(t *testing.T) {
+	h := newHashRangeRates()
+	h.SetRanges([]assignment.HashRange{
+		{Lo: 0, Hi: math.MaxUint32},
+	})
 
 	h.RecordSamples(0, 100)
 	time.Sleep(10 * time.Millisecond)
@@ -58,20 +63,38 @@ func TestHashBucketRates_SnapshotResetsCounters(t *testing.T) {
 	snap1 := h.Snapshot()
 	assert.Greater(t, snap1.SamplesPerSecond[0], 0.0)
 
-	// After snapshot, counters should be reset.
 	time.Sleep(10 * time.Millisecond)
 	snap2 := h.Snapshot()
-
-	// All buckets should be zero since no new samples were recorded.
-	for i := 0; i < hashBucketCount; i++ {
-		assert.Equal(t, 0.0, snap2.SamplesPerSecond[i], "bucket %d should be zero after reset", i)
-	}
+	assert.Equal(t, 0.0, snap2.SamplesPerSecond[0])
 }
 
-func TestHashBucketRates_ConcurrentAccess(t *testing.T) {
-	h := newHashBucketRates()
-	done := make(chan struct{})
+func TestHashRangeRates_SetRangesDiscardsOldCounters(t *testing.T) {
+	h := newHashRangeRates()
+	h.SetRanges([]assignment.HashRange{
+		{Lo: 0, Hi: math.MaxUint32},
+	})
+	h.RecordSamples(0, 100)
 
+	h.SetRanges([]assignment.HashRange{
+		{Lo: 0, Hi: 999},
+		{Lo: 1000, Hi: math.MaxUint32},
+	})
+
+	time.Sleep(10 * time.Millisecond)
+	snap := h.Snapshot()
+	require.Len(t, snap.SamplesPerSecond, 2)
+	assert.Equal(t, 0.0, snap.SamplesPerSecond[0])
+	assert.Equal(t, 0.0, snap.SamplesPerSecond[1])
+}
+
+func TestHashRangeRates_ConcurrentAccess(t *testing.T) {
+	h := newHashRangeRates()
+	h.SetRanges([]assignment.HashRange{
+		{Lo: 0, Hi: math.MaxUint32 / 2},
+		{Lo: math.MaxUint32/2 + 1, Hi: math.MaxUint32},
+	})
+
+	done := make(chan struct{})
 	go func() {
 		for i := 0; i < 10000; i++ {
 			h.RecordSamples(uint32(i*1000), 1)
@@ -79,11 +102,34 @@ func TestHashBucketRates_ConcurrentAccess(t *testing.T) {
 		close(done)
 	}()
 
-	// Concurrent snapshot while recording.
 	for i := 0; i < 10; i++ {
 		snap := h.Snapshot()
-		assert.Equal(t, hashBucketCount, snap.NumBuckets)
+		assert.Len(t, snap.Ranges, 2)
 	}
 
 	<-done
+}
+
+func TestHashRangeRates_HasRanges(t *testing.T) {
+	h := newHashRangeRates()
+	assert.False(t, h.HasRanges())
+
+	h.SetRanges([]assignment.HashRange{{Lo: 0, Hi: math.MaxUint32}})
+	assert.True(t, h.HasRanges())
+}
+
+func TestHashRangeRates_OutOfRangeHashIgnored(t *testing.T) {
+	h := newHashRangeRates()
+	h.SetRanges([]assignment.HashRange{
+		{Lo: 100, Hi: 200},
+	})
+
+	h.RecordSamples(50, 100)  // below range
+	h.RecordSamples(300, 100) // above range
+	h.RecordSamples(150, 100) // in range
+
+	time.Sleep(10 * time.Millisecond)
+	snap := h.Snapshot()
+	require.Len(t, snap.SamplesPerSecond, 1)
+	assert.Greater(t, snap.SamplesPerSecond[0], 0.0)
 }

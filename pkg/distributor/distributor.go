@@ -50,9 +50,12 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
+	"github.com/grafana/mimir/pkg/nautilus/rebalancer"
 	"github.com/grafana/mimir/pkg/costattribution"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -233,10 +236,13 @@ type Distributor struct {
 
 	reactiveLimiter reactivelimiter.ReactiveLimiter
 
-	// nautilusAssignment holds the current hash-range-to-partition assignment
-	// produced by the nautilus rebalancer. When non-nil, it is used to route
-	// series to partitions instead of the partition ring's default hashing.
-	nautilusAssignment syncatomic.Pointer[assignment.Assignment]
+	// nautilusAssignments holds the timed assignment set polled from the
+	// nautilus rebalancer. The latest assignment is used to route series
+	// to partitions instead of the partition ring's default hashing.
+	nautilusAssignments syncatomic.Pointer[assignment.TimedAssignmentSet]
+
+	// nautilusRebalancerConn is the gRPC connection to the rebalancer.
+	nautilusRebalancerConn io.Closer
 
 	// For testing functionality that relies on timing without having to sleep in unit tests.
 	sleep func(time.Duration)
@@ -246,16 +252,10 @@ type Distributor struct {
 func defaultSleep(d time.Duration) { time.Sleep(d) }
 func defaultNow() time.Time        { return time.Now() }
 
-// SetNautilusAssignment sets the current nautilus hash-range-to-partition
-// assignment. Called by the nautilus rebalancer after each rebalance round.
-func (d *Distributor) SetNautilusAssignment(a *assignment.Assignment) {
-	d.nautilusAssignment.Store(a)
-}
-
-// GetNautilusAssignment returns the current nautilus assignment, or nil if
-// none is loaded.
-func (d *Distributor) GetNautilusAssignment() *assignment.Assignment {
-	return d.nautilusAssignment.Load()
+// GetNautilusAssignments returns the current timed assignment set, or nil
+// if none has been polled yet.
+func (d *Distributor) GetNautilusAssignments() *assignment.TimedAssignmentSet {
+	return d.nautilusAssignments.Load()
 }
 
 // GetIngesterPool returns the ingester client pool, allowing other modules
@@ -347,6 +347,10 @@ type Config struct {
 	UsageTrackerClient  usagetrackerclient.Config `yaml:"usage_tracker_client" doc:"hidden"`
 
 	ReactiveLimiter reactivelimiter.Config `yaml:"reactive_limiter"`
+
+	// NautilusRebalancerAddress is the gRPC address of the nautilus
+	// rebalancer. When set, the distributor polls it for assignments.
+	NautilusRebalancerAddress string `yaml:"nautilus_rebalancer_address" category:"experimental"`
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
@@ -398,6 +402,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.EnableInfluxEndpoint, "distributor.influx-endpoint-enabled", false, "Enable Influx endpoint.")
 	f.IntVar(&cfg.ReusableIngesterPushWorkers, "distributor.reusable-ingester-push-workers", 2000, "Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.)")
 	f.BoolVar(&cfg.EnableStartTimeQuietZero, "distributor.otel-start-time-quiet-zero", false, "Change the implementation of OTel startTime from a real zero to a special NaN value.")
+	f.StringVar(&cfg.NautilusRebalancerAddress, "distributor.nautilus-rebalancer-address", "", "gRPC address of the nautilus rebalancer. When set, the distributor polls it for hash-range-to-partition assignments.")
 
 	cfg.DefaultLimits.RegisterFlags(f)
 }
@@ -894,12 +899,32 @@ func (d *Distributor) starting(ctx context.Context) error {
 		}
 	}
 
+	if d.cfg.NautilusRebalancerAddress != "" {
+		// nolint:staticcheck // grpc.DialContext() has been deprecated; we'll address it before upgrading to gRPC 2.
+		conn, err := grpc.DialContext(ctx, d.cfg.NautilusRebalancerAddress,
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithBlock(),
+		)
+		if err != nil {
+			return errors.Wrap(err, "connecting to nautilus rebalancer")
+		}
+		d.nautilusRebalancerConn = conn
+		level.Info(d.log).Log("msg", "connected to nautilus rebalancer", "address", d.cfg.NautilusRebalancerAddress)
+	}
+
 	return nil
 }
 
 func (d *Distributor) running(ctx context.Context) error {
 	ingestionRateTicker := time.NewTicker(instanceIngestionRateTickInterval)
 	defer ingestionRateTicker.Stop()
+
+	var nautilusTicker *time.Ticker
+	if d.nautilusRebalancerConn != nil {
+		nautilusTicker = time.NewTicker(10 * time.Second)
+		defer nautilusTicker.Stop()
+		d.pollNautilusAssignments(ctx)
+	}
 
 	for {
 		select {
@@ -912,7 +937,33 @@ func (d *Distributor) running(ctx context.Context) error {
 		case err := <-d.subservicesWatcher.Chan():
 			return errors.Wrap(err, "distributor subservice failed")
 		}
+
+		if nautilusTicker != nil {
+			select {
+			case <-nautilusTicker.C:
+				d.pollNautilusAssignments(ctx)
+			default:
+			}
+		}
 	}
+}
+
+func (d *Distributor) pollNautilusAssignments(ctx context.Context) {
+	conn, ok := d.nautilusRebalancerConn.(*grpc.ClientConn)
+	if !ok || conn == nil {
+		return
+	}
+
+	client := rebalancer.NewNautilusRebalancerClient(conn)
+	resp, err := client.GetAssignments(ctx, &rebalancer.GetAssignmentsRequest{})
+	if err != nil {
+		level.Warn(d.log).Log("msg", "failed to poll nautilus rebalancer", "err", err)
+		return
+	}
+
+	set := resp.ToTimedAssignmentSet()
+	d.nautilusAssignments.Store(set)
+	level.Debug(d.log).Log("msg", "polled nautilus assignments", "count", len(set.Assignments))
 }
 
 func (d *Distributor) cleanupInactiveUser(userID string) {
@@ -967,6 +1018,9 @@ func (d *Distributor) RemoveGroupMetricsForUser(userID, group string) {
 
 // Called after distributor is asked to stop via StopAsync.
 func (d *Distributor) stopping(_ error) error {
+	if d.nautilusRebalancerConn != nil {
+		_ = d.nautilusRebalancerConn.Close()
+	}
 	return services.StopManagerAndAwaitStopped(context.Background(), d.subservices)
 }
 
@@ -2609,8 +2663,12 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 	var partitionKeys []ring.PartitionKeys
 	var err error
 
-	if a := d.nautilusAssignment.Load(); a != nil {
-		partitionKeys, err = d.getKeysByAssignment(ctx, a, keys)
+	var nautilusAssignment *assignment.Assignment
+	if s := d.nautilusAssignments.Load(); s != nil {
+		nautilusAssignment = s.Latest()
+	}
+	if nautilusAssignment != nil {
+		partitionKeys, err = d.getKeysByAssignment(ctx, nautilusAssignment, keys)
 	} else {
 		partitionKeys, err = tenantRing.GetKeysByPartition(ctx, keys)
 	}

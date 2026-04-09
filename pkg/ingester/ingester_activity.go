@@ -148,6 +148,10 @@ func (i *ActivityTrackerWrapper) HashRangeStats(ctx context.Context, request *cl
 	return i.ing.HashRangeStats(ctx, request)
 }
 
+func (i *ActivityTrackerWrapper) SetHashRanges(ctx context.Context, request *client.SetHashRangesRequest) (*client.SetHashRangesResponse, error) {
+	return i.ing.SetHashRanges(ctx, request)
+}
+
 func (i *ActivityTrackerWrapper) FlushHandler(w http.ResponseWriter, r *http.Request) {
 	ix := i.tracker.Insert(func() string {
 		return requestActivity(r.Context(), "Ingester/FlushHandler", nil)

@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"math"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -160,4 +161,65 @@ func TestEvenSplit_ManyPartitions(t *testing.T) {
 		_, ok := a.Lookup(key)
 		assert.True(t, ok, "key %d should be found", key)
 	}
+}
+
+func TestTimedAssignmentSet_AddAndForTimestamp(t *testing.T) {
+	s := &TimedAssignmentSet{}
+
+	t1 := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	a1 := EvenSplit([]int32{0, 1})
+	s.Add(t1, a1)
+
+	t2 := t1.Add(time.Hour)
+	a2 := EvenSplit([]int32{0, 1, 2})
+	s.Add(t2, a2)
+
+	assert.Nil(t, s.ForTimestamp(t1.Add(-time.Second)))
+
+	assert.Equal(t, a1, s.ForTimestamp(t1))
+	assert.Equal(t, a1, s.ForTimestamp(t1.Add(time.Minute)))
+
+	assert.Equal(t, a2, s.ForTimestamp(t2))
+	assert.Equal(t, a2, s.ForTimestamp(t2.Add(time.Hour)))
+}
+
+func TestTimedAssignmentSet_Latest(t *testing.T) {
+	s := &TimedAssignmentSet{}
+	assert.Nil(t, s.Latest())
+
+	a1 := EvenSplit([]int32{0})
+	s.Add(time.Now(), a1)
+	assert.Equal(t, a1, s.Latest())
+
+	a2 := EvenSplit([]int32{0, 1})
+	s.Add(time.Now().Add(time.Second), a2)
+	assert.Equal(t, a2, s.Latest())
+}
+
+func TestTimedAssignmentSet_RangesForPartition(t *testing.T) {
+	s := &TimedAssignmentSet{}
+	assert.Nil(t, s.RangesForPartition(0))
+
+	a := &Assignment{
+		Entries: []Entry{
+			{Range: HashRange{Lo: 0, Hi: 99}, PartitionID: 0},
+			{Range: HashRange{Lo: 100, Hi: 199}, PartitionID: 1},
+			{Range: HashRange{Lo: 200, Hi: 299}, PartitionID: 0},
+			{Range: HashRange{Lo: 300, Hi: math.MaxUint32}, PartitionID: 2},
+		},
+	}
+	s.Add(time.Now(), a)
+
+	ranges := s.RangesForPartition(0)
+	require.Len(t, ranges, 2)
+	assert.Equal(t, uint32(0), ranges[0].Lo)
+	assert.Equal(t, uint32(99), ranges[0].Hi)
+	assert.Equal(t, uint32(200), ranges[1].Lo)
+	assert.Equal(t, uint32(299), ranges[1].Hi)
+
+	ranges = s.RangesForPartition(1)
+	require.Len(t, ranges, 1)
+
+	ranges = s.RangesForPartition(99)
+	assert.Empty(t, ranges)
 }

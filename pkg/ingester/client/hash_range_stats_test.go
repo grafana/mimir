@@ -11,12 +11,12 @@ import (
 
 func TestHashRangeStatsResponse_MarshalUnmarshal(t *testing.T) {
 	original := &HashRangeStatsResponse{
-		NumBuckets:       256,
-		SamplesPerSecond: make([]float64, 256),
+		Rates: []HashRangeRate{
+			{Lo: 0, Hi: 1000, SamplesPerSecond: 100.5},
+			{Lo: 1001, Hi: 2000, SamplesPerSecond: 200.25},
+			{Lo: 2001, Hi: 4294967295, SamplesPerSecond: 300.75},
+		},
 	}
-	original.SamplesPerSecond[0] = 100.5
-	original.SamplesPerSecond[127] = 200.25
-	original.SamplesPerSecond[255] = 300.75
 
 	data, err := original.Marshal()
 	require.NoError(t, err)
@@ -25,15 +25,18 @@ func TestHashRangeStatsResponse_MarshalUnmarshal(t *testing.T) {
 	err = restored.Unmarshal(data)
 	require.NoError(t, err)
 
-	assert.Equal(t, original.NumBuckets, restored.NumBuckets)
-	require.Len(t, restored.SamplesPerSecond, 256)
-	assert.InDelta(t, 100.5, restored.SamplesPerSecond[0], 0.001)
-	assert.InDelta(t, 200.25, restored.SamplesPerSecond[127], 0.001)
-	assert.InDelta(t, 300.75, restored.SamplesPerSecond[255], 0.001)
+	require.Len(t, restored.Rates, 3)
+	assert.Equal(t, uint32(0), restored.Rates[0].Lo)
+	assert.Equal(t, uint32(1000), restored.Rates[0].Hi)
+	assert.InDelta(t, 100.5, restored.Rates[0].SamplesPerSecond, 0.001)
 
-	// Verify zero buckets are zero.
-	assert.Equal(t, 0.0, restored.SamplesPerSecond[1])
-	assert.Equal(t, 0.0, restored.SamplesPerSecond[254])
+	assert.Equal(t, uint32(1001), restored.Rates[1].Lo)
+	assert.Equal(t, uint32(2000), restored.Rates[1].Hi)
+	assert.InDelta(t, 200.25, restored.Rates[1].SamplesPerSecond, 0.001)
+
+	assert.Equal(t, uint32(2001), restored.Rates[2].Lo)
+	assert.Equal(t, uint32(4294967295), restored.Rates[2].Hi)
+	assert.InDelta(t, 300.75, restored.Rates[2].SamplesPerSecond, 0.001)
 }
 
 func TestHashRangeStatsResponse_EmptyRoundTrip(t *testing.T) {
@@ -46,31 +49,67 @@ func TestHashRangeStatsResponse_EmptyRoundTrip(t *testing.T) {
 	restored := &HashRangeStatsResponse{}
 	err = restored.Unmarshal(data)
 	require.NoError(t, err)
-
-	assert.Equal(t, uint32(0), restored.NumBuckets)
-	assert.Empty(t, restored.SamplesPerSecond)
-}
-
-func TestHashRangeStatsRequest_MarshalUnmarshal(t *testing.T) {
-	req := &HashRangeStatsRequest{}
-
-	data, err := req.Marshal()
-	require.NoError(t, err)
-	assert.Empty(t, data)
-
-	err = req.Unmarshal(data)
-	require.NoError(t, err)
+	assert.Empty(t, restored.Rates)
 }
 
 func TestHashRangeStatsResponse_Size(t *testing.T) {
 	resp := &HashRangeStatsResponse{
-		NumBuckets:       256,
-		SamplesPerSecond: make([]float64, 256),
+		Rates: []HashRangeRate{
+			{Lo: 0, Hi: 1000, SamplesPerSecond: 1.0},
+			{Lo: 1001, Hi: 2000, SamplesPerSecond: 2.0},
+		},
 	}
-	resp.SamplesPerSecond[0] = 1.0
 
 	size := resp.Size()
 	data, err := resp.Marshal()
 	require.NoError(t, err)
 	assert.Equal(t, size, len(data))
+}
+
+func TestSetHashRangesRequest_MarshalUnmarshal(t *testing.T) {
+	original := &SetHashRangesRequest{
+		Ranges: []HashRangeEntry{
+			{Lo: 0, Hi: 1000},
+			{Lo: 1001, Hi: 4294967295},
+		},
+	}
+
+	data, err := original.Marshal()
+	require.NoError(t, err)
+	require.NotEmpty(t, data)
+
+	restored := &SetHashRangesRequest{}
+	err = restored.Unmarshal(data)
+	require.NoError(t, err)
+
+	require.Len(t, restored.Ranges, 2)
+	assert.Equal(t, uint32(0), restored.Ranges[0].Lo)
+	assert.Equal(t, uint32(1000), restored.Ranges[0].Hi)
+	assert.Equal(t, uint32(1001), restored.Ranges[1].Lo)
+	assert.Equal(t, uint32(4294967295), restored.Ranges[1].Hi)
+}
+
+func TestSetHashRangesRequest_Size(t *testing.T) {
+	req := &SetHashRangesRequest{
+		Ranges: []HashRangeEntry{
+			{Lo: 0, Hi: 1000},
+			{Lo: 1001, Hi: 4294967295},
+		},
+	}
+
+	size := req.Size()
+	data, err := req.Marshal()
+	require.NoError(t, err)
+	assert.Equal(t, size, len(data))
+}
+
+func TestSetHashRangesResponse_MarshalUnmarshal(t *testing.T) {
+	resp := &SetHashRangesResponse{}
+
+	data, err := resp.Marshal()
+	require.NoError(t, err)
+	assert.Empty(t, data)
+
+	err = resp.Unmarshal(data)
+	require.NoError(t, err)
 }

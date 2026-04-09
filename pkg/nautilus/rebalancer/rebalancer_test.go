@@ -3,8 +3,8 @@
 package rebalancer
 
 import (
-	"math"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -12,38 +12,17 @@ import (
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
 )
 
-func TestLoadForRange(t *testing.T) {
-	var rates [hashBucketCount]float64
-	rates[0] = 100.0
-	rates[1] = 200.0
-
-	bucketSize := (uint64(math.MaxUint32) + 1) / hashBucketCount
-
-	// Full first bucket.
-	load := loadForRange(assignment.HashRange{Lo: 0, Hi: uint32(bucketSize - 1)}, rates)
-	assert.InDelta(t, 100.0, load, 0.01)
-
-	// Full second bucket.
-	load = loadForRange(assignment.HashRange{Lo: uint32(bucketSize), Hi: uint32(2*bucketSize - 1)}, rates)
-	assert.InDelta(t, 200.0, load, 0.01)
-
-	// Half of first bucket.
-	load = loadForRange(assignment.HashRange{Lo: 0, Hi: uint32(bucketSize/2 - 1)}, rates)
-	assert.InDelta(t, 50.0, load, 0.01)
-
-	// Spans both buckets.
-	load = loadForRange(assignment.HashRange{Lo: 0, Hi: uint32(2*bucketSize - 1)}, rates)
-	assert.InDelta(t, 300.0, load, 0.01)
-}
-
 func TestRunSlicer_ConvergesOnSkewedLoad(t *testing.T) {
 	partitions := []int32{0, 1, 2, 3}
 	initial := assignment.EvenSplit(partitions)
 	require.NoError(t, initial.Validate())
 
-	// Skewed load: most samples in bucket 0, none elsewhere.
-	var rates [hashBucketCount]float64
-	rates[0] = 10000.0
+	rates := []rangeRate{
+		{hr: initial.Entries[0].Range, rate: 10000.0},
+		{hr: initial.Entries[1].Range, rate: 100.0},
+		{hr: initial.Entries[2].Range, rate: 100.0},
+		{hr: initial.Entries[3].Range, rate: 100.0},
+	}
 
 	cfg := Config{
 		MovementBudget: 0.5,
@@ -53,20 +32,17 @@ func TestRunSlicer_ConvergesOnSkewedLoad(t *testing.T) {
 	result := r.runSlicer(initial, rates, partitions)
 	require.NoError(t, result.Validate())
 
-	// The hot partition (partition 0, which has bucket 0) should have lost
-	// some of its load to other partitions. Verify we have more entries than
-	// the initial 4 (splits should have occurred).
-	assert.Greater(t, len(result.Entries), len(initial.Entries))
+	assert.Greater(t, len(result.Entries), len(initial.Entries),
+		"splits should have occurred on the hot range")
 }
 
 func TestRunSlicer_EvenLoadNoChange(t *testing.T) {
 	partitions := []int32{0, 1, 2, 3}
 	initial := assignment.EvenSplit(partitions)
 
-	// Even load across all buckets.
-	var rates [hashBucketCount]float64
-	for i := range rates {
-		rates[i] = 100.0
+	rates := make([]rangeRate, len(initial.Entries))
+	for i, e := range initial.Entries {
+		rates[i] = rangeRate{hr: e.Range, rate: 100.0}
 	}
 
 	cfg := Config{
@@ -77,10 +53,10 @@ func TestRunSlicer_EvenLoadNoChange(t *testing.T) {
 	result := r.runSlicer(initial, rates, partitions)
 	require.NoError(t, result.Validate())
 
-	// With even load, partition assignments should remain balanced.
 	partitionLoad := make(map[int32]float64)
+	rateMap := buildRateMap(rates)
 	for _, e := range result.Entries {
-		partitionLoad[e.PartitionID] += loadForRange(e.Range, rates)
+		partitionLoad[e.PartitionID] += lookupRate(e.Range, rateMap)
 	}
 
 	totalLoad := 0.0
@@ -95,15 +71,14 @@ func TestRunSlicer_EvenLoadNoChange(t *testing.T) {
 }
 
 func TestRunSlicer_InactivePartitionsReassigned(t *testing.T) {
-	// Start with 4 partitions, but only 3 are active.
 	allPartitions := []int32{0, 1, 2, 3}
 	initial := assignment.EvenSplit(allPartitions)
 
-	activePartitions := []int32{0, 1, 2} // partition 3 is inactive
+	activePartitions := []int32{0, 1, 2}
 
-	var rates [hashBucketCount]float64
-	for i := range rates {
-		rates[i] = 100.0
+	rates := make([]rangeRate, len(initial.Entries))
+	for i, e := range initial.Entries {
+		rates[i] = rangeRate{hr: e.Range, rate: 100.0}
 	}
 
 	cfg := Config{
@@ -114,16 +89,16 @@ func TestRunSlicer_InactivePartitionsReassigned(t *testing.T) {
 	result := r.runSlicer(initial, rates, activePartitions)
 	require.NoError(t, result.Validate())
 
-	// No entry should be assigned to partition 3.
 	for _, e := range result.Entries {
 		assert.NotEqual(t, int32(3), e.PartitionID, "inactive partition should not be assigned")
 	}
 }
 
 func TestMergeAdjacentUnderloaded(t *testing.T) {
-	var rates [hashBucketCount]float64
-	for i := range rates {
-		rates[i] = 1.0
+	rateMap := map[assignment.HashRange]float64{
+		{Lo: 0, Hi: 99}:   0.1,
+		{Lo: 100, Hi: 199}: 0.1,
+		{Lo: 200, Hi: 299}: 0.1,
 	}
 
 	entries := []rangeLoad{
@@ -132,11 +107,75 @@ func TestMergeAdjacentUnderloaded(t *testing.T) {
 		{entry: assignment.Entry{Range: assignment.HashRange{Lo: 200, Hi: 299}, PartitionID: 1}, load: 0.1},
 	}
 
-	result := mergeAdjacentUnderloaded(entries, 1.0, rates)
+	result := mergeAdjacentUnderloaded(entries, 1.0, rateMap)
 
-	// First two entries should be merged (same partition, adjacent, underloaded).
 	assert.Equal(t, 2, len(result))
 	assert.Equal(t, uint32(0), result[0].entry.Range.Lo)
 	assert.Equal(t, uint32(199), result[0].entry.Range.Hi)
 	assert.Equal(t, int32(0), result[0].entry.PartitionID)
+}
+
+func TestAssignmentStore(t *testing.T) {
+	s := &assignmentStore{}
+
+	assert.Nil(t, s.latest())
+
+	a1 := assignment.EvenSplit([]int32{0, 1})
+	t1 := time.Now()
+	s.add(t1, a1)
+
+	assert.Equal(t, a1, s.latest())
+
+	snap := s.snapshot()
+	require.Len(t, snap.Assignments, 1)
+	assert.Equal(t, t1.UnixMilli(), snap.Assignments[0].From.UnixMilli())
+
+	a2 := assignment.EvenSplit([]int32{0, 1, 2})
+	t2 := t1.Add(time.Minute)
+	s.add(t2, a2)
+
+	assert.Equal(t, a2, s.latest())
+
+	snap = s.snapshot()
+	require.Len(t, snap.Assignments, 2)
+}
+
+func TestGetAssignmentsResponse_RoundTrip(t *testing.T) {
+	a := assignment.EvenSplit([]int32{0, 1, 2})
+	set := &assignment.TimedAssignmentSet{}
+	set.Add(time.Now(), a)
+
+	proto := TimedAssignmentSetToProto(set)
+
+	data, err := proto.Marshal()
+	require.NoError(t, err)
+	require.NotEmpty(t, data)
+
+	restored := &GetAssignmentsResponse{}
+	err = restored.Unmarshal(data)
+	require.NoError(t, err)
+
+	restoredSet := restored.ToTimedAssignmentSet()
+	require.Len(t, restoredSet.Assignments, 1)
+
+	latest := restoredSet.Latest()
+	require.NotNil(t, latest)
+	require.Len(t, latest.Entries, len(a.Entries))
+
+	for i, e := range a.Entries {
+		assert.Equal(t, e.Range.Lo, latest.Entries[i].Range.Lo)
+		assert.Equal(t, e.Range.Hi, latest.Entries[i].Range.Hi)
+		assert.Equal(t, e.PartitionID, latest.Entries[i].PartitionID)
+	}
+}
+
+func TestLookupRate(t *testing.T) {
+	rateMap := map[assignment.HashRange]float64{
+		{Lo: 0, Hi: 999}:    100.0,
+		{Lo: 1000, Hi: 1999}: 200.0,
+	}
+
+	assert.Equal(t, 100.0, lookupRate(assignment.HashRange{Lo: 0, Hi: 999}, rateMap))
+	assert.Equal(t, 200.0, lookupRate(assignment.HashRange{Lo: 1000, Hi: 1999}, rateMap))
+	assert.Equal(t, 0.0, lookupRate(assignment.HashRange{Lo: 5000, Hi: 6000}, rateMap))
 }
