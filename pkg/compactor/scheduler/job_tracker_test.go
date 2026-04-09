@@ -272,6 +272,43 @@ func TestJobTracker_ByteTracking(t *testing.T) {
 	assertTrackerBytes(t, reg, "merge job complete", 0, 0)
 }
 
+func TestJobTracker_PlanJobTracking(t *testing.T) {
+	clk := clock.NewMock()
+	clk.Set(at(3, 0))
+	jt, reg := newTestJobTracker(clk)
+
+	assertIncompletePlanJobs := func(label string, expected int) {
+		t.Helper()
+		require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+			# HELP cortex_compactor_incomplete_plan_jobs The total number of plan jobs that have not yet completed (pending or active).
+			# TYPE cortex_compactor_incomplete_plan_jobs gauge
+			cortex_compactor_incomplete_plan_jobs %d
+		`, expected)), "cortex_compactor_incomplete_plan_jobs"), label)
+	}
+
+	assertIncompletePlanJobs("no plan jobs yet", 0)
+
+	_, err := jt.Maintenance(time.Minute, false, true, time.Hour, 0)
+	require.NoError(t, err)
+	assertIncompletePlanJobs("plan job pending", 1)
+
+	leaseResp, _, err := jt.Lease()
+	require.NoError(t, err)
+	require.Equal(t, planJobId, leaseResp.Key.Id)
+	assertIncompletePlanJobs("plan job active (still incomplete)", 1)
+
+	canceled, _, err := jt.CancelLease(leaseResp.Key.Id, leaseResp.Key.Epoch)
+	require.NoError(t, err)
+	require.True(t, canceled)
+	assertIncompletePlanJobs("plan job revived to pending (unchanged)", 1)
+
+	leaseResp, _, err = jt.Lease()
+	require.NoError(t, err)
+	_, _, err = jt.Remove(leaseResp.Key.Id, leaseResp.Key.Epoch, true)
+	require.NoError(t, err)
+	assertIncompletePlanJobs("plan job complete", 0)
+}
+
 func TestJobTracker_Cleanup(t *testing.T) {
 	clk := clock.NewMock()
 	reg := prometheus.NewPedanticRegistry()

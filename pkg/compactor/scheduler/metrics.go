@@ -126,10 +126,6 @@ func (q *queueMetrics) Pending(j TrackedJob) {
 
 func (q *queueMetrics) Leased(j TrackedJob) {
 	q.pendingJobs.Dec()
-	if j.ID() == planJobId {
-		q.incompletePlanJobs.Dec()
-		q.planJobCount--
-	}
 	q.activeJobs.Inc()
 }
 
@@ -146,7 +142,10 @@ func (q *queueMetrics) Recover(pending, leased []TrackedJob) {
 	}
 	for _, j := range leased {
 		q.activeJobs.Inc()
-		if cj, ok := j.(*TrackedCompactionJob); ok {
+		if j.ID() == planJobId {
+			q.incompletePlanJobs.Inc()
+			q.planJobCount++
+		} else if cj, ok := j.(*TrackedCompactionJob); ok {
 			q.addBytes(cj)
 		}
 	}
@@ -156,16 +155,15 @@ func (q *queueMetrics) Recover(pending, leased []TrackedJob) {
 func (q *queueMetrics) Revive(j TrackedJob) {
 	q.activeJobs.Dec()
 	q.pendingJobs.Inc()
-	if j.ID() == planJobId {
-		q.incompletePlanJobs.Inc()
-		q.planJobCount++
-	}
 }
 
 // Complete records a job leaving the system from the active queue (success or failure).
 func (q *queueMetrics) Complete(j TrackedJob) {
 	q.activeJobs.Dec()
-	if cj, ok := j.(*TrackedCompactionJob); ok {
+	if j.ID() == planJobId {
+		q.incompletePlanJobs.Dec()
+		q.planJobCount--
+	} else if cj, ok := j.(*TrackedCompactionJob); ok {
 		q.subBytes(cj)
 	}
 }
