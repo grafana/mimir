@@ -240,10 +240,10 @@ func (s *OperatorEvaluationStats) ComputeForSubquery(
 
 	lastNewSamplesIdxUsed := -1
 
-	for outerIdx := range int64(parentTimeRange.StepCount) {
-		outerT := parentTimeRange.IndexTime(outerIdx)
+	for parentIdx := range parentTimeRange.StepCount {
+		parentT := parentTimeRange.IndexTime(int64(parentIdx))
 
-		rangeEnd := outerT
+		rangeEnd := parentT
 		if subqueryTimestamp != nil {
 			rangeEnd = *subqueryTimestamp
 		}
@@ -251,19 +251,17 @@ func (s *OperatorEvaluationStats) ComputeForSubquery(
 		rangeStart := rangeEnd - subqueryRangeMilliseconds
 
 		// Find the range of inner steps in (rangeStart, rangeEnd].
-		firstIdx := s.timeRange.FirstPointIndexAfter(rangeStart)
-		lastIdx := s.timeRange.LastPointIndexAtOrBefore(rangeEnd)
+		firstInnerIdx := s.timeRange.FirstPointIndexAfter(rangeStart)
+		lastInnerIdx := s.timeRange.LastPointIndexAtOrBefore(rangeEnd)
+		firstNewSamplesInnerIdx := max(lastNewSamplesIdxUsed, firstInnerIdx)
 
-		for innerIdx := firstIdx; innerIdx <= lastIdx; innerIdx++ {
-			result.allSeries.samplesProcessedPerStep[outerIdx] += s.allSeries.samplesProcessedPerStep[innerIdx]
+		result.allSeries.SetFromSubquery(s.allSeries, parentIdx, firstInnerIdx, firstNewSamplesInnerIdx, lastInnerIdx)
+
+		for i, subset := range result.subsets {
+			subset.SetFromSubquery(s.subsets[i].statsTracker, parentIdx, firstInnerIdx, firstNewSamplesInnerIdx, lastInnerIdx)
 		}
 
-		firstNewIdx := max(lastNewSamplesIdxUsed, firstIdx)
-		for innerIdx := firstNewIdx; innerIdx <= lastIdx; innerIdx++ {
-			result.allSeries.newSamplesReadPerStep[outerIdx] += s.allSeries.newSamplesReadPerStep[innerIdx]
-		}
-
-		lastNewSamplesIdxUsed = lastIdx + 1
+		lastNewSamplesIdxUsed = lastInnerIdx + 1
 	}
 
 	return result, nil
@@ -325,6 +323,16 @@ func newStatsTracker(timeRange QueryTimeRange, memoryConsumptionTracker *limiter
 func (s *statsTracker) Add(pointIndex int64, samplesProcessed int64, newSamplesRead int64) {
 	s.samplesProcessedPerStep[pointIndex] += samplesProcessed
 	s.newSamplesReadPerStep[pointIndex] += newSamplesRead
+}
+
+func (s *statsTracker) SetFromSubquery(source *statsTracker, parentIdx, firstInnerIdx, firstNewSamplesInnerIdx, lastIdx int) {
+	for innerIdx := firstInnerIdx; innerIdx <= lastIdx; innerIdx++ {
+		s.samplesProcessedPerStep[parentIdx] += source.samplesProcessedPerStep[innerIdx]
+	}
+
+	for innerIdx := firstNewSamplesInnerIdx; innerIdx <= lastIdx; innerIdx++ {
+		s.newSamplesReadPerStep[parentIdx] += source.newSamplesReadPerStep[innerIdx]
+	}
 }
 
 func (s *statsTracker) SetFromStepInvariant(samplesProcessed int64, newSamplesRead int64) {
