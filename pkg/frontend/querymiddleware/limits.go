@@ -203,8 +203,10 @@ func (l limitsMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Respon
 	}
 
 	// Enforce the max query length.
+	// Use GetMinT/GetMaxT which account for range selectors, subqueries, offsets, and lookback delta.
+	// This ensures instant queries with large subquery ranges (e.g. [30d:1m]) are also checked.
 	if maxQueryLength := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, l.MaxTotalQueryLength); maxQueryLength > 0 {
-		queryLen := timestamp.Time(r.GetEnd()).Sub(timestamp.Time(r.GetStart()))
+		queryLen := timestamp.Time(r.GetMaxT()).Sub(timestamp.Time(r.GetMinT()))
 		if queryLen > maxQueryLength {
 			return nil, newMaxTotalQueryLengthError(queryLen, maxQueryLength)
 		}
