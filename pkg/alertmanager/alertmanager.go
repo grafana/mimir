@@ -21,8 +21,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/alerting/definition"
-	"github.com/grafana/alerting/notify/nfstatus"
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/alertmanager/api"
 	"github.com/prometheus/alertmanager/cluster"
@@ -101,8 +99,6 @@ type Config struct {
 	Replicator        Replicator
 	Store             alertstore.AlertStore
 	PersisterConfig   PersisterConfig
-
-	EnableNotifyHooks bool
 }
 
 // An Alertmanager manages the alerts for one user.
@@ -137,8 +133,6 @@ type Alertmanager struct {
 	configHashMetric prometheus.Gauge
 
 	rateLimitedNotifications *prometheus.CounterVec
-
-	notifyHooksMetrics *notifyHooksMetrics
 }
 
 var (
@@ -200,10 +194,6 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 			Name: "alertmanager_notification_rate_limited_total",
 			Help: "Number of rate-limited notifications per integration.",
 		}, []string{"integration"}), // "integration" is consistent with other alertmanager metrics.
-	}
-
-	if am.cfg.EnableNotifyHooks {
-		am.notifyHooksMetrics = newNotifyHooksMetrics(reg)
 	}
 
 	am.registry = reg
@@ -377,7 +367,7 @@ func (am *Alertmanager) ApplyConfig(conf *config.Config, tmpls []*alertspb.Templ
 
 	baseIntegrationsMap := make(map[string][]*notify.Integration)
 	for name, v := range integrationsMap {
-		baseIntegrationsMap[name] = nfstatus.GetIntegrations(v)
+		baseIntegrationsMap[name] = v
 	}
 
 	pipeline := am.pipelineBuilder.New(
@@ -449,16 +439,6 @@ func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {
 }
 
 func (am *Alertmanager) wrapNotifier(integrationName string, notifier notify.Notifier) notify.Notifier {
-	if am.cfg.EnableNotifyHooks {
-		n, err := newNotifyHooksNotifier(notifier, am.cfg.Limits, am.cfg.UserID, am.logger, am.notifyHooksMetrics)
-		if err != nil {
-			// It's rare an error is returned, but in theory it can happen.
-			level.Error(am.logger).Log("msg", "Failed to setup notify hooks", "err", err)
-		} else {
-			notifier = n
-		}
-	}
-
 	if am.cfg.Limits != nil {
 		rl := &tenantRateLimits{
 			tenant:      am.cfg.UserID,
@@ -473,7 +453,7 @@ func (am *Alertmanager) wrapNotifier(integrationName string, notifier notify.Not
 }
 
 // buildIntegrationsMap builds a map of name to the list of integration notifiers off of a list of receiver config.
-func (am *Alertmanager) buildIntegrationsMap(nc []config.Receiver, tmpls []*alertspb.TemplateDesc) (map[string][]*nfstatus.Integration, error) {
+func (am *Alertmanager) buildIntegrationsMap(nc []config.Receiver, tmpls []*alertspb.TemplateDesc) (map[string][]*notify.Integration, error) {
 	// Create a firewall binded to the per-tenant config.
 	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(am.cfg.UserID, am.cfg.Limits))
 
@@ -483,7 +463,7 @@ func (am *Alertmanager) buildIntegrationsMap(nc []config.Receiver, tmpls []*aler
 	}
 	tmpl.ExternalURL = am.cfg.ExternalURL
 
-	integrationsMap := make(map[string][]*nfstatus.Integration, len(nc))
+	integrationsMap := make(map[string][]*notify.Integration, len(nc))
 	for _, rcv := range nc {
 		integrations, err := buildReceiverIntegrations(rcv, tmpl, firewallDialer, am.logger, am.wrapNotifier)
 		if err != nil {
@@ -498,10 +478,11 @@ func (am *Alertmanager) buildIntegrationsMap(nc []config.Receiver, tmpls []*aler
 // buildReceiverIntegrations builds a list of integration notifiers off of a
 // receiver config.
 // Taken from https://github.com/prometheus/alertmanager/blob/94d875f1227b29abece661db1a68c001122d1da5/cmd/alertmanager/main.go#L112-L159.
-func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, wrapper func(string, notify.Notifier) notify.Notifier) ([]*nfstatus.Integration, error) {
+func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, wrapper func(string, notify.Notifier) notify.Notifier) ([]*notify.Integration, error) {
+
 	var (
 		errs         types.MultiError
-		integrations []*nfstatus.Integration
+		integrations []*notify.Integration
 		add          = func(name string, i int, rs notify.ResolvedSender, f func(l log.Logger) (notify.Notifier, error)) {
 			integrationLogger := log.With(logger, "integration", name)
 			n, err := f(integrationLogger)
@@ -510,7 +491,7 @@ func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, fire
 				return
 			}
 			n = wrapper(name, n)
-			integrations = append(integrations, nfstatus.NewIntegration(nfstatus.NewNotifierAdapter(n), rs, name, i, nc.Name, nil, integrationLogger))
+			integrations = append(integrations, notify.NewIntegration(n, rs, name, i, nc.Name))
 		}
 	)
 
@@ -566,25 +547,6 @@ func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, fire
 		return nil, &errs
 	}
 	return integrations, nil
-}
-
-// grafanaToUpstreamConfig converts a Grafana alerting configuration into an upstream Alertmanager configuration.
-// It ignores the configuration for Grafana receivers, adding only their names.
-func grafanaToUpstreamConfig(cfg *definition.PostableApiAlertingConfig) config.Config {
-	rcvs := make([]config.Receiver, 0, len(cfg.Receivers))
-	for _, r := range cfg.Receivers {
-		rcvs = append(rcvs, config.Receiver{Name: r.Name})
-	}
-
-	return config.Config{
-		Global:            cfg.Global,
-		Route:             cfg.Route.AsAMRoute(),
-		InhibitRules:      cfg.InhibitRules,
-		Receivers:         rcvs,
-		Templates:         cfg.Templates,
-		MuteTimeIntervals: cfg.MuteTimeIntervals,
-		TimeIntervals:     cfg.TimeIntervals,
-	}
 }
 
 func md5HashAsMetricValue(data []byte) float64 {

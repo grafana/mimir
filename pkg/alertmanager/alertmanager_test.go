@@ -14,10 +14,8 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/alerting/definition"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/test"
-	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/featurecontrol"
