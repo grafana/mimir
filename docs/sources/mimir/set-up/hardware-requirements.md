@@ -77,11 +77,3 @@ The following object storage services are supported:
 | GCP         | Google Cloud Storage (GCS) |
 | Azure       | Azure Blob Storage         |
 | Self-hosted | Any S3-compatible API      |
-
-## Deployment platforms
-
-Grafana Mimir can run on any platform that meets the compute, disk, and network requirements described on this page, including:
-
-- **Kubernetes**: managed services (EKS, GKE, AKS) or self-managed clusters. Refer to [Deploy with Helm]({{< relref "./helm-chart" >}}) for Helm-based deployments.
-- **Virtual machines or bare metal**: Grafana Mimir binaries can run directly on Linux hosts.
-- **Docker Compose**: suitable for development and testing. Refer to the [development setup](https://github.com/grafana/mimir/tree/main/development) for examples.
