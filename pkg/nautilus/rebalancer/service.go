@@ -184,10 +184,20 @@ type assignmentStore struct {
 	set assignment.TimedAssignmentSet
 }
 
+// maxStoredAssignments is the maximum number of historical assignments
+// kept in the store. Only the most recent are retained; older ones are
+// dropped. Queriers will need a longer window once they consult the
+// store, but for now distributors only use Latest().
+const maxStoredAssignments = 5
+
 func (s *assignmentStore) add(from time.Time, a *assignment.Assignment) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.set.Add(from, a)
+
+	if n := len(s.set.Assignments); n > maxStoredAssignments {
+		s.set.Assignments = s.set.Assignments[n-maxStoredAssignments:]
+	}
 }
 
 func (s *assignmentStore) snapshot() assignment.TimedAssignmentSet {
