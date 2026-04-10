@@ -40,6 +40,11 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 				- NoOp
 			`,
 		},
+		"timestamp(v) < bool C: query time range is on threshold, should not optimize": {
+			expr:            "timestamp(metric) < bool CONSTANT",
+			queryStart:      time.UnixMilli(thresholdMs),
+			expectUnchanged: true,
+		},
 		"timestamp(v) < C: query time range overlaps threshold, should not optimize": {
 			expr:            "timestamp(metric) < CONSTANT",
 			queryStart:      time.UnixMilli(thresholdMs - 1),

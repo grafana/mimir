@@ -143,6 +143,10 @@ func isAlwaysEmpty(node planning.Node, params *planning.QueryParameters) bool {
 func isAlwaysEmptyBinaryExpression(node *core.BinaryExpression, params *planning.QueryParameters) bool {
 	earliestPossibleTimestampValueInMilliseconds := params.TimeRange.StartT - params.LookbackDelta.Milliseconds()
 
+	if node.ReturnBool {
+		return false
+	}
+
 	switch node.Op {
 	case core.BINARY_LAND:
 		return isAlwaysEmpty(node.LHS, params) || isAlwaysEmpty(node.RHS, params)
