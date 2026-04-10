@@ -473,7 +473,7 @@ func TestTripperware_Metrics(t *testing.T) {
 				false,
 				nil,
 				reg,
-				nil,
+				limiter.NewInflightMemoryConsumptionTracker(reg, nil),
 			)
 			require.NoError(t, err)
 
@@ -538,7 +538,7 @@ func TestTripperware_BlockedRequests(t *testing.T) {
 		false,
 		nil,
 		nil,
-		nil,
+		limiter.NewInflightMemoryConsumptionTracker(nil, nil),
 	)
 	if err != nil {
 		t.Fatal(err)
