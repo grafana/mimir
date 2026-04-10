@@ -236,7 +236,6 @@ func (t QueriedTimeRange) Union(other QueriedTimeRange) QueriedTimeRange {
 type OperatorParameters struct {
 	Queryable                                 storage.Queryable
 	MemoryConsumptionTracker                  *limiter.MemoryConsumptionTracker
-	DeregisterMemoryConsumptionTrackerOnClose bool
 	Annotations                               *annotations.Annotations
 	QueryStats                                *types.QueryStats
 	EagerLoadSelectors                        bool

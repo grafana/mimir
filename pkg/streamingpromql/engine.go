@@ -310,23 +310,21 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 	// All the time split queries must fit within a single memory consumption tracker.
 	if parentTracker, parentErr := limiter.MemoryConsumptionTrackerFromContext(ctx); parentErr == nil {
 		operatorParams.MemoryConsumptionTracker = parentTracker
+		e.memoryConsumptionTrackerFactory.IncRefCount(parentTracker)
 	} else {
 		maxEstimatedMemoryConsumptionPerQuery, err := e.limitsProvider.GetMaxEstimatedMemoryConsumptionPerQuery(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("could not get memory consumption limit for query: %w", err)
 		}
-
 		operatorParams.MemoryConsumptionTracker = e.memoryConsumptionTrackerFactory.NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionPerQuery, params.OriginalExpression)
-		operatorParams.DeregisterMemoryConsumptionTrackerOnClose = true
 	}
 
 	materializer := planning.NewMaterializer(operatorParams, e.nodeMaterializers)
 	for idx, req := range nodeRequests {
 		op, err := materializer.ConvertNodeToOperator(req.Node, req.TimeRange)
 		if err != nil {
-			if operatorParams.DeregisterMemoryConsumptionTrackerOnClose {
-				e.memoryConsumptionTrackerFactory.Deregister(operatorParams.MemoryConsumptionTracker)
-			}
+			// Note - the MemoryConsumptionTracker maintains a ref count so inherited parent trackers will not be removed
+			e.memoryConsumptionTrackerFactory.Deregister(operatorParams.MemoryConsumptionTracker)
 			return nil, err
 		}
 
@@ -335,9 +333,8 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 
 	evaluator, err := NewEvaluator(nodeRequests, operatorParams, e, params.OriginalExpression)
 	if err != nil {
-		if operatorParams.DeregisterMemoryConsumptionTrackerOnClose {
-			e.memoryConsumptionTrackerFactory.Deregister(operatorParams.MemoryConsumptionTracker)
-		}
+		// Note - the MemoryConsumptionTracker maintains a ref count so inherited parent trackers will not be removed
+		e.memoryConsumptionTrackerFactory.Deregister(operatorParams.MemoryConsumptionTracker)
 		return nil, err
 	}
 	return evaluator, nil

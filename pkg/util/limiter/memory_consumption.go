@@ -219,7 +219,12 @@ func (t *InflightMemoryConsumptionTracker) NewMemoryConsumptionTracker(ctx conte
 	id := t.nextID.Add(1)
 	tracker.trackingId = id
 	t.inflight.Store(id, tracker)
+	tracker.refCount.Store(1)
 	return tracker
+}
+
+func (t *InflightMemoryConsumptionTracker) IncRefCount(tracker *MemoryConsumptionTracker) {
+	tracker.refCount.Inc()
 }
 
 // Deregister removes the tracking of this tracker.
@@ -227,7 +232,18 @@ func (t *InflightMemoryConsumptionTracker) Deregister(tracker *MemoryConsumption
 	if tracker.trackingId == 0 {
 		panic("cannot deregister a tracker not created via the InflightMemoryConsumptionTracker")
 	}
-	t.inflight.Delete(tracker.trackingId)
+	if tracker.refCount.Dec() < 1 {
+		t.inflight.Delete(tracker.trackingId)
+	}
+}
+
+// IsRegistered returns true if the given tracker is currently registered with this InflightMemoryConsumptionTracker
+func (t *InflightMemoryConsumptionTracker) IsRegistered(tracker *MemoryConsumptionTracker) bool {
+	if tracker.trackingId == 0 {
+		return false
+	}
+	_, ok := t.inflight.Load(tracker.trackingId)
+	return ok
 }
 
 // Describe implements prometheus.Collector.
@@ -280,6 +296,7 @@ type MemoryConsumptionTracker struct {
 	mtx sync.Mutex
 
 	trackingId uint64
+	refCount   atomic.Int32
 }
 
 // NewUnlimitedMemoryConsumptionTracker creates a new MemoryConsumptionTracker that track memory consumption but
@@ -295,6 +312,7 @@ func NewMemoryConsumptionTracker(ctx context.Context, maxEstimatedMemoryConsumpt
 		rejectionCount:   rejectionCount,
 		queryDescription: queryDescription,
 		ctx:              ctx,
+		refCount:         atomic.Int32{},
 	}
 }
 

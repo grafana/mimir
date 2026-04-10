@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
+	"golang.org/x/sync/errgroup"
 )
 
 const rejectedQueriesMetricName = "rejected_queries"
@@ -351,5 +352,88 @@ func TestMemoryConsumptionTracker_NegativeMemoryConsumptionPanicWithTracing(t *t
 
 	require.PanicsWithValue(t, `Estimated memory consumption of all instances of ingester chunks in this query is 0 bytes when trying to return 10 bytes. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: foo + bar (trace ID: 00000000000000010000000000000002)`, func() {
 		tracker.DecreaseMemoryConsumption(10, IngesterChunks)
+	})
+}
+
+func TestNewInflightUnlimitedMemoryConsumptionTracker(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	factory := NewInflightUnlimitedMemoryConsumptionTracker(reg)
+	tracker := factory.NewMemoryConsumptionTracker(context.Background(), 1000, "foo + bar")
+	err := tracker.IncreaseMemoryConsumption(5000, IngesterChunks)
+	require.NoError(t, err)
+}
+
+func TestMemoryTrackerRefCounts(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	factory := NewInflightMemoryConsumptionTracker(reg, nil)
+
+	t.Run("no ref count changes - deregister is successful", func(t *testing.T) {
+		tracker := factory.NewMemoryConsumptionTracker(context.Background(), 1000, "foo + bar")
+		require.True(t, factory.IsRegistered(tracker))
+		factory.Deregister(tracker)
+		require.False(t, factory.IsRegistered(tracker))
+	})
+
+	t.Run("single ref count increase", func(t *testing.T) {
+		tracker := factory.NewMemoryConsumptionTracker(context.Background(), 1000, "foo + bar")
+		require.True(t, factory.IsRegistered(tracker))
+		factory.IncRefCount(tracker)
+		require.True(t, factory.IsRegistered(tracker))
+		factory.Deregister(tracker)
+		require.True(t, factory.IsRegistered(tracker))
+		factory.Deregister(tracker)
+		require.False(t, factory.IsRegistered(tracker))
+	})
+
+	// This case simulates the split_and_cache usage of a parent tracker passed to multiple child goroutines
+	t.Run("ref counts in goroutines - no memory limits exceeded", func(t *testing.T) {
+		tracker := factory.NewMemoryConsumptionTracker(context.Background(), 1000, "foo + bar")
+		require.True(t, factory.IsRegistered(tracker))
+
+		routines := 5
+		g, _ := errgroup.WithContext(t.Context())
+		for range routines {
+			g.Go(func() error {
+				factory.IncRefCount(tracker)
+				// do some work
+				require.NoError(t, tracker.IncreaseMemoryConsumption(10, IngesterChunks))
+				factory.Deregister(tracker)
+				require.True(t, factory.IsRegistered(tracker))
+				return nil
+			})
+		}
+		require.NoError(t, g.Wait())
+
+		require.Equal(t, uint64(routines*10), tracker.currentEstimatedMemoryConsumptionBytes)
+		require.True(t, factory.IsRegistered(tracker))
+
+		factory.Deregister(tracker)
+		require.False(t, factory.IsRegistered(tracker))
+	})
+
+	// As above, but this case simulates the goroutines exceeding the memory consumption
+	t.Run("ref counts in goroutines - with memory exceeded", func(t *testing.T) {
+		tracker := factory.NewMemoryConsumptionTracker(context.Background(), 5, "foo + bar")
+		require.True(t, factory.IsRegistered(tracker))
+
+		routines := 5
+		g, _ := errgroup.WithContext(t.Context())
+		for range routines {
+			g.Go(func() error {
+				factory.IncRefCount(tracker)
+				// do some work
+				require.Error(t, tracker.IncreaseMemoryConsumption(10, IngesterChunks)) // this will exceed the allow memory consumption
+				factory.Deregister(tracker)
+				require.True(t, factory.IsRegistered(tracker))
+				return nil
+			})
+		}
+		require.NoError(t, g.Wait())
+
+		require.Equal(t, uint64(0), tracker.currentEstimatedMemoryConsumptionBytes)
+		require.True(t, factory.IsRegistered(tracker))
+
+		factory.Deregister(tracker)
+		require.False(t, factory.IsRegistered(tracker))
 	})
 }

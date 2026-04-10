@@ -26,8 +26,7 @@ type Evaluator struct {
 	engine             *Engine
 	originalExpression string
 
-	MemoryConsumptionTracker                  *limiter.MemoryConsumptionTracker
-	deregisterMemoryConsumptionTrackerOnClose bool
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	annotations *annotations.Annotations
 	stats       *types.QueryStats
@@ -40,8 +39,7 @@ func NewEvaluator(nodeRequests []NodeEvaluationRequest, params *planning.Operato
 		engine:             engine,
 		originalExpression: originalExpression,
 
-		MemoryConsumptionTracker:                  params.MemoryConsumptionTracker,
-		deregisterMemoryConsumptionTrackerOnClose: params.DeregisterMemoryConsumptionTrackerOnClose,
+		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 
 		annotations: params.Annotations,
 		stats:       params.QueryStats,
@@ -375,9 +373,7 @@ func (e *Evaluator) Close() {
 	if e.cancel != nil {
 		e.cancel(errQueryClosed)
 	}
-	if e.deregisterMemoryConsumptionTrackerOnClose {
-		e.engine.memoryConsumptionTrackerFactory.Deregister(e.MemoryConsumptionTracker)
-	}
+	e.engine.memoryConsumptionTrackerFactory.Deregister(e.MemoryConsumptionTracker)
 }
 
 type EvaluationObserver interface {
