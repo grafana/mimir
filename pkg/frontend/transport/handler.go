@@ -534,7 +534,6 @@ func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes i
 	stats := details.QuerierStats
 
 	statsResponse := []string{
-		statsValue(encodeTimeSeconds, stats.LoadEncodeTime().Seconds()),
 		statsValue(estimatedSeriesCount, stats.LoadEstimatedSeriesCount()),
 		statsValue(fetchedChunkBytes, stats.LoadFetchedChunkBytes()),
 		statsValue(fetchedChunksCount, stats.LoadFetchedChunks()),
@@ -551,11 +550,11 @@ func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes i
 		statsValue(remoteExecutionRequestCount, stats.LoadRemoteExecutionRequestCount()),
 	}
 
-	if contentLengthBytes < 0 {
+	if contentLengthBytes >= 0 {
 		// encode_time_seconds is always 0 for streaming responses: encoding runs concurrently with body
 		// streaming, so the encode time is not available until after the headers have been sent.
-		// Prune off the encodeTimeSeconds for these streaming responses.
-		statsResponse = statsResponse[1:]
+		// We only insert this if we are in a non-streaming response.
+		statsResponse = append(statsResponse, statsValue(encodeTimeSeconds, stats.LoadEncodeTime().Seconds()))
 	}
 
 	return statsResponse
