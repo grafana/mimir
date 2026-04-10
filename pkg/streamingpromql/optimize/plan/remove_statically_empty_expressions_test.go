@@ -33,171 +33,101 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 	thresholdMs := int64(constant*1000) + lookbackDelta.Milliseconds()
 
 	testCases := map[string]struct {
-		expr          string
-		queryStart    time.Time // instant query time
-		lookbackDelta time.Duration
-		expectedPlan  string
+		expr            string
+		queryStart      time.Time // instant query time
+		expectedPlan    string
+		expectUnchanged bool
 	}{
 		"timestamp(v) < C: query range starts exactly at threshold, should optimize": {
-			expr:          "metric and timestamp(metric) < 1000",
-			queryStart:    time.UnixMilli(thresholdMs),
-			lookbackDelta: lookbackDelta,
+			expr:       "metric and timestamp(metric) < 1000",
+			queryStart: time.UnixMilli(thresholdMs),
 			expectedPlan: `
 				- NoOp
 			`,
 		},
 		"timestamp(v) < C: query range starts one ms before threshold, should not optimize": {
-			expr:          "metric and timestamp(metric) < 1000",
-			queryStart:    time.UnixMilli(thresholdMs - 1),
-			lookbackDelta: lookbackDelta,
-			expectedPlan: `
-				- BinaryExpression: LHS and RHS
-					- LHS: VectorSelector: {__name__="metric"}
-					- RHS: BinaryExpression: LHS < RHS
-						- LHS: DeduplicateAndMerge
-							- FunctionCall: timestamp(...)
-								- VectorSelector: {__name__="metric"}, return sample timestamps
-						- RHS: NumberLiteral: 1000
-			`,
+			expr:            "metric and timestamp(metric) < 1000",
+			queryStart:      time.UnixMilli(thresholdMs - 1),
+			expectUnchanged: true,
 		},
 		"timestamp(v) < C: query range well before threshold, should not optimize": {
-			expr:          "metric and timestamp(metric) < 1000",
-			queryStart:    time.Unix(500, 0),
-			lookbackDelta: lookbackDelta,
-			expectedPlan: `
-				- BinaryExpression: LHS and RHS
-					- LHS: VectorSelector: {__name__="metric"}
-					- RHS: BinaryExpression: LHS < RHS
-						- LHS: DeduplicateAndMerge
-							- FunctionCall: timestamp(...)
-								- VectorSelector: {__name__="metric"}, return sample timestamps
-						- RHS: NumberLiteral: 1000
-			`,
+			expr:            "metric and timestamp(metric) < 1000",
+			queryStart:      time.Unix(500, 0),
+			expectUnchanged: true,
 		},
 
 		"timestamp(v) <= C: query range starts one ms above threshold, should optimize": {
-			expr:          "metric and timestamp(metric) <= 1000",
-			queryStart:    time.UnixMilli(thresholdMs + 1),
-			lookbackDelta: lookbackDelta,
+			expr:       "metric and timestamp(metric) <= 1000",
+			queryStart: time.UnixMilli(thresholdMs + 1),
 			expectedPlan: `
 				- NoOp
 			`,
 		},
 		"timestamp(v) <= C: query range starts exactly at threshold, should not optimize": {
-			expr:          "metric and timestamp(metric) <= 1000",
-			queryStart:    time.UnixMilli(thresholdMs),
-			lookbackDelta: lookbackDelta,
-			expectedPlan: `
-				- BinaryExpression: LHS and RHS
-					- LHS: VectorSelector: {__name__="metric"}
-					- RHS: BinaryExpression: LHS <= RHS
-						- LHS: DeduplicateAndMerge
-							- FunctionCall: timestamp(...)
-								- VectorSelector: {__name__="metric"}, return sample timestamps
-						- RHS: NumberLiteral: 1000
-			`,
+			expr:            "metric and timestamp(metric) <= 1000",
+			queryStart:      time.UnixMilli(thresholdMs),
+			expectUnchanged: true,
 		},
 
 		"C > timestamp(v) (reversed <): query range at threshold, should optimize": {
-			expr:          "metric and 1000 > timestamp(metric)",
-			queryStart:    time.UnixMilli(thresholdMs),
-			lookbackDelta: lookbackDelta,
+			expr:       "metric and 1000 > timestamp(metric)",
+			queryStart: time.UnixMilli(thresholdMs),
 			expectedPlan: `
 				- NoOp
 			`,
 		},
 		"C > timestamp(v) (reversed <): query range before threshold, should not optimize": {
-			expr:          "metric and 1000 > timestamp(metric)",
-			queryStart:    time.UnixMilli(thresholdMs - 1),
-			lookbackDelta: lookbackDelta,
-			expectedPlan: `
-				- BinaryExpression: LHS and RHS
-					- LHS: VectorSelector: {__name__="metric"}
-					- RHS: BinaryExpression: LHS > RHS
-						- LHS: NumberLiteral: 1000
-						- RHS: DeduplicateAndMerge
-							- FunctionCall: timestamp(...)
-								- VectorSelector: {__name__="metric"}, return sample timestamps
-			`,
+			expr:            "metric and 1000 > timestamp(metric)",
+			queryStart:      time.UnixMilli(thresholdMs - 1),
+			expectUnchanged: true,
 		},
 		"C >= timestamp(v) (reversed <=): query range one ms above threshold, should optimize": {
-			expr:          "metric and 1000 >= timestamp(metric)",
-			queryStart:    time.UnixMilli(thresholdMs + 1),
-			lookbackDelta: lookbackDelta,
+			expr:       "metric and 1000 >= timestamp(metric)",
+			queryStart: time.UnixMilli(thresholdMs + 1),
 			expectedPlan: `
 				- NoOp
 			`,
 		},
 		"C >= timestamp(v) (reversed <=): query range exactly at threshold, should not optimize": {
-			expr:          "metric and 1000 >= timestamp(metric)",
-			queryStart:    time.UnixMilli(thresholdMs),
-			lookbackDelta: lookbackDelta,
-			expectedPlan: `
-				- BinaryExpression: LHS and RHS
-					- LHS: VectorSelector: {__name__="metric"}
-					- RHS: BinaryExpression: LHS >= RHS
-						- LHS: NumberLiteral: 1000
-						- RHS: DeduplicateAndMerge
-							- FunctionCall: timestamp(...)
-								- VectorSelector: {__name__="metric"}, return sample timestamps
-			`,
+			expr:            "metric and 1000 >= timestamp(metric)",
+			queryStart:      time.UnixMilli(thresholdMs),
+			expectUnchanged: true,
 		},
 
 		"timestamp filter on LHS of and: should optimize": {
-			expr:          "timestamp(metric) < 1000 and metric",
-			queryStart:    time.UnixMilli(thresholdMs),
-			lookbackDelta: lookbackDelta,
+			expr:       "timestamp(metric) < 1000 and metric",
+			queryStart: time.UnixMilli(thresholdMs),
 			expectedPlan: `
 				- NoOp
 			`,
 		},
 
 		"non-timestamp comparison on RHS of and: should not optimize": {
-			expr:          "metric and metric2 < 1000",
-			queryStart:    time.UnixMilli(thresholdMs),
-			lookbackDelta: lookbackDelta,
-			expectedPlan: `
-				- BinaryExpression: LHS and RHS
-					- LHS: VectorSelector: {__name__="metric"}
-					- RHS: BinaryExpression: LHS < RHS
-						- LHS: VectorSelector: {__name__="metric2"}
-						- RHS: NumberLiteral: 1000
-			`,
+			expr:            "metric and metric2 < 1000",
+			queryStart:      time.UnixMilli(thresholdMs),
+			expectUnchanged: true,
 		},
 
 		"nested and expressions: inner replaced first, then outer": {
 			// The inner "and" has the timestamp filter → replaced with NoOp.
 			// The outer "and" then has NoOp as its LHS → also replaced with NoOp.
-			expr:          "(metric and timestamp(metric) < 1000) and metric2",
-			queryStart:    time.UnixMilli(thresholdMs),
-			lookbackDelta: lookbackDelta,
+			expr:       "(metric and timestamp(metric) < 1000) and metric2",
+			queryStart: time.UnixMilli(thresholdMs),
 			expectedPlan: `
 				- NoOp
 			`,
 		},
 		"nested and expressions: inner not optimized because threshold not met": {
-			expr:          "(metric and timestamp(metric) < 1000) and metric2",
-			queryStart:    time.UnixMilli(thresholdMs - 1),
-			lookbackDelta: lookbackDelta,
-			expectedPlan: `
-				- BinaryExpression: LHS and RHS
-					- LHS: BinaryExpression: LHS and RHS
-						- LHS: VectorSelector: {__name__="metric"}
-						- RHS: BinaryExpression: LHS < RHS
-							- LHS: DeduplicateAndMerge
-								- FunctionCall: timestamp(...)
-									- VectorSelector: {__name__="metric"}, return sample timestamps
-							- RHS: NumberLiteral: 1000
-					- RHS: VectorSelector: {__name__="metric2"}
-			`,
+			expr:            "(metric and timestamp(metric) < 1000) and metric2",
+			queryStart:      time.UnixMilli(thresholdMs - 1),
+			expectUnchanged: true,
 		},
 
 		"timestamp filter outside subquery: should optimize": {
 			// The "and timestamp(metric) < 1000" is outside the subquery, so it is evaluated
 			// at the outer query time range, which is after the threshold.
-			expr:          "avg_over_time(metric[5m:1m]) and timestamp(metric) < 1000",
-			queryStart:    time.UnixMilli(thresholdMs),
-			lookbackDelta: lookbackDelta,
+			expr:       "avg_over_time(metric[5m:1m]) and timestamp(metric) < 1000",
+			queryStart: time.UnixMilli(thresholdMs),
 			expectedPlan: `
 				- NoOp
 			`,
@@ -207,39 +137,39 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 			// over the subquery's time range, which extends back further than the outer query
 			// start. We stop recursion at the Subquery boundary to avoid incorrectly replacing
 			// expressions that may return non-empty results at the earlier subquery steps.
-			expr:          "avg_over_time((metric and timestamp(metric) < 1000)[2h:1m])",
-			queryStart:    time.Unix(10000, 0),
-			lookbackDelta: 0,
-			expectedPlan: `
-				- DeduplicateAndMerge
-					- FunctionCall: avg_over_time(...)
-						- Subquery: [2h0m0s:1m0s]
-							- BinaryExpression: LHS and RHS
-								- LHS: VectorSelector: {__name__="metric"}
-								- RHS: BinaryExpression: LHS < RHS
-									- LHS: DeduplicateAndMerge
-										- FunctionCall: timestamp(...)
-											- VectorSelector: {__name__="metric"}, return sample timestamps
-									- RHS: NumberLiteral: 1000
-			`,
+			expr:            "avg_over_time((metric and timestamp(metric) < 1000)[2h:1m])",
+			queryStart:      time.Unix(10000, 0),
+			expectUnchanged: true,
 		},
 	}
 
 	ctx := context.Background()
 	observer := streamingpromql.NoopPlanningObserver{}
 
+	generatePlan := func(t *testing.T, enableOptimizationPass bool, expr string, timeRange types.QueryTimeRange) string {
+		opts := streamingpromql.NewTestEngineOpts()
+		planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+		require.NoError(t, err)
+
+		if enableOptimizationPass {
+			planner.RegisterQueryPlanOptimizationPass(plan.NewRemoveStaticallyEmptyExpressionsOptimizationPass(prometheus.NewPedanticRegistry(), opts.Logger))
+		}
+
+		p, err := planner.NewQueryPlan(ctx, expr, timeRange, lookbackDelta, false, observer)
+		require.NoError(t, err)
+
+		return p.String()
+	}
+
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			opts := streamingpromql.NewTestEngineOpts()
-			planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
-			require.NoError(t, err)
-			planner.RegisterQueryPlanOptimizationPass(plan.NewRemoveStaticallyEmptyExpressionsOptimizationPass(prometheus.NewPedanticRegistry(), opts.Logger))
-
 			timeRange := types.NewInstantQueryTimeRange(testCase.queryStart)
-			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, testCase.lookbackDelta, false, observer)
-			require.NoError(t, err)
 
-			actual := p.String()
+			if testCase.expectUnchanged {
+				testCase.expectedPlan = generatePlan(t, false, testCase.expr, timeRange)
+			}
+
+			actual := generatePlan(t, true, testCase.expr, timeRange)
 			require.Equal(t, testutils.TrimIndent(testCase.expectedPlan), actual)
 		})
 	}
