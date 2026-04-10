@@ -4,6 +4,7 @@ package plan_test
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"strconv"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/stretchr/testify/require"
 
@@ -24,7 +26,6 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 	const lookbackDelta = 5 * time.Minute
 	const constant = 1000
 	thresholdMs := (constant*time.Second + lookbackDelta).Milliseconds()
-
 
 	testCases := map[string]struct {
 		expr            string
@@ -166,13 +167,13 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 	ctx := context.Background()
 	observer := streamingpromql.NoopPlanningObserver{}
 
-	generatePlan := func(t *testing.T, enableOptimizationPass bool, expr string, timeRange types.QueryTimeRange) string {
+	generatePlan := func(t *testing.T, enableOptimizationPass bool, expr string, timeRange types.QueryTimeRange, reg prometheus.Registerer) string {
 		opts := streamingpromql.NewTestEngineOpts()
 		planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 		require.NoError(t, err)
 
 		if enableOptimizationPass {
-			planner.RegisterQueryPlanOptimizationPass(plan.NewRemoveStaticallyEmptyExpressionsOptimizationPass(prometheus.NewPedanticRegistry(), opts.Logger))
+			planner.RegisterQueryPlanOptimizationPass(plan.NewRemoveStaticallyEmptyExpressionsOptimizationPass(reg, opts.Logger))
 		}
 
 		p, err := planner.NewQueryPlan(ctx, expr, timeRange, lookbackDelta, false, observer)
@@ -186,13 +187,26 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 			testCase.expr = strings.ReplaceAll(testCase.expr, "CONSTANT", strconv.Itoa(constant))
 
 			timeRange := types.NewRangeQueryTimeRange(testCase.queryStart, timestamp.Time(math.MaxInt64), time.Minute)
+			expectedModified := 1
 
 			if testCase.expectUnchanged {
-				testCase.expectedPlan = generatePlan(t, false, testCase.expr, timeRange)
+				testCase.expectedPlan = generatePlan(t, false, testCase.expr, timeRange, nil)
+				expectedModified = 0
 			}
 
-			actual := generatePlan(t, true, testCase.expr, timeRange)
+			reg := prometheus.NewPedanticRegistry()
+			actual := generatePlan(t, true, testCase.expr, timeRange, reg)
 			require.Equal(t, testutils.TrimIndent(testCase.expectedPlan), actual)
+
+			require.NoError(t, testutil.CollectAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+				# HELP cortex_mimir_query_engine_remove_statically_empty_expressions_attempted_total Total number of queries that the optimization pass has attempted to skip statically empty expressions for.
+				# TYPE cortex_mimir_query_engine_remove_statically_empty_expressions_attempted_total counter
+				cortex_mimir_query_engine_remove_statically_empty_expressions_attempted_total 1
+				# HELP cortex_mimir_query_engine_remove_statically_empty_expressions_modified_total Total number of queries where the optimization pass has replaced one or more statically empty expressions with a no-op.
+				# TYPE cortex_mimir_query_engine_remove_statically_empty_expressions_modified_total counter
+				cortex_mimir_query_engine_remove_statically_empty_expressions_modified_total %d
+				`, expectedModified)), "cortex_mimir_query_engine_remove_statically_empty_expressions_attempted_total", "cortex_mimir_query_engine_remove_statically_empty_expressions_modified_total",
+			))
 		})
 	}
 }
