@@ -62,7 +62,8 @@ type state struct {
 	initialSyncCompleted     *prometheus.CounterVec
 	initialSyncDuration      prometheus.Histogram
 
-	msgc chan *clusterpb.Part
+	msgc  chan *clusterpb.Part
+	stopc chan struct{}
 }
 
 // newReplicatedStates creates a new state struct, which manages state to be replicated between alertmanagers.
@@ -76,6 +77,7 @@ func newReplicatedStates(userID string, rf int, re Replicator, st alertstore.Ale
 		store:             st,
 		states:            make(map[string]cluster.State, 2), // we use two, one for the notifications and one for silences.
 		msgc:              make(chan *clusterpb.Part),
+		stopc:             make(chan struct{}),
 		reg:               r,
 		settleReadTimeout: defaultSettleReadTimeout,
 		storeReadTimeout:  readTimeout,
@@ -289,12 +291,14 @@ func (s *state) MergeFullStates(fs []*clusterpb.FullState) error {
 }
 
 func (s *state) running(ctx context.Context) error {
+	defer close(s.stopc)
+
 	for {
 		select {
 		case p := <-s.msgc:
 			// If the replication factor is <= 1, we don't need to replicate any state anywhere else.
 			if s.replicationFactor <= 1 {
-				return nil
+				continue
 			}
 
 			s.stateReplicationTotal.WithLabelValues(p.Key).Inc()
@@ -303,6 +307,7 @@ func (s *state) running(ctx context.Context) error {
 				level.Error(s.logger).Log("msg", "failed to replicate state to other alertmanagers", "key", p.Key, "err", err)
 			}
 		case <-ctx.Done():
+			level.Debug(s.logger).Log("msg", "state replication loop terminated, context done")
 			return nil
 		}
 	}
@@ -310,8 +315,14 @@ func (s *state) running(ctx context.Context) error {
 
 func (s *state) broadcast(key string, b []byte) {
 	// We should ignore the Merges into the initial state during settling.
-	if s.Ready() {
-		s.msgc <- &clusterpb.Part{Key: key, Data: b}
+	if !s.Ready() || s.replicationFactor <= 1 {
+		return
+	}
+
+	select {
+	case s.msgc <- &clusterpb.Part{Key: key, Data: b}:
+	case <-s.stopc:
+		level.Warn(s.logger).Log("msg", "broadcast dropped, state replication loop already terminated", "key", key)
 	}
 }
 

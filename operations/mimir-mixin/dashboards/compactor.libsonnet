@@ -289,8 +289,10 @@ local fixTargetsForTransformations(panel, refIds) = panel {
         $.queryPanel(
           |||
             max by(%(instance)s) (time() - (max_over_time(cortex_compactor_last_scheduler_contact_timestamp_seconds{%(job)s}[1h]) > 0))
+            and on(%(instance)s) up{%(job)s}
             or
             max by(%(instance)s) (time() - max_over_time(process_start_time_seconds{%(job)s}[1h]))
+            and on(%(instance)s) up{%(job)s}
             and max by(%(instance)s) (cortex_compactor_last_scheduler_contact_timestamp_seconds{%(job)s} == 0)
           ||| % {
             instance: $._config.per_instance_label,

@@ -372,6 +372,11 @@ func toHTTPStatus(pushErr error) int {
 		return http.StatusInternalServerError
 	}
 
+	var httpStatusErr ErrorWithHTTPStatusCode
+	if errors.As(pushErr, &httpStatusErr) {
+		return httpStatusErr.HTTPStatusCode()
+	}
+
 	var distributorErr Error
 	if errors.As(pushErr, &distributorErr) {
 		return errorCauseToHTTPStatusCode(distributorErr.Cause())

@@ -30,6 +30,7 @@ message JobSpec {
 message CompactionJob {
   repeated bytes block_ids = 1;
   bool split = 2;
+  uint64 total_blocks_bytes = 3;
 }
 
 service CompactorScheduler {

@@ -397,7 +397,7 @@ func (p *Proxy) Start() error {
 
 	// Since we are only doing query requests decoding, we only care about the lookback delta for the Codec instance.
 	// The other config parameters are not relevant.
-	codec := querymiddleware.NewCodec(p.registerer, p.cfg.BackendsLookbackDelta, "json", nil, &propagation.NoopInjector{})
+	codec := querymiddleware.NewCodec(p.registerer, p.cfg.BackendsLookbackDelta, "json", nil, &propagation.NoopInjector{}, p.logger)
 
 	// register routes
 	for _, route := range p.routes {

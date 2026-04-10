@@ -90,7 +90,12 @@ func (a *AndUnlessBinaryOperation) computeSeriesMetadata(ctx context.Context, ma
 		return nil, nil
 	}
 
-	rightMetadata, err := a.Right.SeriesMetadata(ctx, matchers)
+	// Do not pass the parent's matchers to the RHS. For 'and' and 'unless', the RHS acts as
+	// a presence filter on the LHS: only the LHS series are returned. Passing matchers from a
+	// parent binary operation to the RHS could incorrectly exclude RHS series that would
+	// otherwise filter out (for 'unless') or include (for 'and') LHS series, producing wrong
+	// results when the parent's matchers cover labels not in this operation's matching set.
+	rightMetadata, err := a.Right.SeriesMetadata(ctx, nil)
 	if err != nil {
 		return nil, err
 	}

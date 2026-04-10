@@ -1085,6 +1085,44 @@ func TestOptimizationPass(t *testing.T) {
 			expectUnchanged:            true,
 			expectedSelectorsInspected: 2,
 		},
+		"subset vector selectors via regex (narrower uses exact matcher)": {
+			expr: `metric_name{status="success"} / metric_name{status=~"(success|canceled)"}`,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS
+					- LHS: DuplicateFilter: {status="success"}
+						- ref#1 Duplicate
+							- VectorSelector: {__name__="metric_name", status=~"(success|canceled)"}
+					- RHS: ref#1 Duplicate ...
+			`,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 0,
+			expectedSubsetSelectorsEliminated:    1,
+			expectedSelectorsInspected:           2,
+		},
+		"subset matrix selectors via regex (narrower uses exact matcher)": {
+			expr: `rate(metric_name{status="success"}[5m]) / rate(metric_name{status=~"(success|canceled)"}[5m])`,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS
+					- LHS: DuplicateFilter: {status="success"}
+						- ref#1 Duplicate
+							- DeduplicateAndMerge
+								- FunctionCall: rate(...)
+									- MatrixSelector: {__name__="metric_name", status=~"(success|canceled)"}[5m0s]
+					- RHS: ref#1 Duplicate ...
+			`,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 0,
+			expectedSubsetSelectorsEliminated:    1,
+			expectedSelectorsInspected:           2,
+		},
+		"subset vector selectors via regex, regex value not matching": {
+			expr:                                 `metric_name{status="unknown"} / metric_name{status=~"(success|canceled)"}`,
+			expectUnchanged:                      true,
+			expectedDuplicateNodes:               0,
+			expectedDuplicateSelectorsEliminated: 0,
+			expectedSubsetSelectorsEliminated:    0,
+			expectedSelectorsInspected:           2,
+		},
 	}
 
 	ctx := context.Background()
@@ -1654,7 +1692,6 @@ func TestSelectorsAreDuplicateOrSubset(t *testing.T) {
 			},
 		},
 
-		// FIXME: it'd be nice to support this case, but this is currently not supported.
 		"second selector is subset of first when considering regex, narrower selector uses regex": {
 			firstSelector:  `{a=~"(a|b|c)"}`,
 			secondSelector: `{a=~"(a|b)"}`,
@@ -1663,6 +1700,84 @@ func TestSelectorsAreDuplicateOrSubset(t *testing.T) {
 		"second selector is subset of first when considering regex, narrower selector uses exact matcher": {
 			firstSelector:  `{a=~"(a|b|c)"}`,
 			secondSelector: `{a="a"}`,
+			expectedResult: commonsubexpressionelimination.SubsetSelectors,
+			expectedSubsetMatchers: []*core.LabelMatcher{
+				{Name: "a", Type: labels.MatchEqual, Value: "a"},
+			},
+		},
+		"second selector is not a subset of first, exact matcher value does not match regex": {
+			firstSelector:  `{a=~"(a|b|c)"}`,
+			secondSelector: `{a="z"}`,
+			expectedResult: commonsubexpressionelimination.NotDuplicateOrSubset,
+		},
+		"second selector is subset of first via regex with additional extra matchers": {
+			firstSelector:  `{a=~"(a|b)"}`,
+			secondSelector: `{a="a", c="x"}`,
+			expectedResult: commonsubexpressionelimination.SubsetSelectors,
+			expectedSubsetMatchers: []*core.LabelMatcher{
+				{Name: "a", Type: labels.MatchEqual, Value: "a"},
+				{Name: "c", Type: labels.MatchEqual, Value: "x"},
+			},
+		},
+		"second selector is subset of first via regex with equal matchers on other labels": {
+			firstSelector:  `{a=~"(a|b)", b="x"}`,
+			secondSelector: `{a="a", b="x"}`,
+			expectedResult: commonsubexpressionelimination.SubsetSelectors,
+			expectedSubsetMatchers: []*core.LabelMatcher{
+				{Name: "a", Type: labels.MatchEqual, Value: "a"},
+			},
+		},
+		"second selector is not a subset of the first, narrower is not in intersection": {
+			// {c="a"} matches c=a, which is not in the intersection {c=b}, so not a subset.
+			firstSelector:  `{c=~"a|b", c=~"b|c"}`,
+			secondSelector: `{c="a"}`,
+			expectedResult: commonsubexpressionelimination.NotDuplicateOrSubset,
+		},
+		"second selector is a subset of the first, narrower is in intersection, not currently optimized for": {
+			firstSelector:  `{c=~"a|b", c=~"b|c"}`,
+			secondSelector: `{c="b"}`,
+			expectedResult: commonsubexpressionelimination.NotDuplicateOrSubset, // TODO: Optimize for this case
+		},
+		"regex: second is subset of first with c=a": {
+			firstSelector:  `{c=~"(a|b)"}`,
+			secondSelector: `{a="x", c="a"}`,
+			expectedResult: commonsubexpressionelimination.SubsetSelectors,
+			expectedSubsetMatchers: []*core.LabelMatcher{
+				{Name: "a", Type: labels.MatchEqual, Value: "x"},
+				{Name: "c", Type: labels.MatchEqual, Value: "a"},
+			},
+		},
+		"regex: second is not subset of first as c is not a": {
+			firstSelector:  `{a=~"(a|b)"}`,
+			secondSelector: `{c="a"}`,
+			expectedResult: commonsubexpressionelimination.NotDuplicateOrSubset,
+		},
+		"regex: second is not subset of first as a is not c": {
+			firstSelector:  `{c=~"(a|b)"}`,
+			secondSelector: `{a="a"}`,
+			expectedResult: commonsubexpressionelimination.NotDuplicateOrSubset,
+		},
+		"regex: second is not subset of first as first is negated": {
+			firstSelector:  `{a!~"(a|b)"}`,
+			secondSelector: `{a="a"}`,
+			expectedResult: commonsubexpressionelimination.NotDuplicateOrSubset,
+		},
+		"regex: second is subset of first via negation of first": {
+			firstSelector:  `{a!~"(a|b)"}`,
+			secondSelector: `{a="x"}`,
+			expectedResult: commonsubexpressionelimination.SubsetSelectors,
+			expectedSubsetMatchers: []*core.LabelMatcher{
+				{Name: "a", Type: labels.MatchEqual, Value: "x"},
+			},
+		},
+		"regex: second is not of first via negation of second": {
+			firstSelector:  `{a=~"(a|b)"}`,
+			secondSelector: `{a!="a"}`,
+			expectedResult: commonsubexpressionelimination.NotDuplicateOrSubset,
+		},
+		"regex: second is subset of first via double negation": {
+			firstSelector:  `{a!~"(a|b)"}`,
+			secondSelector: `{a!="a"}`,
 			expectedResult: commonsubexpressionelimination.NotDuplicateOrSubset,
 		},
 	}

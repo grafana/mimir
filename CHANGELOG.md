@@ -33,6 +33,7 @@
 * [CHANGE] Querier: The flag `-querier.filter-queryables-enabled` is deprecated and will be removed in Mimir 3.3. #14843
 * [CHANGE] Ingest storage: The `cortex_ingest_storage_writer_latency_seconds` metric now tracks the latency to write an incoming request to all Kafka partitions in a single call, instead of tracking latency individually for each partition. #14898
 * [CHANGE] Ingest storage: deprecated `-ingest-storage.kafka.write-clients` CLI flag. The flag is now ignored and Mimir always uses a single Kafka write client. The flag will be removed in Mimir 3.3. #14903
+* [CHANGE] Alertmanager: `-alertmanager.grafana-alertmanager-idle-grace-period` renamed to `-alertmanager.strict-initialization-idle-grace-period`. #14960
 * [FEATURE] Distributor: Derive limits based on tenant metadata. Supported limits are `max_active_series_per_user`, `ingestion_rate`, `ingestion_burst_size`, `ingestion_burst_factor`, `otel_metric_suffixes_enabled`, `name_validation_scheme` and `otel_translation_strategy`. #14289
 * [FEATURE] Distributor: add `cortex_distributor_request_body_compression_ratio` histogram that tracks the compression of write requests. #14232
 * [FEATURE] Distributor: add `-distributor.otel-label-name-underscore-sanitization` and `-distributor.otel-label-name-preserve-underscores` that control sanitization of underscores during OTLP translation. #13133
@@ -53,9 +54,10 @@
 * [FEATURE] Ingest storage: Add `-ingest-storage.kafka.tls*` flags to connect to Kafka using TLS. #14550
 * [FEATURE] Ingest storage: Add `-ingest-storage.ingestion-partition-tenant-write-shard-size` to limit the number of partitions used for writes independently from reads, allowing safely reducing the shard size without losing query coverage during the migration. #14780
 * [FEATURE] MQE: Add experimental support for splitting and caching intermediate results for functions over range vectors in instant queries. #13472 #14479 #14506 #14499 #14517 #14536 #14614 #14645 #14677 #14788
-* [FEATURE] MQE: Add experimental support for reporting the number of samples read per query. #14828 #14839
+* [FEATURE] MQE: Add experimental support for reporting the number of samples read per query. #14828 #14839 #14952
 * [FEATURE] Compactor: Add `-compactor.ooo-split-and-merge-shards` per-tenant limit to allow a separate shard count for blocks with the out-of-order external label. #14704
 * [FEATURE] Distributor: add experimental support for controlling OTLP metric name suffix addition and translation strategy via `X-Mimir-OTLP-AddSuffixes` and `X-Mimir-OTLP-TranslationStrategy` request headers on the OTLP push path, gated by `-api.otlp-translation-headers-enabled` (off by default). #14782
+* [ENHANCEMENT] Distributor: Add per-tenant `-distributor.active-series-limit-response-code` override to configure the HTTP response code returned when rejecting series due to the active series limit. Defaults to 429 (Too Many Requests). Set to 400 (Bad Request) to prevent clients from retrying rejected requests. #14981
 * [ENHANCEMENT] Query-frontend: Add `minimum_step_size` filter to blocked queries config to reject range queries with a step smaller than the configured threshold. #14885
 * [ENHANCEMENT] Query-frontend: Add support for blocking queries exceeding a time range duration with `time_range_longer_than`. #14609
 * [ENHANCEMENT] Distributor: Add zone-aware rate limiting via `-distributor.ring.instance-availability-zone`. When configured the global ingestion rate limit is divided by the number of zones and the number of distributors in the local zone, instead of the total number of distributors. #14515
@@ -172,8 +174,10 @@
 * [ENHANCEMENT] MQE: Improve per-query memory consumption limit enforcement in histogram function evaluations. #14691
 * [ENHANCEMENT] MQE: Improve per-query memory consumption limit enforcement within aggregation operations. #14735
 * [ENHANCEMENT] Usage-tracker: Improve performance by using a special shard grouping algorithm. #14715
+* [ENHANCEMENT] MQE: Support subset selector elimination for expressions where the subset is given by regex selectors. #14732
 * [ENHANCEMENT] API: activity tracker (if enabled) covers the full request lifecycle and used on all routes. #14777
 * [ENHANCEMENT] MQE: Add metrics for tracking in-flight memory consumption tracking. `cortex_querier_inflight_query_max_estimated_memory_consumption_limit_bytes`, `cortex_querier_inflight_query_current_estimated_memory_consumption_bytes`, `cortex_querier_inflight_query_peak_estimated_memory_consumption_bytes` and `cortex_querier_inflight_query_sampled_count`. #14807
+* [ENHANCEMENT] Query-frontend: Stream JSON encoding directly to the response body to avoid a full-copy allocation of the serialized payload. #14840
 * [ENHANCEMENT] Activity tracker: Added `activity_tracker_unfinished_activities_loaded` metric to report the number of unfinished activities detected on startup. #14860
 * [ENHANCEMENT] Distributor now uses record validation time as Kafka record timestamp to reduce rejections among consumers. #14921
 * [BUGFIX] Distributor: Fix race condition where usage-tracker partition ring may not be initialized before the distributor service starts, causing `usage-tracker partition ring is required` error on startup. #14675
@@ -217,6 +221,7 @@
 * [BUGFIX] Query-scheduler: Fix issue where queries executed with remote execution could time out rather than fail immediately if the querier evaluating the request crashes after receiving the query from the query-scheduler. #13742
 * [BUGFIX] Query-frontend: Fix silent panic when executing a remote read API request if the request has no matchers. #13745
 * [BUGFIX] Ruler: Fixed `-ruler.max-rule-groups-per-tenant-by-namespace` to only count rule groups in the specified namespace instead of all namespaces. #13743
+* [BUGFIX] Ruler: Fix parsing of rule expressions with leading newlines. #14947
 * [BUGFIX] Query-frontend: Fix race condition that could sometimes cause unnecessary resharding of queriers if querier shuffle sharding and remote execution is enabled. #13794 #13838
 * [BUGFIX] Query-frontend: Fix `step()` duration expression returning 1000x larger value. #13920
 * [BUGFIX] Store-gateway: Fix parent-child relationship in LabelNames and LabelValues trace spans. #13932
@@ -240,6 +245,9 @@
 * [BUGFIX] Distributor: Fix nil pointer panic in `WriteRequest.Unmarshal` when receiving a Remote Write 2.0 request with zero timeseries. #14698
 * [BUGFIX] MQE: Fix `info()` incorrectly dropping inner series with no matching info series when a data label matcher matches the empty string. #14819
 * [BUGFIX] MQE: Fix `info()` emitting un-enriched series when a data label matcher doesn't match the empty string and the info series is unavailable at some timestamps. #14812
+* [BUGFIX] MQE: Fix and/unless functions to not pass matchers to RHS as it can result in incorrect filtering. #14902
+* [BUGFIX] MQE: Fix internal error when executing a subquery with delayed name removal enabled. #14946
+* [BUGFIX] Alertmanager: Fix deadlock when trying to broadcast after stopping a tenant #14922
 
 ### Mixin
 

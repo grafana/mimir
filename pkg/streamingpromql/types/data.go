@@ -323,3 +323,13 @@ func (q *QueryTimeRange) LastPointIndexAtOrBefore(t int64) int {
 	}
 	return idx
 }
+
+func MatchersMatch(matchers []*labels.Matcher, lbls labels.Labels) bool {
+	for _, matcher := range matchers {
+		if !matcher.Matches(lbls.Get(matcher.Name)) {
+			return false
+		}
+	}
+
+	return true
+}

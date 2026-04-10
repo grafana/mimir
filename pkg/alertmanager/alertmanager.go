@@ -37,7 +37,6 @@ import (
 	webex_v0mimir1 "github.com/grafana/alerting/receivers/webex/v0mimir1"
 	webhook_v0mimir1 "github.com/grafana/alerting/receivers/webhook/v0mimir1"
 	wechat_v0mimir1 "github.com/grafana/alerting/receivers/wechat/v0mimir1"
-	alertingTemplates "github.com/grafana/alerting/templates"
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/alertmanager/api"
 	"github.com/prometheus/alertmanager/cluster"
@@ -62,6 +61,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"golang.org/x/time/rate"
 
+	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
 	util_net "github.com/grafana/mimir/pkg/util/net"
 )
@@ -335,7 +335,7 @@ func clusterWait(position func() int, timeout time.Duration) func() time.Duratio
 }
 
 // ApplyConfig applies a new configuration to an Alertmanager.
-func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, tmpls []alertingTemplates.TemplateDefinition, rawCfg string) error {
+func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, tmpls []*alertspb.TemplateDesc, rawCfg string) error {
 	cfg := grafanaToUpstreamConfig(conf)
 	integrationsMap, err := am.buildIntegrationsMap(conf.Receivers, tmpls)
 	if err != nil {
@@ -474,7 +474,7 @@ func (am *Alertmanager) wrapNotifier(integrationName string, notifier notify.Not
 }
 
 // buildIntegrationsMap builds a map of name to the list of integration notifiers off of a list of receiver config.
-func (am *Alertmanager) buildIntegrationsMap(nc []*definition.PostableApiReceiver, tmpls []alertingTemplates.TemplateDefinition) (map[string][]*nfstatus.Integration, error) {
+func (am *Alertmanager) buildIntegrationsMap(nc []*definition.PostableApiReceiver, tmpls []*alertspb.TemplateDesc) (map[string][]*nfstatus.Integration, error) {
 	// Create a firewall binded to the per-tenant config.
 	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(am.cfg.UserID, am.cfg.Limits))
 

@@ -188,7 +188,7 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 			// For consistency with Prometheus' engine, we convert each histogram point to an equivalent number of float points.
 			sampleCount := types.EquivalentFloatSampleCount(h)
 			v.QueryStats.IncrementSamples(sampleCount)
-			v.evaluationStats.TrackSampleForInstantVectorSelector(stepT, sampleCount)
+			v.evaluationStats.TrackSampleForInstantVectorSelector(stepT, sampleCount, nil)
 
 		} else {
 			// Only create the slice once we know the series is a histogram or not.
@@ -201,7 +201,7 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 				}
 			}
 			v.QueryStats.IncrementSamples(1)
-			v.evaluationStats.TrackSampleForInstantVectorSelector(stepT, 1)
+			v.evaluationStats.TrackSampleForInstantVectorSelector(stepT, 1, nil)
 			data.Floats = append(data.Floats, promql.FPoint{T: stepT, F: f})
 		}
 	}
@@ -215,7 +215,7 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 
 func (v *InstantVectorSelector) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	var err error
-	v.evaluationStats, err = types.NewOperatorEvaluationStats(v.Selector.TimeRange, v.MemoryConsumptionTracker)
+	v.evaluationStats, err = types.NewOperatorEvaluationStats(v.Selector.TimeRange, v.MemoryConsumptionTracker, 0)
 	if err != nil {
 		return err
 	}

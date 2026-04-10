@@ -67,6 +67,12 @@ type Error interface {
 	IsSoft() bool
 }
 
+// ErrorWithHTTPStatusCode is an optional interface that errors can implement
+// to override the default HTTP status code derived from the error cause.
+type ErrorWithHTTPStatusCode interface {
+	HTTPStatusCode() int
+}
+
 // replicasDidNotMatchError is an error stating that replicas do not match.
 type replicasDidNotMatchError struct {
 	replica, elected string
@@ -165,11 +171,12 @@ func (e reactiveLimiterExceededError) IsSoft() bool {
 
 var _ Error = reactiveLimiterExceededError{}
 
-func newActiveSeriesLimitedError(totalSeriesInThisRequest, rejectedSeriesFromThisRequest, limit int) activeSeriesLimitedError {
+func newActiveSeriesLimitedError(totalSeriesInThisRequest, rejectedSeriesFromThisRequest, limit, httpStatusCode int) activeSeriesLimitedError {
 	return activeSeriesLimitedError{
 		totalSeriesInThisRequest:      totalSeriesInThisRequest,
 		rejectedSeriesFromThisRequest: rejectedSeriesFromThisRequest,
 		limit:                         limit,
+		httpStatusCode:                httpStatusCode,
 	}
 }
 
@@ -177,6 +184,7 @@ type activeSeriesLimitedError struct {
 	totalSeriesInThisRequest      int
 	rejectedSeriesFromThisRequest int
 	limit                         int
+	httpStatusCode                int
 }
 
 func (e activeSeriesLimitedError) Error() string {
@@ -191,8 +199,13 @@ func (e activeSeriesLimitedError) IsSoft() bool {
 	return false
 }
 
-// Ensure that activeSeriesLimitedError implements Error.
+func (e activeSeriesLimitedError) HTTPStatusCode() int {
+	return e.httpStatusCode
+}
+
+// Ensure that activeSeriesLimitedError implements Error and ErrorWithHTTPStatusCode.
 var _ Error = activeSeriesLimitedError{}
+var _ ErrorWithHTTPStatusCode = activeSeriesLimitedError{}
 
 // ingestionRateLimitedError is an error used to represent the ingestion rate limited error.
 type ingestionRateLimitedError struct {

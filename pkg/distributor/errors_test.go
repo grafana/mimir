@@ -638,11 +638,43 @@ func TestErrorCauseToHTTPStatusCode(t *testing.T) {
 			errorCause:         mimirpb.ERROR_CAUSE_TSDB_UNAVAILABLE,
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 		},
+		"an ACTIVE_SERIES_LIMITED error cause gets translated into a HTTP 429": {
+			errorCause:         mimirpb.ERROR_CAUSE_ACTIVE_SERIES_LIMITED,
+			expectedHTTPStatus: http.StatusTooManyRequests,
+		},
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			status := errorCauseToHTTPStatusCode(tc.errorCause)
 			assert.Equal(t, tc.expectedHTTPStatus, status)
+		})
+	}
+}
+
+func TestActiveSeriesLimitedErrorHTTPStatusCode(t *testing.T) {
+	tests := map[string]struct {
+		httpStatusCode     int
+		expectedHTTPStatus int
+	}{
+		"default 429": {
+			httpStatusCode:     http.StatusTooManyRequests,
+			expectedHTTPStatus: http.StatusTooManyRequests,
+		},
+		"overridden to 400": {
+			httpStatusCode:     http.StatusBadRequest,
+			expectedHTTPStatus: http.StatusBadRequest,
+		},
+		"arbitrary code": {
+			httpStatusCode:     http.StatusServiceUnavailable,
+			expectedHTTPStatus: http.StatusServiceUnavailable,
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			err := newActiveSeriesLimitedError(100, 25, 50, tc.httpStatusCode)
+			assert.Equal(t, tc.expectedHTTPStatus, err.HTTPStatusCode())
+			assert.Equal(t, mimirpb.ERROR_CAUSE_ACTIVE_SERIES_LIMITED, err.Cause())
+			assert.False(t, err.IsSoft())
 		})
 	}
 }

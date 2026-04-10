@@ -245,8 +245,6 @@ Usage of ./cmd/mimir/mimir:
     	Enable the alertmanager config API. (default true)
   -alertmanager.enable-state-cleanup
     	Enables periodic cleanup of alertmanager stateful data (notification logs and silences) from object storage. When enabled, data is removed for any tenant that does not have a configuration. (default true)
-  -alertmanager.grafana-alertmanager-grace-period duration
-    	[experimental] Duration to wait before shutting down an idle Alertmanager using an unpromoted or default configuration when strict initialization is enabled. (default 5m0s)
   -alertmanager.log-parsing-label-matchers
     	[experimental] Enable logging when parsing label matchers. This flag is intended to be used with -alertmanager.utf8-strict-mode-enabled to validate UTF-8 strict mode is working as intended.
   -alertmanager.max-alerts-count int
@@ -369,6 +367,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Timeout for reading the state from object storage during the initial sync. Set to `0` for no timeout. (default 15s)
   -alertmanager.strict-initialization-enabled
     	[experimental] Skip initializing Alertmanagers for tenants without a non-default, non-empty configuration. For Grafana Alertmanager tenants, configurations not marked as 'promoted' will also be skipped.
+  -alertmanager.strict-initialization-idle-grace-period duration
+    	[experimental] Duration to wait before shutting down an idle Alertmanager using a default/empty configuration when strict initialization is enabled. (default 5m0s)
   -alertmanager.utf8-migration-logging-enabled
     	[experimental] Enable logging of tenant configurations that are incompatible with UTF-8 strict mode.
   -alertmanager.utf8-strict-mode-enabled
@@ -820,7 +820,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-larger-sketch uint
     	Number of series for a label name above which larger count-min sketches are used for that label. (default 1000000)
   -blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-smaller-sketch uint
-    	Number of series for a label name above which smaller count-min sketches are used for that label. (default 1000)
+    	Number of series for a label name below which smaller count-min sketches are used for that label. (default 1000)
   -blocks-storage.tsdb.index-lookup-planning.min-series-per-block-for-query-planning uint
     	Minimum number of series a block must have for query planning to be used. (default 10000)
   -blocks-storage.tsdb.index-lookup-planning.retrieved-posting-cost float
