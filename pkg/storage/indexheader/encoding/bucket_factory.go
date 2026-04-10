@@ -44,7 +44,6 @@ func (bf *BucketDecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table
 
 	var contentLength int
 	bf.mu.Lock()
-	defer bf.mu.Unlock()
 	if cachedContentLength, ok := bf.sectionLenCache[offset]; ok {
 		// Section length is cached
 		contentLength = cachedContentLength
@@ -52,7 +51,7 @@ func (bf *BucketDecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table
 		// We do not know section length yet;
 		// use the lower-level BucketReader to scan the length data
 		metaReader := NewBucketReader(
-			bf.ctx, bf.bkt, bf.objectPath, offset, int(attrs.Size),
+			bf.ctx, bf.bkt, bf.objectPath, offset, int(attrs.Size)-offset,
 		)
 
 		lengthBytes := make([]byte, numLenBytes)
@@ -61,11 +60,13 @@ func (bf *BucketDecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table
 			return Decbuf{E: err}
 		}
 		if n != numLenBytes {
+			bf.mu.Unlock()
 			return Decbuf{E: fmt.Errorf("insufficient bytes read for size (got %d, wanted %d): %w", n, numLenBytes, ErrInvalidSize)}
 		}
 		contentLength = int(binary.BigEndian.Uint32(lengthBytes))
 		bf.sectionLenCache[offset] = contentLength
 	}
+	bf.mu.Unlock()
 
 	bufferLength := numLenBytes + contentLength + crc32.Size
 
