@@ -247,9 +247,8 @@ func requireEqualHttpResponse(t *testing.T, expected, actual *http.Response) str
 	require.NoError(t, err)
 	require.JSONEq(t, string(expectedJSON), string(actualJSON))
 
-	return string(actualJSON)
-
 	// No need to reset the bodies since they're typically not used after this comparison
+	return string(actualJSON)
 }
 
 func TestCodec_JSONResponse_Labels(t *testing.T) {

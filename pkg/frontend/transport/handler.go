@@ -527,19 +527,13 @@ func getQueryStats(queryResponseTime time.Duration, details *querymiddleware.Que
 
 // getResponseQueryStats returns the response query stats in the format of Server-Timing header.
 // contentLengthBytes must be the http.Response.ContentLength field value; -1 means unknown (streaming response).
-// For streaming responses the size is reported as 0 to preserve backward compatibility.
-// encode_time_seconds is always 0 for streaming responses: encoding runs concurrently with body
-// streaming, so the encode time is not available until after the headers have been sent.
 func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes int64, details *querymiddleware.QueryDetails) []string {
 	if details == nil {
 		return nil
 	}
 	stats := details.QuerierStats
-	// Normalize -1 (unknown / streaming) to 0 so the field is always present in the header.
-	if contentLengthBytes < 0 {
-		contentLengthBytes = 0
-	}
-	return []string{
+
+	statsResponse := []string{
 		statsValue(encodeTimeSeconds, stats.LoadEncodeTime().Seconds()),
 		statsValue(estimatedSeriesCount, stats.LoadEstimatedSeriesCount()),
 		statsValue(fetchedChunkBytes, stats.LoadFetchedChunkBytes()),
@@ -556,6 +550,16 @@ func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes i
 		statsValue(splitQueries, stats.LoadSplitQueries()),
 		statsValue(remoteExecutionRequestCount, stats.LoadRemoteExecutionRequestCount()),
 	}
+
+	if contentLengthBytes < 0 {
+		// For streaming responses the size is reported as 0 to preserve backward compatibility.
+		// encode_time_seconds is always 0 for streaming responses: encoding runs concurrently with body
+		// streaming, so the encode time is not available until after the headers have been sent.
+		// Prune off the encodeTimeSeconds for these streaming responses.
+		statsResponse = statsResponse[1:]
+	}
+
+	return statsResponse
 }
 
 func statsValue(name string, val interface{}) string {
