@@ -405,7 +405,7 @@ func TestMemoryTrackerRefCounts(t *testing.T) {
 				childTracker.DecreaseMemoryConsumption(1, IngesterChunks)
 				require.Equal(t, uint64(9), childTracker.currentEstimatedMemoryConsumptionBytes)
 				require.Equal(t, fmt.Sprintf("child %d", i), childTracker.queryDescription)
-				require.GreaterOrEqual(t, tracker.currentEstimatedMemoryConsumptionBytes, uint64(9))
+				require.GreaterOrEqual(t, tracker.CurrentEstimatedMemoryConsumptionBytes(), uint64(9))
 
 				factory.DecrementReferenceCount(childTracker)
 				require.True(t, factory.IsRegistered(tracker))
