@@ -99,7 +99,7 @@ type splitAndCacheMiddleware struct {
 	extractor      Extractor
 	shouldCacheReq shouldCacheFn
 
-	// Tracker is a producer for MemoryConsumptionTracker and provides cumulative metrics of in-flight trackers
+	// memoryConsumptionTrackerFactory is a producer for MemoryConsumptionTracker and provides cumulative metrics of in-flight trackers
 	memoryConsumptionTrackerFactory *limiter.InflightMemoryConsumptionTracker
 
 	// Can be set from tests
