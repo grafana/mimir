@@ -113,7 +113,7 @@ func (bbr *BucketBufReader) ResetAt(off int) error {
 	if off > bbr.length {
 		return ErrInvalidSize
 	}
-	
+
 	if err := bbr.resetReader(off); err != nil {
 		return err
 	}
