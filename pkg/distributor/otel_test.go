@@ -1822,7 +1822,7 @@ func TestOTLPHandler_TranslationHeaders(t *testing.T) {
 				{Name: "__name__", Value: "test.metric"},
 			},
 			Samples: []prompb.Sample{
-				{Value: 1, Timestamp: time.Date(2020, 4, 1, 0, 0, 0, 0, time.UTC).UnixNano()},
+				{Value: 1, Timestamp: time.Date(2020, 4, 1, 0, 0, 0, 0, time.UTC).UnixMilli()},
 			},
 		},
 	}
