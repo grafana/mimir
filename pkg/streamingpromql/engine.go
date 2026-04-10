@@ -112,6 +112,11 @@ func NewEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *Q
 		planning.NODE_TYPE_SPLIT_FUNCTION_OVER_RANGE_VECTOR: rangevectorsplitting.NewMaterializer(opts.RangeVectorSplitting.Enabled, intermediateCache, opts.Logger),
 	}
 
+	memoryConsumptionTrackerFactory := opts.MemoryConsumptionTrackerFactory
+	if memoryConsumptionTrackerFactory == nil {
+		memoryConsumptionTrackerFactory = limiter.NewInflightMemoryConsumptionTracker(opts.CommonOpts.Reg, metrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxEstimatedQueryMemoryConsumption))
+	}
+
 	return &Engine{
 		lookbackDelta:            DetermineLookbackDelta(opts.CommonOpts),
 		timeout:                  opts.CommonOpts.Timeout,
@@ -131,7 +136,7 @@ func NewEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *Q
 		eagerLoadSelectors:              opts.EagerLoadSelectors,
 		planner:                         planner,
 		nodeMaterializers:               nodeMaterializers,
-		MemoryConsumptionTrackerFactory: limiter.NewInflightMemoryConsumptionTracker(opts.CommonOpts.Reg, metrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxEstimatedQueryMemoryConsumption)),
+		MemoryConsumptionTrackerFactory: memoryConsumptionTrackerFactory,
 	}, nil
 }
 

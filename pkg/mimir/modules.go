@@ -869,16 +869,14 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	// Use either the Prometheus engine or Mimir Query Engine (with optional fallback to Prometheus
 	// if it has been configured) for middlewares that require executing queries using a PromQL engine.
 	var eng promql.QueryEngine
-	var memoryConsumptionTrackerFactory *limiter.InflightMemoryConsumptionTracker
-
 	switch t.Cfg.Frontend.QueryEngine {
 	case querier.PrometheusEngine:
 		eng = limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(promOpts))
 	case querier.MimirEngine:
 		var err error
-		t.QueryFrontendStreamingEngine, err = streamingpromql.NewEngine(mqeOpts, stats.NewQueryMetrics(mqeOpts.CommonOpts.Reg), t.QueryFrontendQueryPlanner)
-		memoryConsumptionTrackerFactory = t.QueryFrontendStreamingEngine.MemoryConsumptionTrackerFactory
-
+		queryMetrics := stats.NewQueryMetrics(mqeOpts.CommonOpts.Reg)
+		mqeOpts.MemoryConsumptionTrackerFactory = limiter.NewInflightMemoryConsumptionTracker(mqeOpts.CommonOpts.Reg, queryMetrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxEstimatedQueryMemoryConsumption))
+		t.QueryFrontendStreamingEngine, err = streamingpromql.NewEngine(mqeOpts, queryMetrics, t.QueryFrontendQueryPlanner)
 		if err != nil {
 			return nil, fmt.Errorf("unable to create Mimir Query Engine: %w", err)
 		}
@@ -909,7 +907,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		// The tracker will be used in the query time split middleware to ensure that all split queries
 		// are tracked under a common memory consumption tracker.
 		// This is only set when using the streamingpromql engine.
-		memoryConsumptionTrackerFactory,
+		mqeOpts.MemoryConsumptionTrackerFactory,
 	)
 	if err != nil {
 		return nil, err
