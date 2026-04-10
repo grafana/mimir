@@ -4,10 +4,12 @@ package plan_test
 
 import (
 	"context"
+	"math"
 	"testing"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql"
@@ -163,7 +165,7 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			timeRange := types.NewInstantQueryTimeRange(testCase.queryStart)
+			timeRange := types.NewRangeQueryTimeRange(testCase.queryStart, timestamp.Time(math.MaxInt64), time.Minute)
 
 			if testCase.expectUnchanged {
 				testCase.expectedPlan = generatePlan(t, false, testCase.expr, timeRange)
