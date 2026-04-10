@@ -908,9 +908,6 @@ spec:
   - name: memberlist-bridge-grpc
     port: 9095
     targetPort: 9095
-  - name: memberlist-bridge-gossip-ring
-    port: 7946
-    targetPort: 7946
   selector:
     name: memberlist-bridge-zone-a
 ---
@@ -930,9 +927,6 @@ spec:
   - name: memberlist-bridge-grpc
     port: 9095
     targetPort: 9095
-  - name: memberlist-bridge-gossip-ring
-    port: 7946
-    targetPort: 7946
   selector:
     name: memberlist-bridge-zone-b
 ---
@@ -1819,9 +1813,11 @@ spec:
         - -ingester.ring.store=memberlist
         - -ingester.ring.zone-awareness-enabled=true
         - -mem-ballast-size-bytes=1073741824
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
         - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
@@ -1934,9 +1930,11 @@ spec:
         - -ingester.ring.store=memberlist
         - -ingester.ring.zone-awareness-enabled=true
         - -mem-ballast-size-bytes=1073741824
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
         - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
@@ -2017,7 +2015,6 @@ spec:
   template:
     metadata:
       labels:
-        gossip_ring_member: "true"
         name: memberlist-bridge-zone-a
     spec:
       affinity:
@@ -2059,8 +2056,6 @@ spec:
           name: http-metrics
         - containerPort: 9095
           name: grpc
-        - containerPort: 7946
-          name: gossip-ring
         readinessProbe:
           httpGet:
             path: /ready
@@ -2106,7 +2101,6 @@ spec:
   template:
     metadata:
       labels:
-        gossip_ring_member: "true"
         name: memberlist-bridge-zone-b
     spec:
       affinity:
@@ -2148,8 +2142,6 @@ spec:
           name: http-metrics
         - containerPort: 9095
           name: grpc
-        - containerPort: 7946
-          name: gossip-ring
         readinessProbe:
           httpGet:
             path: /ready
@@ -2215,9 +2207,11 @@ spec:
         - -ingester.ring.store=memberlist
         - -ingester.ring.zone-awareness-enabled=true
         - -mem-ballast-size-bytes=268435456
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
         - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
@@ -2331,9 +2325,11 @@ spec:
         - -ingester.ring.store=memberlist
         - -ingester.ring.zone-awareness-enabled=true
         - -mem-ballast-size-bytes=268435456
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
         - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
@@ -2454,9 +2450,11 @@ spec:
         - -ingester.ring.store=memberlist
         - -ingester.ring.zone-awareness-enabled=true
         - -mem-ballast-size-bytes=268435456
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
         - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
@@ -2552,9 +2550,11 @@ spec:
     spec:
       containers:
       - args:
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
         - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
@@ -2649,9 +2649,11 @@ spec:
                 - us-east-2a
       containers:
       - args:
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
         - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
@@ -2752,9 +2754,11 @@ spec:
                 - us-east-2b
       containers:
       - args:
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
         - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
@@ -2854,9 +2858,11 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
         - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
@@ -2941,9 +2947,11 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
         - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
@@ -3033,9 +3041,11 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
         - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
@@ -3174,9 +3184,11 @@ spec:
         - -ingester.ring.store=memberlist
         - -ingester.ring.zone-awareness-enabled=true
         - -mem-ballast-size-bytes=268435456
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
         - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
@@ -3289,9 +3301,11 @@ spec:
         - -ingester.ring.store=memberlist
         - -ingester.ring.zone-awareness-enabled=true
         - -mem-ballast-size-bytes=268435456
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
         - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
@@ -3410,9 +3424,11 @@ spec:
         - -ingester.ring.store=memberlist
         - -ingester.ring.zone-awareness-enabled=true
         - -mem-ballast-size-bytes=268435456
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
         - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
@@ -3506,9 +3522,11 @@ spec:
     spec:
       containers:
       - args:
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
         - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
@@ -3609,9 +3627,11 @@ spec:
                 - us-east-2a
       containers:
       - args:
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
         - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
@@ -3717,9 +3737,11 @@ spec:
                 - us-east-2b
       containers:
       - args:
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
         - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
@@ -3824,9 +3846,11 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
         - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
@@ -3911,9 +3935,11 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
         - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
@@ -4003,9 +4029,11 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
         - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
@@ -4105,9 +4133,11 @@ spec:
         - -ingester.ring.store=memberlist
         - -ingester.ring.zone-awareness-enabled=true
         - -mem-ballast-size-bytes=1073741824
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
         - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
@@ -4230,9 +4260,11 @@ spec:
         - -ingester.ring.store=memberlist
         - -ingester.ring.zone-awareness-enabled=true
         - -mem-ballast-size-bytes=1073741824
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
         - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
@@ -4333,8 +4365,12 @@ spec:
         - -alertmanager.storage.path=/data
         - -alertmanager.web.external-url=http://test/alertmanager
         - -common.storage.backend=gcs
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -4438,9 +4474,11 @@ spec:
         - -compactor.split-and-merge-shards=0
         - -compactor.split-groups=1
         - -compactor.symbols-flushers-concurrency=4
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
         - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
@@ -4574,6 +4612,7 @@ spec:
         - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
         - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
@@ -4724,6 +4763,7 @@ spec:
         - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
         - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
@@ -4860,6 +4900,7 @@ spec:
         - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
         - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
@@ -5823,9 +5864,11 @@ spec:
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -common.storage.backend=gcs
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
         - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
@@ -5981,9 +6024,11 @@ spec:
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -common.storage.backend=gcs
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
         - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
@@ -6140,9 +6185,11 @@ spec:
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -common.storage.backend=gcs
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
         - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
@@ -6300,9 +6347,11 @@ spec:
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -common.storage.backend=gcs
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
         - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
