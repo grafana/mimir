@@ -610,11 +610,7 @@ func BenchmarkEncodeMetricsQueryResponse(b *testing.B) {
 	}
 }
 
-// BenchmarkEncodeMetricsQueryResponse_Sizes benchmarks EncodeMetricsQueryResponse across
-// a range of payload sizes. Run this on both main and this branch then compare with benchstat:
-//
-//	go test ./pkg/frontend/querymiddleware/ -run='^$' -bench=BenchmarkEncodeMetricsQueryResponse_Sizes -benchtime=20x -count=10 > bench.txt
-//	benchstat bench_main.txt bench_branch.txt
+// BenchmarkEncodeMetricsQueryResponse_Sizes benchmarks EncodeMetricsQueryResponse across a range of payload sizes.
 func BenchmarkEncodeMetricsQueryResponse_Sizes(b *testing.B) {
 	sizes := []struct{ series, samples int }{
 		{1000, 100},
@@ -637,8 +633,8 @@ func BenchmarkEncodeMetricsQueryResponse_Sizes(b *testing.B) {
 					b.Fatal(err)
 				}
 				// Measure live heap before releasing the response body.
-				// On main the encoded bytes.Buffer backing array is still referenced here;
-				// on this branch only a drained pipe reader remains.
+				// Prior to PR #14840 the encoded bytes.Buffer backing array would still be referenced here;
+				// now only a drained pipe reader remains.
 				runtime.GC()
 				var ms runtime.MemStats
 				runtime.ReadMemStats(&ms)
