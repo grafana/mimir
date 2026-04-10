@@ -162,7 +162,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 	// Note - per modules.go where this memoryConsumptionTrackerFactory was created, depending on the downstream implementation this factory
 	// may return an unlimited tracker and ignore the maxEstimatedMemoryConsumptionPerQuery
 	memoryTracker := s.memoryConsumptionTrackerFactory.NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionPerQuery, req.GetQuery())
-	defer s.memoryConsumptionTrackerFactory.Deregister(memoryTracker)
+	defer s.memoryConsumptionTrackerFactory.DecrementReferenceCount(memoryTracker)
 
 	isCacheEnabled := s.cacheEnabled && (s.shouldCacheReq == nil || s.shouldCacheReq(req))
 	maxCacheFreshness := validation.MaxDurationPerTenant(tenantIDs, s.limits.MaxCacheFreshness)

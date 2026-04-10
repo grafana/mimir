@@ -159,9 +159,9 @@ type InflightMemoryConsumptionTracker struct {
 	forceUnlimited bool
 }
 
-// NewInflightUnlimitedMemoryConsumptionTracker returns a new InflightMemoryConsumptionTracker. There should only be one instance of this per container.
+// NewUnlimintedInflightMemoryConsumptionTracker returns a new InflightMemoryConsumptionTracker. There should only be one instance of this per container.
 // All MemoryConsumptionTrackers returned from this instance will be unlimited memory consumption trackers.
-func NewInflightUnlimitedMemoryConsumptionTracker(reg prometheus.Registerer) *InflightMemoryConsumptionTracker {
+func NewUnlimintedInflightMemoryConsumptionTracker(reg prometheus.Registerer) *InflightMemoryConsumptionTracker {
 	t := NewInflightMemoryConsumptionTracker(reg, nil)
 	t.forceUnlimited = true
 	return t
@@ -210,7 +210,8 @@ func NewInflightMemoryConsumptionTracker(reg prometheus.Registerer, queriesRejec
 
 // NewMemoryConsumptionTracker returns a new MemoryConsumptionTracker the same as if limiter.MemoryConsumptionTracker() was called.
 // However this new tracker will be included in the accumulated metrics managed by this InflightMemoryConsumptionTracker.
-// Ensure that you invoke Deregister(tracker) once the tracker is no longer required.
+// A new instantiation will set the internal reference count to 1. There is no need to call IncreaseReferenceCount() after construction.
+// Ensure that you invoke DecrementReferenceCount(tracker) once the tracker is no longer required.
 func (t *InflightMemoryConsumptionTracker) NewMemoryConsumptionTracker(ctx context.Context, maxEstimatedMemoryConsumptionBytes uint64, queryDescription string) *MemoryConsumptionTracker {
 	if t.forceUnlimited {
 		maxEstimatedMemoryConsumptionBytes = 0
@@ -223,14 +224,14 @@ func (t *InflightMemoryConsumptionTracker) NewMemoryConsumptionTracker(ctx conte
 	return tracker
 }
 
-func (t *InflightMemoryConsumptionTracker) IncRefCount(tracker *MemoryConsumptionTracker) {
+func (t *InflightMemoryConsumptionTracker) IncreaseReferenceCount(tracker *MemoryConsumptionTracker) {
 	tracker.refCount.Inc()
 }
 
-// Deregister removes the tracking of this tracker.
-func (t *InflightMemoryConsumptionTracker) Deregister(tracker *MemoryConsumptionTracker) {
+// DecrementReferenceCount removes the tracking of this tracker.
+func (t *InflightMemoryConsumptionTracker) DecrementReferenceCount(tracker *MemoryConsumptionTracker) {
 	if tracker.trackingId == 0 {
-		panic("cannot deregister a tracker not created via the InflightMemoryConsumptionTracker")
+		panic("cannot decrement a reference count on a tracker not created via the InflightMemoryConsumptionTracker")
 	}
 	if tracker.refCount.Dec() < 1 {
 		t.inflight.Delete(tracker.trackingId)
@@ -238,6 +239,7 @@ func (t *InflightMemoryConsumptionTracker) Deregister(tracker *MemoryConsumption
 }
 
 // IsRegistered returns true if the given tracker is currently registered with this InflightMemoryConsumptionTracker
+// Only a registered tracker can have its reference decreased via DecrementReferenceCount()
 func (t *InflightMemoryConsumptionTracker) IsRegistered(tracker *MemoryConsumptionTracker) bool {
 	if tracker.trackingId == 0 {
 		return false

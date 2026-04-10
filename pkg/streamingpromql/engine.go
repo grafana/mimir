@@ -310,7 +310,7 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 	// All the time split queries must fit within a single memory consumption tracker.
 	if parentTracker, parentErr := limiter.MemoryConsumptionTrackerFromContext(ctx); parentErr == nil {
 		operatorParams.MemoryConsumptionTracker = parentTracker
-		e.memoryConsumptionTrackerFactory.IncRefCount(parentTracker)
+		e.memoryConsumptionTrackerFactory.IncreaseReferenceCount(parentTracker)
 	} else {
 		maxEstimatedMemoryConsumptionPerQuery, err := e.limitsProvider.GetMaxEstimatedMemoryConsumptionPerQuery(ctx)
 		if err != nil {
@@ -324,7 +324,7 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 		op, err := materializer.ConvertNodeToOperator(req.Node, req.TimeRange)
 		if err != nil {
 			// Note - the MemoryConsumptionTracker maintains a ref count so inherited parent trackers will not be removed
-			e.memoryConsumptionTrackerFactory.Deregister(operatorParams.MemoryConsumptionTracker)
+			e.memoryConsumptionTrackerFactory.DecrementReferenceCount(operatorParams.MemoryConsumptionTracker)
 			return nil, err
 		}
 
@@ -334,7 +334,7 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 	evaluator, err := NewEvaluator(nodeRequests, operatorParams, e, params.OriginalExpression)
 	if err != nil {
 		// Note - the MemoryConsumptionTracker maintains a ref count so inherited parent trackers will not be removed
-		e.memoryConsumptionTrackerFactory.Deregister(operatorParams.MemoryConsumptionTracker)
+		e.memoryConsumptionTrackerFactory.DecrementReferenceCount(operatorParams.MemoryConsumptionTracker)
 		return nil, err
 	}
 	return evaluator, nil

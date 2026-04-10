@@ -286,14 +286,14 @@ func TestMemoryConsumptionTrackerTracker_Aggregation(t *testing.T) {
 
 	assertTrackerTrackerMetrics(t, reg, float64(tracker1Limit+tracker2Limit), float64(tracker1Current+tracker2Current), float64(tracker1Peak+tracker2Peak), 2)
 
-	tt.Deregister(tracker1)
+	tt.DecrementReferenceCount(tracker1)
 	assertTrackerTrackerMetrics(t, reg, float64(tracker2Limit), float64(tracker2Current), float64(tracker2Peak), 1)
 
-	tt.Deregister(tracker2)
+	tt.DecrementReferenceCount(tracker2)
 	assertTrackerTrackerMetrics(t, reg, 0, 0, 0, 0)
 
 	// idempotent
-	tt.Deregister(tracker2)
+	tt.DecrementReferenceCount(tracker2)
 	assertTrackerTrackerMetrics(t, reg, 0, 0, 0, 0)
 }
 
@@ -301,7 +301,7 @@ func TestMemoryConsumptionTrackerTracker_DeregisterNonManagedTracker(t *testing.
 	reg := prometheus.NewPedanticRegistry()
 	tt := NewInflightMemoryConsumptionTracker(reg, nil)
 	nonManagedTracker := NewMemoryConsumptionTracker(context.Background(), 100, nil, "query3")
-	require.Panics(t, func() { tt.Deregister(nonManagedTracker) })
+	require.Panics(t, func() { tt.DecrementReferenceCount(nonManagedTracker) })
 }
 
 func assertTrackerTrackerMetrics(t *testing.T, reg prometheus.Gatherer, maxBytes, currentBytes, peakBytes float64, sampled int) {
@@ -355,9 +355,9 @@ func TestMemoryConsumptionTracker_NegativeMemoryConsumptionPanicWithTracing(t *t
 	})
 }
 
-func TestNewInflightUnlimitedMemoryConsumptionTracker(t *testing.T) {
+func TestNewUnlimintedInflightMemoryConsumptionTracker(t *testing.T) {
 	reg := prometheus.NewRegistry()
-	factory := NewInflightUnlimitedMemoryConsumptionTracker(reg)
+	factory := NewUnlimintedInflightMemoryConsumptionTracker(reg)
 	tracker := factory.NewMemoryConsumptionTracker(context.Background(), 1000, "foo + bar")
 	err := tracker.IncreaseMemoryConsumption(5000, IngesterChunks)
 	require.NoError(t, err)
@@ -367,21 +367,21 @@ func TestMemoryTrackerRefCounts(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	factory := NewInflightMemoryConsumptionTracker(reg, nil)
 
-	t.Run("no ref count changes - deregister is successful", func(t *testing.T) {
+	t.Run("no ref count changes -decrementReferenceCount is successful", func(t *testing.T) {
 		tracker := factory.NewMemoryConsumptionTracker(context.Background(), 1000, "foo + bar")
 		require.True(t, factory.IsRegistered(tracker))
-		factory.Deregister(tracker)
+		factory.DecrementReferenceCount(tracker)
 		require.False(t, factory.IsRegistered(tracker))
 	})
 
 	t.Run("single ref count increase", func(t *testing.T) {
 		tracker := factory.NewMemoryConsumptionTracker(context.Background(), 1000, "foo + bar")
 		require.True(t, factory.IsRegistered(tracker))
-		factory.IncRefCount(tracker)
+		factory.IncreaseReferenceCount(tracker)
 		require.True(t, factory.IsRegistered(tracker))
-		factory.Deregister(tracker)
+		factory.DecrementReferenceCount(tracker)
 		require.True(t, factory.IsRegistered(tracker))
-		factory.Deregister(tracker)
+		factory.DecrementReferenceCount(tracker)
 		require.False(t, factory.IsRegistered(tracker))
 	})
 
@@ -394,10 +394,10 @@ func TestMemoryTrackerRefCounts(t *testing.T) {
 		g, _ := errgroup.WithContext(t.Context())
 		for range routines {
 			g.Go(func() error {
-				factory.IncRefCount(tracker)
+				factory.IncreaseReferenceCount(tracker)
 				// do some work
 				require.NoError(t, tracker.IncreaseMemoryConsumption(10, IngesterChunks))
-				factory.Deregister(tracker)
+				factory.DecrementReferenceCount(tracker)
 				require.True(t, factory.IsRegistered(tracker))
 				return nil
 			})
@@ -407,7 +407,7 @@ func TestMemoryTrackerRefCounts(t *testing.T) {
 		require.Equal(t, uint64(routines*10), tracker.currentEstimatedMemoryConsumptionBytes)
 		require.True(t, factory.IsRegistered(tracker))
 
-		factory.Deregister(tracker)
+		factory.DecrementReferenceCount(tracker)
 		require.False(t, factory.IsRegistered(tracker))
 	})
 
@@ -420,10 +420,10 @@ func TestMemoryTrackerRefCounts(t *testing.T) {
 		g, _ := errgroup.WithContext(t.Context())
 		for range routines {
 			g.Go(func() error {
-				factory.IncRefCount(tracker)
+				factory.IncreaseReferenceCount(tracker)
 				// do some work
 				require.Error(t, tracker.IncreaseMemoryConsumption(10, IngesterChunks)) // this will exceed the allow memory consumption
-				factory.Deregister(tracker)
+				factory.DecrementReferenceCount(tracker)
 				require.True(t, factory.IsRegistered(tracker))
 				return nil
 			})
@@ -433,7 +433,7 @@ func TestMemoryTrackerRefCounts(t *testing.T) {
 		require.Equal(t, uint64(0), tracker.currentEstimatedMemoryConsumptionBytes)
 		require.True(t, factory.IsRegistered(tracker))
 
-		factory.Deregister(tracker)
+		factory.DecrementReferenceCount(tracker)
 		require.False(t, factory.IsRegistered(tracker))
 	})
 }

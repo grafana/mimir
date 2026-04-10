@@ -373,7 +373,7 @@ func (e *Evaluator) Close() {
 	if e.cancel != nil {
 		e.cancel(errQueryClosed)
 	}
-	e.engine.memoryConsumptionTrackerFactory.Deregister(e.MemoryConsumptionTracker)
+	e.engine.memoryConsumptionTrackerFactory.DecrementReferenceCount(e.MemoryConsumptionTracker)
 }
 
 type EvaluationObserver interface {

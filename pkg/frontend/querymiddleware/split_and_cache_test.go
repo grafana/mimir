@@ -2353,7 +2353,7 @@ func TestSplitAndCacheMiddleware_UnlimitedMemoryConsumptionTrackerFactory(t *tes
 				tc.shouldCacheReq,
 				log.NewNopLogger(),
 				nil,
-				limiter.NewInflightUnlimitedMemoryConsumptionTracker(nil), // No memory consumption tracker factory.
+				limiter.NewUnlimintedInflightMemoryConsumptionTracker(nil), // No memory consumption tracker factory.
 			)
 
 			rc := mw.Wrap(downstream)

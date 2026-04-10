@@ -874,7 +874,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	switch t.Cfg.Frontend.QueryEngine {
 	case querier.PrometheusEngine:
 		eng = limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(promOpts))
-		memoryConsumptionTrackerFactory = limiter.NewInflightUnlimitedMemoryConsumptionTracker(promqlEngineRegisterer)
+		memoryConsumptionTrackerFactory = limiter.NewUnlimintedInflightMemoryConsumptionTracker(promqlEngineRegisterer)
 	case querier.MimirEngine:
 		var err error
 		// The streaming engine will use this same MemoryConsumptionTrackerFactory
