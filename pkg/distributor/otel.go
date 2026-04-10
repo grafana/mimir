@@ -402,8 +402,9 @@ func newOTLPParser(
 
 				translationHeadersApplied = true
 				// Auto-upgrade the name validation scheme if the effective
-				// translation strategy determined by the headers entails utf8.
-				if !translationStrategy.ShouldEscape() {
+				// translation strategy determined by the headers entails utf8
+				// and the tenant isn't already using UTF-8 validation.
+				if !translationStrategy.ShouldEscape() && limits.NameValidationScheme(limitsKey) != model.UTF8Validation {
 					s := model.UTF8Validation
 					*schemeOverride = &s
 				}
