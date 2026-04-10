@@ -2334,9 +2334,9 @@ func TestSplitAndCacheMiddleware_NilMemoryConsumptionTrackerFactory(t *testing.T
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			downstreamCalled := 0
+			var downstreamCalled atomic.Int32
 			downstream := HandlerFunc(func(_ context.Context, _ MetricsQueryRequest) (Response, error) {
-				downstreamCalled++
+				downstreamCalled.Inc()
 				return expectedResponse, nil
 			})
 
@@ -2372,7 +2372,7 @@ func TestSplitAndCacheMiddleware_NilMemoryConsumptionTrackerFactory(t *testing.T
 			prometheusResponse, ok := resp.GetPrometheusResponse()
 			require.True(t, ok)
 			require.Equal(t, expectedResponse, prometheusResponse)
-			require.Equal(t, tc.expectedDownstreamOnFirst, downstreamCalled)
+			require.Equal(t, tc.expectedDownstreamOnFirst, int(downstreamCalled.Load()))
 
 			// Second identical request — exercises cache-hit path when cache is enabled.
 			resp, err = rc.Do(ctx, req)
@@ -2380,7 +2380,7 @@ func TestSplitAndCacheMiddleware_NilMemoryConsumptionTrackerFactory(t *testing.T
 			prometheusResponse, ok = resp.GetPrometheusResponse()
 			require.True(t, ok)
 			require.Equal(t, expectedResponse, prometheusResponse)
-			require.Equal(t, tc.expectedDownstreamOnSecond, downstreamCalled)
+			require.Equal(t, tc.expectedDownstreamOnSecond, int(downstreamCalled.Load()))
 		})
 	}
 }
