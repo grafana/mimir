@@ -130,7 +130,6 @@ func NewEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *Q
 			Help:                        "Estimated peak memory consumption of each query (in bytes)",
 			NativeHistogramBucketFactor: 1.1,
 		}),
-		queriesRejectedDueToPeakMemoryConsumption: metrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxEstimatedQueryMemoryConsumption),
 
 		pedantic:                        opts.Pedantic,
 		eagerLoadSelectors:              opts.EagerLoadSelectors,
@@ -164,9 +163,8 @@ type Engine struct {
 
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 
-	logger                                    log.Logger
-	estimatedPeakMemoryConsumption            prometheus.Histogram
-	queriesRejectedDueToPeakMemoryConsumption prometheus.Counter
+	logger                         log.Logger
+	estimatedPeakMemoryConsumption prometheus.Histogram
 
 	// When operating in pedantic mode:
 	// - Query.Exec() will call Close() on the root operator a second time to ensure it behaves correctly if Close() is called multiple times.
