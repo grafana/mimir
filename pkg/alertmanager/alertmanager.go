@@ -365,13 +365,8 @@ func (am *Alertmanager) ApplyConfig(conf *config.Config, tmpls []*alertspb.Templ
 
 	route := dispatch.NewRoute(conf.Route, nil)
 
-	baseIntegrationsMap := make(map[string][]*notify.Integration)
-	for name, v := range integrationsMap {
-		baseIntegrationsMap[name] = v
-	}
-
 	pipeline := am.pipelineBuilder.New(
-		baseIntegrationsMap,
+		integrationsMap,
 		waitFunc,
 		am.inhibitor,
 		silence.NewSilencer(am.silences, am.marker, am.logger),
