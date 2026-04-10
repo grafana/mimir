@@ -596,7 +596,7 @@ func BenchmarkEncodeMetricsQueryResponse(b *testing.B) {
 
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		encoded, err := codec.EncodeMetricsQueryResponse(context.Background(), req, resp)
 		if err != nil {
 			b.Fatal(err)
@@ -627,7 +627,7 @@ func BenchmarkEncodeMetricsQueryResponse_Sizes(b *testing.B) {
 			codec := newTestCodec()
 			req := &http.Request{Header: http.Header{"Accept": []string{jsonMimeType}}}
 			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				encoded, err := codec.EncodeMetricsQueryResponse(context.Background(), req, resp)
 				if err != nil {
 					b.Fatal(err)
