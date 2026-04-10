@@ -52,10 +52,14 @@ func (i *Ingester) metricsUpdaterServiceRunning(ctx context.Context) error {
 	limitMetricsUpdateTicker := time.NewTicker(i.cfg.limitMetricsUpdatePeriod)
 	defer limitMetricsUpdateTicker.Stop()
 
+	hashRangeLogTicker := time.NewTicker(time.Minute)
+	defer hashRangeLogTicker.Stop()
+
 	for {
 		select {
 		case <-ingestionRateTicker.C:
 			i.ingestionRate.Tick()
+			i.hashRangeRates.Tick()
 		case <-rateUpdateTicker.C:
 			i.tsdbsMtx.RLock()
 			for _, db := range i.tsdbs {
@@ -69,6 +73,8 @@ func (i *Ingester) metricsUpdaterServiceRunning(ctx context.Context) error {
 			i.updateUsageStats()
 		case <-limitMetricsUpdateTicker.C:
 			i.updateLimitMetrics()
+		case <-hashRangeLogTicker.C:
+			i.hashRangeRates.LogSummary(i.logger)
 		case <-ctx.Done():
 			return nil
 		}

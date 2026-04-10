@@ -3,49 +3,76 @@
 package ingester
 
 import (
+	"fmt"
 	"sort"
+	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
+
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
+	util_math "github.com/grafana/mimir/pkg/util/math"
 )
 
-// hashRangeRates tracks ingestion rates per owned hash range.
+const (
+	hashRangeEWMAAlpha = 0.2
+)
+
+// hashRangeRates tracks EWMA ingestion rates per owned hash range.
 // The rebalancer pushes owned ranges via SetHashRanges. On the hot
 // push path, RecordSamples finds the matching range (binary search)
-// and atomically increments its counter. Snapshot returns per-range
-// samples/sec and resets the counters.
+// and calls Add() on the per-range EwmaRate. The ingester's background
+// loop calls Tick() every second to advance the EWMA, and LogSummary()
+// every minute to log per-range rates.
 type hashRangeRates struct {
-	mu        sync.RWMutex
-	ranges    []assignment.HashRange
-	counts    []atomic.Uint64
-	lastReset atomic.Int64 // unix nanoseconds
+	mu     sync.RWMutex
+	ranges []assignment.HashRange
+	rates  []*util_math.EwmaRate
+
+	tickInterval time.Duration
 }
 
-func newHashRangeRates() *hashRangeRates {
-	h := &hashRangeRates{}
-	h.lastReset.Store(time.Now().UnixNano())
-	return h
+func newHashRangeRates(tickInterval time.Duration) *hashRangeRates {
+	return &hashRangeRates{
+		tickInterval: tickInterval,
+	}
 }
 
-// SetRanges replaces the current set of owned hash ranges. Any
-// accumulated counts for previous ranges are discarded.
+// SetRanges replaces the current set of owned hash ranges. EWMA state
+// is preserved for ranges that are unchanged; new ranges start with a
+// fresh EWMA.
 func (h *hashRangeRates) SetRanges(ranges []assignment.HashRange) {
 	sorted := make([]assignment.HashRange, len(ranges))
 	copy(sorted, ranges)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Lo < sorted[j].Lo })
 
 	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	// Build a lookup of old range -> EwmaRate for state preservation.
+	old := make(map[assignment.HashRange]*util_math.EwmaRate, len(h.ranges))
+	for i, r := range h.ranges {
+		old[r] = h.rates[i]
+	}
+
+	newRates := make([]*util_math.EwmaRate, len(sorted))
+	for i, r := range sorted {
+		if existing, ok := old[r]; ok {
+			newRates[i] = existing
+		} else {
+			newRates[i] = util_math.NewEWMARate(hashRangeEWMAAlpha, h.tickInterval)
+		}
+	}
+
 	h.ranges = sorted
-	h.counts = make([]atomic.Uint64, len(sorted))
-	h.lastReset.Store(time.Now().UnixNano())
-	h.mu.Unlock()
+	h.rates = newRates
 }
 
-// RecordSamples atomically adds count samples to the range containing
-// the given hash. If no range matches (stale routing), the sample is
-// silently dropped — the rebalancer tolerates this noise.
+// RecordSamples adds count samples to the EWMA tracker for the range
+// containing the given hash. If no range matches (stale routing), the
+// sample is silently dropped.
 func (h *hashRangeRates) RecordSamples(hash uint32, count int) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -59,23 +86,30 @@ func (h *hashRangeRates) RecordSamples(hash uint32, count int) {
 	}) - 1
 
 	if idx >= 0 && h.ranges[idx].Contains(hash) {
-		h.counts[idx].Add(uint64(count))
+		h.rates[idx].Add(int64(count))
 	}
 }
 
-// HashRangeSnapshot holds per-range rates from a snapshot.
+// Tick advances all per-range EWMAs. Must be called at a fixed
+// interval (matching the tickInterval used at construction).
+func (h *hashRangeRates) Tick() {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	for _, r := range h.rates {
+		r.Tick()
+	}
+}
+
+// HashRangeSnapshot holds per-range EWMA rates from a snapshot.
 type HashRangeSnapshot struct {
 	Ranges           []assignment.HashRange
 	SamplesPerSecond []float64
 }
 
-// Snapshot returns the current per-range rates (samples/sec) and
-// resets the counters for the next measurement period.
+// Snapshot returns the current per-range EWMA rates (samples/sec).
+// Unlike the old counter-based approach, this does not reset state.
 func (h *hashRangeRates) Snapshot() HashRangeSnapshot {
-	now := time.Now().UnixNano()
-	lastReset := h.lastReset.Swap(now)
-	elapsed := float64(now-lastReset) / float64(time.Second)
-
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
@@ -85,13 +119,8 @@ func (h *hashRangeRates) Snapshot() HashRangeSnapshot {
 	}
 	copy(snap.Ranges, h.ranges)
 
-	if elapsed <= 0 {
-		return snap
-	}
-
-	for i := range h.counts {
-		count := h.counts[i].Swap(0)
-		snap.SamplesPerSecond[i] = float64(count) / elapsed
+	for i, r := range h.rates {
+		snap.SamplesPerSecond[i] = r.Rate()
 	}
 
 	return snap
@@ -102,4 +131,30 @@ func (h *hashRangeRates) HasRanges() bool {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return len(h.ranges) > 0
+}
+
+// LogSummary logs a summary of all owned hash ranges and their EWMA
+// ingestion rates.
+func (h *hashRangeRates) LogSummary(logger log.Logger) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	if len(h.ranges) == 0 {
+		return
+	}
+
+	var totalRate float64
+	lines := make([]string, len(h.ranges))
+	for i, r := range h.ranges {
+		rate := h.rates[i].Rate()
+		totalRate += rate
+		lines[i] = fmt.Sprintf("[%08x-%08x]=%.1f/s", r.Lo, r.Hi, rate)
+	}
+
+	level.Info(logger).Log(
+		"msg", "hash range ingestion rate summary",
+		"num_ranges", len(h.ranges),
+		"total_samples_per_sec", fmt.Sprintf("%.1f", totalRate),
+		"ranges", strings.Join(lines, " "),
+	)
 }

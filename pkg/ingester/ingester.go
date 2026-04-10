@@ -447,7 +447,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.ingestionRate = util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval)
 	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetrics.Enabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests, &i.inflightPushRequestsBytes)
 	i.activeGroups = activeGroupsCleanupService
-	i.hashRangeRates = newHashRangeRates()
+	i.hashRangeRates = newHashRangeRates(instanceIngestionRateTickInterval)
 
 	i.costAttributionMgr = costAttributionMgr
 	// We create a circuit breaker, which will be activated on a successful completion of starting.
