@@ -40,6 +40,19 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 		expectedPlan    string
 		expectUnchanged bool
 	}{
+		"timestamp(v) < C expression without surrounding binop and query time range is on threshold, should optimize": {
+			expr:       "timestamp(metric) < 1000",
+			queryStart: time.UnixMilli(thresholdMs),
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"timestamp(v) < C expression without surrounding binop and query time range is at threshold, should not optimize": {
+			expr:            "timestamp(metric) < 1000",
+			queryStart:      time.UnixMilli(thresholdMs - 1),
+			expectUnchanged: true,
+		},
+
 		"timestamp(v) < C: query range starts exactly at threshold, should optimize": {
 			expr:       "metric and timestamp(metric) < 1000",
 			queryStart: time.UnixMilli(thresholdMs),
@@ -47,7 +60,7 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 				- NoOp
 			`,
 		},
-		"timestamp(v) < C: query range starts one ms before threshold, should not optimize": {
+		"timestamp(v) < C: query range starts just before before threshold, should not optimize": {
 			expr:            "metric and timestamp(metric) < 1000",
 			queryStart:      time.UnixMilli(thresholdMs - 1),
 			expectUnchanged: true,
@@ -58,7 +71,7 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 			expectUnchanged: true,
 		},
 
-		"timestamp(v) <= C: query range starts one ms above threshold, should optimize": {
+		"timestamp(v) <= C: query range starts just before above threshold, should optimize": {
 			expr:       "metric and timestamp(metric) <= 1000",
 			queryStart: time.UnixMilli(thresholdMs + 1),
 			expectedPlan: `
@@ -83,7 +96,7 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 			queryStart:      time.UnixMilli(thresholdMs - 1),
 			expectUnchanged: true,
 		},
-		"C >= timestamp(v) (reversed <=): query range one ms above threshold, should optimize": {
+		"C >= timestamp(v) (reversed <=): query range just above threshold, should optimize": {
 			expr:       "metric and 1000 >= timestamp(metric)",
 			queryStart: time.UnixMilli(thresholdMs + 1),
 			expectedPlan: `

@@ -101,7 +101,6 @@ func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) apply(node planning.N
 
 	var modified int
 
-	// Process children first (bottom-up), so that nested "and" expressions are also handled.
 	for idx := range node.ChildCount() {
 		replacement, modifiedInChild, err := s.apply(node.Child(idx), params)
 		if err != nil {
@@ -117,12 +116,7 @@ func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) apply(node planning.N
 		}
 	}
 
-	binExpr, isBinExpr := node.(*core.BinaryExpression)
-	if !isBinExpr || binExpr.Op != core.BINARY_LAND {
-		return nil, modified, nil
-	}
-
-	if isAlwaysEmpty(binExpr.LHS, params) || isAlwaysEmpty(binExpr.RHS, params) {
+	if isAlwaysEmpty(node, params) {
 		modified++
 		noOp := &core.NoOp{NoOpDetails: &core.NoOpDetails{}}
 		return noOp, modified, nil
@@ -133,37 +127,34 @@ func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) apply(node planning.N
 
 // isAlwaysEmpty returns true if node can be statically determined to produce an empty instant
 // vector for the entire query time range described by params.
-//
-// It returns true for NoOp nodes (already known to be empty) and for comparisons of the form:
-//
-//	timestamp(v) < C   (or C > timestamp(v))
-//	timestamp(v) <= C  (or C >= timestamp(v))
-//
-// where C is a numeric constant, when the query start is far enough after C to guarantee the
-// comparison is always false.
 func isAlwaysEmpty(node planning.Node, params *planning.QueryParameters) bool {
 	node = unwrap(node)
 
-	if _, isNoOp := node.(*core.NoOp); isNoOp {
+	switch node := node.(type) {
+	case *core.NoOp:
 		return true
-	}
-
-	binExpr, ok := node.(*core.BinaryExpression)
-	if !ok {
+	case *core.BinaryExpression:
+		return isAlwaysEmptyBinaryExpression(node, params)
+	default:
 		return false
 	}
+}
 
-	switch binExpr.Op {
+func isAlwaysEmptyBinaryExpression(node *core.BinaryExpression, params *planning.QueryParameters) bool {
+	switch node.Op {
+	case core.BINARY_LAND:
+		return isAlwaysEmpty(node.LHS, params) || isAlwaysEmpty(node.RHS, params)
+
 	case core.BINARY_LSS:
 		// timestamp(v) < C: always false when queryStart_ms >= C*1000 + lookbackDelta_ms.
-		if constant, ok := extractTimestampComparisonConstant(binExpr.LHS, binExpr.RHS); ok {
+		if constant, ok := extractTimestampComparisonConstant(node.LHS, node.RHS); ok {
 			thresholdMs := int64(constant*1000) + params.LookbackDelta.Milliseconds()
 			return params.TimeRange.StartT >= thresholdMs
 		}
 
 	case core.BINARY_LTE:
 		// timestamp(v) <= C: always false when queryStart_ms > C*1000 + lookbackDelta_ms.
-		if constant, ok := extractTimestampComparisonConstant(binExpr.LHS, binExpr.RHS); ok {
+		if constant, ok := extractTimestampComparisonConstant(node.LHS, node.RHS); ok {
 			thresholdMs := int64(constant*1000) + params.LookbackDelta.Milliseconds()
 			return params.TimeRange.StartT > thresholdMs
 		}
@@ -171,7 +162,7 @@ func isAlwaysEmpty(node planning.Node, params *planning.QueryParameters) bool {
 	case core.BINARY_GTR:
 		// C > timestamp(v) is equivalent to timestamp(v) < C.
 		// Always false when queryStart_ms >= C*1000 + lookbackDelta_ms.
-		if constant, ok := extractTimestampComparisonConstant(binExpr.RHS, binExpr.LHS); ok {
+		if constant, ok := extractTimestampComparisonConstant(node.RHS, node.LHS); ok {
 			thresholdMs := int64(constant*1000) + params.LookbackDelta.Milliseconds()
 			return params.TimeRange.StartT >= thresholdMs
 		}
@@ -179,7 +170,7 @@ func isAlwaysEmpty(node planning.Node, params *planning.QueryParameters) bool {
 	case core.BINARY_GTE:
 		// C >= timestamp(v) is equivalent to timestamp(v) <= C.
 		// Always false when queryStart_ms > C*1000 + lookbackDelta_ms.
-		if constant, ok := extractTimestampComparisonConstant(binExpr.RHS, binExpr.LHS); ok {
+		if constant, ok := extractTimestampComparisonConstant(node.RHS, node.LHS); ok {
 			thresholdMs := int64(constant*1000) + params.LookbackDelta.Milliseconds()
 			return params.TimeRange.StartT > thresholdMs
 		}
