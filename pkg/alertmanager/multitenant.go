@@ -34,7 +34,6 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	"github.com/prometheus/alertmanager/config"
-	amconfig "github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/featurecontrol"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -374,19 +373,19 @@ func ComputeFallbackConfig(fallbackConfigFile string) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("unable to read fallback config %q: %s", fallbackConfigFile, err)
 		}
-		_, err = amconfig.LoadFile(fallbackConfigFile)
+		_, err = config.LoadFile(fallbackConfigFile)
 		if err != nil {
 			return nil, fmt.Errorf("unable to load fallback config %q: %s", fallbackConfigFile, err)
 		}
 		return fallbackConfig, nil
 	}
-	globalConfig := amconfig.DefaultGlobalConfig()
-	defaultConfig := amconfig.Config{
+	globalConfig := config.DefaultGlobalConfig()
+	defaultConfig := config.Config{
 		Global: &globalConfig,
-		Route: &amconfig.Route{
+		Route: &config.Route{
 			Receiver: "empty-receiver",
 		},
-		Receivers: []amconfig.Receiver{
+		Receivers: []config.Receiver{
 			{
 				Name: "empty-receiver",
 			},
