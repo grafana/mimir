@@ -552,7 +552,6 @@ func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes i
 	}
 
 	if contentLengthBytes < 0 {
-		// For streaming responses the size is reported as 0 to preserve backward compatibility.
 		// encode_time_seconds is always 0 for streaming responses: encoding runs concurrently with body
 		// streaming, so the encode time is not available until after the headers have been sent.
 		// Prune off the encodeTimeSeconds for these streaming responses.
