@@ -59,6 +59,17 @@ func (r *BucketReader) Read(p []byte) (n int, err error) {
 	return n, err
 }
 
+func (r *BucketReader) Seek(offset int64, whence int) (int64, error) {
+	if whence != io.SeekStart {
+		return 0, fmt.Errorf("invalid Seek whence: %d", whence)
+	}
+	if offset < 0 {
+		return 0, fmt.Errorf("seek to negative offset %d", offset)
+	}
+	r.off = int(offset)
+	return offset, nil
+}
+
 var bucketBufPool = sync.Pool{
 	New: func() any {
 		// 1MiB buffer chosen as starting point;
@@ -97,7 +108,11 @@ func NewBucketBufReader(
 	}
 
 	resetReader := func(off int) error {
-		r := NewBucketReader(ctx, bkt, name, base+off, length)
+		r := NewBucketReader(ctx, bkt, name, base, length)
+		_, err := r.Seek(int64(off), io.SeekStart)
+		if err != nil {
+			return err
+		}
 		bufReader.r = r
 		return nil
 	}
