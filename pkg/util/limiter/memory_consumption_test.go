@@ -403,7 +403,7 @@ func TestMemoryTrackerRefCounts(t *testing.T) {
 				// child reports just our memory allocation
 				require.NoError(t, childTracker.IncreaseMemoryConsumption(10, IngesterChunks))
 				childTracker.DecreaseMemoryConsumption(1, IngesterChunks)
-				require.Equal(t, uint64(9), childTracker.currentEstimatedMemoryConsumptionBytes)
+				require.Equal(t, uint64(9), childTracker.CurrentEstimatedMemoryConsumptionBytes())
 				require.Equal(t, fmt.Sprintf("child %d", i), childTracker.queryDescription)
 				require.GreaterOrEqual(t, tracker.CurrentEstimatedMemoryConsumptionBytes(), uint64(9))
 
@@ -415,7 +415,7 @@ func TestMemoryTrackerRefCounts(t *testing.T) {
 		}
 		require.NoError(t, g.Wait())
 
-		require.Equal(t, uint64(routines*9), tracker.currentEstimatedMemoryConsumptionBytes)
+		require.Equal(t, uint64(routines*9), tracker.CurrentEstimatedMemoryConsumptionBytes())
 		require.Equal(t, "foo + bar", tracker.queryDescription)
 		require.True(t, factory.IsRegistered(tracker))
 
@@ -443,7 +443,7 @@ func TestMemoryTrackerRefCounts(t *testing.T) {
 		}
 		require.NoError(t, g.Wait())
 
-		require.Equal(t, uint64(0), tracker.currentEstimatedMemoryConsumptionBytes)
+		require.Equal(t, uint64(0), tracker.CurrentEstimatedMemoryConsumptionBytes())
 		require.True(t, factory.IsRegistered(tracker))
 
 		factory.DecrementReferenceCount(tracker)
