@@ -4,7 +4,6 @@ package encoding
 
 import (
 	"encoding/binary"
-
 	"hash/crc32"
 
 	"github.com/pkg/errors"
