@@ -36,6 +36,7 @@
   } else {},
 
   local container = $.core.v1.container,
+  local containerPort = $.core.v1.containerPort,
   local deployment = $.apps.v1.deployment,
   local service = $.core.v1.service,
 
@@ -68,7 +69,9 @@
 
   assert !$._config.memberlist_zone_aware_routing_enabled || $._config.multi_zone_memberlist_bridge_enabled : 'memberlist zone-aware routing requires memberlist-bridge multi-zone deployment',
 
-  memberlist_bridge_ports:: $.util.defaultPorts,
+  local gossipPort = containerPort.newNamed(name='gossip-ring', containerPort=7946),
+
+  memberlist_bridge_ports:: $.util.defaultPorts + (if $._config.memberlist_ring_enabled then [gossipPort] else []),
   memberlist_bridge_node_affinity_matchers:: [],
 
   memberlist_bridge_container::
@@ -204,7 +207,8 @@
     // so they're critical to avoid network partitioning. We want to guarantee that 2 bridges don't run
     // on the same node, and we also want to run them with higher-than-default priority.
     + deployment.spec.template.spec.withPriorityClassName($._config.memberlist_bridge_priority_class)
-    + $.util.antiAffinity,
+    + $.util.antiAffinity
+    + (if $._config.memberlist_ring_enabled then deployment.spec.template.metadata.withLabelsMixin({ [$._config.gossip_member_label]: 'true' }) else {}),
 
   // Ensure all configured addresses are zonal ones.
   local memberlistBridgeMultiZoneConfigError = $.validateMimirMultiZoneConfig([

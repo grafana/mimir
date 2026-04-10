@@ -921,6 +921,9 @@ spec:
   - name: memberlist-bridge-grpc
     port: 9095
     targetPort: 9095
+  - name: memberlist-bridge-gossip-ring
+    port: 7946
+    targetPort: 7946
   selector:
     name: memberlist-bridge-zone-a
 ---
@@ -940,6 +943,9 @@ spec:
   - name: memberlist-bridge-grpc
     port: 9095
     targetPort: 9095
+  - name: memberlist-bridge-gossip-ring
+    port: 7946
+    targetPort: 7946
   selector:
     name: memberlist-bridge-zone-b
 ---
@@ -2046,6 +2052,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: memberlist-bridge-zone-a
     spec:
       affinity:
@@ -2087,6 +2094,8 @@ spec:
           name: http-metrics
         - containerPort: 9095
           name: grpc
+        - containerPort: 7946
+          name: gossip-ring
         readinessProbe:
           httpGet:
             path: /ready
@@ -2132,6 +2141,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: memberlist-bridge-zone-b
     spec:
       affinity:
@@ -2173,6 +2183,8 @@ spec:
           name: http-metrics
         - containerPort: 9095
           name: grpc
+        - containerPort: 7946
+          name: gossip-ring
         readinessProbe:
           httpGet:
             path: /ready
