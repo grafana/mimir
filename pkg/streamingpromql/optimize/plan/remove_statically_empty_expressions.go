@@ -95,6 +95,7 @@ func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) Apply(ctx context.Con
 func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) apply(node planning.Node, params *planning.QueryParameters) (planning.Node, bool, error) {
 	// Do not descend into subqueries for simplicity: their children are evaluated over a different time range
 	// (shifted backwards by the subquery range), so params.TimeRange does not apply there.
+	// FIXME: we could handle this case
 	if _, isSubquery := node.(*core.Subquery); isSubquery {
 		return nil, false, nil
 	}

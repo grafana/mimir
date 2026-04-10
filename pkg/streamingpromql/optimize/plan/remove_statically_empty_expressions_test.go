@@ -32,81 +32,53 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 		expectedPlan    string
 		expectUnchanged bool
 	}{
-		"timestamp(v) < C expression without surrounding binop and query time range is on threshold, should optimize": {
+		"timestamp(v) < C: query time range is on threshold, should optimize": {
 			expr:       "timestamp(metric) < CONSTANT",
 			queryStart: time.UnixMilli(thresholdMs),
 			expectedPlan: `
 				- NoOp
 			`,
 		},
-		"timestamp(v) < C expression without surrounding binop and query time range is at threshold, should not optimize": {
+		"timestamp(v) < C: query time range overlaps threshold, should not optimize": {
 			expr:            "timestamp(metric) < CONSTANT",
 			queryStart:      time.UnixMilli(thresholdMs - 1),
 			expectUnchanged: true,
 		},
-
-		"timestamp(v) < C: query range starts exactly at threshold, should optimize": {
-			expr:       "metric and timestamp(metric) < CONSTANT",
-			queryStart: time.UnixMilli(thresholdMs),
-			expectedPlan: `
-				- NoOp
-			`,
-		},
-		"timestamp(v) < C: query range starts just before before threshold, should not optimize": {
-			expr:            "metric and timestamp(metric) < CONSTANT",
-			queryStart:      time.UnixMilli(thresholdMs - 1),
-			expectUnchanged: true,
-		},
-		"timestamp(v) < C: query range well before threshold, should not optimize": {
-			expr:            "metric and timestamp(metric) < CONSTANT",
-			queryStart:      time.Unix(500, 0),
-			expectUnchanged: true,
-		},
-
-		"timestamp(v) <= C: query range starts just before above threshold, should optimize": {
-			expr:       "metric and timestamp(metric) <= CONSTANT",
+		"timestamp(v) <= C: query range starts just above threshold, should optimize": {
+			expr:       "timestamp(metric) <= CONSTANT",
 			queryStart: time.UnixMilli(thresholdMs + 1),
 			expectedPlan: `
 				- NoOp
 			`,
 		},
 		"timestamp(v) <= C: query range starts exactly at threshold, should not optimize": {
-			expr:            "metric and timestamp(metric) <= CONSTANT",
+			expr:            "timestamp(metric) <= CONSTANT",
 			queryStart:      time.UnixMilli(thresholdMs),
 			expectUnchanged: true,
 		},
-
-		"C > timestamp(v) (reversed <): query range at threshold, should optimize": {
+		"C > timestamp(v): query range at threshold, should optimize": {
 			expr:       "metric and CONSTANT > timestamp(metric)",
 			queryStart: time.UnixMilli(thresholdMs),
 			expectedPlan: `
 				- NoOp
 			`,
 		},
-		"C > timestamp(v) (reversed <): query range before threshold, should not optimize": {
+		"C > timestamp(v): query range before threshold, should not optimize": {
 			expr:            "metric and CONSTANT > timestamp(metric)",
 			queryStart:      time.UnixMilli(thresholdMs - 1),
 			expectUnchanged: true,
 		},
-		"C >= timestamp(v) (reversed <=): query range just above threshold, should optimize": {
+		"C >= timestamp(v): query range just above threshold, should optimize": {
 			expr:       "metric and CONSTANT >= timestamp(metric)",
 			queryStart: time.UnixMilli(thresholdMs + 1),
 			expectedPlan: `
 				- NoOp
 			`,
 		},
-		"C >= timestamp(v) (reversed <=): query range exactly at threshold, should not optimize": {
+		"C >= timestamp(v): query range exactly at threshold, should not optimize": {
 			expr:            "metric and CONSTANT >= timestamp(metric)",
 			queryStart:      time.UnixMilli(thresholdMs),
 			expectUnchanged: true,
-		},
-
-		"timestamp filter on LHS of and: should optimize": {
-			expr:       "timestamp(metric) < CONSTANT and metric",
-			queryStart: time.UnixMilli(thresholdMs),
-			expectedPlan: `
-				- NoOp
-			`,
 		},
 
 		"non-timestamp comparison: should not optimize": {
@@ -115,7 +87,28 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 			expectUnchanged: true,
 		},
 
-		"nested and expressions: inner replaced first, then outer": {
+		"timestamp(v) < C with and: query range starts exactly at threshold, should optimize": {
+			expr:       "metric and timestamp(metric) < CONSTANT",
+			queryStart: time.UnixMilli(thresholdMs),
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"timestamp(v) < C with and: query range starts just before before threshold, should not optimize": {
+			expr:            "metric and timestamp(metric) < CONSTANT",
+			queryStart:      time.UnixMilli(thresholdMs - 1),
+			expectUnchanged: true,
+		},
+
+		"timestamp condition on LHS of and: should optimize": {
+			expr:       "timestamp(metric) < CONSTANT and metric",
+			queryStart: time.UnixMilli(thresholdMs),
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+
+		"nested and expressions: should optimize where inner expression is no-op": {
 			// The inner "and" has the timestamp filter → replaced with NoOp.
 			// The outer "and" then has NoOp as its LHS → also replaced with NoOp.
 			expr:       "(metric and timestamp(metric) < CONSTANT) and metric2",
@@ -124,13 +117,36 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 				- NoOp
 			`,
 		},
-		"nested and expressions: inner not optimized because threshold not met": {
+		"nested and expressions: inner not optimized because not a no-op": {
 			expr:            "(metric and timestamp(metric) < CONSTANT) and metric2",
 			queryStart:      time.UnixMilli(thresholdMs - 1),
 			expectUnchanged: true,
 		},
+		"nested and expressions: should optimize as far as possible": {
+			expr:       "(metric and timestamp(metric) < CONSTANT) or metric2",
+			queryStart: time.UnixMilli(thresholdMs),
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- BinaryExpression: LHS or RHS
+						- LHS: NoOp
+						- RHS: VectorSelector: {__name__="metric2"}
+			`,
+		},
 
-		"timestamp filter outside subquery: should optimize": {
+		"complex expression inside timestamp() that is a no-op: should optimize": {
+			expr:       `foo and timestamp(sum(metric)) < CONSTANT`,
+			queryStart: time.UnixMilli(thresholdMs),
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"complex expression inside timestamp() that is not a no-op: should not optimize": {
+			expr:            `foo and timestamp(sum(metric)) < CONSTANT`,
+			queryStart:      time.UnixMilli(thresholdMs - 1),
+			expectUnchanged: true,
+		},
+
+		"timestamp condition outside subquery: should optimize": {
 			// The "and timestamp(metric) < CONSTANT" is outside the subquery, so it is evaluated
 			// at the outer query time range, which is after the threshold.
 			expr:       "avg_over_time(metric[5m:1m]) and timestamp(metric) < CONSTANT",
@@ -139,11 +155,8 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 				- NoOp
 			`,
 		},
-		"timestamp filter inside subquery: should not optimize": {
-			// The "and timestamp(metric) < CONSTANT" is inside the subquery, so it is evaluated
-			// over the subquery's time range, which extends back further than the outer query
-			// start. We stop recursion at the Subquery boundary to avoid incorrectly replacing
-			// expressions that may return non-empty results at the earlier subquery steps.
+		"timestamp condition inside subquery: should not optimize": {
+			// The "and timestamp(metric) < CONSTANT" is inside the subquery, so it is ignored.
 			expr:            "avg_over_time((metric and timestamp(metric) < CONSTANT)[2h:1m])",
 			queryStart:      time.Unix(10000, 0),
 			expectUnchanged: true,
