@@ -337,4 +337,3 @@ type stateChannel struct {
 func (c *stateChannel) Broadcast(b []byte) {
 	c.s.broadcast(c.key, b)
 }
-
