@@ -617,10 +617,10 @@ func BenchmarkEncodeMetricsQueryResponse_Sizes(b *testing.B) {
 		{3000, 500},
 		{10000, 1000},
 	}
+	codec := newTestCodec()
 	for _, sz := range sizes {
 		resp := benchmarkPrometheusResponse(sz.series, sz.samples)
 		b.Run(fmt.Sprintf("%dx%d", sz.series, sz.samples), func(b *testing.B) {
-			codec := newTestCodec()
 			req := &http.Request{Header: http.Header{"Accept": []string{jsonMimeType}}}
 			b.ReportAllocs()
 			for b.Loop() {
