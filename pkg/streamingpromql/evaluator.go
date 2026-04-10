@@ -376,7 +376,7 @@ func (e *Evaluator) Close() {
 		e.cancel(errQueryClosed)
 	}
 	if e.deregisterMemoryConsumptionTrackerOnClose {
-		e.engine.MemoryConsumptionTrackerFactory.Deregister(e.MemoryConsumptionTracker)
+		e.engine.memoryConsumptionTrackerFactory.Deregister(e.MemoryConsumptionTracker)
 	}
 }
 

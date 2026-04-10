@@ -136,7 +136,7 @@ func NewEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *Q
 		eagerLoadSelectors:              opts.EagerLoadSelectors,
 		planner:                         planner,
 		nodeMaterializers:               nodeMaterializers,
-		MemoryConsumptionTrackerFactory: memoryConsumptionTrackerFactory,
+		memoryConsumptionTrackerFactory: memoryConsumptionTrackerFactory,
 	}, nil
 }
 
@@ -179,7 +179,7 @@ type Engine struct {
 
 	planner                         *QueryPlanner
 	nodeMaterializers               map[planning.NodeType]planning.NodeMaterializer
-	MemoryConsumptionTrackerFactory *limiter.InflightMemoryConsumptionTracker
+	memoryConsumptionTrackerFactory *limiter.InflightMemoryConsumptionTracker
 }
 
 func (e *Engine) RegisterNodeMaterializer(nodeType planning.NodeType, materializer planning.NodeMaterializer) error {
@@ -318,7 +318,7 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 			return nil, fmt.Errorf("could not get memory consumption limit for query: %w", err)
 		}
 
-		operatorParams.MemoryConsumptionTracker = e.MemoryConsumptionTrackerFactory.NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionPerQuery, params.OriginalExpression)
+		operatorParams.MemoryConsumptionTracker = e.memoryConsumptionTrackerFactory.NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionPerQuery, params.OriginalExpression)
 		operatorParams.DeregisterMemoryConsumptionTrackerOnClose = true
 	}
 
@@ -327,7 +327,7 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 		op, err := materializer.ConvertNodeToOperator(req.Node, req.TimeRange)
 		if err != nil {
 			if operatorParams.DeregisterMemoryConsumptionTrackerOnClose {
-				e.MemoryConsumptionTrackerFactory.Deregister(operatorParams.MemoryConsumptionTracker)
+				e.memoryConsumptionTrackerFactory.Deregister(operatorParams.MemoryConsumptionTracker)
 			}
 			return nil, err
 		}
@@ -338,7 +338,7 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 	evaluator, err := NewEvaluator(nodeRequests, operatorParams, e, params.OriginalExpression)
 	if err != nil {
 		if operatorParams.DeregisterMemoryConsumptionTrackerOnClose {
-			e.MemoryConsumptionTrackerFactory.Deregister(operatorParams.MemoryConsumptionTracker)
+			e.memoryConsumptionTrackerFactory.Deregister(operatorParams.MemoryConsumptionTracker)
 		}
 		return nil, err
 	}
