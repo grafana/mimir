@@ -1,0 +1,231 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package plan
+
+import (
+	"context"
+
+	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
+)
+
+// RemoveStaticallyEmptyExpressionsOptimizationPass replaces subexpressions that can be statically
+// determined to return no results with a NoOp node, avoiding unnecessary computation.
+//
+// Currently it detects the following pattern in both "and" operands:
+//
+//	timestamp(<inner>) < <constant>   (or the symmetric form <constant> > timestamp(<inner>))
+//	timestamp(<inner>) <= <constant>  (or the symmetric form <constant> >= timestamp(<inner>))
+//
+// where <constant> is a NumberLiteral (possibly wrapped in transparent nodes).
+//
+// The check is conservative: the optimization applies only when the query start is far enough
+// after <constant> that even a sample as old as one lookback-delta before the step cannot
+// satisfy the comparison:
+//
+//	timestamp(v) < C  →  always false when StartT (in ms) >= C*1000 + lookback delta (in ms)
+//	timestamp(v) <= C →  always false when StartT (in ms) >  C*1000 + lookback delta (in ms)
+//
+// This allows the optimization pass to work correctly when v is an instant vector selector
+// (which returns the underlying sample timestamp and so could return a value as early as
+// StartT - lookback delta), and when v is any other kind of expression (which will
+// return the output timestamp, and so could return a value as early as StartT).
+//
+// For simplicity, the optimization pass does not descend into Subquery nodes, because the effective time range for
+// expressions inside a subquery differs from the outer query time range.
+type RemoveStaticallyEmptyExpressionsOptimizationPass struct {
+	attempts prometheus.Counter
+	modified prometheus.Counter
+	logger   log.Logger
+}
+
+func NewRemoveStaticallyEmptyExpressionsOptimizationPass(reg prometheus.Registerer, logger log.Logger) *RemoveStaticallyEmptyExpressionsOptimizationPass {
+	return &RemoveStaticallyEmptyExpressionsOptimizationPass{
+		attempts: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_mimir_query_engine_remove_statically_empty_expressions_attempted_total",
+			Help: "Total number of queries that the optimization pass has attempted to skip statically empty expressions for.",
+		}),
+		modified: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_mimir_query_engine_remove_statically_empty_expressions_modified_total",
+			Help: "Total number of queries where the optimization pass has replaced one or more statically empty expressions with a no-op.",
+		}),
+		logger: logger,
+	}
+}
+
+func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) Name() string {
+	return "skip statically empty expressions"
+}
+
+func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
+	if maximumSupportedQueryPlanVersion < planning.QueryPlanV9 {
+		// NoOp node is not supported by the downstream querier.
+		return plan, nil
+	}
+
+	logger := spanlogger.FromContext(ctx, s.logger)
+	s.attempts.Inc()
+
+	newRoot, modified, err := s.apply(plan.Root, plan.Parameters)
+	if err != nil {
+		return nil, err
+	}
+
+	if newRoot != nil {
+		plan.Root = newRoot
+	}
+
+	if modified > 0 {
+		logger.DebugLog("msg", "replaced statically empty expression(s) with no-op", "count", modified)
+		s.modified.Inc()
+	}
+
+	return plan, nil
+}
+
+// apply recursively walks the plan tree, replacing statically-empty "and" binary expressions
+// with a NoOp node. It returns the replacement node (non-nil if this node should be replaced),
+// the number of replacements made, and any error.
+func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) apply(node planning.Node, params *planning.QueryParameters) (planning.Node, int, error) {
+	// Do not descend into subqueries for simplicity: their children are evaluated over a different time range
+	// (shifted backwards by the subquery range), so params.TimeRange does not apply there.
+	if _, isSubquery := node.(*core.Subquery); isSubquery {
+		return nil, 0, nil
+	}
+
+	var modified int
+
+	// Process children first (bottom-up), so that nested "and" expressions are also handled.
+	for idx := range node.ChildCount() {
+		replacement, modifiedInChild, err := s.apply(node.Child(idx), params)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		modified += modifiedInChild
+
+		if replacement != nil {
+			if err := node.ReplaceChild(idx, replacement); err != nil {
+				return nil, 0, err
+			}
+		}
+	}
+
+	binExpr, isBinExpr := node.(*core.BinaryExpression)
+	if !isBinExpr || binExpr.Op != core.BINARY_LAND {
+		return nil, modified, nil
+	}
+
+	if isAlwaysEmpty(binExpr.LHS, params) || isAlwaysEmpty(binExpr.RHS, params) {
+		modified++
+		noOp := &core.NoOp{NoOpDetails: &core.NoOpDetails{}}
+		return noOp, modified, nil
+	}
+
+	return nil, modified, nil
+}
+
+// isAlwaysEmpty returns true if node can be statically determined to produce an empty instant
+// vector for the entire query time range described by params.
+//
+// It returns true for NoOp nodes (already known to be empty) and for comparisons of the form:
+//
+//	timestamp(v) < C   (or C > timestamp(v))
+//	timestamp(v) <= C  (or C >= timestamp(v))
+//
+// where C is a numeric constant, when the query start is far enough after C to guarantee the
+// comparison is always false.
+func isAlwaysEmpty(node planning.Node, params *planning.QueryParameters) bool {
+	node = unwrap(node)
+
+	if _, isNoOp := node.(*core.NoOp); isNoOp {
+		return true
+	}
+
+	binExpr, ok := node.(*core.BinaryExpression)
+	if !ok {
+		return false
+	}
+
+	switch binExpr.Op {
+	case core.BINARY_LSS:
+		// timestamp(v) < C: always false when queryStart_ms >= C*1000 + lookbackDelta_ms.
+		if constant, ok := extractTimestampComparisonConstant(binExpr.LHS, binExpr.RHS); ok {
+			thresholdMs := int64(constant*1000) + params.LookbackDelta.Milliseconds()
+			return params.TimeRange.StartT >= thresholdMs
+		}
+
+	case core.BINARY_LTE:
+		// timestamp(v) <= C: always false when queryStart_ms > C*1000 + lookbackDelta_ms.
+		if constant, ok := extractTimestampComparisonConstant(binExpr.LHS, binExpr.RHS); ok {
+			thresholdMs := int64(constant*1000) + params.LookbackDelta.Milliseconds()
+			return params.TimeRange.StartT > thresholdMs
+		}
+
+	case core.BINARY_GTR:
+		// C > timestamp(v) is equivalent to timestamp(v) < C.
+		// Always false when queryStart_ms >= C*1000 + lookbackDelta_ms.
+		if constant, ok := extractTimestampComparisonConstant(binExpr.RHS, binExpr.LHS); ok {
+			thresholdMs := int64(constant*1000) + params.LookbackDelta.Milliseconds()
+			return params.TimeRange.StartT >= thresholdMs
+		}
+
+	case core.BINARY_GTE:
+		// C >= timestamp(v) is equivalent to timestamp(v) <= C.
+		// Always false when queryStart_ms > C*1000 + lookbackDelta_ms.
+		if constant, ok := extractTimestampComparisonConstant(binExpr.RHS, binExpr.LHS); ok {
+			thresholdMs := int64(constant*1000) + params.LookbackDelta.Milliseconds()
+			return params.TimeRange.StartT > thresholdMs
+		}
+	}
+
+	return false
+}
+
+// extractTimestampComparisonConstant checks whether timestampSide is (or wraps) a timestamp()
+// function call and constantSide is (or wraps) a NumberLiteral. If so, it returns the constant
+// value and true.
+func extractTimestampComparisonConstant(timestampSide, constantSide planning.Node) (float64, bool) {
+	if !isTimestampCall(timestampSide) {
+		return 0, false
+	}
+
+	constantSide = unwrap(constantSide)
+	literal, ok := constantSide.(*core.NumberLiteral)
+	if !ok {
+		return 0, false
+	}
+
+	return literal.Value, true
+}
+
+// isTimestampCall returns true if node is (or wraps) a FunctionCall for the timestamp() function.
+// It unwraps DeduplicateAndMerge, DropName, and StepInvariantExpression layers transparently.
+func isTimestampCall(node planning.Node) bool {
+	node = unwrap(node)
+
+	fc, ok := node.(*core.FunctionCall)
+	return ok && fc.Function == functions.FUNCTION_TIMESTAMP
+}
+
+// unwrap removes transparent wrapper nodes returning the innermost non-wrapper node.
+func unwrap(node planning.Node) planning.Node {
+	for {
+		switch n := node.(type) {
+		case *core.DeduplicateAndMerge:
+			node = n.Inner
+		case *core.DropName:
+			node = n.Inner
+		case *core.StepInvariantExpression:
+			node = n.Inner
+		default:
+			return node
+		}
+	}
+}

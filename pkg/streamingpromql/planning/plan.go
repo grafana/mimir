@@ -62,7 +62,10 @@ const QueryPlanV7 = QueryPlanVersion(7)
 // QueryPlanV8 introduces support for subset selector elimination in multi-aggregation nodes.
 const QueryPlanV8 = QueryPlanVersion(8)
 
-var MaximumSupportedQueryPlanVersion = QueryPlanV8
+// QueryPlanV9 introduces the NoOp node.
+const QueryPlanV9 = QueryPlanVersion(9)
+
+var MaximumSupportedQueryPlanVersion = QueryPlanV9
 
 type QueryPlan struct {
 	Root       Node
