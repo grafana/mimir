@@ -981,6 +981,9 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 			"/schedulerpb.SchedulerForQuerier/NotifyQuerierShutdown",
 			"/usagetrackerpb.UsageTracker/GetUsersCloseToLimit",
 			"/usagetrackerpb.UsageTracker/TrackSeriesBatch",
+			"/cortex.Ingester/HashRangeStats",
+			"/cortex.Ingester/SetHashRanges",
+			"/nautilus.NautilusRebalancer/GetAssignments",
 		})
 
 	// Do not allow to configure potentially unsafe options until we've properly tested them in Mimir.
