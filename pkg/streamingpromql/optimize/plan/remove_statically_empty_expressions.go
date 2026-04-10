@@ -141,36 +141,35 @@ func isAlwaysEmpty(node planning.Node, params *planning.QueryParameters) bool {
 }
 
 func isAlwaysEmptyBinaryExpression(node *core.BinaryExpression, params *planning.QueryParameters) bool {
-	earliestPossibleTimestampValue := params.TimeRange.StartT - params.LookbackDelta.Milliseconds()
+	earliestPossibleTimestampValueInMilliseconds := params.TimeRange.StartT - params.LookbackDelta.Milliseconds()
 
 	switch node.Op {
 	case core.BINARY_LAND:
 		return isAlwaysEmpty(node.LHS, params) || isAlwaysEmpty(node.RHS, params)
 
 	case core.BINARY_LSS:
-		// timestamp(v) < C: always false when queryStart_ms >= C*1000 + lookbackDelta_ms.
+		// timestamp(v) < C: always empty when C <= the earliest value that timestamp() could return
+		// timestamp() returns the value in seconds since the epoch, so we need to convert to milliseconds.
 		if constant, ok := isTimestampComparison(node.LHS, node.RHS); ok {
-			return earliestPossibleTimestampValue >= int64(constant*1000)
+			return int64(constant*1000) <= earliestPossibleTimestampValueInMilliseconds
 		}
 
 	case core.BINARY_LTE:
-		// timestamp(v) <= C: always false when queryStart_ms > C*1000 + lookbackDelta_ms.
+		// timestamp(v) <= C: always empty when C < the earliest value that timestamp() could return
 		if constant, ok := isTimestampComparison(node.LHS, node.RHS); ok {
-			return earliestPossibleTimestampValue > int64(constant*1000)
+			return int64(constant*1000) < earliestPossibleTimestampValueInMilliseconds
 		}
 
 	case core.BINARY_GTR:
-		// C > timestamp(v) is equivalent to timestamp(v) < C.
-		// Always false when queryStart_ms >= C*1000 + lookbackDelta_ms.
+		// C > timestamp(v): equivalent to timestamp(v) < C.
 		if constant, ok := isTimestampComparison(node.RHS, node.LHS); ok {
-			return earliestPossibleTimestampValue >= int64(constant*1000)
+			return int64(constant*1000) <= earliestPossibleTimestampValueInMilliseconds
 		}
 
 	case core.BINARY_GTE:
-		// C >= timestamp(v) is equivalent to timestamp(v) <= C.
-		// Always false when queryStart_ms > C*1000 + lookbackDelta_ms.
+		// C >= timestamp(v): equivalent to timestamp(v) <= C.
 		if constant, ok := isTimestampComparison(node.RHS, node.LHS); ok {
-			return earliestPossibleTimestampValue > int64(constant*1000)
+			return int64(constant*1000) < earliestPossibleTimestampValueInMilliseconds
 		}
 	}
 
