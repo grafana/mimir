@@ -188,6 +188,10 @@ type Config struct {
 
 	PushGrpcMethodEnabled bool `yaml:"push_grpc_method_enabled" category:"experimental" doc:"hidden"`
 
+	NautilusEnabled bool `yaml:"nautilus_enabled" category:"experimental"`
+
+	WipeTSDBDirOnStartup bool `yaml:"wipe_tsdb_dir_on_startup" category:"experimental" doc:"hidden"`
+
 	// This config is dynamically injected because defined outside the ingester config.
 	IngestStorageConfig ingest.Config `yaml:"-"`
 
@@ -218,6 +222,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.UpdateIngesterOwnedSeries, "ingester.track-ingester-owned-series", false, "This option enables tracking of ingester-owned series based on ring state, even if -ingester.use-ingester-owned-series-for-limits is disabled.")
 	f.DurationVar(&cfg.OwnedSeriesUpdateInterval, "ingester.owned-series-update-interval", 15*time.Second, "How often to check for ring changes and possibly recompute owned series as a result of detected change.")
 	f.BoolVar(&cfg.PushGrpcMethodEnabled, "ingester.push-grpc-method-enabled", true, "Enables Push gRPC method on ingester. Can be only disabled when using ingest-storage to make sure ingesters only receive data from Kafka.")
+	f.BoolVar(&cfg.WipeTSDBDirOnStartup, "ingester.wipe-tsdb-dir-on-startup", false, "If true, the ingester will delete all data in the TSDB directory on startup before re-initializing it. Only intended for development and testing.")
+	f.BoolVar(&cfg.NautilusEnabled, "ingester.nautilus-enabled", false, "Enable nautilus hash-range tracking. When enabled, the ingester accepts SetHashRanges/HashRangeStats RPCs and tracks per-range ingestion rates.")
 
 	// Hardcoded config (can only be overridden in tests).
 	cfg.limitMetricsUpdatePeriod = time.Second * 15
@@ -447,7 +453,9 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.ingestionRate = util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval)
 	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetrics.Enabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests, &i.inflightPushRequestsBytes)
 	i.activeGroups = activeGroupsCleanupService
-	i.hashRangeRates = newHashRangeRates(instanceIngestionRateTickInterval)
+	if cfg.NautilusEnabled {
+		i.hashRangeRates = newHashRangeRates(instanceIngestionRateTickInterval)
+	}
 
 	i.costAttributionMgr = costAttributionMgr
 	// We create a circuit breaker, which will be activated on a successful completion of starting.
@@ -657,6 +665,13 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 			_ = services.StopAndAwaitTerminated(shutdownCtx, i.lifecycler)
 		}
 	}()
+
+	if i.cfg.WipeTSDBDirOnStartup {
+		level.Warn(i.logger).Log("msg", "wiping TSDB directory on startup as configured", "dir", i.cfg.BlocksStorageConfig.TSDB.Dir)
+		if err := os.RemoveAll(i.cfg.BlocksStorageConfig.TSDB.Dir); err != nil {
+			return errors.Wrap(err, "failed to wipe TSDB directory on startup")
+		}
+	}
 
 	// Ensure the TSDB directory exists before checking for markers.
 	// This is required for ingesters starting with empty disks to support operations
