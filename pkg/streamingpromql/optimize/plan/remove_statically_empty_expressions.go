@@ -81,7 +81,7 @@ func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) Apply(ctx context.Con
 		plan.Root = newRoot
 	}
 
-	if modified > 0 {
+	if modified {
 		logger.DebugLog("msg", "replaced statically empty expression(s) with no-op", "count", modified)
 		s.modified.Inc()
 	}
@@ -92,34 +92,33 @@ func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) Apply(ctx context.Con
 // apply recursively walks the plan tree, replacing statically-empty "and" binary expressions
 // with a NoOp node. It returns the replacement node (non-nil if this node should be replaced),
 // the number of replacements made, and any error.
-func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) apply(node planning.Node, params *planning.QueryParameters) (planning.Node, int, error) {
+func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) apply(node planning.Node, params *planning.QueryParameters) (planning.Node, bool, error) {
 	// Do not descend into subqueries for simplicity: their children are evaluated over a different time range
 	// (shifted backwards by the subquery range), so params.TimeRange does not apply there.
 	if _, isSubquery := node.(*core.Subquery); isSubquery {
-		return nil, 0, nil
+		return nil, false, nil
 	}
 
-	var modified int
+	modified := false
 
 	for idx := range node.ChildCount() {
 		replacement, modifiedInChild, err := s.apply(node.Child(idx), params)
 		if err != nil {
-			return nil, 0, err
+			return nil, false, err
 		}
 
-		modified += modifiedInChild
+		modified = modified || modifiedInChild
 
 		if replacement != nil {
 			if err := node.ReplaceChild(idx, replacement); err != nil {
-				return nil, 0, err
+				return nil, false, err
 			}
 		}
 	}
 
 	if isAlwaysEmpty(node, params) {
-		modified++
 		noOp := &core.NoOp{NoOpDetails: &core.NoOpDetails{}}
-		return noOp, modified, nil
+		return noOp, true, nil
 	}
 
 	return nil, modified, nil
