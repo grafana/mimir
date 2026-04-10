@@ -1276,29 +1276,29 @@ func TestDistributor_Push_ShouldGuaranteeShardingTokenConsistencyOverTheTime(t *
 		"metric_1 with value_1": {
 			inputSeries:    labelAdapters("__name__", "metric_1", "cluster", "cluster_1", "key", "value_1"),
 			expectedSeries: labelAdapters("__name__", "metric_1", "cluster", "cluster_1", "key", "value_1"),
-			expectedToken:  0xec0a2e9d,
+			expectedToken:  0xdc8c2e9d,
 		},
 		"metric_1 with value_1 and dropped label due to config": {
 			inputSeries: labelAdapters("__name__", "metric_1", "cluster", "cluster_1", "key", "value_1",
 				"dropped", "unused"),
 			expectedSeries: labelAdapters("__name__", "metric_1", "cluster", "cluster_1", "key", "value_1"),
-			expectedToken:  0xec0a2e9d,
+			expectedToken:  0xdc8c2e9d,
 		},
 		"metric_1 with value_1 and dropped HA replica label": {
 			inputSeries: labelAdapters("__name__", "metric_1", "cluster", "cluster_1", "key", "value_1",
 				"__replica__", "replica_1"),
 			expectedSeries: labelAdapters("__name__", "metric_1", "cluster", "cluster_1", "key", "value_1"),
-			expectedToken:  0xec0a2e9d,
+			expectedToken:  0xdc8c2e9d,
 		},
 		"metric_2 with value_1": {
 			inputSeries:    labelAdapters("__name__", "metric_2", "key", "value_1"),
 			expectedSeries: labelAdapters("__name__", "metric_2", "key", "value_1"),
-			expectedToken:  0xa60906f2,
+			expectedToken:  0xdc8c06f2,
 		},
 		"metric_1 with value_2": {
 			inputSeries:    labelAdapters("__name__", "metric_1", "key", "value_2"),
 			expectedSeries: labelAdapters("__name__", "metric_1", "key", "value_2"),
-			expectedToken:  0x18abc8a2,
+			expectedToken:  0xdc8cc8a2,
 		},
 	}
 
@@ -6890,7 +6890,7 @@ func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, _ ..
 			return nil, err
 		}
 
-		hash := mimirpb.ShardByAllLabelAdapters(orgid, series.Labels)
+		hash := tokenForLabels(orgid, series.Labels)
 		existing, ok := i.timeseries[hash]
 		if !ok {
 			i.timeseries[hash] = &series
