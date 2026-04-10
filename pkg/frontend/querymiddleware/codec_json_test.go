@@ -589,27 +589,6 @@ func TestCodec_JSONEncoding_Labels(t *testing.T) {
 	}
 }
 
-func BenchmarkEncodeMetricsQueryResponse(b *testing.B) {
-	codec := newTestCodec()
-	req := &http.Request{Header: http.Header{"Accept": []string{jsonMimeType}}}
-	resp := benchmarkPrometheusResponse(1000, 100) // 1000 series × 100 float samples
-
-	b.ResetTimer()
-	b.ReportAllocs()
-	for b.Loop() {
-		encoded, err := codec.EncodeMetricsQueryResponse(context.Background(), req, resp)
-		if err != nil {
-			b.Fatal(err)
-		}
-		n, err := io.Copy(io.Discard, encoded.Body)
-		if err != nil {
-			b.Fatal(err)
-		}
-		_ = encoded.Body.Close()
-		b.SetBytes(n)
-	}
-}
-
 // BenchmarkEncodeMetricsQueryResponse_Sizes benchmarks EncodeMetricsQueryResponse across a range of payload sizes.
 func BenchmarkEncodeMetricsQueryResponse_Sizes(b *testing.B) {
 	sizes := []struct{ series, samples int }{
