@@ -19,20 +19,10 @@ import (
 )
 
 func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
-	// lookbackDelta is the duration added to the threshold when checking if the optimization can apply.
-	// threshold (ms) = C * 1000 + lookbackDelta (ms)
-	//
-	// For timestamp(v) < C:
-	//   optimize when queryStart_ms >= C*1000 + lookbackDelta_ms
-	// For timestamp(v) <= C:
-	//   optimize when queryStart_ms > C*1000 + lookbackDelta_ms
 	const lookbackDelta = 5 * time.Minute
+	const constant = 1000
+	thresholdMs := (constant*time.Second + lookbackDelta).Milliseconds()
 
-	// constant is the value C used in `timestamp(v) < C` throughout these tests (in seconds).
-	// thresholdMs is the minimum queryStart at which the `<` optimization applies:
-	//   thresholdMs = C * 1000 + lookbackDelta (ms)
-	const constant = 1000.0 // seconds
-	thresholdMs := int64(constant*1000) + lookbackDelta.Milliseconds()
 
 	testCases := map[string]struct {
 		expr            string

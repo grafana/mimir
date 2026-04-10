@@ -140,48 +140,46 @@ func isAlwaysEmpty(node planning.Node, params *planning.QueryParameters) bool {
 }
 
 func isAlwaysEmptyBinaryExpression(node *core.BinaryExpression, params *planning.QueryParameters) bool {
+	earliestPossibleTimestampValue := params.TimeRange.StartT - params.LookbackDelta.Milliseconds()
+
 	switch node.Op {
 	case core.BINARY_LAND:
 		return isAlwaysEmpty(node.LHS, params) || isAlwaysEmpty(node.RHS, params)
 
 	case core.BINARY_LSS:
 		// timestamp(v) < C: always false when queryStart_ms >= C*1000 + lookbackDelta_ms.
-		if constant, ok := extractTimestampComparisonConstant(node.LHS, node.RHS); ok {
-			thresholdMs := int64(constant*1000) + params.LookbackDelta.Milliseconds()
-			return params.TimeRange.StartT >= thresholdMs
+		if constant, ok := isTimestampComparison(node.LHS, node.RHS); ok {
+			return earliestPossibleTimestampValue >= int64(constant*1000)
 		}
 
 	case core.BINARY_LTE:
 		// timestamp(v) <= C: always false when queryStart_ms > C*1000 + lookbackDelta_ms.
-		if constant, ok := extractTimestampComparisonConstant(node.LHS, node.RHS); ok {
-			thresholdMs := int64(constant*1000) + params.LookbackDelta.Milliseconds()
-			return params.TimeRange.StartT > thresholdMs
+		if constant, ok := isTimestampComparison(node.LHS, node.RHS); ok {
+			return earliestPossibleTimestampValue > int64(constant*1000)
 		}
 
 	case core.BINARY_GTR:
 		// C > timestamp(v) is equivalent to timestamp(v) < C.
 		// Always false when queryStart_ms >= C*1000 + lookbackDelta_ms.
-		if constant, ok := extractTimestampComparisonConstant(node.RHS, node.LHS); ok {
-			thresholdMs := int64(constant*1000) + params.LookbackDelta.Milliseconds()
-			return params.TimeRange.StartT >= thresholdMs
+		if constant, ok := isTimestampComparison(node.RHS, node.LHS); ok {
+			return earliestPossibleTimestampValue >= int64(constant*1000)
 		}
 
 	case core.BINARY_GTE:
 		// C >= timestamp(v) is equivalent to timestamp(v) <= C.
 		// Always false when queryStart_ms > C*1000 + lookbackDelta_ms.
-		if constant, ok := extractTimestampComparisonConstant(node.RHS, node.LHS); ok {
-			thresholdMs := int64(constant*1000) + params.LookbackDelta.Milliseconds()
-			return params.TimeRange.StartT > thresholdMs
+		if constant, ok := isTimestampComparison(node.RHS, node.LHS); ok {
+			return earliestPossibleTimestampValue > int64(constant*1000)
 		}
 	}
 
 	return false
 }
 
-// extractTimestampComparisonConstant checks whether timestampSide is (or wraps) a timestamp()
+// isTimestampComparison checks whether timestampSide is (or wraps) a timestamp()
 // function call and constantSide is (or wraps) a NumberLiteral. If so, it returns the constant
 // value and true.
-func extractTimestampComparisonConstant(timestampSide, constantSide planning.Node) (float64, bool) {
+func isTimestampComparison(timestampSide, constantSide planning.Node) (float64, bool) {
 	if !isTimestampCall(timestampSide) {
 		return 0, false
 	}
