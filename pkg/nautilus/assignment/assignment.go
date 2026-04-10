@@ -116,6 +116,38 @@ func EvenSplit(partitionIDs []int32) *Assignment {
 	return &Assignment{Entries: entries}
 }
 
+// FineEvenSplit creates an assignment like EvenSplit but with
+// slicesPerPartition sub-ranges per partition. This provides the
+// granularity needed by the slicer algorithm to make moves on the
+// first rebalance round.
+func FineEvenSplit(partitionIDs []int32, slicesPerPartition int) *Assignment {
+	n := len(partitionIDs)
+	if n == 0 {
+		return &Assignment{}
+	}
+	if slicesPerPartition < 1 {
+		slicesPerPartition = 1
+	}
+
+	totalSlices := n * slicesPerPartition
+	entries := make([]Entry, 0, totalSlices)
+	rangeSize := (uint64(math.MaxUint32) + 1) / uint64(totalSlices)
+
+	for i := 0; i < totalSlices; i++ {
+		lo := uint64(i) * rangeSize
+		hi := lo + rangeSize - 1
+		if i == totalSlices-1 {
+			hi = uint64(math.MaxUint32)
+		}
+		entries = append(entries, Entry{
+			Range:       HashRange{Lo: uint32(lo), Hi: uint32(hi)},
+			PartitionID: partitionIDs[i/slicesPerPartition],
+		})
+	}
+
+	return &Assignment{Entries: entries}
+}
+
 // Load reads a JSON-encoded assignment from r. This function signature
 // is compatible with dskit's runtimeconfig.Loader.
 func Load(r io.Reader) (interface{}, error) {
