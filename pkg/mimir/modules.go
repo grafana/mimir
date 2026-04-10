@@ -858,8 +858,6 @@ func (t *Mimir) initQueryFrontendTopicOffsetsReaders() (services.Service, error)
 // to optimize Prometheus query requests.
 func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error) {
 	promqlEngineRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "query-frontend"}, t.Registerer)
-
-	queryStats := stats.NewQueryMetrics(promqlEngineRegisterer)
 	promOpts, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer, t.QueryLimitsProvider)
 	// Disable concurrency limits for sharded queries spawned by the query-frontend.
 	promOpts.ActiveQueryTracker = nil
@@ -878,7 +876,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		eng = limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(promOpts))
 	case querier.MimirEngine:
 		var err error
-		t.QueryFrontendStreamingEngine, err = streamingpromql.NewEngine(mqeOpts, queryStats, t.QueryFrontendQueryPlanner)
+		t.QueryFrontendStreamingEngine, err = streamingpromql.NewEngine(mqeOpts, stats.NewQueryMetrics(mqeOpts.CommonOpts.Reg), t.QueryFrontendQueryPlanner)
 		memoryConsumptionTrackerFactory = t.QueryFrontendStreamingEngine.MemoryConsumptionTrackerFactory
 
 		if err != nil {
