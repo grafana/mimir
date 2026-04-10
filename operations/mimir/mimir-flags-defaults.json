@@ -1338,6 +1338,7 @@
   "memberlist.dead-node-reclaim-time": 0,
   "memberlist.compression-enabled": true,
   "memberlist.notify-interval": 0,
+  "memberlist.received-messages-queue-size": 1024,
   "memberlist.advertise-addr": "",
   "memberlist.advertise-port": 7946,
   "memberlist.cluster-label": "",
