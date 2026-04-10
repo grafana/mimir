@@ -149,6 +149,13 @@ api:
   # CLI flag: -api.skip-label-count-validation-header-enabled
   [skip_label_count_validation_header_enabled: <boolean> | default = false]
 
+  # (experimental) Allows controlling OTLP metric name suffix addition and
+  # translation strategy via X-Mimir-OTLP-AddSuffixes and
+  # X-Mimir-OTLP-TranslationStrategy headers on the OTLP push path. Not
+  # recommended for general use.
+  # CLI flag: -api.otlp-translation-headers-enabled
+  [otlp_translation_headers_enabled: <boolean> | default = false]
+
   # (advanced) HTTP URL path under which the Alertmanager ui and api will be
   # served.
   # CLI flag: -http.alertmanager-http-prefix

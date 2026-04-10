@@ -98,6 +98,17 @@
         },
         {
           "kind": "field",
+          "name": "otlp_translation_headers_enabled",
+          "required": false,
+          "desc": "Allows controlling OTLP metric name suffix addition and translation strategy via X-Mimir-OTLP-AddSuffixes and X-Mimir-OTLP-TranslationStrategy headers on the OTLP push path. Not recommended for general use.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "api.otlp-translation-headers-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "alertmanager_http_prefix",
           "required": false,
           "desc": "HTTP URL path under which the Alertmanager ui and api will be served.",

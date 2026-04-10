@@ -110,6 +110,8 @@ The following features are currently experimental:
     - `-validation.name-validation-scheme`
   - Configure metric and label name translation strategy in OTLP endpoint
     - `-distributor.otel-translation-strategy`
+  - Allow controlling OTLP translation via request headers
+    - `-api.otlp-translation-headers-enabled`
   - Configure how to handle label values over the length limit
     - `-validation.label-value-length-over-limit-strategy`
   - Ingester health check grace period (`-distributor.ingester-health-check-grace-period`)

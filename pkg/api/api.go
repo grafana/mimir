@@ -59,6 +59,7 @@ type ConfigHandler func(actualCfg interface{}, defaultCfg interface{}) http.Hand
 type Config struct {
 	SkipLabelNameValidationHeader  bool `yaml:"skip_label_name_validation_header_enabled" category:"advanced"`
 	SkipLabelCountValidationHeader bool `yaml:"skip_label_count_validation_header_enabled" category:"advanced"`
+	OTLPTranslationHeaders         bool `yaml:"otlp_translation_headers_enabled" category:"experimental"`
 
 	AlertmanagerHTTPPrefix string `yaml:"alertmanager_http_prefix" category:"advanced"`
 	PrometheusHTTPPrefix   string `yaml:"prometheus_http_prefix" category:"advanced"`
@@ -80,6 +81,7 @@ type Config struct {
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.SkipLabelNameValidationHeader, "api.skip-label-name-validation-header-enabled", false, "Allows to skip label name validation via X-Mimir-SkipLabelNameValidation header on the http write path. Use with caution as it breaks PromQL. Allowing this for external clients allows any client to send invalid label names. After enabling it, requests with a specific HTTP header set to true will not have label names validated.")
 	f.BoolVar(&cfg.SkipLabelCountValidationHeader, "api.skip-label-count-validation-header-enabled", false, "Allows to disable enforcement of the label count limit \"max_label_names_per_series\" via X-Mimir-SkipLabelCountValidation header on the http write path. Allowing this for external clients allows any client to send invalid label counts. After enabling it, requests with a specific HTTP header set to true will not have label counts validated.")
+	f.BoolVar(&cfg.OTLPTranslationHeaders, "api.otlp-translation-headers-enabled", false, "Allows controlling OTLP metric name suffix addition and translation strategy via X-Mimir-OTLP-AddSuffixes and X-Mimir-OTLP-TranslationStrategy headers on the OTLP push path. Not recommended for general use.")
 	cfg.RegisterFlagsWithPrefix("", f)
 }
 
@@ -308,7 +310,7 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 	}
 
 	a.RegisterRoute(OTLPPushEndpoint, distributor.OTLPHandler(
-		pushConfig.MaxOTLPRequestSize, d.RequestBufferPool, a.sourceIPs, limits,
+		pushConfig.MaxOTLPRequestSize, d.RequestBufferPool, a.sourceIPs, a.cfg.OTLPTranslationHeaders, limits,
 		pushConfig.OTelResourceAttributePromotionConfig,
 		pushConfig.KeepIdentifyingOTelResourceAttributesConfig,
 		pushConfig.RetryConfig, pushConfig.OTLPPushMiddlewares,

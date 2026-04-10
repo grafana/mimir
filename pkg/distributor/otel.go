@@ -53,6 +53,15 @@ const (
 
 	otelParseError = "otlp_parse_error"
 	maxErrMsgLen   = 1024
+
+	// OTLP translation headers allow per-request control of metric name translation.
+	// When both headers are set, otlpTranslationStrategyHeader takes full precedence
+	// and otlpAddSuffixesHeader is ignored.
+	// When only otlpAddSuffixesHeader is set, it toggles the suffix behavior of the
+	// tenant's configured translation strategy (e.g. UnderscoreEscapingWithSuffixes
+	// becomes UnderscoreEscapingWithoutSuffixes when set to "false").
+	otlpAddSuffixesHeader         = "X-Mimir-OTLP-AddSuffixes"
+	otlpTranslationStrategyHeader = "X-Mimir-OTLP-TranslationStrategy"
 )
 
 type OTLPHandlerLimits interface {
@@ -76,6 +85,7 @@ func OTLPHandler(
 	maxRecvMsgSize int,
 	requestBufferPool util.Pool,
 	sourceIPs *middleware.SourceIPExtractor,
+	allowTranslationHeaders bool,
 	limits OTLPHandlerLimits,
 	resourceAttributePromotionConfig OTelResourceAttributePromotionConfig,
 	keepIdentifyingOTelResourceAttributesConfig KeepIdentifyingOTelResourceAttributesConfig,
@@ -100,10 +110,13 @@ func OTLPHandler(
 
 		otlpConverter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
 
+		var schemeOverride *model.ValidationScheme
 		parser := newOTLPParser(
+			allowTranslationHeaders,
 			limits, resourceAttributePromotionConfig, keepIdentifyingOTelResourceAttributesConfig,
 			otlpConverter, pushMetrics, discardedDueToOtelParseError,
 			OTLPPushMiddlewares,
+			&schemeOverride,
 		)
 
 		supplier := func() (*mimirpb.WriteRequest, func(), int, error) {
@@ -128,6 +141,9 @@ func OTLPHandler(
 		}
 		req := newRequest(supplier)
 		req.contentLength = r.ContentLength
+		req.onInit = func() {
+			req.nameValidationSchemeOverride = schemeOverride
+		}
 
 		pushErr := push(ctx, req)
 		if pushErr == nil {
@@ -224,6 +240,7 @@ func observeOTLPFieldsCount(pushMetrics *PushMetrics, req pmetricotlp.ExportRequ
 }
 
 func newOTLPParser(
+	allowTranslationHeaders bool,
 	limits OTLPHandlerLimits,
 	resourceAttributePromotionConfig OTelResourceAttributePromotionConfig,
 	keepIdentifyingOTelResourceAttributesConfig KeepIdentifyingOTelResourceAttributesConfig,
@@ -231,6 +248,7 @@ func newOTLPParser(
 	pushMetrics *PushMetrics,
 	discardedDueToOtelParseError *prometheus.CounterVec,
 	OTLPPushMiddlewares []OTLPPushMiddleware,
+	schemeOverride **model.ValidationScheme,
 ) parserFunc {
 	if resourceAttributePromotionConfig == nil {
 		resourceAttributePromotionConfig = limits
@@ -364,7 +382,29 @@ func newOTLPParser(
 
 		limitsKey := tenantMd.WithTenant(tenantID)
 		translationStrategy := limits.OTelTranslationStrategy(limitsKey)
-		validateTranslationStrategy(translationStrategy, limits, limitsKey)
+		translationHeadersApplied := false
+		if allowTranslationHeaders {
+			strategyHeader := r.Header.Get(otlpTranslationStrategyHeader)
+			suffixesHeader := r.Header.Get(otlpAddSuffixesHeader)
+			if strategyHeader != "" || suffixesHeader != "" {
+				var err error
+				translationStrategy, err = applyTranslationHeaders(strategyHeader, suffixesHeader, limits, limitsKey)
+				if err != nil {
+					return 0, httpgrpc.Error(http.StatusBadRequest, err.Error())
+				}
+
+				translationHeadersApplied = true
+				// Auto-upgrade the name validation scheme if the effective
+				// translation strategy determined by the headers entails utf8.
+				if !translationStrategy.ShouldEscape() {
+					s := model.UTF8Validation
+					*schemeOverride = &s
+				}
+			}
+		}
+		if !translationHeadersApplied {
+			validateTranslationStrategy(translationStrategy, limits, limitsKey)
+		}
 
 		pushMetrics.IncOTLPRequest(tenantID)
 		pushMetrics.ObserveRequestBodySize(tenantID, "otlp", int64(uncompressedBodySize), r.ContentLength)
@@ -423,6 +463,52 @@ func newOTLPParser(
 		req.Metadata = metadata
 		return uncompressedBodySize, nil
 	}
+}
+
+// applyTranslationHeaders returns an updated translation strategy based on strategyHeader and suffixesHeader.
+// When both headers are present, strategyHeader takes full precedence.
+func applyTranslationHeaders(strategyHeader, suffixesHeader string, limits OTLPHandlerLimits, limitsKey string) (otlptranslator.TranslationStrategyOption, error) {
+	if strategyHeader != "" {
+		strategy := otlptranslator.TranslationStrategyOption(strategyHeader)
+		switch strategy {
+		case otlptranslator.UnderscoreEscapingWithSuffixes, otlptranslator.UnderscoreEscapingWithoutSuffixes, otlptranslator.NoUTF8EscapingWithSuffixes, otlptranslator.NoTranslation:
+			return otlptranslator.TranslationStrategyOption(strategyHeader), nil
+		default:
+			return "", fmt.Errorf("invalid value for %s header: %q", otlpTranslationStrategyHeader, strategy)
+		}
+	}
+
+	// Only the suffixes header is set. Start from the tenant's configured strategy
+	// and toggle the suffix aspect: e.g. if the tenant uses UnderscoreEscapingWithSuffixes
+	// and the header says "false", the effective strategy becomes
+	// UnderscoreEscapingWithoutSuffixes. The escaping mode is preserved.
+	addSuffixes, err := strconv.ParseBool(suffixesHeader)
+	if err != nil {
+		return "", fmt.Errorf(`invalid value for %s header: %q, expected "true" or "false"`, otlpAddSuffixesHeader, suffixesHeader)
+	}
+
+	strategy := limits.OTelTranslationStrategy(limitsKey)
+	switch strategy {
+	case otlptranslator.UnderscoreEscapingWithSuffixes:
+		if !addSuffixes {
+			strategy = otlptranslator.UnderscoreEscapingWithoutSuffixes
+		}
+	case otlptranslator.UnderscoreEscapingWithoutSuffixes:
+		if addSuffixes {
+			strategy = otlptranslator.UnderscoreEscapingWithSuffixes
+		}
+	case otlptranslator.NoUTF8EscapingWithSuffixes:
+		if !addSuffixes {
+			strategy = otlptranslator.NoTranslation
+		}
+	case otlptranslator.NoTranslation:
+		if addSuffixes {
+			strategy = otlptranslator.NoUTF8EscapingWithSuffixes
+		}
+	default:
+		panic("limits.OTelTranslationStrategy should never return an empty string")
+	}
+	return strategy, nil
 }
 
 // validateTranslationStrategy ensures consistency between name translation strategy and name validation scheme and metric name suffix enablement.
