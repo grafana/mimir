@@ -135,15 +135,6 @@ github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric
 # github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.55.0
 ## explicit; go 1.24.0
 github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping
-# github.com/Masterminds/goutils v1.1.1
-## explicit
-github.com/Masterminds/goutils
-# github.com/Masterminds/semver/v3 v3.4.0
-## explicit; go 1.21
-github.com/Masterminds/semver/v3
-# github.com/Masterminds/sprig/v3 v3.2.1
-## explicit; go 1.13
-github.com/Masterminds/sprig/v3
 # github.com/alecthomas/chroma/v2 v2.23.1
 ## explicit; go 1.22
 github.com/alecthomas/chroma/v2
@@ -718,29 +709,6 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-# github.com/grafana/alerting v0.0.0-20260227181651-5106b6285f2d
-## explicit; go 1.24.0
-github.com/grafana/alerting/definition
-github.com/grafana/alerting/http/v0mimir1
-github.com/grafana/alerting/notify/nfstatus
-github.com/grafana/alerting/receivers
-github.com/grafana/alerting/receivers/discord/v0mimir1
-github.com/grafana/alerting/receivers/email/v0mimir1
-github.com/grafana/alerting/receivers/jira/v0mimir1
-github.com/grafana/alerting/receivers/opsgenie/v0mimir1
-github.com/grafana/alerting/receivers/pagerduty/v0mimir1
-github.com/grafana/alerting/receivers/pushover/v0mimir1
-github.com/grafana/alerting/receivers/schema
-github.com/grafana/alerting/receivers/slack/v0mimir1
-github.com/grafana/alerting/receivers/sns/v0mimir1
-github.com/grafana/alerting/receivers/teams/v0mimir1
-github.com/grafana/alerting/receivers/teams/v0mimir2
-github.com/grafana/alerting/receivers/telegram/v0mimir1
-github.com/grafana/alerting/receivers/victorops/v0mimir1
-github.com/grafana/alerting/receivers/webex/v0mimir1
-github.com/grafana/alerting/receivers/webhook/v0mimir1
-github.com/grafana/alerting/receivers/wechat/v0mimir1
-github.com/grafana/alerting/templates/email
 # github.com/grafana/dskit v0.0.0-20260401084324-1cf1f4c6679f
 ## explicit; go 1.25.8
 github.com/grafana/dskit/backoff
@@ -898,12 +866,6 @@ github.com/hashicorp/vault/api/auth/kubernetes
 # github.com/hashicorp/vault/api/auth/userpass v0.11.0
 ## explicit; go 1.23.0
 github.com/hashicorp/vault/api/auth/userpass
-# github.com/huandu/xstrings v1.3.2
-## explicit; go 1.12
-github.com/huandu/xstrings
-# github.com/imdario/mergo v0.3.16
-## explicit; go 1.13
-github.com/imdario/mergo
 # github.com/inconshreveable/mousetrap v1.1.0
 ## explicit; go 1.18
 github.com/inconshreveable/mousetrap
@@ -972,6 +934,8 @@ github.com/kylelemons/godebug/pretty
 # github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0
 ## explicit; go 1.16
 github.com/lufia/plan9stats
+# github.com/mailru/easyjson v0.9.0
+## explicit; go 1.20
 # github.com/mattn/go-colorable v0.1.14
 ## explicit; go 1.18
 github.com/mattn/go-colorable
@@ -1194,6 +1158,20 @@ github.com/prometheus/alertmanager/matchers/parse
 github.com/prometheus/alertmanager/nflog
 github.com/prometheus/alertmanager/nflog/nflogpb
 github.com/prometheus/alertmanager/notify
+github.com/prometheus/alertmanager/notify/discord
+github.com/prometheus/alertmanager/notify/email
+github.com/prometheus/alertmanager/notify/msteams
+github.com/prometheus/alertmanager/notify/msteamsv2
+github.com/prometheus/alertmanager/notify/opsgenie
+github.com/prometheus/alertmanager/notify/pagerduty
+github.com/prometheus/alertmanager/notify/pushover
+github.com/prometheus/alertmanager/notify/slack
+github.com/prometheus/alertmanager/notify/sns
+github.com/prometheus/alertmanager/notify/telegram
+github.com/prometheus/alertmanager/notify/victorops
+github.com/prometheus/alertmanager/notify/webex
+github.com/prometheus/alertmanager/notify/webhook
+github.com/prometheus/alertmanager/notify/wechat
 github.com/prometheus/alertmanager/pkg/labels
 github.com/prometheus/alertmanager/provider
 github.com/prometheus/alertmanager/provider/mem
@@ -1358,9 +1336,6 @@ github.com/shirou/gopsutil/v4/internal/common
 github.com/shirou/gopsutil/v4/mem
 github.com/shirou/gopsutil/v4/net
 github.com/shirou/gopsutil/v4/process
-# github.com/shopspring/decimal v1.2.0
-## explicit; go 1.13
-github.com/shopspring/decimal
 # github.com/shurcooL/httpfs v0.0.0-20230704072500-f1e31cf0ba5c
 ## explicit; go 1.19
 github.com/shurcooL/httpfs/filter
@@ -1374,9 +1349,6 @@ github.com/shurcooL/vfsgen
 github.com/spf13/afero
 github.com/spf13/afero/internal/common
 github.com/spf13/afero/mem
-# github.com/spf13/cast v1.5.0
-## explicit; go 1.18
-github.com/spf13/cast
 # github.com/spf13/cobra v1.9.1
 ## explicit; go 1.15
 github.com/spf13/cobra
@@ -1798,7 +1770,6 @@ golang.org/x/crypto/internal/poly1305
 golang.org/x/crypto/pbkdf2
 golang.org/x/crypto/pkcs12
 golang.org/x/crypto/pkcs12/internal/rc2
-golang.org/x/crypto/scrypt
 # golang.org/x/exp v0.0.0-20260312153236-7ab1446f8b90
 ## explicit; go 1.25.0
 golang.org/x/exp/constraints
@@ -2154,12 +2125,6 @@ google.golang.org/protobuf/types/known/fieldmaskpb
 google.golang.org/protobuf/types/known/structpb
 google.golang.org/protobuf/types/known/timestamppb
 google.golang.org/protobuf/types/known/wrapperspb
-# gopkg.in/alexcesaro/quotedprintable.v3 v3.0.0-20150716171945-2caba252f4dc
-## explicit
-gopkg.in/alexcesaro/quotedprintable.v3
-# gopkg.in/mail.v2 v2.3.1
-## explicit
-gopkg.in/mail.v2
 # gopkg.in/telebot.v3 v3.2.1
 ## explicit; go 1.13
 gopkg.in/telebot.v3
