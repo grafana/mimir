@@ -13,6 +13,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
+	utillog "github.com/grafana/mimir/pkg/util/log"
 )
 
 // matchersConfig is a simplified version of an Alertmanager configuration
@@ -43,7 +44,7 @@ type matchersInhibitionRule struct {
 func validateMatchersInConfigDesc(logger log.Logger, origin string, cfg alertspb.AlertConfigDesc) {
 	// Do not add origin to the logger as it's added in the compat package.
 	logger = log.With(logger, "user", cfg.User)
-	parseFn := compat.FallbackMatchersParser(logger)
+	parseFn := compat.FallbackMatchersParser(utillog.SlogFromGoKit(logger))
 	matchersCfg := matchersConfig{}
 	if err := yaml.Unmarshal([]byte(cfg.RawConfig), &matchersCfg); err != nil {
 		level.Warn(logger).Log("msg", "Failed to load configuration in validateMatchersInConfigDesc", "origin", origin, "err", err)

@@ -132,7 +132,7 @@ route:
 				Timeout:   false,
 			},
 		}
-		require.NoError(t, am.alerts.Put(inputAlerts...))
+		require.NoError(t, am.alerts.Put(context.Background(), inputAlerts...))
 	}
 
 	// Give it some time, as alerts are sent to dispatcher asynchronously.
@@ -198,7 +198,7 @@ route:
 			Timeout:   false,
 		},
 	}
-	require.NoError(t, am.alerts.Put(inputAlerts...))
+	require.NoError(t, am.alerts.Put(context.Background(), inputAlerts...))
 
 	test.Poll(t, 3*time.Second, true, func() interface{} {
 		logs := buf.String()
@@ -382,7 +382,7 @@ func TestSilenceLimits(t *testing.T) {
 		StartsAt: time.Now(),
 		EndsAt:   time.Now().Add(5 * time.Minute),
 	}
-	require.NoError(t, am.silences.Set(sil1))
+	require.NoError(t, am.silences.Set(context.Background(),sil1))
 
 	// Insert sil2 should fail because maximum number of silences has been
 	// exceeded.
@@ -391,17 +391,17 @@ func TestSilenceLimits(t *testing.T) {
 		StartsAt: time.Now(),
 		EndsAt:   time.Now().Add(5 * time.Minute),
 	}
-	require.EqualError(t, am.silences.Set(sil2), "exceeded maximum number of silences: 1 (limit: 1)")
+	require.EqualError(t, am.silences.Set(context.Background(),sil2), "exceeded maximum number of silences: 1 (limit: 1)")
 
 	// Expire sil1 and run the GC. This should allow sil2 to be inserted.
-	require.NoError(t, am.silences.Expire(sil1.Id))
+	require.NoError(t, am.silences.Expire(context.Background(),sil1.Id))
 	n, err := am.silences.GC()
 	require.NoError(t, err)
 	require.Equal(t, 1, n)
-	require.NoError(t, am.silences.Set(sil2))
+	require.NoError(t, am.silences.Set(context.Background(),sil2))
 
 	// Expire sil2 and run the GC.
-	require.NoError(t, am.silences.Expire(sil2.Id))
+	require.NoError(t, am.silences.Expire(context.Background(),sil2.Id))
 	n, err = am.silences.GC()
 	require.NoError(t, err)
 	require.Equal(t, 1, n)
@@ -423,7 +423,7 @@ func TestSilenceLimits(t *testing.T) {
 		StartsAt:  time.Now(),
 		EndsAt:    time.Now().Add(5 * time.Minute),
 	}
-	require.EqualError(t, am.silences.Set(sil3), fmt.Sprintf("silence exceeded maximum size: %d bytes (limit: 4096 bytes)", toMeshSilence(t, sil3, 0).Size()))
+	require.EqualError(t, am.silences.Set(context.Background(),sil3), fmt.Sprintf("silence exceeded maximum size: %d bytes (limit: 4096 bytes)", toMeshSilence(t, sil3, 0).Size()))
 
 	// Should be able to insert sil4.
 	sil4 := &silencepb.Silence{
@@ -431,19 +431,19 @@ func TestSilenceLimits(t *testing.T) {
 		StartsAt: time.Now(),
 		EndsAt:   time.Now().Add(5 * time.Minute),
 	}
-	require.NoError(t, am.silences.Set(sil4))
+	require.NoError(t, am.silences.Set(context.Background(),sil4))
 
 	// Should be able to update sil4 without modifications. It is expected to
 	// keep the same ID.
 	sil5 := cloneSilence(t, sil4)
-	require.NoError(t, am.silences.Set(sil5))
+	require.NoError(t, am.silences.Set(context.Background(),sil5))
 	require.Equal(t, sil4.Id, sil5.Id)
 
 	// Should be able to update the comment. It is also expected to keep the
 	// same ID.
 	sil6 := cloneSilence(t, sil5)
 	sil6.Comment = "m"
-	require.NoError(t, am.silences.Set(sil6))
+	require.NoError(t, am.silences.Set(context.Background(),sil6))
 	require.Equal(t, sil5.Id, sil6.Id)
 
 	// Should not be able to update the start and end time as this requires
@@ -453,10 +453,10 @@ func TestSilenceLimits(t *testing.T) {
 	sil7 := cloneSilence(t, sil6)
 	sil7.StartsAt = time.Now().Add(5 * time.Minute)
 	sil7.EndsAt = time.Now().Add(10 * time.Minute)
-	require.EqualError(t, am.silences.Set(sil7), "exceeded maximum number of silences: 1 (limit: 1)")
+	require.EqualError(t, am.silences.Set(context.Background(),sil7), "exceeded maximum number of silences: 1 (limit: 1)")
 
 	// sil6 should not be expired because the update failed.
-	sils, _, err := am.silences.Query(silence.QState(types.SilenceStateExpired))
+	sils, _, err := am.silences.Query(context.Background(), silence.QState(types.SilenceStateExpired))
 	require.NoError(t, err)
 	require.Len(t, sils, 0)
 
@@ -465,10 +465,10 @@ func TestSilenceLimits(t *testing.T) {
 	limits.maxSilencesCount = 2
 	sil8 := cloneSilence(t, sil6)
 	sil8.Comment = strings.Repeat("m", 2<<11)
-	require.EqualError(t, am.silences.Set(sil8), fmt.Sprintf("silence exceeded maximum size: %d bytes (limit: 4096 bytes)", toMeshSilence(t, sil8, 0).Size()))
+	require.EqualError(t, am.silences.Set(context.Background(),sil8), fmt.Sprintf("silence exceeded maximum size: %d bytes (limit: 4096 bytes)", toMeshSilence(t, sil8, 0).Size()))
 
 	// sil6 should not be expired because the update failed.
-	sils, _, err = am.silences.Query(silence.QState(types.SilenceStateExpired))
+	sils, _, err = am.silences.Query(context.Background(), silence.QState(types.SilenceStateExpired))
 	require.NoError(t, err)
 	require.Len(t, sils, 0)
 
@@ -480,10 +480,10 @@ func TestSilenceLimits(t *testing.T) {
 	// should still be active.
 	sil9 := cloneSilence(t, sil8)
 	sil9.Matchers = []*silencepb.Matcher{{Name: "n", Pattern: "o"}}
-	require.EqualError(t, am.silences.Set(sil9), fmt.Sprintf("silence exceeded maximum size: %d bytes (limit: 4096 bytes)", toMeshSilence(t, sil9, 0).Size()))
+	require.EqualError(t, am.silences.Set(context.Background(),sil9), fmt.Sprintf("silence exceeded maximum size: %d bytes (limit: 4096 bytes)", toMeshSilence(t, sil9, 0).Size()))
 
 	// sil6 should not be expired because the update failed.
-	sils, _, err = am.silences.Query(silence.QState(types.SilenceStateExpired))
+	sils, _, err = am.silences.Query(context.Background(), silence.QState(types.SilenceStateExpired))
 	require.NoError(t, err)
 	require.Len(t, sils, 0)
 }

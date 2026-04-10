@@ -139,11 +139,11 @@ func (a *AlertmanagerCommand) setup(_ *kingpin.ParseContext, logger log.Logger) 
 	if a.UTF8StrictMode {
 		features = featurecontrol.FeatureUTF8StrictMode
 	}
-	flags, err := featurecontrol.NewFlags(l, features)
+	flags, err := featurecontrol.NewFlags(util_log.SlogFromGoKit(l), features)
 	if err != nil {
 		return err
 	}
-	compat.InitFromFlags(l, flags)
+	compat.InitFromFlags(util_log.SlogFromGoKit(l), flags)
 
 	cli, err := client.New(a.ClientConfig, logger)
 	if err != nil {

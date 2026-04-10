@@ -1206,14 +1206,14 @@ func (t *Mimir) initAlertManager() (serv services.Service, err error) {
 	} else {
 		level.Info(util_log.Logger).Log("msg", "Starting Alertmanager in classic mode")
 	}
-	features, err := featurecontrol.NewFlags(util_log.Logger, mode)
+	features, err := featurecontrol.NewFlags(util_log.SlogFromGoKit(util_log.Logger), mode)
 	util_log.CheckFatal("initializing Alertmanager feature flags", err)
 
 	compatLogger := log.NewNopLogger()
 	if t.Cfg.Alertmanager.LogParsingLabelMatchers {
 		compatLogger = util_log.Logger
 	}
-	compat.InitFromFlags(compatLogger, features)
+	compat.InitFromFlags(util_log.SlogFromGoKit(compatLogger), features)
 
 	t.Cfg.Alertmanager.ShardingRing.Common.ListenPort = t.Cfg.Server.GRPCListenPort
 	t.Cfg.Alertmanager.CheckExternalURL(t.Cfg.API.AlertmanagerHTTPPrefix, util_log.Logger)
