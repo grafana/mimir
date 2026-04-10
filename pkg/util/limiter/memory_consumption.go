@@ -256,6 +256,15 @@ func (t *InflightMemoryConsumptionTracker) IncreaseReferenceCount(tracker *Memor
 // DecrementReferenceCount removes the tracking of this tracker.
 func (t *InflightMemoryConsumptionTracker) DecrementReferenceCount(tracker *MemoryConsumptionTracker) {
 	if tracker.parent != nil {
+		// Why do we need this extra complexity?
+		// The memory consumption tracker in MQE lives in the evaluator.
+		// When a query is complete, the order in which the query is closed out is q.evaluator.Close() followed by q.returnResultToPool().
+		// This means that the DecrementReferenceCount() on the child tracker happens before the allocations are returned.
+		// For the purposes of the tracker or the accumulated in-flight tracker it does not matter, but we do want to ensure that
+		// a child tracker can only have DecrementReferenceCount() called once AND we need to ensure that the child.parent reference
+		// is intact after a DecrementReferenceCount() so that this late returnResultToPool() updates the parent.
+		// There is no race issue with the parent tracker managed from the middleware, as it will not close out the parent tracker
+		// until all the child goroutines have completed. It is not affected by this internal query/evaluator lifecycle.
 		if tracker.childDeregistered.Swap(true) {
 			return
 		}
