@@ -224,12 +224,42 @@ func (t *InflightMemoryConsumptionTracker) NewMemoryConsumptionTracker(ctx conte
 	return tracker
 }
 
+// NewWrappedMemoryConsumptionTracker returns a MemoryConsumptionTracker which is backed by the given parent MemoryConsumptionTracker.
+// Any increment or decrement in memory is first passed through the parent before this tracker is updated.
+// Any functions for requesting the tracker values - such as PeakEstimatedMemoryConsumptionBytes() - returns this tracker's values.
+//
+// The reference count of the parent is increased on this allocation.
+// This returned MemoryConsumptionTracker should be passed to the DecrementReferenceCount() when it is no longer required and this will
+// decrement the reference count of the parent.
+//
+// Note that the accumulated metrics reported by the InflightMemoryConsumptionTracker will not include this MemoryConsumptionTracker. Only
+// the metrics on the parent trackers are included in the InflightMemoryConsumptionTracker accumulations.
+func (t *InflightMemoryConsumptionTracker) NewWrappedMemoryConsumptionTracker(ctx context.Context, queryDescription string, parent *MemoryConsumptionTracker) *MemoryConsumptionTracker {
+	t.IncreaseReferenceCount(parent)
+	return &MemoryConsumptionTracker{
+		maxEstimatedMemoryConsumptionBytes: parent.maxEstimatedMemoryConsumptionBytes,
+		rejectionCount:                     parent.rejectionCount,
+		queryDescription:                   queryDescription,
+		ctx:                                ctx,
+		parent:                             parent,
+	}
+}
+
 func (t *InflightMemoryConsumptionTracker) IncreaseReferenceCount(tracker *MemoryConsumptionTracker) {
+	if tracker.trackingId == 0 {
+		panic("cannot increment a reference count on a wrapped tracker or a tracker not created via the InflightMemoryConsumptionTracker")
+	}
 	tracker.refCount.Inc()
 }
 
 // DecrementReferenceCount removes the tracking of this tracker.
 func (t *InflightMemoryConsumptionTracker) DecrementReferenceCount(tracker *MemoryConsumptionTracker) {
+	if tracker.parent != nil {
+		t.DecrementReferenceCount(tracker.parent)
+		tracker.parent = nil
+		return
+	}
+
 	if tracker.trackingId == 0 {
 		panic("cannot decrement a reference count on a tracker not created via the InflightMemoryConsumptionTracker")
 	}
@@ -241,6 +271,9 @@ func (t *InflightMemoryConsumptionTracker) DecrementReferenceCount(tracker *Memo
 // IsRegistered returns true if the given tracker is currently registered with this InflightMemoryConsumptionTracker
 // Only a registered tracker can have its reference decreased via DecrementReferenceCount()
 func (t *InflightMemoryConsumptionTracker) IsRegistered(tracker *MemoryConsumptionTracker) bool {
+	if tracker.parent != nil {
+		return t.IsRegistered(tracker.parent)
+	}
 	if tracker.trackingId == 0 {
 		return false
 	}
@@ -280,9 +313,13 @@ func (t *InflightMemoryConsumptionTracker) Collect(ch chan<- prometheus.Metric) 
 //
 // It also tracks the peak number of in-memory bytes for use in query statistics.
 type MemoryConsumptionTracker struct {
-	maxEstimatedMemoryConsumptionBytes     uint64
+	parent *MemoryConsumptionTracker
+	// maxEstimatedMemoryConsumptionBytes is the limit (if any). Any attempt to request more than this value will result in an error.
+	maxEstimatedMemoryConsumptionBytes uint64
+	// currentEstimatedMemoryConsumptionBytes is the current memory usage at this point in time.
 	currentEstimatedMemoryConsumptionBytes uint64
-	peakEstimatedMemoryConsumptionBytes    uint64
+	// peakEstimatedMemoryConsumptionBytes is the peak memory usage observed during the lifecycle of this tracker.
+	peakEstimatedMemoryConsumptionBytes uint64
 
 	currentEstimatedMemoryConsumptionBySource [memoryConsumptionSourceCount]uint64
 
@@ -322,6 +359,12 @@ func NewMemoryConsumptionTracker(ctx context.Context, maxEstimatedMemoryConsumpt
 //
 // It returns an error if the query would exceed the maximum memory consumption limit.
 func (l *MemoryConsumptionTracker) IncreaseMemoryConsumption(b uint64, source MemoryConsumptionSource) error {
+	if l.parent != nil {
+		if err := l.parent.IncreaseMemoryConsumption(b, source); err != nil {
+			return err
+		}
+	}
+
 	l.mtx.Lock()
 	defer l.mtx.Unlock()
 
@@ -346,6 +389,10 @@ func (l *MemoryConsumptionTracker) IncreaseMemoryConsumption(b uint64, source Me
 
 // DecreaseMemoryConsumption decreases the current memory consumption by b bytes.
 func (l *MemoryConsumptionTracker) DecreaseMemoryConsumption(b uint64, source MemoryConsumptionSource) {
+	if l.parent != nil {
+		l.parent.DecreaseMemoryConsumption(b, source)
+	}
+
 	l.mtx.Lock()
 	defer l.mtx.Unlock()
 
@@ -397,11 +444,19 @@ func (l *MemoryConsumptionTracker) CurrentEstimatedMemoryConsumptionBytesBySourc
 
 // IncreaseMemoryConsumptionForLabels attempts to increase the current memory consumption based on labels.
 func (l *MemoryConsumptionTracker) IncreaseMemoryConsumptionForLabels(lbls labels.Labels) error {
+	if l.parent != nil {
+		if err := l.parent.IncreaseMemoryConsumptionForLabels(lbls); err != nil {
+			return err
+		}
+	}
 	return l.IncreaseMemoryConsumption(lbls.ByteSize(), Labels)
 }
 
 // DecreaseMemoryConsumptionForLabels decreases the current memory consumption based on labels.
 func (l *MemoryConsumptionTracker) DecreaseMemoryConsumptionForLabels(lbls labels.Labels) {
+	if l.parent != nil {
+		l.parent.DecreaseMemoryConsumptionForLabels(lbls)
+	}
 	l.DecreaseMemoryConsumption(lbls.ByteSize(), Labels)
 }
 

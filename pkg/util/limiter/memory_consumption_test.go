@@ -392,19 +392,31 @@ func TestMemoryTrackerRefCounts(t *testing.T) {
 
 		routines := 5
 		g, _ := errgroup.WithContext(t.Context())
-		for range routines {
+		for i := range routines {
 			g.Go(func() error {
-				factory.IncreaseReferenceCount(tracker)
-				// do some work
-				require.NoError(t, tracker.IncreaseMemoryConsumption(10, IngesterChunks))
-				factory.DecrementReferenceCount(tracker)
+				childTracker := factory.NewWrappedMemoryConsumptionTracker(context.Background(), fmt.Sprintf("child %d", i), tracker)
+				require.Equal(t, tracker.maxEstimatedMemoryConsumptionBytes, childTracker.maxEstimatedMemoryConsumptionBytes)
 				require.True(t, factory.IsRegistered(tracker))
+				require.True(t, factory.IsRegistered(childTracker))
+				// do some work
+
+				// child reports just our memory allocation
+				require.NoError(t, childTracker.IncreaseMemoryConsumption(10, IngesterChunks))
+				childTracker.DecreaseMemoryConsumption(1, IngesterChunks)
+				require.Equal(t, uint64(9), childTracker.currentEstimatedMemoryConsumptionBytes)
+				require.Equal(t, fmt.Sprintf("child %d", i), childTracker.queryDescription)
+				require.GreaterOrEqual(t, tracker.currentEstimatedMemoryConsumptionBytes, uint64(9))
+
+				factory.DecrementReferenceCount(childTracker)
+				require.True(t, factory.IsRegistered(tracker))
+				require.False(t, factory.IsRegistered(childTracker))
 				return nil
 			})
 		}
 		require.NoError(t, g.Wait())
 
-		require.Equal(t, uint64(routines*10), tracker.currentEstimatedMemoryConsumptionBytes)
+		require.Equal(t, uint64(routines*9), tracker.currentEstimatedMemoryConsumptionBytes)
+		require.Equal(t, "foo + bar", tracker.queryDescription)
 		require.True(t, factory.IsRegistered(tracker))
 
 		factory.DecrementReferenceCount(tracker)
@@ -420,11 +432,12 @@ func TestMemoryTrackerRefCounts(t *testing.T) {
 		g, _ := errgroup.WithContext(t.Context())
 		for range routines {
 			g.Go(func() error {
-				factory.IncreaseReferenceCount(tracker)
+				childTracker := factory.NewWrappedMemoryConsumptionTracker(context.Background(), "child", tracker)
 				// do some work
-				require.Error(t, tracker.IncreaseMemoryConsumption(10, IngesterChunks)) // this will exceed the allow memory consumption
-				factory.DecrementReferenceCount(tracker)
+				require.Error(t, childTracker.IncreaseMemoryConsumption(10, IngesterChunks)) // this will exceed the allow memory consumption
+				factory.DecrementReferenceCount(childTracker)
 				require.True(t, factory.IsRegistered(tracker))
+				require.False(t, factory.IsRegistered(childTracker))
 				return nil
 			})
 		}
